@@ -1,0 +1,56 @@
+"use client";
+
+import * as React from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { cn } from "@/lib/utils";
+import { Sidebar } from "./sidebar";
+import { TopBar } from "./topbar";
+import { MOBILE_NAV } from "./nav";
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+
+  // Auth screens render full-bleed, without the console chrome.
+  if (pathname.startsWith("/login")) return <>{children}</>;
+
+  return (
+    <div className="flex min-h-screen bg-paper">
+      <a href="#main-content" className="skip-link">
+        Skip to content
+      </a>
+      <Sidebar />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar />
+        <main id="main-content" className="flex-1 px-4 pb-24 pt-6 sm:px-6 lg:px-8 lg:pb-10">
+          <div className="mx-auto w-full max-w-[1400px]">{children}</div>
+        </main>
+      </div>
+
+      {/* Mobile bottom nav */}
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-line bg-paper/95 px-2 py-2 backdrop-blur lg:hidden"
+        aria-label="Primary mobile"
+      >
+        {MOBILE_NAV.map((item) => {
+          const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={active ? "page" : undefined}
+              className={cn(
+                "flex flex-1 flex-col items-center gap-1 rounded-2xl py-1.5 text-[0.625rem] font-semibold transition",
+                active ? "text-ink" : "text-muted",
+              )}
+            >
+              <Icon className={cn("h-5 w-5", active && "text-tangerine")} />
+              {item.label.split(" ")[0]}
+            </Link>
+          );
+        })}
+      </nav>
+    </div>
+  );
+}
