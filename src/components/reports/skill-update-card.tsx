@@ -32,6 +32,9 @@ export function SkillUpdateCard({
 
   function decide(status: "accepted" | "rejected") {
     actions.setSkillUpdateStatus(campaignId, skillUpdate.id, status);
+    // Accepting must actually apply the learning to the agent skill (feed back),
+    // not just flip the record's status.
+    if (status === "accepted") actions.acceptSkillLearning(skillUpdate.skill);
     toast({
       title: status === "accepted" ? "Skill update accepted" : "Skill update rejected",
       description:

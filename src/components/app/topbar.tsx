@@ -49,8 +49,8 @@ export function TopBar() {
       href: "/outreach",
     },
     kpis.hotReplies > 0 && { label: `${kpis.hotReplies} hot replies within SLA`, href: "/replies" },
-    kpis.interested > kpis.interviewsBooked && {
-      label: `${kpis.interested - kpis.interviewsBooked} interested candidates to book`,
+    kpis.awaitingBooking > 0 && {
+      label: `${kpis.awaitingBooking} interested candidates to book`,
       href: "/calendar",
     },
   ].filter(Boolean) as { label: string; href: string }[];

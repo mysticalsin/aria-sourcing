@@ -11,7 +11,7 @@ import {
 } from "@/components/ui";
 import { ScoreGauge } from "@/components/charts/score-gauge";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
-import { useActions, useCampaign, useSettings } from "@/lib/store";
+import { useActions, useCampaign, useCandidate, useSettings } from "@/lib/store";
 import {
   downloadText,
   formatTimeAgo,
@@ -87,6 +87,9 @@ export function CandidateDrawer({
 }) {
   const actions = useActions();
   const { toast } = useToast();
+  // Always read the LIVE record so in-drawer mutations (stage, compliance, history)
+  // reflect immediately instead of showing the click-time snapshot.
+  const liveCandidate = useCandidate(candidate?.id);
   const campaign = useCampaign(candidate?.campaignId);
   const confidentialityMode = Boolean(useSettings().confidentialityMode);
   const [revealed, setRevealed] = useState(false);
@@ -104,7 +107,7 @@ export function CandidateDrawer({
     );
   }
 
-  const c = candidate;
+  const c = liveCandidate ?? candidate;
   const purpose = hasOutreachPurpose(c.stage);
   const masked = confidentialityMode && !purpose && !revealed;
   const dc = applyConfidentiality(c, {
@@ -184,12 +187,28 @@ export function CandidateDrawer({
     });
   };
 
+  const contactBlocked = flags.doNotContact || flags.suppressed || flags.unsubscribed;
+
   const footer = (
     <div className="flex flex-wrap items-center gap-2">
-      <Button variant="secondary" size="md" leftIcon={<Send className="h-4 w-4" />} onClick={handleGenerate}>
+      <Button
+        variant="secondary"
+        size="md"
+        leftIcon={<Send className="h-4 w-4" />}
+        onClick={handleGenerate}
+        disabled={contactBlocked}
+        title={contactBlocked ? "Candidate is suppressed / do-not-contact" : undefined}
+      >
         Generate outreach
       </Button>
-      <Button variant="primary" size="md" leftIcon={<CalendarPlus className="h-4 w-4" />} onClick={handleBook}>
+      <Button
+        variant="primary"
+        size="md"
+        leftIcon={<CalendarPlus className="h-4 w-4" />}
+        onClick={handleBook}
+        disabled={contactBlocked}
+        title={contactBlocked ? "Candidate is suppressed / do-not-contact" : undefined}
+      >
         Book interview
       </Button>
       <Link

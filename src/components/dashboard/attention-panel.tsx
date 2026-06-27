@@ -56,7 +56,7 @@ export function AttentionPanel() {
     {
       label: "Interested awaiting booking",
       hint: "Ready to schedule an interview",
-      count: kpis.interested,
+      count: kpis.awaitingBooking,
       href: "/calendar",
       tone: "violet",
       icon: <CalendarClock className="h-4 w-4" aria-hidden />,

@@ -18,6 +18,10 @@ import { supabaseEnabled } from "@/lib/supabase/config";
  * backend, so the route NEVER sends — it always returns dry-run.
  */
 export async function POST(req: NextRequest) {
+  // Reject oversized requests before buffering the body.
+  if (Number(req.headers.get("content-length") ?? 0) > 100_000) {
+    return NextResponse.json({ status: "error", detail: "Payload too large." }, { status: 413 });
+  }
   let payload: Record<string, unknown>;
   try {
     payload = await req.json();
@@ -35,6 +39,9 @@ export async function POST(req: NextRequest) {
 
   if (!subject || !body || !candidateEmail) {
     return NextResponse.json({ status: "error", detail: "Missing required fields." }, { status: 400 });
+  }
+  if (subject.length > 255 || body.length > 50_000) {
+    return NextResponse.json({ status: "error", detail: "Subject/body exceeds length limits." }, { status: 413 });
   }
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(candidateEmail)) {
     return NextResponse.json({ status: "error", detail: "Invalid recipient address." }, { status: 400 });

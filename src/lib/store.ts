@@ -100,6 +100,7 @@ export interface HermesActions {
     candidateId: string,
     tone?: OutreachTone,
     channel?: OutreachChannel,
+    seatId?: string,
   ) => OutreachMessage | null;
   updateOutreach: (messageId: string, patch: Partial<OutreachMessage>) => void;
   regenerateOutreach: (messageId: string, tone?: OutreachTone) => void;
@@ -768,6 +769,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const candidate = s.candidates.find((c) => c.id === candidateId);
       const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
       if (!candidate || !campaign) return null;
+      // Never book a candidate who opted out / is suppressed (compliance).
+      const cf = candidate.complianceFlags;
+      if (cf.doNotContact || cf.suppressed || cf.unsubscribed) return null;
 
       const all = getInterviewerByName(opts?.interviewerName) ?? nextInterviewer(s.bookings.length);
       const start = opts?.startTime ? new Date(opts.startTime) : defaultSlot();

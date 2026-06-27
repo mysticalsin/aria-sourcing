@@ -92,6 +92,7 @@ export interface GlobalKpis {
   replyRate: number;
   interviewsBooked: number;
   interested: number;
+  awaitingBooking: number;
   avgMatchScore: number;
   timeToFirstInterviewHours: number | null;
   pendingApprovals: number;
@@ -107,9 +108,11 @@ export function globalKpis(state: HermesState): GlobalKpis {
   const interested = cands.filter(
     (c) => stageRank(c.stage) >= 3 && c.stage !== "Not Interested",
   ).length;
+  const awaitingBooking = cands.filter((c) => c.stage === "Interested" && !c.booking).length;
   const scores = cands.map((c) => c.matchScore).filter(Boolean);
   const avg = scores.length ? round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
-  const ttfi = state.campaigns
+  // Mean time-to-first-interview across ACTIVE campaigns only.
+  const ttfi = active
     .map((c) => c.metrics.timeToFirstInterviewHours)
     .filter((v): v is number => v != null);
 
@@ -121,6 +124,7 @@ export function globalKpis(state: HermesState): GlobalKpis {
     replyRate: contacted ? replied / contacted : 0,
     interviewsBooked: booked,
     interested,
+    awaitingBooking,
     avgMatchScore: avg,
     timeToFirstInterviewHours: ttfi.length ? round(ttfi.reduce((a, b) => a + b, 0) / ttfi.length) : null,
     pendingApprovals: state.outreach.filter((m) => m.status === "Needs Approval").length,

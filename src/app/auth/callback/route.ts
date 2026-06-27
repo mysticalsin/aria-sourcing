@@ -5,7 +5,10 @@ import { getServerSupabase } from "@/lib/supabase/server";
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
-  const redirect = url.searchParams.get("redirect") || "/";
+  // Only allow same-origin relative paths — never an absolute or protocol-relative
+  // URL (open-redirect guard).
+  const rawRedirect = url.searchParams.get("redirect") || "/";
+  const redirect = rawRedirect.startsWith("/") && !rawRedirect.startsWith("//") ? rawRedirect : "/";
   const supabase = getServerSupabase();
 
   if (code && supabase) {

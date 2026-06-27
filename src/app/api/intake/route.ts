@@ -26,6 +26,10 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  // Reject oversized requests before buffering/parsing the body.
+  if (Number(req.headers.get("content-length") ?? 0) > 64_000) {
+    return NextResponse.json({ ok: false, error: "Payload too large." }, { status: 413 });
+  }
   let payload: Record<string, unknown>;
   try {
     payload = await req.json();

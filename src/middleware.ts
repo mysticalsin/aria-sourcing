@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
-import { SUPABASE_ANON_KEY, SUPABASE_URL, supabaseEnabled } from "@/lib/supabase/config";
+import { SUPABASE_ANON_KEY, SUPABASE_URL, supabaseEnabled, ALLOWED_EMAIL_DOMAIN } from "@/lib/supabase/config";
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
@@ -41,6 +41,17 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Enforce the email-domain allow-list when configured (display alone is not a gate).
+  if (user && ALLOWED_EMAIL_DOMAIN && !isAuthRoute) {
+    const email = (user.email ?? "").toLowerCase();
+    if (!email.endsWith(`@${ALLOWED_EMAIL_DOMAIN.toLowerCase()}`)) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/auth/signout";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+  }
+
   if (user && path.startsWith("/login")) {
     const url = req.nextUrl.clone();
     url.pathname = "/";
@@ -51,6 +62,7 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Run on everything except static assets and image files.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
+  // Run on everything except API routes (they return their own JSON status codes),
+  // static assets and image files.
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|icon.svg|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
 };

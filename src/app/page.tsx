@@ -60,7 +60,7 @@ export default function DashboardPage() {
   const activities = useActivities();
   const activeCampaign = useActiveCampaign();
 
-  const activeCampaigns = campaigns.filter((c) => c.status !== "Filled");
+  const activeCampaigns = campaigns.filter((c) => !["Filled", "Paused"].includes(c.status));
   const funnel = funnelForCandidates(candidates);
 
   const kpiCards: {
@@ -109,7 +109,7 @@ export default function DashboardPage() {
       label: "Time to first interview",
       value:
         kpis.timeToFirstInterviewHours != null ? `${kpis.timeToFirstInterviewHours}h` : "—",
-      hint: "Median across active campaigns",
+      hint: "Mean across active campaigns",
       icon: <Timer aria-hidden />,
       tone: "neutral",
     },

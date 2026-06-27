@@ -1,5 +1,5 @@
 import { DEFAULT_SCORING_WEIGHTS, scoreCandidate } from "./scoring";
-import { dedupeCandidates, slaDueFor } from "./rules";
+import { dedupeCandidates } from "./rules";
 import { humanizeText } from "./humanizer";
 import type {
   Booking,
