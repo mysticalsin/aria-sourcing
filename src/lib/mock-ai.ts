@@ -38,6 +38,7 @@ import {
   pickN,
   round,
   slugify,
+  titleCase,
 } from "./utils";
 
 /* ============================================================================
@@ -169,6 +170,35 @@ Requirements:
 
 We offer €90k–€120k, meaningful equity, and a fully remote EU setup (CET).`;
 
+/** A real Mantu/Amaris "need is now ACTIVE" recruitment email (structured format). */
+export const SAMPLE_MANTU_EMAIL = `From: Noreply (Mantu) <noreply@mantu.example>
+To: Amaris_RCM_PRO@amaris.com
+Cc: AMACAN_Managers; AMACAN_Recruitment
+Importance: High
+
+Hello,
+This need is now ACTIVE: Crédit Agricole - Murex Support
+Type: Consulting
+Category: Active
+Status: Running
+Client: LBCCAN
+Manager: MARGIOTTA Lisa
+Recruiter: JENDOUBI Maryem
+Priority: 1 - Urgent and critical
+Location: MONTREAL
+Start date: 7/13/2026
+Nb people: 1
+Languages: English - Fluent, French - Fluent
+
+Key required skills
+- Strong understanding of financial markets, specifically US corporate bonds.
+- MANDATORY: Prior experience working directly with Front Office traders in a high-pressure trading environment.
+- MANDATORY: Good knowledge of Murex Front Office tools on MX.III (Pricing, Simulation, Market Data, standard reports). Strong knowledge of financial products (vanilla), including valuation principles and risk sensitivities.
+- Strong communication, interpersonal, and stakeholder management skills.
+- Minimum 5 years of relevant experience. Offshore experience is a plus.
+
+Skills: Murex, Finance, Pricing, Pricing Analysis`;
+
 export interface ParsedIntake {
   sender: { name: string; email: string };
   intent: IntakeIntent;
@@ -179,9 +209,135 @@ export interface ParsedIntake {
   confidence: Record<string, number>;
 }
 
+export function isMantuNeedEmail(text: string): boolean {
+  return /this need is now|key required skills/i.test(text) || /^\s*recruiter\s*:/im.test(text);
+}
+
+/** Structured parser for the Mantu/Amaris "need is now ACTIVE" recruitment email. */
+export function parseMantuNeed(text: string): ParsedIntake {
+  const field = (label: string): string =>
+    text.match(new RegExp(`^\\s*${label}\\s*:\\s*(.+)$`, "im"))?.[1]?.trim() ?? "";
+
+  const title =
+    text.match(/this need is now active\s*:?\s*(.+)/i)?.[1]?.trim() ||
+    field("Subject") ||
+    field("Need") ||
+    "Consulting Need";
+
+  const manager = field("Manager");
+  const recruiter = field("Recruiter");
+  const client = field("Client");
+  const priority = field("Priority");
+  const locationRaw = field("Location");
+  const startRaw = field("Start date");
+  const typeRaw = field("Type") || "Consulting";
+
+  const emailMatch = text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
+  const senderName = manager || recruiter || "Hiring Manager";
+  const senderEmail =
+    emailMatch?.[0] ??
+    `${slugify(senderName).replace(/-/g, ".")}@${slugify(client) || "client"}.example`;
+
+  // Priority / importance → urgency
+  let urgency: Urgency = "Standard";
+  if (/critical/i.test(priority) || /\b1\b/.test(priority) || /high importance|importance:\s*high/i.test(text))
+    urgency = "Critical";
+  else if (/urgent/i.test(priority) || /\b2\b/.test(priority)) urgency = "Urgent";
+
+  const intent: IntakeIntent = urgency === "Critical" ? "Urgent Hire" : "New Role";
+
+  // Skills — the explicit "Skills:" line is authoritative; augment from bullets.
+  const skillsLine = field("Skills");
+  const lineSkills = skillsLine
+    ? skillsLine.split(/[,;]/).map((s) => s.trim()).filter(Boolean)
+    : [];
+  const dictSkills = SKILL_DICTIONARY.filter((s) =>
+    new RegExp(`(^|[^a-z])${escapeRegExp(s)}([^a-z]|$)`, "i").test(text),
+  );
+  const requiredSkills = Array.from(new Set([...lineSkills, ...dictSkills])).slice(0, 8);
+
+  const minYears = text.match(/minimum\s*(\d{1,2})\s*\+?\s*years/i)?.[1];
+  const minYearsExperience = minYears ? parseInt(minYears, 10) : null;
+
+  const niceToHaveSkills: string[] = [];
+  if (/offshore/i.test(text)) niceToHaveSkills.push("Offshore experience");
+
+  // Location → region + timezone (best-effort)
+  const loc = titleCase(locationRaw || "");
+  const tz = /montreal|toronto|new york|boston/i.test(locationRaw)
+    ? "EST"
+    : /london|uk/i.test(locationRaw)
+      ? "GMT"
+      : /paris|france|montreal/i.test(locationRaw)
+        ? "CET"
+        : "EST";
+  const regions = loc ? [loc] : ["Global"];
+
+  // Start date m/d/yyyy → ISO
+  let targetStartDate: string;
+  const d = startRaw ? new Date(startRaw) : null;
+  targetStartDate = d && !isNaN(d.getTime()) ? d.toISOString() : isoDaysAfter(45, new Date());
+
+  const industryExperience = /financial markets|bonds|trading|finance|murex|pricing/i.test(text)
+    ? ["Fintech"]
+    : [];
+
+  const validationWarnings: ValidationWarning[] = [];
+  if (!skillsLine && requiredSkills.length < 3)
+    validationWarnings.push({ field: "requiredSkills", severity: "critical", message: "No explicit skills line and few skills detected." });
+  validationWarnings.push({ field: "salary", severity: "warning", message: "No salary/rate in the need email — confirm the band." });
+  if (!locationRaw)
+    validationWarnings.push({ field: "location", severity: "warning", message: "No location specified." });
+
+  const jobAnalysis: JobAnalysis = {
+    title,
+    department: typeRaw || "Consulting",
+    seniority: minYearsExperience && minYearsExperience >= 8 ? "Staff" : "Senior",
+    employmentType: /consulting|contract|contractor|freelance/i.test(typeRaw) ? "Contract" : "Full-time",
+    locationType: /remote/i.test(text) ? "Remote" : /hybrid/i.test(text) ? "Hybrid" : "On-site",
+    regions,
+    timezone: tz,
+    salaryMin: null,
+    salaryMax: null,
+    currency: /montreal|toronto|canada/i.test(locationRaw) ? "CAD" : "USD",
+    equity: /equity|options|esop/i.test(text),
+    requiredSkills: requiredSkills.length ? requiredSkills : ["Murex", "Finance", "Pricing"],
+    niceToHaveSkills,
+    minYearsExperience,
+    maxYearsExperience: minYearsExperience ? minYearsExperience + 5 : null,
+    education: "No formal requirement",
+    industryExperience,
+    companyStageTarget: ["Enterprise", "Public"],
+    teamSize: field("Nb people") ? `${field("Nb people")} role(s)` : "Client-embedded",
+    reportingTo: manager || "Engagement Manager",
+    urgency,
+    validationWarnings,
+  };
+
+  const hasCritical = validationWarnings.some((w) => w.severity === "critical");
+  return {
+    sender: { name: senderName, email: senderEmail },
+    intent,
+    urgency,
+    jobAnalysis,
+    validationWarnings,
+    clarificationDraft: hasCritical ? buildClarificationEmail(senderName, jobAnalysis, validationWarnings) : null,
+    confidence: {
+      title: 0.95,
+      salary: 0.3,
+      skills: skillsLine ? 0.95 : 0.7,
+      location: locationRaw ? 0.92 : 0.5,
+      seniority: 0.8,
+    },
+  };
+}
+
 export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIntake {
   const text = `${input.email}\n${input.jd ?? ""}`;
   const lower = text.toLowerCase();
+
+  // Structured Mantu/Amaris "need is now ACTIVE" email → dedicated parser.
+  if (isMantuNeedEmail(text)) return parseMantuNeed(text);
 
   // Sender extraction
   const emailMatch = text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);

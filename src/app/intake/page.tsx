@@ -23,6 +23,7 @@ import {
   parseEmailAndJD,
   SAMPLE_INTAKE_EMAIL,
   SAMPLE_INTAKE_JD,
+  SAMPLE_MANTU_EMAIL,
   type ParsedIntake,
 } from "@/lib/mock-ai";
 import { useActions, useHydrated } from "@/lib/store";
@@ -49,6 +50,7 @@ import {
   Copy,
   FileText,
   Info,
+  Inbox,
   Plus,
   Rocket,
   ScanText,
@@ -103,6 +105,33 @@ export default function IntakePage() {
       title: "Sample loaded",
       description: "An urgent senior backend (Go) brief is ready to parse.",
       variant: "info",
+    });
+  }
+
+  function loadMantu() {
+    setEmail(SAMPLE_MANTU_EMAIL);
+    setJd("");
+    toast({
+      title: "Mantu need loaded",
+      description: "A real Mantu/Amaris “need is now ACTIVE” email is ready to parse.",
+      variant: "info",
+    });
+  }
+
+  /** Simulates an inbound email arriving and being auto-scanned (the /api/intake flow). */
+  function scanInbox() {
+    const incoming = SAMPLE_MANTU_EMAIL;
+    setEmail(incoming);
+    setJd("");
+    const result = parseEmailAndJD({ email: incoming });
+    setParsed(result);
+    setJob(result.jobAnalysis);
+    setSenderName(result.sender.name);
+    setSenderEmail(result.sender.email);
+    toast({
+      title: "Inbound need scanned",
+      description: `${result.jobAnalysis.title} detected and parsed from the inbox.`,
+      variant: "success",
     });
   }
 
@@ -231,24 +260,52 @@ export default function IntakePage() {
                 />
               </Field>
 
-              <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  leftIcon={<Sparkles aria-hidden />}
-                  onClick={loadSample}
-                >
-                  Load sample urgent backend role
-                </Button>
-                <Button
-                  type="button"
-                  leftIcon={<ScanText aria-hidden />}
-                  onClick={handleParse}
-                  disabled={!email.trim()}
-                  className="ml-auto"
-                >
-                  Parse JD
-                </Button>
+              <div className="space-y-3 border-t border-line pt-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<Sparkles aria-hidden />}
+                    onClick={loadSample}
+                  >
+                    Sample backend role
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<FileText aria-hidden />}
+                    onClick={loadMantu}
+                  >
+                    Load Mantu need
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="subtle"
+                    size="sm"
+                    leftIcon={<Inbox aria-hidden />}
+                    onClick={scanInbox}
+                  >
+                    Scan inbox
+                  </Button>
+                  <Button
+                    type="button"
+                    leftIcon={<ScanText aria-hidden />}
+                    onClick={handleParse}
+                    disabled={!email.trim()}
+                    className="ml-auto"
+                  >
+                    Parse JD
+                  </Button>
+                </div>
+                <p className="text-xs text-muted">
+                  Inbound emails can also POST to{" "}
+                  <code className="rounded bg-ink/[0.06] px-1 py-0.5 font-mono text-[0.6875rem] text-ink-soft">
+                    /api/intake
+                  </code>{" "}
+                  — a Microsoft Graph / n8n webhook scans the JD email and returns a structured brief.
+                </p>
               </div>
             </CardBody>
           </Card>

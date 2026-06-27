@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx tests/fleet.mts && tsx tests/humanizer.mts && tsx tests/mock-ai.mts && tsx tests/scoring-metrics.mts && tsx tests/skills.mts && tsx tests/rules-confidential.mts"
+    "test": "tsx tests/fleet.mts && tsx tests/humanizer.mts && tsx tests/mock-ai.mts && tsx tests/mantu-intake.mts && tsx tests/scoring-metrics.mts && tsx tests/skills.mts && tsx tests/rules-confidential.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
