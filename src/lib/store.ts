@@ -22,7 +22,7 @@ import {
   type ReplyClassification,
   type SourceResult,
 } from "./mock-ai";
-import { buildSeedState, STATE_VERSION } from "./seed";
+import { buildSeedState, defaultGuardrails, STATE_VERSION } from "./seed";
 import { computeCampaignMetrics, globalKpis, type GlobalKpis } from "./metrics";
 import {
   checkOutreachApproval,
@@ -39,6 +39,7 @@ import type {
   AllocationResult,
   ApiKey,
   ApiKeyProvider,
+  GuardrailRule,
   Role,
   Booking,
   Campaign,
@@ -189,6 +190,13 @@ export interface HermesActions {
   testApiKey: (id: string) => Promise<{ ok: boolean; valid: boolean; detail: string }>;
   removeApiKey: (id: string) => Promise<void>;
   setCurrentRole: (role: Role) => void;
+
+  // guardrails & Aria
+  updateAriaPrompt: (text: string) => void;
+  addGuardrailRule: (text: string) => void;
+  toggleGuardrailRule: (id: string) => void;
+  removeGuardrailRule: (id: string) => void;
+  askAria: (instruction: string) => { reply: string };
 
   // misc
   logActivity: (a: Omit<Activity, "id" | "createdAt"> & { createdAt?: string }) => void;
@@ -1662,6 +1670,85 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit],
   );
 
+  /* ---- Guardrails & Aria (the editable agent brain) --------------------- */
+
+  const patchGuardrails = useCallback(
+    (patch: Partial<HermesState["settings"]["guardrails"]>, activity?: string) =>
+      commit((prev) => {
+        const next = { ...prev, settings: { ...prev.settings, guardrails: { ...prev.settings.guardrails, ...patch } } };
+        return activity
+          ? withActivity(
+              next,
+              makeActivity({ type: "system", title: activity, notes: "Guardrails updated.", outcome: "Saved", campaignId: null, linkedEntityType: null, linkedEntityId: null }),
+              null,
+            )
+          : next;
+      }),
+    [commit],
+  );
+
+  const updateAriaPrompt = useCallback(
+    (text: string) => patchGuardrails({ ariaPrompt: text }, "Aria's master prompt updated"),
+    [patchGuardrails],
+  );
+
+  const addGuardrailRule = useCallback(
+    (text: string) => {
+      const clean = text.trim();
+      if (!clean) return;
+      const rule: GuardrailRule = { id: genId("gr"), text: clean, enabled: true, locked: false };
+      commit((prev) =>
+        withActivity(
+          { ...prev, settings: { ...prev.settings, guardrails: { ...prev.settings.guardrails, rules: [...prev.settings.guardrails.rules, rule] } } },
+          makeActivity({ type: "system", title: "Guardrail added", notes: clean, outcome: "Added", campaignId: null, linkedEntityType: null, linkedEntityId: null }),
+          null,
+        ),
+      );
+    },
+    [commit],
+  );
+
+  const toggleGuardrailRule = useCallback(
+    (id: string) =>
+      commit((prev) => ({
+        ...prev,
+        settings: {
+          ...prev.settings,
+          guardrails: {
+            ...prev.settings.guardrails,
+            rules: prev.settings.guardrails.rules.map((r) => (r.id === id && !r.locked ? { ...r, enabled: !r.enabled } : r)),
+          },
+        },
+      })),
+    [commit],
+  );
+
+  const removeGuardrailRule = useCallback(
+    (id: string) =>
+      commit((prev) => ({
+        ...prev,
+        settings: {
+          ...prev.settings,
+          guardrails: { ...prev.settings.guardrails, rules: prev.settings.guardrails.rules.filter((r) => r.id === id ? r.locked === true : true) },
+        },
+      })),
+    [commit],
+  );
+
+  // "Ask Aria" — in demo, captures the instruction as a new guardrail rule and
+  // acknowledges. (Live mode would route this through the model with an API key.)
+  const askAria = useCallback(
+    (instruction: string): { reply: string } => {
+      const clean = instruction.trim();
+      if (!clean) return { reply: "Tell me what to change and I'll add it as a guardrail." };
+      addGuardrailRule(clean);
+      return {
+        reply: `Done — added that as an active guardrail: "${clean}". Every agent will follow it on the next run. You can edit or remove it below anytime.`,
+      };
+    },
+    [addGuardrailRule],
+  );
+
   const resetDemo = useCallback(() => {
     const fresh = buildSeedState();
     stateRef.current = fresh;
@@ -1715,6 +1802,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       testApiKey,
       removeApiKey,
       setCurrentRole,
+      updateAriaPrompt,
+      addGuardrailRule,
+      toggleGuardrailRule,
+      removeGuardrailRule,
+      askAria,
       logActivity,
       resetDemo,
     }),
@@ -1730,6 +1822,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       addSuppression, removeSuppression, allocateOutreach, runFleetSourcing,
       runLearning, acceptSkillLearning, updateSkillContent, recordPiiReveal,
       saveApiKey, testApiKey, removeApiKey, setCurrentRole,
+      updateAriaPrompt, addGuardrailRule, toggleGuardrailRule, removeGuardrailRule, askAria,
       logActivity, resetDemo,
     ],
   );
@@ -1809,6 +1902,7 @@ const EMPTY: HermesState = {
     confidentialityMode: true,
     defaultLanguage: "en",
     soundEnabled: false,
+    guardrails: defaultGuardrails(),
     notifications: { slack: true, telegram: false, email: true },
   },
   seats: [],
@@ -1933,4 +2027,8 @@ export function useApiKeys(): ApiKey[] {
 
 export function useRole(): Role {
   return useStateOrEmpty().currentRole;
+}
+
+export function useGuardrails() {
+  return useStateOrEmpty().settings.guardrails;
 }

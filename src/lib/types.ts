@@ -507,6 +507,23 @@ export interface ComplianceSettings {
   gdprMode: boolean;
 }
 
+/* ---- Guardrails & Aria (the agent's editable brain) ---------------------- */
+
+export interface GuardrailRule {
+  id: string;
+  text: string;
+  enabled: boolean;
+  /** Locked safety rails ("so we don't get banned") — cannot be disabled or removed. */
+  locked?: boolean;
+}
+
+export interface GuardrailConfig {
+  /** Aria's master system prompt — every agent inherits it as their base brain. */
+  ariaPrompt: string;
+  /** Editable behavior rules injected into every agent. Locked ones are non-negotiable. */
+  rules: GuardrailRule[];
+}
+
 export interface SystemSettings {
   humanApprovalGate: boolean;
   dryRunMode: boolean;
@@ -524,6 +541,8 @@ export interface SystemSettings {
   defaultLanguage: string;
   /** Operations-floor sound effects. OFF by default. */
   soundEnabled: boolean;
+  /** Editable guardrails + Aria's master prompt — the adjustable brain of every agent. */
+  guardrails: GuardrailConfig;
   notifications: {
     slack: boolean;
     telegram: boolean;

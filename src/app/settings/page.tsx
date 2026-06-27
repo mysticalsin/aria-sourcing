@@ -22,6 +22,7 @@ import { IntegrationCard } from "@/components/settings/integration-card";
 import { CompliancePanel } from "@/components/settings/compliance-panel";
 import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
 import { RolesPanel } from "@/components/settings/roles-panel";
+import { GuardrailsPanel } from "@/components/settings/guardrails-panel";
 import { useHydrated, useSettings, useIntegrations, useActions } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
 import { integrationHealthSummary } from "@/lib/integrations";
@@ -786,6 +787,16 @@ export default function SettingsPage() {
             description="Admin, member and viewer. Roles gate who can manage settings, keys, the fleet — and who is read-only."
           >
             <RolesPanel />
+          </Section>
+
+          {/* 13 — Guardrails & Aria */}
+          <Section
+            n="13"
+            eyebrow="Guardrails"
+            title="Guardrails & Aria"
+            description="The adjustable brain. Edit Aria's master prompt, manage the rules every agent follows, or just ask Aria — no .env, no code."
+          >
+            <GuardrailsPanel />
           </Section>
         </div>
       </HydrationGate>

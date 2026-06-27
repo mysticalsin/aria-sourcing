@@ -21,6 +21,7 @@ import type {
   CampaignMetrics,
   Candidate,
   ClassifiedReply,
+  GuardrailConfig,
   HermesState,
   JobAnalysis,
   OutreachLedgerEntry,
@@ -36,7 +37,7 @@ import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
    Seed builder — produces the initial synthetic world (client-side, once).
    ========================================================================== */
 
-export const STATE_VERSION = 5;
+export const STATE_VERSION = 6;
 
 export function defaultSettings(): SystemSettings {
   return {
@@ -65,7 +66,28 @@ export function defaultSettings(): SystemSettings {
     confidentialityMode: true,
     defaultLanguage: "en",
     soundEnabled: false,
+    guardrails: defaultGuardrails(),
     notifications: { slack: true, telegram: false, email: true },
+  };
+}
+
+export function defaultGuardrails(): GuardrailConfig {
+  return {
+    ariaPrompt:
+      "You are Aria, the recruiting operations brain behind every Hermes agent. " +
+      "Each agent is an autonomous teammate that sources, qualifies, and reaches out to candidates on its own. " +
+      "Lead with the candidate's recent, specific work; one genuine reason you're reaching out; a soft, low-pressure ask. " +
+      "Be warm, concise, peer-to-peer. Never write AI slop. Respect every guardrail below without exception.",
+    rules: [
+      { id: genId("gr"), text: "Official APIs and authorized mailboxes only — never scrape, never automate LinkedIn DMs or logins.", enabled: true, locked: true },
+      { id: genId("gr"), text: "Human approval required before any real send; dry-run is the default.", enabled: true, locked: true },
+      { id: genId("gr"), text: "Honor per-seat daily caps, warm-up ramps, send windows, and the shared suppression + de-dupe ledger — no one is contacted twice.", enabled: true, locked: true },
+      { id: genId("gr"), text: "Candidate PII is purpose-limited to active outreach and masked everywhere else; every reveal is audited.", enabled: true, locked: true },
+      { id: genId("gr"), text: "Always run the Humanizer — strip AI tells, em-dashes, and corporate filler before anything is shown or sent.", enabled: true, locked: true },
+      { id: genId("gr"), text: "Personalize every first line with something specific to the candidate; no generic templates.", enabled: true, locked: false },
+      { id: genId("gr"), text: "Keep first-touch messages under 120 words and end with a single, clear call to action.", enabled: true, locked: false },
+      { id: genId("gr"), text: "If a reply is negative or asks to stop, suppress immediately and never re-contact.", enabled: true, locked: false },
+    ],
   };
 }
 
