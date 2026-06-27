@@ -50,23 +50,23 @@ function LoginInner() {
           <HermesWordmark className="[&_*]:!text-paper" />
         </div>
         <div className="relative space-y-6">
-          <p className="eyebrow !text-tangerine">Autonomous recruiting ops</p>
+          <p className="eyebrow text-mantu-yellow">Autonomous recruiting ops</p>
           <h1 className="display text-5xl">
             Source boldly.
             <br />
             Book beyond.
           </h1>
           <p className="max-w-md text-paper/70">
-            Hermes turns job requests into booked interviews — human approval, machine speed.
+            Hermes turns job requests into booked interviews: human approval, machine speed.
             Sign in with your Microsoft work account to enter the command center.
           </p>
         </div>
         <ul className="relative space-y-2 text-sm text-paper/70">
           <li className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-tangerine" /> Human approval gate on by default
+            <ShieldCheck className="h-4 w-4 text-mantu-yellow" /> Human approval gate on by default
           </li>
           <li className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-tangerine" /> Every touchpoint tracked in your workspace
+            <Sparkles className="h-4 w-4 text-mantu-yellow" /> Every touchpoint tracked in your workspace
           </li>
         </ul>
       </section>
