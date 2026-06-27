@@ -5,16 +5,16 @@ import { AppShell } from "@/components/app/app-shell";
 
 export const metadata: Metadata = {
   title: {
-    default: "Hermes Sourcing — Autonomous Recruiting Operations",
-    template: "%s · Hermes Sourcing",
+    default: "Hermes Sourcing by Mantu — Autonomous Recruiting Operations",
+    template: "%s · Hermes by Mantu",
   },
   description:
-    "Hermes turns job requests into booked interviews. Autonomous sourcing, human approval, machine speed. Dry-run by default.",
-  applicationName: "Hermes Sourcing",
+    "Hermes turns job requests into booked interviews. Autonomous sourcing, human approval, machine speed. A Mantu company. Dry-run by default.",
+  applicationName: "Hermes Sourcing by Mantu",
 };
 
 export const viewport: Viewport = {
-  themeColor: "#f7f1e8",
+  themeColor: "#6600AE",
   width: "device-width",
   initialScale: 1,
 };

@@ -8,22 +8,30 @@
    All colors are HSL channels (no hsl() wrapper) so Tailwind can apply alpha.
    ========================================================================== */
 :root {
-  --paper: 38 44% 97%;
-  --canvas: 36 40% 95%;
-  --surface: 40 56% 99%;
-  --ink: 26 16% 12%;
-  --ink-soft: 26 10% 30%;
-  --muted: 28 8% 47%;
-  --line: 32 22% 88%;
+  /* Mantu Brand DNA palette — Purple #6600AE / #7F00DA, Yellow #F8F060, Navy #1A0033 */
+  --paper: 270 40% 98%;
+  --canvas: 270 30% 96%;
+  --surface: 270 60% 99%;
+  --ink: 271 100% 10%; /* #1A0033 */
+  --ink-soft: 271 32% 30%;
+  --muted: 271 14% 48%;
+  --line: 270 24% 90%;
 
-  --tangerine: 18 95% 54%;
-  --tangerine-soft: 24 100% 93%;
-  --electric: 224 90% 56%;
-  --electric-soft: 222 100% 95%;
-  --aqua: 180 68% 40%;
-  --aqua-soft: 176 64% 91%;
-  --violet: 280 68% 58%;
-  --violet-soft: 282 78% 95%;
+  /* tangerine token = Mantu Bright Purple #7F00DA (primary CTA accent) */
+  --tangerine: 275 100% 43%;
+  --tangerine-soft: 275 100% 95%;
+  /* electric token = Mantu Primary Purple #6600AE (links / focus) */
+  --electric: 275 100% 34%;
+  --electric-soft: 275 80% 95%;
+  /* aqua token = a blue-leaning purple to keep the family in-palette */
+  --aqua: 265 70% 48%;
+  --aqua-soft: 265 70% 95%;
+  --violet: 282 72% 55%;
+  --violet-soft: 282 80% 95%;
+
+  /* Mantu Accent Yellow #F8F060 — highlights, key numerals, logo */
+  --mantu-yellow: 57 92% 67%;
+  --mantu-yellow-ink: 271 100% 12%;
 
   --success: 152 54% 38%;
   --success-soft: 150 56% 91%;
@@ -32,8 +40,9 @@
   --danger: 2 76% 54%;
   --danger-soft: 4 88% 95%;
 
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+  /* Mantu Brand DNA: Calibri (Carlito open-source fallback), then system. */
+  --font-sans: "Calibri", "Carlito", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
   --font-mono: "SFMono-Regular", ui-monospace, "JetBrains Mono", "Fira Code",
     Menlo, Consolas, monospace;
 }
@@ -122,13 +131,25 @@ body {
 .orbital {
   background: conic-gradient(
     from 140deg,
+    hsl(var(--electric) / 0.9),
     hsl(var(--tangerine) / 0.85),
-    hsl(var(--electric) / 0.8),
-    hsl(var(--aqua) / 0.85),
-    hsl(var(--violet) / 0.8),
-    hsl(var(--tangerine) / 0.85)
+    hsl(var(--mantu-yellow) / 0.9),
+    hsl(var(--violet) / 0.85),
+    hsl(var(--electric) / 0.9)
   );
   filter: blur(2px);
+}
+
+/* Mantu accent yellow — for highlights, key numerals, logo glyph */
+.text-mantu-yellow {
+  color: hsl(var(--mantu-yellow));
+}
+.bg-mantu-yellow {
+  background-color: hsl(var(--mantu-yellow));
+  color: hsl(var(--mantu-yellow-ink));
+}
+.ring-mantu-yellow {
+  box-shadow: 0 0 0 1px hsl(var(--mantu-yellow) / 0.5);
 }
 
 /* Custom scrollbar */
