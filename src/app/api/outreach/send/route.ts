@@ -93,11 +93,17 @@ export async function POST(req: NextRequest) {
   if (claimErr) {
     return NextResponse.json({ status: "error", detail: `Guardrail check failed: ${claimErr.message}` }, { status: 500 });
   }
-  const allowed = (claim as { allowed?: boolean } | null)?.allowed === true;
-  if (!allowed) {
-    const reason = (claim as { reason?: string } | null)?.reason ?? "blocked by guardrails";
-    return NextResponse.json({ status: "skipped", detail: `Guardrail blocked: ${reason}` });
+  const claimObj = claim as { allowed?: boolean; reason?: string; ledger_id?: string } | null;
+  if (claimObj?.allowed !== true) {
+    return NextResponse.json({ status: "skipped", detail: `Guardrail blocked: ${claimObj?.reason ?? "blocked by guardrails"}` });
   }
+  // The claim is recorded as 'claimed' (holds the de-dupe slot). We reconcile it to
+  // 'sent' or 'skipped' after the provider actually responds — so a failed send is
+  // retryable and never counts as contacted.
+  const ledgerId = claimObj.ledger_id;
+  const reconcile = async (status: "sent" | "skipped", reason: string | null) => {
+    if (ledgerId) await supabase.from("outreach_ledger").update({ status, reason }).eq("id", ledgerId);
+  };
 
   // 5. Send — From is the SEAT's verified mailbox, never the request body.
   try {
@@ -108,11 +114,12 @@ export async function POST(req: NextRequest) {
       subject,
       body,
     });
+    if (outcome.status === "sent") await reconcile("sent", null);
+    else await reconcile("skipped", outcome.detail); // dry-run / provider error → free the slot
     return NextResponse.json(outcome);
   } catch (err) {
-    return NextResponse.json(
-      { status: "error", detail: err instanceof Error ? err.message : "Send failed." },
-      { status: 500 },
-    );
+    const detail = err instanceof Error ? err.message : "Send failed.";
+    await reconcile("skipped", detail);
+    return NextResponse.json({ status: "error", detail }, { status: 500 });
   }
 }

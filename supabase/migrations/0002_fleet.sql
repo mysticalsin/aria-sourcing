@@ -135,10 +135,12 @@ begin
     return json_build_object('allowed', false, 'reason', 'seat daily cap reached');
   end if;
 
-  -- atomic insert; the unique index blocks a concurrent double-contact
+  -- atomic insert as 'claimed' — holds the de-dupe slot (the unique index, daily
+  -- cap and re-contact checks all include 'claimed'). The caller reconciles to
+  -- 'sent' after the provider responds, or 'skipped' on failure (so it retries).
   begin
     insert into public.outreach_ledger(workspace_id, candidate_id, candidate_email, seat_id, campaign_id, channel, status)
-      values (wid, p_candidate_id, p_candidate_email, p_seat_id, p_campaign_id, p_channel, 'sent')
+      values (wid, p_candidate_id, p_candidate_email, p_seat_id, p_campaign_id, p_channel, 'claimed')
       returning id into new_id;
   exception when unique_violation then
     return json_build_object('allowed', false, 'reason', 'already contacted');
