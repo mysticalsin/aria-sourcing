@@ -178,6 +178,8 @@ export interface JobAnalysis {
   teamSize: string;
   reportingTo: string;
   urgency: Urgency;
+  /** Detected language of the need (ISO code, e.g. "en", "fr"). */
+  language?: string;
   validationWarnings: ValidationWarning[];
 }
 
@@ -518,6 +520,8 @@ export interface SystemSettings {
   /** When on, candidate PII is masked everywhere except an active outreach context,
    *  and any reveal is written to the audit trail (purpose limitation). */
   confidentialityMode: boolean;
+  /** Default language Hermes composes outreach in (ISO code). */
+  defaultLanguage: string;
   notifications: {
     slack: boolean;
     telegram: boolean;
@@ -581,6 +585,8 @@ export interface AgentSeat {
   /** Editable per-agent prompt — the voice/instructions this Hermes agent writes with. */
   persona: string;
   signature: string;
+  /** Language this agent writes outreach in (ISO code). */
+  language?: string;
   /** Connected email account label (official API). Empty = not connected. */
   connectedAccount: string;
   createdAt: string;
@@ -628,6 +634,7 @@ export interface FleetSettings {
   enforceBusinessHours: boolean;
   jitter: boolean;
   globalDailyCap: number | null; // optional org-wide ceiling across all seats
+  maxAgents: number; // hard ceiling on deployable agents (e.g. 300)
 }
 
 export interface AllocationAssignment {

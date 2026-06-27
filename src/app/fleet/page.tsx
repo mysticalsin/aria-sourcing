@@ -28,6 +28,7 @@ import {
   useCampaigns,
   useActiveCampaignId,
   useActions,
+  useSettings,
 } from "@/lib/store";
 import { SEAT_PROVIDERS, type SeatProvider, type AllocationResult } from "@/lib/types";
 import {
@@ -78,6 +79,21 @@ export default function FleetPage() {
   const activeId = useActiveCampaignId();
   const actions = useActions();
   const { toast } = useToast();
+  const maxAgents = useSettings().fleet.maxAgents || 300;
+
+  const [deployN, setDeployN] = React.useState("25");
+  const handleDeploy = () => {
+    const n = Math.max(1, Math.min(Number(deployN) || 0, maxAgents));
+    const res = actions.deployAgents(n);
+    toast({
+      title: res.created > 0 ? `Deployed ${res.created} agents` : "Fleet at capacity",
+      description:
+        res.created > 0
+          ? `Fleet now ${res.total}/${res.max}. Each obeys official limits + shared guardrails.${res.capped ? " (capped at max)" : ""}`
+          : `Already at the ${res.max}-agent ceiling.`,
+      variant: res.created > 0 ? "success" : "warning",
+    });
+  };
 
   const [scopeId, setScopeId] = React.useState<string>("");
   const [allocation, setAllocation] = React.useState<AllocationResult | null>(null);
@@ -305,21 +321,42 @@ export default function FleetPage() {
                 <SectionNumeral n="04" />
                 <div>
                   <Eyebrow>The roster</Eyebrow>
-                  <CardTitle>Agents</CardTitle>
+                  <CardTitle>Agents · {seats.length}/{maxAgents}</CardTitle>
                   <p className="mt-1 text-sm text-muted">
-                    {seats.length} seat{seats.length === 1 ? "" : "s"} · each tied to one official
-                    mailbox, warmed and rate-limited independently.
+                    {seats.length} of up to {maxAgents} agents · each tied to one official mailbox,
+                    warmed and rate-limited independently. Scale wide; the guardrails scale with you.
                   </p>
                 </div>
               </div>
-              <Button
-                variant="secondary"
-                size="sm"
-                leftIcon={<Plus className="h-4 w-4" />}
-                onClick={() => setAddOpen(true)}
-              >
-                Add agent
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5 rounded-full border border-ink/12 bg-surface p-1 pl-3">
+                  <label htmlFor="deploy-n" className="text-xs font-semibold text-muted">
+                    Deploy
+                  </label>
+                  <Input
+                    id="deploy-n"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={maxAgents}
+                    value={deployN}
+                    onChange={(e) => setDeployN(e.target.value)}
+                    className="h-8 w-16 px-2 text-center"
+                    aria-label="Number of agents to deploy"
+                  />
+                  <Button variant="secondary" size="sm" leftIcon={<Bot className="h-4 w-4" />} onClick={handleDeploy}>
+                    Deploy agents
+                  </Button>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  leftIcon={<Plus className="h-4 w-4" />}
+                  onClick={() => setAddOpen(true)}
+                >
+                  Add one
+                </Button>
+              </div>
             </div>
 
             {seats.length === 0 ? (

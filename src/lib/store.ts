@@ -147,6 +147,10 @@ export interface HermesActions {
 
   // fleet — multi-seat coordination + anti-ban guardrails
   addSeat: (partial: Partial<AgentSeat> & { name: string; operatorEmail: string }) => AgentSeat;
+  deployAgents: (
+    n: number,
+    opts?: { language?: string; namePrefix?: string },
+  ) => { created: number; total: number; capped: boolean; max: number };
   updateSeat: (id: string, patch: Partial<AgentSeat>) => void;
   setSeatStatus: (id: string, status: AgentSeat["status"]) => void;
   connectSeatAccount: (id: string, account: string) => void;
@@ -450,7 +454,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const finalTone = tone ?? effectiveTone(s.skills); // learned default tone
       const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
-      const gen = generateOutreach(candidate, campaign, finalTone, channel, 1, voice);
+      // Compose in the seat's language, else the need's, else the workspace default.
+      const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
+      const gen = generateOutreach(candidate, campaign, finalTone, channel, 1, voice, lang);
       const msg = newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1);
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
@@ -1102,6 +1108,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           partial.persona ??
           "Warm, concise, peer-to-peer recruiter. Lead with the candidate's recent work, one genuine specific compliment, soft 15-minute ask. No corporate fluff, no AI slop.",
         signature: partial.signature ?? "— Hermes (dry-run on behalf of the hiring team)",
+        language: partial.language ?? current().settings.defaultLanguage,
         connectedAccount: "",
         createdAt: now,
       };
@@ -1122,7 +1129,67 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       );
       return seat;
     },
-    [commit],
+    [commit, current],
+  );
+
+  // Bulk-deploy up to maxAgents coordinated agents. Each is a distinct seat that
+  // still obeys every guardrail (official-API only, per-account caps, warm-up,
+  // suppression, shared de-dupe) — scale, not rate-limit evasion.
+  const deployAgents = useCallback(
+    (n: number, opts?: { language?: string; namePrefix?: string }) => {
+      const s = current();
+      const max = s.settings.fleet.maxAgents || 300;
+      const room = Math.max(0, max - s.seats.length);
+      const toCreate = Math.min(Math.max(0, Math.floor(n)), room);
+      if (toCreate === 0) return { created: 0, total: s.seats.length, capped: room === 0, max };
+      const providers = ["Microsoft Graph", "Gmail API", "SendGrid", "Resend"] as const;
+      const now = new Date().toISOString();
+      const base = s.seats.length;
+      const newSeats: AgentSeat[] = Array.from({ length: toCreate }, (_, i) => {
+        const idx = base + i;
+        return {
+          id: genId("seat"),
+          name: `${opts?.namePrefix ?? "Hermes Agent"} ${String(idx + 1).padStart(3, "0")}`,
+          operatorEmail: `agent${idx + 1}@hermes.example`,
+          provider: providers[idx % providers.length],
+          status: "active",
+          mode: "mock",
+          domainVerified: false,
+          dailyLimit: 40,
+          warmup: true,
+          warmupStartCap: 10,
+          warmupStepPerDay: 4,
+          warmupStartedAt: now,
+          minGapMinutes: 12,
+          sendWindow: defaultSendWindow(),
+          sentToday: 0,
+          lastSendAt: null,
+          health: { sentTotal: 0, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
+          persona: "Warm, concise, peer-to-peer recruiter. Lead with the candidate's recent work, one genuine compliment, soft 15-minute ask. No AI slop.",
+          signature: "— Hermes (dry-run on behalf of the hiring team)",
+          language: opts?.language ?? s.settings.defaultLanguage,
+          connectedAccount: "",
+          createdAt: now,
+        };
+      });
+      commit((prev) =>
+        withActivity(
+          { ...prev, seats: [...prev.seats, ...newSeats] },
+          makeActivity({
+            type: "system",
+            title: `Deployed ${newSeats.length} Hermes agents`,
+            notes: `Fleet now ${s.seats.length + newSeats.length}/${max} agents (mock, dry-run; each within official limits).`,
+            outcome: `${newSeats.length} deployed`,
+            campaignId: null,
+            linkedEntityType: null,
+            linkedEntityId: null,
+          }),
+          null,
+        ),
+      );
+      return { created: newSeats.length, total: s.seats.length + newSeats.length, capped: toCreate < Math.floor(n), max };
+    },
+    [commit, current],
   );
 
   const updateSeat = useCallback(
@@ -1516,6 +1583,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       toggleIntegrationMode,
       testIntegration,
       addSeat,
+      deployAgents,
       updateSeat,
       setSeatStatus,
       connectSeatAccount,
@@ -1539,7 +1607,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       setSkillUpdateStatus, setCandidateStage, suppressCandidate, markDoNotContact,
       unsubscribeCandidate, anonymizeCandidate, exportCandidate, updateSettings,
       updateIntegration, toggleIntegrationMode, testIntegration,
-      addSeat, updateSeat, setSeatStatus, connectSeatAccount, toggleSeatLive,
+      addSeat, deployAgents, updateSeat, setSeatStatus, connectSeatAccount, toggleSeatLive,
       addSuppression, removeSuppression, allocateOutreach, runFleetSourcing,
       runLearning, acceptSkillLearning, updateSkillContent, recordPiiReveal,
       logActivity, resetDemo,
@@ -1616,9 +1684,10 @@ const EMPTY: HermesState = {
     },
     fleet: {
       recontactWindowDays: 90, bounceRatePauseThreshold: 0.05, complaintRatePauseThreshold: 0.001,
-      enforceBusinessHours: true, jitter: true, globalDailyCap: null,
+      enforceBusinessHours: true, jitter: true, globalDailyCap: null, maxAgents: 300,
     },
     confidentialityMode: true,
+    defaultLanguage: "en",
     notifications: { slack: true, telegram: false, email: true },
   },
   seats: [],

@@ -28,6 +28,7 @@ export function defaultFleetSettings(): FleetSettings {
     enforceBusinessHours: true,
     jitter: true,
     globalDailyCap: null,
+    maxAgents: 300,
   };
 }
 

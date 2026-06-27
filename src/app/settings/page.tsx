@@ -9,6 +9,7 @@ import {
   SectionNumeral,
   Field,
   Input,
+  Select,
   Switch,
   Button,
   Badge,
@@ -22,6 +23,7 @@ import { CompliancePanel } from "@/components/settings/compliance-panel";
 import { useHydrated, useSettings, useIntegrations, useActions } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
 import { integrationHealthSummary } from "@/lib/integrations";
+import { LANGUAGES } from "@/lib/i18n";
 import {
   ShieldCheck,
   Lock,
@@ -683,6 +685,81 @@ export default function SettingsPage() {
                   >
                     Manage agents
                     <ArrowUpRight className="h-4 w-4" aria-hidden />
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+          </Section>
+
+          {/* 10 — Scale & localization */}
+          <Section
+            n="10"
+            eyebrow="Scale"
+            title="Scale & localization"
+            description="Run an army of coordinated agents and reach candidates in any language — multi-user, multi-mailbox, one set of rules."
+          >
+            <Card>
+              <CardContent className="space-y-5">
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Field
+                    label="Outreach language (default)"
+                    htmlFor="defaultLanguage"
+                    hint="Hermes composes in this language; per-need detection and per-agent language override it."
+                  >
+                    <Select
+                      id="defaultLanguage"
+                      value={settings.defaultLanguage}
+                      onChange={(e) => {
+                        actions.updateSettings({ defaultLanguage: e.target.value });
+                        savedToast();
+                      }}
+                      options={LANGUAGES.map((l) => ({ value: l.code, label: `${l.label} (${l.native})` }))}
+                    />
+                  </Field>
+                  <Field
+                    label="Max agents (fleet ceiling)"
+                    htmlFor="maxAgents"
+                    hint="Hard cap on deployable agents across the workspace."
+                  >
+                    <Input
+                      id="maxAgents"
+                      type="number"
+                      min={1}
+                      max={1000}
+                      value={settings.fleet.maxAgents}
+                      onChange={(e) => patchFleet({ maxAgents: Math.max(1, Number(e.target.value) || 1) })}
+                      onBlur={savedToast}
+                    />
+                  </Field>
+                </div>
+
+                <div className="rounded-2xl bg-ink/[0.03] p-4 text-sm text-muted">
+                  Multiple operators can run the same workspace — every signed-in teammate shares one
+                  campaign pipeline, one suppression ledger, and one de-dupe guarantee, so a large
+                  fleet never double-contacts a candidate. Each agent is a real, authorized mailbox
+                  within its provider's official limits — scale, never rate-limit evasion.
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Link
+                    href="/fleet"
+                    className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-4 transition hover:border-ink/25"
+                  >
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-ink">Deploy agents</span>
+                      <span className="block text-xs text-muted">Spin up coordinated sourcing + outreach agents.</span>
+                    </span>
+                    <ArrowUpRight className="h-4 w-4 shrink-0 text-muted" aria-hidden />
+                  </Link>
+                  <Link
+                    href="/skills"
+                    className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-4 transition hover:border-ink/25"
+                  >
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-ink">Learning skills</span>
+                      <span className="block text-xs text-muted">The playbooks the agents learn and run.</span>
+                    </span>
+                    <ArrowUpRight className="h-4 w-4 shrink-0 text-muted" aria-hidden />
                   </Link>
                 </div>
               </CardContent>

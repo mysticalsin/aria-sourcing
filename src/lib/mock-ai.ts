@@ -1,6 +1,8 @@
 import { DEFAULT_SCORING_WEIGHTS, scoreCandidate } from "./scoring";
 import { dedupeCandidates } from "./rules";
 import { humanizeText } from "./humanizer";
+import { roleProfile } from "./roles";
+import { detectLanguage, outreachStrings, REPLY_LEXICON } from "./i18n";
 import type {
   Booking,
   Campaign,
@@ -311,6 +313,7 @@ export function parseMantuNeed(text: string): ParsedIntake {
     teamSize: field("Nb people") ? `${field("Nb people")} role(s)` : "Client-embedded",
     reportingTo: manager || "Engagement Manager",
     urgency,
+    language: detectLanguage(text),
     validationWarnings,
   };
 
@@ -474,6 +477,7 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
     teamSize: text.match(/team of (\d+)/i)?.[0] ?? "6–10 engineers",
     reportingTo: text.match(/report(?:s|ing) to (?:the )?([A-Za-z ]+?)[.,\n]/i)?.[1]?.trim() ?? "Engineering Manager",
     urgency,
+    language: detectLanguage(text),
     validationWarnings,
   };
 
@@ -531,9 +535,12 @@ export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
     .map((s) => `"${s}"`)
     .join(" OR ")}) AND (${jd.regions.map((r) => `"${r}"`).join(" OR ")}) NOT "recruiter"`;
 
+  const profile = roleProfile(jd);
   return {
-    primaryPlatforms: jd.department === "Design" ? ["LinkedIn", "Talent Pool"] : ["GitHub", "LinkedIn"],
-    secondaryPlatforms: ["Stack Overflow", "Referral"],
+    // Platform mix adapts to the role family (code roles → GitHub-led; everything
+    // else → professional networks first).
+    primaryPlatforms: profile.platforms.slice(0, 2),
+    secondaryPlatforms: profile.platforms.slice(2).length ? profile.platforms.slice(2) : ["Referral"],
     githubQueries,
     linkedinBoolean,
     stackOverflowTags: topSkills.map((s) => s.toLowerCase().replace(/\s+/g, "-")),
@@ -644,21 +651,24 @@ function synthCandidate(
   forceCompany?: string,
 ): Candidate {
   const jd = campaign.jobAnalysis;
+  const profile = roleProfile(jd); // role-agnostic: titles/companies/skills match the need
   const first = pick(FIRST_NAMES, rng);
   const last = pick(LAST_NAMES, rng);
   const name = `${first} ${last}`;
   const stage = pick(jd.companyStageTarget.length ? jd.companyStageTarget : (["Series B"] as CompanyStage[]), rng);
-  const company = forceCompany ?? pick(COMPANIES_BY_STAGE[stage], rng);
+  const company = forceCompany ?? pick(profile.companies, rng);
   const loc = pick(LOCATIONS, rng);
   const handle = `${first}${last}`.toLowerCase();
 
-  // Tech stack: most required + some nice + extras → realistic overlap
+  // Skills: most required + some nice; tech "extras" only for code roles so a
+  // finance/sales candidate isn't handed Kubernetes.
   const reqTake = Math.max(2, Math.ceil(jd.requiredSkills.length * (0.55 + rng() * 0.4)));
+  const extras = profile.queryStyle === "github" ? pickN(EXTRA_SKILLS, 2 + Math.floor(rng() * 3), rng) : [];
   const techStack = Array.from(
     new Set([
       ...pickN(jd.requiredSkills, reqTake, rng),
       ...pickN(jd.niceToHaveSkills, Math.floor(rng() * 2), rng),
-      ...pickN(EXTRA_SKILLS, 2 + Math.floor(rng() * 3), rng),
+      ...extras,
     ]),
   );
 
@@ -666,8 +676,7 @@ function synthCandidate(
     jd.minYearsExperience != null ? jd.minYearsExperience : jd.seniority === "Senior" ? 6 : 4;
   const yearsExperience = clamp(Math.round(baseYears + (rng() * 6 - 2)), 1, 22);
 
-  const titlePrefix = pick(["Senior", "Staff", "Lead", ""], rng);
-  const currentTitle = `${titlePrefix ? titlePrefix + " " : ""}${jd.department === "Design" ? "Product Designer" : "Software Engineer"}`.trim();
+  const currentTitle = pick(profile.titles, rng);
 
   return {
     id: genId("cand"),
@@ -728,47 +737,29 @@ export function generateOutreach(
   channel: OutreachChannel = "Email",
   sequenceStep = 1,
   voice?: { persona?: string; signature?: string },
+  language?: string,
 ): GeneratedOutreach {
   const jd = campaign.jobAnalysis;
   const firstName = candidate.name.split(" ")[0];
-  const topSkill = candidate.techStack[0] ?? jd.requiredSkills[0] ?? "your stack";
+  const topSkill = candidate.techStack[0] ?? jd.requiredSkills[0] ?? "your work";
   const evidence = personalizationEvidence(candidate, jd);
 
-  const valueHook =
-    jd.department === "Design"
-      ? "shaping the product surface end-to-end"
-      : `owning ${jd.requiredSkills.slice(0, 2).join(" + ")} at the core of the platform`;
+  // Compose in the need's language (or the requested one); English is the fallback.
+  const lang = language ?? jd.language ?? "en";
+  const L = outreachStrings(lang);
 
-  const openers: Record<OutreachTone, string> = {
-    "Casual Professional": `Hi ${firstName} — your work with ${topSkill} at ${candidate.currentCompany} stood out.`,
-    Executive: `${firstName}, I'll be brief. Your ${topSkill} track record at ${candidate.currentCompany} maps closely to a mandate I'm running.`,
-    Technical: `Hi ${firstName} — saw your ${topSkill} work (${candidate.recentActivity.replace(/\.$/, "")}). Technically, it lines up well with what we're building.`,
-  };
-
-  const close =
-    sequenceStep > 1
-      ? "Circling back once in case this slipped — no pressure either way. Worth a quick read?"
-      : "Worth a 15-minute, no-strings call to see if it's interesting? I can work around your week.";
-
-  const subject =
-    sequenceStep > 1
-      ? `Re: ${jd.title} — following up, ${firstName}`
-      : tone === "Executive"
-        ? `${jd.title} mandate — ${candidate.currentCompany} → next chapter`
-        : `${jd.title} role that fits your ${topSkill} work`;
+  const subject = sequenceStep > 1 ? L.subjectFollow(jd.title, firstName) : L.subjectNew(jd.title, topSkill);
 
   const body = [
-    openers[tone],
+    L.greeting(firstName, topSkill, candidate.currentCompany),
     "",
-    `We're hiring a ${jd.title} (${jd.locationType}, ${jd.regions.join("/")}) and the shape of the role is about ${valueHook}. ${
-      jd.equity ? "Meaningful equity is on the table." : ""
-    }`.trim(),
+    `${L.roleLine(jd.title, jd.locationType, jd.regions.join("/"))}${jd.equity ? " " + L.equity : ""}`,
     "",
-    `Why you, specifically: ${evidence[0]}${evidence[1] ? ` And ${evidence[1].toLowerCase()}` : ""}.`,
+    L.whyYou(evidence[0] ?? "", evidence[1]),
     "",
-    close,
+    sequenceStep > 1 ? L.ctaFollow : L.cta,
     "",
-    `${voice?.signature ?? "— Sent in dry-run by Hermes on behalf of the hiring team."} Reply STOP to opt out anytime.`,
+    `${voice?.signature ?? "— " + L.signature} ${L.optOut}`,
   ].join("\n");
 
   // ALWAYS humanize — no AI slop ever.
@@ -837,24 +828,25 @@ export function classifyReply(replyText: string, candidateName = "there"): Reply
   let confidence = 0.6;
   let reasoning = "No strong signal detected; routing to human review.";
 
-  if (/stop|unsubscribe|do not contact|remove me|remove my|delete my|take me off|how did you get|gdpr|leave me alone/i.test(t)) {
+  // Multilingual intent detection (EN/FR/ES/DE/PT/IT/NL via the merged lexicon).
+  if (REPLY_LEXICON.negative.test(t)) {
     intent = "NEGATIVE";
     confidence = 0.93;
     reasoning = "Opt-out / hostile language detected — must stop immediately and escalate.";
-  } else if (/out of office|ooo|on leave|on vacation|annual leave|back on/i.test(t)) {
+  } else if (REPLY_LEXICON.ooo.test(t)) {
     intent = "OOO";
     confidence = 0.95;
     reasoning = "Auto-reply / absence language detected.";
-  } else if (/(not interested|no thanks|happy where i am|not looking|not the right time|not for me|isn'?t for me|pass\b)/i.test(t)) {
+  } else if (REPLY_LEXICON.notInterested.test(t)) {
     intent = "NOT_INTERESTED";
     confidence = 0.9;
     reasoning = "Explicit decline language detected.";
-  } else if (/(refer|reach out to|you should talk to|my colleague|know someone|connect you with)/i.test(t)) {
+  } else if (REPLY_LEXICON.referral.test(t)) {
     intent = "REFERRAL";
     confidence = 0.82;
     reasoning = "Candidate is pointing to someone else — referral path.";
-  } else if (/(interested|yes|let's talk|sounds great|keen|love to|happy to chat|tell me when|book)/i.test(t)) {
-    if (/(salary|comp|range|remote|relocat|visa|equity|stack|team|what (?:is|are)|how many|questions?)/i.test(t)) {
+  } else if (REPLY_LEXICON.interested.test(t)) {
+    if (REPLY_LEXICON.qualified.test(t)) {
       intent = "QUALIFIED_INTEREST";
       confidence = 0.78;
       reasoning = "Positive signal with open questions — answer, then offer the calendar.";
@@ -863,13 +855,11 @@ export function classifyReply(replyText: string, candidateName = "there"): Reply
       confidence = 0.9;
       reasoning = "Clear positive intent with a request to proceed.";
     }
-  } else if (/(maybe|perhaps|not sure|depends|tell me more|what.s the role)/i.test(t)) {
+  } else if (/(maybe|perhaps|not sure|depends|tell me more|what.s the role|peut-être|quizás|vielleicht)/i.test(t)) {
     intent = "QUALIFIED_INTEREST";
     confidence = 0.72;
     reasoning = "Soft positive with hesitation — nurture and inform.";
-  } else if (
-    /(salary|comp|compensation|package|benefits|remote|relocat|visa|sponsor|equity|stack|team size|how many|what (?:is|are))/i.test(t)
-  ) {
+  } else if (REPLY_LEXICON.qualified.test(t)) {
     // Role/comp questions with no decline → qualified interest (per reply_classification_skill).
     intent = "QUALIFIED_INTEREST";
     confidence = 0.72;
