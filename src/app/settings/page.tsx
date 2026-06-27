@@ -20,6 +20,8 @@ import {
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { IntegrationCard } from "@/components/settings/integration-card";
 import { CompliancePanel } from "@/components/settings/compliance-panel";
+import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
+import { RolesPanel } from "@/components/settings/roles-panel";
 import { useHydrated, useSettings, useIntegrations, useActions } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
 import { integrationHealthSummary } from "@/lib/integrations";
@@ -764,6 +766,26 @@ export default function SettingsPage() {
                 </div>
               </CardContent>
             </Card>
+          </Section>
+
+          {/* 11 — API keys */}
+          <Section
+            n="11"
+            eyebrow="Secrets"
+            title="API keys"
+            description="Add a provider key and test it. Secrets are stored server-side and never shown again — admins only."
+          >
+            <ApiKeysPanel />
+          </Section>
+
+          {/* 12 — Access & roles */}
+          <Section
+            n="12"
+            eyebrow="Access"
+            title="Access & roles"
+            description="Admin, member and viewer. Roles gate who can manage settings, keys, the fleet — and who is read-only."
+          >
+            <RolesPanel />
           </Section>
         </div>
       </HydrationGate>

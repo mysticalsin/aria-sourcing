@@ -37,6 +37,9 @@ import type {
   AgentSeat,
   AgentSkill,
   AllocationResult,
+  ApiKey,
+  ApiKeyProvider,
+  Role,
   Booking,
   Campaign,
   Candidate,
@@ -176,6 +179,16 @@ export interface HermesActions {
 
   // confidentiality
   recordPiiReveal: (candidateId: string) => void;
+
+  // API keys + access control
+  saveApiKey: (input: {
+    name: string;
+    provider: ApiKeyProvider;
+    value: string;
+  }) => Promise<{ ok: boolean; key?: ApiKey; demo?: boolean; error?: string }>;
+  testApiKey: (id: string) => Promise<{ ok: boolean; valid: boolean; detail: string }>;
+  removeApiKey: (id: string) => Promise<void>;
+  setCurrentRole: (role: Role) => void;
 
   // misc
   logActivity: (a: Omit<Activity, "id" | "createdAt"> & { createdAt?: string }) => void;
@@ -1547,6 +1560,108 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit, current],
   );
 
+  /* ---- API keys (secret stored server-side; never in client state) ------ */
+
+  const saveApiKey = useCallback(
+    async (input: { name: string; provider: ApiKeyProvider; value: string }) => {
+      try {
+        const res = await fetch("/api/keys", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        });
+        const json = await res.json();
+        if (!json.ok) return { ok: false as const, error: json.error ?? "Save failed." };
+        const key: ApiKey = {
+          id: genId("key"),
+          name: input.name,
+          provider: input.provider,
+          last4: json.last4 ?? "••••",
+          status: "untested",
+          lastTestedAt: null,
+          createdBy: current().settings.operatorName,
+          createdAt: new Date().toISOString(),
+        };
+        commit((prev) =>
+          withActivity(
+            { ...prev, apiKeys: [key, ...prev.apiKeys] },
+            makeActivity({
+              type: "system",
+              title: `API key saved — ${input.name}`,
+              notes: `${input.provider} key stored (••••${key.last4})${json.demo ? " · demo session" : " · backend"}.`,
+              outcome: "Saved",
+              campaignId: null,
+              linkedEntityType: null,
+              linkedEntityId: null,
+            }),
+            null,
+          ),
+        );
+        return { ok: true as const, key, demo: !!json.demo };
+      } catch (e) {
+        return { ok: false as const, error: e instanceof Error ? e.message : "Network error." };
+      }
+    },
+    [commit, current],
+  );
+
+  const testApiKey = useCallback(
+    async (id: string) => {
+      const k = current().apiKeys.find((x) => x.id === id);
+      try {
+        const res = await fetch("/api/keys/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, provider: k?.provider }),
+        });
+        const json = await res.json();
+        const valid = !!(json.ok && json.valid);
+        commit((prev) => ({
+          ...prev,
+          apiKeys: prev.apiKeys.map((x) =>
+            x.id === id ? { ...x, status: valid ? "valid" : "invalid", lastTestedAt: new Date().toISOString() } : x,
+          ),
+        }));
+        return { ok: !!json.ok, valid, detail: json.detail ?? json.error ?? "" };
+      } catch (e) {
+        return { ok: false, valid: false, detail: e instanceof Error ? e.message : "Network error." };
+      }
+    },
+    [commit, current],
+  );
+
+  const removeApiKey = useCallback(
+    async (id: string) => {
+      try {
+        await fetch(`/api/keys?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      } catch {
+        /* ignore; still drop from local state */
+      }
+      commit((prev) => ({ ...prev, apiKeys: prev.apiKeys.filter((x) => x.id !== id) }));
+    },
+    [commit],
+  );
+
+  const setCurrentRole = useCallback(
+    (role: Role) =>
+      commit((prev) =>
+        withActivity(
+          { ...prev, currentRole: role },
+          makeActivity({
+            type: "system",
+            title: `Access level set to ${role}`,
+            notes: "Operator role changed.",
+            outcome: role,
+            campaignId: null,
+            linkedEntityType: null,
+            linkedEntityId: null,
+          }),
+          null,
+        ),
+      ),
+    [commit],
+  );
+
   const resetDemo = useCallback(() => {
     const fresh = buildSeedState();
     stateRef.current = fresh;
@@ -1596,6 +1711,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       acceptSkillLearning,
       updateSkillContent,
       recordPiiReveal,
+      saveApiKey,
+      testApiKey,
+      removeApiKey,
+      setCurrentRole,
       logActivity,
       resetDemo,
     }),
@@ -1610,6 +1729,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       addSeat, deployAgents, updateSeat, setSeatStatus, connectSeatAccount, toggleSeatLive,
       addSuppression, removeSuppression, allocateOutreach, runFleetSourcing,
       runLearning, acceptSkillLearning, updateSkillContent, recordPiiReveal,
+      saveApiKey, testApiKey, removeApiKey, setCurrentRole,
       logActivity, resetDemo,
     ],
   );
@@ -1694,6 +1814,8 @@ const EMPTY: HermesState = {
   suppression: [],
   ledger: [],
   skills: [],
+  apiKeys: [],
+  currentRole: "admin",
   activeCampaignId: null,
 };
 
@@ -1802,4 +1924,12 @@ export function useSkill(key: SkillKey): AgentSkill | undefined {
 export function useFleetSummary(): FleetSummary {
   const s = useStateOrEmpty();
   return fleetSummary(s.seats, s.settings.fleet);
+}
+
+export function useApiKeys(): ApiKey[] {
+  return useStateOrEmpty().apiKeys;
+}
+
+export function useRole(): Role {
+  return useStateOrEmpty().currentRole;
 }

@@ -1,0 +1,63 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
+import { supabaseEnabled } from "@/lib/supabase/config";
+import { validateApiKeyFormat } from "@/lib/providers";
+
+/**
+ * Test an API key. Either test a value passed directly (just-entered), or test a
+ * stored key by id — the secret is read server-side via the service-role client
+ * (workspace-scoped), validated, and the row's status is updated. Never returns
+ * the secret.
+ */
+export async function POST(req: NextRequest) {
+  if (Number(req.headers.get("content-length") ?? 0) > 8000) {
+    return NextResponse.json({ ok: false, error: "Payload too large." }, { status: 413 });
+  }
+  let payload: Record<string, unknown>;
+  try {
+    payload = await req.json();
+  } catch {
+    return NextResponse.json({ ok: false, error: "Invalid JSON." }, { status: 400 });
+  }
+  const provider = String(payload.provider ?? "");
+  const value = typeof payload.value === "string" ? payload.value : "";
+  const id = typeof payload.id === "string" ? payload.id : "";
+
+  // Direct value test (e.g. on the entry form).
+  if (value) {
+    const fmt = validateApiKeyFormat(provider, value);
+    return NextResponse.json({ ok: true, valid: fmt.valid, detail: fmt.detail });
+  }
+
+  if (!id) return NextResponse.json({ ok: false, error: "Provide a key value or id." }, { status: 400 });
+
+  // Stored-key test by id.
+  if (!supabaseEnabled) {
+    return NextResponse.json({ ok: true, valid: true, detail: "Simulated test (demo mode)." });
+  }
+  const session = getServerSupabase();
+  const svc = getServiceSupabase();
+  if (!session || !svc) {
+    return NextResponse.json({ ok: false, error: "Service role not configured." }, { status: 500 });
+  }
+  const {
+    data: { user },
+  } = await session.auth.getUser();
+  if (!user) return NextResponse.json({ ok: false, error: "Not authenticated." }, { status: 401 });
+  const { data: wid } = await session.rpc("current_workspace_id");
+
+  const { data: row, error } = await svc
+    .from("api_keys")
+    .select("provider, secret, workspace_id")
+    .eq("id", id)
+    .single();
+  if (error || !row) return NextResponse.json({ ok: false, error: "Key not found." }, { status: 404 });
+  if (row.workspace_id !== wid) return NextResponse.json({ ok: false, error: "Forbidden." }, { status: 403 });
+
+  const fmt = validateApiKeyFormat(row.provider, row.secret);
+  await svc
+    .from("api_keys")
+    .update({ status: fmt.valid ? "valid" : "invalid", last_tested_at: new Date().toISOString() })
+    .eq("id", id);
+  return NextResponse.json({ ok: true, valid: fmt.valid, detail: fmt.detail });
+}

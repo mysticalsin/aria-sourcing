@@ -36,7 +36,7 @@ import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
    Seed builder — produces the initial synthetic world (client-side, once).
    ========================================================================== */
 
-export const STATE_VERSION = 3;
+export const STATE_VERSION = 4;
 
 export function defaultSettings(): SystemSettings {
   return {
@@ -545,6 +545,19 @@ export function buildSeedState(): HermesState {
     suppression,
     ledger,
     skills: defaultSkills(),
+    apiKeys: [
+      {
+        id: genId("key"),
+        name: "Anthropic (primary)",
+        provider: "Anthropic",
+        last4: "a1b2",
+        status: "valid",
+        lastTestedAt: isoHoursBefore(5),
+        createdBy: "Jordan Bryce",
+        createdAt: isoDaysBefore(12),
+      },
+    ],
+    currentRole: "admin",
     activeCampaignId: campaigns[0]?.id ?? null,
   };
 }

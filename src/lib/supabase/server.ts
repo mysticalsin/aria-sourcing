@@ -1,8 +1,20 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
-import { SUPABASE_ANON_KEY, SUPABASE_URL, supabaseEnabled } from "./config";
+import { SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL, supabaseEnabled } from "./config";
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
+
+/**
+ * Service-role client (SERVER ONLY) — bypasses RLS to read secrets (e.g. API key
+ * values) for server-side validation. Never import this into a client component.
+ */
+export function getServiceSupabase() {
+  if (!supabaseEnabled || !SUPABASE_SERVICE_ROLE_KEY) return null;
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
 
 /**
  * Server Supabase client bound to the request cookies. Use in Server Components,

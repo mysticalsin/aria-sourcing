@@ -1,5 +1,29 @@
 import type { SeatProvider } from "./types";
 
+/** Deterministic format validation for an API key by provider. No network — a
+ *  malformed key is rejected immediately; a well-formed one passes as plausible. */
+export function validateApiKeyFormat(provider: string, value: string): { valid: boolean; detail: string } {
+  const v = (value ?? "").trim();
+  if (!v) return { valid: false, detail: "Empty key." };
+  const rule: Record<string, RegExp> = {
+    Anthropic: /^sk-ant-[A-Za-z0-9_-]{20,}$/,
+    OpenAI: /^sk-[A-Za-z0-9_-]{20,}$/,
+    "Kimi (Moonshot)": /^sk-[A-Za-z0-9_-]{20,}$/,
+    Resend: /^re_[A-Za-z0-9_-]{10,}$/,
+    SendGrid: /^SG\.[A-Za-z0-9_.-]{20,}$/,
+  };
+  const re = rule[provider];
+  if (!re) return { valid: v.length >= 8, detail: v.length >= 8 ? "Accepted (custom)." : "Too short." };
+  return re.test(v)
+    ? { valid: true, detail: `${provider} key format looks valid.` }
+    : { valid: false, detail: `Does not match the expected ${provider} key format.` };
+}
+
+export function last4Of(value: string): string {
+  const v = (value ?? "").trim();
+  return v.length >= 4 ? v.slice(-4) : "••••";
+}
+
 /* ============================================================================
    Email provider adapters (SERVER ONLY).
    Dry-run is the default everywhere. A real send happens ONLY when: live mode is

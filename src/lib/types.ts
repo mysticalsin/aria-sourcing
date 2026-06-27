@@ -657,6 +657,35 @@ export interface AllocationResult {
   fleetCapacityRemaining: number;
 }
 
+/* ---- Roles / access control ---------------------------------------------- */
+
+export const ROLES = ["admin", "member", "viewer"] as const;
+export type Role = (typeof ROLES)[number];
+
+/* ---- API keys / secrets -------------------------------------------------- */
+
+export const API_KEY_PROVIDERS = [
+  "Anthropic",
+  "OpenAI",
+  "Kimi (Moonshot)",
+  "Resend",
+  "SendGrid",
+  "Custom",
+] as const;
+export type ApiKeyProvider = (typeof API_KEY_PROVIDERS)[number];
+
+/** Stored metadata only — the secret value never lives in client state. */
+export interface ApiKey {
+  id: string;
+  name: string;
+  provider: ApiKeyProvider;
+  last4: string;
+  status: "untested" | "valid" | "invalid";
+  lastTestedAt: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+
 /* ---- Root persisted state ------------------------------------------------ */
 
 export interface HermesState {
@@ -674,5 +703,7 @@ export interface HermesState {
   suppression: SuppressionEntry[];
   ledger: OutreachLedgerEntry[];
   skills: AgentSkill[];
+  apiKeys: ApiKey[];
+  currentRole: Role;
   activeCampaignId: string | null;
 }

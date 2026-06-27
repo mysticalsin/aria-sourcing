@@ -29,7 +29,9 @@ import {
   useActiveCampaignId,
   useActions,
   useSettings,
+  useRole,
 } from "@/lib/store";
+import { can } from "@/lib/rbac";
 import { SEAT_PROVIDERS, type SeatProvider, type AllocationResult } from "@/lib/types";
 import {
   Bot,
@@ -80,9 +82,14 @@ export default function FleetPage() {
   const actions = useActions();
   const { toast } = useToast();
   const maxAgents = useSettings().fleet.maxAgents || 300;
+  const canManage = can(useRole(), "manage_fleet");
 
   const [deployN, setDeployN] = React.useState("25");
   const handleDeploy = () => {
+    if (!canManage) {
+      toast({ title: "Admins only", description: "Only an admin can deploy agents.", variant: "warning" });
+      return;
+    }
     const n = Math.max(1, Math.min(Number(deployN) || 0, maxAgents));
     const res = actions.deployAgents(n);
     toast({
@@ -344,7 +351,14 @@ export default function FleetPage() {
                     className="h-8 w-16 px-2 text-center"
                     aria-label="Number of agents to deploy"
                   />
-                  <Button variant="secondary" size="sm" leftIcon={<Bot className="h-4 w-4" />} onClick={handleDeploy}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    leftIcon={<Bot className="h-4 w-4" />}
+                    onClick={handleDeploy}
+                    disabled={!canManage}
+                    title={canManage ? undefined : "Admins only"}
+                  >
                     Deploy agents
                   </Button>
                 </div>
@@ -353,6 +367,8 @@ export default function FleetPage() {
                   size="sm"
                   leftIcon={<Plus className="h-4 w-4" />}
                   onClick={() => setAddOpen(true)}
+                  disabled={!canManage}
+                  title={canManage ? undefined : "Admins only"}
                 >
                   Add one
                 </Button>
