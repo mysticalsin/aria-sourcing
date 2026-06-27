@@ -49,6 +49,10 @@ export async function POST(req: NextRequest) {
   if (!email.trim()) {
     return NextResponse.json({ ok: false, error: "Provide `email` (or `from`/`subject`/`body`)." }, { status: 400 });
   }
+  // Hard input cap — a JD email is never this long. Blocks pathological-input CPU abuse.
+  if (email.length > 20000 || (jd?.length ?? 0) > 20000) {
+    return NextResponse.json({ ok: false, error: "Payload too large (max 20000 chars)." }, { status: 413 });
+  }
 
   // Gate when a real backend exists; open in demo (pure text parsing).
   if (supabaseEnabled) {

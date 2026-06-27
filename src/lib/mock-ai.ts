@@ -232,7 +232,7 @@ export function parseMantuNeed(text: string): ParsedIntake {
   const startRaw = field("Start date");
   const typeRaw = field("Type") || "Consulting";
 
-  const emailMatch = text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
+  const emailMatch = text.match(/[A-Za-z0-9._+-]{1,128}@[A-Za-z0-9-]{1,128}\.[A-Za-z0-9.-]{1,64}/);
   const senderName = manager || recruiter || "Hiring Manager";
   const senderEmail =
     emailMatch?.[0] ??
@@ -256,7 +256,7 @@ export function parseMantuNeed(text: string): ParsedIntake {
   );
   const requiredSkills = Array.from(new Set([...lineSkills, ...dictSkills])).slice(0, 8);
 
-  const minYears = text.match(/minimum\s*(\d{1,2})\s*\+?\s*years/i)?.[1];
+  const minYears = text.match(/minimum[\s]{0,6}(\d{1,2})[\s+]{0,6}years/i)?.[1];
   const minYearsExperience = minYears ? parseInt(minYears, 10) : null;
 
   const niceToHaveSkills: string[] = [];
@@ -332,15 +332,19 @@ export function parseMantuNeed(text: string): ParsedIntake {
   };
 }
 
+/** Hard cap on parser input — a JD email is never this long; prevents any
+ *  pathological-input CPU blowup regardless of caller. */
+const MAX_PARSE_CHARS = 20000;
+
 export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIntake {
-  const text = `${input.email}\n${input.jd ?? ""}`;
+  const text = `${input.email}\n${input.jd ?? ""}`.slice(0, MAX_PARSE_CHARS);
   const lower = text.toLowerCase();
 
   // Structured Mantu/Amaris "need is now ACTIVE" email → dedicated parser.
   if (isMantuNeedEmail(text)) return parseMantuNeed(text);
 
   // Sender extraction
-  const emailMatch = text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
+  const emailMatch = text.match(/[A-Za-z0-9._+-]{1,128}@[A-Za-z0-9-]{1,128}\.[A-Za-z0-9.-]{1,64}/);
   const fromLine = text.match(/from:\s*(.+)/i)?.[1] ?? "";
   const nameMatch =
     fromLine.match(/^([A-Z][a-z]+ [A-Z][a-z]+)/)?.[1] ??
@@ -363,7 +367,7 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
 
   // Title
   const titleMatch =
-    text.match(/(?:hiring|looking for|need|seeking|backfill)\s+(?:a|an)?\s*([A-Z][\w/ +.-]{3,48}?(?:Engineer|Developer|Designer|Manager|Lead|Architect|Scientist|Analyst))/i)?.[1] ??
+    text.match(/(?:hiring|looking for|need|seeking|backfill)\s+(?:an?\s+)?([A-Z][\w/ +.-]{3,48}?(?:Engineer|Developer|Designer|Manager|Lead|Architect|Scientist|Analyst))/i)?.[1] ??
     text.match(/(?:role|position|title):\s*(.+)/i)?.[1] ??
     "Senior Software Engineer";
   const title = titleMatch.trim().replace(/\s+/g, " ");
@@ -409,7 +413,7 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   const currency = /£/.test(text) ? "GBP" : /\$/.test(text) ? "USD" : "EUR";
 
   // Years
-  const yearsMatch = [...text.matchAll(/(\d{1,2})\s*\+?\s*(?:years|yrs)/gi)].map((m) => parseInt(m[1], 10));
+  const yearsMatch = [...text.matchAll(/(\d{1,2})[\s+]{0,6}(?:years|yrs)/gi)].map((m) => parseInt(m[1], 10));
   const minYearsExperience = yearsMatch.length ? Math.min(...yearsMatch) : null;
   const maxYearsExperience = yearsMatch.length ? Math.max(...yearsMatch) + 3 : null;
 
@@ -833,7 +837,7 @@ export function classifyReply(replyText: string, candidateName = "there"): Reply
   let confidence = 0.6;
   let reasoning = "No strong signal detected; routing to human review.";
 
-  if (/stop|unsubscribe|do not contact|remove me|how did you get|gdpr|leave me alone/i.test(t)) {
+  if (/stop|unsubscribe|do not contact|remove me|remove my|delete my|take me off|how did you get|gdpr|leave me alone/i.test(t)) {
     intent = "NEGATIVE";
     confidence = 0.93;
     reasoning = "Opt-out / hostile language detected — must stop immediately and escalate.";
@@ -841,7 +845,7 @@ export function classifyReply(replyText: string, candidateName = "there"): Reply
     intent = "OOO";
     confidence = 0.95;
     reasoning = "Auto-reply / absence language detected.";
-  } else if (/(not interested|no thanks|happy where i am|not looking|not the right time|pass\b)/i.test(t)) {
+  } else if (/(not interested|no thanks|happy where i am|not looking|not the right time|not for me|isn'?t for me|pass\b)/i.test(t)) {
     intent = "NOT_INTERESTED";
     confidence = 0.9;
     reasoning = "Explicit decline language detected.";
@@ -864,7 +868,7 @@ export function classifyReply(replyText: string, candidateName = "there"): Reply
     confidence = 0.72;
     reasoning = "Soft positive with hesitation — nurture and inform.";
   } else if (
-    /(salary|comp|compensation|package|benefits|remote|relocat|visa|sponsor|equity|stack|team size|how many|what (?:is|are)|\?)/i.test(t)
+    /(salary|comp|compensation|package|benefits|remote|relocat|visa|sponsor|equity|stack|team size|how many|what (?:is|are))/i.test(t)
   ) {
     // Role/comp questions with no decline → qualified interest (per reply_classification_skill).
     intent = "QUALIFIED_INTEREST";
