@@ -707,6 +707,13 @@ export function classifyReply(replyText: string, candidateName = "there"): Reply
     intent = "QUALIFIED_INTEREST";
     confidence = 0.72;
     reasoning = "Soft positive with hesitation — nurture and inform.";
+  } else if (
+    /(salary|comp|compensation|package|benefits|remote|relocat|visa|sponsor|equity|stack|team size|how many|what (?:is|are)|\?)/i.test(t)
+  ) {
+    // Role/comp questions with no decline → qualified interest (per reply_classification_skill).
+    intent = "QUALIFIED_INTEREST";
+    confidence = 0.72;
+    reasoning = "Questions about comp/role without a decline — answer and append the calendar.";
   }
 
   return {
