@@ -194,6 +194,29 @@ body {
   }
 }
 
+/* Agent character animations */
+@keyframes bot-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7%); }
+}
+.bot-float { animation: bot-float 2.8s ease-in-out infinite; }
+.bot-float-fast { animation: bot-float 1.7s ease-in-out infinite; }
+
+@keyframes bot-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  96% { transform: scaleY(0.12); }
+}
+.bot-eyes {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: bot-blink 4.2s infinite;
+}
+@keyframes bot-glow {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
+.bot-glow { animation: bot-glow 2s ease-in-out infinite; }
+
 /* Operations-floor liveliness */
 @keyframes blink {
   0%, 80%, 100% { opacity: 0.2; }

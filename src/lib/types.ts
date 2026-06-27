@@ -522,6 +522,8 @@ export interface SystemSettings {
   confidentialityMode: boolean;
   /** Default language Hermes composes outreach in (ISO code). */
   defaultLanguage: string;
+  /** Operations-floor sound effects. OFF by default. */
+  soundEnabled: boolean;
   notifications: {
     slack: boolean;
     telegram: boolean;

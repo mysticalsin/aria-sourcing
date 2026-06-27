@@ -2,21 +2,12 @@
 
 import * as React from "react";
 import { Badge } from "@/components/ui";
-import { cn, initialsFrom, type Tone } from "@/lib/utils";
+import { cn, type Tone } from "@/lib/utils";
 import { effectiveDailyCap } from "@/lib/fleet";
+import { AgentBot, botColorForSeat } from "@/components/floor/agent-bot";
 import type { AgentSeat } from "@/lib/types";
 import type { AgentActivity } from "@/lib/floor";
 
-const AVATAR_BG: Record<Tone, string> = {
-  neutral: "bg-ink/10 text-ink-soft",
-  tangerine: "bg-tangerine-soft text-tangerine",
-  electric: "bg-electric-soft text-electric",
-  aqua: "bg-aqua-soft text-aqua",
-  violet: "bg-violet-soft text-violet",
-  success: "bg-success-soft text-success",
-  warning: "bg-warning-soft text-[hsl(32_90%_34%)]",
-  danger: "bg-danger-soft text-danger",
-};
 const DOT: Record<Tone, string> = {
   neutral: "bg-muted",
   tangerine: "bg-tangerine",
@@ -39,7 +30,6 @@ export function AgentDesk({
 }) {
   const cap = effectiveDailyCap(seat);
   const pct = cap ? Math.min(100, (seat.sentToday / cap) * 100) : 0;
-  const initials = initialsFrom(seat.name.replace(/^Hermes\s*[·.]?\s*/i, "")) || "AG";
 
   return (
     <button
@@ -48,10 +38,14 @@ export function AgentDesk({
       className="card-surface group relative flex w-full flex-col gap-3 p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lift focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
     >
       <div className="flex items-center gap-3">
-        <span className="relative">
-          <span className={cn("flex h-11 w-11 items-center justify-center rounded-2xl text-sm font-bold", AVATAR_BG[activity.tone])}>
-            {initials}
-          </span>
+        <span className="relative inline-flex">
+          <AgentBot
+            color={botColorForSeat(seat.id)}
+            size={48}
+            busy={activity.busy}
+            paused={activity.state === "paused"}
+            warming={activity.state === "warming"}
+          />
           <span
             className={cn(
               "absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full ring-2 ring-surface",

@@ -36,7 +36,7 @@ import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
    Seed builder — produces the initial synthetic world (client-side, once).
    ========================================================================== */
 
-export const STATE_VERSION = 4;
+export const STATE_VERSION = 5;
 
 export function defaultSettings(): SystemSettings {
   return {
@@ -64,6 +64,7 @@ export function defaultSettings(): SystemSettings {
     fleet: defaultFleetSettings(),
     confidentialityMode: true,
     defaultLanguage: "en",
+    soundEnabled: false,
     notifications: { slack: true, telegram: false, email: true },
   };
 }

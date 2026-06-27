@@ -1808,6 +1808,7 @@ const EMPTY: HermesState = {
     },
     confidentialityMode: true,
     defaultLanguage: "en",
+    soundEnabled: false,
     notifications: { slack: true, telegram: false, email: true },
   },
   seats: [],

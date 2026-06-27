@@ -15,6 +15,8 @@ import {
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { AgentDesk } from "@/components/floor/agent-desk";
+import { AgentBot, botColorForSeat } from "@/components/floor/agent-bot";
+import { playSound } from "@/lib/sound";
 import {
   useHydrated,
   useSeats,
@@ -22,6 +24,7 @@ import {
   useCandidates,
   useLedger,
   useSettings,
+  useActions,
 } from "@/lib/store";
 import { agentActivity, floorRollup } from "@/lib/floor";
 import {
@@ -33,7 +36,7 @@ import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
 import { languageLabel } from "@/lib/i18n";
 import { formatTimeAgo } from "@/lib/utils";
 import type { AgentSeat, HermesState } from "@/lib/types";
-import { Bot, Users, Activity, PauseCircle, Flame, Mail, Clock, Languages, Building2, ArrowUpRight } from "lucide-react";
+import { Bot, Users, Activity, PauseCircle, Flame, Mail, Clock, Languages, Building2, ArrowUpRight, Volume2, VolumeX } from "lucide-react";
 
 export default function FloorPage() {
   const hydrated = useHydrated();
@@ -42,11 +45,23 @@ export default function FloorPage() {
   const candidates = useCandidates();
   const ledger = useLedger();
   const settings = useSettings();
+  const actions = useActions();
+  const soundEnabled = settings.soundEnabled;
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
 
   const stateLike = { campaigns, candidates, ledger, seats, settings } as unknown as HermesState;
   const rollup = floorRollup(seats, stateLike);
   const selected = seats.find((s) => s.id === selectedId) ?? null;
+
+  const selectAgent = (id: string) => {
+    setSelectedId(id);
+    playSound("select", soundEnabled);
+  };
+  const toggleSound = () => {
+    const next = !soundEnabled;
+    actions.updateSettings({ soundEnabled: next });
+    playSound("toggle", next); // confirm with a blip when turning on
+  };
 
   const stats = [
     { label: "On the floor", value: rollup.total, icon: <Users className="h-4 w-4" />, tone: "electric" as const },
@@ -63,13 +78,25 @@ export default function FloorPage() {
         title="The agents, at work."
         description="Every Hermes agent on one floor — live status, what they're sourcing right now, and who they're working. Click a desk for the full picture."
         actions={
-          <Link
-            href="/fleet"
-            className="inline-flex h-10 items-center gap-1.5 rounded-full border border-ink/12 bg-surface px-4 text-sm font-semibold text-ink hover:border-ink/25"
-          >
-            Manage fleet
-            <ArrowUpRight className="h-4 w-4" aria-hidden />
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleSound}
+              aria-pressed={soundEnabled}
+              aria-label={soundEnabled ? "Mute sound effects" : "Enable sound effects"}
+              title={soundEnabled ? "Sound on" : "Sound off (click to enable)"}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-ink/12 bg-surface text-ink-soft transition hover:border-ink/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric"
+            >
+              {soundEnabled ? <Volume2 className="h-4 w-4 text-electric" /> : <VolumeX className="h-4 w-4" />}
+            </button>
+            <Link
+              href="/fleet"
+              className="inline-flex h-10 items-center gap-1.5 rounded-full border border-ink/12 bg-surface px-4 text-sm font-semibold text-ink hover:border-ink/25"
+            >
+              Manage fleet
+              <ArrowUpRight className="h-4 w-4" aria-hidden />
+            </Link>
+          </div>
         }
       />
 
@@ -108,7 +135,7 @@ export default function FloorPage() {
                 key={seat.id}
                 seat={seat}
                 activity={agentActivity(seat, stateLike)}
-                onSelect={(s) => setSelectedId(s.id)}
+                onSelect={(s) => selectAgent(s.id)}
               />
             ))}
           </div>
@@ -164,6 +191,15 @@ function AgentDetailDrawer({
   return (
     <Drawer open={open} onClose={onClose} title={seat.name} description={`${seat.provider} · ${activity.label}`} width="max-w-xl">
       <div className="space-y-6 animate-fade-in">
+        <div className="flex justify-center py-1">
+          <AgentBot
+            color={botColorForSeat(seat.id)}
+            size={108}
+            busy={activity.busy}
+            paused={activity.state === "paused"}
+            warming={activity.state === "warming"}
+          />
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={activity.tone} dot>
             {activity.label}
