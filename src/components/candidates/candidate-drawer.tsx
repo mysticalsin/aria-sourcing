@@ -205,8 +205,8 @@ export function CandidateDrawer({
     <Drawer
       open={open}
       onClose={onClose}
-      title={c.name}
-      description={`${c.currentTitle} @ ${c.currentCompany}`}
+      title={dc.name}
+      description={masked ? "Confidential candidate · PII minimized" : `${c.currentTitle} @ ${c.currentCompany}`}
       footer={footer}
       width="max-w-2xl"
     >

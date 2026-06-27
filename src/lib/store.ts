@@ -555,7 +555,20 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               }
             : c,
         );
-        let next: HermesState = { ...prev, outreach, candidates };
+        // Write the authoritative ledger record so the fleet de-dupe sees this
+        // manual contact too (single source of truth → no double-contact).
+        const ledgerEntry: OutreachLedgerEntry = {
+          id: genId("led"),
+          candidateId: candidate.id,
+          candidateEmail: candidate.email,
+          seatId: "",
+          campaignId: campaign.id,
+          channel: msg.channel,
+          status: "sent",
+          reason: null,
+          at: now,
+        };
+        let next: HermesState = { ...prev, outreach, candidates, ledger: [ledgerEntry, ...prev.ledger] };
         // bump today counter then recompute (counter preserved by computeCampaignMetrics)
         next = {
           ...next,

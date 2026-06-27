@@ -44,13 +44,29 @@ language sql stable security definer set search_path = public as $$
   select workspace_id from public.profiles where id = auth.uid();
 $$;
 
--- profiles: a user owns their own row
+-- a user's own role, read via SECURITY DEFINER so the update policy can pin it
+create or replace function public.current_profile_role()
+returns text language sql stable security definer set search_path = public as $$
+  select role from public.profiles where id = auth.uid();
+$$;
+
+-- profiles: a user owns their own row, but CANNOT self-assign workspace_id or role
+-- (those are set only by ensure_workspace(), which is SECURITY DEFINER and bypasses RLS).
 drop policy if exists "own profile read"   on public.profiles;
 drop policy if exists "own profile insert" on public.profiles;
 drop policy if exists "own profile update" on public.profiles;
-create policy "own profile read"   on public.profiles for select using (id = auth.uid());
-create policy "own profile insert" on public.profiles for insert with check (id = auth.uid());
-create policy "own profile update" on public.profiles for update using (id = auth.uid());
+create policy "own profile read" on public.profiles for select using (id = auth.uid());
+-- self-insert only with no chosen workspace and the default role
+create policy "own profile insert" on public.profiles for insert
+  with check (id = auth.uid() and workspace_id is null and role = 'member');
+-- on update, workspace_id and role must stay exactly as stored (anti tenant-hop / escalation)
+create policy "own profile update" on public.profiles for update
+  using (id = auth.uid())
+  with check (
+    id = auth.uid()
+    and workspace_id is not distinct from public.current_workspace_id()
+    and role is not distinct from public.current_profile_role()
+  );
 
 -- workspaces: members may read their workspace
 drop policy if exists "members read workspace" on public.workspaces;
@@ -110,8 +126,9 @@ begin
 end;
 $$;
 
-grant execute on function public.ensure_workspace()     to authenticated;
-grant execute on function public.current_workspace_id() to authenticated;
+grant execute on function public.ensure_workspace()      to authenticated;
+grant execute on function public.current_workspace_id()  to authenticated;
+grant execute on function public.current_profile_role()  to authenticated;
 
 -- keep updated_at fresh on state writes
 create or replace function public.touch_updated_at()

@@ -228,6 +228,14 @@ export function allocateBatch(
       skipped.push({ candidateId: cand.id, candidateName: cand.name, reason: `Inside ${settings.recontactWindowDays}-day re-contact window` });
       continue;
     }
+    // Belt-and-suspenders: honor lastContactedAt even if the ledger entry is missing.
+    if (
+      cand.lastContactedAt &&
+      nowMs - new Date(cand.lastContactedAt).getTime() < settings.recontactWindowDays * 86_400_000
+    ) {
+      skipped.push({ candidateId: cand.id, candidateName: cand.name, reason: "Already contacted (re-contact window)" });
+      continue;
+    }
     if (globalRemaining <= 0) {
       deferred.push({ candidateId: cand.id, candidateName: cand.name, reason: "Global daily cap reached" });
       continue;
