@@ -1206,8 +1206,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "outreach",
-            title: `Email sent to ${candidate.name}`,
-            notes: `Live email delivered via ${seat.operatorEmail}.`,
+            title: `${channel} sent to ${candidate.name}`,
+            notes: channel === "Email"
+              ? `Live email delivered via ${seat.operatorEmail}.`
+              : `Live ${channel} delivered to ${candidate.phone ?? "the candidate"}.`,
             outcome: "Sent",
             campaignId: msg.campaignId,
             linkedEntityType: "candidate",

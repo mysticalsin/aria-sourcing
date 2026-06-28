@@ -330,7 +330,7 @@ export function PersonaEditor() {
               {seats.filter((s) => s.status === "active").length}/{seats.length} active
             </span>
           </div>
-          <ul className="max-h-[60vh] overflow-y-auto">
+          <ul role="listbox" aria-label="Agent roster" className="max-h-[60vh] overflow-y-auto">
             {seats.map((seat) => {
               const stateLabel = seatStateLabel(seat.status);
               const benched = seat.status !== "active";
@@ -338,6 +338,9 @@ export function PersonaEditor() {
                 <li key={seat.id}>
                   <button
                     type="button"
+                    role="option"
+                    aria-selected={selectedSeatId === seat.id}
+                    aria-label={`${seat.name}${stateLabel ? ` — ${stateLabel}` : ""}`}
                     onClick={() => setSelectedSeatId(seat.id)}
                     className={cn(
                       "w-full text-left px-4 py-3 text-sm transition-colors border-b border-violet/5 last:border-0",

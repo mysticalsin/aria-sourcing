@@ -153,12 +153,12 @@ export function CommandSearch() {
                 className="h-14 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-muted"
               />
             </div>
-            <div className="max-h-[50vh] overflow-y-auto p-2">
+            <div role="listbox" aria-label="Search results" className="max-h-[50vh] overflow-y-auto p-2">
               {results.length === 0 && (
-                <p className="px-3 py-8 text-center text-sm text-muted">No matches for “{query}”.</p>
+                <p className="px-3 py-8 text-center text-sm text-muted">No matches for "{query}".</p>
               )}
               {Array.from(grouped.entries()).map(([group, items]) => (
-                <div key={group} className="mb-1">
+                <div key={group} role="group" aria-label={group} className="mb-1">
                   <p className="eyebrow px-3 py-1.5">{group}</p>
                   {items.map((r) => {
                     flatIndex += 1;
@@ -166,6 +166,8 @@ export function CommandSearch() {
                     return (
                       <button
                         key={r.id}
+                        role="option"
+                        aria-selected={isActive}
                         onClick={() => choose(r)}
                         onMouseEnter={() => setActive(results.indexOf(r))}
                         className={cn(

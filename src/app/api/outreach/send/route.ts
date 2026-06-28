@@ -218,6 +218,7 @@ export async function POST(req: NextRequest) {
   const { data: suppRows, error: suppErr } = await supabase
     .from("suppression_list")
     .select("type, value, expires_at")
+    .eq("workspace_id", approvalWid)
     .in("type", ["email", "domain"])
     .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`);
   if (suppErr) {

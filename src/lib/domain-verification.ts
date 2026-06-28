@@ -26,7 +26,10 @@ export async function domainVerified(domain: string): Promise<boolean> {
 
 async function hasTxtRecord(name: string, prefix: string): Promise<boolean> {
   try {
-    const records = await dns.resolveTxt(name);
+    const records = await Promise.race([
+      dns.resolveTxt(name),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("DNS timeout")), 8_000)),
+    ]);
     return records.some((rr) => rr.some((txt) => txt.toLowerCase().startsWith(prefix.toLowerCase())));
   } catch {
     return false;

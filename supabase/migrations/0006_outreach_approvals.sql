@@ -37,5 +37,5 @@ create policy outreach_approvals_insert on public.outreach_approvals
 
 drop policy if exists outreach_approvals_update on public.outreach_approvals;
 create policy outreach_approvals_update on public.outreach_approvals
-  for update using (workspace_id = public.current_workspace_id())
+  for update using (workspace_id = public.current_workspace_id() and approved_by = auth.uid())
   with check (workspace_id = public.current_workspace_id() and approved_by = auth.uid());

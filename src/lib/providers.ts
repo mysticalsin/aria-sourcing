@@ -85,6 +85,7 @@ export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
       }
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
+        signal: AbortSignal.timeout(15_000),
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           from: req.fromName ? `${req.fromName} <${req.from}>` : req.from,
@@ -111,6 +112,7 @@ export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
       }
       const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
         method: "POST",
+        signal: AbortSignal.timeout(15_000),
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           personalizations: [{ to: [{ email: req.to }] }],

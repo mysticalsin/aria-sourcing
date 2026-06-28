@@ -49,9 +49,12 @@ export async function GET(req: NextRequest) {
   authUrl.searchParams.set("code_challenge_method", "S256");
 
   const res = NextResponse.redirect(authUrl.toString());
+  const isHttps = req.nextUrl.protocol === "https:" || req.headers.get("x-forwarded-proto") === "https";
+  const isLocalhost = req.nextUrl.hostname === "localhost" || req.nextUrl.hostname === "127.0.0.1";
+  const secureCookie = isHttps || !isLocalhost;
   const cookieOpts = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: secureCookie,
     sameSite: "lax" as const,
     path: "/",
     maxAge: 600,
