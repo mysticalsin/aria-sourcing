@@ -1110,9 +1110,26 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (msg.status !== "Approved") return { ok: false, error: "Only an approved message can be sent." };
       const candidate = s.candidates.find((c) => c.id === msg.candidateId);
       if (!candidate) return { ok: false, error: "Linked candidate missing." };
-      const seat = s.seats.find((x) => x.status === "active" && x.mode === "live" && x.domainVerified);
+      // Resolve a live seat for the message's channel: a domain-verified mailbox for
+      // Email, or a live WhatsApp / SMS sender for the phone channels.
+      const channel = msg.channel;
+      const seat =
+        channel === "WhatsApp"
+          ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "WhatsApp Cloud")
+          : channel === "SMS"
+            ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "Twilio SMS")
+            : s.seats.find((x) => x.status === "active" && x.mode === "live" && x.domainVerified);
       if (!supabaseEnabled || !seat) {
-        return { ok: false, error: "No live, domain-verified mailbox connected. Connect one in the Fleet first." };
+        const need =
+          channel === "WhatsApp"
+            ? "live WhatsApp sender"
+            : channel === "SMS"
+              ? "live SMS sender"
+              : "live, domain-verified mailbox";
+        return { ok: false, error: `No ${need} connected. Connect one in the Fleet first.` };
+      }
+      if ((channel === "WhatsApp" || channel === "SMS") && !candidate.phone) {
+        return { ok: false, error: "No phone number on file for this candidate. Enrich it before a phone send." };
       }
       let out: { status?: string; detail?: string };
       try {
@@ -1127,6 +1144,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             campaignId: msg.campaignId,
             subject: msg.subject,
             body: msg.body,
+            channel,
+            phone: candidate.phone,
             confirmLive: true,
           }),
         });
@@ -1169,7 +1188,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           ...next,
           campaigns: next.campaigns.map((c) =>
             c.id === msg.campaignId
-              ? { ...c, metrics: { ...c.metrics, emailsSentToday: c.metrics.emailsSentToday + 1 } }
+              ? { ...c, metrics: { ...c.metrics, emailsSentToday: c.metrics.emailsSentToday + (msg.channel === "Email" ? 1 : 0) } }
               : c,
           ),
         };

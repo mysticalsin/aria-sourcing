@@ -11,6 +11,7 @@ import type { EmailConnection, Role } from "@/lib/types";
 import { can } from "@/lib/rbac";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { safeLog } from "@/lib/log-redact";
+import { sendWhatsApp, sendSms } from "@/lib/channels";
 
 /**
  * Strip CR/LF and other control characters from a value bound for an email header
@@ -35,6 +36,8 @@ const OutreachSendSchema = z.object({
   campaignId: z.string().min(1).max(120),
   subject: z.string().min(1).max(255),
   body: z.string().min(1).max(50_000),
+  channel: z.enum(["Email", "LinkedIn", "WhatsApp", "SMS"]).default("Email"),
+  phone: z.string().max(40).optional(),
   confirmLive: z.boolean().default(false),
 });
 
@@ -126,6 +129,67 @@ export async function POST(req: NextRequest) {
 
   if (!seatId) {
     return NextResponse.json({ status: "error", detail: "Missing seatId." }, { status: 400 });
+  }
+
+  // Phone channels (WhatsApp / SMS): deliver via the channel adapter using the
+  // candidate's phone. Self-contained branch — skips the email-only steps (domain
+  // verification, email connection) but keeps auth, the approval gate above, and the
+  // atomic guardrail claim. The email/LinkedIn path below is unchanged.
+  if (payload.channel === "WhatsApp" || payload.channel === "SMS") {
+    const phone = (payload.phone ?? "").trim();
+    if (!phone) {
+      return NextResponse.json({ status: "skipped", detail: "No phone number on file for this candidate." });
+    }
+    const { data: phoneSeat } = await supabase
+      .from("agent_seats")
+      .select("id, provider, status, mode")
+      .eq("id", seatId)
+      .maybeSingle();
+    if (!phoneSeat) {
+      return NextResponse.json({ status: "error", detail: "Seat not found in your workspace." }, { status: 403 });
+    }
+    if (phoneSeat.mode !== "live") {
+      return NextResponse.json({ status: "dry-run", detail: "Seat not live — nothing sent." });
+    }
+    const expectedProvider = payload.channel === "WhatsApp" ? "WhatsApp Cloud" : "Twilio SMS";
+    if (phoneSeat.provider !== expectedProvider) {
+      return NextResponse.json({ status: "skipped", detail: `Seat is not a ${expectedProvider} sender.` });
+    }
+
+    // Atomic guardrail claim (re-contact window + per-seat cap + de-dupe by candidate).
+    const { data: pClaim, error: pClaimErr } = await supabase.rpc("claim_and_record", {
+      p_candidate_id: candidateId,
+      p_candidate_email: phone,
+      p_campaign_id: campaignId,
+      p_seat_id: seatId,
+      p_channel: payload.channel,
+    });
+    if (pClaimErr) {
+      safeLog("claim_and_record error", { message: pClaimErr.message, code: pClaimErr.code });
+      return NextResponse.json({ status: "error", detail: "Guardrail check failed." }, { status: 500 });
+    }
+    const pClaimObj = pClaim as { allowed?: boolean; reason?: string; ledger_id?: string } | null;
+    if (pClaimObj?.allowed !== true) {
+      return NextResponse.json({ status: "skipped", detail: `Guardrail blocked: ${pClaimObj?.reason ?? "blocked by guardrails"}` });
+    }
+    const pLedgerId = pClaimObj.ledger_id;
+    const pReconcile = async (status: "sent" | "skipped", reason: string | null) => {
+      if (pLedgerId) await supabase.from("outreach_ledger").update({ status, reason }).eq("id", pLedgerId);
+    };
+
+    try {
+      const outcome =
+        payload.channel === "WhatsApp"
+          ? await sendWhatsApp({ to: phone, body })
+          : await sendSms({ to: phone, body });
+      if (outcome.status === "sent") await pReconcile("sent", null);
+      else await pReconcile("skipped", outcome.detail);
+      return NextResponse.json(outcome);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "Send failed.";
+      await pReconcile("skipped", detail);
+      return NextResponse.json({ status: "error", detail }, { status: 500 });
+    }
   }
 
   // 3. Seat must belong to the caller's workspace (RLS), be live + domain-verified.
