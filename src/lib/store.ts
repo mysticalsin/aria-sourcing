@@ -177,6 +177,7 @@ export interface HermesActions {
 
   // candidates / compliance
   setCandidateStage: (id: string, stage: CandidateStage) => void;
+  setCandidatePhone: (id: string, phone: string) => void;
   suppressCandidate: (id: string) => void;
   markDoNotContact: (id: string) => void;
   unsubscribeCandidate: (id: string) => void;
@@ -1674,6 +1675,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         if (cand) next = recomputeMetrics(next, cand.campaignId);
         return next;
       }),
+    [commit],
+  );
+
+  const setCandidatePhone = useCallback(
+    (id: string, phone: string) =>
+      commit((s) => ({
+        ...s,
+        candidates: s.candidates.map((c) => (c.id === id ? { ...c, phone: phone.trim() || undefined } : c)),
+      })),
     [commit],
   );
 
@@ -3211,6 +3221,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       generateReport,
       setSkillUpdateStatus,
       setCandidateStage,
+      setCandidatePhone,
       suppressCandidate,
       markDoNotContact,
       unsubscribeCandidate,
@@ -3282,7 +3293,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       sourceNextBatch, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
       approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, classifyAndStoreReply, markReplyHandled,
       applyReplyAction, createBookingFor, updateBooking, generateReport,
-      setSkillUpdateStatus, setCandidateStage, suppressCandidate, markDoNotContact,
+      setSkillUpdateStatus, setCandidateStage, setCandidatePhone, suppressCandidate, markDoNotContact,
       unsubscribeCandidate, anonymizeCandidate, exportCandidate, updateSettings,
       updateIntegration, toggleIntegrationMode, testIntegration,
       addSeat, deployAgents, updateSeat, setSeatStatus, connectSeatAccount, disconnectSeatAccount, toggleSeatLive,

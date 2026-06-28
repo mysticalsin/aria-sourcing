@@ -34,6 +34,7 @@ import {
   Linkedin,
   Lock,
   Mail,
+  Phone,
   MapPin,
   MessageSquare,
   Send,
@@ -271,6 +272,22 @@ export function CandidateDrawer({
                 </span>
               )}
             </div>
+            {!masked && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
+                <span className="inline-flex items-center gap-1.5 text-ink-soft">
+                  <Phone className="h-4 w-4" aria-hidden />
+                  <input
+                    key={c.id}
+                    type="tel"
+                    defaultValue={c.phone ?? ""}
+                    onBlur={(e) => actions.setCandidatePhone(c.id, e.target.value)}
+                    placeholder="Add phone for WhatsApp / SMS"
+                    aria-label="Candidate phone number"
+                    className="w-56 rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink placeholder:text-muted"
+                  />
+                </span>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-2">
               {c.githubUrl &&
                 (masked ? (
