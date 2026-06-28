@@ -109,22 +109,48 @@ export async function getAccessTokenForReading(connection: EmailConnection): Pro
   return ensureAccessToken(connection);
 }
 
+// Retry an idempotent OAuth token refresh on transient failures (429 / 5xx / network).
+// Safe to retry — unlike a send, a refresh can't double-contact anyone.
+async function postFormWithRetry(url: string, body: URLSearchParams, maxRetries = 2): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+        signal: AbortSignal.timeout(15_000),
+      });
+      // Success or a non-retryable client error (e.g. invalid_grant) — return as-is.
+      if (res.ok || (res.status !== 429 && res.status < 500)) return res;
+      lastErr = new Error(`OAuth token endpoint ${res.status}`);
+    } catch (err) {
+      lastErr = err;
+    }
+    if (attempt < maxRetries) await new Promise((r) => setTimeout(r, 400 * 2 ** attempt));
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("OAuth token refresh failed.");
+}
+
 async function refreshGoogleToken(connection: EmailConnection): Promise<string | null> {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   if (!clientId || !clientSecret || !connection.refreshToken) return null;
 
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      refresh_token: connection.refreshToken,
-      grant_type: "refresh_token",
-    }),
-    signal: AbortSignal.timeout(15_000),
-  });
+  let res: Response;
+  try {
+    res = await postFormWithRetry(
+      "https://oauth2.googleapis.com/token",
+      new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: connection.refreshToken,
+        grant_type: "refresh_token",
+      }),
+    );
+  } catch {
+    return null;
+  }
   const json = (await res.json().catch(() => ({}))) as {
     access_token?: string;
     expires_in?: number;
@@ -146,18 +172,21 @@ async function refreshMicrosoftToken(connection: EmailConnection): Promise<strin
   const clientSecret = process.env.MICROSOFT_CLIENT_SECRET;
   if (!clientId || !clientSecret || !connection.refreshToken) return null;
 
-  const res = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      refresh_token: connection.refreshToken,
-      grant_type: "refresh_token",
-      scope: "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Calendars.ReadWrite offline_access",
-    }),
-    signal: AbortSignal.timeout(15_000),
-  });
+  let res: Response;
+  try {
+    res = await postFormWithRetry(
+      "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+      new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: connection.refreshToken,
+        grant_type: "refresh_token",
+        scope: "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Calendars.ReadWrite offline_access",
+      }),
+    );
+  } catch {
+    return null;
+  }
   const json = (await res.json().catch(() => ({}))) as {
     access_token?: string;
     expires_in?: number;
