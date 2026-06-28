@@ -53,6 +53,25 @@ Open **SQL Editor** and run, in order:
   confirmed — otherwise everything is dry-run.
 - LinkedIn is assisted-manual only — no automation or scraping.
 
+**Real candidate sourcing (optional, live):**
+- Set `GITHUB_TOKEN` in `.env.local` (a GitHub personal access token; read-only
+  public scope is enough). Create one at <https://github.com/settings/tokens>.
+- With it, the **Source** action finds REAL people via the GitHub Users Search API
+  instead of synthetic demo data. Without it, sourcing falls back to synthetic.
+- Verify the token in **Settings → Integrations → GitHub Sourcing → Test connection**
+  (it pings GitHub and shows the connected account).
+- GitHub gives a public profile, not always an email. Candidates sourced without a
+  public email need enrichment before outreach.
+
+**Real interview booking (optional, live):**
+- The Gmail / Microsoft Graph OAuth also requests calendar access
+  (`calendar.events` / `Calendars.ReadWrite`). When you connect (or **re-connect**) a
+  mailbox in **Settings → Fleet**, booking creates a REAL calendar event on that
+  mailbox's calendar (candidate + interviewer as attendees). The synthetic link is the
+  fallback when calendar access is not granted.
+- Mailboxes connected before this change are mail-only. Re-connect them to grant
+  calendar access.
+
 ## 3. Register the Microsoft (Entra) app
 
 In the **Azure Portal → Microsoft Entra ID → App registrations → New registration**:
