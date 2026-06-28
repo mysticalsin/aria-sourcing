@@ -13,6 +13,8 @@ import {
   PROVIDER_ENV,
   type AiProviderSlug,
 } from "@/lib/ai/provider";
+import { connectAndListTools } from "@/lib/mcp-client";
+import { runAnthropicWithTools, type ResolvedMcpServer } from "@/lib/ai/tool-loop";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { redactObject, redactSecrets, redactEmail } from "@/lib/log-redact";
 
@@ -48,6 +50,13 @@ const HermesChatSchema = z.object({
   apiKeyId: z.string().uuid().optional(),
   // Reject path-traversal / injection in the model id; allow valid model slugs.
   model: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/).default("hermes"),
+  /** Enabled MCP servers to expose to the model as tools (chat task only). Only the
+   *  {url, apiKeyId} is sent — the bearer token is resolved server-side from the vault,
+   *  so the browser never holds it. */
+  mcpServers: z
+    .array(z.object({ url: z.string().url().max(500), apiKeyId: z.string().uuid().optional() }))
+    .max(20)
+    .optional(),
 });
 
 const TASK_SYSTEM: Record<"outreach" | "classify" | "sourcing" | "chat", string> = {
@@ -118,6 +127,33 @@ async function resolveVaultSecret(id?: string): Promise<string> {
   return "";
 }
 
+/**
+ * Resolve the caller's enabled MCP servers into connectable servers with their tools.
+ * The bearer token for each is resolved from the vault server-side (never from the
+ * browser). http(s) only (SSRF). Servers that fail to connect or expose no tools are
+ * skipped, so a broken server can't block the chat.
+ */
+async function gatherMcpServers(
+  servers: { url: string; apiKeyId?: string }[],
+): Promise<ResolvedMcpServer[]> {
+  const resolved: ResolvedMcpServer[] = [];
+  for (const s of servers) {
+    let parsed: URL;
+    try {
+      parsed = new URL(s.url);
+    } catch {
+      continue;
+    }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") continue;
+    const token = s.apiKeyId ? await resolveVaultSecret(s.apiKeyId) : "";
+    const conn = await connectAndListTools(s.url, token);
+    if (conn.ok && conn.tools && conn.tools.length) {
+      resolved.push({ url: s.url, token, tools: conn.tools });
+    }
+  }
+  return resolved;
+}
+
 export async function POST(req: NextRequest) {
   // Fail closed in production (middleware doesn't cover /api/*): never serve the
   // open demo path — which could spend env-resident provider keys unauthenticated.
@@ -151,7 +187,7 @@ export async function POST(req: NextRequest) {
 
   const validated = await validateBody(req, HermesChatSchema, { maxBytes: 32_000 });
   if (!validated.ok) return validated.response;
-  const { task, prompt, stream, hermesApiKeyId, model, provider, apiKeyId } = validated.data;
+  const { task, prompt, stream, hermesApiKeyId, model, provider, apiKeyId, mcpServers } = validated.data;
   // keyId: cloud provider key id takes precedence over the hermes key id.
   const keyId = apiKeyId ?? hermesApiKeyId;
 
@@ -181,6 +217,24 @@ export async function POST(req: NextRequest) {
     const key = vaultKey || process.env[PROVIDER_ENV[slug]] || "";
     if (!key) {
       return NextResponse.json({ ok: false, reason: `No API key configured for ${provider}.` });
+    }
+    // MCP tool-calling (chat task, Anthropic): when the workspace has enabled MCP
+    // servers, let the model call their tools and loop to a final answer. Additive —
+    // falls through to the normal single-shot completion when no usable servers resolve.
+    if (task === "chat" && slug === "anthropic" && mcpServers && mcpServers.length) {
+      const resolvedServers = await gatherMcpServers(mcpServers);
+      if (resolvedServers.length) {
+        const result = await runAnthropicWithTools({
+          model: model && model !== "hermes" ? model : "claude-sonnet-4-6",
+          system,
+          prompt,
+          key,
+          servers: resolvedServers,
+        });
+        if (result.ok && result.text) return NextResponse.json({ ok: true, text: result.text });
+        if (!result.ok) return NextResponse.json({ ok: false, reason: result.reason ?? "MCP tool loop failed." });
+        // result.ok with empty text → fall through to a normal completion.
+      }
     }
     const { url, headers, body } = buildCloudRequest(slug, model ?? "hermes", system, prompt, key);
     try {

@@ -2999,6 +2999,41 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         ? (s.settings.savedModels ?? []).find((m) => m.id === chatModelId)?.modelName
         : undefined;
 
+      // 3b. Cloud + MCP tools: when a cloud Anthropic provider is configured for chat and
+      // the workspace has enabled MCP servers, route through the server-side tool-calling
+      // loop so the agent can actually use those tools. Non-streaming (the loop completes
+      // server-side); falls through to the streaming Aria path / mock on any miss.
+      const chatAiCfg = resolveAiProvider(s.settings, "chat", {
+        providerId: seat?.providerId,
+        modelId: seat?.modelId,
+      });
+      const enabledMcp = (s.settings.mcpServers ?? [])
+        .filter((m) => m.enabled)
+        .map((m) => ({ url: m.url, ...(m.apiKeyId ? { apiKeyId: m.apiKeyId } : {}) }));
+      if (chatAiCfg && chatAiCfg.provider === "anthropic" && enabledMcp.length) {
+        try {
+          const res = await fetch("/api/hermes/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              task: "chat",
+              prompt: fullPrompt,
+              provider: chatAiCfg.provider,
+              ...(chatAiCfg.model && { model: chatAiCfg.model }),
+              ...(chatAiCfg.apiKeyId && { apiKeyId: chatAiCfg.apiKeyId }),
+              mcpServers: enabledMcp,
+            }),
+          });
+          const data = (await res.json().catch(() => null)) as { ok?: boolean; text?: string } | null;
+          if (data?.ok && data.text) {
+            updateChatMessage(threadId, assistantId, { content: data.text, pending: false });
+            return;
+          }
+        } catch {
+          /* fall through to the streaming Aria path / mock */
+        }
+      }
+
       // 4. Live mode: try the Aria proxy with streaming.
       if (hermesAvailable(s.settings)) {
         // F-5: create an AbortController so the caller can cancel mid-stream.
