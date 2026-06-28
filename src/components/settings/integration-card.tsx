@@ -82,9 +82,9 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
     setSmtpHost("");
   }
 
-  function handleTest() {
+  async function handleTest() {
     setTesting(true);
-    const result = actions.testIntegration(integration.id);
+    const result = await actions.testIntegration(integration.id);
     setTesting(false);
     toast({
       title: result.ok ? `${integration.name} ready` : `${integration.name} not ready`,

@@ -61,3 +61,64 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, source: "github", error: detail }, { status: 502 });
   }
 }
+
+/**
+ * Real connection test for GitHub sourcing: pings GET /user with the configured
+ * token and reports the authenticated identity. Never returns the token. Reports
+ * connected:false (not an error) when no token is set, so the UI can say "add a
+ * token to go live" rather than showing a failure.
+ */
+export async function GET(req: NextRequest) {
+  const prodBlock = prodFailClosed();
+  if (prodBlock) return prodBlock;
+
+  const rl = checkRateLimit(rateLimitKey(req, "source-probe"), { windowMs: 60_000, max: 20 });
+  if (!rl.ok) return tooManyRequests(rl.retryAfterSec);
+
+  if (supabaseEnabled) {
+    const supabase = getServerSupabase();
+    if (!supabase) return NextResponse.json({ ok: false, error: "No Supabase client." }, { status: 500 });
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ ok: false, error: "Not authenticated." }, { status: 401 });
+    const { data: role } = await supabase.rpc("current_profile_role");
+    if (!can(role as Role, "source")) {
+      return NextResponse.json({ ok: false, error: "Insufficient permissions." }, { status: 403 });
+    }
+  }
+
+  const token = process.env.GITHUB_TOKEN ?? "";
+  if (!token) {
+    return NextResponse.json({
+      ok: true,
+      connected: false,
+      reason: "No GITHUB_TOKEN set. Add one to source real candidates from GitHub.",
+    });
+  }
+
+  try {
+    const res = await fetch("https://api.github.com/user", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "aria-sourcing",
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      return NextResponse.json({ ok: true, connected: false, reason: `GitHub token rejected (${res.status}).` });
+    }
+    const u = (await res.json().catch(() => ({}))) as { login?: string; name?: string; public_repos?: number };
+    return NextResponse.json({
+      ok: true,
+      connected: true,
+      login: u.login ?? "unknown",
+      name: u.name ?? null,
+      publicRepos: u.public_repos ?? 0,
+    });
+  } catch {
+    return NextResponse.json({ ok: true, connected: false, reason: "GitHub unreachable." });
+  }
+}

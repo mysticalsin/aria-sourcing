@@ -186,7 +186,7 @@ export interface HermesActions {
   updateSettings: (patch: Partial<SystemSettings>) => void;
   updateIntegration: (id: string, patch: Partial<IntegrationStatus>) => void;
   toggleIntegrationMode: (id: string) => void;
-  testIntegration: (id: string) => ConnectionTestResult;
+  testIntegration: (id: string) => Promise<ConnectionTestResult>;
 
   // fleet — multi-seat coordination + anti-ban guardrails
   addSeat: (partial: Partial<AgentSeat> & { name: string; operatorEmail: string }) => AgentSeat;
@@ -1757,13 +1757,38 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const testIntegration = useCallback(
-    (id: string) => {
+    async (id: string): Promise<ConnectionTestResult> => {
       const s = current();
       const integ = s.integrations.find((i) => i.id === id);
-      const result = integ
-        ? testConnection(integ)
-        : { ok: false, latencyMs: 0, message: "Integration not found." };
-      if (integ && result.ok) {
+      if (!integ) return { ok: false, latencyMs: 0, message: "Integration not found." };
+
+      let result: ConnectionTestResult;
+      // GitHub sourcing has a real backend — actually probe it (GET /user via the
+      // server token) instead of echoing a stored status. Other integrations have no
+      // server probe in this build, so they report their honest last-known status.
+      if (integ.id === "int_github") {
+        const t0 = Date.now();
+        try {
+          const res = await fetch("/api/source", { method: "GET" });
+          const out = (await res.json().catch(() => null)) as
+            | { connected?: boolean; login?: string; reason?: string }
+            | null;
+          const latencyMs = Date.now() - t0;
+          result = out?.connected
+            ? { ok: true, latencyMs, message: `Connected to GitHub as ${out.login}.` }
+            : {
+                ok: false,
+                latencyMs,
+                message: out?.reason ?? "GitHub not connected. Set GITHUB_TOKEN to source real candidates.",
+              };
+        } catch {
+          result = { ok: false, latencyMs: Date.now() - t0, message: "GitHub probe failed (network)." };
+        }
+      } else {
+        result = testConnection(integ);
+      }
+
+      if (result.ok) {
         commit((prev) => ({
           ...prev,
           integrations: prev.integrations.map((i) =>
