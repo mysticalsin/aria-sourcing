@@ -48,6 +48,22 @@ function McpRow({
           <p className="truncate text-xs text-muted" title={server.url}>
             {server.url}
           </p>
+          {server.toolNames && server.toolNames.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {server.toolNames.slice(0, 12).map((t) => (
+                <span
+                  key={t}
+                  className="rounded-md bg-line/60 px-1.5 py-0.5 text-[10px] font-medium text-muted"
+                  title={`Tool the fleet can call: ${t}`}
+                >
+                  {t}
+                </span>
+              ))}
+              {server.toolNames.length > 12 && (
+                <span className="text-[10px] text-muted">+{server.toolNames.length - 12} more</span>
+              )}
+            </div>
+          )}
           {isAdmin && (
             <Field
               label="Auth key (optional)"

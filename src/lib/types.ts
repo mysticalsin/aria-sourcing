@@ -822,6 +822,8 @@ export interface McpServerConfig {
   lastTestedAt?: string;
   /** Tools the server exposed on the last successful connection test. */
   toolCount?: number;
+  /** Names of those tools (for display), captured on the last successful test. */
+  toolNames?: string[];
 }
 
 /** Stored metadata only — the secret value never lives in client state. */

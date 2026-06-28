@@ -68,7 +68,12 @@ export async function POST(req: NextRequest) {
   try {
     const result = await connectAndListTools(url, token);
     if (result.ok) {
-      return NextResponse.json({ ok: true, serverName: result.serverName, toolCount: result.tools?.length ?? 0 });
+      return NextResponse.json({
+        ok: true,
+        serverName: result.serverName,
+        toolCount: result.tools?.length ?? 0,
+        toolNames: (result.tools ?? []).map((t) => t.name).slice(0, 50),
+      });
     }
     return NextResponse.json({ ok: false, error: result.error ?? "MCP connection failed." });
   } catch (err) {

@@ -2726,7 +2726,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const s = current();
       const server = (s.settings.mcpServers ?? []).find((m) => m.id === id);
       if (!server) return { ok: false, error: "MCP server not found." };
-      let out: { ok?: boolean; toolCount?: number; serverName?: string; error?: string };
+      let out: { ok?: boolean; toolCount?: number; toolNames?: string[]; serverName?: string; error?: string };
       try {
         const res = await fetch("/api/mcp/test", {
           method: "POST",
@@ -2749,6 +2749,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                   status: out.ok ? "connected" : "error",
                   lastTestedAt: now,
                   toolCount: out.ok ? out.toolCount : m.toolCount,
+                  toolNames: out.ok ? out.toolNames : m.toolNames,
                 }
               : m,
           ),
