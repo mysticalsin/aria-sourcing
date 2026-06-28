@@ -757,6 +757,9 @@ function synthCandidate(
     campaignId: campaign.id,
     name,
     email: `${handle}@${slugify(company)}.example`,
+    // Synthetic demo phone so the WhatsApp/SMS channels are demonstrable; real sourced
+    // candidates (e.g. GitHub) have no phone until enriched.
+    phone: `+1415${Math.floor(rng() * 9_000_000 + 1_000_000)}`,
     avatarInitials: initialsFrom(name),
     currentTitle,
     currentCompany: company,
@@ -824,7 +827,7 @@ export function generateOutreach(
 
   const subject = sequenceStep > 1 ? L.subjectFollow(jd.title, firstName) : L.subjectNew(jd.title, topSkill);
 
-  const body = [
+  const emailBody = [
     L.greeting(firstName, topSkill, candidate.currentCompany),
     "",
     `${L.roleLine(jd.title, jd.locationType, jd.regions.join("/"))}${jd.equity ? " " + L.equity : ""}`,
@@ -836,6 +839,18 @@ export function generateOutreach(
     // no default "Sent by Aria" line and no opt-out boilerplate.
     ...(voice?.signature && voice.signature.trim() ? ["", voice.signature.trim()] : []),
   ].join("\n");
+
+  // WhatsApp / SMS are short-form: one tight message, no long role/why blocks and no
+  // subject line in the body (the channel adapters deliver the body only).
+  const phoneBody = [
+    L.greeting(firstName, topSkill, candidate.currentCompany),
+    sequenceStep > 1 ? L.ctaFollow : L.cta,
+    ...(voice?.signature && voice.signature.trim() ? [voice.signature.trim()] : []),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const body = channel === "WhatsApp" || channel === "SMS" ? phoneBody : emailBody;
 
   // ALWAYS humanize — no AI slop ever.
   return {
