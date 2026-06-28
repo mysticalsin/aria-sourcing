@@ -137,8 +137,8 @@ export function CandidateDrawer({
     }
   };
 
-  const handleBook = () => {
-    const res = actions.createBookingFor(c.id);
+  const handleBook = async () => {
+    const res = await actions.createBookingFor(c.id);
     if (res) {
       toast({
         title: "Interview booked (dry-run)",

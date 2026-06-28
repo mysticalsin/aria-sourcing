@@ -272,8 +272,8 @@ export default function Page({ params }: { params: { id: string } }) {
     });
   };
 
-  const handleBook = (cand: Candidate) => {
-    const res = actions.createBookingFor(cand.id);
+  const handleBook = async (cand: Candidate) => {
+    const res = await actions.createBookingFor(cand.id);
     if (res) {
       toast({
         title: `Interview booked: ${cand.name}`,

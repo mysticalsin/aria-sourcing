@@ -163,7 +163,7 @@ export interface HermesActions {
   createBookingFor: (
     candidateId: string,
     opts?: { startTime?: string; interviewerName?: string },
-  ) => { booking: Booking; prepEmail: string; confirmationEmail: string } | null;
+  ) => Promise<{ booking: Booking; prepEmail: string; confirmationEmail: string } | null>;
   updateBooking: (id: string, patch: Partial<Booking>) => void;
 
   // reports + learning
@@ -1465,7 +1465,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const createBookingFor = useCallback(
-    (candidateId: string, opts?: { startTime?: string; interviewerName?: string }) => {
+    async (candidateId: string, opts?: { startTime?: string; interviewerName?: string }) => {
       const s = current();
       const candidate = s.candidates.find((c) => c.id === candidateId);
       const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
@@ -1504,6 +1504,52 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
         return next;
       });
+
+      // Create a REAL calendar event when a live mailbox is connected, then reconcile
+      // the booking's calLink to the real event URL. This never blocks the booking from
+      // being recorded; demo mode or a mail-only connection keeps the synthetic link.
+      const seat = s.seats.find(
+        (x) =>
+          x.status === "active" &&
+          x.mode === "live" &&
+          (x.provider === "Gmail API" || x.provider === "Microsoft Graph"),
+      );
+      if (supabaseEnabled && seat) {
+        try {
+          const res = await fetch("/api/calendar/event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              seatId: seat.id,
+              candidateName: booking.candidateName,
+              candidateEmail: candidate.email || undefined,
+              role: booking.role,
+              startTime: booking.startTime,
+              endTime: booking.endTime,
+              timezone: booking.timezone,
+              interviewerEmail: booking.interviewerEmail || undefined,
+              agenda: booking.agenda,
+              confirmLive: true,
+            }),
+          });
+          const out = (await res.json().catch(() => null)) as { status?: string; link?: string | null } | null;
+          if (out?.status === "created" && out.link) {
+            const link = out.link;
+            commit((prev) => ({
+              ...prev,
+              bookings: prev.bookings.map((b) => (b.id === booking.id ? { ...b, calLink: link } : b)),
+              candidates: prev.candidates.map((c) =>
+                c.id === candidate.id && c.booking?.id === booking.id
+                  ? { ...c, booking: { ...c.booking, calLink: link } }
+                  : c,
+              ),
+            }));
+          }
+        } catch {
+          // calendar failure — keep the synthetic link
+        }
+      }
+
       return { booking, prepEmail: prep, confirmationEmail: confirm };
     },
     [commit, current],

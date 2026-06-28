@@ -95,9 +95,9 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
   const [preview, setPreview] = React.useState<BookingPreview | null>(null);
   const [booking, setBooking] = React.useState<string | null>(null);
 
-  function handleBook(candidate: Candidate) {
+  async function handleBook(candidate: Candidate) {
     setBooking(candidate.id);
-    const res = a.createBookingFor(candidate.id);
+    const res = await a.createBookingFor(candidate.id);
     setBooking(null);
     if (!res) {
       toast({
