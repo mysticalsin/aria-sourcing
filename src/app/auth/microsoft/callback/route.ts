@@ -122,7 +122,7 @@ export async function GET(req: NextRequest) {
     : null;
 
   // Upsert connection.
-  await svc.from("email_connections").upsert(
+  const { error: upsertError } = await svc.from("email_connections").upsert(
     {
       workspace_id: wid,
       seat_id: seatId,
@@ -136,9 +136,17 @@ export async function GET(req: NextRequest) {
     },
     { onConflict: "workspace_id, seat_id" },
   );
+  if (upsertError) {
+    console.error("[microsoft/callback] email_connections upsert failed:", upsertError.message, upsertError.code);
+    return redirectError(req, "Failed to save email connection.");
+  }
 
   // Mirror connected account on the seat.
-  await svc.from("agent_seats").update({ connected_account: accountEmail }).eq("id", seatId);
+  const { error: updateError } = await svc.from("agent_seats").update({ connected_account: accountEmail }).eq("id", seatId);
+  if (updateError) {
+    console.error("[microsoft/callback] agent_seats update failed:", updateError.message, updateError.code);
+    return redirectError(req, "Failed to update seat connection.");
+  }
 
   return redirectSuccess(req, `Connected ${accountEmail}`);
 }
