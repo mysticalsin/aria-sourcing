@@ -12,9 +12,10 @@ import {
   parseCloudResponse,
   PROVIDER_ENV,
   type AiProviderSlug,
+  DEFAULT_MODEL,
 } from "@/lib/ai/provider";
 import { connectAndListTools } from "@/lib/mcp-client";
-import { runAnthropicWithTools, type ResolvedMcpServer } from "@/lib/ai/tool-loop";
+import { runAnthropicWithTools, runOpenAiWithTools, type ResolvedMcpServer } from "@/lib/ai/tool-loop";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { redactObject, redactSecrets, redactEmail } from "@/lib/log-redact";
 
@@ -221,16 +222,14 @@ export async function POST(req: NextRequest) {
     // MCP tool-calling (chat task, Anthropic): when the workspace has enabled MCP
     // servers, let the model call their tools and loop to a final answer. Additive —
     // falls through to the normal single-shot completion when no usable servers resolve.
-    if (task === "chat" && slug === "anthropic" && mcpServers && mcpServers.length) {
+    if (task === "chat" && mcpServers && mcpServers.length) {
       const resolvedServers = await gatherMcpServers(mcpServers);
       if (resolvedServers.length) {
-        const result = await runAnthropicWithTools({
-          model: model && model !== "hermes" ? model : "claude-sonnet-4-6",
-          system,
-          prompt,
-          key,
-          servers: resolvedServers,
-        });
+        const toolModel = model && model !== "hermes" ? model : DEFAULT_MODEL[slug];
+        const result =
+          slug === "anthropic"
+            ? await runAnthropicWithTools({ model: toolModel, system, prompt, key, servers: resolvedServers })
+            : await runOpenAiWithTools({ provider: slug, model: toolModel, system, prompt, key, servers: resolvedServers });
         if (result.ok && result.text) return NextResponse.json({ ok: true, text: result.text });
         if (!result.ok) return NextResponse.json({ ok: false, reason: result.reason ?? "MCP tool loop failed." });
         // result.ok with empty text → fall through to a normal completion.

@@ -1,4 +1,4 @@
-import { buildAnthropicToolDefs, type ResolvedMcpServer } from "../src/lib/ai/tool-loop";
+import { buildAnthropicToolDefs, buildOpenAiToolDefs, type ResolvedMcpServer } from "../src/lib/ai/tool-loop";
 
 let pass = 0,
   fail = 0;
@@ -51,6 +51,26 @@ ok(
   "server with no tools → no tool defs",
   buildAnthropicToolDefs([{ url: "https://c", token: "tc", tools: [] }]).toolDefs.length === 0,
 );
+
+// --- OpenAI-compatible tool defs ---------------------------------------------
+const oai = buildOpenAiToolDefs([srvA, srvB]);
+ok("openai: maps all unique tools", oai.toolDefs.length === 3);
+ok("openai: wraps each in a function type", oai.toolDefs.every((t) => t.type === "function"));
+ok(
+  "openai: carries name + description under function",
+  oai.toolDefs.find((t) => t.function.name === "search")?.function.description === "Search",
+);
+ok(
+  "openai: schema under function.parameters",
+  JSON.stringify(oai.toolDefs.find((t) => t.function.name === "search")?.function.parameters) ===
+    JSON.stringify({ type: "object", properties: { q: { type: "string" } } }),
+);
+ok(
+  "openai: defaults a missing schema to an empty object schema",
+  JSON.stringify(oai.toolDefs.find((t) => t.function.name === "lookup")?.function.parameters) ===
+    JSON.stringify({ type: "object", properties: {} }),
+);
+ok("openai: first server wins on collision", oai.owner.get("search")?.url === "https://a");
 
 console.log(`RESULT mcp-tool-loop: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

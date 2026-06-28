@@ -3010,7 +3010,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const enabledMcp = (s.settings.mcpServers ?? [])
         .filter((m) => m.enabled)
         .map((m) => ({ url: m.url, ...(m.apiKeyId ? { apiKeyId: m.apiKeyId } : {}) }));
-      if (chatAiCfg && chatAiCfg.provider === "anthropic" && enabledMcp.length) {
+      if (chatAiCfg && enabledMcp.length) {
         try {
           const res = await fetch("/api/hermes/chat", {
             method: "POST",

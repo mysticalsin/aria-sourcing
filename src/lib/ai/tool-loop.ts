@@ -9,6 +9,7 @@
 // (looked up from the key vault server-side), never the raw key from the browser.
 
 import { callMcpTool, type McpTool } from "@/lib/mcp-client";
+import { CLOUD_ENDPOINT, type AiProviderSlug } from "@/lib/ai/provider";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 
@@ -135,6 +136,124 @@ export async function runAnthropicWithTools(args: {
       toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: resultText });
     }
     messages.push({ role: "user", content: toolResults });
+  }
+
+  return { ok: false, reason: "Tool loop exceeded the round limit." };
+}
+
+/* ------------------------------------------------------------------------- *
+ * OpenAI-compatible variant (OpenAI / Groq / xAI / Mistral). Same loop, the  *
+ * chat/completions tool-call wire format.                                    *
+ * ------------------------------------------------------------------------- */
+
+interface OpenAiToolDef {
+  type: "function";
+  function: { name: string; description: string; parameters: Record<string, unknown> };
+}
+
+/** Map resolved MCP tools to OpenAI-compatible tool definitions (pure, testable). */
+export function buildOpenAiToolDefs(servers: ResolvedMcpServer[]): {
+  toolDefs: OpenAiToolDef[];
+  owner: Map<string, ResolvedMcpServer>;
+} {
+  const toolDefs: OpenAiToolDef[] = [];
+  const owner = new Map<string, ResolvedMcpServer>();
+  for (const server of servers) {
+    for (const t of server.tools) {
+      if (!t.name || owner.has(t.name)) continue;
+      owner.set(t.name, server);
+      const parameters =
+        t.inputSchema && typeof t.inputSchema === "object"
+          ? (t.inputSchema as Record<string, unknown>)
+          : { type: "object", properties: {} };
+      toolDefs.push({ type: "function", function: { name: t.name, description: t.description ?? "", parameters } });
+    }
+  }
+  return { toolDefs, owner };
+}
+
+interface OpenAiToolCall {
+  id?: string;
+  type?: string;
+  function?: { name?: string; arguments?: string };
+}
+
+interface OpenAiMessage {
+  role: string;
+  content?: string | null;
+  tool_calls?: OpenAiToolCall[];
+  tool_call_id?: string;
+}
+
+/** OpenAI-compatible completion that may call MCP tools, looping to a final answer. */
+export async function runOpenAiWithTools(args: {
+  provider: AiProviderSlug;
+  model: string;
+  system: string;
+  prompt: string;
+  key: string;
+  servers: ResolvedMcpServer[];
+  maxRounds?: number;
+  timeoutMs?: number;
+}): Promise<{ ok: boolean; text?: string; reason?: string }> {
+  const { provider, model, system, prompt, key, servers } = args;
+  const maxRounds = args.maxRounds ?? 4;
+  const timeoutMs = args.timeoutMs ?? 30_000;
+  const url = CLOUD_ENDPOINT[provider];
+
+  const { toolDefs, owner } = buildOpenAiToolDefs(servers);
+  if (!toolDefs.length) return { ok: false, reason: "No MCP tools available." };
+
+  const messages: OpenAiMessage[] = [
+    { role: "system", content: system },
+    { role: "user", content: prompt },
+  ];
+
+  for (let round = 0; round < maxRounds; round++) {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+        body: JSON.stringify({ model, messages, tools: toolDefs, stream: false }),
+        redirect: "manual",
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (err) {
+      return { ok: false, reason: err instanceof Error ? err.message : "Network error." };
+    }
+    if (!res.ok) return { ok: false, reason: `Upstream error ${res.status}` };
+
+    const json = (await res.json().catch(() => null)) as
+      | { choices?: { message?: OpenAiMessage; finish_reason?: string }[] }
+      | null;
+    const choice = json?.choices?.[0];
+    const message = choice?.message;
+    if (!message) return { ok: false, reason: "Empty response from provider." };
+
+    const toolCalls = message.tool_calls ?? [];
+    if (choice?.finish_reason !== "tool_calls" || toolCalls.length === 0) {
+      return { ok: true, text: (message.content ?? "").trim() };
+    }
+
+    // Echo the assistant turn (carrying its tool_calls), then return each tool result.
+    messages.push({ role: "assistant", content: message.content ?? "", tool_calls: toolCalls });
+    for (const tc of toolCalls) {
+      const name = tc.function?.name;
+      const server = name ? owner.get(name) : undefined;
+      let resultText = "Tool not available.";
+      if (server && name) {
+        let parsedArgs: Record<string, unknown> = {};
+        try {
+          parsedArgs = JSON.parse(tc.function?.arguments || "{}") as Record<string, unknown>;
+        } catch {
+          parsedArgs = {};
+        }
+        const out = await callMcpTool(server.url, server.token, name, parsedArgs);
+        resultText = out.ok ? JSON.stringify(out.content ?? "").slice(0, 4000) : `Error: ${out.error ?? "tool failed"}`;
+      }
+      messages.push({ role: "tool", tool_call_id: tc.id, content: resultText });
+    }
   }
 
   return { ok: false, reason: "Tool loop exceeded the round limit." };
