@@ -1276,7 +1276,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // DEDUP: never create a second reply for a messageId already ingested. Return the
       // existing reply, or a benign stand-in if it was since deleted — so a re-sync of the
       // same message can't double-ingest or re-append the id. (Always returns here.)
-      if (input.messageId && s.ingestedMessageIds?.includes(input.messageId)) {
+      // Dedup is durable, not just the bounded ledger: an old messageId can fall out of
+      // the capped ingestedMessageIds, so also treat it as ingested if a reply with that
+      // messageId still exists. Prevents duplicate ClassifiedReply rows on re-sync.
+      if (
+        input.messageId &&
+        (s.ingestedMessageIds?.includes(input.messageId) ||
+          s.replies.some((r) => r.messageId === input.messageId))
+      ) {
         const existing = s.replies.find((r) => r.messageId === input.messageId);
         const c = existing
           ? {
