@@ -110,7 +110,10 @@ export function dedupeCandidates(
     const gh = cand.githubUrl.toLowerCase();
     const company = cand.currentCompany.toLowerCase();
 
-    if (seenEmail.has(email)) {
+    // Only treat a non-blank email as a dedupe key. Real sourced profiles (e.g.
+    // GitHub) often have no public email; those are deduped by linkedin/github URL
+    // below, not collapsed together as "same blank email".
+    if (email && seenEmail.has(email)) {
       skipped.push({ name: cand.name, reason: "Duplicate email" });
       continue;
     }
@@ -136,7 +139,7 @@ export function dedupeCandidates(
     }
 
     accepted.push(cand);
-    seenEmail.add(email);
+    if (email) seenEmail.add(email);
     if (li) seenLinkedin.add(li);
     if (gh) seenGithub.add(gh);
   }

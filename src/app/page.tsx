@@ -115,7 +115,7 @@ export default function DashboardPage() {
     },
   ];
 
-  function handleSourceBatch() {
+  async function handleSourceBatch() {
     if (!activeCampaign) {
       toast({
         title: "No active campaign",
@@ -124,9 +124,9 @@ export default function DashboardPage() {
       });
       return;
     }
-    const result = actions.sourceNextBatch(activeCampaign.id);
+    const result = await actions.sourceNextBatch(activeCampaign.id);
     toast({
-      title: `Sourced ${pluralize(result.accepted.length, "candidate")}`,
+      title: `Sourced ${pluralize(result.accepted.length, "candidate")}${result.source === "github" ? " (live)" : ""}`,
       description: `${activeCampaign.title} · ${result.skipped.length} skipped by dedupe & exclusions.`,
       variant: result.accepted.length > 0 ? "success" : "info",
     });

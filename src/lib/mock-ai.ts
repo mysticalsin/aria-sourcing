@@ -2,6 +2,7 @@ import { DEFAULT_SCORING_WEIGHTS, scoreCandidate } from "./scoring";
 import { dedupeCandidates } from "./rules";
 import { humanizeText } from "./humanizer";
 import { roleProfile } from "./roles";
+import type { GithubUser } from "./sourcing/github";
 import { detectLanguage, outreachStrings, REPLY_LEXICON } from "./i18n";
 import type {
   Booking,
@@ -640,6 +641,79 @@ export function sourceCandidates(
     return { ...c, matchScore: score, matchBreakdown: breakdown };
   });
 
+  return { accepted: scored, skipped };
+}
+
+/**
+ * Map real GitHub users into scored, deduped Candidates — the live counterpart to
+ * sourceCandidates(). Same scoring + dedupe pipeline, real data. Email comes from the
+ * public profile when present and is otherwise left blank (enrichment is a separate
+ * step); techStack is the query language plus any required/nice skill named in the
+ * bio; yearsExperience is estimated from GitHub account age.
+ */
+export function mapGithubCandidates(
+  users: GithubUser[],
+  campaign: Campaign,
+  query: string,
+  existing: Candidate[],
+  weights: ScoringWeights = campaign.scoringWeights,
+): SourceResult {
+  const jd = campaign.jobAnalysis;
+  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
+  const raw: Candidate[] = users.map((u) => {
+    const name = (u.name && u.name.trim()) || u.login;
+    const bio = (u.bio ?? "").trim();
+    const bioLower = bio.toLowerCase();
+    const matched = allSkills.filter((s) => bioLower.includes(s.toLowerCase()));
+    const techStack = Array.from(new Set([...(u.topLanguage ? [u.topLanguage] : []), ...matched]));
+    const accountYears = u.createdAt
+      ? clamp(Math.floor((Date.now() - new Date(u.createdAt).getTime()) / (365 * 86_400_000)), 1, 25)
+      : 4;
+    return {
+      id: genId("cand"),
+      campaignId: campaign.id,
+      name,
+      email: u.email ?? "",
+      avatarInitials: initialsFrom(name),
+      currentTitle: bio ? bio.slice(0, 64) : jd.title,
+      currentCompany: (u.company ?? "").replace(/^@/, "").trim(),
+      location: u.location ?? "",
+      timezone: "",
+      linkedinUrl: "",
+      githubUrl: u.htmlUrl,
+      sourcePlatform: "GitHub",
+      sourceQuery: query,
+      matchScore: 0,
+      matchBreakdown: [],
+      techStack,
+      yearsExperience: accountYears,
+      companyStageExperience: [],
+      industryExperience: [],
+      recentActivity: `${u.publicRepos} public repos, ${u.followers} followers`,
+      stage: "Sourced",
+      lastContactedAt: null,
+      outreachHistory: [],
+      replyHistory: [],
+      booking: null,
+      complianceFlags: {
+        doNotContact: false,
+        suppressed: false,
+        unsubscribed: false,
+        gdprExportRequested: false,
+        anonymized: false,
+        suppressedUntil: null,
+      },
+      createdAt: new Date().toISOString(),
+    };
+  });
+
+  const { accepted, skipped } = dedupeCandidates(raw, existing, {
+    excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
+  });
+  const scored = accepted.map((c) => {
+    const { score, breakdown } = scoreCandidate(c, jd, weights);
+    return { ...c, matchScore: score, matchBreakdown: breakdown };
+  });
   return { accepted: scored, skipped };
 }
 

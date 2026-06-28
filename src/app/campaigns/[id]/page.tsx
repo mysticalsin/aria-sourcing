@@ -250,13 +250,15 @@ export default function Page({ params }: { params: { id: string } }) {
     });
   };
 
-  const handleSource = () => {
-    const res = actions.sourceNextBatch(c.id);
+  const handleSource = async () => {
+    const res = await actions.sourceNextBatch(c.id);
     toast({
-      title: `Sourced ${res.accepted.length} candidate${res.accepted.length === 1 ? "" : "s"}`,
+      title: `Sourced ${res.accepted.length} candidate${res.accepted.length === 1 ? "" : "s"}${res.source === "github" ? " (live)" : ""}`,
       description: res.skipped.length
         ? `${res.skipped.length} skipped by dedupe and exclusion rules.`
-        : "All matched candidates accepted into the pipeline.",
+        : res.source === "github"
+          ? "Live results from GitHub."
+          : "All matched candidates accepted into the pipeline.",
       variant: "success",
     });
   };

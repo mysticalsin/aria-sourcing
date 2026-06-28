@@ -19,10 +19,12 @@ import {
   newOutreachMessage,
   nextInterviewer,
   sourceCandidates,
+  mapGithubCandidates,
   type GeneratedOutreach,
   type ReplyClassification,
   type SourceResult,
 } from "./mock-ai";
+import type { GithubUser } from "./sourcing/github";
 import {
   buildOutreachPrompt,
   hermesAvailable,
@@ -118,7 +120,7 @@ export interface HermesActions {
   sourceNextBatch: (
     campaignId: string,
     opts?: { platform?: SourcePlatform; count?: number },
-  ) => SourceResult;
+  ) => Promise<SourceResult & { source: "github" | "mock" }>;
 
   // outreach
   generateOutreachFor: (
@@ -605,15 +607,55 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const sourceNextBatch = useCallback(
-    (campaignId: string, opts?: { platform?: SourcePlatform; count?: number }) => {
+    async (
+      campaignId: string,
+      opts?: { platform?: SourcePlatform; count?: number },
+    ): Promise<SourceResult & { source: "github" | "mock" }> => {
       const s = current();
       const campaign = s.campaigns.find((c) => c.id === campaignId);
-      if (!campaign) return { accepted: [], skipped: [] };
+      if (!campaign) return { accepted: [], skipped: [], source: "mock" };
       const platform: SourcePlatform =
         opts?.platform ?? (campaign.jobAnalysis.department === "Design" ? "LinkedIn" : "GitHub");
       const count = opts?.count ?? 6;
       const weights = effectiveWeights(campaign.scoringWeights, s.skills); // learned scoring
-      const result = sourceCandidates(campaign, platform, count, s.candidates, s.candidates.length, weights);
+
+      let result: SourceResult = { accepted: [], skipped: [] };
+      let source: "github" | "mock" = "mock";
+
+      // Try REAL sourcing on GitHub first. The server resolves GITHUB_TOKEN and
+      // answers `source: "mock"` when none is set, so this is fully functional in
+      // demo mode and goes live the moment a token exists. When a token IS present
+      // the real result is authoritative even at zero hits (no synthetic injection).
+      // LinkedIn has no public search API, so it stays synthetic.
+      if (platform === "GitHub") {
+        const query =
+          campaign.sourcingStrategy.githubQueries[0]?.query ??
+          `language:${(campaign.jobAnalysis.requiredSkills[0] ?? "typescript").toLowerCase()}`;
+        try {
+          const res = await fetch("/api/source", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query, count }),
+          });
+          const out = (await res.json().catch(() => null)) as
+            | { ok?: boolean; source?: string; users?: GithubUser[] }
+            | null;
+          if (out?.ok && out.source === "github") {
+            result =
+              out.users && out.users.length > 0
+                ? mapGithubCandidates(out.users, campaign, query, s.candidates, weights)
+                : { accepted: [], skipped: [] };
+            source = "github";
+          }
+        } catch {
+          // network/route failure — fall through to synthetic below
+        }
+      }
+
+      // Fallback: synthetic sourcing (demo, no token, LinkedIn, or route failure).
+      if (source === "mock") {
+        result = sourceCandidates(campaign, platform, count, s.candidates, s.candidates.length, weights);
+      }
 
       commit((prev) => {
         let next: HermesState = {
@@ -626,11 +668,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           makeActivity({
             type: "sourcing",
             title: `Sourced ${result.accepted.length} candidates`,
-            notes: `${platform} batch. ${result.skipped.length} skipped by dedupe (${result.skipped
+            notes: `${source === "github" ? "Live GitHub" : `${platform} synthetic`} batch. ${result.skipped.length} skipped by dedupe (${result.skipped
               .slice(0, 3)
               .map((x) => x.reason)
               .join(", ")}${result.skipped.length > 3 ? "…" : ""}).`,
-            outcome: `${result.accepted.length} accepted · ${result.skipped.length} skipped`,
+            outcome: `${result.accepted.length} accepted, ${result.skipped.length} skipped${source === "github" ? " (live)" : ""}`,
             campaignId,
             linkedEntityType: "campaign",
             linkedEntityId: campaignId,
@@ -639,7 +681,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
         return next;
       });
-      return result;
+      return { ...result, source };
     },
     [commit, current],
   );
