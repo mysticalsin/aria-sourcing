@@ -56,6 +56,7 @@ import type {
   CronJob,
   GuardrailRule,
   LlmProvider,
+  McpServerConfig,
   MemoryEntry,
   MemoryKind,
   ModelTask,
@@ -244,6 +245,12 @@ export interface HermesActions {
   removeProvider: (id: string) => void;
   setDefaultProvider: (id: string) => void;
 
+  // MCP servers (external tool sources)
+  addMcpServer: (m: Omit<McpServerConfig, "id" | "status">) => McpServerConfig;
+  updateMcpServer: (id: string, patch: Partial<McpServerConfig>) => void;
+  removeMcpServer: (id: string) => void;
+  testMcpServer: (id: string) => Promise<{ ok: boolean; toolCount?: number; error?: string }>;
+
   // Saved models
   addModel: (m: Omit<SavedModel, "id">) => SavedModel;
   updateModel: (id: string, patch: Partial<SavedModel>) => void;
@@ -331,6 +338,7 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
       llmProviders: parsed.settings.llmProviders ?? defs.llmProviders,
       savedModels: parsed.settings.savedModels ?? defs.savedModels,
       tools: parsed.settings.tools ?? defs.tools,
+      mcpServers: parsed.settings.mcpServers ?? defs.mcpServers,
       defaultModels: parsed.settings.defaultModels ?? defs.defaultModels,
       // STATE_VERSION 8 — live Aria runtime config.
       hermesLiveMode: parsed.settings.hermesLiveMode ?? defs.hermesLiveMode,
@@ -2626,6 +2634,93 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit],
   );
 
+  const addMcpServer = useCallback(
+    (m: Omit<McpServerConfig, "id" | "status">): McpServerConfig => {
+      const server: McpServerConfig = { ...m, id: genId("mcp"), status: "untested" };
+      commit((s) =>
+        withActivity(
+          { ...s, settings: { ...s.settings, mcpServers: [...(s.settings.mcpServers ?? []), server] } },
+          makeActivity({
+            type: "system",
+            title: `MCP server added — ${server.name}`,
+            notes: `Tool source ${server.url} registered.`,
+            outcome: "Added",
+            campaignId: null,
+            linkedEntityType: null,
+            linkedEntityId: null,
+          }),
+          null,
+        ),
+      );
+      return server;
+    },
+    [commit],
+  );
+
+  const updateMcpServer = useCallback(
+    (id: string, patch: Partial<McpServerConfig>) =>
+      commit((s) => ({
+        ...s,
+        settings: {
+          ...s.settings,
+          mcpServers: (s.settings.mcpServers ?? []).map((m) => (m.id === id ? { ...m, ...patch } : m)),
+        },
+      })),
+    [commit],
+  );
+
+  const removeMcpServer = useCallback(
+    (id: string) =>
+      commit((s) => ({
+        ...s,
+        settings: {
+          ...s.settings,
+          mcpServers: (s.settings.mcpServers ?? []).filter((m) => m.id !== id),
+        },
+      })),
+    [commit],
+  );
+
+  /** Probe a registered MCP server (the /api/mcp/test route runs the MCP `initialize`
+   *  handshake) and record the result on the server config. */
+  const testMcpServer = useCallback(
+    async (id: string): Promise<{ ok: boolean; toolCount?: number; error?: string }> => {
+      const s = current();
+      const server = (s.settings.mcpServers ?? []).find((m) => m.id === id);
+      if (!server) return { ok: false, error: "MCP server not found." };
+      let out: { ok?: boolean; toolCount?: number; serverName?: string; error?: string };
+      try {
+        const res = await fetch("/api/mcp/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: server.url, apiKeyId: server.apiKeyId }),
+        });
+        out = (await res.json().catch(() => ({ ok: false, error: "Bad response from MCP test." }))) as typeof out;
+      } catch (err) {
+        out = { ok: false, error: err instanceof Error ? err.message : "MCP test failed." };
+      }
+      const now = new Date().toISOString();
+      commit((prev) => ({
+        ...prev,
+        settings: {
+          ...prev.settings,
+          mcpServers: (prev.settings.mcpServers ?? []).map((m) =>
+            m.id === id
+              ? {
+                  ...m,
+                  status: out.ok ? "connected" : "error",
+                  lastTestedAt: now,
+                  toolCount: out.ok ? out.toolCount : m.toolCount,
+                }
+              : m,
+          ),
+        },
+      }));
+      return { ok: !!out.ok, toolCount: out.toolCount, error: out.error };
+    },
+    [commit, current],
+  );
+
   const setDefaultProvider = useCallback(
     (id: string) =>
       commit((s) => ({
@@ -3153,6 +3248,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       updateProvider,
       removeProvider,
       setDefaultProvider,
+      addMcpServer,
+      updateMcpServer,
+      removeMcpServer,
+      testMcpServer,
       addModel,
       updateModel,
       removeModel,
@@ -3192,6 +3291,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       saveApiKey, testApiKey, removeApiKey, setCurrentRole,
       updateAriaPrompt, addGuardrailRule, toggleGuardrailRule, removeGuardrailRule, askAria,
       addProvider, updateProvider, removeProvider, setDefaultProvider,
+      addMcpServer, updateMcpServer, removeMcpServer, testMcpServer,
       addModel, updateModel, removeModel, setModelDefaultForTask,
       toggleTool,
       assignAgentProvider, assignAgentModel, assignAgentTools,
@@ -3282,6 +3382,7 @@ const EMPTY: HermesState = {
     llmProviders: defaultLlmProviders(),
     savedModels: defaultSavedModels(),
     tools: defaultTools(),
+    mcpServers: [],
     defaultModels: {},
     hermesLiveMode: false,
     hermesApiUrl: "",

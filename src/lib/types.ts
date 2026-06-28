@@ -565,6 +565,9 @@ export interface SystemSettings {
   savedModels: SavedModel[];
   /** Per-capability tool registry — toggles apply to every agent by default. */
   tools: ToolDef[];
+  /** Registered MCP (Model Context Protocol) servers — extra tool sources the fleet
+   *  can connect to. The raw auth token lives in the key vault, referenced by id. */
+  mcpServers: McpServerConfig[];
   /** Default model per task type (SavedModel.id). */
   defaultModels?: Partial<Record<ModelTask, string>>;
   /** When on, outreach drafting routes through the live Aria agent runtime
@@ -800,6 +803,25 @@ export interface ToolDef {
   label: string;
   description: string;
   enabled: boolean;
+}
+
+export type McpServerStatus = "untested" | "connected" | "error";
+
+/** A registered Model Context Protocol server — an external source of tools the fleet
+ *  can call. Mirrors LlmProvider: the auth token lives in the key vault by id, never
+ *  inline. */
+export interface McpServerConfig {
+  id: string;
+  name: string;
+  /** The MCP server's HTTP(S) endpoint (streamable-HTTP / SSE transport). */
+  url: string;
+  /** References an ApiKey.id for the Bearer token; the raw secret never lives here. */
+  apiKeyId?: string;
+  enabled: boolean;
+  status: McpServerStatus;
+  lastTestedAt?: string;
+  /** Tools the server exposed on the last successful connection test. */
+  toolCount?: number;
 }
 
 /** Stored metadata only — the secret value never lives in client state. */

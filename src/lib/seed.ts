@@ -134,6 +134,7 @@ export function defaultSettings(): SystemSettings {
     llmProviders: defaultLlmProviders(),
     savedModels: defaultSavedModels(),
     tools: defaultTools(),
+    mcpServers: [],
     defaultModels: {
       sourcing: "model_claude_opus_4",
       outreach: "model_claude_opus_4",
