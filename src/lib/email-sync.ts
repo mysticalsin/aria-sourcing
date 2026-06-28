@@ -35,6 +35,74 @@ function looksLikeHtml(s: string): boolean {
   return /<[a-zA-Z][^>]*>/.test(s);
 }
 
+// ── Retry helper ─────────────────────────────────────────────────────────────
+
+const RETRYABLE_STATUSES = new Set([429, 502, 503, 504]);
+
+/**
+ * Wraps `fetch` with bounded exponential back-off for transient failures.
+ * Retryable: HTTP 429 / 502 / 503 / 504 and thrown network / timeout errors.
+ * Non-retryable: any other 4xx or 2xx — returned immediately without retry.
+ *
+ * Each attempt receives a **fresh** `AbortSignal.timeout(15_000)` so the
+ * timeout resets per attempt rather than draining a shared signal.
+ *
+ * If a `Retry-After` response header is present (seconds integer or HTTP-date)
+ * it is honoured but capped at 10 s to prevent a single mailbox stalling the
+ * whole sync. Without it, backoff is 500 ms → 1 000 ms → 2 000 ms.
+ *
+ * READ-ONLY companion: only used by GET helpers; never issues write verbs.
+ */
+async function fetchWithRetry(
+  url: string,
+  init: Omit<RequestInit, "signal">,
+  maxRetries = 3,
+): Promise<Response> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        ...init,
+        signal: AbortSignal.timeout(15_000),
+      });
+
+      // Non-retryable (2xx, 4xx other than 429) or exhausted retries — return as-is
+      if (!RETRYABLE_STATUSES.has(res.status) || attempt === maxRetries) {
+        return res;
+      }
+
+      // Retryable status — honour Retry-After header if present, else backoff
+      const retryAfterRaw = res.headers.get("Retry-After");
+      let waitMs: number;
+
+      if (retryAfterRaw) {
+        const parsed = parseInt(retryAfterRaw, 10);
+        if (!Number.isNaN(parsed)) {
+          waitMs = parsed * 1_000; // seconds → ms
+        } else {
+          // HTTP-date format
+          waitMs = Math.max(0, new Date(retryAfterRaw).getTime() - Date.now());
+        }
+        waitMs = Math.min(waitMs, 10_000); // cap at 10 s
+      } else {
+        waitMs = 500 * 2 ** attempt; // 500 → 1 000 → 2 000 ms
+      }
+
+      await new Promise<void>((r) => setTimeout(r, waitMs));
+    } catch (err) {
+      // Network error or AbortError/TimeoutError
+      lastError = err;
+      if (attempt === maxRetries) throw err;
+      const waitMs = Math.min(500 * 2 ** attempt, 10_000);
+      await new Promise<void>((r) => setTimeout(r, waitMs));
+    }
+  }
+
+  // Unreachable — loop always returns or throws before here
+  throw lastError ?? new Error("fetchWithRetry: unexpected state");
+}
+
 // ── Gmail ────────────────────────────────────────────────────────────────────
 
 /**
@@ -47,10 +115,9 @@ export async function listInboundGmail(
 ): Promise<{ id: string; threadId: string }[]> {
   const q = encodeURIComponent("newer_than:14d -in:chats -from:me");
   const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${q}&maxResults=${max}`;
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     method: "GET",
     headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) {
     throw new Error(`Gmail list error ${res.status}`);
@@ -70,10 +137,9 @@ export async function getGmailMessage(
   id: string,
 ): Promise<InboundMessage | null> {
   const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`;
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     method: "GET",
     headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) {
     throw new Error(`Gmail message error ${res.status}`);
@@ -178,10 +244,9 @@ export async function listInboundGraph(
   const url =
     `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages` +
     `?$top=${max}&$select=id,conversationId&$orderby=receivedDateTime desc`;
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     method: "GET",
     headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) {
     throw new Error(`Graph list error ${res.status}`);
@@ -206,10 +271,9 @@ export async function getGraphMessage(
   const url =
     `https://graph.microsoft.com/v1.0/me/messages/${id}` +
     `?$select=from,subject,body,conversationId,internetMessageId,receivedDateTime`;
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     method: "GET",
     headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) {
     throw new Error(`Graph message error ${res.status}`);
