@@ -7,6 +7,7 @@ import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
+import { connectAndListTools } from "@/lib/mcp-client";
 
 /**
  * Connection test for a registered MCP (Model Context Protocol) server. Runs the MCP
@@ -18,34 +19,6 @@ const McpTestSchema = z.object({
   url: z.string().url().max(500),
   apiKeyId: z.string().max(120).optional(),
 });
-
-interface McpInitResponse {
-  result?: { serverInfo?: { name?: string }; capabilities?: Record<string, unknown> };
-  error?: { message?: string };
-}
-
-function parseMcpResponse(text: string): McpInitResponse | null {
-  const trimmed = text.trim();
-  if (trimmed.startsWith("{")) {
-    try {
-      return JSON.parse(trimmed) as McpInitResponse;
-    } catch {
-      return null;
-    }
-  }
-  // Streamable HTTP may answer as SSE: find the first `data: {...}` line.
-  for (const line of trimmed.split("\n")) {
-    const l = line.trim();
-    if (l.startsWith("data:")) {
-      try {
-        return JSON.parse(l.slice(5).trim()) as McpInitResponse;
-      } catch {
-        /* keep scanning */
-      }
-    }
-  }
-  return null;
-}
 
 export async function POST(req: NextRequest) {
   const prodBlock = prodFailClosed();
@@ -91,40 +64,13 @@ export async function POST(req: NextRequest) {
     if (secret) token = decryptSecret(secret);
   }
 
-  const initBody = {
-    jsonrpc: "2.0",
-    id: 1,
-    method: "initialize",
-    params: {
-      protocolVersion: "2024-11-05",
-      capabilities: {},
-      clientInfo: { name: "aria-sourcing", version: "1.0" },
-    },
-  };
-
+  // initialize + tools/list via the MCP client, so the test reports the real tools.
   try {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      Accept: "application/json, text/event-stream",
-    };
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(initBody),
-      redirect: "manual",
-      signal: AbortSignal.timeout(12_000),
-    });
-    if (!res.ok) {
-      return NextResponse.json({ ok: false, error: `MCP server responded ${res.status}.` });
+    const result = await connectAndListTools(url, token);
+    if (result.ok) {
+      return NextResponse.json({ ok: true, serverName: result.serverName, toolCount: result.tools?.length ?? 0 });
     }
-    const json = parseMcpResponse(await res.text());
-    if (json?.result) {
-      // A valid initialize result confirms the connection; tools/list (the tool count)
-      // is a follow-up call left for when the fleet actually invokes MCP tools.
-      return NextResponse.json({ ok: true, serverName: json.result.serverInfo?.name ?? "MCP server" });
-    }
-    return NextResponse.json({ ok: false, error: json?.error?.message ?? "No valid MCP initialize response." });
+    return NextResponse.json({ ok: false, error: result.error ?? "MCP connection failed." });
   } catch (err) {
     return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : "MCP connection failed." });
   }
