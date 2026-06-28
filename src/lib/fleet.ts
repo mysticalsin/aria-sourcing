@@ -42,6 +42,8 @@ export const PROVIDER_LIMIT_NOTE: Record<SeatProvider, string> = {
   "Gmail API": "Workspace ~2k sends/day; keep cold sends ≤ 40/day/mailbox warmed.",
   SendGrid: "Respect plan limits; warm dedicated IPs gradually.",
   Resend: "Respect plan limits; verify domain (SPF/DKIM/DMARC) before sending.",
+  "WhatsApp Cloud": "Cold WhatsApp needs a pre-approved Meta template; keep volume low and honor opt-out.",
+  "Twilio SMS": "Honor SMS regulations (opt-in/TCPA); keep cold sends low and include opt-out.",
 };
 
 /* ---- Warm-up + capacity --------------------------------------------------- */

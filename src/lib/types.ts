@@ -71,7 +71,7 @@ export const INTAKE_INTENTS = [
 ] as const;
 export type IntakeIntent = (typeof INTAKE_INTENTS)[number];
 
-export const OUTREACH_CHANNELS = ["Email", "LinkedIn"] as const;
+export const OUTREACH_CHANNELS = ["Email", "LinkedIn", "WhatsApp", "SMS"] as const;
 export type OutreachChannel = (typeof OUTREACH_CHANNELS)[number];
 
 export const OUTREACH_TONES = [
@@ -261,6 +261,9 @@ export interface Candidate {
   campaignId: string;
   name: string;
   email: string;
+  /** E.164 phone (e.g. +14155552671) for WhatsApp / SMS outreach. Often empty
+   *  until enriched; sourced profiles rarely expose one. */
+  phone?: string;
   avatarInitials: string;
   currentTitle: string;
   currentCompany: string;
@@ -585,6 +588,8 @@ export const SEAT_PROVIDERS = [
   "Gmail API",
   "SendGrid",
   "Resend",
+  "WhatsApp Cloud",
+  "Twilio SMS",
 ] as const;
 export type SeatProvider = (typeof SEAT_PROVIDERS)[number];
 

@@ -47,6 +47,8 @@ const PROVIDER_TONE: Record<SeatProvider, Tone> = {
   "Gmail API": "tangerine",
   SendGrid: "aqua",
   Resend: "violet",
+  "WhatsApp Cloud": "aqua",
+  "Twilio SMS": "violet",
 };
 
 const STATUS_TONE: Record<AgentSeat["status"], Tone> = {

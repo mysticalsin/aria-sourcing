@@ -1,4 +1,4 @@
-import type { SystemSettings } from "@/lib/types";
+import type { OutreachChannel, SystemSettings } from "@/lib/types";
 
 /* ============================================================================
    Aria live runtime — client helper.
@@ -116,7 +116,7 @@ export function buildOutreachPrompt(opts: {
  */
 export function parseHermesOutreach(
   text: string,
-  channel: "Email" | "LinkedIn",
+  channel: OutreachChannel,
   fallbackSubject: string,
 ): { subject: string; body: string } | null {
   const trimmed = (text ?? "").trim();
