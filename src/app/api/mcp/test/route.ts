@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
+import { decryptSecret } from "@/lib/crypto-secrets";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
@@ -87,7 +88,7 @@ export async function POST(req: NextRequest) {
     const svc = getServiceSupabase();
     const { data } = (await svc?.from("api_keys").select("secret").eq("id", apiKeyId).maybeSingle()) ?? { data: null };
     const secret = (data as { secret?: string } | null)?.secret;
-    if (secret) token = secret;
+    if (secret) token = decryptSecret(secret);
   }
 
   const initBody = {

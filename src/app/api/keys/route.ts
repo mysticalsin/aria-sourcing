@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getServerSupabase, requireAdmin } from "@/lib/supabase/server";
+import { encryptSecret } from "@/lib/crypto-secrets";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { last4Of, validateApiKeyFormat } from "@/lib/providers";
 import { validateBody } from "@/lib/api/validate";
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
   const { data: wid } = await supabase.rpc("ensure_workspace");
   const { data, error } = await supabase
     .from("api_keys")
-    .insert({ workspace_id: wid, name, provider, secret: value, last4, created_by: createdBy })
+    .insert({ workspace_id: wid, name, provider, secret: encryptSecret(value), last4, created_by: createdBy })
     .select();
   if (error) {
     // Log the DB detail server-side (redacted); never echo Postgres/RLS internals to the client.

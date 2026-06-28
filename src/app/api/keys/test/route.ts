@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getServerSupabase, getServiceSupabase, requireAdmin } from "@/lib/supabase/server";
+import { decryptSecret } from "@/lib/crypto-secrets";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { validateApiKeyFormat } from "@/lib/providers";
 import { validateBody } from "@/lib/api/validate";
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest) {
   if (error || !row) return NextResponse.json({ ok: false, error: "Key not found." }, { status: 404 });
   if (row.workspace_id !== wid) return NextResponse.json({ ok: false, error: "Forbidden." }, { status: 403 });
 
-  const fmt = validateApiKeyFormat(row.provider, row.secret);
+  const fmt = validateApiKeyFormat(row.provider, decryptSecret(row.secret));
   await svc
     .from("api_keys")
     .update({ status: fmt.valid ? "valid" : "invalid", last_tested_at: new Date().toISOString() })

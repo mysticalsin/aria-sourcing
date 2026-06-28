@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
+import { decryptSecret } from "@/lib/crypto-secrets";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
 import { isAllowedHermesUrl } from "@/lib/api/url";
@@ -112,7 +113,7 @@ async function resolveVaultSecret(id?: string): Promise<string> {
     .eq("id", id)
     .single();
   if (row && row.workspace_id === wid && typeof row.secret === "string") {
-    return row.secret;
+    return decryptSecret(row.secret);
   }
   return "";
 }
