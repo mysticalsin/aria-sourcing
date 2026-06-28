@@ -4,6 +4,7 @@ import {
   Target,
   Users,
   Send,
+  MessageSquare,
   MessageSquareReply,
   CalendarDays,
   LineChart,
@@ -11,6 +12,10 @@ import {
   Bot,
   Brain,
   Building2,
+  Database,
+  Sparkles,
+  History,
+  FolderSearch,
   type LucideIcon,
 } from "lucide-react";
 
@@ -32,8 +37,13 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/calendar", label: "Calendar", icon: CalendarDays, section: "Operate", description: "Interview bookings" },
   { href: "/fleet", label: "Agent Fleet", icon: Bot, section: "Operate", description: "Multi-agent coordination" },
   { href: "/floor", label: "Ops Floor", icon: Building2, section: "Operate", description: "Live agent floor" },
+  { href: "/chat", label: "Chat", icon: MessageSquare, section: "Operate", description: "Per-agent chat" },
   { href: "/reports", label: "Reports", icon: LineChart, section: "Operate", description: "Learning loop" },
   { href: "/skills", label: "Skills", icon: Brain, section: "System", description: "Learned playbooks" },
+  { href: "/memory", label: "Memory", icon: Database, section: "System", description: "Agent long-term memory" },
+  { href: "/sessions", label: "Sessions", icon: History, section: "System", description: "Chat & activity history" },
+  { href: "/curator", label: "Files", icon: FolderSearch, section: "System", description: "Aria files & curator" },
+  { href: "/soul", label: "Soul", icon: Sparkles, section: "System", description: "Agent personas & brain" },
   { href: "/settings", label: "Settings", icon: Settings, section: "System", description: "Integrations & compliance" },
 ];
 

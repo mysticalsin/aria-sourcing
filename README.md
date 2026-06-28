@@ -16,12 +16,14 @@ skill improvements.
 
 - **Agent fleet (`/fleet`)** — run **multiple coordinated Hermes agents**, each a
   real, authorized sending seat (Microsoft Graph / Gmail / SendGrid / Resend via
-  official APIs). A shared **outreach ledger + suppression list** guarantees no
+  official APIs). Connect Gmail or Microsoft mailboxes via OAuth directly from the
+  seat card. A shared **outreach ledger + suppression list** guarantees no
   candidate is ever contacted twice across the whole fleet. Anti-ban guardrails:
   per-account daily caps, **warm-up ramps**, send windows, human-paced jitter,
-  global re-contact window, and **auto-pause** on bounce/complaint spikes. This is
-  team coordination *within* each platform's official limits — **never** scraping,
-  LinkedIn automation, or rate-limit evasion. LinkedIn stays assisted-manual.
+  global re-contact window, domain verification (SPF/DKIM/DMARC), and **auto-pause**
+  on bounce/complaint spikes. This is team coordination *within* each platform's
+  official limits — **never** scraping, LinkedIn automation, or rate-limit evasion.
+  LinkedIn stays assisted-manual.
 - **Learning skills (`/skills`)** — the four Hermes skills (outreach / sourcing /
   scoring / reply-classification) are versioned, editable playbooks. **Run
   learning** analyses real outcomes (which tone converted, which score dimension
@@ -142,7 +144,9 @@ The app is architected so a real backend can be wired without touching the UI:
 | Sourcing | `sourceCandidates()` synthetic gen | GitHub / LinkedIn official partner APIs |
 | Scoring | `scoreCandidate()` | Resume Matcher API |
 | Enrichment | none | Apollo / Hunter / Clearbit (official APIs) |
-| Email send | dry-run | SendGrid / Resend (gated behind the dry-run flag) |
+| Email send | dry-run | Gmail / Microsoft Graph OAuth seats, plus SendGrid / Resend (gated behind the dry-run flag) |
+| LinkedIn | assisted-manual drafts | Official RSC integration only — Hermes drafts, human sends |
+| Hermes runtime | n/a in demo | Full proxy to local hermes-agent: status, memory, skills, sessions, schedules, curator, files |
 | Scheduling | mock links | Cal.com + Microsoft Graph / Teams |
 | Notifications | in-app toasts | Slack / Telegram |
 
@@ -151,7 +155,51 @@ Each integration card in **Settings** carries a `mode: mock | live` flag and a
 
 ---
 
-## 5. Architecture
+## 5. Hermes runtime integration (now wired)
+
+When `HERMES_API_URL` is set, the app talks directly to a local
+[`hermes-agent`](https://github.com/project-hermes/hermes-agent) instance:
+
+- **Status** — `/settings` shows Hermes health, version, and device info.
+- **Chat** — `/chat` uses the Hermes gateway with streaming response support,
+  session history, and a searchable sidebar.
+- **Memory** — `/memory` reads and searches the Hermes memory graph.
+- **Soul** — `/soul` exposes model listing and session inspection.
+- **Skills** — `/skills` lists Hermes skills and can update their prompts through
+  a proxy that injects anti-bypass LinkedIn guardrails.
+- **Schedules** — `/schedules` bridges to Hermes scheduled tasks.
+- **Curator** — `/curator` browses Hermes files and curator status.
+
+The proxy (`src/app/api/hermes/proxy/route.ts`) is **allow-listed** and
+server-side authenticated so the browser never sees the Hermes API key. All
+requests are validated with Zod and the upstream URL is checked against an
+explicit allow-list to avoid SSRF.
+
+---
+
+## 6. Tests & security audit
+
+The repo includes a growing test suite under `tests/`:
+
+```bash
+npm run test           # node --test with tsx
+npm run test:security  # security-audit suite only
+npm run typecheck
+npm run lint
+npm run build
+```
+
+`tests/security-audit.mts` enforces static invariants:
+- No dangerous client-side APIs (`dangerouslySetInnerHTML`, `eval`, `Function`)
+- No hardcoded secrets or API key patterns
+- SSRF allow-list coverage for the Hermes proxy
+- `rel="noreferrer"` on every `target="_blank"` link
+
+For full production guidance see **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+
+---
+
+## 7. Architecture
 
 ```
 src/
@@ -161,13 +209,20 @@ src/
     app/               # shell (AppShell, Sidebar, TopBar, CommandSearch, nav)
     charts/            # recharts wrappers (funnel, gauge, distribution, …)
     dashboard/ shared/ campaigns/ candidates/ outreach/ replies/ calendar/
-    settings/ reports/ # feature components
+    settings/ reports/ chat/ memory/ soul/ schedules/ curator/ # feature components
   lib/
     types.ts           # domain model (single source of truth)
     store.ts           # React context + actions + localStorage persistence
     seed.ts            # synthetic world (3 campaigns, ~52 candidates, …)
     mock-ai.ts         # deterministic parse/source/outreach/classify/report
+    api/               # server-side helpers (Hermes proxy auth, integrations)
+    email-oauth.ts     # Gmail / Microsoft OAuth token exchange + refresh
+    fleet.ts           # seat orchestration, rate limits, health
+    linkedin-policy.ts # guardrails that block automation/scraping prompts
+    providers.ts       # structured provider logging
     scoring.ts metrics.ts rules.ts integrations.ts utils.ts
+  supabase/migrations/ # Supabase schema (live mode)
+  tests/               # static security audit and validation tests
   styles/globals.css   # design tokens + base styles
 ```
 

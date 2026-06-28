@@ -96,7 +96,7 @@ export function AllocationResultView({ result }: { result: AllocationResult | nu
           <EmptyState
             icon={<Users className="h-6 w-6" />}
             title="Nothing allocated"
-            description="No candidate cleared the guardrails — see skipped and deferred below for why."
+            description="No candidate cleared the guardrails. See skipped and deferred below for why."
           />
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">

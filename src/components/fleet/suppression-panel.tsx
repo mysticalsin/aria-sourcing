@@ -84,7 +84,7 @@ export function SuppressionPanel() {
             <CardTitle>Suppression list</CardTitle>
             <p className="mt-1 text-sm text-ink-soft">
               The global source of truth for who the fleet must never reach. Every allocation checks
-              this list before assigning a contact — it also powers cross-seat de-dupe.
+              this list before assigning a contact. It also powers cross-seat de-dupe.
             </p>
           </div>
         </div>

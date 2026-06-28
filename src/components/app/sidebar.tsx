@@ -19,7 +19,7 @@ export function Sidebar() {
   const sections = ["Operate", "System"] as const;
 
   return (
-    <aside className="hidden lg:flex w-[260px] shrink-0 flex-col border-r border-line bg-paper/80 backdrop-blur sticky top-0 h-screen">
+    <aside className="hidden lg:flex w-[260px] shrink-0 flex-col sidebar-glass sticky top-0 h-screen">
       <div className="px-5 py-5">
         <Link href="/" className="inline-flex rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric">
           <HermesWordmark />
@@ -42,11 +42,11 @@ export function Sidebar() {
                       className={cn(
                         "group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold transition-all",
                         active
-                          ? "bg-ink text-paper shadow-soft"
-                          : "text-ink-soft hover:bg-ink/5 hover:text-ink",
+                          ? "bg-gradient-to-r from-electric/90 to-violet/80 text-white shadow-soft"
+                          : "text-ink-soft hover:bg-violet/[0.06] hover:text-ink",
                       )}
                     >
-                      <Icon className={cn("h-[18px] w-[18px]", active ? "text-tangerine" : "text-muted group-hover:text-ink")} />
+                      <Icon className={cn("h-[18px] w-[18px]", active ? "text-mantu-yellow" : "text-muted group-hover:text-ink")} />
                       <span className="flex-1">{item.label}</span>
                     </Link>
                   </li>
@@ -57,8 +57,8 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="border-t border-line p-4 space-y-3">
-        <div className="flex items-center justify-between rounded-2xl bg-ink/[0.04] px-3 py-2.5">
+      <div className="border-t border-violet/10 p-4 space-y-3">
+        <div className="flex items-center justify-between rounded-2xl bg-violet/[0.06] border border-violet/[0.08] px-3 py-2.5">
           <span className="flex items-center gap-2 text-xs font-semibold text-ink-soft">
             <Activity className="h-4 w-4 text-success" />
             Integrations

@@ -32,6 +32,20 @@ export function maskPhone(): string {
 }
 
 /**
+ * Redact PII inside a free-text email/reply body for display when confidentiality
+ * mode is on and the operator has not revealed it. Best-effort: email addresses,
+ * links, and phone-like number runs become tokens. Over-redaction is acceptable
+ * here (privacy-first) — the operator can reveal, which is audited.
+ */
+export function maskEmailBody(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
+    .replace(/https?:\/\/[^\s)]+/g, "[link]")
+    .replace(/\+?\d[\d().\-\s]{6,}\d/g, "[phone]");
+}
+
+/**
  * Return a candidate with PII masked unless revealed. `reveal` should be true
  * only inside an active outreach/approval context (purpose limitation) or after
  * an explicit, audited operator reveal.

@@ -1,7 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getServerSupabase } from "@/lib/supabase/server";
-import { supabaseEnabled } from "@/lib/supabase/config";
+import { z } from "zod";
+import { getServerSupabase, requireAdmin } from "@/lib/supabase/server";
+import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { last4Of, validateApiKeyFormat } from "@/lib/providers";
+import { validateBody } from "@/lib/api/validate";
+import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
+import { safeLog } from "@/lib/log-redact";
+
+const ApiKeyCreateSchema = z.object({
+  name: z.string().min(1).max(120),
+  provider: z.string().min(1).max(80),
+  value: z.string().min(1).max(1000),
+});
 
 /**
  * API key storage. Secrets are written to the `api_keys` table (admin-only via
@@ -9,24 +19,33 @@ import { last4Of, validateApiKeyFormat } from "@/lib/providers";
  * server-side — the response carries only metadata (last4) for the session.
  */
 export async function POST(req: NextRequest) {
-  if (Number(req.headers.get("content-length") ?? 0) > 8000) {
-    return NextResponse.json({ ok: false, error: "Payload too large." }, { status: 413 });
+  // Fail closed in production (middleware doesn't cover /api/*).
+  const prodBlock = prodFailClosed();
+  if (prodBlock) return prodBlock;
+
+  // Auth-first: resolve and authorise the caller BEFORE parsing the body or
+  // touching the secret. Demo mode (no Supabase) is intentionally open and only
+  // echoes metadata.
+  let supabase: ReturnType<typeof getServerSupabase> = null;
+  let createdBy = "unknown";
+  if (supabaseEnabled) {
+    supabase = getServerSupabase();
+    if (!supabase) return NextResponse.json({ ok: false, error: "No Supabase client." }, { status: 500 });
+    const admin = await requireAdmin(supabase);
+    if (!admin.ok) return admin.response;
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    createdBy = user?.email ?? "unknown";
   }
-  let payload: Record<string, unknown>;
-  try {
-    payload = await req.json();
-  } catch {
-    return NextResponse.json({ ok: false, error: "Invalid JSON." }, { status: 400 });
-  }
-  const name = String(payload.name ?? "").trim();
-  const provider = String(payload.provider ?? "").trim();
-  const value = String(payload.value ?? "");
-  if (!name || !provider || !value) {
-    return NextResponse.json({ ok: false, error: "name, provider and value are required." }, { status: 400 });
-  }
-  if (value.length > 1000) {
-    return NextResponse.json({ ok: false, error: "Key too long." }, { status: 413 });
-  }
+
+  // Throttle: persisting secrets is sensitive — blunt abuse / accidental loops.
+  const limit = checkRateLimit(rateLimitKey(req, "keys-create"), { windowMs: 60_000, max: 20 });
+  if (!limit.ok) return tooManyRequests(limit.retryAfterSec);
+
+  const validated = await validateBody(req, ApiKeyCreateSchema, { maxBytes: 8_000 });
+  if (!validated.ok) return validated.response;
+  const { name, provider, value } = validated.data;
 
   const last4 = last4Of(value);
   const fmt = validateApiKeyFormat(provider, value);
@@ -41,31 +60,48 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const supabase = getServerSupabase();
   if (!supabase) return NextResponse.json({ ok: false, error: "No Supabase client." }, { status: 500 });
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "Not authenticated." }, { status: 401 });
-
   const { data: wid } = await supabase.rpc("ensure_workspace");
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("api_keys")
-    .insert({ workspace_id: wid, name, provider, secret: value, last4, created_by: user.email });
+    .insert({ workspace_id: wid, name, provider, secret: value, last4, created_by: createdBy })
+    .select();
   if (error) {
-    // RLS rejects non-admins.
-    return NextResponse.json({ ok: false, error: `Save failed (admins only): ${error.message}` }, { status: 403 });
+    // Log the DB detail server-side (redacted); never echo Postgres/RLS internals to the client.
+    safeLog("api_keys insert error", { message: error.message, code: error.code });
+    return NextResponse.json({ ok: false, error: "Couldn't save the key — try again." }, { status: 403 });
   }
-  return NextResponse.json({ ok: true, last4, formatValid: fmt.valid });
+  return NextResponse.json({ ok: true, id: data[0].id, last4, formatValid: fmt.valid });
 }
 
 export async function DELETE(req: NextRequest) {
+  // Fail closed in production (middleware doesn't cover /api/*).
+  const prodBlock = prodFailClosed();
+  if (prodBlock) return prodBlock;
+
+  // Auth-first: authorise BEFORE validating input or returning anything.
+  let supabase: ReturnType<typeof getServerSupabase> = null;
+  if (supabaseEnabled) {
+    supabase = getServerSupabase();
+    if (!supabase) return NextResponse.json({ ok: false, error: "No Supabase client." }, { status: 500 });
+    const admin = await requireAdmin(supabase);
+    if (!admin.ok) return admin.response;
+  }
+
+  const limit = checkRateLimit(rateLimitKey(req, "keys-delete"), { windowMs: 60_000, max: 20 });
+  if (!limit.ok) return tooManyRequests(limit.retryAfterSec);
+
   const id = new URL(req.url).searchParams.get("id");
-  if (!id) return NextResponse.json({ ok: false, error: "Missing id." }, { status: 400 });
+  if (!id || !z.string().uuid().safeParse(id).success) {
+    return NextResponse.json({ ok: false, error: "Missing or invalid id." }, { status: 400 });
+  }
+
   if (!supabaseEnabled) return NextResponse.json({ ok: true, demo: true });
-  const supabase = getServerSupabase();
   if (!supabase) return NextResponse.json({ ok: false, error: "No Supabase client." }, { status: 500 });
   const { error } = await supabase.from("api_keys").delete().eq("id", id);
-  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 403 });
+  if (error) {
+    safeLog("api_keys delete error", { message: error.message, code: error.code });
+    return NextResponse.json({ ok: false, error: "Couldn't delete the key — try again." }, { status: 403 });
+  }
   return NextResponse.json({ ok: true });
 }

@@ -1,0 +1,106 @@
+"use client";
+
+import * as React from "react";
+import { Card, CardContent, Eyebrow, Badge, SkeletonCard } from "@/components/ui";
+import { useSettings } from "@/lib/store";
+import { hermesRuntimeAvailable } from "@/lib/ai/hermes-runtime";
+import { Server } from "lucide-react";
+
+interface CuratorState {
+  enabled?: boolean;
+  paused?: boolean;
+  interval_hours?: number | null;
+  last_run_at?: string | null;
+  min_idle_hours?: number | null;
+  stale_after_days?: number | null;
+  archive_after_days?: number | null;
+}
+
+export function CuratorStatus() {
+  const settings = useSettings();
+  const live = hermesRuntimeAvailable(settings);
+  const [state, setState] = React.useState<CuratorState | null>(null);
+  const [loading, setLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!live) {
+      setState(null);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    const params = new URLSearchParams();
+    params.set("upstreamPath", "api/curator");
+    if (settings.hermesApiKeyId) params.set("hermesApiKeyId", settings.hermesApiKeyId);
+    fetch(`/api/hermes/proxy?${params.toString()}`).then(async (res) => {
+      if (cancelled) return;
+      setLoading(false);
+      if (!res.ok) return;
+      const data = (await res.json().catch(() => null)) as CuratorState | null;
+      if (data) setState(data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [live, settings]);
+
+  if (!live) {
+    return (
+      <Card>
+        <CardContent className="space-y-2">
+          <Eyebrow className="flex items-center gap-1.5">
+            <Server className="h-3 w-3" aria-hidden /> Curator
+          </Eyebrow>
+          <p className="text-xs text-muted">
+            Enable Aria live mode in Settings to inspect the curator state.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between">
+          <Eyebrow className="flex items-center gap-1.5">
+            <Server className="h-3 w-3" aria-hidden /> Curator
+          </Eyebrow>
+          <Badge tone="success" size="sm" dot>Live</Badge>
+        </div>
+        {loading ? (
+          <SkeletonCard />
+        ) : !state ? (
+          <p className="text-xs text-muted">Could not load curator state.</p>
+        ) : (
+          <dl className="grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <dt className="text-muted">Enabled</dt>
+              <dd className="font-medium text-ink">{state.enabled ? "Yes" : "No"}</dd>
+            </div>
+            <div>
+              <dt className="text-muted">Paused</dt>
+              <dd className="font-medium text-ink">{state.paused ? "Yes" : "No"}</dd>
+            </div>
+            <div>
+              <dt className="text-muted">Interval</dt>
+              <dd className="font-medium text-ink">{state.interval_hours ?? "—"} h</dd>
+            </div>
+            <div>
+              <dt className="text-muted">Last run</dt>
+              <dd className="font-medium text-ink">{state.last_run_at ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-muted">Stale after</dt>
+              <dd className="font-medium text-ink">{state.stale_after_days ?? "—"} d</dd>
+            </div>
+            <div>
+              <dt className="text-muted">Archive after</dt>
+              <dd className="font-medium text-ink">{state.archive_after_days ?? "—"} d</dd>
+            </div>
+          </dl>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

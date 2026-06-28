@@ -31,7 +31,7 @@ export function HeroPanel() {
         </h1>
 
         <p className="mt-5 max-w-xl text-base leading-relaxed text-ink-soft sm:text-lg">
-          Hermes turns a single job request into booked interviews — it parses the brief,
+          Aria turns a single job request into booked interviews: it parses the brief,
           sources matched talent, drafts outreach for your approval, and books the room.
           Human approval, machine speed.
         </p>
@@ -61,7 +61,7 @@ export function HeroPanel() {
 
         <p className="mt-6 inline-flex items-center gap-1.5 text-xs font-medium text-muted">
           <Sparkles className="h-3.5 w-3.5 text-electric" aria-hidden />
-          Every send is a dry-run until you approve it — nothing leaves without sign-off.
+          Every send is a dry-run until you approve it. Nothing leaves without sign-off.
         </p>
       </div>
     </section>

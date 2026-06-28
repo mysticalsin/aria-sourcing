@@ -4,9 +4,11 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { ConfirmProvider } from "@/components/ui";
 import { Sidebar } from "./sidebar";
 import { TopBar } from "./topbar";
 import { MOBILE_NAV } from "./nav";
+import { Onboarding } from "./onboarding";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -15,7 +17,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (pathname.startsWith("/login")) return <>{children}</>;
 
   return (
-    <div className="flex min-h-screen bg-paper">
+    <ConfirmProvider>
+    <div className="flex min-h-screen">
       <a href="#main-content" className="skip-link">
         Skip to content
       </a>
@@ -29,7 +32,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Mobile bottom nav */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-line bg-paper/95 px-2 py-2 backdrop-blur lg:hidden"
+        className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-violet/10 bg-paper/85 px-2 py-2 backdrop-blur-xl lg:hidden"
         aria-label="Primary mobile"
       >
         {MOBILE_NAV.map((item) => {
@@ -51,6 +54,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           );
         })}
       </nav>
+
+      {/* First-run guided tour (shows once per browser) */}
+      <Onboarding />
     </div>
+    </ConfirmProvider>
   );
 }

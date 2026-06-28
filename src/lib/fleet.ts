@@ -153,7 +153,11 @@ export function suppressionMatch(
 
 export function ledgerHasActiveContact(ledger: OutreachLedgerEntry[], candidateId: string): boolean {
   return ledger.some(
-    (e) => e.candidateId === candidateId && (e.status === "claimed" || e.status === "sent"),
+    (e) =>
+      e.candidateId === candidateId &&
+      // "pending_manual" (LinkedIn assisted-manual) is an active claim too —
+      // omitting it lets the same candidate be allocated and contacted twice.
+      (e.status === "claimed" || e.status === "sent" || e.status === "pending_manual"),
   );
 }
 
@@ -167,7 +171,7 @@ export function recentlyContacted(
   return ledger.some(
     (e) =>
       e.candidateId === candidateId &&
-      (e.status === "sent" || e.status === "claimed") &&
+      (e.status === "sent" || e.status === "claimed" || e.status === "pending_manual") &&
       new Date(e.at).getTime() >= cutoff,
   );
 }

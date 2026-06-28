@@ -25,9 +25,20 @@ yarn-error.log*
 .env
 .env*.local
 
+# backups (may contain cleartext secrets / candidate PII)
+backups/
+
 # typescript
 *.tsbuildinfo
 
 # test artifacts
 .playwright-mcp/
 *.jpeg
+
+# local 3D verification screenshots
+/floor3d-*.png
+/office-*.png
+
+# Scratch: port-reference clones + working plans
+ultraplan/
+tmp/

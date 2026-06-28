@@ -127,7 +127,9 @@ export function globalKpis(state: HermesState): GlobalKpis {
     awaitingBooking,
     avgMatchScore: avg,
     timeToFirstInterviewHours: ttfi.length ? round(ttfi.reduce((a, b) => a + b, 0) / ttfi.length) : null,
-    pendingApprovals: state.outreach.filter((m) => m.status === "Needs Approval").length,
+    pendingApprovals: state.outreach.filter(
+      (m) => m.status === "Needs Approval" || m.status === "Pending Manual Send",
+    ).length,
     hotReplies: state.replies.filter(
       (r) => !r.handled && ["INTERESTED", "QUALIFIED_INTEREST"].includes(r.intent),
     ).length,

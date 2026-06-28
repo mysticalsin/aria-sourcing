@@ -138,7 +138,7 @@ export default function FleetPage() {
           : "No new candidates this run",
       description:
         result.sourced > 0
-          ? `${lines.join(" · ")}${result.skipped ? ` — ${result.skipped} skipped` : ""}`
+          ? `${lines.join(" · ")}${result.skipped ? ` (${result.skipped} skipped)` : ""}`
           : "Every active agent is at capacity or this scope is exhausted. Add an agent or widen the campaign scope.",
       variant: result.sourced > 0 ? "success" : "warning",
     });
@@ -205,7 +205,7 @@ export default function FleetPage() {
       <PageHeader
         eyebrow="Agent fleet"
         title="An army of agents. One set of rules."
-        description="Coordinated multi-agent sourcing and outreach that never double-contacts a candidate and stays inside every account's official API limits — no scraping, no LinkedIn automation."
+        description="Coordinated multi-agent sourcing and outreach that never double-contacts a candidate and stays inside every account's official API limits. No scraping, no LinkedIn automation."
         actions={
           <Button
             variant="secondary"
@@ -242,7 +242,7 @@ export default function FleetPage() {
                   <Eyebrow>Live guardrails</Eyebrow>
                   <CardTitle>Speed without the footguns</CardTitle>
                   <p className="mt-1 text-sm text-muted">
-                    Every agent runs under the same enforced rules. These are not suggestions — the
+                    Every agent runs under the same enforced rules. These are not suggestions: the
                     fleet physically cannot step outside them.
                   </p>
                 </div>
@@ -410,7 +410,7 @@ export default function FleetPage() {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         title="Add an agent"
-        description="Each agent is one official mailbox under enforced limits. It starts in dry-run mode — connect a real account and verify the domain to go live."
+        description="Each agent is one official mailbox under enforced limits. It starts in dry-run mode. Connect a real account and verify the domain to go live."
         footer={
           <>
             <Button variant="ghost" size="md" onClick={() => setAddOpen(false)}>
@@ -434,7 +434,7 @@ export default function FleetPage() {
               id={nameId}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Atlas — Backend Outreach"
+              placeholder="e.g. Atlas: Backend Outreach"
               autoComplete="off"
             />
           </Field>
@@ -481,7 +481,7 @@ export default function FleetPage() {
           </div>
 
           <p className="rounded-2xl bg-canvas/60 p-3 text-xs leading-relaxed text-muted">
-            Official provider APIs only — no scraping, no LinkedIn automation. The new seat joins the
+            Official provider APIs only. No scraping, no LinkedIn automation. The new seat joins the
             shared suppression ledger immediately, so it can never re-contact someone another agent
             already reached.
           </p>

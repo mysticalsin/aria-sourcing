@@ -1,7 +1,42 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
+import { createHash } from "crypto";
 import { sendViaProvider, type SendRequest } from "@/lib/providers";
-import { getServerSupabase } from "@/lib/supabase/server";
-import { supabaseEnabled } from "@/lib/supabase/config";
+import { sendViaGmailApi, sendViaMicrosoftGraph } from "@/lib/email-oauth";
+import { domainVerified } from "@/lib/domain-verification";
+import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
+import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
+import { validateBody } from "@/lib/api/validate";
+import type { EmailConnection, Role } from "@/lib/types";
+import { can } from "@/lib/rbac";
+import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
+import { safeLog } from "@/lib/log-redact";
+
+/**
+ * Strip CR/LF and other control characters from a value bound for an email header
+ * (the Subject). The Gmail/Graph MIME builder joins headers with `\r\n`, so an
+ * unescaped newline in the subject would inject arbitrary headers or body —
+ * classic SMTP/MIME header injection. Subjects are single-line: collapse control
+ * chars and runs of whitespace to a single space.
+ */
+function sanitizeHeader(value: string): string {
+  return value
+    .replace(/[\x00-\x1F\x7F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const OutreachSendSchema = z.object({
+  seatId: z.string().uuid().optional(),
+  messageId: z.string().min(1).max(120),
+  candidateId: z.string().min(1).max(120),
+  candidateEmail: z.string().email().max(255).optional(),
+  to: z.string().email().max(255).optional(),
+  campaignId: z.string().min(1).max(120),
+  subject: z.string().min(1).max(255),
+  body: z.string().min(1).max(50_000),
+  confirmLive: z.boolean().default(false),
+});
 
 /**
  * Outreach send endpoint — safe by construction.
@@ -18,34 +53,29 @@ import { supabaseEnabled } from "@/lib/supabase/config";
  * backend, so the route NEVER sends — it always returns dry-run.
  */
 export async function POST(req: NextRequest) {
-  // Reject oversized requests before buffering the body.
-  if (Number(req.headers.get("content-length") ?? 0) > 100_000) {
-    return NextResponse.json({ status: "error", detail: "Payload too large." }, { status: 413 });
-  }
-  let payload: Record<string, unknown>;
-  try {
-    payload = await req.json();
-  } catch {
-    return NextResponse.json({ status: "error", detail: "Invalid JSON body." }, { status: 400 });
-  }
+  // Fail closed in production (middleware doesn't cover /api/*): never serve the
+  // open demo path — which could spend provider keys unauthenticated or treat
+  // every caller as admin when Supabase env is absent.
+  const prodBlock = prodFailClosed();
+  if (prodBlock) return prodBlock;
 
-  const seatId = String(payload.seatId ?? "");
-  const candidateId = String(payload.candidateId ?? "");
-  const candidateEmail = String(payload.candidateEmail ?? payload.to ?? "");
-  const campaignId = String(payload.campaignId ?? "");
-  const subject = String(payload.subject ?? "");
-  const body = String(payload.body ?? "");
-  const confirmLive = payload.confirmLive === true;
+  // Rate limit (defence-in-depth) before any work: blunt abuse and runaway send
+  // loops on this provider-touching endpoint. Per-IP sliding window.
+  const rl = checkRateLimit(rateLimitKey(req, "outreach-send"), { windowMs: 60_000, max: 30 });
+  if (!rl.ok) return tooManyRequests(rl.retryAfterSec);
 
-  if (!subject || !body || !candidateEmail) {
-    return NextResponse.json({ status: "error", detail: "Missing required fields." }, { status: 400 });
-  }
-  if (subject.length > 255 || body.length > 50_000) {
-    return NextResponse.json({ status: "error", detail: "Subject/body exceeds length limits." }, { status: 413 });
-  }
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(candidateEmail)) {
-    return NextResponse.json({ status: "error", detail: "Invalid recipient address." }, { status: 400 });
-  }
+  const validated = await validateBody(req, OutreachSendSchema, { maxBytes: 100_000 });
+  if (!validated.ok) return validated.response;
+  const payload = validated.data;
+
+  const seatId = payload.seatId ?? "";
+  const candidateId = payload.candidateId;
+  const candidateEmail = payload.candidateEmail ?? payload.to ?? "";
+  const campaignId = payload.campaignId;
+  const body = payload.body;
+  // Strip CR/LF + control chars from the subject to prevent header/MIME injection.
+  const subject = sanitizeHeader(payload.subject);
+  const { confirmLive } = payload;
 
   // DEMO mode: no server-side guardrails → never send.
   if (!supabaseEnabled || !confirmLive) {
@@ -69,6 +99,31 @@ export async function POST(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ status: "error", detail: "Not authenticated." }, { status: 401 });
   }
+  // Authorization: a real send requires the `outreach` permission (viewers are read-only).
+  const { data: senderRole } = await supabase.rpc("current_profile_role");
+  if (!can(senderRole as Role, "outreach")) {
+    return NextResponse.json({ status: "error", detail: "Insufficient permissions." }, { status: 403 });
+  }
+
+  // Approval gate (server-side): a real send requires a recorded human approval of
+  // THIS exact message (by id + sha256 of subject+body). Without a matching
+  // approval the endpoint refuses — closing the bypass where a direct API call
+  // could send an unapproved message. Approvals are written by /api/outreach/approve.
+  const { data: approvalWid } = await supabase.rpc("current_workspace_id");
+  const approvalHash = createHash("sha256").update(`${payload.subject}\n${body}`).digest("hex");
+  const { data: approval } = await supabase
+    .from("outreach_approvals")
+    .select("body_hash")
+    .eq("workspace_id", approvalWid)
+    .eq("message_id", payload.messageId)
+    .maybeSingle();
+  if (!approval || approval.body_hash !== approvalHash) {
+    return NextResponse.json(
+      { status: "error", detail: "Message not human-approved (or changed since approval)." },
+      { status: 403 },
+    );
+  }
+
   if (!seatId) {
     return NextResponse.json({ status: "error", detail: "Missing seatId." }, { status: 400 });
   }
@@ -89,6 +144,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "dry-run", detail: "Seat not live / domain unverified — dry-run." });
   }
 
+  // 3b. Server-side suppression / do-not-contact gate — enforced BEFORE any send
+  // and before the atomic claim. `suppression_list` (RLS-scoped to the caller's
+  // workspace) is the only DNC source reachable server-side; candidate-level
+  // compliance flags live solely in the client store and cannot be enforced here.
+  // claim_and_record re-checks this atomically; this is explicit defence-in-depth.
+  const emailLc = candidateEmail.toLowerCase();
+  const domainLc = emailLc.split("@")[1] ?? "";
+  const { data: suppRows, error: suppErr } = await supabase
+    .from("suppression_list")
+    .select("type, value, expires_at")
+    .in("type", ["email", "domain"])
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`);
+  if (suppErr) {
+    safeLog("suppression_list check error", { message: suppErr.message, code: suppErr.code });
+    return NextResponse.json({ status: "error", detail: "Suppression check failed." }, { status: 500 });
+  }
+  const suppressed = (suppRows ?? []).some((s) => {
+    const v = String(s.value).toLowerCase();
+    return (s.type === "email" && v === emailLc) || (s.type === "domain" && domainLc !== "" && v === domainLc);
+  });
+  if (suppressed) {
+    return NextResponse.json({ status: "skipped", detail: "Recipient is on the suppression / do-not-contact list." });
+  }
+
   // 4. Atomic guardrail claim in Postgres (suppression + window + cap + de-dupe).
   const { data: claim, error: claimErr } = await supabase.rpc("claim_and_record", {
     p_candidate_id: candidateId,
@@ -98,7 +177,8 @@ export async function POST(req: NextRequest) {
     p_channel: "Email",
   });
   if (claimErr) {
-    return NextResponse.json({ status: "error", detail: `Guardrail check failed: ${claimErr.message}` }, { status: 500 });
+    safeLog("claim_and_record error", { message: claimErr.message, code: claimErr.code });
+    return NextResponse.json({ status: "error", detail: "Guardrail check failed." }, { status: 500 });
   }
   const claimObj = claim as { allowed?: boolean; reason?: string; ledger_id?: string } | null;
   if (claimObj?.allowed !== true) {
@@ -112,15 +192,73 @@ export async function POST(req: NextRequest) {
     if (ledgerId) await supabase.from("outreach_ledger").update({ status, reason }).eq("id", ledgerId);
   };
 
-  // 5. Send — From is the SEAT's verified mailbox, never the request body.
+  // 5. Domain verification — live sends require a domain with sender policy records.
+  if (!seat.domain_verified) {
+    const verified = await domainVerified(seat.operator_email.split("@")[1] ?? "");
+    if (verified) {
+      await supabase.from("agent_seats").update({ domain_verified: true }).eq("id", seatId);
+      seat.domain_verified = true;
+    }
+  }
+  if (!seat.domain_verified) {
+    return NextResponse.json({ status: "dry-run", detail: "Domain not verified (SPF/DKIM/DMARC) — dry-run." });
+  }
+
+  // 6. Send — From is the SEAT's verified mailbox, never the request body.
   try {
-    const outcome = await sendViaProvider({
-      provider: seat.provider as SendRequest["provider"],
-      from: seat.operator_email,
-      to: candidateEmail,
-      subject,
-      body,
-    });
+    let outcome: { status: "sent" | "dry-run" | "error"; provider: string; detail: string; id?: string };
+
+    if (seat.provider === "Gmail API" || seat.provider === "Microsoft Graph") {
+      const svc = getServiceSupabase();
+      // Defence-in-depth workspace check: resolve the caller's workspace_id via
+      // the RPC (same pattern as hermes/chat resolveVaultSecret), then verify
+      // the service-role result matches — RLS alone is not sufficient when the
+      // service role bypasses row-level policies.
+      const { data: wid } = await supabase.rpc("current_workspace_id");
+      const { data: conn } = await svc
+        ?.from("email_connections")
+        .select("id, access_token, refresh_token, expires_at, scope, account_email, workspace_id")
+        .eq("seat_id", seatId)
+        .single() ?? { data: null };
+      if (!conn || conn.workspace_id !== wid) {
+        return NextResponse.json({ status: "dry-run", detail: `${seat.provider} mailbox not connected — dry-run.` });
+      }
+      const connection: EmailConnection = {
+        id: conn.id,
+        seatId,
+        provider: seat.provider,
+        accountEmail: conn.account_email,
+        accessToken: conn.access_token,
+        refreshToken: conn.refresh_token,
+        expiresAt: conn.expires_at,
+        scope: conn.scope,
+        connectedAt: "",
+        updatedAt: "",
+      };
+
+      if (seat.provider === "Gmail API") {
+        outcome = await sendViaGmailApi({ from: seat.operator_email, to: candidateEmail, subject, body }, connection);
+      } else {
+        outcome = await sendViaMicrosoftGraph({ from: seat.operator_email, to: candidateEmail, subject, body }, connection);
+      }
+
+      // Persist refreshed token if it changed.
+      if (svc && (conn.access_token !== connection.accessToken || conn.expires_at !== connection.expiresAt)) {
+        await svc
+          .from("email_connections")
+          .update({ access_token: connection.accessToken, expires_at: connection.expiresAt, updated_at: new Date().toISOString() })
+          .eq("id", connection.id);
+      }
+    } else {
+      outcome = await sendViaProvider({
+        provider: seat.provider as SendRequest["provider"],
+        from: seat.operator_email,
+        to: candidateEmail,
+        subject,
+        body,
+      });
+    }
+
     if (outcome.status === "sent") await reconcile("sent", null);
     else await reconcile("skipped", outcome.detail); // dry-run / provider error → free the slot
     return NextResponse.json(outcome);

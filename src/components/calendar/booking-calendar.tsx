@@ -55,6 +55,20 @@ function LinkButton({
   children: React.ReactNode;
   tone: "teams" | "cal";
 }) {
+  // No real meeting URL until a live calendar integration is connected — show a
+  // clear disabled state instead of a fabricated link that 404s.
+  if (!href) {
+    return (
+      <span
+        aria-disabled="true"
+        title="Meeting link is generated once the calendar integration goes live"
+        className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-full bg-ink/[0.04] px-3 text-xs font-semibold text-muted ring-1 ring-inset ring-line"
+      >
+        {icon}
+        {children} · on live send
+      </span>
+    );
+  }
   return (
     <a
       href={href}

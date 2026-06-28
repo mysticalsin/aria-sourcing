@@ -8,6 +8,7 @@ import {
   Drawer,
   Eyebrow,
   useToast,
+  useConfirm,
 } from "@/components/ui";
 import { ScoreGauge } from "@/components/charts/score-gauge";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
@@ -87,6 +88,7 @@ export function CandidateDrawer({
 }) {
   const actions = useActions();
   const { toast } = useToast();
+  const confirm = useConfirm();
   // Always read the LIVE record so in-drawer mutations (stage, compliance, history)
   // reflect immediately instead of showing the click-time snapshot.
   const liveCandidate = useCandidate(candidate?.id);
@@ -127,7 +129,7 @@ export function CandidateDrawer({
     if (msg) {
       toast({
         title: "Outreach drafted",
-        description: `${c.name} — review in the outreach queue.`,
+        description: `${c.name}: review in the outreach queue.`,
         variant: "success",
       });
     } else {
@@ -158,20 +160,20 @@ export function CandidateDrawer({
     });
   };
 
-  const handleAnonymize = () => {
-    if (!window.confirm(`Anonymize ${c.name}? This redacts their PII and cannot be undone.`)) return;
+  const handleAnonymize = async () => {
+    if (!(await confirm({ title: `Anonymize ${c.name}?`, description: "This redacts their PII and cannot be undone.", confirmLabel: "Anonymize", danger: true }))) return;
     actions.anonymizeCandidate(c.id);
     toast({ title: "Candidate anonymized", description: "PII has been redacted.", variant: "success" });
   };
 
-  const handleSuppress = () => {
-    if (!window.confirm(`Suppress contact with ${c.name}? They will be excluded from outreach.`)) return;
+  const handleSuppress = async () => {
+    if (!(await confirm({ title: `Suppress contact with ${c.name}?`, description: "They will be excluded from outreach.", confirmLabel: "Suppress", danger: true }))) return;
     actions.suppressCandidate(c.id);
     toast({ title: "Contact suppressed", description: `${c.name} moved out of active outreach.`, variant: "warning" });
   };
 
-  const handleDoNotContact = () => {
-    if (!window.confirm(`Mark ${c.name} as do-not-contact? This is a hard exclusion.`)) return;
+  const handleDoNotContact = async () => {
+    if (!(await confirm({ title: `Mark ${c.name} as do-not-contact?`, description: "This is a hard exclusion.", confirmLabel: "Mark do-not-contact", danger: true }))) return;
     actions.markDoNotContact(c.id);
     toast({ title: "Marked do-not-contact", description: `${c.name} added to the exclusion list.`, variant: "warning" });
   };
@@ -265,7 +267,7 @@ export function CandidateDrawer({
               {masked && (
                 <span className="inline-flex items-center gap-1 text-xs font-semibold text-violet">
                   <Lock className="h-3.5 w-3.5" aria-hidden />
-                  PII minimized — confidential
+                  PII minimized (confidential)
                 </span>
               )}
             </div>

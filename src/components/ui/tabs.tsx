@@ -46,7 +46,7 @@ export function Tabs({
       role="tablist"
       aria-label="Workspace sections"
       className={cn(
-        "flex gap-1 overflow-x-auto no-scrollbar rounded-full bg-ink/[0.04] p-1",
+        "flex gap-1 overflow-x-auto no-scrollbar rounded-full bg-violet/[0.05] p-1 ring-1 ring-inset ring-violet/[0.08]",
         className,
       )}
     >
@@ -67,7 +67,9 @@ export function Tabs({
             onKeyDown={(e) => onKeyDown(e, i)}
             className={cn(
               "inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-all",
-              active ? "bg-surface text-ink shadow-soft" : "text-muted hover:text-ink",
+              active
+                ? "bg-surface/90 text-ink shadow-soft ring-1 ring-inset ring-violet/10"
+                : "text-muted hover:text-ink hover:bg-violet/[0.05]",
             )}
           >
             {item.icon}
@@ -102,14 +104,14 @@ export function TabPanel({
   className?: string;
   children: React.ReactNode;
 }) {
-  if (!active) return null;
   return (
     <div
       role="tabpanel"
       id={`${idBase}-panel-${value}`}
       aria-labelledby={`${idBase}-${value}`}
-      tabIndex={0}
-      className={cn("animate-fade-in focus:outline-none", className)}
+      tabIndex={active ? 0 : -1}
+      hidden={!active}
+      className={cn(active && "animate-fade-in", "focus:outline-none", className)}
     >
       {children}
     </div>

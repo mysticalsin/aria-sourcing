@@ -19,15 +19,25 @@ import {
   newOutreachMessage,
   nextInterviewer,
   sourceCandidates,
+  type GeneratedOutreach,
   type ReplyClassification,
   type SourceResult,
 } from "./mock-ai";
-import { buildSeedState, defaultGuardrails, STATE_VERSION } from "./seed";
+import {
+  buildOutreachPrompt,
+  hermesAvailable,
+  hermesGenerate,
+  parseHermesOutreach,
+} from "./ai/hermes";
+import { resolveAiProvider } from "./ai/provider";
+import { buildSeedState, defaultGuardrails, defaultLlmProviders, defaultSavedModels, defaultSettings, defaultTools, STATE_VERSION } from "./seed";
 import { computeCampaignMetrics, globalKpis, type GlobalKpis } from "./metrics";
 import {
   checkOutreachApproval,
   type ApprovalResult,
 } from "./rules";
+import { checkLinkedInPolicy, linkedInGuardrailPrompt } from "./linkedin-policy";
+import { matchCandidateByEmail } from "./email-match";
 import {
   testConnection,
   type ConnectionTestResult,
@@ -39,7 +49,14 @@ import type {
   AllocationResult,
   ApiKey,
   ApiKeyProvider,
+  ChatMessage,
+  ChatThread,
+  CronJob,
   GuardrailRule,
+  LlmProvider,
+  MemoryEntry,
+  MemoryKind,
+  ModelTask,
   Role,
   Booking,
   Campaign,
@@ -49,17 +66,21 @@ import type {
   HermesState,
   IntegrationStatus,
   JobAnalysis,
+  LedgerStatus,
   OutreachChannel,
   OutreachLedgerEntry,
   OutreachMessage,
+  OutreachStatus,
   OutreachTone,
   ReplyIntent,
+  SavedModel,
   ScoringWeights,
   SkillKey,
   SkillUpdate,
   SourcePlatform,
   SuppressionEntry,
   SystemSettings,
+  ToolId,
   WeeklyReport,
 } from "./types";
 import { genId, isoDaysBefore } from "./utils";
@@ -106,9 +127,21 @@ export interface HermesActions {
     channel?: OutreachChannel,
     seatId?: string,
   ) => OutreachMessage | null;
+  /** Live variant: drafts via the Aria runtime when live mode is configured,
+   *  else falls back to the deterministic mock. Commits exactly like
+   *  generateOutreachFor — status is still set by the human approval gate. */
+  generateOutreachLive: (
+    candidateId: string,
+    tone?: OutreachTone,
+    channel?: OutreachChannel,
+    seatId?: string,
+  ) => Promise<OutreachMessage | null>;
   updateOutreach: (messageId: string, patch: Partial<OutreachMessage>) => void;
   regenerateOutreach: (messageId: string, tone?: OutreachTone) => void;
   approveOutreach: (messageId: string) => ApprovalResult;
+  confirmManualSend: (messageId: string) => { ok: boolean; error?: string };
+  /** The deliberate gated send for a live-approved email — calls the server send route. */
+  sendApprovedOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string }>;
   rejectOutreach: (messageId: string) => void;
 
   // replies
@@ -116,7 +149,11 @@ export interface HermesActions {
     text: string;
     candidateId?: string;
     campaignId?: string;
-  }) => { reply: ClassifiedReply; classification: ReplyClassification };
+    fromAddress?: string;
+    messageId?: string;
+    inboxThreadId?: string;
+    externalReceivedAt?: string;
+  }) => Promise<{ reply: ClassifiedReply; classification: ReplyClassification }>;
   markReplyHandled: (replyId: string) => void;
   applyReplyAction: (replyId: string) => void;
 
@@ -158,6 +195,7 @@ export interface HermesActions {
   updateSeat: (id: string, patch: Partial<AgentSeat>) => void;
   setSeatStatus: (id: string, status: AgentSeat["status"]) => void;
   connectSeatAccount: (id: string, account: string) => void;
+  disconnectSeatAccount: (id: string) => void;
   toggleSeatLive: (id: string) => { ok: boolean; reason: string };
   addSuppression: (entry: {
     type: SuppressionEntry["type"];
@@ -176,7 +214,7 @@ export interface HermesActions {
   // skills — learning loop
   runLearning: () => SkillUpdate[];
   acceptSkillLearning: (key: SkillKey) => void;
-  updateSkillContent: (key: SkillKey, content: string) => void;
+  updateSkillContent: (key: SkillKey, content: string) => { ok: boolean; error?: string };
 
   // confidentiality
   recordPiiReveal: (candidateId: string) => void;
@@ -198,9 +236,50 @@ export interface HermesActions {
   removeGuardrailRule: (id: string) => void;
   askAria: (instruction: string) => { reply: string };
 
+  // LLM providers
+  addProvider: (p: Omit<LlmProvider, "id">) => LlmProvider;
+  updateProvider: (id: string, patch: Partial<LlmProvider>) => void;
+  removeProvider: (id: string) => void;
+  setDefaultProvider: (id: string) => void;
+
+  // Saved models
+  addModel: (m: Omit<SavedModel, "id">) => SavedModel;
+  updateModel: (id: string, patch: Partial<SavedModel>) => void;
+  removeModel: (id: string) => void;
+  setModelDefaultForTask: (id: string, task: ModelTask) => void;
+
+  // Tools
+  toggleTool: (toolId: ToolId) => void;
+
+  // Per-agent LLM assignment
+  assignAgentProvider: (seatId: string, providerId: string) => void;
+  assignAgentModel: (seatId: string, modelId: string) => void;
+  assignAgentTools: (seatId: string, toolIds: ToolId[]) => void;
+
   // misc
   logActivity: (a: Omit<Activity, "id" | "createdAt"> & { createdAt?: string }) => void;
   resetDemo: () => void;
+
+  // chat
+  createChatThread: (seatId: string) => ChatThread;
+  deleteChatThread: (id: string) => void;
+  appendChatMessage: (threadId: string, msg: ChatMessage) => void;
+  updateChatMessage: (threadId: string, msgId: string, patch: Partial<ChatMessage>) => void;
+  sendChat: (threadId: string, text: string) => Promise<void>;
+  /** Abort an in-flight sendChat for the given thread (call on unmount / thread delete). */
+  cancelChat: (threadId: string) => void;
+
+  // memory
+  addMemory: (seatId: string, kind: MemoryKind, content: string) => MemoryEntry;
+  updateMemory: (id: string, patch: Partial<Pick<MemoryEntry, "kind" | "content" | "pinned">>) => void;
+  removeMemory: (id: string) => void;
+  togglePinMemory: (id: string) => void;
+
+  // schedules
+  addSchedule: (job: Omit<CronJob, "id" | "createdAt" | "lastRunAt">) => CronJob;
+  updateSchedule: (id: string, patch: Partial<Omit<CronJob, "id" | "createdAt">>) => void;
+  removeSchedule: (id: string) => void;
+  toggleSchedule: (id: string) => void;
 }
 
 interface HermesContextValue {
@@ -215,6 +294,61 @@ const HermesContext = createContext<HermesContextValue | null>(null);
    Provider
    ========================================================================== */
 
+/** Fill in any fields added in recent STATE_VERSIONs without wiping existing data. */
+export function migrateToCurrentVersion(parsed: HermesState): HermesState {
+  const defs = defaultSettings();
+  return {
+    ...parsed,
+    version: STATE_VERSION,
+    // D-2: fill every required root field that may be absent in older blobs.
+    campaigns: parsed.campaigns ?? [],
+    candidates: parsed.candidates ?? [],
+    outreach: parsed.outreach ?? [],
+    replies: parsed.replies ?? [],
+    bookings: parsed.bookings ?? [],
+    reports: parsed.reports ?? [],
+    integrations: parsed.integrations ?? [],
+    activities: parsed.activities ?? [],
+    activeCampaignId: parsed.activeCampaignId ?? null,
+    apiKeys: parsed.apiKeys ?? [],
+    currentRole: parsed.currentRole ?? "admin",
+    skills: parsed.skills ?? [],
+    suppression: parsed.suppression ?? [],
+    ledger: parsed.ledger ?? [],
+    // Inbound-email dedup ledger — initialise on upgrade so re-sync after an
+    // upgrade can't double-create replies for already-ingested messages.
+    ingestedMessageIds: parsed.ingestedMessageIds ?? [],
+    // STATE_VERSION 9 — per-agent chat threads.
+    chats: parsed.chats ?? [],
+    // STATE_VERSION 10 — per-agent memory.
+    memory: parsed.memory ?? [],
+    // STATE_VERSION 11 — schedules.
+    schedules: parsed.schedules ?? [],
+    settings: {
+      ...parsed.settings,
+      llmProviders: parsed.settings.llmProviders ?? defs.llmProviders,
+      savedModels: parsed.settings.savedModels ?? defs.savedModels,
+      tools: parsed.settings.tools ?? defs.tools,
+      defaultModels: parsed.settings.defaultModels ?? defs.defaultModels,
+      // STATE_VERSION 8 — live Aria runtime config.
+      hermesLiveMode: parsed.settings.hermesLiveMode ?? defs.hermesLiveMode,
+      hermesApiUrl: parsed.settings.hermesApiUrl ?? defs.hermesApiUrl,
+      hermesApiKeyId: parsed.settings.hermesApiKeyId ?? defs.hermesApiKeyId,
+      // D-2: guardrails and notifications fills.
+      guardrails: parsed.settings.guardrails ?? defs.guardrails,
+      notifications: parsed.settings.notifications ?? defs.notifications,
+      // STATE_VERSION 11 — Aria management API URL.
+      hermesWebUrl: parsed.settings.hermesWebUrl ?? defs.hermesWebUrl ?? "",
+    },
+    seats: (parsed.seats ?? []).map((seat) => ({
+      ...seat,
+      providerId: seat.providerId,
+      modelId: seat.modelId,
+      toolIds: seat.toolIds,
+    })),
+  };
+}
+
 function loadState(): HermesState {
   if (typeof window === "undefined") return buildSeedState();
   try {
@@ -222,6 +356,10 @@ function loadState(): HermesState {
     if (raw) {
       const parsed = JSON.parse(raw) as HermesState;
       if (parsed && parsed.version === STATE_VERSION) return parsed;
+      // Migrate from a prior version rather than wiping all data.
+      if (parsed && typeof parsed.version === "number" && parsed.version >= STATE_VERSION - 3) {
+        return migrateToCurrentVersion(parsed);
+      }
     }
   } catch {
     /* corrupt → reseed */
@@ -234,8 +372,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   const stateRef = useRef<HermesState | null>(null);
   stateRef.current = state;
   const workspaceIdRef = useRef<string>("");
+  // Optimistic-concurrency token: the workspace_state.updated_at we last loaded/saved.
+  const remoteUpdatedAtRef = useRef<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextPersist = useRef(false);
+  // F-5: AbortControllers for in-flight sendChat requests, keyed by threadId.
+  const chatAbortControllers = useRef<Map<string, AbortController>>(new Map());
 
   // Hydrate once on mount.
   // LIVE mode → load the shared workspace document from Supabase (seed if empty).
@@ -248,13 +390,19 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         if (cancelled) return;
         if (remote) {
           workspaceIdRef.current = remote.workspaceId;
+          remoteUpdatedAtRef.current = remote.updatedAt;
           if (remote.state) {
             skipNextPersist.current = true; // don't re-save what we just loaded
-            setState(remote.state);
+            // D-1: run migration when the persisted version is behind current.
+            setState(remote.state.version < STATE_VERSION ? migrateToCurrentVersion(remote.state) : remote.state);
           } else {
             const seeded = buildSeedState();
             setState(seeded);
-            if (remote.workspaceId) void saveRemoteState(remote.workspaceId, seeded);
+            if (remote.workspaceId) {
+              void saveRemoteState(remote.workspaceId, seeded, null).then((res) => {
+                if (res.ok && res.updatedAt) remoteUpdatedAtRef.current = res.updatedAt;
+              });
+            }
           }
           return;
         }
@@ -278,7 +426,37 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const wid = workspaceIdRef.current;
       const snapshot = state;
       saveTimer.current = setTimeout(() => {
-        if (wid) void saveRemoteState(wid, snapshot);
+        if (!wid) return;
+        void (async () => {
+          const res = await saveRemoteState(wid, snapshot, remoteUpdatedAtRef.current);
+          if (res.ok) {
+            if (res.updatedAt) remoteUpdatedAtRef.current = res.updatedAt;
+          } else if (res.conflict && res.latest) {
+            // A teammate saved since we loaded. Reload their latest so nothing is
+            // silently clobbered; record it in the activity log so the operator
+            // knows their last unsaved edit was dropped and can reapply it.
+            remoteUpdatedAtRef.current = res.latest.updatedAt;
+            const latestState = res.latest.state;
+            if (latestState) {
+              skipNextPersist.current = true;
+              const migrated =
+                latestState.version < STATE_VERSION ? migrateToCurrentVersion(latestState) : latestState;
+              const notice: Activity = {
+                id: genId("act"),
+                type: "system",
+                title: "Workspace reloaded from your team",
+                notes:
+                  "A teammate saved a change at the same moment, so the latest shared version was loaded. Reapply your last edit if it is missing.",
+                outcome: "Reloaded",
+                campaignId: null,
+                linkedEntityType: null,
+                linkedEntityId: null,
+                createdAt: new Date().toISOString(),
+              };
+              setState({ ...migrated, activities: [notice, ...migrated.activities].slice(0, 300) });
+            }
+          }
+        })();
       }, 600);
     } else {
       try {
@@ -500,6 +678,122 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit, current],
   );
 
+  // Live outreach drafting. When live mode is configured, ask the Aria runtime
+  // to compose the subject+body; on ANY failure (live mode off, runtime
+  // unavailable, request error, or an unparseable reply) it falls back to the
+  // exact same mock used by generateOutreachFor. The committed message's status
+  // is still decided by the human approval gate — never auto-sent.
+  const generateOutreachLive = useCallback(
+    async (candidateId: string, tone?: OutreachTone, channel: OutreachChannel = "Email", seatId?: string) => {
+      const s = current();
+      const candidate = s.candidates.find((c) => c.id === candidateId);
+      const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
+      if (!candidate || !campaign) return null;
+      const finalTone = tone ?? effectiveTone(s.skills);
+      const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
+      const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
+      const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
+
+      // Mock is the canonical fallback (and the source of personalization evidence).
+      const mockGen = generateOutreach(candidate, campaign, finalTone, channel, 1, voice, lang);
+
+      // Resolve cloud provider config (seat override → workspace defaults).
+      const aiCfg = resolveAiProvider(s.settings, "outreach", {
+        providerId: seat?.providerId,
+        modelId: seat?.modelId,
+      });
+
+      // Layer 1: attempt live when a cloud provider is configured OR hermes live mode is on.
+      let gen: GeneratedOutreach = mockGen;
+      let live = false;
+      if (aiCfg || (s.settings.hermesLiveMode && hermesAvailable(s.settings))) {
+        const basePrompt = buildOutreachPrompt({
+          candidateName: candidate.name,
+          candidateTitle: candidate.currentTitle,
+          candidateCompany: candidate.currentCompany,
+          techStack: candidate.techStack,
+          recentActivity: candidate.recentActivity,
+          yearsExperience: candidate.yearsExperience,
+          roleTitle: campaign.jobAnalysis.title,
+          locationType: campaign.jobAnalysis.locationType,
+          regions: campaign.jobAnalysis.regions,
+          requiredSkills: campaign.jobAnalysis.requiredSkills,
+          tone: finalTone,
+          channel,
+          language: lang,
+          persona: voice?.persona,
+          signature: voice?.signature,
+        });
+        // F-2: prepend ariaPrompt when set so it shapes the live generation.
+        const ariaPrompt = s.settings.guardrails?.ariaPrompt;
+        const guardrails = [ariaPrompt, linkedInGuardrailPrompt()].filter(Boolean).join("\n\n");
+        const prompt = guardrails ? `${guardrails}\n\n${basePrompt}` : basePrompt;
+
+        // Build input: cloud path when aiCfg resolved, hermes path otherwise.
+        let outreachGenInput: Parameters<typeof hermesGenerate>[0];
+        if (aiCfg) {
+          outreachGenInput = {
+            task: "outreach",
+            prompt,
+            provider: aiCfg.provider,
+            model: aiCfg.model,
+            apiKeyId: aiCfg.apiKeyId,
+          };
+        } else {
+          // F-7: resolve the configured model for outreach (seat override → task default).
+          const outreachModelId = seat?.modelId ?? s.settings.defaultModels?.outreach;
+          outreachGenInput = {
+            task: "outreach",
+            prompt,
+            hermesApiUrl: s.settings.hermesApiUrl,
+            hermesApiKeyId: s.settings.hermesApiKeyId,
+          };
+          if (outreachModelId) {
+            const modelName = (s.settings.savedModels ?? []).find((m) => m.id === outreachModelId)?.modelName;
+            if (modelName) outreachGenInput.model = modelName;
+          }
+        }
+
+        // Layer 2: a non-ok result keeps the mock draft.
+        const result = await hermesGenerate(outreachGenInput);
+        if (result.ok && result.text) {
+          // Layer 3: an unparseable reply keeps the mock draft.
+          const parsed = parseHermesOutreach(result.text, channel, mockGen.subject);
+          if (parsed) {
+            gen = {
+              subject: parsed.subject,
+              body: parsed.body,
+              // Reuse the mock's evidence — same shape, deterministic, audit-friendly.
+              personalizationEvidence: mockGen.personalizationEvidence,
+              channel,
+            };
+            live = true;
+          }
+        }
+      }
+
+      const msg = newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1);
+      commit((prev) => {
+        const next = { ...prev, outreach: [msg, ...prev.outreach] };
+        return withActivity(
+          next,
+          makeActivity({
+            type: "outreach",
+            title: `Outreach drafted — ${candidate.name}`,
+            notes: `${finalTone} ${channel} message ${live ? "drafted by Aria (live)" : "generated"} with ${gen.personalizationEvidence.length} personalization points.`,
+            outcome: msg.status,
+            campaignId: campaign.id,
+            linkedEntityType: "candidate",
+            linkedEntityId: candidate.id,
+          }),
+          campaign.id,
+        );
+      });
+      return msg;
+    },
+    [commit, current],
+  );
+
   const updateOutreach = useCallback(
     (messageId: string, patch: Partial<OutreachMessage>) =>
       commit((s) => ({
@@ -556,18 +850,150 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       if (!result.allowed) return result;
 
+      // Persist the human approval server-side so /api/outreach/send can verify it
+      // (never-auto-send is enforced server-side, not only in the browser). Recording
+      // an approval never sends anything. Fire-and-forget: if it fails, a later send
+      // simply refuses with 403 — fail-safe.
+      if (supabaseEnabled) {
+        void fetch("/api/outreach/approve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messageId, subject: msg.subject, body: msg.body }),
+        }).catch(() => {});
+      }
+
       const now = new Date().toISOString();
+      // LinkedIn is assisted-manual: the system drafts the message but a human must
+      // copy/paste it on the candidate's profile. Keep it out of the sent counter
+      // and ledger until the operator confirms the manual send.
+      const isLive = !s.settings.dryRunMode;
+      const isLinkedInManual = msg.channel === "LinkedIn" && isLive;
+      const isEmailLive = msg.channel === "Email" && isLive;
+      // HYBRID send model: in LIVE mode an approval records approval and holds the
+      // de-dupe slot (ledger 'claimed') but NEVER sends — an explicit sendApprovedOutreach()
+      // actually delivers and only then flips to 'sent'. In dry-run/demo we simulate the
+      // send so the showcase stays alive. This is the never-auto-send guarantee.
+      const isPendingSend = isLinkedInManual || isEmailLive;
+      const finalStatus: OutreachStatus = isLinkedInManual
+        ? "Pending Manual Send"
+        : isEmailLive
+          ? "Approved"
+          : "Scheduled";
+      const finalLedgerStatus: LedgerStatus = isLinkedInManual
+        ? "pending_manual"
+        : isEmailLive
+          ? "claimed"
+          : "sent";
       commit((prev) => {
         const outreach = prev.outreach.map((m) =>
           m.id === messageId
             ? {
                 ...m,
-                status: "Scheduled" as const,
+                status: finalStatus,
                 approvedBy: prev.settings.operatorName,
-                scheduledFor: now,
-                sentAt: now,
+                scheduledFor: isPendingSend ? null : now,
+                sentAt: isPendingSend ? null : now,
                 dryRun: prev.settings.dryRunMode,
               }
+            : m,
+        );
+        const candidates = prev.candidates.map((c) =>
+          c.id === candidate.id
+            ? {
+                ...c,
+                stage: isPendingSend
+                  ? c.stage
+                  : (["Sourced"].includes(c.stage) ? "Contacted" : c.stage) as CandidateStage,
+                // Always stamp the contact time — a LinkedIn manual contact still
+                // claims the candidate, so the de-dupe re-contact window (fleet.ts,
+                // rules.ts) must see it to block a second touch.
+                lastContactedAt: now,
+                outreachHistory: [
+                  { messageId, channel: msg.channel, subject: msg.subject, status: finalStatus, at: now },
+                  ...c.outreachHistory,
+                ],
+              }
+            : c,
+        );
+        // Write the authoritative ledger record so the fleet de-dupe sees this
+        // manual contact too (single source of truth → no double-contact).
+        const ledgerEntry: OutreachLedgerEntry = {
+          id: genId("led"),
+          candidateId: candidate.id,
+          candidateEmail: candidate.email,
+          seatId: "",
+          campaignId: campaign.id,
+          channel: msg.channel,
+          status: finalLedgerStatus,
+          reason: isLinkedInManual
+            ? "Awaiting operator manual send on LinkedIn."
+            : isEmailLive
+              ? "Approved, awaiting an explicit send."
+              : null,
+          at: now,
+        };
+        let next: HermesState = { ...prev, outreach, candidates, ledger: [ledgerEntry, ...prev.ledger] };
+        // bump today counter then recompute (counter preserved by computeCampaignMetrics)
+        next = {
+          ...next,
+          campaigns: next.campaigns.map((c) =>
+            c.id === campaign.id
+              ? {
+                  ...c,
+                  metrics: {
+                    ...c.metrics,
+                    emailsSentToday: c.metrics.emailsSentToday + (msg.channel === "Email" && !isPendingSend ? 1 : 0),
+                    linkedinSentToday: c.metrics.linkedinSentToday + (isLinkedInManual ? 0 : msg.channel === "LinkedIn" ? 1 : 0),
+                  },
+                }
+              : c,
+          ),
+        };
+        next = recomputeMetrics(next, campaign.id);
+        next = withActivity(
+          next,
+          makeActivity({
+            type: "outreach",
+            title: `Outreach approved — ${candidate.name}`,
+            notes: isLinkedInManual
+              ? "LinkedIn message approved, pending manual copy/paste by operator."
+              : isEmailLive
+                ? "Email approved, awaiting an explicit send."
+                : `${msg.channel} message approved. ${prev.settings.dryRunMode ? "Dry-run, nothing sent." : "Live send."}`,
+            outcome: isLinkedInManual
+              ? "Pending Manual Send"
+              : isEmailLive
+                ? "Approved, pending send"
+                : "Approved / Dry-run scheduled",
+            campaignId: campaign.id,
+            linkedEntityType: "candidate",
+            linkedEntityId: candidate.id,
+          }),
+          campaign.id,
+        );
+        return next;
+      });
+      return result;
+    },
+    [commit, current],
+  );
+
+  const confirmManualSend = useCallback(
+    (messageId: string): { ok: boolean; error?: string } => {
+      const s = current();
+      const msg = s.outreach.find((m) => m.id === messageId);
+      if (!msg) return { ok: false, error: "Message not found." };
+      if (msg.channel !== "LinkedIn") return { ok: false, error: "Manual send confirmation is only for LinkedIn messages." };
+      if (msg.status !== "Pending Manual Send") return { ok: false, error: "Message is not awaiting manual send." };
+      const candidate = s.candidates.find((c) => c.id === msg.candidateId);
+      const campaign = s.campaigns.find((c) => c.id === msg.campaignId);
+      if (!candidate || !campaign) return { ok: false, error: "Linked candidate/campaign missing." };
+
+      const now = new Date().toISOString();
+      commit((prev) => {
+        const outreach = prev.outreach.map((m) =>
+          m.id === messageId
+            ? { ...m, status: "Scheduled" as const, scheduledFor: now, sentAt: now }
             : m,
         );
         const candidates = prev.candidates.map((c) =>
@@ -583,8 +1009,6 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               }
             : c,
         );
-        // Write the authoritative ledger record so the fleet de-dupe sees this
-        // manual contact too (single source of truth → no double-contact).
         const ledgerEntry: OutreachLedgerEntry = {
           id: genId("led"),
           candidateId: candidate.id,
@@ -593,11 +1017,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           campaignId: campaign.id,
           channel: msg.channel,
           status: "sent",
-          reason: null,
+          reason: "Operator confirmed manual send on LinkedIn.",
           at: now,
         };
         let next: HermesState = { ...prev, outreach, candidates, ledger: [ledgerEntry, ...prev.ledger] };
-        // bump today counter then recompute (counter preserved by computeCampaignMetrics)
         next = {
           ...next,
           campaigns: next.campaigns.map((c) =>
@@ -606,8 +1029,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                   ...c,
                   metrics: {
                     ...c.metrics,
-                    emailsSentToday: c.metrics.emailsSentToday + (msg.channel === "Email" ? 1 : 0),
-                    linkedinSentToday: c.metrics.linkedinSentToday + (msg.channel === "LinkedIn" ? 1 : 0),
+                    linkedinSentToday: c.metrics.linkedinSentToday + 1,
                   },
                 }
               : c,
@@ -618,9 +1040,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "outreach",
-            title: `Outreach approved — ${candidate.name}`,
-            notes: `${msg.channel} message approved. ${prev.settings.dryRunMode ? "Dry-run — nothing sent." : "Live send."}`,
-            outcome: "Approved / Dry-run scheduled",
+            title: `LinkedIn message sent — ${candidate.name}`,
+            notes: "Operator confirmed the message was manually copied and sent on LinkedIn.",
+            outcome: "Scheduled",
             campaignId: campaign.id,
             linkedEntityType: "candidate",
             linkedEntityId: candidate.id,
@@ -629,7 +1051,103 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
         return next;
       });
-      return result;
+      return { ok: true };
+    },
+    [commit, current],
+  );
+
+  // The deliberate, gated SEND for a live-approved email. Calls the server send route
+  // (which re-verifies auth, the live seat, domain, suppression, AND the recorded human
+  // approval) and only flips the local record to sent on a real "sent" response. This is
+  // the one place a real email leaves; it never fires automatically.
+  const sendApprovedOutreach = useCallback(
+    async (messageId: string): Promise<{ ok: boolean; error?: string }> => {
+      const s = current();
+      const msg = s.outreach.find((m) => m.id === messageId);
+      if (!msg) return { ok: false, error: "Message not found." };
+      if (msg.status !== "Approved") return { ok: false, error: "Only an approved message can be sent." };
+      const candidate = s.candidates.find((c) => c.id === msg.candidateId);
+      if (!candidate) return { ok: false, error: "Linked candidate missing." };
+      const seat = s.seats.find((x) => x.status === "active" && x.mode === "live" && x.domainVerified);
+      if (!supabaseEnabled || !seat) {
+        return { ok: false, error: "No live, domain-verified mailbox connected. Connect one in the Fleet first." };
+      }
+      let out: { status?: string; detail?: string };
+      try {
+        const res = await fetch("/api/outreach/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messageId,
+            seatId: seat.id,
+            candidateId: candidate.id,
+            candidateEmail: candidate.email,
+            campaignId: msg.campaignId,
+            subject: msg.subject,
+            body: msg.body,
+            confirmLive: true,
+          }),
+        });
+        out = (await res.json().catch(() => ({ status: "error", detail: "Bad response from the send endpoint." }))) as {
+          status?: string;
+          detail?: string;
+        };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : "Send failed." };
+      }
+      if (out.status !== "sent") {
+        return { ok: false, error: out.detail ?? `Send did not complete (${out.status ?? "unknown"}).` };
+      }
+      // Delivered. Flip the local record to sent (Scheduled + sentAt) and count it.
+      const now = new Date().toISOString();
+      commit((prev) => {
+        const outreach = prev.outreach.map((m) =>
+          m.id === messageId ? { ...m, status: "Scheduled" as OutreachStatus, sentAt: now } : m,
+        );
+        const ledger = prev.ledger.map((l) =>
+          l.candidateId === candidate.id && l.status === "claimed"
+            ? { ...l, status: "sent" as LedgerStatus, seatId: seat.id, at: now }
+            : l,
+        );
+        const candidates = prev.candidates.map((c) =>
+          c.id === candidate.id
+            ? {
+                ...c,
+                stage: (["Sourced"].includes(c.stage) ? "Contacted" : c.stage) as CandidateStage,
+                lastContactedAt: now,
+                outreachHistory: [
+                  { messageId, channel: msg.channel, subject: msg.subject, status: "Scheduled" as OutreachStatus, at: now },
+                  ...c.outreachHistory,
+                ],
+              }
+            : c,
+        );
+        let next: HermesState = { ...prev, outreach, ledger, candidates };
+        next = {
+          ...next,
+          campaigns: next.campaigns.map((c) =>
+            c.id === msg.campaignId
+              ? { ...c, metrics: { ...c.metrics, emailsSentToday: c.metrics.emailsSentToday + 1 } }
+              : c,
+          ),
+        };
+        next = recomputeMetrics(next, msg.campaignId);
+        next = withActivity(
+          next,
+          makeActivity({
+            type: "outreach",
+            title: `Email sent to ${candidate.name}`,
+            notes: `Live email delivered via ${seat.operatorEmail}.`,
+            outcome: "Sent",
+            campaignId: msg.campaignId,
+            linkedEntityType: "candidate",
+            linkedEntityId: candidate.id,
+          }),
+          msg.campaignId,
+        );
+        return next;
+      });
+      return { ok: true };
     },
     [commit, current],
   );
@@ -663,13 +1181,112 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const classifyAndStoreReply = useCallback(
-    (input: { text: string; candidateId?: string; campaignId?: string }) => {
+    async (input: {
+      text: string;
+      candidateId?: string;
+      campaignId?: string;
+      fromAddress?: string;
+      messageId?: string;
+      inboxThreadId?: string;
+      externalReceivedAt?: string;
+    }) => {
       const s = current();
-      const candidate = input.candidateId
-        ? s.candidates.find((c) => c.id === input.candidateId)
+
+      // DEDUP: never create a second reply for a messageId already ingested. Return the
+      // existing reply, or a benign stand-in if it was since deleted — so a re-sync of the
+      // same message can't double-ingest or re-append the id. (Always returns here.)
+      if (input.messageId && s.ingestedMessageIds?.includes(input.messageId)) {
+        const existing = s.replies.find((r) => r.messageId === input.messageId);
+        const c = existing
+          ? {
+              intent: existing.intent,
+              confidence: existing.confidence,
+              reasoning: existing.reasoning,
+              suggestedAction: existing.suggestedAction,
+              draftResponse: existing.draftResponse,
+            }
+          : classifyReply(input.text);
+        return {
+          reply: existing ?? {
+            id: genId("rep"),
+            candidateId: "",
+            campaignId: input.campaignId ?? "",
+            channel: "Email",
+            body: input.text,
+            intent: c.intent,
+            confidence: c.confidence,
+            reasoning: c.reasoning,
+            suggestedAction: c.suggestedAction,
+            draftResponse: c.draftResponse,
+            handled: true,
+            slaDueAt: null,
+            receivedAt: input.externalReceivedAt ?? new Date().toISOString(),
+            messageId: input.messageId,
+          },
+          classification: c,
+        };
+      }
+
+      // AUTO-MATCH: resolve candidate from fromAddress when no candidateId given. Prefer a
+      // candidate in the active campaign, else any candidate with that email (the address is
+      // the identity). Avoids both missing a match in another campaign and arbitrarily
+      // linking across campaigns when there is no active campaign.
+      let resolvedCandidateId = input.candidateId;
+      if (!resolvedCandidateId && input.fromAddress) {
+        const scopeId = input.campaignId ?? s.activeCampaignId ?? undefined;
+        const matched =
+          matchCandidateByEmail(s.candidates, input.fromAddress, scopeId) ??
+          matchCandidateByEmail(s.candidates, input.fromAddress);
+        if (matched) resolvedCandidateId = matched.id;
+      }
+
+      const candidate = resolvedCandidateId
+        ? s.candidates.find((c) => c.id === resolvedCandidateId)
         : undefined;
       const campaignId = input.campaignId ?? candidate?.campaignId ?? s.activeCampaignId ?? s.campaigns[0]?.id ?? "";
-      const classification = classifyReply(input.text, candidate?.name);
+
+      // F-1: route through live provider when available; mock is the fallback on any failure.
+      let classification = classifyReply(input.text, candidate?.name);
+      const classifyAiCfg = resolveAiProvider(s.settings, "classification", { providerId: undefined });
+      if (classifyAiCfg || hermesAvailable(s.settings)) {
+        try {
+          const classifyInput: Parameters<typeof hermesGenerate>[0] = classifyAiCfg
+            ? {
+                task: "classify",
+                prompt: input.text,
+                provider: classifyAiCfg.provider,
+                model: classifyAiCfg.model,
+                apiKeyId: classifyAiCfg.apiKeyId,
+              }
+            : {
+                task: "classify",
+                prompt: input.text,
+                hermesApiUrl: s.settings.hermesApiUrl,
+                hermesApiKeyId: s.settings.hermesApiKeyId,
+              };
+          const result = await hermesGenerate(classifyInput);
+          if (result.ok && result.text) {
+            const parsed = JSON.parse(result.text) as ReplyClassification;
+            if (
+              parsed.intent &&
+              typeof parsed.confidence === "number" &&
+              parsed.reasoning
+            ) {
+              classification = {
+                ...classification,
+                intent: parsed.intent,
+                confidence: parsed.confidence,
+                reasoning: parsed.reasoning,
+                ...(parsed.suggestedAction ? { suggestedAction: parsed.suggestedAction } : {}),
+                ...(parsed.draftResponse ? { draftResponse: parsed.draftResponse } : {}),
+              };
+            }
+          }
+        } catch {
+          // fall back to mock classification already assigned above
+        }
+      }
+      const receivedAt = input.externalReceivedAt ?? new Date().toISOString();
       const reply: ClassifiedReply = {
         id: genId("rep"),
         candidateId: candidate?.id ?? "",
@@ -684,12 +1301,27 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         handled: false,
         slaDueAt:
           ["INTERESTED", "QUALIFIED_INTEREST"].includes(classification.intent)
-            ? new Date(Date.now() + s.settings.slaMinutes * 60000).toISOString()
+            ? new Date(new Date(receivedAt).getTime() + s.settings.slaMinutes * 60000).toISOString()
             : null,
-        receivedAt: new Date().toISOString(),
+        receivedAt,
+        ...(input.fromAddress ? { fromAddress: input.fromAddress } : {}),
+        ...(input.messageId ? { messageId: input.messageId } : {}),
+        ...(input.inboxThreadId ? { inboxThreadId: input.inboxThreadId } : {}),
+        ...(input.externalReceivedAt ? { externalReceivedAt: input.externalReceivedAt } : {}),
       };
       commit((prev) => {
-        let next: HermesState = { ...prev, replies: [reply, ...prev.replies] };
+        let next: HermesState = {
+          ...prev,
+          replies: [reply, ...prev.replies],
+          // Bound the dedup ledger (most recent 5000) and never store a duplicate id, so it
+          // can't grow unbounded or double-count on re-sync.
+          ingestedMessageIds: input.messageId
+            ? [
+                ...(prev.ingestedMessageIds ?? []).filter((id) => id !== input.messageId),
+                input.messageId,
+              ].slice(-5000)
+            : prev.ingestedMessageIds ?? [],
+        };
         if (candidate) {
           next = {
             ...next,
@@ -1128,7 +1760,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         persona:
           partial.persona ??
           "Warm, concise, peer-to-peer recruiter. Lead with the candidate's recent work, one genuine specific compliment, soft 15-minute ask. No corporate fluff, no AI slop.",
-        signature: partial.signature ?? "— Hermes (dry-run on behalf of the hiring team)",
+        signature: partial.signature ?? "",
         language: partial.language ?? current().settings.defaultLanguage,
         connectedAccount: "",
         createdAt: now,
@@ -1138,7 +1770,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           { ...s, seats: [...s.seats, seat] },
           makeActivity({
             type: "system",
-            title: `Hermes agent added — ${seat.name}`,
+            title: `Aria agent added — ${seat.name}`,
             notes: `${seat.provider} seat created in mock mode.`,
             outcome: "Seat created",
             campaignId: null,
@@ -1170,7 +1802,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const idx = base + i;
         return {
           id: genId("seat"),
-          name: `${opts?.namePrefix ?? "Hermes Agent"} ${String(idx + 1).padStart(3, "0")}`,
+          name: `${opts?.namePrefix ?? "Aria Agent"} ${String(idx + 1).padStart(3, "0")}`,
           operatorEmail: `agent${idx + 1}@hermes.example`,
           provider: providers[idx % providers.length],
           status: "active",
@@ -1187,7 +1819,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           lastSendAt: null,
           health: { sentTotal: 0, bounces: 0, complaints: 0, bounceRate: 0, complaintRate: 0 },
           persona: "Warm, concise, peer-to-peer recruiter. Lead with the candidate's recent work, one genuine compliment, soft 15-minute ask. No AI slop.",
-          signature: "— Hermes (dry-run on behalf of the hiring team)",
+          signature: "",
           language: opts?.language ?? s.settings.defaultLanguage,
           connectedAccount: "",
           createdAt: now,
@@ -1198,7 +1830,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           { ...prev, seats: [...prev.seats, ...newSeats] },
           makeActivity({
             type: "system",
-            title: `Deployed ${newSeats.length} Hermes agents`,
+            title: `Deployed ${newSeats.length} Aria agents`,
             notes: `Fleet now ${s.seats.length + newSeats.length}/${max} agents (mock, dry-run; each within official limits).`,
             outcome: `${newSeats.length} deployed`,
             campaignId: null,
@@ -1254,8 +1886,33 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           makeActivity({
             type: "system",
             title: `Mailbox connected — ${seat?.name ?? id}`,
-            notes: `${account} connected via official API (mock). Verify domain before live sends.`,
+            notes: `${account} connected via official API. Verify domain before live sends.`,
             outcome: "Connected",
+            campaignId: null,
+            linkedEntityType: null,
+            linkedEntityId: null,
+          }),
+          null,
+        );
+      }),
+    [commit],
+  );
+
+  const disconnectSeatAccount = useCallback(
+    (id: string) =>
+      commit((s) => {
+        const seat = s.seats.find((x) => x.id === id);
+        const next = {
+          ...s,
+          seats: s.seats.map((x) => (x.id === id ? { ...x, connectedAccount: "" } : x)),
+        };
+        return withActivity(
+          next,
+          makeActivity({
+            type: "system",
+            title: `Mailbox disconnected — ${seat?.name ?? id}`,
+            notes: "OAuth email connection removed.",
+            outcome: "Disconnected",
             campaignId: null,
             linkedEntityType: null,
             linkedEntityId: null,
@@ -1409,7 +2066,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit, current],
   );
 
-  /* ---- Fleet: parallel sourcing (multiple Hermes agents) --------------- */
+  /* ---- Fleet: parallel sourcing (multiple Aria agents) --------------- */
 
   const runFleetSourcing = useCallback(
     (opts?: { campaignId?: string; perAgent?: number }) => {
@@ -1448,7 +2105,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           makeActivity({
             type: "sourcing",
             title: `Fleet sourcing — ${added.length} candidates`,
-            notes: `${activeSeats.length} Hermes agents sourced in parallel across ${affected.size} campaign(s). ${totalSkipped} deduped.`,
+            notes: `${activeSeats.length} Aria agents sourced in parallel across ${affected.size} campaign(s). ${totalSkipped} deduped.`,
             outcome: `${added.length} added`,
             campaignId: opts?.campaignId ?? null,
             linkedEntityType: null,
@@ -1534,11 +2191,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateSkillContent = useCallback(
-    (key: SkillKey, content: string) =>
+    (key: SkillKey, content: string): { ok: boolean; error?: string } => {
+      const policy = checkLinkedInPolicy(content);
+      if (!policy.ok) {
+        return { ok: false, error: policy.reason };
+      }
       commit((s) => ({
         ...s,
         skills: s.skills.map((sk) => (sk.key === key ? { ...sk, content, updatedAt: new Date().toISOString() } : sk)),
-      })),
+      }));
+      return { ok: true };
+    },
     [commit],
   );
 
@@ -1581,7 +2244,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const json = await res.json();
         if (!json.ok) return { ok: false as const, error: json.error ?? "Save failed." };
         const key: ApiKey = {
-          id: genId("key"),
+          // D-5: use the server-assigned id so client and server agree on the key id.
+          id: json.id ?? genId("key"),
           name: input.name,
           provider: input.provider,
           last4: json.last4 ?? "••••",
@@ -1640,10 +2304,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const removeApiKey = useCallback(
     async (id: string) => {
+      // D-6: only commit the local removal when the server delete succeeded.
       try {
-        await fetch(`/api/keys?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+        const res = await fetch(`/api/keys?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+        if (!res.ok) return;
       } catch {
-        /* ignore; still drop from local state */
+        return; // network error — abort, don't remove locally
       }
       commit((prev) => ({ ...prev, apiKeys: prev.apiKeys.filter((x) => x.id !== id) }));
     },
@@ -1749,9 +2415,549 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [addGuardrailRule],
   );
 
+  /* ---- LLM providers ---------------------------------------------------- */
+
+  const addProvider = useCallback(
+    (p: Omit<LlmProvider, "id">): LlmProvider => {
+      const provider: LlmProvider = { ...p, id: genId("prov") };
+      commit((s) =>
+        withActivity(
+          { ...s, settings: { ...s.settings, llmProviders: [...(s.settings.llmProviders ?? []), provider] } },
+          makeActivity({
+            type: "system",
+            title: `LLM provider added — ${provider.label}`,
+            notes: `${provider.kind} provider configured.`,
+            outcome: "Added",
+            campaignId: null,
+            linkedEntityType: null,
+            linkedEntityId: null,
+          }),
+          null,
+        ),
+      );
+      return provider;
+    },
+    [commit],
+  );
+
+  const updateProvider = useCallback(
+    (id: string, patch: Partial<LlmProvider>) =>
+      commit((s) => ({
+        ...s,
+        settings: {
+          ...s.settings,
+          llmProviders: (s.settings.llmProviders ?? []).map((p) => (p.id === id ? { ...p, ...patch } : p)),
+        },
+      })),
+    [commit],
+  );
+
+  const removeProvider = useCallback(
+    (id: string) =>
+      commit((s) => {
+        // D-3: cascade — drop savedModels, clear seat providerId, promote new default.
+        const removedProvider = (s.settings.llmProviders ?? []).find((p) => p.id === id);
+        const remaining = (s.settings.llmProviders ?? []).filter((p) => p.id !== id);
+        let updatedProviders = remaining;
+        if (removedProvider?.isDefault) {
+          const firstEnabled = remaining.find((p) => p.enabled);
+          if (firstEnabled) {
+            updatedProviders = remaining.map((p) => ({ ...p, isDefault: p.id === firstEnabled.id }));
+          }
+        }
+        return withActivity(
+          {
+            ...s,
+            settings: {
+              ...s.settings,
+              llmProviders: updatedProviders,
+              // Drop every saved model that belonged to the removed provider.
+              savedModels: (s.settings.savedModels ?? []).filter((m) => m.providerId !== id),
+            },
+            // Clear providerId on any seat that referenced the removed provider.
+            seats: s.seats.map((seat) =>
+              seat.providerId === id ? { ...seat, providerId: undefined } : seat,
+            ),
+          },
+          makeActivity({
+            type: "system",
+            title: "LLM provider removed",
+            notes: `Provider ${id} removed.`,
+            outcome: "Removed",
+            campaignId: null,
+            linkedEntityType: null,
+            linkedEntityId: null,
+          }),
+          null,
+        );
+      }),
+    [commit],
+  );
+
+  const setDefaultProvider = useCallback(
+    (id: string) =>
+      commit((s) => ({
+        ...s,
+        settings: {
+          ...s.settings,
+          llmProviders: (s.settings.llmProviders ?? []).map((p) => ({ ...p, isDefault: p.id === id })),
+        },
+      })),
+    [commit],
+  );
+
+  /* ---- Saved models ------------------------------------------------------ */
+
+  const addModel = useCallback(
+    (m: Omit<SavedModel, "id">): SavedModel => {
+      const model: SavedModel = { ...m, id: genId("model") };
+      commit((s) =>
+        withActivity(
+          { ...s, settings: { ...s.settings, savedModels: [...(s.settings.savedModels ?? []), model] } },
+          makeActivity({
+            type: "system",
+            title: `Model added — ${model.label}`,
+            notes: `${model.modelName} registered under provider ${model.providerId}.`,
+            outcome: "Added",
+            campaignId: null,
+            linkedEntityType: null,
+            linkedEntityId: null,
+          }),
+          null,
+        ),
+      );
+      return model;
+    },
+    [commit],
+  );
+
+  const updateModel = useCallback(
+    (id: string, patch: Partial<SavedModel>) =>
+      commit((s) => ({
+        ...s,
+        settings: {
+          ...s.settings,
+          savedModels: (s.settings.savedModels ?? []).map((m) => (m.id === id ? { ...m, ...patch } : m)),
+        },
+      })),
+    [commit],
+  );
+
+  const removeModel = useCallback(
+    (id: string) =>
+      commit((s) => {
+        // D-4: cascade — prune defaultModels entries and clear seat modelId references.
+        const defaultModels = { ...(s.settings.defaultModels ?? {}) };
+        (Object.keys(defaultModels) as Array<keyof typeof defaultModels>).forEach((task) => {
+          if (defaultModels[task] === id) delete defaultModels[task];
+        });
+        return withActivity(
+          {
+            ...s,
+            settings: {
+              ...s.settings,
+              savedModels: (s.settings.savedModels ?? []).filter((m) => m.id !== id),
+              defaultModels,
+            },
+            // Null modelId on any seat that referenced the removed model.
+            seats: s.seats.map((seat) =>
+              seat.modelId === id ? { ...seat, modelId: undefined } : seat,
+            ),
+          },
+          makeActivity({
+            type: "system",
+            title: "Model removed",
+            notes: `Model ${id} removed from registry.`,
+            outcome: "Removed",
+            campaignId: null,
+            linkedEntityType: null,
+            linkedEntityId: null,
+          }),
+          null,
+        );
+      }),
+    [commit],
+  );
+
+  const setModelDefaultForTask = useCallback(
+    (id: string, task: ModelTask) =>
+      commit((s) => ({
+        ...s,
+        settings: {
+          ...s.settings,
+          // Remove this task from any other model first, then assign it here.
+          savedModels: (s.settings.savedModels ?? []).map((m) => ({
+            ...m,
+            defaultForTask: m.id === id
+              ? [...new Set([...(m.defaultForTask ?? []), task])]
+              : (m.defaultForTask ?? []).filter((t) => t !== task),
+          })),
+          defaultModels: { ...(s.settings.defaultModels ?? {}), [task]: id },
+        },
+      })),
+    [commit],
+  );
+
+  /* ---- Tools ------------------------------------------------------------- */
+
+  const toggleTool = useCallback(
+    (toolId: ToolId) =>
+      commit((s) => ({
+        ...s,
+        settings: {
+          ...s.settings,
+          tools: (s.settings.tools ?? []).map((t) => (t.id === toolId ? { ...t, enabled: !t.enabled } : t)),
+        },
+      })),
+    [commit],
+  );
+
+  /* ---- Per-agent LLM assignment ----------------------------------------- */
+
+  const assignAgentProvider = useCallback(
+    (seatId: string, providerId: string) =>
+      commit((s) => ({ ...s, seats: s.seats.map((x) => (x.id === seatId ? { ...x, providerId } : x)) })),
+    [commit],
+  );
+
+  const assignAgentModel = useCallback(
+    (seatId: string, modelId: string) =>
+      commit((s) => ({ ...s, seats: s.seats.map((x) => (x.id === seatId ? { ...x, modelId } : x)) })),
+    [commit],
+  );
+
+  const assignAgentTools = useCallback(
+    (seatId: string, toolIds: ToolId[]) =>
+      commit((s) => ({ ...s, seats: s.seats.map((x) => (x.id === seatId ? { ...x, toolIds } : x)) })),
+    [commit],
+  );
+
+  /* ---- Chat ---------------------------------------------------------------- */
+
+  const createChatThread = useCallback(
+    (seatId: string): ChatThread => {
+      const s = current();
+      const seat = s.seats.find((x) => x.id === seatId);
+      const now = new Date().toISOString();
+      const thread: ChatThread = {
+        id: genId("chat"),
+        seatId,
+        title: `Chat with ${seat?.name ?? seatId}`,
+        messages: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      commit((prev) => ({ ...prev, chats: [thread, ...prev.chats] }));
+      return thread;
+    },
+    [commit, current],
+  );
+
+  const deleteChatThread = useCallback(
+    (id: string) => commit((s) => ({ ...s, chats: s.chats.filter((t) => t.id !== id) })),
+    [commit],
+  );
+
+  const appendChatMessage = useCallback(
+    (threadId: string, msg: ChatMessage) =>
+      commit((s) => ({
+        ...s,
+        chats: s.chats.map((t) =>
+          t.id === threadId
+            ? { ...t, messages: [...t.messages, msg], updatedAt: new Date().toISOString() }
+            : t,
+        ),
+      })),
+    [commit],
+  );
+
+  const updateChatMessage = useCallback(
+    (threadId: string, msgId: string, patch: Partial<ChatMessage>) =>
+      commit((s) => ({
+        ...s,
+        chats: s.chats.map((t) =>
+          t.id === threadId
+            ? {
+                ...t,
+                messages: t.messages.map((m) => (m.id === msgId ? { ...m, ...patch } : m)),
+                updatedAt: new Date().toISOString(),
+              }
+            : t,
+        ),
+      })),
+    [commit],
+  );
+
+  const sendChat = useCallback(
+    async (threadId: string, text: string) => {
+      const s = current();
+      const thread = s.chats.find((t) => t.id === threadId);
+      if (!thread) return;
+      const seat = s.seats.find((x) => x.id === thread.seatId);
+      const now = new Date().toISOString();
+
+      // 1. Append user message immediately.
+      const userMsg: ChatMessage = { id: genId("cmsg"), role: "user", content: text, at: now };
+      appendChatMessage(threadId, userMsg);
+
+      // 2. Append a pending assistant bubble.
+      const assistantId = genId("cmsg");
+      appendChatMessage(threadId, {
+        id: assistantId,
+        role: "assistant",
+        content: "",
+        at: new Date().toISOString(),
+        pending: true,
+      });
+
+      // 3. Build conversation context (stateRef is current after appendChatMessage calls).
+      const latestThread = current().chats.find((t) => t.id === threadId);
+      const history = (latestThread?.messages ?? [])
+        .filter((m) => !m.pending && m.id !== assistantId && m.role !== "system")
+        .map((m) => `${m.role === "user" ? "User" : "Aria"}: ${m.content}`)
+        .join("\n");
+      const conversationPrompt = history ? `${history}\nAria:` : "Aria:";
+
+      // S-3 / F-2: compose ariaPrompt + seat persona into the prompt (NOT the system field).
+      const ariaPrompt = s.settings.guardrails?.ariaPrompt;
+      const personaBase = seat?.persona
+        ? `${seat.persona}\n\nAria guardrail: text generation only — never auto-send outreach.`
+        : "You are Aria, the recruiting operations brain. Be warm, concise, and practical. Text generation only — never auto-send outreach.";
+      const guardrails = [ariaPrompt, linkedInGuardrailPrompt()].filter(Boolean).join("\n\n");
+      const effectivePersona = guardrails ? `${guardrails}\n\n${personaBase}` : personaBase;
+      // Full prompt has persona as a prefix (persona in prompt, never in the system field per S-3).
+      const fullPrompt = `${effectivePersona}\n\n${conversationPrompt}`;
+
+      // F-7: resolve the configured model for the chat task.
+      const chatModelId = seat?.modelId ?? s.settings.defaultModels?.chat;
+      const chatModelName = chatModelId
+        ? (s.settings.savedModels ?? []).find((m) => m.id === chatModelId)?.modelName
+        : undefined;
+
+      // 4. Live mode: try the Aria proxy with streaming.
+      if (hermesAvailable(s.settings)) {
+        // F-5: create an AbortController so the caller can cancel mid-stream.
+        const controller = new AbortController();
+        chatAbortControllers.current.set(threadId, controller);
+        try {
+          const res = await fetch("/api/hermes/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              task: "chat",
+              // S-3: persona goes in the prompt, NOT as a separate system field.
+              prompt: fullPrompt,
+              stream: true,
+              ...(chatModelName && { model: chatModelName }),
+              hermesApiUrl: s.settings.hermesApiUrl,
+              hermesApiKeyId: s.settings.hermesApiKeyId,
+            }),
+            signal: controller.signal,
+          });
+          if (res.ok && res.body) {
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let accumulated = "";
+            let leftover = ""; // F-6: carry partial SSE lines across chunk boundaries
+            outer: while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              const rawChunk = leftover + decoder.decode(value, { stream: true });
+              const lines = rawChunk.split("\n");
+              leftover = lines.pop() ?? ""; // last element may be an incomplete line
+              for (const line of lines) {
+                if (!line.startsWith("data:")) continue;
+                const raw = line.slice(5).trim();
+                if (raw === "[DONE]") break outer;
+                try {
+                  const parsed = JSON.parse(raw) as {
+                    choices?: { delta?: { content?: string } }[];
+                  };
+                  const delta = parsed.choices?.[0]?.delta?.content ?? "";
+                  if (delta) {
+                    accumulated += delta;
+                    updateChatMessage(threadId, assistantId, { content: accumulated, pending: true });
+                  }
+                } catch {
+                  /* malformed SSE chunk — continue */
+                }
+              }
+            }
+            chatAbortControllers.current.delete(threadId);
+            updateChatMessage(threadId, assistantId, {
+              content: accumulated || "(no response)",
+              pending: false,
+            });
+            return;
+          }
+        } catch (err) {
+          chatAbortControllers.current.delete(threadId);
+          // F-5: if aborted, mark the bubble cancelled and do NOT fall through to mock.
+          if (err instanceof Error && err.name === "AbortError") {
+            updateChatMessage(threadId, assistantId, { content: "(cancelled)", pending: false });
+            return;
+          }
+          /* any other streaming failure — fall through to mock */
+        }
+      }
+
+      // 5. Mock reply (demo mode or any live failure).
+      const seatName = seat?.name ?? "Aria";
+      await new Promise<void>((r) => setTimeout(r, 350));
+      updateChatMessage(threadId, assistantId, {
+        content: `[Demo] Hi from ${seatName}! I'm your Aria agent. Ask me about campaigns, candidates, or outreach strategy. To enable live AI replies, connect the Aria runtime in Settings → Aria Agent.`,
+        pending: false,
+      });
+    },
+    [current, appendChatMessage, updateChatMessage],
+  );
+
+  // F-5: cancel an in-flight sendChat stream (call on component unmount or thread delete).
+  const cancelChat = useCallback(
+    (threadId: string) => {
+      chatAbortControllers.current.get(threadId)?.abort();
+      chatAbortControllers.current.delete(threadId);
+    },
+    [],
+  );
+
+  /* ---- Memory -------------------------------------------------------------- */
+
+  const addMemory = useCallback(
+    (seatId: string, kind: MemoryKind, content: string): MemoryEntry => {
+      const now = new Date().toISOString();
+      const entry: MemoryEntry = {
+        id: genId("mem"),
+        seatId,
+        kind,
+        content: content.trim(),
+        pinned: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+      commit((s) =>
+        withActivity(
+          { ...s, memory: [entry, ...s.memory] },
+          makeActivity({
+            type: "system",
+            title: `Memory stored — ${kind}`,
+            notes: content.trim().slice(0, 80),
+            outcome: "Stored",
+            campaignId: null,
+            linkedEntityType: null,
+            linkedEntityId: null,
+          }),
+          null,
+        ),
+      );
+      return entry;
+    },
+    [commit],
+  );
+
+  const updateMemory = useCallback(
+    (id: string, patch: Partial<Pick<MemoryEntry, "kind" | "content" | "pinned">>) =>
+      commit((s) => ({
+        ...s,
+        memory: s.memory.map((m) =>
+          m.id === id ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m,
+        ),
+      })),
+    [commit],
+  );
+
+  const removeMemory = useCallback(
+    (id: string) =>
+      commit((s) => ({ ...s, memory: s.memory.filter((m) => m.id !== id) })),
+    [commit],
+  );
+
+  const togglePinMemory = useCallback(
+    (id: string) =>
+      commit((s) => ({
+        ...s,
+        memory: s.memory.map((m) =>
+          m.id === id ? { ...m, pinned: !m.pinned, updatedAt: new Date().toISOString() } : m,
+        ),
+      })),
+    [commit],
+  );
+
+  /* ---- Schedules ----------------------------------------------------------- */
+
+  const addSchedule = useCallback(
+    (job: Omit<CronJob, "id" | "createdAt" | "lastRunAt">): CronJob => {
+      const now = new Date().toISOString();
+      const entry: CronJob = {
+        ...job,
+        id: genId("sched"),
+        lastRunAt: null,
+        createdAt: now,
+      };
+      commit((s) =>
+        withActivity(
+          { ...s, schedules: [entry, ...s.schedules] },
+          makeActivity({
+            type: "system",
+            title: `Schedule created — ${entry.name}`,
+            notes: `${entry.cadence} ${entry.task} job added.`,
+            outcome: "Created",
+            campaignId: null,
+            linkedEntityType: null,
+            linkedEntityId: null,
+          }),
+          null,
+        ),
+      );
+      return entry;
+    },
+    [commit],
+  );
+
+  const updateSchedule = useCallback(
+    (id: string, patch: Partial<Omit<CronJob, "id" | "createdAt">>) =>
+      commit((s) => ({
+        ...s,
+        schedules: s.schedules.map((j) => (j.id === id ? { ...j, ...patch } : j)),
+      })),
+    [commit],
+  );
+
+  const removeSchedule = useCallback(
+    (id: string) =>
+      commit((s) =>
+        withActivity(
+          { ...s, schedules: s.schedules.filter((j) => j.id !== id) },
+          makeActivity({
+            type: "system",
+            title: "Schedule removed",
+            notes: `Job ${id} deleted.`,
+            outcome: "Removed",
+            campaignId: null,
+            linkedEntityType: null,
+            linkedEntityId: null,
+          }),
+          null,
+        ),
+      ),
+    [commit],
+  );
+
+  const toggleSchedule = useCallback(
+    (id: string) =>
+      commit((s) => ({
+        ...s,
+        schedules: s.schedules.map((j) => (j.id === id ? { ...j, enabled: !j.enabled } : j)),
+      })),
+    [commit],
+  );
+
   const resetDemo = useCallback(() => {
     const fresh = buildSeedState();
     stateRef.current = fresh;
+    // In LIVE mode, do NOT auto-persist the reset — that would wipe the SHARED
+    // workspace for every member. Reset only the local view; reload re-hydrates.
+    if (supabaseEnabled) skipNextPersist.current = true;
     setState(fresh);
   }, []);
 
@@ -1763,9 +2969,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       regenerateQueries,
       sourceNextBatch,
       generateOutreachFor,
+      generateOutreachLive,
       updateOutreach,
       regenerateOutreach,
       approveOutreach,
+      confirmManualSend,
+      sendApprovedOutreach,
       rejectOutreach,
       classifyAndStoreReply,
       markReplyHandled,
@@ -1789,6 +2998,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       updateSeat,
       setSeatStatus,
       connectSeatAccount,
+      disconnectSeatAccount,
       toggleSeatLive,
       addSuppression,
       removeSuppression,
@@ -1807,23 +3017,56 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       toggleGuardrailRule,
       removeGuardrailRule,
       askAria,
+      addProvider,
+      updateProvider,
+      removeProvider,
+      setDefaultProvider,
+      addModel,
+      updateModel,
+      removeModel,
+      setModelDefaultForTask,
+      toggleTool,
+      assignAgentProvider,
+      assignAgentModel,
+      assignAgentTools,
       logActivity,
       resetDemo,
+      createChatThread,
+      deleteChatThread,
+      appendChatMessage,
+      updateChatMessage,
+      sendChat,
+      cancelChat,
+      addMemory,
+      updateMemory,
+      removeMemory,
+      togglePinMemory,
+      addSchedule,
+      updateSchedule,
+      removeSchedule,
+      toggleSchedule,
     }),
     [
       setActiveCampaign, createCampaignFromAnalysis, updateCampaign, regenerateQueries,
-      sourceNextBatch, generateOutreachFor, updateOutreach, regenerateOutreach,
-      approveOutreach, rejectOutreach, classifyAndStoreReply, markReplyHandled,
+      sourceNextBatch, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
+      approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, classifyAndStoreReply, markReplyHandled,
       applyReplyAction, createBookingFor, updateBooking, generateReport,
       setSkillUpdateStatus, setCandidateStage, suppressCandidate, markDoNotContact,
       unsubscribeCandidate, anonymizeCandidate, exportCandidate, updateSettings,
       updateIntegration, toggleIntegrationMode, testIntegration,
-      addSeat, deployAgents, updateSeat, setSeatStatus, connectSeatAccount, toggleSeatLive,
+      addSeat, deployAgents, updateSeat, setSeatStatus, connectSeatAccount, disconnectSeatAccount, toggleSeatLive,
       addSuppression, removeSuppression, allocateOutreach, runFleetSourcing,
       runLearning, acceptSkillLearning, updateSkillContent, recordPiiReveal,
       saveApiKey, testApiKey, removeApiKey, setCurrentRole,
       updateAriaPrompt, addGuardrailRule, toggleGuardrailRule, removeGuardrailRule, askAria,
+      addProvider, updateProvider, removeProvider, setDefaultProvider,
+      addModel, updateModel, removeModel, setModelDefaultForTask,
+      toggleTool,
+      assignAgentProvider, assignAgentModel, assignAgentTools,
       logActivity, resetDemo,
+      createChatThread, deleteChatThread, appendChatMessage, updateChatMessage, sendChat, cancelChat,
+      addMemory, updateMemory, removeMemory, togglePinMemory,
+      addSchedule, updateSchedule, removeSchedule, toggleSchedule,
     ],
   );
 
@@ -1889,7 +3132,7 @@ const EMPTY: HermesState = {
     minScoreToContact: 70,
     slaMinutes: 15,
     operatorName: "Operator",
-    systemIdentity: "Hermes Sourcing",
+    systemIdentity: "Aria Sourcing",
     rateLimits: { emailsPerDay: 15, linkedinPerDay: 20, followUpGapDays: 3, suppressionDays: 90 },
     compliance: {
       candidateRetentionDays: 180, jdRetentionDays: 365, emailContentRetentionDays: 365,
@@ -1904,6 +3147,14 @@ const EMPTY: HermesState = {
     soundEnabled: false,
     guardrails: defaultGuardrails(),
     notifications: { slack: true, telegram: false, email: true },
+    llmProviders: defaultLlmProviders(),
+    savedModels: defaultSavedModels(),
+    tools: defaultTools(),
+    defaultModels: {},
+    hermesLiveMode: false,
+    hermesApiUrl: "",
+    hermesApiKeyId: "",
+    hermesWebUrl: "",
   },
   seats: [],
   suppression: [],
@@ -1911,6 +3162,9 @@ const EMPTY: HermesState = {
   skills: [],
   apiKeys: [],
   currentRole: "admin",
+  chats: [],
+  memory: [],
+  schedules: [],
   activeCampaignId: null,
 };
 
@@ -2031,4 +3285,39 @@ export function useRole(): Role {
 
 export function useGuardrails() {
   return useStateOrEmpty().settings.guardrails;
+}
+
+export function useLlmProviders() {
+  return useStateOrEmpty().settings.llmProviders ?? [];
+}
+
+export function useSavedModels() {
+  return useStateOrEmpty().settings.savedModels ?? [];
+}
+
+export function useTools() {
+  return useStateOrEmpty().settings.tools ?? [];
+}
+
+export function useDefaultModels() {
+  return useStateOrEmpty().settings.defaultModels ?? {};
+}
+
+export function useChats() {
+  return useStateOrEmpty().chats;
+}
+
+export function useChatThread(id: string | null | undefined) {
+  const s = useStateOrEmpty();
+  return id ? s.chats.find((t) => t.id === id) : undefined;
+}
+
+export function useMemory(seatId?: string): MemoryEntry[] {
+  const s = useStateOrEmpty();
+  if (!seatId) return s.memory;
+  return s.memory.filter((m) => m.seatId === seatId);
+}
+
+export function useSchedules(): CronJob[] {
+  return useStateOrEmpty().schedules;
 }

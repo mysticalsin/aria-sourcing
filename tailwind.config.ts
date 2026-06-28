@@ -37,6 +37,10 @@ const config: Config = {
           DEFAULT: "hsl(var(--violet) / <alpha-value>)",
           soft: "hsl(var(--violet-soft) / <alpha-value>)",
         },
+        "mantu-yellow": {
+          DEFAULT: "hsl(var(--mantu-yellow) / <alpha-value>)",
+          ink: "hsl(var(--mantu-yellow-ink) / <alpha-value>)",
+        },
         success: {
           DEFAULT: "hsl(var(--success) / <alpha-value>)",
           soft: "hsl(var(--success-soft) / <alpha-value>)",
@@ -64,6 +68,8 @@ const config: Config = {
         soft: "0 1px 2px hsl(var(--ink) / 0.04), 0 8px 24px hsl(var(--ink) / 0.06)",
         lift: "0 2px 6px hsl(var(--ink) / 0.06), 0 20px 48px hsl(var(--ink) / 0.10)",
         glow: "0 0 0 1px hsl(var(--tangerine) / 0.30), 0 12px 32px hsl(var(--tangerine) / 0.20)",
+        glass: "inset 0 1px 0 hsl(var(--paper) / 0.85), 0 4px 24px hsl(var(--ink) / 0.10)",
+        "glow-purple": "0 0 0 1px hsl(var(--tangerine) / 0.25), 0 8px 24px hsl(var(--tangerine) / 0.18), 0 2px 6px hsl(var(--ink) / 0.06)",
       },
       fontSize: {
         eyebrow: ["0.6875rem", { lineHeight: "1rem", letterSpacing: "0.14em" }],

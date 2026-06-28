@@ -16,13 +16,21 @@ import {
   EmptyState,
   SkeletonCard,
   useToast,
+  useConfirm,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
+import { cn } from "@/lib/utils";
 import { IntegrationCard } from "@/components/settings/integration-card";
 import { CompliancePanel } from "@/components/settings/compliance-panel";
 import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
 import { RolesPanel } from "@/components/settings/roles-panel";
 import { GuardrailsPanel } from "@/components/settings/guardrails-panel";
+import { ProvidersPanel } from "@/components/settings/providers-panel";
+import { ModelsPanel } from "@/components/settings/models-panel";
+import { ToolsPanel } from "@/components/settings/tools-panel";
+import { HermesRuntimePanel } from "@/components/settings/hermes-runtime-panel";
+import { SchedulesPanel } from "@/components/settings/schedules-panel";
+import { HermesSchedulesPanel } from "@/components/settings/hermes-schedules-panel";
 import { useHydrated, useSettings, useIntegrations, useActions } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
 import { integrationHealthSummary } from "@/lib/integrations";
@@ -41,7 +49,36 @@ import {
   ArrowUpRight,
   Clock,
   Shuffle,
+  Cpu,
+  BrainCircuit,
+  Wrench,
+  Info,
 } from "lucide-react";
+
+/* ---- tabbed navigation -------------------------------------------------- */
+
+const SettingsTabContext = React.createContext("integrations");
+
+/** Maps each numbered section to the tab it lives under. */
+const N_TO_TAB: Record<string, string> = {
+  "04": "integrations",
+  "14": "ai", "15": "ai", "16": "ai", "17": "ai",
+  "03": "fleet", "06": "fleet", "09": "fleet", "18": "fleet",
+  "02": "compliance", "05": "compliance", "07": "compliance",
+  "08": "voice", "13": "voice",
+  "11": "access", "12": "access",
+  "01": "workspace", "10": "workspace",
+};
+
+const TABS: { id: string; label: string; icon: React.ReactNode }[] = [
+  { id: "integrations", label: "Integrations", icon: <Plug2 className="h-4 w-4" /> },
+  { id: "ai", label: "AI & Models", icon: <Cpu className="h-4 w-4" /> },
+  { id: "fleet", label: "Fleet & Automation", icon: <Clock className="h-4 w-4" /> },
+  { id: "compliance", label: "Approval & Compliance", icon: <ShieldCheck className="h-4 w-4" /> },
+  { id: "voice", label: "Brand Voice", icon: <Sparkles className="h-4 w-4" /> },
+  { id: "access", label: "Access & Keys", icon: <Lock className="h-4 w-4" /> },
+  { id: "workspace", label: "Workspace", icon: <Users className="h-4 w-4" /> },
+];
 
 /* ---- small presentational helpers --------------------------------------- */
 
@@ -58,9 +95,11 @@ function Section({
   description: string;
   children: React.ReactNode;
 }) {
+  const activeTab = React.useContext(SettingsTabContext);
+  if (N_TO_TAB[n] && N_TO_TAB[n] !== activeTab) return null;
   return (
-    <section className="grid gap-5 border-t border-line py-10 first:border-t-0 first:pt-0 lg:grid-cols-[260px_1fr] lg:gap-12">
-      <div className="flex items-start gap-4 lg:flex-col lg:gap-2">
+    <section className="grid gap-5 border-t border-line py-10 first:border-t-0 first:pt-0 lg:grid-cols-[240px_1fr] lg:gap-10">
+      <div className="flex items-start gap-3 lg:flex-col lg:gap-2">
         <SectionNumeral n={n} />
         <div className="min-w-0">
           <Eyebrow>{eyebrow}</Eyebrow>
@@ -140,6 +179,24 @@ export default function SettingsPage() {
   const integrations = useIntegrations();
   const actions = useActions();
   const { toast } = useToast();
+  const confirm = useConfirm();
+  const [activeTab, setActiveTab] = React.useState("integrations");
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const oauth = params.get("oauth");
+    const message = params.get("message");
+    if (oauth === "success") {
+      toast({ title: "Mailbox connected", description: message ?? "", variant: "success" });
+      setActiveTab("fleet");
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (oauth === "error") {
+      toast({ title: "Mailbox connection failed", description: message ?? "", variant: "error" });
+      setActiveTab("fleet");
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, [toast]);
 
   const summary = integrationHealthSummary(integrations);
 
@@ -182,13 +239,13 @@ export default function SettingsPage() {
   const bouncePct = Math.round(settings.fleet.bounceRatePauseThreshold * 1000) / 10;
   const complaintPct = Math.round(settings.fleet.complaintRatePauseThreshold * 1000) / 10;
 
-  function handleReset() {
-    if (typeof window !== "undefined" && !window.confirm("Reset all demo data and settings to factory defaults? This cannot be undone.")) {
+  async function handleReset() {
+    if (!(await confirm({ title: "Reset to factory defaults?", description: "This resets all settings and data. It cannot be undone.", confirmLabel: "Reset", danger: true }))) {
       return;
     }
     actions.resetDemo();
     toast({
-      title: "Demo data reset",
+      title: "Reset to defaults",
       description: "Campaigns, candidates, and settings are back to factory defaults.",
       variant: "info",
     });
@@ -199,7 +256,7 @@ export default function SettingsPage() {
       <PageHeader
         eyebrow="Control"
         title="Settings"
-        description="Operating identity, the human-approval gate, rate limits, integrations, and compliance. Everything Hermes runs against lives here."
+        description="Operating identity, the human-approval gate, rate limits, integrations, and compliance. Everything Aria runs against lives here."
         actions={
           <Button
             variant="outline"
@@ -207,7 +264,7 @@ export default function SettingsPage() {
             leftIcon={<RotateCcw className="h-4 w-4" />}
             onClick={handleReset}
           >
-            Reset demo data
+            Reset to defaults
           </Button>
         }
       />
@@ -222,13 +279,52 @@ export default function SettingsPage() {
           </div>
         }
       >
-        <div>
+        <div className="grid gap-8 lg:grid-cols-[220px_1fr]">
+          {/* Tab rail — jump straight to a section, no scrolling */}
+          <div className="lg:sticky lg:top-4 lg:self-start lg:border-r lg:border-line lg:pr-5">
+            <div
+              role="tablist"
+              aria-label="Settings sections"
+              aria-orientation="vertical"
+              className="flex gap-1.5 overflow-x-auto scroll-smooth pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden snap-x snap-mandatory lg:flex-col lg:gap-1 lg:overflow-visible lg:pb-0 lg:snap-none"
+            >
+              {TABS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  id={`settings-tab-${t.id}`}
+                  aria-selected={activeTab === t.id}
+                  aria-controls="settings-panel"
+                  onClick={() => setActiveTab(t.id)}
+                  className={cn(
+                    "inline-flex shrink-0 snap-start items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all duration-150 lg:w-full",
+                    activeTab === t.id
+                      ? "bg-gradient-to-r from-electric/90 to-violet/80 text-white shadow-glow-purple"
+                      : "text-ink-soft hover:bg-violet/10 hover:text-ink",
+                  )}
+                >
+                  {t.icon}
+                  <span className="whitespace-nowrap">{t.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <SettingsTabContext.Provider value={activeTab}>
+            <div
+              className="min-w-0"
+              id="settings-panel"
+              role="tabpanel"
+              aria-labelledby={`settings-tab-${activeTab}`}
+              tabIndex={0}
+            >
           {/* 01 — System identity */}
           <Section
             n="01"
             eyebrow="Identity"
             title="System identity"
-            description="How Hermes signs its work and who it acts on behalf of."
+            description="How Aria signs its work and who it acts on behalf of."
           >
             <Card>
               <CardContent className="grid gap-5 sm:grid-cols-2">
@@ -248,14 +344,14 @@ export default function SettingsPage() {
                 <Field
                   label="System identity"
                   htmlFor="systemIdentity"
-                  hint="The persona Hermes presents as in drafted outreach."
+                  hint="The persona Aria presents as in drafted outreach."
                 >
                   <Input
                     id="systemIdentity"
                     value={settings.systemIdentity}
                     onChange={(e) => actions.updateSettings({ systemIdentity: e.target.value })}
                     onBlur={savedToast}
-                    placeholder="e.g. Hermes Sourcing Assistant"
+                    placeholder="e.g. Aria Sourcing Assistant"
                   />
                 </Field>
               </CardContent>
@@ -286,7 +382,7 @@ export default function SettingsPage() {
                     id="dryRunMode"
                     icon={<Lock className="h-4 w-4" />}
                     label="Dry-run mode"
-                    description="Simulate sends only — nothing leaves the system. The safe default for this build."
+                    description="Simulate sends only: nothing leaves the system. The safe default for this build."
                     checked={settings.dryRunMode}
                     onCheckedChange={(v) => setToggle({ dryRunMode: v }, "Dry-run mode", v)}
                   />
@@ -415,7 +511,7 @@ export default function SettingsPage() {
             n="04"
             eyebrow="Connections"
             title="Integrations"
-            description="The inbox, sourcing, enrichment, calendar, and comms tools Hermes orchestrates."
+            description="The inbox, sourcing, enrichment, calendar, and comms tools Aria orchestrates."
           >
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone="success" size="sm" dot>
@@ -443,7 +539,7 @@ export default function SettingsPage() {
               <EmptyState
                 icon={<Plug2 className="h-7 w-7" />}
                 title="No integrations configured"
-                description="Integrations appear here once Hermes is provisioned with its tool connections."
+                description="Integrations appear here once Aria is provisioned with its tool connections."
               />
             ) : (
               <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -469,7 +565,7 @@ export default function SettingsPage() {
             n="06"
             eyebrow="Alerts"
             title="Notifications"
-            description="Where Hermes pings you when something needs a human — approvals, hot replies, escalations."
+            description="Where Aria pings you when something needs a human: approvals, hot replies, escalations."
           >
             <Card>
               <CardContent>
@@ -499,6 +595,11 @@ export default function SettingsPage() {
                     onCheckedChange={(v) => patchNotify("email", v)}
                   />
                 </div>
+                <p className="mt-3 flex items-start gap-1.5 text-xs text-muted">
+                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                  Toggling on records your preference. Delivery begins once you add the matching
+                  Slack/Telegram webhook or SMTP credential in Access &amp; Keys.
+                </p>
               </CardContent>
             </Card>
           </Section>
@@ -526,8 +627,8 @@ export default function SettingsPage() {
                 </div>
                 <p className="text-xs text-muted">
                   Purpose limitation: contact data is only fully visible when there is a
-                  legitimate outreach purpose for that candidate. Anywhere else — lists, search,
-                  the pipeline — email and name are minimized. Tap{" "}
+                  legitimate outreach purpose for that candidate. Anywhere else (lists, search,
+                  the pipeline), email and name are minimized. Tap{" "}
                   <span className="font-medium text-ink-soft">Reveal contact</span> on a profile
                   to unmask, and that access is recorded against the operator.
                 </p>
@@ -584,7 +685,7 @@ export default function SettingsPage() {
             n="09"
             eyebrow="Fleet"
             title="Fleet guardrails"
-            description="The shared rules every sending agent obeys — re-contact windows, auto-pause thresholds, and human pacing."
+            description="The shared rules every sending agent obeys: re-contact windows, auto-pause thresholds, and human pacing."
           >
             <Card>
               <CardContent className="space-y-5">
@@ -654,7 +755,7 @@ export default function SettingsPage() {
                     id="enforceBusinessHours"
                     icon={<Clock className="h-4 w-4" />}
                     label="Enforce business hours"
-                    description="Only send inside each seat's configured send window — never overnight or on off-days."
+                    description="Only send inside each seat's configured send window, never overnight or on off-days."
                     checked={settings.fleet.enforceBusinessHours}
                     onCheckedChange={(v) =>
                       toggleFleet("enforceBusinessHours", "Business-hours enforcement", v)
@@ -699,7 +800,7 @@ export default function SettingsPage() {
             n="10"
             eyebrow="Scale"
             title="Scale & localization"
-            description="Run an army of coordinated agents and reach candidates in any language — multi-user, multi-mailbox, one set of rules."
+            description="Run an army of coordinated agents and reach candidates in any language: multi-user, multi-mailbox, one set of rules."
           >
             <Card>
               <CardContent className="space-y-5">
@@ -707,7 +808,7 @@ export default function SettingsPage() {
                   <Field
                     label="Outreach language (default)"
                     htmlFor="defaultLanguage"
-                    hint="Hermes composes in this language; per-need detection and per-agent language override it."
+                    hint="Aria composes in this language; per-need detection and per-agent language override it."
                   >
                     <Select
                       id="defaultLanguage"
@@ -737,10 +838,10 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="rounded-2xl bg-ink/[0.03] p-4 text-sm text-muted">
-                  Multiple operators can run the same workspace — every signed-in teammate shares one
+                  Multiple operators can run the same workspace: every signed-in teammate shares one
                   campaign pipeline, one suppression ledger, and one de-dupe guarantee, so a large
                   fleet never double-contacts a candidate. Each agent is a real, authorized mailbox
-                  within its provider's official limits — scale, never rate-limit evasion.
+                  within its provider's official limits. Scale, not rate-limit evasion.
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -774,7 +875,7 @@ export default function SettingsPage() {
             n="11"
             eyebrow="Secrets"
             title="API keys"
-            description="Add a provider key and test it. Secrets are stored server-side and never shown again — admins only."
+            description="Add a provider key and test it. Secrets are stored server-side and never shown again (admins only)."
           >
             <ApiKeysPanel />
           </Section>
@@ -784,7 +885,7 @@ export default function SettingsPage() {
             n="12"
             eyebrow="Access"
             title="Access & roles"
-            description="Admin, member and viewer. Roles gate who can manage settings, keys, the fleet — and who is read-only."
+            description="Admin, member and viewer. Roles gate who can manage settings, keys, the fleet, and who is read-only."
           >
             <RolesPanel />
           </Section>
@@ -794,10 +895,65 @@ export default function SettingsPage() {
             n="13"
             eyebrow="Guardrails"
             title="Guardrails & Aria"
-            description="The adjustable brain. Edit Aria's master prompt, manage the rules every agent follows, or just ask Aria — no .env, no code."
+            description="The adjustable brain. Edit Aria's master prompt, manage the rules every agent follows, or just ask Aria. No .env, no code."
           >
             <GuardrailsPanel />
           </Section>
+
+          {/* 14 — LLM providers */}
+          <Section
+            n="14"
+            eyebrow="AI backbone"
+            title="LLM providers"
+            description="Connect the language model backends the sourcing fleet runs on. Each provider links to a saved API key (secrets never leave the server). Admin only."
+          >
+            <ProvidersPanel />
+          </Section>
+
+          {/* 15 — Models */}
+          <Section
+            n="15"
+            eyebrow="Models"
+            title="Saved models"
+            description="Register the specific models your fleet uses and set which model handles each task type: sourcing, outreach, classification, and chat. Admin only."
+          >
+            <ModelsPanel />
+          </Section>
+
+          {/* 16 — Tools */}
+          <Section
+            n="16"
+            eyebrow="Capabilities"
+            title="Tools"
+            description="Toggle the capabilities available to every agent by default. Individual agents can be assigned a custom tool subset from the fleet page. Admin only."
+          >
+            <ToolsPanel />
+          </Section>
+
+          {/* 17 — Aria runtime */}
+          <Section
+            n="17"
+            eyebrow="Runtime"
+            title="Aria agent runtime"
+            description="Connect the live NousResearch Aria agent for real LLM-backed outreach drafting. Text generation only. The approval gate still applies. Falls back to the built-in mock when off or misconfigured. Admin only."
+          >
+            <HermesRuntimePanel />
+          </Section>
+
+          {/* 18 — Schedules */}
+          <Section
+            n="18"
+            eyebrow="Automation"
+            title="Schedules"
+            description="Recurring fleet jobs: sourcing sweeps, outreach batches, and reports on a cadence. Each run still passes through the approval gate. Admin only."
+          >
+            <SchedulesPanel />
+            <div className="mt-6">
+              <HermesSchedulesPanel />
+            </div>
+          </Section>
+            </div>
+          </SettingsTabContext.Provider>
         </div>
       </HydrationGate>
     </div>

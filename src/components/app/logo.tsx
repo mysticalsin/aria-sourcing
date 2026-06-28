@@ -1,41 +1,51 @@
 import * as React from "react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
-/** Hermes mark — winged-courier glyph on a Mantu-purple tile (pure SVG, no stock). */
+/** Aria M-mark — the gradient mark on a transparent background (reads on any
+ *  surface; never tiled, circled, or cropped). */
 export function HermesMark({ className }: { className?: string }) {
   return (
-    <span
-      className={cn(
-        "relative inline-flex h-9 w-9 items-center justify-center rounded-2xl shadow-soft",
-        className,
-      )}
-      style={{
-        background: "linear-gradient(140deg, hsl(var(--electric)), hsl(var(--tangerine)))",
-      }}
-      aria-hidden
-    >
-      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="white" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 3v18" />
-        <path d="M12 7c3.5 0 6-1.2 8-3-0.6 3.2-3 5-8 5" stroke="hsl(var(--mantu-yellow))" />
-        <path d="M12 7c-3.5 0-6-1.2-8-3 .6 3.2 3 5 8 5" />
-        <circle cx="12" cy="14.5" r="2.2" stroke="hsl(var(--mantu-yellow))" />
-      </svg>
-    </span>
+    <Image
+      src="/aria-mark.png"
+      alt="Aria"
+      width={60}
+      height={44}
+      priority
+      className={cn("h-9 w-auto object-contain", className)}
+    />
   );
 }
 
+/**
+ * Full brand lockup for light surfaces — the complete ARIA logo, rendered
+ * transparent (no dark backdrop): the gradient M-mark above a spaced ink "ARIA"
+ * wordmark and a gradient "AGENTIC SOURCING PLATFORM" tagline. Mirrors the
+ * marketing logo (aria-logo.png), but with ink "ARIA" so it reads on the light
+ * sidebar (the white-on-transparent aria-logo.png is used on the dark login).
+ */
 export function HermesWordmark({ className, compact }: { className?: string; compact?: boolean }) {
+  if (compact) return <HermesMark className={className} />;
   return (
-    <span className={cn("flex items-center gap-2.5", className)}>
-      <HermesMark />
-      {!compact && (
-        <span className="flex flex-col leading-none">
-          <span className="text-[0.95rem] font-extrabold tracking-tight text-ink">HERMES</span>
-          <span className="eyebrow !text-[0.5625rem] !tracking-[0.2em] text-tangerine">
-            SOURCING · BY MANTU
-          </span>
+    <span className={cn("flex flex-col items-center gap-2 text-center", className)}>
+      <Image
+        src="/aria-mark.png"
+        alt=""
+        aria-hidden
+        width={120}
+        height={88}
+        priority
+        className="h-14 w-auto object-contain"
+      />
+      <span className="flex flex-col items-center leading-none">
+        <span className="pl-[0.4em] text-2xl font-extrabold tracking-[0.4em] text-ink">
+          ARIA
         </span>
-      )}
+        <span className="mt-2 bg-gradient-to-r from-violet via-electric to-aqua bg-clip-text pl-[0.28em] text-[0.5rem] font-bold uppercase tracking-[0.28em] text-transparent">
+          Agentic Sourcing Platform
+        </span>
+      </span>
+      <span className="sr-only">Aria — Agentic Sourcing Platform by Mantu</span>
     </span>
   );
 }

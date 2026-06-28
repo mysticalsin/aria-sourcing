@@ -1,0 +1,16 @@
+# Keep the build context small and secrets out of the image.
+node_modules
+.next
+.git
+.env
+.env.local
+.env.*.local
+*.log
+npm-debug.log*
+.DS_Store
+coverage
+.playwright-mcp
+ultraplan
+graphify-out
+*.md
+!README.md

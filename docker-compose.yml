@@ -1,0 +1,50 @@
+# Start Aria Sourcing in Docker:  docker compose up   (or: npm run docker:dev)
+#
+# Prereqs: the local Supabase stack running on the host (`supabase start`), and a
+# .env.local with NEXT_PUBLIC_SUPABASE_URL / _ANON_KEY / SUPABASE_SERVICE_ROLE_KEY.
+#
+# Why this fixes the OneDrive `.next` corruption: the source is bind-mounted, but
+# `/app/node_modules` and `/app/.next` are anonymous volumes that shadow the host
+# dirs — so Next writes its build output to the container's filesystem, never to the
+# OneDrive-synced checkout.
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    environment:
+      # In-container (server-side) code reaches the host's local Supabase here.
+      # The browser still uses NEXT_PUBLIC_SUPABASE_URL (localhost) from .env.local.
+      SUPABASE_URL: "http://host.docker.internal:54321"
+      # Reliable file-watching for HMR over a bind mount on macOS/Windows.
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+    extra_hosts:
+      # Lets the container resolve the host (for the host's Supabase) on Linux too.
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    command: npm run dev
+    restart: unless-stopped
+    # Resource limits — top-level form works with plain `docker compose up` (non-swarm).
+    mem_limit: 2g
+    cpus: "1.5"
+    # deploy.resources.limits is the canonical Compose v2 / swarm form.
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: "1.5"
+    healthcheck:
+      # node:slim has no wget/curl; use a Node one-liner instead.
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s   # generous window for Next.js dev-server cold start

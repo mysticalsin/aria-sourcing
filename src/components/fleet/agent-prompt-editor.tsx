@@ -60,7 +60,7 @@ export function AgentPromptEditor({ seat }: { seat: AgentSeat }) {
           id={signatureId}
           value={signature}
           onChange={(e) => setSignature(e.target.value)}
-          placeholder="— Hermes (dry-run on behalf of the hiring team)"
+          placeholder="Your sign-off (optional), e.g. Maya, Talent Team"
         />
       </Field>
 

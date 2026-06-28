@@ -165,7 +165,7 @@ export default function DashboardPage() {
                 <Sparkles className="h-3.5 w-3.5 text-electric" aria-hidden />
                 {activeCampaign
                   ? `Acting on ${activeCampaign.title}`
-                  : "No active campaign yet — start with an intake"}
+                  : "No active campaign yet. Start with an intake."}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">

@@ -316,6 +316,8 @@ export function toneForOutreachStatus(s: OutreachStatus): Tone {
       return "warning";
     case "Approved":
       return "success";
+    case "Pending Manual Send":
+      return "tangerine";
     case "Scheduled":
       return "electric";
     case "Rejected":

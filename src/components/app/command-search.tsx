@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Search, CornerDownLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { lockBodyScroll, unlockBodyScroll } from "@/lib/scroll-lock";
 import { NAV_ITEMS } from "./nav";
 import { useCampaigns, useCandidates, useActions } from "@/lib/store";
 
@@ -42,10 +43,10 @@ export function CommandSearch() {
       setQuery("");
       setActive(0);
       const t = window.setTimeout(() => inputRef.current?.focus(), 30);
-      document.body.style.overflow = "hidden";
+      lockBodyScroll();
       return () => {
         window.clearTimeout(t);
-        document.body.style.overflow = "";
+        unlockBodyScroll();
       };
     }
   }, [open]);

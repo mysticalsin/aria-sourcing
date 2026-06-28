@@ -13,6 +13,7 @@ import {
 import {
   applyConfidentiality,
   hasOutreachPurpose,
+  maskEmailBody,
 } from "../src/lib/confidential";
 import { buildSeedState, defaultSettings } from "../src/lib/seed";
 import type { Candidate, OutreachMessage, SystemSettings } from "../src/lib/types";
@@ -154,6 +155,17 @@ ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
   const r = checkOutreachApproval(ctx);
   ok("at linkedin limit: not allowed", r.allowed === false);
   ok("at linkedin limit: blocker mentions LinkedIn limit", r.blockers.some((b) => /LinkedIn/i.test(b) && /limit/i.test(b)));
+}
+
+// 3c) LinkedIn assisted-manual requires a profile URL.
+{
+  const ctx = approvalCtx({
+    candidate: makeCandidate({ matchScore: 95, linkedinUrl: "" }),
+    message: makeMessage({ channel: "LinkedIn" }),
+  });
+  const r = checkOutreachApproval(ctx);
+  ok("linkedin without profile url: not allowed", r.allowed === false);
+  ok("linkedin without profile url: blocker mentions LinkedIn profile", r.blockers.some((b) => /LinkedIn profile/i.test(b)));
 }
 
 // 4) Blocks when complianceFlags.doNotContact is set.
@@ -302,6 +314,14 @@ try {
 ok("hasOutreachPurpose('Sourced') is false", hasOutreachPurpose("Sourced") === false);
 ok("hasOutreachPurpose('Contacted') is true", hasOutreachPurpose("Contacted") === true);
 ok("hasOutreachPurpose('Hired') is true", hasOutreachPurpose("Hired") === true);
+
+/* ---- maskEmailBody (reply-body PII redaction) ---------------------------- */
+const _mb = maskEmailBody("reach me at john.doe@acme.com or call +1 415 555 0100, see https://acme.com/jobs");
+ok("maskEmailBody redacts the email address", _mb.includes("[email]") && !_mb.includes("john.doe@acme.com"));
+ok("maskEmailBody redacts the phone number", _mb.includes("[phone]"));
+ok("maskEmailBody redacts the link", _mb.includes("[link]") && !_mb.includes("https://acme.com/jobs"));
+ok("maskEmailBody leaves plain prose intact", maskEmailBody("Thanks, sounds interesting.") === "Thanks, sounds interesting.");
+ok("maskEmailBody handles empty string", maskEmailBody("") === "");
 
 /* ========================================================================== */
 

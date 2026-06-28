@@ -1,5 +1,6 @@
 import { agentActivity, floorRollup } from "../src/lib/floor";
 import { buildSeedState } from "../src/lib/seed";
+import { SEED_NOW } from "../src/lib/utils";
 
 let pass = 0,
   fail = 0;
@@ -13,21 +14,24 @@ function ok(name: string, cond: boolean) {
 
 const s = buildSeedState();
 const seat = (id: string) => s.seats.find((x) => x.id === id)!;
+// Pin "now" to the seed reference time so warmup-stage assertions stay deterministic
+// and do not drift as the real calendar advances past SEED_NOW.
+const NOW = SEED_NOW.getTime();
 
-const maya = agentActivity(seat("seat_maya"), s);
+const maya = agentActivity(seat("seat_maya"), s, NOW);
 ok("warmed active agent is working", ["sourcing", "outreach", "booking"].includes(maya.state));
 ok("working agent has a label", maya.label.length > 0);
 ok("working agent is busy (animates)", maya.busy === true);
 ok("contacted count is a number", typeof maya.contacted === "number" && maya.contacted >= 0);
 
-const aisha = agentActivity(seat("seat_aisha"), s); // warmup day ~5
+const aisha = agentActivity(seat("seat_aisha"), s, NOW); // warmup day ~5
 ok("warming agent state = warming", aisha.state === "warming");
 
-const lucas = agentActivity(seat("seat_lucas"), s); // bounce 0.068 > 5% → auto-pause
+const lucas = agentActivity(seat("seat_lucas"), s, NOW); // bounce 0.068 > 5% → auto-pause
 ok("high-bounce agent is paused", lucas.state === "paused");
 
 // determinism: same inputs → same activity
-const maya2 = agentActivity(seat("seat_maya"), s);
+const maya2 = agentActivity(seat("seat_maya"), s, NOW);
 ok("activity is deterministic", maya.label === maya2.label && maya.detail === maya2.detail);
 
 const roll = floorRollup(s.seats, s);

@@ -20,6 +20,9 @@ export const PERMISSIONS = [
   "manage_settings",
   "manage_keys",
   "manage_roles",
+  "manage_providers",
+  "manage_models",
+  "manage_tools",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -28,6 +31,9 @@ const ROLE_PERMS: Record<Role, Permission[]> = {
   member: ["view", "source", "outreach", "book", "reply", "skills", "compliance"],
   viewer: ["view"],
 };
+
+// Admin gets all permissions including the new LLM-config trio.
+// Member and viewer remain unchanged — only admins configure providers/models/tools.
 
 export function can(role: Role, perm: Permission): boolean {
   return ROLE_PERMS[role]?.includes(perm) ?? false;

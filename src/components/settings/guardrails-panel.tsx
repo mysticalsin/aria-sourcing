@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Card, CardContent, Field, Textarea, Input, Button, Switch, Badge, useToast } from "@/components/ui";
+import { Card, CardContent, Field, Textarea, Input, Button, Switch, Badge, useToast, useConfirm } from "@/components/ui";
 import { useActions, useGuardrails, useRole } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ export function GuardrailsPanel() {
   const role = useRole();
   const actions = useActions();
   const { toast } = useToast();
+  const confirm = useConfirm();
   const isAdmin = can(role, "manage_settings");
 
   const [prompt, setPrompt] = React.useState(guardrails.ariaPrompt);
@@ -39,6 +40,20 @@ export function GuardrailsPanel() {
     setAriaReply(reply);
     setAriaMsg("");
   }
+  // Confirm before turning a guardrail OFF — disabling a safety rule is the
+  // destructive direction. Enabling stays a single click.
+  async function toggleRule(r: { id: string; text: string; enabled: boolean }) {
+    if (r.enabled) {
+      const ok = await confirm({
+        title: "Disable this guardrail?",
+        description: `"${r.text}" will no longer constrain the fleet until you re-enable it.`,
+        confirmLabel: "Disable",
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    actions.toggleGuardrailRule(r.id);
+  }
 
   const locked = guardrails.rules.filter((r) => r.locked);
   const editable = guardrails.rules.filter((r) => !r.locked);
@@ -53,7 +68,7 @@ export function GuardrailsPanel() {
               <Sparkles className="h-4 w-4" />
             </span>
             <div>
-              <p className="text-sm font-bold text-ink">Aria — the agent brain</p>
+              <p className="text-sm font-bold text-ink">Aria: the agent brain</p>
               <p className="text-xs text-muted">Master system prompt every agent inherits. Edit it directly, or ask Aria below.</p>
             </div>
           </div>
@@ -89,12 +104,14 @@ export function GuardrailsPanel() {
                 Send
               </Button>
             </div>
-            {ariaReply && (
-              <p className="mt-2 flex items-start gap-1.5 text-xs text-ink-soft">
-                <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-electric" />
-                {ariaReply}
-              </p>
-            )}
+            <div aria-live="polite">
+              {ariaReply && (
+                <p className="mt-2 flex items-start gap-1.5 text-xs text-ink-soft">
+                  <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-electric" />
+                  {ariaReply}
+                </p>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -131,7 +148,7 @@ export function GuardrailsPanel() {
             <ul className="divide-y divide-line rounded-2xl border border-line">
               {editable.map((r) => (
                 <li key={r.id} className="flex items-center gap-3 p-3">
-                  <Switch checked={r.enabled} disabled={!isAdmin} onCheckedChange={() => actions.toggleGuardrailRule(r.id)} />
+                  <Switch checked={r.enabled} disabled={!isAdmin} onCheckedChange={() => toggleRule(r)} />
                   <span className={cn("min-w-0 flex-1 text-sm", r.enabled ? "text-ink" : "text-muted line-through")}>{r.text}</span>
                   {isAdmin && (
                     <Button variant="ghost" size="icon" aria-label="Remove guardrail" onClick={() => actions.removeGuardrailRule(r.id)}>

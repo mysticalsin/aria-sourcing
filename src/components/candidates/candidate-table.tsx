@@ -124,8 +124,8 @@ export function CandidateTable({
                       </button>
                       {masked && (
                         <span
-                          title="PII minimized — confidential"
-                          aria-label="PII minimized — confidential"
+                          title="PII minimized (confidential)"
+                          aria-label="PII minimized (confidential)"
                           className="shrink-0 text-violet"
                         >
                           <Lock className="h-3.5 w-3.5" aria-hidden />

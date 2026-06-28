@@ -30,14 +30,28 @@ Open **SQL Editor** and run, in order:
    one-active-contact-per-candidate unique index) and the **`claim_and_record()`**
    RPC that enforces suppression + re-contact window + per-seat daily cap
    atomically server-side (the anti-double-contact / anti-ban guarantee).
+3. [`supabase/migrations/0003_api_keys.sql`](supabase/migrations/0003_api_keys.sql) —
+   `api_keys` table with column-level grants so secrets stay server-side.
+4. [`supabase/migrations/0004_email_connections.sql`](supabase/migrations/0004_email_connections.sql) —
+   `email_connections` table for Gmail / Microsoft Graph OAuth tokens, also with
+   column-level grants and admin-only RLS.
+5. [`supabase/migrations/0005_rls_tenant_isolation.sql`](supabase/migrations/0005_rls_tenant_isolation.sql) —
+   **Required security hardening — do not skip.** Adds the `WITH CHECK` clause to
+   the `workspace_state` UPDATE policy (stops a tenant re-pointing a row to another
+   workspace), revokes `anon`, and role-gates every fleet write. Without it,
+   0001–0002 leave a cross-tenant RLS gap.
 
-(Or `supabase db push` with the CLI.)
+> Run **every** migration in order, through 0005. `supabase db push` /
+> `supabase start` / `supabase db reset` apply them all automatically; if you run
+> them by hand in the SQL Editor, do not stop before 0005.
 
-**Email sending (optional, live):** set `RESEND_API_KEY` or `SENDGRID_API_KEY`
-in `.env.local`. A real send only happens when a fleet seat is set **live** with a
-**verified domain** and the send is explicitly confirmed — otherwise everything is
-dry-run. Microsoft Graph / Gmail require per-mailbox OAuth (connect flow).
-LinkedIn is assisted-manual only — no automation or scraping.
+**Email sending (optional, live):**
+- API-key providers: set `RESEND_API_KEY` or `SENDGRID_API_KEY` in `.env.local`.
+- OAuth providers (Gmail / Microsoft Graph): configure the OAuth apps below, then
+  connect each seat in **Settings → Fleet**. A real send only happens when a fleet
+  seat is set **live** with a **verified domain** and the send is explicitly
+  confirmed — otherwise everything is dry-run.
+- LinkedIn is assisted-manual only — no automation or scraping.
 
 ## 3. Register the Microsoft (Entra) app
 
@@ -78,7 +92,30 @@ Supabase → **Authentication → URL Configuration**:
 > Supabase callback (`…supabase.co/auth/v1/callback`); the **app** redirect URL
 > registered in **Supabase** is `…/auth/callback`.
 
-## 5. (Optional) restrict to your domain
+## 5. (Optional) Gmail OAuth
+
+For **Gmail API** seats:
+
+1. Go to <https://console.cloud.google.com/apis/credentials>.
+2. Create an **OAuth client ID** (Web application).
+3. Add authorized redirect URI: `http://localhost:3000/auth/google/callback`
+   (and your production equivalent).
+4. Enable the **Gmail API**.
+5. Copy **Client ID** → `GOOGLE_CLIENT_ID` and **Client secret** → `GOOGLE_CLIENT_SECRET`.
+
+## 6. (Optional) Microsoft Graph OAuth
+
+For **Microsoft Graph** seats (sending via Outlook/Exchange Online):
+
+1. In **Azure Portal → Microsoft Entra ID → App registrations → New registration**.
+2. Add a **Web** redirect URI: `http://localhost:3000/auth/microsoft/callback`
+   (and your production equivalent).
+3. **API permissions** → Microsoft Graph → delegated:
+   `Mail.Send`, `User.Read`, `offline_access` → *Grant admin consent*.
+4. Copy **Application (client) ID** → `MICROSOFT_CLIENT_ID`.
+5. **Certificates & secrets → New client secret** → copy value to `MICROSOFT_CLIENT_SECRET`.
+
+## 7. (Optional) restrict to your domain
 
 Set `NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN=yourcompany.com`. Everyone signing in from
 that domain lands in the **same shared workspace** automatically

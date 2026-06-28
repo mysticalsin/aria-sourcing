@@ -68,7 +68,10 @@ if (outreach) {
     "outreach: >=1 personalizationEvidence",
     Array.isArray(outreach.personalizationEvidence) && outreach.personalizationEvidence.length >= 1,
   );
-  ok("outreach: body contains STOP opt-out", outreach.body.includes("STOP"));
+  ok(
+    "outreach: body has no STOP/opt-out boilerplate",
+    !outreach.body.includes("STOP") && !outreach.body.toLowerCase().includes("on behalf"),
+  );
   // humanizer strips em/en dashes — none should survive
   ok("outreach: body has no em-dash", !outreach.body.includes("—"));
   ok("outreach: body has no en-dash", !outreach.body.includes("–"));
@@ -76,7 +79,7 @@ if (outreach) {
   ok("outreach: channel defaults to Email", outreach.channel === "Email");
 } else {
   ok("outreach: >=1 personalizationEvidence", false);
-  ok("outreach: body contains STOP opt-out", false);
+  ok("outreach: body has no STOP/opt-out boilerplate", false);
   ok("outreach: body has no em-dash", false);
   ok("outreach: body has no en-dash", false);
   ok("outreach: subject is a non-empty string", false);

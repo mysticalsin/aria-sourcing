@@ -40,7 +40,7 @@ const SAMPLE_REPLIES: { label: string; text: string }[] = [
   {
     label: "Interested",
     text:
-      "Thanks for reaching out — honestly the timing is good. The stack you described is exactly what I want to be working on next, and going fully remote is a big plus. I'm free Thursday or Friday afternoon (CET) for a quick intro call. What works on your end?",
+      "Thanks for reaching out. Honestly, the timing is good. The stack you described is exactly what I want to be working on next, and going fully remote is a big plus. I'm free Thursday or Friday afternoon (CET) for a quick intro call. What works on your end?",
   },
   {
     label: "Qualified",
@@ -55,7 +55,7 @@ const SAMPLE_REPLIES: { label: string; text: string }[] = [
   {
     label: "Negative",
     text:
-      "Please stop emailing me. I never signed up for this and I'd like to be removed from your list immediately — otherwise I'll be reporting these messages as spam.",
+      "Please stop emailing me. I never signed up for this and I'd like to be removed from your list immediately, otherwise I'll be reporting these messages as spam.",
   },
 ];
 
@@ -75,7 +75,7 @@ export function ReplyClassifier({
 
   const inputId = React.useId();
 
-  function handleClassify() {
+  async function handleClassify() {
     const trimmed = text.trim();
     if (!trimmed) {
       toast({
@@ -87,20 +87,28 @@ export function ReplyClassifier({
     }
     setClassifying(true);
     setResult(null);
-    window.setTimeout(() => {
-      const { reply } = a.classifyAndStoreReply({
+    try {
+      // F-1: classifyAndStoreReply is now async (routes through live Aria when available).
+      const { reply } = await a.classifyAndStoreReply({
         text: trimmed,
         campaignId,
         candidateId,
       });
       setResult(reply);
-      setClassifying(false);
       toast({
         title: "Reply classified",
         description: `${INTENT_LABELS[reply.intent]} · ${formatPercent(reply.confidence)} confidence`,
         variant: "info",
       });
-    }, 420);
+    } catch {
+      toast({
+        title: "Classification failed",
+        description: "Could not classify the reply. Please try again.",
+        variant: "error",
+      });
+    } finally {
+      setClassifying(false);
+    }
   }
 
   async function handleCopyDraft() {
@@ -108,7 +116,7 @@ export function ReplyClassifier({
     const ok = await copyToClipboard(result.draftResponse);
     toast({
       title: ok ? "Draft copied to clipboard" : "Couldn't copy",
-      description: ok ? "Review before sending — nothing is auto-sent." : undefined,
+      description: ok ? "Review before sending. Nothing is auto-sent." : undefined,
       variant: ok ? "success" : "error",
     });
     if (ok) {
@@ -127,7 +135,7 @@ export function ReplyClassifier({
             Paste reply to classify
           </CardTitle>
           <p className="mt-1 text-sm text-muted">
-            Intent, confidence and a suggested draft — instantly. Drafts are never sent automatically.
+            Intent, confidence, and a suggested draft, delivered instantly. Drafts are never sent automatically.
           </p>
         </div>
       </CardHeader>
@@ -142,7 +150,7 @@ export function ReplyClassifier({
             id={inputId}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="e.g. Thanks for reaching out — this actually sounds interesting…"
+            placeholder="e.g. Thanks for reaching out. This actually sounds interesting…"
             className="min-h-[140px]"
           />
         </Field>

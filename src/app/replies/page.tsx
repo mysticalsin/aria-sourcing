@@ -3,16 +3,20 @@
 import * as React from "react";
 import {
   Badge,
+  Button,
   Select,
   EmptyState,
   SkeletonCard,
+  useToast,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { ReplyClassifier } from "@/components/replies/reply-classifier";
 import { ReplyCard } from "@/components/replies/reply-card";
-import { useHydrated, useReplies } from "@/lib/store";
+import { useHydrated, useReplies, useActions, useRole } from "@/lib/store";
 import { REPLY_INTENTS, type ReplyIntent } from "@/lib/types";
-import { Inbox, Flame, Filter, AlarmClock } from "lucide-react";
+import { can } from "@/lib/rbac";
+import { Inbox, Flame, Filter, AlarmClock, RefreshCw } from "lucide-react";
+import type { InboundMessage } from "@/lib/email-sync";
 
 const INTENT_LABELS: Record<ReplyIntent, string> = {
   INTERESTED: "Interested",
@@ -25,6 +29,105 @@ const INTENT_LABELS: Record<ReplyIntent, string> = {
 };
 
 const HOT_INTENTS: ReplyIntent[] = ["INTERESTED", "QUALIFIED_INTEREST"];
+
+// ── Inbox sync button ────────────────────────────────────────────────────────
+
+type SyncApiResponse = {
+  ok: boolean;
+  messages?: (InboundMessage & { seatId: string })[];
+  errors?: string[];
+};
+
+function SyncInboxButton() {
+  const actions = useActions();
+  const { toast } = useToast();
+  const role = useRole();
+  const [syncing, setSyncing] = React.useState(false);
+
+  if (!can(role, "source")) return null;
+
+  async function handleSync() {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/email/sync", {
+        method: "POST",
+        signal: AbortSignal.timeout(60_000),
+      });
+      const json = (await res.json().catch(() => ({ ok: false }))) as SyncApiResponse;
+
+      if (!res.ok || !json.ok) {
+        toast({
+          title: "Couldn't reach the mailbox sync.",
+          description: "Check your connection settings and try again.",
+          variant: "error",
+        });
+        return;
+      }
+
+      const msgs = json.messages ?? [];
+      const errs = json.errors ?? [];
+
+      if (msgs.length === 0 && errs.length === 0) {
+        toast({ title: "No new mail to sync." });
+        return;
+      }
+
+      let clientFailed = 0;
+      for (const m of msgs) {
+        try {
+          await actions.classifyAndStoreReply({
+            text: m.body,
+            fromAddress: m.from,
+            messageId: m.messageId,
+            inboxThreadId: m.threadId,
+            externalReceivedAt: m.receivedAt,
+          });
+        } catch {
+          // One bad message doesn't abort the rest.
+          clientFailed++;
+        }
+      }
+
+      const synced = msgs.length - clientFailed;
+      const parts: string[] = [`${synced} synced`];
+      if (clientFailed > 0) parts.push(`${clientFailed} failed`);
+      if (errs.length > 0) parts.push(`${errs.length} skipped`);
+      const errDetail = errs.slice(0, 2).join("; ");
+
+      toast({
+        title: parts.join(", ") + ".",
+        description: errDetail || undefined,
+      });
+    } catch (err) {
+      const isTimeout = err instanceof Error && err.name === "TimeoutError";
+      toast({
+        title: isTimeout
+          ? "Sync timed out. Try again."
+          : "Couldn't reach the mailbox sync.",
+        description: isTimeout
+          ? undefined
+          : "Check your connection settings and try again.",
+        variant: "error",
+      });
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      loading={syncing}
+      leftIcon={<RefreshCw className="h-3.5 w-3.5" aria-hidden />}
+      onClick={handleSync}
+    >
+      {syncing ? "Syncing..." : "Sync inbox"}
+    </Button>
+  );
+}
+
+// ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function RepliesPage() {
   const hydrated = useHydrated();
@@ -76,6 +179,7 @@ export default function RepliesPage() {
                 {negative} negative
               </Badge>
             )}
+            <SyncInboxButton />
           </div>
         }
       />

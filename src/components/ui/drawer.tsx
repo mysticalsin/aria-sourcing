@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { lockBodyScroll, unlockBodyScroll } from "@/lib/scroll-lock";
 import { X } from "lucide-react";
 
 /**
@@ -32,7 +33,7 @@ export function Drawer({
   React.useEffect(() => {
     if (!open) return;
     previouslyFocused.current = document.activeElement as HTMLElement;
-    document.body.style.overflow = "hidden";
+    lockBodyScroll();
     const t = window.setTimeout(() => {
       const focusable = panelRef.current?.querySelector<HTMLElement>(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
@@ -51,7 +52,7 @@ export function Drawer({
     return () => {
       window.clearTimeout(t);
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
+      unlockBodyScroll();
       previouslyFocused.current?.focus?.();
     };
   }, [open, onClose]);
@@ -71,11 +72,11 @@ export function Drawer({
         aria-modal="true"
         aria-labelledby={titleId}
         className={cn(
-          "absolute right-0 top-0 h-full w-full bg-paper shadow-lift animate-slide-in-right flex flex-col",
+          "absolute right-0 top-0 z-10 h-full w-full glass-panel animate-slide-in-right flex flex-col",
           width,
         )}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-line p-6">
+        <div className="flex items-start justify-between gap-4 border-b border-violet/10 p-6">
           <div className="min-w-0">
             <h2 id={titleId} className="text-xl font-bold tracking-tight text-ink truncate">
               {title}
@@ -90,8 +91,8 @@ export function Drawer({
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-6">{children}</div>
-        {footer && <div className="border-t border-line p-4">{footer}</div>}
+        <div className="flex-1 overflow-y-auto overscroll-contain p-6">{children}</div>
+        {footer && <div className="border-t border-violet/10 p-4">{footer}</div>}
       </div>
     </div>
   );

@@ -75,6 +75,7 @@ import {
   FileSearch,
   GraduationCap,
   LayoutDashboard,
+  Linkedin,
   MapPin,
   MessageSquare,
   RefreshCw,
@@ -205,8 +206,11 @@ export default function Page({ params }: { params: { id: string } }) {
   const needsApproval = outreach
     .filter((mm) => mm.status === "Needs Approval")
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const pendingManual = outreach
+    .filter((mm) => mm.status === "Pending Manual Send")
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const otherOutreach = outreach
-    .filter((mm) => mm.status !== "Needs Approval")
+    .filter((mm) => mm.status !== "Needs Approval" && mm.status !== "Pending Manual Send")
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const sortedReplies = [...campaignReplies].sort((a, b) => {
@@ -270,7 +274,7 @@ export default function Page({ params }: { params: { id: string } }) {
     const res = actions.createBookingFor(cand.id);
     if (res) {
       toast({
-        title: `Interview booked — ${cand.name}`,
+        title: `Interview booked: ${cand.name}`,
         description: `With ${res.booking.interviewer}. Teams + Cal.com links generated (dry-run).`,
         variant: "success",
       });
@@ -509,7 +513,7 @@ export default function Page({ params }: { params: { id: string } }) {
             </CardHeader>
             <CardBody>
               {jd.validationWarnings.length === 0 ? (
-                <p className="text-sm text-muted">Clean parse — no assumptions flagged for review.</p>
+                <p className="text-sm text-muted">Clean parse. No assumptions flagged for review.</p>
               ) : (
                 <ul className="space-y-2">
                   {jd.validationWarnings.map((w, i) => (
@@ -556,7 +560,7 @@ export default function Page({ params }: { params: { id: string } }) {
         <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <Eyebrow>Where Hermes looks</Eyebrow>
+              <Eyebrow>Where Aria looks</Eyebrow>
               <h2 className="text-xl font-bold tracking-tight text-ink">Sourcing strategy</h2>
             </div>
             <Button variant="secondary" leftIcon={<RefreshCw className="h-4 w-4" />} onClick={handleMoreQueries}>
@@ -737,7 +741,7 @@ export default function Page({ params }: { params: { id: string } }) {
               <EmptyState
                 icon={<Send className="h-6 w-6" />}
                 title="No outreach drafted yet"
-                description="Open a candidate and generate a message — it lands in the approval queue here before anything is scheduled."
+                description="Open a candidate and generate a message. It lands in the approval queue before anything is scheduled."
               />
             ) : (
               <>
@@ -750,6 +754,20 @@ export default function Page({ params }: { params: { id: string } }) {
                       </Badge>
                     </div>
                     {needsApproval.map((msg) => (
+                      <OutreachMessageCard key={msg.id} message={msg} />
+                    ))}
+                  </section>
+                )}
+                {pendingManual.length > 0 && (
+                  <section className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Linkedin className="h-4 w-4 text-tangerine" aria-hidden />
+                      <Eyebrow>Pending manual send</Eyebrow>
+                      <Badge tone="tangerine" size="sm">
+                        {pendingManual.length}
+                      </Badge>
+                    </div>
+                    {pendingManual.map((msg) => (
                       <OutreachMessageCard key={msg.id} message={msg} />
                     ))}
                   </section>
@@ -879,7 +897,7 @@ export default function Page({ params }: { params: { id: string } }) {
             <Eyebrow className="mb-3 block">Proposed skill updates</Eyebrow>
             {c.skillUpdates.length === 0 ? (
               <p className="text-sm text-muted">
-                No skill updates proposed yet. Generate a report and Hermes will suggest refinements to its sourcing,
+                No skill updates proposed yet. Generate a report and Aria will suggest refinements to its sourcing,
                 outreach, and scoring skills.
               </p>
             ) : (

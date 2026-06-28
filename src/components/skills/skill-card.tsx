@@ -86,7 +86,11 @@ export function SkillCard({ skill }: { skill: AgentSkill }) {
 
   function save() {
     if (!dirty) return;
-    actions.updateSkillContent(skill.key, content);
+    const res = actions.updateSkillContent(skill.key, content);
+    if (!res.ok) {
+      toast({ title: "Playbook rejected", description: res.error ?? "This content violates a guardrail.", variant: "error" });
+      return;
+    }
     toast({
       title: "Playbook saved",
       description: `${skill.title} updated. The agent uses this on the next run.`,

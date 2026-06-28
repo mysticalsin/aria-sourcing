@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import * as React from "react";
 import {
   Card,
@@ -9,6 +10,8 @@ import {
   Button,
   Modal,
   Switch,
+  Input,
+  Field,
   useToast,
 } from "@/components/ui";
 import { useActions } from "@/lib/store";
@@ -27,6 +30,7 @@ import {
   ShieldCheck,
   AlertTriangle,
   CheckCircle2,
+  ChevronLeft,
 } from "lucide-react";
 
 const CATEGORY_ICON: Record<IntegrationStatus["category"], React.ReactNode> = {
@@ -51,16 +55,40 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
   const { toast } = useToast();
   const [configureOpen, setConfigureOpen] = React.useState(false);
   const [testing, setTesting] = React.useState(false);
+  const [apiKey, setApiKey] = React.useState("");
+  const [account, setAccount] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [smtpOpen, setSmtpOpen] = React.useState(false);
+  const [smtpEmail, setSmtpEmail] = React.useState("");
+  const [smtpPassword, setSmtpPassword] = React.useState("");
+  const [smtpHost, setSmtpHost] = React.useState("");
+
+  // Stable IDs for accessible label–input pairing (WCAG 1.3.1)
+  const smtpEmailId = React.useId();
+  const smtpPasswordId = React.useId();
+  const smtpHostId = React.useId();
+  const apiKeyId = React.useId();
+  const accountId = React.useId();
 
   const isLive = integration.mode === "live";
+  const connected = integration.status === "connected";
+  const isMailbox = integration.category === "Inbox" || integration.category === "Comms";
+
+  function handleCloseModal() {
+    setConfigureOpen(false);
+    setSmtpOpen(false);
+    setSmtpEmail("");
+    setSmtpPassword("");
+    setSmtpHost("");
+  }
 
   function handleTest() {
     setTesting(true);
     const result = actions.testIntegration(integration.id);
     setTesting(false);
     toast({
-      title: result.ok ? `${integration.name} reachable` : `${integration.name} unreachable`,
-      description: `${result.message}${result.ok ? ` · ${result.latencyMs}ms` : ""}`,
+      title: result.ok ? `${integration.name} ready` : `${integration.name} not ready`,
+      description: result.latencyMs > 0 ? `${result.message} · ${result.latencyMs}ms` : result.message,
       variant: result.ok ? "success" : "error",
     });
   }
@@ -72,10 +100,82 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
       title: `${integration.name} → ${nextMode === "live" ? "Live" : "Mock"} mode`,
       description:
         nextMode === "live"
-          ? "Live mode would use real credentials. This demo still runs dry-run only."
-          : "Mock mode is the safe default — no real calls are made.",
+          ? "Live mode active: outreach routes through these credentials once the sending domain is verified."
+          : "Mock mode is the safe default. No real calls are made.",
       variant: nextMode === "live" ? "warning" : "info",
     });
+  }
+
+  async function handleConnect() {
+    if (!apiKey.trim()) {
+      toast({ title: "Credentials required", description: "Enter an API key or token to connect.", variant: "error" });
+      return;
+    }
+    setSaving(true);
+    try {
+      await actions.saveApiKey({ name: `${integration.name} connection`, provider: "Custom", value: apiKey.trim() });
+      actions.updateIntegration(integration.id, {
+        status: "connected",
+        connectedAccount: account.trim() || undefined,
+        lastSync: new Date().toISOString(),
+        errors: [],
+      });
+      toast({
+        title: `${integration.name} connected`,
+        description: "Credentials stored server-side. Flip Live mode on the card when you're ready.",
+        variant: "success",
+      });
+      setApiKey("");
+      setAccount("");
+      handleCloseModal();
+    } catch {
+      toast({ title: "Couldn't connect", description: "Saving the credential failed. Try again.", variant: "error" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSmtpConnect() {
+    if (!smtpEmail.trim() || !smtpPassword.trim() || !smtpHost.trim()) {
+      toast({ title: "All fields required", description: "Enter your email address, app password, and SMTP host.", variant: "error" });
+      return;
+    }
+    setSaving(true);
+    try {
+      await actions.saveApiKey({
+        name: `${integration.name} (${smtpEmail.trim()})`,
+        provider: "Custom",
+        value: `smtp:${JSON.stringify({ host: smtpHost.trim(), email: smtpEmail.trim(), password: smtpPassword.trim() })}`,
+      });
+      actions.updateIntegration(integration.id, {
+        status: "connected",
+        connectedAccount: smtpEmail.trim(),
+        lastSync: new Date().toISOString(),
+        errors: [],
+      });
+      toast({
+        title: `${integration.name} connected`,
+        description: `Linked ${smtpEmail.trim()} via SMTP / IMAP. Flip Live mode when ready.`,
+        variant: "success",
+      });
+      handleCloseModal();
+    } catch {
+      toast({ title: "Couldn't connect", description: "Saving the credential failed. Try again.", variant: "error" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleDisconnect() {
+    actions.updateIntegration(integration.id, {
+      status: "not_configured",
+      lastSync: null,
+      mode: "mock",
+      errors: [],
+      connectedAccount: "",
+    });
+    toast({ title: `${integration.name} disconnected`, description: "Reverted to mock mode.", variant: "info" });
+    handleCloseModal();
   }
 
   const tone = toneForHealth(integration.status);
@@ -107,6 +207,15 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
           </div>
 
           <p className="text-sm leading-relaxed text-ink-soft">{integration.description}</p>
+
+          {integration.connectedAccount && (
+            <div className="-mt-1 flex items-center gap-1.5">
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" aria-hidden />
+              <span className="truncate text-xs font-medium text-success">
+                {integration.connectedAccount}
+              </span>
+            </div>
+          )}
 
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={tone} dot>
@@ -178,48 +287,179 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
 
       <Modal
         open={configureOpen}
-        onClose={() => setConfigureOpen(false)}
-        title={`Configure ${integration.name}`}
-        description="Demo placeholder — no real credentials are stored."
+        onClose={handleCloseModal}
+        title={`Connect ${integration.name}`}
+        description="Add your credentials right here. No code, no .env editing."
         footer={
-          <Button variant="primary" size="sm" onClick={() => setConfigureOpen(false)}>
-            Got it
-          </Button>
+          <div className="flex w-full items-center justify-between gap-2">
+            {connected ? (
+              <Button variant="subtle" size="sm" onClick={handleDisconnect}>
+                Disconnect
+              </Button>
+            ) : (
+              <span />
+            )}
+            <div className="flex gap-2">
+              <Button variant="subtle" size="sm" onClick={handleCloseModal}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                loading={saving}
+                leftIcon={<Plug className="h-4 w-4" />}
+                onClick={handleConnect}
+              >
+                {connected ? "Update connection" : "Connect"}
+              </Button>
+            </div>
+          </div>
         }
       >
-        <div className="space-y-4 text-sm text-ink-soft">
+        <div className="space-y-4">
+          {connected && (
+            <div className="flex items-start gap-2.5 rounded-2xl bg-success-soft px-3.5 py-3 text-success">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <div className="min-w-0">
+                {integration.connectedAccount && (
+                  <p className="truncate text-sm font-semibold">{integration.connectedAccount}</p>
+                )}
+                <p className="text-sm">
+                  Connected{integration.lastSync ? ` · last synced ${formatTimeAgo(integration.lastSync)}` : ""}.
+                  {" "}Update the credential below, or disconnect.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Mailbox account-connect block — shown for Inbox / Comms integrations */}
+          {isMailbox && (
+            <div className="space-y-2.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
+                Connect your account
+              </p>
+
+              {!smtpOpen && (
+                <div className="space-y-2.5">
+                  <p className="text-sm leading-relaxed text-ink-soft">
+                    Each agent connects its own Gmail or Outlook mailbox with real sign-in.{" "}
+                    <Link
+                      href="/fleet"
+                      className="font-medium text-ink underline underline-offset-2 hover:text-ink/70"
+                    >
+                      Connect a mailbox in Agent Fleet
+                    </Link>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setSmtpOpen(true)}
+                    className="flex items-center gap-2.5 rounded-2xl border border-ink/[0.1] bg-surface px-3.5 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-canvas"
+                  >
+                    <Server className="h-4 w-4 shrink-0 text-ink-soft" aria-hidden />
+                    Connect via SMTP / IMAP
+                  </button>
+                </div>
+              )}
+
+              {smtpOpen && (
+                <div className="space-y-3 rounded-2xl border border-ink/[0.1] bg-canvas p-3.5">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setSmtpOpen(false); setSmtpEmail(""); setSmtpPassword(""); setSmtpHost(""); }}
+                      className="text-ink-soft transition-colors hover:text-ink"
+                      aria-label="Back"
+                    >
+                      <ChevronLeft className="h-4 w-4" aria-hidden />
+                    </button>
+                    <p className="text-sm font-semibold text-ink">SMTP / IMAP settings</p>
+                  </div>
+                  <Field label="Email address" htmlFor={smtpEmailId}>
+                    <Input
+                      id={smtpEmailId}
+                      type="email"
+                      value={smtpEmail}
+                      onChange={(e) => setSmtpEmail(e.target.value)}
+                      placeholder="name@company.com"
+                      autoComplete="email"
+                    />
+                  </Field>
+                  <Field label="App password" htmlFor={smtpPasswordId} hint="Use an app-specific password, not your account password.">
+                    <Input
+                      id={smtpPasswordId}
+                      type="password"
+                      value={smtpPassword}
+                      onChange={(e) => setSmtpPassword(e.target.value)}
+                      placeholder="App-specific password"
+                      autoComplete="off"
+                    />
+                  </Field>
+                  <Field label="SMTP host" htmlFor={smtpHostId}>
+                    <Input
+                      id={smtpHostId}
+                      value={smtpHost}
+                      onChange={(e) => setSmtpHost(e.target.value)}
+                      placeholder="smtp.gmail.com"
+                    />
+                  </Field>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    className="w-full"
+                    loading={saving}
+                    onClick={handleSmtpConnect}
+                  >
+                    Connect
+                  </Button>
+                </div>
+              )}
+
+              {!smtpOpen && (
+                <div className="flex items-center gap-3">
+                  <div className="h-px flex-1 bg-ink/[0.08]" />
+                  <span className="text-xs text-muted">or use API key</span>
+                  <div className="h-px flex-1 bg-ink/[0.08]" />
+                </div>
+              )}
+            </div>
+          )}
+
+          <Field
+            label={`${integration.name} API key`}
+            htmlFor={apiKeyId}
+            hint="Stored encrypted server-side (never returned to the browser)."
+          >
+            <Input
+              id={apiKeyId}
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="Paste your API key or access token"
+              autoComplete="off"
+            />
+          </Field>
+
+          <Field
+            label="Account or endpoint (optional)"
+            htmlFor={accountId}
+            hint="The mailbox, workspace, or base URL the provider uses, if any."
+          >
+            <Input
+              id={accountId}
+              value={account}
+              onChange={(e) => setAccount(e.target.value)}
+              placeholder={isMailbox ? "name@company.com" : "https://api.provider.com"}
+            />
+          </Field>
+
           <div className="flex items-start gap-2.5 rounded-2xl bg-aqua-soft px-3.5 py-3 text-aqua">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-            <p>
-              This integration runs in <strong>Mock mode</strong> by default. Hermes simulates
-              {" "}
-              {integration.category.toLowerCase()} calls so nothing leaves your machine.
+            <p className="text-xs">
+              After connecting, flip <strong>Live mode</strong> on the card and hit{" "}
+              <strong>Test connection</strong>. This build stays dry-run. Nothing real (outreach,
+              money, candidate data) leaves until you go live.
             </p>
           </div>
-          <div>
-            <h4 className="mb-1 flex items-center gap-1.5 font-semibold text-ink">
-              <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />
-              Wire up the real {integration.name}
-            </h4>
-            <ol className="ml-4 list-decimal space-y-1.5 text-ink-soft">
-              <li>
-                Add your {integration.name} API credentials to the server environment
-                (<code className="rounded bg-ink/[0.06] px-1 py-0.5 font-mono text-xs">.env.local</code>).
-              </li>
-              <li>
-                Implement the live adapter in{" "}
-                <code className="rounded bg-ink/[0.06] px-1 py-0.5 font-mono text-xs">
-                  src/lib/integrations.ts
-                </code>
-                .
-              </li>
-              <li>Toggle this card to Live mode and run Test connection to verify.</li>
-            </ol>
-          </div>
-          <p className="text-xs text-muted">
-            Everything in this build is dry-run. No outreach, money, or candidate data is ever
-            sent for real.
-          </p>
         </div>
       </Modal>
     </>

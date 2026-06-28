@@ -1,5 +1,5 @@
 /* ============================================================================
-   i18n — Hermes composes outreach and reads replies in ANY language.
+   i18n — Aria composes outreach and reads replies in ANY language.
    Curated, faithful phrase packs for the common business languages; English is
    the safe fallback for anything unmapped. Reply classification merges keyword
    lexicons across languages so a reply in any of them routes correctly.
@@ -54,21 +54,17 @@ export interface OutreachStrings {
   whyYou: (a: string, b?: string) => string;
   cta: string;
   ctaFollow: string;
-  optOut: string;
-  signature: string;
 }
 
 const en: OutreachStrings = {
   subjectNew: (t, s) => `${t} role that fits your ${s} work`,
-  subjectFollow: (t, f) => `Re: ${t} — following up, ${f}`,
+  subjectFollow: (t, f) => `Re: ${t} (follow-up), ${f}`,
   greeting: (f, s, c) => `Hi ${f}, your work with ${s} at ${c} stood out.`,
   roleLine: (t, l, r) => `We're hiring a ${t} (${l}, ${r}).`,
   equity: "Meaningful equity is on the table.",
   whyYou: (a, b) => `Why you, specifically: ${a}${b ? `. And ${b.toLowerCase()}` : ""}.`,
   cta: "Worth a 15-minute, no-strings call to see if it's interesting?",
   ctaFollow: "Circling back once in case this slipped, no pressure either way.",
-  optOut: "Reply STOP to opt out anytime.",
-  signature: "Sent in dry-run by Hermes on behalf of the hiring team.",
 };
 
 const fr: OutreachStrings = {
@@ -80,8 +76,6 @@ const fr: OutreachStrings = {
   whyYou: (a, b) => `Pourquoi vous : ${a}${b ? `. Et ${b.toLowerCase()}` : ""}.`,
   cta: "Un échange de 15 minutes, sans engagement, vous conviendrait-il ?",
   ctaFollow: "Je reviens vers vous au cas où, sans aucune pression.",
-  optOut: "Répondez STOP pour vous désinscrire à tout moment.",
-  signature: "Envoyé en mode test par Hermes pour l'équipe de recrutement.",
 };
 
 const es: OutreachStrings = {
@@ -93,8 +87,6 @@ const es: OutreachStrings = {
   whyYou: (a, b) => `Por qué tú: ${a}${b ? `. Y ${b.toLowerCase()}` : ""}.`,
   cta: "¿Te vendría bien una llamada de 15 minutos, sin compromiso?",
   ctaFollow: "Vuelvo a escribirte por si se traspapeló, sin ninguna presión.",
-  optOut: "Responde STOP para darte de baja cuando quieras.",
-  signature: "Enviado en modo de prueba por Hermes en nombre del equipo de selección.",
 };
 
 const de: OutreachStrings = {
@@ -106,8 +98,6 @@ const de: OutreachStrings = {
   whyYou: (a, b) => `Warum du: ${a}${b ? `. Und ${b.toLowerCase()}` : ""}.`,
   cta: "Hättest du Lust auf ein 15-minütiges, unverbindliches Gespräch?",
   ctaFollow: "Ich melde mich nochmal, falls es untergegangen ist, ganz ohne Druck.",
-  optOut: "Antworte mit STOP, um dich jederzeit abzumelden.",
-  signature: "Im Testmodus von Hermes im Auftrag des Recruiting-Teams gesendet.",
 };
 
 const pt: OutreachStrings = {
@@ -119,8 +109,6 @@ const pt: OutreachStrings = {
   whyYou: (a, b) => `Por que você: ${a}${b ? `. E ${b.toLowerCase()}` : ""}.`,
   cta: "Que tal uma conversa de 15 minutos, sem compromisso?",
   ctaFollow: "Retomo o contato caso tenha passado, sem qualquer pressão.",
-  optOut: "Responda STOP para sair a qualquer momento.",
-  signature: "Enviado em modo de teste pela Hermes em nome da equipe de recrutamento.",
 };
 
 const it: OutreachStrings = {
@@ -132,8 +120,6 @@ const it: OutreachStrings = {
   whyYou: (a, b) => `Perché tu: ${a}${b ? `. E ${b.toLowerCase()}` : ""}.`,
   cta: "Ti andrebbe una call di 15 minuti, senza impegno?",
   ctaFollow: "Ti riscrivo nel caso fosse sfuggito, senza alcuna pressione.",
-  optOut: "Rispondi STOP per annullare l'iscrizione in qualsiasi momento.",
-  signature: "Inviato in modalità di prova da Hermes per conto del team di selezione.",
 };
 
 const nl: OutreachStrings = {
@@ -145,8 +131,6 @@ const nl: OutreachStrings = {
   whyYou: (a, b) => `Waarom jij: ${a}${b ? `. En ${b.toLowerCase()}` : ""}.`,
   cta: "Heb je zin in een vrijblijvend gesprek van 15 minuten?",
   ctaFollow: "Ik kom er nog even op terug voor het geval het is ondergesneeuwd, geen druk.",
-  optOut: "Antwoord STOP om je op elk moment af te melden.",
-  signature: "In testmodus verzonden door Hermes namens het wervingsteam.",
 };
 
 const PACKS: Record<string, OutreachStrings> = { en, fr, es, de, pt, it, nl };

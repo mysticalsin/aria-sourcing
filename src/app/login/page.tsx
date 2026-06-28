@@ -3,20 +3,41 @@
 import * as React from "react";
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { HermesWordmark } from "@/components/app/logo";
-import { Button } from "@/components/ui";
+import { motion, AnimatePresence, useInView } from "framer-motion";
+import { Menu, X, AlertTriangle, Lock } from "lucide-react";
 import { getBrowserSupabase } from "@/lib/supabase/client";
 import { supabaseEnabled, ALLOWED_EMAIL_DOMAIN } from "@/lib/supabase/config";
-import { ShieldCheck, Sparkles, Lock, AlertTriangle } from "lucide-react";
 
-function MicrosoftLogo({ className }: { className?: string }) {
+const VIDEO_URL =
+  "https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260619_191346_9d19d66e-86a4-47f7-8dc6-712c1788c3b2.mp4";
+
+const NAV_LINKS = ["Platform", "Fleet", "Security", "Contact"];
+
+/** Only allow same-origin path redirects (blocks open-redirect to external sites).
+ *  Rejects protocol-relative `//host` and the backslash bypass `/\host` (browsers
+ *  normalise `\` to `/`, turning it into a protocol-relative external redirect). */
+const safeRedirect = (r: string) =>
+  r.startsWith("/") && !r.startsWith("//") && !r.startsWith("/\\") ? r : "/";
+
+/** Splits text into characters and fades each in with a 0.07s stagger, once in view. */
+function StaggeredFade({ text }: { text: string }) {
+  const ref = React.useRef<HTMLSpanElement>(null);
+  const inView = useInView(ref, { once: true });
   return (
-    <svg viewBox="0 0 23 23" className={className} aria-hidden width="18" height="18">
-      <rect x="1" y="1" width="10" height="10" fill="#f25022" />
-      <rect x="12" y="1" width="10" height="10" fill="#7fba00" />
-      <rect x="1" y="12" width="10" height="10" fill="#00a4ef" />
-      <rect x="12" y="12" width="10" height="10" fill="#ffb900" />
-    </svg>
+    <span ref={ref} aria-label={text}>
+      {text.split("").map((ch, i) => (
+        <motion.span
+          key={i}
+          aria-hidden
+          style={{ display: "inline-block" }}
+          initial={{ opacity: 0 }}
+          animate={inView ? { opacity: 1, y: 0 } : { opacity: 0 }}
+          transition={{ delay: i * 0.07, duration: 0.5, ease: "easeOut" }}
+        >
+          {ch === " " ? " " : ch}
+        </motion.span>
+      ))}
+    </span>
   );
 }
 
@@ -26,6 +47,35 @@ function LoginInner() {
   const redirect = params.get("redirect") || "/";
   const error = params.get("error");
   const [loading, setLoading] = React.useState(false);
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const [showEmail, setShowEmail] = React.useState(true);
+  const [email, setEmail] = React.useState("admin");
+  const [password, setPassword] = React.useState("admin");
+  const [authError, setAuthError] = React.useState<string | null>(null);
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+
+  // Respect prefers-reduced-motion for the background hero video: only play /
+  // loop it when the user hasn't asked the OS to reduce motion. Controlled here
+  // (not via the `autoPlay`/`loop` attributes) so the preference is honoured on
+  // mount and when it changes, and so the global reduced-motion CSS — which only
+  // covers CSS animations, not native video playback — isn't relied on.
+  React.useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const apply = () => {
+      if (mq.matches) {
+        v.loop = false;
+        v.pause();
+      } else {
+        v.loop = true;
+        void v.play().catch(() => {});
+      }
+    };
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
 
   const signInWithMicrosoft = async () => {
     const supabase = getBrowserSupabase();
@@ -40,103 +90,249 @@ function LoginInner() {
     if (err) setLoading(false);
   };
 
+  const signInWithEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setAuthError(null);
+    // Dev one-click demo: admin/admin is resolved SERVER-SIDE (the real password
+    // never reaches the client bundle).
+    if (email.trim() === "admin" && password === "admin") {
+      const res = await fetch("/api/auth/demo-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: "admin", password: "admin" }),
+      });
+      if (res.ok) {
+        window.location.href = safeRedirect(redirect);
+        return;
+      }
+      setAuthError("Demo login is unavailable.");
+      setLoading(false);
+      return;
+    }
+    const supabase = getBrowserSupabase();
+    if (!supabase) {
+      setLoading(false);
+      return;
+    }
+    const loginEmail = email.includes("@") ? email : `${email}@hermes.local`;
+    const { error: err } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
+    if (err) {
+      setAuthError(err.message);
+      setLoading(false);
+    } else {
+      // Full reload so the store re-hydrates with the authenticated session.
+      window.location.href = safeRedirect(redirect);
+    }
+  };
+
+  const handleCTA = () => {
+    if (supabaseEnabled) void signInWithMicrosoft();
+    else router.push(safeRedirect(redirect));
+  };
+
+  const ctaText = loading
+    ? "Signing in…"
+    : supabaseEnabled
+      ? "Sign in with Microsoft"
+      : "Enter the console";
+
   return (
-    <main className="grid min-h-screen lg:grid-cols-2">
-      {/* Brand panel */}
-      <section className="relative hidden overflow-hidden bg-ink p-12 text-paper lg:flex lg:flex-col lg:justify-between">
-        <div className="orbital absolute -right-24 -top-24 h-80 w-80 rounded-full opacity-40" aria-hidden />
-        <div className="bg-dot-grid absolute inset-0 opacity-[0.15]" aria-hidden />
-        <div className="relative">
-          <HermesWordmark className="[&_*]:!text-paper" />
+    <div className="login-hero relative flex h-screen w-screen flex-col overflow-hidden bg-[#010101] text-white">
+      {/* Background video */}
+      <video
+        ref={videoRef}
+        className="absolute inset-0 h-full w-full object-cover object-center"
+        muted
+        loop
+        playsInline
+        poster=""
+        aria-hidden
+      >
+        <source src={VIDEO_URL} type="video/mp4" />
+      </video>
+      {/* Legibility overlay */}
+      <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/70" aria-hidden />
+
+      {/* Navigation */}
+      <nav className="relative z-20 flex items-center justify-between px-5 py-6 sm:px-8 md:justify-center">
+        <span className="flex items-center md:absolute md:left-8">
+          {/* Full transparent logo (white ARIA reads on the dark hero) — shown whole. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/aria-logo.png" alt="Aria: Agentic Sourcing Platform by Mantu" className="h-16 w-auto object-contain" />
+        </span>
+        <div className="hidden items-center gap-10 md:flex">
+          {NAV_LINKS.map((l) => (
+            <a
+              key={l}
+              href="#"
+              className="text-xs uppercase tracking-[0.2em] text-white/80 transition-colors duration-300 hover:text-white"
+            >
+              {l}
+            </a>
+          ))}
         </div>
-        <div className="relative space-y-6">
-          <p className="eyebrow text-mantu-yellow">Autonomous recruiting ops</p>
-          <h1 className="display text-5xl">
-            Source boldly.
-            <br />
-            Book beyond.
-          </h1>
-          <p className="max-w-md text-paper/70">
-            Hermes turns job requests into booked interviews: human approval, machine speed.
-            Sign in with your Microsoft work account to enter the command center.
-          </p>
-        </div>
-        <ul className="relative space-y-2 text-sm text-paper/70">
-          <li className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-mantu-yellow" /> Human approval gate on by default
-          </li>
-          <li className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-mantu-yellow" /> Every touchpoint tracked in your workspace
-          </li>
-        </ul>
-      </section>
+        <button
+          type="button"
+          className="text-white md:hidden"
+          onClick={() => setMenuOpen((v) => !v)}
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={menuOpen}
+        >
+          {menuOpen ? <X size={22} /> : <Menu size={22} />}
+        </button>
+        <span className="hidden text-xs uppercase tracking-[0.2em] text-white/60 md:absolute md:right-8 md:block">
+          by Mantu
+        </span>
+      </nav>
 
-      {/* Auth panel */}
-      <section className="flex items-center justify-center p-6">
-        <div className="w-full max-w-sm">
-          <div className="mb-8 lg:hidden">
-            <HermesWordmark />
-          </div>
-          <p className="eyebrow mb-2">Welcome back</p>
-          <h2 className="display text-3xl text-ink">Sign in to Hermes</h2>
-          <p className="mt-2 text-sm text-muted">
-            {supabaseEnabled
-              ? "Use your Microsoft work account to continue."
-              : "Supabase isn’t configured — explore the open demo instead."}
-          </p>
-
-          {error && (
-            <div className="mt-5 flex items-start gap-2 rounded-2xl bg-danger-soft px-4 py-3 text-sm text-danger">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          <div className="mt-7 space-y-3">
-            {supabaseEnabled ? (
-              <Button
-                onClick={signInWithMicrosoft}
-                loading={loading}
-                size="lg"
-                variant="primary"
-                className="w-full justify-center"
-                leftIcon={<MicrosoftLogo />}
+      {/* Mobile menu */}
+      <AnimatePresence>
+        {menuOpen && (
+          <motion.div
+            className="mobile-menu-glass fixed left-4 right-4 top-16 z-50 flex flex-col items-center gap-5 rounded-2xl py-8 md:hidden"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+          >
+            {NAV_LINKS.map((l, i) => (
+              <motion.a
+                key={l}
+                href="#"
+                onClick={() => setMenuOpen(false)}
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.05 + i * 0.06 }}
+                className="text-sm font-light uppercase tracking-[0.25em] text-white/90 transition-colors hover:text-white"
               >
-                Continue with Microsoft
-              </Button>
-            ) : (
-              <Button
-                onClick={() => router.push("/")}
-                size="lg"
-                variant="primary"
-                className="w-full justify-center"
-                leftIcon={<Sparkles className="h-4 w-4" />}
-              >
-                Enter the demo
-              </Button>
-            )}
+                {l}
+              </motion.a>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-            {ALLOWED_EMAIL_DOMAIN && supabaseEnabled && (
-              <p className="flex items-center justify-center gap-1.5 text-xs text-muted">
-                <Lock className="h-3.5 w-3.5" />
-                Restricted to @{ALLOWED_EMAIL_DOMAIN} accounts
-              </p>
-            )}
+      {/* Hero content */}
+      <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-5 pb-16 pt-12 text-center sm:px-8 sm:pt-16 md:pt-24">
+        <h1 className="font-garamond mb-6 text-4xl font-normal leading-[1.08] tracking-tight text-white sm:mb-8 sm:text-6xl md:text-8xl lg:text-9xl">
+          <span className="block">
+            <StaggeredFade text="HUMAN APPROVAL" />
+          </span>
+          <span className="block">
+            <StaggeredFade text="MACHINE SPEED" />
+          </span>
+        </h1>
+
+        <motion.p
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 1.6 }}
+          className="mb-8 max-w-xs text-sm font-light leading-relaxed text-white/70 sm:mb-10 sm:max-w-md sm:text-base md:text-lg"
+        >
+          A fleet of autonomous agents that source, write, and book.
+          <br className="hidden sm:block" /> Every message held for your sign-off.
+        </motion.p>
+
+        <motion.button
+          type="button"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 2.0 }}
+          onClick={handleCTA}
+          disabled={loading}
+          className="liquid-glass rounded-full px-7 py-3.5 text-sm font-light uppercase tracking-[0.18em] text-white/90 disabled:opacity-70 sm:px-10 sm:py-4 sm:tracking-[0.2em]"
+        >
+          {ctaText}
+        </motion.button>
+
+        {supabaseEnabled && (
+          <div className="mt-5 w-full max-w-xs">
+            <button
+              type="button"
+              onClick={() => setShowEmail((v) => !v)}
+              className="text-xs uppercase tracking-[0.18em] text-white/50 transition-colors hover:text-white/80"
+            >
+              {showEmail ? "Hide email sign-in" : "Sign in with email"}
+            </button>
+            <AnimatePresence>
+              {showEmail && (
+                <motion.form
+                  onSubmit={signInWithEmail}
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.25 }}
+                  className="mt-4 flex flex-col gap-3 overflow-hidden"
+                >
+                  <label htmlFor="login-username" className="sr-only">
+                    Username or email
+                  </label>
+                  <input
+                    id="login-username"
+                    name="username"
+                    type="text"
+                    required
+                    autoComplete="username"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="admin"
+                    className="rounded-full bg-white/5 px-5 py-3 text-sm text-white placeholder-white/40 outline-none ring-1 ring-inset ring-white/15 transition focus:ring-white/40"
+                  />
+                  <label htmlFor="login-password" className="sr-only">
+                    Password
+                  </label>
+                  <input
+                    id="login-password"
+                    name="password"
+                    type="password"
+                    required
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Password"
+                    className="rounded-full bg-white/5 px-5 py-3 text-sm text-white placeholder-white/40 outline-none ring-1 ring-inset ring-white/15 transition focus:ring-white/40"
+                  />
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="liquid-glass rounded-full px-7 py-3 text-sm font-light uppercase tracking-[0.18em] text-white/90 disabled:opacity-70"
+                  >
+                    {loading ? "Signing in…" : "Sign in"}
+                  </button>
+                </motion.form>
+              )}
+            </AnimatePresence>
+            {authError && <p className="mt-3 text-xs text-red-300">{authError}</p>}
           </div>
+        )}
 
-          <p className="mt-10 text-xs leading-relaxed text-muted">
-            Synthetic data · dry-run mode · no candidate is contacted without approval. By
-            continuing you agree this is a demonstration environment.
+        {ALLOWED_EMAIL_DOMAIN && supabaseEnabled && (
+          <p className="mt-5 flex items-center gap-1.5 text-xs text-white/50">
+            <Lock className="h-3.5 w-3.5" />
+            Restricted to @{ALLOWED_EMAIL_DOMAIN} accounts
           </p>
-        </div>
-      </section>
-    </main>
+        )}
+
+        {error && (
+          <div className="mt-5 flex items-center gap-2 rounded-full bg-red-500/15 px-4 py-2 text-xs text-red-200 ring-1 ring-inset ring-red-400/20">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <p className="mt-10 max-w-sm text-[0.7rem] font-light leading-relaxed text-white/40">
+          No candidate is contacted without your explicit approval. Nothing sends until you connect
+          and verify a sending domain.
+        </p>
+      </main>
+    </div>
   );
 }
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-paper" />}>
+    <Suspense fallback={<div className="h-screen w-screen bg-[#010101]" />}>
       <LoginInner />
     </Suspense>
   );

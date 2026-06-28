@@ -109,8 +109,8 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
     }
     setPreview(res);
     toast({
-      title: `Interview booked — ${candidate.name}`,
-      description: `Dry-run · Teams link ready: ${res.booking.teamsLink}`,
+      title: `Interview booked: ${candidate.name}`,
+      description: "Added to the schedule. The meeting link is issued when the calendar integration goes live.",
       variant: "success",
     });
   }
@@ -193,8 +193,8 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
       <Modal
         open={preview !== null}
         onClose={() => setPreview(null)}
-        title={preview ? `Interview booked — ${preview.booking.candidateName}` : "Interview booked"}
-        description="Dry-run scheduled. Prep and confirmation emails are drafted below — nothing is sent automatically."
+        title={preview ? `Interview booked: ${preview.booking.candidateName}` : "Interview booked"}
+        description="Dry-run scheduled. Prep and confirmation emails are drafted below. Nothing is sent automatically."
         footer={
           <Button variant="primary" size="sm" onClick={() => setPreview(null)}>
             Done
@@ -217,25 +217,37 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
               <p className="mt-1 text-xs text-muted">
                 {formatDateTime(preview.booking.startTime)} · {preview.booking.timezone}
               </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <a
-                  href={preview.booking.teamsLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex h-8 items-center gap-1.5 rounded-full bg-electric-soft px-3 text-xs font-semibold text-electric ring-1 ring-inset ring-electric/20 transition hover:bg-electric/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
-                >
-                  <Video className="h-3.5 w-3.5" aria-hidden />
-                  Join Teams
-                </a>
-                <a
-                  href={preview.booking.calLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex h-8 items-center gap-1.5 rounded-full bg-violet-soft px-3 text-xs font-semibold text-violet ring-1 ring-inset ring-violet/20 transition hover:bg-violet/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
-                >
-                  <CalendarPlus className="h-3.5 w-3.5" aria-hidden />
-                  Cal.com
-                </a>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {preview.booking.teamsLink || preview.booking.calLink ? (
+                  <>
+                    {preview.booking.teamsLink && (
+                      <a
+                        href={preview.booking.teamsLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-8 items-center gap-1.5 rounded-full bg-electric-soft px-3 text-xs font-semibold text-electric ring-1 ring-inset ring-electric/20 transition hover:bg-electric/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
+                      >
+                        <Video className="h-3.5 w-3.5" aria-hidden />
+                        Join Teams
+                      </a>
+                    )}
+                    {preview.booking.calLink && (
+                      <a
+                        href={preview.booking.calLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-8 items-center gap-1.5 rounded-full bg-violet-soft px-3 text-xs font-semibold text-violet ring-1 ring-inset ring-violet/20 transition hover:bg-violet/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
+                      >
+                        <CalendarPlus className="h-3.5 w-3.5" aria-hidden />
+                        Cal.com
+                      </a>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-xs text-muted">
+                    Meeting links are issued when the calendar integration goes live.
+                  </p>
+                )}
               </div>
             </div>
 

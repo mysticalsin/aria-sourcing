@@ -77,7 +77,7 @@ export default function CampaignsPage() {
       <PageHeader
         eyebrow="Recruiting operations"
         title="Campaigns"
-        description="Every open role Hermes is sourcing for. Track the funnel, spot the bottleneck, and act on the next best move."
+        description="Every open role Aria is sourcing for. Track the funnel, spot the bottleneck, and act on the next best move."
         actions={
           <Button
             variant="secondary"
@@ -106,7 +106,7 @@ export default function CampaignsPage() {
           <EmptyState
             icon={<FolderSearch className="h-6 w-6" />}
             title="No campaigns yet"
-            description="Paste a hiring manager's request into intake and Hermes will parse the role, build a sourcing strategy, and open a campaign."
+            description="Paste a hiring manager's request into intake and Aria will parse the role, build a sourcing strategy, and open a campaign."
             action={
               <Button
                 variant="secondary"

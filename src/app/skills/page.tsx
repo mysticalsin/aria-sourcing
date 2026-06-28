@@ -75,8 +75,8 @@ function LoopExplainer() {
           </Eyebrow>
           <CardTitle className="mt-0.5">Experience compounds into better playbooks</CardTitle>
           <p className="mt-1 max-w-2xl text-sm text-muted">
-            Hermes never edits itself silently. It studies what actually converted, drafts a
-            proposal, and waits for your sign-off — then the accepted parameters feed straight back
+            Aria never edits itself silently. It studies what actually converted, drafts a
+            proposal, and waits for your sign-off. The accepted parameters then feed straight back
             into the next sourcing, outreach, and reply-classification run.
           </p>
         </div>
@@ -128,7 +128,7 @@ function ProposalCard({
     actions.setSkillUpdateStatus(campaignId, proposal.id, "accepted");
     toast({
       title: "Learning accepted",
-      description: `${proposal.title} is now baked into ${proposal.skill}.md — it applies on the next run.`,
+      description: `${proposal.title} is now baked into ${proposal.skill}.md. It applies on the next run.`,
       variant: "success",
     });
   }
@@ -226,13 +226,13 @@ export default function SkillsPage() {
     setRunning(false);
     const n = result.length;
     toast({
-      title: n > 0 ? `Learning run complete — ${n} ${n === 1 ? "proposal" : "proposals"}` : "Learning run complete",
+      title: n > 0 ? `Learning run complete: ${n} ${n === 1 ? "proposal" : "proposals"}` : "Learning run complete",
       description:
         n > 0
           ? "Review each proposed change below and accept the ones worth keeping."
           : activeCampaign
             ? "No new refinements surfaced from the latest outcomes."
-            : "Run a campaign first so Hermes has outcomes to learn from.",
+            : "Run a campaign first so Aria has outcomes to learn from.",
       variant: n > 0 ? "success" : "info",
     });
   }
@@ -242,7 +242,7 @@ export default function SkillsPage() {
       <PageHeader
         eyebrow="Self-improvement"
         title="Skills that learn from experience."
-        description="Living playbooks the agent reads at runtime — and rewrites for itself as it learns what books interviews. Every change is proposed, reviewed, and reversible."
+        description="Living playbooks the agent reads at runtime and rewrites as it learns what books interviews. Every change is proposed, reviewed, and reversible."
         actions={
           <Button
             variant="secondary"
@@ -320,10 +320,10 @@ export default function SkillsPage() {
           <section>
             <div className="mb-4">
               <Eyebrow>Playbooks</Eyebrow>
-              <CardTitle>The skills Hermes runs on</CardTitle>
+              <CardTitle>The skills Aria runs on</CardTitle>
               <p className="mt-1 max-w-2xl text-sm text-muted">
                 Each skill is markdown the agent reads at runtime plus the tuned parameters it has
-                learned. Edit any playbook directly — your changes take effect on the next run.
+                learned. Edit any playbook directly. Your changes take effect on the next run.
               </p>
             </div>
 

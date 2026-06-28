@@ -1,7 +1,18 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import { parseEmailAndJD, isMantuNeedEmail } from "@/lib/mock-ai";
 import { getServerSupabase } from "@/lib/supabase/server";
-import { supabaseEnabled } from "@/lib/supabase/config";
+import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
+import { validateBody } from "@/lib/api/validate";
+import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
+
+const IntakeSchema = z.object({
+  email: z.string().max(20_000).optional(),
+  jd: z.string().max(20_000).optional(),
+  from: z.string().max(500).optional(),
+  subject: z.string().max(500).optional(),
+  body: z.string().max(20_000).optional(),
+});
 
 /**
  * Intake API / email-scan endpoint.
@@ -26,45 +37,40 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  // Reject oversized requests before buffering/parsing the body.
-  if (Number(req.headers.get("content-length") ?? 0) > 64_000) {
-    return NextResponse.json({ ok: false, error: "Payload too large." }, { status: 413 });
-  }
-  let payload: Record<string, unknown>;
-  try {
-    payload = await req.json();
-  } catch {
-    return NextResponse.json({ ok: false, error: "Invalid JSON body." }, { status: 400 });
-  }
+  // Fail closed in production: middleware does not run on /api/*, so refuse here
+  // rather than fall back to open demo mode when Supabase is unconfigured in prod.
+  const prodBlock = prodFailClosed();
+  if (prodBlock) return prodBlock;
 
-  // Accept {email,jd} or {from,subject,body}
-  const email =
-    typeof payload.email === "string" && payload.email.trim()
-      ? payload.email
-      : [
-          payload.from ? `From: ${payload.from}` : "",
-          payload.subject ? `Subject: ${payload.subject}` : "",
-          typeof payload.body === "string" ? payload.body : "",
-        ]
-          .filter(Boolean)
-          .join("\n");
-  const jd = typeof payload.jd === "string" ? payload.jd : undefined;
-
-  if (!email.trim()) {
-    return NextResponse.json({ ok: false, error: "Provide `email` (or `from`/`subject`/`body`)." }, { status: 400 });
-  }
-  // Hard input cap — a JD email is never this long. Blocks pathological-input CPU abuse.
-  if (email.length > 20000 || (jd?.length ?? 0) > 20000) {
-    return NextResponse.json({ ok: false, error: "Payload too large (max 20000 chars)." }, { status: 413 });
-  }
-
-  // Gate when a real backend exists; open in demo (pure text parsing).
+  // Auth-first: gate before parsing or returning anything when a real backend
+  // exists. Demo mode is open (pure text parsing of caller-supplied input).
   if (supabaseEnabled) {
     const supabase = getServerSupabase();
     const { data } = (await supabase?.auth.getUser()) ?? { data: { user: null } };
     if (!data?.user) {
       return NextResponse.json({ ok: false, error: "Not authenticated." }, { status: 401 });
     }
+  }
+
+  // Throttle: parsing runs an LLM-style extraction — cost/abuse-prone. Tight limit.
+  const limit = checkRateLimit(rateLimitKey(req, "intake"), { windowMs: 60_000, max: 10 });
+  if (!limit.ok) return tooManyRequests(limit.retryAfterSec);
+
+  const validated = await validateBody(req, IntakeSchema, { maxBytes: 64_000 });
+  if (!validated.ok) return validated.response;
+  const payload = validated.data;
+
+  // Accept {email,jd} or {from,subject,body}
+  const email =
+    payload.email && payload.email.trim()
+      ? payload.email
+      : [payload.from ? `From: ${payload.from}` : "", payload.subject ? `Subject: ${payload.subject}` : "", payload.body ?? ""]
+          .filter(Boolean)
+          .join("\n");
+  const jd = payload.jd;
+
+  if (!email.trim()) {
+    return NextResponse.json({ ok: false, error: "Provide `email` (or `from`/`subject`/`body`)." }, { status: 400 });
   }
 
   const parsed = parseEmailAndJD({ email, jd });

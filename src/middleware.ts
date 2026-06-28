@@ -1,16 +1,31 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
-import { SUPABASE_ANON_KEY, SUPABASE_URL, supabaseEnabled, ALLOWED_EMAIL_DOMAIN } from "@/lib/supabase/config";
+import { SUPABASE_ANON_KEY, SUPABASE_URL, supabaseEnabled, ALLOWED_EMAIL_DOMAIN, isProduction } from "@/lib/supabase/config";
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
 /**
- * Route gate. In DEMO mode (no Supabase env) it is a no-op — the app is open.
- * In LIVE mode it refreshes the Supabase session and redirects unauthenticated
- * users to /login (Microsoft SSO). /login and /auth/* stay public.
+ * Route gate. In non-production DEMO mode (no Supabase env) it is a no-op — the
+ * app is open for local development. In production with no Supabase env it FAILS
+ * CLOSED (503) rather than granting open access. In LIVE mode it refreshes the
+ * Supabase session and redirects unauthenticated users to /login (Microsoft SSO).
+ * /login and /auth/* stay public.
  */
 export async function middleware(req: NextRequest) {
-  if (!supabaseEnabled) return NextResponse.next();
+  if (!supabaseEnabled) {
+    // Fail CLOSED in production. With no Supabase env the app would run in open
+    // DEMO mode (no login gate, every caller treated as admin) — never acceptable
+    // in prod. Refuse every matched route with a 503; the matcher already excludes
+    // static assets and API routes, so nothing privileged leaks through.
+    if (isProduction) {
+      return new NextResponse(
+        "Service unavailable: server authentication is not configured.",
+        { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } },
+      );
+    }
+    // Non-production: keep the open DEMO experience for local development.
+    return NextResponse.next();
+  }
 
   let res = NextResponse.next({ request: req });
 

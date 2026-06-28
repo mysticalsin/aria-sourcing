@@ -14,9 +14,36 @@ import {
   useDashboardKpis,
   useSettings,
 } from "@/lib/store";
-import { useToast } from "@/components/ui";
+import { useToast, useConfirm } from "@/components/ui";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { getCurrentUser, type CurrentUser } from "@/lib/supabase/workspace";
+
+/**
+ * Keyboard handler shared by both dropdown menus.
+ * Escape closes the menu and restores focus to the trigger.
+ * ArrowDown/ArrowUp cycle focus among role="menuitem" descendants.
+ */
+function menuKeyHandler(
+  e: React.KeyboardEvent<HTMLDivElement>,
+  close: () => void,
+  triggerRef: React.RefObject<HTMLButtonElement>
+) {
+  const items = Array.from(
+    e.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]')
+  );
+  const idx = items.indexOf(document.activeElement as HTMLElement);
+  if (e.key === "Escape") {
+    e.preventDefault();
+    close();
+    triggerRef.current?.focus();
+  } else if (e.key === "ArrowDown") {
+    e.preventDefault();
+    items[(idx + 1) % items.length]?.focus();
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    items[(idx - 1 + items.length) % items.length]?.focus();
+  }
+}
 
 export function TopBar() {
   const router = useRouter();
@@ -26,14 +53,38 @@ export function TopBar() {
   const settings = useSettings();
   const { setActiveCampaign, resetDemo } = useActions();
   const { toast } = useToast();
+  const confirm = useConfirm();
 
   const [notifOpen, setNotifOpen] = React.useState(false);
   const [userOpen, setUserOpen] = React.useState(false);
   const [authUser, setAuthUser] = React.useState<CurrentUser | null>(null);
 
+  // Refs for trigger buttons (focus restoration on close) and menu panels (focus-in on open).
+  const notifTriggerRef = React.useRef<HTMLButtonElement>(null);
+  const notifMenuRef = React.useRef<HTMLDivElement>(null);
+  const userTriggerRef = React.useRef<HTMLButtonElement>(null);
+  const userMenuRef = React.useRef<HTMLDivElement>(null);
+
   React.useEffect(() => {
     if (supabaseEnabled) getCurrentUser().then(setAuthUser);
   }, []);
+
+  // Move focus to the first menuitem when the notification panel opens.
+  // Fall back to the panel itself (tabIndex=-1) when the list is empty.
+  React.useEffect(() => {
+    if (notifOpen && notifMenuRef.current) {
+      const first = notifMenuRef.current.querySelector<HTMLElement>('[role="menuitem"]');
+      (first ?? notifMenuRef.current).focus();
+    }
+  }, [notifOpen]);
+
+  // Move focus to the first menuitem when the user panel opens.
+  React.useEffect(() => {
+    if (userOpen && userMenuRef.current) {
+      const first = userMenuRef.current.querySelector<HTMLElement>('[role="menuitem"]');
+      (first ?? userMenuRef.current).focus();
+    }
+  }, [userOpen]);
 
   const displayName = authUser?.name ?? settings.operatorName;
   const displayInitials = displayName
@@ -56,7 +107,7 @@ export function TopBar() {
   ].filter(Boolean) as { label: string; href: string }[];
 
   return (
-    <header className="sticky top-0 z-40 border-b border-line bg-paper/85 backdrop-blur">
+    <header className="sticky top-0 z-40 topbar-glass">
       <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
         <Link href="/" className="lg:hidden">
           <HermesWordmark compact />
@@ -76,7 +127,7 @@ export function TopBar() {
               id="campaign-switcher"
               value={active?.id ?? ""}
               onChange={(e) => setActiveCampaign(e.target.value)}
-              className="h-10 max-w-[200px] appearance-none truncate rounded-full border border-ink/12 bg-surface pl-4 pr-9 text-sm font-semibold text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric"
+              className="h-10 max-w-[200px] appearance-none truncate rounded-full border border-violet/10 bg-surface/80 backdrop-blur-sm pl-4 pr-9 text-sm font-semibold text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric"
             >
               {campaigns.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -89,7 +140,7 @@ export function TopBar() {
         )}
 
         <span
-          className="hidden items-center gap-1.5 rounded-full bg-success-soft px-3 py-1.5 text-xs font-bold text-success lg:inline-flex"
+          className="hidden items-center gap-1.5 rounded-full bg-success-soft/80 px-3 py-1.5 text-xs font-bold text-success ring-1 ring-success/15 lg:inline-flex"
           title="Human approval gate is on"
         >
           <ShieldCheck className="h-3.5 w-3.5" />
@@ -99,12 +150,14 @@ export function TopBar() {
         {/* Notifications */}
         <div className="relative">
           <button
+            ref={notifTriggerRef}
             onClick={() => {
               setNotifOpen((o) => !o);
               setUserOpen(false);
             }}
             aria-label={`Notifications (${notifications.length})`}
             aria-expanded={notifOpen}
+            aria-haspopup="menu"
             className="relative rounded-full p-2.5 text-ink-soft hover:bg-ink/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric"
           >
             <Bell className="h-5 w-5" />
@@ -115,8 +168,15 @@ export function TopBar() {
           {notifOpen && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setNotifOpen(false)} aria-hidden />
-              <div className="absolute right-0 z-20 mt-2 w-80 overflow-hidden rounded-3xl border border-line bg-paper shadow-lift animate-scale-in">
-                <p className="border-b border-line px-4 py-3 text-sm font-bold text-ink">Attention needed</p>
+              <div
+                ref={notifMenuRef}
+                role="menu"
+                aria-label="Notifications"
+                tabIndex={-1}
+                onKeyDown={(e) => menuKeyHandler(e, () => setNotifOpen(false), notifTriggerRef)}
+                className="absolute right-0 z-20 mt-2 w-80 overflow-hidden rounded-3xl glass-dropdown animate-scale-in"
+              >
+                <p className="border-b border-violet/10 px-4 py-3 text-sm font-bold text-ink">Attention needed</p>
                 {notifications.length === 0 ? (
                   <p className="px-4 py-6 text-center text-sm text-muted">All clear. Nothing needs you.</p>
                 ) : (
@@ -124,6 +184,7 @@ export function TopBar() {
                     {notifications.map((n, i) => (
                       <li key={i}>
                         <button
+                          role="menuitem"
                           onClick={() => {
                             router.push(n.href);
                             setNotifOpen(false);
@@ -145,15 +206,17 @@ export function TopBar() {
         {/* User menu */}
         <div className="relative">
           <button
+            ref={userTriggerRef}
             onClick={() => {
               setUserOpen((o) => !o);
               setNotifOpen(false);
             }}
             aria-label="User menu"
             aria-expanded={userOpen}
+            aria-haspopup="menu"
             className="flex items-center gap-2 rounded-full p-1 pr-2 hover:bg-ink/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric"
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-electric text-sm font-bold text-white">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full gradient-purple text-sm font-bold text-white shadow-soft">
               {displayInitials}
             </span>
             <ChevronDown className="hidden h-4 w-4 text-muted sm:block" />
@@ -161,40 +224,61 @@ export function TopBar() {
           {userOpen && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setUserOpen(false)} aria-hidden />
-              <div className="absolute right-0 z-20 mt-2 w-60 overflow-hidden rounded-3xl border border-line bg-paper shadow-lift animate-scale-in">
-                <div className="border-b border-line px-4 py-3">
+              <div
+                ref={userMenuRef}
+                role="menu"
+                aria-label="Account menu"
+                tabIndex={-1}
+                onKeyDown={(e) => menuKeyHandler(e, () => setUserOpen(false), userTriggerRef)}
+                className="absolute right-0 z-20 mt-2 w-60 overflow-hidden rounded-3xl glass-dropdown animate-scale-in"
+              >
+                <div className="border-b border-violet/10 px-4 py-3">
                   <p className="truncate text-sm font-bold text-ink">{displayName}</p>
                   <p className="truncate text-xs text-muted">{authUser?.email ?? "Sourcing Operator"}</p>
                 </div>
                 <div className="p-2">
                   <Link
                     href="/settings"
+                    role="menuitem"
                     onClick={() => setUserOpen(false)}
                     className="flex items-center gap-2 rounded-2xl px-3 py-2.5 text-sm text-ink-soft hover:bg-ink/5"
                   >
                     <ShieldCheck className="h-4 w-4" /> Settings & compliance
                   </Link>
                   <button
-                    onClick={() => {
-                      resetDemo();
+                    role="menuitem"
+                    onClick={async () => {
                       setUserOpen(false);
-                      toast({ title: "Demo reset", description: "Workspace seed restored.", variant: "success" });
-                      router.push("/");
+                      const ok = await confirm({
+                        title: "Reset workspace to defaults?",
+                        description:
+                          "This discards all local changes and restores the workspace to factory defaults. This can't be undone.",
+                        confirmLabel: "Reset",
+                        danger: true,
+                      });
+                      if (!ok) return;
+                      resetDemo();
+                      toast({ title: "Reset to defaults", description: "Workspace restored to factory defaults.", variant: "success" });
+                      // Full reload (not router.push) so the seeded in-memory state is
+                      // discarded before any debounced persist can overwrite a live
+                      // shared workspace. In live mode this re-hydrates from Supabase.
+                      window.location.href = "/";
                     }}
                     className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm text-ink-soft hover:bg-ink/5"
                   >
-                    <RotateCcw className="h-4 w-4" /> Reset demo data
+                    <RotateCcw className="h-4 w-4" /> Reset to defaults
                   </button>
                   {supabaseEnabled && (
                     <a
                       href="/auth/signout"
+                      role="menuitem"
                       className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm text-danger hover:bg-danger-soft"
                     >
                       <LogOut className="h-4 w-4" /> Sign out
                     </a>
                   )}
                 </div>
-                <div className="flex items-center gap-1.5 border-t border-line px-4 py-2.5 text-xs text-muted">
+                <div className="flex items-center gap-1.5 border-t border-violet/10 px-4 py-2.5 text-xs text-muted">
                   <Check className="h-3.5 w-3.5 text-success" /> Synthetic data · dry-run
                 </div>
               </div>

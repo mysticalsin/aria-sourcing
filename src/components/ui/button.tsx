@@ -4,7 +4,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 
-type Variant = "primary" | "secondary" | "ghost" | "outline" | "danger" | "subtle";
+type Variant = "primary" | "secondary" | "ghost" | "outline" | "danger" | "subtle" | "gradient";
 type Size = "sm" | "md" | "lg" | "icon";
 
 const VARIANTS: Record<Variant, string> = {
@@ -17,6 +17,8 @@ const VARIANTS: Record<Variant, string> = {
   ghost: "text-ink hover:bg-ink/5",
   subtle: "bg-ink/5 text-ink hover:bg-ink/10",
   danger: "bg-danger text-white hover:bg-danger/90 shadow-soft",
+  gradient:
+    "bg-gradient-to-br from-electric to-violet text-white hover:from-tangerine hover:to-violet shadow-glow-purple",
 };
 
 const SIZES: Record<Size, string> = {

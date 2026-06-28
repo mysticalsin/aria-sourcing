@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Badge, Button, Card, CardContent, Field, Input, Select, EmptyState, useToast } from "@/components/ui";
+import { Badge, Button, Card, CardContent, Field, Input, Select, EmptyState, useToast, useConfirm } from "@/components/ui";
 import { useActions, useApiKeys, useRole } from "@/lib/store";
 import { API_KEY_PROVIDERS, type ApiKeyProvider } from "@/lib/types";
 import { can } from "@/lib/rbac";
@@ -15,6 +15,7 @@ export function ApiKeysPanel() {
   const role = useRole();
   const actions = useActions();
   const { toast } = useToast();
+  const confirm = useConfirm();
   const isAdmin = can(role, "manage_keys");
 
   const [name, setName] = React.useState("");
@@ -58,7 +59,7 @@ export function ApiKeysPanel() {
   }
 
   async function handleRemove(id: string, label: string) {
-    if (!window.confirm(`Delete the API key "${label}"? This removes it from the backend.`)) return;
+    if (!(await confirm({ title: `Delete API key "${label}"?`, description: "This removes it from the backend.", confirmLabel: "Delete", danger: true }))) return;
     await actions.removeApiKey(id);
     toast({ title: "API key deleted", variant: "info" });
   }

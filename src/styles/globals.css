@@ -14,7 +14,7 @@
   --surface: 270 60% 99%;
   --ink: 271 100% 10%; /* #1A0033 */
   --ink-soft: 271 32% 30%;
-  --muted: 271 14% 48%;
+  --muted: 271 14% 40%;
   --line: 270 24% 90%;
 
   /* tangerine token = Mantu Bright Purple #7F00DA (primary CTA accent) */
@@ -54,16 +54,31 @@
 html {
   -webkit-text-size-adjust: 100%;
   scroll-behavior: smooth;
+  /* Base paper color lives on html so body can be transparent for the fixed gradient pseudo */
+  background-color: hsl(var(--paper));
 }
 
 body {
-  background-color: hsl(var(--paper));
+  /* background-color is on html; body is transparent so body::before gradient shows through */
+  isolation: isolate; /* creates a stacking context — makes z-index: -1 on ::before work correctly */
   color: hsl(var(--ink));
   font-family: var(--font-sans);
   font-feature-settings: "cv02", "cv03", "cv04", "ss01";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+}
+
+/* Subtle purple ambient mesh — position: fixed avoids full-page repaint on scroll */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background-image:
+    radial-gradient(ellipse 110% 70% at 10% -5%, hsl(var(--violet) / 0.07) 0%, transparent 52%),
+    radial-gradient(ellipse 80% 65% at 90% 108%, hsl(var(--electric) / 0.06) 0%, transparent 52%);
 }
 
 /* Accessible focus ring everywhere */
@@ -113,18 +128,86 @@ body {
   line-height: 0.98;
 }
 
-/* Card chrome */
+/* Card chrome — glassmorphic frosted surface */
 .card-surface {
-  background-color: hsl(var(--surface));
-  border: 1px solid hsl(var(--line));
+  background: hsl(var(--surface) / 0.74);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  border: 1px solid hsl(var(--violet) / 0.10);
   border-radius: 24px;
-  box-shadow: 0 1px 2px hsl(var(--ink) / 0.04), 0 8px 24px hsl(var(--ink) / 0.05);
+  box-shadow:
+    inset 0 1px 0 hsl(var(--paper) / 0.90),
+    0 1px 3px hsl(var(--ink) / 0.04),
+    0 8px 32px hsl(var(--ink) / 0.08);
 }
 
 /* Subtle dotted grid background for hero/canvas overlays */
 .bg-dot-grid {
-  background-image: radial-gradient(hsl(var(--ink) / 0.06) 1px, transparent 1px);
+  background-image: radial-gradient(hsl(var(--violet) / 0.07) 1px, transparent 1px);
   background-size: 22px 22px;
+}
+
+/* ============================================================================
+   GLASSMORPHIC SURFACE SYSTEM
+   Frosted, translucent panels with Mantu purple tints. Requires a non-solid
+   background behind each surface (the body gradient satisfies this).
+   ========================================================================== */
+
+/* Topbar — frosted top navigation bar */
+.topbar-glass {
+  background: hsl(var(--paper) / 0.80);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-bottom: 1px solid hsl(var(--violet) / 0.08);
+  box-shadow: 0 1px 16px hsl(var(--ink) / 0.06);
+}
+
+/* Sidebar — tall frosted navigation panel */
+.sidebar-glass {
+  background: linear-gradient(
+    180deg,
+    hsl(var(--paper) / 0.88) 0%,
+    hsl(var(--surface) / 0.82) 100%
+  );
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border-right: 1px solid hsl(var(--violet) / 0.08);
+}
+
+/* Glass panel — drawer / modal / sheet */
+.glass-panel {
+  background: hsl(var(--surface) / 0.88);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  box-shadow:
+    inset 0 1px 0 hsl(var(--paper) / 0.90),
+    -4px 0 48px hsl(var(--ink) / 0.12),
+    0 0 0 1px hsl(var(--violet) / 0.06);
+}
+
+/* Glass dropdown — notification & user menu popovers */
+.glass-dropdown {
+  background: hsl(var(--surface) / 0.88);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid hsl(var(--violet) / 0.10);
+  box-shadow:
+    inset 0 1px 0 hsl(var(--paper) / 0.85),
+    0 4px 24px hsl(var(--ink) / 0.10),
+    0 1px 3px hsl(var(--ink) / 0.06);
+}
+
+/* Purple gradient fill — logo tile, active states, hero accents */
+.gradient-purple {
+  background: linear-gradient(135deg, hsl(var(--electric)), hsl(var(--violet)));
+}
+
+/* Purple gradient text — headline accents */
+.gradient-purple-text {
+  background: linear-gradient(135deg, hsl(var(--electric)), hsl(var(--violet)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 /* Conic / orbital decorative gradient used in hero shapes */
@@ -255,4 +338,64 @@ body {
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ============================================================================
+   Cinematic login hero — scoped classes (used only on /login).
+   ========================================================================== */
+.font-garamond {
+  font-family: "Garamond", "Times New Roman", serif;
+}
+
+.login-hero {
+  font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.mobile-menu-glass {
+  background: rgba(10, 10, 10, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.liquid-glass {
+  background: rgba(255, 255, 255, 0.01);
+  background-blend-mode: luminosity;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: none;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.liquid-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.4px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.45) 0%,
+    rgba(255, 255, 255, 0.15) 20%,
+    rgba(255, 255, 255, 0) 40%,
+    rgba(255, 255, 255, 0) 60%,
+    rgba(255, 255, 255, 0.15) 80%,
+    rgba(255, 255, 255, 0.45) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.liquid-glass:hover {
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.15);
+}
+
+.liquid-glass:active {
+  transform: scale(0.98);
 }

@@ -1,7 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
-import { supabaseEnabled } from "@/lib/supabase/config";
+import { z } from "zod";
+import { getServerSupabase, getServiceSupabase, requireAdmin } from "@/lib/supabase/server";
+import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { validateApiKeyFormat } from "@/lib/providers";
+import { validateBody } from "@/lib/api/validate";
+import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
+
+const ApiKeyTestSchema = z.object({
+  provider: z.string().max(80).optional(),
+  value: z.string().max(1000).optional(),
+  id: z.string().uuid().optional(),
+});
 
 /**
  * Test an API key. Either test a value passed directly (just-entered), or test a
@@ -10,22 +19,32 @@ import { validateApiKeyFormat } from "@/lib/providers";
  * the secret.
  */
 export async function POST(req: NextRequest) {
-  if (Number(req.headers.get("content-length") ?? 0) > 8000) {
-    return NextResponse.json({ ok: false, error: "Payload too large." }, { status: 413 });
-  }
-  let payload: Record<string, unknown>;
-  try {
-    payload = await req.json();
-  } catch {
-    return NextResponse.json({ ok: false, error: "Invalid JSON." }, { status: 400 });
-  }
-  const provider = String(payload.provider ?? "");
-  const value = typeof payload.value === "string" ? payload.value : "";
-  const id = typeof payload.id === "string" ? payload.id : "";
+  // Fail closed in production (middleware doesn't cover /api/*).
+  const prodBlock = prodFailClosed();
+  if (prodBlock) return prodBlock;
 
-  // Direct value test (e.g. on the entry form).
+  // Auth-first: when a real backend is configured, require admin BEFORE any work
+  // or response. The just-entered "value" format check previously returned to
+  // unauthenticated callers — it now sits behind this gate.
+  let session: ReturnType<typeof getServerSupabase> = null;
+  if (supabaseEnabled) {
+    session = getServerSupabase();
+    if (!session) return NextResponse.json({ ok: false, error: "No Supabase client." }, { status: 500 });
+    const admin = await requireAdmin(session);
+    if (!admin.ok) return admin.response;
+  }
+
+  // Throttle: key testing drives provider/LLM cost — abuse-prone. Tight limit.
+  const limit = checkRateLimit(rateLimitKey(req, "keys-test"), { windowMs: 60_000, max: 10 });
+  if (!limit.ok) return tooManyRequests(limit.retryAfterSec);
+
+  const validated = await validateBody(req, ApiKeyTestSchema, { maxBytes: 8_000 });
+  if (!validated.ok) return validated.response;
+  const { provider, value, id } = validated.data;
+
+  // Direct value test (e.g. on the entry form) — now behind the auth gate above.
   if (value) {
-    const fmt = validateApiKeyFormat(provider, value);
+    const fmt = validateApiKeyFormat(provider ?? "", value);
     return NextResponse.json({ ok: true, valid: fmt.valid, detail: fmt.detail });
   }
 
@@ -35,15 +54,11 @@ export async function POST(req: NextRequest) {
   if (!supabaseEnabled) {
     return NextResponse.json({ ok: true, valid: true, detail: "Simulated test (demo mode)." });
   }
-  const session = getServerSupabase();
   const svc = getServiceSupabase();
   if (!session || !svc) {
     return NextResponse.json({ ok: false, error: "Service role not configured." }, { status: 500 });
   }
-  const {
-    data: { user },
-  } = await session.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "Not authenticated." }, { status: 401 });
+
   const { data: wid } = await session.rpc("current_workspace_id");
 
   const { data: row, error } = await svc

@@ -16,6 +16,7 @@ export { Progress, Meter } from "./progress";
 export { Skeleton, SkeletonText, SkeletonCard } from "./skeleton";
 export { Drawer } from "./drawer";
 export { Modal } from "./modal";
+export { ConfirmProvider, useConfirm, type ConfirmOptions } from "./confirm";
 export { ToastProvider, useToast } from "./toast";
 export { EmptyState } from "./empty-state";
 export { Table, THead, TBody, TR, TH, TD } from "./table";

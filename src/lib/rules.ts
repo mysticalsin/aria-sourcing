@@ -10,7 +10,7 @@ import type {
 import type { Tone } from "./utils";
 
 /* ============================================================================
-   Business rules — the guardrails Hermes enforces before acting.
+   Business rules — the guardrails Aria enforces before acting.
    ========================================================================== */
 
 export const MIN_SCORE_FLOOR = 70;
@@ -54,6 +54,12 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
   if (candidate.complianceFlags.unsubscribed) blockers.push("Candidate has unsubscribed.");
   if (candidate.complianceFlags.suppressed) blockers.push("Candidate contact is currently suppressed.");
 
+  // LinkedIn assisted-manual: we cannot send automatically, but we can draft
+  // the message and ask the operator to paste it on the candidate's profile.
+  if (message.channel === "LinkedIn" && !candidate.linkedinUrl.trim()) {
+    blockers.push("LinkedIn profile URL is required to send a LinkedIn message.");
+  }
+
   // Rule 4 — respect rate limits
   const limit = limitFor(message.channel, settings);
   const used = message.channel === "Email" ? ctx.emailsSentToday : ctx.linkedinSentToday;
@@ -67,7 +73,7 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
   if (candidate.lastContactedAt && message.sequenceStep <= 1) {
     const days = daysSince(candidate.lastContactedAt);
     if (days < DEDUPE_WINDOW_DAYS) {
-      warnings.push(`Contacted ${Math.round(days)}d ago — inside the ${DEDUPE_WINDOW_DAYS}d window.`);
+      warnings.push(`Contacted ${Math.round(days)}d ago, inside the ${DEDUPE_WINDOW_DAYS}d re-contact window.`);
     }
   }
 
@@ -186,7 +192,7 @@ export function campaignHealth(c: Campaign): CampaignHealth {
   if (m.sourced === 0)
     return { tone: "neutral", label: "Awaiting sourcing", detail: "No candidates sourced yet." };
   if (m.contacted > 0 && m.replied / Math.max(1, m.contacted) < 0.08)
-    return { tone: "warning", label: "Low reply rate", detail: "Reply rate under 8% — refresh messaging." };
+    return { tone: "warning", label: "Low reply rate", detail: "Reply rate under 8%. Refresh the messaging." };
   if (m.interested > 0 && m.booked === 0)
     return { tone: "tangerine", label: "Bookings pending", detail: "Interested candidates awaiting booking." };
   if (m.booked > 0) return { tone: "success", label: "On track", detail: "Pipeline converting to interviews." };

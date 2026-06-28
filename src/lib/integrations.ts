@@ -50,6 +50,16 @@ export function defaultIntegrations(): IntegrationStatus[] {
       errors: ["Awaiting official partner API credentials."],
     },
     {
+      id: "int_linkedin_rsc",
+      name: "LinkedIn Recruiter System Connect",
+      category: "Sourcing",
+      description: "Official LinkedIn ATS integration for automated profile import and InMail. Requires a LinkedIn partnership agreement.",
+      status: "not_configured",
+      mode: "mock",
+      lastSync: null,
+      errors: ["Not connected. Apply for RSC at LinkedIn Talent Solutions, then enter OAuth credentials."],
+    },
+    {
       id: "int_twenty",
       name: "Twenty CRM",
       category: "CRM",
@@ -67,7 +77,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       status: "not_configured",
       mode: "mock",
       lastSync: null,
-      errors: ["No project URL configured — demo runs on localStorage."],
+      errors: ["No project URL configured: demo runs on localStorage."],
     },
     {
       id: "int_n8n",
@@ -103,7 +113,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       id: "int_enrichment",
       name: "Apollo / Hunter / Clearbit",
       category: "Enrichment",
-      description: "Contact enrichment via official APIs only — no scraping.",
+      description: "Contact enrichment via official APIs only: no scraping.",
       status: "connected",
       mode: "mock",
       lastSync: isoHoursBefore(3),
@@ -113,7 +123,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       id: "int_sendgrid",
       name: "SendGrid / Resend",
       category: "Comms",
-      description: "Transactional email delivery. Dry-run by default — nothing is sent.",
+      description: "Transactional email delivery. Dry-run by default (nothing is sent).",
       status: "connected",
       mode: "mock",
       lastSync: isoHoursBefore(1),
@@ -138,25 +148,32 @@ export interface ConnectionTestResult {
   message: string;
 }
 
-/** Deterministic mock connection test. Never touches the network. */
+/**
+ * Honest connection check. Mock adapters make no network call (and say so); live
+ * credentials are validated server-side on the next real sync, not faked here.
+ */
 export function testConnection(integration: IntegrationStatus): ConnectionTestResult {
-  const seed = integration.id.split("").reduce((a, ch) => a + ch.charCodeAt(0), 0);
-  const latencyMs = 40 + (seed % 180);
   if (integration.status === "not_configured") {
     return {
       ok: false,
-      latencyMs,
-      message: `${integration.name}: not configured — add credentials to enable.`,
+      latencyMs: 0,
+      message: `${integration.name}: not configured. Add credentials to enable.`,
     };
   }
   if (integration.status === "error") {
-    return { ok: false, latencyMs, message: `${integration.name}: connection error.` };
+    return { ok: false, latencyMs: 0, message: `${integration.name}: last sync failed. Re-check credentials.` };
   }
-  const modeLabel = integration.mode === "mock" ? "mock adapter" : "live API";
+  if (integration.mode === "mock") {
+    return {
+      ok: true,
+      latencyMs: 0,
+      message: `${integration.name}: mock adapter. Sample data only, no live call. Switch to Live to validate real credentials.`,
+    };
+  }
   return {
     ok: true,
-    latencyMs,
-    message: `${integration.name}: ${modeLabel} responded in ${latencyMs}ms.`,
+    latencyMs: 0,
+    message: `${integration.name}: live credentials stored, and will be validated on the next sync.`,
   };
 }
 

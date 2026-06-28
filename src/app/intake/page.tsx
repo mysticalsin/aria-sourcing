@@ -184,7 +184,7 @@ export default function IntakePage() {
       title: ok ? "Clarification copied" : "Copy failed",
       description: ok
         ? "Paste it into your reply to the hiring manager."
-        : "Your browser blocked clipboard access — select and copy manually.",
+        : "Your browser blocked clipboard access. Select and copy manually.",
       variant: ok ? "success" : "error",
     });
   }
@@ -197,7 +197,7 @@ export default function IntakePage() {
     });
     toast({
       title: "Campaign created",
-      description: `${campaign.title} is live — sourcing strategy generated.`,
+      description: `${campaign.title} is live. Sourcing strategy generated.`,
       variant: "success",
     });
     router.push(`/campaigns/${campaign.id}`);
@@ -214,7 +214,7 @@ export default function IntakePage() {
       <PageHeader
         eyebrow="Intake"
         title="Email + JD intake"
-        description="Paste a hiring request and Hermes parses it into a structured, editable brief — then spins up an autonomous sourcing campaign."
+        description="Paste a hiring request and Aria parses it into a structured, editable brief, then spins up an autonomous sourcing campaign."
         actions={
           <Badge tone="aqua" dot>
             <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
@@ -228,20 +228,20 @@ export default function IntakePage() {
           {/* LEFT — inbound brief form */}
           <Card className="animate-fade-in lg:sticky lg:top-6 lg:self-start">
             <CardHeader>
-              <Eyebrow>01 — Inbound brief</Eyebrow>
+              <Eyebrow>01: Inbound brief</Eyebrow>
               <CardTitle className="mt-1">Paste the hiring request</CardTitle>
             </CardHeader>
             <CardBody className="space-y-5 pt-0">
               <Field
                 label="Recruiter email / brief"
                 htmlFor="intake-email"
-                hint="The raw email from the hiring manager — From line and signature help extraction."
+                hint="The raw email from the hiring manager. The From line and signature improve extraction."
               >
                 <Textarea
                   id="intake-email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="From: Daniela Brandt <daniela.brandt@northwind.example>&#10;Subject: URGENT — backfill Senior Backend Engineer…"
+                  placeholder="From: Daniela Brandt <daniela.brandt@northwind.example>&#10;Subject: URGENT - backfill Senior Backend Engineer…"
                   className="min-h-[220px] font-mono text-[0.8125rem]"
                 />
               </Field>
@@ -249,7 +249,7 @@ export default function IntakePage() {
               <Field
                 label="Job description (optional)"
                 htmlFor="intake-jd"
-                hint="Optional — sharpens skills, salary and seniority detection."
+                hint="Optional. Sharpens skills, salary and seniority detection."
               >
                 <Textarea
                   id="intake-jd"
@@ -303,8 +303,8 @@ export default function IntakePage() {
                   Inbound emails can also POST to{" "}
                   <code className="rounded bg-ink/[0.06] px-1 py-0.5 font-mono text-[0.6875rem] text-ink-soft">
                     /api/intake
-                  </code>{" "}
-                  — a Microsoft Graph / n8n webhook scans the JD email and returns a structured brief.
+                  </code>
+                  {". "}A Microsoft Graph / n8n webhook scans the JD email and returns a structured brief.
                 </p>
               </div>
             </CardBody>
@@ -316,7 +316,7 @@ export default function IntakePage() {
               className="lg:min-h-[420px]"
               icon={<ScanText className="h-6 w-6" aria-hidden />}
               title="Awaiting a brief"
-              description="Parse an email (or load the sample) and the structured, editable analysis — confidence scores, validation, and a clarification draft — appears here."
+              description="Parse an email (or load the sample) and the structured, editable analysis (confidence scores, validation, and a clarification draft) appears here."
             />
           ) : (
             <div className="space-y-6 animate-fade-in">
@@ -324,7 +324,7 @@ export default function IntakePage() {
                 <CardHeader className="flex flex-col gap-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <Eyebrow>02 — Structured analysis</Eyebrow>
+                      <Eyebrow>02: Structured analysis</Eyebrow>
                       <CardTitle className="mt-1">Extracted brief</CardTitle>
                     </div>
                     <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
@@ -503,7 +503,7 @@ export default function IntakePage() {
                     </span>
                     {job.requiredSkills.length === 0 ? (
                       <p className="mb-2 text-xs text-danger">
-                        No required skills — add at least three for a strong sourcing strategy.
+                        No required skills. Add at least three for a strong sourcing strategy.
                       </p>
                     ) : (
                       <div className="mb-2 flex flex-wrap gap-1.5">

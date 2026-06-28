@@ -24,20 +24,83 @@ import type {
   GuardrailConfig,
   HermesState,
   JobAnalysis,
+  LlmProvider,
   OutreachLedgerEntry,
   OutreachMessage,
   ReplyIntent,
+  SavedModel,
   SuppressionEntry,
   SystemSettings,
+  ToolDef,
+  ToolId,
   WeeklyReport,
 } from "./types";
+import { LLM_PROVIDERS, TOOL_IDS } from "./types";
 import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
 
 /* ============================================================================
    Seed builder — produces the initial synthetic world (client-side, once).
    ========================================================================== */
 
-export const STATE_VERSION = 6;
+export const STATE_VERSION = 11;
+
+/* ---- LLM config defaults ------------------------------------------------- */
+
+const TOOL_META: Record<ToolId, { label: string; description: string }> = {
+  web_search: { label: "Web search", description: "Search the public web for candidate research and signal." },
+  browser: { label: "Browser", description: "Open and navigate web pages for deep research." },
+  github_sourcing: { label: "GitHub sourcing", description: "Search GitHub profiles, repos, and contributions." },
+  linkedin_sourcing: { label: "LinkedIn sourcing", description: "Search LinkedIn for candidate signals (read-only official API)." },
+  enrichment: { label: "Enrichment", description: "Enrich candidate profiles with public data (Clearbit, Hunter, etc.)." },
+  email_send: { label: "Email send", description: "Send outreach and follow-ups via the configured seat provider." },
+  calendar: { label: "Calendar", description: "Create and manage interview calendar invites." },
+  vision: { label: "Vision", description: "Analyse images and screenshots attached to candidate profiles." },
+  image_gen: { label: "Image generation", description: "Generate avatars and visual assets for reports." },
+  memory: { label: "Memory", description: "Persist learned facts about candidates and campaigns across runs." },
+  skills: { label: "Skill execution", description: "Run the learned outreach, scoring, and sourcing skill playbooks." },
+};
+
+export function defaultLlmProviders(): LlmProvider[] {
+  return LLM_PROVIDERS.map((kind, i) => ({
+    id: `prov_${kind.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`,
+    kind,
+    label: kind,
+    enabled: i === 0, // only Anthropic enabled by default; rest require a key to activate
+    isDefault: i === 0,
+  }));
+}
+
+export function defaultSavedModels(): SavedModel[] {
+  return [
+    {
+      id: "model_claude_opus_4",
+      providerId: "prov_anthropic",
+      modelName: "claude-opus-4-5",
+      label: "Claude Opus 4.5",
+      contextWindow: 200000,
+      enabled: true,
+      defaultForTask: ["sourcing", "outreach"],
+    },
+    {
+      id: "model_claude_sonnet_4",
+      providerId: "prov_anthropic",
+      modelName: "claude-sonnet-4-5",
+      label: "Claude Sonnet 4.5",
+      contextWindow: 200000,
+      enabled: true,
+      defaultForTask: ["classification", "chat"],
+    },
+  ];
+}
+
+export function defaultTools(): ToolDef[] {
+  return TOOL_IDS.map((id) => ({
+    id,
+    label: TOOL_META[id].label,
+    description: TOOL_META[id].description,
+    enabled: true,
+  }));
+}
 
 export function defaultSettings(): SystemSettings {
   return {
@@ -46,7 +109,7 @@ export function defaultSettings(): SystemSettings {
     minScoreToContact: 70,
     slaMinutes: 15,
     operatorName: "Jordan Bryce",
-    systemIdentity: "Hermes Sourcing",
+    systemIdentity: "Aria Sourcing",
     rateLimits: {
       emailsPerDay: 15,
       linkedinPerDay: 20,
@@ -68,22 +131,36 @@ export function defaultSettings(): SystemSettings {
     soundEnabled: false,
     guardrails: defaultGuardrails(),
     notifications: { slack: true, telegram: false, email: true },
+    llmProviders: defaultLlmProviders(),
+    savedModels: defaultSavedModels(),
+    tools: defaultTools(),
+    defaultModels: {
+      sourcing: "model_claude_opus_4",
+      outreach: "model_claude_opus_4",
+      classification: "model_claude_sonnet_4",
+      chat: "model_claude_sonnet_4",
+    },
+    hermesLiveMode: false,
+    hermesApiUrl: "",
+    hermesApiKeyId: "",
+    memoryCapacity: 200,
+    hermesWebUrl: "",
   };
 }
 
 export function defaultGuardrails(): GuardrailConfig {
   return {
     ariaPrompt:
-      "You are Aria, the recruiting operations brain behind every Hermes agent. " +
+      "You are Aria, the recruiting operations brain behind every Aria agent. " +
       "Each agent is an autonomous teammate that sources, qualifies, and reaches out to candidates on its own. " +
       "Lead with the candidate's recent, specific work; one genuine reason you're reaching out; a soft, low-pressure ask. " +
       "Be warm, concise, peer-to-peer. Never write AI slop. Respect every guardrail below without exception.",
     rules: [
-      { id: genId("gr"), text: "Official APIs and authorized mailboxes only — never scrape, never automate LinkedIn DMs or logins.", enabled: true, locked: true },
+      { id: genId("gr"), text: "Official APIs and authorized mailboxes only: never scrape, never automate LinkedIn DMs or logins. LinkedIn outreach uses assisted-manual copy/paste or an official LinkedIn Recruiter System Connect integration.", enabled: true, locked: true },
       { id: genId("gr"), text: "Human approval required before any real send; dry-run is the default.", enabled: true, locked: true },
-      { id: genId("gr"), text: "Honor per-seat daily caps, warm-up ramps, send windows, and the shared suppression + de-dupe ledger — no one is contacted twice.", enabled: true, locked: true },
+      { id: genId("gr"), text: "Honor per-seat daily caps, warm-up ramps, send windows, and the shared suppression + de-dupe ledger: no one is contacted twice.", enabled: true, locked: true },
       { id: genId("gr"), text: "Candidate PII is purpose-limited to active outreach and masked everywhere else; every reveal is audited.", enabled: true, locked: true },
-      { id: genId("gr"), text: "Always run the Humanizer — strip AI tells, em-dashes, and corporate filler before anything is shown or sent.", enabled: true, locked: true },
+      { id: genId("gr"), text: "Always run the Humanizer: strip AI tells, em-dashes, and corporate filler before anything is shown or sent.", enabled: true, locked: true },
       { id: genId("gr"), text: "Personalize every first line with something specific to the candidate; no generic templates.", enabled: true, locked: false },
       { id: genId("gr"), text: "Keep first-touch messages under 120 words and end with a single, clear call to action.", enabled: true, locked: false },
       { id: genId("gr"), text: "If a reply is negative or asks to stop, suppress immediately and never re-contact.", enabled: true, locked: false },
@@ -108,7 +185,7 @@ function seedSeats(): AgentSeat[] {
     lastSendAt: isoHoursBefore(2),
     persona:
       "Warm, concise, peer-to-peer recruiter. Lead with the candidate's most recent shipped work, one specific genuine compliment, then a soft 15-minute ask. No corporate fluff, no AI slop.",
-    signature: "— Hermes (dry-run on behalf of the hiring team)",
+    signature: "",
     connectedAccount: "",
     createdAt: isoDaysBefore(40),
   };
@@ -116,7 +193,7 @@ function seedSeats(): AgentSeat[] {
     {
       ...base,
       id: "seat_maya",
-      name: "Hermes · Maya R.",
+      name: "Aria · Maya R.",
       operatorEmail: "maya.rivera@hermes.example",
       provider: "Microsoft Graph",
       warmupStartedAt: isoDaysBefore(24),
@@ -126,7 +203,7 @@ function seedSeats(): AgentSeat[] {
     {
       ...base,
       id: "seat_diego",
-      name: "Hermes · Diego K.",
+      name: "Aria · Diego K.",
       operatorEmail: "diego.khan@hermes.example",
       provider: "Gmail API",
       warmupStartedAt: isoDaysBefore(30),
@@ -136,7 +213,7 @@ function seedSeats(): AgentSeat[] {
     {
       ...base,
       id: "seat_aisha",
-      name: "Hermes · Aisha N.",
+      name: "Aria · Aisha N.",
       operatorEmail: "aisha.nwosu@hermes.example",
       provider: "Microsoft Graph",
       warmupStartedAt: isoDaysBefore(5), // still warming up
@@ -146,7 +223,7 @@ function seedSeats(): AgentSeat[] {
     {
       ...base,
       id: "seat_lucas",
-      name: "Hermes · Lucas P.",
+      name: "Aria · Lucas P.",
       operatorEmail: "lucas.park@hermes.example",
       provider: "SendGrid",
       warmupStartedAt: isoDaysBefore(18),
@@ -315,18 +392,18 @@ const SPECS: CampaignSpec[] = [
 
 const REPLY_BODIES: Record<ReplyIntent, string[]> = {
   INTERESTED: [
-    "This sounds genuinely interesting — yes, I'd love to learn more. When works for a quick call?",
-    "Great timing, I'm open to a conversation. Happy to find a slot this week.",
+    "This sounds genuinely interesting. Yes, I'd love to learn more. When works for a quick call?",
+    "Great timing, I'm open to a conversation. I can find a slot this week.",
   ],
   QUALIFIED_INTEREST: [
-    "Potentially interested — what's the comp band and is it fully remote? Also how big is the team?",
+    "Potentially interested: what's the comp band and is it fully remote? Also how big is the team?",
     "Could be a fit. Tell me more about the tech stack and whether visa sponsorship is possible.",
   ],
   NOT_INTERESTED: [
     "Thanks for reaching out, but I'm happy where I am right now. Not looking to move.",
-    "Appreciate it — not the right time for me. Good luck with the search.",
+    "Appreciate it, but not the right time for me. Good luck with the search.",
   ],
-  REFERRAL: ["Not for me, but you should talk to my colleague who's actively looking — want an intro?"],
+  REFERRAL: ["Not for me, but you should talk to my colleague who's actively looking. Want an intro?"],
   OOO: ["I'm out of office until next Monday with limited access to email."],
   UNCLEAR: ["Hmm, maybe? Depends what you mean exactly."],
   NEGATIVE: ["Please stop contacting me and remove my details. How did you get my email?"],
@@ -494,19 +571,19 @@ export function buildSeedState(): HermesState {
         bookings.push(booking);
         cand.booking = booking;
         campaignActivities.push(
-          act("booking", `Interview booked — ${cand.name}`, `${interviewer.name} (${interviewer.role}). Teams link generated.`, booking.status, campaign.id, { type: "booking", id: booking.id }, booking.createdAt),
+          act("booking", `Interview booked: ${cand.name}`, `${interviewer.name} (${interviewer.role}). Teams link generated.`, booking.status, campaign.id, { type: "booking", id: booking.id }, booking.createdAt),
         );
       }
 
       // Per-candidate activities for richer timeline (a subset)
       if (rank >= RANK.Contacted && i < 8) {
         campaignActivities.push(
-          act("outreach", `Outreach scheduled — ${cand.name}`, `Dry-run ${cand.outreachHistory[0]?.channel ?? "Email"} drafted and approved.`, "Approved / Dry-run scheduled", campaign.id, { type: "candidate", id: cand.id }, cand.lastContactedAt ?? isoDaysBefore(9)),
+          act("outreach", `Outreach scheduled: ${cand.name}`, `${cand.outreachHistory[0]?.channel ?? "Email"} drafted and approved.`, "Approved / Queued for send", campaign.id, { type: "candidate", id: cand.id }, cand.lastContactedAt ?? isoDaysBefore(9)),
         );
       }
       if (rank >= RANK.Replied && i < 8) {
         campaignActivities.push(
-          act("reply", `Reply classified — ${cand.name}`, `Intent ${replyIntentForStage(stage)}.`, replyIntentForStage(stage), campaign.id, { type: "candidate", id: cand.id }, isoDaysBefore(7 - (i % 3))),
+          act("reply", `Reply classified: ${cand.name}`, `Intent ${replyIntentForStage(stage)}.`, replyIntentForStage(stage), campaign.id, { type: "candidate", id: cand.id }, isoDaysBefore(7 - (i % 3))),
         );
       }
 
@@ -581,7 +658,11 @@ export function buildSeedState(): HermesState {
       },
     ],
     currentRole: "admin",
+    chats: [],
+    memory: [],
+    schedules: [],
     activeCampaignId: campaigns[0]?.id ?? null,
+    ingestedMessageIds: [],
   };
 }
 

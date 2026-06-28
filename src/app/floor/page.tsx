@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import {
   Badge,
   Button,
@@ -27,6 +28,7 @@ import {
   useActions,
 } from "@/lib/store";
 import { agentActivity, floorRollup } from "@/lib/floor";
+import { seatsToOfficeAgents } from "@/lib/floor3d";
 import {
   effectiveDailyCap,
   seatHealthStatus,
@@ -36,7 +38,9 @@ import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
 import { languageLabel } from "@/lib/i18n";
 import { formatTimeAgo } from "@/lib/utils";
 import type { AgentSeat, HermesState } from "@/lib/types";
-import { Bot, Users, Activity, PauseCircle, Flame, Mail, Clock, Languages, Building2, ArrowUpRight, Volume2, VolumeX } from "lucide-react";
+import { Bot, Users, Activity, PauseCircle, Flame, Mail, Clock, Languages, Building2, ArrowUpRight, Volume2, VolumeX, LayoutGrid, Box } from "lucide-react";
+
+const Floor3D = dynamic(() => import("@/components/floor3d/Floor3D"), { ssr: false });
 
 export default function FloorPage() {
   const hydrated = useHydrated();
@@ -48,6 +52,7 @@ export default function FloorPage() {
   const actions = useActions();
   const soundEnabled = settings.soundEnabled;
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [viewMode, setViewMode] = React.useState<"2d" | "3d">("2d");
 
   const stateLike = { campaigns, candidates, ledger, seats, settings } as unknown as HermesState;
   const rollup = floorRollup(seats, stateLike);
@@ -76,7 +81,7 @@ export default function FloorPage() {
       <PageHeader
         eyebrow="Operations floor"
         title="The agents, at work."
-        description="Every Hermes agent on one floor — live status, what they're sourcing right now, and who they're working. Click a desk for the full picture."
+        description="Every Aria agent on one floor: live status, what they're sourcing right now, and who they're working. Click a desk for the full picture."
         actions={
           <div className="flex items-center gap-2">
             <button
@@ -114,7 +119,54 @@ export default function FloorPage() {
           ))}
         </div>
 
-        {seats.length === 0 ? (
+        {/* 2D / 3D view toggle */}
+        <div className="mb-4 flex gap-2">
+          {([
+            { mode: "2d" as const, label: "2D grid", icon: <LayoutGrid className="h-4 w-4" /> },
+            { mode: "3d" as const, label: "3D floor", icon: <Box className="h-4 w-4" /> },
+          ]).map(({ mode, label, icon }) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setViewMode(mode)}
+              aria-pressed={viewMode === mode}
+              className={[
+                "inline-flex h-9 items-center gap-1.5 rounded-full border px-4 text-sm font-semibold transition",
+                viewMode === mode
+                  ? "border-electric bg-electric/10 text-electric"
+                  : "border-ink/12 bg-surface text-ink-soft hover:border-ink/25",
+              ].join(" ")}
+            >
+              {icon}
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {viewMode === "3d" ? (
+          seats.length === 0 ? (
+            <EmptyState
+              icon={<Bot className="h-7 w-7" />}
+              title="The floor is empty"
+              description="Deploy agents to populate the operations floor."
+              action={
+                <Link
+                  href="/fleet"
+                  className="inline-flex h-11 items-center rounded-full bg-tangerine px-6 text-sm font-semibold text-white shadow-soft hover:bg-tangerine/90"
+                >
+                  Deploy agents
+                </Link>
+              }
+            />
+          ) : (
+            <Floor3DSection
+              seats={seats}
+              state={stateLike}
+              selectedId={selectedId}
+              onSelect={(s) => selectAgent(s)}
+            />
+          )
+        ) : seats.length === 0 ? (
           <EmptyState
             icon={<Bot className="h-7 w-7" />}
             title="The floor is empty"
@@ -148,6 +200,42 @@ export default function FloorPage() {
         open={selected !== null}
         onClose={() => setSelectedId(null)}
       />
+    </div>
+  );
+}
+
+function Floor3DSection({
+  seats,
+  state,
+  selectedId,
+  onSelect,
+}: {
+  seats: AgentSeat[];
+  state: HermesState;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  // Render-cap: a full procedural robot per agent is ~20 meshes; rendering the
+  // whole fleet (up to 300) tanks the GPU. Cap the 3D scene to the first N and
+  // surface the cap honestly (no silent truncation) — the full fleet lives on
+  // the Agent Fleet page.
+  const FULL_DETAIL = 48;
+  const office = seatsToOfficeAgents(seats, state);
+  const proxied = Math.max(0, office.length - FULL_DETAIL);
+  return (
+    <div className="space-y-3">
+      {office.length > 0 && (
+        <p className="text-xs text-muted">
+          {office.length} agents on the floor in 3D.
+          {proxied > 0 &&
+            ` Nearest ${FULL_DETAIL} fully animated; ${proxied} more rendered as live instanced proxies for performance.`}{" "}
+          <Link href="/fleet" className="font-semibold text-electric hover:underline">
+            Manage the full fleet
+          </Link>
+          .
+        </p>
+      )}
+      <Floor3D agents={office} selectedId={selectedId} onSelect={onSelect} />
     </div>
   );
 }
@@ -220,7 +308,7 @@ function AgentDetailDrawer({
           <Eyebrow className="mb-2 block">Capacity today</Eyebrow>
           <Meter label="Sends" used={seat.sentToday} limit={cap} />
           <p className="mt-1.5 text-xs text-muted">
-            {ws.full ? "Fully warmed." : `Warming up — day ${ws.day}, cap ${ws.cap}/day.`}
+            {ws.full ? "Fully warmed." : `Warming up: day ${ws.day}, cap ${ws.cap}/day.`}
           </p>
         </div>
 

@@ -1,4 +1,16 @@
+import { redactEmail, redactSecrets } from "@/lib/log-redact";
 import type { SeatProvider } from "./types";
+
+function auditLog(level: "info" | "error", message: string, meta?: Record<string, unknown>) {
+  const entry = { time: new Date().toISOString(), source: "email-provider", level, ...(meta ?? {}) };
+  if (level === "error") {
+    // eslint-disable-next-line no-console
+    console.error(JSON.stringify(entry));
+  } else {
+    // eslint-disable-next-line no-console
+    console.log(JSON.stringify(entry));
+  }
+}
 
 /** Deterministic format validation for an API key by provider. No network — a
  *  malformed key is rejected immediately; a well-formed one passes as plausible. */
@@ -63,10 +75,14 @@ function escapeHtml(s: string): string {
 
 /** Perform a real send via the provider's official API. Throws on misconfig. */
 export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
+  auditLog("info", "Send attempt", { provider: req.provider, from: req.from, to: req.to });
   switch (req.provider) {
     case "Resend": {
       const key = process.env.RESEND_API_KEY;
-      if (!key) return { status: "dry-run", provider: req.provider, detail: "No RESEND_API_KEY — dry-run." };
+      if (!key) {
+        auditLog("info", "Resend dry-run: no API key", { to: req.to });
+        return { status: "dry-run", provider: req.provider, detail: "No RESEND_API_KEY — dry-run." };
+      }
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
@@ -80,12 +96,19 @@ export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
         }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) return { status: "error", provider: req.provider, detail: json?.message ?? `HTTP ${res.status}` };
+      if (!res.ok) {
+        auditLog("error", "Resend send failed", { status: res.status, to: req.to });
+        return { status: "error", provider: req.provider, detail: json?.message ?? `HTTP ${res.status}` };
+      }
+      auditLog("info", "Resend send succeeded", { to: req.to, id: json?.id });
       return { status: "sent", provider: req.provider, detail: "Sent via Resend.", id: json?.id };
     }
     case "SendGrid": {
       const key = process.env.SENDGRID_API_KEY;
-      if (!key) return { status: "dry-run", provider: req.provider, detail: "No SENDGRID_API_KEY — dry-run." };
+      if (!key) {
+        auditLog("info", "SendGrid dry-run: no API key", { to: req.to });
+        return { status: "dry-run", provider: req.provider, detail: "No SENDGRID_API_KEY — dry-run." };
+      }
       const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
         method: "POST",
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
@@ -101,19 +124,22 @@ export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
       });
       if (!res.ok) {
         const txt = await res.text().catch(() => "");
-        return { status: "error", provider: req.provider, detail: txt || `HTTP ${res.status}` };
+        auditLog("error", "SendGrid send failed", { status: res.status, to: req.to, body: redactSecrets(redactEmail(txt.slice(0, 500))) });
+        return { status: "error", provider: req.provider, detail: `SendGrid send error ${res.status}.` };
       }
+      auditLog("info", "SendGrid send succeeded", { to: req.to });
       return { status: "sent", provider: req.provider, detail: "Sent via SendGrid." };
     }
     case "Microsoft Graph":
-    case "Gmail API":
-      // Per-mailbox OAuth required. Until a mailbox is connected, stay dry-run.
-      return {
-        status: "dry-run",
-        provider: req.provider,
-        detail: `${req.provider} needs a connected mailbox (OAuth). Dry-run until connected.`,
-      };
+    case "Gmail API": {
+      // OAuth providers are handled by sendViaOAuthProvider in the outreach send
+      // route so the stored token can be resolved server-side.
+      const detail = `${req.provider} must be sent via the OAuth adapter. Dry-run.`;
+      auditLog("info", "OAuth provider dry-run", { provider: req.provider, to: req.to });
+      return { status: "dry-run", provider: req.provider, detail };
+    }
     default:
+      auditLog("error", "Unknown email provider", { provider: req.provider });
       return { status: "dry-run", provider: req.provider, detail: "Unknown provider — dry-run." };
   }
 }

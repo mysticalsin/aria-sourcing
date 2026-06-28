@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { Card, Badge, Button, useToast } from "@/components/ui";
-import { useCandidate, useActions } from "@/lib/store";
+import { useCandidate, useActions, useSettings } from "@/lib/store";
+import { maskEmailBody } from "@/lib/confidential";
 import {
   cn,
   toneForIntent,
@@ -17,6 +18,8 @@ import {
   CornerUpRight,
   ShieldAlert,
   User,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 const INTENT_LABELS: Record<ReplyIntent, string> = {
@@ -35,6 +38,15 @@ export function ReplyCard({ reply }: { reply: ClassifiedReply }) {
   const candidate = useCandidate(reply.candidateId);
   const a = useActions();
   const { toast } = useToast();
+  const confidentialityMode = useSettings().confidentialityMode;
+  const [revealed, setRevealed] = React.useState(false);
+  const showBody = revealed || !confidentialityMode;
+
+  // Reveal the raw reply body (with its email/phone PII); audited on first reveal.
+  function toggleReveal() {
+    if (!revealed && reply.candidateId) a.recordPiiReveal(reply.candidateId);
+    setRevealed((v) => !v);
+  }
 
   // Live SLA tick — only after mount to avoid hydration drift.
   const [now, setNow] = React.useState<number | null>(null);
@@ -108,8 +120,18 @@ export function ReplyCard({ reply }: { reply: ClassifiedReply }) {
       </div>
 
       <blockquote className="mt-2 border-l-2 border-line pl-3 text-sm leading-relaxed text-ink-soft line-clamp-3">
-        {reply.body}
+        {showBody ? reply.body : maskEmailBody(reply.body)}
       </blockquote>
+      {confidentialityMode && (
+        <button
+          type="button"
+          onClick={toggleReveal}
+          className="mt-1 inline-flex items-center gap-1 text-xs text-muted transition-colors hover:text-ink-soft"
+        >
+          {revealed ? <EyeOff className="h-3 w-3" aria-hidden /> : <Eye className="h-3 w-3" aria-hidden />}
+          {revealed ? "Hide details" : "Reveal details"}
+        </button>
+      )}
 
       <p className="mt-3 text-sm text-muted">
         <span className="font-semibold text-ink-soft">Suggested: </span>

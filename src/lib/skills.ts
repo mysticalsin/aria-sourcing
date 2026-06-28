@@ -13,7 +13,7 @@ import { genId, round } from "./utils";
 import { stageRank } from "./metrics";
 
 /* ============================================================================
-   HERMES SKILLS — the agent's editable, versioned playbooks. The agent learns
+   ARIA SKILLS — the agent's editable, versioned playbooks. The agent learns
    from real sourcing outcomes: it analyses what actually converted, proposes
    concrete changes, and (on accept) updates the skill params, which feed back
    into scoring, outreach, sourcing and reply classification.
@@ -32,7 +32,7 @@ export function defaultSkills(now = new Date("2026-06-26T09:00:00Z").toISOString
       key: "outreach_skill",
       filename: "outreach_skill.md",
       title: "Outreach composition",
-      description: "How Hermes writes first-touch and follow-up messages.",
+      description: "How Aria writes first-touch and follow-up messages.",
       content: [
         "# Outreach skill",
         "",
@@ -52,7 +52,7 @@ export function defaultSkills(now = new Date("2026-06-26T09:00:00Z").toISOString
       key: "sourcing_skill",
       filename: "sourcing_skill.md",
       title: "Sourcing strategy",
-      description: "Where and how Hermes finds candidates.",
+      description: "Where and how Aria finds candidates.",
       content: [
         "# Sourcing skill",
         "",
@@ -71,7 +71,7 @@ export function defaultSkills(now = new Date("2026-06-26T09:00:00Z").toISOString
       key: "scoring_skill",
       filename: "scoring_skill.md",
       title: "Candidate scoring",
-      description: "How Hermes weights the composite match score.",
+      description: "How Aria weights the composite match score.",
       content: [
         "# Scoring skill",
         "",
@@ -89,7 +89,7 @@ export function defaultSkills(now = new Date("2026-06-26T09:00:00Z").toISOString
       key: "reply_classification_skill",
       filename: "reply_classification_skill.md",
       title: "Reply classification",
-      description: "How Hermes reads and routes replies.",
+      description: "How Aria reads and routes replies.",
       content: [
         "# Reply classification skill",
         "",
@@ -111,7 +111,7 @@ export function getSkill(skills: AgentSkill[], key: SkillKey): AgentSkill | unde
   return skills.find((s) => s.key === key);
 }
 
-/* ---- Outcome analysis (the "experience" Hermes learns from) --------------- */
+/* ---- Outcome analysis (the "experience" Aria learns from) --------------- */
 
 export interface OutcomeAnalysis {
   toneRates: { tone: OutreachTone; sent: number; positive: number; rate: number }[];

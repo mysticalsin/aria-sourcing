@@ -44,7 +44,7 @@ import {
 } from "./utils";
 
 /* ============================================================================
-   MOCK AI — deterministic stand-ins for the real Hermes pipeline.
+   MOCK AI — deterministic stand-ins for the real Aria pipeline.
    Pure functions, synthetic data only. No network, no real model calls.
    ========================================================================== */
 
@@ -138,15 +138,15 @@ const SKILL_DICTIONARY = [
    ========================================================================== */
 
 export const SAMPLE_INTAKE_EMAIL = `From: Daniela Brandt <daniela.brandt@northwind.example>
-Subject: URGENT — backfill Senior Backend Engineer (Go), need pipeline ASAP
+Subject: URGENT: backfill Senior Backend Engineer (Go), need pipeline ASAP
 
-Hi Hermes,
+Hi Aria,
 
 One of our senior backend engineers just resigned and we need to backfill this
-role critically — ideally someone in seat within 8 weeks. This is high priority.
+role critically, ideally someone in seat within 8 weeks. This is high priority.
 
 We're hiring a Senior Backend Engineer, fully remote across the EU (CET-ish
-overlap). Core stack is Go, Kubernetes, PostgreSQL and gRPC — they'll own
+overlap). Core stack is Go, Kubernetes, PostgreSQL and gRPC: they'll own
 distributed systems at the heart of the platform. Nice to have: Kafka,
 OpenTelemetry, Terraform. We want 5+ years of experience, ideally from a
 Series A or Series B company in fintech or SaaS. Budget is roughly €90k–€120k
@@ -287,7 +287,7 @@ export function parseMantuNeed(text: string): ParsedIntake {
   const validationWarnings: ValidationWarning[] = [];
   if (!skillsLine && requiredSkills.length < 3)
     validationWarnings.push({ field: "requiredSkills", severity: "critical", message: "No explicit skills line and few skills detected." });
-  validationWarnings.push({ field: "salary", severity: "warning", message: "No salary/rate in the need email — confirm the band." });
+  validationWarnings.push({ field: "salary", severity: "warning", message: "No salary/rate in the need email. Confirm the band." });
   if (!locationRaw)
     validationWarnings.push({ field: "location", severity: "warning", message: "No location specified." });
 
@@ -447,7 +447,7 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   if (locationType === "Hybrid" && !/hybrid/i.test(text))
     validationWarnings.push({ field: "location", severity: "info", message: "Location type inferred (defaulted to Hybrid)." });
   if (requiredSkills.length < 3)
-    validationWarnings.push({ field: "requiredSkills", severity: "critical", message: "Fewer than 3 required skills detected — JD may be vague." });
+    validationWarnings.push({ field: "requiredSkills", severity: "critical", message: "Fewer than 3 required skills detected. JD may be vague." });
   if (minYearsExperience == null)
     validationWarnings.push({ field: "experience", severity: "warning", message: "No years-of-experience band specified." });
 
@@ -505,7 +505,7 @@ function buildClarificationEmail(name: string, jd: JobAnalysis, warnings: Valida
   const asks = warnings.map((w) => `• ${w.message}`).join("\n");
   return `Hi ${name.split(" ")[0]},
 
-Thanks for the brief on the ${jd.title} role — happy to kick off sourcing right away. To target the right people and avoid wasted outreach, could you confirm a few details:
+Thanks for the brief on the ${jd.title} role. I'll kick off sourcing right away. To target the right people and avoid wasted outreach, could you confirm a few details:
 
 ${asks}
 • Confirmed budget band and whether equity is on the table
@@ -514,7 +514,7 @@ ${asks}
 I'll spin up the campaign the moment these land. In the meantime I've drafted a provisional profile so we lose no time.
 
 Best,
-Hermes Sourcing`;
+Aria Sourcing`;
 }
 
 /* ============================================================================
@@ -758,8 +758,9 @@ export function generateOutreach(
     L.whyYou(evidence[0] ?? "", evidence[1]),
     "",
     sequenceStep > 1 ? L.ctaFollow : L.cta,
-    "",
-    `${voice?.signature ?? "— " + L.signature} ${L.optOut}`,
+    // No auto-appended footer: a recruiter's own sign-off is added only when set;
+    // no default "Sent by Aria" line and no opt-out boilerplate.
+    ...(voice?.signature && voice.signature.trim() ? ["", voice.signature.trim()] : []),
   ].join("\n");
 
   // ALWAYS humanize — no AI slop ever.
@@ -774,7 +775,7 @@ export function generateOutreach(
 function personalizationEvidence(candidate: Candidate, jd: JobAnalysis): string[] {
   const ev: string[] = [];
   const shared = candidate.techStack.filter((s) => jd.requiredSkills.includes(s));
-  if (shared.length) ev.push(`You work across ${shared.slice(0, 3).join(", ")} — exactly our core stack`);
+  if (shared.length) ev.push(`You work across ${shared.slice(0, 3).join(", ")}, exactly our core stack`);
   ev.push(`${candidate.yearsExperience} yrs of depth, currently at ${candidate.currentCompany}`);
   if (candidate.recentActivity) ev.push(candidate.recentActivity.replace(/\.$/, ""));
   if (candidate.companyStageExperience.length)
@@ -799,7 +800,11 @@ export function newOutreachMessage(
     body: gen.body,
     tone,
     personalizationEvidence: gen.personalizationEvidence,
-    status: settings.humanApprovalGate ? "Needs Approval" : "Approved",
+    status: settings.humanApprovalGate
+      ? "Needs Approval"
+      : gen.channel === "LinkedIn" && !settings.dryRunMode
+        ? "Pending Manual Send"
+        : "Approved",
     sequenceStep,
     scheduledFor: null,
     sentAt: null,
@@ -832,7 +837,7 @@ export function classifyReply(replyText: string, candidateName = "there"): Reply
   if (REPLY_LEXICON.negative.test(t)) {
     intent = "NEGATIVE";
     confidence = 0.93;
-    reasoning = "Opt-out / hostile language detected — must stop immediately and escalate.";
+    reasoning = "Opt-out / hostile language detected: must stop immediately and escalate.";
   } else if (REPLY_LEXICON.ooo.test(t)) {
     intent = "OOO";
     confidence = 0.95;
@@ -844,12 +849,12 @@ export function classifyReply(replyText: string, candidateName = "there"): Reply
   } else if (REPLY_LEXICON.referral.test(t)) {
     intent = "REFERRAL";
     confidence = 0.82;
-    reasoning = "Candidate is pointing to someone else — referral path.";
+    reasoning = "Candidate is pointing to someone else (referral path).";
   } else if (REPLY_LEXICON.interested.test(t)) {
     if (REPLY_LEXICON.qualified.test(t)) {
       intent = "QUALIFIED_INTEREST";
       confidence = 0.78;
-      reasoning = "Positive signal with open questions — answer, then offer the calendar.";
+      reasoning = "Positive signal with open questions: answer, then offer the calendar.";
     } else {
       intent = "INTERESTED";
       confidence = 0.9;
@@ -858,12 +863,12 @@ export function classifyReply(replyText: string, candidateName = "there"): Reply
   } else if (/(maybe|perhaps|not sure|depends|tell me more|what.s the role|peut-être|quizás|vielleicht)/i.test(t)) {
     intent = "QUALIFIED_INTEREST";
     confidence = 0.72;
-    reasoning = "Soft positive with hesitation — nurture and inform.";
+    reasoning = "Soft positive with hesitation: nurture and inform.";
   } else if (REPLY_LEXICON.qualified.test(t)) {
     // Role/comp questions with no decline → qualified interest (per reply_classification_skill).
     intent = "QUALIFIED_INTEREST";
     confidence = 0.72;
-    reasoning = "Questions about comp/role without a decline — answer and append the calendar.";
+    reasoning = "Questions about comp/role without a decline: answer and append the calendar.";
   }
 
   return {
@@ -881,26 +886,26 @@ const SUGGESTED_ACTION: Record<ReplyIntent, string> = {
   NOT_INTERESTED: "Send a gracious close and start the suppression timer.",
   REFERRAL: "Thank them and create the referred candidate as a new lead.",
   OOO: "Pause the sequence until their return date.",
-  UNCLEAR: "Queue for human review — intent ambiguous.",
+  UNCLEAR: "Queue for human review: intent ambiguous.",
   NEGATIVE: "Stop all outreach immediately, add to do-not-contact, and escalate.",
 };
 
 function draftFor(intent: ReplyIntent, first: string): string {
   switch (intent) {
     case "INTERESTED":
-      return `Brilliant, ${first} — thank you! Here's my calendar so you can grab whatever suits: {{cal_link}}. I'll send a Teams invite the moment you pick a slot. Looking forward to it.`;
+      return `Brilliant, ${first}! Thank you. Here's my calendar so you can grab whatever suits: {{cal_link}}. I'll send a Teams invite the moment you pick a slot. Looking forward to it.`;
     case "QUALIFIED_INTEREST":
       return `Great questions, ${first}. Quick answers: comp and remote policy are both flexible within band, and the team is small and senior. If it's easier to talk it through, here's my calendar: {{cal_link}}.`;
     case "NOT_INTERESTED":
-      return `Completely understand, ${first} — thanks for the quick reply. I'll close this out and won't keep nudging. If the timing ever changes, you know where to find me. All the best.`;
+      return `Completely understand, ${first}. Thanks for the quick reply. I'll close this out and won't keep nudging. If the timing ever changes, you know where to find me. All the best.`;
     case "REFERRAL":
-      return `Really appreciate that, ${first}! If you're happy to intro me, I'd be glad to reach out. Thank you for thinking of the right person.`;
+      return `Really appreciate that, ${first}! If you can intro me, I'd be glad to reach out. Thank you for thinking of the right person.`;
     case "OOO":
-      return `Thanks for the note — enjoy the time away, ${first}. I'll pause and circle back after you're settled back in.`;
+      return `Thanks for the note. Enjoy the time away, ${first}. I'll pause and circle back after you're settled back in.`;
     case "NEGATIVE":
       return `Understood, ${first}. I've removed you from all outreach and you won't hear from us again. Apologies for the intrusion.`;
     default:
-      return `Thanks ${first} — just to make sure I read you right, would you like me to share more on the role, or is now not the moment?`;
+      return `Thanks, ${first}. Just to make sure I read you right: would you like me to share more on the role, or is now not the moment?`;
   }
 }
 
@@ -915,7 +920,6 @@ export function createBooking(
   startTime: Date,
 ): Booking {
   const end = new Date(startTime.getTime() + 30 * 60000);
-  const slug = `${slugify(candidate.name)}-${slugify(campaign.title)}`.slice(0, 40);
   return {
     id: genId("bk"),
     candidateId: candidate.id,
@@ -927,8 +931,11 @@ export function createBooking(
     timezone: candidate.timezone,
     interviewer: interviewer.name,
     interviewerEmail: interviewer.email,
-    teamsLink: `https://teams.microsoft.com/l/meetup-join/hermes/${slug}-${Math.floor(startTime.getTime() / 100000) % 100000}`,
-    calLink: `https://cal.com/hermes/${slug}`,
+    // Real meeting URLs are issued by the calendar provider (Microsoft Graph / Cal.com) at
+    // live-send time. Until that integration is connected, leave these empty rather than
+    // fabricate links that 404 — the calendar UI renders an "on live send" state.
+    teamsLink: "",
+    calLink: "",
     status: "Confirmed",
     agenda: [
       "Intro & role context (5 min)",
@@ -941,7 +948,7 @@ export function createBooking(
 }
 
 export function interviewerPrepEmail(b: Booking, candidate: Candidate): string {
-  return `Subject: Prep — ${b.candidateName} for ${b.role}
+  return `Subject: Interview prep: ${b.candidateName} for ${b.role}
 
 Hi ${b.interviewer.split(" ")[0]},
 
@@ -954,11 +961,11 @@ Teams link: ${b.teamsLink}
 Agenda:
 ${b.agenda.map((a) => `- ${a}`).join("\n")}
 
-— Hermes`;
+Aria`;
 }
 
 export function candidateConfirmationEmail(b: Booking): string {
-  return `Subject: Confirmed — your ${b.role} conversation
+  return `Subject: Confirmed: your ${b.role} conversation
 
 Hi ${b.candidateName.split(" ")[0]},
 
@@ -967,10 +974,9 @@ You're booked in. Details:
 • With: ${b.interviewer}
 • Where: ${b.teamsLink}
 
-No prep needed — just bring your questions. Reply here if you need to move it.
+No prep needed, just bring your questions. Reply here if you need to move it.
 
-Looking forward,
-Hermes (on behalf of the hiring team)`;
+Looking forward to it.`;
 }
 
 /* ============================================================================
@@ -1011,7 +1017,7 @@ export function generateWeeklyReport(campaign: Campaign, candidates: Candidate[]
       bestTime: "09:00–11:00 local",
     },
     insights: [
-      `Reply rate is ${(replyRate * 100).toFixed(0)}% across ${m.contacted} contacted — ${
+      `Reply rate is ${(replyRate * 100).toFixed(0)}% across ${m.contacted} contacted, ${
         replyRate > 0.18 ? "above" : "below"
       } the 18% benchmark.`,
       `Average match score of accepted candidates is ${avg}.`,
@@ -1032,8 +1038,8 @@ function buildAttention(c: Campaign): string[] {
   const m = c.metrics;
   if (m.sourced > m.contacted) out.push(`${m.sourced - m.contacted} sourced candidates have no outreach drafted.`);
   if (m.interested > m.booked) out.push(`${m.interested - m.booked} interested candidates are awaiting a booking.`);
-  if (m.contacted && m.replied / m.contacted < 0.1) out.push("Reply rate under 10% — consider refreshing the outreach skill.");
-  if (out.length === 0) out.push("No blockers — campaign is healthy.");
+  if (m.contacted && m.replied / m.contacted < 0.1) out.push("Reply rate under 10%. Consider refreshing the outreach skill.");
+  if (out.length === 0) out.push("No blockers. Campaign is healthy.");
   return out;
 }
 
@@ -1098,7 +1104,7 @@ function funnelRank(stage: string): number {
 export function exportMarkdownReport(report: WeeklyReport): string {
   const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
   const lines: string[] = [];
-  lines.push(`# Weekly Sourcing Report — ${report.campaignTitle}`);
+  lines.push(`# Weekly Sourcing Report: ${report.campaignTitle}`);
   lines.push("");
   lines.push(`_Generated ${new Date(report.generatedAt).toUTCString()} · ${report.periodLabel}_`);
   lines.push("");
@@ -1118,7 +1124,7 @@ export function exportMarkdownReport(report: WeeklyReport): string {
     `- **Time to first interview:** ${
       report.performance.timeToFirstInterviewHours != null
         ? `${report.performance.timeToFirstInterviewHours}h`
-        : "—"
+        : "N/A"
     }`,
   );
   lines.push(`- **Cost per hire (est.):** $${report.performance.costPerHire.toLocaleString()}`);
@@ -1136,7 +1142,7 @@ export function exportMarkdownReport(report: WeeklyReport): string {
   lines.push("## Proposed skill updates");
   lines.push("");
   report.skillUpdates.forEach((s) => {
-    lines.push(`### ${s.skill} — ${s.title}`);
+    lines.push(`### ${s.skill}: ${s.title}`);
     lines.push(`- _Rationale:_ ${s.rationale}`);
     lines.push(`- _Before:_ ${s.before}`);
     lines.push(`- _After:_ ${s.after}`);

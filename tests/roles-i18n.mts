@@ -42,14 +42,14 @@ const cand = seed.candidates[0];
 const camp = seed.campaigns.find((c) => c.id === cand.campaignId)!;
 
 const frMsg = generateOutreach(cand, camp, "Casual Professional", "Email", 1, undefined, "fr");
-ok("FR outreach is in French", /bonjour|nous recrutons|répondez stop/i.test(frMsg.body));
-ok("FR outreach keeps the opt-out", /STOP/i.test(frMsg.body));
+ok("FR outreach is in French", /bonjour|nous recrutons/i.test(frMsg.body));
+ok("FR outreach has no STOP opt-out", !/STOP/i.test(frMsg.body));
 
 const deMsg = generateOutreach(cand, camp, "Casual Professional", "Email", 1, undefined, "de");
-ok("DE outreach is in German", /hallo|wir suchen|antworte mit stop/i.test(deMsg.body));
+ok("DE outreach is in German", /hallo|wir suchen/i.test(deMsg.body));
 
 const enMsg = generateOutreach(cand, camp, "Casual Professional", "Email", 1, undefined, "en");
-ok("EN outreach unchanged baseline", /hi |reply stop/i.test(enMsg.body));
+ok("EN outreach baseline (no opt-out)", /hi /i.test(enMsg.body) && !/reply stop/i.test(enMsg.body));
 
 /* ---- multilingual classify ---- */
 ok("detect FR", detectLanguage("Bonjour, merci pour votre message, cordialement") === "fr");

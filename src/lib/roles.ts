@@ -2,7 +2,7 @@ import type { JobAnalysis, SourcePlatform } from "./types";
 
 /* ============================================================================
    ROLE-AGNOSTIC PROFILES
-   Hermes treats every need on its own terms: it reads the job analysis, infers
+   Aria treats every need on its own terms: it reads the job analysis, infers
    the role family, and adapts the candidate pool + sourcing platforms + query
    style to THAT need — so a Murex/finance consulting need yields finance
    consultants (sourced on professional networks), not software engineers.

@@ -73,7 +73,7 @@ export default function ReportsPage() {
       <PageHeader
         eyebrow="Intelligence"
         title="Weekly reports"
-        description="Funnel economics, performance signals, and the self-improvement updates Hermes proposes from every campaign it runs."
+        description="Funnel economics, performance signals, and the self-improvement updates Aria proposes from every campaign it runs."
         actions={
           <Button
             variant="secondary"
@@ -173,7 +173,7 @@ export default function ReportsPage() {
                   <Eyebrow>Self-improvement</Eyebrow>
                   <CardTitle>Skill updates</CardTitle>
                   <p className="mt-1 text-sm text-muted">
-                    Hermes proposes edits to its own playbooks from what worked this week. Accept to
+                    Aria proposes edits to its own playbooks from what worked this week. Accept to
                     bake them into future runs.
                   </p>
                 </div>

@@ -1,5 +1,5 @@
 /* ============================================================================
-   HERMES SOURCING — domain types
+   ARIA SOURCING — domain types
    Single source of truth for the data model. Every module imports from here.
    ========================================================================== */
 
@@ -85,6 +85,7 @@ export const OUTREACH_STATUSES = [
   "Draft",
   "Needs Approval",
   "Approved",
+  "Pending Manual Send",
   "Scheduled",
   "Rejected",
 ] as const;
@@ -321,6 +322,11 @@ export interface ClassifiedReply {
   handled: boolean;
   slaDueAt: string | null;
   receivedAt: string;
+  /** Inbound-email metadata (set when auto-ingested from a mailbox; absent for manual entry). */
+  fromAddress?: string;
+  messageId?: string;
+  inboxThreadId?: string;
+  externalReceivedAt?: string; // ISO timestamp from the email provider
 }
 
 /* ---- Bookings ------------------------------------------------------------ */
@@ -393,7 +399,7 @@ export interface SkillVersionEntry {
   at: string;
 }
 
-/** A persistent, versioned Hermes skill (the `*.md` the agent edits as it learns). */
+/** A persistent, versioned Aria skill (the `*.md` the agent edits as it learns). */
 export interface AgentSkill {
   key: SkillKey;
   filename: string;
@@ -486,6 +492,8 @@ export interface IntegrationStatus {
   mode: IntegrationMode;
   lastSync: string | null;
   errors: string[];
+  /** Email or identifier of the linked mailbox account (OAuth or SMTP). Empty = not set. */
+  connectedAccount?: string;
 }
 
 /* ---- Settings ------------------------------------------------------------ */
@@ -537,7 +545,7 @@ export interface SystemSettings {
   /** When on, candidate PII is masked everywhere except an active outreach context,
    *  and any reveal is written to the audit trail (purpose limitation). */
   confidentialityMode: boolean;
-  /** Default language Hermes composes outreach in (ISO code). */
+  /** Default language Aria composes outreach in (ISO code). */
   defaultLanguage: string;
   /** Operations-floor sound effects. OFF by default. */
   soundEnabled: boolean;
@@ -548,6 +556,26 @@ export interface SystemSettings {
     telegram: boolean;
     email: boolean;
   };
+  /** Configured LLM provider connections for the sourcing fleet. */
+  llmProviders: LlmProvider[];
+  /** Saved models the fleet can use (references a provider by id). */
+  savedModels: SavedModel[];
+  /** Per-capability tool registry — toggles apply to every agent by default. */
+  tools: ToolDef[];
+  /** Default model per task type (SavedModel.id). */
+  defaultModels?: Partial<Record<ModelTask, string>>;
+  /** When on, outreach drafting routes through the live Aria agent runtime
+   *  (with a mock fallback). Off by default — the safe default for this build. */
+  hermesLiveMode: boolean;
+  /** Base URL of the hermes-agent aiohttp server (e.g. http://127.0.0.1:8642). */
+  hermesApiUrl?: string;
+  /** References an ApiKey.id (provider "Aria Agent") holding the bearer token. */
+  hermesApiKeyId?: string;
+  /** Maximum number of memory entries stored across all agents. */
+  memoryCapacity?: number;
+  /** Base URL of the hermes-agent web_server / management API (e.g. http://127.0.0.1:8643).
+   *  Distinct from hermesApiUrl which is the OpenAI-compat generation endpoint. */
+  hermesWebUrl?: string;
 }
 
 /* ---- Outreach fleet (multi-seat coordination + anti-ban guardrails) ------- */
@@ -603,7 +631,7 @@ export interface AgentSeat {
   sentToday: number;
   lastSendAt: string | null;
   health: SeatHealth;
-  /** Editable per-agent prompt — the voice/instructions this Hermes agent writes with. */
+  /** Editable per-agent prompt — the voice/instructions this Aria agent writes with. */
   persona: string;
   signature: string;
   /** Language this agent writes outreach in (ISO code). */
@@ -611,6 +639,12 @@ export interface AgentSeat {
   /** Connected email account label (official API). Empty = not connected. */
   connectedAccount: string;
   createdAt: string;
+  /** LlmProvider.id assigned to this agent (overrides workspace default). */
+  providerId?: string;
+  /** SavedModel.id assigned to this agent. */
+  modelId?: string;
+  /** Tool IDs enabled for this agent (overrides workspace defaults when set). */
+  toolIds?: ToolId[];
 }
 
 export const SUPPRESSION_TYPES = ["email", "domain", "linkedin"] as const;
@@ -628,6 +662,7 @@ export interface SuppressionEntry {
 
 export const LEDGER_STATUSES = [
   "claimed",
+  "pending_manual",
   "sent",
   "bounced",
   "complained",
@@ -688,12 +723,79 @@ export type Role = (typeof ROLES)[number];
 export const API_KEY_PROVIDERS = [
   "Anthropic",
   "OpenAI",
+  "Google",
+  "xAI",
+  "Groq",
+  "OpenRouter",
+  "Mistral",
   "Kimi (Moonshot)",
   "Resend",
   "SendGrid",
+  "Aria Agent",
   "Custom",
 ] as const;
 export type ApiKeyProvider = (typeof API_KEY_PROVIDERS)[number];
+
+/* ---- LLM providers (the fleet's model layer) ----------------------------- */
+
+export const LLM_PROVIDERS = [
+  "Anthropic",
+  "OpenAI",
+  "OpenRouter",
+  "Google",
+  "xAI",
+  "Groq",
+  "Mistral",
+  "Local/Custom",
+] as const;
+export type LlmProviderKind = (typeof LLM_PROVIDERS)[number];
+
+export interface LlmProvider {
+  id: string;
+  /** Which hosted provider this connects to. */
+  kind: LlmProviderKind;
+  label: string;
+  /** Override the provider's default base URL (e.g. proxy or local endpoint). */
+  baseUrl?: string;
+  /** References an ApiKey.id — the raw secret never lives in provider state. */
+  apiKeyId?: string;
+  enabled: boolean;
+  isDefault?: boolean;
+}
+
+export type ModelTask = "sourcing" | "outreach" | "classification" | "chat";
+
+export interface SavedModel {
+  id: string;
+  providerId: string;
+  modelName: string;
+  label: string;
+  contextWindow?: number;
+  enabled: boolean;
+  defaultForTask?: ModelTask[];
+}
+
+export const TOOL_IDS = [
+  "web_search",
+  "browser",
+  "github_sourcing",
+  "linkedin_sourcing",
+  "enrichment",
+  "email_send",
+  "calendar",
+  "vision",
+  "image_gen",
+  "memory",
+  "skills",
+] as const;
+export type ToolId = (typeof TOOL_IDS)[number];
+
+export interface ToolDef {
+  id: ToolId;
+  label: string;
+  description: string;
+  enabled: boolean;
+}
 
 /** Stored metadata only — the secret value never lives in client state. */
 export interface ApiKey {
@@ -704,6 +806,75 @@ export interface ApiKey {
   status: "untested" | "valid" | "invalid";
   lastTestedAt: string | null;
   createdBy: string;
+  createdAt: string;
+}
+
+export const EMAIL_CONNECTION_PROVIDERS = ["Gmail API", "Microsoft Graph"] as const;
+export type EmailConnectionProvider = (typeof EMAIL_CONNECTION_PROVIDERS)[number];
+
+/** Server-side OAuth connection for an email sending seat.
+ *  Secrets are stored in Postgres and never returned to the browser. */
+export interface EmailConnection {
+  id: string;
+  seatId: string;
+  provider: EmailConnectionProvider;
+  accountEmail: string;
+  accessToken: string;
+  refreshToken: string | null;
+  expiresAt: string | null;
+  scope: string;
+  connectedAt: string;
+  updatedAt: string;
+}
+
+/* ---- Memory -------------------------------------------------------------- */
+
+export const MEMORY_KINDS = ["fact", "preference", "instruction", "episodic"] as const;
+export type MemoryKind = (typeof MEMORY_KINDS)[number];
+
+export interface MemoryEntry {
+  id: string;
+  seatId: string;
+  kind: MemoryKind;
+  content: string;
+  pinned?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/* ---- Chat ---------------------------------------------------------------- */
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  at: string;
+  pending?: boolean;
+}
+
+export interface ChatThread {
+  id: string;
+  seatId: string;
+  title: string;
+  messages: ChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/* ---- Schedules (local CRUD, demo posture — no live cron yet) ------------ */
+
+export const CRON_CADENCES = ["daily", "weekly", "monthly"] as const;
+export type CronCadence = (typeof CRON_CADENCES)[number];
+
+export interface CronJob {
+  id: string;
+  name: string;
+  cadence: CronCadence;
+  /** Time of day in HH:MM format (local timezone), optional. */
+  timeOfDay?: string;
+  task: "sourcing" | "outreach" | "report";
+  enabled: boolean;
+  lastRunAt: string | null;
   createdAt: string;
 }
 
@@ -726,5 +897,11 @@ export interface HermesState {
   skills: AgentSkill[];
   apiKeys: ApiKey[];
   currentRole: Role;
+  chats: ChatThread[];
+  memory: MemoryEntry[];
+  /** Scheduled automation jobs. Demo posture — UI only, no live cron. */
+  schedules: CronJob[];
   activeCampaignId: string | null;
+  /** Dedup ledger of provider message ids already ingested (inbound email tracking). */
+  ingestedMessageIds?: string[];
 }

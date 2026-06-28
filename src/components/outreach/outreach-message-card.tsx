@@ -30,11 +30,14 @@ import {
   Save,
   Mail,
   Linkedin,
+  Send,
   Sparkles,
   AlertTriangle,
   ShieldCheck,
   Repeat,
   ArrowUpRight,
+  Copy,
+  ExternalLink,
 } from "lucide-react";
 
 export function OutreachMessageCard({ message }: { message: OutreachMessage }) {
@@ -57,8 +60,11 @@ export function OutreachMessageCard({ message }: { message: OutreachMessage }) {
   const ChannelIcon = message.channel === "Email" ? Mail : Linkedin;
   const hasEvidence = message.personalizationEvidence.length > 0;
   const actionable = message.status === "Needs Approval" || message.status === "Draft";
+  const pendingManual = message.status === "Pending Manual Send";
   const settled = message.status === "Scheduled" || message.status === "Approved";
   const rejected = message.status === "Rejected";
+  // Live-approved email awaiting the deliberate, gated send (the real delivery step).
+  const approvedPendingSend = message.status === "Approved";
 
   const subjectId = `outreach-subject-${message.id}`;
   const bodyId = `outreach-body-${message.id}`;
@@ -71,7 +77,7 @@ export function OutreachMessageCard({ message }: { message: OutreachMessage }) {
     const tone = e.target.value as OutreachTone;
     a.regenerateOutreach(message.id, tone);
     toast({
-      title: `Rewritten — ${tone}`,
+      title: `Rewritten: ${tone}`,
       description: "Personalization re-derived from the candidate profile.",
       variant: "info",
     });
@@ -97,10 +103,10 @@ export function OutreachMessageCard({ message }: { message: OutreachMessage }) {
       return;
     }
     toast({
-      title: settings.dryRunMode ? "Approved — dry-run scheduled" : "Approved — scheduled",
+      title: "Approved: queued for send",
       description: res.warnings.length
         ? res.warnings.join(" ")
-        : "Nothing sent live. Human approval, machine speed.",
+        : "Goes live once the agent seat is connected and its sending domain is verified.",
       variant: "success",
     });
   }
@@ -120,6 +126,56 @@ export function OutreachMessageCard({ message }: { message: OutreachMessage }) {
       title: "Draft regenerated",
       description: "Fresh copy generated from the candidate signals.",
       variant: "info",
+    });
+  }
+
+  const [copied, setCopied] = React.useState(false);
+  const [sending, setSending] = React.useState(false);
+  async function handleCopyMessage() {
+    try {
+      await navigator.clipboard.writeText(`${subject}\n\n${body}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+      toast({ title: "Message copied", description: "Paste it into LinkedIn and send.", variant: "success" });
+    } catch {
+      toast({ title: "Copy failed", description: "Select the text and copy it manually.", variant: "warning" });
+    }
+  }
+
+  function handleOpenLinkedIn() {
+    const url = candidate?.linkedinUrl;
+    if (!url) {
+      toast({ title: "No LinkedIn URL", description: "This candidate has no LinkedIn profile on file.", variant: "error" });
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  function handleConfirmManualSend() {
+    const res = a.confirmManualSend(message.id);
+    if (!res.ok) {
+      toast({ title: "Could not confirm", description: res.error, variant: "error" });
+      return;
+    }
+    toast({
+      title: "LinkedIn send confirmed",
+      description: "Ledger updated. The candidate is marked as contacted.",
+      variant: "success",
+    });
+  }
+
+  async function handleSend() {
+    setSending(true);
+    const res = await a.sendApprovedOutreach(message.id);
+    setSending(false);
+    if (!res.ok) {
+      toast({ title: "Send blocked", description: res.error, variant: "error" });
+      return;
+    }
+    toast({
+      title: "Email sent",
+      description: "Delivered from the live mailbox. The candidate is now marked as contacted.",
+      variant: "success",
     });
   }
 
@@ -176,7 +232,7 @@ export function OutreachMessageCard({ message }: { message: OutreachMessage }) {
           ) : (
             <div className="flex items-start gap-2 rounded-2xl bg-warning-soft px-3 py-2.5 text-xs font-medium text-[hsl(32_90%_34%)] ring-1 ring-inset ring-warning/30">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-              No personalization attached — approval will be blocked until evidence is present. Regenerate to fix.
+              No personalization attached. Approval will be blocked until evidence is present. Regenerate to fix.
             </div>
           )}
         </div>
@@ -219,20 +275,73 @@ export function OutreachMessageCard({ message }: { message: OutreachMessage }) {
           />
         </Field>
 
+        {/* LinkedIn assisted-manual send panel */}
+        {pendingManual && (
+          <div className="space-y-3 rounded-2xl bg-tangerine-soft px-3.5 py-3 text-sm text-tangerine ring-1 ring-inset ring-tangerine/20">
+            <div className="flex items-start gap-2.5">
+              <Linkedin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <div>
+                <p className="font-semibold">LinkedIn message ready: manual send required</p>
+                <p className="mt-0.5 text-tangerine/80">
+                  Aria cannot send LinkedIn messages automatically. Copy the draft, open the candidate&apos;s profile, paste it, then confirm here.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<Copy className="h-4 w-4" />}
+                onClick={handleCopyMessage}
+              >
+                {copied ? "Copied" : "Copy message"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<ExternalLink className="h-4 w-4" />}
+                onClick={handleOpenLinkedIn}
+                disabled={!candidate?.linkedinUrl}
+              >
+                Open LinkedIn
+              </Button>
+              <Button
+                size="sm"
+                variant="primary"
+                leftIcon={<Check className="h-4 w-4" />}
+                onClick={handleConfirmManualSend}
+              >
+                Confirm manual send
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Settled confirmation banner */}
         {settled && (
           <div className="flex items-start gap-2.5 rounded-2xl bg-success-soft px-3.5 py-3 text-sm text-success ring-1 ring-inset ring-success/20">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-            <div>
+            <div className="min-w-0 flex-1">
               <p className="font-semibold">
-                {message.dryRun ? "Approved / Dry-run scheduled" : "Approved / Scheduled"}
+                {message.dryRun
+                  ? "Approved / Queued for send"
+                  : approvedPendingSend
+                    ? "Approved, ready to send"
+                    : "Approved / Sent"}
               </p>
               <p className="mt-0.5 text-success/80">
                 {message.approvedBy ? `Approved by ${message.approvedBy}` : "Approved"}
                 {message.scheduledFor ? ` · ${formatTimeAgo(message.scheduledFor)}` : ""}
                 {message.dryRun ? " · Nothing sent live." : ""}
+                {approvedPendingSend ? " · Review done. Click Send to deliver." : ""}
               </p>
             </div>
+            {approvedPendingSend && (
+              <Button size="sm" disabled={sending} onClick={handleSend}>
+                <Send className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+                {sending ? "Sending…" : "Send now"}
+              </Button>
+            )}
           </div>
         )}
 

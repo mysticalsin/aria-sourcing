@@ -10,7 +10,7 @@ export default function NotFound() {
       <p className="eyebrow mb-2">Error 404</p>
       <h1 className="display text-4xl text-ink">This route went off the map.</h1>
       <p className="mt-3 max-w-md text-muted">
-        The page you’re looking for doesn’t exist in the Hermes console. Let’s get you back to
+        The page you’re looking for doesn’t exist in the Aria console. Let’s get you back to
         the command center.
       </p>
       <Link

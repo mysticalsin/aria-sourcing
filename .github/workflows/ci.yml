@@ -2,24 +2,47 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
-    branches: [main]
+    branches: ["**"]
 
 jobs:
-  verify:
+  build:
+    name: Typecheck / Lint / Test / Build
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
-      - name: Install
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
         run: npm ci
+
       - name: Typecheck
         run: npm run typecheck
-      - name: Unit tests
-        run: npm test
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
       - name: Build
         run: npm run build
+
+      # BLOCKING gate: high/critical advisories fail CI (no "|| true").
+      # Known Next.js advisories must be resolved via the Next upgrade tracked
+      # separately; do not re-add "|| true" to silence this gate.
+      - name: Audit (high-severity, blocking)
+        run: npm audit --audit-level=high
+
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
