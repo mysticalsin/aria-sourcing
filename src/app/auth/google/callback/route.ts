@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getServerSupabase, getServiceSupabase, requireAdmin } from "@/lib/supabase/server";
 import { supabaseEnabled } from "@/lib/supabase/config";
+import { encryptSecret } from "@/lib/crypto-secrets";
 
 /**
  * Google OAuth callback for Gmail API seat connection.
@@ -128,8 +129,8 @@ export async function GET(req: NextRequest) {
       seat_id: seatId,
       provider: "Gmail API",
       account_email: accountEmail,
-      access_token: tokenJson.access_token,
-      refresh_token: tokenJson.refresh_token ?? null,
+      access_token: encryptSecret(tokenJson.access_token),
+      refresh_token: tokenJson.refresh_token ? encryptSecret(tokenJson.refresh_token) : null,
       expires_at: expiresAt,
       scope: tokenJson.scope ?? "https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly",
       updated_at: new Date().toISOString(),

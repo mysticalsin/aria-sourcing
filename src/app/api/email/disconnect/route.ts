@@ -10,6 +10,7 @@ import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
+import { decryptSecret } from "@/lib/crypto-secrets";
 
 const DisconnectSchema = z.object({
   seatId: z.string().uuid(),
@@ -94,7 +95,7 @@ export async function POST(req: NextRequest) {
 
   if (conn.provider === "Gmail API" && conn.refresh_token) {
     try {
-      const body = new URLSearchParams({ token: conn.refresh_token });
+      const body = new URLSearchParams({ token: decryptSecret(conn.refresh_token) });
       const res = await fetch("https://oauth2.googleapis.com/revoke", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },

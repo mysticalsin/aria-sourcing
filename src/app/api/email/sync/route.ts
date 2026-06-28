@@ -9,6 +9,7 @@ import { can } from "@/lib/rbac";
 import type { EmailConnection, Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { getAccessTokenForReading } from "@/lib/email-oauth";
+import { encryptSecret, decryptSecret } from "@/lib/crypto-secrets";
 import {
   listInboundGmail,
   getGmailMessage,
@@ -123,13 +124,16 @@ export async function POST(req: NextRequest) {
     }
     connectionsProcessed++;
 
+    // Tokens are encrypted at rest; decrypt for use. Keep the decrypted original to
+    // detect a refresh below.
+    const origAccessToken = decryptSecret(row.access_token);
     const conn: EmailConnection = {
       id: row.id,
       seatId: row.seat_id,
       provider: row.provider,
       accountEmail: row.account_email,
-      accessToken: row.access_token,
-      refreshToken: row.refresh_token,
+      accessToken: origAccessToken,
+      refreshToken: row.refresh_token ? decryptSecret(row.refresh_token) : row.refresh_token,
       expiresAt: row.expires_at,
       scope: row.scope ?? "",
       connectedAt: "",
@@ -145,13 +149,13 @@ export async function POST(req: NextRequest) {
 
     // Persist a refreshed token if it changed.
     if (
-      token !== row.access_token ||
+      token !== origAccessToken ||
       conn.expiresAt !== row.expires_at
     ) {
       await svc
         .from("email_connections")
         .update({
-          access_token: conn.accessToken,
+          access_token: encryptSecret(conn.accessToken),
           expires_at: conn.expiresAt,
           updated_at: new Date().toISOString(),
         })

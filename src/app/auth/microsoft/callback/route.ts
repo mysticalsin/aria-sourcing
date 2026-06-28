@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getServerSupabase, getServiceSupabase, requireAdmin } from "@/lib/supabase/server";
 import { supabaseEnabled } from "@/lib/supabase/config";
+import { encryptSecret } from "@/lib/crypto-secrets";
 
 /**
  * Microsoft OAuth callback for Microsoft Graph seat connection.
@@ -128,8 +129,8 @@ export async function GET(req: NextRequest) {
       seat_id: seatId,
       provider: "Microsoft Graph",
       account_email: accountEmail,
-      access_token: tokenJson.access_token,
-      refresh_token: tokenJson.refresh_token ?? null,
+      access_token: encryptSecret(tokenJson.access_token),
+      refresh_token: tokenJson.refresh_token ? encryptSecret(tokenJson.refresh_token) : null,
       expires_at: expiresAt,
       scope: tokenJson.scope ?? "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/User.Read offline_access",
       updated_at: new Date().toISOString(),

@@ -12,6 +12,7 @@ import { can } from "@/lib/rbac";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { safeLog } from "@/lib/log-redact";
 import { sendWhatsApp, sendSms } from "@/lib/channels";
+import { encryptSecret, decryptSecret } from "@/lib/crypto-secrets";
 
 /**
  * Strip CR/LF and other control characters from a value bound for an email header
@@ -288,13 +289,16 @@ export async function POST(req: NextRequest) {
       if (!conn || conn.workspace_id !== wid) {
         return NextResponse.json({ status: "dry-run", detail: `${seat.provider} mailbox not connected — dry-run.` });
       }
+      // Tokens are stored encrypted at rest; decrypt for use. Keep the decrypted
+      // original to detect a refresh below.
+      const origAccessToken = decryptSecret(conn.access_token);
       const connection: EmailConnection = {
         id: conn.id,
         seatId,
         provider: seat.provider,
         accountEmail: conn.account_email,
-        accessToken: conn.access_token,
-        refreshToken: conn.refresh_token,
+        accessToken: origAccessToken,
+        refreshToken: conn.refresh_token ? decryptSecret(conn.refresh_token) : conn.refresh_token,
         expiresAt: conn.expires_at,
         scope: conn.scope,
         connectedAt: "",
@@ -308,10 +312,10 @@ export async function POST(req: NextRequest) {
       }
 
       // Persist refreshed token if it changed.
-      if (svc && (conn.access_token !== connection.accessToken || conn.expires_at !== connection.expiresAt)) {
+      if (svc && (origAccessToken !== connection.accessToken || conn.expires_at !== connection.expiresAt)) {
         await svc
           .from("email_connections")
-          .update({ access_token: connection.accessToken, expires_at: connection.expiresAt, updated_at: new Date().toISOString() })
+          .update({ access_token: encryptSecret(connection.accessToken), expires_at: connection.expiresAt, updated_at: new Date().toISOString() })
           .eq("id", connection.id);
       }
     } else {
