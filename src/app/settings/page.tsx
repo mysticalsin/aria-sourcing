@@ -28,6 +28,7 @@ import { GuardrailsPanel } from "@/components/settings/guardrails-panel";
 import { ProvidersPanel } from "@/components/settings/providers-panel";
 import { ModelsPanel } from "@/components/settings/models-panel";
 import { ToolsPanel } from "@/components/settings/tools-panel";
+import { McpServersPanel } from "@/components/settings/mcp-servers-panel";
 import { HermesRuntimePanel } from "@/components/settings/hermes-runtime-panel";
 import { SchedulesPanel } from "@/components/settings/schedules-panel";
 import { HermesSchedulesPanel } from "@/components/settings/hermes-schedules-panel";
@@ -928,6 +929,14 @@ export default function SettingsPage() {
             description="Toggle the capabilities available to every agent by default. Individual agents can be assigned a custom tool subset from the fleet page. Admin only."
           >
             <ToolsPanel />
+            <div className="mt-6 border-t border-line pt-5">
+              <h3 className="text-sm font-semibold text-ink">MCP tool servers</h3>
+              <p className="mb-3 mt-1 text-xs text-muted">
+                Connect external Model Context Protocol servers (sourcing, enrichment, messaging, and
+                more) to give the fleet more tools. The auth token is stored server-side in the key vault.
+              </p>
+              <McpServersPanel />
+            </div>
           </Section>
 
           {/* 17 — Aria runtime */}

@@ -3524,6 +3524,10 @@ export function useLlmProviders() {
   return useStateOrEmpty().settings.llmProviders ?? [];
 }
 
+export function useMcpServers() {
+  return useStateOrEmpty().settings.mcpServers ?? [];
+}
+
 export function useSavedModels() {
   return useStateOrEmpty().settings.savedModels ?? [];
 }
