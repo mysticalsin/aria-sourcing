@@ -466,6 +466,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               };
               setState({ ...migrated, activities: [notice, ...migrated.activities].slice(0, 300) });
             }
+          } else {
+            // Non-conflict save failure (network / quota). Retry once shortly so a blip
+            // on the last edit before the user stops typing doesn't silently lose the
+            // write (the debounce otherwise only re-saves on the next state change).
+            setTimeout(() => {
+              void saveRemoteState(wid, snapshot, remoteUpdatedAtRef.current).then((r) => {
+                if (r.ok && r.updatedAt) remoteUpdatedAtRef.current = r.updatedAt;
+              });
+            }, 2500);
           }
         })();
       }, 600);
@@ -2051,7 +2060,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const disconnectSeatAccount = useCallback(
-    (id: string) =>
+    (id: string) => {
+      // Live mode: revoke + delete the server-side OAuth connection so the refresh
+      // token is actually killed (fire-and-forget; local state updates immediately).
+      if (supabaseEnabled) {
+        void fetch("/api/email/disconnect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ seatId: id }),
+        }).catch(() => {});
+      }
       commit((s) => {
         const seat = s.seats.find((x) => x.id === id);
         const next = {
@@ -2071,7 +2089,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           }),
           null,
         );
-      }),
+      });
+    },
     [commit],
   );
 
