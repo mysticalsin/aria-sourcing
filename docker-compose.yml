@@ -1,50 +1,210 @@
-# Start Aria Sourcing in Docker:  docker compose up   (or: npm run docker:dev)
+# =============================================================================
+# Aria Sourcing — fully self-contained stack: the app + Supabase (db, auth, rest,
+# kong) all in Docker. No host `supabase start`, no external identity provider.
 #
-# Prereqs: the local Supabase stack running on the host (`supabase start`), and a
-# .env.local with NEXT_PUBLIC_SUPABASE_URL / _ANON_KEY / SUPABASE_SERVICE_ROLE_KEY.
+#   Start:  docker compose up --build        (first run builds images + migrates/seeds)
+#   Stop:   docker compose down              (keeps the database in the db_data volume)
+#   Reset:  docker compose down -v           (wipes the database; next up re-seeds)
 #
-# Why this fixes the OneDrive `.next` corruption: the source is bind-mounted, but
-# `/app/node_modules` and `/app/.next` are anonymous volumes that shadow the host
-# dirs — so Next writes its build output to the container's filesystem, never to the
-# OneDrive-synced checkout.
+# Log in at http://localhost:3000 with the one-click "admin / admin" shortcut, or the
+# email form: admin@hermes.local / admindemo123.
+#
+# The keys below are the PUBLIC supabase sample keys — fine for a local stack only.
+# For any non-local use, regenerate JWT_SECRET + the anon/service JWTs and override them.
+# =============================================================================
+name: aria-sourcing
+
+x-keys:
+  jwt_secret: &jwt_secret "your-super-secret-jwt-token-with-at-least-32-characters-long"
+  jwt_exp: &jwt_exp "3600"
+  pg_password: &pg_password "postgres"
+  demo_admin_pw: &demo_admin_pw "admindemo123"
+  anon_key: &anon_key "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE"
+  service_key: &service_key "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q"
+
 services:
+  # ---- Postgres (Supabase image: roles, auth schema, auth.uid(), extensions) --------
+  db:
+    image: supabase/postgres:17.6.1.136
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: *pg_password
+      JWT_SECRET: *jwt_secret
+      JWT_EXP: *jwt_exp
+    volumes:
+      - ./docker/db/01-roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:Z
+      - ./docker/db/02-jwt.sql:/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql:Z
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "${DB_HOST_PORT:-54322}:5432"   # host access for psql / Studio parity
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # ---- One-shot: hand the auth schema to supabase_auth_admin BEFORE GoTrue starts ----
+  # The supabase/postgres image creates auth.uid()/role()/email() owned by postgres, which
+  # makes GoTrue crash-loop ("must be owner of function uid"). Reassign first so GoTrue
+  # comes up clean on its first try.
+  db-init:
+    image: postgres:17-bookworm
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./docker/db/03-auth-owner.sql:/auth-owner.sql:ro
+    command:
+      - sh
+      - -c
+      - 'until pg_isready -h db -U postgres -q; do sleep 2; done;
+         psql postgres://postgres:postgres@db:5432/postgres -v ON_ERROR_STOP=1 -f /auth-owner.sql'
+    restart: "no"
+
+  # ---- GoTrue (email+password auth, JWT issuance) -----------------------------------
+  auth:
+    image: supabase/gotrue:v2.189.0
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: "9999"
+      API_EXTERNAL_URL: http://localhost:54321
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:postgres@db:5432/postgres
+      GOTRUE_SITE_URL: http://localhost:3000
+      GOTRUE_URI_ALLOW_LIST: "*"
+      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: *jwt_exp
+      GOTRUE_JWT_SECRET: *jwt_secret
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ---- PostgREST (RLS-enforced CRUD + RPC over /rest/v1) ----------------------------
+  rest:
+    image: postgrest/postgrest:v14.12
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://authenticator:postgres@db:5432/postgres
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: *jwt_secret
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_SECRET: *jwt_secret
+      PGRST_APP_SETTINGS_JWT_EXP: *jwt_exp
+    healthcheck:
+      test: ["CMD", "postgrest", "--ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ---- Kong (single API gateway; routes /auth/v1 + /rest/v1 like supabase-js wants) --
+  kong:
+    image: kong/kong:3.9.1
+    restart: unless-stopped
+    depends_on:
+      auth:
+        condition: service_started
+      rest:
+        condition: service_started
+    ports:
+      - "${KONG_PORT:-54321}:8000"
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /usr/local/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth,request-termination,ip-restriction,post-function
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+      SUPABASE_ANON_KEY: *anon_key
+      SUPABASE_SERVICE_KEY: *service_key
+      DASHBOARD_USERNAME: supabase
+      DASHBOARD_PASSWORD: supabase
+    volumes:
+      - ./docker/kong.yml:/home/kong/temp.yml:ro,z
+      - ./docker/kong-entrypoint.sh:/home/kong/kong-entrypoint.sh:ro,z
+    entrypoint: ["/bin/sh", "/home/kong/kong-entrypoint.sh"]
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---- One-shot: apply the 6 app migrations (after GoTrue) + seed/promote admin ------
+  supabase-bootstrap:
+    build:
+      context: ./docker/bootstrap
+    depends_on:
+      db:
+        condition: service_healthy
+      auth:
+        condition: service_started
+    environment:
+      ADMIN_DB_URL: postgres://postgres:postgres@db:5432/postgres
+      SERVICE_ROLE_KEY: *service_key
+      DEMO_ADMIN_PASSWORD: *demo_admin_pw
+    volumes:
+      - ./supabase/migrations:/migrations:ro
+      - ./docker/db/03-auth-owner.sql:/auth-owner.sql:ro
+    restart: "no"
+
+  # ---- The Next.js app (dev server; .next on an anon volume to dodge OneDrive corruption) --
   app:
     build:
       context: .
       dockerfile: Dockerfile
+    depends_on:
+      supabase-bootstrap:
+        condition: service_completed_successfully
+      kong:
+        condition: service_started
     ports:
-      - "3000:3000"
+      - "${APP_PORT:-3000}:3000"
     env_file:
-      - .env.local
+      - path: .env.local
+        required: false
     environment:
-      # In-container (server-side) code reaches the host's local Supabase here.
-      # The browser still uses NEXT_PUBLIC_SUPABASE_URL (localhost) from .env.local.
-      SUPABASE_URL: "http://host.docker.internal:54321"
-      # Reliable file-watching for HMR over a bind mount on macOS/Windows.
+      NODE_ENV: development
+      # Server (in-container) reaches Supabase via Kong by service name; the browser
+      # uses the host-mapped localhost URL. config.ts prefers SUPABASE_URL on the server.
+      SUPABASE_URL: http://kong:8000
+      NEXT_PUBLIC_SUPABASE_URL: "http://localhost:${KONG_PORT:-54321}"
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: *anon_key
+      SUPABASE_SERVICE_ROLE_KEY: *service_key
+      NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN: ""
+      DEMO_ADMIN_PASSWORD: *demo_admin_pw
       WATCHPACK_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
-    extra_hosts:
-      # Lets the container resolve the host (for the host's Supabase) on Linux too.
-      - "host.docker.internal:host-gateway"
     volumes:
       - .:/app
       - /app/node_modules
       - /app/.next
     command: npm run dev
     restart: unless-stopped
-    # Resource limits — top-level form works with plain `docker compose up` (non-swarm).
-    mem_limit: 2g
-    cpus: "1.5"
-    # deploy.resources.limits is the canonical Compose v2 / swarm form.
-    deploy:
-      resources:
-        limits:
-          memory: 2g
-          cpus: "1.5"
     healthcheck:
-      # node:slim has no wget/curl; use a Node one-liner instead.
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s   # generous window for Next.js dev-server cold start
+      start_period: 60s
+
+volumes:
+  db_data:

@@ -1,46 +1,77 @@
-# Running Aria Sourcing in Docker
+# Running Aria Sourcing fully in Docker (with Supabase)
 
-Running in a container fixes the OneDrive `.next` corruption: Next builds inside the
-container's filesystem (an anonymous volume), so the synced host checkout is never
-touched. Source is still bind-mounted, so edits hot-reload.
+One `docker compose up` brings up the whole thing — the Next.js app **and** a self-hosted
+Supabase backend (Postgres, GoTrue auth, PostgREST, Kong) — all in Docker. No host
+`supabase start`, no external identity provider, no manual migration step.
 
-## One-time
+## Start
 
-1. Start Docker Desktop.
-2. Start the local Supabase stack on the host (the app talks to it):
-   ```
-   supabase start
-   ```
-3. Make sure `.env.local` exists with:
-   ```
-   NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
-   SUPABASE_SERVICE_ROLE_KEY=<service role key>
-   ```
-
-## Start the app
-
-```
-docker compose up        # or: npm run docker:dev
+```bash
+docker compose up --build      # first run: builds images, applies migrations, seeds admin
 ```
 
-App: http://localhost:3000 — admin / admin to sign in.
+Then open **http://localhost:3000** and sign in:
 
-First run builds the image (`npm ci`) and may take a few minutes; later runs are fast.
-Rebuild the image after dependency changes: `docker compose up --build`.
+- one-click **`admin` / `admin`**, or
+- the email form: **admin@hermes.local** / **admindemo123**
+
+First run pulls the Supabase images and runs `npm ci`, so it takes a few minutes. Later
+runs are fast. Use `docker compose up -d` to run detached.
+
+## Stop / reset
+
+```bash
+docker compose down            # stop everything; KEEPS the database (db_data volume)
+docker compose up -d           # start again — your data (users, workspace, state) persists
+docker compose down -v         # stop AND wipe the database; next `up` re-migrates + re-seeds
+docker compose restart app     # restart just the app after a code change
+```
+
+## What comes up
+
+| Service | Image | Role |
+|---|---|---|
+| `db` | supabase/postgres | Postgres with the Supabase roles, `auth` schema, extensions; all 9 app tables |
+| `db-init` | postgres | one-shot: hands the `auth` schema to `supabase_auth_admin` so GoTrue starts clean |
+| `auth` | supabase/gotrue | email+password login, JWT issuance |
+| `rest` | postgrest | RLS-enforced CRUD + RPCs over `/rest/v1` |
+| `kong` | kong | single API gateway (routes `/auth/v1` + `/rest/v1`), exposed on `:54321` |
+| `supabase-bootstrap` | postgres+curl | one-shot: applies the 6 migrations, seeds + promotes the admin user, reloads PostgREST |
+| `app` | (this repo) | the Next.js dev server on `:3000` |
+
+`docker compose ps` should show `db/auth/rest/kong` healthy and the two one-shots
+`Exited (0)`.
 
 ## How the networking works
 
-- The **browser** runs on your host and reaches Supabase at `NEXT_PUBLIC_SUPABASE_URL`
-  (`http://localhost:54321`).
-- The **server** runs inside the container and reaches the host's Supabase via the
-  `SUPABASE_URL` override (`http://host.docker.internal:54321`) set in
-  `docker-compose.yml`. Outside Docker that var is unset and everything falls back to
-  the public URL, so normal `npm run dev` is unchanged.
+- The **browser** reaches Supabase at `NEXT_PUBLIC_SUPABASE_URL` = `http://localhost:54321`
+  (Kong's host port).
+- The **server** (inside the app container) reaches Supabase via `SUPABASE_URL` =
+  `http://kong:8000` (Docker service name). `config.ts` prefers `SUPABASE_URL` on the
+  server, so the browser never sees the internal address.
+- The app runs in **LIVE mode** (Supabase-backed, login gate on) because the Supabase env
+  is set — visiting `/` redirects you to `/login`, which a demo build never does.
+
+## Ports
+
+Defaults: app `3000`, Kong/Supabase API `54321`, Postgres `54322`. Override if they clash
+with a host `supabase start` or another dev server:
+
+```bash
+APP_PORT=3001 KONG_PORT=54331 DB_HOST_PORT=54332 docker compose up
+```
+
+(`NEXT_PUBLIC_SUPABASE_URL` follows `KONG_PORT` automatically.)
 
 ## Notes
 
-- `.env.local` is loaded at runtime via `env_file` and is excluded from the image
-  (`.dockerignore`) — secrets are never baked in.
-- To run without Docker but still off OneDrive, you can also use the build-dir hatch:
-  `NEXT_DIST_DIR=/tmp/aria-next npm run dev`.
+- The Supabase keys in `docker-compose.yml` are the **public Supabase sample keys** — fine
+  for a local stack only. For any non-local use, regenerate `JWT_SECRET` and the matching
+  anon/service-role JWTs and override them.
+- `.env.local` is optional and loaded if present — put provider keys there (GitHub, WhatsApp,
+  Twilio, OAuth, `DATA_ENCRYPTION_KEY`, …) to light up those integrations. The core stack
+  runs without it.
+- Inspect the database directly: `docker compose exec db psql -U postgres`, or point any
+  client at `localhost:54322` (user `postgres`, password `postgres`).
+- The `.next` build dir lives on an anonymous volume (not the OneDrive-synced checkout), so
+  Next's output never corrupts the host copy.
