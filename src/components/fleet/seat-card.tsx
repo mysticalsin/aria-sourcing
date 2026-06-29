@@ -25,6 +25,7 @@ import {
   PROVIDER_LIMIT_NOTE,
 } from "@/lib/fleet";
 import type { AgentSeat, SeatProvider, ToolId } from "@/lib/types";
+import { ROBOT_PALETTE } from "@/lib/floor3d";
 import { cn, type Tone } from "@/lib/utils";
 import { AgentPromptEditor } from "./agent-prompt-editor";
 import {
@@ -40,6 +41,7 @@ import {
   Flame,
   ShieldCheck,
   BrainCircuit,
+  Palette,
 } from "lucide-react";
 
 const PROVIDER_TONE: Record<SeatProvider, Tone> = {
@@ -363,6 +365,65 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
                     ...enabledModels.map((m) => ({ value: m.id, label: m.label })),
                   ]}
                 />
+              </Field>
+
+              <Field
+                label="Floor colour"
+                htmlFor={`color-${seat.id}`}
+                hint="Robot colour on the 3D Ops Floor. Auto = palette by seat order."
+              >
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {ROBOT_PALETTE.map((c) => {
+                    const active =
+                      (seat.color ?? "").toLowerCase() === c.toLowerCase();
+                    return (
+                      <button
+                        key={c}
+                        type="button"
+                        disabled={!canManageLlm}
+                        title={c}
+                        aria-label={`Set colour ${c}`}
+                        onClick={() => actions.updateSeat(seat.id, { color: c })}
+                        className={cn(
+                          "h-6 w-6 rounded-full border-2 transition hover:scale-110",
+                          active ? "border-ink" : "border-transparent",
+                          "disabled:cursor-default disabled:opacity-70",
+                        )}
+                        style={{ backgroundColor: c }}
+                      />
+                    );
+                  })}
+                  <label
+                    className="relative inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border-2 border-dashed border-ink/30 transition hover:scale-110"
+                    title="Custom colour"
+                  >
+                    <input
+                      id={`color-${seat.id}`}
+                      type="color"
+                      value={seat.color ?? "#3B82F6"}
+                      disabled={!canManageLlm}
+                      onChange={(e) =>
+                        actions.updateSeat(seat.id, { color: e.target.value })
+                      }
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                    />
+                    <Palette className="h-3.5 w-3.5 text-muted" aria-hidden />
+                  </label>
+                  {seat.color ? (
+                    <button
+                      type="button"
+                      disabled={!canManageLlm}
+                      onClick={() =>
+                        actions.updateSeat(seat.id, { color: undefined })
+                      }
+                      className="ml-1 text-xs text-muted underline hover:text-ink disabled:opacity-70"
+                    >
+                      Reset to auto
+                    </button>
+                  ) : (
+                    <span className="ml-1 text-xs text-muted">Auto</span>
+                  )}
+                </div>
               </Field>
 
               {enabledTools.length > 0 && (

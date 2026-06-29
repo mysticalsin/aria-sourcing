@@ -642,6 +642,9 @@ export interface AgentSeat {
   /** Editable per-agent prompt — the voice/instructions this Aria agent writes with. */
   persona: string;
   signature: string;
+  /** Optional custom robot colour (any CSS hex, e.g. "#3B82F6"). When set it
+   *  overrides the auto-assigned floor palette so new agents can use any colour. */
+  color?: string;
   /** Language this agent writes outreach in (ISO code). */
   language?: string;
   /** Connected email account label (official API). Empty = not connected. */
