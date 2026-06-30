@@ -42,3 +42,5 @@ backups/
 # Scratch: port-reference clones + working plans
 ultraplan/
 tmp/
+.vercel
+.env*

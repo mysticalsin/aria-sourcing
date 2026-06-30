@@ -1,5 +1,13 @@
 # Keep CLI deploys lean — exclude heavy non-build assets.
 # (public/ is NOT excluded; the app's logo images live there.)
+#
+# CRITICAL: never upload local env files — .env.local points NEXT_PUBLIC_SUPABASE_URL
+# at 127.0.0.1 (and vercel link injects VERCEL_OIDC_TOKEN). Next.js loads .env.local
+# during `next build`, which would flip the deployed demo into broken "live" mode.
+# The deploy passes NEXT_PUBLIC_ENABLE_DEMO_LOGIN via --build-env instead.
+.env
+.env.local
+.env*.local
 .localbin
 Aria
 backups
