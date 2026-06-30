@@ -8,6 +8,7 @@ import {
   SUPABASE_URL,
   supabaseEnabled,
   isProduction,
+  demoLoginEnabled,
   assertSupabaseConfiguredInProd,
 } from "./config";
 
@@ -29,8 +30,10 @@ export async function requireAdmin(
   if (!supabaseEnabled || !serverSupabase) {
     // Fail CLOSED in production: without a verified Supabase session we cannot
     // confirm identity or role, so admin access must NEVER be granted. DEMO mode
-    // (non-production) stays open for local development.
-    if (isProduction) {
+    // (non-production) stays open for local development, as does a deliberately
+    // public synthetic demo (NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true) whose state is
+    // entirely in-browser anyway.
+    if (isProduction && !demoLoginEnabled) {
       return {
         ok: false,
         response: NextResponse.json(

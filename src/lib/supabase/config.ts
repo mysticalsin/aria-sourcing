@@ -31,7 +31,9 @@ export const isProduction = process.env.NODE_ENV === "production";
  * at module top level — so it can never break the build.
  */
 export function assertSupabaseConfiguredInProd(): void {
-  if (isProduction && !supabaseEnabled) {
+  // A deliberately public demo (demoLoginEnabled) is the one sanctioned exception:
+  // it intentionally runs open in prod with no Supabase, so don't throw for it.
+  if (isProduction && !supabaseEnabled && !demoLoginEnabled) {
     throw new Error(
       "Supabase is not configured while NODE_ENV=production. Refusing to fall back to open DEMO mode.",
     );
@@ -46,7 +48,7 @@ export function assertSupabaseConfiguredInProd(): void {
  * or null to proceed. Call as the FIRST statement of each protected handler.
  */
 export function prodFailClosed(): Response | null {
-  if (isProduction && !supabaseEnabled) {
+  if (isProduction && !supabaseEnabled && !demoLoginEnabled) {
     return new Response(JSON.stringify({ ok: false, error: "service_unavailable" }), {
       status: 503,
       headers: { "Content-Type": "application/json" },
@@ -62,11 +64,17 @@ export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?
 export const ALLOWED_EMAIL_DOMAIN = process.env.NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN ?? "";
 
 /**
- * Public-demo escape hatch. When `NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true`, the
- * one-click `admin`/`admin` demo login (`/api/auth/demo-login`) is permitted even
- * under `NODE_ENV=production`, and the login hero turns its primary CTA into a
- * one-click demo sign-in. Default (unset) preserves the production fail-closed
- * posture — demo login stays 404'd in prod. Set this ONLY on a deliberately
- * public, synthetic-data demo instance; never on a real tenant deployment.
+ * Public-demo escape hatch. When `NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true` this instance
+ * is a deliberately public, synthetic-data demo, which changes two things in prod:
+ *
+ *  1. With Supabase configured — the one-click `admin`/`admin` demo login
+ *     (`/api/auth/demo-login`) is permitted even under `NODE_ENV=production`.
+ *  2. WITHOUT Supabase configured — the app is allowed to run in open DEMO mode in
+ *     production (in-browser `localStorage`, no login gate) instead of failing
+ *     closed. The per-request fail-closed guards below honour this flag.
+ *
+ * Default (unset) preserves the strict production fail-closed posture: demo login
+ * stays 404'd and a missing Supabase env returns 503. Set ONLY on a public demo;
+ * never on a real tenant deployment. All outreach stays dry-run regardless.
  */
 export const demoLoginEnabled = process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN === "true";

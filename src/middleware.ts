@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
-import { SUPABASE_ANON_KEY, SUPABASE_URL, supabaseEnabled, ALLOWED_EMAIL_DOMAIN, isProduction } from "@/lib/supabase/config";
+import { SUPABASE_ANON_KEY, SUPABASE_URL, supabaseEnabled, ALLOWED_EMAIL_DOMAIN, isProduction, demoLoginEnabled } from "@/lib/supabase/config";
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
@@ -17,13 +17,17 @@ export async function middleware(req: NextRequest) {
     // DEMO mode (no login gate, every caller treated as admin) — never acceptable
     // in prod. Refuse every matched route with a 503; the matcher already excludes
     // static assets and API routes, so nothing privileged leaks through.
-    if (isProduction) {
+    //
+    // The ONE sanctioned exception is a deliberately public, synthetic-data demo
+    // (NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true): there the open in-browser DEMO mode IS
+    // the intended product, so allow it through.
+    if (isProduction && !demoLoginEnabled) {
       return new NextResponse(
         "Service unavailable: server authentication is not configured.",
         { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } },
       );
     }
-    // Non-production: keep the open DEMO experience for local development.
+    // Non-production, or an explicit public demo: keep the open DEMO experience.
     return NextResponse.next();
   }
 

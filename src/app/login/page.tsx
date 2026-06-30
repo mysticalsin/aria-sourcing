@@ -114,7 +114,18 @@ function LoginInner() {
     setLoading(true);
     setAuthError(null);
     if (email.trim() === "admin" && password === "admin") {
-      await runDemoLogin();
+      // With a backend, resolve admin/admin to the seeded account server-side.
+      // In open demo mode (no Supabase) admin/admin is a cosmetic gate — just enter.
+      if (supabaseEnabled) {
+        await runDemoLogin();
+      } else {
+        window.location.href = safeRedirect(redirect);
+      }
+      return;
+    }
+    if (!supabaseEnabled) {
+      setAuthError("Use admin / admin to enter the demo.");
+      setLoading(false);
       return;
     }
     const supabase = getBrowserSupabase();
@@ -134,7 +145,8 @@ function LoginInner() {
   };
 
   const handleCTA = () => {
-    if (demoLoginEnabled) void runDemoLogin();
+    if (demoLoginEnabled && supabaseEnabled) void runDemoLogin();
+    else if (demoLoginEnabled) window.location.href = safeRedirect(redirect);
     else if (supabaseEnabled) void signInWithMicrosoft();
     else router.push(safeRedirect(redirect));
   };
@@ -256,7 +268,7 @@ function LoginInner() {
           {ctaText}
         </motion.button>
 
-        {supabaseEnabled && (
+        {(supabaseEnabled || demoLoginEnabled) && (
           <div className="mt-5 w-full max-w-xs">
             <button
               type="button"
