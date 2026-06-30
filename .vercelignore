@@ -1,0 +1,11 @@
+# Keep CLI deploys lean — exclude heavy non-build assets.
+# (public/ is NOT excluded; the app's logo images live there.)
+.localbin
+Aria
+backups
+ultraplan
+production-readiness
+.playwright-mcp
+docker
+tmp
+*.mp4
