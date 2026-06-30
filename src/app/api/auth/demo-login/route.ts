@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { SUPABASE_URL, SUPABASE_ANON_KEY, supabaseEnabled } from "@/lib/supabase/config";
+import { SUPABASE_URL, SUPABASE_ANON_KEY, supabaseEnabled, demoLoginEnabled } from "@/lib/supabase/config";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 
 /**
@@ -13,7 +13,9 @@ import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit"
  * (falls back to the local default for the bundled local stack only).
  */
 export async function POST(req: Request) {
-  if (process.env.NODE_ENV === "production") {
+  // Hard-disabled in production UNLESS this is a deliberately public demo instance
+  // (NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true). Default prod stays fail-closed (404).
+  if (process.env.NODE_ENV === "production" && !demoLoginEnabled) {
     return NextResponse.json({ ok: false, error: "Disabled in production." }, { status: 404 });
   }
   if (!supabaseEnabled) {
@@ -32,7 +34,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Invalid demo credentials." }, { status: 401 });
   }
 
-  const demoPassword = process.env.DEMO_ADMIN_PASSWORD ?? "admindemo123";
+  // In a public production demo the seeded account's real password MUST be set
+  // explicitly — never fall back to the well-known local default (it would let
+  // anyone sign in to the seeded Supabase account directly). Local/dev keeps the
+  // convenience default.
+  const demoPassword =
+    process.env.DEMO_ADMIN_PASSWORD ??
+    (process.env.NODE_ENV === "production" ? null : "admindemo123");
+  if (!demoPassword) {
+    return NextResponse.json(
+      { ok: false, error: "Demo login is not configured." },
+      { status: 500 },
+    );
+  }
   const cookieStore = cookies();
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     cookies: {

@@ -21,9 +21,17 @@ export function Sidebar() {
   return (
     <aside className="hidden lg:flex w-[260px] shrink-0 flex-col sidebar-glass sticky top-0 h-screen">
       <div className="px-5 py-5">
-        <Link href="/" className="inline-flex rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric">
+        <Link href="/" className="flex justify-center rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric">
           <HermesWordmark />
         </Link>
+        <a
+          href="https://www.linkedin.com/in/tonywalteur/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2.5 block text-center text-[0.65rem] font-medium tracking-wide text-muted underline-offset-2 transition-colors hover:text-ink hover:underline"
+        >
+          Created by Tony Walteur
+        </a>
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 pb-4" aria-label="Primary">

@@ -60,3 +60,13 @@ export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?
 
 /** Optional: restrict sign-in to an email domain (e.g. "mantu.com"). Empty = any. */
 export const ALLOWED_EMAIL_DOMAIN = process.env.NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN ?? "";
+
+/**
+ * Public-demo escape hatch. When `NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true`, the
+ * one-click `admin`/`admin` demo login (`/api/auth/demo-login`) is permitted even
+ * under `NODE_ENV=production`, and the login hero turns its primary CTA into a
+ * one-click demo sign-in. Default (unset) preserves the production fail-closed
+ * posture — demo login stays 404'd in prod. Set this ONLY on a deliberately
+ * public, synthetic-data demo instance; never on a real tenant deployment.
+ */
+export const demoLoginEnabled = process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN === "true";

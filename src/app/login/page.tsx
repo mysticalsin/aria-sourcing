@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence, useInView } from "framer-motion";
 import { Menu, X, AlertTriangle, Lock } from "lucide-react";
 import { getBrowserSupabase } from "@/lib/supabase/client";
-import { supabaseEnabled, ALLOWED_EMAIL_DOMAIN } from "@/lib/supabase/config";
+import { supabaseEnabled, ALLOWED_EMAIL_DOMAIN, demoLoginEnabled } from "@/lib/supabase/config";
 
 const VIDEO_URL =
   "https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260619_191346_9d19d66e-86a4-47f7-8dc6-712c1788c3b2.mp4";
@@ -90,24 +90,31 @@ function LoginInner() {
     if (err) setLoading(false);
   };
 
+  // One-click demo sign-in: admin/admin is resolved SERVER-SIDE (the real account
+  // password never reaches the client bundle). Used by both the hero CTA (when
+  // NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true) and the admin/admin email-form path.
+  const runDemoLogin = async () => {
+    setLoading(true);
+    setAuthError(null);
+    const res = await fetch("/api/auth/demo-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin", password: "admin" }),
+    });
+    if (res.ok) {
+      window.location.href = safeRedirect(redirect);
+      return;
+    }
+    setAuthError("Demo login is unavailable.");
+    setLoading(false);
+  };
+
   const signInWithEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setAuthError(null);
-    // Dev one-click demo: admin/admin is resolved SERVER-SIDE (the real password
-    // never reaches the client bundle).
     if (email.trim() === "admin" && password === "admin") {
-      const res = await fetch("/api/auth/demo-login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: "admin", password: "admin" }),
-      });
-      if (res.ok) {
-        window.location.href = safeRedirect(redirect);
-        return;
-      }
-      setAuthError("Demo login is unavailable.");
-      setLoading(false);
+      await runDemoLogin();
       return;
     }
     const supabase = getBrowserSupabase();
@@ -127,15 +134,18 @@ function LoginInner() {
   };
 
   const handleCTA = () => {
-    if (supabaseEnabled) void signInWithMicrosoft();
+    if (demoLoginEnabled) void runDemoLogin();
+    else if (supabaseEnabled) void signInWithMicrosoft();
     else router.push(safeRedirect(redirect));
   };
 
   const ctaText = loading
     ? "Signing in…"
-    : supabaseEnabled
-      ? "Sign in with Microsoft"
-      : "Enter the console";
+    : demoLoginEnabled
+      ? "Enter the demo console"
+      : supabaseEnabled
+        ? "Sign in with Microsoft"
+        : "Enter the console";
 
   return (
     <div className="login-hero relative flex h-screen w-screen flex-col overflow-hidden bg-[#010101] text-white">
@@ -324,6 +334,18 @@ function LoginInner() {
         <p className="mt-10 max-w-sm text-[0.7rem] font-light leading-relaxed text-white/40">
           No candidate is contacted without your explicit approval. Nothing sends until you connect
           and verify a sending domain.
+        </p>
+
+        <p className="mt-6 text-xs font-light tracking-[0.18em] text-white/50">
+          Designed &amp; built by{" "}
+          <a
+            href="https://www.linkedin.com/in/tonywalteur/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-normal text-white/80 underline-offset-4 transition-colors hover:text-white hover:underline"
+          >
+            Tony Walteur
+          </a>
         </p>
       </main>
     </div>
