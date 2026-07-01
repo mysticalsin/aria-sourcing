@@ -11,7 +11,7 @@ type CookieToSet = { name: string; value: string; options?: CookieOptions };
  * Supabase session and redirects unauthenticated users to /login (Microsoft SSO).
  * /login and /auth/* stay public.
  */
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   if (!supabaseEnabled) {
     // Fail CLOSED in production. With no Supabase env the app would run in open
     // DEMO mode (no login gate, every caller treated as admin) — never acceptable

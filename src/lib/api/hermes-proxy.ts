@@ -12,10 +12,8 @@ export const HERMES_PROXY_TIMEOUT_MS = 30_000;
 export function logHermesProxy(level: "info" | "error", message: string, meta?: Record<string, unknown>) {
   const entry = { time: new Date().toISOString(), source: "hermes-proxy", level, message, ...(meta ?? {}) };
   if (level === "error") {
-    // eslint-disable-next-line no-console
     console.error(JSON.stringify(entry));
   } else {
-    // eslint-disable-next-line no-console
     console.log(JSON.stringify(entry));
   }
 }

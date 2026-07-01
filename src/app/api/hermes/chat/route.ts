@@ -94,10 +94,8 @@ function logUpstream(level: "info" | "error", message: string, meta?: Record<str
   const entry = { time: new Date().toISOString(), source: "hermes-proxy", level, message, ...redactObject(meta ?? {}) };
   const line = redactSecrets(redactEmail(JSON.stringify(entry)));
   if (level === "error") {
-    // eslint-disable-next-line no-console
     console.error(line);
   } else {
-    // eslint-disable-next-line no-console
     console.log(line);
   }
 }

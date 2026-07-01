@@ -183,7 +183,6 @@ function LoginInner() {
       <nav className="relative z-20 flex items-center justify-between px-5 py-6 sm:px-8 md:justify-center">
         <span className="flex items-center md:absolute md:left-8">
           {/* Full transparent logo (white ARIA reads on the dark hero) — shown whole. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/aria-logo.png" alt="Aria: Agentic Sourcing Platform by Mantu" className="h-16 w-auto object-contain" />
         </span>
         <div className="hidden items-center gap-10 md:flex">

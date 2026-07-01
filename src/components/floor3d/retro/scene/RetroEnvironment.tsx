@@ -215,7 +215,7 @@ function OpenFloor() {
   const carpetCx = (dminX + dmaxX) / 2;
   const carpetCz = (dminZ + dmaxZ) / 2;
 
-  const carpetTex = useMemo(makeCarpetTexture, []);
+  const carpetTex = useMemo(() => makeCarpetTexture(), []);
   useMemo(() => {
     if (carpetTex) carpetTex.repeat.set(carpetW / 1.2, carpetD / 1.2);
   }, [carpetTex, carpetW, carpetD]);
@@ -252,7 +252,7 @@ function OpenFloor() {
 // real cafeteria wall. Single back wall; never slices the view.
 // ---------------------------------------------------------------------------
 function FeatureWall() {
-  const brickTex = useMemo(makeBrickTexture, []);
+  const brickTex = useMemo(() => makeBrickTexture(), []);
   const wordmark = useTexture("/brand/mantu-wordmark.png?v=official");
   const monogram = useTexture("/brand/mantu-logo-source.jpg");
   wordmark.colorSpace = THREE.SRGBColorSpace;
@@ -446,7 +446,7 @@ function BarArea() {
 // Living plant wall (left side) + extra greenery in front of it.
 // ---------------------------------------------------------------------------
 function PlantWall() {
-  const foliage = useMemo(makeFoliageTexture, []);
+  const foliage = useMemo(() => makeFoliageTexture(), []);
   const [wx, , wz] = toWorld(100, 520);
   return (
     <group>

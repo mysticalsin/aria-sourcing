@@ -113,6 +113,5 @@ export function safeLog(...args: unknown[]): void {
     }
     return arg;
   });
-  // eslint-disable-next-line no-console
   console.log(...out);
 }

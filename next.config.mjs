@@ -7,10 +7,6 @@ const nextConfig = {
   // mid-write on this checkout. Defaults to `.next` so CI/Vercel are unaffected;
   // set NEXT_DIST_DIR to a local, non-synced path for dev (e.g. NEXT_DIST_DIR=/tmp/aria-next).
   distDir: process.env.NEXT_DIST_DIR || ".next",
-  eslint: {
-    // Demo MVP: do not fail production builds on lint. `npm run lint` still works.
-    ignoreDuringBuilds: true,
-  },
   async headers() {
     // Security headers for a console that renders candidate PII.
     const isProd = process.env.NODE_ENV === "production";
