@@ -1,0 +1,23 @@
+title = "aria-sourcing-demo gitleaks config"
+
+# Keep every built-in detection rule; only add allowlist entries below.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known-safe placeholder/demo values, not real secrets"
+paths = [
+  # Env template: every value in this file is a documented placeholder for the
+  # reader to replace, never a real credential.
+  '''\.env\.production\.example$''',
+  # Local docker-compose dev stack: the JWTs here are Supabase's own publicly
+  # documented local-dev demo tokens (iss: "supabase-demo"), signed with the
+  # equally public "your-super-secret-jwt-token-with-at-least-32-characters-long"
+  # placeholder from Supabase's official self-hosting docs. This repo's real
+  # deployment secrets live only in .env.local / Vercel env vars, never here.
+  '''docker-compose\.yml$''',
+  # Test fixtures that intentionally contain fake-secret-shaped strings to
+  # exercise the redaction/audit logic itself.
+  '''tests/audit-fixes\.mts$''',
+  '''tests/log-redact\.mts$''',
+]
