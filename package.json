@@ -16,18 +16,18 @@
   },
   "dependencies": {
     "@dust-tt/client": "^1.2.6",
-    "@react-three/drei": "^9.122.0",
-    "@react-three/fiber": "^8.18.0",
-    "@react-three/postprocessing": "^2.19.1",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
+    "@react-three/postprocessing": "^3.0.4",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.108.2",
     "clsx": "^2.1.1",
     "framer-motion": "^11.11.17",
     "lucide-react": "^0.456.0",
-    "next": "^14.2.35",
+    "next": "^15.5.18",
     "postprocessing": "^6.39.1",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "recharts": "^2.13.3",
     "tailwind-merge": "^2.5.4",
     "three": "^0.169.0",
@@ -36,16 +36,20 @@
   },
   "devDependencies": {
     "@types/node": "^20.17.6",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
+    "@types/react": "^19.2.3",
+    "@types/react-dom": "^19.2.3",
     "@types/three": "^0.169.0",
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",
-    "eslint-config-next": "^14.2.35",
+    "eslint-config-next": "^15.5.18",
     "playwright": "^1.61.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
     "tsx": "^4.22.4",
     "typescript": "^5.6.3"
+  },
+  "overrides": {
+    "express-rate-limit": "^8.5.2",
+    "ip-address": "^10.2.0"
   }
 }

@@ -49,7 +49,8 @@ export async function POST(req: Request) {
     if (!demoAuthConfigured()) {
       return NextResponse.json({ ok: false, error: "Demo login is not configured." }, { status: 500 });
     }
-    cookies().set(DEMO_COOKIE_NAME, mintDemoToken(), {
+    const cookieStore = await cookies();
+    cookieStore.set(DEMO_COOKIE_NAME, mintDemoToken(), {
       httpOnly: true,
       secure: isProduction,
       sameSite: "lax",
@@ -68,7 +69,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Demo login is not configured." }, { status: 500 });
   }
 
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     cookies: {
       getAll() {

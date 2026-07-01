@@ -49,6 +49,9 @@ export default function GlobalError({
             >
               Try again
             </button>
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- global-error replaces
+                the root layout on catastrophic failure, so it must not depend on next/link's
+                router context working; a plain anchor is the deliberate, safe fallback here. */}
             <a
               href="/"
               className="inline-flex h-11 items-center rounded-full border border-line bg-surface px-6 text-sm font-semibold text-ink shadow-soft hover:bg-canvas"

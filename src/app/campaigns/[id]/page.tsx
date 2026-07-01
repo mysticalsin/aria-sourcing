@@ -150,14 +150,15 @@ function yearsLabel(min: number | null, max: number | null): string {
   return `Up to ${max} yrs`;
 }
 
-export default function Page({ params }: { params: { id: string } }) {
+export default function Page({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = React.use(params);
   const hydrated = useHydrated();
-  const campaign = useCampaign(params.id);
-  const candidates = useCampaignCandidates(params.id);
-  const outreach = useCampaignOutreach(params.id);
+  const campaign = useCampaign(id);
+  const candidates = useCampaignCandidates(id);
+  const outreach = useCampaignOutreach(id);
   const allReplies = useReplies();
   const allBookings = useBookings();
-  const report = useReportForCampaign(params.id);
+  const report = useReportForCampaign(id);
   const actions = useActions();
   const { toast } = useToast();
   const router = useRouter();
