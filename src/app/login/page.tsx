@@ -353,7 +353,7 @@ function LoginInner() {
           <a
             href="https://www.linkedin.com/in/tonywalteur/"
             target="_blank"
-            rel="noopener noreferrer"
+            rel="noreferrer"
             className="font-normal text-white/80 underline-offset-4 transition-colors hover:text-white hover:underline"
           >
             Tony Walteur

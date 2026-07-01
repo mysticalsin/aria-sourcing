@@ -340,6 +340,7 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
       savedModels: parsed.settings.savedModels ?? defs.savedModels,
       tools: parsed.settings.tools ?? defs.tools,
       mcpServers: parsed.settings.mcpServers ?? defs.mcpServers,
+      webResearch: parsed.settings.webResearch ?? defs.webResearch,
       defaultModels: parsed.settings.defaultModels ?? defs.defaultModels,
       // STATE_VERSION 8 — live Aria runtime config.
       hermesLiveMode: parsed.settings.hermesLiveMode ?? defs.hermesLiveMode,
@@ -3011,7 +3012,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const enabledMcp = (s.settings.mcpServers ?? [])
         .filter((m) => m.enabled)
         .map((m) => ({ url: m.url, ...(m.apiKeyId ? { apiKeyId: m.apiKeyId } : {}) }));
-      if (chatAiCfg && enabledMcp.length) {
+      const webResearch = s.settings.webResearch !== false;
+      if (chatAiCfg && (enabledMcp.length || webResearch)) {
         try {
           const res = await fetch("/api/hermes/chat", {
             method: "POST",
@@ -3023,6 +3025,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               ...(chatAiCfg.model && { model: chatAiCfg.model }),
               ...(chatAiCfg.apiKeyId && { apiKeyId: chatAiCfg.apiKeyId }),
               mcpServers: enabledMcp,
+              webResearch,
             }),
           });
           const data = (await res.json().catch(() => null)) as { ok?: boolean; text?: string } | null;
@@ -3436,6 +3439,7 @@ const EMPTY: HermesState = {
   settings: {
     humanApprovalGate: true,
     dryRunMode: true,
+    webResearch: true,
     minScoreToContact: 70,
     slaMinutes: 15,
     operatorName: "Operator",

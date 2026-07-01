@@ -568,6 +568,10 @@ export interface SystemSettings {
   /** Registered MCP (Model Context Protocol) servers — extra tool sources the fleet
    *  can connect to. The raw auth token lives in the key vault, referenced by id. */
   mcpServers: McpServerConfig[];
+  /** Give agents the built-in, read-only web-research tools (web_search / fetch_page /
+   *  rss) in chat. Compliant by design: honest bot UA, no login/stealth, SSRF-guarded.
+   *  Only active when a cloud LLM provider is configured for the chat task. */
+  webResearch?: boolean;
   /** Default model per task type (SavedModel.id). */
   defaultModels?: Partial<Record<ModelTask, string>>;
   /** When on, outreach drafting routes through the live Aria agent runtime

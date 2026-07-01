@@ -16,6 +16,7 @@ import {
 } from "@/lib/ai/provider";
 import { connectAndListTools } from "@/lib/mcp-client";
 import { runAnthropicWithTools, runOpenAiWithTools, type ResolvedMcpServer } from "@/lib/ai/tool-loop";
+import { BUILTIN_WEB_URL, WEB_TOOL_DEFS } from "@/lib/ai/web-tools";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { redactObject, redactSecrets, redactEmail } from "@/lib/log-redact";
 
@@ -58,6 +59,9 @@ const HermesChatSchema = z.object({
     .array(z.object({ url: z.string().url().max(500), apiKeyId: z.string().uuid().optional() }))
     .max(20)
     .optional(),
+  /** Expose the built-in, read-only web-research tools (web_search / fetch_page / rss)
+   *  to the model (chat task only). Compliant: honest bot UA, no login/stealth, SSRF-guarded. */
+  webResearch: z.boolean().default(false),
 });
 
 const TASK_SYSTEM: Record<"outreach" | "classify" | "sourcing" | "chat", string> = {
@@ -188,7 +192,7 @@ export async function POST(req: NextRequest) {
 
   const validated = await validateBody(req, HermesChatSchema, { maxBytes: 32_000 });
   if (!validated.ok) return validated.response;
-  const { task, prompt, stream, hermesApiKeyId, model, provider, apiKeyId, mcpServers } = validated.data;
+  const { task, prompt, stream, hermesApiKeyId, model, provider, apiKeyId, mcpServers, webResearch } = validated.data;
   // keyId: cloud provider key id takes precedence over the hermes key id.
   const keyId = apiKeyId ?? hermesApiKeyId;
 
@@ -222,8 +226,11 @@ export async function POST(req: NextRequest) {
     // MCP tool-calling (chat task, Anthropic): when the workspace has enabled MCP
     // servers, let the model call their tools and loop to a final answer. Additive —
     // falls through to the normal single-shot completion when no usable servers resolve.
-    if (task === "chat" && mcpServers && mcpServers.length) {
-      const resolvedServers = await gatherMcpServers(mcpServers);
+    if (task === "chat" && (webResearch || (mcpServers && mcpServers.length))) {
+      const resolvedServers: ResolvedMcpServer[] = [];
+      // Built-in read-only web-research tools (in-process; no vault token, SSRF-guarded).
+      if (webResearch) resolvedServers.push({ url: BUILTIN_WEB_URL, token: "", tools: WEB_TOOL_DEFS });
+      if (mcpServers && mcpServers.length) resolvedServers.push(...(await gatherMcpServers(mcpServers)));
       if (resolvedServers.length) {
         const toolModel = model && model !== "hermes" ? model : DEFAULT_MODEL[slug];
         const result =

@@ -10,6 +10,7 @@
 
 import { callMcpTool, type McpTool } from "@/lib/mcp-client";
 import { CLOUD_ENDPOINT, type AiProviderSlug } from "@/lib/ai/provider";
+import { BUILTIN_WEB_URL, runWebTool } from "@/lib/ai/web-tools";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 
@@ -17,6 +18,20 @@ export interface ResolvedMcpServer {
   url: string;
   token: string;
   tools: McpTool[];
+}
+
+/**
+ * Execute one tool call. Built-in tools (the web-research server, marked by the
+ * BUILTIN_WEB_URL sentinel) run in-process; everything else is brokered to the
+ * remote MCP server with its vault token. Same {ok, content, error} contract either way.
+ */
+async function execTool(
+  server: ResolvedMcpServer,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<{ ok: boolean; content?: unknown; error?: string }> {
+  if (server.url === BUILTIN_WEB_URL) return runWebTool(name, args);
+  return callMcpTool(server.url, server.token, name, args);
 }
 
 interface AnthropicToolDef {
@@ -128,7 +143,7 @@ export async function runAnthropicWithTools(args: {
       const server = tu.name ? owner.get(tu.name) : undefined;
       let resultText = "Tool not available.";
       if (server && tu.name) {
-        const out = await callMcpTool(server.url, server.token, tu.name, tu.input ?? {});
+        const out = await execTool(server, tu.name, tu.input ?? {});
         resultText = out.ok
           ? JSON.stringify(out.content ?? "").slice(0, 4000)
           : `Error: ${out.error ?? "tool failed"}`;
@@ -249,7 +264,7 @@ export async function runOpenAiWithTools(args: {
         } catch {
           parsedArgs = {};
         }
-        const out = await callMcpTool(server.url, server.token, name, parsedArgs);
+        const out = await execTool(server, name, parsedArgs);
         resultText = out.ok ? JSON.stringify(out.content ?? "").slice(0, 4000) : `Error: ${out.error ?? "tool failed"}`;
       }
       messages.push({ role: "tool", tool_call_id: tc.id, content: resultText });

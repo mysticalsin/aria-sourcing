@@ -2,10 +2,10 @@
 
 import * as React from "react";
 import { Badge, Button, Card, CardContent, Field, Input, Select, Switch, useToast } from "@/components/ui";
-import { useActions, useApiKeys, useMcpServers, useRole } from "@/lib/store";
+import { useActions, useApiKeys, useMcpServers, useRole, useSettings } from "@/lib/store";
 import type { McpServerConfig, McpServerStatus } from "@/lib/types";
 import { can } from "@/lib/rbac";
-import { Plug, Plus, Trash2, Zap } from "lucide-react";
+import { Globe, Plug, Plus, Trash2, Zap } from "lucide-react";
 
 const STATUS_TONE: Record<McpServerStatus, "neutral" | "success" | "danger"> = {
   untested: "neutral",
@@ -123,8 +123,10 @@ export function McpServersPanel() {
   const isAdmin = can(role, "manage_tools");
   const servers = useMcpServers();
   const apiKeys = useApiKeys();
+  const settings = useSettings();
   const actions = useActions();
   const { toast } = useToast();
+  const webResearch = settings.webResearch !== false;
 
   const [name, setName] = React.useState("");
   const [url, setUrl] = React.useState("");
@@ -158,6 +160,40 @@ export function McpServersPanel() {
   return (
     <Card>
       <CardContent className="space-y-4">
+        {/* Built-in, read-only web-research capability. Compliant by design: honest bot
+            User-Agent, no login/session/stealth, SSRF-guarded. Only active when a cloud
+            LLM provider is configured for the chat task. */}
+        <div className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-4 sm:flex-row sm:items-start sm:gap-4">
+          <div className="flex items-start gap-3 sm:flex-1">
+            <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+              <Globe className="h-3.5 w-3.5" />
+            </div>
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-semibold text-ink">Web research (built-in)</span>
+                <Badge tone={webResearch ? "success" : "neutral"} size="sm">
+                  {webResearch ? "on" : "off"}
+                </Badge>
+              </div>
+              <p className="text-xs text-muted">
+                Lets agents read the public web — <code>web_search</code>, <code>fetch_page</code>, <code>rss</code> — for
+                research and sourcing signals. Read-only and compliant: honest bot user-agent, no logins, no scraping
+                behind auth, no bot-detection evasion; internal/private addresses are blocked. Active only when a cloud
+                LLM provider is set for chat.
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center">
+            <Switch
+              id="web-research-enable"
+              checked={webResearch}
+              onCheckedChange={(v) => actions.updateSettings({ webResearch: v })}
+              label={webResearch ? "Enabled" : "Disabled"}
+              disabled={!isAdmin}
+            />
+          </div>
+        </div>
+
         {servers.length === 0 && (
           <p className="text-sm text-muted">No MCP servers connected. Add one to give the fleet more tools.</p>
         )}

@@ -106,6 +106,7 @@ export function defaultSettings(): SystemSettings {
   return {
     humanApprovalGate: true,
     dryRunMode: true,
+    webResearch: true,
     minScoreToContact: 70,
     slaMinutes: 15,
     operatorName: "Jordan Bryce",

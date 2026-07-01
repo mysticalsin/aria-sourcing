@@ -27,7 +27,7 @@ export function Sidebar() {
         <a
           href="https://www.linkedin.com/in/tonywalteur/"
           target="_blank"
-          rel="noopener noreferrer"
+          rel="noreferrer"
           className="mt-2.5 block text-center text-[0.65rem] font-medium tracking-wide text-muted underline-offset-2 transition-colors hover:text-ink hover:underline"
         >
           Created by Tony Walteur
