@@ -9,7 +9,7 @@ import { supabaseEnabled } from "@/lib/supabase/config";
  */
 export async function resolveVaultSecret(id?: string): Promise<string> {
   if (!supabaseEnabled || !id) return "";
-  const session = getServerSupabase();
+  const session = await getServerSupabase();
   const svc = getServiceSupabase();
   if (!session || !svc) return "";
   const {

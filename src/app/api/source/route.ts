@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
   // Live mode: require an authenticated user with the `source` permission. Demo
   // mode (no backend) is open but still rate-limited.
   if (supabaseEnabled) {
-    const supabase = getServerSupabase();
+    const supabase = await getServerSupabase();
     if (!supabase) return NextResponse.json({ ok: false, error: "No Supabase client." }, { status: 500 });
     const {
       data: { user },
@@ -108,7 +108,7 @@ export async function GET(req: NextRequest) {
   if (!rl.ok) return tooManyRequests(rl.retryAfterSec);
 
   if (supabaseEnabled) {
-    const supabase = getServerSupabase();
+    const supabase = await getServerSupabase();
     if (!supabase) return NextResponse.json({ ok: false, error: "No Supabase client." }, { status: 500 });
     const {
       data: { user },

@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ── 5. Auth ────────────────────────────────────────────────────────────────
-  const supabase = getServerSupabase();
+  const supabase = await getServerSupabase();
   if (!supabase) {
     return NextResponse.json({ ok: false, error: "No Supabase client." }, { status: 500 });
   }

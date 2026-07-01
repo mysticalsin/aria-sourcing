@@ -46,7 +46,7 @@ function isRedirectResponse(res: Response): boolean {
 }
 
 async function handler(req: NextRequest) {
-  const supabase = supabaseEnabled ? getServerSupabase() : null;
+  const supabase = supabaseEnabled ? await getServerSupabase() : null;
 
   // S-1: Auth FIRST — require an authenticated principal for EVERY method, in demo
   // AND prod. The proxy must never be an open relay (closes the unauthenticated-GET

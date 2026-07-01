@@ -29,7 +29,7 @@ const DustRunSchema = z.object({
  * workspace/agent/key to spend against.
  */
 async function loadDustSettings(
-  session: NonNullable<ReturnType<typeof getServerSupabase>>,
+  session: NonNullable<Awaited<ReturnType<typeof getServerSupabase>>>,
 ): Promise<HermesState["settings"]["dust"] | null> {
   const { data: wid } = await session.rpc("current_workspace_id");
   if (!wid) return null;
@@ -45,7 +45,7 @@ async function loadDustSettings(
 /** Resolve a vault secret by ApiKey.id, scoped to the caller's workspace. Returns
  *  "" on any failure. NEVER logs or returns the value outside the immediate call. */
 async function resolveVaultSecret(
-  session: NonNullable<ReturnType<typeof getServerSupabase>>,
+  session: NonNullable<Awaited<ReturnType<typeof getServerSupabase>>>,
   id?: string,
 ): Promise<string> {
   if (!id) return "";
@@ -72,9 +72,9 @@ export async function POST(req: NextRequest) {
 
   // Auth-first: reject unauthenticated / under-permissioned callers before
   // buffering the body or spending the workspace's Dust message quota.
-  let session: ReturnType<typeof getServerSupabase> = null;
+  let session: Awaited<ReturnType<typeof getServerSupabase>> = null;
   if (supabaseEnabled) {
-    session = getServerSupabase();
+    session = await getServerSupabase();
     if (!session) return NextResponse.json({ ok: false, error: "No Supabase client." }, { status: 500 });
     const {
       data: { user },

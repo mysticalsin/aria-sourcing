@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "dry-run", detail: "Demo / dry-run — no calendar event created." });
   }
 
-  const supabase = getServerSupabase();
+  const supabase = await getServerSupabase();
   if (!supabase) return NextResponse.json({ status: "dry-run", detail: "No Supabase client." });
   const {
     data: { user },

@@ -25,7 +25,7 @@ export type AdminCheckResult =
  * Use this in mutating API routes that should be admin-only.
  */
 export async function requireAdmin(
-  serverSupabase: ReturnType<typeof getServerSupabase>,
+  serverSupabase: Awaited<ReturnType<typeof getServerSupabase>>,
 ): Promise<AdminCheckResult> {
   if (!supabaseEnabled || !serverSupabase) {
     // Fail CLOSED in production: without a verified Supabase session we cannot
@@ -77,12 +77,13 @@ export function getServiceSupabase() {
  * Server Supabase client bound to the request cookies. Use in Server Components,
  * Route Handlers, and middleware. Returns null in DEMO mode.
  */
-export function getServerSupabase() {
+export async function getServerSupabase() {
   // Fail closed in production: never hand back a null (DEMO/admin) request context
   // when Supabase env is missing — that is the fail-open bug this guard prevents.
   assertSupabaseConfiguredInProd();
   if (!supabaseEnabled) return null;
-  const cookieStore = cookies();
+  // Next.js 15+: cookies() is async-only.
+  const cookieStore = await cookies();
   return createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     cookies: {
       getAll() {

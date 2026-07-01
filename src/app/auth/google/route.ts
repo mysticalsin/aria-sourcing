@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(req: NextRequest) {
   // Only an authenticated admin may initiate an OAuth seat connection.
-  const admin = await requireAdmin(getServerSupabase());
+  const admin = await requireAdmin(await getServerSupabase());
   if (!admin.ok) return admin.response;
 
   const clientId = process.env.GOOGLE_CLIENT_ID;

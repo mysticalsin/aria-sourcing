@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
     return redirectError(req, "Email connections require Supabase (live mode).");
   }
 
-  const supabase = getServerSupabase();
+  const supabase = await getServerSupabase();
   const svc = getServiceSupabase();
   if (!supabase || !svc) {
     return redirectError(req, "Supabase not configured.");

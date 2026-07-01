@@ -32,7 +32,7 @@ export function getHermesBaseUrl(): { ok: true; baseUrl: string } | { ok: false;
 export async function resolveHermesBearerToken(hermesApiKeyId?: string): Promise<string> {
   let bearerToken = process.env.HERMES_API_KEY ?? "";
   if (supabaseEnabled && hermesApiKeyId) {
-    const session = getServerSupabase();
+    const session = await getServerSupabase();
     const svc = getServiceSupabase();
     if (session && svc) {
       const {

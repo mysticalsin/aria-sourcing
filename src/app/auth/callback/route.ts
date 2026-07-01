@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   // URL (open-redirect guard).
   const rawRedirect = url.searchParams.get("redirect") || "/";
   const redirect = rawRedirect.startsWith("/") && !rawRedirect.startsWith("//") ? rawRedirect : "/";
-  const supabase = getServerSupabase();
+  const supabase = await getServerSupabase();
 
   if (code && supabase) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);

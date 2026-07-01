@@ -27,9 +27,9 @@ export async function POST(req: NextRequest) {
   // Auth-first: when a real backend is configured, require admin BEFORE any work
   // or response. The just-entered "value" format check previously returned to
   // unauthenticated callers — it now sits behind this gate.
-  let session: ReturnType<typeof getServerSupabase> = null;
+  let session: Awaited<ReturnType<typeof getServerSupabase>> = null;
   if (supabaseEnabled) {
-    session = getServerSupabase();
+    session = await getServerSupabase();
     if (!session) return NextResponse.json({ ok: false, error: "No Supabase client." }, { status: 500 });
     const admin = await requireAdmin(session);
     if (!admin.ok) return admin.response;

@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
   // Auth-first: gate before parsing or returning anything when a real backend
   // exists. Demo mode is open (pure text parsing of caller-supplied input).
   if (supabaseEnabled) {
-    const supabase = getServerSupabase();
+    const supabase = await getServerSupabase();
     const { data } = (await supabase?.auth.getUser()) ?? { data: { user: null } };
     if (!data?.user) {
       return NextResponse.json({ ok: false, error: "Not authenticated." }, { status: 401 });

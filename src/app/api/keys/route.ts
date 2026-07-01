@@ -27,10 +27,10 @@ export async function POST(req: NextRequest) {
   // Auth-first: resolve and authorise the caller BEFORE parsing the body or
   // touching the secret. Demo mode (no Supabase) is intentionally open and only
   // echoes metadata.
-  let supabase: ReturnType<typeof getServerSupabase> = null;
+  let supabase: Awaited<ReturnType<typeof getServerSupabase>> = null;
   let createdBy = "unknown";
   if (supabaseEnabled) {
-    supabase = getServerSupabase();
+    supabase = await getServerSupabase();
     if (!supabase) return NextResponse.json({ ok: false, error: "No Supabase client." }, { status: 500 });
     const admin = await requireAdmin(supabase);
     if (!admin.ok) return admin.response;
@@ -81,9 +81,9 @@ export async function DELETE(req: NextRequest) {
   if (prodBlock) return prodBlock;
 
   // Auth-first: authorise BEFORE validating input or returning anything.
-  let supabase: ReturnType<typeof getServerSupabase> = null;
+  let supabase: Awaited<ReturnType<typeof getServerSupabase>> = null;
   if (supabaseEnabled) {
-    supabase = getServerSupabase();
+    supabase = await getServerSupabase();
     if (!supabase) return NextResponse.json({ ok: false, error: "No Supabase client." }, { status: 500 });
     const admin = await requireAdmin(supabase);
     if (!admin.ok) return admin.response;

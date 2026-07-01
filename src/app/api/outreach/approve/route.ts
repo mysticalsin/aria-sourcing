@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   const rl = checkRateLimit(rateLimitKey(req, "outreach-approve"), { windowMs: 60_000, max: 60 });
   if (!rl.ok) return tooManyRequests(rl.retryAfterSec);
 
-  const supabase = getServerSupabase();
+  const supabase = await getServerSupabase();
   if (!supabase) return NextResponse.json({ ok: false, error: "No Supabase client." }, { status: 500 });
 
   const {

@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, synced: false, detail: "Demo mode — no enforcement backend." });
   }
 
-  const supabase = getServerSupabase();
+  const supabase = await getServerSupabase();
   if (!supabase) {
     return NextResponse.json({ ok: true, synced: false, detail: "No Supabase client — not synced." });
   }

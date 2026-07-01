@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
   const prodBlock = prodFailClosed();
   if (prodBlock) return prodBlock;
 
-  const supabase = supabaseEnabled ? getServerSupabase() : null;
+  const supabase = supabaseEnabled ? await getServerSupabase() : null;
   let userId: string | null = null;
   if (supabaseEnabled) {
     if (!supabase) return NextResponse.json({ ok: false, reason: "No Supabase client." }, { status: 500 });

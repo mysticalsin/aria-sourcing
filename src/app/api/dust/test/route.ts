@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   // Auth-first: resolve and authorise the caller BEFORE parsing the body or
   // spending a call against the caller's Dust workspace.
   if (supabaseEnabled) {
-    const supabase = getServerSupabase();
+    const supabase = await getServerSupabase();
     if (!supabase) return NextResponse.json({ ok: false, error: "No Supabase client." }, { status: 500 });
     const admin = await requireAdmin(supabase);
     if (!admin.ok) return admin.response;

@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
 
   let token = "";
   if (supabaseEnabled) {
-    const supabase = getServerSupabase();
+    const supabase = await getServerSupabase();
     if (!supabase) return NextResponse.json({ ok: false, error: "No Supabase client." }, { status: 500 });
     const {
       data: { user },
