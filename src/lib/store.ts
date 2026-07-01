@@ -1753,6 +1753,49 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit],
   );
 
+  /**
+   * Sync a compliance action into the real, server-enforced suppression_list
+   * table (/api/compliance/suppress) so the send route actually blocks this
+   * recipient, not just the local view. Fire-and-forget: the local flag (set by
+   * complianceMutate) is the source of truth for this app's own UI regardless
+   * of whether the network sync lands; a failure just gets a follow-up activity
+   * note so it isn't silently lost.
+   */
+  const syncSuppressionToServer = useCallback(
+    (email: string, reason: string, campaignId: string, candidateId: string) => {
+      if (!email) return;
+      void fetch("/api/compliance/suppress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "email", value: email, reason }),
+      })
+        .then((res) => res.json().catch(() => null))
+        .then((out: { ok?: boolean; synced?: boolean; detail?: string } | null) => {
+          if (out?.ok && out.synced === false && out.detail) {
+            commit((prev) =>
+              withActivity(
+                prev,
+                makeActivity({
+                  type: "compliance",
+                  title: "Suppression not synced to enforcement list",
+                  notes: out.detail!,
+                  outcome: "Local only",
+                  campaignId,
+                  linkedEntityType: "candidate",
+                  linkedEntityId: candidateId,
+                }),
+                campaignId,
+              ),
+            );
+          }
+        })
+        .catch(() => {
+          // Network failure — the local flag still applies; nothing further to do.
+        });
+    },
+    [commit],
+  );
+
   const complianceMutate = useCallback(
     (id: string, fn: (c: Candidate) => Candidate, label: string, outcome: string) =>
       commit((s) => {
@@ -1781,7 +1824,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const suppressCandidate = useCallback(
-    (id: string) =>
+    (id: string) => {
+      const cand = current().candidates.find((c) => c.id === id);
       complianceMutate(
         id,
         (c) => ({
@@ -1795,12 +1839,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         }),
         "Contact suppressed",
         "Suppressed",
-      ),
-    [complianceMutate],
+      );
+      if (cand) syncSuppressionToServer(cand.email, "Suppressed", cand.campaignId, id);
+    },
+    [complianceMutate, current, syncSuppressionToServer],
   );
 
   const markDoNotContact = useCallback(
-    (id: string) =>
+    (id: string) => {
+      const cand = current().candidates.find((c) => c.id === id);
       complianceMutate(
         id,
         (c) => ({
@@ -1810,19 +1857,24 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         }),
         "Marked do-not-contact",
         "Do-not-contact",
-      ),
-    [complianceMutate],
+      );
+      if (cand) syncSuppressionToServer(cand.email, "Do-not-contact", cand.campaignId, id);
+    },
+    [complianceMutate, current, syncSuppressionToServer],
   );
 
   const unsubscribeCandidate = useCallback(
-    (id: string) =>
+    (id: string) => {
+      const cand = current().candidates.find((c) => c.id === id);
       complianceMutate(
         id,
         (c) => ({ ...c, complianceFlags: { ...c.complianceFlags, unsubscribed: true } }),
         "Unsubscribe honored",
         "Unsubscribed",
-      ),
-    [complianceMutate],
+      );
+      if (cand) syncSuppressionToServer(cand.email, "Unsubscribed", cand.campaignId, id);
+    },
+    [complianceMutate, current, syncSuppressionToServer],
   );
 
   const anonymizeCandidate = useCallback(
