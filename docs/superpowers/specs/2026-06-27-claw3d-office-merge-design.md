@@ -1,9 +1,9 @@
 # Claw3D Office Merge — Design Spec
 
-**Date:** 2026-06-27
+**Date:** 2026-06-27 (§11 obscura addendum added 2026-07-01)
 **Author:** Claude (with Tony)
-**Status:** Draft — awaiting spec review
-**Source repo:** `https://github.com/iamlukethedev/Claw3D.git` (MIT, © 2026 Luke The Dev)
+**Status:** Approved — proceeding to implementation plan
+**Source repo:** `https://github.com/iamlukethedev/Claw3D.git` (MIT, © 2026 Luke The Dev); §11 sidecar from `https://github.com/h4ckf0r0day/obscura` (Apache-2.0)
 **Target repo:** `MSourcing` ("hermes-sourcing")
 
 ---
@@ -161,6 +161,7 @@ Each phase ends at a **green gate** (typecheck + targeted test/manual proof) bef
 - **P3 — Mount the office at /floor.** Rewrite `floor/page.tsx` → Claw3D `OfficeScreen`; add `floor/builder`. Wire `server/index.js` as dev/prod entry. **Gate:** `/floor` renders the animated office against the **demo gateway**; characters walk/animate; builder loads.
 - **P4 — Wire Hermes + real seats.** Hook `hermes-gateway-adapter` to MSourcing env; add `seats → OfficeAgent` shim; unify token resolution + allow-list. **Gate:** office shows real seats with correct live status; falls back to demo when Hermes is down.
 - **P5 — Retire old floor + finalize.** Delete `floor3d/**`, `public/office3d/**`; rewrite `tests/floor.mts`; port Claw3D's vitest/playwright suites; finalize Dockerfile, env example, CI (container build). **Gate:** full test suite green; Docker image runs `/floor` end-to-end; CSP clean in console.
+- **P6 — Obscura sidecar + Aria browser-session tool.** See §11. Add obscura as a second container/process alongside the Node server; add `server/obscura-adapter.js`; add `src/lib/ai/browser-tools.ts` (`browser_open`/`browser_act`/`browser_extract`/`browser_screenshot`/`browser_close`) to Aria's tool-loop. **Gate:** full test suite green; new browser-session tools pass their own test suite (SSRF guard, robots.txt, action-vocabulary allowlist, session TTL); manual proof against a real JS-rendered page (e.g. a SPA portfolio site).
 
 ## 6. Verification strategy
 - **Regression oracle:** MSourcing's 22 `.mts` suites + typecheck + build must stay green through every phase (esp. P1).
@@ -186,6 +187,7 @@ Each phase ends at a **green gate** (typecheck + targeted test/manual proof) bef
 | Hermes token path duplicated | Single server-side resolver reused; no second token source |
 | Phaser SSR crash | Loaded client-only via `next/dynamic { ssr:false }` |
 | three 0.185 / react 19.3 pulled transitively | `overrides` lock |
+| Obscura sidecar scope-creeps into a scraping-evasion tool (e.g. a later "just add a `type` action") | §11.5 action-vocabulary allowlist test fails CI if a text-input action is added without deliberately revisiting §11.2 |
 
 ## 9. Acceptance criteria
 1. `/floor` renders Claw3D's animated 3D office (procedural characters moving, pathfinding, follow-cam, builder reachable).
@@ -194,6 +196,9 @@ Each phase ends at a **green gate** (typecheck + targeted test/manual proof) bef
 4. App runs from a Docker image via `node server/index.js`, WS gateway functional.
 5. Old sprite `floor3d/*` fully removed; no dead assets; merged CSP clean.
 6. Office is **on-brand**: 5 glossy colored robots + 1 suited human CEO (animated, not sprites), Mantu 'M' + wordmark on a feature wall, office themed to the real Mantu space (colorful baffles, living wall, wood floor, dome pendants, daylight windows).
+7. `browser_open/act/extract/screenshot/close` (§11) work end-to-end against a real JS-rendered page via Aria's tool-loop.
+8. Obscura binary in the shipped image has no `stealth` feature compiled in (verified: build log shows the exact `cargo build` invocation used, no Docker Hub image pulled).
+9. Browser-session action vocabulary contains no text-input capability; SSRF + robots.txt enforced on every navigation, not just session open.
 
 ---
 
@@ -373,3 +378,64 @@ Keep the **orthographic isometric "dollhouse"** camera (`RetroOffice3D.tsx:5185-
 - **`rectAreaLight`** for the daylight window needs `RectAreaLightUniformsLib` init; `directionalLight` is the safe fallback. `toneMappingExposure: 1.12` is global — verify it doesn't blow highlights on glossy shells.
 - **Unspecified layout details (decide during P3 build):** positions/counts/spacing of baffles, pendant rows, OSB benches, bar stools; which wall hosts white-brick / living wall / daylight windows; whether to show both "Mantu" wordmark and "COFFICE" sign.
 - **Brand font** unavailable; v1 ships default bold sans (not marketing-exact).
+
+---
+
+## 11. Obscura sidecar — Aria's browser-session tool (P6)
+
+**Source:** `https://github.com/h4ckf0r0day/obscura` (Apache-2.0) — a Rust headless browser engine, CDP/Puppeteer/Playwright-compatible, ~30MB RSS / instant startup. Ships an optional `--features stealth` (anti-detect fingerprinting) that this design **does not use**.
+
+### 11.1 Why
+
+Aria's existing web-research tools (`src/lib/ai/web-tools.ts`) are deliberately a plain, non-evasive `GET` + HTML-strip: no JS execution, no cookies, no multi-step interaction. That's the right default for simple pages, but it can't read JS-rendered sites (candidate portfolio SPAs, GitHub Pages apps) or handle pagination/"load more"/infinite-scroll/cookie-consent walls that block the plain fetch from ever seeing the real content. Obscura closes that gap: real V8 execution, small footprint, fits as a sidecar in the P2 `server/` scaffold instead of standing up separate hosting.
+
+### 11.2 Hard scope boundary (non-negotiable, structural — not a policy note)
+
+This tool is **read-only multi-step public-page browsing**. It is explicitly **not** a login/session/scraping-evasion tool:
+
+- **No stealth.** Obscura is built from source at a pinned tag with **default cargo features only** (`cargo build --release`, `--features stealth` never passed). Building from source (not pulling the `h4ckf0r0day/obscura` Docker Hub image) is deliberate — it makes the omission auditable in our own Dockerfile rather than trusting an unverified upstream image's build flags.
+- **No credential entry, structurally.** The action vocabulary exposed to the model is `click | scroll | wait | back | forward` only. There is **no `type`/`fill`/`submit` action** — the vocabulary itself has no way to enter text into a field, so login forms cannot be completed regardless of what the model is asked to do. This isn't a prompt-level instruction the model could be talked out of; the capability doesn't exist in the adapter's API surface.
+- **No persistent identity.** Each `browser_open` call gets a fresh, cookie-empty browser context. Cookies set during a session live only for that session's lifetime and are discarded on close — never written to disk, never reused by a later session, never shared across seats/agents.
+- **Bounded session lifetime.** Idle timeout 60s, hard wall-clock cap 5 min, auto-close either way. No session can be kept alive indefinitely to accumulate an authenticated-looking browsing history.
+- **SSRF + robots.txt on every hop, not just the first.** `assertPublicUrl` (existing guard from `src/lib/api/url.ts`) runs before `browser_open` **and** before every same-session navigation triggered by `back`/`forward`/a link-following `click`. Additionally — because this tool is materially more capable than the plain fetch tools — `browser_open` fetches and checks the target's `robots.txt` and declines to open a path it disallows for `*` or our UA token.
+- **Honest UA, unchanged.** Same `AriaResearchBot/1.0 (+read-only; ...)` UA the existing tools send, passed to obscura via CDP `Network.setUserAgentOverride`. Obscura's anti-detect fingerprinting is off (no stealth feature compiled in), so this is genuinely identifiable automated traffic, not a browser impersonation.
+
+### 11.3 Architecture
+
+```
+server/
+├── index.js                    # existing (P2) — Next handler + /api/gateway/ws upgrade
+├── obscura-adapter.js           # NEW — owns the obscura sidecar process + session table
+└── ...
+src/lib/ai/
+├── web-tools.ts                 # existing — unchanged, still the cheap default
+└── browser-tools.ts             # NEW — tool defs + dispatch for browser_open/act/extract/screenshot/close
+```
+
+- **Process:** obscura runs as a second process/container next to the Node server (own Dockerfile stage, built from source per §11.2), listening on a loopback-only CDP port (not exposed outside the container network). `server/obscura-adapter.js` is the only thing that talks to it — analogous to `hermes-gateway-adapter.js` owning the Hermes connection today.
+- **Session table:** `obscura-adapter.js` holds `Map<sessionId, {tab, openedAt, lastActivityAt}>`; a interval sweeper enforces the idle/hard timeouts from §11.2 and closes/evicts expired tabs.
+- **Tool dispatch:** `src/lib/ai/browser-tools.ts` exposes 5 tools in the same `{ok, content, error}` shape `runWebTool` already uses, so the tool-loop dispatches to it interchangeably:
+  - `browser_open(url)` → SSRF + robots.txt check → new obscura tab, navigate, wait for load → `{sessionId, title, text}`
+  - `browser_act(sessionId, action)` → `action` is one of `{type: "click", selector} | {type: "scroll", direction} | {type: "wait", ms|selector} | {type: "back"} | {type: "forward"}` → re-runs SSRF check on the resulting URL if it changed → `{url, title, text}`
+  - `browser_extract(sessionId)` → current page text/links, same `stripHtml`-style shape as `fetch_page`
+  - `browser_screenshot(sessionId)` → PNG (base64, size-capped)
+  - `browser_close(sessionId)` → explicit early close (idle/hard timeout close it anyway)
+- **Internal transport:** `obscura-adapter.js` exposes a small loopback HTTP API (`POST /session`, `/session/:id/act`, etc.) that `browser-tools.ts` calls via `fetch("http://127.0.0.1:<port>/...")` — same pattern as the existing internal Hermes proxy, not a new external attack surface.
+
+### 11.4 Error handling
+
+- Obscura process crash/unreachable → adapter returns `{ok:false, error:"Browser sidecar unavailable."}`; tool-loop treats it like any other failed tool call (existing behavior in `runWebTool`'s catch-all).
+- Unknown/expired `sessionId` → `{ok:false, error:"Session not found or expired."}`.
+- `robots.txt` disallow → `{ok:false, error:"Blocked by robots.txt."}`.
+- SSRF guard reject → same message shape `web-tools.ts` already uses (`guard.reason`).
+
+### 11.5 Testing
+
+- Unit: action-vocabulary allowlist rejects anything outside `click/scroll/wait/back/forward` (proves no `type`/`fill` path exists even if someone tries to add one later without touching this test); SSRF guard invoked on open + every navigation; robots.txt parsing/deny; session TTL sweep.
+- Integration: real obscura sidecar in CI (Docker service container), `browser_open` a local fixture SPA page, `browser_act` click a "load more", `browser_extract` confirms new content appeared, `browser_close`.
+- Manual/visual: point at a real JS-rendered public page (e.g. a candidate's portfolio SPA) end-to-end through Aria's chat, confirm rendered text comes back where plain `fetch_page` would return an empty shell.
+
+### 11.6 Additions to earlier sections
+
+- **§4 dependencies:** obscura is **not** an npm package — it's a Rust binary built in its own Dockerfile stage (pinned upstream git tag, `cargo build --release`, default features). No entry in `package.json`.
+- **§8 risks** and **§9 acceptance criteria** rows for obscura are folded directly into those sections above (risk row + items 7-9).
