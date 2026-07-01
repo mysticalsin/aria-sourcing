@@ -167,6 +167,7 @@ export default function Page({ params }: { params: { id: string } }) {
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [stageFilter, setStageFilter] = React.useState("all");
   const [scoreFilter, setScoreFilter] = React.useState("all");
+  const [agentRunning, setAgentRunning] = React.useState(false);
 
   if (!hydrated) {
     return (
@@ -265,7 +266,6 @@ export default function Page({ params }: { params: { id: string } }) {
     });
   };
 
-  const [agentRunning, setAgentRunning] = React.useState(false);
   const handleRunAgent = async () => {
     setAgentRunning(true);
     const res = await actions.runSourcingAgent(c.id);
