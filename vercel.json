@@ -39,6 +39,6 @@
     }
   },
   "buildCommand": "npm run build",
-  "installCommand": "npm ci",
+  "installCommand": "npm install -g npm@11.12.1 && npm ci",
   "outputDirectory": ".next"
 }

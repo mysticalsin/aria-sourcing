@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "description": "Hermes Sourcing — autonomous recruiting operations console (MVP demo, mock integrations, synthetic data).",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
