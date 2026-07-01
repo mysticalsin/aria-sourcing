@@ -71,6 +71,7 @@ import type {
   CandidateStage,
   ClassifiedReply,
   DustAgentSummary,
+  DustRegion,
   DustTask,
   HermesState,
   IntegrationStatus,
@@ -286,8 +287,9 @@ export interface HermesActions {
   testDustConnection: (
     workspaceId: string,
     apiKey: string,
+    region?: DustRegion,
   ) => Promise<{ ok: boolean; agents?: DustAgentSummary[]; error?: string }>;
-  connectDust: (workspaceId: string, apiKey: string) => Promise<{ ok: boolean; error?: string }>;
+  connectDust: (workspaceId: string, apiKey: string, region?: DustRegion) => Promise<{ ok: boolean; error?: string }>;
   updateDustAgentLock: (task: DustTask, agentSId: string) => void;
   disconnectDust: () => void;
   runDustTask: (task: DustTask, message: string) => Promise<{ ok: boolean; text?: string; error?: string }>;
@@ -3024,12 +3026,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
    *  persisting anything — used by the Settings Connect/Reconnect flow before
    *  the key is saved to the vault. */
   const testDustConnection = useCallback(
-    async (workspaceId: string, apiKey: string) => {
+    async (workspaceId: string, apiKey: string, region: DustRegion = "us") => {
       try {
         const res = await fetch("/api/dust/test", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ workspaceId, apiKey }),
+          body: JSON.stringify({ workspaceId, apiKey, region }),
         });
         const json = (await res.json().catch(() => ({ ok: false, error: "Bad response from Dust." }))) as {
           ok?: boolean;
@@ -3052,8 +3054,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
    *  in the fresh agent list; locks pointing at an agent that's since been
    *  deleted in Dust are dropped rather than left dangling. */
   const connectDust = useCallback(
-    async (workspaceId: string, apiKey: string) => {
-      const test = await testDustConnection(workspaceId, apiKey);
+    async (workspaceId: string, apiKey: string, region: DustRegion = "us") => {
+      const test = await testDustConnection(workspaceId, apiKey, region);
       if (!test.ok) return { ok: false as const, error: test.error };
       const agents = test.agents ?? [];
       const saved = await saveApiKey({ name: "Dust", provider: "Dust", value: apiKey });
@@ -3070,7 +3072,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             ...prev,
             settings: {
               ...prev.settings,
-              dust: { workspaceId, apiKeyId, connected: true, agentLocks, agents },
+              dust: { workspaceId, region, apiKeyId, connected: true, agentLocks, agents },
             },
           },
           makeActivity({

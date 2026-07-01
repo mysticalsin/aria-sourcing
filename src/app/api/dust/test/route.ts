@@ -16,6 +16,7 @@ export const dynamic = "force-dynamic";
 const DustTestSchema = z.object({
   workspaceId: z.string().min(1).max(200),
   apiKey: z.string().min(1).max(2000),
+  region: z.enum(["us", "eu"]).default("us"),
 });
 
 /**
@@ -44,10 +45,10 @@ export async function POST(req: NextRequest) {
 
   const validated = await validateBody(req, DustTestSchema, { maxBytes: 4_000 });
   if (!validated.ok) return validated.response;
-  const { workspaceId, apiKey } = validated.data;
+  const { workspaceId, apiKey, region } = validated.data;
 
   try {
-    const agents = await listDustAgents(workspaceId, apiKey);
+    const agents = await listDustAgents(workspaceId, apiKey, region);
     return NextResponse.json({ ok: true, agents });
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Failed to connect to Dust.";

@@ -63,10 +63,14 @@ export async function POST(req: NextRequest) {
 
   if (!supabase) return NextResponse.json({ ok: false, error: "No Supabase client." }, { status: 500 });
   const { data: wid } = await supabase.rpc("ensure_workspace");
+  // select("id") only: `authenticated` has no column-level SELECT grant on
+  // `secret` (by design — it must never round-trip to the browser), and an
+  // unqualified .select() asks PostgREST to RETURNING * (every column),
+  // which Postgres then denies wholesale as "permission denied for table".
   const { data, error } = await supabase
     .from("api_keys")
     .insert({ workspace_id: wid, name, provider, secret: encryptSecret(value), last4, created_by: createdBy })
-    .select();
+    .select("id");
   if (error) {
     // Log the DB detail server-side (redacted); never echo Postgres/RLS internals to the client.
     safeLog("api_keys insert error", { message: error.message, code: error.code });

@@ -124,6 +124,24 @@ async function testListSuccess() {
   ok("listDustAgents: sends Bearer auth with the given key", seen[0]?.auth === "Bearer sk-dust-test-key");
 }
 
+/* ---- listDustAgents: region routes to the correct regional host --------- */
+async function testListRegion() {
+  const seen: string[] = [];
+  globalThis.fetch = (async (url: unknown) => {
+    seen.push(String(url));
+    return jsonResponse(200, { agentConfigurations: [] });
+  }) as typeof fetch;
+
+  await listDustAgents("ws_1", "sk-dust-test-key"); // no region -> default
+  await listDustAgents("ws_1", "sk-dust-test-key", "us");
+  await listDustAgents("ws_1", "sk-dust-test-key", "eu");
+  restoreFetch();
+
+  ok("listDustAgents: no region arg defaults to the US host", (seen[0] ?? "").startsWith("https://dust.tt/"));
+  ok("listDustAgents: region 'us' hits the US host", (seen[1] ?? "").startsWith("https://dust.tt/"));
+  ok("listDustAgents: region 'eu' hits the EU host, not dust.tt", (seen[2] ?? "").startsWith("https://eu.dust.tt/"));
+}
+
 /* ---- listDustAgents: 401 -> throws (route turns this into {ok:false}) --- */
 async function testListUnauthorized() {
   globalThis.fetch = (async () => jsonResponse(401, apiErrorBody("invalid_api_key_error", "The API key is invalid."))) as typeof fetch;
@@ -211,6 +229,32 @@ async function testRunTimeout() {
   ok("runDustAgent: timeout is bounded (didn't hang)", elapsed < 5_000);
 }
 
+/* ---- runDustAgent: timeoutMs (5th arg) AND region (6th arg) both still land
+   in the right slot -- regression test for a real bug where region was first
+   inserted BEFORE timeoutMs, silently breaking every existing positional call
+   (the 300ms timeout above would have landed in the region slot instead). --- */
+async function testRunTimeoutAndRegion() {
+  const seen: string[] = [];
+  globalThis.fetch = (async (url: unknown) => {
+    seen.push(String(url));
+    return jsonResponse(200, {
+      conversation: mkConversation({
+        sId: "conv_3",
+        content: [[mkAgentMessage({ sId: "am_3", status: "created" })]],
+      }),
+    });
+  }) as typeof fetch;
+
+  const start = Date.now();
+  const result = await runDustAgent("ws_1", "sk-dust-test-key", "agent_jd", "hello", 300, "eu");
+  const elapsed = Date.now() - start;
+  restoreFetch();
+
+  ok("runDustAgent: explicit timeoutMs (5th arg) still bounds the wait", elapsed < 5_000);
+  ok("runDustAgent: timed out (proves timeoutMs, not region, was used as the number)", result.ok === false);
+  ok("runDustAgent: region (6th arg) routed to the EU host", seen.every((u) => u.startsWith("https://eu.dust.tt/")));
+}
+
 /* ---- runDustAgent: agent fails -> ok:false with the Dust error --------- */
 async function testRunAgentFailed() {
   globalThis.fetch = (async (url: unknown) => {
@@ -234,10 +278,12 @@ async function testRunAgentFailed() {
 }
 
 await testListSuccess();
+await testListRegion();
 await testListUnauthorized();
 await testRunSuccess();
 await testRunUnauthorized();
 await testRunTimeout();
+await testRunTimeoutAndRegion();
 await testRunAgentFailed();
 
 /* ---- Pure-function piece shared by the two routes: task validation ----- */

@@ -4,7 +4,7 @@ import * as React from "react";
 import { Button, Card, CardContent, Field, Input, Select, useToast } from "@/components/ui";
 import { useActions, useDustSettings, useRole } from "@/lib/store";
 import { can } from "@/lib/rbac";
-import { DUST_TASKS, type DustTask } from "@/lib/types";
+import { DUST_TASKS, type DustRegion, type DustTask } from "@/lib/types";
 import { Link2, Unlink, Zap } from "lucide-react";
 
 const TASK_LABEL: Record<DustTask, string> = {
@@ -34,14 +34,16 @@ export function DustAgentPanel() {
   const connected = !!dust?.connected;
 
   const [workspaceId, setWorkspaceId] = React.useState(dust?.workspaceId ?? "");
+  const [region, setRegion] = React.useState<DustRegion>(dust?.region ?? "us");
   const [apiKey, setApiKey] = React.useState("");
   const [connecting, setConnecting] = React.useState(false);
 
-  // Keep the workspace-id field in sync if settings load/change after mount
+  // Keep the workspace-id/region fields in sync if settings load/change after mount
   // (e.g. a teammate connects Dust and this workspace document refreshes).
   React.useEffect(() => {
     setWorkspaceId(dust?.workspaceId ?? "");
-  }, [dust?.workspaceId]);
+    setRegion(dust?.region ?? "us");
+  }, [dust?.workspaceId, dust?.region]);
 
   async function handleConnect() {
     if (!workspaceId.trim() || !apiKey.trim()) {
@@ -49,7 +51,7 @@ export function DustAgentPanel() {
       return;
     }
     setConnecting(true);
-    const res = await actions.connectDust(workspaceId.trim(), apiKey.trim());
+    const res = await actions.connectDust(workspaceId.trim(), apiKey.trim(), region);
     setConnecting(false);
     if (res.ok) {
       setApiKey(""); // never retain the secret in the form
@@ -88,13 +90,24 @@ export function DustAgentPanel() {
             <p className="text-xs text-muted">Admins only. Contact your workspace admin to connect Dust.</p>
           ) : (
             <div className="space-y-3">
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-3">
                 <Field label="Workspace ID" htmlFor="dust-workspace">
                   <Input
                     id="dust-workspace"
                     value={workspaceId}
                     onChange={(e) => setWorkspaceId(e.target.value)}
                     placeholder="e.g. abc123"
+                  />
+                </Field>
+                <Field label="Region" htmlFor="dust-region" hint="From your Dust URL: app.dust.tt (US) or eu.dust.tt (EU).">
+                  <Select
+                    id="dust-region"
+                    value={region}
+                    onChange={(e) => setRegion(e.target.value as DustRegion)}
+                    options={[
+                      { value: "us", label: "US (dust.tt)" },
+                      { value: "eu", label: "EU (eu.dust.tt)" },
+                    ]}
                   />
                 </Field>
                 <Field label="API key" htmlFor="dust-key" hint="Stored encrypted server-side (never returned to the browser).">
@@ -131,7 +144,7 @@ export function DustAgentPanel() {
           <div className="min-w-0">
             <p className="text-sm font-semibold text-success">Connected</p>
             <p className="text-xs text-success/80">
-              Workspace <span className="font-mono">{dust.workspaceId}</span> ·{" "}
+              Workspace <span className="font-mono">{dust.workspaceId}</span> ({(dust.region ?? "us").toUpperCase()}) ·{" "}
               {(dust.agents ?? []).length} agent{(dust.agents ?? []).length === 1 ? "" : "s"} available
             </p>
           </div>
@@ -177,9 +190,20 @@ export function DustAgentPanel() {
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
               Reconnect / rotate key
             </p>
-            <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr_auto] sm:items-end">
               <Field label="Workspace ID" htmlFor="dust-workspace-reconnect">
                 <Input id="dust-workspace-reconnect" value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)} />
+              </Field>
+              <Field label="Region" htmlFor="dust-region-reconnect">
+                <Select
+                  id="dust-region-reconnect"
+                  value={region}
+                  onChange={(e) => setRegion(e.target.value as DustRegion)}
+                  options={[
+                    { value: "us", label: "US" },
+                    { value: "eu", label: "EU" },
+                  ]}
+                />
               </Field>
               <Field
                 label="API key"

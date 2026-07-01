@@ -859,12 +859,19 @@ export interface DustAgentSummary {
   description: string;
 }
 
+/** Dust's public API is region-hosted: https://dust.tt (US) or https://eu.dust.tt (EU). */
+export type DustRegion = "us" | "eu";
+
 /** Non-secret Dust workspace config. The API key itself lives in the vault
  *  (references an ApiKey.id with provider "Dust"), never inline here — same
  *  convention as LlmProvider.apiKeyId / McpServerConfig.apiKeyId. */
 export interface DustSettings {
   /** The Dust workspace id (path segment in every Dust API call), e.g. "abc123". */
   workspaceId: string;
+  /** Dust's public API is region-hosted -- the workspace id alone doesn't tell you
+   *  which. Defaults to "us" so existing connections (persisted before this field
+   *  existed) keep working unchanged. */
+  region?: DustRegion;
   /** References an ApiKey.id (provider "Dust") holding the bearer token. */
   apiKeyId?: string;
   /** True once a Configure + "Test connection" round-trip has succeeded. */

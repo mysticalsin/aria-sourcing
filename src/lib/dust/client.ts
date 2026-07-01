@@ -22,7 +22,13 @@
 
 import { DustAPI } from "@dust-tt/client";
 import { safeLog } from "@/lib/log-redact";
-import type { DustAgentSummary } from "@/lib/types";
+import type { DustAgentSummary, DustRegion } from "@/lib/types";
+
+/** Dust's public API is region-hosted; the SDK defaults to the US host. */
+const REGION_BASE_URL: Record<DustRegion, string> = {
+  us: "https://dust.tt",
+  eu: "https://eu.dust.tt",
+};
 
 // Re-exported so existing callers of this module keep working unchanged — the
 // shape now lives in types.ts (client-safe) since the Settings UI needs it too
@@ -41,8 +47,8 @@ const dustLogger = {
   trace: () => {},
 };
 
-function buildClient(workspaceId: string, apiKey: string): DustAPI {
-  return new DustAPI({ workspaceId, apiKey, logger: dustLogger });
+function buildClient(workspaceId: string, apiKey: string, region: DustRegion = "us"): DustAPI {
+  return new DustAPI({ workspaceId, apiKey, baseUrl: REGION_BASE_URL[region], logger: dustLogger });
 }
 
 function resolveTimezone(): string {
@@ -63,8 +69,12 @@ function sleep(ms: number): Promise<void> {
  * Dust-side or network error — the /api/dust/test route wraps this call in
  * try/catch and turns a throw into { ok: false, error }.
  */
-export async function listDustAgents(workspaceId: string, apiKey: string): Promise<DustAgentSummary[]> {
-  const dust = buildClient(workspaceId, apiKey);
+export async function listDustAgents(
+  workspaceId: string,
+  apiKey: string,
+  region: DustRegion = "us",
+): Promise<DustAgentSummary[]> {
+  const dust = buildClient(workspaceId, apiKey, region);
   const res = await dust.getAgentConfigurations({ view: "all", includes: ["authors"] });
   if (res.isErr()) {
     throw new Error(res.error.message || "Failed to list Dust agents.");
@@ -101,10 +111,11 @@ export async function runDustAgent(
   agentSId: string,
   message: string,
   timeoutMs = 25_000,
+  region: DustRegion = "us",
 ): Promise<DustRunResult> {
   const deadline = Date.now() + timeoutMs;
   try {
-    const dust = buildClient(workspaceId, apiKey);
+    const dust = buildClient(workspaceId, apiKey, region);
 
     const created = await dust.createConversation({
       title: null,

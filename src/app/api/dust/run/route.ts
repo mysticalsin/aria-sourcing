@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "No Dust API key configured." });
   }
 
-  const result = await runDustAgent(dust.workspaceId, apiKey, agentSId, message);
+  const result = await runDustAgent(dust.workspaceId, apiKey, agentSId, message, undefined, dust.region ?? "us");
   if (!result.ok) return NextResponse.json({ ok: false, error: result.error });
   return NextResponse.json({ ok: true, text: result.text });
 }
