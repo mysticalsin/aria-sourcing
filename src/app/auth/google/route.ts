@@ -1,6 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getServerSupabase, requireAdmin } from "@/lib/supabase/server";
 
+// Auth-gated, never cacheable — and without this, Next tries to prerender the
+// route at build time (calling requireAdmin() before it touches any request
+// API Next would otherwise auto-detect as dynamic), which throws the
+// production fail-closed guard as a build error when Supabase isn't configured.
+export const dynamic = "force-dynamic";
+
 /**
  * Start Google OAuth for a Gmail API seat.
  *
