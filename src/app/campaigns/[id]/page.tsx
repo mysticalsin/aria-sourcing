@@ -13,11 +13,13 @@ import {
   EmptyState,
   Eyebrow,
   Field,
+  Input,
   Progress,
   Select,
   SkeletonCard,
   Tabs,
   TabPanel,
+  Textarea,
   useToast,
   type TabItem,
 } from "@/components/ui";
@@ -58,9 +60,12 @@ import {
 } from "@/lib/utils";
 import {
   CANDIDATE_STAGES,
+  SENIORITY_LEVELS,
+  URGENCY_LEVELS,
   type Campaign,
   type CampaignStatus,
   type Candidate,
+  type JobAnalysis,
   type ScoringWeights,
   type ValidationWarning,
 } from "@/lib/types";
@@ -79,12 +84,14 @@ import {
   Linkedin,
   MapPin,
   MessageSquare,
+  Pencil,
   RefreshCw,
   Send,
   Sparkles,
   Target,
   UserRound,
   Users,
+  X,
 } from "lucide-react";
 
 const STATUS_TONE: Record<CampaignStatus, Tone> = {
@@ -150,6 +157,143 @@ function yearsLabel(min: number | null, max: number | null): string {
   return `Up to ${max} yrs`;
 }
 
+function parseSkillList(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Edits the fields of the JD that most directly drive scoring and represent
+ * "a manager adjusted expectations": required/nice-to-have skills, seniority,
+ * minimum experience, and urgency. Saving re-scores this campaign's existing
+ * candidates against the updated JD (see updateCampaign in store.ts) instead
+ * of leaving them frozen at their original sourcing-time score.
+ */
+function JdEditForm({
+  jd,
+  onSave,
+  onCancel,
+}: {
+  jd: JobAnalysis;
+  onSave: (patch: Partial<JobAnalysis>) => void;
+  onCancel: () => void;
+}) {
+  const [seniority, setSeniority] = React.useState(jd.seniority);
+  const [urgency, setUrgency] = React.useState(jd.urgency);
+  const [minYears, setMinYears] = React.useState(jd.minYearsExperience?.toString() ?? "");
+  const [required, setRequired] = React.useState(jd.requiredSkills.join(", "));
+  const [niceToHave, setNiceToHave] = React.useState(jd.niceToHaveSkills.join(", "));
+
+  const save = () => {
+    onSave({
+      seniority,
+      urgency,
+      minYearsExperience: minYears.trim() ? Number(minYears) : null,
+      requiredSkills: parseSkillList(required),
+      niceToHaveSkills: parseSkillList(niceToHave),
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Seniority" htmlFor="jd-seniority">
+          <Select
+            id="jd-seniority"
+            value={seniority}
+            onChange={(e) => setSeniority(e.target.value as JobAnalysis["seniority"])}
+            options={SENIORITY_LEVELS.map((s) => ({ value: s, label: s }))}
+          />
+        </Field>
+        <Field label="Urgency" htmlFor="jd-urgency">
+          <Select
+            id="jd-urgency"
+            value={urgency}
+            onChange={(e) => setUrgency(e.target.value as JobAnalysis["urgency"])}
+            options={URGENCY_LEVELS.map((u) => ({ value: u, label: u }))}
+          />
+        </Field>
+        <Field label="Minimum years experience" htmlFor="jd-min-years">
+          <Input
+            id="jd-min-years"
+            type="number"
+            min={0}
+            value={minYears}
+            onChange={(e) => setMinYears(e.target.value)}
+            placeholder="No minimum"
+          />
+        </Field>
+      </div>
+      <Field label="Required skills (comma-separated)" htmlFor="jd-required-skills">
+        <Textarea id="jd-required-skills" rows={2} value={required} onChange={(e) => setRequired(e.target.value)} />
+      </Field>
+      <Field label="Nice-to-have skills (comma-separated)" htmlFor="jd-nice-to-have">
+        <Textarea id="jd-nice-to-have" rows={2} value={niceToHave} onChange={(e) => setNiceToHave(e.target.value)} />
+      </Field>
+      <div className="flex items-center gap-2">
+        <Button size="sm" onClick={save}>
+          Save &amp; re-score candidates
+        </Button>
+        <Button size="sm" variant="ghost" leftIcon={<X className="h-3.5 w-3.5" />} onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Edits the six scoring-weight dimensions. Saving re-scores this campaign's existing candidates. */
+function WeightsEditForm({
+  weights,
+  onSave,
+  onCancel,
+}: {
+  weights: ScoringWeights;
+  onSave: (patch: ScoringWeights) => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = React.useState<Record<keyof ScoringWeights, string>>(
+    Object.fromEntries(
+      (Object.keys(weights) as (keyof ScoringWeights)[]).map((k) => [k, String(weights[k])]),
+    ) as Record<keyof ScoringWeights, string>,
+  );
+
+  const save = () => {
+    const next = Object.fromEntries(
+      (Object.keys(draft) as (keyof ScoringWeights)[]).map((k) => [k, Math.max(0, Number(draft[k]) || 0)]),
+    ) as unknown as ScoringWeights;
+    onSave(next);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        {(Object.keys(draft) as (keyof ScoringWeights)[]).map((key) => (
+          <Field key={key} label={WEIGHT_LABELS[key]} htmlFor={`weight-${key}`}>
+            <Input
+              id={`weight-${key}`}
+              type="number"
+              min={0}
+              value={draft[key]}
+              onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
+            />
+          </Field>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <Button size="sm" onClick={save}>
+          Save &amp; re-score candidates
+        </Button>
+        <Button size="sm" variant="ghost" leftIcon={<X className="h-3.5 w-3.5" />} onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = React.use(params);
   const hydrated = useHydrated();
@@ -169,6 +313,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const [stageFilter, setStageFilter] = React.useState("all");
   const [scoreFilter, setScoreFilter] = React.useState("all");
   const [agentRunning, setAgentRunning] = React.useState(false);
+  const [editingJd, setEditingJd] = React.useState(false);
+  const [editingWeights, setEditingWeights] = React.useState(false);
 
   if (!hydrated) {
     return (
@@ -320,6 +466,32 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const openCandidate = (cand: Candidate) => {
     setSelected(cand);
     setDrawerOpen(true);
+  };
+
+  const handleSaveJd = (patch: Partial<JobAnalysis>) => {
+    const candidateCount = candidates.length;
+    actions.updateCampaign(c.id, { jobAnalysis: { ...c.jobAnalysis, ...patch } });
+    setEditingJd(false);
+    toast({
+      title: "Requirements updated",
+      description: candidateCount
+        ? `${candidateCount} candidate${candidateCount === 1 ? "" : "s"} re-scored against the updated JD.`
+        : "No candidates sourced yet to re-score.",
+      variant: "success",
+    });
+  };
+
+  const handleSaveWeights = (patch: ScoringWeights) => {
+    const candidateCount = candidates.length;
+    actions.updateCampaign(c.id, { scoringWeights: patch });
+    setEditingWeights(false);
+    toast({
+      title: "Scoring weights updated",
+      description: candidateCount
+        ? `${candidateCount} candidate${candidateCount === 1 ? "" : "s"} re-scored with the new weights.`
+        : "No candidates sourced yet to re-score.",
+      variant: "success",
+    });
   };
 
   const overviewMetrics: {
@@ -519,19 +691,30 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       <TabPanel value="jd" active={tab === "jd"} idBase={idBase}>
         <div className="grid gap-6 lg:grid-cols-3">
           <Card className="lg:col-span-2">
-            <CardHeader>
-              <Eyebrow>Parsed requirement</Eyebrow>
-              <CardTitle className="mt-1">Role specification</CardTitle>
+            <CardHeader className="flex items-center justify-between gap-3">
+              <div>
+                <Eyebrow>Parsed requirement</Eyebrow>
+                <CardTitle className="mt-1">Role specification</CardTitle>
+              </div>
+              {!editingJd && (
+                <Button size="sm" variant="ghost" leftIcon={<Pencil className="h-3.5 w-3.5" />} onClick={() => setEditingJd(true)}>
+                  Edit requirements
+                </Button>
+              )}
             </CardHeader>
             <CardBody>
-              <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
-                {jdItems.map((item) => (
-                  <div key={item.label}>
-                    <dt className="text-[0.625rem] font-semibold uppercase tracking-wide text-muted">{item.label}</dt>
-                    <dd className="mt-0.5 text-sm font-semibold text-ink">{item.value}</dd>
-                  </div>
-                ))}
-              </dl>
+              {editingJd ? (
+                <JdEditForm jd={jd} onSave={handleSaveJd} onCancel={() => setEditingJd(false)} />
+              ) : (
+                <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
+                  {jdItems.map((item) => (
+                    <div key={item.label}>
+                      <dt className="text-[0.625rem] font-semibold uppercase tracking-wide text-muted">{item.label}</dt>
+                      <dd className="mt-0.5 text-sm font-semibold text-ink">{item.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
             </CardBody>
           </Card>
 
@@ -699,28 +882,48 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           </div>
 
           <Card>
-            <CardHeader>
-              <Eyebrow>Ranking</Eyebrow>
-              <CardTitle className="mt-1">Scoring weights</CardTitle>
+            <CardHeader className="flex items-center justify-between gap-3">
+              <div>
+                <Eyebrow>Ranking</Eyebrow>
+                <CardTitle className="mt-1">Scoring weights</CardTitle>
+              </div>
+              {!editingWeights && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  leftIcon={<Pencil className="h-3.5 w-3.5" />}
+                  onClick={() => setEditingWeights(true)}
+                >
+                  Edit weights
+                </Button>
+              )}
             </CardHeader>
             <CardBody className="space-y-4">
-              {(Object.keys(c.scoringWeights) as (keyof ScoringWeights)[]).map((key, i) => {
-                const raw = c.scoringWeights[key];
-                const pct = Math.round((raw / weightTotal) * 100);
-                return (
-                  <div key={key} className="space-y-1.5">
-                    <div className="flex items-baseline justify-between text-sm">
-                      <span className="font-semibold text-ink-soft">{WEIGHT_LABELS[key]}</span>
-                      <span className="font-bold tabular-nums text-ink">{pct}%</span>
+              {editingWeights ? (
+                <WeightsEditForm
+                  weights={c.scoringWeights}
+                  onSave={handleSaveWeights}
+                  onCancel={() => setEditingWeights(false)}
+                />
+              ) : (
+                (Object.keys(c.scoringWeights) as (keyof ScoringWeights)[]).map((key, i) => {
+                  const raw = c.scoringWeights[key];
+                  const pct = Math.round((raw / weightTotal) * 100);
+                  return (
+                    <div key={key} className="space-y-1.5">
+                      <div className="flex items-baseline justify-between text-sm">
+                        <span className="font-semibold text-ink-soft">{WEIGHT_LABELS[key]}</span>
+                        <span className="font-bold tabular-nums text-ink">{pct}%</span>
+                      </div>
+                      <Progress
+                        value={pct}
+                        tone={WEIGHT_TONES[i % WEIGHT_TONES.length]}
+                        aria-label={`${WEIGHT_LABELS[key]} weight ${pct}%`}
+                      />
                     </div>
-                    <Progress
-                      value={pct}
-                      tone={WEIGHT_TONES[i % WEIGHT_TONES.length]}
-                      aria-label={`${WEIGHT_LABELS[key]} weight ${pct}%`}
-                    />
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </CardBody>
           </Card>
         </div>

@@ -11,7 +11,7 @@ import {
   useActions,
   useActiveCampaign,
   useCampaigns,
-  useDashboardKpis,
+  useRecommendations,
   useSettings,
 } from "@/lib/store";
 import { useToast, useConfirm } from "@/components/ui";
@@ -49,7 +49,7 @@ export function TopBar() {
   const router = useRouter();
   const campaigns = useCampaigns();
   const active = useActiveCampaign();
-  const kpis = useDashboardKpis();
+  const recommendations = useRecommendations();
   const settings = useSettings();
   const { setActiveCampaign, resetDemo } = useActions();
   const { toast } = useToast();
@@ -94,17 +94,9 @@ export function TopBar() {
     .slice(0, 2)
     .toUpperCase();
 
-  const notifications = [
-    kpis.pendingApprovals > 0 && {
-      label: `${kpis.pendingApprovals} outreach drafts awaiting approval`,
-      href: "/outreach",
-    },
-    kpis.hotReplies > 0 && { label: `${kpis.hotReplies} hot replies within SLA`, href: "/replies" },
-    kpis.awaitingBooking > 0 && {
-      label: `${kpis.awaitingBooking} interested candidates to book`,
-      href: "/calendar",
-    },
-  ].filter(Boolean) as { label: string; href: string }[];
+  // Same derived, ranked queue the dashboard's Priority queue panel renders --
+  // top 3 here so the bell and the panel can never show conflicting priorities.
+  const notifications = recommendations.slice(0, 3).map((rec) => ({ label: rec.title, href: rec.href }));
 
   return (
     <header className="sticky top-0 z-40 topbar-glass">
@@ -176,7 +168,7 @@ export function TopBar() {
                 onKeyDown={(e) => menuKeyHandler(e, () => setNotifOpen(false), notifTriggerRef)}
                 className="absolute right-0 z-20 mt-2 w-80 overflow-hidden rounded-3xl glass-dropdown animate-scale-in"
               >
-                <p className="border-b border-violet/10 px-4 py-3 text-sm font-bold text-ink">Attention needed</p>
+                <p className="border-b border-violet/10 px-4 py-3 text-sm font-bold text-ink">Priority queue</p>
                 {notifications.length === 0 ? (
                   <p className="px-4 py-6 text-center text-sm text-muted">All clear. Nothing needs you.</p>
                 ) : (

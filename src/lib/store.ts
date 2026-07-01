@@ -37,6 +37,8 @@ import {
 import { resolveAiProvider } from "./ai/provider";
 import { buildSeedState, defaultGuardrails, defaultLlmProviders, defaultSavedModels, defaultSettings, defaultTools, STATE_VERSION } from "./seed";
 import { computeCampaignMetrics, globalKpis, type GlobalKpis } from "./metrics";
+import { deriveRecommendations, type Recommendation } from "./recommendations";
+import { scoreCandidate } from "./scoring";
 import {
   checkOutreachApproval,
   type ApprovalResult,
@@ -619,10 +621,51 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const updateCampaign = useCallback(
     (id: string, patch: Partial<Campaign>) =>
-      commit((s) => ({
-        ...s,
-        campaigns: s.campaigns.map((c) => (c.id === id ? { ...c, ...patch } : c)),
-      })),
+      commit((s) => {
+        const existing = s.campaigns.find((c) => c.id === id);
+        if (!existing) return s;
+        const merged: Campaign = { ...existing, ...patch };
+        let next: HermesState = {
+          ...s,
+          campaigns: s.campaigns.map((c) => (c.id === id ? merged : c)),
+        };
+
+        // Reactive re-score: editing the JD or scoring weights silently re-ranks
+        // existing candidates (via the recommendation queue's match-score input)
+        // instead of leaving them frozen at their original sourcing-time score.
+        // Adaptive, not autonomous -- it reacts to a human's own edit here; it
+        // never touches anything already approved/sent/booked, and never sends.
+        if (patch.jobAnalysis || patch.scoringWeights) {
+          const weights = effectiveWeights(merged.scoringWeights, s.skills);
+          const affected = next.candidates.filter((c) => c.campaignId === id);
+          next = {
+            ...next,
+            candidates: next.candidates.map((c) => {
+              if (c.campaignId !== id) return c;
+              const { score, breakdown } = scoreCandidate(c, merged.jobAnalysis, weights);
+              return { ...c, matchScore: score, matchBreakdown: breakdown };
+            }),
+          };
+          next = recomputeMetrics(next, id);
+          if (affected.length > 0) {
+            next = withActivity(
+              next,
+              makeActivity({
+                type: "score",
+                title: "Candidates re-scored",
+                notes: `${affected.length} candidate${affected.length === 1 ? "" : "s"} re-scored after the JD/weights update.`,
+                outcome: "Priority queue updated",
+                campaignId: id,
+                linkedEntityType: "campaign",
+                linkedEntityId: id,
+              }),
+              id,
+            );
+          }
+        }
+
+        return next;
+      }),
     [commit],
   );
 
@@ -3907,6 +3950,11 @@ export function useActivities(): Activity[] {
 
 export function useDashboardKpis(): GlobalKpis {
   return globalKpis(useStateOrEmpty());
+}
+
+/** Single prioritized recommendation queue -- see recommendations.ts for the ranking rationale. */
+export function useRecommendations(): Recommendation[] {
+  return deriveRecommendations(useStateOrEmpty());
 }
 
 export function useSeats(): AgentSeat[] {
