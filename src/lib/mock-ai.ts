@@ -211,6 +211,12 @@ export interface ParsedIntake {
   validationWarnings: ValidationWarning[];
   clarificationDraft: string | null;
   confidence: Record<string, number>;
+  /** Optional enrichment from a locked Dust agent (task "jdAnalysis"). A sibling
+   *  display field, never merged into jobAnalysis's typed fields — free text from
+   *  an external agent shouldn't be able to corrupt the scoring/sourcing pipeline.
+   *  Attached client-side, after the fact, by the intake page; absent unless a
+   *  Dust agent is configured and locked for this task. */
+  dustAnalysis?: { agentId: string; text: string } | null;
 }
 
 export function isMantuNeedEmail(text: string): boolean {

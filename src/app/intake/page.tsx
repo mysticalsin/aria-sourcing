@@ -26,7 +26,7 @@ import {
   SAMPLE_MANTU_EMAIL,
   type ParsedIntake,
 } from "@/lib/mock-ai";
-import { useActions, useHydrated } from "@/lib/store";
+import { useActions, useHydrated, useSettings } from "@/lib/store";
 import {
   copyToClipboard,
   formatPercent,
@@ -85,6 +85,7 @@ export default function IntakePage() {
   const router = useRouter();
   const { toast } = useToast();
   const actions = useActions();
+  const settings = useSettings();
 
   const [email, setEmail] = useState("");
   const [jd, setJd] = useState("");
@@ -93,9 +94,34 @@ export default function IntakePage() {
   const [senderName, setSenderName] = useState("");
   const [senderEmail, setSenderEmail] = useState("");
   const [skillDraft, setSkillDraft] = useState("");
+  const [dustPending, setDustPending] = useState(false);
+  // Guards against a slow Dust reply from an earlier parse landing on top of a
+  // newer one if the user re-parses before the first call resolves.
+  const parseSeqRef = React.useRef(0);
 
   function patchJob(patch: Partial<JobAnalysis>) {
     setJob((prev) => (prev ? { ...prev, ...patch } : prev));
+  }
+
+  /** Enrichment on top of the heuristic parse above — never blocks or replaces it.
+   *  Only fires when a "jdAnalysis" Dust agent is locked in Settings; any failure
+   *  (unconfigured, network, Dust error) just leaves `dustAnalysis` unset. */
+  function maybeRunDustJdAnalysis(rawJd: string, rawEmail: string) {
+    const seq = ++parseSeqRef.current;
+    setDustPending(false);
+    const agentSId = settings.dust?.connected ? settings.dust.agentLocks?.jdAnalysis : undefined;
+    if (!agentSId) return;
+    const message = rawJd.trim() || rawEmail;
+    if (!message.trim()) return;
+    setDustPending(true);
+    void actions.runDustTask("jdAnalysis", message).then((res) => {
+      if (parseSeqRef.current !== seq) return; // superseded by a newer parse
+      setDustPending(false);
+      if (res.ok && res.text) {
+        const text = res.text;
+        setParsed((prev) => (prev ? { ...prev, dustAnalysis: { agentId: agentSId, text } } : prev));
+      }
+    });
   }
 
   function loadSample() {
@@ -128,6 +154,7 @@ export default function IntakePage() {
     setJob(result.jobAnalysis);
     setSenderName(result.sender.name);
     setSenderEmail(result.sender.email);
+    maybeRunDustJdAnalysis("", incoming);
     toast({
       title: "Inbound need scanned",
       description: `${result.jobAnalysis.title} detected and parsed from the inbox.`,
@@ -149,6 +176,7 @@ export default function IntakePage() {
     setJob(result.jobAnalysis);
     setSenderName(result.sender.name);
     setSenderEmail(result.sender.email);
+    maybeRunDustJdAnalysis(jd, email);
     toast({
       title: "Brief parsed",
       description: `${result.jobAnalysis.title} · ${result.jobAnalysis.requiredSkills.length} required skills detected.`,
@@ -636,6 +664,32 @@ export default function IntakePage() {
                     <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-2xl bg-canvas/70 p-4 font-sans text-sm leading-relaxed text-ink-soft ring-1 ring-inset ring-line">
                       {parsed.clarificationDraft}
                     </pre>
+                  </CardBody>
+                </Card>
+              )}
+
+              {/* Dust agent enrichment — optional, additive, never blocks the heuristic result above */}
+              {(parsed.dustAnalysis || dustPending) && (
+                <Card>
+                  <CardHeader className="flex items-start justify-between gap-3">
+                    <div>
+                      <Eyebrow>Agent enrichment</Eyebrow>
+                      <CardTitle className="mt-1">Dust analysis</CardTitle>
+                    </div>
+                    {dustPending && (
+                      <Badge tone="electric" dot>
+                        Analyzing…
+                      </Badge>
+                    )}
+                  </CardHeader>
+                  <CardBody className="pt-0">
+                    {parsed.dustAnalysis ? (
+                      <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-2xl bg-canvas/70 p-4 font-sans text-sm leading-relaxed text-ink-soft ring-1 ring-inset ring-line">
+                        {parsed.dustAnalysis.text}
+                      </pre>
+                    ) : (
+                      <p className="text-sm text-muted">Waiting on the locked Dust agent…</p>
+                    )}
                   </CardBody>
                 </Card>
               )}

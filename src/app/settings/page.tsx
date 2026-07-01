@@ -29,6 +29,7 @@ import { ProvidersPanel } from "@/components/settings/providers-panel";
 import { ModelsPanel } from "@/components/settings/models-panel";
 import { ToolsPanel } from "@/components/settings/tools-panel";
 import { McpServersPanel } from "@/components/settings/mcp-servers-panel";
+import { DustAgentPanel } from "@/components/settings/dust-agent-panel";
 import { HermesRuntimePanel } from "@/components/settings/hermes-runtime-panel";
 import { SchedulesPanel } from "@/components/settings/schedules-panel";
 import { HermesSchedulesPanel } from "@/components/settings/hermes-schedules-panel";
@@ -63,7 +64,7 @@ const SettingsTabContext = React.createContext("integrations");
 /** Maps each numbered section to the tab it lives under. */
 const N_TO_TAB: Record<string, string> = {
   "04": "integrations",
-  "14": "ai", "15": "ai", "16": "ai", "17": "ai",
+  "14": "ai", "15": "ai", "16": "ai", "17": "ai", "19": "ai",
   "03": "fleet", "06": "fleet", "09": "fleet", "18": "fleet",
   "02": "compliance", "05": "compliance", "07": "compliance",
   "08": "voice", "13": "voice",
@@ -947,6 +948,16 @@ export default function SettingsPage() {
             description="Connect the live NousResearch Aria agent for real LLM-backed outreach drafting. Text generation only. The approval gate still applies. Falls back to the built-in mock when off or misconfigured. Admin only."
           >
             <HermesRuntimePanel />
+          </Section>
+
+          {/* 19 — Dust agent platform */}
+          <Section
+            n="19"
+            eyebrow="Agent platform"
+            title="Dust agents"
+            description="Connect a Dust (dust.tt) workspace and lock which of your own agents runs each recruiting task — starting with JD analysis on intake. Admin only."
+          >
+            <DustAgentPanel />
           </Section>
 
           {/* 18 — Schedules */}

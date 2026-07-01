@@ -591,6 +591,10 @@ export interface SystemSettings {
   /** Base URL of the hermes-agent web_server / management API (e.g. http://127.0.0.1:8643).
    *  Distinct from hermesApiUrl which is the OpenAI-compat generation endpoint. */
   hermesWebUrl?: string;
+  /** Dust (dust.tt) agent-platform connection: workspace id, vault key reference,
+   *  and which agent is locked to each DustTask. Optional — absent means Dust is
+   *  not configured for this workspace. */
+  dust?: DustSettings;
 }
 
 /* ---- Outreach fleet (multi-seat coordination + anti-ban guardrails) ------- */
@@ -752,6 +756,7 @@ export const API_KEY_PROVIDERS = [
   "Resend",
   "SendGrid",
   "Aria Agent",
+  "Dust",
   "Custom",
 ] as const;
 export type ApiKeyProvider = (typeof API_KEY_PROVIDERS)[number];
@@ -837,6 +842,43 @@ export interface McpServerConfig {
   toolCount?: number;
   /** Names of those tools (for display), captured on the last successful test. */
   toolNames?: string[];
+}
+
+/** Recruiting tasks that can be delegated to a locked Dust agent. A Record (not an
+ *  enum-keyed object) so more tasks can be added later without a schema change. */
+export const DUST_TASKS = ["jdAnalysis", "companyResearch"] as const;
+export type DustTask = (typeof DUST_TASKS)[number];
+
+/** One agent configuration in a Dust workspace, as returned by
+ *  `assistant/agent_configurations`. Non-secret (name/description only) — the
+ *  client-safe counterpart to the server-only `DustAgentSummary` the SDK call
+ *  produces in `src/lib/dust/client.ts` (re-exported from there). */
+export interface DustAgentSummary {
+  sId: string;
+  name: string;
+  description: string;
+}
+
+/** Non-secret Dust workspace config. The API key itself lives in the vault
+ *  (references an ApiKey.id with provider "Dust"), never inline here — same
+ *  convention as LlmProvider.apiKeyId / McpServerConfig.apiKeyId. */
+export interface DustSettings {
+  /** The Dust workspace id (path segment in every Dust API call), e.g. "abc123". */
+  workspaceId: string;
+  /** References an ApiKey.id (provider "Dust") holding the bearer token. */
+  apiKeyId?: string;
+  /** True once a Configure + "Test connection" round-trip has succeeded. */
+  connected: boolean;
+  /** Which Dust agent (by sId) is locked to each task, keyed by DustTask. A loose
+   *  Record<string, string> (not Partial<Record<DustTask, string>>) so new task
+   *  keys can be added later purely by extending DUST_TASKS — no JSONB schema
+   *  change, since workspace_state is one schemaless document. */
+  agentLocks: Record<string, string>;
+  /** Snapshot of the workspace's agents from the last successful Connect/Reconnect,
+   *  cached client-side purely to populate the task-lock dropdowns without
+   *  re-entering the API key on every Settings visit — same convention as
+   *  `McpServerConfig.toolNames`. Non-secret. */
+  agents?: DustAgentSummary[];
 }
 
 /** Stored metadata only — the secret value never lives in client state. */

@@ -68,6 +68,8 @@ import type {
   Candidate,
   CandidateStage,
   ClassifiedReply,
+  DustAgentSummary,
+  DustTask,
   HermesState,
   IntegrationStatus,
   JobAnalysis,
@@ -142,6 +144,12 @@ export interface HermesActions {
     campaignId: string,
     opts?: { platform?: SourcePlatform; count?: number },
   ) => Promise<SourceResult & { source: "github" | "web" | "mock" }>;
+  /** One tool-calling agent pass: searches real candidates, scores them, and
+   *  drafts outreach for the best matches in a single loop (/api/sourcing-agent),
+   *  instead of sourceNextBatch + generateOutreachLive called one at a time.
+   *  Requires a cloud provider configured for the "sourcing" task (Anthropic or
+   *  an OpenAI-compatible provider — hermes/Kimi don't support tool-calling). */
+  runSourcingAgent: (campaignId: string, count?: number) => Promise<{ ok: boolean; added: number; error?: string }>;
 
   // outreach
   generateOutreachFor: (
@@ -271,6 +279,16 @@ export interface HermesActions {
   updateMcpServer: (id: string, patch: Partial<McpServerConfig>) => void;
   removeMcpServer: (id: string) => void;
   testMcpServer: (id: string) => Promise<{ ok: boolean; toolCount?: number; error?: string }>;
+
+  // Dust (dust.tt) agent-platform integration
+  testDustConnection: (
+    workspaceId: string,
+    apiKey: string,
+  ) => Promise<{ ok: boolean; agents?: DustAgentSummary[]; error?: string }>;
+  connectDust: (workspaceId: string, apiKey: string) => Promise<{ ok: boolean; error?: string }>;
+  updateDustAgentLock: (task: DustTask, agentSId: string) => void;
+  disconnectDust: () => void;
+  runDustTask: (task: DustTask, message: string) => Promise<{ ok: boolean; text?: string; error?: string }>;
 
   // Saved models
   addModel: (m: Omit<SavedModel, "id">) => SavedModel;
@@ -747,6 +765,102 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
       return { ...result, source };
+    },
+    [commit, current],
+  );
+
+  const runSourcingAgent = useCallback(
+    async (campaignId: string, count = 5): Promise<{ ok: boolean; added: number; error?: string }> => {
+      const s = current();
+      const campaign = s.campaigns.find((c) => c.id === campaignId);
+      if (!campaign) return { ok: false, added: 0, error: "Campaign not found." };
+      const weights = effectiveWeights(campaign.scoringWeights, s.skills);
+      const finalTone = effectiveTone(s.skills);
+
+      const aiCfg = resolveAiProvider(s.settings, "sourcing");
+      if (!aiCfg) {
+        return { ok: false, added: 0, error: "No cloud LLM provider configured for sourcing — add one in Settings." };
+      }
+      if (aiCfg.provider === "kimi") {
+        return {
+          ok: false,
+          added: 0,
+          error: "Kimi doesn't support tool-calling. Configure a different provider (Anthropic/OpenAI/Groq/xAI/Mistral) for the sourcing task.",
+        };
+      }
+
+      type AgentCandidate = Candidate & { draftSubject?: string; draftBody?: string };
+      let out: { ok?: boolean; candidates?: AgentCandidate[]; reason?: string } | null = null;
+      try {
+        const res = await fetch("/api/sourcing-agent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            campaign: { ...campaign, scoringWeights: weights },
+            existing: s.candidates.filter((c) => c.campaignId === campaignId),
+            count,
+            provider: aiCfg.provider,
+            apiKeyId: aiCfg.apiKeyId,
+            model: aiCfg.model,
+          }),
+        });
+        out = await res.json().catch(() => null);
+      } catch (err) {
+        return { ok: false, added: 0, error: err instanceof Error ? err.message : "Network error." };
+      }
+
+      if (!out?.ok || !out.candidates?.length) {
+        return { ok: false, added: 0, error: out?.reason ?? "The agent found no real candidates." };
+      }
+
+      const cleanCandidates: Candidate[] = [];
+      const messages: OutreachMessage[] = [];
+      for (const raw of out.candidates) {
+        const { draftSubject, draftBody, ...clean } = raw;
+        const candidate = clean as Candidate;
+        cleanCandidates.push(candidate);
+        if (draftSubject && draftBody) {
+          messages.push(
+            newOutreachMessage(
+              candidate,
+              campaign,
+              {
+                subject: draftSubject,
+                body: draftBody,
+                personalizationEvidence: candidate.recentActivity ? [candidate.recentActivity] : [],
+                channel: "Email",
+              },
+              finalTone,
+              s.settings,
+            ),
+          );
+        }
+      }
+
+      commit((prev) => {
+        let next: HermesState = {
+          ...prev,
+          candidates: [...cleanCandidates, ...prev.candidates],
+          outreach: [...messages, ...prev.outreach],
+        };
+        next = recomputeMetrics(next, campaignId);
+        next = withActivity(
+          next,
+          makeActivity({
+            type: "sourcing",
+            title: `Sourcing agent found ${cleanCandidates.length} candidates`,
+            notes: `${messages.length} drafted for outreach in one tool-calling pass (live).`,
+            outcome: `${cleanCandidates.length} added, ${messages.length} drafted`,
+            campaignId,
+            linkedEntityType: "campaign",
+            linkedEntityId: campaignId,
+          }),
+          campaignId,
+        );
+        return next;
+      });
+
+      return { ok: true, added: cleanCandidates.length };
     },
     [commit, current],
   );
@@ -2861,6 +2975,132 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit, current],
   );
 
+  /* ---- Dust (dust.tt) agent-platform integration ------------------------- */
+
+  /** Test a just-entered workspace id + API key (POST /api/dust/test) without
+   *  persisting anything — used by the Settings Connect/Reconnect flow before
+   *  the key is saved to the vault. */
+  const testDustConnection = useCallback(
+    async (workspaceId: string, apiKey: string) => {
+      try {
+        const res = await fetch("/api/dust/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workspaceId, apiKey }),
+        });
+        const json = (await res.json().catch(() => ({ ok: false, error: "Bad response from Dust." }))) as {
+          ok?: boolean;
+          agents?: DustAgentSummary[];
+          error?: string;
+        };
+        if (json.ok) return { ok: true as const, agents: json.agents ?? [] };
+        return { ok: false as const, error: json.error ?? "Could not connect to Dust." };
+      } catch (err) {
+        return { ok: false as const, error: err instanceof Error ? err.message : "Network error." };
+      }
+    },
+    [],
+  );
+
+  /** Full Connect flow: test the credentials, then — only on success — store the
+   *  API key in the vault (provider "Dust") and save the non-secret workspace
+   *  config + agent snapshot to settings.dust. Existing agent locks survive a
+   *  reconnect (e.g. rotating the key) as long as the locked agent still exists
+   *  in the fresh agent list; locks pointing at an agent that's since been
+   *  deleted in Dust are dropped rather than left dangling. */
+  const connectDust = useCallback(
+    async (workspaceId: string, apiKey: string) => {
+      const test = await testDustConnection(workspaceId, apiKey);
+      if (!test.ok) return { ok: false as const, error: test.error };
+      const agents = test.agents ?? [];
+      const saved = await saveApiKey({ name: "Dust", provider: "Dust", value: apiKey });
+      if (!saved.ok || !saved.key) {
+        return { ok: false as const, error: saved.error ?? "Could not save the Dust API key." };
+      }
+      const apiKeyId = saved.key.id;
+      const validSIds = new Set(agents.map((a) => a.sId));
+      commit((prev) => {
+        const priorLocks = prev.settings.dust?.agentLocks ?? {};
+        const agentLocks = Object.fromEntries(Object.entries(priorLocks).filter(([, sId]) => validSIds.has(sId)));
+        return withActivity(
+          {
+            ...prev,
+            settings: {
+              ...prev.settings,
+              dust: { workspaceId, apiKeyId, connected: true, agentLocks, agents },
+            },
+          },
+          makeActivity({
+            type: "system",
+            title: "Dust connected",
+            notes: `Workspace ${workspaceId} linked · ${agents.length} agent${agents.length === 1 ? "" : "s"} available.`,
+            outcome: "Connected",
+            campaignId: null,
+            linkedEntityType: null,
+            linkedEntityId: null,
+          }),
+          null,
+        );
+      });
+      return { ok: true as const };
+    },
+    [testDustConnection, saveApiKey, commit],
+  );
+
+  const updateDustAgentLock = useCallback(
+    (task: DustTask, agentSId: string) =>
+      commit((prev) => {
+        if (!prev.settings.dust) return prev;
+        const agentLocks = { ...prev.settings.dust.agentLocks };
+        if (agentSId) agentLocks[task] = agentSId;
+        else delete agentLocks[task];
+        return { ...prev, settings: { ...prev.settings, dust: { ...prev.settings.dust, agentLocks } } };
+      }),
+    [commit],
+  );
+
+  const disconnectDust = useCallback(
+    () =>
+      commit((prev) =>
+        withActivity(
+          { ...prev, settings: { ...prev.settings, dust: undefined } },
+          makeActivity({
+            type: "system",
+            title: "Dust disconnected",
+            notes: "Workspace unlinked. The vault key was left in place — remove it from Access & Keys if no longer needed.",
+            outcome: "Disconnected",
+            campaignId: null,
+            linkedEntityType: null,
+            linkedEntityId: null,
+          }),
+          null,
+        ),
+      ),
+    [commit],
+  );
+
+  /** Run one locked Dust agent turn (POST /api/dust/run). The server resolves the
+   *  workspace, API key, and which agent is locked to `task` entirely from
+   *  settings.dust — this call only ever sends the task name and message text. */
+  const runDustTask = useCallback(async (task: DustTask, message: string) => {
+    try {
+      const res = await fetch("/api/dust/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task, message }),
+      });
+      const json = (await res.json().catch(() => ({ ok: false, error: "Bad response from Dust." }))) as {
+        ok?: boolean;
+        text?: string;
+        error?: string;
+      };
+      if (json.ok) return { ok: true as const, text: json.text ?? "" };
+      return { ok: false as const, error: json.error ?? "Dust run failed." };
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : "Network error." };
+    }
+  }, []);
+
   const setDefaultProvider = useCallback(
     (id: string) =>
       commit((s) => ({
@@ -3372,6 +3612,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       updateCampaign,
       regenerateQueries,
       sourceNextBatch,
+      runSourcingAgent,
       generateOutreachFor,
       generateOutreachLive,
       updateOutreach,
@@ -3430,6 +3671,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       updateMcpServer,
       removeMcpServer,
       testMcpServer,
+      testDustConnection,
+      connectDust,
+      updateDustAgentLock,
+      disconnectDust,
+      runDustTask,
       addModel,
       updateModel,
       removeModel,
@@ -3457,7 +3703,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       setActiveCampaign, createCampaignFromAnalysis, updateCampaign, regenerateQueries,
-      sourceNextBatch, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
+      sourceNextBatch, runSourcingAgent, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
       approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, classifyAndStoreReply, markReplyHandled,
       applyReplyAction, createBookingFor, updateBooking, generateReport,
       setSkillUpdateStatus, setCandidateStage, setCandidatePhone, suppressCandidate, markDoNotContact,
@@ -3470,6 +3716,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       updateAriaPrompt, addGuardrailRule, toggleGuardrailRule, removeGuardrailRule, askAria,
       addProvider, updateProvider, removeProvider, setDefaultProvider,
       addMcpServer, updateMcpServer, removeMcpServer, testMcpServer,
+      testDustConnection, connectDust, updateDustAgentLock, disconnectDust, runDustTask,
       addModel, updateModel, removeModel, setModelDefaultForTask,
       toggleTool,
       assignAgentProvider, assignAgentModel, assignAgentTools,
@@ -3705,6 +3952,10 @@ export function useLlmProviders() {
 
 export function useMcpServers() {
   return useStateOrEmpty().settings.mcpServers ?? [];
+}
+
+export function useDustSettings() {
+  return useStateOrEmpty().settings.dust;
 }
 
 export function useSavedModels() {

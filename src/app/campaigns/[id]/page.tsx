@@ -67,6 +67,7 @@ import {
 import {
   ArrowLeft,
   Banknote,
+  Bot,
   CalendarCheck,
   CalendarPlus,
   ClipboardList,
@@ -264,6 +265,22 @@ export default function Page({ params }: { params: { id: string } }) {
     });
   };
 
+  const [agentRunning, setAgentRunning] = React.useState(false);
+  const handleRunAgent = async () => {
+    setAgentRunning(true);
+    const res = await actions.runSourcingAgent(c.id);
+    setAgentRunning(false);
+    if (!res.ok) {
+      toast({ title: "Sourcing agent didn't run", description: res.error, variant: "error" });
+      return;
+    }
+    toast({
+      title: `Sourcing agent found ${res.added} candidate${res.added === 1 ? "" : "s"}`,
+      description: "Real search, real scoring, drafted outreach — review before sending.",
+      variant: "success",
+    });
+  };
+
   const handleMoreQueries = () => {
     actions.regenerateQueries(c.id);
     toast({
@@ -401,6 +418,14 @@ export default function Page({ params }: { params: { id: string } }) {
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             <Button variant="secondary" leftIcon={<Sparkles className="h-4 w-4" />} onClick={handleSource}>
               Source next batch
+            </Button>
+            <Button
+              variant="secondary"
+              leftIcon={<Bot className="h-4 w-4" />}
+              onClick={handleRunAgent}
+              disabled={agentRunning}
+            >
+              {agentRunning ? "Agent working…" : "Run sourcing agent"}
             </Button>
             <Button variant="outline" leftIcon={<Send className="h-4 w-4" />} onClick={() => router.push("/outreach")}>
               Review outreach

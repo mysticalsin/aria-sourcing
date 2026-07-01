@@ -11,10 +11,11 @@
     "docker:build": "docker compose up --build",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx tests/fleet.mts && tsx tests/humanizer.mts && tsx tests/mock-ai.mts && tsx tests/mantu-intake.mts && tsx tests/security-redos.mts && tsx tests/scoring-metrics.mts && tsx tests/skills.mts && tsx tests/rules-confidential.mts && tsx tests/roles-i18n.mts && tsx tests/rbac-keys.mts && tsx tests/api-validation.mts && tsx tests/floor.mts && tsx tests/guardrails.mts && tsx tests/admin-config.mts && tsx tests/hermes-live.mts && tsx tests/linkedin-policy.mts && tsx tests/hermes-proxy.mts && tsx tests/security-audit.mts && tsx tests/chat.mts && tsx tests/audit-fixes.mts && tsx tests/memory-soul.mts && tsx tests/ai-provider.mts && tsx tests/fail-closed.mts && tsx tests/rate-limit.mts && tsx tests/log-redact.mts && tsx tests/outreach-guardrails.mts && tsx tests/email-match.mts && tsx tests/sourcing.mts && tsx tests/crypto-secrets.mts && tsx tests/mcp-tool-loop.mts && tsx tests/web-tools.mts",
-    "test:security": "tsx tests/security-audit.mts && tsx tests/security-redos.mts && tsx tests/rbac-keys.mts && tsx tests/api-validation.mts && tsx tests/guardrails.mts && tsx tests/linkedin-policy.mts && tsx tests/web-tools.mts"
+    "test": "tsx tests/fleet.mts && tsx tests/humanizer.mts && tsx tests/mock-ai.mts && tsx tests/mantu-intake.mts && tsx tests/security-redos.mts && tsx tests/scoring-metrics.mts && tsx tests/skills.mts && tsx tests/rules-confidential.mts && tsx tests/roles-i18n.mts && tsx tests/rbac-keys.mts && tsx tests/api-validation.mts && tsx tests/floor.mts && tsx tests/guardrails.mts && tsx tests/admin-config.mts && tsx tests/hermes-live.mts && tsx tests/hermes-proxy.mts && tsx tests/security-audit.mts && tsx tests/chat.mts && tsx tests/audit-fixes.mts && tsx tests/memory-soul.mts && tsx tests/ai-provider.mts && tsx tests/fail-closed.mts && tsx tests/rate-limit.mts && tsx tests/log-redact.mts && tsx tests/outreach-guardrails.mts && tsx tests/email-match.mts && tsx tests/sourcing.mts && tsx tests/crypto-secrets.mts && tsx tests/mcp-tool-loop.mts && tsx tests/web-tools.mts && tsx tests/sourcing-agent.mts && tsx tests/dust.mts",
+    "test:security": "tsx tests/security-audit.mts && tsx tests/security-redos.mts && tsx tests/rbac-keys.mts && tsx tests/api-validation.mts && tsx tests/guardrails.mts && tsx tests/web-tools.mts"
   },
   "dependencies": {
+    "@dust-tt/client": "^1.2.6",
     "@react-three/drei": "^9.122.0",
     "@react-three/fiber": "^8.18.0",
     "@react-three/postprocessing": "^2.19.1",
