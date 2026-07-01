@@ -33,6 +33,28 @@ jobs:
       - name: Test
         run: npm run test
 
+      # The job runs directly on the runner (not inside a container), so unlike
+      # docker-compose.yml's internal-network-only wiring, the sidecar's port must
+      # be published to the runner's localhost for the test process to reach it --
+      # this is a CI-only difference in how the port is reached, not a change to
+      # the sidecar itself (still built from source, pinned commit, default
+      # cargo features, no --stealth/--allow-private-network -- see
+      # docker/obscura/Dockerfile).
+      - name: Build Obscura sidecar image
+        run: docker build -t aria-obscura-ci ./docker/obscura
+
+      - name: Start Obscura sidecar
+        run: docker run -d --name obscura-ci -p 9222:9222 aria-obscura-ci
+
+      - name: Obscura integration test
+        env:
+          OBSCURA_URL: http://127.0.0.1:9222
+        run: npm run test:obscura
+
+      - name: Stop Obscura sidecar
+        if: always()
+        run: docker rm -f obscura-ci
+
       - name: Build
         run: npm run build
 
