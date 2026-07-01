@@ -41,7 +41,6 @@ import {
   checkOutreachApproval,
   type ApprovalResult,
 } from "./rules";
-import { checkLinkedInPolicy, linkedInGuardrailPrompt } from "./linkedin-policy";
 import { matchCandidateByEmail } from "./email-match";
 import {
   testConnection,
@@ -834,7 +833,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         });
         // F-2: prepend ariaPrompt when set so it shapes the live generation.
         const ariaPrompt = s.settings.guardrails?.ariaPrompt;
-        const guardrails = [ariaPrompt, linkedInGuardrailPrompt()].filter(Boolean).join("\n\n");
+        const guardrails = ariaPrompt || "";
         const prompt = guardrails ? `${guardrails}\n\n${basePrompt}` : basePrompt;
 
         // Build input: cloud path when aiCfg resolved, hermes path otherwise.
@@ -2476,10 +2475,6 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const updateSkillContent = useCallback(
     (key: SkillKey, content: string): { ok: boolean; error?: string } => {
-      const policy = checkLinkedInPolicy(content);
-      if (!policy.ok) {
-        return { ok: false, error: policy.reason };
-      }
       commit((s) => ({
         ...s,
         skills: s.skills.map((sk) => (sk.key === key ? { ...sk, content, updatedAt: new Date().toISOString() } : sk)),
@@ -3095,7 +3090,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const personaBase = seat?.persona
         ? `${seat.persona}\n\nAria guardrail: text generation only — never auto-send outreach.`
         : "You are Aria, the recruiting operations brain. Be warm, concise, and practical. Text generation only — never auto-send outreach.";
-      const guardrails = [ariaPrompt, linkedInGuardrailPrompt()].filter(Boolean).join("\n\n");
+      const guardrails = ariaPrompt || "";
       const effectivePersona = guardrails ? `${guardrails}\n\n${personaBase}` : personaBase;
       // Full prompt has persona as a prefix (persona in prompt, never in the system field per S-3).
       const fullPrompt = `${effectivePersona}\n\n${conversationPrompt}`;
