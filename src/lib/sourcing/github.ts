@@ -2,6 +2,11 @@
 // searches and reads public profiles; it never writes to GitHub. The caller (the
 // /api/source route) supplies a token resolved server-side and never logs it.
 //
+// Keyless by default: GitHub's REST API allows fully anonymous requests (no signup,
+// no token) at 60 req/hour per IP, with tighter limits on the search endpoint. A
+// GITHUB_TOKEN is optional and only raises the ceiling (5,000 req/hour) — it is
+// never required to get real results.
+//
 // Honest limitation: GitHub exposes a public profile, not always an email. We take
 // the public email when present and otherwise leave it blank — the candidate is a
 // real person you found; finding their email is a separate enrichment step.
@@ -24,13 +29,14 @@ export interface GithubUser {
 }
 
 async function gh(path: string, token: string): Promise<unknown> {
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "aria-sourcing",
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(`${GH_API}${path}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      "User-Agent": "aria-sourcing",
-    },
+    headers,
     // Single-use signal per call; the route bounds the overall work.
     signal: AbortSignal.timeout(15_000),
   });
@@ -42,14 +48,15 @@ async function gh(path: string, token: string): Promise<unknown> {
  * Search GitHub users and resolve each to a public profile.
  *
  * `query` is a GitHub search qualifier string, e.g.
- * `language:typescript location:london followers:>50`. `count` is capped at 20 to
- * respect the authenticated search rate limit (30 req/min). Per-user detail calls
- * are sequential and bounded by `count`.
+ * `language:typescript location:london followers:>50`. `count` is capped at 20.
+ * `token` is optional — pass "" to run fully anonymous (60 req/hour); a real token
+ * raises that to 5,000 req/hour. Per-user detail calls are sequential and bounded
+ * by `count`.
  */
 export async function searchGithubUsers(
   query: string,
   count: number,
-  token: string,
+  token = "",
 ): Promise<GithubUser[]> {
   const perPage = Math.min(Math.max(Math.trunc(count) || 1, 1), 20);
   const search = (await gh(

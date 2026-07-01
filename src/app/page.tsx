@@ -125,8 +125,9 @@ export default function DashboardPage() {
       return;
     }
     const result = await actions.sourceNextBatch(activeCampaign.id);
+    const isLive = result.source === "github" || result.source === "web";
     toast({
-      title: `Sourced ${pluralize(result.accepted.length, "candidate")}${result.source === "github" ? " (live)" : ""}`,
+      title: `Sourced ${pluralize(result.accepted.length, "candidate")}${isLive ? " (live)" : ""}`,
       description: `${activeCampaign.title} · ${result.skipped.length} skipped by dedupe & exclusions.`,
       variant: result.accepted.length > 0 ? "success" : "info",
     });

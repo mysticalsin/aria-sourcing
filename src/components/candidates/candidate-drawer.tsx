@@ -28,6 +28,7 @@ import {
   CalendarPlus,
   Clock,
   Download,
+  ExternalLink,
   Eye,
   EyeOff,
   Github,
@@ -321,6 +322,23 @@ export function CandidateDrawer({
                   >
                     <Linkedin className="h-3.5 w-3.5" aria-hidden />
                     LinkedIn
+                  </a>
+                ))}
+              {c.sourceUrl &&
+                (masked ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-ink/[0.05] px-3 py-1.5 font-mono text-xs font-semibold text-muted">
+                    <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                    {dc.sourceUrl}
+                  </span>
+                ) : (
+                  <a
+                    href={dc.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-ink/[0.05] px-3 py-1.5 text-xs font-semibold text-ink-soft hover:bg-ink/10"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                    {c.sourcePlatform}
                   </a>
                 ))}
               {masked && (

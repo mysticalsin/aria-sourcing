@@ -1,6 +1,9 @@
 import { buildSeedState } from "../src/lib/seed";
-import { mapGithubCandidates } from "../src/lib/mock-ai";
+import { mapGithubCandidates, mapWebSearchCandidates } from "../src/lib/mock-ai";
 import type { GithubUser } from "../src/lib/sourcing/github";
+import { searchGithubUsers } from "../src/lib/sourcing/github";
+import { extractLead, buildWebQuery, isWebSearchPlatform, type SearchHit } from "../src/lib/sourcing/web-leads";
+import { dedupeCandidates } from "../src/lib/rules";
 
 let pass = 0,
   fail = 0;
@@ -79,6 +82,111 @@ const rdup = mapGithubCandidates(
   W,
 );
 ok("same github URL is deduped", rdup.accepted.length === 1);
+
+// --- GitHub: keyless by default (no Authorization header when token is "") -
+{
+  const originalFetch = globalThis.fetch;
+  const seenAuth: (string | undefined)[] = [];
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+    seenAuth.push((init?.headers as Record<string, string> | undefined)?.Authorization);
+    return {
+      ok: true,
+      json: async () => ({ items: [] }),
+    } as Response;
+  }) as typeof fetch;
+
+  await searchGithubUsers("language:typescript", 1, "");
+  await searchGithubUsers("language:typescript", 1, "tok_123");
+  globalThis.fetch = originalFetch;
+
+  ok("anonymous call sends no Authorization header", seenAuth[0] === undefined);
+  ok("token call sends Bearer Authorization header", seenAuth[1] === "Bearer tok_123");
+}
+
+// --- web-leads: platform classification --------------------------------
+ok("LinkedIn is a web-search platform", isWebSearchPlatform("LinkedIn"));
+ok("Stack Overflow is a web-search platform", isWebSearchPlatform("Stack Overflow"));
+ok("Dribbble is a web-search platform", isWebSearchPlatform("Dribbble"));
+ok("Behance is a web-search platform", isWebSearchPlatform("Behance"));
+ok("GitHub is not routed through web-search", !isWebSearchPlatform("GitHub"));
+ok("Talent Pool is not routed through web-search", !isWebSearchPlatform("Talent Pool"));
+ok("Referral is not routed through web-search", !isWebSearchPlatform("Referral"));
+
+ok(
+  "buildWebQuery scopes to the platform domain",
+  buildWebQuery("LinkedIn", "Senior Engineer") === "site:linkedin.com/in Senior Engineer",
+);
+ok(
+  "buildWebQuery scopes Dribbble to its domain",
+  buildWebQuery("Dribbble", "Product Designer") === "site:dribbble.com Product Designer",
+);
+
+// --- web-leads: extractLead never fabricates, falls back honestly -------
+const liHit: SearchHit = {
+  title: "Jane Doe - Senior Product Designer - Acme Corp | LinkedIn",
+  url: "https://www.linkedin.com/in/jane-doe-4471",
+  snippet: "Experience in Figma, design systems, and user research.",
+};
+const liLead = extractLead(liHit, "LinkedIn");
+ok("LinkedIn lead: name parsed", liLead.name === "Jane Doe");
+ok("LinkedIn lead: title parsed", liLead.title === "Senior Product Designer");
+ok("LinkedIn lead: company parsed", liLead.company === "Acme Corp");
+ok("LinkedIn lead: url kept verbatim", liLead.url === liHit.url);
+
+const noisyHit: SearchHit = {
+  title: "jane-doe-4471 | LinkedIn",
+  url: "https://www.linkedin.com/in/jane-doe-4471",
+  snippet: "",
+};
+const fallbackLead = extractLead(noisyHit, "LinkedIn");
+// nameFromSlug strips a trailing numeric/hex id segment (LinkedIn commonly appends
+// one to the slug), so "jane-doe-4471" cleans to "Jane Doe", not "Jane Doe 4471".
+ok("unparseable title falls back to URL slug, title-cased", fallbackLead.name === "Jane Doe");
+ok("no company fabricated when absent from result text", fallbackLead.company === "");
+
+const dribbbleHit: SearchHit = {
+  title: "Sam Rivera on Dribbble",
+  url: "https://dribbble.com/samrivera",
+  snippet: "Product designer specializing in mobile app design.",
+};
+const dribbbleLead = extractLead(dribbbleHit, "Dribbble");
+ok("Dribbble suffix stripped from name", dribbbleLead.name === "Sam Rivera");
+
+// --- mapWebSearchCandidates: honest mapping + dedupe by sourceUrl -------
+const leads = [
+  { name: "Sam Rivera", title: "Product Designer", company: "Acme Corp", url: "https://dribbble.com/samrivera", snippet: "Figma, design systems" },
+  { name: "Sam Rivera", title: "Product Designer", company: "Acme Corp", url: "https://dribbble.com/samrivera", snippet: "Figma, design systems" },
+];
+const webResult = mapWebSearchCandidates(leads, campaign, "site:dribbble.com Product Designer", "Dribbble", [], W);
+ok("web lead accepted once", webResult.accepted.length === 1);
+ok("duplicate web lead (same profile URL) deduped", webResult.skipped.length === 1);
+const w = webResult.accepted[0];
+ok("sourceUrl kept", w?.sourceUrl === "https://dribbble.com/samrivera");
+ok("sourcePlatform is Dribbble", w?.sourcePlatform === "Dribbble");
+ok("linkedinUrl blank for non-LinkedIn platform", w?.linkedinUrl === "");
+ok("email honestly blank (never fabricated)", w?.email === "");
+ok("candidate is scored", typeof w?.matchScore === "number");
+
+// LinkedIn leads populate linkedinUrl instead of sourceUrl, reusing existing dedupe.
+const liResult = mapWebSearchCandidates(
+  [{ name: "Jane Doe", title: "Senior Product Designer", company: "Acme Corp", url: "https://www.linkedin.com/in/jane-doe-4471", snippet: "" }],
+  campaign,
+  "site:linkedin.com/in Senior Product Designer",
+  "LinkedIn",
+  [],
+  W,
+);
+ok("LinkedIn lead sets linkedinUrl", liResult.accepted[0]?.linkedinUrl === "https://www.linkedin.com/in/jane-doe-4471");
+ok("LinkedIn lead leaves sourceUrl unset", liResult.accepted[0]?.sourceUrl === undefined);
+
+// --- dedupeCandidates: sourceUrl is a dedupe key (Dribbble/Behance/SO) ---
+const existingWithSourceUrl = [{ ...webResult.accepted[0]!, id: "existing_1" }];
+const dupeAttempt = dedupeCandidates(
+  [{ ...webResult.accepted[0]!, id: "new_1", email: "" }],
+  existingWithSourceUrl,
+  { excludedCompanies: [] },
+);
+ok("second batch dedupes an already-seen sourceUrl", dupeAttempt.accepted.length === 0 && dupeAttempt.skipped.length === 1);
 
 console.log(`RESULT sourcing: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

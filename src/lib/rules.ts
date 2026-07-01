@@ -102,17 +102,19 @@ export function dedupeCandidates(
   const seenEmail = new Set(existing.map((c) => c.email.toLowerCase()));
   const seenLinkedin = new Set(existing.map((c) => c.linkedinUrl.toLowerCase()).filter(Boolean));
   const seenGithub = new Set(existing.map((c) => c.githubUrl.toLowerCase()).filter(Boolean));
+  const seenSourceUrl = new Set(existing.map((c) => (c.sourceUrl ?? "").toLowerCase()).filter(Boolean));
   const excluded = new Set(opts.excludedCompanies.map((c) => c.toLowerCase()));
 
   for (const cand of incoming) {
     const email = cand.email.toLowerCase();
     const li = cand.linkedinUrl.toLowerCase();
     const gh = cand.githubUrl.toLowerCase();
+    const su = (cand.sourceUrl ?? "").toLowerCase();
     const company = cand.currentCompany.toLowerCase();
 
     // Only treat a non-blank email as a dedupe key. Real sourced profiles (e.g.
-    // GitHub) often have no public email; those are deduped by linkedin/github URL
-    // below, not collapsed together as "same blank email".
+    // GitHub) often have no public email; those are deduped by linkedin/github/
+    // source URL below, not collapsed together as "same blank email".
     if (email && seenEmail.has(email)) {
       skipped.push({ name: cand.name, reason: "Duplicate email" });
       continue;
@@ -123,6 +125,10 @@ export function dedupeCandidates(
     }
     if (gh && seenGithub.has(gh)) {
       skipped.push({ name: cand.name, reason: "Duplicate GitHub" });
+      continue;
+    }
+    if (su && seenSourceUrl.has(su)) {
+      skipped.push({ name: cand.name, reason: "Duplicate source profile" });
       continue;
     }
     if (excluded.has(company)) {
@@ -142,6 +148,7 @@ export function dedupeCandidates(
     if (email) seenEmail.add(email);
     if (li) seenLinkedin.add(li);
     if (gh) seenGithub.add(gh);
+    if (su) seenSourceUrl.add(su);
   }
 
   return { accepted, skipped };

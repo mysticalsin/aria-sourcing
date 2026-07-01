@@ -3,6 +3,7 @@ import { dedupeCandidates } from "./rules";
 import { humanizeText } from "./humanizer";
 import { roleProfile } from "./roles";
 import type { GithubUser } from "./sourcing/github";
+import type { WebLead, WebSearchPlatform } from "./sourcing/web-leads";
 import { detectLanguage, outreachStrings, REPLY_LEXICON } from "./i18n";
 import type {
   Booking,
@@ -522,11 +523,20 @@ Aria Sourcing`;
    2. buildSourcingStrategy + createCampaign
    ========================================================================== */
 
+// GitHub's `location:` qualifier is a literal free-text match against a user's
+// self-reported profile location — it only works with real place names ("Germany",
+// "London"). Continent/remote-status codes like "EU"/"APAC"/"Remote" essentially
+// never appear verbatim in a profile, so including them zeroes out an otherwise
+// good query. Only apply the qualifier for a region that's an actual place.
+const NON_LOCATION_REGIONS = new Set(["EU", "APAC", "LATAM", "Remote", "Global"]);
+
 export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
   const topSkills = jd.requiredSkills.slice(0, 4);
+  const region = jd.regions[0];
+  const locationQualifier = region && !NON_LOCATION_REGIONS.has(region) ? ` location:${region}` : "";
   const githubQueries: GithubQuery[] = topSkills.slice(0, 3).map((skill, i) => ({
     label: `${skill} contributors`,
-    query: `language:${skill.replace(/\s+/g, "")} location:${jd.regions[0] ?? "EU"} followers:>40 ${
+    query: `language:${skill.replace(/\s+/g, "")}${locationQualifier} followers:>40 ${
       i === 0 ? "stars:>20" : "repos:>5"
     }`,
     estimatedResults: 120 + i * 60,
@@ -690,6 +700,77 @@ export function mapGithubCandidates(
       companyStageExperience: [],
       industryExperience: [],
       recentActivity: `${u.publicRepos} public repos, ${u.followers} followers`,
+      stage: "Sourced",
+      lastContactedAt: null,
+      outreachHistory: [],
+      replyHistory: [],
+      booking: null,
+      complianceFlags: {
+        doNotContact: false,
+        suppressed: false,
+        unsubscribed: false,
+        gdprExportRequested: false,
+        anonymized: false,
+        suppressedUntil: null,
+      },
+      createdAt: new Date().toISOString(),
+    };
+  });
+
+  const { accepted, skipped } = dedupeCandidates(raw, existing, {
+    excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
+  });
+  const scored = accepted.map((c) => {
+    const { score, breakdown } = scoreCandidate(c, jd, weights);
+    return { ...c, matchScore: score, matchBreakdown: breakdown };
+  });
+  return { accepted: scored, skipped };
+}
+
+/**
+ * Map real web-search leads (LinkedIn, Stack Overflow, Dribbble, Behance — platforms
+ * with no free structured search API) into scored, deduped Candidates. Same
+ * scoring + dedupe pipeline as mapGithubCandidates, real data. Search results give a
+ * profile URL and a title/snippet, not a structured record: name/title/company are
+ * best-effort (extractLead), and anything the result text doesn't contain stays
+ * honestly blank rather than fabricated — email, phone, location, tenure signals are
+ * all a separate enrichment step.
+ */
+export function mapWebSearchCandidates(
+  leads: WebLead[],
+  campaign: Campaign,
+  query: string,
+  platform: WebSearchPlatform,
+  existing: Candidate[],
+  weights: ScoringWeights = campaign.scoringWeights,
+): SourceResult {
+  const jd = campaign.jobAnalysis;
+  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
+  const raw: Candidate[] = leads.map((lead) => {
+    const hay = `${lead.title} ${lead.snippet}`.toLowerCase();
+    const techStack = allSkills.filter((s) => hay.includes(s.toLowerCase()));
+    return {
+      id: genId("cand"),
+      campaignId: campaign.id,
+      name: lead.name,
+      email: "",
+      avatarInitials: initialsFrom(lead.name),
+      currentTitle: lead.title || jd.title,
+      currentCompany: lead.company,
+      location: "",
+      timezone: "",
+      linkedinUrl: platform === "LinkedIn" ? lead.url : "",
+      githubUrl: "",
+      sourceUrl: platform === "LinkedIn" ? undefined : lead.url,
+      sourcePlatform: platform,
+      sourceQuery: query,
+      matchScore: 0,
+      matchBreakdown: [],
+      techStack,
+      yearsExperience: jd.minYearsExperience ?? (jd.seniority === "Senior" ? 6 : 4),
+      companyStageExperience: [],
+      industryExperience: [],
+      recentActivity: lead.snippet || `Found via ${platform} search.`,
       stage: "Sourced",
       lastContactedAt: null,
       outreachHistory: [],

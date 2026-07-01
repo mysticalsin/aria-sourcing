@@ -7,18 +7,34 @@ import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { searchGithubUsers, type GithubUser } from "@/lib/sourcing/github";
+import { SOURCE_PLATFORMS } from "@/lib/types";
+import { isWebSearchPlatform, extractLead, type WebLead } from "@/lib/sourcing/web-leads";
+import { runWebTool } from "@/lib/ai/web-tools";
 
 /**
- * Real candidate sourcing. Searches GitHub for real people matching a query and
- * returns their public profiles. The GitHub token is resolved server-side from the
- * environment and never returned to the client. When no token is configured the
- * route responds `source: "mock"` so the caller falls back to synthetic sourcing —
- * the app stays fully functional in demo mode, and goes live the moment a token is
- * set. Read-only: it never writes to GitHub.
+ * Real candidate sourcing.
+ *
+ * platform "GitHub" (default): searches GitHub for real people via the Users
+ * Search API. Runs keyless by default (GitHub's anonymous API quota, 60
+ * req/hour/IP) — no signup required. An optional GITHUB_TOKEN, resolved
+ * server-side and never returned to the client, raises that ceiling to 5,000
+ * req/hour.
+ *
+ * platform in {LinkedIn, Stack Overflow, Dribbble, Behance}: no free structured
+ * search API exists for these, so real candidates are discovered via the
+ * existing compliant web_search tool (site:-scoped), same honesty/read-only
+ * guarantees as the chat research tools.
+ *
+ * platform in {Referral, Talent Pool}: not externally sourceable — these are
+ * internal-pipeline concepts, not searched at all.
+ *
+ * Read-only throughout: never writes to GitHub, never logs into or scrapes a
+ * platform, never posts a message.
  */
 const SourceSchema = z.object({
   query: z.string().min(1).max(256),
   count: z.number().int().min(1).max(20).default(8),
+  platform: z.enum(SOURCE_PLATFORMS).default("GitHub"),
 });
 
 export async function POST(req: NextRequest) {
@@ -45,28 +61,44 @@ export async function POST(req: NextRequest) {
 
   const validated = await validateBody(req, SourceSchema, { maxBytes: 10_000 });
   if (!validated.ok) return validated.response;
-  const { query, count = 8 } = validated.data;
+  const { query, count = 8, platform = "GitHub" as const } = validated.data;
 
-  const token = process.env.GITHUB_TOKEN ?? "";
-  if (!token) {
-    return NextResponse.json({ ok: true, source: "mock", users: [] as GithubUser[] });
+  if (platform === "GitHub") {
+    const token = process.env.GITHUB_TOKEN ?? "";
+    try {
+      const users = await searchGithubUsers(query, count, token);
+      return NextResponse.json({ ok: true, source: "github", platform, users });
+    } catch (err) {
+      // GitHub error bodies never contain the token; keep the client message terse.
+      const detail = err instanceof Error ? err.message : "GitHub search failed.";
+      return NextResponse.json({ ok: false, source: "github", platform, error: detail }, { status: 502 });
+    }
   }
 
-  try {
-    const users = await searchGithubUsers(query, count, token);
-    return NextResponse.json({ ok: true, source: "github", users });
-  } catch (err) {
-    // GitHub error bodies never contain the token; keep the client message terse.
-    const detail = err instanceof Error ? err.message : "GitHub search failed.";
-    return NextResponse.json({ ok: false, source: "github", error: detail }, { status: 502 });
+  if (isWebSearchPlatform(platform)) {
+    const result = await runWebTool("web_search", { query });
+    if (!result.ok) {
+      return NextResponse.json(
+        { ok: false, source: "web", platform, error: result.error ?? "Web search failed." },
+        { status: 502 },
+      );
+    }
+    const content = result.content as { results?: { title: string; url: string; snippet: string }[] } | undefined;
+    const hits = (content?.results ?? []).slice(0, count);
+    const leads: WebLead[] = hits.map((h) => extractLead(h, platform));
+    return NextResponse.json({ ok: true, source: "web", platform, leads });
   }
+
+  // Referral / Talent Pool: internal-pipeline concepts, no external source to search.
+  return NextResponse.json({ ok: true, source: "mock", platform, users: [] as GithubUser[] });
 }
 
 /**
- * Real connection test for GitHub sourcing: pings GET /user with the configured
- * token and reports the authenticated identity. Never returns the token. Reports
- * connected:false (not an error) when no token is set, so the UI can say "add a
- * token to go live" rather than showing a failure.
+ * Real connection test for GitHub sourcing. With a token: pings GET /user and
+ * reports the authenticated identity. Without one: pings the keyless GET
+ * /rate_limit endpoint (works anonymously) and reports the live 60 req/hour
+ * quota, so the UI shows real connectivity rather than "add a token to go live" —
+ * a token is an optional upgrade, not a requirement. Never returns the token.
  */
 export async function GET(req: NextRequest) {
   const prodBlock = prodFailClosed();
@@ -89,12 +121,33 @@ export async function GET(req: NextRequest) {
   }
 
   const token = process.env.GITHUB_TOKEN ?? "";
+
   if (!token) {
-    return NextResponse.json({
-      ok: true,
-      connected: false,
-      reason: "No GITHUB_TOKEN set. Add one to source real candidates from GitHub.",
-    });
+    try {
+      const res = await fetch("https://api.github.com/rate_limit", {
+        headers: { Accept: "application/vnd.github+json", "User-Agent": "aria-sourcing" },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) {
+        return NextResponse.json({ ok: true, connected: false, reason: `GitHub unreachable (${res.status}).` });
+      }
+      const body = (await res.json().catch(() => ({}))) as {
+        resources?: { search?: { remaining?: number; limit?: number } };
+      };
+      const search = body.resources?.search;
+      return NextResponse.json({
+        ok: true,
+        connected: true,
+        login: null,
+        name: null,
+        anonymous: true,
+        rateLimitRemaining: search?.remaining ?? null,
+        rateLimitTotal: search?.limit ?? null,
+        reason: "Sourcing anonymously (60 req/hour). Add GITHUB_TOKEN for a higher ceiling (5,000 req/hour).",
+      });
+    } catch {
+      return NextResponse.json({ ok: true, connected: false, reason: "GitHub unreachable." });
+    }
   }
 
   try {
@@ -116,6 +169,7 @@ export async function GET(req: NextRequest) {
       connected: true,
       login: u.login ?? "unknown",
       name: u.name ?? null,
+      anonymous: false,
       publicRepos: u.public_repos ?? 0,
     });
   } catch {

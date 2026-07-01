@@ -130,6 +130,8 @@ export const SOURCE_PLATFORMS = [
   "GitHub",
   "LinkedIn",
   "Stack Overflow",
+  "Dribbble",
+  "Behance",
   "Referral",
   "Talent Pool",
 ] as const;
@@ -271,6 +273,9 @@ export interface Candidate {
   timezone: string;
   linkedinUrl: string;
   githubUrl: string;
+  /** Canonical URL for a real hit on a platform with no dedicated field above
+   *  (Stack Overflow, Dribbble, Behance). Blank for synthetic candidates. */
+  sourceUrl?: string;
   sourcePlatform: SourcePlatform;
   sourceQuery: string;
   matchScore: number;

@@ -46,7 +46,7 @@ const PROFILES: Record<RoleFamily, Omit<RoleProfile, "family">> = {
     label: "Product design",
     titles: ["Product Designer", "Senior Product Designer", "UX Designer", "Design Lead", "Design Systems Lead"],
     companies: ["Brightloop", "Hearthstack", "Tideglass", "Cartograph", "Vellum AI"],
-    platforms: ["LinkedIn", "Talent Pool", "Referral"],
+    platforms: ["Dribbble", "Behance", "LinkedIn"],
     queryStyle: "linkedin",
   },
   product: {

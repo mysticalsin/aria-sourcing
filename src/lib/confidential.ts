@@ -61,6 +61,7 @@ export function applyConfidentiality(
     email: maskEmail(candidate.email),
     linkedinUrl: candidate.linkedinUrl ? "•••" : "",
     githubUrl: candidate.githubUrl ? "•••" : "",
+    sourceUrl: candidate.sourceUrl ? "•••" : undefined,
     avatarInitials: candidate.avatarInitials ? candidate.avatarInitials[0] + "•" : "•",
   };
 }

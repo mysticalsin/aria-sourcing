@@ -252,12 +252,13 @@ export default function Page({ params }: { params: { id: string } }) {
 
   const handleSource = async () => {
     const res = await actions.sourceNextBatch(c.id);
+    const isLive = res.source === "github" || res.source === "web";
     toast({
-      title: `Sourced ${res.accepted.length} candidate${res.accepted.length === 1 ? "" : "s"}${res.source === "github" ? " (live)" : ""}`,
+      title: `Sourced ${res.accepted.length} candidate${res.accepted.length === 1 ? "" : "s"}${isLive ? " (live)" : ""}`,
       description: res.skipped.length
         ? `${res.skipped.length} skipped by dedupe and exclusion rules.`
-        : res.source === "github"
-          ? "Live results from GitHub."
+        : isLive
+          ? `Live results from ${res.source === "github" ? "GitHub" : "the web"}.`
           : "All matched candidates accepted into the pipeline.",
       variant: "success",
     });
