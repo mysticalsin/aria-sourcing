@@ -56,9 +56,13 @@ function probe(over: Record<string, string | undefined>): Probe {
     else env[k] = v;
   }
   env.__FAILCLOSED_WORKER = "1";
-  // process.argv[1] is the tsx CLI entry that launched us; re-use it so children
-  // load TypeScript exactly the same way (no dependency on a global `tsx`).
-  const r = spawnSync(process.execPath, [process.argv[1], SELF], { env, encoding: "utf8" });
+  // Register tsx as a loader directly (tsx's documented, Node-version-safe entry
+  // point: https://tsx.is/node — works identically regardless of how *this*
+  // process was launched or which Node minor version is running). Re-using
+  // process.argv[1] instead is fragile: its exact resolved form depends on the
+  // Node version and how tsx's own CLI bootstraps itself, which silently broke
+  // in CI (Node 20) while passing locally (Node 22).
+  const r = spawnSync(process.execPath, ["--import", "tsx", SELF], { env, encoding: "utf8" });
   const out = (r.stdout || "").trim();
   const m = out.match(/__FC\|(THROW|NOTHROW)\|(true|false)\|(true|false)/);
   if (!m) {
