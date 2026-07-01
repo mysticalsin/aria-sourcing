@@ -23,8 +23,8 @@ const OBSCURA_HTTP_URL = process.env.OBSCURA_URL || "http://127.0.0.1:9222";
 // reaching it by service name). Connecting straight to the well-known ws:// path sidesteps
 // the HTTP discovery step -- and the bad host it would return -- entirely.
 const OBSCURA_WS_URL = `${OBSCURA_HTTP_URL.replace(/^http/, "ws").replace(/\/$/, "")}/devtools/browser`;
-const IDLE_TIMEOUT_MS = 60_000;
-const HARD_TIMEOUT_MS = 5 * 60_000;
+export const IDLE_TIMEOUT_MS = 60_000;
+export const HARD_TIMEOUT_MS = 5 * 60_000;
 const SWEEP_INTERVAL_MS = 15_000;
 
 export interface ObscuraSession {
@@ -59,14 +59,22 @@ async function getBrowser(): Promise<Browser> {
   return browserPromise;
 }
 
+/** Pure expiry check, exported so the sweeper's timing logic is unit-testable without a real sidecar. */
+export function isSessionExpired(
+  session: Pick<ObscuraSession, "openedAt" | "lastActivityAt">,
+  now: number,
+): boolean {
+  const idleExpired = now - session.lastActivityAt > IDLE_TIMEOUT_MS;
+  const hardExpired = now - session.openedAt > HARD_TIMEOUT_MS;
+  return idleExpired || hardExpired;
+}
+
 function ensureSweeper(): void {
   if (sweeperHandle) return;
   sweeperHandle = setInterval(() => {
     const now = Date.now();
     for (const session of sessions.values()) {
-      const idleExpired = now - session.lastActivityAt > IDLE_TIMEOUT_MS;
-      const hardExpired = now - session.openedAt > HARD_TIMEOUT_MS;
-      if (idleExpired || hardExpired) {
+      if (isSessionExpired(session, now)) {
         void closeObscuraSession(session.id);
       }
     }

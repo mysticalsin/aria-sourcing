@@ -107,13 +107,13 @@ export function isBrowserTool(name: string): boolean {
 
 /* ----------------------------- robots.txt --------------------------------- */
 
-interface RobotsRules {
+export interface RobotsRules {
   allow: string[];
   disallow: string[];
 }
 
-/** Very small robots.txt parser: groups by User-agent, longest-prefix-match wins. */
-function parseRobotsTxt(body: string): Map<string, RobotsRules> {
+/** Very small robots.txt parser: groups by User-agent, longest-prefix-match wins. Exported for direct unit testing. */
+export function parseRobotsTxt(body: string): Map<string, RobotsRules> {
   const groups = new Map<string, RobotsRules>();
   let currentAgents: string[] = [];
   let groupOpen = false;
@@ -149,7 +149,8 @@ function parseRobotsTxt(body: string): Map<string, RobotsRules> {
   return groups;
 }
 
-function isPathAllowed(rules: RobotsRules, path: string): boolean {
+/** Longest-prefix-match wins between allow/disallow rules. Exported for direct unit testing. */
+export function isPathAllowed(rules: RobotsRules, path: string): boolean {
   let bestLen = -1;
   let bestAllowed = true;
   for (const p of rules.disallow) {
@@ -260,21 +261,51 @@ async function browserOpen(urlRaw: string): Promise<ToolResult> {
 }
 
 async function browserAct(sessionId: string, args: Record<string, unknown>): Promise<ToolResult> {
-  const found = requireSession(sessionId);
-  if (!found.ok) return { ok: false, error: found.error };
-  const { session } = found;
-
+  // Validate the action shape before touching the session table -- fail fast on bad
+  // input, and let the vocabulary allowlist be unit-tested without a live session.
   const type = String(args.type ?? "");
   if (!ALLOWED_ACT_TYPES.has(type)) {
     return { ok: false, error: `Unsupported action "${type}". Allowed: click, scroll, wait, back, forward.` };
   }
+
+  const found = requireSession(sessionId);
+  if (!found.ok) return { ok: false, error: found.error };
+  const { session } = found;
 
   try {
     switch (type) {
       case "click": {
         const selector = String(args.selector ?? "");
         if (!selector) return { ok: false, error: "click requires a selector." };
-        await session.page.click(selector, { timeout: NAV_TIMEOUT_MS });
+        // Obscura's CDP Input domain doesn't fully satisfy Playwright's
+        // page.click() actionability/hit-test polling (it hangs waiting on
+        // protocol responses Obscura's lighter-weight Input/DOM domains don't
+        // return in the shape Playwright expects). element.click() is spec'd
+        // to dispatch a properly trusted click event -- same effective result
+        // for our use case (trigger the element's click handler / link
+        // navigation) -- and only needs Runtime.evaluate, which is solid.
+        await session.page.waitForSelector(selector, { timeout: NAV_TIMEOUT_MS });
+        // The click may trigger a navigation partway through the evaluate() call
+        // itself, tearing down its execution context before the `true` return value
+        // makes it back -- that's a SUCCESS (the click landed and navigation started),
+        // not a failure, so it's distinguished from a genuine evaluate error below.
+        let clicked = false;
+        try {
+          clicked = await session.page.evaluate((sel) => {
+            const el = document.querySelector(sel as string) as HTMLElement | null;
+            if (!el) return false;
+            el.click();
+            return true;
+          }, selector);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (!/execution context was destroyed/i.test(msg)) throw err;
+          clicked = true;
+        }
+        // Whether or not a navigation started, wait for it to settle -- if nothing
+        // navigated, "load" is already satisfied and this resolves immediately.
+        await session.page.waitForLoadState("load", { timeout: NAV_TIMEOUT_MS }).catch(() => {});
+        if (!clicked) return { ok: false, error: `No element matches selector "${selector}".` };
         break;
       }
       case "scroll": {
