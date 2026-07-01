@@ -166,6 +166,16 @@ services:
       - ./docker/db/03-auth-owner.sql:/auth-owner.sql:ro
     restart: "no"
 
+  # ---- Obscura sidecar: read-only multi-step browser tool for Aria (§11) ------------
+  # Built from source, pinned commit, default cargo features only -- see
+  # docker/obscura/Dockerfile for the full non-stealth rationale. No `ports:` entry:
+  # this is deliberately unreachable from the host, only from sibling containers on
+  # this compose network (obscura-adapter.js reaches it at http://obscura:9222).
+  obscura:
+    build:
+      context: ./docker/obscura
+    restart: unless-stopped
+
   # ---- The Next.js app (dev server; .next on an anon volume to dodge OneDrive corruption) --
   app:
     build:
@@ -175,6 +185,8 @@ services:
       supabase-bootstrap:
         condition: service_completed_successfully
       kong:
+        condition: service_started
+      obscura:
         condition: service_started
     ports:
       - "${APP_PORT:-3003}:3000"
@@ -191,6 +203,7 @@ services:
       SUPABASE_SERVICE_ROLE_KEY: *service_key
       NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN: ""
       DEMO_ADMIN_PASSWORD: *demo_admin_pw
+      OBSCURA_URL: http://obscura:9222
       WATCHPACK_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
     volumes:
