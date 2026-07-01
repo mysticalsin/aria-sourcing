@@ -18,6 +18,7 @@ import {
 import { connectAndListTools } from "@/lib/mcp-client";
 import { runAnthropicWithTools, runOpenAiWithTools, type ResolvedMcpServer } from "@/lib/ai/tool-loop";
 import { BUILTIN_WEB_URL, WEB_TOOL_DEFS } from "@/lib/ai/web-tools";
+import { BUILTIN_BROWSER_URL, BROWSER_TOOL_DEFS } from "@/lib/ai/browser-tools";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { redactObject, redactSecrets, redactEmail } from "@/lib/log-redact";
 
@@ -61,6 +62,8 @@ const HermesChatSchema = z.object({
     .max(20)
     .optional(),
   /** Expose the built-in, read-only web-research tools (web_search / fetch_page / rss)
+   *  AND the Obscura browser tools (browser_open / browser_act / browser_extract /
+   *  browser_screenshot / browser_close, restricted to click/scroll/wait/back/forward)
    *  to the model (chat task only). Compliant: honest bot UA, no login/stealth, SSRF-guarded. */
   webResearch: z.boolean().default(false),
 });
@@ -215,6 +218,11 @@ export async function POST(req: NextRequest) {
       const resolvedServers: ResolvedMcpServer[] = [];
       // Built-in read-only web-research tools (in-process; no vault token, SSRF-guarded).
       if (webResearch) resolvedServers.push({ url: BUILTIN_WEB_URL, token: "", tools: WEB_TOOL_DEFS });
+      // Obscura browser tools: same toggle, a strictly more capable (JS-rendered
+      // pages) but equally guarded sibling. Errors gracefully ({ok:false}, not a
+      // crash) when no sidecar is reachable (e.g. the public Vercel demo, which
+      // has no Obscura container next to it).
+      if (webResearch) resolvedServers.push({ url: BUILTIN_BROWSER_URL, token: "", tools: BROWSER_TOOL_DEFS });
       if (mcpServers && mcpServers.length) resolvedServers.push(...(await gatherMcpServers(mcpServers)));
       if (resolvedServers.length) {
         const toolModel = model && model !== "hermes" ? model : DEFAULT_MODEL[slug];

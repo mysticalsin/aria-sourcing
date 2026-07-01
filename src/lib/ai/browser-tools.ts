@@ -27,6 +27,9 @@ import {
   type ObscuraSession,
 } from "@/lib/ai/obscura-adapter";
 
+/** Sentinel "server url" that marks the built-in browser tools inside the tool-loop. */
+export const BUILTIN_BROWSER_URL = "builtin:browser-research";
+
 const USER_AGENT = "AriaResearchBot/1.0 (+read-only; https://aria-sourcing-demo.vercel.app)";
 const NAV_TIMEOUT_MS = 15_000;
 const ROBOTS_TIMEOUT_MS = 8_000;

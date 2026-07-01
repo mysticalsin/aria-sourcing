@@ -176,10 +176,11 @@ export function McpServersPanel() {
                 </Badge>
               </div>
               <p className="text-xs text-muted">
-                Lets agents read the public web — <code>web_search</code>, <code>fetch_page</code>, <code>rss</code> — for
-                research and sourcing signals. Read-only and compliant: honest bot user-agent, no logins, no scraping
-                behind auth, no bot-detection evasion; internal/private addresses are blocked. Active only when a cloud
-                LLM provider is set for chat.
+                Lets agents read the public web — <code>web_search</code>, <code>fetch_page</code>, <code>rss</code>, and
+                (when the Obscura sidecar is running) <code>browser_open</code> for JS-rendered pages a plain fetch can&apos;t
+                read — for research and sourcing signals. Read-only and compliant: honest bot user-agent, no logins, no
+                scraping behind auth, no bot-detection evasion, no form-filling; internal/private addresses are blocked.
+                Active only when a cloud LLM provider is set for chat.
               </p>
             </div>
           </div>

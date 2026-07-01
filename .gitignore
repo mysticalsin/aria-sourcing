@@ -44,3 +44,8 @@ ultraplan/
 tmp/
 .vercel
 .env*
+
+# Next's distDir always resolves via path.join(projectRoot, distDir) even when
+# NEXT_DIST_DIR is an absolute path (e.g. $TMPDIR) -- it lands nested in here
+# instead of truly outside the repo. Ignore defensively so it can never be committed.
+var/

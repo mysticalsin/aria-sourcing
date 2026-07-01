@@ -11,6 +11,7 @@
 import { callMcpTool, type McpTool } from "@/lib/mcp-client";
 import { CLOUD_ENDPOINT, type AiProviderSlug } from "@/lib/ai/provider";
 import { BUILTIN_WEB_URL, runWebTool } from "@/lib/ai/web-tools";
+import { BUILTIN_BROWSER_URL, runBrowserTool } from "@/lib/ai/browser-tools";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 
@@ -36,9 +37,10 @@ export interface ToolCallRecord {
 
 /**
  * Execute one tool call. A server with a `run` override (a stateful in-process
- * tool set) is dispatched directly; the built-in web-research server (the
- * BUILTIN_WEB_URL sentinel) runs in-process; everything else is brokered to the
- * remote MCP server with its vault token. Same {ok, content, error} contract either way.
+ * tool set) is dispatched directly; the built-in web-research and browser-research
+ * servers (the BUILTIN_WEB_URL / BUILTIN_BROWSER_URL sentinels) run in-process;
+ * everything else is brokered to the remote MCP server with its vault token.
+ * Same {ok, content, error} contract either way.
  */
 async function execTool(
   server: ResolvedMcpServer,
@@ -47,6 +49,7 @@ async function execTool(
 ): Promise<{ ok: boolean; content?: unknown; error?: string }> {
   if (server.run) return server.run(name, args);
   if (server.url === BUILTIN_WEB_URL) return runWebTool(name, args);
+  if (server.url === BUILTIN_BROWSER_URL) return runBrowserTool(name, args);
   return callMcpTool(server.url, server.token, name, args);
 }
 
