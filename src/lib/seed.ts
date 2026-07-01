@@ -42,7 +42,7 @@ import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
    Seed builder — produces the initial synthetic world (client-side, once).
    ========================================================================== */
 
-export const STATE_VERSION = 11;
+export const STATE_VERSION = 12;
 
 /* ---- LLM config defaults ------------------------------------------------- */
 

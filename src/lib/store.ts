@@ -307,6 +307,10 @@ const HermesContext = createContext<HermesContextValue | null>(null);
 /** Fill in any fields added in recent STATE_VERSIONs without wiping existing data. */
 export function migrateToCurrentVersion(parsed: HermesState): HermesState {
   const defs = defaultSettings();
+  // STATE_VERSION 12 — the demo moved to Kimi (Kimi Code) via the server env key.
+  // Blobs older than 12 have their model layer reset below so returning visitors
+  // leave the previous Anthropic default (which would fall back to the mock).
+  const preKimi = (parsed.version ?? 0) < 12;
   return {
     ...parsed,
     version: STATE_VERSION,
@@ -336,12 +340,12 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
     schedules: parsed.schedules ?? [],
     settings: {
       ...parsed.settings,
-      llmProviders: parsed.settings.llmProviders ?? defs.llmProviders,
-      savedModels: parsed.settings.savedModels ?? defs.savedModels,
+      llmProviders: preKimi ? defs.llmProviders : (parsed.settings.llmProviders ?? defs.llmProviders),
+      savedModels: preKimi ? defs.savedModels : (parsed.settings.savedModels ?? defs.savedModels),
       tools: parsed.settings.tools ?? defs.tools,
       mcpServers: parsed.settings.mcpServers ?? defs.mcpServers,
       webResearch: parsed.settings.webResearch ?? defs.webResearch,
-      defaultModels: parsed.settings.defaultModels ?? defs.defaultModels,
+      defaultModels: preKimi ? defs.defaultModels : (parsed.settings.defaultModels ?? defs.defaultModels),
       // STATE_VERSION 8 — live Aria runtime config.
       hermesLiveMode: parsed.settings.hermesLiveMode ?? defs.hermesLiveMode,
       hermesApiUrl: parsed.settings.hermesApiUrl ?? defs.hermesApiUrl,
