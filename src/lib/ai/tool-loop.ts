@@ -18,11 +18,26 @@ export interface ResolvedMcpServer {
   url: string;
   token: string;
   tools: McpTool[];
+  /** Optional direct dispatcher for a stateful in-process tool set (e.g. a
+   *  per-request sourcing-tool runner that accumulates real candidates found
+   *  across calls). When present, execTool calls this instead of the URL-based
+   *  dispatch, so the caller can inspect that accumulated state after the loop
+   *  finishes rather than trusting the model to echo it back correctly. */
+  run?: (name: string, args: Record<string, unknown>) => Promise<{ ok: boolean; content?: unknown; error?: string }>;
+}
+
+/** One completed tool call, for callers that need the real results the loop saw
+ *  (not just the model's final prose summarizing them). */
+export interface ToolCallRecord {
+  name: string;
+  input: Record<string, unknown>;
+  output: { ok: boolean; content?: unknown; error?: string };
 }
 
 /**
- * Execute one tool call. Built-in tools (the web-research server, marked by the
- * BUILTIN_WEB_URL sentinel) run in-process; everything else is brokered to the
+ * Execute one tool call. A server with a `run` override (a stateful in-process
+ * tool set) is dispatched directly; the built-in web-research server (the
+ * BUILTIN_WEB_URL sentinel) runs in-process; everything else is brokered to the
  * remote MCP server with its vault token. Same {ok, content, error} contract either way.
  */
 async function execTool(
@@ -30,6 +45,7 @@ async function execTool(
   name: string,
   args: Record<string, unknown>,
 ): Promise<{ ok: boolean; content?: unknown; error?: string }> {
+  if (server.run) return server.run(name, args);
   if (server.url === BUILTIN_WEB_URL) return runWebTool(name, args);
   return callMcpTool(server.url, server.token, name, args);
 }
@@ -99,13 +115,14 @@ export async function runAnthropicWithTools(args: {
   servers: ResolvedMcpServer[];
   maxRounds?: number;
   timeoutMs?: number;
-}): Promise<{ ok: boolean; text?: string; reason?: string }> {
+}): Promise<{ ok: boolean; text?: string; reason?: string; toolCalls: ToolCallRecord[] }> {
   const { model, system, prompt, key, servers } = args;
   const maxRounds = args.maxRounds ?? 4;
   const timeoutMs = args.timeoutMs ?? 30_000;
+  const toolCalls: ToolCallRecord[] = [];
 
   const { toolDefs, owner } = buildAnthropicToolDefs(servers);
-  if (!toolDefs.length) return { ok: false, reason: "No MCP tools available." };
+  if (!toolDefs.length) return { ok: false, reason: "No MCP tools available.", toolCalls };
 
   const messages: AnthropicMessage[] = [{ role: "user", content: prompt }];
 
@@ -120,20 +137,20 @@ export async function runAnthropicWithTools(args: {
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
-      return { ok: false, reason: err instanceof Error ? err.message : "Network error." };
+      return { ok: false, reason: err instanceof Error ? err.message : "Network error.", toolCalls };
     }
-    if (!res.ok) return { ok: false, reason: `Upstream error ${res.status}` };
+    if (!res.ok) return { ok: false, reason: `Upstream error ${res.status}`, toolCalls };
 
     const json = (await res.json().catch(() => null)) as
       | { content?: AnthropicContentBlock[]; stop_reason?: string }
       | null;
     const content = json?.content;
-    if (!content) return { ok: false, reason: "Empty response from provider." };
+    if (!content) return { ok: false, reason: "Empty response from provider.", toolCalls };
 
     const toolUses = content.filter((b) => b.type === "tool_use");
     // No tool call (or model is done) → final answer.
     if (json?.stop_reason !== "tool_use" || toolUses.length === 0) {
-      return { ok: true, text: textFrom(content) };
+      return { ok: true, text: textFrom(content), toolCalls };
     }
 
     // Echo the assistant turn, then run each requested tool and return the results.
@@ -142,18 +159,20 @@ export async function runAnthropicWithTools(args: {
     for (const tu of toolUses) {
       const server = tu.name ? owner.get(tu.name) : undefined;
       let resultText = "Tool not available.";
+      let out: { ok: boolean; content?: unknown; error?: string } = { ok: false, error: "Tool not available." };
       if (server && tu.name) {
-        const out = await execTool(server, tu.name, tu.input ?? {});
+        out = await execTool(server, tu.name, tu.input ?? {});
         resultText = out.ok
           ? JSON.stringify(out.content ?? "").slice(0, 4000)
           : `Error: ${out.error ?? "tool failed"}`;
       }
+      if (tu.name) toolCalls.push({ name: tu.name, input: tu.input ?? {}, output: out });
       toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: resultText });
     }
     messages.push({ role: "user", content: toolResults });
   }
 
-  return { ok: false, reason: "Tool loop exceeded the round limit." };
+  return { ok: false, reason: "Tool loop exceeded the round limit.", toolCalls };
 }
 
 /* ------------------------------------------------------------------------- *
@@ -210,14 +229,15 @@ export async function runOpenAiWithTools(args: {
   servers: ResolvedMcpServer[];
   maxRounds?: number;
   timeoutMs?: number;
-}): Promise<{ ok: boolean; text?: string; reason?: string }> {
+}): Promise<{ ok: boolean; text?: string; reason?: string; toolCalls: ToolCallRecord[] }> {
   const { provider, model, system, prompt, key, servers } = args;
   const maxRounds = args.maxRounds ?? 4;
   const timeoutMs = args.timeoutMs ?? 30_000;
   const url = CLOUD_ENDPOINT[provider];
+  const toolCallLog: ToolCallRecord[] = [];
 
   const { toolDefs, owner } = buildOpenAiToolDefs(servers);
-  if (!toolDefs.length) return { ok: false, reason: "No MCP tools available." };
+  if (!toolDefs.length) return { ok: false, reason: "No MCP tools available.", toolCalls: toolCallLog };
 
   const messages: OpenAiMessage[] = [
     { role: "system", content: system },
@@ -235,20 +255,20 @@ export async function runOpenAiWithTools(args: {
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
-      return { ok: false, reason: err instanceof Error ? err.message : "Network error." };
+      return { ok: false, reason: err instanceof Error ? err.message : "Network error.", toolCalls: toolCallLog };
     }
-    if (!res.ok) return { ok: false, reason: `Upstream error ${res.status}` };
+    if (!res.ok) return { ok: false, reason: `Upstream error ${res.status}`, toolCalls: toolCallLog };
 
     const json = (await res.json().catch(() => null)) as
       | { choices?: { message?: OpenAiMessage; finish_reason?: string }[] }
       | null;
     const choice = json?.choices?.[0];
     const message = choice?.message;
-    if (!message) return { ok: false, reason: "Empty response from provider." };
+    if (!message) return { ok: false, reason: "Empty response from provider.", toolCalls: toolCallLog };
 
     const toolCalls = message.tool_calls ?? [];
     if (choice?.finish_reason !== "tool_calls" || toolCalls.length === 0) {
-      return { ok: true, text: (message.content ?? "").trim() };
+      return { ok: true, text: (message.content ?? "").trim(), toolCalls: toolCallLog };
     }
 
     // Echo the assistant turn (carrying its tool_calls), then return each tool result.
@@ -257,19 +277,21 @@ export async function runOpenAiWithTools(args: {
       const name = tc.function?.name;
       const server = name ? owner.get(name) : undefined;
       let resultText = "Tool not available.";
+      let parsedArgs: Record<string, unknown> = {};
+      let out: { ok: boolean; content?: unknown; error?: string } = { ok: false, error: "Tool not available." };
       if (server && name) {
-        let parsedArgs: Record<string, unknown> = {};
         try {
           parsedArgs = JSON.parse(tc.function?.arguments || "{}") as Record<string, unknown>;
         } catch {
           parsedArgs = {};
         }
-        const out = await execTool(server, name, parsedArgs);
+        out = await execTool(server, name, parsedArgs);
         resultText = out.ok ? JSON.stringify(out.content ?? "").slice(0, 4000) : `Error: ${out.error ?? "tool failed"}`;
       }
+      if (name) toolCallLog.push({ name, input: parsedArgs, output: out });
       messages.push({ role: "tool", tool_call_id: tc.id, content: resultText });
     }
   }
 
-  return { ok: false, reason: "Tool loop exceeded the round limit." };
+  return { ok: false, reason: "Tool loop exceeded the round limit.", toolCalls: toolCallLog };
 }

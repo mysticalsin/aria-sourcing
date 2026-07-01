@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
-import { decryptSecret } from "@/lib/crypto-secrets";
+import { getServerSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed, demoLoginEnabled, DEMO_COOKIE_NAME } from "@/lib/supabase/config";
+import { resolveVaultSecret } from "@/lib/ai/vault-secret";
 import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
 import { isAllowedHermesUrl } from "@/lib/api/url";
@@ -105,32 +105,6 @@ function logUpstream(level: "info" | "error", message: string, meta?: Record<str
 /** True when a fetch (with redirect:"manual") yielded a redirect we must not follow. */
 function isRedirectResponse(res: Response): boolean {
   return res.type === "opaqueredirect" || (res.status >= 300 && res.status < 400);
-}
-
-/**
- * Resolve a vault secret by ApiKey.id, scoped to the caller's workspace.
- * Returns the raw secret string, or "" on any failure.
- * NEVER logs or returns the value outside the immediate call site.
- */
-async function resolveVaultSecret(id?: string): Promise<string> {
-  if (!supabaseEnabled || !id) return "";
-  const session = getServerSupabase();
-  const svc = getServiceSupabase();
-  if (!session || !svc) return "";
-  const {
-    data: { user },
-  } = await session.auth.getUser();
-  if (!user) return "";
-  const { data: wid } = await session.rpc("current_workspace_id");
-  const { data: row } = await svc
-    .from("api_keys")
-    .select("secret, workspace_id")
-    .eq("id", id)
-    .single();
-  if (row && row.workspace_id === wid && typeof row.secret === "string") {
-    return decryptSecret(row.secret);
-  }
-  return "";
 }
 
 /**
