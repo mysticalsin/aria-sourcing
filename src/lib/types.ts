@@ -761,6 +761,7 @@ export const LLM_PROVIDERS = [
   "xAI",
   "Groq",
   "Mistral",
+  "Kimi",
   "Local/Custom",
 ] as const;
 export type LlmProviderKind = (typeof LLM_PROVIDERS)[number];

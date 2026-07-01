@@ -114,9 +114,11 @@ function LoginInner() {
     setLoading(true);
     setAuthError(null);
     if (email.trim() === "admin" && password === "admin") {
-      // With a backend, resolve admin/admin to the seeded account server-side.
-      // In open demo mode (no Supabase) admin/admin is a cosmetic gate — just enter.
-      if (supabaseEnabled) {
+      // With a backend OR a public demo, resolve admin/admin server-side: LIVE mode
+      // signs into the seeded account; the open demo mints the signed session cookie
+      // that unlocks the live model. Only a bare local dev instance (no Supabase, no
+      // demo flag) treats admin/admin as a cosmetic gate.
+      if (supabaseEnabled || demoLoginEnabled) {
         await runDemoLogin();
       } else {
         window.location.href = safeRedirect(redirect);
@@ -145,8 +147,9 @@ function LoginInner() {
   };
 
   const handleCTA = () => {
-    if (demoLoginEnabled && supabaseEnabled) void runDemoLogin();
-    else if (demoLoginEnabled) window.location.href = safeRedirect(redirect);
+    // Demo (LIVE or open): one-click admin/admin sign-in. runDemoLogin sets the session
+    // (Supabase cookie in LIVE mode, signed demo cookie in the open demo) then redirects.
+    if (demoLoginEnabled) void runDemoLogin();
     else if (supabaseEnabled) void signInWithMicrosoft();
     else router.push(safeRedirect(redirect));
   };

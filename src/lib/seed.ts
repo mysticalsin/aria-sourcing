@@ -61,17 +61,30 @@ const TOOL_META: Record<ToolId, { label: string; description: string }> = {
 };
 
 export function defaultLlmProviders(): LlmProvider[] {
-  return LLM_PROVIDERS.map((kind, i) => ({
+  return LLM_PROVIDERS.map((kind) => ({
     id: `prov_${kind.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`,
     kind,
     label: kind,
-    enabled: i === 0, // only Anthropic enabled by default; rest require a key to activate
-    isDefault: i === 0,
+    // The public demo resolves its chat/agent models to a Kimi (Kimi Code) key held in
+    // the server env, so Kimi is the enabled default provider; the rest activate once a
+    // key is added in Settings → AI & Models.
+    enabled: kind === "Kimi",
+    isDefault: kind === "Kimi",
   }));
 }
 
 export function defaultSavedModels(): SavedModel[] {
   return [
+    {
+      // The demo's active model — Kimi Code, resolved to the server-env KIMI_API_KEY.
+      id: "model_kimi_coding",
+      providerId: "prov_kimi",
+      modelName: "kimi-for-coding",
+      label: "Kimi K2 (Code)",
+      contextWindow: 256000,
+      enabled: true,
+      defaultForTask: ["sourcing", "outreach", "classification", "chat"],
+    },
     {
       id: "model_claude_opus_4",
       providerId: "prov_anthropic",
@@ -137,10 +150,10 @@ export function defaultSettings(): SystemSettings {
     tools: defaultTools(),
     mcpServers: [],
     defaultModels: {
-      sourcing: "model_claude_opus_4",
-      outreach: "model_claude_opus_4",
-      classification: "model_claude_sonnet_4",
-      chat: "model_claude_sonnet_4",
+      sourcing: "model_kimi_coding",
+      outreach: "model_kimi_coding",
+      classification: "model_kimi_coding",
+      chat: "model_kimi_coding",
     },
     hermesLiveMode: false,
     hermesApiUrl: "",

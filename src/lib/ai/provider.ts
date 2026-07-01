@@ -11,7 +11,7 @@
 
 import type { LlmProviderKind, ModelTask, SystemSettings } from "@/lib/types";
 
-export type AiProviderSlug = "anthropic" | "openai" | "groq" | "xai" | "mistral";
+export type AiProviderSlug = "anthropic" | "openai" | "groq" | "xai" | "mistral" | "kimi";
 
 /** Maps LlmProviderKind → AiProviderSlug. Absent = not directly callable. */
 export const KIND_TO_SLUG: Partial<Record<LlmProviderKind, AiProviderSlug>> = {
@@ -20,6 +20,7 @@ export const KIND_TO_SLUG: Partial<Record<LlmProviderKind, AiProviderSlug>> = {
   Groq: "groq",
   xAI: "xai",
   Mistral: "mistral",
+  Kimi: "kimi",
   // Google, OpenRouter, and "Local/Custom" intentionally absent —
   // they require different auth schemes or a user-supplied base URL.
 };
@@ -31,6 +32,9 @@ export const DEFAULT_MODEL: Record<AiProviderSlug, string> = {
   groq: "llama-3.3-70b-versatile",
   xai: "grok-2-latest",
   mistral: "mistral-large-latest",
+  // Kimi (Moonshot) is OpenAI-compatible. moonshot-v1-8k is the cheap, always-available
+  // default; override per-workspace with a SavedModel (e.g. kimi-k2-0711-preview).
+  kimi: "moonshot-v1-8k",
 };
 
 export interface AiResolved {
@@ -100,12 +104,19 @@ export function aiProviderConfigured(settings: SystemSettings): boolean {
    SERVER-ONLY pure helpers
    ========================================================================== */
 
+// Kimi/Moonshot base URL is overridable so a non-standard gateway key (e.g. an
+// "sk-kimi-…" reseller key) can point elsewhere without a code change. Server-only:
+// non-NEXT_PUBLIC env is undefined in the browser bundle, but CLOUD_ENDPOINT is only
+// read server-side (buildCloudRequest / tool-loop), so the default applies there.
+const KIMI_BASE = (process.env.KIMI_BASE_URL || "https://api.moonshot.ai/v1").replace(/\/+$/, "");
+
 export const CLOUD_ENDPOINT: Record<AiProviderSlug, string> = {
   anthropic: "https://api.anthropic.com/v1/messages",
   openai: "https://api.openai.com/v1/chat/completions",
   groq: "https://api.groq.com/openai/v1/chat/completions",
   xai: "https://api.x.ai/v1/chat/completions",
   mistral: "https://api.mistral.ai/v1/chat/completions",
+  kimi: `${KIMI_BASE}/chat/completions`,
 };
 
 export const PROVIDER_ENV: Record<AiProviderSlug, string> = {
@@ -114,6 +125,7 @@ export const PROVIDER_ENV: Record<AiProviderSlug, string> = {
   groq: "GROQ_API_KEY",
   xai: "XAI_API_KEY",
   mistral: "MISTRAL_API_KEY",
+  kimi: "KIMI_API_KEY",
 };
 
 /**

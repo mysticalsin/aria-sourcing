@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
-import { SUPABASE_ANON_KEY, SUPABASE_URL, supabaseEnabled, ALLOWED_EMAIL_DOMAIN, isProduction, demoLoginEnabled } from "@/lib/supabase/config";
+import { SUPABASE_ANON_KEY, SUPABASE_URL, supabaseEnabled, ALLOWED_EMAIL_DOMAIN, isProduction, demoLoginEnabled, DEMO_COOKIE_NAME } from "@/lib/supabase/config";
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
@@ -27,7 +27,28 @@ export async function middleware(req: NextRequest) {
         { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } },
       );
     }
-    // Non-production, or an explicit public demo: keep the open DEMO experience.
+    // Public demo: gate the app behind the one-click admin/admin login so the
+    // env-resident LLM key can't be spent anonymously. Presence check only — the Edge
+    // runtime has no node:crypto; the chat route cryptographically verifies the cookie
+    // before using the key. /login and /auth/* stay public.
+    if (demoLoginEnabled) {
+      const path = req.nextUrl.pathname;
+      const isAuthRoute = path.startsWith("/login") || path.startsWith("/auth");
+      const hasSession = req.cookies.has(DEMO_COOKIE_NAME);
+      if (!hasSession && !isAuthRoute) {
+        const url = req.nextUrl.clone();
+        url.pathname = "/login";
+        url.searchParams.set("redirect", path);
+        return NextResponse.redirect(url);
+      }
+      if (hasSession && path.startsWith("/login")) {
+        const url = req.nextUrl.clone();
+        url.pathname = "/";
+        url.search = "";
+        return NextResponse.redirect(url);
+      }
+    }
+    // Non-production local dev, or a signed-in demo session: serve the app.
     return NextResponse.next();
   }
 

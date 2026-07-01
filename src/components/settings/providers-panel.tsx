@@ -22,6 +22,7 @@ const PROVIDER_COLOR: Record<LlmProviderKind, string> = {
   xAI: "bg-slate-100 text-slate-700",
   Groq: "bg-orange-100 text-orange-700",
   Mistral: "bg-rose-100 text-rose-700",
+  Kimi: "bg-indigo-100 text-indigo-700",
   "Local/Custom": "bg-neutral-100 text-neutral-600",
 };
 

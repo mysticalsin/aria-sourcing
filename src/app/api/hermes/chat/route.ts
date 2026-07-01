@@ -2,7 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
 import { decryptSecret } from "@/lib/crypto-secrets";
-import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
+import { supabaseEnabled, prodFailClosed, demoLoginEnabled, DEMO_COOKIE_NAME } from "@/lib/supabase/config";
+import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
 import { isAllowedHermesUrl } from "@/lib/api/url";
 import { can } from "@/lib/rbac";
@@ -46,7 +47,7 @@ const HermesChatSchema = z.object({
   hermesApiKeyId: z.string().uuid().optional(),
   /** Cloud provider to route through. "hermes" = existing self-hosted path. */
   provider: z
-    .enum(["hermes", "anthropic", "openai", "groq", "xai", "mistral"])
+    .enum(["hermes", "anthropic", "openai", "groq", "xai", "mistral", "kimi"])
     .default("hermes"),
   /** ApiKey.id for the cloud provider — raw secret resolved server-side only. */
   apiKeyId: z.string().uuid().optional(),
@@ -215,6 +216,15 @@ export async function POST(req: NextRequest) {
 
   /* ---- Cloud provider branch (Anthropic / OpenAI-compatible) -------------- */
   if (provider !== "hermes") {
+    // Open-demo cost gate: env-resident provider keys are spendable ONLY by a caller
+    // holding a valid demo session (admin/admin → signed httpOnly cookie). The Supabase
+    // path already authenticated above; local dev (no demoLoginEnabled) stays open.
+    // Fail closed if the gate secret isn't configured so the key can't leak.
+    if (!supabaseEnabled && demoLoginEnabled) {
+      if (!demoAuthConfigured() || !verifyDemoToken(req.cookies.get(DEMO_COOKIE_NAME)?.value)) {
+        return NextResponse.json({ ok: false, reason: "Sign in to use the live model." }, { status: 401 });
+      }
+    }
     // Key resolution: vault by id (workspace-scoped) → env fallback → error.
     // The raw secret is NEVER logged or returned to the caller.
     const slug = provider as AiProviderSlug;
@@ -226,7 +236,10 @@ export async function POST(req: NextRequest) {
     // MCP tool-calling (chat task, Anthropic): when the workspace has enabled MCP
     // servers, let the model call their tools and loop to a final answer. Additive —
     // falls through to the normal single-shot completion when no usable servers resolve.
-    if (task === "chat" && (webResearch || (mcpServers && mcpServers.length))) {
+    // Kimi Code (kimi-for-coding) rejects the OpenAI `tools` param (no function-calling),
+    // so skip the tool loop for it and answer with a plain completion. Other providers
+    // still get the MCP / built-in web-research tool loop.
+    if (task === "chat" && slug !== "kimi" && (webResearch || (mcpServers && mcpServers.length))) {
       const resolvedServers: ResolvedMcpServer[] = [];
       // Built-in read-only web-research tools (in-process; no vault token, SSRF-guarded).
       if (webResearch) resolvedServers.push({ url: BUILTIN_WEB_URL, token: "", tools: WEB_TOOL_DEFS });
@@ -238,8 +251,10 @@ export async function POST(req: NextRequest) {
             ? await runAnthropicWithTools({ model: toolModel, system, prompt, key, servers: resolvedServers })
             : await runOpenAiWithTools({ provider: slug, model: toolModel, system, prompt, key, servers: resolvedServers });
         if (result.ok && result.text) return NextResponse.json({ ok: true, text: result.text });
-        if (!result.ok) return NextResponse.json({ ok: false, reason: result.reason ?? "MCP tool loop failed." });
-        // result.ok with empty text → fall through to a normal completion.
+        // Tool loop failed or returned empty (e.g. a provider that rejects the tools
+        // param) → fall through to a normal single-shot completion so chat still answers
+        // instead of erroring out / dropping the caller to the client-side mock.
+        if (!result.ok) logUpstream("info", "Tool loop unavailable; using plain completion", { provider, reason: result.reason });
       }
     }
     const { url, headers, body } = buildCloudRequest(slug, model ?? "hermes", system, prompt, key);

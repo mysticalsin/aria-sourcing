@@ -57,15 +57,15 @@ ok("seed has tools array", Array.isArray(seed.settings.tools));
 ok("seed tools cover all TOOL_IDS", seed.settings.tools.length === TOOL_IDS.length);
 ok("seed has defaultModels object", typeof seed.settings.defaultModels === "object" && seed.settings.defaultModels !== null);
 
-// Verify Anthropic is the default provider.
-const anthropicProv = seed.settings.llmProviders.find((p) => p.kind === "Anthropic");
-ok("Anthropic provider exists", !!anthropicProv);
-ok("Anthropic provider is default", !!anthropicProv?.isDefault);
-ok("Anthropic provider is enabled", !!anthropicProv?.enabled);
+// Verify Kimi is the default provider (the public demo runs on a Kimi Code key).
+const kimiProv = seed.settings.llmProviders.find((p) => p.kind === "Kimi");
+ok("Kimi provider exists", !!kimiProv);
+ok("Kimi provider is default", !!kimiProv?.isDefault);
+ok("Kimi provider is enabled", !!kimiProv?.enabled);
 
 // Other providers should be disabled by default.
-const otherProviders = seed.settings.llmProviders.filter((p) => p.kind !== "Anthropic");
-ok("non-Anthropic providers are disabled by default", otherProviders.every((p) => !p.enabled));
+const otherProviders = seed.settings.llmProviders.filter((p) => p.kind !== "Kimi");
+ok("non-Kimi providers are disabled by default", otherProviders.every((p) => !p.enabled));
 
 // LLM_PROVIDERS coverage.
 ok("all LLM_PROVIDERS have an entry", LLM_PROVIDERS.every((k) => seed.settings.llmProviders.some((p) => p.kind === k)));

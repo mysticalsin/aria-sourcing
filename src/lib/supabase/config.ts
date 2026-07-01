@@ -78,3 +78,12 @@ export const ALLOWED_EMAIL_DOMAIN = process.env.NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN
  * never on a real tenant deployment. All outreach stays dry-run regardless.
  */
 export const demoLoginEnabled = process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN === "true";
+
+/**
+ * Cookie name carrying the signed open-demo session. Set by /api/auth/demo-login on
+ * the one-click admin/admin login and verified server-side (see src/lib/demo-auth.ts)
+ * before the chat route spends an env-resident LLM key. Defined here (crypto-free) so
+ * both the Edge middleware and the Node routes can reference the name without pulling
+ * node:crypto into the Edge bundle.
+ */
+export const DEMO_COOKIE_NAME = "aria_demo";
