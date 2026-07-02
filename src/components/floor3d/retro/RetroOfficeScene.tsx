@@ -23,6 +23,7 @@ import type { OfficeAgent } from "@/components/floor3d/types";
 import { getDeviceQuality, MAX_3D_AGENTS, type DeviceQuality } from "@/lib/device";
 import { RobotAgentModel } from "./objects/RobotAgentModel";
 import { RetroEnvironment } from "./scene/RetroEnvironment";
+import { PacketFX } from "./scene/PacketFX";
 import { useAgentTick } from "./systems/agentTick";
 
 // ---------------------------------------------------------------------------
@@ -58,6 +59,14 @@ function SceneContents({
   }, [agents, quality, selectedId]);
 
   const { renderAgentsRef, renderAgentLookupRef } = useAgentTick(shownAgents);
+
+  // CEO agent id — doubles as the Living Floor's "central hub" that packets
+  // fly to (PacketFX.tsx). The priority sort above always keeps the CEO in
+  // shownAgents (pri 0), so this resolves whenever at least one seat exists.
+  const ceoId = useMemo(
+    () => shownAgents.find((a) => a.position === "ceo")?.id ?? null,
+    [shownAgents],
+  );
 
   return (
     <>
@@ -111,6 +120,14 @@ function SceneContents({
           selected={selectedId === agent.id}
         />
       ))}
+
+      {/* Living-floor FX: pooled packets + status-pulse halos reacting to
+          the real agent-events bus. Hard-gated off the "low" device tier —
+          which already folds in prefers-reduced-motion (src/lib/device.ts)
+          — so those sessions render zero extra draw calls/sound; the 2D
+          activity ticker (src/app/floor/page.tsx) is their guaranteed
+          fallback. */}
+      {!low && <PacketFX agentsRef={renderAgentsRef} ceoId={ceoId} />}
     </>
   );
 }

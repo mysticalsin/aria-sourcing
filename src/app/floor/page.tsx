@@ -39,7 +39,18 @@ import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
 import { languageLabel } from "@/lib/i18n";
 import { formatTimeAgo } from "@/lib/utils";
 import type { AgentSeat, HermesState } from "@/lib/types";
-import { Bot, Users, Activity, PauseCircle, Flame, Mail, Clock, Languages, Building2, ArrowUpRight, Volume2, VolumeX, LayoutGrid, Box } from "lucide-react";
+import { subscribe, recentEvents, type AgentEvent } from "@/lib/agent-events";
+import {
+  EVENT_COLOR,
+  EVENT_SOUND,
+  PULSE_MS,
+  pickResponderIndex,
+  describeEvent,
+} from "@/components/floor3d/retro/scene/packet-shared";
+import { Bot, Users, Activity, PauseCircle, Flame, Mail, Clock, Languages, Building2, ArrowUpRight, Volume2, VolumeX, LayoutGrid, Box, Radio } from "lucide-react";
+
+/** Recent events shown in the 2D activity ticker (guaranteed fallback). */
+const TICKER_CAP = 8;
 
 const Floor3D = dynamic(() => import("@/components/floor3d/Floor3D"), { ssr: false });
 
@@ -55,9 +66,80 @@ export default function FloorPage() {
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [viewMode, setViewMode] = React.useState<"2d" | "3d">("2d");
 
+  // Device tier — cheap, deterministic per session (src/lib/device.ts).
+  // "low" already folds in prefers-reduced-motion, so gating sound on "high"
+  // alone satisfies both halves of "hard-gate 3D FX + reduced-motion";
+  // PacketFX (RetroOfficeScene.tsx) gates its own packets the same way.
+  const [deviceQuality] = React.useState(() => getDeviceQuality());
+  const fxSoundEnabled = deviceQuality === "high";
+
+  // Live activity ticker — the guaranteed 2D fallback for the event bus.
+  // Seeded from the bounded ring buffer so navigating to /floor after
+  // triggering an action elsewhere still shows it.
+  const [ticker, setTicker] = React.useState<AgentEvent[]>(() =>
+    recentEvents().slice(-TICKER_CAP),
+  );
+  // Seat ids currently "pulsing" — forces their 3D status to "working" so
+  // the existing agentTick walk-to-desk animation fires (no agentTick edits).
+  const pulseUntilRef = React.useRef<Map<string, number>>(new Map());
+  const soundEnabledRef = React.useRef(soundEnabled);
+  const seatsRef = React.useRef(seats);
+  React.useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
+  React.useEffect(() => {
+    seatsRef.current = seats;
+  }, [seats]);
+
+  React.useEffect(() => {
+    const now = Date.now();
+    for (const e of recentEvents()) {
+      if (e.at <= now - PULSE_MS) continue;
+      const employees = seatsRef.current.slice(1); // index 0 = CEO (src/lib/floor3d.ts)
+      if (employees.length === 0) continue;
+      const seat = employees[pickResponderIndex(e, employees.length)];
+      pulseUntilRef.current.set(seat.id, e.at + PULSE_MS);
+    }
+
+    const unsubscribe = subscribe((e) => {
+      setTicker((prev) => [...prev, e].slice(-TICKER_CAP));
+      const employees = seatsRef.current.slice(1);
+      if (employees.length > 0) {
+        const seat = employees[pickResponderIndex(e, employees.length)];
+        pulseUntilRef.current.set(seat.id, Date.now() + PULSE_MS);
+      }
+      if (fxSoundEnabled && soundEnabledRef.current) {
+        playSound(EVENT_SOUND[e.kind], true);
+      }
+    });
+    return unsubscribe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Force a re-render every second so an expired pulse lets go of the forced
+  // "working" status. agentTick's own DESK_STICKY_MS (10s) keeps the walk/sit
+  // animation going well past this window, so nothing snaps back visibly.
+  const [, forcePulseTick] = React.useReducer((n: number) => n + 1, 0);
+  React.useEffect(() => {
+    const id = setInterval(() => {
+      const now = Date.now();
+      for (const [seatId, until] of pulseUntilRef.current) {
+        if (until <= now) pulseUntilRef.current.delete(seatId);
+      }
+      forcePulseTick();
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+
   const stateLike = { campaigns, candidates, ledger, seats, settings } as unknown as HermesState;
   const rollup = floorRollup(seats, stateLike);
   const selected = seats.find((s) => s.id === selectedId) ?? null;
+
+  const pulseNow = Date.now();
+  const pulsingSeatIds = new Set<string>();
+  for (const [seatId, until] of pulseUntilRef.current) {
+    if (until > pulseNow) pulsingSeatIds.add(seatId);
+  }
 
   const selectAgent = (id: string) => {
     setSelectedId(id);
@@ -144,6 +226,12 @@ export default function FloorPage() {
           ))}
         </div>
 
+        {/* Live activity ticker — the guaranteed 2D fallback: renders on
+            every device/view, regardless of tier or reduced-motion, since
+            the packet FX + sound (RetroOfficeScene.tsx/PacketFX.tsx) are
+            hard-gated off for low-tier/reduced-motion sessions. */}
+        <ActivityTicker events={ticker} seats={seats} />
+
         {viewMode === "3d" ? (
           seats.length === 0 ? (
             <EmptyState
@@ -165,6 +253,7 @@ export default function FloorPage() {
               state={stateLike}
               selectedId={selectedId}
               onSelect={(s) => selectAgent(s)}
+              pulsingSeatIds={pulsingSeatIds}
             />
           )
         ) : seats.length === 0 ? (
@@ -210,11 +299,13 @@ function Floor3DSection({
   state,
   selectedId,
   onSelect,
+  pulsingSeatIds,
 }: {
   seats: AgentSeat[];
   state: HermesState;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  pulsingSeatIds: Set<string>;
 }) {
   // Render-cap: a full procedural robot per agent is ~20 meshes; rendering the
   // whole fleet (up to 300) tanks the GPU. RetroOfficeScene itself caps at
@@ -223,7 +314,11 @@ function Floor3DSection({
   // what's on screen. The full fleet always lives on the Agent Fleet page.
   const [deviceQuality] = React.useState(() => getDeviceQuality());
   const cap = MAX_3D_AGENTS[deviceQuality];
-  const office = seatsToOfficeAgents(seats, state);
+  // Force a pulsing seat's status to "working" so agentTick's existing
+  // status-flip → walk-to-desk mechanism fires for it (no agentTick edits).
+  const office = seatsToOfficeAgents(seats, state).map((a) =>
+    pulsingSeatIds.has(a.id) && a.status !== "working" ? { ...a, status: "working" as const } : a,
+  );
   const notShown = Math.max(0, office.length - cap);
   return (
     <div className="space-y-3">
@@ -240,6 +335,49 @@ function Floor3DSection({
       )}
       <Floor3D agents={office} selectedId={selectedId} onSelect={onSelect} />
     </div>
+  );
+}
+
+/** 2D text feed of recent agent-events — the guaranteed fallback for the
+ *  Living Floor on every device, tier, and view mode (see PacketFX.tsx /
+ *  RetroOfficeScene.tsx for the 3D-only packet+sound layer this backs up). */
+function ActivityTicker({ events, seats }: { events: AgentEvent[]; seats: AgentSeat[] }) {
+  const employees = seats.slice(1); // index 0 = CEO (src/lib/floor3d.ts convention)
+  const items = [...events].slice(-TICKER_CAP).reverse();
+  return (
+    <Card className="mb-4 p-4">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-ink">
+          <Radio className="h-3.5 w-3.5 text-electric" aria-hidden />
+          <Eyebrow>Live activity</Eyebrow>
+        </div>
+        <span className="text-xs text-muted">Real-time feed — works on every device</span>
+      </div>
+      {items.length === 0 ? (
+        <p className="text-sm text-muted">
+          No agent activity yet — trigger a sourcing or outreach action to see it here.
+        </p>
+      ) : (
+        <ul className="space-y-1.5">
+          {items.map((e, i) => {
+            const seat = employees.length > 0 ? employees[pickResponderIndex(e, employees.length)] : null;
+            return (
+              <li key={`${e.at}-${i}`} className="flex items-center gap-2 text-sm">
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: EVENT_COLOR[e.kind] }}
+                  aria-hidden
+                />
+                <span className="truncate text-ink-soft">{describeEvent(e, seat?.name)}</span>
+                <span className="ml-auto shrink-0 text-xs text-muted">
+                  {formatTimeAgo(new Date(e.at).toISOString())}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
   );
 }
 
