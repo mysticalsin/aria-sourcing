@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Badge,
@@ -13,7 +13,7 @@ import {
 import { ScoreGauge } from "@/components/charts/score-gauge";
 import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
-import { useActions, useCampaign, useCandidate, useSettings } from "@/lib/store";
+import { useActions, useCampaign, useCandidate, useOutreach, useSettings } from "@/lib/store";
 import {
   downloadText,
   formatTimeAgo,
@@ -36,6 +36,7 @@ import type {
   CandidateStage,
   InterviewKind,
   LeadSource,
+  OutreachMessage,
   PrequalOutcome,
   StarRating,
 } from "@/lib/types";
@@ -108,6 +109,46 @@ function Chips({ items, label }: { items: string[]; label: string }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** View-only "why this person" fallback — guarantees the chip(s) below are
+ *  never blank, even for the rare draft whose stored personalizationEvidence
+ *  came back empty (e.g. a live-sourced draft with no recentActivity). Derived
+ *  purely from fields already on the candidate; never written back to the
+ *  message, and never substitutes for real evidence when it's present — the
+ *  personalization-required approval gate in rules.ts still reads the stored
+ *  personalizationEvidence unchanged. */
+function personalizationFallbackHook(candidate: Candidate): string {
+  const topSkill = candidate.techStack[0];
+  if (topSkill) return `${topSkill} background fits this role`;
+  if (candidate.currentTitle) return `${candidate.currentTitle} experience fits this role`;
+  return `${candidate.yearsExperience} yrs of relevant experience`;
+}
+
+/** "Why this person" — the personalization evidence behind this candidate's
+ *  latest outreach draft, matching the same aqua chip styling the outreach
+ *  queue uses (see OutreachMessageCard). Falls back to a single derived hook
+ *  when the draft's real evidence is empty, so the section is never blank. */
+function WhyThisPerson({ candidate, message }: { candidate: Candidate; message: OutreachMessage }) {
+  const real = message.personalizationEvidence.filter((e) => e.trim().length > 0);
+  const chips = real.length > 0 ? real : [personalizationFallbackHook(candidate)];
+  return (
+    <Section title="Why this person" icon={<Sparkles className="h-4 w-4" />}>
+      <div className="flex flex-wrap gap-1.5">
+        {chips.map((ev, i) => (
+          <span
+            key={i}
+            className="inline-flex items-center rounded-full bg-aqua-soft px-2.5 py-1 text-xs font-medium text-aqua ring-1 ring-inset ring-aqua/20"
+          >
+            {ev}
+          </span>
+        ))}
+      </div>
+      <p className="text-xs text-muted">
+        From the {message.status.toLowerCase()} outreach draft · sequence step {message.sequenceStep}.
+      </p>
+    </Section>
   );
 }
 
@@ -320,6 +361,18 @@ export function CandidateDrawer({
     setRevealed(false);
     setNoteText("");
   }, [candidateId, open]);
+
+  // Latest drafted/queued outreach for this candidate (any status — Draft
+  // through Scheduled), newest first, so the "why this person" chips below
+  // always reflect the most recent personalization. View-only lookup via the
+  // existing useOutreach() selector — no new store state.
+  const outreach = useOutreach();
+  const latestOutreachMessage = useMemo(() => {
+    if (!candidateId) return undefined;
+    return outreach
+      .filter((m) => m.candidateId === candidateId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+  }, [outreach, candidateId]);
 
   // Debounce timers are keyed to this component instance, not to `open` — they
   // must keep running even if the drawer is closed mid-edit (Escape/backdrop)
@@ -757,6 +810,10 @@ export function CandidateDrawer({
             <ScoreBreakdown breakdown={c.matchBreakdown} />
           </div>
         </Section>
+
+        {/* Why this person — personalization evidence behind the latest
+            drafted/queued outreach, if any (view-only; never blank). */}
+        {latestOutreachMessage && <WhyThisPerson candidate={c} message={latestOutreachMessage} />}
 
         {/* TAnIA — source, star rating, prequal, interviews, #Vivier */}
         <TaniaPanel c={c} />

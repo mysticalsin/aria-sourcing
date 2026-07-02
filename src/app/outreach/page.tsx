@@ -11,6 +11,7 @@ import {
   Button,
   Select,
   EmptyState,
+  Progress,
   SkeletonCard,
   useToast,
 } from "@/components/ui";
@@ -18,6 +19,7 @@ import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { OutreachMessageCard } from "@/components/outreach/outreach-message-card";
 import { RateMeterPanel } from "@/components/outreach/rate-meter-panel";
 import { QuickDraft } from "@/components/outreach/quick-draft";
+import { SequenceLadder } from "@/components/outreach/sequence-ladder";
 import {
   useHydrated,
   useCampaigns,
@@ -30,7 +32,8 @@ import {
   useActions,
 } from "@/lib/store";
 import type { FollowUpDueItem } from "@/lib/recommendations";
-import { cn } from "@/lib/utils";
+import type { Candidate, OutreachMessage } from "@/lib/types";
+import { cn, pluralize } from "@/lib/utils";
 import {
   Inbox,
   Send,
@@ -42,6 +45,42 @@ import {
   Repeat,
   CheckCheck,
 } from "lucide-react";
+
+/** View-only "why this person" fallback — guarantees the chip on a queue row
+ *  is never blank, even for the rare draft whose stored personalizationEvidence
+ *  came back empty (e.g. a live-sourced draft with no recentActivity). Derived
+ *  purely from fields already on the candidate; never written back to the
+ *  message, and never substitutes for real evidence when it's present — the
+ *  personalization-required approval gate in rules.ts still reads the stored
+ *  personalizationEvidence unchanged. */
+function personalizationFallbackHook(candidate: Candidate | undefined): string {
+  if (!candidate) return "Matched against the role's requirements";
+  const topSkill = candidate.techStack[0];
+  if (topSkill) return `${topSkill} background fits this role`;
+  if (candidate.currentTitle) return `${candidate.currentTitle} experience fits this role`;
+  return `${candidate.yearsExperience} yrs of relevant experience`;
+}
+
+/** The single strongest "why this person" line for a compact queue-row chip:
+ *  the first non-blank real evidence entry, else the fallback hook above. */
+function whyThisPersonHook(message: OutreachMessage, candidate: Candidate | undefined): string {
+  const real = message.personalizationEvidence.find((e) => e.trim().length > 0);
+  return real ?? personalizationFallbackHook(candidate);
+}
+
+/** Compact "why this person" chip for a queue row — distinct per candidate
+ *  since it's sourced from that candidate's own evidence/skills, never a
+ *  shared template string. */
+function WhyThisPersonChip({ message }: { message: OutreachMessage }) {
+  const candidate = useCandidate(message.candidateId);
+  const hook = whyThisPersonHook(message, candidate);
+  return (
+    <Badge tone="aqua" size="sm" className="max-w-full truncate" title={hook}>
+      <Sparkles className="h-3 w-3 shrink-0" aria-hidden />
+      {hook}
+    </Badge>
+  );
+}
 
 function StatTile({
   icon,
@@ -72,6 +111,18 @@ function StatTile({
   );
 }
 
+/** Small concurrent batches so drafting the whole due backlog (40+) never
+ *  freezes the store or the UI -- mirrors handleBulkDraftOutreach's
+ *  commit-loop pattern in candidates/page.tsx. draftFollowUpFor is itself
+ *  async (it may attempt a live-gen round trip), so each batch runs its
+ *  calls concurrently via Promise.all, then yields one tick before the next
+ *  batch so the Progress meter actually paints. */
+const FOLLOWUP_DRAFT_BATCH_SIZE = 5;
+
+function nextTick(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 /** One row in the "Follow-ups due" list (Task 1) — drafts a step-N follow-up
  *  straight into the approval queue above. Never sends. */
 function FollowUpDueRow({ item }: { item: FollowUpDueItem }) {
@@ -97,9 +148,9 @@ function FollowUpDueRow({ item }: { item: FollowUpDueItem }) {
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface px-4 py-3">
-      <div className="min-w-0">
+      <div className="min-w-0 space-y-1.5">
         <p className="truncate text-sm font-semibold text-ink">{candidate?.name ?? "Unknown candidate"}</p>
-        <p className="text-xs text-muted">{Math.floor(item.daysSinceContact)}d of silence · no reply yet</p>
+        <SequenceLadder nextSequenceStep={item.nextSequenceStep} daysSinceContact={item.daysSinceContact} />
       </div>
       <Button
         size="sm"
@@ -134,6 +185,8 @@ function OutreachView() {
   const [campaignFilter, setCampaignFilter] = React.useState<string>(campaignParam ?? "all");
   const [sentOpen, setSentOpen] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [draftingAllDue, setDraftingAllDue] = React.useState(false);
+  const [draftAllProgress, setDraftAllProgress] = React.useState({ done: 0, total: 0 });
 
   const matches = React.useCallback(
     (campaignId: string) => campaignFilter === "all" || campaignId === campaignFilter,
@@ -192,6 +245,40 @@ function OutreachView() {
           ? `Blocked drafts stayed in the queue. ${Array.from(blockers).join(" ")}`
           : "Queued for send per the usual approval flow.",
       variant: blocked > 0 ? "warning" : "success",
+    });
+  }
+
+  /** Draft-all-due autopilot (Task 2.4): clears the entire follow-up backlog
+   *  in one click by calling the SAME draftFollowUpFor the single-row button
+   *  uses for every currently-due item — never sends, only adds drafts to
+   *  the approval queue above, each already tagged with its own sequence
+   *  step. Batches with a small concurrency cap (see FOLLOWUP_DRAFT_BATCH_SIZE)
+   *  so a large backlog (40+) never freezes the store or the UI. */
+  async function handleDraftAllDue() {
+    if (draftingAllDue) return;
+    const items = followUpsDueFiltered;
+    if (items.length === 0) return;
+
+    setDraftingAllDue(true);
+    setDraftAllProgress({ done: 0, total: items.length });
+    let drafted = 0;
+    for (let i = 0; i < items.length; i += FOLLOWUP_DRAFT_BATCH_SIZE) {
+      const batch = items.slice(i, i + FOLLOWUP_DRAFT_BATCH_SIZE);
+      const results = await Promise.all(batch.map((item) => actions.draftFollowUpFor(item.candidateId)));
+      drafted += results.filter((msg) => msg !== null).length;
+      setDraftAllProgress({ done: Math.min(i + FOLLOWUP_DRAFT_BATCH_SIZE, items.length), total: items.length });
+      await nextTick();
+    }
+    setDraftingAllDue(false);
+
+    const skipped = items.length - drafted;
+    toast({
+      title: `Drafted ${pluralize(drafted, "follow-up")}`,
+      description:
+        skipped > 0
+          ? `${pluralize(skipped, "candidate")} skipped (already handled). Each draft carries its own sequence step — review above.`
+          : "Each draft carries its own sequence step — review and approve above. Nothing was sent.",
+      variant: drafted > 0 ? "success" : "warning",
     });
   }
 
@@ -306,13 +393,15 @@ function OutreachView() {
               ) : (
                 <div className="space-y-5">
                   {pendingFiltered.map((m) => (
-                    <OutreachMessageCard
-                      key={m.id}
-                      message={m}
-                      selectable
-                      selected={selectedIds.has(m.id)}
-                      onToggleSelect={toggleSelect}
-                    />
+                    <div key={m.id} className="space-y-2">
+                      <WhyThisPersonChip message={m} />
+                      <OutreachMessageCard
+                        message={m}
+                        selectable
+                        selected={selectedIds.has(m.id)}
+                        onToggleSelect={toggleSelect}
+                      />
+                    </div>
                   ))}
                 </div>
               )}
@@ -335,7 +424,10 @@ function OutreachView() {
                 </div>
                 <div className="space-y-5">
                   {pendingManualFiltered.map((m) => (
-                    <OutreachMessageCard key={m.id} message={m} />
+                    <div key={m.id} className="space-y-2">
+                      <WhyThisPersonChip message={m} />
+                      <OutreachMessageCard message={m} />
+                    </div>
                   ))}
                 </div>
               </section>
@@ -346,18 +438,39 @@ function OutreachView() {
                 your approval before anything sends. */}
             {followUpsDueFiltered.length > 0 && (
               <section className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <span
-                    className="grid h-7 w-7 place-items-center rounded-lg bg-aqua-soft text-aqua"
-                    aria-hidden
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="grid h-7 w-7 place-items-center rounded-lg bg-aqua-soft text-aqua"
+                      aria-hidden
+                    >
+                      <Repeat className="h-4 w-4" />
+                    </span>
+                    <h2 className="eyebrow">Follow-ups due</h2>
+                    <Badge tone="aqua" size="sm">
+                      {followUpsDueFiltered.length}
+                    </Badge>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    leftIcon={<Sparkles className="h-3.5 w-3.5" aria-hidden />}
+                    onClick={handleDraftAllDue}
+                    loading={draftingAllDue}
+                    disabled={draftingAllDue}
                   >
-                    <Repeat className="h-4 w-4" />
-                  </span>
-                  <h2 className="eyebrow">Follow-ups due</h2>
-                  <Badge tone="aqua" size="sm">
-                    {followUpsDueFiltered.length}
-                  </Badge>
+                    {draftingAllDue
+                      ? `Drafting ${draftAllProgress.done}/${draftAllProgress.total}…`
+                      : "Draft all due follow-ups"}
+                  </Button>
                 </div>
+                {draftingAllDue && (
+                  <Progress
+                    value={draftAllProgress.total ? (draftAllProgress.done / draftAllProgress.total) * 100 : 0}
+                    tone="aqua"
+                    aria-label={`Drafting follow-ups: ${draftAllProgress.done} of ${draftAllProgress.total}`}
+                  />
+                )}
                 <div className="space-y-2.5">
                   {followUpsDueFiltered.map((item) => (
                     <FollowUpDueRow key={item.candidateId} item={item} />
@@ -410,7 +523,10 @@ function OutreachView() {
                 ) : (
                   <div className="space-y-5 animate-fade-in">
                     {scheduledFiltered.map((m) => (
-                      <OutreachMessageCard key={m.id} message={m} />
+                      <div key={m.id} className="space-y-2">
+                        <WhyThisPersonChip message={m} />
+                        <OutreachMessageCard message={m} />
+                      </div>
                     ))}
                   </div>
                 ))}

@@ -10,6 +10,7 @@ import {
   Eyebrow,
   Field,
   Input,
+  Progress,
   Select,
   SkeletonCard,
   useToast,
@@ -21,7 +22,17 @@ import { SourcingFeed } from "@/components/tania/sourcing-feed";
 import { useActions, useActiveCampaign, useCandidates, useHydrated } from "@/lib/store";
 import { CANDIDATE_STAGES, SOURCE_PLATFORMS, type Candidate, type CandidateStage } from "@/lib/types";
 import { pluralize } from "@/lib/utils";
-import { Bookmark, Radar, Search } from "lucide-react";
+import { Bookmark, Radar, Search, Sparkles } from "lucide-react";
+
+/** Small batches so a bulk draft over dozens of candidates never blocks the
+ *  main thread — each batch commits synchronously (generateOutreachFor is
+ *  synchronous), then we yield one tick before the next so the Progress meter
+ *  actually paints and the rest of the UI stays responsive. */
+const DRAFT_BATCH_SIZE = 5;
+
+function nextTick(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
 
 const SORT_OPTIONS = [
   { value: "match", label: "Match score" },
@@ -71,6 +82,8 @@ function CandidatesView() {
   const [page, setPage] = React.useState(0);
   const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE);
   const [sourcing, setSourcing] = React.useState(false);
+  const [draftingOutreach, setDraftingOutreach] = React.useState(false);
+  const [draftProgress, setDraftProgress] = React.useState({ done: 0, total: 0 });
   // The just-sourced batch, staged for the streaming reveal below — purely a
   // display buffer; `sourceNextBatch` already committed these candidates for
   // real. `sourceBatchKey` remounts <SourcingFeed> on every new batch (even
@@ -233,6 +246,43 @@ function CandidatesView() {
     clearSelection();
   }
 
+  /** Bulk personalized outreach — drafts one message per selected candidate via
+   *  the SAME generateOutreachFor the drawer's "Generate outreach" button and
+   *  QuickDraft already use, so every draft gets its own distinct
+   *  personalizationEvidence from mock-ai.ts (never a shared/spam template) and
+   *  lands in the approval queue exactly like a single draft — never sends.
+   *  Runs in small batches, yielding between them so a big selection (dozens+)
+   *  never freezes the store while the Progress meter below reports done/total. */
+  async function handleBulkDraftOutreach() {
+    if (draftingOutreach) return;
+    const ids = Array.from(visibleSelectedIds);
+    if (ids.length === 0) return;
+
+    setDraftingOutreach(true);
+    setDraftProgress({ done: 0, total: ids.length });
+    let drafted = 0;
+    for (let i = 0; i < ids.length; i += DRAFT_BATCH_SIZE) {
+      const batch = ids.slice(i, i + DRAFT_BATCH_SIZE);
+      for (const id of batch) {
+        if (actions.generateOutreachFor(id)) drafted += 1;
+      }
+      setDraftProgress({ done: Math.min(i + DRAFT_BATCH_SIZE, ids.length), total: ids.length });
+      await nextTick();
+    }
+    setDraftingOutreach(false);
+
+    const skipped = ids.length - drafted;
+    toast({
+      title: `Drafted ${pluralize(drafted, "outreach message")}`,
+      description:
+        skipped > 0
+          ? `${pluralize(skipped, "candidate")} skipped (no matching campaign). Each draft carries its own personalization evidence — review in the outreach queue.`
+          : "Each draft carries its own personalization evidence — review and approve in the outreach queue. Nothing was sent.",
+      variant: drafted > 0 ? "success" : "warning",
+    });
+    clearSelection();
+  }
+
   function handleBulkVivier() {
     const ids = Array.from(visibleSelectedIds).filter(
       (id) => !candidates.find((c) => c.id === id)?.vivier,
@@ -369,7 +419,12 @@ function CandidatesView() {
                 onChange={(e) => setBulkReason(e.target.value)}
               />
             )}
-            <Button size="sm" variant="primary" onClick={handleBulkStageApply} disabled={!bulkStage}>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={handleBulkStageApply}
+              disabled={!bulkStage || draftingOutreach}
+            >
               Apply
             </Button>
             <Button
@@ -377,12 +432,34 @@ function CandidatesView() {
               variant="outline"
               leftIcon={<Bookmark className="h-3.5 w-3.5" aria-hidden />}
               onClick={handleBulkVivier}
+              disabled={draftingOutreach}
             >
               Add to #Vivier
             </Button>
-            <Button size="sm" variant="ghost" onClick={clearSelection}>
+            <Button
+              size="sm"
+              variant="secondary"
+              leftIcon={<Sparkles className="h-3.5 w-3.5" aria-hidden />}
+              onClick={handleBulkDraftOutreach}
+              loading={draftingOutreach}
+              disabled={draftingOutreach}
+            >
+              {draftingOutreach
+                ? `Drafting ${draftProgress.done}/${draftProgress.total}…`
+                : "Draft personalized outreach for selected"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={clearSelection} disabled={draftingOutreach}>
               Clear selection
             </Button>
+            {draftingOutreach && (
+              <div className="w-full max-w-sm">
+                <Progress
+                  value={draftProgress.total ? (draftProgress.done / draftProgress.total) * 100 : 0}
+                  tone="electric"
+                  aria-label={`Drafting personalized outreach: ${draftProgress.done} of ${draftProgress.total}`}
+                />
+              </div>
+            )}
           </CardBody>
         </Card>
       )}
