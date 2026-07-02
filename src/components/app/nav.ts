@@ -20,6 +20,7 @@ import {
   Inbox,
   Bookmark,
   Network,
+  Rocket,
   type LucideIcon,
 } from "lucide-react";
 
@@ -35,6 +36,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Command Center", icon: LayoutDashboard, section: "Operate", description: "Live operations overview" },
   { href: "/funnel", label: "Funnel", icon: Workflow, section: "Operate", description: "TAnIA hiring funnel" },
   { href: "/intake", label: "Intake", icon: MailPlus, section: "Operate", description: "Email + JD parser" },
+  { href: "/launch", label: "Launch", icon: Rocket, section: "Operate", description: "Multi-role batch launch" },
   { href: "/campaigns", label: "Campaigns", icon: Target, section: "Operate", description: "Sourcing campaigns" },
   { href: "/applicants", label: "Applicants", icon: Inbox, section: "Operate", description: "Chatbox applicant inbox" },
   { href: "/candidates", label: "Candidates", icon: Users, section: "Operate", description: "Talent intelligence" },
