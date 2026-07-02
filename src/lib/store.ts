@@ -36,9 +36,10 @@ import {
 } from "./ai/hermes";
 import { resolveAiProvider } from "./ai/provider";
 import { buildSeedState, defaultGuardrails, defaultLlmProviders, defaultSavedModels, defaultSettings, defaultTools, STATE_VERSION } from "./seed";
-import { computeCampaignMetrics, globalKpis, type GlobalKpis } from "./metrics";
+import { computeCampaignMetrics, firstInterviewElapsedHours, globalKpis, type GlobalKpis } from "./metrics";
 import { deriveRecommendations, deriveFollowUpsDue, type Recommendation, type FollowUpDueItem } from "./recommendations";
 import { scoreCandidate } from "./scoring";
+import { deriveLeadSource, deriveStarRating, DEFAULT_STAR_THRESHOLDS } from "./tania";
 import {
   checkOutreachApproval,
   type ApprovalResult,
@@ -70,7 +71,15 @@ import type {
   Candidate,
   CandidateNote,
   CandidateStage,
+  ChatboxSubmission,
+  ChatboxSubmissionStatus,
   ClassifiedReply,
+  InterviewKind,
+  InterviewRecord,
+  LeadSource,
+  PrequalOutcome,
+  PrequalRecord,
+  StarRating,
   DustAgentSummary,
   DustRegion,
   DustTask,
@@ -107,7 +116,7 @@ import {
   learnedParamsFor,
   proposeSkillUpdates,
 } from "./skills";
-import { stageRank } from "./metrics";
+import { stageRank, withStage } from "./metrics";
 
 const STORAGE_KEY = "hermes-sourcing:v1";
 
@@ -190,6 +199,9 @@ export interface HermesActions {
    *  the candidate isn't actually due (already replied, too recent, or already
    *  has a pending draft). */
   draftFollowUpFor: (candidateId: string, tone?: OutreachTone, seatId?: string) => OutreachMessage | null;
+  /** Draft a #Vivier re-contact for a pooled (Rejected/Not Interested) candidate,
+   *  bypassing the follow-up stage gate. Returns the Draft (still needs approval). */
+  draftRecontactFor: (candidateId: string, tone?: OutreachTone, seatId?: string) => OutreachMessage | null;
 
   // replies
   classifyAndStoreReply: (input: {
@@ -237,8 +249,32 @@ export interface HermesActions {
    *  control — call it alongside setCandidateStage("Rejected", ...), never
    *  instead of it. Clearing the reason (empty string) is not audit-logged. */
   setRejectionReason: (candidateId: string, reason: string) => void;
+  /* ---- TAnIA: star rating, lead source, #Vivier, prequal, interviews ---- */
+  /** Manual override of the Mantu Star Rating (TopGun/A/B/C/D). */
+  setCandidateRating: (id: string, rating: StarRating) => void;
+  /** Reclassify a candidate's lead source (Applicant/Referral/Outbound). */
+  setCandidateLeadSource: (id: string, leadSource: LeadSource) => void;
+  /** Add/remove a candidate from #Vivier (talent pool); auto-flags Silver Medalist. */
+  toggleVivier: (id: string) => void;
+  /** Patch the prequal record (schedule, questions, tone guide). */
+  savePrequal: (candidateId: string, patch: Partial<PrequalRecord>) => void;
+  /** Record the prequal decision. "advance" promotes a LEAD to a CANDIDATE. */
+  setPrequalOutcome: (candidateId: string, outcome: PrequalOutcome) => void;
+  /** Schedule an interview round (Intw1/2/3/QM); books an Interested lead. */
+  addInterview: (candidateId: string, kind: InterviewKind, interviewer: string, scheduledFor: string | null) => void;
+  /** Patch an interview record (outcome, HM feedback, rating). */
+  updateInterview: (candidateId: string, interviewId: string, patch: Partial<InterviewRecord>) => void;
+  /** Hand a scored chatbox application off to the Applicant Screener — creates a Candidate. */
+  advanceChatboxSubmission: (id: string) => void;
+  /** Set a chatbox submission's review status. */
+  setChatboxSubmissionStatus: (id: string, status: ChatboxSubmissionStatus) => void;
+  /** Append a new chatbox submission (used by the public careers chatbox). */
+  addChatboxSubmission: (sub: ChatboxSubmission) => void;
   suppressCandidate: (id: string) => void;
   markDoNotContact: (id: string) => void;
+  /** Undoes suppressCandidate/markDoNotContact — clears the suppressed/doNotContact
+   *  flags and restores `stage` to whatever it was right before suppression. */
+  restoreCandidateContact: (id: string) => void;
   unsubscribeCandidate: (id: string) => void;
   anonymizeCandidate: (id: string) => void;
   exportCandidate: (id: string) => string;
@@ -366,6 +402,10 @@ interface HermesContextValue {
   state: HermesState | null;
   hydrated: boolean;
   actions: HermesActions;
+  /** Computed once per state change (not per consumer) — the TopBar bell and
+   *  the dashboard AttentionPanel both read this instead of independently
+   *  re-running deriveRecommendations on every render. */
+  recommendations: Recommendation[];
 }
 
 const HermesContext = createContext<HermesContextValue | null>(null);
@@ -381,12 +421,21 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
   // Blobs older than 12 have their model layer reset below so returning visitors
   // leave the previous Anthropic default (which would fall back to the mock).
   const preKimi = (parsed.version ?? 0) < 12;
+  const starT = parsed.settings?.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
   return {
     ...parsed,
     version: STATE_VERSION,
     // D-2: fill every required root field that may be absent in older blobs.
     campaigns: parsed.campaigns ?? [],
-    candidates: parsed.candidates ?? [],
+    // STATE_VERSION 13 — backfill the TAnIA layer (lead source + star rating) on
+    // any candidate that predates it, without clobbering explicit values.
+    candidates: (parsed.candidates ?? []).map((c) => ({
+      ...c,
+      leadSource: c.leadSource ?? deriveLeadSource(c),
+      starRating: c.starRating ?? deriveStarRating(c.matchScore, starT),
+    })),
+    // STATE_VERSION 13 — inbound chatbox queue.
+    chatboxSubmissions: parsed.chatboxSubmissions ?? [],
     outreach: parsed.outreach ?? [],
     replies: parsed.replies ?? [],
     bookings: parsed.bookings ?? [],
@@ -423,6 +472,8 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
       // D-2: guardrails and notifications fills.
       guardrails: parsed.settings.guardrails ?? defs.guardrails,
       notifications: parsed.settings.notifications ?? defs.notifications,
+      // STATE_VERSION 13 — Mantu Star Rating thresholds.
+      starRatingThresholds: parsed.settings.starRatingThresholds ?? defs.starRatingThresholds,
       // STATE_VERSION 11 — Aria management API URL.
       hermesWebUrl: parsed.settings.hermesWebUrl ?? defs.hermesWebUrl ?? "",
     },
@@ -634,11 +685,21 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const recomputeMetrics = (s: HermesState, campaignId: string): HermesState => {
     const cands = s.candidates.filter((c) => c.campaignId === campaignId);
+    const campaign = s.campaigns.find((c) => c.id === campaignId);
+    // Elapsed time from campaign creation to the first *scheduled* interview
+    // (shared with seed.ts via firstInterviewElapsedHours so live and seeded
+    // campaigns report the same KPI meaning — see metrics.ts).
+    const firstInterviewHours = campaign
+      ? firstInterviewElapsedHours(
+          s.bookings.filter((b) => b.campaignId === campaignId),
+          campaign.createdAt,
+        )
+      : null;
     return {
       ...s,
       campaigns: s.campaigns.map((c) =>
         c.id === campaignId
-          ? { ...c, metrics: computeCampaignMetrics(cands, c.metrics) }
+          ? { ...c, metrics: computeCampaignMetrics(cands, c.metrics, firstInterviewHours) }
           : c,
       ),
     };
@@ -1177,6 +1238,44 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             type: "outreach",
             title: `Follow-up drafted — ${candidate.name}`,
             notes: `Sequence step ${due.nextSequenceStep} · ${Math.floor(due.daysSinceContact)}d of silence since last contact.`,
+            outcome: msg.status,
+            campaignId: campaign.id,
+            linkedEntityType: "candidate",
+            linkedEntityId: candidate.id,
+          }),
+          campaign.id,
+        );
+      });
+      return msg;
+    },
+    [commit, current],
+  );
+
+  // #Vivier re-contact. Unlike draftFollowUpFor (which is gated to candidates
+  // still in the "Contacted but silent" sequence), a pooled candidate is by
+  // definition Rejected / Not Interested, so this drafts a fresh re-engagement
+  // outreach regardless of stage. Still only a Draft behind the approval gate.
+  const draftRecontactFor = useCallback(
+    (candidateId: string, tone?: OutreachTone, seatId?: string) => {
+      const s = current();
+      const candidate = s.candidates.find((c) => c.id === candidateId);
+      const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
+      if (!candidate || !campaign) return null;
+      const finalTone = tone ?? effectiveTone(s.skills);
+      const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
+      const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
+      const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
+      const channel: OutreachChannel = candidate.outreachHistory[0]?.channel ?? "Email";
+      const gen = generateOutreach(candidate, campaign, finalTone, channel, 1, voice, lang);
+      const msg = newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1);
+      commit((prev) => {
+        const next = { ...prev, outreach: [msg, ...prev.outreach] };
+        return withActivity(
+          next,
+          makeActivity({
+            type: "outreach",
+            title: `Re-contact drafted — ${candidate.name}`,
+            notes: `#Vivier re-engagement${candidate.silverMedalist ? " (Silver Medalist)" : ""}. Awaiting approval.`,
             outcome: msg.status,
             campaignId: campaign.id,
             linkedEntityType: "candidate",
@@ -1885,10 +1984,22 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               c.id === reply.candidateId
                 ? {
                     ...c,
-                    stage: target,
+                    ...withStage(c, target),
                     complianceFlags:
                       reply.intent === "NEGATIVE"
-                        ? { ...c.complianceFlags, doNotContact: true, suppressed: true }
+                        ? {
+                            ...c.complianceFlags,
+                            doNotContact: true,
+                            suppressed: true,
+                            // Mirror suppressCandidate/markDoNotContact so the
+                            // "Undo — restore contact" button in the drawer can
+                            // restore the real prior stage instead of falling
+                            // back to the hardcoded default.
+                            preSuppressionStage:
+                              c.stage === "Suppressed"
+                                ? c.complianceFlags.preSuppressionStage ?? null
+                                : c.stage,
+                          }
                         : c.complianceFlags,
                   }
                 : c,
@@ -2041,7 +2152,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           ...prev,
           bookings: [booking, ...prev.bookings],
           candidates: prev.candidates.map((c) =>
-            c.id === candidate.id ? { ...c, stage: "Booked", booking } : c,
+            c.id === candidate.id
+              ? { ...c, ...withStage(c, "Booked"), booking }
+              : c,
           ),
         };
         next = recomputeMetrics(next, campaign.id);
@@ -2083,7 +2196,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             next = {
               ...next,
               candidates: next.candidates.map((c) =>
-                c.id === booking.candidateId ? { ...c, stage: "Interviewed" } : c,
+                c.id === booking.candidateId
+                  ? { ...c, ...withStage(c, "Interviewed") }
+                  : c,
               ),
             };
             next = recomputeMetrics(next, booking.campaignId);
@@ -2172,7 +2287,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const cand = s.candidates.find((c) => c.id === id);
         let next: HermesState = {
           ...s,
-          candidates: s.candidates.map((c) => (c.id === id ? { ...c, stage } : c)),
+          candidates: s.candidates.map((c) =>
+            c.id === id
+              ? // Track the historical high-water-mark rank so a later regression
+                // (e.g. Rejected after Interviewed) doesn't undercount how far the
+                // candidate actually progressed in funnel/KPI aggregation.
+                { ...c, ...withStage(c, stage) }
+              : c,
+          ),
         };
         if (cand) next = recomputeMetrics(next, cand.campaignId);
         return next;
@@ -2253,6 +2375,307 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit],
   );
 
+  /* ---- TAnIA actions (source, rating, #Vivier, prequal, interviews, chatbox) */
+
+  const setCandidateRating = useCallback(
+    (id: string, rating: StarRating) =>
+      commit((s) => ({
+        ...s,
+        candidates: s.candidates.map((c) => (c.id === id ? { ...c, starRating: rating } : c)),
+      })),
+    [commit],
+  );
+
+  const setCandidateLeadSource = useCallback(
+    (id: string, leadSource: LeadSource) =>
+      commit((s) => ({
+        ...s,
+        candidates: s.candidates.map((c) => (c.id === id ? { ...c, leadSource } : c)),
+      })),
+    [commit],
+  );
+
+  const toggleVivier = useCallback(
+    (id: string) =>
+      commit((s) => {
+        const cand = s.candidates.find((c) => c.id === id);
+        if (!cand) return s;
+        const nowIn = !cand.vivier;
+        const next: HermesState = {
+          ...s,
+          candidates: s.candidates.map((c) =>
+            c.id === id
+              ? {
+                  ...c,
+                  vivier: nowIn,
+                  silverMedalist:
+                    nowIn && (c.starRating === "TopGun" || c.starRating === "A") ? true : c.silverMedalist,
+                  recontactAt: nowIn ? c.recontactAt ?? isoDaysBefore(-90) : c.recontactAt,
+                }
+              : c,
+          ),
+        };
+        return withActivity(
+          next,
+          makeActivity({
+            type: "system",
+            title: `${nowIn ? "Added to" : "Removed from"} #Vivier — ${cand.name}`,
+            notes: nowIn ? "Talent pool — kept warm for future needs." : "Removed from talent pool.",
+            outcome: nowIn ? "Pooled" : "Unpooled",
+            campaignId: cand.campaignId,
+            linkedEntityType: "candidate",
+            linkedEntityId: id,
+          }),
+          cand.campaignId,
+        );
+      }),
+    [commit],
+  );
+
+  const savePrequal = useCallback(
+    (candidateId: string, patch: Partial<PrequalRecord>) =>
+      commit((s) => ({
+        ...s,
+        candidates: s.candidates.map((c) => {
+          if (c.id !== candidateId) return c;
+          const base: PrequalRecord = c.prequal ?? {
+            scheduledFor: null,
+            completedAt: null,
+            questions: [],
+            outcome: "pending",
+          };
+          return { ...c, prequal: { ...base, ...patch } };
+        }),
+      })),
+    [commit],
+  );
+
+  const setPrequalOutcome = useCallback(
+    (candidateId: string, outcome: PrequalOutcome) =>
+      commit((s) => {
+        const cand = s.candidates.find((c) => c.id === candidateId);
+        if (!cand) return s;
+        // Advancing a prequal is the LEAD -> CANDIDATE promotion (TAnIA §5/§7).
+        const promote = outcome === "advance" && ["Sourced", "Contacted", "Replied"].includes(cand.stage);
+        const nextStage: CandidateStage = promote
+          ? "Interested"
+          : outcome === "reject"
+            ? "Rejected"
+            : cand.stage;
+        const base: PrequalRecord = cand.prequal ?? {
+          scheduledFor: null,
+          completedAt: null,
+          questions: [],
+          outcome: "pending",
+        };
+        let next: HermesState = {
+          ...s,
+          candidates: s.candidates.map((c) =>
+            c.id === candidateId
+              ? {
+                  ...c,
+                  // A "reject" outcome sets stage: "Rejected" regardless of how
+                  // far the candidate had progressed (e.g. re-prequalling an
+                  // already-Interviewed candidate) — withStage keeps the
+                  // high-water mark so effectiveStageRank() doesn't under-report.
+                  ...withStage(c, nextStage),
+                  prequal: {
+                    ...base,
+                    outcome,
+                    completedAt: base.completedAt ?? new Date().toISOString(),
+                    starRating: base.starRating ?? c.starRating,
+                  },
+                  vivier: outcome === "reject" ? true : c.vivier,
+                }
+              : c,
+          ),
+        };
+        next = recomputeMetrics(next, cand.campaignId);
+        return withActivity(
+          next,
+          makeActivity({
+            type: "system",
+            title: `Prequal ${outcome} — ${cand.name}`,
+            notes: promote
+              ? "Lead promoted to Candidate."
+              : outcome === "reject"
+                ? "Declined at prequal; added to #Vivier."
+                : "Held for review.",
+            outcome: outcome === "advance" ? "Advance to Intw1" : outcome === "hold" ? "Hold" : "Reject",
+            campaignId: cand.campaignId,
+            linkedEntityType: "candidate",
+            linkedEntityId: candidateId,
+          }),
+          cand.campaignId,
+        );
+      }),
+    [commit],
+  );
+
+  const addInterview = useCallback(
+    (candidateId: string, kind: InterviewKind, interviewer: string, scheduledFor: string | null) =>
+      commit((s) => {
+        const cand = s.candidates.find((c) => c.id === candidateId);
+        if (!cand) return s;
+        const rec: InterviewRecord = {
+          id: genId("iv"),
+          kind,
+          scheduledFor,
+          interviewer,
+          outcome: "Scheduled",
+          hmFeedbackDueAt: null,
+          createdAt: new Date().toISOString(),
+        };
+        // Booking the first interview moves an Interested lead into the interview flow.
+        const nextStage: CandidateStage = cand.stage === "Interested" ? "Booked" : cand.stage;
+        let next: HermesState = {
+          ...s,
+          candidates: s.candidates.map((c) =>
+            c.id === candidateId
+              ? { ...c, ...withStage(c, nextStage), interviews: [...(c.interviews ?? []), rec] }
+              : c,
+          ),
+        };
+        next = recomputeMetrics(next, cand.campaignId);
+        return withActivity(
+          next,
+          makeActivity({
+            type: "booking",
+            title: `${kind} scheduled — ${cand.name}`,
+            notes: `Interviewer: ${interviewer}.`,
+            outcome: "Scheduled",
+            campaignId: cand.campaignId,
+            linkedEntityType: "candidate",
+            linkedEntityId: candidateId,
+          }),
+          cand.campaignId,
+        );
+      }),
+    [commit],
+  );
+
+  const updateInterview = useCallback(
+    (candidateId: string, interviewId: string, patch: Partial<InterviewRecord>) =>
+      commit((s) => ({
+        ...s,
+        candidates: s.candidates.map((c) =>
+          c.id === candidateId
+            ? {
+                ...c,
+                interviews: (c.interviews ?? []).map((iv) =>
+                  iv.id === interviewId ? { ...iv, ...patch } : iv,
+                ),
+              }
+            : c,
+        ),
+      })),
+    [commit],
+  );
+
+  const advanceChatboxSubmission = useCallback(
+    (id: string) =>
+      commit((s) => {
+        const sub = (s.chatboxSubmissions ?? []).find((x) => x.id === id);
+        if (!sub) return s;
+        const campaignId = sub.campaignId ?? s.activeCampaignId ?? s.campaigns[0]?.id ?? "";
+        const initials = `${sub.firstName[0] ?? ""}${sub.lastName[0] ?? ""}`.toUpperCase();
+        const cand: Candidate = {
+          id: genId("cand"),
+          campaignId,
+          name: `${sub.firstName} ${sub.lastName}`.trim(),
+          email: sub.email,
+          phone: sub.phone,
+          avatarInitials: initials,
+          currentTitle: sub.roleTitle,
+          currentCompany: "—",
+          location: sub.detected.location ?? "—",
+          timezone: "—",
+          linkedinUrl: "",
+          githubUrl: "",
+          sourcePlatform: "Referral", // closest base enum; leadSource is authoritative
+          sourceQuery: `Chatbox Path ${sub.path}`,
+          matchScore: sub.score.total,
+          matchBreakdown: [],
+          techStack: sub.detected.skills ?? [],
+          yearsExperience: 0,
+          companyStageExperience: [],
+          industryExperience: [],
+          recentActivity: `Applied via career-site chatbox (Path ${sub.path}).`,
+          stage: "Replied",
+          lastContactedAt: null,
+          outreachHistory: [],
+          replyHistory: [],
+          booking: null,
+          complianceFlags: {
+            doNotContact: false,
+            suppressed: false,
+            unsubscribed: false,
+            gdprExportRequested: false,
+            anonymized: false,
+            suppressedUntil: null,
+          },
+          createdAt: new Date().toISOString(),
+          provenance: "live",
+          leadSource: "Applicant",
+          starRating: sub.starRating,
+          dna: sub.detected.skills ?? [],
+        };
+        let next: HermesState = {
+          ...s,
+          candidates: [cand, ...s.candidates],
+          chatboxSubmissions: (s.chatboxSubmissions ?? []).map((x) =>
+            x.id === id ? { ...x, status: "advanced", handoffCandidateId: cand.id } : x,
+          ),
+        };
+        if (campaignId) next = recomputeMetrics(next, campaignId);
+        return withActivity(
+          next,
+          makeActivity({
+            type: "parse",
+            title: `Applicant handed off — ${cand.name}`,
+            notes: `Chatbox score ${sub.score.total}/100 · ${sub.starRating}. Screener created a candidate record.`,
+            outcome: "Handoff to Applicant Screener",
+            campaignId: campaignId || null,
+            linkedEntityType: "candidate",
+            linkedEntityId: cand.id,
+          }),
+          campaignId || null,
+        );
+      }),
+    [commit],
+  );
+
+  const setChatboxSubmissionStatus = useCallback(
+    (id: string, status: ChatboxSubmissionStatus) =>
+      commit((s) => ({
+        ...s,
+        chatboxSubmissions: (s.chatboxSubmissions ?? []).map((x) =>
+          x.id === id ? { ...x, status } : x,
+        ),
+      })),
+    [commit],
+  );
+
+  const addChatboxSubmission = useCallback(
+    (sub: ChatboxSubmission) =>
+      commit((s) =>
+        withActivity(
+          { ...s, chatboxSubmissions: [sub, ...(s.chatboxSubmissions ?? [])] },
+          makeActivity({
+            type: "parse",
+            title: `New application — ${sub.firstName} ${sub.lastName}`,
+            notes: `Career-site chatbox (Path ${sub.path}) · score ${sub.score.total}/100 · ${sub.starRating}.`,
+            outcome: "Awaiting screener",
+            campaignId: sub.campaignId,
+            linkedEntityType: sub.campaignId ? "campaign" : null,
+            linkedEntityId: sub.campaignId,
+          }),
+          sub.campaignId ?? null,
+        ),
+      ),
+    [commit],
+  );
+
   /**
    * Sync a compliance action into the real, server-enforced suppression_list
    * table (/api/compliance/suppress) so the send route actually blocks this
@@ -2260,12 +2683,21 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
    * complianceMutate) is the source of truth for this app's own UI regardless
    * of whether the network sync lands; a failure just gets a follow-up activity
    * note so it isn't silently lost.
+   *
+   * `method: "DELETE"` reverses this (used by restoreCandidateContact) — same
+   * endpoint, same auth/RLS posture, removes the row instead of upserting it.
    */
   const syncSuppressionToServer = useCallback(
-    (email: string, reason: string, campaignId: string, candidateId: string) => {
+    (
+      email: string,
+      reason: string,
+      campaignId: string,
+      candidateId: string,
+      method: "POST" | "DELETE" = "POST",
+    ) => {
       if (!email) return;
       void fetch("/api/compliance/suppress", {
-        method: "POST",
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "email", value: email, reason }),
       })
@@ -2277,7 +2709,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 prev,
                 makeActivity({
                   type: "compliance",
-                  title: "Suppression not synced to enforcement list",
+                  title:
+                    method === "DELETE"
+                      ? "Restore not synced to enforcement list"
+                      : "Suppression not synced to enforcement list",
                   notes: out.detail!,
                   outcome: "Local only",
                   campaignId,
@@ -2303,7 +2738,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         if (!cand) return s;
         let next: HermesState = {
           ...s,
-          candidates: s.candidates.map((c) => (c.id === id ? fn(c) : c)),
+          // Any complianceMutate caller may change `stage` (e.g. suppressCandidate,
+          // markDoNotContact both set stage: "Suppressed"); always fold the result
+          // into the high-water-mark rank so a later regression can't undercount
+          // how far the candidate actually progressed in funnel/KPI aggregation.
+          candidates: s.candidates.map((c) => {
+            if (c.id !== id) return c;
+            const updated = fn(c);
+            return { ...updated, ...withStage(c, updated.stage) };
+          }),
         };
         next = recomputeMetrics(next, cand.campaignId);
         return withActivity(
@@ -2335,6 +2778,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             ...c.complianceFlags,
             suppressed: true,
             suppressedUntil: isoDaysBefore(-90),
+            // Preserve the real stage from before the FIRST suppression so a
+            // later suppress/DNC toggle (or a restore) doesn't clobber it with
+            // "Suppressed" itself.
+            preSuppressionStage:
+              c.stage === "Suppressed" ? c.complianceFlags.preSuppressionStage ?? null : c.stage,
           },
         }),
         "Contact suppressed",
@@ -2353,12 +2801,45 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         (c) => ({
           ...c,
           stage: "Suppressed",
-          complianceFlags: { ...c.complianceFlags, doNotContact: true, suppressed: true },
+          complianceFlags: {
+            ...c.complianceFlags,
+            doNotContact: true,
+            suppressed: true,
+            preSuppressionStage:
+              c.stage === "Suppressed" ? c.complianceFlags.preSuppressionStage ?? null : c.stage,
+          },
         }),
         "Marked do-not-contact",
         "Do-not-contact",
       );
       if (cand) syncSuppressionToServer(cand.email, "Do-not-contact", cand.campaignId, id);
+    },
+    [complianceMutate, current, syncSuppressionToServer],
+  );
+
+  const restoreCandidateContact = useCallback(
+    (id: string) => {
+      const cand = current().candidates.find((c) => c.id === id);
+      complianceMutate(
+        id,
+        (c) => ({
+          ...c,
+          stage: c.complianceFlags.preSuppressionStage ?? "Sourced",
+          complianceFlags: {
+            ...c.complianceFlags,
+            suppressed: false,
+            doNotContact: false,
+            suppressedUntil: null,
+            preSuppressionStage: null,
+          },
+        }),
+        "Contact restored",
+        "Restored",
+      );
+      // Mirror suppressCandidate/markDoNotContact: also remove the candidate
+      // from the real, server-enforced suppression_list so the outreach send
+      // route stops blocking them, not just the local view.
+      if (cand) syncSuppressionToServer(cand.email, "Restored", cand.campaignId, id, "DELETE");
     },
     [complianceMutate, current, syncSuppressionToServer],
   );
@@ -4066,6 +4547,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       sendApprovedOutreach,
       rejectOutreach,
       draftFollowUpFor,
+      draftRecontactFor,
       classifyAndStoreReply,
       markReplyHandled,
       applyReplyAction,
@@ -4078,8 +4560,19 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       setCandidatePhone,
       addCandidateNote,
       setRejectionReason,
+      setCandidateRating,
+      setCandidateLeadSource,
+      toggleVivier,
+      savePrequal,
+      setPrequalOutcome,
+      addInterview,
+      updateInterview,
+      advanceChatboxSubmission,
+      setChatboxSubmissionStatus,
+      addChatboxSubmission,
       suppressCandidate,
       markDoNotContact,
+      restoreCandidateContact,
       unsubscribeCandidate,
       anonymizeCandidate,
       exportCandidate,
@@ -4152,9 +4645,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [
       setActiveCampaign, createCampaignFromAnalysis, updateCampaign, regenerateQueries,
       sourceNextBatch, runSourcingAgent, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
-      approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, draftFollowUpFor, classifyAndStoreReply, markReplyHandled,
+      approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, draftFollowUpFor, draftRecontactFor, classifyAndStoreReply, markReplyHandled,
       applyReplyAction, draftReplyResponse, createBookingFor, updateBooking, generateReport,
-      setSkillUpdateStatus, setCandidateStage, setCandidatePhone, addCandidateNote, setRejectionReason, suppressCandidate, markDoNotContact,
+      setSkillUpdateStatus, setCandidateStage, setCandidatePhone, addCandidateNote, setRejectionReason,
+      setCandidateRating, setCandidateLeadSource, toggleVivier, savePrequal, setPrequalOutcome, addInterview, updateInterview,
+      advanceChatboxSubmission, setChatboxSubmissionStatus, addChatboxSubmission,
+      suppressCandidate, markDoNotContact, restoreCandidateContact,
       unsubscribeCandidate, anonymizeCandidate, exportCandidate, updateSettings,
       updateIntegration, toggleIntegrationMode, testIntegration,
       addSeat, deployAgents, updateSeat, setSeatStatus, connectSeatAccount, disconnectSeatAccount, toggleSeatLive,
@@ -4175,9 +4671,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     ],
   );
 
+  const recommendations = useMemo(
+    () => (state ? deriveRecommendations(state) : []),
+    [state],
+  );
+
   const value = useMemo<HermesContextValue>(
-    () => ({ state, hydrated: state !== null, actions }),
-    [state, actions],
+    () => ({ state, hydrated: state !== null, actions, recommendations }),
+    [state, actions, recommendations],
   );
 
   return React.createElement(HermesContext.Provider, { value }, children);
@@ -4315,6 +4816,16 @@ export function useCandidate(id: string | null | undefined): Candidate | undefin
   return id ? s.candidates.find((c) => c.id === id) : undefined;
 }
 
+/** Scored chatbox applications awaiting recruiter handoff (TAnIA §5). */
+export function useChatboxSubmissions(): ChatboxSubmission[] {
+  return useStateOrEmpty().chatboxSubmissions ?? [];
+}
+
+/** Candidates in #Vivier (the talent pool), newest first. */
+export function useVivier(): Candidate[] {
+  return useStateOrEmpty().candidates.filter((c) => c.vivier);
+}
+
 export function useOutreach(): OutreachMessage[] {
   return useStateOrEmpty().outreach;
 }
@@ -4354,12 +4865,21 @@ export function useActivities(): Activity[] {
 }
 
 export function useDashboardKpis(): GlobalKpis {
-  return globalKpis(useStateOrEmpty());
+  const { campaigns, candidates, outreach, replies } = useStateOrEmpty();
+  // Keyed on the individual slices globalKpis() reads, not the whole state
+  // object, so a commit that only touches e.g. replies doesn't force a
+  // recompute when campaigns/candidates/outreach are unchanged.
+  return useMemo(
+    () => globalKpis({ campaigns, candidates, outreach, replies }),
+    [campaigns, candidates, outreach, replies],
+  );
 }
 
-/** Single prioritized recommendation queue -- see recommendations.ts for the ranking rationale. */
+/** Single prioritized recommendation queue -- see recommendations.ts for the ranking rationale.
+ *  Computed once per state change in <HermesProvider> (not per caller) so the TopBar bell and
+ *  the dashboard AttentionPanel share one derivation instead of running it twice. */
 export function useRecommendations(): Recommendation[] {
-  return deriveRecommendations(useStateOrEmpty());
+  return useHermes().recommendations;
 }
 
 /** Candidates whose follow-up is due (Task 1) -- see deriveFollowUpsDue in recommendations.ts. */

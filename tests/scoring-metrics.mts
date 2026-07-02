@@ -13,8 +13,12 @@ import {
   candidatesForCampaign,
   stageRank,
   STAGE_RANK,
+  effectiveStageRank,
+  withStage,
+  firstInterviewElapsedHours,
 } from "../src/lib/metrics";
 import { FUNNEL_STAGES } from "../src/lib/types";
+import type { Candidate } from "../src/lib/types";
 import { buildSeedState } from "../src/lib/seed";
 
 let pass = 0,
@@ -152,6 +156,85 @@ ok("unknown stage falls back to 0", stageRank("Totally Made Up") === 0);
 ok("Not Interested maps to Replied rank (2)", stageRank("Not Interested") === 2);
 ok("Rejected maps to Contacted rank (1)", stageRank("Rejected") === 1);
 ok("Suppressed maps to Contacted rank (1)", stageRank("Suppressed") === 1);
+
+/* ---- withStage / maxStageRank high-water-mark (regression for P1) -------- */
+// withStage is the single helper every store.ts stage-mutation site
+// (setCandidateStage, createBookingFor, updateBooking, complianceMutate,
+// applyReplyAction) must go through so a later regression to a terminal
+// stage never erases an earlier positive high-water mark.
+type BareCandidate = Pick<Candidate, "stage" | "maxStageRank">;
+
+const fresh: BareCandidate = { stage: "Sourced", maxStageRank: undefined };
+const afterInterested = withStage(fresh, "Interested");
+ok("withStage: Sourced -> Interested sets maxStageRank to 3", afterInterested.maxStageRank === 3);
+ok("withStage: stage updated to Interested", afterInterested.stage === "Interested");
+
+// Exact P1 failure scenario: a candidate reaches "Interviewed" purely via the
+// booking flow (createBookingFor -> updateBooking), which never calls
+// setCandidateStage, then gets suppressed via a negative reply / manual DNC.
+// Before the fix, maxStageRank stayed at whatever setCandidateStage last set
+// it to (or 0), so effectiveStageRank() under-reported the true progress.
+const booked = withStage(fresh, "Booked"); // createBookingFor
+ok("withStage: Sourced -> Booked sets maxStageRank to 4", booked.maxStageRank === 4);
+const interviewed = withStage(booked, "Interviewed"); // updateBooking (Booked -> Interviewed)
+ok("withStage: Booked -> Interviewed sets maxStageRank to 5", interviewed.maxStageRank === 5);
+const suppressedAfterInterview = withStage(interviewed, "Suppressed"); // suppressCandidate / markDoNotContact / applyReplyAction
+ok(
+  "withStage: Interviewed -> Suppressed preserves maxStageRank at 5 (does not regress to 1)",
+  suppressedAfterInterview.maxStageRank === 5,
+);
+ok(
+  "effectiveStageRank returns 5 for a suppressed-after-interviewed candidate, not 3 or 1",
+  effectiveStageRank({ ...suppressedAfterInterview } as Candidate) === 5,
+);
+
+// A candidate suppressed with no prior progress should not gain a phantom
+// high-water mark beyond what Suppressed itself ranks.
+const neverProgressed: BareCandidate = { stage: "Sourced", maxStageRank: 0 };
+const suppressedEarly = withStage(neverProgressed, "Suppressed");
+ok(
+  "withStage: Sourced -> Suppressed with no prior progress caps at Suppressed rank (1)",
+  suppressedEarly.maxStageRank === 1,
+);
+
+/* ---- firstInterviewElapsedHours (regression for P2) ---------------------- */
+// Must use each booking's scheduled `startTime`, not `createdAt`, and must be
+// the single formula shared by store.ts (live) and seed.ts (seeded) so both
+// report the same KPI meaning for an equivalent booking lag.
+const campaignCreatedAt = "2026-01-01T00:00:00.000Z";
+
+ok(
+  "firstInterviewElapsedHours: no bookings -> null",
+  firstInterviewElapsedHours([], campaignCreatedAt) === null,
+);
+
+ok(
+  "firstInterviewElapsedHours: single booking 10h after createdAt -> 10",
+  firstInterviewElapsedHours(
+    [{ startTime: "2026-01-01T10:00:00.000Z" }],
+    campaignCreatedAt,
+  ) === 10,
+);
+
+ok(
+  "firstInterviewElapsedHours: picks the earliest startTime among multiple bookings",
+  firstInterviewElapsedHours(
+    [
+      { startTime: "2026-01-03T00:00:00.000Z" },
+      { startTime: "2026-01-01T05:00:00.000Z" },
+      { startTime: "2026-01-02T00:00:00.000Z" },
+    ],
+    campaignCreatedAt,
+  ) === 5,
+);
+
+ok(
+  "firstInterviewElapsedHours: startTime before createdAt clamps to 0, never negative",
+  firstInterviewElapsedHours(
+    [{ startTime: "2025-12-31T00:00:00.000Z" }],
+    campaignCreatedAt,
+  ) === 0,
+);
 
 /* ---- summary ------------------------------------------------------------- */
 console.log(`RESULT scoring: ${pass} passed, ${fail} failed`);

@@ -140,6 +140,9 @@ export function buildCloudRequest(
   system: string,
   prompt: string,
   key: string,
+  /** Output ceiling. Defaults to 2048 — enough headroom for JSON drafts, CV
+   *  analysis and screening-question generation that 1024 silently truncated. */
+  maxTokens = 2048,
 ): { url: string; headers: Record<string, string>; body: string } {
   if (provider === "anthropic") {
     return {
@@ -151,7 +154,7 @@ export function buildCloudRequest(
       },
       body: JSON.stringify({
         model,
-        max_tokens: 1024,
+        max_tokens: maxTokens,
         system,
         messages: [{ role: "user", content: prompt }],
       }),
@@ -166,6 +169,7 @@ export function buildCloudRequest(
     },
     body: JSON.stringify({
       model,
+      max_tokens: maxTokens,
       messages: [
         { role: "system", content: system },
         { role: "user", content: prompt },

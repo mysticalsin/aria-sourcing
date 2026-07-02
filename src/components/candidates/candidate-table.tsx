@@ -21,8 +21,10 @@ import {
   type Tone,
 } from "@/lib/utils";
 import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
+import { deriveLeadSource, deriveStarRating, DEFAULT_STAR_THRESHOLDS } from "@/lib/tania";
+import { SourceBadge, StarBadge } from "@/components/tania/badges";
 import type { Candidate, ComplianceFlags } from "@/lib/types";
-import { Ban, Download, EyeOff, Lock, MailX, UserX, Users } from "lucide-react";
+import { Ban, Bookmark, Download, EyeOff, Lock, MailX, UserX, Users } from "lucide-react";
 
 interface FlagDescriptor {
   key: keyof ComplianceFlags;
@@ -50,33 +52,65 @@ export function CandidateTable({
   candidates,
   onSelect,
   showCampaign = false,
+  emptyState,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectAll,
 }: {
   candidates: Candidate[];
   onSelect: (c: Candidate) => void;
   showCampaign?: boolean;
+  /** Overrides the empty-state copy — e.g. to distinguish "no data at all" from
+   *  "filters matched nothing" (see CAND-P1-2). Falls back to the default. */
+  emptyState?: { title: string; description: string; action?: React.ReactNode };
+  /** Providing both enables the bulk-select checkbox column (see CAND-P1-4).
+   *  Omit both to keep a plain, unselectable table (e.g. the campaign detail page). */
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  onToggleSelectAll?: () => void;
 }) {
   const campaigns = useCampaigns();
-  const confidentialityMode = Boolean(useSettings().confidentialityMode);
+  const settings = useSettings();
+  const confidentialityMode = Boolean(settings.confidentialityMode);
+  const starThresholds = settings.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
   const campaignTitle = React.useMemo(() => {
     const map = new Map<string, string>();
     campaigns.forEach((c) => map.set(c.id, c.title));
     return map;
   }, [campaigns]);
+  const selectable = Boolean(selectedIds && onToggleSelect);
 
   if (candidates.length === 0) {
     return (
       <EmptyState
         icon={<Users className="h-6 w-6" />}
-        title="No candidates yet"
-        description="Source a batch to populate the pipeline. Matched candidates will appear here ranked by fit."
+        title={emptyState?.title ?? "No candidates yet"}
+        description={
+          emptyState?.description ??
+          "Source a batch to populate the pipeline. Matched candidates will appear here ranked by fit."
+        }
+        action={emptyState?.action}
       />
     );
   }
+
+  const allSelected = selectable && candidates.every((c) => selectedIds!.has(c.id));
 
   return (
     <Table caption="Candidates" className="min-w-[40rem]">
       <THead>
         <TR className="border-b border-line">
+          {selectable && (
+            <TH>
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={onToggleSelectAll}
+                aria-label="Select all candidates"
+                className="h-4 w-4 rounded border-line accent-tangerine focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
+              />
+            </TH>
+          )}
           <TH>Candidate</TH>
           {showCampaign && <TH>Campaign</TH>}
           <TH>Source</TH>
@@ -102,6 +136,18 @@ export function CandidateTable({
               onClick={() => onSelect(c)}
               className="cursor-pointer transition-colors hover:bg-canvas"
             >
+              {selectable && (
+                <TD>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds!.has(c.id)}
+                    onChange={() => onToggleSelect!(c.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={`Select ${c.name}`}
+                    className="h-4 w-4 rounded border-line accent-tangerine focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
+                  />
+                </TD>
+              )}
               <TD>
                 <div className="flex items-center gap-3">
                   <span
@@ -146,10 +192,19 @@ export function CandidateTable({
                 </TD>
               )}
               <TD>
-                <div className="flex items-center gap-1.5">
-                  <Badge tone="neutral" size="sm">
-                    {c.sourcePlatform}
-                  </Badge>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <SourceBadge source={deriveLeadSource(c)} size="sm" />
+                  {/* The "Source" filter above narrows by the literal sourcePlatform
+                      (GitHub, LinkedIn, ...), but SourceBadge only shows the collapsed
+                      lead-source taxonomy (Applicant/Referral/Outbound) — surface the
+                      literal platform too so a platform filter stays visually verifiable
+                      (see CAND-P1-1). */}
+                  <span className="text-xs text-muted">{c.sourcePlatform}</span>
+                  {c.vivier && (
+                    <Badge tone="violet" size="sm" title="In #Vivier (talent pool)">
+                      <Bookmark className="h-3 w-3" aria-hidden /> Vivier
+                    </Badge>
+                  )}
                   {c.provenance === "synthetic" && (
                     <Badge tone="warning" size="sm" title="Demo data — not a real sourced profile">
                       Synthetic
@@ -159,13 +214,12 @@ export function CandidateTable({
               </TD>
               <TD>
                 <div className="flex items-center gap-2">
-                  <Badge tone={scoreTone(c.matchScore)} size="sm">
-                    {Math.round(c.matchScore)}
-                  </Badge>
+                  <StarBadge rating={c.starRating ?? deriveStarRating(c.matchScore, starThresholds)} size="sm" showLabel={false} />
+                  <span className="text-xs font-semibold tabular-nums text-ink-soft">{Math.round(c.matchScore)}</span>
                   <Progress
                     value={c.matchScore}
                     tone={scoreTone(c.matchScore)}
-                    className="w-16"
+                    className="hidden w-16 sm:block"
                     aria-label={`Match score ${Math.round(c.matchScore)} of 100`}
                   />
                 </div>

@@ -52,9 +52,13 @@ export function ActivityTimeline({
   limit?: number;
   emptyHint?: string;
 }) {
-  const items = [...activities]
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, limit);
+  const items = React.useMemo(
+    () =>
+      [...activities]
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, limit),
+    [activities, limit],
+  );
 
   if (items.length === 0) {
     return (

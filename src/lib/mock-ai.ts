@@ -283,10 +283,10 @@ export function parseMantuNeed(text: string): ParsedIntake {
         : "EST";
   const regions = loc ? [loc] : ["Global"];
 
-  // Start date m/d/yyyy → ISO
-  let targetStartDate: string;
+  // Start date m/d/yyyy → ISO. Null when the need email doesn't state one —
+  // createCampaign applies its own default rather than baking a guess in here.
   const d = startRaw ? new Date(startRaw) : null;
-  targetStartDate = d && !isNaN(d.getTime()) ? d.toISOString() : isoDaysAfter(45, new Date());
+  const targetStartDate: string | null = d && !isNaN(d.getTime()) ? d.toISOString() : null;
 
   const industryExperience = /financial markets|bonds|trading|finance|murex|pricing/i.test(text)
     ? ["Fintech"]
@@ -322,6 +322,7 @@ export function parseMantuNeed(text: string): ParsedIntake {
     reportingTo: manager || "Engagement Manager",
     urgency,
     language: detectLanguage(text),
+    expectedStartDate: targetStartDate,
     validationWarnings,
   };
 
@@ -603,7 +604,7 @@ export function createCampaign(
     hiringManager: meta.hiringManager,
     hiringManagerEmail: meta.hiringManagerEmail,
     createdAt: new Date().toISOString(),
-    targetStartDate: isoDaysAfter(45, new Date()),
+    targetStartDate: jd.expectedStartDate ?? isoDaysAfter(45, new Date()),
     jobAnalysis: jd,
     sourcingStrategy: buildSourcingStrategy(jd),
     scoringWeights: { ...DEFAULT_SCORING_WEIGHTS },

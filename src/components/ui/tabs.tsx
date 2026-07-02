@@ -104,6 +104,16 @@ export function TabPanel({
   className?: string;
   children: React.ReactNode;
 }) {
+  // Mount-once-keep-mounted: a panel's children only render once the panel
+  // has been visited at least once, and stay mounted after that (so in-panel
+  // state, e.g. a filter or an in-progress form, survives switching tabs).
+  // Panels never visited never render their (often heavy) subtree at all —
+  // this is what keeps first paint cheap on tab-heavy pages.
+  const [hasBeenActive, setHasBeenActive] = React.useState(active);
+  React.useEffect(() => {
+    if (active) setHasBeenActive(true);
+  }, [active]);
+
   return (
     <div
       role="tabpanel"
@@ -113,7 +123,7 @@ export function TabPanel({
       hidden={!active}
       className={cn(active && "animate-fade-in", "focus:outline-none", className)}
     >
-      {children}
+      {hasBeenActive && children}
     </div>
   );
 }

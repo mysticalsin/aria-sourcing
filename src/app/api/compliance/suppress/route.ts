@@ -83,3 +83,61 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true, synced: true });
 }
+
+/**
+ * Reverse a POST above (e.g. the "Undo — restore contact" action) by removing
+ * the row from the shared enforcement table, mirroring the POST's auth/RLS
+ * posture exactly so a restore is governed by the same admin-only boundary as
+ * the original suppress.
+ */
+export async function DELETE(req: NextRequest) {
+  const prodBlock = prodFailClosed();
+  if (prodBlock) return prodBlock;
+
+  const rl = checkRateLimit(rateLimitKey(req, "compliance-suppress"), { windowMs: 60_000, max: 30 });
+  if (!rl.ok) return tooManyRequests(rl.retryAfterSec);
+
+  const validated = await validateBody(req, SuppressSchema, { maxBytes: 2_000 });
+  if (!validated.ok) return validated.response;
+  const { type } = validated.data;
+  const value = validated.data.value.trim().toLowerCase();
+
+  if (!supabaseEnabled) {
+    return NextResponse.json({ ok: true, synced: false, detail: "Demo mode — no enforcement backend." });
+  }
+
+  const supabase = await getServerSupabase();
+  if (!supabase) {
+    return NextResponse.json({ ok: true, synced: false, detail: "No Supabase client — not synced." });
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ ok: false, error: "Not authenticated." }, { status: 401 });
+  }
+
+  const { data: workspaceId } = await supabase.rpc("current_workspace_id");
+  if (!workspaceId) {
+    return NextResponse.json({ ok: false, error: "No workspace." }, { status: 403 });
+  }
+
+  const { error } = await supabase
+    .from("suppression_list")
+    .delete()
+    .match({ workspace_id: workspaceId, type, value });
+
+  if (error) {
+    // RLS denies non-admins here by design — same expected outcome as the POST
+    // path: the local flag still reflects the operator's own view.
+    safeLog("suppression_list delete error", { message: error.message, code: error.code });
+    return NextResponse.json({
+      ok: true,
+      synced: false,
+      detail: "Local flag cleared. Removing it from the shared enforcement list requires an admin.",
+    });
+  }
+
+  return NextResponse.json({ ok: true, synced: true });
+}

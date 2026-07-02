@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FocusEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Badge,
@@ -21,14 +21,36 @@ import {
   toneForStage,
 } from "@/lib/utils";
 import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
-import type { Candidate, CandidateStage } from "@/lib/types";
+import { StarBadge, SourceBadge } from "@/components/tania/badges";
+import {
+  deriveLeadSource,
+  deriveStarRating,
+  DEFAULT_STAR_THRESHOLDS,
+  prequalSlaHours,
+  isCandidate as isTaniaCandidate,
+  STAR_RATING_META,
+} from "@/lib/tania";
+import type {
+  Candidate,
+  CandidateStage,
+  InterviewKind,
+  LeadSource,
+  PrequalOutcome,
+  StarRating,
+} from "@/lib/types";
+import { LEAD_SOURCES, STAR_RATINGS } from "@/lib/types";
 import {
   Ban,
+  Bookmark,
   Briefcase,
   Building2,
   CalendarPlus,
+  CheckCircle2,
+  Circle,
   ClipboardCheck,
   Clock,
+  PartyPopper,
+  PhoneCall,
   Download,
   ExternalLink,
   Eye,
@@ -41,6 +63,7 @@ import {
   MapPin,
   MessageSquare,
   NotebookPen,
+  RotateCcw,
   Send,
   ShieldAlert,
   Sparkles,
@@ -87,6 +110,180 @@ function Chips({ items, label }: { items: string[]; label: string }) {
   );
 }
 
+/** TAnIA panel — lead source, Mantu Star Rating, Prequal decision, interview
+ *  rounds and #Vivier. All actions are recruiter-initiated ("Human Always Decides"). */
+function TaniaPanel({ c }: { c: Candidate }) {
+  const actions = useActions();
+  const { toast } = useToast();
+  const settings = useSettings();
+  const thresholds = settings.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
+  const source = deriveLeadSource(c);
+  const rating = c.starRating ?? deriveStarRating(c.matchScore, thresholds);
+  const isLead = ["Sourced", "Contacted", "Replied"].includes(c.stage);
+  const promoted = isTaniaCandidate(c);
+  const sla = prequalSlaHours(rating);
+  const INTERVIEW_STEPS: InterviewKind[] = ["Intw1", "Intw2", "Intw3", "QM"];
+
+  const setRating = (r: StarRating) => {
+    actions.setCandidateRating(c.id, r);
+    toast({ title: `Rating set: ${STAR_RATING_META[r].label}`, variant: "success" });
+  };
+  const setSource = (s: LeadSource) => actions.setCandidateLeadSource(c.id, s);
+  const decide = (outcome: PrequalOutcome) => {
+    actions.setPrequalOutcome(c.id, outcome);
+    toast({
+      title: outcome === "advance" ? "Advanced — lead is now a Candidate" : outcome === "reject" ? "Prequal rejected — added to #Vivier" : "Held for review",
+      variant: outcome === "reject" ? "warning" : "success",
+    });
+  };
+  const schedule = (kind: InterviewKind) => {
+    actions.addInterview(c.id, kind, "Hiring Manager", null);
+    toast({ title: `${kind} scheduled`, description: "Reminder cadence T-24h / T-1h queued.", variant: "success" });
+  };
+  const toggleVivier = () => {
+    actions.toggleVivier(c.id);
+    toast({ title: c.vivier ? "Removed from #Vivier" : "Added to #Vivier", variant: c.vivier ? "info" : "success" });
+  };
+
+  return (
+    <Section title="TAnIA — source, rating & prequal" icon={<PhoneCall className="h-4 w-4" />}>
+      {/* Source + rating */}
+      <div className="flex flex-wrap items-center gap-2">
+        <SourceBadge source={source} />
+        <StarBadge rating={rating} />
+        {c.vivier && (
+          <Badge tone="violet" size="sm">
+            <Bookmark className="h-3 w-3" aria-hidden /> #Vivier
+          </Badge>
+        )}
+        {c.referredBy && <span className="text-xs text-muted">Referred by {c.referredBy}</span>}
+      </div>
+
+      {/* Rating override */}
+      <div className="space-y-1.5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Star rating {sla ? `· ${sla}h prequal SLA` : "· rejection tier"}</p>
+        <div className="flex flex-wrap gap-1.5">
+          {STAR_RATINGS.map((r) => (
+            <Button key={r} variant={rating === r ? "primary" : "outline"} size="sm" onClick={() => setRating(r)}>
+              {r === "TopGun" ? "Top Gun" : r}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {/* Source reclassify */}
+      <div className="space-y-1.5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Lead source</p>
+        <div className="flex flex-wrap gap-1.5">
+          {LEAD_SOURCES.map((s) => (
+            <Button key={s} variant={source === s ? "primary" : "outline"} size="sm" onClick={() => setSource(s)}>
+              {s}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {/* Prequal decision — the LEAD -> CANDIDATE gate */}
+      <div className="rounded-2xl border border-line bg-canvas/60 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-sm font-semibold text-ink">Prequal call</p>
+          {c.prequal?.outcome && c.prequal.outcome !== "pending" && (
+            <Badge tone={c.prequal.outcome === "advance" ? "success" : c.prequal.outcome === "reject" ? "danger" : "warning"} size="sm">
+              {c.prequal.outcome}
+            </Badge>
+          )}
+        </div>
+        {promoted ? (
+          <p className="text-sm text-muted">Prequalified — this lead is now a Candidate in the interview pipeline.</p>
+        ) : (
+          <>
+            <p className="mb-2 text-sm text-muted">
+              {isLead ? "Prequalify to promote this lead into a Candidate. One-tap decision:" : "This candidate is past the prequal gate."}
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              <Button variant="primary" size="sm" disabled={!isLead} onClick={() => decide("advance")}>Advance</Button>
+              <Button variant="outline" size="sm" disabled={!isLead} onClick={() => decide("hold")}>Hold</Button>
+              <Button variant="outline" size="sm" disabled={!isLead} onClick={() => decide("reject")}>Reject</Button>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Interview rounds */}
+      <div className="space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Interview rounds</p>
+        {c.interviews && c.interviews.length > 0 ? (
+          <ul className="space-y-1.5">
+            {c.interviews.map((iv) => (
+              <li key={iv.id} className="flex items-center justify-between rounded-xl bg-ink/[0.03] px-3 py-2 text-sm">
+                <span className="font-semibold text-ink">{iv.kind}</span>
+                <span className="text-muted">{iv.interviewer}</span>
+                <Badge tone={iv.outcome === "Advance" || iv.outcome === "Completed" ? "success" : iv.outcome === "Reject" || iv.outcome === "No Show" ? "danger" : "aqua"} size="sm">
+                  {iv.outcome}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted">No interviews scheduled yet.</p>
+        )}
+        <div className="flex flex-wrap gap-1.5">
+          {INTERVIEW_STEPS.map((kind) => (
+            <Button key={kind} variant="subtle" size="sm" leftIcon={<CalendarPlus className="h-3.5 w-3.5" />} disabled={!promoted} onClick={() => schedule(kind)}>
+              {kind}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <Button variant="outline" size="sm" leftIcon={<Bookmark className="h-3.5 w-3.5" />} onClick={toggleVivier}>
+        {c.vivier ? "Remove from #Vivier" : "Add to #Vivier"}
+      </Button>
+    </Section>
+  );
+}
+
+/** Onboarding progress (TAnIA Stages III→IV) — shown once a candidate reaches an
+ *  offer. Steps derive from stage; this is the offer→signed→pre-boarding→employee
+ *  journey plus the post-fill signal. */
+function OnboardingPanel({ c }: { c: Candidate }) {
+  const source = deriveLeadSource(c);
+  const hired = c.stage === "Hired";
+  const steps: { label: string; done: boolean; note?: string }[] = [
+    { label: "Offer sent", done: true, note: "HR pre-fills from SMART; TA congratulates." },
+    { label: "Offer signed", done: hired, note: "HR collects signed offer; triggers SMART registration." },
+    { label: "Pre-boarding", done: hired, note: "Checklist + candidate → employee portal." },
+    { label: "SMART registration + need closure", done: hired, note: "Post-fill report: source of hire captured." },
+    { label: "OneStart onboarding", done: hired, note: "TA welcomes; T2P tracked by manager + HR." },
+    { label: "Referral Champion", done: false, note: "Engage the new hire to drive referrals." },
+  ];
+  return (
+    <Section title="Onboarding" icon={<PartyPopper className="h-4 w-4" />}>
+      <div className="rounded-2xl border border-line bg-canvas/60 p-3">
+        <p className="mb-2 text-sm text-muted">
+          Source of hire: <span className="font-semibold text-ink">{source}</span>
+          {" · "}Time-to-Proficiency touchpoints at 1 / 3 / 6 months.
+        </p>
+        <ul className="space-y-2">
+          {steps.map((s) => (
+            <li key={s.label} className="flex items-start gap-2.5">
+              {s.done ? (
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden />
+              ) : (
+                <Circle className="mt-0.5 h-4 w-4 shrink-0 text-muted" aria-hidden />
+              )}
+              <span>
+                <span className={s.done ? "text-sm font-semibold text-ink" : "text-sm text-ink-soft"}>{s.label}</span>
+                {s.note && <span className="block text-xs text-muted">{s.note}</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </Section>
+  );
+}
+
 export function CandidateDrawer({
   candidate,
   open,
@@ -106,12 +303,42 @@ export function CandidateDrawer({
   const confidentialityMode = Boolean(useSettings().confidentialityMode);
   const [revealed, setRevealed] = useState(false);
   const [noteText, setNoteText] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const rejectionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const phoneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Latest not-yet-committed edit for each debounced field, so the unmount
+  // cleanup below can flush it instead of dropping it — the cleanup closure is
+  // fixed at mount time, so it can't read fresh render-scoped state directly.
+  const pendingRejection = useRef<{ id: string; value: string } | null>(null);
+  const pendingPhone = useRef<{ id: string; value: string } | null>(null);
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
 
   const candidateId = candidate?.id ?? null;
   useEffect(() => {
     setRevealed(false);
     setNoteText("");
   }, [candidateId, open]);
+
+  // Debounce timers are keyed to this component instance, not to `open` — they
+  // must keep running even if the drawer is closed mid-edit (Escape/backdrop)
+  // so an in-flight edit still commits instead of being silently discarded.
+  // If the component itself unmounts (e.g. navigating away from /candidates)
+  // while a debounce is still pending, flush the latest value immediately
+  // rather than just clearing the timer — otherwise the edit is silently lost.
+  useEffect(
+    () => () => {
+      if (rejectionTimer.current) clearTimeout(rejectionTimer.current);
+      if (phoneTimer.current) clearTimeout(phoneTimer.current);
+      if (pendingRejection.current) {
+        actionsRef.current.setRejectionReason(pendingRejection.current.id, pendingRejection.current.value);
+      }
+      if (pendingPhone.current) {
+        actionsRef.current.setCandidatePhone(pendingPhone.current.id, pendingPhone.current.value);
+      }
+    },
+    [],
+  );
 
   if (!candidate) {
     return (
@@ -137,7 +364,6 @@ export function CandidateDrawer({
     flags.gdprExportRequested;
 
   const campaignPaused = campaign?.status === "Paused";
-  const [generating, setGenerating] = useState(false);
 
   const handleGenerate = async () => {
     if (campaignPaused) {
@@ -192,10 +418,44 @@ export function CandidateDrawer({
     toast({ title: "Note added", description: `Logged to ${c.name}'s activity trail.`, variant: "success" });
   };
 
-  const handleRejectionReasonBlur = (e: FocusEvent<HTMLTextAreaElement>) => {
+  // Committed on every keystroke (debounced), not onBlur — so an edit isn't lost
+  // if the user hits Escape before ever blurring the field (see CAND-P0-1).
+  const handleRejectionReasonChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
-    if (value.trim() === (c.rejectionReason ?? "").trim()) return;
-    actions.setRejectionReason(c.id, value);
+    pendingRejection.current = { id: c.id, value };
+    if (rejectionTimer.current) clearTimeout(rejectionTimer.current);
+    rejectionTimer.current = setTimeout(() => {
+      pendingRejection.current = null;
+      if (value.trim() !== (c.rejectionReason ?? "").trim()) {
+        actions.setRejectionReason(c.id, value);
+      }
+    }, 400);
+  };
+
+  const handlePhoneChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    pendingPhone.current = { id: c.id, value };
+    if (phoneTimer.current) clearTimeout(phoneTimer.current);
+    phoneTimer.current = setTimeout(() => {
+      pendingPhone.current = null;
+      actions.setCandidatePhone(c.id, value);
+    }, 400);
+  };
+
+  // Guards every Drawer close path (Escape, backdrop click, the X button all
+  // funnel through the single `onClose` prop) against silently discarding a
+  // typed-but-not-"Add"-clicked recruiter note (see CAND-P0-1).
+  const handleClose = async () => {
+    if (noteText.trim()) {
+      const proceed = await confirm({
+        title: "Discard unsaved note?",
+        description: "You have a recruiter note that hasn't been added yet. Closing now will discard it.",
+        confirmLabel: "Discard note",
+        danger: true,
+      });
+      if (!proceed) return;
+    }
+    onClose();
   };
 
   const handleBook = async () => {
@@ -228,15 +488,44 @@ export function CandidateDrawer({
   };
 
   const handleSuppress = async () => {
-    if (!(await confirm({ title: `Suppress contact with ${c.name}?`, description: "They will be excluded from outreach.", confirmLabel: "Suppress", danger: true }))) return;
+    if (
+      !(await confirm({
+        title: `Suppress contact with ${c.name}?`,
+        description: "They'll be excluded from outreach and their stage will show as Suppressed. Use \"Undo — restore contact\" in Compliance below to reverse this.",
+        confirmLabel: "Suppress",
+        danger: true,
+      }))
+    )
+      return;
     actions.suppressCandidate(c.id);
     toast({ title: "Contact suppressed", description: `${c.name} moved out of active outreach.`, variant: "warning" });
   };
 
   const handleDoNotContact = async () => {
-    if (!(await confirm({ title: `Mark ${c.name} as do-not-contact?`, description: "This is a hard exclusion.", confirmLabel: "Mark do-not-contact", danger: true }))) return;
+    if (
+      !(await confirm({
+        title: `Mark ${c.name} as do-not-contact?`,
+        description: "This is a hard exclusion — their stage will show as Suppressed. Use \"Undo — restore contact\" in Compliance below to reverse this.",
+        confirmLabel: "Mark do-not-contact",
+        danger: true,
+      }))
+    )
+      return;
     actions.markDoNotContact(c.id);
     toast({ title: "Marked do-not-contact", description: `${c.name} added to the exclusion list.`, variant: "warning" });
+  };
+
+  const handleRestoreContact = async () => {
+    if (
+      !(await confirm({
+        title: `Restore contact with ${c.name}?`,
+        description: "This clears the suppressed / do-not-contact flags and restores their pipeline stage.",
+        confirmLabel: "Restore",
+      }))
+    )
+      return;
+    actions.restoreCandidateContact(c.id);
+    toast({ title: "Contact restored", description: `${c.name} is eligible for outreach again.`, variant: "success" });
   };
 
   const handleReveal = () => {
@@ -293,7 +582,7 @@ export function CandidateDrawer({
   return (
     <Drawer
       open={open}
-      onClose={onClose}
+      onClose={handleClose}
       title={dc.name}
       description={masked ? "Confidential candidate · PII minimized" : `${c.currentTitle} @ ${c.currentCompany}`}
       footer={footer}
@@ -352,7 +641,7 @@ export function CandidateDrawer({
                     key={c.id}
                     type="tel"
                     defaultValue={c.phone ?? ""}
-                    onBlur={(e) => actions.setCandidatePhone(c.id, e.target.value)}
+                    onChange={handlePhoneChange}
                     placeholder="Add phone for WhatsApp / SMS"
                     aria-label="Candidate phone number"
                     className="w-56 rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink placeholder:text-muted"
@@ -465,6 +754,12 @@ export function CandidateDrawer({
           </div>
         </Section>
 
+        {/* TAnIA — source, star rating, prequal, interviews, #Vivier */}
+        <TaniaPanel c={c} />
+
+        {/* Onboarding journey (Stages III→IV) — only once at offer/hired */}
+        {(c.stage === "Offer" || c.stage === "Hired") && <OnboardingPanel c={c} />}
+
         {/* Interview stage */}
         <Section title="Interview stage" icon={<ClipboardCheck className="h-4 w-4" />}>
           <div className="flex items-center gap-2">
@@ -498,7 +793,7 @@ export function CandidateDrawer({
                 id={`rejection-reason-${c.id}`}
                 key={c.id}
                 defaultValue={c.rejectionReason ?? ""}
-                onBlur={handleRejectionReasonBlur}
+                onChange={handleRejectionReasonChange}
                 placeholder="Why was this candidate rejected? Logged to the activity trail."
                 rows={2}
                 className="w-full rounded-2xl border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted"
@@ -640,6 +935,16 @@ export function CandidateDrawer({
               Mark do-not-contact
             </Button>
           </div>
+          {(flags.suppressed || flags.doNotContact) && (
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={<RotateCcw className="h-4 w-4" />}
+              onClick={handleRestoreContact}
+            >
+              Undo — restore contact
+            </Button>
+          )}
         </Section>
       </div>
     </Drawer>

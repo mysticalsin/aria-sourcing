@@ -10,6 +10,7 @@ import {
   buildSourcingStrategy,
 } from "./mock-ai";
 import { DEFAULT_SCORING_WEIGHTS } from "./scoring";
+import { firstInterviewElapsedHours } from "./metrics";
 import { slaDueFor } from "./rules";
 import { defaultFleetSettings, defaultSendWindow } from "./fleet";
 import { defaultSkills } from "./skills";
@@ -20,15 +21,20 @@ import type {
   Campaign,
   CampaignMetrics,
   Candidate,
+  ChatboxSubmission,
   ClassifiedReply,
   GuardrailConfig,
   HermesState,
+  InterviewRecord,
   JobAnalysis,
+  LeadSource,
   LlmProvider,
   OutreachLedgerEntry,
   OutreachMessage,
+  PrequalRecord,
   ReplyIntent,
   SavedModel,
+  StarRating,
   SuppressionEntry,
   SystemSettings,
   ToolDef,
@@ -36,13 +42,21 @@ import type {
   WeeklyReport,
 } from "./types";
 import { LLM_PROVIDERS, TOOL_IDS } from "./types";
+import {
+  computeChatboxScore,
+  DEFAULT_STAR_THRESHOLDS,
+  deriveStarRating,
+  isCandidate,
+} from "./tania";
 import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
 
 /* ============================================================================
    Seed builder — produces the initial synthetic world (client-side, once).
    ========================================================================== */
 
-export const STATE_VERSION = 12;
+// STATE_VERSION 13 — TAnIA layer: lead source, star rating, #Vivier, prequal +
+// interviews, chatbox submissions, Knight M job ads (all additive & derived).
+export const STATE_VERSION = 13;
 
 /* ---- LLM config defaults ------------------------------------------------- */
 
@@ -121,6 +135,7 @@ export function defaultSettings(): SystemSettings {
     dryRunMode: true,
     webResearch: true,
     minScoreToContact: 70,
+    starRatingThresholds: { topGun: 88, a: 80, b: 65, c: 50 },
     slaMinutes: 15,
     operatorName: "Jordan Bryce",
     systemIdentity: "Aria Sourcing",
@@ -465,6 +480,220 @@ function act(
 
 /* ---- Main builder -------------------------------------------------------- */
 
+/* ---- TAnIA seed layer ---------------------------------------------------- */
+
+const REFERRERS = [
+  "Amélie Rousseau",
+  "Marco Bianchi",
+  "Priya Nair",
+  "Tom Kowalski",
+  "Sofia Almeida",
+];
+
+const KNIGHT_M_NOTES = [
+  "Inclusive language check passed — no gendered or age-coded terms.",
+  "Salary transparency present; EU pay-directive aligned.",
+  "Accessibility statement included; no exclusionary requirements.",
+];
+
+/** Five vacancy-specific screening questions (TAnIA §5, Q1–Q5). */
+function screeningQuestionsFor(job: JobAnalysis): string[] {
+  const loc = job.regions[0] ?? "the target region";
+  const skill = job.requiredSkills[0] ?? "the core skill";
+  const tool = job.requiredSkills[1] ?? job.requiredSkills[0] ?? "the primary tool";
+  return [
+    `This role requires ${job.locationType.toLowerCase()} presence in ${loc}. Is this compatible?`,
+    "Do you require visa sponsorship to work in the target country?",
+    `How experienced are you in ${skill}? (1–5)`,
+    `How would you rate your ${tool} experience? (1–5)`,
+    "Have you managed international stakeholders in this domain?",
+  ];
+}
+
+/**
+ * Layer TAnIA concepts onto the freshly-built candidate pool + campaigns:
+ * lead source distribution, star ratings, #Vivier, prequal + interview records,
+ * DNA, and Knight-M-checked job ads. Deterministic (index-keyed) so the demo
+ * world is stable across reloads. Returns the seeded chatbox submissions.
+ */
+function seedTania(candidates: Candidate[], campaigns: Campaign[]): ChatboxSubmission[] {
+  const t = DEFAULT_STAR_THRESHOLDS;
+
+  candidates.forEach((c, i) => {
+    // Lead-source distribution: 20% Applicant, 10% Referral, 70% Outbound.
+    const mod = i % 10;
+    const source: LeadSource = mod < 2 ? "Applicant" : mod === 2 ? "Referral" : "Outbound";
+    c.leadSource = source;
+    if (source === "Referral") c.referredBy = REFERRERS[i % REFERRERS.length];
+
+    // Star rating derived from the existing match score.
+    c.starRating = deriveStarRating(c.matchScore, t);
+
+    // DNA — top skills + a captured signal, stored back for the talent pool.
+    c.dna = [...c.techStack.slice(0, 3), `${c.yearsExperience}y experience`];
+
+    // #Vivier: strong profiles that dropped out are Silver Medalists, always pooled.
+    // recontactAt is a PAST date for those already due to re-engage, future for the
+    // rest (isoDaysBefore(n): positive n = n days ago, negative = n days ahead).
+    const dropped = c.stage === "Rejected" || c.stage === "Not Interested";
+    if (dropped && (c.starRating === "TopGun" || c.starRating === "A")) {
+      c.vivier = true;
+      c.silverMedalist = true;
+      c.recontactAt = isoDaysBefore(12 + (i % 20)); // due now (12–32 days ago)
+    } else if (source !== "Applicant" && dropped) {
+      // Referrals & Outbound are always pooled on rejection (TAnIA §3).
+      c.vivier = true;
+      c.recontactAt = isoDaysBefore(-(20 + (i % 50))); // future re-contact window
+    }
+
+    // Prequal + interviews for anyone who became a Candidate (Stage II+).
+    if (isCandidate(c)) {
+      const prequal: PrequalRecord = {
+        scheduledFor: isoDaysBefore(9 - (i % 4)),
+        completedAt: isoDaysBefore(9 - (i % 4)),
+        starRating: c.starRating,
+        toneGuide: source === "Referral" ? "Warm, recognise the referral" : "Proactive, opportunity-led",
+        questions: [
+          { q: "Motivation for exploring a move now?", a: "Growth + scope; open to the right team.", kind: "text" },
+          { q: "Compensation expectations aligned?", a: "Within band.", kind: "yesno" },
+          { q: "Notice period / availability?", a: `${4 + (i % 8)} weeks`, kind: "text" },
+          { q: "Core-skill depth", a: "", kind: "stars", stars: 4 + (i % 2) },
+        ],
+        outcome: "advance",
+      };
+      c.prequal = prequal;
+
+      const interviews: InterviewRecord[] = [];
+      const iw = (kind: InterviewRecord["kind"], daysAgo: number, outcome: InterviewRecord["outcome"], rating?: StarRating): InterviewRecord => ({
+        id: genId("iv"),
+        kind,
+        scheduledFor: isoDaysBefore(daysAgo),
+        interviewer: REFERRERS[(i + 1) % REFERRERS.length],
+        outcome,
+        starRating: rating,
+        hmFeedback: outcome === "Completed" || outcome === "Advance" ? "Strong technical signal; good stakeholder posture." : undefined,
+        hmFeedbackDueAt: outcome === "Scheduled" ? isoDaysBefore(-1) : null,
+        notes: "",
+        createdAt: isoDaysBefore(daysAgo + 1),
+      });
+      if (c.stage === "Booked") {
+        interviews.push(iw("Intw1", -2, "Scheduled"));
+      } else if (c.stage === "Interviewed") {
+        interviews.push(iw("Intw1", 3, "Advance", c.starRating), iw("Intw2", -3, "Scheduled"));
+      } else if (c.stage === "Offer" || c.stage === "Hired") {
+        interviews.push(
+          iw("Intw1", 12, "Advance", c.starRating),
+          iw("Intw2", 8, "Advance", c.starRating),
+          iw("Intw3", 4, "Completed", c.starRating),
+        );
+      }
+      if (interviews.length) c.interviews = interviews;
+    }
+  });
+
+  // Guarantee a compelling #Vivier for the demo: if too few dropped-out strong
+  // profiles were pooled organically, take the highest-scored mid-funnel
+  // candidates (never active winners) and mark them as Silver Medalists who chose
+  // a competing offer — the ones that got away, kept warm for a future need.
+  const RECONTACT_REASONS = [
+    "Accepted a competing offer — strong mutual fit, timing was off.",
+    "Role filled by another candidate; excellent profile to re-engage.",
+    "Paused their search; asked us to reconnect next quarter.",
+  ];
+  const medalists = candidates.filter((c) => c.silverMedalist);
+  if (medalists.length < 4) {
+    const eligible = candidates
+      .filter((c) => !c.vivier && !["Hired", "Offer", "Booked", "Interviewed"].includes(c.stage))
+      .sort((a, b) => b.matchScore - a.matchScore);
+    for (let k = 0; medalists.length + k < 4 && k < eligible.length; k++) {
+      const c = eligible[k];
+      c.stage = "Rejected";
+      c.vivier = true;
+      c.silverMedalist = true;
+      c.starRating = c.starRating === "TopGun" ? "TopGun" : "A"; // silver medalists are top talent
+      c.rejectionReason = RECONTACT_REASONS[k % RECONTACT_REASONS.length];
+      c.recontactAt = isoDaysBefore(8 + k * 6); // due now, staggered
+    }
+  }
+
+  // Knight-M-checked job ads on every campaign (TAnIA Stage 0).
+  campaigns.forEach((camp, ci) => {
+    camp.jobAd = {
+      content:
+        `# ${camp.title}\n\n${camp.department} · ${camp.jobAnalysis.locationType} · ${camp.jobAnalysis.regions.join(", ")}\n\n` +
+        `We're hiring a ${camp.title.toLowerCase()} to join ${camp.hiringManager}'s team. ` +
+        `You'll work on high-impact problems with a senior, supportive group.\n\n` +
+        `**Must have:** ${camp.jobAnalysis.requiredSkills.slice(0, 4).join(", ")}.\n` +
+        `**Nice to have:** ${camp.jobAnalysis.niceToHaveSkills.slice(0, 3).join(", ")}.`,
+      screeningQuestions: screeningQuestionsFor(camp.jobAnalysis),
+      knightM: {
+        checked: true,
+        passed: true,
+        issues: [KNIGHT_M_NOTES[ci % KNIGHT_M_NOTES.length]],
+        checkedAt: isoDaysBefore(17 - ci * 5),
+      },
+      status: camp.status === "Intake" ? "draft" : "published",
+      updatedAt: isoDaysBefore(16 - ci * 5),
+    };
+  });
+
+  // A handful of inbound chatbox applications awaiting handoff (TAnIA §5).
+  return buildChatboxSubmissions(campaigns);
+}
+
+function buildChatboxSubmissions(campaigns: Campaign[]): ChatboxSubmission[] {
+  const specs: Array<{
+    path: "A" | "B";
+    first: string;
+    last: string;
+    campaignIdx: number;
+    inputs: Parameters<typeof computeChatboxScore>[0];
+    location: string;
+    skills: string[];
+    daysAgo: number;
+    status: ChatboxSubmission["status"];
+  }> = [
+    { path: "A", first: "Giulia", last: "Ferraro", campaignIdx: 0, inputs: { mobility: "Yes", needsVisa: false, keyExpStars: 5, toolStars: 5, projectYes: true, hasContactPref: true }, location: "Milan, IT", skills: ["Java", "Spring Boot", "Kafka"], daysAgo: 0, status: "new" },
+    { path: "A", first: "Daniel", last: "Okonkwo", campaignIdx: 0, inputs: { mobility: "Relocation required", needsVisa: true, keyExpStars: 4, toolStars: 3, projectYes: true, hasContactPref: true, outsideRegion: true }, location: "Lagos, NG", skills: ["Java", "Microservices"], daysAgo: 0, status: "new" },
+    { path: "A", first: "Marta", last: "Nowak", campaignIdx: 1, inputs: { mobility: "Yes", needsVisa: false, keyExpStars: 4, toolStars: 4, projectYes: true, hasContactPref: true }, location: "Kraków, PL", skills: ["React", "TypeScript", "Next.js"], daysAgo: 1, status: "reviewed" },
+    { path: "B", first: "Hassan", last: "El-Amin", campaignIdx: 1, inputs: { mobility: "Depends on the opportunity" as never, keyExpStars: 3, toolStars: 3, hasContactPref: false }, location: "Remote / EU", skills: ["Frontend", "Design systems"], daysAgo: 1, status: "new" },
+    { path: "A", first: "Chloé", last: "Dubois", campaignIdx: 2, inputs: { mobility: "Yes", needsVisa: false, keyExpStars: 5, toolStars: 4, projectYes: true, hasContactPref: true }, location: "Paris, FR", skills: ["Figma", "Design systems", "Prototyping"], daysAgo: 2, status: "new" },
+    { path: "A", first: "Ben", last: "Carter", campaignIdx: 2, inputs: { mobility: "No", needsVisa: false, keyExpStars: 2, toolStars: 2, projectYes: false, hasContactPref: false, outsideRegion: true }, location: "Austin, US", skills: ["UI"], daysAgo: 3, status: "new" },
+  ];
+
+  return specs.map((s) => {
+    const camp = campaigns[s.campaignIdx] ?? campaigns[0];
+    const score = computeChatboxScore(s.inputs);
+    const rating = deriveStarRating(score.total, DEFAULT_STAR_THRESHOLDS);
+    const first = s.first;
+    const last = s.last;
+    return {
+      id: genId("cbx"),
+      path: s.path,
+      campaignId: camp?.id ?? null,
+      roleTitle: camp?.title ?? "Spontaneous application",
+      firstName: first,
+      lastName: last,
+      email: `${first.toLowerCase()}.${last.toLowerCase().replace(/[^a-z]/g, "")}@example.com`,
+      phone: "+00 000 000 000",
+      cvFileName: `${first}_${last}_CV.pdf`,
+      detected: { location: s.location, skills: s.skills },
+      answers: [
+        { question: "Mobility compatible?", answer: String(s.inputs.mobility ?? "—"), kind: "mobility" },
+        { question: "Visa sponsorship required?", answer: s.inputs.needsVisa ? "Yes" : "No", kind: "visa" },
+        { question: "Key experience", answer: `${s.inputs.keyExpStars ?? 0}/5`, kind: "keyexp", stars: s.inputs.keyExpStars },
+        { question: "Tool / expertise", answer: `${s.inputs.toolStars ?? 0}/5`, kind: "toolexp", stars: s.inputs.toolStars },
+        { question: "Managed international stakeholders?", answer: s.inputs.projectYes ? "Yes" : "No", kind: "project" },
+      ],
+      score,
+      starRating: rating,
+      contactPref: s.inputs.hasContactPref ? { time: "Morning", day: "Tuesday" } : undefined,
+      status: s.status,
+      createdAt: isoHoursBefore(s.daysAgo * 24 + 3),
+    };
+  });
+}
+
 export function buildSeedState(): HermesState {
   const settings = defaultSettings();
   const now = Date.now();
@@ -609,7 +838,13 @@ export function buildSeedState(): HermesState {
     campaign.metrics = computeMetrics(accepted);
     campaign.metrics.emailsSentToday = specIndex === 0 ? 6 : specIndex === 1 ? 3 : 1;
     campaign.metrics.linkedinSentToday = specIndex === 0 ? 2 : 1;
-    campaign.metrics.timeToFirstInterviewHours = campaign.metrics.booked > 0 ? 34 + specIndex * 8 : null;
+    // Real elapsed time from campaign creation to the first scheduled interview
+    // (never fabricated — shares firstInterviewElapsedHours with the live
+    // computation in store.ts, see metrics.ts).
+    campaign.metrics.timeToFirstInterviewHours = firstInterviewElapsedHours(
+      bookings.filter((b) => b.campaignId === campaign.id),
+      campaign.createdAt,
+    );
 
     // Weekly report + skill updates
     const report = generateWeeklyReport(campaign, allCandidates);
@@ -645,6 +880,10 @@ export function buildSeedState(): HermesState {
     });
   }
 
+  // Layer the TAnIA concepts (source, star rating, #Vivier, prequal, interviews,
+  // Knight M job ads) onto the pool and produce the inbound chatbox queue.
+  const chatboxSubmissions = seedTania(allCandidates, campaigns);
+
   return {
     version: STATE_VERSION,
     campaigns,
@@ -659,6 +898,7 @@ export function buildSeedState(): HermesState {
     seats,
     suppression,
     ledger,
+    chatboxSubmissions,
     skills: defaultSkills(),
     apiKeys: [
       {

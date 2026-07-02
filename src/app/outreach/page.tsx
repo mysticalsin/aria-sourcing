@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   Card,
   CardContent,
@@ -109,7 +110,10 @@ function FollowUpDueRow({ item }: { item: FollowUpDueItem }) {
   );
 }
 
-export default function OutreachPage() {
+/** Reads `?campaign=<id>` to seed the campaign filter (e.g. arriving from a
+ *  campaign detail page's "Review outreach" button). Must live under a
+ *  Suspense boundary. */
+function OutreachView() {
   const hydrated = useHydrated();
   const campaigns = useCampaigns();
   const pending = usePendingApprovals();
@@ -119,8 +123,10 @@ export default function OutreachPage() {
   const followUpsDue = useFollowUpsDue();
   const actions = useActions();
   const { toast } = useToast();
+  const searchParams = useSearchParams();
+  const campaignParam = searchParams.get("campaign");
 
-  const [campaignFilter, setCampaignFilter] = React.useState<string>("all");
+  const [campaignFilter, setCampaignFilter] = React.useState<string>(campaignParam ?? "all");
   const [sentOpen, setSentOpen] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
 
@@ -480,5 +486,25 @@ export default function OutreachPage() {
         </div>
       </HydrationGate>
     </>
+  );
+}
+
+export default function OutreachPage() {
+  return (
+    <React.Suspense
+      fallback={
+        <div className="grid gap-6 lg:grid-cols-3">
+          <div className="space-y-6 lg:col-span-2">
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+          <div className="space-y-6">
+            <SkeletonCard />
+          </div>
+        </div>
+      }
+    >
+      <OutreachView />
+    </React.Suspense>
   );
 }

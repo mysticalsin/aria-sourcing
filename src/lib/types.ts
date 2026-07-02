@@ -183,6 +183,10 @@ export interface JobAnalysis {
   urgency: Urgency;
   /** Detected language of the need (ISO code, e.g. "en", "fr"). */
   language?: string;
+  /** ISO date explicitly stated in the inbound brief (e.g. "Start date: 7/13/2026").
+   *  Null when the brief doesn't state one — createCampaign then falls back to a
+   *  default target. Absent covers analyses predating this field. */
+  expectedStartDate?: string | null;
   validationWarnings: ValidationWarning[];
 }
 
@@ -264,6 +268,10 @@ export interface ComplianceFlags {
   gdprExportRequested: boolean;
   anonymized: boolean;
   suppressedUntil: string | null;
+  /** The candidate's real pipeline stage captured immediately before
+   *  suppressCandidate/markDoNotContact overwrote it with "Suppressed" —
+   *  lets restoreCandidateContact undo the mutation. Null once restored. */
+  preSuppressionStage?: CandidateStage | null;
 }
 
 export interface Candidate {
@@ -294,6 +302,12 @@ export interface Candidate {
   industryExperience: string[];
   recentActivity: string;
   stage: CandidateStage;
+  /** Historical high-water-mark funnel rank (see STAGE_RANK in metrics.ts) —
+   *  the furthest the candidate ever progressed, even if `stage` later moved
+   *  to a terminal/negative state (Rejected, Suppressed). Absent = derive
+   *  from the current stage. Funnel/KPI aggregation reads this instead of
+   *  the live stage rank so post-interview rejections aren't undercounted. */
+  maxStageRank?: number;
   lastContactedAt: string | null;
   outreachHistory: OutreachHistoryEntry[];
   replyHistory: ReplyHistoryEntry[];
@@ -310,6 +324,178 @@ export interface Candidate {
   /** Why this candidate was rejected — captured alongside the "Rejected" stage.
    *  Optional and editable independently of the stage itself. */
   rejectionReason?: string;
+
+  /* ---- TAnIA layer (additive; derived on migration when absent) ---------- */
+  /** TAnIA lead source — Applicant (inbound job ad), Referral (My Referral app),
+   *  or Outbound (headhunted/sourced). Drives tone, SLA and rejection handling
+   *  (TAnIA §3). Derived from sourcePlatform on migration when absent. */
+  leadSource?: LeadSource;
+  /** Employee who referred this candidate (Referral source only). */
+  referredBy?: string;
+  /** Mantu Star Rating (TopGun/A/B/C/D) — TAnIA §4. Derived from matchScore via
+   *  the configurable thresholds in SystemSettings when absent. */
+  starRating?: StarRating;
+  /** #Vivier / talent-pool membership — a profile kept warm for future needs. */
+  vivier?: boolean;
+  /** Silver Medalist — a TopGun/A not hired now, tracked for future needs. */
+  silverMedalist?: boolean;
+  /** ISO timestamp before which a pooled profile should not be re-contacted. */
+  recontactAt?: string | null;
+  /** Prequal call record — the gate where a LEAD becomes a CANDIDATE. */
+  prequal?: PrequalRecord;
+  /** Interview records (Intw1 / Intw2 / Intw3 / QM). Newest last. */
+  interviews?: InterviewRecord[];
+  /** Skills + signals captured across the process — the candidate "DNA" stored
+   *  back into the talent pool (TAnIA Talent Pool & Community Mgr). */
+  dna?: string[];
+}
+
+/* ============================================================================
+   TAnIA — Talent Acquisition funnel model (additive layer)
+   The base CandidateStage/Campaign model above stays authoritative for outreach,
+   the sending fleet and reports. TAnIA concepts layer on top: lead source, the
+   Mantu Star Rating, the 4-stage funnel, prequal + interviews, and #Vivier.
+   Ref: "TAnIA Architecture & Candidate Journey" v6.0 (Mantu / Amaris, Jun 2026).
+   ========================================================================== */
+
+/** Where a lead came from — agent behaviour, tone and SLA differ by source. */
+export const LEAD_SOURCES = ["Applicant", "Referral", "Outbound"] as const;
+export type LeadSource = (typeof LEAD_SOURCES)[number];
+
+/** Mantu Star Rating applied at every evaluation stage (Screening → Intw3). */
+export const STAR_RATINGS = ["TopGun", "A", "B", "C", "D"] as const;
+export type StarRating = (typeof STAR_RATINGS)[number];
+
+/** The Mantu 4-stage hiring funnel. "Chatbox" is the pre-Stage-I entry layer. */
+export const TANIA_STAGES = [
+  "Chatbox", // pre-Stage I — external candidate entry point
+  "Need", // Stage 0 — Need Brief
+  "Leads", // Stage I — LEADS (TOFU)
+  "Candidates", // Stage II — CANDIDATES (MOFU)
+  "Offered", // Stage III — OFFERED CANDIDATES
+  "Employees", // Stage IV — EMPLOYEES
+] as const;
+export type TaniaStage = (typeof TANIA_STAGES)[number];
+
+export const INTERVIEW_KINDS = ["Prequal", "Intw1", "Intw2", "Intw3", "QM"] as const;
+export type InterviewKind = (typeof INTERVIEW_KINDS)[number];
+
+export const INTERVIEW_OUTCOMES = [
+  "Scheduled",
+  "Completed",
+  "Advance",
+  "Hold",
+  "Reject",
+  "No Show",
+] as const;
+export type InterviewOutcome = (typeof INTERVIEW_OUTCOMES)[number];
+
+/** One interview event in the pipeline (Intw1/2/3 or the Consulting QM). */
+export interface InterviewRecord {
+  id: string;
+  kind: InterviewKind;
+  scheduledFor: string | null;
+  interviewer: string;
+  outcome: InterviewOutcome;
+  /** Rating captured at this stage (TAnIA rates at every gate). */
+  starRating?: StarRating;
+  /** Structured hiring-manager feedback (form filled T+30min post-interview). */
+  hmFeedback?: string;
+  /** When the HM feedback form is due — drives the "no feedback" alert. */
+  hmFeedbackDueAt?: string | null;
+  notes?: string;
+  createdAt: string;
+}
+
+export type PrequalOutcome = "pending" | "advance" | "hold" | "reject";
+
+export interface PrequalQuestion {
+  q: string;
+  a: string;
+  kind: "yesno" | "stars" | "text";
+  /** 1–5 when kind === "stars". */
+  stars?: number;
+}
+
+/** The Prequal call — the gate where a LEAD becomes a CANDIDATE. */
+export interface PrequalRecord {
+  scheduledFor: string | null;
+  completedAt: string | null;
+  starRating?: StarRating;
+  questions: PrequalQuestion[];
+  toneGuide?: string;
+  outcome: PrequalOutcome;
+}
+
+/* ---- Career-website Chatbox (external candidate entry point, TAnIA §5) ---- */
+
+export const CHATBOX_PATHS = ["A", "B"] as const;
+/** Path A = applying to a specific job. Path B = spontaneous browse / match. */
+export type ChatboxPath = (typeof CHATBOX_PATHS)[number];
+
+export type ChatboxAnswerKind =
+  | "mobility"
+  | "visa"
+  | "keyexp"
+  | "toolexp"
+  | "project"
+  | "quickmatch";
+
+export interface ChatboxScreeningAnswer {
+  question: string;
+  answer: string;
+  kind: ChatboxAnswerKind;
+  /** 1–5 for star-rated screening questions (key experience, tool/expertise). */
+  stars?: number;
+}
+
+/** The weighted 0–100 automatic score computed at chatbox handoff (TAnIA §5.07). */
+export interface ChatboxScore {
+  total: number; // 0–100
+  location: number; // /25
+  visa: number; // /20
+  keySkill: number; // /25
+  project: number; // /20
+  availability: number; // /10
+}
+
+export const CHATBOX_SUBMISSION_STATUSES = [
+  "new",
+  "reviewed",
+  "advanced",
+  "rejected",
+  "pooled",
+] as const;
+export type ChatboxSubmissionStatus = (typeof CHATBOX_SUBMISSION_STATUSES)[number];
+
+/** A scored external application produced by the chatbox, awaiting recruiter
+ *  handoff to the Applicant Screener. */
+export interface ChatboxSubmission {
+  id: string;
+  path: ChatboxPath;
+  /** The job applied to (Path A) or best match (Path B); null for pure spontaneous. */
+  campaignId: string | null;
+  roleTitle: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  cvFileName?: string;
+  /** Signals extracted from the CV (invisible to the candidate, TAnIA §5.04). */
+  detected: {
+    location?: string;
+    nationality?: string;
+    phoneCountry?: string;
+    skills?: string[];
+  };
+  answers: ChatboxScreeningAnswer[];
+  score: ChatboxScore;
+  starRating: StarRating;
+  contactPref?: { time?: string; day?: string };
+  status: ChatboxSubmissionStatus;
+  /** Candidate id created once the recruiter advances the submission. */
+  handoffCandidateId?: string;
+  createdAt: string;
 }
 
 /* ---- Outreach ------------------------------------------------------------ */
@@ -444,6 +630,23 @@ export interface AgentSkill {
 
 /* ---- Campaign ------------------------------------------------------------ */
 
+/** Knight M job-ad compliance check — re-run on every edit before publish. */
+export interface JobAdCompliance {
+  checked: boolean;
+  passed: boolean;
+  issues: string[];
+  checkedAt: string | null;
+}
+
+/** The drafted job ad + its compliance state (TAnIA Stage 0 "Job ad creation"). */
+export interface JobAd {
+  content: string;
+  screeningQuestions: string[];
+  knightM: JobAdCompliance;
+  status: "draft" | "published";
+  updatedAt: string;
+}
+
 export interface CampaignMetrics {
   sourced: number;
   contacted: number;
@@ -467,6 +670,9 @@ export interface Campaign {
   department: string;
   urgency: Urgency;
   status: CampaignStatus;
+  /** Status to restore to on resume. Set when pausing; persisted on the record
+   *  itself (not component state) so it survives navigation/remount. */
+  previousStatus?: CampaignStatus | null;
   hiringManager: string;
   hiringManagerEmail: string;
   createdAt: string;
@@ -477,6 +683,8 @@ export interface Campaign {
   metrics: CampaignMetrics;
   skillUpdates: SkillUpdate[];
   activities: Activity[];
+  /** Drafted job ad + Knight M compliance (TAnIA Stage 0). Optional/additive. */
+  jobAd?: JobAd;
 }
 
 /* ---- Weekly report ------------------------------------------------------- */
@@ -565,6 +773,9 @@ export interface SystemSettings {
   humanApprovalGate: boolean;
   dryRunMode: boolean;
   minScoreToContact: number;
+  /** Match-score cutoffs mapping to the Mantu Star Rating (TopGun/A/B/C/D).
+   *  A score ≥ topGun is a TOP GUN, ≥ a is an A player, ≥ b a B, ≥ c a C, else D. */
+  starRatingThresholds?: { topGun: number; a: number; b: number; c: number };
   slaMinutes: number;
   operatorName: string;
   systemIdentity: string;
@@ -1019,4 +1230,7 @@ export interface HermesState {
   activeCampaignId: string | null;
   /** Dedup ledger of provider message ids already ingested (inbound email tracking). */
   ingestedMessageIds?: string[];
+  /** Scored external applications from the career-website chatbox, awaiting
+   *  recruiter handoff to the Applicant Screener (TAnIA §5). Additive. */
+  chatboxSubmissions?: ChatboxSubmission[];
 }

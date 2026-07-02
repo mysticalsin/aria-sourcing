@@ -135,7 +135,7 @@ export async function runAnthropicWithTools(args: {
       res = await fetch(ANTHROPIC_URL, {
         method: "POST",
         headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model, max_tokens: 1024, system, messages, tools: toolDefs }),
+        body: JSON.stringify({ model, max_tokens: 4096, system, messages, tools: toolDefs }),
         redirect: "manual",
         signal: AbortSignal.timeout(timeoutMs),
       });

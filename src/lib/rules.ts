@@ -181,6 +181,8 @@ export interface CampaignHealth {
 
 export function campaignHealth(c: Campaign): CampaignHealth {
   const m = c.metrics;
+  if (c.status === "Paused")
+    return { tone: "warning", label: "Paused", detail: "Resume to continue sourcing and outreach." };
   if (c.status === "Filled") return { tone: "success", label: "Filled", detail: "Role closed." };
   if (m.sourced === 0)
     return { tone: "neutral", label: "Awaiting sourcing", detail: "No candidates sourced yet." };
@@ -194,6 +196,7 @@ export function campaignHealth(c: Campaign): CampaignHealth {
 
 export function nextActionForCampaign(c: Campaign): string {
   const m = c.metrics;
+  if (c.status === "Paused") return "Resume campaign to continue";
   if (m.sourced === 0) return "Source first batch";
   if (m.sourced > m.contacted) return `Review ${m.sourced - m.contacted} drafts`;
   if (m.replied > m.interested + m.notInterested) return "Classify new replies";

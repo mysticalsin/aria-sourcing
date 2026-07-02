@@ -26,8 +26,8 @@ import {
   SAMPLE_MANTU_EMAIL,
   type ParsedIntake,
 } from "@/lib/mock-ai";
-import { parseIntakeLive } from "@/lib/ai/intake";
-import { useActions, useHydrated, useSettings } from "@/lib/store";
+import { parseIntakeLive, deriveValidationWarnings } from "@/lib/ai/intake";
+import { useActions, useCampaigns, useHydrated, useSettings } from "@/lib/store";
 import {
   copyToClipboard,
   formatPercent,
@@ -88,6 +88,7 @@ export default function IntakePage() {
   const confirm = useConfirm();
   const actions = useActions();
   const settings = useSettings();
+  const campaigns = useCampaigns();
 
   const [email, setEmail] = useState("");
   const [jd, setJd] = useState("");
@@ -108,6 +109,15 @@ export default function IntakePage() {
   function patchJob(patch: Partial<JobAnalysis>) {
     setJob((prev) => (prev ? { ...prev, ...patch } : prev));
   }
+
+  // Recomputed from the live, editable `job` state (not the frozen parse-time
+  // `parsed.validationWarnings`) so adding/removing skills or filling in salary
+  // actually clears/raises warnings, and the create-campaign gate below can't
+  // go stale relative to what's on screen.
+  const liveValidationWarnings = React.useMemo(
+    () => (job ? deriveValidationWarnings(job) : []),
+    [job],
+  );
 
   /** Enrichment on top of the heuristic parse above — never blocks or replaces it.
    *  Only fires when a "jdAnalysis" Dust agent is locked in Settings; any failure
@@ -238,7 +248,7 @@ export default function IntakePage() {
 
   async function handleCreateCampaign() {
     if (!job || !parsed) return;
-    const criticalWarnings = parsed.validationWarnings.filter((w) => w.severity === "critical");
+    const criticalWarnings = liveValidationWarnings.filter((w) => w.severity === "critical");
     if (criticalWarnings.length > 0) {
       const ok = await confirm({
         title:
@@ -254,9 +264,32 @@ export default function IntakePage() {
       });
       if (!ok) return;
     }
+
+    // Duplicate guard: a re-parse-and-create, a double-click, or repeated "Scan
+    // inbox" on the same recurring need email shouldn't silently spin up a
+    // second campaign (and a second sourcing run) for the same open role.
+    const normalizedTitle = job.title.trim().toLowerCase();
+    const hiringManagerEmail = senderEmail.trim() || "unknown@company.example";
+    const duplicate = campaigns.find(
+      (c) =>
+        c.status !== "Filled" &&
+        c.title.trim().toLowerCase() === normalizedTitle &&
+        c.hiringManagerEmail.trim().toLowerCase() === hiringManagerEmail.toLowerCase(),
+    );
+    if (duplicate) {
+      const proceed = await confirm({
+        title: "Possible duplicate campaign",
+        description: `“${duplicate.title}” for ${duplicate.hiringManagerEmail} already exists (${duplicate.status}). Create another campaign for the same role anyway?`,
+        confirmLabel: "Create anyway",
+        cancelLabel: "Cancel",
+        danger: true,
+      });
+      if (!proceed) return;
+    }
+
     const campaign = actions.createCampaignFromAnalysis(job, {
       hiringManager: senderName.trim() || "Hiring Manager",
-      hiringManagerEmail: senderEmail.trim() || "unknown@company.example",
+      hiringManagerEmail,
     });
     toast({
       title: "Campaign created",
@@ -270,6 +303,13 @@ export default function IntakePage() {
     if (raw.trim() === "") return null;
     const n = Number(raw);
     return Number.isFinite(n) ? n : null;
+  }
+
+  /** ISO datetime -> the yyyy-mm-dd shape <input type="date"> expects. */
+  function dateInputValue(iso: string | null | undefined): string {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
   }
 
   return (
@@ -331,6 +371,7 @@ export default function IntakePage() {
                     size="sm"
                     leftIcon={<Sparkles aria-hidden />}
                     onClick={loadSample}
+                    disabled={parsing}
                   >
                     Sample backend role
                   </Button>
@@ -340,6 +381,7 @@ export default function IntakePage() {
                     size="sm"
                     leftIcon={<FileText aria-hidden />}
                     onClick={loadMantu}
+                    disabled={parsing}
                   >
                     Load Mantu need
                   </Button>
@@ -468,6 +510,26 @@ export default function IntakePage() {
                       />
                     </Field>
                   </div>
+
+                  {/* Expected start date */}
+                  <Field
+                    label="Expected start date"
+                    htmlFor="job-start-date"
+                    hint="From the client's stated start date, when given. Falls back to a default when creating the campaign if left blank."
+                  >
+                    <Input
+                      id="job-start-date"
+                      type="date"
+                      value={dateInputValue(job.expectedStartDate)}
+                      onChange={(e) =>
+                        patchJob({
+                          expectedStartDate: e.target.value
+                            ? new Date(e.target.value).toISOString()
+                            : null,
+                        })
+                      }
+                    />
+                  </Field>
 
                   {/* Salary */}
                   <div>
@@ -640,20 +702,20 @@ export default function IntakePage() {
                 </CardBody>
               </Card>
 
-              {/* Validation warnings */}
-              {parsed.validationWarnings.length > 0 && (
+              {/* Validation warnings — live, recomputed from the editable brief above */}
+              {liveValidationWarnings.length > 0 && (
                 <Card>
                   <CardHeader>
                     <Eyebrow>Validation</Eyebrow>
                     <CardTitle className="mt-1">
-                      {parsed.validationWarnings.length === 1
+                      {liveValidationWarnings.length === 1
                         ? "1 thing to confirm"
-                        : `${parsed.validationWarnings.length} things to confirm`}
+                        : `${liveValidationWarnings.length} things to confirm`}
                     </CardTitle>
                   </CardHeader>
                   <CardBody className="pt-0">
                     <ul className="flex flex-col gap-2">
-                      {parsed.validationWarnings.map((w, i) => {
+                      {liveValidationWarnings.map((w, i) => {
                         const tone = SEVERITY_TONE[w.severity];
                         return (
                           <li

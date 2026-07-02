@@ -20,6 +20,7 @@ import {
   Tabs,
   TabPanel,
   Textarea,
+  useConfirm,
   useToast,
   type TabItem,
 } from "@/components/ui";
@@ -308,6 +309,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const report = useReportForCampaign(id);
   const actions = useActions();
   const { toast } = useToast();
+  const confirm = useConfirm();
   const router = useRouter();
 
   const [tab, setTab] = React.useState("overview");
@@ -316,9 +318,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const [stageFilter, setStageFilter] = React.useState("all");
   const [scoreFilter, setScoreFilter] = React.useState("all");
   const [agentRunning, setAgentRunning] = React.useState(false);
+  const [sourcing, setSourcing] = React.useState(false);
+  const [bookingCandidateId, setBookingCandidateId] = React.useState<string | null>(null);
   const [editingJd, setEditingJd] = React.useState(false);
   const [editingWeights, setEditingWeights] = React.useState(false);
-  const [prePauseStatus, setPrePauseStatus] = React.useState<CampaignStatus | null>(null);
 
   if (!hydrated) {
     return (
@@ -404,7 +407,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   };
 
   const handleSource = async () => {
+    if (sourcing) return;
+    setSourcing(true);
     const res = await actions.sourceNextBatch(c.id);
+    setSourcing(false);
     if (!res.ok) {
       toast({
         title:
@@ -444,8 +450,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   };
 
   const handlePause = () => {
-    setPrePauseStatus(c.status);
-    actions.updateCampaign(c.id, { status: "Paused" });
+    actions.updateCampaign(c.id, { status: "Paused", previousStatus: c.status });
     toast({
       title: "Campaign paused",
       description: "Sourcing and new outreach drafts are blocked until you resume.",
@@ -454,9 +459,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   };
 
   const handleResume = () => {
-    const restored: CampaignStatus = prePauseStatus ?? "Sourcing";
-    actions.updateCampaign(c.id, { status: restored });
-    setPrePauseStatus(null);
+    const restored: CampaignStatus = c.previousStatus ?? "Sourcing";
+    actions.updateCampaign(c.id, { status: restored, previousStatus: null });
     toast({
       title: "Campaign resumed",
       description: `Status restored to ${restored}.`,
@@ -464,11 +468,27 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     });
   };
 
-  const handleMarkFilled = () => {
-    actions.updateCampaign(c.id, { status: "Filled" });
+  const handleMarkFilled = async () => {
+    const proceed = await confirm({
+      title: `Mark "${c.title}" as filled?`,
+      description: "This closes the campaign. Sourcing and outreach will stop until it's reopened.",
+      confirmLabel: "Mark filled",
+      danger: true,
+    });
+    if (!proceed) return;
+    actions.updateCampaign(c.id, { status: "Filled", previousStatus: null });
     toast({
       title: "Campaign marked Filled",
       description: `${c.title} is now marked as filled.`,
+      variant: "success",
+    });
+  };
+
+  const handleReopen = () => {
+    actions.updateCampaign(c.id, { status: "Sourcing" });
+    toast({
+      title: "Campaign reopened",
+      description: `${c.title} is back to Sourcing.`,
       variant: "success",
     });
   };
@@ -483,7 +503,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   };
 
   const handleBook = async (cand: Candidate) => {
+    if (bookingCandidateId) return;
+    setBookingCandidateId(cand.id);
     const res = await actions.createBookingFor(cand.id);
+    setBookingCandidateId(null);
     if (res.ok) {
       toast({
         title: `Interview booked: ${cand.name}`,
@@ -638,10 +661,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               variant="secondary"
               leftIcon={<Sparkles className="h-4 w-4" />}
               onClick={handleSource}
-              disabled={c.status === "Paused"}
+              loading={sourcing}
+              disabled={sourcing || c.status === "Paused"}
               title={c.status === "Paused" ? "Resume the campaign to source new candidates" : undefined}
             >
-              Source next batch
+              {sourcing ? "Sourcing…" : "Source next batch"}
             </Button>
             <Button
               variant="secondary"
@@ -652,7 +676,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             >
               {agentRunning ? "Agent working…" : "Run sourcing agent"}
             </Button>
-            <Button variant="outline" leftIcon={<Send className="h-4 w-4" />} onClick={() => router.push("/outreach")}>
+            <Button
+              variant="outline"
+              leftIcon={<Send className="h-4 w-4" />}
+              onClick={() => router.push(`/outreach?campaign=${c.id}`)}
+            >
               Review outreach
             </Button>
             {c.status === "Paused" ? (
@@ -664,7 +692,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 Pause campaign
               </Button>
             )}
-            {c.status !== "Filled" && (
+            {c.status === "Filled" ? (
+              <Button variant="outline" leftIcon={<RefreshCw className="h-4 w-4" />} onClick={handleReopen}>
+                Reopen
+              </Button>
+            ) : (
               <Button variant="outline" leftIcon={<CheckCircle2 className="h-4 w-4" />} onClick={handleMarkFilled}>
                 Mark filled
               </Button>
@@ -1144,6 +1176,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                           size="sm"
                           leftIcon={<CalendarPlus className="h-4 w-4" />}
                           onClick={() => handleBook(cand)}
+                          loading={bookingCandidateId === cand.id}
+                          disabled={bookingCandidateId !== null}
                         >
                           Book
                         </Button>

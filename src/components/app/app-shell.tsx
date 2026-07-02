@@ -13,8 +13,9 @@ import { Onboarding } from "./onboarding";
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
-  // Auth screens render full-bleed, without the console chrome.
-  if (pathname.startsWith("/login")) return <>{children}</>;
+  // Auth screens and the public career-site chatbox render full-bleed, without
+  // the recruiter console chrome.
+  if (pathname.startsWith("/login") || pathname.startsWith("/careers")) return <>{children}</>;
 
   return (
     <ConfirmProvider>
@@ -32,7 +33,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Mobile bottom nav */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-violet/10 bg-paper/85 px-2 py-2 backdrop-blur-xl lg:hidden"
+        className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-violet/10 bg-paper/85 px-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur-xl lg:hidden"
         aria-label="Primary mobile"
       >
         {MOBILE_NAV.map((item) => {

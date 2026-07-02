@@ -27,7 +27,7 @@ function ok(name: string, cond: boolean) {
 
 /* ---- 1. STATE_VERSION bumped to 10 -------------------------------------- */
 
-ok("STATE_VERSION is 12", STATE_VERSION === 12);
+ok("STATE_VERSION is 13", STATE_VERSION === 13);
 
 /* ---- 2. buildSeedState includes chats: [] ------------------------------- */
 

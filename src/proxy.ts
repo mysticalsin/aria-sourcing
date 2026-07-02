@@ -4,6 +4,16 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL, supabaseEnabled, ALLOWED_EMAIL_DOMAIN,
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
+/** Routes that must stay reachable without a session: the auth screens and the
+ *  public career-site chatbox (external candidates never log in). */
+function isPublicPath(path: string): boolean {
+  return (
+    path.startsWith("/login") ||
+    path.startsWith("/auth") ||
+    path.startsWith("/careers")
+  );
+}
+
 /**
  * Route gate. In non-production DEMO mode (no Supabase env) it is a no-op — the
  * app is open for local development. In production with no Supabase env it FAILS
@@ -33,7 +43,7 @@ export async function proxy(req: NextRequest) {
     // before using the key. /login and /auth/* stay public.
     if (demoLoginEnabled) {
       const path = req.nextUrl.pathname;
-      const isAuthRoute = path.startsWith("/login") || path.startsWith("/auth");
+      const isAuthRoute = isPublicPath(path);
       const hasSession = req.cookies.has(DEMO_COOKIE_NAME);
       if (!hasSession && !isAuthRoute) {
         const url = req.nextUrl.clone();
@@ -72,7 +82,7 @@ export async function proxy(req: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = req.nextUrl.pathname;
-  const isAuthRoute = path.startsWith("/login") || path.startsWith("/auth");
+  const isAuthRoute = isPublicPath(path);
 
   if (!user && !isAuthRoute) {
     const url = req.nextUrl.clone();

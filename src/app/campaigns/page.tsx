@@ -49,9 +49,16 @@ export default function CampaignsPage() {
     });
   }, [campaigns, query, status, urgency, department]);
 
+  // Only Sourcing (default), Paused, and Filled are ever actually set by any
+  // code path today. Intake/Outreach/Interviewing/Closing exist in the type
+  // for future use but filtering by them always returns zero results, so
+  // they're excluded here rather than shown as a dead-end filter option.
   const statusOptions = [
     { value: "all", label: "All statuses" },
-    ...CAMPAIGN_STATUSES.map((s) => ({ value: s, label: s })),
+    ...CAMPAIGN_STATUSES.filter((s) => s === "Sourcing" || s === "Paused" || s === "Filled").map((s) => ({
+      value: s,
+      label: s,
+    })),
   ];
   const urgencyOptions = [
     { value: "all", label: "All urgency" },

@@ -2,11 +2,12 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Bell, ChevronDown, RotateCcw, ShieldCheck, Check, LogOut } from "lucide-react";
+import { useRouter, usePathname } from "next/navigation";
+import { Bell, ChevronDown, RotateCcw, ShieldCheck, Check, LogOut, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CommandSearch } from "./command-search";
 import { HermesWordmark } from "./logo";
+import { NAV_ITEMS } from "./nav";
 import {
   useActions,
   useActiveCampaign,
@@ -47,6 +48,7 @@ function menuKeyHandler(
 
 export function TopBar() {
   const router = useRouter();
+  const pathname = usePathname();
   const campaigns = useCampaigns();
   const active = useActiveCampaign();
   const recommendations = useRecommendations();
@@ -57,13 +59,59 @@ export function TopBar() {
 
   const [notifOpen, setNotifOpen] = React.useState(false);
   const [userOpen, setUserOpen] = React.useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const [authUser, setAuthUser] = React.useState<CurrentUser | null>(null);
+
+  // Close the mobile nav on route change.
+  React.useEffect(() => {
+    setMobileNavOpen(false);
+  }, [pathname]);
+
+  // When the mobile nav opens, move focus into the panel; restore focus to the
+  // trigger when it closes (modal focus contract for the aria-modal sheet).
+  React.useEffect(() => {
+    if (mobileNavOpen && mobileNavPanelRef.current) {
+      const first = mobileNavPanelRef.current.querySelector<HTMLElement>(
+        'button, [href], [tabindex]:not([tabindex="-1"])',
+      );
+      (first ?? mobileNavPanelRef.current).focus();
+    } else if (!mobileNavOpen) {
+      mobileNavTriggerRef.current?.focus();
+    }
+  }, [mobileNavOpen]);
+
+  // Escape closes the sheet; Tab cycles focus within it (focus trap).
+  const onMobileNavKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setMobileNavOpen(false);
+      return;
+    }
+    if (e.key !== "Tab") return;
+    const focusable = Array.from(
+      e.currentTarget.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((el) => el.offsetParent !== null);
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
 
   // Refs for trigger buttons (focus restoration on close) and menu panels (focus-in on open).
   const notifTriggerRef = React.useRef<HTMLButtonElement>(null);
   const notifMenuRef = React.useRef<HTMLDivElement>(null);
   const userTriggerRef = React.useRef<HTMLButtonElement>(null);
   const userMenuRef = React.useRef<HTMLDivElement>(null);
+  const mobileNavTriggerRef = React.useRef<HTMLButtonElement>(null);
+  const mobileNavPanelRef = React.useRef<HTMLElement>(null);
 
   React.useEffect(() => {
     if (supabaseEnabled) getCurrentUser().then(setAuthUser);
@@ -101,6 +149,18 @@ export function TopBar() {
   return (
     <header className="sticky top-0 z-40 topbar-glass">
       <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
+        {/* Mobile / tablet nav trigger — exposes the full nav below lg. */}
+        <button
+          ref={mobileNavTriggerRef}
+          type="button"
+          onClick={() => setMobileNavOpen(true)}
+          aria-label="Open navigation menu"
+          aria-expanded={mobileNavOpen}
+          className="rounded-full p-2.5 text-ink-soft hover:bg-ink/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric lg:hidden"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+
         <Link href="/" className="lg:hidden">
           <HermesWordmark compact />
         </Link>
@@ -283,6 +343,67 @@ export function TopBar() {
       <div className="px-4 pb-3 sm:hidden">
         <CommandSearch />
       </div>
+
+      {/* Mobile / tablet full-nav sheet (all routes reachable below lg). */}
+      {mobileNavOpen && (
+        <div
+          className="fixed inset-0 z-50 lg:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Navigation"
+          onKeyDown={onMobileNavKeyDown}
+        >
+          <div
+            className="absolute inset-0 bg-ink/30 backdrop-blur-sm animate-fade-in"
+            onClick={() => setMobileNavOpen(false)}
+            aria-hidden
+          />
+          <nav
+            ref={mobileNavPanelRef}
+            className="sidebar-glass absolute left-0 top-0 flex h-full w-[17rem] max-w-[82%] flex-col overflow-y-auto pb-[env(safe-area-inset-bottom)] animate-fade-in shadow-lift"
+          >
+            <div className="flex items-center justify-between px-5 py-4">
+              <HermesWordmark />
+              <button
+                type="button"
+                onClick={() => setMobileNavOpen(false)}
+                aria-label="Close navigation menu"
+                className="rounded-full p-2 text-ink-soft hover:bg-ink/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            {(["Operate", "System"] as const).map((section) => (
+              <div key={section} className="px-3 py-2">
+                <p className="px-3 pb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wider text-muted">
+                  {section}
+                </p>
+                <ul className="space-y-0.5">
+                  {NAV_ITEMS.filter((n) => n.section === section).map((item) => {
+                    const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+                    const Icon = item.icon;
+                    return (
+                      <li key={item.href}>
+                        <Link
+                          href={item.href}
+                          aria-current={active ? "page" : undefined}
+                          className={cn(
+                            "flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold transition",
+                            active ? "bg-electric-soft text-electric" : "text-ink-soft hover:bg-ink/5",
+                          )}
+                        >
+                          <Icon className={cn("h-5 w-5 shrink-0", active ? "text-electric" : "text-muted")} />
+                          <span className="truncate">{item.label}</span>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </nav>
+        </div>
+      )}
     </header>
   );
 }

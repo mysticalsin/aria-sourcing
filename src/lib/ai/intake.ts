@@ -176,7 +176,9 @@ export function parseHermesIntakeJson(text: string): LiveIntakeFields | null {
   };
 }
 
-function deriveValidationWarnings(
+/** Exported so callers (e.g. the intake page) can recompute warnings live from
+ *  edited job-analysis state instead of relying on the frozen parse-time list. */
+export function deriveValidationWarnings(
   job: Pick<JobAnalysis, "salaryMin" | "salaryMax" | "requiredSkills" | "minYearsExperience">,
 ): ValidationWarning[] {
   const warnings: ValidationWarning[] = [];

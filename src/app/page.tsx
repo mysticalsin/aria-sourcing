@@ -21,6 +21,7 @@ import { HeroPanel } from "@/components/dashboard/hero-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { AttentionPanel } from "@/components/dashboard/attention-panel";
 import { IntegrationStrip } from "@/components/dashboard/integration-strip";
+import { TaniaSummary } from "@/components/dashboard/tania-summary";
 import { CampaignCard } from "@/components/campaigns/campaign-card";
 import { ActivityTimeline } from "@/components/shared/activity-timeline";
 import {
@@ -66,7 +67,7 @@ export default function DashboardPage() {
   const activeCampaign = useActiveCampaign();
 
   const activeCampaigns = campaigns.filter((c) => !["Filled", "Paused"].includes(c.status));
-  const funnel = funnelForCandidates(candidates);
+  const funnel = React.useMemo(() => funnelForCandidates(candidates), [candidates]);
 
   const kpiCards: {
     label: string;
@@ -282,9 +283,11 @@ export default function DashboardPage() {
             </section>
           </div>
 
-          {/* Right: attention + activity */}
+          {/* Right: attention + TAnIA summary + activity */}
           <div className="space-y-6">
             <AttentionPanel />
+
+            <TaniaSummary />
 
             <Card className="animate-fade-in">
               <CardHeader>

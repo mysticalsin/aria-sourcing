@@ -17,9 +17,10 @@
 
 import { OrbitControls } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
-import { Suspense } from "react";
+import { Suspense, useMemo, useState } from "react";
 import "./core/troikaConfig"; // main-thread text layout (CSP blocks blob: workers)
 import type { OfficeAgent } from "@/components/floor3d/types";
+import { getDeviceQuality, MAX_3D_AGENTS, type DeviceQuality } from "@/lib/device";
 import { RobotAgentModel } from "./objects/RobotAgentModel";
 import { RetroEnvironment } from "./scene/RetroEnvironment";
 import { useAgentTick } from "./systems/agentTick";
@@ -40,19 +41,34 @@ function SceneContents({
   agents,
   selectedId,
   onSelect,
-}: RetroOfficeSceneProps) {
-  const { renderAgentsRef, renderAgentLookupRef } = useAgentTick(agents);
+  quality,
+}: RetroOfficeSceneProps & { quality: DeviceQuality }) {
+  const low = quality === "low";
+  // Cap the number of full-detail robot models so a large deployed fleet can't
+  // white-screen a weak GPU. CEO + selected + the rest, then sliced. The floor's
+  // 2D grid view shows the entire fleet without this cap.
+  const shownAgents = useMemo(() => {
+    const cap = MAX_3D_AGENTS[quality];
+    if (agents.length <= cap) return agents;
+    const ranked = [...agents].sort((a, b) => {
+      const pri = (x: OfficeAgent) => (x.position === "ceo" ? 0 : x.id === selectedId ? 1 : 2);
+      return pri(a) - pri(b);
+    });
+    return ranked.slice(0, cap);
+  }, [agents, quality, selectedId]);
+
+  const { renderAgentsRef, renderAgentLookupRef } = useAgentTick(shownAgents);
 
   return (
     <>
-      {/* Lighting */}
-      <ambientLight intensity={0.55} />
+      {/* Lighting — the secondary fill light and shadow map scale with quality. */}
+      <ambientLight intensity={low ? 0.7 : 0.55} />
       <directionalLight
         position={[8, 20, 12]}
         intensity={0.9}
-        castShadow
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
+        castShadow={!low}
+        shadow-mapSize-width={low ? 512 : 1024}
+        shadow-mapSize-height={low ? 512 : 1024}
         shadow-camera-near={1}
         shadow-camera-far={60}
         shadow-camera-left={-18}
@@ -60,7 +76,7 @@ function SceneContents({
         shadow-camera-top={18}
         shadow-camera-bottom={-18}
       />
-      <directionalLight position={[-10, 12, -8]} intensity={0.3} color="#b8d4ff" />
+      {!low && <directionalLight position={[-10, 12, -8]} intensity={0.3} color="#b8d4ff" />}
 
       {/* Camera controls — target lifted to character height so the agents
           read prominently by default while still allowing a full orbit. */}
@@ -80,7 +96,7 @@ function SceneContents({
       </Suspense>
 
       {/* Animated agents — official built characters (robots + CEO human) */}
-      {agents.map((agent) => (
+      {shownAgents.map((agent) => (
         <RobotAgentModel
           key={agent.id}
           agentId={agent.id}
@@ -103,16 +119,26 @@ function SceneContents({
 // Root — wraps the Canvas
 // ---------------------------------------------------------------------------
 export default function RetroOfficeScene(props: RetroOfficeSceneProps) {
+  // Resolve the device tier BEFORE the Canvas's first commit — r3f locks the WebGL
+  // context attributes (antialias/powerPreference) at creation, so a post-mount
+  // effect would be too late. getDeviceQuality is SSR-safe ("high" with no window).
+  const [quality] = useState<DeviceQuality>(() => getDeviceQuality());
+  const low = quality === "low";
+
   return (
     <Canvas
       camera={{ position: [2, 9, 15], fov: 50 }}
-      shadows
-      gl={{ antialias: true, alpha: false }}
+      shadows={!low}
+      gl={{ antialias: !low, alpha: false, powerPreference: "high-performance" }}
       style={{ background: "#1a1f2e" }}
-      dpr={[1, Math.min(typeof window !== "undefined" ? window.devicePixelRatio : 1, 1.5)]}
+      dpr={
+        low
+          ? 1
+          : [1, Math.min(typeof window !== "undefined" ? window.devicePixelRatio : 1, 1.5)]
+      }
     >
       <Suspense fallback={null}>
-        <SceneContents {...props} />
+        <SceneContents {...props} quality={quality} />
       </Suspense>
     </Canvas>
   );

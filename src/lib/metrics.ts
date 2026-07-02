@@ -1,6 +1,8 @@
 import type {
+  Booking,
   CampaignMetrics,
   Candidate,
+  CandidateStage,
   FunnelPoint,
   HermesState,
 } from "./types";
@@ -27,6 +29,51 @@ export function stageRank(stage: string): number {
   return STAGE_RANK[stage] ?? 0;
 }
 
+/* The furthest funnel point a candidate ever reached, even if their current
+   `stage` later regressed to a terminal/negative one (Rejected, Suppressed).
+   Takes the max of the tracked high-water mark and the live stage rank so a
+   stale/missing maxStageRank can never under-report the current stage. */
+export function effectiveStageRank(c: Candidate): number {
+  return Math.max(c.maxStageRank ?? 0, stageRank(c.stage));
+}
+
+/* Computes the {stage, maxStageRank} pair for a candidate transitioning to a
+   new stage. Every store.ts mutation site that sets `candidate.stage`
+   (setCandidateStage, booking creation/completion, suppression, reply
+   handling, ...) must merge this in, or a later regression to a terminal
+   stage (Suppressed/Rejected) silently erases an earlier high-water mark
+   (e.g. Interviewed) and effectiveStageRank() under-reports it. */
+export function withStage(
+  prev: Pick<Candidate, "stage" | "maxStageRank">,
+  stage: CandidateStage,
+): { stage: CandidateStage; maxStageRank: number } {
+  return {
+    stage,
+    maxStageRank: Math.max(prev.maxStageRank ?? 0, stageRank(prev.stage), stageRank(stage)),
+  };
+}
+
+/* Elapsed hours from `createdAt` to the earliest `startTime` among the given
+   bookings — each booking's *scheduled* interview time, not the moment the
+   booking record itself was created. This is the single, canonical
+   time-to-first-interview computation shared by store.ts (live campaigns)
+   and seed.ts (seeded demo campaigns) so both report the same KPI meaning.
+   Returns null when there are no bookings yet. */
+export function firstInterviewElapsedHours(
+  bookings: Pick<Booking, "startTime">[],
+  createdAt: string,
+): number | null {
+  const firstStartTime = bookings.reduce<string | null>(
+    (min, b) => (min === null || b.startTime < min ? b.startTime : min),
+    null,
+  );
+  if (firstStartTime === null) return null;
+  return Math.max(
+    0,
+    Math.round((new Date(firstStartTime).getTime() - new Date(createdAt).getTime()) / 3_600_000),
+  );
+}
+
 const FUNNEL_RANK: Record<string, number> = {
   Sourced: 0,
   Contacted: 1,
@@ -40,21 +87,26 @@ const FUNNEL_RANK: Record<string, number> = {
 export function funnelForCandidates(candidates: Candidate[]): FunnelPoint[] {
   return FUNNEL_STAGES.map((stage) => ({
     stage,
-    count: candidates.filter((c) => stageRank(c.stage) >= FUNNEL_RANK[stage]).length,
+    count: candidates.filter((c) => effectiveStageRank(c) >= FUNNEL_RANK[stage]).length,
   }));
 }
 
 export function computeCampaignMetrics(
   candidates: Candidate[],
   prev?: Partial<CampaignMetrics>,
+  /** Real elapsed hours from campaign creation to the first booked interview
+   *  (caller computes this from actual timestamps — see recomputeMetrics in
+   *  store.ts). `undefined` preserves whatever was already on `prev`; pass
+   *  `null` explicitly once no booking exists yet. */
+  timeToFirstInterviewHours?: number | null,
 ): CampaignMetrics {
   const sourced = candidates.length;
-  const contacted = candidates.filter((c) => stageRank(c.stage) >= 1).length;
-  const replied = candidates.filter((c) => stageRank(c.stage) >= 2).length;
+  const contacted = candidates.filter((c) => effectiveStageRank(c) >= 1).length;
+  const replied = candidates.filter((c) => effectiveStageRank(c) >= 2).length;
   const interested = candidates.filter(
-    (c) => stageRank(c.stage) >= 3 && c.stage !== "Not Interested",
+    (c) => effectiveStageRank(c) >= 3 && c.stage !== "Not Interested",
   ).length;
-  const booked = candidates.filter((c) => stageRank(c.stage) >= 4).length;
+  const booked = candidates.filter((c) => effectiveStageRank(c) >= 4).length;
   const interviewed = candidates.filter((c) =>
     ["Interviewed", "Offer", "Hired"].includes(c.stage),
   ).length;
@@ -77,7 +129,9 @@ export function computeCampaignMetrics(
     replyRate: contacted ? replied / contacted : 0,
     avgMatchScore: avg,
     timeToFirstInterviewHours:
-      prev?.timeToFirstInterviewHours ?? (booked > 0 ? 36 : null),
+      timeToFirstInterviewHours !== undefined
+        ? timeToFirstInterviewHours
+        : (prev?.timeToFirstInterviewHours ?? null),
     emailsSentToday: prev?.emailsSentToday ?? 0,
     linkedinSentToday: prev?.linkedinSentToday ?? 0,
   };
@@ -98,14 +152,16 @@ export interface GlobalKpis {
   hotReplies: number;
 }
 
-export function globalKpis(state: HermesState): GlobalKpis {
+export function globalKpis(
+  state: Pick<HermesState, "campaigns" | "candidates" | "outreach" | "replies">,
+): GlobalKpis {
   const active = state.campaigns.filter((c) => !["Filled", "Paused"].includes(c.status));
   const cands = state.candidates;
-  const contacted = cands.filter((c) => stageRank(c.stage) >= 1).length;
-  const replied = cands.filter((c) => stageRank(c.stage) >= 2).length;
-  const booked = cands.filter((c) => stageRank(c.stage) >= 4).length;
+  const contacted = cands.filter((c) => effectiveStageRank(c) >= 1).length;
+  const replied = cands.filter((c) => effectiveStageRank(c) >= 2).length;
+  const booked = cands.filter((c) => effectiveStageRank(c) >= 4).length;
   const interested = cands.filter(
-    (c) => stageRank(c.stage) >= 3 && c.stage !== "Not Interested",
+    (c) => effectiveStageRank(c) >= 3 && c.stage !== "Not Interested",
   ).length;
   const awaitingBooking = cands.filter((c) => c.stage === "Interested" && !c.booking).length;
   const scores = cands.map((c) => c.matchScore).filter(Boolean);
