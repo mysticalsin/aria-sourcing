@@ -17,6 +17,7 @@ import {
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { AgentDesk } from "@/components/floor/agent-desk";
 import { AgentBot, botColorForSeat } from "@/components/floor/agent-bot";
+import { AgentCortex } from "@/components/floor/agent-cortex";
 import { MissionControlHud } from "@/components/floor/mission-control-hud";
 import { playSound } from "@/lib/sound";
 import {
@@ -25,6 +26,7 @@ import {
   useCampaigns,
   useCandidates,
   useLedger,
+  useSuppression,
   useSettings,
   useActions,
 } from "@/lib/store";
@@ -48,7 +50,7 @@ import {
   pickResponderIndex,
   describeEvent,
 } from "@/components/floor3d/retro/scene/packet-shared";
-import { Bot, Users, Activity, PauseCircle, Flame, Mail, Clock, Languages, Building2, ArrowUpRight, Volume2, VolumeX, LayoutGrid, Box, Radio } from "lucide-react";
+import { Bot, Users, Activity, PauseCircle, Flame, Mail, Clock, Languages, Building2, ArrowUpRight, Volume2, VolumeX, LayoutGrid, Box, Radio, Brain } from "lucide-react";
 
 /** Recent events shown in the 2D activity ticker (guaranteed fallback). */
 const TICKER_CAP = 8;
@@ -61,10 +63,16 @@ export default function FloorPage() {
   const campaigns = useCampaigns();
   const candidates = useCandidates();
   const ledger = useLedger();
+  const suppression = useSuppression();
   const settings = useSettings();
   const actions = useActions();
   const soundEnabled = settings.soundEnabled;
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  // Which panel the selection drawer shows — "overview" (AgentDetailDrawer,
+  // unchanged) or "cortex" (3.2 Glass Cortex). Mutually exclusive so only one
+  // Drawer is ever mounted open at a time; resets to "overview" whenever the
+  // selection changes so switching agents doesn't leave the wrong pane open.
+  const [drawerView, setDrawerView] = React.useState<"overview" | "cortex">("overview");
   const [viewMode, setViewMode] = React.useState<"2d" | "3d">("2d");
 
   // Device tier — cheap, deterministic per session (src/lib/device.ts).
@@ -132,7 +140,7 @@ export default function FloorPage() {
     return () => clearInterval(id);
   }, []);
 
-  const stateLike = { campaigns, candidates, ledger, seats, settings } as unknown as HermesState;
+  const stateLike = { campaigns, candidates, ledger, suppression, seats, settings } as unknown as HermesState;
   const rollup = floorRollup(seats, stateLike);
   const selected = seats.find((s) => s.id === selectedId) ?? null;
 
@@ -144,7 +152,12 @@ export default function FloorPage() {
 
   const selectAgent = (id: string) => {
     setSelectedId(id);
+    setDrawerView("overview");
     playSound("select", soundEnabled);
+  };
+  const closeDrawer = () => {
+    setSelectedId(null);
+    setDrawerView("overview");
   };
   const toggleSound = () => {
     const next = !soundEnabled;
@@ -288,8 +301,16 @@ export default function FloorPage() {
       <AgentDetailDrawer
         seat={selected}
         state={stateLike}
-        open={selected !== null}
-        onClose={() => setSelectedId(null)}
+        open={selected !== null && drawerView === "overview"}
+        onClose={closeDrawer}
+        onOpenCortex={() => setDrawerView("cortex")}
+      />
+      <AgentCortex
+        seat={selected}
+        state={stateLike}
+        open={selected !== null && drawerView === "cortex"}
+        onClose={closeDrawer}
+        onBack={() => setDrawerView("overview")}
       />
     </div>
   );
@@ -395,11 +416,13 @@ function AgentDetailDrawer({
   state,
   open,
   onClose,
+  onOpenCortex,
 }: {
   seat: AgentSeat | null;
   state: HermesState;
   open: boolean;
   onClose: () => void;
+  onOpenCortex: () => void;
 }) {
   if (!seat) {
     return (
@@ -445,6 +468,15 @@ function AgentDetailDrawer({
           <Badge tone={seat.mode === "live" ? "success" : "neutral"}>{seat.mode}</Badge>
           <Badge tone={health.tone}>{health.label}</Badge>
         </div>
+
+        <button
+          type="button"
+          onClick={onOpenCortex}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-electric/30 bg-electric-soft px-4 py-2.5 text-sm font-semibold text-electric transition hover:border-electric/50"
+        >
+          <Brain className="h-4 w-4" aria-hidden />
+          Open cortex — watch it think
+        </button>
 
         <Card className="bg-canvas/40">
           <CardContent className="space-y-1">
