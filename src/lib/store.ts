@@ -119,6 +119,7 @@ import {
 } from "./skills";
 import { stageRank, withStage } from "./metrics";
 import { humanizeText } from "./humanizer";
+import { parseCommand, campaignToAriaContext, type AriaPlan } from "./aria-command";
 
 const STORAGE_KEY = "hermes-sourcing:v1";
 
@@ -339,6 +340,20 @@ export interface HermesActions {
   toggleGuardrailRule: (id: string) => void;
   removeGuardrailRule: (id: string) => void;
   askAria: (instruction: string) => { reply: string };
+  /** Aria Command — sequences the real store actions behind a previewed,
+   *  step-by-step plan (see src/lib/aria-command.ts + command-console.tsx).
+   *  `onStep` fires "running" then "done"/"failed" (with a real result count)
+   *  for each step in order. Never sends: every draft it creates lands in the
+   *  same Draft/Needs-Approval queue as every other drafting path, still
+   *  gated by the human approval gate — this only composes existing actions. */
+  runAriaPlan: (
+    plan: AriaPlan,
+    onStep?: (
+      i: number,
+      status: "running" | "done" | "failed",
+      result?: { count?: number; detail?: string },
+    ) => void,
+  ) => Promise<void>;
 
   // LLM providers
   addProvider: (p: Omit<LlmProvider, "id">) => LlmProvider;
@@ -3897,18 +3912,201 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit],
   );
 
-  // "Ask Aria" — in demo, captures the instruction as a new guardrail rule and
-  // acknowledges. (Live mode would route this through the model with an API key.)
+  /* ---- Aria Command: parse → preview → execute ------------------------- */
+
+  // "the strong ones" / "anyone perfect" reuse the Mantu Star Rating already
+  // computed for every candidate (tania.ts) rather than inventing a new
+  // scoring concept just for this feature.
+  const ARIA_STRONG_RATINGS: StarRating[] = ["TopGun", "A"];
+  const ARIA_PERFECT_RATING: StarRating = "TopGun";
+  // Caps how many candidates a single draft/follow-up/book/pool step touches
+  // per run — an instruction with no explicit count should never fan out
+  // into an unbounded batch of drafts/bookings.
+  const ARIA_STEP_CANDIDATE_CAP = 10;
+
+  /**
+   * Aria Command — executes a previewed `AriaPlan` step by step, calling
+   * `onStep` before and after each one so the console can tick it green (or
+   * red) with a real result count. Every step composes EXISTING store
+   * actions unchanged (sourceNextBatch, generateOutreachLive,
+   * draftFollowUpFor, createBookingFor, toggleVivier, generateReport) — none
+   * of them is a send path, so outreach always lands in the same
+   * Draft/Needs-Approval queue the human approval gate already governs (see
+   * newOutreachMessage in mock-ai.ts). A step with no matched campaign fails
+   * cleanly instead of guessing one into existence: a one-line instruction
+   * carries too little information to safely fabricate a whole new JD, so
+   * the operator picks an existing campaign from Campaigns first.
+   */
+  const runAriaPlan = useCallback(
+    async (
+      plan: AriaPlan,
+      onStep?: (
+        i: number,
+        status: "running" | "done" | "failed",
+        result?: { count?: number; detail?: string },
+      ) => void,
+    ): Promise<void> => {
+      const campaignId = plan.matchedCampaignId;
+
+      for (let i = 0; i < plan.steps.length; i++) {
+        const step = plan.steps[i];
+        onStep?.(i, "running");
+        try {
+          if (!campaignId) {
+            onStep?.(i, "failed", {
+              detail: "No matching campaign for this instruction — pick one from Campaigns first.",
+            });
+            continue;
+          }
+
+          if (step.verb === "source") {
+            const res = await sourceNextBatch(campaignId, { count: step.count ?? 10 });
+            if (res.ok) {
+              onStep?.(i, "done", {
+                count: res.accepted.length,
+                detail: `${res.accepted.length} sourced, ${res.skipped.length} skipped`,
+              });
+            } else {
+              onStep?.(i, "failed", { detail: res.error });
+            }
+            continue;
+          }
+
+          if (step.verb === "draft") {
+            const s = current();
+            const targets = s.candidates
+              .filter((c) => c.campaignId === campaignId)
+              .filter(
+                (c) => !c.complianceFlags.doNotContact && !c.complianceFlags.suppressed && !c.complianceFlags.unsubscribed,
+              )
+              .filter((c) => stageRank(c.stage) < 1)
+              .filter((c) => ARIA_STRONG_RATINGS.includes(c.starRating ?? deriveStarRating(c.matchScore)))
+              .filter((c) => !s.outreach.some((m) => m.candidateId === c.id && m.status === "Needs Approval"))
+              .slice(0, ARIA_STEP_CANDIDATE_CAP);
+            let count = 0;
+            for (const cand of targets) {
+              const msg = await generateOutreachLive(cand.id);
+              if (msg) count += 1;
+            }
+            onStep?.(i, "done", {
+              count,
+              detail: `${count} outreach draft${count === 1 ? "" : "s"} queued for approval`,
+            });
+            continue;
+          }
+
+          if (step.verb === "follow-up") {
+            const s = current();
+            const due = deriveFollowUpsDue(s)
+              .filter((d) => s.candidates.find((c) => c.id === d.candidateId)?.campaignId === campaignId)
+              .slice(0, ARIA_STEP_CANDIDATE_CAP);
+            let count = 0;
+            for (const d of due) {
+              const msg = await draftFollowUpFor(d.candidateId);
+              if (msg) count += 1;
+            }
+            onStep?.(i, "done", {
+              count,
+              detail: `${count} follow-up draft${count === 1 ? "" : "s"} queued for approval`,
+            });
+            continue;
+          }
+
+          if (step.verb === "book") {
+            const s = current();
+            const targets = s.candidates
+              .filter((c) => c.campaignId === campaignId && c.stage === "Interested")
+              .filter((c) => (c.starRating ?? deriveStarRating(c.matchScore)) === ARIA_PERFECT_RATING)
+              .filter(
+                (c) => !c.complianceFlags.doNotContact && !c.complianceFlags.suppressed && !c.complianceFlags.unsubscribed,
+              )
+              .slice(0, ARIA_STEP_CANDIDATE_CAP);
+            let count = 0;
+            let lastError: string | undefined;
+            for (const cand of targets) {
+              const res = await createBookingFor(cand.id);
+              if (res.ok) count += 1;
+              else lastError = res.error;
+            }
+            if (count > 0 || targets.length === 0) {
+              onStep?.(i, "done", {
+                count,
+                detail:
+                  targets.length === 0
+                    ? "No TopGun candidates at Interested stage to book."
+                    : `${count} interview${count === 1 ? "" : "s"} booked`,
+              });
+            } else {
+              onStep?.(i, "failed", { detail: lastError ?? "Booking failed." });
+            }
+            continue;
+          }
+
+          if (step.verb === "pool") {
+            const s = current();
+            const targets = s.candidates
+              .filter((c) => c.campaignId === campaignId && !c.vivier)
+              .filter((c) => c.stage === "Not Interested" || c.stage === "Rejected")
+              .filter((c) => (c.starRating ?? deriveStarRating(c.matchScore)) !== "D")
+              .slice(0, ARIA_STEP_CANDIDATE_CAP);
+            targets.forEach((c) => toggleVivier(c.id));
+            onStep?.(i, "done", {
+              count: targets.length,
+              detail: `${targets.length} candidate${targets.length === 1 ? "" : "s"} added to #Vivier`,
+            });
+            continue;
+          }
+
+          if (step.verb === "report") {
+            const report = generateReport(campaignId);
+            onStep?.(
+              i,
+              report ? "done" : "failed",
+              report
+                ? { count: 1, detail: `Weekly report generated (${report.periodLabel})` }
+                : { detail: "Could not generate a report for this campaign." },
+            );
+            continue;
+          }
+
+          onStep?.(i, "failed", { detail: "Unrecognized step." });
+        } catch (err) {
+          onStep?.(i, "failed", { detail: err instanceof Error ? err.message : "Unexpected error." });
+        }
+      }
+    },
+    [current, sourceNextBatch, generateOutreachLive, draftFollowUpFor, createBookingFor, toggleVivier, generateReport],
+  );
+
+  // "Ask Aria" — first tries to parse the instruction as an Aria Command (see
+  // aria-command.ts). When it resolves into a real plan, Aria only DESCRIBES
+  // what it would do here — actually running it goes through runAriaPlan /
+  // the Aria Command console, never from this stub. When nothing actionable
+  // parses (e.g. a policy statement like "never contact anyone at our
+  // current clients"), falls back to the original behavior: captures the
+  // instruction as a new guardrail rule. (Live mode would route this through
+  // the model with an API key.)
   const askAria = useCallback(
     (instruction: string): { reply: string } => {
       const clean = instruction.trim();
-      if (!clean) return { reply: "Tell me what to change and I'll add it as a guardrail." };
+      if (!clean) {
+        return { reply: "Tell me what to change, or ask me to source/draft/book something, and I'll take it from there." };
+      }
+
+      const s = current();
+      const plan = parseCommand(clean, { campaigns: s.campaigns.map(campaignToAriaContext) });
+      if (plan.steps.length > 0) {
+        return {
+          reply: `Here's what I'd do: ${plan.summary} Open Aria Command to review the plan and run it — nothing executes from here.`,
+        };
+      }
+
       addGuardrailRule(clean);
       return {
         reply: `Done — added that as an active guardrail: "${clean}". Every agent will follow it on the next run. You can edit or remove it below anytime.`,
       };
     },
-    [addGuardrailRule],
+    [addGuardrailRule, current],
   );
 
   /* ---- LLM providers ---------------------------------------------------- */
@@ -4839,6 +5037,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       toggleGuardrailRule,
       removeGuardrailRule,
       askAria,
+      runAriaPlan,
       addProvider,
       updateProvider,
       removeProvider,
@@ -4893,7 +5092,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       addSuppression, removeSuppression, allocateOutreach, runFleetSourcing,
       runLearning, acceptSkillLearning, updateSkillContent, recordPiiReveal,
       saveApiKey, testApiKey, removeApiKey, setCurrentRole,
-      updateAriaPrompt, addGuardrailRule, toggleGuardrailRule, removeGuardrailRule, askAria,
+      updateAriaPrompt, addGuardrailRule, toggleGuardrailRule, removeGuardrailRule, askAria, runAriaPlan,
       addProvider, updateProvider, removeProvider, setDefaultProvider,
       addMcpServer, updateMcpServer, removeMcpServer, testMcpServer,
       testDustConnection, connectDust, updateDustAgentLock, disconnectDust, runDustTask,

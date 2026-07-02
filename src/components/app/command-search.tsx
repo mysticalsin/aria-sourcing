@@ -2,11 +2,13 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Search, CornerDownLeft } from "lucide-react";
+import { Search, CornerDownLeft, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { lockBodyScroll, unlockBodyScroll } from "@/lib/scroll-lock";
 import { NAV_ITEMS } from "./nav";
 import { useCampaigns, useCandidates, useActions } from "@/lib/store";
+import { campaignToAriaContext, parseCommand } from "@/lib/aria-command";
+import { AriaCommandConsole } from "@/components/aria/command-console";
 
 interface Result {
   id: string;
@@ -24,6 +26,8 @@ export function CommandSearch() {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [active, setActive] = React.useState(0);
+  const [ariaConsoleOpen, setAriaConsoleOpen] = React.useState(false);
+  const [ariaConsoleText, setAriaConsoleText] = React.useState("");
   const inputRef = React.useRef<HTMLInputElement>(null);
   const dialogRef = React.useRef<HTMLDivElement>(null);
   const previouslyFocused = React.useRef<HTMLElement | null>(null);
@@ -93,6 +97,31 @@ export function CommandSearch() {
           run: () => router.push(`/candidates?focus=${c.id}`),
         }),
       );
+
+    // Fallback: nothing above matched, but the query reads like an instruction
+    // ("source 15 backend engineers…") rather than a search term. Parse it
+    // deterministically (same grammar the Aria Command console uses) and, if
+    // it resolves into a real plan, surface one result that opens the console
+    // pre-parsed instead of leaving the operator with "no matches". A query
+    // with no recognizable verb (or gibberish) never reaches this branch —
+    // parseCommand returns an empty plan and the normal "no matches" state
+    // stands, so ⌘K behavior for ordinary searches is unchanged.
+    if (out.length === 0 && q) {
+      const plan = parseCommand(query, { campaigns: campaigns.map(campaignToAriaContext) });
+      if (plan.steps.length > 0) {
+        out.push({
+          id: "aria-command-fallback",
+          label: `Run with Aria: “${query.trim()}”`,
+          hint: plan.summary,
+          group: "Aria Command",
+          run: () => {
+            setAriaConsoleText(query);
+            setAriaConsoleOpen(true);
+          },
+        });
+      }
+    }
+
     return out.slice(0, 14);
   }, [query, campaigns, candidates, router, setActiveCampaign]);
 
@@ -191,6 +220,9 @@ export function CommandSearch() {
                           isActive ? "bg-ink text-paper" : "hover:bg-ink/5",
                         )}
                       >
+                        {group === "Aria Command" && (
+                          <Sparkles className="h-4 w-4 shrink-0 text-electric" aria-hidden />
+                        )}
                         <span className="flex-1 min-w-0">
                           <span className="block truncate text-sm font-semibold">{r.label}</span>
                           <span className={cn("block truncate text-xs", isActive ? "text-paper/70" : "text-muted")}>
@@ -207,6 +239,8 @@ export function CommandSearch() {
           </div>
         </div>
       )}
+
+      <AriaCommandConsole open={ariaConsoleOpen} onOpenChange={setAriaConsoleOpen} initialText={ariaConsoleText} />
     </>
   );
 }
