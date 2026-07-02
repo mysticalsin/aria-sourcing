@@ -130,6 +130,14 @@ export default function DashboardPage() {
       return;
     }
     const result = await actions.sourceNextBatch(activeCampaign.id);
+    if (!result.ok) {
+      toast({
+        title: `${result.source === "github" ? "GitHub" : "Web"} sourcing failed`,
+        description: result.error,
+        variant: "error",
+      });
+      return;
+    }
     const isLive = result.source === "github" || result.source === "web";
     toast({
       title: `Sourced ${pluralize(result.accepted.length, "candidate")}${isLive ? " (live)" : ""}`,

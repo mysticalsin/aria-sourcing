@@ -99,10 +99,10 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
     setBooking(candidate.id);
     const res = await a.createBookingFor(candidate.id);
     setBooking(null);
-    if (!res) {
+    if (!res.ok) {
       toast({
         title: "Couldn't book interview",
-        description: "The candidate or campaign could not be found.",
+        description: res.error,
         variant: "error",
       });
       return;

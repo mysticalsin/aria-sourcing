@@ -146,9 +146,16 @@ export function CandidateTable({
                 </TD>
               )}
               <TD>
-                <Badge tone="neutral" size="sm">
-                  {c.sourcePlatform}
-                </Badge>
+                <div className="flex items-center gap-1.5">
+                  <Badge tone="neutral" size="sm">
+                    {c.sourcePlatform}
+                  </Badge>
+                  {c.provenance === "synthetic" && (
+                    <Badge tone="warning" size="sm" title="Demo data — not a real sourced profile">
+                      Synthetic
+                    </Badge>
+                  )}
+                </div>
               </TD>
               <TD>
                 <div className="flex items-center gap-2">

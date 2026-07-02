@@ -162,8 +162,12 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
     window.location.href = `${path}?seat_id=${encodeURIComponent(seat.id)}`;
   }
 
-  function handleDisconnect() {
-    actions.disconnectSeatAccount(seat.id);
+  async function handleDisconnect() {
+    const res = await actions.disconnectSeatAccount(seat.id);
+    if (!res.ok) {
+      toast({ title: "Mailbox disconnect failed", description: res.error, variant: "error" });
+      return;
+    }
     toast({ title: "Mailbox disconnected", variant: "info" });
   }
 

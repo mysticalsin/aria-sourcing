@@ -146,7 +146,10 @@ export interface HermesActions {
   sourceNextBatch: (
     campaignId: string,
     opts?: { platform?: SourcePlatform; count?: number },
-  ) => Promise<SourceResult & { source: "github" | "web" | "mock" }>;
+  ) => Promise<
+    | (SourceResult & { source: "github" | "web" | "mock"; ok: true })
+    | { ok: false; error: string; source: "github" | "web" }
+  >;
   /** One tool-calling agent pass: searches real candidates, scores them, and
    *  drafts outreach for the best matches in a single loop (/api/sourcing-agent),
    *  instead of sourceNextBatch + generateOutreachLive called one at a time.
@@ -195,7 +198,10 @@ export interface HermesActions {
   createBookingFor: (
     candidateId: string,
     opts?: { startTime?: string; interviewerName?: string },
-  ) => Promise<{ booking: Booking; prepEmail: string; confirmationEmail: string } | null>;
+  ) => Promise<
+    | { ok: true; booking: Booking; prepEmail: string; confirmationEmail: string }
+    | { ok: false; error: string }
+  >;
   updateBooking: (id: string, patch: Partial<Booking>) => void;
 
   // reports + learning
@@ -230,7 +236,7 @@ export interface HermesActions {
   updateSeat: (id: string, patch: Partial<AgentSeat>) => void;
   setSeatStatus: (id: string, status: AgentSeat["status"]) => void;
   connectSeatAccount: (id: string, account: string) => void;
-  disconnectSeatAccount: (id: string) => void;
+  disconnectSeatAccount: (id: string) => Promise<{ ok: boolean; error?: string }>;
   toggleSeatLive: (id: string) => { ok: boolean; reason: string };
   addSuppression: (entry: {
     type: SuppressionEntry["type"];
@@ -261,7 +267,7 @@ export interface HermesActions {
     value: string;
   }) => Promise<{ ok: boolean; key?: ApiKey; demo?: boolean; error?: string }>;
   testApiKey: (id: string) => Promise<{ ok: boolean; valid: boolean; detail: string }>;
-  removeApiKey: (id: string) => Promise<void>;
+  removeApiKey: (id: string) => Promise<{ ok: boolean; error?: string }>;
   setCurrentRole: (role: Role) => void;
 
   // guardrails & Aria
@@ -716,10 +722,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     async (
       campaignId: string,
       opts?: { platform?: SourcePlatform; count?: number },
-    ): Promise<SourceResult & { source: "github" | "web" | "mock" }> => {
+    ): Promise<
+      | (SourceResult & { source: "github" | "web" | "mock"; ok: true })
+      | { ok: false; error: string; source: "github" | "web" }
+    > => {
       const s = current();
       const campaign = s.campaigns.find((c) => c.id === campaignId);
-      if (!campaign) return { accepted: [], skipped: [], source: "mock" };
+      if (!campaign) return { accepted: [], skipped: [], source: "mock", ok: true };
       const platform: SourcePlatform = opts?.platform ?? roleProfile(campaign.jobAnalysis).platforms[0];
       const count = opts?.count ?? 6;
       const weights = effectiveWeights(campaign.scoringWeights, s.skills); // learned scoring
@@ -731,8 +740,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // GitHub via its Search API, everything else with a real presence (LinkedIn,
       // Stack Overflow, Dribbble, Behance) via site:-scoped web search. Both run
       // keyless by default. Once a real attempt runs, its result is authoritative
-      // even at zero hits — no synthetic backfill. Talent Pool / Referral are
-      // internal-pipeline concepts with no external source, so they stay synthetic.
+      // even at zero hits — no synthetic backfill. A failed real attempt is a
+      // genuine error, surfaced to the caller — never silently backfilled with
+      // synthetic profiles. Talent Pool / Referral are internal-pipeline concepts
+      // with no external source, so they stay synthetic (demo mode).
       if (platform === "GitHub") {
         const query =
           campaign.sourcingStrategy.githubQueries[0]?.query ??
@@ -744,7 +755,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             body: JSON.stringify({ query, count, platform }),
           });
           const out = (await res.json().catch(() => null)) as
-            | { ok?: boolean; source?: string; users?: GithubUser[] }
+            | { ok?: boolean; source?: string; users?: GithubUser[]; error?: string }
             | null;
           if (out?.ok && out.source === "github") {
             result =
@@ -752,9 +763,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 ? mapGithubCandidates(out.users, campaign, query, s.candidates, weights)
                 : { accepted: [], skipped: [] };
             source = "github";
+          } else {
+            return { ok: false, error: out?.error ?? "GitHub sourcing failed.", source: "github" };
           }
-        } catch {
-          // network/route failure — fall through to synthetic below
+        } catch (err) {
+          return {
+            ok: false,
+            error: err instanceof Error ? err.message : "Network error reaching GitHub sourcing.",
+            source: "github",
+          };
         }
       } else if (isWebSearchPlatform(platform)) {
         const query = baseWebQuery(campaign, platform);
@@ -765,7 +782,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             body: JSON.stringify({ query, count, platform }),
           });
           const out = (await res.json().catch(() => null)) as
-            | { ok?: boolean; source?: string; leads?: WebLead[] }
+            | { ok?: boolean; source?: string; leads?: WebLead[]; error?: string }
             | null;
           if (out?.ok && out.source === "web") {
             result =
@@ -773,14 +790,19 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 ? mapWebSearchCandidates(out.leads, campaign, query, platform, s.candidates, weights)
                 : { accepted: [], skipped: [] };
             source = "web";
+          } else {
+            return { ok: false, error: out?.error ?? "Web sourcing failed.", source: "web" };
           }
-        } catch {
-          // network/route failure — fall through to synthetic below
+        } catch (err) {
+          return {
+            ok: false,
+            error: err instanceof Error ? err.message : "Network error reaching web sourcing.",
+            source: "web",
+          };
         }
-      }
-
-      // Fallback: synthetic sourcing (Talent Pool/Referral, or a route failure above).
-      if (source === "mock") {
+      } else {
+        // Referral / Talent Pool: internal-pipeline concepts, no external source to
+        // search — synthetic by design, not a fallback from a failed live attempt.
         result = sourceCandidates(campaign, platform, count, s.candidates, s.candidates.length, weights);
       }
 
@@ -809,7 +831,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
         return next;
       });
-      return { ...result, source };
+      return { ...result, source, ok: true };
     },
     [commit, current],
   );
@@ -1717,20 +1739,75 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const createBookingFor = useCallback(
-    async (candidateId: string, opts?: { startTime?: string; interviewerName?: string }) => {
+    async (
+      candidateId: string,
+      opts?: { startTime?: string; interviewerName?: string },
+    ): Promise<
+      | { ok: true; booking: Booking; prepEmail: string; confirmationEmail: string }
+      | { ok: false; error: string }
+    > => {
       const s = current();
       const candidate = s.candidates.find((c) => c.id === candidateId);
       const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
-      if (!candidate || !campaign) return null;
+      if (!candidate || !campaign) return { ok: false, error: "Candidate or campaign not found." };
       // Never book a candidate who opted out / is suppressed (compliance).
       const cf = candidate.complianceFlags;
-      if (cf.doNotContact || cf.suppressed || cf.unsubscribed) return null;
+      if (cf.doNotContact || cf.suppressed || cf.unsubscribed) {
+        return { ok: false, error: "Candidate has opted out / is suppressed — cannot book." };
+      }
 
       const all = getInterviewerByName(opts?.interviewerName) ?? nextInterviewer(s.bookings.length);
       const start = opts?.startTime ? new Date(opts.startTime) : defaultSlot();
       const booking = createBooking(candidate, campaign, all, start);
       const prep = interviewerPrepEmail(booking, candidate);
       const confirm = candidateConfirmationEmail(booking);
+
+      // Create a REAL calendar event FIRST when a live mailbox is connected — a
+      // failed remote call must not produce a "Booked" candidate carrying a fake
+      // calendar link. Demo mode / no live seat skips this and commits immediately
+      // below with the synthetic link, exactly as before.
+      const seat = s.seats.find(
+        (x) =>
+          x.status === "active" &&
+          x.mode === "live" &&
+          (x.provider === "Gmail API" || x.provider === "Microsoft Graph"),
+      );
+      if (supabaseEnabled && seat) {
+        try {
+          const res = await fetch("/api/calendar/event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              seatId: seat.id,
+              candidateName: booking.candidateName,
+              candidateEmail: candidate.email || undefined,
+              role: booking.role,
+              startTime: booking.startTime,
+              endTime: booking.endTime,
+              timezone: booking.timezone,
+              interviewerEmail: booking.interviewerEmail || undefined,
+              agenda: booking.agenda,
+              confirmLive: true,
+            }),
+          });
+          const out = (await res.json().catch(() => null)) as
+            | { status?: string; link?: string | null; detail?: string }
+            | null;
+          if (!res.ok) {
+            return { ok: false, error: out?.detail ?? `Calendar request failed (${res.status}).` };
+          }
+          if (out?.status === "created" && out.link) {
+            booking.calLink = out.link;
+          }
+          // status "dry-run" / "skipped" (mail-only connection, seat not live, etc.)
+          // is documented graceful degradation, not a failure — keep the synthetic link.
+        } catch (err) {
+          return {
+            ok: false,
+            error: err instanceof Error ? err.message : "Calendar service unreachable.",
+          };
+        }
+      }
 
       commit((prev) => {
         let next: HermesState = {
@@ -1757,52 +1834,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
 
-      // Create a REAL calendar event when a live mailbox is connected, then reconcile
-      // the booking's calLink to the real event URL. This never blocks the booking from
-      // being recorded; demo mode or a mail-only connection keeps the synthetic link.
-      const seat = s.seats.find(
-        (x) =>
-          x.status === "active" &&
-          x.mode === "live" &&
-          (x.provider === "Gmail API" || x.provider === "Microsoft Graph"),
-      );
-      if (supabaseEnabled && seat) {
-        try {
-          const res = await fetch("/api/calendar/event", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              seatId: seat.id,
-              candidateName: booking.candidateName,
-              candidateEmail: candidate.email || undefined,
-              role: booking.role,
-              startTime: booking.startTime,
-              endTime: booking.endTime,
-              timezone: booking.timezone,
-              interviewerEmail: booking.interviewerEmail || undefined,
-              agenda: booking.agenda,
-              confirmLive: true,
-            }),
-          });
-          const out = (await res.json().catch(() => null)) as { status?: string; link?: string | null } | null;
-          if (out?.status === "created" && out.link) {
-            const link = out.link;
-            commit((prev) => ({
-              ...prev,
-              bookings: prev.bookings.map((b) => (b.id === booking.id ? { ...b, calLink: link } : b)),
-              candidates: prev.candidates.map((c) =>
-                c.id === candidate.id && c.booking?.id === booking.id
-                  ? { ...c, booking: { ...c.booking, calLink: link } }
-                  : c,
-              ),
-            }));
-          }
-        } catch {
-          // calendar failure — keep the synthetic link
-        }
-      }
-
-      return { booking, prepEmail: prep, confirmationEmail: confirm };
+      return { ok: true, booking, prepEmail: prep, confirmationEmail: confirm };
     },
     [commit, current],
   );
@@ -2331,15 +2363,26 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const disconnectSeatAccount = useCallback(
-    (id: string) => {
+    async (id: string): Promise<{ ok: boolean; error?: string }> => {
       // Live mode: revoke + delete the server-side OAuth connection so the refresh
-      // token is actually killed (fire-and-forget; local state updates immediately).
+      // token is actually killed. Awaited — the seat is only marked disconnected
+      // locally once the server confirms the connection is actually gone, so a
+      // failed revoke can't leave a false "disconnected" assurance while the
+      // server still holds a live token.
       if (supabaseEnabled) {
-        void fetch("/api/email/disconnect", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ seatId: id }),
-        }).catch(() => {});
+        try {
+          const res = await fetch("/api/email/disconnect", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ seatId: id }),
+          });
+          const out = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+          if (!out?.ok) {
+            return { ok: false, error: out?.error ?? `Disconnect failed (${res.status}).` };
+          }
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Network error disconnecting mailbox." };
+        }
       }
       commit((s) => {
         const seat = s.seats.find((x) => x.id === id);
@@ -2361,6 +2404,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           null,
         );
       });
+      return { ok: true };
     },
     [commit],
   );
@@ -2741,15 +2785,20 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const removeApiKey = useCallback(
-    async (id: string) => {
+    async (id: string): Promise<{ ok: boolean; error?: string }> => {
       // D-6: only commit the local removal when the server delete succeeded.
       try {
         const res = await fetch(`/api/keys?id=${encodeURIComponent(id)}`, { method: "DELETE" });
-        if (!res.ok) return;
-      } catch {
-        return; // network error — abort, don't remove locally
+        if (!res.ok) {
+          const body = (await res.json().catch(() => null)) as { error?: string } | null;
+          return { ok: false, error: body?.error ?? `Delete failed (${res.status}).` };
+        }
+      } catch (err) {
+        // network error — abort, don't remove locally
+        return { ok: false, error: err instanceof Error ? err.message : "Network error." };
       }
       commit((prev) => ({ ...prev, apiKeys: prev.apiKeys.filter((x) => x.id !== id) }));
+      return { ok: true };
     },
     [commit],
   );
@@ -3386,10 +3435,18 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         ? (s.settings.savedModels ?? []).find((m) => m.id === chatModelId)?.modelName
         : undefined;
 
+      // Track whether ANY live path was actually attempted below. The mock/"[Demo]"
+      // reply is only legitimate when nothing was attempted (pure demo, no live
+      // runtime configured at all). A live attempt that fails must surface as a
+      // real error, never a fabricated normal-looking answer.
+      let attemptedLive = false;
+      let liveError: string | null = null;
+
       // 3b. Cloud + MCP tools: when a cloud Anthropic provider is configured for chat and
       // the workspace has enabled MCP servers, route through the server-side tool-calling
       // loop so the agent can actually use those tools. Non-streaming (the loop completes
-      // server-side); falls through to the streaming Aria path / mock on any miss.
+      // server-side); falls through to the streaming Aria path on any miss, and only ends
+      // in the mock if that path is also unavailable/fails.
       const chatAiCfg = resolveAiProvider(s.settings, "chat", {
         providerId: seat?.providerId,
         modelId: seat?.modelId,
@@ -3399,6 +3456,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         .map((m) => ({ url: m.url, ...(m.apiKeyId ? { apiKeyId: m.apiKeyId } : {}) }));
       const webResearch = s.settings.webResearch !== false;
       if (chatAiCfg && (enabledMcp.length || webResearch)) {
+        attemptedLive = true;
         try {
           const res = await fetch("/api/hermes/chat", {
             method: "POST",
@@ -3413,18 +3471,24 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               webResearch,
             }),
           });
-          const data = (await res.json().catch(() => null)) as { ok?: boolean; text?: string } | null;
+          const data = (await res.json().catch(() => null)) as
+            | { ok?: boolean; text?: string; error?: string }
+            | null;
           if (data?.ok && data.text) {
             updateChatMessage(threadId, assistantId, { content: data.text, pending: false });
             return;
           }
-        } catch {
-          /* fall through to the streaming Aria path / mock */
+          liveError = data?.error ?? `Chat tool loop failed (${res.status}).`;
+        } catch (err) {
+          // Genuine failure — recorded, not swallowed. Still let the streaming Aria
+          // path below have a chance before surfacing it.
+          liveError = err instanceof Error ? err.message : "Network error contacting the chat tool loop.";
         }
       }
 
       // 4. Live mode: try the Aria proxy with streaming.
       if (hermesAvailable(s.settings)) {
+        attemptedLive = true;
         // F-5: create an AbortController so the caller can cancel mid-stream.
         const controller = new AbortController();
         chatAbortControllers.current.set(threadId, controller);
@@ -3479,6 +3543,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             });
             return;
           }
+          liveError = `Aria runtime returned ${res.status}.`;
         } catch (err) {
           chatAbortControllers.current.delete(threadId);
           // F-5: if aborted, mark the bubble cancelled and do NOT fall through to mock.
@@ -3486,11 +3551,22 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             updateChatMessage(threadId, assistantId, { content: "(cancelled)", pending: false });
             return;
           }
-          /* any other streaming failure — fall through to mock */
+          liveError = err instanceof Error ? err.message : "Streaming error contacting the Aria runtime.";
         }
       }
 
-      // 5. Mock reply (demo mode or any live failure).
+      // 5. A live runtime was configured and attempted, but every path failed —
+      // surface a genuine error bubble. Never fabricate a normal-looking reply here.
+      if (attemptedLive) {
+        updateChatMessage(threadId, assistantId, {
+          content: liveError ?? "Aria couldn't reach the live model. Try again in a moment.",
+          pending: false,
+          error: true,
+        });
+        return;
+      }
+
+      // 6. Mock reply — only reached when no live runtime is configured at all.
       const seatName = seat?.name ?? "Aria";
       await new Promise<void>((r) => setTimeout(r, 350));
       updateChatMessage(threadId, assistantId, {

@@ -141,14 +141,14 @@ export function CandidateDrawer({
 
   const handleBook = async () => {
     const res = await actions.createBookingFor(c.id);
-    if (res) {
+    if (res.ok) {
       toast({
         title: "Interview booked (dry-run)",
         description: `With ${res.booking.interviewer}. Teams + Cal.com links generated.`,
         variant: "success",
       });
     } else {
-      toast({ title: "Could not book interview", variant: "error" });
+      toast({ title: "Could not book interview", description: res.error, variant: "error" });
     }
   };
 
@@ -239,6 +239,11 @@ export function CandidateDrawer({
           {campaign && (
             <Badge tone="electric" size="sm">
               {campaign.title}
+            </Badge>
+          )}
+          {c.provenance === "synthetic" && (
+            <Badge tone="warning" size="sm" title="Demo data — not a real sourced profile">
+              Synthetic
             </Badge>
           )}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted">

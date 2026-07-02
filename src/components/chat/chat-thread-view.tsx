@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { useSeats, useActions, useChatThread, useSettings } from "@/lib/store";
 import { hermesAvailable } from "@/lib/ai/hermes";
 import { ChatComposer } from "./chat-composer";
-import { Bot, User, Loader2, Info, Sparkles } from "lucide-react";
+import { Bot, User, Loader2, Info, Sparkles, AlertTriangle } from "lucide-react";
 import type { ChatMessage } from "@/lib/types";
 
 interface ChatThreadViewProps {
@@ -178,7 +178,9 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
           "max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed",
           isUser
             ? "bg-ink text-paper rounded-tr-sm"
-            : "bg-surface border border-violet/10 text-ink rounded-tl-sm",
+            : msg.error
+              ? "bg-danger-soft border border-danger/20 text-danger rounded-tl-sm"
+              : "bg-surface border border-violet/10 text-ink rounded-tl-sm",
         )}
       >
         {msg.pending && !msg.content ? (
@@ -186,6 +188,11 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted animate-bounce [animation-delay:0ms]" />
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted animate-bounce [animation-delay:150ms]" />
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted animate-bounce [animation-delay:300ms]" />
+          </span>
+        ) : msg.error ? (
+          <span className="flex items-start gap-1.5">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span className="whitespace-pre-wrap">{msg.content}</span>
           </span>
         ) : (
           <span className="whitespace-pre-wrap">{msg.content}</span>

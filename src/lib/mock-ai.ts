@@ -720,6 +720,7 @@ export function mapGithubCandidates(
         suppressedUntil: null,
       },
       createdAt: new Date().toISOString(),
+      provenance: "live",
     };
   });
 
@@ -791,6 +792,7 @@ export function mapWebSearchCandidates(
         suppressedUntil: null,
       },
       createdAt: new Date().toISOString(),
+      provenance: "live",
     };
   });
 
@@ -880,6 +882,7 @@ function synthCandidate(
       suppressedUntil: null,
     },
     createdAt: new Date().toISOString(),
+    provenance: "synthetic",
   };
 }
 

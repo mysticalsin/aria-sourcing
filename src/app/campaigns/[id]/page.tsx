@@ -401,6 +401,14 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   const handleSource = async () => {
     const res = await actions.sourceNextBatch(c.id);
+    if (!res.ok) {
+      toast({
+        title: `${res.source === "github" ? "GitHub" : "Web"} sourcing failed`,
+        description: res.error,
+        variant: "error",
+      });
+      return;
+    }
     const isLive = res.source === "github" || res.source === "web";
     toast({
       title: `Sourced ${res.accepted.length} candidate${res.accepted.length === 1 ? "" : "s"}${isLive ? " (live)" : ""}`,
@@ -439,14 +447,14 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   const handleBook = async (cand: Candidate) => {
     const res = await actions.createBookingFor(cand.id);
-    if (res) {
+    if (res.ok) {
       toast({
         title: `Interview booked: ${cand.name}`,
         description: `With ${res.booking.interviewer}. Teams + Cal.com links generated (dry-run).`,
         variant: "success",
       });
     } else {
-      toast({ title: "Could not book interview", variant: "error" });
+      toast({ title: "Could not book interview", description: res.error, variant: "error" });
     }
   };
 

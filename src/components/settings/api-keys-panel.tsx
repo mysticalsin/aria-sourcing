@@ -60,7 +60,11 @@ export function ApiKeysPanel() {
 
   async function handleRemove(id: string, label: string) {
     if (!(await confirm({ title: `Delete API key "${label}"?`, description: "This removes it from the backend.", confirmLabel: "Delete", danger: true }))) return;
-    await actions.removeApiKey(id);
+    const res = await actions.removeApiKey(id);
+    if (!res.ok) {
+      toast({ title: "Couldn't delete API key", description: res.error, variant: "error" });
+      return;
+    }
     toast({ title: "API key deleted", variant: "info" });
   }
 
