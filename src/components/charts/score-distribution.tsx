@@ -74,9 +74,17 @@ export function ScoreDistribution({
   }
 
   const data = scoreDistribution(scores);
+  const summary = data
+    .map((point) => `${point.band} ${formatNumber(point.count)}`)
+    .join(", ");
 
   return (
-    <div className="animate-fade-in" style={{ width: "100%", height }}>
+    <div
+      className="animate-fade-in"
+      style={{ width: "100%", height }}
+      role="img"
+      aria-label={`Match score distribution: ${summary}`}
+    >
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 16, right: 8, bottom: 4, left: 8 }}>
           <CartesianGrid

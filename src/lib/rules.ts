@@ -1,5 +1,4 @@
 import type {
-  Booking,
   Campaign,
   Candidate,
   OutreachChannel,
@@ -167,27 +166,6 @@ export function slaDueFor(
   return new Date(new Date(receivedAtIso).getTime() + slaMinutes * 60000).toISOString();
 }
 
-/* ---- Rate-limit meter helper -------------------------------------------- */
-
-export interface RateMeter {
-  channel: OutreachChannel;
-  used: number;
-  limit: number;
-  ratio: number;
-  blocked: boolean;
-}
-
-export function rateMeters(settings: SystemSettings, emailUsed: number, linkedinUsed: number): RateMeter[] {
-  return [
-    meter("Email", emailUsed, settings.rateLimits.emailsPerDay),
-    meter("LinkedIn", linkedinUsed, settings.rateLimits.linkedinPerDay),
-  ];
-}
-
-function meter(channel: OutreachChannel, used: number, limit: number): RateMeter {
-  return { channel, used, limit, ratio: limit ? Math.min(1, used / limit) : 0, blocked: used >= limit };
-}
-
 /* ---- Campaign health + next action -------------------------------------- */
 
 export interface CampaignHealth {
@@ -223,8 +201,4 @@ export function nextActionForCampaign(c: Campaign): string {
 
 export function daysSince(iso: string, now: number = Date.now()): number {
   return (now - new Date(iso).getTime()) / 86_400_000;
-}
-
-export function isBookingUpcoming(b: Booking, now: number = Date.now()): boolean {
-  return new Date(b.startTime).getTime() > now && b.status !== "Cancelled";
 }

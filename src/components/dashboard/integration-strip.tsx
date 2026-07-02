@@ -5,6 +5,7 @@ import { Eyebrow } from "@/components/ui";
 import { useIntegrations } from "@/lib/store";
 import { integrationHealthSummary } from "@/lib/integrations";
 import { cn, toneForHealth, pluralize, type Tone } from "@/lib/utils";
+import type { IntegrationStatus } from "@/lib/types";
 import { Plug } from "lucide-react";
 
 const DOT: Record<Tone, string> = {
@@ -16,6 +17,13 @@ const DOT: Record<Tone, string> = {
   success: "bg-success",
   warning: "bg-warning",
   danger: "bg-danger",
+};
+
+const HEALTH_LABEL: Record<IntegrationStatus["status"], string> = {
+  connected: "Connected",
+  degraded: "Degraded",
+  error: "Error",
+  not_configured: "Not configured",
 };
 
 export function IntegrationStrip() {
@@ -63,6 +71,7 @@ export function IntegrationStrip() {
                 className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-line bg-canvas/50 py-1.5 pl-3 pr-2 text-sm"
               >
                 <span className={cn("h-2 w-2 rounded-full", DOT[tone])} aria-hidden />
+                <span className="sr-only">{HEALTH_LABEL[integration.status]}</span>
                 <span className="font-medium text-ink">{integration.name}</span>
                 <span
                   className={cn(

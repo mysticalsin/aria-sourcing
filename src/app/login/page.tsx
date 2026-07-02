@@ -345,7 +345,7 @@ function LoginInner() {
           </div>
         )}
 
-        <p className="mt-10 max-w-sm text-[0.7rem] font-light leading-relaxed text-white/40">
+        <p className="mt-10 max-w-sm text-[0.7rem] font-light leading-relaxed text-white/70">
           No candidate is contacted without your explicit approval. Nothing sends until you connect
           and verify a sending domain.
         </p>

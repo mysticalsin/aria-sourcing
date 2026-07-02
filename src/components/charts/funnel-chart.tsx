@@ -58,8 +58,17 @@ export function FunnelChart({
     );
   }
 
+  const summary = data
+    .map((point) => `${point.stage} ${formatNumber(point.count)}`)
+    .join(", ");
+
   return (
-    <div className="animate-fade-in" style={{ width: "100%", height }}>
+    <div
+      className="animate-fade-in"
+      style={{ width: "100%", height }}
+      role="img"
+      aria-label={`Conversion funnel: ${summary}`}
+    >
       <ResponsiveContainer width="100%" height="100%">
         <BarChart
           layout="vertical"

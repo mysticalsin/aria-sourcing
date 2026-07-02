@@ -25,6 +25,9 @@ export function CommandSearch() {
   const [query, setQuery] = React.useState("");
   const [active, setActive] = React.useState(0);
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const dialogRef = React.useRef<HTMLDivElement>(null);
+  const previouslyFocused = React.useRef<HTMLElement | null>(null);
+  const listboxId = React.useId();
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -40,13 +43,20 @@ export function CommandSearch() {
 
   React.useEffect(() => {
     if (open) {
+      previouslyFocused.current = document.activeElement as HTMLElement;
       setQuery("");
       setActive(0);
       const t = window.setTimeout(() => inputRef.current?.focus(), 30);
       lockBodyScroll();
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key === "Tab") trapFocus(e, dialogRef.current);
+      };
+      document.addEventListener("keydown", onKey);
       return () => {
         window.clearTimeout(t);
+        document.removeEventListener("keydown", onKey);
         unlockBodyScroll();
+        previouslyFocused.current?.focus?.();
       };
     }
   }, [open]);
@@ -133,6 +143,7 @@ export function CommandSearch() {
         <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-[12vh]">
           <div className="absolute inset-0 bg-ink/40 backdrop-blur-[2px] animate-fade-in" onClick={() => setOpen(false)} aria-hidden />
           <div
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-label="Command search"
@@ -150,10 +161,14 @@ export function CommandSearch() {
                 onKeyDown={onKeyDown}
                 placeholder="Search…"
                 aria-label="Search query"
+                role="combobox"
+                aria-expanded={results.length > 0}
+                aria-controls={listboxId}
+                aria-activedescendant={results[active]?.id}
                 className="h-14 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-muted"
               />
             </div>
-            <div role="listbox" aria-label="Search results" className="max-h-[50vh] overflow-y-auto p-2">
+            <div id={listboxId} role="listbox" aria-label="Search results" className="max-h-[50vh] overflow-y-auto p-2">
               {results.length === 0 && (
                 <p className="px-3 py-8 text-center text-sm text-muted">No matches for "{query}".</p>
               )}
@@ -166,6 +181,7 @@ export function CommandSearch() {
                     return (
                       <button
                         key={r.id}
+                        id={r.id}
                         role="option"
                         aria-selected={isActive}
                         onClick={() => choose(r)}
@@ -193,4 +209,23 @@ export function CommandSearch() {
       )}
     </>
   );
+}
+
+function trapFocus(e: KeyboardEvent, container: HTMLElement | null) {
+  if (!container) return;
+  const focusable = Array.from(
+    container.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((el) => el.offsetParent !== null);
+  if (focusable.length === 0) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
 }

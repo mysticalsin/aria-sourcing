@@ -111,21 +111,6 @@ export function seatHealthStatus(seat: AgentSeat, settings: FleetSettings): Seat
   return { tone: "success", label: "Healthy", shouldPause: false, detail: "Deliverability within safe limits." };
 }
 
-/** Reasons a seat cannot send right now. */
-export function seatSendable(
-  seat: AgentSeat,
-  settings: FleetSettings,
-  now = new Date(),
-): { ok: boolean; reason: string } {
-  if (seat.status === "disabled") return { ok: false, reason: "Seat disabled" };
-  if (seat.status === "paused") return { ok: false, reason: "Seat paused" };
-  if (seatHealthStatus(seat, settings).shouldPause) return { ok: false, reason: "Auto-paused (deliverability)" };
-  if (seatRemainingToday(seat, now.getTime()) <= 0) return { ok: false, reason: "Daily cap reached" };
-  if (!isWithinSendWindow(seat, now, settings.enforceBusinessHours))
-    return { ok: false, reason: "Outside send window" };
-  return { ok: true, reason: "" };
-}
-
 /** Live sending requires verified domain + explicit live mode (else dry-run). */
 export function seatCanSendLive(seat: AgentSeat): { ok: boolean; reason: string } {
   if (seat.mode !== "live") return { ok: false, reason: "Seat in dry-run (mock) mode" };
@@ -307,12 +292,4 @@ export function fleetSummary(seats: AgentSeat[], settings: FleetSettings, now = 
     avgBounceRate: seats.reduce((a, s) => a + s.health.bounceRate, 0) / n,
     avgComplaintRate: seats.reduce((a, s) => a + s.health.complaintRate, 0) / n,
   };
-}
-
-export function nextSendDelayMinutes(seat: AgentSeat, jitter: boolean): number {
-  const base = Math.max(1, seat.minGapMinutes);
-  if (!jitter) return base;
-  // deterministic-ish jitter from seat id so previews are stable
-  const seed = seat.id.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-  return base + (seed % Math.max(1, Math.floor(base / 2)));
 }

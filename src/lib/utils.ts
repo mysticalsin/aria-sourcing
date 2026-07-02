@@ -28,9 +28,6 @@ export function isoDaysBefore(days: number, base: Date = SEED_NOW): string {
 export function isoHoursBefore(hours: number, base: Date = SEED_NOW): string {
   return new Date(base.getTime() - hours * 3_600_000).toISOString();
 }
-export function isoHoursAfter(hours: number, base: Date = SEED_NOW): string {
-  return new Date(base.getTime() + hours * 3_600_000).toISOString();
-}
 export function isoDaysAfter(days: number, base: Date = SEED_NOW): string {
   return new Date(base.getTime() + days * 86_400_000).toISOString();
 }

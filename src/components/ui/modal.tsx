@@ -23,10 +23,12 @@ export function Modal({
   className?: string;
 }) {
   const panelRef = React.useRef<HTMLDivElement>(null);
+  const previouslyFocused = React.useRef<HTMLElement | null>(null);
   const titleId = React.useId();
 
   React.useEffect(() => {
     if (!open) return;
+    previouslyFocused.current = document.activeElement as HTMLElement;
     lockBodyScroll();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") { onClose(); return; }
@@ -56,6 +58,7 @@ export function Modal({
       document.removeEventListener("keydown", onKey);
       unlockBodyScroll();
       window.clearTimeout(t);
+      previouslyFocused.current?.focus?.();
     };
   }, [open, onClose]);
 

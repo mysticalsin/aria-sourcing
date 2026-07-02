@@ -22,15 +22,6 @@ export function maskName(name: string): string {
   return `${parts[0]} ${parts[parts.length - 1][0]}.`;
 }
 
-export function maskUrl(url: string, label: string): string {
-  if (!url) return "";
-  return `${label}/in/•••`;
-}
-
-export function maskPhone(): string {
-  return "•••";
-}
-
 /**
  * Redact PII inside a free-text email/reply body for display when confidentiality
  * mode is on and the operator has not revealed it. Best-effort: email addresses,

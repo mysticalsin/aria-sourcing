@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
   Button,
@@ -20,7 +21,6 @@ import { HeroPanel } from "@/components/dashboard/hero-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { AttentionPanel } from "@/components/dashboard/attention-panel";
 import { IntegrationStrip } from "@/components/dashboard/integration-strip";
-import { FunnelChart } from "@/components/charts/funnel-chart";
 import { CampaignCard } from "@/components/campaigns/campaign-card";
 import { ActivityTimeline } from "@/components/shared/activity-timeline";
 import {
@@ -47,6 +47,11 @@ import {
   Timer,
   Users,
 } from "lucide-react";
+
+const FunnelChart = dynamic(
+  () => import("@/components/charts/funnel-chart").then((mod) => mod.FunnelChart),
+  { ssr: false, loading: () => <Skeleton className="h-[300px] w-full rounded-2xl" /> },
+);
 
 export default function DashboardPage() {
   const hydrated = useHydrated();

@@ -5,7 +5,6 @@ export {
   CardHeader,
   CardBody,
   CardContent,
-  CardFooter,
   CardTitle,
   Eyebrow,
   SectionNumeral,

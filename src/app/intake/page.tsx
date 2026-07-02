@@ -590,7 +590,7 @@ export default function IntakePage() {
                               type="button"
                               onClick={() => removeNiceToHave(skill)}
                               aria-label={`Remove ${skill}`}
-                              className="grid h-4 w-4 place-items-center rounded-full text-ink/40 transition hover:bg-ink/10 hover:text-ink"
+                              className="grid h-4 w-4 place-items-center rounded-full text-muted transition hover:bg-ink/10 hover:text-ink"
                             >
                               <X className="h-3 w-3" aria-hidden />
                             </button>

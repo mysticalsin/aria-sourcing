@@ -1,5 +1,4 @@
 import type {
-  Campaign,
   CampaignMetrics,
   Candidate,
   FunnelPoint,
@@ -134,10 +133,6 @@ export function globalKpis(state: HermesState): GlobalKpis {
       (r) => !r.handled && ["INTERESTED", "QUALIFIED_INTEREST"].includes(r.intent),
     ).length,
   };
-}
-
-export function campaignById(state: HermesState, id: string): Campaign | undefined {
-  return state.campaigns.find((c) => c.id === id);
 }
 
 export function candidatesForCampaign(state: HermesState, campaignId: string): Candidate[] {

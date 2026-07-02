@@ -24,20 +24,6 @@ export const ROBOT_PALETTE: string[] = [
   "#F43F5E", // Rose
 ];
 
-/** djb2-style stable string hash. Deterministic, unsigned 32-bit. */
-function stableHash(s: string): number {
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) {
-    h = (Math.imul(h, 33) ^ s.charCodeAt(i)) >>> 0;
-  }
-  return h;
-}
-
-/** Deterministic robot colour for a seat id (hash-based; order-independent). */
-export function robotColor(seatId: string): string {
-  return ROBOT_PALETTE[stableHash(seatId) % ROBOT_PALETTE.length];
-}
-
 /** HSL (h∈[0,360), s/l∈[0,1]) → "#rrggbb". */
 function hslToHex(h: number, s: number, l: number): string {
   const c = (1 - Math.abs(2 * l - 1)) * s;
