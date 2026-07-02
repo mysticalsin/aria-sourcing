@@ -249,6 +249,14 @@ export interface ReplyHistoryEntry {
   at: string;
 }
 
+/** A free-text recruiter note logged against a candidate — audit-worthy, so
+ *  adding one also writes an Activity (see addCandidateNote in store.ts). */
+export interface CandidateNote {
+  id: string;
+  text: string;
+  at: string;
+}
+
 export interface ComplianceFlags {
   doNotContact: boolean;
   suppressed: boolean;
@@ -297,6 +305,11 @@ export interface Candidate {
    *  synthCandidate (demo/dry-run backfill) — never a real person. Undefined
    *  covers seed data predating this field. */
   provenance?: "live" | "synthetic";
+  /** Free-text recruiter notes, newest first. Absent/empty = none yet. */
+  notes?: CandidateNote[];
+  /** Why this candidate was rejected — captured alongside the "Rejected" stage.
+   *  Optional and editable independently of the stage itself. */
+  rejectionReason?: string;
 }
 
 /* ---- Outreach ------------------------------------------------------------ */

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type FocusEvent, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Badge,
@@ -40,6 +40,7 @@ import {
   Phone,
   MapPin,
   MessageSquare,
+  NotebookPen,
   Send,
   ShieldAlert,
   Sparkles,
@@ -104,10 +105,12 @@ export function CandidateDrawer({
   const campaign = useCampaign(candidate?.campaignId);
   const confidentialityMode = Boolean(useSettings().confidentialityMode);
   const [revealed, setRevealed] = useState(false);
+  const [noteText, setNoteText] = useState("");
 
   const candidateId = candidate?.id ?? null;
   useEffect(() => {
     setRevealed(false);
+    setNoteText("");
   }, [candidateId, open]);
 
   if (!candidate) {
@@ -174,9 +177,25 @@ export function CandidateDrawer({
       description:
         stage === "Hired"
           ? `${c.name} moved to Hired. Consider marking ${campaign?.title ?? "the campaign"} as Filled once the req is closed.`
-          : `${c.name} moved to ${stage}.`,
+          : stage === "Rejected"
+            ? `${c.name} moved to Rejected. Add a rejection reason below.`
+            : `${c.name} moved to ${stage}.`,
       variant: stage === "Rejected" ? "warning" : "success",
     });
+  };
+
+  const handleAddNote = () => {
+    const clean = noteText.trim();
+    if (!clean) return;
+    actions.addCandidateNote(c.id, clean);
+    setNoteText("");
+    toast({ title: "Note added", description: `Logged to ${c.name}'s activity trail.`, variant: "success" });
+  };
+
+  const handleRejectionReasonBlur = (e: FocusEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    if (value.trim() === (c.rejectionReason ?? "").trim()) return;
+    actions.setRejectionReason(c.id, value);
   };
 
   const handleBook = async () => {
@@ -467,6 +486,25 @@ export function CandidateDrawer({
               </Button>
             ))}
           </div>
+          {c.stage === "Rejected" && (
+            <div>
+              <label
+                htmlFor={`rejection-reason-${c.id}`}
+                className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted"
+              >
+                Rejection reason
+              </label>
+              <textarea
+                id={`rejection-reason-${c.id}`}
+                key={c.id}
+                defaultValue={c.rejectionReason ?? ""}
+                onBlur={handleRejectionReasonBlur}
+                placeholder="Why was this candidate rejected? Logged to the activity trail."
+                rows={2}
+                className="w-full rounded-2xl border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted"
+              />
+            </div>
+          )}
         </Section>
 
         {/* Tech stack */}
@@ -502,6 +540,35 @@ export function CandidateDrawer({
         {/* Recent activity */}
         <Section title="Recent activity" icon={<Clock className="h-4 w-4" />}>
           <p className="text-sm leading-relaxed text-ink-soft">{c.recentActivity}</p>
+        </Section>
+
+        {/* Recruiter notes */}
+        <Section title="Recruiter notes" icon={<NotebookPen className="h-4 w-4" />}>
+          <div className="flex items-start gap-2">
+            <textarea
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="Add a note for the team…"
+              rows={2}
+              aria-label="Add a recruiter note"
+              className="min-h-[44px] flex-1 rounded-2xl border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted"
+            />
+            <Button variant="outline" size="sm" onClick={handleAddNote} disabled={!noteText.trim()}>
+              Add
+            </Button>
+          </div>
+          {(c.notes?.length ?? 0) === 0 ? (
+            <p className="text-sm text-muted">No notes yet.</p>
+          ) : (
+            <ul className="space-y-2">
+              {(c.notes ?? []).map((n) => (
+                <li key={n.id} className="rounded-2xl bg-ink/[0.03] px-3 py-2">
+                  <p className="text-sm text-ink-soft">{n.text}</p>
+                  <p className="mt-1 text-xs text-muted">{formatTimeAgo(n.at)}</p>
+                </li>
+              ))}
+            </ul>
+          )}
         </Section>
 
         {/* Outreach history */}

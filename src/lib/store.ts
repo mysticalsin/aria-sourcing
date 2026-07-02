@@ -68,6 +68,7 @@ import type {
   Booking,
   Campaign,
   Candidate,
+  CandidateNote,
   CandidateStage,
   ClassifiedReply,
   DustAgentSummary,
@@ -229,6 +230,13 @@ export interface HermesActions {
   // candidates / compliance
   setCandidateStage: (id: string, stage: CandidateStage) => void;
   setCandidatePhone: (id: string, phone: string) => void;
+  /** Appends a free-text recruiter note (newest first). Audit-worthy — writes
+   *  an Activity, not just a UI notification. No-ops on blank text. */
+  addCandidateNote: (candidateId: string, text: string) => void;
+  /** Records/edits why a candidate was rejected. Independent of the stage
+   *  control — call it alongside setCandidateStage("Rejected", ...), never
+   *  instead of it. Clearing the reason (empty string) is not audit-logged. */
+  setRejectionReason: (candidateId: string, reason: string) => void;
   suppressCandidate: (id: string) => void;
   markDoNotContact: (id: string) => void;
   unsubscribeCandidate: (id: string) => void;
@@ -2181,6 +2189,70 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit],
   );
 
+  const addCandidateNote = useCallback(
+    (candidateId: string, text: string) => {
+      const clean = text.trim();
+      if (!clean) return;
+      commit((s) => {
+        const cand = s.candidates.find((c) => c.id === candidateId);
+        if (!cand) return s;
+        const note: CandidateNote = { id: genId("note"), text: clean, at: new Date().toISOString() };
+        const next: HermesState = {
+          ...s,
+          candidates: s.candidates.map((c) =>
+            c.id === candidateId ? { ...c, notes: [note, ...(c.notes ?? [])] } : c,
+          ),
+        };
+        return withActivity(
+          next,
+          makeActivity({
+            type: "system",
+            title: `Note added — ${cand.name}`,
+            notes: clean,
+            outcome: "Recruiter note",
+            campaignId: cand.campaignId,
+            linkedEntityType: "candidate",
+            linkedEntityId: candidateId,
+          }),
+          cand.campaignId,
+        );
+      });
+    },
+    [commit],
+  );
+
+  const setRejectionReason = useCallback(
+    (candidateId: string, reason: string) => {
+      const clean = reason.trim();
+      commit((s) => {
+        const cand = s.candidates.find((c) => c.id === candidateId);
+        if (!cand) return s;
+        const next: HermesState = {
+          ...s,
+          candidates: s.candidates.map((c) =>
+            c.id === candidateId ? { ...c, rejectionReason: clean || undefined } : c,
+          ),
+        };
+        // Clearing the reason is a local edit, not an event worth an audit entry.
+        if (!clean) return next;
+        return withActivity(
+          next,
+          makeActivity({
+            type: "system",
+            title: `Rejection reason recorded — ${cand.name}`,
+            notes: clean,
+            outcome: "Rejected",
+            campaignId: cand.campaignId,
+            linkedEntityType: "candidate",
+            linkedEntityId: candidateId,
+          }),
+          cand.campaignId,
+        );
+      });
+    },
+    [commit],
+  );
+
   /**
    * Sync a compliance action into the real, server-enforced suppression_list
    * table (/api/compliance/suppress) so the send route actually blocks this
@@ -4004,6 +4076,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       setSkillUpdateStatus,
       setCandidateStage,
       setCandidatePhone,
+      addCandidateNote,
+      setRejectionReason,
       suppressCandidate,
       markDoNotContact,
       unsubscribeCandidate,
@@ -4080,7 +4154,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       sourceNextBatch, runSourcingAgent, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
       approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, draftFollowUpFor, classifyAndStoreReply, markReplyHandled,
       applyReplyAction, draftReplyResponse, createBookingFor, updateBooking, generateReport,
-      setSkillUpdateStatus, setCandidateStage, setCandidatePhone, suppressCandidate, markDoNotContact,
+      setSkillUpdateStatus, setCandidateStage, setCandidatePhone, addCandidateNote, setRejectionReason, suppressCandidate, markDoNotContact,
       unsubscribeCandidate, anonymizeCandidate, exportCandidate, updateSettings,
       updateIntegration, toggleIntegrationMode, testIntegration,
       addSeat, deployAgents, updateSeat, setSeatStatus, connectSeatAccount, disconnectSeatAccount, toggleSeatLive,
