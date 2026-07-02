@@ -12,6 +12,7 @@
 import { RoundedBox, useGLTF, useTexture } from "@react-three/drei";
 import { useMemo } from "react";
 import * as THREE from "three";
+import { CHAIR_SEAT_OFFSET } from "../core/constants";
 import { toWorld } from "../core/geometry";
 import { DESK_POSITIONS } from "../core/navigation";
 
@@ -188,7 +189,7 @@ function DeskUnit({ cx, cy }: { cx: number; cy: number }) {
       />
       <GlbInstance
         src="/office3d/assets/chairDesk.glb"
-        position={[wx, 0, wz + 0.9]}
+        position={[wx, 0, wz + CHAIR_SEAT_OFFSET]}
         rotation={[0, Math.PI, 0]}
         scale={0.85}
       />

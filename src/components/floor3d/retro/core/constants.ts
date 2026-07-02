@@ -10,6 +10,10 @@ export const BUMP_FREEZE_MS = 1500;
 export const BUMP_RECOVERY_MS = 1200;
 export const DESK_STICKY_MS = 10_000;
 
+// World-Z distance in front of a desk center where the chair sits and a
+// "working" agent is seated. Keeps desk + chair + seated robot aligned.
+export const CHAIR_SEAT_OFFSET = 0.6;
+
 // 2-D canvas dimensions (pixel space — agents navigate in this coordinate system)
 export const CANVAS_W = 1800;
 export const CANVAS_H = 1800;
