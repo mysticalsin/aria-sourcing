@@ -21,6 +21,7 @@ import {
   Bookmark,
   Network,
   Rocket,
+  Rewind,
   type LucideIcon,
 } from "lucide-react";
 
@@ -46,6 +47,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/calendar", label: "Calendar", icon: CalendarDays, section: "Operate", description: "Interview bookings" },
   { href: "/fleet", label: "Agent Fleet", icon: Bot, section: "Operate", description: "Multi-agent coordination" },
   { href: "/floor", label: "Ops Floor", icon: Building2, section: "Operate", description: "Live agent floor" },
+  { href: "/replay", label: "Replay", icon: Rewind, section: "Operate", description: "Scrub the agents' whole day" },
   { href: "/chat", label: "Chat", icon: MessageSquare, section: "Operate", description: "Per-agent chat" },
   { href: "/reports", label: "Reports", icon: LineChart, section: "Operate", description: "Learning loop" },
   { href: "/architecture", label: "Architecture", icon: Network, section: "System", description: "TAnIA agent org & guardrails" },
