@@ -5,23 +5,10 @@ import Link from "next/link";
 import { TriangleAlert } from "lucide-react";
 
 /**
- * Root error boundary. Catches render/runtime errors thrown within the app
- * shell so a single broken view degrades to a recoverable panel instead of a
- * blank screen. Never surfaces error.message / stack to end users in production —
- * the real error is logged to the console for developers only.
- *
- * Most routes intentionally fall through to this generic boundary — the
- * sidebar/topbar still persist because AppShell wraps children above it in
- * layout.tsx, so nothing is broken by not having a bespoke one. Only a
- * handful of routes ship their own error.tsx, each naming the specific thing
- * that's likely to break in its scoped copy: /floor (heavy WebGL/three.js
- * office view), /fleet (seat mutation, LLM provider/model assignment,
- * allocation logic), /campaigns/[id] and /settings (single detail/config
- * views worth a page-specific recovery message), /soul (the persona editor),
- * /skills (the self-improvement/learning-proposal view), and /memory (the
- * per-agent memory panel). This is a deliberate, incremental scope decision,
- * not an unfinished rollout — add a bespoke boundary for a route once it has
- * a similarly concrete failure mode worth naming, not by default.
+ * Route-segment error boundary for /memory. Scopes a crash in the per-agent
+ * memory panel to this segment instead of blanking the whole app. Never
+ * surfaces error.message / stack to end users in production — the real
+ * error is logged to the console for developers only.
  */
 export default function Error({
   error,
@@ -45,10 +32,10 @@ export default function Error({
         <TriangleAlert className="h-8 w-8 text-danger" />
       </div>
       <p className="eyebrow mb-2">Something broke</p>
-      <h1 className="display text-4xl text-ink">This screen hit an unexpected error.</h1>
+      <h1 className="display text-4xl text-ink">The memory view hit an unexpected error.</h1>
       <p className="mt-3 max-w-md text-muted">
-        Aria couldn’t finish rendering this view. Your data is safe — try again, or head
-        back to the command center.
+        Aria couldn’t finish rendering agent memory. Your data is safe — try again, or
+        head back to the command center.
       </p>
       {error.digest ? (
         <p className="mt-2 font-mono text-xs text-muted/80">Reference: {error.digest}</p>

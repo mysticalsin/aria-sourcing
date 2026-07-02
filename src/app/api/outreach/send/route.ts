@@ -12,7 +12,7 @@ import { can } from "@/lib/rbac";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { safeLog } from "@/lib/log-redact";
 import { sendWhatsApp, sendSms } from "@/lib/channels";
-import { encryptSecret, decryptSecret } from "@/lib/crypto-secrets";
+import { encryptSecret, decryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
 
 /**
  * Strip CR/LF and other control characters from a value bound for an email header
@@ -148,6 +148,9 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
     if (!phoneSeat) {
       return NextResponse.json({ status: "error", detail: "Seat not found in your workspace." }, { status: 403 });
+    }
+    if (phoneSeat.status !== "active") {
+      return NextResponse.json({ status: "skipped", detail: "Seat is not active." });
     }
     if (phoneSeat.mode !== "live") {
       return NextResponse.json({ status: "dry-run", detail: "Seat not live — nothing sent." });
@@ -311,8 +314,15 @@ export async function POST(req: NextRequest) {
         outcome = await sendViaMicrosoftGraph({ from: seat.operator_email, to: candidateEmail, subject, body }, connection);
       }
 
-      // Persist refreshed token if it changed.
-      if (svc && (origAccessToken !== connection.accessToken || conn.expires_at !== connection.expiresAt)) {
+      // Persist refreshed token if it changed. Fail closed: never write a refreshed
+      // token in cleartext when production requires encryption at rest but no key is
+      // configured — skip the persist (the send itself already happened above)
+      // rather than silently degrade the stored credential to plaintext.
+      if (
+        svc &&
+        (origAccessToken !== connection.accessToken || conn.expires_at !== connection.expiresAt) &&
+        !encryptionRequiredButMissing()
+      ) {
         await svc
           .from("email_connections")
           .update({ access_token: encryptSecret(connection.accessToken), expires_at: connection.expiresAt, updated_at: new Date().toISOString() })

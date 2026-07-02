@@ -17,7 +17,7 @@ import {
 import { Badge, Button, EmptyState, Field, Input, useToast } from "@/components/ui";
 import { useActions } from "@/lib/store";
 import type { Booking, BookingStatus } from "@/lib/types";
-import { cn, formatTime, formatDate, formatDateTime, toneForBookingStatus } from "@/lib/utils";
+import { cn, formatTime, formatDate, formatDateTime, ianaForAbbrev, toneForBookingStatus } from "@/lib/utils";
 
 const TERMINAL_STATUSES = new Set(["Completed", "Cancelled", "No Show"]);
 
@@ -133,7 +133,11 @@ function BookingRow({ booking }: { booking: Booking }) {
     const durationMs = new Date(booking.endTime).getTime() - new Date(booking.startTime).getTime();
     const startTime = nextStart.toISOString();
     const endTime = new Date(nextStart.getTime() + durationMs).toISOString();
-    actions.updateBooking(booking.id, { startTime, endTime });
+    const result = actions.updateBooking(booking.id, { startTime, endTime });
+    if (!result.ok) {
+      toast({ title: "Couldn't reschedule", description: result.error, variant: "error" });
+      return;
+    }
     toast({
       title: "Interview rescheduled",
       description: `${booking.candidateName} · ${formatDateTime(startTime)}`,
@@ -148,10 +152,10 @@ function BookingRow({ booking }: { booking: Booking }) {
         <div className="flex shrink-0 flex-col gap-0.5 sm:w-32">
           <div className="flex items-center gap-1.5 text-sm font-bold tabular-nums text-ink">
             <Clock className="h-3.5 w-3.5 text-ink-soft" aria-hidden />
-            {formatTime(booking.startTime)}
+            {formatTime(booking.startTime, ianaForAbbrev(booking.timezone))}
           </div>
           <div className="pl-5 text-xs text-muted tabular-nums">
-            to {formatTime(booking.endTime)}
+            to {formatTime(booking.endTime, ianaForAbbrev(booking.timezone))}
           </div>
           <div className="pl-5 text-[0.6875rem] uppercase tracking-wide text-muted">
             {booking.timezone}

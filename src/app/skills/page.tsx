@@ -19,7 +19,9 @@ import {
   useActiveCampaign,
   useSkills,
   useActions,
+  useRole,
 } from "@/lib/store";
+import { can } from "@/lib/rbac";
 import { SKILL_ORDER } from "@/lib/skills";
 import type { SkillUpdate } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -116,14 +118,17 @@ function LoopExplainer() {
 function ProposalCard({
   proposal,
   campaignId,
+  canEdit,
 }: {
   proposal: SkillUpdate;
   campaignId: string;
+  canEdit: boolean;
 }) {
   const actions = useActions();
   const { toast } = useToast();
 
   function accept() {
+    if (!canEdit) return;
     actions.acceptSkillLearning(proposal.skill);
     actions.setSkillUpdateStatus(campaignId, proposal.id, "accepted");
     toast({
@@ -134,6 +139,7 @@ function ProposalCard({
   }
 
   function dismiss() {
+    if (!canEdit) return;
     actions.setSkillUpdateStatus(campaignId, proposal.id, "rejected");
     toast({
       title: "Proposal dismissed",
@@ -183,7 +189,14 @@ function ProposalCard({
             {proposal.impact}
           </Badge>
           <div className="flex gap-2">
-            <Button variant="ghost" size="sm" leftIcon={<X className="h-4 w-4" />} onClick={dismiss}>
+            <Button
+              variant="ghost"
+              size="sm"
+              leftIcon={<X className="h-4 w-4" />}
+              onClick={dismiss}
+              disabled={!canEdit}
+              title={canEdit ? undefined : "Viewers cannot dismiss proposals"}
+            >
               Dismiss
             </Button>
             <Button
@@ -191,6 +204,8 @@ function ProposalCard({
               size="sm"
               leftIcon={<Check className="h-4 w-4" />}
               onClick={accept}
+              disabled={!canEdit}
+              title={canEdit ? undefined : "Viewers cannot accept proposals"}
             >
               Accept
             </Button>
@@ -207,6 +222,7 @@ export default function SkillsPage() {
   const skills = useSkills();
   const actions = useActions();
   const { toast } = useToast();
+  const canEditSkills = can(useRole(), "skills");
 
   const [running, setRunning] = React.useState(false);
 
@@ -221,6 +237,7 @@ export default function SkillsPage() {
   }, [skills]);
 
   function runLearning() {
+    if (!canEditSkills) return;
     setRunning(true);
     const result = actions.runLearning();
     setRunning(false);
@@ -250,6 +267,8 @@ export default function SkillsPage() {
             loading={running}
             leftIcon={<Brain className="h-4 w-4" />}
             onClick={runLearning}
+            disabled={!canEditSkills}
+            title={canEditSkills ? undefined : "Viewers cannot run learning"}
           >
             Run learning
           </Button>
@@ -302,6 +321,8 @@ export default function SkillsPage() {
                     loading={running}
                     leftIcon={<Brain className="h-4 w-4" />}
                     onClick={runLearning}
+                    disabled={!canEditSkills}
+                    title={canEditSkills ? undefined : "Viewers cannot run learning"}
                   >
                     Run learning
                   </Button>
@@ -310,7 +331,12 @@ export default function SkillsPage() {
             ) : (
               <div className={cn("grid gap-5", proposals.length > 1 && "lg:grid-cols-2")}>
                 {proposals.map((p) => (
-                  <ProposalCard key={p.id} proposal={p} campaignId={activeCampaign!.id} />
+                  <ProposalCard
+                    key={p.id}
+                    proposal={p}
+                    campaignId={activeCampaign!.id}
+                    canEdit={canEditSkills}
+                  />
                 ))}
               </div>
             )}
@@ -336,7 +362,7 @@ export default function SkillsPage() {
             ) : (
               <div className="grid gap-5 lg:grid-cols-2">
                 {orderedSkills.map((skill) => (
-                  <SkillCard key={skill.key} skill={skill} />
+                  <SkillCard key={skill.key} skill={skill} canEdit={canEditSkills} />
                 ))}
               </div>
             )}

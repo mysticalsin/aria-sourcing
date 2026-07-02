@@ -4,10 +4,13 @@
 import { CANVAS_H, CANVAS_W } from "./constants";
 
 // ---------------------------------------------------------------------------
-// Desk positions (canvas pixel coords) — agents in "working" state walk here
-// 5 columns × 8 rows = 40 desks
+// Desk positions (canvas pixel coords) — agents in "working" state walk here.
+// 8 columns × 8 rows = 64 desks — matches MAX_3D_AGENTS.high (src/lib/device.ts)
+// so every simultaneously-shown "working" agent gets a unique desk; applyCollisionBumps
+// skips sitting agents entirely, so a shortfall here would show as agents
+// permanently overlapping at the same desk instead of being pushed apart.
 // ---------------------------------------------------------------------------
-const DESK_COL_X = [200, 400, 600, 800, 1000] as const;
+const DESK_COL_X = [180, 294, 408, 522, 636, 750, 864, 978] as const;
 const DESK_ROW_Y = [250, 450, 650, 850, 1050, 1250, 1450, 1650] as const;
 
 export const DESK_POSITIONS: { x: number; y: number }[] = DESK_ROW_Y.flatMap(

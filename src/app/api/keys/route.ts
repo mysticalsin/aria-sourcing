@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getServerSupabase, requireAdmin } from "@/lib/supabase/server";
-import { encryptSecret } from "@/lib/crypto-secrets";
+import { encryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { last4Of, validateApiKeyFormat } from "@/lib/providers";
 import { validateBody } from "@/lib/api/validate";
@@ -62,6 +62,16 @@ export async function POST(req: NextRequest) {
   }
 
   if (!supabase) return NextResponse.json({ ok: false, error: "No Supabase client." }, { status: 500 });
+
+  // Fail closed: never persist a new secret in cleartext when production requires
+  // encryption at rest but DATA_ENCRYPTION_KEY isn't configured.
+  if (encryptionRequiredButMissing()) {
+    return NextResponse.json(
+      { ok: false, error: "Server encryption key is not configured." },
+      { status: 503 },
+    );
+  }
+
   const { data: wid } = await supabase.rpc("ensure_workspace");
   // select("id") only: `authenticated` has no column-level SELECT grant on
   // `secret` (by design — it must never round-trip to the browser), and an

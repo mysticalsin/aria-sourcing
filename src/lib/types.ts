@@ -309,6 +309,11 @@ export interface Candidate {
    *  the live stage rank so post-interview rejections aren't undercounted. */
   maxStageRank?: number;
   lastContactedAt: string | null;
+  /** Timestamp of the candidate's most recent inbound reply (any intent),
+   *  stamped by classifyAndStoreReply. Lets the approval gate detect a draft
+   *  that was written before the candidate replied and block it as stale.
+   *  Absent/null = no reply on record yet. */
+  lastRepliedAt?: string | null;
   outreachHistory: OutreachHistoryEntry[];
   replyHistory: ReplyHistoryEntry[];
   booking: Booking | null;

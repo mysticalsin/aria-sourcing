@@ -9,7 +9,7 @@ import { can } from "@/lib/rbac";
 import type { EmailConnection, Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { getAccessTokenForReading } from "@/lib/email-oauth";
-import { encryptSecret, decryptSecret } from "@/lib/crypto-secrets";
+import { encryptSecret, decryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
 import {
   listInboundGmail,
   getGmailMessage,
@@ -147,19 +147,26 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    // Persist a refreshed token if it changed.
+    // Persist a refreshed token if it changed. Fail closed: never write a refreshed
+    // token in cleartext when production requires encryption at rest but no key is
+    // configured — skip the persist (this sync still completes with the in-memory
+    // token) rather than silently degrade the stored credential to plaintext.
     if (
       token !== origAccessToken ||
       conn.expiresAt !== row.expires_at
     ) {
-      await svc
-        .from("email_connections")
-        .update({
-          access_token: encryptSecret(conn.accessToken),
-          expires_at: conn.expiresAt,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", conn.id);
+      if (encryptionRequiredButMissing()) {
+        errors.push(`Refreshed token for ${row.id} not persisted (server encryption key not configured).`);
+      } else {
+        await svc
+          .from("email_connections")
+          .update({
+            access_token: encryptSecret(conn.accessToken),
+            expires_at: conn.expiresAt,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", conn.id);
+      }
     }
 
     const remaining = TOTAL_MESSAGE_CAP - totalCollected;

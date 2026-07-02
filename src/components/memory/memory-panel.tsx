@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { Database, Pin, PinOff, Plus, Pencil, Trash2, Check, X } from "lucide-react";
-import { useSeats, useMemory, useActions } from "@/lib/store";
+import { useSeats, useMemory, useActions, useRole } from "@/lib/store";
+import { can } from "@/lib/rbac";
 import type { MemoryKind } from "@/lib/types";
 import { MEMORY_KINDS } from "@/lib/types";
 import { Badge, Button, Card, CardContent, Input, Select, Textarea, Meter, useToast } from "@/components/ui";
@@ -73,14 +74,20 @@ function AddEntryForm({ seatId, onDone }: { seatId: string; onDone: () => void }
 
 /* ---- Single entry row ---------------------------------------------------- */
 
-function EntryRow({ entry }: { entry: { id: string; seatId: string; kind: MemoryKind; content: string; pinned?: boolean; createdAt: string; updatedAt: string } }) {
+function EntryRow({
+  entry,
+  canEdit,
+}: {
+  entry: { id: string; seatId: string; kind: MemoryKind; content: string; pinned?: boolean; createdAt: string; updatedAt: string };
+  canEdit: boolean;
+}) {
   const actions = useActions();
   const { toast } = useToast();
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(entry.content);
 
   function saveEdit() {
-    if (!draft.trim()) return;
+    if (!canEdit || !draft.trim()) return;
     actions.updateMemory(entry.id, { content: draft.trim() });
     setEditing(false);
     toast({ title: "Memory updated", variant: "success" });
@@ -123,7 +130,7 @@ function EntryRow({ entry }: { entry: { id: string; seatId: string; kind: Memory
         <p className="flex-1 min-w-0 text-sm text-ink leading-snug break-words">{entry.content}</p>
       )}
 
-      {!editing && (
+      {!editing && canEdit && (
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
           <Button
             variant="ghost"
@@ -168,6 +175,7 @@ function EntryRow({ entry }: { entry: { id: string; seatId: string; kind: Memory
 
 export function MemoryPanel() {
   const seats = useSeats();
+  const canEditMemory = can(useRole(), "skills");
   const [selectedSeatId, setSelectedSeatId] = React.useState<string | null>(null);
   const [adding, setAdding] = React.useState(false);
 
@@ -250,7 +258,7 @@ export function MemoryPanel() {
             <div className="w-40">
               <Meter label="Capacity" used={allMemory.length} limit={capacity} tone="violet" />
             </div>
-            {selectedSeatId && (
+            {selectedSeatId && canEditMemory && (
               <Button
                 size="sm"
                 variant="secondary"
@@ -265,7 +273,7 @@ export function MemoryPanel() {
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-          {adding && selectedSeatId && (
+          {adding && selectedSeatId && canEditMemory && (
             <AddEntryForm seatId={selectedSeatId} onDone={() => setAdding(false)} />
           )}
 
@@ -285,7 +293,7 @@ export function MemoryPanel() {
             <div>
               <p className="text-xs font-bold text-violet uppercase tracking-wider mb-2">Pinned</p>
               <ul className="space-y-2">
-                {pinned.map((e) => <EntryRow key={e.id} entry={e} />)}
+                {pinned.map((e) => <EntryRow key={e.id} entry={e} canEdit={canEditMemory} />)}
               </ul>
             </div>
           )}
@@ -294,7 +302,7 @@ export function MemoryPanel() {
             <div key={kind}>
               <p className="text-xs font-bold text-ink-soft uppercase tracking-wider mb-2">{kind}</p>
               <ul className="space-y-2">
-                {items.map((e) => <EntryRow key={e.id} entry={e} />)}
+                {items.map((e) => <EntryRow key={e.id} entry={e} canEdit={canEditMemory} />)}
               </ul>
             </div>
           ))}

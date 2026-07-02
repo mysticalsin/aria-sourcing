@@ -21,24 +21,37 @@ export function CuratorStatus() {
   const live = hermesRuntimeAvailable(settings);
   const [state, setState] = React.useState<CuratorState | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState(false);
 
   React.useEffect(() => {
     if (!live) {
       setState(null);
+      setError(false);
       return;
     }
     let cancelled = false;
     setLoading(true);
+    setError(false);
     const params = new URLSearchParams();
     params.set("upstreamPath", "api/curator");
     if (settings.hermesApiKeyId) params.set("hermesApiKeyId", settings.hermesApiKeyId);
-    fetch(`/api/hermes/proxy?${params.toString()}`).then(async (res) => {
-      if (cancelled) return;
-      setLoading(false);
-      if (!res.ok) return;
-      const data = (await res.json().catch(() => null)) as CuratorState | null;
-      if (data) setState(data);
-    });
+    fetch(`/api/hermes/proxy?${params.toString()}`)
+      .then(async (res) => {
+        if (cancelled) return;
+        setLoading(false);
+        if (!res.ok) {
+          setError(true);
+          return;
+        }
+        const data = (await res.json().catch(() => null)) as CuratorState | null;
+        if (data) setState(data);
+        else setError(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLoading(false);
+        setError(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -70,8 +83,8 @@ export function CuratorStatus() {
         </div>
         {loading ? (
           <SkeletonCard />
-        ) : !state ? (
-          <p className="text-xs text-muted">Could not load curator state.</p>
+        ) : error || !state ? (
+          <p className="text-xs text-muted">Could not reach the Aria runtime.</p>
         ) : (
           <dl className="grid grid-cols-2 gap-2 text-xs">
             <div>

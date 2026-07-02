@@ -17,7 +17,8 @@ import {
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { StarBadge, SourceBadge } from "@/components/tania/badges";
-import { useActions, useHydrated, useSettings, useVivier } from "@/lib/store";
+import { useActions, useHydrated, useOutreach, useSettings, useVivier } from "@/lib/store";
+import { hasPendingDraft } from "@/lib/recommendations";
 import {
   DEFAULT_STAR_THRESHOLDS,
   deriveLeadSource,
@@ -49,12 +50,17 @@ type SourceFilter = LeadSource | "all";
 export function VivierView() {
   const hydrated = useHydrated();
   const pool = useVivier();
+  const outreach = useOutreach();
   const settings = useSettings();
   const actions = useActions();
   const { toast } = useToast();
   const confirm = useConfirm();
 
   const [source, setSource] = React.useState<SourceFilter>("all");
+  // Candidate ids with a re-contact draft currently in flight — disables the
+  // button and blocks a double-click from firing draftRecontactFor twice
+  // while the (potentially multi-second) live-LLM call is pending.
+  const [draftingIds, setDraftingIds] = React.useState<Set<string>>(new Set());
 
   const thresholds = settings.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
 
@@ -73,8 +79,10 @@ export function VivierView() {
 
     const filtered = source === "all" ? pool : pool.filter((c) => deriveLeadSource(c) === source);
 
-    const silver = filtered.filter((c) => c.silverMedalist);
-    const warm = [...filtered.filter(isDue)].sort(
+    // Dedupe against an already-queued re-contact draft, matching
+    // deriveFollowUpsDue's hasPendingDraft guard for the outreach page.
+    const silver = filtered.filter((c) => c.silverMedalist && !hasPendingDraft(outreach, c.id));
+    const warm = [...filtered.filter((c) => isDue(c) && !hasPendingDraft(outreach, c.id))].sort(
       (a, b) => starRatingScore(ratingOf(b)) - starRatingScore(ratingOf(a)),
     );
 
@@ -93,30 +101,42 @@ export function VivierView() {
       totalSilver: pool.filter((c) => c.silverMedalist).length,
       totalDue: pool.filter(isDue).length,
     };
-  }, [pool, source, ratingOf]);
+  }, [pool, source, ratingOf, outreach]);
 
   /* ---- Actions (all recruiter-initiated) -------------------------------- */
 
   const handleRecontact = React.useCallback(
-    (c: Candidate) => {
-      // Pooled candidates are Rejected/Not Interested, so use the #Vivier-specific
-      // draft path (draftFollowUpFor is gated to the active follow-up sequence).
-      const draft = actions.draftRecontactFor(c.id);
-      if (draft) {
-        toast({
-          title: "Re-contact draft queued for approval",
-          description: `${c.name} · ${c.currentTitle}`,
-          variant: "success",
-        });
-      } else {
-        toast({
-          title: "Could not draft a re-contact",
-          description: `${c.name} is missing a linked campaign.`,
-          variant: "warning",
+    async (c: Candidate) => {
+      // Guard against a double-click firing draftRecontactFor twice for the
+      // same candidate while the live-LLM call is still in flight.
+      if (draftingIds.has(c.id)) return;
+      setDraftingIds((prev) => new Set(prev).add(c.id));
+      try {
+        // Pooled candidates are Rejected/Not Interested, so use the #Vivier-specific
+        // draft path (draftFollowUpFor is gated to the active follow-up sequence).
+        const draft = await actions.draftRecontactFor(c.id);
+        if (draft) {
+          toast({
+            title: "Re-contact draft queued for approval",
+            description: `${c.name} · ${c.currentTitle}`,
+            variant: "success",
+          });
+        } else {
+          toast({
+            title: "Could not draft a re-contact",
+            description: `${c.name} is missing a linked campaign.`,
+            variant: "warning",
+          });
+        }
+      } finally {
+        setDraftingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(c.id);
+          return next;
         });
       }
     },
-    [actions, toast],
+    [actions, toast, draftingIds],
   );
 
   const handleRemove = React.useCallback(
@@ -264,6 +284,7 @@ export function VivierView() {
                       now={derived.now}
                       onRecontact={handleRecontact}
                       onRemove={handleRemove}
+                      drafting={draftingIds.has(c.id)}
                     />
                   ))}
                 </div>
@@ -303,6 +324,7 @@ export function VivierView() {
                         rating={ratingOf(c)}
                         now={derived.now}
                         onDraft={handleRecontact}
+                        drafting={draftingIds.has(c.id)}
                       />
                     ))}
                   </Card>
@@ -403,12 +425,14 @@ function SilverMedalistCard({
   now,
   onRecontact,
   onRemove,
+  drafting,
 }: {
   candidate: Candidate;
   rating: ReturnType<typeof deriveStarRating>;
   now: number;
   onRecontact: (c: Candidate) => void;
   onRemove: (c: Candidate) => void;
+  drafting: boolean;
 }) {
   return (
     <Card
@@ -450,8 +474,10 @@ function SilverMedalistCard({
             variant="subtle"
             leftIcon={<RotateCcw aria-hidden />}
             onClick={() => onRecontact(c)}
+            loading={drafting}
+            disabled={drafting}
           >
-            Re-contact
+            {drafting ? "Drafting…" : "Re-contact"}
           </Button>
           <Button
             size="sm"
@@ -473,11 +499,13 @@ function WarmRow({
   rating,
   now,
   onDraft,
+  drafting,
 }: {
   candidate: Candidate;
   rating: ReturnType<typeof deriveStarRating>;
   now: number;
   onDraft: (c: Candidate) => void;
+  drafting: boolean;
 }) {
   const overdue = c.recontactAt != null;
   return (
@@ -517,8 +545,10 @@ function WarmRow({
         variant="outline"
         leftIcon={<Send aria-hidden />}
         onClick={() => onDraft(c)}
+        loading={drafting}
+        disabled={drafting}
       >
-        Draft re-contact
+        {drafting ? "Drafting…" : "Draft re-contact"}
       </Button>
     </div>
   );

@@ -78,9 +78,12 @@ function FollowUpDueRow({ item }: { item: FollowUpDueItem }) {
   const candidate = useCandidate(item.candidateId);
   const actions = useActions();
   const { toast } = useToast();
+  const [drafting, setDrafting] = React.useState(false);
 
-  function handleDraft() {
-    const msg = actions.draftFollowUpFor(item.candidateId);
+  async function handleDraft() {
+    setDrafting(true);
+    const msg = await actions.draftFollowUpFor(item.candidateId);
+    setDrafting(false);
     if (!msg) {
       toast({ title: "Could not draft the follow-up", variant: "error" });
       return;
@@ -103,8 +106,10 @@ function FollowUpDueRow({ item }: { item: FollowUpDueItem }) {
         variant="outline"
         leftIcon={<Repeat className="h-3.5 w-3.5" aria-hidden />}
         onClick={handleDraft}
+        loading={drafting}
+        disabled={drafting}
       >
-        Draft follow-up
+        {drafting ? "Drafting…" : "Draft follow-up"}
       </Button>
     </div>
   );

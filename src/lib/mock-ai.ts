@@ -29,12 +29,14 @@ import type {
   ValidationWarning,
   WeeklyReport,
 } from "./types";
-import { FUNNEL_STAGES } from "./types";
+import { OUTREACH_CHANNELS } from "./types";
+import { effectiveStageRank, funnelForCandidates } from "./metrics";
 import {
   campaignId as makeCampaignId,
   clamp,
   escapeRegExp,
   genId,
+  ianaForAbbrev,
   initialsFrom,
   isoDaysAfter,
   makeRng,
@@ -1148,12 +1150,21 @@ Aria`;
 }
 
 export function candidateConfirmationEmail(b: Booking): string {
+  const when = new Date(b.startTime).toLocaleString("en-US", {
+    timeZone: ianaForAbbrev(b.timezone),
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
   return `Subject: Confirmed: your ${b.role} conversation
 
 Hi ${b.candidateName.split(" ")[0]},
 
 You're booked in. Details:
-• When: ${new Date(b.startTime).toUTCString()} (${b.timezone})
+• When: ${when}
 • With: ${b.interviewer}
 • Where: ${b.teamsLink}
 
@@ -1166,11 +1177,17 @@ Looking forward to it.`;
    7. generateWeeklyReport + exportMarkdownReport
    ========================================================================== */
 
-export function generateWeeklyReport(campaign: Campaign, candidates: Candidate[]): WeeklyReport {
+export function generateWeeklyReport(
+  campaign: Campaign,
+  candidates: Candidate[],
+  messages: OutreachMessage[],
+): WeeklyReport {
   const inCampaign = candidates.filter((c) => c.campaignId === campaign.id);
-  const stageCount = (s: string) => inCampaign.filter((c) => stageRank(c.stage) >= funnelRank(s)).length;
-
-  const funnel = FUNNEL_STAGES.map((stage) => ({ stage, count: stageCount(stage) }));
+  // Canonical funnel snapshot — reuses the same effectiveStageRank-based
+  // high-water-mark logic as the dashboard/reports (metrics.ts), so a
+  // candidate who reached Interviewed and later regressed to Rejected still
+  // counts at Interviewed here too, instead of a locally-drifted rank map.
+  const funnel = funnelForCandidates(inCampaign);
   const m = campaign.metrics;
   const scores = inCampaign.map((c) => c.matchScore).filter(Boolean);
   const avg = scores.length ? round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
@@ -1186,7 +1203,11 @@ export function generateWeeklyReport(campaign: Campaign, candidates: Candidate[]
     campaignId: campaign.id,
     campaignTitle: campaign.title,
     generatedAt: new Date().toISOString(),
-    periodLabel: "Last 7 days",
+    // The funnel below counts every candidate ever attached to the campaign
+    // (no activity-date filter exists), so it's a cumulative snapshot, not a
+    // trailing week — label it honestly rather than implying a week-over-week
+    // comparison the data can't actually support.
+    periodLabel: "All-time (since campaign start)",
     funnel,
     performance: {
       replyRate,
@@ -1195,7 +1216,7 @@ export function generateWeeklyReport(campaign: Campaign, candidates: Candidate[]
       avgMatchScore: avg,
       timeToFirstInterviewHours: m.timeToFirstInterviewHours,
       costPerHire: 4200,
-      bestChannel: replyRate > 0.18 ? "Email" : "LinkedIn",
+      bestChannel: computeBestChannel(inCampaign, messages.filter((msg) => msg.campaignId === campaign.id)),
       bestDay: "Tuesday",
       bestTime: "09:00–11:00 local",
     },
@@ -1214,6 +1235,32 @@ export function generateWeeklyReport(campaign: Campaign, candidates: Candidate[]
     skillUpdates,
     attentionNeeded: buildAttention(campaign),
   };
+}
+
+/** Real per-channel reply rate from actual outreach messages, instead of a fixed
+ *  Email/LinkedIn split on the overall reply rate that could never surface
+ *  WhatsApp or SMS even when they genuinely outperform. Each candidate's
+ *  earliest outreach message decides which channel "gets credit" for a later
+ *  reply; a channel only competes once it has actually been used. */
+function computeBestChannel(inCampaign: Candidate[], campaignMessages: OutreachMessage[]): OutreachChannel {
+  const firstChannelByCandidate = new Map<string, OutreachChannel>();
+  for (const msg of [...campaignMessages].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
+    if (!firstChannelByCandidate.has(msg.candidateId)) firstChannelByCandidate.set(msg.candidateId, msg.channel);
+  }
+
+  let best: OutreachChannel = "Email";
+  let bestRate = -1;
+  for (const channel of OUTREACH_CHANNELS) {
+    const contacted = inCampaign.filter((c) => firstChannelByCandidate.get(c.id) === channel);
+    if (!contacted.length) continue;
+    const replied = contacted.filter((c) => effectiveStageRank(c) >= 2).length;
+    const rate = replied / contacted.length;
+    if (rate > bestRate) {
+      bestRate = rate;
+      best = channel;
+    }
+  }
+  return best;
 }
 
 function buildAttention(c: Campaign): string[] {
@@ -1269,21 +1316,6 @@ function proposeSkillUpdates(
   return updates;
 }
 
-/* funnel/stage ranking so a candidate counts in every earlier funnel band */
-const STAGE_ORDER = [
-  "Sourced", "Contacted", "Replied", "Interested", "Booked", "Interviewed", "Offer", "Hired",
-];
-function stageRank(stage: string): number {
-  const map: Record<string, number> = {
-    Sourced: 0, Contacted: 1, Replied: 2, Interested: 3, Booked: 4, Interviewed: 5, Offer: 6, Hired: 7,
-    "Not Interested": 2, Rejected: 2, Suppressed: 1,
-  };
-  return map[stage] ?? 0;
-}
-function funnelRank(stage: string): number {
-  return STAGE_ORDER.indexOf(stage);
-}
-
 export function exportMarkdownReport(report: WeeklyReport): string {
   const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
   const lines: string[] = [];
@@ -1336,5 +1368,3 @@ export function exportMarkdownReport(report: WeeklyReport): string {
   lines.push("_Hermes Sourcing · dry-run mode · synthetic data._");
   return lines.join("\n");
 }
-
-export { STAGE_ORDER };

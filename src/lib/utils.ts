@@ -153,11 +153,35 @@ export function formatDateTime(iso: string): string {
   });
 }
 
-export function formatTime(iso: string): string {
+export function formatTime(iso: string, timeZone?: string): string {
   return new Date(iso).toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
+    ...(timeZone ? { timeZone } : {}),
   });
+}
+
+/* ---- Timezones -------------------------------------------------------------
+   Candidates/bookings only carry a short zone label (e.g. "CET") drawn from a
+   small fixed set of demo regions, not a real IANA zone id. Rendering a booking
+   time with plain toLocaleTimeString()/toUTCString() ignores that label entirely,
+   so the number shown is silently wrong for every zone but UTC. This maps the
+   label to a real IANA zone so booking times render as genuine local wall-clock
+   time. Unknown/blank labels (live-sourced candidates with no known location)
+   fall back to UTC rather than guessing. */
+const IANA_BY_ABBREVIATION: Record<string, string> = {
+  CET: "Europe/Berlin",
+  WET: "Europe/Lisbon",
+  GMT: "Europe/London",
+  CST: "America/Chicago",
+  EST: "America/Toronto",
+  IST: "Asia/Kolkata",
+  SGT: "Asia/Singapore",
+  BRT: "America/Sao_Paulo",
+};
+
+export function ianaForAbbrev(abbrev: string): string {
+  return IANA_BY_ABBREVIATION[abbrev] ?? "UTC";
 }
 
 /** Human "time ago" / "in X". Safe to call post-mount only. */

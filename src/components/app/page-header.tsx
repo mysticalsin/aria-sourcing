@@ -39,6 +39,12 @@ export function HydrationGate({
   fallback: React.ReactNode;
   children: React.ReactNode;
 }) {
-  if (!hydrated) return <>{fallback}</>;
+  if (!hydrated) {
+    return (
+      <div role="status" aria-live="polite" aria-label="Loading">
+        {fallback}
+      </div>
+    );
+  }
   return <>{children}</>;
 }

@@ -73,6 +73,13 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
     warnings.push(`Approaching daily ${message.channel} limit (${used}/${limit}).`);
   }
 
+  // Candidate replied since this draft was written — the copy may no longer
+  // make sense (e.g. a follow-up nudging someone who already answered). Block
+  // approval and force a regenerate/reject rather than shipping stale copy.
+  if (candidate.lastRepliedAt && new Date(candidate.lastRepliedAt) > new Date(message.createdAt)) {
+    blockers.push("Candidate has replied since this follow-up was drafted — regenerate or reject.");
+  }
+
   // Rule 5 — dedupe: don't re-contact inside the window
   if (candidate.lastContactedAt && message.sequenceStep <= 1) {
     const days = daysSince(candidate.lastContactedAt);

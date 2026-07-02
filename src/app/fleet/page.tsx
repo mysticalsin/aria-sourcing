@@ -32,7 +32,7 @@ import {
   useRole,
 } from "@/lib/store";
 import { can } from "@/lib/rbac";
-import { SEAT_PROVIDERS, type SeatProvider, type AllocationResult } from "@/lib/types";
+import { SEAT_PROVIDERS, SEAT_STATUSES, type SeatProvider, type SeatStatus, type AllocationResult } from "@/lib/types";
 import {
   Bot,
   Plus,
@@ -44,7 +44,15 @@ import {
   Clock,
   Network,
   CircleSlash,
+  Search,
 } from "lucide-react";
+
+const SEAT_ROSTER_PAGE = 30;
+const STATUS_LABEL: Record<SeatStatus, string> = {
+  active: "Active",
+  paused: "Paused",
+  disabled: "Disabled",
+};
 
 const GUARDRAILS = [
   {
@@ -85,6 +93,33 @@ export default function FleetPage() {
   const canManage = can(useRole(), "manage_fleet");
 
   const [deployN, setDeployN] = React.useState("25");
+
+  // Roster filters — the "Deploy" control can push a fleet past 100+ seats,
+  // so search/status/provider narrow it and a "load more" cursor keeps the
+  // initial mount cheap instead of rendering every heavyweight SeatCard.
+  const [rosterQuery, setRosterQuery] = React.useState("");
+  const [rosterStatus, setRosterStatus] = React.useState<"all" | SeatStatus>("all");
+  const [rosterProvider, setRosterProvider] = React.useState<"all" | SeatProvider>("all");
+  const [rosterVisible, setRosterVisible] = React.useState(SEAT_ROSTER_PAGE);
+
+  const filteredSeats = React.useMemo(() => {
+    const q = rosterQuery.trim().toLowerCase();
+    return seats.filter((seat) => {
+      if (rosterStatus !== "all" && seat.status !== rosterStatus) return false;
+      if (rosterProvider !== "all" && seat.provider !== rosterProvider) return false;
+      if (q && !seat.name.toLowerCase().includes(q) && !seat.operatorEmail.toLowerCase().includes(q)) {
+        return false;
+      }
+      return true;
+    });
+  }, [seats, rosterQuery, rosterStatus, rosterProvider]);
+
+  React.useEffect(() => {
+    setRosterVisible(SEAT_ROSTER_PAGE);
+  }, [rosterQuery, rosterStatus, rosterProvider]);
+
+  const visibleSeats = filteredSeats.slice(0, rosterVisible);
+  const rosterHasMore = filteredSeats.length > visibleSeats.length;
   const handleDeploy = () => {
     if (!canManage) {
       toast({ title: "Admins only", description: "Only an admin can deploy agents.", variant: "warning" });
@@ -392,11 +427,91 @@ export default function FleetPage() {
                 }
               />
             ) : (
-              <div className="grid items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3">
-                {seats.map((seat) => (
-                  <SeatCard key={seat.id} seat={seat} />
-                ))}
-              </div>
+              <>
+                <div className="mb-4 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+                  <Field label="Search" htmlFor="roster-search">
+                    <div className="relative">
+                      <Search
+                        className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+                        aria-hidden
+                      />
+                      <Input
+                        id="roster-search"
+                        className="pl-10"
+                        placeholder="Name or mailbox"
+                        value={rosterQuery}
+                        onChange={(e) => setRosterQuery(e.target.value)}
+                      />
+                    </div>
+                  </Field>
+                  <Field label="Status" htmlFor="roster-status">
+                    <Select
+                      id="roster-status"
+                      value={rosterStatus}
+                      onChange={(e) => setRosterStatus(e.target.value as "all" | SeatStatus)}
+                      options={[
+                        { value: "all", label: "All statuses" },
+                        ...SEAT_STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] })),
+                      ]}
+                    />
+                  </Field>
+                  <Field label="Provider" htmlFor="roster-provider">
+                    <Select
+                      id="roster-provider"
+                      value={rosterProvider}
+                      onChange={(e) => setRosterProvider(e.target.value as "all" | SeatProvider)}
+                      options={[
+                        { value: "all", label: "All providers" },
+                        ...SEAT_PROVIDERS.map((p) => ({ value: p, label: p })),
+                      ]}
+                    />
+                  </Field>
+                </div>
+
+                {filteredSeats.length === 0 ? (
+                  <EmptyState
+                    icon={<Bot className="h-7 w-7" />}
+                    title="No agents match your filters"
+                    description="Try a different search term, or reset the status/provider filters."
+                    action={
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setRosterQuery("");
+                          setRosterStatus("all");
+                          setRosterProvider("all");
+                        }}
+                      >
+                        Clear filters
+                      </Button>
+                    }
+                  />
+                ) : (
+                  <>
+                    <p className="mb-3 text-xs text-muted">
+                      Showing {visibleSeats.length} of {filteredSeats.length}
+                      {filteredSeats.length !== seats.length ? ` (filtered from ${seats.length})` : ""}
+                    </p>
+                    <div className="grid items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3">
+                      {visibleSeats.map((seat) => (
+                        <SeatCard key={seat.id} seat={seat} />
+                      ))}
+                    </div>
+                    {rosterHasMore && (
+                      <div className="mt-5 flex justify-center">
+                        <Button
+                          variant="outline"
+                          size="md"
+                          onClick={() => setRosterVisible((v) => v + SEAT_ROSTER_PAGE)}
+                        >
+                          Load more ({filteredSeats.length - visibleSeats.length} remaining)
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
             )}
           </section>
 

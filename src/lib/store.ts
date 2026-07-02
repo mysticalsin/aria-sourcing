@@ -15,9 +15,9 @@ import {
   createBooking,
   generateOutreach,
   generateWeeklyReport,
+  getInterviewers,
   interviewerPrepEmail,
   newOutreachMessage,
-  nextInterviewer,
   sourceCandidates,
   mapGithubCandidates,
   mapWebSearchCandidates,
@@ -117,6 +117,7 @@ import {
   proposeSkillUpdates,
 } from "./skills";
 import { stageRank, withStage } from "./metrics";
+import { humanizeText } from "./humanizer";
 
 const STORAGE_KEY = "hermes-sourcing:v1";
 
@@ -198,10 +199,10 @@ export interface HermesActions {
    *  queue exactly like generateOutreachFor — never sends. Returns null when
    *  the candidate isn't actually due (already replied, too recent, or already
    *  has a pending draft). */
-  draftFollowUpFor: (candidateId: string, tone?: OutreachTone, seatId?: string) => OutreachMessage | null;
+  draftFollowUpFor: (candidateId: string, tone?: OutreachTone, seatId?: string) => Promise<OutreachMessage | null>;
   /** Draft a #Vivier re-contact for a pooled (Rejected/Not Interested) candidate,
    *  bypassing the follow-up stage gate. Returns the Draft (still needs approval). */
-  draftRecontactFor: (candidateId: string, tone?: OutreachTone, seatId?: string) => OutreachMessage | null;
+  draftRecontactFor: (candidateId: string, tone?: OutreachTone, seatId?: string) => Promise<OutreachMessage | null>;
 
   // replies
   classifyAndStoreReply: (input: {
@@ -229,7 +230,10 @@ export interface HermesActions {
     | { ok: true; booking: Booking; prepEmail: string; confirmationEmail: string }
     | { ok: false; error: string }
   >;
-  updateBooking: (id: string, patch: Partial<Booking>) => void;
+  updateBooking: (
+    id: string,
+    patch: Partial<Booking>,
+  ) => { ok: true } | { ok: false; error: string };
 
   // reports + learning
   generateReport: (campaignId: string) => WeeklyReport | null;
@@ -379,6 +383,8 @@ export interface HermesActions {
   // chat
   createChatThread: (seatId: string) => ChatThread;
   deleteChatThread: (id: string) => void;
+  /** Empty a thread's message history in place (keeps the thread/id). */
+  clearChatThread: (id: string) => void;
   appendChatMessage: (threadId: string, msg: ChatMessage) => void;
   updateChatMessage: (threadId: string, msgId: string, patch: Partial<ChatMessage>) => void;
   sendChat: (threadId: string, text: string) => Promise<void>;
@@ -504,6 +510,92 @@ function loadState(): HermesState {
     /* corrupt → reseed */
   }
   return buildSeedState();
+}
+
+/**
+ * Shared live-generation attempt for follow-up / re-contact drafts — the same
+ * three-layer fallback generateOutreachLive/regenerateOutreach already use (a
+ * cloud provider or hermes live mode configured -> hermesGenerate -> parse ->
+ * humanize). Without this, draftFollowUpFor/draftRecontactFor always fell
+ * straight to the mock template, so every follow-up touch for a candidate was
+ * byte-identical copy. Returns the mock unchanged (live: false) on any
+ * failure at any layer — a follow-up draft always lands regardless.
+ */
+async function attemptLiveFollowUpGen(opts: {
+  settings: SystemSettings;
+  candidate: Candidate;
+  campaign: Campaign;
+  tone: OutreachTone;
+  channel: OutreachChannel;
+  voice?: { persona?: string; signature?: string };
+  lang: string;
+  mockGen: GeneratedOutreach;
+  seat?: AgentSeat;
+  touchNote: string;
+}): Promise<{ gen: GeneratedOutreach; live: boolean }> {
+  const { settings, candidate, campaign, tone, channel, voice, lang, mockGen, seat, touchNote } = opts;
+  const aiCfg = resolveAiProvider(settings, "outreach", {
+    providerId: seat?.providerId,
+    modelId: seat?.modelId,
+  });
+  if (!aiCfg && !(settings.hermesLiveMode && hermesAvailable(settings))) {
+    return { gen: mockGen, live: false };
+  }
+
+  const basePrompt = buildOutreachPrompt({
+    candidateName: candidate.name,
+    candidateTitle: candidate.currentTitle,
+    candidateCompany: candidate.currentCompany,
+    techStack: candidate.techStack,
+    recentActivity: candidate.recentActivity,
+    yearsExperience: candidate.yearsExperience,
+    roleTitle: campaign.jobAnalysis.title,
+    locationType: campaign.jobAnalysis.locationType,
+    regions: campaign.jobAnalysis.regions,
+    requiredSkills: campaign.jobAnalysis.requiredSkills,
+    tone,
+    channel,
+    language: lang,
+    persona: voice?.persona,
+    signature: voice?.signature,
+  });
+  const ariaPrompt = settings.guardrails?.ariaPrompt;
+  const guardrails = [ariaPrompt, touchNote].filter(Boolean).join("\n\n");
+  const prompt = guardrails ? `${guardrails}\n\n${basePrompt}` : basePrompt;
+
+  let genInput: Parameters<typeof hermesGenerate>[0];
+  if (aiCfg) {
+    genInput = { task: "outreach", prompt, provider: aiCfg.provider, model: aiCfg.model, apiKeyId: aiCfg.apiKeyId };
+  } else {
+    const outreachModelId = seat?.modelId ?? settings.defaultModels?.outreach;
+    genInput = {
+      task: "outreach",
+      prompt,
+      hermesApiUrl: settings.hermesApiUrl,
+      hermesApiKeyId: settings.hermesApiKeyId,
+    };
+    if (outreachModelId) {
+      const modelName = (settings.savedModels ?? []).find((m) => m.id === outreachModelId)?.modelName;
+      if (modelName) genInput.model = modelName;
+    }
+  }
+
+  const result = await hermesGenerate(genInput);
+  if (result.ok && result.text) {
+    const parsed = parseHermesOutreach(result.text, channel, mockGen.subject);
+    if (parsed) {
+      return {
+        gen: {
+          subject: humanizeText(parsed.subject),
+          body: humanizeText(parsed.body),
+          personalizationEvidence: mockGen.personalizationEvidence,
+          channel,
+        },
+        live: true,
+      };
+    }
+  }
+  return { gen: mockGen, live: false };
 }
 
 export function HermesProvider({ children }: { children: React.ReactNode }) {
@@ -1175,8 +1267,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           const parsed = parseHermesOutreach(result.text, channel, mockGen.subject);
           if (parsed) {
             gen = {
-              subject: parsed.subject,
-              body: parsed.body,
+              // ALWAYS humanize live copy too — the mock path already does this
+              // (see generateOutreach), so the "no AI slop, ever" guarantee holds
+              // regardless of which provider produced the draft.
+              subject: humanizeText(parsed.subject),
+              body: humanizeText(parsed.body),
               // Reuse the mock's evidence — same shape, deterministic, audit-friendly.
               personalizationEvidence: mockGen.personalizationEvidence,
               channel,
@@ -1215,8 +1310,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   // called (from the recommendations queue / outreach page), and it only ever
   // creates a Draft that still has to clear the human approval gate.
   const draftFollowUpFor = useCallback(
-    (candidateId: string, tone?: OutreachTone, seatId?: string) => {
+    async (candidateId: string, tone?: OutreachTone, seatId?: string) => {
       const s = current();
+      // Captured before the live-gen await below so the stale-draft blocker in
+      // checkOutreachApproval (candidate.lastRepliedAt > message.createdAt) still
+      // catches a reply that lands during the network round-trip — createdAt must
+      // reflect when we started drafting, not when the await happened to resolve.
+      const draftedAt = new Date().toISOString();
       const due = deriveFollowUpsDue(s).find((d) => d.candidateId === candidateId);
       if (!due) return null;
       const candidate = s.candidates.find((c) => c.id === candidateId);
@@ -1228,8 +1328,26 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
       // Keep following up on whichever channel the candidate was originally reached on.
       const channel: OutreachChannel = candidate.outreachHistory[0]?.channel ?? "Email";
-      const gen = generateOutreach(candidate, campaign, finalTone, channel, due.nextSequenceStep, voice, lang);
-      const msg = newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, due.nextSequenceStep);
+      // Mock is the canonical fallback (and the source of personalization evidence).
+      const mockGen = generateOutreach(candidate, campaign, finalTone, channel, due.nextSequenceStep, voice, lang);
+      // Live attempt — same three-layer fallback as generateOutreachLive, so a
+      // follow-up touch isn't silently downgraded to canned copy at scale.
+      const { gen, live } = await attemptLiveFollowUpGen({
+        settings: s.settings,
+        candidate,
+        campaign,
+        tone: finalTone,
+        channel,
+        voice,
+        lang,
+        mockGen,
+        seat,
+        touchNote: `This is follow-up touch #${due.nextSequenceStep} after ${Math.floor(due.daysSinceContact)}d of silence since the last message — vary the angle/urgency from a first touch, keep it short, no guilt-tripping.`,
+      });
+      const msg = {
+        ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, due.nextSequenceStep),
+        createdAt: draftedAt,
+      };
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
         return withActivity(
@@ -1237,7 +1355,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           makeActivity({
             type: "outreach",
             title: `Follow-up drafted — ${candidate.name}`,
-            notes: `Sequence step ${due.nextSequenceStep} · ${Math.floor(due.daysSinceContact)}d of silence since last contact.`,
+            notes: `Sequence step ${due.nextSequenceStep} · ${Math.floor(due.daysSinceContact)}d of silence since last contact${live ? " (Aria live)" : ""}.`,
             outcome: msg.status,
             campaignId: campaign.id,
             linkedEntityType: "candidate",
@@ -1256,8 +1374,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   // definition Rejected / Not Interested, so this drafts a fresh re-engagement
   // outreach regardless of stage. Still only a Draft behind the approval gate.
   const draftRecontactFor = useCallback(
-    (candidateId: string, tone?: OutreachTone, seatId?: string) => {
+    async (candidateId: string, tone?: OutreachTone, seatId?: string) => {
       const s = current();
+      // Same createdAt-before-await fix as draftFollowUpFor — see comment there.
+      const draftedAt = new Date().toISOString();
       const candidate = s.candidates.find((c) => c.id === candidateId);
       const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
       if (!candidate || !campaign) return null;
@@ -1266,8 +1386,23 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
       const channel: OutreachChannel = candidate.outreachHistory[0]?.channel ?? "Email";
-      const gen = generateOutreach(candidate, campaign, finalTone, channel, 1, voice, lang);
-      const msg = newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1);
+      // Mock is the canonical fallback (and the source of personalization evidence).
+      const mockGen = generateOutreach(candidate, campaign, finalTone, channel, 1, voice, lang);
+      // Live attempt — same three-layer fallback as generateOutreachLive, so a
+      // #Vivier re-contact isn't silently downgraded to canned copy either.
+      const { gen, live } = await attemptLiveFollowUpGen({
+        settings: s.settings,
+        candidate,
+        campaign,
+        tone: finalTone,
+        channel,
+        voice,
+        lang,
+        mockGen,
+        seat,
+        touchNote: `This is a #Vivier re-engagement of a previously ${candidate.stage} candidate${candidate.silverMedalist ? " (Silver Medalist)" : ""} — acknowledge the gap briefly, lead with what's different now, no guilt-tripping.`,
+      });
+      const msg = { ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1), createdAt: draftedAt };
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
         return withActivity(
@@ -1275,7 +1410,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           makeActivity({
             type: "outreach",
             title: `Re-contact drafted — ${candidate.name}`,
-            notes: `#Vivier re-engagement${candidate.silverMedalist ? " (Silver Medalist)" : ""}. Awaiting approval.`,
+            notes: `#Vivier re-engagement${candidate.silverMedalist ? " (Silver Medalist)" : ""}. Awaiting approval${live ? " (Aria live)" : ""}.`,
             outcome: msg.status,
             campaignId: campaign.id,
             linkedEntityType: "candidate",
@@ -1365,8 +1500,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           const parsed = parseHermesOutreach(result.text, msg.channel, mockGen.subject);
           if (parsed) {
             gen = {
-              subject: parsed.subject,
-              body: parsed.body,
+              // ALWAYS humanize live copy too — see generateOutreachLive.
+              subject: humanizeText(parsed.subject),
+              body: humanizeText(parsed.body),
               personalizationEvidence: mockGen.personalizationEvidence,
               channel: msg.channel,
             };
@@ -1919,7 +2055,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               c.id === candidate.id
                 ? {
                     ...c,
-                    stage: c.stage === "Contacted" ? "Replied" : c.stage,
+                    // OOO is a pause signal, not a real reply — leave the stage as
+                    // Contacted so deriveFollowUpsDue keeps nominating this candidate
+                    // once the silence gap elapses again (see deriveFollowUpsDue).
+                    stage: c.stage === "Contacted" && reply.intent !== "OOO" ? "Replied" : c.stage,
+                    lastRepliedAt: reply.receivedAt,
                     replyHistory: [
                       { id: reply.id, intent: reply.intent, confidence: reply.confidence, excerpt: input.text.slice(0, 90), at: reply.receivedAt },
                       ...c.replyHistory,
@@ -1958,8 +2098,76 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit],
   );
 
+  /**
+   * Sync a compliance action into the real, server-enforced suppression_list
+   * table (/api/compliance/suppress) so the send route actually blocks this
+   * recipient, not just the local view. Fire-and-forget: the local flag (set by
+   * complianceMutate, or the NEGATIVE-reply branch of applyReplyAction below)
+   * is the source of truth for this app's own UI regardless of whether the
+   * network sync lands; a failure just gets a follow-up activity note so it
+   * isn't silently lost.
+   *
+   * `method: "DELETE"` reverses this (used by restoreCandidateContact) — same
+   * endpoint, same auth/RLS posture, removes the row instead of upserting it.
+   *
+   * Declared above applyReplyAction (rather than alongside complianceMutate /
+   * suppressCandidate further down) purely so applyReplyAction's useCallback
+   * dependency array can reference it without a temporal-dead-zone error.
+   */
+  const syncSuppressionToServer = useCallback(
+    (
+      email: string,
+      reason: string,
+      campaignId: string,
+      candidateId: string,
+      method: "POST" | "DELETE" = "POST",
+    ) => {
+      if (!email) return;
+      void fetch("/api/compliance/suppress", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "email", value: email, reason }),
+      })
+        .then((res) => res.json().catch(() => null))
+        .then((out: { ok?: boolean; synced?: boolean; detail?: string } | null) => {
+          if (out?.ok && out.synced === false && out.detail) {
+            commit((prev) =>
+              withActivity(
+                prev,
+                makeActivity({
+                  type: "compliance",
+                  title:
+                    method === "DELETE"
+                      ? "Restore not synced to enforcement list"
+                      : "Suppression not synced to enforcement list",
+                  notes: out.detail!,
+                  outcome: "Local only",
+                  campaignId,
+                  linkedEntityType: "candidate",
+                  linkedEntityId: candidateId,
+                }),
+                campaignId,
+              ),
+            );
+          }
+        })
+        .catch(() => {
+          // Network failure — the local flag still applies; nothing further to do.
+        });
+    },
+    [commit],
+  );
+
   const applyReplyAction = useCallback(
-    (replyId: string) =>
+    (replyId: string) => {
+      // Looked up before commit so the fire-and-forget server sync below (which
+      // needs the candidate's email) doesn't depend on reaching back into state
+      // after the update has landed.
+      const reply0 = current().replies.find((r) => r.id === replyId);
+      const candidate0 = reply0?.candidateId
+        ? current().candidates.find((c) => c.id === reply0.candidateId)
+        : undefined;
+
       commit((s) => {
         const reply = s.replies.find((r) => r.id === replyId);
         if (!reply) return s;
@@ -2005,6 +2213,20 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 : c,
             ),
           };
+          if (reply.intent === "NEGATIVE") {
+            // The candidate said stop — nothing already sitting in the approval
+            // queue (or already approved, pre-send) may go out for them. Reject
+            // it in the same commit so nothing is left pending a stale send.
+            next = {
+              ...next,
+              outreach: next.outreach.map((m) =>
+                m.candidateId === reply.candidateId &&
+                (m.status === "Needs Approval" || m.status === "Approved")
+                  ? { ...m, status: "Rejected" as OutreachStatus }
+                  : m,
+              ),
+            };
+          }
           next = recomputeMetrics(next, reply.campaignId);
         }
         return withActivity(
@@ -2020,8 +2242,21 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           }),
           reply.campaignId,
         );
-      }),
-    [commit],
+      });
+
+      // NEGATIVE reply: push the block into the real, server-enforced
+      // suppression_list so /api/outreach/send actually refuses this recipient,
+      // not just the local view — mirrors suppressCandidate/markDoNotContact.
+      if (reply0?.intent === "NEGATIVE" && candidate0) {
+        syncSuppressionToServer(
+          candidate0.email,
+          "Negative reply — auto-suppressed",
+          reply0.campaignId,
+          candidate0.id,
+        );
+      }
+    },
+    [commit, current, syncSuppressionToServer],
   );
 
   // Task 2 — turn a classified reply's suggested draft into a real outreach
@@ -2094,9 +2329,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, error: "Candidate has opted out / is suppressed — cannot book." };
       }
 
-      const all = getInterviewerByName(opts?.interviewerName) ?? nextInterviewer(s.bookings.length);
-      const start = opts?.startTime ? new Date(opts.startTime) : defaultSlot();
-      const booking = createBooking(candidate, campaign, all, start);
+      const slot = resolveBookingSlot(s.bookings, s.bookings.length, opts);
+      if ("error" in slot) return { ok: false, error: slot.error };
+      const booking = createBooking(candidate, campaign, slot.interviewer, slot.start);
       const prep = interviewerPrepEmail(booking, candidate);
       const confirm = candidateConfirmationEmail(booking);
 
@@ -2180,7 +2415,20 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateBooking = useCallback(
-    (id: string, patch: Partial<Booking>) =>
+    (id: string, patch: Partial<Booking>): { ok: true } | { ok: false; error: string } => {
+      // Rescheduling to a new time is the one patch shape that can create a
+      // fresh double-booking (status-only patches like "Completed"/"Cancelled"
+      // never move a slot) — guard it before committing.
+      if (patch.startTime || patch.endTime) {
+        const s = current();
+        const booking = s.bookings.find((b) => b.id === id);
+        if (!booking) return { ok: false, error: "Booking not found." };
+        const start = new Date(patch.startTime ?? booking.startTime);
+        const end = new Date(patch.endTime ?? booking.endTime);
+        if (interviewerIsBusy(s.bookings, booking.interviewerEmail, start, end, booking.id)) {
+          return { ok: false, error: `${booking.interviewer} is already booked at that time.` };
+        }
+      }
       commit((s) => {
         const booking = s.bookings.find((b) => b.id === id);
         let next: HermesState = {
@@ -2205,8 +2453,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           }
         }
         return next;
-      }),
-    [commit],
+      });
+      return { ok: true };
+    },
+    [commit, current],
   );
 
   const generateReport = useCallback(
@@ -2214,13 +2464,26 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const s = current();
       const campaign = s.campaigns.find((c) => c.id === campaignId);
       if (!campaign) return null;
-      const report = generateWeeklyReport(campaign, s.candidates);
+      const report = generateWeeklyReport(campaign, s.candidates, s.outreach);
       commit((prev) => {
         let next: HermesState = {
           ...prev,
           reports: [report, ...prev.reports.filter((r) => r.campaignId !== campaignId)],
           campaigns: prev.campaigns.map((c) =>
-            c.id === campaignId ? { ...c, skillUpdates: report.skillUpdates.map((x) => ({ ...x })) } : c,
+            c.id === campaignId
+              ? {
+                  ...c,
+                  // Append newly proposed updates only — overwriting here discarded any
+                  // Accept/Reject decision the recruiter already made on a prior report
+                  // (proposeSkillUpdates re-proposes the same fixed titles every run).
+                  skillUpdates: [
+                    ...c.skillUpdates,
+                    ...report.skillUpdates
+                      .filter((nu) => !c.skillUpdates.some((ex) => ex.title === nu.title))
+                      .map((x) => ({ ...x })),
+                  ],
+                }
+              : c,
           ),
         };
         next = withActivity(
@@ -2673,61 +2936,6 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           sub.campaignId ?? null,
         ),
       ),
-    [commit],
-  );
-
-  /**
-   * Sync a compliance action into the real, server-enforced suppression_list
-   * table (/api/compliance/suppress) so the send route actually blocks this
-   * recipient, not just the local view. Fire-and-forget: the local flag (set by
-   * complianceMutate) is the source of truth for this app's own UI regardless
-   * of whether the network sync lands; a failure just gets a follow-up activity
-   * note so it isn't silently lost.
-   *
-   * `method: "DELETE"` reverses this (used by restoreCandidateContact) — same
-   * endpoint, same auth/RLS posture, removes the row instead of upserting it.
-   */
-  const syncSuppressionToServer = useCallback(
-    (
-      email: string,
-      reason: string,
-      campaignId: string,
-      candidateId: string,
-      method: "POST" | "DELETE" = "POST",
-    ) => {
-      if (!email) return;
-      void fetch("/api/compliance/suppress", {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "email", value: email, reason }),
-      })
-        .then((res) => res.json().catch(() => null))
-        .then((out: { ok?: boolean; synced?: boolean; detail?: string } | null) => {
-          if (out?.ok && out.synced === false && out.detail) {
-            commit((prev) =>
-              withActivity(
-                prev,
-                makeActivity({
-                  type: "compliance",
-                  title:
-                    method === "DELETE"
-                      ? "Restore not synced to enforcement list"
-                      : "Suppression not synced to enforcement list",
-                  notes: out.detail!,
-                  outcome: "Local only",
-                  campaignId,
-                  linkedEntityType: "candidate",
-                  linkedEntityId: candidateId,
-                }),
-                campaignId,
-              ),
-            );
-          }
-        })
-        .catch(() => {
-          // Network failure — the local flag still applies; nothing further to do.
-        });
-    },
     [commit],
   );
 
@@ -4153,6 +4361,19 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit],
   );
 
+  /** Empty a thread's message history in place (keeps the thread/id). Used by the
+   *  chat composer's /clear command. */
+  const clearChatThread = useCallback(
+    (id: string) =>
+      commit((s) => ({
+        ...s,
+        chats: s.chats.map((t) =>
+          t.id === id ? { ...t, messages: [], updatedAt: new Date().toISOString() } : t,
+        ),
+      })),
+    [commit],
+  );
+
   const appendChatMessage = useCallback(
     (threadId: string, msg: ChatMessage) =>
       commit((s) => ({
@@ -4249,7 +4470,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         .filter((m) => m.enabled)
         .map((m) => ({ url: m.url, ...(m.apiKeyId ? { apiKeyId: m.apiKeyId } : {}) }));
       const webResearch = s.settings.webResearch !== false;
-      if (chatAiCfg && (enabledMcp.length || webResearch)) {
+      // Active campaign context: lets chat call the compliant search_candidates tool
+      // (route.ts) so a recruiter can source candidates without leaving the conversation.
+      const activeCampaign = s.campaigns.find((c) => c.id === s.activeCampaignId) ?? s.campaigns[0];
+      const existingForCampaign = activeCampaign
+        ? s.candidates.filter((c) => c.campaignId === activeCampaign.id)
+        : [];
+      if (chatAiCfg && (enabledMcp.length || webResearch || activeCampaign)) {
         attemptedLive = true;
         try {
           const res = await fetch("/api/hermes/chat", {
@@ -4263,16 +4490,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               ...(chatAiCfg.apiKeyId && { apiKeyId: chatAiCfg.apiKeyId }),
               mcpServers: enabledMcp,
               webResearch,
+              ...(activeCampaign && { campaign: activeCampaign, existing: existingForCampaign }),
             }),
           });
           const data = (await res.json().catch(() => null)) as
-            | { ok?: boolean; text?: string; error?: string }
+            | { ok?: boolean; text?: string; reason?: string }
             | null;
           if (data?.ok && data.text) {
             updateChatMessage(threadId, assistantId, { content: data.text, pending: false });
             return;
           }
-          liveError = data?.error ?? `Chat tool loop failed (${res.status}).`;
+          liveError = data?.reason ?? `Chat tool loop failed (${res.status}).`;
         } catch (err) {
           // Genuine failure — recorded, not swallowed. Still let the streaming Aria
           // path below have a chance before surfacing it.
@@ -4629,6 +4857,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       resetDemo,
       createChatThread,
       deleteChatThread,
+      clearChatThread,
       appendChatMessage,
       updateChatMessage,
       sendChat,
@@ -4665,7 +4894,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       toggleTool,
       assignAgentProvider, assignAgentModel, assignAgentTools,
       logActivity, resetDemo,
-      createChatThread, deleteChatThread, appendChatMessage, updateChatMessage, sendChat, cancelChat,
+      createChatThread, deleteChatThread, clearChatThread, appendChatMessage, updateChatMessage, sendChat, cancelChat,
       addMemory, updateMemory, removeMemory, togglePinMemory,
       addSchedule, updateSchedule, removeSchedule, toggleSchedule,
     ],
@@ -4694,14 +4923,73 @@ function defaultSlot(): Date {
 
 function getInterviewerByName(name?: string) {
   if (!name) return null;
-  return (
-    [
-      { name: "Dana Whitfield", email: "dana.whitfield@hermes.example", role: "Engineering Manager" },
-      { name: "Marcus Lindqvist", email: "marcus.lindqvist@hermes.example", role: "Staff Engineer" },
-      { name: "Priya Nair", email: "priya.nair@hermes.example", role: "Director of Engineering" },
-      { name: "Sofia Romano", email: "sofia.romano@hermes.example", role: "Principal Engineer" },
-    ].find((i) => i.name === name) ?? null
-  );
+  return getInterviewers().find((i) => i.name === name) ?? null;
+}
+
+const BOOKING_DURATION_MS = 30 * 60_000;
+
+/** True when `interviewerEmail` already has a non-cancelled booking overlapping
+ *  [start, end). Cancelled bookings never block a slot. */
+function interviewerIsBusy(
+  bookings: Booking[],
+  interviewerEmail: string,
+  start: Date,
+  end: Date,
+  excludeBookingId?: string,
+): boolean {
+  return bookings.some((b) => {
+    if (b.id === excludeBookingId || b.interviewerEmail !== interviewerEmail || b.status === "Cancelled") {
+      return false;
+    }
+    const busyStart = new Date(b.startTime).getTime();
+    const busyEnd = new Date(b.endTime).getTime();
+    return start.getTime() < busyEnd && end.getTime() > busyStart;
+  });
+}
+
+/** Finds an interviewer + start time with no scheduling conflict. Round-robins
+ *  over the interviewer pool (starting from `roundRobinIndex`, same heuristic as
+ *  before) when neither dimension is pinned by the caller; when the caller pins
+ *  an interviewer and/or a start time explicitly, that choice is respected as a
+ *  hard constraint and only the unpinned dimension is advanced to find a free
+ *  slot. Guards against the "5th booking of the day reuses interviewer #1's
+ *  exact slot" double-booking with zero conflict check that existed before. */
+function resolveBookingSlot(
+  bookings: Booking[],
+  roundRobinIndex: number,
+  opts?: { startTime?: string; interviewerName?: string },
+): { interviewer: { name: string; email: string; role: string }; start: Date } | { error: string } {
+  const interviewers = getInterviewers();
+  const pinnedInterviewer = getInterviewerByName(opts?.interviewerName);
+  const pinnedStart = opts?.startTime ? new Date(opts.startTime) : null;
+
+  const pool = pinnedInterviewer
+    ? [pinnedInterviewer]
+    : interviewers.map((_, i) => interviewers[(roundRobinIndex + i) % interviewers.length]);
+
+  // A pinned start is a hard constraint regardless of whether an interviewer is
+  // also pinned: only the interviewer dimension is searched, the clock never
+  // advances. (Matches this function's documented contract — see doc comment.)
+  if (pinnedStart) {
+    const end = new Date(pinnedStart.getTime() + BOOKING_DURATION_MS);
+    const free = pool.find((i) => !interviewerIsBusy(bookings, i.email, pinnedStart, end));
+    if (free) return { interviewer: free, start: pinnedStart };
+    return {
+      error: pinnedInterviewer
+        ? `${pinnedInterviewer.name} is already booked at that time.`
+        : "No interviewer is free at that time.",
+    };
+  }
+
+  let start = defaultSlot();
+  const maxAttempts = 48; // up to 24h of 30-min slots before giving up
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const end = new Date(start.getTime() + BOOKING_DURATION_MS);
+    const free = pool.find((i) => !interviewerIsBusy(bookings, i.email, start, end));
+    if (free) return { interviewer: free, start };
+    start = new Date(start.getTime() + BOOKING_DURATION_MS);
+  }
+  return { error: "No open interview slot found for any interviewer in the next 24 hours." };
 }
 
 /* ============================================================================

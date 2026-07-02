@@ -13,6 +13,7 @@
 // Generate a key: `openssl rand -base64 32`.
 
 import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
+import { isProduction, demoLoginEnabled } from "./supabase/config";
 
 const PREFIX = "enc:v1:";
 
@@ -30,6 +31,20 @@ function getKey(): Buffer | null {
 /** True when a valid encryption key is configured (encryption is active). */
 export function secretEncryptionEnabled(): boolean {
   return getKey() !== null;
+}
+
+/**
+ * Fail-closed guard for secret-at-rest writes. True when we are in production,
+ * this is NOT a deliberately public demo (demoLoginEnabled), and no
+ * DATA_ENCRYPTION_KEY is configured — i.e. persisting a secret right now would
+ * silently write plaintext into a column meant to hold ciphertext (provider API
+ * keys, OAuth mailbox tokens). Callers MUST check this before any encryptSecret()
+ * write that will be persisted and refuse the write instead of degrading to
+ * plaintext (mirrors the assertSupabaseConfiguredInProd fail-closed posture; same
+ * demoLoginEnabled escape hatch, so the public vercel demo is unaffected).
+ */
+export function encryptionRequiredButMissing(): boolean {
+  return isProduction && !demoLoginEnabled && !secretEncryptionEnabled();
 }
 
 /** Encrypt a secret for storage. Returns the plaintext unchanged when no key is set. */

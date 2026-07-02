@@ -119,7 +119,7 @@ export default function ReportsPage() {
                 <Field
                   label="Campaign"
                   htmlFor="report-campaign"
-                  hint="Reports cover the trailing week of activity for the selected campaign."
+                  hint="Reports cover all-time activity for the selected campaign, since it started."
                   className="w-full sm:max-w-md"
                 >
                   <Select

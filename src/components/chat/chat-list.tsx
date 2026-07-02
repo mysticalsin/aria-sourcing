@@ -117,10 +117,20 @@ function ChatThreadRow({
   const lastMsg = thread.messages[thread.messages.length - 1];
   return (
     <li>
-      <button
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onSelect}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onSelect();
+          }
+        }}
+        aria-label={`Open ${thread.title}`}
         className={cn(
-          "group w-full flex items-start gap-2 rounded-2xl px-3 py-2 text-left transition-all",
+          "group w-full flex items-start gap-2 rounded-2xl px-3 py-2 text-left transition-all cursor-pointer",
+          "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric",
           active
             ? "bg-gradient-to-r from-electric/90 to-violet/80 text-white"
             : "text-ink-soft hover:bg-violet/[0.06] hover:text-ink",
@@ -148,7 +158,7 @@ function ChatThreadRow({
         >
           <Trash2 className="h-3 w-3" />
         </button>
-      </button>
+      </div>
     </li>
   );
 }

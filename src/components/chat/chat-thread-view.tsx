@@ -44,16 +44,8 @@ export function ChatThreadView({ threadId, onNew }: ChatThreadViewProps) {
 
     // Handle slash commands.
     if (text === "/clear") {
-      // Replace messages with a system note.
-      actions.appendChatMessage(thread.id, {
-        id: crypto.randomUUID(),
-        role: "system",
-        content: "Thread cleared.",
-        at: new Date().toISOString(),
-      });
-      // Remove all previous messages except the system note just added — simplest approach:
-      // We don't have a clearThread action, so we use deleteChatThread + createChatThread
-      // but that changes the id. Instead we'll show a note only.
+      // Actually empty the thread's messages (keeps the thread/id).
+      actions.clearChatThread(thread.id);
       return;
     }
     if (text === "/new") {

@@ -272,6 +272,22 @@ export function PersonaEditor() {
     setPersona(DEFAULT_PERSONA);
   }
 
+  // Switching agents while a persona edit is unsaved silently discards it —
+  // confirm first, mirroring the guardrail-disable confirm above.
+  async function selectSeat(id: string) {
+    if (id === selectedSeatId) return;
+    if (personaDirty) {
+      const ok = await confirm({
+        title: "Discard unsaved persona changes?",
+        description: "Your edited persona for this agent hasn't been saved. Switching agents will discard it.",
+        confirmLabel: "Discard changes",
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    setSelectedSeatId(id);
+  }
+
   function saveAria() {
     actions.updateAriaPrompt(ariaPrompt.trim());
     toast({ title: "Aria's prompt saved", variant: "success" });
@@ -341,7 +357,7 @@ export function PersonaEditor() {
                     role="option"
                     aria-selected={selectedSeatId === seat.id}
                     aria-label={`${seat.name}${stateLabel ? ` — ${stateLabel}` : ""}`}
-                    onClick={() => setSelectedSeatId(seat.id)}
+                    onClick={() => selectSeat(seat.id)}
                     className={cn(
                       "w-full text-left px-4 py-3 text-sm transition-colors border-b border-violet/5 last:border-0",
                       selectedSeatId === seat.id

@@ -8,7 +8,7 @@ import type { EmailConnection, Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { createGoogleCalendarEvent, createGraphCalendarEvent, type CalendarEventInput } from "@/lib/calendar";
 import { safeLog } from "@/lib/log-redact";
-import { decryptSecret, encryptSecret } from "@/lib/crypto-secrets";
+import { decryptSecret, encryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
 
 /**
  * Create a REAL interview calendar event on the seat's connected mailbox calendar.
@@ -120,8 +120,15 @@ export async function POST(req: NextRequest) {
       // keeps its synthetic link.
       return NextResponse.json({ status: "skipped", detail: outcome.detail });
     }
-    // Persist a refreshed token if it changed.
-    if (svc && (origAccessToken !== connection.accessToken || conn.expires_at !== connection.expiresAt)) {
+    // Persist a refreshed token if it changed. Fail closed: never write a refreshed
+    // token in cleartext when production requires encryption at rest but no key is
+    // configured — skip the persist (the event itself was already created above)
+    // rather than silently degrade the stored credential to plaintext.
+    if (
+      svc &&
+      (origAccessToken !== connection.accessToken || conn.expires_at !== connection.expiresAt) &&
+      !encryptionRequiredButMissing()
+    ) {
       await svc
         .from("email_connections")
         .update({

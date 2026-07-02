@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getServerSupabase, getServiceSupabase, requireAdmin } from "@/lib/supabase/server";
 import { supabaseEnabled } from "@/lib/supabase/config";
-import { encryptSecret } from "@/lib/crypto-secrets";
+import { encryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
 
 /**
  * Google OAuth callback for Gmail API seat connection.
@@ -53,6 +53,12 @@ export async function GET(req: NextRequest) {
 
   if (!supabaseEnabled) {
     return redirectError(req, "Email connections require Supabase (live mode).");
+  }
+
+  // Fail closed: never persist a new OAuth mailbox token in cleartext when
+  // production requires encryption at rest but DATA_ENCRYPTION_KEY isn't configured.
+  if (encryptionRequiredButMissing()) {
+    return redirectError(req, "Server encryption key is not configured.");
   }
 
   const supabase = await getServerSupabase();

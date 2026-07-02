@@ -120,7 +120,7 @@ function maxSequenceStepFor(outreach: OutreachMessage[], candidateId: string): n
 /** True when this candidate already has an un-actioned draft sitting in the
  *  approval queue -- either from a prior follow-up draft or any other source.
  *  Guards against re-drafting the same follow-up on every call. */
-function hasPendingDraft(outreach: OutreachMessage[], candidateId: string): boolean {
+export function hasPendingDraft(outreach: OutreachMessage[], candidateId: string): boolean {
   return outreach.some(
     (m) => m.candidateId === candidateId && (m.status === "Needs Approval" || m.status === "Draft"),
   );
@@ -136,7 +136,12 @@ function hasPendingDraft(outreach: OutreachMessage[], candidateId: string): bool
  */
 export function deriveFollowUpsDue(state: HermesState, now: number = Date.now()): FollowUpDueItem[] {
   const gapDays = state.settings.rateLimits.followUpGapDays;
-  const repliedCandidateIds = new Set(state.replies.map((r) => r.candidateId));
+  // OOO is a pause signal, not a real reply (the state machine deliberately
+  // leaves stage as Contacted for it — see classifyAndStoreReply) -- excluded
+  // here too so an auto-responder doesn't permanently block re-nomination.
+  const repliedCandidateIds = new Set(
+    state.replies.filter((r) => r.intent !== "OOO").map((r) => r.candidateId),
+  );
   const out: FollowUpDueItem[] = [];
 
   for (const c of state.candidates) {
@@ -144,10 +149,10 @@ export function deriveFollowUpsDue(state: HermesState, now: number = Date.now())
     if (!c.lastContactedAt) continue;
     if (c.complianceFlags.doNotContact || c.complianceFlags.unsubscribed || c.complianceFlags.suppressed) continue;
     // Belt-and-suspenders: the state machine already flips Contacted -> Replied
-    // the moment a reply lands, so these two checks are normally redundant --
-    // keep both anyway so a candidate can never be nudged for a follow-up when
-    // a reply already exists in either record.
-    if (c.replyHistory.length > 0 || repliedCandidateIds.has(c.id)) continue;
+    // the moment a non-OOO reply lands, so these two checks are normally
+    // redundant -- keep both anyway so a candidate can never be nudged for a
+    // follow-up when a real reply already exists in either record.
+    if (c.replyHistory.some((r) => r.intent !== "OOO") || repliedCandidateIds.has(c.id)) continue;
     const daysSinceContact = daysSince(c.lastContactedAt, now);
     if (daysSinceContact < gapDays) continue;
     if (hasPendingDraft(state.outreach, c.id)) continue;

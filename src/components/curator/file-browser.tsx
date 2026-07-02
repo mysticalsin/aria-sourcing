@@ -25,25 +25,38 @@ export function FileBrowser() {
   const [path, setPath] = React.useState<string | undefined>(undefined);
   const [listing, setListing] = React.useState<FileList | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState(false);
 
   React.useEffect(() => {
     if (!live) {
       setListing(null);
+      setError(false);
       return;
     }
     let cancelled = false;
     setLoading(true);
+    setError(false);
     const params = new URLSearchParams();
     params.set("upstreamPath", "api/files");
     if (path) params.set("path", path);
     if (settings.hermesApiKeyId) params.set("hermesApiKeyId", settings.hermesApiKeyId);
-    fetch(`/api/hermes/proxy?${params.toString()}`).then(async (res) => {
-      if (cancelled) return;
-      setLoading(false);
-      if (!res.ok) return;
-      const data = (await res.json().catch(() => null)) as FileList | null;
-      if (data) setListing(data);
-    });
+    fetch(`/api/hermes/proxy?${params.toString()}`)
+      .then(async (res) => {
+        if (cancelled) return;
+        setLoading(false);
+        if (!res.ok) {
+          setError(true);
+          return;
+        }
+        const data = (await res.json().catch(() => null)) as FileList | null;
+        if (data) setListing(data);
+        else setError(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLoading(false);
+        setError(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -80,6 +93,8 @@ export function FileBrowser() {
         )}
         {loading ? (
           <SkeletonCard />
+        ) : error ? (
+          <p className="text-xs text-muted">Could not reach the Aria runtime.</p>
         ) : !listing || listing.entries.length === 0 ? (
           <p className="text-xs text-muted">No files at this path.</p>
         ) : (

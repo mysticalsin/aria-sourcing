@@ -847,7 +847,7 @@ export function buildSeedState(): HermesState {
     );
 
     // Weekly report + skill updates
-    const report = generateWeeklyReport(campaign, allCandidates);
+    const report = generateWeeklyReport(campaign, allCandidates, outreach);
     reports.push(report);
     campaign.skillUpdates = report.skillUpdates.map((s) => ({ ...s }));
     campaignActivities.push(

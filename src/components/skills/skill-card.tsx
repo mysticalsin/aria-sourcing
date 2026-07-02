@@ -66,7 +66,7 @@ function paramSummary(params: AgentSkillParams): { label: string; value: string 
   return out;
 }
 
-export function SkillCard({ skill }: { skill: AgentSkill }) {
+export function SkillCard({ skill, canEdit }: { skill: AgentSkill; canEdit: boolean }) {
   const actions = useActions();
   const { toast } = useToast();
 
@@ -85,7 +85,7 @@ export function SkillCard({ skill }: { skill: AgentSkill }) {
   const contentId = `skill-content-${skill.key}`;
 
   function save() {
-    if (!dirty) return;
+    if (!dirty || !canEdit) return;
     const res = actions.updateSkillContent(skill.key, content);
     if (!res.ok) {
       toast({ title: "Playbook rejected", description: res.error ?? "This content violates a guardrail.", variant: "error" });
@@ -171,7 +171,8 @@ export function SkillCard({ skill }: { skill: AgentSkill }) {
           <Textarea
             id={contentId}
             value={content}
-            onChange={(e) => setContent(e.target.value)}
+            onChange={(e) => canEdit && setContent(e.target.value)}
+            readOnly={!canEdit}
             spellCheck={false}
             className="min-h-[200px] font-mono text-xs leading-relaxed"
           />
@@ -183,7 +184,8 @@ export function SkillCard({ skill }: { skill: AgentSkill }) {
             size="sm"
             leftIcon={<Save className="h-4 w-4" />}
             onClick={save}
-            disabled={!dirty}
+            disabled={!dirty || !canEdit}
+            title={canEdit ? undefined : "Viewers cannot edit playbooks"}
           >
             Save
           </Button>
@@ -192,7 +194,8 @@ export function SkillCard({ skill }: { skill: AgentSkill }) {
             size="sm"
             leftIcon={<RotateCcw className="h-4 w-4" />}
             onClick={reset}
-            disabled={!dirty}
+            disabled={!dirty || !canEdit}
+            title={canEdit ? undefined : "Viewers cannot edit playbooks"}
           >
             Reset
           </Button>

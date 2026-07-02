@@ -29,6 +29,7 @@ import {
 } from "@/lib/store";
 import { agentActivity, floorRollup } from "@/lib/floor";
 import { seatsToOfficeAgents } from "@/lib/floor3d";
+import { getDeviceQuality, MAX_3D_AGENTS } from "@/lib/device";
 import {
   effectiveDailyCap,
   seatHealthStatus,
@@ -216,19 +217,21 @@ function Floor3DSection({
   onSelect: (id: string) => void;
 }) {
   // Render-cap: a full procedural robot per agent is ~20 meshes; rendering the
-  // whole fleet (up to 300) tanks the GPU. Cap the 3D scene to the first N and
-  // surface the cap honestly (no silent truncation) — the full fleet lives on
-  // the Agent Fleet page.
-  const FULL_DETAIL = 48;
+  // whole fleet (up to 300) tanks the GPU. RetroOfficeScene itself caps at
+  // MAX_3D_AGENTS[deviceQuality] and drops agents past that cap entirely (no
+  // proxy mesh) — mirror the same real cap here so the copy never lies about
+  // what's on screen. The full fleet always lives on the Agent Fleet page.
+  const [deviceQuality] = React.useState(() => getDeviceQuality());
+  const cap = MAX_3D_AGENTS[deviceQuality];
   const office = seatsToOfficeAgents(seats, state);
-  const proxied = Math.max(0, office.length - FULL_DETAIL);
+  const notShown = Math.max(0, office.length - cap);
   return (
     <div className="space-y-3">
       {office.length > 0 && (
         <p className="text-xs text-muted">
           {office.length} agents on the floor in 3D.
-          {proxied > 0 &&
-            ` Nearest ${FULL_DETAIL} fully animated; ${proxied} more rendered as live instanced proxies for performance.`}{" "}
+          {notShown > 0 &&
+            ` Nearest ${cap} fully animated at this device tier; ${notShown} more not shown here.`}{" "}
           <Link href="/fleet" className="font-semibold text-electric hover:underline">
             Manage the full fleet
           </Link>

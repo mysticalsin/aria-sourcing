@@ -5,9 +5,9 @@ import { supabaseEnabled, prodFailClosed, demoLoginEnabled, DEMO_COOKIE_NAME } f
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
 import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
-import { isAllowedHermesUrl } from "@/lib/api/url";
+import { isAllowedHermesUrl, assertPublicUrl } from "@/lib/api/url";
 import { can } from "@/lib/rbac";
-import type { Role } from "@/lib/types";
+import type { Campaign, Candidate, Role, ScoringWeights } from "@/lib/types";
 import {
   buildCloudRequest,
   parseCloudResponse,
@@ -18,7 +18,7 @@ import {
 import { connectAndListTools } from "@/lib/mcp-client";
 import { runAnthropicWithTools, runOpenAiWithTools, type ResolvedMcpServer } from "@/lib/ai/tool-loop";
 import { BUILTIN_WEB_URL, WEB_TOOL_DEFS } from "@/lib/ai/web-tools";
-import { BUILTIN_BROWSER_URL, BROWSER_TOOL_DEFS } from "@/lib/ai/browser-tools";
+import { SOURCING_TOOL_DEFS, makeSourcingToolRunner } from "@/lib/ai/sourcing-tools";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { redactObject, redactSecrets, redactEmail } from "@/lib/log-redact";
 
@@ -62,10 +62,14 @@ const HermesChatSchema = z.object({
     .max(20)
     .optional(),
   /** Expose the built-in, read-only web-research tools (web_search / fetch_page / rss)
-   *  AND the Obscura browser tools (browser_open / browser_act / browser_extract /
-   *  browser_screenshot / browser_close, restricted to click/scroll/wait/back/forward)
    *  to the model (chat task only). Compliant: honest bot UA, no login/stealth, SSRF-guarded. */
   webResearch: z.boolean().default(false),
+  /** Active campaign context (client-owned, passed through — same stateless posture as
+   *  /api/sourcing-agent). When present (and well-formed), chat also gets the compliant
+   *  search_candidates tool bound to this campaign, so a recruiter can source candidates
+   *  without leaving the conversation. */
+  campaign: z.record(z.string(), z.unknown()).optional(),
+  existing: z.array(z.record(z.string(), z.unknown())).max(500).optional(),
 });
 
 const TASK_SYSTEM: Record<"outreach" | "classify" | "sourcing" | "chat", string> = {
@@ -83,7 +87,9 @@ const TASK_SYSTEM: Record<"outreach" | "classify" | "sourcing" | "chat", string>
     "You are a talent-sourcing strategist. Given a role, propose concrete search strategies and target signals. " +
     "Return structured, concise text.",
   chat:
-    "You are Aria, the recruiting operations brain behind the Aria agent fleet. Be warm, concise, and practical.",
+    "You are Aria, the recruiting operations brain behind the Aria agent fleet. Be warm, concise, and practical. " +
+    "When a search_candidates tool is available, use it to find real, already-scored candidates for the " +
+    "active campaign instead of inventing names, companies, or scores.",
 };
 
 const UPSTREAM_TIMEOUT_MS = 30_000;
@@ -126,6 +132,12 @@ async function gatherMcpServers(
       continue;
     }
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:") continue;
+    // SSRF guard: block private/loopback/link-local/metadata hosts (and DNS-rebinding)
+    // before the server ever dials the caller-supplied URL. This server is reused for
+    // every tool call the model makes during the loop, so this is a repeatable channel
+    // — not just a one-shot probe.
+    const guard = await assertPublicUrl(s.url);
+    if (!guard.ok) continue;
     const token = s.apiKeyId ? await resolveVaultSecret(s.apiKeyId) : "";
     const conn = await connectAndListTools(s.url, token);
     if (conn.ok && conn.tools && conn.tools.length) {
@@ -166,25 +178,39 @@ export async function POST(req: NextRequest) {
   const rl = checkRateLimit(rateLimitKey(req, "hermes-chat", userId), { windowMs: 60_000, max: 60 });
   if (!rl.ok) return tooManyRequests(rl.retryAfterSec);
 
-  const validated = await validateBody(req, HermesChatSchema, { maxBytes: 32_000 });
+  // Campaign context can carry a full campaign + candidate list — same shape/size posture
+  // as /api/sourcing-agent, so allow a matching request body.
+  const validated = await validateBody(req, HermesChatSchema, { maxBytes: 200_000 });
   if (!validated.ok) return validated.response;
-  const { task, prompt, stream, hermesApiKeyId, model, provider, apiKeyId, mcpServers, webResearch } = validated.data;
+  const { task, prompt, stream, hermesApiKeyId, model, provider, apiKeyId, mcpServers, webResearch, campaign, existing } =
+    validated.data;
   // keyId: cloud provider key id takes precedence over the hermes key id.
   const keyId = apiKeyId ?? hermesApiKeyId;
 
   // Per-task authorization — outreach/sourcing/classify need the matching permission.
+  // Also resolved for the chat task so the search_candidates tool (below) can be gated
+  // by the "source" permission, same as /api/sourcing-agent.
+  let callerRole: Role | null = null;
   if (supabaseEnabled && supabase) {
     const { data: role } = await supabase.rpc("current_profile_role");
+    callerRole = role as Role;
     const TASK_PERM: Record<string, "outreach" | "source" | undefined> = {
       outreach: "outreach",
       sourcing: "source",
       classify: "source",
     };
     const perm = TASK_PERM[task as string];
-    if (perm && !can(role as Role, perm)) {
+    if (perm && !can(callerRole, perm)) {
       return NextResponse.json({ ok: false, reason: "Insufficient permissions for this task." }, { status: 403 });
     }
   }
+  const canSourceInChat = !supabaseEnabled || can(callerRole as Role, "source");
+  // Attaching third-party MCP servers is an admin-level capability (same permission
+  // /api/mcp/test enforces before it will even test-connect an admin-entered URL) —
+  // a viewer/member without manage_tools must not get the model calling arbitrary
+  // MCP tools. Drop the array rather than granting it (servers that fail to resolve
+  // are already silently skipped elsewhere, so this keeps that posture).
+  const canUseMcpToolsInChat = !supabaseEnabled || can(callerRole as Role, "manage_tools");
 
   // S-3: Server-defined system prompt only — never accept body.system (prompt injection risk).
   const system = TASK_SYSTEM[task as keyof typeof TASK_SYSTEM] ?? TASK_SYSTEM.chat;
@@ -208,22 +234,40 @@ export async function POST(req: NextRequest) {
     if (!key) {
       return NextResponse.json({ ok: false, reason: `No API key configured for ${provider}.` });
     }
+    // A well-formed campaign context enables the search_candidates tool, gated by the
+    // same "source" permission as /api/sourcing-agent (never for a viewer/no-permission
+    // caller, even if they can reach chat).
+    const campaignObj = campaign as unknown as Campaign | undefined;
+    const sourcingCampaign =
+      canSourceInChat && campaignObj?.jobAnalysis && campaignObj?.scoringWeights ? campaignObj : null;
+
     // MCP tool-calling (chat task, Anthropic): when the workspace has enabled MCP
-    // servers, let the model call their tools and loop to a final answer. Additive —
-    // falls through to the normal single-shot completion when no usable servers resolve.
+    // servers, or web research, or a sourceable campaign is in context, let the model
+    // call their tools and loop to a final answer. Additive — falls through to the
+    // normal single-shot completion when no usable servers resolve.
     // Kimi Code (kimi-for-coding) rejects the OpenAI `tools` param (no function-calling),
     // so skip the tool loop for it and answer with a plain completion. Other providers
-    // still get the MCP / built-in web-research tool loop.
-    if (task === "chat" && slug !== "kimi" && (webResearch || (mcpServers && mcpServers.length))) {
+    // still get the MCP / built-in web-research / sourcing tool loop.
+    // Only an admin-level caller (manage_tools) may attach MCP servers to this
+    // request — a viewer/member's mcpServers array is dropped, not honored.
+    const usableMcpServers = canUseMcpToolsInChat && mcpServers && mcpServers.length ? mcpServers : undefined;
+    if (task === "chat" && slug !== "kimi" && (webResearch || usableMcpServers || sourcingCampaign)) {
       const resolvedServers: ResolvedMcpServer[] = [];
       // Built-in read-only web-research tools (in-process; no vault token, SSRF-guarded).
       if (webResearch) resolvedServers.push({ url: BUILTIN_WEB_URL, token: "", tools: WEB_TOOL_DEFS });
-      // Obscura browser tools: same toggle, a strictly more capable (JS-rendered
-      // pages) but equally guarded sibling. Errors gracefully ({ok:false}, not a
-      // crash) when no sidecar is reachable (e.g. the public Vercel demo, which
-      // has no Obscura container next to it).
-      if (webResearch) resolvedServers.push({ url: BUILTIN_BROWSER_URL, token: "", tools: BROWSER_TOOL_DEFS });
-      if (mcpServers && mcpServers.length) resolvedServers.push(...(await gatherMcpServers(mcpServers)));
+      // Compliant sourcing tool: real search (GitHub Search API / site:-scoped web
+      // search), real dedupe, real deterministic scoring — never a stealth browser.
+      if (sourcingCampaign) {
+        const githubToken = process.env.GITHUB_TOKEN ?? "";
+        const runner = makeSourcingToolRunner(
+          sourcingCampaign,
+          (existing ?? []) as unknown as Candidate[],
+          sourcingCampaign.scoringWeights as ScoringWeights,
+          githubToken,
+        );
+        resolvedServers.push({ url: "builtin:sourcing-chat", token: "", tools: SOURCING_TOOL_DEFS, run: runner.run });
+      }
+      if (usableMcpServers) resolvedServers.push(...(await gatherMcpServers(usableMcpServers)));
       if (resolvedServers.length) {
         const toolModel = model && model !== "hermes" ? model : DEFAULT_MODEL[slug];
         const result =
