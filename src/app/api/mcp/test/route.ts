@@ -1,9 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
-import { decryptSecret } from "@/lib/crypto-secrets";
-import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
+import { getServerSupabase } from "@/lib/supabase/server";
+import { resolveVaultSecret } from "@/lib/ai/vault-secret";
+import { supabaseEnabled, prodFailClosed, demoLoginEnabled, DEMO_COOKIE_NAME } from "@/lib/supabase/config";
+import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
+import { assertPublicUrl } from "@/lib/api/url";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
@@ -17,7 +19,7 @@ import { connectAndListTools } from "@/lib/mcp-client";
  */
 const McpTestSchema = z.object({
   url: z.string().url().max(500),
-  apiKeyId: z.string().max(120).optional(),
+  apiKeyId: z.string().uuid().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -39,6 +41,12 @@ export async function POST(req: NextRequest) {
     if (!can(role as Role, "manage_tools")) {
       return NextResponse.json({ ok: false, error: "Insufficient permissions." }, { status: 403 });
     }
+  } else if (demoLoginEnabled) {
+    // Public demo (no Supabase): require the signed admin/admin session cookie so
+    // this route isn't reachable anonymously (mirrors the hermes/chat cost gate).
+    if (!demoAuthConfigured() || !verifyDemoToken(req.cookies.get(DEMO_COOKIE_NAME)?.value)) {
+      return NextResponse.json({ ok: false, error: "Sign in to use this tool." }, { status: 401 });
+    }
   }
 
   const validated = await validateBody(req, McpTestSchema, { maxBytes: 5_000 });
@@ -56,12 +64,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Only http(s) MCP endpoints are supported." });
   }
 
-  // Resolve the Bearer token from the vault if one was linked.
-  if (apiKeyId && supabaseEnabled) {
-    const svc = getServiceSupabase();
-    const { data } = (await svc?.from("api_keys").select("secret").eq("id", apiKeyId).maybeSingle()) ?? { data: null };
-    const secret = (data as { secret?: string } | null)?.secret;
-    if (secret) token = decryptSecret(secret);
+  // SSRF guard: block private/loopback/link-local/metadata hosts (and DNS-rebinding)
+  // before the server ever dials the admin-entered URL.
+  const guard = await assertPublicUrl(url);
+  if (!guard.ok) {
+    return NextResponse.json({ ok: false, error: guard.reason ?? "URL blocked." }, { status: 400 });
+  }
+
+  // Resolve the Bearer token from the vault if one was linked, scoped to the
+  // caller's workspace (see resolveVaultSecret in @/lib/ai/vault-secret.ts).
+  if (apiKeyId) {
+    token = await resolveVaultSecret(apiKeyId);
   }
 
   // initialize + tools/list via the MCP client, so the test reports the real tools.

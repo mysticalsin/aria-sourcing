@@ -8,6 +8,7 @@ import type { EmailConnection, Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { createGoogleCalendarEvent, createGraphCalendarEvent, type CalendarEventInput } from "@/lib/calendar";
 import { safeLog } from "@/lib/log-redact";
+import { decryptSecret, encryptSecret } from "@/lib/crypto-secrets";
 
 /**
  * Create a REAL interview calendar event on the seat's connected mailbox calendar.
@@ -82,13 +83,16 @@ export async function POST(req: NextRequest) {
   if (!conn || conn.workspace_id !== wid) {
     return NextResponse.json({ status: "dry-run", detail: `${seat.provider} mailbox not connected — no event created.` });
   }
+  // Tokens are stored encrypted at rest; decrypt for use. Keep the decrypted
+  // original to detect a refresh below.
+  const origAccessToken = decryptSecret(conn.access_token);
   const connection: EmailConnection = {
     id: conn.id,
     seatId: d.seatId,
     provider: seat.provider,
     accountEmail: conn.account_email,
-    accessToken: conn.access_token,
-    refreshToken: conn.refresh_token,
+    accessToken: origAccessToken,
+    refreshToken: conn.refresh_token ? decryptSecret(conn.refresh_token) : conn.refresh_token,
     expiresAt: conn.expires_at,
     scope: conn.scope,
     connectedAt: "",
@@ -117,11 +121,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "skipped", detail: outcome.detail });
     }
     // Persist a refreshed token if it changed.
-    if (svc && (conn.access_token !== connection.accessToken || conn.expires_at !== connection.expiresAt)) {
+    if (svc && (origAccessToken !== connection.accessToken || conn.expires_at !== connection.expiresAt)) {
       await svc
         .from("email_connections")
         .update({
-          access_token: connection.accessToken,
+          access_token: encryptSecret(connection.accessToken),
           expires_at: connection.expiresAt,
           updated_at: new Date().toISOString(),
         })

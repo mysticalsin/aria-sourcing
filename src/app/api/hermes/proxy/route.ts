@@ -179,8 +179,9 @@ async function handler(req: NextRequest) {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Network error.";
-    logHermesProxy("error", "Aria proxy upstream error", redactObject({ error: redactSecrets(redactEmail(msg)), path: pathCheck.upstreamPath }));
-    return NextResponse.json({ ok: false, reason: msg }, { status: 502 });
+    const safeMsg = redactSecrets(redactEmail(msg));
+    logHermesProxy("error", "Aria proxy upstream error", redactObject({ error: safeMsg, path: pathCheck.upstreamPath }));
+    return NextResponse.json({ ok: false, reason: safeMsg }, { status: 502 });
   }
 }
 

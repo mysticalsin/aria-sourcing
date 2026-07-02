@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
       const fail = new URL("/login", url.origin);
-      fail.searchParams.set("error", error.message);
+      fail.searchParams.set("error", "Sign-in failed. Please try again.");
       return NextResponse.redirect(fail);
     }
   }

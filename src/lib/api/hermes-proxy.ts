@@ -1,5 +1,6 @@
 import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled } from "@/lib/supabase/config";
+import { decryptSecret } from "@/lib/crypto-secrets";
 import { isAllowedHermesUrl } from "./url";
 
 /**
@@ -44,7 +45,7 @@ export async function resolveHermesBearerToken(hermesApiKeyId?: string): Promise
           .eq("id", hermesApiKeyId)
           .single();
         if (row && row.workspace_id === wid && typeof row.secret === "string") {
-          bearerToken = row.secret;
+          bearerToken = decryptSecret(row.secret);
         }
       }
     }
