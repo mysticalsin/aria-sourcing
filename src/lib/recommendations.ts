@@ -9,8 +9,10 @@
 //
 // Priority ordering (approved): SLA risk first, then match score, then stage
 // leverage. The score bands below are scaled so each tier can never be
-// overridden by the one below it (SLA urgency dominates at up to 10,000; match
-// score contributes 0-100; stage leverage is a single-digit tiebreak).
+// overridden by the one below it (SLA urgency dominates at up to 20,000 --
+// 10,000 while still ticking down to a breach, escalating past that ceiling
+// once breached so an overdue reply always outranks a merely-imminent one;
+// match score contributes 0-100; stage leverage is a single-digit tiebreak).
 
 import type { HermesState, OutreachMessage } from "./types";
 import type { Tone } from "./utils";
@@ -20,7 +22,9 @@ export type RecommendationKind =
   | "hot_reply"
   | "approve_outreach"
   | "book_interview"
-  | "follow_up_due";
+  | "follow_up_due"
+  | "stalled_draft"
+  | "source_campaign";
 
 export interface Recommendation {
   id: string;
@@ -40,7 +44,9 @@ const MAX_ROWS = 8;
 const STAGE_LEVERAGE: Record<RecommendationKind, number> = {
   hot_reply: 1,
   follow_up_due: 2,
+  source_campaign: 3,
   approve_outreach: 5,
+  stalled_draft: 6,
   book_interview: 8,
 };
 
@@ -49,6 +55,8 @@ const ROLLUP_LABEL: Record<RecommendationKind, string> = {
   approve_outreach: "drafts to approve",
   book_interview: "candidates to book",
   follow_up_due: "follow-ups due",
+  stalled_draft: "stalled drafts",
+  source_campaign: "campaigns to source",
 };
 
 const KIND_TONE: Record<RecommendationKind, Tone> = {
@@ -56,6 +64,8 @@ const KIND_TONE: Record<RecommendationKind, Tone> = {
   approve_outreach: "warning",
   book_interview: "violet",
   follow_up_due: "aqua",
+  stalled_draft: "danger",
+  source_campaign: "electric",
 };
 
 const KIND_HREF: Record<RecommendationKind, string> = {
@@ -63,12 +73,29 @@ const KIND_HREF: Record<RecommendationKind, string> = {
   approve_outreach: "/outreach",
   book_interview: "/calendar",
   follow_up_due: "/outreach",
+  stalled_draft: "/outreach",
+  source_campaign: "/campaigns",
 };
 
-/** 0 (no SLA / not urgent) to 1000 (breached or imminent), decaying to 0 over ~48h out. */
+/** Outreach messages sitting in Draft/Needs Approval this long without action
+ *  escalate to a stalled-draft nudge instead of quietly aging in place. */
+const STALLED_DRAFT_DAYS = 2;
+
+/**
+ * 0 (no SLA / not urgent) to 1000 (imminent), climbing as the deadline
+ * approaches over ~48h out. Once the deadline has passed, escalates past that
+ * 1000 ceiling (up to 2000, growing with how long it's been overdue) instead
+ * of plateauing at the same score as "about to breach" -- a breached reply
+ * must always outrank every not-yet-breached one, even a lower-match one, so
+ * it sorts to the top rather than sinking as fresher SLAs pile up.
+ */
 function slaUrgency(dueAt: string | null, now: number): number {
   if (!dueAt) return 0;
   const hoursLeft = (new Date(dueAt).getTime() - now) / (60 * 60 * 1000);
+  if (hoursLeft <= 0) {
+    const hoursOverdue = -hoursLeft;
+    return 1100 + Math.min(900, hoursOverdue * (900 / 48));
+  }
   return Math.max(0, Math.min(1000, 1000 - hoursLeft * (1000 / 48)));
 }
 
@@ -168,9 +195,28 @@ export function deriveRecommendations(state: HermesState, now: number = Date.now
   }
 
   for (const m of state.outreach) {
-    if (m.status !== "Needs Approval" && m.status !== "Pending Manual Send") continue;
+    if (m.status !== "Draft" && m.status !== "Needs Approval" && m.status !== "Pending Manual Send") continue;
     const cand = candidateById.get(m.candidateId);
     const matchScore = cand?.matchScore ?? 0;
+
+    // Draft / Needs Approval messages that have sat unapproved too long escalate
+    // to a stalled nudge -- this is also the only place a plain Draft (which
+    // otherwise never reaches the approval queue) can surface at all.
+    if (m.status !== "Pending Manual Send" && daysSince(m.createdAt, now) >= STALLED_DRAFT_DAYS) {
+      items.push({
+        kind: "stalled_draft",
+        entityId: m.id,
+        title: cand ? `Stalled draft to ${cand.name}` : "A stalled outreach draft",
+        slaDueAt: null,
+        matchScore,
+        why: `Unapproved for ${Math.floor(daysSince(m.createdAt, now))}d`,
+        priorityScore: matchScore + STAGE_LEVERAGE.stalled_draft,
+      });
+      continue;
+    }
+
+    if (m.status === "Draft") continue; // fresh drafts aren't actionable yet
+
     items.push({
       kind: "approve_outreach",
       entityId: m.id,
@@ -203,6 +249,24 @@ export function deriveRecommendations(state: HermesState, now: number = Date.now
       matchScore: f.matchScore,
       why: `${Math.floor(f.daysSinceContact)}d of silence, no reply yet`,
       priorityScore: f.matchScore + STAGE_LEVERAGE.follow_up_due,
+    });
+  }
+
+  for (const c of state.campaigns) {
+    if (c.status !== "Sourcing") continue;
+    const campaignCandidates = state.candidates.filter((cand) => cand.campaignId === c.id);
+    const noneSourced = campaignCandidates.length === 0;
+    const noneProgressed = !noneSourced && campaignCandidates.every((cand) => cand.stage === "Sourced");
+    if (!noneSourced && !noneProgressed) continue;
+
+    items.push({
+      kind: "source_campaign",
+      entityId: c.id,
+      title: `Source candidates for ${c.title}`,
+      slaDueAt: null,
+      matchScore: 0,
+      why: noneSourced ? "No candidates sourced yet" : `${campaignCandidates.length} sourced, none contacted yet`,
+      priorityScore: STAGE_LEVERAGE.source_campaign,
     });
   }
 

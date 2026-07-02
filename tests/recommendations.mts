@@ -5,7 +5,7 @@
  */
 import { deriveRecommendations } from "../src/lib/recommendations";
 import { buildSeedState } from "../src/lib/seed";
-import type { Candidate, ClassifiedReply, OutreachMessage, HermesState } from "../src/lib/types";
+import type { Candidate, Campaign, ClassifiedReply, OutreachMessage, HermesState } from "../src/lib/types";
 
 let pass = 0,
   fail = 0;
@@ -54,6 +54,8 @@ const outreachTemplate: OutreachMessage = seed.outreach[0] ?? {
   createdAt: new Date(NOW).toISOString(),
 };
 
+const campaignTemplate: Campaign = seed.campaigns[0];
+
 function candidate(overrides: Partial<Candidate>): Candidate {
   return { ...candidateTemplate, ...overrides };
 }
@@ -63,9 +65,17 @@ function reply(overrides: Partial<ClassifiedReply>): ClassifiedReply {
 function outreachMsg(overrides: Partial<OutreachMessage>): OutreachMessage {
   return { ...outreachTemplate, ...overrides };
 }
+function campaign(overrides: Partial<Campaign>): Campaign {
+  return { ...campaignTemplate, ...overrides };
+}
 
+// Seed campaigns include a "Sourcing" one, which (now that source_campaign
+// recommendations exist) legitimately produces a rec once its candidates are
+// cleared below. Tests that want an empty/exact-count queue don't intend to
+// exercise that path, so start with no campaigns too; tests that specifically
+// need one set s.campaigns themselves.
 function emptyState(): HermesState {
-  return { ...seed, candidates: [], outreach: [], replies: [] };
+  return { ...seed, candidates: [], outreach: [], replies: [], campaigns: [] };
 }
 
 /* ---- fully clear state -> empty queue ------------------------------------ */
@@ -94,6 +104,7 @@ ok("no items anywhere -> empty queue", deriveRecommendations(emptyState(), NOW).
       candidateId: "high-match-cand",
       campaignId: "camp1",
       status: "Needs Approval",
+      createdAt: new Date(NOW).toISOString(), // fresh -- must stay approve_outreach, not stalled_draft
     }),
   ];
   const recs = deriveRecommendations(s, NOW);
@@ -109,8 +120,20 @@ ok("no items anywhere -> empty queue", deriveRecommendations(emptyState(), NOW).
 {
   const s = emptyState();
   s.outreach = [
-    outreachMsg({ id: "low", candidateId: "low-cand", campaignId: "camp1", status: "Needs Approval" }),
-    outreachMsg({ id: "high", candidateId: "high-cand", campaignId: "camp1", status: "Pending Manual Send" }),
+    outreachMsg({
+      id: "low",
+      candidateId: "low-cand",
+      campaignId: "camp1",
+      status: "Needs Approval",
+      createdAt: new Date(NOW).toISOString(), // fresh -- must stay approve_outreach, not stalled_draft
+    }),
+    outreachMsg({
+      id: "high",
+      candidateId: "high-cand",
+      campaignId: "camp1",
+      status: "Pending Manual Send",
+      createdAt: new Date(NOW).toISOString(),
+    }),
   ];
   s.candidates = [
     candidate({ id: "low-cand", campaignId: "camp1", matchScore: 40, stage: "Contacted", booking: null }),
@@ -128,7 +151,13 @@ ok("no items anywhere -> empty queue", deriveRecommendations(emptyState(), NOW).
     candidate({ id: "book-cand", campaignId: "camp1", matchScore: 70, stage: "Interested", booking: null }),
   ];
   s.outreach = [
-    outreachMsg({ id: "tie-draft", candidateId: "approve-cand", campaignId: "camp1", status: "Needs Approval" }),
+    outreachMsg({
+      id: "tie-draft",
+      candidateId: "approve-cand",
+      campaignId: "camp1",
+      status: "Needs Approval",
+      createdAt: new Date(NOW).toISOString(), // fresh -- must stay approve_outreach, not stalled_draft
+    }),
   ];
   const recs = deriveRecommendations(s, NOW);
   ok(
@@ -145,7 +174,15 @@ ok("no items anywhere -> empty queue", deriveRecommendations(emptyState(), NOW).
   const msgs: OutreachMessage[] = [];
   for (let i = 0; i < 12; i++) {
     cands.push(candidate({ id: `cand-${i}`, campaignId: "camp1", matchScore: 50 + i, stage: "Contacted", booking: null }));
-    msgs.push(outreachMsg({ id: `draft-${i}`, candidateId: `cand-${i}`, campaignId: "camp1", status: "Needs Approval" }));
+    msgs.push(
+      outreachMsg({
+        id: `draft-${i}`,
+        candidateId: `cand-${i}`,
+        campaignId: "camp1",
+        status: "Needs Approval",
+        createdAt: new Date(NOW).toISOString(), // fresh -- must stay approve_outreach, not stalled_draft
+      }),
+    );
   }
   s.candidates = cands;
   s.outreach = msgs;
@@ -166,6 +203,114 @@ ok("no items anywhere -> empty queue", deriveRecommendations(emptyState(), NOW).
   s.outreach = [outreachMsg({ id: "already-approved", candidateId: "c1", campaignId: "camp1", status: "Approved" })];
   const recs = deriveRecommendations(s, NOW);
   ok("handled reply, already-booked candidate, and approved message all stay out of the queue", recs.length === 0, recs);
+}
+
+/* ---- stalled drafts: old unapproved messages escalate, fresh ones don't --- */
+{
+  const s = emptyState();
+  s.candidates = [
+    candidate({ id: "stale-cand", campaignId: "camp1", stage: "Contacted", booking: null }),
+    candidate({ id: "fresh-approval-cand", campaignId: "camp1", stage: "Contacted", booking: null }),
+    candidate({ id: "fresh-draft-cand", campaignId: "camp1", stage: "Contacted", booking: null }),
+  ];
+  s.outreach = [
+    outreachMsg({
+      id: "stale-needs-approval",
+      candidateId: "stale-cand",
+      campaignId: "camp1",
+      status: "Needs Approval",
+      createdAt: new Date(NOW - 3 * 24 * 60 * 60 * 1000).toISOString(), // 3d old -- past the 2d threshold
+    }),
+    outreachMsg({
+      id: "fresh-needs-approval",
+      candidateId: "fresh-approval-cand",
+      campaignId: "camp1",
+      status: "Needs Approval",
+      createdAt: new Date(NOW).toISOString(),
+    }),
+    outreachMsg({
+      id: "fresh-plain-draft",
+      candidateId: "fresh-draft-cand",
+      campaignId: "camp1",
+      status: "Draft",
+      createdAt: new Date(NOW).toISOString(),
+    }),
+  ];
+  const recs = deriveRecommendations(s, NOW);
+  ok(
+    "a Needs Approval message sitting >= 2d escalates to stalled_draft",
+    recs.some((r) => r.id === "stalled_draft:stale-needs-approval"),
+    recs,
+  );
+  ok(
+    "a fresh Needs Approval message stays approve_outreach, not stalled_draft",
+    recs.some((r) => r.id === "approve_outreach:fresh-needs-approval") &&
+      !recs.some((r) => r.id === "stalled_draft:fresh-needs-approval"),
+    recs,
+  );
+  ok(
+    "a fresh plain Draft (< 2d old) does not surface at all",
+    !recs.some((r) => r.id.includes("fresh-plain-draft")),
+    recs,
+  );
+  ok("exactly the stale and fresh-approval items surface -- the fresh Draft stays hidden", recs.length === 2, recs);
+}
+
+/* ---- source_campaign: unsourced/under-sourced Sourcing campaigns surface -- */
+{
+  const s = emptyState();
+  s.campaigns = [
+    campaign({ id: "camp-empty-sourcing", status: "Sourcing", title: "Unsourced Role" }),
+    campaign({ id: "camp-progressed-sourcing", status: "Sourcing", title: "Progressed Role" }),
+  ];
+  s.candidates = [
+    candidate({ id: "progressed-cand", campaignId: "camp-progressed-sourcing", stage: "Contacted", booking: null }),
+  ];
+  const recs = deriveRecommendations(s, NOW);
+  ok(
+    "a Sourcing campaign with 0 candidates surfaces as source_campaign",
+    recs.some((r) => r.id === "source_campaign:camp-empty-sourcing"),
+    recs,
+  );
+  ok(
+    "a Sourcing campaign whose candidates have progressed past Sourced does not surface",
+    !recs.some((r) => r.id === "source_campaign:camp-progressed-sourcing"),
+    recs,
+  );
+}
+
+/* ---- SLA breach escalation: a breached reply outranks a merely-imminent one, even with a much lower match score --- */
+{
+  const s = emptyState();
+  s.candidates = [
+    candidate({ id: "breached-cand", campaignId: "camp1", matchScore: 10, stage: "Contacted", booking: null }),
+    candidate({ id: "imminent-cand", campaignId: "camp1", matchScore: 95, stage: "Contacted", booking: null }),
+  ];
+  s.replies = [
+    reply({
+      id: "breached-reply",
+      candidateId: "breached-cand",
+      campaignId: "camp1",
+      intent: "INTERESTED",
+      handled: false,
+      slaDueAt: new Date(NOW - 60 * 60 * 1000).toISOString(), // 1h overdue -- breached
+    }),
+    reply({
+      id: "imminent-reply",
+      candidateId: "imminent-cand",
+      campaignId: "camp1",
+      intent: "INTERESTED",
+      handled: false,
+      slaDueAt: new Date(NOW + 5 * 60 * 1000).toISOString(), // 5min out -- imminent, not yet breached
+    }),
+  ];
+  const recs = deriveRecommendations(s, NOW);
+  ok("both hot replies present", recs.length === 2, recs);
+  ok(
+    "a breached reply outranks a merely-imminent one despite a 85-point lower match score",
+    recs[0]?.id === "hot_reply:breached-reply" && recs[1]?.id === "hot_reply:imminent-reply",
+    recs,
+  );
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
