@@ -1,10 +1,13 @@
 name: CodeQL
 
-# Auto-runs PAUSED (billing-gated Actions on this private repo -- see ci.yml).
-# Manual-only until GitHub billing is restored -- then restore the
-# push/pull_request/schedule triggers below.
 on:
-  workflow_dispatch:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  schedule:
+    # Run weekly on Monday at 03:17 UTC so results don't pile up unnoticed
+    - cron: "17 3 * * 1"
 
 jobs:
   analyze:
