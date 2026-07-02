@@ -32,6 +32,7 @@ import { ScoreDistribution } from "@/components/charts/score-distribution";
 import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
+import { AgentRunStream } from "@/components/run/agent-run-stream";
 import { OutreachMessageCard } from "@/components/outreach/outreach-message-card";
 import { RateMeterPanel } from "@/components/outreach/rate-meter-panel";
 import { ReplyClassifier } from "@/components/replies/reply-classifier";
@@ -90,6 +91,7 @@ import {
   Pause,
   Pencil,
   Play,
+  PlayCircle,
   RefreshCw,
   Send,
   Sparkles,
@@ -329,6 +331,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const [bookingCandidateId, setBookingCandidateId] = React.useState<string | null>(null);
   const [editingJd, setEditingJd] = React.useState(false);
   const [editingWeights, setEditingWeights] = React.useState(false);
+  // "Watch Aria Work" panel — remounted (via runToken as its key) on every
+  // "Run Aria" click so each click starts a genuinely fresh, replayable run.
+  const [runOpen, setRunOpen] = React.useState(false);
+  const [runToken, setRunToken] = React.useState(0);
 
   if (!hydrated) {
     return (
@@ -460,6 +466,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       description: "Real search, real scoring, drafted outreach — review before sending.",
       variant: "success",
     });
+  };
+
+  const handleOpenRun = () => {
+    setRunOpen(true);
+    setRunToken((k) => k + 1);
   };
 
   const handlePause = () => {
@@ -690,6 +701,15 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               {agentRunning ? "Agent working…" : "Run sourcing agent"}
             </Button>
             <Button
+              variant="primary"
+              leftIcon={<PlayCircle className="h-4 w-4" />}
+              onClick={handleOpenRun}
+              disabled={c.status === "Paused"}
+              title={c.status === "Paused" ? "Resume the campaign to run Aria" : undefined}
+            >
+              Run Aria
+            </Button>
+            <Button
               variant="outline"
               leftIcon={<Send className="h-4 w-4" />}
               onClick={() => router.push(`/outreach?campaign=${c.id}`)}
@@ -725,6 +745,16 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           <span className="font-semibold text-ink">{nextAction}</span>
         </div>
       </Card>
+
+      {runOpen && (
+        <AgentRunStream
+          key={runToken}
+          campaignId={c.id}
+          autoStart
+          onClose={() => setRunOpen(false)}
+          className="mb-6 animate-fade-in"
+        />
+      )}
 
       <Tabs items={tabs} value={tab} onValueChange={setTab} idBase={idBase} className="mb-6" />
 

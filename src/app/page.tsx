@@ -24,6 +24,7 @@ import { IntegrationStrip } from "@/components/dashboard/integration-strip";
 import { TaniaSummary } from "@/components/dashboard/tania-summary";
 import { CampaignCard } from "@/components/campaigns/campaign-card";
 import { ActivityTimeline } from "@/components/shared/activity-timeline";
+import { AgentRunStream } from "@/components/run/agent-run-stream";
 import {
   useActions,
   useActiveCampaign,
@@ -41,6 +42,7 @@ import {
   FileText,
   GitBranch,
   Megaphone,
+  PlayCircle,
   Radar,
   Reply,
   Sparkles,
@@ -68,6 +70,24 @@ export default function DashboardPage() {
 
   const activeCampaigns = campaigns.filter((c) => !["Filled", "Paused"].includes(c.status));
   const funnel = React.useMemo(() => funnelForCandidates(candidates), [candidates]);
+
+  // "Watch Aria Work" panel — remounted (via runToken as its key) on every
+  // "Run Aria" click so each click starts a genuinely fresh, replayable run.
+  const [runOpen, setRunOpen] = React.useState(false);
+  const [runToken, setRunToken] = React.useState(0);
+
+  function handleOpenRun() {
+    if (!activeCampaign) {
+      toast({
+        title: "No active campaign",
+        description: "Create a campaign from an intake brief first.",
+        variant: "warning",
+      });
+      return;
+    }
+    setRunOpen(true);
+    setRunToken((k) => k + 1);
+  }
 
   const kpiCards: {
     label: string;
@@ -198,6 +218,13 @@ export default function DashboardPage() {
                 Source next batch
               </Button>
               <Button
+                variant="primary"
+                leftIcon={<PlayCircle aria-hidden />}
+                onClick={handleOpenRun}
+              >
+                Run Aria
+              </Button>
+              <Button
                 variant="outline"
                 leftIcon={<GitBranch aria-hidden />}
                 onClick={() => router.push("/outreach")}
@@ -214,6 +241,16 @@ export default function DashboardPage() {
             </div>
           </div>
         </Card>
+
+        {runOpen && activeCampaign && (
+          <AgentRunStream
+            key={runToken}
+            campaignId={activeCampaign.id}
+            autoStart
+            onClose={() => setRunOpen(false)}
+            className="animate-fade-in"
+          />
+        )}
 
         {/* KPI grid */}
         <section className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
