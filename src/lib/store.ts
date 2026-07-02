@@ -148,7 +148,7 @@ export interface HermesActions {
     opts?: { platform?: SourcePlatform; count?: number },
   ) => Promise<
     | (SourceResult & { source: "github" | "web" | "mock"; ok: true })
-    | { ok: false; error: string; source: "github" | "web" }
+    | { ok: false; error: string; source: "github" | "web" | "paused" }
   >;
   /** One tool-calling agent pass: searches real candidates, scores them, and
    *  drafts outreach for the best matches in a single loop (/api/sourcing-agent),
@@ -724,11 +724,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       opts?: { platform?: SourcePlatform; count?: number },
     ): Promise<
       | (SourceResult & { source: "github" | "web" | "mock"; ok: true })
-      | { ok: false; error: string; source: "github" | "web" }
+      | { ok: false; error: string; source: "github" | "web" | "paused" }
     > => {
       const s = current();
       const campaign = s.campaigns.find((c) => c.id === campaignId);
       if (!campaign) return { accepted: [], skipped: [], source: "mock", ok: true };
+      if (campaign.status === "Paused") {
+        return { ok: false, error: "Campaign is paused.", source: "paused" };
+      }
       const platform: SourcePlatform = opts?.platform ?? roleProfile(campaign.jobAnalysis).platforms[0];
       const count = opts?.count ?? 6;
       const weights = effectiveWeights(campaign.scoringWeights, s.skills); // learned scoring
@@ -841,6 +844,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const s = current();
       const campaign = s.campaigns.find((c) => c.id === campaignId);
       if (!campaign) return { ok: false, added: 0, error: "Campaign not found." };
+      if (campaign.status === "Paused") {
+        return { ok: false, added: 0, error: "Campaign is paused." };
+      }
       const weights = effectiveWeights(campaign.scoringWeights, s.skills);
       const finalTone = effectiveTone(s.skills);
 
@@ -1841,10 +1847,29 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const updateBooking = useCallback(
     (id: string, patch: Partial<Booking>) =>
-      commit((s) => ({
-        ...s,
-        bookings: s.bookings.map((b) => (b.id === id ? { ...b, ...patch } : b)),
-      })),
+      commit((s) => {
+        const booking = s.bookings.find((b) => b.id === id);
+        let next: HermesState = {
+          ...s,
+          bookings: s.bookings.map((b) => (b.id === id ? { ...b, ...patch } : b)),
+        };
+        // Completing an interview naturally advances the candidate past "Booked" --
+        // only when they're still sitting there, so this never fights a stage the
+        // human already set manually (Interviewed/Offer/Hired/Rejected/...).
+        if (booking && patch.status === "Completed") {
+          const cand = next.candidates.find((c) => c.id === booking.candidateId);
+          if (cand?.stage === "Booked") {
+            next = {
+              ...next,
+              candidates: next.candidates.map((c) =>
+                c.id === booking.candidateId ? { ...c, stage: "Interviewed" } : c,
+              ),
+            };
+            next = recomputeMetrics(next, booking.campaignId);
+          }
+        }
+        return next;
+      }),
     [commit],
   );
 
@@ -2559,7 +2584,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const s = current();
       const activeSeats = s.seats.filter((x) => x.status === "active");
       const workCampaigns = opts?.campaignId
-        ? s.campaigns.filter((c) => c.id === opts.campaignId)
+        ? s.campaigns.filter((c) => c.id === opts.campaignId && c.status !== "Paused")
         : s.campaigns.filter((c) => !["Filled", "Paused"].includes(c.status));
       if (activeSeats.length === 0 || workCampaigns.length === 0)
         return { sourced: 0, skipped: 0, perSeat: [] as { seatName: string; campaignTitle: string; sourced: number }[] };

@@ -4,14 +4,18 @@ import * as React from "react";
 import {
   CalendarDays,
   CalendarClock,
+  CheckCircle2,
   Clock,
   Video,
   CalendarPlus,
   UserRound,
+  UserX,
+  XCircle,
   ListChecks,
 } from "lucide-react";
-import { Badge, EmptyState } from "@/components/ui";
-import type { Booking } from "@/lib/types";
+import { Badge, Button, EmptyState, useToast } from "@/components/ui";
+import { useActions } from "@/lib/store";
+import type { Booking, BookingStatus } from "@/lib/types";
 import { cn, formatTime, formatDate, toneForBookingStatus } from "@/lib/utils";
 
 const TERMINAL_STATUSES = new Set(["Completed", "Cancelled", "No Show"]);
@@ -89,62 +93,107 @@ function LinkButton({
 }
 
 function BookingRow({ booking }: { booking: Booking }) {
+  const actions = useActions();
+  const { toast } = useToast();
   const previewAgenda = booking.agenda.slice(0, 3);
   const extra = booking.agenda.length - previewAgenda.length;
+  const isTerminal = TERMINAL_STATUSES.has(booking.status);
+
+  const setOutcome = (status: Extract<BookingStatus, "Completed" | "No Show" | "Cancelled">) => {
+    actions.updateBooking(booking.id, { status });
+    toast({
+      title: `Interview marked ${status}`,
+      description: `${booking.candidateName} · ${booking.role}`,
+      variant: status === "Completed" ? "success" : "warning",
+    });
+  };
+
   return (
-    <div className="flex flex-col gap-4 rounded-2xl border border-line bg-surface p-4 transition-shadow hover:shadow-soft sm:flex-row sm:items-start">
-      <div className="flex shrink-0 flex-col gap-0.5 sm:w-32">
-        <div className="flex items-center gap-1.5 text-sm font-bold tabular-nums text-ink">
-          <Clock className="h-3.5 w-3.5 text-ink-soft" aria-hidden />
-          {formatTime(booking.startTime)}
-        </div>
-        <div className="pl-5 text-xs text-muted tabular-nums">
-          to {formatTime(booking.endTime)}
-        </div>
-        <div className="pl-5 text-[0.6875rem] uppercase tracking-wide text-muted">
-          {booking.timezone}
-        </div>
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <h4 className="truncate text-sm font-bold text-ink">{booking.candidateName}</h4>
-          <Badge tone={toneForBookingStatus(booking.status)} size="sm" dot>
-            {booking.status}
-          </Badge>
-        </div>
-        <p className="mt-0.5 truncate text-sm text-ink-soft">{booking.role}</p>
-        <p className="mt-1 flex items-center gap-1.5 text-xs text-muted">
-          <UserRound className="h-3.5 w-3.5" aria-hidden />
-          {booking.interviewer}
-        </p>
-
-        {previewAgenda.length > 0 && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-            <ListChecks className="h-3.5 w-3.5 text-ink-soft" aria-hidden />
-            {previewAgenda.map((item, i) => (
-              <span
-                key={i}
-                className="rounded-full bg-ink/[0.05] px-2 py-0.5 text-[0.6875rem] font-medium text-ink-soft"
-              >
-                {item}
-              </span>
-            ))}
-            {extra > 0 && (
-              <span className="text-[0.6875rem] font-semibold text-muted">+{extra} more</span>
-            )}
+    <div className="rounded-2xl border border-line bg-surface p-4 transition-shadow hover:shadow-soft">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+        <div className="flex shrink-0 flex-col gap-0.5 sm:w-32">
+          <div className="flex items-center gap-1.5 text-sm font-bold tabular-nums text-ink">
+            <Clock className="h-3.5 w-3.5 text-ink-soft" aria-hidden />
+            {formatTime(booking.startTime)}
           </div>
-        )}
+          <div className="pl-5 text-xs text-muted tabular-nums">
+            to {formatTime(booking.endTime)}
+          </div>
+          <div className="pl-5 text-[0.6875rem] uppercase tracking-wide text-muted">
+            {booking.timezone}
+          </div>
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="truncate text-sm font-bold text-ink">{booking.candidateName}</h4>
+            <Badge tone={toneForBookingStatus(booking.status)} size="sm" dot>
+              {booking.status}
+            </Badge>
+          </div>
+          <p className="mt-0.5 truncate text-sm text-ink-soft">{booking.role}</p>
+          <p className="mt-1 flex items-center gap-1.5 text-xs text-muted">
+            <UserRound className="h-3.5 w-3.5" aria-hidden />
+            {booking.interviewer}
+          </p>
+
+          {previewAgenda.length > 0 && (
+            <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+              <ListChecks className="h-3.5 w-3.5 text-ink-soft" aria-hidden />
+              {previewAgenda.map((item, i) => (
+                <span
+                  key={i}
+                  className="rounded-full bg-ink/[0.05] px-2 py-0.5 text-[0.6875rem] font-medium text-ink-soft"
+                >
+                  {item}
+                </span>
+              ))}
+              {extra > 0 && (
+                <span className="text-[0.6875rem] font-semibold text-muted">+{extra} more</span>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:items-end">
+          <LinkButton href={booking.teamsLink} tone="teams" icon={<Video className="h-3.5 w-3.5" aria-hidden />}>
+            Teams
+          </LinkButton>
+          <LinkButton href={booking.calLink} tone="cal" icon={<CalendarPlus className="h-3.5 w-3.5" aria-hidden />}>
+            Cal.com
+          </LinkButton>
+        </div>
       </div>
 
-      <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:items-end">
-        <LinkButton href={booking.teamsLink} tone="teams" icon={<Video className="h-3.5 w-3.5" aria-hidden />}>
-          Teams
-        </LinkButton>
-        <LinkButton href={booking.calLink} tone="cal" icon={<CalendarPlus className="h-3.5 w-3.5" aria-hidden />}>
-          Cal.com
-        </LinkButton>
-      </div>
+      {!isTerminal && (
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3">
+          <span className="text-xs font-semibold text-muted">Mark outcome:</span>
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={<CheckCircle2 className="h-3.5 w-3.5" aria-hidden />}
+            onClick={() => setOutcome("Completed")}
+          >
+            Completed
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={<UserX className="h-3.5 w-3.5" aria-hidden />}
+            onClick={() => setOutcome("No Show")}
+          >
+            No show
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={<XCircle className="h-3.5 w-3.5" aria-hidden />}
+            onClick={() => setOutcome("Cancelled")}
+          >
+            Cancel
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

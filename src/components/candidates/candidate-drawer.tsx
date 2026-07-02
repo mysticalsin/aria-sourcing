@@ -18,14 +18,16 @@ import {
   formatTimeAgo,
   toneForIntent,
   toneForOutreachStatus,
+  toneForStage,
 } from "@/lib/utils";
 import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
-import type { Candidate } from "@/lib/types";
+import type { Candidate, CandidateStage } from "@/lib/types";
 import {
   Ban,
   Briefcase,
   Building2,
   CalendarPlus,
+  ClipboardCheck,
   Clock,
   Download,
   ExternalLink,
@@ -63,6 +65,11 @@ function Section({
     </section>
   );
 }
+
+/** Manual forward-progression stages surfaced post-interview — the funnel stages
+ *  before "Booked" advance automatically from outreach/reply activity, so only
+ *  the human-decided outcomes need a control here. */
+const STAGE_ACTIONS: CandidateStage[] = ["Interviewed", "Offer", "Hired", "Rejected"];
 
 function Chips({ items, label }: { items: string[]; label: string }) {
   if (items.length === 0) return <p className="text-sm text-muted">None recorded.</p>;
@@ -126,7 +133,17 @@ export function CandidateDrawer({
     flags.anonymized ||
     flags.gdprExportRequested;
 
+  const campaignPaused = campaign?.status === "Paused";
+
   const handleGenerate = () => {
+    if (campaignPaused) {
+      toast({
+        title: "Campaign is paused",
+        description: `${campaign?.title} is paused — resume it before drafting new outreach.`,
+        variant: "warning",
+      });
+      return;
+    }
     const msg = actions.generateOutreachFor(c.id);
     if (msg) {
       toast({
@@ -137,6 +154,18 @@ export function CandidateDrawer({
     } else {
       toast({ title: "Could not generate outreach", variant: "error" });
     }
+  };
+
+  const handleSetStage = (stage: CandidateStage) => {
+    actions.setCandidateStage(c.id, stage);
+    toast({
+      title: `Stage updated: ${stage}`,
+      description:
+        stage === "Hired"
+          ? `${c.name} moved to Hired. Consider marking ${campaign?.title ?? "the campaign"} as Filled once the req is closed.`
+          : `${c.name} moved to ${stage}.`,
+      variant: stage === "Rejected" ? "warning" : "success",
+    });
   };
 
   const handleBook = async () => {
@@ -200,8 +229,14 @@ export function CandidateDrawer({
         size="md"
         leftIcon={<Send className="h-4 w-4" />}
         onClick={handleGenerate}
-        disabled={contactBlocked}
-        title={contactBlocked ? "Candidate is suppressed / do-not-contact" : undefined}
+        disabled={contactBlocked || campaignPaused}
+        title={
+          contactBlocked
+            ? "Candidate is suppressed / do-not-contact"
+            : campaignPaused
+              ? "Campaign is paused — resume it to draft outreach"
+              : undefined
+        }
       >
         Generate outreach
       </Button>
@@ -396,6 +431,29 @@ export function CandidateDrawer({
               <ScoreGauge score={c.matchScore} label="Overall fit" />
             </div>
             <ScoreBreakdown breakdown={c.matchBreakdown} />
+          </div>
+        </Section>
+
+        {/* Interview stage */}
+        <Section title="Interview stage" icon={<ClipboardCheck className="h-4 w-4" />}>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted">Current:</span>
+            <Badge tone={toneForStage(c.stage)} size="sm" dot>
+              {c.stage}
+            </Badge>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {STAGE_ACTIONS.map((stage) => (
+              <Button
+                key={stage}
+                variant={c.stage === stage ? "primary" : "outline"}
+                size="sm"
+                disabled={c.stage === stage}
+                onClick={() => handleSetStage(stage)}
+              >
+                {stage}
+              </Button>
+            ))}
           </div>
         </Section>
 

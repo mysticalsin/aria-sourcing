@@ -75,6 +75,7 @@ import {
   Bot,
   CalendarCheck,
   CalendarPlus,
+  CheckCircle2,
   ClipboardList,
   Compass,
   Copy,
@@ -84,7 +85,9 @@ import {
   Linkedin,
   MapPin,
   MessageSquare,
+  Pause,
   Pencil,
+  Play,
   RefreshCw,
   Send,
   Sparkles,
@@ -315,6 +318,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const [agentRunning, setAgentRunning] = React.useState(false);
   const [editingJd, setEditingJd] = React.useState(false);
   const [editingWeights, setEditingWeights] = React.useState(false);
+  const [prePauseStatus, setPrePauseStatus] = React.useState<CampaignStatus | null>(null);
 
   if (!hydrated) {
     return (
@@ -403,7 +407,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     const res = await actions.sourceNextBatch(c.id);
     if (!res.ok) {
       toast({
-        title: `${res.source === "github" ? "GitHub" : "Web"} sourcing failed`,
+        title:
+          res.source === "paused"
+            ? "Campaign is paused"
+            : `${res.source === "github" ? "GitHub" : "Web"} sourcing failed`,
         description: res.error,
         variant: "error",
       });
@@ -432,6 +439,36 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     toast({
       title: `Sourcing agent found ${res.added} candidate${res.added === 1 ? "" : "s"}`,
       description: "Real search, real scoring, drafted outreach — review before sending.",
+      variant: "success",
+    });
+  };
+
+  const handlePause = () => {
+    setPrePauseStatus(c.status);
+    actions.updateCampaign(c.id, { status: "Paused" });
+    toast({
+      title: "Campaign paused",
+      description: "Sourcing and new outreach drafts are blocked until you resume.",
+      variant: "warning",
+    });
+  };
+
+  const handleResume = () => {
+    const restored: CampaignStatus = prePauseStatus ?? "Sourcing";
+    actions.updateCampaign(c.id, { status: restored });
+    setPrePauseStatus(null);
+    toast({
+      title: "Campaign resumed",
+      description: `Status restored to ${restored}.`,
+      variant: "success",
+    });
+  };
+
+  const handleMarkFilled = () => {
+    actions.updateCampaign(c.id, { status: "Filled" });
+    toast({
+      title: "Campaign marked Filled",
+      description: `${c.title} is now marked as filled.`,
       variant: "success",
     });
   };
@@ -597,20 +634,41 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           </div>
 
           <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <Button variant="secondary" leftIcon={<Sparkles className="h-4 w-4" />} onClick={handleSource}>
+            <Button
+              variant="secondary"
+              leftIcon={<Sparkles className="h-4 w-4" />}
+              onClick={handleSource}
+              disabled={c.status === "Paused"}
+              title={c.status === "Paused" ? "Resume the campaign to source new candidates" : undefined}
+            >
               Source next batch
             </Button>
             <Button
               variant="secondary"
               leftIcon={<Bot className="h-4 w-4" />}
               onClick={handleRunAgent}
-              disabled={agentRunning}
+              disabled={agentRunning || c.status === "Paused"}
+              title={c.status === "Paused" ? "Resume the campaign to run the sourcing agent" : undefined}
             >
               {agentRunning ? "Agent working…" : "Run sourcing agent"}
             </Button>
             <Button variant="outline" leftIcon={<Send className="h-4 w-4" />} onClick={() => router.push("/outreach")}>
               Review outreach
             </Button>
+            {c.status === "Paused" ? (
+              <Button variant="primary" leftIcon={<Play className="h-4 w-4" />} onClick={handleResume}>
+                Resume campaign
+              </Button>
+            ) : (
+              <Button variant="outline" leftIcon={<Pause className="h-4 w-4" />} onClick={handlePause}>
+                Pause campaign
+              </Button>
+            )}
+            {c.status !== "Filled" && (
+              <Button variant="outline" leftIcon={<CheckCircle2 className="h-4 w-4" />} onClick={handleMarkFilled}>
+                Mark filled
+              </Button>
+            )}
           </div>
         </div>
 
