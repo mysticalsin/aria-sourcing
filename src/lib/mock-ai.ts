@@ -509,7 +509,10 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   };
 }
 
-function buildClarificationEmail(name: string, jd: JobAnalysis, warnings: ValidationWarning[]): string {
+/** Exported so the live intake parser (src/lib/ai/intake.ts) can build the same
+ *  clarification draft off a live-parsed JobAnalysis — kept in one place so the
+ *  copy stays identical between the heuristic and live paths. */
+export function buildClarificationEmail(name: string, jd: JobAnalysis, warnings: ValidationWarning[]): string {
   const asks = warnings.map((w) => `• ${w.message}`).join("\n");
   return `Hi ${name.split(" ")[0]},
 

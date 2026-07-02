@@ -174,7 +174,10 @@ export interface HermesActions {
     seatId?: string,
   ) => Promise<OutreachMessage | null>;
   updateOutreach: (messageId: string, patch: Partial<OutreachMessage>) => void;
-  regenerateOutreach: (messageId: string, tone?: OutreachTone) => void;
+  /** Live variant: regenerates via the Aria runtime when live mode is configured
+   *  (same three-layer fallback as generateOutreachLive), else the deterministic
+   *  mock. Status is still set by the human approval gate — never auto-sent. */
+  regenerateOutreach: (messageId: string, tone?: OutreachTone) => Promise<void>;
   approveOutreach: (messageId: string) => ApprovalResult;
   confirmManualSend: (messageId: string) => { ok: boolean; error?: string };
   /** The deliberate gated send for a live-approved email — calls the server send route. */
@@ -1189,14 +1192,81 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const regenerateOutreach = useCallback(
-    (messageId: string, tone?: OutreachTone) => {
+    async (messageId: string, tone?: OutreachTone) => {
       const s = current();
       const msg = s.outreach.find((m) => m.id === messageId);
       const candidate = msg && s.candidates.find((c) => c.id === msg.candidateId);
       const campaign = msg && s.campaigns.find((c) => c.id === msg.campaignId);
       if (!msg || !candidate || !campaign) return;
       const nextTone = tone ?? msg.tone;
-      const gen = generateOutreach(candidate, campaign, nextTone, msg.channel, msg.sequenceStep);
+
+      // Mock is the canonical fallback (and the source of personalization evidence) —
+      // same shape as before this went live.
+      const mockGen = generateOutreach(candidate, campaign, nextTone, msg.channel, msg.sequenceStep);
+
+      // Live attempt — the exact same three-layer fallback as generateOutreachLive:
+      // Layer 1 only fires when a cloud provider or hermes live mode is configured;
+      // Layer 2 keeps the mock on a non-ok result; Layer 3 keeps the mock on an
+      // unparseable reply. A failed/unconfigured live call always keeps the mock draft.
+      let gen: GeneratedOutreach = mockGen;
+      const aiCfg = resolveAiProvider(s.settings, "outreach");
+      if (aiCfg || (s.settings.hermesLiveMode && hermesAvailable(s.settings))) {
+        const lang = campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
+        const basePrompt = buildOutreachPrompt({
+          candidateName: candidate.name,
+          candidateTitle: candidate.currentTitle,
+          candidateCompany: candidate.currentCompany,
+          techStack: candidate.techStack,
+          recentActivity: candidate.recentActivity,
+          yearsExperience: candidate.yearsExperience,
+          roleTitle: campaign.jobAnalysis.title,
+          locationType: campaign.jobAnalysis.locationType,
+          regions: campaign.jobAnalysis.regions,
+          requiredSkills: campaign.jobAnalysis.requiredSkills,
+          tone: nextTone,
+          channel: msg.channel,
+          language: lang,
+        });
+        const ariaPrompt = s.settings.guardrails?.ariaPrompt;
+        const prompt = ariaPrompt ? `${ariaPrompt}\n\n${basePrompt}` : basePrompt;
+
+        let regenGenInput: Parameters<typeof hermesGenerate>[0];
+        if (aiCfg) {
+          regenGenInput = {
+            task: "outreach",
+            prompt,
+            provider: aiCfg.provider,
+            model: aiCfg.model,
+            apiKeyId: aiCfg.apiKeyId,
+          };
+        } else {
+          const outreachModelId = s.settings.defaultModels?.outreach;
+          regenGenInput = {
+            task: "outreach",
+            prompt,
+            hermesApiUrl: s.settings.hermesApiUrl,
+            hermesApiKeyId: s.settings.hermesApiKeyId,
+          };
+          if (outreachModelId) {
+            const modelName = (s.settings.savedModels ?? []).find((m) => m.id === outreachModelId)?.modelName;
+            if (modelName) regenGenInput.model = modelName;
+          }
+        }
+
+        const result = await hermesGenerate(regenGenInput);
+        if (result.ok && result.text) {
+          const parsed = parseHermesOutreach(result.text, msg.channel, mockGen.subject);
+          if (parsed) {
+            gen = {
+              subject: parsed.subject,
+              body: parsed.body,
+              personalizationEvidence: mockGen.personalizationEvidence,
+              channel: msg.channel,
+            };
+          }
+        }
+      }
+
       commit((prev) => ({
         ...prev,
         outreach: prev.outreach.map((m) =>

@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Card, CardContent, Eyebrow, Badge, Select, Button, Field } from "@/components/ui";
-import { useCandidates, useActions } from "@/lib/store";
+import { Card, CardContent, Eyebrow, Badge, Select, Button, Field, useToast } from "@/components/ui";
+import { useCampaigns, useCandidates, useActions } from "@/lib/store";
 import {
   OUTREACH_TONES,
   OUTREACH_CHANNELS,
@@ -14,7 +14,9 @@ import { Sparkles, ShieldCheck } from "lucide-react";
 
 export function QuickDraft() {
   const candidates = useCandidates();
+  const campaigns = useCampaigns();
   const actions = useActions();
+  const { toast } = useToast();
 
   const [candidateId, setCandidateId] = React.useState("");
   const [tone, setTone] = React.useState<OutreachTone>("Casual Professional");
@@ -40,16 +42,31 @@ export function QuickDraft() {
     setResult(null);
   }, [candidateId, tone, channel]);
 
-  function handleDraft() {
+  async function handleDraft() {
     if (!candidateId) return;
+    const candidate = eligible.find((c) => c.id === candidateId);
+    const campaign = candidate ? campaigns.find((camp) => camp.id === candidate.campaignId) : undefined;
+    if (campaign?.status === "Paused") {
+      toast({
+        title: "Campaign is paused",
+        description: `${campaign.title} is paused — resume it before drafting new outreach.`,
+        variant: "warning",
+      });
+      return;
+    }
     setLoading(true);
     setResult(null);
-    // Brief pause so the spinner has time to render — makes the AI feel intentional
-    setTimeout(() => {
-      const msg = actions.generateOutreachFor(candidateId, tone, channel);
-      setResult(msg);
-      setLoading(false);
-    }, 700);
+    let msg: OutreachMessage | null;
+    try {
+      msg = await actions.generateOutreachLive(candidateId, tone, channel);
+    } catch {
+      // A live-runtime hiccup should never block drafting — fall back to the
+      // template path so the human still gets a draft to review.
+      msg = actions.generateOutreachFor(candidateId, tone, channel);
+      toast({ title: "Aria is unavailable — used the template draft instead.", variant: "info" });
+    }
+    setResult(msg);
+    setLoading(false);
   }
 
   return (

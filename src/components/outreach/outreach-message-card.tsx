@@ -73,9 +73,13 @@ export function OutreachMessageCard({ message }: { message: OutreachMessage }) {
   const name = candidate?.name ?? "Unknown candidate";
   const initials = candidate ? candidate.avatarInitials || initialsFrom(candidate.name) : "??";
 
-  function handleToneChange(e: React.ChangeEvent<HTMLSelectElement>) {
+  const [regenerating, setRegenerating] = React.useState(false);
+
+  async function handleToneChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const tone = e.target.value as OutreachTone;
-    a.regenerateOutreach(message.id, tone);
+    setRegenerating(true);
+    await a.regenerateOutreach(message.id, tone);
+    setRegenerating(false);
     toast({
       title: `Rewritten: ${tone}`,
       description: "Personalization re-derived from the candidate profile.",
@@ -120,8 +124,10 @@ export function OutreachMessageCard({ message }: { message: OutreachMessage }) {
     });
   }
 
-  function handleRegenerate() {
-    a.regenerateOutreach(message.id, message.tone);
+  async function handleRegenerate() {
+    setRegenerating(true);
+    await a.regenerateOutreach(message.id, message.tone);
+    setRegenerating(false);
     toast({
       title: "Draft regenerated",
       description: "Fresh copy generated from the candidate signals.",
@@ -244,7 +250,7 @@ export function OutreachMessageCard({ message }: { message: OutreachMessage }) {
               id={toneId}
               value={message.tone}
               onChange={handleToneChange}
-              disabled={settled}
+              disabled={settled || regenerating}
               options={OUTREACH_TONES.map((t) => ({ value: t, label: t }))}
             />
           </Field>
@@ -393,8 +399,10 @@ export function OutreachMessageCard({ message }: { message: OutreachMessage }) {
               variant="subtle"
               leftIcon={<RefreshCw className="h-4 w-4" />}
               onClick={handleRegenerate}
+              loading={regenerating}
+              disabled={regenerating}
             >
-              Regenerate
+              {regenerating ? "Regenerating…" : "Regenerate"}
             </Button>
           )}
           {candidate && (

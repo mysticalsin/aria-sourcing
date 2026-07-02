@@ -20,12 +20,12 @@ import {
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import {
-  parseEmailAndJD,
   SAMPLE_INTAKE_EMAIL,
   SAMPLE_INTAKE_JD,
   SAMPLE_MANTU_EMAIL,
   type ParsedIntake,
 } from "@/lib/mock-ai";
+import { parseIntakeLive } from "@/lib/ai/intake";
 import { useActions, useHydrated, useSettings } from "@/lib/store";
 import {
   copyToClipboard,
@@ -95,9 +95,13 @@ export default function IntakePage() {
   const [senderEmail, setSenderEmail] = useState("");
   const [skillDraft, setSkillDraft] = useState("");
   const [dustPending, setDustPending] = useState(false);
+  const [parsing, setParsing] = useState(false);
   // Guards against a slow Dust reply from an earlier parse landing on top of a
   // newer one if the user re-parses before the first call resolves.
   const parseSeqRef = React.useRef(0);
+  // Same guard, for the live LLM parse itself — a slower earlier parse can't
+  // clobber a faster, more recent one if the user re-parses quickly.
+  const liveParseSeqRef = React.useRef(0);
 
   function patchJob(patch: Partial<JobAnalysis>) {
     setJob((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -144,12 +148,18 @@ export default function IntakePage() {
     });
   }
 
-  /** Simulates an inbound email arriving and being auto-scanned (the /api/intake flow). */
-  function scanInbox() {
+  /** Simulates an inbound email arriving and being auto-scanned (the /api/intake flow).
+   *  Routes through the live LLM when a cloud provider is configured for chat;
+   *  parseIntakeLive falls back to the regex heuristic silently on any failure. */
+  async function scanInbox() {
     const incoming = SAMPLE_MANTU_EMAIL;
     setEmail(incoming);
     setJd("");
-    const result = parseEmailAndJD({ email: incoming });
+    const seq = ++liveParseSeqRef.current;
+    setParsing(true);
+    const result = await parseIntakeLive(settings, { email: incoming });
+    if (liveParseSeqRef.current !== seq) return; // superseded by a newer parse
+    setParsing(false);
     setParsed(result);
     setJob(result.jobAnalysis);
     setSenderName(result.sender.name);
@@ -162,7 +172,10 @@ export default function IntakePage() {
     });
   }
 
-  function handleParse() {
+  /** Routes through the live LLM when a cloud provider is configured for chat;
+   *  parseIntakeLive falls back to the regex heuristic silently on any failure
+   *  (unconfigured, network error, or an unusable/non-JSON reply). */
+  async function handleParse() {
     if (!email.trim()) {
       toast({
         title: "Nothing to parse",
@@ -171,7 +184,11 @@ export default function IntakePage() {
       });
       return;
     }
-    const result = parseEmailAndJD({ email, jd: jd.trim() ? jd : undefined });
+    const seq = ++liveParseSeqRef.current;
+    setParsing(true);
+    const result = await parseIntakeLive(settings, { email, jd: jd.trim() ? jd : undefined });
+    if (liveParseSeqRef.current !== seq) return; // superseded by a newer parse
+    setParsing(false);
     setParsed(result);
     setJob(result.jobAnalysis);
     setSenderName(result.sender.name);
@@ -314,6 +331,8 @@ export default function IntakePage() {
                     size="sm"
                     leftIcon={<Inbox aria-hidden />}
                     onClick={scanInbox}
+                    loading={parsing}
+                    disabled={parsing}
                   >
                     Scan inbox
                   </Button>
@@ -321,10 +340,11 @@ export default function IntakePage() {
                     type="button"
                     leftIcon={<ScanText aria-hidden />}
                     onClick={handleParse}
-                    disabled={!email.trim()}
+                    loading={parsing}
+                    disabled={!email.trim() || parsing}
                     className="ml-auto"
                   >
-                    Parse JD
+                    {parsing ? "Parsing…" : "Parse JD"}
                   </Button>
                 </div>
                 <p className="text-xs text-muted">

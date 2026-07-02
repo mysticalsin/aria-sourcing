@@ -134,8 +134,9 @@ export function CandidateDrawer({
     flags.gdprExportRequested;
 
   const campaignPaused = campaign?.status === "Paused";
+  const [generating, setGenerating] = useState(false);
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (campaignPaused) {
       toast({
         title: "Campaign is paused",
@@ -144,7 +145,17 @@ export function CandidateDrawer({
       });
       return;
     }
-    const msg = actions.generateOutreachFor(c.id);
+    setGenerating(true);
+    let msg: ReturnType<typeof actions.generateOutreachFor> = null;
+    try {
+      msg = await actions.generateOutreachLive(c.id);
+    } catch {
+      // A live-runtime hiccup (network error, thrown rejection) should never block
+      // drafting — fall back to the template path so the human still gets a draft.
+      msg = actions.generateOutreachFor(c.id);
+      toast({ title: "Aria is unavailable — used the template draft instead.", variant: "info" });
+    }
+    setGenerating(false);
     if (msg) {
       toast({
         title: "Outreach drafted",
@@ -229,7 +240,8 @@ export function CandidateDrawer({
         size="md"
         leftIcon={<Send className="h-4 w-4" />}
         onClick={handleGenerate}
-        disabled={contactBlocked || campaignPaused}
+        loading={generating}
+        disabled={contactBlocked || campaignPaused || generating}
         title={
           contactBlocked
             ? "Candidate is suppressed / do-not-contact"
@@ -238,7 +250,7 @@ export function CandidateDrawer({
               : undefined
         }
       >
-        Generate outreach
+        {generating ? "Drafting…" : "Generate outreach"}
       </Button>
       <Button
         variant="primary"
