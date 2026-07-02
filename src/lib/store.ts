@@ -431,8 +431,10 @@ function loadState(): HermesState {
     if (raw) {
       const parsed = JSON.parse(raw) as HermesState;
       if (parsed && parsed.version === STATE_VERSION) return parsed;
-      // Migrate from a prior version rather than wiping all data.
-      if (parsed && typeof parsed.version === "number" && parsed.version >= STATE_VERSION - 3) {
+      // Migrate ANY prior version rather than wiping all data — migrateToCurrentVersion
+      // defensively defaults every field, so it can handle arbitrarily old blobs. Only
+      // missing/corrupt/unparseable JSON or a non-numeric version falls through to reseed.
+      if (parsed && typeof parsed.version === "number") {
         return migrateToCurrentVersion(parsed);
       }
     }
@@ -450,9 +452,41 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   // Optimistic-concurrency token: the workspace_state.updated_at we last loaded/saved.
   const remoteUpdatedAtRef = useRef<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // DEMO mode only: latest state snapshot awaiting a debounced localStorage write,
+  // so flushLocalSave() can write it immediately on unmount / tab close.
+  const pendingLocalSave = useRef<HermesState | null>(null);
   const skipNextPersist = useRef(false);
   // F-5: AbortControllers for in-flight sendChat requests, keyed by threadId.
   const chatAbortControllers = useRef<Map<string, AbortController>>(new Map());
+
+  // Flush a pending debounced DEMO-mode localStorage write immediately. Called on
+  // provider unmount and on `beforeunload` so debouncing the persist effect (below)
+  // never drops the last edit made just before navigation / tab close.
+  const flushLocalSave = useCallback(() => {
+    if (supabaseEnabled) return;
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    const pending = pendingLocalSave.current;
+    if (pending) {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(pending));
+      } catch {
+        /* quota / private mode — ignore for demo */
+      }
+      pendingLocalSave.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (supabaseEnabled) return;
+    window.addEventListener("beforeunload", flushLocalSave);
+    return () => {
+      window.removeEventListener("beforeunload", flushLocalSave);
+      flushLocalSave();
+    };
+  }, [flushLocalSave]);
 
   // Hydrate once on mount.
   // LIVE mode → load the shared workspace document from Supabase (seed if empty).
@@ -543,13 +577,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         })();
       }, 600);
     } else {
-      try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      } catch {
-        /* quota / private mode — ignore for demo */
-      }
+      // Debounced like the Supabase branch above (same 600ms interval / saveTimer ref)
+      // instead of writing to localStorage synchronously on every state change.
+      pendingLocalSave.current = state;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => {
+        saveTimer.current = null;
+        flushLocalSave();
+      }, 600);
     }
-  }, [state]);
+  }, [state, flushLocalSave]);
 
   const commit = useCallback((fn: (s: HermesState) => HermesState) => {
     setState((prev) => {
@@ -3646,6 +3683,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             const decoder = new TextDecoder();
             let accumulated = "";
             let leftover = ""; // F-6: carry partial SSE lines across chunk boundaries
+            // Throttle intermediate store commits to ~every 75ms: `accumulated` still
+            // gathers every delta unconditionally, so the final flush after the loop
+            // (and the abort/error paths below) always sees the complete text — only the
+            // frequency of mid-stream repaints changes, never what the user ends up seeing.
+            let lastFlushAt = 0;
+            const STREAM_FLUSH_INTERVAL_MS = 75;
             outer: while (true) {
               const { done, value } = await reader.read();
               if (done) break;
@@ -3663,7 +3706,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                   const delta = parsed.choices?.[0]?.delta?.content ?? "";
                   if (delta) {
                     accumulated += delta;
-                    updateChatMessage(threadId, assistantId, { content: accumulated, pending: true });
+                    const nowMs = Date.now();
+                    if (nowMs - lastFlushAt >= STREAM_FLUSH_INTERVAL_MS) {
+                      lastFlushAt = nowMs;
+                      updateChatMessage(threadId, assistantId, { content: accumulated, pending: true });
+                    }
                   }
                 } catch {
                   /* malformed SSE chunk — continue */
