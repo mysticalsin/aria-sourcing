@@ -2,6 +2,10 @@
 
 **An industrial-grade autonomous recruiting operations console.**
 
+![Aria Sourcing — Command Center](docs/screenshots/01-console.png)
+
+<sub>Live demo: <https://aria-sourcing-demo.vercel.app> — sign in with `admin` / `admin`. Synthetic data, mock integrations, dry-run by default.</sub>
+
 Hermes turns inbound job requests into booked interviews: it parses a job
 description from an email, builds a sourcing campaign, finds and scores synthetic
 candidates, drafts personalized outreach, processes replies, books interviews
@@ -11,6 +15,23 @@ skill improvements.
 > **Human approval. Machine speed.** This is a runnable MVP/demo. Every
 > integration runs in **mock mode**, all data is **synthetic**, and all outreach
 > is **dry-run** by default — nothing is ever actually sent.
+
+## Screens
+
+### Ops Floor — the agents, at work in 3D
+![3D operations floor with the Mantu office, desks and live agents](docs/screenshots/02-floor3d.png)
+
+### Campaigns — every open role, funnel and bottleneck
+![Campaigns board showing sourced/contacted/replied/booked funnels](docs/screenshots/03-campaigns.png)
+
+### Outreach — human approval, machine speed
+![Outreach approval queue with a personalized draft, guardrails and rate limits](docs/screenshots/04-outreach.png)
+
+### Weekly reports — funnel economics and self-improvement
+![Weekly performance report with funnel chart and metrics](docs/screenshots/05-reports.png)
+
+### Chat — talk to any agent, live or demo
+![Chat with an Aria agent answering an outreach-prioritization question](docs/screenshots/06-chat.png)
 
 ### Agent fleet, learning skills & confidentiality
 
