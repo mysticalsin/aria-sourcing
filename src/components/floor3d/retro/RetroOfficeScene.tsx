@@ -17,11 +17,17 @@
 
 import { Billboard, OrbitControls, Text } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Suspense, useMemo, useRef, useState, type RefObject } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
+import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import "./core/troikaConfig"; // main-thread text layout (CSP blocks blob: workers)
 import type { OfficeAgent } from "@/components/floor3d/types";
 import { getDeviceQuality, MAX_3D_AGENTS, type DeviceQuality } from "@/lib/device";
+import {
+  getDirectorTarget,
+  subscribeDirectorTarget,
+  type DirectorTarget,
+} from "@/lib/demo/aria-live";
 import { RobotAgentModel } from "./objects/RobotAgentModel";
 import { RetroEnvironment } from "./scene/RetroEnvironment";
 import { PacketFX } from "./scene/PacketFX";
@@ -62,6 +68,7 @@ function SceneContents({
   }, [agents, quality, selectedId]);
 
   const { renderAgentsRef, renderAgentLookupRef } = useAgentTick(shownAgents);
+  const controlsRef = useRef<OrbitControlsImpl | null>(null);
 
   // CEO agent id — doubles as the Living Floor's "central hub" that packets
   // fly to (PacketFX.tsx). The priority sort above always keeps the CEO in
@@ -93,6 +100,7 @@ function SceneContents({
       {/* Camera controls — target lifted to character height so the agents
           read prominently by default while still allowing a full orbit. */}
       <OrbitControls
+        ref={controlsRef}
         target={[0, 1.2, -1]}
         maxPolarAngle={Math.PI / 2.2}
         minDistance={5}
@@ -101,6 +109,15 @@ function SceneContents({
         dampingFactor={0.08}
         enableDamping
       />
+
+      {/* Aria Live (Demo Director) — additive, off by default. Only lerps the
+          OrbitControls *target* (never touches camera.position directly, so
+          user drag/zoom keeps working exactly as before) toward whichever
+          robot is currently "acting" in a running Aria Live cinematic. When
+          no run is active `getDirectorTarget()` is null and this is a no-op
+          every frame — the camera behaves exactly as it did before this
+          existed. See src/lib/demo/aria-live.ts for the run itself. */}
+      <AriaLiveDirector controlsRef={controlsRef} agentsRef={renderAgentsRef} />
 
       {/* Static office environment */}
       <Suspense fallback={null}>
@@ -139,6 +156,54 @@ function SceneContents({
       {!low && <AgentActivityLabels agentsRef={renderAgentsRef} selectedId={selectedId ?? null} />}
     </>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Aria Live (Demo Director) camera — additive, off by default (workstream
+// 3.1). Subscribes to the tiny module-level pub/sub in src/lib/demo/aria-live.ts
+// instead of a prop, because the trigger (TopBar / ⌘K) and this scene have no
+// shared React context available to thread one through (Floor3D.tsx and
+// floor/page.tsx are owned by another workstream and out of scope here).
+// Never touches agentTick's nav/collision fields, PacketFX, or the perf caps
+// — it only reads renderAgentsRef positions and re-aims OrbitControls' target.
+// ---------------------------------------------------------------------------
+const ESTABLISHING_TARGET = new THREE.Vector3(0, 1.2, -1); // matches OrbitControls' static default above
+const DIRECTOR_LERP = 0.06;
+
+function AriaLiveDirector({
+  controlsRef,
+  agentsRef,
+}: {
+  controlsRef: RefObject<OrbitControlsImpl | null>;
+  agentsRef: RefObject<RenderAgent[]>;
+}) {
+  const [target, setTarget] = useState<DirectorTarget>(() =>
+    typeof window === "undefined" ? null : getDirectorTarget(),
+  );
+  useEffect(() => subscribeDirectorTarget(setTarget), []);
+
+  const desired = useRef(new THREE.Vector3());
+
+  useFrame(() => {
+    const controls = controlsRef.current;
+    // No active Aria Live run (the common case): touch nothing, every frame.
+    // This is the entire "off by default" contract — the camera/OrbitControls
+    // behave exactly as they did before this hook existed.
+    if (!controls || !target) return;
+
+    if ("establishing" in target) {
+      desired.current.copy(ESTABLISHING_TARGET);
+    } else {
+      const agent = agentsRef.current?.find((a) => a.id === target.seatId);
+      if (!agent) return;
+      const [wx, , wz] = toWorld(agent.x, agent.y);
+      desired.current.set(wx, 1.4, wz);
+    }
+    controls.target.lerp(desired.current, DIRECTOR_LERP);
+    controls.update();
+  });
+
+  return null;
 }
 
 // ---------------------------------------------------------------------------
