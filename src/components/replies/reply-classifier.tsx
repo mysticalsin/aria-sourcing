@@ -13,7 +13,7 @@ import {
   Field,
   useToast,
 } from "@/components/ui";
-import { useActions } from "@/lib/store";
+import { useActions, useCandidate, useCampaign } from "@/lib/store";
 import { toneForIntent, copyToClipboard, formatPercent } from "@/lib/utils";
 import type { ClassifiedReply, ReplyIntent } from "@/lib/types";
 import {
@@ -24,6 +24,7 @@ import {
   Lightbulb,
   ListChecks,
   MessageSquareQuote,
+  Send,
 } from "lucide-react";
 
 const INTENT_LABELS: Record<ReplyIntent, string> = {
@@ -72,6 +73,8 @@ export function ReplyClassifier({
   const [classifying, setClassifying] = React.useState(false);
   const [result, setResult] = React.useState<ClassifiedReply | null>(null);
   const [copied, setCopied] = React.useState(false);
+  const resultCandidate = useCandidate(result?.candidateId);
+  const resultCampaign = useCampaign(resultCandidate?.campaignId);
 
   const inputId = React.useId();
 
@@ -123,6 +126,28 @@ export function ReplyClassifier({
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     }
+  }
+
+  function handleSendReply() {
+    if (!result) return;
+    if (resultCampaign?.status === "Paused") {
+      toast({
+        title: "Campaign is paused",
+        description: `${resultCampaign.title} is paused — resume it before drafting new outreach.`,
+        variant: "warning",
+      });
+      return;
+    }
+    const msg = a.draftReplyResponse(result.id);
+    if (!msg) {
+      toast({ title: "Could not draft a reply", description: "No linked candidate for this reply.", variant: "error" });
+      return;
+    }
+    toast({
+      title: "Reply drafted",
+      description: "Review it in the outreach queue. Nothing is sent until you approve it.",
+      variant: "success",
+    });
   }
 
   return (
@@ -227,24 +252,36 @@ export function ReplyClassifier({
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted">
                   Draft response
                 </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  leftIcon={
-                    copied ? (
-                      <Check className="h-3.5 w-3.5" aria-hidden />
-                    ) : (
-                      <Copy className="h-3.5 w-3.5" aria-hidden />
-                    )
-                  }
-                  onClick={handleCopyDraft}
-                >
-                  {copied ? "Copied" : "Copy draft"}
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    leftIcon={
+                      copied ? (
+                        <Check className="h-3.5 w-3.5" aria-hidden />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" aria-hidden />
+                      )
+                    }
+                    onClick={handleCopyDraft}
+                  >
+                    {copied ? "Copied" : "Copy draft"}
+                  </Button>
+                  {result.candidateId && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      leftIcon={<Send className="h-3.5 w-3.5" aria-hidden />}
+                      onClick={handleSendReply}
+                    >
+                      Send reply
+                    </Button>
+                  )}
+                </div>
               </div>
               <pre className="whitespace-pre-wrap rounded-2xl border border-line bg-surface p-4 font-sans text-sm leading-relaxed text-ink">
                 {result.draftResponse}

@@ -317,6 +317,9 @@ export interface OutreachMessage {
   approvedBy: string | null;
   dryRun: boolean;
   createdAt: string;
+  /** Carried over from a ClassifiedReply when this draft was created as a reply
+   *  (see draftReplyResponse in store.ts), so a live send can thread correctly. */
+  inboxThreadId?: string;
 }
 
 /* ---- Replies ------------------------------------------------------------- */

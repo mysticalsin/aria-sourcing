@@ -12,6 +12,7 @@ import {
   CalendarClock,
   ChevronRight,
   CheckCircle2,
+  Repeat,
 } from "lucide-react";
 
 const TONE_TILE: Record<Tone, string> = {
@@ -29,6 +30,7 @@ const KIND_ICON: Record<RecommendationKind, React.ReactNode> = {
   approve_outreach: <ShieldCheck className="h-4 w-4" aria-hidden />,
   hot_reply: <Flame className="h-4 w-4" aria-hidden />,
   book_interview: <CalendarClock className="h-4 w-4" aria-hidden />,
+  follow_up_due: <Repeat className="h-4 w-4" aria-hidden />,
 };
 
 /**
@@ -60,7 +62,7 @@ export function AttentionPanel() {
           <EmptyState
             icon={<CheckCircle2 className="h-6 w-6 text-success" aria-hidden />}
             title="All clear"
-            description="No approvals, hot replies, or pending bookings right now. The pipeline is flowing."
+            description="No approvals, hot replies, pending bookings, or overdue follow-ups right now. The pipeline is flowing."
           />
         ) : (
           <ul className="flex flex-col gap-2">

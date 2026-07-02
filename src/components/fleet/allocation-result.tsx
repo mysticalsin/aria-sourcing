@@ -69,7 +69,7 @@ export function AllocationResultView({ result }: { result: AllocationResult | nu
       <EmptyState
         icon={<Inbox className="h-6 w-6" />}
         title="No allocation run yet"
-        description="Run “Allocate outreach” to fan the ready pool across your agents. Every candidate is contacted by exactly one seat, within each account's daily cap."
+        description="Run “Allocate outreach” to fan the ready pool across your agents. Every candidate gets one draft from exactly one seat, within each account's daily cap — each draft still needs your approval before it sends."
       />
     );
   }
@@ -84,7 +84,7 @@ export function AllocationResultView({ result }: { result: AllocationResult | nu
           <div>
             <Eyebrow>Allocation plan</Eyebrow>
             <CardTitle>
-              {pluralize(total, "contact")} across {pluralize(groups.length, "agent")}
+              {pluralize(total, "draft")} across {pluralize(groups.length, "agent")}
             </CardTitle>
           </div>
           <Badge tone="aqua" dot>
@@ -95,7 +95,7 @@ export function AllocationResultView({ result }: { result: AllocationResult | nu
         {total === 0 ? (
           <EmptyState
             icon={<Users className="h-6 w-6" />}
-            title="Nothing allocated"
+            title="Nothing drafted"
             description="No candidate cleared the guardrails. See skipped and deferred below for why."
           />
         ) : (

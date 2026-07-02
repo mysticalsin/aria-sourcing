@@ -12,10 +12,15 @@
 // overridden by the one below it (SLA urgency dominates at up to 10,000; match
 // score contributes 0-100; stage leverage is a single-digit tiebreak).
 
-import type { HermesState } from "./types";
+import type { HermesState, OutreachMessage } from "./types";
 import type { Tone } from "./utils";
+import { daysSince } from "./rules";
 
-export type RecommendationKind = "hot_reply" | "approve_outreach" | "book_interview";
+export type RecommendationKind =
+  | "hot_reply"
+  | "approve_outreach"
+  | "book_interview"
+  | "follow_up_due";
 
 export interface Recommendation {
   id: string;
@@ -34,6 +39,7 @@ const MAX_ROWS = 8;
 
 const STAGE_LEVERAGE: Record<RecommendationKind, number> = {
   hot_reply: 1,
+  follow_up_due: 2,
   approve_outreach: 5,
   book_interview: 8,
 };
@@ -42,18 +48,21 @@ const ROLLUP_LABEL: Record<RecommendationKind, string> = {
   hot_reply: "replies to answer",
   approve_outreach: "drafts to approve",
   book_interview: "candidates to book",
+  follow_up_due: "follow-ups due",
 };
 
 const KIND_TONE: Record<RecommendationKind, Tone> = {
   hot_reply: "tangerine",
   approve_outreach: "warning",
   book_interview: "violet",
+  follow_up_due: "aqua",
 };
 
 const KIND_HREF: Record<RecommendationKind, string> = {
   hot_reply: "/replies",
   approve_outreach: "/outreach",
   book_interview: "/calendar",
+  follow_up_due: "/outreach",
 };
 
 /** 0 (no SLA / not urgent) to 1000 (breached or imminent), decaying to 0 over ~48h out. */
@@ -63,6 +72,71 @@ function slaUrgency(dueAt: string | null, now: number): number {
   return Math.max(0, Math.min(1000, 1000 - hoursLeft * (1000 / 48)));
 }
 
+/* ---- Follow-up sequences: derived due-queue, no background job ----------- */
+
+export interface FollowUpDueItem {
+  candidateId: string;
+  campaignId: string;
+  matchScore: number;
+  /** Days since lastContactedAt, at the `now` the selector was evaluated with. */
+  daysSinceContact: number;
+  /** The sequenceStep the next drafted follow-up should use (prior max + 1). */
+  nextSequenceStep: number;
+}
+
+function maxSequenceStepFor(outreach: OutreachMessage[], candidateId: string): number {
+  return outreach
+    .filter((m) => m.candidateId === candidateId)
+    .reduce((max, m) => Math.max(max, m.sequenceStep), 0);
+}
+
+/** True when this candidate already has an un-actioned draft sitting in the
+ *  approval queue -- either from a prior follow-up draft or any other source.
+ *  Guards against re-drafting the same follow-up on every call. */
+function hasPendingDraft(outreach: OutreachMessage[], candidateId: string): boolean {
+  return outreach.some(
+    (m) => m.candidateId === candidateId && (m.status === "Needs Approval" || m.status === "Draft"),
+  );
+}
+
+/**
+ * Candidates who were contacted, never replied, and have gone quiet longer
+ * than the campaign/settings follow-up gap. Pure and derived fresh from live
+ * state every call, matching deriveRecommendations' style: the UI promises
+ * "auto follow-up after Nd of silence" (outreach-message-card.tsx), and this
+ * is the selector that makes that promise real -- as a due-queue feeding the
+ * human approval gate, never as a background job that sends anything itself.
+ */
+export function deriveFollowUpsDue(state: HermesState, now: number = Date.now()): FollowUpDueItem[] {
+  const gapDays = state.settings.rateLimits.followUpGapDays;
+  const repliedCandidateIds = new Set(state.replies.map((r) => r.candidateId));
+  const out: FollowUpDueItem[] = [];
+
+  for (const c of state.candidates) {
+    if (c.stage !== "Contacted") continue;
+    if (!c.lastContactedAt) continue;
+    if (c.complianceFlags.doNotContact || c.complianceFlags.unsubscribed || c.complianceFlags.suppressed) continue;
+    // Belt-and-suspenders: the state machine already flips Contacted -> Replied
+    // the moment a reply lands, so these two checks are normally redundant --
+    // keep both anyway so a candidate can never be nudged for a follow-up when
+    // a reply already exists in either record.
+    if (c.replyHistory.length > 0 || repliedCandidateIds.has(c.id)) continue;
+    const daysSinceContact = daysSince(c.lastContactedAt, now);
+    if (daysSinceContact < gapDays) continue;
+    if (hasPendingDraft(state.outreach, c.id)) continue;
+
+    out.push({
+      candidateId: c.id,
+      campaignId: c.campaignId,
+      matchScore: c.matchScore,
+      daysSinceContact,
+      nextSequenceStep: maxSequenceStepFor(state.outreach, c.id) + 1,
+    });
+  }
+
+  return out;
+}
+
 interface ScoredItem {
   kind: RecommendationKind;
   entityId: string;
@@ -70,6 +144,8 @@ interface ScoredItem {
   slaDueAt: string | null;
   matchScore: number;
   priorityScore: number;
+  /** Overrides the default SLA/match-score "why" text when set. */
+  why?: string;
 }
 
 export function deriveRecommendations(state: HermesState, now: number = Date.now()): Recommendation[] {
@@ -117,6 +193,19 @@ export function deriveRecommendations(state: HermesState, now: number = Date.now
     });
   }
 
+  for (const f of deriveFollowUpsDue(state, now)) {
+    const cand = candidateById.get(f.candidateId);
+    items.push({
+      kind: "follow_up_due",
+      entityId: f.candidateId,
+      title: cand ? `Follow up with ${cand.name}` : "Follow up with a candidate",
+      slaDueAt: null,
+      matchScore: f.matchScore,
+      why: `${Math.floor(f.daysSinceContact)}d of silence, no reply yet`,
+      priorityScore: f.matchScore + STAGE_LEVERAGE.follow_up_due,
+    });
+  }
+
   items.sort((a, b) => b.priorityScore - a.priorityScore);
 
   const top = items.slice(0, MAX_ROWS);
@@ -126,7 +215,7 @@ export function deriveRecommendations(state: HermesState, now: number = Date.now
     id: `${it.kind}:${it.entityId}`,
     kind: it.kind,
     title: it.title,
-    why: it.slaDueAt ? `SLA due ${new Date(it.slaDueAt).toLocaleString()}` : `Match score ${it.matchScore}`,
+    why: it.why ?? (it.slaDueAt ? `SLA due ${new Date(it.slaDueAt).toLocaleString()}` : `Match score ${it.matchScore}`),
     href: KIND_HREF[it.kind],
     tone: KIND_TONE[it.kind],
     priorityScore: it.priorityScore,

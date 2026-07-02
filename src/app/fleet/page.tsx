@@ -153,11 +153,11 @@ export default function FleetPage() {
     toast({
       title:
         assigned > 0
-          ? `Allocated ${assigned} candidate${assigned === 1 ? "" : "s"} across the fleet`
+          ? `Drafted ${assigned} outreach message${assigned === 1 ? "" : "s"} for approval`
           : "Nothing to allocate right now",
       description:
         assigned > 0
-          ? `${result.fleetCapacityRemaining} sends of capacity remaining today${
+          ? `${assigned} candidate${assigned === 1 ? "" : "s"} across the fleet, each awaiting your approval before anything sends. ${result.fleetCapacityRemaining} of today's fleet capacity left${
               result.deferred.length ? ` · ${result.deferred.length} deferred` : ""
             }${result.skipped.length ? ` · ${result.skipped.length} skipped` : ""}.`
           : "No ready candidates matched available, in-window agent capacity. Try running fleet sourcing first.",

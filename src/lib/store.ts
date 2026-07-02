@@ -37,7 +37,7 @@ import {
 import { resolveAiProvider } from "./ai/provider";
 import { buildSeedState, defaultGuardrails, defaultLlmProviders, defaultSavedModels, defaultSettings, defaultTools, STATE_VERSION } from "./seed";
 import { computeCampaignMetrics, globalKpis, type GlobalKpis } from "./metrics";
-import { deriveRecommendations, type Recommendation } from "./recommendations";
+import { deriveRecommendations, deriveFollowUpsDue, type Recommendation, type FollowUpDueItem } from "./recommendations";
 import { scoreCandidate } from "./scoring";
 import {
   checkOutreachApproval,
@@ -180,6 +180,12 @@ export interface HermesActions {
   /** The deliberate gated send for a live-approved email — calls the server send route. */
   sendApprovedOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string }>;
   rejectOutreach: (messageId: string) => void;
+  /** Drafts the next sequence-step follow-up for a candidate who has gone quiet
+   *  past the configured gap (see deriveFollowUpsDue). Lands in the approval
+   *  queue exactly like generateOutreachFor — never sends. Returns null when
+   *  the candidate isn't actually due (already replied, too recent, or already
+   *  has a pending draft). */
+  draftFollowUpFor: (candidateId: string, tone?: OutreachTone, seatId?: string) => OutreachMessage | null;
 
   // replies
   classifyAndStoreReply: (input: {
@@ -193,6 +199,11 @@ export interface HermesActions {
   }) => Promise<{ reply: ClassifiedReply; classification: ReplyClassification }>;
   markReplyHandled: (replyId: string) => void;
   applyReplyAction: (replyId: string) => void;
+  /** Turns a reply's suggested draftResponse into a real OutreachMessage in the
+   *  approval queue (never sends directly). Carries the reply's inboxThreadId
+   *  for threading when present. Returns null when the reply/candidate can't
+   *  be resolved or there's no draft text to send. */
+  draftReplyResponse: (replyId: string) => OutreachMessage | null;
 
   // bookings
   createBookingFor: (
@@ -1088,6 +1099,49 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit, current],
   );
 
+  // Task 1 — follow-up sequences. Reuses the exact same draft-creation path as
+  // generateOutreachFor (generateOutreach + newOutreachMessage), just with the
+  // next sequenceStep so the copy switches to its "follow-up" flavor. This is a
+  // derived due-queue, not a background job: it only fires when explicitly
+  // called (from the recommendations queue / outreach page), and it only ever
+  // creates a Draft that still has to clear the human approval gate.
+  const draftFollowUpFor = useCallback(
+    (candidateId: string, tone?: OutreachTone, seatId?: string) => {
+      const s = current();
+      const due = deriveFollowUpsDue(s).find((d) => d.candidateId === candidateId);
+      if (!due) return null;
+      const candidate = s.candidates.find((c) => c.id === candidateId);
+      const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
+      if (!candidate || !campaign) return null;
+      const finalTone = tone ?? effectiveTone(s.skills);
+      const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
+      const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
+      const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
+      // Keep following up on whichever channel the candidate was originally reached on.
+      const channel: OutreachChannel = candidate.outreachHistory[0]?.channel ?? "Email";
+      const gen = generateOutreach(candidate, campaign, finalTone, channel, due.nextSequenceStep, voice, lang);
+      const msg = newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, due.nextSequenceStep);
+      commit((prev) => {
+        const next = { ...prev, outreach: [msg, ...prev.outreach] };
+        return withActivity(
+          next,
+          makeActivity({
+            type: "outreach",
+            title: `Follow-up drafted — ${candidate.name}`,
+            notes: `Sequence step ${due.nextSequenceStep} · ${Math.floor(due.daysSinceContact)}d of silence since last contact.`,
+            outcome: msg.status,
+            campaignId: campaign.id,
+            linkedEntityType: "candidate",
+            linkedEntityId: candidate.id,
+          }),
+          campaign.id,
+        );
+      });
+      return msg;
+    },
+    [commit, current],
+  );
+
   const updateOutreach = useCallback(
     (messageId: string, patch: Partial<OutreachMessage>) =>
       commit((s) => ({
@@ -1742,6 +1796,58 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
       }),
     [commit],
+  );
+
+  // Task 2 — turn a classified reply's suggested draft into a real outreach
+  // draft instead of leaving copy-to-clipboard as the only affordance. Builds
+  // the message the same way every other draft is built (newOutreachMessage),
+  // so it lands in "Needs Approval" and has to clear the same approve -> send
+  // gate; this function only ever adds to state.outreach, it never sends.
+  const draftReplyResponse = useCallback(
+    (replyId: string): OutreachMessage | null => {
+      const s = current();
+      const reply = s.replies.find((r) => r.id === replyId);
+      if (!reply || !reply.candidateId || !reply.draftResponse.trim()) return null;
+      const candidate = s.candidates.find((c) => c.id === reply.candidateId);
+      const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
+      if (!candidate || !campaign) return null;
+
+      const finalTone = effectiveTone(s.skills);
+      const priorSubject = candidate.outreachHistory[0]?.subject;
+      const trimmedBody = reply.body.trim();
+      const excerpt = trimmedBody.length > 100 ? `${trimmedBody.slice(0, 100)}…` : trimmedBody;
+      const gen: GeneratedOutreach = {
+        subject: priorSubject ? `Re: ${priorSubject}` : `Re: ${campaign.jobAnalysis.title}`,
+        body: reply.draftResponse,
+        personalizationEvidence: [`Replying to their message: "${excerpt}"`],
+        channel: reply.channel,
+      };
+      const priorMaxStep = s.outreach
+        .filter((m) => m.candidateId === candidate.id)
+        .reduce((max, m) => Math.max(max, m.sequenceStep), 0);
+      const msg: OutreachMessage = {
+        ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, priorMaxStep + 1),
+        ...(reply.inboxThreadId ? { inboxThreadId: reply.inboxThreadId } : {}),
+      };
+      commit((prev) => {
+        const next = { ...prev, outreach: [msg, ...prev.outreach] };
+        return withActivity(
+          next,
+          makeActivity({
+            type: "outreach",
+            title: `Reply drafted — ${candidate.name}`,
+            notes: `${msg.channel} response drafted from the classified reply. Awaiting approval before anything sends.`,
+            outcome: msg.status,
+            campaignId: campaign.id,
+            linkedEntityType: "candidate",
+            linkedEntityId: candidate.id,
+          }),
+          campaign.id,
+        );
+      });
+      return msg;
+    },
+    [commit, current],
   );
 
   const createBookingFor = useCallback(
@@ -2504,6 +2610,18 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   /* ---- Fleet: coordinated allocation (the anti-double-contact core) ----- */
 
+  // Task 3 — Fleet is a bulk-DRAFTING engine, not a bulk-send engine. Planning
+  // (allocateBatch, in fleet.ts) is untouched and still decides who goes to
+  // which seat, respecting suppression, the ledger, and daily caps. What this
+  // action does with that plan changed: it used to mark candidates "Contacted",
+  // stamp lastContactedAt, and write a "sent" ledger entry WITHOUT any approval
+  // — a real bypass of the human approval gate that also corrupted the 90-day
+  // re-contact dedupe (recontact windows are read from the ledger/lastContactedAt,
+  // and both were being written as if a real send had already happened). Now it
+  // only ever creates Draft OutreachMessages via the exact same path as a single
+  // generateOutreachFor call; stage, lastContactedAt, and the ledger are untouched
+  // here and are written exactly once, by approveOutreach, when a human approves
+  // each message individually.
   const allocateOutreach = useCallback(
     (opts?: { campaignId?: string; pool?: "ready" | "interested" }): AllocationResult => {
       const s = current();
@@ -2511,6 +2629,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const pool = s.candidates.filter((c) => {
         if (opts?.campaignId && c.campaignId !== opts.campaignId) return false;
         if (c.complianceFlags.doNotContact || c.complianceFlags.unsubscribed) return false;
+        // Don't re-draft someone who already has an un-actioned draft sitting in
+        // the approval queue — without the old eager ledger claim, this is what
+        // keeps a repeat allocation run from piling up duplicate drafts.
+        if (s.outreach.some((m) => m.candidateId === c.id && m.status === "Needs Approval")) return false;
         if (poolKind === "interested") return c.stage === "Interested";
         return c.matchScore >= s.settings.minScoreToContact && stageRank(c.stage) < 1;
       });
@@ -2518,52 +2640,39 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const result = allocateBatch(pool, activeSeats, s.ledger, s.suppression, s.settings.fleet, new Date());
       if (result.assignments.length === 0) return result;
 
-      const now = new Date().toISOString();
       const byCand = new Map(s.candidates.map((c) => [c.id, c]));
-      const perSeatCount = new Map<string, number>();
-      const ledgerAdds: OutreachLedgerEntry[] = result.assignments.map((a) => {
-        perSeatCount.set(a.seatId, (perSeatCount.get(a.seatId) ?? 0) + 1);
-        const cand = byCand.get(a.candidateId);
-        return {
-          id: genId("led"),
-          candidateId: a.candidateId,
-          candidateEmail: cand?.email ?? "",
-          seatId: a.seatId,
-          campaignId: cand?.campaignId ?? "",
-          channel: "Email",
-          status: "sent", // dry-run send recorded in the ledger
-          reason: null,
-          at: now,
-        };
-      });
-      const assignedIds = new Set(result.assignments.map((a) => a.candidateId));
-      const affected = new Set(ledgerAdds.map((l) => l.campaignId));
+      const byCampaign = new Map(s.campaigns.map((c) => [c.id, c]));
+      const bySeat = new Map(s.seats.map((x) => [x.id, x]));
+      const finalTone = effectiveTone(s.skills);
+
+      const drafted: OutreachMessage[] = [];
+      for (const a of result.assignments) {
+        const candidate = byCand.get(a.candidateId);
+        const campaign = candidate && byCampaign.get(candidate.campaignId);
+        if (!candidate || !campaign) continue;
+        const seat = bySeat.get(a.seatId);
+        const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
+        const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
+        const gen = generateOutreach(candidate, campaign, finalTone, "Email", 1, voice, lang);
+        drafted.push(newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1));
+      }
+      if (drafted.length === 0) return result;
+
+      const affectedCampaigns = new Set(drafted.map((m) => m.campaignId));
+      const seatIds = new Set(result.assignments.map((a) => a.seatId));
 
       commit((prev) => {
-        let next: HermesState = {
-          ...prev,
-          ledger: [...ledgerAdds, ...prev.ledger],
-          seats: prev.seats.map((x) =>
-            perSeatCount.has(x.id)
-              ? { ...x, sentToday: x.sentToday + (perSeatCount.get(x.id) ?? 0), lastSendAt: now }
-              : x,
-          ),
-          candidates: prev.candidates.map((c) =>
-            assignedIds.has(c.id) && stageRank(c.stage) < 1
-              ? { ...c, stage: "Contacted", lastContactedAt: now }
-              : c,
-          ),
-        };
-        affected.forEach((cid) => {
+        let next: HermesState = { ...prev, outreach: [...drafted, ...prev.outreach] };
+        affectedCampaigns.forEach((cid) => {
           if (cid) next = recomputeMetrics(next, cid);
         });
         next = withActivity(
           next,
           makeActivity({
             type: "outreach",
-            title: `Fleet allocated ${result.assignments.length} contacts`,
-            notes: `Distributed across ${perSeatCount.size} agents · ${result.skipped.length} skipped (suppression/dupe) · ${result.deferred.length} deferred (capacity). Dry-run.`,
-            outcome: "Approved / Dry-run scheduled",
+            title: `Fleet drafted ${drafted.length} outreach messages`,
+            notes: `Distributed across ${seatIds.size} agents · ${result.skipped.length} skipped (suppression/dupe) · ${result.deferred.length} deferred (capacity). Every draft awaits human approval — nothing sent.`,
+            outcome: "Drafted / awaiting approval",
             campaignId: opts?.campaignId ?? null,
             linkedEntityType: null,
             linkedEntityId: null,
@@ -3767,9 +3876,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       confirmManualSend,
       sendApprovedOutreach,
       rejectOutreach,
+      draftFollowUpFor,
       classifyAndStoreReply,
       markReplyHandled,
       applyReplyAction,
+      draftReplyResponse,
       createBookingFor,
       updateBooking,
       generateReport,
@@ -3850,8 +3961,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [
       setActiveCampaign, createCampaignFromAnalysis, updateCampaign, regenerateQueries,
       sourceNextBatch, runSourcingAgent, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
-      approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, classifyAndStoreReply, markReplyHandled,
-      applyReplyAction, createBookingFor, updateBooking, generateReport,
+      approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, draftFollowUpFor, classifyAndStoreReply, markReplyHandled,
+      applyReplyAction, draftReplyResponse, createBookingFor, updateBooking, generateReport,
       setSkillUpdateStatus, setCandidateStage, setCandidatePhone, suppressCandidate, markDoNotContact,
       unsubscribeCandidate, anonymizeCandidate, exportCandidate, updateSettings,
       updateIntegration, toggleIntegrationMode, testIntegration,
@@ -4058,6 +4169,11 @@ export function useDashboardKpis(): GlobalKpis {
 /** Single prioritized recommendation queue -- see recommendations.ts for the ranking rationale. */
 export function useRecommendations(): Recommendation[] {
   return deriveRecommendations(useStateOrEmpty());
+}
+
+/** Candidates whose follow-up is due (Task 1) -- see deriveFollowUpsDue in recommendations.ts. */
+export function useFollowUpsDue(): FollowUpDueItem[] {
+  return deriveFollowUpsDue(useStateOrEmpty());
 }
 
 export function useSeats(): AgentSeat[] {

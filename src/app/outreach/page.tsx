@@ -7,9 +7,11 @@ import {
   CardContent,
   Eyebrow,
   Badge,
+  Button,
   Select,
   EmptyState,
   SkeletonCard,
+  useToast,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { OutreachMessageCard } from "@/components/outreach/outreach-message-card";
@@ -22,7 +24,11 @@ import {
   useOutreach,
   useActiveCampaign,
   useSettings,
+  useFollowUpsDue,
+  useCandidate,
+  useActions,
 } from "@/lib/store";
+import type { FollowUpDueItem } from "@/lib/recommendations";
 import { cn } from "@/lib/utils";
 import {
   Inbox,
@@ -32,6 +38,7 @@ import {
   Sparkles,
   ClipboardCheck,
   Linkedin,
+  Repeat,
 } from "lucide-react";
 
 function StatTile({
@@ -63,6 +70,44 @@ function StatTile({
   );
 }
 
+/** One row in the "Follow-ups due" list (Task 1) — drafts a step-N follow-up
+ *  straight into the approval queue above. Never sends. */
+function FollowUpDueRow({ item }: { item: FollowUpDueItem }) {
+  const candidate = useCandidate(item.candidateId);
+  const actions = useActions();
+  const { toast } = useToast();
+
+  function handleDraft() {
+    const msg = actions.draftFollowUpFor(item.candidateId);
+    if (!msg) {
+      toast({ title: "Could not draft the follow-up", variant: "error" });
+      return;
+    }
+    toast({
+      title: "Follow-up drafted",
+      description: `${candidate?.name ?? "Candidate"}: sequence step ${msg.sequenceStep}, added above for your approval.`,
+      variant: "success",
+    });
+  }
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface px-4 py-3">
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold text-ink">{candidate?.name ?? "Unknown candidate"}</p>
+        <p className="text-xs text-muted">{Math.floor(item.daysSinceContact)}d of silence · no reply yet</p>
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        leftIcon={<Repeat className="h-3.5 w-3.5" aria-hidden />}
+        onClick={handleDraft}
+      >
+        Draft follow-up
+      </Button>
+    </div>
+  );
+}
+
 export default function OutreachPage() {
   const hydrated = useHydrated();
   const campaigns = useCampaigns();
@@ -70,6 +115,7 @@ export default function OutreachPage() {
   const allOutreach = useOutreach();
   const activeCampaign = useActiveCampaign();
   const settings = useSettings();
+  const followUpsDue = useFollowUpsDue();
 
   const [campaignFilter, setCampaignFilter] = React.useState<string>("all");
   const [sentOpen, setSentOpen] = React.useState(false);
@@ -86,6 +132,7 @@ export default function OutreachPage() {
   const scheduledFiltered = allOutreach
     .filter((m) => m.status === "Scheduled")
     .filter((m) => matches(m.campaignId));
+  const followUpsDueFiltered = followUpsDue.filter((f) => matches(f.campaignId));
 
   const meterCampaign =
     campaignFilter === "all"
@@ -197,6 +244,31 @@ export default function OutreachPage() {
                 <div className="space-y-5">
                   {pendingManualFiltered.map((m) => (
                     <OutreachMessageCard key={m.id} message={m} />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Follow-ups due (Task 1) — a derived queue, not a background job.
+                Drafting a follow-up only ever adds a Draft above; it still needs
+                your approval before anything sends. */}
+            {followUpsDueFiltered.length > 0 && (
+              <section className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="grid h-7 w-7 place-items-center rounded-lg bg-aqua-soft text-aqua"
+                    aria-hidden
+                  >
+                    <Repeat className="h-4 w-4" />
+                  </span>
+                  <h2 className="eyebrow">Follow-ups due</h2>
+                  <Badge tone="aqua" size="sm">
+                    {followUpsDueFiltered.length}
+                  </Badge>
+                </div>
+                <div className="space-y-2.5">
+                  {followUpsDueFiltered.map((item) => (
+                    <FollowUpDueRow key={item.candidateId} item={item} />
                   ))}
                 </div>
               </section>

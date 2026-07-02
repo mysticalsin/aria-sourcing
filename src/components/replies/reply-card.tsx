@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Card, Badge, Button, useToast } from "@/components/ui";
-import { useCandidate, useActions, useSettings } from "@/lib/store";
+import { useCandidate, useCampaign, useActions, useSettings } from "@/lib/store";
 import { maskEmailBody } from "@/lib/confidential";
 import {
   cn,
@@ -20,6 +20,7 @@ import {
   User,
   Eye,
   EyeOff,
+  Send,
 } from "lucide-react";
 
 const INTENT_LABELS: Record<ReplyIntent, string> = {
@@ -36,6 +37,7 @@ const HOT_INTENTS: ReplyIntent[] = ["INTERESTED", "QUALIFIED_INTEREST"];
 
 export function ReplyCard({ reply }: { reply: ClassifiedReply }) {
   const candidate = useCandidate(reply.candidateId);
+  const campaign = useCampaign(candidate?.campaignId);
   const a = useActions();
   const { toast } = useToast();
   const confidentialityMode = useSettings().confidentialityMode;
@@ -79,6 +81,29 @@ export function ReplyCard({ reply }: { reply: ClassifiedReply }) {
   function handleHandled() {
     a.markReplyHandled(reply.id);
     toast({ title: "Marked as handled", variant: "info" });
+  }
+
+  const canSendReply = Boolean(reply.candidateId) && reply.draftResponse.trim().length > 0;
+
+  function handleSendReply() {
+    if (campaign?.status === "Paused") {
+      toast({
+        title: "Campaign is paused",
+        description: `${campaign.title} is paused — resume it before drafting new outreach.`,
+        variant: "warning",
+      });
+      return;
+    }
+    const msg = a.draftReplyResponse(reply.id);
+    if (!msg) {
+      toast({ title: "Could not draft a reply", description: "No linked candidate or draft text.", variant: "error" });
+      return;
+    }
+    toast({
+      title: "Reply drafted",
+      description: `${candidateName}: review it in the outreach queue. Nothing is sent until you approve it.`,
+      variant: "success",
+    });
   }
 
   return (
@@ -160,6 +185,16 @@ export function ReplyCard({ reply }: { reply: ClassifiedReply }) {
           >
             Apply action
           </Button>
+          {canSendReply && (
+            <Button
+              variant="outline"
+              size="sm"
+              leftIcon={<Send className="h-3.5 w-3.5" aria-hidden />}
+              onClick={handleSendReply}
+            >
+              Send reply
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"

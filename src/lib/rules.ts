@@ -59,6 +59,11 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
     blockers.push("LinkedIn profile URL is required to send a LinkedIn message.");
   }
 
+  // Mirror of the LinkedIn check above: an Email message needs somewhere to go.
+  if (message.channel === "Email" && !candidate.email.trim()) {
+    blockers.push("Candidate has no email on file — required to send an Email message.");
+  }
+
   // Rule 4 — respect rate limits
   const limit = limitFor(message.channel, settings);
   const used = message.channel === "Email" ? ctx.emailsSentToday : ctx.linkedinSentToday;
