@@ -22,6 +22,7 @@ import {
   formatTimeAgo,
   scoreTone,
   toneForOutreachStatus,
+  type Tone,
 } from "@/lib/utils";
 import {
   Check,
@@ -38,9 +39,38 @@ import {
   ArrowUpRight,
   Copy,
   ExternalLink,
+  Clock,
 } from "lucide-react";
 
-export function OutreachMessageCard({ message }: { message: OutreachMessage }) {
+/** "waiting 3d" style label for how long a draft has sat in the queue — reuses
+ *  formatTimeAgo's tested duration math, just drops the trailing "ago" so it
+ *  reads naturally as a waiting duration instead of a past event. */
+function waitingLabel(createdAt: string): string {
+  const ago = formatTimeAgo(createdAt);
+  return ago === "just now" ? "waiting <1m" : `waiting ${ago.replace(/ ago$/, "")}`;
+}
+
+/** Escalates tone the longer a draft has been waiting on a human — mirrors the
+ *  SLA countdown badge on reply cards (see reply-card.tsx). */
+function agingTone(createdAt: string): Tone {
+  const days = (Date.now() - new Date(createdAt).getTime()) / 86_400_000;
+  if (days >= 3) return "danger";
+  if (days >= 1) return "warning";
+  return "neutral";
+}
+
+export function OutreachMessageCard({
+  message,
+  selectable = false,
+  selected = false,
+  onToggleSelect,
+}: {
+  message: OutreachMessage;
+  /** Show a bulk-select checkbox (only used on the pending-approval list). */
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (messageId: string) => void;
+}) {
   const candidate = useCandidate(message.candidateId);
   const campaign = useCampaign(message.campaignId);
   const settings = useSettings();
@@ -191,6 +221,15 @@ export function OutreachMessageCard({ message }: { message: OutreachMessage }) {
         {/* Header: candidate summary + score + status */}
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
+            {selectable && (
+              <input
+                type="checkbox"
+                checked={selected}
+                onChange={() => onToggleSelect?.(message.id)}
+                aria-label={`Select ${name} for bulk approval`}
+                className="h-4 w-4 shrink-0 rounded border-line accent-tangerine focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
+              />
+            )}
             <span
               className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-ink/[0.06] text-sm font-bold text-ink-soft ring-1 ring-inset ring-ink/10"
               aria-hidden
@@ -216,6 +255,11 @@ export function OutreachMessageCard({ message }: { message: OutreachMessage }) {
               <ChannelIcon className="h-3 w-3" aria-hidden /> {message.channel}
             </Badge>
             <Badge tone={toneForOutreachStatus(message.status)}>{message.status}</Badge>
+            {(actionable || pendingManual) && (
+              <Badge tone={agingTone(message.createdAt)} size="sm">
+                <Clock className="h-3 w-3" aria-hidden /> {waitingLabel(message.createdAt)}
+              </Badge>
+            )}
           </div>
         </div>
 

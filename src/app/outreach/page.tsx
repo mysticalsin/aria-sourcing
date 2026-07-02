@@ -39,6 +39,7 @@ import {
   ClipboardCheck,
   Linkedin,
   Repeat,
+  CheckCheck,
 } from "lucide-react";
 
 function StatTile({
@@ -116,9 +117,12 @@ export default function OutreachPage() {
   const activeCampaign = useActiveCampaign();
   const settings = useSettings();
   const followUpsDue = useFollowUpsDue();
+  const actions = useActions();
+  const { toast } = useToast();
 
   const [campaignFilter, setCampaignFilter] = React.useState<string>("all");
   const [sentOpen, setSentOpen] = React.useState(false);
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
 
   const matches = React.useCallback(
     (campaignId: string) => campaignFilter === "all" || campaignId === campaignFilter,
@@ -133,6 +137,52 @@ export default function OutreachPage() {
     .filter((m) => m.status === "Scheduled")
     .filter((m) => matches(m.campaignId));
   const followUpsDueFiltered = followUpsDue.filter((f) => matches(f.campaignId));
+
+  const selectedInView = pendingFiltered.filter((m) => selectedIds.has(m.id));
+  const allPendingSelected = pendingFiltered.length > 0 && selectedInView.length === pendingFiltered.length;
+
+  function toggleSelect(messageId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) next.delete(messageId);
+      else next.add(messageId);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds(allPendingSelected ? new Set() : new Set(pendingFiltered.map((m) => m.id)));
+  }
+
+  /** Bulk approve: routes every selected draft through the SAME gated
+   *  approveOutreach() the single Approve button uses (it runs
+   *  checkOutreachApproval internally) — never flips status directly, never
+   *  bypasses a blocker, and never sends. Blocked drafts simply stay in the
+   *  queue and get counted, matching the single-approve failure path. */
+  function handleBulkApprove() {
+    const ids = selectedInView.map((m) => m.id);
+    if (ids.length === 0) return;
+    let approved = 0;
+    let blocked = 0;
+    const blockers = new Set<string>();
+    for (const id of ids) {
+      const res = actions.approveOutreach(id);
+      if (res.allowed) approved += 1;
+      else {
+        blocked += 1;
+        res.blockers.forEach((b) => blockers.add(b));
+      }
+    }
+    setSelectedIds(new Set());
+    toast({
+      title: blocked > 0 ? `Approved ${approved}, ${blocked} blocked` : `Approved ${approved}`,
+      description:
+        blocked > 0
+          ? `Blocked drafts stayed in the queue. ${Array.from(blockers).join(" ")}`
+          : "Queued for send per the usual approval flow.",
+      variant: blocked > 0 ? "warning" : "success",
+    });
+  }
 
   const meterCampaign =
     campaignFilter === "all"
@@ -190,17 +240,42 @@ export default function OutreachPage() {
           {/* Main queue */}
           <div className="space-y-6 lg:col-span-2">
             <section className="space-y-4">
-              <div className="flex items-center gap-2">
-                <span
-                  className="grid h-7 w-7 place-items-center rounded-lg bg-warning-soft text-warning"
-                  aria-hidden
-                >
-                  <ClipboardCheck className="h-4 w-4" />
-                </span>
-                <h2 className="eyebrow">Awaiting approval</h2>
-                <Badge tone="warning" size="sm">
-                  {pendingFiltered.length}
-                </Badge>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="grid h-7 w-7 place-items-center rounded-lg bg-warning-soft text-warning"
+                    aria-hidden
+                  >
+                    <ClipboardCheck className="h-4 w-4" />
+                  </span>
+                  <h2 className="eyebrow">Awaiting approval</h2>
+                  <Badge tone="warning" size="sm">
+                    {pendingFiltered.length}
+                  </Badge>
+                </div>
+                {pendingFiltered.length > 0 && (
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-1.5 text-xs font-semibold text-ink-soft">
+                      <input
+                        type="checkbox"
+                        checked={allPendingSelected}
+                        onChange={toggleSelectAll}
+                        aria-label="Select all pending approvals"
+                        className="h-4 w-4 rounded border-line accent-tangerine focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
+                      />
+                      Select all
+                    </label>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      leftIcon={<CheckCheck className="h-3.5 w-3.5" aria-hidden />}
+                      onClick={handleBulkApprove}
+                      disabled={selectedInView.length === 0}
+                    >
+                      Approve selected{selectedInView.length > 0 ? ` (${selectedInView.length})` : ""}
+                    </Button>
+                  </div>
+                )}
               </div>
 
               {pendingFiltered.length === 0 ? (
@@ -220,7 +295,13 @@ export default function OutreachPage() {
               ) : (
                 <div className="space-y-5">
                   {pendingFiltered.map((m) => (
-                    <OutreachMessageCard key={m.id} message={m} />
+                    <OutreachMessageCard
+                      key={m.id}
+                      message={m}
+                      selectable
+                      selected={selectedIds.has(m.id)}
+                      onToggleSelect={toggleSelect}
+                    />
                   ))}
                 </div>
               )}
