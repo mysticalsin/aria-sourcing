@@ -3,11 +3,12 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Bell, ChevronDown, RotateCcw, ShieldCheck, Check, LogOut, Menu, Sparkles, X } from "lucide-react";
+import { Bell, ChevronDown, RotateCcw, ShieldCheck, Check, LogOut, Menu, Mic, Sparkles, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CommandSearch } from "./command-search";
 import { HermesWordmark } from "./logo";
 import { NAV_ITEMS } from "./nav";
+import { VoiceConsole } from "./voice-console";
 import {
   useActions,
   useActiveCampaign,
@@ -82,6 +83,7 @@ export function TopBar() {
   const [notifOpen, setNotifOpen] = React.useState(false);
   const [userOpen, setUserOpen] = React.useState(false);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
+  const [voiceOpen, setVoiceOpen] = React.useState(false);
   const [authUser, setAuthUser] = React.useState<CurrentUser | null>(null);
 
   // Close the mobile nav on route change.
@@ -234,6 +236,21 @@ export function TopBar() {
         >
           <Sparkles className="h-3.5 w-3.5" />
           Aria Live
+        </button>
+
+        {/* Hey Aria — push-to-talk voice console. Reuses the exact same
+            deterministic Aria Command grammar + gated runAriaPlan dispatch
+            as the ⌘K console (see voice-console.tsx); this is just another,
+            hands-free way to reach it. */}
+        <button
+          type="button"
+          onClick={() => setVoiceOpen(true)}
+          disabled={!hydrated}
+          className="hidden items-center gap-1.5 rounded-full bg-ink/5 px-3 py-1.5 text-xs font-bold text-ink-soft transition hover:bg-ink/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric disabled:opacity-50 lg:inline-flex"
+          title="Hey Aria — push-to-talk voice ops (drafts only)"
+        >
+          <Mic className="h-3.5 w-3.5" />
+          Hey Aria
         </button>
 
         {/* Notifications */}
@@ -443,6 +460,7 @@ export function TopBar() {
       )}
     </header>
     <AriaLiveOverlay />
+    <VoiceConsole open={voiceOpen} onOpenChange={setVoiceOpen} />
     </>
   );
 }
