@@ -3,9 +3,11 @@
 import * as React from "react";
 import { useSearchParams } from "next/navigation";
 import {
+  Badge,
   Button,
   Card,
   CardBody,
+  Eyebrow,
   Field,
   Input,
   Select,
@@ -15,10 +17,11 @@ import {
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
-import { useActions, useCandidates, useHydrated } from "@/lib/store";
+import { SourcingFeed } from "@/components/tania/sourcing-feed";
+import { useActions, useActiveCampaign, useCandidates, useHydrated } from "@/lib/store";
 import { CANDIDATE_STAGES, SOURCE_PLATFORMS, type Candidate, type CandidateStage } from "@/lib/types";
 import { pluralize } from "@/lib/utils";
-import { Bookmark, Search } from "lucide-react";
+import { Bookmark, Radar, Search } from "lucide-react";
 
 const SORT_OPTIONS = [
   { value: "match", label: "Match score" },
@@ -51,6 +54,7 @@ function CandidatesView() {
   const hydrated = useHydrated();
   const candidates = useCandidates();
   const actions = useActions();
+  const activeCampaign = useActiveCampaign();
   const { toast } = useToast();
   const searchParams = useSearchParams();
   const focus = searchParams.get("focus");
@@ -66,6 +70,13 @@ function CandidatesView() {
   const [bulkReason, setBulkReason] = React.useState("");
   const [page, setPage] = React.useState(0);
   const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE);
+  const [sourcing, setSourcing] = React.useState(false);
+  // The just-sourced batch, staged for the streaming reveal below — purely a
+  // display buffer; `sourceNextBatch` already committed these candidates for
+  // real. `sourceBatchKey` remounts <SourcingFeed> on every new batch (even
+  // one of the same size as the last) so the reveal always replays.
+  const [justSourced, setJustSourced] = React.useState<Candidate[]>([]);
+  const [sourceBatchKey, setSourceBatchKey] = React.useState(0);
 
   const handledFocus = React.useRef<string | null>(null);
 
@@ -161,6 +172,44 @@ function CandidatesView() {
     setSelectedIds(new Set());
     setBulkStage("");
     setBulkReason("");
+  }
+
+  /** Sources the active campaign's next batch via the SAME unchanged
+   *  `sourceNextBatch` action the campaign page and dashboard already use —
+   *  then stages the exact, already-committed result for the streaming
+   *  reveal below instead of only a toast. */
+  async function handleSourceBatch() {
+    if (sourcing) return;
+    if (!activeCampaign) {
+      toast({
+        title: "No active campaign",
+        description: "Open a campaign (or start a new intake) to source its next batch.",
+        variant: "warning",
+      });
+      return;
+    }
+    setSourcing(true);
+    const res = await actions.sourceNextBatch(activeCampaign.id);
+    setSourcing(false);
+    if (!res.ok) {
+      toast({
+        title:
+          res.source === "paused"
+            ? "Campaign is paused"
+            : `${res.source === "github" ? "GitHub" : "Web"} sourcing failed`,
+        description: res.error,
+        variant: "error",
+      });
+      return;
+    }
+    setJustSourced(res.accepted);
+    setSourceBatchKey((k) => k + 1);
+    const isLive = res.source === "github" || res.source === "web";
+    toast({
+      title: `Sourced ${pluralize(res.accepted.length, "candidate")}${isLive ? " (live)" : ""}`,
+      description: `${activeCampaign.title} · ${pluralize(res.skipped.length, "candidate")} skipped by dedupe & exclusions.`,
+      variant: res.accepted.length > 0 ? "success" : "info",
+    });
   }
 
   /** Bulk stage move — routes every selected candidate through the SAME
@@ -264,10 +313,39 @@ function CandidatesView() {
         </CardBody>
       </Card>
 
-      <p className="mb-4 text-sm text-muted">
-        <span className="font-semibold text-ink">{filtered.length}</span> of{" "}
-        {pluralize(candidates.length, "candidate")} across all campaigns
-      </p>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted">
+          <span className="font-semibold text-ink">{filtered.length}</span> of{" "}
+          {pluralize(candidates.length, "candidate")} across all campaigns
+        </p>
+        <Button
+          variant="secondary"
+          size="sm"
+          leftIcon={<Radar className="h-4 w-4" />}
+          onClick={handleSourceBatch}
+          loading={sourcing}
+          disabled={sourcing}
+          title={activeCampaign ? `Source the next batch for ${activeCampaign.title}` : "No active campaign"}
+        >
+          {sourcing ? "Sourcing…" : "Source next batch"}
+        </Button>
+      </div>
+
+      {justSourced.length > 0 && (
+        <div className="mb-6 space-y-2">
+          <div className="flex items-center gap-2">
+            <Eyebrow>Just sourced</Eyebrow>
+            <Badge tone="electric" size="sm">
+              {justSourced.length}
+            </Badge>
+          </div>
+          <SourcingFeed
+            key={sourceBatchKey}
+            candidates={justSourced}
+            campaignId={activeCampaign?.id}
+          />
+        </div>
+      )}
 
       {visibleSelectedIds.size > 0 && (
         <Card className="mb-4 border-electric/30 bg-electric-soft/40">

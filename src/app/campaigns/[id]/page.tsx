@@ -31,6 +31,7 @@ import { ActivityTimeline } from "@/components/shared/activity-timeline";
 import { ScoreDistribution } from "@/components/charts/score-distribution";
 import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
+import { SourcingFeed } from "@/components/tania/sourcing-feed";
 import { OutreachMessageCard } from "@/components/outreach/outreach-message-card";
 import { RateMeterPanel } from "@/components/outreach/rate-meter-panel";
 import { ReplyClassifier } from "@/components/replies/reply-classifier";
@@ -319,6 +320,12 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const [scoreFilter, setScoreFilter] = React.useState("all");
   const [agentRunning, setAgentRunning] = React.useState(false);
   const [sourcing, setSourcing] = React.useState(false);
+  // The just-sourced batch, staged for the streaming reveal below — purely a
+  // display buffer; the store already committed these candidates for real.
+  // `sourceBatchKey` remounts <SourcingFeed> on every new batch (even one of
+  // the same size as the last) so the reveal always replays from the top.
+  const [justSourced, setJustSourced] = React.useState<Candidate[]>([]);
+  const [sourceBatchKey, setSourceBatchKey] = React.useState(0);
   const [bookingCandidateId, setBookingCandidateId] = React.useState<string | null>(null);
   const [editingJd, setEditingJd] = React.useState(false);
   const [editingWeights, setEditingWeights] = React.useState(false);
@@ -422,6 +429,12 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       });
       return;
     }
+    // Stage the reveal with the exact, already-committed batch — never a
+    // re-derived or re-scored copy — and jump to the Candidates tab so the
+    // stream is immediately visible instead of resolving behind a toast.
+    setJustSourced(res.accepted);
+    setSourceBatchKey((k) => k + 1);
+    if (res.accepted.length > 0) setTab("candidates");
     const isLive = res.source === "github" || res.source === "web";
     toast({
       title: `Sourced ${res.accepted.length} candidate${res.accepted.length === 1 ? "" : "s"}${isLive ? " (live)" : ""}`,
@@ -1030,6 +1043,18 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       {/* Candidates */}
       <TabPanel value="candidates" active={tab === "candidates"} idBase={idBase}>
         <div className="space-y-6">
+          {justSourced.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Eyebrow>Just sourced</Eyebrow>
+                <Badge tone="electric" size="sm">
+                  {justSourced.length}
+                </Badge>
+              </div>
+              <SourcingFeed key={sourceBatchKey} candidates={justSourced} campaignId={c.id} />
+            </div>
+          )}
+
           <Card>
             <CardBody className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Field label="Stage" htmlFor="cand-stage">

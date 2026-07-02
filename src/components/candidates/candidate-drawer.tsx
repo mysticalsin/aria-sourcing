@@ -11,6 +11,7 @@ import {
   useConfirm,
 } from "@/components/ui";
 import { ScoreGauge } from "@/components/charts/score-gauge";
+import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { useActions, useCampaign, useCandidate, useSettings } from "@/lib/store";
 import {
@@ -746,9 +747,12 @@ export function CandidateDrawer({
 
         {/* Score */}
         <Section title="Match score" icon={<Sparkles className="h-4 w-4" />}>
-          <div className="grid gap-6 sm:grid-cols-[auto_1fr] sm:items-start">
+          <div className="grid gap-6 sm:grid-cols-[auto_auto_1fr] sm:items-start">
             <div className="flex justify-center sm:justify-start">
               <ScoreGauge score={c.matchScore} label="Overall fit" />
+            </div>
+            <div className="flex justify-center sm:justify-start">
+              <FitRadar matchBreakdown={c.matchBreakdown} size={180} label={c.name} />
             </div>
             <ScoreBreakdown breakdown={c.matchBreakdown} />
           </div>
