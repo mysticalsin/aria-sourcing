@@ -57,12 +57,19 @@ export function AriaCommandConsole({ open, onOpenChange, initialText = "" }: Ari
 
   // Editing the instruction (or opening with a new one) always resets the
   // checklist to idle — a stale green tick from a previous run/instruction
-  // must never linger next to a plan it doesn't describe.
+  // must never linger next to a plan it doesn't describe. Re-keyed on `text`
+  // (not `plan`): a running step's side effects (e.g. sourcing mutates the
+  // campaign store) change `campaigns` → `ctx` → give `plan` a brand-new
+  // identity even though the instruction didn't change, which would otherwise
+  // re-fire this effect and wipe the checklist mid-run. The `running` guard
+  // is a second belt-and-braces check so an in-flight run's rows are never
+  // reset out from under it.
   React.useEffect(() => {
+    if (running) return;
     setStatuses(plan ? plan.steps.map(() => "idle") : []);
     setResults(plan ? plan.steps.map(() => ({})) : []);
     setHasRun(false);
-  }, [plan]);
+  }, [text]);
 
   const handleRun = React.useCallback(async () => {
     if (!plan || plan.steps.length === 0 || running) return;

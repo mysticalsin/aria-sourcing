@@ -3960,7 +3960,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           }
 
           if (step.verb === "source") {
-            const res = await sourceNextBatch(campaignId, { count: step.count ?? 10 });
+            const res = await sourceNextBatch(campaignId, { platform: "Talent Pool", count: step.count ?? 10 });
             if (res.ok) {
               onStep?.(i, "done", {
                 count: res.accepted.length,
