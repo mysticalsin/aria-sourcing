@@ -17,6 +17,7 @@ import {
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { AgentDesk } from "@/components/floor/agent-desk";
 import { AgentBot, botColorForSeat } from "@/components/floor/agent-bot";
+import { MissionControlHud } from "@/components/floor/mission-control-hud";
 import { playSound } from "@/lib/sound";
 import {
   useHydrated,
@@ -333,7 +334,15 @@ function Floor3DSection({
           .
         </p>
       )}
-      <Floor3D agents={office} selectedId={selectedId} onSelect={onSelect} />
+      {/* Mission Control HUD — glass overlay over the 3D canvas only (the
+          2D grid view + ActivityTicker above stay the guaranteed fallback).
+          The wrapping div has no explicit height, so it shrinks to Floor3D's
+          own h-[70vh] container; the HUD's absolute inset-0 then matches
+          that exactly without touching Floor3D.tsx itself. */}
+      <div className="relative">
+        <Floor3D agents={office} selectedId={selectedId} onSelect={onSelect} />
+        <MissionControlHud />
+      </div>
     </div>
   );
 }
