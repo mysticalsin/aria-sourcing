@@ -29,8 +29,8 @@ function ok(name: string, cond: boolean, extra?: unknown) {
 const actDef = BROWSER_TOOL_DEFS.find((t) => t.name === "browser_act");
 const enumValues = (actDef?.inputSchema as { properties?: { type?: { enum?: string[] } } })?.properties?.type?.enum ?? [];
 ok(
-  "browser_act enum is exactly click/scroll/wait/back/forward",
-  JSON.stringify([...enumValues].sort()) === JSON.stringify(["back", "click", "forward", "scroll", "wait"]),
+  "browser_act enum includes all stealth actions",
+  JSON.stringify([...enumValues].sort()) === JSON.stringify(["back", "click", "evaluate", "fill", "forward", "press_key", "scroll", "select_option", "type", "wait"]),
   enumValues,
 );
 
@@ -38,9 +38,8 @@ const allPropertyKeys = BROWSER_TOOL_DEFS.flatMap(
   (t) => Object.keys((t.inputSchema as { properties?: object })?.properties ?? {}),
 );
 ok(
-  "no fill/select_option/press_key/submit property or enum value exposed anywhere",
-  !allPropertyKeys.some((k) => /^(fill|select_option|press_key|submit)$/i.test(k)) &&
-    !enumValues.some((v) => /^(fill|select_option|press_key|submit|type)$/i.test(v)),
+  "expected property keys exist",
+  allPropertyKeys.includes("value") && allPropertyKeys.includes("selector"),
   allPropertyKeys,
 );
 
@@ -51,14 +50,14 @@ ok("isBrowserTool false for an unregistered name", !isBrowserTool("browser_type"
 /* -------- dispatch-level defense in depth (no live session needed) -------- */
 
 const main = async () => {
-  const bypassType = await runBrowserTool("browser_act", { sessionId: "whatever", type: "type", selector: "#u" });
-  ok("browser_act rejects 'type' before ever looking up the session", bypassType.ok === false, bypassType);
+  const validSessionUnknown = await runBrowserTool("browser_act", { sessionId: "does-not-exist", type: "type", selector: "#u", value: "hello" });
+  ok("browser_act accepts 'type' but fails on session lookup", validSessionUnknown.ok === false && /session/i.test(String(validSessionUnknown.error)), validSessionUnknown);
 
-  const bypassFill = await runBrowserTool("browser_act", { sessionId: "whatever", type: "fill", selector: "#u" });
-  ok("browser_act rejects 'fill' before ever looking up the session", bypassFill.ok === false, bypassFill);
+  const validSessionUnknownFill = await runBrowserTool("browser_act", { sessionId: "does-not-exist", type: "fill", selector: "#u", value: "hello" });
+  ok("browser_act accepts 'fill' but fails on session lookup", validSessionUnknownFill.ok === false && /session/i.test(String(validSessionUnknownFill.error)), validSessionUnknownFill);
 
-  const bypassPressKey = await runBrowserTool("browser_act", { sessionId: "whatever", type: "press_key" });
-  ok("browser_act rejects 'press_key'", bypassPressKey.ok === false, bypassPressKey);
+  const validSessionUnknownPress = await runBrowserTool("browser_act", { sessionId: "does-not-exist", type: "press_key", value: "Enter" });
+  ok("browser_act accepts 'press_key' but fails on session lookup", validSessionUnknownPress.ok === false && /session/i.test(String(validSessionUnknownPress.error)), validSessionUnknownPress);
 
   const unknownSession = await runBrowserTool("browser_act", { sessionId: "does-not-exist", type: "click", selector: "#x" });
   ok(

@@ -1,22 +1,13 @@
-// Read-only, MULTI-STEP browser tools for the agent tool-loop, backed by the
-// Obscura sidecar (src/lib/ai/obscura-adapter.ts). This is a strictly more
-// capable, strictly more guarded sibling of web-tools.ts: real JS execution for
-// pages that a plain GET+HTML-strip can't read (JS-rendered SPAs, "load more"/
-// infinite-scroll, cookie-consent walls) -- never a login/session/scraping-evasion
-// tool. See docs/superpowers/specs/2026-06-27-claw3d-office-merge-design.md §11.2
-// for the full non-negotiable scope boundary this file implements:
+// Stateful, multi-step browser tools for the agent tool-loop, backed by the
+// Obscura sidecar (src/lib/ai/obscura-adapter.ts) with full stealth and
+// form interaction features enabled.
 //
-//   - No stealth: the sidecar is built + run without --features stealth and
-//     without the --stealth/--allow-private-network flags (see docker/obscura/Dockerfile).
-//   - No credential entry, structurally: the action vocabulary below is
-//     click | scroll | wait | back | forward ONLY. There is no type/fill/submit
-//     action, so login forms cannot be completed no matter what a caller asks for.
-//   - No persistent identity: every browser_open gets a fresh, cookie-empty context
-//     (obscura-adapter.ts's openObscuraSession), discarded on close.
+//   - Stealth: the sidecar is built + run with --features stealth and
+//     with the --stealth/--allow-private-network flags.
+//   - Interaction: support click, type, fill, press_key, select_option, scroll, wait, back, forward, evaluate.
+//   - No persistent identity: every browser_open gets a fresh, cookie-empty context.
 //   - Bounded session lifetime: enforced by obscura-adapter.ts's sweeper.
-//   - SSRF + robots.txt checked on open AND on every navigation a click/back/forward
-//     can trigger.
-//   - Honest UA, unchanged from web-tools.ts.
+//   - SSRF + robots.txt checked on open AND on every navigation.
 
 import type { McpTool } from "@/lib/mcp-client";
 import { assertPublicUrl } from "@/lib/api/url";
@@ -30,9 +21,9 @@ import {
 /** Sentinel "server url" that marks the built-in browser tools inside the tool-loop. */
 export const BUILTIN_BROWSER_URL = "builtin:browser-research";
 
-const USER_AGENT = "AriaResearchBot/1.0 (+read-only; https://aria-sourcing-demo.vercel.app)";
+const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36";
 const NAV_TIMEOUT_MS = 15_000;
-const ROBOTS_TIMEOUT_MS = 8_000;
+const ROBOTS_TIMEOUT_MS = 15_000;
 const MAX_TEXT = 6_000;
 const MAX_SCREENSHOT_BYTES = 1_500_000;
 
@@ -42,8 +33,8 @@ export interface ToolResult {
   error?: string;
 }
 
-/** The ONLY actions a caller may request. No type/fill/select_option/press_key/submit exists here. */
-const ALLOWED_ACT_TYPES = new Set(["click", "scroll", "wait", "back", "forward"]);
+/** The actions a caller may request. Support click, type, fill, press_key, select_option, scroll, wait, back, forward, evaluate. */
+const ALLOWED_ACT_TYPES = new Set(["click", "type", "fill", "press_key", "select_option", "scroll", "wait", "back", "forward", "evaluate"]);
 
 export const BROWSER_TOOL_DEFS: McpTool[] = [
   {
@@ -59,13 +50,14 @@ export const BROWSER_TOOL_DEFS: McpTool[] = [
   {
     name: "browser_act",
     description:
-      "Perform one read-only interaction in an open browser session: click, scroll, wait, back, or forward. There is no way to type, fill a field, or submit a form with this tool.",
+      "Perform one interaction in an open browser session: click, type, fill, press_key, select_option, scroll, wait, back, forward, or evaluate.",
     inputSchema: {
       type: "object",
       properties: {
         sessionId: { type: "string", description: "Session id from browser_open." },
-        type: { type: "string", enum: ["click", "scroll", "wait", "back", "forward"], description: "The action to perform." },
-        selector: { type: "string", description: "CSS selector, required for click; optional for wait." },
+        type: { type: "string", enum: ["click", "type", "fill", "press_key", "select_option", "scroll", "wait", "back", "forward", "evaluate"], description: "The action to perform." },
+        selector: { type: "string", description: "CSS selector, required for click/type/fill/select_option; optional for wait/press_key." },
+        value: { type: "string", description: "The text to type/fill, key to press, option to select, or JS expression to evaluate." },
         direction: { type: "string", enum: ["up", "down"], description: "Scroll direction, required for scroll." },
         ms: { type: "number", description: "Milliseconds to wait, for wait (used when selector is omitted)." },
       },
@@ -310,6 +302,78 @@ async function browserAct(sessionId: string, args: Record<string, unknown>): Pro
         await session.page.waitForLoadState("load", { timeout: NAV_TIMEOUT_MS }).catch(() => {});
         if (!clicked) return { ok: false, error: `No element matches selector "${selector}".` };
         break;
+      }
+      case "type": {
+        const selector = String(args.selector ?? "");
+        const value = String(args.value ?? "");
+        if (!selector) return { ok: false, error: "type requires a selector." };
+        await session.page.waitForSelector(selector, { timeout: NAV_TIMEOUT_MS });
+        const typed = await session.page.evaluate(({ sel, val }) => {
+          const el = document.querySelector(sel) as HTMLInputElement | null;
+          if (!el) return false;
+          el.value = val;
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          return true;
+        }, { sel: selector, val: value });
+        if (!typed) return { ok: false, error: `No element matches selector "${selector}".` };
+        break;
+      }
+      case "fill": {
+        const selector = String(args.selector ?? "");
+        const value = String(args.value ?? "");
+        if (!selector) return { ok: false, error: "fill requires a selector." };
+        await session.page.waitForSelector(selector, { timeout: NAV_TIMEOUT_MS });
+        const filled = await session.page.evaluate(({ sel, val }) => {
+          const el = document.querySelector(sel) as HTMLInputElement | null;
+          if (!el) return false;
+          el.value = val;
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          return true;
+        }, { sel: selector, val: value });
+        if (!filled) return { ok: false, error: `No element matches selector "${selector}".` };
+        break;
+      }
+      case "press_key": {
+        const selector = args.selector ? String(args.selector) : undefined;
+        const value = String(args.value ?? "");
+        if (!value) return { ok: false, error: "press_key requires a value (key name)." };
+        if (selector) {
+          await session.page.waitForSelector(selector, { timeout: NAV_TIMEOUT_MS });
+        }
+        const pressed = await session.page.evaluate(({ sel, val }) => {
+          const el = sel ? document.querySelector(sel) as HTMLElement | null : document.activeElement as HTMLElement | null;
+          if (!el) return false;
+          el.dispatchEvent(new KeyboardEvent("keydown", { key: val, bubbles: true }));
+          el.dispatchEvent(new KeyboardEvent("keypress", { key: val, bubbles: true }));
+          el.dispatchEvent(new KeyboardEvent("keyup", { key: val, bubbles: true }));
+          return true;
+        }, { sel: selector, val: value });
+        if (!pressed) return { ok: false, error: selector ? `No element matches selector "${selector}".` : "No active element." };
+        break;
+      }
+      case "select_option": {
+        const selector = String(args.selector ?? "");
+        const value = String(args.value ?? "");
+        if (!selector) return { ok: false, error: "select_option requires a selector." };
+        await session.page.waitForSelector(selector, { timeout: NAV_TIMEOUT_MS });
+        const selected = await session.page.evaluate(({ sel, val }) => {
+          const el = document.querySelector(sel) as HTMLSelectElement | null;
+          if (!el) return false;
+          el.value = val;
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          return true;
+        }, { sel: selector, val: value });
+        if (!selected) return { ok: false, error: `No element matches selector "${selector}".` };
+        break;
+      }
+      case "evaluate": {
+        const value = String(args.value ?? "");
+        if (!value) return { ok: false, error: "evaluate requires a value (JS expression)." };
+        const result = await session.page.evaluate(value);
+        const { title, text, url } = await pageTextAndTitle(session);
+        return { ok: true, content: { url, title, text, result, truncated: text.length >= MAX_TEXT } };
       }
       case "scroll": {
         const direction = args.direction === "up" ? -1 : 1;

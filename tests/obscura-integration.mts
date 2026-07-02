@@ -20,6 +20,7 @@
  */
 import { openObscuraSession, closeObscuraSession } from "../src/lib/ai/obscura-adapter";
 import { runBrowserTool } from "../src/lib/ai/browser-tools";
+import { ensureObscuraRunning } from "../src/lib/ai/obscura-launcher";
 
 let pass = 0,
   fail = 0;
@@ -47,6 +48,12 @@ const FIXTURE_HTML = `<!doctype html>
 <html><body>
 <ul id="list"><li>Item 1</li></ul>
 <button id="load-more">Load more</button>
+<input id="text-input" type="text" />
+<select id="select-input">
+  <option value="opt-a">Option A</option>
+  <option value="opt-b">Option B</option>
+</select>
+<span id="status"></span>
 <script>
 let n = 2;
 document.getElementById("load-more").addEventListener("click", () => {
@@ -54,6 +61,12 @@ document.getElementById("load-more").addEventListener("click", () => {
   li.textContent = "Item " + n;
   n += 1;
   document.getElementById("list").appendChild(li);
+});
+document.getElementById("text-input").addEventListener("input", (e) => {
+  document.getElementById("status").textContent = "Typed: " + e.target.value;
+});
+document.getElementById("select-input").addEventListener("change", (e) => {
+  document.getElementById("status").textContent = "Selected: " + e.target.value;
 });
 </script>
 </body></html>`;
@@ -78,6 +91,24 @@ async function adapterLevelTest() {
 
     const lastItemText = await session.page.locator("#list li").last().textContent();
     ok("the new item has the expected text", lastItemText === "Item 2", lastItemText);
+
+    // Test filling
+    await session.page.evaluate(() => {
+      const el = document.querySelector("#text-input") as HTMLInputElement;
+      el.value = "Hermes";
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const statusText = await session.page.locator("#status").textContent();
+    ok("filling text updates status", statusText === "Typed: Hermes", statusText);
+
+    // Test selecting option
+    await session.page.evaluate(() => {
+      const el = document.querySelector("#select-input") as HTMLSelectElement;
+      el.value = "opt-b";
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const statusTextSelect = await session.page.locator("#status").textContent();
+    ok("selecting option updates status", statusTextSelect === "Selected: opt-b", statusTextSelect);
   } finally {
     await closeObscuraSession(session.id);
   }
@@ -116,6 +147,15 @@ async function toolLevelTest() {
 }
 
 async function main() {
+  const isLocal = OBSCURA_HTTP_URL.includes("127.0.0.1") || OBSCURA_HTTP_URL.includes("localhost");
+  if (isLocal) {
+    try {
+      await ensureObscuraRunning();
+    } catch (e) {
+      console.warn("[Test] Failed to ensure local Obscura sidecar is running:", e);
+    }
+  }
+
   if (!(await sidecarReachable())) {
     console.log(`SKIPPED: no Obscura sidecar reachable at ${OBSCURA_HTTP_URL} (run \`docker compose up -d obscura\` first)`);
     process.exit(0);
