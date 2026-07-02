@@ -132,7 +132,10 @@ export default function DashboardPage() {
     const result = await actions.sourceNextBatch(activeCampaign.id);
     if (!result.ok) {
       toast({
-        title: `${result.source === "github" ? "GitHub" : "Web"} sourcing failed`,
+        title:
+          result.source === "paused"
+            ? "Campaign is paused"
+            : `${result.source === "github" ? "GitHub" : "Web"} sourcing failed`,
         description: result.error,
         variant: "error",
       });

@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   CalendarDays,
   CalendarClock,
+  CalendarCog,
   CheckCircle2,
   Clock,
   Video,
@@ -13,10 +14,10 @@ import {
   XCircle,
   ListChecks,
 } from "lucide-react";
-import { Badge, Button, EmptyState, useToast } from "@/components/ui";
+import { Badge, Button, EmptyState, Field, Input, useToast } from "@/components/ui";
 import { useActions } from "@/lib/store";
 import type { Booking, BookingStatus } from "@/lib/types";
-import { cn, formatTime, formatDate, toneForBookingStatus } from "@/lib/utils";
+import { cn, formatTime, formatDate, formatDateTime, toneForBookingStatus } from "@/lib/utils";
 
 const TERMINAL_STATUSES = new Set(["Completed", "Cancelled", "No Show"]);
 
@@ -24,6 +25,13 @@ type DayGroup = { key: string; label: string; bookings: Booking[] };
 
 function byStartAsc(a: Booking, b: Booking) {
   return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+}
+
+/** ISO -> value a `<input type="datetime-local">` accepts, in local time. */
+function toDatetimeLocalValue(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function groupByDay(bookings: Booking[], order: "asc" | "desc"): DayGroup[] {
@@ -99,6 +107,9 @@ function BookingRow({ booking }: { booking: Booking }) {
   const extra = booking.agenda.length - previewAgenda.length;
   const isTerminal = TERMINAL_STATUSES.has(booking.status);
 
+  const [rescheduling, setRescheduling] = React.useState(false);
+  const [newStart, setNewStart] = React.useState(() => toDatetimeLocalValue(booking.startTime));
+
   const setOutcome = (status: Extract<BookingStatus, "Completed" | "No Show" | "Cancelled">) => {
     actions.updateBooking(booking.id, { status });
     toast({
@@ -106,6 +117,29 @@ function BookingRow({ booking }: { booking: Booking }) {
       description: `${booking.candidateName} · ${booking.role}`,
       variant: status === "Completed" ? "success" : "warning",
     });
+  };
+
+  const openReschedule = () => {
+    setNewStart(toDatetimeLocalValue(booking.startTime));
+    setRescheduling(true);
+  };
+
+  const saveReschedule = () => {
+    const nextStart = new Date(newStart);
+    if (!newStart || Number.isNaN(nextStart.getTime())) {
+      toast({ title: "Pick a valid date and time", variant: "warning" });
+      return;
+    }
+    const durationMs = new Date(booking.endTime).getTime() - new Date(booking.startTime).getTime();
+    const startTime = nextStart.toISOString();
+    const endTime = new Date(nextStart.getTime() + durationMs).toISOString();
+    actions.updateBooking(booking.id, { startTime, endTime });
+    toast({
+      title: "Interview rescheduled",
+      description: `${booking.candidateName} · ${formatDateTime(startTime)}`,
+      variant: "success",
+    });
+    setRescheduling(false);
   };
 
   return (
@@ -190,6 +224,33 @@ function BookingRow({ booking }: { booking: Booking }) {
             leftIcon={<XCircle className="h-3.5 w-3.5" aria-hidden />}
             onClick={() => setOutcome("Cancelled")}
           >
+            Cancel
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={<CalendarCog className="h-3.5 w-3.5" aria-hidden />}
+            onClick={() => (rescheduling ? setRescheduling(false) : openReschedule())}
+          >
+            Reschedule
+          </Button>
+        </div>
+      )}
+
+      {!isTerminal && rescheduling && (
+        <div className="mt-3 flex flex-wrap items-end gap-2 rounded-xl bg-ink/[0.03] p-3">
+          <Field label="New time" htmlFor={`reschedule-${booking.id}`} className="min-w-[220px] flex-1">
+            <Input
+              id={`reschedule-${booking.id}`}
+              type="datetime-local"
+              value={newStart}
+              onChange={(e) => setNewStart(e.target.value)}
+            />
+          </Field>
+          <Button variant="primary" size="sm" onClick={saveReschedule} disabled={!newStart}>
+            Save
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setRescheduling(false)}>
             Cancel
           </Button>
         </div>

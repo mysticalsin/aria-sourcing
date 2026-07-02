@@ -16,6 +16,7 @@ import {
   Input,
   Select,
   Textarea,
+  useConfirm,
   useToast,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
@@ -84,6 +85,7 @@ export default function IntakePage() {
   const hydrated = useHydrated();
   const router = useRouter();
   const { toast } = useToast();
+  const confirm = useConfirm();
   const actions = useActions();
   const settings = useSettings();
 
@@ -234,8 +236,24 @@ export default function IntakePage() {
     });
   }
 
-  function handleCreateCampaign() {
-    if (!job) return;
+  async function handleCreateCampaign() {
+    if (!job || !parsed) return;
+    const criticalWarnings = parsed.validationWarnings.filter((w) => w.severity === "critical");
+    if (criticalWarnings.length > 0) {
+      const ok = await confirm({
+        title:
+          criticalWarnings.length === 1
+            ? "1 critical issue needs review"
+            : `${criticalWarnings.length} critical issues need review`,
+        description: `${criticalWarnings
+          .map((w) => `${w.field}: ${w.message}`)
+          .join(" · ")} — review the validation warnings above, or proceed anyway.`,
+        confirmLabel: "Create anyway",
+        cancelLabel: "Review brief",
+        danger: true,
+      });
+      if (!ok) return;
+    }
     const campaign = actions.createCampaignFromAnalysis(job, {
       hiringManager: senderName.trim() || "Hiring Manager",
       hiringManagerEmail: senderEmail.trim() || "unknown@company.example",
