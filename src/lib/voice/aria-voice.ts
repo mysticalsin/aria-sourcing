@@ -143,11 +143,30 @@ export function stopListening(): void {
   }
 }
 
+/** The ElevenLabs <audio> element currently playing an Aria utterance (if
+ *  any) — module-level so a new `speak()` call can stop the last one before
+ *  starting, mirroring the browser path's speechSynthesis.cancel(). */
+let activeAudio: HTMLAudioElement | null = null;
+
+function stopActiveAudio(): void {
+  const audio = activeAudio;
+  activeAudio = null;
+  if (!audio) return;
+  try {
+    audio.pause();
+    if (audio.src) URL.revokeObjectURL(audio.src);
+  } catch {
+    /* best effort */
+  }
+}
+
 /** Speaks one utterance via the browser's own speechSynthesis — cancels
  *  anything already queued/speaking first so summaries never stack up.
  *  No-ops silently when TTS isn't supported or `text` is blank. Never
- *  throws: TTS is cosmetic and must never break the calling flow. */
-export function speak(text: string): void {
+ *  throws: TTS is cosmetic and must never break the calling flow. This is
+ *  the FALLBACK path used by speak() below when the ElevenLabs proxy isn't
+ *  configured, is rate-limited, or fails. */
+function speakWithBrowser(text: string): void {
   if (!isTTSSupported() || !text.trim()) return;
   try {
     window.speechSynthesis.cancel();
@@ -156,4 +175,92 @@ export function speak(text: string): void {
   } catch {
     /* best effort — TTS is cosmetic, never block on it */
   }
+}
+
+/** Tries the server-side ElevenLabs proxy (`/api/voice/tts`) and plays the
+ *  returned audio. Falls back to speakWithBrowser() on any non-200 response
+ *  (204 no key, 429 rate-limited, 502 upstream failure) or on a fetch/play
+ *  error — the caller (speak()) never needs to know which path was used. */
+async function speakWithElevenLabs(text: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch("/api/voice/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+  } catch {
+    speakWithBrowser(text);
+    return;
+  }
+
+  if (res.status !== 200) {
+    // 204 (no key configured), 429 (rate-limited), 502 (upstream/network
+    // failure on the server), or anything else unexpected.
+    speakWithBrowser(text);
+    return;
+  }
+
+  let blob: Blob;
+  try {
+    blob = await res.blob();
+  } catch {
+    speakWithBrowser(text);
+    return;
+  }
+
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  activeAudio = audio;
+
+  let settled = false;
+  const cleanup = () => {
+    URL.revokeObjectURL(url);
+    if (activeAudio === audio) activeAudio = null;
+  };
+  const fallBackToBrowser = () => {
+    if (settled) return;
+    settled = true;
+    cleanup();
+    speakWithBrowser(text);
+  };
+  audio.addEventListener("ended", () => {
+    if (settled) return;
+    settled = true;
+    cleanup();
+  });
+  audio.addEventListener("error", fallBackToBrowser);
+
+  try {
+    await audio.play();
+  } catch {
+    // Autoplay blocked, decode failure, etc.
+    fallBackToBrowser();
+  }
+}
+
+/**
+ * Speaks one utterance. Tries the server-side ElevenLabs proxy first for
+ * higher-quality speech, falling back to the browser's own speechSynthesis
+ * when the proxy reports no key configured, rate-limits, fails upstream, or
+ * the fetch itself errors — see speakWithElevenLabs()/speakWithBrowser().
+ * Fire-and-forget from the caller's perspective: this function is
+ * synchronous (`void`) and never throws; all async work happens internally.
+ * Cancels/replaces any Aria audio (either path) already playing so spoken
+ * summaries never stack.
+ */
+export function speak(text: string): void {
+  const trimmed = text.trim();
+  if (typeof window === "undefined" || !trimmed) return;
+
+  stopActiveAudio();
+  if (isTTSSupported()) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch {
+      /* best effort */
+    }
+  }
+
+  void speakWithElevenLabs(trimmed);
 }
