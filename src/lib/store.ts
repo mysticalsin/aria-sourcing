@@ -35,6 +35,7 @@ import {
   parseHermesOutreach,
 } from "./ai/hermes";
 import { resolveAiProvider } from "./ai/provider";
+import { emit } from "./agent-events";
 import { buildSeedState, defaultGuardrails, defaultLlmProviders, defaultSavedModels, defaultSettings, defaultTools, STATE_VERSION } from "./seed";
 import { computeCampaignMetrics, firstInterviewElapsedHours, globalKpis, type GlobalKpis } from "./metrics";
 import { deriveRecommendations, deriveFollowUpsDue, type Recommendation, type FollowUpDueItem } from "./recommendations";
@@ -1046,6 +1047,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
         return next;
       });
+      emit({ kind: "source", campaignId, count: result.accepted.length });
       return { ...result, source, ok: true };
     },
     [commit, current],
@@ -1179,6 +1181,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           campaign.id,
         );
       });
+      emit({ kind: "allocate", candidateName: candidate.name, campaignId: campaign.id });
       return msg;
     },
     [commit, current],
@@ -1671,6 +1674,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
         return next;
       });
+      emit({ kind: "send", candidateName: candidate.name, campaignId: campaign.id });
       return result;
     },
     [commit, current],
@@ -2084,6 +2088,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           campaignId,
         );
       });
+      emit({ kind: "reply", candidateName: candidate?.name, campaignId });
       return { reply, classification };
     },
     [commit, current],
@@ -2409,6 +2414,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
 
+      emit({ kind: "book", candidateName: candidate.name, campaignId: campaign.id });
       return { ok: true, booking, prepEmail: prep, confirmationEmail: confirm };
     },
     [commit, current],
@@ -3549,6 +3555,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
         return next;
       });
+      emit({ kind: "allocate", count: drafted.length, campaignId: opts?.campaignId });
       return result;
     },
     [commit, current],
