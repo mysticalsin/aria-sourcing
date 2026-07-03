@@ -20,6 +20,7 @@ import { Card, CardBody, Badge } from "@/components/ui";
 import { useActivities, useCandidates, useOutreach, useSeats, useSuppression } from "@/lib/store";
 import { formatNumber, formatTimeAgo } from "@/lib/utils";
 import type { Tone } from "@/lib/utils";
+import type { Candidate } from "@/lib/types";
 
 const PENDING_SEND_STATUSES = new Set(["Needs Approval", "Approved", "Scheduled", "Pending Manual Send"]);
 
@@ -89,8 +90,13 @@ export function CompliancePosture() {
   );
 
   /* ---- Suppression adherence ---------------------------------------------
-     A "breach" is a suppressed/do-not-contact candidate who still has an
-     outreach message sitting in a status that could reach them. */
+     A "breach" is either (a) a candidate already flagged suppressed/
+     do-not-contact who still has an outreach message sitting in a status
+     that could reach them, or (b) any candidate whose email — or its
+     domain — matches an active Fleet suppression entry while a message to
+     them is still pending/queued. (b) is what actually catches entries
+     added straight to the Fleet suppression list (e.g. an excluded
+     competitor domain) that never touched the candidate's complianceFlags. */
   const activeSuppression = React.useMemo(
     () => suppression.filter((s) => !s.expiresAt || new Date(s.expiresAt).getTime() > now),
     [suppression, now],
@@ -99,13 +105,29 @@ export function CompliancePosture() {
     () => candidates.filter((c) => c.complianceFlags.suppressed || c.complianceFlags.doNotContact),
     [candidates],
   );
-  const suppressionBreaches = React.useMemo(
-    () =>
-      flaggedCandidates.filter((c) =>
-        outreach.some((m) => m.candidateId === c.id && PENDING_SEND_STATUSES.has(m.status)),
-      ),
-    [flaggedCandidates, outreach],
-  );
+  const suppressionBreaches = React.useMemo(() => {
+    const flaggedBreaches = flaggedCandidates.filter((c) =>
+      outreach.some((m) => m.candidateId === c.id && PENDING_SEND_STATUSES.has(m.status)),
+    );
+    const candidateById = new Map(candidates.map((c) => [c.id, c] as const));
+    const listBreaches: Candidate[] = [];
+    for (const m of outreach) {
+      if (!PENDING_SEND_STATUSES.has(m.status)) continue;
+      const candidate = candidateById.get(m.candidateId);
+      if (!candidate) continue;
+      const email = candidate.email.toLowerCase();
+      const domain = email.split("@")[1] ?? "";
+      const matchesSuppression = activeSuppression.some(
+        (s) =>
+          (s.type === "email" && s.value.toLowerCase() === email) ||
+          (s.type === "domain" && domain !== "" && s.value.toLowerCase() === domain),
+      );
+      if (matchesSuppression) listBreaches.push(candidate);
+    }
+    const byId = new Map<string, Candidate>();
+    for (const c of [...flaggedBreaches, ...listBreaches]) byId.set(c.id, c);
+    return Array.from(byId.values());
+  }, [flaggedCandidates, outreach, candidates, activeSuppression]);
 
   /* ---- Rate-limit adherence ----------------------------------------------
      Each seat enforces its own dailyLimit; this reads the live counters. */
@@ -134,10 +156,10 @@ export function CompliancePosture() {
       <Tile
         icon={<Ban className="h-5 w-5" aria-hidden />}
         tone={suppressionBreaches.length > 0 ? "danger" : "success"}
-        stat={`${suppressionBreaches.length}/${formatNumber(flaggedCandidates.length)}`}
+        stat={formatNumber(suppressionBreaches.length)}
         statLabel="Suppression breaches detected"
         title="Suppressed candidates stay suppressed"
-        detail={`${formatNumber(activeSuppression.length)} active suppression entr${activeSuppression.length === 1 ? "y" : "ies"} checked against ${formatNumber(flaggedCandidates.length)} flagged candidate${flaggedCandidates.length === 1 ? "" : "s"} for any outreach still pending or scheduled to them.`}
+        detail={`${formatNumber(activeSuppression.length)} active suppression entr${activeSuppression.length === 1 ? "y" : "ies"} and ${formatNumber(flaggedCandidates.length)} flagged candidate${flaggedCandidates.length === 1 ? "" : "s"} checked by email and domain against every outreach message still pending or scheduled to them.`}
       />
       <Tile
         icon={<Gauge className="h-5 w-5" aria-hidden />}

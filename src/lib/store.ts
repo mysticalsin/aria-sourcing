@@ -1584,20 +1584,24 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // and ledger until the operator confirms the manual send.
       const isLive = !s.settings.dryRunMode;
       const isLinkedInManual = msg.channel === "LinkedIn" && isLive;
-      const isEmailLive = msg.channel === "Email" && isLive;
+      // Email, WhatsApp, and SMS all have a real live provider wired up in
+      // sendApprovedOutreach() (domain-verified mailbox, WhatsApp Cloud, Twilio SMS).
+      // None of them may be delivered on approval alone.
+      const isLiveSendChannel =
+        (msg.channel === "Email" || msg.channel === "WhatsApp" || msg.channel === "SMS") && isLive;
       // HYBRID send model: in LIVE mode an approval records approval and holds the
       // de-dupe slot (ledger 'claimed') but NEVER sends — an explicit sendApprovedOutreach()
       // actually delivers and only then flips to 'sent'. In dry-run/demo we simulate the
       // send so the showcase stays alive. This is the never-auto-send guarantee.
-      const isPendingSend = isLinkedInManual || isEmailLive;
+      const isPendingSend = isLinkedInManual || isLiveSendChannel;
       const finalStatus: OutreachStatus = isLinkedInManual
         ? "Pending Manual Send"
-        : isEmailLive
+        : isLiveSendChannel
           ? "Approved"
           : "Scheduled";
       const finalLedgerStatus: LedgerStatus = isLinkedInManual
         ? "pending_manual"
-        : isEmailLive
+        : isLiveSendChannel
           ? "claimed"
           : "sent";
       commit((prev) => {
@@ -1643,7 +1647,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           status: finalLedgerStatus,
           reason: isLinkedInManual
             ? "Awaiting operator manual send on LinkedIn."
-            : isEmailLive
+            : isLiveSendChannel
               ? "Approved, awaiting an explicit send."
               : null,
           at: now,
@@ -1673,12 +1677,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             title: `Outreach approved — ${candidate.name}`,
             notes: isLinkedInManual
               ? "LinkedIn message approved, pending manual copy/paste by operator."
-              : isEmailLive
-                ? "Email approved, awaiting an explicit send."
+              : isLiveSendChannel
+                ? `${msg.channel} approved, awaiting an explicit send.`
                 : `${msg.channel} message approved. ${prev.settings.dryRunMode ? "Dry-run, nothing sent." : "Live send."}`,
             outcome: isLinkedInManual
               ? "Pending Manual Send"
-              : isEmailLive
+              : isLiveSendChannel
                 ? "Approved, pending send"
                 : "Approved / Dry-run scheduled",
             campaignId: campaign.id,

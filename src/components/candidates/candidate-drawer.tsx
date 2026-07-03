@@ -36,12 +36,13 @@ import type {
   Candidate,
   CandidateStage,
   InterviewKind,
+  InterviewOutcome,
   LeadSource,
   OutreachMessage,
   PrequalOutcome,
   StarRating,
 } from "@/lib/types";
-import { LEAD_SOURCES, STAR_RATINGS } from "@/lib/types";
+import { INTERVIEW_OUTCOMES, LEAD_SOURCES, STAR_RATINGS } from "@/lib/types";
 import {
   Ban,
   Bookmark,
@@ -62,6 +63,7 @@ import {
   Linkedin,
   Lock,
   Mail,
+  MailX,
   Phone,
   MapPin,
   MessageSquare,
@@ -184,6 +186,13 @@ function TaniaPanel({ c }: { c: Candidate }) {
     actions.addInterview(c.id, kind, "Hiring Manager", null);
     toast({ title: `${kind} scheduled`, description: "Reminder cadence T-24h / T-1h queued.", variant: "success" });
   };
+  const setOutcome = (interviewId: string, kind: InterviewKind, outcome: InterviewOutcome) => {
+    actions.updateInterview(c.id, interviewId, { outcome });
+    toast({
+      title: `${kind} outcome: ${outcome}`,
+      variant: outcome === "Reject" || outcome === "No Show" ? "warning" : "success",
+    });
+  };
   const toggleVivier = () => {
     actions.toggleVivier(c.id);
     toast({ title: c.vivier ? "Removed from #Vivier" : "Added to #Vivier", variant: c.vivier ? "info" : "success" });
@@ -259,12 +268,26 @@ function TaniaPanel({ c }: { c: Candidate }) {
         {c.interviews && c.interviews.length > 0 ? (
           <ul className="space-y-1.5">
             {c.interviews.map((iv) => (
-              <li key={iv.id} className="flex items-center justify-between rounded-xl bg-ink/[0.03] px-3 py-2 text-sm">
+              <li key={iv.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-ink/[0.03] px-3 py-2 text-sm">
                 <span className="font-semibold text-ink">{iv.kind}</span>
                 <span className="text-muted">{iv.interviewer}</span>
-                <Badge tone={iv.outcome === "Advance" || iv.outcome === "Completed" ? "success" : iv.outcome === "Reject" || iv.outcome === "No Show" ? "danger" : "aqua"} size="sm">
-                  {iv.outcome}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge tone={iv.outcome === "Advance" || iv.outcome === "Completed" ? "success" : iv.outcome === "Reject" || iv.outcome === "No Show" ? "danger" : "aqua"} size="sm">
+                    {iv.outcome}
+                  </Badge>
+                  <select
+                    aria-label={`Set outcome for ${iv.kind} interview`}
+                    value={iv.outcome}
+                    onChange={(e) => setOutcome(iv.id, iv.kind, e.target.value as InterviewOutcome)}
+                    className="rounded-md border border-line bg-surface px-2 py-1 text-xs text-ink"
+                  >
+                    {INTERVIEW_OUTCOMES.map((outcome) => (
+                      <option key={outcome} value={outcome}>
+                        {outcome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </li>
             ))}
           </ul>
@@ -569,6 +592,20 @@ export function CandidateDrawer({
       return;
     actions.markDoNotContact(c.id);
     toast({ title: "Marked do-not-contact", description: `${c.name} added to the exclusion list.`, variant: "warning" });
+  };
+
+  const handleUnsubscribe = async () => {
+    if (
+      !(await confirm({
+        title: `Unsubscribe ${c.name}?`,
+        description: "Honors their GDPR unsubscribe request — they'll be excluded from all future outreach.",
+        confirmLabel: "Unsubscribe",
+        danger: true,
+      }))
+    )
+      return;
+    actions.unsubscribeCandidate(c.id);
+    toast({ title: "Unsubscribed", description: `${c.name} will no longer receive outreach.`, variant: "warning" });
   };
 
   const handleRestoreContact = async () => {
@@ -996,6 +1033,9 @@ export function CandidateDrawer({
             </Button>
             <Button variant="danger" size="sm" leftIcon={<Ban className="h-4 w-4" />} onClick={handleDoNotContact}>
               Mark do-not-contact
+            </Button>
+            <Button variant="outline" size="sm" leftIcon={<MailX className="h-4 w-4" />} onClick={handleUnsubscribe}>
+              Unsubscribe
             </Button>
           </div>
           {(flags.suppressed || flags.doNotContact) && (
