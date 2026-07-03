@@ -5358,6 +5358,73 @@ export function useActivities(): Activity[] {
   return useStateOrEmpty().activities;
 }
 
+/** One event in an entity's merged timeline — see useEntityTimeline. */
+export type TimelineEvent =
+  | { kind: "activity"; id: string; at: string; activity: Activity }
+  | { kind: "outreach"; id: string; at: string; message: OutreachMessage }
+  | { kind: "reply"; id: string; at: string; reply: ClassifiedReply };
+
+/**
+ * Decision Replay read model (workstream 4.2) — groups useActivities() by
+ * linkedEntityId and merges in the entity's outreach + replies so a full
+ * sourced→scored→drafted→approved→replied→booked chain can be replayed from
+ * one call. Purely additive: no new persisted fields, no change to
+ * withActivity/makeActivity semantics, no existing selector touched.
+ *
+ * Booking activities are logged against the *booking's* id, not the
+ * candidate's (see createBookingFor's withActivity call), so for
+ * linkedEntityType "candidate" this also pulls in any booking activity whose
+ * booking.candidateId matches — otherwise the "booked" step would silently
+ * vanish from a candidate's replay. Outreach messages and replies are only
+ * merged for "candidate" (the only entity type they key off today); other
+ * linkedEntityType calls (e.g. "campaign") return just the matched activities.
+ */
+export function useEntityTimeline(
+  linkedEntityType: Activity["linkedEntityType"],
+  linkedEntityId: string | null | undefined,
+): TimelineEvent[] {
+  const s = useStateOrEmpty();
+  return useMemo(() => {
+    if (!linkedEntityType || !linkedEntityId) return [];
+
+    const directActivities = s.activities.filter(
+      (a) => a.linkedEntityType === linkedEntityType && a.linkedEntityId === linkedEntityId,
+    );
+    const bookingActivities =
+      linkedEntityType === "candidate"
+        ? s.activities.filter(
+            (a) =>
+              a.linkedEntityType === "booking" &&
+              s.bookings.some((b) => b.id === a.linkedEntityId && b.candidateId === linkedEntityId),
+          )
+        : [];
+    const activityEvents: TimelineEvent[] = [...directActivities, ...bookingActivities].map((activity) => ({
+      kind: "activity",
+      id: activity.id,
+      at: activity.createdAt,
+      activity,
+    }));
+
+    const outreachEvents: TimelineEvent[] =
+      linkedEntityType === "candidate"
+        ? s.outreach
+            .filter((m) => m.candidateId === linkedEntityId)
+            .map((message) => ({ kind: "outreach", id: message.id, at: message.createdAt, message }))
+        : [];
+
+    const replyEvents: TimelineEvent[] =
+      linkedEntityType === "candidate"
+        ? s.replies
+            .filter((r) => r.candidateId === linkedEntityId)
+            .map((reply) => ({ kind: "reply", id: reply.id, at: reply.receivedAt, reply }))
+        : [];
+
+    return [...activityEvents, ...outreachEvents, ...replyEvents].sort(
+      (a, b) => new Date(a.at).getTime() - new Date(b.at).getTime(),
+    );
+  }, [s.activities, s.outreach, s.replies, s.bookings, linkedEntityType, linkedEntityId]);
+}
+
 export function useDashboardKpis(): GlobalKpis {
   const { campaigns, candidates, outreach, replies } = useStateOrEmpty();
   // Keyed on the individual slices globalKpis() reads, not the whole state
