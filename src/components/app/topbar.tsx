@@ -20,7 +20,7 @@ import {
   useSettings,
 } from "@/lib/store";
 import { useToast, useConfirm } from "@/components/ui";
-import { supabaseEnabled } from "@/lib/supabase/config";
+import { supabaseEnabled, demoLoginEnabled } from "@/lib/supabase/config";
 import { getCurrentUser, type CurrentUser } from "@/lib/supabase/workspace";
 import { beginAriaLiveRun } from "@/lib/demo/aria-live";
 import { AriaLiveOverlay } from "@/components/demo/aria-live-overlay";
@@ -374,7 +374,7 @@ export function TopBar() {
                   >
                     <RotateCcw className="h-4 w-4" /> Reset to defaults
                   </button>
-                  {supabaseEnabled && (
+                  {(supabaseEnabled || demoLoginEnabled) && (
                     <a
                       href="/auth/signout"
                       role="menuitem"
