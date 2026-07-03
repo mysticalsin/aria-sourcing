@@ -20,6 +20,7 @@ import { OutreachMessageCard } from "@/components/outreach/outreach-message-card
 import { RateMeterPanel } from "@/components/outreach/rate-meter-panel";
 import { QuickDraft } from "@/components/outreach/quick-draft";
 import { SequenceLadder } from "@/components/outreach/sequence-ladder";
+import { GlassBoxPanel } from "@/components/outreach/glass-box-panel";
 import {
   useHydrated,
   useCampaigns,
@@ -187,6 +188,14 @@ function OutreachView() {
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [draftingAllDue, setDraftingAllDue] = React.useState(false);
   const [draftAllProgress, setDraftAllProgress] = React.useState({ done: 0, total: 0 });
+  // Which pending draft (if any) has its glass-box guardrail detail expanded.
+  // Collapsed by default so the queue doesn't render every candidate's radar
+  // + claim map at once; the panel is one click away for every draft.
+  const [glassBoxId, setGlassBoxId] = React.useState<string | null>(null);
+
+  function toggleGlassBox(messageId: string) {
+    setGlassBoxId((prev) => (prev === messageId ? null : messageId));
+  }
 
   const matches = React.useCallback(
     (campaignId: string) => campaignFilter === "all" || campaignId === campaignFilter,
@@ -401,6 +410,20 @@ function OutreachView() {
                         selected={selectedIds.has(m.id)}
                         onToggleSelect={toggleSelect}
                       />
+                      <button
+                        type="button"
+                        onClick={() => toggleGlassBox(m.id)}
+                        aria-expanded={glassBoxId === m.id}
+                        className="inline-flex items-center gap-1.5 rounded-full px-1 text-xs font-semibold text-electric transition hover:text-electric/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
+                      >
+                        <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+                        {glassBoxId === m.id ? "Hide guardrail detail" : "Show guardrail detail"}
+                        <ChevronDown
+                          className={cn("h-3.5 w-3.5 transition-transform", glassBoxId === m.id && "rotate-180")}
+                          aria-hidden
+                        />
+                      </button>
+                      {glassBoxId === m.id && <GlassBoxPanel message={m} />}
                     </div>
                   ))}
                 </div>
