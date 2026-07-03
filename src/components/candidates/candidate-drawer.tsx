@@ -13,6 +13,7 @@ import {
 import { ScoreGauge } from "@/components/charts/score-gauge";
 import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
+import { ConsentPassport } from "@/components/candidates/consent-passport";
 import { useActions, useCampaign, useCandidate, useOutreach, useSettings } from "@/lib/store";
 import {
   downloadText,
@@ -68,6 +69,7 @@ import {
   RotateCcw,
   Send,
   ShieldAlert,
+  ShieldCheck,
   Sparkles,
   UserX,
 } from "lucide-react";
@@ -1006,6 +1008,13 @@ export function CandidateDrawer({
               Undo — restore contact
             </Button>
           )}
+        </Section>
+
+        {/* Consent passport — GDPR data lineage: source/lawful-basis chips,
+            retention countdown, and the reveal ledger for this candidate.
+            Display-only; does not itself reveal masked PII. */}
+        <Section title="Consent passport" icon={<ShieldCheck className="h-4 w-4" />}>
+          <ConsentPassport candidate={c} />
         </Section>
       </div>
     </Drawer>

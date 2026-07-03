@@ -23,6 +23,7 @@ import {
 import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
 import { deriveLeadSource, deriveStarRating, DEFAULT_STAR_THRESHOLDS } from "@/lib/tania";
 import { SourceBadge, StarBadge } from "@/components/tania/badges";
+import { ProvenanceChip } from "@/components/candidates/consent-passport";
 import type { Candidate, ComplianceFlags } from "@/lib/types";
 import { Ban, Bookmark, Download, EyeOff, Lock, MailX, UserX, Users } from "lucide-react";
 
@@ -200,6 +201,7 @@ export function CandidateTable({
                       literal platform too so a platform filter stays visually verifiable
                       (see CAND-P1-1). */}
                   <span className="text-xs text-muted">{c.sourcePlatform}</span>
+                  <ProvenanceChip candidate={c} />
                   {c.vivier && (
                     <Badge tone="violet" size="sm" title="In #Vivier (talent pool)">
                       <Bookmark className="h-3 w-3" aria-hidden /> Vivier
