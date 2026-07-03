@@ -10,9 +10,11 @@ export const BUMP_FREEZE_MS = 1500;
 export const BUMP_RECOVERY_MS = 1200;
 export const DESK_STICKY_MS = 10_000;
 
-// World-Z distance in front of a desk center where the chair sits and a
-// "working" agent is seated. Keeps desk + chair + seated robot aligned.
-export const CHAIR_SEAT_OFFSET = 0.6;
+// World-Z distance in front of the desk's front edge where the chair sits and
+// a "working" agent is seated. Tuned so chair + seated robot tuck to the desk
+// (desk front edge ≈ +0.01 world-units from center; 0.15 leaves a natural gap).
+// Keeps desk + chair + seated robot aligned (RobotAgentModel uses this too).
+export const CHAIR_SEAT_OFFSET = 0.15;
 
 // 2-D canvas dimensions (pixel space — agents navigate in this coordinate system)
 export const CANVAS_W = 1800;
