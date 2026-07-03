@@ -2,6 +2,21 @@ import type { Metadata, Viewport } from "next";
 import "@/styles/globals.css";
 import { Providers } from "@/components/app/providers";
 import { AppShell } from "@/components/app/app-shell";
+import { Geist, EB_Garamond } from "next/font/google";
+
+const geist = Geist({
+  subsets: ["latin"],
+  weight: ["300", "400", "500"],
+  variable: "--font-geist",
+  display: "swap",
+});
+
+const garamond = EB_Garamond({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-garamond",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: {
@@ -21,16 +36,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-scroll-behavior="smooth">
-      <head>
-        {/* Cinematic login hero fonts */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        {/* Root-layout links load globally — the per-page-font rule does not apply. */}
-        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-        <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500&display=swap" rel="stylesheet" />
-        <link href="https://db.onlinewebfonts.com/c/2bf40ab72ea4897a3fd9b6e48b233a19?family=Garamond" rel="stylesheet" />
-      </head>
+    <html lang="en" data-scroll-behavior="smooth" className={`${geist.variable} ${garamond.variable}`}>
       <body className="antialiased">
         <Providers>
           <AppShell>{children}</AppShell>
