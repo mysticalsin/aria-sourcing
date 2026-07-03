@@ -22,6 +22,7 @@ import {
   Network,
   Rocket,
   Rewind,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -56,6 +57,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/sessions", label: "Sessions", icon: History, section: "System", description: "Chat & activity history" },
   { href: "/curator", label: "Files", icon: FolderSearch, section: "System", description: "Aria files & curator" },
   { href: "/soul", label: "Soul", icon: Sparkles, section: "System", description: "Agent personas & brain" },
+  { href: "/trust", label: "Trust & ROI", icon: ShieldCheck, section: "System", description: "ROI calculator & compliance posture" },
   { href: "/settings", label: "Settings", icon: Settings, section: "System", description: "Integrations & compliance" },
 ];
 
