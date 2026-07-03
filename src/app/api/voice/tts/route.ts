@@ -25,8 +25,8 @@ export const dynamic = "force-dynamic";
 /** Bounds cost/abuse from a single utterance; Aria's spoken summaries are short. */
 const MAX_TEXT_LENGTH = 300;
 
-/** ElevenLabs default voice ("Rachel") — used when ELEVENLABS_VOICE_ID isn't set. */
-const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
+/** ElevenLabs default voice ("Sarah" — mature, reassuring, confident; fits the Aria persona). Used when ELEVENLABS_VOICE_ID isn't set. */
+const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 
 const UPSTREAM_TIMEOUT_MS = 15_000;
 
