@@ -37,7 +37,6 @@ export function QuickDraft() {
   const toneOptions = OUTREACH_TONES.map((t) => ({ value: t, label: t }));
   const channelOptions = OUTREACH_CHANNELS.map((ch) => ({ value: ch, label: ch }));
 
-  // Clear result when selections change
   React.useEffect(() => {
     setResult(null);
   }, [candidateId, tone, channel]);

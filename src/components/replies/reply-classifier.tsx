@@ -160,7 +160,7 @@ export function ReplyClassifier({
             Paste reply to classify
           </CardTitle>
           <p className="mt-1 text-sm text-muted">
-            Intent, confidence, and a suggested draft, delivered instantly. Drafts are never sent automatically.
+            Intent, confidence, and a suggested draft. Drafts are never sent automatically.
           </p>
         </div>
       </CardHeader>

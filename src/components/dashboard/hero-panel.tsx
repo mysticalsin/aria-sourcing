@@ -27,7 +27,7 @@ export function HeroPanel() {
         <Eyebrow className="text-tangerine">Autonomous recruiting ops</Eyebrow>
 
         <h1 className="display mt-4 text-4xl text-ink sm:text-5xl lg:text-6xl">
-          Autonomous sourcing, delivered beyond.
+          Autonomous sourcing, from brief to booked interview.
         </h1>
 
         <p className="mt-5 max-w-xl text-base leading-relaxed text-ink-soft sm:text-lg">
@@ -55,7 +55,7 @@ export function HeroPanel() {
 
           <span className="inline-flex h-12 items-center gap-1.5 rounded-full bg-tangerine-soft px-4 text-sm font-semibold text-tangerine ring-1 ring-inset ring-tangerine/20">
             <Zap className="h-4 w-4" aria-hidden />
-            Source boldly.
+            Always sourcing.
           </span>
         </div>
 

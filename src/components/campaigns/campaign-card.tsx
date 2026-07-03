@@ -40,7 +40,6 @@ export function CampaignCard({ campaign }: { campaign: Campaign }) {
         aria-label={`Open campaign ${campaign.title}`}
         className="block rounded-2xl p-6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/40"
       >
-        {/* Header row */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <Eyebrow>{campaign.department}</Eyebrow>
@@ -56,7 +55,6 @@ export function CampaignCard({ campaign }: { campaign: Campaign }) {
           </span>
         </div>
 
-        {/* Status badges */}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Badge tone={toneForUrgency(campaign.urgency)} size="sm" dot>
             {campaign.urgency}
@@ -75,12 +73,10 @@ export function CampaignCard({ campaign }: { campaign: Campaign }) {
           </Badge>
         </div>
 
-        {/* Mini funnel */}
         <div className="mt-5">
           <MiniFunnel metrics={m} />
         </div>
 
-        {/* Counts */}
         <dl className="mt-5 grid grid-cols-4 gap-2">
           {counts.map((c) => (
             <div
@@ -97,7 +93,6 @@ export function CampaignCard({ campaign }: { campaign: Campaign }) {
           ))}
         </dl>
 
-        {/* Footer next-action hint */}
         <div className="mt-5 flex items-center gap-2 border-t border-line pt-4 text-sm">
           <span
             className={cn(

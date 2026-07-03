@@ -682,7 +682,6 @@ export function CandidateDrawer({
       width="max-w-2xl"
     >
       <div className="space-y-8 animate-fade-in">
-        {/* Header meta */}
         <div className="space-y-3">
           {campaign && (
             <Badge tone="electric" size="sm">
@@ -837,7 +836,6 @@ export function CandidateDrawer({
           )}
         </div>
 
-        {/* Score */}
         <Section title="Match score" icon={<Sparkles className="h-4 w-4" />}>
           <div className="grid gap-6 sm:grid-cols-[auto_auto_1fr] sm:items-start">
             <div className="flex justify-center sm:justify-start">
@@ -860,7 +858,6 @@ export function CandidateDrawer({
         {/* Onboarding journey (Stages III→IV) — only once at offer/hired */}
         {(c.stage === "Offer" || c.stage === "Hired") && <OnboardingPanel c={c} />}
 
-        {/* Interview stage */}
         <Section title="Interview stage" icon={<ClipboardCheck className="h-4 w-4" />}>
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted">Current:</span>
@@ -902,7 +899,6 @@ export function CandidateDrawer({
           )}
         </Section>
 
-        {/* Tech stack */}
         <Section title="Tech stack">
           <Chips items={c.techStack} label="Tech stack" />
         </Section>
@@ -932,12 +928,10 @@ export function CandidateDrawer({
           </div>
         </Section>
 
-        {/* Recent activity */}
         <Section title="Recent activity" icon={<Clock className="h-4 w-4" />}>
           <p className="text-sm leading-relaxed text-ink-soft">{c.recentActivity}</p>
         </Section>
 
-        {/* Recruiter notes */}
         <Section title="Recruiter notes" icon={<NotebookPen className="h-4 w-4" />}>
           <div className="flex items-start gap-2">
             <textarea
@@ -966,7 +960,6 @@ export function CandidateDrawer({
           )}
         </Section>
 
-        {/* Outreach history */}
         <Section title="Outreach history" icon={<Send className="h-4 w-4" />}>
           {c.outreachHistory.length === 0 ? (
             <p className="text-sm text-muted">No outreach sent yet.</p>
@@ -992,7 +985,6 @@ export function CandidateDrawer({
           )}
         </Section>
 
-        {/* Reply history */}
         <Section title="Reply history" icon={<MessageSquare className="h-4 w-4" />}>
           {c.replyHistory.length === 0 ? (
             <p className="text-sm text-muted">No replies received yet.</p>
@@ -1015,7 +1007,6 @@ export function CandidateDrawer({
           )}
         </Section>
 
-        {/* Compliance controls */}
         <Section title="Compliance & data governance" icon={<ShieldAlert className="h-4 w-4" />}>
           <p className="text-sm text-muted">
             Honor candidate rights immediately. Export and anonymize support GDPR; suppression and

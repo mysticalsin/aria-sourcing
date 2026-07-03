@@ -253,7 +253,6 @@ export function TopBar() {
           Hey Aria
         </button>
 
-        {/* Notifications */}
         <div className="relative">
           <button
             ref={notifTriggerRef}
@@ -309,7 +308,6 @@ export function TopBar() {
           )}
         </div>
 
-        {/* User menu */}
         <div className="relative">
           <button
             ref={userTriggerRef}
@@ -393,7 +391,6 @@ export function TopBar() {
         </div>
       </div>
 
-      {/* Mobile search row */}
       <div className="px-4 pb-3 sm:hidden">
         <CommandSearch />
       </div>
