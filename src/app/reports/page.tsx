@@ -33,6 +33,7 @@ import {
   Sparkles,
   Inbox,
   FileText,
+  Brain,
 } from "lucide-react";
 
 export default function ReportsPage() {
@@ -49,7 +50,18 @@ export default function ReportsPage() {
   const campaign = useCampaign(effectiveId);
   const report = useReportForCampaign(effectiveId);
 
-  const skillUpdates = campaign?.skillUpdates ?? [];
+  // Proposal cards awaiting review surface first — the same real proposals
+  // (real metrics, real before/after) reviewable in depth via the "Watch it
+  // learn" streamed session on the Skills page.
+  const skillUpdates = React.useMemo(
+    () =>
+      [...(campaign?.skillUpdates ?? [])].sort((a, b) => {
+        if (a.status === "proposed" && b.status !== "proposed") return -1;
+        if (a.status !== "proposed" && b.status === "proposed") return 1;
+        return b.createdAt.localeCompare(a.createdAt);
+      }),
+    [campaign?.skillUpdates],
+  );
   const proposedCount = skillUpdates.filter((s) => s.status === "proposed").length;
 
   function handleGenerate() {
@@ -177,11 +189,20 @@ export default function ReportsPage() {
                     bake them into future runs.
                   </p>
                 </div>
-                {proposedCount > 0 && (
-                  <Badge tone="warning" dot>
-                    {proposedCount} awaiting review
-                  </Badge>
-                )}
+                <div className="flex items-center gap-2">
+                  {proposedCount > 0 && (
+                    <Badge tone="warning" dot>
+                      {proposedCount} awaiting review
+                    </Badge>
+                  )}
+                  <Link
+                    href="/skills"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-full bg-ink/[0.05] px-3.5 text-xs font-semibold text-ink-soft transition hover:bg-ink/[0.08] hover:text-ink"
+                  >
+                    <Brain className="h-3.5 w-3.5" aria-hidden />
+                    Watch it learn
+                  </Link>
+                </div>
               </div>
 
               {skillUpdates.length === 0 ? (
