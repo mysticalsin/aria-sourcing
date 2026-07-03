@@ -427,7 +427,7 @@ export function TopBar() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            {(["Operate", "System"] as const).map((section) => (
+            {(["Operate", "Analyze", "System"] as const).map((section) => (
               <div key={section} className="px-3 py-2">
                 <p className="px-3 pb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wider text-muted">
                   {section}

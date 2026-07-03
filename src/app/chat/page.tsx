@@ -102,15 +102,19 @@ export default function ChatPage() {
           )}
         </div>
 
-        {/* Right pane — Aria runtime sessions (live mode only) */}
-        {live && (
-          <div className="w-64 shrink-0 border-l border-violet/10 overflow-hidden flex flex-col bg-surface/40">
-            <div className="px-4 py-3 border-b border-violet/10 flex items-center justify-between">
-              <p className="text-xs font-bold text-ink-soft uppercase tracking-wider">Aria sessions</p>
+        {/* Right pane — Aria runtime sessions (live), or a local thread-derived preview (demo) */}
+        <div className="w-64 shrink-0 border-l border-violet/10 overflow-hidden flex flex-col bg-surface/40">
+          <div className="px-4 py-3 border-b border-violet/10 flex items-center justify-between">
+            <p className="text-xs font-bold text-ink-soft uppercase tracking-wider">Aria sessions</p>
+            {live ? (
               <Badge tone="success" size="sm" dot>Live</Badge>
-            </div>
-            <div className="flex-1 overflow-y-auto p-3 space-y-2">
-              {sessionsLoading ? (
+            ) : (
+              <Badge tone="warning" size="sm">Demo</Badge>
+            )}
+          </div>
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            {live ? (
+              sessionsLoading ? (
                 <p className="text-xs text-muted">Loading…</p>
               ) : !hermesSessions || hermesSessions.length === 0 ? (
                 <p className="text-xs text-muted">No sessions on the runtime yet.</p>
@@ -127,10 +131,31 @@ export default function ChatPage() {
                     </CardContent>
                   </Card>
                 ))
-              )}
-            </div>
+              )
+            ) : chats.length === 0 ? (
+              <p className="text-xs text-muted">No local threads yet.</p>
+            ) : (
+              <>
+                {chats.map((thread) => {
+                  const seat = seats.find((s) => s.id === thread.seatId);
+                  return (
+                    <Card key={thread.id}>
+                      <CardContent className="p-2.5">
+                        <p className="text-xs font-medium text-ink truncate">{thread.title}</p>
+                        <p className="text-[10px] text-muted truncate">
+                          {seat?.name ?? "Unassigned"} · {thread.messages.length} msg
+                        </p>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+                <p className="pt-1 text-[10px] text-muted">
+                  Local thread preview — enable Aria live mode in Settings to mirror runtime sessions here.
+                </p>
+              </>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </HydrationGate>
   );

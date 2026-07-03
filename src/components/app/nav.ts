@@ -30,11 +30,12 @@ export interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
-  section: "Operate" | "System";
+  section: "Operate" | "Analyze" | "System";
   description: string;
 }
 
 export const NAV_ITEMS: NavItem[] = [
+  // Operate — day-to-day sourcing & recruiting work
   { href: "/", label: "Command Center", icon: LayoutDashboard, section: "Operate", description: "Live operations overview" },
   { href: "/funnel", label: "Funnel", icon: Workflow, section: "Operate", description: "TAnIA hiring funnel" },
   { href: "/intake", label: "Intake", icon: MailPlus, section: "Operate", description: "Email + JD parser" },
@@ -48,16 +49,18 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/calendar", label: "Calendar", icon: CalendarDays, section: "Operate", description: "Interview bookings" },
   { href: "/fleet", label: "Agent Fleet", icon: Bot, section: "Operate", description: "Multi-agent coordination" },
   { href: "/floor", label: "Ops Floor", icon: Building2, section: "Operate", description: "Live agent floor" },
-  { href: "/replay", label: "Replay", icon: Rewind, section: "Operate", description: "Scrub the agents' whole day" },
   { href: "/chat", label: "Chat", icon: MessageSquare, section: "Operate", description: "Per-agent chat" },
-  { href: "/reports", label: "Reports", icon: LineChart, section: "Operate", description: "Learning loop" },
+  // Analyze — hindsight, metrics & compliance posture
+  { href: "/replay", label: "Replay", icon: Rewind, section: "Analyze", description: "Scrub the agents' whole day" },
+  { href: "/reports", label: "Reports", icon: LineChart, section: "Analyze", description: "Learning loop" },
+  { href: "/sessions", label: "Sessions", icon: History, section: "Analyze", description: "Chat & activity history" },
+  { href: "/trust", label: "Trust & ROI", icon: ShieldCheck, section: "Analyze", description: "ROI calculator & compliance posture" },
+  // System — agent architecture, config & platform internals
   { href: "/architecture", label: "Architecture", icon: Network, section: "System", description: "TAnIA agent org & guardrails" },
   { href: "/skills", label: "Skills", icon: Brain, section: "System", description: "Learned playbooks" },
   { href: "/memory", label: "Memory", icon: Database, section: "System", description: "Agent long-term memory" },
-  { href: "/sessions", label: "Sessions", icon: History, section: "System", description: "Chat & activity history" },
   { href: "/curator", label: "Files", icon: FolderSearch, section: "System", description: "Aria files & curator" },
   { href: "/soul", label: "Soul", icon: Sparkles, section: "System", description: "Agent personas & brain" },
-  { href: "/trust", label: "Trust & ROI", icon: ShieldCheck, section: "System", description: "ROI calculator & compliance posture" },
   { href: "/settings", label: "Settings", icon: Settings, section: "System", description: "Integrations & compliance" },
 ];
 

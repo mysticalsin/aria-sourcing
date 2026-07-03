@@ -16,7 +16,7 @@ export function Sidebar() {
   const settings = useSettings();
   const health = integrationHealthSummary(integrations);
 
-  const sections = ["Operate", "System"] as const;
+  const sections = ["Operate", "Analyze", "System"] as const;
 
   return (
     <aside className="hidden lg:flex w-[260px] shrink-0 flex-col sidebar-glass sticky top-0 h-screen">
