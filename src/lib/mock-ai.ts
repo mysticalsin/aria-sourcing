@@ -14,6 +14,7 @@ import type {
   CompanyStage,
   GithubQuery,
   IntakeIntent,
+  Interviewer,
   JobAnalysis,
   OutreachChannel,
   OutreachMessage,
@@ -111,21 +112,6 @@ const ACTIVITY_LINES = [
   "Recently launched a side project; days ago.",
   "Contributes to standards working groups regularly.",
 ];
-
-const INTERVIEWERS = [
-  { name: "Dana Whitfield", email: "dana.whitfield@hermes.example", role: "Engineering Manager" },
-  { name: "Marcus Lindqvist", email: "marcus.lindqvist@hermes.example", role: "Staff Engineer" },
-  { name: "Priya Nair", email: "priya.nair@hermes.example", role: "Director of Engineering" },
-  { name: "Sofia Romano", email: "sofia.romano@hermes.example", role: "Principal Engineer" },
-];
-
-export function getInterviewers() {
-  return INTERVIEWERS;
-}
-
-export function nextInterviewer(bookingCount: number) {
-  return INTERVIEWERS[bookingCount % INTERVIEWERS.length];
-}
 
 /* ---- Skills dictionary for the parser ----------------------------------- */
 
@@ -1114,7 +1100,9 @@ function draftFor(intent: ReplyIntent, first: string): string {
 export function createBooking(
   candidate: Candidate,
   campaign: Campaign,
-  interviewer: { name: string; email: string; role: string },
+  // Null when the interviewer roster is empty (see resolveBookingSlot in
+  // store.ts) — an honest gap rather than a fabricated name.
+  interviewer: Interviewer | null,
   startTime: Date,
 ): Booking {
   const end = new Date(startTime.getTime() + 30 * 60000);
@@ -1127,8 +1115,8 @@ export function createBooking(
     startTime: startTime.toISOString(),
     endTime: end.toISOString(),
     timezone: candidate.timezone,
-    interviewer: interviewer.name,
-    interviewerEmail: interviewer.email,
+    interviewer: interviewer?.name ?? "",
+    interviewerEmail: interviewer?.email ?? "",
     // Real meeting URLs are issued by the calendar provider (Microsoft Graph / Cal.com) at
     // live-send time. Until that integration is connected, leave these empty rather than
     // fabricate links that 404 — the calendar UI renders an "on live send" state.
@@ -1146,9 +1134,12 @@ export function createBooking(
 }
 
 export function interviewerPrepEmail(b: Booking, candidate: Candidate): string {
+  // No interviewer assigned yet (empty roster) — greet generically rather
+  // than produce "Hi ,".
+  const firstName = b.interviewer ? b.interviewer.split(" ")[0] : "there";
   return `Subject: Interview prep: ${b.candidateName} for ${b.role}
 
-Hi ${b.interviewer.split(" ")[0]},
+Hi ${firstName},
 
 You're interviewing ${b.candidateName} (${candidate.currentTitle} @ ${candidate.currentCompany}) for ${b.role}.
 Match score: ${candidate.matchScore}. Stack: ${candidate.techStack.slice(0, 5).join(", ")}.
@@ -1178,7 +1169,7 @@ Hi ${b.candidateName.split(" ")[0]},
 
 You're booked in. Details:
 • When: ${when}
-• With: ${b.interviewer}
+• With: ${b.interviewer || "Interviewer to be confirmed"}
 • Where: ${b.teamsLink}
 
 No prep needed, just bring your questions. Reply here if you need to move it.

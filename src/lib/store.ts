@@ -15,7 +15,6 @@ import {
   createBooking,
   generateOutreach,
   generateWeeklyReport,
-  getInterviewers,
   interviewerPrepEmail,
   newOutreachMessage,
   sourceCandidates,
@@ -36,13 +35,14 @@ import {
 } from "./ai/hermes";
 import { resolveAiProvider } from "./ai/provider";
 import { emit } from "./agent-events";
-import { buildSeedState, defaultGuardrails, defaultLlmProviders, defaultSavedModels, defaultSettings, defaultTools, STATE_VERSION } from "./seed";
+import { buildSeedState, defaultGuardrails, defaultLlmProviders, defaultSavedModels, defaultSettings, defaultTools, seedInterviewers, STATE_VERSION } from "./seed";
 import { computeCampaignMetrics, firstInterviewElapsedHours, globalKpis, type GlobalKpis } from "./metrics";
 import { deriveRecommendations, deriveFollowUpsDue, type Recommendation, type FollowUpDueItem } from "./recommendations";
 import { scoreCandidate } from "./scoring";
 import { deriveLeadSource, deriveStarRating, DEFAULT_STAR_THRESHOLDS } from "./tania";
 import {
   checkOutreachApproval,
+  dedupeCandidates,
   type ApprovalResult,
 } from "./rules";
 import { matchCandidateByEmail } from "./email-match";
@@ -86,6 +86,7 @@ import type {
   DustTask,
   HermesState,
   IntegrationStatus,
+  Interviewer,
   JobAnalysis,
   LedgerStatus,
   OutreachChannel,
@@ -104,7 +105,7 @@ import type {
   ToolId,
   WeeklyReport,
 } from "./types";
-import { genId, isoDaysBefore } from "./utils";
+import { genId, initialsFrom, isoDaysBefore } from "./utils";
 import { createCampaign as buildCampaign } from "./mock-ai";
 import { supabaseEnabled } from "./supabase/config";
 import { loadRemoteState, saveRemoteState } from "./supabase/workspace";
@@ -169,6 +170,31 @@ export interface HermesActions {
    *  Requires a cloud provider configured for the "sourcing" task (Anthropic or
    *  an OpenAI-compatible provider — hermes/Kimi don't support tool-calling). */
   runSourcingAgent: (campaignId: string, count?: number) => Promise<{ ok: boolean; added: number; error?: string }>;
+  /** Manual intake: resolve one real GitHub user by exact login (via /api/source)
+   *  and add them to the campaign — same scoring + dedupe pipeline as
+   *  sourceNextBatch, just for a person the operator already has in mind
+   *  instead of a search. Never drafts or sends outreach. */
+  addCandidateFromGithub: (
+    campaignId: string,
+    username: string,
+  ) => Promise<{ ok: true; added: number; skipped: number } | { ok: false; error: string }>;
+  /** Manual intake, zero network: builds a real Candidate straight from
+   *  operator-entered fields (no search, no scraping) and scores it with the
+   *  same scoring/dedupe pipeline as every other sourcing path. Labeled
+   *  sourcePlatform "Referral" — an honest existing value, not a fabricated
+   *  live source. Never drafts or sends outreach. */
+  addCandidateManual: (
+    campaignId: string,
+    input: {
+      name: string;
+      title?: string;
+      skills?: string[];
+      profileUrl?: string;
+      email?: string;
+      location?: string;
+      notes?: string;
+    },
+  ) => { ok: true; added: number; skipped: number } | { ok: false; error: string };
 
   // outreach
   generateOutreachFor: (
@@ -302,6 +328,7 @@ export interface HermesActions {
   connectSeatAccount: (id: string, account: string) => void;
   disconnectSeatAccount: (id: string) => Promise<{ ok: boolean; error?: string }>;
   toggleSeatLive: (id: string) => { ok: boolean; reason: string };
+  verifySeatDomain: (id: string) => Promise<{ ok: boolean; verified?: boolean; error?: string }>;
   addSuppression: (entry: {
     type: SuppressionEntry["type"];
     value: string;
@@ -418,6 +445,11 @@ export interface HermesActions {
   updateSchedule: (id: string, patch: Partial<Omit<CronJob, "id" | "createdAt">>) => void;
   removeSchedule: (id: string) => void;
   toggleSchedule: (id: string) => void;
+
+  // interviewers (real registered staff — replaces the old hardcoded mock roster)
+  addInterviewer: (input: { name: string; email: string; role?: string }) => Interviewer;
+  updateInterviewer: (id: string, patch: Partial<Omit<Interviewer, "id">>) => void;
+  removeInterviewer: (id: string) => void;
 }
 
 interface HermesContextValue {
@@ -479,6 +511,11 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
     memory: parsed.memory ?? [],
     // STATE_VERSION 11 — schedules.
     schedules: parsed.schedules ?? [],
+    // STATE_VERSION 14 — registered interviewer roster, replacing the hardcoded
+    // mock-ai INTERVIEWERS list. Falls back to that same seed roster (not an
+    // empty array) so a returning visitor's existing bookings keep matching a
+    // real name in the round-robin instead of silently losing their interviewers.
+    interviewers: parsed.interviewers ?? seedInterviewers(),
     settings: {
       ...parsed.settings,
       llmProviders: preKimi ? defs.llmProviders : (parsed.settings.llmProviders ?? defs.llmProviders),
@@ -1064,6 +1101,168 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       emit({ kind: "source", campaignId, count: result.accepted.length });
       return { ...result, source, ok: true };
+    },
+    [commit, current],
+  );
+
+  const addCandidateFromGithub = useCallback(
+    async (
+      campaignId: string,
+      username: string,
+    ): Promise<{ ok: true; added: number; skipped: number } | { ok: false; error: string }> => {
+      const s = current();
+      const campaign = s.campaigns.find((c) => c.id === campaignId);
+      if (!campaign) return { ok: false, error: "Campaign not found." };
+      const login = username.trim();
+      if (!login) return { ok: false, error: "GitHub username is required." };
+      const weights = effectiveWeights(campaign.scoringWeights, s.skills);
+
+      let res: Response;
+      try {
+        res = await fetch("/api/source", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: login, platform: "GitHub", count: 1 }),
+        });
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : "Network error reaching GitHub." };
+      }
+      const out = (await res.json().catch(() => null)) as
+        | { ok?: boolean; source?: string; users?: GithubUser[]; error?: string }
+        | null;
+      if (!out?.ok || out.source !== "github") {
+        return { ok: false, error: out?.error ?? "GitHub lookup failed." };
+      }
+      const users = out.users ?? [];
+      if (users.length === 0) return { ok: false, error: "GitHub user not found." };
+
+      const { accepted, skipped } = mapGithubCandidates(users, campaign, `@${login}`, s.candidates, weights);
+
+      commit((prev) => {
+        let next: HermesState = { ...prev, candidates: [...accepted, ...prev.candidates] };
+        next = recomputeMetrics(next, campaignId);
+        next = withActivity(
+          next,
+          makeActivity({
+            type: "sourcing",
+            title: accepted.length ? `Added @${login} from GitHub` : `@${login} already in pipeline`,
+            notes: accepted.length
+              ? "Manually added a specific GitHub profile (not a search)."
+              : `Skipped by dedupe (${skipped[0]?.reason ?? "duplicate"}).`,
+            outcome: accepted.length ? "1 accepted" : "0 accepted, 1 skipped",
+            campaignId,
+            linkedEntityType: "campaign",
+            linkedEntityId: campaignId,
+          }),
+          campaignId,
+        );
+        return next;
+      });
+      emit({ kind: "source", campaignId, count: accepted.length });
+      return { ok: true, added: accepted.length, skipped: skipped.length };
+    },
+    [commit, current],
+  );
+
+  const addCandidateManual = useCallback(
+    (
+      campaignId: string,
+      input: {
+        name: string;
+        title?: string;
+        skills?: string[];
+        profileUrl?: string;
+        email?: string;
+        location?: string;
+        notes?: string;
+      },
+    ): { ok: true; added: number; skipped: number } | { ok: false; error: string } => {
+      const s = current();
+      const campaign = s.campaigns.find((c) => c.id === campaignId);
+      if (!campaign) return { ok: false, error: "Campaign not found." };
+      const name = input.name.trim();
+      if (!name) return { ok: false, error: "Name is required." };
+
+      const jd = campaign.jobAnalysis;
+      const weights = effectiveWeights(campaign.scoringWeights, s.skills);
+      const noteText = input.notes?.trim();
+
+      // Same construction as mapGithubCandidates/mapWebSearchCandidates: a real
+      // profile, honestly blank wherever the operator didn't supply a value —
+      // no fabricated company/timezone/tenure. sourcePlatform "Referral" is the
+      // least-invasive existing SourcePlatform value for a hand-entered lead;
+      // sourceUrl is the same generic "canonical URL, no dedicated field" slot
+      // mapWebSearchCandidates uses.
+      const raw: Candidate = {
+        id: genId("cand"),
+        campaignId,
+        name,
+        email: input.email?.trim() ?? "",
+        avatarInitials: initialsFrom(name),
+        currentTitle: input.title?.trim() || jd.title,
+        currentCompany: "",
+        location: input.location?.trim() ?? "",
+        timezone: "",
+        linkedinUrl: "",
+        githubUrl: "",
+        sourceUrl: input.profileUrl?.trim() || undefined,
+        sourcePlatform: "Referral",
+        sourceQuery: "Manually added by operator",
+        matchScore: 0,
+        matchBreakdown: [],
+        techStack: Array.from(new Set((input.skills ?? []).map((sk) => sk.trim()).filter(Boolean))),
+        yearsExperience: jd.minYearsExperience ?? (jd.seniority === "Senior" ? 6 : 4),
+        companyStageExperience: [],
+        industryExperience: [],
+        recentActivity: "Manually added — no activity signal available.",
+        stage: "Sourced",
+        lastContactedAt: null,
+        outreachHistory: [],
+        replyHistory: [],
+        booking: null,
+        complianceFlags: {
+          doNotContact: false,
+          suppressed: false,
+          unsubscribed: false,
+          gdprExportRequested: false,
+          anonymized: false,
+          suppressedUntil: null,
+        },
+        createdAt: new Date().toISOString(),
+        provenance: "live",
+        notes: noteText ? [{ id: genId("note"), text: noteText, at: new Date().toISOString() }] : undefined,
+      };
+
+      const { accepted, skipped } = dedupeCandidates([raw], s.candidates, {
+        excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
+      });
+      const scored = accepted.map((cand) => {
+        const { score, breakdown } = scoreCandidate(cand, jd, weights);
+        return { ...cand, matchScore: score, matchBreakdown: breakdown };
+      });
+
+      commit((prev) => {
+        let next: HermesState = { ...prev, candidates: [...scored, ...prev.candidates] };
+        next = recomputeMetrics(next, campaignId);
+        next = withActivity(
+          next,
+          makeActivity({
+            type: "sourcing",
+            title: scored.length ? `Added ${name} manually` : `${name} already in pipeline`,
+            notes: scored.length
+              ? "Manually entered candidate — no external search involved."
+              : `Skipped by dedupe (${skipped[0]?.reason ?? "duplicate"}).`,
+            outcome: scored.length ? "1 accepted" : "0 accepted, 1 skipped",
+            campaignId,
+            linkedEntityType: "campaign",
+            linkedEntityId: campaignId,
+          }),
+          campaignId,
+        );
+        return next;
+      });
+      if (scored.length > 0) emit({ kind: "source", campaignId, count: scored.length });
+      return { ok: true, added: scored.length, skipped: skipped.length };
     },
     [commit, current],
   );
@@ -1789,22 +1988,24 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (msg.status !== "Approved") return { ok: false, error: "Only an approved message can be sent." };
       const candidate = s.candidates.find((c) => c.id === msg.candidateId);
       if (!candidate) return { ok: false, error: "Linked candidate missing." };
-      // Resolve a live seat for the message's channel: a domain-verified mailbox for
-      // Email, or a live WhatsApp / SMS sender for the phone channels.
+      // Resolve a live seat for the message's channel: a live mailbox for Email
+      // (domain verification is checked — and persisted — server-side on send,
+      // not pre-filtered here, since that's the only place it can ever become
+      // true), or a live WhatsApp / SMS sender for the phone channels.
       const channel = msg.channel;
       const seat =
         channel === "WhatsApp"
           ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "WhatsApp Cloud")
           : channel === "SMS"
             ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "Twilio SMS")
-            : s.seats.find((x) => x.status === "active" && x.mode === "live" && x.domainVerified);
+            : s.seats.find((x) => x.status === "active" && x.mode === "live");
       if (!supabaseEnabled || !seat) {
         const need =
           channel === "WhatsApp"
             ? "live WhatsApp sender"
             : channel === "SMS"
               ? "live SMS sender"
-              : "live, domain-verified mailbox";
+              : "live mailbox";
         return { ok: false, error: `No ${need} connected. Connect one in the Fleet first.` };
       }
       if ((channel === "WhatsApp" || channel === "SMS") && !candidate.phone) {
@@ -2353,7 +2554,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, error: "Candidate has opted out / is suppressed — cannot book." };
       }
 
-      const slot = resolveBookingSlot(s.bookings, s.bookings.length, opts);
+      const activeInterviewers = s.interviewers.filter((iv) => iv.active);
+      const slot = resolveBookingSlot(s.bookings, activeInterviewers, s.bookings.length, opts);
       if ("error" in slot) return { ok: false, error: slot.error };
       const booking = createBooking(candidate, campaign, slot.interviewer, slot.start);
       const prep = interviewerPrepEmail(booking, candidate);
@@ -2422,7 +2624,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           makeActivity({
             type: "booking",
             title: `Interview booked — ${candidate.name}`,
-            notes: `${booking.interviewer}. Teams + Cal.com links generated. Stage → Booked.`,
+            notes: `${booking.interviewer || "No interviewer assigned yet"}. Teams + Cal.com links generated. Stage → Booked.`,
             outcome: "Confirmed",
             campaignId: campaign.id,
             linkedEntityType: "booking",
@@ -2450,7 +2652,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         if (!booking) return { ok: false, error: "Booking not found." };
         const start = new Date(patch.startTime ?? booking.startTime);
         const end = new Date(patch.endTime ?? booking.endTime);
-        if (interviewerIsBusy(s.bookings, booking.interviewerEmail, start, end, booking.id)) {
+        // No interviewer assigned (empty roster at booking time) — nothing to
+        // conflict-check; an empty interviewerEmail must never collide with
+        // another interviewer-less booking's empty string.
+        if (booking.interviewerEmail && interviewerIsBusy(s.bookings, booking.interviewerEmail, start, end, booking.id)) {
           return { ok: false, error: `${booking.interviewer} is already booked at that time.` };
         }
       }
@@ -3461,6 +3666,49 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
       });
       return { ok: true, reason: "Seat is live. Sends still require approval + guardrails." };
+    },
+    [commit, current],
+  );
+
+  const verifySeatDomain = useCallback(
+    async (id: string): Promise<{ ok: boolean; verified?: boolean; error?: string }> => {
+      const s = current();
+      const seat = s.seats.find((x) => x.id === id);
+      if (!seat) return { ok: false, error: "Seat not found." };
+      const domain = seat.operatorEmail.split("@")[1] ?? "";
+      if (!domain) return { ok: false, error: "Connect a mailbox before verifying its domain." };
+      try {
+        const res = await fetch("/api/outreach/verify-domain", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ seatId: id, domain }),
+        });
+        const out = (await res.json().catch(() => null)) as { ok?: boolean; verified?: boolean; error?: string } | null;
+        if (!out?.ok) {
+          return { ok: false, error: out?.error ?? `Verification failed (${res.status}).` };
+        }
+        if (out.verified) {
+          commit((prev) => {
+            const next = { ...prev, seats: prev.seats.map((x) => (x.id === id ? { ...x, domainVerified: true } : x)) };
+            return withActivity(
+              next,
+              makeActivity({
+                type: "system",
+                title: `Domain verified — ${seat.name}`,
+                notes: `${domain} has valid SPF/DKIM/DMARC records.`,
+                outcome: "Verified",
+                campaignId: null,
+                linkedEntityType: null,
+                linkedEntityId: null,
+              }),
+              null,
+            );
+          });
+        }
+        return { ok: true, verified: !!out.verified };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : "Network error verifying domain." };
+      }
     },
     [commit, current],
   );
@@ -4958,6 +5206,69 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit],
   );
 
+  /* ---- Interviewers ---------------------------------------------------------
+     Real registered staff, admin-managed (see interviewer-panel.tsx). Bookings
+     denormalize name/email as plain strings, so editing/removing an interviewer
+     here never rewrites history — see resolveBookingSlot below. */
+
+  const addInterviewer = useCallback(
+    (input: { name: string; email: string; role?: string }): Interviewer => {
+      const entry: Interviewer = {
+        id: genId("intv"),
+        name: input.name,
+        email: input.email,
+        role: input.role,
+        active: true,
+      };
+      commit((s) =>
+        withActivity(
+          { ...s, interviewers: [entry, ...s.interviewers] },
+          makeActivity({
+            type: "system",
+            title: `Interviewer added — ${entry.name}`,
+            notes: entry.role ? `${entry.role}. Available for round-robin booking.` : "Available for round-robin booking.",
+            outcome: "Created",
+            campaignId: null,
+            linkedEntityType: null,
+            linkedEntityId: null,
+          }),
+          null,
+        ),
+      );
+      return entry;
+    },
+    [commit],
+  );
+
+  const updateInterviewer = useCallback(
+    (id: string, patch: Partial<Omit<Interviewer, "id">>) =>
+      commit((s) => ({
+        ...s,
+        interviewers: s.interviewers.map((iv) => (iv.id === id ? { ...iv, ...patch } : iv)),
+      })),
+    [commit],
+  );
+
+  const removeInterviewer = useCallback(
+    (id: string) =>
+      commit((s) =>
+        withActivity(
+          { ...s, interviewers: s.interviewers.filter((iv) => iv.id !== id) },
+          makeActivity({
+            type: "system",
+            title: "Interviewer removed",
+            notes: `Interviewer ${id} deleted from the roster.`,
+            outcome: "Removed",
+            campaignId: null,
+            linkedEntityType: null,
+            linkedEntityId: null,
+          }),
+          null,
+        ),
+      ),
+    [commit],
+  );
+
   const resetDemo = useCallback(() => {
     const fresh = buildSeedState();
     stateRef.current = fresh;
@@ -4974,6 +5285,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       updateCampaign,
       regenerateQueries,
       sourceNextBatch,
+      addCandidateFromGithub,
+      addCandidateManual,
       runSourcingAgent,
       generateOutreachFor,
       generateOutreachLive,
@@ -5024,6 +5337,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       connectSeatAccount,
       disconnectSeatAccount,
       toggleSeatLive,
+      verifySeatDomain,
       addSuppression,
       removeSuppression,
       allocateOutreach,
@@ -5080,10 +5394,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       updateSchedule,
       removeSchedule,
       toggleSchedule,
+      addInterviewer,
+      updateInterviewer,
+      removeInterviewer,
     }),
     [
       setActiveCampaign, createCampaignFromAnalysis, updateCampaign, regenerateQueries,
-      sourceNextBatch, runSourcingAgent, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
+      sourceNextBatch, addCandidateFromGithub, addCandidateManual, runSourcingAgent, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
       approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, draftFollowUpFor, draftRecontactFor, classifyAndStoreReply, markReplyHandled,
       applyReplyAction, draftReplyResponse, createBookingFor, updateBooking, generateReport,
       setSkillUpdateStatus, setCandidateStage, setCandidatePhone, addCandidateNote, setRejectionReason,
@@ -5092,7 +5409,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       suppressCandidate, markDoNotContact, restoreCandidateContact,
       unsubscribeCandidate, anonymizeCandidate, exportCandidate, updateSettings,
       updateIntegration, toggleIntegrationMode, testIntegration,
-      addSeat, deployAgents, updateSeat, setSeatStatus, connectSeatAccount, disconnectSeatAccount, toggleSeatLive,
+      addSeat, deployAgents, updateSeat, setSeatStatus, connectSeatAccount, disconnectSeatAccount, toggleSeatLive, verifySeatDomain,
       addSuppression, removeSuppression, allocateOutreach, runFleetSourcing,
       runLearning, acceptSkillLearning, updateSkillContent, recordPiiReveal,
       saveApiKey, testApiKey, removeApiKey, setCurrentRole,
@@ -5107,6 +5424,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       createChatThread, deleteChatThread, clearChatThread, appendChatMessage, updateChatMessage, sendChat, cancelChat,
       addMemory, updateMemory, removeMemory, togglePinMemory,
       addSchedule, updateSchedule, removeSchedule, toggleSchedule,
+      addInterviewer, updateInterviewer, removeInterviewer,
     ],
   );
 
@@ -5131,9 +5449,9 @@ function defaultSlot(): Date {
   return d;
 }
 
-function getInterviewerByName(name?: string) {
+function getInterviewerByName(interviewers: Interviewer[], name?: string) {
   if (!name) return null;
-  return getInterviewers().find((i) => i.name === name) ?? null;
+  return interviewers.find((i) => i.name === name) ?? null;
 }
 
 const BOOKING_DURATION_MS = 30 * 60_000;
@@ -5158,19 +5476,28 @@ function interviewerIsBusy(
 }
 
 /** Finds an interviewer + start time with no scheduling conflict. Round-robins
- *  over the interviewer pool (starting from `roundRobinIndex`, same heuristic as
- *  before) when neither dimension is pinned by the caller; when the caller pins
- *  an interviewer and/or a start time explicitly, that choice is respected as a
- *  hard constraint and only the unpinned dimension is advanced to find a free
- *  slot. Guards against the "5th booking of the day reuses interviewer #1's
- *  exact slot" double-booking with zero conflict check that existed before. */
+ *  over the ACTIVE interviewer pool passed in by the caller (starting from
+ *  `roundRobinIndex`, same heuristic as before) when neither dimension is
+ *  pinned by the caller; when the caller pins an interviewer and/or a start
+ *  time explicitly, that choice is respected as a hard constraint and only
+ *  the unpinned dimension is advanced to find a free slot. Guards against the
+ *  "5th booking of the day reuses interviewer #1's exact slot" double-booking
+ *  with zero conflict check that existed before.
+ *
+ *  When `interviewers` is empty (no one registered yet — see the interviewers
+ *  store slice), this returns a booking with no interviewer rather than
+ *  inventing one: an honest gap, not a fabricated roster. */
 function resolveBookingSlot(
   bookings: Booking[],
+  interviewers: Interviewer[],
   roundRobinIndex: number,
   opts?: { startTime?: string; interviewerName?: string },
-): { interviewer: { name: string; email: string; role: string }; start: Date } | { error: string } {
-  const interviewers = getInterviewers();
-  const pinnedInterviewer = getInterviewerByName(opts?.interviewerName);
+): { interviewer: Interviewer | null; start: Date } | { error: string } {
+  if (interviewers.length === 0) {
+    return { interviewer: null, start: opts?.startTime ? new Date(opts.startTime) : defaultSlot() };
+  }
+
+  const pinnedInterviewer = getInterviewerByName(interviewers, opts?.interviewerName);
   const pinnedStart = opts?.startTime ? new Date(opts.startTime) : null;
 
   const pool = pinnedInterviewer
@@ -5227,6 +5554,7 @@ const EMPTY: HermesState = {
   outreach: [],
   replies: [],
   bookings: [],
+  interviewers: [],
   reports: [],
   integrations: [],
   activities: [],
@@ -5343,6 +5671,10 @@ export function useReplies(): ClassifiedReply[] {
 
 export function useBookings(): Booking[] {
   return useStateOrEmpty().bookings;
+}
+
+export function useInterviewers(): Interviewer[] {
+  return useStateOrEmpty().interviewers;
 }
 
 export function useReports(): WeeklyReport[] {

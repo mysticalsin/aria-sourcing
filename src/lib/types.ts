@@ -549,6 +549,21 @@ export interface ClassifiedReply {
   externalReceivedAt?: string; // ISO timestamp from the email provider
 }
 
+/* ---- Interviewers ---------------------------------------------------------
+   A registered real staff member available for interview round-robin. Bookings
+   still denormalize interviewer name/email as plain strings (below) so a
+   historical booking survives an interviewer being edited or removed later. */
+
+export interface Interviewer {
+  id: string;
+  name: string;
+  email: string;
+  role?: string;
+  /** Inactive interviewers stay in the roster (history, re-activation) but are
+   *  skipped by round-robin booking assignment. */
+  active: boolean;
+}
+
 /* ---- Bookings ------------------------------------------------------------ */
 
 export interface Booking {
@@ -736,6 +751,16 @@ export interface IntegrationStatus {
   errors: string[];
   /** Email or identifier of the linked mailbox account (OAuth or SMTP). Empty = not set. */
   connectedAccount?: string;
+  /** True when this card has actual backend wiring in this codebase (a real API
+   *  route, OAuth flow, or send path) rather than being a roadmap placeholder.
+   *  Concept cards render an honest "Concept" badge and hide the Test-connection /
+   *  Live-mode controls, which would otherwise be theater with nothing behind them. */
+  real: boolean;
+  /** For a real integration with no live connection check (see testIntegration in
+   *  store.ts, which only probes GitHub): where to send the operator to actually
+   *  configure it (e.g. the Agent Fleet mailbox connect flow). Absent = no in-app
+   *  setup surface (e.g. an env-var-only credential) — the card shows Configure only. */
+  setupHref?: string;
 }
 
 /* ---- Settings ------------------------------------------------------------ */
@@ -1218,6 +1243,9 @@ export interface HermesState {
   outreach: OutreachMessage[];
   replies: ClassifiedReply[];
   bookings: Booking[];
+  /** Registered real staff available for interview round-robin (replaces the
+   *  hardcoded mock-ai roster). Empty = no interviewer assigned on booking. */
+  interviewers: Interviewer[];
   reports: WeeklyReport[];
   integrations: IntegrationStatus[];
   activities: Activity[];

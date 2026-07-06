@@ -109,6 +109,7 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
   const [accountEmail, setAccountEmail] = React.useState(seat.connectedAccount || seat.operatorEmail);
   const [editorOpen, setEditorOpen] = React.useState(false);
   const [llmOpen, setLlmOpen] = React.useState(false);
+  const [verifyingDomain, setVerifyingDomain] = React.useState(false);
 
   const cap = effectiveDailyCap(seat);
   const remaining = seatRemainingToday(seat);
@@ -180,6 +181,28 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
     });
   }
 
+  async function handleVerifyDomain() {
+    setVerifyingDomain(true);
+    try {
+      const result = await actions.verifySeatDomain(seat.id);
+      if (!result.ok) {
+        toast({ title: "Verification failed", description: result.error, variant: "error" });
+        return;
+      }
+      if (result.verified) {
+        toast({ title: "Domain verified", description: "SPF/DMARC/DKIM checks passed", variant: "success" });
+      } else {
+        toast({
+          title: "Domain not verified",
+          description: "DNS records missing — see the runbook",
+          variant: "error",
+        });
+      }
+    } finally {
+      setVerifyingDomain(false);
+    }
+  }
+
   return (
     <>
       <Card className="flex h-full flex-col animate-fade-in">
@@ -201,27 +224,41 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
           </div>
 
           {/* Connected mailbox */}
-          <div className="flex items-center gap-2 rounded-2xl bg-canvas px-3 py-2.5">
-            {seat.connectedAccount ? (
-              <MailCheck className="h-4 w-4 shrink-0 text-success" aria-hidden />
-            ) : (
-              <Mail className="h-4 w-4 shrink-0 text-muted" aria-hidden />
-            )}
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-ink">
-                {seat.connectedAccount || "Not connected"}
-              </p>
-              <p className="truncate text-xs text-muted">
-                {seat.connectedAccount
-                  ? seat.domainVerified
-                    ? "Domain verified (SPF/DKIM/DMARC)"
-                    : "Domain not verified yet"
-                  : "Connect an authorized mailbox to send"}
-              </p>
+          <div className="rounded-2xl bg-canvas px-3 py-2.5">
+            <div className="flex items-center gap-2">
+              {seat.connectedAccount ? (
+                <MailCheck className="h-4 w-4 shrink-0 text-success" aria-hidden />
+              ) : (
+                <Mail className="h-4 w-4 shrink-0 text-muted" aria-hidden />
+              )}
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-ink">
+                  {seat.connectedAccount || "Not connected"}
+                </p>
+                <p className="truncate text-xs text-muted">
+                  {seat.connectedAccount
+                    ? seat.domainVerified
+                      ? "Domain verified (SPF/DKIM/DMARC)"
+                      : "Domain not verified yet"
+                    : "Connect an authorized mailbox to send"}
+                </p>
+              </div>
+              <Badge tone={PROVIDER_TONE[seat.provider]} size="sm" className="ml-auto">
+                {seat.provider}
+              </Badge>
             </div>
-            <Badge tone={PROVIDER_TONE[seat.provider]} size="sm" className="ml-auto">
-              {seat.provider}
-            </Badge>
+            {seat.connectedAccount && !seat.domainVerified && canManageLlm && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2 w-full"
+                leftIcon={<ShieldCheck className="h-4 w-4" />}
+                loading={verifyingDomain}
+                onClick={handleVerifyDomain}
+              >
+                Verify domain
+              </Button>
+            )}
           </div>
 
           {/* Quota */}
