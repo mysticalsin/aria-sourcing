@@ -19,7 +19,7 @@ import {
   useDefaultModels,
   useRole,
 } from "@/lib/store";
-import type { ModelTask, SavedModel } from "@/lib/types";
+import type { LlmProviderKind, ModelTask, SavedModel } from "@/lib/types";
 import { can } from "@/lib/rbac";
 import { BrainCircuit, Plus, Star, Trash2 } from "lucide-react";
 
@@ -37,6 +37,7 @@ const TASK_LABEL: Record<ModelTask, string> = {
 function ModelRow({
   model,
   providerLabel,
+  providerKind,
   defaultModels,
   isAdmin,
   onUpdate,
@@ -45,6 +46,7 @@ function ModelRow({
 }: {
   model: SavedModel;
   providerLabel: string;
+  providerKind?: LlmProviderKind;
   defaultModels: Partial<Record<ModelTask, string>>;
   isAdmin: boolean;
   onUpdate: (patch: Partial<SavedModel>) => void;
@@ -67,6 +69,9 @@ function ModelRow({
               {model.contextWindow ? ` · ${(model.contextWindow / 1000).toFixed(0)}k ctx` : ""}
               {" · "}{providerLabel}
             </p>
+            {providerKind === "Kimi" && (
+              <p className="mt-0.5 text-xs text-warning">No tool-calling — can&apos;t run the sourcing agent</p>
+            )}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -140,6 +145,7 @@ export function ModelsPanel() {
 
   const providerOptions = providers.map((p) => ({ value: p.id, label: p.label }));
   const providerMap = Object.fromEntries(providers.map((p) => [p.id, p.label]));
+  const providerKindMap = Object.fromEntries(providers.map((p) => [p.id, p.kind]));
 
   function handleAdd() {
     if (!draft.providerId) {
@@ -175,6 +181,7 @@ export function ModelsPanel() {
               key={m.id}
               model={m}
               providerLabel={providerMap[m.providerId] ?? m.providerId}
+              providerKind={providerKindMap[m.providerId]}
               defaultModels={defaultModels}
               isAdmin={isAdmin}
               onUpdate={(patch) => actions.updateModel(m.id, patch)}
