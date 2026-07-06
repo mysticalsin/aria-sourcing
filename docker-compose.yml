@@ -110,6 +110,9 @@ services:
       PGRST_DB_USE_LEGACY_GUCS: "false"
       PGRST_APP_SETTINGS_JWT_SECRET: *jwt_secret
       PGRST_APP_SETTINGS_JWT_EXP: *jwt_exp
+      # `postgrest --ready` probes the admin server; without this port set the
+      # healthcheck errors forever while the API itself serves fine.
+      PGRST_ADMIN_SERVER_PORT: "3001"
     healthcheck:
       test: ["CMD", "postgrest", "--ready"]
       interval: 5s
