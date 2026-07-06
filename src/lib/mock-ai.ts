@@ -225,6 +225,16 @@ export function isMantuNeedEmail(text: string): boolean {
   return /this need is now|key required skills/i.test(text) || /^\s*recruiter\s*:/im.test(text);
 }
 
+/** Does an inbound mailbox message look like a hiring need / JD email (vs a
+ *  candidate reply, newsletter, …)? Used by the intake "Scan inbox" flow to
+ *  pick need emails out of a synced mailbox. Mantu "need is now ACTIVE" mails
+ *  match on the body; otherwise only a conservative subject-line check — a
+ *  false positive here would parse a random email into a job brief. */
+export function isNeedEmail(subject: string, body: string): boolean {
+  if (isMantuNeedEmail(body) || isMantuNeedEmail(subject)) return true;
+  return /\b(job description|jd attached|new (role|position|need|vacancy|opening)|hiring request|backfill|open position)\b/i.test(subject);
+}
+
 /** Structured parser for the Mantu/Amaris "need is now ACTIVE" recruitment email. */
 export function parseMantuNeed(text: string): ParsedIntake {
   const field = (label: string): string =>
@@ -546,10 +556,13 @@ export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
   const topSkills = jd.requiredSkills.slice(0, 4);
   const region = jd.regions[0];
   const locationQualifier = region && !NON_LOCATION_REGIONS.has(region) ? ` location:${region}` : "";
+  // Note: only user-search qualifiers are valid here (language:, location:,
+  // followers:, repos:, created:). Repo qualifiers like `stars:` silently zero
+  // out the whole query on /search/users.
   const githubQueries: GithubQuery[] = topSkills.slice(0, 3).map((skill, i) => ({
     label: `${skill} contributors`,
     query: `language:${skill.replace(/\s+/g, "")}${locationQualifier} followers:>40 ${
-      i === 0 ? "stars:>20" : "repos:>5"
+      i === 0 ? "repos:>10" : "repos:>5"
     }`,
     estimatedResults: 120 + i * 60,
   }));
