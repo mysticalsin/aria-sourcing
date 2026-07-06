@@ -6,12 +6,13 @@ Verified end-to-end on 2026-07-06 against the local Docker stack.
 
 ---
 
-## TL;DR — the three ways in
+## TL;DR — the four ways in
 
 | How | Where | What happens |
 |---|---|---|
 | **Paste it** | `/intake` → paste the need email → **Parse JD** → **Create campaign** | Campaign is created **and the first real sourcing batch runs automatically**. |
 | **Email it** | Send the need email to a connected mailbox → `/intake` → **Scan inbox** | Aria pulls the mailbox, finds the newest need email, parses it. You review, click **Create campaign**, sourcing starts. |
+| **Hand it a person** | Campaign page → Candidates tab → **Add candidate** | Two modes: a **GitHub username** (fetches the real public profile via the GitHub API) or a **manual entry** (name, title, skills, LinkedIn/profile URL, email). Either way the person lands as a scored candidate in the campaign — no search, no outreach drafted. |
 | **Webhook** | `POST /api/intake` with `{ email }` or `{ from, subject, body }` | Returns the structured brief as JSON (parse-only — campaign creation stays human-gated in the app). |
 
 Every path keeps the human-approval gate: **no candidate is ever contacted without your explicit sign-off** on the outreach.
@@ -127,10 +128,27 @@ Real batches are authoritative: zero real hits is reported as zero, never backfi
 
 ---
 
-## 6. Troubleshooting
+## 6. From approved outreach to a real inbox (live sending)
+
+Everything is dry-run until ALL of these are true (each is checked server-side):
+
+1. Live/Supabase mode (Docker stack or hosted Supabase) and a signed-in `admin`/`member`.
+2. A **send provider**: `RESEND_API_KEY` or `SENDGRID_API_KEY`, or a connected Gmail/Graph mailbox seat. (WhatsApp via `WHATSAPP_TOKEN`+`WHATSAPP_PHONE_NUMBER_ID`, SMS via Twilio vars — both wired too.)
+3. The seat's **sending domain verified** — click **Verify domain** on the seat card (Agent Fleet): it runs a real SPF/DMARC/DKIM DNS check and persists the result. No DNS records → no send.
+4. The seat toggled **Live**.
+5. The exact message **human-approved** (the server stores a hash of the approved subject+body; editing after approval invalidates it).
+6. Recipient not suppressed, within re-contact windows and the seat's daily/warm-up caps (enforced atomically in Postgres).
+
+Known compliance gap to close before real volume: the `List-Unsubscribe` header points at a placeholder mailbox and SendGrid sends carry none — wire a real unsubscribe route first.
+
+## 7. Interviewers & booking
+
+The interviewer roster is editable on `/calendar` (admin): add real names/emails, deactivate or remove people; bookings round-robin over **active** interviewers. With a live Gmail/Graph seat + Supabase, bookings create real calendar events (`/api/calendar/event`); otherwise they stay honest dry-runs with no fake meeting links. Ship real staff into the roster before going live — the seeded four are demo placeholders.
+
+## 8. Troubleshooting
 
 - **"Sourcing started — 0 candidates"** on a LinkedIn-family platform → set `TAVILY_API_KEY` (see §5). On GitHub → you may have hit the anonymous 60/hr rate limit; set `GITHUB_TOKEN`.
-- **Chat / live parse falls back to heuristic** — the bundled Kimi key returns **401 (dead/rotated)** as of 2026-07-06. Parsing still works (regex heuristic); set a valid key in Settings → AI or the `KIMI_API_KEY` env to restore LLM-upgraded parsing, or configure Anthropic/OpenAI for the *chat* task.
+- **Chat / live parse falls back to heuristic (Kimi 401)** — a Kimi-Code subscription key is scoped to `https://api.kimi.com/coding/v1`, not the default Moonshot endpoint. Set `KIMI_BASE_URL=https://api.kimi.com/coding/v1` next to `KIMI_API_KEY` (fixed in `.env.local` 2026-07-06; mirror it in Vercel env if prod ever 401s).
 - **Stuck at login locally** → the app is in live mode but its Supabase isn't running (see §1C).
 - **`aria-sourcing-rest-1` shows unhealthy** → fixed 2026-07-06 (`PGRST_ADMIN_SERVER_PORT` added to `docker-compose.yml`); recreate with `docker compose up -d rest`.
 - **Scan inbox always loads the sample** → no mailbox connected (§3 setup), or the need email's subject doesn't match the recognizer — resend with a subject like `NEED: <role>` or just paste it (§2).
