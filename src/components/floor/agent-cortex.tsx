@@ -265,7 +265,7 @@ export function AgentCortex({ seat, state, open, onClose, onBack }: AgentCortexP
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 text-ink">
               <Brain className="h-3.5 w-3.5 text-electric" aria-hidden />
-              <Eyebrow>Reasoning trace</Eyebrow>
+              <Eyebrow>Reasoning trace — simulated</Eyebrow>
             </div>
             <p className="truncate text-sm text-muted">
               {trace.candidateName ? `Focused on ${trace.candidateName}` : "No candidate in focus"}
@@ -277,7 +277,7 @@ export function AgentCortex({ seat, state, open, onClose, onBack }: AgentCortexP
 
         <Card className="bg-ink/[0.03]">
           <CardContent>
-            <Eyebrow className="mb-2 block">Live thinking</Eyebrow>
+            <Eyebrow className="mb-2 block">Simulated thinking (derived from real pipeline data)</Eyebrow>
             <p className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-ink-soft" aria-live="off">
               {text}
               {streaming && (

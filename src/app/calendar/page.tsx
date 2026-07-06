@@ -290,7 +290,7 @@ export default function CalendarPage() {
       <PageHeader
         eyebrow="Scheduling"
         title="Interview calendar"
-        description="Confirmed and proposed interviews as an agenda, plus interested candidates ready to book. Teams and Cal.com links are generated for every slot."
+        description="Confirmed and proposed interviews as an agenda, plus interested candidates ready to book. Teams / calendar links are attached once a live calendar integration is connected."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="violet" dot>
