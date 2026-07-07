@@ -3,21 +3,27 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Bell, ChevronDown, RotateCcw, ShieldCheck, Check, LogOut, Menu, X } from "lucide-react";
+import { Bell, ChevronDown, RotateCcw, ShieldCheck, Check, LogOut, Menu, Mic, Sparkles, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CommandSearch } from "./command-search";
 import { HermesWordmark } from "./logo";
 import { NAV_ITEMS } from "./nav";
+import { VoiceConsole } from "./voice-console";
 import {
   useActions,
   useActiveCampaign,
   useCampaigns,
+  useHermes,
+  useHydrated,
   useRecommendations,
+  useSeats,
   useSettings,
 } from "@/lib/store";
 import { useToast, useConfirm } from "@/components/ui";
-import { supabaseEnabled } from "@/lib/supabase/config";
+import { supabaseEnabled, demoLoginEnabled } from "@/lib/supabase/config";
 import { getCurrentUser, type CurrentUser } from "@/lib/supabase/workspace";
+import { beginAriaLiveRun } from "@/lib/demo/aria-live";
+import { AriaLiveOverlay } from "@/components/demo/aria-live-overlay";
 
 /**
  * Keyboard handler shared by both dropdown menus.
@@ -53,13 +59,31 @@ export function TopBar() {
   const active = useActiveCampaign();
   const recommendations = useRecommendations();
   const settings = useSettings();
-  const { setActiveCampaign, resetDemo } = useActions();
+  const actions = useActions();
+  const { setActiveCampaign, resetDemo } = actions;
+  const { state: hermesState } = useHermes();
+  const hydrated = useHydrated();
+  const seats = useSeats();
   const { toast } = useToast();
   const confirm = useConfirm();
+
+  const playAriaLive = React.useCallback(() => {
+    const result = beginAriaLiveRun({
+      actions,
+      state: hermesState,
+      campaigns,
+      activeCampaignId: active?.id ?? null,
+      seats,
+    });
+    if (!result.ok) {
+      toast({ title: "Can't start Aria Live", description: result.reason, variant: "warning" });
+    }
+  }, [actions, hermesState, campaigns, active, seats, toast]);
 
   const [notifOpen, setNotifOpen] = React.useState(false);
   const [userOpen, setUserOpen] = React.useState(false);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
+  const [voiceOpen, setVoiceOpen] = React.useState(false);
   const [authUser, setAuthUser] = React.useState<CurrentUser | null>(null);
 
   // Close the mobile nav on route change.
@@ -147,6 +171,7 @@ export function TopBar() {
   const notifications = recommendations.slice(0, 3).map((rec) => ({ label: rec.title, href: rec.href }));
 
   return (
+    <>
     <header className="sticky top-0 z-40 topbar-glass">
       <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
         {/* Mobile / tablet nav trigger — exposes the full nav below lg. */}
@@ -199,7 +224,35 @@ export function TopBar() {
           {settings.humanApprovalGate ? "Approval gate ON" : "Gate OFF"}
         </span>
 
-        {/* Notifications */}
+        {/* Aria Live (Demo Director) — plays the whole hire funnel hands-free
+            with camera cuts (~20s): source -> draft -> approve -> reply ->
+            book -> report. Fully reverted on close (see aria-live.ts). */}
+        <button
+          type="button"
+          onClick={playAriaLive}
+          disabled={!hydrated}
+          className="hidden items-center gap-1.5 rounded-full bg-gradient-to-br from-electric to-violet px-3 py-1.5 text-xs font-bold text-white shadow-soft transition hover:from-tangerine hover:to-violet focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric disabled:opacity-50 lg:inline-flex"
+          title="Play the full hire funnel hands-free (~20s)"
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          Aria Live
+        </button>
+
+        {/* Hey Aria — push-to-talk voice console. Reuses the exact same
+            deterministic Aria Command grammar + gated runAriaPlan dispatch
+            as the ⌘K console (see voice-console.tsx); this is just another,
+            hands-free way to reach it. */}
+        <button
+          type="button"
+          onClick={() => setVoiceOpen(true)}
+          disabled={!hydrated}
+          className="hidden items-center gap-1.5 rounded-full bg-ink/5 px-3 py-1.5 text-xs font-bold text-ink-soft transition hover:bg-ink/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric disabled:opacity-50 lg:inline-flex"
+          title="Hey Aria — push-to-talk voice ops (drafts only)"
+        >
+          <Mic className="h-3.5 w-3.5" />
+          Hey Aria
+        </button>
+
         <div className="relative">
           <button
             ref={notifTriggerRef}
@@ -255,7 +308,6 @@ export function TopBar() {
           )}
         </div>
 
-        {/* User menu */}
         <div className="relative">
           <button
             ref={userTriggerRef}
@@ -320,7 +372,7 @@ export function TopBar() {
                   >
                     <RotateCcw className="h-4 w-4" /> Reset to defaults
                   </button>
-                  {supabaseEnabled && (
+                  {(supabaseEnabled || demoLoginEnabled) && (
                     <a
                       href="/auth/signout"
                       role="menuitem"
@@ -339,7 +391,6 @@ export function TopBar() {
         </div>
       </div>
 
-      {/* Mobile search row */}
       <div className="px-4 pb-3 sm:hidden">
         <CommandSearch />
       </div>
@@ -373,7 +424,7 @@ export function TopBar() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            {(["Operate", "System"] as const).map((section) => (
+            {(["Operate", "Analyze", "System"] as const).map((section) => (
               <div key={section} className="px-3 py-2">
                 <p className="px-3 pb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wider text-muted">
                   {section}
@@ -405,5 +456,8 @@ export function TopBar() {
         </div>
       )}
     </header>
+    <AriaLiveOverlay />
+    <VoiceConsole open={voiceOpen} onOpenChange={setVoiceOpen} />
+    </>
   );
 }

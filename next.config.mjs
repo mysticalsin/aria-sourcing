@@ -19,10 +19,9 @@ const nextConfig = {
     const csp = [
       "default-src 'self'",
       scriptSrc,
-      // Google Fonts + onlinewebfonts stylesheets for the cinematic login hero.
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://db.onlinewebfonts.com",
+      "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
-      "font-src 'self' data: https://fonts.gstatic.com https://db.onlinewebfonts.com",
+      "font-src 'self' data:",
       // Login hero background video (CloudFront).
       "media-src 'self' blob: https://d8j0ntlcm91z4.cloudfront.net",
       // blob: lets three's GLTFLoader fetch each GLB's own embedded textures
@@ -41,7 +40,7 @@ const nextConfig = {
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=()" },
         ],
       },
     ];

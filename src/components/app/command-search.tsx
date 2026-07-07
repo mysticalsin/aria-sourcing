@@ -2,11 +2,29 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Search, CornerDownLeft } from "lucide-react";
+import { Search, CornerDownLeft, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { lockBodyScroll, unlockBodyScroll } from "@/lib/scroll-lock";
 import { NAV_ITEMS } from "./nav";
-import { useCampaigns, useCandidates, useActions } from "@/lib/store";
+import {
+  useActions,
+  useActiveCampaignId,
+  useCampaigns,
+  useCandidates,
+  useHermes,
+  useHydrated,
+  useSeats,
+} from "@/lib/store";
+import { campaignToAriaContext, parseCommand } from "@/lib/aria-command";
+import { AriaCommandConsole } from "@/components/aria/command-console";
+import { useToast } from "@/components/ui";
+import { beginAriaLiveRun } from "@/lib/demo/aria-live";
+
+/** Matches when the query reads like an Aria Live request — kept loose (a
+ *  substring match against the query, not the other way round) so "aria",
+ *  "play", "live", "demo", etc. all surface the entry, same spirit as the
+ *  Aria Command fallback below. */
+const ARIA_LIVE_QUERY = "play aria live demo cinematic hire funnel";
 
 interface Result {
   id: string;
@@ -20,10 +38,18 @@ export function CommandSearch() {
   const router = useRouter();
   const campaigns = useCampaigns();
   const candidates = useCandidates();
-  const { setActiveCampaign } = useActions();
+  const actions = useActions();
+  const { setActiveCampaign } = actions;
+  const { state: hermesState } = useHermes();
+  const hydrated = useHydrated();
+  const seats = useSeats();
+  const activeCampaignId = useActiveCampaignId();
+  const { toast } = useToast();
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [active, setActive] = React.useState(0);
+  const [ariaConsoleOpen, setAriaConsoleOpen] = React.useState(false);
+  const [ariaConsoleText, setAriaConsoleText] = React.useState("");
   const inputRef = React.useRef<HTMLInputElement>(null);
   const dialogRef = React.useRef<HTMLDivElement>(null);
   const previouslyFocused = React.useRef<HTMLElement | null>(null);
@@ -93,8 +119,70 @@ export function CommandSearch() {
           run: () => router.push(`/candidates?focus=${c.id}`),
         }),
       );
+
+    // Aria Live (Demo Director) — plays the whole hire funnel hands-free with
+    // camera cuts (~20s). Always offered (not conditioned on other matches)
+    // so it's discoverable on an empty query, but only once hydrated so it
+    // can't be triggered before there's a workspace/campaign to run against.
+    if (hydrated && (!q || ARIA_LIVE_QUERY.includes(q))) {
+      out.push({
+        id: "aria-live-play",
+        label: "Play Aria Live",
+        hint: "Run the full hire funnel hands-free (~20s)",
+        group: "Aria Command",
+        run: () => {
+          const result = beginAriaLiveRun({
+            actions,
+            state: hermesState,
+            campaigns,
+            activeCampaignId,
+            seats,
+          });
+          if (!result.ok) {
+            toast({ title: "Can't start Aria Live", description: result.reason, variant: "warning" });
+          }
+        },
+      });
+    }
+
+    // Fallback: nothing above matched, but the query reads like an instruction
+    // ("source 15 backend engineers…") rather than a search term. Parse it
+    // deterministically (same grammar the Aria Command console uses) and, if
+    // it resolves into a real plan, surface one result that opens the console
+    // pre-parsed instead of leaving the operator with "no matches". A query
+    // with no recognizable verb (or gibberish) never reaches this branch —
+    // parseCommand returns an empty plan and the normal "no matches" state
+    // stands, so ⌘K behavior for ordinary searches is unchanged.
+    if (out.length === 0 && q) {
+      const plan = parseCommand(query, { campaigns: campaigns.map(campaignToAriaContext) });
+      if (plan.steps.length > 0) {
+        out.push({
+          id: "aria-command-fallback",
+          label: `Run with Aria: “${query.trim()}”`,
+          hint: plan.summary,
+          group: "Aria Command",
+          run: () => {
+            setAriaConsoleText(query);
+            setAriaConsoleOpen(true);
+          },
+        });
+      }
+    }
+
     return out.slice(0, 14);
-  }, [query, campaigns, candidates, router, setActiveCampaign]);
+  }, [
+    query,
+    campaigns,
+    candidates,
+    router,
+    setActiveCampaign,
+    hydrated,
+    actions,
+    hermesState,
+    activeCampaignId,
+    seats,
+    toast,
+  ]);
 
   const grouped = React.useMemo(() => {
     const map = new Map<string, Result[]>();
@@ -191,6 +279,9 @@ export function CommandSearch() {
                           isActive ? "bg-ink text-paper" : "hover:bg-ink/5",
                         )}
                       >
+                        {group === "Aria Command" && (
+                          <Sparkles className="h-4 w-4 shrink-0 text-electric" aria-hidden />
+                        )}
                         <span className="flex-1 min-w-0">
                           <span className="block truncate text-sm font-semibold">{r.label}</span>
                           <span className={cn("block truncate text-xs", isActive ? "text-paper/70" : "text-muted")}>
@@ -207,6 +298,8 @@ export function CommandSearch() {
           </div>
         </div>
       )}
+
+      <AriaCommandConsole open={ariaConsoleOpen} onOpenChange={setAriaConsoleOpen} initialText={ariaConsoleText} />
     </>
   );
 }

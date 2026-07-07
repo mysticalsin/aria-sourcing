@@ -67,7 +67,6 @@ export function SchedulesPanel() {
           </span>
         </div>
 
-        {/* Existing jobs */}
         {schedules.length === 0 ? (
           <EmptyState
             icon={<CalendarClock className="h-7 w-7" />}
@@ -111,7 +110,6 @@ export function SchedulesPanel() {
           </div>
         )}
 
-        {/* Add job */}
         {isAdmin ? (
           <div className="rounded-2xl border border-violet/10 bg-violet/[0.03] p-4">
             <p className="mb-3 text-sm font-semibold text-ink">New scheduled job</p>

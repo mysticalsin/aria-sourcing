@@ -55,7 +55,7 @@ export function HeroPanel() {
 
           <span className="inline-flex h-12 items-center gap-1.5 rounded-full bg-tangerine-soft px-4 text-sm font-semibold text-tangerine ring-1 ring-inset ring-tangerine/20">
             <Zap className="h-4 w-4" aria-hidden />
-            Source boldly.
+            Always sourcing.
           </span>
         </div>
 

@@ -59,11 +59,19 @@ export async function loadRemoteState(): Promise<RemoteLoad | null> {
       console.warn("ensure_workspace failed; running in-memory only:", rpcError?.message);
       return { workspaceId: "", state: null, updatedAt: null };
     }
-    const { data: row } = await supabase
+    const { data: row, error: rowError } = await supabase
       .from("workspace_state")
       .select("state, updated_at")
       .eq("workspace_id", workspaceId)
       .maybeSingle();
+    if (rowError) {
+      // A FAILED read must not masquerade as an EMPTY workspace: the hydrate
+      // path seeds-and-saves when it sees `state: null` with a workspaceId,
+      // which would overwrite the whole shared blob during a transient backend
+      // blip. Run in-memory only (no workspaceId → nothing ever persists).
+      console.warn("workspace_state load failed; running in-memory only:", rowError.message);
+      return { workspaceId: "", state: null, updatedAt: null };
+    }
     return {
       workspaceId: workspaceId as string,
       state: (row?.state as HermesState) ?? null,

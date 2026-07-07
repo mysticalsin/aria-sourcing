@@ -25,70 +25,165 @@ export interface ApprovalContext {
   linkedinSentToday: number;
 }
 
+/** One row of the "glass-box" guardrail checklist — a human-readable report
+ *  of a single condition the approval gate evaluated. Purely a reporting
+ *  layer: every row mirrors a condition that already feeds `blockers`/
+ *  `warnings` below, in the same order, so the checklist can never show a
+ *  state the real gate didn't compute. Adding a row never changes `allowed`. */
+export interface ApprovalCheck {
+  rule: string;
+  status: "pass" | "warn" | "block";
+  detail: string;
+}
+
 export interface ApprovalResult {
   allowed: boolean;
   blockers: string[];
   warnings: string[];
+  /** Optional so any pre-existing hand-built `ApprovalResult` literal (e.g.
+   *  the early-return "message not found" cases in store.ts) stays valid
+   *  without modification — additive only, never required. */
+  checks?: ApprovalCheck[];
 }
 
 export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
   const { candidate, message, settings } = ctx;
   const blockers: string[] = [];
   const warnings: string[] = [];
+  const checks: ApprovalCheck[] = [];
 
   // Rule 2 — score before contacting
   if (candidate.matchScore < settings.minScoreToContact) {
-    blockers.push(
-      `Match score ${candidate.matchScore} is below the ${settings.minScoreToContact} contact floor.`,
-    );
+    const detail = `Match score ${candidate.matchScore} is below the ${settings.minScoreToContact} contact floor.`;
+    blockers.push(detail);
+    checks.push({ rule: "Match score", status: "block", detail });
+  } else {
+    checks.push({
+      rule: "Match score",
+      status: "pass",
+      detail: `Match score ${candidate.matchScore} meets the ${settings.minScoreToContact} contact floor.`,
+    });
   }
 
   // Rule 3 — personalize every message
   if (!message.personalizationEvidence || message.personalizationEvidence.length === 0) {
-    blockers.push("No personalization evidence attached to this message.");
+    const detail = "No personalization evidence attached to this message.";
+    blockers.push(detail);
+    checks.push({ rule: "Personalization", status: "block", detail });
+  } else {
+    checks.push({
+      rule: "Personalization",
+      status: "pass",
+      detail: `${message.personalizationEvidence.length} personalization ${message.personalizationEvidence.length === 1 ? "point" : "points"} attached.`,
+    });
   }
 
   // Rule 10 + compliance — respect candidate wishes
-  if (candidate.complianceFlags.doNotContact) blockers.push("Candidate is on the do-not-contact list.");
-  if (candidate.complianceFlags.unsubscribed) blockers.push("Candidate has unsubscribed.");
-  if (candidate.complianceFlags.suppressed) blockers.push("Candidate contact is currently suppressed.");
+  if (candidate.complianceFlags.doNotContact) {
+    const detail = "Candidate is on the do-not-contact list.";
+    blockers.push(detail);
+    checks.push({ rule: "Do-not-contact", status: "block", detail });
+  } else {
+    checks.push({ rule: "Do-not-contact", status: "pass", detail: "Not on the do-not-contact list." });
+  }
+
+  if (candidate.complianceFlags.unsubscribed) {
+    const detail = "Candidate has unsubscribed.";
+    blockers.push(detail);
+    checks.push({ rule: "Unsubscribed", status: "block", detail });
+  } else {
+    checks.push({ rule: "Unsubscribed", status: "pass", detail: "Has not unsubscribed." });
+  }
+
+  if (candidate.complianceFlags.suppressed) {
+    const detail = "Candidate contact is currently suppressed.";
+    blockers.push(detail);
+    checks.push({ rule: "Suppressed", status: "block", detail });
+  } else {
+    checks.push({ rule: "Suppressed", status: "pass", detail: "Contact is not suppressed." });
+  }
 
   // LinkedIn assisted-manual: we cannot send automatically, but we can draft
   // the message and ask the operator to paste it on the candidate's profile.
   if (message.channel === "LinkedIn" && !candidate.linkedinUrl.trim()) {
-    blockers.push("LinkedIn profile URL is required to send a LinkedIn message.");
-  }
-
-  // Mirror of the LinkedIn check above: an Email message needs somewhere to go.
-  if (message.channel === "Email" && !candidate.email.trim()) {
-    blockers.push("Candidate has no email on file — required to send an Email message.");
+    const detail = "LinkedIn profile URL is required to send a LinkedIn message.";
+    blockers.push(detail);
+    checks.push({ rule: "Contact info", status: "block", detail });
+  } else if (message.channel === "Email" && !candidate.email.trim()) {
+    // Mirror of the LinkedIn check above: an Email message needs somewhere to go.
+    const detail = "Candidate has no email on file — required to send an Email message.";
+    blockers.push(detail);
+    checks.push({ rule: "Contact info", status: "block", detail });
+  } else {
+    checks.push({
+      rule: "Contact info",
+      status: "pass",
+      detail:
+        message.channel === "LinkedIn"
+          ? "LinkedIn profile URL on file."
+          : message.channel === "Email"
+            ? "Email address on file."
+            : `${message.channel} channel — no contact-detail rule required.`,
+    });
   }
 
   // Rule 4 — respect rate limits
   const limit = limitFor(message.channel, settings);
   const used = message.channel === "Email" ? ctx.emailsSentToday : ctx.linkedinSentToday;
   if (used >= limit) {
-    blockers.push(`Daily ${message.channel} limit reached (${used}/${limit}).`);
+    const detail = `Daily ${message.channel} limit reached (${used}/${limit}).`;
+    blockers.push(detail);
+    checks.push({ rule: "Rate limit", status: "block", detail });
   } else if (used >= limit - 2) {
-    warnings.push(`Approaching daily ${message.channel} limit (${used}/${limit}).`);
+    const detail = `Approaching daily ${message.channel} limit (${used}/${limit}).`;
+    warnings.push(detail);
+    checks.push({ rule: "Rate limit", status: "warn", detail });
+  } else {
+    checks.push({
+      rule: "Rate limit",
+      status: "pass",
+      detail: `${used}/${limit} ${message.channel} sends used today.`,
+    });
   }
 
   // Candidate replied since this draft was written — the copy may no longer
   // make sense (e.g. a follow-up nudging someone who already answered). Block
   // approval and force a regenerate/reject rather than shipping stale copy.
   if (candidate.lastRepliedAt && new Date(candidate.lastRepliedAt) > new Date(message.createdAt)) {
-    blockers.push("Candidate has replied since this follow-up was drafted — regenerate or reject.");
+    const detail = "Candidate has replied since this follow-up was drafted — regenerate or reject.";
+    blockers.push(detail);
+    checks.push({ rule: "Draft freshness", status: "block", detail });
+  } else {
+    checks.push({
+      rule: "Draft freshness",
+      status: "pass",
+      detail: candidate.lastRepliedAt ? "No reply since this draft was written." : "No prior reply on record.",
+    });
   }
 
   // Rule 5 — dedupe: don't re-contact inside the window
   if (candidate.lastContactedAt && message.sequenceStep <= 1) {
     const days = daysSince(candidate.lastContactedAt);
     if (days < DEDUPE_WINDOW_DAYS) {
-      warnings.push(`Contacted ${Math.round(days)}d ago, inside the ${DEDUPE_WINDOW_DAYS}d re-contact window.`);
+      const detail = `Contacted ${Math.round(days)}d ago, inside the ${DEDUPE_WINDOW_DAYS}d re-contact window.`;
+      warnings.push(detail);
+      checks.push({ rule: "Re-contact window", status: "warn", detail });
+    } else {
+      checks.push({
+        rule: "Re-contact window",
+        status: "pass",
+        detail: `Contacted ${Math.round(days)}d ago — outside the ${DEDUPE_WINDOW_DAYS}d window.`,
+      });
     }
+  } else {
+    checks.push({
+      rule: "Re-contact window",
+      status: "pass",
+      detail: message.sequenceStep > 1 ? "Follow-up in an existing sequence." : "No prior contact on record.",
+    });
   }
 
-  return { allowed: blockers.length === 0, blockers, warnings };
+  return { allowed: blockers.length === 0, blockers, warnings, checks };
 }
 
 export function limitFor(channel: OutreachChannel, settings: SystemSettings): number {

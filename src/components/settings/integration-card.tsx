@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import * as React from "react";
 import {
   Card,
@@ -31,6 +32,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   ChevronLeft,
+  Wrench,
 } from "lucide-react";
 
 const CATEGORY_ICON: Record<IntegrationStatus["category"], React.ReactNode> = {
@@ -52,6 +54,7 @@ const HEALTH_LABEL: Record<IntegrationStatus["status"], string> = {
 
 export function IntegrationCard({ integration }: { integration: IntegrationStatus }) {
   const actions = useActions();
+  const router = useRouter();
   const { toast } = useToast();
   const [configureOpen, setConfigureOpen] = React.useState(false);
   const [testing, setTesting] = React.useState(false);
@@ -201,9 +204,15 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
               <Eyebrow>{integration.category}</Eyebrow>
               <h3 className="truncate text-base font-bold text-ink">{integration.name}</h3>
             </div>
-            <Badge tone={isLive ? "tangerine" : "aqua"} size="sm">
-              {isLive ? "Live" : "Mock"}
-            </Badge>
+            {integration.real ? (
+              <Badge tone={isLive ? "tangerine" : "aqua"} size="sm">
+                {isLive ? "Live" : "Mock"}
+              </Badge>
+            ) : (
+              <Badge tone="neutral" size="sm">
+                Concept
+              </Badge>
+            )}
           </div>
 
           <p className="text-sm leading-relaxed text-ink-soft">{integration.description}</p>
@@ -243,22 +252,24 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
           )}
 
           <div className="mt-auto space-y-3 pt-1">
-            <div className="flex items-center justify-between rounded-2xl bg-canvas px-3 py-2.5">
-              <div>
-                <label htmlFor={`mode-${integration.id}`} className="text-sm font-semibold text-ink">
-                  Live mode
-                </label>
-                <p className="text-xs text-muted">
-                  {isLive ? "Real credentials path" : "Mock is the safe default"}
-                </p>
+            {integration.real && (
+              <div className="flex items-center justify-between rounded-2xl bg-canvas px-3 py-2.5">
+                <div>
+                  <label htmlFor={`mode-${integration.id}`} className="text-sm font-semibold text-ink">
+                    Live mode
+                  </label>
+                  <p className="text-xs text-muted">
+                    {isLive ? "Real credentials path" : "Mock is the safe default"}
+                  </p>
+                </div>
+                <Switch
+                  id={`mode-${integration.id}`}
+                  checked={isLive}
+                  onCheckedChange={handleToggleMode}
+                  label={`Toggle ${integration.name} live mode`}
+                />
               </div>
-              <Switch
-                id={`mode-${integration.id}`}
-                checked={isLive}
-                onCheckedChange={handleToggleMode}
-                label={`Toggle ${integration.name} live mode`}
-              />
-            </div>
+            )}
 
             <div className="flex gap-2">
               <Button
@@ -270,16 +281,32 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
               >
                 Configure
               </Button>
-              <Button
-                variant="subtle"
-                size="sm"
-                className="flex-1"
-                loading={testing}
-                leftIcon={<Activity className="h-4 w-4" />}
-                onClick={handleTest}
-              >
-                Test connection
-              </Button>
+              {/* Only GitHub has a real, live connection check (testIntegration in
+                  store.ts pings /api/source). Other real cards point to their actual
+                  setup surface instead of running the no-op mock testConnection(). */}
+              {integration.real && integration.id === "int_github" && (
+                <Button
+                  variant="subtle"
+                  size="sm"
+                  className="flex-1"
+                  loading={testing}
+                  leftIcon={<Activity className="h-4 w-4" />}
+                  onClick={handleTest}
+                >
+                  Test connection
+                </Button>
+              )}
+              {integration.real && integration.id !== "int_github" && integration.setupHref && (
+                <Button
+                  variant="subtle"
+                  size="sm"
+                  className="flex-1"
+                  leftIcon={<Wrench className="h-4 w-4" />}
+                  onClick={() => router.push(integration.setupHref!)}
+                >
+                  Setup guide
+                </Button>
+              )}
             </div>
           </div>
         </CardContent>

@@ -344,11 +344,11 @@ body::before {
    Cinematic login hero — scoped classes (used only on /login).
    ========================================================================== */
 .font-garamond {
-  font-family: "Garamond", "Times New Roman", serif;
+  font-family: var(--font-garamond), "Times New Roman", serif;
 }
 
 .login-hero {
-  font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-geist), -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 .mobile-menu-glass {

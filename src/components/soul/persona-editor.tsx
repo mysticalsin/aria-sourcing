@@ -237,7 +237,6 @@ export function PersonaEditor() {
     });
   }
 
-  // Persona state
   const [persona, setPersona] = React.useState(selectedSeat?.persona ?? "");
   const personaDirty = persona !== (selectedSeat?.persona ?? "");
 
@@ -245,17 +244,14 @@ export function PersonaEditor() {
     setPersona(selectedSeat?.persona ?? "");
   }, [selectedSeatId, selectedSeat?.persona]);
 
-  // Aria prompt state
   const [ariaPrompt, setAriaPrompt] = React.useState(guardrails.ariaPrompt);
   const ariaDirty = ariaPrompt !== guardrails.ariaPrompt;
   React.useEffect(() => {
     setAriaPrompt(guardrails.ariaPrompt);
   }, [guardrails.ariaPrompt]);
 
-  // New guardrail rule
   const [newRule, setNewRule] = React.useState("");
 
-  // Memory count for selected seat
   const seatMemory = useMemory(selectedSeatId ?? undefined);
 
   const locked = guardrails.rules.filter((r) => r.locked);

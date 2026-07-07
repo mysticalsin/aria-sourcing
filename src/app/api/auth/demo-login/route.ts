@@ -24,7 +24,6 @@ import { demoAuthConfigured, mintDemoToken } from "@/lib/demo-auth";
  * Hard-disabled in production unless this is a deliberately public demo instance.
  */
 export async function POST(req: Request) {
-  // Hard-disabled in production UNLESS this is a deliberately public demo instance.
   if (isProduction && !demoLoginEnabled) {
     return NextResponse.json({ ok: false, error: "Disabled in production." }, { status: 404 });
   }

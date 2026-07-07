@@ -9,7 +9,7 @@
 .env.local
 .env*.local
 .localbin
-Aria
+/Aria/
 backups
 ultraplan
 production-readiness

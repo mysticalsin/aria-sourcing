@@ -7,16 +7,16 @@ import { cn } from "@/lib/utils";
 import { NAV_ITEMS } from "./nav";
 import { HermesWordmark } from "./logo";
 import { useIntegrations, useSettings } from "@/lib/store";
-import { integrationHealthSummary } from "@/lib/integrations";
+import { realIntegrationSummary } from "@/lib/integrations";
 import { ShieldCheck, Activity } from "lucide-react";
 
 export function Sidebar() {
   const pathname = usePathname();
   const integrations = useIntegrations();
   const settings = useSettings();
-  const health = integrationHealthSummary(integrations);
+  const health = realIntegrationSummary(integrations);
 
-  const sections = ["Operate", "System"] as const;
+  const sections = ["Operate", "Analyze", "System"] as const;
 
   return (
     <aside className="hidden lg:flex w-[260px] shrink-0 flex-col sidebar-glass sticky top-0 h-screen">

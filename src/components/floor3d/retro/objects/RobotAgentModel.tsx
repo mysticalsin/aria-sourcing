@@ -13,6 +13,7 @@ import * as THREE from "three";
 import { RobotCharacter } from "@/components/floor3d/RobotCharacter";
 import { RiggedCharacter, RIGGED_MAN_URL } from "@/components/floor3d/RiggedCharacter";
 import type { RenderAgent3D } from "@/components/floor3d/types";
+import { CHAIR_SEAT_OFFSET } from "../core/constants";
 import { toWorld } from "../core/geometry";
 import type { RenderAgent } from "../core/types";
 
@@ -72,8 +73,10 @@ export const RobotAgentModel = memo(function RobotAgentModel({
     if (!agent || !groupRef.current) return;
 
     // World position (feet on the floor — the character bobs internally).
+    // Seated agents sit at the chair, offset in front of the desk center.
     const [wx, , wz] = toWorld(agent.x, agent.y);
-    pos.current.set(wx, 0, wz);
+    const seatZ = agent.state === "sitting" ? wz + CHAIR_SEAT_OFFSET : wz;
+    pos.current.set(wx, 0, seatZ);
     groupRef.current.position.lerp(pos.current, 0.15);
 
     // Facing (shortest-arc smoothing).

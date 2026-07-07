@@ -2,12 +2,14 @@
 
 import * as React from "react";
 import { Card, CardContent, Eyebrow, Badge, SkeletonCard } from "@/components/ui";
-import { useSettings } from "@/lib/store";
+import { useSettings, useSeats, useMemory } from "@/lib/store";
 import { getHermesMemory, hermesRuntimeAvailable } from "@/lib/ai/hermes-runtime";
 import { Server } from "lucide-react";
 
 export function HermesMemoryPanel() {
   const settings = useSettings();
+  const seats = useSeats();
+  const localMemory = useMemory();
   const live = hermesRuntimeAvailable(settings);
   const [entries, setEntries] = React.useState<unknown[] | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -32,12 +34,32 @@ export function HermesMemoryPanel() {
   if (!live) {
     return (
       <Card>
-        <CardContent className="space-y-2">
-          <Eyebrow className="flex items-center gap-1.5">
-            <Server className="h-3 w-3" aria-hidden /> Aria memory
-          </Eyebrow>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <Eyebrow className="flex items-center gap-1.5">
+              <Server className="h-3 w-3" aria-hidden /> Aria memory
+            </Eyebrow>
+            <Badge tone="warning" size="sm">Demo</Badge>
+          </div>
+          {localMemory.length === 0 ? (
+            <p className="text-xs text-muted">No local memory entries yet.</p>
+          ) : (
+            <div className="space-y-2 max-h-[320px] overflow-y-auto">
+              {localMemory.map((entry) => {
+                const seat = seats.find((s) => s.id === entry.seatId);
+                return (
+                  <div key={entry.id} className="rounded-xl border border-line bg-canvas p-2.5 text-xs">
+                    <p className="font-medium text-ink">
+                      {seat?.name ?? "Unassigned"} · <span className="text-muted">{entry.kind}</span>
+                    </p>
+                    <p className="mt-1 text-muted line-clamp-3">{entry.content}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <p className="text-xs text-muted">
-            Enable Aria live mode in Settings to mirror the runtime&apos;s long-term memory here.
+            Mirroring local memory — enable Aria live mode in Settings to sync the runtime&apos;s copy here.
           </p>
         </CardContent>
       </Card>

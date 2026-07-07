@@ -52,7 +52,7 @@ export function WeeklyReportCard({ report }: { report: WeeklyReport }) {
     });
   }
 
-  const stats: { label: string; value: string }[] = [
+  const stats: { label: string; value: string; illustrative?: boolean }[] = [
     { label: "Reply rate", value: formatPercent(p.replyRate) },
     { label: "Interest rate", value: formatPercent(p.interestRate) },
     { label: "Booking rate", value: formatPercent(p.bookingRate) },
@@ -61,9 +61,9 @@ export function WeeklyReportCard({ report }: { report: WeeklyReport }) {
       label: "Time to interview",
       value: p.timeToFirstInterviewHours == null ? "—" : `${round(p.timeToFirstInterviewHours)}h`,
     },
-    { label: "Cost per hire", value: formatCurrency(p.costPerHire) },
+    { label: "Cost per hire", value: formatCurrency(p.costPerHire), illustrative: true },
     { label: "Best channel", value: p.bestChannel },
-    { label: "Best slot", value: `${p.bestDay} · ${p.bestTime}` },
+    { label: "Best slot", value: `${p.bestDay} · ${p.bestTime}`, illustrative: true },
   ];
 
   return (
@@ -109,8 +109,13 @@ export function WeeklyReportCard({ report }: { report: WeeklyReport }) {
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
             {stats.map((s) => (
               <div key={s.label} className="rounded-2xl bg-canvas px-4 py-3">
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted">
+                <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
                   {s.label}
+                  {s.illustrative && (
+                    <Badge tone="neutral" size="sm" className="normal-case tracking-normal">
+                      illustrative
+                    </Badge>
+                  )}
                 </div>
                 <div className="mt-1 text-xl font-extrabold tabular-nums text-ink">{s.value}</div>
               </div>
@@ -130,6 +135,7 @@ export function WeeklyReportCard({ report }: { report: WeeklyReport }) {
             title="Winning patterns"
             items={report.winningPatterns}
             tone="success"
+            illustrative
           />
           <InsightList
             icon={<AlertTriangle className="h-4 w-4 text-warning" aria-hidden />}
@@ -138,6 +144,11 @@ export function WeeklyReportCard({ report }: { report: WeeklyReport }) {
             tone="warning"
           />
         </div>
+
+        <p className="text-xs text-muted">
+          Benchmarks marked <span className="font-semibold">illustrative</span> are fixed reference values, not
+          computed from this campaign.
+        </p>
       </CardContent>
     </Card>
   );
@@ -148,11 +159,13 @@ function InsightList({
   title,
   items,
   tone,
+  illustrative,
 }: {
   icon: React.ReactNode;
   title: string;
   items: string[];
   tone: "electric" | "success" | "warning";
+  illustrative?: boolean;
 }) {
   return (
     <div className="rounded-2xl border border-line p-4">
@@ -160,6 +173,11 @@ function InsightList({
         <h4 className="flex items-center gap-1.5 text-sm font-bold text-ink">
           {icon}
           {title}
+          {illustrative && (
+            <Badge tone="neutral" size="sm" className="font-medium">
+              illustrative
+            </Badge>
+          )}
         </h4>
         <Badge tone={tone} size="sm">
           {items.length}

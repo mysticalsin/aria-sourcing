@@ -14,6 +14,7 @@ import type {
   CompanyStage,
   GithubQuery,
   IntakeIntent,
+  Interviewer,
   JobAnalysis,
   OutreachChannel,
   OutreachMessage,
@@ -112,21 +113,6 @@ const ACTIVITY_LINES = [
   "Contributes to standards working groups regularly.",
 ];
 
-const INTERVIEWERS = [
-  { name: "Dana Whitfield", email: "dana.whitfield@hermes.example", role: "Engineering Manager" },
-  { name: "Marcus Lindqvist", email: "marcus.lindqvist@hermes.example", role: "Staff Engineer" },
-  { name: "Priya Nair", email: "priya.nair@hermes.example", role: "Director of Engineering" },
-  { name: "Sofia Romano", email: "sofia.romano@hermes.example", role: "Principal Engineer" },
-];
-
-export function getInterviewers() {
-  return INTERVIEWERS;
-}
-
-export function nextInterviewer(bookingCount: number) {
-  return INTERVIEWERS[bookingCount % INTERVIEWERS.length];
-}
-
 /* ---- Skills dictionary for the parser ----------------------------------- */
 
 const SKILL_DICTIONARY = [
@@ -223,6 +209,16 @@ export interface ParsedIntake {
 
 export function isMantuNeedEmail(text: string): boolean {
   return /this need is now|key required skills/i.test(text) || /^\s*recruiter\s*:/im.test(text);
+}
+
+/** Does an inbound mailbox message look like a hiring need / JD email (vs a
+ *  candidate reply, newsletter, …)? Used by the intake "Scan inbox" flow to
+ *  pick need emails out of a synced mailbox. Mantu "need is now ACTIVE" mails
+ *  match on the body; otherwise only a conservative subject-line check — a
+ *  false positive here would parse a random email into a job brief. */
+export function isNeedEmail(subject: string, body: string): boolean {
+  if (isMantuNeedEmail(body) || isMantuNeedEmail(subject)) return true;
+  return /\b(job description|jd attached|new (role|position|need|vacancy|opening)|hiring request|backfill|open position)\b/i.test(subject);
 }
 
 /** Structured parser for the Mantu/Amaris "need is now ACTIVE" recruitment email. */
@@ -546,10 +542,13 @@ export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
   const topSkills = jd.requiredSkills.slice(0, 4);
   const region = jd.regions[0];
   const locationQualifier = region && !NON_LOCATION_REGIONS.has(region) ? ` location:${region}` : "";
+  // Note: only user-search qualifiers are valid here (language:, location:,
+  // followers:, repos:, created:). Repo qualifiers like `stars:` silently zero
+  // out the whole query on /search/users.
   const githubQueries: GithubQuery[] = topSkills.slice(0, 3).map((skill, i) => ({
     label: `${skill} contributors`,
     query: `language:${skill.replace(/\s+/g, "")}${locationQualifier} followers:>40 ${
-      i === 0 ? "stars:>20" : "repos:>5"
+      i === 0 ? "repos:>10" : "repos:>5"
     }`,
     estimatedResults: 120 + i * 60,
   }));
@@ -1101,7 +1100,9 @@ function draftFor(intent: ReplyIntent, first: string): string {
 export function createBooking(
   candidate: Candidate,
   campaign: Campaign,
-  interviewer: { name: string; email: string; role: string },
+  // Null when the interviewer roster is empty (see resolveBookingSlot in
+  // store.ts) — an honest gap rather than a fabricated name.
+  interviewer: Interviewer | null,
   startTime: Date,
 ): Booking {
   const end = new Date(startTime.getTime() + 30 * 60000);
@@ -1114,8 +1115,8 @@ export function createBooking(
     startTime: startTime.toISOString(),
     endTime: end.toISOString(),
     timezone: candidate.timezone,
-    interviewer: interviewer.name,
-    interviewerEmail: interviewer.email,
+    interviewer: interviewer?.name ?? "",
+    interviewerEmail: interviewer?.email ?? "",
     // Real meeting URLs are issued by the calendar provider (Microsoft Graph / Cal.com) at
     // live-send time. Until that integration is connected, leave these empty rather than
     // fabricate links that 404 — the calendar UI renders an "on live send" state.
@@ -1133,9 +1134,12 @@ export function createBooking(
 }
 
 export function interviewerPrepEmail(b: Booking, candidate: Candidate): string {
+  // No interviewer assigned yet (empty roster) — greet generically rather
+  // than produce "Hi ,".
+  const firstName = b.interviewer ? b.interviewer.split(" ")[0] : "there";
   return `Subject: Interview prep: ${b.candidateName} for ${b.role}
 
-Hi ${b.interviewer.split(" ")[0]},
+Hi ${firstName},
 
 You're interviewing ${b.candidateName} (${candidate.currentTitle} @ ${candidate.currentCompany}) for ${b.role}.
 Match score: ${candidate.matchScore}. Stack: ${candidate.techStack.slice(0, 5).join(", ")}.
@@ -1165,7 +1169,7 @@ Hi ${b.candidateName.split(" ")[0]},
 
 You're booked in. Details:
 • When: ${when}
-• With: ${b.interviewer}
+• With: ${b.interviewer || "Interviewer to be confirmed"}
 • Where: ${b.teamsLink}
 
 No prep needed, just bring your questions. Reply here if you need to move it.

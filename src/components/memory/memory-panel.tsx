@@ -179,7 +179,6 @@ export function MemoryPanel() {
   const [selectedSeatId, setSelectedSeatId] = React.useState<string | null>(null);
   const [adding, setAdding] = React.useState(false);
 
-  // Auto-select first seat
   React.useEffect(() => {
     if (!selectedSeatId && seats.length > 0) setSelectedSeatId(seats[0].id);
   }, [seats, selectedSeatId]);
@@ -192,7 +191,6 @@ export function MemoryPanel() {
   const capacity = 200; // default; settings.memoryCapacity is optional
   const entries = selectedSeatId ? seatMemory : allMemory;
 
-  // Group by kind for display
   const pinned = entries.filter((e) => e.pinned);
   const byKind = MEMORY_KINDS.map((k) => ({
     kind: k,

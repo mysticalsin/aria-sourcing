@@ -9,7 +9,6 @@ import { HUMAN_PRINCIPLE } from "@/lib/agents-org";
 export default function ArchitecturePage() {
   return (
     <div className="space-y-8">
-      {/* Header */}
       <header className="animate-fade-in">
         <Eyebrow className="mb-2 block text-tangerine">Agent architecture</Eyebrow>
         <h1 className="display text-3xl text-ink sm:text-4xl lg:text-5xl">

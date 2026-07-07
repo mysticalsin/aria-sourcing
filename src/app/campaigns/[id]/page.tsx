@@ -31,6 +31,9 @@ import { ActivityTimeline } from "@/components/shared/activity-timeline";
 import { ScoreDistribution } from "@/components/charts/score-distribution";
 import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
+import { AddCandidateButton } from "@/components/candidates/add-candidate-dialog";
+import { SourcingFeed } from "@/components/tania/sourcing-feed";
+import { AgentRunStream } from "@/components/run/agent-run-stream";
 import { OutreachMessageCard } from "@/components/outreach/outreach-message-card";
 import { RateMeterPanel } from "@/components/outreach/rate-meter-panel";
 import { ReplyClassifier } from "@/components/replies/reply-classifier";
@@ -89,6 +92,7 @@ import {
   Pause,
   Pencil,
   Play,
+  PlayCircle,
   RefreshCw,
   Send,
   Sparkles,
@@ -319,9 +323,19 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const [scoreFilter, setScoreFilter] = React.useState("all");
   const [agentRunning, setAgentRunning] = React.useState(false);
   const [sourcing, setSourcing] = React.useState(false);
+  // The just-sourced batch, staged for the streaming reveal below — purely a
+  // display buffer; the store already committed these candidates for real.
+  // `sourceBatchKey` remounts <SourcingFeed> on every new batch (even one of
+  // the same size as the last) so the reveal always replays from the top.
+  const [justSourced, setJustSourced] = React.useState<Candidate[]>([]);
+  const [sourceBatchKey, setSourceBatchKey] = React.useState(0);
   const [bookingCandidateId, setBookingCandidateId] = React.useState<string | null>(null);
   const [editingJd, setEditingJd] = React.useState(false);
   const [editingWeights, setEditingWeights] = React.useState(false);
+  // "Watch Aria Work" panel — remounted (via runToken as its key) on every
+  // "Run Aria" click so each click starts a genuinely fresh, replayable run.
+  const [runOpen, setRunOpen] = React.useState(false);
+  const [runToken, setRunToken] = React.useState(0);
 
   if (!hydrated) {
     return (
@@ -422,6 +436,12 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       });
       return;
     }
+    // Stage the reveal with the exact, already-committed batch — never a
+    // re-derived or re-scored copy — and jump to the Candidates tab so the
+    // stream is immediately visible instead of resolving behind a toast.
+    setJustSourced(res.accepted);
+    setSourceBatchKey((k) => k + 1);
+    if (res.accepted.length > 0) setTab("candidates");
     const isLive = res.source === "github" || res.source === "web";
     toast({
       title: `Sourced ${res.accepted.length} candidate${res.accepted.length === 1 ? "" : "s"}${isLive ? " (live)" : ""}`,
@@ -447,6 +467,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       description: "Real search, real scoring, drafted outreach — review before sending.",
       variant: "success",
     });
+  };
+
+  const handleOpenRun = () => {
+    setRunOpen(true);
+    setRunToken((k) => k + 1);
   };
 
   const handlePause = () => {
@@ -677,6 +702,15 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               {agentRunning ? "Agent working…" : "Run sourcing agent"}
             </Button>
             <Button
+              variant="primary"
+              leftIcon={<PlayCircle className="h-4 w-4" />}
+              onClick={handleOpenRun}
+              disabled={c.status === "Paused"}
+              title={c.status === "Paused" ? "Resume the campaign to run Aria" : undefined}
+            >
+              Run Aria
+            </Button>
+            <Button
               variant="outline"
               leftIcon={<Send className="h-4 w-4" />}
               onClick={() => router.push(`/outreach?campaign=${c.id}`)}
@@ -712,6 +746,16 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           <span className="font-semibold text-ink">{nextAction}</span>
         </div>
       </Card>
+
+      {runOpen && (
+        <AgentRunStream
+          key={runToken}
+          campaignId={c.id}
+          autoStart
+          onClose={() => setRunOpen(false)}
+          className="mb-6 animate-fade-in"
+        />
+      )}
 
       <Tabs items={tabs} value={tab} onValueChange={setTab} idBase={idBase} className="mb-6" />
 
@@ -1030,6 +1074,18 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       {/* Candidates */}
       <TabPanel value="candidates" active={tab === "candidates"} idBase={idBase}>
         <div className="space-y-6">
+          {justSourced.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Eyebrow>Just sourced</Eyebrow>
+                <Badge tone="electric" size="sm">
+                  {justSourced.length}
+                </Badge>
+              </div>
+              <SourcingFeed key={sourceBatchKey} candidates={justSourced} campaignId={c.id} />
+            </div>
+          )}
+
           <Card>
             <CardBody className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Field label="Stage" htmlFor="cand-stage">
@@ -1048,9 +1104,12 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                   onChange={(e) => setScoreFilter(e.target.value)}
                 />
               </Field>
-              <div className="flex items-end text-sm text-muted sm:col-span-2 lg:col-span-2">
-                Showing <span className="mx-1 font-semibold text-ink">{filteredCandidates.length}</span> of{" "}
-                {candidates.length}. Open a candidate to score, generate outreach, or book.
+              <div className="flex flex-wrap items-end justify-between gap-3 text-sm text-muted sm:col-span-2 lg:col-span-2">
+                <span>
+                  Showing <span className="mx-1 font-semibold text-ink">{filteredCandidates.length}</span> of{" "}
+                  {candidates.length}. Open a candidate to score, generate outreach, or book.
+                </span>
+                <AddCandidateButton campaignId={c.id} />
               </div>
             </CardBody>
           </Card>

@@ -5,7 +5,6 @@ import {
   generateOutreach,
   generateWeeklyReport,
   interviewerPrepEmail,
-  nextInterviewer,
   sourceCandidates,
   buildSourcingStrategy,
 } from "./mock-ai";
@@ -26,6 +25,7 @@ import type {
   GuardrailConfig,
   HermesState,
   InterviewRecord,
+  Interviewer,
   JobAnalysis,
   LeadSource,
   LlmProvider,
@@ -54,9 +54,10 @@ import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
    Seed builder — produces the initial synthetic world (client-side, once).
    ========================================================================== */
 
-// STATE_VERSION 13 — TAnIA layer: lead source, star rating, #Vivier, prequal +
-// interviews, chatbox submissions, Knight M job ads (all additive & derived).
-export const STATE_VERSION = 13;
+// STATE_VERSION 14 — registered interviewer roster (interviewers slice) replaces
+// the hardcoded mock-ai INTERVIEWERS list; interviewers are now stored,
+// admin-editable data instead of a fake fixed 4-person cast.
+export const STATE_VERSION = 14;
 
 /* ---- LLM config defaults ------------------------------------------------- */
 
@@ -97,7 +98,11 @@ export function defaultSavedModels(): SavedModel[] {
       label: "Kimi K2 (Code)",
       contextWindow: 256000,
       enabled: true,
-      defaultForTask: ["sourcing", "outreach", "classification", "chat"],
+      // No "sourcing": the sourcing agent requires tool-calling, which Kimi doesn't
+      // support (runSourcingAgent in store.ts hard-rejects it). Leaving it out of
+      // this list — and out of defaultModels.sourcing below — lets resolveAiProvider
+      // fall through to its "no provider configured" path instead of a guaranteed failure.
+      defaultForTask: ["outreach", "classification", "chat"],
     },
     {
       id: "model_claude_opus_4",
@@ -165,7 +170,9 @@ export function defaultSettings(): SystemSettings {
     tools: defaultTools(),
     mcpServers: [],
     defaultModels: {
-      sourcing: "model_kimi_coding",
+      // No sourcing default: Kimi can't run it (no tool-calling) and no other
+      // provider is enabled out of the box, so resolveAiProvider correctly reports
+      // "not configured" until an operator sets a tool-calling-capable provider.
       outreach: "model_kimi_coding",
       classification: "model_kimi_coding",
       chat: "model_kimi_coding",
@@ -269,6 +276,19 @@ function seedSuppression(): SuppressionEntry[] {
     { id: genId("supp"), type: "email", value: "do-not-contact@example.com", reason: "Do-not-contact request", source: "Operator", createdAt: isoDaysBefore(30), expiresAt: null },
     { id: genId("supp"), type: "domain", value: "competitor-excluded.example", reason: "Excluded company domain", source: "Policy", createdAt: isoDaysBefore(20), expiresAt: null },
     { id: genId("supp"), type: "email", value: "unsub@example.com", reason: "Unsubscribed", source: "Unsubscribe link", createdAt: isoDaysBefore(12), expiresAt: null },
+  ];
+}
+
+/** The demo's starter interviewer roster (formerly mock-ai's hardcoded
+ *  INTERVIEWERS list). Exported so store.ts can fall back to it when
+ *  migrating a pre-STATE_VERSION-14 blob that predates the interviewers
+ *  slice — real staff, once editable, replace these in Settings. */
+export function seedInterviewers(): Interviewer[] {
+  return [
+    { id: "intv_dana", name: "Dana Whitfield", email: "dana.whitfield@hermes.example", role: "Engineering Manager", active: true },
+    { id: "intv_marcus", name: "Marcus Lindqvist", email: "marcus.lindqvist@hermes.example", role: "Staff Engineer", active: true },
+    { id: "intv_priya", name: "Priya Nair", email: "priya.nair@hermes.example", role: "Director of Engineering", active: true },
+    { id: "intv_sofia", name: "Sofia Romano", email: "sofia.romano@hermes.example", role: "Principal Engineer", active: true },
   ];
 }
 
@@ -707,6 +727,7 @@ export function buildSeedState(): HermesState {
   const activities: Activity[] = [];
   const seats = seedSeats();
   const suppression = seedSuppression();
+  const interviewers = seedInterviewers();
   const ledger: OutreachLedgerEntry[] = [];
 
   let bookingCounter = 0;
@@ -807,7 +828,7 @@ export function buildSeedState(): HermesState {
 
       // Bookings
       if (rank >= RANK.Booked) {
-        const interviewer = nextInterviewer(bookingCounter++);
+        const interviewer = interviewers[bookingCounter++ % interviewers.length];
         const isPast = stage === "Interviewed";
         const start = new Date(now + (isPast ? -1 : 1 + (i % 3)) * 86_400_000 + 14 * 3_600_000);
         const booking = createBooking(cand, campaign, interviewer, start);
@@ -891,6 +912,7 @@ export function buildSeedState(): HermesState {
     outreach,
     replies,
     bookings,
+    interviewers,
     reports,
     integrations: defaultIntegrations(),
     activities,

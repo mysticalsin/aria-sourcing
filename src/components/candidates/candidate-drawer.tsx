@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Badge,
@@ -11,8 +11,10 @@ import {
   useConfirm,
 } from "@/components/ui";
 import { ScoreGauge } from "@/components/charts/score-gauge";
+import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
-import { useActions, useCampaign, useCandidate, useSettings } from "@/lib/store";
+import { ConsentPassport } from "@/components/candidates/consent-passport";
+import { useActions, useCampaign, useCandidate, useOutreach, useSettings } from "@/lib/store";
 import {
   downloadText,
   formatTimeAgo,
@@ -34,11 +36,13 @@ import type {
   Candidate,
   CandidateStage,
   InterviewKind,
+  InterviewOutcome,
   LeadSource,
+  OutreachMessage,
   PrequalOutcome,
   StarRating,
 } from "@/lib/types";
-import { LEAD_SOURCES, STAR_RATINGS } from "@/lib/types";
+import { INTERVIEW_OUTCOMES, LEAD_SOURCES, STAR_RATINGS } from "@/lib/types";
 import {
   Ban,
   Bookmark,
@@ -59,6 +63,7 @@ import {
   Linkedin,
   Lock,
   Mail,
+  MailX,
   Phone,
   MapPin,
   MessageSquare,
@@ -66,6 +71,7 @@ import {
   RotateCcw,
   Send,
   ShieldAlert,
+  ShieldCheck,
   Sparkles,
   UserX,
 } from "lucide-react";
@@ -110,6 +116,46 @@ function Chips({ items, label }: { items: string[]; label: string }) {
   );
 }
 
+/** View-only "why this person" fallback — guarantees the chip(s) below are
+ *  never blank, even for the rare draft whose stored personalizationEvidence
+ *  came back empty (e.g. a live-sourced draft with no recentActivity). Derived
+ *  purely from fields already on the candidate; never written back to the
+ *  message, and never substitutes for real evidence when it's present — the
+ *  personalization-required approval gate in rules.ts still reads the stored
+ *  personalizationEvidence unchanged. */
+function personalizationFallbackHook(candidate: Candidate): string {
+  const topSkill = candidate.techStack[0];
+  if (topSkill) return `${topSkill} background fits this role`;
+  if (candidate.currentTitle) return `${candidate.currentTitle} experience fits this role`;
+  return `${candidate.yearsExperience} yrs of relevant experience`;
+}
+
+/** "Why this person" — the personalization evidence behind this candidate's
+ *  latest outreach draft, matching the same aqua chip styling the outreach
+ *  queue uses (see OutreachMessageCard). Falls back to a single derived hook
+ *  when the draft's real evidence is empty, so the section is never blank. */
+function WhyThisPerson({ candidate, message }: { candidate: Candidate; message: OutreachMessage }) {
+  const real = message.personalizationEvidence.filter((e) => e.trim().length > 0);
+  const chips = real.length > 0 ? real : [personalizationFallbackHook(candidate)];
+  return (
+    <Section title="Why this person" icon={<Sparkles className="h-4 w-4" />}>
+      <div className="flex flex-wrap gap-1.5">
+        {chips.map((ev, i) => (
+          <span
+            key={i}
+            className="inline-flex items-center rounded-full bg-aqua-soft px-2.5 py-1 text-xs font-medium text-aqua ring-1 ring-inset ring-aqua/20"
+          >
+            {ev}
+          </span>
+        ))}
+      </div>
+      <p className="text-xs text-muted">
+        From the {message.status.toLowerCase()} outreach draft · sequence step {message.sequenceStep}.
+      </p>
+    </Section>
+  );
+}
+
 /** TAnIA panel — lead source, Mantu Star Rating, Prequal decision, interview
  *  rounds and #Vivier. All actions are recruiter-initiated ("Human Always Decides"). */
 function TaniaPanel({ c }: { c: Candidate }) {
@@ -139,6 +185,13 @@ function TaniaPanel({ c }: { c: Candidate }) {
   const schedule = (kind: InterviewKind) => {
     actions.addInterview(c.id, kind, "Hiring Manager", null);
     toast({ title: `${kind} scheduled`, description: "Reminder cadence T-24h / T-1h queued.", variant: "success" });
+  };
+  const setOutcome = (interviewId: string, kind: InterviewKind, outcome: InterviewOutcome) => {
+    actions.updateInterview(c.id, interviewId, { outcome });
+    toast({
+      title: `${kind} outcome: ${outcome}`,
+      variant: outcome === "Reject" || outcome === "No Show" ? "warning" : "success",
+    });
   };
   const toggleVivier = () => {
     actions.toggleVivier(c.id);
@@ -215,12 +268,26 @@ function TaniaPanel({ c }: { c: Candidate }) {
         {c.interviews && c.interviews.length > 0 ? (
           <ul className="space-y-1.5">
             {c.interviews.map((iv) => (
-              <li key={iv.id} className="flex items-center justify-between rounded-xl bg-ink/[0.03] px-3 py-2 text-sm">
+              <li key={iv.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-ink/[0.03] px-3 py-2 text-sm">
                 <span className="font-semibold text-ink">{iv.kind}</span>
                 <span className="text-muted">{iv.interviewer}</span>
-                <Badge tone={iv.outcome === "Advance" || iv.outcome === "Completed" ? "success" : iv.outcome === "Reject" || iv.outcome === "No Show" ? "danger" : "aqua"} size="sm">
-                  {iv.outcome}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge tone={iv.outcome === "Advance" || iv.outcome === "Completed" ? "success" : iv.outcome === "Reject" || iv.outcome === "No Show" ? "danger" : "aqua"} size="sm">
+                    {iv.outcome}
+                  </Badge>
+                  <select
+                    aria-label={`Set outcome for ${iv.kind} interview`}
+                    value={iv.outcome}
+                    onChange={(e) => setOutcome(iv.id, iv.kind, e.target.value as InterviewOutcome)}
+                    className="rounded-md border border-line bg-surface px-2 py-1 text-xs text-ink"
+                  >
+                    {INTERVIEW_OUTCOMES.map((outcome) => (
+                      <option key={outcome} value={outcome}>
+                        {outcome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </li>
             ))}
           </ul>
@@ -319,6 +386,18 @@ export function CandidateDrawer({
     setRevealed(false);
     setNoteText("");
   }, [candidateId, open]);
+
+  // Latest drafted/queued outreach for this candidate (any status — Draft
+  // through Scheduled), newest first, so the "why this person" chips below
+  // always reflect the most recent personalization. View-only lookup via the
+  // existing useOutreach() selector — no new store state.
+  const outreach = useOutreach();
+  const latestOutreachMessage = useMemo(() => {
+    if (!candidateId) return undefined;
+    return outreach
+      .filter((m) => m.candidateId === candidateId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+  }, [outreach, candidateId]);
 
   // Debounce timers are keyed to this component instance, not to `open` — they
   // must keep running even if the drawer is closed mid-edit (Escape/backdrop)
@@ -515,6 +594,20 @@ export function CandidateDrawer({
     toast({ title: "Marked do-not-contact", description: `${c.name} added to the exclusion list.`, variant: "warning" });
   };
 
+  const handleUnsubscribe = async () => {
+    if (
+      !(await confirm({
+        title: `Unsubscribe ${c.name}?`,
+        description: "Honors their GDPR unsubscribe request — they'll be excluded from all future outreach.",
+        confirmLabel: "Unsubscribe",
+        danger: true,
+      }))
+    )
+      return;
+    actions.unsubscribeCandidate(c.id);
+    toast({ title: "Unsubscribed", description: `${c.name} will no longer receive outreach.`, variant: "warning" });
+  };
+
   const handleRestoreContact = async () => {
     if (
       !(await confirm({
@@ -589,7 +682,6 @@ export function CandidateDrawer({
       width="max-w-2xl"
     >
       <div className="space-y-8 animate-fade-in">
-        {/* Header meta */}
         <div className="space-y-3">
           {campaign && (
             <Badge tone="electric" size="sm">
@@ -744,15 +836,21 @@ export function CandidateDrawer({
           )}
         </div>
 
-        {/* Score */}
         <Section title="Match score" icon={<Sparkles className="h-4 w-4" />}>
-          <div className="grid gap-6 sm:grid-cols-[auto_1fr] sm:items-start">
+          <div className="grid gap-6 sm:grid-cols-[auto_auto_1fr] sm:items-start">
             <div className="flex justify-center sm:justify-start">
               <ScoreGauge score={c.matchScore} label="Overall fit" />
+            </div>
+            <div className="flex justify-center sm:justify-start">
+              <FitRadar matchBreakdown={c.matchBreakdown} size={180} label={c.name} />
             </div>
             <ScoreBreakdown breakdown={c.matchBreakdown} />
           </div>
         </Section>
+
+        {/* Why this person — personalization evidence behind the latest
+            drafted/queued outreach, if any (view-only; never blank). */}
+        {latestOutreachMessage && <WhyThisPerson candidate={c} message={latestOutreachMessage} />}
 
         {/* TAnIA — source, star rating, prequal, interviews, #Vivier */}
         <TaniaPanel c={c} />
@@ -760,7 +858,6 @@ export function CandidateDrawer({
         {/* Onboarding journey (Stages III→IV) — only once at offer/hired */}
         {(c.stage === "Offer" || c.stage === "Hired") && <OnboardingPanel c={c} />}
 
-        {/* Interview stage */}
         <Section title="Interview stage" icon={<ClipboardCheck className="h-4 w-4" />}>
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted">Current:</span>
@@ -802,7 +899,6 @@ export function CandidateDrawer({
           )}
         </Section>
 
-        {/* Tech stack */}
         <Section title="Tech stack">
           <Chips items={c.techStack} label="Tech stack" />
         </Section>
@@ -832,12 +928,10 @@ export function CandidateDrawer({
           </div>
         </Section>
 
-        {/* Recent activity */}
         <Section title="Recent activity" icon={<Clock className="h-4 w-4" />}>
           <p className="text-sm leading-relaxed text-ink-soft">{c.recentActivity}</p>
         </Section>
 
-        {/* Recruiter notes */}
         <Section title="Recruiter notes" icon={<NotebookPen className="h-4 w-4" />}>
           <div className="flex items-start gap-2">
             <textarea
@@ -866,7 +960,6 @@ export function CandidateDrawer({
           )}
         </Section>
 
-        {/* Outreach history */}
         <Section title="Outreach history" icon={<Send className="h-4 w-4" />}>
           {c.outreachHistory.length === 0 ? (
             <p className="text-sm text-muted">No outreach sent yet.</p>
@@ -892,7 +985,6 @@ export function CandidateDrawer({
           )}
         </Section>
 
-        {/* Reply history */}
         <Section title="Reply history" icon={<MessageSquare className="h-4 w-4" />}>
           {c.replyHistory.length === 0 ? (
             <p className="text-sm text-muted">No replies received yet.</p>
@@ -915,7 +1007,6 @@ export function CandidateDrawer({
           )}
         </Section>
 
-        {/* Compliance controls */}
         <Section title="Compliance & data governance" icon={<ShieldAlert className="h-4 w-4" />}>
           <p className="text-sm text-muted">
             Honor candidate rights immediately. Export and anonymize support GDPR; suppression and
@@ -934,6 +1025,9 @@ export function CandidateDrawer({
             <Button variant="danger" size="sm" leftIcon={<Ban className="h-4 w-4" />} onClick={handleDoNotContact}>
               Mark do-not-contact
             </Button>
+            <Button variant="outline" size="sm" leftIcon={<MailX className="h-4 w-4" />} onClick={handleUnsubscribe}>
+              Unsubscribe
+            </Button>
           </div>
           {(flags.suppressed || flags.doNotContact) && (
             <Button
@@ -945,6 +1039,13 @@ export function CandidateDrawer({
               Undo — restore contact
             </Button>
           )}
+        </Section>
+
+        {/* Consent passport — GDPR data lineage: source/lawful-basis chips,
+            retention countdown, and the reveal ledger for this candidate.
+            Display-only; does not itself reveal masked PII. */}
+        <Section title="Consent passport" icon={<ShieldCheck className="h-4 w-4" />}>
+          <ConsentPassport candidate={c} />
         </Section>
       </div>
     </Drawer>

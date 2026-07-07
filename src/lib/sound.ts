@@ -4,7 +4,16 @@
    user gesture (click) so the AudioContext can start.
    ========================================================================== */
 
-export type SoundKind = "click" | "deploy" | "toggle" | "success" | "select";
+export type SoundKind =
+  | "click"
+  | "deploy"
+  | "toggle"
+  | "success"
+  | "select"
+  | "packet"
+  | "ping"
+  | "beacon"
+  | "chord";
 
 type AudioCtor = typeof AudioContext;
 let ctx: AudioContext | null = null;
@@ -31,6 +40,11 @@ const NOTES: Record<SoundKind, number[]> = {
   toggle: [440],
   deploy: [523, 659, 784], // C–E–G rising
   success: [659, 988],
+  // Living-floor event cues (src/components/floor3d/retro/scene/PacketFX.tsx)
+  packet: [1046, 1568], // cyan chirp — a candidate sourced
+  ping: [740, 988], // tangerine confirm — a draft queued/approved
+  beacon: [880, 440, 880], // red alarm — a reply just landed
+  chord: [523.25, 659.25, 783.99, 987.77], // violet chord — a booking confirmed
 };
 
 /** Play a short blip. No-op unless `enabled`. Safe to call anywhere. */

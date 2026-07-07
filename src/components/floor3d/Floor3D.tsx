@@ -21,6 +21,12 @@ interface Floor3DProps {
   agents: OfficeAgent[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /** Optional replacement agent list (e.g. /replay's derived history
+   *  reconstruction). When provided, the scene renders these INSTEAD of
+   *  `agents` — everything else (WebGL detection, the Suspense boundary, the
+   *  context-loss guard) is unchanged either way. Undefined (the default)
+   *  keeps this component byte-for-byte identical to before this prop existed. */
+  agentsOverride?: OfficeAgent[];
 }
 
 /** True when a WebGL rendering context can actually be created. */
@@ -53,7 +59,10 @@ function WebGLFallback({
   );
 }
 
-export default function Floor3D({ agents, selectedId, onSelect }: Floor3DProps) {
+export default function Floor3D({ agents, selectedId, onSelect, agentsOverride }: Floor3DProps) {
+  // Source-of-agents swap only — everything below is unchanged regardless of
+  // which list this resolves to.
+  const activeAgents = agentsOverride ?? agents;
   // null = not yet checked (avoids mounting the scene during the first paint
   // before we know WebGL is available).
   const [webglOk, setWebglOk] = React.useState<boolean | null>(null);
@@ -119,7 +128,7 @@ export default function Floor3D({ agents, selectedId, onSelect }: Floor3DProps) 
             }
           >
             <RetroOfficeScene
-              agents={agents}
+              agents={activeAgents}
               selectedId={selectedId}
               onSelect={onSelect}
             />

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Eyebrow } from "@/components/ui";
 import { useIntegrations } from "@/lib/store";
-import { integrationHealthSummary } from "@/lib/integrations";
+import { realIntegrationSummary } from "@/lib/integrations";
 import { cn, toneForHealth, pluralize, type Tone } from "@/lib/utils";
 import type { IntegrationStatus } from "@/lib/types";
 import { Plug } from "lucide-react";
@@ -28,7 +28,7 @@ const HEALTH_LABEL: Record<IntegrationStatus["status"], string> = {
 
 export function IntegrationStrip() {
   const integrations = useIntegrations();
-  const summary = integrationHealthSummary(integrations);
+  const summary = realIntegrationSummary(integrations);
 
   return (
     <section className="rounded-3xl border border-line bg-surface p-5 shadow-soft animate-fade-in">

@@ -196,7 +196,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 3. Seat must belong to the caller's workspace (RLS), be live + domain-verified.
+  // 3. Seat must belong to the caller's workspace (RLS) and be live. Domain
+  // verification is deliberately NOT gated here — the real DNS check-and-persist
+  // happens in step 5 below, which is the only place `domain_verified` is ever
+  // set true. Requiring it up front would make a seat permanently unverifiable.
   const { data: seat, error: seatErr } = await supabase
     .from("agent_seats")
     .select("id, provider, operator_email, mode, domain_verified, status")
@@ -208,8 +211,8 @@ export async function POST(req: NextRequest) {
   if (seat.status !== "active") {
     return NextResponse.json({ status: "skipped", detail: "Seat is not active." });
   }
-  if (seat.mode !== "live" || !seat.domain_verified) {
-    return NextResponse.json({ status: "dry-run", detail: "Seat not live / domain unverified — dry-run." });
+  if (seat.mode !== "live") {
+    return NextResponse.json({ status: "dry-run", detail: "Seat not live — nothing sent." });
   }
 
   // 3b. Server-side suppression / do-not-contact gate — enforced BEFORE any send

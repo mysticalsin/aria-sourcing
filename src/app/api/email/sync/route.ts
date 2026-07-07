@@ -172,7 +172,6 @@ export async function POST(req: NextRequest) {
     const remaining = TOTAL_MESSAGE_CAP - totalCollected;
 
     if (row.provider === "Gmail API") {
-      // List stubs
       let stubs: { id: string; threadId: string }[] = [];
       try {
         stubs = await listInboundGmail(token, Math.min(remaining, 25));
@@ -182,7 +181,6 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      // Fetch each message
       for (const stub of stubs) {
         if (totalCollected >= TOTAL_MESSAGE_CAP) break;
         try {
@@ -204,7 +202,6 @@ export async function POST(req: NextRequest) {
         }
       }
     } else if (row.provider === "Microsoft Graph") {
-      // List stubs
       let stubs: { id: string; conversationId: string }[] = [];
       try {
         stubs = await listInboundGraph(token, Math.min(remaining, 25));
@@ -214,7 +211,6 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      // Fetch each message
       for (const stub of stubs) {
         if (totalCollected >= TOTAL_MESSAGE_CAP) break;
         try {

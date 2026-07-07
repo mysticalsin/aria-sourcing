@@ -10,10 +10,12 @@ import {
   Button,
   EmptyState,
   SkeletonCard,
+  Tabs,
   useToast,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { SkillCard } from "@/components/skills/skill-card";
+import { LearningSession } from "@/components/skills/learning-session";
 import {
   useHydrated,
   useActiveCampaign,
@@ -23,7 +25,7 @@ import {
 } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import { SKILL_ORDER } from "@/lib/skills";
-import type { SkillUpdate } from "@/lib/types";
+import type { SkillKey, SkillUpdate } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
   Brain,
@@ -225,6 +227,7 @@ export default function SkillsPage() {
   const canEditSkills = can(useRole(), "skills");
 
   const [running, setRunning] = React.useState(false);
+  const [reviewSkillKey, setReviewSkillKey] = React.useState<SkillKey>(SKILL_ORDER[0]);
 
   const proposals = (activeCampaign?.skillUpdates ?? []).filter((u) => u.status === "proposed");
 
@@ -235,6 +238,8 @@ export default function SkillsPage() {
       (a, b) => (rank.get(a.key) ?? 99) - (rank.get(b.key) ?? 99),
     );
   }, [skills]);
+
+  const reviewSkill = orderedSkills.find((s) => s.key === reviewSkillKey) ?? orderedSkills[0];
 
   function runLearning() {
     if (!canEditSkills) return;
@@ -289,6 +294,35 @@ export default function SkillsPage() {
       >
         <div className="space-y-8">
           <LoopExplainer />
+
+          {/* Watch it learn — a streamed, narrated review of one skill's real,
+              most-recent proposal (metrics + reply outcomes + word-diff). */}
+          {orderedSkills.length > 0 && reviewSkill && (
+            <section>
+              <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <Eyebrow>Live review</Eyebrow>
+                  <CardTitle>Watch it learn</CardTitle>
+                  <p className="mt-1 max-w-2xl text-sm text-muted">
+                    Pick a skill to stream its most recent review — real metrics, a red/green
+                    playbook diff, and the projected outcome signal, before you accept.
+                  </p>
+                </div>
+                <Tabs
+                  idBase="watch-it-learn"
+                  value={reviewSkill.key}
+                  onValueChange={(v) => setReviewSkillKey(v as SkillKey)}
+                  items={orderedSkills.map((s) => ({ value: s.key, label: s.title }))}
+                />
+              </div>
+              <LearningSession
+                key={reviewSkill.key}
+                skill={reviewSkill}
+                campaignId={activeCampaign?.id ?? null}
+                canEdit={canEditSkills}
+              />
+            </section>
+          )}
 
           {/* Proposals awaiting review */}
           <section>
