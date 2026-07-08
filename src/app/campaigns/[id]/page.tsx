@@ -684,7 +684,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             </dl>
           </div>
 
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 lg:max-w-[55%] lg:justify-end">
             <Button
               variant="secondary"
               leftIcon={<Sparkles className="h-4 w-4" />}
