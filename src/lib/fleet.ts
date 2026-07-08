@@ -106,7 +106,7 @@ export function seatHealthStatus(seat: AgentSeat, settings: FleetSettings): Seat
     };
   }
   if (bounceRate > settings.bounceRatePauseThreshold * 0.6) {
-    return { tone: "warning", label: "Watch", shouldPause: false, detail: "Bounce rate climbing — monitor." };
+    return { tone: "warning", label: "Watch", shouldPause: false, detail: "Bounce rate climbing, keep monitoring." };
   }
   return { tone: "success", label: "Healthy", shouldPause: false, detail: "Deliverability within safe limits." };
 }

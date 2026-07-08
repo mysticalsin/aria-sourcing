@@ -111,7 +111,7 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
     checks.push({ rule: "Contact info", status: "block", detail });
   } else if (message.channel === "Email" && !candidate.email.trim()) {
     // Mirror of the LinkedIn check above: an Email message needs somewhere to go.
-    const detail = "Candidate has no email on file — required to send an Email message.";
+    const detail = "Candidate has no email on file. An Email message requires one.";
     blockers.push(detail);
     checks.push({ rule: "Contact info", status: "block", detail });
   } else {
@@ -123,7 +123,7 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
           ? "LinkedIn profile URL on file."
           : message.channel === "Email"
             ? "Email address on file."
-            : `${message.channel} channel — no contact-detail rule required.`,
+            : `${message.channel} channel: no contact-detail rule required.`,
     });
   }
 
@@ -150,7 +150,7 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
   // make sense (e.g. a follow-up nudging someone who already answered). Block
   // approval and force a regenerate/reject rather than shipping stale copy.
   if (candidate.lastRepliedAt && new Date(candidate.lastRepliedAt) > new Date(message.createdAt)) {
-    const detail = "Candidate has replied since this follow-up was drafted — regenerate or reject.";
+    const detail = "Candidate has replied since this follow-up was drafted. Regenerate or reject.";
     blockers.push(detail);
     checks.push({ rule: "Draft freshness", status: "block", detail });
   } else {
@@ -172,7 +172,7 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
       checks.push({
         rule: "Re-contact window",
         status: "pass",
-        detail: `Contacted ${Math.round(days)}d ago — outside the ${DEDUPE_WINDOW_DAYS}d window.`,
+        detail: `Contacted ${Math.round(days)}d ago, outside the ${DEDUPE_WINDOW_DAYS}d window.`,
       });
     }
   } else {

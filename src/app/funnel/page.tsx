@@ -27,7 +27,7 @@ export default function FunnelPage() {
       <PageHeader
         eyebrow="TAnIA funnel"
         title="Funnel board"
-        description="The Mantu 4-stage hiring funnel — from the chatbox and open needs through Leads, Candidates, Offered and Employees — with the stage × source flow that keeps a human in the loop at every gate."
+        description="The Mantu 4-stage hiring funnel: from the chatbox and open needs through Leads, Candidates, Offered and Employees, with the stage × source flow that keeps a human in the loop at every gate."
       />
 
       <HydrationGate

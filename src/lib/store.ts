@@ -207,7 +207,7 @@ function mapSillageCandidates(
       yearsExperience: jd.minYearsExperience ?? (jd.seniority === "Senior" ? 6 : 4),
       companyStageExperience: [],
       industryExperience: [],
-      recentActivity: headline || about.slice(0, 140) || `Sourced via Sillage account mapping — ${companyLabel}.`,
+      recentActivity: headline || about.slice(0, 140) || `Sourced via Sillage account mapping: ${companyLabel}.`,
       stage: "Sourced",
       lastContactedAt: null,
       outreachHistory: [],
@@ -1396,7 +1396,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         yearsExperience: jd.minYearsExperience ?? (jd.seniority === "Senior" ? 6 : 4),
         companyStageExperience: [],
         industryExperience: [],
-        recentActivity: "Manually added — no activity signal available.",
+        recentActivity: "Manually added, no activity signal available.",
         stage: "Sourced",
         lastContactedAt: null,
         outreachHistory: [],
@@ -1432,7 +1432,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             type: "sourcing",
             title: scored.length ? `Added ${name} manually` : `${name} already in pipeline`,
             notes: scored.length
-              ? "Manually entered candidate — no external search involved."
+              ? "Manually entered candidate, no external search involved."
               : `Skipped by dedupe (${skipped[0]?.reason ?? "duplicate"}).`,
             outcome: scored.length ? "1 accepted" : "0 accepted, 1 skipped",
             campaignId,
@@ -1530,7 +1530,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "sourcing",
-            title: `Sourced ${accepted.length} candidates via Sillage account mapping — ${companyLabel}`,
+            title: `Sourced ${accepted.length} candidates via Sillage account mapping: ${companyLabel}`,
             notes: `Live Sillage batch. ${skipped.length} skipped by dedupe (${skipped
               .slice(0, 3)
               .map((x) => x.reason)
@@ -1680,7 +1680,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             next,
             makeActivity({
               type: "sourcing",
-              title: `Enriched via Apollo — ${cand.name}`,
+              title: `Enriched via Apollo: ${cand.name}`,
               notes: "Revealed contact details via Apollo (1 credit).",
               outcome: email && phone ? "Email + phone revealed" : email ? "Email revealed" : "Phone revealed",
               campaignId: cand.campaignId,
@@ -1860,7 +1860,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             prev,
             makeActivity({
               type: "sourcing",
-              title: `No contact found via Seamless — ${cand.name}`,
+              title: `No contact found via Seamless: ${cand.name}`,
               notes: "Research completed but returned no email or phone.",
               outcome: "0 contact fields revealed",
               campaignId: cand.campaignId,
@@ -1884,7 +1884,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "sourcing",
-            title: `Enriched via Seamless — ${cand.name}`,
+            title: `Enriched via Seamless: ${cand.name}`,
             notes: "Revealed contact details via Seamless.",
             outcome: email && phone ? "Email + phone revealed" : email ? "Email revealed" : "Phone revealed",
             campaignId: cand.campaignId,
@@ -1912,7 +1912,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
       const aiCfg = resolveAiProvider(s.settings, "sourcing");
       if (!aiCfg) {
-        return { ok: false, added: 0, error: "No cloud LLM provider configured for sourcing — add one in Settings." };
+        return { ok: false, added: 0, error: "No cloud LLM provider configured for sourcing. Add one in Settings." };
       }
       if (aiCfg.provider === "kimi") {
         return {
@@ -2017,7 +2017,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "outreach",
-            title: `Outreach drafted — ${candidate.name}`,
+            title: `Outreach drafted: ${candidate.name}`,
             notes: `${finalTone} ${channel} message generated with ${gen.personalizationEvidence.length} personalization points.`,
             outcome: msg.status,
             campaignId: campaign.id,
@@ -2137,7 +2137,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "outreach",
-            title: `Outreach drafted — ${candidate.name}`,
+            title: `Outreach drafted: ${candidate.name}`,
             notes: `${finalTone} ${channel} message ${live ? "drafted by Aria (live)" : "generated"} with ${gen.personalizationEvidence.length} personalization points.`,
             outcome: msg.status,
             campaignId: campaign.id,
@@ -2203,7 +2203,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "outreach",
-            title: `Follow-up drafted — ${candidate.name}`,
+            title: `Follow-up drafted: ${candidate.name}`,
             notes: `Sequence step ${due.nextSequenceStep} · ${Math.floor(due.daysSinceContact)}d of silence since last contact${live ? " (Aria live)" : ""}.`,
             outcome: msg.status,
             campaignId: campaign.id,
@@ -2258,7 +2258,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "outreach",
-            title: `Re-contact drafted — ${candidate.name}`,
+            title: `Re-contact drafted: ${candidate.name}`,
             notes: `#Vivier re-engagement${candidate.silverMedalist ? " (Silver Medalist)" : ""}. Awaiting approval${live ? " (Aria live)" : ""}.`,
             outcome: msg.status,
             campaignId: campaign.id,
@@ -2505,7 +2505,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "outreach",
-            title: `Outreach approved — ${candidate.name}`,
+            title: `Outreach approved: ${candidate.name}`,
             notes: isLinkedInManual
               ? "LinkedIn message approved, pending manual copy/paste by operator."
               : isLiveSendChannel
@@ -2592,7 +2592,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "outreach",
-            title: `LinkedIn message sent — ${candidate.name}`,
+            title: `LinkedIn message sent: ${candidate.name}`,
             notes: "Operator confirmed the message was manually copied and sent on LinkedIn.",
             outcome: "Scheduled",
             campaignId: campaign.id,
@@ -2930,7 +2930,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "reply",
-            title: `Reply classified${candidate ? ` — ${candidate.name}` : ""}`,
+            title: `Reply classified${candidate ? `: ${candidate.name}` : ""}`,
             notes: `Intent ${classification.intent} at ${(classification.confidence * 100).toFixed(0)}% confidence.`,
             outcome: classification.intent,
             campaignId,
@@ -3107,7 +3107,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (reply0?.intent === "NEGATIVE" && candidate0) {
         syncSuppressionToServer(
           candidate0.email,
-          "Negative reply — auto-suppressed",
+          "Negative reply, auto-suppressed",
           reply0.campaignId,
           candidate0.id,
         );
@@ -3153,7 +3153,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "outreach",
-            title: `Reply drafted — ${candidate.name}`,
+            title: `Reply drafted: ${candidate.name}`,
             notes: `${msg.channel} response drafted from the classified reply. Awaiting approval before anything sends.`,
             outcome: msg.status,
             campaignId: campaign.id,
@@ -3183,7 +3183,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // Never book a candidate who opted out / is suppressed (compliance).
       const cf = candidate.complianceFlags;
       if (cf.doNotContact || cf.suppressed || cf.unsubscribed) {
-        return { ok: false, error: "Candidate has opted out / is suppressed — cannot book." };
+        return { ok: false, error: "Candidate has opted out or is suppressed. Cannot book." };
       }
 
       const activeInterviewers = s.interviewers.filter((iv) => iv.active);
@@ -3255,7 +3255,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "booking",
-            title: `Interview booked — ${candidate.name}`,
+            title: `Interview booked: ${candidate.name}`,
             notes: `${booking.interviewer || "No interviewer assigned yet"}. Teams + Cal.com links generated. Stage → Booked.`,
             outcome: "Confirmed",
             campaignId: campaign.id,
@@ -3454,7 +3454,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "system",
-            title: `Note added — ${cand.name}`,
+            title: `Note added: ${cand.name}`,
             notes: clean,
             outcome: "Recruiter note",
             campaignId: cand.campaignId,
@@ -3486,7 +3486,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "system",
-            title: `Rejection reason recorded — ${cand.name}`,
+            title: `Rejection reason recorded: ${cand.name}`,
             notes: clean,
             outcome: "Rejected",
             campaignId: cand.campaignId,
@@ -3544,8 +3544,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "system",
-            title: `${nowIn ? "Added to" : "Removed from"} #Vivier — ${cand.name}`,
-            notes: nowIn ? "Talent pool — kept warm for future needs." : "Removed from talent pool.",
+            title: `${nowIn ? "Added to" : "Removed from"} #Vivier: ${cand.name}`,
+            notes: nowIn ? "Talent pool, kept warm for future needs." : "Removed from talent pool.",
             outcome: nowIn ? "Pooled" : "Unpooled",
             campaignId: cand.campaignId,
             linkedEntityType: "candidate",
@@ -3620,7 +3620,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "system",
-            title: `Prequal ${outcome} — ${cand.name}`,
+            title: `Prequal ${outcome}: ${cand.name}`,
             notes: promote
               ? "Lead promoted to Candidate."
               : outcome === "reject"
@@ -3666,7 +3666,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "booking",
-            title: `${kind} scheduled — ${cand.name}`,
+            title: `${kind} scheduled: ${cand.name}`,
             notes: `Interviewer: ${interviewer}.`,
             outcome: "Scheduled",
             campaignId: cand.campaignId,
@@ -3757,7 +3757,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "parse",
-            title: `Applicant handed off — ${cand.name}`,
+            title: `Applicant handed off: ${cand.name}`,
             notes: `Chatbox score ${sub.score.total}/100 · ${sub.starRating}. Screener created a candidate record.`,
             outcome: "Handoff to Applicant Screener",
             campaignId: campaignId || null,
@@ -3788,7 +3788,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           { ...s, chatboxSubmissions: [sub, ...(s.chatboxSubmissions ?? [])] },
           makeActivity({
             type: "parse",
-            title: `New application — ${sub.firstName} ${sub.lastName}`,
+            title: `New application: ${sub.firstName} ${sub.lastName}`,
             notes: `Career-site chatbox (Path ${sub.path}) · score ${sub.score.total}/100 · ${sub.starRating}.`,
             outcome: "Awaiting screener",
             campaignId: sub.campaignId,
@@ -4095,7 +4095,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           { ...s, seats: [...s.seats, seat] },
           makeActivity({
             type: "system",
-            title: `Aria agent added — ${seat.name}`,
+            title: `Aria agent added: ${seat.name}`,
             notes: `${seat.provider} seat created in mock mode.`,
             outcome: "Seat created",
             campaignId: null,
@@ -4185,7 +4185,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "system",
-            title: `Agent ${status} — ${seat?.name ?? id}`,
+            title: `Agent ${status}: ${seat?.name ?? id}`,
             notes: `Seat status set to ${status}.`,
             outcome: status,
             campaignId: null,
@@ -4210,7 +4210,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "system",
-            title: `Mailbox connected — ${seat?.name ?? id}`,
+            title: `Mailbox connected: ${seat?.name ?? id}`,
             notes: `${account} connected via official API. Verify domain before live sends.`,
             outcome: "Connected",
             campaignId: null,
@@ -4255,7 +4255,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "system",
-            title: `Mailbox disconnected — ${seat?.name ?? id}`,
+            title: `Mailbox disconnected: ${seat?.name ?? id}`,
             notes: "OAuth email connection removed.",
             outcome: "Disconnected",
             campaignId: null,
@@ -4287,7 +4287,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "system",
-            title: `Agent set LIVE — ${seat.name}`,
+            title: `Agent set LIVE: ${seat.name}`,
             notes: "Seat will send via the official provider API within guardrails.",
             outcome: "Live",
             campaignId: null,
@@ -4326,7 +4326,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               next,
               makeActivity({
                 type: "system",
-                title: `Domain verified — ${seat.name}`,
+                title: `Domain verified: ${seat.name}`,
                 notes: `${domain} has valid SPF/DKIM/DMARC records.`,
                 outcome: "Verified",
                 campaignId: null,
@@ -4444,7 +4444,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           makeActivity({
             type: "outreach",
             title: `Fleet drafted ${drafted.length} outreach messages`,
-            notes: `Distributed across ${seatIds.size} agents · ${result.skipped.length} skipped (suppression/dupe) · ${result.deferred.length} deferred (capacity). Every draft awaits human approval — nothing sent.`,
+            notes: `Distributed across ${seatIds.size} agents · ${result.skipped.length} skipped (suppression/dupe) · ${result.deferred.length} deferred (capacity). Every draft awaits human approval. Nothing sent.`,
             outcome: "Drafted / awaiting approval",
             campaignId: opts?.campaignId ?? null,
             linkedEntityType: null,
@@ -4498,7 +4498,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "sourcing",
-            title: `Fleet sourcing — ${added.length} candidates`,
+            title: `Fleet sourcing: ${added.length} candidates`,
             notes: `${activeSeats.length} Aria agents sourced in parallel across ${affected.size} campaign(s). ${totalSkipped} deduped.`,
             outcome: `${added.length} added`,
             campaignId: opts?.campaignId ?? null,
@@ -4534,7 +4534,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         next,
         makeActivity({
           type: "learning",
-          title: `Learning run — ${proposals.length} proposals`,
+          title: `Learning run: ${proposals.length} proposals`,
           notes: "Analyzed sourcing outcomes: tone conversion, score-dimension signal, reply mix.",
           outcome: `${proposals.length} proposals`,
           campaignId: cid,
@@ -4570,7 +4570,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "learning",
-            title: `Skill learned — ${key}`,
+            title: `Skill learned: ${key}`,
             notes: `${summary}. Now feeds future ${key.replace("_skill", "")}.`,
             outcome: `v${skill.version + 1}`,
             campaignId: null,
@@ -4649,7 +4649,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             { ...prev, apiKeys: [key, ...prev.apiKeys] },
             makeActivity({
               type: "system",
-              title: `API key saved — ${input.name}`,
+              title: `API key saved: ${input.name}`,
               notes: `${input.provider} key stored (••••${key.last4})${json.demo ? " · demo session" : " · backend"}.`,
               outcome: "Saved",
               campaignId: null,
@@ -4838,7 +4838,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         try {
           if (!campaignId) {
             onStep?.(i, "failed", {
-              detail: "No matching campaign for this instruction — pick one from Campaigns first.",
+              detail: "No matching campaign for this instruction. Pick one from Campaigns first.",
             });
             continue;
           }
@@ -4981,13 +4981,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const plan = parseCommand(clean, { campaigns: s.campaigns.map(campaignToAriaContext) });
       if (plan.steps.length > 0) {
         return {
-          reply: `Here's what I'd do: ${plan.summary} Open Aria Command to review the plan and run it — nothing executes from here.`,
+          reply: `Here's what I'd do: ${plan.summary} Open Aria Command to review the plan and run it. Nothing executes from here.`,
         };
       }
 
       addGuardrailRule(clean);
       return {
-        reply: `Done — added that as an active guardrail: "${clean}". Every agent will follow it on the next run. You can edit or remove it below anytime.`,
+        reply: `Done. Added that as an active guardrail: "${clean}". Every agent will follow it on the next run. You can edit or remove it below anytime.`,
       };
     },
     [addGuardrailRule, current],
@@ -5003,7 +5003,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           { ...s, settings: { ...s.settings, llmProviders: [...(s.settings.llmProviders ?? []), provider] } },
           makeActivity({
             type: "system",
-            title: `LLM provider added — ${provider.label}`,
+            title: `LLM provider added: ${provider.label}`,
             notes: `${provider.kind} provider configured.`,
             outcome: "Added",
             campaignId: null,
@@ -5080,7 +5080,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           { ...s, settings: { ...s.settings, mcpServers: [...(s.settings.mcpServers ?? []), server] } },
           makeActivity({
             type: "system",
-            title: `MCP server added — ${server.name}`,
+            title: `MCP server added: ${server.name}`,
             notes: `Tool source ${server.url} registered.`,
             outcome: "Added",
             campaignId: null,
@@ -5252,7 +5252,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           makeActivity({
             type: "system",
             title: "Dust disconnected",
-            notes: "Workspace unlinked. The vault key was left in place — remove it from Access & Keys if no longer needed.",
+            notes: "Workspace unlinked. The vault key was left in place. Remove it from Access & Keys if no longer needed.",
             outcome: "Disconnected",
             campaignId: null,
             linkedEntityType: null,
@@ -5308,7 +5308,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           { ...s, settings: { ...s.settings, savedModels: [...(s.settings.savedModels ?? []), model] } },
           makeActivity({
             type: "system",
-            title: `Model added — ${model.label}`,
+            title: `Model added: ${model.label}`,
             notes: `${model.modelName} registered under provider ${model.providerId}.`,
             outcome: "Added",
             campaignId: null,
@@ -5726,7 +5726,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           { ...s, memory: [entry, ...s.memory] },
           makeActivity({
             type: "system",
-            title: `Memory stored — ${kind}`,
+            title: `Memory stored: ${kind}`,
             notes: content.trim().slice(0, 80),
             outcome: "Stored",
             campaignId: null,
@@ -5785,7 +5785,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           { ...s, schedules: [entry, ...s.schedules] },
           makeActivity({
             type: "system",
-            title: `Schedule created — ${entry.name}`,
+            title: `Schedule created: ${entry.name}`,
             notes: `${entry.cadence} ${entry.task} job added.`,
             outcome: "Created",
             campaignId: null,
@@ -5857,7 +5857,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           { ...s, interviewers: [entry, ...s.interviewers] },
           makeActivity({
             type: "system",
-            title: `Interviewer added — ${entry.name}`,
+            title: `Interviewer added: ${entry.name}`,
             notes: entry.role ? `${entry.role}. Available for round-robin booking.` : "Available for round-robin booking.",
             outcome: "Created",
             campaignId: null,

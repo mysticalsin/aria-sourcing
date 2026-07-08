@@ -132,7 +132,7 @@ export function LearningSession({
     if (!pending) return [];
     const out: string[] = [];
     out.push(
-      `Reviewing ${skill.title} — v${skill.version}, applied ${skill.metrics.applied}× so far, outcome signal ${
+      `Reviewing ${skill.title} (v${skill.version}), applied ${skill.metrics.applied}× so far, outcome signal ${
         skill.metrics.outcomeSignal > 0 ? "+" : ""
       }${round(skill.metrics.outcomeSignal, 1)}.`,
     );
@@ -145,13 +145,13 @@ export function LearningSession({
       const r = analysis.toneRates.find((t) => t.tone === analysis.bestTone);
       if (r) {
         out.push(
-          `${r.tone} converted ${(r.rate * 100).toFixed(0)}% of ${r.sent} sends — the strongest tone tested this cycle.`,
+          `${r.tone} converted ${(r.rate * 100).toFixed(0)}% of ${r.sent} sends. The strongest tone tested this cycle.`,
         );
       }
     }
     if (skill.key === "scoring_skill" && analysis.topDimension) {
       out.push(
-        `Converters average ${analysis.topDimension.avg} on "${analysis.topDimension.key}" — today's weights under-value it.`,
+        `Converters average ${analysis.topDimension.avg} on "${analysis.topDimension.key}". Today's weights under-value it.`,
       );
     }
     if (skill.key === "reply_classification_skill") {

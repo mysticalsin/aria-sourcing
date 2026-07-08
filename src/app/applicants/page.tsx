@@ -14,7 +14,7 @@ export default function ApplicantsPage() {
       <PageHeader
         eyebrow="Candidate Intelligence · Applicant Screener"
         title="Applicant inbox"
-        description="Scored applications from the career-site chatbox, ready for recruiter handoff. Aria proposes — you decide who advances."
+        description="Scored applications from the career-site chatbox, ready for recruiter handoff. Aria proposes, you decide who advances."
         actions={
           <Link
             href="/careers"

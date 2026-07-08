@@ -70,7 +70,7 @@ function ModelRow({
               {" · "}{providerLabel}
             </p>
             {providerKind === "Kimi" && (
-              <p className="mt-0.5 text-xs text-warning">No tool-calling — can&apos;t run the sourcing agent</p>
+              <p className="mt-0.5 text-xs text-warning">No tool-calling: can&apos;t run the sourcing agent</p>
             )}
           </div>
         </div>

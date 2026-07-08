@@ -64,7 +64,7 @@ export function HermesConfigPanel() {
             {JSON.stringify(demoConfig, null, 2)}
           </pre>
           <p className="text-xs text-muted">
-            Local config preview — enable Aria live mode in Settings to inspect the runtime&apos;s actual configuration.
+            Local config preview. Enable Aria live mode in Settings to inspect the runtime&apos;s actual configuration.
           </p>
         </CardContent>
       </Card>

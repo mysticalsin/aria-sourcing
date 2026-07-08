@@ -208,7 +208,7 @@ export function CandidateTable({
                     </Badge>
                   )}
                   {c.provenance === "synthetic" && (
-                    <Badge tone="warning" size="sm" title="Demo data — not a real sourced profile">
+                    <Badge tone="warning" size="sm" title="Demo data: not a real sourced profile">
                       Synthetic
                     </Badge>
                   )}

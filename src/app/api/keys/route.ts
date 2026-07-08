@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
   if (error) {
     // Log the DB detail server-side (redacted); never echo Postgres/RLS internals to the client.
     safeLog("api_keys insert error", { message: error.message, code: error.code });
-    return NextResponse.json({ ok: false, error: "Couldn't save the key — try again." }, { status: 403 });
+    return NextResponse.json({ ok: false, error: "Couldn't save the key. Try again." }, { status: 403 });
   }
   return NextResponse.json({ ok: true, id: data[0].id, last4, formatValid: fmt.valid });
 }
@@ -116,7 +116,7 @@ export async function DELETE(req: NextRequest) {
   const { error } = await supabase.from("api_keys").delete().eq("id", id);
   if (error) {
     safeLog("api_keys delete error", { message: error.message, code: error.code });
-    return NextResponse.json({ ok: false, error: "Couldn't delete the key — try again." }, { status: 403 });
+    return NextResponse.json({ ok: false, error: "Couldn't delete the key. Try again." }, { status: 403 });
   }
   return NextResponse.json({ ok: true });
 }

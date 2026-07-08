@@ -125,7 +125,7 @@ export function AuditPack({
 
       <header className="mb-8 border-b-2 border-black pb-4">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-black/60">
-          Decision Replay — Audit Pack
+          Decision Replay: Audit Pack
         </p>
         <h1 className="mt-1 text-2xl font-bold">{candidate.name}</h1>
         <p className="mt-1 text-sm text-black/70">
@@ -164,7 +164,7 @@ export function AuditPack({
       </ol>
 
       <footer className="mt-10 border-t border-black/20 pt-3 text-[0.65rem] text-black/50">
-        MSourcing / Aria — Decision Replay audit export. Read-only trace; no send or mutation actions were taken to
+        MSourcing / Aria: Decision Replay audit export. Read-only trace; no send or mutation actions were taken to
         produce this document.
       </footer>
     </div>

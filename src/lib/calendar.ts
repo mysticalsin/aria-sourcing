@@ -46,7 +46,7 @@ export async function createGoogleCalendarEvent(
   if (!token) return { ok: false, provider: "Gmail API", detail: "No access token." };
 
   const body = {
-    summary: `Interview: ${ev.candidateName} — ${ev.role}`,
+    summary: `Interview: ${ev.candidateName}, ${ev.role}`,
     description: agendaText(ev),
     start: { dateTime: ev.startTime, timeZone: ev.timezone || "UTC" },
     end: { dateTime: ev.endTime, timeZone: ev.timezone || "UTC" },
@@ -75,7 +75,7 @@ export async function createGraphCalendarEvent(
   if (!token) return { ok: false, provider: "Microsoft Graph", detail: "No access token." };
 
   const body = {
-    subject: `Interview: ${ev.candidateName} — ${ev.role}`,
+    subject: `Interview: ${ev.candidateName}, ${ev.role}`,
     body: { contentType: "text", content: agendaText(ev) },
     start: { dateTime: ev.startTime, timeZone: ev.timezone || "UTC" },
     end: { dateTime: ev.endTime, timeZone: ev.timezone || "UTC" },

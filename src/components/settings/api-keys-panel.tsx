@@ -52,7 +52,7 @@ export function ApiKeysPanel() {
     const r = await actions.testApiKey(id);
     setTesting(null);
     toast({
-      title: r.valid ? "Format looks valid — not a live test" : "Format check failed",
+      title: r.valid ? "Format looks valid (not a live test)" : "Format check failed",
       description: r.detail,
       variant: r.valid ? "success" : "error",
     });

@@ -69,7 +69,7 @@ export function AllocationResultView({ result }: { result: AllocationResult | nu
       <EmptyState
         icon={<Inbox className="h-6 w-6" />}
         title="No allocation run yet"
-        description="Run “Allocate outreach” to fan the ready pool across your agents. Every candidate gets one draft from exactly one seat, within each account's daily cap — each draft still needs your approval before it sends."
+        description="Run “Allocate outreach” to fan the ready pool across your agents. Every candidate gets one draft from exactly one seat, within each account's daily cap. Each draft still needs your approval before it sends."
       />
     );
   }

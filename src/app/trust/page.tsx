@@ -26,10 +26,10 @@ export default function TrustPage() {
       <PageHeader
         eyebrow="Trust & ROI"
         title="Trust & ROI Proof Center"
-        description="A falsifiable ROI case and a real compliance posture — every number below is either an auditable count from this workspace or an assumption you can edit yourself."
+        description="A falsifiable ROI case and a real compliance posture: every number below is either an auditable count from this workspace or an assumption you can edit yourself."
         actions={
           <Badge tone="warning" size="md" dot>
-            Illustrative — computed on synthetic demo data
+            Illustrative, computed on synthetic demo data
           </Badge>
         }
       />

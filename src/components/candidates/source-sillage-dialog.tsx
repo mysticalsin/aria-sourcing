@@ -136,7 +136,7 @@ export function SourceSillageButton({ campaignId, disabled }: { campaignId: stri
         {polling ? (
           <div className="flex items-center gap-3 rounded-2xl bg-ink/[0.03] px-4 py-3.5 text-sm text-ink-soft">
             <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
-            Mapping {polling.label} via Sillage — this can take a minute.
+            Mapping {polling.label} via Sillage. This can take a minute.
           </div>
         ) : (
           <Field

@@ -135,7 +135,7 @@ export function RoiCalculator() {
           <EmptyState
             icon={<Calculator className="h-6 w-6" aria-hidden />}
             title="Nothing to calculate yet"
-            description="The ROI calculator derives every number from real sourcing, outreach and booking activity — source and work a campaign first."
+            description="The ROI calculator derives every number from real sourcing, outreach and booking activity. Source and work a campaign first."
             action={
               <Link
                 href="/campaigns"
@@ -157,7 +157,7 @@ export function RoiCalculator() {
           <Eyebrow className="mb-1 block">ROI calculator</Eyebrow>
           <CardTitle>Recruiter hours saved, priced by you</CardTitle>
           <p className="mt-1 max-w-xl text-sm text-muted">
-            Drag any assumption below — the multiple and annual saving recompute live. Every figure is an
+            Drag any assumption below. The multiple and annual saving recompute live. Every figure is an
             editable assumption multiplied by a real, auditable count from this workspace.
           </p>
         </div>
@@ -177,7 +177,7 @@ export function RoiCalculator() {
             a={{
               key: "hourlyCost",
               label: "Recruiter fully-loaded hourly cost",
-              hint: "Editable assumption — your blended recruiter cost per hour.",
+              hint: "Editable assumption: your blended recruiter cost per hour.",
               value: hourlyCost,
               onChange: setHourlyCost,
               min: 20,
@@ -229,7 +229,7 @@ export function RoiCalculator() {
             a={{
               key: "monthlyCost",
               label: "Your assumed platform cost",
-              hint: "Editable assumption — swap in your real quoted price to see your multiple.",
+              hint: "Editable assumption: swap in your real quoted price to see your multiple.",
               value: monthlyCost,
               onChange: setMonthlyCost,
               min: 200,
@@ -294,7 +294,7 @@ export function RoiCalculator() {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         title="How we counted"
-        description="The raw, auditable counts behind every number above — nothing here is estimated."
+        description="The raw, auditable counts behind every number above. Nothing here is estimated."
       >
         <dl className="space-y-4 text-sm">
           <div className="flex items-baseline justify-between border-b border-line pb-3">

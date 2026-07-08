@@ -80,7 +80,7 @@ export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
       const key = process.env.RESEND_API_KEY;
       if (!key) {
         auditLog("info", "Resend dry-run: no API key", { to: req.to });
-        return { status: "dry-run", provider: req.provider, detail: "No RESEND_API_KEY — dry-run." };
+        return { status: "dry-run", provider: req.provider, detail: "No RESEND_API_KEY, dry-run only." };
       }
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
@@ -107,7 +107,7 @@ export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
       const key = process.env.SENDGRID_API_KEY;
       if (!key) {
         auditLog("info", "SendGrid dry-run: no API key", { to: req.to });
-        return { status: "dry-run", provider: req.provider, detail: "No SENDGRID_API_KEY — dry-run." };
+        return { status: "dry-run", provider: req.provider, detail: "No SENDGRID_API_KEY, dry-run only." };
       }
       const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
         method: "POST",
@@ -141,6 +141,6 @@ export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
     }
     default:
       auditLog("error", "Unknown email provider", { provider: req.provider });
-      return { status: "dry-run", provider: req.provider, detail: "Unknown provider — dry-run." };
+      return { status: "dry-run", provider: req.provider, detail: "Unknown provider, dry-run only." };
   }
 }

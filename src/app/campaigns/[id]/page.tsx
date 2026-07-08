@@ -467,7 +467,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     }
     toast({
       title: `Sourcing agent found ${res.added} candidate${res.added === 1 ? "" : "s"}`,
-      description: "Real search, real scoring, drafted outreach — review before sending.",
+      description: "Real search, real scoring, drafted outreach: review before sending.",
       variant: "success",
     });
   };

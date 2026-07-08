@@ -35,7 +35,7 @@ export default function Error({
       <p className="eyebrow mb-2">Something broke</p>
       <h1 className="display text-4xl text-ink">Settings hit an unexpected error.</h1>
       <p className="mt-3 max-w-md text-muted">
-        Aria couldn’t finish rendering settings. Your data is safe — try again, or head
+        Aria couldn’t finish rendering settings. Your data is safe, so try again, or head
         back to the command center.
       </p>
       {error.digest ? (

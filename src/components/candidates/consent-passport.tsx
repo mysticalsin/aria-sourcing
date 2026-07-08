@@ -16,7 +16,7 @@ import { Eye, ShieldCheck, Timer } from "lucide-react";
  *  not to gate any action. */
 
 const ILLUSTRATIVE_LABEL =
-  "Illustrative compliance model on synthetic data — display only, not a legal determination.";
+  "Illustrative compliance model on synthetic data: display only, not a legal determination.";
 
 interface ConsentBasis {
   sourceLabel: string;
@@ -140,7 +140,7 @@ export function ConsentPassport({ candidate }: { candidate: Candidate }) {
             </p>
           ) : (
             <Badge tone="danger" size="sm">
-              Retention window elapsed {Math.abs(remaining)}d ago — flag for review
+              Retention window elapsed {Math.abs(remaining)}d ago, flag for review
             </Badge>
           )}
         </div>

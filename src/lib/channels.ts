@@ -35,7 +35,7 @@ export async function sendWhatsApp(req: ChannelSendRequest): Promise<ChannelSend
     return {
       status: "dry-run",
       provider: "WhatsApp Cloud",
-      detail: "WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID not set — nothing sent.",
+      detail: "WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID not set, nothing sent.",
     };
   }
   const to = normalizePhone(req.to);
@@ -69,7 +69,7 @@ export async function sendSms(req: ChannelSendRequest): Promise<ChannelSendOutco
     return {
       status: "dry-run",
       provider: "Twilio SMS",
-      detail: "TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM not set — nothing sent.",
+      detail: "TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM not set, nothing sent.",
     };
   }
   const to = normalizePhone(req.to);

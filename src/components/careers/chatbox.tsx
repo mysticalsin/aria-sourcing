@@ -145,7 +145,7 @@ function makeInitialDraft(): Draft {
 const STAR_FILLED: Record<StarRating, number> = { TopGun: 5, A: 4, B: 3, C: 2, D: 1 };
 
 const GENERIC_SCREENING = [
-  "Is the role's location workable for you — happy on-site, remote, or would you relocate?",
+  "Is the role's location workable for you: happy on-site, remote, or would you relocate?",
   "Would you need visa sponsorship to work in this role?",
   "How would you rate your experience in the core skills for this role?",
   "And your hands-on expertise with the main tools involved?",
@@ -429,7 +429,7 @@ export function Chatbox() {
       setDraft(d);
       setStep("analyzing");
       setBusy(true);
-      await say([{ text: "Perfect — give me a moment to read through your details.", delay: 350 }]);
+      await say([{ text: "Perfect, give me a moment to read through your details.", delay: 350 }]);
       await sleep(850);
       if (!mounted.current) return;
       const det = deriveDetection(d);
@@ -532,7 +532,7 @@ export function Chatbox() {
 
   const chooseA = () => {
     pushUser("Apply for a specific role");
-    advance("A_role", { ...draft, path: "A" }, [{ text: "Great — let's find the right role for you." }]);
+    advance("A_role", { ...draft, path: "A" }, [{ text: "Great, let's find the right role for you." }]);
   };
   const chooseB = () => {
     pushUser("Explore what's open");
@@ -542,11 +542,11 @@ export function Chatbox() {
   const selectRole = (c: Campaign) => {
     pushUser(`Apply for ${c.title}`);
     startProfile({ ...draft, path: "A", campaign: c, roleTitle: c.title, spontaneous: false }, [
-      { text: `${c.title} — excellent choice.` },
+      { text: `${c.title}. Excellent choice.` },
     ]);
   };
   const roleToExplore = () => {
-    pushUser("I don't see my role — explore instead");
+    pushUser("I don't see my role, explore instead");
     advance("B_desired", { ...draft, path: "B" });
   };
 
@@ -639,7 +639,7 @@ export function Chatbox() {
       setMatches(found);
       setStep("B_matches");
       void say([
-        { text: `Great news — I found ${found.length} role${found.length > 1 ? "s" : ""} that could be a strong fit:` },
+        { text: `Great news, I found ${found.length} role${found.length > 1 ? "s" : ""} that could be a strong fit:` },
       ]);
     } else {
       setStep("B_nomatch");
@@ -689,7 +689,7 @@ export function Chatbox() {
       historyRef.current.push("B_nomatch");
       setStep("B_matches");
       void say([
-        { text: `Thanks — after reading your CV I found ${found.length} role${found.length > 1 ? "s" : ""} worth a look:` },
+        { text: `Thanks, after reading your CV I found ${found.length} role${found.length > 1 ? "s" : ""} worth a look:` },
       ]);
     } else {
       await say([
@@ -731,7 +731,7 @@ export function Chatbox() {
         return (
           <div className="space-y-2">
             {openCampaigns.length === 0 ? (
-              <p className="text-sm text-muted">No open roles right now — but let's find you a fit.</p>
+              <p className="text-sm text-muted">No open roles right now, but let's find you a fit.</p>
             ) : (
               <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
                 {openCampaigns.map((c) => (
@@ -744,7 +744,7 @@ export function Chatbox() {
               onClick={roleToExplore}
               className="text-xs font-semibold text-electric hover:underline"
             >
-              I don't see my role — explore instead
+              I don't see my role, explore instead
             </button>
           </div>
         );
@@ -812,7 +812,7 @@ export function Chatbox() {
           <TextComposer
             key="B_desired"
             placeholder="e.g. Frontend Engineer"
-            hint="Not sure of the exact title? Describe what you do — e.g. 'building web apps'."
+            hint="Not sure of the exact title? Describe what you do, e.g. 'building web apps'."
             onSubmit={submitBDesired}
           />
         );
@@ -847,7 +847,7 @@ export function Chatbox() {
               ))}
             </div>
             <button type="button" onClick={joinTalentPool} className="text-xs font-semibold text-electric hover:underline">
-              None of these fit — join the talent pool
+              None of these fit, join the talent pool
             </button>
           </div>
         );
@@ -856,20 +856,20 @@ export function Chatbox() {
           <div className="space-y-3">
             <FileComposer onFile={onNomatchCvFile} compact />
             <button type="button" onClick={joinTalentPool} className="text-xs font-semibold text-electric hover:underline">
-              Skip the CV — just join the talent pool
+              Skip the CV, just join the talent pool
             </button>
           </div>
         );
       case "done":
         return (
           <div className="flex flex-wrap gap-2">
-            <Chip onClick={() => doneOption("Email me a copy", "Sent — keep an eye on your inbox shortly.")}>
+            <Chip onClick={() => doneOption("Email me a copy", "Sent. Keep an eye on your inbox shortly.")}>
               Email me a copy
             </Chip>
             <Chip onClick={() => doneOption("Show similar roles", "I'll line up a few similar openings for you.")}>
               Similar opportunities
             </Chip>
-            <Chip onClick={() => doneOption("Join the talent pool", "You're in — we'll reach out when something fits.")}>
+            <Chip onClick={() => doneOption("Join the talent pool", "You're in. We'll reach out when something fits.")}>
               Join talent pool
             </Chip>
             <Button variant="ghost" size="sm" leftIcon={<RotateCcw className="h-3.5 w-3.5" />} onClick={resetChat}>

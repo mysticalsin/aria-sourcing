@@ -241,7 +241,7 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
               <Bot className="h-3 w-3" aria-hidden /> Watch Aria work
             </Eyebrow>
             <p className="mt-1 text-sm text-muted">
-              Sources a batch, scores every candidate, and drafts outreach for each one — streamed live.
+              Sources a batch, scores every candidate, and drafts outreach for each one, streamed live.
               Every draft stops at your approval gate below. Nothing is ever sent automatically.
             </p>
           </div>
@@ -267,7 +267,7 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
             <ShieldCheck className="h-3 w-3" aria-hidden /> Approval gate {settings.humanApprovalGate ? "on" : "off"}
           </Badge>
           <Badge tone="warning" size="sm">
-            {Math.round(displayQueued)} queued — awaiting approval
+            {Math.round(displayQueued)} queued, awaiting approval
           </Badge>
           {phase === "done" && (
             <Badge tone="electric" size="sm">
@@ -287,7 +287,7 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
           <EmptyState
             icon={<Sparkles className="h-6 w-6" aria-hidden />}
             title="No new candidates this run"
-            description="Aria didn't find any fresh candidates to add this batch. Try running again — dedupe and exclusion rules can skip a whole batch."
+            description="Aria didn't find any fresh candidates to add this batch. Try running again: dedupe and exclusion rules can skip a whole batch."
           />
         )}
 

@@ -58,7 +58,7 @@ const ROWS: FlowRow[] = [
     },
     referral: null,
     outbound: null,
-    note: "Nothing auto-advances — a recruiter reads the scorecard first.",
+    note: "Nothing auto-advances. A recruiter reads the scorecard first.",
   },
   {
     stage: "Need",
@@ -74,12 +74,12 @@ const ROWS: FlowRow[] = [
     phase: "Screening & Star Rating",
     applicant: {
       action:
-        "Applicant Screener parses the CV + answers and applies the Star Rating — TopGun/A instant, B to the digest, C/D to reject.",
+        "Applicant Screener parses the CV + answers and applies the Star Rating: TopGun/A instant, B to the digest, C/D to reject.",
       gate: "Prequal or reject.",
     },
     referral: {
       action:
-        "Referral Evaluator scores the lead and flags the referrer — always instant, never batched.",
+        "Referral Evaluator scores the lead and flags the referrer. Always instant, never batched.",
       gate: "Reviews referrals first.",
     },
     outbound: {
@@ -119,7 +119,7 @@ const ROWS: FlowRow[] = [
   },
   {
     stage: "Candidates",
-    phase: "Interviews — Intw1 / Intw2 (+ test) / Intw3 (+ QM)",
+    phase: "Interviews: Intw1 / Intw2 (+ test) / Intw3 (+ QM)",
     shared: {
       action:
         "Scheduling with reminders at T-24h and T-1h; the hiring-manager feedback form is due T+30min.",
@@ -189,7 +189,7 @@ export function FlowMatrix() {
           </Badge>
         </div>
         <p className="mt-2 max-w-3xl text-sm text-muted">
-          How each agent acts by lead source at every stage — and the human decision gate that never
+          How each agent acts by lead source at every stage, and the human decision gate that never
           gets skipped.
         </p>
       </CardHeader>

@@ -217,7 +217,7 @@ export default function IntakePage() {
         ? `${result.jobAnalysis.title} parsed from the newest need email${
             needCount > 1 ? ` (${needCount - 1} older need email${needCount > 2 ? "s" : ""} also in the inbox)` : ""
           }.`
-        : `No need email found in a connected mailbox — parsed the sample Mantu need instead. (${result.jobAnalysis.title})`,
+        : `No need email found in a connected mailbox. Parsed the sample Mantu need instead. (${result.jobAnalysis.title})`,
       variant: fromInbox ? "success" : "info",
     });
   }
@@ -295,7 +295,7 @@ export default function IntakePage() {
             : `${criticalWarnings.length} critical issues need review`,
         description: `${criticalWarnings
           .map((w) => `${w.field}: ${w.message}`)
-          .join(" · ")} — review the validation warnings above, or proceed anyway.`,
+          .join(" · ")}. Review the validation warnings above, or proceed anyway.`,
         confirmLabel: "Create anyway",
         cancelLabel: "Review brief",
         danger: true,

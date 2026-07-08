@@ -42,12 +42,12 @@ export async function POST(req: NextRequest) {
   // Demo mode: no enforcement backend exists to sync into — the local flag is
   // the only record, same posture as every other real-backend route here.
   if (!supabaseEnabled) {
-    return NextResponse.json({ ok: true, synced: false, detail: "Demo mode — no enforcement backend." });
+    return NextResponse.json({ ok: true, synced: false, detail: "Demo mode: no enforcement backend." });
   }
 
   const supabase = await getServerSupabase();
   if (!supabase) {
-    return NextResponse.json({ ok: true, synced: false, detail: "No Supabase client — not synced." });
+    return NextResponse.json({ ok: true, synced: false, detail: "No Supabase client: not synced." });
   }
 
   const {
@@ -103,12 +103,12 @@ export async function DELETE(req: NextRequest) {
   const value = validated.data.value.trim().toLowerCase();
 
   if (!supabaseEnabled) {
-    return NextResponse.json({ ok: true, synced: false, detail: "Demo mode — no enforcement backend." });
+    return NextResponse.json({ ok: true, synced: false, detail: "Demo mode: no enforcement backend." });
   }
 
   const supabase = await getServerSupabase();
   if (!supabase) {
-    return NextResponse.json({ ok: true, synced: false, detail: "No Supabase client — not synced." });
+    return NextResponse.json({ ok: true, synced: false, detail: "No Supabase client: not synced." });
   }
 
   const {

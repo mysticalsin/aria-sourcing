@@ -276,8 +276,8 @@ function CandidatesView() {
       title: `Drafted ${pluralize(drafted, "outreach message")}`,
       description:
         skipped > 0
-          ? `${pluralize(skipped, "candidate")} skipped (no matching campaign). Each draft carries its own personalization evidence — review in the outreach queue.`
-          : "Each draft carries its own personalization evidence — review and approve in the outreach queue. Nothing was sent.",
+          ? `${pluralize(skipped, "candidate")} skipped (no matching campaign). Each draft carries its own personalization evidence, review it in the outreach queue.`
+          : "Each draft carries its own personalization evidence. Review and approve it in the outreach queue; nothing was sent.",
       variant: drafted > 0 ? "success" : "warning",
     });
     clearSelection();

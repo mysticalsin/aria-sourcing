@@ -150,7 +150,7 @@ export default function ChatPage() {
                   );
                 })}
                 <p className="pt-1 text-[10px] text-muted">
-                  Local thread preview — enable Aria live mode in Settings to mirror runtime sessions here.
+                  Local thread preview. Enable Aria live mode in Settings to mirror runtime sessions here.
                 </p>
               </>
             )}

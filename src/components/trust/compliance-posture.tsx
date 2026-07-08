@@ -169,7 +169,7 @@ export function CompliancePosture() {
         title="Send-rate limits are enforced per seat"
         detail={
           seatsOverCap.length > 0
-            ? `${seatsOverCap.length} seat${seatsOverCap.length === 1 ? "" : "s"} sent above its configured dailyLimit — review before the next send.`
+            ? `${seatsOverCap.length} seat${seatsOverCap.length === 1 ? "" : "s"} sent above its configured dailyLimit. Review before the next send.`
             : "Every agent seat's sends today are at or under its configured daily cap."
         }
       />

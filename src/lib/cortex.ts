@@ -83,7 +83,7 @@ const CLEAR_WORDS = ["Clear.", "Nothing flagged.", "No hits.", "All clear."] as 
 
 /** Fixed per-dimension detail text so the same signal always reads the same way. */
 function dimSummary(item: MatchBreakdownItem): string {
-  return `${item.label} ${Math.round(item.score)}/100 — ${item.rationale}`;
+  return `${item.label} ${Math.round(item.score)}/100 (${item.rationale})`;
 }
 
 function maskedName(candidate: Candidate, state: HermesState): string {
@@ -115,13 +115,13 @@ export function agentCortexTrace(seat: AgentSeat, state: HermesState, now = Date
       candidateId: null,
       candidateName: null,
       suppressed: false,
-      lines: [`${seat.name} is offline — disabled by the operator.`, "Nothing to reason about while offline."],
+      lines: [`${seat.name} is offline, disabled by the operator.`, "Nothing to reason about while offline."],
       ladder: [
         { key: "source", label: "Source", status: "skipped", detail: "Agent is offline." },
         { key: "score", label: "Score", status: "skipped", detail: "Agent is offline." },
         { key: "draft", label: "Draft", status: "skipped", detail: "Agent is offline." },
       ],
-      chips: [{ key: "status", label: "Offline", tone: "neutral", detail: "Disabled — no seat activity to guard." }],
+      chips: [{ key: "status", label: "Offline", tone: "neutral", detail: "Disabled: no seat activity to guard." }],
       meters: [],
       matchScore: null,
     };
@@ -137,12 +137,12 @@ export function agentCortexTrace(seat: AgentSeat, state: HermesState, now = Date
       candidateName: null,
       suppressed: false,
       lines: manual
-        ? [`${seat.name} is paused — holding until the operator resumes.`, "No candidate cycle running while paused."]
+        ? [`${seat.name} is paused, holding until the operator resumes.`, "No candidate cycle running while paused."]
         : [`Deliverability guardrail tripped: ${health.detail}`, "Holding every send until this clears."],
       ladder: [
-        { key: "source", label: "Source", status: "skipped", detail: "Paused — no cycle running." },
-        { key: "score", label: "Score", status: "skipped", detail: "Paused — no cycle running." },
-        { key: "draft", label: "Draft", status: "skipped", detail: "Paused — nothing to draft." },
+        { key: "source", label: "Source", status: "skipped", detail: "Paused: no cycle running." },
+        { key: "score", label: "Score", status: "skipped", detail: "Paused: no cycle running." },
+        { key: "draft", label: "Draft", status: "skipped", detail: "Paused: nothing to draft." },
       ],
       chips: [
         { key: "status", label: manual ? "Manually paused" : "Auto-paused", tone: "danger", detail: manual ? "Paused by the operator." : health.detail },
@@ -162,11 +162,11 @@ export function agentCortexTrace(seat: AgentSeat, state: HermesState, now = Date
       candidateName: null,
       suppressed: false,
       lines: [
-        `${seat.name} is still warming up — day ${ws.day}, capped at ${ws.cap} sends/day.`,
+        `${seat.name} is still warming up: day ${ws.day}, capped at ${ws.cap} sends/day.`,
         "Ramping deliverability before taking a full candidate load.",
       ],
       ladder: [
-        { key: "source", label: "Source", status: "skipped", detail: "Warm-up ramp — full cycle resumes once warmup completes." },
+        { key: "source", label: "Source", status: "skipped", detail: "Warm-up ramp: full cycle resumes once warmup completes." },
         { key: "score", label: "Score", status: "skipped", detail: "Warm-up ramp." },
         { key: "draft", label: "Draft", status: "skipped", detail: "Warm-up ramp." },
       ],
@@ -189,7 +189,7 @@ export function agentCortexTrace(seat: AgentSeat, state: HermesState, now = Date
       suppressed: false,
       lines: [`No active campaigns need ${seat.name} right now.`, "Standing by for the next assignment."],
       ladder: [
-        { key: "source", label: "Source", status: "skipped", detail: "Standing by — nothing queued." },
+        { key: "source", label: "Source", status: "skipped", detail: "Standing by: nothing queued." },
         { key: "score", label: "Score", status: "skipped", detail: "Standing by." },
         { key: "draft", label: "Draft", status: "skipped", detail: "Standing by." },
       ],
@@ -218,9 +218,9 @@ export function agentCortexTrace(seat: AgentSeat, state: HermesState, now = Date
       candidateId: null,
       candidateName: null,
       suppressed: false,
-      lines: [`${opener} ${campaign.title} (${role}).`, "No candidates sourced yet for this campaign — nothing to score or draft."],
+      lines: [`${opener} ${campaign.title} (${role}).`, "No candidates sourced yet for this campaign: nothing to score or draft."],
       ladder: [
-        { key: "source", label: "Source", status: "active", detail: "Searching — no hits yet." },
+        { key: "source", label: "Source", status: "active", detail: "Searching: no hits yet." },
         { key: "score", label: "Score", status: "skipped", detail: "Nothing to score yet." },
         { key: "draft", label: "Draft", status: "skipped", detail: "Nothing to draft yet." },
       ],
@@ -245,12 +245,12 @@ export function agentCortexTrace(seat: AgentSeat, state: HermesState, now = Date
 
   const lines: string[] = [
     `${opener} ${campaign.title} (${role}).`,
-    `Candidate in focus: ${name} — ${focus.currentTitle} at ${focus.currentCompany}.`,
+    `Candidate in focus: ${name}, ${focus.currentTitle} at ${focus.currentCompany}.`,
     `Sourced via ${focus.sourcePlatform}, matched on "${focus.sourceQuery}".`,
-    `Composite score ${Math.round(focus.matchScore)}/100. Strongest signal — ${dimSummary(strongest)}`,
+    `Composite score ${Math.round(focus.matchScore)}/100. Strongest signal: ${dimSummary(strongest)}`,
   ];
   if (weakest && weakest.key !== strongest.key) {
-    lines.push(`Weakest signal — ${dimSummary(weakest)}`);
+    lines.push(`Weakest signal: ${dimSummary(weakest)}`);
   }
   if (focus.replyHistory.length > 0) {
     const latest = focus.replyHistory[0];
@@ -259,43 +259,43 @@ export function agentCortexTrace(seat: AgentSeat, state: HermesState, now = Date
   lines.push("Checking the suppression list…");
   lines.push(
     blocked
-      ? `⚠ Match found — ${supp ? `suppression list (${supp.reason || supp.type})` : doNotContact ? "do-not-contact flag" : "unsubscribed"}. Stopping before draft.`
+      ? `⚠ Match found: ${supp ? `suppression list (${supp.reason || supp.type})` : doNotContact ? "do-not-contact flag" : "unsubscribed"}. Stopping before draft.`
       : pick(CLEAR_WORDS, h),
   );
   lines.push("Checking the ledger…");
   lines.push(
     activeClaim
-      ? "Already claimed elsewhere — skipping duplicate contact."
+      ? "Already claimed elsewhere, skipping duplicate contact."
       : withinWindow
-        ? `Inside the ${state.settings.fleet.recontactWindowDays}-day re-contact window — holding.`
+        ? `Inside the ${state.settings.fleet.recontactWindowDays}-day re-contact window, holding.`
         : "No active claim on file.",
   );
   if (blocked) {
     lines.push("Draft blocked by guardrail. Moving to the next candidate.");
   } else if (alreadyDrafted || activeClaim) {
-    lines.push(`Outreach already drafted for ${name} — sitting in the approval queue.`);
+    lines.push(`Outreach already drafted for ${name}, sitting in the approval queue.`);
   } else {
     lines.push(`Drafting personalized outreach for ${name} now.`);
   }
 
   const ladder: CortexRung[] = [
-    { key: "source", label: "Source", status: "done", detail: `Found via ${focus.sourcePlatform} — matched "${focus.sourceQuery}".` },
+    { key: "source", label: "Source", status: "done", detail: `Found via ${focus.sourcePlatform}, matched "${focus.sourceQuery}".` },
     {
       key: "score",
       label: "Score",
       status: "done",
-      detail: `Composite ${Math.round(focus.matchScore)}/100 — strongest ${strongest.label} (${Math.round(strongest.score)}/100).`,
+      detail: `Composite ${Math.round(focus.matchScore)}/100, strongest ${strongest.label} (${Math.round(strongest.score)}/100).`,
     },
     blocked
-      ? { key: "draft", label: "Draft", status: "skipped", detail: `Blocked before drafting — ${supp ? supp.reason || supp.type : doNotContact ? "do-not-contact" : "unsubscribed"}.` }
+      ? { key: "draft", label: "Draft", status: "skipped", detail: `Blocked before drafting: ${supp ? supp.reason || supp.type : doNotContact ? "do-not-contact" : "unsubscribed"}.` }
       : alreadyDrafted || activeClaim
-        ? { key: "draft", label: "Draft", status: "done", detail: alreadyDrafted ? `Drafted — "${focus.outreachHistory[0].subject}".` : "Contact already claimed." }
+        ? { key: "draft", label: "Draft", status: "done", detail: alreadyDrafted ? `Drafted: "${focus.outreachHistory[0].subject}".` : "Contact already claimed." }
         : { key: "draft", label: "Draft", status: "active", detail: "Drafting personalized outreach now." },
   ];
 
   const chips: CortexChip[] = [
     supp
-      ? { key: "suppression", label: "Suppressed", tone: "danger", detail: `On the suppression list — ${supp.reason || supp.type}.` }
+      ? { key: "suppression", label: "Suppressed", tone: "danger", detail: `On the suppression list: ${supp.reason || supp.type}.` }
       : doNotContact
         ? { key: "suppression", label: "Do-not-contact", tone: "danger", detail: "Candidate flagged do-not-contact." }
         : unsubscribed

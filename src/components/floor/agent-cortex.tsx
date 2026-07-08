@@ -240,7 +240,7 @@ export function AgentCortex({ seat, state, open, onClose, onBack }: AgentCortexP
     <Drawer
       open={open}
       onClose={onClose}
-      title={`${seat.name} — inside the mind`}
+      title={`${seat.name}: inside the mind`}
       description={trace.headline}
       width="max-w-xl"
     >
@@ -265,7 +265,7 @@ export function AgentCortex({ seat, state, open, onClose, onBack }: AgentCortexP
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 text-ink">
               <Brain className="h-3.5 w-3.5 text-electric" aria-hidden />
-              <Eyebrow>Reasoning trace — simulated</Eyebrow>
+              <Eyebrow>Reasoning trace (simulated)</Eyebrow>
             </div>
             <p className="truncate text-sm text-muted">
               {trace.candidateName ? `Focused on ${trace.candidateName}` : "No candidate in focus"}
@@ -295,7 +295,7 @@ export function AgentCortex({ seat, state, open, onClose, onBack }: AgentCortexP
         </div>
 
         <div>
-          <Eyebrow className="mb-2 block">Confidence — match breakdown</Eyebrow>
+          <Eyebrow className="mb-2 block">Confidence: match breakdown</Eyebrow>
           <ConfidenceMeters meters={trace.meters} />
         </div>
       </div>

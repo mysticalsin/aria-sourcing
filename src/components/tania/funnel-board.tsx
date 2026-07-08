@@ -258,7 +258,7 @@ function Column({
   const [dragOver, setDragOver] = React.useState(false);
   return (
     <section
-      aria-label={`${meta.label} — ${count}`}
+      aria-label={`${meta.label}, ${count}`}
       className={cn(
         "flex w-[15.5rem] shrink-0 flex-col rounded-3xl bg-canvas/50 p-3 ring-1 ring-inset ring-line transition-colors",
         dragOver && "bg-electric-soft ring-2 ring-electric",
@@ -329,7 +329,7 @@ function CandidateCard({ candidate, thresholds }: { candidate: Candidate; thresh
     <li>
       <Link
         href={`/candidates?focus=${candidate.id}`}
-        aria-label={`Open ${candidate.name} — drag to move between funnel stages`}
+        aria-label={`Open ${candidate.name}, drag to move between funnel stages`}
         draggable
         onDragStart={(e) => {
           e.dataTransfer.setData("text/plain", candidate.id);

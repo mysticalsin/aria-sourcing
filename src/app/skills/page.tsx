@@ -304,7 +304,7 @@ export default function SkillsPage() {
                   <Eyebrow>Live review</Eyebrow>
                   <CardTitle>Watch it learn</CardTitle>
                   <p className="mt-1 max-w-2xl text-sm text-muted">
-                    Pick a skill to stream its most recent review — real metrics, a red/green
+                    Pick a skill to stream its most recent review: real metrics, a red/green
                     playbook diff, and the projected outcome signal, before you accept.
                   </p>
                 </div>

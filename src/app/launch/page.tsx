@@ -59,7 +59,7 @@ We're growing the platform team and adding a Senior Backend Engineer, fully remo
   `Title: Frontend Engineer
 Expanding the product team with a Frontend Engineer for our React/TypeScript app, hybrid (Germany). 3+ years with React, TypeScript and Next.js. GraphQL a plus. Salary 70k-95k EUR.`,
   `Title: Data Engineer
-Building out the data platform — adding a Data Engineer with Python, Spark and Airflow experience, remote (EU). 4+ years, dbt and Snowflake nice to have. Salary 85k-110k EUR.`,
+Building out the data platform: adding a Data Engineer with Python, Spark and Airflow experience, remote (EU). 4+ years, dbt and Snowflake nice to have. Salary 85k-110k EUR.`,
   `Title: Product Designer
 Growing design with a Product Designer for our design systems, hybrid (UK). 4+ years, Figma and Accessibility required. Salary 65k-85k GBP.`,
   `Title: Account Executive
@@ -98,7 +98,7 @@ export default function LaunchPage() {
     setRaw(SAMPLE_BRIEF);
     toast({
       title: "Sample brief loaded",
-      description: "6 roles, separated by --- — ready to launch.",
+      description: "6 roles, separated by ---, ready to launch.",
       variant: "info",
     });
   }
@@ -146,7 +146,7 @@ export default function LaunchPage() {
       setLaunching(false);
       toast({
         title: "War room live",
-        description: `${roleBlocks.length} role${roleBlocks.length === 1 ? "" : "s"} sourcing in parallel — nothing sent, drafts only.`,
+        description: `${roleBlocks.length} role${roleBlocks.length === 1 ? "" : "s"} sourcing in parallel: nothing sent, drafts only.`,
         variant: "success",
       });
     }
@@ -209,7 +209,7 @@ export default function LaunchPage() {
               </div>
               <p className="text-xs text-muted">
                 Each block is parsed offline into a structured brief, then becomes its own campaign with
-                deterministic sourcing — zero network required, nothing is sent.
+                deterministic sourcing: zero network required, nothing is sent.
               </p>
             </CardBody>
           </Card>
@@ -220,7 +220,7 @@ export default function LaunchPage() {
             <EmptyState
               icon={<Radio className="h-6 w-6" aria-hidden />}
               title="Awaiting launch"
-              description="Paste role blocks above (separated by ---) and click Launch — a lane appears per role as its campaign spins up and sources in parallel."
+              description="Paste role blocks above (separated by ---) and click Launch. A lane appears per role as its campaign spins up and sources in parallel."
             />
           )}
         </div>

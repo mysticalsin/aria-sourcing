@@ -19,7 +19,7 @@ const VerifyDomainSchema = z.object({
     .string()
     .min(3)
     .max(253)
-    .regex(HOSTNAME_RE, "Enter a bare domain (e.g. mail.example.com) — not a URL or email address."),
+    .regex(HOSTNAME_RE, "Enter a bare domain (e.g. mail.example.com), not a URL or email address."),
 });
 
 /**

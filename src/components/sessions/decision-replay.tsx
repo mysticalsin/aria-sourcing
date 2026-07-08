@@ -171,9 +171,9 @@ export function buildReplayChain(candidate: Candidate, timeline: TimelineEvent[]
       title: `Sourced from ${candidate.sourcePlatform}`,
       outcome: candidate.sourceQuery || candidate.sourcePlatform,
       notes: `${candidate.currentTitle}${candidate.currentCompany ? ` at ${candidate.currentCompany}` : ""}${
-        candidate.techStack.length ? ` — ${candidate.techStack.slice(0, 5).join(", ")}` : ""
+        candidate.techStack.length ? `: ${candidate.techStack.slice(0, 5).join(", ")}` : ""
       }.`,
-      who: "Aria — Sourcing Agent",
+      who: "Aria (Sourcing Agent)",
       synthesized: true,
     },
     {
@@ -185,7 +185,7 @@ export function buildReplayChain(candidate: Candidate, timeline: TimelineEvent[]
         ? `${candidate.matchBreakdown.length} dimensions weighed`
         : `${Math.round(candidate.matchScore)}/100`,
       notes: "Composite match score computed against the role's scoring weights.",
-      who: "Aria — Scoring Engine",
+      who: "Aria (Scoring Engine)",
       synthesized: true,
     },
   ];
@@ -213,7 +213,7 @@ export function buildReplayChain(candidate: Candidate, timeline: TimelineEvent[]
 
     const who: string =
       kind === "drafted"
-        ? `Aria — Outreach Agent${activity.notes.toLowerCase().includes("live") ? " (live)" : ""}`
+        ? `Aria (Outreach Agent)${activity.notes.toLowerCase().includes("live") ? " (live)" : ""}`
         : kind === "approved" || kind === "sent"
           ? message?.approvedBy || operatorName
           : kind === "rejected"

@@ -46,7 +46,7 @@ export const ROLE_LABEL: Record<Role, string> = {
 };
 
 export const ROLE_DESCRIPTION: Record<Role, string> = {
-  admin: "Full control — settings, API keys, roles, fleet, and every operation.",
+  admin: "Full control: settings, API keys, roles, fleet, and every operation.",
   member: "Operates the pipeline: source, outreach, booking, replies, skills. No settings/keys/roles/fleet.",
-  viewer: "Read-only — can see everything, change nothing.",
+  viewer: "Read-only: can see everything, change nothing.",
 };

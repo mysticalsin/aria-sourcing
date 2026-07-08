@@ -31,7 +31,7 @@ function classifySillageTest(
   if (live.status === 401) return { valid: false, detail: live.detail || live.title || "Sillage rejected this key (401)." };
   if (live.status === 0) {
     const fmt = fallbackFormat();
-    return { valid: fmt.valid, detail: `${fmt.detail} Sillage was unreachable — format check only.` };
+    return { valid: fmt.valid, detail: `${fmt.detail} Sillage was unreachable, format check only.` };
   }
   return { valid: true, detail: live.detail || live.title || `Sillage responded (HTTP ${live.status}).` };
 }

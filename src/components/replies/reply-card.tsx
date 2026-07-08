@@ -89,7 +89,7 @@ export function ReplyCard({ reply }: { reply: ClassifiedReply }) {
     if (campaign?.status === "Paused") {
       toast({
         title: "Campaign is paused",
-        description: `${campaign.title} is paused — resume it before drafting new outreach.`,
+        description: `${campaign.title} is paused. Resume it before drafting new outreach.`,
         variant: "warning",
       });
       return;

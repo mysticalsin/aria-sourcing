@@ -514,7 +514,7 @@ const REFERRERS = [
 ];
 
 const KNIGHT_M_NOTES = [
-  "Inclusive language check passed — no gendered or age-coded terms.",
+  "Inclusive language check passed: no gendered or age-coded terms.",
   "Salary transparency present; EU pay-directive aligned.",
   "Accessibility statement included; no exclusionary requirements.",
 ];
@@ -619,7 +619,7 @@ function seedTania(candidates: Candidate[], campaigns: Campaign[]): ChatboxSubmi
   // candidates (never active winners) and mark them as Silver Medalists who chose
   // a competing offer — the ones that got away, kept warm for a future need.
   const RECONTACT_REASONS = [
-    "Accepted a competing offer — strong mutual fit, timing was off.",
+    "Accepted a competing offer. Strong mutual fit, timing was off.",
     "Role filled by another candidate; excellent profile to re-engage.",
     "Paused their search; asked us to reconnect next quarter.",
   ];

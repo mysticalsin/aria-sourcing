@@ -63,11 +63,11 @@ function scoreExperience(c: Candidate, jd: JobAnalysis): { score: number; ration
   } else if (min != null && yrs < min) {
     const gap = min - yrs;
     score = clamp(72 - gap * 16, 8, 72);
-    rationale = `${yrs} yrs — ${gap} below the ${min}-yr minimum.`;
+    rationale = `${yrs} yrs, ${gap} below the ${min}-yr minimum.`;
   } else if (max != null && yrs > max) {
     const over = yrs - max;
     score = clamp(90 - over * 7, 55, 90);
-    rationale = `${yrs} yrs — ${over} above the ${max}-yr ceiling (possible over-level).`;
+    rationale = `${yrs} yrs, ${over} above the ${max}-yr ceiling (possible over-level).`;
   } else {
     score = 94;
     rationale = `${yrs} yrs lands inside the target band.`;
@@ -111,8 +111,8 @@ function scoreLocation(c: Candidate, jd: JobAnalysis): { score: number; rational
     return {
       score,
       rationale: tzAligned
-        ? `Remote role — timezone ${c.timezone} overlaps working hours.`
-        : `Remote role — timezone ${c.timezone} has limited overlap.`,
+        ? `Remote role: timezone ${c.timezone} overlaps working hours.`
+        : `Remote role: timezone ${c.timezone} has limited overlap.`,
     };
   }
   const inRegion = jd.regions.some(
@@ -122,8 +122,8 @@ function scoreLocation(c: Candidate, jd: JobAnalysis): { score: number; rational
   return {
     score,
     rationale: inRegion
-      ? `Based in ${c.location} — within ${jd.locationType} range.`
-      : `Based in ${c.location} — outside ${jd.locationType} catchment.`,
+      ? `Based in ${c.location}, within ${jd.locationType} range.`
+      : `Based in ${c.location}, outside ${jd.locationType} catchment.`,
   };
 }
 

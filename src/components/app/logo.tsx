@@ -45,7 +45,7 @@ export function HermesWordmark({ className, compact }: { className?: string; com
           Agentic Sourcing Platform
         </span>
       </span>
-      <span className="sr-only">Aria — Agentic Sourcing Platform by Mantu</span>
+      <span className="sr-only">Aria: Agentic Sourcing Platform by Mantu</span>
     </span>
   );
 }

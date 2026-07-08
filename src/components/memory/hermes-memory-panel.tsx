@@ -59,7 +59,7 @@ export function HermesMemoryPanel() {
             </div>
           )}
           <p className="text-xs text-muted">
-            Mirroring local memory — enable Aria live mode in Settings to sync the runtime&apos;s copy here.
+            Mirroring local memory. Enable Aria live mode in Settings to sync the runtime&apos;s copy here.
           </p>
         </CardContent>
       </Card>

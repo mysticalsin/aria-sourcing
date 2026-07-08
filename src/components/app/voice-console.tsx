@@ -39,10 +39,10 @@ export interface VoiceConsoleProps {
 }
 
 const STT_UNSUPPORTED_MESSAGE =
-  "Voice input isn't available in this browser — speech recognition only works in Chromium-based browsers (Chrome, Edge). Type your instruction below instead.";
+  "Voice input isn't available in this browser. Speech recognition only works in Chromium-based browsers (Chrome, Edge); type your instruction below instead.";
 
 const REJECTED_MESSAGE =
-  "Didn't catch an actionable command — try naming an action (source, draft, follow up, book, pool, report) plus a role or campaign.";
+  "Didn't catch an actionable command. Try naming an action (source, draft, follow up, book, pool, report) plus a role or campaign.";
 
 /** DOM-only nav "flash": Sidebar/mobile-nav belong to other work in this
  *  phase, so this reaches their rendered `<a href>` the same way a plain
@@ -91,7 +91,7 @@ function buildSettledMessage(plan: AriaPlan, statuses: StepStatus[], results: St
   });
   const anyFailed = statuses.some((s) => s === "failed");
   const lead = anyFailed ? "Ran with some issues" : "Done";
-  return `${lead}: ${bits.join(", ")}. Drafts are waiting for approval — nothing sent.`;
+  return `${lead}: ${bits.join(", ")}. Drafts are waiting for approval, nothing sent.`;
 }
 
 export function VoiceConsole({ open, onOpenChange }: VoiceConsoleProps) {
@@ -223,12 +223,12 @@ export function VoiceConsole({ open, onOpenChange }: VoiceConsoleProps) {
       open={open}
       onClose={() => onOpenChange(false)}
       title="Hey Aria"
-      description="Push-to-talk voice ops — speak or type one instruction. Aria runs it through the same drafts-only plan as Aria Command."
+      description="Push-to-talk voice ops: speak or type one instruction. Aria runs it through the same drafts-only plan as Aria Command."
       className="max-w-xl"
       footer={
         <p className="flex w-full items-center gap-1.5 text-xs text-muted">
           <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-success" aria-hidden />
-          Drafts only — voice can never send. Every run halts at the approval queue.
+          Drafts only. Voice can never send; every run halts at the approval queue.
         </p>
       }
     >
@@ -308,7 +308,7 @@ export function VoiceConsole({ open, onOpenChange }: VoiceConsoleProps) {
         </form>
 
         {!ttsSupported && (
-          <p className="text-xs text-muted">Spoken replies aren't supported in this browser — summaries still show as text below.</p>
+          <p className="text-xs text-muted">Spoken replies aren't supported in this browser. Summaries still show as text below.</p>
         )}
 
         {phase === "rejected" && (

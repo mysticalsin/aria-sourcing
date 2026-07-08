@@ -90,7 +90,7 @@ export function SourceApolloButton({ campaignId, disabled }: { campaignId: strin
         open={open}
         onClose={resetAndClose}
         title="Source via Apollo"
-        description="Free search — no Apollo credits spent. Results land directly as candidates; reveal contact details per-candidate afterward (that step costs a credit)."
+        description="Free search: no Apollo credits spent. Results land directly as candidates; reveal contact details per-candidate afterward (that step costs a credit)."
         footer={
           <>
             <Button variant="ghost" size="md" onClick={resetAndClose}>

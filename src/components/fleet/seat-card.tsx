@@ -194,7 +194,7 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
       } else {
         toast({
           title: "Domain not verified",
-          description: "DNS records missing — see the runbook",
+          description: "DNS records missing, see the runbook",
           variant: "error",
         });
       }

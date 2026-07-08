@@ -217,7 +217,7 @@ export function AriaLiveOverlay() {
               </Button>
             </div>
             <p className="mt-4 text-center text-xs text-muted">
-              Synthetic demo run, fully reverted on close — nothing was sent.
+              Synthetic demo run, fully reverted on close. Nothing was sent.
             </p>
           </motion.div>
         </div>

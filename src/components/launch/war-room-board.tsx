@@ -69,7 +69,7 @@ export function WarRoomBoard({ lanes, className }: WarRoomBoardProps) {
             <Eyebrow>War room</Eyebrow>
             <CardTitle className="mt-1">
               {Math.round(displaySourced)} sourced across {resolved.length} role
-              {resolved.length === 1 ? "" : "s"}, {totalSent} sent — awaiting approval
+              {resolved.length === 1 ? "" : "s"}, {totalSent} sent, awaiting approval
             </CardTitle>
           </div>
           <Badge tone={anySourcing ? "electric" : "success"} dot className="shrink-0">

@@ -977,7 +977,7 @@ export default function SettingsPage() {
             n="19"
             eyebrow="Agent platform"
             title="Dust agents"
-            description="Connect a Dust (dust.tt) workspace and lock which of your own agents runs each recruiting task — starting with JD analysis on intake. Admin only."
+            description="Connect a Dust (dust.tt) workspace and lock which of your own agents runs each recruiting task, starting with JD analysis on intake. Admin only."
           >
             <DustAgentPanel />
           </Section>

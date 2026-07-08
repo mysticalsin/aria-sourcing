@@ -105,14 +105,14 @@ export default function ReplayPage() {
       <PageHeader
         eyebrow="Ops Floor"
         title="Autopilot Replay"
-        description="Drag the playhead to scrub the agents' whole day — candidates reveal themselves as they were sourced, scored, drafted, approved, replied to and booked, while the floor re-enacts it in lockstep. Read-only: nothing here sends or mutates anything."
+        description="Drag the playhead to scrub the agents' whole day. Candidates reveal themselves as they were sourced, scored, drafted, approved, replied to and booked, while the floor re-enacts it in lockstep. Read-only: nothing here sends or mutates anything."
       />
       <HydrationGate hydrated={hydrated} fallback={<SkeletonCard className="h-96" />}>
         {stream.length === 0 ? (
           <EmptyState
             icon={<Rewind className="h-7 w-7" aria-hidden />}
             title="Nothing to replay yet"
-            description="The replay reconstructs itself from real candidate, outreach, reply and booking history — source and work a campaign first."
+            description="The replay reconstructs itself from real candidate, outreach, reply and booking history. Source and work a campaign first."
             action={
               <Link
                 href="/campaigns"

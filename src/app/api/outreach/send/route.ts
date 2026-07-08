@@ -86,14 +86,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       status: "dry-run",
       detail: !supabaseEnabled
-        ? "Demo mode — no enforcement backend. Nothing sent."
-        : "Dry-run — confirmLive not set. Nothing sent.",
+        ? "Demo mode: no enforcement backend. Nothing sent."
+        : "Dry-run: confirmLive not set. Nothing sent.",
     });
   }
 
   const supabase = await getServerSupabase();
   if (!supabase) {
-    return NextResponse.json({ status: "dry-run", detail: "No Supabase client — dry-run." });
+    return NextResponse.json({ status: "dry-run", detail: "No Supabase client, dry-run." });
   }
 
   // 2. Require an authenticated session.
@@ -153,7 +153,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "skipped", detail: "Seat is not active." });
     }
     if (phoneSeat.mode !== "live") {
-      return NextResponse.json({ status: "dry-run", detail: "Seat not live — nothing sent." });
+      return NextResponse.json({ status: "dry-run", detail: "Seat not live, nothing sent." });
     }
     const expectedProvider = payload.channel === "WhatsApp" ? "WhatsApp Cloud" : "Twilio SMS";
     if (phoneSeat.provider !== expectedProvider) {
@@ -212,7 +212,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "skipped", detail: "Seat is not active." });
   }
   if (seat.mode !== "live") {
-    return NextResponse.json({ status: "dry-run", detail: "Seat not live — nothing sent." });
+    return NextResponse.json({ status: "dry-run", detail: "Seat not live, nothing sent." });
   }
 
   // 3b. Server-side suppression / do-not-contact gate — enforced BEFORE any send
@@ -273,7 +273,7 @@ export async function POST(req: NextRequest) {
     }
   }
   if (!seat.domain_verified) {
-    return NextResponse.json({ status: "dry-run", detail: "Domain not verified (SPF/DKIM/DMARC) — dry-run." });
+    return NextResponse.json({ status: "dry-run", detail: "Domain not verified (SPF/DKIM/DMARC), dry-run." });
   }
 
   // 6. Send — From is the SEAT's verified mailbox, never the request body.
@@ -293,7 +293,7 @@ export async function POST(req: NextRequest) {
         .eq("seat_id", seatId)
         .single() ?? { data: null };
       if (!conn || conn.workspace_id !== wid) {
-        return NextResponse.json({ status: "dry-run", detail: `${seat.provider} mailbox not connected — dry-run.` });
+        return NextResponse.json({ status: "dry-run", detail: `${seat.provider} mailbox not connected, dry-run.` });
       }
       // Tokens are stored encrypted at rest; decrypt for use. Keep the decrypted
       // original to detect a refresh below.

@@ -285,8 +285,8 @@ function OutreachView() {
       title: `Drafted ${pluralize(drafted, "follow-up")}`,
       description:
         skipped > 0
-          ? `${pluralize(skipped, "candidate")} skipped (already handled). Each draft carries its own sequence step — review above.`
-          : "Each draft carries its own sequence step — review and approve above. Nothing was sent.",
+          ? `${pluralize(skipped, "candidate")} skipped (already handled). Each draft carries its own sequence step, review above.`
+          : "Each draft carries its own sequence step. Review and approve above; nothing was sent.",
       variant: drafted > 0 ? "success" : "warning",
     });
   }

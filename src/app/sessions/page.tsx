@@ -78,7 +78,7 @@ export default function SessionsPage() {
       <PageHeader
         eyebrow="System"
         title="Sessions"
-        description="Browse and search every agent conversation and the full activity history across the workspace — open any candidate's Decision Replay to see the full sourced-to-booked chain."
+        description="Browse and search every agent conversation and the full activity history across the workspace. Open any candidate's Decision Replay to see the full sourced-to-booked chain."
       />
 
       <div className="relative mb-6 max-w-xl">

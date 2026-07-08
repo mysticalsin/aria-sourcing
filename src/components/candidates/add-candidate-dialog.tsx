@@ -171,7 +171,7 @@ export function AddCandidateButton({ campaignId }: { campaignId: string }) {
             <Field
               label="GitHub username"
               htmlFor={`${idBase}-username`}
-              hint="Looks up the real public profile via the GitHub API — no search, just this one person."
+              hint="Looks up the real public profile via the GitHub API. No search, just this one person."
             >
               <Input
                 id={`${idBase}-username`}

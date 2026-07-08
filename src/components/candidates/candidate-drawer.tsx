@@ -179,7 +179,7 @@ function TaniaPanel({ c }: { c: Candidate }) {
   const decide = (outcome: PrequalOutcome) => {
     actions.setPrequalOutcome(c.id, outcome);
     toast({
-      title: outcome === "advance" ? "Advanced — lead is now a Candidate" : outcome === "reject" ? "Prequal rejected — added to #Vivier" : "Held for review",
+      title: outcome === "advance" ? "Advanced: lead is now a Candidate" : outcome === "reject" ? "Prequal rejected: added to #Vivier" : "Held for review",
       variant: outcome === "reject" ? "warning" : "success",
     });
   };
@@ -200,7 +200,7 @@ function TaniaPanel({ c }: { c: Candidate }) {
   };
 
   return (
-    <Section title="TAnIA — source, rating & prequal" icon={<PhoneCall className="h-4 w-4" />}>
+    <Section title="TAnIA: source, rating & prequal" icon={<PhoneCall className="h-4 w-4" />}>
       {/* Source + rating */}
       <div className="flex flex-wrap items-center gap-2">
         <SourceBadge source={source} />
@@ -248,7 +248,7 @@ function TaniaPanel({ c }: { c: Candidate }) {
           )}
         </div>
         {promoted ? (
-          <p className="text-sm text-muted">Prequalified — this lead is now a Candidate in the interview pipeline.</p>
+          <p className="text-sm text-muted">Prequalified. This lead is now a Candidate in the interview pipeline.</p>
         ) : (
           <>
             <p className="mb-2 text-sm text-muted">
@@ -460,7 +460,7 @@ export function CandidateDrawer({
     if (campaignPaused) {
       toast({
         title: "Campaign is paused",
-        description: `${campaign?.title} is paused — resume it before drafting new outreach.`,
+        description: `${campaign?.title} is paused. Resume it before drafting new outreach.`,
         variant: "warning",
       });
       return;
@@ -473,7 +473,7 @@ export function CandidateDrawer({
       // A live-runtime hiccup (network error, thrown rejection) should never block
       // drafting — fall back to the template path so the human still gets a draft.
       msg = actions.generateOutreachFor(c.id);
-      toast({ title: "Aria is unavailable — used the template draft instead.", variant: "info" });
+      toast({ title: "Aria is unavailable, used the template draft instead.", variant: "info" });
     }
     setGenerating(false);
     if (msg) {
@@ -582,7 +582,7 @@ export function CandidateDrawer({
     if (
       !(await confirm({
         title: `Suppress contact with ${c.name}?`,
-        description: "They'll be excluded from outreach and their stage will show as Suppressed. Use \"Undo — restore contact\" in Compliance below to reverse this.",
+        description: "They'll be excluded from outreach and their stage will show as Suppressed. Use \"Undo: restore contact\" in Compliance below to reverse this.",
         confirmLabel: "Suppress",
         danger: true,
       }))
@@ -596,7 +596,7 @@ export function CandidateDrawer({
     if (
       !(await confirm({
         title: `Mark ${c.name} as do-not-contact?`,
-        description: "This is a hard exclusion — their stage will show as Suppressed. Use \"Undo — restore contact\" in Compliance below to reverse this.",
+        description: "This is a hard exclusion: their stage will show as Suppressed. Use \"Undo: restore contact\" in Compliance below to reverse this.",
         confirmLabel: "Mark do-not-contact",
         danger: true,
       }))
@@ -663,7 +663,7 @@ export function CandidateDrawer({
     if (
       !(await confirm({
         title: `Unsubscribe ${c.name}?`,
-        description: "Honors their GDPR unsubscribe request — they'll be excluded from all future outreach.",
+        description: "Honors their GDPR unsubscribe request. They'll be excluded from all future outreach.",
         confirmLabel: "Unsubscribe",
         danger: true,
       }))
@@ -712,7 +712,7 @@ export function CandidateDrawer({
           contactBlocked
             ? "Candidate is suppressed / do-not-contact"
             : campaignPaused
-              ? "Campaign is paused — resume it to draft outreach"
+              ? "Campaign is paused. Resume it to draft outreach"
               : undefined
         }
       >
@@ -754,7 +754,7 @@ export function CandidateDrawer({
             </Badge>
           )}
           {c.provenance === "synthetic" && (
-            <Badge tone="warning" size="sm" title="Demo data — not a real sourced profile">
+            <Badge tone="warning" size="sm" title="Demo data: not a real sourced profile">
               Synthetic
             </Badge>
           )}
@@ -1118,7 +1118,7 @@ export function CandidateDrawer({
               leftIcon={<RotateCcw className="h-4 w-4" />}
               onClick={handleRestoreContact}
             >
-              Undo — restore contact
+              Undo: restore contact
             </Button>
           )}
         </Section>
