@@ -95,9 +95,23 @@ const config: Config = {
         },
       },
       animation: {
-        "fade-in": "fade-in 0.35s ease-out both",
-        "scale-in": "scale-in 0.2s ease-out both",
-        "slide-in-right": "slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1) both",
+        // `backwards` (not `both`): applies the `from` state before the
+        // animation starts (no flash of unstyled content) without RETAINING
+        // the `to` state's transform afterward. `both`/`forwards` would leave
+        // a computed `transform` value (e.g. translateY(0), scale(1)) on the
+        // element forever after the animation ends — and per the CSS spec,
+        // any non-`none` transform (even a visual no-op like translateY(0))
+        // creates a new containing block, silently breaking every
+        // `position: fixed` descendant (dialogs, drawers) nested anywhere
+        // inside an animated ancestor: they render fixed to THAT ancestor's
+        // box instead of the viewport, so a modal opened after scrolling
+        // shows up wherever the animated wrapper currently sits on screen
+        // instead of centered. The element already settles at opacity:1 /
+        // transform:none on its own once the animation stops applying, so
+        // this is visually identical to `both` with the bug removed.
+        "fade-in": "fade-in 0.35s ease-out backwards",
+        "scale-in": "scale-in 0.2s ease-out backwards",
+        "slide-in-right": "slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1) backwards",
         "spin-slow": "spin-slow 14s linear infinite",
       },
     },
