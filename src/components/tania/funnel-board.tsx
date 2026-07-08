@@ -3,8 +3,9 @@
 import * as React from "react";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
-import { Card, Eyebrow } from "@/components/ui";
+import { Card, Eyebrow, useToast } from "@/components/ui";
 import { StarBadge, SourceBadge, StageBadge } from "@/components/tania/badges";
+import { useActions } from "@/lib/store";
 import {
   TANIA_STAGE_META,
   LEAD_SOURCE_META,
@@ -17,6 +18,7 @@ import {
 import {
   LEAD_SOURCES,
   type Candidate,
+  type CandidateStage,
   type Campaign,
   type ChatboxSubmission,
   type LeadSource,
@@ -35,6 +37,20 @@ import { cn } from "@/lib/utils";
 /** The four funnel stages that hold real candidate cards. */
 const CANDIDATE_STAGES = ["Leads", "Candidates", "Offered", "Employees"] as const;
 type CandidateFunnelStage = (typeof CANDIDATE_STAGES)[number];
+
+/** taniaStageForCandidate maps several CandidateStage values onto one TAnIA
+ *  column (e.g. Sourced/Contacted/Replied all show as "Leads"). Dragging a
+ *  card into a column is therefore a many-to-one write: it sets the
+ *  candidate to that column's entry stage, the natural first stop within the
+ *  group — the same convention most kanban boards use when a column
+ *  represents more than one underlying status. Finer-grained stage changes
+ *  within a column still happen from the candidate drawer. */
+const COLUMN_ENTRY_STAGE: Record<CandidateFunnelStage, CandidateStage> = {
+  Leads: "Sourced",
+  Candidates: "Interested",
+  Offered: "Offer",
+  Employees: "Hired",
+};
 
 type SourceFilter = LeadSource | "all";
 
@@ -68,6 +84,24 @@ export function FunnelBoard({
   thresholds?: StarThresholds;
 }) {
   const [source, setSource] = React.useState<SourceFilter>("all");
+  const actions = useActions();
+  const { toast } = useToast();
+
+  const handleDropCandidate = React.useCallback(
+    (candidateId: string, targetStage: CandidateFunnelStage) => {
+      const candidate = candidates.find((c) => c.id === candidateId);
+      if (!candidate) return;
+      if (taniaStageForCandidate(candidate) === targetStage) return; // already in this column
+      const nextStage = COLUMN_ENTRY_STAGE[targetStage];
+      actions.setCandidateStage(candidateId, nextStage);
+      toast({
+        title: `${candidate.name} moved to ${TANIA_STAGE_META[targetStage].label}`,
+        description: `Stage set to ${nextStage}.`,
+        variant: "success",
+      });
+    },
+    [candidates, actions, toast],
+  );
 
   // Active candidates grouped onto the funnel (rejected/pooled map to null → dropped).
   const byStage = React.useMemo(() => {
@@ -189,6 +223,7 @@ export function FunnelBoard({
                 stage={stage}
                 count={all.length}
                 sourceChips={<SourceMini counts={sourceBreakdown(all)} />}
+                onDropCandidate={(id) => handleDropCandidate(id, stage)}
               >
                 {shown.length > 0 ? (
                   shown.map((c) => <CandidateCard key={c.id} candidate={c} thresholds={thresholds} />)
@@ -209,17 +244,44 @@ function Column({
   count,
   sourceChips,
   children,
+  onDropCandidate,
 }: {
   stage: TaniaStage;
   count: number;
   sourceChips?: React.ReactNode;
   children: React.ReactNode;
+  /** Present only for the 4 candidate-holding columns — Chatbox and Need hold
+   *  a different entity type and aren't valid drop targets for a candidate. */
+  onDropCandidate?: (candidateId: string) => void;
 }) {
   const meta = TANIA_STAGE_META[stage];
+  const [dragOver, setDragOver] = React.useState(false);
   return (
     <section
       aria-label={`${meta.label} — ${count}`}
-      className="flex w-[15.5rem] shrink-0 flex-col rounded-3xl bg-canvas/50 p-3 ring-1 ring-inset ring-line"
+      className={cn(
+        "flex w-[15.5rem] shrink-0 flex-col rounded-3xl bg-canvas/50 p-3 ring-1 ring-inset ring-line transition-colors",
+        dragOver && "bg-electric-soft ring-2 ring-electric",
+      )}
+      onDragOver={
+        onDropCandidate
+          ? (e) => {
+              e.preventDefault(); // required to allow a drop
+              setDragOver(true);
+            }
+          : undefined
+      }
+      onDragLeave={onDropCandidate ? () => setDragOver(false) : undefined}
+      onDrop={
+        onDropCandidate
+          ? (e) => {
+              e.preventDefault();
+              setDragOver(false);
+              const id = e.dataTransfer.getData("text/plain");
+              if (id) onDropCandidate(id);
+            }
+          : undefined
+      }
     >
       <header className="px-1">
         <div className="flex items-center justify-between gap-2">
@@ -262,12 +324,23 @@ function SourceMini({ counts }: { counts: Record<LeadSource, number> }) {
 function CandidateCard({ candidate, thresholds }: { candidate: Candidate; thresholds: StarThresholds }) {
   const rating = candidate.starRating ?? deriveStarRating(candidate.matchScore, thresholds);
   const src = deriveLeadSource(candidate);
+  const [dragging, setDragging] = React.useState(false);
   return (
     <li>
       <Link
         href={`/candidates?focus=${candidate.id}`}
-        aria-label={`Open ${candidate.name}`}
-        className="group block rounded-2xl border border-line bg-surface p-3 shadow-soft transition-all hover:-translate-y-0.5 hover:shadow-lift focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
+        aria-label={`Open ${candidate.name} — drag to move between funnel stages`}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData("text/plain", candidate.id);
+          e.dataTransfer.effectAllowed = "move";
+          setDragging(true);
+        }}
+        onDragEnd={() => setDragging(false)}
+        className={cn(
+          "group block cursor-grab rounded-2xl border border-line bg-surface p-3 shadow-soft transition-all active:cursor-grabbing hover:-translate-y-0.5 hover:shadow-lift focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric",
+          dragging && "opacity-40",
+        )}
       >
         <div className="flex items-start justify-between gap-2">
           <p className="min-w-0 truncate text-sm font-bold text-ink">{candidate.name}</p>
