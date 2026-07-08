@@ -75,7 +75,8 @@ function togglePinInState(s: HermesState, id: string): HermesState {
 
 const seed = buildSeedState();
 
-ok("STATE_VERSION is 13", STATE_VERSION === 13);
+ok("STATE_VERSION is a positive integer", Number.isInteger(STATE_VERSION) && STATE_VERSION > 0);
+ok("seed version matches STATE_VERSION", seed.version === STATE_VERSION);
 ok("seed state has memory array", Array.isArray(seed.memory));
 ok("seed memory starts empty", seed.memory.length === 0);
 ok("defaultSettings has memoryCapacity", (defaultSettings().memoryCapacity ?? 0) > 0);

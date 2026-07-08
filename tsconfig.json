@@ -41,6 +41,8 @@
     "ultraplan",
     ".localbin",
     "backups",
-    "supabase"
+    "supabase",
+    "var",
+    "tmp"
   ]
 }
