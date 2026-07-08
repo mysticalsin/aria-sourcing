@@ -3,6 +3,8 @@ import { dedupeCandidates } from "./rules";
 import { humanizeText } from "./humanizer";
 import { roleProfile } from "./roles";
 import type { GithubUser } from "./sourcing/github";
+import type { ApolloPerson } from "./sourcing/apollo";
+import type { SeamlessContact } from "./sourcing/seamless";
 import type { WebLead, WebSearchPlatform } from "./sourcing/web-leads";
 import { detectLanguage, outreachStrings, REPLY_LEXICON } from "./i18n";
 import type {
@@ -711,6 +713,153 @@ export function mapGithubCandidates(
       companyStageExperience: [],
       industryExperience: [],
       recentActivity: `${u.publicRepos} public repos, ${u.followers} followers`,
+      stage: "Sourced",
+      lastContactedAt: null,
+      outreachHistory: [],
+      replyHistory: [],
+      booking: null,
+      complianceFlags: {
+        doNotContact: false,
+        suppressed: false,
+        unsubscribed: false,
+        gdprExportRequested: false,
+        anonymized: false,
+        suppressedUntil: null,
+      },
+      createdAt: new Date().toISOString(),
+      provenance: "live",
+    };
+  });
+
+  const { accepted, skipped } = dedupeCandidates(raw, existing, {
+    excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
+  });
+  const scored = accepted.map((c) => {
+    const { score, breakdown } = scoreCandidate(c, jd, weights);
+    return { ...c, matchScore: score, matchBreakdown: breakdown };
+  });
+  return { accepted: scored, skipped };
+}
+
+/**
+ * Map real Apollo people into scored, deduped Candidates — same scoring + dedupe
+ * pipeline as mapGithubCandidates, real data. Apollo's search endpoint never
+ * returns email/phone (that's the separate, credit-costing enrichment step), so
+ * email is always left blank here; `sourceExternalId` carries Apollo's person id
+ * so a later per-candidate enrichment call knows who to match.
+ */
+export function mapApolloCandidates(
+  people: ApolloPerson[],
+  campaign: Campaign,
+  query: string,
+  existing: Candidate[],
+  weights: ScoringWeights = campaign.scoringWeights,
+): SourceResult {
+  const jd = campaign.jobAnalysis;
+  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
+  const raw: Candidate[] = people.map((p) => {
+    const headline = (p.headline || p.title || "").toLowerCase();
+    const matched = allSkills.filter((s) => headline.includes(s.toLowerCase()));
+    const location = [p.city, p.state, p.country].filter(Boolean).join(", ");
+    const recentActivity = p.seniority
+      ? `${p.seniority}${p.departments.length ? ` · ${p.departments.join(", ")}` : ""}`
+      : "Apollo profile";
+    return {
+      id: genId("cand"),
+      campaignId: campaign.id,
+      name: p.name,
+      email: "",
+      avatarInitials: initialsFrom(p.name),
+      currentTitle: p.title || jd.title,
+      currentCompany: p.company,
+      location,
+      timezone: "",
+      linkedinUrl: p.linkedinUrl,
+      githubUrl: "",
+      sourceExternalId: p.id || undefined,
+      sourcePlatform: "Apollo",
+      sourceQuery: query,
+      matchScore: 0,
+      matchBreakdown: [],
+      techStack: matched,
+      yearsExperience: 4, // Apollo search doesn't expose tenure — a neutral estimate
+      companyStageExperience: [],
+      industryExperience: [],
+      recentActivity,
+      stage: "Sourced",
+      lastContactedAt: null,
+      outreachHistory: [],
+      replyHistory: [],
+      booking: null,
+      complianceFlags: {
+        doNotContact: false,
+        suppressed: false,
+        unsubscribed: false,
+        gdprExportRequested: false,
+        anonymized: false,
+        suppressedUntil: null,
+      },
+      createdAt: new Date().toISOString(),
+      provenance: "live",
+    };
+  });
+
+  const { accepted, skipped } = dedupeCandidates(raw, existing, {
+    excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
+  });
+  const scored = accepted.map((c) => {
+    const { score, breakdown } = scoreCandidate(c, jd, weights);
+    return { ...c, matchScore: score, matchBreakdown: breakdown };
+  });
+  return { accepted: scored, skipped };
+}
+
+/**
+ * Map real Seamless.AI search contacts (fifth real sourcing channel) into
+ * scored, deduped Candidates. Same construction as mapApolloCandidates — no
+ * email/phone from search (Seamless reveals those only via the separate,
+ * explicitly confirmed research/poll flow — see startSeamlessResearch /
+ * checkSeamlessResearch in store.ts), `sourceExternalId` carries the
+ * `searchResultId` a later research call needs.
+ */
+export function mapSeamlessCandidates(
+  contacts: SeamlessContact[],
+  campaign: Campaign,
+  query: string,
+  existing: Candidate[],
+  weights: ScoringWeights = campaign.scoringWeights,
+): SourceResult {
+  const jd = campaign.jobAnalysis;
+  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
+  const raw: Candidate[] = contacts.map((c) => {
+    const headline = (c.title || "").toLowerCase();
+    const matched = allSkills.filter((s) => headline.includes(s.toLowerCase()));
+    const location = [c.city, c.state, c.country].filter(Boolean).join(", ");
+    const recentActivity = c.seniority
+      ? `${c.seniority}${c.department ? ` · ${c.department}` : ""}`
+      : "Seamless profile";
+    return {
+      id: genId("cand"),
+      campaignId: campaign.id,
+      name: c.name,
+      email: "",
+      avatarInitials: initialsFrom(c.name),
+      currentTitle: c.title || jd.title,
+      currentCompany: c.company,
+      location,
+      timezone: "",
+      linkedinUrl: c.liUrl,
+      githubUrl: "",
+      sourceExternalId: c.searchResultId || undefined,
+      sourcePlatform: "Seamless",
+      sourceQuery: query,
+      matchScore: 0,
+      matchBreakdown: [],
+      techStack: matched,
+      yearsExperience: 4, // Seamless search doesn't expose tenure — a neutral estimate
+      companyStageExperience: [],
+      industryExperience: [],
+      recentActivity,
       stage: "Sourced",
       lastContactedAt: null,
       outreachHistory: [],

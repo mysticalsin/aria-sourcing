@@ -74,6 +74,7 @@ import {
   ShieldCheck,
   Sparkles,
   UserX,
+  Zap,
 } from "lucide-react";
 
 function Section({
@@ -371,8 +372,10 @@ export function CandidateDrawer({
   const [revealed, setRevealed] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [revealingSeamless, setRevealingSeamless] = useState(false);
   const rejectionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const phoneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const seamlessPollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   // Latest not-yet-committed edit for each debounced field, so the unmount
   // cleanup below can flush it instead of dropping it — the cleanup closure is
   // fixed at mount time, so it can't read fresh render-scoped state directly.
@@ -386,6 +389,15 @@ export function CandidateDrawer({
     setRevealed(false);
     setNoteText("");
   }, [candidateId, open]);
+
+  // Stop polling on unmount so a closed drawer never keeps hitting
+  // /api/source/seamless/research-status in the background.
+  useEffect(
+    () => () => {
+      if (seamlessPollTimer.current) clearInterval(seamlessPollTimer.current);
+    },
+    [],
+  );
 
   // Latest drafted/queued outreach for this candidate (any status — Draft
   // through Scheduled), newest first, so the "why this person" chips below
@@ -594,6 +606,59 @@ export function CandidateDrawer({
     toast({ title: "Marked do-not-contact", description: `${c.name} added to the exclusion list.`, variant: "warning" });
   };
 
+  const handleEnrichApollo = async () => {
+    if (
+      !(await confirm({
+        title: `Enrich ${c.name} via Apollo?`,
+        description:
+          "Reveals their personal email (and phone, if Apollo has one). Costs 1 Apollo credit on a match, 0 if not found.",
+        confirmLabel: "Enrich (1 credit)",
+      }))
+    )
+      return;
+    const res = await actions.enrichApolloCandidate(c.id);
+    toast({
+      title: res.revealed ? "Contact details revealed" : res.ok ? "No contact details found" : "Enrichment failed",
+      description: res.detail,
+      variant: res.revealed ? "success" : res.ok ? "info" : "error",
+    });
+  };
+
+  const handleRevealSeamless = async () => {
+    if (
+      !(await confirm({
+        title: `Reveal ${c.name}'s contact via Seamless?`,
+        description: "Starts an async research job to find their email/phone. Costs Seamless research credits.",
+        confirmLabel: "Reveal contact",
+      }))
+    )
+      return;
+    const start = await actions.startSeamlessResearch(c.id);
+    if (!start.ok) {
+      toast({ title: "Seamless research failed to start", description: start.error, variant: "error" });
+      return;
+    }
+    setRevealingSeamless(true);
+    const candidateId = c.id;
+    const requestId = start.requestId;
+    seamlessPollTimer.current = setInterval(async () => {
+      const res = await actionsRef.current.checkSeamlessResearch(candidateId, requestId);
+      if (res.ok && res.status === "processing") return; // keep polling
+      if (seamlessPollTimer.current) clearInterval(seamlessPollTimer.current);
+      seamlessPollTimer.current = null;
+      setRevealingSeamless(false);
+      if (!res.ok) {
+        toast({ title: "Seamless research failed", description: res.error, variant: "error" });
+        return;
+      }
+      toast({
+        title: res.revealed ? "Contact details revealed" : "No contact details found",
+        description: res.revealed ? "Revealed via Seamless." : "Research completed but found no email or phone.",
+        variant: res.revealed ? "success" : "info",
+      });
+    }, 4_000);
+  };
+
   const handleUnsubscribe = async () => {
     if (
       !(await confirm({
@@ -723,6 +788,23 @@ export function CandidateDrawer({
                   <Lock className="h-3.5 w-3.5" aria-hidden />
                   PII minimized (confidential)
                 </span>
+              )}
+              {c.sourcePlatform === "Apollo" && !c.email && (
+                <Button variant="outline" size="sm" leftIcon={<Zap className="h-4 w-4" />} onClick={handleEnrichApollo}>
+                  Enrich via Apollo
+                </Button>
+              )}
+              {c.sourcePlatform === "Seamless" && !c.email && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  leftIcon={<Zap className="h-4 w-4" />}
+                  onClick={handleRevealSeamless}
+                  loading={revealingSeamless}
+                  disabled={revealingSeamless}
+                >
+                  {revealingSeamless ? "Researching…" : "Reveal via Seamless"}
+                </Button>
               )}
             </div>
             {!masked && (

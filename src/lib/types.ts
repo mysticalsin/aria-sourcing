@@ -132,6 +132,9 @@ export const SOURCE_PLATFORMS = [
   "Stack Overflow",
   "Dribbble",
   "Behance",
+  "Sillage",
+  "Apollo",
+  "Seamless",
   "Referral",
   "Talent Pool",
 ] as const;
@@ -292,6 +295,11 @@ export interface Candidate {
   /** Canonical URL for a real hit on a platform with no dedicated field above
    *  (Stack Overflow, Dribbble, Behance). Blank for synthetic candidates. */
   sourceUrl?: string;
+  /** External record id on the source platform (e.g. Apollo's person `id`) —
+   *  lets a later enrichment call re-identify this exact profile precisely
+   *  instead of a fuzzy name/company re-match. Absent for sources that already
+   *  resolve the full profile (email included) at sourcing time (Sillage, GitHub). */
+  sourceExternalId?: string;
   sourcePlatform: SourcePlatform;
   sourceQuery: string;
   matchScore: number;
@@ -1019,6 +1027,9 @@ export const API_KEY_PROVIDERS = [
   "SendGrid",
   "Aria Agent",
   "Dust",
+  "Sillage",
+  "Apollo",
+  "Seamless",
   "Custom",
 ] as const;
 export type ApiKeyProvider = (typeof API_KEY_PROVIDERS)[number];

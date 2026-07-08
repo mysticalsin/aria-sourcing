@@ -20,12 +20,17 @@ import {
   sourceCandidates,
   mapGithubCandidates,
   mapWebSearchCandidates,
+  mapApolloCandidates,
+  mapSeamlessCandidates,
   type GeneratedOutreach,
   type ReplyClassification,
   type SourceResult,
 } from "./mock-ai";
 import type { GithubUser } from "./sourcing/github";
 import { isWebSearchPlatform, type WebLead, type WebSearchPlatform } from "./sourcing/web-leads";
+import type { SillageProfile } from "./sourcing/sillage";
+import type { ApolloPerson } from "./sourcing/apollo";
+import type { SeamlessContact, SeamlessResearchContact } from "./sourcing/seamless";
 import { roleProfile } from "./roles";
 import {
   buildOutreachPrompt,
@@ -142,6 +147,94 @@ function baseWebQuery(campaign: Campaign, platform: WebSearchPlatform): string {
   return [jd.title, jd.requiredSkills[0] ?? ""].filter(Boolean).join(" ");
 }
 
+/**
+ * Parse the "Source via Sillage" dialog's single free-text field into the
+ * identifier shape /api/source/sillage/start expects — a linkedin.com URL is
+ * sent as linkedinUrl, anything else as a bare domain (protocol/www/path
+ * stripped if the operator pasted a full URL).
+ */
+function parseSillageIdentifier(input: string): { domain?: string; linkedinUrl?: string } {
+  const trimmed = input.trim();
+  if (/linkedin\.com\//i.test(trimmed)) {
+    return { linkedinUrl: /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}` };
+  }
+  return { domain: trimmed.replace(/^https?:\/\//i, "").replace(/^www\./i, "").split("/")[0] };
+}
+
+/**
+ * Map real Sillage account-mapping profiles into scored, deduped Candidates —
+ * the live counterpart to mapGithubCandidates/mapWebSearchCandidates (mock-ai.ts),
+ * same scoring + dedupe pipeline, real data. Kept here rather than mock-ai.ts
+ * because it needs the campaign's live effective weights, which only exist in
+ * this client-side store — /api/source/sillage/status has no access to campaign
+ * state and returns raw profiles only.
+ */
+function mapSillageCandidates(
+  profiles: SillageProfile[],
+  campaign: Campaign,
+  companyLabel: string,
+  existing: Candidate[],
+  weights: ScoringWeights = campaign.scoringWeights,
+): SourceResult {
+  const jd = campaign.jobAnalysis;
+  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
+  const raw: Candidate[] = profiles.map((p) => {
+    const name = [p.firstName, p.lastName].filter(Boolean).join(" ").trim() || "Unknown";
+    const headline = (p.headline ?? "").trim();
+    const about = (p.about ?? "").trim();
+    const hay = `${p.position ?? ""} ${headline} ${about}`.toLowerCase();
+    const techStack = allSkills.filter((s) => hay.includes(s.toLowerCase()));
+    const location = [p.location?.city, p.location?.region, p.location?.country].filter(Boolean).join(", ");
+    return {
+      id: genId("cand"),
+      campaignId: campaign.id,
+      name,
+      email: p.email ?? "",
+      phone: p.phone ?? undefined,
+      avatarInitials: initialsFrom(name),
+      currentTitle: p.position || jd.title,
+      currentCompany: companyLabel,
+      location,
+      timezone: "",
+      linkedinUrl: p.linkedinUrl ?? "",
+      githubUrl: "",
+      sourcePlatform: "Sillage",
+      sourceQuery: companyLabel,
+      matchScore: 0,
+      matchBreakdown: [],
+      techStack,
+      yearsExperience: jd.minYearsExperience ?? (jd.seniority === "Senior" ? 6 : 4),
+      companyStageExperience: [],
+      industryExperience: [],
+      recentActivity: headline || about.slice(0, 140) || `Sourced via Sillage account mapping — ${companyLabel}.`,
+      stage: "Sourced",
+      lastContactedAt: null,
+      outreachHistory: [],
+      replyHistory: [],
+      booking: null,
+      complianceFlags: {
+        doNotContact: false,
+        suppressed: false,
+        unsubscribed: false,
+        gdprExportRequested: false,
+        anonymized: false,
+        suppressedUntil: null,
+      },
+      createdAt: new Date().toISOString(),
+      provenance: "live",
+    };
+  });
+
+  const { accepted, skipped } = dedupeCandidates(raw, existing, {
+    excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
+  });
+  const scored = accepted.map((c) => {
+    const { score, breakdown } = scoreCandidate(c, jd, weights);
+    return { ...c, matchScore: score, matchBreakdown: breakdown };
+  });
+  return { accepted: scored, skipped };
+}
+
 /* ============================================================================
    Actions contract
    ========================================================================== */
@@ -195,6 +288,80 @@ export interface HermesActions {
       notes?: string;
     },
   ) => { ok: true; added: number; skipped: number } | { ok: false; error: string };
+  /** Sillage Account Mapping (third real sourcing channel): resolves a company
+   *  (domain or LinkedIn URL) into real enriched employee profiles. Enrichment is
+   *  async — this kicks off the job server-side and returns a requestId to poll
+   *  with checkSillageMapping. Requires a stored Sillage key (Settings). */
+  startSillageMapping: (
+    campaignId: string,
+    identifier: string,
+  ) => Promise<{ ok: true; requestId: string } | { ok: false; error: string }>;
+  /** Polls one Sillage mapping job. While processing: {ok:true, status:"processing"}.
+   *  On completion: maps + scores + dedupes the real profiles exactly like
+   *  sourceNextBatch, commits the accepted candidates, logs an activity entry, and
+   *  updates campaign metrics. Never backfills a failed/empty result with synthetic
+   *  profiles. */
+  checkSillageMapping: (
+    campaignId: string,
+    requestId: string,
+  ) => Promise<
+    | { ok: true; status: "processing" }
+    | { ok: true; status: "completed"; added: number; company: string }
+    | { ok: false; error: string }
+  >;
+  /** Real Apollo.io search (fourth real sourcing channel) — free, synchronous,
+   *  no mock fallback: Apollo is a real channel, so an unconfigured key
+   *  surfaces honestly as "not_configured" rather than synthesizing fake
+   *  candidates. Requires a stored Apollo key (Settings). */
+  sourceFromApollo: (
+    campaignId: string,
+    filters: {
+      titles?: string[];
+      seniorities?: string[];
+      locations?: string[];
+      organizationDomains?: string[];
+      keywords?: string;
+      count?: number;
+    },
+  ) => Promise<SourceResult & { source: "apollo" | "not_configured" | "error"; error?: string }>;
+  /** Explicit, confirmed, single-candidate Apollo enrichment (costs 1 Apollo
+   *  credit on a match, 0 if not found). Never call this for a whole batch. */
+  enrichApolloCandidate: (
+    candidateId: string,
+  ) => Promise<{ ok: boolean; revealed: boolean; detail: string }>;
+  /** Real Seamless.AI search (fifth real sourcing channel) — synchronous, no
+   *  mock fallback. Requires a stored Seamless key (Settings). */
+  sourceFromSeamless: (
+    campaignId: string,
+    filters: {
+      jobTitles?: string[];
+      seniorities?: string[];
+      departments?: string[];
+      industries?: string[];
+      countries?: string[];
+      states?: string[];
+      companyNames?: string[];
+      companyDomains?: string[];
+      count?: number;
+    },
+  ) => Promise<SourceResult & { source: "seamless" | "not_configured" | "error"; error?: string }>;
+  /** Explicit, confirmed, single-candidate Seamless contact reveal. Async
+   *  (research → poll) — kicks off the job and returns a requestId to poll
+   *  with checkSeamlessResearch. Never call this for a whole batch. */
+  startSeamlessResearch: (
+    candidateId: string,
+  ) => Promise<{ ok: true; requestId: string } | { ok: false; error: string }>;
+  /** Polls one Seamless research job. On completion, patches the candidate's
+   *  email/phone in place (same PII convention as enrichApolloCandidate) and
+   *  never fabricates contact info on failure. */
+  checkSeamlessResearch: (
+    candidateId: string,
+    requestId: string,
+  ) => Promise<
+    | { ok: true; status: "processing" }
+    | { ok: true; status: "completed"; revealed: boolean }
+    | { ok: false; error: string }
+  >;
 
   // outreach
   generateOutreachFor: (
@@ -1263,6 +1430,456 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       if (scored.length > 0) emit({ kind: "source", campaignId, count: scored.length });
       return { ok: true, added: scored.length, skipped: skipped.length };
+    },
+    [commit, current],
+  );
+
+  const startSillageMapping = useCallback(
+    async (
+      campaignId: string,
+      identifier: string,
+    ): Promise<{ ok: true; requestId: string } | { ok: false; error: string }> => {
+      const s = current();
+      const campaign = s.campaigns.find((c) => c.id === campaignId);
+      if (!campaign) return { ok: false, error: "Campaign not found." };
+      const trimmed = identifier.trim();
+      if (!trimmed) return { ok: false, error: "Enter a company domain or LinkedIn URL." };
+
+      let res: Response;
+      try {
+        res = await fetch("/api/source/sillage/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ campaignId, ...parseSillageIdentifier(trimmed) }),
+        });
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : "Network error reaching Sillage." };
+      }
+      const out = (await res.json().catch(() => null)) as
+        | { ok?: boolean; requestId?: string; error?: string }
+        | null;
+      if (!out?.ok || !out.requestId) {
+        return { ok: false, error: out?.error ?? "Sillage enrichment failed to start." };
+      }
+      return { ok: true, requestId: out.requestId };
+    },
+    [current],
+  );
+
+  const checkSillageMapping = useCallback(
+    async (
+      campaignId: string,
+      requestId: string,
+    ): Promise<
+      | { ok: true; status: "processing" }
+      | { ok: true; status: "completed"; added: number; company: string }
+      | { ok: false; error: string }
+    > => {
+      const s = current();
+      const campaign = s.campaigns.find((c) => c.id === campaignId);
+      if (!campaign) return { ok: false, error: "Campaign not found." };
+
+      let res: Response;
+      try {
+        res = await fetch(`/api/source/sillage/status?requestId=${encodeURIComponent(requestId)}`);
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : "Network error reaching Sillage." };
+      }
+      const out = (await res.json().catch(() => null)) as
+        | {
+            ok?: boolean;
+            status?: string;
+            error?: string;
+            company?: { name?: string };
+            profiles?: SillageProfile[];
+          }
+        | null;
+      if (!out?.ok) return { ok: false, error: out?.error ?? "Sillage status check failed." };
+      if (out.status === "processing") return { ok: true, status: "processing" };
+      if (out.status !== "completed") return { ok: false, error: out.error ?? "Sillage enrichment did not complete." };
+
+      const companyLabel = out.company?.name || "this company";
+      const weights = effectiveWeights(campaign.scoringWeights, s.skills);
+      const { accepted, skipped } = mapSillageCandidates(
+        out.profiles ?? [],
+        campaign,
+        companyLabel,
+        s.candidates,
+        weights,
+      );
+
+      commit((prev) => {
+        let next: HermesState = { ...prev, candidates: [...accepted, ...prev.candidates] };
+        next = recomputeMetrics(next, campaignId);
+        next = withActivity(
+          next,
+          makeActivity({
+            type: "sourcing",
+            title: `Sourced ${accepted.length} candidates via Sillage account mapping — ${companyLabel}`,
+            notes: `Live Sillage batch. ${skipped.length} skipped by dedupe (${skipped
+              .slice(0, 3)
+              .map((x) => x.reason)
+              .join(", ")}${skipped.length > 3 ? "…" : ""}).`,
+            outcome: `${accepted.length} accepted, ${skipped.length} skipped (live)`,
+            campaignId,
+            linkedEntityType: "campaign",
+            linkedEntityId: campaignId,
+          }),
+          campaignId,
+        );
+        return next;
+      });
+      if (accepted.length > 0) emit({ kind: "source", campaignId, count: accepted.length });
+      return { ok: true, status: "completed", added: accepted.length, company: companyLabel };
+    },
+    [commit, current],
+  );
+
+  const sourceFromApollo = useCallback(
+    async (
+      campaignId: string,
+      filters: {
+        titles?: string[];
+        seniorities?: string[];
+        locations?: string[];
+        organizationDomains?: string[];
+        keywords?: string;
+        count?: number;
+      },
+    ): Promise<SourceResult & { source: "apollo" | "not_configured" | "error"; error?: string }> => {
+      const s = current();
+      const campaign = s.campaigns.find((c) => c.id === campaignId);
+      if (!campaign) return { accepted: [], skipped: [], source: "error", error: "Campaign not found." };
+      const weights = effectiveWeights(campaign.scoringWeights, s.skills);
+      const count = filters.count ?? 10;
+      const queryLabel =
+        [
+          filters.titles?.length ? `titles:${filters.titles.join("|")}` : null,
+          filters.seniorities?.length ? `seniority:${filters.seniorities.join("|")}` : null,
+          filters.locations?.length ? `loc:${filters.locations.join("|")}` : null,
+          filters.organizationDomains?.length ? `domains:${filters.organizationDomains.join("|")}` : null,
+          filters.keywords ? `kw:${filters.keywords}` : null,
+        ]
+          .filter(Boolean)
+          .join(" ") || "Apollo search";
+
+      let result: SourceResult = { accepted: [], skipped: [] };
+      let source: "apollo" | "not_configured" | "error" = "error";
+      let error: string | undefined;
+
+      try {
+        const res = await fetch("/api/source/apollo/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...filters, count }),
+        });
+        const out = (await res.json().catch(() => null)) as
+          | { ok?: boolean; source?: string; people?: ApolloPerson[]; error?: string }
+          | null;
+        if (out?.ok && out.source === "apollo") {
+          result =
+            out.people && out.people.length > 0
+              ? mapApolloCandidates(out.people, campaign, queryLabel, s.candidates, weights)
+              : { accepted: [], skipped: [] };
+          source = "apollo";
+        } else if (out?.source === "not_configured") {
+          source = "not_configured";
+          error = out.error ?? "Add an Apollo key in Settings to source real candidates.";
+        } else {
+          source = "error";
+          error = out?.error ?? "Apollo search failed.";
+        }
+      } catch (e) {
+        source = "error";
+        error = e instanceof Error ? e.message : "Network error.";
+      }
+
+      if (result.accepted.length > 0) {
+        commit((prev) => {
+          let next: HermesState = {
+            ...prev,
+            candidates: [...result.accepted, ...prev.candidates],
+          };
+          next = recomputeMetrics(next, campaignId);
+          next = withActivity(
+            next,
+            makeActivity({
+              type: "sourcing",
+              title: `Sourced ${result.accepted.length} candidates via Apollo`,
+              notes: `Live Apollo batch. ${result.skipped.length} skipped by dedupe (${result.skipped
+                .slice(0, 3)
+                .map((x) => x.reason)
+                .join(", ")}${result.skipped.length > 3 ? "…" : ""}).`,
+              outcome: `${result.accepted.length} accepted, ${result.skipped.length} skipped (live)`,
+              campaignId,
+              linkedEntityType: "campaign",
+              linkedEntityId: campaignId,
+            }),
+            campaignId,
+          );
+          return next;
+        });
+        emit({ kind: "source", campaignId, count: result.accepted.length });
+      }
+      return { ...result, source, error };
+    },
+    [commit, current],
+  );
+
+  const enrichApolloCandidate = useCallback(
+    async (candidateId: string): Promise<{ ok: boolean; revealed: boolean; detail: string }> => {
+      const s = current();
+      const cand = s.candidates.find((c) => c.id === candidateId);
+      if (!cand) return { ok: false, revealed: false, detail: "Candidate not found." };
+      if (cand.sourcePlatform !== "Apollo" || !cand.sourceExternalId) {
+        return { ok: false, revealed: false, detail: "Not an Apollo-sourced candidate." };
+      }
+      try {
+        const res = await fetch("/api/source/apollo/enrich", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ apolloId: cand.sourceExternalId }),
+        });
+        const out = (await res.json().catch(() => null)) as
+          | { ok?: boolean; source?: string; email?: string; phone?: string; error?: string; detail?: string }
+          | null;
+        if (!out?.ok || (out.source !== "apollo" && out.source !== "not_configured")) {
+          return { ok: false, revealed: false, detail: out?.error ?? "Apollo enrichment failed." };
+        }
+        if (out.source === "not_configured") {
+          return { ok: false, revealed: false, detail: out.error ?? "No Apollo key configured." };
+        }
+        const email = out.email ?? "";
+        const phone = out.phone ?? "";
+        if (!email && !phone) {
+          return { ok: true, revealed: false, detail: out.detail ?? "No contact details found (0 credits charged)." };
+        }
+        commit((prev) => {
+          const next: HermesState = {
+            ...prev,
+            candidates: prev.candidates.map((c) =>
+              c.id === candidateId ? { ...c, email: email || c.email, phone: phone || c.phone } : c,
+            ),
+          };
+          return withActivity(
+            next,
+            makeActivity({
+              type: "sourcing",
+              title: `Enriched via Apollo — ${cand.name}`,
+              notes: "Revealed contact details via Apollo (1 credit).",
+              outcome: email && phone ? "Email + phone revealed" : email ? "Email revealed" : "Phone revealed",
+              campaignId: cand.campaignId,
+              linkedEntityType: "candidate",
+              linkedEntityId: cand.id,
+            }),
+            cand.campaignId,
+          );
+        });
+        return { ok: true, revealed: true, detail: "Contact details revealed." };
+      } catch (e) {
+        return { ok: false, revealed: false, detail: e instanceof Error ? e.message : "Network error." };
+      }
+    },
+    [commit, current],
+  );
+
+  const sourceFromSeamless = useCallback(
+    async (
+      campaignId: string,
+      filters: {
+        jobTitles?: string[];
+        seniorities?: string[];
+        departments?: string[];
+        industries?: string[];
+        countries?: string[];
+        states?: string[];
+        companyNames?: string[];
+        companyDomains?: string[];
+        count?: number;
+      },
+    ): Promise<SourceResult & { source: "seamless" | "not_configured" | "error"; error?: string }> => {
+      const s = current();
+      const campaign = s.campaigns.find((c) => c.id === campaignId);
+      if (!campaign) return { accepted: [], skipped: [], source: "error", error: "Campaign not found." };
+      const weights = effectiveWeights(campaign.scoringWeights, s.skills);
+      const count = filters.count ?? 25;
+      const queryLabel =
+        [
+          filters.jobTitles?.length ? `titles:${filters.jobTitles.join("|")}` : null,
+          filters.seniorities?.length ? `seniority:${filters.seniorities.join("|")}` : null,
+          filters.departments?.length ? `dept:${filters.departments.join("|")}` : null,
+          filters.industries?.length ? `industry:${filters.industries.join("|")}` : null,
+          filters.countries?.length ? `country:${filters.countries.join("|")}` : null,
+          filters.companyNames?.length ? `company:${filters.companyNames.join("|")}` : null,
+          filters.companyDomains?.length ? `domains:${filters.companyDomains.join("|")}` : null,
+        ]
+          .filter(Boolean)
+          .join(" ") || "Seamless search";
+
+      let result: SourceResult = { accepted: [], skipped: [] };
+      let source: "seamless" | "not_configured" | "error" = "error";
+      let error: string | undefined;
+
+      try {
+        const res = await fetch("/api/source/seamless/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...filters, count }),
+        });
+        const out = (await res.json().catch(() => null)) as
+          | { ok?: boolean; source?: string; contacts?: SeamlessContact[]; error?: string }
+          | null;
+        if (out?.ok && out.source === "seamless") {
+          result =
+            out.contacts && out.contacts.length > 0
+              ? mapSeamlessCandidates(out.contacts, campaign, queryLabel, s.candidates, weights)
+              : { accepted: [], skipped: [] };
+          source = "seamless";
+        } else if (out?.source === "not_configured") {
+          source = "not_configured";
+          error = out.error ?? "Add a Seamless key in Settings to source real candidates.";
+        } else {
+          source = "error";
+          error = out?.error ?? "Seamless search failed.";
+        }
+      } catch (e) {
+        source = "error";
+        error = e instanceof Error ? e.message : "Network error.";
+      }
+
+      if (result.accepted.length > 0) {
+        commit((prev) => {
+          let next: HermesState = {
+            ...prev,
+            candidates: [...result.accepted, ...prev.candidates],
+          };
+          next = recomputeMetrics(next, campaignId);
+          next = withActivity(
+            next,
+            makeActivity({
+              type: "sourcing",
+              title: `Sourced ${result.accepted.length} candidates via Seamless`,
+              notes: `Live Seamless batch. ${result.skipped.length} skipped by dedupe (${result.skipped
+                .slice(0, 3)
+                .map((x) => x.reason)
+                .join(", ")}${result.skipped.length > 3 ? "…" : ""}).`,
+              outcome: `${result.accepted.length} accepted, ${result.skipped.length} skipped (live)`,
+              campaignId,
+              linkedEntityType: "campaign",
+              linkedEntityId: campaignId,
+            }),
+            campaignId,
+          );
+          return next;
+        });
+        emit({ kind: "source", campaignId, count: result.accepted.length });
+      }
+      return { ...result, source, error };
+    },
+    [commit, current],
+  );
+
+  const startSeamlessResearch = useCallback(
+    async (candidateId: string): Promise<{ ok: true; requestId: string } | { ok: false; error: string }> => {
+      const s = current();
+      const cand = s.candidates.find((c) => c.id === candidateId);
+      if (!cand) return { ok: false, error: "Candidate not found." };
+      if (cand.sourcePlatform !== "Seamless" || !cand.sourceExternalId) {
+        return { ok: false, error: "Not a Seamless-sourced candidate." };
+      }
+      let res: Response;
+      try {
+        res = await fetch("/api/source/seamless/research", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ searchResultId: cand.sourceExternalId }),
+        });
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : "Network error reaching Seamless." };
+      }
+      const out = (await res.json().catch(() => null)) as
+        | { ok?: boolean; requestId?: string; error?: string }
+        | null;
+      if (!out?.ok || !out.requestId) {
+        return { ok: false, error: out?.error ?? "Seamless research failed to start." };
+      }
+      return { ok: true, requestId: out.requestId };
+    },
+    [current],
+  );
+
+  const checkSeamlessResearch = useCallback(
+    async (
+      candidateId: string,
+      requestId: string,
+    ): Promise<
+      | { ok: true; status: "processing" }
+      | { ok: true; status: "completed"; revealed: boolean }
+      | { ok: false; error: string }
+    > => {
+      const s = current();
+      const cand = s.candidates.find((c) => c.id === candidateId);
+      if (!cand) return { ok: false, error: "Candidate not found." };
+
+      let res: Response;
+      try {
+        res = await fetch(`/api/source/seamless/research-status?requestId=${encodeURIComponent(requestId)}`);
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : "Network error reaching Seamless." };
+      }
+      const out = (await res.json().catch(() => null)) as
+        | { ok?: boolean; status?: string; error?: string; contact?: SeamlessResearchContact }
+        | null;
+      if (!out?.ok) {
+        if (out?.status === "processing") return { ok: true, status: "processing" };
+        return { ok: false, error: out?.error ?? "Seamless research failed." };
+      }
+      if (out.status === "processing") return { ok: true, status: "processing" };
+      if (out.status !== "completed") return { ok: false, error: out.error ?? "Seamless research did not complete." };
+
+      const email = out.contact?.email ?? "";
+      const phone = out.contact?.phone ?? "";
+      if (!email && !phone) {
+        commit((prev) =>
+          withActivity(
+            prev,
+            makeActivity({
+              type: "sourcing",
+              title: `No contact found via Seamless — ${cand.name}`,
+              notes: "Research completed but returned no email or phone.",
+              outcome: "0 contact fields revealed",
+              campaignId: cand.campaignId,
+              linkedEntityType: "candidate",
+              linkedEntityId: cand.id,
+            }),
+            cand.campaignId,
+          ),
+        );
+        return { ok: true, status: "completed", revealed: false };
+      }
+
+      commit((prev) => {
+        const next: HermesState = {
+          ...prev,
+          candidates: prev.candidates.map((c) =>
+            c.id === candidateId ? { ...c, email: email || c.email, phone: phone || c.phone } : c,
+          ),
+        };
+        return withActivity(
+          next,
+          makeActivity({
+            type: "sourcing",
+            title: `Enriched via Seamless — ${cand.name}`,
+            notes: "Revealed contact details via Seamless.",
+            outcome: email && phone ? "Email + phone revealed" : email ? "Email revealed" : "Phone revealed",
+            campaignId: cand.campaignId,
+            linkedEntityType: "candidate",
+            linkedEntityId: cand.id,
+          }),
+          cand.campaignId,
+        );
+      });
+      return { ok: true, status: "completed", revealed: true };
     },
     [commit, current],
   );
@@ -5287,6 +5904,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       sourceNextBatch,
       addCandidateFromGithub,
       addCandidateManual,
+      startSillageMapping,
+      checkSillageMapping,
+      sourceFromApollo,
+      enrichApolloCandidate,
+      sourceFromSeamless,
+      startSeamlessResearch,
+      checkSeamlessResearch,
       runSourcingAgent,
       generateOutreachFor,
       generateOutreachLive,
@@ -5400,7 +6024,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       setActiveCampaign, createCampaignFromAnalysis, updateCampaign, regenerateQueries,
-      sourceNextBatch, addCandidateFromGithub, addCandidateManual, runSourcingAgent, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
+      sourceNextBatch, addCandidateFromGithub, addCandidateManual, startSillageMapping, checkSillageMapping, sourceFromApollo, enrichApolloCandidate, sourceFromSeamless, startSeamlessResearch, checkSeamlessResearch, runSourcingAgent, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
       approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, draftFollowUpFor, draftRecontactFor, classifyAndStoreReply, markReplyHandled,
       applyReplyAction, draftReplyResponse, createBookingFor, updateBooking, generateReport,
       setSkillUpdateStatus, setCandidateStage, setCandidatePhone, addCandidateNote, setRejectionReason,
