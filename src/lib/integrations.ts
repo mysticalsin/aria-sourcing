@@ -1,5 +1,6 @@
 import type { IntegrationStatus } from "./types";
 import { isoHoursBefore } from "./utils";
+import { supabaseEnabled } from "./supabase/config";
 
 /* ============================================================================
    Integration adapters — MOCK MODE by default.
@@ -129,11 +130,14 @@ export function defaultIntegrations(): IntegrationStatus[] {
       name: "Supabase",
       category: "Infra",
       description: "Postgres + auth backend for production persistence (demo uses localStorage).",
-      status: "not_configured",
-      mode: "mock",
+      // The one card in this list that IS the app's actual data layer, not a
+      // roadmap placeholder — seed it from the real runtime flag so a freshly
+      // provisioned live workspace doesn't start out lying about its own backend.
+      status: supabaseEnabled ? "connected" : "not_configured",
+      mode: supabaseEnabled ? "live" : "mock",
       lastSync: null,
-      errors: ["No project URL configured: demo runs on localStorage."],
-      real: false,
+      errors: supabaseEnabled ? [] : ["No project URL configured: demo runs on localStorage."],
+      real: true,
     },
     {
       id: "int_n8n",

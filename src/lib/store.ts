@@ -53,6 +53,7 @@ import {
 import { matchCandidateByEmail } from "./email-match";
 import {
   testConnection,
+  defaultIntegrations,
   type ConnectionTestResult,
 } from "./integrations";
 import type {
@@ -661,7 +662,21 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
     replies: parsed.replies ?? [],
     bookings: parsed.bookings ?? [],
     reports: parsed.reports ?? [],
-    integrations: parsed.integrations ?? [],
+    // STATE_VERSION 15 — re-sync each stored integration's `real` flag against
+    // the current seed. `real` is a static fact about the codebase (does a
+    // route/OAuth flow/send path actually exist for this card), not user data
+    // — a workspace provisioned before a card gained real wiring would
+    // otherwise show a stale "Concept" badge forever, since nothing else ever
+    // re-reads defaultIntegrations() after the initial seed. Every other
+    // field (status, mode, lastSync, connectedAccount, errors) is genuine
+    // usage history and stays untouched.
+    integrations:
+      parsed.integrations && parsed.integrations.length > 0
+        ? parsed.integrations.map((i) => {
+            const seed = defaultIntegrations().find((d) => d.id === i.id);
+            return seed ? { ...i, real: seed.real } : i;
+          })
+        : defaultIntegrations(),
     activities: parsed.activities ?? [],
     activeCampaignId: parsed.activeCampaignId ?? null,
     apiKeys: parsed.apiKeys ?? [],

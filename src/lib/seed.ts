@@ -57,7 +57,10 @@ import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
 // STATE_VERSION 14 — registered interviewer roster (interviewers slice) replaces
 // the hardcoded mock-ai INTERVIEWERS list; interviewers are now stored,
 // admin-editable data instead of a fake fixed 4-person cast.
-export const STATE_VERSION = 14;
+// STATE_VERSION 15 — re-syncs each stored integration's `real` flag against the
+// current defaultIntegrations() seed, so a workspace provisioned before a card
+// gained genuine backend wiring stops showing a stale "Concept" badge.
+export const STATE_VERSION = 15;
 
 /* ---- LLM config defaults ------------------------------------------------- */
 
