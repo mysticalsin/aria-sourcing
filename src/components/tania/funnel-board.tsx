@@ -341,6 +341,7 @@ function CandidateCard({ candidate, thresholds }: { candidate: Candidate; thresh
           "group block cursor-grab rounded-2xl border border-line bg-surface p-3 shadow-soft transition-all active:cursor-grabbing hover:-translate-y-0.5 hover:shadow-lift focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric",
           dragging && "opacity-40",
         )}
+        style={{ WebkitUserDrag: "element" } as React.CSSProperties}
       >
         <div className="flex items-start justify-between gap-2">
           <p className="min-w-0 truncate text-sm font-bold text-ink">{candidate.name}</p>
