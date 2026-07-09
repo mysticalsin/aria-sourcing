@@ -50,6 +50,7 @@ clearChannelEnv();
   }) as typeof fetch;
   const res = await sendWhatsApp({ to: "+14155552671", body: "hi" });
   ok("WhatsApp not configured -> dry-run", res.status === "dry-run");
+  ok("WhatsApp not configured -> proven not sent", res.deliveryState === "not-sent");
   ok("WhatsApp not configured -> fetch never called", !called);
   restoreFetch();
 }
@@ -66,6 +67,7 @@ process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
   }) as typeof fetch;
   const res = await sendWhatsApp({ to: "+14155552671", body: "hi" });
   ok("WhatsApp success -> status sent", res.status === "sent");
+  ok("WhatsApp success -> accepted delivery state", res.deliveryState === "accepted");
   ok("WhatsApp success -> id taken from the response body", res.id === "wamid.ABCD");
   ok(
     "WhatsApp success -> hits the Graph API messages endpoint for the configured phone number id",
@@ -101,6 +103,7 @@ process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
   globalThis.fetch = (async () => jsonResponse(401, { error: "bad token" })) as typeof fetch;
   const res = await sendWhatsApp({ to: "+14155552671", body: "hi" });
   ok("WhatsApp upstream 401 -> status error", res.status === "error");
+  ok("WhatsApp upstream 401 -> proven rejected", res.deliveryState === "not-sent");
   ok("WhatsApp upstream 401 -> detail mentions the status code", res.detail.includes("401"));
   restoreFetch();
 }
@@ -111,7 +114,18 @@ process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
   globalThis.fetch = (async () => jsonResponse(200, { messages: [{}] })) as typeof fetch;
   const res = await sendWhatsApp({ to: "+14155552671", body: "hi" });
   ok("WhatsApp success without provider id -> error", res.status === "error");
+  ok("WhatsApp success without provider id -> ambiguous delivery", res.deliveryState === "unknown");
   ok("WhatsApp success without provider id -> explicit reconciliation detail", /message id/i.test(res.detail));
+  restoreFetch();
+}
+
+// A provider 5xx can be emitted after request processing. It must not release
+// the durable claim because a retry could duplicate an accepted message.
+{
+  globalThis.fetch = (async () => jsonResponse(503, { error: "upstream unavailable" })) as typeof fetch;
+  const res = await sendWhatsApp({ to: "+14155552671", body: "hi" });
+  ok("WhatsApp upstream 503 -> status error", res.status === "error");
+  ok("WhatsApp upstream 503 -> ambiguous delivery", res.deliveryState === "unknown");
   restoreFetch();
 }
 
@@ -122,6 +136,7 @@ process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
   }) as typeof fetch;
   const res = await sendWhatsApp({ to: "+14155552671", body: "hi" });
   ok("WhatsApp fetch throws -> caught into status error (never throws out)", res.status === "error");
+  ok("WhatsApp fetch throws -> ambiguous delivery", res.deliveryState === "unknown");
   ok("WhatsApp fetch throws -> detail carries the underlying error message", res.detail === "network down");
   restoreFetch();
 }
@@ -135,6 +150,7 @@ process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
   }) as typeof fetch;
   const res = await sendWhatsApp({ to: "not-a-phone!!", body: "hi" });
   ok("WhatsApp invalid phone -> status error", res.status === "error");
+  ok("WhatsApp invalid phone -> proven not sent", res.deliveryState === "not-sent");
   ok("WhatsApp invalid phone -> fetch never called", !called);
   restoreFetch();
 }

@@ -36,6 +36,7 @@ import { publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 
 const WHATSAPP_GATE_CACHE_VERSION = "whatsapp-outbound-gate-v1";
 const WHATSAPP_GATE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export interface DispatchStats {
   processed: number;
@@ -92,6 +93,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
 
   for (const msg of due ?? []) {
     stats.processed++;
+    let deliveryAttemptId: string | null = null;
     const finish = async (status: "sent" | "blocked" | "failed", gateResult?: unknown) => {
       const reopenReview =
         status === "blocked" &&
@@ -101,7 +103,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           status,
           reviewDecision: msg.review_decision ?? null,
         });
-      await supabase
+      let transition = supabase
         .from("messages_outbound")
         .update({
           status,
@@ -109,8 +111,19 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           ...(gateResult !== undefined ? { gate_result: gateResult } : {}),
           ...(reopenReview ? { review_decision: null, reviewed_at: null, reviewed_by: null } : {}),
         })
-        .eq("id", msg.id);
-      stats[status]++;
+        .eq("id", msg.id)
+        .eq("status", deliveryAttemptId ? "dispatching" : "queued");
+      if (deliveryAttemptId) {
+        transition = transition.eq("delivery_attempt_id", deliveryAttemptId);
+      }
+      const { data: transitioned, error: transitionError } = await transition
+        .select("id")
+        .maybeSingle();
+      if (transitionError) {
+        safeLog("dispatch-outbound: terminal transition error", { message: transitionError.message });
+        return;
+      }
+      if (transitioned) stats[status]++;
     };
 
     try {
@@ -301,7 +314,21 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         meta_phone_number_id?: string;
       } | null;
       if (claimObj?.allowed !== true) {
+        if (msg.channel === "WhatsApp" && (claimObj?.reason === "not-queued" || claimObj?.reason === "message-not-found")) {
+          // Another worker already owns or completed this row. Its state is
+          // authoritative; a losing selector must never downgrade it.
+          continue;
+        }
         await finish("blocked", { pass: false, reasons: [`guardrail:${claimObj?.reason ?? "blocked"}`] });
+        continue;
+      }
+      deliveryAttemptId = claimObj.delivery_attempt_id ?? null;
+      if (msg.channel === "WhatsApp" && (!deliveryAttemptId || !UUID_PATTERN.test(deliveryAttemptId))) {
+        // A provider call without the database-issued ownership token could
+        // never be reconciled or finalized safely. Leave the claimed row for
+        // operator recovery rather than guessing a terminal state.
+        safeLog("dispatch-outbound: WhatsApp claim returned no valid delivery attempt");
+        stats.failed++;
         continue;
       }
 
@@ -357,6 +384,40 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           stats.failed++;
           continue;
         }
+      }
+      if (msg.channel === "WhatsApp") {
+        if (outcome.deliveryState !== "not-sent") {
+          // A timeout, disconnect, or successful response without Meta's
+          // durable id may have been accepted. Releasing the claim would make
+          // a retry capable of double-contacting the candidate.
+          safeLog("dispatch-outbound: WhatsApp result requires reconciliation", {
+            deliveryState: outcome.deliveryState,
+          });
+          stats.failed++;
+          continue;
+        }
+        try {
+          const { data: failure, error: failureErr } = await supabase.rpc(
+            "finalize_whatsapp_provider_failure",
+            {
+              p_message_id: msg.id,
+              p_delivery_attempt_id: deliveryAttemptId,
+              p_reason: outcome.detail.slice(0, 512),
+            },
+          );
+          const failureObj = failure as { allowed?: boolean; reason?: string } | null;
+          if (failureErr || failureObj?.allowed !== true) {
+            safeLog("dispatch-outbound: WhatsApp failure finalization failed", {
+              message: failureErr?.message ?? failureObj?.reason ?? "unknown",
+            });
+          }
+        } catch (err) {
+          safeLog("dispatch-outbound: WhatsApp failure finalization error", {
+            message: err instanceof Error ? err.message : "unknown",
+          });
+        }
+        stats.failed++;
+        continue;
       }
       if (claimObj.ledger_id) {
         await supabase
