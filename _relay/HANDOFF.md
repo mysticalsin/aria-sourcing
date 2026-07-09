@@ -47,6 +47,7 @@ Also fixed this shift (pre-dating the commits above): OneDrive File Provider jam
 - Browser tool is read-only research only — no stealth, no private-network access, no page-content mutation, no arbitrary eval. Do not re-add those without a fresh security review.
 - Official WhatsApp API only. Out of scope: candidate PII in tests, native mobile, billing.
 - Untracked floor3d/linkedin-policy(old copy)/trend-spark files predate this shift and remain unimported by HEAD — left untracked, not this session's concern.
+- **Confirmed 2026-07-09: this project is worked concurrently by Codex CLI in the same worktree** (identified from live uncommitted file drift during shift 2, confirmed by Tony). Division of labor now formalized in `AGENTS.md`: Claude Code builds/integrates/tests/commits/deploys; Codex audits and may also write code — findings go to `_relay/codex-findings.md`. Full autopilot both sides, no permission-asking for normal iteration.
 
 ## Watch out
 - OneDrive eviction can break ANY local tooling mid-run; `killall OneDrive` + reopen fixed it once tonight, may recur.
