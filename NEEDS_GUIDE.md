@@ -48,7 +48,7 @@ npm install && npm run dev         # http://localhost:3000
 
 - With no Supabase env vars: open demo mode (localStorage persistence, no login).
 - Note: this repo's `.env.local` points at a local Supabase on `127.0.0.1:54321` — if the Docker stack (or `supabase start`) isn't running, you'll be stuck at the login gate. Either start the stack or blank the `NEXT_PUBLIC_SUPABASE_*` vars.
-- On this OneDrive checkout, set `NEXT_DIST_DIR` to a non-synced path or `.next` gets corrupted mid-write.
+- On this OneDrive checkout, use `npm run build:isolated`. It copies only the application build inputs to a temporary directory, installs from `package-lock.json`, and runs the standard build there. Do not set an absolute `NEXT_DIST_DIR`: Turbopack does not support output outside its project root.
 
 ---
 
@@ -137,7 +137,7 @@ Everything is dry-run until ALL of these are true (each is checked server-side):
 3. The seat's **sending domain verified** — click **Verify domain** on the seat card (Agent Fleet): it runs a real SPF/DMARC/DKIM DNS check and persists the result. No DNS records → no send.
 4. The seat toggled **Live**.
 5. The exact message **human-approved** (the server stores a hash of the approved subject+body; editing after approval invalidates it).
-6. `OUTREACH_UNSUBSCRIBE_BASE_URL` is set to a canonical HTTPS app origin and migrations through `0012_email_unsubscribe.sql` are applied. Every live email gets a recipient-specific opaque one-click link, standard headers, and a visible footer.
+6. `OUTREACH_UNSUBSCRIBE_BASE_URL` is set to a canonical HTTPS app origin and migrations through `0015_whatsapp_webhook_late_event_safety.sql` are applied. Every live email gets a recipient-specific opaque one-click link, standard headers, and a visible footer.
 7. Recipient not suppressed, within re-contact windows and the seat's daily/warm-up caps (enforced atomically in Postgres).
 
 Before real volume, run the controlled unsubscribe smoke test in `production-readiness/DEPLOYMENT_RUNBOOK.md`: inspect raw headers, submit one-click POST, and prove a later send is blocked.

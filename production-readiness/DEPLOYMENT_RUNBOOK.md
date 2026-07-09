@@ -28,10 +28,17 @@ npm run typecheck       # tsc --noEmit; must exit 0
 npm run lint            # next lint; must be "No ESLint warnings or errors."
 npm run test            # full deterministic suite; must be 0 failures
 npm run test:security   # security-specific subset (faster); must be 0 failures
-npm run build           # must complete without error
+npm run build           # must complete without error in CI or an unsynced checkout
+npm run build:isolated  # required for this OneDrive-synced checkout
 ```
 
-If `npm run build` fails, do NOT proceed. Fix the build first.
+If the applicable build command fails, do NOT proceed. Fix the build first.
+
+`build:isolated` creates an empty temporary project, copies the build inputs,
+installs from the lockfile, clears any inherited `NEXT_DIST_DIR`, and runs the
+normal production build. Vercel continues to use `npm run build`; do not set
+an absolute `NEXT_DIST_DIR`, because Turbopack rejects output outside the
+project root.
 
 ---
 
@@ -67,6 +74,9 @@ supabase db push
 # 0010_whatsapp_delivery_reconciliation.sql → Meta acceptance and receipt audit
 # 0011_outreach_approval_lifecycle.sql → approval revoke/atomic email claims
 # 0012_email_unsubscribe.sql → opaque one-click unsubscribe token hashes
+# 0013_outreach_approval_race_safety.sql → serialized approval/revoke/dispatch lifecycle
+# 0014_whatsapp_review_and_inbound_recovery.sql → human review and recoverable inbound work
+# 0015_whatsapp_webhook_late_event_safety.sql → late receipt and draft-collision safety
 ```
 
 **IMPORTANT:** RLS must be enabled on every table listed above. Verify after each migration:
@@ -93,6 +103,8 @@ WHERE routine_schema = 'public'
   AND routine_name IN (
     'claim_and_record', 'claim_email_outbound', 'claim_whatsapp_outbound',
     'record_outreach_approval', 'revoke_outreach_approval',
+    'review_whatsapp_outbound', 'claim_whatsapp_inbound_processing',
+    'complete_whatsapp_inbound_processing',
     'record_whatsapp_provider_acceptance', 'record_whatsapp_delivery_event'
   );
 -- Must return every named routine.
@@ -111,6 +123,7 @@ All variables below must be set in Vercel **before** deploying. Production value
 | `SUPABASE_SERVICE_ROLE_KEY` | Server | Yes | Never expose to browser. Supabase → API → service_role |
 | `DATA_ENCRYPTION_KEY` | Server | Yes | Base64 32-byte key for provider/OAuth secrets at rest |
 | `CRON_SECRET` | Server | Yes for dispatcher | Strong random bearer secret for `/api/cron/dispatch-outbound` |
+| `CAREERS_WORKSPACE_ID` | Server | Yes to enable `/careers` | UUID of the single workspace allowed to publish public roles; leave unset to fail closed |
 | `NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN` | Public | Recommended | Locks sign-in to one domain (e.g. `mantu.com`) |
 | `HERMES_API_URL` | Server | For AI drafts | Internal only; must not be a public internet URL |
 | `HERMES_API_KEY` | Server | For AI drafts | Strong random token (≥32 chars) |
@@ -267,7 +280,7 @@ Time: <UTC timestamp>
 - [ ] `npm run typecheck` → exit 0
 - [ ] `npm run lint` → no errors
 - [ ] `npm run test` → 0 failures
-- [ ] `npm run build` → no errors
+- [ ] `npm run build` (CI or unsynced checkout) or `npm run build:isolated` (OneDrive checkout) → no errors
 - [ ] DB migrations applied and RLS confirmed
 - [ ] All required env vars set in Vercel
 - [ ] `git push origin main` or `vercel --prod`

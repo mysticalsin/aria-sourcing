@@ -11,7 +11,8 @@ required for launch but must be done before the relevant feature is used.
 - [ ] `npm ci && npm run typecheck` — zero TypeScript errors.
 - [ ] `npm run lint` — clean.
 - [ ] `npm run test` — full deterministic suite passes.
-- [ ] `npm run build` — production build succeeds locally.
+- [ ] `npm run build` (CI or unsynced checkout) or `npm run build:isolated`
+      (OneDrive checkout) — production build succeeds locally.
 - [ ] Confirm `.env.production.example` is complete and `.env.local` (or
       Vercel env vars) matches every variable listed there.
 - [ ] Confirm no secrets are committed to git (`git log --all -S "supabase.co"`
@@ -47,6 +48,11 @@ required for launch but must be done before the relevant feature is used.
   8. `supabase/migrations/0011_outreach_approval_lifecycle.sql` and
      `0012_email_unsubscribe.sql` — authoritative revoke/claim lifecycle and
      opaque one-click unsubscribe hashes.
+  9. `supabase/migrations/0013_outreach_approval_race_safety.sql` — one lock
+     order for approve, revoke, and dispatch; retry-safe WhatsApp claims.
+  10. `supabase/migrations/0014_whatsapp_review_and_inbound_recovery.sql` and
+      `0015_whatsapp_webhook_late_event_safety.sql` — durable human review,
+      inbound recovery, and late-receipt safety.
 - [ ] Verify RLS is active for every table: in the SQL Editor, run
       `SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname = 'public';`
       — every row must show `rowsecurity = true`.
@@ -115,6 +121,9 @@ required for launch but must be done before the relevant feature is used.
       not plain text) in Vercel and is absent from all browser-exposed env vars.
 - [ ] Set `DATA_ENCRYPTION_KEY`, `CRON_SECRET`, and the canonical HTTPS
       `OUTREACH_UNSUBSCRIBE_BASE_URL` before enabling a live email seat.
+- [ ] To enable the public careers site, set the server-only
+      `CAREERS_WORKSPACE_ID` to the intended workspace UUID. Leave it unset
+      until that workspace has only compliance-passed, published job ads.
 - [ ] If WhatsApp is enabled, set `WHATSAPP_TOKEN`,
       `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, and
       `WHATSAPP_APP_SECRET`; register `/api/webhooks/whatsapp` in Meta.
