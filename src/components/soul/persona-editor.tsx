@@ -145,6 +145,10 @@ function AddAgentForm({ onAdded }: { onAdded?: (id: string) => void }) {
       name: clean,
       operatorEmail: email.trim() || `${slug || "agent"}@hermes.example`,
     });
+    if (!seat) {
+      toast({ title: "Admins only", description: "Your profile cannot add fleet agents.", variant: "warning" });
+      return;
+    }
     toast({
       title: `${seat.name} added`,
       description: "New agent created in dry-run mode. Bench or assign it any time.",

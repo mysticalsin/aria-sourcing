@@ -90,7 +90,8 @@ export default function FleetPage() {
   const actions = useActions();
   const { toast } = useToast();
   const maxAgents = useSettings().fleet.maxAgents || 300;
-  const canManage = can(useRole(), "manage_fleet");
+  const role = useRole();
+  const canManage = hydrated && can(role, "manage_fleet");
 
   const [deployN, setDeployN] = React.useState("25");
 
@@ -201,6 +202,10 @@ export default function FleetPage() {
   }
 
   function handleAddAgent() {
+    if (!canManage) {
+      toast({ title: "Admins only", description: "Only an admin can add fleet agents.", variant: "warning" });
+      return;
+    }
     const trimmedName = name.trim();
     const trimmedEmail = operatorEmail.trim();
     if (!trimmedName || !trimmedEmail) {
@@ -218,6 +223,10 @@ export default function FleetPage() {
       provider,
       dailyLimit: Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : undefined,
     });
+    if (!seat) {
+      toast({ title: "Agent not added", description: "Your profile cannot manage the fleet.", variant: "error" });
+      return;
+    }
     toast({
       title: `Agent “${seat.name}” added`,
       description: `${seat.provider} seat created in dry-run mode. Connect a mailbox and verify the domain before going live.`,
@@ -241,7 +250,7 @@ export default function FleetPage() {
         eyebrow="Agent fleet"
         title="An army of agents. One set of rules."
         description="Coordinated multi-agent sourcing and outreach that never double-contacts a candidate and stays inside every account's official API limits. No scraping, no LinkedIn automation."
-        actions={
+        actions={canManage ? (
           <Button
             variant="secondary"
             size="md"
@@ -250,7 +259,7 @@ export default function FleetPage() {
           >
             Add agent
           </Button>
-        }
+        ) : undefined}
       />
 
       <HydrationGate
@@ -370,7 +379,7 @@ export default function FleetPage() {
                   </p>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
+              {canManage && <div className="flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-1.5 rounded-full border border-ink/12 bg-surface p-1 pl-3">
                   <label htmlFor="deploy-n" className="text-xs font-semibold text-muted">
                     Deploy
@@ -391,8 +400,6 @@ export default function FleetPage() {
                     size="sm"
                     leftIcon={<Bot className="h-4 w-4" />}
                     onClick={handleDeploy}
-                    disabled={!canManage}
-                    title={canManage ? undefined : "Admins only"}
                   >
                     Deploy agents
                   </Button>
@@ -402,12 +409,10 @@ export default function FleetPage() {
                   size="sm"
                   leftIcon={<Plus className="h-4 w-4" />}
                   onClick={() => setAddOpen(true)}
-                  disabled={!canManage}
-                  title={canManage ? undefined : "Admins only"}
                 >
                   Add one
                 </Button>
-              </div>
+              </div>}
             </div>
 
             {seats.length === 0 ? (
@@ -415,7 +420,7 @@ export default function FleetPage() {
                 icon={<Bot className="h-7 w-7" />}
                 title="No agents yet"
                 description="Add your first agent to start coordinated, rule-bound sourcing and outreach across official mailboxes."
-                action={
+                action={canManage ? (
                   <Button
                     variant="secondary"
                     size="md"
@@ -424,7 +429,7 @@ export default function FleetPage() {
                   >
                     Add agent
                   </Button>
-                }
+                ) : undefined}
               />
             ) : (
               <>
@@ -521,7 +526,7 @@ export default function FleetPage() {
       </HydrationGate>
 
       {/* Add-agent modal */}
-      <Modal
+      {canManage && <Modal
         open={addOpen}
         onClose={() => setAddOpen(false)}
         title="Add an agent"
@@ -601,7 +606,7 @@ export default function FleetPage() {
             already reached.
           </p>
         </div>
-      </Modal>
+      </Modal>}
     </div>
   );
 }

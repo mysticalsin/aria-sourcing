@@ -115,6 +115,7 @@ import { genId, initialsFrom, isoDaysBefore } from "./utils";
 import { createCampaign as buildCampaign } from "./mock-ai";
 import { supabaseEnabled } from "./supabase/config";
 import { loadRemoteState, saveRemoteState } from "./supabase/workspace";
+import { applyAuthoritativeRole } from "./live-role-authority";
 import { allocateBatch, defaultSendWindow, fleetSummary, type FleetSummary } from "./fleet";
 import {
   applyLearning,
@@ -128,6 +129,7 @@ import { stageRank, withStage } from "./metrics";
 import { humanizeText } from "./humanizer";
 import { parseCommand, campaignToAriaContext, type AriaPlan } from "./aria-command";
 import { recordOutreachApproval, revokeOutreachApproval } from "./outreach-approval";
+import { can } from "./rbac";
 
 const STORAGE_KEY = "hermes-sourcing:v1";
 const ARIA_STRONG_RATINGS: readonly StarRating[] = ["TopGun", "A"];
@@ -490,7 +492,7 @@ export interface HermesActions {
   testIntegration: (id: string) => Promise<ConnectionTestResult>;
 
   // fleet — multi-seat coordination + anti-ban guardrails
-  addSeat: (partial: Partial<AgentSeat> & { name: string; operatorEmail: string }) => AgentSeat;
+  addSeat: (partial: Partial<AgentSeat> & { name: string; operatorEmail: string }) => AgentSeat | null;
   deployAgents: (
     n: number,
     opts?: { language?: string; namePrefix?: string },
@@ -844,6 +846,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   const workspaceIdRef = useRef<string>("");
   // Optimistic-concurrency token: the workspace_state.updated_at we last loaded/saved.
   const remoteUpdatedAtRef = useRef<string | null>(null);
+  const liveRoleRef = useRef<Role>("viewer");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // DEMO mode only: latest state snapshot awaiting a debounced localStorage write,
   // so flushLocalSave() can write it immediately on unmount / tab close.
@@ -897,12 +900,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         if (remote) {
           workspaceIdRef.current = remote.workspaceId;
           remoteUpdatedAtRef.current = remote.updatedAt;
+          liveRoleRef.current = remote.role;
           if (remote.state) {
             skipNextPersist.current = true; // don't re-save what we just loaded
             // D-1: run migration when the persisted version is behind current.
-            setState(remote.state.version < STATE_VERSION ? migrateToCurrentVersion(remote.state) : remote.state);
+            const loaded = remote.state.version < STATE_VERSION
+              ? migrateToCurrentVersion(remote.state)
+              : remote.state;
+            setState(applyAuthoritativeRole(loaded, remote.role));
           } else {
-            const seeded = buildSeedState();
+            const seeded = applyAuthoritativeRole(buildSeedState(), remote.role);
             setState(seeded);
             if (remote.workspaceId) {
               void saveRemoteState(remote.workspaceId, seeded, null).then((res) => {
@@ -912,6 +919,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           }
           return;
         }
+        // A live auth-null/error path must never fall through to localStorage,
+        // whose demo seed is admin. Keep the shell read-only until auth recovers.
+        setState(applyAuthoritativeRole(buildSeedState(), "viewer"));
+        return;
       }
       setState(loadState());
     })();
@@ -959,7 +970,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 linkedEntityId: null,
                 createdAt: new Date().toISOString(),
               };
-              setState({ ...migrated, activities: [notice, ...migrated.activities].slice(0, 300) });
+              setState(applyAuthoritativeRole(
+                { ...migrated, activities: [notice, ...migrated.activities].slice(0, 300) },
+                liveRoleRef.current,
+              ));
             }
           } else {
             // Non-conflict save failure (network / quota). Retry once shortly so a blip
@@ -4232,6 +4246,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const addSeat = useCallback(
     (partial: Partial<AgentSeat> & { name: string; operatorEmail: string }) => {
+      const authorizedState = stateRef.current;
+      if (!authorizedState || !can(authorizedState.currentRole, "manage_fleet")) return null;
       const now = new Date().toISOString();
       const seat: AgentSeat = {
         id: genId("seat"),
@@ -4284,8 +4300,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   // suppression, shared de-dupe) — scale, not rate-limit evasion.
   const deployAgents = useCallback(
     (n: number, opts?: { language?: string; namePrefix?: string }) => {
-      const s = current();
+      const s = stateRef.current;
+      if (!s) return { created: 0, total: 0, capped: false, max: 0 };
       const max = s.settings.fleet.maxAgents || 300;
+      if (!can(s.currentRole, "manage_fleet")) {
+        return { created: 0, total: s.seats.length, capped: false, max };
+      }
       const room = Math.max(0, max - s.seats.length);
       const toCreate = Math.min(Math.max(0, Math.floor(n)), room);
       if (toCreate === 0) return { created: 0, total: s.seats.length, capped: room === 0, max };
@@ -4890,7 +4910,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const setCurrentRole = useCallback(
-    (role: Role) =>
+    (role: Role) => {
+      // Live authority comes only from profiles.role. This action exists solely
+      // for the explicitly labelled backend-free demo preview.
+      if (supabaseEnabled) return;
       commit((prev) =>
         withActivity(
           { ...prev, currentRole: role },
@@ -4905,7 +4928,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           }),
           null,
         ),
-      ),
+      );
+    },
     [commit],
   );
 
@@ -6405,7 +6429,7 @@ const EMPTY: HermesState = {
   ledger: [],
   skills: [],
   apiKeys: [],
-  currentRole: "admin",
+  currentRole: "viewer",
   chats: [],
   memory: [],
   schedules: [],
