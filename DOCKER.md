@@ -31,12 +31,13 @@ docker compose restart app     # restart just the app after a code change
 
 | Service | Image | Role |
 |---|---|---|
-| `db` | supabase/postgres | Postgres with the Supabase roles, `auth` schema, extensions; all 9 app tables |
+| `db` | supabase/postgres | Postgres with the Supabase roles, `auth` schema, extensions, and the app schema |
 | `db-init` | postgres | one-shot: hands the `auth` schema to `supabase_auth_admin` so GoTrue starts clean |
 | `auth` | supabase/gotrue | email+password login, JWT issuance |
 | `rest` | postgrest | RLS-enforced CRUD + RPCs over `/rest/v1` |
 | `kong` | kong | single API gateway (routes `/auth/v1` + `/rest/v1`), exposed on `:54321` |
-| `supabase-bootstrap` | postgres+curl | one-shot: applies the 6 migrations, seeds + promotes the admin user, reloads PostgREST |
+| `supabase-bootstrap` | postgres+curl | one-shot: applies migrations `0001` through `0015`, seeds + promotes the admin user, reloads PostgREST |
+| `obscura` | pinned Rust source build | read-only browser-research sidecar; no host port, stealth, or private-network access |
 | `app` | (this repo) | the Next.js dev server on `:3000` |
 
 `docker compose ps` should show `db/auth/rest/kong` healthy and the two one-shots
@@ -75,3 +76,18 @@ APP_PORT=3001 KONG_PORT=54331 DB_HOST_PORT=54332 docker compose up
   client at `localhost:54322` (user `postgres`, password `postgres`).
 - The `.next` build dir lives on an anonymous volume (not the OneDrive-synced checkout), so
   Next's output never corrupts the host copy.
+
+### Restricted build egress
+
+The `obscura` image caches Rusty's pinned V8 archive with BuildKit. If the
+builder cannot reach GitHub Releases on its first build, provide a
+non-secret, owner-controlled mirror with the upstream layout, for example:
+
+```bash
+RUSTY_V8_MIRROR=https://artifacts.example.internal/rusty_v8 docker compose build obscura
+```
+
+For the currently pinned dependency, that mirror must serve
+`v137.3.0/librusty_v8_release_aarch64-unknown-linux-gnu.a.gz`. Verify the
+artifact’s checksum before publishing it. Do not put credentials in
+`RUSTY_V8_MIRROR`, because Compose passes it as a build argument.

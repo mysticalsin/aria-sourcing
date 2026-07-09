@@ -108,8 +108,15 @@ const main = async () => {
 };
 
 const launcher = readFileSync(new URL("../src/lib/ai/obscura-launcher.ts", import.meta.url), "utf8");
+const dockerfile = readFileSync(new URL("../docker/obscura/Dockerfile", import.meta.url), "utf8");
+const compose = readFileSync(new URL("../docker-compose.yml", import.meta.url), "utf8");
 ok("sidecar launcher does not enable stealth", !/--stealth/.test(launcher));
 ok("sidecar launcher does not permit private-network browsing", !/--allow-private-network/.test(launcher));
+ok("sidecar image does not compile stealth support", !/--features\s+stealth/.test(dockerfile));
+ok("sidecar image does not enable stealth at runtime", !/--stealth/.test(dockerfile));
+ok("sidecar image does not allow private-network browsing", !/--allow-private-network/.test(dockerfile));
+ok("sidecar build caches the upstream V8 archive", dockerfile.includes("target=/usr/local/cargo/.rusty_v8") && dockerfile.includes("sharing=locked"));
+ok("sidecar build accepts an owner-controlled V8 mirror", dockerfile.includes("ARG RUSTY_V8_MIRROR") && compose.includes("RUSTY_V8_MIRROR"));
 
 main().catch((err) => {
   console.error("TEST CRASHED:", err);

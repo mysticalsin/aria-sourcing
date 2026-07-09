@@ -179,6 +179,10 @@ services:
   obscura:
     build:
       context: ./docker/obscura
+      args:
+        # Non-secret owner-controlled Rusty V8 mirror for restricted builders.
+        # Leave blank to use the pinned upstream release and BuildKit cache.
+        RUSTY_V8_MIRROR: ${RUSTY_V8_MIRROR:-}
     restart: unless-stopped
 
   # ---- The Next.js app (dev server; .next on an anon volume to dodge OneDrive corruption) --

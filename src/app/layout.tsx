@@ -2,21 +2,6 @@ import type { Metadata, Viewport } from "next";
 import "@/styles/globals.css";
 import { Providers } from "@/components/app/providers";
 import { AppShell } from "@/components/app/app-shell";
-import { Geist, EB_Garamond } from "next/font/google";
-
-const geist = Geist({
-  subsets: ["latin"],
-  weight: ["300", "400", "500"],
-  variable: "--font-geist",
-  display: "swap",
-});
-
-const garamond = EB_Garamond({
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-garamond",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: {
@@ -36,7 +21,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-scroll-behavior="smooth" className={`${geist.variable} ${garamond.variable}`}>
+    <html lang="en" data-scroll-behavior="smooth">
       <body className="antialiased">
         <Providers>
           <AppShell>{children}</AppShell>

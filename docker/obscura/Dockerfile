@@ -2,7 +2,8 @@
 #
 # Obscura sidecar: browser automation backing Aria's
 # browser_* tools (src/lib/ai/browser-tools.ts via server/obscura-adapter.js).
-# Built from source with --features stealth and running with stealth and private network flags.
+# Built from source with default features only. The sidecar remains an honest,
+# read-only research browser and never enables stealth or private-network access.
 
 FROM rust:1-slim-bookworm AS builder
 
@@ -27,8 +28,14 @@ RUN git init -q . \
     && git checkout -q "${OBSCURA_COMMIT}" \
     && test "$(git rev-parse HEAD)" = "${OBSCURA_COMMIT}"
 
-# Build both obscura and obscura-worker with features stealth.
-RUN cargo build --release --bin obscura --bin obscura-worker --features stealth
+# Build both binaries without optional stealth support.
+# Cache the verified upstream V8 archive across BuildKit builds. Restricted
+# builders can supply their own non-secret, checksum-verified mirror instead
+# of relying on public GitHub release egress.
+ARG RUSTY_V8_MIRROR
+RUN --mount=type=cache,id=aria-obscura-rusty-v8,target=/usr/local/cargo/.rusty_v8,sharing=locked \
+    if [ -n "${RUSTY_V8_MIRROR:-}" ]; then export RUSTY_V8_MIRROR; fi; \
+    cargo build --release --bin obscura --bin obscura-worker
 
 FROM gcr.io/distroless/cc-debian12
 
@@ -38,4 +45,4 @@ COPY --from=builder /build/target/release/obscura-worker /obscura-worker
 EXPOSE 9222
 
 ENTRYPOINT ["/obscura"]
-CMD ["serve", "--port", "9222", "--host", "0.0.0.0", "--stealth", "--allow-private-network"]
+CMD ["serve", "--port", "9222", "--host", "0.0.0.0"]
