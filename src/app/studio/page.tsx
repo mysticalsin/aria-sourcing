@@ -1,12 +1,13 @@
 "use client";
 
-/* Agent Studio — create and tune on-demand sourcing agents, and jump into the
-   Flowise visual editor for the ones that have a flow. Autopilot is per-agent
+/* Agent Studio — create and tune on-demand sourcing agents. Flow execution is
+   limited to ARIA-owned runtime bindings; Flowise authoring is intentionally
+   private until a per-workspace deployment boundary exists. Autopilot is per-agent
    opt-in: even ON, every message still clears the human-likeness gate, the
    approval record, and claim_and_record before the wire. */
 
 import * as React from "react";
-import { ExternalLink, Bot, ShieldCheck, Wand2 } from "lucide-react";
+import { Bot, ShieldCheck, Wand2 } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -37,7 +38,6 @@ export default function StudioPage() {
   const [loading, setLoading] = React.useState(true);
   const [demo, setDemo] = React.useState(false);
   const [specs, setSpecs] = React.useState<SpecRow[]>([]);
-  const [flowiseUrl, setFlowiseUrl] = React.useState("");
   const [name, setName] = React.useState("");
   const [roleTitle, setRoleTitle] = React.useState("");
   const [skills, setSkills] = React.useState("");
@@ -47,10 +47,9 @@ export default function StudioPage() {
   const load = React.useCallback(async () => {
     try {
       const res = await fetch("/api/agents/specs");
-      const json = (await res.json()) as { ok: boolean; demo?: boolean; specs?: SpecRow[]; flowiseUrl?: string };
+      const json = (await res.json()) as { ok: boolean; demo?: boolean; specs?: SpecRow[] };
       setDemo(Boolean(json.demo));
       setSpecs(json.specs ?? []);
-      setFlowiseUrl(json.flowiseUrl ?? "");
     } catch {
       toast({ title: "Could not load agents.", variant: "error" });
     } finally {
@@ -126,14 +125,7 @@ export default function StudioPage() {
       <PageHeader
         eyebrow="System"
         title="Agent Studio"
-        description="Build on-demand sourcing agents: one role, one task, hard guardrails. Edit their flows visually, flip autopilot per agent."
-        actions={
-          flowiseUrl ? (
-            <Button variant="secondary" onClick={() => window.open(flowiseUrl, "_blank", "noopener")}>
-              <ExternalLink className="h-4 w-4" /> Open Flowise
-            </Button>
-          ) : undefined
-        }
+        description="Build on-demand sourcing agents: one role, one task, hard guardrails. Runtime flows stay bound to this workspace; Flowise authoring remains private."
       />
 
       {demo && (
@@ -246,22 +238,7 @@ export default function StudioPage() {
                           onCheckedChange={() => void toggleAutopilot(spec)}
                         />
                       </label>
-                      {flowiseUrl && (
-                        <Button
-                          variant="secondary"
-                          onClick={() =>
-                            window.open(
-                              spec.flowise_chatflow_id
-                                ? `${flowiseUrl}/canvas/${spec.flowise_chatflow_id}`
-                                : flowiseUrl,
-                              "_blank",
-                              "noopener",
-                            )
-                          }
-                        >
-                          <ExternalLink className="h-4 w-4" /> Edit flow
-                        </Button>
-                      )}
+                      {spec.flowise_chatflow_id && <Badge tone="neutral">Workspace-bound Flowise runtime</Badge>}
                     </div>
                   </div>
                 </CardContent>

@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
     .neq("status", "archived")
     .order("created_at", { ascending: false });
   if (error) return NextResponse.json({ ok: false, reason: "Failed to load agents." }, { status: 500 });
-  return NextResponse.json({ ok: true, specs: data ?? [], flowiseUrl: process.env.FLOWISE_PUBLIC_URL ?? "" });
+  return NextResponse.json({ ok: true, specs: data ?? [] });
 }
 
 export async function POST(req: NextRequest) {

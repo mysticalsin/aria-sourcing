@@ -4,6 +4,7 @@ import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
+import { getFlowiseProxyPolicy } from "@/lib/flowise-policy";
 
 export const dynamic = "force-dynamic";
 
@@ -20,8 +21,6 @@ export const dynamic = "force-dynamic";
  * Env: FLOWISE_URL (sidecar base, e.g. https://flows.internal.example) and
  * FLOWISE_API_KEY. Absent → 503, feature simply off.
  */
-
-const ALLOWED_PREFIXES = ["chatflows", "prediction", "agentflowv2-generator", "apikey"];
 
 async function proxy(req: NextRequest, params: { path: string[] }) {
   const prodBlock = prodFailClosed();
@@ -51,13 +50,27 @@ async function proxy(req: NextRequest, params: { path: string[] }) {
   const rl = checkRateLimit(rateLimitKey(req, "flowise-proxy", user.id), { windowMs: 60_000, max: 60 });
   if (!rl.ok) return tooManyRequests(rl.retryAfterSec);
 
-  // Path allowlist — only the API families Agent Studio needs, no traversal.
-  const segments = (params.path ?? []).filter((s) => s !== ".." && s !== ".");
-  if (segments.length === 0 || !ALLOWED_PREFIXES.includes(segments[0])) {
-    return NextResponse.json({ ok: false, reason: "Path not allowed." }, { status: 403 });
+  const policy = getFlowiseProxyPolicy(req.method, params.path ?? []);
+  if (!policy.ok) {
+    return NextResponse.json(
+      { ok: false, reason: policy.reason },
+      { status: req.method === "POST" ? 403 : 405, headers: { Allow: "POST" } },
+    );
+  }
+  const { data: flowSpec, error: flowSpecErr } = await supabase
+    .from("agent_specs")
+    .select("id")
+    .eq("flowise_chatflow_id", policy.flowId)
+    .neq("status", "archived")
+    .maybeSingle();
+  if (flowSpecErr) {
+    return NextResponse.json({ ok: false, reason: "Could not verify the Flowise flow." }, { status: 500 });
+  }
+  if (!flowSpec) {
+    return NextResponse.json({ ok: false, reason: "Flowise flow not found." }, { status: 404 });
   }
 
-  const target = `${base}/api/v1/${segments.map(encodeURIComponent).join("/")}${req.nextUrl.search}`;
+  const target = `${base}/api/v1/prediction/${encodeURIComponent(policy.flowId)}${req.nextUrl.search}`;
   const init: RequestInit = {
     method: req.method,
     headers: {
@@ -66,9 +79,11 @@ async function proxy(req: NextRequest, params: { path: string[] }) {
     },
     signal: AbortSignal.timeout(60_000),
   };
-  if (req.method !== "GET" && req.method !== "HEAD") {
-    init.body = await req.text();
+  const body = await req.text();
+  if (body.length > 100_000) {
+    return NextResponse.json({ ok: false, reason: "Flowise request body is too large." }, { status: 413 });
   }
+  init.body = body;
 
   try {
     const upstream = await fetch(target, init);
