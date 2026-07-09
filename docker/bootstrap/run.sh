@@ -4,7 +4,7 @@
 #   2. hand the auth schema to supabase_auth_admin (the supabase/postgres image creates
 #      it owned by postgres, which crash-loops GoTrue with "must be owner of function uid")
 #   3. wait for GoTrue to recover + finish its migrations (auth:9999/health)
-#   4. apply the app's migrations 0001..0006 in order (idempotent)
+#   4. apply every numbered app migration in order (idempotent)
 #   5. seed the offline login user admin@hermes.local via the GoTrue admin API
 #   6. promote that user to an admin profile in the app schema
 # All steps are idempotent, so re-running on every `docker compose up` is safe.

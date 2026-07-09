@@ -153,7 +153,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ---- One-shot: apply the 6 app migrations (after GoTrue) + seed/promote admin ------
+  # ---- One-shot: apply every numbered app migration (after GoTrue) + seed/promote admin ------
   supabase-bootstrap:
     build:
       context: ./docker/bootstrap
