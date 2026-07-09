@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getServerSupabase, getServiceSupabase, requireAdmin } from "@/lib/supabase/server";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { encryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
+import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 
 /**
  * Microsoft OAuth callback for Microsoft Graph seat connection.
@@ -69,6 +70,9 @@ export async function GET(req: NextRequest) {
 
   const admin = await requireAdmin(supabase);
   if (!admin.ok) return admin.response;
+  if (publicDemoSideEffectsDisabled()) {
+    return redirectError(req, PUBLIC_DEMO_DRY_RUN_DETAIL);
+  }
 
   const redirectUri = process.env.MICROSOFT_REDIRECT_URI ?? "http://localhost:3000/auth/microsoft/callback";
 

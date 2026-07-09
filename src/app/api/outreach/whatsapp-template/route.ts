@@ -19,6 +19,7 @@ import {
   parseApprovedWhatsAppTemplateParameterSchema,
 } from "@/lib/whatsapp-template-queue";
 import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
+import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 
 export const dynamic = "force-dynamic";
 
@@ -271,6 +272,9 @@ export async function POST(req: NextRequest) {
   const scopeHash = approvalScopeHash({ candidateId: payload.candidateId, channel: "WhatsApp", recipient });
   if (!scopeHash) {
     return NextResponse.json({ ok: false, error: "Invalid template recipient." }, { status: 400 });
+  }
+  if (publicDemoSideEffectsDisabled()) {
+    return NextResponse.json({ ok: true, status: "dry-run", persisted: false, detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
   }
   const { data: recorded, error: approvalErr } = await actor.supabase.rpc("record_outreach_approval", {
     p_message_id: approvalMessageId,

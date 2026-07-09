@@ -498,7 +498,7 @@ export interface HermesActions {
   updateSeat: (id: string, patch: Partial<AgentSeat>) => void;
   setSeatStatus: (id: string, status: AgentSeat["status"]) => void;
   connectSeatAccount: (id: string, account: string) => void;
-  disconnectSeatAccount: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  disconnectSeatAccount: (id: string) => Promise<{ ok: boolean; error?: string; dryRun?: boolean }>;
   toggleSeatLive: (id: string) => { ok: boolean; reason: string };
   verifySeatDomain: (id: string) => Promise<{ ok: boolean; verified?: boolean; error?: string }>;
   addSuppression: (entry: {
@@ -2439,6 +2439,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         try {
           const persisted = await recordOutreachApproval({ messageId, ...approvalSnapshot });
           if (!persisted.ok) return approvalBlocked(persisted.error);
+          if (persisted.dryRun) {
+            return {
+              ...result,
+              dryRun: true,
+              warnings: [
+                ...result.warnings,
+                persisted.detail ?? "Public demo: approval was simulated and the draft remains pending.",
+              ],
+            };
+          }
           const revokeStaleApproval = async (blocker: string): Promise<ApprovalResult> => {
             const revoked = await revokeOutreachApproval(messageId);
             return revoked.ok
@@ -4383,7 +4393,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const disconnectSeatAccount = useCallback(
-    async (id: string): Promise<{ ok: boolean; error?: string }> => {
+    async (id: string): Promise<{ ok: boolean; error?: string; dryRun?: boolean }> => {
       // Live mode: revoke + delete the server-side OAuth connection so the refresh
       // token is actually killed. Awaited — the seat is only marked disconnected
       // locally once the server confirms the connection is actually gone, so a
@@ -4396,9 +4406,18 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ seatId: id }),
           });
-          const out = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+          const out = (await res.json().catch(() => null)) as {
+            ok?: boolean;
+            error?: string;
+            status?: string;
+            changed?: boolean;
+            detail?: string;
+          } | null;
           if (!out?.ok) {
             return { ok: false, error: out?.error ?? `Disconnect failed (${res.status}).` };
+          }
+          if (out.status === "dry-run" && out.changed === false) {
+            return { ok: true, dryRun: true, error: out.detail ?? "Public demo: mailbox connection was not changed." };
           }
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Network error disconnecting mailbox." };

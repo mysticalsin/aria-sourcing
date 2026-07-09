@@ -247,6 +247,10 @@ export function GlassBoxPanel({ message }: GlassBoxPanelProps) {
       toast({ title: "Approval blocked", description: res.blockers.join(" "), variant: "error" });
       return;
     }
+    if (res.dryRun) {
+      toast({ title: "Public demo only", description: res.warnings.join(" "), variant: "info" });
+      return;
+    }
     toast({
       title: "Approved: queued for send",
       description: res.warnings.length

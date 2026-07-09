@@ -17,6 +17,7 @@ import {
   getGraphMessage,
   type InboundMessage,
 } from "@/lib/email-sync";
+import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 
 /** Maximum messages returned across ALL connections in a single sync. */
 const TOTAL_MESSAGE_CAP = 50;
@@ -80,6 +81,10 @@ export async function POST(req: NextRequest) {
       { ok: false, error: "Workspace not found." },
       { status: 400 },
     );
+  }
+
+  if (publicDemoSideEffectsDisabled()) {
+    return NextResponse.json({ ok: true, status: "dry-run", messages: [], errors: [], detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
   }
 
   // ── 5. Load email connections (service-role — bypasses RLS for secrets) ────

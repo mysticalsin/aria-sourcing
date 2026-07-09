@@ -32,6 +32,7 @@ import {
 } from "@/lib/whatsapp-template-queue";
 import { assessWhatsAppDispatch, type WhatsAppPermission } from "@/lib/whatsapp-policy";
 import { shouldReopenWhatsAppReview } from "@/lib/whatsapp-review-policy";
+import { publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 
 const WHATSAPP_GATE_CACHE_VERSION = "whatsapp-outbound-gate-v1";
 const WHATSAPP_GATE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
@@ -70,6 +71,10 @@ async function cacheWhatsAppGateVerdict(
 
 export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageId?: string): Promise<DispatchStats> {
   const stats: DispatchStats = { processed: 0, sent: 0, blocked: 0, failed: 0 };
+
+  // A public demo may still use a real Supabase database. Never let a queued
+  // row from that shared environment reach a provider, regardless of caller.
+  if (publicDemoSideEffectsDisabled()) return stats;
 
   let dueQuery = supabase
     .from("messages_outbound")

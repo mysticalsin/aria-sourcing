@@ -18,6 +18,7 @@ import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/
 import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
 import { dispatchDue } from "@/lib/dispatch-outbound";
 import { createEmailUnsubscribeLink } from "@/lib/email-unsubscribe";
+import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 
 const OutreachSendSchema = z.object({
   seatId: z.string().uuid().optional(),
@@ -204,6 +205,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "skipped", detail: "Seat is not a WhatsApp Cloud sender." });
     }
 
+    if (publicDemoSideEffectsDisabled()) {
+      return NextResponse.json({ status: "dry-run", detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
+    }
+
     const { data: queued, error: queueErr } = await supabase
       .from("messages_outbound")
       .insert({
@@ -306,6 +311,10 @@ export async function POST(req: NextRequest) {
   }
   if (seat.mode !== "live") {
     return NextResponse.json({ status: "dry-run", detail: "Seat not live, nothing sent." });
+  }
+
+  if (publicDemoSideEffectsDisabled()) {
+    return NextResponse.json({ status: "dry-run", detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
   }
 
   // Domain verification happens before the irreversible claim. A dry-run

@@ -6,6 +6,7 @@ import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
+import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 
 const RevokeSchema = z.object({
   messageId: z.string().min(1).max(120),
@@ -39,6 +40,9 @@ export async function POST(req: NextRequest) {
 
   const validated = await validateBody(req, RevokeSchema);
   if (!validated.ok) return validated.response;
+  if (publicDemoSideEffectsDisabled()) {
+    return NextResponse.json({ ok: true, status: "dry-run", persisted: false, detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
+  }
   const { data, error } = await supabase.rpc("revoke_outreach_approval", {
     p_message_id: validated.data.messageId,
   });
