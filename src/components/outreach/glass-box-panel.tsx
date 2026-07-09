@@ -210,6 +210,8 @@ export function GlassBoxPanel({ message }: GlassBoxPanelProps) {
   const actions = useActions();
   const { toast } = useToast();
   const reducedMotion = usePrefersReducedMotion();
+  const [approving, setApproving] = React.useState(false);
+  const [rejecting, setRejecting] = React.useState(false);
 
   if (!candidate || !campaign) {
     return (
@@ -235,8 +237,6 @@ export function GlassBoxPanel({ message }: GlassBoxPanelProps) {
   const checks = result.checks ?? [];
   const hasBlock = checks.some((c) => c.status === "block");
   const actionable = message.status === "Needs Approval" || message.status === "Draft";
-  const [approving, setApproving] = React.useState(false);
-  const [rejecting, setRejecting] = React.useState(false);
 
   async function handleApprove() {
     if (approving) return;
