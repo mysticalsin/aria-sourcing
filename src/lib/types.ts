@@ -941,7 +941,7 @@ export interface AgentSeat {
   toolIds?: ToolId[];
 }
 
-export const SUPPRESSION_TYPES = ["email", "domain", "linkedin"] as const;
+export const SUPPRESSION_TYPES = ["email", "domain", "phone", "linkedin"] as const;
 export type SuppressionType = (typeof SUPPRESSION_TYPES)[number];
 
 export interface SuppressionEntry {
