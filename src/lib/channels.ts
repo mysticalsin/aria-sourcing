@@ -18,6 +18,10 @@ export interface ChannelSendOutcome {
 
 const TIMEOUT = 15_000;
 
+// Graph API versions expire ~2 years after release (v18.0 died early 2026).
+// v21.0 is the early-2026 stable; override without a deploy if Meta sunsets it.
+const WHATSAPP_API_VERSION = process.env.WHATSAPP_API_VERSION ?? "v21.0";
+
 function normalizePhone(raw: string): string {
   return raw.replace(/[^\d+]/g, "");
 }
@@ -42,7 +46,7 @@ export async function sendWhatsApp(req: ChannelSendRequest): Promise<ChannelSend
   if (!to) return { status: "error", provider: "WhatsApp Cloud", detail: "No phone number on file for this candidate." };
 
   try {
-    const res = await fetch(`https://graph.facebook.com/v18.0/${phoneNumberId}/messages`, {
+    const res = await fetch(`https://graph.facebook.com/${WHATSAPP_API_VERSION}/${phoneNumberId}/messages`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ messaging_product: "whatsapp", to, type: "text", text: { body: req.body } }),

@@ -12,6 +12,7 @@ import { can } from "@/lib/rbac";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { safeLog } from "@/lib/log-redact";
 import { sendWhatsApp, sendSms } from "@/lib/channels";
+import { gateOutbound } from "@/lib/gate";
 import { encryptSecret, decryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
 
 /**
@@ -125,6 +126,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { status: "error", detail: "Message not human-approved (or changed since approval)." },
       { status: 403 },
+    );
+  }
+
+  // Human-likeness gate (all channels): text that reads as machine output —
+  // status narration, AI self-disclosure, leaked tool/JSON markup, unfilled
+  // placeholders — never reaches a candidate, approved or not. Block-only:
+  // the approved text is never mutated here, so the approval hash stays valid.
+  const gate = gateOutbound(body);
+  if (!gate.pass) {
+    return NextResponse.json(
+      { status: "error", detail: `Human-likeness gate blocked: ${gate.reasons.join(", ")}.` },
+      { status: 422 },
     );
   }
 

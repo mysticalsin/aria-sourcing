@@ -1,0 +1,163 @@
+/* ============================================================================
+   GATED AUTOPILOT — answers candidate replies like a person, inside hard
+   guardrails, or hands the message to a human. Never both, never neither.
+
+   Flow (WhatsApp first, email later):
+     inbound webhook → parseWhatsAppWebhook() → thread to candidate/spec →
+     composeReply() with an injected LLM `generate` fn → decideAutopilot():
+       - spec.guardrails.autopilot off        → queue for human (status blocked)
+       - canary_remaining > 0                 → queue for human, decrement canary
+       - reply commits to salary/offer/legal  → queue for human
+       - human-likeness gate fails            → queue for human
+       - otherwise                            → schedule send (human pacing)
+   Dispatch happens in /api/cron/dispatch-outbound, which re-runs the gate and
+   the atomic claim_and_record guardrail before anything touches the wire.
+
+   Pure logic lives here (injectable, deterministic, unit-tested); all DB and
+   HTTP side effects live in the API routes.
+   ========================================================================== */
+
+import { createHmac, timingSafeEqual } from "crypto";
+import { gateOutbound, type GateVerdict } from "./gate";
+import { humanizeText } from "./humanizer";
+
+// ---------------------------------------------------------------------------
+// Meta webhook: signature + payload parsing
+// ---------------------------------------------------------------------------
+
+/** Verify Meta's X-Hub-Signature-256 header (HMAC-SHA256 of the raw body). */
+export function verifyMetaSignature(rawBody: string, header: string | null, appSecret: string): boolean {
+  if (!header || !appSecret) return false;
+  const expected = `sha256=${createHmac("sha256", appSecret).update(rawBody, "utf8").digest("hex")}`;
+  const a = Buffer.from(header);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+export interface InboundWhatsApp {
+  /** Sender phone in E.164 without '+' (as Meta delivers it). */
+  from: string;
+  /** Meta message id — dedupe key (unique per workspace+channel in DB). */
+  providerId: string;
+  text: string;
+  timestamp: number;
+}
+
+/**
+ * Extract text messages from a WhatsApp Cloud API webhook payload. Ignores
+ * statuses (delivered/read receipts) and non-text message types.
+ */
+export function parseWhatsAppWebhook(payload: unknown): InboundWhatsApp[] {
+  const out: InboundWhatsApp[] = [];
+  const entries = (payload as { entry?: unknown[] })?.entry;
+  if (!Array.isArray(entries)) return out;
+  for (const entry of entries) {
+    const changes = (entry as { changes?: unknown[] })?.changes;
+    if (!Array.isArray(changes)) continue;
+    for (const change of changes) {
+      const value = (change as { value?: { messages?: unknown[] } })?.value;
+      const messages = value?.messages;
+      if (!Array.isArray(messages)) continue;
+      for (const raw of messages) {
+        const m = raw as {
+          from?: string;
+          id?: string;
+          timestamp?: string;
+          type?: string;
+          text?: { body?: string };
+        };
+        if (m.type !== "text" || !m.from || !m.id || typeof m.text?.body !== "string") continue;
+        out.push({
+          from: m.from,
+          providerId: m.id,
+          text: m.text.body,
+          timestamp: Number(m.timestamp ?? 0) * 1000,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Reply composition — sounds like the recruiter who owns the seat, never like
+// a system. The LLM call is injected so this stays unit-testable.
+// ---------------------------------------------------------------------------
+
+export interface ComposeContext {
+  /** The candidate's inbound message. */
+  inbound: string;
+  /** The last message we sent them (thread context). */
+  lastOutbound: string;
+  /** Role brief summary (title, seniority, key facts) for factual answers. */
+  roleSummary: string;
+}
+
+const REPLY_SYSTEM =
+  "You are a recruiter texting a candidate you already contacted. Reply to their message " +
+  "as yourself, in the same language they wrote in. Rules: under 80 words; plain texting " +
+  "register, contractions fine; answer only what they asked using the role facts given; " +
+  "if you don't know a fact, say you'll check and come back, never invent; never mention " +
+  "AI, tools, systems, or that anything is automated; no status updates, no headers, no " +
+  "sign-off block, no em-dashes; never promise salary, an offer, or contract terms. " +
+  "Output ONLY the message text.";
+
+export function buildReplyPrompt(ctx: ComposeContext): { system: string; prompt: string } {
+  return {
+    system: REPLY_SYSTEM,
+    prompt: [
+      `Role facts:\n${ctx.roleSummary}`,
+      `Your last message to them:\n${ctx.lastOutbound}`,
+      `Their reply:\n${ctx.inbound}`,
+      "Write your reply text now.",
+    ].join("\n\n"),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Autopilot decision — send inside guardrails, otherwise queue for the human.
+// ---------------------------------------------------------------------------
+
+export interface SpecGuardrails {
+  autopilot?: boolean;
+  canary_remaining?: number;
+  topics_allow?: string[];
+  max_per_day?: number;
+}
+
+/** Content a texting agent must never commit to on its own. */
+const COMMITMENT_PATTERNS: [RegExp, string][] = [
+  [/\b(salary|compensation|package) (is|will be|of)\b/i, "commitment-salary"],
+  [/\b\d{2,3}[ ,.]?\d{3}\s*(€|EUR|USD|\$|CHF|GBP|£)|\b(€|\$|£)\s*\d{2,3}[ ,.]?\d{3}\b/i, "commitment-salary"],
+  [/\b(we|I) (can|will) (offer|guarantee|promise)\b/i, "commitment-offer"],
+  [/\byou (are|'re) hired\b/i, "commitment-offer"],
+  [/\b(offer letter|contract|signing bonus|equity grant)\b/i, "commitment-contract"],
+];
+
+export type AutopilotDecision =
+  | { action: "send"; text: string }
+  | { action: "queue"; text: string; reasons: string[] };
+
+/**
+ * Decide what happens to a composed reply. `queue` means a human (the spec
+ * owner) reviews it in the Replies queue; `send` means it may be scheduled —
+ * the dispatcher still re-gates and runs claim_and_record before the wire.
+ */
+export function decideAutopilot(replyDraft: string, guardrails: SpecGuardrails): AutopilotDecision {
+  // Soft-clean first so the human queue receives reviewable text either way.
+  const cleaned = humanizeText(replyDraft ?? "");
+  const reasons: string[] = [];
+
+  if (!guardrails.autopilot) reasons.push("autopilot-off");
+  if ((guardrails.canary_remaining ?? 0) > 0) reasons.push("canary");
+
+  for (const [re, reason] of COMMITMENT_PATTERNS) {
+    if (re.test(cleaned) && !reasons.includes(reason)) reasons.push(reason);
+  }
+
+  const gate: GateVerdict = gateOutbound(cleaned);
+  if (!gate.pass) reasons.push(...gate.reasons.map((r) => `gate:${r}`));
+
+  if (reasons.length > 0) return { action: "queue", text: gate.pass ? gate.text : cleaned, reasons };
+  return { action: "send", text: (gate as { text: string }).text };
+}

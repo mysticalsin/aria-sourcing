@@ -38,6 +38,12 @@
       "maxDuration": 60
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/dispatch-outbound",
+      "schedule": "* * * * *"
+    }
+  ],
   "buildCommand": "npm run build",
   "installCommand": "npx -y npm@11.12.1 ci",
   "outputDirectory": ".next"
