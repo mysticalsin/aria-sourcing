@@ -7,6 +7,7 @@ import { Badge, Button, EmptyState, Input, Modal } from "@/components/ui";
 import { cn, type Tone } from "@/lib/utils";
 import { useActions, useCampaigns } from "@/lib/store";
 import { campaignToAriaContext, parseCommand, type AriaPlan } from "@/lib/aria-command";
+import { shouldResetAriaChecklist } from "@/lib/aria-command-console-state";
 
 type StepStatus = "idle" | "running" | "done" | "failed";
 type StepResult = { count?: number; detail?: string };
@@ -42,6 +43,7 @@ export function AriaCommandConsole({ open, onOpenChange, initialText = "" }: Ari
   const [hasRun, setHasRun] = React.useState(false);
   const [statuses, setStatuses] = React.useState<StepStatus[]>([]);
   const [results, setResults] = React.useState<StepResult[]>([]);
+  const lastChecklistTextRef = React.useRef<string | null>(null);
 
   // Re-seed the instruction whenever the console (re)opens with a new prefill.
   React.useEffect(() => {
@@ -65,11 +67,12 @@ export function AriaCommandConsole({ open, onOpenChange, initialText = "" }: Ari
   // is a second belt-and-braces check so an in-flight run's rows are never
   // reset out from under it.
   React.useEffect(() => {
-    if (running) return;
+    if (!shouldResetAriaChecklist({ previousText: lastChecklistTextRef.current, text, running })) return;
+    lastChecklistTextRef.current = text;
     setStatuses(plan ? plan.steps.map(() => "idle") : []);
     setResults(plan ? plan.steps.map(() => ({})) : []);
     setHasRun(false);
-  }, [text]);
+  }, [text, plan, running]);
 
   const handleRun = React.useCallback(async () => {
     if (!plan || plan.steps.length === 0 || running) return;

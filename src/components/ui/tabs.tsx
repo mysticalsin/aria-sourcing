@@ -66,7 +66,7 @@ export function Tabs({
             onClick={() => onValueChange(item.value)}
             onKeyDown={(e) => onKeyDown(e, i)}
             className={cn(
-              "inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-all",
+              "inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-[background-color,color,box-shadow] duration-150 ease-motion-out",
               active
                 ? "bg-surface/90 text-ink shadow-soft ring-1 ring-inset ring-violet/10"
                 : "text-muted hover:text-ink hover:bg-violet/[0.05]",
@@ -121,7 +121,7 @@ export function TabPanel({
       aria-labelledby={`${idBase}-${value}`}
       tabIndex={active ? 0 : -1}
       hidden={!active}
-      className={cn(active && "animate-fade-in", "focus:outline-none", className)}
+      className={cn("focus:outline-none", className)}
     >
       {hasBeenActive && children}
     </div>

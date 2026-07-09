@@ -46,9 +46,9 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         disabled={disabled || loading}
         className={cn(
-          "inline-flex items-center font-semibold transition-all duration-150 select-none",
+          "inline-flex items-center font-semibold transition-[transform,background-color,color,opacity] duration-150 ease-motion-out select-none",
           "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric",
-          "disabled:opacity-50 disabled:pointer-events-none active:scale-[0.98]",
+          "disabled:opacity-50 disabled:pointer-events-none active:scale-[0.97]",
           VARIANTS[variant],
           SIZES[size],
           className,

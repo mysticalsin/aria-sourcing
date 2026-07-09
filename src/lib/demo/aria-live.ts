@@ -48,6 +48,8 @@
 import { pickResponderIndex } from "@/components/floor3d/retro/scene/packet-shared";
 import type { HermesActions } from "@/lib/store";
 import type { AgentSeat, Campaign, HermesState } from "@/lib/types";
+import { supabaseEnabled } from "@/lib/supabase/config";
+import { getAriaLiveRunPolicy } from "@/lib/demo/aria-live-policy";
 
 /** Must match store.ts's STORAGE_KEY exactly — read/write only, never edited here. */
 const STORAGE_KEY = "hermes-sourcing:v1";
@@ -277,7 +279,7 @@ async function runSequence(actions: HermesActions, campaign: Campaign, seats: Ag
 
   setChapter("approving", `Approving the draft for ${candidate.name}…`, candidate.name);
   await sleep(500);
-  const approval = actions.approveOutreach(msg.id);
+  const approval = await actions.approveOutreach(msg.id);
   if (restoring) return;
   if (!approval.allowed) {
     fail(`Approval blocked: ${approval.blockers[0] ?? "a guardrail was hit"}.`);
@@ -354,6 +356,8 @@ export function beginAriaLiveRun(opts: {
   activeCampaignId: string | null;
   seats: AgentSeat[];
 }): { ok: true } | { ok: false; reason: string } {
+  const policy = getAriaLiveRunPolicy(supabaseEnabled);
+  if (!policy.ok) return policy;
   if (!opts.state) return { ok: false, reason: "Still loading the workspace…" };
   if (getAriaLiveSnapshot().active) return { ok: false, reason: "Aria Live is already running." };
   const campaign = opts.campaigns.find((c) => c.id === opts.activeCampaignId) ?? opts.campaigns[0];

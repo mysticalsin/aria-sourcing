@@ -74,6 +74,9 @@ const config: Config = {
       fontSize: {
         eyebrow: ["0.6875rem", { lineHeight: "1rem", letterSpacing: "0.14em" }],
       },
+      transitionTimingFunction: {
+        "motion-out": "var(--ease-motion-out)",
+      },
       keyframes: {
         "fade-in": {
           from: { opacity: "0", transform: "translateY(6px)" },
@@ -109,7 +112,7 @@ const config: Config = {
         // instead of centered. The element already settles at opacity:1 /
         // transform:none on its own once the animation stops applying, so
         // this is visually identical to `both` with the bug removed.
-        "fade-in": "fade-in 0.35s ease-out backwards",
+        "fade-in": "fade-in 0.18s var(--ease-motion-out) backwards",
         "scale-in": "scale-in 0.2s ease-out backwards",
         "slide-in-right": "slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1) backwards",
         "spin-slow": "spin-slow 14s linear infinite",

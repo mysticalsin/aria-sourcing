@@ -36,8 +36,8 @@ export function Progress({
       className={cn("h-2 w-full overflow-hidden rounded-full bg-ink/10", trackClassName, className)}
     >
       <div
-        className={cn("h-full rounded-full transition-[width] duration-500", FILL[tone])}
-        style={{ width: `${pct}%` }}
+        className={cn("motion-progress-fill h-full origin-left rounded-full transition-transform duration-[180ms] ease-motion-out", FILL[tone])}
+        style={{ transform: `scaleX(${pct / 100})` }}
       />
     </div>
   );

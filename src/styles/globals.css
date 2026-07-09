@@ -45,6 +45,7 @@
     Roboto, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
   --font-mono: "SFMono-Regular", ui-monospace, "JetBrains Mono", "Fira Code",
     Menlo, Consolas, monospace;
+  --ease-motion-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 * {
@@ -329,15 +330,62 @@ body::before {
 }
 
 /* Respect reduced motion globally */
+@keyframes reduced-fade-in {
+  from { opacity: 0.01; }
+  to { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+
+  .animate-fade-in,
+  .animate-scale-in,
+  .animate-slide-in-right {
+    animation-name: reduced-fade-in !important;
+    animation-duration: 160ms !important;
+    animation-timing-function: ease-out !important;
+    transform: none !important;
+  }
+
+  .animate-spin,
+  .animate-pulse,
+  .animate-bounce,
+  .spin-slow,
+  .status-live,
+  .bot-glow,
+  .dot-typing span {
+    animation: none !important;
+  }
+
+  .motion-progress-fill {
+    transition-duration: 0ms !important;
+  }
+}
+
+.motion-card {
+  transition: transform 200ms var(--ease-motion-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .motion-card:hover {
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-card,
+  .motion-card:hover {
+    transform: none;
+    transition: none;
+  }
+}
+
+.aria-live-overlay::backdrop {
+  background: transparent;
 }
 
 /* ============================================================================

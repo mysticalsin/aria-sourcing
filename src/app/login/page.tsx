@@ -4,14 +4,13 @@ import * as React from "react";
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence, useInView } from "framer-motion";
-import { Menu, X, AlertTriangle, Lock } from "lucide-react";
+import { AlertTriangle, Lock } from "lucide-react";
 import { getBrowserSupabase } from "@/lib/supabase/client";
 import { supabaseEnabled, ALLOWED_EMAIL_DOMAIN, demoLoginEnabled } from "@/lib/supabase/config";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 
 const VIDEO_URL =
   "https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260619_191346_9d19d66e-86a4-47f7-8dc6-712c1788c3b2.mp4";
-
-const NAV_LINKS = ["Platform", "Fleet", "Security", "Contact"];
 
 /** Only allow same-origin path redirects (blocks open-redirect to external sites).
  *  Rejects protocol-relative `//host` and the backslash bypass `/\host` (browsers
@@ -23,6 +22,8 @@ const safeRedirect = (r: string) =>
 function StaggeredFade({ text }: { text: string }) {
   const ref = React.useRef<HTMLSpanElement>(null);
   const inView = useInView(ref, { once: true });
+  const reducedMotion = usePrefersReducedMotion();
+  if (reducedMotion) return <span ref={ref}>{text}</span>;
   return (
     <span ref={ref} aria-label={text}>
       {text.split("").map((ch, i) => (
@@ -47,7 +48,8 @@ function LoginInner() {
   const redirect = params.get("redirect") || "/";
   const error = params.get("error");
   const [loading, setLoading] = React.useState(false);
-  const [menuOpen, setMenuOpen] = React.useState(false);
+  const reducedMotion = usePrefersReducedMotion();
+  const [videoPausedByUser, setVideoPausedByUser] = React.useState(false);
   const [showEmail, setShowEmail] = React.useState(true);
   const [email, setEmail] = React.useState("admin");
   const [password, setPassword] = React.useState("admin");
@@ -62,20 +64,14 @@ function LoginInner() {
   React.useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const apply = () => {
-      if (mq.matches) {
-        v.loop = false;
-        v.pause();
-      } else {
-        v.loop = true;
-        void v.play().catch(() => {});
-      }
-    };
-    apply();
-    mq.addEventListener("change", apply);
-    return () => mq.removeEventListener("change", apply);
-  }, []);
+    if (reducedMotion || videoPausedByUser) {
+      v.loop = false;
+      v.pause();
+    } else {
+      v.loop = true;
+      void v.play().catch(() => {});
+    }
+  }, [reducedMotion, videoPausedByUser]);
 
   const signInWithMicrosoft = async () => {
     const supabase = getBrowserSupabase();
@@ -179,63 +175,24 @@ function LoginInner() {
       {/* Legibility overlay */}
       <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/70" aria-hidden />
 
-      {/* Navigation */}
-      <nav className="relative z-20 flex items-center justify-between px-5 py-6 sm:px-8 md:justify-center">
+      <nav className="relative z-20 flex items-center justify-between gap-4 px-5 py-6 sm:px-8">
         <span className="flex items-center md:absolute md:left-8">
           {/* Full transparent logo (white ARIA reads on the dark hero) — shown whole. */}
           <img src="/aria-logo.png" alt="Aria: Agentic Sourcing Platform by Mantu" className="h-16 w-auto object-contain" />
         </span>
-        <div className="hidden items-center gap-10 md:flex">
-          {NAV_LINKS.map((l) => (
-            <a
-              key={l}
-              href="#"
-              className="text-xs uppercase tracking-[0.2em] text-white/80 transition-colors duration-300 hover:text-white"
-            >
-              {l}
-            </a>
-          ))}
-        </div>
         <button
           type="button"
-          className="text-white md:hidden"
-          onClick={() => setMenuOpen((v) => !v)}
-          aria-label={menuOpen ? "Close menu" : "Open menu"}
-          aria-expanded={menuOpen}
+          className="rounded-full border border-white/20 px-3.5 py-2 text-[0.65rem] uppercase tracking-[0.16em] text-white/80 transition-[border-color,color,background-color] duration-150 hover:border-white/40 hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-70"
+          onClick={() => setVideoPausedByUser((paused) => !paused)}
+          aria-pressed={reducedMotion || videoPausedByUser}
+          disabled={reducedMotion}
         >
-          {menuOpen ? <X size={22} /> : <Menu size={22} />}
+          {reducedMotion ? "Background motion paused by system" : videoPausedByUser ? "Play background motion" : "Pause background motion"}
         </button>
         <span className="hidden text-xs uppercase tracking-[0.2em] text-white/60 md:absolute md:right-8 md:block">
           by Mantu
         </span>
       </nav>
-
-      {/* Mobile menu */}
-      <AnimatePresence>
-        {menuOpen && (
-          <motion.div
-            className="mobile-menu-glass fixed left-4 right-4 top-16 z-50 flex flex-col items-center gap-5 rounded-2xl py-8 md:hidden"
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.3, ease: "easeOut" }}
-          >
-            {NAV_LINKS.map((l, i) => (
-              <motion.a
-                key={l}
-                href="#"
-                onClick={() => setMenuOpen(false)}
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.05 + i * 0.06 }}
-                className="text-sm font-light uppercase tracking-[0.25em] text-white/90 transition-colors hover:text-white"
-              >
-                {l}
-              </motion.a>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Hero content */}
       <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-5 pb-16 pt-12 text-center sm:px-8 sm:pt-16 md:pt-24">
@@ -275,6 +232,8 @@ function LoginInner() {
             <button
               type="button"
               onClick={() => setShowEmail((v) => !v)}
+              aria-expanded={showEmail}
+              aria-controls="login-email-form"
               className="text-xs uppercase tracking-[0.18em] text-white/50 transition-colors hover:text-white/80"
             >
               {showEmail ? "Hide email sign-in" : "Sign in with email"}
@@ -282,6 +241,7 @@ function LoginInner() {
             <AnimatePresence>
               {showEmail && (
                 <motion.form
+                  id="login-email-form"
                   onSubmit={signInWithEmail}
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
