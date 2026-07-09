@@ -117,6 +117,9 @@ required for launch but must be done before the relevant feature is used.
       restricts sign-in to your org.
 - [ ] Confirm `HERMES_API_KEY` is a freshly generated random token
       (`openssl rand -hex 32`), not the placeholder value.
+- [ ] If Hermes is enabled, set `HERMES_RUNTIME_WORKSPACE_ID` to the one
+      workspace assigned to that dedicated runtime and prove a second workspace
+      receives 403 without any upstream call.
 - [ ] Confirm `SUPABASE_SERVICE_ROLE_KEY` is set as a **Secret** (encrypted,
       not plain text) in Vercel and is absent from all browser-exposed env vars.
 - [ ] Set `DATA_ENCRYPTION_KEY`, `CRON_SECRET`, and the canonical HTTPS
