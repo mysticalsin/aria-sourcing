@@ -5,7 +5,7 @@ import { Card, CardContent, Badge, useToast } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { useActions, useRole } from "@/lib/store";
 import { ROLES, type Role } from "@/lib/types";
-import { ROLE_DESCRIPTION, ROLE_LABEL, can } from "@/lib/rbac";
+import { ROLE_DESCRIPTION, ROLE_LABEL } from "@/lib/rbac";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { ShieldCheck, UserCog, Eye, Check } from "lucide-react";
 
@@ -19,18 +19,30 @@ export function RolesPanel() {
   const role = useRole();
   const actions = useActions();
   const { toast } = useToast();
-  const isAdmin = can(role, "manage_roles");
-  // In demo (no auth) the switcher is a free preview; in live only admins set roles.
-  const canSwitch = !supabaseEnabled || isAdmin;
+
+  if (supabaseEnabled) {
+    return (
+      <Card>
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between rounded-2xl border border-line bg-surface p-4">
+            <span className="flex items-center gap-2 font-bold text-ink">
+              {ICON[role]}
+              {ROLE_LABEL[role]}
+            </span>
+            <Badge tone="electric" size="sm"><Check className="h-3 w-3" /> current</Badge>
+          </div>
+          <p className="text-xs text-muted">
+            This access level is assigned to your signed-in profile. An administrator changes teammate roles in the identity directory, not in shared workspace settings.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   function choose(r: Role) {
     if (r === role) return;
-    if (!canSwitch) {
-      toast({ title: "Admins only", description: "Only an admin can change access levels.", variant: "warning" });
-      return;
-    }
     actions.setCurrentRole(r);
-    toast({ title: `Now acting as ${ROLE_LABEL[r]}`, description: ROLE_DESCRIPTION[r], variant: "info" });
+    toast({ title: `Previewing ${ROLE_LABEL[r]}`, description: ROLE_DESCRIPTION[r], variant: "info" });
   }
 
   return (
@@ -48,7 +60,6 @@ export function RolesPanel() {
                 className={cn(
                   "rounded-2xl border p-4 text-left transition",
                   active ? "border-electric bg-electric-soft" : "border-line bg-surface hover:border-ink/25",
-                  !canSwitch && !active && "opacity-70",
                 )}
               >
                 <div className="mb-1.5 flex items-center justify-between">
@@ -68,9 +79,7 @@ export function RolesPanel() {
           })}
         </div>
         <p className="text-xs text-muted">
-          In live (Supabase) mode, an admin assigns teammate roles on their profile; this control sets
-          the active operator level. Members operate the pipeline; viewers are read-only; only admins
-          manage settings, API keys, roles, and the agent fleet.
+          Demo role preview only. It lets you inspect the interface as an admin, member, or viewer and does not change any live user account.
         </p>
       </CardContent>
     </Card>
