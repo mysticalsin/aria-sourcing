@@ -22,7 +22,8 @@ type ReviewAction = { action: "approve" } | { action: "reject" };
 
 type ReviewActionResponse = {
   ok: boolean;
-  status?: "queued" | "rejected";
+  status?: "queued" | "rejected" | "dry-run";
+  detail?: string;
   error?: string;
 };
 
@@ -77,6 +78,14 @@ export function WhatsAppReviewQueue() {
       const result = (await response.json().catch(() => ({ ok: false }))) as ReviewActionResponse;
       if (!response.ok || !result.ok) {
         throw new Error(result.error ?? "Could not record the WhatsApp review decision.");
+      }
+      if (result.status === "dry-run") {
+        toast({
+          title: "Public demo only",
+          description: result.detail ?? "The WhatsApp review decision was not persisted.",
+          variant: "info",
+        });
+        return;
       }
       setDrafts((current) => current.filter((draft) => draft.id !== messageId));
       toast({

@@ -141,6 +141,10 @@ export function OutreachMessageCard({
       });
       return;
     }
+    if (res.dryRun) {
+      toast({ title: "Public demo only", description: res.warnings.join(" "), variant: "info" });
+      return;
+    }
     toast({
       title: "Approved: queued for send",
       description: res.warnings.length

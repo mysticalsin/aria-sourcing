@@ -8,6 +8,7 @@ import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { gateOutbound } from "@/lib/gate";
 import { isReviewableWhatsAppDraft } from "@/lib/whatsapp-review-policy";
+import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 
 export const dynamic = "force-dynamic";
 
@@ -135,6 +136,10 @@ export async function POST(req: NextRequest) {
         { status: 422 },
       );
     }
+  }
+
+  if (publicDemoSideEffectsDisabled()) {
+    return NextResponse.json({ ok: true, status: "dry-run", persisted: false, detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
   }
 
   const { data, error } = await reviewer.supabase.rpc("review_whatsapp_outbound", {

@@ -7,6 +7,7 @@ import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
+import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 
 /**
  * Record a human approval for a SPECIFIC outbound message.
@@ -62,6 +63,10 @@ export async function POST(req: NextRequest) {
   const bodyHash = approvalHash(subject, body);
   const scopeHash = approvalScopeHash({ candidateId, channel, recipient });
   if (!scopeHash) return NextResponse.json({ ok: false, error: "Invalid approval recipient." }, { status: 400 });
+
+  if (publicDemoSideEffectsDisabled()) {
+    return NextResponse.json({ ok: true, status: "dry-run", persisted: false, detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
+  }
 
   const { data: recorded, error } = await supabase.rpc("record_outreach_approval", {
     p_message_id: messageId,

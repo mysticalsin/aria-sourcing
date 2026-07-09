@@ -10,7 +10,7 @@ export interface OutreachApprovalRequest {
 }
 
 export type OutreachApprovalPersistence =
-  | { ok: true }
+  | { ok: true; dryRun: boolean; detail?: string }
   | { ok: false; error: string };
 
 type ApprovalFetch = typeof fetch;
@@ -32,11 +32,17 @@ export async function recordOutreachApproval(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(request),
     });
-    const payload = (await response.json().catch(() => null)) as { ok?: unknown } | null;
+    const payload = (await response.json().catch(() => null)) as {
+      ok?: unknown;
+      status?: unknown;
+      persisted?: unknown;
+      detail?: unknown;
+    } | null;
     if (!response.ok || payload?.ok !== true) {
       return { ok: false, error: APPROVAL_NOT_RECORDED };
     }
-    return { ok: true };
+    const dryRun = payload.status === "dry-run" && payload.persisted === false;
+    return { ok: true, dryRun, detail: dryRun && typeof payload.detail === "string" ? payload.detail : undefined };
   } catch {
     return { ok: false, error: APPROVAL_NOT_RECORDED };
   }
@@ -57,11 +63,17 @@ export async function revokeOutreachApproval(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messageId }),
     });
-    const payload = (await response.json().catch(() => null)) as { ok?: unknown } | null;
+    const payload = (await response.json().catch(() => null)) as {
+      ok?: unknown;
+      status?: unknown;
+      persisted?: unknown;
+      detail?: unknown;
+    } | null;
     if (!response.ok || payload?.ok !== true) {
       return { ok: false, error: "Approval could not be revoked. The draft remains unchanged." };
     }
-    return { ok: true };
+    const dryRun = payload.status === "dry-run" && payload.persisted === false;
+    return { ok: true, dryRun, detail: dryRun && typeof payload.detail === "string" ? payload.detail : undefined };
   } catch {
     return { ok: false, error: "Approval could not be revoked. The draft remains unchanged." };
   }

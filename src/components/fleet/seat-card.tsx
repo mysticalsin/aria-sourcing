@@ -169,6 +169,10 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
       toast({ title: "Mailbox disconnect failed", description: res.error, variant: "error" });
       return;
     }
+    if (res.dryRun) {
+      toast({ title: "Public demo only", description: res.error, variant: "info" });
+      return;
+    }
     toast({ title: "Mailbox disconnected", variant: "info" });
   }
 

@@ -11,6 +11,7 @@ import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { decryptSecret } from "@/lib/crypto-secrets";
+import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 
 const DisconnectSchema = z.object({
   seatId: z.string().uuid(),
@@ -61,6 +62,25 @@ export async function POST(req: NextRequest) {
   const { data: wid } = await supabase.rpc("current_workspace_id");
   if (!wid) {
     return NextResponse.json({ ok: false, error: "Workspace not found." }, { status: 400 });
+  }
+
+  // Preserve ownership semantics before the public-demo exit without reading
+  // any mailbox credential. RLS makes a foreign seat indistinguishable from an
+  // absent one, matching the normal idempotent disconnect response.
+  const { data: ownedSeat, error: ownedSeatErr } = await supabase
+    .from("agent_seats")
+    .select("id")
+    .eq("id", seatId)
+    .maybeSingle();
+  if (ownedSeatErr) {
+    return NextResponse.json({ ok: false, error: "Failed to verify mailbox ownership." }, { status: 500 });
+  }
+  if (!ownedSeat) {
+    return NextResponse.json({ ok: true, revoked: false });
+  }
+
+  if (publicDemoSideEffectsDisabled()) {
+    return NextResponse.json({ ok: true, status: "dry-run", revoked: false, changed: false, detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
   }
 
   // ── 8. Load the email connection (service-role bypasses RLS for secrets) ──
