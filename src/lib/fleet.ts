@@ -8,6 +8,7 @@ import type {
   SendWindow,
   SuppressionEntry,
 } from "./types";
+import { normalizeSuppressionValue } from "./manual-suppression";
 import type { Tone } from "./utils";
 import { clamp } from "./utils";
 
@@ -122,17 +123,19 @@ export function seatCanSendLive(seat: AgentSeat): { ok: boolean; reason: string 
 
 export function suppressionMatch(
   suppression: SuppressionEntry[],
-  candidate: Pick<Candidate, "email" | "linkedinUrl">,
+  candidate: Pick<Candidate, "email" | "linkedinUrl" | "phone">,
   now = Date.now(),
 ): SuppressionEntry | null {
   const email = candidate.email.toLowerCase();
   const domain = email.split("@")[1] ?? "";
   const li = candidate.linkedinUrl.toLowerCase();
+  const phone = candidate.phone ? normalizeSuppressionValue("phone", candidate.phone) : null;
   for (const s of suppression) {
     if (s.expiresAt && new Date(s.expiresAt).getTime() < now) continue;
     const v = s.value.toLowerCase();
     if (s.type === "email" && v === email) return s;
     if (s.type === "domain" && domain === v) return s;
+    if (s.type === "phone" && phone && phone === normalizeSuppressionValue("phone", s.value)) return s;
     if (s.type === "linkedin" && li && li.includes(v)) return s;
   }
   return null;

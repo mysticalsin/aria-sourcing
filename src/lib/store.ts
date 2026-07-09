@@ -130,6 +130,11 @@ import { humanizeText } from "./humanizer";
 import { parseCommand, campaignToAriaContext, type AriaPlan } from "./aria-command";
 import { recordOutreachApproval, revokeOutreachApproval } from "./outreach-approval";
 import { can } from "./rbac";
+import {
+  normalizeSuppressionValue,
+  persistManualSuppression,
+  type EnforcedSuppressionType,
+} from "./manual-suppression";
 
 const STORAGE_KEY = "hermes-sourcing:v1";
 const ARIA_STRONG_RATINGS: readonly StarRating[] = ["TopGun", "A"];
@@ -508,8 +513,8 @@ export interface HermesActions {
     value: string;
     reason: string;
     expiresAt?: string | null;
-  }) => void;
-  removeSuppression: (id: string) => void;
+  }) => Promise<{ ok: boolean; entry?: SuppressionEntry; error?: string }>;
+  removeSuppression: (id: string) => Promise<{ ok: boolean; error?: string }>;
   allocateOutreach: (opts?: { campaignId?: string; pool?: "ready" | "interested" }) => AllocationResult;
   runFleetSourcing: (opts?: { campaignId?: string; perAgent?: number }) => {
     sourced: number;
@@ -4546,36 +4551,67 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   /* ---- Fleet: suppression ---------------------------------------------- */
 
   const addSuppression = useCallback(
-    (entry: { type: SuppressionEntry["type"]; value: string; reason: string; expiresAt?: string | null }) =>
-      commit((s) => {
-        const e: SuppressionEntry = {
-          id: genId("supp"),
-          type: entry.type,
-          value: entry.value.trim().toLowerCase(),
-          reason: entry.reason,
-          source: "Operator",
-          createdAt: new Date().toISOString(),
-          expiresAt: entry.expiresAt ?? null,
-        };
-        return withActivity(
-          { ...s, suppression: [e, ...s.suppression] },
-          makeActivity({
-            type: "compliance",
-            title: "Suppression added",
-            notes: `${e.type}: ${e.value} (${e.reason}).`,
-            outcome: "Suppressed",
-            campaignId: null,
-            linkedEntityType: null,
-            linkedEntityId: null,
-          }),
-          null,
+    async (entry: { type: SuppressionEntry["type"]; value: string; reason: string; expiresAt?: string | null }) => {
+      if (supabaseEnabled && entry.type === "linkedin") {
+        return { ok: false, error: "LinkedIn is assisted-manual and has no server-enforced suppression channel." };
+      }
+      const normalized = entry.type === "linkedin"
+        ? entry.value.trim().toLowerCase()
+        : normalizeSuppressionValue(entry.type as EnforcedSuppressionType, entry.value);
+      if (!normalized) return { ok: false, error: "Enter a valid suppression value." };
+      if (supabaseEnabled) {
+        const persisted = await persistManualSuppression(
+          { ...entry, type: entry.type as EnforcedSuppressionType, value: normalized },
+          "POST",
         );
-      }),
+        if (!persisted.ok) return persisted;
+      }
+      const e: SuppressionEntry = {
+        id: genId("supp"),
+        type: entry.type,
+        value: normalized,
+        reason: entry.reason,
+        source: "Operator",
+        createdAt: new Date().toISOString(),
+        expiresAt: entry.expiresAt ?? null,
+      };
+      commit((s) => withActivity(
+        { ...s, suppression: [e, ...s.suppression] },
+        makeActivity({
+          type: "compliance",
+          title: "Suppression added",
+          notes: `${e.type}: ${e.value} (${e.reason}).`,
+          outcome: "Suppressed",
+          campaignId: null,
+          linkedEntityType: null,
+          linkedEntityId: null,
+        }),
+        null,
+      ));
+      return { ok: true, entry: e };
+    },
     [commit],
   );
 
   const removeSuppression = useCallback(
-    (id: string) => commit((s) => ({ ...s, suppression: s.suppression.filter((x) => x.id !== id) })),
+    async (id: string) => {
+      const entry = stateRef.current?.suppression.find((item) => item.id === id);
+      if (!entry) return { ok: false, error: "Suppression not found." };
+      if (supabaseEnabled && entry.type !== "linkedin") {
+        const persisted = await persistManualSuppression(
+          {
+            type: entry.type as EnforcedSuppressionType,
+            value: entry.value,
+            reason: entry.reason,
+            expiresAt: entry.expiresAt,
+          },
+          "DELETE",
+        );
+        if (!persisted.ok) return persisted;
+      }
+      commit((s) => ({ ...s, suppression: s.suppression.filter((item) => item.id !== id) }));
+      return { ok: true };
+    },
     [commit],
   );
 

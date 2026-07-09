@@ -7,7 +7,7 @@ import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit"
 import { safeLog } from "@/lib/log-redact";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
-import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
+import { normalizeSuppressionValue, suppressionDeleteConfirmed } from "@/lib/manual-suppression";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +26,7 @@ const SuppressSchema = z.object({
   type: z.enum(["email", "domain", "phone"]).default("email"),
   value: z.string().min(3).max(255),
   reason: z.string().max(200).default(""),
+  expiresAt: z.string().datetime().nullable().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -37,9 +38,9 @@ export async function POST(req: NextRequest) {
 
   const validated = await validateBody(req, SuppressSchema, { maxBytes: 2_000 });
   if (!validated.ok) return validated.response;
-  const { type, reason } = validated.data;
-  const rawValue = validated.data.value.trim();
-  const value = type === "phone" ? normalizeWhatsAppAddress(rawValue) : rawValue.toLowerCase();
+  const { reason, expiresAt } = validated.data;
+  const type = validated.data.type ?? "email";
+  const value = normalizeSuppressionValue(type, validated.data.value);
   if (!value) return NextResponse.json({ ok: false, error: "Invalid suppression value." }, { status: 400 });
 
   // Demo mode: no enforcement backend exists to sync into — the local flag is
@@ -77,7 +78,14 @@ export async function POST(req: NextRequest) {
   const { error } = await serviceSupabase
     .from("suppression_list")
     .upsert(
-      { workspace_id: workspaceId, type, value, reason: reason || "Operator action", source: "Operator" },
+      {
+        workspace_id: workspaceId,
+        type,
+        value,
+        reason: reason || "Operator action",
+        source: "Operator",
+        expires_at: expiresAt ?? null,
+      },
       { onConflict: "workspace_id,type,value" },
     );
 
@@ -86,7 +94,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Could not update the enforcement list." }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, synced: true });
+  return NextResponse.json({ ok: true, synced: true, value });
 }
 
 /**
@@ -104,9 +112,8 @@ export async function DELETE(req: NextRequest) {
 
   const validated = await validateBody(req, SuppressSchema, { maxBytes: 2_000 });
   if (!validated.ok) return validated.response;
-  const { type } = validated.data;
-  const rawValue = validated.data.value.trim();
-  const value = type === "phone" ? normalizeWhatsAppAddress(rawValue) : rawValue.toLowerCase();
+  const type = validated.data.type ?? "email";
+  const value = normalizeSuppressionValue(type, validated.data.value);
   if (!value) return NextResponse.json({ ok: false, error: "Invalid suppression value." }, { status: 400 });
 
   if (!supabaseEnabled) {
@@ -139,15 +146,20 @@ export async function DELETE(req: NextRequest) {
   if (!serviceSupabase) {
     return NextResponse.json({ ok: false, error: "Enforcement storage is unavailable." }, { status: 503 });
   }
-  const { error } = await serviceSupabase
+  const { data: deleted, error } = await serviceSupabase
     .from("suppression_list")
     .delete()
-    .match({ workspace_id: workspaceId, type, value });
+    .match({ workspace_id: workspaceId, type, value })
+    .select("id")
+    .maybeSingle();
 
   if (error) {
     safeLog("suppression_list delete error", { message: error.message, code: error.code });
     return NextResponse.json({ ok: false, error: "Could not update the enforcement list." }, { status: 500 });
   }
+  if (!suppressionDeleteConfirmed(deleted)) {
+    return NextResponse.json({ ok: false, error: "No matching enforcement record was removed." }, { status: 409 });
+  }
 
-  return NextResponse.json({ ok: true, synced: true });
+  return NextResponse.json({ ok: true, synced: true, value });
 }
