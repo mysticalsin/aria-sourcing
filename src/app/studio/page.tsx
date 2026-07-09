@@ -33,7 +33,7 @@ interface SpecRow {
 const ALL_CHANNELS = ["Email", "WhatsApp", "LinkedIn", "SMS"] as const;
 
 export default function StudioPage() {
-  const toast = useToast();
+  const { toast } = useToast();
   const [loading, setLoading] = React.useState(true);
   const [demo, setDemo] = React.useState(false);
   const [specs, setSpecs] = React.useState<SpecRow[]>([]);
@@ -52,7 +52,7 @@ export default function StudioPage() {
       setSpecs(json.specs ?? []);
       setFlowiseUrl(json.flowiseUrl ?? "");
     } catch {
-      toast.error("Could not load agents.");
+      toast({ title: "Could not load agents.", variant: "error" });
     } finally {
       setLoading(false);
     }
@@ -82,13 +82,13 @@ export default function StudioPage() {
       });
       const json = (await res.json()) as { ok: boolean; reason?: string };
       if (!json.ok) throw new Error(json.reason ?? "Create failed");
-      toast.success("Agent created. Autopilot is off until you enable it.");
+      toast({ title: "Agent created. Autopilot is off until you enable it.", variant: "success" });
       setName("");
       setRoleTitle("");
       setSkills("");
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Create failed.");
+      toast({ title: err instanceof Error ? err.message : "Create failed.", variant: "error" });
     } finally {
       setSaving(false);
     }
@@ -111,10 +111,13 @@ export default function StudioPage() {
     });
     const json = (await res.json()) as { ok: boolean };
     if (json.ok) {
-      toast.success(next ? "Autopilot on — first 5 replies still go to your queue (canary)." : "Autopilot off.");
+      toast({
+        title: next ? "Autopilot on - first 5 replies still go to your queue (canary)." : "Autopilot off.",
+        variant: "success",
+      });
       await load();
     } else {
-      toast.error("Update failed.");
+      toast({ title: "Update failed.", variant: "error" });
     }
   }
 
@@ -238,7 +241,10 @@ export default function StudioPage() {
                       <label className="flex items-center gap-2 text-xs text-muted">
                         <ShieldCheck className="h-3.5 w-3.5" />
                         Gated autopilot
-                        <Switch checked={Boolean(spec.guardrails.autopilot)} onChange={() => void toggleAutopilot(spec)} />
+                        <Switch
+                          checked={Boolean(spec.guardrails.autopilot)}
+                          onCheckedChange={() => void toggleAutopilot(spec)}
+                        />
                       </label>
                       {flowiseUrl && (
                         <Button
