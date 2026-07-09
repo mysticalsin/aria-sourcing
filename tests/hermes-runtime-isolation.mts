@@ -1,0 +1,185 @@
+import { mock } from "node:test";
+import { NextRequest } from "next/server";
+import {
+  evaluateHermesProxyOperation,
+  evaluateHermesWorkspaceBinding,
+} from "../src/lib/api/hermes-runtime-isolation";
+
+let pass = 0;
+let fail = 0;
+function ok(name: string, condition: boolean) {
+  if (condition) pass++;
+  else {
+    fail++;
+    console.log("FAIL:", name);
+  }
+}
+
+const workspaceA = "11111111-1111-4111-8111-111111111111";
+const workspaceB = "22222222-2222-4222-8222-222222222222";
+
+ok(
+  "production runtime fails closed without a workspace binding",
+  evaluateHermesWorkspaceBinding({ production: true, supabaseEnabled: true, workspaceId: workspaceA, boundWorkspaceId: undefined }).status === 503,
+);
+ok(
+  "production runtime refuses a topology without workspace identity",
+  evaluateHermesWorkspaceBinding({ production: true, supabaseEnabled: false, workspaceId: null, boundWorkspaceId: workspaceA }).status === 503,
+);
+ok(
+  "production runtime denies a different workspace",
+  evaluateHermesWorkspaceBinding({ production: true, supabaseEnabled: true, workspaceId: workspaceB, boundWorkspaceId: workspaceA }).status === 403,
+);
+ok(
+  "production runtime permits only the bound workspace",
+  evaluateHermesWorkspaceBinding({ production: true, supabaseEnabled: true, workspaceId: workspaceA, boundWorkspaceId: workspaceA }).ok,
+);
+ok(
+  "production generic proxy denies mutations",
+  evaluateHermesProxyOperation({ production: true, method: "PATCH", upstreamPath: "api/config", canManageSettings: true }).status === 405,
+);
+ok(
+  "production generic proxy denies untyped chat POST",
+  evaluateHermesProxyOperation({ production: true, method: "POST", upstreamPath: "v1/chat/completions", canManageSettings: true }).status === 405,
+);
+ok(
+  "viewer cannot read runtime memory",
+  evaluateHermesProxyOperation({ production: true, method: "GET", upstreamPath: "api/memory", canManageSettings: false }).status === 403,
+);
+ok(
+  "viewer can read bounded health",
+  evaluateHermesProxyOperation({ production: true, method: "GET", upstreamPath: "api/health", canManageSettings: false }).ok,
+);
+
+process.env.NODE_ENV = "production";
+process.env.HERMES_API_URL = "http://127.0.0.1:8642";
+process.env.HERMES_API_KEY = "test-global-runtime-key";
+process.env.OPENAI_API_KEY = "test-cloud-key";
+
+let workspaceId = workspaceA;
+let role = "viewer";
+let vaultSecret = "";
+let upstreamCalls = 0;
+let lastAuthorization = "";
+
+const supabase = {
+  auth: { getUser: async () => ({ data: { user: { id: "user-1" } }, error: null }) },
+  rpc: async (name: string) => {
+    if (name === "current_workspace_id") return { data: workspaceId, error: null };
+    if (name === "current_profile_role") return { data: role, error: null };
+    return { data: null, error: null };
+  },
+};
+
+const service = {
+  from: () => {
+    const query: any = {
+      select: () => query,
+      eq: () => query,
+      single: async () => ({ data: null, error: { message: "not found" } }),
+    };
+    return query;
+  },
+};
+
+const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
+mock.module(moduleUrl("src/lib/supabase/config.ts"), {
+  namedExports: {
+    DEMO_COOKIE_NAME: "aria_demo",
+    demoLoginEnabled: false,
+    prodFailClosed: () => null,
+    supabaseEnabled: true,
+  },
+});
+mock.module(moduleUrl("src/lib/supabase/server.ts"), {
+  namedExports: {
+    getServerSupabase: async () => supabase,
+    getServiceSupabase: () => service,
+  },
+});
+mock.module(moduleUrl("src/lib/ai/vault-secret.ts"), {
+  namedExports: {
+    resolveVaultSecret: async (keyId?: string) => keyId ? vaultSecret : "",
+  },
+});
+
+const originalFetch = globalThis.fetch;
+globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+  upstreamCalls++;
+  lastAuthorization = String((init?.headers as Record<string, string> | undefined)?.Authorization ?? "");
+  return new Response(JSON.stringify({ choices: [{ message: { content: "bounded answer" } }], ok: true }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}) as typeof fetch;
+
+try {
+  const proxyModule = await import("../src/app/api/hermes/proxy/route");
+  const proxyGet = ((proxyModule as any).GET ?? (proxyModule as any).default?.GET) as (request: NextRequest) => Promise<Response>;
+  const proxyPost = ((proxyModule as any).POST ?? (proxyModule as any).default?.POST) as (request: NextRequest) => Promise<Response>;
+
+  delete process.env.HERMES_RUNTIME_WORKSPACE_ID;
+  upstreamCalls = 0;
+  const unbound = await proxyGet(new NextRequest("http://localhost/api/hermes/proxy?upstreamPath=api/status"));
+  ok("unbound production proxy returns 503 before upstream", unbound.status === 503 && upstreamCalls === 0);
+
+  process.env.HERMES_RUNTIME_WORKSPACE_ID = workspaceA;
+  workspaceId = workspaceB;
+  const crossWorkspace = await proxyGet(new NextRequest("http://localhost/api/hermes/proxy?upstreamPath=api/status"));
+  const crossWorkspaceText = await crossWorkspace.text();
+  ok("foreign workspace returns 403 before upstream", crossWorkspace.status === 403 && upstreamCalls === 0);
+  ok("foreign-workspace response does not disclose the binding", !crossWorkspaceText.includes(workspaceA));
+
+  workspaceId = workspaceA;
+  role = "viewer";
+  const health = await proxyGet(new NextRequest("http://localhost/api/hermes/proxy?upstreamPath=api/health"));
+  ok("bound workspace viewer can read health", health.status === 200 && upstreamCalls === 1);
+
+  const memory = await proxyGet(new NextRequest("http://localhost/api/hermes/proxy?upstreamPath=api/memory"));
+  ok("viewer cannot read global runtime memory", memory.status === 403 && upstreamCalls === 1);
+
+  role = "admin";
+  const adminMemory = await proxyGet(new NextRequest("http://localhost/api/hermes/proxy?upstreamPath=api/memory"));
+  ok("bound workspace admin can read runtime memory", adminMemory.status === 200 && upstreamCalls === 2);
+
+  const mutation = await proxyPost(new NextRequest("http://localhost/api/hermes/proxy?upstreamPath=v1/chat/completions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ messages: [] }),
+  }));
+  ok("generic production chat proxy is closed", mutation.status === 405 && upstreamCalls === 2);
+
+  const invalidKeyId = "33333333-3333-4333-8333-333333333333";
+  const invalidKey = await proxyGet(new NextRequest(`http://localhost/api/hermes/proxy?upstreamPath=api/health&hermesApiKeyId=${invalidKeyId}`));
+  ok("invalid vault key id cannot fall back to env credential", invalidKey.status === 403 && upstreamCalls === 2);
+
+  const chatModule = await import("../src/app/api/hermes/chat/route");
+  const chatPost = ((chatModule as any).POST ?? (chatModule as any).default?.POST) as (request: NextRequest) => Promise<Response>;
+  const chatRequest = (body: Record<string, unknown>) => new NextRequest("http://localhost/api/hermes/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": crypto.randomUUID() },
+    body: JSON.stringify(body),
+  });
+
+  delete process.env.HERMES_RUNTIME_WORKSPACE_ID;
+  const unboundChat = await chatPost(chatRequest({ provider: "hermes", prompt: "Hello" }));
+  ok("typed Hermes chat also fails closed when unbound", unboundChat.status === 503 && upstreamCalls === 2);
+
+  process.env.HERMES_RUNTIME_WORKSPACE_ID = workspaceA;
+  vaultSecret = "";
+  const invalidChatKey = await chatPost(chatRequest({ provider: "hermes", prompt: "Hello", hermesApiKeyId: invalidKeyId }));
+  ok("typed Hermes chat rejects invalid key without env fallback", invalidChatKey.status === 403 && upstreamCalls === 2);
+
+  const boundedChat = await chatPost(chatRequest({ provider: "hermes", prompt: "Hello" }));
+  ok("bound typed Hermes chat reaches its runtime", boundedChat.status === 200 && upstreamCalls === 3);
+  ok("bound typed Hermes chat may use the configured env credential", lastAuthorization === "Bearer test-global-runtime-key");
+
+  delete process.env.HERMES_RUNTIME_WORKSPACE_ID;
+  const cloudChat = await chatPost(chatRequest({ provider: "openai", model: "gpt-4o-mini", prompt: "Hello" }));
+  ok("cloud-provider chat remains independent of Hermes binding", cloudChat.status === 200 && upstreamCalls === 4);
+} finally {
+  globalThis.fetch = originalFetch;
+}
+
+console.log(`RESULT hermes-runtime-isolation: ${pass} passed, ${fail} failed`);
+if (fail > 0) process.exitCode = 1;

@@ -127,6 +127,7 @@ All variables below must be set in Vercel **before** deploying. Production value
 | `NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN` | Public | Recommended | Locks sign-in to one domain (e.g. `mantu.com`) |
 | `HERMES_API_URL` | Server | For AI drafts | Internal only; must not be a public internet URL |
 | `HERMES_API_KEY` | Server | For AI drafts | Strong random token (≥32 chars) |
+| `HERMES_RUNTIME_WORKSPACE_ID` | Server | Required with Hermes | UUID of the single workspace bound to this dedicated runtime; no shared multi-workspace process |
 | `GOOGLE_CLIENT_ID` | Server | If Gmail seats used | |
 | `GOOGLE_CLIENT_SECRET` | Server | If Gmail seats used | |
 | `GOOGLE_REDIRECT_URI` | Server | If Gmail seats used | `https://<app>/auth/google/callback` |

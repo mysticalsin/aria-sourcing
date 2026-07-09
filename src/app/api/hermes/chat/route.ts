@@ -21,6 +21,7 @@ import { BUILTIN_WEB_URL, WEB_TOOL_DEFS } from "@/lib/ai/web-tools";
 import { SOURCING_TOOL_DEFS, makeSourcingToolRunner } from "@/lib/ai/sourcing-tools";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { redactObject, redactSecrets, redactEmail } from "@/lib/log-redact";
+import { evaluateHermesWorkspaceBinding } from "@/lib/api/hermes-runtime-isolation";
 
 /**
  * Aria runtime proxy (SERVER ONLY).
@@ -312,6 +313,25 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const production = process.env.NODE_ENV === "production";
+  let runtimeWorkspaceId: string | null = null;
+  if (production && supabaseEnabled && supabase) {
+    const { data: resolvedWorkspaceId, error: workspaceError } = await supabase.rpc("current_workspace_id");
+    runtimeWorkspaceId = typeof resolvedWorkspaceId === "string" ? resolvedWorkspaceId : null;
+    if (workspaceError || !runtimeWorkspaceId) {
+      return NextResponse.json({ ok: false, reason: "Workspace not available." }, { status: 403 });
+    }
+  }
+  const binding = evaluateHermesWorkspaceBinding({
+    production,
+    supabaseEnabled,
+    workspaceId: runtimeWorkspaceId,
+    boundWorkspaceId: process.env.HERMES_RUNTIME_WORKSPACE_ID,
+  });
+  if (!binding.ok) {
+    return NextResponse.json({ ok: false, reason: binding.reason }, { status: binding.status });
+  }
+
   // S-1: URL is env-only — never use client-supplied hermesApiUrl (SSRF risk).
   const rawBaseUrl = process.env.HERMES_API_URL ?? "";
   const baseUrl = rawBaseUrl.replace(/\/$/, "");
@@ -325,10 +345,16 @@ export async function POST(req: NextRequest) {
   }
 
   // Resolve the bearer token server-side. Vault by id (workspace-scoped) first;
-  // env fallback second. The raw secret is NEVER logged or returned.
+  // env fallback is allowed only when no key id was requested. A supplied id
+  // that does not resolve in this workspace must fail closed.
   let bearerToken = process.env.HERMES_API_KEY ?? "";
-  const vaultSecret = await resolveVaultSecret(hermesApiKeyId);
-  if (vaultSecret) bearerToken = vaultSecret;
+  if (hermesApiKeyId) {
+    const vaultSecret = await resolveVaultSecret(hermesApiKeyId);
+    if (!vaultSecret) {
+      return NextResponse.json({ ok: false, reason: "Aria runtime key is not available." }, { status: 403 });
+    }
+    bearerToken = vaultSecret;
+  }
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (bearerToken) headers["Authorization"] = `Bearer ${bearerToken}`;
