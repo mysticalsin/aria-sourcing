@@ -41,7 +41,7 @@
   "crons": [
     {
       "path": "/api/cron/dispatch-outbound",
-      "schedule": "* * * * *"
+      "schedule": "13 6 * * *"
     }
   ],
   "buildCommand": "npm run build",

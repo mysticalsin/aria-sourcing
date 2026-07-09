@@ -10,6 +10,7 @@ import {
   type SpecGuardrails,
 } from "@/lib/autopilot";
 import { dedupeHash, nextSendTime } from "@/lib/gate";
+import { dispatchDue } from "@/lib/dispatch-outbound";
 import {
   CLOUD_ENDPOINT,
   PROVIDER_ENV,
@@ -208,6 +209,15 @@ export async function POST(req: NextRequest) {
         message: err instanceof Error ? err.message : "unknown",
       });
     }
+  }
+
+  // Opportunistic drain: Meta calls this webhook for every delivery/read
+  // receipt too, so due queued messages go out with near-human latency even
+  // though Vercel Hobby only allows a daily cron (the /api/cron backstop).
+  try {
+    await dispatchDue(supabase, 5);
+  } catch (err) {
+    safeLog("whatsapp webhook: drain error", { message: err instanceof Error ? err.message : "unknown" });
   }
 
   return NextResponse.json({ ok: true });
