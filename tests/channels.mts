@@ -74,12 +74,44 @@ process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
   restoreFetch();
 }
 
+// --- Approved templates use Meta's template endpoint shape, never a raw text
+// message. This is how business-initiated WhatsApp outreach stays inside the
+// approved-template policy outside an open reply window.
+{
+  let sent: Record<string, unknown> | null = null;
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+    sent = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+    return jsonResponse(200, { messages: [{ id: "wamid.TEMPLATE" }] });
+  }) as typeof fetch;
+  const res = await sendWhatsApp({
+    to: "+14155552671",
+    kind: "approved_template",
+    template: { name: "role_intro", language: "en_US", bodyParameters: ["Marco"] },
+  });
+  const template = sent?.template as { name?: string; language?: { code?: string }; components?: { type?: string; parameters?: { text?: string }[] }[] } | undefined;
+  ok("WhatsApp template -> status sent", res.status === "sent");
+  ok("WhatsApp template -> sends a template payload", sent?.type === "template");
+  ok("WhatsApp template -> preserves approved template name and language", template?.name === "role_intro" && template.language?.code === "en_US");
+  ok("WhatsApp template -> sends typed body parameters", template?.components?.[0]?.parameters?.[0]?.text === "Marco");
+  restoreFetch();
+}
+
 // --- Configured + upstream non-2xx ------------------------------------------
 {
   globalThis.fetch = (async () => jsonResponse(401, { error: "bad token" })) as typeof fetch;
   const res = await sendWhatsApp({ to: "+14155552671", body: "hi" });
   ok("WhatsApp upstream 401 -> status error", res.status === "error");
   ok("WhatsApp upstream 401 -> detail mentions the status code", res.detail.includes("401"));
+  restoreFetch();
+}
+
+// A 2xx response without Meta's durable message id is ambiguous. The
+// dispatcher cannot reconcile it safely, so it must never be treated as sent.
+{
+  globalThis.fetch = (async () => jsonResponse(200, { messages: [{}] })) as typeof fetch;
+  const res = await sendWhatsApp({ to: "+14155552671", body: "hi" });
+  ok("WhatsApp success without provider id -> error", res.status === "error");
+  ok("WhatsApp success without provider id -> explicit reconciliation detail", /message id/i.test(res.detail));
   restoreFetch();
 }
 

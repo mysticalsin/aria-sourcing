@@ -9,6 +9,32 @@ export interface ChannelSendRequest {
   body: string;
 }
 
+interface WhatsAppSenderRequest {
+  /** Resolved from the locked ARIA sender record, never accepted from a client. */
+  senderPhoneNumberId?: string;
+}
+
+export interface WhatsAppTemplateSendRequest {
+  to: string;
+  kind: "approved_template";
+  template: {
+    /** Meta-approved template name, selected from ARIA's trusted catalog. */
+    name: string;
+    /** Meta language code, for example en_US. */
+    language: string;
+    /** Final, typed body parameters only. No tool output or event payloads. */
+    bodyParameters?: string[];
+  };
+}
+
+export type WhatsAppSendRequest =
+  | (ChannelSendRequest & WhatsAppSenderRequest)
+  | (WhatsAppTemplateSendRequest & WhatsAppSenderRequest);
+
+function isWhatsAppTemplateRequest(req: WhatsAppSendRequest): req is WhatsAppTemplateSendRequest & WhatsAppSenderRequest {
+  return "kind" in req && req.kind === "approved_template";
+}
+
 export interface ChannelSendOutcome {
   status: "sent" | "dry-run" | "error";
   provider: string;
@@ -32,9 +58,9 @@ function normalizePhone(raw: string): string {
  * contact inside an open 24h session; cold outreach to a new number requires a
  * pre-approved message template configured in Meta Business.
  */
-export async function sendWhatsApp(req: ChannelSendRequest): Promise<ChannelSendOutcome> {
+export async function sendWhatsApp(req: WhatsAppSendRequest): Promise<ChannelSendOutcome> {
   const token = process.env.WHATSAPP_TOKEN ?? "";
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID ?? "";
+  const phoneNumberId = req.senderPhoneNumberId ?? process.env.WHATSAPP_PHONE_NUMBER_ID ?? "";
   if (!token || !phoneNumberId) {
     return {
       status: "dry-run",
@@ -45,16 +71,49 @@ export async function sendWhatsApp(req: ChannelSendRequest): Promise<ChannelSend
   const to = normalizePhone(req.to);
   if (!to) return { status: "error", provider: "WhatsApp Cloud", detail: "No phone number on file for this candidate." };
 
+  let payload: Record<string, unknown>;
+  if (isWhatsAppTemplateRequest(req)) {
+    payload = {
+      messaging_product: "whatsapp",
+      to,
+      type: "template",
+      template: {
+        name: req.template.name,
+        language: { code: req.template.language },
+        ...(req.template.bodyParameters?.length
+          ? {
+              components: [
+                {
+                  type: "body",
+                  parameters: req.template.bodyParameters.map((text) => ({ type: "text", text })),
+                },
+              ],
+            }
+          : {}),
+      },
+    };
+  } else {
+    payload = { messaging_product: "whatsapp", to, type: "text", text: { body: req.body } };
+  }
+
   try {
     const res = await fetch(`https://graph.facebook.com/${WHATSAPP_API_VERSION}/${phoneNumberId}/messages`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ messaging_product: "whatsapp", to, type: "text", text: { body: req.body } }),
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(TIMEOUT),
     });
     if (!res.ok) return { status: "error", provider: "WhatsApp Cloud", detail: `WhatsApp API ${res.status}` };
     const data = (await res.json().catch(() => ({}))) as { messages?: { id?: string }[] };
-    return { status: "sent", provider: "WhatsApp Cloud", detail: "Sent via WhatsApp.", id: data.messages?.[0]?.id };
+    const providerMessageId = data.messages?.[0]?.id;
+    if (!providerMessageId) {
+      return {
+        status: "error",
+        provider: "WhatsApp Cloud",
+        detail: "WhatsApp API response did not include a message ID for reconciliation.",
+      };
+    }
+    return { status: "sent", provider: "WhatsApp Cloud", detail: "Sent via WhatsApp.", id: providerMessageId };
   } catch (err) {
     return {
       status: "error",

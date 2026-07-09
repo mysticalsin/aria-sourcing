@@ -18,16 +18,24 @@ function makeFakeDb(seed: {
   outbound: Row[];
   approvals: Row[];
   seats: Row[];
-  claim: { allowed?: boolean; reason?: string; ledger_id?: string } | null;
+  whatsappContacts?: Row[];
+  whatsappTemplates?: Row[];
+  cacheError?: { message: string } | null;
+  claim: { allowed?: boolean; reason?: string; ledger_id?: string; delivery_attempt_id?: string } | null;
   claimError?: { message: string } | null;
+  acceptance?: { allowed?: boolean; reason?: string } | null;
+  acceptanceError?: { message: string } | null;
 }) {
   const updates: { table: string; patch: Row; id: unknown }[] = [];
   const rpcCalls: { fn: string; args: Row }[] = [];
+  const cacheWrites: Row[] = [];
 
   function table(name: string): Row[] {
     if (name === "messages_outbound") return seed.outbound;
     if (name === "outreach_approvals") return seed.approvals;
     if (name === "agent_seats") return seed.seats;
+    if (name === "whatsapp_contacts") return seed.whatsappContacts ?? [];
+    if (name === "whatsapp_templates") return seed.whatsappTemplates ?? [];
     return [];
   }
 
@@ -54,6 +62,10 @@ function makeFakeDb(seed: {
           return Promise.resolve({ error: null });
         },
       }),
+      upsert: (row: Row) => {
+        if (name === "outbound_content_cache") cacheWrites.push(row);
+        return Promise.resolve({ error: seed.cacheError ?? null });
+      },
     };
     return q;
   }
@@ -62,11 +74,14 @@ function makeFakeDb(seed: {
     from: (name: string) => query(name),
     rpc: (fn: string, args: Row) => {
       rpcCalls.push({ fn, args });
+      if (fn === "record_whatsapp_provider_acceptance") {
+        return Promise.resolve({ data: seed.acceptance ?? { allowed: true, reason: "recorded" }, error: seed.acceptanceError ?? null });
+      }
       return Promise.resolve({ data: seed.claim, error: seed.claimError ?? null });
     },
   } as unknown as SupabaseClient;
 
-  return { client, updates, rpcCalls };
+  return { client, updates, rpcCalls, cacheWrites };
 }
 
 const bodyHash = (body: string) => createHash("sha256").update(`\n${body}`).digest("hex");
@@ -88,6 +103,14 @@ function baseMsg(over: Row = {}): Row {
   };
 }
 const LIVE_SEAT: Row = { id: "seat-1", provider: "WhatsApp Cloud", status: "active", mode: "live" };
+const LIVE_WHATSAPP_CONTACT: Row = {
+  workspace_id: "ws-1",
+  recipient_e164: "33612345678",
+  consent_status: "opted_in",
+  recorded_at: "2026-01-01T00:00:00.000Z",
+  last_inbound_at: new Date().toISOString(),
+  expires_at: null,
+};
 
 // ---------------------------------------------------------------------------
 // 1. No approval row → blocked, RPC never called
@@ -132,10 +155,68 @@ const LIVE_SEAT: Row = { id: "seat-1", provider: "WhatsApp Cloud", status: "acti
 }
 
 // ---------------------------------------------------------------------------
-// 4. Seat not live / wrong provider → blocked before claim
+// 4. WhatsApp requires a persisted opt-in before any seat, claim, or provider
+// interaction. Missing consent is a hard block, not a review hint.
 // ---------------------------------------------------------------------------
 {
-  const approvals = [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY) }];
+  const db = makeFakeDb({
+    outbound: [baseMsg({ type: "candidate_reply" })],
+    approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "human" }],
+    seats: [LIVE_SEAT],
+    whatsappContacts: [],
+    claim: { allowed: true },
+  });
+  const stats = await dispatchDue(db.client, 10);
+  ok("WhatsApp consent: missing opt-in blocks", stats.blocked === 1);
+  ok("WhatsApp consent: missing opt-in never claims", db.rpcCalls.length === 0);
+  ok("WhatsApp consent: reason recorded", JSON.stringify(db.updates.at(-1)?.patch).includes("missing-opt-in"));
+}
+
+// ---------------------------------------------------------------------------
+// 5. Approved-template delivery requires an ARIA catalog record, not merely a
+// syntactically plausible name supplied by a caller. The content stays queued
+// until the trusted row is present and Meta has approved that exact locale.
+// ---------------------------------------------------------------------------
+{
+  delete process.env.WHATSAPP_TOKEN;
+  delete process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const db = makeFakeDb({
+    outbound: [baseMsg({ type: "approved_template", template_id: "tpl-1", template_parameters: [] })],
+    approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "human" }],
+    seats: [LIVE_SEAT],
+    whatsappContacts: [{ ...LIVE_WHATSAPP_CONTACT }],
+    whatsappTemplates: [{ id: "tpl-1", workspace_id: "ws-1", meta_name: "role_intro", language: "en_US", status: "approved" }],
+    claim: { allowed: true, ledger_id: "led-template" },
+  });
+  const stats = await dispatchDue(db.client, 10);
+  ok("WhatsApp template: trusted catalog entry reaches the atomic claim", db.rpcCalls.some((c) => c.fn === "claim_whatsapp_outbound"));
+  ok("WhatsApp template: no provider credentials leaves it unsent", stats.failed === 1 && stats.sent === 0);
+}
+
+// ---------------------------------------------------------------------------
+// 6. The cache preserves the content-gate verdict for audit and repeat-block
+// analysis, but a cache write failure fails closed before a ledger claim.
+// ---------------------------------------------------------------------------
+{
+  const db = makeFakeDb({
+    outbound: [baseMsg()],
+    approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "human" }],
+    seats: [LIVE_SEAT],
+    whatsappContacts: [{ ...LIVE_WHATSAPP_CONTACT }],
+    claim: { allowed: true },
+    cacheError: { message: "cache unavailable" },
+  });
+  const stats = await dispatchDue(db.client, 10);
+  ok("WhatsApp gate cache: cache write is attempted", db.cacheWrites.length === 1);
+  ok("WhatsApp gate cache: storage error blocks before claim", stats.blocked === 1 && db.rpcCalls.length === 0);
+  ok("WhatsApp gate cache: failure reason is retained", JSON.stringify(db.updates.at(-1)?.patch).includes("gate-cache-write-failed"));
+}
+
+// ---------------------------------------------------------------------------
+// 7. Seat not live / wrong provider → blocked before claim
+// ---------------------------------------------------------------------------
+{
+  const approvals = [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "human" }];
   for (const seat of [
     { ...LIVE_SEAT, mode: "sandbox" },
     { ...LIVE_SEAT, status: "paused" },
@@ -149,13 +230,14 @@ const LIVE_SEAT: Row = { id: "seat-1", provider: "WhatsApp Cloud", status: "acti
 }
 
 // ---------------------------------------------------------------------------
-// 5. Guardrail claim denies (suppression/cap/re-contact) → blocked with reason
+// 8. Guardrail claim denies (suppression/cap/re-contact) → blocked with reason
 // ---------------------------------------------------------------------------
 {
   const db = makeFakeDb({
     outbound: [baseMsg()],
-    approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY) }],
+    approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "human" }],
     seats: [LIVE_SEAT],
+    whatsappContacts: [{ ...LIVE_WHATSAPP_CONTACT }],
     claim: { allowed: false, reason: "suppressed" },
   });
   const stats = await dispatchDue(db.client, 10);
@@ -164,7 +246,23 @@ const LIVE_SEAT: Row = { id: "seat-1", provider: "WhatsApp Cloud", status: "acti
 }
 
 // ---------------------------------------------------------------------------
-// 6. All guards pass, no WhatsApp creds in env → adapter dry-runs → failed
+// 9. Legacy or system-generated approval cannot release an external message.
+// ---------------------------------------------------------------------------
+{
+  const db = makeFakeDb({
+    outbound: [baseMsg()],
+    approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "legacy_unverified" }],
+    seats: [LIVE_SEAT],
+    claim: { allowed: true },
+  });
+  const stats = await dispatchDue(db.client, 10);
+  ok("legacy approval: blocked", stats.blocked === 1 && stats.sent === 0);
+  ok("legacy approval: claim never ran", db.rpcCalls.length === 0);
+  ok("legacy approval: reason recorded", JSON.stringify(db.updates.at(-1)?.patch).includes("approval-not-human"));
+}
+
+// ---------------------------------------------------------------------------
+// 10. All guards pass, no WhatsApp creds in env → adapter dry-runs → failed
 //    (never a silent fake-sent)
 // ---------------------------------------------------------------------------
 {
@@ -172,18 +270,107 @@ const LIVE_SEAT: Row = { id: "seat-1", provider: "WhatsApp Cloud", status: "acti
   delete process.env.WHATSAPP_PHONE_NUMBER_ID;
   const db = makeFakeDb({
     outbound: [baseMsg()],
-    approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY) }],
+    approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "human" }],
     seats: [LIVE_SEAT],
+    whatsappContacts: [{ ...LIVE_WHATSAPP_CONTACT }],
     claim: { allowed: true, ledger_id: "led-1" },
   });
   const stats = await dispatchDue(db.client, 10);
   ok("dry-run creds: marked failed, not sent", stats.failed === 1 && stats.sent === 0);
   ok("dry-run creds: claim ran once", db.rpcCalls.length === 1);
-  ok("dry-run creds: claim scoped to spec", db.rpcCalls[0]?.args.p_campaign_id === "spec-1");
+  ok("dry-run creds: claim is the service-only WhatsApp RPC", db.rpcCalls[0]?.fn === "claim_whatsapp_outbound");
+  ok("dry-run creds: claim is scoped to the queued message", db.rpcCalls[0]?.args.p_message_id === "m-1");
+  ok("dry-run creds: gate verdict recorded in cache", db.cacheWrites.length === 1 && db.cacheWrites[0]?.verdict === "pass");
 }
 
 // ---------------------------------------------------------------------------
-// 7. Not-yet-due and non-queued messages are untouched
+// A revoked approval is never eligible for a service-only dispatch, even when
+// its old content hash and human provenance still match.
+// ---------------------------------------------------------------------------
+{
+  const db = makeFakeDb({
+    outbound: [baseMsg()],
+    approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "human", revoked_at: "2026-07-09T00:00:00.000Z" }],
+    seats: [LIVE_SEAT],
+    whatsappContacts: [{ ...LIVE_WHATSAPP_CONTACT }],
+    claim: { allowed: true },
+  });
+  const stats = await dispatchDue(db.client, 10);
+  ok("revoked approval: blocks before claim", stats.blocked === 1 && db.rpcCalls.length === 0);
+  ok("revoked approval: records a specific reason", JSON.stringify(db.updates.at(-1)?.patch).includes("approval-revoked"));
+}
+
+// ---------------------------------------------------------------------------
+// 11. Meta acceptance is reconciled by the service-only RPC before a message
+// is marked sent. The dispatcher must never write a generic sent state that
+// loses the Meta message id or races the ledger update.
+// ---------------------------------------------------------------------------
+{
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.WHATSAPP_TOKEN;
+  const originalPhone = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  process.env.WHATSAPP_TOKEN = "test-token";
+  process.env.WHATSAPP_PHONE_NUMBER_ID = "sender-1";
+  globalThis.fetch = (async () => ({ ok: true, status: 200, json: async () => ({ messages: [{ id: "wamid.accepted" }] }) })) as typeof fetch;
+  try {
+    const db = makeFakeDb({
+      outbound: [baseMsg()],
+      approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "human" }],
+      seats: [LIVE_SEAT],
+      whatsappContacts: [{ ...LIVE_WHATSAPP_CONTACT }],
+      claim: { allowed: true, ledger_id: "led-1", delivery_attempt_id: "attempt-1" },
+      acceptance: { allowed: true, reason: "recorded" },
+    });
+    const stats = await dispatchDue(db.client, 10);
+    const acceptance = db.rpcCalls.find((call) => call.fn === "record_whatsapp_provider_acceptance");
+    ok("provider acceptance: counts only a reconciled Meta send", stats.sent === 1 && stats.failed === 0);
+    ok("provider acceptance: persists the outbox id", acceptance?.args.p_message_id === "m-1");
+    ok("provider acceptance: persists the delivery attempt", acceptance?.args.p_delivery_attempt_id === "attempt-1");
+    ok("provider acceptance: persists Meta's message id", acceptance?.args.p_provider_message_id === "wamid.accepted");
+    ok("provider acceptance: does not generic-update outbox to sent", !db.updates.some((u) => u.table === "messages_outbound" && u.patch.status === "sent"));
+    ok("provider acceptance: does not generic-update claimed ledger", !db.updates.some((u) => u.table === "outreach_ledger" && u.patch.status === "sent"));
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalToken === undefined) delete process.env.WHATSAPP_TOKEN;
+    else process.env.WHATSAPP_TOKEN = originalToken;
+    if (originalPhone === undefined) delete process.env.WHATSAPP_PHONE_NUMBER_ID;
+    else process.env.WHATSAPP_PHONE_NUMBER_ID = originalPhone;
+  }
+}
+
+// A provider acceptance response that cannot be atomically persisted stays
+// dispatching for manual reconciliation. Retrying it could double-send.
+{
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.WHATSAPP_TOKEN;
+  const originalPhone = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  process.env.WHATSAPP_TOKEN = "test-token";
+  process.env.WHATSAPP_PHONE_NUMBER_ID = "sender-1";
+  globalThis.fetch = (async () => ({ ok: true, status: 200, json: async () => ({ messages: [{ id: "wamid.ambiguous" }] }) })) as typeof fetch;
+  try {
+    const db = makeFakeDb({
+      outbound: [baseMsg()],
+      approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "human" }],
+      seats: [LIVE_SEAT],
+      whatsappContacts: [{ ...LIVE_WHATSAPP_CONTACT }],
+      claim: { allowed: true, ledger_id: "led-1", delivery_attempt_id: "attempt-1" },
+      acceptance: { allowed: false, reason: "attempt-mismatch" },
+    });
+    const stats = await dispatchDue(db.client, 10);
+    ok("provider acceptance failure: requires manual reconciliation", stats.failed === 1 && stats.sent === 0);
+    ok("provider acceptance failure: does not change dispatching outbox to failed", !db.updates.some((u) => u.table === "messages_outbound" && u.patch.status === "failed"));
+    ok("provider acceptance failure: does not free the claimed ledger", !db.updates.some((u) => u.table === "outreach_ledger"));
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalToken === undefined) delete process.env.WHATSAPP_TOKEN;
+    else process.env.WHATSAPP_TOKEN = originalToken;
+    if (originalPhone === undefined) delete process.env.WHATSAPP_PHONE_NUMBER_ID;
+    else process.env.WHATSAPP_PHONE_NUMBER_ID = originalPhone;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 12. Not-yet-due and non-queued messages are untouched
 // ---------------------------------------------------------------------------
 {
   const db = makeFakeDb({
@@ -202,7 +389,7 @@ const LIVE_SEAT: Row = { id: "seat-1", provider: "WhatsApp Cloud", status: "acti
 }
 
 // ---------------------------------------------------------------------------
-// 8. Limit respected
+// 12. Limit respected
 // ---------------------------------------------------------------------------
 {
   const db = makeFakeDb({
@@ -213,6 +400,63 @@ const LIVE_SEAT: Row = { id: "seat-1", provider: "WhatsApp Cloud", status: "acti
   });
   const stats = await dispatchDue(db.client, 2);
   ok("limit: only 2 processed", stats.processed === 2);
+}
+
+// ---------------------------------------------------------------------------
+// 13. A deliberate WhatsApp send may dispatch only the outbox row it created.
+// It must never drain another candidate's due message as a side effect.
+// ---------------------------------------------------------------------------
+{
+  const db = makeFakeDb({
+    outbound: [baseMsg({ id: "m-other" }), baseMsg({ id: "m-target" })],
+    approvals: [
+      { workspace_id: "ws-1", message_id: "m-other", body_hash: bodyHash(GOOD_BODY), approval_source: "human" },
+      { workspace_id: "ws-1", message_id: "m-target", body_hash: bodyHash(GOOD_BODY), approval_source: "human" },
+    ],
+    seats: [LIVE_SEAT],
+    whatsappContacts: [{ ...LIVE_WHATSAPP_CONTACT }],
+    claim: { allowed: true },
+  });
+  const stats = await dispatchDue(db.client, 10, "m-target");
+  ok("targeted dispatch: processes only the requested row", stats.processed === 1);
+  ok("targeted dispatch: leaves other candidate untouched", !db.updates.some((u) => u.id === "m-other"));
+}
+
+// ---------------------------------------------------------------------------
+// 14. The durable outbox ID is not the approval message ID. A human approval
+// must follow the stored approval_message_id, otherwise every route-queued
+// WhatsApp send is blocked before the service-only claim.
+// ---------------------------------------------------------------------------
+{
+  delete process.env.WHATSAPP_TOKEN;
+  delete process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const db = makeFakeDb({
+    outbound: [baseMsg({ id: "outbox-1", approval_message_id: "approval-1" })],
+    approvals: [{ workspace_id: "ws-1", message_id: "approval-1", body_hash: bodyHash(GOOD_BODY), approval_source: "human" }],
+    seats: [LIVE_SEAT],
+    whatsappContacts: [{ ...LIVE_WHATSAPP_CONTACT }],
+    claim: { allowed: true },
+  });
+  const stats = await dispatchDue(db.client, 10);
+  ok("outbox approval: distinct approval ID reaches the claim", db.rpcCalls.some((call) => call.fn === "claim_whatsapp_outbound"));
+  ok("outbox approval: a valid distinct approval is not blocked", stats.blocked === 0);
+}
+
+// ---------------------------------------------------------------------------
+// 15. SMS cannot reach a live provider until it has an equivalent consent,
+// opt-out, suppression, and durable-outbox policy.
+// ---------------------------------------------------------------------------
+{
+  const db = makeFakeDb({
+    outbound: [baseMsg({ channel: "SMS", to_address: "+14155552671" })],
+    approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "human" }],
+    seats: [{ ...LIVE_SEAT, provider: "Twilio SMS" }],
+    claim: { allowed: true },
+  });
+  const stats = await dispatchDue(db.client, 10);
+  ok("SMS policy: dispatcher blocks until the consent policy exists", stats.blocked === 1);
+  ok("SMS policy: dispatcher never claims or sends", db.rpcCalls.length === 0);
+  ok("SMS policy: reason is explicit", JSON.stringify(db.updates.at(-1)?.patch).includes("sms-disabled-pending-consent-policy"));
 }
 
 console.log(`RESULT dispatch-outbound: ${pass} passed, ${fail} failed`);

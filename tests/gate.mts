@@ -1,4 +1,5 @@
 import { gateOutbound, dedupeHash, inQuietHours, nextSendTime, replyDelayMs, DEFAULT_QUIET_HOURS } from "../src/lib/gate";
+import { assessWhatsAppDispatch, normalizeWhatsAppAddress } from "../src/lib/whatsapp-policy";
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) { if (cond) { pass++; } else { fail++; console.log("FAIL:", name); } }
@@ -177,6 +178,91 @@ for (const [i, msg] of MUST_PASS.entries()) {
     gateOutbound(" �" + "x".repeat(100_000));
   } catch { threw = true; }
   ok("robust: no throw on odd input", !threw);
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp policy — carrier delivery is legal only with a current permission.
+// Free-form copy is a reply inside the 24-hour customer-service window; new
+// business contact must use an approved template.
+// ---------------------------------------------------------------------------
+{
+  const now = new Date("2026-07-09T14:00:00.000Z");
+  const optedIn = { status: "opted_in" as const, recipientAddress: "33612345678", recordedAt: "2026-07-01T09:00:00.000Z" };
+
+  ok("WhatsApp policy: normalizes E.164 punctuation", normalizeWhatsAppAddress("+33 (6) 12 34 56 78") === "33612345678");
+  ok("WhatsApp policy: rejects malformed recipient", normalizeWhatsAppAddress("not-a-number") === null);
+  ok("WhatsApp policy: rejects embedded or repeated plus signs", normalizeWhatsAppAddress("+33+6 12 34 56 78") === null);
+
+  const reply = assessWhatsAppDispatch({
+    now,
+    recipientAddress: "+33612345678",
+    type: "candidate_reply",
+    permission: optedIn,
+    inboundReceivedAt: "2026-07-09T13:30:00.000Z",
+  });
+  ok("WhatsApp policy: permits opted-in reply inside 24 hours", reply.allow === true);
+
+  const noPermission = assessWhatsAppDispatch({
+    now,
+    recipientAddress: "33612345678",
+    type: "candidate_reply",
+    permission: null,
+    inboundReceivedAt: "2026-07-09T13:30:00.000Z",
+  });
+  ok("WhatsApp policy: blocks reply without recorded opt-in", noPermission.allow === false && noPermission.reason === "missing-opt-in");
+
+  const optOut = assessWhatsAppDispatch({
+    now,
+    recipientAddress: "33612345678",
+    type: "approved_template",
+    permission: { ...optedIn, status: "opted_out" as const },
+    template: { name: "role_intro", language: "en_US" },
+  });
+  ok("WhatsApp policy: blocks opted-out recipient even for templates", optOut.allow === false && optOut.reason === "opted-out");
+
+  const staleReply = assessWhatsAppDispatch({
+    now,
+    recipientAddress: "33612345678",
+    type: "candidate_reply",
+    permission: optedIn,
+    inboundReceivedAt: "2026-07-08T13:59:59.000Z",
+  });
+  ok("WhatsApp policy: blocks free-form reply outside 24 hours", staleReply.allow === false && staleReply.reason === "reply-window-closed");
+
+  const exactBoundary = assessWhatsAppDispatch({
+    now,
+    recipientAddress: "33612345678",
+    type: "candidate_reply",
+    permission: optedIn,
+    inboundReceivedAt: "2026-07-08T14:00:00.000Z",
+  });
+  ok("WhatsApp policy: fails closed at the exact 24-hour boundary", exactBoundary.allow === false && exactBoundary.reason === "reply-window-closed");
+
+  const missingTemplate = assessWhatsAppDispatch({
+    now,
+    recipientAddress: "33612345678",
+    type: "approved_template",
+    permission: optedIn,
+  });
+  ok("WhatsApp policy: blocks business initiation without an approved template reference", missingTemplate.allow === false && missingTemplate.reason === "template-required");
+
+  const template = assessWhatsAppDispatch({
+    now,
+    recipientAddress: "33612345678",
+    type: "approved_template",
+    permission: optedIn,
+    template: { name: "role_intro", language: "en_US", approved: true },
+  });
+  ok("WhatsApp policy: permits opted-in approved template", template.allow === true);
+
+  const unknownTemplate = assessWhatsAppDispatch({
+    now,
+    recipientAddress: "33612345678",
+    type: "approved_template",
+    permission: optedIn,
+    template: { name: "invented_template", language: "en_US", approved: false },
+  });
+  ok("WhatsApp policy: blocks a template outside the trusted catalog", unknownTemplate.allow === false && unknownTemplate.reason === "template-not-approved");
 }
 
 console.log(`RESULT gate: ${pass} passed, ${fail} failed`);

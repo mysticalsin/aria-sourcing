@@ -127,8 +127,12 @@ import {
 import { stageRank, withStage } from "./metrics";
 import { humanizeText } from "./humanizer";
 import { parseCommand, campaignToAriaContext, type AriaPlan } from "./aria-command";
+import { recordOutreachApproval, revokeOutreachApproval } from "./outreach-approval";
 
 const STORAGE_KEY = "hermes-sourcing:v1";
+const ARIA_STRONG_RATINGS: readonly StarRating[] = ["TopGun", "A"];
+const ARIA_PERFECT_RATING: StarRating = "TopGun";
+const ARIA_STEP_CANDIDATE_CAP = 10;
 
 /**
  * Base query text for a web-search-sourced platform, built from the campaign's
@@ -385,11 +389,11 @@ export interface HermesActions {
    *  (same three-layer fallback as generateOutreachLive), else the deterministic
    *  mock. Status is still set by the human approval gate — never auto-sent. */
   regenerateOutreach: (messageId: string, tone?: OutreachTone) => Promise<void>;
-  approveOutreach: (messageId: string) => ApprovalResult;
+  approveOutreach: (messageId: string) => Promise<ApprovalResult>;
   confirmManualSend: (messageId: string) => { ok: boolean; error?: string };
   /** The deliberate gated send for a live-approved email — calls the server send route. */
-  sendApprovedOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string }>;
-  rejectOutreach: (messageId: string) => void;
+  sendApprovedOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string; queued?: boolean }>;
+  rejectOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string }>;
   /** Drafts the next sequence-step follow-up for a candidate who has gone quiet
    *  past the configured gap (see deriveFollowUpsDue). Lands in the approval
    *  queue exactly like generateOutreachFor — never sends. Returns null when
@@ -847,6 +851,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   const skipNextPersist = useRef(false);
   // F-5: AbortControllers for in-flight sendChat requests, keyed by threadId.
   const chatAbortControllers = useRef<Map<string, AbortController>>(new Map());
+  // Approval persistence is authoritative in live mode. Keep a per-draft lock
+  // so a double-click cannot create a second ledger entry while the request is
+  // in flight.
+  const pendingOutreachApprovals = useRef<Set<string>>(new Set());
 
   // Flush a pending debounced DEMO-mode localStorage write immediately. Called on
   // provider unmount and on `beforeunload` so debouncing the persist effect (below)
@@ -2379,16 +2387,31 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const approveOutreach = useCallback(
-    (messageId: string): ApprovalResult => {
-      const s = current();
-      const msg = s.outreach.find((m) => m.id === messageId);
-      if (!msg) return { allowed: false, blockers: ["Message not found."], warnings: [] };
-      const candidate = s.candidates.find((c) => c.id === msg.candidateId);
-      const campaign = s.campaigns.find((c) => c.id === msg.campaignId);
-      if (!candidate || !campaign)
-        return { allowed: false, blockers: ["Linked candidate/campaign missing."], warnings: [] };
+    async (messageId: string): Promise<ApprovalResult> => {
+      const approvalBlocked = (blocker: string): ApprovalResult => ({
+        allowed: false,
+        blockers: [blocker],
+        warnings: [],
+      });
+      const recipientFor = (message: OutreachMessage, candidate: Candidate) =>
+        message.channel === "WhatsApp" || message.channel === "SMS"
+          ? candidate.phone ?? ""
+          : message.channel === "LinkedIn"
+            ? candidate.linkedinUrl ?? ""
+            : candidate.email;
+      const isActionable = (message: OutreachMessage) =>
+        message.status === "Needs Approval" || message.status === "Draft";
 
-      const result = checkOutreachApproval({
+      let s = current();
+      const initialMessage = s.outreach.find((m) => m.id === messageId);
+      if (!initialMessage) return approvalBlocked("Message not found.");
+      if (!isActionable(initialMessage)) return approvalBlocked("Message is no longer awaiting approval.");
+      let msg: OutreachMessage = initialMessage;
+      let candidate = s.candidates.find((c) => c.id === msg.candidateId);
+      let campaign = s.campaigns.find((c) => c.id === msg.campaignId);
+      if (!candidate || !campaign) return approvalBlocked("Linked candidate/campaign missing.");
+
+      let result = checkOutreachApproval({
         candidate,
         message: msg,
         settings: s.settings,
@@ -2397,16 +2420,67 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       if (!result.allowed) return result;
 
-      // Persist the human approval server-side so /api/outreach/send can verify it
-      // (never-auto-send is enforced server-side, not only in the browser). Recording
-      // an approval never sends anything. Fire-and-forget: if it fails, a later send
-      // simply refuses with 403 — fail-safe.
+      const approvalSnapshot = {
+        candidateId: candidate.id,
+        channel: msg.channel,
+        recipient: recipientFor(msg, candidate),
+        subject: msg.subject,
+        body: msg.body,
+      };
+
+      // Persist the exact human approval before any local status/ledger change.
+      // A double-click, failed request, stale edit, or concurrent rejection leaves
+      // the draft pending rather than presenting an approval the server cannot use.
       if (supabaseEnabled) {
-        void fetch("/api/outreach/approve", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messageId, subject: msg.subject, body: msg.body }),
-        }).catch(() => {});
+        if (pendingOutreachApprovals.current.has(messageId)) {
+          return approvalBlocked("Approval is already being recorded.");
+        }
+        pendingOutreachApprovals.current.add(messageId);
+        try {
+          const persisted = await recordOutreachApproval({ messageId, ...approvalSnapshot });
+          if (!persisted.ok) return approvalBlocked(persisted.error);
+          const revokeStaleApproval = async (blocker: string): Promise<ApprovalResult> => {
+            const revoked = await revokeOutreachApproval(messageId);
+            return revoked.ok
+              ? approvalBlocked(blocker)
+              : approvalBlocked(`${blocker} The stale server approval could not be revoked.`);
+          };
+
+          s = current();
+          const refreshedMessage = s.outreach.find((m) => m.id === messageId);
+          if (!refreshedMessage) return revokeStaleApproval("Message was removed while approval was being recorded.");
+          if (!isActionable(refreshedMessage)) return revokeStaleApproval("Message is no longer awaiting approval.");
+          const refreshedCandidate = s.candidates.find((c) => c.id === refreshedMessage.candidateId);
+          const refreshedCampaign = s.campaigns.find((c) => c.id === refreshedMessage.campaignId);
+          if (!refreshedCandidate || !refreshedCampaign) return revokeStaleApproval("Linked candidate/campaign missing.");
+          msg = refreshedMessage;
+          candidate = refreshedCandidate;
+          campaign = refreshedCampaign;
+
+          const refreshedRecipient = recipientFor(msg, candidate);
+          if (
+            msg.candidateId !== approvalSnapshot.candidateId ||
+            msg.channel !== approvalSnapshot.channel ||
+            refreshedRecipient !== approvalSnapshot.recipient ||
+            msg.subject !== approvalSnapshot.subject ||
+            msg.body !== approvalSnapshot.body
+          ) {
+            return revokeStaleApproval("Draft changed while approval was being recorded. Review and approve the current copy again.");
+          }
+
+          result = checkOutreachApproval({
+            candidate,
+            message: msg,
+            settings: s.settings,
+            emailsSentToday: campaign.metrics.emailsSentToday,
+            linkedinSentToday: campaign.metrics.linkedinSentToday,
+          });
+          if (!result.allowed) {
+            return revokeStaleApproval(result.blockers[0] ?? "Approval conditions changed while the server record was being created.");
+          }
+        } finally {
+          pendingOutreachApprovals.current.delete(messageId);
+        }
       }
 
       const now = new Date().toISOString();
@@ -2613,7 +2687,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   // approval) and only flips the local record to sent on a real "sent" response. This is
   // the one place a real email leaves; it never fires automatically.
   const sendApprovedOutreach = useCallback(
-    async (messageId: string): Promise<{ ok: boolean; error?: string }> => {
+    async (messageId: string): Promise<{ ok: boolean; error?: string; queued?: boolean }> => {
       const s = current();
       const msg = s.outreach.find((m) => m.id === messageId);
       if (!msg) return { ok: false, error: "Message not found." };
@@ -2668,8 +2742,33 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : "Send failed." };
       }
-      if (out.status !== "sent") {
+      const deliveryQueued = channel === "WhatsApp" && out.status === "queued";
+      if (out.status !== "sent" && !deliveryQueued) {
         return { ok: false, error: out.detail ?? `Send did not complete (${out.status ?? "unknown"}).` };
+      }
+      if (deliveryQueued) {
+        const now = new Date().toISOString();
+        commit((prev) => {
+          const outreach = prev.outreach.map((m) =>
+            m.id === messageId
+              ? { ...m, status: "Scheduled" as OutreachStatus, scheduledFor: now, sentAt: null }
+              : m,
+          );
+          return withActivity(
+            { ...prev, outreach },
+            makeActivity({
+              type: "outreach",
+              title: `WhatsApp delivery queued for ${candidate.name}`,
+              notes: "ARIA will re-check consent, do-not-contact status, the reply window, and the approval before delivery.",
+              outcome: "Queued for policy check",
+              campaignId: msg.campaignId,
+              linkedEntityType: "candidate",
+              linkedEntityId: candidate.id,
+            }),
+            msg.campaignId,
+          );
+        });
+        return { ok: true, queued: true };
       }
       // Delivered. Flip the local record to sent (Scheduled + sentAt) and count it.
       const now = new Date().toISOString();
@@ -2728,7 +2827,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const rejectOutreach = useCallback(
-    (messageId: string) =>
+    async (messageId: string): Promise<{ ok: boolean; error?: string }> => {
+      const currentState = current();
+      const currentMessage = currentState.outreach.find((m) => m.id === messageId);
+      if (!currentMessage) return { ok: false, error: "Message not found." };
+      if (supabaseEnabled) {
+        const revoked = await revokeOutreachApproval(messageId);
+        if (!revoked.ok) return { ok: false, error: revoked.error };
+      }
       commit((s) => {
         const msg = s.outreach.find((m) => m.id === messageId);
         const next = {
@@ -2751,8 +2857,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           }),
           msg.campaignId,
         );
-      }),
-    [commit],
+      });
+      return { ok: true };
+    },
+    [commit, current],
   );
 
   const classifyAndStoreReply = useCallback(
@@ -4801,13 +4909,6 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   // "the strong ones" / "anyone perfect" reuse the Mantu Star Rating already
   // computed for every candidate (tania.ts) rather than inventing a new
   // scoring concept just for this feature.
-  const ARIA_STRONG_RATINGS: StarRating[] = ["TopGun", "A"];
-  const ARIA_PERFECT_RATING: StarRating = "TopGun";
-  // Caps how many candidates a single draft/follow-up/book/pool step touches
-  // per run — an instruction with no explicit count should never fan out
-  // into an unbounded batch of drafts/bookings.
-  const ARIA_STEP_CANDIDATE_CAP = 10;
-
   /**
    * Aria Command — executes a previewed `AriaPlan` step by step, calling
    * `onStep` before and after each one so the console can tick it green (or

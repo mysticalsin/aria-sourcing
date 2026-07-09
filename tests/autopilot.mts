@@ -1,10 +1,13 @@
 import { createHmac } from "crypto";
+import { readFileSync } from "fs";
 import {
   verifyMetaSignature,
   parseWhatsAppWebhook,
+  parseWhatsAppDeliveryStatuses,
   buildReplyPrompt,
   decideAutopilot,
 } from "../src/lib/autopilot";
+import { isWhatsAppOptOut } from "../src/lib/whatsapp-policy";
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) { if (cond) { pass++; } else { fail++; console.log("FAIL:", name); } }
@@ -50,6 +53,7 @@ function ok(name: string, cond: boolean) { if (cond) { pass++; } else { fail++; 
             field: "messages",
             value: {
               // status-only delivery (read receipt) — must be ignored
+              metadata: { phone_number_id: "phid" },
               statuses: [{ id: "wamid.A1", status: "read", timestamp: "1720512120" }],
             },
           },
@@ -63,11 +67,30 @@ function ok(name: string, cond: boolean) { if (cond) { pass++; } else { fail++; 
   ok("parse: provider id preserved", msgs[0]?.providerId === "wamid.A1");
   ok("parse: text preserved", msgs[0]?.text === "Yes, interested! What is the stack?");
   ok("parse: timestamp in ms", msgs[0]?.timestamp === 1720512000000);
+  ok("parse: sender phone-number id preserved for tenant resolution", msgs[0]?.senderPhoneNumberId === "phid");
 
   ok("parse: empty payload → []", parseWhatsAppWebhook({}).length === 0);
   ok("parse: null → [] (no throw)", parseWhatsAppWebhook(null).length === 0);
   ok("parse: junk entry → [] (no throw)", parseWhatsAppWebhook({ entry: [42, "x", {}] }).length === 0);
+
+  const receipts = parseWhatsAppDeliveryStatuses(payload);
+  ok("receipt: status-only payload extracts delivery events", receipts.length === 1);
+  ok("receipt: provider id is preserved", receipts[0]?.providerMessageId === "wamid.A1");
+  ok("receipt: sender phone-number id scopes reconciliation", receipts[0]?.senderPhoneNumberId === "phid");
+  ok("receipt: delivery timestamp is normalized to milliseconds", receipts[0]?.occurredAt === 1720512120000);
+  ok("receipt: accepts only known statuses", parseWhatsAppDeliveryStatuses({
+    entry: [{ changes: [{ value: { metadata: { phone_number_id: "phid" }, statuses: [{ id: "wamid.X", status: "unknown", timestamp: "1720512120" }] } }] }],
+  }).length === 0);
+  ok("receipt: ignores incomplete status records", parseWhatsAppDeliveryStatuses({
+    entry: [{ changes: [{ value: { metadata: { phone_number_id: "phid" }, statuses: [{ status: "delivered", timestamp: "not-a-time" }] } }] }],
+  }).length === 0);
 }
+
+// Candidate opt-outs are deterministic routing commands, not LLM input. They
+// must halt drafting before the message can enter any agent conversation.
+ok("opt-out: STOP blocks regardless of case", isWhatsAppOptOut("  stop "));
+ok("opt-out: unsubscribe blocks", isWhatsAppOptOut("UNSUBSCRIBE"));
+ok("opt-out: ordinary candidate reply is not an opt-out", !isWhatsAppOptOut("Yes, please share the role details."));
 
 // ---------------------------------------------------------------------------
 // Reply prompt shape
@@ -99,10 +122,11 @@ const CLEAN_REPLY = "Good question! The team works in TypeScript and Go, mostly 
   ok("decide: canary queues", d.action === "queue" && d.reasons.includes("canary"));
 }
 {
-  // clean reply, autopilot on, canary spent → send
+  // Clean copy is still a draft: an external reply always needs a named human
+  // to review and explicitly send it.
   const d = decideAutopilot(CLEAN_REPLY, { autopilot: true, canary_remaining: 0 });
-  ok("decide: clean reply sends", d.action === "send");
-  if (d.action === "send") ok("decide: send text non-empty", d.text.length > 20);
+  ok("decide: clean reply queues for human review", d.action === "queue" && d.reasons.includes("human-review-required"));
+  ok("decide: clean queued text is non-empty", d.text.length > 20);
 }
 {
   // salary commitment → queue
@@ -124,16 +148,14 @@ const CLEAN_REPLY = "Good question! The team works in TypeScript and Go, mostly 
   ok("decide: status narration queues", d.action === "queue");
 }
 {
-  // soft AI-isms cleaned, still sends
+  // Soft AI-isms are cleaned, then the draft still waits for human review.
   const d = decideAutopilot(
     "We could leverage your robust experience — the team ships weekly and would love to talk this week.",
     { autopilot: true, canary_remaining: 0 },
   );
-  ok("decide: AI-isms cleaned then sends", d.action === "send");
-  if (d.action === "send") {
-    ok("decide: 'leverage' gone from sent text", !/leverage/i.test(d.text));
-    ok("decide: em-dash gone from sent text", !d.text.includes("—"));
-  }
+  ok("decide: AI-isms cleaned then queues", d.action === "queue" && d.reasons.includes("human-review-required"));
+  ok("decide: 'leverage' gone from queued text", !/leverage/i.test(d.text));
+  ok("decide: em-dash gone from queued text", !d.text.includes("—"));
 }
 {
   // multiple reasons accumulate
@@ -156,6 +178,15 @@ const CLEAN_REPLY = "Good question! The team works in TypeScript and Go, mostly 
   } catch { threw = true; }
   ok("robust: no throw on odd input", !threw);
 }
+
+const webhookRoute = readFileSync(new URL("../src/app/api/webhooks/whatsapp/route.ts", import.meta.url), "utf8");
+ok("webhook never synthesizes an outreach approval", !/from\("outreach_approvals"\)\.insert/.test(webhookRoute));
+ok("webhook stores generated WhatsApp replies as human-review blocked", /status:\s*"blocked"/.test(webhookRoute));
+ok("webhook resolves workspace from the registered WhatsApp sender", /from\("whatsapp_senders"\)/.test(webhookRoute));
+ok("webhook handles a candidate opt-out before any model call", /isWhatsAppOptOut\(msg\.text\)/.test(webhookRoute));
+ok("webhook refuses to acknowledge events when durable storage is unavailable", /return NextResponse\.json\(\{ ok: false, reason: "Service client unavailable\." \}, \{ status: 503 \}\)/.test(webhookRoute));
+ok("webhook reconciles signed delivery receipts through a service-only RPC", /record_whatsapp_delivery_event/.test(webhookRoute));
+ok("webhook parses delivery receipts separately from candidate messages", /parseWhatsAppDeliveryStatuses\(payload\)/.test(webhookRoute));
 
 console.log(`RESULT autopilot: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

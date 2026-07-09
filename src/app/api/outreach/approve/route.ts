@@ -1,12 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { createHash } from "crypto";
 import { getServerSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
+import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
 
 /**
  * Record a human approval for a SPECIFIC outbound message.
@@ -19,6 +19,9 @@ import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit"
  */
 const ApproveSchema = z.object({
   messageId: z.string().min(1).max(120),
+  candidateId: z.string().min(1).max(120),
+  channel: z.enum(["Email", "LinkedIn", "WhatsApp", "SMS"]),
+  recipient: z.string().min(1).max(255),
   subject: z.string().min(1).max(255),
   body: z.string().min(1).max(50_000),
 });
@@ -49,26 +52,27 @@ export async function POST(req: NextRequest) {
 
   const validated = await validateBody(req, ApproveSchema, { maxBytes: 100_000 });
   if (!validated.ok) return validated.response;
-  const { messageId, subject, body } = validated.data;
+  const { messageId, candidateId, channel, recipient, subject, body } = validated.data;
 
   const { data: wid } = await supabase.rpc("current_workspace_id");
   if (!wid) return NextResponse.json({ ok: false, error: "Workspace not found." }, { status: 400 });
 
   // Hash the EXACT content the operator approved; the send route recomputes this
   // and refuses if it differs (the body was changed after approval).
-  const bodyHash = createHash("sha256").update(`${subject}\n${body}`).digest("hex");
+  const bodyHash = approvalHash(subject, body);
+  const scopeHash = approvalScopeHash({ candidateId, channel, recipient });
+  if (!scopeHash) return NextResponse.json({ ok: false, error: "Invalid approval recipient." }, { status: 400 });
 
-  const { error } = await supabase.from("outreach_approvals").upsert(
-    {
-      workspace_id: wid,
-      message_id: messageId,
-      body_hash: bodyHash,
-      approved_by: user.id,
-      approved_at: new Date().toISOString(),
-    },
-    { onConflict: "workspace_id,message_id" },
-  );
-  if (error) {
+  const { data: recorded, error } = await supabase.rpc("record_outreach_approval", {
+    p_message_id: messageId,
+    p_body_hash: bodyHash,
+    p_approval_scope_hash: scopeHash,
+  });
+  const result = recorded as { ok?: boolean; reason?: string } | null;
+  if (error || result?.ok !== true) {
+    if (result?.reason === "already-dispatching") {
+      return NextResponse.json({ ok: false, error: "This message has already entered delivery." }, { status: 409 });
+    }
     return NextResponse.json({ ok: false, error: "Failed to record approval." }, { status: 500 });
   }
   return NextResponse.json({ ok: true });

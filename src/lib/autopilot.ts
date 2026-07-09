@@ -37,10 +37,25 @@ export function verifyMetaSignature(rawBody: string, header: string | null, appS
 export interface InboundWhatsApp {
   /** Sender phone in E.164 without '+' (as Meta delivers it). */
   from: string;
+  /** Meta phone-number ID identifies the ARIA workspace sender. */
+  senderPhoneNumberId: string;
   /** Meta message id — dedupe key (unique per workspace+channel in DB). */
   providerId: string;
   text: string;
   timestamp: number;
+}
+
+export interface WhatsAppDeliveryStatus {
+  /** Meta phone-number ID identifies the ARIA workspace sender. */
+  senderPhoneNumberId: string;
+  /** Meta outbound message id, used to reconcile the exact outbox row. */
+  providerMessageId: string;
+  /** Provider acceptance, delivery, read receipt, or a terminal failure. */
+  status: "sent" | "delivered" | "read" | "failed";
+  /** Provider event time in Unix milliseconds. */
+  occurredAt: number;
+  /** Numeric provider code only: never store recipient or provider prose. */
+  providerErrorCode?: number;
 }
 
 /**
@@ -55,9 +70,11 @@ export function parseWhatsAppWebhook(payload: unknown): InboundWhatsApp[] {
     const changes = (entry as { changes?: unknown[] })?.changes;
     if (!Array.isArray(changes)) continue;
     for (const change of changes) {
-      const value = (change as { value?: { messages?: unknown[] } })?.value;
+      const value = (change as { value?: { messages?: unknown[]; metadata?: { phone_number_id?: string } } })?.value;
       const messages = value?.messages;
       if (!Array.isArray(messages)) continue;
+      const senderPhoneNumberId = value?.metadata?.phone_number_id;
+      if (!senderPhoneNumberId) continue;
       for (const raw of messages) {
         const m = raw as {
           from?: string;
@@ -69,9 +86,64 @@ export function parseWhatsAppWebhook(payload: unknown): InboundWhatsApp[] {
         if (m.type !== "text" || !m.from || !m.id || typeof m.text?.body !== "string") continue;
         out.push({
           from: m.from,
+          senderPhoneNumberId,
           providerId: m.id,
           text: m.text.body,
           timestamp: Number(m.timestamp ?? 0) * 1000,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Extract signed Meta delivery/read status receipts separately from inbound
+ * candidate text. Receipts never enter the reply composer or message inbox;
+ * they are append-only reconciliation facts for an already accepted outbound.
+ */
+export function parseWhatsAppDeliveryStatuses(payload: unknown): WhatsAppDeliveryStatus[] {
+  const out: WhatsAppDeliveryStatus[] = [];
+  const entries = (payload as { entry?: unknown[] })?.entry;
+  if (!Array.isArray(entries)) return out;
+  for (const entry of entries) {
+    const changes = (entry as { changes?: unknown[] })?.changes;
+    if (!Array.isArray(changes)) continue;
+    for (const change of changes) {
+      const value = (change as {
+        value?: { statuses?: unknown[]; metadata?: { phone_number_id?: string } };
+      })?.value;
+      const senderPhoneNumberId = value?.metadata?.phone_number_id;
+      const statuses = value?.statuses;
+      if (!senderPhoneNumberId || !Array.isArray(statuses)) continue;
+      for (const raw of statuses) {
+        const status = raw as {
+          id?: string;
+          status?: string;
+          timestamp?: string;
+          errors?: Array<{ code?: unknown }>;
+        };
+        if (
+          !status.id ||
+          (status.status !== "sent" && status.status !== "delivered" && status.status !== "read" && status.status !== "failed")
+        ) {
+          continue;
+        }
+        const seconds = Number(status.timestamp);
+        if (!Number.isFinite(seconds) || seconds <= 0) continue;
+        const rawCode = status.errors?.[0]?.code;
+        const providerErrorCode =
+          typeof rawCode === "number" && Number.isFinite(rawCode)
+            ? rawCode
+            : typeof rawCode === "string" && /^\d{1,12}$/.test(rawCode)
+              ? Number(rawCode)
+              : undefined;
+        out.push({
+          senderPhoneNumberId,
+          providerMessageId: status.id,
+          status: status.status,
+          occurredAt: Math.floor(seconds * 1_000),
+          ...(providerErrorCode === undefined ? {} : { providerErrorCode }),
         });
       }
     }
@@ -134,9 +206,7 @@ const COMMITMENT_PATTERNS: [RegExp, string][] = [
   [/\b(offer letter|contract|signing bonus|equity grant)\b/i, "commitment-contract"],
 ];
 
-export type AutopilotDecision =
-  | { action: "send"; text: string }
-  | { action: "queue"; text: string; reasons: string[] };
+export type AutopilotDecision = { action: "queue"; text: string; reasons: string[] };
 
 /**
  * Decide what happens to a composed reply. `queue` means a human (the spec
@@ -146,7 +216,9 @@ export type AutopilotDecision =
 export function decideAutopilot(replyDraft: string, guardrails: SpecGuardrails): AutopilotDecision {
   // Soft-clean first so the human queue receives reviewable text either way.
   const cleaned = humanizeText(replyDraft ?? "");
-  const reasons: string[] = [];
+  // Autopilot may classify and draft, but a named operator makes the only
+  // approval that can release an external message.
+  const reasons: string[] = ["human-review-required"];
 
   if (!guardrails.autopilot) reasons.push("autopilot-off");
   if ((guardrails.canary_remaining ?? 0) > 0) reasons.push("canary");
@@ -158,6 +230,5 @@ export function decideAutopilot(replyDraft: string, guardrails: SpecGuardrails):
   const gate: GateVerdict = gateOutbound(cleaned);
   if (!gate.pass) reasons.push(...gate.reasons.map((r) => `gate:${r}`));
 
-  if (reasons.length > 0) return { action: "queue", text: gate.pass ? gate.text : cleaned, reasons };
-  return { action: "send", text: (gate as { text: string }).text };
+  return { action: "queue", text: gate.pass ? gate.text : cleaned, reasons };
 }

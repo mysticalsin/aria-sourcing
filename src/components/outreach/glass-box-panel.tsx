@@ -235,9 +235,14 @@ export function GlassBoxPanel({ message }: GlassBoxPanelProps) {
   const checks = result.checks ?? [];
   const hasBlock = checks.some((c) => c.status === "block");
   const actionable = message.status === "Needs Approval" || message.status === "Draft";
+  const [approving, setApproving] = React.useState(false);
+  const [rejecting, setRejecting] = React.useState(false);
 
-  function handleApprove() {
-    const res = actions.approveOutreach(message.id);
+  async function handleApprove() {
+    if (approving) return;
+    setApproving(true);
+    const res = await actions.approveOutreach(message.id);
+    setApproving(false);
     if (!res.allowed) {
       toast({ title: "Approval blocked", description: res.blockers.join(" "), variant: "error" });
       return;
@@ -251,8 +256,15 @@ export function GlassBoxPanel({ message }: GlassBoxPanelProps) {
     });
   }
 
-  function handleReject() {
-    actions.rejectOutreach(message.id);
+  async function handleReject() {
+    if (rejecting) return;
+    setRejecting(true);
+    const result = await actions.rejectOutreach(message.id);
+    setRejecting(false);
+    if (!result.ok) {
+      toast({ title: "Could not reject outreach", description: result.error, variant: "error" });
+      return;
+    }
     toast({ title: "Outreach rejected", description: "Removed from the approval queue.", variant: "warning" });
   }
 
@@ -295,13 +307,14 @@ export function GlassBoxPanel({ message }: GlassBoxPanelProps) {
               variant="primary"
               leftIcon={<Check className="h-4 w-4" />}
               onClick={handleApprove}
-              disabled={hasBlock}
+              loading={approving}
+              disabled={hasBlock || approving || rejecting}
               title={hasBlock ? "Blocked by a failing guardrail check above" : undefined}
             >
-              Approve
+              {approving ? "Recording approval…" : "Approve"}
             </Button>
-            <Button size="sm" variant="ghost" leftIcon={<X className="h-4 w-4" />} onClick={handleReject}>
-              Reject
+            <Button size="sm" variant="ghost" leftIcon={<X className="h-4 w-4" />} onClick={handleReject} disabled={approving || rejecting}>
+              {rejecting ? "Revoking…" : "Reject"}
             </Button>
           </div>
         )}
