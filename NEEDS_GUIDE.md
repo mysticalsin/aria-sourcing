@@ -38,7 +38,7 @@ docker compose up --build          # app + its own Supabase (Postgres, GoTrue, P
 
 - **https://aria-sourcing-demo.vercel.app** — sign in **admin / admin**.
 - Runs against hosted Supabase; all demo users share one workspace.
-- Deploy runbook: `DEPLOY_VERCEL_DEMO.md` (production branch is `vercel-demo`).
+- Deploy runbook: `production-readiness/DEPLOYMENT_RUNBOOK.md`.
 
 ### C. Bare local dev
 
@@ -133,13 +133,14 @@ Real batches are authoritative: zero real hits is reported as zero, never backfi
 Everything is dry-run until ALL of these are true (each is checked server-side):
 
 1. Live/Supabase mode (Docker stack or hosted Supabase) and a signed-in `admin`/`member`.
-2. A **send provider**: `RESEND_API_KEY` or `SENDGRID_API_KEY`, or a connected Gmail/Graph mailbox seat. (WhatsApp via `WHATSAPP_TOKEN`+`WHATSAPP_PHONE_NUMBER_ID`, SMS via Twilio vars — both wired too.)
+2. A **send provider**: `RESEND_API_KEY` or `SENDGRID_API_KEY`, or a connected Gmail/Graph mailbox seat. WhatsApp additionally needs `WHATSAPP_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID` and its consent/template/window policy. **SMS is intentionally disabled** until it has equivalent consent, suppression, opt-out, and durable dispatch controls.
 3. The seat's **sending domain verified** — click **Verify domain** on the seat card (Agent Fleet): it runs a real SPF/DMARC/DKIM DNS check and persists the result. No DNS records → no send.
 4. The seat toggled **Live**.
 5. The exact message **human-approved** (the server stores a hash of the approved subject+body; editing after approval invalidates it).
-6. Recipient not suppressed, within re-contact windows and the seat's daily/warm-up caps (enforced atomically in Postgres).
+6. `OUTREACH_UNSUBSCRIBE_BASE_URL` is set to a canonical HTTPS app origin and migrations through `0012_email_unsubscribe.sql` are applied. Every live email gets a recipient-specific opaque one-click link, standard headers, and a visible footer.
+7. Recipient not suppressed, within re-contact windows and the seat's daily/warm-up caps (enforced atomically in Postgres).
 
-Known compliance gap to close before real volume: the `List-Unsubscribe` header points at a placeholder mailbox and SendGrid sends carry none — wire a real unsubscribe route first.
+Before real volume, run the controlled unsubscribe smoke test in `production-readiness/DEPLOYMENT_RUNBOOK.md`: inspect raw headers, submit one-click POST, and prove a later send is blocked.
 
 ## 7. Interviewers & booking
 
@@ -153,4 +154,4 @@ The interviewer roster is editable on `/calendar` (admin): add real names/emails
 - **`aria-sourcing-rest-1` shows unhealthy** → fixed 2026-07-06 (`PGRST_ADMIN_SERVER_PORT` added to `docker-compose.yml`); recreate with `docker compose up -d rest`.
 - **Scan inbox always loads the sample** → no mailbox connected (§3 setup), or the need email's subject doesn't match the recognizer — resend with a subject like `NEED: <role>` or just paste it (§2).
 - **Edits don't show up on :3003** → the container dev server hot-reloads from this repo; hard-refresh the browser. Rebuild only after `package.json` changes.
-- **Deploying to prod** → push to the `vercel-demo` branch and verify the deployment's readyState (not just the push) — see `DEPLOY_VERCEL_DEMO.md`.
+- **Deploying to prod** → follow `production-readiness/DEPLOYMENT_RUNBOOK.md`; verify the deployed artifact and the unsubscribe/approval smoke checks, not just a source push.

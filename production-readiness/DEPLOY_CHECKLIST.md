@@ -10,7 +10,7 @@ required for launch but must be done before the relevant feature is used.
 
 - [ ] `npm ci && npm run typecheck` — zero TypeScript errors.
 - [ ] `npm run lint` — clean.
-- [ ] `npm run test` — all 21 suites pass.
+- [ ] `npm run test` — full deterministic suite passes.
 - [ ] `npm run build` — production build succeeds locally.
 - [ ] Confirm `.env.production.example` is complete and `.env.local` (or
       Vercel env vars) matches every variable listed there.
@@ -36,6 +36,17 @@ required for launch but must be done before the relevant feature is used.
      column-level grants (secrets server-side only).
   4. `supabase/migrations/0004_email_connections.sql` — email_connections
      table for Gmail / Microsoft Graph OAuth tokens.
+  5. `supabase/migrations/0005_rls_tenant_isolation.sql` — hardened tenant
+     grants and RLS policies.
+  6. `supabase/migrations/0006_outreach_approvals.sql` through
+     `0008_human_outbound_approvals.sql` — durable approval records and human
+     provenance.
+  7. `supabase/migrations/0009_whatsapp_delivery_policy.sql` and
+     `0010_whatsapp_delivery_reconciliation.sql` — consent/template/window
+     policy plus Meta acceptance and receipt audit history.
+  8. `supabase/migrations/0011_outreach_approval_lifecycle.sql` and
+     `0012_email_unsubscribe.sql` — authoritative revoke/claim lifecycle and
+     opaque one-click unsubscribe hashes.
 - [ ] Verify RLS is active for every table: in the SQL Editor, run
       `SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname = 'public';`
       — every row must show `rowsecurity = true`.
@@ -102,6 +113,13 @@ required for launch but must be done before the relevant feature is used.
       (`openssl rand -hex 32`), not the placeholder value.
 - [ ] Confirm `SUPABASE_SERVICE_ROLE_KEY` is set as a **Secret** (encrypted,
       not plain text) in Vercel and is absent from all browser-exposed env vars.
+- [ ] Set `DATA_ENCRYPTION_KEY`, `CRON_SECRET`, and the canonical HTTPS
+      `OUTREACH_UNSUBSCRIBE_BASE_URL` before enabling a live email seat.
+- [ ] If WhatsApp is enabled, set `WHATSAPP_TOKEN`,
+      `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, and
+      `WHATSAPP_APP_SECRET`; register `/api/webhooks/whatsapp` in Meta.
+- [ ] Do not enable SMS: the product intentionally blocks all live SMS delivery
+      until its consent and durable-dispatch policy exists.
 - [ ] Remove or leave blank `RESEND_API_KEY` / `SENDGRID_API_KEY` if you are
       not yet ready to enable live email — all sends default to dry-run when
       absent.
@@ -144,6 +162,9 @@ required for launch but must be done before the relevant feature is used.
 - [ ] Verify domain in your email provider dashboard (Resend / SendGrid).
 - [ ] Confirm bounce rate monitoring is in place — auto-pause a seat if bounce
       rate exceeds 5 % or complaint rate exceeds 0.1 %.
+- [ ] Send a controlled email and inspect raw headers for `List-Unsubscribe` and
+      `List-Unsubscribe-Post`; submit the one-click request and prove the next
+      send to that address is blocked by `suppression_list`.
 - [ ] Only after verification: flip the target fleet seat to `live` in
       **Settings → Fleet** and set the domain-verified flag.
 

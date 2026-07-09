@@ -48,3 +48,15 @@ The application cannot truthfully be called live-production-ready until these ar
 ## Release truth
 
 Code-level guardrails and tests are present. Live deployment, data migration, provider credentials, Meta approval, consent controls, sidecar hardening, and remote build proof are still required. Do not enable live WhatsApp sending until every blocker above has a recorded passing check.
+
+## Update: WhatsApp delivery policy implemented, still not deployed
+
+`0009_whatsapp_delivery_policy.sql` and its associated runtime changes now close the code-level gaps in production blocker items 4 through 6: phone DNC, explicit consent, sender-to-workspace mapping, approved templates, reply windows, content-gate verdict caching, typed provider payloads, and service-only claims are implemented in the worktree. The direct route now enters the durable outbox rather than calling Meta.
+
+This does not change release truth. The migration, Meta sender/template configuration, opt-in import, signed webhook replay, staging database proof, and remote build proof remain mandatory. See `2026-07-09-whatsapp-delivery-hardening.md` for the exact rollout sequence and verification evidence.
+
+## Update: local release verification now passes
+
+The same checkout now passes `npx tsc --noEmit`, `npm run test`, `npm run build`, and `git diff --check`. The former local build stall did not reproduce. The browser sidecar was also changed to transparent, public, read-only research only, removing stealth, private-network access, text entry, and arbitrary page evaluation from its production tool vocabulary.
+
+This is source-level verification only. The production deployment, migrations, external provider configuration, and signed webhook evidence remain release gates. See `2026-07-09-production-verification.md`.

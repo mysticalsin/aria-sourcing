@@ -13,7 +13,8 @@ The Supabase CLI is already vendored at `./.localbin/supabase` (v2.108.0).
 bash scripts/local-supabase-up.sh
 ```
 This runs `supabase start` (pulls images on first run), applies **all migrations
-0001–0005 including the RLS / tenant-isolation policy**, and writes `.env.local`
+0001–0012 including tenant isolation, durable approval lifecycle, WhatsApp
+delivery reconciliation, and email unsubscribe policy**, and writes `.env.local`
 with the local URL + anon + service-role keys. Then:
 ```bash
 npm run dev      # restart so .env.local is picked up → app now runs in LIVE mode
