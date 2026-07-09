@@ -40,9 +40,14 @@
   --danger: 2 76% 54%;
   --danger-soft: 4 88% 95%;
 
+  /* System stacks keep the visual hierarchy available to the build and offline
+     deployments. Do not use next/font/google here: it makes production builds
+     depend on a third-party font request. */
+  --font-geist: "Avenir Next", Avenir, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-garamond: "Iowan Old Style", "Baskerville", "Baskerville Old Face", "Times New Roman", serif;
   /* Mantu Brand DNA: Calibri (Carlito open-source fallback), then system. */
-  --font-sans: "Calibri", "Carlito", -apple-system, BlinkMacSystemFont, "Segoe UI",
-    Roboto, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+  --font-sans: "Calibri", "Carlito", var(--font-geist);
   --font-mono: "SFMono-Regular", ui-monospace, "JetBrains Mono", "Fira Code",
     Menlo, Consolas, monospace;
   --ease-motion-out: cubic-bezier(0.23, 1, 0.32, 1);
