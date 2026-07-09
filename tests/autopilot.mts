@@ -180,10 +180,19 @@ const CLEAN_REPLY = "Good question! The team works in TypeScript and Go, mostly 
 }
 
 const webhookRoute = readFileSync(new URL("../src/app/api/webhooks/whatsapp/route.ts", import.meta.url), "utf8");
+const inboundProcessor = readFileSync(new URL("../src/lib/whatsapp-inbound.ts", import.meta.url), "utf8");
 ok("webhook never synthesizes an outreach approval", !/from\("outreach_approvals"\)\.insert/.test(webhookRoute));
-ok("webhook stores generated WhatsApp replies as human-review blocked", /status:\s*"blocked"/.test(webhookRoute));
+ok(
+  "webhook stores generated WhatsApp replies as human-review blocked",
+  /processStoredWhatsAppInbound/.test(webhookRoute) && /status:\s*"blocked"/.test(inboundProcessor),
+);
 ok("webhook resolves workspace from the registered WhatsApp sender", /from\("whatsapp_senders"\)/.test(webhookRoute));
-ok("webhook handles a candidate opt-out before any model call", /isWhatsAppOptOut\(msg\.text\)/.test(webhookRoute));
+const optOutIndex = inboundProcessor.indexOf("isWhatsAppOptOut(body)");
+const providerIndex = inboundProcessor.indexOf("const provider = envProvider()");
+ok(
+  "webhook handles a candidate opt-out before any model call",
+  /processStoredWhatsAppInbound/.test(webhookRoute) && optOutIndex >= 0 && providerIndex > optOutIndex,
+);
 ok("webhook refuses to acknowledge events when durable storage is unavailable", /return NextResponse\.json\(\{ ok: false, reason: "Service client unavailable\." \}, \{ status: 503 \}\)/.test(webhookRoute));
 ok("webhook reconciles signed delivery receipts through a service-only RPC", /record_whatsapp_delivery_event/.test(webhookRoute));
 ok("webhook parses delivery receipts separately from candidate messages", /parseWhatsAppDeliveryStatuses\(payload\)/.test(webhookRoute));

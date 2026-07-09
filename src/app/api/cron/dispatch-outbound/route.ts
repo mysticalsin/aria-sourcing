@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import { dispatchDue } from "@/lib/dispatch-outbound";
+import { recoverPendingWhatsAppInbound } from "@/lib/whatsapp-inbound";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,7 @@ export async function GET(req: NextRequest) {
   const supabase = getServiceSupabase();
   if (!supabase) return NextResponse.json({ ok: false, reason: "No service client." }, { status: 503 });
 
+  const inboundRecovery = await recoverPendingWhatsAppInbound(supabase, 50);
   const stats = await dispatchDue(supabase, 50);
-  return NextResponse.json({ ok: true, ...stats });
+  return NextResponse.json({ ok: true, ...stats, inboundRecovery });
 }

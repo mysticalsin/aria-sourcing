@@ -25,7 +25,13 @@ import { sendWhatsApp, sendSms } from "@/lib/channels";
 import { gateOutbound } from "@/lib/gate";
 import { safeLog } from "@/lib/log-redact";
 import { approvalHash } from "@/lib/outreach-content";
+import {
+  APPROVED_WHATSAPP_TEMPLATE_AUDIT_SUBJECT,
+  buildApprovedWhatsAppTemplateAudit,
+  parseApprovedWhatsAppTemplateParameterSchema,
+} from "@/lib/whatsapp-template-queue";
 import { assessWhatsAppDispatch, type WhatsAppPermission } from "@/lib/whatsapp-policy";
+import { shouldReopenWhatsAppReview } from "@/lib/whatsapp-review-policy";
 
 const WHATSAPP_GATE_CACHE_VERSION = "whatsapp-outbound-gate-v1";
 const WHATSAPP_GATE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
@@ -67,7 +73,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
 
   let dueQuery = supabase
     .from("messages_outbound")
-    .select("id, workspace_id, spec_id, candidate_id, seat_id, channel, to_address, subject, body, type, template_id, template_parameters, approval_message_id")
+    .select("id, workspace_id, spec_id, candidate_id, seat_id, channel, to_address, subject, body, type, template_id, template_parameters, approval_message_id, review_decision")
     .eq("status", "queued")
     .lte("scheduled_at", new Date().toISOString());
   if (messageId) dueQuery = dueQuery.eq("id", messageId);
@@ -82,12 +88,21 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
   for (const msg of due ?? []) {
     stats.processed++;
     const finish = async (status: "sent" | "blocked" | "failed", gateResult?: unknown) => {
+      const reopenReview =
+        status === "blocked" &&
+        shouldReopenWhatsAppReview({
+          channel: msg.channel,
+          type: msg.type,
+          status,
+          reviewDecision: msg.review_decision ?? null,
+        });
       await supabase
         .from("messages_outbound")
         .update({
           status,
           ...(status === "sent" ? { sent_at: new Date().toISOString() } : {}),
           ...(gateResult !== undefined ? { gate_result: gateResult } : {}),
+          ...(reopenReview ? { review_decision: null, reviewed_at: null, reviewed_by: null } : {}),
         })
         .eq("id", msg.id);
       stats[status]++;
@@ -101,8 +116,69 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         continue;
       }
 
-      // 1. Approval must exist for exactly this text.
-      const bodyHash = approvalHash(msg.subject ?? "", msg.body);
+      // A Meta-approved template is not free-form candidate copy. Before
+      // looking up its approval, reconstruct the exact audit payload from the
+      // current trusted template record and normalized stored parameters. This
+      // makes a post-approval change to template identity, locale, sender,
+      // version, schema, or parameters fail closed before the DB claim.
+      const isApprovedWhatsAppTemplate = msg.channel === "WhatsApp" && msg.type === "approved_template";
+      let whatsappTemplate: { name: string; language: string; bodyParameters: string[] } | null = null;
+      let templateAuditBody: string | null = null;
+      if (isApprovedWhatsAppTemplate) {
+        const { data: template, error: templateErr } = await supabase
+          .from("whatsapp_templates")
+          .select("id, sender_id, meta_name, language, version, status, parameter_schema, body_parameter_count")
+          .eq("workspace_id", msg.workspace_id)
+          .eq("id", msg.template_id ?? "")
+          .maybeSingle();
+        if (templateErr) {
+          safeLog("dispatch-outbound: WhatsApp template lookup error", { message: templateErr.message });
+          await finish("blocked", { pass: false, reasons: ["whatsapp-template-store-unavailable"] });
+          continue;
+        }
+        if (!template || template.status !== "approved") {
+          await finish("blocked", { pass: false, reasons: ["whatsapp:template-not-approved"] });
+          continue;
+        }
+        const parameterSchema = parseApprovedWhatsAppTemplateParameterSchema(
+          template.parameter_schema,
+          template.body_parameter_count,
+        );
+        const audit = parameterSchema
+          ? buildApprovedWhatsAppTemplateAudit({
+              template: {
+                id: String(template.id),
+                senderId: String(template.sender_id),
+                metaName: String(template.meta_name),
+                language: String(template.language),
+                version: Number(template.version),
+              },
+              parameterSchema,
+              parameters: msg.template_parameters,
+            })
+          : null;
+        if (!audit) {
+          await finish("blocked", { pass: false, reasons: ["whatsapp:template-parameters-invalid"] });
+          continue;
+        }
+        if (msg.subject !== APPROVED_WHATSAPP_TEMPLATE_AUDIT_SUBJECT || msg.body !== audit.body) {
+          await finish("blocked", { pass: false, reasons: ["whatsapp:template-audit-mismatch"] });
+          continue;
+        }
+        templateAuditBody = audit.body;
+        whatsappTemplate = {
+          name: String(template.meta_name),
+          language: String(template.language),
+          bodyParameters: audit.parameters,
+        };
+      }
+
+      // 1. Approval must exist for exactly this message. For an externally
+      // approved template, the canonical audit payload replaces candidate
+      // prose so identity and normalized parameters are part of the hash.
+      const bodyHash = isApprovedWhatsAppTemplate
+        ? approvalHash(APPROVED_WHATSAPP_TEMPLATE_AUDIT_SUBJECT, templateAuditBody ?? "")
+        : approvalHash(msg.subject ?? "", msg.body);
       const approvalMessageId = msg.approval_message_id ?? msg.id;
       const { data: approval } = await supabase
         .from("outreach_approvals")
@@ -122,22 +198,26 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         continue;
       }
 
-      // 2. Human-likeness gate, re-run at the wire.
-      const gate = gateOutbound(msg.body);
-      if (msg.channel === "WhatsApp" && !(await cacheWhatsAppGateVerdict(supabase, msg.workspace_id, msg.body, gate))) {
-        await finish("blocked", { pass: false, reasons: ["whatsapp:gate-cache-write-failed"] });
-        continue;
-      }
-      if (!gate.pass) {
-        await finish("blocked", { pass: false, reasons: gate.reasons });
-        continue;
+      // 2. Human-likeness is a free-form text safeguard. It intentionally does
+      // not evaluate the machine-readable audit record for an externally
+      // approved Meta template; that record was already bound to the approval
+      // above and the actual recipient-facing text stays in Meta's template.
+      if (!isApprovedWhatsAppTemplate) {
+        const gate = gateOutbound(msg.body);
+        if (msg.channel === "WhatsApp" && !(await cacheWhatsAppGateVerdict(supabase, msg.workspace_id, msg.body, gate))) {
+          await finish("blocked", { pass: false, reasons: ["whatsapp:gate-cache-write-failed"] });
+          continue;
+        }
+        if (!gate.pass) {
+          await finish("blocked", { pass: false, reasons: gate.reasons });
+          continue;
+        }
       }
 
       // 2b. WhatsApp has its own legal/provider boundary. A free-form reply
       // needs a current, matching opt-in plus an open customer-service window.
       // A business-initiated message must instead identify a trusted template.
       // This happens before a seat check, ledger claim, or provider call.
-      let whatsappTemplate: { name: string; language: string; bodyParameters: string[] } | null = null;
       if (msg.channel === "WhatsApp") {
         const { data: contact, error: contactErr } = await supabase
           .from("whatsapp_contacts")
@@ -158,31 +238,6 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
               expiresAt: contact.expires_at,
             }
           : null;
-        if (msg.type === "approved_template") {
-          const { data: template, error: templateErr } = await supabase
-            .from("whatsapp_templates")
-            .select("id, meta_name, language, status")
-            .eq("workspace_id", msg.workspace_id)
-            .eq("id", msg.template_id ?? "")
-            .maybeSingle();
-          if (templateErr) {
-            safeLog("dispatch-outbound: WhatsApp template lookup error", { message: templateErr.message });
-            await finish("blocked", { pass: false, reasons: ["whatsapp-template-store-unavailable"] });
-            continue;
-          }
-          const parameters = msg.template_parameters;
-          if (!Array.isArray(parameters) || !parameters.every((value) => typeof value === "string" && value.length <= 1_024)) {
-            await finish("blocked", { pass: false, reasons: ["whatsapp:template-parameters-invalid"] });
-            continue;
-          }
-          if (template) {
-            whatsappTemplate = {
-              name: String(template.meta_name),
-              language: String(template.language),
-              bodyParameters: parameters,
-            };
-          }
-        }
         const decision = assessWhatsAppDispatch({
           now: new Date(),
           recipientAddress: msg.to_address,

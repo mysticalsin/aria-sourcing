@@ -19,6 +19,7 @@ import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { OutreachMessageCard } from "@/components/outreach/outreach-message-card";
 import { RateMeterPanel } from "@/components/outreach/rate-meter-panel";
 import { QuickDraft } from "@/components/outreach/quick-draft";
+import { WhatsAppTemplatePicker } from "@/components/outreach/whatsapp-template-picker";
 import { SequenceLadder } from "@/components/outreach/sequence-ladder";
 import { GlassBoxPanel } from "@/components/outreach/glass-box-panel";
 import {
@@ -354,6 +355,7 @@ function OutreachView() {
       >
         <div className="space-y-6">
         <QuickDraft />
+        <WhatsAppTemplatePicker />
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Main queue */}
           <div className="space-y-6 lg:col-span-2">

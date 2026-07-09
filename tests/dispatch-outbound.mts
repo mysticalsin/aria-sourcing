@@ -1,6 +1,10 @@
 import { createHash } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { dispatchDue } from "../src/lib/dispatch-outbound";
+import {
+  APPROVED_WHATSAPP_TEMPLATE_AUDIT_SUBJECT,
+  buildApprovedWhatsAppTemplateAudit,
+} from "../src/lib/whatsapp-template-queue";
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) { if (cond) { pass++; } else { fail++; console.log("FAIL:", name); } }
@@ -84,8 +88,24 @@ function makeFakeDb(seed: {
   return { client, updates, rpcCalls, cacheWrites };
 }
 
-const bodyHash = (body: string) => createHash("sha256").update(`\n${body}`).digest("hex");
+const bodyHash = (body: string, subject = "") => createHash("sha256").update(`${subject}\n${body}`).digest("hex");
 const GOOD_BODY = "Hi Marco, thanks for the reply! The team works in Go and Postgres. Want a quick call Thursday?";
+
+const TEMPLATE_ID = "24a4b85a-8c82-48e6-b52d-4ba86a4c94e8";
+const TEMPLATE_SENDER_ID = "9a58303a-0e78-4f80-ac55-ec40d43f2e65";
+const TEMPLATE_META = {
+  id: TEMPLATE_ID,
+  senderId: TEMPLATE_SENDER_ID,
+  metaName: "role_intro",
+  language: "en_US",
+  version: 1,
+};
+const EMPTY_TEMPLATE_AUDIT = buildApprovedWhatsAppTemplateAudit({
+  template: TEMPLATE_META,
+  parameterSchema: [],
+  parameters: [],
+});
+if (!EMPTY_TEMPLATE_AUDIT) throw new Error("Template fixture must produce an audit payload");
 
 function baseMsg(over: Row = {}): Row {
   return {
@@ -172,6 +192,27 @@ const LIVE_WHATSAPP_CONTACT: Row = {
   ok("WhatsApp consent: reason recorded", JSON.stringify(db.updates.at(-1)?.patch).includes("missing-opt-in"));
 }
 
+// A human-approved candidate reply can be blocked later by a transient policy
+// state, such as a missing contact row during a temporary store outage. It
+// must return to the existing explicit review flow, not keep an `approved`
+// decision that the review RPC would refuse to revisit.
+{
+  const db = makeFakeDb({
+    outbound: [baseMsg({ type: "candidate_reply", review_decision: "approved" })],
+    approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "human" }],
+    seats: [LIVE_SEAT],
+    whatsappContacts: [],
+    claim: { allowed: true },
+  });
+  const stats = await dispatchDue(db.client, 10);
+  const patch = db.updates.at(-1)?.patch;
+  ok("transient WhatsApp block: remains blocked until a human re-reviews", stats.blocked === 1);
+  ok(
+    "transient WhatsApp block: clears the stale approval review decision",
+    patch?.review_decision === null && patch.reviewed_at === null && patch.reviewed_by === null,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // 5. Approved-template delivery requires an ARIA catalog record, not merely a
 // syntactically plausible name supplied by a caller. The content stays queued
@@ -181,11 +222,38 @@ const LIVE_WHATSAPP_CONTACT: Row = {
   delete process.env.WHATSAPP_TOKEN;
   delete process.env.WHATSAPP_PHONE_NUMBER_ID;
   const db = makeFakeDb({
-    outbound: [baseMsg({ type: "approved_template", template_id: "tpl-1", template_parameters: [] })],
-    approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "human" }],
+    outbound: [
+      baseMsg({
+        type: "approved_template",
+        template_id: TEMPLATE_ID,
+        template_parameters: [],
+        subject: APPROVED_WHATSAPP_TEMPLATE_AUDIT_SUBJECT,
+        body: EMPTY_TEMPLATE_AUDIT.body,
+      }),
+    ],
+    approvals: [
+      {
+        workspace_id: "ws-1",
+        message_id: "m-1",
+        body_hash: bodyHash(EMPTY_TEMPLATE_AUDIT.body, APPROVED_WHATSAPP_TEMPLATE_AUDIT_SUBJECT),
+        approval_source: "human",
+      },
+    ],
     seats: [LIVE_SEAT],
     whatsappContacts: [{ ...LIVE_WHATSAPP_CONTACT }],
-    whatsappTemplates: [{ id: "tpl-1", workspace_id: "ws-1", meta_name: "role_intro", language: "en_US", status: "approved" }],
+    whatsappTemplates: [
+      {
+        id: TEMPLATE_ID,
+        workspace_id: "ws-1",
+        sender_id: TEMPLATE_SENDER_ID,
+        meta_name: "role_intro",
+        language: "en_US",
+        version: 1,
+        status: "approved",
+        parameter_schema: [],
+        body_parameter_count: 0,
+      },
+    ],
     claim: { allowed: true, ledger_id: "led-template" },
   });
   const stats = await dispatchDue(db.client, 10);
@@ -194,7 +262,106 @@ const LIVE_WHATSAPP_CONTACT: Row = {
 }
 
 // ---------------------------------------------------------------------------
-// 6. The cache preserves the content-gate verdict for audit and repeat-block
+// 6. A direct authenticated outbox insert cannot pair arbitrary free-form text
+// or changed template parameters with an otherwise valid approval. The
+// dispatcher rebuilds the canonical template audit before the atomic claim.
+// ---------------------------------------------------------------------------
+{
+  const parameterTemplate = {
+    id: TEMPLATE_ID,
+    senderId: TEMPLATE_SENDER_ID,
+    metaName: "role_intro",
+    language: "en_US",
+    version: 1,
+  };
+  const originalAudit = buildApprovedWhatsAppTemplateAudit({
+    template: parameterTemplate,
+    parameterSchema: [{ name: "first_name", maxLength: 80 }],
+    parameters: ["Amélie"],
+  });
+  if (!originalAudit) throw new Error("Parameterized template fixture must produce an audit payload");
+  const db = makeFakeDb({
+    outbound: [
+      baseMsg({
+        type: "approved_template",
+        template_id: TEMPLATE_ID,
+        template_parameters: ["Mallory"],
+        subject: APPROVED_WHATSAPP_TEMPLATE_AUDIT_SUBJECT,
+        body: originalAudit.body,
+      }),
+    ],
+    approvals: [
+      {
+        workspace_id: "ws-1",
+        message_id: "m-1",
+        body_hash: bodyHash(originalAudit.body, APPROVED_WHATSAPP_TEMPLATE_AUDIT_SUBJECT),
+        approval_source: "human",
+      },
+    ],
+    seats: [LIVE_SEAT],
+    whatsappContacts: [{ ...LIVE_WHATSAPP_CONTACT }],
+    whatsappTemplates: [
+      {
+        id: TEMPLATE_ID,
+        workspace_id: "ws-1",
+        sender_id: TEMPLATE_SENDER_ID,
+        meta_name: "role_intro",
+        language: "en_US",
+        version: 1,
+        status: "approved",
+        parameter_schema: [{ name: "first_name", max_length: 80 }],
+        body_parameter_count: 1,
+      },
+    ],
+    claim: { allowed: true },
+  });
+  const stats = await dispatchDue(db.client, 10);
+  ok("template mutation: changed parameters block before claim", stats.blocked === 1 && db.rpcCalls.length === 0);
+  ok("template mutation: audit mismatch is retained", JSON.stringify(db.updates.at(-1)?.patch).includes("template-audit-mismatch"));
+}
+
+{
+  const db = makeFakeDb({
+    outbound: [
+      baseMsg({
+        type: "approved_template",
+        template_id: TEMPLATE_ID,
+        template_parameters: [],
+        subject: APPROVED_WHATSAPP_TEMPLATE_AUDIT_SUBJECT,
+        body: "An arbitrary direct insert, not a canonical Meta template audit.",
+      }),
+    ],
+    approvals: [
+      {
+        workspace_id: "ws-1",
+        message_id: "m-1",
+        body_hash: bodyHash("An arbitrary direct insert, not a canonical Meta template audit.", APPROVED_WHATSAPP_TEMPLATE_AUDIT_SUBJECT),
+        approval_source: "human",
+      },
+    ],
+    seats: [LIVE_SEAT],
+    whatsappContacts: [{ ...LIVE_WHATSAPP_CONTACT }],
+    whatsappTemplates: [
+      {
+        id: TEMPLATE_ID,
+        workspace_id: "ws-1",
+        sender_id: TEMPLATE_SENDER_ID,
+        meta_name: "role_intro",
+        language: "en_US",
+        version: 1,
+        status: "approved",
+        parameter_schema: [],
+        body_parameter_count: 0,
+      },
+    ],
+    claim: { allowed: true },
+  });
+  const stats = await dispatchDue(db.client, 10);
+  ok("direct template insert: arbitrary body cannot reach the claim", stats.blocked === 1 && db.rpcCalls.length === 0);
+}
+
+// ---------------------------------------------------------------------------
+// 7. The cache preserves the content-gate verdict for audit and repeat-block
 // analysis, but a cache write failure fails closed before a ledger claim.
 // ---------------------------------------------------------------------------
 {

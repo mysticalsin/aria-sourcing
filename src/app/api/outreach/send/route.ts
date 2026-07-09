@@ -236,22 +236,49 @@ export async function POST(req: NextRequest) {
     if (dispatcher) {
       try {
         await dispatchDue(dispatcher, 1, queued.id);
-        const { data: dispatched } = await dispatcher
-          .from("messages_outbound")
-          .select("status")
-          .eq("id", queued.id)
-          .maybeSingle();
-        if (dispatched?.status === "sent") {
-          return NextResponse.json({ status: "sent", detail: "Sent through the policy-checked WhatsApp dispatcher." });
-        }
-        if (dispatched?.status === "blocked") {
-          return NextResponse.json({ status: "skipped", detail: "WhatsApp policy blocked this message before delivery." });
-        }
-        if (dispatched?.status === "failed") {
-          return NextResponse.json({ status: "error", detail: "WhatsApp delivery failed after the policy checks." }, { status: 502 });
-        }
       } catch (err) {
         safeLog("whatsapp immediate dispatch error", { message: err instanceof Error ? err.message : "unknown" });
+      }
+
+      // A worker can intentionally leave an accepted provider request in
+      // `dispatching` when its durable acceptance record failed.  That state is
+      // not queued and must never invite a client retry, which could double-send.
+      const { data: dispatched, error: dispatchedErr } = await dispatcher
+        .from("messages_outbound")
+        .select("status")
+        .eq("id", queued.id)
+        .maybeSingle();
+      if (dispatched?.status === "sent") {
+        return NextResponse.json({ status: "sent", detail: "Sent through the policy-checked WhatsApp dispatcher." });
+      }
+      if (dispatched?.status === "blocked") {
+        return NextResponse.json({ status: "skipped", detail: "WhatsApp policy blocked this message before delivery." });
+      }
+      if (dispatched?.status === "failed") {
+        return NextResponse.json({ status: "error", detail: "WhatsApp delivery failed after the policy checks." }, { status: 502 });
+      }
+      if (dispatched?.status === "dispatching") {
+        return NextResponse.json(
+          {
+            status: "reconciliation-required",
+            delivery: "whatsapp-reconciliation-required",
+            messageId: queued.id,
+            detail: "WhatsApp provider acceptance is not yet reconciled. Do not retry this message.",
+          },
+          { status: 502 },
+        );
+      }
+      if (dispatchedErr || !dispatched || dispatched.status !== "queued") {
+        safeLog("whatsapp immediate dispatch state unavailable", { message: dispatchedErr?.message ?? "no outbox row" });
+        return NextResponse.json(
+          {
+            status: "reconciliation-required",
+            delivery: "whatsapp-reconciliation-required",
+            messageId: queued.id,
+            detail: "WhatsApp delivery state could not be confirmed. Do not retry this message.",
+          },
+          { status: 502 },
+        );
       }
     }
     return NextResponse.json({
