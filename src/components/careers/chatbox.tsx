@@ -14,16 +14,14 @@ import {
 } from "lucide-react";
 import { Button, Input, Progress, Select } from "@/components/ui";
 import {
-  CHATBOX_WEIGHTS,
   computeChatboxScore,
   deriveStarRating,
   DEFAULT_STAR_THRESHOLDS,
   type ChatboxScoreInputs,
 } from "@/lib/tania";
-import { useActions, useCampaigns } from "@/lib/store";
+import { DEFAULT_CAREER_SCREENING, type PublicCareerApplicationInput, type PublicCareerJob } from "@/lib/careers";
 import { cn, genId } from "@/lib/utils";
 import type {
-  Campaign,
   ChatboxScreeningAnswer,
   ChatboxSubmission,
   StarRating,
@@ -96,7 +94,7 @@ const COUNTRIES: CountryPref[] = [
 
 interface Draft {
   path: "A" | "B";
-  campaign: Campaign | null;
+  campaign: PublicCareerJob | null;
   roleTitle: string;
   firstName: string;
   lastName: string;
@@ -144,13 +142,7 @@ function makeInitialDraft(): Draft {
 
 const STAR_FILLED: Record<StarRating, number> = { TopGun: 5, A: 4, B: 3, C: 2, D: 1 };
 
-const GENERIC_SCREENING = [
-  "Is the role's location workable for you: happy on-site, remote, or would you relocate?",
-  "Would you need visa sponsorship to work in this role?",
-  "How would you rate your experience in the core skills for this role?",
-  "And your hands-on expertise with the main tools involved?",
-  "Have you worked on projects directly relevant to this role?",
-];
+const GENERIC_SCREENING = DEFAULT_CAREER_SCREENING;
 
 const SKILL_VOCAB = [
   "React", "TypeScript", "JavaScript", "Python", "Java", "Go", "Rust", "Node.js",
@@ -199,7 +191,7 @@ function typingDelay(text?: string): number {
   return Math.min(1100, 360 + text.length * 10);
 }
 
-function detectSkills(cvText: string, campaign: Campaign | null, desired?: string): string[] {
+function detectSkills(cvText: string, campaign: PublicCareerJob | null, desired?: string): string[] {
   const hay = `${cvText} ${desired ?? ""}`.toLowerCase();
   const found: string[] = [];
   for (const s of SKILL_VOCAB) {
@@ -207,7 +199,7 @@ function detectSkills(cvText: string, campaign: Campaign | null, desired?: strin
     if (found.length >= 5) break;
   }
   if (found.length < 2 && campaign) {
-    for (const s of campaign.jobAnalysis.requiredSkills) {
+    for (const s of campaign.requiredSkills) {
       if (!found.includes(s)) found.push(s);
       if (found.length >= 4) break;
     }
@@ -216,7 +208,7 @@ function detectSkills(cvText: string, campaign: Campaign | null, desired?: strin
   return found.slice(0, 5);
 }
 
-function matchCampaigns(d: Draft, open: Campaign[]): Campaign[] {
+function matchCampaigns(d: Draft, open: PublicCareerJob[]): PublicCareerJob[] {
   const terms = [d.qm.desired, d.qm.sector, d.qm.city, ...(d.detected.skills ?? [])]
     .filter(Boolean)
     .join(" ")
@@ -228,9 +220,9 @@ function matchCampaigns(d: Draft, open: Campaign[]): Campaign[] {
       const hay = [
         c.title,
         c.department,
-        ...(c.jobAnalysis.requiredSkills ?? []),
-        ...(c.jobAnalysis.niceToHaveSkills ?? []),
-        ...(c.jobAnalysis.industryExperience ?? []),
+        ...c.requiredSkills,
+        ...c.niceToHaveSkills,
+        ...c.industryExperience,
       ]
         .join(" ")
         .toLowerCase();
@@ -243,27 +235,64 @@ function matchCampaigns(d: Draft, open: Campaign[]): Campaign[] {
   return scored.slice(0, 5).map((x) => x.c);
 }
 
-export function Chatbox() {
-  const campaigns = useCampaigns();
-  const { addChatboxSubmission } = useActions();
-
-  const openCampaigns = React.useMemo(
-    () => campaigns.filter((c) => c.status !== "Filled" && c.status !== "Paused"),
-    [campaigns],
+function isPublicCareerJob(value: unknown): value is PublicCareerJob {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const job = value as Partial<PublicCareerJob>;
+  return (
+    typeof job.id === "string" &&
+    typeof job.title === "string" &&
+    typeof job.department === "string" &&
+    typeof job.seniority === "string" &&
+    typeof job.employmentType === "string" &&
+    typeof job.locationType === "string" &&
+    Array.isArray(job.regions) &&
+    Array.isArray(job.requiredSkills) &&
+    Array.isArray(job.niceToHaveSkills) &&
+    Array.isArray(job.industryExperience) &&
+    Array.isArray(job.screeningQuestions)
   );
+}
 
+export function Chatbox() {
   const [messages, setMessages] = React.useState<ChatMsg[]>([]);
   const [step, setStep] = React.useState<Step>("intro");
   const [typing, setTyping] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [draft, setDraft] = React.useState<Draft>(makeInitialDraft);
-  const [matches, setMatches] = React.useState<Campaign[]>([]);
+  const [jobs, setJobs] = React.useState<PublicCareerJob[]>([]);
+  const [careersAvailability, setCareersAvailability] = React.useState<"loading" | "ready" | "unavailable">("loading");
+  const [matches, setMatches] = React.useState<PublicCareerJob[]>([]);
 
   const historyRef = React.useRef<Step[]>([]);
   const cvTextRef = React.useRef<string>("");
   const mounted = React.useRef(true);
   const started = React.useRef(false);
   const bottomRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/careers", { cache: "no-store", signal: controller.signal });
+        const body = (await response.json().catch(() => null)) as { ok?: boolean; jobs?: unknown } | null;
+        const publicJobs = Array.isArray(body?.jobs) ? body.jobs.filter(isPublicCareerJob) : [];
+        if (!response.ok || body?.ok !== true || publicJobs.length !== (body?.jobs as unknown[] | undefined)?.length) {
+          throw new Error("careers unavailable");
+        }
+        if (!cancelled) {
+          setJobs(publicJobs);
+          setCareersAvailability("ready");
+        }
+      } catch {
+        if (!cancelled && !controller.signal.aborted) setCareersAvailability("unavailable");
+      }
+    })();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, []);
 
   /* ---- message plumbing -------------------------------------------------- */
 
@@ -304,7 +333,7 @@ export function Chatbox() {
   /* ---- prompts ----------------------------------------------------------- */
 
   const screeningQ = React.useCallback((i: number, d: Draft): string => {
-    const custom = d.campaign?.jobAd?.screeningQuestions;
+    const custom = d.campaign?.screeningQuestions;
     return custom?.[i] ?? GENERIC_SCREENING[i];
   }, []);
 
@@ -403,7 +432,7 @@ export function Chatbox() {
       const country = d.phoneCountry.name;
       const location = `${d.phoneCountry.city}, ${country}`;
       const skills = detectSkills(cvTextRef.current, d.campaign, d.qm.desired);
-      const regions = d.campaign?.jobAnalysis.regions ?? [];
+      const regions = d.campaign?.regions ?? [];
       const outsideRegion =
         regions.length > 0
           ? !regions.some((r) => {
@@ -505,6 +534,33 @@ export function Chatbox() {
     [screeningQ],
   );
 
+  const submitPublicApplication = React.useCallback(async (submission: ChatboxSubmission): Promise<boolean> => {
+    const payload: PublicCareerApplicationInput = {
+      path: submission.path,
+      campaignId: submission.campaignId,
+      roleTitle: submission.roleTitle,
+      firstName: submission.firstName,
+      lastName: submission.lastName,
+      email: submission.email,
+      phone: submission.phone,
+      cvFileName: submission.cvFileName,
+      detected: submission.detected,
+      answers: submission.answers.map(({ kind, answer, stars, question }) => ({ kind, answer, stars, question })),
+      contactPref: submission.contactPref,
+    };
+    try {
+      const response = await fetch("/api/careers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = (await response.json().catch(() => null)) as { ok?: boolean } | null;
+      return response.ok && body?.ok === true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const finalize = React.useCallback(
     async (d: Draft) => {
       historyRef.current.push(step);
@@ -512,7 +568,16 @@ export function Chatbox() {
       setStep("done");
       setBusy(true);
       const sub = buildSubmission(d);
-      addChatboxSubmission(sub);
+      const submitted = await submitPublicApplication(sub);
+      if (!submitted) {
+        if (!mounted.current) return;
+        setBusy(false);
+        setStep("contact");
+        await say([
+          { text: "I couldn't confirm your application just now. Please try again shortly." },
+        ]);
+        return;
+      }
       await say([
         {
           text:
@@ -525,7 +590,7 @@ export function Chatbox() {
       if (!mounted.current) return;
       setBusy(false);
     },
-    [step, buildSubmission, addChatboxSubmission, say],
+    [step, buildSubmission, submitPublicApplication, say],
   );
 
   /* ---- step handlers ----------------------------------------------------- */
@@ -539,7 +604,7 @@ export function Chatbox() {
     advance("B_desired", { ...draft, path: "B" }, [{ text: "Love the curiosity. Let's find something that fits." }]);
   };
 
-  const selectRole = (c: Campaign) => {
+  const selectRole = (c: PublicCareerJob) => {
     pushUser(`Apply for ${c.title}`);
     startProfile({ ...draft, path: "A", campaign: c, roleTitle: c.title, spontaneous: false }, [
       { text: `${c.title}. Excellent choice.` },
@@ -634,7 +699,7 @@ export function Chatbox() {
     const d: Draft = { ...draft, qm: { ...draft.qm, visaNeeded } };
     historyRef.current.push("B_visa");
     setDraft(d);
-    const found = matchCampaigns(d, openCampaigns);
+    const found = matchCampaigns(d, jobs);
     if (found.length) {
       setMatches(found);
       setStep("B_matches");
@@ -681,7 +746,7 @@ export function Chatbox() {
     if (!mounted.current) return;
     const skills = detectSkills(cvTextRef.current, draft.campaign, draft.qm.desired);
     const d: Draft = { ...draft, cvFileName: f.name, detected: { ...draft.detected, skills } };
-    const found = matchCampaigns(d, openCampaigns);
+    const found = matchCampaigns(d, jobs);
     setBusy(false);
     setDraft(d);
     if (found.length) {
@@ -721,6 +786,20 @@ export function Chatbox() {
     }
     switch (step) {
       case "intro":
+        if (careersAvailability === "loading") {
+          return (
+            <div className="flex items-center gap-2 py-1 text-sm text-muted">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Checking available positions…
+            </div>
+          );
+        }
+        if (careersAvailability === "unavailable") {
+          return (
+            <p role="alert" className="rounded-2xl border border-violet/12 bg-surface/70 px-4 py-3 text-sm text-muted">
+              Applications are unavailable right now. Please try again later.
+            </p>
+          );
+        }
         return (
           <div className="grid gap-2 sm:grid-cols-2">
             <BigChoice icon={<Compass className="h-4 w-4" />} title="Apply to a role" hint="I know what I want" onClick={chooseA} />
@@ -730,11 +809,11 @@ export function Chatbox() {
       case "A_role":
         return (
           <div className="space-y-2">
-            {openCampaigns.length === 0 ? (
+            {jobs.length === 0 ? (
               <p className="text-sm text-muted">No open roles right now, but let's find you a fit.</p>
             ) : (
               <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
-                {openCampaigns.map((c) => (
+                {jobs.map((c) => (
                   <RoleCard key={c.id} campaign={c} onSelect={() => selectRole(c)} />
                 ))}
               </div>
@@ -1309,9 +1388,8 @@ function FileComposer({
   );
 }
 
-function RoleCard({ campaign, onSelect }: { campaign: Campaign; onSelect: () => void }) {
-  const j = campaign.jobAnalysis;
-  const meta = [j.locationType, j.regions[0], j.seniority].filter(Boolean).join(" · ");
+function RoleCard({ campaign, onSelect }: { campaign: PublicCareerJob; onSelect: () => void }) {
+  const meta = [campaign.locationType, campaign.regions[0], campaign.seniority].filter(Boolean).join(" · ");
   return (
     <button
       type="button"
