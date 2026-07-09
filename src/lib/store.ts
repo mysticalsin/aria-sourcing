@@ -415,7 +415,7 @@ export interface HermesActions {
     externalReceivedAt?: string;
   }) => Promise<{ reply: ClassifiedReply; classification: ReplyClassification }>;
   markReplyHandled: (replyId: string) => void;
-  applyReplyAction: (replyId: string) => void;
+  applyReplyAction: (replyId: string) => Promise<{ ok: boolean; error?: string; warning?: string }>;
   /** Turns a reply's suggested draftResponse into a real OutreachMessage in the
    *  approval queue (never sends directly). Carries the reply's inboxThreadId
    *  for threading when present. Returns null when the reply/candidate can't
@@ -3079,6 +3079,34 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
    * suppressCandidate further down) purely so applyReplyAction's useCallback
    * dependency array can reference it without a temporal-dead-zone error.
    */
+  const persistSuppressionToServer = useCallback(
+    async (
+      type: "email" | "phone",
+      value: string,
+      reason: string,
+      method: "POST" | "DELETE" = "POST",
+    ): Promise<{ ok: boolean; error?: string }> => {
+      if (!value.trim()) return { ok: true };
+      try {
+        const response = await fetch("/api/compliance/suppress", {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type, value, reason }),
+        });
+        const out = (await response.json().catch(() => null)) as
+          | { ok?: boolean; synced?: boolean; detail?: string; error?: string }
+          | null;
+        if (!response.ok || !out?.ok || out.synced === false) {
+          return { ok: false, error: out?.detail ?? out?.error ?? "The server did not confirm the enforcement update." };
+        }
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : "Network error updating the enforcement list." };
+      }
+    },
+    [],
+  );
+
   const syncSuppressionToServer = useCallback(
     (
       email: string,
@@ -3086,16 +3114,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       campaignId: string,
       candidateId: string,
       method: "POST" | "DELETE" = "POST",
+      type: "email" | "phone" = "email",
     ) => {
       if (!email) return;
-      void fetch("/api/compliance/suppress", {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "email", value: email, reason }),
-      })
-        .then((res) => res.json().catch(() => null))
-        .then((out: { ok?: boolean; synced?: boolean; detail?: string } | null) => {
-          if (out?.ok && out.synced === false && out.detail) {
+      void persistSuppressionToServer(type, email, reason, method)
+        .then((result) => {
+          if (!result.ok) {
+            const detail = result.error ?? "The server did not confirm the enforcement update.";
             commit((prev) =>
               withActivity(
                 prev,
@@ -3105,7 +3130,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                     method === "DELETE"
                       ? "Restore not synced to enforcement list"
                       : "Suppression not synced to enforcement list",
-                  notes: out.detail!,
+                  notes: detail,
                   outcome: "Local only",
                   campaignId,
                   linkedEntityType: "candidate",
@@ -3115,23 +3140,56 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               ),
             );
           }
-        })
-        .catch(() => {
-          // Network failure — the local flag still applies; nothing further to do.
         });
     },
-    [commit],
+    [commit, persistSuppressionToServer],
+  );
+
+  const syncCandidateSuppressionToServer = useCallback(
+    (candidate: Candidate, reason: string, method: "POST" | "DELETE" = "POST") => {
+      syncSuppressionToServer(candidate.email, reason, candidate.campaignId, candidate.id, method);
+      if (candidate.phone?.trim()) {
+        syncSuppressionToServer(candidate.phone, reason, candidate.campaignId, candidate.id, method, "phone");
+      }
+    },
+    [syncSuppressionToServer],
   );
 
   const applyReplyAction = useCallback(
-    (replyId: string) => {
-      // Looked up before commit so the fire-and-forget server sync below (which
-      // needs the candidate's email) doesn't depend on reaching back into state
-      // after the update has landed.
-      const reply0 = current().replies.find((r) => r.id === replyId);
+    async (replyId: string): Promise<{ ok: boolean; error?: string; warning?: string }> => {
+      const initial = current();
+      const reply0 = initial.replies.find((r) => r.id === replyId);
+      if (!reply0) return { ok: false, error: "Reply not found." };
       const candidate0 = reply0?.candidateId
-        ? current().candidates.find((c) => c.id === reply0.candidateId)
+        ? initial.candidates.find((c) => c.id === reply0.candidateId)
         : undefined;
+      let warning: string | undefined;
+
+      // A negative reply is a server-side safety event. Persist every reachable
+      // recipient channel and revoke any existing approval before the browser
+      // presents the candidate as suppressed. This prevents a stale direct send
+      // or queued WhatsApp row from escaping the newly recorded DNC state.
+      if (reply0.intent === "NEGATIVE" && candidate0 && supabaseEnabled) {
+        const targets = [
+          ...(candidate0.email.trim() ? [{ type: "email" as const, value: candidate0.email }] : []),
+          ...(candidate0.phone?.trim() ? [{ type: "phone" as const, value: candidate0.phone }] : []),
+        ];
+        for (const target of targets) {
+          const persisted = await persistSuppressionToServer(
+            target.type,
+            target.value,
+            "Negative reply, auto-suppressed",
+          );
+          if (!persisted.ok) return { ok: false, error: persisted.error ?? "Could not record the candidate suppression." };
+        }
+        const approvalIds = initial.outreach
+          .filter((message) => message.candidateId === candidate0.id)
+          .map((message) => message.id);
+        const revoked = await Promise.all(approvalIds.map((messageId) => revokeOutreachApproval(messageId)));
+        if (revoked.some((result) => !result.ok)) {
+          warning = "The candidate is suppressed for future contact, but a message already in delivery could not be cancelled.";
+        }
+      }
 
       commit((s) => {
         const reply = s.replies.find((r) => r.id === replyId);
@@ -3186,7 +3244,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               ...next,
               outreach: next.outreach.map((m) =>
                 m.candidateId === reply.candidateId &&
-                (m.status === "Needs Approval" || m.status === "Approved")
+                (m.status === "Needs Approval" ||
+                  m.status === "Approved" ||
+                  m.status === "Pending Manual Send" ||
+                  (m.status === "Scheduled" && !m.sentAt))
                   ? { ...m, status: "Rejected" as OutreachStatus }
                   : m,
               ),
@@ -3209,19 +3270,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
       });
 
-      // NEGATIVE reply: push the block into the real, server-enforced
-      // suppression_list so /api/outreach/send actually refuses this recipient,
-      // not just the local view — mirrors suppressCandidate/markDoNotContact.
-      if (reply0?.intent === "NEGATIVE" && candidate0) {
-        syncSuppressionToServer(
-          candidate0.email,
-          "Negative reply, auto-suppressed",
-          reply0.campaignId,
-          candidate0.id,
-        );
-      }
+      return warning ? { ok: true, warning } : { ok: true };
     },
-    [commit, current, syncSuppressionToServer],
+    [commit, current, persistSuppressionToServer],
   );
 
   // Task 2 — turn a classified reply's suggested draft into a real outreach
@@ -3966,9 +4017,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         "Contact suppressed",
         "Suppressed",
       );
-      if (cand) syncSuppressionToServer(cand.email, "Suppressed", cand.campaignId, id);
+      if (cand) syncCandidateSuppressionToServer(cand, "Suppressed");
     },
-    [complianceMutate, current, syncSuppressionToServer],
+    [complianceMutate, current, syncCandidateSuppressionToServer],
   );
 
   const markDoNotContact = useCallback(
@@ -3990,9 +4041,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         "Marked do-not-contact",
         "Do-not-contact",
       );
-      if (cand) syncSuppressionToServer(cand.email, "Do-not-contact", cand.campaignId, id);
+      if (cand) syncCandidateSuppressionToServer(cand, "Do-not-contact");
     },
-    [complianceMutate, current, syncSuppressionToServer],
+    [complianceMutate, current, syncCandidateSuppressionToServer],
   );
 
   const restoreCandidateContact = useCallback(
@@ -4017,9 +4068,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // Mirror suppressCandidate/markDoNotContact: also remove the candidate
       // from the real, server-enforced suppression_list so the outreach send
       // route stops blocking them, not just the local view.
-      if (cand) syncSuppressionToServer(cand.email, "Restored", cand.campaignId, id, "DELETE");
+      if (cand) syncCandidateSuppressionToServer(cand, "Restored", "DELETE");
     },
-    [complianceMutate, current, syncSuppressionToServer],
+    [complianceMutate, current, syncCandidateSuppressionToServer],
   );
 
   const unsubscribeCandidate = useCallback(
@@ -4031,9 +4082,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         "Unsubscribe honored",
         "Unsubscribed",
       );
-      if (cand) syncSuppressionToServer(cand.email, "Unsubscribed", cand.campaignId, id);
+      if (cand) syncCandidateSuppressionToServer(cand, "Unsubscribed");
     },
-    [complianceMutate, current, syncSuppressionToServer],
+    [complianceMutate, current, syncCandidateSuppressionToServer],
   );
 
   const anonymizeCandidate = useCallback(
