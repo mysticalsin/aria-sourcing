@@ -10,7 +10,8 @@ function isPublicPath(path: string): boolean {
   return (
     path.startsWith("/login") ||
     path.startsWith("/auth") ||
-    path.startsWith("/careers")
+    path.startsWith("/careers") ||
+    path.startsWith("/unsubscribe")
   );
 }
 
