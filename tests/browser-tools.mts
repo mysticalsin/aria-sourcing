@@ -12,6 +12,7 @@ import {
   parseRobotsTxt,
   isPathAllowed,
 } from "../src/lib/ai/browser-tools";
+import { readFileSync } from "fs";
 
 let pass = 0,
   fail = 0;
@@ -29,8 +30,8 @@ function ok(name: string, cond: boolean, extra?: unknown) {
 const actDef = BROWSER_TOOL_DEFS.find((t) => t.name === "browser_act");
 const enumValues = (actDef?.inputSchema as { properties?: { type?: { enum?: string[] } } })?.properties?.type?.enum ?? [];
 ok(
-  "browser_act enum includes all stealth actions",
-  JSON.stringify([...enumValues].sort()) === JSON.stringify(["back", "click", "evaluate", "fill", "forward", "press_key", "scroll", "select_option", "type", "wait"]),
+  "browser_act enum exposes read-only research actions only",
+  JSON.stringify([...enumValues].sort()) === JSON.stringify(["back", "click", "forward", "scroll", "wait"]),
   enumValues,
 );
 
@@ -38,8 +39,8 @@ const allPropertyKeys = BROWSER_TOOL_DEFS.flatMap(
   (t) => Object.keys((t.inputSchema as { properties?: object })?.properties ?? {}),
 );
 ok(
-  "expected property keys exist",
-  allPropertyKeys.includes("value") && allPropertyKeys.includes("selector"),
+  "read-only action property keys exist without a text-entry value",
+  allPropertyKeys.includes("selector") && allPropertyKeys.includes("direction") && allPropertyKeys.includes("ms") && !allPropertyKeys.includes("value"),
   allPropertyKeys,
 );
 
@@ -50,14 +51,10 @@ ok("isBrowserTool false for an unregistered name", !isBrowserTool("browser_type"
 /* -------- dispatch-level defense in depth (no live session needed) -------- */
 
 const main = async () => {
-  const validSessionUnknown = await runBrowserTool("browser_act", { sessionId: "does-not-exist", type: "type", selector: "#u", value: "hello" });
-  ok("browser_act accepts 'type' but fails on session lookup", validSessionUnknown.ok === false && /session/i.test(String(validSessionUnknown.error)), validSessionUnknown);
-
-  const validSessionUnknownFill = await runBrowserTool("browser_act", { sessionId: "does-not-exist", type: "fill", selector: "#u", value: "hello" });
-  ok("browser_act accepts 'fill' but fails on session lookup", validSessionUnknownFill.ok === false && /session/i.test(String(validSessionUnknownFill.error)), validSessionUnknownFill);
-
-  const validSessionUnknownPress = await runBrowserTool("browser_act", { sessionId: "does-not-exist", type: "press_key", value: "Enter" });
-  ok("browser_act accepts 'press_key' but fails on session lookup", validSessionUnknownPress.ok === false && /session/i.test(String(validSessionUnknownPress.error)), validSessionUnknownPress);
+  for (const type of ["type", "fill", "press_key", "select_option", "evaluate"]) {
+    const disallowed = await runBrowserTool("browser_act", { sessionId: "does-not-exist", type, selector: "#u", value: "hello" });
+    ok(`browser_act rejects non-read-only '${type}' before session lookup`, disallowed.ok === false && /not allowed/i.test(String(disallowed.error)), disallowed);
+  }
 
   const unknownSession = await runBrowserTool("browser_act", { sessionId: "does-not-exist", type: "click", selector: "#x" });
   ok(
@@ -109,6 +106,10 @@ const main = async () => {
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 };
+
+const launcher = readFileSync(new URL("../src/lib/ai/obscura-launcher.ts", import.meta.url), "utf8");
+ok("sidecar launcher does not enable stealth", !/--stealth/.test(launcher));
+ok("sidecar launcher does not permit private-network browsing", !/--allow-private-network/.test(launcher));
 
 main().catch((err) => {
   console.error("TEST CRASHED:", err);

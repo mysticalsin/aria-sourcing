@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "child_process";
-import { existsSync } from "fs";
+import net from "node:net";
 
 let launcherPromise: Promise<void> | null = null;
 let sidecarProcess: ChildProcess | null = null;
@@ -8,8 +8,6 @@ const PORT = 9222;
 
 async function isPortOpen(port: number): Promise<boolean> {
   return new Promise((resolve) => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const net = require("net");
     const socket = new net.Socket();
     socket.setTimeout(500);
     socket.on("connect", () => {
@@ -29,7 +27,8 @@ async function isPortOpen(port: number): Promise<boolean> {
 }
 
 /**
- * Ensure the Obscura sidecar process is running on port 9222.
+ * Start a locally configured, transparent Obscura sidecar for development.
+ * Production must provide a separately managed sidecar through OBSCURA_URL.
  */
 export async function ensureObscuraRunning(): Promise<void> {
   if (launcherPromise) {
@@ -43,18 +42,13 @@ export async function ensureObscuraRunning(): Promise<void> {
       return;
     }
 
-    let binPath = process.env.OBSCURA_BIN_PATH || "";
-    if (!binPath || !existsSync(binPath)) {
-      const localPath = "/Users/tony/.gemini/antigravity/obscura_bin/obscura";
-      if (existsSync(localPath)) {
-        binPath = localPath;
-      } else {
-        binPath = "obscura";
-      }
+    const binPath = process.env.OBSCURA_BIN_PATH || "";
+    if (!binPath) {
+      throw new Error("Set OBSCURA_BIN_PATH to a verified local sidecar binary.");
     }
 
     console.log(`[Obscura] Spawning sidecar process from ${binPath}...`);
-    const args = ["serve", "--port", String(PORT), "--stealth", "--allow-private-network"];
+    const args = ["serve", "--port", String(PORT)];
     
     try {
       sidecarProcess = spawn(binPath, args, {

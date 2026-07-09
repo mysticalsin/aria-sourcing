@@ -1,10 +1,8 @@
-// Stateful, multi-step browser tools for the agent tool-loop, backed by the
-// Obscura sidecar (src/lib/ai/obscura-adapter.ts) with full stealth and
-// form interaction features enabled.
+// Stateful, multi-step browser tools for public research, backed by the
+// transparent Obscura sidecar (src/lib/ai/obscura-adapter.ts).
 //
-//   - Stealth: the sidecar is built + run with --features stealth and
-//     with the --stealth/--allow-private-network flags.
-//   - Interaction: support click, type, fill, press_key, select_option, scroll, wait, back, forward, evaluate.
+//   - No stealth or private-network access.
+//   - Interaction: click, scroll, wait, back, and forward only.
 //   - No persistent identity: every browser_open gets a fresh, cookie-empty context.
 //   - Bounded session lifetime: enforced by obscura-adapter.ts's sweeper.
 //   - SSRF + robots.txt checked on open AND on every navigation.
@@ -21,7 +19,7 @@ import {
 /** Sentinel "server url" that marks the built-in browser tools inside the tool-loop. */
 export const BUILTIN_BROWSER_URL = "builtin:browser-research";
 
-const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36";
+const USER_AGENT = "ARIAResearchBot/1.0";
 const NAV_TIMEOUT_MS = 15_000;
 const ROBOTS_TIMEOUT_MS = 15_000;
 const MAX_TEXT = 6_000;
@@ -33,8 +31,8 @@ export interface ToolResult {
   error?: string;
 }
 
-/** The actions a caller may request. Support click, type, fill, press_key, select_option, scroll, wait, back, forward, evaluate. */
-const ALLOWED_ACT_TYPES = new Set(["click", "type", "fill", "press_key", "select_option", "scroll", "wait", "back", "forward", "evaluate"]);
+/** The public-research actions a caller may request. */
+const ALLOWED_ACT_TYPES = new Set(["click", "scroll", "wait", "back", "forward"]);
 
 export const BROWSER_TOOL_DEFS: McpTool[] = [
   {
@@ -50,14 +48,13 @@ export const BROWSER_TOOL_DEFS: McpTool[] = [
   {
     name: "browser_act",
     description:
-      "Perform one interaction in an open browser session: click, type, fill, press_key, select_option, scroll, wait, back, forward, or evaluate.",
+      "Perform one public-research interaction in an open browser session: click, scroll, wait, back, or forward.",
     inputSchema: {
       type: "object",
       properties: {
         sessionId: { type: "string", description: "Session id from browser_open." },
-        type: { type: "string", enum: ["click", "type", "fill", "press_key", "select_option", "scroll", "wait", "back", "forward", "evaluate"], description: "The action to perform." },
-        selector: { type: "string", description: "CSS selector, required for click/type/fill/select_option; optional for wait/press_key." },
-        value: { type: "string", description: "The text to type/fill, key to press, option to select, or JS expression to evaluate." },
+        type: { type: "string", enum: ["click", "scroll", "wait", "back", "forward"], description: "The action to perform." },
+        selector: { type: "string", description: "CSS selector, required for click and optional for wait." },
         direction: { type: "string", enum: ["up", "down"], description: "Scroll direction, required for scroll." },
         ms: { type: "number", description: "Milliseconds to wait, for wait (used when selector is omitted)." },
       },
@@ -260,7 +257,7 @@ async function browserAct(sessionId: string, args: Record<string, unknown>): Pro
   // input, and let the vocabulary allowlist be unit-tested without a live session.
   const type = String(args.type ?? "");
   if (!ALLOWED_ACT_TYPES.has(type)) {
-    return { ok: false, error: `Unsupported action "${type}". Allowed: click, scroll, wait, back, forward.` };
+    return { ok: false, error: `Action "${type}" is not allowed. Allowed: click, scroll, wait, back, forward.` };
   }
 
   const found = requireSession(sessionId);
@@ -302,78 +299,6 @@ async function browserAct(sessionId: string, args: Record<string, unknown>): Pro
         await session.page.waitForLoadState("load", { timeout: NAV_TIMEOUT_MS }).catch(() => {});
         if (!clicked) return { ok: false, error: `No element matches selector "${selector}".` };
         break;
-      }
-      case "type": {
-        const selector = String(args.selector ?? "");
-        const value = String(args.value ?? "");
-        if (!selector) return { ok: false, error: "type requires a selector." };
-        await session.page.waitForSelector(selector, { timeout: NAV_TIMEOUT_MS });
-        const typed = await session.page.evaluate(({ sel, val }) => {
-          const el = document.querySelector(sel) as HTMLInputElement | null;
-          if (!el) return false;
-          el.value = val;
-          el.dispatchEvent(new Event("input", { bubbles: true }));
-          el.dispatchEvent(new Event("change", { bubbles: true }));
-          return true;
-        }, { sel: selector, val: value });
-        if (!typed) return { ok: false, error: `No element matches selector "${selector}".` };
-        break;
-      }
-      case "fill": {
-        const selector = String(args.selector ?? "");
-        const value = String(args.value ?? "");
-        if (!selector) return { ok: false, error: "fill requires a selector." };
-        await session.page.waitForSelector(selector, { timeout: NAV_TIMEOUT_MS });
-        const filled = await session.page.evaluate(({ sel, val }) => {
-          const el = document.querySelector(sel) as HTMLInputElement | null;
-          if (!el) return false;
-          el.value = val;
-          el.dispatchEvent(new Event("input", { bubbles: true }));
-          el.dispatchEvent(new Event("change", { bubbles: true }));
-          return true;
-        }, { sel: selector, val: value });
-        if (!filled) return { ok: false, error: `No element matches selector "${selector}".` };
-        break;
-      }
-      case "press_key": {
-        const selector = args.selector ? String(args.selector) : undefined;
-        const value = String(args.value ?? "");
-        if (!value) return { ok: false, error: "press_key requires a value (key name)." };
-        if (selector) {
-          await session.page.waitForSelector(selector, { timeout: NAV_TIMEOUT_MS });
-        }
-        const pressed = await session.page.evaluate(({ sel, val }) => {
-          const el = sel ? document.querySelector(sel) as HTMLElement | null : document.activeElement as HTMLElement | null;
-          if (!el) return false;
-          el.dispatchEvent(new KeyboardEvent("keydown", { key: val, bubbles: true }));
-          el.dispatchEvent(new KeyboardEvent("keypress", { key: val, bubbles: true }));
-          el.dispatchEvent(new KeyboardEvent("keyup", { key: val, bubbles: true }));
-          return true;
-        }, { sel: selector, val: value });
-        if (!pressed) return { ok: false, error: selector ? `No element matches selector "${selector}".` : "No active element." };
-        break;
-      }
-      case "select_option": {
-        const selector = String(args.selector ?? "");
-        const value = String(args.value ?? "");
-        if (!selector) return { ok: false, error: "select_option requires a selector." };
-        await session.page.waitForSelector(selector, { timeout: NAV_TIMEOUT_MS });
-        const selected = await session.page.evaluate(({ sel, val }) => {
-          const el = document.querySelector(sel) as HTMLSelectElement | null;
-          if (!el) return false;
-          el.value = val;
-          el.dispatchEvent(new Event("change", { bubbles: true }));
-          return true;
-        }, { sel: selector, val: value });
-        if (!selected) return { ok: false, error: `No element matches selector "${selector}".` };
-        break;
-      }
-      case "evaluate": {
-        const value = String(args.value ?? "");
-        if (!value) return { ok: false, error: "evaluate requires a value (JS expression)." };
-        const result = await session.page.evaluate(value);
-        const { title, text, url } = await pageTextAndTitle(session);
-        return { ok: true, content: { url, title, text, result, truncated: text.length >= MAX_TEXT } };
       }
       case "scroll": {
         const direction = args.direction === "up" ? -1 : 1;

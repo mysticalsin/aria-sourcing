@@ -13,7 +13,6 @@
 
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { randomUUID } from "node:crypto";
-import { ensureObscuraRunning } from "./obscura-launcher";
 
 const OBSCURA_HTTP_URL = process.env.OBSCURA_URL || "http://127.0.0.1:9222";
 // Obscura's /json/version always advertises `ws://127.0.0.1:<port>/devtools/browser`
@@ -41,17 +40,11 @@ const sessions = new Map<string, ObscuraSession>();
 let browserPromise: Promise<Browser> | null = null;
 let sweeperHandle: ReturnType<typeof setInterval> | null = null;
 
-const isLocal = OBSCURA_HTTP_URL.includes("127.0.0.1") || OBSCURA_HTTP_URL.includes("localhost");
-
 /** Fresh connection to the sidecar (memoized); resets on disconnect so the next call retries. */
 async function getBrowser(): Promise<Browser> {
   if (!browserPromise) {
-    browserPromise = (async () => {
-      if (isLocal) {
-        await ensureObscuraRunning();
-      }
-      return chromium.connectOverCDP(OBSCURA_WS_URL);
-    })()
+    browserPromise = chromium
+      .connectOverCDP(OBSCURA_WS_URL)
       .then((browser) => {
         browser.once("disconnected", () => {
           browserPromise = null;
@@ -93,7 +86,7 @@ function ensureSweeper(): void {
 export async function openObscuraSession(): Promise<ObscuraSession> {
   ensureSweeper();
   const browser = await getBrowser();
-  const context = await browser.newContext();
+  const context = await browser.newContext({ userAgent: "ARIAResearchBot/1.0" });
   const page = await context.newPage();
   const now = Date.now();
   const session: ObscuraSession = { id: randomUUID(), context, page, openedAt: now, lastActivityAt: now };
