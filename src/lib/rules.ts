@@ -105,13 +105,21 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
 
   // LinkedIn assisted-manual: we cannot send automatically, but we can draft
   // the message and ask the operator to paste it on the candidate's profile.
-  if (message.channel === "LinkedIn" && !candidate.linkedinUrl.trim()) {
+  if (message.channel === "SMS") {
+    const detail = "SMS delivery is disabled until recorded consent, opt-out, suppression, and durable dispatch controls are implemented.";
+    blockers.push(detail);
+    checks.push({ rule: "Channel policy", status: "block", detail });
+  } else if (message.channel === "LinkedIn" && !candidate.linkedinUrl.trim()) {
     const detail = "LinkedIn profile URL is required to send a LinkedIn message.";
     blockers.push(detail);
     checks.push({ rule: "Contact info", status: "block", detail });
   } else if (message.channel === "Email" && !candidate.email.trim()) {
     // Mirror of the LinkedIn check above: an Email message needs somewhere to go.
     const detail = "Candidate has no email on file. An Email message requires one.";
+    blockers.push(detail);
+    checks.push({ rule: "Contact info", status: "block", detail });
+  } else if (message.channel === "WhatsApp" && !(candidate.phone ?? "").trim()) {
+    const detail = "Candidate has no phone number on file. A WhatsApp message requires one.";
     blockers.push(detail);
     checks.push({ rule: "Contact info", status: "block", detail });
   } else {
@@ -123,7 +131,9 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
           ? "LinkedIn profile URL on file."
           : message.channel === "Email"
             ? "Email address on file."
-            : `${message.channel} channel: no contact-detail rule required.`,
+            : message.channel === "WhatsApp"
+              ? "WhatsApp phone number on file."
+              : `${message.channel} channel: no contact-detail rule required.`,
     });
   }
 

@@ -168,6 +168,22 @@ ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
   ok("linkedin without profile url: blocker mentions LinkedIn profile", r.blockers.some((b) => /LinkedIn profile/i.test(b)));
 }
 
+// 3d) Phone channels must not advance without a recipient. SMS is deliberately
+// disabled until it has an equivalent consent/suppression delivery policy.
+{
+  const noPhone = checkOutreachApproval(
+    approvalCtx({ candidate: makeCandidate({ phone: "" }), message: makeMessage({ channel: "WhatsApp" }) }),
+  );
+  ok("WhatsApp without phone: not allowed", noPhone.allowed === false);
+  ok("WhatsApp without phone: blocker mentions phone", noPhone.blockers.some((b) => /phone/i.test(b)));
+
+  const sms = checkOutreachApproval(
+    approvalCtx({ candidate: makeCandidate({ phone: "+14155552671" }), message: makeMessage({ channel: "SMS" }) }),
+  );
+  ok("SMS is disabled before approval", sms.allowed === false);
+  ok("SMS disabled blocker is explicit", sms.blockers.some((b) => /SMS delivery is disabled/i.test(b)));
+}
+
 // 4) Blocks when complianceFlags.doNotContact is set.
 {
   const ctx = approvalCtx({
