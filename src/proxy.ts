@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { SUPABASE_ANON_KEY, SUPABASE_AUTH_COOKIE_NAME, SUPABASE_URL, supabaseEnabled, ALLOWED_EMAIL_DOMAIN, isProduction, demoLoginEnabled, DEMO_COOKIE_NAME } from "@/lib/supabase/config";
+import { verifyDemoTokenAtEdge } from "@/lib/demo-auth-edge";
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
@@ -39,12 +40,15 @@ export async function proxy(req: NextRequest) {
   const requestPath = req.nextUrl.pathname;
   const apiRequest = requestPath === "/api" || requestPath.startsWith("/api/");
   if (!supabaseEnabled) {
+    const validDemoSession = demoLoginEnabled
+      ? await verifyDemoTokenAtEdge(req.cookies.get(DEMO_COOKIE_NAME)?.value, process.env.DEMO_SESSION_SECRET)
+      : false;
     // Preserve each API handler's own JSON auth, provider-signature, cron-secret,
     // public, or liveness contract. This is the same ownership boundary APIs had
     // before they were added to the matcher for live-session domain enforcement.
     if (apiRequest) {
       if (!demoLoginEnabled || isPublicServiceApi(requestPath)) return NextResponse.next();
-      if (!req.cookies.has(DEMO_COOKIE_NAME)) {
+      if (!validDemoSession) {
         return NextResponse.json(
           { ok: false, reason: "Sign in to use this demo API." },
           { status: 401 },
@@ -66,14 +70,13 @@ export async function proxy(req: NextRequest) {
         { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } },
       );
     }
-    // Public demo: gate the app behind the one-click admin/admin login so the
-    // env-resident LLM key can't be spent anonymously. Presence check only — the Edge
-    // runtime has no node:crypto; the chat route cryptographically verifies the cookie
-    // before using the key. /login and /auth/* stay public.
+    // Public demo: gate the app behind the one-click admin/admin login. The
+    // Web Crypto verifier works in the Edge runtime, so a forged cookie name is
+    // not enough to reach either pages or non-public APIs.
     if (demoLoginEnabled) {
       const path = requestPath;
       const isAuthRoute = isPublicPath(path);
-      const hasSession = req.cookies.has(DEMO_COOKIE_NAME);
+      const hasSession = validDemoSession;
       if (!hasSession && !isAuthRoute) {
         const url = req.nextUrl.clone();
         url.pathname = "/login";
