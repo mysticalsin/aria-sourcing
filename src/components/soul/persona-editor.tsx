@@ -232,7 +232,7 @@ export function PersonaEditor() {
       description:
         next === "active"
           ? "Back in rotation, within its guardrails."
-          : "Off rotation — no new contacts assigned until you activate it.",
+          : "Off rotation, no new contacts assigned until you activate it.",
       variant: next === "active" ? "success" : "info",
     });
   }
@@ -352,7 +352,7 @@ export function PersonaEditor() {
                     type="button"
                     role="option"
                     aria-selected={selectedSeatId === seat.id}
-                    aria-label={`${seat.name}${stateLabel ? ` — ${stateLabel}` : ""}`}
+                    aria-label={`${seat.name}${stateLabel ? `, ${stateLabel}` : ""}`}
                     onClick={() => selectSeat(seat.id)}
                     className={cn(
                       "w-full text-left px-4 py-3 text-sm transition-colors border-b border-violet/5 last:border-0",

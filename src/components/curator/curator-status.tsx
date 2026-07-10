@@ -91,7 +91,7 @@ export function CuratorStatus() {
           </div>
           <CuratorFields state={demoState} />
           <p className="text-xs text-muted">
-            Preview only — enable Aria live mode in Settings to inspect the runtime&apos;s real curator state.
+            Preview only. Enable Aria live mode in Settings to inspect the runtime&apos;s real curator state.
           </p>
         </CardContent>
       </Card>

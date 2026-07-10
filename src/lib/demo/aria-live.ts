@@ -48,6 +48,8 @@
 import { pickResponderIndex } from "@/components/floor3d/retro/scene/packet-shared";
 import type { HermesActions } from "@/lib/store";
 import type { AgentSeat, Campaign, HermesState } from "@/lib/types";
+import { supabaseEnabled } from "@/lib/supabase/config";
+import { getAriaLiveRunPolicy } from "@/lib/demo/aria-live-policy";
 
 /** Must match store.ts's STORAGE_KEY exactly — read/write only, never edited here. */
 const STORAGE_KEY = "hermes-sourcing:v1";
@@ -204,7 +206,7 @@ function sleep(ms: number): Promise<void> {
  *  "interested" lexicon so the cinematic reliably proceeds to booking
  *  regardless of which language/provider is configured for classification. */
 const SEEDED_REPLY_TEXT =
-  "Hi! Thanks so much for reaching out — this sounds like a great opportunity and I'm very interested. Would love to find time for a quick call this week.";
+  "Hi! Thanks so much for reaching out. This sounds like a great opportunity and I'm very interested. Would love to find time for a quick call this week.";
 
 function publish(patch: Partial<AriaLiveSnapshot>) {
   snapshotChannel.set({ ...snapshotChannel.get(), active: true, ...patch });
@@ -244,13 +246,13 @@ async function runSequence(actions: HermesActions, campaign: Campaign, seats: Ag
     fail(
       !sourceRes.ok
         ? `Aria couldn't source a candidate: ${sourceRes.error}`
-        : "Aria couldn't source a candidate for this run — try again in a moment.",
+        : "Aria couldn't source a candidate for this run. Try again in a moment.",
     );
     return;
   }
   const candidate = sourceRes.accepted[0];
   kpis.sourced = 1;
-  setChapter("sourcing", `Found ${candidate.name} — ${candidate.currentTitle} at ${candidate.currentCompany}.`, candidate.name);
+  setChapter("sourcing", `Found ${candidate.name}, ${candidate.currentTitle} at ${candidate.currentCompany}.`, candidate.name);
   await sleep(1600);
   if (restoring) return;
 
@@ -277,14 +279,14 @@ async function runSequence(actions: HermesActions, campaign: Campaign, seats: Ag
 
   setChapter("approving", `Approving the draft for ${candidate.name}…`, candidate.name);
   await sleep(500);
-  const approval = actions.approveOutreach(msg.id);
+  const approval = await actions.approveOutreach(msg.id);
   if (restoring) return;
   if (!approval.allowed) {
     fail(`Approval blocked: ${approval.blockers[0] ?? "a guardrail was hit"}.`);
     return;
   }
   kpis.approved = 1;
-  setChapter("approving", "Outreach approved — scheduled (dry-run, nothing sent).", candidate.name);
+  setChapter("approving", "Outreach approved, scheduled (dry-run, nothing sent).", candidate.name);
   await sleep(1400);
   if (restoring) return;
 
@@ -319,7 +321,7 @@ async function runSequence(actions: HermesActions, campaign: Campaign, seats: Ag
   await sleep(700);
   actions.generateReport(campaign.id);
   if (restoring) return;
-  setChapter("done", `Hire funnel complete for ${candidate.name} — report ready.`, candidate.name);
+  setChapter("done", `Hire funnel complete for ${candidate.name}. Report ready.`, candidate.name);
 }
 
 /** Starts a run. No-op (returns false) if one is already active — callers
@@ -354,10 +356,12 @@ export function beginAriaLiveRun(opts: {
   activeCampaignId: string | null;
   seats: AgentSeat[];
 }): { ok: true } | { ok: false; reason: string } {
+  const policy = getAriaLiveRunPolicy(supabaseEnabled);
+  if (!policy.ok) return policy;
   if (!opts.state) return { ok: false, reason: "Still loading the workspace…" };
   if (getAriaLiveSnapshot().active) return { ok: false, reason: "Aria Live is already running." };
   const campaign = opts.campaigns.find((c) => c.id === opts.activeCampaignId) ?? opts.campaigns[0];
-  if (!campaign) return { ok: false, reason: "Create a campaign first — Aria Live needs one to run against." };
+  if (!campaign) return { ok: false, reason: "Create a campaign first. Aria Live needs one to run against." };
   startAriaLive(opts.actions, opts.state, campaign, opts.seats);
   return { ok: true };
 }

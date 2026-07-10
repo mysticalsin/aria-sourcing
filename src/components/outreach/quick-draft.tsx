@@ -48,7 +48,7 @@ export function QuickDraft() {
     if (campaign?.status === "Paused") {
       toast({
         title: "Campaign is paused",
-        description: `${campaign.title} is paused — resume it before drafting new outreach.`,
+        description: `${campaign.title} is paused. Resume it before drafting new outreach.`,
         variant: "warning",
       });
       return;
@@ -62,7 +62,7 @@ export function QuickDraft() {
       // A live-runtime hiccup should never block drafting — fall back to the
       // template path so the human still gets a draft to review.
       msg = actions.generateOutreachFor(candidateId, tone, channel);
-      toast({ title: "Aria is unavailable — used the template draft instead.", variant: "info" });
+      toast({ title: "Aria is unavailable, used the template draft instead.", variant: "info" });
     }
     setResult(msg);
     setLoading(false);

@@ -20,6 +20,7 @@
  */
 import { openObscuraSession, closeObscuraSession } from "../src/lib/ai/obscura-adapter";
 import { runBrowserTool } from "../src/lib/ai/browser-tools";
+import { ensureObscuraRunning } from "../src/lib/ai/obscura-launcher";
 
 let pass = 0,
   fail = 0;
@@ -78,6 +79,7 @@ async function adapterLevelTest() {
 
     const lastItemText = await session.page.locator("#list li").last().textContent();
     ok("the new item has the expected text", lastItemText === "Item 2", lastItemText);
+
   } finally {
     await closeObscuraSession(session.id);
   }
@@ -116,6 +118,15 @@ async function toolLevelTest() {
 }
 
 async function main() {
+  const isLocal = OBSCURA_HTTP_URL.includes("127.0.0.1") || OBSCURA_HTTP_URL.includes("localhost");
+  if (isLocal) {
+    try {
+      await ensureObscuraRunning();
+    } catch (e) {
+      console.warn("[Test] Failed to ensure local Obscura sidecar is running:", e);
+    }
+  }
+
   if (!(await sidecarReachable())) {
     console.log(`SKIPPED: no Obscura sidecar reachable at ${OBSCURA_HTTP_URL} (run \`docker compose up -d obscura\` first)`);
     process.exit(0);

@@ -69,12 +69,21 @@ export function ReplyCard({ reply }: { reply: ClassifiedReply }) {
 
   const candidateName = candidate?.name ?? "Unlinked candidate";
 
-  function handleApply() {
-    a.applyReplyAction(reply.id);
+  const [applying, setApplying] = React.useState(false);
+
+  async function handleApply() {
+    if (applying) return;
+    setApplying(true);
+    const result = await a.applyReplyAction(reply.id);
+    setApplying(false);
+    if (!result.ok) {
+      toast({ title: "Could not apply action", description: result.error, variant: "error" });
+      return;
+    }
     toast({
       title: "Action applied",
-      description: reply.suggestedAction,
-      variant: "success",
+      description: result.warning ?? reply.suggestedAction,
+      variant: result.warning ? "warning" : "success",
     });
   }
 
@@ -89,7 +98,7 @@ export function ReplyCard({ reply }: { reply: ClassifiedReply }) {
     if (campaign?.status === "Paused") {
       toast({
         title: "Campaign is paused",
-        description: `${campaign.title} is paused — resume it before drafting new outreach.`,
+        description: `${campaign.title} is paused. Resume it before drafting new outreach.`,
         variant: "warning",
       });
       return;
@@ -182,8 +191,10 @@ export function ReplyCard({ reply }: { reply: ClassifiedReply }) {
             size="sm"
             leftIcon={<CornerUpRight className="h-3.5 w-3.5" aria-hidden />}
             onClick={handleApply}
+            loading={applying}
+            disabled={applying}
           >
-            Apply action
+            {applying ? "Applying…" : "Apply action"}
           </Button>
           {canSendReply && (
             <Button

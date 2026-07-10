@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────────────────────
-# Bring up LOCAL Supabase, apply ALL migrations (incl. 0005 RLS / tenant isolation),
+# Bring up LOCAL Supabase, apply every numbered migration (including RLS, delivery,
+# approval lifecycle, and unsubscribe policy),
 # and write .env.local so the Hermes app runs in LIVE mode against the local stack.
 #
 # Prereq: Docker Desktop running (open it once + accept first-launch onboarding).
@@ -22,7 +23,7 @@ fi
 echo "▸ Starting local Supabase (first run pulls container images — a few minutes)…"
 "$SB" start
 
-echo "▸ Applying all migrations (0001-0005, incl. RLS) via db reset…"
+echo "▸ Applying every numbered migration via db reset…"
 "$SB" db reset
 
 echo "▸ Capturing local keys → .env.local"

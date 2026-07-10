@@ -19,6 +19,7 @@ import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { OutreachMessageCard } from "@/components/outreach/outreach-message-card";
 import { RateMeterPanel } from "@/components/outreach/rate-meter-panel";
 import { QuickDraft } from "@/components/outreach/quick-draft";
+import { WhatsAppTemplatePicker } from "@/components/outreach/whatsapp-template-picker";
 import { SequenceLadder } from "@/components/outreach/sequence-ladder";
 import { GlassBoxPanel } from "@/components/outreach/glass-box-panel";
 import {
@@ -186,6 +187,7 @@ function OutreachView() {
   const [campaignFilter, setCampaignFilter] = React.useState<string>(campaignParam ?? "all");
   const [sentOpen, setSentOpen] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [approvingAll, setApprovingAll] = React.useState(false);
   const [draftingAllDue, setDraftingAllDue] = React.useState(false);
   const [draftAllProgress, setDraftAllProgress] = React.useState({ done: 0, total: 0 });
   // Which pending draft (if any) has its glass-box guardrail detail expanded.
@@ -232,29 +234,39 @@ function OutreachView() {
    *  checkOutreachApproval internally) — never flips status directly, never
    *  bypasses a blocker, and never sends. Blocked drafts simply stay in the
    *  queue and get counted, matching the single-approve failure path. */
-  function handleBulkApprove() {
+  async function handleBulkApprove() {
+    if (approvingAll) return;
     const ids = selectedInView.map((m) => m.id);
     if (ids.length === 0) return;
+    setApprovingAll(true);
     let approved = 0;
     let blocked = 0;
     const blockers = new Set<string>();
-    for (const id of ids) {
-      const res = actions.approveOutreach(id);
-      if (res.allowed) approved += 1;
-      else {
-        blocked += 1;
-        res.blockers.forEach((b) => blockers.add(b));
+    const blockedIds = new Set<string>();
+    try {
+      for (const id of ids) {
+        const res = await actions.approveOutreach(id);
+        if (res.allowed) approved += 1;
+        else {
+          blocked += 1;
+          blockedIds.add(id);
+          res.blockers.forEach((b) => blockers.add(b));
+        }
       }
+      // Keep every unapproved draft selected so the operator can correct it
+      // rather than silently losing the selection after a partial failure.
+      setSelectedIds(blockedIds);
+      toast({
+        title: blocked > 0 ? `Approved ${approved}, ${blocked} blocked` : `Approved ${approved}`,
+        description:
+          blocked > 0
+            ? `Blocked drafts stayed selected in the queue. ${Array.from(blockers).join(" ")}`
+            : "Queued for send per the usual approval flow.",
+        variant: blocked > 0 ? "warning" : "success",
+      });
+    } finally {
+      setApprovingAll(false);
     }
-    setSelectedIds(new Set());
-    toast({
-      title: blocked > 0 ? `Approved ${approved}, ${blocked} blocked` : `Approved ${approved}`,
-      description:
-        blocked > 0
-          ? `Blocked drafts stayed in the queue. ${Array.from(blockers).join(" ")}`
-          : "Queued for send per the usual approval flow.",
-      variant: blocked > 0 ? "warning" : "success",
-    });
   }
 
   /** Draft-all-due autopilot (Task 2.4): clears the entire follow-up backlog
@@ -285,8 +297,8 @@ function OutreachView() {
       title: `Drafted ${pluralize(drafted, "follow-up")}`,
       description:
         skipped > 0
-          ? `${pluralize(skipped, "candidate")} skipped (already handled). Each draft carries its own sequence step — review above.`
-          : "Each draft carries its own sequence step — review and approve above. Nothing was sent.",
+          ? `${pluralize(skipped, "candidate")} skipped (already handled). Each draft carries its own sequence step, review above.`
+          : "Each draft carries its own sequence step. Review and approve above; nothing was sent.",
       variant: drafted > 0 ? "success" : "warning",
     });
   }
@@ -343,6 +355,7 @@ function OutreachView() {
       >
         <div className="space-y-6">
         <QuickDraft />
+        <WhatsAppTemplatePicker />
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Main queue */}
           <div className="space-y-6 lg:col-span-2">
@@ -367,6 +380,7 @@ function OutreachView() {
                         type="checkbox"
                         checked={allPendingSelected}
                         onChange={toggleSelectAll}
+                        disabled={approvingAll}
                         aria-label="Select all pending approvals"
                         className="h-4 w-4 rounded border-line accent-tangerine focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
                       />
@@ -377,9 +391,12 @@ function OutreachView() {
                       variant="outline"
                       leftIcon={<CheckCheck className="h-3.5 w-3.5" aria-hidden />}
                       onClick={handleBulkApprove}
-                      disabled={selectedInView.length === 0}
+                      loading={approvingAll}
+                      disabled={selectedInView.length === 0 || approvingAll}
                     >
-                      Approve selected{selectedInView.length > 0 ? ` (${selectedInView.length})` : ""}
+                      {approvingAll
+                        ? "Recording approvals…"
+                        : `Approve selected${selectedInView.length > 0 ? ` (${selectedInView.length})` : ""}`}
                     </Button>
                   </div>
                 )}

@@ -104,6 +104,8 @@ export function OutreachMessageCard({
   const initials = candidate ? candidate.avatarInitials || initialsFrom(candidate.name) : "??";
 
   const [regenerating, setRegenerating] = React.useState(false);
+  const [approving, setApproving] = React.useState(false);
+  const [rejecting, setRejecting] = React.useState(false);
 
   async function handleToneChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const tone = e.target.value as OutreachTone;
@@ -126,8 +128,11 @@ export function OutreachMessageCard({
     });
   }
 
-  function handleApprove() {
-    const res = a.approveOutreach(message.id);
+  async function handleApprove() {
+    if (approving) return;
+    setApproving(true);
+    const res = await a.approveOutreach(message.id);
+    setApproving(false);
     if (!res.allowed) {
       toast({
         title: "Approval blocked",
@@ -145,8 +150,15 @@ export function OutreachMessageCard({
     });
   }
 
-  function handleReject() {
-    a.rejectOutreach(message.id);
+  async function handleReject() {
+    if (rejecting) return;
+    setRejecting(true);
+    const result = await a.rejectOutreach(message.id);
+    setRejecting(false);
+    if (!result.ok) {
+      toast({ title: "Could not reject outreach", description: result.error, variant: "error" });
+      return;
+    }
     toast({
       title: "Outreach rejected",
       description: "Removed from the approval queue.",
@@ -206,6 +218,14 @@ export function OutreachMessageCard({
     setSending(false);
     if (!res.ok) {
       toast({ title: "Send blocked", description: res.error, variant: "error" });
+      return;
+    }
+    if (res.queued) {
+      toast({
+        title: "WhatsApp queued",
+        description: "ARIA will re-check consent, do-not-contact status, the reply window, and your approval before delivery.",
+        variant: "success",
+      });
       return;
     }
     toast({
@@ -294,7 +314,7 @@ export function OutreachMessageCard({
               id={toneId}
               value={message.tone}
               onChange={handleToneChange}
-              disabled={settled || regenerating}
+              disabled={settled || regenerating || approving || rejecting}
               options={OUTREACH_TONES.map((t) => ({ value: t, label: t }))}
             />
           </Field>
@@ -307,7 +327,7 @@ export function OutreachMessageCard({
               id={subjectId}
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              disabled={settled}
+              disabled={settled || approving || rejecting}
               placeholder="Subject line"
             />
           </Field>
@@ -319,7 +339,7 @@ export function OutreachMessageCard({
             id={bodyId}
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            disabled={settled}
+            disabled={settled || approving || rejecting}
             className="min-h-[160px]"
             placeholder="Message body"
           />
@@ -412,7 +432,7 @@ export function OutreachMessageCard({
               variant="outline"
               leftIcon={<Save className="h-4 w-4" />}
               onClick={handleSave}
-              disabled={!dirty}
+              disabled={!dirty || approving || rejecting}
             >
               Save edits
             </Button>
@@ -424,16 +444,19 @@ export function OutreachMessageCard({
                 variant="primary"
                 leftIcon={<Check className="h-4 w-4" />}
                 onClick={handleApprove}
+                loading={approving}
+                disabled={approving || rejecting}
               >
-                Approve
+                {approving ? "Recording approval…" : "Approve"}
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
                 leftIcon={<X className="h-4 w-4" />}
                 onClick={handleReject}
+                disabled={approving || rejecting}
               >
-                Reject
+                {rejecting ? "Revoking…" : "Reject"}
               </Button>
             </>
           )}
@@ -444,7 +467,7 @@ export function OutreachMessageCard({
               leftIcon={<RefreshCw className="h-4 w-4" />}
               onClick={handleRegenerate}
               loading={regenerating}
-              disabled={regenerating}
+              disabled={regenerating || approving || rejecting}
             >
               {regenerating ? "Regenerating…" : "Regenerate"}
             </Button>

@@ -166,7 +166,7 @@ export function VivierView() {
       <PageHeader
         eyebrow="Talent Pool"
         title="#Vivier"
-        description="TopGuns and A-players not hired now, kept warm for the future — silver medalists, a re-contact pipeline, and the pool's aggregate DNA."
+        description="TopGuns and A-players not hired now, kept warm for the future: silver medalists, a re-contact pipeline, and the pool's aggregate DNA."
       />
 
       <HydrationGate hydrated={hydrated} fallback={<VivierFallback />}>
@@ -174,7 +174,7 @@ export function VivierView() {
           <EmptyState
             icon={<Sparkles className="h-6 w-6" aria-hidden />}
             title="The talent pool is empty"
-            description="Pool a strong candidate who dropped out from their profile — silver medalists and always-pooled referrals & outbound leads land here to be kept warm."
+            description="Pool a strong candidate who dropped out from their profile. Silver medalists and always-pooled referrals & outbound leads land here to be kept warm."
           />
         ) : (
           <div className="space-y-8">
@@ -349,7 +349,7 @@ export function VivierView() {
                     ) : (
                       <>
                         <p className="mb-3 text-sm text-muted">
-                          The most common skills &amp; signals across the pool — chip size scales
+                          The most common skills &amp; signals across the pool. Chip size scales
                           with frequency.
                         </p>
                         <ul className="flex flex-wrap items-center gap-2">
@@ -460,7 +460,7 @@ function SilverMedalistCard({
 
       <p className="text-xs leading-relaxed text-ink-soft">
         <span className="font-semibold">Why pooled: </span>
-        {c.rejectionReason || "TopGun / A talent who dropped out — kept warm for a future need."}
+        {c.rejectionReason || "TopGun / A talent who dropped out, kept warm for a future need."}
       </p>
 
       <div className="mt-auto flex items-center justify-between gap-2 pt-1">

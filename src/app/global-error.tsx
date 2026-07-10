@@ -36,7 +36,7 @@ export default function GlobalError({
           <p className="eyebrow mb-2">Something broke</p>
           <h1 className="display text-4xl text-ink">Aria ran into a critical error.</h1>
           <p className="mt-3 max-w-md text-muted">
-            The application failed to load. This one’s on us — reloading usually clears it.
+            The application failed to load. This one’s on us: reloading usually clears it.
           </p>
           {error.digest ? (
             <p className="mt-2 font-mono text-xs text-muted/80">Reference: {error.digest}</p>

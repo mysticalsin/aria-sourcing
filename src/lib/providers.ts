@@ -1,12 +1,14 @@
 import { redactEmail, redactSecrets } from "@/lib/log-redact";
+import { renderEmailWithUnsubscribe } from "@/lib/email-unsubscribe";
 import type { SeatProvider } from "./types";
 
 function auditLog(level: "info" | "error", message: string, meta?: Record<string, unknown>) {
-  const entry = { time: new Date().toISOString(), source: "email-provider", level, ...(meta ?? {}) };
+  const entry = { time: new Date().toISOString(), source: "email-provider", level, message, ...(meta ?? {}) };
+  const serialized = redactSecrets(redactEmail(JSON.stringify(entry)));
   if (level === "error") {
-    console.error(JSON.stringify(entry));
+    console.error(serialized);
   } else {
-    console.log(JSON.stringify(entry));
+    console.log(serialized);
   }
 }
 
@@ -21,6 +23,7 @@ export function validateApiKeyFormat(provider: string, value: string): { valid: 
     "Kimi (Moonshot)": /^sk-[A-Za-z0-9_-]{20,}$/,
     Resend: /^re_[A-Za-z0-9_-]{10,}$/,
     SendGrid: /^SG\.[A-Za-z0-9_.-]{20,}$/,
+    Sillage: /^sk_live_[A-Za-z0-9]{16,}$/,
   };
   const re = rule[provider];
   if (!re) return { valid: v.length >= 8, detail: v.length >= 8 ? "Accepted (custom)." : "Too short." };
@@ -51,6 +54,8 @@ export interface SendRequest {
   to: string;
   subject: string;
   body: string;
+  /** Server-generated opaque recipient link; required for any live delivery. */
+  unsubscribeUrl?: string;
 }
 
 export interface SendOutcome {
@@ -60,26 +65,23 @@ export interface SendOutcome {
   id?: string;
 }
 
-function plainToHtml(body: string): string {
-  return body
-    .split("\n")
-    .map((l) => (l.trim() ? `<p>${escapeHtml(l)}</p>` : "<br/>"))
-    .join("");
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c] ?? c);
-}
-
 /** Perform a real send via the provider's official API. Throws on misconfig. */
 export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
   auditLog("info", "Send attempt", { provider: req.provider, from: req.from, to: req.to });
+  if (!req.unsubscribeUrl) {
+    return {
+      status: "error",
+      provider: req.provider,
+      detail: "No compliant unsubscribe link is configured for this email.",
+    };
+  }
+  const rendered = renderEmailWithUnsubscribe(req.body, req.unsubscribeUrl);
   switch (req.provider) {
     case "Resend": {
       const key = process.env.RESEND_API_KEY;
       if (!key) {
         auditLog("info", "Resend dry-run: no API key", { to: req.to });
-        return { status: "dry-run", provider: req.provider, detail: "No RESEND_API_KEY — dry-run." };
+        return { status: "dry-run", provider: req.provider, detail: "No RESEND_API_KEY, dry-run only." };
       }
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
@@ -89,15 +91,15 @@ export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
           from: req.fromName ? `${req.fromName} <${req.from}>` : req.from,
           to: [req.to],
           subject: req.subject,
-          text: req.body,
-          html: plainToHtml(req.body),
-          headers: { "List-Unsubscribe": "<mailto:unsubscribe@hermes.example>" },
+          text: rendered.text,
+          html: rendered.html,
+          headers: rendered.headers,
         }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         auditLog("error", "Resend send failed", { status: res.status, to: req.to });
-        return { status: "error", provider: req.provider, detail: json?.message ?? `HTTP ${res.status}` };
+        return { status: "error", provider: req.provider, detail: `Resend send error ${res.status}.` };
       }
       auditLog("info", "Resend send succeeded", { to: req.to, id: json?.id });
       return { status: "sent", provider: req.provider, detail: "Sent via Resend.", id: json?.id };
@@ -106,7 +108,7 @@ export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
       const key = process.env.SENDGRID_API_KEY;
       if (!key) {
         auditLog("info", "SendGrid dry-run: no API key", { to: req.to });
-        return { status: "dry-run", provider: req.provider, detail: "No SENDGRID_API_KEY — dry-run." };
+        return { status: "dry-run", provider: req.provider, detail: "No SENDGRID_API_KEY, dry-run only." };
       }
       const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
         method: "POST",
@@ -117,9 +119,10 @@ export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
           from: { email: req.from, name: req.fromName },
           subject: req.subject,
           content: [
-            { type: "text/plain", value: req.body },
-            { type: "text/html", value: plainToHtml(req.body) },
+            { type: "text/plain", value: rendered.text },
+            { type: "text/html", value: rendered.html },
           ],
+          headers: rendered.headers,
         }),
       });
       if (!res.ok) {
@@ -140,6 +143,6 @@ export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
     }
     default:
       auditLog("error", "Unknown email provider", { provider: req.provider });
-      return { status: "dry-run", provider: req.provider, detail: "Unknown provider — dry-run." };
+      return { status: "dry-run", provider: req.provider, detail: "Unknown provider, dry-run only." };
   }
 }

@@ -194,7 +194,7 @@ export function RunTimeline({ events, minMs, maxMs, cursorMs, onScrub, soundEnab
         ))}
         {reducedMotion && (
           <span className="text-xs text-muted">
-            Autoplay disabled (reduced motion) — drag the playhead to scrub.
+            Autoplay disabled (reduced motion): drag the playhead to scrub.
           </span>
         )}
       </div>

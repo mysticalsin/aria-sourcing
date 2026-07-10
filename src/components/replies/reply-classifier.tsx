@@ -133,7 +133,7 @@ export function ReplyClassifier({
     if (resultCampaign?.status === "Paused") {
       toast({
         title: "Campaign is paused",
-        description: `${resultCampaign.title} is paused — resume it before drafting new outreach.`,
+        description: `${resultCampaign.title} is paused. Resume it before drafting new outreach.`,
         variant: "warning",
       });
       return;

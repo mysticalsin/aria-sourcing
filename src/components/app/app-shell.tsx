@@ -15,7 +15,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // Auth screens and the public career-site chatbox render full-bleed, without
   // the recruiter console chrome.
-  if (pathname.startsWith("/login") || pathname.startsWith("/careers")) return <>{children}</>;
+  if (pathname.startsWith("/login") || pathname.startsWith("/careers") || pathname.startsWith("/unsubscribe")) return <>{children}</>;
 
   return (
     <ConfirmProvider>

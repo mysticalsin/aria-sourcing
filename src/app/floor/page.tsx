@@ -381,11 +381,11 @@ function ActivityTicker({ events, seats }: { events: AgentEvent[]; seats: AgentS
           <Radio className="h-3.5 w-3.5 text-electric" aria-hidden />
           <Eyebrow>Live activity</Eyebrow>
         </div>
-        <span className="text-xs text-muted">Real-time feed — works on every device</span>
+        <span className="text-xs text-muted">Real-time feed, works on every device</span>
       </div>
       {items.length === 0 ? (
         <p className="text-sm text-muted">
-          No agent activity yet — trigger a sourcing or outreach action to see it here.
+          No agent activity yet. Trigger a sourcing or outreach action to see it here.
         </p>
       ) : (
         <ul className="space-y-1.5">
@@ -475,7 +475,7 @@ function AgentDetailDrawer({
           className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-electric/30 bg-electric-soft px-4 py-2.5 text-sm font-semibold text-electric transition hover:border-electric/50"
         >
           <Brain className="h-4 w-4" aria-hidden />
-          Open cortex — watch it think
+          Open cortex, watch it think
         </button>
 
         <Card className="bg-canvas/40">

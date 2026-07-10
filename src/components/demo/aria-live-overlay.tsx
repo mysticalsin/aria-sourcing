@@ -5,6 +5,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, RotateCcw, Sparkles, SkipForward, X, XCircle } from "lucide-react";
 import { Badge, Button } from "@/components/ui";
 import { useCountUp } from "@/components/reveal/use-count-up";
+import { lockBodyScroll, unlockBodyScroll } from "@/lib/scroll-lock";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { useActiveCampaignId, useCampaigns, useHermes, useHydrated, useSeats } from "@/lib/store";
 import {
   ARIA_LIVE_CHAPTERS,
@@ -18,18 +20,6 @@ import {
   abandonAriaLiveIfActive,
   type AriaLiveSnapshot,
 } from "@/lib/demo/aria-live";
-
-function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = React.useState(false);
-  React.useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReduced(mq.matches);
-    const onChange = () => setReduced(mq.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
-  return reduced;
-}
 
 const CHAPTER_LABELS: Record<string, string> = {
   sourcing: "Source",
@@ -56,6 +46,7 @@ const CHAPTER_LABELS: Record<string, string> = {
 export function AriaLiveOverlay() {
   const [snapshot, setSnapshot] = React.useState<AriaLiveSnapshot>(() => getAriaLiveSnapshot());
   const reducedMotion = usePrefersReducedMotion();
+  const dialogRef = React.useRef<HTMLDialogElement>(null);
   const closeBtnRef = React.useRef<HTMLButtonElement>(null);
 
   const { state, actions } = useHermes();
@@ -89,15 +80,16 @@ export function AriaLiveOverlay() {
   }, [snapshot.finished]);
 
   React.useEffect(() => {
-    if (!snapshot.active) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (snapshot.finished) dismissAriaLive();
-      else skipAriaLive();
+    const dialog = dialogRef.current;
+    if (!snapshot.active || !dialog) return;
+    if (!dialog.open) dialog.showModal();
+    lockBodyScroll();
+    dialog.querySelector<HTMLElement>("button")?.focus();
+    return () => {
+      if (dialog.open) dialog.close();
+      unlockBodyScroll();
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [snapshot.active, snapshot.finished]);
+  }, [snapshot.active]);
 
   if (!snapshot.active) return null;
 
@@ -105,7 +97,16 @@ export function AriaLiveOverlay() {
   const barTransition = reducedMotion ? { duration: 0 } : { duration: 0.5, ease: [0.22, 1, 0.36, 1] as const };
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col" role="region" aria-label="Aria Live cinematic">
+    <dialog
+      ref={dialogRef}
+      className="aria-live-overlay m-0 h-screen max-h-none w-screen max-w-none border-0 bg-transparent p-0"
+      aria-label="Aria Live cinematic"
+      onCancel={(event) => {
+        event.preventDefault();
+        if (snapshot.finished) dismissAriaLive();
+        else skipAriaLive();
+      }}
+    >
       {/* Top letterbox bar */}
       <motion.div
         initial={reducedMotion ? false : { height: 0 }}
@@ -138,10 +139,9 @@ export function AriaLiveOverlay() {
         </div>
       </motion.div>
 
-      {/* The "stage" — deliberately pointer-events-none so the real page (and
-          the 3D floor, camera-tracked by RetroOfficeScene.tsx's director
-          hook) stays visible and click-through beneath the letterbox. */}
-      <div className="pointer-events-none flex-1" />
+      {/* The stage stays transparent so the director remains visible, but it
+          catches pointer input while the native dialog keeps the page inert. */}
+      <div className="aria-live-stage flex-1 pointer-events-auto bg-transparent" />
 
       {/* Bottom letterbox bar — captions + chapter progress */}
       <motion.div
@@ -182,8 +182,6 @@ export function AriaLiveOverlay() {
       {snapshot.finished && (
         <div className="pointer-events-auto absolute inset-0 flex items-center justify-center bg-ink/70 p-4 backdrop-blur-sm">
           <motion.div
-            role="dialog"
-            aria-modal="true"
             aria-label={snapshot.error ? "Aria Live stopped early" : "Hire funnel complete"}
             initial={reducedMotion ? false : { opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -217,12 +215,12 @@ export function AriaLiveOverlay() {
               </Button>
             </div>
             <p className="mt-4 text-center text-xs text-muted">
-              Synthetic demo run, fully reverted on close — nothing was sent.
+              Synthetic demo run, fully reverted on close. Nothing was sent.
             </p>
           </motion.div>
         </div>
       )}
-    </div>
+    </dialog>
   );
 }
 

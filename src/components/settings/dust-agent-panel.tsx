@@ -70,7 +70,7 @@ export function DustAgentPanel() {
     setApiKey("");
     toast({
       title: "Dust disconnected",
-      description: "The vault key was left in place — remove it from Access & Keys if no longer needed.",
+      description: "The vault key was left in place. Remove it from Access & Keys if no longer needed.",
       variant: "info",
     });
   }
@@ -83,7 +83,7 @@ export function DustAgentPanel() {
         <CardContent className="space-y-4">
           <p className="text-sm leading-relaxed text-ink-soft">
             Connect a Dust (dust.tt) workspace to delegate recruiting tasks to your own agents. Dust
-            has no self-serve login flow — paste the workspace ID and an API key from{" "}
+            has no self-serve login flow. Paste the workspace ID and an API key from{" "}
             <span className="font-medium text-ink">Dust → Settings → API Keys</span>, then hit Connect.
           </p>
           {!isAdmin ? (

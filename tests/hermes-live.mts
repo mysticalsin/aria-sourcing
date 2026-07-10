@@ -31,7 +31,7 @@ function ok(name: string, cond: boolean) {
 /* ---- 1. Settings shape + defaults --------------------------------------- */
 
 const seed = buildSeedState();
-ok("seed version is current (8)", seed.version === STATE_VERSION);
+ok("seed version is current", seed.version === STATE_VERSION);
 ok("hermesLiveMode defaults false", seed.settings.hermesLiveMode === false);
 ok("hermesApiUrl defaults empty string", seed.settings.hermesApiUrl === "");
 ok("hermesApiKeyId defaults empty string", seed.settings.hermesApiKeyId === "");

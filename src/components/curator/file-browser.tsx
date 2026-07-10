@@ -160,7 +160,7 @@ export function FileBrowser() {
           )}
           <FileEntries listing={demoListing} onNavigate={setPath} />
           <p className="text-xs text-muted">
-            Preview only — enable Aria live mode in Settings to browse the real runtime file tree.
+            Preview only. Enable Aria live mode in Settings to browse the real runtime file tree.
           </p>
         </CardContent>
       </Card>

@@ -3,6 +3,8 @@ import { dedupeCandidates } from "./rules";
 import { humanizeText } from "./humanizer";
 import { roleProfile } from "./roles";
 import type { GithubUser } from "./sourcing/github";
+import type { ApolloPerson } from "./sourcing/apollo";
+import type { SeamlessContact } from "./sourcing/seamless";
 import type { WebLead, WebSearchPlatform } from "./sourcing/web-leads";
 import { detectLanguage, outreachStrings, REPLY_LEXICON } from "./i18n";
 import type {
@@ -14,6 +16,7 @@ import type {
   CompanyStage,
   GithubQuery,
   IntakeIntent,
+  Interviewer,
   JobAnalysis,
   OutreachChannel,
   OutreachMessage,
@@ -112,21 +115,6 @@ const ACTIVITY_LINES = [
   "Contributes to standards working groups regularly.",
 ];
 
-const INTERVIEWERS = [
-  { name: "Dana Whitfield", email: "dana.whitfield@hermes.example", role: "Engineering Manager" },
-  { name: "Marcus Lindqvist", email: "marcus.lindqvist@hermes.example", role: "Staff Engineer" },
-  { name: "Priya Nair", email: "priya.nair@hermes.example", role: "Director of Engineering" },
-  { name: "Sofia Romano", email: "sofia.romano@hermes.example", role: "Principal Engineer" },
-];
-
-export function getInterviewers() {
-  return INTERVIEWERS;
-}
-
-export function nextInterviewer(bookingCount: number) {
-  return INTERVIEWERS[bookingCount % INTERVIEWERS.length];
-}
-
 /* ---- Skills dictionary for the parser ----------------------------------- */
 
 const SKILL_DICTIONARY = [
@@ -223,6 +211,16 @@ export interface ParsedIntake {
 
 export function isMantuNeedEmail(text: string): boolean {
   return /this need is now|key required skills/i.test(text) || /^\s*recruiter\s*:/im.test(text);
+}
+
+/** Does an inbound mailbox message look like a hiring need / JD email (vs a
+ *  candidate reply, newsletter, …)? Used by the intake "Scan inbox" flow to
+ *  pick need emails out of a synced mailbox. Mantu "need is now ACTIVE" mails
+ *  match on the body; otherwise only a conservative subject-line check — a
+ *  false positive here would parse a random email into a job brief. */
+export function isNeedEmail(subject: string, body: string): boolean {
+  if (isMantuNeedEmail(body) || isMantuNeedEmail(subject)) return true;
+  return /\b(job description|jd attached|new (role|position|need|vacancy|opening)|hiring request|backfill|open position)\b/i.test(subject);
 }
 
 /** Structured parser for the Mantu/Amaris "need is now ACTIVE" recruitment email. */
@@ -546,10 +544,13 @@ export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
   const topSkills = jd.requiredSkills.slice(0, 4);
   const region = jd.regions[0];
   const locationQualifier = region && !NON_LOCATION_REGIONS.has(region) ? ` location:${region}` : "";
+  // Note: only user-search qualifiers are valid here (language:, location:,
+  // followers:, repos:, created:). Repo qualifiers like `stars:` silently zero
+  // out the whole query on /search/users.
   const githubQueries: GithubQuery[] = topSkills.slice(0, 3).map((skill, i) => ({
     label: `${skill} contributors`,
     query: `language:${skill.replace(/\s+/g, "")}${locationQualifier} followers:>40 ${
-      i === 0 ? "stars:>20" : "repos:>5"
+      i === 0 ? "repos:>10" : "repos:>5"
     }`,
     estimatedResults: 120 + i * 60,
   }));
@@ -712,6 +713,153 @@ export function mapGithubCandidates(
       companyStageExperience: [],
       industryExperience: [],
       recentActivity: `${u.publicRepos} public repos, ${u.followers} followers`,
+      stage: "Sourced",
+      lastContactedAt: null,
+      outreachHistory: [],
+      replyHistory: [],
+      booking: null,
+      complianceFlags: {
+        doNotContact: false,
+        suppressed: false,
+        unsubscribed: false,
+        gdprExportRequested: false,
+        anonymized: false,
+        suppressedUntil: null,
+      },
+      createdAt: new Date().toISOString(),
+      provenance: "live",
+    };
+  });
+
+  const { accepted, skipped } = dedupeCandidates(raw, existing, {
+    excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
+  });
+  const scored = accepted.map((c) => {
+    const { score, breakdown } = scoreCandidate(c, jd, weights);
+    return { ...c, matchScore: score, matchBreakdown: breakdown };
+  });
+  return { accepted: scored, skipped };
+}
+
+/**
+ * Map real Apollo people into scored, deduped Candidates — same scoring + dedupe
+ * pipeline as mapGithubCandidates, real data. Apollo's search endpoint never
+ * returns email/phone (that's the separate, credit-costing enrichment step), so
+ * email is always left blank here; `sourceExternalId` carries Apollo's person id
+ * so a later per-candidate enrichment call knows who to match.
+ */
+export function mapApolloCandidates(
+  people: ApolloPerson[],
+  campaign: Campaign,
+  query: string,
+  existing: Candidate[],
+  weights: ScoringWeights = campaign.scoringWeights,
+): SourceResult {
+  const jd = campaign.jobAnalysis;
+  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
+  const raw: Candidate[] = people.map((p) => {
+    const headline = (p.headline || p.title || "").toLowerCase();
+    const matched = allSkills.filter((s) => headline.includes(s.toLowerCase()));
+    const location = [p.city, p.state, p.country].filter(Boolean).join(", ");
+    const recentActivity = p.seniority
+      ? `${p.seniority}${p.departments.length ? ` · ${p.departments.join(", ")}` : ""}`
+      : "Apollo profile";
+    return {
+      id: genId("cand"),
+      campaignId: campaign.id,
+      name: p.name,
+      email: "",
+      avatarInitials: initialsFrom(p.name),
+      currentTitle: p.title || jd.title,
+      currentCompany: p.company,
+      location,
+      timezone: "",
+      linkedinUrl: p.linkedinUrl,
+      githubUrl: "",
+      sourceExternalId: p.id || undefined,
+      sourcePlatform: "Apollo",
+      sourceQuery: query,
+      matchScore: 0,
+      matchBreakdown: [],
+      techStack: matched,
+      yearsExperience: 4, // Apollo search doesn't expose tenure — a neutral estimate
+      companyStageExperience: [],
+      industryExperience: [],
+      recentActivity,
+      stage: "Sourced",
+      lastContactedAt: null,
+      outreachHistory: [],
+      replyHistory: [],
+      booking: null,
+      complianceFlags: {
+        doNotContact: false,
+        suppressed: false,
+        unsubscribed: false,
+        gdprExportRequested: false,
+        anonymized: false,
+        suppressedUntil: null,
+      },
+      createdAt: new Date().toISOString(),
+      provenance: "live",
+    };
+  });
+
+  const { accepted, skipped } = dedupeCandidates(raw, existing, {
+    excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
+  });
+  const scored = accepted.map((c) => {
+    const { score, breakdown } = scoreCandidate(c, jd, weights);
+    return { ...c, matchScore: score, matchBreakdown: breakdown };
+  });
+  return { accepted: scored, skipped };
+}
+
+/**
+ * Map real Seamless.AI search contacts (fifth real sourcing channel) into
+ * scored, deduped Candidates. Same construction as mapApolloCandidates — no
+ * email/phone from search (Seamless reveals those only via the separate,
+ * explicitly confirmed research/poll flow — see startSeamlessResearch /
+ * checkSeamlessResearch in store.ts), `sourceExternalId` carries the
+ * `searchResultId` a later research call needs.
+ */
+export function mapSeamlessCandidates(
+  contacts: SeamlessContact[],
+  campaign: Campaign,
+  query: string,
+  existing: Candidate[],
+  weights: ScoringWeights = campaign.scoringWeights,
+): SourceResult {
+  const jd = campaign.jobAnalysis;
+  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
+  const raw: Candidate[] = contacts.map((c) => {
+    const headline = (c.title || "").toLowerCase();
+    const matched = allSkills.filter((s) => headline.includes(s.toLowerCase()));
+    const location = [c.city, c.state, c.country].filter(Boolean).join(", ");
+    const recentActivity = c.seniority
+      ? `${c.seniority}${c.department ? ` · ${c.department}` : ""}`
+      : "Seamless profile";
+    return {
+      id: genId("cand"),
+      campaignId: campaign.id,
+      name: c.name,
+      email: "",
+      avatarInitials: initialsFrom(c.name),
+      currentTitle: c.title || jd.title,
+      currentCompany: c.company,
+      location,
+      timezone: "",
+      linkedinUrl: c.liUrl,
+      githubUrl: "",
+      sourceExternalId: c.searchResultId || undefined,
+      sourcePlatform: "Seamless",
+      sourceQuery: query,
+      matchScore: 0,
+      matchBreakdown: [],
+      techStack: matched,
+      yearsExperience: 4, // Seamless search doesn't expose tenure — a neutral estimate
+      companyStageExperience: [],
+      industryExperience: [],
+      recentActivity,
       stage: "Sourced",
       lastContactedAt: null,
       outreachHistory: [],
@@ -1101,7 +1249,9 @@ function draftFor(intent: ReplyIntent, first: string): string {
 export function createBooking(
   candidate: Candidate,
   campaign: Campaign,
-  interviewer: { name: string; email: string; role: string },
+  // Null when the interviewer roster is empty (see resolveBookingSlot in
+  // store.ts) — an honest gap rather than a fabricated name.
+  interviewer: Interviewer | null,
   startTime: Date,
 ): Booking {
   const end = new Date(startTime.getTime() + 30 * 60000);
@@ -1114,8 +1264,8 @@ export function createBooking(
     startTime: startTime.toISOString(),
     endTime: end.toISOString(),
     timezone: candidate.timezone,
-    interviewer: interviewer.name,
-    interviewerEmail: interviewer.email,
+    interviewer: interviewer?.name ?? "",
+    interviewerEmail: interviewer?.email ?? "",
     // Real meeting URLs are issued by the calendar provider (Microsoft Graph / Cal.com) at
     // live-send time. Until that integration is connected, leave these empty rather than
     // fabricate links that 404 — the calendar UI renders an "on live send" state.
@@ -1133,9 +1283,12 @@ export function createBooking(
 }
 
 export function interviewerPrepEmail(b: Booking, candidate: Candidate): string {
+  // No interviewer assigned yet (empty roster) — greet generically rather
+  // than produce "Hi ,".
+  const firstName = b.interviewer ? b.interviewer.split(" ")[0] : "there";
   return `Subject: Interview prep: ${b.candidateName} for ${b.role}
 
-Hi ${b.interviewer.split(" ")[0]},
+Hi ${firstName},
 
 You're interviewing ${b.candidateName} (${candidate.currentTitle} @ ${candidate.currentCompany}) for ${b.role}.
 Match score: ${candidate.matchScore}. Stack: ${candidate.techStack.slice(0, 5).join(", ")}.
@@ -1165,7 +1318,7 @@ Hi ${b.candidateName.split(" ")[0]},
 
 You're booked in. Details:
 • When: ${when}
-• With: ${b.interviewer}
+• With: ${b.interviewer || "Interviewer to be confirmed"}
 • Where: ${b.teamsLink}
 
 No prep needed, just bring your questions. Reply here if you need to move it.

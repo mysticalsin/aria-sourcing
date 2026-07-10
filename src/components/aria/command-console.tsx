@@ -7,6 +7,7 @@ import { Badge, Button, EmptyState, Input, Modal } from "@/components/ui";
 import { cn, type Tone } from "@/lib/utils";
 import { useActions, useCampaigns } from "@/lib/store";
 import { campaignToAriaContext, parseCommand, type AriaPlan } from "@/lib/aria-command";
+import { shouldResetAriaChecklist } from "@/lib/aria-command-console-state";
 
 type StepStatus = "idle" | "running" | "done" | "failed";
 type StepResult = { count?: number; detail?: string };
@@ -42,6 +43,7 @@ export function AriaCommandConsole({ open, onOpenChange, initialText = "" }: Ari
   const [hasRun, setHasRun] = React.useState(false);
   const [statuses, setStatuses] = React.useState<StepStatus[]>([]);
   const [results, setResults] = React.useState<StepResult[]>([]);
+  const lastChecklistTextRef = React.useRef<string | null>(null);
 
   // Re-seed the instruction whenever the console (re)opens with a new prefill.
   React.useEffect(() => {
@@ -65,11 +67,12 @@ export function AriaCommandConsole({ open, onOpenChange, initialText = "" }: Ari
   // is a second belt-and-braces check so an in-flight run's rows are never
   // reset out from under it.
   React.useEffect(() => {
-    if (running) return;
+    if (!shouldResetAriaChecklist({ previousText: lastChecklistTextRef.current, text, running })) return;
+    lastChecklistTextRef.current = text;
     setStatuses(plan ? plan.steps.map(() => "idle") : []);
     setResults(plan ? plan.steps.map(() => ({})) : []);
     setHasRun(false);
-  }, [text]);
+  }, [text, plan, running]);
 
   const handleRun = React.useCallback(async () => {
     if (!plan || plan.steps.length === 0 || running) return;
@@ -105,13 +108,13 @@ export function AriaCommandConsole({ open, onOpenChange, initialText = "" }: Ari
       open={open}
       onClose={() => onOpenChange(false)}
       title="Aria Command"
-      description="Type one instruction. Aria previews the plan below — nothing runs until you press Run."
+      description="Type one instruction. Aria previews the plan below. Nothing runs until you press Run."
       className="max-w-2xl"
       footer={
         <div className="flex w-full flex-wrap items-center justify-between gap-3">
           <p className="flex items-center gap-1.5 text-xs text-muted">
             <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-success" aria-hidden />
-            Drafts only — every message still waits for your approval. Nothing is ever sent automatically.
+            Drafts only. Every message still waits for your approval. Nothing is ever sent automatically.
           </p>
           <Button
             leftIcon={<PlayCircle className="h-4 w-4" />}
@@ -136,7 +139,7 @@ export function AriaCommandConsole({ open, onOpenChange, initialText = "" }: Ari
           <EmptyState
             icon={<Sparkles className="h-6 w-6" aria-hidden />}
             title="Waiting for an instruction"
-            description="Describe what you want Aria to do — source, draft, follow up, book, pool, or report."
+            description="Describe what you want Aria to do: source, draft, follow up, book, pool, or report."
           />
         )}
 
@@ -144,7 +147,7 @@ export function AriaCommandConsole({ open, onOpenChange, initialText = "" }: Ari
           <EmptyState
             icon={<Sparkles className="h-6 w-6" aria-hidden />}
             title="No actionable command recognized"
-            description="Aria couldn't find a source/draft/follow-up/book/pool/report instruction in that sentence — nothing will run. Try naming an action and a role or campaign."
+            description="Aria couldn't find a source/draft/follow-up/book/pool/report instruction in that sentence. Nothing will run. Try naming an action and a role or campaign."
           />
         )}
 
@@ -191,7 +194,7 @@ export function AriaCommandConsole({ open, onOpenChange, initialText = "" }: Ari
 
         {plan?.matchedCampaignId === undefined && hasSteps && (
           <p className="text-xs text-muted">
-            No existing campaign matched this instruction — steps will fail cleanly instead of guessing one. Open
+            No existing campaign matched this instruction. Steps will fail cleanly instead of guessing one. Open
             Campaigns and pick one, or mention its role/location.
           </p>
         )}
@@ -199,7 +202,7 @@ export function AriaCommandConsole({ open, onOpenChange, initialText = "" }: Ari
         {settled && (
           <div className="flex items-start gap-2.5 rounded-2xl bg-success-soft px-3.5 py-3 text-sm text-success ring-1 ring-inset ring-success/20">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-            <span>Run halted with drafts sitting in the outreach queue — 0 messages sent.</span>
+            <span>Run halted with drafts sitting in the outreach queue (0 messages sent).</span>
           </div>
         )}
       </div>

@@ -1,4 +1,5 @@
 import { redactEmail, redactSecrets } from "@/lib/log-redact";
+import { renderEmailWithUnsubscribe, type RenderedUnsubscribeEmail } from "@/lib/email-unsubscribe";
 import type { EmailConnection, EmailConnectionProvider } from "./types";
 
 export interface OAuthSendRequest {
@@ -8,6 +9,8 @@ export interface OAuthSendRequest {
   to: string;
   subject: string;
   body: string;
+  /** Server-generated opaque recipient link; required for any live delivery. */
+  unsubscribeUrl?: string;
 }
 
 export interface OAuthSendOutcome {
@@ -20,12 +23,15 @@ export interface OAuthSendOutcome {
 /** Send via Gmail API using a stored OAuth connection. */
 export async function sendViaGmailApi(req: OAuthSendRequest, connection: EmailConnection): Promise<OAuthSendOutcome> {
   const provider = connection.provider;
+  if (!req.unsubscribeUrl) {
+    return { status: "error", provider, detail: "No compliant unsubscribe link is configured for this email." };
+  }
   const token = await ensureAccessToken(connection);
   if (!token) {
     return { status: "error", provider, detail: "Unable to refresh Gmail access token." };
   }
 
-  const mime = buildMimeMessage(req);
+  const mime = buildMimeMessage(req, renderEmailWithUnsubscribe(req.body, req.unsubscribeUrl));
   const raw = Buffer.from(mime).toString("base64url");
 
   const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
@@ -34,9 +40,9 @@ export async function sendViaGmailApi(req: OAuthSendRequest, connection: EmailCo
     body: JSON.stringify({ raw }),
     signal: AbortSignal.timeout(15_000),
   });
-  const json = (await res.json().catch(() => ({}))) as { id?: string; error?: { message?: string } };
+  const json = (await res.json().catch(() => ({}))) as { id?: string };
   if (!res.ok) {
-    return { status: "error", provider, detail: json.error?.message ?? `Gmail API error ${res.status}` };
+    return { status: "error", provider, detail: `Gmail API error ${res.status}.` };
   }
   return { status: "sent", provider, detail: "Sent via Gmail API.", id: json.id };
 }
@@ -47,23 +53,21 @@ export async function sendViaMicrosoftGraph(
   connection: EmailConnection,
 ): Promise<OAuthSendOutcome> {
   const provider = connection.provider;
+  if (!req.unsubscribeUrl) {
+    return { status: "error", provider, detail: "No compliant unsubscribe link is configured for this email." };
+  }
   const token = await ensureAccessToken(connection);
   if (!token) {
     return { status: "error", provider, detail: "Unable to refresh Microsoft access token." };
   }
 
+  // Graph's JSON message shape only permits x-* custom headers. Send a raw MIME
+  // message so standard List-Unsubscribe headers survive the provider boundary.
+  const mime = buildMimeMessage(req, renderEmailWithUnsubscribe(req.body, req.unsubscribeUrl));
   const res = await fetch("https://graph.microsoft.com/v1.0/me/sendMail", {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      message: {
-        subject: req.subject,
-        body: { contentType: "HTML", content: plainToHtml(req.body) },
-        from: { emailAddress: { address: req.from, name: req.fromName ?? "" } },
-        toRecipients: [{ emailAddress: { address: req.to } }],
-      },
-      saveToSentItems: true,
-    }),
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "text/plain" },
+    body: Buffer.from(mime).toString("base64"),
     signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) {
@@ -205,13 +209,15 @@ async function refreshMicrosoftToken(connection: EmailConnection): Promise<strin
   return json.access_token;
 }
 
-function buildMimeMessage(req: OAuthSendRequest): string {
+function buildMimeMessage(req: OAuthSendRequest, rendered: RenderedUnsubscribeEmail): string {
   const boundary = `__hermes_${Math.random().toString(36).slice(2)}__`;
   const fromHeader = req.fromName ? `${req.fromName} <${req.from}>` : req.from;
   const headers = [
     `From: ${fromHeader}`,
     `To: ${req.to}`,
     `Subject: ${req.subject}`,
+    `List-Unsubscribe: ${rendered.headers["List-Unsubscribe"]}`,
+    `List-Unsubscribe-Post: ${rendered.headers["List-Unsubscribe-Post"]}`,
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
     "MIME-Version: 1.0",
     "",
@@ -221,24 +227,13 @@ function buildMimeMessage(req: OAuthSendRequest): string {
     "Content-Type: text/plain; charset=\"UTF-8\"",
     "Content-Transfer-Encoding: 7bit",
     "",
-    req.body,
+    rendered.text,
     `--${boundary}`,
     "Content-Type: text/html; charset=\"UTF-8\"",
     "Content-Transfer-Encoding: 7bit",
     "",
-    plainToHtml(req.body),
+    rendered.html,
     `--${boundary}--`,
   ];
   return headers.concat(parts).join("\r\n");
-}
-
-function plainToHtml(body: string): string {
-  return body
-    .split("\n")
-    .map((l) => (l.trim() ? `<p>${escapeHtml(l)}</p>` : "<br/>"))
-    .join("");
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c] ?? c);
 }

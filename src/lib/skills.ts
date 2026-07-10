@@ -189,22 +189,22 @@ export function proposeSkillUpdates(state: HermesState): SkillUpdate[] {
     if (a.bestTone !== cur) {
       const r = a.toneRates.find((t) => t.tone === a.bestTone)!;
       out.push(mk("outreach_skill", `Default to a ${a.bestTone.toLowerCase()} tone`,
-        `${a.bestTone} converted ${(r.rate * 100).toFixed(0)}% of ${r.sent} sends — the best of the tested tones.`,
+        `${a.bestTone} converted ${(r.rate * 100).toFixed(0)}% of ${r.sent} sends, the best of the tested tones.`,
         `Default tone: ${cur}.`, `Default tone: ${a.bestTone}.`, "+ projected reply lift", now));
     }
   }
   if (a.topDimension && a.topDimension.key !== "skills") {
     out.push(mk("scoring_skill", `Increase the weight of "${a.topDimension.key}"`,
-      `Converters average ${a.topDimension.avg} on ${a.topDimension.key} — under-weighted today.`,
+      `Converters average ${a.topDimension.avg} on ${a.topDimension.key}, under-weighted today.`,
       `Standard weights.`, `Nudge ${a.topDimension.key} up by ~6 points.`, "Better recall on real converters", now));
   } else {
     out.push(mk("scoring_skill", "Hold scoring weights",
-      "Skills remains the strongest predictor of conversion — keep it dominant.",
+      "Skills remains the strongest predictor of conversion: keep it dominant.",
       "Skills weight 34%.", "Skills weight 34% (held).", "Stable precision", now));
   }
   if (a.unclearRate > 0.15) {
     out.push(mk("reply_classification_skill", "Lower the qualified-interest floor",
-      `${(a.unclearRate * 100).toFixed(0)}% of replies landed UNCLEAR — too many hot leads to manual review.`,
+      `${(a.unclearRate * 100).toFixed(0)}% of replies landed UNCLEAR: too many hot leads to manual review.`,
       "Qualified-interest floor 0.70.", "Qualified-interest floor 0.66.", "Fewer hot leads lost", now));
   }
   out.push(mk("sourcing_skill", "Lead queries with the top required skill",

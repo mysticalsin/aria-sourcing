@@ -1,10 +1,15 @@
 import type { IntegrationStatus } from "./types";
 import { isoHoursBefore } from "./utils";
+import { supabaseEnabled } from "./supabase/config";
 
 /* ============================================================================
    Integration adapters — MOCK MODE by default.
-   No real network calls are made anywhere. `live` mode is a placeholder that
-   would require official API credentials to be wired in later.
+   Most of these cards are roadmap placeholders (`real: false`): no code in this
+   repo talks to them. A few (`real: true`) do have actual backend wiring —
+   GitHub Sourcing (/api/source), the Outlook/Graph mailbox + calendar (Agent
+   Fleet's OAuth connect flow), and SendGrid/Resend (sendViaProvider) — but this
+   card's own "Configure"/"Live mode" controls still don't drive them; see
+   setupHref and testIntegration (store.ts) for the real config surface.
    ========================================================================== */
 
 export function defaultIntegrations(): IntegrationStatus[] {
@@ -18,6 +23,8 @@ export function defaultIntegrations(): IntegrationStatus[] {
       mode: "mock",
       lastSync: isoHoursBefore(0.4),
       errors: [],
+      real: true,
+      setupHref: "/fleet",
     },
     {
       id: "int_resume_matcher",
@@ -28,6 +35,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       mode: "mock",
       lastSync: isoHoursBefore(1.2),
       errors: [],
+      real: false,
     },
     {
       id: "int_github",
@@ -38,6 +46,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       mode: "mock",
       lastSync: isoHoursBefore(0.8),
       errors: [],
+      real: true,
     },
     {
       id: "int_linkedin",
@@ -48,6 +57,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       mode: "mock",
       lastSync: isoHoursBefore(6),
       errors: ["Awaiting official partner API credentials."],
+      real: false,
     },
     {
       id: "int_linkedin_rsc",
@@ -58,6 +68,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       mode: "mock",
       lastSync: null,
       errors: ["Not connected. Apply for RSC at LinkedIn Talent Solutions, then enter OAuth credentials."],
+      real: false,
     },
     {
       id: "int_twenty",
@@ -68,6 +79,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       mode: "mock",
       lastSync: isoHoursBefore(0.6),
       errors: [],
+      real: false,
     },
     {
       id: "int_smart_ats",
@@ -78,6 +90,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       mode: "mock",
       lastSync: isoHoursBefore(0.5),
       errors: [],
+      real: false,
     },
     {
       id: "int_knight_m",
@@ -88,6 +101,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       mode: "mock",
       lastSync: isoHoursBefore(1.5),
       errors: [],
+      real: false,
     },
     {
       id: "int_my_referral",
@@ -98,6 +112,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       mode: "mock",
       lastSync: isoHoursBefore(2.5),
       errors: [],
+      real: false,
     },
     {
       id: "int_onestart",
@@ -108,16 +123,21 @@ export function defaultIntegrations(): IntegrationStatus[] {
       mode: "mock",
       lastSync: null,
       errors: ["Onboarding target system pending scope with HR (per TAnIA open items)."],
+      real: false,
     },
     {
       id: "int_supabase",
       name: "Supabase",
       category: "Infra",
       description: "Postgres + auth backend for production persistence (demo uses localStorage).",
-      status: "not_configured",
-      mode: "mock",
+      // The one card in this list that IS the app's actual data layer, not a
+      // roadmap placeholder — seed it from the real runtime flag so a freshly
+      // provisioned live workspace doesn't start out lying about its own backend.
+      status: supabaseEnabled ? "connected" : "not_configured",
+      mode: supabaseEnabled ? "live" : "mock",
       lastSync: null,
-      errors: ["No project URL configured: demo runs on localStorage."],
+      errors: supabaseEnabled ? [] : ["No project URL configured: demo runs on localStorage."],
+      real: true,
     },
     {
       id: "int_n8n",
@@ -128,6 +148,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       mode: "mock",
       lastSync: isoHoursBefore(2),
       errors: [],
+      real: false,
     },
     {
       id: "int_calcom",
@@ -138,6 +159,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       mode: "mock",
       lastSync: isoHoursBefore(0.3),
       errors: [],
+      real: false,
     },
     {
       id: "int_graph_teams",
@@ -148,6 +170,8 @@ export function defaultIntegrations(): IntegrationStatus[] {
       mode: "mock",
       lastSync: isoHoursBefore(0.5),
       errors: [],
+      real: true,
+      setupHref: "/fleet",
     },
     {
       id: "int_enrichment",
@@ -158,6 +182,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       mode: "mock",
       lastSync: isoHoursBefore(3),
       errors: [],
+      real: false,
     },
     {
       id: "int_sendgrid",
@@ -168,6 +193,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       mode: "mock",
       lastSync: isoHoursBefore(1),
       errors: [],
+      real: true,
     },
     {
       id: "int_notify",
@@ -178,6 +204,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       mode: "mock",
       lastSync: isoHoursBefore(0.2),
       errors: [],
+      real: false,
     },
   ];
 }
@@ -231,4 +258,12 @@ export function integrationHealthSummary(integrations: IntegrationStatus[]): {
     notConfigured: integrations.filter((i) => i.status === "not_configured").length,
     total: integrations.length,
   };
+}
+
+/** Same shape as integrationHealthSummary, scoped to integrations with actual
+ *  backend wiring (`real: true`). Use this anywhere a "connected" count is meant
+ *  to reflect real system health (sidebar, dashboard strip) rather than the
+ *  full roadmap list of cards. */
+export function realIntegrationSummary(integrations: IntegrationStatus[]): ReturnType<typeof integrationHealthSummary> {
+  return integrationHealthSummary(integrations.filter((i) => i.real));
 }

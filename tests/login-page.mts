@@ -1,0 +1,28 @@
+import { readFileSync } from "fs";
+
+let pass = 0;
+let fail = 0;
+function ok(name: string, condition: boolean) {
+  if (condition) pass++;
+  else {
+    fail++;
+    console.log("FAIL:", name);
+  }
+}
+
+const login = readFileSync(new URL("../src/app/login/page.tsx", import.meta.url), "utf8");
+
+ok("login has no dead hash navigation", !login.includes('href="#"'));
+ok("login removes the unbacked public navigation list", !login.includes("NAV_LINKS"));
+ok("login tracks a user-controlled video pause", login.includes("videoPausedByUser"));
+ok("login uses the shared reduced-motion preference", login.includes("usePrefersReducedMotion"));
+ok("login offers a visible pause label", login.includes("Pause background motion"));
+ok("login offers a visible resume label", login.includes("Play background motion"));
+ok("login explains the system reduced-motion state", login.includes("Background motion paused by system"));
+ok("login pause control reports its pressed state", login.includes("aria-pressed"));
+ok("login email disclosure reports its expanded state", login.includes("aria-expanded={showEmail}"));
+ok("login email disclosure identifies its controlled form", login.includes('aria-controls="login-email-form"'));
+ok("login email form has the controlled id", login.includes('id="login-email-form"'));
+
+console.log(`RESULT login-page: ${pass} passed, ${fail} failed`);
+if (fail > 0) process.exitCode = 1;

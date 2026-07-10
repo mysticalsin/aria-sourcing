@@ -86,7 +86,7 @@ function ensureSweeper(): void {
 export async function openObscuraSession(): Promise<ObscuraSession> {
   ensureSweeper();
   const browser = await getBrowser();
-  const context = await browser.newContext();
+  const context = await browser.newContext({ userAgent: "ARIAResearchBot/1.0" });
   const page = await context.newPage();
   const now = Date.now();
   const session: ObscuraSession = { id: randomUUID(), context, page, openedAt: now, lastActivityAt: now };

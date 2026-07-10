@@ -1,22 +1,11 @@
-// Read-only, MULTI-STEP browser tools for the agent tool-loop, backed by the
-// Obscura sidecar (src/lib/ai/obscura-adapter.ts). This is a strictly more
-// capable, strictly more guarded sibling of web-tools.ts: real JS execution for
-// pages that a plain GET+HTML-strip can't read (JS-rendered SPAs, "load more"/
-// infinite-scroll, cookie-consent walls) -- never a login/session/scraping-evasion
-// tool. See docs/superpowers/specs/2026-06-27-claw3d-office-merge-design.md §11.2
-// for the full non-negotiable scope boundary this file implements:
+// Stateful, multi-step browser tools for public research, backed by the
+// transparent Obscura sidecar (src/lib/ai/obscura-adapter.ts).
 //
-//   - No stealth: the sidecar is built + run without --features stealth and
-//     without the --stealth/--allow-private-network flags (see docker/obscura/Dockerfile).
-//   - No credential entry, structurally: the action vocabulary below is
-//     click | scroll | wait | back | forward ONLY. There is no type/fill/submit
-//     action, so login forms cannot be completed no matter what a caller asks for.
-//   - No persistent identity: every browser_open gets a fresh, cookie-empty context
-//     (obscura-adapter.ts's openObscuraSession), discarded on close.
+//   - No stealth or private-network access.
+//   - Interaction: click, scroll, wait, back, and forward only.
+//   - No persistent identity: every browser_open gets a fresh, cookie-empty context.
 //   - Bounded session lifetime: enforced by obscura-adapter.ts's sweeper.
-//   - SSRF + robots.txt checked on open AND on every navigation a click/back/forward
-//     can trigger.
-//   - Honest UA, unchanged from web-tools.ts.
+//   - SSRF + robots.txt checked on open AND on every navigation.
 
 import type { McpTool } from "@/lib/mcp-client";
 import { assertPublicUrl } from "@/lib/api/url";
@@ -30,9 +19,9 @@ import {
 /** Sentinel "server url" that marks the built-in browser tools inside the tool-loop. */
 export const BUILTIN_BROWSER_URL = "builtin:browser-research";
 
-const USER_AGENT = "AriaResearchBot/1.0 (+read-only; https://aria-sourcing-demo.vercel.app)";
+const USER_AGENT = "ARIAResearchBot/1.0";
 const NAV_TIMEOUT_MS = 15_000;
-const ROBOTS_TIMEOUT_MS = 8_000;
+const ROBOTS_TIMEOUT_MS = 15_000;
 const MAX_TEXT = 6_000;
 const MAX_SCREENSHOT_BYTES = 1_500_000;
 
@@ -42,7 +31,7 @@ export interface ToolResult {
   error?: string;
 }
 
-/** The ONLY actions a caller may request. No type/fill/select_option/press_key/submit exists here. */
+/** The public-research actions a caller may request. */
 const ALLOWED_ACT_TYPES = new Set(["click", "scroll", "wait", "back", "forward"]);
 
 export const BROWSER_TOOL_DEFS: McpTool[] = [
@@ -59,13 +48,13 @@ export const BROWSER_TOOL_DEFS: McpTool[] = [
   {
     name: "browser_act",
     description:
-      "Perform one read-only interaction in an open browser session: click, scroll, wait, back, or forward. There is no way to type, fill a field, or submit a form with this tool.",
+      "Perform one public-research interaction in an open browser session: click, scroll, wait, back, or forward.",
     inputSchema: {
       type: "object",
       properties: {
         sessionId: { type: "string", description: "Session id from browser_open." },
         type: { type: "string", enum: ["click", "scroll", "wait", "back", "forward"], description: "The action to perform." },
-        selector: { type: "string", description: "CSS selector, required for click; optional for wait." },
+        selector: { type: "string", description: "CSS selector, required for click and optional for wait." },
         direction: { type: "string", enum: ["up", "down"], description: "Scroll direction, required for scroll." },
         ms: { type: "number", description: "Milliseconds to wait, for wait (used when selector is omitted)." },
       },
@@ -268,7 +257,7 @@ async function browserAct(sessionId: string, args: Record<string, unknown>): Pro
   // input, and let the vocabulary allowlist be unit-tested without a live session.
   const type = String(args.type ?? "");
   if (!ALLOWED_ACT_TYPES.has(type)) {
-    return { ok: false, error: `Unsupported action "${type}". Allowed: click, scroll, wait, back, forward.` };
+    return { ok: false, error: `Action "${type}" is not allowed. Allowed: click, scroll, wait, back, forward.` };
   }
 
   const found = requireSession(sessionId);

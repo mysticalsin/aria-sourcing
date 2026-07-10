@@ -37,7 +37,7 @@ export function CareersShell({ children }: { children: React.ReactNode }) {
 
       <footer className="border-t border-violet/10 py-6">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-2 px-4 text-xs text-muted sm:flex-row sm:px-6">
-          <p>© Mantu — a conversation-first way to apply.</p>
+          <p>© Mantu: a conversation-first way to apply.</p>
           <div className="flex items-center gap-4">
             <span className="cursor-default hover:text-ink">Privacy</span>
             <span className="cursor-default hover:text-ink">Cookies</span>

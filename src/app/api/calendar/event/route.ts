@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
 
   // DEMO / not confirmed: never touch a real calendar.
   if (!supabaseEnabled || !d.confirmLive) {
-    return NextResponse.json({ status: "dry-run", detail: "Demo / dry-run — no calendar event created." });
+    return NextResponse.json({ status: "dry-run", detail: "Demo / dry-run: no calendar event created." });
   }
 
   const supabase = await getServerSupabase();
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     .eq("id", d.seatId)
     .maybeSingle();
   if (!seat) return NextResponse.json({ status: "error", detail: "Seat not found in your workspace." }, { status: 403 });
-  if (seat.mode !== "live") return NextResponse.json({ status: "dry-run", detail: "Seat not live — no event created." });
+  if (seat.mode !== "live") return NextResponse.json({ status: "dry-run", detail: "Seat not live: no event created." });
   if (seat.provider !== "Gmail API" && seat.provider !== "Microsoft Graph") {
     return NextResponse.json({ status: "skipped", detail: "Seat provider has no calendar integration." });
   }
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
       .eq("seat_id", d.seatId)
       .single()) ?? { data: null };
   if (!conn || conn.workspace_id !== wid) {
-    return NextResponse.json({ status: "dry-run", detail: `${seat.provider} mailbox not connected — no event created.` });
+    return NextResponse.json({ status: "dry-run", detail: `${seat.provider} mailbox not connected: no event created.` });
   }
   // Tokens are stored encrypted at rest; decrypt for use. Keep the decrypted
   // original to detect a refresh below.

@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import {
   SUPABASE_URL,
   SUPABASE_ANON_KEY,
+  SUPABASE_AUTH_COOKIE_NAME,
   supabaseEnabled,
   demoLoginEnabled,
   isProduction,
@@ -70,6 +71,7 @@ export async function POST(req: Request) {
 
   const cookieStore = await cookies();
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    cookieOptions: { name: SUPABASE_AUTH_COOKIE_NAME },
     cookies: {
       getAll() {
         return cookieStore.getAll();

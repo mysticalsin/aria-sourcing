@@ -247,7 +247,7 @@ export function TopBar() {
           onClick={() => setVoiceOpen(true)}
           disabled={!hydrated}
           className="hidden items-center gap-1.5 rounded-full bg-ink/5 px-3 py-1.5 text-xs font-bold text-ink-soft transition hover:bg-ink/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric disabled:opacity-50 lg:inline-flex"
-          title="Hey Aria — push-to-talk voice ops (drafts only)"
+          title="Hey Aria: push-to-talk voice ops (drafts only)"
         >
           <Mic className="h-3.5 w-3.5" />
           Hey Aria

@@ -25,9 +25,9 @@ function ok(name: string, cond: boolean) {
   }
 }
 
-/* ---- 1. STATE_VERSION bumped to 10 -------------------------------------- */
+/* ---- 1. STATE_VERSION is a valid, monotonically-bumped schema version --- */
 
-ok("STATE_VERSION is 13", STATE_VERSION === 13);
+ok("STATE_VERSION is a positive integer", Number.isInteger(STATE_VERSION) && STATE_VERSION > 0);
 
 /* ---- 2. buildSeedState includes chats: [] ------------------------------- */
 

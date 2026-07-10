@@ -52,7 +52,7 @@ export function ApiKeysPanel() {
     const r = await actions.testApiKey(id);
     setTesting(null);
     toast({
-      title: r.valid ? "Key looks valid" : "Key failed validation",
+      title: r.valid ? "Format looks valid (not a live test)" : "Format check failed",
       description: r.detail,
       variant: r.valid ? "success" : "error",
     });
@@ -141,7 +141,7 @@ export function ApiKeysPanel() {
                       leftIcon={<Zap className="h-4 w-4" />}
                       onClick={() => handleTest(k.id)}
                     >
-                      Test
+                      Format check
                     </Button>
                     <Button
                       variant="ghost"

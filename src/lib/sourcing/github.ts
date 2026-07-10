@@ -44,6 +44,29 @@ async function gh(path: string, token: string): Promise<unknown> {
   return res.json();
 }
 
+/** Fetch and map one GitHub user by login — shared by the search loop below
+ *  (each search hit is resolved to a full profile) and getGithubUser (a direct
+ *  single-user lookup). Throws on any fetch failure; callers decide how to
+ *  handle it (searchGithubUsers skips it and keeps the rest of the batch,
+ *  getGithubUser reports a 404 as "not found" and re-throws anything else). */
+async function fetchGithubUser(login: string, token: string, topLanguage: string | null): Promise<GithubUser> {
+  const u = (await gh(`/users/${encodeURIComponent(login)}`, token)) as Record<string, unknown>;
+  return {
+    login: String(u.login ?? login),
+    name: (u.name as string) ?? null,
+    email: (u.email as string) ?? null,
+    company: (u.company as string) ?? null,
+    location: (u.location as string) ?? null,
+    bio: (u.bio as string) ?? null,
+    blog: (u.blog as string) ?? null,
+    htmlUrl: String(u.html_url ?? `https://github.com/${login}`),
+    publicRepos: Number(u.public_repos ?? 0),
+    followers: Number(u.followers ?? 0),
+    createdAt: (u.created_at as string) ?? null,
+    topLanguage,
+  };
+}
+
 /**
  * Search GitHub users and resolve each to a public profile.
  *
@@ -73,24 +96,26 @@ export async function searchGithubUsers(
   const users: GithubUser[] = [];
   for (const login of logins) {
     try {
-      const u = (await gh(`/users/${encodeURIComponent(login)}`, token)) as Record<string, unknown>;
-      users.push({
-        login: String(u.login ?? login),
-        name: (u.name as string) ?? null,
-        email: (u.email as string) ?? null,
-        company: (u.company as string) ?? null,
-        location: (u.location as string) ?? null,
-        bio: (u.bio as string) ?? null,
-        blog: (u.blog as string) ?? null,
-        htmlUrl: String(u.html_url ?? `https://github.com/${login}`),
-        publicRepos: Number(u.public_repos ?? 0),
-        followers: Number(u.followers ?? 0),
-        createdAt: (u.created_at as string) ?? null,
-        topLanguage: lang,
-      });
+      users.push(await fetchGithubUser(login, token, lang));
     } catch {
       // Skip a user whose detail fetch fails; keep the rest of the batch.
     }
   }
   return users;
+}
+
+/**
+ * Resolve a single, specific GitHub user by exact login — the operator handed
+ * Aria a real person instead of a search. Same public-profile mapping as
+ * searchGithubUsers; topLanguage is null (there's no search query to parse a
+ * `language:` filter from). Returns null on a 404 (no such user); any other
+ * failure (network, rate limit, ...) throws.
+ */
+export async function getGithubUser(login: string, token = ""): Promise<GithubUser | null> {
+  try {
+    return await fetchGithubUser(login, token, null);
+  } catch (err) {
+    if (err instanceof Error && /GitHub API 404/.test(err.message)) return null;
+    throw err;
+  }
 }

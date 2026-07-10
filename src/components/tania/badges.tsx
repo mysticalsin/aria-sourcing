@@ -42,7 +42,7 @@ export function StarBadge({
         STAR_CLASSES[rating],
         className,
       )}
-      title={`${meta.label} — ${meta.criteria} (${meta.yes})`}
+      title={`${meta.label}: ${meta.criteria} (${meta.yes})`}
     >
       <Star
         className={cn("shrink-0", size === "sm" ? "h-3 w-3" : "h-3.5 w-3.5")}
@@ -92,7 +92,7 @@ export function SourceBadge({
         SOURCE_CLASSES[source],
         className,
       )}
-      title={`${meta.label} — ${meta.entry}. ${meta.tone}`}
+      title={`${meta.label}: ${meta.entry}. ${meta.tone}`}
     >
       <Icon className={cn("shrink-0", size === "sm" ? "h-3 w-3" : "h-3.5 w-3.5")} />
       {showLabel ? meta.label : <span className="sr-only">{meta.label}</span>}

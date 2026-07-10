@@ -36,6 +36,7 @@ import { HermesSchedulesPanel } from "@/components/settings/hermes-schedules-pan
 import { useHydrated, useSettings, useIntegrations, useActions } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
 import { integrationHealthSummary } from "@/lib/integrations";
+import { supabaseEnabled } from "@/lib/supabase/config";
 import { LANGUAGES } from "@/lib/i18n";
 import {
   ShieldCheck,
@@ -178,7 +179,28 @@ const BANNED_AI_ISMS = [
 export default function SettingsPage() {
   const hydrated = useHydrated();
   const settings = useSettings();
-  const integrations = useIntegrations();
+  const storedIntegrations = useIntegrations();
+  // The Supabase card's stored status is seed data, frozen at whatever it was
+  // when this workspace was first created — it can never reflect a later env
+  // change. Override it live from the actual runtime flag every render, same
+  // way login/persistence already gate on `supabaseEnabled` elsewhere, so the
+  // card can't say "not configured" while the app is demonstrably running on
+  // live Supabase (or the reverse).
+  const integrations = React.useMemo(
+    () =>
+      storedIntegrations.map((i) =>
+        i.id === "int_supabase"
+          ? {
+              ...i,
+              status: supabaseEnabled ? ("connected" as const) : ("not_configured" as const),
+              mode: supabaseEnabled ? ("live" as const) : ("mock" as const),
+              real: true,
+              errors: supabaseEnabled ? [] : ["No project URL configured: demo runs on localStorage."],
+            }
+          : i,
+      ),
+    [storedIntegrations],
+  );
   const actions = useActions();
   const { toast } = useToast();
   const confirm = useConfirm();
@@ -955,7 +977,7 @@ export default function SettingsPage() {
             n="19"
             eyebrow="Agent platform"
             title="Dust agents"
-            description="Connect a Dust (dust.tt) workspace and lock which of your own agents runs each recruiting task — starting with JD analysis on intake. Admin only."
+            description="Connect a Dust (dust.tt) workspace and lock which of your own agents runs each recruiting task, starting with JD analysis on intake. Admin only."
           >
             <DustAgentPanel />
           </Section>

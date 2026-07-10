@@ -1,7 +1,7 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
-import { SUPABASE_ANON_KEY, SUPABASE_URL, supabaseEnabled } from "./config";
+import { SUPABASE_ANON_KEY, SUPABASE_AUTH_COOKIE_NAME, SUPABASE_URL, supabaseEnabled } from "./config";
 
 let cached: ReturnType<typeof createBrowserClient> | null = null;
 
@@ -12,6 +12,8 @@ let cached: ReturnType<typeof createBrowserClient> | null = null;
 export function getBrowserSupabase() {
   if (!supabaseEnabled) return null;
   if (cached) return cached;
-  cached = createBrowserClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  cached = createBrowserClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    cookieOptions: { name: SUPABASE_AUTH_COOKIE_NAME },
+  });
   return cached;
 }

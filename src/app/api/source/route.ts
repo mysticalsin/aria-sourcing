@@ -6,7 +6,7 @@ import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
-import { searchGithubUsers, type GithubUser } from "@/lib/sourcing/github";
+import { searchGithubUsers, getGithubUser, type GithubUser } from "@/lib/sourcing/github";
 import { SOURCE_PLATFORMS } from "@/lib/types";
 import { isWebSearchPlatform, extractLead, type WebLead } from "@/lib/sourcing/web-leads";
 import { runWebTool } from "@/lib/ai/web-tools";
@@ -30,12 +30,24 @@ import { runWebTool } from "@/lib/ai/web-tools";
  *
  * Read-only throughout: never writes to GitHub, never logs into or scrapes a
  * platform, never posts a message.
+ *
+ * `username` (optional): manual single-profile intake. When present, `query`
+ * is ignored entirely and the request resolves that one GitHub login via
+ * GET /users/{login} instead of running a search.
  */
-const SourceSchema = z.object({
-  query: z.string().min(1).max(256),
-  count: z.number().int().min(1).max(20).default(8),
-  platform: z.enum(SOURCE_PLATFORMS).default("GitHub"),
-});
+const GITHUB_USERNAME_RE = /^[a-zA-Z\d](?:[a-zA-Z\d]|-(?=[a-zA-Z\d])){0,38}$/;
+
+const SourceSchema = z
+  .object({
+    query: z.string().min(1).max(256).optional(),
+    username: z.string().min(1).max(39).regex(GITHUB_USERNAME_RE, "Not a valid GitHub username.").optional(),
+    count: z.number().int().min(1).max(20).default(8),
+    platform: z.enum(SOURCE_PLATFORMS).default("GitHub"),
+  })
+  .refine((data) => Boolean(data.username?.trim()) || Boolean(data.query?.trim()), {
+    message: "query or username is required.",
+    path: ["query"],
+  });
 
 export async function POST(req: NextRequest) {
   const prodBlock = prodFailClosed();
@@ -61,7 +73,26 @@ export async function POST(req: NextRequest) {
 
   const validated = await validateBody(req, SourceSchema, { maxBytes: 10_000 });
   if (!validated.ok) return validated.response;
-  const { query, count = 8, platform = "GitHub" as const } = validated.data;
+  const { query, username, count = 8, platform = "GitHub" as const } = validated.data;
+
+  // Manual single-profile intake: resolve exactly the named GitHub login,
+  // ignoring `query` and `count` entirely — this is a lookup, not a search.
+  if (username) {
+    const token = process.env.GITHUB_TOKEN ?? "";
+    try {
+      const user = await getGithubUser(username, token);
+      if (!user) {
+        return NextResponse.json({ ok: false, error: "GitHub user not found." }, { status: 404 });
+      }
+      return NextResponse.json({ ok: true, source: "github", users: [user] });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "GitHub lookup failed.";
+      return NextResponse.json({ ok: false, source: "github", error: detail }, { status: 502 });
+    }
+  }
+
+  // Schema-enforced: username or query is present; username was handled above.
+  if (!query) return NextResponse.json({ ok: false, error: "query is required." }, { status: 400 });
 
   if (platform === "GitHub") {
     const token = process.env.GITHUB_TOKEN ?? "";

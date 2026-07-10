@@ -76,7 +76,7 @@ export const COORDINATOR: Coordinator = {
   mapsTo: "Maps to Aria's master brain and guardrails (see Soul).",
   principles: [
     "Knows every lead's source and funnel stage before it acts.",
-    "Delegates each task to the right manager — it never freelances.",
+    "Delegates each task to the right manager. It never freelances.",
     "Always confirms with the recruiter before anything leaves the building.",
   ],
 };
@@ -87,7 +87,7 @@ export const MANAGERS: ManagerAgent[] = [
   {
     id: "sourcing-lead",
     name: "Sourcing & Lead Manager",
-    stageScope: "Stage 0 + I — LEADS",
+    stageScope: "Stage 0 + I: LEADS",
     mission:
       "Turns a validated need into a live job ad and a qualified stream of leads across every source.",
     color: "electric",
@@ -100,7 +100,7 @@ export const MANAGERS: ManagerAgent[] = [
       },
       {
         name: "Sourcing Planner",
-        whatItDoes: "Designs the search strategy — boolean strings and semantic queries per role.",
+        whatItDoes: "Designs the search strategy: boolean strings and semantic queries per role.",
       },
       {
         name: "Database Scout",
@@ -121,7 +121,7 @@ export const MANAGERS: ManagerAgent[] = [
   {
     id: "candidate-intelligence",
     name: "Candidate Intelligence Manager",
-    stageScope: "Stage I → II — QUALIFY",
+    stageScope: "Stage I → II: QUALIFY",
     mission:
       "Assesses each lead against the brief and turns raw applicants into ranked, prequal-ready candidates.",
     color: "violet",
@@ -157,9 +157,9 @@ export const MANAGERS: ManagerAgent[] = [
   {
     id: "process",
     name: "Process Manager",
-    stageScope: "Stages I → III — KEEP IT MOVING",
+    stageScope: "Stages I → III: KEEP IT MOVING",
     mission:
-      "Watches the whole pipeline so nothing stalls — surfaces the next step and chases missing feedback.",
+      "Watches the whole pipeline so nothing stalls, surfacing the next step and chasing missing feedback.",
     color: "aqua",
     poweredBy: "Fronts the Command Center attention cards + SLA timers.",
     stages: ["Leads", "Candidates", "Offered"],
@@ -170,7 +170,7 @@ export const MANAGERS: ManagerAgent[] = [
       },
       {
         name: "Next Step Advisor",
-        whatItDoes: "Recommends the next move — Intw1/2/3, QM, offer or reject.",
+        whatItDoes: "Recommends the next move: Intw1/2/3, QM, offer or reject.",
       },
       {
         name: "Follow-up Agent",
@@ -189,9 +189,9 @@ export const MANAGERS: ManagerAgent[] = [
   {
     id: "candidate-experience",
     name: "Candidate Experience Expert",
-    stageScope: "Stages I → III — EVERY TOUCH",
+    stageScope: "Stages I → III: EVERY TOUCH",
     mission:
-      "Owns how every candidate feels — the right message, the right tone, at the right moment.",
+      "Owns how every candidate feels: the right message, the right tone, at the right moment.",
     color: "tangerine",
     poweredBy: "Fronts the Outreach approval queue + Replies.",
     stages: ["Leads", "Candidates", "Offered"],
@@ -221,9 +221,9 @@ export const MANAGERS: ManagerAgent[] = [
   {
     id: "onboarding",
     name: "Onboarding Manager",
-    stageScope: "Stages III → IV — LAND WELL",
+    stageScope: "Stages III → IV: LAND WELL",
     mission:
-      "Carries a signed offer through to a settled new joiner — registration, pre-boarding and the first months.",
+      "Carries a signed offer through to a settled new joiner: registration, pre-boarding and the first months.",
     color: "success",
     poweredBy: "Fronts Calendar bookings + the Reports close-out.",
     stages: ["Offered", "Employees"],
@@ -253,7 +253,7 @@ export const MANAGERS: ManagerAgent[] = [
   {
     id: "talent-pool",
     name: "Talent Pool & Community Manager",
-    stageScope: "#Vivier — CROSS-STAGE",
+    stageScope: "#Vivier: CROSS-STAGE",
     mission:
       "Keeps every strong near-miss warm and re-engages the talent community when a new fit opens.",
     color: "mantu-yellow",
@@ -299,15 +299,15 @@ export interface GatedAction {
 export const NEVER_ALONE: GatedAction[] = [
   {
     action: "Run a search",
-    why: "A live search spends sourcing credits and shapes the whole funnel — the recruiter picks the strategy first.",
+    why: "A live search spends sourcing credits and shapes the whole funnel. The recruiter picks the strategy first.",
   },
   {
     action: "Contact a lead",
-    why: "Every first touch carries the Mantu brand — a human approves the message and the target.",
+    why: "Every first touch carries the Mantu brand. A human approves the message and the target.",
   },
   {
     action: "Send a rejection",
-    why: "A 'no' lands on a real person and the employer brand — it is reviewed, never automated.",
+    why: "A 'no' lands on a real person and the employer brand. It is reviewed, never automated.",
   },
   {
     action: "Make a prequal or interview decision",
@@ -315,11 +315,11 @@ export const NEVER_ALONE: GatedAction[] = [
   },
   {
     action: "Send or sign an offer",
-    why: "An offer is a legal and financial commitment — only a human can issue or sign it.",
+    why: "An offer is a legal and financial commitment. Only a human can issue or sign it.",
   },
   {
     action: "Register a hire",
-    why: "Creating an employee record touches payroll and systems of record — a person confirms it.",
+    why: "Creating an employee record touches payroll and systems of record. A person confirms it.",
   },
 ];
 
@@ -333,9 +333,9 @@ export interface GuardrailException {
 /** The single exception — still recruiter-confirmed, always pooled. */
 export const GATED_EXCEPTION: GuardrailException = {
   action: "Auto-reject on a self-declared hard disqualifier (Applicants only)",
-  why: "When an applicant states a non-negotiable blocker — no obtainable work authorisation, or unwilling to relocate for an on-site-only role — TAnIA may pre-file the rejection to save the recruiter time.",
+  why: "When an applicant states a non-negotiable blocker (no obtainable work authorisation, or unwilling to relocate for an on-site-only role), TAnIA may pre-file the rejection to save the recruiter time.",
   safeguards: [
-    "Applicants only — never referrals or outbound leads.",
+    "Applicants only, never referrals or outbound leads.",
     "The recruiter still confirms before it sends.",
     "The candidate is always added to #Vivier.",
   ],

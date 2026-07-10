@@ -12,6 +12,7 @@ import {
   parseRobotsTxt,
   isPathAllowed,
 } from "../src/lib/ai/browser-tools";
+import { readFileSync } from "fs";
 
 let pass = 0,
   fail = 0;
@@ -29,7 +30,7 @@ function ok(name: string, cond: boolean, extra?: unknown) {
 const actDef = BROWSER_TOOL_DEFS.find((t) => t.name === "browser_act");
 const enumValues = (actDef?.inputSchema as { properties?: { type?: { enum?: string[] } } })?.properties?.type?.enum ?? [];
 ok(
-  "browser_act enum is exactly click/scroll/wait/back/forward",
+  "browser_act enum exposes read-only research actions only",
   JSON.stringify([...enumValues].sort()) === JSON.stringify(["back", "click", "forward", "scroll", "wait"]),
   enumValues,
 );
@@ -38,9 +39,8 @@ const allPropertyKeys = BROWSER_TOOL_DEFS.flatMap(
   (t) => Object.keys((t.inputSchema as { properties?: object })?.properties ?? {}),
 );
 ok(
-  "no fill/select_option/press_key/submit property or enum value exposed anywhere",
-  !allPropertyKeys.some((k) => /^(fill|select_option|press_key|submit)$/i.test(k)) &&
-    !enumValues.some((v) => /^(fill|select_option|press_key|submit|type)$/i.test(v)),
+  "read-only action property keys exist without a text-entry value",
+  allPropertyKeys.includes("selector") && allPropertyKeys.includes("direction") && allPropertyKeys.includes("ms") && !allPropertyKeys.includes("value"),
   allPropertyKeys,
 );
 
@@ -51,14 +51,10 @@ ok("isBrowserTool false for an unregistered name", !isBrowserTool("browser_type"
 /* -------- dispatch-level defense in depth (no live session needed) -------- */
 
 const main = async () => {
-  const bypassType = await runBrowserTool("browser_act", { sessionId: "whatever", type: "type", selector: "#u" });
-  ok("browser_act rejects 'type' before ever looking up the session", bypassType.ok === false, bypassType);
-
-  const bypassFill = await runBrowserTool("browser_act", { sessionId: "whatever", type: "fill", selector: "#u" });
-  ok("browser_act rejects 'fill' before ever looking up the session", bypassFill.ok === false, bypassFill);
-
-  const bypassPressKey = await runBrowserTool("browser_act", { sessionId: "whatever", type: "press_key" });
-  ok("browser_act rejects 'press_key'", bypassPressKey.ok === false, bypassPressKey);
+  for (const type of ["type", "fill", "press_key", "select_option", "evaluate"]) {
+    const disallowed = await runBrowserTool("browser_act", { sessionId: "does-not-exist", type, selector: "#u", value: "hello" });
+    ok(`browser_act rejects non-read-only '${type}' before session lookup`, disallowed.ok === false && /not allowed/i.test(String(disallowed.error)), disallowed);
+  }
 
   const unknownSession = await runBrowserTool("browser_act", { sessionId: "does-not-exist", type: "click", selector: "#x" });
   ok(
@@ -110,6 +106,17 @@ const main = async () => {
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 };
+
+const launcher = readFileSync(new URL("../src/lib/ai/obscura-launcher.ts", import.meta.url), "utf8");
+const dockerfile = readFileSync(new URL("../docker/obscura/Dockerfile", import.meta.url), "utf8");
+const compose = readFileSync(new URL("../docker-compose.yml", import.meta.url), "utf8");
+ok("sidecar launcher does not enable stealth", !/--stealth/.test(launcher));
+ok("sidecar launcher does not permit private-network browsing", !/--allow-private-network/.test(launcher));
+ok("sidecar image does not compile stealth support", !/--features\s+stealth/.test(dockerfile));
+ok("sidecar image does not enable stealth at runtime", !/--stealth/.test(dockerfile));
+ok("sidecar image does not allow private-network browsing", !/--allow-private-network/.test(dockerfile));
+ok("sidecar build caches the upstream V8 archive", dockerfile.includes("target=/usr/local/cargo/.rusty_v8") && dockerfile.includes("sharing=locked"));
+ok("sidecar build accepts an owner-controlled V8 mirror", dockerfile.includes("ARG RUSTY_V8_MIRROR") && compose.includes("RUSTY_V8_MIRROR"));
 
 main().catch((err) => {
   console.error("TEST CRASHED:", err);

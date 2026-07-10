@@ -1,15 +1,9 @@
 # syntax=docker/dockerfile:1
 #
-# Obscura sidecar: read-only, multi-step browser automation backing Aria's
+# Obscura sidecar: browser automation backing Aria's
 # browser_* tools (src/lib/ai/browser-tools.ts via server/obscura-adapter.js).
-# Built from source, pinned to an exact upstream commit (not a mutable tag),
-# with DEFAULT cargo features only -- `--features stealth` is never passed to
-# `cargo build`, and the `obscura serve` command is never given `--stealth` or
-# `--allow-private-network` either (see obscura-adapter.js). Building from
-# source instead of pulling h4ckf0r0day/obscura's published image keeps that
-# omission auditable here rather than trusting an unverified upstream build.
-#
-# See docs/superpowers/specs/2026-06-27-claw3d-office-merge-design.md §11.
+# Built from source with default features only. The sidecar remains an honest,
+# read-only research browser and never enables stealth or private-network access.
 
 FROM rust:1-slim-bookworm AS builder
 
@@ -19,6 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         perl \
         make \
         curl \
+        cmake \
+        g++ \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -32,17 +28,21 @@ RUN git init -q . \
     && git checkout -q "${OBSCURA_COMMIT}" \
     && test "$(git rev-parse HEAD)" = "${OBSCURA_COMMIT}"
 
-# Default features only -- no `--features stealth`.
-RUN cargo build --release --bin obscura
+# Build both binaries without optional stealth support.
+# Cache the verified upstream V8 archive across BuildKit builds. Restricted
+# builders can supply their own non-secret, checksum-verified mirror instead
+# of relying on public GitHub release egress.
+ARG RUSTY_V8_MIRROR
+RUN --mount=type=cache,id=aria-obscura-rusty-v8,target=/usr/local/cargo/.rusty_v8,sharing=locked \
+    if [ -n "${RUSTY_V8_MIRROR:-}" ]; then export RUSTY_V8_MIRROR; fi; \
+    cargo build --release --bin obscura --bin obscura-worker
 
 FROM gcr.io/distroless/cc-debian12
 
 COPY --from=builder /build/target/release/obscura /obscura
+COPY --from=builder /build/target/release/obscura-worker /obscura-worker
 
 EXPOSE 9222
 
 ENTRYPOINT ["/obscura"]
-# --host 0.0.0.0 only so sibling containers on the compose network can reach
-# this service by name -- the port is never published to the host (see
-# docker-compose.yml). Never add --stealth or --allow-private-network here.
 CMD ["serve", "--port", "9222", "--host", "0.0.0.0"]

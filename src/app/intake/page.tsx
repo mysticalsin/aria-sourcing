@@ -24,8 +24,10 @@ import {
   SAMPLE_INTAKE_EMAIL,
   SAMPLE_INTAKE_JD,
   SAMPLE_MANTU_EMAIL,
+  isNeedEmail,
   type ParsedIntake,
 } from "@/lib/mock-ai";
+import type { InboundMessage } from "@/lib/email-sync";
 import { parseIntakeLive, deriveValidationWarnings } from "@/lib/ai/intake";
 import { useActions, useCampaigns, useHydrated, useSettings } from "@/lib/store";
 import {
@@ -160,15 +162,47 @@ export default function IntakePage() {
     });
   }
 
-  /** Simulates an inbound email arriving and being auto-scanned (the /api/intake flow).
-   *  Routes through the live LLM when a cloud provider is configured for chat;
-   *  parseIntakeLive falls back to the regex heuristic silently on any failure. */
+  /** Scans the connected mailbox (POST /api/email/sync) for hiring-need emails
+   *  and loads the newest one into the form. When no mailbox is connected (demo
+   *  mode), sync fails, or no need email is found, it falls back to the bundled
+   *  sample Mantu need — and says so. Routes through the live LLM when a cloud
+   *  provider is configured for chat; parseIntakeLive falls back to the regex
+   *  heuristic silently on any failure. */
   async function scanInbox() {
-    const incoming = SAMPLE_MANTU_EMAIL;
-    setEmail(incoming);
-    setJd("");
     const seq = ++liveParseSeqRef.current;
     setParsing(true);
+
+    let incoming = "";
+    let fromInbox = false;
+    let needCount = 0;
+    try {
+      const res = await fetch("/api/email/sync", {
+        method: "POST",
+        signal: AbortSignal.timeout(60_000),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        messages?: (InboundMessage & { seatId: string })[];
+      } | null;
+      if (res.ok && json?.ok) {
+        const needs = (json.messages ?? [])
+          .filter((m) => isNeedEmail(m.subject ?? "", m.body ?? ""))
+          .sort((a, b) => (b.receivedAt ?? "").localeCompare(a.receivedAt ?? ""));
+        needCount = needs.length;
+        const newest = needs[0];
+        if (newest) {
+          incoming = `From: ${newest.from}\nSubject: ${newest.subject}\n\n${newest.body}`;
+          fromInbox = true;
+        }
+      }
+    } catch {
+      // Mailbox unreachable (demo mode, no connection, timeout) — sample below.
+    }
+    if (liveParseSeqRef.current !== seq) return; // superseded by a newer parse
+    if (!incoming) incoming = SAMPLE_MANTU_EMAIL;
+
+    setEmail(incoming);
+    setJd("");
     const result = await parseIntakeLive(settings, { email: incoming });
     if (liveParseSeqRef.current !== seq) return; // superseded by a newer parse
     setParsing(false);
@@ -178,9 +212,13 @@ export default function IntakePage() {
     setSenderEmail(result.sender.email);
     maybeRunDustJdAnalysis("", incoming);
     toast({
-      title: "Inbound need scanned",
-      description: `${result.jobAnalysis.title} detected and parsed from the inbox.`,
-      variant: "success",
+      title: fromInbox ? "Need email found in your inbox" : "Sample need loaded",
+      description: fromInbox
+        ? `${result.jobAnalysis.title} parsed from the newest need email${
+            needCount > 1 ? ` (${needCount - 1} older need email${needCount > 2 ? "s" : ""} also in the inbox)` : ""
+          }.`
+        : `No need email found in a connected mailbox. Parsed the sample Mantu need instead. (${result.jobAnalysis.title})`,
+      variant: fromInbox ? "success" : "info",
     });
   }
 
@@ -257,7 +295,7 @@ export default function IntakePage() {
             : `${criticalWarnings.length} critical issues need review`,
         description: `${criticalWarnings
           .map((w) => `${w.field}: ${w.message}`)
-          .join(" · ")} — review the validation warnings above, or proceed anyway.`,
+          .join(" · ")}. Review the validation warnings above, or proceed anyway.`,
         confirmLabel: "Create anyway",
         cancelLabel: "Review brief",
         danger: true,
@@ -291,9 +329,28 @@ export default function IntakePage() {
       hiringManager: senderName.trim() || "Hiring Manager",
       hiringManagerEmail,
     });
+    // Sourcing starts immediately — first batch on the strategy's lead platform.
+    // Fire-and-forget: the campaign page renders candidates as they land, and a
+    // failure surfaces as a toast without blocking campaign creation.
+    void actions.sourceNextBatch(campaign.id).then((res) => {
+      if (res.ok) {
+        const n = res.accepted.length;
+        toast({
+          title: "Sourcing started",
+          description: `First batch in: ${n} candidate${n === 1 ? "" : "s"} for ${campaign.title}.`,
+          variant: "success",
+        });
+      } else {
+        toast({
+          title: "Sourcing couldn't start",
+          description: `${res.error} Retry with “Source next batch” on the campaign page.`,
+          variant: "warning",
+        });
+      }
+    });
     toast({
       title: "Campaign created",
-      description: `${campaign.title} is live. Sourcing strategy generated.`,
+      description: `${campaign.title} is live. First sourcing batch is running.`,
       variant: "success",
     });
     router.push(`/campaigns/${campaign.id}`);

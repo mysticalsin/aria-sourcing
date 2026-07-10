@@ -1,12 +1,29 @@
+import path from "node:path";
+
+/**
+ * Turbopack deliberately rejects output directories outside its project root.
+ * Keep this setting relative and use `npm run build:isolated` when a synced
+ * checkout needs its build artifacts kept in a temporary workspace.
+ */
+export function resolveNextDistDir(configuredDistDir) {
+  if (!configuredDistDir) return ".next";
+  if (path.isAbsolute(configuredDistDir)) {
+    throw new Error(
+      "NEXT_DIST_DIR must be relative. Turbopack cannot build outside the project root; use `npm run build:isolated` instead.",
+    );
+  }
+
+  return configuredDistDir;
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
   // Do not advertise the framework via X-Powered-By (information disclosure).
   poweredByHeader: false,
-  // Allow relocating the build dir off a synced drive — OneDrive corrupts `.next`
-  // mid-write on this checkout. Defaults to `.next` so CI/Vercel are unaffected;
-  // set NEXT_DIST_DIR to a local, non-synced path for dev (e.g. NEXT_DIST_DIR=/tmp/aria-next).
-  distDir: process.env.NEXT_DIST_DIR || ".next",
+  // Defaults to `.next` so CI/Vercel are unaffected. For synced checkouts,
+  // `build:isolated` creates a temporary copy rather than escaping this root.
+  distDir: resolveNextDistDir(process.env.NEXT_DIST_DIR),
   async headers() {
     // Security headers for a console that renders candidate PII.
     const isProd = process.env.NODE_ENV === "production";
@@ -41,6 +58,22 @@ const nextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=()" },
+        ],
+      },
+      {
+        source: "/unsubscribe/:path*",
+        headers: [
+          { key: "Cache-Control", value: "no-store" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+        ],
+      },
+      {
+        source: "/api/unsubscribe/:path*",
+        headers: [
+          { key: "Cache-Control", value: "no-store" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
         ],
       },
     ];

@@ -341,7 +341,7 @@ export function GuardrailsPanel() {
               TAnIA never does these alone
             </h2>
             <p className="mt-2 max-w-2xl text-[0.95rem] leading-relaxed text-ink-soft">
-              Six actions are always recruiter-gated. TAnIA prepares the work and waits — a human
+              Six actions are always recruiter-gated. TAnIA prepares the work and waits: a human
               makes the call.
             </p>
           </div>

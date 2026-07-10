@@ -18,6 +18,15 @@ export const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""
 
 export const supabaseEnabled = SUPABASE_URL.length > 0 && SUPABASE_ANON_KEY.length > 0;
 
+// @supabase/ssr derives the auth cookie name from the URL's host when none is
+// given. The browser and the server intentionally resolve SUPABASE_URL to
+// different hosts (server: the docker-internal `kong`; browser: the
+// host-mapped `localhost:<port>`) so each side can actually reach it — but
+// that also means each side would silently pick a DIFFERENT cookie name and
+// never recognise the other's session. Force one fixed name everywhere so
+// server (proxy.ts, getServerSupabase) and browser (client.ts) agree.
+export const SUPABASE_AUTH_COOKIE_NAME = "sb-auth-token";
+
 /** True for production builds (`next build` / `next start`). */
 export const isProduction = process.env.NODE_ENV === "production";
 

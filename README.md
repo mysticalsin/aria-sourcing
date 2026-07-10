@@ -69,6 +69,9 @@ skill improvements.
   Flip modes with env vars only — no code changes. Full guide:
   **[SUPABASE_SETUP.md](SUPABASE_SETUP.md)** (`cp .env.local.example .env.local`).
 
+> **Operator's guide:** [NEEDS_GUIDE.md](NEEDS_GUIDE.md) — how to give Aria a
+> need (paste, email, or webhook) and get sourcing running, on any run mode.
+
 ---
 
 ## 1. Install & run

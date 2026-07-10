@@ -31,6 +31,10 @@ import { ActivityTimeline } from "@/components/shared/activity-timeline";
 import { ScoreDistribution } from "@/components/charts/score-distribution";
 import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
+import { AddCandidateButton } from "@/components/candidates/add-candidate-dialog";
+import { SourceSillageButton } from "@/components/candidates/source-sillage-dialog";
+import { SourceApolloButton } from "@/components/candidates/source-apollo-dialog";
+import { SourceSeamlessButton } from "@/components/candidates/source-seamless-dialog";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
 import { AgentRunStream } from "@/components/run/agent-run-stream";
 import { OutreachMessageCard } from "@/components/outreach/outreach-message-card";
@@ -463,7 +467,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     }
     toast({
       title: `Sourcing agent found ${res.added} candidate${res.added === 1 ? "" : "s"}`,
-      description: "Real search, real scoring, drafted outreach — review before sending.",
+      description: "Real search, real scoring, drafted outreach: review before sending.",
       variant: "success",
     });
   };
@@ -680,7 +684,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             </dl>
           </div>
 
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 lg:max-w-[55%] lg:justify-end">
             <Button
               variant="secondary"
               leftIcon={<Sparkles className="h-4 w-4" />}
@@ -700,6 +704,9 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             >
               {agentRunning ? "Agent working…" : "Run sourcing agent"}
             </Button>
+            <SourceSillageButton campaignId={c.id} disabled={c.status === "Paused"} />
+            <SourceApolloButton campaignId={c.id} disabled={c.status === "Paused"} />
+            <SourceSeamlessButton campaignId={c.id} disabled={c.status === "Paused"} />
             <Button
               variant="primary"
               leftIcon={<PlayCircle className="h-4 w-4" />}
@@ -1103,9 +1110,12 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                   onChange={(e) => setScoreFilter(e.target.value)}
                 />
               </Field>
-              <div className="flex items-end text-sm text-muted sm:col-span-2 lg:col-span-2">
-                Showing <span className="mx-1 font-semibold text-ink">{filteredCandidates.length}</span> of{" "}
-                {candidates.length}. Open a candidate to score, generate outreach, or book.
+              <div className="flex flex-wrap items-end justify-between gap-3 text-sm text-muted sm:col-span-2 lg:col-span-2">
+                <span>
+                  Showing <span className="mx-1 font-semibold text-ink">{filteredCandidates.length}</span> of{" "}
+                  {candidates.length}. Open a candidate to score, generate outreach, or book.
+                </span>
+                <AddCandidateButton campaignId={c.id} />
               </div>
             </CardBody>
           </Card>
