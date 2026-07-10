@@ -31,7 +31,14 @@ import {
   useActions,
 } from "@/lib/store";
 import { agentActivity, floorRollup } from "@/lib/floor";
-import { seatsToOfficeAgents } from "@/lib/floor3d";
+import {
+  EVENT_COLOR,
+  EVENT_SOUND,
+  PULSE_MS,
+  pickResponderIndex,
+  describeEvent,
+  seatsToOfficeAgents,
+} from "@/lib/floor3d";
 import { getDeviceQuality, MAX_3D_AGENTS } from "@/lib/device";
 import {
   effectiveDailyCap,
@@ -43,13 +50,6 @@ import { languageLabel } from "@/lib/i18n";
 import { formatTimeAgo } from "@/lib/utils";
 import type { AgentSeat, HermesState } from "@/lib/types";
 import { subscribe, recentEvents, type AgentEvent } from "@/lib/agent-events";
-import {
-  EVENT_COLOR,
-  EVENT_SOUND,
-  PULSE_MS,
-  pickResponderIndex,
-  describeEvent,
-} from "@/components/floor3d/retro/scene/packet-shared";
 import { Bot, Users, Activity, PauseCircle, Flame, Mail, Clock, Languages, Building2, ArrowUpRight, Volume2, VolumeX, LayoutGrid, Box, Radio, Brain } from "lucide-react";
 
 /** Recent events shown in the 2D activity ticker (guaranteed fallback). */

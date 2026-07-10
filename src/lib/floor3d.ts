@@ -1,6 +1,96 @@
 import type { AgentSeat, HermesState } from "@/lib/types";
 import { agentActivity } from "@/lib/floor";
-import type { OfficeAgent } from "@/components/floor3d/types";
+import type { AgentEvent } from "@/lib/agent-events";
+import type { SoundKind } from "@/lib/sound";
+
+/* ============================================================================
+   Shared 3D-floor types and pure helpers. This module is deliberately free of
+   React, three.js, and @react-three/fiber imports so lib code and non-canvas UI
+   can share the floor contract without pulling in the 3D subsystem.
+   ========================================================================== */
+
+export type AgentStatus = "working" | "idle" | "error";
+
+/** Org position. Everyone is an employee; the first seat is treated as CEO. */
+export type AgentPosition = "employee" | "ceo";
+
+export type RenderState = "walking" | "sitting" | "standing";
+
+export interface OfficeAgent {
+  id: string;
+  name: string;
+  subtitle?: string | null;
+  status: AgentStatus;
+  color: string;
+  position?: AgentPosition;
+  provider?: string;
+  model?: string;
+}
+
+/**
+ * The live, mutated-in-place render record. Characters read their own entry
+ * from a shared ref each frame (no React re-render), exactly like the hermes
+ * AgentsLayer pattern.
+ */
+export interface RenderAgent3D extends OfficeAgent {
+  x: number;
+  y: number;
+  facing: number;
+  state: RenderState;
+  frame: number;
+  walkSpeed?: number;
+  phaseOffset: number;
+}
+
+/** Packet/pulse color per event kind. */
+export const EVENT_COLOR: Record<AgentEvent["kind"], string> = {
+  source: "#22D3EE",
+  allocate: "#F97316",
+  send: "#F97316",
+  reply: "#EF4444",
+  book: "#8B5CF6",
+};
+
+/** WebAudio cue per event kind. */
+export const EVENT_SOUND: Record<AgentEvent["kind"], SoundKind> = {
+  source: "packet",
+  allocate: "ping",
+  send: "ping",
+  reply: "beacon",
+  book: "chord",
+};
+
+export const PULSE_MS = 4000;
+
+export const PACKET_FLIGHT_MS = 850;
+
+export function pickResponderIndex(e: AgentEvent, n: number): number {
+  if (n <= 0) return 0;
+  const key = `${e.kind}:${e.campaignId ?? ""}:${e.candidateName ?? ""}:${e.count ?? ""}:${e.at}`;
+  let h = 0;
+  for (let i = 0; i < key.length; i += 1) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return h % n;
+}
+
+export function describeEvent(e: AgentEvent, seatName?: string | null): string {
+  const who = seatName ? ` · ${seatName}` : "";
+  switch (e.kind) {
+    case "source":
+      return `Sourced ${e.count ?? "new"} candidate${e.count === 1 ? "" : "s"}${who}`;
+    case "allocate":
+      return e.candidateName
+        ? `Drafted outreach for ${e.candidateName}${who}`
+        : `Drafted ${e.count ?? ""} outreach draft${e.count === 1 ? "" : "s"}${who}`;
+    case "send":
+      return `Approved outreach${e.candidateName ? ` to ${e.candidateName}` : ""}${who}`;
+    case "reply":
+      return `Reply received${e.candidateName ? ` from ${e.candidateName}` : ""}${who}`;
+    case "book":
+      return `Interview booked${e.candidateName ? ` with ${e.candidateName}` : ""}${who}`;
+    default:
+      return "Agent activity";
+  }
+}
 
 /* ============================================================================
    Adapter + palette bridging the real fleet/seat model to the self-contained

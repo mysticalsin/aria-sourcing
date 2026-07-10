@@ -15,7 +15,7 @@ import { subscribe, type AgentEvent } from "@/lib/agent-events";
 import type { RenderAgent } from "../core/types";
 import { toWorld } from "../core/geometry";
 import { CANVAS_H, CANVAS_W } from "../core/constants";
-import { EVENT_COLOR, PACKET_FLIGHT_MS, PULSE_MS, pickResponderIndex } from "./packet-shared";
+import { EVENT_COLOR, PACKET_FLIGHT_MS, PULSE_MS, pickResponderIndex } from "@/lib/floor3d";
 
 export interface PacketFXProps {
   /** Live, ref-driven agent records (agentTick.ts). Read-only here. */

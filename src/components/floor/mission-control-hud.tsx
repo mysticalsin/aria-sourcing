@@ -4,7 +4,7 @@ import * as React from "react";
 import { Users, Mail, PenLine, CheckCircle2, CalendarCheck, Radio } from "lucide-react";
 import { useCandidates, useOutreach, useBookings, useReplies, useSettings } from "@/lib/store";
 import { subscribe, recentEvents, type AgentEvent } from "@/lib/agent-events";
-import { EVENT_COLOR } from "@/components/floor3d/retro/scene/packet-shared";
+import { EVENT_COLOR } from "@/lib/floor3d";
 import { useCountUp } from "@/components/reveal/use-count-up";
 import { missionControlHudValues } from "@/lib/metrics";
 import { cn } from "@/lib/utils";

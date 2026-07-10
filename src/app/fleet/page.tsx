@@ -201,7 +201,7 @@ export default function FleetPage() {
     });
   }
 
-  function handleAddAgent() {
+  async function handleAddAgent() {
     if (!canManage) {
       toast({ title: "Admins only", description: "Only an admin can add fleet agents.", variant: "warning" });
       return;
@@ -217,7 +217,7 @@ export default function FleetPage() {
       return;
     }
     const parsedLimit = Number.parseInt(dailyLimit, 10);
-    const seat = actions.addSeat({
+    const seat = await actions.addSeat({
       name: trimmedName,
       operatorEmail: trimmedEmail,
       provider,

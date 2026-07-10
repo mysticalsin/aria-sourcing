@@ -36,6 +36,7 @@ backups/
 *.jpeg
 
 # local 3D verification screenshots
+/*.png
 /floor3d-*.png
 /office-*.png
 

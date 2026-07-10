@@ -21,7 +21,7 @@ import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from "
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import "./core/troikaConfig"; // main-thread text layout (CSP blocks blob: workers)
-import type { OfficeAgent } from "@/components/floor3d/types";
+import type { OfficeAgent } from "@/lib/floor3d";
 import { getDeviceQuality, MAX_3D_AGENTS, type DeviceQuality } from "@/lib/device";
 import {
   getDirectorTarget,
@@ -220,7 +220,7 @@ function AriaLiveDirector({
 const LABEL_FONT = "/office3d/fonts/Manrope-SemiBold.ttf";
 const LABEL_Y = 1.95;
 const LABEL_MAX_CHARS = 46;
-const ACTIVE_ACCENT = "#22D3EE"; // matches EVENT_COLOR.source (packet-shared.ts)
+const ACTIVE_ACCENT = "#22D3EE"; // matches EVENT_COLOR.source (src/lib/floor3d.ts)
 const SELECTED_ACCENT = "#8ab4ff"; // matches the selection pulse ring (RobotAgentModel.tsx)
 
 type FloorLabel = { id: string; text: string } | null;

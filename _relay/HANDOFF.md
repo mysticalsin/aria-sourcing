@@ -1,70 +1,85 @@
 ---
 project: MSourcing / ARIA
-shift: 16
+shift: 18
 agent: codex
-updated: 2026-07-10 10:41
-status: tavily-mcp-query-auth-tsc-clean
+updated: 2026-07-10 11:46
+status: r2-dead-code-hygiene-tsc-clean
 ---
 
-# Handoff - Tavily MCP Query Auth
+# Handoff - R2 Dead Code + Hygiene Purge
 
 ## Current state
-- Tavily hosted MCP query auth is implemented in the existing MCP subsystem.
-- `AUTH_QUERY_PARAMS` is a closed enum in `src/lib/types.ts` with `tavilyApiKey`.
-- `src/lib/mcp-client.ts` exports `applyMcpAuth(baseUrl, secret, opts)`:
-  - bearer default returns the base URL and bearer token unchanged.
-  - query auth appends `authQueryParam=<vault secret>` via `URL.searchParams` and returns an empty bearer token.
-  - query auth throws if the base URL already contains the auth param, case-insensitive, or if the param is missing.
-- Runtime dialers validate the key-free base URL with `assertPublicUrl` before applying query auth:
-  - `src/app/api/hermes/chat/route.ts`
-  - `src/app/api/mcp/test/route.ts`
-- MCP client and test-route failures return host-only errors for MCP connection/tool-call paths.
-- `src/lib/log-redact.ts` redacts closed-list auth query params before any generic secret redaction.
-- `src/lib/mcp-auth-params.ts` centralizes base URL rejection for auth query params and is used by store and route schemas.
-- `src/components/settings/mcp-servers-panel.tsx` exposes admin-only auth style and query param controls.
-- `scripts/probe-tavily-mcp.mts` now uses `applyMcpAuth` instead of hand-assembling the Tavily URL.
-- `src/lib/ai/tool-loop.ts` has the requested single-line TODO for the pre-existing DNS-rebind redial gap.
+- Release Rock R2 dead-code and hygiene purge is implemented in the working tree.
+- The live 3D floor path remains `Floor3D.tsx -> retro/RetroOfficeScene.tsx -> RobotAgentModel/RobotCharacter/RiggedCharacter + RetroEnvironment/PacketFX/agentTick/core`.
+- Shared floor contracts and packet pure helpers now live in `src/lib/floor3d.ts`.
+- Components and lib modules import floor shared types/helpers from `@/lib/floor3d`; no live lib file imports from `src/components/floor3d`.
+- `vercel.json` no longer defines static security headers. `next.config.mjs` owns CSP/security headers and carries production HSTS.
+- Root PNG screenshots were moved to `docs/screenshots/archive/`; `.gitignore` now ignores only root-level `/*.png`.
 
 ## Done this shift
-- Required navigation and context:
-  - `graphify query "MSourcing Tavily MCP query auth existing MCP subsystem mcp-client gatherMcpServers"` failed because `graphify-out/graph.json` is absent.
-  - `graphify-out/wiki/index.md` is absent.
-  - Read `_relay/HANDOFF.md`, vault guardrails, project-local Codex memory, `.rocket-fuel/design-tavily-mcp.md` through v3, and the MCP files named in the brief.
-- Added `AUTH_QUERY_PARAMS` / `AuthQueryParam` and `McpServerConfig.authStyle/authQueryParam`.
-- Added `applyMcpAuth` and host-only MCP client errors.
-- Added central auth query redaction and focused helper coverage.
-- Added base URL auth-param rejection in store add/update and both API route schemas.
-- Threaded auth fields through store test payloads, chat MCP payloads, `gatherMcpServers`, and `/api/mcp/test`.
-- Updated settings UI for Bearer header vs URL query param.
-- Refactored the Tavily live probe onto `applyMcpAuth`.
-- Added and wired `tests/mcp-query-auth.mts` into `npm test`.
-- Archived previous baton to `_relay/archive/2026-07-10-1041-codex.md`.
+- Removed verified-unreachable 3D files:
+  - `src/components/floor3d/Floor3DScene.tsx`
+  - `src/components/floor3d/InstancedAgents.tsx`
+  - `src/components/floor3d/OfficeRoom.tsx`
+  - `src/components/floor3d/OfficeFurniture.tsx`
+  - `src/components/floor3d/SpriteCharacter.tsx`
+  - `src/components/floor3d/CityWorld.tsx`
+  - `src/components/floor3d/retro/objects/AgentModel.tsx`
+  - `src/components/floor3d/retro/core/avatarProfile.ts`
+  - `src/components/floor3d/retro/objects/RobotAgent.tsx`
+  - `src/components/floor3d/retro/scene/OfficeEnvironment.tsx`
+- Removed dead barrels:
+  - `src/components/app/index.ts`
+  - `src/components/chat/index.ts`
+- Removed obsolete floor helper/type files after moving their live exports to lib:
+  - `src/components/floor3d/retro/scene/packet-shared.ts`
+  - `src/components/floor3d/types.ts`
+- Removed `@react-three/postprocessing` and `postprocessing` from `package.json` and `package-lock.json`.
+- Updated import paths in the live scene, floor page, mission HUD, replay, and Aria Live demo director.
+- Archived previous baton to `_relay/archive/2026-07-10-1146-codex.md`.
 - Added project-local Codex learning in `_agent_state/codex/memory.json`.
 
 ## Blockers
-- Live Tavily probe was not run in this sandbox. The brief assigns the live `scripts/probe-tavily-mcp.mts` run to Visionary outside the sandbox.
+- Sandbox blocks `.git/index.lock`, so `git rm` / `git mv` could not stage changes:
+  - `fatal: Unable to create '.git/index.lock': Operation not permitted`
+  - Files were removed/moved in the filesystem; Git status shows deletions and new archive files for the next committer.
+- Sandbox blocks the `tsx` CLI IPC server:
+  - `Error: listen EPERM: operation not permitted .../tsx-501/*.pipe`
+  - The same floor test passed via `node --import tsx tests/floor.mts`.
 
 ## Verification
-- `node --import tsx tests/mcp-query-auth.mts` passed:
-  - `RESULT mcp-query-auth: 15 passed, 0 failed`
-- `node --import tsx tests/log-redact.mts` passed:
-  - `RESULT log-redact: 24 passed, 0 failed`
+- `graphify query "Rock R2 MSourcing Floor3D dead code packet-shared postprocessing vercel CSP screenshots" --budget 1500` failed because `graphify-out/graph.json` is absent.
+- `npm install --package-lock-only` passed; only existing Node engine warning for `@dust-tt/client@1.2.6` under Node `v22.22.3`.
 - `npx tsc --noEmit` passed with exit 0.
-- `git diff --check -- src/lib/types.ts src/lib/mcp-auth-params.ts src/lib/log-redact.ts src/lib/mcp-client.ts src/lib/store.ts src/app/api/hermes/chat/route.ts src/app/api/mcp/test/route.ts src/components/settings/mcp-servers-panel.tsx src/lib/ai/tool-loop.ts scripts/probe-tavily-mcp.mts tests/mcp-query-auth.mts package.json` passed with exit 0.
+- `node --import tsx tests/floor.mts` passed:
+  - `RESULT floor: 11 passed, 0 failed`
+- Exact `npx tsx tests/floor.mts` is sandbox-blocked by `listen EPERM` on the tsx temp pipe.
+- `rg` found zero imports of the deleted 3D files.
+- `rg` found zero imports/usages of `@react-three/postprocessing` or `postprocessing` in `package.json`, `package-lock.json`, `src`, and `tests`.
+- `find . -maxdepth 1 -type f -name '*.png' -print` returned no root PNG files.
+- `node` check confirmed `vercel.json` has no `headers` block and `next.config.mjs` contains `Strict-Transport-Security`.
+- `git diff --check` passed with exit 0.
 
 ## Next steps
-1. Visionary should run `scripts/probe-tavily-mcp.mts` live outside the sandbox with a real `TAVILY_API_KEY`.
-2. Review and commit this MCP integration separately from pre-existing `.rocket-fuel`, `Aria/`, and other dirty-tree files.
-3. A later MCP hardening rock should close the documented DNS-rebind redial gap for all remote MCP servers.
+1. Visionary/full-runner runs the full external gate outside this sandbox, including exact `npx tsx tests/floor.mts` if its environment permits tsx IPC.
+2. Commit this R2 working-tree change separately from pre-existing dirty content.
 
 ## Decisions made (don't relitigate)
-- Existing bearer MCP configs remain backward-compatible by default.
-- The persisted MCP `url` remains key-free; query auth is assembled only after vault resolution and base URL SSRF validation.
-- `authQueryParam` is closed to `AUTH_QUERY_PARAMS`; adding a future query-auth MCP requires extending that enum.
-- MCP client errors intentionally do not echo upstream MCP error text, because query-auth servers can echo short secrets that generic redactors cannot prove safe.
-- DNS-rebind redial mitigation is out of scope for this rock and pre-existed query auth.
+- The Tarjan/reachability audit is accepted as authoritative for the 10 dead files.
+- `three`, `@react-three/fiber`, `@react-three/drei`, and `troika-three-text` stay.
+- `next.config.mjs` is the single source for security headers.
+- Root-level PNG clutter belongs under `docs/screenshots/archive/`; docs/public images are not ignored.
 
 ## Watch out
-- The working tree had substantial pre-existing untracked `.rocket-fuel`, `Aria/`, `graphify-out/`, and script files before this shift.
-- `scripts/probe-tavily-mcp.mts` was already untracked before this shift; this shift edited it in place.
-- `package.json` test chain now includes `tests/mcp-query-auth.mts`.
+- Pre-existing dirty/untracked files before this shift included:
+  - `.claude/scheduled_tasks.lock`
+  - `.rocket-fuel/`
+  - `Aria/`
+  - `_agent_state/`
+  - `_relay/HANDOFF.md`
+  - `_relay/archive/2026-07-10-1138-codex.md`
+  - `docs/superpowers/plans/`
+  - `graphify-out/`
+  - `src/app/fleet/page.tsx`
+  - `src/lib/fleet-seats.ts`
+- Because `.git` writes are blocked, screenshot moves appear as root deletions plus untracked `docs/screenshots/archive/` additions rather than staged renames in this sandbox.

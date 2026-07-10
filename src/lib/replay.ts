@@ -1,6 +1,5 @@
 import type { HermesState, OutreachLedgerEntry } from "./types";
-import type { OfficeAgent } from "@/components/floor3d/types";
-import { colorForAgent } from "./floor3d";
+import { colorForAgent, type OfficeAgent } from "./floor3d";
 
 /* ============================================================================
    Autopilot Replay (DVR) — a purely derived read model. Nothing here is
@@ -42,7 +41,7 @@ export interface ReplayEvent {
 
 /** How long a seat renders "working" on either side of an event's real
  *  timestamp once the playhead is near it. Mirrors PULSE_MS in
- *  src/components/floor3d/retro/scene/packet-shared.ts (kept as a local,
+ *  src/lib/floor3d.ts (kept as a local,
  *  duplicated constant rather than an import so this module has zero
  *  dependency on the 3D scene subsystem). */
 const WORKING_WINDOW_MS = 4000;
@@ -238,7 +237,7 @@ function lowerBound(events: ReplayEvent[], t: number): number {
  *  or it's a candidate-less report/re-score event), so some robot still
  *  reacts instead of the floor staying silent. Mirrors the same
  *  hash-a-fallback-responder idea as pickResponderIndex in
- *  packet-shared.ts, kept local since the event shapes differ. */
+ *  src/lib/floor3d.ts, kept local since the event shapes differ. */
 function hashEvent(e: ReplayEvent, n: number): number {
   if (n <= 0) return 0;
   const key = `${e.kind}:${e.candidateId ?? ""}:${e.label}:${e.at}`;
