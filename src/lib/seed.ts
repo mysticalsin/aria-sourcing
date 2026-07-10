@@ -914,6 +914,7 @@ export function buildSeedState(): HermesState {
     outreach,
     replies,
     bookings,
+    wins: [],
     interviewers,
     reports,
     integrations: defaultIntegrations(),
