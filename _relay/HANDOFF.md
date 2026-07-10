@@ -1,66 +1,122 @@
 ---
 project: MSourcing / ARIA
-shift: 19
-agent: codex
-updated: 2026-07-10 12:00
-status: r3-docs-truth-tsc-clean
+shift: 21
+agent: claude-opus-4-8
+updated: 2026-07-10 13:06 EDT
+status: w5-gate-closed-full-gate-green-engagement-complete
 ---
 
-# Handoff - R3 Docs Truth + Deploy Story
+# Handoff — W5 closeout (Claude, shift 21)
+
+## Closeout this session
+- Closed the last open rock, **Rock W5 (Gate + wiring)**. The `tests/docs-truth.mts`
+  suite was orphaned: present on disk but untracked and absent from the `npm test`
+  chain, so it enforced nothing.
+- Wired `docs-truth.mts` into the chain as the 98th suite command and committed the
+  config/docs it asserts (`.env.local.example` gained `TAVILY_API_KEY`; `STATUS.md`
+  is now tracked). Bumped the suite count 97→98 in both `STATUS.md` and the
+  docs-truth assertion so they stay coupled.
+- Full gate green, verified in this session (not diff-read):
+  - `npx tsc --noEmit` → No errors.
+  - Full `npm test` chain (pretest+test), run with the sandbox `tsx`→`node --import tsx`
+    rewrite → 98 suite commands, every `RESULT … 0 failed`, chain exit 0
+    (`docs-truth: 11 passed, 0 failed`).
+  - `npx eslint .` → No issues found.
+- Committed on `main` (matching the whole engagement; not pushed):
+  - `05f50f4` test: gate-enforce docs/config truth via docs-truth.mts (closes W5)
+  - `f4203e5` chore: release-ops hygiene — ignore fly secrets, add Vercel go-live doc
+  - plus this receipts commit (briefs r1–r4, codex logs, relay archive + this baton).
+- Left unstaged as unrelated scratch: `Aria/` (brand PNGs), `_agent_state/`,
+  `graphify-out/`, and the `.claude/scheduled_tasks.lock` deletion.
+
+## Note on the sandbox
+- Bare `tsx <file>` still fails here with `listen EPERM … tsx-501/<pid>.pipe`
+  (tsx IPC server blocked by the sandbox). `node --import tsx <file>` is the
+  equivalent that runs. `package.json` keeps the bare-`tsx` form because the owner
+  environment runs it fine; only local verification used the rewrite.
+
+---
+
+# (Prior baton) Handoff - R4 Store Split
 
 ## Current state
-- Release Rock R3 docs consolidation is implemented in the working tree.
-- `README.md` is now the truthful front door: Next `^16.2.6`, React `^19.2.7`, Node `22.x`, 97 `npm test` suite commands, current shipped surfaces, correct root-level `supabase/migrations/` and `tests/` architecture map, local Supabase startup, canonical deploy pointer, and MSourcing / ARIA / Hermes naming note.
-- Root `DEPLOYMENT.md` is now only a short pointer to `production-readiness/DEPLOYMENT_RUNBOOK.md`, the `vercel-demo` variant, env examples, and `STATUS.md`.
-- `production-readiness/DEPLOYMENT_RUNBOOK.md` is the only annotated migration list; it documents `0001` through `0018` and the deliberate missing `0016`.
-- `SUPABASE_SETUP.md`, `production-readiness/DEPLOY_CHECKLIST.md`, and `production-readiness/LOCAL_SETUP.md` now say to apply every file in `supabase/migrations/` in order instead of freezing old ranges.
-- `.env.local.example` and `.env.production.example` were regenerated around the env vars read under `src/`, plus provider-map keys such as `KIMI_API_KEY`; missing Tavily, Kimi, demo-session, encryption, cron, unsubscribe, and Google OAuth vars are included with purpose comments and no real secrets.
-- `production-readiness/STATUS.md` exists and is dated 2026-07-10. It supersedes the old 2026-06-27 due-diligence snapshot.
-- Historical production-readiness reports now carry a top supersession banner pointing to `STATUS.md` for current release posture.
-- Added `tests/docs-truth.mts` with grep-based docs assertions.
+- Release Rock R4 store split is implemented in the working tree.
+- `src/lib/store.ts` still owns `HermesActions`, `HermesProvider`, the 132 `useCallback` actions, context, and hooks.
+- Four React-free modules now exist under `src/lib/store/`:
+  - `booking-slot.ts`
+  - `migrations.ts`
+  - `sourcing-helpers.ts`
+  - `winlog-derive.ts`
+- `src/lib/store.ts` imports from those modules and re-exports moved public symbols from the store barrel:
+  - `appendWinRecord`
+  - `deriveWinRecord`
+  - `WIN_RECORD_LIMIT`
+  - `migrateToCurrentVersion`
+  - `normalizeHermesState`
+  - `defaultSlot`
+  - `interviewerIsBusy`
+  - `resolveBookingSlot`
+- Consumer import paths were not changed.
+- Baseline `src/lib/store.ts` line count before R4: 6,959.
+- Current `src/lib/store.ts` line count after R4: 6,555.
 
 ## Done this shift
-- Replaced stale README claims about Next 14 / React 18 and mock-only future APIs.
-- Consolidated deploy docs around the canonical runbook and current status page.
-- Removed stale migration-range guidance from current setup/checklist docs.
-- Added the single current status page requested by Rock R3.
-- Added supersession banners to old due-diligence report files instead of deleting evidence.
-- Ran a Visionary-style README truth review with a subagent; it reported no README truth issues and did not edit files.
-- Archived previous baton to `_relay/archive/2026-07-10-1200-codex.md`.
+- Ran mandatory graphify navigation first. It failed because `graphify-out/graph.json` is absent.
+- Checked `graphify-out/wiki/index.md`. It is absent, so raw source inspection was used after graph/wiki miss.
+- Confirmed tests import moved public symbols through `../src/lib/store` or `../src/lib/store.ts`, not direct submodules:
+  - `tests/winlog.mts`
+  - `tests/memory-soul.mts`
+- Extracted sourcing helpers:
+  - `baseWebQuery`
+  - `parseSillageIdentifier`
+  - `mapSillageCandidates`
+- Extracted winlog derivation:
+  - `WIN_RECORD_LIMIT`
+  - `deriveWinRecord`
+  - `appendWinRecord`
+- Extracted migration/load helpers:
+  - `migrateToCurrentVersion`
+  - `normalizeHermesState`
+  - `loadState`
+- Extracted booking solver:
+  - `defaultSlot`
+  - `interviewerIsBusy`
+  - `resolveBookingSlot`
+- Skipped `HermesActions` contract and hooks extraction for cycle-safety. They remain in `store.ts` beside `HermesContext` and `HermesProvider`.
+- Archived previous baton to `_relay/archive/2026-07-10-1228-codex.md`.
 
 ## Blockers
-- No code blockers.
-- `npm run lint` exits 0 but reports one warning in `src/lib/store.ts:4546` about an unnecessary `useCallback` dependency. This R3 task did not change code.
-- `npm test` was not run in full this shift; R3 proof required the docs truth test plus TypeScript. The 97 count was verified from `package.json` (`pretest` 3 commands + `test` 94 commands).
+- Literal `npm test` cannot run in this sandbox because the `tsx` CLI fails before executing tests:
+  - `Error: listen EPERM: operation not permitted .../tsx-501/<pid>.pipe`
+- Retrying with `TMPDIR=/private/tmp` produced the same `listen EPERM` pipe failure.
+- This is a sandbox IPC/socket restriction, not a test assertion failure.
 
 ## Verification
-- `graphify query "MSourcing release Rock R3 docs README deployment env migrations status Next React tests Supabase" --budget 1500` failed because `graphify-out/graph.json` is absent.
-- `graphify-out/wiki/index.md` is absent; raw files were used after graph/wiki miss.
-- `node --import tsx tests/docs-truth.mts` passed: `RESULT docs-truth: 11 passed, 0 failed`.
 - `npx tsc --noEmit` passed with exit 0.
-- `npm run lint` passed with exit 0 and one warning in `src/lib/store.ts:4546`.
+- `npm test` attempted twice and failed before tests ran due to `tsx` IPC pipe `listen EPERM`.
+- Equivalent full package gate passed by executing the same `pretest` + `test` command list with `node --import tsx` for commands that were `tsx <file>` and leaving existing `node --experimental-test-module-mocks --import tsx` commands unchanged:
+  - `RESULT rewritten-full-test-gate: 97 commands passed`
+  - `tests/winlog.mts`: `RESULT winlog: 22 passed, 0 failed`
+  - `tests/memory-soul.mts`: `RESULT memory-soul: 39 passed, 0 failed`
+  - `tests/audit-fixes.mts`: `RESULT audit-fixes: 46 passed, 0 failed`
 - `git diff --check` passed with exit 0.
-- Targeted grep found no `Next.js 14`, `React 18`, `through 0005`, `through 0012`, or partial-apply migration claims in current docs: `README.md`, `DEPLOYMENT.md`, `SUPABASE_SETUP.md`, `DEPLOYMENT_RUNBOOK.md`, `DEPLOY_CHECKLIST.md`, `LOCAL_SETUP.md`, `STATUS.md`, and env examples.
-- Visionary README review found no issues: versions, route surfaces, migration list, env examples, and deployment claims aligned with source files.
+- `wc -l src/lib/store.ts src/lib/store/*.ts`:
+  - `src/lib/store.ts`: 6,555
+  - `src/lib/store/booking-slot.ts`: 87
+  - `src/lib/store/migrations.ts`: 120
+  - `src/lib/store/sourcing-helpers.ts`: 113
+  - `src/lib/store/winlog-derive.ts`: 106
 
 ## Next steps
-1. Commit R3 docs separately from unrelated existing untracked `.rocket-fuel/`, `Aria/`, `_agent_state/`, and `graphify-out/` content.
-2. If desired, run full `npm test` outside the sandbox/with enough time before release sign-off.
-3. Leave old due-diligence reports in place as historical evidence; use `STATUS.md` for current posture.
+1. If running outside this sandbox, run literal `npm test` to confirm the `tsx` CLI path in the owner environment.
+2. Commit only the R4 files and relay archive/handoff; leave unrelated pre-existing changes alone.
 
 ## Decisions made (don't relitigate)
-- `production-readiness/DEPLOYMENT_RUNBOOK.md` is the canonical deployment runbook.
-- `production-readiness/STATUS.md` is the dated current posture page for 2026-07-10.
-- Historical due-diligence files are superseded, not deleted.
-- Migration guidance outside the runbook must be directory-based: apply every file in `supabase/migrations/` in order.
-- `0016` is intentionally absent; do not create or renumber it as a docs fix.
+- Keep all consumer imports on `@/lib/store` or existing relative store imports.
+- Do not extract the 132 `useCallback` actions.
+- Do not extract hooks or `HermesActions` in R4 because the cycle risk is not worth it.
+- This rock is pure move plus re-export; no behavior changes or new tests.
 
 ## Watch out
-- Many production-readiness files changed only by a 3-line supersession banner.
-- Existing unrelated untracked files remain:
-  - `.rocket-fuel/`
-  - `Aria/`
-  - `_agent_state/`
-  - `_relay/archive/2026-07-10-1138-codex.md`
-  - `_relay/archive/2026-07-10-1146-codex.md`
-  - `graphify-out/`
+- There are unrelated existing working-tree changes outside this R4 split, including env examples, `.rocket-fuel/`, `.agent_state/`, previous `_relay/archive/` files, `graphify-out/`, `production-readiness/STATUS.md`, and `tests/docs-truth.mts`.
+- `git diff --name-only` only shows tracked changes; remember `src/lib/store/` is untracked until added.

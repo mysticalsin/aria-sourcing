@@ -1,0 +1,21 @@
+Implemented R4 store split.
+
+Created:
+- `src/lib/store/migrations.ts`
+- `src/lib/store/winlog-derive.ts`
+- `src/lib/store/booking-slot.ts`
+- `src/lib/store/sourcing-helpers.ts`
+
+`src/lib/store.ts` now imports those modules and re-exports the moved public symbols. No consumer import paths changed. I skipped `HermesActions` and hooks extraction for cycle safety.
+
+Proof:
+- `npx tsc --noEmit`: pass
+- Literal `npm test`: blocked by sandbox `tsx` IPC `listen EPERM` before tests ran
+- Equivalent full package gate: 97 commands passed via `node --import tsx`
+- `git diff --check`: pass
+- `store.ts`: 6,959 lines before, 6,555 after
+
+Updated `_relay/HANDOFF.md`, archived the previous baton, and added the workspace Codex learning.
+
+VERDICT: SHIP
+

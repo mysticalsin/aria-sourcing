@@ -1,0 +1,20 @@
+ M .claude/scheduled_tasks.lock
+ M .rocket-fuel/codex/thread_id
+ M _relay/HANDOFF.md
+ M src/app/fleet/page.tsx
+?? .rocket-fuel/brief-r1-seats.md
+?? .rocket-fuel/brief-r2-purge.md
+?? .rocket-fuel/codex/r1-seats.baseline.txt
+?? .rocket-fuel/codex/r1-seats.brief.txt
+?? .rocket-fuel/codex/r1-seats.err.log
+?? .rocket-fuel/codex/r1-seats.events.jsonl
+?? .rocket-fuel/codex/r1-seats.last.txt
+?? .rocket-fuel/codex/r2-purge.baseline.txt
+?? .rocket-fuel/codex/r2-purge.brief.txt
+?? Aria/
+?? _agent_state/
+?? _relay/archive/2026-07-10-1138-codex.md
+?? docs/superpowers/plans/
+?? graphify-out/
+?? kimi-live-chat-proof.png
+?? src/lib/fleet-seats.ts

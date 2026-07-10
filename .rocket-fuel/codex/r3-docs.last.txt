@@ -1,0 +1,12 @@
+R3 docs are consolidated and verified.
+
+Changed: README front door, root deploy pointer, canonical runbook, env examples, Supabase/checklist/local setup migration wording, dated `production-readiness/STATUS.md`, historical report supersession banners, `tests/docs-truth.mts`, and relay handoff.
+
+Proof:
+- `node --import tsx tests/docs-truth.mts` passed: 11 passed, 0 failed
+- `npx tsc --noEmit` passed, exit 0
+- `npm run lint` passed, exit 0, with one existing warning in `src/lib/store.ts:4546`
+- `git diff --check` passed, exit 0
+- Visionary README truth review found no issues
+
+VERDICT: SHIP

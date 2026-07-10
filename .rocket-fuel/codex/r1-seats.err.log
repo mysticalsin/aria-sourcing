@@ -1,0 +1,8 @@
+2026-07-10T15:33:49.536899Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
+2026-07-10T15:35:30.150962Z ERROR codex_core::tools::router: error=apply_patch verification failed: Failed to find expected lines in /Users/tony/Library/CloudStorage/OneDrive-MantuGroup/Documents/Chief of Staff/Apps Source/MSourcing/src/lib/store.ts:
+          null,
+        );
+      });
+    [commit],
+  );
+2026-07-10T15:36:54.549060Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
