@@ -11,6 +11,12 @@ import { resolveVaultSecret } from "@/lib/ai/vault-secret";
 import { runAnthropicWithTools, runOpenAiWithTools, type ResolvedMcpServer } from "@/lib/ai/tool-loop";
 import { SOURCING_TOOL_DEFS, makeSourcingToolRunner } from "@/lib/ai/sourcing-tools";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
+import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
+import {
+  DISCLOSURE_SYSTEM,
+  candidateDisclosureContextForCampaignLike,
+  validateCandidateBoundText,
+} from "@/lib/agent-disclosure-policy";
 
 export const dynamic = "force-dynamic";
 
@@ -51,18 +57,12 @@ const SYSTEM_PROMPT =
   "\"body\": \"<first-touch outreach, under 120 words, leads with their specific real work, one genuine " +
   "reason for reaching out, soft low-pressure ask, no AI slop, no corporate filler, no em-dashes>\"}]}. " +
   "Draft for the requested number of candidates, choosing the best-scored real matches you found. Every " +
-  "candidateId MUST be one that a search_candidates result actually returned.";
+  "candidateId MUST be one that a search_candidates result actually returned. " +
+  DISCLOSURE_SYSTEM;
 
 function buildPrompt(campaign: Campaign, count: number): string {
-  const jd = campaign.jobAnalysis;
   return [
-    `Role: ${jd.title} (${jd.seniority}, ${jd.department})`,
-    `Location: ${jd.locationType}${jd.regions.length ? ` — ${jd.regions.join("/")}` : ""}`,
-    `Required skills: ${jd.requiredSkills.join(", ") || "n/a"}`,
-    `Nice-to-have: ${jd.niceToHaveSkills.join(", ") || "n/a"}`,
-    jd.minYearsExperience != null ? `Minimum experience: ${jd.minYearsExperience} years` : "",
-    jd.companyStageTarget.length ? `Target company stage: ${jd.companyStageTarget.join(", ")}` : "",
-    jd.industryExperience.length ? `Industry experience: ${jd.industryExperience.join(", ")}` : "",
+    candidateDisclosureContextForCampaignLike(campaign),
     "",
     `Find and draft outreach for ${count} real candidates for this role.`,
   ]
@@ -139,7 +139,8 @@ export async function POST(req: NextRequest) {
   }
 
   const githubToken = process.env.GITHUB_TOKEN ?? "";
-  const runner = makeSourcingToolRunner(campaign, existing, weights, githubToken);
+  const tavilyKey = supabase ? await resolveStoredTavilyKey(supabase) : null;
+  const runner = makeSourcingToolRunner(campaign, existing, weights, githubToken, tavilyKey ?? undefined);
   const servers: ResolvedMcpServer[] = [
     { url: "builtin:sourcing-agent", token: "", tools: SOURCING_TOOL_DEFS, run: runner.run },
   ];
@@ -172,6 +173,17 @@ export async function POST(req: NextRequest) {
     .map((d) => {
       const cand = byId.get(d.candidateId);
       if (!cand) return null;
+      const disclosure = validateCandidateBoundText(d.body, {
+        salaryMin: campaign.jobAnalysis.salaryMin,
+        salaryMax: campaign.jobAnalysis.salaryMax,
+        forbidden: [
+          campaign.jobAnalysis.department,
+          campaign.jobAnalysis.teamSize,
+          campaign.jobAnalysis.reportingTo,
+          campaign.jobAnalysis.currency,
+        ],
+      });
+      if (!disclosure.safe) return null;
       return { ...cand, draftSubject: d.subject, draftBody: d.body };
     })
     .filter((c): c is Candidate & { draftSubject: string; draftBody: string } => c !== null);

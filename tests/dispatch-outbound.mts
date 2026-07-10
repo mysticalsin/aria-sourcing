@@ -311,7 +311,7 @@ const LIVE_WHATSAPP_CONTACT: Row = {
   });
   const stats = await dispatchDue(db.client, 10);
   ok("WhatsApp template: trusted catalog entry reaches the atomic claim", db.rpcCalls.some((c) => c.fn === "claim_whatsapp_outbound"));
-  ok("WhatsApp template: no provider credentials leaves it unsent", stats.failed === 1 && stats.sent === 0);
+  ok("WhatsApp template: no provider credentials is unconfigured, not failed", stats.unconfigured === 1 && stats.failed === 0 && stats.sent === 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -534,7 +534,7 @@ const LIVE_WHATSAPP_CONTACT: Row = {
 }
 
 // ---------------------------------------------------------------------------
-// 10. All guards pass, no WhatsApp creds in env → adapter dry-runs → failed
+// 10. All guards pass, no WhatsApp creds in env → adapter dry-runs → unconfigured
 //    (never a silent fake-sent)
 // ---------------------------------------------------------------------------
 {
@@ -549,7 +549,7 @@ const LIVE_WHATSAPP_CONTACT: Row = {
     claim: { allowed: true, ledger_id: "led-1", delivery_attempt_id: ATTEMPT_ONE },
   });
   const stats = await dispatchDue(db.client, 10);
-  ok("dry-run creds: marked failed, not sent", stats.failed === 1 && stats.sent === 0);
+  ok("dry-run creds: marked unconfigured, not failed or sent", stats.unconfigured === 1 && stats.failed === 0 && stats.sent === 0);
   ok("dry-run creds: claim ran once", db.rpcCalls.filter((call) => call.fn === "claim_whatsapp_outbound").length === 1);
   ok("dry-run creds: claim is the service-only WhatsApp RPC", db.rpcCalls[0]?.fn === "claim_whatsapp_outbound");
   ok("dry-run creds: claim is scoped to the queued message", db.rpcCalls[0]?.args.p_message_id === "m-1");

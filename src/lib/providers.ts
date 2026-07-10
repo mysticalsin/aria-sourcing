@@ -24,6 +24,7 @@ export function validateApiKeyFormat(provider: string, value: string): { valid: 
     Resend: /^re_[A-Za-z0-9_-]{10,}$/,
     SendGrid: /^SG\.[A-Za-z0-9_.-]{20,}$/,
     Sillage: /^sk_live_[A-Za-z0-9]{16,}$/,
+    Tavily: /^tvly-[A-Za-z0-9_-]{8,}$/,
   };
   const re = rule[provider];
   if (!re) return { valid: v.length >= 8, detail: v.length >= 8 ? "Accepted (custom)." : "Too short." };

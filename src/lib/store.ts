@@ -27,7 +27,7 @@ import {
   type SourceResult,
 } from "./mock-ai";
 import type { GithubUser } from "./sourcing/github";
-import { isWebSearchPlatform, type WebLead, type WebSearchPlatform } from "./sourcing/web-leads";
+import { ensureWebQueryScope, isWebSearchPlatform, type WebLead, type WebSearchPlatform } from "./sourcing/web-leads";
 import type { SillageProfile } from "./sourcing/sillage";
 import type { ApolloPerson } from "./sourcing/apollo";
 import type { SeamlessContact, SeamlessResearchContact } from "./sourcing/seamless";
@@ -39,6 +39,11 @@ import {
   parseHermesOutreach,
 } from "./ai/hermes";
 import { resolveAiProvider } from "./ai/provider";
+import {
+  candidateDisclosureContextForCampaignLike,
+  detectInjection,
+  validateCandidateBoundText,
+} from "./agent-disclosure-policy";
 import { emit } from "./agent-events";
 import { buildSeedState, defaultGuardrails, defaultLlmProviders, defaultSavedModels, defaultSettings, defaultTools, seedInterviewers, STATE_VERSION } from "./seed";
 import { computeCampaignMetrics, firstInterviewElapsedHours, globalKpis, type GlobalKpis } from "./metrics";
@@ -673,19 +678,15 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
     replies: parsed.replies ?? [],
     bookings: parsed.bookings ?? [],
     reports: parsed.reports ?? [],
-    // STATE_VERSION 15 — re-sync each stored integration's `real` flag against
-    // the current seed. `real` is a static fact about the codebase (does a
-    // route/OAuth flow/send path actually exist for this card), not user data
-    // — a workspace provisioned before a card gained real wiring would
-    // otherwise show a stale "Concept" badge forever, since nothing else ever
-    // re-reads defaultIntegrations() after the initial seed. Every other
-    // field (status, mode, lastSync, connectedAccount, errors) is genuine
-    // usage history and stays untouched.
+    // STATE_VERSION 16 — re-sync each stored integration's `real` flag against
+    // the current seed. Roadmap placeholders (`real: false`) also lose any older
+    // fabricated connected/lastSync state; real cards keep their usage history.
     integrations:
       parsed.integrations && parsed.integrations.length > 0
         ? parsed.integrations.map((i) => {
             const seed = defaultIntegrations().find((d) => d.id === i.id);
-            return seed ? { ...i, real: seed.real } : i;
+            if (!seed) return i;
+            return seed.real ? { ...i, real: true } : { ...i, real: false, status: "not_configured", lastSync: null };
           })
         : defaultIntegrations(),
     activities: parsed.activities ?? [],
@@ -758,6 +759,12 @@ function loadState(): HermesState {
   return buildSeedState();
 }
 
+function githubLocationQualifier(location: string | undefined, query: string): string {
+  if (!location?.trim() || /(?:^|\s)location:/i.test(query)) return "";
+  const city = location.split(",")[0]?.trim();
+  return city ? ` location:"${city}"` : "";
+}
+
 /**
  * Shared live-generation attempt for follow-up / re-contact drafts — the same
  * three-layer fallback generateOutreachLive/regenerateOutreach already use (a
@@ -799,6 +806,7 @@ async function attemptLiveFollowUpGen(opts: {
     locationType: campaign.jobAnalysis.locationType,
     regions: campaign.jobAnalysis.regions,
     requiredSkills: campaign.jobAnalysis.requiredSkills,
+    roleContext: candidateDisclosureContextForCampaignLike(campaign),
     tone,
     channel,
     language: lang,
@@ -1222,9 +1230,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // synthetic profiles. Talent Pool / Referral are internal-pipeline concepts
       // with no external source, so they stay synthetic (demo mode).
       if (platform === "GitHub") {
-        const query =
+        const baseQuery =
           campaign.sourcingStrategy.githubQueries[0]?.query ??
           `language:${(campaign.jobAnalysis.requiredSkills[0] ?? "typescript").toLowerCase()}`;
+        const query = `${baseQuery}${githubLocationQualifier(campaign.jobAnalysis.location, baseQuery)}`;
         try {
           const res = await fetch("/api/source", {
             method: "POST",
@@ -1251,7 +1260,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           };
         }
       } else if (isWebSearchPlatform(platform)) {
-        const query = baseWebQuery(campaign, platform);
+        const query = ensureWebQueryScope(platform, baseWebQuery(campaign, platform));
         try {
           const res = await fetch("/api/source", {
             method: "POST",
@@ -2100,6 +2109,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           locationType: campaign.jobAnalysis.locationType,
           regions: campaign.jobAnalysis.regions,
           requiredSkills: campaign.jobAnalysis.requiredSkills,
+          roleContext: candidateDisclosureContextForCampaignLike(campaign),
           tone: finalTone,
           channel,
           language: lang,
@@ -2341,6 +2351,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           locationType: campaign.jobAnalysis.locationType,
           regions: campaign.jobAnalysis.regions,
           requiredSkills: campaign.jobAnalysis.requiredSkills,
+          roleContext: candidateDisclosureContextForCampaignLike(campaign),
           tone: nextTone,
           channel: msg.channel,
           language: lang,
@@ -3004,6 +3015,35 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         } catch {
           // fall back to mock classification already assigned above
         }
+      }
+      const campaign = s.campaigns.find((c) => c.id === campaignId);
+      const inboundInjection = detectInjection(input.text);
+      if (classification.draftResponse) {
+        const disclosure = validateCandidateBoundText(classification.draftResponse, {
+          salaryMin: campaign?.jobAnalysis.salaryMin ?? null,
+          salaryMax: campaign?.jobAnalysis.salaryMax ?? null,
+          forbidden: campaign
+            ? [
+                campaign.jobAnalysis.department,
+                campaign.jobAnalysis.teamSize,
+                campaign.jobAnalysis.reportingTo,
+                campaign.jobAnalysis.currency,
+              ]
+            : [],
+        });
+        const injection = detectInjection(classification.draftResponse);
+        if (!disclosure.safe || injection.flagged || inboundInjection.flagged) {
+          classification = {
+            ...classification,
+            suggestedAction: `Queue for human review: ${disclosure.reason ?? "injection-suspected"}.`,
+            draftResponse: "Thanks for the reply. A recruiter will review and follow up.",
+          };
+        }
+      } else if (inboundInjection.flagged) {
+        classification = {
+          ...classification,
+          suggestedAction: "Queue for human review: injection-suspected.",
+        };
       }
       const receivedAt = input.externalReceivedAt ?? new Date().toISOString();
       const reply: ClassifiedReply = {

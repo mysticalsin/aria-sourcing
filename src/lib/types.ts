@@ -168,6 +168,8 @@ export interface JobAnalysis {
   seniority: Seniority;
   employmentType: "Full-time" | "Contract" | "Part-time";
   locationType: "Remote" | "Hybrid" | "On-site";
+  /** Concrete place parsed from the brief, e.g. "London". Empty/absent when unknown. */
+  location?: string;
   regions: string[];
   timezone: string;
   salaryMin: number | null;
@@ -1030,6 +1032,7 @@ export const API_KEY_PROVIDERS = [
   "Sillage",
   "Apollo",
   "Seamless",
+  "Tavily",
   "Custom",
 ] as const;
 export type ApiKeyProvider = (typeof API_KEY_PROVIDERS)[number];

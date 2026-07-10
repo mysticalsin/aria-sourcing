@@ -348,6 +348,60 @@ export function parseMantuNeed(text: string): ParsedIntake {
  *  pathological-input CPU blowup regardless of caller. */
 const MAX_PARSE_CHARS = 20000;
 
+const NON_LOCATION_VALUES = new Set([
+  "remote",
+  "hybrid",
+  "onsite",
+  "on-site",
+  "office",
+  "the office",
+  "python",
+  "typescript",
+  "javascript",
+  "java",
+  "go",
+  "rust",
+  "react",
+  "node",
+  "kubernetes",
+]);
+
+function normalizeParsedLocation(raw: string | undefined): string {
+  if (!raw) return "";
+  const value = raw
+    .replace(/\s+/g, " ")
+    .replace(/^(?:our|the|a|an)\s+/i, "")
+    .replace(/\s+(?:with|must|who|that|to|for|joining|join|experience|team|department|office)\b.*$/i, "")
+    .replace(/^[\s:,-]+|[\s.,;:!?)\]]+$/g, "")
+    .trim();
+  if (!value || value.length > 80 || !/[a-z]/i.test(value)) return "";
+  if (NON_LOCATION_VALUES.has(value.toLowerCase())) return "";
+  if (/^(?:strong|senior|staff|lead|principal|backend|frontend|full[- ]stack|software|data|platform)\b/i.test(value)) return "";
+  return value
+    .split(" ")
+    .map((part) => (part === part.toLowerCase() ? part.replace(/^[a-z]/, (c) => c.toUpperCase()) : part))
+    .join(" ");
+}
+
+function extractLocation(text: string): string {
+  const patterns = [
+    /\blocation\s*[:\-]\s*([A-Za-z][A-Za-z .,'/-]{1,80})/gi,
+    /\bbased\s+in\s+([A-Za-z][A-Za-z .,'/-]{1,80})/gi,
+    /\bteam\s+in\s+([A-Za-z][A-Za-z .,'/-]{1,80})/gi,
+    /\bin\s+([A-Z][A-Za-z.'/-]*(?:\s+[A-Z][A-Za-z.'/-]*){0,3}(?:,\s*[A-Z][A-Za-z .'-]*)?)/g,
+  ];
+
+  for (const pattern of patterns) {
+    pattern.lastIndex = 0;
+    const matches = text.matchAll(pattern);
+    for (const match of matches) {
+      const location = normalizeParsedLocation(match[1]);
+      if (location) return location;
+    }
+  }
+  return "";
+}
+
 export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIntake {
   const text = `${input.email}\n${input.jd ?? ""}`.slice(0, MAX_PARSE_CHARS);
   const lower = text.toLowerCase();
@@ -418,6 +472,8 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   // Timezone
   const tzMatch = text.match(/\b(CET|CEST|GMT|UTC|EST|PST|IST|SGT|BRT)\b/i)?.[1]?.toUpperCase() ?? "CET";
 
+  const location = extractLocation(text);
+
   // Salary
   const salaryNums = [...text.matchAll(/[€$£]?\s?(\d{2,3})\s?k\b/gi)].map((m) => parseInt(m[1], 10) * 1000);
   const salaryMin = salaryNums.length ? Math.min(...salaryNums) : null;
@@ -468,6 +524,7 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
       ? "Contract"
       : "Full-time",
     locationType,
+    ...(location ? { location } : {}),
     regions: Array.from(new Set(regions)),
     timezone: tzMatch,
     salaryMin,
@@ -504,7 +561,7 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
       title: requiredSkills.length > 4 ? 0.92 : 0.74,
       salary: salaryMin != null ? 0.9 : 0.4,
       skills: clamp(0.55 + requiredSkills.length * 0.05, 0.5, 0.95),
-      location: locationType === "Remote" ? 0.9 : 0.7,
+      location: location ? 0.9 : locationType === "Remote" ? 0.9 : 0.7,
       seniority: 0.85,
     },
   };

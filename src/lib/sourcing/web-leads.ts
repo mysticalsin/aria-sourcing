@@ -55,6 +55,13 @@ export function buildWebQuery(platform: WebSearchPlatform, baseQuery: string): s
   return `site:${PLATFORM_DOMAINS[platform]} ${baseQuery}`.trim();
 }
 
+/** Add the platform site: scope once, preserving callers that already sent it. */
+export function ensureWebQueryScope(platform: WebSearchPlatform, query: string): string {
+  const trimmed = query.trim();
+  const siteScope = `site:${PLATFORM_DOMAINS[platform]}`;
+  return trimmed.toLowerCase().includes(siteScope.toLowerCase()) ? trimmed : buildWebQuery(platform, trimmed);
+}
+
 function titleCase(words: string): string {
   return words
     .split(/\s+/)

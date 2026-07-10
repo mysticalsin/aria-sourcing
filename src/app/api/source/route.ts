@@ -9,8 +9,9 @@ import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { searchGithubUsers, getGithubUser, type GithubUser } from "@/lib/sourcing/github";
 import { SOURCE_PLATFORMS } from "@/lib/types";
-import { isWebSearchPlatform, extractLead, type WebLead } from "@/lib/sourcing/web-leads";
+import { ensureWebQueryScope, isWebSearchPlatform, extractLead, type WebLead } from "@/lib/sourcing/web-leads";
 import { runWebTool } from "@/lib/ai/web-tools";
+import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 
 /**
  * Real candidate sourcing.
@@ -65,6 +66,8 @@ export async function POST(req: NextRequest) {
   const rl = checkRateLimit(rateLimitKey(req, "source"), { windowMs: 60_000, max: 10 });
   if (!rl.ok) return tooManyRequests(rl.retryAfterSec);
 
+  let tavilyKey: string | null = null;
+
   // Live mode: require an authenticated user with the `source` permission. Demo
   // mode (no backend) is open but still rate-limited.
   if (supabaseEnabled) {
@@ -78,6 +81,7 @@ export async function POST(req: NextRequest) {
     if (!can(role as Role, "source")) {
       return NextResponse.json({ ok: false, error: "Insufficient permissions." }, { status: 403 });
     }
+    tavilyKey = await resolveStoredTavilyKey(supabase);
   }
 
   const validated = await validateBody(req, SourceSchema, { maxBytes: 10_000 });
@@ -116,7 +120,8 @@ export async function POST(req: NextRequest) {
   }
 
   if (isWebSearchPlatform(platform)) {
-    const result = await runWebTool("web_search", { query });
+    const scopedQuery = ensureWebQueryScope(platform, query);
+    const result = await runWebTool("web_search", { query: scopedQuery }, { tavilyKey: tavilyKey ?? undefined });
     if (!result.ok) {
       return NextResponse.json(
         { ok: false, source: "web", platform, error: result.error ?? "Web search failed." },

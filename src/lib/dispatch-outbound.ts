@@ -9,8 +9,9 @@
      4. claim_whatsapp_outbound for WhatsApp, which atomically validates
         consent, DNC, template/window, seat, and the delivery ledger.
         SMS uses the existing claim_and_record path.
-   Anything that fails flips to 'blocked' (human queue) or 'failed'; a message
-   never silently retries into a double-send (dedupe_hash UNIQUE + ledger claim).
+   Anything that fails flips to 'blocked' (human queue) or 'failed'; an
+   unconfigured provider is counted separately. A message never silently retries
+   into a double-send (dedupe_hash UNIQUE + ledger claim).
 
    Called from two places (Vercel Hobby forbids minute crons):
      - /api/webhooks/whatsapp — opportunistic drain after each inbound event
@@ -33,17 +34,36 @@ import {
 import { assessWhatsAppDispatch, type WhatsAppPermission } from "@/lib/whatsapp-policy";
 import { shouldReopenWhatsAppReview } from "@/lib/whatsapp-review-policy";
 import { publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
+import { detectInjection, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 
 const WHATSAPP_GATE_CACHE_VERSION = "whatsapp-outbound-gate-v1";
 const WHATSAPP_GATE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function disclosureInternalFromBrief(value: unknown): Parameters<typeof validateCandidateBoundText>[1] {
+  const brief = record(value);
+  if (!brief) return {};
+  return {
+    salaryMin: typeof brief.salaryMin === "number" ? brief.salaryMin : null,
+    salaryMax: typeof brief.salaryMax === "number" ? brief.salaryMax : null,
+    forbidden: [brief.department, brief.teamSize, brief.reportingTo, brief.currency]
+      .filter((item): item is string => typeof item === "string" && item.trim().length > 0),
+  };
+}
 
 export interface DispatchStats {
   processed: number;
   sent: number;
   blocked: number;
   failed: number;
+  unconfigured: number;
 }
+
+type DispatchOutcomeCounter = Exclude<keyof DispatchStats, "processed">;
 
 async function cacheWhatsAppGateVerdict(
   supabase: SupabaseClient,
@@ -71,7 +91,7 @@ async function cacheWhatsAppGateVerdict(
 }
 
 export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageId?: string): Promise<DispatchStats> {
-  const stats: DispatchStats = { processed: 0, sent: 0, blocked: 0, failed: 0 };
+  const stats: DispatchStats = { processed: 0, sent: 0, blocked: 0, failed: 0, unconfigured: 0 };
 
   // A public demo may still use a real Supabase database. Never let a queued
   // row from that shared environment reach a provider, regardless of caller.
@@ -94,7 +114,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
   for (const msg of due ?? []) {
     stats.processed++;
     let deliveryAttemptId: string | null = null;
-    const finish = async (status: "sent" | "blocked" | "failed", gateResult?: unknown) => {
+    const finish = async (status: "sent" | "blocked" | "failed", gateResult?: unknown, countAs?: DispatchOutcomeCounter) => {
       const reopenReview =
         status === "blocked" &&
         shouldReopenWhatsAppReview({
@@ -123,7 +143,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         safeLog("dispatch-outbound: terminal transition error", { message: transitionError.message });
         return;
       }
-      if (transitioned) stats[status]++;
+      if (transitioned) stats[countAs ?? status]++;
     };
 
     try {
@@ -228,6 +248,19 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         }
         if (!gate.pass) {
           await finish("blocked", { pass: false, reasons: gate.reasons });
+          continue;
+        }
+        const { data: spec } = msg.spec_id
+          ? await supabase
+              .from("agent_specs")
+              .select("role_brief")
+              .eq("id", msg.spec_id)
+              .maybeSingle()
+          : { data: null };
+        const disclosure = validateCandidateBoundText(msg.body, disclosureInternalFromBrief(record(spec)?.role_brief));
+        const injection = detectInjection(msg.body);
+        if (!disclosure.safe || injection.flagged) {
+          await finish("blocked", { pass: false, reasons: [disclosure.reason ?? "injection-suspected"] });
           continue;
         }
       }
@@ -386,6 +419,19 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         }
       }
       if (msg.channel === "WhatsApp") {
+        if (outcome.status === "dry-run") {
+          if (claimObj.ledger_id) {
+            await supabase
+              .from("outreach_ledger")
+              .update({
+                status: "skipped",
+                reason: outcome.detail,
+              })
+              .eq("id", claimObj.ledger_id);
+          }
+          await finish("blocked", { pass: false, reasons: ["provider-unconfigured"] }, "unconfigured");
+          continue;
+        }
         if (outcome.deliveryState !== "not-sent") {
           // A timeout, disconnect, or successful response without Meta's
           // durable id may have been accepted. Releasing the claim would make
@@ -428,7 +474,11 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           })
           .eq("id", claimObj.ledger_id);
       }
-      await finish(outcome.status === "sent" ? "sent" : "failed");
+      await finish(
+        outcome.status === "sent" ? "sent" : outcome.status === "dry-run" ? "blocked" : "failed",
+        outcome.status === "dry-run" ? { pass: false, reasons: ["provider-unconfigured"] } : undefined,
+        outcome.status === "dry-run" ? "unconfigured" : undefined,
+      );
     } catch (err) {
       safeLog("dispatch-outbound: error", { message: err instanceof Error ? err.message : "unknown" });
       await finish("failed");

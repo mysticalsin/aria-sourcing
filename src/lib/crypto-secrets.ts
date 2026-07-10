@@ -13,8 +13,6 @@
 // Generate a key: `openssl rand -base64 32`.
 
 import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
-import { isProduction, demoLoginEnabled } from "./supabase/config";
-
 const PREFIX = "enc:v1:";
 
 function getKey(): Buffer | null {
@@ -44,7 +42,13 @@ export function secretEncryptionEnabled(): boolean {
  * demoLoginEnabled escape hatch, so the public vercel demo is unaffected).
  */
 export function encryptionRequiredButMissing(): boolean {
-  return isProduction && !demoLoginEnabled && !secretEncryptionEnabled();
+  const liveSupabaseEnabled = Boolean(
+    (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "") &&
+      (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""),
+  );
+  const liveProduction = process.env.NODE_ENV === "production";
+  const liveDemoLoginEnabled = process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN === "true";
+  return (liveProduction || liveSupabaseEnabled) && !liveDemoLoginEnabled && !secretEncryptionEnabled();
 }
 
 /** Encrypt a secret for storage. Returns the plaintext unchanged when no key is set. */

@@ -19,6 +19,8 @@ export interface ResolvedMcpServer {
   url: string;
   token: string;
   tools: McpTool[];
+  /** Optional workspace-scoped Tavily key for the in-process web_search tool. */
+  tavilyKey?: string;
   /** Optional direct dispatcher for a stateful in-process tool set (e.g. a
    *  per-request sourcing-tool runner that accumulates real candidates found
    *  across calls). When present, execTool calls this instead of the URL-based
@@ -48,7 +50,7 @@ async function execTool(
   args: Record<string, unknown>,
 ): Promise<{ ok: boolean; content?: unknown; error?: string }> {
   if (server.run) return server.run(name, args);
-  if (server.url === BUILTIN_WEB_URL) return runWebTool(name, args);
+  if (server.url === BUILTIN_WEB_URL) return runWebTool(name, args, { tavilyKey: server.tavilyKey });
   if (server.url === BUILTIN_BROWSER_URL) return runBrowserTool(name, args);
   return callMcpTool(server.url, server.token, name, args);
 }

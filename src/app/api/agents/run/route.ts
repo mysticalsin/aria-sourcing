@@ -11,6 +11,7 @@ import { resolveVaultSecret } from "@/lib/ai/vault-secret";
 import { makeSourcingToolRunner } from "@/lib/ai/sourcing-tools";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { initialState, runGraph, type CandidateLite, type GraphDeps } from "@/lib/agents/graph";
+import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 
 export const dynamic = "force-dynamic";
 
@@ -84,7 +85,8 @@ export async function POST(req: NextRequest) {
   if (!key) return NextResponse.json({ ok: false, reason: `No API key configured for ${provider}.` });
   const llmModel = model || DEFAULT_MODEL[slug];
 
-  const runner = makeSourcingToolRunner(campaign, existing, weights, process.env.GITHUB_TOKEN ?? "");
+  const tavilyKey = supabase ? await resolveStoredTavilyKey(supabase) : null;
+  const runner = makeSourcingToolRunner(campaign, existing, weights, process.env.GITHUB_TOKEN ?? "", tavilyKey ?? undefined);
   const deps: GraphDeps = {
     async generate(system, prompt) {
       const reqSpec = buildCloudRequest(slug, llmModel, system, prompt, key, 1024);
@@ -124,6 +126,8 @@ export async function POST(req: NextRequest) {
     runId = run?.id ?? null;
   }
 
+  // stepGraph applies candidateDisclosureContextForCampaignLike before any
+  // candidate-facing model prompt; the raw brief remains server-side for sink scans.
   const state = initialState(campaign.jobAnalysis as unknown as Record<string, unknown>, count);
   const result = await runGraph(state, deps, async (node, s, event) => {
     if (!supabase || !workspaceId || !runId) return;

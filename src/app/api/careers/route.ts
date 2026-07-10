@@ -29,6 +29,7 @@ const AnswerSchema = z
 
 const CareerApplicationSchema = z
   .object({
+    // Target-salary capture is deferred until the careers schema and UI both support it.
     path: z.enum(["A", "B"]),
     campaignId: z.string().trim().min(1).max(120).nullable(),
     roleTitle: z.string().trim().min(1).max(160),

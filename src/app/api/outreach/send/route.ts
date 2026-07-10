@@ -19,6 +19,7 @@ import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
 import { dispatchDue } from "@/lib/dispatch-outbound";
 import { createEmailUnsubscribeLink } from "@/lib/email-unsubscribe";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
+import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 
 const OutreachSendSchema = z.object({
   seatId: z.string().uuid().optional(),
@@ -33,6 +34,10 @@ const OutreachSendSchema = z.object({
   phone: z.string().max(40).optional(),
   confirmLive: z.boolean().default(false),
 });
+
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
 
 /**
  * Outreach send endpoint — safe by construction.
@@ -129,6 +134,23 @@ export async function POST(req: NextRequest) {
   const { data: approvalWid } = await supabase.rpc("current_workspace_id");
   if (!approvalWid) {
     return NextResponse.json({ status: "error", detail: "Workspace not found." }, { status: 400 });
+  }
+  const { data: workspaceState } = await supabase
+    .from("workspace_state")
+    .select("state")
+    .eq("workspace_id", approvalWid)
+    .maybeSingle();
+  const campaigns = Array.isArray(record(workspaceState?.state)?.campaigns)
+    ? record(workspaceState?.state)?.campaigns as unknown[]
+    : [];
+  const campaign = campaigns.find((item) => record(item)?.id === campaignId);
+  const disclosure = validateCandidateBoundText(body, disclosureInternalFromCampaignLike(campaign));
+  const injection = detectInjection(body);
+  if (!disclosure.safe || injection.flagged) {
+    return NextResponse.json(
+      { status: "error", detail: disclosure.reason ?? "injection-suspected" },
+      { status: 422 },
+    );
   }
   const approvedContentHash = approvalHash(subject, body);
   const approvedScopeHash = approvalScopeHash({

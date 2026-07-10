@@ -4,6 +4,10 @@ import { dedupeHash } from "@/lib/gate";
 import { isWhatsAppOptOut } from "@/lib/whatsapp-policy";
 import { buildReplyPrompt, decideAutopilot, type SpecGuardrails } from "@/lib/autopilot";
 import {
+  candidateDisclosureContextForCampaignLike,
+  detectInjection,
+} from "@/lib/agent-disclosure-policy";
+import {
   CLOUD_ENDPOINT,
   DEFAULT_MODEL,
   PROVIDER_ENV,
@@ -197,7 +201,7 @@ export async function processStoredWhatsAppInbound(
     const { system, prompt } = buildReplyPrompt({
       inbound: body,
       lastOutbound: thread.body,
-      roleSummary: JSON.stringify(brief).slice(0, 2_000),
+      roleSummary: candidateDisclosureContextForCampaignLike(brief).slice(0, 2_000),
     });
     const request = buildCloudRequest(provider.slug, DEFAULT_MODEL[provider.slug], system, prompt, provider.key, 512);
     const response = await fetch(request.url, {
@@ -211,7 +215,14 @@ export async function processStoredWhatsAppInbound(
     if (!draft.trim()) return retry("empty-reply-draft");
 
     const guardrails = (spec.guardrails ?? {}) as SpecGuardrails;
-    const decision = decideAutopilot(draft, guardrails);
+    const salaryMin = typeof brief.salaryMin === "number" ? brief.salaryMin : null;
+    const salaryMax = typeof brief.salaryMax === "number" ? brief.salaryMax : null;
+    const forbidden = [brief.department, brief.teamSize, brief.reportingTo, brief.currency]
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+    const decision = decideAutopilot(draft, guardrails, { salaryMin, salaryMax, forbidden });
+    if (detectInjection(body).flagged && !decision.reasons.includes("injection-suspected")) {
+      decision.reasons.push("injection-suspected");
+    }
     const reviewDraftDedupeHash = dedupeHash(thread.candidate_id, "WhatsApp", decision.text);
     const { error: outboundErr } = await supabase.from("messages_outbound").insert({
       workspace_id: workspaceId,

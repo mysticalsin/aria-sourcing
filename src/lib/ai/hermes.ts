@@ -77,6 +77,7 @@ export function buildOutreachPrompt(opts: {
   locationType: string;
   regions: string[];
   requiredSkills: string[];
+  roleContext?: string;
   tone: string;
   channel: string;
   language: string;
@@ -96,9 +97,12 @@ export function buildOutreachPrompt(opts: {
     `- Recent activity: ${opts.recentActivity || "n/a"}`,
     "",
     "Role:",
-    `- Title: ${opts.roleTitle}`,
-    `- Setup: ${opts.locationType}${opts.regions.length ? ` (${opts.regions.join("/")})` : ""}`,
-    `- Core skills: ${opts.requiredSkills.join(", ") || "n/a"}`,
+    opts.roleContext ??
+      [
+        `- Title: ${opts.roleTitle}`,
+        `- Setup: ${opts.locationType}${opts.regions.length ? ` (${opts.regions.join("/")})` : ""}`,
+        `- Core skills: ${opts.requiredSkills.join(", ") || "n/a"}`,
+      ].join("\n"),
     "",
     "Rules: lead with the candidate's specific recent work; one genuine reason you're reaching out; a soft, low-pressure ask. Under 120 words. No AI slop, no corporate filler.",
     opts.signature ? `Sign off with: ${opts.signature}` : "",

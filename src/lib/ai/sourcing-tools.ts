@@ -17,7 +17,7 @@ import type { McpTool } from "@/lib/mcp-client";
 import type { Campaign, Candidate, ScoringWeights, SourcePlatform } from "@/lib/types";
 import { searchGithubUsers } from "@/lib/sourcing/github";
 import { runWebTool } from "@/lib/ai/web-tools";
-import { extractLead, isWebSearchPlatform } from "@/lib/sourcing/web-leads";
+import { ensureWebQueryScope, extractLead, isWebSearchPlatform } from "@/lib/sourcing/web-leads";
 import { mapGithubCandidates, mapWebSearchCandidates } from "@/lib/mock-ai";
 
 export const SOURCING_TOOL_DEFS: McpTool[] = [
@@ -78,6 +78,7 @@ export function makeSourcingToolRunner(
   existing: Candidate[],
   weights: ScoringWeights,
   githubToken: string,
+  tavilyKey?: string,
 ) {
   const found: Candidate[] = [];
 
@@ -107,12 +108,13 @@ export function makeSourcingToolRunner(
         return { ok: false, error: err instanceof Error ? err.message : "GitHub search failed." };
       }
     } else if (isWebSearchPlatform(platform)) {
-      const search = await runWebTool("web_search", { query });
+      const scopedQuery = ensureWebQueryScope(platform, query);
+      const search = await runWebTool("web_search", { query: scopedQuery }, { tavilyKey });
       if (!search.ok) return { ok: false, error: search.error ?? "Web search failed." };
       const content = search.content as { results?: { title: string; url: string; snippet: string }[] } | undefined;
       const hits = (content?.results ?? []).slice(0, count);
       const leads = hits.map((h) => extractLead(h, platform));
-      const result = mapWebSearchCandidates(leads, campaign, query, platform, alreadySeen, weights);
+      const result = mapWebSearchCandidates(leads, campaign, scopedQuery, platform, alreadySeen, weights);
       accepted = result.accepted;
       skippedCount = result.skipped.length;
     } else {

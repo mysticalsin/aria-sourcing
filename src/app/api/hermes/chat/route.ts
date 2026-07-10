@@ -22,6 +22,8 @@ import { SOURCING_TOOL_DEFS, makeSourcingToolRunner } from "@/lib/ai/sourcing-to
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { redactObject, redactSecrets, redactEmail } from "@/lib/log-redact";
 import { evaluateHermesWorkspaceBinding } from "@/lib/api/hermes-runtime-isolation";
+import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
+import { DISCLOSURE_SYSTEM } from "@/lib/agent-disclosure-policy";
 
 /**
  * Aria runtime proxy (SERVER ONLY).
@@ -78,7 +80,8 @@ const TASK_SYSTEM: Record<"outreach" | "classify" | "sourcing" | "chat", string>
     "You are a senior technical recruiter writing first-touch candidate outreach. " +
     "Lead with the candidate's specific recent work, give one genuine reason for reaching out, " +
     "and end with a soft, low-pressure ask. Keep it under 120 words. No AI slop, no corporate filler, no em-dashes. " +
-    "Reply with exactly: a line 'Subject: <subject>' then a blank line then the message body. No preamble.",
+    "Reply with exactly: a line 'Subject: <subject>' then a blank line then the message body. No preamble. " +
+    DISCLOSURE_SYSTEM,
   classify:
     "You are a reply-classification engine for recruiting outreach. Read the candidate reply and respond with " +
     "compact JSON only: {\"intent\": one of INTERESTED|QUALIFIED_INTEREST|NOT_INTERESTED|REFERRAL|OOO|UNCLEAR|NEGATIVE, " +
@@ -254,8 +257,9 @@ export async function POST(req: NextRequest) {
     const usableMcpServers = canUseMcpToolsInChat && mcpServers && mcpServers.length ? mcpServers : undefined;
     if (task === "chat" && slug !== "kimi" && (webResearch || usableMcpServers || sourcingCampaign)) {
       const resolvedServers: ResolvedMcpServer[] = [];
+      const tavilyKey = canSourceInChat && supabase ? await resolveStoredTavilyKey(supabase) : null;
       // Built-in read-only web-research tools (in-process; no vault token, SSRF-guarded).
-      if (webResearch) resolvedServers.push({ url: BUILTIN_WEB_URL, token: "", tools: WEB_TOOL_DEFS });
+      if (webResearch) resolvedServers.push({ url: BUILTIN_WEB_URL, token: "", tools: WEB_TOOL_DEFS, tavilyKey: tavilyKey ?? undefined });
       // Compliant sourcing tool: real search (GitHub Search API / site:-scoped web
       // search), real dedupe, real deterministic scoring — never a stealth browser.
       if (sourcingCampaign) {
@@ -265,6 +269,7 @@ export async function POST(req: NextRequest) {
           (existing ?? []) as unknown as Candidate[],
           sourcingCampaign.scoringWeights as ScoringWeights,
           githubToken,
+          tavilyKey ?? undefined,
         );
         resolvedServers.push({ url: "builtin:sourcing-chat", token: "", tools: SOURCING_TOOL_DEFS, run: runner.run });
       }

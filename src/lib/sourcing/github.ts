@@ -82,8 +82,9 @@ export async function searchGithubUsers(
   token = "",
 ): Promise<GithubUser[]> {
   const perPage = Math.min(Math.max(Math.trunc(count) || 1, 1), 20);
+  const effectiveQuery = /(?:^|\s)type:/i.test(query) ? query.trim() : `${query.trim()} type:user`;
   const search = (await gh(
-    `/search/users?q=${encodeURIComponent(query)}&per_page=${perPage}`,
+    `/search/users?q=${encodeURIComponent(effectiveQuery)}&per_page=${perPage}`,
     token,
   )) as { items?: { login?: string }[] };
   const logins = (search.items ?? [])
@@ -91,7 +92,7 @@ export async function searchGithubUsers(
     .filter((l): l is string => typeof l === "string" && l.length > 0)
     .slice(0, perPage);
 
-  const lang = query.match(/language:([A-Za-z0-9+#.\-]+)/i)?.[1] ?? null;
+  const lang = effectiveQuery.match(/language:([A-Za-z0-9+#.\-]+)/i)?.[1] ?? null;
 
   const users: GithubUser[] = [];
   for (const login of logins) {

@@ -9,6 +9,7 @@ import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit"
 import { gateOutbound } from "@/lib/gate";
 import { isReviewableWhatsAppDraft } from "@/lib/whatsapp-review-policy";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
+import { detectInjection, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,23 @@ type ReviewRow = {
   gate_result: unknown;
   created_at: string;
   review_decision: string | null;
+  spec_id?: string | null;
 };
+
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function disclosureInternalFromBrief(value: unknown): Parameters<typeof validateCandidateBoundText>[1] {
+  const brief = record(value);
+  if (!brief) return {};
+  return {
+    salaryMin: typeof brief.salaryMin === "number" ? brief.salaryMin : null,
+    salaryMax: typeof brief.salaryMax === "number" ? brief.salaryMax : null,
+    forbidden: [brief.department, brief.teamSize, brief.reportingTo, brief.currency]
+      .filter((item): item is string => typeof item === "string" && item.trim().length > 0),
+  };
+}
 
 async function requireReviewer(req: NextRequest) {
   const prodBlock = prodFailClosed();
@@ -113,7 +130,7 @@ export async function POST(req: NextRequest) {
 
   const { data: current, error: currentErr } = await reviewer.supabase
     .from("messages_outbound")
-    .select("id, channel, status, type, body, review_decision")
+    .select("id, channel, status, type, body, review_decision, spec_id")
     .eq("id", messageId)
     .maybeSingle();
   if (currentErr) {
@@ -130,9 +147,24 @@ export async function POST(req: NextRequest) {
 
   if (action === "approve") {
     const gate = gateOutbound(current.body);
+    const { data: spec } = current.spec_id
+      ? await reviewer.supabase
+          .from("agent_specs")
+          .select("role_brief")
+          .eq("id", current.spec_id)
+          .maybeSingle()
+      : { data: null };
+    const disclosure = validateCandidateBoundText(current.body, disclosureInternalFromBrief(record(spec)?.role_brief));
+    const injection = detectInjection(current.body);
     if (!gate.pass) {
       return NextResponse.json(
         { ok: false, error: "This draft still fails the candidate-message safety gate." },
+        { status: 422 },
+      );
+    }
+    if (!disclosure.safe || injection.flagged) {
+      return NextResponse.json(
+        { ok: false, error: disclosure.reason ?? "injection-suspected" },
         { status: 422 },
       );
     }

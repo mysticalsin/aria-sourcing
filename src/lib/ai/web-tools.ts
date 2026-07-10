@@ -190,12 +190,12 @@ async function tavilySearch(query: string, key: string): Promise<ToolResult | nu
   }
 }
 
-async function webSearch(queryRaw: string): Promise<ToolResult> {
+async function webSearch(queryRaw: string, storedTavilyKey?: string): Promise<ToolResult> {
   const query = queryRaw.trim().slice(0, 300);
   if (!query) return { ok: false, error: "Empty query." };
 
   // Prefer an official search API when configured.
-  const tavilyKey = process.env.TAVILY_API_KEY;
+  const tavilyKey = storedTavilyKey ?? process.env.TAVILY_API_KEY;
   if (tavilyKey) {
     const t = await tavilySearch(query, tavilyKey);
     if (t) return t;
@@ -281,11 +281,15 @@ async function rss(urlRaw: string): Promise<ToolResult> {
  * Execute a built-in web tool by name. Same {ok, content, error} contract as callMcpTool,
  * so the tool-loop can dispatch to it interchangeably. Never throws.
  */
-export async function runWebTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {
+export async function runWebTool(
+  name: string,
+  args: Record<string, unknown>,
+  opts: { tavilyKey?: string } = {},
+): Promise<ToolResult> {
   try {
     switch (name) {
       case "web_search":
-        return await webSearch(String(args.query ?? ""));
+        return await webSearch(String(args.query ?? ""), opts.tavilyKey);
       case "fetch_page":
         return await fetchPage(String(args.url ?? ""));
       case "rss":
