@@ -1,5 +1,6 @@
 import { mock } from "node:test";
 import { NextRequest } from "next/server";
+import { mintDemoToken } from "../src/lib/demo-auth";
 
 let pass = 0;
 let fail = 0;
@@ -12,6 +13,7 @@ function ok(name: string, condition: boolean) {
 }
 
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
+process.env.DEMO_SESSION_SECRET = "public-demo-session-secret-32-characters";
 mock.module("@supabase/ssr", {
   namedExports: { createServerClient: () => { throw new Error("Supabase client must not be created"); } },
 });
@@ -33,6 +35,18 @@ const routeGate = ((proxyModule as any).proxy ?? (proxyModule as any).default?.p
 
 const anonymousSource = await routeGate(new NextRequest("http://localhost/api/source", { method: "POST" }));
 ok("public-demo source requires a demo session before its handler", anonymousSource.status === 401);
+
+const forgedSource = await routeGate(new NextRequest("http://localhost/api/source", {
+  method: "POST",
+  headers: { cookie: "aria_demo=forged" },
+}));
+ok("forged demo cookie is rejected at the shared gate", forgedSource.status === 401);
+
+const signedSource = await routeGate(new NextRequest("http://localhost/api/source", {
+  method: "POST",
+  headers: { cookie: `aria_demo=${mintDemoToken()}` },
+}));
+ok("signed demo cookie reaches the route handler", signedSource.status === 200);
 
 const publicHealth = await routeGate(new NextRequest("http://localhost/api/health"));
 ok("public-demo health remains public", publicHealth.status === 200);
