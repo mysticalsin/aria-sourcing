@@ -1,0 +1,11 @@
+nit: W1 — predicate is now correct and buildable: real contacted requires `OutreachMessage.dryRun === false AND sentAt != null` or provider/server ledger terminal `status:'sent'`; this matches manual LinkedIn confirm and provider-send transitions, and excludes demo dry-run sent plus live approved-unsent (PLAN-wave2.md:20, ../src/lib/store.ts:2537, ../src/lib/store.ts:2560, ../src/lib/store.ts:2660, ../src/lib/store.ts:2685, ../src/lib/store.ts:2817, ../src/lib/store.ts:2821).
+
+nit: W2 — touchCount now correctly consumes W1 completed-send facts instead of raw outreachHistory or dryRun-only checks; cap, private export boundary, and messageId-to-outreach join are sufficient to build (PLAN-wave2.md:21).
+
+nit: W3 — exec dashboard is sound if it calls the canonical W1 derivation rather than re-implementing filters locally; RBAC, demo banner, synthetic exclusion, and proof coverage are adequate (PLAN-wave2.md:22).
+
+nit: W4 — Databricks route/config design remains sound: dedicated DatabricksSettings, `api_keys` only for the secret, `assertPublicUrl`, private-link out of scope, proposed drafts only, and no server mutation proof (PLAN-wave2.md:23).
+
+nit: Plan text — the older “Verified seams” summary still contains stale shorthand (`touchCount = outreachHistory.length`, Databricks rows to `createCampaignFromAnalysis`), but the Rocks override it concretely enough for implementation (PLAN-wave2.md:11, PLAN-wave2.md:14, PLAN-wave2.md:20, PLAN-wave2.md:23).
+
+VERDICT: APPROVED

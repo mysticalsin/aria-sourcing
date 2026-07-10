@@ -1,0 +1,14 @@
+Implemented the five requested fixes only, plus the required relay/memory bookkeeping from the project contract.
+
+Key proof points:
+- Stored Tavily key in chat is now gated by `source` permission: [route.ts](/Users/tony/Library/CloudStorage/OneDrive-MantuGroup/Documents/Chief%20of%20Staff/Apps%20Source/MSourcing/src/app/api/hermes/chat/route.ts:258)
+- Decrypt failure now returns `null`: [tavily.ts](/Users/tony/Library/CloudStorage/OneDrive-MantuGroup/Documents/Chief%20of%20Staff/Apps%20Source/MSourcing/src/lib/sourcing/tavily.ts:27)
+- GitHub location qualifiers are quoted in app and smoke script.
+- `npm test` now includes the three new tests.
+- Direct `undici` dependency and lock entry are gone. `undici-types` remains only as transitive type metadata.
+- D2 assertion added in [web-tavily-key.mts](/Users/tony/Library/CloudStorage/OneDrive-MantuGroup/Documents/Chief%20of%20Staff/Apps%20Source/MSourcing/tests/web-tavily-key.mts:134).
+
+Verification: `npx tsc --noEmit` passed with exit 0. I did not run bare `npx tsx ...` tests in-sandbox because the relay documents the expected IPC `listen EPERM` failure.
+
+ROCK-STATUS: DONE
+

@@ -1,0 +1,15 @@
+Implemented the candidate-facing agent security layer.
+
+Key proof:
+- Added `src/lib/agent-disclosure-policy.ts`
+- Replaced raw brief/role prompt inputs with the disclosure whitelist
+- Added sink scans across autopilot, approve, send, WhatsApp review, dispatch, sourcing-agent drafts, graph drafts, and reply-classification drafts
+- Added `tests/agent-disclosure-policy.mts`
+- Updated `_relay/HANDOFF.md` and local plan/review
+
+Verification:
+- `npx tsc --noEmit` passed with exit 0
+- Static grep guard found no raw `JSON.stringify(state.brief)` / `roleSummary: JSON.stringify` leaks
+- `npx tsx tests/agent-disclosure-policy.mts` could not run in this sandbox due `listen EPERM` on the `tsx` IPC pipe, matching the known sandbox limitation
+
+ROCK-STATUS: DONE

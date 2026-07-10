@@ -1,0 +1,12 @@
+{
+  "mode": "audit",
+  "gate": "G2-same-page-meeting",
+  "thread_id": null,
+  "round": 0,
+  "verdicts": [],
+  "codex_model": "gpt-5.5",
+  "degraded_until": "2026-07-09T22:40:00-04:00",
+  "degraded_reason": "codex usage-limit",
+  "opened_at": "2026-07-09T22:31:00-04:00",
+  "notes": "G0 doctor exit 2 (usage limit). CONTRACT + PLAN authored solo-visionary (degraded). Same Page Meeting fires at 22:40 reset via meet-brief.md."
+}

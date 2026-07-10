@@ -1,0 +1,37 @@
+Implemented the Tavily stored-key surface and threading. `web-tools.ts` stays Supabase-free, stored Tavily keys are resolved server-side from `api_keys`, and absent stored key still falls back to env then DuckDuckGo. `DATA_ENCRYPTION_KEY` is now present in `.env.local`; I did not print it.
+
+Blocked only on the exact required proof command: `npx tsx` cannot start in this sandbox because Unix-domain socket `listen()` returns `EPERM` before test code runs. The same test passes with the non-IPC loader, and `tsc` is clean.
+
+Successful proof:
+```text
+RESULT web-tavily-key: 10 passed, 0 failed
+```
+
+`npx tsc --noEmit` exited 0 with no output.
+
+Exact required command output:
+```text
+node:net:1918
+      const error = new UVExceptionWithHostPort(rval, 'listen', address, port);
+                    ^
+
+Error: listen EPERM: operation not permitted /var/folders/5m/c_klcrrj4yj_jxhf4t6vhb080000gn/T/tsx-501/82554.pipe
+    at Server.setupListenHandle [as _listen2] (node:net:1918:21)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2119:5)
+    at file:///Users/tony/Library/CloudStorage/OneDrive-MantuGroup/Documents/Chief%20of%20Staff/Apps%20Source/MSourcing/node_modules/tsx/dist/cli.mjs:53:31537
+    at new Promise (<anonymous>)
+    at createIpcServer (file:///Users/tony/Library/CloudStorage/OneDrive-MantuGroup/Documents/Chief%20of%20Staff/Apps%20Source/MSourcing/node_modules/tsx/dist/cli.mjs:53:31515)
+    at async file:///Users/tony/Library/CloudStorage/OneDrive-MantuGroup/Documents/Chief%20of%20Staff/Apps%20Source/MSourcing/node_modules/tsx/dist/cli.mjs:55:459 {
+  code: 'EPERM',
+  errno: -1,
+  syscall: 'listen',
+  address: '/var/folders/5m/c_klcrrj4yj_jxhf4t6vhb080000gn/T/tsx-501/82554.pipe',
+  port: -1
+}
+
+Node.js v22.22.3
+```
+
+ROCK-STATUS: BLOCKED npx tsx cannot start in this sandbox because Unix-domain socket listen returns EPERM
+

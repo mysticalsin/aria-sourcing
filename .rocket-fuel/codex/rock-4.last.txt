@@ -1,0 +1,4 @@
+Built Rock 4. `npx tsc --noEmit` passed with exit 0. `tests/web-leads.mts` exists and passes via `node --import tsx` with 21/0; `linkedin-policy` passed 18/0 and `outreach-guardrails` passed 42/0. Protected policy suites are unchanged. Plain `npx tsx tests/web-leads.mts` is sandbox-blocked by the known `listen EPERM` pipe issue.
+
+VERDICT: SHIP
+

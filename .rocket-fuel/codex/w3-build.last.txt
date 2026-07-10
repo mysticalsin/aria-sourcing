@@ -1,0 +1,12 @@
+Built Rock W3.
+
+Added `/exec`, shared canonical derivation in `src/lib/exec-dashboard.ts`, nav entry, RBAC export gating, demo banner, real funnels/trends, wins feed redaction, and open-rate “Not tracked yet”.
+
+Proof:
+`node --import tsx tests/exec-dashboard.mts` -> `RESULT exec-dashboard: 28 passed, 0 failed`
+`npx tsc --noEmit` -> exit 0
+
+`npx tsx tests/exec-dashboard.mts` was sandbox-blocked by `EPERM` on the tsx IPC pipe, so I used the equivalent `node --import tsx` form.
+
+
+VERDICT: SHIP

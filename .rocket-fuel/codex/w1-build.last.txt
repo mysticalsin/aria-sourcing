@@ -1,0 +1,8 @@
+Built Rock W1. `src/lib/metrics.ts` now exports `isRealSendFact`, `realFunnelFacts`, and the HUD derivation; `globalKpis`, campaign recompute, and Mission Control HUD consume the canonical path.
+
+Verification:
+`npx tsc --noEmit` exit 0
+`node --import tsx tests/metrics-canonical.mts` -> `RESULT metrics-canonical: 21 passed, 0 failed`
+`node --import tsx tests/scoring-metrics.mts` -> `RESULT scoring: 160 passed, 0 failed`
+
+VERDICT: SHIP

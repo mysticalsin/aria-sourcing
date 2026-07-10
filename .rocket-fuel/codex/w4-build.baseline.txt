@@ -1,0 +1,49 @@
+ M .claude/scheduled_tasks.lock
+ M _relay/HANDOFF.md
+ M src/components/app/nav.ts
+ M src/components/floor/mission-control-hud.tsx
+ M src/lib/metrics.ts
+ M src/lib/seed.ts
+ M src/lib/skills.ts
+ M src/lib/store.ts
+ M src/lib/types.ts
+?? .rocket-fuel/PLAN-wave2.md
+?? .rocket-fuel/ROCKS-wave2.md
+?? .rocket-fuel/brief-fix1.md
+?? .rocket-fuel/brief-rock1.md
+?? .rocket-fuel/brief-rock2.md
+?? .rocket-fuel/brief-rock3.md
+?? .rocket-fuel/brief-rock4.md
+?? .rocket-fuel/brief-rock5.md
+?? .rocket-fuel/brief-security-fix.md
+?? .rocket-fuel/brief-security-fix2.md
+?? .rocket-fuel/brief-security.md
+?? .rocket-fuel/brief-w1.md
+?? .rocket-fuel/brief-w2.md
+?? .rocket-fuel/brief-w4.md
+?? .rocket-fuel/codex-sec/
+?? .rocket-fuel/codex-w2/
+?? .rocket-fuel/codex/
+?? .rocket-fuel/meet-brief-r2.md
+?? .rocket-fuel/meet-brief-r3.md
+?? .rocket-fuel/meet-brief-r4.md
+?? .rocket-fuel/meet-brief-r5.md
+?? .rocket-fuel/meet-brief-sec-r2.md
+?? .rocket-fuel/meet-brief-sec.md
+?? .rocket-fuel/meet-brief-w2-r1.md
+?? .rocket-fuel/meet-brief-w2-r2.md
+?? .rocket-fuel/meet-brief-w2-r3.md
+?? .rocket-fuel/meet-brief-wave2-audit.md
+?? .rocket-fuel/meet-brief.md
+?? .rocket-fuel/meetings/013-wave2-r1.md
+?? .rocket-fuel/state.json
+?? Aria/
+?? _agent_state/
+?? _relay/archive/2026-07-10-0915-codex.md
+?? _relay/archive/2026-07-10-0929-codex.md
+?? docs/superpowers/plans/
+?? graphify-out/
+?? kimi-live-chat-proof.png
+?? src/app/winlog/
+?? tests/metrics-canonical.mts
+?? tests/winlog.mts

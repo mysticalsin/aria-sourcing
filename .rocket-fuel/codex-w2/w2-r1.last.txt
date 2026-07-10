@@ -1,0 +1,25 @@
+blocker: W1 — `contacted = distinct candidates with ledger status === "sent"` is not canonical enough because dry-run approval deliberately writes a local ledger row with `status:"sent"`; exec KPIs must count only real send facts, using `OutreachMessage.dryRun === false` as the exact available discriminator and/or provider-backed DB ledger rows, since `OutreachLedgerEntry` itself has no `dryRun` or `messageId` to join safely today (PLAN-wave2.md:20, ../src/lib/store.ts:2537, ../src/lib/store.ts:2551, ../src/lib/store.ts:2561, ../src/lib/store.ts:2585, ../src/lib/types.ts:518, ../src/lib/types.ts:970).
+
+blocker: W2 — `winlog.md (docs/ or download)` is unsafe as written; WinRecord includes candidate identity and booking facts, so export must be generated inside the authenticated app boundary as a private workspace download/view, never committed under `docs/`, `public/`, `_relay/`, or `.rocket-fuel` where candidate PII can leak outside the app boundary (PLAN-wave2.md:21, ../src/lib/store.ts:3484, ../src/lib/types.ts:579).
+
+blocker: W4 — a `"Databricks"` api_keys provider entry is insufficient for route design; `api_keys` stores only `name/provider/secret/last4/status` metadata and `ApiKey` exposes no config fields, while `SystemSettings` has no Databricks config, so host, warehouse_id, auth mode, client_id, and apiKeyId need a dedicated workspace integration config rather than “settings or key metadata” ambiguity (PLAN-wave2.md:23, ../supabase/migrations/0003_api_keys.sql:9, ../src/lib/types.ts:812, ../src/lib/types.ts:1019, ../src/lib/types.ts:1167).
+
+blocker: W4 — customer-supplied Databricks host must pass the existing public URL SSRF guard before any token or statement fetch; `assertPublicUrl` blocks credentials, internal suffixes, private/link-local/metadata hosts, and DNS rebinding, so private-link/internal Databricks workspaces must be explicitly out of scope or routed through a separately configured admin allowlist/proxy, not accepted as raw host input (../src/lib/api/url.ts:128, ../src/lib/api/url.ts:141, ../src/lib/api/url.ts:144, ../src/lib/api/url.ts:149, ../src/lib/api/url.ts:156).
+
+risk: W2 — the WinRecord fields are mostly derivable at `createBookingFor` because the seam has candidate, campaign, booking, replies, outreach history, and full state, but `messageTraits` needs an explicit join from `candidate.outreachHistory[].messageId` to `state.outreach`; `wins: WinRecord[]` on root `HermesState` is unbounded JSONB growth unless capped or stored/exported in a bounded per-workspace durable table/view (PLAN-wave2.md:11, PLAN-wave2.md:21, ../src/lib/store.ts:3407, ../src/lib/store.ts:3471, ../src/lib/types.ts:1253).
+
+risk: W3 — live `/exec` is page-session gated by proxy, but it still needs in-app RBAC: allow `viewer` only if it is aggregate/read-only and PII-redacted; require `admin` for exports/config. Demo mode must not emit “real” executive metrics from seed data because seed settings default `dryRunMode:true`, seed outreach is `dryRun:true`, and candidates expose `provenance:"synthetic"` as the synthetic discriminator (../src/proxy.ts:32, ../src/proxy.ts:124, ../src/lib/rbac.ts:29, ../src/lib/seed.ts:139, ../src/lib/seed.ts:788, ../src/lib/types.ts:332).
+
+risk: W3 — the plan’s “Real slices only; provenance-aware” is directionally right, but proof must assert both `candidate.provenance !== "synthetic"` and `outreach.dryRun !== true` are excluded from live KPI tiles; otherwise demo seed sends can still look like real contacted/reply/booked counts through current stage-based metrics (PLAN-wave2.md:16, PLAN-wave2.md:22, ../src/lib/metrics.ts:103, ../src/lib/metrics.ts:155).
+
+risk: W4 — the no-auto-create requirement is correct, but the route should return proposed `ParsedIntake`/campaign drafts only; any call path that reaches `createCampaignFromAnalysis` server-side before human confirmation would violate the intake flow and make malformed Databricks rows capable of mutating state (PLAN-wave2.md:14, PLAN-wave2.md:23).
+
+risk: Proof — W1 proof is not decisive unless it includes a fixture with local ledger `status:"sent"` plus linked `OutreachMessage.dryRun:true` and asserts it is excluded; otherwise the test can bless the exact demo-counting defect under review (PLAN-wave2.md:20, ../src/lib/store.ts:2537, ../src/lib/types.ts:532).
+
+question: W4 — OAuth M2M needs more than a secret: where are `client_id`, auth mode, and token-cache policy stored? PAT can live as one `api_keys.secret`, but M2M needs non-secret config plus a secret reference, which argues again for dedicated `DatabricksSettings` (PLAN-wave2.md:14, PLAN-wave2.md:23).
+
+nit: Proof — proposed new test filenames do not collide with existing test files; nearby existing coverage is `scoring-metrics.mts` and `login-page.mts`, so the names are available and decidable if W5 adds them to the long `npm test` chain (../package.json:18).
+
+nit: Order — W1 → W2+W4 → W3 → W5 is basically right, but W2 should consume the corrected W1 real-contact fact model before recording touches/channel traits, and W4 should start with the dedicated integration config before the route (PLAN-wave2.md:26).
+
+VERDICT: REVISE
