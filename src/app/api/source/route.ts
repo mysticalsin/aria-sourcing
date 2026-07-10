@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getServerSupabase } from "@/lib/supabase/server";
-import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
+import { supabaseEnabled, prodFailClosed, demoLoginEnabled, DEMO_COOKIE_NAME } from "@/lib/supabase/config";
+import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
@@ -49,9 +50,17 @@ const SourceSchema = z
     path: ["query"],
   });
 
+function publicDemoSourceDenied(req: NextRequest): Response | null {
+  if (supabaseEnabled || !demoLoginEnabled) return null;
+  if (demoAuthConfigured() && verifyDemoToken(req.cookies.get(DEMO_COOKIE_NAME)?.value)) return null;
+  return NextResponse.json({ ok: false, error: "Sign in to use live sourcing." }, { status: 401 });
+}
+
 export async function POST(req: NextRequest) {
   const prodBlock = prodFailClosed();
   if (prodBlock) return prodBlock;
+  const demoBlock = publicDemoSourceDenied(req);
+  if (demoBlock) return demoBlock;
 
   const rl = checkRateLimit(rateLimitKey(req, "source"), { windowMs: 60_000, max: 10 });
   if (!rl.ok) return tooManyRequests(rl.retryAfterSec);
@@ -134,6 +143,8 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const prodBlock = prodFailClosed();
   if (prodBlock) return prodBlock;
+  const demoBlock = publicDemoSourceDenied(req);
+  if (demoBlock) return demoBlock;
 
   const rl = checkRateLimit(rateLimitKey(req, "source-probe"), { windowMs: 60_000, max: 20 });
   if (!rl.ok) return tooManyRequests(rl.retryAfterSec);
