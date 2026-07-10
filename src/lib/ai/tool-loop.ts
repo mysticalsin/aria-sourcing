@@ -52,6 +52,7 @@ async function execTool(
   if (server.run) return server.run(name, args);
   if (server.url === BUILTIN_WEB_URL) return runWebTool(name, args, { tavilyKey: server.tavilyKey });
   if (server.url === BUILTIN_BROWSER_URL) return runBrowserTool(name, args);
+  // TODO(MCP hardening): re-guard or pin the validated host/IP before this redial; pre-existing DNS-rebind scope applies to all remote MCP servers.
   return callMcpTool(server.url, server.token, name, args);
 }
 

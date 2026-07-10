@@ -3,6 +3,7 @@
 import type { HermesState, Role } from "@/lib/types";
 import { getBrowserSupabase } from "./client";
 import { stripSharedRole } from "@/lib/live-role-authority";
+import { AGENT_SEAT_SELECT, type AgentSeatRow } from "@/lib/fleet-seats";
 
 function profileRole(value: unknown): Role {
   return value === "admin" || value === "member" || value === "viewer" ? value : "viewer";
@@ -96,6 +97,20 @@ export async function loadRemoteState(): Promise<RemoteLoad | null> {
     console.warn("loadRemoteState error:", err);
     return { workspaceId: "", state: null, updatedAt: null, role: "viewer" };
   }
+}
+
+export async function loadRemoteAgentSeats(): Promise<AgentSeatRow[] | null> {
+  const supabase = getBrowserSupabase();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("agent_seats")
+    .select(AGENT_SEAT_SELECT)
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.warn("agent_seats load failed; keeping workspace-state seats:", error.message);
+    return null;
+  }
+  return (data ?? []) as AgentSeatRow[];
 }
 
 /**

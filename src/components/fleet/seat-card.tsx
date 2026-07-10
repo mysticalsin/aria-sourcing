@@ -135,13 +135,17 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
     });
   }
 
-  function handleConnect() {
+  async function handleConnect() {
     const email = accountEmail.trim();
     if (!email || !email.includes("@")) {
       toast({ title: "Enter a valid mailbox", description: "Use the authorized sending address.", variant: "error" });
       return;
     }
-    actions.connectSeatAccount(seat.id, email);
+    const result = await actions.connectSeatAccount(seat.id, email);
+    if (!result.ok) {
+      toast({ title: "Mailbox not connected", description: result.error, variant: "error" });
+      return;
+    }
     setConnectOpen(false);
     toast({
       title: "Mailbox connected",
@@ -176,8 +180,8 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
     toast({ title: "Mailbox disconnected", variant: "info" });
   }
 
-  function handleToggleLive() {
-    const result = actions.toggleSeatLive(seat.id);
+  async function handleToggleLive() {
+    const result = await actions.toggleSeatLive(seat.id);
     toast({
       title: result.ok ? `${seat.name} updated` : "Cannot go live yet",
       description: result.reason,

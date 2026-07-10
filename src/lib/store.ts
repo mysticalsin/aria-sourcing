@@ -128,9 +128,10 @@ import type {
 import { genId, initialsFrom, isoDaysBefore } from "./utils";
 import { createCampaign as buildCampaign } from "./mock-ai";
 import { supabaseEnabled } from "./supabase/config";
-import { loadRemoteState, saveRemoteState } from "./supabase/workspace";
+import { loadRemoteAgentSeats, loadRemoteState, saveRemoteState } from "./supabase/workspace";
 import { applyAuthoritativeRole } from "./live-role-authority";
 import { allocateBatch, defaultSendWindow, fleetSummary, type FleetSummary } from "./fleet";
+import { createFleetSeatOnServer, mergeAgentSeatRows, patchFleetSeatOnServer } from "./fleet-seats";
 import {
   applyLearning,
   effectiveTone,
@@ -511,16 +512,16 @@ export interface HermesActions {
   testIntegration: (id: string) => Promise<ConnectionTestResult>;
 
   // fleet — multi-seat coordination + anti-ban guardrails
-  addSeat: (partial: Partial<AgentSeat> & { name: string; operatorEmail: string }) => AgentSeat | null;
+  addSeat: (partial: Partial<AgentSeat> & { name: string; operatorEmail: string }) => Promise<AgentSeat | null>;
   deployAgents: (
     n: number,
     opts?: { language?: string; namePrefix?: string },
   ) => { created: number; total: number; capped: boolean; max: number };
   updateSeat: (id: string, patch: Partial<AgentSeat>) => void;
   setSeatStatus: (id: string, status: AgentSeat["status"]) => void;
-  connectSeatAccount: (id: string, account: string) => void;
+  connectSeatAccount: (id: string, account: string) => Promise<{ ok: boolean; error?: string }>;
   disconnectSeatAccount: (id: string) => Promise<{ ok: boolean; error?: string; dryRun?: boolean }>;
-  toggleSeatLive: (id: string) => { ok: boolean; reason: string };
+  toggleSeatLive: (id: string) => Promise<{ ok: boolean; reason: string }>;
   verifySeatDomain: (id: string) => Promise<{ ok: boolean; verified?: boolean; error?: string }>;
   addSuppression: (entry: {
     type: SuppressionEntry["type"];
@@ -1036,9 +1037,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             skipNextPersist.current = true; // don't re-save what we just loaded
             // D-1: run migration when the persisted version is behind current.
             const loaded = normalizeHermesState(remote.state);
-            setState(applyAuthoritativeRole(loaded, remote.role));
+            const serverSeats = await loadRemoteAgentSeats();
+            const liveState = serverSeats ? { ...loaded, seats: mergeAgentSeatRows(loaded.seats, serverSeats) } : loaded;
+            setState(applyAuthoritativeRole(liveState, remote.role));
           } else {
-            const seeded = applyAuthoritativeRole(buildSeedState(), remote.role);
+            const seededBase = buildSeedState();
+            const serverSeats = await loadRemoteAgentSeats();
+            const seeded = applyAuthoritativeRole(
+              serverSeats ? { ...seededBase, seats: mergeAgentSeatRows(seededBase.seats, serverSeats) } : seededBase,
+              remote.role,
+            );
             setState(seeded);
             if (remote.workspaceId) {
               void saveRemoteState(remote.workspaceId, seeded, null).then((res) => {
@@ -1086,6 +1094,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             if (latestState) {
               skipNextPersist.current = true;
               const migrated = normalizeHermesState(latestState);
+              const serverSeats = await loadRemoteAgentSeats();
+              const liveState = serverSeats ? { ...migrated, seats: mergeAgentSeatRows(migrated.seats, serverSeats) } : migrated;
               const notice: Activity = {
                 id: genId("act"),
                 type: "system",
@@ -1099,7 +1109,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 createdAt: new Date().toISOString(),
               };
               setState(applyAuthoritativeRole(
-                { ...migrated, activities: [notice, ...migrated.activities].slice(0, 300) },
+                { ...liveState, activities: [notice, ...liveState.activities].slice(0, 300) },
                 liveRoleRef.current,
               ));
             }
@@ -4416,11 +4426,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   /* ---- Fleet: seats ----------------------------------------------------- */
 
   const addSeat = useCallback(
-    (partial: Partial<AgentSeat> & { name: string; operatorEmail: string }) => {
+    async (partial: Partial<AgentSeat> & { name: string; operatorEmail: string }) => {
       const authorizedState = stateRef.current;
       if (!authorizedState || !can(authorizedState.currentRole, "manage_fleet")) return null;
       const now = new Date().toISOString();
-      const seat: AgentSeat = {
+      const draft: AgentSeat = {
         id: genId("seat"),
         name: partial.name,
         operatorEmail: partial.operatorEmail,
@@ -4446,6 +4456,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         connectedAccount: "",
         createdAt: now,
       };
+      let seat = draft;
+      if (supabaseEnabled) {
+        const created = await createFleetSeatOnServer(draft);
+        if (!created.ok) return null;
+        seat = created.seat;
+      }
       commit((s) =>
         withActivity(
           { ...s, seats: [...s.seats, seat] },
@@ -4531,8 +4547,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateSeat = useCallback(
-    (id: string, patch: Partial<AgentSeat>) =>
-      commit((s) => ({ ...s, seats: s.seats.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
+    (id: string, patch: Partial<AgentSeat>) => {
+      if (supabaseEnabled && (patch.operatorEmail !== undefined || patch.mode !== undefined)) {
+        void patchFleetSeatOnServer(id, { operatorEmail: patch.operatorEmail, mode: patch.mode });
+      }
+      commit((s) => ({ ...s, seats: s.seats.map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
+    },
     [commit],
   );
 
@@ -4559,7 +4579,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const connectSeatAccount = useCallback(
-    (id: string, account: string) =>
+    async (id: string, account: string) => {
+      if (supabaseEnabled) {
+        const synced = await patchFleetSeatOnServer(id, { operatorEmail: account });
+        if (!synced.ok) return synced;
+      }
       commit((s) => {
         const next = {
           ...s,
@@ -4579,7 +4603,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           }),
           null,
         );
-      }),
+      });
+      return { ok: true };
+    },
     [commit],
   );
 
@@ -4640,16 +4666,24 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const toggleSeatLive = useCallback(
-    (id: string): { ok: boolean; reason: string } => {
+    async (id: string): Promise<{ ok: boolean; reason: string }> => {
       const s = current();
       const seat = s.seats.find((x) => x.id === id);
       if (!seat) return { ok: false, reason: "Seat not found." };
       if (seat.mode === "live") {
+        if (supabaseEnabled) {
+          const synced = await patchFleetSeatOnServer(id, { mode: "mock" });
+          if (!synced.ok) return { ok: false, reason: synced.error };
+        }
         commit((prev) => ({ ...prev, seats: prev.seats.map((x) => (x.id === id ? { ...x, mode: "mock" } : x)) }));
         return { ok: true, reason: "Switched to dry-run (mock)." };
       }
       if (!seat.connectedAccount) return { ok: false, reason: "Connect a mailbox before going live." };
       if (!seat.domainVerified) return { ok: false, reason: "Verify the sending domain (SPF/DKIM/DMARC) first." };
+      if (supabaseEnabled) {
+        const synced = await patchFleetSeatOnServer(id, { mode: "live", operatorEmail: seat.operatorEmail });
+        if (!synced.ok) return { ok: false, reason: synced.error };
+      }
       commit((prev) => {
         const next = { ...prev, seats: prev.seats.map((x) => (x.id === id ? { ...x, mode: "live" as const } : x)) };
         return withActivity(
