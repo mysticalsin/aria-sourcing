@@ -46,7 +46,14 @@ import {
 } from "./agent-disclosure-policy";
 import { emit } from "./agent-events";
 import { buildSeedState, defaultGuardrails, defaultLlmProviders, defaultSavedModels, defaultSettings, defaultTools, seedInterviewers, STATE_VERSION } from "./seed";
-import { computeCampaignMetrics, firstInterviewElapsedHours, globalKpis, type GlobalKpis } from "./metrics";
+import {
+  computeCampaignMetrics,
+  firstInterviewElapsedHours,
+  globalKpis,
+  isRealSendFact,
+  realFunnelFacts,
+  type GlobalKpis,
+} from "./metrics";
 import { deriveRecommendations, deriveFollowUpsDue, type Recommendation, type FollowUpDueItem } from "./recommendations";
 import { scoreCandidate } from "./scoring";
 import { deriveLeadSource, deriveStarRating, DEFAULT_STAR_THRESHOLDS } from "./tania";
@@ -114,6 +121,7 @@ import type {
   SuppressionEntry,
   SystemSettings,
   ToolId,
+  WinRecord,
   WeeklyReport,
 } from "./types";
 import { genId, initialsFrom, isoDaysBefore } from "./utils";
@@ -648,6 +656,108 @@ interface HermesContextValue {
 
 const HermesContext = createContext<HermesContextValue | null>(null);
 
+export const WIN_RECORD_LIMIT = 500;
+
+export function deriveWinRecord(
+  state: HermesState,
+  candidate: Candidate,
+  campaign: Campaign,
+  booking: Booking,
+): WinRecord {
+  try {
+    const outreachById = new Map(state.outreach.map((message) => [message.id, message]));
+    const joined = candidate.outreachHistory
+      .map((entry) => {
+        const message = outreachById.get(entry.messageId);
+        return message ? { entry, message } : null;
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+    const realSends = joined
+      .filter(({ message }) => isRealSendFact(message))
+      .sort((a, b) => {
+        const aAt = new Date(a.message.sentAt ?? a.entry.at).getTime();
+        const bAt = new Date(b.message.sentAt ?? b.entry.at).getTime();
+        return aAt - bAt;
+      });
+    const earliestRealSend = realSends[0] ?? null;
+    const winningSend = realSends[realSends.length - 1] ?? null;
+    const newestReply =
+      state.replies
+        .filter((reply) => reply.candidateId === candidate.id)
+        .sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())[0] ?? null;
+    const bookingAt = new Date(booking.createdAt).getTime();
+    const firstSendAt = earliestRealSend
+      ? new Date(earliestRealSend.message.sentAt ?? earliestRealSend.entry.at).getTime()
+      : Number.NaN;
+
+    return {
+      id: genId("win"),
+      at: booking.createdAt,
+      candidateId: candidate.id,
+      candidateName: candidate.name,
+      campaignId: campaign.id,
+      campaignTitle: campaign.title,
+      bookingId: booking.id,
+      sourcePlatform: candidate.sourcePlatform,
+      leadSource: candidate.leadSource ?? deriveLeadSource(candidate),
+      matchScore: candidate.matchScore,
+      seniority: campaign.jobAnalysis.seniority,
+      roleTitle: campaign.jobAnalysis.title,
+      outreachChannel: winningSend?.message.channel ?? null,
+      touchCount: realSends.length,
+      timeToBookMs:
+        Number.isFinite(bookingAt) && Number.isFinite(firstSendAt)
+          ? Math.max(0, bookingAt - firstSendAt)
+          : null,
+      triggeringReplyIntent: newestReply
+        ? { intent: newestReply.intent, confidence: newestReply.confidence }
+        : null,
+      messageTraits: winningSend
+        ? {
+            subjectLength: winningSend.message.subject.length,
+            bodyLength: winningSend.message.body.length,
+            tone: winningSend.message.tone,
+          }
+        : {},
+    };
+  } catch {
+    return {
+      id: genId("win"),
+      at: booking.createdAt,
+      candidateId: candidate.id,
+      candidateName: candidate.name,
+      campaignId: campaign.id,
+      campaignTitle: campaign.title,
+      bookingId: booking.id,
+      sourcePlatform: candidate.sourcePlatform,
+      leadSource: candidate.leadSource ?? null,
+      matchScore: candidate.matchScore,
+      seniority: campaign.jobAnalysis.seniority,
+      roleTitle: campaign.jobAnalysis.title,
+      outreachChannel: candidate.outreachHistory[0]?.channel ?? null,
+      touchCount: 0,
+      timeToBookMs: null,
+      triggeringReplyIntent: candidate.replyHistory[0]
+        ? {
+            intent: candidate.replyHistory[0].intent,
+            confidence: candidate.replyHistory[0].confidence,
+          }
+        : null,
+      messageTraits: {},
+    };
+  }
+}
+
+export function appendWinRecord(
+  state: HermesState,
+  candidate: Candidate,
+  campaign: Campaign,
+  booking: Booking,
+): HermesState {
+  const win = deriveWinRecord(state, candidate, campaign, booking);
+  return { ...state, wins: [win, ...(state.wins ?? [])].slice(0, WIN_RECORD_LIMIT) };
+}
+
 /* ============================================================================
    Provider
    ========================================================================== */
@@ -677,6 +787,7 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
     outreach: parsed.outreach ?? [],
     replies: parsed.replies ?? [],
     bookings: parsed.bookings ?? [],
+    wins: parsed.wins ?? [],
     reports: parsed.reports ?? [],
     // STATE_VERSION 16 — re-sync each stored integration's `real` flag against
     // the current seed. Roadmap placeholders (`real: false`) also lose any older
@@ -729,6 +840,7 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
       starRatingThresholds: parsed.settings.starRatingThresholds ?? defs.starRatingThresholds,
       // STATE_VERSION 11 — Aria management API URL.
       hermesWebUrl: parsed.settings.hermesWebUrl ?? defs.hermesWebUrl ?? "",
+      databricks: parsed.settings.databricks ?? defs.databricks,
     },
     seats: (parsed.seats ?? []).map((seat) => ({
       ...seat,
@@ -739,18 +851,23 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
   };
 }
 
+export function normalizeHermesState(parsed: HermesState): HermesState {
+  if (parsed.version !== STATE_VERSION) return migrateToCurrentVersion(parsed);
+  return { ...parsed, wins: parsed.wins ?? [] };
+}
+
 function loadState(): HermesState {
   if (typeof window === "undefined") return buildSeedState();
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as HermesState;
-      if (parsed && parsed.version === STATE_VERSION) return parsed;
+      if (parsed && parsed.version === STATE_VERSION) return normalizeHermesState(parsed);
       // Migrate ANY prior version rather than wiping all data — migrateToCurrentVersion
       // defensively defaults every field, so it can handle arbitrarily old blobs. Only
       // missing/corrupt/unparseable JSON or a non-numeric version falls through to reseed.
       if (parsed && typeof parsed.version === "number") {
-        return migrateToCurrentVersion(parsed);
+        return normalizeHermesState(parsed);
       }
     }
   } catch {
@@ -917,9 +1034,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           if (remote.state) {
             skipNextPersist.current = true; // don't re-save what we just loaded
             // D-1: run migration when the persisted version is behind current.
-            const loaded = remote.state.version < STATE_VERSION
-              ? migrateToCurrentVersion(remote.state)
-              : remote.state;
+            const loaded = normalizeHermesState(remote.state);
             setState(applyAuthoritativeRole(loaded, remote.role));
           } else {
             const seeded = applyAuthoritativeRole(buildSeedState(), remote.role);
@@ -969,8 +1084,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             const latestState = res.latest.state;
             if (latestState) {
               skipNextPersist.current = true;
-              const migrated =
-                latestState.version < STATE_VERSION ? migrateToCurrentVersion(latestState) : latestState;
+              const migrated = normalizeHermesState(latestState);
               const notice: Activity = {
                 id: genId("act"),
                 type: "system",
@@ -1061,7 +1175,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       ...s,
       campaigns: s.campaigns.map((c) =>
         c.id === campaignId
-          ? { ...c, metrics: computeCampaignMetrics(cands, c.metrics, firstInterviewHours) }
+          ? {
+              ...c,
+              metrics: computeCampaignMetrics(
+                cands,
+                c.metrics,
+                firstInterviewHours,
+                realFunnelFacts(s, { live: !s.settings.dryRunMode, campaignId }),
+              ),
+            }
           : c,
       ),
     };
@@ -3469,15 +3591,18 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
 
       commit((prev) => {
+        const candidates = prev.candidates.map((c) =>
+          c.id === candidate.id
+            ? { ...c, ...withStage(c, "Booked"), booking }
+            : c,
+        );
+        const bookedCandidate = candidates.find((c) => c.id === candidate.id) ?? candidate;
         let next: HermesState = {
           ...prev,
           bookings: [booking, ...prev.bookings],
-          candidates: prev.candidates.map((c) =>
-            c.id === candidate.id
-              ? { ...c, ...withStage(c, "Booked"), booking }
-              : c,
-          ),
+          candidates,
         };
+        next = appendWinRecord(next, bookedCandidate, campaign, booking);
         next = recomputeMetrics(next, campaign.id);
         next = withActivity(
           next,
@@ -6464,6 +6589,7 @@ const EMPTY: HermesState = {
   outreach: [],
   replies: [],
   bookings: [],
+  wins: [],
   interviewers: [],
   reports: [],
   integrations: [],
@@ -6583,6 +6709,10 @@ export function useBookings(): Booking[] {
   return useStateOrEmpty().bookings;
 }
 
+export function useWins(): WinRecord[] {
+  return useStateOrEmpty().wins;
+}
+
 export function useInterviewers(): Interviewer[] {
   return useStateOrEmpty().interviewers;
 }
@@ -6672,13 +6802,13 @@ export function useEntityTimeline(
 }
 
 export function useDashboardKpis(): GlobalKpis {
-  const { campaigns, candidates, outreach, replies } = useStateOrEmpty();
+  const { campaigns, candidates, outreach, replies, bookings, settings } = useStateOrEmpty();
   // Keyed on the individual slices globalKpis() reads, not the whole state
   // object, so a commit that only touches e.g. replies doesn't force a
   // recompute when campaigns/candidates/outreach are unchanged.
   return useMemo(
-    () => globalKpis({ campaigns, candidates, outreach, replies }),
-    [campaigns, candidates, outreach, replies],
+    () => globalKpis({ campaigns, candidates, outreach, replies, bookings, settings }),
+    [campaigns, candidates, outreach, replies, bookings, settings],
   );
 }
 

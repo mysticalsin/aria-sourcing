@@ -13,6 +13,7 @@ import {
   Brain,
   Building2,
   Database,
+  BarChart3,
   Sparkles,
   History,
   FolderSearch,
@@ -23,6 +24,7 @@ import {
   Rocket,
   Rewind,
   ShieldCheck,
+  Trophy,
   Wand2,
   type LucideIcon,
 } from "lucide-react";
@@ -53,6 +55,8 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/chat", label: "Chat", icon: MessageSquare, section: "Operate", description: "Per-agent chat" },
   // Analyze — hindsight, metrics & compliance posture
   { href: "/replay", label: "Replay", icon: Rewind, section: "Analyze", description: "Scrub the agents' whole day" },
+  { href: "/exec", label: "Exec", icon: BarChart3, section: "Analyze", description: "Leadership KPI dashboard" },
+  { href: "/winlog", label: "Winlog", icon: Trophy, section: "Analyze", description: "Booked-win learning records" },
   { href: "/reports", label: "Reports", icon: LineChart, section: "Analyze", description: "Learning loop" },
   { href: "/sessions", label: "Sessions", icon: History, section: "Analyze", description: "Chat & activity history" },
   { href: "/trust", label: "Trust & ROI", icon: ShieldCheck, section: "Analyze", description: "ROI calculator & compliance posture" },

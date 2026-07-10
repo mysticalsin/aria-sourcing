@@ -2,10 +2,11 @@
 
 import * as React from "react";
 import { Users, Mail, PenLine, CheckCircle2, CalendarCheck, Radio } from "lucide-react";
-import { useCandidates, useLedger, useOutreach, useBookings } from "@/lib/store";
+import { useCandidates, useOutreach, useBookings, useReplies, useSettings } from "@/lib/store";
 import { subscribe, recentEvents, type AgentEvent } from "@/lib/agent-events";
 import { EVENT_COLOR } from "@/components/floor3d/retro/scene/packet-shared";
 import { useCountUp } from "@/components/reveal/use-count-up";
+import { missionControlHudValues } from "@/lib/metrics";
 import { cn } from "@/lib/utils";
 
 /* ============================================================================
@@ -15,11 +16,11 @@ import { cn } from "@/lib/utils";
 
    Every tile is a live read of the REAL store — never a theatrical
    incrementer:
-     Sourced   = candidates.length                    (useCandidates)
-     Contacted = ledger entries with status "sent"     (useLedger)
+     Sourced   = canonical real-funnel sourced count   (missionControlHudValues)
+     Contacted = canonical real completed-send facts   (missionControlHudValues)
      Drafted   = outreach messages ever generated      (useOutreach)
      Approved  = outreach messages with approvedBy set (useOutreach)
-     Booked    = booking records                       (useBookings)
+     Booked    = canonical real-funnel bookings        (missionControlHudValues)
    `useCountUp` (src/components/reveal/use-count-up.ts) animates old -> new
    whenever a real value changes. The agent-events bus only decides *when* to
    re-check for a delta (within one tick of the emitting store action, same
@@ -72,18 +73,16 @@ function bucketEvents(events: AgentEvent[], now: number): number[] {
 
 export function MissionControlHud() {
   const candidates = useCandidates();
-  const ledger = useLedger();
   const outreach = useOutreach();
+  const replies = useReplies();
   const bookings = useBookings();
+  const settings = useSettings();
   const reducedMotion = usePrefersReducedMotion();
 
-  const values: Record<TileKey, number> = {
-    sourced: candidates.length,
-    contacted: ledger.filter((l) => l.status === "sent").length,
-    drafted: outreach.length,
-    approved: outreach.filter((m) => m.approvedBy != null).length,
-    booked: bookings.length,
-  };
+  const values: Record<TileKey, number> = missionControlHudValues(
+    { candidates, outreach, replies, bookings },
+    { live: !settings.dryRunMode },
+  );
 
   // Always-fresh mirror of the real values, read from inside callbacks below
   // without re-subscribing them to every render.

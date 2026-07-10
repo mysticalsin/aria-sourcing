@@ -594,6 +594,37 @@ export interface Booking {
   createdAt: string;
 }
 
+/* ---- Wins ----------------------------------------------------------------
+   Structured conversion records captured when a booking is accepted. These
+   stay inside HermesState because they can contain candidate PII. */
+
+export interface WinRecord {
+  id: string;
+  at: string;
+  candidateId: string;
+  candidateName: string;
+  campaignId: string;
+  campaignTitle: string;
+  bookingId: string;
+  sourcePlatform: SourcePlatform;
+  leadSource: LeadSource | null;
+  matchScore: number;
+  seniority: Seniority;
+  roleTitle: string;
+  outreachChannel: OutreachChannel | null;
+  touchCount: number;
+  timeToBookMs: number | null;
+  triggeringReplyIntent: {
+    intent: ReplyIntent;
+    confidence: number;
+  } | null;
+  messageTraits: {
+    subjectLength?: number;
+    bodyLength?: number;
+    tone?: OutreachTone;
+  };
+}
+
 /* ---- Activity ------------------------------------------------------------ */
 
 export interface Activity {
@@ -867,6 +898,9 @@ export interface SystemSettings {
    *  and which agent is locked to each DustTask. Optional — absent means Dust is
    *  not configured for this workspace. */
   dust?: DustSettings;
+  /** Databricks SQL Statement Execution intake config. The PAT or OAuth client
+   *  secret is stored in api_keys and referenced by id; it never lives here. */
+  databricks?: DatabricksSettings;
 }
 
 /* ---- Outreach fleet (multi-seat coordination + anti-ban guardrails) ------- */
@@ -1033,6 +1067,7 @@ export const API_KEY_PROVIDERS = [
   "Apollo",
   "Seamless",
   "Tavily",
+  "Databricks",
   "Custom",
 ] as const;
 export type ApiKeyProvider = (typeof API_KEY_PROVIDERS)[number];
@@ -1164,6 +1199,16 @@ export interface DustSettings {
   agents?: DustAgentSummary[];
 }
 
+export interface DatabricksSettings {
+  host: string;
+  warehouseId: string;
+  authMode: "pat" | "m2m";
+  clientId?: string;
+  apiKeyId: string;
+  needsQuery: string;
+  sinceColumn?: string;
+}
+
 /** Stored metadata only — the secret value never lives in client state. */
 export interface ApiKey {
   id: string;
@@ -1257,6 +1302,7 @@ export interface HermesState {
   outreach: OutreachMessage[];
   replies: ClassifiedReply[];
   bookings: Booking[];
+  wins: WinRecord[];
   /** Registered real staff available for interview round-robin (replaces the
    *  hardcoded mock-ai roster). Empty = no interviewer assigned on booking. */
   interviewers: Interviewer[];
