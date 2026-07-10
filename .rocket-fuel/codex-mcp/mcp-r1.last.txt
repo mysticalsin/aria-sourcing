@@ -1,0 +1,16 @@
+blocker: The design does not guarantee the Tavily key never lands in persisted/UI state. If an admin pastes `?tavilyApiKey=...` into `McpServerConfig.url`, the app displays it in settings and persists it in activity notes (`src/components/settings/mcp-servers-panel.tsx:48`, `src/lib/store.ts:5472`). The design needs explicit reject/scrub of auth query params from base URLs.
+
+blocker: The new auth fields will not reach runtime unless store and route schemas change too. Current chat/test payloads only send `{ url, apiKeyId }`, and both route schemas only accept those fields (`src/lib/store.ts:5530`, `src/lib/store.ts:5954`, `src/app/api/hermes/chat/route.ts:63`, `src/app/api/mcp/test/route.ts:20`).
+
+blocker: Error surfaces can leak query secrets. `mcp-client` returns upstream `error.message` raw, `/api/mcp/test` returns caught `err.message` to the UI, and chat logs tool-loop failure reasons (`src/lib/mcp-client.ts:90`, `src/lib/mcp-client.ts:131`, `src/lib/mcp-client.ts:144`, `src/app/api/mcp/test/route.ts:91`, `src/app/api/mcp/test/route.ts:93`, `src/app/api/hermes/chat/route.ts:287`). `redactSecrets` does not specifically redact `tavilyApiKey=` query params.
+
+risk: SSRF guard on the clean base URL is the right order, but later tool calls redial `server.url` without re-validating or IP pinning (`src/app/api/hermes/chat/route.ts:143`, `src/lib/ai/tool-loop.ts:55`). A DNS rebind between gather and tool-call remains a gap.
+
+risk: `ResolvedMcpServer` carrying a key-bearing URL is not currently stringified in the traced runtime path, but it is a fragile secret container. One future debug log of `servers` would leak unless query-secret redaction is centralized.
+
+question: `applyMcpAuth` is the right production seam for runtime callers, but `scripts/probe-tavily-mcp.mts` is a third MCP dialer and currently hand-assembles the key URL (`scripts/probe-tavily-mcp.mts:17`). Either update it to use the helper or mark it live-probe-only.
+
+nit: URL assembly via the `URL` API is correct for existing query strings, encoding, and trailing slash, but the helper should reject an existing `authQueryParam` in the base URL instead of silently overwriting it.
+
+VERDICT: REVISE
+

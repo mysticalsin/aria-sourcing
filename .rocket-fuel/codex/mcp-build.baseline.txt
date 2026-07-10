@@ -1,0 +1,19 @@
+ M .claude/scheduled_tasks.lock
+?? .rocket-fuel/brief-mcp.md
+?? .rocket-fuel/codex-mcp/
+?? .rocket-fuel/codex/mcp-build.baseline.txt
+?? .rocket-fuel/codex/mcp-build.brief.txt
+?? .rocket-fuel/design-tavily-mcp.md
+?? .rocket-fuel/meet-brief-mcp-r2.md
+?? .rocket-fuel/meet-brief-mcp-r3.md
+?? .rocket-fuel/meet-brief-mcp.md
+?? .rocket-fuel/meetings/016-mcp-r1.md
+?? .rocket-fuel/meetings/017-mcp-r2.md
+?? .rocket-fuel/meetings/018-mcp-r3-approved.md
+?? Aria/
+?? _agent_state/
+?? docs/superpowers/plans/
+?? graphify-out/
+?? kimi-live-chat-proof.png
+?? scripts/probe-tavily-mcp.mts
+?? scripts/smoke-linkedin-live.mts

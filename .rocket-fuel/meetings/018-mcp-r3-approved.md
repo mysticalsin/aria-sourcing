@@ -1,0 +1,1 @@
+# Tavily MCP Design Meeting — Round 3: APPROVED (trend REVISE→REVISE→APPROVED, blockers 3→1→0). Enum makes configurable⟺redactable; B1 guard before activity persist; DNS-rebind scoped out. Proceeding to build.

@@ -1,68 +1,70 @@
 ---
 project: MSourcing / ARIA
-shift: 15
+shift: 16
 agent: codex
-updated: 2026-07-10 10:06
-status: wave2-rock-w3-exec-dashboard-tsc-clean
+updated: 2026-07-10 10:41
+status: tavily-mcp-query-auth-tsc-clean
 ---
 
-# Handoff - Wave 2 Rock W3 Exec Dashboard
+# Handoff - Tavily MCP Query Auth
 
 ## Current state
-- Wave 2 Rock W3 is implemented in source:
-  - `/exec` exists at `src/app/exec/page.tsx`.
-  - `src/lib/exec-dashboard.ts` is the shared pure derivation used by the page and focused test.
-  - The page is read-only and does not call store actions.
-  - KPI tiles consume canonical W1 metrics through `globalKpis` and `realFunnelFacts`.
-  - Per-platform and per-campaign funnels are derived through `realFunnelFacts`; campaign rows also pass canonical facts into `computeCampaignMetrics`.
-  - Trend sparklines use `TrendSpark` and real candidate/outreach/reply/booking timestamps.
-  - Wins feed reads `state.wins`; viewer sees first-name + role, admin sees full name.
-  - Open rate renders `Not tracked yet` with the note that no email-open events exist.
-  - Demo mode shows the banner `Demo data - synthetic`.
-  - Admin-only export is gated through `execCanExport(role)` -> `can(role, "manage_settings")`.
-- Navigation includes `/exec` in the Analyze section.
+- Tavily hosted MCP query auth is implemented in the existing MCP subsystem.
+- `AUTH_QUERY_PARAMS` is a closed enum in `src/lib/types.ts` with `tavilyApiKey`.
+- `src/lib/mcp-client.ts` exports `applyMcpAuth(baseUrl, secret, opts)`:
+  - bearer default returns the base URL and bearer token unchanged.
+  - query auth appends `authQueryParam=<vault secret>` via `URL.searchParams` and returns an empty bearer token.
+  - query auth throws if the base URL already contains the auth param, case-insensitive, or if the param is missing.
+- Runtime dialers validate the key-free base URL with `assertPublicUrl` before applying query auth:
+  - `src/app/api/hermes/chat/route.ts`
+  - `src/app/api/mcp/test/route.ts`
+- MCP client and test-route failures return host-only errors for MCP connection/tool-call paths.
+- `src/lib/log-redact.ts` redacts closed-list auth query params before any generic secret redaction.
+- `src/lib/mcp-auth-params.ts` centralizes base URL rejection for auth query params and is used by store and route schemas.
+- `src/components/settings/mcp-servers-panel.tsx` exposes admin-only auth style and query param controls.
+- `scripts/probe-tavily-mcp.mts` now uses `applyMcpAuth` instead of hand-assembling the Tavily URL.
+- `src/lib/ai/tool-loop.ts` has the requested single-line TODO for the pre-existing DNS-rebind redial gap.
 
 ## Done this shift
-- Required navigation:
-  - `graphify query "MSourcing Wave-2 W3 exec dashboard canonical metrics"` failed because `graphify-out/graph.json` is absent.
+- Required navigation and context:
+  - `graphify query "MSourcing Tavily MCP query auth existing MCP subsystem mcp-client gatherMcpServers"` failed because `graphify-out/graph.json` is absent.
   - `graphify-out/wiki/index.md` is absent.
-  - Read `_relay/HANDOFF.md`, `.rocket-fuel/PLAN-wave2.md`, `.rocket-fuel/ROCKS-wave2.md`, `src/lib/metrics.ts`, `src/lib/store.ts`, RBAC/nav/page patterns, and focused test style before edits.
-- Added `src/lib/exec-dashboard.ts`.
-- Added `src/app/exec/page.tsx`.
-- Added `/exec` nav entry in `src/components/app/nav.ts`.
-- Added `tests/exec-dashboard.mts` covering:
-  - canonical metrics agreement,
-  - synthetic/dry-run/approved-unsent exclusion from live contact facts,
-  - no `Math.random` and no hardcoded KPI literal assignments,
-  - open-rate honesty text,
-  - viewer/admin export and win-label behavior.
-- Archived previous baton to `_relay/archive/2026-07-10-1006-codex.md`.
+  - Read `_relay/HANDOFF.md`, vault guardrails, project-local Codex memory, `.rocket-fuel/design-tavily-mcp.md` through v3, and the MCP files named in the brief.
+- Added `AUTH_QUERY_PARAMS` / `AuthQueryParam` and `McpServerConfig.authStyle/authQueryParam`.
+- Added `applyMcpAuth` and host-only MCP client errors.
+- Added central auth query redaction and focused helper coverage.
+- Added base URL auth-param rejection in store add/update and both API route schemas.
+- Threaded auth fields through store test payloads, chat MCP payloads, `gatherMcpServers`, and `/api/mcp/test`.
+- Updated settings UI for Bearer header vs URL query param.
+- Refactored the Tavily live probe onto `applyMcpAuth`.
+- Added and wired `tests/mcp-query-auth.mts` into `npm test`.
+- Archived previous baton to `_relay/archive/2026-07-10-1041-codex.md`.
 - Added project-local Codex learning in `_agent_state/codex/memory.json`.
 
 ## Blockers
-- `npx tsx tests/exec-dashboard.mts` is blocked in this sandbox by IPC pipe permission:
-  - `Error: listen EPERM: operation not permitted ... /T/tsx-501/...pipe`
-- Workaround proof command succeeded with `node --import tsx tests/exec-dashboard.mts`.
+- Live Tavily probe was not run in this sandbox. The brief assigns the live `scripts/probe-tavily-mcp.mts` run to Visionary outside the sandbox.
 
 ## Verification
-- `node --import tsx tests/exec-dashboard.mts` passed:
-  - `RESULT exec-dashboard: 28 passed, 0 failed`
+- `node --import tsx tests/mcp-query-auth.mts` passed:
+  - `RESULT mcp-query-auth: 15 passed, 0 failed`
+- `node --import tsx tests/log-redact.mts` passed:
+  - `RESULT log-redact: 24 passed, 0 failed`
 - `npx tsc --noEmit` passed with exit 0.
-- `git diff --check -- src/lib/exec-dashboard.ts src/app/exec/page.tsx src/components/app/nav.ts tests/exec-dashboard.mts` passed with exit 0.
+- `git diff --check -- src/lib/types.ts src/lib/mcp-auth-params.ts src/lib/log-redact.ts src/lib/mcp-client.ts src/lib/store.ts src/app/api/hermes/chat/route.ts src/app/api/mcp/test/route.ts src/components/settings/mcp-servers-panel.tsx src/lib/ai/tool-loop.ts scripts/probe-tavily-mcp.mts tests/mcp-query-auth.mts package.json` passed with exit 0.
 
 ## Next steps
-1. Visionary can run `npx tsx tests/exec-dashboard.mts` outside the sandbox if they want the exact proof command from the Wave-2 plan.
-2. Rock W5 owns wiring all new focused tests into the full `npm test` chain and running `npx tsc --noEmit && npm test` plus lint.
-3. Review and commit W3 separately from the existing W1/W2/W4 and `.rocket-fuel` dirty working-tree files if desired.
+1. Visionary should run `scripts/probe-tavily-mcp.mts` live outside the sandbox with a real `TAVILY_API_KEY`.
+2. Review and commit this MCP integration separately from pre-existing `.rocket-fuel`, `Aria/`, and other dirty-tree files.
+3. A later MCP hardening rock should close the documented DNS-rebind redial gap for all remote MCP servers.
 
 ## Decisions made (don't relitigate)
-- `metrics.ts` semantics were not changed for W3.
-- `/exec` uses a shared pure derivation module so tests and UI cannot fork live KPI filters.
-- Open rate remains a tracked gap, never a numeric metric.
-- Admin export uses `manage_settings` as the existing admin-only permission boundary.
-- The timing tile uses canonical `timeToFirstInterviewHours`; no separate time-to-source formula was invented because W1 exposes no canonical time-to-source metric.
+- Existing bearer MCP configs remain backward-compatible by default.
+- The persisted MCP `url` remains key-free; query auth is assembled only after vault resolution and base URL SSRF validation.
+- `authQueryParam` is closed to `AUTH_QUERY_PARAMS`; adding a future query-auth MCP requires extending that enum.
+- MCP client errors intentionally do not echo upstream MCP error text, because query-auth servers can echo short secrets that generic redactors cannot prove safe.
+- DNS-rebind redial mitigation is out of scope for this rock and pre-existed query auth.
 
 ## Watch out
-- The working tree already had substantial pre-existing W1/W2/W4 and `.rocket-fuel` changes before this shift.
-- `src/components/app/nav.ts` already included W2 Winlog work in the dirty tree; this shift only added `/exec` beside it.
-- `tests/exec-dashboard.mts` is focused and not yet wired into `npm test`; Rock W5 owns test-chain wiring.
+- The working tree had substantial pre-existing untracked `.rocket-fuel`, `Aria/`, `graphify-out/`, and script files before this shift.
+- `scripts/probe-tavily-mcp.mts` was already untracked before this shift; this shift edited it in place.
+- `package.json` test chain now includes `tests/mcp-query-auth.mts`.
