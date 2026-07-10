@@ -7,7 +7,7 @@ Hermes runs in two modes:
   shared **org workspace** (scoped by email domain via RLS), and the whole console
   is gated behind **Microsoft sign-in**.
 
-Switching modes is just env vars + the SQL migration — no code changes.
+Switching modes is just env vars + the SQL migrations. No code changes.
 
 ---
 
@@ -22,28 +22,17 @@ Switching modes is just env vars + the SQL migration — no code changes.
 
 ## 2. Run the schema
 
-Open **SQL Editor** and run, in order:
-1. [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) —
-   `workspaces`, `profiles`, `workspace_state`, RLS, `ensure_workspace()`.
-2. [`supabase/migrations/0002_fleet.sql`](supabase/migrations/0002_fleet.sql) —
-   `agent_seats`, `suppression_list`, `outreach_ledger` (with the
-   one-active-contact-per-candidate unique index) and the **`claim_and_record()`**
-   RPC that enforces suppression + re-contact window + per-seat daily cap
-   atomically server-side (the anti-double-contact / anti-ban guarantee).
-3. [`supabase/migrations/0003_api_keys.sql`](supabase/migrations/0003_api_keys.sql) —
-   `api_keys` table with column-level grants so secrets stay server-side.
-4. [`supabase/migrations/0004_email_connections.sql`](supabase/migrations/0004_email_connections.sql) —
-   `email_connections` table for Gmail / Microsoft Graph OAuth tokens, also with
-   column-level grants and admin-only RLS.
-5. [`supabase/migrations/0005_rls_tenant_isolation.sql`](supabase/migrations/0005_rls_tenant_isolation.sql) —
-   **Required security hardening — do not skip.** Adds the `WITH CHECK` clause to
-   the `workspace_state` UPDATE policy (stops a tenant re-pointing a row to another
-   workspace), revokes `anon`, and role-gates every fleet write. Without it,
-   0001–0002 leave a cross-tenant RLS gap.
+Apply every file in `supabase/migrations/` in order:
 
-> Run **every** migration in order, through 0005. `supabase db push` /
-> `supabase start` / `supabase db reset` apply them all automatically; if you run
-> them by hand in the SQL Editor, do not stop before 0005.
+```bash
+supabase db push
+```
+
+For local development, `bash scripts/local-supabase-up.sh` starts Supabase and
+uses `supabase db reset`, which also applies every numbered migration. If you
+must use the SQL Editor, run every file in lexical order and do not stop at an
+older range. The canonical annotated migration list is maintained only in
+[`production-readiness/DEPLOYMENT_RUNBOOK.md`](production-readiness/DEPLOYMENT_RUNBOOK.md).
 
 **Email sending (optional, live):**
 - API-key providers: set `RESEND_API_KEY` or `SENDGRID_API_KEY` in `.env.local`.

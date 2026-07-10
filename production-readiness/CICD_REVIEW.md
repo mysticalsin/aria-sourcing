@@ -1,5 +1,8 @@
 # CI/CD Review — MSourcing (hermes-sourcing)
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **Area:** Phase 8 — CI/CD pipeline, branch protection, pipeline gates, deploy approval
 **Reviewer role:** DevSecOps / Pipeline Engineer
 **Date:** 2026-06-27

@@ -1,5 +1,8 @@
 # API Security Report — Hermes Sourcing (MSourcing)
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **Phase 4 — API security (OWASP API Security Top 10).**
 **Gate mapped:** Gate 4 — API.
 **Date:** 2026-06-27

@@ -2,7 +2,7 @@
 
 **App:** Hermes Sourcing (MSourcing)
 **Stack:** Next.js 16 App Router · React 19 · Supabase (Postgres + Auth) · Microsoft Entra · Vercel
-**Last updated:** 2026-07-09
+**Last updated:** 2026-07-10
 
 ---
 
@@ -12,7 +12,7 @@
 |---|---|
 | Vercel CLI installed (`npm i -g vercel`) | `vercel --version` |
 | Supabase CLI installed | `supabase --version` |
-| Node ≥ 20 | `node --version` |
+| Node 22.x | `node --version` and `package.json` `engines.node` |
 | GitHub Actions CI green on `main` | GitHub → Actions tab |
 | All required env vars set in Vercel project | Vercel → Project → Settings → Environment Variables |
 
@@ -20,13 +20,13 @@
 
 ## 1. Pre-deployment gate (run every time)
 
-All four checks must pass before a production deploy is triggered. Block the deploy if any fails.
+All checks must pass before a production deploy is triggered. Block the deploy if any fails.
 
 ```bash
 # From the repo root:
 npm run typecheck       # tsc --noEmit; must exit 0
 npm run lint            # next lint; must be "No ESLint warnings or errors."
-npm run test            # full deterministic suite; must be 0 failures
+npm run test            # full deterministic suite; 97 suite commands must be 0 failures
 npm run test:security   # security-specific subset (faster); must be 0 failures
 npm run build           # must complete without error in CI or an unsynced checkout
 npm run build:isolated  # required for this OneDrive-synced checkout
@@ -44,7 +44,7 @@ project root.
 
 ## 2. Database migrations (Supabase)
 
-Migrations must be applied **before** the new code is live. The migration files live in `supabase/migrations/`. Apply in strict numeric order.
+Migrations must be applied **before** the new code is live. The migration files live in `supabase/migrations/`. Apply every file in strict numeric order.
 
 ### 2a. Check current schema state
 
@@ -61,22 +61,25 @@ If the diff is empty, the DB is already at HEAD — skip to step 3.
 supabase db push
 
 # Alternative: run the SQL files manually in Supabase SQL Editor.
-# Order matters — each file depends on the previous:
-# 0001_init.sql           → workspaces, profiles, workspace_state, RLS, ensure_workspace()
-# 0002_fleet.sql          → agent_seats, suppression_list, outreach_ledger, claim_and_record() RPC
-# 0003_api_keys.sql       → api_keys, column-level grants (secret hidden from authenticated role)
-# 0004_email_connections.sql → email_connections, admin-only RLS
-# 0005_rls_tenant_isolation.sql → hardened tenant grants/policies
+# Order matters. Apply every file below:
+# 0001_init.sql → workspaces, profiles, workspace_state, base RLS, ensure_workspace()
+# 0002_fleet.sql → agent_seats, suppression_list, outreach_ledger, claim_and_record() RPC
+# 0003_api_keys.sql → api_keys, column-level grants for server-side secrets
+# 0004_email_connections.sql → email_connections for Gmail/Microsoft OAuth tokens
+# 0005_rls_tenant_isolation.sql → hardened tenant grants, anon revoke, role-gated writes
 # 0006_outreach_approvals.sql → durable human approval records
 # 0007_agent_runtime.sql → agent runtime and durable message ledgers
 # 0008_human_outbound_approvals.sql → human approval provenance
 # 0009_whatsapp_delivery_policy.sql → consent/template/window dispatch policy
 # 0010_whatsapp_delivery_reconciliation.sql → Meta acceptance and receipt audit
-# 0011_outreach_approval_lifecycle.sql → approval revoke/atomic email claims
+# 0011_outreach_approval_lifecycle.sql → approval revoke and atomic email claims
 # 0012_email_unsubscribe.sql → opaque one-click unsubscribe token hashes
 # 0013_outreach_approval_race_safety.sql → serialized approval/revoke/dispatch lifecycle
 # 0014_whatsapp_review_and_inbound_recovery.sql → human review and recoverable inbound work
 # 0015_whatsapp_webhook_late_event_safety.sql → late receipt and draft-collision safety
+# 0016 intentionally unreleased — gap is deliberate
+# 0017_dispatch_concurrency.sql → dispatcher claim concurrency safety
+# 0018_first_admin.sql → first-admin bootstrap path
 ```
 
 **IMPORTANT:** RLS must be enabled on every table listed above. Verify after each migration:
@@ -116,17 +119,29 @@ WHERE routine_schema = 'public'
 
 All variables below must be set in Vercel **before** deploying. Production values only — never commit secrets to git.
 
+Minimum live production set: the Supabase trio
+(`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+`SUPABASE_SERVICE_ROLE_KEY`), `DATA_ENCRYPTION_KEY`, `CRON_SECRET`,
+`OUTREACH_UNSUBSCRIBE_BASE_URL`, Google OAuth variables if Gmail seats are used,
+Microsoft OAuth variables if Outlook seats are used, and at least one verified
+delivery path before any live email is enabled.
+
 | Variable | Scope | Required | Notes |
 |---|---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Public | Yes | `https://<ref>.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public | Yes | Supabase → Project Settings → API → anon public |
+| `SUPABASE_URL` | Server | Optional | Server-side override for the Supabase project URL; defaults to `NEXT_PUBLIC_SUPABASE_URL` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server | Yes | Never expose to browser. Supabase → API → service_role |
 | `DATA_ENCRYPTION_KEY` | Server | Yes | Base64 32-byte key for provider/OAuth secrets at rest |
 | `CRON_SECRET` | Server | Yes for dispatcher | Strong random bearer secret for `/api/cron/dispatch-outbound` |
 | `CAREERS_WORKSPACE_ID` | Server | Yes to enable `/careers` | UUID of the single workspace allowed to publish public roles; leave unset to fail closed |
 | `NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN` | Public | Recommended | Locks sign-in to one domain (e.g. `mantu.com`) |
+| `NEXT_PUBLIC_ENABLE_DEMO_LOGIN` | Public | No for live prod | Synthetic demo-login escape hatch; keep false/unset in real production |
+| `DEMO_SESSION_SECRET` | Server | Required if demo login is enabled | HMAC secret for signed demo sessions |
+| `DEMO_ADMIN_PASSWORD` | Server | Required if demo login is enabled | Demo admin password; do not use for real tenants |
 | `HERMES_API_URL` | Server | For AI drafts | Internal only; must not be a public internet URL |
 | `HERMES_API_KEY` | Server | For AI drafts | Strong random token (≥32 chars) |
+| `HERMES_PROXY_SECRET` | Server | If Hermes proxy route is used | Shared secret for proxy calls |
 | `HERMES_RUNTIME_WORKSPACE_ID` | Server | Required with Hermes | UUID of the single workspace bound to this dedicated runtime; no shared multi-workspace process |
 | `GOOGLE_CLIENT_ID` | Server | If Gmail seats used | |
 | `GOOGLE_CLIENT_SECRET` | Server | If Gmail seats used | |
@@ -137,10 +152,19 @@ All variables below must be set in Vercel **before** deploying. Production value
 | `RESEND_API_KEY` | Server | If Resend email used | |
 | `SENDGRID_API_KEY` | Server | If SendGrid email used | |
 | `OUTREACH_UNSUBSCRIBE_BASE_URL` | Server | Yes for live email | Canonical HTTPS app origin, no query/fragment |
+| `GITHUB_TOKEN` | Server | If GitHub sourcing is used | Read-only token for source search |
+| `TAVILY_API_KEY` | Server | If Tavily web sourcing is used | Server-side fallback; stored workspace key can take precedence |
+| `KIMI_API_KEY` | Server | If Kimi provider is used | Kimi/Moonshot provider key |
+| `KIMI_BASE_URL` | Server | Optional | Defaults to `https://api.moonshot.ai/v1` |
+| `ELEVENLABS_API_KEY` | Server | If voice TTS is used | ElevenLabs API key |
+| `ELEVENLABS_VOICE_ID` | Server | Optional with voice TTS | Defaults in code when unset |
 | `WHATSAPP_TOKEN` | Server | If WhatsApp used | Meta Cloud API token |
 | `WHATSAPP_PHONE_NUMBER_ID` | Server | If WhatsApp used | Meta registered sender ID |
+| `WHATSAPP_API_VERSION` | Server | Optional with WhatsApp | Defaults to `v21.0` |
 | `WHATSAPP_VERIFY_TOKEN` / `WHATSAPP_APP_SECRET` | Server | If WhatsApp webhooks used | Verify Meta subscription and signatures |
+| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM` | Server | Reserved | SMS remains disabled until equivalent controls exist |
 | `FLOWISE_URL` / `FLOWISE_API_KEY` | Server | If Flowise inference used | Private runtime only; browser authoring remains disabled |
+| `OBSCURA_URL` / `OBSCURA_BIN_PATH` | Server | Optional research sidecar | Read-only browser research sidecar endpoint or binary path |
 
 Verify all variables are visible in Vercel before continuing:
 

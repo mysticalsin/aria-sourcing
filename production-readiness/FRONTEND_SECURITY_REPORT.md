@@ -1,5 +1,8 @@
 # Frontend Security Report — MSourcing ("hermes-sourcing")
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **Phase 3 — Frontend Security** | Maps to: **Gate 3 (frontend-security part)**
 **Auditor:** Frontend Security Engineer (production-readiness review)
 **Date:** 2026-06-27

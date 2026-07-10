@@ -1,5 +1,8 @@
 # Backend / API Review — MSourcing ("hermes-sourcing")
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **Phase 4 — Backend.** Maps to **Gate 4 — Backend/API**.
 **Reviewer:** Backend Engineer (production-readiness review)
 **Date:** 2026-06-27

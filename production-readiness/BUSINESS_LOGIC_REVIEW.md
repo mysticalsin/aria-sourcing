@@ -1,5 +1,8 @@
 # Business Logic Review — Phase 4 (Gate 4)
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **Target:** MSourcing ("hermes-sourcing") — autonomous recruiting operations console
 **Reviewer area:** Phase 4 — business-logic abuse: privilege escalation, workflow bypass, quota/guardrail bypass (anti-ban / per-account limits, suppression / do-not-contact, LinkedIn policy), race conditions, replay, inconsistent states, direct object manipulation in the client store.
 **Repo root:** `/Users/tony/Library/CloudStorage/OneDrive-MantuGroup/Documents/TEST/MSourcing`

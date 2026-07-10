@@ -1,5 +1,8 @@
 # QA Test Results — MSourcing ("hermes-sourcing")
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 - **Gate:** Gate 9 — QA
 - **Date / time:** 2026-06-27 ~19:55 EDT
 - **Repo:** `/Users/tony/.../TEST/MSourcing`, branch `main`, **dirty tree** (73 modified, 86 untracked, 0 staged, 0 deleted; HEAD `35ce313`)

@@ -1,5 +1,8 @@
 # Threat Model — Hermes Sourcing (MSourcing)
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **Date:** 2026-06-27 (re-audited against the CURRENT working tree)
 **Auditor role:** Threat Modeler (Phase 2)
 **Framework:** STRIDE per trust boundary + OWASP Top 10 / API Security Top 10 mapping

@@ -1,85 +1,66 @@
 ---
 project: MSourcing / ARIA
-shift: 18
+shift: 19
 agent: codex
-updated: 2026-07-10 11:46
-status: r2-dead-code-hygiene-tsc-clean
+updated: 2026-07-10 12:00
+status: r3-docs-truth-tsc-clean
 ---
 
-# Handoff - R2 Dead Code + Hygiene Purge
+# Handoff - R3 Docs Truth + Deploy Story
 
 ## Current state
-- Release Rock R2 dead-code and hygiene purge is implemented in the working tree.
-- The live 3D floor path remains `Floor3D.tsx -> retro/RetroOfficeScene.tsx -> RobotAgentModel/RobotCharacter/RiggedCharacter + RetroEnvironment/PacketFX/agentTick/core`.
-- Shared floor contracts and packet pure helpers now live in `src/lib/floor3d.ts`.
-- Components and lib modules import floor shared types/helpers from `@/lib/floor3d`; no live lib file imports from `src/components/floor3d`.
-- `vercel.json` no longer defines static security headers. `next.config.mjs` owns CSP/security headers and carries production HSTS.
-- Root PNG screenshots were moved to `docs/screenshots/archive/`; `.gitignore` now ignores only root-level `/*.png`.
+- Release Rock R3 docs consolidation is implemented in the working tree.
+- `README.md` is now the truthful front door: Next `^16.2.6`, React `^19.2.7`, Node `22.x`, 97 `npm test` suite commands, current shipped surfaces, correct root-level `supabase/migrations/` and `tests/` architecture map, local Supabase startup, canonical deploy pointer, and MSourcing / ARIA / Hermes naming note.
+- Root `DEPLOYMENT.md` is now only a short pointer to `production-readiness/DEPLOYMENT_RUNBOOK.md`, the `vercel-demo` variant, env examples, and `STATUS.md`.
+- `production-readiness/DEPLOYMENT_RUNBOOK.md` is the only annotated migration list; it documents `0001` through `0018` and the deliberate missing `0016`.
+- `SUPABASE_SETUP.md`, `production-readiness/DEPLOY_CHECKLIST.md`, and `production-readiness/LOCAL_SETUP.md` now say to apply every file in `supabase/migrations/` in order instead of freezing old ranges.
+- `.env.local.example` and `.env.production.example` were regenerated around the env vars read under `src/`, plus provider-map keys such as `KIMI_API_KEY`; missing Tavily, Kimi, demo-session, encryption, cron, unsubscribe, and Google OAuth vars are included with purpose comments and no real secrets.
+- `production-readiness/STATUS.md` exists and is dated 2026-07-10. It supersedes the old 2026-06-27 due-diligence snapshot.
+- Historical production-readiness reports now carry a top supersession banner pointing to `STATUS.md` for current release posture.
+- Added `tests/docs-truth.mts` with grep-based docs assertions.
 
 ## Done this shift
-- Removed verified-unreachable 3D files:
-  - `src/components/floor3d/Floor3DScene.tsx`
-  - `src/components/floor3d/InstancedAgents.tsx`
-  - `src/components/floor3d/OfficeRoom.tsx`
-  - `src/components/floor3d/OfficeFurniture.tsx`
-  - `src/components/floor3d/SpriteCharacter.tsx`
-  - `src/components/floor3d/CityWorld.tsx`
-  - `src/components/floor3d/retro/objects/AgentModel.tsx`
-  - `src/components/floor3d/retro/core/avatarProfile.ts`
-  - `src/components/floor3d/retro/objects/RobotAgent.tsx`
-  - `src/components/floor3d/retro/scene/OfficeEnvironment.tsx`
-- Removed dead barrels:
-  - `src/components/app/index.ts`
-  - `src/components/chat/index.ts`
-- Removed obsolete floor helper/type files after moving their live exports to lib:
-  - `src/components/floor3d/retro/scene/packet-shared.ts`
-  - `src/components/floor3d/types.ts`
-- Removed `@react-three/postprocessing` and `postprocessing` from `package.json` and `package-lock.json`.
-- Updated import paths in the live scene, floor page, mission HUD, replay, and Aria Live demo director.
-- Archived previous baton to `_relay/archive/2026-07-10-1146-codex.md`.
-- Added project-local Codex learning in `_agent_state/codex/memory.json`.
+- Replaced stale README claims about Next 14 / React 18 and mock-only future APIs.
+- Consolidated deploy docs around the canonical runbook and current status page.
+- Removed stale migration-range guidance from current setup/checklist docs.
+- Added the single current status page requested by Rock R3.
+- Added supersession banners to old due-diligence report files instead of deleting evidence.
+- Ran a Visionary-style README truth review with a subagent; it reported no README truth issues and did not edit files.
+- Archived previous baton to `_relay/archive/2026-07-10-1200-codex.md`.
 
 ## Blockers
-- Sandbox blocks `.git/index.lock`, so `git rm` / `git mv` could not stage changes:
-  - `fatal: Unable to create '.git/index.lock': Operation not permitted`
-  - Files were removed/moved in the filesystem; Git status shows deletions and new archive files for the next committer.
-- Sandbox blocks the `tsx` CLI IPC server:
-  - `Error: listen EPERM: operation not permitted .../tsx-501/*.pipe`
-  - The same floor test passed via `node --import tsx tests/floor.mts`.
+- No code blockers.
+- `npm run lint` exits 0 but reports one warning in `src/lib/store.ts:4546` about an unnecessary `useCallback` dependency. This R3 task did not change code.
+- `npm test` was not run in full this shift; R3 proof required the docs truth test plus TypeScript. The 97 count was verified from `package.json` (`pretest` 3 commands + `test` 94 commands).
 
 ## Verification
-- `graphify query "Rock R2 MSourcing Floor3D dead code packet-shared postprocessing vercel CSP screenshots" --budget 1500` failed because `graphify-out/graph.json` is absent.
-- `npm install --package-lock-only` passed; only existing Node engine warning for `@dust-tt/client@1.2.6` under Node `v22.22.3`.
+- `graphify query "MSourcing release Rock R3 docs README deployment env migrations status Next React tests Supabase" --budget 1500` failed because `graphify-out/graph.json` is absent.
+- `graphify-out/wiki/index.md` is absent; raw files were used after graph/wiki miss.
+- `node --import tsx tests/docs-truth.mts` passed: `RESULT docs-truth: 11 passed, 0 failed`.
 - `npx tsc --noEmit` passed with exit 0.
-- `node --import tsx tests/floor.mts` passed:
-  - `RESULT floor: 11 passed, 0 failed`
-- Exact `npx tsx tests/floor.mts` is sandbox-blocked by `listen EPERM` on the tsx temp pipe.
-- `rg` found zero imports of the deleted 3D files.
-- `rg` found zero imports/usages of `@react-three/postprocessing` or `postprocessing` in `package.json`, `package-lock.json`, `src`, and `tests`.
-- `find . -maxdepth 1 -type f -name '*.png' -print` returned no root PNG files.
-- `node` check confirmed `vercel.json` has no `headers` block and `next.config.mjs` contains `Strict-Transport-Security`.
+- `npm run lint` passed with exit 0 and one warning in `src/lib/store.ts:4546`.
 - `git diff --check` passed with exit 0.
+- Targeted grep found no `Next.js 14`, `React 18`, `through 0005`, `through 0012`, or partial-apply migration claims in current docs: `README.md`, `DEPLOYMENT.md`, `SUPABASE_SETUP.md`, `DEPLOYMENT_RUNBOOK.md`, `DEPLOY_CHECKLIST.md`, `LOCAL_SETUP.md`, `STATUS.md`, and env examples.
+- Visionary README review found no issues: versions, route surfaces, migration list, env examples, and deployment claims aligned with source files.
 
 ## Next steps
-1. Visionary/full-runner runs the full external gate outside this sandbox, including exact `npx tsx tests/floor.mts` if its environment permits tsx IPC.
-2. Commit this R2 working-tree change separately from pre-existing dirty content.
+1. Commit R3 docs separately from unrelated existing untracked `.rocket-fuel/`, `Aria/`, `_agent_state/`, and `graphify-out/` content.
+2. If desired, run full `npm test` outside the sandbox/with enough time before release sign-off.
+3. Leave old due-diligence reports in place as historical evidence; use `STATUS.md` for current posture.
 
 ## Decisions made (don't relitigate)
-- The Tarjan/reachability audit is accepted as authoritative for the 10 dead files.
-- `three`, `@react-three/fiber`, `@react-three/drei`, and `troika-three-text` stay.
-- `next.config.mjs` is the single source for security headers.
-- Root-level PNG clutter belongs under `docs/screenshots/archive/`; docs/public images are not ignored.
+- `production-readiness/DEPLOYMENT_RUNBOOK.md` is the canonical deployment runbook.
+- `production-readiness/STATUS.md` is the dated current posture page for 2026-07-10.
+- Historical due-diligence files are superseded, not deleted.
+- Migration guidance outside the runbook must be directory-based: apply every file in `supabase/migrations/` in order.
+- `0016` is intentionally absent; do not create or renumber it as a docs fix.
 
 ## Watch out
-- Pre-existing dirty/untracked files before this shift included:
-  - `.claude/scheduled_tasks.lock`
+- Many production-readiness files changed only by a 3-line supersession banner.
+- Existing unrelated untracked files remain:
   - `.rocket-fuel/`
   - `Aria/`
   - `_agent_state/`
-  - `_relay/HANDOFF.md`
   - `_relay/archive/2026-07-10-1138-codex.md`
-  - `docs/superpowers/plans/`
+  - `_relay/archive/2026-07-10-1146-codex.md`
   - `graphify-out/`
-  - `src/app/fleet/page.tsx`
-  - `src/lib/fleet-seats.ts`
-- Because `.git` writes are blocked, screenshot moves appear as root deletions plus untracked `docs/screenshots/archive/` additions rather than staged renames in this sandbox.

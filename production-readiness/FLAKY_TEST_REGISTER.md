@@ -1,5 +1,8 @@
 # Flaky Test Register — MSourcing ("hermes-sourcing")
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 - **Gate:** Gate 9 — QA
 - **Date:** 2026-06-27
 - **Definition:** a test whose pass/fail can change across runs without a code change (timing, randomness, ordering, environment, network, clock).

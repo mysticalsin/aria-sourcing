@@ -1,5 +1,8 @@
 # ASSET REGISTER — MSourcing (Hermes Sourcing by Mantu)
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **Phase 1 deliverable.** Audit date: 2026-06-27. New document.
 Inventory of assets, their classification, owner (UNKNOWN — see UNKNOWN_ITEMS), and
 where they live. Used by the threat model and risk register. Every "where" is repo-verified;

@@ -1,5 +1,8 @@
 # ACCESSIBILITY REPORT — MSourcing ("hermes-sourcing" / "Aria by Mantu")
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 Phase 3 — WCAG 2.2 AA static accessibility review
 Maps to: **Gate 3 — accessibility part**
 

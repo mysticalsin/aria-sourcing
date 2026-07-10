@@ -1,5 +1,8 @@
 # CAPACITY PLAN & LOAD-TEST PLAN — MSourcing (Aria / "hermes-sourcing")
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **Phase 10 deliverable — Performance / Reliability Engineer.** Audit date: 2026-06-27. **New document.**
 Maps to **Release Gate 10 — Performance / reliability**. Companion to `PERFORMANCE_REPORT.md` and
 `RELIABILITY_REPORT.md`.

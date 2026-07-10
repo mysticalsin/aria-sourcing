@@ -1,5 +1,8 @@
 # Container & Orchestration Security Report — MSourcing ("hermes-sourcing")
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 - **Phase / Gate:** Phase 7 — **Gate 7: Containers / orchestration**
 - **Reviewer role:** Container / Orchestration Engineer
 - **Repo:** `/Users/tony/Library/CloudStorage/OneDrive-MantuGroup/Documents/TEST/MSourcing` (git, branch `main`, **working tree DIRTY** — audited as-is)

@@ -1,5 +1,8 @@
 # Security Review — MSourcing (Hermes Sourcing) — CONSOLIDATED
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **Date:** 2026-06-27 · **Author:** Release Manager (cross-cutting synthesis)
 **Method:** Static analysis of the `main` working tree + local test/audit runs. No penetration testing, no running instance, no live cloud/DB access. Supersedes the prior `SECURITY_REVIEW.md`; the controls inventory from that version is preserved and updated below.
 **Baselines:** OWASP ASVS L2/L3, OWASP API Top 10, OWASP Top 10, NIST SSDF/CSF, CIS Controls.

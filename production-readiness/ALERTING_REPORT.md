@@ -1,5 +1,8 @@
 # Alerting Report — Hermes Sourcing (MSourcing)
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **App:** Hermes Sourcing ("hermes-sourcing")
 **Phase:** 11 — Observability / Operations
 **Gate:** Gate 11 — Observability/operations
