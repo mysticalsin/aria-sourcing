@@ -63,6 +63,7 @@ import {
   type ApprovalResult,
 } from "./rules";
 import { matchCandidateByEmail } from "./email-match";
+import { validateMcpBaseUrlHasNoAuthQueryParam } from "./mcp-auth-params";
 import {
   testConnection,
   defaultIntegrations,
@@ -5470,6 +5471,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const addMcpServer = useCallback(
     (m: Omit<McpServerConfig, "id" | "status">): McpServerConfig => {
+      const guard = validateMcpBaseUrlHasNoAuthQueryParam(m.url);
+      if (!guard.ok) throw new Error(guard.error);
       const server: McpServerConfig = { ...m, id: genId("mcp"), status: "untested" };
       commit((s) =>
         withActivity(
@@ -5492,15 +5495,22 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateMcpServer = useCallback(
-    (id: string, patch: Partial<McpServerConfig>) =>
+    (id: string, patch: Partial<McpServerConfig>) => {
+      const existing = (current().settings.mcpServers ?? []).find((m) => m.id === id);
+      const nextUrl = patch.url ?? existing?.url;
+      if (nextUrl) {
+        const guard = validateMcpBaseUrlHasNoAuthQueryParam(nextUrl);
+        if (!guard.ok) throw new Error(guard.error);
+      }
       commit((s) => ({
         ...s,
         settings: {
           ...s.settings,
           mcpServers: (s.settings.mcpServers ?? []).map((m) => (m.id === id ? { ...m, ...patch } : m)),
         },
-      })),
-    [commit],
+      }));
+    },
+    [commit, current],
   );
 
   const removeMcpServer = useCallback(
@@ -5527,7 +5537,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const res = await fetch("/api/mcp/test", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: server.url, apiKeyId: server.apiKeyId }),
+          body: JSON.stringify({
+            url: server.url,
+            apiKeyId: server.apiKeyId,
+            authStyle: server.authStyle,
+            authQueryParam: server.authQueryParam,
+          }),
         });
         out = (await res.json().catch(() => ({ ok: false, error: "Bad response from MCP test." }))) as typeof out;
       } catch (err) {
@@ -5953,7 +5968,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       const enabledMcp = (s.settings.mcpServers ?? [])
         .filter((m) => m.enabled)
-        .map((m) => ({ url: m.url, ...(m.apiKeyId ? { apiKeyId: m.apiKeyId } : {}) }));
+        .map((m) => ({
+          url: m.url,
+          ...(m.apiKeyId ? { apiKeyId: m.apiKeyId } : {}),
+          ...(m.authStyle ? { authStyle: m.authStyle } : {}),
+          ...(m.authQueryParam ? { authQueryParam: m.authQueryParam } : {}),
+        }));
       const webResearch = s.settings.webResearch !== false;
       // Active campaign context: lets chat call the compliant search_candidates tool
       // (route.ts) so a recruiter can source candidates without leaving the conversation.

@@ -7,6 +7,7 @@ import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
 import { isAllowedHermesUrl, assertPublicUrl } from "@/lib/api/url";
 import { can } from "@/lib/rbac";
+import { AUTH_QUERY_PARAMS } from "@/lib/types";
 import type { Campaign, Candidate, Role, ScoringWeights } from "@/lib/types";
 import {
   buildCloudRequest,
@@ -15,7 +16,8 @@ import {
   type AiProviderSlug,
   DEFAULT_MODEL,
 } from "@/lib/ai/provider";
-import { connectAndListTools } from "@/lib/mcp-client";
+import { applyMcpAuth, connectAndListTools } from "@/lib/mcp-client";
+import { validateMcpBaseUrlHasNoAuthQueryParam } from "@/lib/mcp-auth-params";
 import { runAnthropicWithTools, runOpenAiWithTools, type ResolvedMcpServer } from "@/lib/ai/tool-loop";
 import { BUILTIN_WEB_URL, WEB_TOOL_DEFS } from "@/lib/ai/web-tools";
 import { SOURCING_TOOL_DEFS, makeSourcingToolRunner } from "@/lib/ai/sourcing-tools";
@@ -24,6 +26,31 @@ import { redactObject, redactSecrets, redactEmail } from "@/lib/log-redact";
 import { evaluateHermesWorkspaceBinding } from "@/lib/api/hermes-runtime-isolation";
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import { DISCLOSURE_SYSTEM } from "@/lib/agent-disclosure-policy";
+
+const McpAuthStyleSchema = z.enum(["bearer", "query"]);
+const McpAuthQueryParamSchema = z.enum(AUTH_QUERY_PARAMS);
+const McpServerPayloadSchema = z
+  .object({
+    url: z
+      .string()
+      .url()
+      .max(500)
+      .refine((url) => validateMcpBaseUrlHasNoAuthQueryParam(url).ok, {
+        message: "MCP server URL must not contain auth query params.",
+      }),
+    apiKeyId: z.string().uuid().optional(),
+    authStyle: McpAuthStyleSchema.optional(),
+    authQueryParam: McpAuthQueryParamSchema.optional(),
+  })
+  .superRefine((server, ctx) => {
+    if ((server.authStyle ?? "bearer") === "query" && !server.authQueryParam) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["authQueryParam"],
+        message: "authQueryParam is required for query-auth MCP servers.",
+      });
+    }
+  });
 
 /**
  * Aria runtime proxy (SERVER ONLY).
@@ -57,11 +84,10 @@ const HermesChatSchema = z.object({
   apiKeyId: z.string().uuid().optional(),
   // Reject path-traversal / injection in the model id; allow valid model slugs.
   model: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/).default("hermes"),
-  /** Enabled MCP servers to expose to the model as tools (chat task only). Only the
-   *  {url, apiKeyId} is sent — the bearer token is resolved server-side from the vault,
-   *  so the browser never holds it. */
+  /** Enabled MCP servers to expose to the model as tools (chat task only). The raw
+   *  secret is resolved server-side from the vault, so the browser never holds it. */
   mcpServers: z
-    .array(z.object({ url: z.string().url().max(500), apiKeyId: z.string().uuid().optional() }))
+    .array(McpServerPayloadSchema)
     .max(20)
     .optional(),
   /** Expose the built-in, read-only web-research tools (web_search / fetch_page / rss)
@@ -120,12 +146,12 @@ function isRedirectResponse(res: Response): boolean {
 
 /**
  * Resolve the caller's enabled MCP servers into connectable servers with their tools.
- * The bearer token for each is resolved from the vault server-side (never from the
+ * The auth secret for each is resolved from the vault server-side (never from the
  * browser). http(s) only (SSRF). Servers that fail to connect or expose no tools are
  * skipped, so a broken server can't block the chat.
  */
 async function gatherMcpServers(
-  servers: { url: string; apiKeyId?: string }[],
+  servers: z.infer<typeof McpServerPayloadSchema>[],
 ): Promise<ResolvedMcpServer[]> {
   const resolved: ResolvedMcpServer[] = [];
   for (const s of servers) {
@@ -142,10 +168,16 @@ async function gatherMcpServers(
     // — not just a one-shot probe.
     const guard = await assertPublicUrl(s.url);
     if (!guard.ok) continue;
-    const token = s.apiKeyId ? await resolveVaultSecret(s.apiKeyId) : "";
-    const conn = await connectAndListTools(s.url, token);
+    const secret = s.apiKeyId ? await resolveVaultSecret(s.apiKeyId) : "";
+    let auth: { url: string; token: string };
+    try {
+      auth = applyMcpAuth(s.url, secret, { authStyle: s.authStyle, authQueryParam: s.authQueryParam });
+    } catch {
+      continue;
+    }
+    const conn = await connectAndListTools(auth.url, auth.token);
     if (conn.ok && conn.tools && conn.tools.length) {
-      resolved.push({ url: s.url, token, tools: conn.tools });
+      resolved.push({ url: auth.url, token: auth.token, tools: conn.tools });
     }
   }
   return resolved;

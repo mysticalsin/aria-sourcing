@@ -12,12 +12,27 @@
    - safeLog       : console.log wrapper that deep-redacts strings and objects
    ========================================================================== */
 
+import { AUTH_QUERY_PARAMS } from "./types";
+
 /** Keys whose values are assumed sensitive wherever they appear. */
 const SENSITIVE_KEY = /(email|token|secret|key|authorization|password|apikey)/i;
 
 /** Email matcher. Used only with String.replace (which resets lastIndex), so the
     global flag is safe here; never call .test() on this instance. */
 const EMAIL_RE = /([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g;
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function redactAuthQueryParams(s: string): string {
+  if (typeof s !== "string") return s;
+  let out = s;
+  for (const param of AUTH_QUERY_PARAMS) {
+    out = out.replace(new RegExp(`([?&])(${escapeRegExp(param)})=[^&#\\s]*`, "gi"), "$1$2=REDACTED");
+  }
+  return out;
+}
 
 /**
  * Mask the local part of every email address found in `s`, keeping the first
@@ -37,7 +52,7 @@ export function redactEmail(s: string): string {
  */
 export function redactSecrets(s: string): string {
   if (typeof s !== "string") return s;
-  return s
+  return redactAuthQueryParams(s)
     // Authorization schemes: keep the scheme, drop the credential.
     .replace(/\b(Bearer|Basic|Token)\s+[A-Za-z0-9\-._~+/]+=*/gi, "$1 ***")
     // JWTs (header.payload.signature; base64url header always begins with eyJ).

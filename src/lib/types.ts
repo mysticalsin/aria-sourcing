@@ -1136,6 +1136,9 @@ export interface ToolDef {
 
 export type McpServerStatus = "untested" | "connected" | "error";
 
+export const AUTH_QUERY_PARAMS = ["tavilyApiKey"] as const;
+export type AuthQueryParam = (typeof AUTH_QUERY_PARAMS)[number];
+
 /** A registered Model Context Protocol server — an external source of tools the fleet
  *  can call. Mirrors LlmProvider: the auth token lives in the key vault by id, never
  *  inline. */
@@ -1144,7 +1147,11 @@ export interface McpServerConfig {
   name: string;
   /** The MCP server's HTTP(S) endpoint (streamable-HTTP / SSE transport). */
   url: string;
-  /** References an ApiKey.id for the Bearer token; the raw secret never lives here. */
+  /** How the resolved vault secret is sent to the MCP server. Defaults to bearer. */
+  authStyle?: "bearer" | "query";
+  /** Closed-list query parameter for query-auth MCP servers. */
+  authQueryParam?: AuthQueryParam;
+  /** References an ApiKey.id; the raw secret never lives here. */
   apiKeyId?: string;
   enabled: boolean;
   status: McpServerStatus;

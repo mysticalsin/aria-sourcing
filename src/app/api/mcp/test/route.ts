@@ -7,20 +7,48 @@ import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
 import { assertPublicUrl } from "@/lib/api/url";
 import { can } from "@/lib/rbac";
+import { AUTH_QUERY_PARAMS } from "@/lib/types";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
-import { connectAndListTools } from "@/lib/mcp-client";
+import { applyMcpAuth, connectAndListTools } from "@/lib/mcp-client";
+import { validateMcpBaseUrlHasNoAuthQueryParam } from "@/lib/mcp-auth-params";
 
 /**
  * Connection test for a registered MCP (Model Context Protocol) server. Runs the MCP
  * `initialize` JSON-RPC handshake against the server's HTTP endpoint and reports
  * whether it answered as a valid MCP server. Admin-gated (manage_tools) in live mode;
- * the Bearer token is resolved server-side from the key vault and never returned.
+ * the auth secret is resolved server-side from the key vault and never returned.
  */
-const McpTestSchema = z.object({
-  url: z.string().url().max(500),
-  apiKeyId: z.string().uuid().optional(),
-});
+const McpTestSchema = z
+  .object({
+    url: z
+      .string()
+      .url()
+      .max(500)
+      .refine((url) => validateMcpBaseUrlHasNoAuthQueryParam(url).ok, {
+        message: "MCP server URL must not contain auth query params.",
+      }),
+    apiKeyId: z.string().uuid().optional(),
+    authStyle: z.enum(["bearer", "query"]).optional(),
+    authQueryParam: z.enum(AUTH_QUERY_PARAMS).optional(),
+  })
+  .superRefine((server, ctx) => {
+    if ((server.authStyle ?? "bearer") === "query" && !server.authQueryParam) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["authQueryParam"],
+        message: "authQueryParam is required for query-auth MCP servers.",
+      });
+    }
+  });
+
+function hostFor(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "MCP server";
+  }
+}
 
 export async function POST(req: NextRequest) {
   const prodBlock = prodFailClosed();
@@ -51,7 +79,8 @@ export async function POST(req: NextRequest) {
 
   const validated = await validateBody(req, McpTestSchema, { maxBytes: 5_000 });
   if (!validated.ok) return validated.response;
-  const { url, apiKeyId } = validated.data;
+  const { url, apiKeyId, authStyle, authQueryParam } = validated.data;
+  const host = hostFor(url);
 
   // Only http(s); never follow redirects (SSRF hardening). The URL is admin-entered.
   let parsed: URL;
@@ -76,10 +105,16 @@ export async function POST(req: NextRequest) {
   if (apiKeyId) {
     token = await resolveVaultSecret(apiKeyId);
   }
+  let auth: { url: string; token: string };
+  try {
+    auth = applyMcpAuth(url, token, { authStyle, authQueryParam });
+  } catch {
+    return NextResponse.json({ ok: false, error: `MCP authentication is misconfigured for ${host}.` }, { status: 400 });
+  }
 
   // initialize + tools/list via the MCP client, so the test reports the real tools.
   try {
-    const result = await connectAndListTools(url, token);
+    const result = await connectAndListTools(auth.url, auth.token);
     if (result.ok) {
       return NextResponse.json({
         ok: true,
@@ -89,7 +124,7 @@ export async function POST(req: NextRequest) {
       });
     }
     return NextResponse.json({ ok: false, error: result.error ?? "MCP connection failed." });
-  } catch (err) {
-    return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : "MCP connection failed." });
+  } catch {
+    return NextResponse.json({ ok: false, error: `MCP connection failed for ${host}.` });
   }
 }
