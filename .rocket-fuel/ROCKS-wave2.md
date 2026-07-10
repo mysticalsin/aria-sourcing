@@ -25,8 +25,8 @@ Done means: DatabricksSettings ({host, warehouseId, authMode pat|m2m, clientId?,
 Proof: `npx tsx tests/databricks-intake.mts` → exit 0 (incl. SSRF private-host rejection + no-server-mutation)
 Status: DONE
 
-## Rock W5: Gate + wiring
+## Rock W5: Gate + wiring  ✅ DONE (SHIP — docs-truth wired, full gate green: tsc 0, 98 suites 0 failed, lint 0)
 Owner: Integrator
 Done means: all new tests in npm chain; full gate green.
-Proof: `npx tsc --noEmit && npm test` exit 0; `npm run lint` 0 errors
-Status: NOT STARTED
+Proof: `npx tsc --noEmit` → No errors; full `npm test` chain (pretest+test) → 98 suite commands, all `RESULT … 0 failed`, chain exit 0 (incl. `docs-truth: 11 passed, 0 failed`); `npm run lint` → No issues found. The orphaned `tests/docs-truth.mts` is now the 98th command in the chain; STATUS.md count and the docs-truth STATUS assertion both moved 97→98 in lockstep.
+Status: DONE
