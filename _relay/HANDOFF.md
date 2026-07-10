@@ -8,7 +8,10 @@ status: in-progress
 
 # Handoff — ARIA enterprise-ready (sourcing agents + Flowise Studio)
 
-## Current state
+## Current state (as of 2026-07-10 merge)
+- **`main` merged up to `vercel-demo` via PR #1 (merge commit `6c471f0`), pushed to origin.** main is now the latest, fully-tested code — 67/67 test suites, tsc clean, isolated prod build passes. The merge auto-triggered a Vercel production build (git integration confirmed live). OPEN: Tony verifies the new build reaches READY and that Vercel's production branch is set to `main`.
+
+## Prior state
 - Branch `vercel-demo`, HEAD `c53127f`, pushed to origin (push confirmed this shift).
 - Full gate green: `npx tsc --noEmit` clean, `npm test` 55/55 suites, 0 failures (was 42-45/45 at last handoff; +10 suites landed this shift: approval-persistence, providers, email-unsubscribe, linkedin-policy, flowise-policy, dispatch-outbound expanded, motion-foundation, login-page, aria-live, aria-command-console-state, compliance-suppression).
 - **A second, concurrent process was writing to this same worktree live during this shift** (not me — files appeared/changed mid-session: whatsapp-policy.ts, outreach-approval.ts, email-unsubscribe.ts, linkedin-policy.ts, flowise-policy.ts, browser-tools.ts stealth removal, store.ts suppression flow, UX/motion files). I absorbed and committed all of it in 8 reviewed, tested, atomic commits rather than one blob. If you're the next session and see more uncommitted drift, the same process may still be running — re-survey `git status` fresh before trusting any plan, mine included.
