@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1
+#
+# Production image for Aria Sourcing (Next.js App Router, standalone output).
+# The build runs INSIDE the container so the host `.next` (OneDrive-synced, prone to
+# mid-write corruption) never enters the image. The dev `Dockerfile` (npm run dev,
+# NODE_ENV=development) is NOT for production — it disables every fail-closed guard.
+ARG NODE_VERSION=22
+
+FROM node:${NODE_VERSION}-bookworm-slim AS deps
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+FROM node:${NODE_VERSION}-bookworm-slim AS builder
+WORKDIR /app
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
+# The 4 NEXT_PUBLIC_* values are inlined into the client bundle by `next build`, so
+# they must be ENV *before* the build. They are build args, not runtime secrets (the
+# anon key is a public, RLS-guarded JWT). Real tenant builds with DEMO_LOGIN=false.
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ARG NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN
+ARG NEXT_PUBLIC_ENABLE_DEMO_LOGIN
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
+    NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN=$NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN \
+    NEXT_PUBLIC_ENABLE_DEMO_LOGIN=$NEXT_PUBLIC_ENABLE_DEMO_LOGIN
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm run build
+
+FROM node:${NODE_VERSION}-bookworm-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0 NEXT_TELEMETRY_DISABLED=1
+# output:"standalone" emits a self-contained server at .next/standalone/server.js but
+# EXCLUDES public/ and .next/static — copy them explicitly or every static asset 404s.
+# `node` (uid 1000) already exists in the base image → run unprivileged.
+COPY --from=builder --chown=node:node /app/public ./public
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+USER node
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["node", "server.js"]

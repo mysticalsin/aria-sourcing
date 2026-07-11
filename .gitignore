@@ -52,3 +52,4 @@ tmp/
 var/
 
 production-readiness/.fly-secrets.env
+production-readiness/.fly-token.env

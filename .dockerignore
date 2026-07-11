@@ -14,3 +14,32 @@ ultraplan
 graphify-out
 *.md
 !README.md
+
+# --- Fly/Vercel production build hygiene ---
+# NOTE: .dockerignore treats a trailing "# ..." on a pattern line as part of the
+# literal pattern, so every comment stays on its own line.
+# CRITICAL (secret leak): Dockerfile.prod does `COPY . .`; keep Fly secrets OUT of the image.
+production-readiness
+**/.fly-secrets.env
+.fly-secrets.env
+# non-app dirs / local artifacts
+.vercel
+_agent_state
+Aria
+Aria.png
+Logo.png
+.claude
+scratchpad
+# infra config (not needed at app runtime)
+Dockerfile
+Dockerfile.prod
+docker-compose.yml
+fly.*.toml
+.dockerignore
+deploy-fly.sh
+e2e-workflow-test.sh
+# heavy dirs that bloated the build context to 524MB (none belong in any image)
+tmp
+.localbin
+var
+docs

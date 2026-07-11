@@ -1,0 +1,34 @@
+name: Deploy Aria Mantu (Fly)
+
+# Runs the full Fly deploy from a GitHub runner (clean, fast network to Fly) so it
+# does not depend on any local machine's route to Fly's API. Trigger manually.
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Restore secret files from bundle
+        env:
+          BUNDLE: ${{ secrets.ARIA_DEPLOY_BUNDLE }}
+        run: |
+          if [ -z "$BUNDLE" ]; then echo "::error::ARIA_DEPLOY_BUNDLE secret is not set"; exit 1; fi
+          echo "$BUNDLE" | base64 -d | tar xzf - -C .
+          echo "restored:"; ls -1 production-readiness/.fly-*.env .env.local 2>/dev/null
+
+      - name: Deploy the full Fly stack
+        run: bash deploy-fly.sh
+
+      - name: Report URLs
+        if: always()
+        run: |
+          echo "App:  https://aria-mantu-app.fly.dev"
+          echo "Kong: https://aria-mantu-kong.fly.dev"

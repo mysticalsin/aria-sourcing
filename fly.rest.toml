@@ -1,0 +1,26 @@
+# aria-mantu-rest — PostgREST (stock image). INTERNAL ONLY, reached at aria-mantu-rest.internal:3000.
+app            = "aria-mantu-rest"
+primary_region = "cdg"
+
+[build]
+  image = "postgrest/postgrest:v14.12"
+
+[env]
+  PGRST_SERVER_HOST          = "*6"     # bind IPv6 for the 6PN .internal net (default !4 = IPv4 only)
+  PGRST_DB_SCHEMAS           = "public"
+  PGRST_DB_ANON_ROLE         = "anon"
+  PGRST_DB_USE_LEGACY_GUCS   = "false"
+  PGRST_APP_SETTINGS_JWT_EXP = "3600"
+  PGRST_ADMIN_SERVER_PORT    = "3001"
+  # Secrets (fly secrets set): PGRST_JWT_SECRET (=FLY_JWT_SECRET),
+  #   PGRST_APP_SETTINGS_JWT_SECRET (=FLY_JWT_SECRET),
+  #   PGRST_DB_URI = postgres://authenticator:<FLY_PG_PASSWORD>@aria-mantu-db.internal:5432/postgres
+
+[[services]]
+  internal_port = 3000
+  protocol      = "tcp"
+  # no external ports → internal only
+
+[[vm]]
+  size   = "shared-cpu-1x"
+  memory = "512mb"

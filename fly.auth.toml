@@ -1,0 +1,32 @@
+# aria-mantu-auth — GoTrue (stock image). INTERNAL ONLY, reached at aria-mantu-auth.internal:9999.
+app            = "aria-mantu-auth"
+primary_region = "cdg"
+
+[build]
+  image = "supabase/gotrue:v2.189.0"
+
+[env]
+  GOTRUE_API_HOST               = "::"                          # bind IPv6 for the 6PN .internal net
+  GOTRUE_API_PORT               = "9999"
+  API_EXTERNAL_URL              = "https://aria-mantu-kong.fly.dev"   # was http://localhost:54321
+  GOTRUE_SITE_URL               = "https://aria-mantu-app.fly.dev"    # was http://localhost:3000
+  GOTRUE_URI_ALLOW_LIST         = "https://aria-mantu-app.fly.dev/**" # was "*"
+  GOTRUE_DB_DRIVER              = "postgres"
+  GOTRUE_DISABLE_SIGNUP         = "true"                        # single-admin tenant (was "false"); see runbook step 11
+  GOTRUE_JWT_ADMIN_ROLES        = "service_role"
+  GOTRUE_JWT_AUD                = "authenticated"
+  GOTRUE_JWT_DEFAULT_GROUP_NAME = "authenticated"
+  GOTRUE_JWT_EXP                = "3600"
+  GOTRUE_EXTERNAL_EMAIL_ENABLED = "true"
+  GOTRUE_MAILER_AUTOCONFIRM     = "true"                        # ok for single-admin; flip false + SMTP for multi-user
+  # Secrets (fly secrets set): GOTRUE_JWT_SECRET (=FLY_JWT_SECRET),
+  #   GOTRUE_DB_DATABASE_URL = postgres://supabase_auth_admin:<FLY_PG_PASSWORD>@aria-mantu-db.internal:5432/postgres
+
+[[services]]
+  internal_port = 9999
+  protocol      = "tcp"
+  # no external ports → internal only
+
+[[vm]]
+  size   = "shared-cpu-1x"
+  memory = "512mb"

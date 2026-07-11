@@ -1,0 +1,13 @@
+# syntax=docker/dockerfile:1
+#
+# aria-bootstrap: one-off migrations runner for the REAL tenant (no demo seed). Fly has no
+# bind mounts, so the migrations + auth-owner script are COPY'd in. Build context = repo root.
+FROM postgres:17-bookworm
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+COPY docker/bootstrap/run.fly.sh /usr/local/bin/run.fly.sh
+COPY supabase/migrations         /migrations
+COPY docker/db/03-auth-owner.sql /auth-owner.sql
+RUN chmod +x /usr/local/bin/run.fly.sh
+ENTRYPOINT ["/usr/local/bin/run.fly.sh"]

@@ -1,0 +1,14 @@
+# syntax=docker/dockerfile:1
+#
+# aria-db image: supabase/postgres + the first-init scripts baked in (Fly has no bind
+# mounts). They run ONCE, on first init of the EMPTY volume, after the image's own role/
+# auth objects exist. 01-roles reads $POSTGRES_PASSWORD; 02-jwt reads $JWT_SECRET/$JWT_EXP.
+#
+# 99-auth-owner is idempotent and self-guards (`if not exists auth -> return`), so it is a
+# harmless no-op if it runs before the image's auth schema exists. It is ALSO re-run as an
+# explicit one-off AFTER the DB is healthy (runbook step 6) — that later run is the reliable
+# one that unblocks GoTrue; the baked copy is belt-and-suspenders.
+FROM supabase/postgres:17.6.1.136
+COPY docker/db/01-roles.sql      /docker-entrypoint-initdb.d/init-scripts/99-roles.sql
+COPY docker/db/02-jwt.sql        /docker-entrypoint-initdb.d/init-scripts/99-jwt.sql
+COPY docker/db/03-auth-owner.sql /docker-entrypoint-initdb.d/init-scripts/99-auth-owner.sql

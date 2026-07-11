@@ -1,0 +1,31 @@
+# aria-mantu-kong — the ONE public Supabase surface the browser hits (custom image).
+app            = "aria-mantu-kong"
+primary_region = "cdg"
+
+[build]
+  dockerfile = "docker/kong/Dockerfile.fly"
+
+[env]
+  KONG_DATABASE                      = "off"
+  KONG_DECLARATIVE_CONFIG            = "/usr/local/kong/kong.yml"   # kong-entrypoint.sh writes the substituted config here
+  KONG_PROXY_LISTEN                  = "0.0.0.0:8000, [::]:8000"    # IPv6 for 6PN + IPv4 for fly-proxy
+  KONG_DNS_ORDER                     = "LAST,AAAA,A,CNAME"          # AAAA so Kong resolves *.internal (was LAST,A,CNAME)
+  KONG_PLUGINS                       = "request-transformer,cors,key-auth,acl,basic-auth,request-termination,ip-restriction,post-function"
+  KONG_NGINX_PROXY_PROXY_BUFFER_SIZE = "160k"
+  KONG_NGINX_PROXY_PROXY_BUFFERS     = "64 160k"
+  # Secrets (fly secrets set): SUPABASE_ANON_KEY (=FLY_SUPABASE_ANON_KEY),
+  #   SUPABASE_SERVICE_KEY (=FLY_SUPABASE_SERVICE_KEY). DASHBOARD_* dropped (studio route removed).
+
+[http_service]
+  internal_port        = 8000
+  force_https          = true          # Fly terminates TLS; Kong speaks plain http internally
+  min_machines_running = 1
+  [[http_service.checks]]
+    method   = "GET"
+    path     = "/healthz"
+    interval = "15s"
+    timeout  = "5s"
+
+[[vm]]
+  size   = "shared-cpu-1x"
+  memory = "512mb"

@@ -1,0 +1,48 @@
+# aria-mantu-app — the Next.js production build (Dockerfile.prod). PUBLIC.
+#   deploy: fly deploy --config fly.app.toml --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$FLY_SUPABASE_ANON_KEY"
+# The 4 NEXT_PUBLIC_* are baked at `next build` (Next inlines them), so they are build args,
+# not runtime secrets. Everything else is [env] (non-secret) or fly secrets set (secret).
+app            = "aria-mantu-app"
+primary_region = "cdg"
+
+[build]
+  dockerfile = "Dockerfile.prod"
+  [build.args]
+    NEXT_PUBLIC_SUPABASE_URL         = "https://aria-mantu-kong.fly.dev"   # browser → Supabase (public Kong)
+    NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN = ""
+    NEXT_PUBLIC_ENABLE_DEMO_LOGIN    = "false"                       # real tenant: OFF → strict fail-closed
+    # NEXT_PUBLIC_SUPABASE_ANON_KEY passed on the CLI (see deploy cmd above)
+
+[env]
+  NODE_ENV                      = "production"
+  PORT                          = "3000"
+  HOSTNAME                      = "0.0.0.0"
+  NEXT_TELEMETRY_DISABLED       = "1"
+  # Server (Node) reaches Supabase over the 6PN private net, NOT the public URL:
+  SUPABASE_URL                  = "http://aria-mantu-kong.internal:8000"
+  # Inert until a seat goes live (also needs a provider key + verified domain); safe to set now:
+  OUTREACH_UNSUBSCRIBE_BASE_URL = "https://aria-mantu-app.fly.dev"
+  # Secrets (fly secrets set): SUPABASE_SERVICE_ROLE_KEY (=FLY_SUPABASE_SERVICE_KEY),
+  #   DATA_ENCRYPTION_KEY (=FLY_DATA_ENCRYPTION_KEY), CRON_SECRET (=FLY_CRON_SECRET).
+  # Do NOT set NEXT_PUBLIC_ENABLE_DEMO_LOGIN / DEMO_ADMIN_PASSWORD on a real tenant.
+
+[http_service]
+  internal_port        = 3000
+  force_https          = true
+  auto_stop_machines   = "suspend"
+  auto_start_machines  = true
+  min_machines_running = 1
+  [http_service.concurrency]
+    type       = "requests"
+    soft_limit = 200
+    hard_limit = 250
+  [[http_service.checks]]
+    method       = "GET"
+    path         = "/api/health"     # unauthenticated, force-dynamic; returns {ok,status:'healthy'} 200
+    interval     = "15s"
+    timeout      = "5s"
+    grace_period = "20s"
+
+[[vm]]
+  size   = "shared-cpu-1x"
+  memory = "1gb"

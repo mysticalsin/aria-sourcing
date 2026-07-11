@@ -4227,7 +4227,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       );
       return { created: newSeats.length, total: s.seats.length + newSeats.length, capped: toCreate < Math.floor(n), max };
     },
-    [commit, current],
+    [commit],
   );
 
   const updateSeat = useCallback(

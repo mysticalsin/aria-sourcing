@@ -1,0 +1,25 @@
+# aria-mantu-db — supabase/postgres on a dedicated volume. INTERNAL ONLY: never gets a public IP,
+# NEVER scaled past 1 machine (no replication in this topology — a 2nd machine = a 2nd empty
+# volume). Reached by siblings at aria-mantu-db.internal:5432 over the IPv6 6PN network.
+app            = "aria-mantu-db"
+primary_region = "cdg"
+
+[build]
+  dockerfile = "docker/db/Dockerfile.fly"
+
+[env]
+  POSTGRES_HOST = "/var/run/postgresql"
+  POSTGRES_PORT = "5432"
+  POSTGRES_DB   = "postgres"
+  JWT_EXP       = "3600"
+  # Secrets (fly secrets set): POSTGRES_PASSWORD (=FLY_PG_PASSWORD), JWT_SECRET (=FLY_JWT_SECRET).
+  # supabase/postgres ships listen_addresses='*' → binds IPv6, so aria-mantu-db.internal:5432 works.
+
+[mounts]
+  source      = "aria_db_data"
+  destination = "/var/lib/postgresql/data"
+
+[[vm]]
+  size   = "shared-cpu-1x"
+  memory = "1gb"
+# No [http_service]/[[services]] with external ports → internal only.
