@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 2,
+  "releaseSha": "<exact-40-character-release-sha>",
+  "production": {
+    "app": "aria-mantu-db",
+    "volumeName": "aria_db_data",
+    "volumeId": "<vol_source-id>",
+    "machineId": "<exact-14-character-source-machine-id>",
+    "region": "cdg"
+  },
+  "recoveryPoint": {
+    "provider": "fly-volume-snapshot",
+    "snapshotId": "<vs_snapshot-id>",
+    "snapshotDigest": "<exact-provider-snapshot-digest>",
+    "createdAt": "<canonical-UTC-timestamp>",
+    "writesQuiescedAt": "<canonical-UTC-timestamp-within-15-minutes-before-snapshot>"
+  },
+  "restoreDrill": {
+    "status": "passed",
+    "targetApp": "aria-mantu-db-recovery-<first-12-release-sha-characters>",
+    "targetVolumeId": "<different-vol_restore-id>",
+    "targetMachineId": "<exact-14-character-restore-machine-id>",
+    "completedAt": "<canonical-UTC-timestamp-after-snapshot>",
+    "destroyAfter": "<canonical-UTC-timestamp-within-24-hours-after-restore>",
+    "restoreOperation": {
+      "requestedSnapshotId": "<same-vs_snapshot-id>",
+      "requestedApp": "aria-mantu-db-recovery-<first-12-release-sha-characters>",
+      "requestedVolumeName": "aria_db_data_restore",
+      "requestedRegion": "cdg",
+      "requestedSizeGb": "<integer-at-least-source-size>",
+      "createdVolumeId": "<same-vol_restore-id>",
+      "providerRequestSha256": "<sha256-of-canonical-private-provider-create-request>",
+      "providerResponseSha256": "<sha256-of-canonical-private-provider-create-response>"
+    },
+    "postgresMajor": 17,
+    "schemaFingerprintSha256": "<64-lowercase-hex-characters>",
+    "rowFingerprintSha256": "<64-lowercase-hex-characters>",
+    "migrationManifestSha256": "<64-lowercase-hex-characters>",
+    "migrationState": "<verified-empty-or-complete-ledger-or-verified-pre-ledger>",
+    "recoveryPreflightSha256": "<exact-digest-emitted-by-reviewed-recovery-preflight>",
+    "legacyBaselineApprovalSha256": "<same-digest-for-verified-pre-ledger-or-null-for-complete-ledger>"
+  },
+  "approval": {
+    "approvedAt": "<canonical-UTC-timestamp-after-restore-drill>",
+    "expiresAt": "<canonical-UTC-timestamp-no-more-than-4-hours-after-approval>",
+    "approvedBy": "<owner-github-login>"
+  }
+}

@@ -37,8 +37,24 @@ ok("docs do not say through 0005 as the full set", !/through 0005/i.test(allDocs
 ok("docs do not say through 0012 as the full set", !/through 0012/i.test(allDocs));
 ok("STATUS.md exists", existsSync(new URL("../production-readiness/STATUS.md", import.meta.url)));
 const status = source("production-readiness/STATUS.md");
-ok("STATUS.md contains today's date", status.includes("2026-07-10"));
-ok("STATUS.md contains 98", status.includes("98"));
+const statusDate = status.match(/\*\*Date:\*\*\s+(\d{4}-\d{2}-\d{2})/)?.[1];
+const statusDateMs = statusDate ? Date.parse(`${statusDate}T00:00:00Z`) : Number.NaN;
+const ageDays = (Date.now() - statusDateMs) / (24 * 60 * 60 * 1000);
+ok(
+  "STATUS.md contains a recent, non-future ISO date",
+  Number.isFinite(statusDateMs) && ageDays >= -1 && ageDays <= 31,
+);
+
+const packageJson = JSON.parse(source("package.json")) as {
+  scripts?: Record<string, string>;
+};
+const countCommands = (script: string | undefined) => script?.split(/\s+&&\s+/).length ?? 0;
+const canonicalTestCommands =
+  countCommands(packageJson.scripts?.pretest) + countCommands(packageJson.scripts?.test);
+ok(
+  "STATUS.md reports the package-derived canonical test command count",
+  canonicalTestCommands > 0 && status.includes(`${canonicalTestCommands} chained checks`),
+);
 
 console.log(`RESULT docs-truth: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

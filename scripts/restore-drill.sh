@@ -39,16 +39,20 @@ dex() {
   docker exec -i "$CID" psql -X -v ON_ERROR_STOP=1 -U postgres "$@"
 }
 
+dex_owner() {
+  docker exec -i "$CID" psql -X -v ON_ERROR_STOP=1 -U supabase_admin "$@"
+}
+
 cleanup_scratch() {
   [ "$SCRATCH_CLEANUP_ARMED" -eq 1 ] || return 0
   local exists
-  exists="$(dex -d postgres -tA -c "select exists (select 1 from pg_database where datname = '${SCRATCH}');" | tr -d '[:space:]')" || return 1
+  exists="$(dex_owner -d postgres -tA -c "select exists (select 1 from pg_database where datname = '${SCRATCH}');" | tr -d '[:space:]')" || return 1
   if [ "$exists" != "t" ]; then
     SCRATCH_CLEANUP_ARMED=0
     return 0
   fi
-  dex -d postgres -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = '${SCRATCH}' and pid <> pg_backend_pid();" >/dev/null 2>&1 || return 1
-  dex -d postgres -c "drop database \"${SCRATCH}\";" >/dev/null 2>&1 || return 1
+  dex_owner -d postgres -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = '${SCRATCH}' and pid <> pg_backend_pid();" >/dev/null 2>&1 || return 1
+  dex_owner -d postgres -c "drop database \"${SCRATCH}\";" >/dev/null 2>&1 || return 1
   SCRATCH_CLEANUP_ARMED=0
 }
 
@@ -64,31 +68,32 @@ ACTUAL_MANIFEST="$(mktemp "${TMPDIR:-/tmp}/aria-restore-manifest.XXXXXX")"
 
 echo "Creating isolated scratch database..."
 SCRATCH_CLEANUP_ARMED=1
-dex -d postgres -c "create database \"${SCRATCH}\";" >/dev/null
+dex_owner -d postgres -c "create database \"${SCRATCH}\" owner postgres;" >/dev/null
 echo "Restoring archive ${BACKUP_ID}..."
-docker exec -i "$CID" pg_restore --exit-on-error --no-owner -U postgres -d "$SCRATCH" < "$ARCHIVE" >/dev/null
+docker exec -i "$CID" pg_restore --exit-on-error --no-owner -U supabase_admin -d "$SCRATCH" < "$ARCHIVE" >/dev/null
 
 REQUIRED_TABLES=(
-  agent_events agent_runs agent_seats agent_specs api_keys email_connections
+  agent_events agent_runs agent_seats agent_specs api_keys aria_schema_migrations databricks_connection_events
+  databricks_connections dust_connection_events dust_connections email_connections
   messages_inbound messages_outbound outbound_content_cache outreach_approvals
   outreach_ledger profiles suppression_list whatsapp_contacts
   whatsapp_conversation_windows whatsapp_delivery_events whatsapp_senders
   whatsapp_templates workspace_state workspaces
 )
 EXPECTED_TABLES="$(printf '%s\n' "${REQUIRED_TABLES[@]}" | LC_ALL=C sort | tr '\n' ',' | sed 's/,$//')"
-ACTUAL_TABLES="$(dex -d "$SCRATCH" -tA -c "select coalesce(string_agg(tablename, ',' order by tablename), '') from pg_tables where schemaname = 'public';" | tr -d '[:space:]')"
+ACTUAL_TABLES="$(dex_owner -d "$SCRATCH" -tA -c "select coalesce(string_agg(tablename, ',' order by tablename), '') from pg_tables where schemaname = 'public';" | tr -d '[:space:]')"
 [ "$ACTUAL_TABLES" = "$EXPECTED_TABLES" ] || { echo "Restored public table set is not exact." >&2; exit 1; }
 
-DISABLED_RLS="$(dex -d "$SCRATCH" -tA -c "select coalesce(string_agg(tablename, ',' order by tablename), '') from pg_tables where schemaname = 'public' and rowsecurity = false;" | tr -d '[:space:]')"
+DISABLED_RLS="$(dex_owner -d "$SCRATCH" -tA -c "select coalesce(string_agg(tablename, ',' order by tablename), '') from pg_tables where schemaname = 'public' and rowsecurity = false;" | tr -d '[:space:]')"
 [ -z "$DISABLED_RLS" ] || { echo "Restored public tables without RLS: $DISABLED_RLS" >&2; exit 1; }
 
-EXPECTED_MIGRATIONS="$(find supabase/migrations -type f -name '[0-9][0-9][0-9][0-9]_*.sql' -exec basename {} \; | cut -d_ -f1 | LC_ALL=C sort | tr '\n' ',' | sed 's/,$//')"
-HAS_MIGRATION_LEDGER="$(dex -d "$SCRATCH" -tA -c "select to_regclass('supabase_migrations.schema_migrations') is not null;" | tr -d '[:space:]')"
+EXPECTED_MIGRATION_IDENTITIES="$(expected_aria_migration_identities supabase/migrations)"
+HAS_MIGRATION_LEDGER="$(dex_owner -d "$SCRATCH" -tA -c "select to_regclass('public.aria_schema_migrations') is not null;" | tr -d '[:space:]')"
 [ "$HAS_MIGRATION_LEDGER" = "t" ] || { echo "Restored database has no migration ledger." >&2; exit 1; }
-ACTUAL_MIGRATIONS="$(dex -d "$SCRATCH" -tA -c "select coalesce(string_agg(version, ',' order by version), '') from supabase_migrations.schema_migrations;" | tr -d '[:space:]')"
-[ "$ACTUAL_MIGRATIONS" = "$EXPECTED_MIGRATIONS" ] || { echo "Restored migration set does not match this checkout." >&2; exit 1; }
+ACTUAL_MIGRATION_IDENTITIES="$(dex_owner -d "$SCRATCH" -tA -c "select coalesce(string_agg(filename || ':' || sha256, ',' order by filename), '') from public.aria_schema_migrations;" | tr -d '[:space:]')"
+[ "$ACTUAL_MIGRATION_IDENTITIES" = "$EXPECTED_MIGRATION_IDENTITIES" ] || { echo "Restored ARIA migration identities do not match this checkout." >&2; exit 1; }
 
-FINGERPRINT="$(dex -d "$SCRATCH" -tA -c "select to_regprocedure('public.finalize_whatsapp_provider_failure(uuid,uuid,text)') is not null;" | tr -d '[:space:]')"
+FINGERPRINT="$(dex_owner -d "$SCRATCH" -tA -c "select to_regprocedure('public.finalize_whatsapp_provider_failure(uuid,uuid,text)') is not null;" | tr -d '[:space:]')"
 [ "$FINGERPRINT" = "t" ] || { echo "Latest schema fingerprint is missing." >&2; exit 1; }
 
 write_db_manifest "$CID" "$SCRATCH" "$BACKUP_ID" "$ACTUAL_SHA" "$ACTUAL_MANIFEST"

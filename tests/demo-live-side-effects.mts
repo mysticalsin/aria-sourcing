@@ -115,6 +115,7 @@ process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "test-anon-key";
 
 let blockExternalEffects = true;
 let providerCalls = 0;
+let serverClientReads = 0;
 let serviceClientReads = 0;
 let durableMutations = 0;
 let authenticatedUser: { id: string } | null = { id: "user-1" };
@@ -132,7 +133,10 @@ mock.module(moduleUrl("src/lib/server/demo-side-effects.ts"), {
 });
 mock.module(moduleUrl("src/lib/supabase/server.ts"), {
   namedExports: {
-    getServerSupabase: async () => currentSupabase,
+    getServerSupabase: async () => {
+      serverClientReads += 1;
+      return currentSupabase;
+    },
     getServiceSupabase: () => {
       serviceClientReads += 1;
       return currentService;
@@ -262,6 +266,26 @@ ok("valid public-demo admin/live-seat send resolves as dry-run", guardedSend.sta
 ok("valid public-demo send performs zero provider calls", providerCalls === 0);
 ok("valid public-demo send performs zero durable mutations", durableMutations === 0);
 ok("valid public-demo send never reads service credentials", serviceClientReads === 0);
+
+blockExternalEffects = false;
+providerCalls = 0;
+serverClientReads = 0;
+serviceClientReads = 0;
+durableMutations = 0;
+const explicitDryRun = await sendPost(new NextRequest("http://localhost/api/outreach/send", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ ...sendPayload, confirmLive: false }),
+}));
+const explicitDryRunBody = await explicitDryRun.json() as { status?: string };
+ok(
+  "normal-tenant confirmLive=false resolves through the real route as dry-run",
+  explicitDryRun.status === 200 && explicitDryRunBody.status === "dry-run",
+);
+ok("normal-tenant confirmLive=false performs zero provider or DNS calls", providerCalls === 0);
+ok("normal-tenant confirmLive=false performs zero server or service client reads", serverClientReads === 0 && serviceClientReads === 0);
+ok("normal-tenant confirmLive=false performs zero durable mutations", durableMutations === 0);
+blockExternalEffects = true;
 
 const approvalSupabase = {
   auth: { getUser: async () => ({ data: { user: { id: "user-1" } }, error: null }) },

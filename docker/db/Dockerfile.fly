@@ -1,14 +1,22 @@
-# syntax=docker/dockerfile:1
-#
-# aria-db image: supabase/postgres + the first-init scripts baked in (Fly has no bind
-# mounts). They run ONCE, on first init of the EMPTY volume, after the image's own role/
-# auth objects exist. 01-roles reads $POSTGRES_PASSWORD; 02-jwt reads $JWT_SECRET/$JWT_EXP.
-#
-# 99-auth-owner is idempotent and self-guards (`if not exists auth -> return`), so it is a
-# harmless no-op if it runs before the image's auth schema exists. It is ALSO re-run as an
-# explicit one-off AFTER the DB is healthy (runbook step 6) — that later run is the reliable
-# one that unblocks GoTrue; the baked copy is belt-and-suspenders.
-FROM supabase/postgres:17.6.1.136
-COPY docker/db/01-roles.sql      /docker-entrypoint-initdb.d/init-scripts/99-roles.sql
-COPY docker/db/02-jwt.sql        /docker-entrypoint-initdb.d/init-scripts/99-jwt.sql
-COPY docker/db/03-auth-owner.sql /docker-entrypoint-initdb.d/init-scripts/99-auth-owner.sql
+# aria-db image: Supabase Postgres plus first-init and post-base reconciliation.
+# Top-level 00-* policy runs before migrate.sh. The pinned migrate.sh invokes
+# /etc/postgresql.schema.sql directly as supabase_admin after every bundled
+# migration, which is the only safe fresh-cluster point for owner-local ACLs and
+# split credentials. The init-complete marker remains last and fail-closed.
+FROM supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00
+# /var/lib/postgresql is both the durable volume root and postgres HOME.
+# Configure every process, including Fly SSH consoles, to keep history off the
+# volume; the entrypoint also removes known regular history files defensively.
+ENV HISTFILE=/dev/null \
+  PSQL_HISTORY=/dev/null \
+  LESSHISTFILE=-
+COPY docker/db/entrypoint.fly.sh /usr/local/bin/aria-db-entrypoint
+COPY docker/db/00-aria-init-log-policy.sql /docker-entrypoint-initdb.d/00-aria-init-log-policy.sql
+COPY docker/db/mark-init-complete.sh /docker-entrypoint-initdb.d/zz-aria-init-complete.sh
+COPY docker/bootstrap/supabase-admin-reconciliation.sql /opt/aria/supabase-admin-reconciliation.sql
+COPY docker/db/postgresql.schema.sql /etc/postgresql.schema.sql
+RUN chmod 0755 \
+  /usr/local/bin/aria-db-entrypoint \
+  /docker-entrypoint-initdb.d/zz-aria-init-complete.sh
+ENTRYPOINT ["/usr/local/bin/aria-db-entrypoint"]
+CMD ["postgres", "-D", "/etc/postgresql"]

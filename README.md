@@ -17,7 +17,7 @@ Verified from `package.json` on 2026-07-10:
 | Data/auth | Supabase Postgres, Supabase Auth, RLS tenancy, service-role server APIs |
 | UI/runtime | Tailwind, Recharts, lucide-react, Framer Motion, Three.js/R3F |
 | Node | `22.x` |
-| Verification | `npm test` runs 97 suite commands including `pretest` |
+| Verification | `npm test` runs 121 chained checks: 17 `pretest` commands plus 104 test commands |
 | Quality gates | `npm run typecheck`, `npm run lint`, `npm test`, `npm run build:isolated` for this OneDrive checkout |
 
 ## Shipped Surfaces
@@ -30,8 +30,9 @@ Verified from `package.json` on 2026-07-10:
 | Public careers intake | `src/app/careers`, `src/app/api/careers/route.ts`, `src/lib/careers*` | Built |
 | Executive dashboard | `src/app/exec`, `src/lib/exec-dashboard.ts` | Built |
 | Win log | `src/app/winlog`, `tests/winlog.mts` | Built |
-| Databricks intake | `src/app/api/integrations/databricks/needs/route.ts`, `src/components/settings/databricks-panel.tsx`, `tests/databricks-intake.mts` | Built |
-| MCP query auth and secret-leak checks | `tests/mcp-query-auth.mts`, `tests/mcp-secret-leak-adversarial.mts` | Built |
+| Databricks intake | `src/app/api/integrations/databricks/{config,needs}`, `src/lib/integrations/databricks-authority.ts`, `tests/{databricks-intake,integration-authority}.mts` | Built in source; migration 0019, deployment `DATABRICKS_ALLOWED_ORIGINS`, and admin rebinding required |
+| MCP discovery and query auth | `src/app/api/mcp/test`, `tests/mcp-query-auth.mts` | Built; HTTPS port 443 only |
+| Third-party MCP execution | `src/lib/mcp-client.ts`, `tests/mcp-runtime-policy.mts` | Disabled in production; nonproduction requires explicit opt-in |
 | Hermes runtime proxy | `src/app/api/hermes/*`, `src/lib/api/hermes-proxy.ts` | Built, private runtime required |
 | Google/Microsoft mailbox OAuth | `src/app/auth/google/*`, `src/app/auth/microsoft/*`, `src/lib/email-oauth.ts` | Built, provider credentials required |
 | WhatsApp review and inbound safety | `src/app/api/webhooks/whatsapp/route.ts`, `src/app/api/outreach/whatsapp-review/route.ts`, `src/lib/channels.ts` | Built, Meta credentials required |
@@ -82,12 +83,29 @@ The short root pointer is [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 Production requires, at minimum:
 
-- Cloud Supabase project with every migration in `supabase/migrations/` applied
-  in order by `supabase db push`.
+- Fly-hosted PostgreSQL recovered and migrated only through the protected
+  bootstrap ledger path in the canonical workflow. Do not run `supabase db
+  push` against the Fly production database.
 - Required production env vars from `.env.production.example`.
+- Protected GitHub `Production` environment secrets for the Fly deployment and
+  a separate registry-only `FLY_REGISTRY_TOKEN` restricted to the app, DB,
+  bootstrap, and Kong registries. Do not reuse a general operator token.
 - A verified delivery provider path before any live outreach.
 - Domain, OAuth, and unsubscribe settings matching the deployment URL.
 - Green local/CI gates against the release SHA.
+
+The protected Fly workflow builds the app, DB, bootstrap, and Kong images from
+the exact release SHA, pushes isolated candidates, pulls and scans their exact
+registry digests, signs provenance and SBOM attestations, promotes immutable SHA
+tags, and deploys without rebuilding. It also pulls the config-pinned upstream
+Auth and REST images for `linux/amd64`, applies the same CycloneDX,
+HIGH/CRITICAL, and secret gates, records them as upstream rather than claiming a
+local build attestation, and compares all six running digests. Its always-run
+evidence upload retains rollback, manifest, schema-validated SBOM, vulnerability,
+filesystem plus image-config/history secret, attestation, and release receipts
+even when a later gate fails.
+The workflow must exist on the repository default branch before manual dispatch
+is available.
 
 The current dated status page is
 [`production-readiness/STATUS.md`](production-readiness/STATUS.md).
@@ -115,7 +133,8 @@ Important code anchors:
 - `src/lib/store.ts` owns client state and local/demo persistence.
 - `src/lib/supabase/*` owns live-mode Supabase config and server helpers.
 - `src/lib/crypto-secrets.ts` encrypts provider/OAuth secrets at rest when
-  `DATA_ENCRYPTION_KEY` is set.
+  `DATA_ENCRYPTION_KEY` is set and supports bounded rotation through
+  `DATA_ENCRYPTION_PREVIOUS_KEYS`.
 - `src/lib/agent-disclosure-policy.ts` blocks candidate-facing disclosure leaks.
 - `src/lib/metrics.ts` and `src/lib/exec-dashboard.ts` define metric semantics.
 - `src/app/api/cron/dispatch-outbound/route.ts` is protected by `CRON_SECRET`.
@@ -132,6 +151,7 @@ Do not commit real secrets.
 ## Migration Rule
 
 Do not hand-pick a partial migration range. Apply every file in
-`supabase/migrations/` in order with `supabase db push` for linked projects or
-`supabase db reset` locally. The only annotated per-migration list lives in the
-canonical deploy runbook.
+`supabase/migrations/` in order. Fly production uses only the protected
+bootstrap ledger path. `supabase db push` is limited to a separately linked
+legacy Vercel demo project, and `supabase db reset` is local development only.
+The only annotated per-migration list lives in the canonical deploy runbook.

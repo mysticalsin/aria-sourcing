@@ -18,18 +18,15 @@ function restoreFetch() {
 }
 
 function jsonResponse(status: number, body: unknown, url = "https://dust.tt/api/v1/w/ws_1/x"): Response {
-  return {
-    ok: status >= 200 && status < 300,
+  void url;
+  return new Response(JSON.stringify(body), {
     status,
-    url,
-    text: async () => JSON.stringify(body),
-    json: async () => body,
-  } as Response;
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
-/** Minimal-but-schema-valid Dust agent configuration (every required field the
- *  SDK's zod schema demands — verified against the installed @dust-tt/client's
- *  actual runtime schema, not guessed from the .d.ts). */
+/** Representative Dust public-API agent configuration fixture. The production
+ *  client validates and maps only sId, name, and description. */
 function mkAgentConfig(over: { sId: string; name: string; description: string }) {
   return {
     id: 1,
@@ -144,12 +141,20 @@ async function testListRegion() {
 
 /* ---- listDustAgents: 401 -> throws (route turns this into {ok:false}) --- */
 async function testListUnauthorized() {
-  globalThis.fetch = (async () => jsonResponse(401, apiErrorBody("invalid_api_key_error", "The API key is invalid."))) as typeof fetch;
+  const apiKey = "dust-special key/+?=&%25";
+  const encoded = encodeURIComponent(apiKey);
+  const formEncoded = new URLSearchParams({ value: apiKey }).toString().slice("value=".length);
+  const doubleEncoded = encodeURIComponent(encoded);
+  globalThis.fetch = (async () =>
+    jsonResponse(
+      401,
+      apiErrorBody("invalid_api_key_error", `Bearer ${apiKey}; authorization=${doubleEncoded}; api_key=${formEncoded}`),
+    )) as typeof fetch;
 
   let threw = false;
   let message = "";
   try {
-    await listDustAgents("ws_1", "bad-key");
+    await listDustAgents("ws_1", apiKey);
   } catch (err) {
     threw = true;
     message = err instanceof Error ? err.message : String(err);
@@ -157,7 +162,77 @@ async function testListUnauthorized() {
   restoreFetch();
 
   ok("listDustAgents: 401 throws", threw);
-  ok("listDustAgents: 401 surfaces the Dust error message", message === "The API key is invalid.");
+  ok("listDustAgents: 401 maps to a generic authentication error", message === "Dust authentication failed.");
+  ok(
+    "listDustAgents: 401 reflects no raw or encoded bearer secret",
+    [apiKey, encoded, formEncoded, doubleEncoded].every((value) => !message.includes(value)),
+  );
+}
+
+/* ---- oversized responses are cancelled before full buffering ---------- */
+async function testOversizedResponseIsCancelled() {
+  const chunk = new TextEncoder().encode("x".repeat(1_100_000));
+  let pulls = 0;
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        pulls++;
+        if (pulls <= 2) controller.enqueue(chunk);
+        else controller.close();
+      },
+      cancel() {
+        cancelled = true;
+      },
+    },
+    { highWaterMark: 0 },
+  );
+  globalThis.fetch = (async () => new Response(stream, { status: 200 })) as typeof fetch;
+
+  let message = "";
+  try {
+    await listDustAgents("ws_1", "sk-dust-test-key");
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+  }
+  restoreFetch();
+
+  ok("listDustAgents: oversized streaming response is rejected", message === "Dust returned an oversized response.");
+  ok("listDustAgents: oversized response body is cancelled at the byte limit", cancelled && pulls === 2);
+}
+
+/* ---- declared oversized responses are cancelled before the first pull -- */
+async function testDeclaredOversizedResponseIsCancelled() {
+  let pulls = 0;
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        pulls++;
+        controller.enqueue(new TextEncoder().encode("{}"));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    },
+    { highWaterMark: 0 },
+  );
+  globalThis.fetch = (async () =>
+    new Response(stream, {
+      status: 200,
+      headers: { "Content-Length": "2000001" },
+    })) as typeof fetch;
+
+  let message = "";
+  try {
+    await listDustAgents("ws_1", "sk-dust-test-key");
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+  }
+  restoreFetch();
+
+  ok("listDustAgents: declared oversized response is rejected", message === "Dust returned an oversized response.");
+  ok("listDustAgents: declared oversized body is cancelled without reading", cancelled && pulls === 0);
 }
 
 /* ---- runDustAgent: success (create + poll to succeeded) ---------------- */
@@ -187,12 +262,51 @@ async function testRunSuccess() {
   ok("runDustAgent: polled at least once", getCalls >= 1);
 }
 
+/* ---- successful provider output must never reflect its bearer secret --- */
+async function testRunSuccessCredentialReflection() {
+  const apiKey = "dust-success-special key/+?=&%25";
+  const encoded = encodeURIComponent(apiKey);
+  const formEncoded = new URLSearchParams({ value: apiKey }).toString().slice("value=".length);
+  const doubleEncoded = encodeURIComponent(encoded);
+  const reflected = `Bearer ${apiKey}; authorization=${doubleEncoded}; api_key=${formEncoded}`;
+
+  globalThis.fetch = (async (url: unknown) => {
+    const u = String(url);
+    if (u.includes("/assistant/conversations") && !u.match(/conversations\/[^/?]+(\?|$)/)) {
+      return jsonResponse(200, { conversation: mkConversation({ sId: "conv_reflection" }) });
+    }
+    return jsonResponse(200, {
+      conversation: mkConversation({
+        sId: "conv_reflection",
+        content: [[mkAgentMessage({ sId: "am_reflection", status: "succeeded", content: reflected })]],
+      }),
+    });
+  }) as typeof fetch;
+
+  const result = await runDustAgent("ws_1", apiKey, "agent_jd", "Analyze this JD", 5_000);
+  restoreFetch();
+
+  ok("runDustAgent: credential-bearing success is rejected", result.ok === false);
+  ok(
+    "runDustAgent: rejected success reflects no raw or encoded bearer secret",
+    !result.ok && [apiKey, encoded, formEncoded, doubleEncoded].every((value) => !result.error.includes(value)),
+  );
+}
+
 /* ---- runDustAgent: 401 on conversation create -> {ok:false}, never throws */
 async function testRunUnauthorized() {
-  globalThis.fetch = (async () => jsonResponse(401, apiErrorBody("invalid_api_key_error", "The API key is invalid."))) as typeof fetch;
+  const apiKey = "dust-run-special key/+?=&%25";
+  const encoded = encodeURIComponent(apiKey);
+  const formEncoded = new URLSearchParams({ value: apiKey }).toString().slice("value=".length);
+  const doubleEncoded = encodeURIComponent(encoded);
+  globalThis.fetch = (async () =>
+    jsonResponse(
+      401,
+      apiErrorBody("invalid_api_key_error", `Bearer ${apiKey}; authorization=${doubleEncoded}; api_key=${formEncoded}`),
+    )) as typeof fetch;
 
   let threw = false;
-  const result = await runDustAgent("ws_1", "bad-key", "agent_jd", "hello").catch(() => {
+  const result = await runDustAgent("ws_1", apiKey, "agent_jd", "hello").catch(() => {
     threw = true;
     return { ok: false as const, error: "threw" };
   });
@@ -200,7 +314,11 @@ async function testRunUnauthorized() {
 
   ok("runDustAgent: 401 never throws", !threw);
   ok("runDustAgent: 401 returns ok:false", result.ok === false);
-  ok("runDustAgent: 401 surfaces the Dust error message", !result.ok && result.error === "The API key is invalid.");
+  ok("runDustAgent: 401 maps to a generic authentication error", !result.ok && result.error === "Dust authentication failed.");
+  ok(
+    "runDustAgent: 401 reflects no raw or encoded bearer secret",
+    !result.ok && [apiKey, encoded, formEncoded, doubleEncoded].every((value) => !result.error.includes(value)),
+  );
 }
 
 /* ---- runDustAgent: agent never finishes -> times out, never throws ----- */
@@ -257,6 +375,10 @@ async function testRunTimeoutAndRegion() {
 
 /* ---- runDustAgent: agent fails -> ok:false with the Dust error --------- */
 async function testRunAgentFailed() {
+  const apiKey = "dust-agent-special key/+?=&%25";
+  const encoded = encodeURIComponent(apiKey);
+  const formEncoded = new URLSearchParams({ value: apiKey }).toString().slice("value=".length);
+  const doubleEncoded = encodeURIComponent(encoded);
   globalThis.fetch = (async (url: unknown) => {
     const u = String(url);
     if (u.includes("/assistant/conversations") && !u.match(/conversations\/[^/?]+(\?|$)/)) {
@@ -265,26 +387,57 @@ async function testRunAgentFailed() {
     return jsonResponse(200, {
       conversation: mkConversation({
         sId: "conv_3",
-        content: [[mkAgentMessage({ sId: "am_3", status: "failed", error: { code: "x", message: "Model provider error." } })]],
+        content: [[mkAgentMessage({
+          sId: "am_3",
+          status: "failed",
+          error: { code: "x", message: `Bearer ${apiKey}; authorization=${doubleEncoded}; api_key=${formEncoded}` },
+        })]],
       }),
     });
   }) as typeof fetch;
 
-  const result = await runDustAgent("ws_1", "sk-dust-test-key", "agent_jd", "hello", 5_000);
+  const result = await runDustAgent("ws_1", apiKey, "agent_jd", "hello", 5_000);
   restoreFetch();
 
   ok("runDustAgent: failed agent message returns ok:false", result.ok === false);
-  ok("runDustAgent: failed agent message surfaces the Dust error", !result.ok && result.error === "Model provider error.");
+  ok("runDustAgent: failed agent message maps to a generic error", !result.ok && result.error === "Dust agent run failed.");
+  ok(
+    "runDustAgent: failed agent message reflects no raw or encoded bearer secret",
+    !result.ok && [apiKey, encoded, formEncoded, doubleEncoded].every((value) => !result.error.includes(value)),
+  );
+}
+
+async function testRunNetworkError() {
+  const apiKey = "dust-network-special key/+?=&%25";
+  const encoded = encodeURIComponent(apiKey);
+  const formEncoded = new URLSearchParams({ value: apiKey }).toString().slice("value=".length);
+  const doubleEncoded = encodeURIComponent(encoded);
+  globalThis.fetch = (async () => {
+    throw new Error(`Bearer ${apiKey}; authorization=${doubleEncoded}; api_key=${formEncoded}`);
+  }) as typeof fetch;
+
+  const result = await runDustAgent("ws_1", apiKey, "agent_jd", "hello", 5_000);
+  restoreFetch();
+
+  ok("runDustAgent: network failure maps to a generic error", !result.ok && result.error === "Dust request failed.");
+  ok(
+    "runDustAgent: network failure reflects no raw or encoded bearer secret",
+    !result.ok && [apiKey, encoded, formEncoded, doubleEncoded].every((value) => !result.error.includes(value)),
+  );
 }
 
 await testListSuccess();
 await testListRegion();
 await testListUnauthorized();
+await testOversizedResponseIsCancelled();
+await testDeclaredOversizedResponseIsCancelled();
 await testRunSuccess();
+await testRunSuccessCredentialReflection();
 await testRunUnauthorized();
 await testRunTimeout();
 await testRunTimeoutAndRegion();
 await testRunAgentFailed();
+await testRunNetworkError();
 
 /* ---- Pure-function piece shared by the two routes: task validation ----- */
 // Mirrors the z.enum(DUST_TASKS) used by POST /api/dust/run — same convention

@@ -171,12 +171,34 @@ function req(body: unknown) {
 
 {
   const sql = readFileSync("supabase/migrations/0018_first_admin.sql", "utf8");
+  const databaseTest = readFileSync("tests/db/ensure-workspace-authority.sql", "utf8");
+  const databaseHarness = readFileSync("scripts/test-db-privileges.sh", "utf8");
   const createdBranch = sql.indexOf("workspace_was_created := true");
   const adminBranch = sql.indexOf("case when workspace_was_created then 'admin'");
   ok("migration 0018 exists and replaces ensure_workspace", sql.includes("create or replace function public.ensure_workspace()"));
   ok("migration contains role='admin' marker", sql.includes("role='admin'"));
   ok("admin assignment is tied to workspace creation branch", createdBranch > 0 && adminBranch > createdBranch);
   ok("join branch keeps existing/default role", /else 'member'/.test(sql) && /else public\.profiles\.role/.test(sql));
+  for (const marker of [
+    "anonymous ensure_workspace call is denied",
+    "first authenticated user creates an exact-domain workspace as admin",
+    "second same-domain user joins the existing workspace as member",
+    "repeat ensure_workspace calls never elevate an existing member profile",
+    "pre-existing member profile remains a member after ensure_workspace",
+    "cross-domain users receive distinct exact-domain workspaces",
+  ]) {
+    ok(`real ensure_workspace database test covers ${marker}`, databaseTest.includes(marker));
+  }
+  ok(
+    "real ensure_workspace database test changes effective roles and JWT claims",
+    /set local role anon/i.test(databaseTest) &&
+      /set local role authenticated/i.test(databaseTest) &&
+      /request\.jwt\.claims/i.test(databaseTest),
+  );
+  ok(
+    "disposable database harness runs ensure_workspace behavior verification",
+    /tests\/db\/ensure-workspace-authority\.sql/.test(databaseHarness),
+  );
 }
 
 console.log(`RESULT fleet-seats-server: ${pass} passed, ${fail} failed`);

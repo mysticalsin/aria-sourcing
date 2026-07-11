@@ -31,10 +31,31 @@ const workspaceSource = readFileSync(new URL("../src/lib/supabase/workspace.ts",
 ok("workspace load resolves current_profile_role", /rpc\("current_profile_role"\)/.test(workspaceSource));
 
 const storeSource = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
+const integrationsSource = readFileSync(new URL("../src/lib/integrations.ts", import.meta.url), "utf8");
 ok("live hydration applies the profile role", /applyAuthoritativeRole/.test(storeSource));
-const authNullViewer = storeSource.indexOf('applyAuthoritativeRole(buildSeedState(), "viewer")');
+const authNullViewer = storeSource.indexOf('applyAuthoritativeRole(buildLiveEmptyState(), "viewer")');
 const demoLoad = storeSource.indexOf("setState(loadState())", authNullViewer);
-ok("live auth-null hydration returns a viewer shell before demo loading", authNullViewer >= 0 && demoLoad > authNullViewer);
+ok("live auth-null hydration returns an empty viewer shell before demo loading", authNullViewer >= 0 && demoLoad > authNullViewer);
+ok(
+  "a new live workspace persists an empty state rather than demo campaign data",
+  /if \(remote\.state\)[\s\S]{0,900}else \{[\s\S]{0,180}const seededBase = buildLiveEmptyState\(\)/.test(storeSource),
+);
+ok(
+  "live action fallback never exposes demo seed data before hydration",
+  /stateRef\.current \?\? \(supabaseEnabled \? buildLiveEmptyState\(\) : buildSeedState\(\)\)/.test(storeSource),
+);
+ok(
+  "live empty state contains no campaigns, candidates, outreach, or ghost API keys",
+  /function buildLiveEmptyState[\s\S]*?campaigns: \[\][\s\S]*?candidates: \[\][\s\S]*?outreach: \[\][\s\S]*?apiKeys: \[\]/.test(storeSource),
+);
+ok(
+  "live empty state keeps real configuration surfaces without fake connection status",
+  /integrations: defaultLiveIntegrations\(\)/.test(storeSource) &&
+    /skills: defaultSkills\(\)/.test(storeSource) &&
+    /export function defaultLiveIntegrations/.test(integrationsSource) &&
+    /status: "not_configured"/.test(integrationsSource) &&
+    /lastSync: null/.test(integrationsSource),
+);
 ok(
   "live role switching is rejected in the store boundary",
   /setCurrentRole[\s\S]{0,500}if \(supabaseEnabled\) return/.test(storeSource),
@@ -43,7 +64,7 @@ ok(
   "store fleet creation enforces authoritative manage_fleet permission",
   /const addSeat[\s\S]{0,450}stateRef\.current[\s\S]{0,180}!authorizedState/.test(storeSource),
 );
-ok("pre-hydration empty authority defaults to viewer", /const EMPTY:[\s\S]*?currentRole: "viewer"/.test(storeSource));
+ok("pre-hydration empty authority defaults to viewer", /function buildLiveEmptyState[\s\S]*?currentRole: "viewer"/.test(storeSource));
 ok("pre-hydration deploy denies when current state is absent", /const deployAgents[\s\S]{0,300}if \(!s\) return \{ created: 0/.test(storeSource));
 ok("viewer cannot manage fleet", !can("viewer", "manage_fleet"));
 ok("member cannot manage fleet", !can("member", "manage_fleet"));

@@ -3,59 +3,40 @@ import { z } from "zod";
 import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
-import { assertPublicUrl } from "@/lib/api/url";
+import { classifyFetchHost } from "@/lib/api/url";
+import { isDatabricksOriginAllowed } from "@/lib/integrations/databricks-origin-policy";
 import { can } from "@/lib/rbac";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
-import { executeNeedsQuery, type DatabricksRow } from "@/lib/integrations/databricks";
+import {
+  executeNeedsQuery,
+  type DatabricksFetch,
+  type DatabricksRow,
+} from "@/lib/integrations/databricks";
+import { resolveDatabricksAuthority } from "@/lib/integrations/databricks-authority";
 import { parseEmailAndJD, type ParsedIntake } from "@/lib/mock-ai";
-import { resolveStoredDatabricksSecret } from "@/lib/sourcing/tavily";
-import type { DatabricksSettings, HermesState, Role } from "@/lib/types";
+import type { Role } from "@/lib/types";
+import { safeLog } from "@/lib/log-redact";
 
 // Auth-gated and host-fetching. Never prerender.
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 /**
  * Databricks hiring-needs intake.
  *
- * Private-link and internal Databricks workspaces are out of scope for Wave 2:
- * cfg.host must pass assertPublicUrl before the token endpoint or SQL Statement
- * Execution endpoint is fetched. This route returns proposed ParsedIntake drafts
- * only. It never creates campaigns or writes campaign state.
+ * Private-link and internal Databricks workspaces are out of scope for Wave 2.
+ * The deployment allowlist owns the exact origin and fetchPublicUrl validates
+ * and pins every token, statement, and poll request. This route returns proposed
+ * ParsedIntake drafts only. It never creates campaigns or writes campaign state.
  */
 
-const NeedsSchema = z.object({
-  since: z.string().min(1).max(64).optional(),
-});
-
-const DatabricksSettingsSchema = z
+const NeedsSchema = z
   .object({
-    host: z.string().url(),
-    warehouseId: z.string().min(1),
-    authMode: z.enum(["pat", "m2m"]),
-    clientId: z.string().optional(),
-    apiKeyId: z.string().min(1),
-    needsQuery: z.string().min(1).max(20_000),
-    sinceColumn: z.string().optional(),
+    since: z.string().min(1).max(64).optional(),
   })
-  .refine((cfg) => cfg.authMode === "pat" || !!cfg.clientId?.trim(), {
-    message: "clientId is required for Databricks M2M auth.",
-    path: ["clientId"],
-  });
+  .strict();
 
 type ServerSupabase = NonNullable<Awaited<ReturnType<typeof getServerSupabase>>>;
-
-export async function loadDatabricksSettings(session: ServerSupabase): Promise<DatabricksSettings | null> {
-  const { data: wid } = await session.rpc("current_workspace_id");
-  if (!wid) return null;
-  const { data: row } = await session
-    .from("workspace_state")
-    .select("state")
-    .eq("workspace_id", wid)
-    .maybeSingle();
-  const state = row?.state as HermesState | undefined;
-  const parsed = DatabricksSettingsSchema.safeParse(state?.settings?.databricks);
-  return parsed.success ? parsed.data : null;
-}
 
 function firstValue(row: DatabricksRow, names: string[]): string {
   const entries = Object.entries(row);
@@ -100,32 +81,45 @@ export async function runDatabricksNeedsForWorkspace(
   input: { since?: string },
   opts: {
     serviceClient?: ReturnType<typeof getServiceSupabase>;
-    fetchImpl?: typeof fetch;
+    fetchImpl?: DatabricksFetch;
     pollDelayMs?: number;
   } = {},
 ): Promise<Response> {
-  const cfg = await loadDatabricksSettings(session);
-  if (!cfg) return NextResponse.json({ ok: false, error: "Databricks intake is not configured." }, { status: 400 });
+  const resolved = await resolveDatabricksAuthority(
+    session,
+    opts.serviceClient === undefined ? getServiceSupabase() : opts.serviceClient,
+  );
+  if (!resolved.ok) {
+    if (resolved.code === "not_configured") {
+      return NextResponse.json({ ok: false, error: "Databricks intake is not configured." }, { status: 400 });
+    }
+    if (resolved.code === "credential_unavailable") {
+      return NextResponse.json({ ok: false, error: "Databricks credential is unavailable." }, { status: 503 });
+    }
+    return NextResponse.json({ ok: false, error: "Databricks configuration could not be loaded." }, { status: 503 });
+  }
+
+  const { config: cfg, secret, authorityScope } = resolved.authority;
+  if (!isDatabricksOriginAllowed(cfg.host)) {
+    return NextResponse.json({ ok: false, error: "Databricks configuration could not be loaded." }, { status: 503 });
+  }
   if (!cfg.needsQuery.includes(":since")) {
     return NextResponse.json({ ok: false, error: "Databricks needsQuery must use the :since parameter." }, { status: 400 });
   }
-
-  const publicHost = await assertPublicUrl(cfg.host);
-  if (!publicHost.ok) {
-    return NextResponse.json({ ok: false, error: publicHost.reason ?? "Databricks host is not public." }, { status: 400 });
+  if (classifyFetchHost(new URL(cfg.host).hostname) === "blocked") {
+    return NextResponse.json({ ok: false, error: "Databricks host is not publicly reachable." }, { status: 400 });
   }
-
-  const secret = await resolveStoredDatabricksSecret(session, cfg.apiKeyId, opts.serviceClient);
-  if (!secret) return NextResponse.json({ ok: false, error: "Databricks API key is not configured." }, { status: 400 });
 
   const since = input.since ?? "1970-01-01T00:00:00.000Z";
   const result = await executeNeedsQuery(cfg, secret, {
     since,
+    authorityScope,
     fetchImpl: opts.fetchImpl,
     pollDelayMs: opts.pollDelayMs,
   });
   if (!result.ok) {
-    return NextResponse.json({ ok: false, error: result.error }, { status: result.status ? 502 : 400 });
+    safeLog("Databricks needs execution failed", { status: result.status, state: result.state });
+    return NextResponse.json({ ok: false, error: result.error }, { status: result.status || result.state ? 502 : 400 });
   }
 
   return NextResponse.json({ ok: true, proposals: rowsToProposals(result.rows) });

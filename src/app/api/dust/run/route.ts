@@ -1,14 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
-import { decryptSecret } from "@/lib/crypto-secrets";
+import { getServerSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
-import type { HermesState, Role } from "@/lib/types";
+import type { Role } from "@/lib/types";
 import { DUST_TASKS } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { runDustAgent } from "@/lib/dust/client";
+import { resolveDustAuthority } from "@/lib/integrations/dust-authority";
 
 // Auth-gated, never cacheable — without this Next tries to prerender the route at
 // build time (calling auth/session helpers before it touches any request API Next
@@ -23,47 +23,9 @@ const DustRunSchema = z.object({
 });
 
 /**
- * Resolve this workspace's persisted Dust config (settings.dust) server-side.
- * Dust is configured entirely through Settings (Configure modal), never passed
- * by the caller, so a client can only pick WHICH task to run — never which
- * workspace/agent/key to spend against.
- */
-async function loadDustSettings(
-  session: NonNullable<Awaited<ReturnType<typeof getServerSupabase>>>,
-): Promise<HermesState["settings"]["dust"] | null> {
-  const { data: wid } = await session.rpc("current_workspace_id");
-  if (!wid) return null;
-  const { data: row } = await session
-    .from("workspace_state")
-    .select("state")
-    .eq("workspace_id", wid)
-    .maybeSingle();
-  const state = row?.state as HermesState | undefined;
-  return state?.settings?.dust ?? null;
-}
-
-/** Resolve a vault secret by ApiKey.id, scoped to the caller's workspace. Returns
- *  "" on any failure. NEVER logs or returns the value outside the immediate call. */
-async function resolveVaultSecret(
-  session: NonNullable<Awaited<ReturnType<typeof getServerSupabase>>>,
-  id?: string,
-): Promise<string> {
-  if (!id) return "";
-  const svc = getServiceSupabase();
-  if (!svc) return "";
-  const { data: wid } = await session.rpc("current_workspace_id");
-  const { data: row } = await svc.from("api_keys").select("secret, workspace_id").eq("id", id).single();
-  if (row && row.workspace_id === wid && typeof row.secret === "string") {
-    return decryptSecret(row.secret);
-  }
-  return "";
-}
-
-/**
  * Run a Dust agent for one recruiting task (jdAnalysis / companyResearch). The
- * workspace id, API key, and which agent is locked to the task are all resolved
- * server-side from the caller's persisted Settings — the request body carries
- * only the task and the message text.
+ * workspace id, tested API key, and task lock are resolved server-side from the
+ * normalized admin-owned connection. The request carries only task + message.
  */
 export async function POST(req: NextRequest) {
   // Fail closed in production (middleware doesn't cover /api/*).
@@ -94,24 +56,34 @@ export async function POST(req: NextRequest) {
   if (!validated.ok) return validated.response;
   const { task, message } = validated.data;
 
-  // Demo mode (no Supabase): Dust config lives only in the persisted workspace
-  // document, which doesn't exist without a backend — nothing to resolve.
+  // Demo mode has no normalized backend authority, so live Dust is unavailable.
   if (!supabaseEnabled || !session) {
     return NextResponse.json({ ok: false, error: "No Dust agent locked for this task." });
   }
 
-  const dust = await loadDustSettings(session);
-  const agentSId = dust?.agentLocks?.[task];
-  if (!dust?.workspaceId || !agentSId) {
-    return NextResponse.json({ ok: false, error: "No Dust agent locked for this task." });
+  const resolved = await resolveDustAuthority(session);
+  if (!resolved.ok) {
+    const status = resolved.code === "backend_error" ? 503 : 409;
+    return NextResponse.json({ ok: false, error: "Dust integration is unavailable." }, { status });
+  }
+  const { authority } = resolved;
+  const agentSId = authority.agentLocks[task];
+  if (!agentSId) {
+    return NextResponse.json({ ok: false, error: "No Dust agent locked for this task." }, { status: 409 });
   }
 
-  const apiKey = await resolveVaultSecret(session, dust.apiKeyId);
-  if (!apiKey) {
-    return NextResponse.json({ ok: false, error: "No Dust API key configured." });
+  const result = await runDustAgent(
+    authority.workspaceId,
+    authority.secret,
+    agentSId,
+    message,
+    undefined,
+    authority.region,
+  );
+  // Treat the client result as untrusted provider data. The route exposes a
+  // stable generic failure and never reflects raw/encoded bearer material.
+  if (!result.ok) {
+    return NextResponse.json({ ok: false, error: "Dust agent request failed." }, { status: 502 });
   }
-
-  const result = await runDustAgent(dust.workspaceId, apiKey, agentSId, message, undefined, dust.region ?? "us");
-  if (!result.ok) return NextResponse.json({ ok: false, error: result.error });
-  return NextResponse.json({ ok: true, text: result.text });
+  return NextResponse.json({ ok: true, text: result.text, agentId: agentSId });
 }

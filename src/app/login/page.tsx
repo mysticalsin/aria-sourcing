@@ -6,7 +6,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence, useInView } from "framer-motion";
 import { AlertTriangle, Lock } from "lucide-react";
 import { getBrowserSupabase } from "@/lib/supabase/client";
-import { supabaseEnabled, ALLOWED_EMAIL_DOMAIN, demoLoginEnabled } from "@/lib/supabase/config";
+import {
+  supabaseEnabled,
+  ALLOWED_EMAIL_DOMAIN,
+  azureLoginEnabled,
+  demoLoginEnabled,
+} from "@/lib/supabase/config";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 
 const VIDEO_URL =
@@ -55,6 +60,7 @@ function LoginInner() {
   const [password, setPassword] = React.useState("admin");
   const [authError, setAuthError] = React.useState<string | null>(null);
   const videoRef = React.useRef<HTMLVideoElement>(null);
+  const emailRef = React.useRef<HTMLInputElement>(null);
 
   // Respect prefers-reduced-motion for the background hero video: only play /
   // loop it when the user hasn't asked the OS to reduce motion. Controlled here
@@ -74,6 +80,7 @@ function LoginInner() {
   }, [reducedMotion, videoPausedByUser]);
 
   const signInWithMicrosoft = async () => {
+    if (!azureLoginEnabled) return;
     const supabase = getBrowserSupabase();
     if (!supabase) return;
     setLoading(true);
@@ -146,7 +153,11 @@ function LoginInner() {
     // Demo (LIVE or open): one-click admin/admin sign-in. runDemoLogin sets the session
     // (Supabase cookie in LIVE mode, signed demo cookie in the open demo) then redirects.
     if (demoLoginEnabled) void runDemoLogin();
-    else if (supabaseEnabled) void signInWithMicrosoft();
+    else if (supabaseEnabled && azureLoginEnabled) void signInWithMicrosoft();
+    else if (supabaseEnabled) {
+      setShowEmail(true);
+      window.requestAnimationFrame(() => emailRef.current?.focus());
+    }
     else router.push(safeRedirect(redirect));
   };
 
@@ -155,7 +166,7 @@ function LoginInner() {
     : demoLoginEnabled
       ? "Enter the demo console"
       : supabaseEnabled
-        ? "Sign in with Microsoft"
+        ? azureLoginEnabled ? "Sign in with Microsoft" : "Sign in with email"
         : "Enter the console";
 
   return (
@@ -244,6 +255,7 @@ function LoginInner() {
                     Username or email
                   </label>
                   <input
+                    ref={emailRef}
                     id="login-username"
                     name="username"
                     type="text"

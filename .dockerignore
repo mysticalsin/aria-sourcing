@@ -1,17 +1,28 @@
 # Keep the build context small and secrets out of the image.
 node_modules
+.pnp
+.pnp.js
 .next
+out
+build
 .git
-.env
-.env.local
-.env.*.local
+.env*
+*.pem
 *.log
 npm-debug.log*
 .DS_Store
+next-env.d.ts
+*.tsbuildinfo
 coverage
 .playwright-mcp
+.vscode
 ultraplan
 graphify-out
+backups
+.superpowers
+supabase/.branches
+supabase/.temp
+*.jpeg
 *.md
 !README.md
 
@@ -25,6 +36,13 @@ production-readiness
 # non-app dirs / local artifacts
 .vercel
 _agent_state
+.rocket-fuel
+_relay
+.github
+.gitlab-ci.yml
+.gitleaks.toml
+.gitleaksignore
+tests
 Aria
 Aria.png
 Logo.png
@@ -37,6 +55,7 @@ docker-compose.yml
 fly.*.toml
 .dockerignore
 deploy-fly.sh
+deploy-fly-*.sh
 e2e-workflow-test.sh
 # heavy dirs that bloated the build context to 524MB (none belong in any image)
 tmp

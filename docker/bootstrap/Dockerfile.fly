@@ -1,13 +1,13 @@
-# syntax=docker/dockerfile:1
-#
-# aria-bootstrap: one-off migrations runner for the REAL tenant (no demo seed). Fly has no
-# bind mounts, so the migrations + auth-owner script are COPY'd in. Build context = repo root.
-FROM postgres:17-bookworm
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+# aria-bootstrap: one-off owner reconciliation and migrations runner for the
+# real tenant. Fly has no bind mounts, so every reviewed SQL surface is copied
+# into the immutable image. Build context = repo root.
+FROM postgres:17-bookworm@sha256:5530681ea5d3e2ed4ce396f9b5cb443efbac6baf2a8a19c0c0635e40ae7eadce
 COPY docker/bootstrap/run.fly.sh /usr/local/bin/run.fly.sh
 COPY supabase/migrations         /migrations
-COPY docker/db/03-auth-owner.sql /auth-owner.sql
+COPY docker/bootstrap/supabase-admin-reconciliation.sql /opt/aria/supabase-admin-reconciliation.sql
+COPY docker/bootstrap/legacy-baseline-invariants.sql /opt/aria/legacy-baseline-invariants.sql
+COPY docker/bootstrap/legacy-baseline-public-schema.sha256 /opt/aria/legacy-baseline-public-schema.sha256
+COPY docker/bootstrap/recovery-empty-public-schema.sha256 /opt/aria/recovery-empty-public-schema.sha256
 RUN chmod +x /usr/local/bin/run.fly.sh
+USER postgres
 ENTRYPOINT ["/usr/local/bin/run.fly.sh"]

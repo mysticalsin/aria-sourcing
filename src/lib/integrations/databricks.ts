@@ -1,6 +1,7 @@
 import type { DatabricksSettings } from "@/lib/types";
+import { fetchPublicUrl } from "@/lib/api/public-fetch";
 
-type FetchLike = typeof fetch;
+export type DatabricksFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
 export type DatabricksRow = Record<string, string>;
 
@@ -18,7 +19,9 @@ type StatementResponse = {
 
 type ExecuteNeedsOptions = {
   since: string;
-  fetchImpl?: FetchLike;
+  /** Server-derived workspace/connection/revision/key binding. Never caller supplied. */
+  authorityScope: string;
+  fetchImpl?: DatabricksFetch;
   pollDelayMs?: number;
 };
 
@@ -31,8 +34,8 @@ function normalizeHost(host: string): string {
   return host.trim().replace(/\/+$/, "");
 }
 
-function tokenCacheKey(host: string, clientId?: string): string {
-  return `${normalizeHost(host)}|${clientId ?? ""}`;
+function tokenCacheKey(authorityScope: string, host: string, clientId?: string): string {
+  return `${authorityScope}|${normalizeHost(host)}|${clientId ?? ""}`;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -76,7 +79,8 @@ export function mapJsonArrayRows(payload: StatementResponse): DatabricksRow[] {
 async function getBearerToken(
   cfg: DatabricksSettings,
   secret: string,
-  fetchImpl: FetchLike,
+  authorityScope: string,
+  fetchImpl: DatabricksFetch,
 ): Promise<{ ok: true; token: string } | { ok: false; error: string; status?: number }> {
   if (cfg.authMode === "pat") return { ok: true, token: secret.trim() };
 
@@ -84,7 +88,7 @@ async function getBearerToken(
   if (!clientId) return { ok: false, error: "Databricks OAuth client id is not configured." };
 
   const host = normalizeHost(cfg.host);
-  const key = tokenCacheKey(host, clientId);
+  const key = tokenCacheKey(authorityScope, host, clientId);
   const cached = tokenCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return { ok: true, token: cached.token };
 
@@ -119,15 +123,11 @@ function statementId(payload: StatementResponse): string {
   return typeof payload.statement_id === "string" ? payload.statement_id : "";
 }
 
-function errorMessage(payload: StatementResponse, fallback: string): string {
-  return typeof payload.status?.error?.message === "string" ? payload.status.error.message : fallback;
-}
-
 async function submitStatement(
   cfg: DatabricksSettings,
   bearerToken: string,
   since: string,
-  fetchImpl: FetchLike,
+  fetchImpl: DatabricksFetch,
 ): Promise<{ res: Response; payload: StatementResponse | null }> {
   const host = normalizeHost(cfg.host);
   const res = await fetchImpl(`${host}/api/2.0/sql/statements`, {
@@ -156,7 +156,7 @@ async function pollStatement(
   cfg: DatabricksSettings,
   statementIdValue: string,
   bearerToken: string,
-  fetchImpl: FetchLike,
+  fetchImpl: DatabricksFetch,
 ): Promise<{ res: Response; payload: StatementResponse | null }> {
   const host = normalizeHost(cfg.host);
   const res = await fetchImpl(`${host}/api/2.0/sql/statements/${encodeURIComponent(statementIdValue)}`, {
@@ -175,11 +175,21 @@ export async function executeNeedsQuery(
   secret: string,
   opts: ExecuteNeedsOptions,
 ): Promise<DatabricksNeedsResult> {
-  const fetchImpl = opts.fetchImpl ?? fetch;
-  const token = await getBearerToken(cfg, secret, fetchImpl);
+  const fetchImpl = opts.fetchImpl ?? fetchPublicUrl;
+  let token: Awaited<ReturnType<typeof getBearerToken>>;
+  try {
+    token = await getBearerToken(cfg, secret, opts.authorityScope, fetchImpl);
+  } catch {
+    return { ok: false, error: "Databricks authentication transport failed.", status: 502 };
+  }
   if (!token.ok) return token;
 
-  const submitted = await submitStatement(cfg, token.token, opts.since, fetchImpl);
+  let submitted: Awaited<ReturnType<typeof submitStatement>>;
+  try {
+    submitted = await submitStatement(cfg, token.token, opts.since, fetchImpl);
+  } catch {
+    return { ok: false, error: "Databricks statement transport failed.", status: 502 };
+  }
   if (!submitted.res.ok || !submitted.payload) {
     return { ok: false, error: `Databricks statement request failed (${submitted.res.status}).`, status: submitted.res.status };
   }
@@ -188,7 +198,7 @@ export async function executeNeedsQuery(
   let state = responseState(payload);
   if (state === "SUCCEEDED") return { ok: true, rows: mapJsonArrayRows(payload) };
   if (state === "FAILED" || state === "CANCELED" || state === "CLOSED") {
-    return { ok: false, error: errorMessage(payload, `Databricks statement ${state.toLowerCase()}.`), state };
+    return { ok: false, error: "Databricks statement execution failed.", state };
   }
 
   const id = statementId(payload);
@@ -196,7 +206,12 @@ export async function executeNeedsQuery(
 
   for (let i = 0; i < MAX_POLLS && (state === "PENDING" || state === "RUNNING"); i += 1) {
     await sleep(opts.pollDelayMs ?? Math.min(2_000, 250 * 2 ** i));
-    const polled = await pollStatement(cfg, id, token.token, fetchImpl);
+    let polled: Awaited<ReturnType<typeof pollStatement>>;
+    try {
+      polled = await pollStatement(cfg, id, token.token, fetchImpl);
+    } catch {
+      return { ok: false, error: "Databricks statement transport failed.", status: 502 };
+    }
     if (!polled.res.ok || !polled.payload) {
       return { ok: false, error: `Databricks statement poll failed (${polled.res.status}).`, status: polled.res.status };
     }
@@ -204,7 +219,7 @@ export async function executeNeedsQuery(
     state = responseState(payload);
     if (state === "SUCCEEDED") return { ok: true, rows: mapJsonArrayRows(payload) };
     if (state === "FAILED" || state === "CANCELED" || state === "CLOSED") {
-      return { ok: false, error: errorMessage(payload, `Databricks statement ${state.toLowerCase()}.`), state };
+      return { ok: false, error: "Databricks statement execution failed.", state };
     }
   }
 

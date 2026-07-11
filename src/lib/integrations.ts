@@ -209,6 +209,19 @@ export function defaultIntegrations(): IntegrationStatus[] {
   ];
 }
 
+/** Configuration catalogue for a new live tenant. Seed connection timestamps
+ * are demo fixtures, so every adapter starts explicitly unconfigured. Real
+ * adapters remain labelled live to expose their actual setup surfaces. */
+export function defaultLiveIntegrations(): IntegrationStatus[] {
+  return defaultIntegrations().map((integration) => ({
+    ...integration,
+    status: "not_configured",
+    mode: integration.real ? "live" : "mock",
+    lastSync: null,
+    connectedAccount: undefined,
+  }));
+}
+
 export interface ConnectionTestResult {
   ok: boolean;
   latencyMs: number;

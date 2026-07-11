@@ -62,8 +62,9 @@ import {
   type ApprovalResult,
 } from "./rules";
 import { matchCandidateByEmail } from "./email-match";
-import { validateMcpBaseUrlHasNoAuthQueryParam } from "./mcp-auth-params";
+import { validateMcpBaseUrl } from "./mcp-auth-params";
 import {
+  defaultLiveIntegrations,
   testConnection,
   type ConnectionTestResult,
 } from "./integrations";
@@ -136,6 +137,7 @@ import { allocateBatch, defaultSendWindow, fleetSummary, type FleetSummary } fro
 import { createFleetSeatOnServer, mergeAgentSeatRows, patchFleetSeatOnServer } from "./fleet-seats";
 import {
   applyLearning,
+  defaultSkills,
   effectiveTone,
   effectiveWeights,
   getSkill,
@@ -495,9 +497,9 @@ export interface HermesActions {
     region?: DustRegion,
   ) => Promise<{ ok: boolean; agents?: DustAgentSummary[]; error?: string }>;
   connectDust: (workspaceId: string, apiKey: string, region?: DustRegion) => Promise<{ ok: boolean; error?: string }>;
-  updateDustAgentLock: (task: DustTask, agentSId: string) => void;
-  disconnectDust: () => void;
-  runDustTask: (task: DustTask, message: string) => Promise<{ ok: boolean; text?: string; error?: string }>;
+  updateDustAgentLock: (task: DustTask, agentSId: string) => Promise<{ ok: boolean; error?: string }>;
+  disconnectDust: () => Promise<{ ok: boolean; error?: string }>;
+  runDustTask: (task: DustTask, message: string) => Promise<{ ok: boolean; text?: string; agentId?: string; error?: string }>;
 
   // Saved models
   addModel: (m: Omit<SavedModel, "id">) => SavedModel;
@@ -725,7 +727,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             const liveState = serverSeats ? { ...loaded, seats: mergeAgentSeatRows(loaded.seats, serverSeats) } : loaded;
             setState(applyAuthoritativeRole(liveState, remote.role));
           } else {
-            const seededBase = buildSeedState();
+            const seededBase = buildLiveEmptyState();
             const serverSeats = await loadRemoteAgentSeats();
             const seeded = applyAuthoritativeRole(
               serverSeats ? { ...seededBase, seats: mergeAgentSeatRows(seededBase.seats, serverSeats) } : seededBase,
@@ -742,7 +744,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         }
         // A live auth-null/error path must never fall through to localStorage,
         // whose demo seed is admin. Keep the shell read-only until auth recovers.
-        setState(applyAuthoritativeRole(buildSeedState(), "viewer"));
+        setState(applyAuthoritativeRole(buildLiveEmptyState(), "viewer"));
         return;
       }
       setState(loadState());
@@ -831,7 +833,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const current = useCallback(() => stateRef.current ?? buildSeedState(), []);
+  const current = useCallback(
+    () => stateRef.current ?? (supabaseEnabled ? buildLiveEmptyState() : buildSeedState()),
+    [],
+  );
 
   /* ---- helpers ---------------------------------------------------------- */
 
@@ -5189,7 +5194,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const addMcpServer = useCallback(
     (m: Omit<McpServerConfig, "id" | "status">): McpServerConfig => {
-      const guard = validateMcpBaseUrlHasNoAuthQueryParam(m.url);
+      const guard = validateMcpBaseUrl(m.url);
       if (!guard.ok) throw new Error(guard.error);
       const server: McpServerConfig = { ...m, id: genId("mcp"), status: "untested" };
       commit((s) =>
@@ -5217,7 +5222,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const existing = (current().settings.mcpServers ?? []).find((m) => m.id === id);
       const nextUrl = patch.url ?? existing?.url;
       if (nextUrl) {
-        const guard = validateMcpBaseUrlHasNoAuthQueryParam(nextUrl);
+        const guard = validateMcpBaseUrl(nextUrl);
         if (!guard.ok) throw new Error(guard.error);
       }
       commit((s) => ({
@@ -5316,12 +5321,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  /** Full Connect flow: test the credentials, then — only on success — store the
-   *  API key in the vault (provider "Dust") and save the non-secret workspace
-   *  config + agent snapshot to settings.dust. Existing agent locks survive a
-   *  reconnect (e.g. rotating the key) as long as the locked agent still exists
-   *  in the fresh agent list; locks pointing at an agent that's since been
-   *  deleted in Dust are dropped rather than left dangling. */
+  /** Full Connect flow: live-test the credentials, store and mark the key valid,
+   * then write the non-secret configuration through the normalized admin-owned
+   * Dust authority route. workspace_state is never an execution authority. */
   const connectDust = useCallback(
     async (workspaceId: string, apiKey: string, region: DustRegion = "us") => {
       const test = await testDustConnection(workspaceId, apiKey, region);
@@ -5332,17 +5334,32 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: false as const, error: saved.error ?? "Could not save the Dust API key." };
       }
       const apiKeyId = saved.key.id;
-      const validSIds = new Set(agents.map((a) => a.sId));
+      const verified = await testApiKey(apiKeyId);
+      if (!verified.ok || !verified.valid) {
+        return { ok: false as const, error: verified.detail || "Could not verify the stored Dust API key." };
+      }
+      let configured: { ok?: boolean; error?: string };
+      try {
+        const response = await fetch("/api/integrations/dust/config", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workspaceId, region, apiKeyId, agents }),
+        });
+        configured = (await response.json().catch(() => ({ ok: false, error: "Bad response from the server." }))) as {
+          ok?: boolean;
+          error?: string;
+        };
+      } catch (error) {
+        return { ok: false as const, error: error instanceof Error ? error.message : "Network error." };
+      }
+      if (!configured.ok) {
+        return { ok: false as const, error: configured.error ?? "Could not save the Dust configuration." };
+      }
       commit((prev) => {
-        const priorLocks = prev.settings.dust?.agentLocks ?? {};
-        const agentLocks = Object.fromEntries(Object.entries(priorLocks).filter(([, sId]) => validSIds.has(sId)));
         return withActivity(
           {
             ...prev,
-            settings: {
-              ...prev.settings,
-              dust: { workspaceId, region, apiKeyId, connected: true, agentLocks, agents },
-            },
+            settings: { ...prev.settings, dust: undefined },
           },
           makeActivity({
             type: "system",
@@ -5358,23 +5375,43 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return { ok: true as const };
     },
-    [testDustConnection, saveApiKey, commit],
+    [testDustConnection, saveApiKey, testApiKey, commit],
   );
 
   const updateDustAgentLock = useCallback(
-    (task: DustTask, agentSId: string) =>
-      commit((prev) => {
-        if (!prev.settings.dust) return prev;
-        const agentLocks = { ...prev.settings.dust.agentLocks };
-        if (agentSId) agentLocks[task] = agentSId;
-        else delete agentLocks[task];
-        return { ...prev, settings: { ...prev.settings, dust: { ...prev.settings.dust, agentLocks } } };
-      }),
-    [commit],
+    async (task: DustTask, agentSId: string) => {
+      try {
+        const response = await fetch("/api/integrations/dust/config", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ task, agentSId }),
+        });
+        const body = (await response.json().catch(() => ({ ok: false, error: "Bad response from the server." }))) as {
+          ok?: boolean;
+          error?: string;
+        };
+        return body.ok
+          ? { ok: true as const }
+          : { ok: false as const, error: body.error ?? "Could not save the Dust agent lock." };
+      } catch (error) {
+        return { ok: false as const, error: error instanceof Error ? error.message : "Network error." };
+      }
+    },
+    [],
   );
 
   const disconnectDust = useCallback(
-    () =>
+    async () => {
+      try {
+        const response = await fetch("/api/integrations/dust/config", { method: "DELETE" });
+        const body = (await response.json().catch(() => ({ ok: false, error: "Bad response from the server." }))) as {
+          ok?: boolean;
+          error?: string;
+        };
+        if (!body.ok) return { ok: false as const, error: body.error ?? "Could not disconnect Dust." };
+      } catch (error) {
+        return { ok: false as const, error: error instanceof Error ? error.message : "Network error." };
+      }
       commit((prev) =>
         withActivity(
           { ...prev, settings: { ...prev.settings, dust: undefined } },
@@ -5389,13 +5426,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           }),
           null,
         ),
-      ),
+      );
+      return { ok: true as const };
+    },
     [commit],
   );
 
-  /** Run one locked Dust agent turn (POST /api/dust/run). The server resolves the
-   *  workspace, API key, and which agent is locked to `task` entirely from
-   *  settings.dust — this call only ever sends the task name and message text. */
+  /** Run one locked Dust agent turn. The server resolves workspace, credential,
+   * and task lock from normalized authority; this call sends only task + text. */
   const runDustTask = useCallback(async (task: DustTask, message: string) => {
     try {
       const res = await fetch("/api/dust/run", {
@@ -5406,9 +5444,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const json = (await res.json().catch(() => ({ ok: false, error: "Bad response from Dust." }))) as {
         ok?: boolean;
         text?: string;
+        agentId?: string;
         error?: string;
       };
-      if (json.ok) return { ok: true as const, text: json.text ?? "" };
+      if (json.ok) return { ok: true as const, text: json.text ?? "", agentId: json.agentId };
       return { ok: false as const, error: json.error ?? "Dust run failed." };
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : "Network error." };
@@ -6232,61 +6271,65 @@ export function useActions(): HermesActions {
   return useHermes().actions;
 }
 
-const EMPTY: HermesState = {
-  version: STATE_VERSION,
-  campaigns: [],
-  candidates: [],
-  outreach: [],
-  replies: [],
-  bookings: [],
-  wins: [],
-  interviewers: [],
-  reports: [],
-  integrations: [],
-  activities: [],
-  settings: {
-    humanApprovalGate: true,
-    dryRunMode: true,
-    webResearch: true,
-    minScoreToContact: 70,
-    slaMinutes: 15,
-    operatorName: "Operator",
-    systemIdentity: "Aria Sourcing",
-    rateLimits: { emailsPerDay: 15, linkedinPerDay: 20, followUpGapDays: 3, suppressionDays: 90 },
-    compliance: {
-      candidateRetentionDays: 180, jdRetentionDays: 365, emailContentRetentionDays: 365,
-      crmAuditLogs: true, unsubscribeEnforcement: true, ccpaDoNotSell: true, gdprMode: true,
+function buildLiveEmptyState(): HermesState {
+  return {
+    version: STATE_VERSION,
+    campaigns: [],
+    candidates: [],
+    outreach: [],
+    replies: [],
+    bookings: [],
+    wins: [],
+    interviewers: [],
+    reports: [],
+    integrations: defaultLiveIntegrations(),
+    activities: [],
+    settings: {
+      humanApprovalGate: true,
+      dryRunMode: true,
+      webResearch: true,
+      minScoreToContact: 70,
+      slaMinutes: 15,
+      operatorName: "Operator",
+      systemIdentity: "Aria Sourcing",
+      rateLimits: { emailsPerDay: 15, linkedinPerDay: 20, followUpGapDays: 3, suppressionDays: 90 },
+      compliance: {
+        candidateRetentionDays: 180, jdRetentionDays: 365, emailContentRetentionDays: 365,
+        crmAuditLogs: true, unsubscribeEnforcement: true, ccpaDoNotSell: true, gdprMode: true,
+      },
+      fleet: {
+        recontactWindowDays: 90, bounceRatePauseThreshold: 0.05, complaintRatePauseThreshold: 0.001,
+        enforceBusinessHours: true, jitter: true, globalDailyCap: null, maxAgents: 300,
+      },
+      confidentialityMode: true,
+      defaultLanguage: "en",
+      soundEnabled: false,
+      guardrails: defaultGuardrails(),
+      notifications: { slack: true, telegram: false, email: true },
+      llmProviders: defaultLlmProviders(),
+      savedModels: defaultSavedModels(),
+      tools: defaultTools(),
+      mcpServers: [],
+      defaultModels: {},
+      hermesLiveMode: false,
+      hermesApiUrl: "",
+      hermesApiKeyId: "",
+      hermesWebUrl: "",
     },
-    fleet: {
-      recontactWindowDays: 90, bounceRatePauseThreshold: 0.05, complaintRatePauseThreshold: 0.001,
-      enforceBusinessHours: true, jitter: true, globalDailyCap: null, maxAgents: 300,
-    },
-    confidentialityMode: true,
-    defaultLanguage: "en",
-    soundEnabled: false,
-    guardrails: defaultGuardrails(),
-    notifications: { slack: true, telegram: false, email: true },
-    llmProviders: defaultLlmProviders(),
-    savedModels: defaultSavedModels(),
-    tools: defaultTools(),
-    mcpServers: [],
-    defaultModels: {},
-    hermesLiveMode: false,
-    hermesApiUrl: "",
-    hermesApiKeyId: "",
-    hermesWebUrl: "",
-  },
-  seats: [],
-  suppression: [],
-  ledger: [],
-  skills: [],
-  apiKeys: [],
-  currentRole: "viewer",
-  chats: [],
-  memory: [],
-  schedules: [],
-  activeCampaignId: null,
-};
+    seats: [],
+    suppression: [],
+    ledger: [],
+    skills: defaultSkills(),
+    apiKeys: [],
+    currentRole: "viewer",
+    chats: [],
+    memory: [],
+    schedules: [],
+    activeCampaignId: null,
+  };
+}
+
+const EMPTY: HermesState = buildLiveEmptyState();
 
 function useStateOrEmpty(): HermesState {
   return useHermes().state ?? EMPTY;

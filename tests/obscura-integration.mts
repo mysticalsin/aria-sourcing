@@ -22,6 +22,9 @@ import { openObscuraSession, closeObscuraSession } from "../src/lib/ai/obscura-a
 import { runBrowserTool } from "../src/lib/ai/browser-tools";
 import { ensureObscuraRunning } from "../src/lib/ai/obscura-launcher";
 
+process.env.NODE_ENV = "test";
+process.env.OBSCURA_TEST_MODE = "true";
+
 let pass = 0,
   fail = 0;
 function ok(name: string, cond: boolean, extra?: unknown) {

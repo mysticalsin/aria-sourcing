@@ -16,7 +16,7 @@
 import type { McpTool } from "@/lib/mcp-client";
 import type { Campaign, Candidate, ScoringWeights, SourcePlatform } from "@/lib/types";
 import { searchGithubUsers } from "@/lib/sourcing/github";
-import { runWebTool } from "@/lib/ai/web-tools";
+import { runWebTool, type WebFetch } from "@/lib/ai/web-tools";
 import { ensureWebQueryScope, extractLead, isWebSearchPlatform } from "@/lib/sourcing/web-leads";
 import { mapGithubCandidates, mapWebSearchCandidates } from "@/lib/mock-ai";
 
@@ -79,6 +79,7 @@ export function makeSourcingToolRunner(
   weights: ScoringWeights,
   githubToken: string,
   tavilyKey?: string,
+  webFetchImpl?: WebFetch,
 ) {
   const found: Candidate[] = [];
 
@@ -109,7 +110,7 @@ export function makeSourcingToolRunner(
       }
     } else if (isWebSearchPlatform(platform)) {
       const scopedQuery = ensureWebQueryScope(platform, query);
-      const search = await runWebTool("web_search", { query: scopedQuery }, { tavilyKey });
+      const search = await runWebTool("web_search", { query: scopedQuery }, { tavilyKey, fetchImpl: webFetchImpl });
       if (!search.ok) return { ok: false, error: search.error ?? "Web search failed." };
       const content = search.content as { results?: { title: string; url: string; snippet: string }[] } | undefined;
       const hits = (content?.results ?? []).slice(0, count);

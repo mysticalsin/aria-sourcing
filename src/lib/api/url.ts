@@ -1,5 +1,6 @@
 import { URL } from "url";
 import { lookup } from "dns/promises";
+import { BlockList, isIP } from "node:net";
 
 /**
  * SSRF-safe URL validator for upstream HTTP proxies.
@@ -71,35 +72,96 @@ export function isAllowedHermesUrl(urlString: string): { ok: boolean; reason?: s
  * hosts but BLOCKS anything internal — private RFC1918/CGNAT ranges, loopback,
  * link-local (incl. 169.254.169.254 cloud metadata), IPv6 ULA/link-local,
  * multicast, embedded credentials, and non-http(s) schemes. It also resolves
- * DNS and rejects if ANY resolved address is private, to blunt DNS-rebinding to
- * internal services. Read-only fetches only; callers must also use
- * redirect:"manual" so a 30x can't bounce to an internal host.
+ * DNS and rejects if ANY resolved address is private. This function is a
+ * validation helper only: it cannot bind a later socket to that DNS answer.
+ * Public callers must use fetchPublicUrl, which validates and pins one address
+ * in the same operation. Chromium needs a separate egress-network control.
  * ------------------------------------------------------------------------- */
 
-/** True if an IPv4/IPv6 literal is private, loopback, link-local, ULA, CGNAT, or multicast. */
+const BLOCKED_IPS = new BlockList();
+const GLOBAL_IPV6 = new BlockList();
+const IETF_PROTOCOL_ASSIGNMENTS = new BlockList();
+const IETF_GLOBAL_EXCEPTIONS = new BlockList();
+
+// IANA currently allocates global unicast from 2000::/3. The IETF protocol
+// assignment block is non-global by default, with the current registry's
+// explicit globally reachable more-specific exceptions below.
+GLOBAL_IPV6.addSubnet("2000::", 3, "ipv6");
+IETF_PROTOCOL_ASSIGNMENTS.addSubnet("2001::", 23, "ipv6");
+for (const [network, prefix] of [
+  ["2001:1::1", 128],
+  ["2001:1::2", 128],
+  ["2001:1::3", 128],
+  ["2001:3::", 32],
+  ["2001:4:112::", 48],
+  ["2001:30::", 28],
+] as const) {
+  IETF_GLOBAL_EXCEPTIONS.addSubnet(network, prefix, "ipv6");
+}
+
+for (const [network, prefix] of [
+  ["0.0.0.0", 8],
+  ["10.0.0.0", 8],
+  ["100.64.0.0", 10],
+  ["127.0.0.0", 8],
+  ["169.254.0.0", 16],
+  ["172.16.0.0", 12],
+  ["192.0.0.0", 24],
+  ["192.0.2.0", 24],
+  ["192.88.99.0", 24],
+  ["192.168.0.0", 16],
+  ["198.18.0.0", 15],
+  ["198.51.100.0", 24],
+  ["203.0.113.0", 24],
+  ["224.0.0.0", 4],
+  ["240.0.0.0", 4],
+] as const) {
+  BLOCKED_IPS.addSubnet(network, prefix, "ipv4");
+}
+
+for (const [network, prefix] of [
+  ["::", 128],
+  ["::1", 128],
+  ["::", 96],
+  ["64:ff9b::", 96],
+  ["64:ff9b:1::", 48],
+  ["100::", 64],
+  ["100:0:0:1::", 64],
+  ["2001::", 32],
+  ["2001:2::", 48],
+  ["2001:10::", 28],
+  ["2001:20::", 28],
+  ["2001:db8::", 32],
+  ["2002::", 16],
+  ["3fff::", 20],
+  ["5f00::", 16],
+  ["fc00::", 7],
+  ["fe80::", 10],
+  ["fec0::", 10],
+  ["ff00::", 8],
+] as const) {
+  BLOCKED_IPS.addSubnet(network, prefix, "ipv6");
+}
+
+/** True if an IP literal is non-global, malformed, or unsafe for public egress. */
 function isPrivateIp(ipRaw: string): boolean {
   const ip = ipRaw.toLowerCase().replace(/^\[|\]$/g, "");
-  const v4 = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (v4) {
-    const a = Number(v4[1]);
-    const b = Number(v4[2]);
-    if ([a, b, Number(v4[3]), Number(v4[4])].some((n) => n > 255)) return true; // malformed → block
-    if (a === 0 || a === 10 || a === 127) return true; // this-net, private, loopback
-    if (a === 169 && b === 254) return true; // link-local incl. cloud metadata
-    if (a === 172 && b >= 16 && b <= 31) return true; // private
-    if (a === 192 && b === 168) return true; // private
-    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
-    if (a >= 224) return true; // multicast / reserved / broadcast
-    return false;
+  const family = isIP(ip);
+  if (family === 0) return true;
+  if (family === 4) return BLOCKED_IPS.check(ip, "ipv4");
+  if (!GLOBAL_IPV6.check(ip, "ipv6")) return true;
+  if (
+    IETF_PROTOCOL_ASSIGNMENTS.check(ip, "ipv6") &&
+    !IETF_GLOBAL_EXCEPTIONS.check(ip, "ipv6")
+  ) {
+    return true;
   }
-  // IPv4-mapped IPv6 (::ffff:a.b.c.d)
-  const mapped = ip.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
-  if (mapped) return isPrivateIp(mapped[1]);
-  if (ip === "::1" || ip === "::") return true; // loopback / unspecified
-  if (ip.startsWith("fe80")) return true; // link-local
-  if (ip.startsWith("fc") || ip.startsWith("fd")) return true; // unique-local fc00::/7
-  if (ip.startsWith("ff")) return true; // multicast
-  return false;
+  return BLOCKED_IPS.check(ip, "ipv6");
+}
+
+/** True only for a syntactically valid, globally routable IP literal. */
+export function isPublicIpAddress(ipRaw: string): boolean {
+  return !isPrivateIp(ipRaw);
 }
 
 function isIpLiteral(host: string): boolean {
@@ -126,11 +188,18 @@ export function classifyFetchHost(host: string): "blocked" | "public" | "needs-d
 }
 
 /**
- * Assert a URL is safe to fetch as a PUBLIC resource. Resolves DNS for hostnames
- * and rejects if any address is private. Returns { ok:false, reason } on any block.
+ * Preflight-classify a PUBLIC URL. This does not make a later global fetch safe;
+ * use fetchPublicUrl for a connection-bound request.
  */
 export async function assertPublicUrl(
   urlString: string,
+  options: {
+    lookupImpl?: (
+      hostname: string,
+      options: { all: true },
+    ) => Promise<readonly { address: string; family: number }[]>;
+    timeoutMs?: number;
+  } = {},
 ): Promise<{ ok: boolean; reason?: string; hostname?: string }> {
   let url: URL;
   try {
@@ -149,14 +218,32 @@ export async function assertPublicUrl(
   if (verdict === "blocked") return { ok: false, reason: "Blocked internal/private host (SSRF guard)." };
   if (verdict === "public") return { ok: true, hostname: host };
   // needs-dns: resolve and ensure every address is public.
+  const timeoutMs = options.timeoutMs ?? 5_000;
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 10_000) {
+    return { ok: false, reason: "Invalid DNS timeout." };
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const addrs = await lookup(host, { all: true });
+    const lookupImpl = options.lookupImpl ?? ((hostname: string) => lookup(hostname, { all: true }));
+    const addrs = await Promise.race([
+      lookupImpl(host, { all: true }),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error("DNS resolution timed out.")), timeoutMs);
+      }),
+    ]);
     if (!addrs.length) return { ok: false, reason: "Host did not resolve." };
     for (const a of addrs) {
       if (isPrivateIp(a.address)) return { ok: false, reason: "Host resolves to a private address (SSRF guard)." };
     }
-  } catch {
-    return { ok: false, reason: "DNS resolution failed." };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: error instanceof Error && /timed out/i.test(error.message)
+        ? "DNS resolution timed out."
+        : "DNS resolution failed.",
+    };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
   return { ok: true, hostname: host };
 }

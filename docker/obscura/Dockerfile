@@ -5,7 +5,7 @@
 # Built from source with default features only. The sidecar remains an honest,
 # read-only research browser and never enables stealth or private-network access.
 
-FROM rust:1-slim-bookworm AS builder
+FROM rust:1-slim-bookworm@sha256:cfbb0e0ef7a73e736386bfa346f1cb0503c6d162969dc9426fb37834f3f64c25 AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
@@ -37,7 +37,7 @@ RUN --mount=type=cache,id=aria-obscura-rusty-v8,target=/usr/local/cargo/.rusty_v
     if [ -n "${RUSTY_V8_MIRROR:-}" ]; then export RUSTY_V8_MIRROR; fi; \
     cargo build --release --bin obscura --bin obscura-worker
 
-FROM gcr.io/distroless/cc-debian12
+FROM gcr.io/distroless/cc-debian12@sha256:a90cf0f046efb32466b38b0972fef3a95e7c580e392e79ff1b7ac08c15fed0bc
 
 COPY --from=builder /build/target/release/obscura /obscura
 COPY --from=builder /build/target/release/obscura-worker /obscura-worker

@@ -72,6 +72,9 @@ for bin in curl jq openssl; do command -v "$bin" >/dev/null 2>&1 || die "'$bin' 
 [ -n "$ADMIN_EMAIL" ]    || die "ADMIN_EMAIL is required."
 [ -n "$ADMIN_PASSWORD" ] || die "ADMIN_PASSWORD is required."
 [ -n "$ANON_KEY" ]       || die "ANON_KEY is required (Supabase anon key)."
+case "$ADMIN_EMAIL:$ADMIN_PASSWORD" in
+  *$'\n'*|*$'\r'*) die "Admin credentials must not contain line breaks." ;;
+esac
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/aria-e2e.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
@@ -81,7 +84,7 @@ COOKIE_HDR=""                          # populated after login
 printf "${C_B}Aria Mantu — E2E workflow test${C_0}\n"
 info "App:  $APP_URL"
 info "Kong: $KONG_URL"
-info "Admin: $ADMIN_EMAIL   Agent provider: $AGENT_PROVIDER   Model: ${OUTREACH_MODEL:-<default>}"
+info "Admin credential supplied. Agent provider: $AGENT_PROVIDER   Model: ${OUTREACH_MODEL:-<default>}"
 
 # api METHOD URL [datafile] -> writes body to $RESP, echoes HTTP status into $HTTP
 HTTP=""
@@ -100,10 +103,13 @@ api() {
 step "1) Admin session (GoTrue password grant → sb-auth-token cookie)"
 # ===========================================================================
 SESS_RAW="$WORK/session_raw.json"
+LOGIN_BODY="$WORK/login.json"
+printf '%s\n%s\n' "$ADMIN_EMAIL" "$ADMIN_PASSWORD" | \
+  jq -Rn 'input as $email | input as $password | {email:$email,password:$password}' > "$LOGIN_BODY"
 LOGIN_CODE=$(curl -sS -m 30 -o "$SESS_RAW" -w '%{http_code}' \
   -X POST "$KONG_URL/auth/v1/token?grant_type=password" \
   -H "apikey: $ANON_KEY" -H 'Content-Type: application/json' \
-  --data-binary "$(jq -n --arg e "$ADMIN_EMAIL" --arg p "$ADMIN_PASSWORD" '{email:$e,password:$p}')")
+  --data-binary "@$LOGIN_BODY")
 ACCESS_TOKEN=$(jq -r '.access_token // empty' "$SESS_RAW" 2>/dev/null)
 if [ "$LOGIN_CODE" != "200" ] || [ -z "$ACCESS_TOKEN" ]; then
   fail "GoTrue login (HTTP $LOGIN_CODE): $(jq -rc '{error:.error, error_description:.error_description, msg:.msg}' "$SESS_RAW" 2>/dev/null)"
@@ -121,10 +127,9 @@ ROLE=$(curl -sS -m 20 -X POST "$KONG_URL/rest/v1/rpc/current_profile_role" \
   -H 'Content-Type: application/json' --data-binary '{}' 2>/dev/null | jq -r '. // empty')
 if [ "$ROLE" = "admin" ]; then
   pass "current_profile_role = admin (has source + outreach permissions)."
-elif [ -n "$ROLE" ]; then
-  warn "current_profile_role = '$ROLE' (not admin). source/outreach routes may 403."
 else
-  warn "current_profile_role returned null (profile not provisioned?). Protected routes may 403."
+  fail "current_profile_role is '${ROLE:-null}', not admin."
+  die "Authenticated profile is not an admin; stop before campaign acceptance."
 fi
 
 # Build the sb-auth-token cookie: 'base64-' + base64url(compact session JSON),
@@ -337,6 +342,33 @@ if [ "$HTTP" = "200" ] && [ "$EM_STATUS" = "dry-run" ]; then
   pass "POST /api/outreach/send (Email) → dry-run: $(jq -rc '.detail' "$RESP") — nothing delivered."
 else
   fail "Expected 200 dry-run for Email; got HTTP $HTTP status='$EM_STATUS': $(head -c 200 "$RESP")"
+fi
+
+# Query both durable outbound stores with the same authenticated identity. The
+# manual LinkedIn refusal and confirmLive=false email dry run must create no
+# ledger claim and no outbox row for either approval message id.
+NO_SEND_LEDGER="$WORK/no-send-ledger.json"
+NO_SEND_OUTBOX="$WORK/no-send-outbox.json"
+NO_SEND_FILTER="in.($MSG_LI,$MSG_EM)"
+NO_SEND_LEDGER_CODE=$(curl -sS -m 20 -o "$NO_SEND_LEDGER" -w '%{http_code}' --get \
+  "$KONG_URL/rest/v1/outreach_ledger" \
+  -H "apikey: $ANON_KEY" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  --data-urlencode 'select=id,status,approval_message_id' \
+  --data-urlencode "approval_message_id=$NO_SEND_FILTER")
+NO_SEND_OUTBOX_CODE=$(curl -sS -m 20 -o "$NO_SEND_OUTBOX" -w '%{http_code}' --get \
+  "$KONG_URL/rest/v1/messages_outbound" \
+  -H "apikey: $ANON_KEY" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  --data-urlencode 'select=id,status,approval_message_id' \
+  --data-urlencode "approval_message_id=$NO_SEND_FILTER")
+NO_SEND_LEDGER_COUNT=$(jq -r 'if type == "array" then length else -1 end' "$NO_SEND_LEDGER" 2>/dev/null)
+NO_SEND_OUTBOX_COUNT=$(jq -r 'if type == "array" then length else -1 end' "$NO_SEND_OUTBOX" 2>/dev/null)
+if [ "$NO_SEND_LEDGER_CODE" = "200" ] && [ "$NO_SEND_OUTBOX_CODE" = "200" ] \
+   && [ "$NO_SEND_LEDGER_COUNT" -eq 0 ] && [ "$NO_SEND_OUTBOX_COUNT" -eq 0 ]; then
+  pass "No-send proof: outreach_ledger=0 and messages_outbound=0 for both canary message ids."
+else
+  fail "No-send database proof failed (ledger HTTP $NO_SEND_LEDGER_CODE count=$NO_SEND_LEDGER_COUNT; outbox HTTP $NO_SEND_OUTBOX_CODE count=$NO_SEND_OUTBOX_COUNT)."
 fi
 
 # ===========================================================================

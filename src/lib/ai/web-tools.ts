@@ -6,14 +6,21 @@
 //   - honest bot User-Agent (never impersonates a human browser),
 //   - no cookies / sessions / logins / form submission (read-only GET),
 //   - no stealth, fingerprint spoofing, CAPTCHA solving, or proxy rotation,
-//   - SSRF-guarded (assertPublicUrl blocks private/loopback/metadata + DNS-rebind),
+//   - SSRF-guarded (fetchPublicUrl validates DNS and pins the connected address),
 //   - redirect:"manual" (a 30x can't bounce to an internal host),
 //   - hard timeout + response size cap + compact truncated output.
 // Search uses an official API when configured (TAVILY_API_KEY), else DuckDuckGo's
 // public, documented, key-less Instant Answer JSON API.
 
 import type { McpTool } from "@/lib/mcp-client";
-import { assertPublicUrl } from "@/lib/api/url";
+import { fetchPublicUrl, type PublicFetchInit } from "@/lib/api/public-fetch";
+import {
+  containsCredentialRepresentation,
+  scrubExactSecretString,
+  scrubExactSecretValue,
+} from "@/lib/credential-safety";
+
+export type WebFetch = (url: string | URL, init?: PublicFetchInit) => Promise<Response>;
 
 /** Sentinel "server url" that marks the built-in web tools inside the tool-loop. */
 export const BUILTIN_WEB_URL = "builtin:web-research";
@@ -39,10 +46,10 @@ export const WEB_TOOL_DEFS: McpTool[] = [
   {
     name: "fetch_page",
     description:
-      "Fetch a single PUBLIC web page by absolute http(s) URL and return its readable text (HTML stripped, truncated). Read-only: no login, no forms, no redirects followed.",
+      "Fetch a single PUBLIC web page by absolute HTTPS URL and return its readable text (HTML stripped, truncated). Read-only: no login, no forms, no redirects followed.",
     inputSchema: {
       type: "object",
-      properties: { url: { type: "string", description: "Absolute http(s) URL of a public page." } },
+      properties: { url: { type: "string", description: "Absolute HTTPS URL of a public page." } },
       required: ["url"],
     },
   },
@@ -52,7 +59,7 @@ export const WEB_TOOL_DEFS: McpTool[] = [
       "Fetch and parse a public RSS/Atom feed and return recent items {title, link, date, summary}. Read-only.",
     inputSchema: {
       type: "object",
-      properties: { url: { type: "string", description: "Absolute http(s) URL of an RSS/Atom feed." } },
+      properties: { url: { type: "string", description: "Absolute HTTPS URL of an RSS/Atom feed." } },
       required: ["url"],
     },
   },
@@ -69,6 +76,19 @@ export interface ToolResult {
   ok: boolean;
   content?: unknown;
   error?: string;
+}
+
+function scrubToolResultSecret(result: ToolResult, secret: string | undefined): ToolResult {
+  if (!secret) return result;
+  return {
+    ...result,
+    ...(result.content === undefined ? {} : { content: scrubExactSecretValue(result.content, secret) }),
+    ...(result.error === undefined ? {} : { error: scrubExactSecretString(result.error, secret) }),
+  };
+}
+
+function queryContainsSecret(query: string, secret: string): boolean {
+  return containsCredentialRepresentation(query, secret);
 }
 
 /* ----------------------------- helpers ----------------------------------- */
@@ -136,19 +156,22 @@ export function stripHtml(html: string): { title: string; text: string } {
 async function safeGet(
   url: string,
   accept: string,
+  fetchImpl: WebFetch,
+  signal?: AbortSignal,
 ): Promise<{ ok: boolean; body?: string; error?: string }> {
-  const guard = await assertPublicUrl(url);
-  if (!guard.ok) return { ok: false, error: guard.reason ?? "URL blocked." };
   let res: Response;
   try {
-    res = await fetch(url, {
+    res = await fetchImpl(url, {
       method: "GET",
       headers: { accept, "user-agent": USER_AGENT },
       redirect: "manual",
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      timeoutMs: FETCH_TIMEOUT_MS,
+      maxResponseBytes: MAX_BYTES,
+      signal,
     });
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Network error." };
+    void err;
+    return { ok: false, error: "Network error." };
   }
   if (res.type === "opaqueredirect" || (res.status >= 300 && res.status < 400)) {
     return { ok: false, error: "Redirect blocked (SSRF guard)." };
@@ -165,48 +188,75 @@ interface SearchHit {
   snippet: string;
 }
 
-async function tavilySearch(query: string, key: string): Promise<ToolResult | null> {
-  const guard = await assertPublicUrl("https://api.tavily.com/search");
-  if (!guard.ok) return null;
+async function tavilySearch(
+  query: string,
+  key: string,
+  fetchImpl: WebFetch,
+  signal?: AbortSignal,
+): Promise<ToolResult | null> {
   try {
-    const res = await fetch("https://api.tavily.com/search", {
+    const res = await fetchImpl("https://api.tavily.com/search", {
       method: "POST",
       headers: { "content-type": "application/json", "user-agent": USER_AGENT },
       body: JSON.stringify({ api_key: key, query, max_results: MAX_RESULTS, search_depth: "basic" }),
       redirect: "manual",
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      timeoutMs: FETCH_TIMEOUT_MS,
+      maxResponseBytes: MAX_BYTES,
+      signal,
     });
     if (!res.ok) return null;
     const data = (await res.json().catch(() => null)) as
       | { results?: { title?: string; url?: string; content?: string }[] }
       | null;
-    const results: SearchHit[] = (data?.results ?? [])
+    // Sanitize before slicing fields. Otherwise a long credential can be
+    // truncated into a prefix that no longer matches the complete secret and
+    // evade the final exact-value pass.
+    const sanitizedData = scrubExactSecretValue(data, key) as typeof data;
+    const results: SearchHit[] = (sanitizedData?.results ?? [])
       .filter((r) => r.url)
       .slice(0, MAX_RESULTS)
       .map((r) => ({ title: (r.title ?? "").slice(0, 120), url: r.url as string, snippet: (r.content ?? "").slice(0, 300) }));
-    return { ok: true, content: { query, results, source: "tavily" } };
+    return { ok: true, content: { query: scrubExactSecretString(query, key), results, source: "tavily" } };
   } catch {
     return null;
   }
 }
 
-async function webSearch(queryRaw: string, storedTavilyKey?: string): Promise<ToolResult> {
+async function webSearch(
+  queryRaw: string,
+  storedTavilyKey: string | undefined,
+  fetchImpl: WebFetch,
+  signal?: AbortSignal,
+): Promise<ToolResult> {
+  const tavilyKey = storedTavilyKey ?? process.env.TAVILY_API_KEY;
+  const rawQueryContainsCredential = tavilyKey ? queryContainsSecret(queryRaw, tavilyKey) : false;
   const query = queryRaw.trim().slice(0, 300);
   if (!query) return { ok: false, error: "Empty query." };
 
   // Prefer an official search API when configured.
-  const tavilyKey = storedTavilyKey ?? process.env.TAVILY_API_KEY;
   if (tavilyKey) {
-    const t = await tavilySearch(query, tavilyKey);
-    if (t) return t;
+    const t = await tavilySearch(query, tavilyKey, fetchImpl, signal);
+    if (t) return scrubToolResultSecret(t, tavilyKey);
+    // The same query may be sent to a keyless fallback only when it does not
+    // contain the configured credential. This avoids forwarding a user-pasted
+    // Tavily key to a second provider after Tavily fails.
+    if (rawQueryContainsCredential || queryContainsSecret(query, tavilyKey)) {
+      return { ok: false, error: "Search provider unavailable." };
+    }
   }
 
   // Key-less default: DuckDuckGo Instant Answer JSON API (public, documented).
   const r = await safeGet(
     `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&no_redirect=1&t=aria`,
     "application/json",
+    fetchImpl,
+    signal,
   );
-  if (!r.ok) return { ok: false, error: r.error };
+  if (!r.ok) {
+    return tavilyKey
+      ? { ok: false, error: "Search provider unavailable." }
+      : { ok: false, error: r.error ?? "Search provider unavailable." };
+  }
   let data: {
     Heading?: string;
     AbstractText?: string;
@@ -216,7 +266,7 @@ async function webSearch(queryRaw: string, storedTavilyKey?: string): Promise<To
   try {
     data = JSON.parse(r.body ?? "{}");
   } catch {
-    return { ok: false, error: "Malformed search response." };
+    return scrubToolResultSecret({ ok: false, error: "Malformed search response." }, tavilyKey);
   }
   const results: SearchHit[] = [];
   if (data.AbstractText && data.AbstractURL) {
@@ -232,13 +282,13 @@ async function webSearch(queryRaw: string, storedTavilyKey?: string): Promise<To
     }
     if (results.length >= MAX_RESULTS) break;
   }
-  return { ok: true, content: { query, results, source: "duckduckgo" } };
+  return scrubToolResultSecret({ ok: true, content: { query, results, source: "duckduckgo" } }, tavilyKey);
 }
 
-async function fetchPage(urlRaw: string): Promise<ToolResult> {
+async function fetchPage(urlRaw: string, fetchImpl: WebFetch, signal?: AbortSignal): Promise<ToolResult> {
   const url = urlRaw.trim();
   if (!url) return { ok: false, error: "Missing url." };
-  const r = await safeGet(url, "text/html,application/xhtml+xml,text/plain");
+  const r = await safeGet(url, "text/html,application/xhtml+xml,text/plain", fetchImpl, signal);
   if (!r.ok) return { ok: false, error: r.error };
   const { title, text } = stripHtml(r.body ?? "");
   return {
@@ -261,10 +311,10 @@ function linkHref(block: string): string {
   return m ? decodeEntities(m[1]) : "";
 }
 
-async function rss(urlRaw: string): Promise<ToolResult> {
+async function rss(urlRaw: string, fetchImpl: WebFetch, signal?: AbortSignal): Promise<ToolResult> {
   const url = urlRaw.trim();
   if (!url) return { ok: false, error: "Missing url." };
-  const r = await safeGet(url, "application/rss+xml,application/atom+xml,application/xml,text/xml");
+  const r = await safeGet(url, "application/rss+xml,application/atom+xml,application/xml,text/xml", fetchImpl, signal);
   if (!r.ok) return { ok: false, error: r.error };
   const xml = r.body ?? "";
   const blocks = xml.match(/<(item|entry)\b[\s\S]*?<\/\1>/gi) ?? [];
@@ -284,20 +334,22 @@ async function rss(urlRaw: string): Promise<ToolResult> {
 export async function runWebTool(
   name: string,
   args: Record<string, unknown>,
-  opts: { tavilyKey?: string } = {},
+  opts: { tavilyKey?: string; fetchImpl?: WebFetch; signal?: AbortSignal } = {},
 ): Promise<ToolResult> {
+  const fetchImpl = opts.fetchImpl ?? fetchPublicUrl;
   try {
     switch (name) {
       case "web_search":
-        return await webSearch(String(args.query ?? ""), opts.tavilyKey);
+        return await webSearch(String(args.query ?? ""), opts.tavilyKey, fetchImpl, opts.signal);
       case "fetch_page":
-        return await fetchPage(String(args.url ?? ""));
+        return await fetchPage(String(args.url ?? ""), fetchImpl, opts.signal);
       case "rss":
-        return await rss(String(args.url ?? ""));
+        return await rss(String(args.url ?? ""), fetchImpl, opts.signal);
       default:
         return { ok: false, error: "Unknown web tool." };
     }
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Web tool error." };
+    void err;
+    return { ok: false, error: "Web tool error." };
   }
 }

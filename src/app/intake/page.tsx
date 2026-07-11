@@ -122,13 +122,11 @@ export default function IntakePage() {
   );
 
   /** Enrichment on top of the heuristic parse above — never blocks or replaces it.
-   *  Only fires when a "jdAnalysis" Dust agent is locked in Settings; any failure
-   *  (unconfigured, network, Dust error) just leaves `dustAnalysis` unset. */
+   * The server-owned Dust authority decides whether an agent is locked; any
+   * unconfigured/network/provider failure simply leaves `dustAnalysis` unset. */
   function maybeRunDustJdAnalysis(rawJd: string, rawEmail: string) {
     const seq = ++parseSeqRef.current;
     setDustPending(false);
-    const agentSId = settings.dust?.connected ? settings.dust.agentLocks?.jdAnalysis : undefined;
-    if (!agentSId) return;
     const message = rawJd.trim() || rawEmail;
     if (!message.trim()) return;
     setDustPending(true);
@@ -137,7 +135,9 @@ export default function IntakePage() {
       setDustPending(false);
       if (res.ok && res.text) {
         const text = res.text;
-        setParsed((prev) => (prev ? { ...prev, dustAnalysis: { agentId: agentSId, text } } : prev));
+        setParsed((prev) =>
+          prev ? { ...prev, dustAnalysis: { agentId: res.agentId ?? "dust:jdAnalysis", text } } : prev,
+        );
       }
     });
   }

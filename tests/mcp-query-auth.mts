@@ -1,6 +1,7 @@
 import { connectAndListTools, applyMcpAuth } from "../src/lib/mcp-client";
 import { redactSecrets } from "../src/lib/log-redact";
-import { validateMcpBaseUrlHasNoAuthQueryParam } from "../src/lib/mcp-auth-params";
+import { validateMcpBaseUrl } from "../src/lib/mcp-auth-params";
+import { readFileSync } from "node:fs";
 
 let pass = 0,
   fail = 0;
@@ -22,12 +23,6 @@ const query = applyMcpAuth("https://mcp.tavily.com/mcp/", "SEKRET", {
 });
 ok("query adds auth param", new URL(query.url).searchParams.get("tavilyApiKey") === "SEKRET");
 ok("query returns empty bearer token", query.token === "");
-
-const withExistingQuery = applyMcpAuth("https://mcp.tavily.com/mcp/?foo=bar", "SEKRET", {
-  authStyle: "query",
-  authQueryParam: "tavilyApiKey",
-});
-ok("existing query appends with ampersand", withExistingQuery.url.includes("?foo=bar&tavilyApiKey="));
 
 const specialSecret = "S E&K?R=E/T#";
 const special = applyMcpAuth("https://mcp.tavily.com/mcp/", specialSecret, {
@@ -67,16 +62,64 @@ const redacted = redactSecrets("https://mcp.tavily.com/mcp/?tavilyApiKey=SEKRET"
 ok("redacts Tavily query secret", redacted.includes("tavilyApiKey=REDACTED"));
 ok("redaction removes raw query secret", !redacted.includes("SEKRET"));
 
-const saveGuard = validateMcpBaseUrlHasNoAuthQueryParam("https://mcp.tavily.com/mcp/?tavilyApiKey=SEKRET");
+const saveGuard = validateMcpBaseUrl("https://mcp.tavily.com/mcp/?tavilyApiKey=SEKRET");
 ok("base-url save guard rejects auth query param", saveGuard.ok === false);
+const arbitraryQueryGuard = validateMcpBaseUrl("https://mcp.example.com/mcp?cursor=not-a-secret");
+ok("base-url save guard rejects every query parameter", arbitraryQueryGuard.ok === false);
+ok(
+  "base-url save guard rejects non-HTTPS endpoints",
+  validateMcpBaseUrl("http://mcp.example.com/mcp").ok === false,
+);
+ok(
+  "base-url save guard rejects embedded userinfo",
+  validateMcpBaseUrl("https://user:password@mcp.example.com/mcp").ok === false,
+);
+ok(
+  "base-url save guard rejects fragments",
+  validateMcpBaseUrl("https://mcp.example.com/mcp#secret-fragment").ok === false,
+);
+ok(
+  "base-url save guard rejects a non-standard HTTPS port",
+  validateMcpBaseUrl("https://mcp.example.com:8443/mcp").ok === false,
+);
+ok(
+  "base-url save guard accepts the standard HTTPS port",
+  validateMcpBaseUrl("https://mcp.example.com:443/mcp").ok === true,
+);
+
+ok(
+  "bearer auth rejects a base URL with arbitrary query parameters",
+  (() => {
+    try {
+      applyMcpAuth("https://mcp.example.com/mcp?cursor=not-a-secret", "SEKRET", { authStyle: "bearer" });
+      return false;
+    } catch {
+      return true;
+    }
+  })(),
+);
+
+ok(
+  "query auth rejects a base URL with arbitrary query parameters",
+  (() => {
+    try {
+      applyMcpAuth("https://mcp.example.com/mcp?cursor=not-a-secret", "SEKRET", {
+        authStyle: "query",
+        authQueryParam: "tavilyApiKey",
+      });
+      return false;
+    } catch {
+      return true;
+    }
+  })(),
+);
 
 const rawSecret = "SEKRET-URL-FAIL";
 const failingAuth = applyMcpAuth("https://mcp.tavily.com/mcp/", rawSecret, {
   authStyle: "query",
   authQueryParam: "tavilyApiKey",
 });
-const realFetch = globalThis.fetch;
-globalThis.fetch = async (input) =>
+const failingFetch = async (input: string | URL) =>
   new Response(
     JSON.stringify({
       jsonrpc: "2.0",
@@ -85,15 +128,22 @@ globalThis.fetch = async (input) =>
     }),
     { status: 200, headers: { "Content-Type": "application/json" } },
   );
-try {
-  const failed = await connectAndListTools(failingAuth.url, failingAuth.token);
-  const error = failed.error ?? "";
-  ok("failing query-auth error contains host", failed.ok === false && error.includes("mcp.tavily.com"));
-  ok("failing query-auth error omits raw key", !error.includes(rawSecret));
-  ok("failing query-auth error omits auth query field", !error.includes("tavilyApiKey"));
-} finally {
-  globalThis.fetch = realFetch;
-}
+const originalNodeEnv = process.env.NODE_ENV;
+const originalRemoteMcpFlag = process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION;
+process.env.NODE_ENV = "test";
+process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION = "true";
+const failed = await connectAndListTools(failingAuth.url, failingAuth.token, { fetchImpl: failingFetch });
+if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+else process.env.NODE_ENV = originalNodeEnv;
+if (originalRemoteMcpFlag === undefined) delete process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION;
+else process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION = originalRemoteMcpFlag;
+const error = failed.error ?? "";
+ok("failing query-auth error contains host", failed.ok === false && error.includes("mcp.tavily.com"));
+ok("failing query-auth error omits raw key", !error.includes(rawSecret));
+ok("failing query-auth error omits auth query field", !error.includes("tavilyApiKey"));
+
+const hermesRouteSource = readFileSync("src/app/api/hermes/chat/route.ts", "utf8");
+ok("Hermes MCP comment no longer claims generic http(s) support", !hermesRouteSource.includes("http(s) only"));
 
 console.log(`RESULT mcp-query-auth: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

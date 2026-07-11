@@ -13,6 +13,8 @@ import { ensureWebQueryScope, isWebSearchPlatform, extractLead, type WebLead } f
 import { runWebTool } from "@/lib/ai/web-tools";
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 
+export const runtime = "nodejs";
+
 /**
  * Real candidate sourcing.
  *

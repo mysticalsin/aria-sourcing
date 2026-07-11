@@ -6,7 +6,14 @@ import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Campaign, Candidate, Role, ScoringWeights } from "@/lib/types";
-import { DEFAULT_MODEL, PROVIDER_ENV, buildCloudRequest, parseCloudResponse, type AiProviderSlug } from "@/lib/ai/provider";
+import {
+  DEFAULT_MODEL,
+  PROVIDER_ENV,
+  VAULT_PROVIDER,
+  buildCloudRequest,
+  parseCloudResponse,
+  type AiProviderSlug,
+} from "@/lib/ai/provider";
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
 import { makeSourcingToolRunner } from "@/lib/ai/sourcing-tools";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
@@ -14,6 +21,7 @@ import { initialState, runGraph, type CandidateLite, type GraphDeps } from "@/li
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 /**
  * On-demand sourcing agent run — the deer-flow-style graph
@@ -47,6 +55,7 @@ export async function POST(req: NextRequest) {
   const supabase = supabaseEnabled ? await getServerSupabase() : null;
   let workspaceId: string | null = null;
   let userId: string | null = null;
+  let callerRole: Role | null = null;
   if (supabaseEnabled) {
     if (!supabase) return NextResponse.json({ ok: false, reason: "No Supabase client." }, { status: 500 });
     const {
@@ -55,8 +64,12 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ ok: false, reason: "Not authenticated." }, { status: 401 });
     userId = user.id;
     const { data: role } = await supabase.rpc("current_profile_role");
-    if (!can(role as Role, "source")) {
+    callerRole = role as Role;
+    if (!can(callerRole, "source")) {
       return NextResponse.json({ ok: false, reason: "Insufficient permissions." }, { status: 403 });
+    }
+    if (!can(callerRole, "manage_providers")) {
+      return NextResponse.json({ ok: false, reason: "Live cloud agents require admin authority." }, { status: 403 });
     }
     const { data: wid } = await supabase.rpc("current_workspace_id");
     workspaceId = (wid as string) ?? null;
@@ -80,7 +93,13 @@ export async function POST(req: NextRequest) {
   }
 
   const slug = provider as AiProviderSlug;
-  const vaultKey = await resolveVaultSecret(apiKeyId);
+  const vaultKey = apiKeyId ? await resolveVaultSecret(apiKeyId, VAULT_PROVIDER[slug]) : "";
+  if (apiKeyId && !vaultKey) {
+    return NextResponse.json({ ok: false, reason: `No valid API key configured for ${provider}.` }, { status: 403 });
+  }
+  if (!apiKeyId && supabaseEnabled && !can(callerRole as Role, "manage_providers")) {
+    return NextResponse.json({ ok: false, reason: "A workspace provider key is required." }, { status: 403 });
+  }
   const key = vaultKey || process.env[PROVIDER_ENV[slug]] || "";
   if (!key) return NextResponse.json({ ok: false, reason: `No API key configured for ${provider}.` });
   const llmModel = model || DEFAULT_MODEL[slug];

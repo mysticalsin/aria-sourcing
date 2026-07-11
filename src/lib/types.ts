@@ -898,9 +898,6 @@ export interface SystemSettings {
    *  and which agent is locked to each DustTask. Optional — absent means Dust is
    *  not configured for this workspace. */
   dust?: DustSettings;
-  /** Databricks SQL Statement Execution intake config. The PAT or OAuth client
-   *  secret is stored in api_keys and referenced by id; it never lives here. */
-  databricks?: DatabricksSettings;
 }
 
 /* ---- Outreach fleet (multi-seat coordination + anti-ban guardrails) ------- */
@@ -1169,7 +1166,7 @@ export type DustTask = (typeof DUST_TASKS)[number];
 
 /** One agent configuration in a Dust workspace, as returned by
  *  `assistant/agent_configurations`. Non-secret (name/description only) — the
- *  client-safe counterpart to the server-only `DustAgentSummary` the SDK call
+ *  client-safe counterpart to the server-only `DustAgentSummary` REST client
  *  produces in `src/lib/dust/client.ts` (re-exported from there). */
 export interface DustAgentSummary {
   sId: string;
@@ -1180,9 +1177,9 @@ export interface DustAgentSummary {
 /** Dust's public API is region-hosted: https://dust.tt (US) or https://eu.dust.tt (EU). */
 export type DustRegion = "us" | "eu";
 
-/** Non-secret Dust workspace config. The API key itself lives in the vault
- *  (references an ApiKey.id with provider "Dust"), never inline here — same
- *  convention as LlmProvider.apiKeyId / McpServerConfig.apiKeyId. */
+/** Non-secret Dust config returned by the normalized integration endpoint.
+ * The legacy settings.dust field is stripped during state normalization and by
+ * the database; this shape remains the client contract for the Settings panel. */
 export interface DustSettings {
   /** The Dust workspace id (path segment in every Dust API call), e.g. "abc123". */
   workspaceId: string;
@@ -1213,7 +1210,6 @@ export interface DatabricksSettings {
   clientId?: string;
   apiKeyId: string;
   needsQuery: string;
-  sinceColumn?: string;
 }
 
 /** Stored metadata only — the secret value never lives in client state. */

@@ -59,7 +59,9 @@ import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
 // admin-editable data instead of a fake fixed 4-person cast.
 // STATE_VERSION 16 — roadmap integration cards must never keep older fabricated
 // connected/lastSync state after the default seed became honest.
-export const STATE_VERSION = 16;
+// STATE_VERSION 17 - Databricks execution authority moved out of the shared
+// workspace JSON and into an admin-owned normalized database record.
+export const STATE_VERSION = 17;
 
 /* ---- LLM config defaults ------------------------------------------------- */
 

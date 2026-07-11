@@ -5,6 +5,13 @@ import type { HermesState } from "../types";
 
 const STORAGE_KEY = "hermes-sourcing:v1";
 
+function withoutLegacyIntegrationAuthority(settings: HermesState["settings"]): HermesState["settings"] {
+  const cleaned = { ...settings } as HermesState["settings"] & { databricks?: unknown; dust?: unknown };
+  delete cleaned.databricks;
+  delete cleaned.dust;
+  return cleaned;
+}
+
 /** Fill in any fields added in recent STATE_VERSIONs without wiping existing data. */
 export function migrateToCurrentVersion(parsed: HermesState): HermesState {
   const defs = defaultSettings();
@@ -65,7 +72,7 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
     // real name in the round-robin instead of silently losing their interviewers.
     interviewers: parsed.interviewers ?? seedInterviewers(),
     settings: {
-      ...parsed.settings,
+      ...withoutLegacyIntegrationAuthority(parsed.settings),
       llmProviders: preKimi ? defs.llmProviders : (parsed.settings.llmProviders ?? defs.llmProviders),
       savedModels: preKimi ? defs.savedModels : (parsed.settings.savedModels ?? defs.savedModels),
       tools: parsed.settings.tools ?? defs.tools,
@@ -83,7 +90,6 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
       starRatingThresholds: parsed.settings.starRatingThresholds ?? defs.starRatingThresholds,
       // STATE_VERSION 11 — Aria management API URL.
       hermesWebUrl: parsed.settings.hermesWebUrl ?? defs.hermesWebUrl ?? "",
-      databricks: parsed.settings.databricks ?? defs.databricks,
     },
     seats: (parsed.seats ?? []).map((seat) => ({
       ...seat,
@@ -96,7 +102,11 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
 
 export function normalizeHermesState(parsed: HermesState): HermesState {
   if (parsed.version !== STATE_VERSION) return migrateToCurrentVersion(parsed);
-  return { ...parsed, wins: parsed.wins ?? [] };
+  return {
+    ...parsed,
+    wins: parsed.wins ?? [],
+    settings: withoutLegacyIntegrationAuthority(parsed.settings),
+  };
 }
 
 export function loadState(): HermesState {

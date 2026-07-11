@@ -5,7 +5,7 @@ import { supabaseEnabled, prodFailClosed, demoLoginEnabled, DEMO_COOKIE_NAME } f
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
 import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
-import { isAllowedHermesUrl, assertPublicUrl } from "@/lib/api/url";
+import { isAllowedHermesUrl } from "@/lib/api/url";
 import { can } from "@/lib/rbac";
 import { AUTH_QUERY_PARAMS } from "@/lib/types";
 import type { Campaign, Candidate, Role, ScoringWeights } from "@/lib/types";
@@ -15,9 +15,10 @@ import {
   PROVIDER_ENV,
   type AiProviderSlug,
   DEFAULT_MODEL,
+  VAULT_PROVIDER,
 } from "@/lib/ai/provider";
-import { applyMcpAuth, connectAndListTools } from "@/lib/mcp-client";
-import { validateMcpBaseUrlHasNoAuthQueryParam } from "@/lib/mcp-auth-params";
+import { applyMcpAuth, connectAndListTools, remoteMcpExecutionEnabled } from "@/lib/mcp-client";
+import { validateMcpBaseUrl } from "@/lib/mcp-auth-params";
 import { runAnthropicWithTools, runOpenAiWithTools, type ResolvedMcpServer } from "@/lib/ai/tool-loop";
 import { BUILTIN_WEB_URL, WEB_TOOL_DEFS } from "@/lib/ai/web-tools";
 import { SOURCING_TOOL_DEFS, makeSourcingToolRunner } from "@/lib/ai/sourcing-tools";
@@ -27,6 +28,8 @@ import { evaluateHermesWorkspaceBinding } from "@/lib/api/hermes-runtime-isolati
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import { DISCLOSURE_SYSTEM } from "@/lib/agent-disclosure-policy";
 
+export const runtime = "nodejs";
+
 const McpAuthStyleSchema = z.enum(["bearer", "query"]);
 const McpAuthQueryParamSchema = z.enum(AUTH_QUERY_PARAMS);
 const McpServerPayloadSchema = z
@@ -35,8 +38,8 @@ const McpServerPayloadSchema = z
       .string()
       .url()
       .max(500)
-      .refine((url) => validateMcpBaseUrlHasNoAuthQueryParam(url).ok, {
-        message: "MCP server URL must not contain auth query params.",
+      .refine((url) => validateMcpBaseUrl(url).ok, {
+        message: "MCP server URL must use HTTPS port 443 and contain no credentials, query, or fragment.",
       }),
     apiKeyId: z.string().uuid().optional(),
     authStyle: McpAuthStyleSchema.optional(),
@@ -147,12 +150,14 @@ function isRedirectResponse(res: Response): boolean {
 /**
  * Resolve the caller's enabled MCP servers into connectable servers with their tools.
  * The auth secret for each is resolved from the vault server-side (never from the
- * browser). http(s) only (SSRF). Servers that fail to connect or expose no tools are
- * skipped, so a broken server can't block the chat.
+ * browser). HTTPS port 443 only. Servers that fail to connect or expose no tools are
+ * skipped. Runtime policy is checked here as a second guard so production never
+ * discovers or exposes third-party descriptions to a model loop.
  */
 async function gatherMcpServers(
   servers: z.infer<typeof McpServerPayloadSchema>[],
 ): Promise<ResolvedMcpServer[]> {
+  if (!remoteMcpExecutionEnabled()) return [];
   const resolved: ResolvedMcpServer[] = [];
   for (const s of servers) {
     let parsed: URL;
@@ -161,13 +166,7 @@ async function gatherMcpServers(
     } catch {
       continue;
     }
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") continue;
-    // SSRF guard: block private/loopback/link-local/metadata hosts (and DNS-rebinding)
-    // before the server ever dials the caller-supplied URL. This server is reused for
-    // every tool call the model makes during the loop, so this is a repeatable channel
-    // — not just a one-shot probe.
-    const guard = await assertPublicUrl(s.url);
-    if (!guard.ok) continue;
+    if (parsed.protocol !== "https:") continue;
     const secret = s.apiKeyId ? await resolveVaultSecret(s.apiKeyId) : "";
     let auth: { url: string; token: string };
     try {
@@ -220,9 +219,6 @@ export async function POST(req: NextRequest) {
   if (!validated.ok) return validated.response;
   const { task, prompt, stream, hermesApiKeyId, model, provider, apiKeyId, mcpServers, webResearch, campaign, existing } =
     validated.data;
-  // keyId: cloud provider key id takes precedence over the hermes key id.
-  const keyId = apiKeyId ?? hermesApiKeyId;
-
   // Per-task authorization — outreach/sourcing/classify need the matching permission.
   // Also resolved for the chat task so the search_candidates tool (below) can be gated
   // by the "source" permission, same as /api/sourcing-agent.
@@ -234,6 +230,7 @@ export async function POST(req: NextRequest) {
       outreach: "outreach",
       sourcing: "source",
       classify: "source",
+      chat: "source",
     };
     const perm = TASK_PERM[task as string];
     if (perm && !can(callerRole, perm)) {
@@ -253,6 +250,12 @@ export async function POST(req: NextRequest) {
 
   /* ---- Cloud provider branch (Anthropic / OpenAI-compatible) -------------- */
   if (provider !== "hermes") {
+    // The request controls provider, model, and key id. Until those choices are
+    // normalized into an admin-owned authority table, only an administrator may
+    // spend a live cloud credential. Internal Hermes remains separately gated.
+    if (supabaseEnabled && !can(callerRole as Role, "manage_providers")) {
+      return NextResponse.json({ ok: false, reason: "Live cloud providers require admin authority." }, { status: 403 });
+    }
     // Open-demo cost gate: env-resident provider keys are spendable ONLY by a caller
     // holding a valid demo session (admin/admin → signed httpOnly cookie). The Supabase
     // path already authenticated above; local dev (no demoLoginEnabled) stays open.
@@ -265,7 +268,17 @@ export async function POST(req: NextRequest) {
     // Key resolution: vault by id (workspace-scoped) → env fallback → error.
     // The raw secret is NEVER logged or returned to the caller.
     const slug = provider as AiProviderSlug;
-    const vaultKey = await resolveVaultSecret(keyId);
+    const vaultKey = apiKeyId ? await resolveVaultSecret(apiKeyId, VAULT_PROVIDER[slug]) : "";
+    // A supplied id is an explicit authority choice. Never fall back to an env
+    // credential when it is missing, invalid, or belongs to another provider.
+    if (apiKeyId && !vaultKey) {
+      return NextResponse.json({ ok: false, reason: `No valid API key configured for ${provider}.` }, { status: 403 });
+    }
+    // Deployment-level env credentials may be used directly only by admins.
+    // Normal member execution uses an admin-created, tested workspace key.
+    if (!apiKeyId && supabaseEnabled && !can(callerRole as Role, "manage_providers")) {
+      return NextResponse.json({ ok: false, reason: "A workspace provider key is required." }, { status: 403 });
+    }
     const key = vaultKey || process.env[PROVIDER_ENV[slug]] || "";
     if (!key) {
       return NextResponse.json({ ok: false, reason: `No API key configured for ${provider}.` });
@@ -277,16 +290,16 @@ export async function POST(req: NextRequest) {
     const sourcingCampaign =
       canSourceInChat && campaignObj?.jobAnalysis && campaignObj?.scoringWeights ? campaignObj : null;
 
-    // MCP tool-calling (chat task, Anthropic): when the workspace has enabled MCP
-    // servers, or web research, or a sourceable campaign is in context, let the model
-    // call their tools and loop to a final answer. Additive — falls through to the
-    // normal single-shot completion when no usable servers resolve.
+    // Tool-calling for chat: built-in web research and sourcing remain available.
+    // Third-party MCP is included only for an explicitly opted-in development/test
+    // runtime. The normal single-shot completion remains the fallback.
     // Kimi Code (kimi-for-coding) rejects the OpenAI `tools` param (no function-calling),
     // so skip the tool loop for it and answer with a plain completion. Other providers
     // still get the MCP / built-in web-research / sourcing tool loop.
     // Only an admin-level caller (manage_tools) may attach MCP servers to this
     // request — a viewer/member's mcpServers array is dropped, not honored.
-    const usableMcpServers = canUseMcpToolsInChat && mcpServers && mcpServers.length ? mcpServers : undefined;
+    const usableMcpServers =
+      canUseMcpToolsInChat && remoteMcpExecutionEnabled() && mcpServers?.length ? mcpServers : undefined;
     if (task === "chat" && slug !== "kimi" && (webResearch || usableMcpServers || sourcingCampaign)) {
       const resolvedServers: ResolvedMcpServer[] = [];
       const tavilyKey = canSourceInChat && supabase ? await resolveStoredTavilyKey(supabase) : null;
@@ -386,7 +399,7 @@ export async function POST(req: NextRequest) {
   // that does not resolve in this workspace must fail closed.
   let bearerToken = process.env.HERMES_API_KEY ?? "";
   if (hermesApiKeyId) {
-    const vaultSecret = await resolveVaultSecret(hermesApiKeyId);
+    const vaultSecret = await resolveVaultSecret(hermesApiKeyId, "Aria Agent");
     if (!vaultSecret) {
       return NextResponse.json({ ok: false, reason: "Aria runtime key is not available." }, { status: 403 });
     }

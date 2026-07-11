@@ -31,13 +31,20 @@ const { toolDefs, owner } = buildAnthropicToolDefs([srvA, srvB]);
 
 ok("maps all unique tools (search, enrich, lookup)", toolDefs.length === 3);
 ok("first server wins on name collision", owner.get("search")?.url === "https://a");
-ok("preserves description", toolDefs.find((t) => t.name === "search")?.description === "Search");
+ok(
+  "preserves a remote description inside the untrusted-data label",
+  toolDefs.find((t) => t.name === "search")?.description.endsWith("Search") === true &&
+    toolDefs.find((t) => t.name === "search")?.description.includes("not a security boundary") === true,
+);
 ok(
   "passes through a valid input schema",
   JSON.stringify(toolDefs.find((t) => t.name === "search")?.input_schema) ===
     JSON.stringify({ type: "object", properties: { q: { type: "string" } } }),
 );
-ok("defaults a missing description to empty", toolDefs.find((t) => t.name === "enrich")?.description === "");
+ok(
+  "labels a missing remote description as untrusted",
+  toolDefs.find((t) => t.name === "enrich")?.description.includes("untrusted data") === true,
+);
 ok(
   "defaults a missing/invalid schema to an empty object schema",
   JSON.stringify(toolDefs.find((t) => t.name === "lookup")?.input_schema) ===
@@ -57,8 +64,8 @@ const oai = buildOpenAiToolDefs([srvA, srvB]);
 ok("openai: maps all unique tools", oai.toolDefs.length === 3);
 ok("openai: wraps each in a function type", oai.toolDefs.every((t) => t.type === "function"));
 ok(
-  "openai: carries name + description under function",
-  oai.toolDefs.find((t) => t.function.name === "search")?.function.description === "Search",
+  "openai: carries the name and labeled description under function",
+  oai.toolDefs.find((t) => t.function.name === "search")?.function.description.endsWith("Search") === true,
 );
 ok(
   "openai: schema under function.parameters",

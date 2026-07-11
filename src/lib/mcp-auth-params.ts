@@ -1,22 +1,18 @@
-import { AUTH_QUERY_PARAMS, type AuthQueryParam } from "./types";
+type McpBaseUrlValidation = { ok: true } | { ok: false; error: string };
 
-const AUTH_QUERY_PARAM_SET = new Set<string>(AUTH_QUERY_PARAMS.map((p) => p.toLowerCase()));
-
-export function findAuthQueryParamInUrl(url: string): AuthQueryParam | null {
+export function validateMcpBaseUrl(url: string): McpBaseUrlValidation {
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
-    return null;
+    return { ok: false, error: "MCP server URL must be a valid absolute HTTPS URL." };
   }
-  for (const key of parsed.searchParams.keys()) {
-    if (AUTH_QUERY_PARAM_SET.has(key.toLowerCase())) return key as AuthQueryParam;
+  if (parsed.protocol !== "https:") return { ok: false, error: "MCP server URL must use HTTPS." };
+  if (parsed.port && parsed.port !== "443") {
+    return { ok: false, error: "MCP server URL must use the standard HTTPS port 443." };
   }
-  return null;
-}
-
-export function validateMcpBaseUrlHasNoAuthQueryParam(url: string): { ok: true } | { ok: false; error: string } {
-  const param = findAuthQueryParamInUrl(url);
-  if (!param) return { ok: true };
-  return { ok: false, error: `MCP server URL must not contain ${param}; store the secret in the key vault.` };
+  if (parsed.username || parsed.password) return { ok: false, error: "MCP server URL must not contain embedded credentials." };
+  if (!parsed.searchParams.keys().next().done) return { ok: false, error: "MCP server URL must not contain query parameters." };
+  if (parsed.hash) return { ok: false, error: "MCP server URL must not contain a fragment." };
+  return { ok: true };
 }

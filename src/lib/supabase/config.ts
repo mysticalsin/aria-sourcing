@@ -72,6 +72,10 @@ export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?
 /** Optional: restrict sign-in to an email domain (e.g. "mantu.com"). Empty = any. */
 export const ALLOWED_EMAIL_DOMAIN = process.env.NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN ?? "";
 
+/** Public capability flag. Keep false unless GoTrue's Azure provider, tenant,
+ * client id, and client secret are all configured in the same release. */
+export const azureLoginEnabled = process.env.NEXT_PUBLIC_ENABLE_AZURE_LOGIN === "true";
+
 /**
  * Public-demo escape hatch. When `NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true` this instance
  * is a deliberately public, synthetic-data demo, which changes two things in prod:

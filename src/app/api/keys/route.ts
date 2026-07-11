@@ -116,6 +116,12 @@ export async function DELETE(req: NextRequest) {
   const { error } = await supabase.from("api_keys").delete().eq("id", id);
   if (error) {
     safeLog("api_keys delete error", { message: error.message, code: error.code });
+    if (error.code === "23503") {
+      return NextResponse.json(
+        { ok: false, error: "Disconnect or rebind integrations that use this key before deleting it." },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ ok: false, error: "Couldn't delete the key. Try again." }, { status: 403 });
   }
   return NextResponse.json({ ok: true });

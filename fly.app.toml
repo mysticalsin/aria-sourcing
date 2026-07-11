@@ -1,7 +1,8 @@
-# aria-mantu-app — the Next.js production build (Dockerfile.prod). PUBLIC.
-#   deploy: fly deploy --config fly.app.toml --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$FLY_SUPABASE_ANON_KEY"
-# The 4 NEXT_PUBLIC_* are baked at `next build` (Next inlines them), so they are build args,
-# not runtime secrets. Everything else is [env] (non-secret) or fly secrets set (secret).
+# aria-mantu-app, the public Next.js service.
+# The protected workflow builds Dockerfile.prod with the public build inputs,
+# scans and publishes that exact image, then deploys its immutable registry
+# digest with `fly deploy --image`. The [build] block documents the canonical
+# Dockerfile and public defaults; the protected release does not rebuild here.
 app            = "aria-mantu-app"
 primary_region = "cdg"
 
@@ -11,6 +12,7 @@ primary_region = "cdg"
     NEXT_PUBLIC_SUPABASE_URL         = "https://aria-mantu-kong.fly.dev"   # browser → Supabase (public Kong)
     NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN = ""
     NEXT_PUBLIC_ENABLE_DEMO_LOGIN    = "false"                       # real tenant: OFF → strict fail-closed
+    NEXT_PUBLIC_ENABLE_AZURE_LOGIN   = "false"                       # enable only with complete GoTrue Azure config
     # NEXT_PUBLIC_SUPABASE_ANON_KEY passed on the CLI (see deploy cmd above)
 
 [env]
@@ -42,6 +44,12 @@ primary_region = "cdg"
     interval     = "15s"
     timeout      = "5s"
     grace_period = "20s"
+  [[http_service.checks]]
+    method       = "GET"
+    path         = "/api/ready"      # DB, Auth, queue, migration hash, and release identity
+    interval     = "30s"
+    timeout      = "5s"
+    grace_period = "30s"
 
 [[vm]]
   size   = "shared-cpu-1x"

@@ -1,55 +1,47 @@
-/* ============================================================================
-   Dust AI-agent integration (SERVER ONLY).
+/* Dust integration (server only). This deliberately uses Dust's narrow REST
+   surface instead of the bundled SDK so ARIA owns timeout, validation, and
+   dependency behavior without importing an incompatible transitive server. */
 
-   Thin wrapper around the official "@dust-tt/client" SDK. Two operations:
-     - listDustAgents : list the workspace's agent configurations (for the
-       Settings "Configure" flow to pick which agent to lock to a task).
-     - runDustAgent   : run one agent turn (create a conversation, mention the
-       agent, poll for its reply) and return its text.
-
-   Dust's public API only streams the agent's reply over SSE
-   (dustAPI.streamAgentAnswerEvents). Wiring raw SSE through a Next.js
-   serverless route handler is fiddly to get right (reconnects, partial
-   frames); polling GET .../conversations/{id} until the agent message
-   settles is Dust's documented simpler alternative for non-streaming callers,
-   and matches every other server->LLM call in this app (hermes/chat is also
-   non-streaming for the default path). Bounded end-to-end by `timeoutMs`.
-
-   Never throws out of runDustAgent — a Dust-side or network failure resolves
-   to { ok: false, error }, matching the "surface, don't retry-loop" guidance
-   for a service with a shared daily message quota.
-   ========================================================================== */
-
-import { DustAPI } from "@dust-tt/client";
-import { safeLog } from "@/lib/log-redact";
+import { z } from "zod";
 import type { DustAgentSummary, DustRegion } from "@/lib/types";
+import { containsCredentialRepresentation } from "@/lib/credential-safety";
 
-/** Dust's public API is region-hosted; the SDK defaults to the US host. */
 const REGION_BASE_URL: Record<DustRegion, string> = {
   us: "https://dust.tt",
   eu: "https://eu.dust.tt",
 };
 
-// Re-exported so existing callers of this module keep working unchanged — the
-// shape now lives in types.ts (client-safe) since the Settings UI needs it too
-// and must not import this server-only module.
+const AgentListSchema = z.object({
+  agentConfigurations: z.array(
+    z.object({
+      sId: z.string().min(1),
+      name: z.string().min(1),
+      description: z.string().nullish(),
+    }).passthrough(),
+  ),
+});
+
+const AgentMessageSchema = z.object({
+  type: z.string().optional(),
+  status: z.enum(["created", "succeeded", "failed", "cancelled"]).optional(),
+  content: z.string().nullable().optional(),
+  error: z.object({ message: z.string().optional() }).nullable().optional(),
+}).passthrough();
+
+const ConversationSchema = z.object({
+  conversation: z.object({
+    sId: z.string().min(1),
+    content: z.array(z.array(AgentMessageSchema)).default([]),
+  }).passthrough(),
+});
+
 export type { DustAgentSummary };
+export type DustRunResult = { ok: true; text: string } | { ok: false; error: string };
 
-/** The SDK requires a logger (default: `console`, which would print raw
- *  upstream error text straight to stdout). Route it through safeLog so any
- *  diagnostic is redacted first, matching this codebase's logging convention.
- *  Never receives the API key itself (that only ever lives in the Authorization
- *  header the SDK builds internally). */
-const dustLogger = {
-  error: (args: Record<string, unknown>, msg: string) => safeLog("[dust]", msg, args),
-  warn: (args: Record<string, unknown>, msg: string) => safeLog("[dust]", msg, args),
-  info: () => {},
-  trace: () => {},
-};
+const POLL_INTERVAL_MS = 1_200;
+const MAX_RESPONSE_BYTES = 2_000_000;
 
-function buildClient(workspaceId: string, apiKey: string, region: DustRegion = "us"): DustAPI {
-  return new DustAPI({ workspaceId, apiKey, baseUrl: REGION_BASE_URL[region], logger: dustLogger });
-}
+class DustClientError extends Error {}
 
 function resolveTimezone(): string {
   try {
@@ -63,48 +55,110 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * List the workspace's agent configurations (view=all, i.e. every agent the
- * caller's role can see, matching the confirmed API contract). Throws on any
- * Dust-side or network error — the /api/dust/test route wraps this call in
- * try/catch and turns a throw into { ok: false, error }.
- */
+function apiUrl(workspaceId: string, path: string, region: DustRegion) {
+  return `${REGION_BASE_URL[region]}/api/v1/w/${encodeURIComponent(workspaceId)}/${path}`;
+}
+
+function httpError(status: number): DustClientError {
+  if (status === 401 || status === 403) return new DustClientError("Dust authentication failed.");
+  if (status === 429) return new DustClientError("Dust rate limit exceeded.");
+  if (status >= 400 && status < 500) return new DustClientError("Dust rejected the request.");
+  return new DustClientError("Dust request failed.");
+}
+
+async function readBoundedResponseText(response: Response): Promise<string> {
+  const contentLength = response.headers.get("content-length");
+  if (contentLength && /^\d+$/.test(contentLength) && Number(contentLength) > MAX_RESPONSE_BYTES) {
+    try {
+      await response.body?.cancel("response size limit exceeded");
+    } catch {
+      // The declared size violation remains the authoritative failure.
+    }
+    throw new DustClientError("Dust returned an oversized response.");
+  }
+
+  if (!response.body) return response.text();
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const text: string[] = [];
+  let bytesRead = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytesRead += value.byteLength;
+      if (bytesRead > MAX_RESPONSE_BYTES) {
+        try {
+          await reader.cancel("response size limit exceeded");
+        } catch {
+          // The size violation remains the authoritative failure.
+        }
+        throw new DustClientError("Dust returned an oversized response.");
+      }
+      text.push(decoder.decode(value, { stream: true }));
+    }
+    text.push(decoder.decode());
+    return text.join("");
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+async function requestJson(
+  workspaceId: string,
+  apiKey: string,
+  path: string,
+  region: DustRegion,
+  init: RequestInit = {},
+) {
+  let response: Response;
+  try {
+    response = await fetch(apiUrl(workspaceId, path, region), {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        ...init.headers,
+      },
+    });
+  } catch {
+    throw new DustClientError("Dust request failed.");
+  }
+  const text = await readBoundedResponseText(response);
+  // Provider-controlled failure bodies are never parsed or surfaced. The
+  // status alone selects a stable client-owned error.
+  if (!response.ok) throw httpError(response.status);
+  let body: unknown;
+  try {
+    body = text ? JSON.parse(text) : {};
+  } catch {
+    throw new DustClientError("Dust returned an invalid JSON response.");
+  }
+  return body;
+}
+
 export async function listDustAgents(
   workspaceId: string,
   apiKey: string,
   region: DustRegion = "us",
 ): Promise<DustAgentSummary[]> {
-  const dust = buildClient(workspaceId, apiKey, region);
-  const res = await dust.getAgentConfigurations({ view: "all", includes: ["authors"] });
-  if (res.isErr()) {
-    throw new Error(res.error.message || "Failed to list Dust agents.");
-  }
-  return res.value.map((a) => ({ sId: a.sId, name: a.name, description: a.description ?? "" }));
+  const body = await requestJson(
+    workspaceId,
+    apiKey,
+    "assistant/agent_configurations?view=all&withAuthors=true",
+    region,
+    { signal: AbortSignal.timeout(10_000) },
+  );
+  const parsed = AgentListSchema.safeParse(body);
+  if (!parsed.success) throw new DustClientError("Dust returned an invalid agent-list response.");
+  return parsed.data.agentConfigurations.map((agent) => ({
+    sId: agent.sId,
+    name: agent.name,
+    description: agent.description ?? "",
+  }));
 }
 
-/** The subset of an agent_message's fields this wrapper reads while polling.
- *  The SDK's full response type is a large zod-inferred union covering every
- *  provider/model variant; asserting this narrow shape keeps the wrapper
- *  maintainable while still failing safely — an unexpected shape just reads as
- *  "not yet the agent message" and falls through to the next poll / timeout,
- *  never a crash. Verified against the SDK's actual runtime zod schema
- *  (GetConversationResponseSchema) at the time of writing. */
-interface DustAgentMessagePoll {
-  type?: string;
-  status?: "created" | "succeeded" | "failed" | "cancelled";
-  content?: string | null;
-  error?: { message?: string } | null;
-}
-
-const POLL_INTERVAL_MS = 1_200;
-
-export type DustRunResult = { ok: true; text: string } | { ok: false; error: string };
-
-/**
- * Run one turn of a Dust agent: create an unlisted conversation mentioning the
- * agent, then poll until its message succeeds, fails, is cancelled, or the
- * timeout elapses. Never throws.
- */
 export async function runDustAgent(
   workspaceId: string,
   apiKey: string,
@@ -115,55 +169,68 @@ export async function runDustAgent(
 ): Promise<DustRunResult> {
   const deadline = Date.now() + timeoutMs;
   try {
-    const dust = buildClient(workspaceId, apiKey, region);
-
-    const created = await dust.createConversation({
-      title: null,
-      visibility: "unlisted",
-      message: {
-        content: message,
-        mentions: [{ configurationId: agentSId }],
-        context: {
-          username: "aria-fleet",
-          timezone: resolveTimezone(),
-          fullName: "Aria Sourcing Fleet",
-          email: null,
-          profilePictureUrl: null,
-          origin: "api",
-        },
+    const createdBody = await requestJson(
+      workspaceId,
+      apiKey,
+      "assistant/conversations",
+      region,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          title: null,
+          visibility: "unlisted",
+          blocking: false,
+          skipToolsValidation: false,
+          message: {
+            content: message,
+            mentions: [{ configurationId: agentSId }],
+            context: {
+              username: "aria-fleet",
+              timezone: resolveTimezone(),
+              fullName: "Aria Sourcing Fleet",
+              email: null,
+              profilePictureUrl: null,
+              origin: "api",
+            },
+          },
+        }),
+        signal: AbortSignal.timeout(Math.max(1_000, deadline - Date.now())),
       },
-      signal: AbortSignal.timeout(Math.max(1_000, deadline - Date.now())),
-    });
-    if (created.isErr()) {
-      return { ok: false, error: created.error.message || "Failed to start a Dust conversation." };
-    }
-    const conversationId = created.value.conversation.sId;
+    );
+    const created = ConversationSchema.safeParse(createdBody);
+    if (!created.success) return { ok: false, error: "Dust returned an invalid conversation response." };
+    const conversationId = created.data.conversation.sId;
 
     while (Date.now() < deadline) {
-      const remaining = deadline - Date.now();
-      const got = await dust.getConversation({
-        conversationId,
-        signal: AbortSignal.timeout(Math.max(1_000, remaining)),
-      });
-      if (got.isErr()) {
-        return { ok: false, error: got.error.message || "Failed to read the Dust conversation." };
-      }
-      // content is an array of message "slots"; each slot holds every version of
-      // that message (edits/regenerations), current version last.
-      const groups = got.value.content as unknown as DustAgentMessagePoll[][];
-      const latest = groups.map((g) => g[g.length - 1]).find((m) => m?.type === "agent_message");
-      if (latest) {
-        if (latest.status === "succeeded") return { ok: true, text: latest.content ?? "" };
-        if (latest.status === "failed" || latest.status === "cancelled") {
-          return { ok: false, error: latest.error?.message || `Dust agent run ${latest.status}.` };
+      const body = await requestJson(
+        workspaceId,
+        apiKey,
+        `assistant/conversations/${encodeURIComponent(conversationId)}`,
+        region,
+        { signal: AbortSignal.timeout(Math.max(1_000, deadline - Date.now())) },
+      );
+      const got = ConversationSchema.safeParse(body);
+      if (!got.success) return { ok: false, error: "Dust returned an invalid conversation response." };
+      const latest = got.data.conversation.content
+        .map((versions) => versions.at(-1))
+        .find((candidate) => candidate?.type === "agent_message");
+      if (latest?.status === "succeeded") {
+        const text = latest.content ?? "";
+        if (containsCredentialRepresentation(text, apiKey)) {
+          return { ok: false, error: "Dust returned an unsafe response." };
         }
-        // status === "created" (still running) — keep polling.
+        return { ok: true, text };
+      }
+      if (latest?.status === "failed" || latest?.status === "cancelled") {
+        return { ok: false, error: latest.status === "failed" ? "Dust agent run failed." : "Dust agent run cancelled." };
       }
       await sleep(Math.min(POLL_INTERVAL_MS, Math.max(0, deadline - Date.now())));
     }
     return { ok: false, error: "Timed out waiting for the Dust agent to respond." };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Unexpected error calling Dust.";
-    return { ok: false, error: msg };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof DustClientError ? error.message : "Dust request failed.",
+    };
   }
 }

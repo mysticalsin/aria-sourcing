@@ -3,7 +3,7 @@ app            = "aria-mantu-auth"
 primary_region = "cdg"
 
 [build]
-  image = "supabase/gotrue:v2.189.0"
+  image = "supabase/gotrue:v2.189.0@sha256:385184459f57569c54c25209f51f3b2be99ddd7c4ce9e3555b5d3eea8447b7cf"
 
 [env]
   GOTRUE_API_HOST               = "::"                          # bind IPv6 for the 6PN .internal net
@@ -20,12 +20,19 @@ primary_region = "cdg"
   GOTRUE_EXTERNAL_EMAIL_ENABLED = "true"
   GOTRUE_MAILER_AUTOCONFIRM     = "true"                        # ok for single-admin; flip false + SMTP for multi-user
   # Secrets (fly secrets set): GOTRUE_JWT_SECRET (=FLY_JWT_SECRET),
-  #   GOTRUE_DB_DATABASE_URL = postgres://supabase_auth_admin:<FLY_PG_PASSWORD>@aria-mantu-db.internal:5432/postgres
+  #   GOTRUE_DB_DATABASE_URL = postgres://supabase_auth_admin:<FLY_AUTH_DB_PASSWORD>@aria-mantu-db.internal:5432/postgres
 
 [[services]]
   internal_port = 9999
   protocol      = "tcp"
+  auto_stop_machines   = "off"
+  auto_start_machines  = false
+  min_machines_running = 1
   # no external ports → internal only
+  [[services.tcp_checks]]
+    grace_period = "20s"
+    interval     = "15s"
+    timeout      = "3s"
 
 [[vm]]
   size   = "shared-cpu-1x"
