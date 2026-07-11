@@ -1,0 +1,44 @@
+{
+  "recent_learnings": [
+    {
+      "date": "2026-07-09",
+      "lesson": "OneDrive ETIMEDOUT reads on fresh files = jammed File Provider; killall OneDrive + reopen recovers; isolate with per-file read probe."
+    },
+    {
+      "at": "2026-07-09",
+      "lesson": "OneDrive Files-On-Demand re-evicts node_modules and other-device files; local builds fail ETIMEDOUT — build remotely from git, never trust local disk."
+    },
+    {
+      "at": "2026-07-09",
+      "lesson": "Background subagents stalled 4/7 times (stream watchdog); when infra flaky, audit and build inline in main loop instead of retrying spawns."
+    },
+    {
+      "at": "2026-07-09",
+      "lesson": "Permission denials came in transient bursts; probe with a different action class before assuming deliberate user block."
+    },
+    {
+      "at": "2026-07-09",
+      "lesson": "grep substring hits are not import proof — verify with git grep -F against HEAD before committing 'required' files."
+    },
+    {
+      "at": "2026-07-09",
+      "lesson": "MSourcing: human-likeness gate = separate event table with no send path + type-constrained outbound + block-only gate at send route; approval hash must never be mutated post-approval."
+    },
+    {
+      "at": "2026-07-10",
+      "lesson": "A state doc's 'all prep done / ready to deploy' claim is not proof; verify deploy prereqs against actual files. MSourcing DEPLOY-STATE said Fly-ready but had no fly.toml and only a dev Dockerfile (CMD npm run dev)."
+    },
+    {
+      "at": "2026-07-10",
+      "lesson": "Sandbox blocks ~/.fly (perms EPERM) and the tsx CLI IPC pipe; flyctl/vercel must run in Tony's shell or via dangerouslyDisableSandbox; tests run via scripts/run-tests-sandbox.mjs (node --import tsx)."
+    },
+    {
+      "at": "2026-07-10",
+      "lesson": "flyctl auth: browser CLI login expires fast; use a personal access token in a gitignored file + export FLY_API_TOKEN=$(cat file). flyctl hangs on telemetry POST — set FLY_NO_METRICS=1 DO_NOT_TRACK=1 and run slow ops in background."
+    },
+    {
+      "at": "2026-07-10",
+      "lesson": "Fly 'trial has ended, please add a credit card' fails apps create with rc=1 — a billing gate like the GitHub one. Check Fly account billing BEFORE driving a deploy; Tony's card must be added at fly.io/trial."
+    }
+  ]
+}

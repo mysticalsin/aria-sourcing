@@ -30,10 +30,22 @@ jobs:
           echo "restored:"; ls -1 production-readiness/.fly-*.env .env.local 2>/dev/null
 
       - name: Deploy the full Fly stack
-        run: bash deploy-fly.sh
+        run: |
+          # install flyctl directly (creates BOTH `flyctl` and `fly`) and put it on PATH
+          # in THIS step, so deploy-fly.sh (which calls `fly`) finds it.
+          curl -L https://fly.io/install.sh | sh
+          export PATH="$HOME/.fly/bin:$PATH"
+          fly version
+          bash deploy-fly.sh
 
-      - name: Report URLs
-        if: always()
+      - name: Verify the app is actually live
         run: |
           echo "App:  https://aria-mantu-app.fly.dev"
           echo "Kong: https://aria-mantu-kong.fly.dev"
+          for i in $(seq 15); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 https://aria-mantu-app.fly.dev/api/health || echo 000)
+            echo "attempt $i: app /api/health -> $code"
+            [ "$code" = "200" ] && { echo "APP IS LIVE"; exit 0; }
+            sleep 15
+          done
+          echo "::error::app did not become healthy after deploy"; exit 1

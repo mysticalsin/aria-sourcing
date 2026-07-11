@@ -1,0 +1,331 @@
+{
+  "goal_id": "goal-2026-07-08-aria-enterprise-ready",
+  "title": "ARIA enterprise-ready: on-demand sourcing agents (deer-flow pattern) + Flowise Agent Studio + gated autopilot + multi-tenant + admin dashboard",
+  "created_at": "2026-07-08T00:00:00+02:00",
+  "rescoped_at": "2026-07-09T00:00:00+02:00",
+  "rescope_reason": "Tony merged new /goal (2026-07-09): deer-flow-pattern on-demand sourcing agents, Flowise visual agent-builder section, gated autopilot with candidate reply handling. Explicit re-scoping decision via 5 Socratic questions + 4 clarifiers — NOT outcome drift.",
+  "status": "IN_PROGRESS",
+  "unsafe": false,
+  "outcome": "ARIA runs on-demand, single-task sourcing agents (deer-flow-pattern planner→sourcer→screener→outreach→reporter, fully parameterizable per role/candidate profile, hard guardrails), editable via an embedded Flowise Agent Studio section, with gated autopilot that can run sourcing autonomously and answer candidate replies within guardrails across email + WhatsApp (LinkedIn draft-gated), every outbound message passing a human-likeness gate, multi-tenant with admin dashboard, deployed to production.",
+  "outcome_criterion": "On the deployed production build: two test users (one admin, one regular) each create an on-demand sourcing agent for a different role via the embedded Agent Studio (Flowise) section; each runs a full sourcing cycle with zero code intervention; at least one real outreach email is sent to a Tony-controlled test inbox, the candidate answers back, and the gated-autopilot agent auto-answers the in-guardrail reply AND queues an out-of-guardrail reply for Tony approval; at least one WhatsApp message is sent to a Tony-controlled number via official API and passes the human-likeness gate (zero AI-tell/status/meta messages on the wire); admin dashboard shows both users activity plus efficiency metrics. Verifier: Tony runs acceptance script + manual pass, records PASS/FAIL.",
+  "outcome_criterion_hash": "bec1c7cca4d3051a5c4b9a456036130dba9dff133e9a9b9667d59df359ba4d5d",
+  "verifier": "Tony runs acceptance script + manual pass on deployed build; PASS/FAIL recorded in m12",
+  "deadline": "2026-07-31T23:59:00+02:00",
+  "out_of_scope": [
+    "Real candidate PII in test runs — synthetic data + Tony-controlled inboxes/profiles only",
+    "Native mobile app (iOS/Android) — responsive web yes, native builds no",
+    "Billing / payments — internal tool, no invoicing module"
+  ],
+  "scope_notes": [
+    "LinkedIn IN scope, governed by policy engine (src/lib/linkedin-policy.ts); autopilot auto-SEND behavior per guardrail engine, not blanket-excluded",
+    "Python fallback AUTHORIZED for agent-graph runtime if TS-native quality falls short (Tony, 2026-07-09)",
+    "Autopilot = gated: drafts instantly, auto-sends ONLY within approved-template/topic/rate guardrails; everything else queues for Tony approval. Never-auto-send stays platform default; autopilot is per-agent opt-in flag.",
+    "WhatsApp channel (re-scope #2, Tony 2026-07-09): official API only (Meta Cloud API or Twilio) — unofficial libs (Baileys/whatsapp-web.js) banned, ToS/ban risk. Business-initiated messages use pre-approved templates; free-form only in 24h service window after candidate reply.",
+    "HUMAN-LIKENESS GATE (applies to ALL channels, hardest on WhatsApp): agent narration/status/meta messages ('thinking', 'processing', action-done notices, AI tells) NEVER reach the wire — internal events stay in events table. Outbound pipeline = compose → cache/hold buffer → AI-tell filter (banned-pattern list + humanizer rules + classifier) → dedupe cache (normalized-text hash per candidate) → human pacing (typing delays, quiet hours, one message per conversation at a time) → send. Fails gate → blocked + queued for Tony."
+  ],
+  "stakeholders": [
+    {
+      "name": "Tony Walteur",
+      "role": "owner/builder",
+      "notify_on": [
+        "blocker",
+        "milestone_done",
+        "completion"
+      ]
+    },
+    {
+      "name": "Mantu sourcing teams",
+      "role": "daily users",
+      "notify_on": [
+        "completion"
+      ]
+    },
+    {
+      "name": "Top management",
+      "role": "tracking/visibility/efficiency via admin dashboard",
+      "notify_on": [
+        "completion"
+      ]
+    }
+  ],
+  "external_repos": [
+    {
+      "name": "deer-flow",
+      "url": "https://github.com/bytedance/deer-flow.git",
+      "decision": "ADOPT-PATTERN",
+      "note": "Port planner→worker→reporter multi-agent graph + guardrail patterns to TS-native ARIA runtime. Python sidecar only as authorized fallback."
+    },
+    {
+      "name": "Flowise",
+      "url": "https://github.com/FlowiseAI/Flowise.git",
+      "decision": "ADOPT-SIDECAR",
+      "note": "Run as own service (Docker host, NOT Vercel serverless); embed canvas in ARIA Agent Studio section via iframe/SSO; ARIA↔Flowise via API."
+    },
+    {
+      "name": "OmniRoute",
+      "url": "https://github.com/diegosouzapw/OmniRoute",
+      "decision": "DEPRIORITIZED",
+      "note": "Superseded by deer-flow/Flowise focus in 2026-07-09 re-scope; revisit only if m2 finds concrete gap."
+    },
+    {
+      "name": "Agent-Reach",
+      "url": "https://github.com/Panniantong/Agent-Reach",
+      "decision": "DEPRIORITIZED",
+      "note": "Same as above."
+    },
+    {
+      "name": "orca",
+      "url": "https://github.com/stablyai/orca",
+      "decision": "DEPRIORITIZED",
+      "note": "Same as above."
+    },
+    {
+      "name": "shepherd",
+      "url": "https://github.com/shepherd-agents/shepherd",
+      "decision": "DEPRIORITIZED",
+      "note": "Same as above."
+    },
+    {
+      "name": "agency-agents",
+      "url": "https://github.com/msitarzewski/agency-agents",
+      "decision": "DEPRIORITIZED",
+      "note": "Same as above."
+    },
+    {
+      "name": "obscura",
+      "url": "https://github.com/mysticalsin/obscura",
+      "decision": "DEPRIORITIZED",
+      "note": "Adapter exists in tests/obscura-adapter.mts — keep, no further integration this goal."
+    }
+  ],
+  "model_routing": {
+    "plan_and_audit": "Fable 5 (main loop) — audits gathered by Sonnet subagents, Fable synthesizes/plans; Sonnet escalates to Fable when stuck",
+    "execute": "Sonnet subagents/workflows"
+  },
+  "milestones": [
+    {
+      "id": "m1",
+      "title": "Deep codebase audit (Sonnet): features, auth, current agent runtime, data model, outreach/email/LinkedIn wiring, event/metrics surface",
+      "verification": "Audit report with prioritized issue list in _relay/ + ultraplan/, synthesized by Fable",
+      "owner": "Sonnet audit → Fable synthesis",
+      "due": "2026-07-10T18:00:00+02:00",
+      "depends_on": [],
+      "status": "DONE",
+      "completed_at": "2026-07-09",
+      "result": "Subagents stalled 3x (infra); Fable audited inline. Findings in _relay/PLAN.md: safe-by-construction send pipeline, WhatsApp/SMS adapters, humanizer, RLS 0005, 40 test suites already exist. Gaps: inbound replies, autopilot, persistent agent runtime, Flowise, real metrics."
+    },
+    {
+      "id": "m2",
+      "title": "deer-flow + Flowise deep-dive: extract agent-graph/guardrail patterns from deer-flow; map Flowise deploy/embed/API/auth requirements; integration spec",
+      "verification": "Integration spec per repo with concrete component list, hosting decision for Flowise sidecar, ported-pattern inventory",
+      "owner": "Sonnet research → Fable synthesis",
+      "due": "2026-07-10T18:00:00+02:00",
+      "depends_on": [],
+      "status": "DONE",
+      "completed_at": "2026-07-09",
+      "result": "deer-flow report: _relay/research/2026-07-09-deer-flow-patterns.md (7 patterns to port, skip LangGraph.js). Flowise report: _relay/research/2026-07-09-flowise-integration-spec.md (sidecar + @flowiseai/agentflow native embed; enterprise-dir license caveat). WhatsApp: send adapter already in channels.ts; remaining provider facts marked ASSUMED, verify at build (research agent stalled 2x)."
+    },
+    {
+      "id": "m3",
+      "title": "Fable architecture plan: AgentSpec schema (role/profile/channels/guardrails/autopilot flag), TS agent runtime, Flowise sidecar wiring, reply-ingestion pipeline, tenancy/RLS, admin metrics",
+      "verification": "Plan file written to ~/.claude/plans/ + _relay/, approved by Tony before build waves start",
+      "owner": "Fable",
+      "due": "2026-07-11T18:00:00+02:00",
+      "depends_on": [
+        "m1",
+        "m2"
+      ],
+      "status": "DONE",
+      "completed_at": "2026-07-09",
+      "result": "_relay/PLAN.md. Tony's standing order (stop-hook 2026-07-09: 'figure it out, get it done, test with Sonnet, push to Vercel production when done') = build authorization; not waiting for separate plan sign-off. Build waves W1-W6 defined."
+    },
+    {
+      "id": "m4",
+      "title": "Auth + roles + tenant isolation (Supabase RLS)",
+      "verification": "Negative tests prove two users cannot see each other's data; RLS suite passes",
+      "owner": "Sonnet",
+      "due": "2026-07-13T18:00:00+02:00",
+      "depends_on": [
+        "m3"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "id": "m5",
+      "title": "Sourcing-agent runtime core: deer-flow-pattern graph (planner→sourcer→screener→outreach→reporter), AgentSpec parameterization per role, guardrail engine (policy checks, rate limits, template scopes, default-deny)",
+      "verification": "Synthetic role brief → agent instantiated on demand → full cycle to report, guardrail engine blocks out-of-policy actions in tests",
+      "owner": "Sonnet (Fable on stuck)",
+      "due": "2026-07-16T18:00:00+02:00",
+      "depends_on": [
+        "m3"
+      ],
+      "status": "DONE",
+      "completed_at": "2026-07-09",
+      "result": "src/lib/agents/graph.ts (planner→sourcer→screener→outreach→reporter, per-node persist, resumable, step budget, gate on every draft) + /api/agents/run. tests/agent-graph.mts 35/35."
+    },
+    {
+      "id": "m6",
+      "title": "Multi-channel outreach + inbound reply pipeline: email send + inbound webhook ingestion, WhatsApp via official API (template messages + 24h-window free-form), gated-autopilot loop (in-guardrail auto-answer, out-of-guardrail approval queue), LinkedIn via policy engine draft-gated, human-likeness gate on ALL outbound (AI-tell filter + dedupe cache + human pacing)",
+      "verification": "Real wire test: email outreach to Tony inbox + WhatsApp message to Tony number, reply back, auto-answer within guardrails, out-of-guardrail queued; adversarial test suite proves zero AI-tell/status/meta messages pass the gate; LinkedIn drafts only unless policy engine passes",
+      "owner": "Sonnet (Fable on stuck)",
+      "due": "2026-07-19T18:00:00+02:00",
+      "depends_on": [
+        "m5"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "id": "m7",
+      "title": "Flowise sidecar deployed + ARIA Agent Studio section: embedded canvas, SSO/token handoff, AgentSpec↔Flowise flow sync (edit agent visually, changes take effect in runtime)",
+      "verification": "Edit a sourcing agent in Studio, saved flow changes agent behavior in next run; embed works for both test users with isolated views",
+      "owner": "Sonnet (Fable on stuck)",
+      "due": "2026-07-22T18:00:00+02:00",
+      "depends_on": [
+        "m4",
+        "m5"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "id": "m8",
+      "title": "Per-user agent sessions/environments: own agents, config, memory; concurrent isolation",
+      "verification": "E2E: two users run agents concurrently, fully isolated",
+      "owner": "Sonnet",
+      "due": "2026-07-23T18:00:00+02:00",
+      "depends_on": [
+        "m4",
+        "m5"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "id": "m9",
+      "title": "Admin dashboard: all-user visibility + efficiency/tracking metrics for top management from real event data",
+      "verification": "Admin sees both test users' activity; metrics render from real event stream",
+      "owner": "Sonnet",
+      "due": "2026-07-25T18:00:00+02:00",
+      "depends_on": [
+        "m4"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "id": "m10",
+      "title": "Premium UX pass: Agent Studio UX, onboarding, empty/loading/error states, polish",
+      "verification": "UX audit checklist pass in real browser (Playwright + manual)",
+      "owner": "Sonnet",
+      "due": "2026-07-27T18:00:00+02:00",
+      "depends_on": [
+        "m6",
+        "m7",
+        "m9"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "id": "m11",
+      "title": "Enterprise hardening + production deploy: secrets, RLS audit, rate limits, audit trail, logging, security suite, adversarial review, Vercel app + Flowise host deploy, setup docs",
+      "verification": "Security review pass; fresh deploy from clean env via documented steps only",
+      "owner": "Sonnet + Fable review",
+      "due": "2026-07-29T18:00:00+02:00",
+      "depends_on": [
+        "m10"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "id": "m12",
+      "title": "Final acceptance: success criterion run end-to-end",
+      "verification": "Full outcome_criterion executed; PASS/FAIL recorded by Tony",
+      "owner": "Tony + Fable",
+      "due": "2026-07-31T18:00:00+02:00",
+      "depends_on": [
+        "m11"
+      ],
+      "status": "PENDING"
+    }
+  ],
+  "premortem": {
+    "run_at": "2026-07-09",
+    "risks": [
+      {
+        "risk": "Flowise cannot run on Vercel serverless (needs persistent Node server + DB)",
+        "mitigation": "m2 picks host (Railway/Render/Fly/Docker VM) before any build; m7 time-boxed; fallback = API-only headless integration, canvas opens in new tab"
+      },
+      {
+        "risk": "Flowise iframe embed auth/SSO friction (its auth model is not multi-tenant SSO-native)",
+        "mitigation": "Token handoff via reverse proxy or Flowise API keys per workspace; fallback: authenticated new-tab launch from ARIA with session token"
+      },
+      {
+        "risk": "Inbound email ingestion (candidate replies) needs provider inbound-parse + DNS; setup stalls",
+        "mitigation": "Pick provider (Resend/SendGrid/Mailgun inbound webhook) in m3; DNS setup starts immediately after; tests inject synthetic webhooks so build never blocks on DNS"
+      },
+      {
+        "risk": "Autopilot auto-sends something embarrassing/committing in Tony's name",
+        "mitigation": "Guardrail engine default-deny; approved template + topic scopes; canary mode (first N autopilot replies always queued); full audit trail; kill-switch flag per agent"
+      },
+      {
+        "risk": "LinkedIn automation triggers policy bans",
+        "mitigation": "linkedin-policy.ts governs all LinkedIn actions; auto-send limited to email; LinkedIn always draft-gated; rate limits enforced"
+      },
+      {
+        "risk": "deer-flow pattern port bigger than expected; TS runtime quality shortfall",
+        "mitigation": "Tony pre-authorized Python sidecar fallback for the agent-graph only; m5 checkpoint at 50% time to decide"
+      },
+      {
+        "risk": "Multi-tenancy retrofit breaks existing demo flows (vercel-demo built on mock/synthetic data)",
+        "mitigation": "m1 audit first; tenancy at data layer via RLS; regression suite runs at every milestone gate"
+      },
+      {
+        "risk": "Scope vs 2026-07-31: agents + Flowise + autopilot + tenancy + dashboards",
+        "mitigation": "Milestone gating; MVP-first per feature; m10 polish only after m6/m7 verified; Fable flags scope-cut candidates at each gate"
+      },
+      {
+        "risk": "OneDrive-synced repo causes file-lock/sync corruption during builds",
+        "mitigation": "Build artifacts gitignored; deploy from git not disk; watch sync conflicts at session start"
+      },
+      {
+        "risk": "WhatsApp Business API onboarding stalls (Meta business verification takes days; template approval per-message-type)",
+        "mitigation": "Start WABA/Twilio setup in m3 immediately after provider decision; Twilio WhatsApp sandbox for all dev/tests so build never blocks on Meta approval; submit outreach templates for approval early"
+      },
+      {
+        "risk": "AI-tell message leaks to a candidate on WhatsApp despite gate (worst reputational failure)",
+        "mitigation": "Default-deny outbound pipeline: only messages typed 'candidate_reply' or 'approved_template' can enter send queue — agent events/status physically separate table with no send path; adversarial test suite (inject 50+ AI-tell fixtures, assert 100% blocked); canary mode + audit trail"
+      }
+    ]
+  },
+  "drift_signals": [],
+  "figure_it_out_invocations": [],
+  "session_log": [
+    {
+      "at": "2026-07-08",
+      "event": "Goal captured, sharpened via 5 Socratic questions, decomposed into 12 milestones, premortem run (5 risks). Status READY."
+    },
+    {
+      "at": "2026-07-09",
+      "event": "RE-SCOPE (merge decision by Tony): absorbed deer-flow on-demand sourcing agents + Flowise Agent Studio + gated autopilot with candidate reply handling. 4 clarifiers + 5 Socratic re-run. Deadline moved 2026-07-22 → 2026-07-31. Milestones rewritten (12). Premortem re-run (9 risks). Prior 6 external repos DEPRIORITIZED in favor of deer-flow/Flowise. Relay baton protocol adopted (_relay/HANDOFF.md)."
+    },
+    {
+      "at": "2026-07-09",
+      "event": "RE-SCOPE #2 (explicit, Tony): WhatsApp channel added (official API only) + human-likeness gate on all outbound messages (AI-tell filter, dedupe cache, human pacing, default-deny pipeline). m6 expanded, outcome_criterion updated + re-hashed, 2 premortem risks added (11 total). m1/m2 audit agents running; WhatsApp integration research agent launched."
+    },
+    {
+      "at": "2026-07-09",
+      "event": "EXECUTION STARTED: m1 (codebase audit) + m2 (deer-flow, Flowise deep-dives) IN_PROGRESS via parallel Sonnet subagents."
+    },
+    {
+      "at": "2026-07-09",
+      "event": "BUILD WAVES W1-W4 SHIPPED+TESTED (subagent infra flaky → built inline): 0007_agent_runtime.sql; gate.ts human-likeness gate (94/94 adversarial) wired into /api/outreach/send; autopilot.ts + /api/webhooks/whatsapp + /api/cron/dispatch-outbound (32/32); agents/graph.ts deer-flow-pattern state machine + /api/agents/run (35/35, resumable); /api/agents/specs CRUD + /api/flowise/[...path] proxy + /studio page + nav. Full regression: 42/43 suites green (security-audit = pre-existing OneDrive-read timeout, unrelated). tsc clean. m5 DONE; m6 code-complete (needs WhatsApp env + wire test); m7 code-complete (needs Flowise sidecar host + env)."
+    },
+    {
+      "at": "2026-07-09",
+      "event": "Shift 2 (/loop iteration): absorbed a concurrent writer's WIP into 10 reviewed, tested, atomic commits (14df41e..bf733ab) pushed to origin. Advances m6/m7/m11 in CODE ONLY: WhatsApp consent/DNC/template-window enforcement, revocable approval lifecycle, CAN-SPAM/GDPR email unsubscribe, LinkedIn policy + Flowise proxy hardening, browser-tool stealth/eval removal, negative-reply server-side auto-suppression + in-flight approval revocation, reduced-motion UX foundation. Full gate 55/55 suites, tsc clean. NOT flipping any milestone to DONE: m6/m7/m11 verification criteria require a real WhatsApp/email wire test, a deployed Flowise sidecar, and applied prod migrations (0007-0012) — none of which happened this shift. Redeploying c53127f-equivalent HEAD to Vercel prod now."
+    },
+    {
+      "at": "2026-07-10",
+      "event": "Branch merge: main fast-forwarded to vercel-demo tip via PR #1 (merge commit 6c471f0). Confirmed 0 divergent commits either direction before merge — the apparent main/vercel-demo divergence was stale local ref-logs from the OneDrive .git lock issue, not real. Post-merge on main: tsc clean, 67/67 test suites pass, isolated production build succeeds. Merge auto-triggered a Vercel production build (new deploys j2ztrob6k/hk2ihh313 appeared). main is now the latest+tested code. STILL not deployment-verified end-to-end: Tony must confirm the new Vercel build reaches READY and that Vercel production branch = main."
+    }
+  ],
+  "metrics_at_completion": null,
+  "retro_id": null
+}

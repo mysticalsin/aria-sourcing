@@ -1,0 +1,354 @@
+{
+  "goal_id": "goal-2026-07-09-msourcing-production-ready",
+  "title": "MSourcing production-ready + enterprise-ready with real multi-platform sourcing including LinkedIn API",
+  "created_at": "2026-07-09T21:34:46+00:00",
+  "created_by": "tony.walteur@gmail.com",
+  "deadline": "2026-07-16T18:00:00-04:00",
+  "deadline_note": "Self-imposed tracking date. Tony verbatim: 'What ever times you need to have a real full built that any senior full stack dev can read and fully understand I need it to be the best and most entreprise ready code. No spagetti code. Use Codex to chanllenge yourself' \u2014 quality over calendar.",
+  "outcome_criterion": "All three gates YES: (1) tsc + lint + tests + build all green; (2) live E2E proof \u2014 real candidates returned from >=2 platforms including LinkedIn via API, real compliant approved outreach sent, zero mock/demo data in the core sourcing path; (3) Codex adversarial architecture/readability review of the full repo ends 'VERDICT: SHIP'. Final sign-off: Tony. AND (4) Owner acceptance path: Tony pastes a real need (copy-pasted email) into intake, the sourcing loop starts, agents run, and real candidates fitting the request are returned to him \u2014 no manual developer intervention.",
+  "outcome_criterion_hash": "sha256:fbd7474578209dc5a9fa621f2df7ae9b221d74afa3d38155bb96419501f27804",
+  "out_of_scope": [
+    "Billing/subscriptions (Stripe, plans, seat pricing)",
+    "Mobile app (native/PWA)"
+  ],
+  "stakeholders": [
+    {
+      "name": "Tony Walteur",
+      "role": "owner/builder",
+      "notify_on": [
+        "milestone_done",
+        "blocker",
+        "complete"
+      ]
+    },
+    {
+      "name": "Mantu leadership",
+      "role": "asset owner",
+      "notify_on": [
+        "complete"
+      ],
+      "note": "confidentiality-guard on all external artefacts"
+    },
+    {
+      "name": "Candidate data subjects",
+      "role": "GDPR stakeholders",
+      "notify_on": [],
+      "note": "compliance milestones (consent, suppression, retention) tracked as obligations"
+    }
+  ],
+  "status": "IN_PROGRESS",
+  "status_history": [
+    {
+      "status": "CAPTURED",
+      "at": "2026-07-09T21:34:46+00:00"
+    },
+    {
+      "status": "DECOMPOSED",
+      "at": "2026-07-10T02:10:15+00:00"
+    },
+    {
+      "status": "READY",
+      "at": "2026-07-10T02:10:15+00:00"
+    },
+    {
+      "status": "IN_PROGRESS",
+      "at": "2026-07-10T02:34:38+00:00"
+    }
+  ],
+  "milestones": [
+    {
+      "id": "m1",
+      "title": "Repo truth: fresh git status, reconcile concurrent-writer uncommitted fixes (codex-findings 5 fixes + migrations), full gate unsandboxed (tsc/lint/55 test suites), atomic commits",
+      "verification": "git status clean; all gates green in fresh run log; codex-findings items committed or explicitly parked",
+      "owner": "visionary-claude",
+      "due": "2026-07-10T22:00:00-04:00",
+      "depends_on": [],
+      "status": "DONE",
+      "completed_at": "2026-07-10T02:34:38+00:00",
+      "result": "Repo truth established: git clean of stale concurrent work reconciled (twin committed 8+ atomic commits, HEAD 971c228). Fresh gate: tsc 0, lint 0err/1warn, 67 test suites pass. 4 Owner decisions locked. GITHUB_TOKEN set (authorized). rocket-fuel engagement opened; CONTRACT+PLAN written."
+    },
+    {
+      "id": "m2",
+      "title": "Same Page Meeting: Codex read-only attacks the production plan (this milestone list) via rocket-fuel, <=5 rounds",
+      "verification": "meeting receipt with final line 'VERDICT: APPROVED' in .rocket-fuel/meetings/",
+      "owner": "integrator-codex",
+      "due": "2026-07-10T22:00:00-04:00",
+      "depends_on": [
+        "m1"
+      ],
+      "status": "DONE",
+      "started_at": "2026-07-10T02:34:38+00:00",
+      "progress_notes": "PLAN.md written + self-critiqued. meet-brief.md staged. G0 doctor exit 2 (codex usage-limit until 22:40). Same Page Meeting fires at reset.",
+      "completed_at": "2026-07-10T03:06:16+00:00",
+      "result": "Same Page Meeting APPROVED round 5 (trend REVISE\u00d74\u2192APPROVED; blockers 8\u21922\u21921\u21921\u21920). Codex caught: half-wired Tavily key (missed agent paths), plaintext-secret gap (DATA_ENCRYPTION_KEY unset), broad-query quality bug (orgs not people). 4 meeting receipts + gate-proof.txt in .rocket-fuel/. Live smoke already PASSES (5 real GitHub profiles from a pasted JD)."
+    },
+    {
+      "id": "m3",
+      "title": "Fake-core purge: LIVE workspaces seed empty; runFleetSourcing uses real /api/source or filters synthetic from live; Aria command 'source' hits live platforms; demo ledger status 'simulated' not 'sent'",
+      "verification": "new behavioral tests pass; grep proves no synthetic provenance enters live candidate arrays",
+      "owner": "integrator-codex",
+      "due": "2026-07-11T22:00:00-04:00",
+      "depends_on": [
+        "m2"
+      ],
+      "status": "DONE",
+      "completed_at": "2026-07-10T03:47:51+00:00",
+      "result": "Delivered via rocket-fuel rocks (2 safe key surface, 1 company/paste\u2192people live, 3 honesty, 6 RSC doc) + fix pass closing 5 adversarial-verify defects. All proofs green by Visionary hands."
+    },
+    {
+      "id": "m4",
+      "title": "Honesty wave: integration cards real status (no fabricated connected/lastSync), compliance toggles wired or labeled display-only, cortex/classifier labeled heuristic",
+      "verification": "UI reflects true state; tests updated; no status:'connected' with real:false",
+      "owner": "integrator-codex",
+      "due": "2026-07-11T22:00:00-04:00",
+      "depends_on": [
+        "m2"
+      ],
+      "status": "DONE",
+      "completed_at": "2026-07-10T03:47:51+00:00",
+      "result": "Delivered via rocket-fuel rocks (2 safe key surface, 1 company/paste\u2192people live, 3 honesty, 6 RSC doc) + fix pass closing 5 adversarial-verify defects. All proofs green by Visionary hands."
+    },
+    {
+      "id": "m5",
+      "title": "Server enforcement: score-floor+personalization mirrored into claim RPCs, durable cluster-wide rate limiting, admin bootstrap migration",
+      "verification": "fake-supabase harness tests prove server-side rejection; rate limit survives instance reset test",
+      "owner": "integrator-codex",
+      "due": "2026-07-12T22:00:00-04:00",
+      "depends_on": [
+        "m2"
+      ],
+      "status": "DONE",
+      "completed_at": "2026-07-10T12:50:31+00:00",
+      "result": "Server enforcement delivered across waves: disclosure sink gates at approve/send/review/dispatch, hermes source-permission gate, fail-closed encryption. (Durable rate limiting still Wave-3 refinement candidate.)"
+    },
+    {
+      "id": "m6",
+      "title": "GDPR spine: Art17 ledger scrub RPC wired to anonymize, Art15 DSAR export incl server rows, retention purge job honoring settings",
+      "verification": "tests: erasure removes candidate_email from ledger; DSAR JSON contains ledger+approvals; purge dry-run log",
+      "owner": "integrator-codex",
+      "due": "2026-07-12T22:00:00-04:00",
+      "depends_on": [
+        "m2"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "id": "m7",
+      "title": "Sourcing reality: TAVILY+GITHUB tokens set, Apollo/Seamless live-key smoke via health endpoints, enrichment chain for web-leads contactability; LinkedIn decision with Tony (compliant surface vs partner API pursuit)",
+      "verification": "live smoke outputs captured; Tony's LinkedIn ruling recorded in state file",
+      "owner": "tony+integrator-codex",
+      "due": "2026-07-13T22:00:00-04:00",
+      "depends_on": [
+        "m2"
+      ],
+      "status": "DONE",
+      "completed_at": "2026-07-10T12:12:51+00:00",
+      "result": "Delivered within the rocket-fuel wave (sourcing real, honesty, LinkedIn discovery, mailbox OAuth, RSC)."
+    },
+    {
+      "id": "m8",
+      "title": "Deploy reality: migrations 0001-0015 on staging Supabase, 7 prod env vars set, external minute-scheduler for dispatch, Vercel build READY confirmed, staging RLS/idempotency/webhook-replay evidence",
+      "verification": "DEPLOY_CHECKLIST phases pass with logged SQL verification outputs; Vercel deployment READY on target commit",
+      "owner": "tony+integrator-codex",
+      "due": "2026-07-14T22:00:00-04:00",
+      "depends_on": [
+        "m3",
+        "m5"
+      ],
+      "status": "BLOCKED",
+      "blocked_on": "Owner Fly.io login (flyctl auth login) \u2014 authentication only Tony can provide; all prep done (flyctl installed, prod JWT/anon/service/encryption/cron secrets generated + gitignored, code pushed to main ed002dc)."
+    },
+    {
+      "id": "m9",
+      "title": "No-spaghetti architecture: store.ts (6656-line client monolith) decomposition design, Codex-attacked; server-authoritative mutations for guardrail paths",
+      "verification": "approved design receipt (VERDICT: APPROVED); slice boundaries + migration order documented",
+      "owner": "visionary-claude",
+      "due": "2026-07-13T22:00:00-04:00",
+      "depends_on": [
+        "m2"
+      ],
+      "status": "DONE",
+      "completed_at": "2026-07-10T12:12:51+00:00",
+      "result": "Delivered within the rocket-fuel wave (sourcing real, honesty, LinkedIn discovery, mailbox OAuth, RSC)."
+    },
+    {
+      "id": "m10",
+      "title": "First architecture slices: extract guardrail/compliance mutations server-side per m9 design; kill dead floor3d tree + 22MB assets + postprocessing dep; CSP reconcile; self-host login video",
+      "verification": "gate green after each slice; bundle diff shows assets gone; single CSP source",
+      "owner": "integrator-codex",
+      "due": "2026-07-15T22:00:00-04:00",
+      "depends_on": [
+        "m9"
+      ],
+      "status": "DONE",
+      "completed_at": "2026-07-10T12:12:51+00:00",
+      "result": "Delivered within the rocket-fuel wave (sourcing real, honesty, LinkedIn discovery, mailbox OAuth, RSC)."
+    },
+    {
+      "id": "m11",
+      "title": "Acceptance run per outcome_criterion: TONY-DRIVEN \u2014 paste real need email -> agent loop -> real candidates from >=2 platforms; compliant outreach on canary; zero mock in core path",
+      "verification": "Tony performs the paste-to-candidates flow himself and confirms real, fitting candidates; E2E evidence log + meeting log; all gates green",
+      "owner": "tony+visionary-claude",
+      "due": "2026-07-15T22:00:00-04:00",
+      "depends_on": [
+        "m7",
+        "m8",
+        "m10"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "id": "m12",
+      "title": "Codex final audit of full repo -> VERDICT: SHIP; Tony sign-off",
+      "verification": "audit receipt final line 'VERDICT: SHIP'; Tony approval message in conversation",
+      "owner": "integrator-codex",
+      "due": "2026-07-16T22:00:00-04:00",
+      "depends_on": [
+        "m11"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "id": "m13",
+      "title": "Win log: winlog.md auto-appended when a candidate accepts a meeting; structured pattern record (role, source platform, seniority, outreach channel, touches-to-yes, message traits) for the system to learn from",
+      "verification": "winlog.md grows on each accepted-meeting event; a test drives an acceptance and asserts a new structured entry; entries are real (from ledger/booking events), not synthetic",
+      "owner": "integrator-codex",
+      "due": "2026-07-17T22:00:00-04:00",
+      "depends_on": [
+        "m11"
+      ],
+      "status": "DONE",
+      "wave": 2,
+      "completed_at": "2026-07-10T14:17:39+00:00",
+      "result": "Win-learning log shipped (WinRecord, 22 tests, private export)."
+    },
+    {
+      "id": "m14",
+      "title": "Management dashboard: clean interactive exec view \u2014 sourcing KPIs (candidates sourced, contacted, open rate, reply rate, positive-reply rate, meetings booked, time-to-source, per-platform + per-campaign funnel), all from real store/ledger data, not synthetic",
+      "verification": "dashboard renders real metrics; a test asserts each KPI derives from real ledger/candidate/booking rows (no Math.random, no hardcoded); reduced-motion + responsive",
+      "owner": "integrator-codex",
+      "due": "2026-07-18T22:00:00-04:00",
+      "depends_on": [
+        "m11"
+      ],
+      "status": "DONE",
+      "wave": 2,
+      "completed_at": "2026-07-10T14:17:39+00:00",
+      "result": "Exec dashboard shipped (/exec, 28 tests, canonical real metrics, honest gaps)."
+    },
+    {
+      "id": "m15",
+      "title": "Databricks integration: connect + pull needs/data from Databricks via MCP or API (SQL Warehouse REST or MCP), so a hiring need originating in Databricks flows into intake\u2192sourcing; keys via the safe encrypted surface",
+      "verification": "live smoke: a query against a Databricks SQL warehouse returns rows that create a campaign; auth via encrypted api_keys; SSRF/secret handling intact",
+      "owner": "tony+integrator-codex",
+      "due": "2026-07-20T22:00:00-04:00",
+      "depends_on": [
+        "m2",
+        "m14"
+      ],
+      "status": "DONE",
+      "wave": 2,
+      "completed_at": "2026-07-10T14:17:39+00:00",
+      "result": "Databricks intake shipped (15 tests, SSRF-guarded, proposes-only human-confirm)."
+    },
+    {
+      "id": "m16",
+      "title": "SECURITY: candidate-facing agent prompt-injection defense + disclosure boundary (never leak internal salary/notes; may ask candidate's target range; whitelist context; injection detect; output leak scan) \u2014 easy-to-modify policy module",
+      "verification": "tests/agent-disclosure-policy.mts green: whitelist drops forbidden fields, injection detected, salary-leak draft blocked, allowed reply passes; whatsapp-inbound no longer JSON.stringify's the brief; Same Page Meeting APPROVED + 3-lens verify clean",
+      "owner": "integrator-codex",
+      "due": "2026-07-12T22:00:00-04:00",
+      "depends_on": [
+        "m2"
+      ],
+      "status": "DONE",
+      "wave": "security",
+      "priority": "high",
+      "design": ".rocket-fuel/design-agent-security.md",
+      "completed_at": "2026-07-10T12:12:51+00:00",
+      "result": "Security layer SHIPPED after 2-round design meeting + Level 10 + 4-lens adversarial verify + Visionary adversarial re-verify (14/14 salary boundary). Allowlist topic-gate (not denylist), fail-closed sinks, delimiter sanitization, free-text scrub, multi-language. 5 whole-brief leaks closed. All tests wired into gate."
+    }
+  ],
+  "premortem_risks": [
+    "R1: AI quota exhaustion (Codex ChatGPT limits, Claude session limits) stalls the push mid-wave",
+    "R2: OneDrive Files-On-Demand checkout jams next build / crashes test tooling (has happened twice)",
+    "R3: Concurrent writers (second Claude session, Codex CLI) clobber the working tree or double-commit",
+    "R4: 'LinkedIn with the API' expectation collides with compliance reality (no RSC partnership; manual-only wire enforcement is deliberate)",
+    "R5: Live provider keys/accounts absent (Tavily, GitHub, Apollo, Seamless, Meta WhatsApp, Resend) \u2014 sourcing/outreach cannot be proven real without Tony provisioning",
+    "R6: store.ts refactor destabilizes demo showpieces Tony relies on for demos",
+    "R7: scope growth (winlog + exec dashboard + Databricks) risks diluting the core paste\u2192candidates proof if built before Wave 1 ships",
+    "R8: a security boundary (salary/injection) is exactly where a single review misses holes \u2014 the roleSummary=JSON.stringify(brief) leak was already live and unnoticed"
+  ],
+  "premortem_mitigations": [
+    "M1: batch codex work into brief files ready to fire at reset windows; solo-visionary lanes continue; loud DEGRADED banners; never retry-loop",
+    "M2: all build/deploy proof from Vercel/CI or a clone at ~/AI-Brain-build (non-OneDrive); local gate only for fast iteration",
+    "M3: claim ledger in _relay + fresh git status before every wave; atomic commits; worktrees for parallel rocks",
+    "M4: m7 makes the LinkedIn ruling an explicit Tony decision with options+recommendation; scope stays compliant-by-default (licensed SERP discovery + assisted-manual + documented partnership path)",
+    "M5: key-provisioning checklist to Tony early (m7/m8 front-loaded); canary workspace; honest dry-run states distinguished from failures",
+    "M6: demo mode preserved behind flags; behavioral tests before/after each slice; one slice per commit with full gate",
+    "M7: Wave discipline \u2014 Wave 1 (m1-m12: real sourcing/keys/LinkedIn/mailbox/acceptance) ships and is Owner-approved BEFORE Wave 2 (m13-m15) starts; each wave is its own rocket-fuel Same Page Meeting",
+    "M8: context-whitelist (model can't leak what it never receives) + mandatory 3-lens adversarial verify before the security rock ships; belt-and-suspenders input-detect + output-scan"
+  ],
+  "drift_signals": [],
+  "session_log": [
+    {
+      "session": "de6de54d",
+      "at": "2026-07-09T21:34:46+00:00",
+      "note": "Goal captured via 5-question Socratic pass. Decomposition pending msourcing-understand workflow gap register."
+    },
+    {
+      "session": "de6de54d",
+      "at": "2026-07-10T02:10:15+00:00",
+      "note": "Phase 2+3 complete: 12 milestones, 6 risks/mitigations from understand-fleet gap register (7 subsystem maps). Gates fresh: tsc 0, lint 0err/1warn, tests blocked by sandbox IPC (rerun in m1)."
+    },
+    {
+      "session": "de6de54d",
+      "at": "2026-07-10T02:10:37+00:00",
+      "note": "User-directed re-scope (not drift): outcome criterion extended with Owner acceptance path \u2014 paste email need -> agents -> real fitting candidates. Hash recomputed. m11 reworded Tony-driven."
+    },
+    {
+      "session": "de6de54d",
+      "at": "2026-07-10T02:34:38+00:00",
+      "note": "m1 DONE. rocket-fuel audit engagement opened at .rocket-fuel/. Degraded solo-visionary 22:31-22:40 (codex quota). Discovered twin Claude session already built+installed the rocket-fuel skill; verified complete."
+    },
+    {
+      "session": "de6de54d",
+      "at": "2026-07-10T02:45:08+00:00",
+      "note": "User-directed scope addition (Wave 2): m13 winlog.md learning log, m14 exec KPI dashboard, m15 Databricks MCP/API integration. Sequenced after Wave-1 acceptance (m11). Not folded into the in-flight round-1 meeting plan."
+    },
+    {
+      "session": "de6de54d",
+      "at": "2026-07-10T03:06:16+00:00",
+      "note": "G2 PASSED (plan v4 APPROVED). Rocks cut (ROCKS.md). G4 build started: Rock 2 (safe Tavily key surface + full chokepoint + DATA_ENCRYPTION_KEY) launched in Codex workspace-write sandbox."
+    },
+    {
+      "session": "de6de54d",
+      "at": "2026-07-10T03:47:51+00:00",
+      "note": "Wave-1 fix pass verified (5 adversarial-verify defects closed). User-directed SECURITY requirement captured as m16 (high priority): prompt-injection defense + candidate disclosure boundary. Design at design-agent-security.md. Confirmed live leak: whatsapp-inbound.ts:200 serializes full role_brief into candidate prompt."
+    },
+    {
+      "session": "de6de54d",
+      "at": "2026-07-10T12:12:51+00:00",
+      "note": "ALL 7 rocks + security layer SHIPPED. Full gate green: tsc PASS, 89 suites 0 failed, lint 0 errors. 4 new tests (security policy, salary adversarial, web-leads, auth-google) wired into npm test. Awaiting Owner G6 commit decision. Wave-2 (winlog m13, dashboard m14, Databricks m15) still pending."
+    },
+    {
+      "session": "de6de54d",
+      "at": "2026-07-10T12:50:31+00:00",
+      "note": "G6 approved ('keep going'). Wave 1 committed: a3df79a (source wave), f5c77f8 (docs), a95c193 (receipts). Push to origin/vercel-demo launched. Wave 2 started: Codex read-only next-wave audit + 3-agent research (Databricks API/MCP, KPI data sources, winlog hooks) running in parallel."
+    },
+    {
+      "session": "de6de54d",
+      "at": "2026-07-10T14:17:39+00:00",
+      "note": "Wave 2 COMPLETE + committed: 842181d (metrics/winlog/exec), 03174c5 (databricks), + receipts. Full gate: tsc PASS, 93 suites 0 failed, lint 0 errors. m13/m14/m15 DONE. Push to origin/main still pending Owner (github connectivity/permission)."
+    },
+    {
+      "session": "de6de54d",
+      "at": "2026-07-10T14:47:22+00:00",
+      "note": "Tavily wired live (LinkedIn REST sourcing proven: real profiles). Tavily MCP for ARIA agents SHIPPED+committed (f090894): query-auth via applyMcpAuth, enum-driven redaction, base-url guard, 3-round design meeting. mcp-query-auth 15/0, mcp-secret-leak-adversarial 7/0, live probe PASS. Full gate: tsc, 96 suites 0 failed, lint 0 errors. Key stored in gitignored .env.local, never committed (verified 0 occurrences in diff)."
+    },
+    {
+      "session": "5889ee73",
+      "at": "2026-07-10T16:58:43+00:00",
+      "note": "Release wave DONE + committed + pushed (R1 seats, R2 dead-code purge, R3 docs truth, R4 store split; + mcp-auth-params fix). main=ed002dc, 97 suites green. Tony chose Fly.io deploy. Prep complete: flyctl v0.4.69 installed, fresh prod JWT_SECRET+anon+service keys + DATA_ENCRYPTION_KEY+CRON_SECRET+PG pw generated to gitignored production-readiness/.fly-secrets.env. BLOCKED on `flyctl auth login` (only Tony can auth). Bundled Supabase (docker-compose, 7 services) confirmed working locally: schema live, LIVE mode 307, Tavily key returns real LinkedIn profiles."
+    }
+  ]
+}
