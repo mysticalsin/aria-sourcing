@@ -177,18 +177,9 @@ function LoginInner() {
 
       <nav className="relative z-20 flex items-center justify-between gap-4 px-5 py-6 sm:px-8">
         <span className="flex items-center md:absolute md:left-8">
-          {/* Full transparent logo (white ARIA reads on the dark hero) — shown whole. */}
-          <img src="/aria-logo.png" alt="Aria: Agentic Sourcing Platform by Mantu" className="h-16 w-auto object-contain" />
+          {/* Aria "M" brandmark (transparent PNG) — clean over the dark hero video. */}
+          <img src="/aria-mark.png" alt="Aria by Mantu" className="h-12 w-auto object-contain sm:h-14" />
         </span>
-        <button
-          type="button"
-          className="rounded-full border border-white/20 px-3.5 py-2 text-[0.65rem] uppercase tracking-[0.16em] text-white/80 transition-[border-color,color,background-color] duration-150 hover:border-white/40 hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-70"
-          onClick={() => setVideoPausedByUser((paused) => !paused)}
-          aria-pressed={reducedMotion || videoPausedByUser}
-          disabled={reducedMotion}
-        >
-          {reducedMotion ? "Background motion paused by system" : videoPausedByUser ? "Play background motion" : "Pause background motion"}
-        </button>
         <span className="hidden text-xs uppercase tracking-[0.2em] text-white/60 md:absolute md:right-8 md:block">
           by Mantu
         </span>
@@ -322,6 +313,17 @@ function LoginInner() {
           </a>
         </p>
       </main>
+
+      {/* Background-motion toggle — pinned bottom-left so it never overlaps the logo. */}
+      <button
+        type="button"
+        className="absolute bottom-5 left-5 z-20 rounded-full border border-white/20 bg-black/20 px-3.5 py-2 text-[0.65rem] uppercase tracking-[0.16em] text-white/80 backdrop-blur-sm transition-[border-color,color,background-color] duration-150 hover:border-white/40 hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-70 sm:bottom-6 sm:left-8"
+        onClick={() => setVideoPausedByUser((paused) => !paused)}
+        aria-pressed={reducedMotion || videoPausedByUser}
+        disabled={reducedMotion}
+      >
+        {reducedMotion ? "Background motion paused by system" : videoPausedByUser ? "Play background motion" : "Pause background motion"}
+      </button>
     </div>
   );
 }
