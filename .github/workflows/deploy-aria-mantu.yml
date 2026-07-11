@@ -24,7 +24,9 @@ jobs:
           BUNDLE: ${{ secrets.ARIA_DEPLOY_BUNDLE }}
         run: |
           if [ -z "$BUNDLE" ]; then echo "::error::ARIA_DEPLOY_BUNDLE secret is not set"; exit 1; fi
-          echo "$BUNDLE" | base64 -d | tar xzf - -C .
+          # strip whitespace/newlines (macOS base64 wraps) then decode to a file, then untar
+          printf '%s' "$BUNDLE" | tr -d '[:space:]' | base64 -d > /tmp/ab.tgz
+          tar xzf /tmp/ab.tgz -C .
           echo "restored:"; ls -1 production-readiness/.fly-*.env .env.local 2>/dev/null
 
       - name: Deploy the full Fly stack
