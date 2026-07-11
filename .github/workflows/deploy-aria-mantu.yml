@@ -1,8 +1,11 @@
 name: Deploy Aria Mantu (Fly)
 
 # Runs the full Fly deploy from a GitHub runner (clean, fast network to Fly) so it
-# does not depend on any local machine's route to Fly's API. Trigger manually.
+# does not depend on any local machine's route to Fly's API. Triggers on push to the
+# deploy branch (git push works even when the GitHub API is unreachable locally).
 on:
+  push:
+    branches: [deploy/fly-github-actions]
   workflow_dispatch:
 
 jobs:
