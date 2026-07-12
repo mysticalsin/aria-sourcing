@@ -37,13 +37,13 @@ status: campaign-blockers-fixed-ci-hardening-in-flight-owner-gates-pending
 3. Branch protection: put the workflow on the default branch (`vercel-demo`), protect `vercel-demo` + `deploy/fly-github-actions`, require exact-SHA CI/CodeQL, block self-review, re-enable the workflow.
 4. Preserve + inspect a disposable clone of `aria_db_data`; produce the release-bound recovery receipt.
 5. Dispatch the protected workflow with the exact SHA + receipt hash; complete live acceptance (DB ready + 2-restart survival, Auth/REST 200, `/api/ready` 200, digests match, admin login, synthetic zero-send campaign).
-6. Broader product findings (email-provider ambiguity, daily-cap concurrency, inbound conversation identity, agent memory ownership) remain open in `_relay/codex-findings.md` — backend deploy does NOT make campaigns production-ready.
+6. Remaining product findings in `_relay/codex-findings.md`: the three campaign blockers (email ambiguity, daily-cap race, inbound identity) are FIXED in source as of this shift; still open: agent memory ownership, autopilot contract, SMS unknown-outcome retry, cross-channel cap race, repo binaries/logs retention. Backend deploy alone does NOT make campaigns production-ready.
 
 ## Next steps
 
-1. Watch CI + CodeQL on the pushed SHA `c6c7a0a` (`gh run list --branch deploy/fly-github-actions`); fix red if any — the SHA must stay green for the protected dispatch.
+1. Watch CI + CodeQL on the branch tip (now `6deeccd`; `gh run list --branch deploy/fly-github-actions`); fix red if any — the release SHA for dispatch is whatever tip is fully green.
 2. Owner executes blockers 1–4 (token, secrets, protection, volume receipt). Everything is written to be executable without conversation context in shift 28's next-steps 3–7 (archived at `_relay/archive/2026-07-11-2020-codex-gpt-5.md`).
-3. Dispatch: `gh workflow run "Deploy Aria Mantu (Fly)" --ref deploy/fly-github-actions -f release_sha=c6c7a0ae5bb85ce7d31d56106d153fc488daae80 -f recovery_receipt_sha256=<reviewed-receipt-sha>` (only after gates 1–4).
+3. Dispatch: `gh workflow run "Deploy Aria Mantu (Fly)" --ref deploy/fly-github-actions -f release_sha=<green-tip-40-char-sha> -f recovery_receipt_sha256=<reviewed-receipt-sha>` (only after gates 1–4; use the exact green tip, currently `6deeccd...`).
 4. Live acceptance per shift-28 step 12, then admin provisioning via `scripts/provision-first-admin.sh` (out-of-band credential), then synthetic campaign acceptance.
 5. Only after full acceptance: flip repo private (`gh repo edit mysticalsin/aria-sourcing-demo --visibility private`) — Tony's explicit final gate.
 6. Continue open product findings before any real-candidate campaign.
