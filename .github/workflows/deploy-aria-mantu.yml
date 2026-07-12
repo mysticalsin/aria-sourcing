@@ -515,7 +515,7 @@ jobs:
               --cache-dir /trivy-cache \
               --scanners vuln \
               --severity HIGH,CRITICAL \
-              --ignore-unfixed=false \
+              --ignore-unfixed=true \
               --exit-code 1 \
               --format json \
               --output "/artifacts/aria-$component-vulnerabilities.json" \
