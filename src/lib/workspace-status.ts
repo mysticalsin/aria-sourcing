@@ -67,7 +67,7 @@ interface WorkspaceBoundarySaveResult<Latest> {
   ok: boolean;
   conflict?: boolean;
   updatedAt?: string;
-  latest?: Latest;
+  latest?: Latest | null;
 }
 
 interface SettleWorkspaceSaveInput<Latest, Prepared> {
@@ -110,7 +110,7 @@ export async function settleWorkspaceSave<Latest, Prepared>({
     }
   }
 
-  if (!result.conflict || result.latest === undefined) return "failed";
+  if (!result.conflict || result.latest === undefined || result.latest === null) return "failed";
 
   let prepared: Prepared | null;
   try {

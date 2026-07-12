@@ -133,6 +133,29 @@ ok(
   throwingSeatsOutcome === "failed" && savedApplies === 0 && conflictApplies === 0,
 );
 
+let nullLatestPrepared = false;
+const nullLatestOutcome = settleWorkspaceSave
+  ? await settleWorkspaceSave({
+      generation,
+      currentGeneration: () => generation,
+      save: async () => ({ ok: false, conflict: true, latest: null }),
+      prepareConflict: async () => {
+        nullLatestPrepared = true;
+        return { state: { id: "synthetic-empty" }, updatedAt: "version-null" };
+      },
+      applySaved: () => {
+        savedApplies += 1;
+      },
+      applyConflict: () => {
+        conflictApplies += 1;
+      },
+    })
+  : undefined;
+ok(
+  "null latest conflict payload is a retryable failure, never prepared as empty state",
+  nullLatestOutcome === "failed" && nullLatestPrepared === false && conflictApplies === 0,
+);
+
 const preparedConflict = { state: { id: "team" }, updatedAt: "version-2" };
 const reconciledOutcome = settleWorkspaceSave
   ? await settleWorkspaceSave({
@@ -225,6 +248,10 @@ ok(
 ok(
   "failed save wiring retains the newest queued snapshot before clearing the queue",
   (store.match(/const newestSnapshot = queuedRemoteSnapshot\.current \?\? pending\.snapshot;\s*queuedRemoteSnapshot\.current = null;\s*markRemoteSaveFailed\(pending, newestSnapshot\)/g) ?? []).length >= 2,
+);
+ok(
+  "retry save failure retains a newer queued snapshot before clearing the queue",
+  /const outcome = await persistPendingSave\(pending\)[\s\S]*const newestSnapshot = queuedRemoteSnapshot\.current \?\? pending\.snapshot;\s*queuedRemoteSnapshot\.current = null;\s*markRemoteSaveFailed\(pending, newestSnapshot\)/.test(store),
 );
 
 console.log(`RESULT workspace-runtime-safety: ${pass} passed, ${fail} failed`);

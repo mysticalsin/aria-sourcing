@@ -988,9 +988,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         queuedRemoteSnapshot.current = null;
         return;
       }
-      markRemoteSaveFailed(pending);
+      const newestSnapshot = queuedRemoteSnapshot.current ?? pending.snapshot;
+      queuedRemoteSnapshot.current = null;
+      markRemoteSaveFailed(pending, newestSnapshot);
     } catch {
-      markRemoteSaveFailed(pending);
+      const newestSnapshot = queuedRemoteSnapshot.current ?? pending.snapshot;
+      queuedRemoteSnapshot.current = null;
+      markRemoteSaveFailed(pending, newestSnapshot);
     } finally {
       if (remoteSaveOperation.current === operation) {
         remoteSaveOperation.current = null;
