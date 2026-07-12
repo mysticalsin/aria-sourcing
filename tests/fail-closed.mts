@@ -13,6 +13,7 @@
    ========================================================================== */
 
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const SELF = fileURLToPath(import.meta.url);
@@ -95,6 +96,30 @@ ok("development + supabase disabled allows DEMO mode (does not throw)", devDisab
 
 const testDisabled = probe({ NODE_ENV: "test", ...NO_SB });
 ok("test env + supabase disabled does not throw (only production fails closed)", testDisabled.threw === false);
+
+const studioPage = readFileSync(new URL("../src/app/studio/page.tsx", import.meta.url), "utf8");
+ok(
+  "Studio treats non-2xx or ok:false agent-spec responses as unavailable, not empty",
+  /!res\.ok\s*\|\|\s*json\.ok\s*!==\s*true/.test(studioPage) && studioPage.includes("setAvailability(\"unavailable\")"),
+);
+ok(
+  "Studio keeps 200 ok:true [] as a valid empty state",
+  studioPage.includes("setSpecs(json.specs ?? [])") && studioPage.includes("setAvailability(\"ready\")"),
+);
+ok(
+  "Studio create is disabled while the page is unavailable",
+  /disabled=\{[^}]*availability\s*!==\s*"ready"/s.test(studioPage),
+);
+ok(
+  "Studio create fails closed before mutating when unavailable",
+  studioPage.indexOf('if (availability !== "ready")') >= 0 &&
+    studioPage.indexOf("return;", studioPage.indexOf('if (availability !== "ready")')) <
+      studioPage.indexOf("setSaving(true)", studioPage.indexOf('if (availability !== "ready")')),
+);
+ok(
+  "Studio unavailable state is accessible and retryable",
+  studioPage.includes('role="alert"') && studioPage.includes("Retry loading agents") && studioPage.includes("aria-describedby"),
+);
 
 console.log(`RESULT fail-closed: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

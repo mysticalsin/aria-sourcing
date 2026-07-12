@@ -269,30 +269,36 @@ export function Chatbox() {
   const started = React.useRef(false);
   const bottomRef = React.useRef<HTMLDivElement>(null);
 
+  const loadCareers = React.useCallback(async (signal?: AbortSignal) => {
+    setCareersAvailability("loading");
+    try {
+      const response = await fetch("/api/careers", { cache: "no-store", signal });
+      const body = (await response.json().catch(() => null)) as { ok?: boolean; jobs?: unknown } | null;
+      const publicJobs = Array.isArray(body?.jobs) ? body.jobs.filter(isPublicCareerJob) : [];
+      if (!response.ok || body?.ok !== true || publicJobs.length !== (body?.jobs as unknown[] | undefined)?.length) {
+        throw new Error("careers unavailable");
+      }
+      setJobs(publicJobs);
+      setCareersAvailability("ready");
+    } catch {
+      if (!signal?.aborted) {
+        setJobs([]);
+        setCareersAvailability("unavailable");
+      }
+    }
+  }, []);
+
   React.useEffect(() => {
     const controller = new AbortController();
-    let cancelled = false;
-    void (async () => {
-      try {
-        const response = await fetch("/api/careers", { cache: "no-store", signal: controller.signal });
-        const body = (await response.json().catch(() => null)) as { ok?: boolean; jobs?: unknown } | null;
-        const publicJobs = Array.isArray(body?.jobs) ? body.jobs.filter(isPublicCareerJob) : [];
-        if (!response.ok || body?.ok !== true || publicJobs.length !== (body?.jobs as unknown[] | undefined)?.length) {
-          throw new Error("careers unavailable");
-        }
-        if (!cancelled) {
-          setJobs(publicJobs);
-          setCareersAvailability("ready");
-        }
-      } catch {
-        if (!cancelled && !controller.signal.aborted) setCareersAvailability("unavailable");
-      }
-    })();
+    void loadCareers(controller.signal);
     return () => {
-      cancelled = true;
       controller.abort();
     };
-  }, []);
+  }, [loadCareers]);
+
+  const retryCareers = React.useCallback(() => {
+    void loadCareers();
+  }, [loadCareers]);
 
   /* ---- message plumbing -------------------------------------------------- */
 
@@ -795,9 +801,20 @@ export function Chatbox() {
         }
         if (careersAvailability === "unavailable") {
           return (
-            <p role="alert" className="rounded-2xl border border-violet/12 bg-surface/70 px-4 py-3 text-sm text-muted">
-              Applications are unavailable right now. Please try again later.
-            </p>
+            <div role="alert" className="rounded-2xl border border-danger/20 bg-danger-soft px-4 py-3 text-sm text-muted">
+              <p className="font-semibold text-danger">Applications are unavailable right now.</p>
+              <p className="mt-1 text-xs">Careers offline. Please retry before treating this as no open roles.</p>
+              <Button type="button" size="sm" variant="outline" className="mt-3" onClick={retryCareers}>
+                Retry loading roles
+              </Button>
+            </div>
+          );
+        }
+        if (careersAvailability === "ready" && jobs.length === 0) {
+          return (
+            <div className="rounded-2xl border border-violet/12 bg-surface/70 px-4 py-3 text-sm text-muted">
+              No open roles right now, but applications are online. You can join the talent pool instead.
+            </div>
           );
         }
         return (
@@ -976,8 +993,20 @@ export function Chatbox() {
         <div className="min-w-0">
           <p className="flex items-center gap-2 font-bold text-ink">
             Aria
-            <span className="inline-flex items-center gap-1 text-[0.625rem] font-semibold uppercase tracking-wide text-success">
-              <span className="h-1.5 w-1.5 rounded-full bg-success status-live" aria-hidden /> online
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 text-[0.625rem] font-semibold uppercase tracking-wide",
+                careersAvailability === "unavailable" ? "text-danger" : careersAvailability === "loading" ? "text-muted" : "text-success",
+              )}
+            >
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  careersAvailability === "unavailable" ? "bg-danger" : careersAvailability === "loading" ? "bg-muted" : "bg-success status-live",
+                )}
+                aria-hidden
+              />
+              {careersAvailability === "unavailable" ? "Careers offline" : careersAvailability === "loading" ? "checking roles" : "careers available"}
             </span>
           </p>
           <p className="truncate text-xs text-muted">Your talent partner at Mantu</p>

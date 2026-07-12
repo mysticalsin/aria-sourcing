@@ -123,9 +123,31 @@ ok(
 );
 
 const chatbox = readFileSync(new URL("../src/components/careers/chatbox.tsx", import.meta.url), "utf8");
+const careersShell = readFileSync(new URL("../src/components/careers/careers-shell.tsx", import.meta.url), "utf8");
 const providers = readFileSync(new URL("../src/components/app/providers.tsx", import.meta.url), "utf8");
 ok("career chatbox does not import the authenticated workspace store", !chatbox.includes('from "@/lib/store"'));
 ok("career route remains outside the authenticated workspace provider", providers.includes('pathname.startsWith("/careers")'));
+ok(
+  "careers chatbox has an explicit retry path when /api/careers is unavailable",
+  chatbox.includes("retryCareers") && chatbox.includes("Retry loading roles"),
+);
+ok(
+  "careers fetch failure or 503 renders offline/unavailable, never online",
+  chatbox.includes("careersAvailability === \"unavailable\"") &&
+    chatbox.includes("Careers offline") &&
+    !chatbox.includes("> online"),
+);
+ok(
+  "careers header avoids always-on hiring claims while availability is unknown",
+  !careersShell.includes("Now hiring across our teams") && careersShell.includes("Applications open when careers is online"),
+);
+ok(
+  "careers loading, unavailable, empty, and ready states are distinct",
+  chatbox.includes("Checking available positions") &&
+    chatbox.includes("Applications are unavailable") &&
+    chatbox.includes("No open roles right now") &&
+    chatbox.includes("careersAvailability === \"ready\""),
+);
 
 console.log(`RESULT careers-public: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

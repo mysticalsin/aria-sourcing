@@ -33,6 +33,7 @@ const ALL_CHANNELS = ["Email", "WhatsApp", "LinkedIn", "SMS"] as const;
 export default function StudioPage() {
   const { toast } = useToast();
   const [loading, setLoading] = React.useState(true);
+  const [availability, setAvailability] = React.useState<"loading" | "ready" | "unavailable">("loading");
   const [demo, setDemo] = React.useState(false);
   const [specs, setSpecs] = React.useState<SpecRow[]>([]);
   const [name, setName] = React.useState("");
@@ -42,13 +43,23 @@ export default function StudioPage() {
   const [saving, setSaving] = React.useState(false);
 
   const load = React.useCallback(async () => {
+    setLoading(true);
+    setAvailability("loading");
     try {
       const res = await fetch("/api/agents/specs");
       const json = (await res.json()) as { ok: boolean; demo?: boolean; specs?: SpecRow[] };
+      if (!res.ok || json.ok !== true) throw new Error("Agent Studio is unavailable.");
       setDemo(Boolean(json.demo));
       setSpecs(json.specs ?? []);
-    } catch {
-      toast({ title: "Could not load agents.", variant: "error" });
+      setAvailability("ready");
+    } catch (err) {
+      setAvailability("unavailable");
+      setSpecs([]);
+      toast({
+        title: "Agent Studio unavailable.",
+        description: err instanceof Error ? err.message : "Could not load agents.",
+        variant: "error",
+      });
     } finally {
       setLoading(false);
     }
@@ -60,6 +71,10 @@ export default function StudioPage() {
 
   async function createSpec(e: React.FormEvent) {
     e.preventDefault();
+    if (availability !== "ready") {
+      toast({ title: "Agent Studio unavailable.", description: "Retry loading agents before creating one.", variant: "error" });
+      return;
+    }
     if (!name.trim() || !roleTitle.trim()) return;
     setSaving(true);
     try {
@@ -115,15 +130,28 @@ export default function StudioPage() {
               <Wand2 className="h-4 w-4 text-muted" />
               <h2 className="text-sm font-semibold text-ink">New sourcing agent</h2>
             </div>
-            <form onSubmit={createSpec} className="flex flex-col gap-4">
+            {availability === "unavailable" && (
+              <div
+                id="studio-unavailable"
+                role="alert"
+                className="mb-4 rounded-2xl border border-danger/20 bg-danger-soft px-4 py-3 text-sm text-danger"
+              >
+                <p className="font-semibold">Agent Studio is unavailable.</p>
+                <p className="mt-1 text-xs text-muted">Existing agents are hidden until the backend responds successfully.</p>
+                <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => void load()}>
+                  Retry loading agents
+                </Button>
+              </div>
+            )}
+            <form onSubmit={createSpec} className="flex flex-col gap-4" aria-describedby={availability === "unavailable" ? "studio-unavailable" : undefined}>
               <Field label="Agent name">
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Backend hunter — Paris" maxLength={120} />
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Backend hunter — Paris" maxLength={120} disabled={availability !== "ready"} />
               </Field>
               <Field label="Role title">
-                <Input value={roleTitle} onChange={(e) => setRoleTitle(e.target.value)} placeholder="Staff Backend Engineer" maxLength={120} />
+                <Input value={roleTitle} onChange={(e) => setRoleTitle(e.target.value)} placeholder="Staff Backend Engineer" maxLength={120} disabled={availability !== "ready"} />
               </Field>
               <Field label="Required skills (comma-separated)">
-                <Input value={skills} onChange={(e) => setSkills(e.target.value)} placeholder="Go, Postgres, Kubernetes" maxLength={300} />
+                <Input value={skills} onChange={(e) => setSkills(e.target.value)} placeholder="Go, Postgres, Kubernetes" maxLength={300} disabled={availability !== "ready"} />
               </Field>
               <Field label="Channels">
                 <div className="flex flex-wrap gap-2">
@@ -133,6 +161,7 @@ export default function StudioPage() {
                       <button
                         key={c}
                         type="button"
+                        disabled={availability !== "ready"}
                         onClick={() =>
                           setChannels((prev) => (active ? prev.filter((x) => x !== c) : [...prev, c]))
                         }
@@ -149,7 +178,7 @@ export default function StudioPage() {
                   })}
                 </div>
               </Field>
-              <Button type="submit" disabled={saving || !name.trim() || !roleTitle.trim() || channels.length === 0}>
+              <Button type="submit" disabled={availability !== "ready" || saving || !name.trim() || !roleTitle.trim() || channels.length === 0}>
                 {saving ? "Creating…" : "Create agent"}
               </Button>
               <p className="text-xs text-muted">
@@ -167,6 +196,17 @@ export default function StudioPage() {
                 <p className="text-sm text-muted">Loading agents…</p>
               </CardContent>
             </Card>
+          ) : availability === "unavailable" ? (
+            <EmptyState
+              icon={<Bot className="h-6 w-6" />}
+              title="Agent Studio unavailable"
+              description="The backend did not return a successful agent list. Retry before treating this workspace as empty."
+              action={
+                <Button type="button" variant="outline" onClick={() => void load()}>
+                  Retry loading agents
+                </Button>
+              }
+            />
           ) : specs.length === 0 ? (
             <EmptyState
               icon={<Bot className="h-6 w-6" />}

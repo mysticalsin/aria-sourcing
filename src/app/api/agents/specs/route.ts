@@ -11,9 +11,8 @@ export const dynamic = "force-dynamic";
 
 /**
  * Agent spec CRUD — the definitions behind on-demand sourcing agents and the
- * Agent Studio page. Autopilot lives in guardrails and is per-spec opt-in;
- * flipping it on never bypasses the send-side gates (approval + human-likeness
- * + claim_and_record all still run at dispatch).
+ * Agent Studio page. Generated replies are queue-only human review: they wait
+ * for named-operator approval before any dispatch path can run.
  */
 
 const ChannelEnum = z.enum(["Email", "LinkedIn", "WhatsApp", "SMS"]);

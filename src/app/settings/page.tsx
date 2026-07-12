@@ -206,6 +206,7 @@ export default function SettingsPage() {
   const { toast } = useToast();
   const confirm = useConfirm();
   const [activeTab, setActiveTab] = React.useState("integrations");
+  const canResetSyntheticDemo = !supabaseEnabled;
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
@@ -265,13 +266,17 @@ export default function SettingsPage() {
   const complaintPct = Math.round(settings.fleet.complaintRatePauseThreshold * 1000) / 10;
 
   async function handleReset() {
-    if (!(await confirm({ title: "Reset to factory defaults?", description: "This resets all settings and data. It cannot be undone.", confirmLabel: "Reset", danger: true }))) {
+    if (!canResetSyntheticDemo) {
+      toast({ title: "Live workspace reset blocked", description: "Synthetic demo reset is not available in live workspaces.", variant: "warning" });
+      return;
+    }
+    if (!(await confirm({ title: "Reset synthetic demo?", description: "This restores local synthetic demo data only. It cannot be used on a live workspace.", confirmLabel: "Reset demo", danger: true }))) {
       return;
     }
     actions.resetDemo();
     toast({
-      title: "Reset to defaults",
-      description: "Campaigns, candidates, and settings are back to factory defaults.",
+      title: "Synthetic demo reset",
+      description: "Campaigns, candidates, and settings are back to synthetic demo data. No live workspace was changed.",
       variant: "info",
     });
   }
@@ -283,14 +288,16 @@ export default function SettingsPage() {
         title="Settings"
         description="Operating identity, the human-approval gate, rate limits, integrations, and compliance. Everything Aria runs against lives here."
         actions={
-          <Button
-            variant="outline"
-            size="md"
-            leftIcon={<RotateCcw className="h-4 w-4" />}
-            onClick={handleReset}
-          >
-            Reset to defaults
-          </Button>
+          canResetSyntheticDemo ? (
+            <Button
+              variant="outline"
+              size="md"
+              leftIcon={<RotateCcw className="h-4 w-4" />}
+              onClick={handleReset}
+            >
+              Reset synthetic demo
+            </Button>
+          ) : null
         }
       />
 
