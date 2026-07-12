@@ -35,6 +35,11 @@ create trigger agent_specs_authority_immutable
 
 alter table public.agent_runs
   add column if not exists owner_id uuid references auth.users(id) on delete restrict;
+alter table public.agent_runs
+  add column if not exists actor_id uuid;
+
+create unique index if not exists profiles_workspace_id_id_key
+  on public.profiles (workspace_id, id);
 
 -- Reconcile legacy run rows to their spec. The spec is the canonical authority;
 -- the old independently supplied workspace_id was never trustworthy.
@@ -59,13 +64,57 @@ alter table public.agent_runs alter column owner_id set not null;
 alter table public.agent_runs
   drop constraint if exists agent_runs_spec_id_fkey;
 alter table public.agent_runs
+  drop constraint if exists agent_runs_workspace_owner_spec_fkey;
+alter table public.agent_runs
   add constraint agent_runs_workspace_owner_spec_fkey
   foreign key (workspace_id, owner_id, spec_id)
   references public.agent_specs (workspace_id, owner_id, id)
   on delete cascade;
+alter table public.agent_runs
+  drop constraint if exists agent_runs_workspace_actor_fkey;
+alter table public.agent_runs
+  add constraint agent_runs_workspace_actor_fkey
+  foreign key (workspace_id, actor_id)
+  references public.profiles (workspace_id, id)
+  on delete restrict;
 
 create unique index if not exists agent_runs_workspace_owner_spec_id_key
   on public.agent_runs (workspace_id, owner_id, spec_id, id);
+
+create or replace function public.enforce_agent_run_authority_immutable()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if tg_op = 'INSERT' then
+    if new.actor_id is null then
+      raise exception 'new agent runs require actor provenance'
+        using errcode = '23502';
+    end if;
+    return new;
+  end if;
+
+  if new.id is distinct from old.id
+     or new.workspace_id is distinct from old.workspace_id
+     or new.owner_id is distinct from old.owner_id
+     or new.spec_id is distinct from old.spec_id
+     or new.actor_id is distinct from old.actor_id
+     or new.started_at is distinct from old.started_at then
+    raise exception 'agent run workspace, owner, spec, and actor authority is immutable'
+      using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.enforce_agent_run_authority_immutable()
+  from public, anon, authenticated, service_role, authenticator;
+
+drop trigger if exists agent_runs_authority_immutable on public.agent_runs;
+create trigger agent_runs_authority_immutable
+  before insert or update on public.agent_runs
+  for each row execute function public.enforce_agent_run_authority_immutable();
 
 -- Agent specs are visible only to the exact owner or a workspace admin.
 drop policy if exists agent_specs_select on public.agent_specs;
@@ -118,8 +167,8 @@ create policy agent_runs_select on public.agent_runs
 drop policy if exists agent_runs_insert on public.agent_runs;
 drop policy if exists agent_runs_update on public.agent_runs;
 
-revoke insert, update, delete on public.agent_runs from authenticated;
-grant select, insert, update, delete on public.agent_runs to service_role;
+revoke insert, update, delete on public.agent_runs from authenticated, service_role;
+grant select, update, delete on public.agent_runs to service_role;
 
 drop policy if exists agent_events_select on public.agent_events;
 create policy agent_events_select on public.agent_events
@@ -154,6 +203,7 @@ create table if not exists public.agent_memories (
     content_ciphertext ~ '^enc:v2:[0-9a-f]{64}:[A-Za-z0-9+/]+={0,2}:[A-Za-z0-9+/]+={0,2}:[A-Za-z0-9+/]+={0,2}$'
   ),
   content_sha256      text not null check (content_sha256 ~ '^[0-9a-f]{64}$'),
+  content_byte_count  integer not null,
   revision            integer not null default 1 check (revision > 0),
   status              text not null default 'pending_review'
                       check (status in ('pending_review', 'approved', 'rejected', 'deleted')),
@@ -179,8 +229,26 @@ create table if not exists public.agent_memories (
   constraint agent_memories_source_binding_check
     check ((source_type = 'run') = (source_run_id is not null)),
   constraint agent_memories_deleted_state_check
-    check ((status = 'deleted') = (deleted_at is not null))
+    check ((status = 'deleted') = (deleted_at is not null)),
+  constraint agent_memories_content_byte_count_check
+    check (content_byte_count between 1 and 8192)
 );
+
+-- Safe reconciliation if a prior interrupted attempt created the table before
+-- the byte-count authority column. Such rows are never left approved.
+alter table public.agent_memories
+  add column if not exists content_byte_count integer;
+update public.agent_memories
+   set content_byte_count = 1,
+       status = 'pending_review',
+       deleted_at = null
+ where content_byte_count is null;
+alter table public.agent_memories alter column content_byte_count set not null;
+alter table public.agent_memories
+  drop constraint if exists agent_memories_content_byte_count_check;
+alter table public.agent_memories
+  add constraint agent_memories_content_byte_count_check
+  check (content_byte_count between 1 and 8192);
 
 create unique index if not exists agent_memories_scope_identity_key
   on public.agent_memories (
@@ -225,12 +293,14 @@ create table if not exists public.agent_memory_events (
   spec_id           uuid not null,
   run_id            uuid,
   actor_id           uuid references auth.users(id) on delete set null,
-  event_type        text not null check (event_type in ('created', 'approved', 'rejected', 'used', 'expired', 'deleted')),
+  event_type        text not null,
   memory_revision   integer not null check (memory_revision > 0),
   content_sha256    text not null check (content_sha256 ~ '^[0-9a-f]{64}$'),
   metadata          jsonb not null default '{}'::jsonb check (metadata = '{}'::jsonb),
   created_at        timestamptz not null default now(),
 
+  constraint agent_memory_events_event_type_check
+    check (event_type in ('created', 'approved', 'rejected', 'selected', 'used', 'expired', 'deleted')),
   constraint agent_memory_events_memory_fkey
     foreign key (
       workspace_id, owner_id, spec_id, memory_id, memory_revision, content_sha256
@@ -243,6 +313,107 @@ create table if not exists public.agent_memory_events (
     on delete cascade
 );
 
+alter table public.agent_memory_events
+  drop constraint if exists agent_memory_events_event_type_check;
+alter table public.agent_memory_events
+  add constraint agent_memory_events_event_type_check
+  check (event_type in ('created', 'approved', 'rejected', 'selected', 'used', 'expired', 'deleted'));
+
+-- CREATE TABLE IF NOT EXISTS does not repair a partially created table. Guard
+-- every named constraint so a ledger retry restores the full authority model.
+do $agent_memory_constraint_reconciliation$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'agent_memories_workspace_owner_spec_fkey'
+       and conrelid = 'public.agent_memories'::regclass
+  ) then
+    alter table public.agent_memories
+      add constraint agent_memories_workspace_owner_spec_fkey
+      foreign key (workspace_id, owner_id, spec_id)
+      references public.agent_specs (workspace_id, owner_id, id)
+      on delete cascade;
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'agent_memories_source_run_fkey'
+       and conrelid = 'public.agent_memories'::regclass
+  ) then
+    alter table public.agent_memories
+      add constraint agent_memories_source_run_fkey
+      foreign key (workspace_id, owner_id, spec_id, source_run_id)
+      references public.agent_runs (workspace_id, owner_id, spec_id, id)
+      on delete restrict;
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'agent_memories_source_binding_check'
+       and conrelid = 'public.agent_memories'::regclass
+  ) then
+    alter table public.agent_memories
+      add constraint agent_memories_source_binding_check
+      check ((source_type = 'run') = (source_run_id is not null));
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'agent_memories_deleted_state_check'
+       and conrelid = 'public.agent_memories'::regclass
+  ) then
+    alter table public.agent_memories
+      add constraint agent_memories_deleted_state_check
+      check ((status = 'deleted') = (deleted_at is not null));
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'agent_run_memory_context_run_fkey'
+       and conrelid = 'public.agent_run_memory_context'::regclass
+  ) then
+    alter table public.agent_run_memory_context
+      add constraint agent_run_memory_context_run_fkey
+      foreign key (workspace_id, owner_id, spec_id, run_id)
+      references public.agent_runs (workspace_id, owner_id, spec_id, id)
+      on delete cascade;
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'agent_run_memory_context_memory_fkey'
+       and conrelid = 'public.agent_run_memory_context'::regclass
+  ) then
+    alter table public.agent_run_memory_context
+      add constraint agent_run_memory_context_memory_fkey
+      foreign key (
+        workspace_id, owner_id, spec_id, memory_id, memory_revision, content_sha256
+      ) references public.agent_memories (
+        workspace_id, owner_id, spec_id, id, revision, content_sha256
+      ) on delete restrict;
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'agent_memory_events_memory_fkey'
+       and conrelid = 'public.agent_memory_events'::regclass
+  ) then
+    alter table public.agent_memory_events
+      add constraint agent_memory_events_memory_fkey
+      foreign key (
+        workspace_id, owner_id, spec_id, memory_id, memory_revision, content_sha256
+      ) references public.agent_memories (
+        workspace_id, owner_id, spec_id, id, revision, content_sha256
+      ) on delete restrict;
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'agent_memory_events_run_fkey'
+       and conrelid = 'public.agent_memory_events'::regclass
+  ) then
+    alter table public.agent_memory_events
+      add constraint agent_memory_events_run_fkey
+      foreign key (workspace_id, owner_id, spec_id, run_id)
+      references public.agent_runs (workspace_id, owner_id, spec_id, id)
+      on delete cascade;
+  end if;
+end
+$agent_memory_constraint_reconciliation$;
+
 create index if not exists agent_memory_events_scope_idx
   on public.agent_memory_events (workspace_id, owner_id, spec_id, created_at desc);
 
@@ -251,18 +422,43 @@ returns trigger
 language plpgsql
 set search_path = public, pg_temp
 as $$
+declare
+  ciphertext_changed boolean := new.content_ciphertext is distinct from old.content_ciphertext;
+  hash_changed boolean := new.content_sha256 is distinct from old.content_sha256;
+  kind_changed boolean := new.kind is distinct from old.kind;
 begin
   if new.id is distinct from old.id
      or new.workspace_id is distinct from old.workspace_id
      or new.owner_id is distinct from old.owner_id
      or new.spec_id is distinct from old.spec_id
-     or new.source_run_id is distinct from old.source_run_id then
+     or new.source_type is distinct from old.source_type
+     or new.source_run_id is distinct from old.source_run_id
+     or new.created_by is distinct from old.created_by
+     or new.created_at is distinct from old.created_at then
     raise exception 'agent memory workspace, owner, spec, and source authority is immutable'
       using errcode = '42501';
   end if;
+
+  if ciphertext_changed is distinct from hash_changed then
+    raise exception 'agent memory ciphertext and hash must change together'
+      using errcode = '22023';
+  end if;
+  if new.content_byte_count is distinct from old.content_byte_count
+     and not ciphertext_changed then
+    raise exception 'agent memory byte count cannot change without content'
+      using errcode = '22023';
+  end if;
+  if old.status = 'deleted' and (ciphertext_changed or kind_changed) then
+    raise exception 'deleted agent memory content is immutable'
+      using errcode = '42501';
+  end if;
+
   if new.content_ciphertext is distinct from old.content_ciphertext
-     or new.content_sha256 is distinct from old.content_sha256 then
+     or new.content_sha256 is distinct from old.content_sha256
+     or kind_changed then
     new.revision := old.revision + 1;
+    new.status := 'pending_review';
+    new.deleted_at := null;
   else
     new.revision := old.revision;
   end if;
@@ -318,7 +514,7 @@ revoke all on public.agent_memory_events
   from public, anon, authenticated, service_role, authenticator;
 
 grant select (
-  id, workspace_id, owner_id, spec_id, kind, content_sha256, revision, status,
+  id, workspace_id, owner_id, spec_id, kind, content_sha256, content_byte_count, revision, status,
   source_type, source_run_id, pinned, expires_at, created_by, updated_by,
   created_at, updated_at, deleted_at
 ) on public.agent_memories to authenticated;
@@ -338,6 +534,7 @@ create policy agent_memories_owner_metadata on public.agent_memories
     and public.current_profile_role() <> 'viewer'
     and (owner_id = auth.uid() or public.current_profile_role() = 'admin')
   );
+drop policy if exists agent_memories_postgres_all on public.agent_memories;
 create policy agent_memories_postgres_all on public.agent_memories
   for all to postgres using (true) with check (true);
 
@@ -349,6 +546,7 @@ create policy agent_run_memory_context_owner_read on public.agent_run_memory_con
     and public.current_profile_role() <> 'viewer'
     and (owner_id = auth.uid() or public.current_profile_role() = 'admin')
   );
+drop policy if exists agent_run_memory_context_postgres_all on public.agent_run_memory_context;
 create policy agent_run_memory_context_postgres_all on public.agent_run_memory_context
   for all to postgres using (true) with check (true);
 
@@ -360,6 +558,7 @@ create policy agent_memory_events_owner_read on public.agent_memory_events
     and public.current_profile_role() <> 'viewer'
     and (owner_id = auth.uid() or public.current_profile_role() = 'admin')
   );
+drop policy if exists agent_memory_events_postgres_all on public.agent_memory_events;
 create policy agent_memory_events_postgres_all on public.agent_memory_events
   for all to postgres using (true) with check (true);
 
@@ -370,9 +569,6 @@ create policy agent_memory_events_postgres_all on public.agent_memory_events
 create table if not exists public.agent_memory_legacy_quarantine (
   id                  bigint generated always as identity primary key,
   workspace_id        uuid not null references public.workspaces(id) on delete cascade,
-  legacy_memory_id    text not null,
-  legacy_seat_id      text,
-  payload             jsonb not null,
   payload_sha256      text not null check (payload_sha256 ~ '^[0-9a-f]{64}$'),
   source_updated_at   timestamptz,
   quarantine_reason   text not null default 'ambiguous_seat_scope',
@@ -380,25 +576,31 @@ create table if not exists public.agent_memory_legacy_quarantine (
   unique (workspace_id, payload_sha256)
 );
 
+-- Reconcile and scrub any interrupted pre-release attempt that used a
+-- recoverable quarantine payload. Only the one-way receipt may remain.
+alter table public.agent_memory_legacy_quarantine drop column if exists payload;
+alter table public.agent_memory_legacy_quarantine drop column if exists legacy_memory_id;
+alter table public.agent_memory_legacy_quarantine drop column if exists legacy_seat_id;
+
 alter table public.agent_memory_legacy_quarantine enable row level security;
 alter table public.agent_memory_legacy_quarantine force row level security;
 revoke all on public.agent_memory_legacy_quarantine
   from public, anon, authenticated, service_role, authenticator;
 grant select on public.agent_memory_legacy_quarantine to service_role;
 grant usage, select on sequence public.agent_memory_legacy_quarantine_id_seq to service_role;
+drop policy if exists agent_memory_legacy_quarantine_postgres_all on public.agent_memory_legacy_quarantine;
 create policy agent_memory_legacy_quarantine_postgres_all
   on public.agent_memory_legacy_quarantine
   for all to postgres using (true) with check (true);
 
 insert into public.agent_memory_legacy_quarantine (
-  workspace_id, legacy_memory_id, legacy_seat_id, payload, payload_sha256,
-  source_updated_at
+  workspace_id, payload_sha256, source_updated_at
 )
 select state.workspace_id,
-       coalesce(nullif(memory.payload ->> 'id', ''), encode(digest(memory.payload::text, 'sha256'), 'hex')),
-       nullif(memory.payload ->> 'seatId', ''),
-       memory.payload,
-       encode(digest(memory.payload::text, 'sha256'), 'hex'),
+       encode(
+         digest(state.workspace_id::text || ':' || memory.memory_payload::text, 'sha256'),
+         'hex'
+       ),
        state.updated_at
   from public.workspace_state as state
   cross join lateral jsonb_array_elements(
@@ -406,7 +608,7 @@ select state.workspace_id,
          then state.state -> 'memory'
          else '[]'::jsonb
     end
-  ) as memory(payload)
+  ) as memory(memory_payload)
 on conflict (workspace_id, payload_sha256) do nothing;
 
 create or replace function public.strip_legacy_agent_memory_authority()
@@ -436,12 +638,13 @@ update public.workspace_state
 -- One service-only transaction creates the run and immutable memory receipts
 -- --------------------------------------------------------------------------
 
+drop function if exists public.create_agent_run_with_memory_context(uuid, uuid, uuid, uuid, jsonb);
+
 create or replace function public.create_agent_run_with_memory_context(
   p_workspace_id uuid,
   p_owner_id uuid,
   p_spec_id uuid,
-  p_actor_id uuid,
-  p_receipts jsonb
+  p_actor_id uuid
 )
 returns uuid
 language plpgsql
@@ -450,24 +653,22 @@ set search_path = public, pg_temp
 as $$
 declare
   run_id uuid;
+  locked_actor_id uuid;
   locked_spec_id uuid;
-  receipt jsonb;
   memory_row public.agent_memories%rowtype;
-  receipt_count integer;
+  selected_count integer := 0;
   total_bytes integer := 0;
-  receipt_position integer;
-  receipt_bytes integer;
-  receipt_memory_id uuid;
-  receipt_revision integer;
-  receipt_hash text;
 begin
-  if jsonb_typeof(p_receipts) is distinct from 'array' then
-    raise exception 'memory receipts must be a JSON array' using errcode = '22023';
-  end if;
-
-  receipt_count := jsonb_array_length(p_receipts);
-  if receipt_count > 8 then
-    raise exception 'memory receipt item limit exceeded' using errcode = '22023';
+  -- Lock the actor first so a concurrent admin revocation wins before any run
+  -- or memory authority is persisted.
+  select profile.id into locked_actor_id
+    from public.profiles as profile
+   where profile.id = p_actor_id
+     and profile.workspace_id = p_workspace_id
+     and profile.role = 'admin'
+   for share;
+  if not found then
+    raise exception 'run actor lacks workspace admin authority' using errcode = '22023';
   end if;
 
   select spec.id into locked_spec_id
@@ -481,101 +682,58 @@ begin
     raise exception 'active exact-scope agent spec not found' using errcode = '22023';
   end if;
 
-  if not exists (
-    select 1
-      from public.profiles
-     where id = p_actor_id
-       and workspace_id = p_workspace_id
-       and role = 'admin'
-  ) then
-    raise exception 'run actor lacks workspace admin authority' using errcode = '22023';
-  end if;
+  insert into public.agent_runs (
+    workspace_id, owner_id, spec_id, actor_id, state_json, node
+  ) values (
+    p_workspace_id, p_owner_id, p_spec_id, p_actor_id, '{}'::jsonb, 'planner'
+  ) returning id into run_id;
 
-  for receipt in select value from jsonb_array_elements(p_receipts)
-  loop
-    if jsonb_typeof(receipt) is distinct from 'object'
-       or exists (
-         select 1 from jsonb_object_keys(receipt) as key(name)
-          where key.name not in ('memoryId', 'memoryRevision', 'contentSha256', 'position', 'byteCount')
-       ) then
-      raise exception 'invalid memory receipt shape' using errcode = '22023';
-    end if;
-
-    begin
-      receipt_memory_id := (receipt ->> 'memoryId')::uuid;
-      receipt_revision := (receipt ->> 'memoryRevision')::integer;
-      receipt_hash := receipt ->> 'contentSha256';
-      receipt_position := (receipt ->> 'position')::integer;
-      receipt_bytes := (receipt ->> 'byteCount')::integer;
-    exception when others then
-      raise exception 'invalid memory receipt values' using errcode = '22023';
-    end;
-
-    if receipt_revision < 1
-       or receipt_position < 0 or receipt_position >= receipt_count
-       or receipt_bytes < 1 or receipt_bytes > 8192
-       or receipt_hash !~ '^[0-9a-f]{64}$' then
-      raise exception 'invalid memory receipt values' using errcode = '22023';
-    end if;
-
-    total_bytes := total_bytes + receipt_bytes;
-    if total_bytes > 8192 then
-      raise exception 'memory receipt byte limit exceeded' using errcode = '22023';
-    end if;
-
-    select memory.* into memory_row
+  -- PostgreSQL, not the caller, selects the exact approved snapshot. The actor,
+  -- spec, and selected rows stay locked until this function commits.
+  for memory_row in
+    select memory.*
       from public.agent_memories as memory
-     where memory.id = receipt_memory_id
-       and memory.workspace_id = p_workspace_id
+     where memory.workspace_id = p_workspace_id
        and memory.owner_id = p_owner_id
        and memory.spec_id = p_spec_id
-       and memory.revision = receipt_revision
-       and memory.content_sha256 = receipt_hash
        and memory.status = 'approved'
        and memory.deleted_at is null
        and (memory.expires_at is null or memory.expires_at > now())
-     for share;
-
-    if not found then
-      raise exception 'memory receipt is stale or outside active authority'
-        using errcode = '22023';
-    end if;
-  end loop;
-
-  insert into public.agent_runs (workspace_id, owner_id, spec_id, state_json, node)
-  values (p_workspace_id, p_owner_id, p_spec_id, '{}'::jsonb, 'planner')
-  returning id into run_id;
-
-  for receipt in select value from jsonb_array_elements(p_receipts)
+     order by memory.pinned desc, memory.updated_at desc, memory.id
+     for share
   loop
-    receipt_memory_id := (receipt ->> 'memoryId')::uuid;
-    receipt_revision := (receipt ->> 'memoryRevision')::integer;
-    receipt_hash := receipt ->> 'contentSha256';
-    receipt_position := (receipt ->> 'position')::integer;
-    receipt_bytes := (receipt ->> 'byteCount')::integer;
+    exit when selected_count >= 8;
+    if total_bytes + memory_row.content_byte_count > 8192 then
+      continue;
+    end if;
 
     insert into public.agent_run_memory_context (
       run_id, workspace_id, owner_id, spec_id, memory_id, memory_revision,
       content_sha256, position, byte_count
     ) values (
-      run_id, p_workspace_id, p_owner_id, p_spec_id, receipt_memory_id,
-      receipt_revision, receipt_hash, receipt_position, receipt_bytes
+      run_id, p_workspace_id, p_owner_id, p_spec_id, memory_row.id,
+      memory_row.revision, memory_row.content_sha256, selected_count,
+      memory_row.content_byte_count
     );
 
     insert into public.agent_memory_events (
       memory_id, workspace_id, owner_id, spec_id, run_id, actor_id,
       event_type, memory_revision, content_sha256, metadata
     ) values (
-      receipt_memory_id, p_workspace_id, p_owner_id, p_spec_id, run_id,
-      p_actor_id, 'used', receipt_revision, receipt_hash, '{}'::jsonb
+      memory_row.id, p_workspace_id, p_owner_id, p_spec_id, run_id,
+      p_actor_id, 'selected', memory_row.revision, memory_row.content_sha256,
+      '{}'::jsonb
     );
+
+    total_bytes := total_bytes + memory_row.content_byte_count;
+    selected_count := selected_count + 1;
   end loop;
 
   return run_id;
 end;
 $$;
 
-revoke all on function public.create_agent_run_with_memory_context(uuid, uuid, uuid, uuid, jsonb)
-  from public, anon, authenticated, authenticator;
-grant execute on function public.create_agent_run_with_memory_context(uuid, uuid, uuid, uuid, jsonb)
+revoke all on function public.create_agent_run_with_memory_context(uuid, uuid, uuid, uuid)
+  from public, anon, authenticated, service_role, authenticator;
+grant execute on function public.create_agent_run_with_memory_context(uuid, uuid, uuid, uuid)
   to service_role;

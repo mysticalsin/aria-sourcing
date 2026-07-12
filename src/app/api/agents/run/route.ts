@@ -157,10 +157,29 @@ export async function POST(req: NextRequest) {
     ownerId: spec.owner_id,
     specId: spec.id,
   };
+
+  let runId: string;
+  try {
+    runId = await createAgentRunWithMemoryContext(service, memoryScope, userId);
+  } catch {
+    return NextResponse.json({ ok: false, reason: "Agent run or context persistence failed." }, { status: 503 });
+  }
+
+  const failPersistedRun = async () => {
+    await service
+      .from("agent_runs")
+      .update({ status: "failed", finished_at: new Date().toISOString() })
+      .eq("id", runId)
+      .eq("workspace_id", workspaceId)
+      .eq("owner_id", spec.owner_id)
+      .eq("spec_id", spec.id);
+  };
+
   let memoryContext;
   try {
-    memoryContext = await loadAgentMemoryContext(service, memoryScope);
+    memoryContext = await loadAgentMemoryContext(service, memoryScope, runId);
   } catch {
+    await failPersistedRun();
     return NextResponse.json({ ok: false, reason: "Agent memory retrieval failed." }, { status: 503 });
   }
 
@@ -176,13 +195,18 @@ export async function POST(req: NextRequest) {
   const slug = provider as AiProviderSlug;
   const vaultKey = apiKeyId ? await resolveVaultSecret(apiKeyId, VAULT_PROVIDER[slug]) : "";
   if (apiKeyId && !vaultKey) {
+    await failPersistedRun();
     return NextResponse.json({ ok: false, reason: `No valid API key configured for ${provider}.` }, { status: 403 });
   }
   if (!apiKeyId && supabaseEnabled && !can(callerRole as Role, "manage_providers")) {
+    await failPersistedRun();
     return NextResponse.json({ ok: false, reason: "A workspace provider key is required." }, { status: 403 });
   }
   const key = vaultKey || process.env[PROVIDER_ENV[slug]] || "";
-  if (!key) return NextResponse.json({ ok: false, reason: `No API key configured for ${provider}.` });
+  if (!key) {
+    await failPersistedRun();
+    return NextResponse.json({ ok: false, reason: `No API key configured for ${provider}.` });
+  }
   const llmModel = model || DEFAULT_MODEL[slug];
 
   const tavilyKey = supabase ? await resolveStoredTavilyKey(supabase) : null;
@@ -216,13 +240,6 @@ export async function POST(req: NextRequest) {
     },
   };
 
-  let runId: string;
-  try {
-    runId = await createAgentRunWithMemoryContext(service, memoryScope, userId, memoryContext.receipts);
-  } catch {
-    return NextResponse.json({ ok: false, reason: "Agent run or context persistence failed." }, { status: 503 });
-  }
-
   // stepGraph applies candidateDisclosureContextForCampaignLike before any
   // candidate-facing model prompt; the raw brief remains server-side for sink scans.
   const state = initialState(campaign.jobAnalysis as unknown as Record<string, unknown>, count);
@@ -250,13 +267,7 @@ export async function POST(req: NextRequest) {
       if (eventError) throw new Error("Agent run persistence failed.");
     });
   } catch {
-    await service
-      .from("agent_runs")
-      .update({ status: "failed", finished_at: new Date().toISOString() })
-      .eq("id", runId)
-      .eq("workspace_id", workspaceId)
-      .eq("owner_id", spec.owner_id)
-      .eq("spec_id", spec.id);
+    await failPersistedRun();
     return NextResponse.json({ ok: false, reason: "Agent run persistence or execution failed." }, { status: 503 });
   }
 

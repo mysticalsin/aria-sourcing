@@ -49,9 +49,27 @@ select aria_agent_memory_test.assert_scalar(
   '1'
 );
 select aria_agent_memory_test.assert_scalar(
-  'legacy memory content remains only in service quarantine',
-  $$select (payload->>'content') from public.agent_memory_legacy_quarantine where workspace_id='11111111-1111-4111-8111-111111111111'$$,
-  'legacy shared secret instruction'
+  'legacy quarantine contains no recoverable JSON or source identifiers',
+  $$select count(*)::text
+      from information_schema.columns
+     where table_schema='public'
+       and table_name='agent_memory_legacy_quarantine'
+       and column_name in ('payload','legacy_memory_id','legacy_seat_id')$$,
+  '0'
+);
+select aria_agent_memory_test.assert_scalar(
+  'legacy quarantine retains only a one-way hash receipt',
+  $$select (payload_sha256 ~ '^[0-9a-f]{64}$')::text
+      from public.agent_memory_legacy_quarantine
+     where workspace_id='11111111-1111-4111-8111-111111111111'$$,
+  'true'
+);
+select aria_agent_memory_test.assert_scalar(
+  'legacy plaintext is absent from quarantine row serialization',
+  $$select (to_jsonb(q)::text not like '%legacy shared secret instruction%')::text
+      from public.agent_memory_legacy_quarantine q
+     where workspace_id='11111111-1111-4111-8111-111111111111'$$,
+  'true'
 );
 select aria_agent_memory_test.assert_scalar(
   'legacy memory is never activated',
@@ -79,12 +97,12 @@ reset role;
 
 insert into public.agent_memories (
   id,workspace_id,owner_id,spec_id,kind,content_ciphertext,content_sha256,
-  revision,status,source_type,created_by,expires_at
+  content_byte_count,revision,status,source_type,created_by,expires_at
 ) values
-  ('71000000-0000-4000-8000-000000000001','11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001','fact','enc:v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:AA==:AA==:AA==','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',1,'approved','operator','a1000000-0000-4000-8000-000000000001',now()+interval '1 day'),
-  ('72000000-0000-4000-8000-000000000002','11111111-1111-4111-8111-111111111111','a2000000-0000-4000-8000-000000000002','62000000-0000-4000-8000-000000000002','fact','enc:v2:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:AA==:AA==:AA==','bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',1,'approved','operator','a2000000-0000-4000-8000-000000000002',now()+interval '1 day'),
-  ('73000000-0000-4000-8000-000000000003','11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001','episodic','enc:v2:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc:AA==:AA==:AA==','cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',1,'approved','operator','a1000000-0000-4000-8000-000000000001',now()-interval '1 second'),
-  ('74000000-0000-4000-8000-000000000004','11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001','instruction','enc:v2:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd:AA==:AA==:AA==','dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',1,'pending_review','operator','a1000000-0000-4000-8000-000000000001',now()+interval '1 day');
+  ('71000000-0000-4000-8000-000000000001','11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001','fact','enc:v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:AA==:AA==:AA==','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',128,1,'approved','operator','a1000000-0000-4000-8000-000000000001',now()+interval '1 day'),
+  ('72000000-0000-4000-8000-000000000002','11111111-1111-4111-8111-111111111111','a2000000-0000-4000-8000-000000000002','62000000-0000-4000-8000-000000000002','fact','enc:v2:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:AA==:AA==:AA==','bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',128,1,'approved','operator','a2000000-0000-4000-8000-000000000002',now()+interval '1 day'),
+  ('73000000-0000-4000-8000-000000000003','11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001','episodic','enc:v2:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc:AA==:AA==:AA==','cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',1,1,'approved','operator','a1000000-0000-4000-8000-000000000001',now()-interval '1 second'),
+  ('74000000-0000-4000-8000-000000000004','11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001','instruction','enc:v2:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd:AA==:AA==:AA==','dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',1,1,'pending_review','operator','a1000000-0000-4000-8000-000000000001',now()+interval '1 day');
 
 select aria_agent_memory_test.assert_sqlstate(
   'memory events reject arbitrary metadata that could carry plaintext',
@@ -94,8 +112,8 @@ select aria_agent_memory_test.assert_sqlstate(
 );
 select aria_agent_memory_test.assert_sqlstate(
   'run-sourced memory requires an exact source run',
-  $$insert into public.agent_memories(id,workspace_id,owner_id,spec_id,kind,content_ciphertext,content_sha256,revision,status,source_type)
-    values('76000000-0000-4000-8000-000000000006','11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001','fact','enc:v2:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:AA==:AA==:AA==','ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',1,'approved','run')$$,
+  $$insert into public.agent_memories(id,workspace_id,owner_id,spec_id,kind,content_ciphertext,content_sha256,content_byte_count,revision,status,source_type)
+    values('76000000-0000-4000-8000-000000000006','11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001','fact','enc:v2:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:AA==:AA==:AA==','ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',1,1,'approved','run')$$,
   array['23514']
 );
 
@@ -119,7 +137,7 @@ select aria_agent_memory_test.assert_sqlstate(
 );
 select aria_agent_memory_test.assert_sqlstate(
   'ordinary owners cannot execute the service-only run receipt function',
-  $$select public.create_agent_run_with_memory_context('11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001','a1000000-0000-4000-8000-000000000001','[]')$$,
+  $$select public.create_agent_run_with_memory_context('11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001','a1000000-0000-4000-8000-000000000001')$$,
   array['42501']
 );
 select aria_agent_memory_test.assert_sqlstate(
@@ -146,6 +164,23 @@ select aria_agent_memory_test.assert_scalar(
   $$select revision::text from public.agent_memories where id='72000000-0000-4000-8000-000000000002'$$,
   '1'
 );
+select aria_agent_memory_test.assert_sqlstate(
+  'memory source provenance cannot be rewritten',
+  $$update public.agent_memories set source_type='import' where id='72000000-0000-4000-8000-000000000002'$$,
+  array['42501']
+);
+update public.agent_memories
+   set content_ciphertext='enc:v2:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee:AA==:AA==:AA==',
+       content_sha256='eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+       content_byte_count=64,
+       revision=99,
+       status='approved'
+ where id='72000000-0000-4000-8000-000000000002';
+select aria_agent_memory_test.assert_scalar(
+  'changed approved content returns to pending review with a new revision',
+  $$select (status='pending_review' and revision=2)::text from public.agent_memories where id='72000000-0000-4000-8000-000000000002'$$,
+  'true'
+);
 
 -- A privileged direct update still cannot rewrite immutable spec authority.
 select aria_agent_memory_test.assert_sqlstate(
@@ -157,21 +192,26 @@ select aria_agent_memory_test.assert_sqlstate(
 -- Composite constraints reject cross-workspace/spec memory bindings.
 select aria_agent_memory_test.assert_sqlstate(
   'cross-workspace memory binding is rejected',
-  $$insert into public.agent_memories(id,workspace_id,owner_id,spec_id,kind,content_ciphertext,content_sha256,revision,status,source_type)
-    values('75000000-0000-4000-8000-000000000005','22222222-2222-4222-8222-222222222222','a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001','fact','enc:v2:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee:AA==:AA==:AA==','eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',1,'approved','operator')$$,
+  $$insert into public.agent_memories(id,workspace_id,owner_id,spec_id,kind,content_ciphertext,content_sha256,content_byte_count,revision,status,source_type)
+    values('75000000-0000-4000-8000-000000000005','22222222-2222-4222-8222-222222222222','a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001','fact','enc:v2:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee:AA==:AA==:AA==','eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',1,1,'approved','operator')$$,
   array['23503']
 );
 
 -- The service-only function atomically creates the run, content-free receipt,
 -- and content-free memory-use event.
+select aria_agent_memory_test.assert_sqlstate(
+  'new runs cannot omit actor provenance',
+  $$insert into public.agent_runs(workspace_id,owner_id,spec_id,state_json,node)
+    values('11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001','{}','planner')$$,
+  array['23502']
+);
 select aria_agent_memory_test.set_claims('a3000000-0000-4000-8000-000000000003');
 set local role service_role;
 select public.create_agent_run_with_memory_context(
   '11111111-1111-4111-8111-111111111111',
   'a1000000-0000-4000-8000-000000000001',
   '61000000-0000-4000-8000-000000000001',
-  'a3000000-0000-4000-8000-000000000003',
-  '[{"memoryId":"71000000-0000-4000-8000-000000000001","memoryRevision":1,"contentSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","position":0,"byteCount":128}]'
+  'a3000000-0000-4000-8000-000000000003'
 ) as run_id \gset
 reset role;
 
@@ -183,8 +223,22 @@ select aria_agent_memory_test.assert_scalar(
   'true'
 );
 select aria_agent_memory_test.assert_scalar(
-  'memory-use event stores no content',
-  $$select (event_type='used' and content_sha256='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' and metadata='{}')::text
+  'run stores actor provenance even when receipts are selected independently',
+  $$select (actor_id='a3000000-0000-4000-8000-000000000003')::text
+      from public.agent_runs
+     where id=(select id from public.agent_runs where spec_id='61000000-0000-4000-8000-000000000001' order by started_at desc limit 1)$$,
+  'true'
+);
+select aria_agent_memory_test.assert_sqlstate(
+  'persisted run actor provenance is immutable',
+  $$update public.agent_runs
+       set actor_id='a1000000-0000-4000-8000-000000000001'
+     where id=(select id from public.agent_runs where spec_id='61000000-0000-4000-8000-000000000001' order by started_at desc limit 1)$$,
+  array['42501']
+);
+select aria_agent_memory_test.assert_scalar(
+  'memory-selection event stores no content without claiming provider use',
+  $$select (event_type='selected' and content_sha256='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' and metadata='{}')::text
       from public.agent_memory_events
      where run_id=(select id from public.agent_runs where spec_id='61000000-0000-4000-8000-000000000001' order by started_at desc limit 1)$$,
   'true'
@@ -200,24 +254,40 @@ select aria_agent_memory_test.assert_scalar(
   '0'
 );
 
--- Expired and unapproved rows can never be receipted for a run.
+-- Expired and unapproved rows can never be auto-selected for a run.
 select aria_agent_memory_test.set_claims('a3000000-0000-4000-8000-000000000003');
 set local role service_role;
 select aria_agent_memory_test.assert_sqlstate(
-  'expired memory is rejected by the atomic receipt function',
-  $$select public.create_agent_run_with_memory_context('11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000003','[{"memoryId":"73000000-0000-4000-8000-000000000003","memoryRevision":1,"contentSha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","position":0,"byteCount":1}]')$$,
-  array['22023']
-);
-select aria_agent_memory_test.assert_sqlstate(
-  'pending memory is rejected by the atomic receipt function',
-  $$select public.create_agent_run_with_memory_context('11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000003','[{"memoryId":"74000000-0000-4000-8000-000000000004","memoryRevision":1,"contentSha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","position":0,"byteCount":1}]')$$,
-  array['22023']
-);
-select aria_agent_memory_test.assert_sqlstate(
   'cross-workspace actors cannot be attributed to a run',
-  $$select public.create_agent_run_with_memory_context('11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001','b1000000-0000-4000-8000-000000000001','[]')$$,
+  $$select public.create_agent_run_with_memory_context('11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001','b1000000-0000-4000-8000-000000000001')$$,
   array['22023']
 );
+select public.create_agent_run_with_memory_context(
+  '11111111-1111-4111-8111-111111111111',
+  'a2000000-0000-4000-8000-000000000002',
+  '62000000-0000-4000-8000-000000000002',
+  'a3000000-0000-4000-8000-000000000003'
+) as empty_run_id \gset
 reset role;
+
+select aria_agent_memory_test.assert_scalar(
+  'expired and pending memories are absent from every run receipt',
+  $$select count(*)::text from public.agent_run_memory_context where memory_id in ('73000000-0000-4000-8000-000000000003','74000000-0000-4000-8000-000000000004')$$,
+  '0'
+);
+select aria_agent_memory_test.assert_scalar(
+  'empty-context runs still persist the exact actor',
+  $$select (actor_id='a3000000-0000-4000-8000-000000000003' and spec_id='62000000-0000-4000-8000-000000000002')::text
+      from public.agent_runs
+     where id=(select id from public.agent_runs where spec_id='62000000-0000-4000-8000-000000000002' order by started_at desc limit 1)$$,
+  'true'
+);
+select aria_agent_memory_test.assert_scalar(
+  'changed content cannot re-enter runtime while pending review',
+  $$select count(*)::text
+      from public.agent_run_memory_context
+     where run_id=(select id from public.agent_runs where spec_id='62000000-0000-4000-8000-000000000002' order by started_at desc limit 1)$$,
+  '0'
+);
 
 rollback;

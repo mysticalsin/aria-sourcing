@@ -25,6 +25,7 @@ let vaultProvider = "OpenAI";
 let agentSpecAvailable = true;
 let runPersistenceFails = false;
 const resolverCalls: Array<{ id?: string; provider?: string }> = [];
+const serviceReadTables: string[] = [];
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
 const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const agentSpecId = "22222222-2222-4222-8222-222222222222";
@@ -66,7 +67,10 @@ const service = {
       ? { message: "synthetic persistence failure" }
       : null,
   }),
-  from: () => {
+  from: (table: string) => {
+    if (["agent_run_memory_context", "agent_memories", "api_keys"].includes(table)) {
+      serviceReadTables.push(table);
+    }
     const query: any = {
       insert: () => query,
       update: () => query,
@@ -190,6 +194,7 @@ try {
     upstreamCalls = 0;
     toolLoopCalls = 0;
     graphCalls = 0;
+    serviceReadTables.length = 0;
   };
 
   const viewerResponse = await hermesRoute.POST(hermesRequest());
@@ -284,6 +289,10 @@ try {
   const persistenceFailureAgent = await agentRoute.POST(agentRequest());
   ok("graph agent fails closed when run-context persistence fails", persistenceFailureAgent.status === 503);
   ok("run-context persistence failure prevents model egress", graphCalls === 0 && upstreamCalls === 0);
+  ok(
+    "run-context persistence failure performs zero vault, memory-key, or Tavily-key resolution",
+    resolverCalls.length === 0 && serviceReadTables.length === 0,
+  );
 
   runPersistenceFails = false;
   resetCalls();
