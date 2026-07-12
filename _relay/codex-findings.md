@@ -193,7 +193,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** If a provider accepts an email and the response then times out or disconnects, the catch path marks the ledger skipped. The partial unique claim becomes retryable and the same approved message can be sent again.
 **Repro/evidence:** Gmail, Graph, and provider helpers do not distinguish proven pre-send failure from unknown post-acceptance failure. Migration `0013` makes skipped rows retryable.
 **Suggested fix:** Persist an immutable request identity and use a non-retryable reconciliation state for ambiguous outcomes.
-**Status:** fixed in source (uncommitted; migration 0022 adds send_attempt_id + non-retryable 'ambiguous' status with rebuilt de-dupe indexes; adapters classify pre-transport vs unknown outcomes; unknown reconciles ambiguous + 502 reconciliation-required; tests/email-send-ambiguity.mts 54/54)
+**Status:** fixed (aa60671; migration 0022 adds send_attempt_id + non-retryable 'ambiguous' status with rebuilt de-dupe indexes; adapters classify pre-transport vs unknown outcomes; unknown reconciles ambiguous + 502 reconciliation-required; tests/email-send-ambiguity.mts 54/54)
 
 ## 2026-07-09 — Email daily cap count is not serialized
 **Severity:** correctness
@@ -201,7 +201,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** `claim_and_record()` counts current sends and inserts without locking the seat or a per-seat daily counter. Two different candidates can concurrently pass at cap minus one.
 **Repro/evidence:** The function reads and counts in separate statements under normal transaction isolation with no shared lock.
 **Suggested fix:** Lock the seat or use a transactional daily counter before count and reservation; test two simultaneous claims at cap minus one.
-**Status:** fixed in source (uncommitted; migration 0021 create-or-replaces claim_and_record with a workspace-scoped SELECT ... FOR UPDATE on agent_seats before the cap count; 0019 search_path and service_role-only ACL preserved; tests/claim-serialization.mts 14/14; live-PG proof via scripts/test-db-privileges.sh in CI)
+**Status:** fixed (d29cd40; migration 0021 create-or-replaces claim_and_record with a workspace-scoped SELECT ... FOR UPDATE on agent_seats before the cap count; 0019 search_path and service_role-only ACL preserved; tests/claim-serialization.mts 14/14; live-PG proof via scripts/test-db-privileges.sh in CI)
 
 ## 2026-07-11 - Production data plane is down while deploy is green
 **Severity:** correctness
@@ -249,7 +249,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Inbound messages have no AgentSpec, run, conversation, sender, or provider-thread foreign key. WhatsApp assigns a reply to the latest outbound address, and email matching falls back to sender address and active campaign.
 **Repro/evidence:** `src/lib/whatsapp-inbound.ts:179-196` selects the latest outbound row by workspace and phone. `src/lib/store.ts:2777-2793` matches email by sender and campaign, even though provider thread IDs are fetched.
 **Suggested fix:** Add canonical agent-owned conversations and provider reply/thread binding; ambiguous matches must enter triage.
-**Status:** fixed in source (uncommitted; migration 0023 adds agent_conversations + conversation_id FKs and service-only resolve_whatsapp_inbound_conversation RPC; whatsapp-inbound drops latest-outbound matching and fails closed to triage on no/ambiguous conversation; email auto-match resolves provider thread first and never falls back to active campaign; tests/inbound-conversation-identity.mts 30/30)
+**Status:** fixed (318f552; migration 0023 adds agent_conversations + conversation_id FKs and service-only resolve_whatsapp_inbound_conversation RPC; whatsapp-inbound drops latest-outbound matching and fails closed to triage on no/ambiguous conversation; email auto-match resolves provider thread first and never falls back to active campaign; tests/inbound-conversation-identity.mts 30/30)
 
 ## 2026-07-11 - Agent memory is shared seat state and unused by runs
 **Severity:** spec-mismatch

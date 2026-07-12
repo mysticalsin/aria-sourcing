@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 29
 agent: claude-opus-4-8
 updated: 2026-07-11 23:55 EDT
-status: campaign-blockers-fixed-ci-hardening-in-flight-owner-gates-pending
+status: exact-sha-ci-codeql-green-owner-gates-are-the-only-blockers
 ---
 
 # Handoff — recovery candidate integrated; owner gates are the critical path
@@ -41,7 +41,7 @@ status: campaign-blockers-fixed-ci-hardening-in-flight-owner-gates-pending
 
 ## Next steps
 
-1. Watch CI + CodeQL on the branch tip (now `6deeccd`; `gh run list --branch deploy/fly-github-actions`); fix red if any — the release SHA for dispatch is whatever tip is fully green.
+1. DONE: CI + CodeQL fully green on `8b460c863893977152009467df6697e5a59fc8d3` (round 5; runs on 2026-07-12). Gate-9 evidence exists. Round-by-round CI fixes: ignore-unfixed policy + npm strip (f518572), linkedin-client-id secret-rule scoping (b75f93c), image CVE patching (b1fc503), gosu explicit-whiteout + reviewed-pin moves (8b460c8). Meta commits after 8b460c8 re-trigger CI on the new tip; dispatch uses the green tip at dispatch time.
 2. Owner executes blockers 1–4 (token, secrets, protection, volume receipt). Everything is written to be executable without conversation context in shift 28's next-steps 3–7 (archived at `_relay/archive/2026-07-11-2020-codex-gpt-5.md`).
 3. Dispatch: `gh workflow run "Deploy Aria Mantu (Fly)" --ref deploy/fly-github-actions -f release_sha=<green-tip-40-char-sha> -f recovery_receipt_sha256=<reviewed-receipt-sha>` (only after gates 1–4; use the exact green tip, currently `6deeccd...`).
 4. Live acceptance per shift-28 step 12, then admin provisioning via `scripts/provision-first-admin.sh` (out-of-band credential), then synthetic campaign acceptance.
