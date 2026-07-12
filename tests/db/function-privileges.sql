@@ -110,7 +110,8 @@ begin
       ('public.record_whatsapp_delivery_event(uuid,uuid,text,text,timestamptz,integer)'),
       ('public.claim_whatsapp_inbound_processing(uuid,uuid)'),
       ('public.complete_whatsapp_inbound_processing(uuid,uuid,text,text)'),
-      ('public.finalize_whatsapp_provider_failure(uuid,uuid,text)')
+      ('public.finalize_whatsapp_provider_failure(uuid,uuid,text)'),
+      ('public.resolve_whatsapp_inbound_conversation(uuid,uuid)')
     ) as service_functions(signature)
   loop
     select pg_get_functiondef(to_regprocedure(item.signature)) into function_def;

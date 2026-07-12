@@ -8,7 +8,7 @@ particular production deployment is healthy.
 ## Source candidate
 
 - Node 22, Next.js 16, React 19, and TypeScript 5 are enforced by the repository.
-- `npm test` runs 121 chained checks: 17 pretest commands plus 104 application
+- `npm test` runs 124 chained checks: 17 pretest commands plus 107 application
   test commands.
 - Local acceptance requires typecheck, lint, the full test chain, the isolated
   production build, the exact database restart test, and the database authority

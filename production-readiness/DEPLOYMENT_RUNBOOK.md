@@ -577,6 +577,9 @@ supabase db push
 # 0018_first_admin.sql → first-admin bootstrap path
 # 0019_agent_authority_and_integrations.sql → normalized Databricks authority and final routine ACLs
 # 0020_dust_authority.sql → normalized Dust authority, append-only config audit, and legacy-state removal
+# 0021_claim_serialization.sql → per-seat FOR UPDATE lock serializes the daily-cap count in claim_and_record
+# 0022_email_send_reconciliation.sql → immutable send_attempt_id + non-retryable 'ambiguous' state for unknown post-acceptance outcomes
+# 0023_conversation_identity.sql → canonical agent_conversations + provider-thread binding; ambiguous inbound fails closed to triage
 ```
 
 **IMPORTANT:** RLS must be enabled on every table listed above. Verify after each migration:
