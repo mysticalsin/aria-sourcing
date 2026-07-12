@@ -4,6 +4,15 @@
 # migration, which is the only safe fresh-cluster point for owner-local ACLs and
 # split credentials. The init-complete marker remains last and fail-closed.
 FROM supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00
+# Patch upstream-fixable HIGH CVEs without moving the empirically-proven postgres
+# base digest: apk patch-upgrades the alpine 3.23 libs with released fixes (c-ares,
+# OpenSSL), and gosu — a Go binary carrying fixable Go-stdlib CVEs — is replaced by
+# alpine's C su-exec, argument-compatible for the entrypoint's `gosu user cmd` use
+# (the official postgres:alpine idiom).
+RUN apk upgrade --no-cache \
+  && apk add --no-cache su-exec \
+  && rm -f /usr/local/bin/gosu \
+  && ln -s /sbin/su-exec /usr/local/bin/gosu
 # /var/lib/postgresql is both the durable volume root and postgres HOME.
 # Configure every process, including Fly SSH consoles, to keep history off the
 # volume; the entrypoint also removes known regular history files defensively.

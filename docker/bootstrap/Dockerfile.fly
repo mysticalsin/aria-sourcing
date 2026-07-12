@@ -2,6 +2,14 @@
 # real tenant. Fly has no bind mounts, so every reviewed SQL surface is copied
 # into the immutable image. Build context = repo root.
 FROM postgres:17-bookworm@sha256:5530681ea5d3e2ed4ce396f9b5cb443efbac6baf2a8a19c0c0635e40ae7eadce
+# Patch upstream-fixable CVEs at build time (Debian patch upgrades only) and drop
+# gosu: this image is a psql client whose entrypoint below never starts postgres,
+# so the base image's root-drop helper (a Go binary carrying fixable Go-stdlib
+# CVEs) is dead weight in the scan surface.
+RUN apt-get update \
+  && apt-get upgrade -y \
+  && rm -rf /var/lib/apt/lists/* \
+  && rm -f /usr/local/bin/gosu
 COPY docker/bootstrap/run.fly.sh /usr/local/bin/run.fly.sh
 COPY supabase/migrations         /migrations
 COPY docker/bootstrap/supabase-admin-reconciliation.sql /opt/aria/supabase-admin-reconciliation.sql
