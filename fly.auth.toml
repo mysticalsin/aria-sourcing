@@ -12,6 +12,7 @@ primary_region = "cdg"
   GOTRUE_SITE_URL               = "https://aria-mantu-app.fly.dev"    # was http://localhost:3000
   GOTRUE_URI_ALLOW_LIST         = "https://aria-mantu-app.fly.dev/**" # was "*"
   GOTRUE_DB_DRIVER              = "postgres"
+  GOTRUE_PASSWORD_MIN_LENGTH    = "5"                           # owner-set floor (default 6); short admin password by request
   GOTRUE_DISABLE_SIGNUP         = "true"                        # single-admin tenant (was "false"); see runbook step 11
   GOTRUE_JWT_ADMIN_ROLES        = "service_role"
   GOTRUE_JWT_AUD                = "authenticated"
