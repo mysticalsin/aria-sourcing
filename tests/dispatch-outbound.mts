@@ -1,10 +1,14 @@
 import { createHash } from "crypto";
+import { readFileSync } from "node:fs";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { dispatchDue } from "../src/lib/dispatch-outbound";
+import { NextRequest } from "next/server";
+import * as dispatchModule from "../src/lib/dispatch-outbound";
 import {
   APPROVED_WHATSAPP_TEMPLATE_AUDIT_SUBJECT,
   buildApprovedWhatsAppTemplateAudit,
 } from "../src/lib/whatsapp-template-queue";
+
+const { dispatchDue } = dispatchModule;
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) { if (cond) { pass++; } else { fail++; console.log("FAIL:", name); } }
@@ -872,17 +876,126 @@ const LIVE_WHATSAPP_CONTACT: Row = {
 // opt-out, suppression, and durable-outbox policy.
 // ---------------------------------------------------------------------------
 {
+  const savedTwilio = {
+    sid: process.env.TWILIO_ACCOUNT_SID,
+    token: process.env.TWILIO_AUTH_TOKEN,
+    from: process.env.TWILIO_FROM,
+  };
+  const originalFetch = globalThis.fetch;
+  process.env.TWILIO_ACCOUNT_SID = "AC_TEST";
+  process.env.TWILIO_AUTH_TOKEN = "test-token";
+  process.env.TWILIO_FROM = "+15005550006";
+  let providerCalls = 0;
+  globalThis.fetch = (async () => {
+    providerCalls++;
+    return { ok: true, status: 201, json: async () => ({ sid: "SM-must-not-send" }) } as Response;
+  }) as typeof fetch;
   const db = makeFakeDb({
     outbound: [baseMsg({ channel: "SMS", to_address: "+14155552671" })],
     approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "human" }],
     seats: [{ ...LIVE_SEAT, provider: "Twilio SMS" }],
     claim: { allowed: true },
   });
-  const stats = await dispatchDue(db.client, 10);
-  ok("SMS policy: dispatcher blocks until the consent policy exists", stats.blocked === 1);
-  ok("SMS policy: dispatcher never claims or sends", db.rpcCalls.length === 0);
-  ok("SMS policy: reason is explicit", JSON.stringify(db.updates.at(-1)?.patch).includes("sms-disabled-pending-consent-policy"));
+  try {
+    const stats = await dispatchDue(db.client, 10);
+    ok("SMS policy: dispatcher blocks until the consent policy exists", stats.blocked === 1);
+    ok("SMS policy: dispatcher never claims", db.rpcCalls.length === 0);
+    ok("SMS policy: dispatcher never calls Twilio", providerCalls === 0);
+    ok("SMS policy: reason is explicit", JSON.stringify(db.updates.at(-1)?.patch).includes("sms-disabled-pending-consent-policy"));
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (savedTwilio.sid === undefined) delete process.env.TWILIO_ACCOUNT_SID;
+    else process.env.TWILIO_ACCOUNT_SID = savedTwilio.sid;
+    if (savedTwilio.token === undefined) delete process.env.TWILIO_AUTH_TOKEN;
+    else process.env.TWILIO_AUTH_TOKEN = savedTwilio.token;
+    if (savedTwilio.from === undefined) delete process.env.TWILIO_FROM;
+    else process.env.TWILIO_FROM = savedTwilio.from;
+  }
 }
+
+// The dormant SMS provider branch must use a fail-closed reconciliation rule
+// before the channel can ever be enabled. Unknown acceptance holds the ledger
+// slot; only a definitive rejection may release it.
+type SmsOutcome = {
+  status: "sent" | "dry-run" | "error";
+  deliveryState: "accepted" | "not-sent" | "unknown";
+  provider: string;
+  detail: string;
+  id?: string;
+};
+const resolveSmsLedgerStatus = (dispatchModule as unknown as {
+  resolveSmsLedgerStatus?: (outcome: SmsOutcome) => "sent" | "skipped" | "ambiguous";
+}).resolveSmsLedgerStatus;
+ok("SMS reconciliation: a production resolver exists", typeof resolveSmsLedgerStatus === "function");
+if (resolveSmsLedgerStatus) {
+  ok(
+    "SMS reconciliation: provider timeout stays non-retryable ambiguous",
+    resolveSmsLedgerStatus({ status: "error", deliveryState: "unknown", provider: "Twilio SMS", detail: "timeout" }) === "ambiguous",
+  );
+  ok(
+    "SMS reconciliation: accepted response without SID stays ambiguous",
+    resolveSmsLedgerStatus({ status: "sent", deliveryState: "accepted", provider: "Twilio SMS", detail: "missing SID" }) === "ambiguous",
+  );
+  ok(
+    "SMS reconciliation: definitive rejection alone releases the ledger",
+    resolveSmsLedgerStatus({ status: "error", deliveryState: "not-sent", provider: "Twilio SMS", detail: "Twilio 400" }) === "skipped",
+  );
+  ok(
+    "SMS reconciliation: accepted response with SID becomes sent",
+    resolveSmsLedgerStatus({ status: "sent", deliveryState: "accepted", provider: "Twilio SMS", detail: "accepted", id: "SM123" }) === "sent",
+  );
+}
+
+const dispatcherSource = readFileSync(new URL("../src/lib/dispatch-outbound.ts", import.meta.url), "utf8");
+ok(
+  "SMS reconciliation: dormant branch uses the fail-closed resolver",
+  /const smsLedgerStatus = resolveSmsLedgerStatus\(outcome\)/.test(dispatcherSource),
+);
+
+// The public route rejects SMS before opening a database client or invoking any
+// provider path. Exercise the response and pin the side-effect ordering.
+{
+  const originalFetch = globalThis.fetch;
+  let providerCalls = 0;
+  globalThis.fetch = (async () => {
+    providerCalls++;
+    throw new Error("SMS API guard must return before provider access");
+  }) as typeof fetch;
+  try {
+    const sendModule = await import("../src/app/api/outreach/send/route");
+    const sendPost = ((sendModule as any).POST ?? (sendModule as any).default?.POST) as (req: NextRequest) => Promise<Response>;
+    const response = await sendPost(new NextRequest("http://localhost/api/outreach/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        seatId: "22222222-2222-4222-8222-222222222222",
+        messageId: "message-sms-1",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@example.test",
+        campaignId: "campaign-1",
+        subject: "A role you may like",
+        body: "Hello, are you open to hearing about a role?",
+        channel: "SMS",
+        phone: "+14155552671",
+        confirmLive: true,
+      }),
+    }));
+    const body = await response.json() as { status?: string };
+    ok("SMS policy: public API returns manual-required 409", response.status === 409 && body.status === "manual-required");
+    ok("SMS policy: public API performs zero provider calls", providerCalls === 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+const sendRouteSource = readFileSync(new URL("../src/app/api/outreach/send/route.ts", import.meta.url), "utf8");
+const smsApiGuard = sendRouteSource.indexOf('if (channel === "SMS")');
+const serverClientOpen = sendRouteSource.indexOf("const supabase = await getServerSupabase()", smsApiGuard);
+const providerCall = sendRouteSource.indexOf("sendViaProvider({", smsApiGuard);
+ok(
+  "SMS policy: API guard precedes database and provider side effects",
+  smsApiGuard >= 0 && serverClientOpen > smsApiGuard && providerCall > smsApiGuard,
+);
 
 console.log(`RESULT dispatch-outbound: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

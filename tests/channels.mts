@@ -168,6 +168,7 @@ clearChannelEnv();
   }) as typeof fetch;
   const res = await sendSms({ to: "+14155552671", body: "hi" });
   ok("SMS not configured -> dry-run", res.status === "dry-run");
+  ok("SMS not configured -> proven not sent", res.deliveryState === "not-sent");
   ok("SMS not configured -> fetch never called", !called);
   restoreFetch();
 }
@@ -185,8 +186,20 @@ process.env.TWILIO_FROM = "+15005550006";
   }) as typeof fetch;
   const res = await sendSms({ to: "+14155552671", body: "hi" });
   ok("SMS success -> status sent", res.status === "sent");
+  ok("SMS success -> accepted delivery state", res.deliveryState === "accepted");
   ok("SMS success -> id taken from the response body", res.id === "SM999");
   ok("SMS success -> hits the Twilio Messages endpoint for the configured account", calledUrl.includes("api.twilio.com") && calledUrl.includes("AC123"));
+  restoreFetch();
+}
+
+// A successful HTTP status without Twilio's durable message SID cannot prove
+// acceptance. Treat it as unknown so no caller can release the duplicate guard.
+{
+  globalThis.fetch = (async () => jsonResponse(201, {})) as typeof fetch;
+  const res = await sendSms({ to: "+14155552671", body: "hi" });
+  ok("SMS success without provider id -> error", res.status === "error");
+  ok("SMS success without provider id -> ambiguous delivery", res.deliveryState === "unknown");
+  ok("SMS success without provider id -> explicit reconciliation detail", /message sid/i.test(res.detail));
   restoreFetch();
 }
 
@@ -195,7 +208,18 @@ process.env.TWILIO_FROM = "+15005550006";
   globalThis.fetch = (async () => jsonResponse(400, { message: "bad request" })) as typeof fetch;
   const res = await sendSms({ to: "+14155552671", body: "hi" });
   ok("SMS upstream 400 -> status error", res.status === "error");
+  ok("SMS upstream 400 -> proven rejected", res.deliveryState === "not-sent");
   ok("SMS upstream 400 -> detail mentions the status code", res.detail.includes("400"));
+  restoreFetch();
+}
+
+// A timeout or server error may be returned after Twilio accepted the request.
+// Both states require reconciliation and must never be called retryable.
+for (const status of [408, 503]) {
+  globalThis.fetch = (async () => jsonResponse(status, { message: "upstream uncertain" })) as typeof fetch;
+  const res = await sendSms({ to: "+14155552671", body: "hi" });
+  ok(`SMS upstream ${status} -> status error`, res.status === "error");
+  ok(`SMS upstream ${status} -> ambiguous delivery`, res.deliveryState === "unknown");
   restoreFetch();
 }
 
@@ -206,6 +230,7 @@ process.env.TWILIO_FROM = "+15005550006";
   }) as typeof fetch;
   const res = await sendSms({ to: "+14155552671", body: "hi" });
   ok("SMS fetch throws -> caught into status error (never throws out)", res.status === "error");
+  ok("SMS fetch throws -> ambiguous delivery", res.deliveryState === "unknown");
   ok("SMS fetch throws -> detail carries the underlying error message", res.detail === "timeout");
   restoreFetch();
 }
@@ -219,6 +244,7 @@ process.env.TWILIO_FROM = "+15005550006";
   }) as typeof fetch;
   const res = await sendSms({ to: "###", body: "hi" });
   ok("SMS invalid phone -> status error", res.status === "error");
+  ok("SMS invalid phone -> proven not sent", res.deliveryState === "not-sent");
   ok("SMS invalid phone -> fetch never called", !called);
   restoreFetch();
 }

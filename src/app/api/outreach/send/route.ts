@@ -47,8 +47,9 @@ function record(value: unknown): Record<string, unknown> | null {
  *   2. The caller has an authenticated session.
  *   3. The named seat belongs to the caller's workspace, is `live`, and has a
  *      verified domain. The From address is taken from the SEAT, never the body.
- *   4. Email/SMS clears `claim_and_record`; WhatsApp is written to the durable
+ *   4. Email clears `claim_email_outbound`; WhatsApp is written to the durable
  *      outbox and clears `claim_whatsapp_outbound` before the dispatcher sends.
+ *      SMS remains disabled before any database or provider work.
  *   5. `confirmLive` is explicitly true.
  * Anything else degrades to dry-run. In DEMO mode there is no enforcement
  * backend, so the route NEVER sends — it always returns dry-run.

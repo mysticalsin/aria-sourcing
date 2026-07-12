@@ -161,7 +161,16 @@ export async function sendSms(req: ChannelSendRequest): Promise<ChannelSendOutco
     });
     if (!res.ok) return { status: "error", deliveryState: failedHttpDeliveryState(res.status), provider: "Twilio SMS", detail: `Twilio ${res.status}` };
     const data = (await res.json().catch(() => ({}))) as { sid?: string };
-    return { status: "sent", deliveryState: "accepted", provider: "Twilio SMS", detail: "Sent via SMS.", id: data.sid };
+    const providerMessageId = data.sid?.trim();
+    if (!providerMessageId) {
+      return {
+        status: "error",
+        deliveryState: "unknown",
+        provider: "Twilio SMS",
+        detail: "Twilio response did not include a message SID for reconciliation.",
+      };
+    }
+    return { status: "sent", deliveryState: "accepted", provider: "Twilio SMS", detail: "Sent via SMS.", id: providerMessageId };
   } catch (err) {
     return { status: "error", deliveryState: "unknown", provider: "Twilio SMS", detail: err instanceof Error ? err.message : "SMS send failed." };
   }

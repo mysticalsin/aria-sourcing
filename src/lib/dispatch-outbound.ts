@@ -2,13 +2,12 @@
    OUTBOUND DISPATCHER — the ONLY path from messages_outbound to the wire.
 
    Every queued message that is due must clear, in order:
-     1. an approval row for exactly this message id + body hash (autopilot
-        writes one when scheduling; a human click writes one in the Replies UI),
+     1. a named human approval row for exactly this message id + body hash,
      2. the human-likeness gate — again, defence in depth,
      3. a live seat of the right provider,
      4. claim_whatsapp_outbound for WhatsApp, which atomically validates
         consent, DNC, template/window, seat, and the delivery ledger.
-        SMS uses the existing claim_and_record path.
+        SMS stays disabled before any claim until it has equivalent controls.
    Anything that fails flips to 'blocked' (human queue) or 'failed'; an
    unconfigured provider is counted separately. A message never silently retries
    into a double-send (dedupe_hash UNIQUE + ledger claim).
@@ -22,7 +21,7 @@
 
 import { createHash } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { sendWhatsApp, sendSms } from "@/lib/channels";
+import { sendWhatsApp, sendSms, type ChannelSendOutcome } from "@/lib/channels";
 import { gateOutbound } from "@/lib/gate";
 import { safeLog } from "@/lib/log-redact";
 import { approvalHash } from "@/lib/outreach-content";
@@ -64,6 +63,25 @@ export interface DispatchStats {
 }
 
 type DispatchOutcomeCounter = Exclude<keyof DispatchStats, "processed">;
+
+/**
+ * Maps a Twilio result to the durable ledger state used if SMS is enabled in a
+ * future release. Only a definitive provider rejection may release the claim.
+ * A timeout, 5xx, disconnect, contradictory result, or response without a
+ * durable SID remains ambiguous and therefore holds the de-duplication slot.
+ */
+export function resolveSmsLedgerStatus(outcome: ChannelSendOutcome): "sent" | "skipped" | "ambiguous" {
+  if (
+    outcome.status === "sent" &&
+    outcome.deliveryState === "accepted" &&
+    typeof outcome.id === "string" &&
+    outcome.id.trim().length > 0
+  ) {
+    return "sent";
+  }
+  if (outcome.status !== "sent" && outcome.deliveryState === "not-sent") return "skipped";
+  return "ambiguous";
+}
 
 async function cacheWhatsAppGateVerdict(
   supabase: SupabaseClient,
@@ -465,19 +483,25 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         stats.failed++;
         continue;
       }
+      const smsLedgerStatus = resolveSmsLedgerStatus(outcome);
       if (claimObj.ledger_id) {
         await supabase
           .from("outreach_ledger")
           .update({
-            status: outcome.status === "sent" ? "sent" : "skipped",
-            reason: outcome.status === "sent" ? null : outcome.detail,
+            status: smsLedgerStatus,
+            reason: smsLedgerStatus === "sent" ? null : outcome.detail,
           })
           .eq("id", claimObj.ledger_id);
       }
+      const providerUnconfigured = outcome.status === "dry-run" && smsLedgerStatus === "skipped";
       await finish(
-        outcome.status === "sent" ? "sent" : outcome.status === "dry-run" ? "blocked" : "failed",
-        outcome.status === "dry-run" ? { pass: false, reasons: ["provider-unconfigured"] } : undefined,
-        outcome.status === "dry-run" ? "unconfigured" : undefined,
+        smsLedgerStatus === "sent" ? "sent" : providerUnconfigured ? "blocked" : "failed",
+        smsLedgerStatus === "ambiguous"
+          ? { pass: false, reasons: ["sms-provider-reconciliation-required"] }
+          : providerUnconfigured
+            ? { pass: false, reasons: ["provider-unconfigured"] }
+            : undefined,
+        providerUnconfigured ? "unconfigured" : undefined,
       );
     } catch (err) {
       safeLog("dispatch-outbound: error", { message: err instanceof Error ? err.message : "unknown" });
