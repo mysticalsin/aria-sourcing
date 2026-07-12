@@ -287,13 +287,6 @@ export async function processStoredWhatsAppInbound(
       return retry("review-draft-write-failed");
     }
 
-    if (guardrails.autopilot && (guardrails.canary_remaining ?? 0) > 0) {
-      const { error: canaryErr } = await supabase
-        .from("agent_specs")
-        .update({ guardrails: { ...guardrails, canary_remaining: (guardrails.canary_remaining ?? 0) - 1 } })
-        .eq("id", spec.id);
-      if (canaryErr) safeLog("whatsapp inbound: canary update failed", { message: canaryErr.message });
-    }
     return complete("processed");
   } catch (err) {
     safeLog("whatsapp inbound: processing error", { message: err instanceof Error ? err.message : "unknown" });

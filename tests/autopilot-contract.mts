@@ -67,6 +67,13 @@ const autopilot = source("src/lib/autopilot.ts");
 ok("legacy reply guardrails are documented as non-authoritative", /legacy compatibility only/i.test(autopilot) && /never grant provider delivery authority/i.test(autopilot));
 ok("reply routing comments do not claim a scheduled send", !/schedule send/i.test(autopilot));
 
+const whatsappInbound = source("src/lib/whatsapp-inbound.ts");
+ok(
+  "WhatsApp inbound never mutates legacy canary counters while queuing review drafts",
+  !/canary_remaining[\s\S]{0,220}\.update\(/i.test(whatsappInbound) &&
+    !/canary update failed/i.test(whatsappInbound),
+);
+
 const readinessStatus = source("production-readiness/STATUS.md");
 ok(
   "current readiness status declares reply drafting queue-only",
