@@ -1,6 +1,0 @@
-2026-07-10T15:53:21.928215Z ERROR codex_core::tools::router: error=apply_patch verification failed: Failed to find expected lines in /Users/tony/Library/CloudStorage/OneDrive-MantuGroup/Documents/Chief of Staff/Apps Source/MSourcing/production-readiness/LOCAL_SETUP.md:
-This runs `supabase start` (pulls images on first run), applies **all migrations
-0001–0012 including tenant isolation, durable approval lifecycle, WhatsApp
-delivery policy, and email unsubscribe**, and writes `.env.local` from the local
-2026-07-10T15:56:33.578507Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
-2026-07-10T15:59:38.586539Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit

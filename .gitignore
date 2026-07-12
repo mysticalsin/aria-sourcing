@@ -1,5 +1,7 @@
 # dependencies
 /node_modules
+/.localbin/
+/.rocket-fuel/
 /.pnp
 .pnp.js
 

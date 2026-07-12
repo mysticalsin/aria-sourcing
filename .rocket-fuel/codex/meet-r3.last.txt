@@ -1,5 +1,0 @@
-blocker: missing_evidence .rocket-fuel/PLAN.md:15 cites scratchpad/g3-tsc.log and scratchpad/g3-test.log as fresh gate proof, but both files are absent; the 79 test + 3 pretest = 82 count checks out, the cited proof does not.
-risk: the 6-site chokepoint is complete only if tavilyKey is threaded into makeSourcingToolRunner/runner.run too; src/lib/ai/tool-loop.ts:50 returns server.run before the BUILTIN_WEB_URL branch, while src/lib/ai/sourcing-tools.ts:76-110 currently calls runWebTool directly.
-question: does Rock 2 harden every encryptSecret persistence path or only provider-key writes; OAuth/token writers in google, microsoft, email sync, outreach, and calendar can still be plaintext if the shared missing-key predicate remains production-only.
-nit: .rocket-fuel/PLAN.md:1 still says PLAN v2 while the body describes v3.
-VERDICT: REVISE

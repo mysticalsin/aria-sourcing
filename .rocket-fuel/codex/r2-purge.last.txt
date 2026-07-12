@@ -1,5 +1,0 @@
-R2 purge is done. `npx tsc --noEmit` passed clean with exit 0.
-
-Proof notes: `node --import tsx tests/floor.mts` passed (`RESULT floor: 11 passed, 0 failed`). Exact `npx tsx tests/floor.mts` is blocked in this sandbox by `listen EPERM` on the tsx temp pipe. Grep checks are clean for deleted-file imports and postprocessing imports. Root PNG check is empty. `vercel.json` headers are removed; HSTS is now in `next.config.mjs`.
-
-VERDICT: SHIP

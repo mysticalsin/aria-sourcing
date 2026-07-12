@@ -1,5 +1,0 @@
-nit: no blocking findings. v3 closes the round-2 leak by making `authQueryParam` a closed enum shared by UI/schema validation and redaction, and B1 now places the guard before activity persistence.
-
-nit: DNS-rebind remains correctly scoped as pre-existing MCP hardening work, not Tavily query-auth scope.
-
-VERDICT: APPROVED

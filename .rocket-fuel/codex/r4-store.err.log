@@ -1,3 +1,0 @@
-2026-07-10T16:25:15.699217Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
-2026-07-10T16:27:53.864304Z ERROR codex_core::tools::router: error=patch rejected: writing outside of the project; rejected by user approval settings
-2026-07-10T16:28:20.705958Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit

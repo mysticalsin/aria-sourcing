@@ -10,7 +10,17 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-SB="./.localbin/supabase"; [ -x "$SB" ] || SB="supabase"
+readonly SUPABASE_CLI_VERSION="2.108.0"
+if ! command -v supabase >/dev/null 2>&1; then
+  echo "Supabase CLI $SUPABASE_CLI_VERSION is required on PATH." >&2
+  echo "Install it using the official Supabase CLI setup instructions, then retry." >&2
+  exit 1
+fi
+if [ "$(supabase --version)" != "$SUPABASE_CLI_VERSION" ]; then
+  echo "Supabase CLI $SUPABASE_CLI_VERSION is required; found $(supabase --version)." >&2
+  exit 1
+fi
+readonly SB="supabase"
 
 if ! docker info >/dev/null 2>&1; then
   echo "✗ Docker is not running. Open Docker Desktop, accept the first-launch onboarding,"

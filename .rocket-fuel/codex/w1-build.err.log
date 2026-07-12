@@ -1,2 +1,0 @@
-2026-07-10T13:09:44.596650Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
-2026-07-10T13:12:49.603375Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit

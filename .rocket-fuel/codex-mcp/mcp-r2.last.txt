@@ -1,7 +1,0 @@
-blocker: B3 only promises redaction for “known auth query params”, but B2 keeps `authQueryParam` as an arbitrary string. If the UI/admin can configure `authStyle:"query"` with any param name, a non-known param can still leak through `redactSecrets`, `safeLog`, mcp-client errors, or test-route messages. Fix by either constraining `authQueryParam` to an enum containing `tavilyApiKey`, or redacting the configured param dynamically everywhere the assembled URL/error can surface.
-
-risk: B1 should say auth-query-param detection is case-normalized and applied before store activity creation. Current store activity records `server.url` in notes, so the save guard must run before `addMcpServer` constructs the activity entry.
-
-nit: The v2 design is otherwise minimal and buildable: `applyMcpAuth` is the right seam, store/schema threading names the correct surfaces, the probe script refactor removes the third assembly path, and DNS-rebind is fairly scoped out as pre-existing.
-
-VERDICT: REVISE

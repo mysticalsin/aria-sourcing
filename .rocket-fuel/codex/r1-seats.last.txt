@@ -1,5 +1,0 @@
-Built R1 fleet seats server-side. `npx tsc --noEmit` passed with exit 0.
-
-Focused proof also passed: `RESULT fleet-seats-server: 10 passed, 0 failed`.
-
-VERDICT: SHIP

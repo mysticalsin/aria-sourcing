@@ -1,4 +1,0 @@
-blocker: false_baseline .rocket-fuel/PLAN.md:16 says .rocket-fuel/gate-proof.txt is committed, but git status shows `?? .rocket-fuel/gate-proof.txt`; `test -f` passes and the file shows tsc PASS + 82 suites, but it is not git-committed in this worktree.
-nit: no remaining runWebTool bypass found; src has only the three production reach paths v4 names: execTool BUILTIN_WEB_URL, makeSourcingToolRunner/server.run, and source route direct call.
-nit: .rocket-fuel/PLAN.md:43 still says Rocks v3 although the plan header is v4.
-VERDICT: REVISE

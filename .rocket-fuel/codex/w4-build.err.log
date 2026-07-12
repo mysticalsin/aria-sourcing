@@ -1,8 +1,0 @@
-2026-07-10T13:31:11.353600Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
-2026-07-10T13:33:07.193613Z ERROR codex_core::tools::router: error=apply_patch verification failed: Failed to find expected lines in /Users/tony/Library/CloudStorage/OneDrive-MantuGroup/Documents/Chief of Staff/Apps Source/MSourcing/src/lib/types.ts:
-  /** Dust (dust.tt) agent-platform connection: workspace id, vault key reference,
-   *  and which agent is locked to each DustTask. Optional — absent means Dust is
-   *  not configured for this workspace. */
-  dust?: DustSettings;
-}
-2026-07-10T13:37:16.736303Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit

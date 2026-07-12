@@ -1,6 +1,0 @@
-2026-07-10T15:44:20.067695Z ERROR codex_core::tools::router: error=apply_patch verification failed: Failed to find expected lines in /Users/tony/Library/CloudStorage/OneDrive-MantuGroup/Documents/Chief of Staff/Apps Source/MSourcing/src/components/floor3d/retro/objects/RobotAgentModel.tsx:
-import { memo, useMemo, useRef, type MutableRefObject } from "react";
-import * as THREE from "three";
-import { useFrame } from "@react-three/fiber";
-import type { RenderAgent3D } from "@/components/floor3d/types";
-2026-07-10T15:45:29.348938Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
