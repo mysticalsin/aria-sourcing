@@ -11,8 +11,13 @@ FROM supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498c
 # (the official postgres:alpine idiom).
 RUN apk upgrade --no-cache \
   && apk add --no-cache su-exec \
-  && rm -f /usr/local/bin/gosu \
-  && ln -s /sbin/su-exec /usr/local/bin/gosu
+  && rm -f /usr/local/bin/gosu
+# Recreate the gosu entrypoint shim in a SEPARATE layer: deleting and recreating the
+# path in one RUN produces a same-path override instead of an explicit whiteout, and
+# image scanners then still see (and flag) the original Go binary in the layer stack.
+# A shell shim to C su-exec keeps `gosu user cmd` working with no Go CVE surface.
+RUN printf '#!/bin/sh\nexec su-exec "$@"\n' > /usr/local/bin/gosu \
+  && chmod 0755 /usr/local/bin/gosu
 # /var/lib/postgresql is both the durable volume root and postgres HOME.
 # Configure every process, including Fly SSH consoles, to keep history off the
 # volume; the entrypoint also removes known regular history files defensively.
