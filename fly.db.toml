@@ -42,7 +42,11 @@ primary_region = "cdg"
     interval     = "15s"
     timeout      = "3s"
 
+# Postgres on 1gb gives tiny shared_buffers → constant disk hits on a starved
+# shared vCPU. shared-cpu-2x/2gb lets the working set stay in cache and doubles
+# query CPU. This is the single biggest DB-side latency win short of collapsing
+# the stack (see DEPLOYMENT.md "Collapse the Supabase stack").
 [[vm]]
-  size   = "shared-cpu-1x"
-  memory = "1gb"
+  size   = "shared-cpu-2x"
+  memory = "2gb"
 # The service has no external ports or public IP, so it remains internal-only.
