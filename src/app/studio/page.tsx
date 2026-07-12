@@ -2,9 +2,8 @@
 
 /* Agent Studio — create and tune on-demand sourcing agents. Flow execution is
    limited to ARIA-owned runtime bindings; Flowise authoring is intentionally
-   private until a per-workspace deployment boundary exists. Autopilot is per-agent
-   opt-in: even ON, every message still clears the human-likeness gate, the
-   approval record, and claim_and_record before the wire. */
+   private until a per-workspace deployment boundary exists. Reply drafting is
+   queue-only: every generated reply waits for a named human reviewer. */
 
 import * as React from "react";
 import { Bot, ShieldCheck, Wand2 } from "lucide-react";
@@ -16,7 +15,6 @@ import {
   Field,
   Input,
   EmptyState,
-  Switch,
   useToast,
 } from "@/components/ui";
 import { PageHeader } from "@/components/app/page-header";
@@ -26,7 +24,6 @@ interface SpecRow {
   name: string;
   role_brief: { title?: string; requiredSkills?: string[] } & Record<string, unknown>;
   channels: string[];
-  guardrails: { autopilot?: boolean; canary_remaining?: number };
   flowise_chatflow_id: string | null;
   status: string;
 }
@@ -76,12 +73,11 @@ export default function StudioPage() {
             requiredSkills: skills.split(",").map((s) => s.trim()).filter(Boolean),
           },
           channels,
-          guardrails: { autopilot: false, canary_remaining: 5 },
         }),
       });
       const json = (await res.json()) as { ok: boolean; reason?: string };
       if (!json.ok) throw new Error(json.reason ?? "Create failed");
-      toast({ title: "Agent created. Autopilot is off until you enable it.", variant: "success" });
+      toast({ title: "Agent created. Generated replies will wait for human review.", variant: "success" });
       setName("");
       setRoleTitle("");
       setSkills("");
@@ -90,33 +86,6 @@ export default function StudioPage() {
       toast({ title: err instanceof Error ? err.message : "Create failed.", variant: "error" });
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function toggleAutopilot(spec: SpecRow) {
-    const next = !spec.guardrails.autopilot;
-    const res = await fetch("/api/agents/specs", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: spec.id,
-        guardrails: {
-          autopilot: next,
-          // Re-arm the canary whenever autopilot is switched on: the first
-          // replies after every activation go to the human queue.
-          canary_remaining: next ? Math.max(spec.guardrails.canary_remaining ?? 0, 5) : spec.guardrails.canary_remaining ?? 0,
-        },
-      }),
-    });
-    const json = (await res.json()) as { ok: boolean };
-    if (json.ok) {
-      toast({
-        title: next ? "Autopilot on - first 5 replies still go to your queue (canary)." : "Autopilot off.",
-        variant: "success",
-      });
-      await load();
-    } else {
-      toast({ title: "Update failed.", variant: "error" });
     }
   }
 
@@ -184,8 +153,8 @@ export default function StudioPage() {
                 {saving ? "Creating…" : "Create agent"}
               </Button>
               <p className="text-xs text-muted">
-                New agents start with autopilot off and a 5-reply canary. WhatsApp and LinkedIn always go through the
-                policy engine and the human-likeness gate.
+                Reply drafting is queue-only. Every generated reply stays in human review until a named operator
+                approves its exact content and recipient.
               </p>
             </form>
           </CardContent>
@@ -224,20 +193,14 @@ export default function StudioPage() {
                             {c}
                           </Badge>
                         ))}
-                        {(spec.guardrails.canary_remaining ?? 0) > 0 && spec.guardrails.autopilot && (
-                          <Badge tone="warning">canary: {spec.guardrails.canary_remaining} left</Badge>
-                        )}
                       </div>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-2">
-                      <label className="flex items-center gap-2 text-xs text-muted">
+                      <div className="flex items-center gap-2 text-xs text-muted">
                         <ShieldCheck className="h-3.5 w-3.5" />
-                        Gated autopilot
-                        <Switch
-                          checked={Boolean(spec.guardrails.autopilot)}
-                          onCheckedChange={() => void toggleAutopilot(spec)}
-                        />
-                      </label>
+                        Reply drafting
+                        <Badge tone="success">Human review</Badge>
+                      </div>
                       {spec.flowise_chatflow_id && <Badge tone="neutral">Workspace-bound Flowise runtime</Badge>}
                     </div>
                   </div>

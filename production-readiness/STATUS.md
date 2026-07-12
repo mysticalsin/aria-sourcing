@@ -28,6 +28,9 @@ particular production deployment is healthy.
   mutation and again before receipt creation. Previous encryption keys use a
   key-ID ring; retiring a deployed ring requires exact release-bound owner
   approval.
+- Reply drafting is queue-only: every generated candidate reply enters named
+  human review, and legacy AgentSpec reply flags never grant provider delivery
+  authority.
 
 ## Release acceptance still required
 

@@ -1,17 +1,14 @@
 /* ============================================================================
-   GATED AUTOPILOT — answers candidate replies like a person, inside hard
-   guardrails, or hands the message to a human. Never both, never neither.
+   REPLY DRAFTING — composes candidate replies inside hard guardrails, then
+   hands every generated reply to a named human reviewer.
 
    Flow (WhatsApp first, email later):
      inbound webhook → parseWhatsAppWebhook() → thread to candidate/spec →
-     composeReply() with an injected LLM `generate` fn → decideAutopilot():
-       - spec.guardrails.autopilot off        → queue for human (status blocked)
-       - canary_remaining > 0                 → queue for human, decrement canary
-       - reply commits to salary/offer/legal  → queue for human
-       - human-likeness gate fails            → queue for human
-       - otherwise                            → schedule send (human pacing)
-   Dispatch happens in /api/cron/dispatch-outbound, which re-runs the gate and
-   the atomic claim_and_record guardrail before anything touches the wire.
+     composeReply() with an injected LLM `generate` fn → decideAutopilot() →
+     store a blocked draft in the human review queue. Safety checks annotate the
+     review reasons; none of the legacy AgentSpec flags can release a message.
+   A separate named-human approval is required before the dispatcher can touch
+   the wire.
 
    Pure logic lives here (injectable, deterministic, unit-tested); all DB and
    HTTP side effects live in the API routes.
@@ -195,10 +192,12 @@ export function buildReplyPrompt(ctx: ComposeContext): { system: string; prompt:
 }
 
 // ---------------------------------------------------------------------------
-// Autopilot decision — send inside guardrails, otherwise queue for the human.
+// Reply-routing decision — every generated reply queues for a named human.
 // ---------------------------------------------------------------------------
 
 export interface SpecGuardrails {
+  /** Legacy compatibility only. These fields may annotate review reasons but
+   * never grant provider delivery authority. */
   autopilot?: boolean;
   canary_remaining?: number;
   topics_allow?: string[];
@@ -210,11 +209,9 @@ type DisclosureInternal = Parameters<typeof validateCandidateBoundText>[1];
 
 export type AutopilotDecision = { action: "queue"; text: string; reasons: string[] };
 
-/**
- * Decide what happens to a composed reply. `queue` means a human (the spec
- * owner) reviews it in the Replies queue; `send` means it may be scheduled —
- * the dispatcher still re-gates and runs claim_and_record before the wire.
- */
+/** Decide what happens to a composed reply. `queue` means a named human reviews
+ * the stored draft in Replies. Provider delivery requires a separate human
+ * approval whose exact content and recipient are revalidated server-side. */
 export function decideAutopilot(
   replyDraft: string,
   guardrails: SpecGuardrails,

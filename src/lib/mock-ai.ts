@@ -1190,11 +1190,10 @@ export function newOutreachMessage(
     body: gen.body,
     tone,
     personalizationEvidence: gen.personalizationEvidence,
-    status: settings.humanApprovalGate
-      ? "Needs Approval"
-      : gen.channel === "LinkedIn" && !settings.dryRunMode
-        ? "Pending Manual Send"
-        : "Approved",
+    // Browser settings never grant delivery authority. Every generated message
+    // starts in named human review; channel-specific handling begins only after
+    // the approval is durably recorded.
+    status: "Needs Approval",
     sequenceStep,
     scheduledFor: null,
     sentAt: null,

@@ -393,16 +393,18 @@ export default function SettingsPage() {
             <Card>
               <CardContent className="space-y-5">
                 <div className="divide-y divide-line rounded-2xl border border-line">
-                  <ToggleRow
-                    id="humanApprovalGate"
-                    icon={<ShieldCheck className="h-4 w-4" />}
-                    label="Human approval gate"
-                    description="Every outreach message must be approved by a person before it can be scheduled."
-                    checked={settings.humanApprovalGate}
-                    onCheckedChange={(v) =>
-                      setToggle({ humanApprovalGate: v }, "Human approval gate", v)
-                    }
-                  />
+                  <div className="flex items-center justify-between gap-4 p-4">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+                      <div>
+                        <p className="text-sm font-semibold text-ink">Human approval required</p>
+                        <p className="mt-1 text-xs text-muted">
+                          Every generated message stays in human review until a named operator approves its exact content and recipient.
+                        </p>
+                      </div>
+                    </div>
+                    <Badge tone="success" size="sm">Always on</Badge>
+                  </div>
                   <ToggleRow
                     id="dryRunMode"
                     icon={<Lock className="h-4 w-4" />}
