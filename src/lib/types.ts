@@ -994,6 +994,9 @@ export const LEDGER_STATUSES = [
   "bounced",
   "complained",
   "skipped",
+  // Unknown provider outcome after transport began — holds the de-dupe slot;
+  // resolved only by human reconciliation, never by an automatic retry.
+  "ambiguous",
 ] as const;
 export type LedgerStatus = (typeof LEDGER_STATUSES)[number];
 
