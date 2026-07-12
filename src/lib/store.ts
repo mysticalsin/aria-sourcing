@@ -140,9 +140,13 @@ import {
 import { applyAuthoritativeRole } from "./live-role-authority";
 import {
   createFailedWorkspaceSave,
+  retainPendingWorkspaceSave,
+  runWorkspaceEffect as runWorkspaceEffectBoundary,
+  settleWorkspaceSave,
   workspaceAllowsMutation,
   type PendingWorkspaceSave,
   type WorkspaceDependency,
+  type WorkspaceEffectAttempt,
   type WorkspaceStatus,
 } from "./workspace-status";
 import { allocateBatch, defaultSendWindow, fleetSummary, type FleetSummary } from "./fleet";
@@ -196,7 +200,7 @@ export interface HermesActions {
     opts?: { platform?: SourcePlatform; count?: number },
   ) => Promise<
     | (SourceResult & { source: "github" | "web" | "mock"; ok: true })
-    | { ok: false; error: string; source: "github" | "web" | "paused" }
+    | { ok: false; error: string; source: "github" | "web" | "paused" | "unavailable" }
   >;
   /** One tool-calling agent pass: searches real candidates, scores them, and
    *  drafts outreach for the best matches in a single loop (/api/sourcing-agent),
@@ -617,8 +621,9 @@ async function attemptLiveFollowUpGen(opts: {
   mockGen: GeneratedOutreach;
   seat?: AgentSeat;
   touchNote: string;
+  runEffect: <T>(effect: () => T) => WorkspaceEffectAttempt<T>;
 }): Promise<{ gen: GeneratedOutreach; live: boolean }> {
-  const { settings, candidate, campaign, tone, channel, voice, lang, mockGen, seat, touchNote } = opts;
+  const { settings, candidate, campaign, tone, channel, voice, lang, mockGen, seat, touchNote, runEffect } = opts;
   const aiCfg = resolveAiProvider(settings, "outreach", {
     providerId: seat?.providerId,
     modelId: seat?.modelId,
@@ -666,7 +671,9 @@ async function attemptLiveFollowUpGen(opts: {
     }
   }
 
-  const result = await hermesGenerate(genInput);
+  const attempt = runEffect(() => hermesGenerate(genInput));
+  if (!attempt.allowed) return { gen: mockGen, live: false };
+  const result = await attempt.value;
   if (result.ok && result.text) {
     const parsed = parseHermesOutreach(result.text, channel, mockGen.subject);
     if (parsed) {
@@ -706,6 +713,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   const queuedRemoteSnapshot = useRef<HermesState | null>(null);
   const pendingRemoteSave = useRef<PendingWorkspaceSave<HermesState> | null>(null);
   const remoteSaveInFlight = useRef(false);
+  const remoteSaveOperation = useRef<symbol | null>(null);
   const drainRemoteSaveQueueRef = useRef<() => void>(() => undefined);
   // DEMO mode only: latest state snapshot awaiting a debounced localStorage write,
   // so flushLocalSave() can write it immediately on unmount / tab close.
@@ -747,6 +755,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     };
   }, [flushLocalSave]);
 
+  useEffect(() => {
+    if (workspaceStatus.phase !== "ready") {
+      for (const controller of chatAbortControllers.current.values()) controller.abort();
+      chatAbortControllers.current.clear();
+    }
+  }, [workspaceStatus.phase]);
+
   const hydrateWorkspace = useCallback(async () => {
     const generation = ++hydrationGeneration.current;
     if (saveTimer.current) {
@@ -755,6 +770,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     }
     queuedRemoteSnapshot.current = null;
     pendingRemoteSave.current = null;
+    remoteSaveOperation.current = null;
+    remoteSaveInFlight.current = false;
     skipNextPersist.current = false;
     setWorkspaceStatus({ phase: "loading", mode: supabaseEnabled ? "live" : "demo" });
 
@@ -828,17 +845,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     };
   }, [hydrateWorkspace]);
 
-  const applyRemoteConflict = useCallback(async (latest: RemoteStateVersion) => {
-    remoteUpdatedAtRef.current = latest.updatedAt;
+  const prepareRemoteConflict = useCallback(async (latest: RemoteStateVersion) => {
+    if (!latest.state || !latest.updatedAt) return null;
     const serverSeats = await loadRemoteAgentSeats();
-    if (serverSeats.status === "unavailable") {
-      stateRef.current = null;
-      setState(null);
-      setWorkspaceStatus(unavailableWorkspaceStatus("agent_seats"));
-      return;
-    }
+    if (serverSeats.status === "unavailable") return null;
 
-    const base = latest.state ? normalizeHermesState(latest.state) : buildLiveEmptyState();
+    const base = normalizeHermesState(latest.state);
     const liveState = {
       ...base,
       seats: mergeAgentSeatRows(base.seats, serverSeats.seats),
@@ -859,49 +871,50 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       { ...liveState, activities: [notice, ...liveState.activities].slice(0, 300) },
       liveRoleRef.current,
     );
+    return { latest, next };
+  }, []);
+
+  const applyRemoteConflict = useCallback((prepared: {
+    latest: RemoteStateVersion;
+    next: HermesState;
+  }) => {
+    remoteUpdatedAtRef.current = prepared.latest.updatedAt;
     skipNextPersist.current = true;
-    stateRef.current = next;
-    setState(next);
+    stateRef.current = prepared.next;
+    setState(prepared.next);
     setWorkspaceStatus({ phase: "ready", mode: "live" });
   }, [setWorkspaceStatus]);
 
   const persistPendingSave = useCallback(async (
     pending: PendingWorkspaceSave<HermesState>,
-  ): Promise<"saved" | "conflict" | "failed"> => {
-    const result = await saveRemoteState(
+  ) => settleWorkspaceSave({
+    generation: pending.generation,
+    currentGeneration: () => hydrationGeneration.current,
+    save: () => saveRemoteState(
       pending.workspaceId,
       pending.snapshot,
       pending.expectedUpdatedAt,
-    );
-    if (result.ok) {
+    ),
+    prepareConflict: prepareRemoteConflict,
+    applySaved: (result) => {
       if (result.updatedAt) remoteUpdatedAtRef.current = result.updatedAt;
       setWorkspaceStatus({ phase: "ready", mode: "live" });
-      return "saved";
-    }
-    if (result.conflict && result.latest) {
-      try {
-        await applyRemoteConflict(result.latest);
-      } catch (error) {
-        console.warn("workspace conflict reload failed:", error);
-        stateRef.current = null;
-        setState(null);
-        setWorkspaceStatus(unavailableWorkspaceStatus("state"));
-      }
-      return "conflict";
-    }
-    return "failed";
-  }, [applyRemoteConflict, setWorkspaceStatus]);
+    },
+    applyConflict: applyRemoteConflict,
+  }), [applyRemoteConflict, prepareRemoteConflict, setWorkspaceStatus]);
 
   const markRemoteSaveFailed = useCallback((
     pending: PendingWorkspaceSave<HermesState>,
     snapshot: HermesState = pending.snapshot,
   ) => {
+    if (pending.generation !== hydrationGeneration.current) return;
+    const retained = retainPendingWorkspaceSave(
+      pending,
+      snapshot,
+      remoteUpdatedAtRef.current,
+    );
     const failed = createFailedWorkspaceSave(
-      {
-        workspaceId: pending.workspaceId,
-        snapshot,
-        expectedUpdatedAt: remoteUpdatedAtRef.current,
-      },
+      retained,
       UNSAVED_WORKSPACE_MESSAGE,
     );
     pendingRemoteSave.current = failed.pending;
@@ -924,12 +937,18 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       workspaceId,
       snapshot,
       expectedUpdatedAt: remoteUpdatedAtRef.current,
+      generation: hydrationGeneration.current,
     };
     pendingRemoteSave.current = pending;
+    const operation = Symbol("workspace-save");
+    remoteSaveOperation.current = operation;
     remoteSaveInFlight.current = true;
 
     void persistPendingSave(pending).then((outcome) => {
+      if (remoteSaveOperation.current !== operation) return;
+      remoteSaveOperation.current = null;
       remoteSaveInFlight.current = false;
+      if (outcome === "stale") return;
       if (outcome === "conflict") {
         queuedRemoteSnapshot.current = null;
         pendingRemoteSave.current = null;
@@ -945,6 +964,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (pendingRemoteSave.current === pending) pendingRemoteSave.current = null;
       if (queuedRemoteSnapshot.current) drainRemoteSaveQueueRef.current();
     }).catch(() => {
+      if (remoteSaveOperation.current !== operation) return;
+      remoteSaveOperation.current = null;
       remoteSaveInFlight.current = false;
       const newestSnapshot = queuedRemoteSnapshot.current ?? pending.snapshot;
       queuedRemoteSnapshot.current = null;
@@ -956,9 +977,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   const retrySave = useCallback(async () => {
     const pending = pendingRemoteSave.current;
     if (!pending || remoteSaveInFlight.current) return;
+    const operation = Symbol("workspace-save-retry");
+    remoteSaveOperation.current = operation;
     remoteSaveInFlight.current = true;
     try {
       const outcome = await persistPendingSave(pending);
+      if (remoteSaveOperation.current !== operation || outcome === "stale") return;
       if (outcome === "saved" || outcome === "conflict") {
         pendingRemoteSave.current = null;
         queuedRemoteSnapshot.current = null;
@@ -968,7 +992,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     } catch {
       markRemoteSaveFailed(pending);
     } finally {
-      remoteSaveInFlight.current = false;
+      if (remoteSaveOperation.current === operation) {
+        remoteSaveOperation.current = null;
+        remoteSaveInFlight.current = false;
+      }
     }
   }, [markRemoteSaveFailed, persistPendingSave]);
 
@@ -1013,6 +1040,26 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   const current = useCallback(
     () => stateRef.current ?? (supabaseEnabled ? buildLiveEmptyState() : buildSeedState()),
     [],
+  );
+
+  const workspaceEffectAllowed = useCallback(
+    () => workspaceAllowsMutation(workspaceStatusRef.current),
+    [],
+  );
+
+  const runWorkspaceEffect = useCallback(
+    <T,>(effect: () => T) => runWorkspaceEffectBoundary(workspaceStatusRef.current, effect),
+    [],
+  );
+
+  const workspaceFetch = useCallback<typeof fetch>(
+    (input, init) => {
+      const attempt = runWorkspaceEffect(() => fetch(input, init));
+      return attempt.allowed
+        ? attempt.value
+        : Promise.reject(new Error("Workspace unavailable. Retry the workspace before running this action."));
+    },
+    [runWorkspaceEffect],
   );
 
   /* ---- helpers ---------------------------------------------------------- */
@@ -1205,8 +1252,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       opts?: { platform?: SourcePlatform; count?: number },
     ): Promise<
       | (SourceResult & { source: "github" | "web" | "mock"; ok: true })
-      | { ok: false; error: string; source: "github" | "web" | "paused" }
+      | { ok: false; error: string; source: "github" | "web" | "paused" | "unavailable" }
     > => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before sourcing.", source: "unavailable" };
+      }
       const s = current();
       const campaign = s.campaigns.find((c) => c.id === campaignId);
       if (!campaign) return { accepted: [], skipped: [], source: "mock", ok: true };
@@ -1234,7 +1284,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           `language:${(campaign.jobAnalysis.requiredSkills[0] ?? "typescript").toLowerCase()}`;
         const query = `${baseQuery}${githubLocationQualifier(campaign.jobAnalysis.location, baseQuery)}`;
         try {
-          const res = await fetch("/api/source", {
+          const res = await workspaceFetch("/api/source", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ query, count, platform }),
@@ -1261,7 +1311,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       } else if (isWebSearchPlatform(platform)) {
         const query = ensureWebQueryScope(platform, baseWebQuery(campaign, platform));
         try {
-          const res = await fetch("/api/source", {
+          const res = await workspaceFetch("/api/source", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ query, count, platform }),
@@ -1319,7 +1369,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       emit({ kind: "source", campaignId, count: result.accepted.length });
       return { ...result, source, ok: true };
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const addCandidateFromGithub = useCallback(
@@ -1327,6 +1377,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       campaignId: string,
       username: string,
     ): Promise<{ ok: true; added: number; skipped: number } | { ok: false; error: string }> => {
+      if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before sourcing." };
       const s = current();
       const campaign = s.campaigns.find((c) => c.id === campaignId);
       if (!campaign) return { ok: false, error: "Campaign not found." };
@@ -1336,7 +1387,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
       let res: Response;
       try {
-        res = await fetch("/api/source", {
+        res = await workspaceFetch("/api/source", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ username: login, platform: "GitHub", count: 1 }),
@@ -1378,7 +1429,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       emit({ kind: "source", campaignId, count: accepted.length });
       return { ok: true, added: accepted.length, skipped: skipped.length };
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const addCandidateManual = useCallback(
@@ -1489,6 +1540,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       campaignId: string,
       identifier: string,
     ): Promise<{ ok: true; requestId: string } | { ok: false; error: string }> => {
+      if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before sourcing." };
       const s = current();
       const campaign = s.campaigns.find((c) => c.id === campaignId);
       if (!campaign) return { ok: false, error: "Campaign not found." };
@@ -1497,7 +1549,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
       let res: Response;
       try {
-        res = await fetch("/api/source/sillage/start", {
+        res = await workspaceFetch("/api/source/sillage/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ campaignId, ...parseSillageIdentifier(trimmed) }),
@@ -1513,7 +1565,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
       return { ok: true, requestId: out.requestId };
     },
-    [current],
+    [current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const checkSillageMapping = useCallback(
@@ -1525,13 +1577,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       | { ok: true; status: "completed"; added: number; company: string }
       | { ok: false; error: string }
     > => {
+      if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before sourcing." };
       const s = current();
       const campaign = s.campaigns.find((c) => c.id === campaignId);
       if (!campaign) return { ok: false, error: "Campaign not found." };
 
       let res: Response;
       try {
-        res = await fetch(`/api/source/sillage/status?requestId=${encodeURIComponent(requestId)}`);
+        res = await workspaceFetch(`/api/source/sillage/status?requestId=${encodeURIComponent(requestId)}`);
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : "Network error reaching Sillage." };
       }
@@ -1582,7 +1635,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (accepted.length > 0) emit({ kind: "source", campaignId, count: accepted.length });
       return { ok: true, status: "completed", added: accepted.length, company: companyLabel };
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const sourceFromApollo = useCallback(
@@ -1597,6 +1650,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         count?: number;
       },
     ): Promise<SourceResult & { source: "apollo" | "not_configured" | "error"; error?: string }> => {
+      if (!workspaceEffectAllowed()) {
+        return { accepted: [], skipped: [], source: "error", error: "Workspace unavailable. Retry before sourcing." };
+      }
       const s = current();
       const campaign = s.campaigns.find((c) => c.id === campaignId);
       if (!campaign) return { accepted: [], skipped: [], source: "error", error: "Campaign not found." };
@@ -1618,7 +1674,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       let error: string | undefined;
 
       try {
-        const res = await fetch("/api/source/apollo/search", {
+        const res = await workspaceFetch("/api/source/apollo/search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ...filters, count }),
@@ -1673,11 +1729,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
       return { ...result, source, error };
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const enrichApolloCandidate = useCallback(
     async (candidateId: string): Promise<{ ok: boolean; revealed: boolean; detail: string }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, revealed: false, detail: "Workspace unavailable. Retry before enrichment." };
+      }
       const s = current();
       const cand = s.candidates.find((c) => c.id === candidateId);
       if (!cand) return { ok: false, revealed: false, detail: "Candidate not found." };
@@ -1685,7 +1744,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, revealed: false, detail: "Not an Apollo-sourced candidate." };
       }
       try {
-        const res = await fetch("/api/source/apollo/enrich", {
+        const res = await workspaceFetch("/api/source/apollo/enrich", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ apolloId: cand.sourceExternalId }),
@@ -1730,7 +1789,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, revealed: false, detail: e instanceof Error ? e.message : "Network error." };
       }
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const sourceFromSeamless = useCallback(
@@ -1748,6 +1807,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         count?: number;
       },
     ): Promise<SourceResult & { source: "seamless" | "not_configured" | "error"; error?: string }> => {
+      if (!workspaceEffectAllowed()) {
+        return { accepted: [], skipped: [], source: "error", error: "Workspace unavailable. Retry before sourcing." };
+      }
       const s = current();
       const campaign = s.campaigns.find((c) => c.id === campaignId);
       if (!campaign) return { accepted: [], skipped: [], source: "error", error: "Campaign not found." };
@@ -1771,7 +1833,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       let error: string | undefined;
 
       try {
-        const res = await fetch("/api/source/seamless/search", {
+        const res = await workspaceFetch("/api/source/seamless/search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ...filters, count }),
@@ -1826,11 +1888,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
       return { ...result, source, error };
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const startSeamlessResearch = useCallback(
     async (candidateId: string): Promise<{ ok: true; requestId: string } | { ok: false; error: string }> => {
+      if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before enrichment." };
       const s = current();
       const cand = s.candidates.find((c) => c.id === candidateId);
       if (!cand) return { ok: false, error: "Candidate not found." };
@@ -1839,7 +1902,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
       let res: Response;
       try {
-        res = await fetch("/api/source/seamless/research", {
+        res = await workspaceFetch("/api/source/seamless/research", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ searchResultId: cand.sourceExternalId }),
@@ -1855,7 +1918,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
       return { ok: true, requestId: out.requestId };
     },
-    [current],
+    [current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const checkSeamlessResearch = useCallback(
@@ -1867,13 +1930,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       | { ok: true; status: "completed"; revealed: boolean }
       | { ok: false; error: string }
     > => {
+      if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before enrichment." };
       const s = current();
       const cand = s.candidates.find((c) => c.id === candidateId);
       if (!cand) return { ok: false, error: "Candidate not found." };
 
       let res: Response;
       try {
-        res = await fetch(`/api/source/seamless/research-status?requestId=${encodeURIComponent(requestId)}`);
+        res = await workspaceFetch(`/api/source/seamless/research-status?requestId=${encodeURIComponent(requestId)}`);
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : "Network error reaching Seamless." };
       }
@@ -1931,11 +1995,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return { ok: true, status: "completed", revealed: true };
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const runSourcingAgent = useCallback(
     async (campaignId: string, count = 5): Promise<{ ok: boolean; added: number; error?: string }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, added: 0, error: "Workspace unavailable. Retry before running the sourcing agent." };
+      }
       const s = current();
       const campaign = s.campaigns.find((c) => c.id === campaignId);
       if (!campaign) return { ok: false, added: 0, error: "Campaign not found." };
@@ -1960,7 +2027,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       type AgentCandidate = Candidate & { draftSubject?: string; draftBody?: string };
       let out: { ok?: boolean; candidates?: AgentCandidate[]; reason?: string } | null = null;
       try {
-        const res = await fetch("/api/sourcing-agent", {
+        const res = await workspaceFetch("/api/sourcing-agent", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -2030,7 +2097,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
       return { ok: true, added: cleanCandidates.length };
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const generateOutreachFor = useCallback(
@@ -2075,6 +2142,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   // is still decided by the human approval gate — never auto-sent.
   const generateOutreachLive = useCallback(
     async (candidateId: string, tone?: OutreachTone, channel: OutreachChannel = "Email", seatId?: string) => {
+      if (!workspaceEffectAllowed()) return null;
       const s = current();
       const candidate = s.candidates.find((c) => c.id === candidateId);
       const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
@@ -2146,7 +2214,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Layer 2: a non-ok result keeps the mock draft.
-        const result = await hermesGenerate(outreachGenInput);
+        const attempt = runWorkspaceEffect(() => hermesGenerate(outreachGenInput));
+        if (!attempt.allowed) return null;
+        const result = await attempt.value;
         if (result.ok && result.text) {
           // Layer 3: an unparseable reply keeps the mock draft.
           const parsed = parseHermesOutreach(result.text, channel, mockGen.subject);
@@ -2166,6 +2236,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      if (!workspaceEffectAllowed()) return null;
       const msg = newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1);
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
@@ -2185,7 +2256,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return msg;
     },
-    [commit, current],
+    [commit, current, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
   // Task 1 — follow-up sequences. Reuses the exact same draft-creation path as
@@ -2196,6 +2267,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   // creates a Draft that still has to clear the human approval gate.
   const draftFollowUpFor = useCallback(
     async (candidateId: string, tone?: OutreachTone, seatId?: string) => {
+      if (!workspaceEffectAllowed()) return null;
       const s = current();
       // Captured before the live-gen await below so the stale-draft blocker in
       // checkOutreachApproval (candidate.lastRepliedAt > message.createdAt) still
@@ -2228,7 +2300,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         mockGen,
         seat,
         touchNote: `This is follow-up touch #${due.nextSequenceStep} after ${Math.floor(due.daysSinceContact)}d of silence since the last message — vary the angle/urgency from a first touch, keep it short, no guilt-tripping.`,
+        runEffect: runWorkspaceEffect,
       });
+      if (!workspaceEffectAllowed()) return null;
       const msg = {
         ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, due.nextSequenceStep),
         createdAt: draftedAt,
@@ -2251,7 +2325,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return msg;
     },
-    [commit, current],
+    [commit, current, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
   // #Vivier re-contact. Unlike draftFollowUpFor (which is gated to candidates
@@ -2260,6 +2334,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   // outreach regardless of stage. Still only a Draft behind the approval gate.
   const draftRecontactFor = useCallback(
     async (candidateId: string, tone?: OutreachTone, seatId?: string) => {
+      if (!workspaceEffectAllowed()) return null;
       const s = current();
       // Same createdAt-before-await fix as draftFollowUpFor — see comment there.
       const draftedAt = new Date().toISOString();
@@ -2286,7 +2361,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         mockGen,
         seat,
         touchNote: `This is a #Vivier re-engagement of a previously ${candidate.stage} candidate${candidate.silverMedalist ? " (Silver Medalist)" : ""} — acknowledge the gap briefly, lead with what's different now, no guilt-tripping.`,
+        runEffect: runWorkspaceEffect,
       });
+      if (!workspaceEffectAllowed()) return null;
       const msg = { ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1), createdAt: draftedAt };
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
@@ -2306,7 +2383,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return msg;
     },
-    [commit, current],
+    [commit, current, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
   const updateOutreach = useCallback(
@@ -2320,6 +2397,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const regenerateOutreach = useCallback(
     async (messageId: string, tone?: OutreachTone) => {
+      if (!workspaceEffectAllowed()) return;
       const s = current();
       const msg = s.outreach.find((m) => m.id === messageId);
       const candidate = msg && s.candidates.find((c) => c.id === msg.candidateId);
@@ -2381,7 +2459,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        const result = await hermesGenerate(regenGenInput);
+        const attempt = runWorkspaceEffect(() => hermesGenerate(regenGenInput));
+        if (!attempt.allowed) return;
+        const result = await attempt.value;
         if (result.ok && result.text) {
           const parsed = parseHermesOutreach(result.text, msg.channel, mockGen.subject);
           if (parsed) {
@@ -2396,6 +2476,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      if (!workspaceEffectAllowed()) return;
       commit((prev) => ({
         ...prev,
         outreach: prev.outreach.map((m) =>
@@ -2412,7 +2493,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         ),
       }));
     },
-    [commit, current],
+    [commit, current, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
   const approveOutreach = useCallback(
@@ -2431,6 +2512,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const isActionable = (message: OutreachMessage) =>
         message.status === "Needs Approval" || message.status === "Draft";
 
+      if (!workspaceEffectAllowed()) return approvalBlocked("Workspace unavailable. Retry before approving outreach.");
       let s = current();
       const initialMessage = s.outreach.find((m) => m.id === messageId);
       if (!initialMessage) return approvalBlocked("Message not found.");
@@ -2466,7 +2548,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         }
         pendingOutreachApprovals.current.add(messageId);
         try {
-          const persisted = await recordOutreachApproval({ messageId, ...approvalSnapshot });
+          const persisted = await recordOutreachApproval({ messageId, ...approvalSnapshot }, workspaceFetch);
           if (!persisted.ok) return approvalBlocked(persisted.error);
           if (persisted.dryRun) {
             return {
@@ -2479,6 +2561,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             };
           }
           const revokeStaleApproval = async (blocker: string): Promise<ApprovalResult> => {
+            // The approval POST already succeeded. Its idempotent rollback must
+            // remain available if hydration changes readiness before revalidation.
             const revoked = await revokeOutreachApproval(messageId);
             return revoked.ok
               ? approvalBlocked(blocker)
@@ -2640,7 +2724,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       emit({ kind: "send", candidateName: candidate.name, campaignId: campaign.id });
       return result;
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const confirmManualSend = useCallback(
@@ -2727,6 +2811,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   // the one place a real email leaves; it never fires automatically.
   const sendApprovedOutreach = useCallback(
     async (messageId: string): Promise<{ ok: boolean; error?: string; queued?: boolean }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before sending outreach." };
+      }
       const s = current();
       const msg = s.outreach.find((m) => m.id === messageId);
       if (!msg) return { ok: false, error: "Message not found." };
@@ -2758,7 +2845,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
       let out: { status?: string; detail?: string };
       try {
-        const res = await fetch("/api/outreach/send", {
+        const res = await workspaceFetch("/api/outreach/send", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -2862,16 +2949,19 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return { ok: true };
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const rejectOutreach = useCallback(
     async (messageId: string): Promise<{ ok: boolean; error?: string }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before changing outreach." };
+      }
       const currentState = current();
       const currentMessage = currentState.outreach.find((m) => m.id === messageId);
       if (!currentMessage) return { ok: false, error: "Message not found." };
       if (supabaseEnabled) {
-        const revoked = await revokeOutreachApproval(messageId);
+        const revoked = await revokeOutreachApproval(messageId, workspaceFetch);
         if (!revoked.ok) return { ok: false, error: revoked.error };
       }
       commit((s) => {
@@ -2899,7 +2989,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return { ok: true };
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const classifyAndStoreReply = useCallback(
@@ -2912,6 +3002,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       inboxThreadId?: string;
       externalReceivedAt?: string;
     }) => {
+      if (!workspaceEffectAllowed()) {
+        throw new Error("Workspace unavailable. Retry before classifying replies.");
+      }
       const s = current();
 
       // DEDUP: never create a second reply for a messageId already ingested. Return the
@@ -3007,7 +3100,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 hermesApiUrl: s.settings.hermesApiUrl,
                 hermesApiKeyId: s.settings.hermesApiKeyId,
               };
-          const result = await hermesGenerate(classifyInput);
+          const attempt = runWorkspaceEffect(() => hermesGenerate(classifyInput));
+          if (!attempt.allowed) throw new Error("Workspace unavailable. Retry before classifying replies.");
+          const result = await attempt.value;
           if (result.ok && result.text) {
             const parsed = JSON.parse(result.text) as ReplyClassification;
             if (
@@ -3139,7 +3234,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       emit({ kind: "reply", candidateName: candidate?.name, campaignId });
       return { reply, classification };
     },
-    [commit, current],
+    [commit, current, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
   const markReplyHandled = useCallback(
@@ -3174,9 +3269,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       reason: string,
       method: "POST" | "DELETE" = "POST",
     ): Promise<{ ok: boolean; error?: string }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before changing suppression." };
+      }
       if (!value.trim()) return { ok: true };
       try {
-        const response = await fetch("/api/compliance/suppress", {
+        const response = await workspaceFetch("/api/compliance/suppress", {
           method,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ type, value, reason }),
@@ -3192,7 +3290,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, error: err instanceof Error ? err.message : "Network error updating the enforcement list." };
       }
     },
-    [],
+    [workspaceEffectAllowed, workspaceFetch],
   );
 
   const syncSuppressionToServer = useCallback(
@@ -3245,6 +3343,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const applyReplyAction = useCallback(
     async (replyId: string): Promise<{ ok: boolean; error?: string; warning?: string }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before applying reply actions." };
+      }
       const initial = current();
       const reply0 = initial.replies.find((r) => r.id === replyId);
       if (!reply0) return { ok: false, error: "Reply not found." };
@@ -3273,7 +3374,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const approvalIds = initial.outreach
           .filter((message) => message.candidateId === candidate0.id)
           .map((message) => message.id);
-        const revoked = await Promise.all(approvalIds.map((messageId) => revokeOutreachApproval(messageId)));
+        const revoked = await Promise.all(
+          approvalIds.map((messageId) => revokeOutreachApproval(messageId, workspaceFetch)),
+        );
         if (revoked.some((result) => !result.ok)) {
           warning = "The candidate is suppressed for future contact, but a message already in delivery could not be cancelled.";
         }
@@ -3360,7 +3463,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
       return warning ? { ok: true, warning } : { ok: true };
     },
-    [commit, current, persistSuppressionToServer],
+    [commit, current, persistSuppressionToServer, workspaceEffectAllowed, workspaceFetch],
   );
 
   // Task 2 — turn a classified reply's suggested draft into a real outreach
@@ -3423,6 +3526,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       | { ok: true; booking: Booking; prepEmail: string; confirmationEmail: string }
       | { ok: false; error: string }
     > => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before creating a booking." };
+      }
       const s = current();
       const candidate = s.candidates.find((c) => c.id === candidateId);
       const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
@@ -3452,7 +3558,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       );
       if (supabaseEnabled && seat) {
         try {
-          const res = await fetch("/api/calendar/event", {
+          const res = await workspaceFetch("/api/calendar/event", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -3520,7 +3626,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       emit({ kind: "book", candidateName: candidate.name, campaignId: campaign.id });
       return { ok: true, booking, prepEmail: prep, confirmationEmail: confirm };
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const updateBooking = useCallback(
@@ -4260,6 +4366,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const testIntegration = useCallback(
     async (id: string): Promise<ConnectionTestResult> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, latencyMs: 0, message: "Workspace unavailable. Retry before testing integrations." };
+      }
       const s = current();
       const integ = s.integrations.find((i) => i.id === id);
       if (!integ) return { ok: false, latencyMs: 0, message: "Integration not found." };
@@ -4271,7 +4380,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (integ.id === "int_github") {
         const t0 = Date.now();
         try {
-          const res = await fetch("/api/source", { method: "GET" });
+          const res = await workspaceFetch("/api/source", { method: "GET" });
           const out = (await res.json().catch(() => null)) as
             | { connected?: boolean; login?: string | null; anonymous?: boolean; reason?: string }
             | null;
@@ -4306,13 +4415,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
       return result;
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   /* ---- Fleet: seats ----------------------------------------------------- */
 
   const addSeat = useCallback(
     async (partial: Partial<AgentSeat> & { name: string; operatorEmail: string }) => {
+      if (!workspaceEffectAllowed()) return null;
       const authorizedState = stateRef.current;
       if (!authorizedState || !can(authorizedState.currentRole, "manage_fleet")) return null;
       const now = new Date().toISOString();
@@ -4344,7 +4454,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       };
       let seat = draft;
       if (supabaseEnabled) {
-        const created = await createFleetSeatOnServer(draft);
+        const attempt = runWorkspaceEffect(() => createFleetSeatOnServer(draft));
+        if (!attempt.allowed) return null;
+        const created = await attempt.value;
         if (!created.ok) return null;
         seat = created.seat;
       }
@@ -4365,7 +4477,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       );
       return seat;
     },
-    [commit, current],
+    [commit, current, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
   // Bulk-deploy up to maxAgents coordinated agents. Each is a distinct seat that
@@ -4434,12 +4546,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const updateSeat = useCallback(
     (id: string, patch: Partial<AgentSeat>) => {
+      if (!workspaceEffectAllowed()) return;
       if (supabaseEnabled && (patch.operatorEmail !== undefined || patch.mode !== undefined)) {
-        void patchFleetSeatOnServer(id, { operatorEmail: patch.operatorEmail, mode: patch.mode });
+        const attempt = runWorkspaceEffect(() =>
+          patchFleetSeatOnServer(id, { operatorEmail: patch.operatorEmail, mode: patch.mode }),
+        );
+        if (!attempt.allowed) return;
+        void attempt.value;
       }
       commit((s) => ({ ...s, seats: s.seats.map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
     },
-    [commit],
+    [commit, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
   const setSeatStatus = useCallback(
@@ -4466,8 +4583,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const connectSeatAccount = useCallback(
     async (id: string, account: string) => {
+      if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before connecting." };
       if (supabaseEnabled) {
-        const synced = await patchFleetSeatOnServer(id, { operatorEmail: account });
+        const attempt = runWorkspaceEffect(() => patchFleetSeatOnServer(id, { operatorEmail: account }));
+        if (!attempt.allowed) return { ok: false, error: "Workspace unavailable. Retry before connecting." };
+        const synced = await attempt.value;
         if (!synced.ok) return synced;
       }
       commit((s) => {
@@ -4492,11 +4612,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return { ok: true };
     },
-    [commit],
+    [commit, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
   const disconnectSeatAccount = useCallback(
     async (id: string): Promise<{ ok: boolean; error?: string; dryRun?: boolean }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before disconnecting." };
+      }
       // Live mode: revoke + delete the server-side OAuth connection so the refresh
       // token is actually killed. Awaited — the seat is only marked disconnected
       // locally once the server confirms the connection is actually gone, so a
@@ -4504,7 +4627,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // server still holds a live token.
       if (supabaseEnabled) {
         try {
-          const res = await fetch("/api/email/disconnect", {
+          const res = await workspaceFetch("/api/email/disconnect", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ seatId: id }),
@@ -4548,17 +4671,22 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return { ok: true };
     },
-    [commit],
+    [commit, workspaceEffectAllowed, workspaceFetch],
   );
 
   const toggleSeatLive = useCallback(
     async (id: string): Promise<{ ok: boolean; reason: string }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, reason: "Workspace unavailable. Retry before changing seat mode." };
+      }
       const s = current();
       const seat = s.seats.find((x) => x.id === id);
       if (!seat) return { ok: false, reason: "Seat not found." };
       if (seat.mode === "live") {
         if (supabaseEnabled) {
-          const synced = await patchFleetSeatOnServer(id, { mode: "mock" });
+          const attempt = runWorkspaceEffect(() => patchFleetSeatOnServer(id, { mode: "mock" }));
+          if (!attempt.allowed) return { ok: false, reason: "Workspace unavailable. Retry before changing seat mode." };
+          const synced = await attempt.value;
           if (!synced.ok) return { ok: false, reason: synced.error };
         }
         commit((prev) => ({ ...prev, seats: prev.seats.map((x) => (x.id === id ? { ...x, mode: "mock" } : x)) }));
@@ -4567,7 +4695,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (!seat.connectedAccount) return { ok: false, reason: "Connect a mailbox before going live." };
       if (!seat.domainVerified) return { ok: false, reason: "Verify the sending domain (SPF/DKIM/DMARC) first." };
       if (supabaseEnabled) {
-        const synced = await patchFleetSeatOnServer(id, { mode: "live", operatorEmail: seat.operatorEmail });
+        const attempt = runWorkspaceEffect(() =>
+          patchFleetSeatOnServer(id, { mode: "live", operatorEmail: seat.operatorEmail }),
+        );
+        if (!attempt.allowed) return { ok: false, reason: "Workspace unavailable. Retry before changing seat mode." };
+        const synced = await attempt.value;
         if (!synced.ok) return { ok: false, reason: synced.error };
       }
       commit((prev) => {
@@ -4588,18 +4720,21 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return { ok: true, reason: "Seat is live. Sends still require approval + guardrails." };
     },
-    [commit, current],
+    [commit, current, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
   const verifySeatDomain = useCallback(
     async (id: string): Promise<{ ok: boolean; verified?: boolean; error?: string }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before verifying the domain." };
+      }
       const s = current();
       const seat = s.seats.find((x) => x.id === id);
       if (!seat) return { ok: false, error: "Seat not found." };
       const domain = seat.operatorEmail.split("@")[1] ?? "";
       if (!domain) return { ok: false, error: "Connect a mailbox before verifying its domain." };
       try {
-        const res = await fetch("/api/outreach/verify-domain", {
+        const res = await workspaceFetch("/api/outreach/verify-domain", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ seatId: id, domain }),
@@ -4631,13 +4766,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, error: err instanceof Error ? err.message : "Network error verifying domain." };
       }
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   /* ---- Fleet: suppression ---------------------------------------------- */
 
   const addSuppression = useCallback(
     async (entry: { type: SuppressionEntry["type"]; value: string; reason: string; expiresAt?: string | null }) => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before changing suppression." };
+      }
       if (supabaseEnabled && entry.type === "linkedin") {
         return { ok: false, error: "LinkedIn is assisted-manual and has no server-enforced suppression channel." };
       }
@@ -4649,6 +4787,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const persisted = await persistManualSuppression(
           { ...entry, type: entry.type as EnforcedSuppressionType, value: normalized },
           "POST",
+          workspaceFetch,
         );
         if (!persisted.ok) return persisted;
       }
@@ -4676,11 +4815,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       ));
       return { ok: true, entry: e };
     },
-    [commit],
+    [commit, workspaceEffectAllowed, workspaceFetch],
   );
 
   const removeSuppression = useCallback(
     async (id: string) => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before changing suppression." };
+      }
       const entry = stateRef.current?.suppression.find((item) => item.id === id);
       if (!entry) return { ok: false, error: "Suppression not found." };
       if (supabaseEnabled && entry.type !== "linkedin") {
@@ -4692,13 +4834,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             expiresAt: entry.expiresAt,
           },
           "DELETE",
+          workspaceFetch,
         );
         if (!persisted.ok) return persisted;
       }
       commit((s) => ({ ...s, suppression: s.suppression.filter((item) => item.id !== id) }));
       return { ok: true };
     },
-    [commit],
+    [commit, workspaceEffectAllowed, workspaceFetch],
   );
 
   /* ---- Fleet: coordinated allocation (the anti-double-contact core) ----- */
@@ -4945,8 +5088,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const saveApiKey = useCallback(
     async (input: { name: string; provider: ApiKeyProvider; value: string }) => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false as const, error: "Workspace unavailable. Retry before saving credentials." };
+      }
       try {
-        const res = await fetch("/api/keys", {
+        const res = await workspaceFetch("/api/keys", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(input),
@@ -4984,14 +5130,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: false as const, error: e instanceof Error ? e.message : "Network error." };
       }
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const testApiKey = useCallback(
     async (id: string) => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, valid: false, detail: "Workspace unavailable. Retry before testing credentials." };
+      }
       const k = current().apiKeys.find((x) => x.id === id);
       try {
-        const res = await fetch("/api/keys/test", {
+        const res = await workspaceFetch("/api/keys/test", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id, provider: k?.provider }),
@@ -5009,14 +5158,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, valid: false, detail: e instanceof Error ? e.message : "Network error." };
       }
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const removeApiKey = useCallback(
     async (id: string): Promise<{ ok: boolean; error?: string }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before removing credentials." };
+      }
       // D-6: only commit the local removal when the server delete succeeded.
       try {
-        const res = await fetch(`/api/keys?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+        const res = await workspaceFetch(`/api/keys?id=${encodeURIComponent(id)}`, { method: "DELETE" });
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as { error?: string } | null;
           return { ok: false, error: body?.error ?? `Delete failed (${res.status}).` };
@@ -5028,7 +5180,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       commit((prev) => ({ ...prev, apiKeys: prev.apiKeys.filter((x) => x.id !== id) }));
       return { ok: true };
     },
-    [commit],
+    [commit, workspaceEffectAllowed, workspaceFetch],
   );
 
   const setCurrentRole = useCallback(
@@ -5314,6 +5466,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const addProvider = useCallback(
     (p: Omit<LlmProvider, "id">): LlmProvider => {
+      if (!workspaceEffectAllowed()) {
+        throw new Error("Workspace unavailable. Retry before adding an LLM provider.");
+      }
       const provider: LlmProvider = { ...p, id: genId("prov") };
       commit((s) =>
         withActivity(
@@ -5332,7 +5487,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       );
       return provider;
     },
-    [commit],
+    [commit, workspaceEffectAllowed],
   );
 
   const updateProvider = useCallback(
@@ -5391,6 +5546,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const addMcpServer = useCallback(
     (m: Omit<McpServerConfig, "id" | "status">): McpServerConfig => {
+      if (!workspaceEffectAllowed()) {
+        throw new Error("Workspace unavailable. Retry before adding an MCP server.");
+      }
       const guard = validateMcpBaseUrl(m.url);
       if (!guard.ok) throw new Error(guard.error);
       const server: McpServerConfig = { ...m, id: genId("mcp"), status: "untested" };
@@ -5411,7 +5569,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       );
       return server;
     },
-    [commit],
+    [commit, workspaceEffectAllowed],
   );
 
   const updateMcpServer = useCallback(
@@ -5449,12 +5607,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
    *  handshake) and record the result on the server config. */
   const testMcpServer = useCallback(
     async (id: string): Promise<{ ok: boolean; toolCount?: number; error?: string }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before testing MCP servers." };
+      }
       const s = current();
       const server = (s.settings.mcpServers ?? []).find((m) => m.id === id);
       if (!server) return { ok: false, error: "MCP server not found." };
       let out: { ok?: boolean; toolCount?: number; toolNames?: string[]; serverName?: string; error?: string };
       try {
-        const res = await fetch("/api/mcp/test", {
+        const res = await workspaceFetch("/api/mcp/test", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -5488,7 +5649,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }));
       return { ok: !!out.ok, toolCount: out.toolCount, error: out.error };
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   /* ---- Dust (dust.tt) agent-platform integration ------------------------- */
@@ -5498,8 +5659,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
    *  the key is saved to the vault. */
   const testDustConnection = useCallback(
     async (workspaceId: string, apiKey: string, region: DustRegion = "us") => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false as const, error: "Workspace unavailable. Retry before testing Dust." };
+      }
       try {
-        const res = await fetch("/api/dust/test", {
+        const res = await workspaceFetch("/api/dust/test", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ workspaceId, apiKey, region }),
@@ -5515,7 +5679,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: false as const, error: err instanceof Error ? err.message : "Network error." };
       }
     },
-    [],
+    [workspaceEffectAllowed, workspaceFetch],
   );
 
   /** Full Connect flow: live-test the credentials, store and mark the key valid,
@@ -5523,8 +5687,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
    * Dust authority route. workspace_state is never an execution authority. */
   const connectDust = useCallback(
     async (workspaceId: string, apiKey: string, region: DustRegion = "us") => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false as const, error: "Workspace unavailable. Retry before connecting Dust." };
+      }
       const test = await testDustConnection(workspaceId, apiKey, region);
       if (!test.ok) return { ok: false as const, error: test.error };
+      if (!workspaceEffectAllowed()) {
+        return { ok: false as const, error: "Workspace unavailable. Retry before connecting Dust." };
+      }
       const agents = test.agents ?? [];
       const saved = await saveApiKey({ name: "Dust", provider: "Dust", value: apiKey });
       if (!saved.ok || !saved.key) {
@@ -5535,9 +5705,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (!verified.ok || !verified.valid) {
         return { ok: false as const, error: verified.detail || "Could not verify the stored Dust API key." };
       }
+      if (!workspaceEffectAllowed()) {
+        return { ok: false as const, error: "Workspace unavailable. Retry before connecting Dust." };
+      }
       let configured: { ok?: boolean; error?: string };
       try {
-        const response = await fetch("/api/integrations/dust/config", {
+        const response = await workspaceFetch("/api/integrations/dust/config", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ workspaceId, region, apiKeyId, agents }),
@@ -5572,13 +5745,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return { ok: true as const };
     },
-    [testDustConnection, saveApiKey, testApiKey, commit],
+    [testDustConnection, saveApiKey, testApiKey, commit, workspaceEffectAllowed, workspaceFetch],
   );
 
   const updateDustAgentLock = useCallback(
     async (task: DustTask, agentSId: string) => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false as const, error: "Workspace unavailable. Retry before changing Dust authority." };
+      }
       try {
-        const response = await fetch("/api/integrations/dust/config", {
+        const response = await workspaceFetch("/api/integrations/dust/config", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ task, agentSId }),
@@ -5594,13 +5770,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: false as const, error: error instanceof Error ? error.message : "Network error." };
       }
     },
-    [],
+    [workspaceEffectAllowed, workspaceFetch],
   );
 
   const disconnectDust = useCallback(
     async () => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false as const, error: "Workspace unavailable. Retry before disconnecting Dust." };
+      }
       try {
-        const response = await fetch("/api/integrations/dust/config", { method: "DELETE" });
+        const response = await workspaceFetch("/api/integrations/dust/config", { method: "DELETE" });
         const body = (await response.json().catch(() => ({ ok: false, error: "Bad response from the server." }))) as {
           ok?: boolean;
           error?: string;
@@ -5626,14 +5805,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       );
       return { ok: true as const };
     },
-    [commit],
+    [commit, workspaceEffectAllowed, workspaceFetch],
   );
 
   /** Run one locked Dust agent turn. The server resolves workspace, credential,
    * and task lock from normalized authority; this call sends only task + text. */
   const runDustTask = useCallback(async (task: DustTask, message: string) => {
+    if (!workspaceEffectAllowed()) {
+      return { ok: false as const, error: "Workspace unavailable. Retry before running Dust." };
+    }
     try {
-      const res = await fetch("/api/dust/run", {
+      const res = await workspaceFetch("/api/dust/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ task, message }),
@@ -5649,7 +5831,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : "Network error." };
     }
-  }, []);
+  }, [workspaceEffectAllowed, workspaceFetch]);
 
   const setDefaultProvider = useCallback(
     (id: string) =>
@@ -5667,6 +5849,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const addModel = useCallback(
     (m: Omit<SavedModel, "id">): SavedModel => {
+      if (!workspaceEffectAllowed()) {
+        throw new Error("Workspace unavailable. Retry before adding a model.");
+      }
       const model: SavedModel = { ...m, id: genId("model") };
       commit((s) =>
         withActivity(
@@ -5685,7 +5870,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       );
       return model;
     },
-    [commit],
+    [commit, workspaceEffectAllowed],
   );
 
   const updateModel = useCallback(
@@ -5860,6 +6045,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const sendChat = useCallback(
     async (threadId: string, text: string) => {
+      if (!workspaceEffectAllowed()) return;
       const s = current();
       const thread = s.chats.find((t) => t.id === threadId);
       if (!thread) return;
@@ -5937,8 +6123,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         : [];
       if (chatAiCfg && (enabledMcp.length || webResearch || activeCampaign)) {
         attemptedLive = true;
+        const toolLoopController = new AbortController();
+        chatAbortControllers.current.set(threadId, toolLoopController);
         try {
-          const res = await fetch("/api/hermes/chat", {
+          const res = await workspaceFetch("/api/hermes/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -5951,6 +6139,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               webResearch,
               ...(activeCampaign && { campaign: activeCampaign, existing: existingForCampaign }),
             }),
+            signal: toolLoopController.signal,
           });
           const data = (await res.json().catch(() => null)) as
             | { ok?: boolean; text?: string; reason?: string }
@@ -5961,9 +6150,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           }
           liveError = data?.reason ?? `Chat tool loop failed (${res.status}).`;
         } catch (err) {
+          if (err instanceof Error && err.name === "AbortError") {
+            updateChatMessage(threadId, assistantId, { content: "(cancelled)", pending: false });
+            return;
+          }
           // Genuine failure — recorded, not swallowed. Still let the streaming Aria
           // path below have a chance before surfacing it.
           liveError = err instanceof Error ? err.message : "Network error contacting the chat tool loop.";
+        } finally {
+          if (chatAbortControllers.current.get(threadId) === toolLoopController) {
+            chatAbortControllers.current.delete(threadId);
+          }
         }
       }
 
@@ -5974,7 +6171,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const controller = new AbortController();
         chatAbortControllers.current.set(threadId, controller);
         try {
-          const res = await fetch("/api/hermes/chat", {
+          const res = await workspaceFetch("/api/hermes/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -6065,7 +6262,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         pending: false,
       });
     },
-    [current, appendChatMessage, updateChatMessage],
+    [current, appendChatMessage, updateChatMessage, workspaceEffectAllowed, workspaceFetch],
   );
 
   // F-5: cancel an in-flight sendChat stream (call on component unmount or thread delete).

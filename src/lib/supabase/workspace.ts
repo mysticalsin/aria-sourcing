@@ -217,13 +217,23 @@ export async function saveRemoteState(
         console.warn("saveRemoteState conflict reload failed:", latestError.message);
         return { ok: false };
       }
+      if (
+        !latestRow ||
+        latestRow.state === null ||
+        latestRow.state === undefined ||
+        typeof latestRow.updated_at !== "string" ||
+        !latestRow.updated_at
+      ) {
+        console.warn("saveRemoteState conflict reload returned no authoritative state version");
+        return { ok: false };
+      }
       return {
         ok: false,
         conflict: true,
         latest: {
           workspaceId,
-          state: (latestRow?.state as HermesState) ?? null,
-          updatedAt: (latestRow?.updated_at as string) ?? null,
+          state: latestRow.state as HermesState,
+          updatedAt: latestRow.updated_at,
         },
       };
     }

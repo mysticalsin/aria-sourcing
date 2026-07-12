@@ -168,5 +168,33 @@ ok(
   failedConflictRead.ok === false && !failedConflictRead.conflict && failedConflictRead.latest === undefined,
 );
 
+maybeSingleReplies = [
+  { data: null, error: null },
+  { data: null, error: null },
+];
+const missingConflictRow = await saveRemoteState(
+  "workspace-1",
+  { currentRole: "member" } as never,
+  "version-1",
+);
+ok(
+  "missing latest conflict row remains failed instead of becoming an empty workspace",
+  missingConflictRow.ok === false && !missingConflictRow.conflict && missingConflictRow.latest === undefined,
+);
+
+maybeSingleReplies = [
+  { data: null, error: null },
+  { data: { state: null, updated_at: "version-2" }, error: null },
+];
+const nullConflictState = await saveRemoteState(
+  "workspace-1",
+  { currentRole: "member" } as never,
+  "version-1",
+);
+ok(
+  "null latest conflict state remains failed instead of seeding a replacement",
+  nullConflictState.ok === false && !nullConflictState.conflict && nullConflictState.latest === undefined,
+);
+
 console.log(`RESULT workspace-availability: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

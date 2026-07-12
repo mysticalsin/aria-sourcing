@@ -41,6 +41,7 @@ const pending: PendingWorkspaceSave<typeof snapshot> = {
   snapshot,
   workspaceId: "workspace-1",
   expectedUpdatedAt: "version-1",
+  generation: 1,
 };
 const failed = createFailedWorkspaceSave(pending, "database unavailable");
 ok("failed save keeps the exact pending snapshot", failed.pending.snapshot === snapshot);
