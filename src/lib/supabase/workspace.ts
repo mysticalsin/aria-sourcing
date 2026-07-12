@@ -4,19 +4,43 @@ import type { HermesState, Role } from "@/lib/types";
 import { getBrowserSupabase } from "./client";
 import { stripSharedRole } from "@/lib/live-role-authority";
 import { AGENT_SEAT_SELECT, type AgentSeatRow } from "@/lib/fleet-seats";
+import type { WorkspaceDependency } from "@/lib/workspace-status";
 
-function profileRole(value: unknown): Role {
-  return value === "admin" || value === "member" || value === "viewer" ? value : "viewer";
+function isProfileRole(value: unknown): value is Role {
+  return value === "admin" || value === "member" || value === "viewer";
 }
 
-export interface RemoteLoad {
+function profileRole(value: unknown): Role {
+  return isProfileRole(value) ? value : "viewer";
+}
+
+export interface RemoteStateVersion {
   workspaceId: string;
   state: HermesState | null;
-  /** Signed-in profile authority. Shared workspace JSON is never authoritative. */
-  role: Role;
   /** The row's `updated_at` when loaded — the optimistic-concurrency token. */
   updatedAt: string | null;
 }
+
+export interface RemoteReadyLoad extends RemoteStateVersion {
+  status: "ready";
+  /** Signed-in profile authority. Shared workspace JSON is never authoritative. */
+  role: Role;
+}
+
+export interface RemoteSignedOutLoad {
+  status: "signed_out";
+}
+
+export interface RemoteUnavailableLoad {
+  status: "unavailable";
+  dependency: Exclude<WorkspaceDependency, "agent_seats">;
+}
+
+export type RemoteLoad = RemoteReadyLoad | RemoteSignedOutLoad | RemoteUnavailableLoad;
+
+export type RemoteAgentSeatsLoad =
+  | { status: "ready"; seats: AgentSeatRow[] }
+  | { status: "unavailable"; dependency: "agent_seats" };
 
 export interface SaveResult {
   ok: boolean;
@@ -25,7 +49,7 @@ export interface SaveResult {
   /** The new `updated_at` after a successful save (becomes the next token). */
   updatedAt?: string;
   /** On a conflict, the latest shared state to reload. */
-  latest?: RemoteLoad;
+  latest?: RemoteStateVersion;
 }
 
 export interface CurrentUser {
@@ -53,41 +77,51 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 /**
  * Load this user's shared workspace state. `ensure_workspace` (a SECURITY DEFINER
  * function in the migration) finds-or-creates the org workspace by email domain
- * and the caller's profile, returning the workspace id. Returns null only when
- * signed out; otherwise returns the workspace id, its persisted state (or null if
- * the workspace has never been seeded), and the row's `updated_at` token.
+ * and the caller's profile, returning the workspace id. The tagged result keeps
+ * confirmed sign-out, dependency failure, and a successful empty workspace
+ * distinct so callers never substitute synthetic data for a failed read.
  */
-export async function loadRemoteState(): Promise<RemoteLoad | null> {
+export async function loadRemoteState(): Promise<RemoteLoad> {
   const supabase = getBrowserSupabase();
-  if (!supabase) return null;
-  const { data: userData } = await supabase.auth.getUser();
-  if (!userData.user) return null;
+  if (!supabase) return { status: "unavailable", dependency: "auth" };
+  let dependency: RemoteUnavailableLoad["dependency"] = "auth";
 
   try {
+    const { data: userData, error: authError } = await supabase.auth.getUser();
+    if (authError) {
+      console.warn("auth session load failed:", authError.message);
+      return { status: "unavailable", dependency: "auth" };
+    }
+    if (!userData.user) return { status: "signed_out" };
+
+    dependency = "workspace";
     const { data: workspaceId, error: rpcError } = await supabase.rpc("ensure_workspace");
     if (rpcError || !workspaceId) {
-      console.warn("ensure_workspace failed; running in-memory only:", rpcError?.message);
-      return { workspaceId: "", state: null, updatedAt: null, role: "viewer" };
+      console.warn("ensure_workspace failed:", rpcError?.message);
+      return { status: "unavailable", dependency: "workspace" };
     }
     const { data: resolvedRole, error: roleError } = await supabase.rpc("current_profile_role");
     if (roleError) {
-      console.warn("current_profile_role failed; using read-only authority:", roleError.message);
+      console.warn("current_profile_role failed:", roleError.message);
+      return { status: "unavailable", dependency: "workspace" };
     }
-    const role = roleError ? "viewer" : profileRole(resolvedRole);
+    if (!isProfileRole(resolvedRole)) {
+      console.warn("current_profile_role returned an invalid authority value");
+      return { status: "unavailable", dependency: "workspace" };
+    }
+    const role = resolvedRole;
+    dependency = "state";
     const { data: row, error: rowError } = await supabase
       .from("workspace_state")
       .select("state, updated_at")
       .eq("workspace_id", workspaceId)
       .maybeSingle();
     if (rowError) {
-      // A FAILED read must not masquerade as an EMPTY workspace: the hydrate
-      // path seeds-and-saves when it sees `state: null` with a workspaceId,
-      // which would overwrite the whole shared blob during a transient backend
-      // blip. Run in-memory only (no workspaceId → nothing ever persists).
-      console.warn("workspace_state load failed; running in-memory only:", rowError.message);
-      return { workspaceId: "", state: null, updatedAt: null, role };
+      console.warn("workspace_state load failed:", rowError.message);
+      return { status: "unavailable", dependency: "state" };
     }
     return {
+      status: "ready",
       workspaceId: workspaceId as string,
       state: (row?.state as HermesState) ?? null,
       updatedAt: (row?.updated_at as string) ?? null,
@@ -95,22 +129,27 @@ export async function loadRemoteState(): Promise<RemoteLoad | null> {
     };
   } catch (err) {
     console.warn("loadRemoteState error:", err);
-    return { workspaceId: "", state: null, updatedAt: null, role: "viewer" };
+    return { status: "unavailable", dependency };
   }
 }
 
-export async function loadRemoteAgentSeats(): Promise<AgentSeatRow[] | null> {
+export async function loadRemoteAgentSeats(): Promise<RemoteAgentSeatsLoad> {
   const supabase = getBrowserSupabase();
-  if (!supabase) return [];
-  const { data, error } = await supabase
-    .from("agent_seats")
-    .select(AGENT_SEAT_SELECT)
-    .order("created_at", { ascending: true });
-  if (error) {
-    console.warn("agent_seats load failed; keeping workspace-state seats:", error.message);
-    return null;
+  if (!supabase) return { status: "unavailable", dependency: "agent_seats" };
+  try {
+    const { data, error } = await supabase
+      .from("agent_seats")
+      .select(AGENT_SEAT_SELECT)
+      .order("created_at", { ascending: true });
+    if (error) {
+      console.warn("agent_seats load failed:", error.message);
+      return { status: "unavailable", dependency: "agent_seats" };
+    }
+    return { status: "ready", seats: (data ?? []) as AgentSeatRow[] };
+  } catch (err) {
+    console.warn("agent_seats load error:", err);
+    return { status: "unavailable", dependency: "agent_seats" };
   }
-  return (data ?? []) as AgentSeatRow[];
 }
 
 /**
@@ -169,11 +208,15 @@ export async function saveRemoteState(
     if (!data) {
       // Zero rows matched → a teammate wrote since we loaded. Return the latest
       // state so the caller can reload instead of clobbering it.
-      const { data: latestRow } = await supabase
+      const { data: latestRow, error: latestError } = await supabase
         .from("workspace_state")
         .select("state, updated_at")
         .eq("workspace_id", workspaceId)
         .maybeSingle();
+      if (latestError) {
+        console.warn("saveRemoteState conflict reload failed:", latestError.message);
+        return { ok: false };
+      }
       return {
         ok: false,
         conflict: true,
@@ -181,7 +224,6 @@ export async function saveRemoteState(
           workspaceId,
           state: (latestRow?.state as HermesState) ?? null,
           updatedAt: (latestRow?.updated_at as string) ?? null,
-          role: "viewer",
         },
       };
     }

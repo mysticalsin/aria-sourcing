@@ -33,16 +33,32 @@ ok("workspace load resolves current_profile_role", /rpc\("current_profile_role"\
 const storeSource = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
 const integrationsSource = readFileSync(new URL("../src/lib/integrations.ts", import.meta.url), "utf8");
 ok("live hydration applies the profile role", /applyAuthoritativeRole/.test(storeSource));
-const authNullViewer = storeSource.indexOf('applyAuthoritativeRole(buildLiveEmptyState(), "viewer")');
-const demoLoad = storeSource.indexOf("setState(loadState())", authNullViewer);
-ok("live auth-null hydration returns an empty viewer shell before demo loading", authNullViewer >= 0 && demoLoad > authNullViewer);
 ok(
-  "a new live workspace persists an empty state rather than demo campaign data",
-  /if \(remote\.state\)[\s\S]{0,900}else \{[\s\S]{0,180}const seededBase = buildLiveEmptyState\(\)/.test(storeSource),
+  "live auth and workspace failures block hydration instead of inventing an empty viewer shell",
+  /remote\.status === "signed_out"[\s\S]{0,220}phase: "signed_out"/.test(storeSource) &&
+    /remote\.status === "unavailable"[\s\S]{0,180}unavailableWorkspaceStatus/.test(storeSource) &&
+    !storeSource.includes('applyAuthoritativeRole(buildLiveEmptyState(), "viewer")'),
+);
+ok(
+  "a successful empty live workspace is ready and uses the observable save queue",
+  /remote\.state \? normalizeHermesState\(remote\.state\) : buildLiveEmptyState\(\)/.test(storeSource) &&
+    /if \(remote\.state\) skipNextPersist\.current = true/.test(storeSource) &&
+    /queuedRemoteSnapshot\.current = state/.test(storeSource) &&
+    /createFailedWorkspaceSave/.test(storeSource),
 );
 ok(
   "live action fallback never exposes demo seed data before hydration",
   /stateRef\.current \?\? \(supabaseEnabled \? buildLiveEmptyState\(\) : buildSeedState\(\)\)/.test(storeSource),
+);
+ok(
+  "workspace mutations are blocked unless availability is ready",
+  /const commit = useCallback[\s\S]{0,180}!workspaceAllowsMutation\(workspaceStatusRef\.current\)/.test(storeSource),
+);
+ok(
+  "failed live save retains the newest queued snapshot and exposes retry",
+  /const newestSnapshot = queuedRemoteSnapshot\.current \?\? pending\.snapshot/.test(storeSource) &&
+    /markRemoteSaveFailed\(pending, newestSnapshot\)/.test(storeSource) &&
+    /const retrySave = useCallback[\s\S]{0,300}persistPendingSave\(pending\)/.test(storeSource),
 );
 ok(
   "live empty state contains no campaigns, candidates, outreach, or ghost API keys",

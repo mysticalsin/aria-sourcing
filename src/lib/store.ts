@@ -131,8 +131,20 @@ import type {
 import { genId, initialsFrom, isoDaysBefore } from "./utils";
 import { createCampaign as buildCampaign } from "./mock-ai";
 import { supabaseEnabled } from "./supabase/config";
-import { loadRemoteAgentSeats, loadRemoteState, saveRemoteState } from "./supabase/workspace";
+import {
+  loadRemoteAgentSeats,
+  loadRemoteState,
+  saveRemoteState,
+  type RemoteStateVersion,
+} from "./supabase/workspace";
 import { applyAuthoritativeRole } from "./live-role-authority";
+import {
+  createFailedWorkspaceSave,
+  workspaceAllowsMutation,
+  type PendingWorkspaceSave,
+  type WorkspaceDependency,
+  type WorkspaceStatus,
+} from "./workspace-status";
 import { allocateBatch, defaultSendWindow, fleetSummary, type FleetSummary } from "./fleet";
 import { createFleetSeatOnServer, mergeAgentSeatRows, patchFleetSeatOnServer } from "./fleet-seats";
 import {
@@ -551,6 +563,9 @@ export interface HermesActions {
 interface HermesContextValue {
   state: HermesState | null;
   hydrated: boolean;
+  workspaceStatus: WorkspaceStatus;
+  retryWorkspace: () => Promise<void>;
+  retrySave: () => Promise<void>;
   actions: HermesActions;
   /** Computed once per state change (not per consumer) — the TopBar bell and
    *  the dashboard AttentionPanel both read this instead of independently
@@ -559,6 +574,18 @@ interface HermesContextValue {
 }
 
 const HermesContext = createContext<HermesContextValue | null>(null);
+const UNSAVED_WORKSPACE_MESSAGE =
+  "Your latest changes are still in this browser but are not saved to the shared workspace.";
+
+function unavailableWorkspaceStatus(dependency: WorkspaceDependency): WorkspaceStatus {
+  const messages: Record<WorkspaceDependency, string> = {
+    auth: "We could not verify your session. Product data and actions are blocked until the connection recovers.",
+    workspace: "We could not resolve your workspace or access level. Product data and actions are blocked.",
+    state: "Workspace data is temporarily unavailable. No empty or demo data has been substituted.",
+    agent_seats: "The authoritative agent roster is temporarily unavailable. Stale workspace seats are not shown.",
+  };
+  return { phase: "unavailable", mode: "live", dependency, message: messages[dependency] };
+}
 
 /* ============================================================================
    Provider
@@ -661,11 +688,25 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<HermesState | null>(null);
   const stateRef = useRef<HermesState | null>(null);
   stateRef.current = state;
+  const [workspaceStatus, setWorkspaceStatusState] = useState<WorkspaceStatus>({
+    phase: "loading",
+    mode: supabaseEnabled ? "live" : "demo",
+  });
+  const workspaceStatusRef = useRef<WorkspaceStatus>(workspaceStatus);
+  const setWorkspaceStatus = useCallback((next: WorkspaceStatus) => {
+    workspaceStatusRef.current = next;
+    setWorkspaceStatusState(next);
+  }, []);
   const workspaceIdRef = useRef<string>("");
   // Optimistic-concurrency token: the workspace_state.updated_at we last loaded/saved.
   const remoteUpdatedAtRef = useRef<string | null>(null);
   const liveRoleRef = useRef<Role>("viewer");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hydrationGeneration = useRef(0);
+  const queuedRemoteSnapshot = useRef<HermesState | null>(null);
+  const pendingRemoteSave = useRef<PendingWorkspaceSave<HermesState> | null>(null);
+  const remoteSaveInFlight = useRef(false);
+  const drainRemoteSaveQueueRef = useRef<() => void>(() => undefined);
   // DEMO mode only: latest state snapshot awaiting a debounced localStorage write,
   // so flushLocalSave() can write it immediately on unmount / tab close.
   const pendingLocalSave = useRef<HermesState | null>(null);
@@ -706,53 +747,230 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     };
   }, [flushLocalSave]);
 
-  // Hydrate once on mount.
-  // LIVE mode → load the shared workspace document from Supabase (seed if empty).
-  // DEMO mode → load from localStorage (no login, fully client-side).
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (supabaseEnabled) {
-        const remote = await loadRemoteState();
-        if (cancelled) return;
-        if (remote) {
-          workspaceIdRef.current = remote.workspaceId;
-          remoteUpdatedAtRef.current = remote.updatedAt;
-          liveRoleRef.current = remote.role;
-          if (remote.state) {
-            skipNextPersist.current = true; // don't re-save what we just loaded
-            // D-1: run migration when the persisted version is behind current.
-            const loaded = normalizeHermesState(remote.state);
-            const serverSeats = await loadRemoteAgentSeats();
-            const liveState = serverSeats ? { ...loaded, seats: mergeAgentSeatRows(loaded.seats, serverSeats) } : loaded;
-            setState(applyAuthoritativeRole(liveState, remote.role));
-          } else {
-            const seededBase = buildLiveEmptyState();
-            const serverSeats = await loadRemoteAgentSeats();
-            const seeded = applyAuthoritativeRole(
-              serverSeats ? { ...seededBase, seats: mergeAgentSeatRows(seededBase.seats, serverSeats) } : seededBase,
-              remote.role,
-            );
-            setState(seeded);
-            if (remote.workspaceId) {
-              void saveRemoteState(remote.workspaceId, seeded, null).then((res) => {
-                if (res.ok && res.updatedAt) remoteUpdatedAtRef.current = res.updatedAt;
-              });
-            }
-          }
-          return;
-        }
-        // A live auth-null/error path must never fall through to localStorage,
-        // whose demo seed is admin. Keep the shell read-only until auth recovers.
-        setState(applyAuthoritativeRole(buildLiveEmptyState(), "viewer"));
+  const hydrateWorkspace = useCallback(async () => {
+    const generation = ++hydrationGeneration.current;
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    queuedRemoteSnapshot.current = null;
+    pendingRemoteSave.current = null;
+    skipNextPersist.current = false;
+    setWorkspaceStatus({ phase: "loading", mode: supabaseEnabled ? "live" : "demo" });
+
+    if (!supabaseEnabled) {
+      const demoState = loadState();
+      if (generation !== hydrationGeneration.current) return;
+      stateRef.current = demoState;
+      setState(demoState);
+      setWorkspaceStatus({ phase: "ready", mode: "demo" });
+      return;
+    }
+
+    workspaceIdRef.current = "";
+    remoteUpdatedAtRef.current = null;
+    liveRoleRef.current = "viewer";
+    stateRef.current = null;
+    setState(null);
+
+    try {
+      const remote = await loadRemoteState();
+      if (generation !== hydrationGeneration.current) return;
+      if (remote.status === "signed_out") {
+        setWorkspaceStatus({ phase: "signed_out", mode: "live" });
         return;
       }
-      setState(loadState());
-    })();
+      if (remote.status === "unavailable") {
+        setWorkspaceStatus(unavailableWorkspaceStatus(remote.dependency));
+        return;
+      }
+
+      workspaceIdRef.current = remote.workspaceId;
+      remoteUpdatedAtRef.current = remote.updatedAt;
+      liveRoleRef.current = remote.role;
+
+      const serverSeats = await loadRemoteAgentSeats();
+      if (generation !== hydrationGeneration.current) return;
+      if (serverSeats.status === "unavailable") {
+        setWorkspaceStatus(unavailableWorkspaceStatus("agent_seats"));
+        return;
+      }
+
+      const base = remote.state ? normalizeHermesState(remote.state) : buildLiveEmptyState();
+      const liveState = {
+        ...base,
+        seats: mergeAgentSeatRows(base.seats, serverSeats.seats),
+      };
+      const next = applyAuthoritativeRole(liveState, remote.role);
+      if (remote.state) skipNextPersist.current = true;
+      stateRef.current = next;
+      setState(next);
+      setWorkspaceStatus({ phase: "ready", mode: "live" });
+    } catch (error) {
+      console.warn("workspace hydration failed:", error);
+      if (generation !== hydrationGeneration.current) return;
+      stateRef.current = null;
+      setState(null);
+      setWorkspaceStatus(unavailableWorkspaceStatus("state"));
+    }
+  }, [setWorkspaceStatus]);
+
+  // Hydrate once on mount. Retry uses the same authoritative path, so recovery
+  // cannot accidentally switch to local/demo state.
+  useEffect(() => {
+    void hydrateWorkspace();
     return () => {
-      cancelled = true;
+      hydrationGeneration.current += 1;
+      if (supabaseEnabled && saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
     };
-  }, []);
+  }, [hydrateWorkspace]);
+
+  const applyRemoteConflict = useCallback(async (latest: RemoteStateVersion) => {
+    remoteUpdatedAtRef.current = latest.updatedAt;
+    const serverSeats = await loadRemoteAgentSeats();
+    if (serverSeats.status === "unavailable") {
+      stateRef.current = null;
+      setState(null);
+      setWorkspaceStatus(unavailableWorkspaceStatus("agent_seats"));
+      return;
+    }
+
+    const base = latest.state ? normalizeHermesState(latest.state) : buildLiveEmptyState();
+    const liveState = {
+      ...base,
+      seats: mergeAgentSeatRows(base.seats, serverSeats.seats),
+    };
+    const notice: Activity = {
+      id: genId("act"),
+      type: "system",
+      title: "Workspace reloaded from your team",
+      notes:
+        "A teammate saved a change at the same moment, so the latest shared version was loaded. Reapply your last edit if it is missing.",
+      outcome: "Reloaded",
+      campaignId: null,
+      linkedEntityType: null,
+      linkedEntityId: null,
+      createdAt: new Date().toISOString(),
+    };
+    const next = applyAuthoritativeRole(
+      { ...liveState, activities: [notice, ...liveState.activities].slice(0, 300) },
+      liveRoleRef.current,
+    );
+    skipNextPersist.current = true;
+    stateRef.current = next;
+    setState(next);
+    setWorkspaceStatus({ phase: "ready", mode: "live" });
+  }, [setWorkspaceStatus]);
+
+  const persistPendingSave = useCallback(async (
+    pending: PendingWorkspaceSave<HermesState>,
+  ): Promise<"saved" | "conflict" | "failed"> => {
+    const result = await saveRemoteState(
+      pending.workspaceId,
+      pending.snapshot,
+      pending.expectedUpdatedAt,
+    );
+    if (result.ok) {
+      if (result.updatedAt) remoteUpdatedAtRef.current = result.updatedAt;
+      setWorkspaceStatus({ phase: "ready", mode: "live" });
+      return "saved";
+    }
+    if (result.conflict && result.latest) {
+      try {
+        await applyRemoteConflict(result.latest);
+      } catch (error) {
+        console.warn("workspace conflict reload failed:", error);
+        stateRef.current = null;
+        setState(null);
+        setWorkspaceStatus(unavailableWorkspaceStatus("state"));
+      }
+      return "conflict";
+    }
+    return "failed";
+  }, [applyRemoteConflict, setWorkspaceStatus]);
+
+  const markRemoteSaveFailed = useCallback((
+    pending: PendingWorkspaceSave<HermesState>,
+    snapshot: HermesState = pending.snapshot,
+  ) => {
+    const failed = createFailedWorkspaceSave(
+      {
+        workspaceId: pending.workspaceId,
+        snapshot,
+        expectedUpdatedAt: remoteUpdatedAtRef.current,
+      },
+      UNSAVED_WORKSPACE_MESSAGE,
+    );
+    pendingRemoteSave.current = failed.pending;
+    setWorkspaceStatus(failed.status);
+  }, [setWorkspaceStatus]);
+
+  const drainRemoteSaveQueue = useCallback(() => {
+    if (remoteSaveInFlight.current || !workspaceAllowsMutation(workspaceStatusRef.current)) return;
+    const snapshot = queuedRemoteSnapshot.current;
+    const workspaceId = workspaceIdRef.current;
+    if (!snapshot) return;
+    if (!workspaceId) {
+      queuedRemoteSnapshot.current = null;
+      setWorkspaceStatus(unavailableWorkspaceStatus("workspace"));
+      return;
+    }
+
+    queuedRemoteSnapshot.current = null;
+    const pending: PendingWorkspaceSave<HermesState> = {
+      workspaceId,
+      snapshot,
+      expectedUpdatedAt: remoteUpdatedAtRef.current,
+    };
+    pendingRemoteSave.current = pending;
+    remoteSaveInFlight.current = true;
+
+    void persistPendingSave(pending).then((outcome) => {
+      remoteSaveInFlight.current = false;
+      if (outcome === "conflict") {
+        queuedRemoteSnapshot.current = null;
+        pendingRemoteSave.current = null;
+        return;
+      }
+      if (outcome === "failed") {
+        const newestSnapshot = queuedRemoteSnapshot.current ?? pending.snapshot;
+        queuedRemoteSnapshot.current = null;
+        markRemoteSaveFailed(pending, newestSnapshot);
+        return;
+      }
+
+      if (pendingRemoteSave.current === pending) pendingRemoteSave.current = null;
+      if (queuedRemoteSnapshot.current) drainRemoteSaveQueueRef.current();
+    }).catch(() => {
+      remoteSaveInFlight.current = false;
+      const newestSnapshot = queuedRemoteSnapshot.current ?? pending.snapshot;
+      queuedRemoteSnapshot.current = null;
+      markRemoteSaveFailed(pending, newestSnapshot);
+    });
+  }, [markRemoteSaveFailed, persistPendingSave, setWorkspaceStatus]);
+  drainRemoteSaveQueueRef.current = drainRemoteSaveQueue;
+
+  const retrySave = useCallback(async () => {
+    const pending = pendingRemoteSave.current;
+    if (!pending || remoteSaveInFlight.current) return;
+    remoteSaveInFlight.current = true;
+    try {
+      const outcome = await persistPendingSave(pending);
+      if (outcome === "saved" || outcome === "conflict") {
+        pendingRemoteSave.current = null;
+        queuedRemoteSnapshot.current = null;
+        return;
+      }
+      markRemoteSaveFailed(pending);
+    } catch {
+      markRemoteSaveFailed(pending);
+    } finally {
+      remoteSaveInFlight.current = false;
+    }
+  }, [markRemoteSaveFailed, persistPendingSave]);
 
   // Persist on change (debounced upsert in LIVE mode, synchronous in DEMO mode).
   useEffect(() => {
@@ -762,54 +980,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     if (supabaseEnabled) {
+      if (!workspaceAllowsMutation(workspaceStatusRef.current)) return;
       if (saveTimer.current) clearTimeout(saveTimer.current);
-      const wid = workspaceIdRef.current;
-      const snapshot = state;
+      queuedRemoteSnapshot.current = state;
       saveTimer.current = setTimeout(() => {
-        if (!wid) return;
-        void (async () => {
-          const res = await saveRemoteState(wid, snapshot, remoteUpdatedAtRef.current);
-          if (res.ok) {
-            if (res.updatedAt) remoteUpdatedAtRef.current = res.updatedAt;
-          } else if (res.conflict && res.latest) {
-            // A teammate saved since we loaded. Reload their latest so nothing is
-            // silently clobbered; record it in the activity log so the operator
-            // knows their last unsaved edit was dropped and can reapply it.
-            remoteUpdatedAtRef.current = res.latest.updatedAt;
-            const latestState = res.latest.state;
-            if (latestState) {
-              skipNextPersist.current = true;
-              const migrated = normalizeHermesState(latestState);
-              const serverSeats = await loadRemoteAgentSeats();
-              const liveState = serverSeats ? { ...migrated, seats: mergeAgentSeatRows(migrated.seats, serverSeats) } : migrated;
-              const notice: Activity = {
-                id: genId("act"),
-                type: "system",
-                title: "Workspace reloaded from your team",
-                notes:
-                  "A teammate saved a change at the same moment, so the latest shared version was loaded. Reapply your last edit if it is missing.",
-                outcome: "Reloaded",
-                campaignId: null,
-                linkedEntityType: null,
-                linkedEntityId: null,
-                createdAt: new Date().toISOString(),
-              };
-              setState(applyAuthoritativeRole(
-                { ...liveState, activities: [notice, ...liveState.activities].slice(0, 300) },
-                liveRoleRef.current,
-              ));
-            }
-          } else {
-            // Non-conflict save failure (network / quota). Retry once shortly so a blip
-            // on the last edit before the user stops typing doesn't silently lose the
-            // write (the debounce otherwise only re-saves on the next state change).
-            setTimeout(() => {
-              void saveRemoteState(wid, snapshot, remoteUpdatedAtRef.current).then((r) => {
-                if (r.ok && r.updatedAt) remoteUpdatedAtRef.current = r.updatedAt;
-              });
-            }, 2500);
-          }
-        })();
+        saveTimer.current = null;
+        drainRemoteSaveQueueRef.current();
       }, 600);
     } else {
       // Debounced like the Supabase branch above (same 600ms interval / saveTimer ref)
@@ -824,6 +1000,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   }, [state, flushLocalSave]);
 
   const commit = useCallback((fn: (s: HermesState) => HermesState) => {
+    if (!workspaceAllowsMutation(workspaceStatusRef.current)) return;
     setState((prev) => {
       const base = prev ?? stateRef.current;
       if (!base) return prev;
@@ -6095,11 +6272,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const resetDemo = useCallback(() => {
+    if (supabaseEnabled || !workspaceAllowsMutation(workspaceStatusRef.current)) return;
     const fresh = buildSeedState();
     stateRef.current = fresh;
-    // In LIVE mode, do NOT auto-persist the reset — that would wipe the SHARED
-    // workspace for every member. Reset only the local view; reload re-hydrates.
-    if (supabaseEnabled) skipNextPersist.current = true;
     setState(fresh);
   }, []);
 
@@ -6266,8 +6441,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const value = useMemo<HermesContextValue>(
-    () => ({ state, hydrated: state !== null, actions, recommendations }),
-    [state, actions, recommendations],
+    () => ({
+      state,
+      hydrated: workspaceStatus.phase === "ready" && state !== null,
+      workspaceStatus,
+      retryWorkspace: hydrateWorkspace,
+      retrySave,
+      actions,
+      recommendations,
+    }),
+    [state, workspaceStatus, hydrateWorkspace, retrySave, actions, recommendations],
   );
 
   return React.createElement(HermesContext.Provider, { value }, children);
