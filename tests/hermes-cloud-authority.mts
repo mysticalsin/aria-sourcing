@@ -22,14 +22,49 @@ let upstreamCalls = 0;
 let toolLoopCalls = 0;
 let graphCalls = 0;
 let vaultProvider = "OpenAI";
+let agentSpecAvailable = true;
+let runPersistenceFails = false;
 const resolverCalls: Array<{ id?: string; provider?: string }> = [];
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
+const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const agentSpecId = "22222222-2222-4222-8222-222222222222";
+const agentRunId = "33333333-3333-4333-8333-333333333333";
 
 const session = {
   auth: { getUser: async () => ({ data: { user: { id: "user-1" } }, error: null }) },
   rpc: async (name: string) => ({
-    data: name === "current_profile_role" ? role : "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    data: name === "current_profile_role" ? role : workspaceId,
     error: null,
+  }),
+  from: (table: string) => {
+    const query: any = {
+      insert: () => query,
+      update: () => query,
+      select: () => query,
+      eq: () => query,
+      maybeSingle: async () => ({
+        data: table === "agent_specs" && agentSpecAvailable
+          ? {
+              id: agentSpecId,
+              workspace_id: workspaceId,
+              owner_id: "user-1",
+              role_brief: { title: "Platform Engineer", skills: ["TypeScript"] },
+              status: "active",
+            }
+          : null,
+        error: null,
+      }),
+    };
+    return query;
+  },
+};
+
+const service = {
+  rpc: async (name: string) => ({
+    data: name === "create_agent_run_with_memory_context" && !runPersistenceFails ? agentRunId : null,
+    error: name === "create_agent_run_with_memory_context" && runPersistenceFails
+      ? { message: "synthetic persistence failure" }
+      : null,
   }),
   from: () => {
     const query: any = {
@@ -37,6 +72,10 @@ const session = {
       update: () => query,
       select: () => query,
       eq: () => query,
+      is: () => query,
+      or: () => query,
+      order: () => query,
+      limit: () => query,
       maybeSingle: async () => ({ data: null, error: null }),
     };
     return query;
@@ -54,7 +93,7 @@ mock.module(moduleUrl("src/lib/supabase/config.ts"), {
 mock.module(moduleUrl("src/lib/supabase/server.ts"), {
   namedExports: {
     getServerSupabase: async () => session,
-    getServiceSupabase: () => null,
+    getServiceSupabase: () => service,
     requireAdmin: async () => ({ ok: false, response: new Response(null, { status: 403 }) }),
   },
 });
@@ -132,7 +171,7 @@ try {
         model: "gpt-4o-mini",
       }),
     });
-  const agentRequest = () =>
+  const agentRequest = (includeSpec = true) =>
     new NextRequest("http://localhost/api/agents/run", {
       method: "POST",
       headers: { "content-type": "application/json", "x-forwarded-for": crypto.randomUUID() },
@@ -143,6 +182,7 @@ try {
         provider: "openai",
         apiKeyId: "11111111-1111-4111-8111-111111111111",
         model: "gpt-4o-mini",
+        ...(includeSpec ? { specId: agentSpecId } : {}),
       }),
     });
   const resetCalls = () => {
@@ -227,6 +267,25 @@ try {
   );
 
   role = "admin";
+  resetCalls();
+  const missingSpecIdAgent = await agentRoute.POST(agentRequest(false));
+  ok("graph agent requires a stored spec id", missingSpecIdAgent.status === 400);
+  ok("missing spec id fails before vault resolution or model egress", resolverCalls.length === 0 && graphCalls === 0 && upstreamCalls === 0);
+
+  agentSpecAvailable = false;
+  resetCalls();
+  const unknownSpecAgent = await agentRoute.POST(agentRequest());
+  ok("graph agent rejects an unavailable active spec", unknownSpecAgent.status === 404);
+  ok("spec authorization fails before vault resolution or model egress", resolverCalls.length === 0 && graphCalls === 0 && upstreamCalls === 0);
+
+  agentSpecAvailable = true;
+  runPersistenceFails = true;
+  resetCalls();
+  const persistenceFailureAgent = await agentRoute.POST(agentRequest());
+  ok("graph agent fails closed when run-context persistence fails", persistenceFailureAgent.status === 503);
+  ok("run-context persistence failure prevents model egress", graphCalls === 0 && upstreamCalls === 0);
+
+  runPersistenceFails = false;
   resetCalls();
   const adminAgent = await agentRoute.POST(agentRequest());
   const adminAgentBody = (await adminAgent.json()) as { ok?: boolean };
