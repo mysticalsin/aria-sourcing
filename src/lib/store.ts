@@ -61,7 +61,6 @@ import {
   dedupeCandidates,
   type ApprovalResult,
 } from "./rules";
-import { matchCandidateByEmail } from "./email-match";
 import { validateMcpBaseUrl } from "./mcp-auth-params";
 import {
   defaultLiveIntegrations,
@@ -69,6 +68,7 @@ import {
   type ConnectionTestResult,
 } from "./integrations";
 import { interviewerIsBusy, resolveBookingSlot } from "./store/booking-slot";
+import { resolveInboundEmailIdentity } from "./store/inbound-identity";
 import { loadState, normalizeHermesState } from "./store/migrations";
 import { baseWebQuery, mapSillageCandidates, parseSillageIdentifier } from "./store/sourcing-helpers";
 import { appendWinRecord } from "./store/winlog-derive";
@@ -2779,23 +2779,37 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
-      // AUTO-MATCH: resolve candidate from fromAddress when no candidateId given. Prefer a
-      // candidate in the active campaign, else any candidate with that email (the address is
-      // the identity). Avoids both missing a match in another campaign and arbitrarily
-      // linking across campaigns when there is no active campaign.
+      // IDENTITY: replies route by provider context (the inbox thread id) and the
+      // canonical conversation, never by whichever campaign happens to be active.
+      // A prior reply or outbound draft on the same provider thread names the
+      // candidate; otherwise only an UNAMBIGUOUS address match may auto-assign.
+      // Ambiguous or unmatched replies keep candidateId "" and land unassigned in
+      // the Replies stream — durable triage, never silent auto-assignment.
       let resolvedCandidateId = input.candidateId;
-      if (!resolvedCandidateId && input.fromAddress) {
-        const scopeId = input.campaignId ?? s.activeCampaignId ?? undefined;
-        const matched =
-          matchCandidateByEmail(s.candidates, input.fromAddress, scopeId) ??
-          matchCandidateByEmail(s.candidates, input.fromAddress);
-        if (matched) resolvedCandidateId = matched.id;
+      let threadCampaignId: string | undefined;
+      let ambiguousSender = false;
+      if (!resolvedCandidateId) {
+        const identity = resolveInboundEmailIdentity({
+          candidates: s.candidates,
+          replies: s.replies,
+          outreach: s.outreach,
+          fromAddress: input.fromAddress,
+          inboxThreadId: input.inboxThreadId,
+        });
+        if (identity.status === "matched") {
+          resolvedCandidateId = identity.candidateId;
+          threadCampaignId = identity.campaignId;
+        } else if (identity.status === "ambiguous") {
+          ambiguousSender = true;
+        }
       }
 
       const candidate = resolvedCandidateId
         ? s.candidates.find((c) => c.id === resolvedCandidateId)
         : undefined;
-      const campaignId = input.campaignId ?? candidate?.campaignId ?? s.activeCampaignId ?? s.campaigns[0]?.id ?? "";
+      // Auto-ingested mail that did not match stays campaignId "" — never
+      // attributed to the active campaign or an arbitrary first campaign.
+      const campaignId = input.campaignId ?? candidate?.campaignId ?? threadCampaignId ?? "";
 
       // F-1: route through live provider when available; mock is the fallback on any failure.
       let classification = classifyReply(input.text, candidate?.name);
@@ -2865,6 +2879,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         classification = {
           ...classification,
           suggestedAction: "Queue for human review: injection-suspected.",
+        };
+      }
+      if (ambiguousSender) {
+        classification = {
+          ...classification,
+          suggestedAction: "Queue for human review: sender matches multiple candidates.",
         };
       }
       const receivedAt = input.externalReceivedAt ?? new Date().toISOString();

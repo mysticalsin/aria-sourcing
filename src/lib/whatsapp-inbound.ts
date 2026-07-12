@@ -40,6 +40,14 @@ interface StoredInboundRow {
   whatsapp_sender_id: string | null;
 }
 
+interface ResolvedConversation {
+  ok?: boolean;
+  reason?: string;
+  conversation_id?: string | null;
+  candidate_id?: string | null;
+  spec_id?: string | null;
+}
+
 /** First server-configured reply model wins. No browser-supplied model keys. */
 function envProvider(): { slug: AiProviderSlug; key: string } | null {
   const order: AiProviderSlug[] = ["anthropic", "openai", "groq", "mistral", "xai"];
@@ -176,31 +184,51 @@ export async function processStoredWhatsAppInbound(
     );
     if (windowErr) return retry("reply-window-write-failed");
 
-    const { data: thread, error: threadErr } = await supabase
-      .from("messages_outbound")
-      .select("candidate_id, spec_id, body")
-      .eq("workspace_id", workspaceId)
-      .eq("to_address", recipient)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (threadErr) return retry("thread-lookup-failed");
-    if (!thread?.spec_id) return complete("triage", "no-active-thread");
+    // Reply identity comes from the canonical conversation (provider-scoped
+    // thread key: registered sender + candidate address), never from whichever
+    // outbound row happened to be written last for the bare phone number.
+    // Unknown ('no-conversation') and ambiguous ('ambiguous-conversation')
+    // threads fail closed into durable triage — the completion path retains
+    // the reason as last_processing_error for the operator.
+    const { data: convoData, error: convoErr } = await supabase.rpc(
+      "resolve_whatsapp_inbound_conversation",
+      { p_inbound_id: input.inboundId, p_claim_id: claimId },
+    );
+    const convo = convoData as ResolvedConversation | null;
+    if (convoErr) return retry("conversation-resolve-failed");
+    if (!convo || convo.ok !== true) return complete("triage", convo?.reason ?? "no-conversation");
+    const conversationId = convo.conversation_id;
+    const conversationCandidateId = convo.candidate_id;
+    if (!conversationId || !conversationCandidateId) return complete("triage", "no-conversation");
+    if (!convo.spec_id) return complete("triage", "agent-spec-unavailable");
 
     const { data: spec, error: specErr } = await supabase
       .from("agent_specs")
       .select("id, seat_id, role_brief, guardrails, status")
-      .eq("id", thread.spec_id)
+      .eq("id", convo.spec_id)
       .maybeSingle();
     if (specErr) return retry("agent-spec-lookup-failed");
     if (!spec || spec.status !== "active") return complete("triage", "agent-spec-unavailable");
+
+    // Prompt context only, never identity: the latest outbound inside THIS
+    // conversation's agent thread (scoped by the resolved spec + recipient).
+    const { data: lastOutbound, error: lastOutboundErr } = await supabase
+      .from("messages_outbound")
+      .select("body")
+      .eq("workspace_id", workspaceId)
+      .eq("spec_id", convo.spec_id)
+      .eq("to_address", recipient)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (lastOutboundErr) return retry("thread-context-lookup-failed");
 
     const provider = envProvider();
     if (!provider) return retry("reply-provider-unavailable");
     const brief = spec.role_brief as { title?: string; seniority?: string } & Record<string, unknown>;
     const { system, prompt } = buildReplyPrompt({
       inbound: body,
-      lastOutbound: thread.body,
+      lastOutbound: lastOutbound?.body ?? "",
       roleSummary: candidateDisclosureContextForCampaignLike(brief).slice(0, 2_000),
     });
     const request = buildCloudRequest(provider.slug, DEFAULT_MODEL[provider.slug], system, prompt, provider.key, 512);
@@ -223,12 +251,13 @@ export async function processStoredWhatsAppInbound(
     if (detectInjection(body).flagged && !decision.reasons.includes("injection-suspected")) {
       decision.reasons.push("injection-suspected");
     }
-    const reviewDraftDedupeHash = dedupeHash(thread.candidate_id, "WhatsApp", decision.text);
+    const reviewDraftDedupeHash = dedupeHash(conversationCandidateId, "WhatsApp", decision.text);
     const { error: outboundErr } = await supabase.from("messages_outbound").insert({
       workspace_id: workspaceId,
       inbound_message_id: input.inboundId,
+      conversation_id: conversationId,
       spec_id: spec.id,
-      candidate_id: thread.candidate_id,
+      candidate_id: conversationCandidateId,
       seat_id: spec.seat_id,
       channel: "WhatsApp",
       to_address: recipient,
