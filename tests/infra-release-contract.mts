@@ -434,6 +434,17 @@ ok(
   ),
 );
 ok(
+  // Only the public-identifier rule may be disabled (it false-fires on Sillage field
+  // names in the compiled bundle); the credential rule must never be disabled.
+  "secret scans disable only the linkedin-client-id public-identifier rule",
+  [ciWorkflow, deployWorkflow].every(
+    (workflow) =>
+      /disable-rules[\s\S]{0,40}linkedin-client-id/.test(workflow) &&
+      !/disable-rules[\s\S]{0,200}linkedin-client-secret/.test(workflow) &&
+      (workflow.match(/^\s*-\s+linkedin-client-id\s*$|"linkedin-client-id"/gm) ?? []).length === 1,
+  ),
+);
+ok(
   "CI and release schema-validate every CycloneDX SBOM with an immutable official validator",
   [ciWorkflow, deployWorkflow].every(
     (workflow) =>

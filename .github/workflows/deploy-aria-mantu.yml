@@ -486,6 +486,10 @@ jobs:
           const value = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
           const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
           const config = {
+            // linkedin-client-id detects a public OAuth client identifier (not a
+            // credential) and false-fires on Sillage request field names compiled
+            // into the app bundle. linkedin-client-secret remains armed.
+            "disable-rules": ["linkedin-client-id"],
             "allow-rules": [{
               id: "aria-public-browser-anon-key",
               description: "Supabase anon JWT is an intentionally public browser build input",

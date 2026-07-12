@@ -274,6 +274,13 @@ jobs:
       - name: Block high and critical production-image vulnerabilities
         run: |
           set -euo pipefail
+          # linkedin-client-id detects a public OAuth client identifier (not a
+          # credential) and false-fires on Sillage request field names compiled into
+          # the app bundle. The linkedin-client-secret rule remains armed.
+          cat > artifacts/supply-chain/trivy-secret.yaml <<'YAML'
+          disable-rules:
+            - linkedin-client-id
+          YAML
           for component in app db bootstrap kong; do
             docker run --rm \
               --volume "$RUNNER_TEMP/aria-scan-input:/image:ro" \
@@ -298,6 +305,7 @@ jobs:
               --cache-dir /trivy-cache \
               --scanners secret \
               --image-config-scanners secret \
+              --secret-config /artifacts/trivy-secret.yaml \
               --exit-code 1 \
               --format json \
               --output "/artifacts/aria-$component-secrets.json" \
