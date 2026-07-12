@@ -125,6 +125,12 @@ jobs:
       - name: Verify effective database authority
         run: npm run test:db-privileges
 
+      - name: Verify cross-channel cap serialization
+        run: npm run test:db-cross-channel-cap
+
+      - name: Verify agent memory authority
+        run: npm run test:db-agent-memory
+
       - name: Prove Fly database volume and restart behavior
         run: npm run test:fly-db-volume
 

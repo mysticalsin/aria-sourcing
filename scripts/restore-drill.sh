@@ -73,7 +73,8 @@ echo "Restoring archive ${BACKUP_ID}..."
 docker exec -i "$CID" pg_restore --exit-on-error --no-owner -U supabase_admin -d "$SCRATCH" < "$ARCHIVE" >/dev/null
 
 REQUIRED_TABLES=(
-  agent_events agent_runs agent_seats agent_specs api_keys aria_schema_migrations databricks_connection_events
+  agent_conversations agent_events agent_memories agent_memory_events agent_memory_legacy_quarantine
+  agent_run_memory_context agent_runs agent_seats agent_specs api_keys aria_schema_migrations databricks_connection_events
   databricks_connections dust_connection_events dust_connections email_connections
   messages_inbound messages_outbound outbound_content_cache outreach_approvals
   outreach_ledger profiles suppression_list whatsapp_contacts

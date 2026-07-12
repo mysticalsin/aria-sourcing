@@ -82,7 +82,9 @@ ok("backup arms scratch cleanup before create", backupArm >= 0 && backupCreate >
 ok("restore arms scratch cleanup before create", restoreArm >= 0 && restoreCreate > restoreArm);
 
 for (const table of [
-  "agent_events", "agent_runs", "agent_seats", "agent_specs", "api_keys", "aria_schema_migrations",
+  "agent_conversations", "agent_events", "agent_memories", "agent_memory_events",
+  "agent_memory_legacy_quarantine", "agent_run_memory_context",
+  "agent_runs", "agent_seats", "agent_specs", "api_keys", "aria_schema_migrations",
   "databricks_connection_events", "databricks_connections", "dust_connection_events",
   "dust_connections", "email_connections",
   "messages_inbound", "messages_outbound", "outbound_content_cache",

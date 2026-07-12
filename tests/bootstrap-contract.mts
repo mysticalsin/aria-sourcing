@@ -17,7 +17,9 @@ const numberedMigrations = readdirSync("supabase/migrations")
   .filter((name) => /^\d{4}_.+\.sql$/.test(name))
   .map((name) => ({ name, source: readFileSync(`supabase/migrations/${name}`, "utf8") }));
 const legacyTables = [
-  "agent_events", "agent_runs", "agent_seats", "agent_specs", "api_keys",
+  "agent_conversations", "agent_events", "agent_memories", "agent_memory_events",
+  "agent_memory_legacy_quarantine", "agent_run_memory_context",
+  "agent_runs", "agent_seats", "agent_specs", "api_keys",
   "databricks_connection_events", "databricks_connections", "dust_connection_events", "dust_connections", "email_connections",
   "messages_inbound", "messages_outbound", "outbound_content_cache", "outreach_approvals",
   "outreach_ledger", "profiles", "suppression_list", "whatsapp_contacts",

@@ -8,7 +8,7 @@ particular production deployment is healthy.
 ## Source candidate
 
 - Node 22, Next.js 16, React 19, and TypeScript 5 are enforced by the repository.
-- `npm test` runs 124 chained checks: 17 pretest commands plus 107 application
+- `npm test` runs 128 chained checks: 18 pretest commands plus 110 application
   test commands.
 - Local acceptance requires typecheck, lint, the full test chain, the isolated
   production build, the exact database restart test, and the database authority
@@ -31,6 +31,11 @@ particular production deployment is healthy.
 - Reply drafting is queue-only: every generated candidate reply enters named
   human review, and legacy AgentSpec reply flags never grant provider delivery
   authority.
+- Email and WhatsApp claims share one serialized per-seat capacity lock, and an
+  ambiguous provider outcome continues to reserve capacity.
+- Agent memory is encrypted, owner/spec scoped, bounded, receipt-bound before
+  any external key or model access, and legacy shared memory is hash-only
+  quarantined rather than activated.
 
 ## Release acceptance still required
 
