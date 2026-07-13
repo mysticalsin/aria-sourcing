@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 30
 agent: codex-gpt-5
-updated: 2026-07-12 21:24 EDT
+updated: 2026-07-12 21:46 EDT
 status: main-pushed-local-gates-green-ci-prerunner-failure-and-fly-volume-network-blocker-remain
 ---
 
@@ -43,7 +43,9 @@ status: main-pushed-local-gates-green-ci-prerunner-failure-and-fly-volume-networ
   - `npm run test:db-privileges` passed: `postgres=restricted-direct supabase_admin=direct cross_owner=denied rotation=pass idempotence=pass empty_preflight=read-only legacy_preflight=read-only complete_preflight=read-only legacy_baseline=approved ledger=filename-sha secret_leak=none`.
   - `git diff --check` passed and local `main` was clean before push.
 - Pushed `main` to origin: `128b036..52423e8`.
+- Relay-only follow-up commit `ac4c77b834125a213c48e5450d65067dbfb64c04` was also pushed to `origin/main` to record this status. It changes only `_relay/HANDOFF.md` and `_relay/codex-findings.md`.
 - Remote check status for exact SHA `52423e8f88b056c38c188c4066d6433f6a2c617d` showed Vercel pending, then GitHub check-runs failed. Log retrieval repeatedly timed out from this network. One direct job metadata probe succeeded for CodeQL job `86713908848`: `runner_name=""`, `runner_group_name=""`, `steps_len=0`, started `2026-07-13T01:06:13Z`, completed `2026-07-13T01:06:17Z`, conclusion `failure`. Treat this as a pre-runner/platform failure until logs prove otherwise, not a source-test failure.
+- Remote check status for exact SHA `ac4c77b834125a213c48e5450d65067dbfb64c04` is also red: GitHub runs `29217207203` (CI) and `29217207170` (CodeQL) both completed with conclusion `failure`. Log retrieval from `results-receiver.actions.githubusercontent.com` timed out from this workstation, and GitHub API job-list calls also timed out on retry.
 - Re-ran the Fly DB volume recovery gate. It did not reach the app assertions because the Docker build failed at Alpine package index fetch:
   - command: `npm run test:fly-db-volume`
   - failing layer: `RUN apk upgrade --no-cache && apk add --no-cache su-exec && rm -f /usr/local/bin/gosu`
@@ -53,12 +55,13 @@ status: main-pushed-local-gates-green-ci-prerunner-failure-and-fly-volume-networ
   - exit: Docker build exit code 99.
 - Tried mirror overrides during diagnosis and rejected them because `dl-2.alpinelinux.org`, `mirrors.edge.kernel.org`, and `mirror.leaseweb.com` were also unreachable from this machine. The Dockerfile mirror override was removed before this Baton was written.
 - Archived previous Baton to `_relay/archive/2026-07-12-2057-codex-gpt-5.md`.
+- Live URL re-check after the `ac4c77b` push is not acceptable production evidence from this network. A first pass saw `/api/ready` return 200 once after `/`, `/login`, and `/api/health` timed out. A repeated 3-pass forced-IPv4 probe then timed out for `/`, `/login`, `/api/health`, and `/api/ready` with curl exit 28 after 8 seconds each. Treat live acceptance as NO-GO until a stable probe and full campaign acceptance pass.
 
 ## Blockers
 
-1. **Remote CI is red for pushed SHA `52423e8f88b056c38c188c4066d6433f6a2c617d`.** Retrieved job metadata for CodeQL shows a pre-runner failure (`steps_len=0`, empty runner fields, 4-second duration). Full logs could not be retrieved because GitHub/Azure log endpoints timed out from this network. Do not deploy from this SHA until CI is re-run green or the platform failure is resolved and documented.
+1. **Remote CI is red for pushed SHA `ac4c77b834125a213c48e5450d65067dbfb64c04`.** The earlier merged source SHA `52423e8f88b056c38c188c4066d6433f6a2c617d` is also red. Retrieved job metadata for the earlier CodeQL run showed a pre-runner failure (`steps_len=0`, empty runner fields, 4-second duration). Full logs for both SHAs could not be retrieved because GitHub/Azure log endpoints timed out from this network. Do not deploy from either SHA until CI is re-run green or the platform failure is resolved and documented.
 2. **Fly DB volume gate is blocked by local outbound access to Alpine repositories.** This is not a schema assertion failure. The test cannot complete while Docker cannot fetch Alpine indexes during the DB image build.
-3. **Live production acceptance is not proven.** Do not call the app fully production-ready until the exact pushed release SHA has passed the protected deploy and live acceptance checklist.
+3. **Live production acceptance is not proven.** Latest forced-IPv4 probes timed out from this workstation for `/`, `/login`, `/api/health`, and `/api/ready`. Do not call the app fully production-ready until the exact pushed release SHA has passed the protected deploy and live acceptance checklist.
 4. **Owner-controlled secret and release gates remain mandatory:**
    - Revoke the exposed Fly token and prove rejection/review.
    - Delete repository-level `ARIA_DEPLOY_BUNDLE`; use individual Production-environment secrets.
@@ -69,7 +72,7 @@ status: main-pushed-local-gates-green-ci-prerunner-failure-and-fly-volume-networ
 
 ## Next steps
 
-1. Retrieve the failed GitHub job logs for SHA `52423e8f88b056c38c188c4066d6433f6a2c617d` once GitHub/Azure log endpoints are reachable. Start with CodeQL job `86713908848` and CI run `29216702413`.
+1. Retrieve the failed GitHub job logs for SHA `ac4c77b834125a213c48e5450d65067dbfb64c04` once GitHub/Azure log endpoints are reachable. Start with CI run `29217207203` and CodeQL run `29217207170`. Keep the earlier source-merge run IDs `29216702413` and `29216702409` as comparison points.
 2. If logs confirm account/runner/platform failure, re-run the workflows after the platform/budget/runner issue is cleared. If logs show a real workflow or source failure, fix that exact failing step and push a new `main` SHA.
 3. Retry `npm run test:fly-db-volume` only when Alpine repository access is reachable from Docker. Do not use `--force-missing-repositories`; that would weaken the CVE patch gate.
 4. Do not deploy until remote CI/CodeQL are green for an exact SHA and the owner-controlled secret, protection, recovery-receipt, and approval gates are closed.
