@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 31
 agent: codex-gpt-5
-updated: 2026-07-12 22:49 EDT
+updated: 2026-07-12 22:52 EDT
 status: main-pushed-local-gates-green-production-acceptance-pending
 ---
 
@@ -15,7 +15,7 @@ status: main-pushed-local-gates-green-production-acceptance-pending
 - Verified source merge: `01721dcbe041b5a9c7d71a37a2ff90bd212139f6` (`merge agent spec runtime authority hardening`).
 - Local `main` includes explicit revert `7e6d1aa` of unsafe reviewer push `b205293`, then the independently reviewed replacement through `35d17ed`.
 - GitHub connectivity recovered at 22:48 EDT. `git ls-remote` proved remote `main` was still `b205293`, then a normal non-force push advanced it through the explicit revert, reviewed replacement, and Relay commits to `352de32cc444aec38450e4cfe2f65fe06bdb511b`.
-- Local and remote `main` were verified equal and the worktree was clean immediately after that push. This Relay-only follow-up is a descendant and must also be pushed normally.
+- The final Relay-only descendant was pushed normally and `HEAD`, `origin/main`, and `git ls-remote` were reverified equal with a clean worktree. Obtain the exact tip with those commands; it is intentionally not embedded in its own Baton.
 - Source/runtime verdict: GO locally. Production verdict: NO-GO until remote, protected-release, recovery, and live acceptance gates below pass.
 - Default GitHub branch was last verified as `vercel-demo`, not `main`. The protected production workflow must exist on the default branch before manual dispatch can work.
 
@@ -50,6 +50,8 @@ status: main-pushed-local-gates-green-production-acceptance-pending
   - `git ls-remote origin refs/heads/main` hung and was interrupted without a ref, so no push was attempted after that failed verification.
   - Forced-IPv4 probes to `/`, `/login`, `/api/health`, `/api/ready`, `/rest/v1/`, and `/auth/v1/health` on `aria-mantu-app.fly.dev` all returned curl exit 28 / HTTP `000` after five-second connect timeouts.
 - GitHub connectivity recovered at 22:48 EDT. Verified remote `main=b205293`, pushed `b205293..352de32` normally, then verified local and remote both equaled `352de32cc444aec38450e4cfe2f65fe06bdb511b` with a clean worktree.
+- Pushed the Relay-only descendant and reverified `HEAD == origin/main == git ls-remote`. Exact-SHA CI and Actions API queries then timed out again against `api.github.com`, so no remote-check conclusion is claimed.
+- A final Fly probe remained inconsistent: `/api/ready` returned HTTP 200 once in 0.21 seconds while `/`, `/rest/v1/`, and `/auth/v1/health` timed out at connect with curl exit 28. This is not acceptable live evidence.
 - Archived the prior Baton to `_relay/archive/2026-07-12-2244-codex-gpt-5.md`.
 - Updated `_relay/codex-findings.md` with fixed source findings, the reviewer-integrity incident, and current remote blockers.
 
@@ -67,8 +69,8 @@ status: main-pushed-local-gates-green-production-acceptance-pending
 
 ## Next steps
 
-1. Verify this Relay-only follow-up is pushed and run `git rev-parse HEAD origin/main` plus `git ls-remote origin refs/heads/main`; all three must match.
-2. Require CI, CodeQL, dependency audit, secret scan, database security, image supply-chain, and aggregate quality checks for that exact final SHA.
+1. Run `git rev-parse HEAD origin/main` plus `git ls-remote origin refs/heads/main`; all three were equal at handoff and must remain equal. Record that exact SHA as the release candidate.
+2. Require CI, CodeQL, dependency audit, secret scan, database security, image supply-chain, and aggregate quality checks for that exact release-candidate SHA.
 3. Retry `npm run test:fly-db-volume` only where Alpine repositories are reachable. Require the exact image, existing-data detection, and two-restart persistence assertions to pass.
 4. Complete the owner-controlled token, secret, branch/environment protection, and recovery-receipt gates. Do not store secret values in Relay.
 5. Dispatch the protected production workflow for the exact approved SHA and verify the running image digest matches release evidence.
