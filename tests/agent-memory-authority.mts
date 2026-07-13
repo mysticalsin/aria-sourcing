@@ -19,8 +19,10 @@ function sha256(value: string): string {
 
 const migrationPath = new URL("../supabase/migrations/0025_agent_memory_authority.sql", import.meta.url);
 const routePath = new URL("../src/app/api/agents/run/route.ts", import.meta.url);
+const specsRoutePath = new URL("../src/app/api/agents/specs/route.ts", import.meta.url);
 const migration = existsSync(migrationPath) ? readFileSync(migrationPath, "utf8") : "";
 const route = readFileSync(routePath, "utf8");
+const specsRoute = readFileSync(specsRoutePath, "utf8");
 
 ok("migration 0025 is reserved for agent-memory authority", migration.length > 0);
 ok("normalized encrypted agent memories are created", /create table if not exists public\.agent_memories[\s\S]*content_ciphertext\s+text\s+not null/i.test(migration));
@@ -79,8 +81,26 @@ const runGraphIndex = route.indexOf("runGraph(", postIndex);
 const contextReceiptIndex = route.indexOf("createAgentRunWithMemoryContext(", postIndex);
 
 ok("agent run requires specId", /specId:\s*z\.string\(\)\.uuid\(\)\s*,/.test(route) && !/specId:\s*z\.string\(\)\.uuid\(\)\.optional\(\)/.test(route));
-ok("agent run loads the exact stored spec", specLookupIndex > postIndex && /owner_id,\s*role_brief[\s\S]*\.eq\("status",\s*"active"\)/.test(route));
+ok("agent run loads the exact owned stored spec", specLookupIndex > postIndex && /owner_id,\s*role_brief,\s*channels,\s*guardrails[\s\S]*\.eq\("owner_id",\s*userId\)[\s\S]*\.eq\("status",\s*"active"\)/.test(route));
 ok("stored spec authority precedes credential and model egress", specLookupIndex > postIndex && specLookupIndex < keyLookupIndex && specLookupIndex < modelEgressIndex);
+ok(
+  "stored channels and guardrails are resolved before durable run receipt",
+  route.indexOf("resolveStoredAgentRuntimePolicy", specLookupIndex) > specLookupIndex &&
+    route.indexOf("resolveStoredAgentRuntimePolicy", specLookupIndex) < contextReceiptIndex,
+);
+ok("runtime policy snapshot persists before memory decryption", /persistAgentRuntimeSnapshot/.test(route) && route.indexOf("persistAgentRuntimeSnapshot") < memoryLoadIndex);
+ok("agent drafts are durable run history without delivery authority", /draftStorage:\s*"run_history"/.test(route) && /deliveryAuthority:\s*"none"/.test(route));
+ok("agent run documentation does not claim a review queue that the route never creates", !/queue-only human review/i.test(route));
+ok("agent route never misclassifies first-touch drafts as provider outbox replies", !route.includes('.from("messages_outbound")'));
+ok("spec writes reuse the fail-closed runtime channel schema", /channels:\s*SupportedAgentChannelsSchema/.test(specsRoute));
+ok("spec writes reuse the fail-closed runtime guardrail schema", /guardrails:\s*SupportedAgentGuardrailsSchema/.test(specsRoute));
+ok("spec writes reuse the executable role-brief schema", /role_brief:\s*SupportedAgentRoleBriefSchema/.test(specsRoute));
+ok("spec reads expose stored runtime availability instead of presenting legacy specs as runnable", /describeStoredAgentRuntimeAvailability/.test(specsRoute));
+ok(
+  "spec read eligibility includes status and exact caller ownership",
+  /select\("id, name, role_brief, channels, guardrails, owner_id,[^\"]*status/.test(specsRoute) &&
+    /describeStoredAgentRuntimeAvailability\([\s\S]*spec\.status,[\s\S]*owner_id,[\s\S]*auth\.user\.id/.test(specsRoute),
+);
 ok("agent run never uses caller campaign authority", !route.includes("validated.data.campaign"));
 ok("agent run never loads shared workspace memory", !route.includes('.from("workspace_state")'));
 ok("agent run retrieves normalized bounded memory", route.includes("loadAgentMemoryContext("));

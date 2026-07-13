@@ -51,8 +51,11 @@ if (!candidate || !campaign) {
 }
 
 const studio = source("src/app/studio/page.tsx");
-ok("Studio names the capability Reply drafting", studio.includes("Reply drafting"));
-ok("Studio states that generated replies enter human review", /every generated reply[^.]*human review/i.test(studio));
+ok("Studio names the graph output as draft storage", studio.includes("Draft storage"));
+ok(
+  "Studio states that graph drafts remain in run history with no delivery authority",
+  studio.includes("Run history only") && studio.includes("No delivery authority"),
+);
 ok("Studio exposes no Autopilot or canary control", !/autopilot|canary/i.test(studio));
 
 const settings = source("src/app/settings/page.tsx");
