@@ -530,3 +530,19 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Three consecutive `/api/ready` calls returned HTTP 200 with build `d2040b534177f5bd2abb28f22de19af57b58dc3a`, migration `0023_conversation_identity.sql`, and all reported components true. Candidate `c3e94b2` contains migrations `0024` and `0025`.
 **Suggested fix:** Complete the protected exact-SHA release path, verify the running digest and build identity, and require the live migration ledger through `0025` before acceptance.
 **Status:** open
+
+## 2026-07-13 - Store contract drift had no executable boundary
+**Severity:** test-gap
+**File:** src/lib/store.ts; src/lib/store/contracts.ts; tests/store-contracts.mts
+**Issue:** The 124-action public store contract, implementation object, memo dependency list, React context shape, and consumer hooks shared one 7,002-line coordinator with no parity or dependency-cycle gate. A future extraction could silently omit an action, retain a stale dependency, or introduce a type/runtime cycle.
+**Repro/evidence:** The pre-change interface, action object, and memo list each had 124 names but no executable comparison. The new suite checks exact name parity, the seven-field context shape, real provider-bound hook behavior, outside-provider rejection, type-inclusive static cycles, value-only runtime cycles, dynamic imports, and positive two-node/self-cycle fixtures.
+**Suggested fix:** Keep `src/lib/store/contracts.ts` React-free and preserve the compatibility re-export while Wave 1B moves action factories behind this boundary.
+**Status:** fixed (`316aecb`; exact final gate: 10/10 focused, 135/135 chained commands, typecheck, lint, 59/59 build)
+
+## 2026-07-13 - Hook regression assertion could print workspace state
+**Severity:** security
+**File:** tests/store-contracts.mts
+**Issue:** The first provider-hook characterization compared `context.state` directly with `null`. If server rendering ever exposed a populated state, Node's assertion failure could serialize candidate, outreach, reply, chat, or memory data into CI logs.
+**Repro/evidence:** Independent security review reproduced Node's direct-object assertion output. The final test compares the boolean `context.state === null` with a fixed message, so a failure cannot reflect `HermesState`.
+**Suggested fix:** Keep security-sensitive negative assertions non-reflective and never print full workspace objects in CI failures.
+**Status:** fixed (`316aecb`; independent closure review and focused 10/10 suite passed)

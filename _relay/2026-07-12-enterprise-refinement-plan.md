@@ -1,8 +1,8 @@
 # ARIA enterprise refinement execution plan
 
 **Prepared:** 2026-07-12 23:59 EDT  
-**Current local main:** `e7136a2e858ad4eee7578aae173b405802d6a2a9`  
-**Remote main at preparation:** `e782610baf25c91a936a336b3bff049a181febfa`  
+**Current verified source baseline:** `316aecb3056a67ac908d0065070c0827560856e2`
+**Local `origin/main` tracking ref:** `bc4633663c9a7ba3b3b4d52b7f3654384e471cb6`
 **Production verdict:** NO-GO  
 **Purpose:** Executable handoff for Claude Code, Codex, security reviewers, and QA.
 
@@ -27,14 +27,19 @@ Completion is not a source-only claim. It requires:
 
 ### Source
 
-- Local `main` contains four commits not yet on `origin/main`:
-  - `269776b`: red release-candidate handoff.
-  - `f52813f`: enterprise developer documentation and structure.
-  - `5a6beda`: shared delivery-outcome policy and replay type-cycle removal.
-  - `e7136a2`: live candidate mappers moved out of `mock-ai.ts`.
+- The verified source baseline is one source commit ahead of the local
+  `origin/main` tracking ref; Relay documentation commits follow it:
+  - `316aecb`: React-free store contracts, hook characterization, and source
+    dependency-cycle gates.
+- The tracking ref advanced to `bc46336` through a push recorded locally at
+  2026-07-13 00:24 EDT. The actor and credential used are unknown. Do not treat
+  this as credential-rotation evidence or resume authenticated release work.
 - `npx tsc --noEmit`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed all 134 chained commands.
+- `npm test`: passed all 135 chained commands.
+- `tests/store-contracts.mts`: passed 10/10, covering the 124-action parity,
+  provider-bound hook behavior, outside-provider rejection, static cycles,
+  runtime cycles, dynamic imports, and positive cycle fixtures.
 - `npm run build`: passed, 59/59 static pages generated.
 - `docker compose config --quiet`: passed after the app and GoTrue default
   port were aligned at 3000.
@@ -114,8 +119,8 @@ Completion is not a source-only claim. It requires:
 2. Review GitHub account/repository audit history from 2026-07-13 03:11 UTC.
 3. Revoke and rotate the exposed Fly credential.
 4. Record issuer, rotation time, actor, scope, and affected environments only.
-5. With fresh GitHub authentication, verify `origin/main` is
-   `e782610b...`, review the four local commits, and push normally.
+5. With fresh GitHub authentication, verify remote `main` is still
+   `bc46336...`, review `origin/main..main`, and push normally.
 6. Open CI run `29221158898` and CodeQL run `29221158901`; capture the exact
    top-level and job annotations.
 7. Repair only the proven account, policy, workflow-start, or action-resolution
@@ -132,15 +137,18 @@ Completion is not a source-only claim. It requires:
 
 **Owners:** Senior Full-Stack Developer, independent validator, QA.
 
-Current evidence:
+Current evidence after Wave 1A:
 
-- `src/lib/store.ts` is 7,002 lines.
+- `src/lib/store.ts` is 6,608 lines.
+- `src/lib/store/contracts.ts` is 445 lines and React-free.
 - `HermesActions` exposes 124 operations.
 - About 92 source files import the store.
 - Hydration, persistence, actions, chat, memory, selectors, and React context
   share one module and one context update surface.
 
 ### Wave 1A: contracts without behavior change
+
+**Status:** completed in `316aecb` on 2026-07-13.
 
 1. Add behavior tests for the current public store hooks and action signatures.
 2. Move `HermesActions` and state-context types to
@@ -149,7 +157,9 @@ Current evidence:
 4. Add a dependency-cycle check for `src/`.
 
 **Exit evidence:** no caller import changes required; typecheck, store-focused
-tests, full suite, and build green.
+tests, full suite, and build green. Independent senior full-stack, security,
+QA, validator, and Fable-style reviews returned GO. The final exact snapshot
+passed `npx tsc --noEmit && npm test`, lint, and a 59/59 production build.
 
 ### Wave 1B: action factories
 

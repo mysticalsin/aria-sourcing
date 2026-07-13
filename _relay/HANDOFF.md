@@ -1,191 +1,169 @@
 ---
 project: MSourcing / ARIA
-shift: 33
+shift: 34
 agent: codex-gpt-5
-updated: 2026-07-12 23:59 EDT
-status: local-main-ahead-source-green-release-and-live-no-go
+updated: 2026-07-13 00:26 EDT
+status: store-wave-1a-green-local-main-one-commit-ahead-release-and-live-no-go
 ---
 
-# Handoff - enterprise documentation and first source boundaries complete
+# Handoff - store contract boundary complete, action factories next
 
 ## Current state
 
 - Continuation worktree:
   `/Users/tony/.codex/worktrees/msourcing-campaign-integration`.
-- Current branch: `main`.
-- Current local source tip before this Relay commit:
-  `e7136a2e858ad4eee7578aae173b405802d6a2a9`.
-- Remote `main`: `e782610baf25c91a936a336b3bff049a181febfa`.
-- Local `main` is four commits ahead:
-  - `269776b` records the red release-candidate handoff.
-  - `f52813f` establishes the enterprise developer documentation layer.
-  - `5a6beda` centralizes delivery outcome policy and removes the replay type cycle.
-  - `e7136a2` moves live candidate mapping out of the mock module.
-- These commits are local only. They were not pushed because Git HTTPS delegates
-  to the compromised GitHub CLI credential and SSH authentication is unavailable.
-- Previous candidate `c3e94b2` remains pushed on
-  `codex/deploy-release-sync-20260713`, but it is now behind local `main` and
-  is not the final source candidate.
-- Source verdict for local `e7136a2`: GO.
+- Branch: `main`.
+- Current verified source commit:
+  `316aecb3056a67ac908d0065070c0827560856e2`.
+- Local `origin/main` tracking ref:
+  `bc4633663c9a7ba3b3b4d52b7f3654384e471cb6`.
+- The verified source commit is one source commit ahead of that tracking ref.
+  This shift's Relay documentation commit follows it; run `git rev-parse HEAD`
+  for the exact branch tip.
+- The tracking ref advanced to `bc46336` through a push recorded in the local
+  reflog at 2026-07-13 00:24:17 EDT. This Codex shift did not run that push.
+  The actor and credential used are unknown. Do not treat the event as
+  credential rotation or current remote verification.
+- Source verdict for `316aecb`: GO.
 - Release verdict: NO-GO.
 - Production verdict: NO-GO.
-- Full execution plan:
+- Detailed cross-agent execution plan:
   `_relay/2026-07-12-enterprise-refinement-plan.md`.
+- Codex audit record:
+  `_relay/codex-findings.md`.
 
 ## Done this shift
 
-- Followed the repository navigation order:
-  - Graphify query failed because `graphify-out/graph.json` was absent.
-  - `graphify-out/wiki/index.md` was also absent.
-  - Raw source inspection began only after both navigation surfaces were
-    confirmed unavailable.
-- Ran three independent read-only reviews:
-  - Documentation/Project Manager audit.
-  - Senior Full-Stack architecture audit.
-  - Fable-style adversarial requirement-to-evidence audit.
-- Built current developer entry points:
-  - `docs/ARCHITECTURE.md`.
-  - `docs/TESTING.md`.
-  - `CONTRIBUTING.md`.
-  - `SECURITY.md`.
-  - `production-readiness/README.md`.
-  - `docs/operations/FLY_SIZING.md`.
-- Corrected documentation and configuration drift:
-  - README test total now derives to 134 commands.
-  - canonical runbook now includes migrations `0024` and `0025`;
-  - Agent graph run-history drafts are distinguished from inbound named-review
-    drafts;
-  - Docker bootstrap no longer claims migrations stop at `0015`;
-  - Compose app default now matches GoTrue and the Docker guide at port 3000;
-  - Supabase live setup now starts empty and does not claim synthetic seed data;
-  - Vercel documents are clearly marked separate or legacy;
-  - root deployment file is a short authority map.
-- Extended executable documentation contracts:
-  - `tests/docs-truth.mts`: 35/35.
-  - `tests/repository-hygiene.mts`: 11/11.
-- Archived the obsolete 23 KB root relay body at
-  `_relay/archive/2026-06-27-claude-relay-baton.md`; the root file is now a
-  compatibility pointer.
-- Removed tracked machine-specific Graphify interpreter state and ignored
-  generated Graphify output.
-- Validated 117 Markdown files with zero missing internal relative-link targets.
-- Added one shared delivery retry-safety policy at
-  `src/lib/delivery-outcome.ts`. API-key email, OAuth email, WhatsApp, and SMS
-  adapters now share the same HTTP 408/5xx ambiguity rule.
-- Moved replay model types to
-  `src/components/sessions/replay-model.ts`, removing the audit-pack to
-  decision-replay component cycle.
-- Moved live GitHub, Apollo, Seamless, and web candidate normalization to
-  `src/lib/sourcing/candidate-mappers.ts`. `mock-ai.ts` is synthetic-only
-  apart from compatibility re-exports.
-- Verification after source changes:
-  - `npx tsc --noEmit`: passed.
+- Read the prior Relay Baton, vault rules, project learnings, and active plan.
+- Followed the mandatory navigation order:
+  - Graphify query could not run because `graphify-out/graph.json` is absent.
+  - `graphify-out/wiki/index.md` is also absent.
+  - Targeted raw source inspection began only after both surfaces were confirmed
+    unavailable.
+- Completed Workstream 1 Wave 1A in commit `316aecb`:
+  - moved `HermesActions` and `HermesContextValue` from the 7,002-line
+    coordinator into React-free `src/lib/store/contracts.ts`;
+  - preserved `src/lib/store.ts` as the compatibility entry point;
+  - preserved all 124 action signatures and all seven context fields;
+  - reduced `src/lib/store.ts` to 6,608 lines without moving behavior;
+  - removed the now-unused `ScoringWeights` import.
+- Added `tests/store-contracts.mts`:
+  - public type compatibility;
+  - exact 124-name parity across contract, action object, and memo dependencies;
+  - exact context shape;
+  - real server-rendered `HermesProvider`, `useHermes`, `useActions`, and
+    `useHydrated` behavior;
+  - outside-provider failure behavior;
+  - type-inclusive static import cycle graph;
+  - value-only runtime cycle graph with literal dynamic imports;
+  - positive two-node and self-cycle fixtures.
+- Corrected both adversarial review findings before commit:
+  - runtime and dynamic cycles are now distinct from type-only static cycles;
+  - the hook negative assertion no longer risks printing full workspace state.
+- Updated architecture and operational documentation to 135 chained commands:
+  18 pretest plus 117 test commands.
+- Independent review roles completed:
+  - Senior Full-Stack Developer: GO.
+  - Cybersecurity Analyst and Director: GO after closure fixes.
+  - QA Lead and independent validator: GO.
+  - Product and Project Manager with Fable-style challenge: GO.
+- Exact final verification for the committed source snapshot:
+  - `npx tsc --noEmit && npm test`: passed.
+  - `npm test`: all 135 chained commands passed.
+  - `tests/store-contracts.mts`: 10/10 passed.
   - `npm run lint`: passed.
-  - `npm test`: all 134 chained commands passed.
   - `npm run build`: passed with 59/59 static pages.
-  - email ambiguity suite: 71/71.
-  - sourcing suite: 46/46.
-  - provider, channel, dispatch, web-lead, mock, docs, and repository focused
-    suites passed.
-  - `docker compose config --quiet`: passed.
-- A separate `npm run build:isolated` attempt stalled in its fresh `npm ci`
-  for more than five minutes and was interrupted. Direct `npm run build`
-  passed in this unsynced worktree. Do not report the fresh isolated execution
-  as green.
-- Archived shift 32 to
-  `_relay/archive/2026-07-12-2359-codex-gpt-5.md`.
+  - `git diff --check`: passed before commit.
+- Added audit findings for the old unguarded contract boundary and the
+  failure-path state-log risk.
+- Archived shift 33 to
+  `_relay/archive/2026-07-13-0026-codex-gpt-5.md`.
 
 ## Blockers
 
-1. **Compromised GitHub CLI credential.** It must be revoked and rotated before
-   authenticated GitHub or HTTPS Git work resumes.
-2. **Previously exposed Fly credential.** It also requires rotation before any
-   production Fly mutation.
-3. **Local main is not pushed.** Four verified commits plus this Relay work
-   remain local until fresh authentication exists.
-4. **GitHub pre-runner cause is unknown.** Previous candidate CI run
-   `29221158898` and CodeQL run `29221158901` failed in seconds. Capture the
-   exact annotations; do not reuse the obsolete budget diagnosis without proof.
-5. **Previous candidate is superseded.** `c3e94b2` does not include the four
-   local main commits. Build a new candidate only after main is safely pushed.
-6. **Fly DB exact-image recovery remains network-blocked.** Alpine package
-   indexes timed out. Do not weaken the patch or restart gate.
-7. **Owner-controlled release settings remain unverified.** Default branch,
-   protected release branch, required checks, administrator bypass, independent
-   Production review, secret scopes, and `ARIA_DEPLOY_BUNDLE` removal need
-   current evidence.
-8. **Production is behind.** Last public readiness proof reported build
-   `d2040b...` and migration `0023`, not current source through `0025`.
-9. **Enterprise behavior is not fully proven.** Two-user browser isolation,
-   real-channel round trips, recovery, two restarts, first-admin login, and
-   final campaign acceptance remain open.
+1. **GitHub credential rotation is still unproven.** A prior GitHub CLI
+   credential was exposed through process arguments. Revoke it, review access
+   history, and issue a fresh least-privilege credential before authenticated
+   GitHub work resumes.
+2. **The 00:24 push actor is unknown.** The local tracking ref moved to
+   `bc46336`, but this does not prove who pushed or which credential was used.
+3. **Current source commit is not on the tracking ref.** `316aecb` remains one
+   commit ahead of local `origin/main`.
+4. **Fly credential rotation is still unproven.** Do not run production Fly
+   mutations with the previously exposed credential.
+5. **GitHub pre-runner cause is unknown.** Candidate CI run `29221158898` and
+   CodeQL run `29221158901` failed within seconds. Exact annotations still
+   need fresh authenticated inspection.
+6. **Previous candidate is superseded.** `c3e94b2` does not include
+   `316aecb`.
+7. **Fly DB exact-image recovery remains network-blocked.** Alpine package
+   indexes timed out. Do not weaken the patch layer or restart test.
+8. **Owner-controlled release settings remain unverified.** Branch protection,
+   environment review, administrator bypass, secret scopes, and bundle-secret
+   removal need current evidence.
+9. **Production is behind reviewed source.** Last public readiness proof reported
+   build `d2040b...` and migration `0023`, not current migrations through
+   `0025`.
+10. **Enterprise behavior is not fully proven.** Two-user browser isolation,
+    real email and official WhatsApp round trips, recovery, two restarts, first
+    admin login, and final campaign acceptance remain open.
 
 ## Next steps
 
-1. Revoke and rotate the GitHub CLI credential. Review access history and record
-   rotation metadata only.
-2. Revoke and rotate the Fly credential. Do not expose the replacement.
-3. With fresh GitHub authentication:
-   - verify `origin/main` remains `e782610b...`;
-   - review `origin/main..main`;
-   - push local `main` normally;
-   - verify local, tracking, and remote refs are equal.
-4. Inspect the exact CI and CodeQL failure annotations. Fix only the proven
-   external or workflow-start cause.
-5. Create a new release candidate from the current remote release baseline plus
-   the updated verified main. Run the complete local source, security, database,
-   build, and release-contract gates for its exact SHA.
-6. Push the new candidate branch and require exact-SHA CI and CodeQL green.
-7. Continue local maintainability work from
-   `_relay/2026-07-12-enterprise-refinement-plan.md`:
-   - store contracts and action factories;
-   - canonical outreach projection/resync;
-   - AgentSeat versus AgentSpec memory vocabulary;
-   - typed workspace-access helper;
-   - two-user Playwright acceptance.
-8. Verify owner-controlled GitHub branch/environment protection and Production
-   secret names without reading values.
-9. Rerun `npm run test:fly-db-volume` on a network that reaches Alpine.
-10. Preserve and inspect a disposable DB-volume clone and generate the exact
-    recovery receipt.
-11. Advance the protected release branch only after every candidate gate passes.
-12. Deploy the exact SHA, verify digests and migration through `0025`, restart
-    DB/Auth twice, provision/login the first admin, and run the zero-send
-    synthetic campaign.
-13. Run controlled email and official WhatsApp round trips with synthetic test
-    identities before enabling real candidate use.
-14. Archive and rewrite this Baton at the next milestone.
+1. Commit this Relay, findings, plan, and learning update as a docs-only handoff.
+2. Start Workstream 1 Wave 1B with the smallest action factory:
+   - characterize campaign and intake actions first;
+   - define explicit factory dependencies;
+   - keep all public action names and hooks unchanged;
+   - do not import React context from the factory;
+   - run focused tests before the complete gate.
+3. Continue Wave 1B one domain per commit:
+   sourcing/enrichment, outreach/compliance, fleet/integrations, then
+   chat/sessions/shared UI memory.
+4. After action factories, build the tested workspace persistence adapter and
+   canonical outreach projection resync path.
+5. Revoke and rotate GitHub and Fly credentials. Record metadata only.
+6. With fresh GitHub authentication:
+   - verify actual remote `main` equals the expected tracking baseline;
+   - inspect `origin/main..main`;
+   - push `main` normally;
+   - verify local, tracking, and remote refs match.
+7. Capture exact CI and CodeQL annotations and repair only the proven cause.
+8. Build a new release candidate containing current `main`.
+9. Complete exact-SHA CI, CodeQL, recovery, protected approval, live migration,
+   restart, first-admin, and zero-send acceptance gates.
+10. Run deployed two-user Playwright isolation and controlled real-channel
+    acceptance before any real candidate use.
+11. Archive and rewrite this Baton at the next milestone.
 
 ## Decisions made (don't relitigate)
 
-- Current developer architecture lives in `docs/ARCHITECTURE.md`; the
-  superseded production-readiness architecture is historical evidence.
-- Current release instructions start at
-  `production-readiness/README.md` and `DEPLOYMENT_RUNBOOK.md`.
-- Generated Graphify output is machine-local and ignored unless a real graph is
-  intentionally regenerated.
-- Agent graph drafts remain run-history-only with no delivery authority.
+- `src/lib/store/contracts.ts` owns the React-free public store action and
+  context contracts.
+- `src/lib/store.ts` remains the compatibility import for existing callers.
+- Wave 1A moved declarations and tests only; it intentionally moved no action
+  behavior.
+- Every action factory must receive explicit dependencies and must not import
+  React context.
+- Static type cycles and runtime/dynamic cycles are separate enforced graphs.
+- Contract tests must not serialize `HermesState` on failure.
+- Normalized outreach rows own delivery authority; `workspace_state` is a UI
+  projection.
+- Agent graph drafts remain run-history-only and have no delivery authority.
 - Inbound candidate replies remain named-human-review work.
-- HTTP 408 and server failures are ambiguous provider outcomes.
-- Live candidate mappers belong to the neutral sourcing domain, not mock code.
-- The browser workspace document is a projection, not delivery or integration
-  authority.
-- Previous candidate `c3e94b2` is evidence of the pre-runner problem, not the
-  final release candidate.
 - No exposed credential may be reused.
-- No production deploy occurs before exact-SHA checks, recovery evidence,
-  protected approval, and live acceptance are green.
+- Source, release, and live evidence remain separate claims.
 
 ## Watch out
 
-- The original repository checkout is dirty and on
+- The original OneDrive checkout is dirty and remains on
   `deploy/fly-github-actions`. Do not clean, reset, switch, or discard it.
 - Work only in the integration worktree above unless a new isolated worktree is
-  explicitly created.
+  intentionally created.
 - Do not put credentials into argv, process listings, logs, Relay, URLs, or
-  test fixtures.
-- The local main commits are verified but unpushed. Preserve them.
-- Do not rerun `npm ci` loops blindly while the registry path is stalled.
-- Do not move the 51 superseded audit files in the same commit as source work.
-- Do not claim production ready from source tests or readiness on migration
+  fixtures.
+- Do not infer that the 00:24 push makes authentication safe.
+- Do not rerun stalled `npm ci` loops without first checking the registry path.
+- Do not move the historical audit archive in the same commit as source work.
+- Do not claim production readiness from local source gates or migration
   `0023`.
