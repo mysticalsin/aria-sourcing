@@ -206,9 +206,12 @@ and live evidence separate.
 
 These are current facts, not permission for a broad rewrite:
 
-- `src/lib/store.ts` is still the large client-state coordinator. New domain
-  calculations should go into small React-free modules under `src/lib/store/`
-  and remain covered by focused tests.
+- `src/lib/store.ts` is still the large client-state coordinator. Its public
+  action and context contracts now live in the React-free
+  `src/lib/store/contracts.ts`; callers retain the compatibility export from
+  `src/lib/store.ts`. New domain calculations and action factories should move
+  behind that contract in small React-free modules under `src/lib/store/` and
+  remain covered by focused tests.
 - Normalized outreach rows own approval and delivery authority while
   `workspace_state` also carries the UI projection. Server mutations should
   return canonical records, and projection save failures need an explicit
