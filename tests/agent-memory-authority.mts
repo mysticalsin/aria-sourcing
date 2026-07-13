@@ -91,7 +91,8 @@ ok(
 ok("runtime policy snapshot persists before memory decryption", /persistAgentRuntimeSnapshot/.test(route) && route.indexOf("persistAgentRuntimeSnapshot") < memoryLoadIndex);
 ok("agent drafts are durable run history without delivery authority", /draftStorage:\s*"run_history"/.test(route) && /deliveryAuthority:\s*"none"/.test(route));
 ok("agent route never misclassifies first-touch drafts as provider outbox replies", !route.includes('.from("messages_outbound")'));
-ok("spec writes trim and reject blank allowed-topic values", /topics_allow:\s*z\.array\(z\.string\(\)\.trim\(\)\.min\(1\)/.test(specsRoute));
+ok("spec writes reuse the fail-closed runtime channel schema", /channels:\s*SupportedAgentChannelsSchema/.test(specsRoute));
+ok("spec writes reuse the fail-closed runtime guardrail schema", /guardrails:\s*SupportedAgentGuardrailsSchema/.test(specsRoute));
 ok("agent run never uses caller campaign authority", !route.includes("validated.data.campaign"));
 ok("agent run never loads shared workspace memory", !route.includes('.from("workspace_state")'));
 ok("agent run retrieves normalized bounded memory", route.includes("loadAgentMemoryContext("));

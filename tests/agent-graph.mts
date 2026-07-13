@@ -8,7 +8,11 @@ import {
   type CandidateLite,
   type GraphDeps,
 } from "../src/lib/agents/graph";
-import { resolveStoredAgentRuntimePolicy } from "../src/lib/agents/runtime-policy";
+import {
+  resolveStoredAgentRuntimePolicy,
+  SupportedAgentChannelsSchema,
+  SupportedAgentGuardrailsSchema,
+} from "../src/lib/agents/runtime-policy";
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) { if (cond) { pass++; } else { fail++; console.log("FAIL:", name); } }
@@ -51,6 +55,10 @@ const POOL: Record<string, CandidateLite[]> = {
     ["Email", "WhatsApp"],
     { autopilot: false, canary_remaining: 5 },
   );
+  const unknownAuthority = resolveStoredAgentRuntimePolicy(
+    ["Email"],
+    { autopilot: false, canary_remaining: 5, quiet_hours: { start: "18:00" } },
+  );
   ok(
     "policy resolver: supported queue-only defaults produce an auditable Email policy",
     email.ok && email.policy.queueMode === "human_review" && !email.policy.autopilotRequested,
@@ -59,6 +67,9 @@ const POOL: Record<string, CandidateLite[]> = {
   ok("policy resolver: unenforced topic rules fail closed", !topicRules.ok);
   ok("policy resolver: unenforced spec-level daily caps fail closed", !specCap.ok);
   ok("policy resolver: mixed channels fail closed instead of silently dropping one", !mixed.ok);
+  ok("policy resolver: unknown authority fields fail closed", !unknownAuthority.ok);
+  ok("spec writes: only the executable Email channel contract is accepted", SupportedAgentChannelsSchema.safeParse(["Email"]).success && !SupportedAgentChannelsSchema.safeParse(["WhatsApp"]).success);
+  ok("spec writes: unsupported and unknown guardrails are rejected", !SupportedAgentGuardrailsSchema.safeParse({ autopilot: true, canary_remaining: 0 }).success && !SupportedAgentGuardrailsSchema.safeParse({ autopilot: false, canary_remaining: 5, quiet_hours: {} }).success);
 }
 
 function makeDeps(overrides?: Partial<GraphDeps> & { planJson?: string; draftBody?: string }): GraphDeps & { generateCalls: string[]; promptCalls: string[] } {

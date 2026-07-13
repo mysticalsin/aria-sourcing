@@ -6,6 +6,10 @@ import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
+import {
+  SupportedAgentChannelsSchema,
+  SupportedAgentGuardrailsSchema,
+} from "@/lib/agents/runtime-policy";
 
 export const dynamic = "force-dynamic";
 
@@ -15,20 +19,11 @@ export const dynamic = "force-dynamic";
  * for named-operator approval before any dispatch path can run.
  */
 
-const ChannelEnum = z.enum(["Email", "LinkedIn", "WhatsApp", "SMS"]);
-
-const GuardrailsSchema = z.object({
-  autopilot: z.boolean().default(false),
-  canary_remaining: z.number().int().min(0).max(50).default(5),
-  topics_allow: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
-  max_per_day: z.number().int().min(1).max(200).optional(),
-});
-
 const CreateSpecSchema = z.object({
   name: z.string().min(1).max(120),
   role_brief: z.record(z.string(), z.unknown()),
-  channels: z.array(ChannelEnum).min(1).max(4).default(["Email"]),
-  guardrails: GuardrailsSchema.default({ autopilot: false, canary_remaining: 5 }),
+  channels: SupportedAgentChannelsSchema.default(["Email"]),
+  guardrails: SupportedAgentGuardrailsSchema.default({ autopilot: false, canary_remaining: 5 }),
   seat_id: z.string().uuid().optional(),
   flowise_chatflow_id: z.string().max(120).optional(),
 });
@@ -37,8 +32,8 @@ const UpdateSpecSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1).max(120).optional(),
   role_brief: z.record(z.string(), z.unknown()).optional(),
-  channels: z.array(ChannelEnum).min(1).max(4).optional(),
-  guardrails: GuardrailsSchema.optional(),
+  channels: SupportedAgentChannelsSchema.optional(),
+  guardrails: SupportedAgentGuardrailsSchema.optional(),
   seat_id: z.string().uuid().nullable().optional(),
   flowise_chatflow_id: z.string().max(120).nullable().optional(),
   status: z.enum(["active", "paused", "archived"]).optional(),

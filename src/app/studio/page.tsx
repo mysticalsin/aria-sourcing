@@ -28,7 +28,7 @@ interface SpecRow {
   status: string;
 }
 
-const ALL_CHANNELS = ["Email", "WhatsApp", "LinkedIn", "SMS"] as const;
+const SUPPORTED_CHANNELS = ["Email"] as const;
 
 export default function StudioPage() {
   const { toast } = useToast();
@@ -39,7 +39,6 @@ export default function StudioPage() {
   const [name, setName] = React.useState("");
   const [roleTitle, setRoleTitle] = React.useState("");
   const [skills, setSkills] = React.useState("");
-  const [channels, setChannels] = React.useState<string[]>(["Email"]);
   const [saving, setSaving] = React.useState(false);
 
   const load = React.useCallback(async () => {
@@ -87,7 +86,7 @@ export default function StudioPage() {
             title: roleTitle.trim(),
             requiredSkills: skills.split(",").map((s) => s.trim()).filter(Boolean),
           },
-          channels,
+          channels: SUPPORTED_CHANNELS,
         }),
       });
       const json = (await res.json()) as { ok: boolean; reason?: string };
@@ -155,30 +154,13 @@ export default function StudioPage() {
               </Field>
               <Field label="Channels">
                 <div className="flex flex-wrap gap-2">
-                  {ALL_CHANNELS.map((c) => {
-                    const active = channels.includes(c);
-                    return (
-                      <button
-                        key={c}
-                        type="button"
-                        disabled={availability !== "ready"}
-                        onClick={() =>
-                          setChannels((prev) => (active ? prev.filter((x) => x !== c) : [...prev, c]))
-                        }
-                        className={
-                          active
-                            ? "rounded-full border border-ink/20 bg-ink px-3 py-1 text-xs text-paper"
-                            : "rounded-full border border-ink/15 px-3 py-1 text-xs text-muted hover:border-ink/30"
-                        }
-                        aria-pressed={active}
-                      >
-                        {c}
-                      </button>
-                    );
-                  })}
+                  {SUPPORTED_CHANNELS.map((channel) => (
+                    <Badge key={channel} tone="neutral">{channel}</Badge>
+                  ))}
                 </div>
+                <p className="mt-2 text-xs text-muted">This runtime currently produces Email drafts only. Other channels remain unavailable until their guardrails are enforced end to end.</p>
               </Field>
-              <Button type="submit" disabled={availability !== "ready" || saving || !name.trim() || !roleTitle.trim() || channels.length === 0}>
+              <Button type="submit" disabled={availability !== "ready" || saving || !name.trim() || !roleTitle.trim()}>
                 {saving ? "Creating…" : "Create agent"}
               </Button>
               <p className="text-xs text-muted">

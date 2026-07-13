@@ -23,7 +23,8 @@ const overlay = readFileSync(new URL("../src/components/demo/aria-live-overlay.t
 const topbar = readFileSync(new URL("../src/components/app/topbar.tsx", import.meta.url), "utf8");
 const settingsPage = readFileSync(new URL("../src/app/settings/page.tsx", import.meta.url), "utf8");
 const specsRoute = readFileSync(new URL("../src/app/api/agents/specs/route.ts", import.meta.url), "utf8");
-const specsRouteBanner = specsRoute.slice(0, specsRoute.indexOf("const ChannelEnum"));
+const studioPage = readFileSync(new URL("../src/app/studio/page.tsx", import.meta.url), "utf8");
+const specsRouteBanner = specsRoute.slice(0, specsRoute.indexOf("const CreateSpecSchema"));
 
 ok("director applies the live-mode policy before starting a run", /getAriaLiveRunPolicy\(supabaseEnabled\)/.test(director));
 ok("overlay uses a native dialog", overlay.includes("<dialog") && overlay.includes("ref={dialogRef}"));
@@ -63,6 +64,11 @@ ok(
   specsRouteBanner.includes("queue-only") &&
     specsRouteBanner.includes("human review") &&
     !/autopilot|canary/i.test(specsRouteBanner),
+);
+ok(
+  "Agent Studio exposes only the channel its runtime can execute",
+  /const SUPPORTED_CHANNELS = \["Email"\] as const/.test(studioPage) &&
+    !/const (?:ALL|SUPPORTED)_CHANNELS = \[[^\]]*(?:WhatsApp|LinkedIn|SMS)/.test(studioPage),
 );
 
 console.log(`RESULT aria-live: ${pass} passed, ${fail} failed`);

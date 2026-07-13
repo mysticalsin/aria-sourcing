@@ -368,6 +368,11 @@ try {
   const unsupportedGuardrailAgent = await agentRoute.POST(agentRequest());
   ok("graph agent rejects stored guardrails it cannot enforce", unsupportedGuardrailAgent.status === 409);
   ok("unsupported guardrails fail before receipt, memory, vault, graph, or model egress", resolverCalls.length === 0 && serviceReadTables.length === 0 && graphCalls === 0 && upstreamCalls === 0);
+  agentSpecGuardrails = { autopilot: false, canary_remaining: 5, quiet_hours: { start: "18:00" } };
+  resetCalls();
+  const unknownGuardrailAgent = await agentRoute.POST(agentRequest());
+  ok("graph agent rejects unknown stored authority fields", unknownGuardrailAgent.status === 409);
+  ok("unknown stored authority fails before receipt, memory, vault, graph, or model egress", resolverCalls.length === 0 && serviceReadTables.length === 0 && graphCalls === 0 && upstreamCalls === 0);
   agentSpecGuardrails = { autopilot: false, canary_remaining: 5 };
 
   agentSpecRemainsActive = false;

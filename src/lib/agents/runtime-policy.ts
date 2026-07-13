@@ -1,13 +1,12 @@
 import { z } from "zod";
 
-const StoredGuardrailsSchema = z.object({
-  autopilot: z.boolean().default(false),
+export const SupportedAgentGuardrailsSchema = z.object({
+  autopilot: z.literal(false).default(false),
   canary_remaining: z.number().int().min(0).max(50).default(5),
-  topics_allow: z.array(z.string().trim().min(1).max(60)).max(20).default([]),
-  max_per_day: z.number().int().min(1).max(200).optional(),
-}).passthrough();
+  topics_allow: z.array(z.string()).max(0).default([]),
+}).strict();
 
-const StoredChannelsSchema = z.array(z.enum(["Email", "LinkedIn", "WhatsApp", "SMS"])).min(1).max(4);
+export const SupportedAgentChannelsSchema = z.tuple([z.literal("Email")]);
 
 export interface AgentExecutionPolicy {
   channel: "Email";
@@ -22,29 +21,18 @@ export type AgentRuntimePolicyResult =
 /**
  * The graph currently produces first-touch email drafts only. Stored specs for
  * other channels fail closed instead of silently running with Email semantics.
- * Legacy autopilot flags are recorded for audit but never grant delivery
- * authority: this release always terminates in named human review.
+ * Unsupported or unknown authority fields fail closed. This release always
+ * terminates with drafts in run history and grants no delivery authority.
  */
 export function resolveStoredAgentRuntimePolicy(
   channels: unknown,
   guardrails: unknown,
 ): AgentRuntimePolicyResult {
-  const parsedChannels = StoredChannelsSchema.safeParse(channels);
-  const parsedGuardrails = StoredGuardrailsSchema.safeParse(guardrails);
+  const parsedChannels = SupportedAgentChannelsSchema.safeParse(channels);
+  const parsedGuardrails = SupportedAgentGuardrailsSchema.safeParse(guardrails);
   if (!parsedChannels.success || !parsedGuardrails.success) {
     return { ok: false, reason: "Stored agent execution policy is invalid." };
   }
-  if (parsedChannels.data.length !== 1 || parsedChannels.data[0] !== "Email") {
-    return { ok: false, reason: "Stored agent has no supported queue-only draft channel." };
-  }
-  if (
-    parsedGuardrails.data.autopilot ||
-    parsedGuardrails.data.topics_allow.length > 0 ||
-    parsedGuardrails.data.max_per_day !== undefined
-  ) {
-    return { ok: false, reason: "Stored agent uses guardrails this queue-only runtime cannot enforce." };
-  }
-
   return {
     ok: true,
     policy: {
