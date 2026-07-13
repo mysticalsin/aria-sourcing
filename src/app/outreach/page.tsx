@@ -60,6 +60,7 @@ function personalizationFallbackHook(candidate: Candidate | undefined): string {
   const topSkill = candidate.techStack[0];
   if (topSkill) return `${topSkill} background fits this role`;
   if (candidate.currentTitle) return `${candidate.currentTitle} experience fits this role`;
+  if (candidate.yearsExperience == null) return "Matched against the role requirements";
   return `${candidate.yearsExperience} yrs of relevant experience`;
 }
 

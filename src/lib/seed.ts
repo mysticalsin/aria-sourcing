@@ -554,7 +554,10 @@ function seedTania(candidates: Candidate[], campaigns: Campaign[]): ChatboxSubmi
     c.starRating = deriveStarRating(c.matchScore, t);
 
     // DNA — top skills + a captured signal, stored back for the talent pool.
-    c.dna = [...c.techStack.slice(0, 3), `${c.yearsExperience}y experience`];
+    c.dna = [
+      ...c.techStack.slice(0, 3),
+      ...(c.yearsExperience == null ? [] : [`${c.yearsExperience}y experience`]),
+    ];
 
     // #Vivier: strong profiles that dropped out are Silver Medalists, always pooled.
     // recontactAt is a PAST date for those already due to re-engage, future for the

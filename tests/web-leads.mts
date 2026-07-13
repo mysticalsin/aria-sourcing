@@ -51,6 +51,7 @@ ok("mapWebSearchCandidates sets linkedinUrl for LinkedIn", candidate?.linkedinUr
 ok("mapWebSearchCandidates keeps email blank", candidate?.email === "");
 ok("mapWebSearchCandidates keeps location blank", candidate?.location === "");
 ok("mapWebSearchCandidates keeps source query site-scoped", candidate?.sourceQuery === linkedInQuery);
+ok("web search does not invent professional tenure", candidate?.yearsExperience === null);
 
 const discoveryText = [
   linkedInQuery,

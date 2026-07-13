@@ -5,7 +5,7 @@ import type { GithubUser } from "@/lib/sourcing/github";
 import type { SeamlessContact } from "@/lib/sourcing/seamless";
 import type { WebLead, WebSearchPlatform } from "@/lib/sourcing/web-leads";
 import type { Campaign, Candidate, ScoringWeights } from "@/lib/types";
-import { clamp, genId, initialsFrom } from "@/lib/utils";
+import { genId, initialsFrom } from "@/lib/utils";
 
 export interface SourceResult {
   accepted: Candidate[];
@@ -27,16 +27,13 @@ export function mapGithubCandidates(
     const bioLower = bio.toLowerCase();
     const matched = allSkills.filter((skill) => bioLower.includes(skill.toLowerCase()));
     const techStack = Array.from(new Set([...(user.topLanguage ? [user.topLanguage] : []), ...matched]));
-    const accountYears = user.createdAt
-      ? clamp(Math.floor((Date.now() - new Date(user.createdAt).getTime()) / (365 * 86_400_000)), 1, 25)
-      : 4;
     return {
       id: genId("cand"),
       campaignId: campaign.id,
       name,
       email: user.email ?? "",
       avatarInitials: initialsFrom(name),
-      currentTitle: bio ? bio.slice(0, 64) : jd.title,
+      currentTitle: "",
       currentCompany: (user.company ?? "").replace(/^@/, "").trim(),
       location: user.location ?? "",
       timezone: "",
@@ -47,7 +44,7 @@ export function mapGithubCandidates(
       matchScore: 0,
       matchBreakdown: [],
       techStack,
-      yearsExperience: accountYears,
+      yearsExperience: null,
       companyStageExperience: [],
       industryExperience: [],
       recentActivity: `${user.publicRepos} public repos, ${user.followers} followers`,
@@ -94,7 +91,7 @@ export function mapApolloCandidates(
       name: person.name,
       email: "",
       avatarInitials: initialsFrom(person.name),
-      currentTitle: person.title || jd.title,
+      currentTitle: person.title || "",
       currentCompany: person.company,
       location,
       timezone: "",
@@ -106,7 +103,7 @@ export function mapApolloCandidates(
       matchScore: 0,
       matchBreakdown: [],
       techStack: matched,
-      yearsExperience: 4,
+      yearsExperience: null,
       companyStageExperience: [],
       industryExperience: [],
       recentActivity,
@@ -153,7 +150,7 @@ export function mapSeamlessCandidates(
       name: contact.name,
       email: "",
       avatarInitials: initialsFrom(contact.name),
-      currentTitle: contact.title || jd.title,
+      currentTitle: contact.title || "",
       currentCompany: contact.company,
       location,
       timezone: "",
@@ -165,7 +162,7 @@ export function mapSeamlessCandidates(
       matchScore: 0,
       matchBreakdown: [],
       techStack: matched,
-      yearsExperience: 4,
+      yearsExperience: null,
       companyStageExperience: [],
       industryExperience: [],
       recentActivity,
@@ -209,7 +206,7 @@ export function mapWebSearchCandidates(
       name: lead.name,
       email: "",
       avatarInitials: initialsFrom(lead.name),
-      currentTitle: lead.title || jd.title,
+      currentTitle: lead.title,
       currentCompany: lead.company,
       location: "",
       timezone: "",
@@ -221,7 +218,7 @@ export function mapWebSearchCandidates(
       matchScore: 0,
       matchBreakdown: [],
       techStack,
-      yearsExperience: jd.minYearsExperience ?? (jd.seniority === "Senior" ? 6 : 4),
+      yearsExperience: null,
       companyStageExperience: [],
       industryExperience: [],
       recentActivity: lead.snippet || `Found via ${platform} search.`,

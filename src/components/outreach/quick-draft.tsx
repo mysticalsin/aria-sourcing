@@ -11,6 +11,7 @@ import {
   type OutreachMessage,
 } from "@/lib/types";
 import { Sparkles, ShieldCheck } from "lucide-react";
+import { recordedCandidateLawfulBasis } from "@/lib/candidate-lawful-basis";
 
 export function QuickDraft() {
   const candidates = useCandidates();
@@ -26,12 +27,19 @@ export function QuickDraft() {
 
   // Only contactable candidates in the picker
   const eligible = candidates.filter(
-    (c) => !c.complianceFlags.doNotContact && !c.complianceFlags.suppressed,
+    (c) =>
+      !c.complianceFlags.doNotContact &&
+      !c.complianceFlags.suppressed &&
+      (c.provenance !== "manual" ||
+        Boolean(recordedCandidateLawfulBasis(c))),
   );
 
   const candidateOptions = [
     { value: "", label: "Pick a candidate…" },
-    ...eligible.map((c) => ({ value: c.id, label: `${c.name}, ${c.currentTitle}` })),
+    ...eligible.map((c) => ({
+      value: c.id,
+      label: [c.name, c.currentTitle].filter(Boolean).join(", "),
+    })),
   ];
 
   const toneOptions = OUTREACH_TONES.map((t) => ({ value: t, label: t }));

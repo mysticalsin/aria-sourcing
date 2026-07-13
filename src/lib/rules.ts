@@ -7,6 +7,7 @@ import type {
   SystemSettings,
 } from "./types";
 import type { Tone } from "./utils";
+import { recordedCandidateLawfulBasis } from "./candidate-lawful-basis";
 
 /* ============================================================================
    Business rules — the guardrails Aria enforces before acting.
@@ -78,6 +79,21 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
       status: "pass",
       detail: `${message.personalizationEvidence.length} personalization ${message.personalizationEvidence.length === 1 ? "point" : "points"} attached.`,
     });
+  }
+
+  if (candidate.provenance === "manual") {
+    if (!recordedCandidateLawfulBasis(candidate)) {
+      const detail =
+        "A manually entered candidate requires an operator-recorded lawful basis before outreach approval.";
+      blockers.push(detail);
+      checks.push({ rule: "Lawful basis", status: "block", detail });
+    } else {
+      checks.push({
+        rule: "Lawful basis",
+        status: "pass",
+        detail: "Operator-recorded lawful basis is present for this manual candidate.",
+      });
+    }
   }
 
   // Rule 10 + compliance — respect candidate wishes

@@ -72,7 +72,7 @@ export function buildOutreachPrompt(opts: {
   candidateCompany: string;
   techStack: string[];
   recentActivity: string;
-  yearsExperience: number;
+  yearsExperience: number | null;
   roleTitle: string;
   locationType: string;
   regions: string[];
@@ -91,10 +91,18 @@ export function buildOutreachPrompt(opts: {
     "",
     "Candidate:",
     `- Name: ${opts.candidateName}`,
-    `- Current: ${opts.candidateTitle} at ${opts.candidateCompany}`,
-    `- Experience: ${opts.yearsExperience} years`,
+    opts.candidateTitle || opts.candidateCompany
+      ? `- Current: ${[opts.candidateTitle, opts.candidateCompany].filter(Boolean).join(" at ")}`
+      : "- Current role: not provided",
+    opts.yearsExperience == null
+      ? "- Experience: not provided"
+      : `- Experience: ${opts.yearsExperience} years`,
     `- Tech stack: ${opts.techStack.join(", ") || "n/a"}`,
-    `- Recent activity: ${opts.recentActivity || "n/a"}`,
+    `- Recent activity: ${
+      opts.recentActivity && !/no activity signal/i.test(opts.recentActivity)
+        ? opts.recentActivity
+        : "n/a"
+    }`,
     "",
     "Role:",
     opts.roleContext ??

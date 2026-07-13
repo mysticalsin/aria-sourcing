@@ -5,18 +5,17 @@ import { useActivities, useSettings } from "@/lib/store";
 import { formatTimeAgo } from "@/lib/utils";
 import type { Tone } from "@/lib/utils";
 import type { Candidate } from "@/lib/types";
+import { recordedCandidateLawfulBasis } from "@/lib/candidate-lawful-basis";
 import { Eye, ShieldCheck, Timer } from "lucide-react";
 
 /** WORKSTREAM 4.4 — Consent Passport & Data Lineage.
  *
- *  Everything here is a DISPLAY derivation over existing candidate/activity
- *  fields — no new persisted state, no enforcement logic. The lawful-basis and
- *  retention chips are illustrative labels for a synthetic demo, not a real
- *  legal determination; they exist to make the compliance model *visible*,
- *  not to gate any action. */
+ *  Everything here is a display derivation over persisted candidate/activity
+ *  fields. Approval enforcement lives in rules.ts. Labels reflect operator
+ *  inputs and are not a legal determination. */
 
 const ILLUSTRATIVE_LABEL =
-  "Illustrative compliance model on synthetic data: display only, not a legal determination.";
+  "Illustrative compliance display only; not a legal determination.";
 
 interface ConsentBasis {
   sourceLabel: string;
@@ -24,13 +23,45 @@ interface ConsentBasis {
   tone: Tone;
 }
 
-/** Derives a source + lawful-basis pair purely from sourcePlatform/sourceUrl —
- *  never from a new field. Referral and Talent Pool leads are modeled as
+/** Derives a source + lawful-basis pair from persisted provenance/source data.
+ *  Referral and Talent Pool leads are modeled as
  *  consent-based (the person opted in / was introduced); everything else with
  *  a public sourceUrl is modeled as legitimate interest over public profile
  *  data; anything without a sourceUrl falls back to a generic sourced-outreach
  *  legitimate-interest basis. */
-function deriveConsentBasis(candidate: Pick<Candidate, "sourcePlatform" | "sourceUrl">): ConsentBasis {
+function deriveConsentBasis(
+  candidate: Pick<
+    Candidate,
+    | "sourcePlatform"
+    | "sourceUrl"
+    | "provenance"
+    | "lawfulBasis"
+    | "lawfulBasisRecordedAt"
+    | "lawfulBasisSource"
+  >,
+): ConsentBasis {
+  if (candidate.provenance === "manual") {
+    const recordedBasis = recordedCandidateLawfulBasis(candidate);
+    if (recordedBasis === "consent") {
+      return {
+        sourceLabel: "Manual entry",
+        basisLabel: "Consent (operator recorded)",
+        tone: "violet",
+      };
+    }
+    if (recordedBasis === "legitimate_interest") {
+      return {
+        sourceLabel: "Manual entry",
+        basisLabel: "Legitimate interest (operator recorded)",
+        tone: "aqua",
+      };
+    }
+    return {
+      sourceLabel: "Manual entry",
+      basisLabel: "Lawful basis not recorded",
+      tone: "warning",
+    };
+  }
   if (candidate.sourcePlatform === "Referral") {
     return { sourceLabel: "Referral", basisLabel: "Consent (referral introduction)", tone: "violet" };
   }
@@ -53,7 +84,19 @@ function deriveConsentBasis(candidate: Pick<Candidate, "sourcePlatform" | "sourc
 
 /** Small provenance chip for candidate rows — same derivation as the passport,
  *  compressed to a single badge with the detail in the title tooltip. */
-export function ProvenanceChip({ candidate }: { candidate: Pick<Candidate, "sourcePlatform" | "sourceUrl"> }) {
+export function ProvenanceChip({
+  candidate,
+}: {
+  candidate: Pick<
+    Candidate,
+    | "sourcePlatform"
+    | "sourceUrl"
+    | "provenance"
+    | "lawfulBasis"
+    | "lawfulBasisRecordedAt"
+    | "lawfulBasisSource"
+  >;
+}) {
   const { sourceLabel, basisLabel, tone } = deriveConsentBasis(candidate);
   return (
     <Badge tone={tone} size="sm" title={`${sourceLabel} · ${basisLabel}`}>

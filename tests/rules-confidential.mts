@@ -15,6 +15,7 @@ import {
   hasOutreachPurpose,
   maskEmailBody,
 } from "../src/lib/confidential";
+import { recordedCandidateLawfulBasis } from "../src/lib/candidate-lawful-basis";
 import { buildSeedState, defaultSettings } from "../src/lib/seed";
 import type { Candidate, OutreachMessage, SystemSettings } from "../src/lib/types";
 
@@ -205,6 +206,49 @@ ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
   const r = checkOutreachApproval(ctx);
   ok("clean message: allowed", r.allowed === true);
   ok("clean message: zero blockers", r.blockers.length === 0);
+}
+
+// 5b) Manual candidates require an operator-recorded lawful basis.
+{
+  const missing = checkOutreachApproval(
+    approvalCtx({
+      candidate: makeCandidate({ provenance: "manual", sourcePlatform: "Manual" }),
+    }),
+  );
+  ok("manual candidate without lawful basis: not allowed", missing.allowed === false);
+  ok(
+    "manual candidate without lawful basis: blocker is explicit",
+    missing.blockers.some((blocker) => /lawful basis/i.test(blocker)),
+  );
+
+  const recorded = checkOutreachApproval(
+    approvalCtx({
+      candidate: makeCandidate({
+        provenance: "manual",
+        sourcePlatform: "Manual",
+        lawfulBasis: "consent",
+        lawfulBasisSource: "operator_selection",
+        lawfulBasisRecordedAt: "2026-07-13T06:00:00.000Z",
+      } as Partial<Candidate>),
+    }),
+  );
+  ok("manual candidate with recorded lawful basis: allowed", recorded.allowed === true);
+
+  for (const ambiguousTimestamp of ["0", "1", "2026-07-13", "2026-07-13T06:00:00Z"]) {
+    const basis = recordedCandidateLawfulBasis(
+      makeCandidate({
+        provenance: "manual",
+        sourcePlatform: "Manual",
+        lawfulBasis: "consent",
+        lawfulBasisSource: "operator_selection",
+        lawfulBasisRecordedAt: ambiguousTimestamp,
+      } as Partial<Candidate>),
+    );
+    ok(
+      `manual candidate with non-canonical timestamp ${ambiguousTimestamp}: basis rejected`,
+      basis === null,
+    );
+  }
 }
 
 // no-throw guard on the approval gate

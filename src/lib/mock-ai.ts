@@ -826,21 +826,27 @@ export function generateOutreach(
 ): GeneratedOutreach {
   const jd = campaign.jobAnalysis;
   const firstName = candidate.name.split(" ")[0];
-  const topSkill = candidate.techStack[0] ?? jd.requiredSkills[0] ?? "your work";
+  const topSkill = sharedRequiredSkills(candidate, jd)[0]?.trim() || null;
   const evidence = personalizationEvidence(candidate, jd);
 
   // Compose in the need's language (or the requested one); English is the fallback.
   const lang = language ?? jd.language ?? "en";
   const L = outreachStrings(lang);
+  const greeting = topSkill
+    ? L.greeting(firstName, topSkill, candidate.currentCompany)
+    : L.salutation(firstName);
 
-  const subject = sequenceStep > 1 ? L.subjectFollow(jd.title, firstName) : L.subjectNew(jd.title, topSkill);
+  const subject = sequenceStep > 1
+    ? L.subjectFollow(jd.title, firstName)
+    : topSkill
+      ? L.subjectNew(jd.title, topSkill)
+      : L.subjectGeneric(jd.title);
 
   const emailBody = [
-    L.greeting(firstName, topSkill, candidate.currentCompany),
+    greeting,
     "",
     `${L.roleLine(jd.title, jd.locationType, jd.regions.join("/"))}${jd.equity ? " " + L.equity : ""}`,
-    "",
-    L.whyYou(evidence[0] ?? "", evidence[1]),
+    ...(evidence.length ? ["", L.whyYou(evidence[0], evidence[1])] : []),
     "",
     sequenceStep > 1 ? L.ctaFollow : L.cta,
     // No auto-appended footer: a recruiter's own sign-off is added only when set;
@@ -851,7 +857,7 @@ export function generateOutreach(
   // WhatsApp / SMS are short-form: one tight message, no long role/why blocks and no
   // subject line in the body (the channel adapters deliver the body only).
   const phoneBody = [
-    L.greeting(firstName, topSkill, candidate.currentCompany),
+    greeting,
     sequenceStep > 1 ? L.ctaFollow : L.cta,
     ...(voice?.signature && voice.signature.trim() ? [voice.signature.trim()] : []),
   ]
@@ -869,12 +875,23 @@ export function generateOutreach(
   };
 }
 
+function sharedRequiredSkills(candidate: Candidate, jd: JobAnalysis): string[] {
+  const required = new Set(jd.requiredSkills.map((skill) => skill.trim().toLowerCase()));
+  return candidate.techStack.filter((skill) => required.has(skill.trim().toLowerCase()));
+}
+
 function personalizationEvidence(candidate: Candidate, jd: JobAnalysis): string[] {
   const ev: string[] = [];
-  const shared = candidate.techStack.filter((s) => jd.requiredSkills.includes(s));
+  const shared = sharedRequiredSkills(candidate, jd);
   if (shared.length) ev.push(`You work across ${shared.slice(0, 3).join(", ")}, exactly our core stack`);
-  ev.push(`${candidate.yearsExperience} yrs of depth, currently at ${candidate.currentCompany}`);
-  if (candidate.recentActivity) ev.push(candidate.recentActivity.replace(/\.$/, ""));
+  if (candidate.yearsExperience != null) {
+    ev.push(
+      `${candidate.yearsExperience} yrs of depth${candidate.currentCompany ? `, currently at ${candidate.currentCompany}` : ""}`,
+    );
+  }
+  if (candidate.recentActivity && !/no activity signal/i.test(candidate.recentActivity)) {
+    ev.push(candidate.recentActivity.replace(/\.$/, ""));
+  }
   if (candidate.companyStageExperience.length)
     ev.push(`Experience at ${candidate.companyStageExperience.join(" / ")} stage companies`);
   return ev.slice(0, 3);

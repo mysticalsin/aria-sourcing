@@ -128,6 +128,7 @@ function personalizationFallbackHook(candidate: Candidate): string {
   const topSkill = candidate.techStack[0];
   if (topSkill) return `${topSkill} background fits this role`;
   if (candidate.currentTitle) return `${candidate.currentTitle} experience fits this role`;
+  if (candidate.yearsExperience == null) return "Matched against the role requirements";
   return `${candidate.yearsExperience} yrs of relevant experience`;
 }
 
@@ -742,7 +743,11 @@ export function CandidateDrawer({
       open={open}
       onClose={handleClose}
       title={dc.name}
-      description={masked ? "Confidential candidate · PII minimized" : `${c.currentTitle} @ ${c.currentCompany}`}
+      description={
+        masked
+          ? "Confidential candidate · PII minimized"
+          : [c.currentTitle, c.currentCompany].filter(Boolean).join(" @ ") || "Role not provided"
+      }
       footer={footer}
       width="max-w-2xl"
     >
@@ -756,6 +761,11 @@ export function CandidateDrawer({
           {c.provenance === "synthetic" && (
             <Badge tone="warning" size="sm" title="Demo data: not a real sourced profile">
               Synthetic
+            </Badge>
+          )}
+          {c.provenance === "manual" && (
+            <Badge tone="warning" size="sm" title="Operator-entered profile">
+              Manual
             </Badge>
           )}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted">
@@ -991,7 +1001,7 @@ export function CandidateDrawer({
             <div>
               <dt className="text-xs font-semibold uppercase tracking-wide text-muted">Experience</dt>
               <dd className="mt-0.5 text-sm font-semibold text-ink tabular-nums">
-                {c.yearsExperience} yrs
+                {c.yearsExperience == null ? "Not provided" : `${c.yearsExperience} yrs`}
               </dd>
             </div>
             <div className="col-span-2 sm:col-span-2">

@@ -78,6 +78,8 @@ ok("techStack includes the query language", !!a?.techStack.includes("TypeScript"
 ok("candidate is scored", typeof a?.matchScore === "number" && a.matchScore >= 0);
 ok("sourcePlatform is GitHub", a?.sourcePlatform === "GitHub");
 ok("stage is Sourced", a?.stage === "Sourced");
+ok("GitHub account age is not presented as professional tenure", a?.yearsExperience === null);
+ok("GitHub biography is not presented as a job title", a?.currentTitle === "");
 
 // --- Name fallback + honest blank email ------------------------------------
 const bob = mk({ login: "bob", htmlUrl: "https://github.com/bob" });

@@ -7,7 +7,12 @@ import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
-import { searchGithubUsers, getGithubUser, type GithubUser } from "@/lib/sourcing/github";
+import {
+  GITHUB_USERNAME_RE,
+  searchGithubUsers,
+  getGithubUser,
+  type GithubUser,
+} from "@/lib/sourcing/github";
 import { SOURCE_PLATFORMS } from "@/lib/types";
 import { ensureWebQueryScope, isWebSearchPlatform, extractLead, type WebLead } from "@/lib/sourcing/web-leads";
 import { runWebTool } from "@/lib/ai/web-tools";
@@ -29,8 +34,7 @@ export const runtime = "nodejs";
  * existing compliant web_search tool (site:-scoped), same honesty/read-only
  * guarantees as the chat research tools.
  *
- * platform in {Referral, Talent Pool}: not externally sourceable — these are
- * internal-pipeline concepts, not searched at all.
+ * platform in {Manual, Referral, Talent Pool}: not externally sourceable.
  *
  * Read-only throughout: never writes to GitHub, never logs into or scrapes a
  * platform, never posts a message.
@@ -39,8 +43,6 @@ export const runtime = "nodejs";
  * is ignored entirely and the request resolves that one GitHub login via
  * GET /users/{login} instead of running a search.
  */
-const GITHUB_USERNAME_RE = /^[a-zA-Z\d](?:[a-zA-Z\d]|-(?=[a-zA-Z\d])){0,38}$/;
-
 const SourceSchema = z
   .object({
     query: z.string().min(1).max(256).optional(),
@@ -93,6 +95,12 @@ export async function POST(req: NextRequest) {
   // Manual single-profile intake: resolve exactly the named GitHub login,
   // ignoring `query` and `count` entirely — this is a lookup, not a search.
   if (username) {
+    if (platform !== "GitHub") {
+      return NextResponse.json(
+        { ok: false, error: "GitHub username lookup requires the GitHub platform." },
+        { status: 400 },
+      );
+    }
     const token = process.env.GITHUB_TOKEN ?? "";
     try {
       const user = await getGithubUser(username, token);
@@ -108,6 +116,13 @@ export async function POST(req: NextRequest) {
 
   // Schema-enforced: username or query is present; username was handled above.
   if (!query) return NextResponse.json({ ok: false, error: "query is required." }, { status: 400 });
+
+  if (platform === "Manual") {
+    return NextResponse.json(
+      { ok: false, source: "manual", error: "Manual intake must use the candidate intake action." },
+      { status: 400 },
+    );
+  }
 
   if (platform === "GitHub") {
     const token = process.env.GITHUB_TOKEN ?? "";

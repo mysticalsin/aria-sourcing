@@ -14,6 +14,7 @@ import type {
   Booking,
   Campaign,
   CandidateStage,
+  CandidateLawfulBasis,
   ChatboxSubmission,
   ChatboxSubmissionStatus,
   ChatMessage,
@@ -69,6 +70,10 @@ export type SourceNextBatchResult =
   | (SourceResult & { source: "github" | "web" | "mock"; ok: true })
   | { ok: false; error: string; source: SourceNextBatchErrorSource };
 
+export type CandidateIntakeResult =
+  | { ok: true; added: number; skipped: number; skipReason?: string }
+  | { ok: false; error: string };
+
 export interface HermesActions {
   // campaigns
   setActiveCampaign: (id: string | null) => void;
@@ -97,12 +102,10 @@ export interface HermesActions {
   addCandidateFromGithub: (
     campaignId: string,
     username: string,
-  ) => Promise<{ ok: true; added: number; skipped: number } | { ok: false; error: string }>;
-  /** Manual intake, zero network: builds a real Candidate straight from
-   *  operator-entered fields (no search, no scraping) and scores it with the
-   *  same scoring/dedupe pipeline as every other sourcing path. Labeled
-   *  sourcePlatform "Referral" — an honest existing value, not a fabricated
-   *  live source. Never drafts or sends outreach. */
+  ) => Promise<CandidateIntakeResult>;
+  /** Manual intake, zero network: builds a Candidate only from operator-entered
+   *  fields, with explicit Manual provenance and unknown facts left unknown.
+   *  Never drafts or sends outreach. */
   addCandidateManual: (
     campaignId: string,
     input: {
@@ -113,8 +116,9 @@ export interface HermesActions {
       email?: string;
       location?: string;
       notes?: string;
+      lawfulBasis: CandidateLawfulBasis;
     },
-  ) => { ok: true; added: number; skipped: number } | { ok: false; error: string };
+  ) => CandidateIntakeResult;
   /** Sillage Account Mapping (third real sourcing channel): resolves a company
    *  (domain or LinkedIn URL) into real enriched employee profiles. Enrichment is
    *  async — this kicks off the job server-side and returns a requestId to poll

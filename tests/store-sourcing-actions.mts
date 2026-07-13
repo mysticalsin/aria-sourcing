@@ -7,6 +7,9 @@ import {
   createSourcingActions,
   type SourcingActionDependencies,
 } from "../src/lib/store/sourcing-actions";
+import { scoreCandidate } from "../src/lib/scoring";
+import { buildOutreachPrompt } from "../src/lib/ai/hermes";
+import { generateOutreach } from "../src/lib/mock-ai";
 import type { Candidate, HermesState } from "../src/lib/types";
 
 type ActivityDraft = Parameters<SourcingActionDependencies["makeActivity"]>[0];
@@ -24,6 +27,30 @@ const agentRunSource = readFileSync(
   new URL("../src/components/run/agent-run-stream.tsx", import.meta.url),
   "utf8",
 );
+const consentPassportSource = readFileSync(
+  new URL("../src/components/candidates/consent-passport.tsx", import.meta.url),
+  "utf8",
+);
+const candidateDrawerSource = readFileSync(
+  new URL("../src/components/candidates/candidate-drawer.tsx", import.meta.url),
+  "utf8",
+);
+const outreachPageSource = readFileSync(
+  new URL("../src/app/outreach/page.tsx", import.meta.url),
+  "utf8",
+);
+const addCandidateDialogSource = readFileSync(
+  new URL("../src/components/candidates/add-candidate-dialog.tsx", import.meta.url),
+  "utf8",
+);
+const candidateMappersSource = readFileSync(
+  new URL("../src/lib/sourcing/candidate-mappers.ts", import.meta.url),
+  "utf8",
+);
+const sourcingHelpersSource = readFileSync(
+  new URL("../src/lib/store/sourcing-helpers.ts", import.meta.url),
+  "utf8",
+);
 
 test("sourcing action boundary is React-free and wired through one stable factory", () => {
   assert.doesNotMatch(sourcingActionsSource, /["']use client["']/);
@@ -33,6 +60,8 @@ test("sourcing action boundary is React-free and wired through one stable factor
     /createSourcingActions\([\s\S]*?\),\n\s*\[[\s\S]*?commit,[\s\S]*?sourcingMutationAllowed,[\s\S]*?syntheticSourcingAllowed,[\s\S]*?workspaceEffectAllowed,[\s\S]*?workspaceFetch,[\s\S]*?\],/,
   );
   assert.equal((storeSource.match(/const sourceNextBatch = useCallback/g) ?? []).length, 0);
+  assert.equal((storeSource.match(/const addCandidateFromGithub = useCallback/g) ?? []).length, 0);
+  assert.equal((storeSource.match(/const addCandidateManual = useCallback/g) ?? []).length, 0);
   assert.match(
     launchSource,
     /platform: supabaseEnabled \? undefined : "Talent Pool"/,
@@ -46,6 +75,9 @@ test("sourcing action boundary is React-free and wired through one stable factor
     storeSource,
     /platform: syntheticSourcingAllowed\(\) \? "Talent Pool" : undefined/,
   );
+  assert.doesNotMatch(storeSource, /yearsExperience:\s*0,/);
+  assert.doesNotMatch(candidateMappersSource, /yearsExperience:\s*(?:4|jd\.minYearsExperience)/);
+  assert.doesNotMatch(sourcingHelpersSource, /yearsExperience:\s*jd\.minYearsExperience/);
 });
 
 const githubUser = {
@@ -69,6 +101,8 @@ function createHarness(options: {
   syntheticSourcingAllowed?: boolean;
   commitAllowed?: boolean;
   responseBody?: unknown;
+  responseStatus?: number;
+  responseText?: string;
   fetchError?: Error;
   afterFetch?: () => void;
   state?: HermesState;
@@ -100,10 +134,14 @@ function createHarness(options: {
       if (options.fetchError) throw options.fetchError;
       options.afterFetch?.();
       return new Response(
-        JSON.stringify(
-          options.responseBody ?? { ok: true, source: "github", users: [githubUser] },
-        ),
-        { status: 200, headers: { "Content-Type": "application/json" } },
+        options.responseText ??
+          JSON.stringify(
+            options.responseBody ?? { ok: true, source: "github", users: [githubUser] },
+          ),
+        {
+          status: options.responseStatus ?? 200,
+          headers: { "Content-Type": "application/json" },
+        },
       );
     },
     makeActivity: (draft) => {
@@ -178,6 +216,614 @@ test("sourcing fails closed before network or state work when the operator canno
   assert.equal(harness.events.length, 0);
 });
 
+test("specific GitHub and manual intake fail closed for unavailable or unauthorized workspaces", async () => {
+  const viewer = createHarness({ mutationAllowed: false });
+  const campaignId = viewer.state.campaigns[0].id;
+
+  const githubDenied = await viewer.actions.addCandidateFromGithub(campaignId, "live-user");
+  const manualDenied = viewer.actions.addCandidateManual(campaignId, {
+    name: "Manual Person",
+  });
+
+  assert.equal(githubDenied.ok, false);
+  assert.equal(manualDenied.ok, false);
+  assert.equal(viewer.fetchCalls, 0);
+  assert.equal(viewer.commitCalls, 0);
+  assert.equal(viewer.events.length, 0);
+
+  const unavailable = createHarness({ workspaceAllowed: false });
+  const unavailableCampaignId = unavailable.state.campaigns[0].id;
+  assert.equal(
+    (await unavailable.actions.addCandidateFromGithub(unavailableCampaignId, "live-user")).ok,
+    false,
+  );
+  assert.equal(
+    unavailable.actions.addCandidateManual(unavailableCampaignId, { name: "Manual Person" }).ok,
+    false,
+  );
+  assert.equal(unavailable.fetchCalls, 0);
+  assert.equal(unavailable.commitCalls, 0);
+});
+
+test("specific GitHub and manual intake reject missing and paused campaigns", async () => {
+  const harness = createHarness();
+  const campaignId = harness.state.campaigns[0].id;
+
+  assert.equal((await harness.actions.addCandidateFromGithub("missing", "live-user")).ok, false);
+  assert.equal(harness.actions.addCandidateManual("missing", { name: "Manual Person" }).ok, false);
+
+  harness.state = {
+    ...harness.state,
+    campaigns: harness.state.campaigns.map((campaign) =>
+      campaign.id === campaignId ? { ...campaign, status: "Paused" } : campaign,
+    ),
+  };
+  assert.equal((await harness.actions.addCandidateFromGithub(campaignId, "live-user")).ok, false);
+  assert.equal(harness.actions.addCandidateManual(campaignId, { name: "Manual Person" }).ok, false);
+  assert.equal(harness.fetchCalls, 0);
+  assert.equal(harness.commitCalls, 0);
+});
+
+test("specific GitHub intake normalizes login and commits the exact validated profile", async () => {
+  const harness = createHarness();
+  const campaignId = harness.state.campaigns[0].id;
+
+  const result = await harness.actions.addCandidateFromGithub(campaignId, "  @live-user  ");
+
+  assert.deepEqual(result, { ok: true, added: 1, skipped: 0 });
+  assert.equal(harness.fetchCalls, 1);
+  assert.equal(harness.commitCalls, 1);
+  assert.equal(harness.recomputeCalls, 1);
+  assert.equal(harness.activityDrafts.length, 1);
+  assert.deepEqual(harness.activityDrafts[0], {
+    type: "sourcing",
+    title: "Added @live-user from GitHub",
+    notes: "Added a specific, validated GitHub profile.",
+    outcome: "1 accepted",
+    campaignId,
+    linkedEntityType: "campaign",
+    linkedEntityId: campaignId,
+  });
+  assert.deepEqual(harness.events, [{ kind: "source", campaignId, count: 1 }]);
+  assert.equal(harness.state.candidates[0].githubUrl, githubUser.htmlUrl);
+  const body = JSON.parse(String(harness.requests[0].init?.body)) as {
+    username: string;
+    count: number;
+    platform: string;
+  };
+  assert.deepEqual(body, { username: "live-user", platform: "GitHub", count: 1 });
+});
+
+test("specific GitHub intake rejects invalid identities and unrelated provider results", async () => {
+  const invalid = createHarness();
+  const campaignId = invalid.state.campaigns[0].id;
+  for (const username of [
+    "",
+    "@",
+    "@@live-user",
+    "two words",
+    "-starts-wrong",
+    "ends-wrong-",
+    "two--hyphens",
+    `${"a".repeat(40)}`,
+  ]) {
+    const result = await invalid.actions.addCandidateFromGithub(campaignId, username);
+    assert.equal(result.ok, false);
+  }
+  assert.equal(invalid.fetchCalls, 0);
+
+  const mismatch = createHarness({
+    responseBody: {
+      ok: true,
+      source: "github",
+      users: [{ ...githubUser, login: "different-user", htmlUrl: "https://github.com/different-user" }],
+    },
+  });
+  const mismatchResult = await mismatch.actions.addCandidateFromGithub(
+    mismatch.state.campaigns[0].id,
+    "live-user",
+  );
+  assert.equal(mismatchResult.ok, false);
+  assert.equal(mismatch.commitCalls, 0);
+
+  const canonicalCase = createHarness({
+    responseBody: {
+      ok: true,
+      source: "github",
+      users: [{ ...githubUser, login: "Live-User", htmlUrl: "https://github.com/Live-User" }],
+    },
+  });
+  const canonicalCaseResult = await canonicalCase.actions.addCandidateFromGithub(
+    canonicalCase.state.campaigns[0].id,
+    "live-user",
+  );
+  assert.equal(canonicalCaseResult.ok, true);
+});
+
+test("specific GitHub intake revalidates authority and latest dedupe state after I/O", async () => {
+  let denied: ReturnType<typeof createHarness>;
+  denied = createHarness({ afterFetch: () => denied.setMutationAllowed(false) });
+  const deniedResult = await denied.actions.addCandidateFromGithub(
+    denied.state.campaigns[0].id,
+    "live-user",
+  );
+  assert.equal(deniedResult.ok, false);
+  assert.equal(denied.commitCalls, 0);
+  assert.equal(denied.events.length, 0);
+
+  let concurrent: ReturnType<typeof createHarness>;
+  concurrent = createHarness({
+    afterFetch: () => {
+      const duplicate: Candidate = {
+        ...concurrent.state.candidates[0],
+        id: "candidate_concurrent_github",
+        campaignId: concurrent.state.campaigns[0].id,
+        githubUrl: githubUser.htmlUrl,
+        email: "",
+      };
+      concurrent.state = {
+        ...concurrent.state,
+        candidates: [duplicate, ...concurrent.state.candidates],
+      };
+    },
+  });
+  const duplicateResult = await concurrent.actions.addCandidateFromGithub(
+    concurrent.state.campaigns[0].id,
+    "live-user",
+  );
+  assert.deepEqual(duplicateResult, {
+    ok: true,
+    added: 0,
+    skipped: 1,
+    skipReason: "Duplicate GitHub",
+  });
+  assert.equal(concurrent.commitCalls, 1);
+  assert.equal(concurrent.recomputeCalls, 0);
+  assert.equal(concurrent.activityDrafts.length, 1);
+  assert.deepEqual(concurrent.activityDrafts[0], {
+    type: "sourcing",
+    title: "@live-user was not added",
+    notes: "Skipped by dedupe (Duplicate GitHub).",
+    outcome: "0 accepted, 1 skipped",
+    campaignId: concurrent.state.campaigns[0].id,
+    linkedEntityType: "campaign",
+    linkedEntityId: concurrent.state.campaigns[0].id,
+  });
+  assert.equal(concurrent.events.length, 0);
+
+  const excludedState = buildSeedState();
+  excludedState.campaigns[0].sourcingStrategy.excludedCompanies = ["Example"];
+  const excluded = createHarness({ state: excludedState });
+  const excludedResult = await excluded.actions.addCandidateFromGithub(
+    excluded.state.campaigns[0].id,
+    "live-user",
+  );
+  assert.deepEqual(excludedResult, {
+    ok: true,
+    added: 0,
+    skipped: 1,
+    skipReason: "Excluded company (Example)",
+  });
+  assert.equal(excluded.activityDrafts[0]?.title, "@live-user was not added");
+  assert.match(excluded.activityDrafts[0]?.notes ?? "", /Excluded company/);
+  assert.doesNotMatch(addCandidateDialogSource, /title: "Already in the pipeline"/);
+
+  for (const postFetchMutation of ["workspace", "missing", "paused"] as const) {
+    let changed: ReturnType<typeof createHarness>;
+    changed = createHarness({
+      afterFetch: () => {
+        if (postFetchMutation === "workspace") {
+          changed.setWorkspaceAllowed(false);
+          return;
+        }
+        const campaignId = changed.state.campaigns[0].id;
+        changed.state = {
+          ...changed.state,
+          campaigns:
+            postFetchMutation === "missing"
+              ? changed.state.campaigns.filter((campaign) => campaign.id !== campaignId)
+              : changed.state.campaigns.map((campaign) =>
+                  campaign.id === campaignId ? { ...campaign, status: "Paused" } : campaign,
+                ),
+        };
+      },
+    });
+    const changedResult = await changed.actions.addCandidateFromGithub(
+      changed.state.campaigns[0].id,
+      "live-user",
+    );
+    assert.equal(changedResult.ok, false, postFetchMutation);
+    assert.equal(changed.commitCalls, 0, postFetchMutation);
+    assert.equal(changed.recomputeCalls, 0, postFetchMutation);
+    assert.equal(changed.activityDrafts.length, 0, postFetchMutation);
+    assert.equal(changed.events.length, 0, postFetchMutation);
+  }
+});
+
+test("specific GitHub intake rejects malformed, oversized, unsafe, or failed provider responses", async () => {
+  const cases: Array<{ name: string; options: Parameters<typeof createHarness>[0] }> = [
+    { name: "non-2xx", options: { responseStatus: 502 } },
+    { name: "invalid-json", options: { responseText: "not json" } },
+    { name: "source-mismatch", options: { responseBody: { ok: true, source: "web", users: [githubUser] } } },
+    { name: "users-missing", options: { responseBody: { ok: true, source: "github" } } },
+    { name: "users-not-array", options: { responseBody: { ok: true, source: "github", users: {} } } },
+    {
+      name: "too-many-users",
+      options: {
+        responseBody: {
+          ok: true,
+          source: "github",
+          users: [githubUser, { ...githubUser, login: "other", htmlUrl: "https://github.com/other" }],
+        },
+      },
+    },
+    {
+      name: "unsafe-url",
+      options: {
+        responseBody: {
+          ok: true,
+          source: "github",
+          users: [{ ...githubUser, htmlUrl: "https://attacker.example/live-user" }],
+        },
+      },
+    },
+    {
+      name: "wrong-profile-url",
+      options: {
+        responseBody: {
+          ok: true,
+          source: "github",
+          users: [{ ...githubUser, htmlUrl: "https://github.com/different-user" }],
+        },
+      },
+    },
+    {
+      name: "github-subdomain",
+      options: {
+        responseBody: {
+          ok: true,
+          source: "github",
+          users: [{ ...githubUser, htmlUrl: "https://gist.github.com/live-user" }],
+        },
+      },
+    },
+    {
+      name: "invalid-email",
+      options: {
+        responseBody: {
+          ok: true,
+          source: "github",
+          users: [{ ...githubUser, email: "not-an-email" }],
+        },
+      },
+    },
+    {
+      name: "invalid-date",
+      options: {
+        responseBody: {
+          ok: true,
+          source: "github",
+          users: [{ ...githubUser, createdAt: "not-a-date" }],
+        },
+      },
+    },
+    {
+      name: "invalid-number",
+      options: {
+        responseBody: {
+          ok: true,
+          source: "github",
+          users: [{ ...githubUser, followers: Number.NaN }],
+        },
+      },
+    },
+  ];
+
+  for (const scenario of cases) {
+    const harness = createHarness(scenario.options);
+    const result = await harness.actions.addCandidateFromGithub(
+      harness.state.campaigns[0].id,
+      "live-user",
+    );
+    assert.equal(result.ok, false, scenario.name);
+    assert.equal(harness.commitCalls, 0, scenario.name);
+    assert.equal(harness.recomputeCalls, 0, scenario.name);
+    assert.equal(harness.activityDrafts.length, 0, scenario.name);
+    assert.equal(harness.events.length, 0, scenario.name);
+  }
+
+  const upstream = createHarness({
+    responseStatus: 502,
+    responseBody: {
+      ok: false,
+      source: "github",
+      error: `Bearer secret-token-value-for-test user@example.test ${"x".repeat(500)}`,
+    },
+  });
+  const upstreamResult = await upstream.actions.addCandidateFromGithub(
+    upstream.state.campaigns[0].id,
+    "live-user",
+  );
+  assert.equal(upstreamResult.ok, false);
+  if (!upstreamResult.ok) {
+    assert.doesNotMatch(upstreamResult.error, /secret-token-value-for-test/);
+    assert.doesNotMatch(upstreamResult.error, /user@example\.test/);
+    assert.ok(upstreamResult.error.length <= 300);
+  }
+});
+
+test("specific GitHub intake propagates commit rejection without false success", async () => {
+  const harness = createHarness({ commitAllowed: false });
+  const result = await harness.actions.addCandidateFromGithub(
+    harness.state.campaigns[0].id,
+    "live-user",
+  );
+  assert.equal(result.ok, false);
+  assert.equal(harness.commitCalls, 1);
+  assert.equal(harness.events.length, 0);
+  assert.equal(
+    harness.state.candidates.some((candidate) => candidate.githubUrl === githubUser.htmlUrl),
+    false,
+  );
+});
+
+test("manual intake validates bounded operator fields before mutation", () => {
+  const harness = createHarness();
+  const campaignId = harness.state.campaigns[0].id;
+  const invalidInputs = [
+    { name: " " },
+    { name: "a".repeat(201) },
+    { name: "Manual", email: "not-an-email" },
+    { name: "Manual", email: `${"a".repeat(250)}@example.test` },
+    { name: "Manual", title: "t".repeat(201) },
+    { name: "Manual", location: "l".repeat(201) },
+    { name: "Manual", profileUrl: "javascript:alert(1)" },
+    { name: "Manual", profileUrl: "http://example.test/profile" },
+    { name: "Manual", profileUrl: "https://user:password@example.test/profile" },
+    { name: "Manual", profileUrl: "https://127.0.0.2/profile" },
+    { name: "Manual", profileUrl: "https://[fd00::1]/profile" },
+    { name: "Manual", profileUrl: "https://[::ffff:127.0.0.1]/profile" },
+    { name: "Manual", profileUrl: `https://example.test/${"p".repeat(2_100)}` },
+    { name: "Manual", skills: Array.from({ length: 31 }, (_, index) => `skill-${index}`) },
+    { name: "Manual", skills: ["s".repeat(101)] },
+    { name: "Manual", notes: "n".repeat(2_001) },
+    { name: "Manual\u0000Person" },
+    { name: "Manual", notes: "unsafe\u0000note" },
+    null,
+    [],
+    { name: 42 },
+    { name: "Manual", skills: "TypeScript" },
+  ];
+
+  for (const input of invalidInputs) {
+    const request =
+      input && typeof input === "object" && !Array.isArray(input)
+        ? { lawfulBasis: "legitimate_interest", ...input }
+        : input;
+    const result = harness.actions.addCandidateManual(campaignId, request as never);
+    assert.equal(result.ok, false);
+  }
+  assert.equal(harness.commitCalls, 0);
+  assert.equal(harness.events.length, 0);
+});
+
+test("manual intake preserves unknown facts and canonicalizes supplied evidence", () => {
+  const harness = createHarness();
+  const campaign = harness.state.campaigns[0];
+  const result = harness.actions.addCandidateManual(campaign.id, {
+    name: "  Manual Person  ",
+    email: " PERSON@Example.Test ",
+    skills: [" TypeScript ", "typescript", " React "],
+    profileUrl: "https://example.test/profiles/manual-person",
+    location: " Toronto ",
+    notes: " Confirmed by recruiter. ",
+    lawfulBasis: "legitimate_interest",
+  });
+
+  assert.deepEqual(result, { ok: true, added: 1, skipped: 0 });
+  const candidate = harness.state.candidates[0];
+  assert.equal(candidate.name, "Manual Person");
+  assert.equal(candidate.email, "person@example.test");
+  assert.equal(candidate.currentTitle, "");
+  assert.equal(candidate.yearsExperience, null);
+  assert.equal(candidate.provenance, "manual");
+  assert.equal(candidate.sourcePlatform, "Manual");
+  assert.equal(candidate.leadSource, "Outbound");
+  assert.equal(candidate.lawfulBasis, "legitimate_interest");
+  assert.equal(candidate.lawfulBasisSource, "operator_selection");
+  assert.ok(Number.isFinite(Date.parse(candidate.lawfulBasisRecordedAt ?? "")));
+  assert.deepEqual(candidate.techStack, ["TypeScript", "React"]);
+  assert.equal(candidate.location, "Toronto");
+  assert.equal(candidate.sourceUrl, "https://example.test/profiles/manual-person");
+  assert.equal(candidate.notes?.[0]?.text, "Confirmed by recruiter.");
+  assert.match(
+    candidate.matchBreakdown.find((item) => item.label === "Experience fit")?.rationale ?? "",
+    /unknown|not provided/i,
+  );
+  assert.equal(harness.recomputeCalls, 1);
+  assert.equal(harness.activityDrafts.length, 1);
+  assert.deepEqual(harness.activityDrafts[0], {
+    type: "sourcing",
+    title: "Added Manual Person manually",
+    notes: "Operator-entered candidate; no external search involved.",
+    outcome: "1 accepted",
+    campaignId: campaign.id,
+    linkedEntityType: "campaign",
+    linkedEntityId: campaign.id,
+  });
+  assert.deepEqual(harness.events, [{ kind: "source", campaignId: campaign.id, count: 1 }]);
+});
+
+test("manual intake projects only the documented fields and cannot override authority-owned state", () => {
+  const harness = createHarness();
+  const campaignId = harness.state.campaigns[0].id;
+  const result = harness.actions.addCandidateManual(
+    campaignId,
+    {
+      name: "Manual Person",
+      title: "Engineer",
+      lawfulBasis: "consent",
+      id: "attacker-id",
+      campaignId: "attacker-campaign",
+      sourcePlatform: "GitHub",
+      provenance: "live",
+      yearsExperience: 99,
+      currentCompany: "Invented Corp",
+      stage: "Hired",
+      complianceFlags: { suppressed: true },
+    } as never,
+  );
+
+  assert.deepEqual(result, { ok: true, added: 1, skipped: 0 });
+  const candidate = harness.state.candidates[0];
+  assert.notEqual(candidate.id, "attacker-id");
+  assert.equal(candidate.campaignId, campaignId);
+  assert.equal(candidate.sourcePlatform, "Manual");
+  assert.equal(candidate.provenance, "manual");
+  assert.equal(candidate.yearsExperience, null);
+  assert.equal(candidate.currentCompany, "");
+  assert.equal(candidate.stage, "Sourced");
+  assert.equal(candidate.complianceFlags.suppressed, false);
+  assert.equal(candidate.lawfulBasis, "consent");
+});
+
+test("unknown experience never becomes a false score, prompt fact, or UI consent claim", () => {
+  const state = buildSeedState();
+  const campaign = state.campaigns[0];
+  const candidate: Candidate = {
+    ...state.candidates[0],
+    yearsExperience: null,
+    provenance: "manual",
+    sourcePlatform: "Manual",
+    leadSource: "Outbound",
+    companyStageExperience: [],
+    industryExperience: [],
+  };
+  const scored = scoreCandidate(candidate, campaign.jobAnalysis, campaign.scoringWeights);
+  const experience = scored.breakdown.find((item) => item.key === "experience");
+  assert.equal(experience?.score, 50);
+  assert.match(experience?.rationale ?? "", /not provided/i);
+  const companyStage = scored.breakdown.find((item) => item.key === "companyStage");
+  const industry = scored.breakdown.find((item) => item.key === "industry");
+  assert.equal(companyStage?.score, 50);
+  assert.match(companyStage?.rationale ?? "", /not provided/i);
+  assert.equal(industry?.score, 50);
+  assert.match(industry?.rationale ?? "", /not provided/i);
+
+  const prompt = buildOutreachPrompt({
+    candidateName: candidate.name,
+    candidateTitle: candidate.currentTitle,
+    candidateCompany: candidate.currentCompany,
+    techStack: candidate.techStack,
+    recentActivity: candidate.recentActivity,
+    yearsExperience: candidate.yearsExperience,
+    roleTitle: campaign.jobAnalysis.title,
+    locationType: campaign.jobAnalysis.locationType,
+    regions: campaign.jobAnalysis.regions,
+    requiredSkills: campaign.jobAnalysis.requiredSkills,
+    tone: "Professional",
+    channel: "Email",
+    language: "en",
+  });
+  assert.doesNotMatch(prompt, /Experience:\s*0 years/i);
+  assert.match(prompt, /Experience: not provided/i);
+  assert.match(consentPassportSource, /candidate\.provenance === "manual"/);
+  assert.match(consentPassportSource, /Lawful basis not recorded/i);
+  assert.match(candidateDrawerSource, /yearsExperience == null/);
+  assert.match(outreachPageSource, /yearsExperience == null/);
+
+  const regional = scoreCandidate(
+    { ...candidate, location: campaign.jobAnalysis.regions[0] ?? "Toronto", timezone: "" },
+    { ...campaign.jobAnalysis, timezone: "" },
+    campaign.scoringWeights,
+  ).breakdown.find((item) => item.key === "location");
+  assert.doesNotMatch(regional?.rationale ?? "", /timezone .*overlaps/i);
+
+  const falseEuMatch = scoreCandidate(
+    { ...candidate, location: "Eugene, Oregon", timezone: "" },
+    { ...campaign.jobAnalysis, regions: ["EU"], timezone: "CET" },
+    campaign.scoringWeights,
+  ).breakdown.find((item) => item.key === "location");
+  assert.equal(falseEuMatch?.score, 80);
+  assert.doesNotMatch(falseEuMatch?.rationale ?? "", /matches a target region/i);
+});
+
+test("manual intake requires an operator-selected lawful basis and generic drafts stay grammatical", () => {
+  const harness = createHarness();
+  const campaign = harness.state.campaigns[0];
+  const missingBasis = harness.actions.addCandidateManual(campaign.id, {
+    name: "Manual Person",
+  } as never);
+  assert.equal(missingBasis.ok, false);
+  assert.equal(harness.commitCalls, 0);
+
+  const added = harness.actions.addCandidateManual(campaign.id, {
+    name: "Manual Person",
+    lawfulBasis: "consent",
+    skills: [campaign.jobAnalysis.requiredSkills[0]],
+  });
+  assert.equal(added.ok, true);
+  const candidate = harness.state.candidates[0];
+  for (const language of ["en", "fr", "es", "de", "pt", "it", "nl"]) {
+    const draft = generateOutreach(
+      candidate,
+      campaign,
+      "Casual Professional",
+      "Email",
+      1,
+      undefined,
+      language,
+    );
+    assert.doesNotMatch(draft.body, /specifically:\s*\./i, language);
+    assert.doesNotMatch(
+      draft.body,
+      /\b(?:at stood out|chez a retenu|en me llamó|bei ist mir|na chamou|in ha colpito|bij viel op)\b/i,
+      language,
+    );
+  }
+});
+
+test("manual duplicate and commit rejection never emit candidate success", () => {
+  const duplicateState = buildSeedState();
+  duplicateState.candidates = [
+    {
+      ...duplicateState.candidates[0],
+      id: "candidate_existing_manual",
+      campaignId: duplicateState.campaigns[0].id,
+      sourceUrl: "https://example.test/profiles/manual-person",
+      email: "",
+    },
+    ...duplicateState.candidates,
+  ];
+  const duplicate = createHarness({ state: duplicateState });
+  const duplicateResult = duplicate.actions.addCandidateManual(
+    duplicate.state.campaigns[0].id,
+    {
+      name: "Manual Person",
+      profileUrl: "https://example.test/profiles/manual-person",
+      lawfulBasis: "legitimate_interest",
+    },
+  );
+  assert.deepEqual(duplicateResult, {
+    ok: true,
+    added: 0,
+    skipped: 1,
+    skipReason: "Duplicate source profile",
+  });
+  assert.equal(duplicate.commitCalls, 1);
+  assert.equal(duplicate.recomputeCalls, 0);
+  assert.equal(duplicate.activityDrafts.length, 1);
+  assert.equal(duplicate.events.length, 0);
+
+  const rejected = createHarness({ commitAllowed: false });
+  const rejectedResult = rejected.actions.addCandidateManual(
+    rejected.state.campaigns[0].id,
+    { name: "Manual Person", lawfulBasis: "consent" },
+  );
+  assert.equal(rejectedResult.ok, false);
+  assert.equal(rejected.events.length, 0);
+});
+
 test("sourcing rejects missing, paused, invalid, and dedicated-provider requests honestly", async () => {
   const harness = createHarness();
   const campaign = harness.state.campaigns[0];
@@ -207,7 +853,7 @@ test("sourcing rejects missing, paused, invalid, and dedicated-provider requests
     assert.equal(invalid.ok, false);
     if (!invalid.ok) assert.equal(invalid.source, "invalid");
   }
-  for (const platform of ["Sillage", "Apollo", "Seamless"] as const) {
+  for (const platform of ["Sillage", "Apollo", "Seamless", "Manual"] as const) {
     const dedicated = await harness.actions.sourceNextBatch(campaign.id, { platform, count: 1 });
     assert.equal(dedicated.ok, false);
     if (!dedicated.ok) {

@@ -86,6 +86,67 @@ if (outreach) {
   ok("outreach: channel defaults to Email", false);
 }
 
+const noEvidenceCandidate = {
+  ...candidate,
+  currentCompany: "",
+  techStack: [],
+  yearsExperience: null,
+  companyStageExperience: [],
+  industryExperience: [],
+  recentActivity: "",
+};
+const genericSubjects: Record<string, string> = {
+  en: `${campaign.jobAnalysis.title} opportunity`,
+  fr: `Opportunité de ${campaign.jobAnalysis.title}`,
+  es: `Oportunidad de ${campaign.jobAnalysis.title}`,
+  de: `Position als ${campaign.jobAnalysis.title}`,
+  pt: `Oportunidade para ${campaign.jobAnalysis.title}`,
+  it: `Opportunità come ${campaign.jobAnalysis.title}`,
+  nl: `Vacature voor ${campaign.jobAnalysis.title}`,
+};
+
+for (const [language, expectedSubject] of Object.entries(genericSubjects)) {
+  const noEvidenceOutreach = generateOutreach(
+    noEvidenceCandidate,
+    campaign,
+    "Casual Professional",
+    "Email",
+    1,
+    undefined,
+    language,
+  );
+  ok(
+    `outreach: ${language} no-evidence subject is generic and translated`,
+    noEvidenceOutreach.subject === expectedSubject,
+  );
+  ok(
+    `outreach: ${language} no-evidence subject makes no unsupported fit claim`,
+    !/background|fit|expérience|experiencia|erfahrung|ervaring/i.test(noEvidenceOutreach.subject),
+  );
+}
+
+const unrelatedSkillOutreach = generateOutreach(
+  { ...noEvidenceCandidate, techStack: ["UnrelatedLegacySkill"] },
+  campaign,
+  "Casual Professional",
+  "Email",
+  1,
+  undefined,
+  "en",
+);
+ok(
+  "outreach: unrelated profile skill does not create role-fit evidence",
+  unrelatedSkillOutreach.personalizationEvidence.length === 0,
+);
+ok(
+  "outreach: unrelated profile skill keeps the generic subject",
+  unrelatedSkillOutreach.subject === genericSubjects.en,
+);
+ok(
+  "outreach: unrelated profile skill keeps the evidence-free salutation",
+  unrelatedSkillOutreach.body.startsWith(`Hi ${noEvidenceCandidate.name.split(" ")[0]},\n`),
+);
+
 /* ------------------------------------------------------------------ */
 /* 3. classifyReply                                                    */
 /* ------------------------------------------------------------------ */

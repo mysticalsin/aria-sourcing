@@ -33,6 +33,16 @@ function overlapCount(a: string[], b: string[]): number {
   return lower(a).filter((x) => setB.has(x)).length;
 }
 
+function locationMatchesRegion(location: string, region: string): boolean {
+  if (region.trim().toLowerCase() === "global") return true;
+  const escaped = region
+    .trim()
+    .toLowerCase()
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/\s+/g, "\\s+");
+  return Boolean(escaped) && new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, "i").test(location);
+}
+
 /* ---- Individual dimension scorers (all return 0-100) --------------------- */
 
 function scoreSkills(c: Candidate, jd: JobAnalysis): { score: number; rationale: string } {
@@ -53,6 +63,9 @@ function scoreSkills(c: Candidate, jd: JobAnalysis): { score: number; rationale:
 
 function scoreExperience(c: Candidate, jd: JobAnalysis): { score: number; rationale: string } {
   const yrs = c.yearsExperience;
+  if (yrs == null) {
+    return { score: 50, rationale: "Experience not provided." };
+  }
   const min = jd.minYearsExperience;
   const max = jd.maxYearsExperience;
   let score: number;
@@ -78,6 +91,9 @@ function scoreExperience(c: Candidate, jd: JobAnalysis): { score: number; ration
 function scoreCompanyStage(c: Candidate, jd: JobAnalysis): { score: number; rationale: string } {
   const target = jd.companyStageTarget.map(String);
   if (target.length === 0) return { score: 70, rationale: "No stage target set." };
+  if (c.companyStageExperience.length === 0) {
+    return { score: 50, rationale: "Company-stage experience not provided." };
+  }
   const hit = overlapCount(c.companyStageExperience.map(String), target);
   const score = clamp(40 + (hit / target.length) * 60, 30, 100);
   return {
@@ -91,6 +107,9 @@ function scoreCompanyStage(c: Candidate, jd: JobAnalysis): { score: number; rati
 function scoreIndustry(c: Candidate, jd: JobAnalysis): { score: number; rationale: string } {
   const target = jd.industryExperience;
   if (target.length === 0) return { score: 72, rationale: "No industry preference set." };
+  if (c.industryExperience.length === 0) {
+    return { score: 50, rationale: "Industry experience not provided." };
+  }
   const hit = overlapCount(c.industryExperience, target);
   const score = clamp(45 + (hit / target.length) * 55, 35, 100);
   return {
@@ -102,22 +121,28 @@ function scoreIndustry(c: Candidate, jd: JobAnalysis): { score: number; rational
 }
 
 function scoreLocation(c: Candidate, jd: JobAnalysis): { score: number; rationale: string } {
+  if (!c.location.trim() && !c.timezone.trim()) {
+    return { score: 50, rationale: "Location and timezone not provided." };
+  }
   if (jd.locationType === "Remote") {
-    const tzAligned =
-      c.timezone.includes(jd.timezone) ||
-      jd.timezone.includes(c.timezone) ||
-      jd.regions.some((r) => c.location.includes(r));
-    const score = tzAligned ? 96 : 80;
+    const timezoneAligned =
+      Boolean(c.timezone) &&
+      Boolean(jd.timezone) &&
+      (c.timezone.includes(jd.timezone) || jd.timezone.includes(c.timezone));
+    const regionAligned =
+      Boolean(c.location) &&
+      jd.regions.some((region) => locationMatchesRegion(c.location, region));
+    const score = timezoneAligned ? 96 : regionAligned ? 90 : 80;
     return {
       score,
-      rationale: tzAligned
+      rationale: timezoneAligned
         ? `Remote role: timezone ${c.timezone} overlaps working hours.`
-        : `Remote role: timezone ${c.timezone} has limited overlap.`,
+        : regionAligned
+          ? `Remote role: location ${c.location} matches a target region.`
+          : "Remote role: working-hours overlap not confirmed.",
     };
   }
-  const inRegion = jd.regions.some(
-    (r) => c.location.toLowerCase().includes(r.toLowerCase()) || r === "Global",
-  );
+  const inRegion = jd.regions.some((region) => locationMatchesRegion(c.location, region));
   const score = inRegion ? 92 : 48;
   return {
     score,
@@ -130,7 +155,8 @@ function scoreLocation(c: Candidate, jd: JobAnalysis): { score: number; rational
 function scoreActivity(c: Candidate): { score: number; rationale: string } {
   const txt = c.recentActivity.toLowerCase();
   let score = 62;
-  if (/this week|days ago|active|shipped|merged|launched|speaking/.test(txt)) score = 92;
+  if (/no activity signal/.test(txt)) score = 50;
+  else if (/this week|days ago|active|shipped|merged|launched|speaking/.test(txt)) score = 92;
   else if (/this month|recently|published|maintains|contribut/.test(txt)) score = 80;
   else if (/last year|inactive|dormant|quiet/.test(txt)) score = 45;
   return { score, rationale: c.recentActivity };

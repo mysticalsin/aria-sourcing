@@ -47,7 +47,9 @@ export function detectLanguage(text: string): string {
 
 export interface OutreachStrings {
   subjectNew: (title: string, topSkill: string) => string;
+  subjectGeneric: (title: string) => string;
   subjectFollow: (title: string, firstName: string) => string;
+  salutation: (firstName: string) => string;
   greeting: (firstName: string, topSkill: string, company: string) => string;
   roleLine: (title: string, locationType: string, regions: string) => string;
   equity: string;
@@ -58,8 +60,11 @@ export interface OutreachStrings {
 
 const en: OutreachStrings = {
   subjectNew: (t, s) => `${t} role that fits your ${s} work`,
+  subjectGeneric: (t) => `${t} opportunity`,
   subjectFollow: (t, f) => `Re: ${t} (follow-up), ${f}`,
-  greeting: (f, s, c) => `Hi ${f}, your work with ${s} at ${c} stood out.`,
+  salutation: (f) => `Hi ${f},`,
+  greeting: (f, s, c) =>
+    c ? `Hi ${f}, your work with ${s} at ${c} stood out.` : `Hi ${f}, your work with ${s} stood out.`,
   roleLine: (t, l, r) => `We're hiring a ${t} (${l}, ${r}).`,
   equity: "Meaningful equity is on the table.",
   whyYou: (a, b) => `Why you, specifically: ${a}${b ? `. And ${b.toLowerCase()}` : ""}.`,
@@ -69,8 +74,13 @@ const en: OutreachStrings = {
 
 const fr: OutreachStrings = {
   subjectNew: (t, s) => `Poste de ${t} en lien avec votre expérience ${s}`,
+  subjectGeneric: (t) => `Opportunité de ${t}`,
   subjectFollow: (t, f) => `Re : ${t}, petite relance, ${f}`,
-  greeting: (f, s, c) => `Bonjour ${f}, votre travail sur ${s} chez ${c} a retenu mon attention.`,
+  salutation: (f) => `Bonjour ${f},`,
+  greeting: (f, s, c) =>
+    c
+      ? `Bonjour ${f}, votre travail sur ${s} chez ${c} a retenu mon attention.`
+      : `Bonjour ${f}, votre travail sur ${s} a retenu mon attention.`,
   roleLine: (t, l, r) => `Nous recrutons un(e) ${t} (${l}, ${r}).`,
   equity: "Un intéressement au capital est prévu.",
   whyYou: (a, b) => `Pourquoi vous : ${a}${b ? `. Et ${b.toLowerCase()}` : ""}.`,
@@ -80,8 +90,13 @@ const fr: OutreachStrings = {
 
 const es: OutreachStrings = {
   subjectNew: (t, s) => `Puesto de ${t} acorde con tu experiencia en ${s}`,
+  subjectGeneric: (t) => `Oportunidad de ${t}`,
   subjectFollow: (t, f) => `Re: ${t}, un seguimiento, ${f}`,
-  greeting: (f, s, c) => `Hola ${f}, tu trabajo con ${s} en ${c} me llamó la atención.`,
+  salutation: (f) => `Hola ${f},`,
+  greeting: (f, s, c) =>
+    c
+      ? `Hola ${f}, tu trabajo con ${s} en ${c} me llamó la atención.`
+      : `Hola ${f}, tu trabajo con ${s} me llamó la atención.`,
   roleLine: (t, l, r) => `Buscamos un/a ${t} (${l}, ${r}).`,
   equity: "Hay participación accionarial sobre la mesa.",
   whyYou: (a, b) => `Por qué tú: ${a}${b ? `. Y ${b.toLowerCase()}` : ""}.`,
@@ -91,8 +106,13 @@ const es: OutreachStrings = {
 
 const de: OutreachStrings = {
   subjectNew: (t, s) => `${t}-Stelle, die zu deiner ${s}-Erfahrung passt`,
+  subjectGeneric: (t) => `Position als ${t}`,
   subjectFollow: (t, f) => `Re: ${t}, kurze Nachfrage, ${f}`,
-  greeting: (f, s, c) => `Hallo ${f}, deine Arbeit mit ${s} bei ${c} ist mir aufgefallen.`,
+  salutation: (f) => `Hallo ${f},`,
+  greeting: (f, s, c) =>
+    c
+      ? `Hallo ${f}, deine Arbeit mit ${s} bei ${c} ist mir aufgefallen.`
+      : `Hallo ${f}, deine Arbeit mit ${s} ist mir aufgefallen.`,
   roleLine: (t, l, r) => `Wir suchen eine/n ${t} (${l}, ${r}).`,
   equity: "Eine sinnvolle Beteiligung ist möglich.",
   whyYou: (a, b) => `Warum du: ${a}${b ? `. Und ${b.toLowerCase()}` : ""}.`,
@@ -102,8 +122,13 @@ const de: OutreachStrings = {
 
 const pt: OutreachStrings = {
   subjectNew: (t, s) => `Vaga de ${t} alinhada à sua experiência em ${s}`,
+  subjectGeneric: (t) => `Oportunidade para ${t}`,
   subjectFollow: (t, f) => `Re: ${t}, um retorno, ${f}`,
-  greeting: (f, s, c) => `Olá ${f}, o seu trabalho com ${s} na ${c} chamou a atenção.`,
+  salutation: (f) => `Olá ${f},`,
+  greeting: (f, s, c) =>
+    c
+      ? `Olá ${f}, o seu trabalho com ${s} na ${c} chamou a atenção.`
+      : `Olá ${f}, o seu trabalho com ${s} chamou a atenção.`,
   roleLine: (t, l, r) => `Estamos a contratar um(a) ${t} (${l}, ${r}).`,
   equity: "Há participação societária em jogo.",
   whyYou: (a, b) => `Por que você: ${a}${b ? `. E ${b.toLowerCase()}` : ""}.`,
@@ -113,8 +138,13 @@ const pt: OutreachStrings = {
 
 const it: OutreachStrings = {
   subjectNew: (t, s) => `Posizione ${t} in linea con la tua esperienza in ${s}`,
+  subjectGeneric: (t) => `Opportunità come ${t}`,
   subjectFollow: (t, f) => `Re: ${t}, un promemoria, ${f}`,
-  greeting: (f, s, c) => `Ciao ${f}, il tuo lavoro con ${s} in ${c} ha colpito.`,
+  salutation: (f) => `Ciao ${f},`,
+  greeting: (f, s, c) =>
+    c
+      ? `Ciao ${f}, il tuo lavoro con ${s} in ${c} ha colpito.`
+      : `Ciao ${f}, il tuo lavoro con ${s} ha colpito.`,
   roleLine: (t, l, r) => `Cerchiamo un/una ${t} (${l}, ${r}).`,
   equity: "È prevista una partecipazione azionaria.",
   whyYou: (a, b) => `Perché tu: ${a}${b ? `. E ${b.toLowerCase()}` : ""}.`,
@@ -124,8 +154,13 @@ const it: OutreachStrings = {
 
 const nl: OutreachStrings = {
   subjectNew: (t, s) => `${t}-functie die past bij je ${s}-werk`,
+  subjectGeneric: (t) => `Vacature voor ${t}`,
   subjectFollow: (t, f) => `Re: ${t}, een follow-up, ${f}`,
-  greeting: (f, s, c) => `Hallo ${f}, je werk met ${s} bij ${c} viel op.`,
+  salutation: (f) => `Hallo ${f},`,
+  greeting: (f, s, c) =>
+    c
+      ? `Hallo ${f}, je werk met ${s} bij ${c} viel op.`
+      : `Hallo ${f}, je werk met ${s} viel op.`,
   roleLine: (t, l, r) => `We zoeken een ${t} (${l}, ${r}).`,
   equity: "Er is een serieus aandelenbelang mogelijk.",
   whyYou: (a, b) => `Waarom jij: ${a}${b ? `. En ${b.toLowerCase()}` : ""}.`,

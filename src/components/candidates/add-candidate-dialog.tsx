@@ -6,6 +6,7 @@ import {
   Field,
   Input,
   Modal,
+  Select,
   TabPanel,
   Tabs,
   Textarea,
@@ -13,6 +14,7 @@ import {
 } from "@/components/ui";
 import { useActions, useRole } from "@/lib/store";
 import { can } from "@/lib/rbac";
+import type { CandidateLawfulBasis } from "@/lib/types";
 import { UserPlus } from "lucide-react";
 
 /**
@@ -41,6 +43,7 @@ export function AddCandidateButton({ campaignId }: { campaignId: string }) {
   const [profileUrl, setProfileUrl] = React.useState("");
   const [location, setLocation] = React.useState("");
   const [notes, setNotes] = React.useState("");
+  const [lawfulBasis, setLawfulBasis] = React.useState<CandidateLawfulBasis | "">("");
 
   if (!can(role, "source")) return null;
 
@@ -53,6 +56,7 @@ export function AddCandidateButton({ campaignId }: { campaignId: string }) {
     setProfileUrl("");
     setLocation("");
     setNotes("");
+    setLawfulBasis("");
     setMode("github");
     setOpen(false);
   }
@@ -72,8 +76,8 @@ export function AddCandidateButton({ campaignId }: { campaignId: string }) {
     }
     if (res.added === 0) {
       toast({
-        title: "Already in the pipeline",
-        description: "That profile matched an existing candidate and was skipped.",
+        title: "Profile not added",
+        description: res.skipReason ?? "The profile did not pass candidate intake checks.",
         variant: "warning",
       });
       return;
@@ -96,6 +100,7 @@ export function AddCandidateButton({ campaignId }: { campaignId: string }) {
       email: email.trim() || undefined,
       location: location.trim() || undefined,
       notes: notes.trim() || undefined,
+      lawfulBasis: lawfulBasis as CandidateLawfulBasis,
     });
     if (!res.ok) {
       toast({ title: "Couldn't add that candidate", description: res.error, variant: "error" });
@@ -103,8 +108,8 @@ export function AddCandidateButton({ campaignId }: { campaignId: string }) {
     }
     if (res.added === 0) {
       toast({
-        title: "Already in the pipeline",
-        description: "That email/profile matched an existing candidate and was skipped.",
+        title: "Candidate not added",
+        description: res.skipReason ?? "The candidate did not pass intake checks.",
         variant: "warning",
       });
       return;
@@ -149,7 +154,12 @@ export function AddCandidateButton({ campaignId }: { campaignId: string }) {
               <Button variant="ghost" size="md" onClick={resetAndClose}>
                 Cancel
               </Button>
-              <Button variant="secondary" size="md" onClick={handleManualSubmit} disabled={!name.trim()}>
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={handleManualSubmit}
+                disabled={!name.trim() || !lawfulBasis}
+              >
                 Add candidate
               </Button>
             </>
@@ -193,6 +203,7 @@ export function AddCandidateButton({ campaignId }: { campaignId: string }) {
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Jordan Rivera"
                   autoComplete="off"
+                  maxLength={200}
                 />
               </Field>
               <Field label="Title" htmlFor={`${idBase}-title`} hint="Optional.">
@@ -202,6 +213,7 @@ export function AddCandidateButton({ campaignId }: { campaignId: string }) {
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="Senior Backend Engineer"
                   autoComplete="off"
+                  maxLength={200}
                 />
               </Field>
               <Field label="Skills" htmlFor={`${idBase}-skills`} hint="Comma-separated, optional.">
@@ -211,6 +223,7 @@ export function AddCandidateButton({ campaignId }: { campaignId: string }) {
                   onChange={(e) => setSkills(e.target.value)}
                   placeholder="Go, Kubernetes, PostgreSQL"
                   autoComplete="off"
+                  maxLength={3_029}
                 />
               </Field>
               <div className="grid gap-4 sm:grid-cols-2">
@@ -222,6 +235,7 @@ export function AddCandidateButton({ campaignId }: { campaignId: string }) {
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="jordan@example.com"
                     autoComplete="off"
+                    maxLength={254}
                   />
                 </Field>
                 <Field label="Location" htmlFor={`${idBase}-location`} hint="Optional.">
@@ -231,6 +245,7 @@ export function AddCandidateButton({ campaignId }: { campaignId: string }) {
                     onChange={(e) => setLocation(e.target.value)}
                     placeholder="Berlin, DE"
                     autoComplete="off"
+                    maxLength={200}
                   />
                 </Field>
               </div>
@@ -241,6 +256,7 @@ export function AddCandidateButton({ campaignId }: { campaignId: string }) {
                   onChange={(e) => setProfileUrl(e.target.value)}
                   placeholder="https://linkedin.com/in/..."
                   autoComplete="off"
+                  maxLength={2_048}
                 />
               </Field>
               <Field label="Notes" htmlFor={`${idBase}-notes`} hint="Optional recruiter note.">
@@ -249,6 +265,26 @@ export function AddCandidateButton({ campaignId }: { campaignId: string }) {
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   rows={2}
+                  maxLength={2_000}
+                />
+              </Field>
+              <Field
+                label="Lawful basis"
+                htmlFor={`${idBase}-lawful-basis`}
+                hint="Required operator selection. Aria records your choice but does not make the legal determination."
+              >
+                <Select
+                  id={`${idBase}-lawful-basis`}
+                  value={lawfulBasis}
+                  onChange={(event) =>
+                    setLawfulBasis(event.target.value as CandidateLawfulBasis | "")
+                  }
+                  options={[
+                    { value: "", label: "Select a basis…" },
+                    { value: "consent", label: "Consent" },
+                    { value: "legitimate_interest", label: "Legitimate interest" },
+                  ]}
+                  required
                 />
               </Field>
             </div>

@@ -13,6 +13,9 @@
 
 const GH_API = "https://api.github.com";
 
+/** GitHub's documented login grammar, shared by the API and client action. */
+export const GITHUB_USERNAME_RE = /^[a-zA-Z\d](?:[a-zA-Z\d]|-(?=[a-zA-Z\d])){0,38}$/;
+
 export interface GithubUser {
   login: string;
   name: string | null;

@@ -23,11 +23,9 @@ import {
 } from "./mock-ai";
 import {
   mapApolloCandidates,
-  mapGithubCandidates,
   mapSeamlessCandidates,
   type SourceResult,
 } from "./sourcing/candidate-mappers";
-import type { GithubUser } from "./sourcing/github";
 import type { SillageProfile } from "./sourcing/sillage";
 import type { ApolloPerson } from "./sourcing/apollo";
 import type { SeamlessContact, SeamlessResearchContact } from "./sourcing/seamless";
@@ -57,7 +55,6 @@ import { scoreCandidate } from "./scoring";
 import { deriveStarRating } from "./tania";
 import {
   checkOutreachApproval,
-  dedupeCandidates,
   type ApprovalResult,
 } from "./rules";
 import { validateMcpBaseUrl } from "./mcp-auth-params";
@@ -129,7 +126,7 @@ import type {
   WinRecord,
   WeeklyReport,
 } from "./types";
-import { genId, initialsFrom, isoDaysBefore } from "./utils";
+import { genId, isoDaysBefore } from "./utils";
 import { createCampaign as buildCampaign } from "./mock-ai";
 import { supabaseEnabled } from "./supabase/config";
 import {
@@ -765,7 +762,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit, campaignMutationAllowed],
   );
 
-  const { sourceNextBatch } = useMemo(
+  const { sourceNextBatch, addCandidateFromGithub, addCandidateManual } = useMemo(
     () =>
       createSourcingActions({
         commit,
@@ -793,169 +790,6 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     (a: Omit<Activity, "id" | "createdAt"> & { createdAt?: string }) =>
       commit((s) => withActivity(s, makeActivity(a), a.campaignId ?? null)),
     [commit],
-  );
-
-  const addCandidateFromGithub = useCallback(
-    async (
-      campaignId: string,
-      username: string,
-    ): Promise<{ ok: true; added: number; skipped: number } | { ok: false; error: string }> => {
-      if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before sourcing." };
-      const s = current();
-      const campaign = s.campaigns.find((c) => c.id === campaignId);
-      if (!campaign) return { ok: false, error: "Campaign not found." };
-      const login = username.trim();
-      if (!login) return { ok: false, error: "GitHub username is required." };
-      const weights = effectiveWeights(campaign.scoringWeights, s.skills);
-
-      let res: Response;
-      try {
-        res = await workspaceFetch("/api/source", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: login, platform: "GitHub", count: 1 }),
-        });
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : "Network error reaching GitHub." };
-      }
-      const out = (await res.json().catch(() => null)) as
-        | { ok?: boolean; source?: string; users?: GithubUser[]; error?: string }
-        | null;
-      if (!out?.ok || out.source !== "github") {
-        return { ok: false, error: out?.error ?? "GitHub lookup failed." };
-      }
-      const users = out.users ?? [];
-      if (users.length === 0) return { ok: false, error: "GitHub user not found." };
-
-      const { accepted, skipped } = mapGithubCandidates(users, campaign, `@${login}`, s.candidates, weights);
-
-      commit((prev) => {
-        let next: HermesState = { ...prev, candidates: [...accepted, ...prev.candidates] };
-        next = recomputeMetrics(next, campaignId);
-        next = withActivity(
-          next,
-          makeActivity({
-            type: "sourcing",
-            title: accepted.length ? `Added @${login} from GitHub` : `@${login} already in pipeline`,
-            notes: accepted.length
-              ? "Manually added a specific GitHub profile (not a search)."
-              : `Skipped by dedupe (${skipped[0]?.reason ?? "duplicate"}).`,
-            outcome: accepted.length ? "1 accepted" : "0 accepted, 1 skipped",
-            campaignId,
-            linkedEntityType: "campaign",
-            linkedEntityId: campaignId,
-          }),
-          campaignId,
-        );
-        return next;
-      });
-      emit({ kind: "source", campaignId, count: accepted.length });
-      return { ok: true, added: accepted.length, skipped: skipped.length };
-    },
-    [commit, current, workspaceEffectAllowed, workspaceFetch],
-  );
-
-  const addCandidateManual = useCallback(
-    (
-      campaignId: string,
-      input: {
-        name: string;
-        title?: string;
-        skills?: string[];
-        profileUrl?: string;
-        email?: string;
-        location?: string;
-        notes?: string;
-      },
-    ): { ok: true; added: number; skipped: number } | { ok: false; error: string } => {
-      const s = current();
-      const campaign = s.campaigns.find((c) => c.id === campaignId);
-      if (!campaign) return { ok: false, error: "Campaign not found." };
-      const name = input.name.trim();
-      if (!name) return { ok: false, error: "Name is required." };
-
-      const jd = campaign.jobAnalysis;
-      const weights = effectiveWeights(campaign.scoringWeights, s.skills);
-      const noteText = input.notes?.trim();
-
-      // Same construction as mapGithubCandidates/mapWebSearchCandidates: a real
-      // profile, honestly blank wherever the operator didn't supply a value —
-      // no fabricated company/timezone/tenure. sourcePlatform "Referral" is the
-      // least-invasive existing SourcePlatform value for a hand-entered lead;
-      // sourceUrl is the same generic "canonical URL, no dedicated field" slot
-      // mapWebSearchCandidates uses.
-      const raw: Candidate = {
-        id: genId("cand"),
-        campaignId,
-        name,
-        email: input.email?.trim() ?? "",
-        avatarInitials: initialsFrom(name),
-        currentTitle: input.title?.trim() || jd.title,
-        currentCompany: "",
-        location: input.location?.trim() ?? "",
-        timezone: "",
-        linkedinUrl: "",
-        githubUrl: "",
-        sourceUrl: input.profileUrl?.trim() || undefined,
-        sourcePlatform: "Referral",
-        sourceQuery: "Manually added by operator",
-        matchScore: 0,
-        matchBreakdown: [],
-        techStack: Array.from(new Set((input.skills ?? []).map((sk) => sk.trim()).filter(Boolean))),
-        yearsExperience: jd.minYearsExperience ?? (jd.seniority === "Senior" ? 6 : 4),
-        companyStageExperience: [],
-        industryExperience: [],
-        recentActivity: "Manually added, no activity signal available.",
-        stage: "Sourced",
-        lastContactedAt: null,
-        outreachHistory: [],
-        replyHistory: [],
-        booking: null,
-        complianceFlags: {
-          doNotContact: false,
-          suppressed: false,
-          unsubscribed: false,
-          gdprExportRequested: false,
-          anonymized: false,
-          suppressedUntil: null,
-        },
-        createdAt: new Date().toISOString(),
-        provenance: "live",
-        notes: noteText ? [{ id: genId("note"), text: noteText, at: new Date().toISOString() }] : undefined,
-      };
-
-      const { accepted, skipped } = dedupeCandidates([raw], s.candidates, {
-        excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
-      });
-      const scored = accepted.map((cand) => {
-        const { score, breakdown } = scoreCandidate(cand, jd, weights);
-        return { ...cand, matchScore: score, matchBreakdown: breakdown };
-      });
-
-      commit((prev) => {
-        let next: HermesState = { ...prev, candidates: [...scored, ...prev.candidates] };
-        next = recomputeMetrics(next, campaignId);
-        next = withActivity(
-          next,
-          makeActivity({
-            type: "sourcing",
-            title: scored.length ? `Added ${name} manually` : `${name} already in pipeline`,
-            notes: scored.length
-              ? "Manually entered candidate, no external search involved."
-              : `Skipped by dedupe (${skipped[0]?.reason ?? "duplicate"}).`,
-            outcome: scored.length ? "1 accepted" : "0 accepted, 1 skipped",
-            campaignId,
-            linkedEntityType: "campaign",
-            linkedEntityId: campaignId,
-          }),
-          campaignId,
-        );
-        return next;
-      });
-      if (scored.length > 0) emit({ kind: "source", campaignId, count: scored.length });
-      return { ok: true, added: scored.length, skipped: skipped.length };
-    },
-    [commit, current],
   );
 
   const startSillageMapping = useCallback(
@@ -3501,7 +3335,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           matchScore: sub.score.total,
           matchBreakdown: [],
           techStack: sub.detected.skills ?? [],
-          yearsExperience: 0,
+          yearsExperience: null,
           companyStageExperience: [],
           industryExperience: [],
           recentActivity: `Applied via career-site chatbox (Path ${sub.path}).`,

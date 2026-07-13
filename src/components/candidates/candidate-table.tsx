@@ -180,7 +180,8 @@ export function CandidateTable({
                       )}
                     </div>
                     <p className="truncate text-xs text-muted">
-                      {c.currentTitle} @ {c.currentCompany}
+                      {[c.currentTitle, c.currentCompany].filter(Boolean).join(" @ ") ||
+                        "Role not provided"}
                     </p>
                   </div>
                 </div>
@@ -210,6 +211,11 @@ export function CandidateTable({
                   {c.provenance === "synthetic" && (
                     <Badge tone="warning" size="sm" title="Demo data: not a real sourced profile">
                       Synthetic
+                    </Badge>
+                  )}
+                  {c.provenance === "manual" && (
+                    <Badge tone="warning" size="sm" title="Operator-entered profile">
+                      Manual
                     </Badge>
                   )}
                 </div>
