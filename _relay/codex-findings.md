@@ -577,7 +577,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The original Apollo and current Seamless flows accepted bounded raw provider identifiers without a server-owned binding to the persisted workspace candidate before spending provider credits or revealing contact data.
 **Repro/evidence:** Apollo is fixed in `ced2a58`: search persists the candidate, selection creates an exact server-owned workspace, campaign, candidate, target binding, prepare claims it before confirmation, and commit revalidates it. `SeamlessResearchSchema` still accepts `searchResultId` without the equivalent binding.
 **Suggested fix:** Accept a canonical candidate ID, resolve the workspace-owned candidate server-side, verify provider and external ID, then spend or reveal only for that exact record.
-**Status:** open (Apollo fixed in `ced2a58`; Seamless remains open)
+**Status:** fixed (`f19bcb1`; every Seamless and Sillage route fails closed before rate limits, secrets, or egress in production, and their production UI actions are hidden; re-enable only after equivalent server-owned authority exists)
 
 ## 2026-07-13 - Async enrichment handles are not bound to their persistence target
 **Severity:** security
@@ -585,7 +585,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Polling accepts a raw request ID, while the browser separately supplies the campaign or candidate that receives the result. A valid handle is not server-bound to a workspace, provider operation, candidate, or campaign, so a mismatched or replayed handle can disclose or persist data into the wrong client-selected record.
 **Repro/evidence:** Both status routes query by `requestId` after role checks only. `checkSeamlessResearch(candidateId, requestId)` and `checkSillageMapping(campaignId, requestId)` choose their local persistence target independently of the server-side provider job.
 **Suggested fix:** Persist an opaque workspace-scoped job record at start, bind it to the exact candidate or campaign, and authorize polling and persistence from that server-owned binding.
-**Status:** open
+**Status:** fixed (`f19bcb1`; incomplete Seamless and Sillage start/status paths are production-disabled before secret or provider access and hidden from production UI)
 
 ## 2026-07-13 - Sillage returns and persists a company-wide contact batch
 **Severity:** security
@@ -593,7 +593,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** One completed company mapping returns all resolved profiles to the browser and the store persists every accepted profile, including provider-returned contact fields. This expands PII exposure beyond an explicit per-candidate reveal decision.
 **Repro/evidence:** The status response includes `profiles: mappingRes.data.profiles`; the client maps the entire array and prepends every accepted candidate to shared workspace state.
 **Suggested fix:** Return a minimized preview by default, require explicit per-candidate reveal, and persist only the fields and candidates the authorized operator selected.
-**Status:** open
+**Status:** fixed (`f19bcb1`; Sillage is production-disabled before provider access and its UI action is hidden until a minimized server-bound implementation exists)
 
 ## 2026-07-13 - Remaining provider actions lack the guarded action contract
 **Severity:** correctness
@@ -601,7 +601,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Seamless, Sillage, and sourcing-agent actions still live in the React coordinator. Several snapshot authority and campaign data before I/O, then commit after await without rechecking current role, workspace, campaign state, dedupe state, or whether the commit applied.
 **Repro/evidence:** Apollo now uses the guarded sourcing factory in `ced2a58`, including exact pre-I/O, post-I/O, DTO, binding, persistence, and commit-result gates. The remaining callbacks still use the old coordinator pattern.
 **Suggested fix:** Extract one provider action group at a time into the sourcing factory and port the same authority, response projection, latest-state, and applied-result decision table.
-**Status:** open (Apollo fixed in `ced2a58`; Seamless, Sillage, and sourcing-agent remain open)
+**Status:** fixed (`f19bcb1`; unfinished paid-provider paths are production-disabled; the sourcing-agent route now owns campaign/settings authority, revalidates before every external call and commit, returns a strict DTO, and the client rechecks latest campaign and dedupe state)
 
 ## 2026-07-13 - Sourcing agent trusts full client objects and returns full candidates
 **Severity:** security
@@ -609,7 +609,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The route accepts opaque campaign and candidate records up to 200 KB, casts them to domain types, and sends them through a cloud tool-calling flow. It does not use a bounded campaign DTO, a minimized candidate context, or a server-authoritative campaign record.
 **Repro/evidence:** `campaign` and `existing` are `z.record(z.string(), z.unknown())`; the route then uses `as unknown as Campaign` and `as unknown as Candidate[]`. The caller sends every campaign candidate rather than an explicit dedupe and disclosure projection.
 **Suggested fix:** Define exact schemas, resolve authoritative campaign data server-side where available, minimize existing candidates to dedupe fields, and validate every returned candidate before persistence.
-**Status:** open
+**Status:** fixed (`f19bcb1`; the route accepts only a campaign ID, loads campaign and provider authority server-side, minimizes tool context, and releases strict candidate DTOs only after the database completion receipt)
 
 ## 2026-07-13 - Provider errors cross the server boundary without one bounded translator
 **Severity:** security
@@ -617,7 +617,47 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Remaining source routes return provider detail strings to the browser. Upstream bodies can contain request details, identifiers, or unbounded text, and each adapter applies a different error policy.
 **Repro/evidence:** Apollo now returns bounded typed errors in `ced2a58`. Seamless and Sillage still return `result.detail || result.title`; there is no shared allowlisted public-error mapping across those routes.
 **Suggested fix:** Centralize provider error classification, redact known secret and URL material, cap length, log only a safe diagnostic code, and return a bounded public message.
-**Status:** open (Apollo fixed in `ced2a58`; Seamless and Sillage remain open)
+**Status:** fixed (`f19bcb1`; Apollo uses bounded errors and the incomplete Seamless/Sillage routes are production-disabled before provider access, so upstream detail cannot cross the production boundary)
+
+## 2026-07-13 - Intake and sourcing invented role facts when evidence was missing
+**Severity:** spec-mismatch
+**File:** src/lib/ai/intake.ts; src/lib/mock-ai.ts; src/app/intake/page.tsx
+**Issue:** Generic intake and sample paths could fill absent role facts with plausible defaults, making an incomplete user request appear sourcing-ready and creating searches from invented needs.
+**Repro/evidence:** Grounding tests now prove absent title, skills, location, seniority, and description remain unknown; cloud-extracted values not grounded in submitted text are dropped; launch samples are separately labeled and complete.
+**Suggested fix:** Keep need readiness evidence-based and block sourcing until required facts and a reviewed query exist.
+**Status:** fixed (`f19bcb1`; intake grounding 5/5, launch readiness 1/1, Mantu intake 14/14, and sourcing action tests passed)
+
+## 2026-07-13 - Graphify learning lacked durable artifact and runtime authority
+**Severity:** security
+**File:** supabase/migrations/0027_sourcing_learning_authority.sql; workers/graphify-lessons; src/app/api/sourcing-agent/route.ts
+**Issue:** A lesson system would be forgeable or ceremonial if Graphify output were not stored and digest-bound, if the worker could see candidate/query data, or if promoted clusters never affected later sourcing.
+**Repro/evidence:** Migration 0027 stores exact export input, graph bytes, manifest, image digest, source commit, optimistic lesson version, independent evidence, and human review. The isolated worker receives aggregate fingerprints/counts only, and deterministic sourcing diversifies human-promoted exact-role queries across Graphify cluster references.
+**Suggested fix:** Preserve aggregate-only exports, immutable image/source binding, separate human promotion, and runtime cluster-aware selection.
+**Status:** fixed (`f19bcb1`; static authority 85/85, runtime 7/7, operations 19/19, and disposable PostgreSQL authority/isolation/idempotency/review/kill-switch/privacy gate passed)
+
+## 2026-07-13 - Feedback receipts disappeared or crossed campaign UI state
+**Severity:** correctness
+**File:** src/app/campaigns/[id]/page.tsx; supabase/migrations/0027_sourcing_learning_authority.sql
+**Issue:** Component-only feedback prompts disappeared after reload, a new run could replace older pending prompts, failed searches could become impossible-to-submit prompts, and preserved component state could show a prior campaign's receipts.
+**Repro/evidence:** The database now lists only successful unreviewed receipts for the exact workspace, actor, and campaign. The page scopes state by campaign, reloads it, merges new receipts by opaque ID, and removes only a durably recorded receipt.
+**Suggested fix:** Keep feedback authority durable and server-scoped; never derive it solely from the latest component response.
+**Status:** fixed (`f19bcb1`; feedback route/runtime 13/13, UI contract 7/7, and mixed-success disposable PostgreSQL regression passed)
+
+## 2026-07-13 - Exact Graphify worker container cannot complete on current network
+**Severity:** test-gap
+**File:** workers/graphify-lessons/Dockerfile; tests/graphify-learning-container.sh
+**Issue:** The exact Graphify 0.9.14 container acceptance gate cannot install its hash-locked Python dependencies because the current route to PyPI times out.
+**Repro/evidence:** Docker resolves the digest-pinned Python base, then pip repeatedly reports `Connection to pypi.org timed out` while requesting `/simple/networkx/`. Host API checks used a different installed Graphify version and are not exact-runtime proof.
+**Suggested fix:** Run `npm run test:graphify-learning` in clean CI/network, scan and publish the resulting immutable image, then configure only that accepted digest.
+**Status:** open
+
+## 2026-07-13 - Migration 0027 was missing from reviewed recovery authority
+**Severity:** correctness
+**File:** docker/bootstrap/legacy-baseline-invariants.sql; docker/bootstrap/legacy-baseline-public-schema.sha256
+**Issue:** Migration 0027 applied under the restricted migration role, but protected legacy recovery still pinned the schema, table set, and function signatures from migration 0026, so an exact current database could not pass recovery preflight.
+**Repro/evidence:** The first full `npm run test:db-privileges` reported schema fingerprint mismatch. After the digest changed, the next run rejected the legacy public table set. The final allowlists include all ten learning tables and sixteen functions.
+**Suggested fix:** Move the reviewed recovery digest and exact table/function allowlists atomically with every future migration.
+**Status:** fixed (`f19bcb1`; final owner-session gate exited 0 with restricted postgres, direct supabase_admin, read-only empty/legacy/complete preflights, approved baseline, exact ledger, rotation, idempotence, and no secret leak)
 
 ## 2026-07-13 - Apollo paid work lacked exact persisted authority
 **Severity:** security
