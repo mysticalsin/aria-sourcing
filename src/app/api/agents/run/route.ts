@@ -24,6 +24,7 @@ import {
 } from "@/lib/agents/memory";
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import { DEFAULT_SCORING_WEIGHTS } from "@/lib/scoring";
+import { dedupeHash, gateOutbound } from "@/lib/gate";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -96,6 +97,15 @@ function normalizeStoredRoleBrief(value: unknown): JobAnalysis | null {
   } as JobAnalysis;
 }
 
+function normalizeStoredChannels(value: unknown): string[] {
+  const channels = stringArray(value).map((channel) => channel.trim()).filter(Boolean);
+  return channels.length ? channels : ["Email"];
+}
+
+function normalizeStoredGuardrails(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
 export async function POST(req: NextRequest) {
   const prodBlock = prodFailClosed();
   if (prodBlock) return prodBlock;
@@ -136,9 +146,10 @@ export async function POST(req: NextRequest) {
 
   const { data: spec, error: specError } = await supabase
     .from("agent_specs")
-    .select("id,workspace_id,owner_id,role_brief,status")
+    .select("id,workspace_id,owner_id,role_brief,channels,guardrails,status")
     .eq("id", specId)
     .eq("workspace_id", workspaceId)
+    .eq("owner_id", userId)
     .eq("status", "active")
     .maybeSingle();
   if (specError || !spec) {
@@ -147,6 +158,14 @@ export async function POST(req: NextRequest) {
 
   const jobAnalysis = normalizeStoredRoleBrief(spec.role_brief);
   if (!jobAnalysis) return NextResponse.json({ ok: false, reason: "Stored agent role brief is invalid." }, { status: 409 });
+  const storedChannels = normalizeStoredChannels(spec.channels);
+  if (!storedChannels.includes("Email")) {
+    return NextResponse.json({ ok: false, reason: "Stored agent spec does not authorize email drafting." }, { status: 409 });
+  }
+  const storedGuardrails = normalizeStoredGuardrails(spec.guardrails);
+  if (storedGuardrails.autopilot === true || storedGuardrails.autoSend === true) {
+    return NextResponse.json({ ok: false, reason: "Stored agent guardrails cannot enable autonomous sending." }, { status: 409 });
+  }
 
   const service = getServiceSupabase();
   if (!service) {
@@ -173,6 +192,18 @@ export async function POST(req: NextRequest) {
       .eq("workspace_id", workspaceId)
       .eq("owner_id", spec.owner_id)
       .eq("spec_id", spec.id);
+  };
+
+  const assertSpecStillActive = async () => {
+    const { data: activeSpec, error: activeSpecError } = await service
+      .from("agent_specs")
+      .select("id")
+      .eq("id", spec.id)
+      .eq("workspace_id", workspaceId)
+      .eq("owner_id", spec.owner_id)
+      .eq("status", "active")
+      .maybeSingle();
+    if (activeSpecError || !activeSpec) throw new Error("Agent spec is no longer active.");
   };
 
   let memoryContext;
@@ -246,6 +277,7 @@ export async function POST(req: NextRequest) {
   let result: Awaited<ReturnType<typeof runGraph>>;
   try {
     result = await runGraph(state, deps, async (node, s, event) => {
+      await assertSpecStillActive();
       const { error: runError } = await service
         .from("agent_runs")
         .update({
@@ -281,11 +313,48 @@ export async function POST(req: NextRequest) {
     })
     .filter((c): c is Candidate & { draftSubject: string; draftBody: string } => c !== null);
 
+  const queuedCandidates: Array<Candidate & { draftSubject: string; draftBody: string; reviewMessageId?: string }> = [];
+  for (const candidate of candidates) {
+    const gate = gateOutbound(candidate.draftBody);
+    const { data: queued, error: queueError } = await service
+      .from("messages_outbound")
+      .insert({
+        workspace_id: workspaceId,
+        spec_id: spec.id,
+        run_id: runId,
+        candidate_id: candidate.id,
+        channel: "Email",
+        to_address: candidate.email,
+        type: "candidate_reply",
+        subject: candidate.draftSubject,
+        body: gate.text,
+        status: "blocked",
+        gate_result: {
+          source: "agent-run",
+          reviewRequired: true,
+          gatePassed: gate.pass,
+          reasons: gate.pass ? [] : gate.reasons,
+        },
+        dedupe_hash: dedupeHash(candidate.id, "Email", gate.text),
+      })
+      .select("id")
+      .maybeSingle();
+    if (queueError && queueError.code !== "23505") {
+      await failPersistedRun();
+      return NextResponse.json({ ok: false, reason: "Agent review queue persistence failed." }, { status: 503 });
+    }
+    queuedCandidates.push({
+      ...candidate,
+      draftBody: gate.text,
+      reviewMessageId: typeof queued?.id === "string" ? queued.id : undefined,
+    });
+  }
+
   return NextResponse.json({
     ok: true,
     runId,
     report: result.state.report ?? "",
-    candidates,
+    candidates: queuedCandidates,
     totalFound: found.length,
     heldByGate: result.state.drafts.filter((d) => !d.gatePassed).length,
     errors: result.state.errors,
