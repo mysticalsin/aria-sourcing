@@ -94,6 +94,7 @@ ok("agent run documentation does not claim a review queue that the route never c
 ok("agent route never misclassifies first-touch drafts as provider outbox replies", !route.includes('.from("messages_outbound")'));
 ok("spec writes reuse the fail-closed runtime channel schema", /channels:\s*SupportedAgentChannelsSchema/.test(specsRoute));
 ok("spec writes reuse the fail-closed runtime guardrail schema", /guardrails:\s*SupportedAgentGuardrailsSchema/.test(specsRoute));
+ok("spec writes reuse the executable role-brief schema", /role_brief:\s*SupportedAgentRoleBriefSchema/.test(specsRoute));
 ok("spec reads expose stored runtime availability instead of presenting legacy specs as runnable", /describeStoredAgentRuntimeAvailability/.test(specsRoute));
 ok("agent run never uses caller campaign authority", !route.includes("validated.data.campaign"));
 ok("agent run never loads shared workspace memory", !route.includes('.from("workspace_state")'));

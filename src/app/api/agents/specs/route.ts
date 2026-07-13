@@ -10,6 +10,7 @@ import {
   describeStoredAgentRuntimeAvailability,
   SupportedAgentChannelsSchema,
   SupportedAgentGuardrailsSchema,
+  SupportedAgentRoleBriefSchema,
 } from "@/lib/agents/runtime-policy";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ export const dynamic = "force-dynamic";
 
 const CreateSpecSchema = z.object({
   name: z.string().min(1).max(120),
-  role_brief: z.record(z.string(), z.unknown()),
+  role_brief: SupportedAgentRoleBriefSchema,
   channels: SupportedAgentChannelsSchema.default(["Email"]),
   guardrails: SupportedAgentGuardrailsSchema.default({ autopilot: false, canary_remaining: 5 }),
   seat_id: z.string().uuid().optional(),
@@ -32,7 +33,7 @@ const CreateSpecSchema = z.object({
 const UpdateSpecSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1).max(120).optional(),
-  role_brief: z.record(z.string(), z.unknown()).optional(),
+  role_brief: SupportedAgentRoleBriefSchema.optional(),
   channels: SupportedAgentChannelsSchema.optional(),
   guardrails: SupportedAgentGuardrailsSchema.optional(),
   seat_id: z.string().uuid().nullable().optional(),
@@ -75,7 +76,7 @@ export async function GET(req: NextRequest) {
     ok: true,
     specs: (data ?? []).map((spec) => ({
       ...spec,
-      ...describeStoredAgentRuntimeAvailability(spec.channels, spec.guardrails),
+      ...describeStoredAgentRuntimeAvailability(spec.role_brief, spec.channels, spec.guardrails),
     })),
   });
 }

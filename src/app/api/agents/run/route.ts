@@ -4,7 +4,7 @@ import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
-import type { Campaign, Candidate, JobAnalysis, Role } from "@/lib/types";
+import type { Campaign, Candidate, Role } from "@/lib/types";
 import {
   DEFAULT_MODEL,
   PROVIDER_ENV,
@@ -22,7 +22,10 @@ import {
   createAgentRunWithMemoryContext,
   loadAgentMemoryContext,
 } from "@/lib/agents/memory";
-import { resolveStoredAgentRuntimePolicy } from "@/lib/agents/runtime-policy";
+import {
+  normalizeStoredAgentRoleBrief,
+  resolveStoredAgentRuntimePolicy,
+} from "@/lib/agents/runtime-policy";
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import { DEFAULT_SCORING_WEIGHTS } from "@/lib/scoring";
 
@@ -52,50 +55,6 @@ const AgentRunSchema = z.object({
   model: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/).optional(),
   specId: z.string().uuid(),
 });
-
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-}
-
-/** Legacy specs were accepted as free-form JSON. Normalize only stored fields
- * so old specs remain runnable without restoring caller-controlled authority. */
-function normalizeStoredRoleBrief(value: unknown): JobAnalysis | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const brief = value as Record<string, unknown>;
-  const title = typeof brief.title === "string" ? brief.title.trim() : "";
-  if (!title) return null;
-  const numberOrNull = (candidate: unknown) =>
-    typeof candidate === "number" && Number.isFinite(candidate) ? candidate : null;
-
-  return {
-    ...brief,
-    title,
-    department: typeof brief.department === "string" ? brief.department : "",
-    seniority: typeof brief.seniority === "string" ? brief.seniority : "Senior",
-    employmentType: typeof brief.employmentType === "string" ? brief.employmentType : "Full-time",
-    locationType: typeof brief.locationType === "string" ? brief.locationType : "Remote",
-    location: typeof brief.location === "string" ? brief.location : "",
-    regions: stringArray(brief.regions),
-    timezone: typeof brief.timezone === "string" ? brief.timezone : "",
-    salaryMin: numberOrNull(brief.salaryMin),
-    salaryMax: numberOrNull(brief.salaryMax),
-    currency: typeof brief.currency === "string" ? brief.currency : "",
-    equity: brief.equity === true,
-    requiredSkills: stringArray(brief.requiredSkills).length
-      ? stringArray(brief.requiredSkills)
-      : stringArray(brief.skills),
-    niceToHaveSkills: stringArray(brief.niceToHaveSkills),
-    minYearsExperience: numberOrNull(brief.minYearsExperience),
-    maxYearsExperience: numberOrNull(brief.maxYearsExperience),
-    education: typeof brief.education === "string" ? brief.education : "",
-    industryExperience: stringArray(brief.industryExperience),
-    companyStageTarget: stringArray(brief.companyStageTarget),
-    teamSize: typeof brief.teamSize === "string" ? brief.teamSize : "",
-    reportingTo: typeof brief.reportingTo === "string" ? brief.reportingTo : "",
-    urgency: typeof brief.urgency === "string" ? brief.urgency : "Standard",
-    validationWarnings: [],
-  } as JobAnalysis;
-}
 
 export async function POST(req: NextRequest) {
   const prodBlock = prodFailClosed();
@@ -147,7 +106,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, reason: "Active agent spec not found." }, { status: 404 });
   }
 
-  const jobAnalysis = normalizeStoredRoleBrief(spec.role_brief);
+  const jobAnalysis = normalizeStoredAgentRoleBrief(spec.role_brief);
   if (!jobAnalysis) return NextResponse.json({ ok: false, reason: "Stored agent role brief is invalid." }, { status: 409 });
   const runtimePolicy = resolveStoredAgentRuntimePolicy(spec.channels, spec.guardrails);
   if (!runtimePolicy.ok) {

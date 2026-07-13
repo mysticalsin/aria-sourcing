@@ -13,6 +13,7 @@ import {
   describeStoredAgentRuntimeAvailability,
   SupportedAgentChannelsSchema,
   SupportedAgentGuardrailsSchema,
+  SupportedAgentRoleBriefSchema,
 } from "../src/lib/agents/runtime-policy";
 
 let pass = 0, fail = 0;
@@ -72,10 +73,18 @@ const POOL: Record<string, CandidateLite[]> = {
   ok("spec writes: only the executable Email channel contract is accepted", SupportedAgentChannelsSchema.safeParse(["Email"]).success && !SupportedAgentChannelsSchema.safeParse(["WhatsApp"]).success);
   ok("spec writes: unsupported and unknown guardrails are rejected", !SupportedAgentGuardrailsSchema.safeParse({ autopilot: true, canary_remaining: 0 }).success && !SupportedAgentGuardrailsSchema.safeParse({ autopilot: false, canary_remaining: 5, quiet_hours: {} }).success);
   const legacyAvailability = describeStoredAgentRuntimeAvailability(
+    BRIEF,
     ["WhatsApp"],
     { autopilot: false, canary_remaining: 5 },
   );
   ok("read model: legacy unsupported specs are explicitly marked unavailable", !legacyAvailability.runtime_eligible && Boolean(legacyAvailability.runtime_reason));
+  const invalidBriefAvailability = describeStoredAgentRuntimeAvailability(
+    {},
+    ["Email"],
+    { autopilot: false, canary_remaining: 5 },
+  );
+  ok("spec writes: a non-empty role title is required", !SupportedAgentRoleBriefSchema.safeParse({}).success);
+  ok("read model: invalid legacy role briefs are explicitly marked unavailable", !invalidBriefAvailability.runtime_eligible && Boolean(invalidBriefAvailability.runtime_reason));
 }
 
 function makeDeps(overrides?: Partial<GraphDeps> & { planJson?: string; draftBody?: string }): GraphDeps & { generateCalls: string[]; promptCalls: string[] } {
