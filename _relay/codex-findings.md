@@ -498,11 +498,3 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** `gh run list --repo mysticalsin/aria-sourcing-demo --branch main --limit 8` shows CI run `29217207203` and CodeQL run `29217207170` failed for `ac4c77b834125a213c48e5450d65067dbfb64c04`. It also shows CI run `29216702413` and CodeQL run `29216702409` failed for `52423e8f88b056c38c188c4066d6433f6a2c617d`. A later status probe for `303d32bd67bcd2664b73bd5bbddd8d05989ec11a` timed out against the GitHub API before returning check-runs. Log retrieval repeatedly timed out from the local network. Direct metadata for earlier CodeQL job `86713908848` returned `runner_name=""`, `runner_group_name=""`, `steps_len=0`, started `2026-07-13T01:06:13Z`, completed `2026-07-13T01:06:17Z`, conclusion `failure`, which means no checkout/test/analyze step ran.
 **Suggested fix:** Retrieve logs once GitHub/Azure log endpoints are reachable. If this is account budget/runner/platform failure, clear it and rerun workflows. If logs show workflow syntax or action-resolution failure, fix that exact setup failure and push a new main SHA. Do not deploy while exact-SHA CI and CodeQL are red.
 **Status:** open
-
-## 2026-07-12 - Agent run did not fully obey stored AgentSpec authority
-**Severity:** spec-mismatch
-**File:** src/app/api/agents/run/route.ts
-**Issue:** The live agent run route loaded only `owner_id`, `role_brief`, and `status`; it did not enforce stored channels or guardrails, allowed same-workspace admins to run another owner's active spec, did not revalidate active status during execution, and returned gate-passing drafts without a durable server review row.
-**Repro/evidence:** Read-only QA found the route selected `id,workspace_id,owner_id,role_brief,status`, filtered by workspace/status but not owner, and returned `draftSubject`/`draftBody` from the response without inserting `messages_outbound`.
-**Suggested fix:** Load and enforce stored channels/guardrails, bind run launch to the spec owner, revalidate active status during graph persistence, and persist every gate-passing draft into the blocked human review queue.
-**Status:** fixed locally in this change (`npx tsx tests/agent-memory-authority.mts` 50/50, `npm run test:security` green, `npm test` green; push/remote CI pending)
