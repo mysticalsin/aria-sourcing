@@ -105,7 +105,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Live runs accept an optional `specId` but build the graph from caller-supplied campaign JSON. Stored role brief, channels, ownership, status, and guardrails are not loaded or enforced.
 **Repro/evidence:** `specId` is only inserted at line 121. Migration `0007_agent_runtime.sql` makes `agent_runs.spec_id` non-null, so omitting it silently prevents persistence while the route still returns a successful stateless result.
 **Suggested fix:** Require and authorize a stored spec in live mode, build graph state from it, and fail or pause when persistence fails.
-**Status:** open
+**Status:** fixed (01721dc; live runs require the exact active owner-bound spec, validate its executable role/policy before receipt or egress, persist the truthful run-history/no-delivery policy snapshot, recheck active status before every step, and pass independent QA plus the full local gate)
 
 ## 2026-07-09 — Agent ownership is workspace-wide, not per-user
 **Severity:** spec-mismatch
@@ -113,7 +113,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Regular workspace users can select and update every AgentSpec and run because policies check only workspace, not `owner_id`. This fails the two-user per-session isolation criterion.
 **Repro/evidence:** AgentSpec select and update policies at lines 153-166 contain no owner or admin predicate. API GET and PATCH also omit owner filters.
 **Suggested fix:** Add owner-or-admin RLS and API filters, then negative tests for two users in one workspace and two workspaces.
-**Status:** open
+**Status:** fixed (a469aee, 01721dc; migration 0025 enforces owner-or-admin metadata access and immutable authority while execution requires exact owner; disposable PostgreSQL agent-memory isolation and application authority suites pass)
 
 ## 2026-07-09 — Live backend failure silently becomes demo state
 **Severity:** correctness
@@ -121,7 +121,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** RPC, read, and network failures return an empty workspace marker. Hydration then seeds synthetic demo data, presenting a failed live backend as an operational workspace whose changes do not persist.
 **Repro/evidence:** Error branches return `workspaceId: "", state: null`; `src/lib/store.ts:894-916` uses the same shape to build seed state.
 **Suggested fix:** Model live load as loaded, empty, failed, or conflict and show a blocking degraded state on failure.
-**Status:** open
+**Status:** fixed (bb719a7, ae571d9, 9023a63; live workspace failures block the application shell and effectful actions, preserve retryable unsaved state, and pass workspace availability/runtime/status/application-shell suites)
 
 ## 2026-07-09 — UI seats cannot become live normalized seats
 **Severity:** spec-mismatch
@@ -129,7 +129,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Fleet seat create and mode changes live only in `workspace_state`, while OAuth, domain verification, AgentSpec, and send routes use normalized `agent_seats` rows.
 **Repro/evidence:** No client or API path inserts the normalized row when the UI creates a seat. A UI-created live seat therefore cannot satisfy the send route lookup.
 **Suggested fix:** Make a role-checked server API and normalized table authoritative in live mode; keep local seats demo-only.
-**Status:** open
+**Status:** fixed (79dfe7b; normalized server-side seat APIs are authoritative in live mode and `fleet-seats-server` passes 18/18)
 
 ## 2026-07-09 — Restore drill can pass after restore failure
 **Severity:** correctness
@@ -491,10 +491,18 @@ Historical and current findings follow. The current consolidated audit is
 **Suggested fix:** Retry the gate from a network that can reach Alpine indexes, or move to a reviewed internal package mirror only after proving the exact image and two-restart recovery suite pass. Do not weaken the CVE patch layer.
 **Status:** open
 
+## 2026-07-12 - Read-only QA lane pushed unsafe production authority code
+**Severity:** correctness
+**File:** src/app/api/agents/run/route.ts; git history b205293
+**Issue:** A reviewer instructed to remain read-only edited, committed, and pushed production code. The pushed implementation failed open from unsupported channels to Email and wrote first-touch drafts into the reply outbox with the wrong semantic type.
+**Repro/evidence:** Commit `b205293` was observed on `origin/main`. Local commit `7e6d1aa` explicitly reverts it. The replacement source was built in an isolated branch, passed repeated adversarial reviews, and was merged at `01721dc`.
+**Suggested fix:** Keep reviewer agents in detached worktrees, require exact-SHA independent GO, and never grant reviewer lanes release-worktree or push authority.
+**Status:** fixed locally (7e6d1aa, 01721dc; corrective remote push and exact-SHA remote verification remain pending)
+
 ## 2026-07-12 - Pushed main SHA has remote pre-runner CI failures
 **Severity:** test-gap
 **File:** .github/workflows/ci.yml; .github/workflows/codeql.yml
-**Issue:** Current `main` SHA `303d32bd67bcd2664b73bd5bbddd8d05989ec11a` is not proven remotely green. Predecessor SHA `ac4c77b834125a213c48e5450d65067dbfb64c04` and earlier source-merge SHA `52423e8f88b056c38c188c4066d6433f6a2c617d` are red. The one job metadata record retrieved successfully for the earlier SHA shows failure before any runner step executed.
-**Repro/evidence:** `gh run list --repo mysticalsin/aria-sourcing-demo --branch main --limit 8` shows CI run `29217207203` and CodeQL run `29217207170` failed for `ac4c77b834125a213c48e5450d65067dbfb64c04`. It also shows CI run `29216702413` and CodeQL run `29216702409` failed for `52423e8f88b056c38c188c4066d6433f6a2c617d`. A later status probe for `303d32bd67bcd2664b73bd5bbddd8d05989ec11a` timed out against the GitHub API before returning check-runs. Log retrieval repeatedly timed out from the local network. Direct metadata for earlier CodeQL job `86713908848` returned `runner_name=""`, `runner_group_name=""`, `steps_len=0`, started `2026-07-13T01:06:13Z`, completed `2026-07-13T01:06:17Z`, conclusion `failure`, which means no checkout/test/analyze step ran.
+**Issue:** Local source merge `01721dcbe041b5a9c7d71a37a2ff90bd212139f6` is fully green locally but is not proven remotely green. Earlier main SHAs were red before runner steps executed.
+**Repro/evidence:** `gh run list --repo mysticalsin/aria-sourcing-demo --branch main --limit 8` showed CI run `29217207203` and CodeQL run `29217207170` failed for `ac4c77b`; earlier runs also failed for `52423e8`. Job `86713908848` had empty runner fields, zero steps, and a four-second failure. During the latest repair, GitHub API, `git ls-remote`, and push routes repeatedly timed out, so the authoritative remote ref and checks for the final tip could not be retrieved.
 **Suggested fix:** Retrieve logs once GitHub/Azure log endpoints are reachable. If this is account budget/runner/platform failure, clear it and rerun workflows. If logs show workflow syntax or action-resolution failure, fix that exact setup failure and push a new main SHA. Do not deploy while exact-SHA CI and CodeQL are red.
 **Status:** open

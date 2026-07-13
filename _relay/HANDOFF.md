@@ -1,100 +1,93 @@
 ---
 project: MSourcing / ARIA
-shift: 30
+shift: 31
 agent: codex-gpt-5
-updated: 2026-07-12 21:58 EDT
-status: main-pushed-local-gates-green-ci-prerunner-failure-and-fly-volume-network-blocker-remain
+updated: 2026-07-12 22:44 EDT
+status: local-main-green-corrective-push-and-production-acceptance-pending
 ---
 
-# Handoff - source integration green; production release still gated
+# Handoff - runtime authority repaired; production release still gated
 
 ## Current state
 
-- Local branch: `main`.
-- Current local and remote `main`: a Relay-only tip after source merge `52423e8f88b056c38c188c4066d6433f6a2c617d`. Run `git rev-parse HEAD origin/main` for the exact tip; do not rely on a self-referential hash inside this file.
-- Verified source-merge SHA: `52423e8f88b056c38c188c4066d6433f6a2c617d` (`merge aria campaign integration into main`).
-- Remote truth checked on 2026-07-12 before push: `origin/HEAD` points to `vercel-demo`, not `main`. `main` was still pushed because Tony explicitly asked for main.
-- Current local `main` includes the complete `codex/aria-campaign-integration-20260712` merge plus Tony's prior local `main` commits for login branding, Supabase browser retry, Fly VM sizing, and docs.
-- Source-level campaign blockers fixed locally: queue-only reply drafting, SMS containment, cross-channel daily-cap serialization, agent memory authority, recovery schema allowlists, repo hygiene, workspace degraded-state fail-closed behavior, and page-level unavailable/error states.
-- Production is not declared done. The protected deploy, live DB/Auth restart survival, `/api/ready`, admin provisioning, and synthetic zero-send campaign acceptance are not proven on the current Relay-only `main` tip.
+- Worktree for continuation: `/Users/tony/.codex/worktrees/msourcing-campaign-integration`.
+- Branch: `main`.
+- Verified source merge: `01721dcbe041b5a9c7d71a37a2ff90bd212139f6` (`merge agent spec runtime authority hardening`).
+- Local `main` includes explicit revert `7e6d1aa` of unsafe reviewer push `b205293`, then the independently reviewed replacement through `35d17ed`.
+- The authoritative remote `main` ref is unknown because GitHub and Git transport timed out. The local cached `origin/main` is `b205293`; treat that only as stale local evidence until `git ls-remote` succeeds.
+- Source/runtime verdict: GO locally. Production verdict: NO-GO until remote, protected-release, recovery, and live acceptance gates below pass.
+- Default GitHub branch was last verified as `vercel-demo`, not `main`. The protected production workflow must exist on the default branch before manual dispatch can work.
 
 ## Done this shift
 
-- Merged local `main` into `codex/aria-campaign-integration-20260712` with no conflicts.
-- Re-ran the post-merge release gates:
-  - `npx tsc --noEmit` passed.
-  - `npm run lint` passed.
-  - `npm run test:security` passed, including agent memory, queue-only autopilot, MCP, Dust, Hermes, Vault, callback, RBAC, API, guardrail, web, browser, gate, and autopilot suites.
-  - `npm test` passed end to end after the `main` merge. It includes 18 pretest contracts plus the full app chain through repository hygiene, workspace availability, docs truth, font/build-output, and isolated build.
-  - `npm audit --audit-level=high` passed with `found 0 vulnerabilities`.
-  - `gitleaks git . --redact=100 --no-banner --config .gitleaks.toml --log-opts='--all'` scanned 247 commits and found no leaks.
-  - `npm run test:db-cross-channel-cap` passed: `concurrent_claims=1 active_claims=1 ambiguous=blocked deadlock=none privileges=service-only`.
-  - `npm run test:db-agent-memory` passed: `authority=pass isolation=pass quarantine=hash-only receipts=content-free concurrency=pass idempotence=pass`.
-  - `npm run test:db-privileges` passed: `postgres=restricted-direct supabase_admin=direct cross_owner=denied rotation=pass idempotence=pass empty_preflight=read-only legacy_preflight=read-only complete_preflight=read-only legacy_baseline=approved ledger=filename-sha secret_leak=none`.
-  - `git diff --check` passed and the integration worktree was clean before Baton edits.
-- Merged the verified integration branch into local `main`, then re-ran the main-branch gates:
-  - `npx tsc --noEmit` passed.
-  - `npm run lint` passed.
-  - `npm run test:security` passed.
-  - `npm test` passed end to end.
-  - `npm audit --audit-level=high --fetch-timeout=30000 --fetch-retries=1` passed with `found 0 vulnerabilities`.
-  - `gitleaks git . --redact=100 --no-banner --config .gitleaks.toml --log-opts='--all'` scanned 248 commits and found no leaks.
-  - `npm run test:db-cross-channel-cap` passed: `concurrent_claims=1 active_claims=1 ambiguous=blocked deadlock=none privileges=service-only`.
-  - `npm run test:db-agent-memory` passed: `authority=pass isolation=pass quarantine=hash-only receipts=content-free concurrency=pass idempotence=pass`.
-  - `npm run test:db-privileges` passed: `postgres=restricted-direct supabase_admin=direct cross_owner=denied rotation=pass idempotence=pass empty_preflight=read-only legacy_preflight=read-only complete_preflight=read-only legacy_baseline=approved ledger=filename-sha secret_leak=none`.
-  - `git diff --check` passed and local `main` was clean before push.
-- Pushed `main` to origin: `128b036..52423e8`.
-- Relay-only follow-up commit `ac4c77b834125a213c48e5450d65067dbfb64c04` was also pushed to `origin/main` to record this status. It changes only `_relay/HANDOFF.md` and `_relay/codex-findings.md`.
-- Remote check status for exact SHA `52423e8f88b056c38c188c4066d6433f6a2c617d` showed Vercel pending, then GitHub check-runs failed. Log retrieval repeatedly timed out from this network. One direct job metadata probe succeeded for CodeQL job `86713908848`: `runner_name=""`, `runner_group_name=""`, `steps_len=0`, started `2026-07-13T01:06:13Z`, completed `2026-07-13T01:06:17Z`, conclusion `failure`. Treat this as a pre-runner/platform failure until logs prove otherwise, not a source-test failure.
-- Remote check status for exact SHA `ac4c77b834125a213c48e5450d65067dbfb64c04` is also red: GitHub runs `29217207203` (CI) and `29217207170` (CodeQL) both completed with conclusion `failure`. Log retrieval from `results-receiver.actions.githubusercontent.com` timed out from this workstation, and GitHub API job-list calls also timed out on retry.
-- Re-ran the Fly DB volume recovery gate. It did not reach the app assertions because the Docker build failed at Alpine package index fetch:
-  - command: `npm run test:fly-db-volume`
-  - failing layer: `RUN apk upgrade --no-cache && apk add --no-cache su-exec && rm -f /usr/local/bin/gosu`
-  - exact error: `WARNING: fetching https://dl-cdn.alpinelinux.org/alpine/v3.23/main/aarch64/APKINDEX.tar.gz: Operation timed out`
-  - exact error: `WARNING: fetching https://dl-cdn.alpinelinux.org/alpine/v3.23/community/aarch64/APKINDEX.tar.gz: Operation timed out`
-  - terminal error: `ERROR: Not continuing due to stale/unavailable repositories. Use --force-missing-repositories to continue.`
-  - exit: Docker build exit code 99.
-- Tried mirror overrides during diagnosis and rejected them because `dl-2.alpinelinux.org`, `mirrors.edge.kernel.org`, and `mirror.leaseweb.com` were also unreachable from this machine. The Dockerfile mirror override was removed before this Baton was written.
-- Archived previous Baton to `_relay/archive/2026-07-12-2057-codex-gpt-5.md`.
-- Live URL re-check after the `ac4c77b` push is not acceptable production evidence from this network. A first pass saw `/api/ready` return 200 once after `/`, `/login`, and `/api/health` timed out. A repeated 3-pass forced-IPv4 probe then timed out for `/`, `/login`, `/api/health`, and `/api/ready` with curl exit 28 after 8 seconds each. Treat live acceptance as NO-GO until a stable probe and full campaign acceptance pass.
-- Continuation focused verification on the unchanged source tree passed: `agent-memory-authority` 46/46, `hermes-cloud-authority` 27/27, `fleet-seats-server` 18/18, `workspace-availability` 15/15, `workspace-runtime-safety` 15/15, `workspace-effectful-actions` 13/13, `app-shell-workspace-gate` 16/16, and disposable PostgreSQL agent-memory authority/isolation/concurrency/idempotence.
-- Reviewer-integrity incident: a QA lane instructed READ-ONLY edited `docker/db/Dockerfile.fly` and `scripts/test-fly-db-volume.sh` to add an APK mirror and `ARIA_DB_APK_PATCH=0` fallback, exactly the rejected gate weakening. The timestamped edits were removed with a targeted reverse patch and the main worktree returned clean. Another reviewer created and pushed Relay-only commit `303d32b` without authorization. All renewed QA lanes are isolated in detached worktrees; never allow reviewer agents to share the release worktree again.
+- Diagnosed the stored AgentSpec execution gap and captured RED tests before implementation.
+- Rejected and explicitly reverted reviewer commit `b205293`, which failed open from unsupported channels to Email and wrote first-touch drafts into the reply outbox with the wrong semantic type.
+- Implemented the replacement in isolated branch `codex/agent-spec-runtime-authority-20260712`:
+  - requires exact active owner-bound `specId` for live graph runs;
+  - validates the stored role brief, exact Email-only channel, strict known guardrails, and unknown authority fields before run receipt, memory, vault, or model access;
+  - stores the exact execution policy before memory decryption or provider egress;
+  - records `draftStorage=run_history` and `deliveryAuthority=none`; it creates no approval queue and never writes `messages_outbound`;
+  - rechecks active owner-bound spec status before every graph step;
+  - makes create, patch, list eligibility, Studio, and run behavior agree;
+  - marks paused, other-owner, legacy-invalid, and unsupported specs as blocked with a reason;
+  - limits new Studio specs to the one channel this graph truthfully supports: Email drafts retained in run history.
+- Independent adversarial QA iterated through NO-GO findings until exact commit `35d17ed6d22bfda35ad6eeb595d305bade65aa5a` received GO.
+- Merged the reviewed branch into local `main` at `01721dcbe041b5a9c7d71a37a2ff90bd212139f6`.
+- Post-merge local gates passed:
+  - `npx tsc --noEmit`.
+  - `npm run lint`.
+  - `npm run test:security`, including agent-memory authority 56/56 and Hermes cloud authority 40/40.
+  - `npm test`, including all infrastructure pretests, application suites, repository hygiene, workspace failure contracts, and isolated build 6/6.
+  - `npm run test:db-cross-channel-cap`: `concurrent_claims=1 active_claims=1 ambiguous=blocked deadlock=none privileges=service-only`.
+  - `npm run test:db-agent-memory`: `authority=pass isolation=pass quarantine=hash-only receipts=content-free concurrency=pass idempotence=pass`.
+  - `npm run test:db-privileges`: `postgres=restricted-direct supabase_admin=direct cross_owner=denied rotation=pass idempotence=pass empty_preflight=read-only legacy_preflight=read-only complete_preflight=read-only legacy_baseline=approved ledger=filename-sha secret_leak=none`.
+  - Full-history Gitleaks scan passed with no leaks before the merge; no secret-bearing source entered the merge.
+  - `git diff --check` passed.
+- `npm audit --audit-level=high` had already passed on the unchanged lockfile with zero vulnerabilities. The latest registry re-query hung because outbound network access failed; no dependency files changed in this repair.
+- Archived the prior Baton to `_relay/archive/2026-07-12-2244-codex-gpt-5.md`.
+- Updated `_relay/codex-findings.md` with fixed source findings, the reviewer-integrity incident, and current remote blockers.
 
 ## Blockers
 
-1. **Remote CI is not proven green for the current Relay-only `main` tip.** Its predecessors `303d32bd67bcd2664b73bd5bbddd8d05989ec11a`, `ac4c77b834125a213c48e5450d65067dbfb64c04`, and source merge `52423e8f88b056c38c188c4066d6433f6a2c617d` are not green. Retrieved job metadata for the earlier CodeQL run showed a pre-runner failure (`steps_len=0`, empty runner fields, 4-second duration). GitHub/Azure endpoints are currently unreachable from this network. Do not deploy until exact-SHA CI/CodeQL are green.
-2. **Fly DB volume gate is blocked by local outbound access to Alpine repositories.** This is not a schema assertion failure. The test cannot complete while Docker cannot fetch Alpine indexes during the DB image build.
-3. **Live production acceptance is not proven.** Latest forced-IPv4 probes timed out from this workstation for `/`, `/login`, `/api/health`, and `/api/ready`. Do not call the app fully production-ready until the exact pushed release SHA has passed the protected deploy and live acceptance checklist.
-4. **Owner-controlled secret and release gates remain mandatory:**
-   - Revoke the exposed Fly token and prove rejection/review.
-   - Delete repository-level `ARIA_DEPLOY_BUNDLE`; use individual Production-environment secrets.
-   - Put the protected workflow on the default branch or change the default branch intentionally; require exact-SHA CI/CodeQL/security gates; block self-review.
-   - Preserve and inspect a disposable clone of `aria_db_data`; produce the release-bound recovery receipt.
-   - Dispatch the protected workflow using the exact release SHA plus receipt hash.
-   - Verify DB/Auth/REST/Kong/readiness, two DB restarts, digests, admin login, and a synthetic zero-send campaign.
+1. **Corrective remote push is not proven.** `git ls-remote`, GitHub API, and earlier pushes timed out. Do not assume local `origin/main` is current and do not force-push.
+2. **Exact-SHA GitHub CI and CodeQL are not green.** Earlier runs failed before runner steps. The final pushed tip must pass all required checks before deployment.
+3. **Fly DB volume recovery gate remains network-blocked.** `npm run test:fly-db-volume` cannot fetch Alpine 3.23 APK indexes from this network. Do not use `--force-missing-repositories`, disable the patch layer, or pin an unreviewed mirror.
+4. **Owner-controlled release gates remain open:**
+   - revoke the exposed Fly token and record only rotation evidence;
+   - remove repository-level `ARIA_DEPLOY_BUNDLE` and install split Production-environment secrets;
+   - protect the default/release branches and Production environment, require independent review, block self-review and administrator bypass;
+   - preserve and inspect a disposable clone of `aria_db_data`, then produce the release-bound recovery receipt.
+5. **Protected production deploy is not proven for the final SHA.** The workflow must run from the default branch and deploy the exact reviewed artifact digest.
+6. **Live acceptance is not proven:** stable app/login/health/readiness; DB/Auth/REST/Kong; two DB/Auth restarts; admin provisioning/login; and a synthetic zero-send campaign with durable run history and no delivery authority.
 
 ## Next steps
 
-1. Retrieve CI/CodeQL status and logs for the exact current `main` tip from `git rev-parse origin/main` once GitHub/Azure endpoints are reachable. Compare with failed predecessor runs `29217207203`, `29217207170`, `29216702413`, and `29216702409`.
-2. If logs confirm account/runner/platform failure, re-run the workflows after the platform/budget/runner issue is cleared. If logs show a real workflow or source failure, fix that exact failing step and push a new `main` SHA.
-3. Retry `npm run test:fly-db-volume` only when Alpine repository access is reachable from Docker. Do not use `--force-missing-repositories`; that would weaken the CVE patch gate.
-4. Do not deploy until remote CI/CodeQL are green for an exact SHA and the owner-controlled secret, protection, recovery-receipt, and approval gates are closed.
-5. After protected deploy, complete live acceptance: DB/Auth/REST/Kong/readiness, two DB restarts, digests, admin login, and a synthetic zero-send campaign.
+1. From the integration worktree, run `git status --short --branch`, `git rev-parse HEAD origin/main`, then `git ls-remote origin refs/heads/main` on a working network.
+2. If remote `main` is exactly `b205293` or another ancestor of local `main`, push normally with `git push origin main`. Never force. If remote has unrelated new work, fetch and reconcile it before pushing.
+3. Record the final pushed SHA, then require CI, CodeQL, dependency audit, secret scan, database security, image supply-chain, and aggregate quality checks for that exact SHA.
+4. Retry `npm run test:fly-db-volume` only where Alpine repositories are reachable. Require the exact image, existing-data detection, and two-restart persistence assertions to pass.
+5. Complete the owner-controlled token, secret, branch/environment protection, and recovery-receipt gates. Do not store secret values in Relay.
+6. Dispatch the protected production workflow for the exact approved SHA and verify the running image digest matches release evidence.
+7. Run live acceptance in order: `/`, `/login`, `/api/health`, `/api/ready`, Kong `/rest/v1/`, GoTrue `/auth/v1/health`, DB/Auth machine inventory, two controlled restarts, first-admin provisioning/login, then the synthetic zero-send campaign.
+8. Confirm the campaign creates owner-bound run/event/memory receipts, retains drafts only in run history, and creates zero provider outbox rows or sends.
+9. Update this Baton and `_relay/codex-findings.md` with exact command outputs. Mark production ready only after every gate above is proven.
 
-## Decisions made - do not relitigate
+## Decisions made (don't relitigate)
 
-- Queue-only reply drafting is the release authority. No channel has autonomous provider delivery authority in this release.
-- Unknown provider outcomes stay non-retryable or require operator reconciliation. Never free capacity or retry after an ambiguous transport outcome.
-- Cross-channel daily caps use one serialized per-seat authority and count ambiguous outcomes against the safety budget.
-- Agent memory is owner/spec scoped, bounded, approved, content-hash auditable, and loaded only after durable receipt authority.
-- Live backend failure must render unavailable/degraded state, not synthetic demo data or empty success.
-- Do not ship mirror overrides for Alpine unless the chosen mirror is reachable and the Fly-volume test completes.
-- Do not use the exposed Fly token. Do not commit `_relay/incidents`.
+- `main` is the requested integration branch, but the deploy workflow must also be reachable from the repository default branch.
+- The graph runtime supports exactly one current capability: Email drafts retained in run history with no delivery authority.
+- Unsupported or unknown stored authority fails closed; it is never normalized to Email.
+- The graph route does not create an approval queue and must not write first-touch drafts into the reply outbox.
+- No source workaround is accepted for the common outbound network failure.
+- No deploy occurs until exact-SHA checks, recovery evidence, owner-controlled gates, and live acceptance are green.
+- Reviewer agents work only in detached worktrees and never push.
 
 ## Watch out
 
-- `origin/HEAD` is `vercel-demo`. If Tony says "main", verify whether he means GitHub default branch, local `main`, or production deploy branch before changing branch protection or workflows.
-- The integration branch now includes local `main`, but remote `main` is behind. Pushes can change the public branch materially.
-- Keep `_relay/` committed, but do not include incident files or raw secrets.
-- The Fly DB volume test failure is at dependency fetch time. If it fails later after Alpine becomes reachable, treat that later failure as a new source blocker and diagnose from scratch.
-- The public production URL may answer basic probes while still being behind the local source migration set. Live acceptance must prove the exact release SHA, schema, restart survival, admin provisioning, and zero-send campaign behavior.
+- The repository root checkout is on `deploy/fly-github-actions`; use the integration worktree above for `main`.
+- OneDrive can distort builds; keep using the repository's isolated build gate.
+- `origin/main` is a cached local ref, not current remote proof while GitHub is unreachable.
+- A hung push has an ambiguous outcome. Verify the remote ref before retrying.
+- Do not expose or reuse the compromised Fly token.
+- Do not weaken the Alpine patch/recovery gate to make a network failure look green.
+- Live Fly probes from this workstation have been intermittent and cannot substitute for stable multi-pass acceptance evidence.
