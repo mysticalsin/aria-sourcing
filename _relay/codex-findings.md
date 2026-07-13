@@ -562,3 +562,59 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Reviewers reproduced commit rejection, viewer denial, failed sourcing, and one-success plus one-creation-failure result sets. The commit boundary now returns a synchronous application result; callers branch on nullable or boolean action outcomes; launch success requires every requested role to be created and sourced.
 **Suggested fix:** Preserve explicit applied/rejected results and keep multi-step UI completion logic in a pure decision function with a complete decision table.
 **Status:** fixed (`1450f85`; focused 22/22, full 136-command gate, and production build passed)
+
+## 2026-07-13 - Candidate intake trusted client and provider data across an effect boundary
+**Severity:** security
+**File:** src/lib/store/sourcing-actions.ts:393
+**Issue:** Live batch, exact GitHub, and manual candidate intake could accept stale authority, malformed provider data, unsafe links, fabricated defaults, duplicate identities, or a rejected state commit while still exposing success behavior.
+**Repro/evidence:** The adversarial matrix covers workspace and role loss before and after I/O, missing and paused campaigns, exact provider source and identity, bounded DTOs, private and mapped-IP URLs, unknown-field injection, latest-state dedupe, and commit rejection. The final boundary records source events and metrics only after a positive applied result.
+**Suggested fix:** Keep the three actions behind the React-free factory and preserve the exact pre-I/O, post-I/O, DTO, dedupe, and commit-result gates.
+**Status:** fixed (`e070e55`, `1f89813`; intake 23/23, approval 58/58, outreach 52/52, full 137-command gate, security suite, and 59/59 build passed)
+
+## 2026-07-13 - Paid enrichment accepts unbound provider identifiers
+**Severity:** security
+**File:** src/app/api/source/apollo/enrich/route.ts:19; src/app/api/source/seamless/research/route.ts:19
+**Issue:** An authenticated source-capable caller can submit any bounded Apollo or Seamless provider identifier. The server checks role and resolves a workspace key but does not prove that the identifier belongs to a candidate sourced into that workspace before spending provider credits or revealing contact data.
+**Repro/evidence:** `ApolloEnrichSchema` accepts only `apolloId` and `revealPhone`; `SeamlessResearchSchema` accepts only `searchResultId`. Neither route resolves a workspace candidate or compares a stored platform and external ID before calling the paid provider operation.
+**Suggested fix:** Accept a canonical candidate ID, resolve the workspace-owned candidate server-side, verify provider and external ID, then spend or reveal only for that exact record.
+**Status:** open
+
+## 2026-07-13 - Async enrichment handles are not bound to their persistence target
+**Severity:** security
+**File:** src/app/api/source/seamless/research-status/route.ts:38; src/app/api/source/sillage/status/route.ts:39; src/lib/store.ts:828
+**Issue:** Polling accepts a raw request ID, while the browser separately supplies the campaign or candidate that receives the result. A valid handle is not server-bound to a workspace, provider operation, candidate, or campaign, so a mismatched or replayed handle can disclose or persist data into the wrong client-selected record.
+**Repro/evidence:** Both status routes query by `requestId` after role checks only. `checkSeamlessResearch(candidateId, requestId)` and `checkSillageMapping(campaignId, requestId)` choose their local persistence target independently of the server-side provider job.
+**Suggested fix:** Persist an opaque workspace-scoped job record at start, bind it to the exact candidate or campaign, and authorize polling and persistence from that server-owned binding.
+**Status:** open
+
+## 2026-07-13 - Sillage returns and persists a company-wide contact batch
+**Severity:** security
+**File:** src/app/api/source/sillage/status/route.ts:76; src/lib/store.ts:872
+**Issue:** One completed company mapping returns all resolved profiles to the browser and the store persists every accepted profile, including provider-returned contact fields. This expands PII exposure beyond an explicit per-candidate reveal decision.
+**Repro/evidence:** The status response includes `profiles: mappingRes.data.profiles`; the client maps the entire array and prepends every accepted candidate to shared workspace state.
+**Suggested fix:** Return a minimized preview by default, require explicit per-candidate reveal, and persist only the fields and candidates the authorized operator selected.
+**Status:** open
+
+## 2026-07-13 - Remaining provider actions lack the guarded action contract
+**Severity:** correctness
+**File:** src/lib/store.ts:795; src/lib/store.ts:992; src/lib/store.ts:1151
+**Issue:** Apollo, Seamless, Sillage, and sourcing-agent actions still live in the React coordinator. Several snapshot authority and campaign data before I/O, then commit after await without rechecking current role, workspace, campaign state, dedupe state, or whether the commit applied.
+**Repro/evidence:** The completed GitHub/manual factory has explicit pre-I/O and post-I/O checks plus boolean commit truth. The remaining callbacks use the old `workspaceEffectAllowed` precheck and do not test an applied result before reporting completion or emitting activity.
+**Suggested fix:** Extract one provider action group at a time into the sourcing factory and port the same authority, response projection, latest-state, and applied-result decision table.
+**Status:** open
+
+## 2026-07-13 - Sourcing agent trusts full client objects and returns full candidates
+**Severity:** security
+**File:** src/app/api/sourcing-agent/route.ts:37; src/app/api/sourcing-agent/route.ts:132
+**Issue:** The route accepts opaque campaign and candidate records up to 200 KB, casts them to domain types, and sends them through a cloud tool-calling flow. It does not use a bounded campaign DTO, a minimized candidate context, or a server-authoritative campaign record.
+**Repro/evidence:** `campaign` and `existing` are `z.record(z.string(), z.unknown())`; the route then uses `as unknown as Campaign` and `as unknown as Candidate[]`. The caller sends every campaign candidate rather than an explicit dedupe and disclosure projection.
+**Suggested fix:** Define exact schemas, resolve authoritative campaign data server-side where available, minimize existing candidates to dedupe fields, and validate every returned candidate before persistence.
+**Status:** open
+
+## 2026-07-13 - Provider errors cross the server boundary without one bounded translator
+**Severity:** security
+**File:** src/app/api/source/apollo/enrich/route.ts:73; src/app/api/source/sillage/start/route.ts:68
+**Issue:** Source routes return raw exception messages or provider detail strings to the browser. Upstream bodies can contain request details, identifiers, or unbounded text, and each adapter applies a different error policy.
+**Repro/evidence:** Apollo returns `err.message`; Seamless and Sillage routes return `result.detail || result.title`. There is no shared redaction, length cap, or allowlisted public-error mapping across these routes.
+**Suggested fix:** Centralize provider error classification, redact known secret and URL material, cap length, log only a safe diagnostic code, and return a bounded public message.
+**Status:** open

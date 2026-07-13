@@ -1,7 +1,7 @@
 # ARIA enterprise refinement execution plan
 
 **Prepared:** 2026-07-12 23:59 EDT  
-**Current verified source baseline:** `1450f858d50e0f53cdd323a730ec6b058b152899`
+**Current verified source baseline:** `1f898138d7d8c403f8a0adfbcf10fc6bcad0244b`
 **Local `origin/main` tracking ref:** `bc4633663c9a7ba3b3b4d52b7f3654384e471cb6`
 **Production verdict:** NO-GO  
 **Purpose:** Executable handoff for Claude Code, Codex, security reviewers, and QA.
@@ -27,19 +27,23 @@ Completion is not a source-only claim. It requires:
 
 ### Source
 
-- The verified source baseline is three local commits ahead of the local
+- The verified source baseline is six local commits ahead of the local
   `origin/main` tracking ref:
   - `316aecb`: React-free store contracts, hook characterization, and source
     dependency-cycle gates.
   - `8775096`: Wave 1A Relay and audit handoff.
   - `1450f85`: campaign/intake action factory, exact runtime projection,
     viewer denial, fail-closed results, and multi-role launch aggregation.
+  - `7327b2b`: campaign Wave 1B Relay evidence.
+  - `e070e55`: React-free guarded live-batch sourcing action.
+  - `1f89813`: guarded GitHub/manual candidate intake and candidate-fact truth
+    model.
 - The tracking ref advanced to `bc46336` through a push recorded locally at
   2026-07-13 00:24 EDT. The actor and credential used are unknown. Do not treat
   this as credential-rotation evidence or resume authenticated release work.
 - `npx tsc --noEmit`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed all 136 chained commands.
+- `npm test`: passed all 137 chained commands.
 - `tests/store-contracts.mts`: passed 10/10, covering the 124-action parity,
   provider-bound hook behavior, outside-provider rejection, static cycles,
   runtime cycles, dynamic imports, and positive cycle fixtures.
@@ -47,6 +51,14 @@ Completion is not a source-only claim. It requires:
   commit rejection, exact editable-field projection, JD validation and secret
   stripping, re-score behavior, query behavior, caller failure handling, and
   complete-versus-partial launch aggregation.
+- `tests/store-sourcing-actions.mts`: passed 23/23, covering pre-I/O and
+  post-I/O authority, campaign state, provider DTO projection, exact GitHub
+  identity, manual-input bounds, URL safety, dedupe, commit rejection, and
+  positive-only side effects.
+- `tests/rules-confidential.mts`: passed 58/58, including fail-closed manual
+  lawful-basis records and strict canonical timestamps.
+- `tests/mock-ai.mts`: passed 52/52, including evidence-free and unrelated-skill
+  outreach in all seven supported languages.
 - `npm run build`: passed, 59/59 static pages generated.
 - `docker compose config --quiet`: passed after the app and GoTrue default
   port were aligned at 3000.
@@ -144,10 +156,11 @@ Completion is not a source-only claim. It requires:
 
 **Owners:** Senior Full-Stack Developer, independent validator, QA.
 
-Current evidence after Wave 1A:
+Current evidence after the first Wave 1B sourcing slices:
 
-- `src/lib/store.ts` is 6,525 lines.
-- `src/lib/store/contracts.ts` is 449 lines and React-free.
+- `src/lib/store.ts` is 6,258 lines.
+- `src/lib/store/contracts.ts` is 463 lines and React-free.
+- `src/lib/store/sourcing-actions.ts` is 909 lines and React-free.
 - `HermesActions` exposes 124 operations.
 - About 92 source files import the store.
 - Hydration, persistence, actions, chat, memory, selectors, and React context
@@ -173,7 +186,9 @@ passed `npx tsc --noEmit && npm test`, lint, and a 59/59 production build.
 Extract one domain per commit:
 
 1. campaign and intake: completed in `1450f85` on 2026-07-13;
-2. sourcing and enrichment;
+2. sourcing and enrichment: `sourceNextBatch`, GitHub intake, and manual intake
+   completed in `e070e55` and `1f89813`; Apollo, Seamless, Sillage, and the
+   sourcing-agent boundary remain open;
 3. outreach and compliance;
 4. fleet and integrations;
 5. chat, sessions, and shared UI memory.
@@ -194,6 +209,46 @@ Campaign/intake exit evidence:
   false-success, undefined-field, opaque-JD, and partial-launch findings.
 - Exact final snapshot passed 22/22 focused tests, 10/10 store-contract tests,
   all 136 chained commands, zero-warning lint, and a 59/59 production build.
+
+Sourcing and candidate-intake evidence:
+
+- `src/lib/store/sourcing-actions.ts` owns `sourceNextBatch`,
+  `addCandidateFromGithub`, and `addCandidateManual` behind explicit,
+  React-free dependencies.
+- GitHub/manual intake fails closed on unavailable workspaces, unauthorized
+  roles, missing or paused campaigns, malformed provider data, unsafe URLs,
+  duplicate identities, authority changes during I/O, and rejected commits.
+- Manual candidates require an operator-selected lawful-basis input. The
+  shared record validator accepts only canonical millisecond UTC timestamps.
+- Unknown candidate facts remain `null` or empty through live mappers, scoring,
+  prompts, consent display, and outreach. Unknown dimensions score neutrally.
+- Fit-style subject and greeting copy requires a case-normalized intersection
+  with the role's required skills. Evidence-free copy uses translated generic
+  subjects in all seven supported languages.
+- The exact committed snapshot passed all 137 chained commands, 23/23 focused
+  intake tests, 58/58 approval tests, 52/52 outreach tests, the complete
+  security suite, typecheck, zero-warning lint, diff validation, and a 59/59
+  production build.
+- Independent QA, senior full-stack, and security-director reviews returned GO
+  on working diff SHA-256 `41688ff384b9cfdbac7247f16c634fbeb3fa272d3badc1d5af89071cee28f3d6`.
+
+Remaining sourcing/enrichment work, in execution order:
+
+1. Bind Apollo and Seamless paid reveal requests to a server-authoritative
+   candidate and workspace record. Never spend credits for a client-supplied
+   provider identifier alone.
+2. Replace raw Seamless and Sillage polling handles with workspace-scoped,
+   campaign/candidate-bound server records; polling must not let the browser
+   choose a different persistence target.
+3. Make Sillage retrieval explicit and per-candidate before persisting contact
+   details; do not return or store a company-wide PII batch by default.
+4. Move Apollo, Seamless, Sillage, and sourcing-agent actions behind the same
+   React-free factory boundary with pre-I/O and post-I/O authority checks,
+   exact response DTOs, current-state dedupe, and explicit commit results.
+5. Replace sourcing-agent full-object casts with bounded campaign and candidate
+   schemas plus minimum-necessary candidate context.
+6. Centralize bounded provider-error translation so upstream bodies and
+   transport details cannot reach user-visible responses or logs unchanged.
 
 **Exit evidence:** each wave reduces `store.ts`, preserves serialized state,
 and passes before/after behavior fixtures.
