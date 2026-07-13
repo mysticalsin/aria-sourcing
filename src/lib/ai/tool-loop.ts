@@ -156,7 +156,11 @@ export interface ResolvedMcpServer {
    *  across calls). When present, execTool calls this instead of the URL-based
    *  dispatch, so the caller can inspect that accumulated state after the loop
    *  finishes rather than trusting the model to echo it back correctly. */
-  run?: (name: string, args: Record<string, unknown>) => Promise<ToolExecutionResult>;
+  run?: (
+    name: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ) => Promise<ToolExecutionResult>;
 }
 
 /** One completed tool call, for callers that need the real results the loop saw
@@ -180,7 +184,7 @@ async function execTool(
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<ToolExecutionResult> {
-  if (server.run) return server.run(name, args);
+  if (server.run) return server.run(name, args, signal);
   if (server.url === BUILTIN_WEB_URL) return runWebTool(name, args, { tavilyKey: server.tavilyKey, signal });
   if (server.url === BUILTIN_BROWSER_URL) return runBrowserTool(name, args);
   return callMcpTool(server.url, server.token, name, args, { signal });
@@ -277,6 +281,7 @@ export async function runAnthropicWithTools(args: {
   servers: ResolvedMcpServer[];
   maxRounds?: number;
   timeoutMs?: number;
+  beforeExternalCall?: () => Promise<boolean>;
 }): Promise<{ ok: boolean; text?: string; reason?: string; toolCalls: ToolCallRecord[] }> {
   const { model, system, prompt, key, servers } = args;
   const maxRounds = boundedPositiveInteger(args.maxRounds, 4, MAX_TOOL_ROUNDS);
@@ -295,6 +300,9 @@ export async function runAnthropicWithTools(args: {
   const messages: AnthropicMessage[] = [{ role: "user", content: prompt }];
 
   for (let round = 0; round < maxRounds; round++) {
+    if (args.beforeExternalCall && !(await args.beforeExternalCall())) {
+      return { ok: false, reason: "Authority changed.", toolCalls };
+    }
     let res: Response;
     try {
       res = await withinDeadline(
@@ -355,6 +363,9 @@ export async function runAnthropicWithTools(args: {
       let out: ToolExecutionResult = { ok: false, error: "Tool not available." };
       if (server && tu.name) {
         try {
+          if (args.beforeExternalCall && !(await args.beforeExternalCall())) {
+            return { ok: false, reason: "Authority changed.", toolCalls };
+          }
           out = await withinDeadline((signal) => execTool(server, tu.name as string, input, signal), deadlineAt);
         } catch (error) {
           if (isDeadlineError(error)) {
@@ -418,6 +429,7 @@ export async function runOpenAiWithTools(args: {
   servers: ResolvedMcpServer[];
   maxRounds?: number;
   timeoutMs?: number;
+  beforeExternalCall?: () => Promise<boolean>;
 }): Promise<{ ok: boolean; text?: string; reason?: string; toolCalls: ToolCallRecord[] }> {
   const { provider, model, system, prompt, key, servers } = args;
   const maxRounds = boundedPositiveInteger(args.maxRounds, 4, MAX_TOOL_ROUNDS);
@@ -440,6 +452,9 @@ export async function runOpenAiWithTools(args: {
   ];
 
   for (let round = 0; round < maxRounds; round++) {
+    if (args.beforeExternalCall && !(await args.beforeExternalCall())) {
+      return { ok: false, reason: "Authority changed.", toolCalls: toolCallLog };
+    }
     let res: Response;
     try {
       res = await withinDeadline(
@@ -505,6 +520,9 @@ export async function runOpenAiWithTools(args: {
           parsedArgs = {};
         }
         try {
+          if (args.beforeExternalCall && !(await args.beforeExternalCall())) {
+            return { ok: false, reason: "Authority changed.", toolCalls: toolCallLog };
+          }
           out = await withinDeadline((signal) => execTool(server, name, parsedArgs, signal), deadlineAt);
         } catch (error) {
           if (isDeadlineError(error)) {

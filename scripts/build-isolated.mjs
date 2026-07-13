@@ -31,11 +31,22 @@ try {
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
   const installEnv = { ...process.env };
   delete installEnv.NEXT_DIST_DIR;
-  execFileSync(npm, ["ci", "--no-audit", "--no-fund"], {
-    cwd: isolatedRoot,
-    env: installEnv,
-    stdio: "inherit",
-  });
+  execFileSync(
+    npm,
+    [
+      "ci",
+      "--no-audit",
+      "--no-fund",
+      "--prefer-offline",
+      "--fetch-retries=2",
+      "--fetch-timeout=30000",
+    ],
+    {
+      cwd: isolatedRoot,
+      env: installEnv,
+      stdio: "inherit",
+    },
+  );
 
   const buildEnv = { ...installEnv, NEXT_TELEMETRY_DISABLED: "1" };
   delete buildEnv.NEXT_DIST_DIR;

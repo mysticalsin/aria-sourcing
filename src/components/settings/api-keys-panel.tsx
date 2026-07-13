@@ -5,10 +5,15 @@ import { Badge, Button, Card, CardContent, Field, Input, Select, EmptyState, use
 import { useActions, useApiKeys, useRole } from "@/lib/store";
 import { API_KEY_PROVIDERS, type ApiKeyProvider } from "@/lib/types";
 import { can } from "@/lib/rbac";
+import { experimentalPaidSourcingEnabled } from "@/lib/supabase/config";
 import { formatTimeAgo, type Tone } from "@/lib/utils";
 import { KeyRound, Plus, ShieldAlert, Trash2, Zap } from "lucide-react";
 
 const STATUS_TONE: Record<string, Tone> = { valid: "success", invalid: "danger", untested: "neutral" };
+
+const SELECTABLE_API_KEY_PROVIDERS = experimentalPaidSourcingEnabled
+  ? API_KEY_PROVIDERS
+  : API_KEY_PROVIDERS.filter((provider) => provider !== "Sillage" && provider !== "Seamless");
 
 export function ApiKeysPanel() {
   const keys = useApiKeys();
@@ -88,7 +93,7 @@ export function ApiKeysPanel() {
                 id="key-provider"
                 value={provider}
                 onChange={(e) => setProvider(e.target.value as ApiKeyProvider)}
-                options={API_KEY_PROVIDERS.map((p) => ({ value: p, label: p }))}
+                options={SELECTABLE_API_KEY_PROVIDERS.map((p) => ({ value: p, label: p }))}
               />
             </Field>
             <Field label="API key" htmlFor="key-value" className="sm:col-span-3">

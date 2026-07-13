@@ -908,6 +908,67 @@ test("sourcing rejects missing, paused, invalid, and dedicated-provider requests
   assert.equal(harness.commitCalls, 0);
 });
 
+test("sourcing rejects an incomplete need or missing reviewed query before network egress", async () => {
+  const incompleteState = buildSeedState();
+  const campaignId = incompleteState.campaigns[0].id;
+  incompleteState.campaigns[0].jobAnalysis = {
+    ...incompleteState.campaigns[0].jobAnalysis,
+    seniority: "Unspecified",
+    employmentType: "Unspecified",
+    locationType: "Unspecified",
+    requiredSkills: [],
+  };
+  const incomplete = createHarness({ state: incompleteState });
+  const incompleteResult = await incomplete.actions.sourceNextBatch(campaignId, {
+    platform: "GitHub",
+  });
+  assert.equal(incompleteResult.ok, false);
+  assert.equal(incomplete.fetchCalls, 0);
+  assert.equal(incomplete.commitCalls, 0);
+
+  const noQueryState = buildSeedState();
+  noQueryState.campaigns[0].sourcingStrategy.githubQueries = [];
+  const noQuery = createHarness({ state: noQueryState });
+  const noQueryResult = await noQuery.actions.sourceNextBatch(
+    noQuery.state.campaigns[0].id,
+    { platform: "GitHub" },
+  );
+  assert.equal(noQueryResult.ok, false);
+  assert.equal(noQuery.fetchCalls, 0);
+  assert.equal(noQuery.commitCalls, 0);
+});
+
+test("sourcing rejects a need or query mutation after live I/O before commit", async () => {
+  let harness: ReturnType<typeof createHarness>;
+  harness = createHarness({
+    afterFetch: () => {
+      const campaignId = harness.state.campaigns[0].id;
+      harness.state = {
+        ...harness.state,
+        campaigns: harness.state.campaigns.map((campaign) =>
+          campaign.id === campaignId
+            ? {
+                ...campaign,
+                jobAnalysis: {
+                  ...campaign.jobAnalysis,
+                  requiredSkills: [],
+                },
+              }
+            : campaign,
+        ),
+      };
+    },
+  });
+
+  const result = await harness.actions.sourceNextBatch(harness.state.campaigns[0].id, {
+    platform: "GitHub",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(harness.fetchCalls, 1);
+  assert.equal(harness.commitCalls, 0);
+  assert.equal(harness.events.length, 0);
+});
+
 test("GitHub sourcing commits the exact live batch, activity, metrics, and event", async () => {
   const harness = createHarness();
   const campaign = harness.state.campaigns[0];

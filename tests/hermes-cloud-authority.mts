@@ -1,5 +1,6 @@
 import { mock } from "node:test";
 import { NextRequest } from "next/server";
+import { buildSeedState } from "../src/lib/seed";
 
 let pass = 0;
 let fail = 0;
@@ -36,6 +37,41 @@ const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
 const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const agentSpecId = "22222222-2222-4222-8222-222222222222";
 const agentRunId = "33333333-3333-4333-8333-333333333333";
+const sourcingSeed = buildSeedState();
+const sourcingCampaign = {
+  ...sourcingSeed.campaigns[0],
+  id: "campaign-1",
+  status: "Sourcing" as const,
+};
+const sourcingWorkspaceState = {
+  campaigns: [sourcingCampaign],
+  candidates: sourcingSeed.candidates.map((candidate) => ({
+    ...candidate,
+    campaignId: "unrelated-campaign",
+  })),
+  settings: {
+    ...sourcingSeed.settings,
+    llmProviders: [{
+      id: "provider-openai",
+      kind: "OpenAI",
+      label: "Approved OpenAI",
+      apiKeyId: "11111111-1111-4111-8111-111111111111",
+      enabled: true,
+      isDefault: true,
+    }],
+    savedModels: [{
+      id: "model-openai-sourcing",
+      providerId: "provider-openai",
+      modelName: "gpt-4o-mini",
+      label: "Approved sourcing model",
+      enabled: true,
+      defaultForTask: ["sourcing"],
+    }],
+    defaultModels: { sourcing: "model-openai-sourcing" },
+  },
+};
+
+mock.module("server-only", { namedExports: {} });
 
 const session = {
   auth: { getUser: async () => ({ data: { user: { id: "user-1" } }, error: null }) },
@@ -51,8 +87,10 @@ const session = {
       select: () => query,
       eq: () => query,
       maybeSingle: async () => ({
-        data: table === "agent_specs" && agentSpecAvailable && specReadAllowed
-          ? {
+        data: table === "workspace_state"
+          ? { state: sourcingWorkspaceState, updated_at: "2026-07-13T19:00:00.000Z" }
+          : table === "agent_specs" && agentSpecAvailable && specReadAllowed
+            ? {
               id: agentSpecId,
               workspace_id: workspaceId,
               owner_id: agentSpecOwnerId,
@@ -60,8 +98,8 @@ const session = {
               channels: agentSpecChannels,
               guardrails: agentSpecGuardrails,
               status: "active",
-            }
-          : null,
+              }
+            : null,
         error: null,
       }),
     };
@@ -129,10 +167,58 @@ mock.module(moduleUrl("src/lib/ai/tool-loop.ts"), {
       toolLoopCalls += 1;
       return { ok: true, text: '{"drafts":[]}' };
     },
-    runOpenAiWithTools: async () => {
+    runOpenAiWithTools: async (args: { servers?: Array<{ run?: (name: string, input: Record<string, unknown>) => Promise<unknown> }> }) => {
       toolLoopCalls += 1;
+      if (args.servers?.[0]?.run) {
+        await args.servers[0].run("search_candidates", {
+          platform: "GitHub",
+          query: sourcingCampaign.sourcingStrategy.githubQueries[0]?.query,
+          count: 1,
+        });
+      }
       return { ok: true, text: '{"drafts":[]}' };
     },
+  },
+});
+mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
+  namedExports: {
+    SOURCING_TOOL_DEFS: [{ name: "search_candidates", description: "test" }],
+    makeSourcingToolRunner: () => {
+      const executions: Array<Record<string, unknown>> = [];
+      return {
+        run: async (_name: string, input: { platform?: string; query?: string }) => {
+          executions.push({
+            platform: String(input.platform ?? ""),
+            query: String(input.query ?? ""),
+            ok: true,
+            candidateCount: 0,
+            skippedCount: 0,
+          });
+          return { ok: true, content: { found: [] } };
+        },
+        getFound: () => [],
+        getExecutions: () => executions,
+      };
+    },
+  },
+});
+mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
+  namedExports: {
+    beginSourcingRun: async () => ({
+      status: "claimed",
+      runId: "55555555-5555-4555-8555-555555555555",
+      roleFingerprint: "a".repeat(64),
+      lessonsEnabled: false,
+    }),
+    listPromotedSourcingLessons: async () => ({ status: "learning_disabled", lessons: [] }),
+    completeSourcingRun: async () => ({
+      status: "completed",
+      runId: "55555555-5555-4555-8555-555555555555",
+      queryCount: 1,
+      candidateCount: 0,
+      receipts: [],
+    }),
+    failSourcingRun: async () => true,
   },
 });
 mock.module(moduleUrl("src/lib/agents/graph.ts"), {
@@ -191,14 +277,15 @@ try {
   const sourcingRequest = () =>
     new NextRequest("http://localhost/api/sourcing-agent", {
       method: "POST",
-      headers: { "content-type": "application/json", "x-forwarded-for": crypto.randomUUID() },
+      headers: {
+        "content-type": "application/json",
+        origin: "http://localhost",
+        "x-forwarded-for": crypto.randomUUID(),
+        "idempotency-key": crypto.randomUUID(),
+      },
       body: JSON.stringify({
-        campaign,
-        existing: [],
+        campaignId: sourcingCampaign.id,
         count: 1,
-        provider: "openai",
-        apiKeyId: "11111111-1111-4111-8111-111111111111",
-        model: "gpt-4o-mini",
       }),
     });
   const agentRequest = (includeSpec = true) =>
@@ -269,10 +356,14 @@ try {
   vaultProvider = "OpenAI";
   resetCalls();
   const memberSourcing = await sourcingRoute.POST(sourcingRequest());
-  ok("member cannot run the live cloud sourcing agent", memberSourcing.status === 403);
+  const memberSourcingBody = (await memberSourcing.json()) as { ok?: boolean };
   ok(
-    "member sourcing denial happens before vault resolution or model egress",
-    resolverCalls.length === 0 && toolLoopCalls === 0 && upstreamCalls === 0,
+    "member with source permission can run server-configured cloud sourcing",
+    memberSourcing.status === 200 && memberSourcingBody.ok === true,
+  );
+  ok(
+    "member sourcing uses only the server-selected workspace key and model",
+    resolverCalls.some((call) => call.provider === "OpenAI") && toolLoopCalls === 1 && upstreamCalls === 0,
   );
 
   role = "admin";

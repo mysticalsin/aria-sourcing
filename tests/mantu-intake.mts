@@ -21,8 +21,8 @@ ok("required skills include Pricing", p.jobAnalysis.requiredSkills.some((s) => /
 ok("hiring manager = MARGIOTTA Lisa", /margiotta/i.test(p.sender.name));
 ok("min years experience = 5", p.jobAnalysis.minYearsExperience === 5);
 ok("employmentType = Contract (Consulting)", p.jobAnalysis.employmentType === "Contract");
-ok("currency = CAD (Montreal)", p.jobAnalysis.currency === "CAD");
-ok("location On-site", p.jobAnalysis.locationType === "On-site");
+ok("currency stays unknown when only Montreal is stated", p.jobAnalysis.currency === "");
+ok("location type stays unknown when no work arrangement is stated", p.jobAnalysis.locationType === "Unspecified");
 ok("offshore captured as nice-to-have", p.jobAnalysis.niceToHaveSkills.some((s) => /offshore/i.test(s)));
 ok("salary flagged missing", p.jobAnalysis.validationWarnings.some((w) => w.field === "salary"));
 

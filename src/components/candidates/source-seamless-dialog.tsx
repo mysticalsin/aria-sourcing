@@ -4,6 +4,7 @@ import * as React from "react";
 import { Button, Field, Input, Modal, useToast } from "@/components/ui";
 import { useActions, useApiKeys, useRole } from "@/lib/store";
 import { can } from "@/lib/rbac";
+import { experimentalPaidSourcingEnabled } from "@/lib/supabase/config";
 import { Search } from "lucide-react";
 
 function splitList(v: string): string[] {
@@ -40,7 +41,7 @@ export function SourceSeamlessButton({ campaignId, disabled }: { campaignId: str
   const [countries, setCountries] = React.useState("");
   const [companyDomains, setCompanyDomains] = React.useState("");
 
-  if (!can(role, "source")) return null;
+  if (!experimentalPaidSourcingEnabled || !can(role, "source")) return null;
   if (!apiKeys.some((k) => k.provider === "Seamless")) return null;
 
   function resetAndClose() {

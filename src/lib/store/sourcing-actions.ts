@@ -3,6 +3,7 @@ import { sourceCandidates } from "../mock-ai";
 import { dedupeCandidates } from "../rules";
 import { roleProfile } from "../roles";
 import { scoreCandidate } from "../scoring";
+import { evaluateNeedReadiness } from "../needs/readiness";
 import {
   mapApolloCandidates,
   mapGithubCandidates,
@@ -11,6 +12,7 @@ import {
 } from "../sourcing/candidate-mappers";
 import type { ApolloSearchProfile } from "../sourcing/apollo";
 import { GITHUB_USERNAME_RE, type GithubUser } from "../sourcing/github";
+import { sourcingAgentCampaignFingerprint } from "../sourcing/sourcing-agent-contract";
 import {
   ensureWebQueryScope,
   isWebSearchPlatform,
@@ -686,6 +688,10 @@ export function createSourcingActions({
     if (initialCampaign.status === "Paused") {
       return { ok: false, error: "Campaign is paused.", source: "paused" };
     }
+    if (!evaluateNeedReadiness(initialCampaign.jobAnalysis).ready) {
+      return invalidRequest("Complete and review the campaign brief before sourcing.");
+    }
+    const initialFingerprint = sourcingAgentCampaignFingerprint(initialCampaign);
 
     const requestedPlatform =
       opts?.platform ?? roleProfile(initialCampaign.jobAnalysis).platforms[0];
@@ -718,9 +724,10 @@ export function createSourcingActions({
     let query = "";
 
     if (requestedPlatform === "GitHub") {
-      const baseQuery =
-        initialCampaign.sourcingStrategy.githubQueries[0]?.query ??
-        `language:${(initialCampaign.jobAnalysis.requiredSkills[0] ?? "typescript").toLowerCase()}`;
+      const baseQuery = initialCampaign.sourcingStrategy.githubQueries[0]?.query.trim() ?? "";
+      if (!baseQuery) {
+        return invalidRequest("Add and review a GitHub sourcing query before sourcing.");
+      }
       query = `${baseQuery}${githubLocationQualifier(initialCampaign.jobAnalysis.location, baseQuery)}`;
       try {
         const response = await workspaceFetch("/api/source", {
@@ -824,6 +831,12 @@ export function createSourcingActions({
     if (campaign.status === "Paused") {
       return { ok: false, error: "Campaign is paused.", source: "paused" };
     }
+    if (
+      !evaluateNeedReadiness(campaign.jobAnalysis).ready ||
+      sourcingAgentCampaignFingerprint(campaign) !== initialFingerprint
+    ) {
+      return invalidRequest("Campaign authority changed during sourcing. Review the current brief and retry.");
+    }
     if (SYNTHETIC_PLATFORMS.has(requestedPlatform) && !syntheticSourcingAllowed()) {
       return invalidRequest(
         `${requestedPlatform} simulation is available only in demo environments.`,
@@ -860,7 +873,17 @@ export function createSourcingActions({
       );
     }
 
+    let authorized = false;
     const applied = commit((previous) => {
+      const currentCampaign = previous.campaigns.find((item) => item.id === campaignId);
+      if (
+        !currentCampaign ||
+        !evaluateNeedReadiness(currentCampaign.jobAnalysis).ready ||
+        sourcingAgentCampaignFingerprint(currentCampaign) !== initialFingerprint
+      ) {
+        return previous;
+      }
+      authorized = true;
       let next: HermesState = {
         ...previous,
         candidates: [...result.accepted, ...previous.candidates],
@@ -891,7 +914,7 @@ export function createSourcingActions({
         campaignId,
       );
     });
-    if (!applied) {
+    if (!applied || !authorized) {
       return {
         ok: false,
         error: "Workspace changed before the sourced candidates could be saved. Retry sourcing.",

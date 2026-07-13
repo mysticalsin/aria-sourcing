@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "workspaceFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "lessons": [
+    {
+      "lessonId": "018f47d2-9d32-7a54-8f21-4aa937c604e9",
+      "authorityVersion": 1,
+      "roleFingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "queryFingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "sourcePlatform": "github",
+      "strategy": "language",
+      "outcome": "useful",
+      "promotionStatus": "draft",
+      "evidence": {
+        "independentRuns": 2,
+        "independentReviewerCount": 1,
+        "resultCount": 5,
+        "reviewedCount": 2,
+        "positiveCount": 2,
+        "negativeCount": 0
+      }
+    }
+  ]
+}

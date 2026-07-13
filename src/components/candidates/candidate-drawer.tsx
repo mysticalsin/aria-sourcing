@@ -15,6 +15,7 @@ import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
 import { useActions, useCampaign, useCandidate, useOutreach, useSettings } from "@/lib/store";
+import { experimentalPaidSourcingEnabled } from "@/lib/supabase/config";
 import {
   downloadText,
   formatTimeAgo,
@@ -844,7 +845,7 @@ export function CandidateDrawer({
                   {enrichingApollo ? "Preparing…" : "Enrich via Apollo"}
                 </Button>
               )}
-              {c.sourcePlatform === "Seamless" && !c.email && (
+              {experimentalPaidSourcingEnabled && c.sourcePlatform === "Seamless" && !c.email && (
                 <Button
                   variant="outline"
                   size="sm"

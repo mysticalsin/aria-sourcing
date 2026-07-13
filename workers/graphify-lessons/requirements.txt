@@ -1,0 +1,5 @@
+# Graphify is pinned to the exact user-selected upstream commit. The worker
+# imports only build, cluster, score, and JSON export APIs. Mandatory upstream
+# dependencies are installed from the hash-locked requirements.lock file;
+# optional semantic LLM, MCP, database, browser, and media extras are omitted.
+graphifyy @ https://github.com/Graphify-Labs/graphify/archive/94d3099540550d58dd121ec3e67cf93e80364079.tar.gz

@@ -31,6 +31,14 @@ export const SUPABASE_AUTH_COOKIE_NAME = "sb-auth-token";
 export const isProduction = process.env.NODE_ENV === "production";
 
 /**
+ * Sillage and Seamless do not yet have the server-owned receipt authority used
+ * by Apollo. They remain available only for explicit local development and
+ * can never be enabled in a production build.
+ */
+export const experimentalPaidSourcingEnabled =
+  !isProduction && process.env.NEXT_PUBLIC_ENABLE_EXPERIMENTAL_PAID_SOURCING === "true";
+
+/**
  * Fail-closed guard. In production the app MUST run in LIVE mode: if Supabase env
  * is missing, the open DEMO fallbacks (no login gate, every caller treated as
  * admin) would expose the entire app. Throwing here forces request-scoped server

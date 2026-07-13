@@ -7,7 +7,15 @@ import type {
   Urgency,
   ValidationWarning,
 } from "@/lib/types";
-import { COMPANY_STAGES, INTAKE_INTENTS, SENIORITY_LEVELS, URGENCY_LEVELS } from "@/lib/types";
+import {
+  COMPANY_STAGES,
+  EMPLOYMENT_TYPES,
+  INTAKE_INTENTS,
+  LOCATION_TYPES,
+  SENIORITY_LEVELS,
+  URGENCY_LEVELS,
+} from "@/lib/types";
+import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import { buildClarificationEmail, parseEmailAndJD, type ParsedIntake } from "@/lib/mock-ai";
 import { resolveAiProvider } from "./provider";
 import { hermesAvailable, hermesGenerate } from "./hermes";
@@ -26,9 +34,6 @@ import { hermesAvailable, hermesGenerate } from "./hermes";
    sends, or contacts anything; the intake page still requires an explicit
    "Create campaign" click from the human.
    ========================================================================== */
-
-const LOCATION_TYPES: JobAnalysis["locationType"][] = ["Remote", "Hybrid", "On-site"];
-const EMPLOYMENT_TYPES: JobAnalysis["employmentType"][] = ["Full-time", "Contract", "Part-time"];
 
 function pickEnum<T extends string>(value: unknown, allowed: readonly T[]): T | undefined {
   return typeof value === "string" && (allowed as readonly string[]).includes(value) ? (value as T) : undefined;
@@ -100,8 +105,8 @@ export function buildIntakeParsePrompt(text: string): string {
         title: "string",
         department: "string",
         seniority: "Junior | Mid | Senior | Staff | Principal | Lead | Director",
-        employmentType: "Full-time | Contract | Part-time",
-        locationType: "Remote | Hybrid | On-site",
+    employmentType: "Full-time | Contract | Part-time",
+    locationType: "Remote | Hybrid | On-site",
         regions: ["string"],
         timezone: "string",
         salaryMin: "number|null",
@@ -176,19 +181,113 @@ export function parseHermesIntakeJson(text: string): LiveIntakeFields | null {
   };
 }
 
+function claimAppearsInSource(value: string | undefined, source: string): boolean {
+  if (!value) return false;
+  const raw = value.trim().toLowerCase();
+  if (!raw) return false;
+  if (source.toLowerCase().includes(raw)) return true;
+  const normalize = (text: string) =>
+    text.toLowerCase().replace(/[^a-z0-9+#.]+/g, " ").trim().replace(/\s+/g, " ");
+  return normalize(source).includes(normalize(value));
+}
+
+function numberAppearsInSource(value: number | null | undefined, source: string): boolean {
+  if (value == null) return false;
+  if (source.includes(String(value))) return true;
+  return value % 1_000 === 0 && new RegExp(`\\b${value / 1_000}\\s*k\\b`, "i").test(source);
+}
+
+export function groundLiveIntakeFields(
+  fields: LiveIntakeFields,
+  source: string,
+): LiveIntakeFields {
+  const supported = (value: string | undefined) =>
+    value && claimAppearsInSource(value, source) ? value : undefined;
+  const supportedList = (values: string[] | undefined) =>
+    values?.filter((value) => claimAppearsInSource(value, source));
+  const sourceLower = source.toLowerCase();
+  const seniority = fields.seniority &&
+    (claimAppearsInSource(fields.seniority, source) ||
+      (fields.seniority === "Mid" && /\bmid[- ]level\b|\bintermediate\b/i.test(source)))
+      ? fields.seniority
+      : undefined;
+  const employmentType = fields.employmentType &&
+    ((fields.employmentType === "Contract" && /\bcontract|contractor|freelance|day rate\b/i.test(source)) ||
+      (fields.employmentType === "Part-time" && /\bpart[- ]time\b/i.test(source)) ||
+      (fields.employmentType === "Full-time" && /\bfull[- ]time\b|\bpermanent\b/i.test(source)))
+      ? fields.employmentType
+      : undefined;
+  const locationType = fields.locationType &&
+    ((fields.locationType === "Remote" && /\bremote\b|work from home/i.test(source)) ||
+      (fields.locationType === "Hybrid" && /\bhybrid\b/i.test(source)) ||
+      (fields.locationType === "On-site" && /\bon-?site\b|in office|in-person/i.test(source)))
+      ? fields.locationType
+      : undefined;
+  const companyStageTarget = fields.companyStageTarget?.filter((stage) => {
+    if (stage === "Series C+") return /series\s*[c-z]/i.test(source);
+    return claimAppearsInSource(stage, source);
+  });
+
+  return {
+    senderName: supported(fields.senderName),
+    senderEmail: supported(fields.senderEmail),
+    intent: undefined,
+    urgency: undefined,
+    title: supported(fields.title),
+    department: supported(fields.department),
+    seniority,
+    employmentType,
+    locationType,
+    regions: supportedList(fields.regions),
+    timezone: supported(fields.timezone),
+    salaryMin: numberAppearsInSource(fields.salaryMin, source) ? fields.salaryMin : undefined,
+    salaryMax: numberAppearsInSource(fields.salaryMax, source) ? fields.salaryMax : undefined,
+    currency:
+      supported(fields.currency) ??
+      (fields.currency === "EUR" && source.includes("€") ? "EUR" : undefined) ??
+      (fields.currency === "GBP" && source.includes("£") ? "GBP" : undefined) ??
+      (fields.currency === "USD" && source.includes("$") ? "USD" : undefined),
+    equity: fields.equity && /equity|options|esop|stock/i.test(sourceLower) ? true : undefined,
+    requiredSkills: supportedList(fields.requiredSkills),
+    niceToHaveSkills: supportedList(fields.niceToHaveSkills),
+    minYearsExperience: numberAppearsInSource(fields.minYearsExperience, source)
+      ? fields.minYearsExperience
+      : undefined,
+    maxYearsExperience: numberAppearsInSource(fields.maxYearsExperience, source)
+      ? fields.maxYearsExperience
+      : undefined,
+    education: supported(fields.education),
+    industryExperience: supportedList(fields.industryExperience),
+    companyStageTarget,
+    teamSize: supported(fields.teamSize),
+    reportingTo: supported(fields.reportingTo),
+    language: supported(fields.language),
+  };
+}
+
 /** Exported so callers (e.g. the intake page) can recompute warnings live from
  *  edited job-analysis state instead of relying on the frozen parse-time list. */
 export function deriveValidationWarnings(
-  job: Pick<JobAnalysis, "salaryMin" | "salaryMax" | "requiredSkills" | "minYearsExperience">,
+  job: Pick<
+    JobAnalysis,
+    | "title"
+    | "seniority"
+    | "employmentType"
+    | "locationType"
+    | "salaryMin"
+    | "salaryMax"
+    | "requiredSkills"
+    | "minYearsExperience"
+  >,
 ): ValidationWarning[] {
-  const warnings: ValidationWarning[] = [];
+  const warnings: ValidationWarning[] = [...evaluateNeedReadiness(job).issues];
   if (job.salaryMin == null && job.salaryMax == null)
     warnings.push({ field: "salary", severity: "warning", message: "No salary range provided." });
-  if (job.requiredSkills.length < 3)
+  if (job.requiredSkills.length > 0 && job.requiredSkills.length < 3)
     warnings.push({
       field: "requiredSkills",
-      severity: "critical",
-      message: "Fewer than 3 required skills detected. JD may be vague.",
+      severity: "warning",
+      message: "Fewer than 3 required skills were stated. Confirm whether the brief is complete.",
     });
   if (job.minYearsExperience == null)
     warnings.push({ field: "experience", severity: "warning", message: "No years-of-experience band specified." });
@@ -210,7 +309,12 @@ export async function parseIntakeLive(
   const mock = parseEmailAndJD(input);
 
   const aiCfg = resolveAiProvider(settings, "chat");
-  if (!aiCfg && !(settings.hermesLiveMode && hermesAvailable(settings))) return mock;
+  if (!aiCfg && !(settings.hermesLiveMode && hermesAvailable(settings))) {
+    return {
+      ...mock,
+      providerWarning: "No cloud parser is configured. Only facts present in the submitted brief were extracted.",
+    };
+  }
 
   const prompt = buildIntakeParsePrompt(`${input.email}\n${input.jd ?? ""}`);
 
@@ -230,12 +334,26 @@ export async function parseIntakeLive(
   try {
     result = await hermesGenerate(genInput);
   } catch {
-    return mock;
+    return {
+      ...mock,
+      providerWarning: "The cloud parser could not be reached. Only facts present in the submitted brief were extracted.",
+    };
   }
-  if (!result.ok || !result.text) return mock;
+  if (!result.ok || !result.text) {
+    return {
+      ...mock,
+      providerWarning: "The cloud parser did not complete. Only facts present in the submitted brief were extracted.",
+    };
+  }
 
-  const fields = parseHermesIntakeJson(result.text);
-  if (!fields) return mock;
+  const parsedFields = parseHermesIntakeJson(result.text);
+  if (!parsedFields) {
+    return {
+      ...mock,
+      providerWarning: "The cloud parser returned an invalid result. Only facts present in the submitted brief were extracted.",
+    };
+  }
+  const fields = groundLiveIntakeFields(parsedFields, `${input.email}\n${input.jd ?? ""}`);
 
   const jobFields = {
     title: fields.title ?? mock.jobAnalysis.title,
@@ -286,5 +404,6 @@ export async function parseIntakeLive(
       location: fields.locationType ? 0.9 : mock.confidence.location,
       seniority: fields.seniority ? 0.9 : mock.confidence.seniority,
     },
+    extractionMode: "cloud",
   };
 }

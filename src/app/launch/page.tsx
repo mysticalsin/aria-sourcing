@@ -16,6 +16,9 @@ import {
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { WarRoomBoard, type WarRoomLane } from "@/components/launch/war-room-board";
 import { parseIntakeLive } from "@/lib/ai/intake";
+import { evaluateNeedReadiness } from "@/lib/needs/readiness";
+import type { ParsedIntake } from "@/lib/mock-ai";
+import { SAMPLE_LAUNCH_BRIEF } from "@/lib/launch/sample-brief";
 import { useActions, useHydrated, useSettings } from "@/lib/store";
 import {
   summarizeCampaignLaunch,
@@ -56,21 +59,6 @@ function splitRoleBlocks(raw: string): string[] {
   return blocks.map((b) => b.trim()).filter(Boolean);
 }
 
-const SAMPLE_BRIEF = [
-  `Title: Senior Backend Engineer
-We're growing the platform team and adding a Senior Backend Engineer, fully remote (EU timezone). 5+ years with Go, Kubernetes and PostgreSQL required; Kafka is a nice-to-have. Salary 90k-125k EUR. Team of 8 engineers, reporting to the Engineering Manager.`,
-  `Title: Frontend Engineer
-Expanding the product team with a Frontend Engineer for our React/TypeScript app, hybrid (Germany). 3+ years with React, TypeScript and Next.js. GraphQL a plus. Salary 70k-95k EUR.`,
-  `Title: Data Engineer
-Building out the data platform: adding a Data Engineer with Python, Spark and Airflow experience, remote (EU). 4+ years, dbt and Snowflake nice to have. Salary 85k-110k EUR.`,
-  `Title: Product Designer
-Growing design with a Product Designer for our design systems, hybrid (UK). 4+ years, Figma and Accessibility required. Salary 65k-85k GBP.`,
-  `Title: Account Executive
-Adding an Account Executive to close new logos, remote (US). 3+ years selling SaaS, CRM and negotiation skills required. Salary 80k-100k USD plus commission.`,
-  `Title: Product Manager
-Expanding product with a Product Manager for the platform line, hybrid (EU). 5+ years shipping B2B SaaS. Salary 90k-115k EUR.`,
-].join("\n---\n");
-
 /** Sourcing waves per launched role. Local demo mode uses deterministic Talent
  *  Pool profiles; live workspaces use the campaign's primary real source. */
 const SOURCING_WAVES = 5;
@@ -97,7 +85,7 @@ export default function LaunchPage() {
   const blocks = React.useMemo(() => splitRoleBlocks(raw), [raw]);
 
   function loadSample() {
-    setRaw(SAMPLE_BRIEF);
+    setRaw(SAMPLE_LAUNCH_BRIEF);
     toast({
       title: "Sample brief loaded",
       description: "6 roles, separated by ---, ready to launch.",
@@ -111,14 +99,11 @@ export default function LaunchPage() {
 
   async function launchRole(
     seq: number,
-    block: string,
+    parsed: ParsedIntake,
   ): Promise<LaunchRoleResult | null> {
-    const parsed = await parseIntakeLive(settings, { email: block });
-    if (launchSeqRef.current !== seq) return null; // superseded by a newer launch
-
     const campaign = actions.createCampaignFromAnalysis(parsed.jobAnalysis, {
-      hiringManager: parsed.sender.name || "Hiring Manager",
-      hiringManagerEmail: parsed.sender.email || "unknown@company.example",
+      hiringManager: parsed.sender.name,
+      hiringManagerEmail: parsed.sender.email,
     });
     if (!campaign) return { created: false, sourcingComplete: false };
     if (launchSeqRef.current !== seq) return null;
@@ -158,7 +143,33 @@ export default function LaunchPage() {
     setLaunching(true);
     setLanes([]);
 
-    const results = await Promise.all(roleBlocks.map((block) => launchRole(seq, block)));
+    const parsedRoles = await Promise.all(
+      roleBlocks.map((block) => parseIntakeLive(settings, { email: block })),
+    );
+    if (launchSeqRef.current !== seq) return;
+    const incomplete = parsedRoles.flatMap((parsed, index) => {
+      const readiness = evaluateNeedReadiness(parsed.jobAnalysis);
+      return readiness.ready
+        ? []
+        : [{
+            label: parsed.jobAnalysis.title || `Role ${index + 1}`,
+            issues: readiness.issues.map((issue) => issue.message),
+          }];
+    });
+    if (incomplete.length > 0) {
+      setLaunching(false);
+      toast({
+        title: "Complete every role before launch",
+        description: incomplete
+          .slice(0, 3)
+          .map((item) => `${item.label}: ${item.issues.join(" ")}`)
+          .join(" "),
+        variant: "warning",
+      });
+      return;
+    }
+
+    const results = await Promise.all(parsedRoles.map((parsed) => launchRole(seq, parsed)));
 
     if (launchSeqRef.current === seq) {
       setLaunching(false);

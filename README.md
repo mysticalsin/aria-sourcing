@@ -17,7 +17,7 @@ Verified from `package.json` on 2026-07-13:
 | Data/auth | Supabase Postgres, Supabase Auth, RLS tenancy, service-role server APIs |
 | UI/runtime | Tailwind, Recharts, lucide-react, Framer Motion, Three.js/R3F |
 | Node | `22.x` |
-| Verification | `npm test` runs 146 chained checks: 28 `pretest` commands plus 118 test commands |
+| Verification | `npm test` runs 156 chained checks: 34 `pretest` commands plus 122 test commands |
 | Quality gates | `npm run typecheck`, `npm run lint`, `npm test`, `npm run build:isolated` for this OneDrive checkout |
 
 ## Shipped Surfaces
@@ -25,6 +25,7 @@ Verified from `package.json` on 2026-07-13:
 | Surface | Where it lives | Status |
 |---|---|---|
 | Sourcing and campaign flow | `src/app/intake`, `src/app/campaigns`, `src/app/api/source`, `src/app/api/sourcing-agent` | Built |
+| Review-gated sourcing lessons | `supabase/migrations/0027_sourcing_learning_authority.sql`, `workers/graphify-lessons`, `docs/operations/SOURCING_LEARNING.md` | Built in source; database migration, digest-pinned worker image, and human review operations required |
 | Outreach guardrails | `src/app/outreach`, `src/lib/dispatch-outbound.ts`, `src/lib/gate.ts`, `src/lib/outreach-*` | Built |
 | Candidate disclosure security layer | `src/lib/agent-disclosure-policy.ts`, `tests/agent-disclosure-policy.mts`, `tests/salary-boundary-adversarial.mts` | Built |
 | Public careers intake | `src/app/careers`, `src/app/api/careers/route.ts`, `src/lib/careers*` | Built |

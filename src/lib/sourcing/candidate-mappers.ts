@@ -5,6 +5,7 @@ import type { GithubUser } from "@/lib/sourcing/github";
 import type { SeamlessContact } from "@/lib/sourcing/seamless";
 import type { WebLead, WebSearchPlatform } from "@/lib/sourcing/web-leads";
 import type { Campaign, Candidate, ScoringWeights } from "@/lib/types";
+import type { CandidateDedupeIdentity } from "@/lib/rules";
 import { genId, initialsFrom } from "@/lib/utils";
 
 export interface SourceResult {
@@ -12,11 +13,18 @@ export interface SourceResult {
   skipped: { name: string; reason: string }[];
 }
 
+export type CandidateMappingCampaign = Pick<
+  Campaign,
+  "id" | "jobAnalysis" | "scoringWeights"
+> & {
+  sourcingStrategy: Pick<Campaign["sourcingStrategy"], "excludedCompanies">;
+};
+
 export function mapGithubCandidates(
   users: GithubUser[],
-  campaign: Campaign,
+  campaign: CandidateMappingCampaign,
   query: string,
-  existing: Candidate[],
+  existing: CandidateDedupeIdentity[],
   weights: ScoringWeights = campaign.scoringWeights,
 ): SourceResult {
   const jd = campaign.jobAnalysis;
@@ -71,9 +79,9 @@ export function mapGithubCandidates(
 
 export function mapApolloCandidates(
   people: ApolloSearchProfile[],
-  campaign: Campaign,
+  campaign: CandidateMappingCampaign,
   query: string,
-  existing: Candidate[],
+  existing: CandidateDedupeIdentity[],
   weights: ScoringWeights = campaign.scoringWeights,
 ): SourceResult {
   const jd = campaign.jobAnalysis;
@@ -130,9 +138,9 @@ export function mapApolloCandidates(
 
 export function mapSeamlessCandidates(
   contacts: SeamlessContact[],
-  campaign: Campaign,
+  campaign: CandidateMappingCampaign,
   query: string,
-  existing: Candidate[],
+  existing: CandidateDedupeIdentity[],
   weights: ScoringWeights = campaign.scoringWeights,
 ): SourceResult {
   const jd = campaign.jobAnalysis;
@@ -189,10 +197,10 @@ export function mapSeamlessCandidates(
 
 export function mapWebSearchCandidates(
   leads: WebLead[],
-  campaign: Campaign,
+  campaign: CandidateMappingCampaign,
   query: string,
   platform: WebSearchPlatform,
-  existing: Candidate[],
+  existing: CandidateDedupeIdentity[],
   weights: ScoringWeights = campaign.scoringWeights,
 ): SourceResult {
   const jd = campaign.jobAnalysis;
@@ -245,8 +253,8 @@ export function mapWebSearchCandidates(
 
 function scoreAndDedupe(
   raw: Candidate[],
-  campaign: Campaign,
-  existing: Candidate[],
+  campaign: CandidateMappingCampaign,
+  existing: CandidateDedupeIdentity[],
   weights: ScoringWeights,
 ): SourceResult {
   const { accepted, skipped } = dedupeCandidates(raw, existing, {

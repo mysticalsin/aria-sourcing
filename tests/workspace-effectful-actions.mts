@@ -24,7 +24,7 @@ function actionBody(name: string, nextName: string): string {
 }
 
 function guardedBefore(body: string, effectPattern: RegExp): boolean {
-  const guard = body.search(/if \(!workspaceEffectAllowed\(\)\)/);
+  const guard = body.search(/if \(!workspaceEffectAllowed\(\)[^\n{]*\)/);
   const effect = body.search(effectPattern);
   return guard >= 0 && effect > guard;
 }

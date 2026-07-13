@@ -56,6 +56,10 @@ import {
   useReportForCampaign,
 } from "@/lib/store";
 import { campaignHealth, nextActionForCampaign } from "@/lib/rules";
+import type {
+  SourcingFeedbackReceipt,
+  SourcingFeedbackVerdict,
+} from "@/lib/store/contracts";
 import {
   copyToClipboard,
   formatNumber,
@@ -76,6 +80,16 @@ import {
   type ScoringWeights,
   type ValidationWarning,
 } from "@/lib/types";
+
+function mergeSourcingFeedbackReceipts(
+  ...groups: SourcingFeedbackReceipt[][]
+): SourcingFeedbackReceipt[] {
+  const merged = new Map<string, SourcingFeedbackReceipt>();
+  for (const group of groups) {
+    for (const receipt of group) merged.set(receipt.receiptId, receipt);
+  }
+  return [...merged.values()];
+}
 import {
   ArrowLeft,
   Banknote,
@@ -325,6 +339,12 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const [stageFilter, setStageFilter] = React.useState("all");
   const [scoreFilter, setScoreFilter] = React.useState("all");
   const [agentRunning, setAgentRunning] = React.useState(false);
+  const [feedbackState, setFeedbackState] = React.useState<{
+    campaignId: string;
+    receipts: SourcingFeedbackReceipt[];
+  }>({ campaignId: id, receipts: [] });
+  const feedbackReceipts = feedbackState.campaignId === id ? feedbackState.receipts : [];
+  const [feedbackSubmitting, setFeedbackSubmitting] = React.useState<Set<string>>(new Set());
   const [sourcing, setSourcing] = React.useState(false);
   // The just-sourced batch, staged for the streaming reveal below — purely a
   // display buffer; the store already committed these candidates for real.
@@ -339,6 +359,28 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   // "Run Aria" click so each click starts a genuinely fresh, replayable run.
   const [runOpen, setRunOpen] = React.useState(false);
   const [runToken, setRunToken] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!hydrated) return;
+    let cancelled = false;
+    setFeedbackState((current) =>
+      current.campaignId === id ? current : { campaignId: id, receipts: [] },
+    );
+    void actions.listPendingSourcingFeedback(id).then((receipts) => {
+      if (cancelled || receipts === null) return;
+      setFeedbackState((current) =>
+        current.campaignId === id
+          ? {
+              campaignId: id,
+              receipts: mergeSourcingFeedbackReceipts(current.receipts, receipts),
+            }
+          : current,
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [actions, hydrated, id]);
 
   if (!hydrated) {
     return (
@@ -443,6 +485,16 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     setSourceBatchKey((k) => k + 1);
     if (res.accepted.length > 0) setTab("candidates");
     const isLive = res.source === "github" || res.source === "web";
+    if (res.accepted.length === 0) {
+      toast({
+        title: "No candidates were added",
+        description: res.skipped.length
+          ? `${res.skipped.length} real results were excluded or already present.`
+          : "The real search completed without a matching result.",
+        variant: "info",
+      });
+      return;
+    }
     toast({
       title: `Sourced ${res.accepted.length} candidate${res.accepted.length === 1 ? "" : "s"}${isLive ? " (live)" : ""}`,
       description: res.skipped.length
@@ -455,16 +507,82 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   };
 
   const handleRunAgent = async () => {
+    const campaignId = c.id;
     setAgentRunning(true);
-    const res = await actions.runSourcingAgent(c.id);
+    const res = await actions.runSourcingAgent(campaignId);
     setAgentRunning(false);
     if (!res.ok) {
       toast({ title: "Sourcing agent didn't run", description: res.error, variant: "error" });
       return;
     }
+    setFeedbackState((current) =>
+      current.campaignId === campaignId
+        ? {
+            campaignId,
+            receipts: mergeSourcingFeedbackReceipts(
+              current.receipts,
+              res.feedbackReceipts ?? [],
+            ),
+          }
+        : current,
+    );
+    if (res.added === 0) {
+      toast({
+        title: "No candidates were added",
+        description:
+          res.mode === "cloud"
+            ? "The real provider search completed, but every result was empty, excluded, or already present."
+            : "The reviewed GitHub queries completed, but every result was empty, excluded, or already present. No cloud model ran.",
+        variant: "info",
+      });
+      return;
+    }
     toast({
-      title: `Sourcing agent found ${res.added} candidate${res.added === 1 ? "" : "s"}`,
-      description: "Real search, real scoring, drafted outreach: review before sending.",
+      title:
+        res.mode === "cloud"
+          ? `Cloud sourcing agent found ${res.added} candidate${res.added === 1 ? "" : "s"}`
+          : `GitHub search found ${res.added} candidate${res.added === 1 ? "" : "s"}`,
+      description:
+        res.mode === "cloud"
+          ? "Real provider search and cloud-assisted drafts are ready for human review."
+          : "Real GitHub results and locally generated drafts are ready for human review. No cloud model ran.",
+      variant: "success",
+    });
+  };
+
+  const handleSourcingFeedback = async (
+    receipt: SourcingFeedbackReceipt,
+    verdict: SourcingFeedbackVerdict,
+  ) => {
+    if (feedbackSubmitting.has(receipt.receiptId)) return;
+    setFeedbackSubmitting((current) => new Set(current).add(receipt.receiptId));
+    const recorded = await actions.recordSourcingFeedback(receipt.receiptId, verdict);
+    setFeedbackSubmitting((current) => {
+      const next = new Set(current);
+      next.delete(receipt.receiptId);
+      return next;
+    });
+    if (!recorded) {
+      toast({
+        title: "Feedback was not saved",
+        description: "The learning receipt is unavailable or was already reviewed differently.",
+        variant: "error",
+      });
+      return;
+    }
+    setFeedbackState((current) =>
+      current.campaignId === c.id
+        ? {
+            campaignId: c.id,
+            receipts: current.receipts.filter(
+              (item) => item.receiptId !== receipt.receiptId,
+            ),
+          }
+        : current,
+    );
+    toast({
+      title: "Sourcing feedback saved",
+      description: "This aggregate result can inform a future human-reviewed sourcing lesson.",
       variant: "success",
     });
   };
@@ -770,6 +888,60 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           <span className="font-semibold text-ink">{nextAction}</span>
         </div>
       </Card>
+
+      {feedbackReceipts.length > 0 && (
+        <Card className="mb-6" aria-label="Sourcing lesson feedback">
+          <CardHeader>
+            <Eyebrow>Private role learning</Eyebrow>
+            <CardTitle className="mt-1">Were these real searches useful?</CardTitle>
+          </CardHeader>
+          <CardBody className="space-y-3">
+            <p className="text-sm text-muted">
+              Feedback stores aggregate query outcomes only. It never sends candidate profiles to Graphify,
+              and no lesson can go live without a separate admin review.
+            </p>
+            {feedbackReceipts.map((receipt) => {
+              const submitting = feedbackSubmitting.has(receipt.receiptId);
+              return (
+                <div
+                  key={receipt.receiptId}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line p-3"
+                >
+                  <p className="text-sm font-medium text-ink">
+                    {receipt.platform}: {receipt.candidateCount} real candidate{receipt.candidateCount === 1 ? "" : "s"}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={submitting}
+                      onClick={() => void handleSourcingFeedback(receipt, "useful")}
+                    >
+                      Useful
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={submitting}
+                      onClick={() => void handleSourcingFeedback(receipt, "dead_end")}
+                    >
+                      Dead end
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={submitting}
+                      onClick={() => void handleSourcingFeedback(receipt, "corrected")}
+                    >
+                      Needs correction
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </CardBody>
+        </Card>
+      )}
 
       {runOpen && (
         <AgentRunStream

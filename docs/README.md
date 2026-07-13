@@ -14,6 +14,7 @@ the same authority.
 | [`docs/API_DESIGN.md`](API_DESIGN.md) | Internal API versioning, typed errors, paid-action safety, and contract-test policy | Changing a server route |
 | [`docs/api/openapi.yaml`](api/openapi.yaml) | Machine-readable contract for covered internal routes | Implementing or consuming a contracted route |
 | [`docs/operations/APOLLO_AUTHORITY_RETENTION.md`](operations/APOLLO_AUTHORITY_RETENTION.md) | Apollo receipt retention, Fly cleanup monitoring, erasure, and evidence | Operating candidate-data retention controls |
+| [`docs/operations/SOURCING_LEARNING.md`](operations/SOURCING_LEARNING.md) | Evidence-grounded sourcing, Graphify aggregate analysis, human promotion, kill switch, and recovery | Operating or auditing adaptive sourcing |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Change workflow, architecture rules, review, and completion evidence | Preparing a code change |
 | [`SECURITY.md`](../SECURITY.md) | Private reporting, credential response, and security invariants | Reporting or reviewing a security issue |
 | [`docs/operations/FLY_SIZING.md`](operations/FLY_SIZING.md) | Source-derived Fly machine configuration and evidence needed for tuning | Reviewing performance or topology |

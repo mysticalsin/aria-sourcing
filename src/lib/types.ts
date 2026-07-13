@@ -106,6 +106,7 @@ export const ACTIVITY_TYPES = [
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
 export const SENIORITY_LEVELS = [
+  "Unspecified",
   "Junior",
   "Mid",
   "Senior",
@@ -115,6 +116,17 @@ export const SENIORITY_LEVELS = [
   "Director",
 ] as const;
 export type Seniority = (typeof SENIORITY_LEVELS)[number];
+
+export const EMPLOYMENT_TYPES = [
+  "Unspecified",
+  "Full-time",
+  "Contract",
+  "Part-time",
+] as const;
+export type EmploymentType = (typeof EMPLOYMENT_TYPES)[number];
+
+export const LOCATION_TYPES = ["Unspecified", "Remote", "Hybrid", "On-site"] as const;
+export type LocationType = (typeof LOCATION_TYPES)[number];
 
 export const COMPANY_STAGES = [
   "Seed",
@@ -170,8 +182,8 @@ export interface JobAnalysis {
   title: string;
   department: string;
   seniority: Seniority;
-  employmentType: "Full-time" | "Contract" | "Part-time";
-  locationType: "Remote" | "Hybrid" | "On-site";
+  employmentType: EmploymentType;
+  locationType: LocationType;
   /** Concrete place parsed from the brief, e.g. "London". Empty/absent when unknown. */
   location?: string;
   regions: string[];

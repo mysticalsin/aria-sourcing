@@ -521,7 +521,7 @@ All checks must pass before a production deploy is triggered. Block the deploy i
 # From the repo root:
 npm run typecheck       # tsc --noEmit; must exit 0
 npm run lint            # next lint; must be "No ESLint warnings or errors."
-npm run test            # 28 pretest + 118 test commands; all must pass
+npm run test            # 34 pretest + 122 test commands; all must pass
 npm run test:security   # security-specific subset (faster); must be 0 failures
 npm run build           # must complete without error in CI or an unsynced checkout
 npm run build:isolated  # required for this OneDrive-synced checkout
@@ -583,6 +583,7 @@ supabase db push
 # 0024_cross_channel_claim_serialization.sql → shared per-seat cap lock across email and WhatsApp claims
 # 0025_agent_memory_authority.sql → exact owner/spec memory authority, receipts, and legacy-memory quarantine
 # 0026_apollo_enrichment_authority.sql → exact paid-enrichment authority, quota, reconciliation, retention, and erasure
+# 0027_sourcing_learning_authority.sql → sourcing run ledger, feedback receipts, aggregate Graphify artifacts, human lesson review, quota, retention, and kill switch
 ```
 
 **IMPORTANT:** RLS must be enabled on every table listed above. Verify after each migration:
@@ -600,7 +601,12 @@ WHERE schemaname = 'public'
                     'whatsapp_templates','whatsapp_conversation_windows',
                     'outbound_content_cache','whatsapp_delivery_events',
                     'databricks_connections','databricks_connection_events',
-                    'dust_connections','dust_connection_events');
+                    'dust_connections','dust_connection_events',
+                    'sourcing_learning_secrets','sourcing_learning_controls',
+                    'sourcing_runs','sourcing_run_quota','sourcing_query_receipts',
+                    'sourcing_query_feedback','sourcing_graphify_exports',
+                    'sourcing_lessons','sourcing_lesson_evidence',
+                    'sourcing_lesson_reviews');
 -- Every row must show rowsecurity = true
 ```
 
@@ -619,7 +625,14 @@ WHERE routine_schema = 'public'
     'audit_databricks_connection_authority',
     'strip_legacy_databricks_authority',
     'stamp_dust_connection_authority', 'audit_dust_connection_authority',
-    'strip_legacy_dust_authority'
+    'strip_legacy_dust_authority',
+    'begin_sourcing_run', 'complete_sourcing_run', 'fail_sourcing_run',
+    'record_sourcing_query_feedback', 'list_pending_sourcing_feedback',
+    'list_promoted_sourcing_lessons',
+    'export_graphify_sourcing_lessons', 'complete_graphify_sourcing_export',
+    'attach_graphify_sourcing_lesson',
+    'review_sourcing_lesson', 'configure_sourcing_learning',
+    'cleanup_sourcing_learning_authority'
   );
 -- Must return every named routine.
 ```
@@ -688,6 +701,10 @@ Each server contributes at most 16 provider-safe tools, each model request sees
 at most 32 tools, and a loop may execute at most 12 calls within one 30-second
 default deadline. External descriptions and results are size-capped and labeled
 as untrusted data. The label is model context, not a security boundary.
+
+Adaptive sourcing operations, including the digest-pinned Graphify worker,
+manual promotion command, kill switch, and evidence checks, are documented in
+[`docs/operations/SOURCING_LEARNING.md`](../docs/operations/SOURCING_LEARNING.md).
 
 Verify all variables are visible in Vercel before continuing:
 

@@ -24,7 +24,10 @@ function ok(name: string, cond: boolean) {
 const parsed = parseEmailAndJD({ email: SAMPLE_INTAKE_EMAIL });
 
 ok("parse: department is Platform", parsed.jobAnalysis.department === "Platform");
-ok("parse: employmentType is Full-time", parsed.jobAnalysis.employmentType === "Full-time");
+ok(
+  "parse: employmentType stays unspecified when the brief does not state it",
+  parsed.jobAnalysis.employmentType === "Unspecified",
+);
 ok("parse: requiredSkills includes Go", parsed.jobAnalysis.requiredSkills.includes("Go"));
 ok(
   "parse: requiredSkills includes Kubernetes",

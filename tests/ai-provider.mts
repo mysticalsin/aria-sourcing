@@ -137,6 +137,25 @@ const disabledSettings = settingsWith([
 ]);
 ok("resolveAiProvider returns null when provider disabled", resolveAiProvider(disabledSettings, "outreach") === null);
 
+const staleSourcingDefault = settingsWith(
+  [
+    makeProvider({ id: "disabled-anthropic", kind: "Anthropic", enabled: false }),
+    makeProvider({ id: "enabled-openai", kind: "OpenAI", enabled: true, isDefault: true }),
+  ],
+  [
+    makeModel({
+      id: "stale-sourcing-model",
+      providerId: "disabled-anthropic",
+      modelName: "claude-stale",
+      defaultForTask: ["sourcing"],
+    }),
+  ],
+  { sourcing: "stale-sourcing-model" },
+);
+const sourcingFallback = resolveAiProvider(staleSourcingDefault, "sourcing");
+ok("stale sourcing model on a disabled provider falls back to an enabled provider", sourcingFallback?.provider === "openai");
+ok("stale sourcing model does not leak its disabled-provider model name", sourcingFallback?.model === "gpt-4o-mini");
+
 /* ---- 8. buildCloudRequest — Anthropic shape ------------------------------- */
 
 const anthropicReq = buildCloudRequest("anthropic", "claude-sonnet-4-6", "System msg", "User msg", "sk-ant-test");

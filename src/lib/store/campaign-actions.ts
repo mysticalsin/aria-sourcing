@@ -1,6 +1,8 @@
 import {
   CAMPAIGN_STATUSES,
   COMPANY_STAGES,
+  EMPLOYMENT_TYPES,
+  LOCATION_TYPES,
   SENIORITY_LEVELS,
   URGENCY_LEVELS,
 } from "../types";
@@ -16,6 +18,7 @@ import type {
   ScoringWeights,
   ValidationWarning,
 } from "../types";
+import { evaluateNeedReadiness } from "../needs/readiness";
 
 export type CampaignActions = Pick<
   HermesActions,
@@ -84,8 +87,6 @@ function isFiniteNumberOrNull(value: unknown): value is number | null {
   return value === null || (typeof value === "number" && Number.isFinite(value));
 }
 
-const EMPLOYMENT_TYPES = ["Full-time", "Contract", "Part-time"] as const;
-const LOCATION_TYPES = ["Remote", "Hybrid", "On-site"] as const;
 const WARNING_SEVERITIES = ["info", "warning", "critical"] as const;
 
 function sanitizeValidationWarnings(value: unknown): ValidationWarning[] | null {
@@ -178,7 +179,7 @@ function sanitizeJobAnalysis(value: unknown): JobAnalysis | null {
   if (value.expectedStartDate !== undefined) {
     sanitized.expectedStartDate = value.expectedStartDate;
   }
-  return sanitized;
+  return evaluateNeedReadiness(sanitized).ready ? sanitized : null;
 }
 
 const SCORING_WEIGHT_KEYS = [
@@ -253,6 +254,7 @@ export function createCampaignActions({
     meta,
   ) => {
     if (!campaignMutationAllowed()) return null;
+    if (!evaluateNeedReadiness(jobAnalysis).ready) return null;
     const campaign = buildCampaign(jobAnalysis, meta);
     const applied = commit((state) => {
       let next: HermesState = {
@@ -359,21 +361,30 @@ export function createCampaignActions({
   };
 
   const regenerateQueries: CampaignActions["regenerateQueries"] = (id) => {
+    const currentCampaign = currentState()?.campaigns.find((campaign) => campaign.id === id);
     if (
       !campaignMutationAllowed() ||
-      !currentState()?.campaigns.some((campaign) => campaign.id === id)
+      !currentCampaign ||
+      !evaluateNeedReadiness(currentCampaign.jobAnalysis).ready
     ) {
       return false;
     }
-    return commit((state) => {
+    let generated = false;
+    const applied = commit((state) => {
       const campaign = state.campaigns.find((item) => item.id === id);
-      if (!campaign) return state;
+      if (!campaign || !evaluateNeedReadiness(campaign.jobAnalysis).ready) return state;
+
+      const skills = campaign.jobAnalysis.requiredSkills.map((skill) => skill.trim()).filter(Boolean);
+      const skill = skills[campaign.sourcingStrategy.githubQueries.length % skills.length];
+      if (!skill) return state;
+      const region = campaign.jobAnalysis.regions[0]?.trim().replace(/["\\]/g, "") ?? "";
 
       const extra = {
-        label: `Adjacent: ${campaign.jobAnalysis.requiredSkills[1] ?? "stack"} maintainers`,
-        query: `language:${(campaign.jobAnalysis.requiredSkills[1] ?? "go").replace(/\s+/g, "")} sort:updated location:${campaign.jobAnalysis.regions[0] ?? "EU"} forks:>5`,
+        label: `Adjacent: ${skill} maintainers`,
+        query: `language:${skill.replace(/\s+/g, "")} sort:updated${region ? ` location:"${region}"` : ""} forks:>5`,
         estimatedResults: 80 + Math.round((campaign.metrics.sourced + 1) * 3.5),
       };
+      generated = true;
       const next = {
         ...state,
         campaigns: state.campaigns.map((item) =>
@@ -402,6 +413,7 @@ export function createCampaignActions({
         id,
       );
     });
+    return applied && generated;
   };
 
   return {

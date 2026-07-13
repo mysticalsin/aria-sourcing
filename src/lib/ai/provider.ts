@@ -44,6 +44,11 @@ export interface AiResolved {
   apiKeyId?: string;
 }
 
+export type AiProviderSettings = Pick<
+  SystemSettings,
+  "llmProviders" | "savedModels" | "defaultModels"
+>;
+
 /**
  * Resolve which cloud AI provider + model to use for a given task.
  *
@@ -56,18 +61,35 @@ export interface AiResolved {
  * Returns null when no enabled, supported provider is configured.
  */
 export function resolveAiProvider(
-  settings: SystemSettings,
+  settings: AiProviderSettings,
   task: ModelTask,
   override?: { providerId?: string; modelId?: string },
 ): AiResolved | null {
   const llmProviders = settings.llmProviders ?? [];
   const savedModels = settings.savedModels ?? [];
 
+  const providerSupportsTask = (provider: (typeof llmProviders)[number] | undefined) => {
+    if (!provider?.enabled) return false;
+    const slug = KIND_TO_SLUG[provider.kind];
+    return Boolean(slug) && !(task === "sourcing" && slug === "kimi");
+  };
+
+  const usableModel = (model: (typeof savedModels)[number] | undefined) =>
+    Boolean(
+      model?.enabled &&
+      providerSupportsTask(llmProviders.find((provider) => provider.id === model.providerId)),
+    );
+
   // 1. Resolve modelId
-  const modelId =
-    override?.modelId ??
-    settings.defaultModels?.[task] ??
-    savedModels.find((m) => m.enabled && m.defaultForTask?.includes(task))?.id;
+  const requestedModelId = override?.modelId ?? settings.defaultModels?.[task];
+  const requestedModel = requestedModelId
+    ? savedModels.find((model) => model.id === requestedModelId)
+    : undefined;
+  const modelId = usableModel(requestedModel)
+    ? requestedModel?.id
+    : savedModels.find(
+        (model) => usableModel(model) && model.defaultForTask?.includes(task),
+      )?.id;
 
   // 2. Resolve SavedModel
   const savedModel = modelId ? savedModels.find((m) => m.id === modelId) : undefined;
@@ -77,13 +99,13 @@ export function resolveAiProvider(
 
   // 4. Resolve LlmProvider object
   let provider = providerId ? llmProviders.find((p) => p.id === providerId) : undefined;
-  if (!provider) {
+  if (!providerSupportsTask(provider)) {
     provider =
-      llmProviders.find((p) => p.enabled && p.isDefault) ??
-      llmProviders.find((p) => p.enabled);
+      llmProviders.find((p) => providerSupportsTask(p) && p.isDefault) ??
+      llmProviders.find((p) => providerSupportsTask(p));
   }
 
-  if (!provider?.enabled) return null;
+  if (!provider || !providerSupportsTask(provider)) return null;
 
   const slug = KIND_TO_SLUG[provider.kind];
   if (!slug) return null;

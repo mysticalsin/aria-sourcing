@@ -44,7 +44,7 @@ test("campaign action boundary is React-free and memoized from stable dependenci
   const runtimeImports = campaignActionsSource
     .split("\n")
     .filter((line) => /^import\s+(?!type\b)/.test(line));
-  assert.deepEqual(runtimeImports, ["import {"]);
+  assert.deepEqual(runtimeImports, ["import {", 'import { evaluateNeedReadiness } from "../needs/readiness";']);
   assert.match(
     campaignActionsSource,
     /CAMPAIGN_STATUSES,[\s\S]*COMPANY_STAGES,[\s\S]*SENIORITY_LEVELS,[\s\S]*URGENCY_LEVELS,[\s\S]*from "\.\.\/types";/,
@@ -685,7 +685,10 @@ test("regenerateQueries appends the derived query and records sourcing activity"
   const harness = createHarness();
   const campaign = harness.state.campaigns[0];
   const previousQueryCount = campaign.sourcingStrategy.githubQueries.length;
-  const expectedSkill = campaign.jobAnalysis.requiredSkills[1] ?? "stack";
+  const expectedSkill = campaign.jobAnalysis.requiredSkills[
+    previousQueryCount % campaign.jobAnalysis.requiredSkills.length
+  ];
+  assert.ok(expectedSkill);
   const expectedLanguage = expectedSkill.replace(/\s+/g, "");
   const expectedRegion = campaign.jobAnalysis.regions[0] ?? "EU";
   const expectedResults = 80 + Math.round((campaign.metrics.sourced + 1) * 3.5);
@@ -699,7 +702,7 @@ test("regenerateQueries appends the derived query and records sourcing activity"
   assert.equal(appended?.label, `Adjacent: ${expectedSkill} maintainers`);
   assert.equal(
     appended?.query,
-    `language:${expectedLanguage} sort:updated location:${expectedRegion} forks:>5`,
+    `language:${expectedLanguage} sort:updated location:"${expectedRegion}" forks:>5`,
   );
   assert.equal(appended?.estimatedResults, expectedResults);
   assert.equal(harness.activityDrafts[0]?.title, "Generated additional query");
@@ -717,7 +720,7 @@ test("regenerateQueries is a strict no-op for an unknown campaign", () => {
   assert.equal(harness.activityDrafts.length, 0);
 });
 
-test("regenerateQueries preserves fallbacks and unrelated campaigns", () => {
+test("regenerateQueries reuses only explicit role facts and preserves unrelated campaigns", () => {
   const initialState = buildSeedState();
   const campaign = initialState.campaigns[0];
   campaign.jobAnalysis = {
@@ -735,8 +738,10 @@ test("regenerateQueries preserves fallbacks and unrelated campaigns", () => {
 
   const updated = harness.state.campaigns.find((item) => item.id === campaign.id);
   const appended = updated?.sourcingStrategy.githubQueries.at(-1);
-  assert.equal(appended?.label, "Adjacent: stack maintainers");
-  assert.equal(appended?.query, "language:go sort:updated location:EU forks:>5");
+  const explicitSkill = campaign.jobAnalysis.requiredSkills[0];
+  assert.ok(explicitSkill);
+  assert.equal(appended?.label, `Adjacent: ${explicitSkill} maintainers`);
+  assert.equal(appended?.query, `language:${explicitSkill.replace(/\s+/g, "")} sort:updated forks:>5`);
   assert.equal(appended?.estimatedResults, 84);
   assert.equal(
     harness.state.campaigns.find((item) => item.id === unrelated.id)?.sourcingStrategy

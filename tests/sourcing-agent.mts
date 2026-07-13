@@ -42,7 +42,7 @@ ok("isSourcingTool rejects an unrelated name", !isSourcingTool("web_search"));
   })) as typeof fetch;
 
   const runner = makeSourcingToolRunner(campaign, [], W, "");
-  const result = await runner.run("search_candidates", { platform: "GitHub", query: "language:TypeScript", count: 3 });
+  const result = await runner.run("search_candidates", { platform: "GitHub", query: "language:Go", count: 3 });
   globalThis.fetch = originalFetch;
 
   ok("GitHub search_candidates call succeeds", result.ok === true);
@@ -74,8 +74,8 @@ ok("isSourcingTool rejects an unrelated name", !isSourcingTool("web_search"));
   })) as typeof fetch;
 
   const runner = makeSourcingToolRunner(campaign, [], W, "");
-  await runner.run("search_candidates", { platform: "GitHub", query: "q", count: 1 });
-  await runner.run("search_candidates", { platform: "GitHub", query: "q again", count: 1 });
+  await runner.run("search_candidates", { platform: "GitHub", query: "language:Go", count: 1 });
+  await runner.run("search_candidates", { platform: "GitHub", query: "language:Go followers:>1", count: 1 });
   globalThis.fetch = originalFetch;
 
   ok("same real person found twice across calls is deduped, not double-counted", runner.getFound().length === 1);
@@ -92,6 +92,32 @@ ok("isSourcingTool rejects an unrelated name", !isSourcingTool("web_search"));
 
   const talentPool = await runner.run("search_candidates", { platform: "Talent Pool", query: "x" });
   ok("Talent Pool has no external search — rejected with a clear reason", talentPool.ok === false && !!talentPool.error);
+}
+
+// --- makeSourcingToolRunner: revocation blocks search transport ------------
+{
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = (async () => {
+    fetchCalls += 1;
+    throw new Error("search fetch must not run");
+  }) as typeof fetch;
+  const runner = makeSourcingToolRunner(
+    campaign,
+    [],
+    W,
+    "",
+    undefined,
+    undefined,
+    async () => false,
+  );
+  const denied = await runner.run("search_candidates", {
+    platform: "GitHub",
+    query: "language:Go",
+    count: 1,
+  });
+  globalThis.fetch = originalFetch;
+  ok("revoked authority blocks candidate search before transport", denied.ok === false && fetchCalls === 0);
 }
 
 // --- tool-loop: run() override is used instead of URL-based dispatch -------
@@ -188,6 +214,45 @@ ok("isSourcingTool rejects an unrelated name", !isSourcingTool("web_search"));
 
   ok("openai-compatible loop completes", result.ok === true && result.text === "final");
   ok("openai-compatible toolCalls records the call", result.toolCalls.length === 1 && result.toolCalls[0]?.name === "probe");
+}
+
+// --- tool-loop: live authority is checked immediately before model egress --
+{
+  const server: ResolvedMcpServer = {
+    url: "builtin:test-authority",
+    token: "",
+    tools: [{ name: "probe", description: "test", inputSchema: { type: "object", properties: {} } }],
+    run: async () => ({ ok: true, content: {} }),
+  };
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = (async () => {
+    fetchCalls += 1;
+    throw new Error("provider fetch must not run");
+  }) as typeof fetch;
+
+  const [anthropic, openAi] = await Promise.all([
+    runAnthropicWithTools({
+      model: "claude-x",
+      system: "sys",
+      prompt: "go",
+      key: "k",
+      servers: [server],
+      beforeExternalCall: async () => false,
+    }),
+    runOpenAiWithTools({
+      provider: "groq",
+      model: "m",
+      system: "sys",
+      prompt: "go",
+      key: "k",
+      servers: [server],
+      beforeExternalCall: async () => false,
+    }),
+  ]);
+  globalThis.fetch = originalFetch;
+
+  ok("authority denial blocks both model transports before fetch", !anthropic.ok && !openAi.ok && fetchCalls === 0);
 }
 
 console.log(`RESULT sourcing-agent: ${pass} passed, ${fail} failed`);

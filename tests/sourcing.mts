@@ -149,6 +149,66 @@ ok("same github URL is deduped", rdup.accepted.length === 1);
   ok("GitHub user search does not duplicate caller type qualifier", decodeURIComponent(seenUrls[2] ?? "").includes("language:typescript type:org") && !decodeURIComponent(seenUrls[2] ?? "").includes("type:org type:user"));
 }
 
+// --- GitHub: partial detail transport failures are honest -----------------
+{
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = (async (url: unknown) => {
+      const value = String(url);
+      if (value.includes("/search/users")) {
+        return {
+          ok: true,
+          json: async () => ({ items: [{ login: "unavailable" }, { login: "available" }] }),
+        } as Response;
+      }
+      if (value.endsWith("/users/unavailable")) {
+        return { ok: false, status: 502, json: async () => ({}) } as Response;
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          login: "available",
+          name: "Available Candidate",
+          html_url: "https://github.com/available",
+          public_repos: 3,
+          followers: 7,
+        }),
+      } as Response;
+    }) as typeof fetch;
+
+    const partial = await searchGithubUsers("language:typescript", 2, "");
+    ok(
+      "GitHub partial profile failure returns only profiles with completed evidence",
+      partial.length === 1 && partial[0]?.login === "available",
+    );
+
+    globalThis.fetch = (async (url: unknown) => {
+      const value = String(url);
+      if (value.includes("/search/users")) {
+        return {
+          ok: true,
+          json: async () => ({ items: [{ login: "unavailable-a" }, { login: "unavailable-b" }] }),
+        } as Response;
+      }
+      return { ok: false, status: 503, json: async () => ({}) } as Response;
+    }) as typeof fetch;
+
+    let allProfilesFailed = false;
+    try {
+      await searchGithubUsers("language:typescript", 2, "");
+    } catch (error) {
+      allProfilesFailed =
+        error instanceof Error && error.message === "GitHub profile resolution failed.";
+    }
+    ok(
+      "GitHub total profile failure is not misreported as a genuine zero-match search",
+      allProfilesFailed,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 // --- web-leads: platform classification --------------------------------
 ok("LinkedIn is a web-search platform", isWebSearchPlatform("LinkedIn"));
 ok("Stack Overflow is a web-search platform", isWebSearchPlatform("Stack Overflow"));

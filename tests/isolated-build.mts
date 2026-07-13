@@ -20,6 +20,12 @@ ok("absolute NEXT_DIST_DIR values fail with the isolated-build instruction", con
 ok("isolated build script exists", existsSync(scriptUrl));
 ok("isolated build copies application source", script.includes('"src"') && script.includes('"public"'));
 ok("isolated build installs from the lockfile", script.includes('"ci"'));
+ok(
+  "isolated install prefers verified cache entries and bounds registry failure time",
+  script.includes('"--prefer-offline"') &&
+    script.includes('"--fetch-retries=2"') &&
+    script.includes('"--fetch-timeout=30000"'),
+);
 ok("isolated build clears inherited output overrides", script.includes("delete buildEnv.NEXT_DIST_DIR"));
 ok("local setup documents the isolated build command", guide.includes("npm run build:isolated"));
 

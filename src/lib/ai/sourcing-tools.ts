@@ -14,11 +14,17 @@
 // draft outreach for.
 
 import type { McpTool } from "@/lib/mcp-client";
-import type { Campaign, Candidate, ScoringWeights, SourcePlatform } from "@/lib/types";
+import type { Candidate, ScoringWeights, SourcePlatform } from "@/lib/types";
+import type { CandidateDedupeIdentity } from "@/lib/rules";
 import { searchGithubUsers } from "@/lib/sourcing/github";
 import { runWebTool, type WebFetch } from "@/lib/ai/web-tools";
 import { ensureWebQueryScope, extractLead, isWebSearchPlatform } from "@/lib/sourcing/web-leads";
-import { mapGithubCandidates, mapWebSearchCandidates } from "@/lib/sourcing/candidate-mappers";
+import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
+import {
+  mapGithubCandidates,
+  mapWebSearchCandidates,
+  type CandidateMappingCampaign,
+} from "@/lib/sourcing/candidate-mappers";
 
 export const SOURCING_TOOL_DEFS: McpTool[] = [
   {
@@ -67,6 +73,14 @@ interface SearchSummary {
   recentActivity: string;
 }
 
+export interface SourcingQueryExecution {
+  platform: SourcePlatform;
+  query: string;
+  ok: boolean;
+  candidateCount: number;
+  skippedCount: number;
+}
+
 /**
  * Build a stateful search_candidates runner bound to one campaign/request.
  * `run` dispatches the tool call; `getFound()` returns every real, scored
@@ -74,18 +88,21 @@ interface SearchSummary {
  * authoritative record the caller should use, not the model's prose.
  */
 export function makeSourcingToolRunner(
-  campaign: Campaign,
-  existing: Candidate[],
+  campaign: CandidateMappingCampaign,
+  existing: CandidateDedupeIdentity[],
   weights: ScoringWeights,
   githubToken: string,
   tavilyKey?: string,
   webFetchImpl?: WebFetch,
+  beforeExternalCall?: () => Promise<boolean>,
 ) {
   const found: Candidate[] = [];
+  const executions: SourcingQueryExecution[] = [];
 
   async function run(
     name: string,
     args: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<{ ok: boolean; content?: unknown; error?: string }> {
     if (name !== "search_candidates") return { ok: false, error: "Unknown tool." };
 
@@ -94,6 +111,11 @@ export function makeSourcingToolRunner(
     const count = Math.min(Math.max(Math.trunc(Number(args.count)) || 5, 1), 10);
     if (!platform) return { ok: false, error: "Missing platform." };
     if (!query) return { ok: false, error: "Missing query." };
+    const policy = validateSourcingQuery(platform, query, campaign);
+    if (!policy.ok) return policy;
+    if (beforeExternalCall && !(await beforeExternalCall())) {
+      return { ok: false, error: "Sourcing authority changed." };
+    }
 
     const alreadySeen = [...existing, ...found];
     let accepted: Candidate[] = [];
@@ -101,17 +123,21 @@ export function makeSourcingToolRunner(
 
     if (platform === "GitHub") {
       try {
-        const users = await searchGithubUsers(query, count, githubToken);
+        const users = await searchGithubUsers(query, count, githubToken, signal);
         const result = mapGithubCandidates(users, campaign, query, alreadySeen, weights);
         accepted = result.accepted;
         skippedCount = result.skipped.length;
       } catch (err) {
+        executions.push({ platform, query, ok: false, candidateCount: 0, skippedCount: 0 });
         return { ok: false, error: err instanceof Error ? err.message : "GitHub search failed." };
       }
     } else if (isWebSearchPlatform(platform)) {
       const scopedQuery = ensureWebQueryScope(platform, query);
       const search = await runWebTool("web_search", { query: scopedQuery }, { tavilyKey, fetchImpl: webFetchImpl });
-      if (!search.ok) return { ok: false, error: search.error ?? "Web search failed." };
+      if (!search.ok) {
+        executions.push({ platform, query, ok: false, candidateCount: 0, skippedCount: 0 });
+        return { ok: false, error: search.error ?? "Web search failed." };
+      }
       const content = search.content as { results?: { title: string; url: string; snippet: string }[] } | undefined;
       const hits = (content?.results ?? []).slice(0, count);
       const leads = hits.map((h) => extractLead(h, platform));
@@ -126,6 +152,13 @@ export function makeSourcingToolRunner(
     }
 
     found.push(...accepted);
+    executions.push({
+      platform,
+      query,
+      ok: true,
+      candidateCount: accepted.length,
+      skippedCount,
+    });
     const summary: SearchSummary[] = accepted.map((c) => ({
       id: c.id,
       name: c.name,
@@ -141,5 +174,9 @@ export function makeSourcingToolRunner(
     return { ok: true, content: { platform, query, found: summary, skippedByDedupe: skippedCount } };
   }
 
-  return { run, getFound: (): Candidate[] => found };
+  return {
+    run,
+    getFound: (): Candidate[] => found,
+    getExecutions: (): SourcingQueryExecution[] => executions.map((execution) => ({ ...execution })),
+  };
 }

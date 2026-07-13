@@ -225,9 +225,14 @@ export interface DedupeResult {
   skipped: { name: string; reason: string }[];
 }
 
+export type CandidateDedupeIdentity = Pick<
+  Candidate,
+  "email" | "linkedinUrl" | "githubUrl" | "sourceUrl" | "lastContactedAt"
+>;
+
 export function dedupeCandidates(
   incoming: Candidate[],
-  existing: Candidate[],
+  existing: CandidateDedupeIdentity[],
   opts: { excludedCompanies: string[]; currentCompany?: string },
 ): DedupeResult {
   const accepted: Candidate[] = [];

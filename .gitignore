@@ -37,6 +37,8 @@ backups/
 # test artifacts
 .playwright-mcp/
 *.jpeg
+__pycache__/
+*.py[cod]
 
 # local 3D verification screenshots
 /*.png

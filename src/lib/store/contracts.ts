@@ -76,6 +76,14 @@ export type CandidateIntakeResult =
 
 export type CandidateAnonymizeResult = { ok: true } | { ok: false; error: string };
 
+export interface SourcingFeedbackReceipt {
+  receiptId: string;
+  platform: "GitHub" | "LinkedIn" | "Stack Overflow" | "Dribbble" | "Behance";
+  candidateCount: number;
+}
+
+export type SourcingFeedbackVerdict = "useful" | "dead_end" | "corrected";
+
 export type ApolloEnrichmentErrorCode =
   | "APOLLO_TARGET_NOT_FOUND"
   | "APOLLO_ENRICHMENT_IN_PROGRESS"
@@ -104,12 +112,26 @@ export interface HermesActions {
     campaignId: string,
     opts?: { platform?: SourcePlatform; count?: number },
   ) => Promise<SourceNextBatchResult>;
-  /** One tool-calling agent pass: searches real candidates, scores them, and
-   *  drafts outreach for the best matches in a single loop (/api/sourcing-agent),
-   *  instead of sourceNextBatch + generateOutreachLive called one at a time.
-   *  Requires a cloud provider configured for the "sourcing" task (Anthropic or
-   *  an OpenAI-compatible provider — hermes/Kimi don't support tool-calling). */
-  runSourcingAgent: (campaignId: string, count?: number) => Promise<{ ok: boolean; added: number; error?: string }>;
+  /** Searches real provider results and drafts for human review. Cloud mode uses
+   * a tool-capable model; deterministic mode executes persisted GitHub queries
+   * directly and never presents itself as an LLM run. */
+  runSourcingAgent: (
+    campaignId: string,
+    count?: number,
+  ) => Promise<{
+    ok: boolean;
+    added: number;
+    mode?: "cloud" | "deterministic";
+    feedbackReceipts?: SourcingFeedbackReceipt[];
+    error?: string;
+  }>;
+  recordSourcingFeedback: (
+    receiptId: string,
+    verdict: SourcingFeedbackVerdict,
+  ) => Promise<boolean>;
+  listPendingSourcingFeedback: (
+    campaignId: string,
+  ) => Promise<SourcingFeedbackReceipt[] | null>;
   /** Manual intake: resolve one real GitHub user by exact login (via /api/source)
    *  and add them to the campaign — same scoring + dedupe pipeline as
    *  sourceNextBatch, just for a person the operator already has in mind

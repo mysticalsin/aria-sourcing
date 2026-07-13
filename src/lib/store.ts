@@ -56,8 +56,14 @@ import { scoreCandidate } from "./scoring";
 import { deriveStarRating } from "./tania";
 import {
   checkOutreachApproval,
+  dedupeCandidates,
   type ApprovalResult,
 } from "./rules";
+import {
+  candidateFromSourcingAgentDto,
+  parseSourcingAgentCandidates,
+  sourcingAgentCampaignFingerprint,
+} from "./sourcing/sourcing-agent-contract";
 import { validateMcpBaseUrl } from "./mcp-auth-params";
 import {
   defaultLiveIntegrations,
@@ -71,7 +77,12 @@ import { resolveInboundEmailIdentity } from "./store/inbound-identity";
 import { loadState, normalizeHermesState } from "./store/migrations";
 import { mapSillageCandidates, parseSillageIdentifier } from "./store/sourcing-helpers";
 import { appendWinRecord } from "./store/winlog-derive";
-import type { HermesActions, HermesContextValue } from "./store/contracts";
+import type {
+  HermesActions,
+  HermesContextValue,
+  SourcingFeedbackReceipt,
+  SourcingFeedbackVerdict,
+} from "./store/contracts";
 import type {
   Activity,
   AgentSeat,
@@ -179,6 +190,47 @@ const STORAGE_KEY = "hermes-sourcing:v1";
 const ARIA_STRONG_RATINGS: readonly StarRating[] = ["TopGun", "A"];
 const ARIA_PERFECT_RATING: StarRating = "TopGun";
 const ARIA_STEP_CANDIDATE_CAP = 10;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SOURCING_FEEDBACK_PLATFORMS = new Set<SourcingFeedbackReceipt["platform"]>([
+  "GitHub",
+  "LinkedIn",
+  "Stack Overflow",
+  "Dribbble",
+  "Behance",
+]);
+
+function parseSourcingFeedbackReceipts(value: unknown): SourcingFeedbackReceipt[] | null {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 20) return null;
+  const receipts: SourcingFeedbackReceipt[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) return null;
+    const row = item as Record<string, unknown>;
+    if (
+      Object.keys(row).some(
+        (key) => key !== "receiptId" && key !== "platform" && key !== "candidateCount",
+      ) ||
+      typeof row.receiptId !== "string" ||
+      !UUID_RE.test(row.receiptId) ||
+      seen.has(row.receiptId) ||
+      typeof row.platform !== "string" ||
+      !SOURCING_FEEDBACK_PLATFORMS.has(row.platform as SourcingFeedbackReceipt["platform"]) ||
+      typeof row.candidateCount !== "number" ||
+      !Number.isSafeInteger(row.candidateCount) ||
+      row.candidateCount < 0 ||
+      row.candidateCount > 100
+    ) {
+      return null;
+    }
+    seen.add(row.receiptId);
+    receipts.push({
+      receiptId: row.receiptId,
+      platform: row.platform as SourcingFeedbackReceipt["platform"],
+      candidateCount: row.candidateCount,
+    });
+  }
+  return receipts;
+}
 
 const HermesContext = createContext<HermesContextValue | null>(null);
 const UNSAVED_WORKSPACE_MESSAGE =
@@ -1220,8 +1272,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const runSourcingAgent = useCallback(
-    async (campaignId: string, count = 5): Promise<{ ok: boolean; added: number; error?: string }> => {
-      if (!workspaceEffectAllowed()) {
+    async (
+      campaignId: string,
+      count = 5,
+    ): Promise<{
+      ok: boolean;
+      added: number;
+      mode?: "cloud" | "deterministic";
+      feedbackReceipts?: SourcingFeedbackReceipt[];
+      error?: string;
+    }> => {
+      if (!workspaceEffectAllowed() || !sourcingMutationAllowed()) {
         return { ok: false, added: 0, error: "Workspace unavailable. Retry before running the sourcing agent." };
       }
       const s = current();
@@ -1230,95 +1291,269 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (campaign.status === "Paused") {
         return { ok: false, added: 0, error: "Campaign is paused." };
       }
-      const weights = effectiveWeights(campaign.scoringWeights, s.skills);
-      const finalTone = effectiveTone(s.skills);
-
-      const aiCfg = resolveAiProvider(s.settings, "sourcing");
-      if (!aiCfg) {
-        return { ok: false, added: 0, error: "No cloud LLM provider configured for sourcing. Add one in Settings." };
+      const requestedCount = Math.min(Math.max(Math.trunc(count) || 5, 1), 8);
+      let response: Response;
+      try {
+        const operationId = crypto.randomUUID();
+        response = await workspaceFetch("/api/sourcing-agent", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": operationId,
+            "X-Request-Id": operationId,
+          },
+          body: JSON.stringify({
+            campaignId,
+            count: requestedCount,
+          }),
+        });
+      } catch {
+        return { ok: false, added: 0, error: "The sourcing agent could not be reached." };
       }
-      if (aiCfg.provider === "kimi") {
+      const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+      if (contentType.split(";", 1)[0]?.trim() !== "application/json") {
+        return { ok: false, added: 0, error: "The sourcing agent returned an invalid response." };
+      }
+      const out = (await response.json().catch(() => null)) as
+        | {
+            ok?: boolean;
+            code?: string;
+            error?: string;
+            campaignId?: string;
+            campaignFingerprint?: string;
+            mode?: string;
+            candidates?: unknown;
+            feedbackReceipts?: unknown;
+          }
+        | null;
+      if (!response.ok || !out?.ok) {
+        const safeErrors: Record<string, string> = {
+          CAMPAIGN_NOT_FOUND: "Campaign not found.",
+          CAMPAIGN_NOT_ACTIVE: "Campaign is not active for sourcing.",
+          CAMPAIGN_NOT_READY: "Complete and review the campaign brief before sourcing.",
+          CAMPAIGN_INPUT_UNSAFE: "Review unsafe instructions in the campaign brief before sourcing.",
+          CAMPAIGN_CHANGED: "Campaign authority changed. Retry from the current campaign.",
+          INSUFFICIENT_PERMISSIONS: "Sourcing authority is no longer available.",
+          SOURCING_AGENT_RATE_LIMITED: "The sourcing-agent rate limit was reached. Try again later.",
+          SOURCING_AGENT_REPLAY_BLOCKED: "This sourcing request was already claimed. Start a new sourcing run.",
+          SOURCING_AGENT_NOT_CONFIGURED: "The selected sourcing provider is not configured.",
+          SOURCING_AGENT_UPSTREAM_FAILED: "The sourcing agent did not complete.",
+          SOURCING_AGENT_RESPONSE_INVALID: "The sourcing agent returned an invalid result.",
+        };
         return {
           ok: false,
           added: 0,
-          error: "Kimi doesn't support tool-calling. Configure a different provider (Anthropic/OpenAI/Groq/xAI/Mistral) for the sourcing task.",
+          error: safeErrors[out?.code ?? ""] ?? "The sourcing agent is unavailable.",
         };
       }
-
-      type AgentCandidate = Candidate & { draftSubject?: string; draftBody?: string };
-      let out: { ok?: boolean; candidates?: AgentCandidate[]; reason?: string } | null = null;
-      try {
-        const res = await workspaceFetch("/api/sourcing-agent", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            campaign: { ...campaign, scoringWeights: weights },
-            existing: s.candidates.filter((c) => c.campaignId === campaignId),
-            count,
-            provider: aiCfg.provider,
-            apiKeyId: aiCfg.apiKeyId,
-            model: aiCfg.model,
-          }),
-        });
-        out = await res.json().catch(() => null);
-      } catch (err) {
-        return { ok: false, added: 0, error: err instanceof Error ? err.message : "Network error." };
+      if (out.campaignId !== campaignId) {
+        return { ok: false, added: 0, error: "The sourcing agent returned a mismatched campaign." };
+      }
+      if (out.mode !== "cloud" && out.mode !== "deterministic") {
+        return { ok: false, added: 0, error: "The sourcing agent returned an invalid execution mode." };
+      }
+      const executionMode = out.mode;
+      if (
+        typeof out.campaignFingerprint !== "string" ||
+        out.campaignFingerprint.length > 100_000
+      ) {
+        return { ok: false, added: 0, error: "The sourcing agent returned an invalid campaign version." };
+      }
+      const received = parseSourcingAgentCandidates(
+        out.candidates,
+        campaignId,
+        requestedCount,
+      );
+      const feedbackReceipts = parseSourcingFeedbackReceipts(out.feedbackReceipts);
+      if (!received || !feedbackReceipts) {
+        return { ok: false, added: 0, error: "The sourcing agent returned an invalid result." };
+      }
+      if (!workspaceEffectAllowed() || !sourcingMutationAllowed()) {
+        return { ok: false, added: 0, error: "Sourcing authority changed during the operation." };
       }
 
-      if (!out?.ok || !out.candidates?.length) {
-        return { ok: false, added: 0, error: out?.reason ?? "The agent found no real candidates." };
-      }
-
-      const cleanCandidates: Candidate[] = [];
-      const messages: OutreachMessage[] = [];
-      for (const raw of out.candidates) {
-        const { draftSubject, draftBody, ...clean } = raw;
-        const candidate = clean as Candidate;
-        cleanCandidates.push(candidate);
-        if (draftSubject && draftBody) {
-          messages.push(
-            newOutreachMessage(
-              candidate,
-              campaign,
-              {
-                subject: draftSubject,
-                body: draftBody,
-                personalizationEvidence: candidate.recentActivity ? [candidate.recentActivity] : [],
-                channel: "Email",
-              },
-              finalTone,
-              s.settings,
-            ),
-          );
+      let authorized = false;
+      let added = 0;
+      let drafted = 0;
+      const persisted = await commitPersisted((prev) => {
+        if (!sourcingMutationAllowed()) return prev;
+        const latestCampaign = prev.campaigns.find((item) => item.id === campaignId);
+        if (!latestCampaign || latestCampaign.status === "Paused" || latestCampaign.status === "Filled") {
+          return prev;
         }
-      }
-
-      commit((prev) => {
+        if (sourcingAgentCampaignFingerprint(latestCampaign) !== out.campaignFingerprint) {
+          return prev;
+        }
+        authorized = true;
+        const weights = effectiveWeights(latestCampaign.scoringWeights, prev.skills);
+        const finalTone = effectiveTone(prev.skills);
+        const candidates = received
+          .filter((dto) => {
+            if (!dto.draftSubject && !dto.draftBody) return true;
+            if (!dto.draftSubject || !dto.draftBody) return false;
+            const forbidden = [
+              latestCampaign.jobAnalysis.department,
+              latestCampaign.jobAnalysis.teamSize,
+              latestCampaign.jobAnalysis.reportingTo,
+              latestCampaign.jobAnalysis.currency,
+            ];
+            return (
+              validateCandidateBoundText(dto.draftSubject, {
+                salaryMin: latestCampaign.jobAnalysis.salaryMin,
+                salaryMax: latestCampaign.jobAnalysis.salaryMax,
+                forbidden,
+              }).safe &&
+              validateCandidateBoundText(dto.draftBody, {
+                salaryMin: latestCampaign.jobAnalysis.salaryMin,
+                salaryMax: latestCampaign.jobAnalysis.salaryMax,
+                forbidden,
+              }).safe
+            );
+          })
+          .map((dto) => {
+            const candidate = candidateFromSourcingAgentDto(dto);
+            const scored = scoreCandidate(candidate, latestCampaign.jobAnalysis, weights);
+            return { dto, candidate: { ...candidate, matchScore: scored.score, matchBreakdown: scored.breakdown } };
+          });
+        const unique = dedupeCandidates(
+          candidates.map((item) => item.candidate),
+          prev.candidates,
+          { excludedCompanies: latestCampaign.sourcingStrategy.excludedCompanies },
+        ).accepted;
+        if (unique.length === 0) return prev;
+        const dtoById = new Map(candidates.map((item) => [item.candidate.id, item.dto]));
+        const messages = unique.map((candidate) => {
+          const dto = dtoById.get(candidate.id)!;
+          const generated = dto.draftSubject && dto.draftBody
+            ? {
+                subject: dto.draftSubject,
+                body: dto.draftBody,
+                personalizationEvidence: candidate.recentActivity ? [candidate.recentActivity] : [],
+                channel: "Email" as const,
+              }
+            : generateOutreach(
+                candidate,
+                latestCampaign,
+                finalTone,
+                "Email",
+                1,
+                undefined,
+                latestCampaign.jobAnalysis.language ?? prev.settings.defaultLanguage,
+              );
+          return newOutreachMessage(
+            candidate,
+            latestCampaign,
+            generated,
+            finalTone,
+            prev.settings,
+          );
+        });
+        added = unique.length;
+        drafted = messages.length;
         let next: HermesState = {
           ...prev,
-          candidates: [...cleanCandidates, ...prev.candidates],
+          candidates: [...unique, ...prev.candidates],
           outreach: [...messages, ...prev.outreach],
         };
         next = recomputeMetrics(next, campaignId);
-        next = withActivity(
+        return withActivity(
           next,
           makeActivity({
             type: "sourcing",
-            title: `Sourcing agent found ${cleanCandidates.length} candidates`,
-            notes: `${messages.length} drafted for outreach in one tool-calling pass (live).`,
-            outcome: `${cleanCandidates.length} added, ${messages.length} drafted`,
+            title: `Sourcing agent found ${unique.length} candidates`,
+            notes:
+              executionMode === "cloud"
+                ? `${messages.length} drafted for human review after a cloud tool-calling pass.`
+                : `${messages.length} drafted for human review after direct GitHub search. No cloud model ran.`,
+            outcome: `${unique.length} added, ${messages.length} drafted`,
             campaignId,
             linkedEntityType: "campaign",
             linkedEntityId: campaignId,
           }),
           campaignId,
         );
-        return next;
       });
-
-      return { ok: true, added: cleanCandidates.length };
+      if (!persisted || !authorized) {
+        return { ok: false, added: 0, error: "The sourcing result could not be saved. Retry safely." };
+      }
+      if (added > 0) emit({ kind: "source", campaignId, count: added });
+      return {
+        ok: true,
+        added,
+        mode: executionMode,
+        feedbackReceipts,
+        ...(drafted === 0 && added > 0 ? { error: "Candidates were saved without drafts." } : {}),
+      };
     },
-    [commit, current, workspaceEffectAllowed, workspaceFetch],
+    [commitPersisted, current, sourcingMutationAllowed, workspaceEffectAllowed, workspaceFetch],
+  );
+
+  const recordSourcingFeedback = useCallback(
+    async (receiptId: string, verdict: SourcingFeedbackVerdict): Promise<boolean> => {
+      if (
+        !workspaceEffectAllowed() ||
+        !sourcingMutationAllowed() ||
+        !UUID_RE.test(receiptId) ||
+        (verdict !== "useful" && verdict !== "dead_end" && verdict !== "corrected")
+      ) {
+        return false;
+      }
+      const operationId = crypto.randomUUID();
+      let response: Response;
+      try {
+        response = await workspaceFetch("/api/sourcing-learning/feedback", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": operationId,
+            "X-Request-Id": operationId,
+          },
+          body: JSON.stringify({ receiptId, verdict }),
+        });
+      } catch {
+        return false;
+      }
+      const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+      if (contentType.split(";", 1)[0]?.trim() !== "application/json") return false;
+      const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+      return Boolean(
+        response.ok &&
+          body?.ok === true &&
+          body.receiptId === receiptId &&
+          body.verdict === verdict,
+      );
+    },
+    [sourcingMutationAllowed, workspaceEffectAllowed, workspaceFetch],
+  );
+
+  const listPendingSourcingFeedback = useCallback(
+    async (campaignId: string): Promise<SourcingFeedbackReceipt[] | null> => {
+      if (
+        !workspaceEffectAllowed() ||
+        !sourcingMutationAllowed() ||
+        !campaignId ||
+        campaignId.length > 100 ||
+        /[\u0000-\u001f\u007f]/.test(campaignId)
+      ) {
+        return null;
+      }
+      let response: Response;
+      try {
+        response = await workspaceFetch(
+          `/api/sourcing-learning/feedback?campaignId=${encodeURIComponent(campaignId)}`,
+          { headers: { "X-Request-Id": crypto.randomUUID() } },
+        );
+      } catch {
+        return null;
+      }
+      const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+      if (!response.ok || contentType.split(";", 1)[0]?.trim() !== "application/json") return null;
+      const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+      if (body?.ok !== true || !Array.isArray(body.receipts)) return null;
+      if (body.receipts.length === 0) return [];
+      return parseSourcingFeedbackReceipts(body.receipts);
+    },
+    [sourcingMutationAllowed, workspaceEffectAllowed, workspaceFetch],
   );
 
   const generateOutreachFor = useCallback(
@@ -5786,6 +6021,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       startSeamlessResearch,
       checkSeamlessResearch,
       runSourcingAgent,
+      recordSourcingFeedback,
+      listPendingSourcingFeedback,
       generateOutreachFor,
       generateOutreachLive,
       updateOutreach,
@@ -5898,7 +6135,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       setActiveCampaign, createCampaignFromAnalysis, updateCampaign, regenerateQueries,
-      sourceNextBatch, addCandidateFromGithub, addCandidateManual, startSillageMapping, checkSillageMapping, sourceFromApollo, prepareApolloEnrichment, enrichApolloCandidate, sourceFromSeamless, startSeamlessResearch, checkSeamlessResearch, runSourcingAgent, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
+      sourceNextBatch, addCandidateFromGithub, addCandidateManual, startSillageMapping, checkSillageMapping, sourceFromApollo, prepareApolloEnrichment, enrichApolloCandidate, sourceFromSeamless, startSeamlessResearch, checkSeamlessResearch, runSourcingAgent, recordSourcingFeedback, listPendingSourcingFeedback, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
       approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, draftFollowUpFor, draftRecontactFor, classifyAndStoreReply, markReplyHandled,
       applyReplyAction, draftReplyResponse, createBookingFor, updateBooking, generateReport,
       setSkillUpdateStatus, setCandidateStage, setCandidatePhone, addCandidateNote, setRejectionReason,

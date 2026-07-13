@@ -8,7 +8,7 @@ particular production deployment is healthy.
 ## Source candidate
 
 - Node 22, Next.js 16, React 19, and TypeScript 5 are enforced by the repository.
-- `npm test` runs 146 chained checks: 28 pretest commands plus 118 application
+- `npm test` runs 156 chained checks: 34 pretest commands plus 122 application
   test commands.
 - Local acceptance requires typecheck, lint, the full test chain, the isolated
   production build, the exact database restart test, and the database authority
@@ -37,6 +37,12 @@ particular production deployment is healthy.
 - Agent memory is encrypted, owner/spec scoped, bounded, receipt-bound before
   any external key or model access, and legacy shared memory is hash-only
   quarantined rather than activated.
+- Sourcing runs use campaign-owned role evidence, database quota and replay
+  authority, query policy enforcement, and completion receipts. Candidate
+  records are released only after the completion receipt is accepted.
+- Graphify receives only aggregate query fingerprints and outcome counts in an
+  isolated no-network worker. It has no runtime sourcing authority and cannot
+  promote lessons; a separate admin review with independent evidence is required.
 
 ## Release acceptance still required
 

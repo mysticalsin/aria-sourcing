@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getServerSupabase } from "@/lib/supabase/server";
-import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
+import { experimentalPaidSourcingEnabled, supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
@@ -18,6 +18,12 @@ import { getMappingStage, findMappingId, getCompanyMapping, resolveStoredSillage
 export async function GET(req: NextRequest) {
   const prodBlock = prodFailClosed();
   if (prodBlock) return prodBlock;
+  if (!experimentalPaidSourcingEnabled) {
+    return NextResponse.json(
+      { ok: false, error: "Sillage is unavailable until server-owned provider receipts are enabled." },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
+  }
 
   const rl = checkRateLimit(rateLimitKey(req, "source-sillage-status"), { windowMs: 60_000, max: 30 });
   if (!rl.ok) return tooManyRequests(rl.retryAfterSec);

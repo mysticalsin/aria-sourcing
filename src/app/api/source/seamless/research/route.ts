@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getServerSupabase } from "@/lib/supabase/server";
-import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
+import { experimentalPaidSourcingEnabled, supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
@@ -23,6 +23,12 @@ const SeamlessResearchSchema = z.object({
 export async function POST(req: NextRequest) {
   const prodBlock = prodFailClosed();
   if (prodBlock) return prodBlock;
+  if (!experimentalPaidSourcingEnabled) {
+    return NextResponse.json(
+      { ok: false, error: "Seamless is unavailable until server-owned provider receipts are enabled." },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
+  }
 
   const rl = checkRateLimit(rateLimitKey(req, "source-seamless-research"), { windowMs: 60_000, max: 15 });
   if (!rl.ok) return tooManyRequests(rl.retryAfterSec);

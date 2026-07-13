@@ -4,6 +4,7 @@ import { humanizeText } from "./humanizer";
 import { roleProfile } from "./roles";
 import type { SourceResult } from "./sourcing/candidate-mappers";
 import { detectLanguage, outreachStrings, REPLY_LEXICON } from "./i18n";
+import { evaluateNeedReadiness } from "./needs/readiness";
 import type {
   Booking,
   Campaign,
@@ -126,8 +127,8 @@ const SKILL_DICTIONARY = [
   ...EXTRA_SKILLS,
   "Java", "C++", "Scala", "Elixir", "Ruby", "Swift", "Kotlin", "Next.js", "Vue", "Svelte",
   "TensorFlow", "PyTorch", "LangChain", "LLM", "RAG", "Vector DB", "Snowflake", "dbt", "Spark",
-  "Airflow", "MongoDB", "MySQL", "RabbitMQ", "Nginx", "Linux", "REST", "OAuth", "SAML", "SOC2",
-  "Figma", "Product Design", "Accessibility", "Design Systems", "Sales", "Negotiation", "CRM",
+  "Airflow", "SQL", "MongoDB", "MySQL", "RabbitMQ", "Nginx", "Linux", "REST", "OAuth", "SAML", "SOC2",
+  "Figma", "Product Design", "Product Management", "Roadmapping", "Accessibility", "Design Systems", "Sales", "Negotiation", "CRM",
 ];
 
 /* ============================================================================
@@ -206,6 +207,8 @@ export interface ParsedIntake {
   validationWarnings: ValidationWarning[];
   clarificationDraft: string | null;
   confidence: Record<string, number>;
+  extractionMode: "evidence" | "cloud";
+  providerWarning?: string;
   /** Optional enrichment from a locked Dust agent (task "jdAnalysis"). A sibling
    *  display field, never merged into jobAnalysis's typed fields — free text from
    *  an external agent shouldn't be able to corrupt the scoring/sourcing pipeline.
@@ -237,7 +240,7 @@ export function parseMantuNeed(text: string): ParsedIntake {
     text.match(/this need is now active\s*:?\s*(.+)/i)?.[1]?.trim() ||
     field("Subject") ||
     field("Need") ||
-    "Consulting Need";
+    "";
 
   const manager = field("Manager");
   const recruiter = field("Recruiter");
@@ -245,13 +248,11 @@ export function parseMantuNeed(text: string): ParsedIntake {
   const priority = field("Priority");
   const locationRaw = field("Location");
   const startRaw = field("Start date");
-  const typeRaw = field("Type") || "Consulting";
+  const typeRaw = field("Type");
 
   const emailMatch = text.match(/[A-Za-z0-9._+-]{1,128}@[A-Za-z0-9-]{1,128}\.[A-Za-z0-9.-]{1,64}/);
-  const senderName = manager || recruiter || "Hiring Manager";
-  const senderEmail =
-    emailMatch?.[0] ??
-    `${slugify(senderName).replace(/-/g, ".")}@${slugify(client) || "client"}.example`;
+  const senderName = manager || recruiter;
+  const senderEmail = emailMatch?.[0] ?? "";
 
   // Priority / importance → urgency
   let urgency: Urgency = "Standard";
@@ -279,14 +280,8 @@ export function parseMantuNeed(text: string): ParsedIntake {
 
   // Location → region + timezone (best-effort)
   const loc = titleCase(locationRaw || "");
-  const tz = /montreal|toronto|new york|boston/i.test(locationRaw)
-    ? "EST"
-    : /london|uk/i.test(locationRaw)
-      ? "GMT"
-      : /paris|france|montreal/i.test(locationRaw)
-        ? "CET"
-        : "EST";
-  const regions = loc ? [loc] : ["Global"];
+  const tz = text.match(/\b(CET|CEST|GMT|UTC|EST|PST|IST|SGT|BRT)\b/i)?.[1]?.toUpperCase() ?? "";
+  const regions = loc ? [loc] : [];
 
   // Start date m/d/yyyy → ISO. Null when the need email doesn't state one —
   // createCampaign applies its own default rather than baking a guess in here.
@@ -297,39 +292,64 @@ export function parseMantuNeed(text: string): ParsedIntake {
     ? ["Fintech"]
     : [];
 
-  const validationWarnings: ValidationWarning[] = [];
-  if (!skillsLine && requiredSkills.length < 3)
-    validationWarnings.push({ field: "requiredSkills", severity: "critical", message: "No explicit skills line and few skills detected." });
-  validationWarnings.push({ field: "salary", severity: "warning", message: "No salary/rate in the need email. Confirm the band." });
-  if (!locationRaw)
-    validationWarnings.push({ field: "location", severity: "warning", message: "No location specified." });
-
   const jobAnalysis: JobAnalysis = {
     title,
-    department: typeRaw || "Consulting",
-    seniority: minYearsExperience && minYearsExperience >= 8 ? "Staff" : "Senior",
-    employmentType: /consulting|contract|contractor|freelance/i.test(typeRaw) ? "Contract" : "Full-time",
-    locationType: /remote/i.test(text) ? "Remote" : /hybrid/i.test(text) ? "Hybrid" : "On-site",
+    department: typeRaw,
+    seniority: "Unspecified",
+    employmentType: /consulting|contract|contractor|freelance/i.test(typeRaw)
+      ? "Contract"
+      : /part[- ]time/i.test(typeRaw)
+        ? "Part-time"
+        : /full[- ]time|permanent/i.test(typeRaw)
+          ? "Full-time"
+          : "Unspecified",
+    locationType: /remote/i.test(text)
+      ? "Remote"
+      : /hybrid/i.test(text)
+        ? "Hybrid"
+        : /on-?site|in office|in-person/i.test(text)
+          ? "On-site"
+          : "Unspecified",
     regions,
     timezone: tz,
     salaryMin: null,
     salaryMax: null,
-    currency: /montreal|toronto|canada/i.test(locationRaw) ? "CAD" : "USD",
+    currency: /\bCAD\b|C\$/i.test(text) ? "CAD" : /\bUSD\b|\$/i.test(text) ? "USD" : "",
     equity: /equity|options|esop/i.test(text),
-    requiredSkills: requiredSkills.length ? requiredSkills : ["Murex", "Finance", "Pricing"],
+    requiredSkills,
     niceToHaveSkills,
     minYearsExperience,
-    maxYearsExperience: minYearsExperience ? minYearsExperience + 5 : null,
-    education: "No formal requirement",
+    maxYearsExperience: null,
+    education: "",
     industryExperience,
-    companyStageTarget: ["Enterprise", "Public"],
-    teamSize: field("Nb people") ? `${field("Nb people")} role(s)` : "Client-embedded",
-    reportingTo: manager || "Engagement Manager",
+    companyStageTarget: /\bpublic\b/i.test(text)
+      ? ["Public"]
+      : /\benterprise\b/i.test(text)
+        ? ["Enterprise"]
+        : [],
+    teamSize: "",
+    reportingTo: "",
     urgency,
     language: detectLanguage(text),
     expectedStartDate: targetStartDate,
-    validationWarnings,
+    validationWarnings: [],
   };
+
+  const validationWarnings: ValidationWarning[] = [
+    ...evaluateNeedReadiness(jobAnalysis).issues,
+    { field: "salary", severity: "warning", message: "No salary/rate in the need email. Confirm the band." },
+  ];
+  if (!locationRaw) {
+    validationWarnings.push({ field: "location", severity: "warning", message: "No location specified." });
+  }
+  if (requiredSkills.length > 0 && requiredSkills.length < 3) {
+    validationWarnings.push({
+      field: "requiredSkills",
+      severity: "warning",
+      message: "Fewer than 3 required skills were stated. Confirm whether the brief is complete.",
+    });
+  }
+  jobAnalysis.validationWarnings = validationWarnings;
 
   const hasCritical = validationWarnings.some((w) => w.severity === "critical");
   return {
@@ -346,6 +366,7 @@ export function parseMantuNeed(text: string): ParsedIntake {
       location: locationRaw ? 0.92 : 0.5,
       seniority: 0.8,
     },
+    extractionMode: "evidence",
   };
 }
 
@@ -420,8 +441,8 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   const nameMatch =
     fromLine.match(/^([A-Z][a-z]+ [A-Z][a-z]+)/)?.[1] ??
     text.match(/(?:thanks|regards|best|cheers)[,\s]+\n?\s*([A-Z][a-z]+ [A-Z][a-z]+)/)?.[1] ??
-    "Hiring Manager";
-  const senderEmail = emailMatch?.[0] ?? "unknown@company.example";
+    "";
+  const senderEmail = emailMatch?.[0] ?? "";
 
   // Intent
   let intent: IntakeIntent = "New Role";
@@ -440,21 +461,22 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   const titleMatch =
     text.match(/(?:hiring|looking for|need|seeking|backfill)\s+(?:an?\s+)?([A-Z][\w/ +.-]{3,48}?(?:Engineer|Developer|Designer|Manager|Lead|Architect|Scientist|Analyst))/i)?.[1] ??
     text.match(/(?:role|position|title):\s*(.+)/i)?.[1] ??
-    "Senior Software Engineer";
+    "";
   const title = titleMatch.trim().replace(/\s+/g, " ");
 
   // Seniority
-  let seniority: Seniority = "Senior";
+  let seniority: Seniority = "Unspecified";
   if (/principal/i.test(title)) seniority = "Principal";
   else if (/staff/i.test(title)) seniority = "Staff";
   else if (/lead/i.test(title)) seniority = "Lead";
   else if (/director|head of/i.test(title)) seniority = "Director";
   else if (/junior|graduate|entry/i.test(title)) seniority = "Junior";
   else if (/\bmid\b|intermediate/i.test(title)) seniority = "Mid";
+  else if (/\bsenior\b/i.test(title)) seniority = "Senior";
 
   // Department (specific signals first; word-boundaries to avoid false hits like
   // "design and operate" or "service contracts")
-  let department = "Engineering";
+  let department = "";
   if (/\b(devops|sre|platform engineer|infrastructure|kubernetes|distributed systems|backend)\b/i.test(text))
     department = "Platform";
   else if (/\b(data engineer|ml|machine learning|analytics|data scientist)\b/i.test(text)) department = "Data";
@@ -463,19 +485,18 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   else if (/\b(designer|product design|ux|ui|design systems)\b/i.test(text)) department = "Design";
 
   // Location type
-  let locationType: JobAnalysis["locationType"] = "Hybrid";
+  let locationType: JobAnalysis["locationType"] = "Unspecified";
   if (/fully remote|remote-first|100% remote|\bremote\b/i.test(text)) locationType = "Remote";
+  else if (/\bhybrid\b/i.test(text)) locationType = "Hybrid";
   else if (/on-?site|in office|in-person/i.test(text)) locationType = "On-site";
 
   // Regions
   const regions: string[] = [];
-  for (const r of ["EU", "US", "UK", "APAC", "LATAM", "Europe", "Germany", "Remote"]) {
+  for (const r of ["EU", "US", "UK", "APAC", "LATAM", "Europe", "Germany", "Canada", "Remote"]) {
     if (new RegExp(`\\b${r}\\b`, "i").test(text)) regions.push(r === "Europe" ? "EU" : r);
   }
-  if (regions.length === 0) regions.push("EU");
-
   // Timezone
-  const tzMatch = text.match(/\b(CET|CEST|GMT|UTC|EST|PST|IST|SGT|BRT)\b/i)?.[1]?.toUpperCase() ?? "CET";
+  const tzMatch = text.match(/\b(CET|CEST|GMT|UTC|EST|PST|IST|SGT|BRT)\b/i)?.[1]?.toUpperCase() ?? "";
 
   const location = extractLocation(text);
 
@@ -483,12 +504,20 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   const salaryNums = [...text.matchAll(/[€$£]?\s?(\d{2,3})\s?k\b/gi)].map((m) => parseInt(m[1], 10) * 1000);
   const salaryMin = salaryNums.length ? Math.min(...salaryNums) : null;
   const salaryMax = salaryNums.length ? Math.max(...salaryNums) : null;
-  const currency = /£/.test(text) ? "GBP" : /\$/.test(text) ? "USD" : "EUR";
+  const currency = salaryNums.length > 0
+    ? /£/.test(text)
+      ? "GBP"
+      : /\$/.test(text)
+        ? "USD"
+        : /€/.test(text)
+          ? "EUR"
+          : ""
+    : "";
 
   // Years
   const yearsMatch = [...text.matchAll(/(\d{1,2})[\s+]{0,6}(?:years|yrs)/gi)].map((m) => parseInt(m[1], 10));
   const minYearsExperience = yearsMatch.length ? Math.min(...yearsMatch) : null;
-  const maxYearsExperience = yearsMatch.length ? Math.max(...yearsMatch) + 3 : null;
+  const maxYearsExperience = yearsMatch.length > 1 ? Math.max(...yearsMatch) : null;
 
   // Skills
   const requiredSkills = SKILL_DICTIONARY.filter((s) =>
@@ -506,20 +535,10 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
       ? ["Seed", "Series A"]
       : /enterprise|public/i.test(text)
         ? ["Series C+", "Public"]
-        : ["Series A", "Series B"];
+        : [];
 
   // Industry
   const industryExperience = INDUSTRIES.filter((i) => new RegExp(i.replace("/", ".?"), "i").test(text)).slice(0, 2);
-
-  const validationWarnings: ValidationWarning[] = [];
-  if (salaryMin == null)
-    validationWarnings.push({ field: "salary", severity: "warning", message: "No salary range provided." });
-  if (locationType === "Hybrid" && !/hybrid/i.test(text))
-    validationWarnings.push({ field: "location", severity: "info", message: "Location type inferred (defaulted to Hybrid)." });
-  if (requiredSkills.length < 3)
-    validationWarnings.push({ field: "requiredSkills", severity: "critical", message: "Fewer than 3 required skills detected. JD may be vague." });
-  if (minYearsExperience == null)
-    validationWarnings.push({ field: "experience", severity: "warning", message: "No years-of-experience band specified." });
 
   const jobAnalysis: JobAnalysis = {
     title,
@@ -527,7 +546,11 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
     seniority,
     employmentType: /\b(contractor|freelance|contract role|contract position|fixed[- ]term|day rate)\b/i.test(text)
       ? "Contract"
-      : "Full-time",
+      : /\bpart[- ]time\b/i.test(text)
+        ? "Part-time"
+        : /\bfull[- ]time\b|\bpermanent\b/i.test(text)
+          ? "Full-time"
+          : "Unspecified",
     locationType,
     ...(location ? { location } : {}),
     regions: Array.from(new Set(regions)),
@@ -536,21 +559,37 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
     salaryMax,
     currency,
     equity,
-    requiredSkills: requiredSkills.length ? requiredSkills : ["TypeScript", "Node.js", "PostgreSQL"],
+    requiredSkills,
     niceToHaveSkills,
     minYearsExperience,
     maxYearsExperience,
     education: /phd|master|bachelor|degree/i.test(text)
       ? (text.match(/phd|master'?s|bachelor'?s/i)?.[0] ?? "Degree preferred")
-      : "No formal requirement",
+      : "",
     industryExperience,
     companyStageTarget,
-    teamSize: text.match(/team of (\d+)/i)?.[0] ?? "6–10 engineers",
-    reportingTo: text.match(/report(?:s|ing) to (?:the )?([A-Za-z ]+?)[.,\n]/i)?.[1]?.trim() ?? "Engineering Manager",
+    teamSize: text.match(/team of (\d+)/i)?.[0] ?? "",
+    reportingTo: text.match(/report(?:s|ing) to (?:the )?([A-Za-z ]+?)[.,\n]/i)?.[1]?.trim() ?? "",
     urgency,
     language: detectLanguage(text),
-    validationWarnings,
+    validationWarnings: [],
   };
+
+  const validationWarnings: ValidationWarning[] = [...evaluateNeedReadiness(jobAnalysis).issues];
+  if (salaryMin == null) {
+    validationWarnings.push({ field: "salary", severity: "warning", message: "No salary range provided." });
+  }
+  if (requiredSkills.length > 0 && requiredSkills.length < 3) {
+    validationWarnings.push({
+      field: "requiredSkills",
+      severity: "warning",
+      message: "Fewer than 3 required skills were stated. Confirm whether the brief is complete.",
+    });
+  }
+  if (minYearsExperience == null) {
+    validationWarnings.push({ field: "experience", severity: "warning", message: "No years-of-experience band specified." });
+  }
+  jobAnalysis.validationWarnings = validationWarnings;
 
   const hasCritical = validationWarnings.some((w) => w.severity === "critical") || salaryMin == null;
   const clarificationDraft = hasCritical ? buildClarificationEmail(nameMatch, jobAnalysis, validationWarnings) : null;
@@ -567,8 +606,9 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
       salary: salaryMin != null ? 0.9 : 0.4,
       skills: clamp(0.55 + requiredSkills.length * 0.05, 0.5, 0.95),
       location: location ? 0.9 : locationType === "Remote" ? 0.9 : 0.7,
-      seniority: 0.85,
+      seniority: seniority === "Unspecified" ? 0 : 0.85,
     },
+    extractionMode: "evidence",
   };
 }
 
