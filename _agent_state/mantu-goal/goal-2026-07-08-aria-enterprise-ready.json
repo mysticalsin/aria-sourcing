@@ -6,9 +6,9 @@
   "rescope_reason": "Tony merged new /goal (2026-07-09): deer-flow-pattern on-demand sourcing agents, Flowise visual agent-builder section, gated autopilot with candidate reply handling. Explicit re-scoping decision via 5 Socratic questions + 4 clarifiers — NOT outcome drift.",
   "status": "IN_PROGRESS",
   "unsafe": false,
-  "outcome": "ARIA runs on-demand, single-task sourcing agents (deer-flow-pattern planner→sourcer→screener→outreach→reporter, fully parameterizable per role/candidate profile, hard guardrails), editable via an embedded Flowise Agent Studio section, with gated autopilot that can run sourcing autonomously and answer candidate replies within guardrails across email + WhatsApp (LinkedIn draft-gated), every outbound message passing a human-likeness gate, multi-tenant with admin dashboard, deployed to production.",
-  "outcome_criterion": "On the deployed production build: two test users (one admin, one regular) each create an on-demand sourcing agent for a different role via the embedded Agent Studio (Flowise) section; each runs a full sourcing cycle with zero code intervention; at least one real outreach email is sent to a Tony-controlled test inbox, the candidate answers back, and the gated-autopilot agent auto-answers the in-guardrail reply AND queues an out-of-guardrail reply for Tony approval; at least one WhatsApp message is sent to a Tony-controlled number via official API and passes the human-likeness gate (zero AI-tell/status/meta messages on the wire); admin dashboard shows both users activity plus efficiency metrics. Verifier: Tony runs acceptance script + manual pass, records PASS/FAIL.",
-  "outcome_criterion_hash": "bec1c7cca4d3051a5c4b9a456036130dba9dff133e9a9b9667d59df359ba4d5d",
+  "outcome": "ARIA runs on-demand, single-task sourcing agents (deer-flow-pattern planner→sourcer→screener→outreach→reporter, fully parameterizable per role/candidate profile, hard guardrails), editable via an embedded Flowise Agent Studio section, with queue-only reply drafting for candidate replies across email + WhatsApp (LinkedIn draft-gated), every outbound message passing a human-likeness gate and named-human approval before dispatch, multi-tenant with admin dashboard, deployed to production.",
+  "outcome_criterion": "On the deployed production build: two test users (one admin, one regular) each create an on-demand sourcing agent for a different role via the embedded Agent Studio (Flowise) section; each runs a full sourcing cycle with zero code intervention; at least one real outreach email is sent to a Tony-controlled test inbox, the candidate answers back, and the reply-drafting agent queues the generated reply for Tony approval; out-of-guardrail replies are also queued with explicit review reasons. At least one WhatsApp message is sent to a Tony-controlled number via official API and passes the human-likeness gate (zero AI-tell/status/meta messages on the wire); admin dashboard shows both users activity plus efficiency metrics. Verifier: Tony runs acceptance script + manual pass, records PASS/FAIL.",
+  "outcome_criterion_hash": "b9b53b404a16807830c3664d1409743ccbd739ed735fe8ea693964d5d385e8a8",
   "verifier": "Tony runs acceptance script + manual pass on deployed build; PASS/FAIL recorded in m12",
   "deadline": "2026-07-31T23:59:00+02:00",
   "out_of_scope": [
@@ -17,9 +17,9 @@
     "Billing / payments — internal tool, no invoicing module"
   ],
   "scope_notes": [
-    "LinkedIn IN scope, governed by policy engine (src/lib/linkedin-policy.ts); autopilot auto-SEND behavior per guardrail engine, not blanket-excluded",
+    "LinkedIn IN scope, governed by policy engine (src/lib/linkedin-policy.ts); LinkedIn remains draft-gated and no channel has autonomous provider delivery authority in this release",
     "Python fallback AUTHORIZED for agent-graph runtime if TS-native quality falls short (Tony, 2026-07-09)",
-    "Autopilot = gated: drafts instantly, auto-sends ONLY within approved-template/topic/rate guardrails; everything else queues for Tony approval. Never-auto-send stays platform default; autopilot is per-agent opt-in flag.",
+    "Reply drafting = queue-only for this release: agents draft candidate replies, but every generated reply queues for named-human approval before provider dispatch. Legacy autopilot fields are compatibility metadata only.",
     "WhatsApp channel (re-scope #2, Tony 2026-07-09): official API only (Meta Cloud API or Twilio) — unofficial libs (Baileys/whatsapp-web.js) banned, ToS/ban risk. Business-initiated messages use pre-approved templates; free-form only in 24h service window after candidate reply.",
     "HUMAN-LIKENESS GATE (applies to ALL channels, hardest on WhatsApp): agent narration/status/meta messages ('thinking', 'processing', action-done notices, AI tells) NEVER reach the wire — internal events stay in events table. Outbound pipeline = compose → cache/hold buffer → AI-tell filter (banned-pattern list + humanizer rules + classifier) → dedupe cache (normalized-text hash per candidate) → human pacing (typing delays, quiet hours, one message per conversation at a time) → send. Fails gate → blocked + queued for Tony."
   ],
@@ -165,8 +165,8 @@
     },
     {
       "id": "m6",
-      "title": "Multi-channel outreach + inbound reply pipeline: email send + inbound webhook ingestion, WhatsApp via official API (template messages + 24h-window free-form), gated-autopilot loop (in-guardrail auto-answer, out-of-guardrail approval queue), LinkedIn via policy engine draft-gated, human-likeness gate on ALL outbound (AI-tell filter + dedupe cache + human pacing)",
-      "verification": "Real wire test: email outreach to Tony inbox + WhatsApp message to Tony number, reply back, auto-answer within guardrails, out-of-guardrail queued; adversarial test suite proves zero AI-tell/status/meta messages pass the gate; LinkedIn drafts only unless policy engine passes",
+      "title": "Multi-channel outreach + inbound reply pipeline: email send + inbound webhook ingestion, WhatsApp via official API (template messages + 24h-window free-form), queue-only reply drafting, LinkedIn via policy engine draft-gated, human-likeness gate on ALL outbound (AI-tell filter + dedupe cache + human pacing)",
+      "verification": "Real wire test: email outreach to Tony inbox + WhatsApp message to Tony number, reply back, generated replies queued for named-human approval with guardrail reasons; adversarial test suite proves zero AI-tell/status/meta messages pass the gate; LinkedIn drafts only unless policy engine passes",
       "owner": "Sonnet (Fable on stuck)",
       "due": "2026-07-19T18:00:00+02:00",
       "depends_on": [
@@ -261,12 +261,12 @@
         "mitigation": "Pick provider (Resend/SendGrid/Mailgun inbound webhook) in m3; DNS setup starts immediately after; tests inject synthetic webhooks so build never blocks on DNS"
       },
       {
-        "risk": "Autopilot auto-sends something embarrassing/committing in Tony's name",
-        "mitigation": "Guardrail engine default-deny; approved template + topic scopes; canary mode (first N autopilot replies always queued); full audit trail; kill-switch flag per agent"
+        "risk": "A stale automation path sends something embarrassing/committing in Tony's name",
+        "mitigation": "Queue-only reply drafting; guardrail engine default-deny; named-human approval before provider dispatch; full audit trail; no autonomous delivery path in this release"
       },
       {
         "risk": "LinkedIn automation triggers policy bans",
-        "mitigation": "linkedin-policy.ts governs all LinkedIn actions; auto-send limited to email; LinkedIn always draft-gated; rate limits enforced"
+        "mitigation": "linkedin-policy.ts governs all LinkedIn actions; all channels stay approval-gated before provider dispatch; LinkedIn always draft-gated; rate limits enforced"
       },
       {
         "risk": "deer-flow pattern port bigger than expected; TS runtime quality shortfall",
@@ -290,7 +290,7 @@
       },
       {
         "risk": "AI-tell message leaks to a candidate on WhatsApp despite gate (worst reputational failure)",
-        "mitigation": "Default-deny outbound pipeline: only messages typed 'candidate_reply' or 'approved_template' can enter send queue — agent events/status physically separate table with no send path; adversarial test suite (inject 50+ AI-tell fixtures, assert 100% blocked); canary mode + audit trail"
+        "mitigation": "Default-deny outbound pipeline: only messages typed 'candidate_reply' or 'approved_template' can enter approval/send queues — agent events/status physically separate table with no send path; adversarial test suite (inject 50+ AI-tell fixtures, assert 100% blocked); queue-only reply drafting + audit trail"
       }
     ]
   },

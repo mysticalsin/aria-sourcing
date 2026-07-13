@@ -169,6 +169,8 @@ export function TopBar() {
   // Same derived, ranked queue the dashboard's Priority queue panel renders --
   // top 3 here so the bell and the panel can never show conflicting priorities.
   const notifications = recommendations.slice(0, 3).map((rec) => ({ label: rec.title, href: rec.href }));
+  const canRunSyntheticDemo = hydrated && !supabaseEnabled;
+  const canResetSyntheticDemo = !supabaseEnabled;
 
   return (
     <>
@@ -224,19 +226,20 @@ export function TopBar() {
           Approval required
         </span>
 
-        {/* Aria Live (Demo Director) — plays the whole hire funnel hands-free
+        {/* Synthetic demo director — plays the whole hire funnel hands-free
             with camera cuts (~20s): source -> draft -> approve -> reply ->
             book -> report. Fully reverted on close (see aria-live.ts). */}
-        <button
-          type="button"
-          onClick={playAriaLive}
-          disabled={!hydrated}
-          className="hidden items-center gap-1.5 rounded-full bg-gradient-to-br from-electric to-violet px-3 py-1.5 text-xs font-bold text-white shadow-soft transition hover:from-tangerine hover:to-violet focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric disabled:opacity-50 lg:inline-flex"
-          title="Play the full hire funnel hands-free (~20s)"
-        >
-          <Sparkles className="h-3.5 w-3.5" />
-          Aria Live
-        </button>
+        {canRunSyntheticDemo && (
+          <button
+            type="button"
+            onClick={playAriaLive}
+            className="hidden items-center gap-1.5 rounded-full bg-gradient-to-br from-electric to-violet px-3 py-1.5 text-xs font-bold text-white shadow-soft transition hover:from-tangerine hover:to-violet focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric disabled:opacity-50 lg:inline-flex"
+            title="Play the synthetic demo hire funnel (~20s)"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Synthetic demo
+          </button>
+        )}
 
         {/* Hey Aria — push-to-talk voice console. Reuses the exact same
             deterministic Aria Command grammar + gated runAriaPlan dispatch
@@ -349,29 +352,31 @@ export function TopBar() {
                   >
                     <ShieldCheck className="h-4 w-4" /> Settings & compliance
                   </Link>
-                  <button
-                    role="menuitem"
-                    onClick={async () => {
-                      setUserOpen(false);
-                      const ok = await confirm({
-                        title: "Reset workspace to defaults?",
-                        description:
-                          "This discards all local changes and restores the workspace to factory defaults. This can't be undone.",
-                        confirmLabel: "Reset",
-                        danger: true,
-                      });
-                      if (!ok) return;
-                      resetDemo();
-                      toast({ title: "Reset to defaults", description: "Workspace restored to factory defaults.", variant: "success" });
-                      // Full reload (not router.push) so the seeded in-memory state is
-                      // discarded before any debounced persist can overwrite a live
-                      // shared workspace. In live mode this re-hydrates from Supabase.
-                      window.location.href = "/";
-                    }}
-                    className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm text-ink-soft hover:bg-ink/5"
-                  >
-                    <RotateCcw className="h-4 w-4" /> Reset to defaults
-                  </button>
+                  {canResetSyntheticDemo && (
+                    <button
+                      role="menuitem"
+                      onClick={async () => {
+                        setUserOpen(false);
+                        const ok = await confirm({
+                          title: "Reset synthetic demo?",
+                          description:
+                            "This discards local demo changes and restores the synthetic demo data. It is not available in live workspaces.",
+                          confirmLabel: "Reset demo",
+                          danger: true,
+                        });
+                        if (!ok) return;
+                        resetDemo();
+                        toast({ title: "Synthetic demo reset", description: "Local demo data was restored. No live workspace was changed.", variant: "info" });
+                        // Full reload (not router.push) so the seeded in-memory state is
+                        // discarded before any debounced persist can overwrite a live
+                        // shared workspace. In live mode this control is hidden.
+                        window.location.href = "/";
+                      }}
+                      className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm text-ink-soft hover:bg-ink/5"
+                    >
+                      <RotateCcw className="h-4 w-4" /> Reset synthetic demo
+                    </button>
+                  )}
                   {(supabaseEnabled || demoLoginEnabled) && (
                     <a
                       href="/auth/signout"
