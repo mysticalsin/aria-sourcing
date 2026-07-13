@@ -1,6 +1,6 @@
 import type { Candidate, Campaign } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
-import type { ReplayStep, ReplayStepKind } from "@/components/sessions/decision-replay";
+import type { ReplayStep, ReplayStepKind } from "@/components/sessions/replay-model";
 
 /* ============================================================================
    Audit Pack — a plain, ink-on-paper, paginated trace of a candidate's

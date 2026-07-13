@@ -4,6 +4,8 @@
 // only the final delivery — the approval gate, suppression, and guardrails upstream
 // still apply, so this never bypasses never-auto-send.
 
+import { classifyFailedHttpDeliveryState } from "@/lib/delivery-outcome";
+
 export interface ChannelSendRequest {
   to: string; // E.164 phone, e.g. +14155552671
   body: string;
@@ -45,12 +47,6 @@ export interface ChannelSendOutcome {
 }
 
 const TIMEOUT = 15_000;
-
-function failedHttpDeliveryState(status: number): "not-sent" | "unknown" {
-  // A timeout or server failure can be returned after the provider processed
-  // the request. Client rejections are definitive; these responses are not.
-  return status === 408 || status >= 500 ? "unknown" : "not-sent";
-}
 
 // Graph API versions expire ~2 years after release (v18.0 died early 2026).
 // v21.0 is the early-2026 stable; override without a deploy if Meta sunsets it.
@@ -112,7 +108,7 @@ export async function sendWhatsApp(req: WhatsAppSendRequest): Promise<ChannelSen
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(TIMEOUT),
     });
-    if (!res.ok) return { status: "error", deliveryState: failedHttpDeliveryState(res.status), provider: "WhatsApp Cloud", detail: `WhatsApp API ${res.status}` };
+    if (!res.ok) return { status: "error", deliveryState: classifyFailedHttpDeliveryState(res.status), provider: "WhatsApp Cloud", detail: `WhatsApp API ${res.status}` };
     const data = (await res.json().catch(() => ({}))) as { messages?: { id?: string }[] };
     const providerMessageId = data.messages?.[0]?.id;
     if (!providerMessageId) {
@@ -159,7 +155,7 @@ export async function sendSms(req: ChannelSendRequest): Promise<ChannelSendOutco
       body: form.toString(),
       signal: AbortSignal.timeout(TIMEOUT),
     });
-    if (!res.ok) return { status: "error", deliveryState: failedHttpDeliveryState(res.status), provider: "Twilio SMS", detail: `Twilio ${res.status}` };
+    if (!res.ok) return { status: "error", deliveryState: classifyFailedHttpDeliveryState(res.status), provider: "Twilio SMS", detail: `Twilio ${res.status}` };
     const data = (await res.json().catch(() => ({}))) as { sid?: string };
     const providerMessageId = data.sid?.trim();
     if (!providerMessageId) {

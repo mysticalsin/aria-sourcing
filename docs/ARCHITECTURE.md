@@ -136,6 +136,8 @@ There are three distinct draft paths. Do not merge their authority:
 
 `src/app/api/outreach/send/route.ts` is the live email delivery boundary.
 `src/lib/dispatch-outbound.ts` owns durable dispatch and reconciliation.
+`src/lib/delivery-outcome.ts` owns the shared HTTP retry-safety
+classification used by email and messaging adapters.
 WhatsApp adds sender, consent, template or reply-window, review, and signed
 webhook checks. Unknown provider outcomes remain non-retryable until an operator
 reconciles them.

@@ -19,6 +19,7 @@ import type {
 import { cn, formatDateTime, formatTimeAgo, toneForBookingStatus, toneForIntent, toneForOutreachStatus, toneForStage } from "@/lib/utils";
 import type { Tone } from "@/lib/utils";
 import { AuditPack } from "@/components/sessions/audit-pack";
+import type { ReplayStep, ReplayStepKind } from "@/components/sessions/replay-model";
 import {
   Ban,
   CalendarCheck2,
@@ -46,38 +47,6 @@ import type { LucideIcon } from "lucide-react";
    timeline with an evidence rail that switches by step kind, plus a printable
    audit pack export. Read-only: nothing here mutates state.
    ========================================================================== */
-
-export type ReplayStepKind =
-  | "sourced"
-  | "scored"
-  | "drafted"
-  | "approved"
-  | "sent"
-  | "rejected"
-  | "replied"
-  | "booked"
-  | "compliance"
-  | "note"
-  | "other";
-
-export interface ReplayStep {
-  key: string;
-  kind: ReplayStepKind;
-  at: string;
-  title: string;
-  outcome: string;
-  notes: string;
-  /** The human (or agent) signature behind this step. */
-  who: string;
-  /** True for the two canonical opening steps that have no discrete activity
-   *  log entry of their own (see buildReplayChain) — surfaced in the UI so
-   *  the replay never claims a log entry that doesn't exist. */
-  synthesized: boolean;
-  message?: OutreachMessage;
-  reply?: ClassifiedReply;
-  booking?: Booking;
-  interview?: InterviewRecord;
-}
 
 const STEP_META: Record<ReplayStepKind, { label: string; icon: LucideIcon; tone: Tone }> = {
   sourced: { label: "Sourced", icon: Search, tone: "neutral" },

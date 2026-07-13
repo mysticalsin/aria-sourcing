@@ -1,5 +1,6 @@
 import { redactEmail, redactSecrets } from "@/lib/log-redact";
 import { renderEmailWithUnsubscribe, type RenderedUnsubscribeEmail } from "@/lib/email-unsubscribe";
+import { classifyFailedHttpDeliveryState } from "@/lib/delivery-outcome";
 import type { EmailConnection, EmailConnectionProvider } from "./types";
 
 export interface OAuthSendRequest {
@@ -24,14 +25,6 @@ export interface OAuthSendOutcome {
   provider: EmailConnectionProvider;
   detail: string;
   id?: string;
-}
-
-/** Classify a failed HTTP response by whether the provider may still have
- *  processed the request before failing. */
-function failedHttpDeliveryState(status: number): "not-sent" | "unknown" {
-  // A timeout or server failure can be returned after the provider processed
-  // the request. Client rejections are definitive; these responses are not.
-  return status === 408 || status >= 500 ? "unknown" : "not-sent";
 }
 
 /** Send via Gmail API using a stored OAuth connection. */
@@ -59,7 +52,7 @@ export async function sendViaGmailApi(req: OAuthSendRequest, connection: EmailCo
     });
     const json = (await res.json().catch(() => ({}))) as { id?: string };
     if (!res.ok) {
-      return { status: "error", deliveryState: failedHttpDeliveryState(res.status), provider, detail: `Gmail API error ${res.status}.` };
+      return { status: "error", deliveryState: classifyFailedHttpDeliveryState(res.status), provider, detail: `Gmail API error ${res.status}.` };
     }
     return { status: "sent", deliveryState: "accepted", provider, detail: "Sent via Gmail API.", id: json.id };
   } catch {
@@ -98,7 +91,7 @@ export async function sendViaMicrosoftGraph(
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
       console.error("Microsoft Graph send error", { status: res.status, body: redactSecrets(redactEmail(txt.slice(0, 500))) });
-      return { status: "error", deliveryState: failedHttpDeliveryState(res.status), provider, detail: `Microsoft Graph send error ${res.status}.` };
+      return { status: "error", deliveryState: classifyFailedHttpDeliveryState(res.status), provider, detail: `Microsoft Graph send error ${res.status}.` };
     }
     return { status: "sent", deliveryState: "accepted", provider, detail: "Sent via Microsoft Graph." };
   } catch {

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
 let passed = 0;
@@ -33,6 +33,22 @@ const setupSources = [
 
 ok("setup uses a PATH Supabase CLI instead of a committed binary", !setupSources.includes("./.localbin/supabase"));
 ok("setup no longer claims the Supabase CLI is vendored", !/Supabase CLI is already vendored/i.test(setupSources));
+
+const replayModelPath = "src/components/sessions/replay-model.ts";
+const auditPackSource = readFileSync("src/components/sessions/audit-pack.tsx", "utf8");
+const decisionReplaySource = readFileSync("src/components/sessions/decision-replay.tsx", "utf8");
+ok("session replay types have a neutral module owner", existsSync(replayModelPath));
+ok(
+  "audit pack does not import the component that renders it",
+  !auditPackSource.includes("@/components/sessions/decision-replay") &&
+    auditPackSource.includes("@/components/sessions/replay-model"),
+);
+ok(
+  "decision replay consumes the neutral replay model",
+  decisionReplaySource.includes("@/components/sessions/replay-model") &&
+    !/export type ReplayStepKind\s*=/.test(decisionReplaySource) &&
+    !/export interface ReplayStep\s*\{/.test(decisionReplaySource),
+);
 
 console.log(`RESULT repository-hygiene: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;

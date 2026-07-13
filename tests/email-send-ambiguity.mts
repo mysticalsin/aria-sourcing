@@ -17,7 +17,7 @@
      4. Route/type source pins (phase-aware catch, LEDGER_STATUSES).
    ========================================================================== */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mock } from "node:test";
 import { NextRequest } from "next/server";
 import { sendViaProvider } from "../src/lib/providers";
@@ -99,6 +99,41 @@ try {
   /* =========================================================================
      1. Adapter error-phase classification.
      ======================================================================= */
+  const sharedClassifierUrl = new URL("../src/lib/delivery-outcome.ts", import.meta.url);
+  ok("delivery ambiguity classifier has one shared domain owner", existsSync(sharedClassifierUrl));
+  if (existsSync(sharedClassifierUrl)) {
+    const { classifyFailedHttpDeliveryState } = await import("../src/lib/delivery-outcome");
+    for (const status of [400, 409, 422, 429, 499]) {
+      ok(
+        `HTTP ${status} is a definitive provider rejection`,
+        classifyFailedHttpDeliveryState(status) === "not-sent",
+      );
+    }
+    for (const status of [408, 500, 502, 503, 599]) {
+      ok(
+        `HTTP ${status} can be ambiguous after request transport`,
+        classifyFailedHttpDeliveryState(status) === "unknown",
+      );
+    }
+  }
+  const providersSource = readFileSync(new URL("../src/lib/providers.ts", import.meta.url), "utf8");
+  const oauthSource = readFileSync(new URL("../src/lib/email-oauth.ts", import.meta.url), "utf8");
+  const channelsSource = readFileSync(new URL("../src/lib/channels.ts", import.meta.url), "utf8");
+  for (const [adapter, source] of [
+    ["API-key email", providersSource],
+    ["OAuth email", oauthSource],
+    ["messaging", channelsSource],
+  ] as const) {
+    ok(
+      `${adapter} adapter imports the shared delivery classifier`,
+      /import\s+\{\s*classifyFailedHttpDeliveryState\s*\}\s+from\s+["']@\/lib\/delivery-outcome["']/.test(source),
+    );
+    ok(
+      `${adapter} adapter defines no private copy of delivery classification`,
+      !/function\s+failedHttpDeliveryState\s*\(/.test(source),
+    );
+  }
+
   const throwingFetch = (async () => {
     throw Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
   }) as typeof fetch;
