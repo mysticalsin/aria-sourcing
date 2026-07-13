@@ -8,6 +8,7 @@ import {
   type CandidateLite,
   type GraphDeps,
 } from "../src/lib/agents/graph";
+import { resolveStoredAgentRuntimePolicy } from "../src/lib/agents/runtime-policy";
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) { if (cond) { pass++; } else { fail++; console.log("FAIL:", name); } }
@@ -26,8 +27,28 @@ const POOL: Record<string, CandidateLite[]> = {
   ],
 };
 
-function makeDeps(overrides?: Partial<GraphDeps> & { planJson?: string; draftBody?: string }): GraphDeps & { generateCalls: string[] } {
+// ---------------------------------------------------------------------------
+// Stored policy admits only the channel this graph can execute truthfully
+// ---------------------------------------------------------------------------
+{
+  const email = resolveStoredAgentRuntimePolicy(
+    ["Email"],
+    { autopilot: true, canary_remaining: 3, topics_allow: ["architecture", "architecture"] },
+  );
+  const mixed = resolveStoredAgentRuntimePolicy(
+    ["Email", "WhatsApp"],
+    { autopilot: false, canary_remaining: 5 },
+  );
+  ok(
+    "policy resolver: legacy autopilot remains human-review-only and topics are deduplicated",
+    email.ok && email.policy.queueMode === "human_review" && email.policy.autopilotRequested && email.policy.topicsAllow.length === 1,
+  );
+  ok("policy resolver: mixed channels fail closed instead of silently dropping one", !mixed.ok);
+}
+
+function makeDeps(overrides?: Partial<GraphDeps> & { planJson?: string; draftBody?: string }): GraphDeps & { generateCalls: string[]; promptCalls: string[] } {
   const generateCalls: string[] = [];
+  const promptCalls: string[] = [];
   const planJson =
     overrides?.planJson ??
     JSON.stringify({
@@ -42,8 +63,10 @@ function makeDeps(overrides?: Partial<GraphDeps> & { planJson?: string; draftBod
     "Hi there, your work on Go services with heavy Postgres loads caught my eye. We have a staff role doing exactly that. Open to a quick chat?";
   return {
     generateCalls,
-    async generate(system: string) {
+    promptCalls,
+    async generate(system: string, prompt: string) {
       generateCalls.push(system.slice(0, 30));
+      promptCalls.push(prompt);
       if (system.startsWith("You plan candidate sourcing")) return "```json\n" + planJson + "\n```";
       return JSON.stringify({ subject: "Go + Postgres staff role", body: draftBody });
     },
@@ -52,6 +75,34 @@ function makeDeps(overrides?: Partial<GraphDeps> & { planJson?: string; draftBod
     },
     ...((overrides ?? {}) as Partial<GraphDeps>),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Stored execution policy is auditable and revalidated before every graph step
+// ---------------------------------------------------------------------------
+{
+  const deps = makeDeps();
+  const checkedNodes: string[] = [];
+  const policy = {
+    channel: "Email" as const,
+    topicsAllow: ["architecture", "career growth"],
+    queueMode: "human_review" as const,
+    autopilotRequested: true,
+  };
+  const result = await runGraph(
+    initialState(BRIEF, 1, policy),
+    deps,
+    undefined,
+    "planner",
+    0,
+    async (node) => { checkedNodes.push(node); },
+  );
+  ok("policy: stored snapshot remains in persisted graph state", result.state.executionPolicy?.queueMode === "human_review");
+  ok("policy: every executed node is preceded by status revalidation", checkedNodes.length === result.steps && checkedNodes[0] === "planner");
+  ok(
+    "policy: stored allowed topics constrain candidate-facing drafting context",
+    deps.promptCalls.some((prompt) => prompt.includes("Allowed outreach topics: architecture, career growth")),
+  );
 }
 
 // ---------------------------------------------------------------------------

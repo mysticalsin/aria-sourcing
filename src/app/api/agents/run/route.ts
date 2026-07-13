@@ -22,6 +22,7 @@ import {
   createAgentRunWithMemoryContext,
   loadAgentMemoryContext,
 } from "@/lib/agents/memory";
+import { resolveStoredAgentRuntimePolicy } from "@/lib/agents/runtime-policy";
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import { DEFAULT_SCORING_WEIGHTS } from "@/lib/scoring";
 
@@ -136,7 +137,7 @@ export async function POST(req: NextRequest) {
 
   const { data: spec, error: specError } = await supabase
     .from("agent_specs")
-    .select("id,workspace_id,owner_id,role_brief,status")
+    .select("id,workspace_id,owner_id,role_brief,channels,guardrails,status")
     .eq("id", specId)
     .eq("workspace_id", workspaceId)
     .eq("status", "active")
@@ -147,6 +148,10 @@ export async function POST(req: NextRequest) {
 
   const jobAnalysis = normalizeStoredRoleBrief(spec.role_brief);
   if (!jobAnalysis) return NextResponse.json({ ok: false, reason: "Stored agent role brief is invalid." }, { status: 409 });
+  const runtimePolicy = resolveStoredAgentRuntimePolicy(spec.channels, spec.guardrails);
+  if (!runtimePolicy.ok) {
+    return NextResponse.json({ ok: false, reason: runtimePolicy.reason }, { status: 409 });
+  }
 
   const service = getServiceSupabase();
   if (!service) {
@@ -242,17 +247,23 @@ export async function POST(req: NextRequest) {
 
   // stepGraph applies candidateDisclosureContextForCampaignLike before any
   // candidate-facing model prompt; the raw brief remains server-side for sink scans.
-  const state = initialState(campaign.jobAnalysis as unknown as Record<string, unknown>, count);
+  const state = initialState(
+    campaign.jobAnalysis as unknown as Record<string, unknown>,
+    count,
+    runtimePolicy.policy,
+  );
   let result: Awaited<ReturnType<typeof runGraph>>;
   try {
     result = await runGraph(state, deps, async (node, s, event) => {
+      const hasReviewableDrafts = s.drafts.some((draft) => draft.gatePassed);
+      const terminalStatus = hasReviewableDrafts ? "awaiting_gate" : "done";
       const { error: runError } = await service
         .from("agent_runs")
         .update({
           node,
           state_json: s as unknown as Record<string, unknown>,
           step_count: s.drafts.length + s.planCursor,
-          status: node === "done" ? "done" : "running",
+          status: node === "done" ? terminalStatus : "running",
           ...(node === "done" ? { finished_at: new Date().toISOString() } : {}),
         })
         .eq("id", runId)
@@ -265,6 +276,16 @@ export async function POST(req: NextRequest) {
         .from("agent_events")
         .insert({ run_id: runId, workspace_id: workspaceId, type: event.type, payload: event.payload });
       if (eventError) throw new Error("Agent run persistence failed.");
+    }, "planner", 0, async () => {
+      const { data: activeSpec, error: activeSpecError } = await supabase
+        .from("agent_specs")
+        .select("id")
+        .eq("id", spec.id)
+        .eq("workspace_id", workspaceId)
+        .eq("owner_id", spec.owner_id)
+        .eq("status", "active")
+        .maybeSingle();
+      if (activeSpecError || !activeSpec) throw new Error("Agent spec is no longer active.");
     });
   } catch {
     await failPersistedRun();
@@ -288,6 +309,7 @@ export async function POST(req: NextRequest) {
     candidates,
     totalFound: found.length,
     heldByGate: result.state.drafts.filter((d) => !d.gatePassed).length,
+    reviewQueueStatus: result.state.drafts.some((d) => d.gatePassed) ? "awaiting_gate" : "empty",
     errors: result.state.errors,
   });
 }

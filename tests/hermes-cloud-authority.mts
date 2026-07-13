@@ -24,6 +24,9 @@ let graphCalls = 0;
 let vaultProvider = "OpenAI";
 let agentSpecAvailable = true;
 let runPersistenceFails = false;
+let agentSpecChannels = ["Email"];
+let agentSpecGuardrails = { autopilot: false, canary_remaining: 5, topics_allow: ["role fit"] };
+let capturedAgentPolicy: Record<string, unknown> | undefined;
 const resolverCalls: Array<{ id?: string; provider?: string }> = [];
 const serviceReadTables: string[] = [];
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
@@ -50,6 +53,8 @@ const session = {
               workspace_id: workspaceId,
               owner_id: "user-1",
               role_brief: { title: "Platform Engineer", skills: ["TypeScript"] },
+              channels: agentSpecChannels,
+              guardrails: agentSpecGuardrails,
               status: "active",
             }
           : null,
@@ -123,7 +128,10 @@ mock.module(moduleUrl("src/lib/ai/tool-loop.ts"), {
 });
 mock.module(moduleUrl("src/lib/agents/graph.ts"), {
   namedExports: {
-    initialState: () => ({ drafts: [], planCursor: 0, errors: [], report: "" }),
+    initialState: (_brief: unknown, _count: unknown, policy?: Record<string, unknown>) => {
+      capturedAgentPolicy = policy;
+      return { drafts: [], planCursor: 0, errors: [], report: "", executionPolicy: policy };
+    },
     runGraph: async (state: Record<string, unknown>, deps: { generate: (system: string, prompt: string) => Promise<string> }) => {
       graphCalls += 1;
       await deps.generate("system", "prompt");
@@ -194,6 +202,7 @@ try {
     upstreamCalls = 0;
     toolLoopCalls = 0;
     graphCalls = 0;
+    capturedAgentPolicy = undefined;
     serviceReadTables.length = 0;
   };
 
@@ -300,9 +309,26 @@ try {
   const adminAgentBody = (await adminAgent.json()) as { ok?: boolean };
   ok("admin can run the live cloud graph agent", adminAgent.status === 200 && adminAgentBody.ok === true);
   ok(
+    "graph agent snapshots stored channels and guardrails into its runtime policy",
+    capturedAgentPolicy?.channel === "Email" &&
+      Array.isArray(capturedAgentPolicy?.topicsAllow) &&
+      capturedAgentPolicy.topicsAllow[0] === "role fit" &&
+      capturedAgentPolicy.queueMode === "human_review",
+  );
+  ok(
     "admin graph agent binds its key before one provider call",
     resolverCalls.some((call) => call.provider === "OpenAI") && graphCalls === 1 && upstreamCalls === 1,
   );
+
+  agentSpecChannels = ["WhatsApp"];
+  resetCalls();
+  const unsupportedChannelAgent = await agentRoute.POST(agentRequest());
+  ok("graph agent rejects a spec with no supported queue-only draft channel", unsupportedChannelAgent.status === 409);
+  ok(
+    "unsupported stored channels fail before receipt, vault, graph, or model egress",
+    resolverCalls.length === 0 && serviceReadTables.length === 0 && graphCalls === 0 && upstreamCalls === 0,
+  );
+  agentSpecChannels = ["Email"];
 
   vaultProvider = "Anthropic";
   resetCalls();

@@ -26,6 +26,7 @@ import {
   disclosureInternalFromCampaignLike,
   validateCandidateBoundText,
 } from "@/lib/agent-disclosure-policy";
+import type { AgentExecutionPolicy } from "@/lib/agents/runtime-policy";
 
 export type AgentNode = "planner" | "sourcer" | "screener" | "outreach" | "reporter" | "done";
 
@@ -75,10 +76,34 @@ export interface AgentGraphState {
   drafts: DraftLite[];
   report?: string;
   errors: string[];
+  /** Immutable stored-spec policy snapshot for audit and resumability. */
+  executionPolicy: AgentExecutionPolicy;
 }
 
-export function initialState(brief: Record<string, unknown>, draftCount = 5, minScore = DEFAULT_MIN_SCORE): AgentGraphState {
-  return { brief, draftCount, minScore, planCursor: 0, candidates: [], screened: [], drafts: [], errors: [] };
+const DEFAULT_EXECUTION_POLICY: AgentExecutionPolicy = {
+  channel: "Email",
+  topicsAllow: [],
+  queueMode: "human_review",
+  autopilotRequested: false,
+};
+
+export function initialState(
+  brief: Record<string, unknown>,
+  draftCount = 5,
+  executionPolicy: AgentExecutionPolicy = DEFAULT_EXECUTION_POLICY,
+  minScore = DEFAULT_MIN_SCORE,
+): AgentGraphState {
+  return {
+    brief,
+    draftCount,
+    executionPolicy,
+    minScore,
+    planCursor: 0,
+    candidates: [],
+    screened: [],
+    drafts: [],
+    errors: [],
+  };
 }
 
 export interface GraphDeps {
@@ -182,7 +207,11 @@ export async function stepGraph(node: AgentNode, state: AgentGraphState, deps: G
       if (!target) return { node: "reporter", state, event: { type: "outreach_complete", payload: { drafts: state.drafts.length } } };
       const raw = await deps.generate(
         OUTREACH_SYSTEM,
-        `Role brief:\n${candidateDisclosureContextForCampaignLike(state.brief).slice(0, 2_000)}\n\nCandidate:\n${JSON.stringify(target)}`,
+        `Role brief:\n${candidateDisclosureContextForCampaignLike(state.brief).slice(0, 2_000)}` +
+          (state.executionPolicy.topicsAllow.length
+            ? `\n\nAllowed outreach topics: ${state.executionPolicy.topicsAllow.join(", ")}`
+            : "") +
+          `\n\nCandidate:\n${JSON.stringify(target)}`,
       );
       const parsed = extractJson(raw) as { subject?: string; body?: string } | null;
       const subject = String(parsed?.subject ?? "").slice(0, 255);
@@ -230,11 +259,13 @@ export async function runGraph(
   onStep?: (node: AgentNode, state: AgentGraphState, event: StepResult["event"]) => Promise<void>,
   startNode: AgentNode = "planner",
   startStep = 0,
+  beforeStep?: (node: AgentNode, state: AgentGraphState, step: number) => Promise<void>,
 ): Promise<{ node: AgentNode; state: AgentGraphState; steps: number }> {
   let node: AgentNode = startNode;
   let current = state;
   let steps = startStep;
   while (node !== "done" && steps < MAX_STEPS) {
+    if (beforeStep) await beforeStep(node, current, steps);
     const result = await stepGraph(node, current, deps);
     node = result.node;
     current = result.state;
