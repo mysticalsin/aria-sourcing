@@ -4,7 +4,7 @@ import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
-import type { Campaign, Candidate, JobAnalysis, Role } from "@/lib/types";
+import type { Campaign, Candidate, Role } from "@/lib/types";
 import {
   DEFAULT_MODEL,
   PROVIDER_ENV,
@@ -22,6 +22,10 @@ import {
   createAgentRunWithMemoryContext,
   loadAgentMemoryContext,
 } from "@/lib/agents/memory";
+import {
+  normalizeStoredAgentRoleBrief,
+  resolveStoredAgentRuntimePolicy,
+} from "@/lib/agents/runtime-policy";
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import { DEFAULT_SCORING_WEIGHTS } from "@/lib/scoring";
 
@@ -33,9 +37,9 @@ export const runtime = "nodejs";
  * (planner → sourcer → screener → outreach → reporter) over the same real
  * search + deterministic scoring the single-shot /api/sourcing-agent uses.
  *
- * Same posture as that route: TEXT + SEARCH ONLY. This never sends anything;
- * gate-passing drafts enter queue-only human review before send. This route
- * never approves or sends candidate communication.
+ * Same posture as that route: TEXT + SEARCH ONLY. This never sends anything.
+ * Gate-passing drafts remain in run history with no delivery authority; this
+ * route creates no approval queue and sends no candidate communication.
  *
  * Every run is bound to one active stored agent spec. Its approved encrypted
  * memory selection is receipted before model execution, and every graph node
@@ -51,50 +55,6 @@ const AgentRunSchema = z.object({
   model: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/).optional(),
   specId: z.string().uuid(),
 });
-
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-}
-
-/** Legacy specs were accepted as free-form JSON. Normalize only stored fields
- * so old specs remain runnable without restoring caller-controlled authority. */
-function normalizeStoredRoleBrief(value: unknown): JobAnalysis | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const brief = value as Record<string, unknown>;
-  const title = typeof brief.title === "string" ? brief.title.trim() : "";
-  if (!title) return null;
-  const numberOrNull = (candidate: unknown) =>
-    typeof candidate === "number" && Number.isFinite(candidate) ? candidate : null;
-
-  return {
-    ...brief,
-    title,
-    department: typeof brief.department === "string" ? brief.department : "",
-    seniority: typeof brief.seniority === "string" ? brief.seniority : "Senior",
-    employmentType: typeof brief.employmentType === "string" ? brief.employmentType : "Full-time",
-    locationType: typeof brief.locationType === "string" ? brief.locationType : "Remote",
-    location: typeof brief.location === "string" ? brief.location : "",
-    regions: stringArray(brief.regions),
-    timezone: typeof brief.timezone === "string" ? brief.timezone : "",
-    salaryMin: numberOrNull(brief.salaryMin),
-    salaryMax: numberOrNull(brief.salaryMax),
-    currency: typeof brief.currency === "string" ? brief.currency : "",
-    equity: brief.equity === true,
-    requiredSkills: stringArray(brief.requiredSkills).length
-      ? stringArray(brief.requiredSkills)
-      : stringArray(brief.skills),
-    niceToHaveSkills: stringArray(brief.niceToHaveSkills),
-    minYearsExperience: numberOrNull(brief.minYearsExperience),
-    maxYearsExperience: numberOrNull(brief.maxYearsExperience),
-    education: typeof brief.education === "string" ? brief.education : "",
-    industryExperience: stringArray(brief.industryExperience),
-    companyStageTarget: stringArray(brief.companyStageTarget),
-    teamSize: typeof brief.teamSize === "string" ? brief.teamSize : "",
-    reportingTo: typeof brief.reportingTo === "string" ? brief.reportingTo : "",
-    urgency: typeof brief.urgency === "string" ? brief.urgency : "Standard",
-    validationWarnings: [],
-  } as JobAnalysis;
-}
 
 export async function POST(req: NextRequest) {
   const prodBlock = prodFailClosed();
@@ -136,17 +96,22 @@ export async function POST(req: NextRequest) {
 
   const { data: spec, error: specError } = await supabase
     .from("agent_specs")
-    .select("id,workspace_id,owner_id,role_brief,status")
+    .select("id,workspace_id,owner_id,role_brief,channels,guardrails,status")
     .eq("id", specId)
     .eq("workspace_id", workspaceId)
+    .eq("owner_id", userId)
     .eq("status", "active")
     .maybeSingle();
-  if (specError || !spec) {
+  if (specError || !spec || spec.owner_id !== userId) {
     return NextResponse.json({ ok: false, reason: "Active agent spec not found." }, { status: 404 });
   }
 
-  const jobAnalysis = normalizeStoredRoleBrief(spec.role_brief);
+  const jobAnalysis = normalizeStoredAgentRoleBrief(spec.role_brief);
   if (!jobAnalysis) return NextResponse.json({ ok: false, reason: "Stored agent role brief is invalid." }, { status: 409 });
+  const runtimePolicy = resolveStoredAgentRuntimePolicy(spec.channels, spec.guardrails);
+  if (!runtimePolicy.ok) {
+    return NextResponse.json({ ok: false, reason: runtimePolicy.reason }, { status: 409 });
+  }
 
   const service = getServiceSupabase();
   if (!service) {
@@ -174,6 +139,30 @@ export async function POST(req: NextRequest) {
       .eq("owner_id", spec.owner_id)
       .eq("spec_id", spec.id);
   };
+
+  const state = initialState(
+    jobAnalysis as unknown as Record<string, unknown>,
+    count,
+    runtimePolicy.policy,
+  );
+  const persistAgentRuntimeSnapshot = async () => {
+    const { data: persisted, error } = await service
+      .from("agent_runs")
+      .update({ node: "planner", state_json: state as unknown as Record<string, unknown>, step_count: 0, status: "running" })
+      .eq("id", runId)
+      .eq("workspace_id", workspaceId)
+      .eq("owner_id", spec.owner_id)
+      .eq("spec_id", spec.id)
+      .select("id")
+      .maybeSingle();
+    if (error || !persisted) throw new Error("Agent runtime snapshot persistence failed.");
+  };
+  try {
+    await persistAgentRuntimeSnapshot();
+  } catch {
+    await failPersistedRun();
+    return NextResponse.json({ ok: false, reason: "Agent runtime snapshot persistence failed." }, { status: 503 });
+  }
 
   let memoryContext;
   try {
@@ -242,7 +231,6 @@ export async function POST(req: NextRequest) {
 
   // stepGraph applies candidateDisclosureContextForCampaignLike before any
   // candidate-facing model prompt; the raw brief remains server-side for sink scans.
-  const state = initialState(campaign.jobAnalysis as unknown as Record<string, unknown>, count);
   let result: Awaited<ReturnType<typeof runGraph>>;
   try {
     result = await runGraph(state, deps, async (node, s, event) => {
@@ -265,6 +253,16 @@ export async function POST(req: NextRequest) {
         .from("agent_events")
         .insert({ run_id: runId, workspace_id: workspaceId, type: event.type, payload: event.payload });
       if (eventError) throw new Error("Agent run persistence failed.");
+    }, "planner", 0, async () => {
+      const { data: activeSpec, error: activeSpecError } = await supabase
+        .from("agent_specs")
+        .select("id")
+        .eq("id", spec.id)
+        .eq("workspace_id", workspaceId)
+        .eq("owner_id", spec.owner_id)
+        .eq("status", "active")
+        .maybeSingle();
+      if (activeSpecError || !activeSpec) throw new Error("Agent spec is no longer active.");
     });
   } catch {
     await failPersistedRun();
@@ -288,6 +286,8 @@ export async function POST(req: NextRequest) {
     candidates,
     totalFound: found.length,
     heldByGate: result.state.drafts.filter((d) => !d.gatePassed).length,
+    draftStorage: "run_history",
+    deliveryAuthority: "none",
     errors: result.state.errors,
   });
 }

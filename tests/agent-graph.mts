@@ -8,6 +8,13 @@ import {
   type CandidateLite,
   type GraphDeps,
 } from "../src/lib/agents/graph";
+import {
+  resolveStoredAgentRuntimePolicy,
+  describeStoredAgentRuntimeAvailability,
+  SupportedAgentChannelsSchema,
+  SupportedAgentGuardrailsSchema,
+  SupportedAgentRoleBriefSchema,
+} from "../src/lib/agents/runtime-policy";
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) { if (cond) { pass++; } else { fail++; console.log("FAIL:", name); } }
@@ -26,8 +33,87 @@ const POOL: Record<string, CandidateLite[]> = {
   ],
 };
 
-function makeDeps(overrides?: Partial<GraphDeps> & { planJson?: string; draftBody?: string }): GraphDeps & { generateCalls: string[] } {
+// ---------------------------------------------------------------------------
+// Stored policy admits only the channel this graph can execute truthfully
+// ---------------------------------------------------------------------------
+{
+  const email = resolveStoredAgentRuntimePolicy(
+    ["Email"],
+    { autopilot: false, canary_remaining: 5 },
+  );
+  const autonomous = resolveStoredAgentRuntimePolicy(
+    ["Email"],
+    { autopilot: true, canary_remaining: 0 },
+  );
+  const topicRules = resolveStoredAgentRuntimePolicy(
+    ["Email"],
+    { autopilot: false, canary_remaining: 5, topics_allow: ["architecture"] },
+  );
+  const specCap = resolveStoredAgentRuntimePolicy(
+    ["Email"],
+    { autopilot: false, canary_remaining: 5, max_per_day: 1 },
+  );
+  const mixed = resolveStoredAgentRuntimePolicy(
+    ["Email", "WhatsApp"],
+    { autopilot: false, canary_remaining: 5 },
+  );
+  const unknownAuthority = resolveStoredAgentRuntimePolicy(
+    ["Email"],
+    { autopilot: false, canary_remaining: 5, quiet_hours: { start: "18:00" } },
+  );
+  ok(
+    "policy resolver: supported run-history defaults produce an auditable Email policy",
+    email.ok && email.policy.draftStorage === "run_history" && email.policy.deliveryAuthority === "none",
+  );
+  ok("policy resolver: autonomous flags fail closed", !autonomous.ok);
+  ok("policy resolver: unenforced topic rules fail closed", !topicRules.ok);
+  ok("policy resolver: unenforced spec-level daily caps fail closed", !specCap.ok);
+  ok("policy resolver: mixed channels fail closed instead of silently dropping one", !mixed.ok);
+  ok("policy resolver: unknown authority fields fail closed", !unknownAuthority.ok);
+  ok("spec writes: only the executable Email channel contract is accepted", SupportedAgentChannelsSchema.safeParse(["Email"]).success && !SupportedAgentChannelsSchema.safeParse(["WhatsApp"]).success);
+  ok("spec writes: unsupported and unknown guardrails are rejected", !SupportedAgentGuardrailsSchema.safeParse({ autopilot: true, canary_remaining: 0 }).success && !SupportedAgentGuardrailsSchema.safeParse({ autopilot: false, canary_remaining: 5, quiet_hours: {} }).success);
+  const legacyAvailability = describeStoredAgentRuntimeAvailability(
+    BRIEF,
+    ["WhatsApp"],
+    { autopilot: false, canary_remaining: 5 },
+    "active",
+    "owner-1",
+    "owner-1",
+  );
+  ok("read model: legacy unsupported specs are explicitly marked unavailable", !legacyAvailability.runtime_eligible && Boolean(legacyAvailability.runtime_reason));
+  const invalidBriefAvailability = describeStoredAgentRuntimeAvailability(
+    {},
+    ["Email"],
+    { autopilot: false, canary_remaining: 5 },
+    "active",
+    "owner-1",
+    "owner-1",
+  );
+  ok("spec writes: a non-empty role title is required", !SupportedAgentRoleBriefSchema.safeParse({}).success);
+  ok("read model: invalid legacy role briefs are explicitly marked unavailable", !invalidBriefAvailability.runtime_eligible && Boolean(invalidBriefAvailability.runtime_reason));
+  const pausedAvailability = describeStoredAgentRuntimeAvailability(
+    BRIEF,
+    ["Email"],
+    { autopilot: false, canary_remaining: 5 },
+    "paused",
+    "owner-1",
+    "owner-1",
+  );
+  const otherOwnerAvailability = describeStoredAgentRuntimeAvailability(
+    BRIEF,
+    ["Email"],
+    { autopilot: false, canary_remaining: 5 },
+    "active",
+    "owner-2",
+    "owner-1",
+  );
+  ok("read model: paused specs are not runnable", !pausedAvailability.runtime_eligible && /active/i.test(pausedAvailability.runtime_reason ?? ""));
+  ok("read model: another owner's specs are not runnable", !otherOwnerAvailability.runtime_eligible && /owner/i.test(otherOwnerAvailability.runtime_reason ?? ""));
+}
+
+function makeDeps(overrides?: Partial<GraphDeps> & { planJson?: string; draftBody?: string }): GraphDeps & { generateCalls: string[]; promptCalls: string[] } {
   const generateCalls: string[] = [];
+  const promptCalls: string[] = [];
   const planJson =
     overrides?.planJson ??
     JSON.stringify({
@@ -42,8 +128,10 @@ function makeDeps(overrides?: Partial<GraphDeps> & { planJson?: string; draftBod
     "Hi there, your work on Go services with heavy Postgres loads caught my eye. We have a staff role doing exactly that. Open to a quick chat?";
   return {
     generateCalls,
-    async generate(system: string) {
+    promptCalls,
+    async generate(system: string, prompt: string) {
       generateCalls.push(system.slice(0, 30));
+      promptCalls.push(prompt);
       if (system.startsWith("You plan candidate sourcing")) return "```json\n" + planJson + "\n```";
       return JSON.stringify({ subject: "Go + Postgres staff role", body: draftBody });
     },
@@ -52,6 +140,43 @@ function makeDeps(overrides?: Partial<GraphDeps> & { planJson?: string; draftBod
     },
     ...((overrides ?? {}) as Partial<GraphDeps>),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Stored execution policy is auditable and revalidated before every graph step
+// ---------------------------------------------------------------------------
+{
+  const deps = makeDeps();
+  const checkedNodes: string[] = [];
+  const policy = {
+    channel: "Email" as const,
+    draftStorage: "run_history" as const,
+    deliveryAuthority: "none" as const,
+  };
+  const result = await runGraph(
+    initialState(BRIEF, 1, policy),
+    deps,
+    undefined,
+    "planner",
+    0,
+    async (node) => { checkedNodes.push(node); },
+  );
+  ok("policy: stored snapshot records run-history storage with no delivery authority", result.state.executionPolicy?.draftStorage === "run_history" && result.state.executionPolicy?.deliveryAuthority === "none");
+  ok("policy: every executed node is preceded by status revalidation", checkedNodes.length === result.steps && checkedNodes[0] === "planner");
+}
+
+{
+  const deps = makeDeps();
+  let stopped = false;
+  try {
+    await runGraph(initialState(BRIEF, 1), deps, undefined, "planner", 0, async (node) => {
+      if (node === "sourcer") throw new Error("spec-paused");
+    });
+  } catch (error) {
+    stopped = error instanceof Error && error.message === "spec-paused";
+  }
+  ok("pause: revalidation failure stops the graph", stopped);
+  ok("pause: no search or later model work runs after the rejected node", deps.generateCalls.length === 1 && deps.promptCalls.length === 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -72,6 +197,7 @@ function makeDeps(overrides?: Partial<GraphDeps> & { planJson?: string; draftBod
   ok("run: one draft per screened candidate", result.state.drafts.length === 3);
   ok("run: all clean drafts pass gate", result.state.drafts.every((d) => d.gatePassed));
   ok("run: report mentions counts", (result.state.report ?? "").includes("4 real candidates"));
+  ok("run: report truthfully retains drafts in run history without claiming approval", (result.state.report ?? "").includes("retained in run history") && !(result.state.report ?? "").includes("ready for approval"));
   ok("run: events narrate lifecycle", events.includes("plan_ready") && events.includes("screened") && events.includes("report"));
   ok("run: no errors", result.state.errors.length === 0);
 }

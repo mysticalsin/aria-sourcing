@@ -5,7 +5,7 @@ import { useHydrated, useSeats, useChats, useActions, useSettings } from "@/lib/
 import { ChatList } from "@/components/chat/chat-list";
 import { ChatThreadView } from "@/components/chat/chat-thread-view";
 import { HydrationGate, PageHeader } from "@/components/app/page-header";
-import { SkeletonCard, Card, CardContent, Eyebrow, Badge } from "@/components/ui";
+import { SkeletonCard, Card, CardContent, Eyebrow, Badge, Button } from "@/components/ui";
 import { getHermesSessions, hermesRuntimeAvailable } from "@/lib/ai/hermes-runtime";
 import { MessageSquare, Server } from "lucide-react";
 
@@ -19,6 +19,7 @@ export default function ChatPage() {
   const [selectedThreadId, setSelectedThreadId] = React.useState<string | null>(null);
   const [hermesSessions, setHermesSessions] = React.useState<unknown[] | null>(null);
   const [sessionsLoading, setSessionsLoading] = React.useState(false);
+  const [sessionsError, setSessionsError] = React.useState<string | null>(null);
 
   // Auto-select the first thread on hydration if none is selected.
   React.useEffect(() => {
@@ -28,23 +29,39 @@ export default function ChatPage() {
     }
   }, [hydrated, chats, selectedThreadId]);
 
-  // Poll Aria runtime sessions when live mode is on.
-  React.useEffect(() => {
+  const loadHermesSessions = React.useCallback((cancelledRef?: { current: boolean }) => {
     if (!live) {
       setHermesSessions(null);
+      setSessionsError(null);
       return;
     }
-    let cancelled = false;
     setSessionsLoading(true);
+    setSessionsError(null);
     getHermesSessions(settings).then((res) => {
-      if (cancelled) return;
+      if (cancelledRef?.current) return;
       setSessionsLoading(false);
-      if (res.ok) setHermesSessions(Array.isArray(res.data) ? res.data : []);
+      if (res.ok) {
+        setHermesSessions(Array.isArray(res.data) ? res.data : []);
+      } else {
+        setHermesSessions(null);
+        setSessionsError(res.reason ?? "Aria runtime sessions could not be loaded.");
+      }
+    }).catch((err) => {
+      if (cancelledRef?.current) return;
+      setSessionsLoading(false);
+      setHermesSessions(null);
+      setSessionsError(err instanceof Error ? err.message : "Aria runtime sessions could not be loaded.");
     });
-    return () => {
-      cancelled = true;
-    };
   }, [live, settings]);
+
+  // Poll Aria runtime sessions when live mode is on.
+  React.useEffect(() => {
+    const cancelled = { current: false };
+    loadHermesSessions(cancelled);
+    return () => {
+      cancelled.current = true;
+    };
+  }, [loadHermesSessions]);
 
   function handleNew() {
     if (seats.length === 0) return;
@@ -106,7 +123,9 @@ export default function ChatPage() {
         <div className="w-64 shrink-0 border-l border-violet/10 overflow-hidden flex flex-col bg-surface/40">
           <div className="px-4 py-3 border-b border-violet/10 flex items-center justify-between">
             <p className="text-xs font-bold text-ink-soft uppercase tracking-wider">Aria sessions</p>
-            {live ? (
+            {live && sessionsError ? (
+              <Badge tone="danger" size="sm">Unavailable</Badge>
+            ) : live ? (
               <Badge tone="success" size="sm" dot>Live</Badge>
             ) : (
               <Badge tone="warning" size="sm">Demo</Badge>
@@ -116,6 +135,14 @@ export default function ChatPage() {
             {live ? (
               sessionsLoading ? (
                 <p className="text-xs text-muted">Loading…</p>
+              ) : sessionsError ? (
+                <div role="alert" className="space-y-2 rounded-2xl border border-danger/20 bg-danger-soft p-3">
+                  <p className="text-xs font-semibold text-danger">Aria runtime unavailable</p>
+                  <p className="text-xs text-muted">{sessionsError}</p>
+                  <Button type="button" size="sm" variant="outline" onClick={() => loadHermesSessions()}>
+                    Retry sessions
+                  </Button>
+                </div>
               ) : !hermesSessions || hermesSessions.length === 0 ? (
                 <p className="text-xs text-muted">No sessions on the runtime yet.</p>
               ) : (

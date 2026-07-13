@@ -51,8 +51,11 @@ if (!candidate || !campaign) {
 }
 
 const studio = source("src/app/studio/page.tsx");
-ok("Studio names the capability Reply drafting", studio.includes("Reply drafting"));
-ok("Studio states that generated replies enter human review", /every generated reply[^.]*human review/i.test(studio));
+ok("Studio names the graph output as draft storage", studio.includes("Draft storage"));
+ok(
+  "Studio states that graph drafts remain in run history with no delivery authority",
+  studio.includes("Run history only") && studio.includes("No delivery authority"),
+);
 ok("Studio exposes no Autopilot or canary control", !/autopilot|canary/i.test(studio));
 
 const settings = source("src/app/settings/page.tsx");
@@ -66,6 +69,13 @@ ok("topbar never claims the server approval gate is off", !topbar.includes("Gate
 const autopilot = source("src/lib/autopilot.ts");
 ok("legacy reply guardrails are documented as non-authoritative", /legacy compatibility only/i.test(autopilot) && /never grant provider delivery authority/i.test(autopilot));
 ok("reply routing comments do not claim a scheduled send", !/schedule send/i.test(autopilot));
+
+const whatsappInbound = source("src/lib/whatsapp-inbound.ts");
+ok(
+  "WhatsApp inbound never mutates legacy canary counters while queuing review drafts",
+  !/canary_remaining[\s\S]{0,220}\.update\(/i.test(whatsappInbound) &&
+    !/canary update failed/i.test(whatsappInbound),
+);
 
 const readinessStatus = source("production-readiness/STATUS.md");
 ok(

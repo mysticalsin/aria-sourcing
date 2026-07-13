@@ -13,8 +13,8 @@
    Guardrails inherited from the platform:
    - The sourcer only reports candidates the injected search actually returned
      (the runner accumulates real results — the model never invents people).
-   - Every outreach draft passes gateOutbound(); failing drafts are kept as
-     'blocked' for human review, never silently dropped or sent.
+   - Every outreach draft passes gateOutbound(); failing drafts remain blocked
+     in run history with reasons and are never silently dropped or sent.
    - step_count is bounded by MAX_STEPS — a runaway plan halts as 'failed'.
    ========================================================================== */
 
@@ -26,6 +26,7 @@ import {
   disclosureInternalFromCampaignLike,
   validateCandidateBoundText,
 } from "@/lib/agent-disclosure-policy";
+import type { AgentExecutionPolicy } from "@/lib/agents/runtime-policy";
 
 export type AgentNode = "planner" | "sourcer" | "screener" | "outreach" | "reporter" | "done";
 
@@ -75,10 +76,33 @@ export interface AgentGraphState {
   drafts: DraftLite[];
   report?: string;
   errors: string[];
+  /** Immutable stored-spec policy snapshot for audit and resumability. */
+  executionPolicy: AgentExecutionPolicy;
 }
 
-export function initialState(brief: Record<string, unknown>, draftCount = 5, minScore = DEFAULT_MIN_SCORE): AgentGraphState {
-  return { brief, draftCount, minScore, planCursor: 0, candidates: [], screened: [], drafts: [], errors: [] };
+const DEFAULT_EXECUTION_POLICY: AgentExecutionPolicy = {
+  channel: "Email",
+  draftStorage: "run_history",
+  deliveryAuthority: "none",
+};
+
+export function initialState(
+  brief: Record<string, unknown>,
+  draftCount = 5,
+  executionPolicy: AgentExecutionPolicy = DEFAULT_EXECUTION_POLICY,
+  minScore = DEFAULT_MIN_SCORE,
+): AgentGraphState {
+  return {
+    brief,
+    draftCount,
+    executionPolicy,
+    minScore,
+    planCursor: 0,
+    candidates: [],
+    screened: [],
+    drafts: [],
+    errors: [],
+  };
 }
 
 export interface GraphDeps {
@@ -212,7 +236,7 @@ export async function stepGraph(node: AgentNode, state: AgentGraphState, deps: G
       const report =
         `Sourced ${state.candidates.length} real candidates across ${state.plan?.steps.length ?? 0} searches; ` +
         `${state.screened.length} passed screening (score >= ${state.minScore}); ` +
-        `${passed} drafts ready for approval, ${state.drafts.length - passed} held by the gate` +
+        `${passed} drafts retained in run history, ${state.drafts.length - passed} held by the gate` +
         (state.errors.length ? `; ${state.errors.length} step error(s).` : ".");
       return { node: "done", state: { ...state, report }, event: { type: "report", payload: { passed } } };
     }
@@ -230,11 +254,13 @@ export async function runGraph(
   onStep?: (node: AgentNode, state: AgentGraphState, event: StepResult["event"]) => Promise<void>,
   startNode: AgentNode = "planner",
   startStep = 0,
+  beforeStep?: (node: AgentNode, state: AgentGraphState, step: number) => Promise<void>,
 ): Promise<{ node: AgentNode; state: AgentGraphState; steps: number }> {
   let node: AgentNode = startNode;
   let current = state;
   let steps = startStep;
   while (node !== "done" && steps < MAX_STEPS) {
+    if (beforeStep) await beforeStep(node, current, steps);
     const result = await stepGraph(node, current, deps);
     node = result.node;
     current = result.state;

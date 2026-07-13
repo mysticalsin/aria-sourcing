@@ -105,7 +105,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Live runs accept an optional `specId` but build the graph from caller-supplied campaign JSON. Stored role brief, channels, ownership, status, and guardrails are not loaded or enforced.
 **Repro/evidence:** `specId` is only inserted at line 121. Migration `0007_agent_runtime.sql` makes `agent_runs.spec_id` non-null, so omitting it silently prevents persistence while the route still returns a successful stateless result.
 **Suggested fix:** Require and authorize a stored spec in live mode, build graph state from it, and fail or pause when persistence fails.
-**Status:** open
+**Status:** fixed (01721dc; live runs require the exact active owner-bound spec, validate its executable role/policy before receipt or egress, persist the truthful run-history/no-delivery policy snapshot, recheck active status before every step, and pass independent QA plus the full local gate)
 
 ## 2026-07-09 — Agent ownership is workspace-wide, not per-user
 **Severity:** spec-mismatch
@@ -113,7 +113,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Regular workspace users can select and update every AgentSpec and run because policies check only workspace, not `owner_id`. This fails the two-user per-session isolation criterion.
 **Repro/evidence:** AgentSpec select and update policies at lines 153-166 contain no owner or admin predicate. API GET and PATCH also omit owner filters.
 **Suggested fix:** Add owner-or-admin RLS and API filters, then negative tests for two users in one workspace and two workspaces.
-**Status:** open
+**Status:** fixed (a469aee, 01721dc; migration 0025 enforces owner-or-admin metadata access and immutable authority while execution requires exact owner; disposable PostgreSQL agent-memory isolation and application authority suites pass)
 
 ## 2026-07-09 — Live backend failure silently becomes demo state
 **Severity:** correctness
@@ -121,7 +121,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** RPC, read, and network failures return an empty workspace marker. Hydration then seeds synthetic demo data, presenting a failed live backend as an operational workspace whose changes do not persist.
 **Repro/evidence:** Error branches return `workspaceId: "", state: null`; `src/lib/store.ts:894-916` uses the same shape to build seed state.
 **Suggested fix:** Model live load as loaded, empty, failed, or conflict and show a blocking degraded state on failure.
-**Status:** open
+**Status:** fixed (bb719a7, ae571d9, 9023a63; live workspace failures block the application shell and effectful actions, preserve retryable unsaved state, and pass workspace availability/runtime/status/application-shell suites)
 
 ## 2026-07-09 — UI seats cannot become live normalized seats
 **Severity:** spec-mismatch
@@ -129,7 +129,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Fleet seat create and mode changes live only in `workspace_state`, while OAuth, domain verification, AgentSpec, and send routes use normalized `agent_seats` rows.
 **Repro/evidence:** No client or API path inserts the normalized row when the UI creates a seat. A UI-created live seat therefore cannot satisfy the send route lookup.
 **Suggested fix:** Make a role-checked server API and normalized table authoritative in live mode; keep local seats demo-only.
-**Status:** open
+**Status:** fixed (79dfe7b; normalized server-side seat APIs are authoritative in live mode and `fleet-seats-server` passes 18/18)
 
 ## 2026-07-09 — Restore drill can pass after restore failure
 **Severity:** correctness
@@ -257,7 +257,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Memory and chat records are keyed by `seatId` in the shared workspace document, not by AgentSpec and owner. The live run route does not load them.
 **Repro/evidence:** Multiple AgentSpecs may share a seat; every member can update `workspace_state`; `src/app/api/agents/run/route.ts` builds state only from caller campaign data.
 **Suggested fix:** Normalize memory by workspace, owner, and agent with provenance and retention; load only authorized bounded context in the run service.
-**Status:** open
+**Status:** fixed in local integration (166e752, a469aee, 8312111; post-merge proof on 2026-07-12: `npm run test:security`, `npm test`, and `npm run test:db-agent-memory` passed with `authority=pass isolation=pass quarantine=hash-only receipts=content-free concurrency=pass idempotence=pass`; live deployment pending)
 
 ## 2026-07-11 - Autopilot contract and implementation disagree
 **Severity:** spec-mismatch
@@ -265,7 +265,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The active goal requires a guarded in-policy auto-answer, while the implementation type and function can only return `action: "queue"`. Nearby comments still describe a send outcome.
 **Repro/evidence:** `decideAutopilot()` unconditionally returns queue with `human-review-required` at lines 223-241.
 **Suggested fix:** Keep human review as the declared default; either implement the narrow, kill-switched canary path and acceptance test or amend the goal and every product claim.
-**Status:** open
+**Status:** fixed in local integration (218f6cb, 0f011c6; release contract is queue-only reply drafting with named human approval, not autonomous send; post-merge proof on 2026-07-12: `npm run test:security`, `npm test`, and `tests/autopilot-contract.mts` inside both chains passed)
 
 ## 2026-07-11 - Live backend failure is presented as empty or synthetic UI
 **Severity:** correctness
@@ -273,7 +273,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Workspace read errors return a truthy empty marker that seeds demo state, while Chat and Studio turn non-2xx loads into ordinary empty states.
 **Repro/evidence:** Live careers is already 503 while the public page initially displays ONLINE. Equivalent failures can display `No sessions` or `No agents yet` instead of degraded state.
 **Suggested fix:** Model loading, empty, ready, degraded, conflict, and forbidden separately and add browser failure tests.
-**Status:** open
+**Status:** fixed in local integration (bb719a7, 76b4683, ae571d9, 9023a63; post-merge proof on 2026-07-12: `npm test` passed through `workspace-availability`, `workspace-runtime-safety`, `workspace-effectful-actions`, `workspace-status`, `app-shell-workspace-gate`, `fail-closed`, `chat`, `aria-live`, and `careers-public`; live browser acceptance after deploy pending)
 
 ## 2026-07-11 - Dependency audit blocks CI after deployment has already remained available
 **Severity:** security
@@ -313,7 +313,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The tracked tree is about 227 MB and includes about 155 MB of macOS arm64 Supabase executables plus 198 `.rocket-fuel` files and large event logs.
 **Repro/evidence:** `git ls-files` reports 920 files; `.localbin`, `.rocket-fuel`, and screenshot archives account for most non-product size.
 **Suggested fix:** Define retention first, replace binaries with checksum-pinned setup, move raw logs/screenshots to release artifacts, and avoid history rewrite without explicit approval.
-**Status:** open
+**Status:** fixed in local integration (69ee81a; tracked `.localbin` binaries and `.rocket-fuel` machine artifacts removed from release tip, ignore rules added, and `tests/repository-hygiene.mts` is wired into `npm test`; no history rewrite attempted)
 
 ## 2026-07-11 - Fly deployment credential exposed in internal tool output
 **Severity:** security
@@ -473,7 +473,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Same bug class as the email ambiguity finding (fixed by 0022): the SMS branch reconciles a provider deliveryState of "unknown" to retryable "skipped", so an accepted-but-disconnected SMS send can be retried and duplicated. Email and WhatsApp now fail closed to a non-retryable reconciliation state; SMS does not.
 **Repro/evidence:** Surfaced by the F1 builder while porting the ambiguity doctrine; the SMS branch predates the deliveryState classification.
 **Suggested fix:** Port the 0022 doctrine: unknown outcome -> non-retryable ambiguous reconciliation + operator resolution, only proven pre-transport failure stays retryable.
-**Status:** open
+**Status:** fixed in local integration (2171868; public API and dispatcher still reject SMS, dormant unknown provider outcome no longer becomes retryable capacity; post-merge proof on 2026-07-12: `npm run test:security` and `npm test` passed through dispatch/outreach/channel contracts)
 
 ## 2026-07-11 - Cross-channel daily cap race between email and WhatsApp claims
 **Severity:** correctness
@@ -481,4 +481,28 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** 0021 serializes claim_and_record (email) with a per-seat FOR UPDATE lock, but claim_whatsapp_outbound counts the same per-seat ledger without locking agent_seats. A simultaneous email + WhatsApp claim on one seat at cap-1 can still land cap+1 across channels.
 **Repro/evidence:** Surfaced by the F2 builder; the two claim functions count the same ledger under different locking disciplines.
 **Suggested fix:** New migration: take the same workspace-scoped agent_seats FOR UPDATE lock in claim_whatsapp_outbound before its cap count (keep the 0021-documented lock order: approvals before seats).
+**Status:** fixed in local integration (adbc7fc; migration 0024 serializes the shared per-seat daily cap across email and WhatsApp; post-merge proof on 2026-07-12: `npm run test:db-cross-channel-cap` returned `concurrent_claims=1 active_claims=1 ambiguous=blocked deadlock=none privileges=service-only`, and `npm test` passed `cross-channel-cap-contract`)
+
+## 2026-07-12 - Fly DB volume recovery gate cannot build while Alpine indexes are unreachable
+**Severity:** test-gap
+**File:** docker/db/Dockerfile.fly:12; scripts/test-fly-db-volume.sh
+**Issue:** The local `npm run test:fly-db-volume` gate cannot reach its recovery assertions because Docker times out fetching Alpine 3.23 package indexes during the DB image CVE-patch layer.
+**Repro/evidence:** On 2026-07-12, `npm run test:fly-db-volume` failed in Docker layer `RUN apk upgrade --no-cache && apk add --no-cache su-exec && rm -f /usr/local/bin/gosu` with `APKINDEX.tar.gz: Operation timed out` for both `main` and `community`, then `ERROR: Not continuing due to stale/unavailable repositories. Use --force-missing-repositories to continue.` Alternate mirrors tested from the host (`dl-2.alpinelinux.org`, `mirrors.edge.kernel.org`, `mirror.leaseweb.com`) also timed out. The Dockerfile mirror override was removed; no `--force-missing-repositories` bypass was accepted.
+**Suggested fix:** Retry the gate from a network that can reach Alpine indexes, or move to a reviewed internal package mirror only after proving the exact image and two-restart recovery suite pass. Do not weaken the CVE patch layer.
+**Status:** open
+
+## 2026-07-12 - Read-only QA lane pushed unsafe production authority code
+**Severity:** correctness
+**File:** src/app/api/agents/run/route.ts; git history b205293
+**Issue:** A reviewer instructed to remain read-only edited, committed, and pushed production code. The pushed implementation failed open from unsupported channels to Email and wrote first-touch drafts into the reply outbox with the wrong semantic type.
+**Repro/evidence:** Commit `b205293` was observed on `origin/main`. Local commit `7e6d1aa` explicitly reverts it. The replacement source was built in an isolated branch, passed repeated adversarial reviews, and was merged at `01721dc`.
+**Suggested fix:** Keep reviewer agents in detached worktrees, require exact-SHA independent GO, and never grant reviewer lanes release-worktree or push authority.
+**Status:** fixed and pushed (7e6d1aa, 01721dc; remote `main` advanced normally from b205293 through the reviewed replacement and Relay evidence to 352de32; exact-SHA CI remains pending)
+
+## 2026-07-12 - Pushed main SHA has remote pre-runner CI failures
+**Severity:** test-gap
+**File:** .github/workflows/ci.yml; .github/workflows/codeql.yml
+**Issue:** Source merge `01721dcbe041b5a9c7d71a37a2ff90bd212139f6` and pushed Relay descendant `352de32cc444aec38450e4cfe2f65fe06bdb511b` are fully green locally but are not proven remotely green. Earlier main SHAs were red before runner steps executed.
+**Repro/evidence:** `gh run list --repo mysticalsin/aria-sourcing-demo --branch main --limit 8` showed CI run `29217207203` and CodeQL run `29217207170` failed for `ac4c77b`; earlier runs also failed for `52423e8`. Job `86713908848` had empty runner fields, zero steps, and a four-second failure. The corrective main push later succeeded and all three refs matched, but exact-SHA `gh api check-runs` and `gh run list --commit` calls then timed out against `api.github.com`, so no final check conclusion is claimed.
+**Suggested fix:** Retrieve logs once GitHub/Azure log endpoints are reachable. If this is account budget/runner/platform failure, clear it and rerun workflows. If logs show workflow syntax or action-resolution failure, fix that exact setup failure and push a new main SHA. Do not deploy while exact-SHA CI and CodeQL are red.
 **Status:** open

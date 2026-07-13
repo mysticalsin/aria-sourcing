@@ -1,63 +1,99 @@
 ---
 project: MSourcing / ARIA
-shift: 29
-agent: claude-opus-4-8
-updated: 2026-07-11 23:55 EDT
-status: exact-sha-ci-codeql-green-owner-gates-are-the-only-blockers
+shift: 31
+agent: codex-gpt-5
+updated: 2026-07-12 22:52 EDT
+status: main-pushed-local-gates-green-production-acceptance-pending
 ---
 
-# Handoff — recovery candidate integrated; owner gates are the critical path
+# Handoff - runtime authority repaired; production release still gated
 
 ## Current state
 
-- **Integration complete.** The reviewed recovery candidate `c6c7a0ae5bb85ce7d31d56106d153fc488daae80` is now the tip of the shared branch `deploy/fly-github-actions` (fast-forward from base `4b24d39`, real SHA preserved — no cherry-pick, no rewrite).
-- Worktree = candidate content exactly, plus 4 newer meta files kept from the shared tree (`_relay/HANDOFF.md`, `_relay/codex-findings.md`, both `_agent_state/*/memory.json`) and 12 untracked intentionally-excluded paths (incident, 2026-07-11 relay archives, enterprise audit, superseded scripts). Nothing was discarded.
-- **Full pre-integration state is preserved** in ref `snapshot/shared-20260711-preintegration` (commit `3ec69a3`, tree `8c54d4c`) — every tracked and untracked file as it stood before integration. Recover any path with `git show 3ec69a3:<path>`.
-- Post-integration verification: `npx tsc --noEmit` clean; `tests/login-page.mts` 15/15. (Codex ran the complete gate suite on this exact content as `c6c7a0a` — see shift 28.)
-- Login page carries BOTH change sets with no conflict: Tony's layout (Aria M mark top-left, background-motion toggle bottom-left) + Codex's azure-login gating and email-focus CTA fallback.
-- Push safety was verified before pushing: `ci.yml`/`codeql.yml` trigger on push (wanted — exact-SHA proof), zero workflows reference `ARIA_DEPLOY_BUNDLE`, deploy workflow is `workflow_dispatch`-only and remotely disabled. Repo visibility: Tony decided (2026-07-11) the repo stays PUBLIC until the backend is live and a campaign runs; flip to private is the final closeout step.
-- Production verdict remains **NO-GO** — unchanged from shift 28. Nothing was deployed; no Fly access was used; the token incident stays open.
+- Worktree for continuation: `/Users/tony/.codex/worktrees/msourcing-campaign-integration`.
+- Branch: `main`.
+- Verified source merge: `01721dcbe041b5a9c7d71a37a2ff90bd212139f6` (`merge agent spec runtime authority hardening`).
+- Local `main` includes explicit revert `7e6d1aa` of unsafe reviewer push `b205293`, then the independently reviewed replacement through `35d17ed`.
+- GitHub connectivity recovered at 22:48 EDT. `git ls-remote` proved remote `main` was still `b205293`, then a normal non-force push advanced it through the explicit revert, reviewed replacement, and Relay commits to `352de32cc444aec38450e4cfe2f65fe06bdb511b`.
+- The final Relay-only descendant was pushed normally and `HEAD`, `origin/main`, and `git ls-remote` were reverified equal with a clean worktree. Obtain the exact tip with those commands; it is intentionally not embedded in its own Baton.
+- Source/runtime verdict: GO locally. Production verdict: NO-GO until remote, protected-release, recovery, and live acceptance gates below pass.
+- Default GitHub branch was last verified as `vercel-demo`, not `main`. The protected production workflow must exist on the default branch before manual dispatch can work.
 
 ## Done this shift
 
-- Triaged the 2 open findings from the Claude adversarial review (secret-provisioning trap, dotfile-restart footgun): both already fixed by Codex in `c6c7a0a` (seven-secret staged verification; HISTFILE suppression + regular-file cleanup in the entrypoint). Statuses reflect that in `_relay/codex-findings.md`.
-- Snapshotted the shared dirty tree (tracked+untracked) to `snapshot/shared-20260711-preintegration` before touching anything (HANDOFF shift-28 next-step 1).
-- Computed the TRUE content diff via a temp index (raw `git status` was misleading: untracked-on-disk files showed as `D`), classified all 112 differing paths, confirmed `c6c7a0a` is a direct child of the shared HEAD.
-- Fast-forwarded `deploy/fly-github-actions` to `c6c7a0a` via `git reset --mixed` + selective checkout, keeping the 4 newer meta files and all excluded confidential paths untracked on disk (HANDOFF shift-28 next-step 2 / blocker 6 resolved).
-- Verified integrated tree (tsc clean, login-page 15/15) and pushed the branch to origin to start exact-SHA CI + CodeQL (gate-9 evidence).
+- Diagnosed the stored AgentSpec execution gap and captured RED tests before implementation.
+- Rejected and explicitly reverted reviewer commit `b205293`, which failed open from unsupported channels to Email and wrote first-touch drafts into the reply outbox with the wrong semantic type.
+- Implemented the replacement in isolated branch `codex/agent-spec-runtime-authority-20260712`:
+  - requires exact active owner-bound `specId` for live graph runs;
+  - validates the stored role brief, exact Email-only channel, strict known guardrails, and unknown authority fields before run receipt, memory, vault, or model access;
+  - stores the exact execution policy before memory decryption or provider egress;
+  - records `draftStorage=run_history` and `deliveryAuthority=none`; it creates no approval queue and never writes `messages_outbound`;
+  - rechecks active owner-bound spec status before every graph step;
+  - makes create, patch, list eligibility, Studio, and run behavior agree;
+  - marks paused, other-owner, legacy-invalid, and unsupported specs as blocked with a reason;
+  - limits new Studio specs to the one channel this graph truthfully supports: Email drafts retained in run history.
+- Independent adversarial QA iterated through NO-GO findings until exact commit `35d17ed6d22bfda35ad6eeb595d305bade65aa5a` received GO.
+- Merged the reviewed branch into local `main` at `01721dcbe041b5a9c7d71a37a2ff90bd212139f6`.
+- Post-merge local gates passed:
+  - `npx tsc --noEmit`.
+  - `npm run lint`.
+  - `npm run test:security`, including agent-memory authority 56/56 and Hermes cloud authority 40/40.
+  - `npm test`, including all infrastructure pretests, application suites, repository hygiene, workspace failure contracts, and isolated build 6/6.
+  - `npm run test:db-cross-channel-cap`: `concurrent_claims=1 active_claims=1 ambiguous=blocked deadlock=none privileges=service-only`.
+  - `npm run test:db-agent-memory`: `authority=pass isolation=pass quarantine=hash-only receipts=content-free concurrency=pass idempotence=pass`.
+  - `npm run test:db-privileges`: `postgres=restricted-direct supabase_admin=direct cross_owner=denied rotation=pass idempotence=pass empty_preflight=read-only legacy_preflight=read-only complete_preflight=read-only legacy_baseline=approved ledger=filename-sha secret_leak=none`.
+  - Full-history Gitleaks scan passed with no leaks before the merge; no secret-bearing source entered the merge.
+  - `git diff --check` passed.
+- `npm audit --audit-level=high` had already passed on the unchanged lockfile with zero vulnerabilities. The latest registry re-query hung because outbound network access failed; no dependency files changed in this repair.
+- Final outbound diagnosis at 22:46 EDT:
+  - DNS resolved `github.com` to `140.82.114.4`, but both forced IPv4 and forced IPv6 TLS connections timed out on port 443 after five seconds.
+  - `git ls-remote origin refs/heads/main` hung and was interrupted without a ref, so no push was attempted after that failed verification.
+  - Forced-IPv4 probes to `/`, `/login`, `/api/health`, `/api/ready`, `/rest/v1/`, and `/auth/v1/health` on `aria-mantu-app.fly.dev` all returned curl exit 28 / HTTP `000` after five-second connect timeouts.
+- GitHub connectivity recovered at 22:48 EDT. Verified remote `main=b205293`, pushed `b205293..352de32` normally, then verified local and remote both equaled `352de32cc444aec38450e4cfe2f65fe06bdb511b` with a clean worktree.
+- Pushed the Relay-only descendant and reverified `HEAD == origin/main == git ls-remote`. Exact-SHA CI and Actions API queries then timed out again against `api.github.com`, so no remote-check conclusion is claimed.
+- A final Fly probe remained inconsistent: `/api/ready` returned HTTP 200 once in 0.21 seconds while `/`, `/rest/v1/`, and `/auth/v1/health` timed out at connect with curl exit 28. This is not acceptable live evidence.
+- Archived the prior Baton to `_relay/archive/2026-07-12-2244-codex-gpt-5.md`.
+- Updated `_relay/codex-findings.md` with fixed source findings, the reviewer-integrity incident, and current remote blockers.
 
-- Fixed the exact-SHA CI supply-chain gate through three diagnosed rounds (first real runs of the hardened pipeline): (1) app image — stripped npm/corepack/yarn from the runner stage (fixable sigstore/picomatch HIGHs lived in npm's bundled deps) and flipped both workflows to --ignore-unfixed=true so only actionable CVEs block (19 unfixable Debian CVEs incl. CVE-2023-45853 no longer permanently redline the gate); (2) app secret scan — disabled only Trivy's linkedin-client-id public-identifier rule (Sillage field-name false positive, same family as the Gitleaks line-allows), linkedin-client-secret stays armed, contract-pinned unbroadenable; (3) db image — apk upgrade + gosu->su-exec swap (12 fixable Go-stdlib HIGHs in gosu), pre-emptive apt upgrades + gosu removal for bootstrap, apt upgrade for kong. Commits f518572, b75f93c, b1fc503.
-- Fixed the three campaign-blocking product findings via a 6-agent build (maps -> builders, disjoint ownership): 0021 per-seat FOR UPDATE cap serialization (d29cd40, 14/14), 0022 email ambiguity doctrine — immutable send_attempt_id + non-retryable 'ambiguous' + phase-aware adapters (aa60671, 54/54), 0023 canonical agent_conversations + claim-bound WhatsApp resolver RPC + provider-thread-first email matching, ambiguity fails closed to triage (318f552, 30/30).
-- Integration: wired the three suites into npm test (124 chained checks), STATUS.md/RUNBOOK updated, resolve_whatsapp_inbound_conversation added to the live-PG service-RPC assertion list, findings ledger updated (3 fixed, 2 follow-ups filed: SMS unknown-outcome retry; cross-channel cap race in claim_whatsapp_outbound). Full gate: npm test exit 0, tsc clean. Commit 9aee49e.
+## Blockers
 
-## Blockers (owner-controlled — the critical path, unchanged from shift 28)
-
-1. Revoke the exposed Fly token (`_relay/incidents/2026-07-11-fly-deploy-token-exposure.md`), prove rejection, review activity, issue split-scope short-lived credentials.
-2. Delete repository-level `ARIA_DEPLOY_BUNDLE`; install individual Production-environment secrets per `production-readiness/.fly-secrets.example`.
-3. Branch protection: put the workflow on the default branch (`vercel-demo`), protect `vercel-demo` + `deploy/fly-github-actions`, require exact-SHA CI/CodeQL, block self-review, re-enable the workflow.
-4. Preserve + inspect a disposable clone of `aria_db_data`; produce the release-bound recovery receipt.
-5. Dispatch the protected workflow with the exact SHA + receipt hash; complete live acceptance (DB ready + 2-restart survival, Auth/REST 200, `/api/ready` 200, digests match, admin login, synthetic zero-send campaign).
-6. Remaining product findings in `_relay/codex-findings.md`: the three campaign blockers (email ambiguity, daily-cap race, inbound identity) are FIXED in source as of this shift; still open: agent memory ownership, autopilot contract, SMS unknown-outcome retry, cross-channel cap race, repo binaries/logs retention. Backend deploy alone does NOT make campaigns production-ready.
+1. **Exact-SHA GitHub CI and CodeQL are not green.** Earlier runs failed before runner steps. The final pushed tip must pass all required checks before deployment.
+2. **Fly DB volume recovery gate remains network-blocked.** `npm run test:fly-db-volume` cannot fetch Alpine 3.23 APK indexes from this network. Do not use `--force-missing-repositories`, disable the patch layer, or pin an unreviewed mirror.
+3. **Owner-controlled release gates remain open:**
+   - revoke the exposed Fly token and record only rotation evidence;
+   - remove repository-level `ARIA_DEPLOY_BUNDLE` and install split Production-environment secrets;
+   - protect the default/release branches and Production environment, require independent review, block self-review and administrator bypass;
+   - preserve and inspect a disposable clone of `aria_db_data`, then produce the release-bound recovery receipt.
+4. **Protected production deploy is not proven for the final SHA.** The workflow must run from the default branch and deploy the exact reviewed artifact digest.
+5. **Live acceptance is not proven:** stable app/login/health/readiness; DB/Auth/REST/Kong; two DB/Auth restarts; admin provisioning/login; and a synthetic zero-send campaign with durable run history and no delivery authority.
 
 ## Next steps
 
-1. DONE: CI + CodeQL fully green on `8b460c863893977152009467df6697e5a59fc8d3` (round 5; runs on 2026-07-12). Gate-9 evidence exists. Round-by-round CI fixes: ignore-unfixed policy + npm strip (f518572), linkedin-client-id secret-rule scoping (b75f93c), image CVE patching (b1fc503), gosu explicit-whiteout + reviewed-pin moves (8b460c8). Meta commits after 8b460c8 re-trigger CI on the new tip; dispatch uses the green tip at dispatch time.
-2. Owner executes blockers 1–4 (token, secrets, protection, volume receipt). Everything is written to be executable without conversation context in shift 28's next-steps 3–7 (archived at `_relay/archive/2026-07-11-2020-codex-gpt-5.md`).
-3. Dispatch: `gh workflow run "Deploy Aria Mantu (Fly)" --ref deploy/fly-github-actions -f release_sha=<green-tip-40-char-sha> -f recovery_receipt_sha256=<reviewed-receipt-sha>` (only after gates 1–4; use the exact green tip, currently `6deeccd...`).
-4. Live acceptance per shift-28 step 12, then admin provisioning via `scripts/provision-first-admin.sh` (out-of-band credential), then synthetic campaign acceptance.
-5. Only after full acceptance: flip repo private (`gh repo edit mysticalsin/aria-sourcing-demo --visibility private`) — Tony's explicit final gate.
-6. Continue open product findings before any real-candidate campaign.
+1. Run `git rev-parse HEAD origin/main` plus `git ls-remote origin refs/heads/main`; all three were equal at handoff and must remain equal. Record that exact SHA as the release candidate.
+2. Require CI, CodeQL, dependency audit, secret scan, database security, image supply-chain, and aggregate quality checks for that exact release-candidate SHA.
+3. Retry `npm run test:fly-db-volume` only where Alpine repositories are reachable. Require the exact image, existing-data detection, and two-restart persistence assertions to pass.
+4. Complete the owner-controlled token, secret, branch/environment protection, and recovery-receipt gates. Do not store secret values in Relay.
+5. Dispatch the protected production workflow for the exact approved SHA and verify the running image digest matches release evidence.
+6. Run live acceptance in order: `/`, `/login`, `/api/health`, `/api/ready`, Kong `/rest/v1/`, GoTrue `/auth/v1/health`, DB/Auth machine inventory, two controlled restarts, first-admin provisioning/login, then the synthetic zero-send campaign.
+7. Confirm the campaign creates owner-bound run/event/memory receipts, retains drafts only in run history, and creates zero provider outbox rows or sends.
+8. Update this Baton and `_relay/codex-findings.md` with exact command outputs. Mark production ready only after every gate above is proven.
 
-## Decisions made — do not relitigate
+## Decisions made (don't relitigate)
 
-- All shift-28 decisions stand (volume mount at `/var/lib/postgresql`, owner-separated reconciliation, staged-vs-deployed secrets, immutable artifact chain, approver independence, degraded-not-demo, LinkedIn assisted-only, never use the exposed token).
-- Repo stays public until live acceptance passes; private flip is the last step (Tony, 2026-07-11).
-- Integration used fast-forward to preserve the reviewed SHA identity — the exact-SHA pipeline depends on it; do not squash/rebase this branch.
-- The snapshot ref `snapshot/shared-20260711-preintegration` is retention evidence — do not delete without a reviewed decision.
+- `main` is the requested integration branch, but the deploy workflow must also be reachable from the repository default branch.
+- The graph runtime supports exactly one current capability: Email drafts retained in run history with no delivery authority.
+- Unsupported or unknown stored authority fails closed; it is never normalized to Email.
+- The graph route does not create an approval queue and must not write first-touch drafts into the reply outbox.
+- No source workaround is accepted for the common outbound network failure.
+- No deploy occurs until exact-SHA checks, recovery evidence, owner-controlled gates, and live acceptance are green.
+- Reviewer agents work only in detached worktrees and never push.
 
 ## Watch out
 
-- All shift-28 watch-outs stand (postgres HOME dotfiles, single DB machine, `.internal` DNS = symptom, staged secrets ambiguity, rerun triggering actor, previous-key retirement, no Gitleaks broadening).
-- The 12 untracked confidential paths must NEVER be committed to the public origin — recheck `git status` before any `git add -A`.
-- `deploy-fly-2.sh` and `.gitlab-ci.yml` on disk are superseded artifacts excluded from the candidate — do not resurrect them into builds.
-- The 4 kept meta files are newer than their tracked versions; committing them is fine (relay history is already public precedent) but never commit the incident file.
+- The repository root checkout is on `deploy/fly-github-actions`; use the integration worktree above for `main`.
+- OneDrive can distort builds; keep using the repository's isolated build gate.
+- Always compare `HEAD`, `origin/main`, and `git ls-remote`; a local tracking ref alone is not remote proof.
+- A hung push has an ambiguous outcome. Verify the remote ref before retrying.
+- Do not expose or reuse the compromised Fly token.
+- Do not weaken the Alpine patch/recovery gate to make a network failure look green.
+- Live Fly probes from this workstation have been intermittent and cannot substitute for stable multi-pass acceptance evidence.
