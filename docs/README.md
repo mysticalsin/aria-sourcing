@@ -11,6 +11,9 @@ the same authority.
 | [`README.md`](../README.md) | Project overview: stack, shipped surfaces, local run, verification, deploy summary, architecture map | First contact with the repo |
 | [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) | Current module boundaries, data ownership, agent isolation, runtime flows, and deployment topology | Understanding or changing the system |
 | [`docs/TESTING.md`](TESTING.md) | Focused, source, database, release, and live verification tiers | Proving a change |
+| [`docs/API_DESIGN.md`](API_DESIGN.md) | Internal API versioning, typed errors, paid-action safety, and contract-test policy | Changing a server route |
+| [`docs/api/openapi.yaml`](api/openapi.yaml) | Machine-readable contract for covered internal routes | Implementing or consuming a contracted route |
+| [`docs/operations/APOLLO_AUTHORITY_RETENTION.md`](operations/APOLLO_AUTHORITY_RETENTION.md) | Apollo receipt retention, Fly cleanup monitoring, erasure, and evidence | Operating candidate-data retention controls |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Change workflow, architecture rules, review, and completion evidence | Preparing a code change |
 | [`SECURITY.md`](../SECURITY.md) | Private reporting, credential response, and security invariants | Reporting or reviewing a security issue |
 | [`docs/operations/FLY_SIZING.md`](operations/FLY_SIZING.md) | Source-derived Fly machine configuration and evidence needed for tuning | Reviewing performance or topology |

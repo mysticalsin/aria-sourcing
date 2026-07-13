@@ -42,7 +42,7 @@ ok(
 ok(
   "a successful empty live workspace is ready and uses the observable save queue",
   /remote\.state \? normalizeHermesState\(remote\.state\) : buildLiveEmptyState\(\)/.test(storeSource) &&
-    /if \(remote\.state\) skipNextPersist\.current = true/.test(storeSource) &&
+    /if \(remote\.state\) \{[\s\S]{0,180}skipNextPersist\.current = true;[\s\S]{0,180}skipPersistSnapshot\.current = next;[\s\S]{0,80}\}/.test(storeSource) &&
     /queuedRemoteSnapshot\.current = state/.test(storeSource) &&
     /createFailedWorkspaceSave/.test(storeSource),
 );

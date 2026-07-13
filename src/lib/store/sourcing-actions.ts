@@ -4,10 +4,12 @@ import { dedupeCandidates } from "../rules";
 import { roleProfile } from "../roles";
 import { scoreCandidate } from "../scoring";
 import {
+  mapApolloCandidates,
   mapGithubCandidates,
   mapWebSearchCandidates,
   type SourceResult,
 } from "../sourcing/candidate-mappers";
+import type { ApolloSearchProfile } from "../sourcing/apollo";
 import { GITHUB_USERNAME_RE, type GithubUser } from "../sourcing/github";
 import {
   ensureWebQueryScope,
@@ -27,11 +29,16 @@ import {
 } from "../types";
 import { genId, initialsFrom } from "../utils";
 import { baseWebQuery } from "./sourcing-helpers";
-import type { HermesActions } from "./contracts";
+import type { ApolloEnrichmentErrorCode, HermesActions } from "./contracts";
 
 export type SourcingActions = Pick<
   HermesActions,
-  "sourceNextBatch" | "addCandidateFromGithub" | "addCandidateManual"
+  | "sourceNextBatch"
+  | "addCandidateFromGithub"
+  | "addCandidateManual"
+  | "sourceFromApollo"
+  | "prepareApolloEnrichment"
+  | "enrichApolloCandidate"
 >;
 
 export type SourcingActivityDraft = Omit<Activity, "id" | "createdAt"> & {
@@ -40,6 +47,7 @@ export type SourcingActivityDraft = Omit<Activity, "id" | "createdAt"> & {
 
 export interface SourcingActionDependencies {
   commit: (update: (state: HermesState) => HermesState) => boolean;
+  commitPersisted: (update: (state: HermesState) => HermesState) => Promise<boolean>;
   currentState: () => HermesState | null;
   sourcingMutationAllowed: () => boolean;
   workspaceEffectAllowed: () => boolean;
@@ -360,6 +368,253 @@ function safeError(value: unknown, fallback: string): string {
   return redactSecrets(redactEmail(value.trim())).slice(0, 300);
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const APOLLO_ENRICHMENT_ERROR_CODES = new Set<ApolloEnrichmentErrorCode>([
+  "APOLLO_TARGET_NOT_FOUND",
+  "APOLLO_ENRICHMENT_IN_PROGRESS",
+  "APOLLO_RECONCILIATION_REQUIRED",
+  "APOLLO_CONFIRMATION_INVALID",
+  "APOLLO_IDEMPOTENCY_CONFLICT",
+  "APOLLO_RETRY_REQUIRES_NEW_CONFIRMATION",
+  "APOLLO_QUOTA_EXCEEDED",
+  "APOLLO_NOT_CONFIGURED",
+  "APOLLO_AUTHORITY_UNAVAILABLE",
+  "APOLLO_RECEIPT_UNAVAILABLE",
+  "APOLLO_OUTCOME_UNKNOWN",
+]);
+
+function apolloEnrichmentErrorCode(value: unknown): ApolloEnrichmentErrorCode | undefined {
+  return typeof value === "string" &&
+    APOLLO_ENRICHMENT_ERROR_CODES.has(value as ApolloEnrichmentErrorCode)
+    ? (value as ApolloEnrichmentErrorCode)
+    : undefined;
+}
+
+const APOLLO_PROFILE_KEYS = new Set([
+  "targetId",
+  "candidateId",
+  "name",
+  "title",
+  "company",
+  "linkedinUrl",
+  "city",
+  "state",
+  "country",
+  "headline",
+  "seniority",
+  "departments",
+]);
+const APOLLO_SEARCH_KEYS = new Set([
+  "titles",
+  "seniorities",
+  "locations",
+  "organizationDomains",
+  "keywords",
+  "count",
+]);
+const APOLLO_SUCCESS_KEYS = new Set(["ok", "source", "profiles"]);
+const APOLLO_SELECTION_KEYS = new Set(["ok", "selected"]);
+const APOLLO_SELECTION_BINDING_KEYS = new Set(["targetId", "candidateId"]);
+const APOLLO_NOT_CONFIGURED_KEYS = new Set([
+  "ok",
+  "source",
+  "profiles",
+  "code",
+  "error",
+]);
+
+type ApolloSearchRequest = {
+  titles?: string[];
+  seniorities?: string[];
+  locations?: string[];
+  organizationDomains?: string[];
+  keywords?: string;
+  count: number;
+};
+
+function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+
+function boundedText(
+  value: unknown,
+  maxLength: number,
+  allowEmpty: boolean,
+): string | null {
+  if (typeof value !== "string" || value.length > maxLength || hasControlCharacters(value)) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed || allowEmpty ? trimmed : null;
+}
+
+function boundedTextArray(
+  value: unknown,
+  maxItems: number,
+  maxLength: number,
+): string[] | null | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > maxItems) return null;
+  const result: string[] = [];
+  for (const item of value) {
+    const text = boundedText(item, maxLength, false);
+    if (text === null) return null;
+    result.push(text);
+  }
+  return result;
+}
+
+function sanitizeApolloSearchRequest(value: unknown): ApolloSearchRequest | null {
+  if (!isRecord(value) || !hasOnlyKeys(value, APOLLO_SEARCH_KEYS)) return null;
+  const titles = boundedTextArray(value.titles, 20, 120);
+  const seniorities = boundedTextArray(value.seniorities, 10, 60);
+  const locations = boundedTextArray(value.locations, 20, 120);
+  const organizationDomains = boundedTextArray(value.organizationDomains, 20, 200);
+  if (
+    titles === null ||
+    seniorities === null ||
+    locations === null ||
+    organizationDomains === null
+  ) {
+    return null;
+  }
+  let keywords: string | undefined;
+  if (value.keywords !== undefined) {
+    const parsed = boundedText(value.keywords, 300, true);
+    if (parsed === null) return null;
+    keywords = parsed || undefined;
+  }
+  const count = value.count ?? 10;
+  if (!Number.isSafeInteger(count) || (count as number) < 1 || (count as number) > 50) {
+    return null;
+  }
+  return {
+    ...(titles !== undefined ? { titles } : {}),
+    ...(seniorities !== undefined ? { seniorities } : {}),
+    ...(locations !== undefined ? { locations } : {}),
+    ...(organizationDomains !== undefined ? { organizationDomains } : {}),
+    ...(keywords !== undefined ? { keywords } : {}),
+    count: count as number,
+  };
+}
+
+function safeApolloLinkedinUrl(value: unknown): string | null {
+  const text = boundedText(value, 500, true);
+  if (text === null || text === "") return text;
+  try {
+    const url = new URL(text);
+    const hostname = url.hostname.toLowerCase();
+    if (
+      url.protocol !== "https:" ||
+      Boolean(url.username) ||
+      Boolean(url.password) ||
+      Boolean(url.port) ||
+      (hostname !== "linkedin.com" && !hostname.endsWith(".linkedin.com")) ||
+      !url.pathname.startsWith("/in/")
+    ) {
+      return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeApolloProfiles(value: unknown, requestedCount: number): ApolloSearchProfile[] | null {
+  if (!Array.isArray(value) || value.length > requestedCount || value.length > 50) return null;
+  const profiles: ApolloSearchProfile[] = [];
+  for (const item of value) {
+    if (!isRecord(item) || !hasOnlyKeys(item, APOLLO_PROFILE_KEYS)) return null;
+    const targetId = boundedText(item.targetId, 36, false);
+    const candidateId = boundedText(item.candidateId, 36, false);
+    const name = boundedText(item.name, 200, false);
+    const title = boundedText(item.title, 200, true);
+    const company = boundedText(item.company, 200, true);
+    const linkedinUrl = safeApolloLinkedinUrl(item.linkedinUrl);
+    const city = boundedText(item.city, 120, true);
+    const state = boundedText(item.state, 120, true);
+    const country = boundedText(item.country, 120, true);
+    const headline = boundedText(item.headline, 500, true);
+    const seniority = boundedText(item.seniority, 80, true);
+    const departments = boundedTextArray(item.departments, 20, 120);
+    if (
+      !targetId ||
+      !UUID_RE.test(targetId) ||
+      !candidateId ||
+      !UUID_RE.test(candidateId) ||
+      !name ||
+      title === null ||
+      company === null ||
+      linkedinUrl === null ||
+      city === null ||
+      state === null ||
+      country === null ||
+      headline === null ||
+      seniority === null ||
+      !departments
+    ) {
+      return null;
+    }
+    profiles.push({
+      targetId,
+      candidateId,
+      name,
+      title,
+      company,
+      linkedinUrl,
+      city,
+      state,
+      country,
+      headline,
+      seniority,
+      departments,
+    });
+  }
+  return profiles;
+}
+
+function apolloQueryLabel(filters: ApolloSearchRequest): string {
+  return (
+    [
+      filters.titles?.length ? `titles:${filters.titles.join("|")}` : null,
+      filters.seniorities?.length ? `seniority:${filters.seniorities.join("|")}` : null,
+      filters.locations?.length ? `loc:${filters.locations.join("|")}` : null,
+      filters.organizationDomains?.length
+        ? `domains:${filters.organizationDomains.join("|")}`
+        : null,
+      filters.keywords ? `kw:${filters.keywords}` : null,
+    ]
+      .filter(Boolean)
+      .join(" ") || "Apollo search"
+  );
+}
+
+function mapApolloBatch(
+  profiles: ApolloSearchProfile[],
+  campaign: HermesState["campaigns"][number],
+  query: string,
+  existing: Candidate[],
+  weights: ScoringWeights,
+): SourceResult {
+  const knownTargets = new Set(
+    existing
+      .map((candidate) => candidate.sourceAuthorityId)
+      .filter((target): target is string => Boolean(target)),
+  );
+  const uniqueProfiles: ApolloSearchProfile[] = [];
+  const skipped: SourceResult["skipped"] = [];
+  for (const profile of profiles) {
+    if (knownTargets.has(profile.targetId)) {
+      skipped.push({ name: profile.name, reason: "Duplicate Apollo target" });
+      continue;
+    }
+    knownTargets.add(profile.targetId);
+    uniqueProfiles.push(profile);
+  }
+  const mapped = mapApolloCandidates(uniqueProfiles, campaign, query, existing, weights);
+  return { accepted: mapped.accepted, skipped: [...skipped, ...mapped.skipped] };
+}
+
 function githubLocationQualifier(location: string | undefined, query: string): string {
   if (!location?.trim() || /(?:^|\s)location:/i.test(query)) return "";
   const city = location.split(",")[0]?.trim().replace(/["\\]/g, "");
@@ -379,6 +634,7 @@ function invalidRequest(error: string) {
 
 export function createSourcingActions({
   commit,
+  commitPersisted,
   currentState,
   sourcingMutationAllowed,
   workspaceEffectAllowed,
@@ -905,5 +1161,433 @@ export function createSourcingActions({
     };
   };
 
-  return { sourceNextBatch, addCandidateFromGithub, addCandidateManual };
+  const sourceFromApollo: SourcingActions["sourceFromApollo"] = async (
+    campaignId,
+    filters,
+  ) => {
+    const fail = (error: string) => ({
+      accepted: [],
+      skipped: [],
+      source: "error" as const,
+      error,
+    });
+    if (!workspaceEffectAllowed()) {
+      return fail("Workspace unavailable. Retry before sourcing.");
+    }
+    if (!sourcingMutationAllowed()) {
+      return fail("You do not have permission to source candidates in this workspace.");
+    }
+    const initialState = currentState();
+    if (!initialState) return fail("Workspace unavailable. Retry before sourcing.");
+    const initialCampaign = initialState.campaigns.find((item) => item.id === campaignId);
+    if (!initialCampaign) return fail("Campaign not found.");
+    if (initialCampaign.status === "Paused") return fail("Campaign is paused.");
+
+    const request = sanitizeApolloSearchRequest(filters);
+    if (!request) return fail("Apollo search filters are invalid.");
+
+    let response: Response;
+    let body: unknown;
+    try {
+      response = await workspaceFetch("/api/source/apollo/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ campaignId, ...request }),
+      });
+      body = await response.json().catch(() => null);
+    } catch (error) {
+      return fail(
+        safeError(
+          error instanceof Error ? error.message : null,
+          "Network error reaching Apollo search.",
+        ),
+      );
+    }
+
+    if (!isRecord(body)) return fail("Apollo search returned an invalid response.");
+    if (
+      response.ok &&
+      body.ok === true &&
+      body.source === "not_configured" &&
+      hasOnlyKeys(body, APOLLO_NOT_CONFIGURED_KEYS) &&
+      Array.isArray(body.profiles) &&
+      body.profiles.length === 0 &&
+      body.code === "APOLLO_NOT_CONFIGURED"
+    ) {
+      return {
+        accepted: [],
+        skipped: [],
+        source: "not_configured",
+        error: safeError(body.error, "Add an Apollo key in Settings to source real candidates."),
+      };
+    }
+    if (!response.ok || body.ok !== true || body.source !== "apollo") {
+      return fail(safeError(body.error, "Apollo search failed."));
+    }
+    if (!hasOnlyKeys(body, APOLLO_SUCCESS_KEYS)) {
+      return fail("Apollo search returned an invalid response.");
+    }
+    const profiles = sanitizeApolloProfiles(body.profiles, request.count);
+    if (!profiles) return fail("Apollo search returned an invalid response.");
+
+    if (!workspaceEffectAllowed()) {
+      return fail("Workspace unavailable. Retry before saving sourced candidates.");
+    }
+    if (!sourcingMutationAllowed()) {
+      return fail("You do not have permission to source candidates in this workspace.");
+    }
+    const latestState = currentState();
+    if (!latestState) {
+      return fail("Workspace unavailable. Retry before saving sourced candidates.");
+    }
+    const latestCampaign = latestState.campaigns.find((item) => item.id === campaignId);
+    if (!latestCampaign) return fail("Campaign not found.");
+    if (latestCampaign.status === "Paused") return fail("Campaign is paused.");
+
+    if (profiles.length === 0) {
+      return { accepted: [], skipped: [], source: "apollo" };
+    }
+
+    const queryLabel = apolloQueryLabel(request);
+    const preview = mapApolloBatch(
+      profiles,
+      latestCampaign,
+      queryLabel,
+      latestState.candidates,
+      effectiveWeights(latestCampaign.scoringWeights, latestState.skills),
+    );
+    if (preview.accepted.length === 0) {
+      return { ...preview, source: "apollo" };
+    }
+    let committedResult: SourceResult | null = null;
+    const applied = await commitPersisted((previous) => {
+      if (!workspaceEffectAllowed() || !sourcingMutationAllowed()) return previous;
+      const campaign = previous.campaigns.find((item) => item.id === campaignId);
+      if (!campaign || campaign.status === "Paused") return previous;
+      const weights = effectiveWeights(campaign.scoringWeights, previous.skills);
+      const result = mapApolloBatch(
+        profiles,
+        campaign,
+        queryLabel,
+        previous.candidates,
+        weights,
+      );
+      committedResult = result;
+      if (result.accepted.length === 0) return previous;
+      let next: HermesState = {
+        ...previous,
+        candidates: [...result.accepted, ...previous.candidates],
+      };
+      next = recomputeMetrics(next, campaignId);
+      return withActivity(
+        next,
+        makeActivity({
+          type: "sourcing",
+          title: `Sourced ${result.accepted.length} candidates via Apollo`,
+          notes: `Live Apollo batch. ${result.skipped.length} skipped by dedupe (${result.skipped
+            .slice(0, 3)
+            .map((item) => item.reason)
+            .join(", ")}${result.skipped.length > 3 ? "…" : ""}).`,
+          outcome: `${result.accepted.length} accepted, ${result.skipped.length} skipped (live)`,
+          campaignId,
+          linkedEntityType: "campaign",
+          linkedEntityId: campaignId,
+        }),
+        campaignId,
+      );
+    });
+    if (!applied || !committedResult) {
+      return fail("Workspace changed before the Apollo candidates could be saved. Retry sourcing.");
+    }
+    const result: SourceResult = committedResult;
+    if (result.accepted.length > 0) {
+      emitSource({ kind: "source", campaignId, count: result.accepted.length });
+    }
+    return { ...result, source: "apollo" };
+  };
+
+  const prepareApolloEnrichment: SourcingActions["prepareApolloEnrichment"] = async (
+    candidateId,
+  ) => {
+    if (!workspaceEffectAllowed()) {
+      return { ok: false, error: "Workspace unavailable. Retry before enrichment." };
+    }
+    if (!sourcingMutationAllowed()) {
+      return { ok: false, error: "You do not have permission to enrich candidates in this workspace." };
+    }
+    const before = currentState();
+    const candidate = before?.candidates.find((item) => item.id === candidateId);
+    const campaign = candidate && before?.campaigns.find((item) => item.id === candidate.campaignId);
+    if (
+      !candidate ||
+      !campaign ||
+      campaign.status === "Paused" ||
+      candidate.sourcePlatform !== "Apollo" ||
+      !UUID_RE.test(candidate.id) ||
+      !candidate.sourceAuthorityId ||
+      !UUID_RE.test(candidate.sourceAuthorityId)
+    ) {
+      return { ok: false, error: "This candidate has no active Apollo enrichment authority." };
+    }
+
+    let selectionResponse: Response;
+    let selectionBody: unknown;
+    const selection = {
+      targetId: candidate.sourceAuthorityId,
+      candidateId: candidate.id,
+    };
+    try {
+      selectionResponse = await workspaceFetch("/api/source/apollo/select", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ campaignId: candidate.campaignId, candidates: [selection] }),
+      });
+      selectionBody = await selectionResponse.json().catch(() => null);
+    } catch (error) {
+      return {
+        ok: false,
+        error: safeError(
+          error instanceof Error ? error.message : null,
+          "Apollo candidate selection failed.",
+        ),
+      };
+    }
+    if (
+      !selectionResponse.ok ||
+      !isRecord(selectionBody) ||
+      selectionBody.ok !== true ||
+      !hasOnlyKeys(selectionBody, APOLLO_SELECTION_KEYS) ||
+      !Array.isArray(selectionBody.selected) ||
+      selectionBody.selected.length !== 1 ||
+      !isRecord(selectionBody.selected[0]) ||
+      !hasOnlyKeys(selectionBody.selected[0], APOLLO_SELECTION_BINDING_KEYS) ||
+      selectionBody.selected[0].targetId !== selection.targetId ||
+      selectionBody.selected[0].candidateId !== selection.candidateId
+    ) {
+      return {
+        ok: false,
+        error: isRecord(selectionBody)
+          ? safeError(selectionBody.error, "Apollo candidate selection failed.")
+          : "Apollo candidate selection failed.",
+      };
+    }
+
+    const afterSelection = currentState();
+    const selectedCandidate = afterSelection?.candidates.find((item) => item.id === candidateId);
+    const selectedCampaign = selectedCandidate && afterSelection?.campaigns.find(
+      (item) => item.id === selectedCandidate.campaignId,
+    );
+    if (
+      !workspaceEffectAllowed() ||
+      !sourcingMutationAllowed() ||
+      !selectedCandidate ||
+      !selectedCampaign ||
+      selectedCampaign.status === "Paused" ||
+      selectedCandidate.sourcePlatform !== "Apollo" ||
+      selectedCandidate.sourceAuthorityId !== candidate.sourceAuthorityId
+    ) {
+      return { ok: false, error: "Apollo enrichment authority changed before preparation. Retry." };
+    }
+
+    let response: Response;
+    let body: unknown;
+    try {
+      response = await workspaceFetch("/api/source/apollo/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "prepare",
+          campaignId: candidate.campaignId,
+          candidateId: candidate.id,
+          targetId: candidate.sourceAuthorityId,
+          scope: "email",
+        }),
+      });
+      body = await response.json().catch(() => null);
+    } catch (error) {
+      return {
+        ok: false,
+        error: safeError(error instanceof Error ? error.message : null, "Apollo enrichment preparation failed."),
+      };
+    }
+    const result = isRecord(body) ? body : null;
+    if (!response.ok || result?.ok !== true) {
+      return {
+        ok: false,
+        error: safeError(result?.error, "Apollo enrichment preparation failed."),
+        code: apolloEnrichmentErrorCode(result?.code),
+      };
+    }
+
+    const confirmationNonce = optionalString(result.confirmationNonce, 36);
+    const expiresAt = optionalIsoDate(result.expiresAt);
+    if (
+      result.status !== "prepared" ||
+      result.campaignId !== candidate.campaignId ||
+      result.candidateId !== candidate.id ||
+      result.targetId !== candidate.sourceAuthorityId ||
+      result.scope !== "email" ||
+      result.maxCostCredits !== 1 ||
+      !confirmationNonce ||
+      !UUID_RE.test(confirmationNonce) ||
+      !expiresAt
+    ) {
+      return { ok: false, error: "Apollo returned an invalid preparation receipt." };
+    }
+
+    const current = currentState();
+    const currentCandidate = current?.candidates.find((item) => item.id === candidateId);
+    const currentCampaign = currentCandidate && current?.campaigns.find((item) => item.id === currentCandidate.campaignId);
+    if (
+      !workspaceEffectAllowed() ||
+      !sourcingMutationAllowed() ||
+      !currentCandidate ||
+      !currentCampaign ||
+      currentCampaign.status === "Paused" ||
+      currentCandidate.sourcePlatform !== "Apollo" ||
+      currentCandidate.sourceAuthorityId !== candidate.sourceAuthorityId
+    ) {
+      return { ok: false, error: "Apollo enrichment authority changed before confirmation. Retry." };
+    }
+    return { ok: true, confirmationNonce, expiresAt };
+  };
+
+  const enrichApolloCandidate: SourcingActions["enrichApolloCandidate"] = async (
+    candidateId,
+    confirmationNonce,
+  ) => {
+    if (!workspaceEffectAllowed()) {
+      return { ok: false, revealed: false, detail: "Workspace unavailable. Retry before enrichment." };
+    }
+    if (!sourcingMutationAllowed()) {
+      return { ok: false, revealed: false, detail: "You do not have permission to enrich candidates." };
+    }
+    const before = currentState();
+    const candidate = before?.candidates.find((item) => item.id === candidateId);
+    const campaign = candidate && before?.campaigns.find((item) => item.id === candidate.campaignId);
+    if (
+      !candidate ||
+      !campaign ||
+      campaign.status === "Paused" ||
+      candidate.sourcePlatform !== "Apollo" ||
+      !UUID_RE.test(candidate.id) ||
+      !candidate.sourceAuthorityId ||
+      !UUID_RE.test(candidate.sourceAuthorityId) ||
+      !UUID_RE.test(confirmationNonce)
+    ) {
+      return { ok: false, revealed: false, detail: "Apollo enrichment confirmation is invalid." };
+    }
+
+    let response: Response;
+    let body: unknown;
+    try {
+      response = await workspaceFetch("/api/source/apollo/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "commit",
+          campaignId: candidate.campaignId,
+          candidateId: candidate.id,
+          targetId: candidate.sourceAuthorityId,
+          scope: "email",
+          confirmationNonce,
+          idempotencyKey: globalThis.crypto.randomUUID(),
+        }),
+      });
+      body = await response.json().catch(() => null);
+    } catch (error) {
+      return {
+        ok: false,
+        revealed: false,
+        detail: safeError(error instanceof Error ? error.message : null, "Apollo enrichment failed."),
+      };
+    }
+    const result = isRecord(body) ? body : null;
+    if (!response.ok || result?.ok !== true) {
+      return {
+        ok: false,
+        revealed: false,
+        detail: safeError(result?.error, "Apollo enrichment failed."),
+        code: apolloEnrichmentErrorCode(result?.code),
+      };
+    }
+
+    const email = optionalString(result.email, 320);
+    if (
+      result.status !== "completed" ||
+      result.campaignId !== candidate.campaignId ||
+      result.candidateId !== candidate.id ||
+      result.targetId !== candidate.sourceAuthorityId ||
+      typeof result.revealed !== "boolean" ||
+      typeof result.cached !== "boolean" ||
+      typeof email !== "string" ||
+      (result.revealed ? !isValidEmail(email) || result.detail !== "email_revealed" : email !== "" || result.detail !== "no_contact_found") ||
+      result.phone !== ""
+    ) {
+      return { ok: false, revealed: false, detail: "Apollo returned an invalid enrichment receipt." };
+    }
+
+    const current = currentState();
+    const currentCandidate = current?.candidates.find((item) => item.id === candidateId);
+    const currentCampaign = currentCandidate && current?.campaigns.find((item) => item.id === currentCandidate.campaignId);
+    if (
+      !workspaceEffectAllowed() ||
+      !sourcingMutationAllowed() ||
+      !currentCandidate ||
+      !currentCampaign ||
+      currentCampaign.status === "Paused" ||
+      currentCandidate.sourcePlatform !== "Apollo" ||
+      currentCandidate.sourceAuthorityId !== candidate.sourceAuthorityId
+    ) {
+      return { ok: false, revealed: false, detail: "Apollo enrichment authority changed before saving. Retry." };
+    }
+    if (!result.revealed) {
+      return { ok: true, revealed: false, detail: "No contact email found." };
+    }
+
+    let saved = false;
+    const committed = await commitPersisted((state) => {
+      const exactCandidate = state.candidates.find((item) => item.id === candidateId);
+      if (
+        !exactCandidate ||
+        exactCandidate.sourcePlatform !== "Apollo" ||
+        exactCandidate.sourceAuthorityId !== candidate.sourceAuthorityId
+      ) {
+        return state;
+      }
+      saved = true;
+      const next: HermesState = {
+        ...state,
+        candidates: state.candidates.map((item) =>
+          item.id === candidateId ? { ...item, email: email.toLowerCase() } : item,
+        ),
+      };
+      return withActivity(
+        next,
+        makeActivity({
+          type: "sourcing",
+          title: `Enriched via Apollo: ${exactCandidate.name}`,
+          notes: "Revealed one contact email through the normalized Apollo authority.",
+          outcome: "Email revealed",
+          campaignId: exactCandidate.campaignId,
+          linkedEntityType: "candidate",
+          linkedEntityId: exactCandidate.id,
+        }),
+        exactCandidate.campaignId,
+      );
+    });
+    if (!committed || !saved) {
+      return { ok: false, revealed: false, detail: "Workspace changed before the contact email could be saved. Retry." };
+    }
+    return { ok: true, revealed: true, detail: "Contact email revealed." };
+  };
+
+  return {
+    sourceNextBatch,
+    addCandidateFromGithub,
+    addCandidateManual,
+    sourceFromApollo,
+    prepareApolloEnrichment,
+    enrichApolloCandidate,
+  };
 }

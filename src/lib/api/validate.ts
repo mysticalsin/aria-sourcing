@@ -14,16 +14,37 @@ export async function validateBody<T>(
   schema: ZodSchema<T>,
   { maxBytes = 32_000 }: { maxBytes?: number } = {},
 ): Promise<{ ok: true; data: T } | { ok: false; response: NextResponse }> {
-  // Enforce the byte cap against actually-received bytes, not the client-controlled
-  // Content-Length header (absent or spoofable → the old check was bypassable).
-  const buf = await req.arrayBuffer();
-  if (buf.byteLength > maxBytes) {
-    return {
-      ok: false,
-      response: NextResponse.json({ ok: false, error: "Payload too large." }, { status: 413 }),
-    };
+  const payloadTooLarge = () => ({
+    ok: false as const,
+    response: NextResponse.json({ ok: false, error: "Payload too large." }, { status: 413 }),
+  });
+  const declaredLength = req.headers.get("content-length")?.trim() ?? "";
+  if (/^\d+$/.test(declaredLength) && Number(declaredLength) > maxBytes) {
+    return payloadTooLarge();
   }
 
+  const reader = req.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let receivedBytes = 0;
+  if (reader) {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      receivedBytes += value.byteLength;
+      if (receivedBytes > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return payloadTooLarge();
+      }
+      chunks.push(value);
+    }
+  }
+
+  const buf = new Uint8Array(receivedBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    buf.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
   let raw: unknown;
   try {
     raw = JSON.parse(new TextDecoder().decode(buf));

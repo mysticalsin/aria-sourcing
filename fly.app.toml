@@ -6,6 +6,10 @@
 app            = "aria-mantu-app"
 primary_region = "cdg"
 
+[processes]
+  web     = "node server.js"
+  cleanup = "node scripts/apollo-authority-cleanup-worker.mjs"
+
 [build]
   dockerfile = "Dockerfile.prod"
   [build.args]
@@ -29,6 +33,7 @@ primary_region = "cdg"
   # Do NOT set NEXT_PUBLIC_ENABLE_DEMO_LOGIN / DEMO_ADMIN_PASSWORD on a real tenant.
 
 [http_service]
+  processes            = ["web"]
   internal_port        = 3000
   force_https          = true
   auto_stop_machines   = "suspend"
@@ -56,5 +61,11 @@ primary_region = "cdg"
 # cost bump. If SSR still feels slow, go performance-1x (a DEDICATED vCPU removes
 # oversubscription jitter entirely) — that's the next lever, not a bigger shared VM.
 [[vm]]
+  processes = ["web"]
   size   = "shared-cpu-2x"
   memory = "2gb"
+
+[[vm]]
+  processes = ["cleanup"]
+  size      = "shared-cpu-1x"
+  memory    = "256mb"

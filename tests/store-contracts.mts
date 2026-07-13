@@ -128,7 +128,7 @@ test("action contract, implementation object, and memo dependencies stay in pari
     .filter((name): name is string => name !== null);
   const dependencyNames = dependencyList.elements.map((element) => element.getText());
 
-  assert.equal(contractNames.length, 124);
+  assert.equal(contractNames.length, 125);
   assert.deepEqual([...implementationNames].sort(), [...contractNames].sort());
   assert.deepEqual([...dependencyNames].sort(), [...contractNames].sort());
 });
@@ -175,7 +175,7 @@ test("public hooks preserve their provider-bound initial behavior", () => {
   const markup = renderToStaticMarkup(
     createElement(HermesProvider, null, createElement(StoreHookProbe)),
   );
-  assert.equal(markup, "<output>loading:false:124</output>");
+  assert.equal(markup, "<output>loading:false:125</output>");
 });
 
 test("useHermes still rejects consumers outside HermesProvider", () => {

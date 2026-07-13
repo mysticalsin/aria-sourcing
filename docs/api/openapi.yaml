@@ -1,0 +1,1380 @@
+openapi: 3.1.0
+info:
+  title: ARIA internal sourcing API
+  version: '2026-07-13'
+  description: >-
+    Additive-only browser-to-server contract for paid sourcing operations.
+    Breaking changes move to /api/v2 and retain the prior contract for at least
+    three months.
+servers:
+  - url: /
+security:
+  - supabaseSession: []
+paths:
+  /api/source/apollo/search:
+    post:
+      operationId: searchApolloProfiles
+      summary: Search Apollo and issue workspace-bound enrichment targets
+      description: Search is free. Raw Apollo person identifiers are never returned.
+      x-aria-contract-version: '2026-07-13'
+      x-aria-max-body-bytes: 10000
+      x-aria-request-throttle:
+        storage: per-instance-memory
+        windowSeconds: 60
+        maxRequests: 10
+        keyDimensions: [route, trusted-proxy-address, authenticated-user]
+      parameters:
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+            format: uri
+          description: Must exactly equal the request URL origin.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApolloSearchRequest'
+      responses:
+        '200':
+          description: Search completed or Apollo is not configured.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Pragma:
+              $ref: '#/components/headers/PragmaNoCache'
+            X-Content-Type-Options:
+              $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApolloSearchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '413':
+          $ref: '#/components/responses/PayloadTooLargeError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+        '429':
+          $ref: '#/components/responses/SearchRateLimitedError'
+        '502':
+          $ref: '#/components/responses/SearchProviderError'
+        '503':
+          $ref: '#/components/responses/SearchDependencyError'
+  /api/source/apollo/enrich:
+    post:
+      operationId: prepareOrCommitApolloEnrichment
+      summary: Prepare or commit one paid Apollo email reveal
+      description: >-
+        Prepare returns a short-lived single-use nonce. Commit atomically claims
+        a workspace-bound target and idempotency key before one provider call.
+        Terminal receipts replay without another call. Ambiguous outcomes never
+        retry automatically.
+      x-aria-contract-version: '2026-07-13'
+      x-aria-max-body-bytes: 2000
+      x-aria-request-throttle:
+        storage: per-instance-memory
+        windowSeconds: 60
+        maxRequests: 15
+        keyDimensions: [route, trusted-proxy-address, authenticated-user]
+      x-aria-spend-quota:
+        storage: postgres
+        period: database-current-date
+        maxWorkspaceClaims: 100
+        maxUserClaims: 25
+        atomicWithProviderClaim: true
+      parameters:
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+            format: uri
+          description: Must exactly equal the request origin.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/ApolloEnrichmentPrepareRequest'
+                - $ref: '#/components/schemas/ApolloEnrichmentCommitRequest'
+      responses:
+        '200':
+          description: Prepared, completed, or idempotently replayed.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Pragma:
+              $ref: '#/components/headers/PragmaNoCache'
+            X-Content-Type-Options:
+              $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ApolloEnrichmentPrepared'
+                  - $ref: '#/components/schemas/ApolloEnrichmentCompleted'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/TargetNotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '413':
+          $ref: '#/components/responses/PayloadTooLargeError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+        '429':
+          $ref: '#/components/responses/EnrichmentRateOrQuotaError'
+        '502':
+          $ref: '#/components/responses/AmbiguousProviderError'
+        '503':
+          $ref: '#/components/responses/EnrichmentDependencyError'
+  /api/source/apollo/select:
+    post:
+      operationId: selectApolloCandidates
+      summary: Select server-issued Apollo candidates for later enrichment
+      description: >-
+        Persists the exact workspace, campaign, candidate, and opaque target
+        binding. Unselected search results cannot create paid confirmations.
+      x-aria-contract-version: '2026-07-13'
+      x-aria-max-body-bytes: 8000
+      x-aria-request-throttle:
+        storage: per-instance-memory
+        windowSeconds: 60
+        maxRequests: 15
+        keyDimensions: [route, trusted-proxy-address, authenticated-user]
+      parameters:
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+            format: uri
+          description: Must exactly equal the request URL origin.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApolloSelectionRequest'
+      responses:
+        '200':
+          description: Exact candidate bindings selected.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Pragma:
+              $ref: '#/components/headers/PragmaNoCache'
+            X-Content-Type-Options:
+              $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApolloSelectionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '413':
+          $ref: '#/components/responses/PayloadTooLargeError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+        '429':
+          $ref: '#/components/responses/SelectionRateLimitedError'
+        '503':
+          $ref: '#/components/responses/SearchDependencyError'
+  /api/admin/source/apollo/erasure:
+    post:
+      operationId: eraseApolloEnrichmentReceipt
+      summary: Anonymize one exact Apollo candidate authority
+      description: >-
+        Admin-only candidate-rights operation. Clears retained encrypted email
+        receipts, cancels unresolved attempts, and erases the normalized provider
+        handle before the shared candidate document is redacted. Retries return
+        the original append-only erasure receipt.
+      x-aria-contract-version: '2026-07-13'
+      x-aria-max-body-bytes: 2000
+      x-aria-request-throttle:
+        storage: per-instance-memory
+        windowSeconds: 60
+        maxRequests: 15
+        keyDimensions: [route, trusted-proxy-address, authenticated-user]
+      parameters:
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+            format: uri
+          description: Must exactly equal the request URL origin.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApolloErasureRequest'
+      responses:
+        '200':
+          description: Exact target erased or an earlier erasure receipt replayed.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Pragma:
+              $ref: '#/components/headers/PragmaNoCache'
+            X-Content-Type-Options:
+              $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApolloErasureResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/TargetNotFoundError'
+        '413':
+          $ref: '#/components/responses/PayloadTooLargeError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+        '429':
+          $ref: '#/components/responses/ErasureRateLimitedError'
+        '503':
+          $ref: '#/components/responses/ErasureDependencyError'
+  /api/admin/source/apollo/reconciliation:
+    post:
+      operationId: listOrReconcileApolloEnrichmentAttempts
+      summary: Investigate and resolve stuck Apollo enrichment attempts
+      description: >-
+        Admin-only, evidence-backed recovery. This operation never calls Apollo.
+        Ambiguous attempts remain blocked unless an administrator records a
+        verified outcome or verified proof that no provider call or charge occurred.
+      x-aria-contract-version: '2026-07-13'
+      x-aria-max-body-bytes: 4000
+      x-aria-request-throttle:
+        storage: per-instance-memory
+        windowSeconds: 60
+        maxRequests: 20
+        keyDimensions: [route, trusted-proxy-address, authenticated-user]
+      parameters:
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+            format: uri
+          description: Must exactly equal the request URL origin.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApolloReconciliationRequest'
+      responses:
+        '200':
+          description: Queue listed or one attempt reconciled.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Pragma:
+              $ref: '#/components/headers/PragmaNoCache'
+            X-Content-Type-Options:
+              $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ApolloReconciliationQueueResponse'
+                  - $ref: '#/components/schemas/ApolloReconciledResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/ReconciliationNotFoundError'
+        '409':
+          $ref: '#/components/responses/ReconciliationConflictError'
+        '413':
+          $ref: '#/components/responses/PayloadTooLargeError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+        '429':
+          $ref: '#/components/responses/ReconciliationRateLimitedError'
+        '503':
+          $ref: '#/components/responses/ReconciliationDependencyError'
+components:
+  securitySchemes:
+    supabaseSession:
+      type: apiKey
+      in: cookie
+      name: sb-auth-token
+      description: Fixed Supabase session cookie shared by browser and server clients. The SSR client may split a large value across numbered cookie chunks.
+  headers:
+    CacheControlNoStore:
+      description: Prevents storage of sourcing and enrichment responses.
+      schema:
+        type: string
+        const: no-store
+    PragmaNoCache:
+      description: Legacy no-cache directive emitted by the route.
+      schema:
+        type: string
+        const: no-cache
+    ContentTypeOptionsNoSniff:
+      description: Disables MIME sniffing.
+      schema:
+        type: string
+        const: nosniff
+    RetryAfterSeconds:
+      description: Whole seconds until this route instance accepts another request.
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    ApolloSearchRequest:
+      type: object
+      additionalProperties: false
+      required: [campaignId]
+      properties:
+        campaignId:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'
+        titles:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 120
+        seniorities:
+          type: array
+          maxItems: 10
+          items:
+            type: string
+            minLength: 1
+            maxLength: 60
+        locations:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 120
+        organizationDomains:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 200
+        keywords:
+          type: string
+          maxLength: 300
+        count:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 10
+    ApolloSearchProfile:
+      type: object
+      additionalProperties: false
+      required:
+        - targetId
+        - candidateId
+        - name
+        - title
+        - company
+        - linkedinUrl
+        - city
+        - state
+        - country
+        - headline
+        - seniority
+        - departments
+      properties:
+        targetId:
+          type: string
+          format: uuid
+          description: Opaque workspace-bound authority. Never an Apollo person ID.
+        candidateId:
+          type: string
+          format: uuid
+          description: Server-issued candidate identity bound to this campaign target.
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        title:
+          type: string
+          maxLength: 200
+        company:
+          type: string
+          maxLength: 200
+        linkedinUrl:
+          oneOf:
+            - type: string
+              const: ''
+            - type: string
+              format: uri
+              maxLength: 500
+              pattern: '^https://(?:[A-Za-z0-9-]+\.)*linkedin\.com/in/.+'
+        city:
+          type: string
+          maxLength: 120
+        state:
+          type: string
+          maxLength: 120
+        country:
+          type: string
+          maxLength: 120
+        headline:
+          type: string
+          maxLength: 500
+        seniority:
+          type: string
+          maxLength: 80
+        departments:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            maxLength: 120
+    ApolloSearchResponse:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [ok, source, profiles]
+          properties:
+            ok:
+              type: boolean
+              const: true
+            source:
+              type: string
+              const: apollo
+            profiles:
+              type: array
+              maxItems: 50
+              items:
+                $ref: '#/components/schemas/ApolloSearchProfile'
+        - type: object
+          additionalProperties: false
+          required: [ok, source, profiles, code, error]
+          properties:
+            ok:
+              type: boolean
+              const: true
+            source:
+              type: string
+              const: not_configured
+            profiles:
+              type: array
+              maxItems: 0
+            code:
+              type: string
+              const: APOLLO_NOT_CONFIGURED
+            error:
+              type: string
+              const: Apollo is not configured.
+    ApolloEnrichmentPrepareRequest:
+      type: object
+      additionalProperties: false
+      required: [action, campaignId, candidateId, targetId, scope]
+      properties:
+        action:
+          type: string
+          const: prepare
+        campaignId:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'
+        candidateId:
+          type: string
+          format: uuid
+        targetId:
+          type: string
+          format: uuid
+        scope:
+          type: string
+          const: email
+    ApolloEnrichmentCommitRequest:
+      type: object
+      additionalProperties: false
+      required: [action, campaignId, candidateId, targetId, scope, confirmationNonce, idempotencyKey]
+      properties:
+        action:
+          type: string
+          const: commit
+        campaignId:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'
+        candidateId:
+          type: string
+          format: uuid
+        targetId:
+          type: string
+          format: uuid
+        scope:
+          type: string
+          const: email
+        confirmationNonce:
+          type: string
+          format: uuid
+        idempotencyKey:
+          type: string
+          format: uuid
+    ApolloEnrichmentPrepared:
+      type: object
+      additionalProperties: false
+      required: [ok, status, campaignId, candidateId, targetId, scope, confirmationNonce, expiresAt, maxCostCredits]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        status:
+          type: string
+          const: prepared
+        campaignId:
+          type: string
+        candidateId:
+          type: string
+          format: uuid
+        targetId:
+          type: string
+          format: uuid
+        scope:
+          type: string
+          const: email
+        confirmationNonce:
+          type: string
+          format: uuid
+        expiresAt:
+          type: string
+          format: date-time
+          pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$'
+        maxCostCredits:
+          type: integer
+          const: 1
+    ApolloEnrichmentCompleted:
+      oneOf:
+        - $ref: '#/components/schemas/ApolloEmailRevealed'
+        - $ref: '#/components/schemas/ApolloNoContactFound'
+    ApolloEmailRevealed:
+      type: object
+      additionalProperties: false
+      required: [ok, status, campaignId, candidateId, targetId, revealed, cached, email, phone, detail]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        status:
+          type: string
+          const: completed
+        campaignId:
+          type: string
+        candidateId:
+          type: string
+          format: uuid
+        targetId:
+          type: string
+          format: uuid
+        revealed:
+          type: boolean
+          const: true
+        cached:
+          type: boolean
+        email:
+          type: string
+          format: email
+          minLength: 1
+          maxLength: 320
+        phone:
+          type: string
+          const: ''
+          description: Email-only scope never returns a phone number.
+        detail:
+          type: string
+          const: email_revealed
+    ApolloNoContactFound:
+      type: object
+      additionalProperties: false
+      required: [ok, status, campaignId, candidateId, targetId, revealed, cached, email, phone, detail]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        status:
+          type: string
+          const: completed
+        campaignId:
+          type: string
+        candidateId:
+          type: string
+          format: uuid
+        targetId:
+          type: string
+          format: uuid
+        revealed:
+          type: boolean
+          const: false
+        cached:
+          type: boolean
+        email:
+          type: string
+          const: ''
+        phone:
+          type: string
+          const: ''
+          description: Email-only scope never returns a phone number.
+        detail:
+          type: string
+          const: no_contact_found
+    ApolloSelectionBinding:
+      type: object
+      additionalProperties: false
+      required: [targetId, candidateId]
+      properties:
+        targetId:
+          type: string
+          format: uuid
+        candidateId:
+          type: string
+          format: uuid
+    ApolloSelectionRequest:
+      type: object
+      additionalProperties: false
+      required: [campaignId, candidates]
+      properties:
+        campaignId:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'
+        candidates:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/ApolloSelectionBinding'
+    ApolloSelectionResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, selected]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        selected:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/ApolloSelectionBinding'
+    ApolloErasureRequest:
+      type: object
+      additionalProperties: false
+      required: [campaignId, candidateId, targetId]
+      properties:
+        campaignId:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'
+        candidateId:
+          type: string
+          format: uuid
+        targetId:
+          type: string
+          format: uuid
+    ApolloErasureResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, campaignId, candidateId, targetId, clearedReceipts, cancelledAttempts, eventId]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        campaignId:
+          type: string
+        candidateId:
+          type: string
+          format: uuid
+        targetId:
+          type: string
+          format: uuid
+        clearedReceipts:
+          type: integer
+          minimum: 0
+        cancelledAttempts:
+          type: integer
+          minimum: 0
+        eventId:
+          type: string
+          format: uuid
+          description: Original append-only erasure receipt, including on a retry.
+    ApolloReconciliationRequest:
+      oneOf:
+        - $ref: '#/components/schemas/ApolloReconciliationListRequest'
+        - $ref: '#/components/schemas/ApolloReconciliationCompleteFoundRequest'
+        - $ref: '#/components/schemas/ApolloReconciliationNonEmailRequest'
+    ApolloReconciliationListRequest:
+      type: object
+      additionalProperties: false
+      required: [operation]
+      properties:
+        operation:
+          type: string
+          const: list
+        beforeCreated:
+          type: string
+          format: date-time
+          maxLength: 100
+        beforeId:
+          type: string
+          format: uuid
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 20
+      dependentRequired:
+        beforeCreated: [beforeId]
+        beforeId: [beforeCreated]
+    ApolloReconciliationCompleteFoundRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - operation
+        - attemptId
+        - expectedVersion
+        - resolution
+        - email
+        - caseReference
+        - evidenceSha256
+      properties:
+        operation:
+          type: string
+          const: reconcile
+        attemptId:
+          type: string
+          format: uuid
+        expectedVersion:
+          type: integer
+          minimum: 1
+        resolution:
+          type: string
+          const: complete_found
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        caseReference:
+          $ref: '#/components/schemas/ApolloCaseReference'
+        evidenceSha256:
+          $ref: '#/components/schemas/Sha256'
+    ApolloReconciliationNonEmailRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - operation
+        - attemptId
+        - expectedVersion
+        - resolution
+        - caseReference
+        - evidenceSha256
+      properties:
+        operation:
+          type: string
+          const: reconcile
+        attemptId:
+          type: string
+          format: uuid
+        expectedVersion:
+          type: integer
+          minimum: 1
+        resolution:
+          type: string
+          enum: [quarantine_stale, complete_not_found, release_no_charge]
+        caseReference:
+          $ref: '#/components/schemas/ApolloCaseReference'
+        evidenceSha256:
+          $ref: '#/components/schemas/Sha256'
+    ApolloCaseReference:
+      type: string
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,119}$'
+    Sha256:
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+    ApolloReconciliationQueueItem:
+      type: object
+      additionalProperties: false
+      required:
+        - attemptId
+        - targetId
+        - providerExternalId
+        - requesterId
+        - status
+        - version
+        - requestId
+        - createdAt
+        - leaseExpiresAt
+        - ambiguousAt
+      properties:
+        attemptId:
+          type: string
+          format: uuid
+        targetId:
+          type: string
+          format: uuid
+        providerExternalId:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Admin-only investigation handle. Never accepted as mutation authority.
+        requesterId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [in_progress, ambiguous]
+        version:
+          type: integer
+          minimum: 1
+        requestId:
+          type: string
+          pattern: '^[A-Za-z0-9._:-]{1,100}$'
+        createdAt:
+          type: string
+          format: date-time
+        leaseExpiresAt:
+          type: string
+          format: date-time
+        ambiguousAt:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+    ApolloReconciliationQueueResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, items, nextCursor]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/ApolloReconciliationQueueItem'
+        nextCursor:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [beforeCreated, beforeId]
+              properties:
+                beforeCreated:
+                  type: string
+                  format: date-time
+                beforeId:
+                  type: string
+                  format: uuid
+            - type: 'null'
+    ApolloReconciledResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, attemptId, status, version, eventId]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        attemptId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [ambiguous, completed, cancelled]
+        version:
+          type: integer
+          minimum: 2
+        eventId:
+          type: string
+          format: uuid
+          description: Append-only reconciliation audit receipt.
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, code, error, requestId]
+      properties:
+        ok:
+          type: boolean
+          const: false
+        code:
+          type: string
+          pattern: '^[A-Z][A-Z0-9_]{2,63}$'
+        error:
+          type: string
+          minLength: 1
+          maxLength: 200
+        requestId:
+          type: string
+          pattern: '^[A-Za-z0-9._:-]{1,100}$'
+    BadRequestError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            code:
+              type: string
+              enum: [INVALID_REQUEST, WORKSPACE_NOT_FOUND]
+    InvalidRequestError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            code:
+              type: string
+              const: INVALID_REQUEST
+    UnauthorizedError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            code:
+              type: string
+              const: NOT_AUTHENTICATED
+    ForbiddenError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            code:
+              type: string
+              enum: [CROSS_ORIGIN_REQUEST, INSUFFICIENT_PERMISSIONS]
+    TargetNotFoundError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            code:
+              type: string
+              const: APOLLO_TARGET_NOT_FOUND
+    ConflictError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            code:
+              type: string
+              enum:
+                - APOLLO_ENRICHMENT_IN_PROGRESS
+                - APOLLO_RECONCILIATION_REQUIRED
+                - APOLLO_CONFIRMATION_INVALID
+                - APOLLO_IDEMPOTENCY_CONFLICT
+                - APOLLO_RETRY_REQUIRES_NEW_CONFIRMATION
+    SearchRateLimitedError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            code:
+              type: string
+              const: APOLLO_SEARCH_RATE_LIMITED
+    SelectionRateLimitedError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            code:
+              type: string
+              const: APOLLO_SELECTION_RATE_LIMITED
+    EnrichmentRateOrQuotaError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            code:
+              type: string
+              const: APOLLO_QUOTA_EXCEEDED
+    SearchProviderError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            code:
+              type: string
+              enum: [APOLLO_PROVIDER_INVALID_RESPONSE, APOLLO_PROVIDER_UNAVAILABLE]
+    AmbiguousProviderError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            code:
+              type: string
+              const: APOLLO_OUTCOME_UNKNOWN
+    SearchDependencyError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            code:
+              type: string
+              const: APOLLO_AUTHORITY_UNAVAILABLE
+    EnrichmentDependencyError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            code:
+              type: string
+              enum:
+                - APOLLO_AUTHORITY_UNAVAILABLE
+                - APOLLO_NOT_CONFIGURED
+                - APOLLO_RECEIPT_UNAVAILABLE
+                - APOLLO_RECONCILIATION_REQUIRED
+    ReconciliationNotFoundError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            code:
+              type: string
+              const: APOLLO_ATTEMPT_NOT_FOUND
+    ReconciliationConflictError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            code:
+              type: string
+              enum: [APOLLO_ATTEMPT_NOT_STALE, APOLLO_RECONCILIATION_CONFLICT]
+    ReconciliationRateLimitedError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            code:
+              type: string
+              const: APOLLO_RECONCILIATION_RATE_LIMITED
+    ErasureRateLimitedError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            code:
+              type: string
+              const: APOLLO_ERASURE_RATE_LIMITED
+    ErasureDependencyError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            code:
+              type: string
+              const: APOLLO_ERASURE_UNAVAILABLE
+    ReconciliationDependencyError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            code:
+              type: string
+              const: APOLLO_RECONCILIATION_UNAVAILABLE
+  responses:
+    BadRequestError:
+      description: Invalid request or no workspace is available to the caller.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BadRequestError'
+    UnauthorizedError:
+      description: Authentication required.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UnauthorizedError'
+    ForbiddenError:
+      description: Caller or request origin is not authorized.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ForbiddenError'
+    TargetNotFoundError:
+      description: Target is absent, expired, or not visible to this workspace.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TargetNotFoundError'
+    ConflictError:
+      description: Nonce, idempotency, state, or reconciliation conflict.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ConflictError'
+    PayloadTooLargeError:
+      description: The JSON body exceeds the route byte limit.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/InvalidRequestError'
+    UnsupportedMediaTypeError:
+      description: Content-Type is not application/json.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/InvalidRequestError'
+    SearchRateLimitedError:
+      description: The per-instance 10-request, 60-second search throttle rejected the request.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfterSeconds'
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SearchRateLimitedError'
+    SelectionRateLimitedError:
+      description: The per-instance 15-request, 60-second selection throttle rejected the request.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfterSeconds'
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SelectionRateLimitedError'
+    EnrichmentRateOrQuotaError:
+      description: >-
+        Either the per-instance 15-request, 60-second throttle or the atomic
+        Postgres workspace/user daily spend quota rejected the request.
+        Retry-After is emitted only for the per-instance throttle.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfterSeconds'
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/EnrichmentRateOrQuotaError'
+    SearchProviderError:
+      description: Safe provider failure with no raw upstream detail.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SearchProviderError'
+    AmbiguousProviderError:
+      description: Provider outcome may have consumed a credit and requires reconciliation.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AmbiguousProviderError'
+    SearchDependencyError:
+      description: Live authority is unavailable or target registration failed.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SearchDependencyError'
+    EnrichmentDependencyError:
+      description: >-
+        Required live authority, Apollo configuration, secure receipt storage,
+        or receipt persistence is unavailable.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/EnrichmentDependencyError'
+    ReconciliationNotFoundError:
+      description: The attempt is absent or belongs to another workspace.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReconciliationNotFoundError'
+    ReconciliationConflictError:
+      description: The lease is active or the attempt version or state changed.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReconciliationConflictError'
+    ReconciliationRateLimitedError:
+      description: The per-instance 20-request, 60-second admin throttle rejected the request.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfterSeconds'
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReconciliationRateLimitedError'
+    ErasureRateLimitedError:
+      description: The per-instance 15-request, 60-second erasure throttle rejected the request.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfterSeconds'
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErasureRateLimitedError'
+    ErasureDependencyError:
+      description: Apollo erasure authority is unavailable.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErasureDependencyError'
+    ReconciliationDependencyError:
+      description: Live authority or encrypted receipt storage is unavailable.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReconciliationDependencyError'

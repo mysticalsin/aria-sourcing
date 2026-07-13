@@ -1,6 +1,6 @@
 // Real candidate sourcing via the Apollo.io API. Search (mixed_people/search) is
 // free (no Apollo credits) and requires a MASTER API key. Enrichment
-// (people/match) costs exactly 1 credit per matched person (0 if not found) and
+// (people/match) may consume up to 1 credit when contact data is returned and
 // must only ever be called on a deliberate, per-candidate, confirmed action —
 // never automatically for a whole search batch. Auth header is `x-api-key`
 // (docs.apollo.io/docs/authentication).
@@ -38,6 +38,13 @@ export interface ApolloPerson {
   seniority: string;
   departments: string[];
 }
+
+/** Browser-safe Apollo search result. The provider id stays server-side; the
+ * opaque target is the only value accepted by the paid enrichment boundary. */
+export type ApolloSearchProfile = Omit<ApolloPerson, "id"> & {
+  targetId: string;
+  candidateId: string;
+};
 
 export interface ApolloMatch {
   email: string;
@@ -119,9 +126,10 @@ export async function searchApolloPeople(
 
 /**
  * Enrich a single Apollo person by their Apollo id — reveals personal email and
- * (optionally) phone. Costs exactly 1 Apollo credit on a match, 0 if not found.
+ * (optionally) phone. May consume up to 1 Apollo credit when data is returned.
  * Only ever call this for a deliberate, confirmed, single-candidate action.
- * Returns null when Apollo found no match (0 credits charged).
+ * Returns null when Apollo found no match. The provider remains authoritative
+ * for the final billing outcome.
  */
 export async function matchApolloPerson(
   apolloId: string,

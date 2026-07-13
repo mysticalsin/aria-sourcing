@@ -63,6 +63,46 @@ async function testValidate() {
   });
   const badJson = await validateBody(invalidJson, TestSchema);
   ok("invalid JSON rejected", !badJson.ok);
+
+  let earlyReadCalls = 0;
+  const declaredOversize = {
+    headers: new Headers({ "content-length": "5000" }),
+    body: {
+      getReader: () => ({
+        read: async () => {
+          earlyReadCalls += 1;
+          return { done: true, value: undefined };
+        },
+        cancel: async () => undefined,
+      }),
+    },
+  } as unknown as Request;
+  const earlyRejected = await validateBody(declaredOversize, TestSchema, { maxBytes: 100 });
+  ok("declared oversized bodies are rejected before reading", !earlyRejected.ok && earlyReadCalls === 0);
+
+  let streamedReadCalls = 0;
+  let streamedCancelCalls = 0;
+  const chunks = [new Uint8Array(60), new Uint8Array(60), new Uint8Array(60)];
+  const streamedOversize = {
+    headers: new Headers(),
+    body: {
+      getReader: () => ({
+        read: async () => {
+          const value = chunks[streamedReadCalls];
+          streamedReadCalls += 1;
+          return value ? { done: false, value } : { done: true, value: undefined };
+        },
+        cancel: async () => {
+          streamedCancelCalls += 1;
+        },
+      }),
+    },
+  } as unknown as Request;
+  const streamedRejected = await validateBody(streamedOversize, TestSchema, { maxBytes: 100 });
+  ok(
+    "chunked oversized bodies stop at max plus one and cancel the reader",
+    !streamedRejected.ok && streamedReadCalls === 2 && streamedCancelCalls === 1,
+  );
 }
 
 await testValidate();

@@ -301,11 +301,12 @@ export interface Candidate {
   /** Canonical URL for a real hit on a platform with no dedicated field above
    *  (Stack Overflow, Dribbble, Behance). Blank for synthetic candidates. */
   sourceUrl?: string;
-  /** External record id on the source platform (e.g. Apollo's person `id`) —
-   *  lets a later enrichment call re-identify this exact profile precisely
-   *  instead of a fuzzy name/company re-match. Absent for sources that already
-   *  resolve the full profile (email included) at sourcing time (Sillage, GitHub). */
+  /** External record id on a source platform whose later API still accepts a
+   *  raw result id. Never use this field as paid-provider authority. */
   sourceExternalId?: string;
+  /** Opaque server-issued authority for a paid provider action. The browser
+   *  never receives the underlying provider person id. */
+  sourceAuthorityId?: string;
   sourcePlatform: SourcePlatform;
   sourceQuery: string;
   matchScore: number;

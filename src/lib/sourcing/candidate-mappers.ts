@@ -1,6 +1,6 @@
 import { dedupeCandidates } from "@/lib/rules";
 import { scoreCandidate } from "@/lib/scoring";
-import type { ApolloPerson } from "@/lib/sourcing/apollo";
+import type { ApolloSearchProfile } from "@/lib/sourcing/apollo";
 import type { GithubUser } from "@/lib/sourcing/github";
 import type { SeamlessContact } from "@/lib/sourcing/seamless";
 import type { WebLead, WebSearchPlatform } from "@/lib/sourcing/web-leads";
@@ -70,7 +70,7 @@ export function mapGithubCandidates(
 }
 
 export function mapApolloCandidates(
-  people: ApolloPerson[],
+  people: ApolloSearchProfile[],
   campaign: Campaign,
   query: string,
   existing: Candidate[],
@@ -86,7 +86,7 @@ export function mapApolloCandidates(
       ? `${person.seniority}${person.departments.length ? ` · ${person.departments.join(", ")}` : ""}`
       : "Apollo profile";
     return {
-      id: genId("cand"),
+      id: person.candidateId,
       campaignId: campaign.id,
       name: person.name,
       email: "",
@@ -97,7 +97,7 @@ export function mapApolloCandidates(
       timezone: "",
       linkedinUrl: person.linkedinUrl,
       githubUrl: "",
-      sourceExternalId: person.id || undefined,
+      sourceAuthorityId: person.targetId,
       sourcePlatform: "Apollo",
       sourceQuery: query,
       matchScore: 0,

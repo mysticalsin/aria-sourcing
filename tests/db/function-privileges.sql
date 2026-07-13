@@ -37,12 +37,24 @@ begin
       ('public.claim_whatsapp_inbound_processing(uuid,uuid)',                 'service_role',  true),
       ('public.complete_whatsapp_inbound_processing(uuid,uuid,text,text)',     'service_role',  true),
       ('public.finalize_whatsapp_provider_failure(uuid,uuid,text)',           'service_role',  true),
+      ('public.register_apollo_enrichment_targets(uuid,uuid,text,jsonb)',     'service_role',  true),
+      ('public.select_apollo_enrichment_target(uuid,uuid,text,uuid,uuid)',    'service_role',  true),
+      ('public.prepare_apollo_enrichment(uuid,uuid,text,uuid,uuid,text)',     'service_role',  true),
+      ('public.claim_apollo_enrichment(uuid,uuid,text,uuid,uuid,text,uuid,uuid,text)', 'service_role', true),
+      ('public.complete_apollo_enrichment(uuid,uuid,uuid,uuid,boolean,text,text)', 'service_role', true),
+      ('public.mark_apollo_enrichment_ambiguous(uuid,uuid,uuid,uuid)',        'service_role',  true),
+      ('public.list_apollo_enrichment_reconciliation(uuid,uuid,timestamptz,uuid,integer)', 'service_role', true),
+      ('public.reconcile_apollo_enrichment(uuid,uuid,uuid,bigint,text,text,text,text,text)', 'service_role', true),
+      ('public.erase_apollo_enrichment_target(uuid,uuid,text,uuid,uuid,text,text)', 'service_role', true),
+      ('public.cleanup_apollo_enrichment_authority(uuid,integer)',             'service_role', true),
       ('public.stamp_databricks_connection_authority()',                      'owner_only',    false),
       ('public.audit_databricks_connection_authority()',                      'owner_only',    true),
       ('public.strip_legacy_databricks_authority()',                          'owner_only',    false),
       ('public.normalize_whatsapp_e164(text)',                                'owner_only',    false),
       ('public.touch_updated_at()',                                           'owner_only',    false),
-      ('public.enforce_active_whatsapp_approval()',                           'owner_only',    true)
+      ('public.enforce_active_whatsapp_approval()',                           'owner_only',    true),
+      ('public.reject_apollo_reconciliation_event_mutation()',               'owner_only',    false),
+      ('public.reject_apollo_erasure_event_mutation()',                     'owner_only',    false)
     ) as expected_matrix(signature, allowed_role, security_definer)
   loop
     if to_regprocedure(item.signature) is null then
@@ -111,6 +123,16 @@ begin
       ('public.claim_whatsapp_inbound_processing(uuid,uuid)'),
       ('public.complete_whatsapp_inbound_processing(uuid,uuid,text,text)'),
       ('public.finalize_whatsapp_provider_failure(uuid,uuid,text)'),
+      ('public.register_apollo_enrichment_targets(uuid,uuid,text,jsonb)'),
+      ('public.select_apollo_enrichment_target(uuid,uuid,text,uuid,uuid)'),
+      ('public.prepare_apollo_enrichment(uuid,uuid,text,uuid,uuid,text)'),
+      ('public.claim_apollo_enrichment(uuid,uuid,text,uuid,uuid,text,uuid,uuid,text)'),
+      ('public.complete_apollo_enrichment(uuid,uuid,uuid,uuid,boolean,text,text)'),
+      ('public.mark_apollo_enrichment_ambiguous(uuid,uuid,uuid,uuid)'),
+      ('public.list_apollo_enrichment_reconciliation(uuid,uuid,timestamptz,uuid,integer)'),
+      ('public.reconcile_apollo_enrichment(uuid,uuid,uuid,bigint,text,text,text,text,text)'),
+      ('public.erase_apollo_enrichment_target(uuid,uuid,text,uuid,uuid,text,text)'),
+      ('public.cleanup_apollo_enrichment_authority(uuid,integer)'),
       ('public.resolve_whatsapp_inbound_conversation(uuid,uuid)')
     ) as service_functions(signature)
   loop

@@ -62,6 +62,9 @@ test("sourcing action boundary is React-free and wired through one stable factor
   assert.equal((storeSource.match(/const sourceNextBatch = useCallback/g) ?? []).length, 0);
   assert.equal((storeSource.match(/const addCandidateFromGithub = useCallback/g) ?? []).length, 0);
   assert.equal((storeSource.match(/const addCandidateManual = useCallback/g) ?? []).length, 0);
+  assert.equal((storeSource.match(/const sourceFromApollo = useCallback/g) ?? []).length, 0);
+  assert.match(storeSource, /createSourcingActions\([\s\S]*?commitPersisted,/);
+  assert.match(sourcingActionsSource, /await commitPersisted\(/);
   assert.match(
     launchSource,
     /platform: supabaseEnabled \? undefined : "Talent Pool"/,
@@ -95,16 +98,33 @@ const githubUser = {
   topLanguage: "TypeScript",
 };
 
+const apolloProfile = {
+  targetId: "11111111-1111-4111-8111-111111111111",
+  candidateId: "99999999-9999-4999-8999-999999999999",
+  name: "Apollo Candidate",
+  title: "Staff Platform Engineer",
+  company: "Example",
+  linkedinUrl: "https://www.linkedin.com/in/apollo-candidate",
+  city: "Toronto",
+  state: "Ontario",
+  country: "Canada",
+  headline: "Staff Platform Engineer",
+  seniority: "staff",
+  departments: ["Engineering"],
+};
+
 function createHarness(options: {
   mutationAllowed?: boolean;
   workspaceAllowed?: boolean;
   syntheticSourcingAllowed?: boolean;
   commitAllowed?: boolean;
   responseBody?: unknown;
+  responseBodies?: unknown[];
   responseStatus?: number;
   responseText?: string;
   fetchError?: Error;
   afterFetch?: () => void;
+  beforeCommit?: (state: HermesState) => HermesState;
   state?: HermesState;
 } = {}) {
   let state = structuredClone(options.state ?? buildSeedState());
@@ -121,6 +141,14 @@ function createHarness(options: {
     commit: (update) => {
       commitCalls += 1;
       if (options.commitAllowed === false) return false;
+      if (options.beforeCommit) state = options.beforeCommit(state);
+      state = update(state);
+      return true;
+    },
+    commitPersisted: async (update) => {
+      commitCalls += 1;
+      if (options.commitAllowed === false) return false;
+      if (options.beforeCommit) state = options.beforeCommit(state);
       state = update(state);
       return true;
     },
@@ -132,11 +160,19 @@ function createHarness(options: {
       fetchCalls += 1;
       requests.push({ input, init });
       if (options.fetchError) throw options.fetchError;
-      options.afterFetch?.();
+      if (fetchCalls === 1) options.afterFetch?.();
+      const requestUrl = String(input);
+      const requestBody = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {};
+      const automaticBody = requestUrl.endsWith("/api/source/apollo/select")
+        ? { ok: true, selected: requestBody.candidates }
+        : { ok: true, source: "github", users: [githubUser] };
       return new Response(
         options.responseText ??
           JSON.stringify(
-            options.responseBody ?? { ok: true, source: "github", users: [githubUser] },
+            options.responseBodies?.[fetchCalls - 1] ??
+              (requestUrl.endsWith("/api/source/apollo/select")
+                ? automaticBody
+                : options.responseBody ?? automaticBody),
           ),
         {
           status: options.responseStatus ?? 200,
@@ -1206,4 +1242,545 @@ test("a rejected commit never reports or emits sourcing success", async () => {
     harness.state.candidates.some((candidate) => candidate.githubUrl === githubUser.htmlUrl),
     false,
   );
+});
+
+test("Apollo search commits only exact validated profiles through the sourcing boundary", async () => {
+  const harness = createHarness({
+    responseBody: { ok: true, source: "apollo", profiles: [apolloProfile] },
+  });
+  const campaignId = harness.state.campaigns[0].id;
+
+  const result = await harness.actions.sourceFromApollo(campaignId, {
+    titles: [" Staff Platform Engineer "],
+    seniorities: ["staff"],
+    locations: ["Toronto"],
+    organizationDomains: ["example.com"],
+    keywords: " platform ",
+    count: 1,
+  });
+
+  assert.equal(result.source, "apollo");
+  assert.equal(result.accepted.length, 1);
+  assert.equal(result.skipped.length, 0);
+  assert.equal(harness.fetchCalls, 1);
+  assert.equal(harness.commitCalls, 1);
+  assert.equal(harness.recomputeCalls, 1);
+  assert.deepEqual(harness.events, [{ kind: "source", campaignId, count: 1 }]);
+  assert.equal(harness.activityDrafts.length, 1);
+  assert.equal(harness.state.candidates[0]?.sourceAuthorityId, apolloProfile.targetId);
+  assert.equal(harness.state.candidates[0]?.id, apolloProfile.candidateId);
+  assert.equal(harness.state.candidates[0]?.sourceExternalId, undefined);
+  assert.deepEqual(JSON.parse(String(harness.requests[0].init?.body)), {
+    campaignId,
+    titles: ["Staff Platform Engineer"],
+    seniorities: ["staff"],
+    locations: ["Toronto"],
+    organizationDomains: ["example.com"],
+    keywords: "platform",
+    count: 1,
+  });
+});
+
+test("Apollo search fails closed before I/O for unavailable, unauthorized, missing, paused, or invalid requests", async () => {
+  const unavailable = createHarness({ workspaceAllowed: false });
+  const unavailableCampaignId = unavailable.state.campaigns[0].id;
+  assert.equal(
+    (await unavailable.actions.sourceFromApollo(unavailableCampaignId, {})).source,
+    "error",
+  );
+
+  const viewer = createHarness({ mutationAllowed: false });
+  const viewerCampaignId = viewer.state.campaigns[0].id;
+  assert.equal((await viewer.actions.sourceFromApollo(viewerCampaignId, {})).source, "error");
+
+  const missing = createHarness();
+  assert.equal((await missing.actions.sourceFromApollo("missing", {})).source, "error");
+
+  const paused = createHarness();
+  const pausedCampaignId = paused.state.campaigns[0].id;
+  paused.state = {
+    ...paused.state,
+    campaigns: paused.state.campaigns.map((campaign) =>
+      campaign.id === pausedCampaignId ? { ...campaign, status: "Paused" } : campaign,
+    ),
+  };
+  assert.equal((await paused.actions.sourceFromApollo(pausedCampaignId, {})).source, "error");
+
+  const invalid = createHarness();
+  const invalidCampaignId = invalid.state.campaigns[0].id;
+  for (const filters of [
+    { count: 0 },
+    { count: 51 },
+    { count: 1.5 },
+    { titles: Array.from({ length: 21 }, () => "Engineer") },
+    { titles: ["\u0000Engineer"] },
+    { keywords: "x".repeat(301) },
+  ]) {
+    const result = await invalid.actions.sourceFromApollo(invalidCampaignId, filters);
+    assert.equal(result.source, "error");
+  }
+
+  for (const harness of [unavailable, viewer, missing, paused, invalid]) {
+    assert.equal(harness.fetchCalls, 0);
+    assert.equal(harness.commitCalls, 0);
+    assert.equal(harness.events.length, 0);
+  }
+});
+
+test("Apollo search rejects malformed or overbroad provider profiles before state work", async () => {
+  const invalidProfiles = [
+    { ...apolloProfile, targetId: "raw-provider-id" },
+    { ...apolloProfile, id: "raw-provider-id" },
+    { ...apolloProfile, linkedinUrl: "http://www.linkedin.com/in/apollo-candidate" },
+    { ...apolloProfile, linkedinUrl: "https://linkedin.com.evil.test/in/apollo-candidate" },
+    { ...apolloProfile, name: "Apollo\u0000Candidate" },
+    { ...apolloProfile, headline: "x".repeat(501) },
+    { ...apolloProfile, departments: Array.from({ length: 21 }, () => "Engineering") },
+  ];
+
+  for (const profile of invalidProfiles) {
+    const harness = createHarness({
+      responseBody: { ok: true, source: "apollo", profiles: [profile] },
+    });
+    const result = await harness.actions.sourceFromApollo(harness.state.campaigns[0].id, {
+      count: 1,
+    });
+    assert.equal(result.source, "error");
+    assert.equal(result.accepted.length, 0);
+    assert.equal(harness.commitCalls, 0);
+    assert.equal(harness.events.length, 0);
+  }
+
+  const tooMany = createHarness({
+    responseBody: {
+      ok: true,
+      source: "apollo",
+      profiles: [apolloProfile, { ...apolloProfile, targetId: "22222222-2222-4222-8222-222222222222" }],
+    },
+  });
+  const tooManyResult = await tooMany.actions.sourceFromApollo(
+    tooMany.state.campaigns[0].id,
+    { count: 1 },
+  );
+  assert.equal(tooManyResult.source, "error");
+  assert.equal(tooMany.commitCalls, 0);
+});
+
+test("Apollo search revalidates workspace, role, and campaign after provider I/O", async () => {
+  for (const mutation of ["workspace", "role", "missing", "paused"] as const) {
+    let harness: ReturnType<typeof createHarness>;
+    harness = createHarness({
+      responseBody: { ok: true, source: "apollo", profiles: [apolloProfile] },
+      afterFetch: () => {
+        const campaignId = harness.state.campaigns[0].id;
+        if (mutation === "workspace") harness.setWorkspaceAllowed(false);
+        if (mutation === "role") harness.setMutationAllowed(false);
+        if (mutation === "missing") {
+          harness.state = { ...harness.state, campaigns: [] };
+        }
+        if (mutation === "paused") {
+          harness.state = {
+            ...harness.state,
+            campaigns: harness.state.campaigns.map((campaign) =>
+              campaign.id === campaignId ? { ...campaign, status: "Paused" } : campaign,
+            ),
+          };
+        }
+      },
+    });
+    const result = await harness.actions.sourceFromApollo(harness.state.campaigns[0].id, {
+      count: 1,
+    });
+    assert.equal(result.source, "error");
+    assert.equal(harness.commitCalls, 0);
+    assert.equal(harness.events.length, 0);
+  }
+});
+
+test("Apollo search dedupes against commit-time state and emits only after an applied write", async () => {
+  const state = buildSeedState();
+  const campaignId = state.campaigns[0].id;
+  const concurrentCandidate: Candidate = {
+    ...state.candidates[0],
+    id: "candidate_concurrent_apollo",
+    campaignId,
+    email: "",
+    linkedinUrl: apolloProfile.linkedinUrl,
+    githubUrl: "",
+    sourcePlatform: "Apollo",
+    sourceAuthorityId: apolloProfile.targetId,
+  };
+  const deduped = createHarness({
+    state,
+    responseBody: { ok: true, source: "apollo", profiles: [apolloProfile] },
+    beforeCommit: (current) => ({
+      ...current,
+      candidates: [concurrentCandidate, ...current.candidates],
+    }),
+  });
+
+  const duplicateResult = await deduped.actions.sourceFromApollo(campaignId, { count: 1 });
+  assert.equal(duplicateResult.source, "apollo");
+  assert.equal(duplicateResult.accepted.length, 0);
+  assert.equal(duplicateResult.skipped.length, 1);
+  assert.equal(deduped.activityDrafts.length, 0);
+  assert.equal(deduped.events.length, 0);
+  assert.equal(
+    deduped.state.candidates.filter(
+      (candidate) => candidate.sourceAuthorityId === apolloProfile.targetId,
+    ).length,
+    1,
+  );
+
+  const rejected = createHarness({
+    state: buildSeedState(),
+    responseBody: { ok: true, source: "apollo", profiles: [apolloProfile] },
+    commitAllowed: false,
+  });
+  const rejectedResult = await rejected.actions.sourceFromApollo(
+    rejected.state.campaigns[0].id,
+    { count: 1 },
+  );
+  assert.equal(rejectedResult.source, "error");
+  assert.equal(rejectedResult.accepted.length, 0);
+  assert.equal(rejected.events.length, 0);
+});
+
+test("Apollo search saves before paid selection and preparation requires an exact selection receipt", async () => {
+  const state = buildSeedState();
+  const campaignId = state.campaigns[0].id;
+  const sourced = createHarness({
+    state: structuredClone(state),
+    responseBody: { ok: true, source: "apollo", profiles: [apolloProfile] },
+  });
+  const sourcedResult = await sourced.actions.sourceFromApollo(campaignId, { count: 1 });
+  assert.equal(sourcedResult.source, "apollo");
+  assert.equal(sourcedResult.accepted.length, 1);
+  assert.equal(sourced.fetchCalls, 1);
+  assert.equal(sourced.commitCalls, 1);
+
+  const candidate = sourced.state.candidates.find((item) => item.id === apolloProfile.candidateId);
+  assert.ok(candidate);
+  const rejected = createHarness({
+    state: structuredClone(sourced.state),
+    responseBodies: [
+      { ok: false, code: "APOLLO_AUTHORITY_UNAVAILABLE", error: "Selection failed." },
+    ],
+  });
+  const rejectedResult = await rejected.actions.prepareApolloEnrichment(candidate.id);
+  assert.equal(rejectedResult.ok, false);
+  assert.equal(rejected.fetchCalls, 1);
+
+  const mismatched = createHarness({
+    state: structuredClone(sourced.state),
+    responseBodies: [{
+        ok: true,
+        selected: [{
+          targetId: apolloProfile.targetId,
+          candidateId: "88888888-8888-4888-8888-888888888888",
+        }],
+      }],
+  });
+  const mismatchedResult = await mismatched.actions.prepareApolloEnrichment(candidate.id);
+  assert.equal(mismatchedResult.ok, false);
+  assert.equal(mismatched.fetchCalls, 1);
+});
+
+test("Apollo search preserves not-configured truth without state work", async () => {
+  const harness = createHarness({
+    responseBody: {
+      ok: true,
+      source: "not_configured",
+      profiles: [],
+      code: "APOLLO_NOT_CONFIGURED",
+      error: "Apollo is not configured.",
+    },
+  });
+
+  const result = await harness.actions.sourceFromApollo(harness.state.campaigns[0].id, {});
+
+  assert.deepEqual(result, {
+    accepted: [],
+    skipped: [],
+    source: "not_configured",
+    error: "Apollo is not configured.",
+  });
+  assert.equal(harness.commitCalls, 0);
+  assert.equal(harness.events.length, 0);
+});
+
+test("Apollo paid enrichment prepares before confirmation and commits one bound target", async () => {
+  const state = buildSeedState();
+  const campaign = state.campaigns[0];
+  const candidate: Candidate = {
+    ...state.candidates[0],
+    id: apolloProfile.candidateId,
+    campaignId: campaign.id,
+    email: "",
+    phone: "",
+    sourcePlatform: "Apollo",
+    sourceExternalId: undefined,
+    sourceAuthorityId: "22222222-2222-4222-8222-222222222222",
+  };
+  state.candidates = [candidate, ...state.candidates];
+  const harness = createHarness({
+    state,
+    responseBodies: [
+      {
+        ok: true,
+        selected: [{
+          targetId: candidate.sourceAuthorityId,
+          candidateId: candidate.id,
+        }],
+      },
+      {
+        ok: true,
+        status: "prepared",
+        campaignId: candidate.campaignId,
+        candidateId: candidate.id,
+        targetId: candidate.sourceAuthorityId,
+        scope: "email",
+        confirmationNonce: "33333333-3333-4333-8333-333333333333",
+        expiresAt: "2026-07-13T07:00:00.000Z",
+        maxCostCredits: 1,
+      },
+      {
+        ok: true,
+        status: "completed",
+        campaignId: candidate.campaignId,
+        candidateId: candidate.id,
+        targetId: candidate.sourceAuthorityId,
+        revealed: true,
+        cached: false,
+        email: "revealed@example.test",
+        phone: "",
+        detail: "email_revealed",
+      },
+    ],
+  });
+
+  const prepared = await harness.actions.prepareApolloEnrichment(candidate.id);
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  assert.equal(harness.commitCalls, 0);
+  assert.deepEqual(JSON.parse(String(harness.requests[0].init?.body)), {
+    campaignId: candidate.campaignId,
+    candidates: [{
+      targetId: candidate.sourceAuthorityId,
+      candidateId: candidate.id,
+    }],
+  });
+  assert.deepEqual(JSON.parse(String(harness.requests[1].init?.body)), {
+    action: "prepare",
+    campaignId: candidate.campaignId,
+    candidateId: candidate.id,
+    targetId: candidate.sourceAuthorityId,
+    scope: "email",
+  });
+
+  const completed = await harness.actions.enrichApolloCandidate(
+    candidate.id,
+    prepared.confirmationNonce,
+  );
+  assert.deepEqual(completed, {
+    ok: true,
+    revealed: true,
+    detail: "Contact email revealed.",
+  });
+  const commitBody = JSON.parse(String(harness.requests[2].init?.body)) as Record<string, unknown>;
+  assert.equal(commitBody.action, "commit");
+  assert.equal(commitBody.campaignId, candidate.campaignId);
+  assert.equal(commitBody.candidateId, candidate.id);
+  assert.equal(commitBody.targetId, candidate.sourceAuthorityId);
+  assert.equal(commitBody.scope, "email");
+  assert.equal(commitBody.confirmationNonce, prepared.confirmationNonce);
+  assert.match(String(commitBody.idempotencyKey), /^[0-9a-f-]{36}$/i);
+  assert.equal(harness.state.candidates.find((item) => item.id === candidate.id)?.email, "revealed@example.test");
+  assert.equal(harness.commitCalls, 1);
+});
+
+test("Apollo no-contact completion does not invent an unverified credit outcome", async () => {
+  const state = buildSeedState();
+  const campaign = state.campaigns[0];
+  const candidate: Candidate = {
+    ...state.candidates[0],
+    id: apolloProfile.candidateId,
+    campaignId: campaign.id,
+    email: "",
+    phone: "",
+    sourcePlatform: "Apollo",
+    sourceExternalId: undefined,
+    sourceAuthorityId: "22222222-2222-4222-8222-222222222222",
+  };
+  state.candidates = [candidate, ...state.candidates];
+  const harness = createHarness({
+    state,
+    responseBody: {
+      ok: true,
+      status: "completed",
+      campaignId: candidate.campaignId,
+      candidateId: candidate.id,
+      targetId: candidate.sourceAuthorityId,
+      revealed: false,
+      cached: false,
+      email: "",
+      phone: "",
+      detail: "no_contact_found",
+    },
+  });
+
+  const result = await harness.actions.enrichApolloCandidate(
+    candidate.id,
+    "33333333-3333-4333-8333-333333333333",
+  );
+
+  assert.deepEqual(result, { ok: true, revealed: false, detail: "No contact email found." });
+  assert.doesNotMatch(result.detail, /credit|charged/i);
+  assert.equal(harness.commitCalls, 0);
+});
+
+test("Apollo client preserves bounded server error codes for UI recovery", async () => {
+  const state = buildSeedState();
+  const campaign = state.campaigns[0];
+  const candidate: Candidate = {
+    ...state.candidates[0],
+    id: apolloProfile.candidateId,
+    campaignId: campaign.id,
+    email: "",
+    sourcePlatform: "Apollo",
+    sourceAuthorityId: "22222222-2222-4222-8222-222222222222",
+  };
+  state.candidates = [candidate, ...state.candidates];
+  const harness = createHarness({
+    state,
+    responseStatus: 409,
+    responseBody: {
+      ok: false,
+      code: "APOLLO_RECONCILIATION_REQUIRED",
+      error: "Enrichment requires reconciliation.",
+      requestId: "request-1",
+    },
+  });
+
+  const result = await harness.actions.enrichApolloCandidate(
+    candidate.id,
+    "33333333-3333-4333-8333-333333333333",
+  );
+
+  assert.deepEqual(result, {
+    ok: false,
+    revealed: false,
+    detail: "Enrichment requires reconciliation.",
+    code: "APOLLO_RECONCILIATION_REQUIRED",
+  });
+  assert.equal(harness.commitCalls, 0);
+});
+
+test("Apollo enrichment rejects unbound, unauthorized, malformed, and unapplied results", async () => {
+  const state = buildSeedState();
+  const campaign = state.campaigns[0];
+  const candidate: Candidate = {
+    ...state.candidates[0],
+    id: apolloProfile.candidateId,
+    campaignId: campaign.id,
+    email: "",
+    sourcePlatform: "Apollo",
+    sourceExternalId: undefined,
+    sourceAuthorityId: "22222222-2222-4222-8222-222222222222",
+  };
+  state.candidates = [candidate, ...state.candidates];
+
+  const viewer = createHarness({ state: structuredClone(state), mutationAllowed: false });
+  assert.equal((await viewer.actions.prepareApolloEnrichment(candidate.id)).ok, false);
+  assert.equal(
+    (await viewer.actions.enrichApolloCandidate(candidate.id, "33333333-3333-4333-8333-333333333333")).ok,
+    false,
+  );
+  assert.equal(viewer.fetchCalls, 0);
+
+  const malformed = createHarness({
+    state: structuredClone(state),
+    responseBody: {
+      ok: true,
+      status: "completed",
+      campaignId: candidate.campaignId,
+      candidateId: candidate.id,
+      targetId: candidate.sourceAuthorityId,
+      revealed: true,
+      cached: false,
+      email: "revealed@example.test",
+      phone: "+14155550100",
+      detail: "email_revealed",
+    },
+  });
+  const malformedResult = await malformed.actions.enrichApolloCandidate(
+    candidate.id,
+    "33333333-3333-4333-8333-333333333333",
+  );
+  assert.equal(malformedResult.ok, false);
+  assert.equal(malformed.commitCalls, 0);
+
+  const rejected = createHarness({
+    state: structuredClone(state),
+    commitAllowed: false,
+    responseBody: {
+      ok: true,
+      status: "completed",
+      campaignId: candidate.campaignId,
+      candidateId: candidate.id,
+      targetId: candidate.sourceAuthorityId,
+      revealed: true,
+      cached: false,
+      email: "revealed@example.test",
+      phone: "",
+      detail: "email_revealed",
+    },
+  });
+  const rejectedResult = await rejected.actions.enrichApolloCandidate(
+    candidate.id,
+    "33333333-3333-4333-8333-333333333333",
+  );
+  assert.equal(rejectedResult.ok, false);
+  assert.equal(rejected.state.candidates.find((item) => item.id === candidate.id)?.email, "");
+
+  const authorityChangedDuringCommit = createHarness({
+    state: structuredClone(state),
+    beforeCommit: (current) => ({
+      ...current,
+      candidates: current.candidates.map((item) =>
+        item.id === candidate.id ? { ...item, sourceAuthorityId: undefined } : item,
+      ),
+    }),
+    responseBody: {
+      ok: true,
+      status: "completed",
+      campaignId: candidate.campaignId,
+      candidateId: candidate.id,
+      targetId: candidate.sourceAuthorityId,
+      revealed: true,
+      cached: false,
+      email: "revealed@example.test",
+      phone: "",
+      detail: "email_revealed",
+    },
+  });
+  const staleCommit = await authorityChangedDuringCommit.actions.enrichApolloCandidate(
+    candidate.id,
+    "33333333-3333-4333-8333-333333333333",
+  );
+  assert.equal(staleCommit.ok, false);
+  assert.equal(
+    authorityChangedDuringCommit.state.candidates.find((item) => item.id === candidate.id)?.email,
+    "",
+  );
+});
+
+test("Apollo UI obtains the server nonce before asking for human confirmation", () => {
+  const prepareIndex = candidateDrawerSource.indexOf("prepareApolloEnrichment(c.id)");
+  const confirmIndex = candidateDrawerSource.indexOf("await confirm(", prepareIndex);
+  const commitIndex = candidateDrawerSource.indexOf("enrichApolloCandidate(", confirmIndex);
+  assert.ok(prepareIndex >= 0 && confirmIndex > prepareIndex && commitIndex > confirmIndex);
+  assert.doesNotMatch(candidateDrawerSource.slice(prepareIndex, commitIndex), /phone/i);
+  assert.equal((storeSource.match(/const prepareApolloEnrichment = useCallback/g) ?? []).length, 0);
+  assert.equal((storeSource.match(/const enrichApolloCandidate = useCallback/g) ?? []).length, 0);
 });

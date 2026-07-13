@@ -676,6 +676,24 @@ app_image_digest(){
   ' "$expected_tag" <<< "$images"
 }
 
+verify_apollo_cleanup_release(){
+  local expected_digest="$1" release_sha="$2" not_before="$3" machines cleanup_machine logs attempt=1
+  machines="$(fly machines list --app aria-mantu-app --json)" || return
+  cleanup_machine="$(node scripts/verify-apollo-cleanup-release.mjs machines "$expected_digest" <<< "$machines")" || return
+  while [ "$attempt" -le 6 ]; do
+    if logs="$(fast 30 fly logs --app aria-mantu-app --machine "$cleanup_machine" --no-tail --json 2>&1)" &&
+      node scripts/verify-apollo-cleanup-release.mjs logs "$release_sha" "$not_before" <<< "$logs"
+    then
+      echo "   OK cleanup process group and healthy startup event"
+      return 0
+    fi
+    attempt=$((attempt+1))
+    [ "$attempt" -gt 6 ] || sleep 10
+  done
+  echo "ERROR: cleanup process did not emit a healthy bounded startup receipt" >&2
+  return 1
+}
+
 previous_image_digest(){
   local app="$1" digest
   if digest="$(app_image_digest "$app" 2>/dev/null)"; then
@@ -955,6 +973,7 @@ validate_secret_inventory aria-mantu-app allow "${APP_ALLOWED_SECRET_NAMES[@]}" 
   || die "application secret inventory changed after the release preflight"
 stage_secrets aria-mantu-app "app secrets" "${A[@]}"
 stage_optional_secret_removals aria-mantu-app "${APP_RETIRED_OPTIONAL_SECRET_NAMES[@]}"
+APOLLO_CLEANUP_NOT_BEFORE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 activate_component_secrets aria-mantu-app "app" \
   fly deploy --config fly.app.toml --image "$ARIA_APP_IMAGE_REF" --wait-timeout 10m --env ARIA_RELEASE_SHA="$ARIA_RELEASE_SHA" --env ARIA_EXPECTED_MIGRATION="$EXPECTED_MIGRATION_FILE" --env ARIA_EXPECTED_MIGRATION_SHA="$EXPECTED_MIGRATION_SHA" --env ARIA_EXPECTED_MIGRATION_COUNT="$EXPECTED_MIGRATION_COUNT" --env ARIA_EXPECTED_LEDGER_SHA="$EXPECTED_LEDGER_SHA"
 validate_secret_inventory aria-mantu-app exact "${APP_DESIRED_SECRET_NAMES[@]}" \
@@ -977,6 +996,8 @@ APP_IMAGE_DIGEST="$(app_image_digest aria-mantu-app)"
 [ "$KONG_IMAGE_DIGEST" = "$KONG_EXPECTED_DIGEST" ] || die "running Kong image digest does not match the scanned promoted image"
 [ "$AUTH_IMAGE_DIGEST" = "$AUTH_EXPECTED_DIGEST" ] || die "running Auth image digest does not match fly.auth.toml"
 [ "$REST_IMAGE_DIGEST" = "$REST_EXPECTED_DIGEST" ] || die "running REST image digest does not match fly.rest.toml"
+verify_apollo_cleanup_release "$APP_IMAGE_DIGEST" "$ARIA_RELEASE_SHA" "$APOLLO_CLEANUP_NOT_BEFORE" \
+  || die "Apollo authority cleanup process failed release acceptance"
 
 # Re-read the complete secret topology immediately before materializing release
 # evidence. This catches late manual or concurrent drift, including dangerous

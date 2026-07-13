@@ -22,12 +22,10 @@ import {
   type ReplyClassification,
 } from "./mock-ai";
 import {
-  mapApolloCandidates,
   mapSeamlessCandidates,
   type SourceResult,
 } from "./sourcing/candidate-mappers";
 import type { SillageProfile } from "./sourcing/sillage";
-import type { ApolloPerson } from "./sourcing/apollo";
 import type { SeamlessContact, SeamlessResearchContact } from "./sourcing/seamless";
 import {
   buildOutreachPrompt,
@@ -36,6 +34,9 @@ import {
   parseHermesOutreach,
 } from "./ai/hermes";
 import { resolveAiProvider } from "./ai/provider";
+import {
+  anonymizeHermesState,
+} from "./candidate-privacy";
 import {
   candidateDisclosureContextForCampaignLike,
   detectInjection,
@@ -373,12 +374,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   const queuedRemoteSnapshot = useRef<HermesState | null>(null);
   const pendingRemoteSave = useRef<PendingWorkspaceSave<HermesState> | null>(null);
   const remoteSaveInFlight = useRef(false);
+  const authoritativeCommitInFlight = useRef(false);
   const remoteSaveOperation = useRef<symbol | null>(null);
   const drainRemoteSaveQueueRef = useRef<() => void>(() => undefined);
   // DEMO mode only: latest state snapshot awaiting a debounced localStorage write,
   // so flushLocalSave() can write it immediately on unmount / tab close.
   const pendingLocalSave = useRef<HermesState | null>(null);
   const skipNextPersist = useRef(false);
+  const skipPersistSnapshot = useRef<HermesState | null>(null);
   // F-5: AbortControllers for in-flight sendChat requests, keyed by threadId.
   const chatAbortControllers = useRef<Map<string, AbortController>>(new Map());
   // Approval persistence is authoritative in live mode. Keep a per-draft lock
@@ -432,7 +435,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     pendingRemoteSave.current = null;
     remoteSaveOperation.current = null;
     remoteSaveInFlight.current = false;
+    authoritativeCommitInFlight.current = false;
     skipNextPersist.current = false;
+    skipPersistSnapshot.current = null;
     setWorkspaceStatus({ phase: "loading", mode: supabaseEnabled ? "live" : "demo" });
 
     if (!supabaseEnabled) {
@@ -479,7 +484,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         seats: mergeAgentSeatRows(base.seats, serverSeats.seats),
       };
       const next = applyAuthoritativeRole(liveState, remote.role);
-      if (remote.state) skipNextPersist.current = true;
+      if (remote.state) {
+        skipNextPersist.current = true;
+        skipPersistSnapshot.current = next;
+      }
       stateRef.current = next;
       setState(next);
       setWorkspaceStatus({ phase: "ready", mode: "live" });
@@ -540,6 +548,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   }) => {
     remoteUpdatedAtRef.current = prepared.latest.updatedAt;
     skipNextPersist.current = true;
+    skipPersistSnapshot.current = prepared.next;
     stateRef.current = prepared.next;
     setState(prepared.next);
     setWorkspaceStatus({ phase: "ready", mode: "live" });
@@ -643,7 +652,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     try {
       const outcome = await persistPendingSave(pending);
       if (remoteSaveOperation.current !== operation || outcome === "stale") return;
-      if (outcome === "saved" || outcome === "conflict") {
+      if (outcome === "saved") {
+        skipNextPersist.current = true;
+        skipPersistSnapshot.current = pending.snapshot;
+        stateRef.current = pending.snapshot;
+        setState(pending.snapshot);
+        pendingRemoteSave.current = null;
+        queuedRemoteSnapshot.current = null;
+        return;
+      }
+      if (outcome === "conflict") {
         pendingRemoteSave.current = null;
         queuedRemoteSnapshot.current = null;
         return;
@@ -668,7 +686,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     if (!state) return;
     if (skipNextPersist.current) {
       skipNextPersist.current = false;
-      return;
+      const persisted = skipPersistSnapshot.current;
+      skipPersistSnapshot.current = null;
+      if (persisted === state) return;
     }
     if (supabaseEnabled) {
       if (!workspaceAllowsMutation(workspaceStatusRef.current)) return;
@@ -691,7 +711,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   }, [state, flushLocalSave]);
 
   const commit = useCallback((fn: (s: HermesState) => HermesState) => {
-    if (!workspaceAllowsMutation(workspaceStatusRef.current)) return false;
+    if (
+      authoritativeCommitInFlight.current ||
+      !workspaceAllowsMutation(workspaceStatusRef.current)
+    ) return false;
     const base = stateRef.current;
     if (!base) return false;
     const next = fn(base);
@@ -700,13 +723,99 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     return true;
   }, []);
 
+  const commitPersisted = useCallback(async (
+    fn: (current: HermesState) => HermesState,
+  ): Promise<boolean> => {
+    if (
+      authoritativeCommitInFlight.current ||
+      remoteSaveInFlight.current ||
+      !workspaceAllowsMutation(workspaceStatusRef.current)
+    ) return false;
+    const base = stateRef.current;
+    if (!base) return false;
+    const next = fn(base);
+    if (next === base) return true;
+
+    if (!supabaseEnabled) {
+      stateRef.current = next;
+      setState(next);
+      return true;
+    }
+
+    const workspaceId = workspaceIdRef.current;
+    if (!workspaceId) return false;
+    const generation = hydrationGeneration.current;
+    const pending: PendingWorkspaceSave<HermesState> = {
+      workspaceId,
+      snapshot: next,
+      expectedUpdatedAt: remoteUpdatedAtRef.current,
+      generation,
+    };
+    const operation = Symbol("workspace-authoritative-commit");
+    authoritativeCommitInFlight.current = true;
+    remoteSaveInFlight.current = true;
+    remoteSaveOperation.current = operation;
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    queuedRemoteSnapshot.current = null;
+
+    try {
+      const outcome = await settleWorkspaceSave({
+        generation,
+        currentGeneration: () => hydrationGeneration.current,
+        save: () => saveRemoteState(
+          workspaceId,
+          next,
+          remoteUpdatedAtRef.current,
+        ),
+        prepareConflict: prepareRemoteConflict,
+        applySaved: (result) => {
+          if (remoteSaveOperation.current !== operation) {
+            throw new Error("authoritative workspace commit superseded");
+          }
+          if (result.updatedAt) remoteUpdatedAtRef.current = result.updatedAt;
+          pendingRemoteSave.current = null;
+          skipNextPersist.current = true;
+          skipPersistSnapshot.current = next;
+          stateRef.current = next;
+          setState(next);
+          setWorkspaceStatus({ phase: "ready", mode: "live" });
+        },
+        applyConflict: applyRemoteConflict,
+      });
+      if (outcome === "failed") {
+        markRemoteSaveFailed(pending, next);
+        return false;
+      }
+      return outcome === "saved";
+    } catch {
+      markRemoteSaveFailed(pending, next);
+      return false;
+    } finally {
+      if (remoteSaveOperation.current === operation) {
+        remoteSaveOperation.current = null;
+        remoteSaveInFlight.current = false;
+      }
+      authoritativeCommitInFlight.current = false;
+    }
+  // Module-level capability is immutable for the lifetime of this client bundle,
+  // but React Compiler needs it named to preserve this callback's memoization.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyRemoteConflict, markRemoteSaveFailed, prepareRemoteConflict, setWorkspaceStatus, supabaseEnabled]);
+
   const current = useCallback(
     () => stateRef.current ?? (supabaseEnabled ? buildLiveEmptyState() : buildSeedState()),
-    [],
+    // See commitPersisted: this build-time capability cannot change at runtime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [supabaseEnabled],
   );
 
   const workspaceEffectAllowed = useCallback(
-    () => workspaceAllowsMutation(workspaceStatusRef.current),
+    () =>
+      !authoritativeCommitInFlight.current &&
+      workspaceAllowsMutation(workspaceStatusRef.current),
     [],
   );
 
@@ -762,10 +871,18 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit, campaignMutationAllowed],
   );
 
-  const { sourceNextBatch, addCandidateFromGithub, addCandidateManual } = useMemo(
+  const {
+    sourceNextBatch,
+    addCandidateFromGithub,
+    addCandidateManual,
+    sourceFromApollo,
+    prepareApolloEnrichment,
+    enrichApolloCandidate,
+  } = useMemo(
     () =>
       createSourcingActions({
         commit,
+        commitPersisted,
         currentState: () => stateRef.current,
         sourcingMutationAllowed,
         workspaceEffectAllowed,
@@ -779,6 +896,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }),
     [
       commit,
+      commitPersisted,
       sourcingMutationAllowed,
       syntheticSourcingAllowed,
       workspaceEffectAllowed,
@@ -891,160 +1009,6 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       if (accepted.length > 0) emit({ kind: "source", campaignId, count: accepted.length });
       return { ok: true, status: "completed", added: accepted.length, company: companyLabel };
-    },
-    [commit, current, workspaceEffectAllowed, workspaceFetch],
-  );
-
-  const sourceFromApollo = useCallback(
-    async (
-      campaignId: string,
-      filters: {
-        titles?: string[];
-        seniorities?: string[];
-        locations?: string[];
-        organizationDomains?: string[];
-        keywords?: string;
-        count?: number;
-      },
-    ): Promise<SourceResult & { source: "apollo" | "not_configured" | "error"; error?: string }> => {
-      if (!workspaceEffectAllowed()) {
-        return { accepted: [], skipped: [], source: "error", error: "Workspace unavailable. Retry before sourcing." };
-      }
-      const s = current();
-      const campaign = s.campaigns.find((c) => c.id === campaignId);
-      if (!campaign) return { accepted: [], skipped: [], source: "error", error: "Campaign not found." };
-      const weights = effectiveWeights(campaign.scoringWeights, s.skills);
-      const count = filters.count ?? 10;
-      const queryLabel =
-        [
-          filters.titles?.length ? `titles:${filters.titles.join("|")}` : null,
-          filters.seniorities?.length ? `seniority:${filters.seniorities.join("|")}` : null,
-          filters.locations?.length ? `loc:${filters.locations.join("|")}` : null,
-          filters.organizationDomains?.length ? `domains:${filters.organizationDomains.join("|")}` : null,
-          filters.keywords ? `kw:${filters.keywords}` : null,
-        ]
-          .filter(Boolean)
-          .join(" ") || "Apollo search";
-
-      let result: SourceResult = { accepted: [], skipped: [] };
-      let source: "apollo" | "not_configured" | "error" = "error";
-      let error: string | undefined;
-
-      try {
-        const res = await workspaceFetch("/api/source/apollo/search", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...filters, count }),
-        });
-        const out = (await res.json().catch(() => null)) as
-          | { ok?: boolean; source?: string; people?: ApolloPerson[]; error?: string }
-          | null;
-        if (out?.ok && out.source === "apollo") {
-          result =
-            out.people && out.people.length > 0
-              ? mapApolloCandidates(out.people, campaign, queryLabel, s.candidates, weights)
-              : { accepted: [], skipped: [] };
-          source = "apollo";
-        } else if (out?.source === "not_configured") {
-          source = "not_configured";
-          error = out.error ?? "Add an Apollo key in Settings to source real candidates.";
-        } else {
-          source = "error";
-          error = out?.error ?? "Apollo search failed.";
-        }
-      } catch (e) {
-        source = "error";
-        error = e instanceof Error ? e.message : "Network error.";
-      }
-
-      if (result.accepted.length > 0) {
-        commit((prev) => {
-          let next: HermesState = {
-            ...prev,
-            candidates: [...result.accepted, ...prev.candidates],
-          };
-          next = recomputeMetrics(next, campaignId);
-          next = withActivity(
-            next,
-            makeActivity({
-              type: "sourcing",
-              title: `Sourced ${result.accepted.length} candidates via Apollo`,
-              notes: `Live Apollo batch. ${result.skipped.length} skipped by dedupe (${result.skipped
-                .slice(0, 3)
-                .map((x) => x.reason)
-                .join(", ")}${result.skipped.length > 3 ? "…" : ""}).`,
-              outcome: `${result.accepted.length} accepted, ${result.skipped.length} skipped (live)`,
-              campaignId,
-              linkedEntityType: "campaign",
-              linkedEntityId: campaignId,
-            }),
-            campaignId,
-          );
-          return next;
-        });
-        emit({ kind: "source", campaignId, count: result.accepted.length });
-      }
-      return { ...result, source, error };
-    },
-    [commit, current, workspaceEffectAllowed, workspaceFetch],
-  );
-
-  const enrichApolloCandidate = useCallback(
-    async (candidateId: string): Promise<{ ok: boolean; revealed: boolean; detail: string }> => {
-      if (!workspaceEffectAllowed()) {
-        return { ok: false, revealed: false, detail: "Workspace unavailable. Retry before enrichment." };
-      }
-      const s = current();
-      const cand = s.candidates.find((c) => c.id === candidateId);
-      if (!cand) return { ok: false, revealed: false, detail: "Candidate not found." };
-      if (cand.sourcePlatform !== "Apollo" || !cand.sourceExternalId) {
-        return { ok: false, revealed: false, detail: "Not an Apollo-sourced candidate." };
-      }
-      try {
-        const res = await workspaceFetch("/api/source/apollo/enrich", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ apolloId: cand.sourceExternalId }),
-        });
-        const out = (await res.json().catch(() => null)) as
-          | { ok?: boolean; source?: string; email?: string; phone?: string; error?: string; detail?: string }
-          | null;
-        if (!out?.ok || (out.source !== "apollo" && out.source !== "not_configured")) {
-          return { ok: false, revealed: false, detail: out?.error ?? "Apollo enrichment failed." };
-        }
-        if (out.source === "not_configured") {
-          return { ok: false, revealed: false, detail: out.error ?? "No Apollo key configured." };
-        }
-        const email = out.email ?? "";
-        const phone = out.phone ?? "";
-        if (!email && !phone) {
-          return { ok: true, revealed: false, detail: out.detail ?? "No contact details found (0 credits charged)." };
-        }
-        commit((prev) => {
-          const next: HermesState = {
-            ...prev,
-            candidates: prev.candidates.map((c) =>
-              c.id === candidateId ? { ...c, email: email || c.email, phone: phone || c.phone } : c,
-            ),
-          };
-          return withActivity(
-            next,
-            makeActivity({
-              type: "sourcing",
-              title: `Enriched via Apollo: ${cand.name}`,
-              notes: "Revealed contact details via Apollo (1 credit).",
-              outcome: email && phone ? "Email + phone revealed" : email ? "Email revealed" : "Phone revealed",
-              campaignId: cand.campaignId,
-              linkedEntityType: "candidate",
-              linkedEntityId: cand.id,
-            }),
-            cand.campaignId,
-          );
-        });
-        return { ok: true, revealed: true, detail: "Contact details revealed." };
-      } catch (e) {
-        return { ok: false, revealed: false, detail: e instanceof Error ? e.message : "Network error." };
-      }
     },
     [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
@@ -3541,25 +3505,94 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [complianceMutate, current, syncCandidateSuppressionToServer],
   );
 
-  const anonymizeCandidate = useCallback(
-    (id: string) =>
-      complianceMutate(
-        id,
-        (c) => ({
-          ...c,
-          name: "Anonymized Candidate",
-          email: `anon-${c.id.slice(-6)}@redacted.example`,
-          avatarInitials: "—",
-          linkedinUrl: "",
-          githubUrl: "",
-          currentCompany: "Redacted",
-          complianceFlags: { ...c.complianceFlags, anonymized: true },
+  const anonymizeCandidate = useCallback(async (id: string) => {
+    if (!workspaceEffectAllowed()) {
+      return { ok: false as const, error: "Workspace unavailable. Retry before anonymizing." };
+    }
+    const candidate = current().candidates.find((item) => item.id === id);
+    if (!candidate) return { ok: false as const, error: "Candidate not found." };
+    if (candidate.complianceFlags.anonymized) return { ok: true as const };
+
+    const role = supabaseEnabled ? liveRoleRef.current : current().currentRole;
+    if (!role || !can(role, "compliance")) {
+      return { ok: false as const, error: "You do not have permission to anonymize candidates." };
+    }
+
+    if (candidate.sourcePlatform === "Apollo" && candidate.sourceAuthorityId) {
+      if (role !== "admin") {
+        return {
+          ok: false as const,
+          error: "Administrator permission is required to erase Apollo enrichment receipts.",
+        };
+      }
+      let response: Response;
+      let body: unknown;
+      try {
+        response = await workspaceFetch("/api/admin/source/apollo/erasure", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            campaignId: candidate.campaignId,
+            candidateId: candidate.id,
+            targetId: candidate.sourceAuthorityId,
+          }),
+        });
+        body = await response.json().catch(() => null);
+      } catch {
+        return { ok: false as const, error: "Could not reach the Apollo erasure service." };
+      }
+      const receipt = body !== null && typeof body === "object" && !Array.isArray(body)
+        ? body as Record<string, unknown>
+        : null;
+      if (
+        !response.ok ||
+        receipt?.ok !== true ||
+        receipt.campaignId !== candidate.campaignId ||
+        receipt.candidateId !== candidate.id ||
+        receipt.targetId !== candidate.sourceAuthorityId
+      ) {
+        const message = typeof receipt?.error === "string" && receipt.error.length <= 300
+          ? receipt.error
+          : "Apollo receipt erasure failed.";
+        return { ok: false as const, error: message };
+      }
+    }
+
+    let changed = false;
+    const persisted = await commitPersisted((state) => {
+      const exact = state.candidates.find((item) => item.id === id);
+      if (
+        !exact ||
+        (candidate.sourcePlatform === "Apollo" &&
+          exact.sourceAuthorityId !== candidate.sourceAuthorityId)
+      ) {
+        return state;
+      }
+      changed = true;
+      let next = anonymizeHermesState(state, id);
+      next = recomputeMetrics(next, exact.campaignId);
+      return withActivity(
+        next,
+        makeActivity({
+          type: "compliance",
+          title: "Candidate record anonymized",
+          notes: "Direct identifiers and candidate-linked content were redacted.",
+          outcome: "Anonymized",
+          campaignId: exact.campaignId,
+          linkedEntityType: "candidate",
+          linkedEntityId: id,
         }),
-        "Candidate anonymized",
-        "Anonymized",
-      ),
-    [complianceMutate],
-  );
+        exact.campaignId,
+      );
+    });
+    if (!persisted || !changed) {
+      return {
+        ok: false as const,
+        error: "The server receipt was erased, but the shared candidate record could not be saved. Retry anonymization.",
+      };
+    }
+    return { ok: true as const };
+  }, [commitPersisted, current, workspaceEffectAllowed, workspaceFetch]);
 
   const exportCandidate = useCallback(
     (id: string) => {
@@ -5747,6 +5780,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       startSillageMapping,
       checkSillageMapping,
       sourceFromApollo,
+      prepareApolloEnrichment,
       enrichApolloCandidate,
       sourceFromSeamless,
       startSeamlessResearch,
@@ -5864,7 +5898,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       setActiveCampaign, createCampaignFromAnalysis, updateCampaign, regenerateQueries,
-      sourceNextBatch, addCandidateFromGithub, addCandidateManual, startSillageMapping, checkSillageMapping, sourceFromApollo, enrichApolloCandidate, sourceFromSeamless, startSeamlessResearch, checkSeamlessResearch, runSourcingAgent, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
+      sourceNextBatch, addCandidateFromGithub, addCandidateManual, startSillageMapping, checkSillageMapping, sourceFromApollo, prepareApolloEnrichment, enrichApolloCandidate, sourceFromSeamless, startSeamlessResearch, checkSeamlessResearch, runSourcingAgent, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
       approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, draftFollowUpFor, draftRecontactFor, classifyAndStoreReply, markReplyHandled,
       applyReplyAction, draftReplyResponse, createBookingFor, updateBooking, generateReport,
       setSkillUpdateStatus, setCandidateStage, setCandidatePhone, addCandidateNote, setRejectionReason,

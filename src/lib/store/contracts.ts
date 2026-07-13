@@ -74,6 +74,21 @@ export type CandidateIntakeResult =
   | { ok: true; added: number; skipped: number; skipReason?: string }
   | { ok: false; error: string };
 
+export type CandidateAnonymizeResult = { ok: true } | { ok: false; error: string };
+
+export type ApolloEnrichmentErrorCode =
+  | "APOLLO_TARGET_NOT_FOUND"
+  | "APOLLO_ENRICHMENT_IN_PROGRESS"
+  | "APOLLO_RECONCILIATION_REQUIRED"
+  | "APOLLO_CONFIRMATION_INVALID"
+  | "APOLLO_IDEMPOTENCY_CONFLICT"
+  | "APOLLO_RETRY_REQUIRES_NEW_CONFIRMATION"
+  | "APOLLO_QUOTA_EXCEEDED"
+  | "APOLLO_NOT_CONFIGURED"
+  | "APOLLO_AUTHORITY_UNAVAILABLE"
+  | "APOLLO_RECEIPT_UNAVAILABLE"
+  | "APOLLO_OUTCOME_UNKNOWN";
+
 export interface HermesActions {
   // campaigns
   setActiveCampaign: (id: string | null) => void;
@@ -155,11 +170,23 @@ export interface HermesActions {
       count?: number;
     },
   ) => Promise<SourceResult & { source: "apollo" | "not_configured" | "error"; error?: string }>;
-  /** Explicit, confirmed, single-candidate Apollo enrichment (costs 1 Apollo
-   *  credit on a match, 0 if not found). Never call this for a whole batch. */
+  /** Creates a short-lived, server-bound confirmation for one Apollo email
+   *  reveal. This performs no provider call and must precede the human modal. */
+  prepareApolloEnrichment: (
+    candidateId: string,
+  ) => Promise<
+    | { ok: true; confirmationNonce: string; expiresAt: string }
+    | { ok: false; error: string; code?: ApolloEnrichmentErrorCode }
+  >;
+  /** Commits one previously prepared Apollo email reveal. The server owns the
+   *  provider id, idempotency, quota, replay, and ambiguity boundaries. */
   enrichApolloCandidate: (
     candidateId: string,
-  ) => Promise<{ ok: boolean; revealed: boolean; detail: string }>;
+    confirmationNonce: string,
+  ) => Promise<
+    | { ok: true; revealed: boolean; detail: string }
+    | { ok: false; revealed: false; detail: string; code?: ApolloEnrichmentErrorCode }
+  >;
   /** Real Seamless.AI search (fifth real sourcing channel) — synchronous, no
    *  mock fallback. Requires a stored Seamless key (Settings). */
   sourceFromSeamless: (
@@ -306,7 +333,7 @@ export interface HermesActions {
    *  flags and restores `stage` to whatever it was right before suppression. */
   restoreCandidateContact: (id: string) => void;
   unsubscribeCandidate: (id: string) => void;
-  anonymizeCandidate: (id: string) => void;
+  anonymizeCandidate: (id: string) => Promise<CandidateAnonymizeResult>;
   exportCandidate: (id: string) => string;
 
   // settings + integrations

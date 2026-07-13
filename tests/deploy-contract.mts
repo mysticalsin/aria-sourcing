@@ -41,6 +41,7 @@ type Scenario = {
   app?: string;
   ready?: string;
   kong?: string;
+  cleanupStatus?: "ok" | "degraded";
   failFlyMatch?: string;
   invalidJwt?: boolean;
   weakDbPassword?: boolean;
@@ -178,6 +179,10 @@ function runDeploy(scenario: Scenario = {}) {
     copyFileSync(
       "scripts/validate-volume-recovery-receipt.mjs",
       join(root, "scripts", "validate-volume-recovery-receipt.mjs"),
+    );
+    copyFileSync(
+      "scripts/verify-apollo-cleanup-release.mjs",
+      join(root, "scripts", "verify-apollo-cleanup-release.mjs"),
     );
     writeFileSync(join(root, ".env.local"), "\n", { mode: 0o600 });
     writeFileSync(join(root, "supabase", "migrations", "0018_contract.sql"), "select 1;\n");
@@ -511,7 +516,10 @@ elif [[ "$*" == *"image show"*"--json"* ]]; then
   esac
   printf '[{"Digest":"%s","Tag":"%s"}]\\n' "$digest" "$tag"
 elif [[ "$*" == *"machines list"*"--json"* ]]; then
-  printf '[{"id":"contract-machine"}]\\n'
+  digest="sha256:$(printf '0%.0s' {1..64})"
+  printf '[{"id":"contract-web","state":"started","config":{"image":"registry.fly.io/aria-mantu-app@%s","metadata":{"fly_process_group":"web"}}},{"id":"contract-cleanup","state":"started","config":{"image":"registry.fly.io/aria-mantu-app@%s","metadata":{"fly_process_group":"cleanup"}}},{"id":"contract-cleanup-standby","state":"stopped","image_ref":"registry.fly.io/aria-mantu-app@%s","config":{"metadata":{"fly_process_group":"cleanup"},"standbys":["contract-cleanup"]}}]\\n' "$digest" "$digest" "$digest"
+elif [[ "$*" == *"logs --app aria-mantu-app"* && "$*" == *"--machine contract-cleanup"* ]]; then
+  printf '{"event":"apollo_authority_cleanup","status":"%s","releaseSha":"%s","startedAt":"%s","workspacesProcessed":1,"processed":0,"expired_receipts_cleared":0,"confirmations_deleted":0,"targets_deleted":0,"expired_targets_scrubbed":0,"quota_rows_deleted":0}\\n' "\${FAKE_CLEANUP_STATUS:-ok}" "$FAKE_RELEASE_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 fi
 `,
     );
@@ -594,6 +602,7 @@ esac
         FAKE_APP_STATUS: scenario.app ?? "200",
         FAKE_READY_STATUS: scenario.ready ?? "200",
         FAKE_KONG_STATUS: scenario.kong ?? "200",
+        FAKE_CLEANUP_STATUS: scenario.cleanupStatus ?? "ok",
         TAVILY_API_KEY: scenario.tavilyApiKey ?? "",
         GITHUB_ACTIONS: "true",
         GITHUB_REF_PROTECTED: "true",
@@ -732,6 +741,13 @@ ok("final app failure cannot report a pending deployment", !appFailure.output.in
 const readinessFailure = runDeploy({ ready: "503" });
 ok("final readiness HTTP 503 fails the deploy", readinessFailure.status !== 0);
 ok("readiness failure cannot report a pending deployment", !readinessFailure.output.includes("DEPLOYED_PENDING_ACCEPTANCE"));
+
+const cleanupFailure = runDeploy({ cleanupStatus: "degraded" });
+ok("degraded cleanup startup evidence fails the deploy", cleanupFailure.status !== 0);
+ok(
+  "cleanup failure cannot report a pending deployment",
+  !cleanupFailure.output.includes("DEPLOYED_PENDING_ACCEPTANCE"),
+);
 
 const flyFailure = runDeploy({ failFlyMatch: "deploy --config fly.auth.toml" });
 ok("required Fly deploy failure propagates", flyFailure.status !== 0);

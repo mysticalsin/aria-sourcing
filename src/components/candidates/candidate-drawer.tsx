@@ -373,6 +373,7 @@ export function CandidateDrawer({
   const [revealed, setRevealed] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [enrichingApollo, setEnrichingApollo] = useState(false);
   const [revealingSeamless, setRevealingSeamless] = useState(false);
   const rejectionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const phoneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -574,9 +575,13 @@ export function CandidateDrawer({
   };
 
   const handleAnonymize = async () => {
-    if (!(await confirm({ title: `Anonymize ${c.name}?`, description: "This redacts their PII and cannot be undone.", confirmLabel: "Anonymize", danger: true }))) return;
-    actions.anonymizeCandidate(c.id);
-    toast({ title: "Candidate anonymized", description: "PII has been redacted.", variant: "success" });
+    if (!(await confirm({ title: `Anonymize ${c.name}?`, description: "This removes operational candidate data and provider receipts. Required suppression records follow their controlled retention policy. This cannot be undone.", confirmLabel: "Anonymize", danger: true }))) return;
+    const result = await actions.anonymizeCandidate(c.id);
+    if (!result.ok) {
+      toast({ title: "Candidate anonymization failed", description: result.error, variant: "error" });
+      return;
+    }
+    toast({ title: "Candidate anonymized", description: "Operational candidate data and provider receipts were redacted and saved.", variant: "success" });
   };
 
   const handleSuppress = async () => {
@@ -608,21 +613,49 @@ export function CandidateDrawer({
   };
 
   const handleEnrichApollo = async () => {
-    if (
-      !(await confirm({
+    setEnrichingApollo(true);
+    try {
+      const prepared = await actions.prepareApolloEnrichment(c.id);
+      if (!prepared.ok) {
+        toast({
+          title: prepared.code === "APOLLO_QUOTA_EXCEEDED"
+            ? "Apollo limit reached"
+            : prepared.code === "APOLLO_RECONCILIATION_REQUIRED"
+              ? "Reconciliation required"
+              : "Apollo enrichment unavailable",
+          description: prepared.error,
+          variant: "error",
+        });
+        return;
+      }
+
+      if (!(await confirm({
         title: `Enrich ${c.name} via Apollo?`,
-        description:
-          "Reveals their personal email (and phone, if Apollo has one). Costs 1 Apollo credit on a match, 0 if not found.",
-        confirmLabel: "Enrich (1 credit)",
-      }))
-    )
-      return;
-    const res = await actions.enrichApolloCandidate(c.id);
-    toast({
-      title: res.revealed ? "Contact details revealed" : res.ok ? "No contact details found" : "Enrichment failed",
-      description: res.detail,
-      variant: res.revealed ? "success" : res.ok ? "info" : "error",
-    });
+        description: "Reveals email only for this candidate and may use up to 1 Apollo credit.",
+        confirmLabel: "Reveal email (up to 1 credit)",
+      }))) {
+        return;
+      }
+
+      const res = await actions.enrichApolloCandidate(c.id, prepared.confirmationNonce);
+      toast({
+        title: res.revealed
+          ? "Email revealed"
+          : res.ok
+            ? "No email found"
+            : res.code === "APOLLO_RECONCILIATION_REQUIRED" || res.code === "APOLLO_OUTCOME_UNKNOWN"
+              ? "Reconciliation required"
+              : res.code === "APOLLO_RETRY_REQUIRES_NEW_CONFIRMATION" || res.code === "APOLLO_CONFIRMATION_INVALID"
+                ? "New confirmation required"
+                : res.code === "APOLLO_QUOTA_EXCEEDED"
+                  ? "Apollo limit reached"
+                  : "Enrichment failed",
+        description: res.detail,
+        variant: res.revealed ? "success" : res.ok ? "info" : "error",
+      });
+    } finally {
+      setEnrichingApollo(false);
+    }
   };
 
   const handleRevealSeamless = async () => {
@@ -800,8 +833,15 @@ export function CandidateDrawer({
                 </span>
               )}
               {c.sourcePlatform === "Apollo" && !c.email && (
-                <Button variant="outline" size="sm" leftIcon={<Zap className="h-4 w-4" />} onClick={handleEnrichApollo}>
-                  Enrich via Apollo
+                <Button
+                  variant="outline"
+                  size="sm"
+                  leftIcon={<Zap className="h-4 w-4" />}
+                  onClick={handleEnrichApollo}
+                  loading={enrichingApollo}
+                  disabled={enrichingApollo}
+                >
+                  {enrichingApollo ? "Preparing…" : "Enrich via Apollo"}
                 </Button>
               )}
               {c.sourcePlatform === "Seamless" && !c.email && (

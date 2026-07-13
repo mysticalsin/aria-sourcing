@@ -227,6 +227,16 @@ const persistStart = store.indexOf("const persistPendingSave = useCallback", hyd
 const hydrateWiring = hydrateStart >= 0 && persistStart > hydrateStart
   ? store.slice(hydrateStart, persistStart)
   : "";
+const authoritativeStart = store.indexOf("const commitPersisted = useCallback");
+const authoritativeEnd = store.indexOf("const current = useCallback", authoritativeStart);
+const authoritativeWiring = authoritativeStart >= 0 && authoritativeEnd > authoritativeStart
+  ? store.slice(authoritativeStart, authoritativeEnd)
+  : "";
+const retryStart = store.indexOf("const retrySave = useCallback");
+const retryEnd = store.indexOf("// Persist on change", retryStart);
+const retryWiring = retryStart >= 0 && retryEnd > retryStart
+  ? store.slice(retryStart, retryEnd)
+  : "";
 ok(
   "hydration invalidates the active save operation and clears stale queued work",
   /\+\+hydrationGeneration\.current/.test(hydrateWiring) &&
@@ -252,6 +262,20 @@ ok(
 ok(
   "retry save failure retains a newer queued snapshot before clearing the queue",
   /const outcome = await persistPendingSave\(pending\)[\s\S]*const newestSnapshot = queuedRemoteSnapshot\.current \?\? pending\.snapshot;\s*queuedRemoteSnapshot\.current = null;\s*markRemoteSaveFailed\(pending, newestSnapshot\)/.test(store),
+);
+ok(
+  "successful retry installs the persisted snapshot locally before clearing recovery state",
+  /if \(outcome === "saved"\) \{[\s\S]{0,260}skipNextPersist\.current = true;[\s\S]{0,180}skipPersistSnapshot\.current = pending\.snapshot;[\s\S]{0,180}stateRef\.current = pending\.snapshot;[\s\S]{0,120}setState\(pending\.snapshot\);/.test(retryWiring) &&
+    /pendingRemoteSave\.current = null;[\s\S]{0,120}queuedRemoteSnapshot\.current = null;/.test(retryWiring),
+);
+ok(
+  "authoritative save failure retains the combined attempted snapshot for retry",
+  /const pending: PendingWorkspaceSave<HermesState> = \{[\s\S]{0,220}snapshot: next,[\s\S]{0,220}generation,[\s\S]{0,80}\};/.test(authoritativeWiring) &&
+    /if \(outcome === "failed"\) \{[\s\S]{0,120}markRemoteSaveFailed\(pending, next\);[\s\S]{0,80}\}/.test(authoritativeWiring),
+);
+ok(
+  "authoritative save exception retains the combined attempted snapshot for retry",
+  /catch \{[\s\S]{0,120}markRemoteSaveFailed\(pending, next\);[\s\S]{0,80}return false;[\s\S]{0,80}\}/.test(authoritativeWiring),
 );
 
 console.log(`RESULT workspace-runtime-safety: ${pass} passed, ${fail} failed`);
