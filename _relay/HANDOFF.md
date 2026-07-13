@@ -11,12 +11,12 @@ status: main-pushed-local-gates-green-ci-prerunner-failure-and-fly-volume-networ
 ## Current state
 
 - Local branch: `main`.
-- Current local and remote `main`: `303d32bd67bcd2664b73bd5bbddd8d05989ec11a`. This Relay-only commit changes only `_relay/HANDOFF.md` and `_relay/codex-findings.md`; source content remains the verified `52423e8f88b056c38c188c4066d6433f6a2c617d` merge plus Relay-only successors.
+- Current local and remote `main`: a Relay-only tip after source merge `52423e8f88b056c38c188c4066d6433f6a2c617d`. Run `git rev-parse HEAD origin/main` for the exact tip; do not rely on a self-referential hash inside this file.
 - Verified source-merge SHA: `52423e8f88b056c38c188c4066d6433f6a2c617d` (`merge aria campaign integration into main`).
 - Remote truth checked on 2026-07-12 before push: `origin/HEAD` points to `vercel-demo`, not `main`. `main` was still pushed because Tony explicitly asked for main.
 - Current local `main` includes the complete `codex/aria-campaign-integration-20260712` merge plus Tony's prior local `main` commits for login branding, Supabase browser retry, Fly VM sizing, and docs.
 - Source-level campaign blockers fixed locally: queue-only reply drafting, SMS containment, cross-channel daily-cap serialization, agent memory authority, recovery schema allowlists, repo hygiene, workspace degraded-state fail-closed behavior, and page-level unavailable/error states.
-- Production is not declared done. The protected deploy, live DB/Auth restart survival, `/api/ready`, admin provisioning, and synthetic zero-send campaign acceptance are not proven on current `main` SHA `303d32bd67bcd2664b73bd5bbddd8d05989ec11a`.
+- Production is not declared done. The protected deploy, live DB/Auth restart survival, `/api/ready`, admin provisioning, and synthetic zero-send campaign acceptance are not proven on the current Relay-only `main` tip.
 
 ## Done this shift
 
@@ -62,7 +62,7 @@ status: main-pushed-local-gates-green-ci-prerunner-failure-and-fly-volume-networ
 
 ## Blockers
 
-1. **Remote CI is not proven green for current `main` SHA `303d32bd67bcd2664b73bd5bbddd8d05989ec11a`.** Its predecessor `ac4c77b834125a213c48e5450d65067dbfb64c04` and source merge `52423e8f88b056c38c188c4066d6433f6a2c617d` are red. Retrieved job metadata for the earlier CodeQL run showed a pre-runner failure (`steps_len=0`, empty runner fields, 4-second duration). GitHub/Azure endpoints are currently unreachable from this network. Do not deploy until exact-SHA CI/CodeQL are green.
+1. **Remote CI is not proven green for the current Relay-only `main` tip.** Its predecessors `303d32bd67bcd2664b73bd5bbddd8d05989ec11a`, `ac4c77b834125a213c48e5450d65067dbfb64c04`, and source merge `52423e8f88b056c38c188c4066d6433f6a2c617d` are not green. Retrieved job metadata for the earlier CodeQL run showed a pre-runner failure (`steps_len=0`, empty runner fields, 4-second duration). GitHub/Azure endpoints are currently unreachable from this network. Do not deploy until exact-SHA CI/CodeQL are green.
 2. **Fly DB volume gate is blocked by local outbound access to Alpine repositories.** This is not a schema assertion failure. The test cannot complete while Docker cannot fetch Alpine indexes during the DB image build.
 3. **Live production acceptance is not proven.** Latest forced-IPv4 probes timed out from this workstation for `/`, `/login`, `/api/health`, and `/api/ready`. Do not call the app fully production-ready until the exact pushed release SHA has passed the protected deploy and live acceptance checklist.
 4. **Owner-controlled secret and release gates remain mandatory:**
@@ -75,7 +75,7 @@ status: main-pushed-local-gates-green-ci-prerunner-failure-and-fly-volume-networ
 
 ## Next steps
 
-1. Retrieve CI/CodeQL status and logs for current `main` SHA `303d32bd67bcd2664b73bd5bbddd8d05989ec11a` once GitHub/Azure endpoints are reachable. Compare with failed predecessor runs `29217207203`, `29217207170`, `29216702413`, and `29216702409`.
+1. Retrieve CI/CodeQL status and logs for the exact current `main` tip from `git rev-parse origin/main` once GitHub/Azure endpoints are reachable. Compare with failed predecessor runs `29217207203`, `29217207170`, `29216702413`, and `29216702409`.
 2. If logs confirm account/runner/platform failure, re-run the workflows after the platform/budget/runner issue is cleared. If logs show a real workflow or source failure, fix that exact failing step and push a new `main` SHA.
 3. Retry `npm run test:fly-db-volume` only when Alpine repository access is reachable from Docker. Do not use `--force-missing-repositories`; that would weaken the CVE patch gate.
 4. Do not deploy until remote CI/CodeQL are green for an exact SHA and the owner-controlled secret, protection, recovery-receipt, and approval gates are closed.
