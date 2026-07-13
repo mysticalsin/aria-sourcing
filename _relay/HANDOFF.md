@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 31
 agent: codex-gpt-5
-updated: 2026-07-12 22:44 EDT
+updated: 2026-07-12 22:46 EDT
 status: local-main-green-corrective-push-and-production-acceptance-pending
 ---
 
@@ -44,6 +44,10 @@ status: local-main-green-corrective-push-and-production-acceptance-pending
   - Full-history Gitleaks scan passed with no leaks before the merge; no secret-bearing source entered the merge.
   - `git diff --check` passed.
 - `npm audit --audit-level=high` had already passed on the unchanged lockfile with zero vulnerabilities. The latest registry re-query hung because outbound network access failed; no dependency files changed in this repair.
+- Final outbound diagnosis at 22:46 EDT:
+  - DNS resolved `github.com` to `140.82.114.4`, but both forced IPv4 and forced IPv6 TLS connections timed out on port 443 after five seconds.
+  - `git ls-remote origin refs/heads/main` hung and was interrupted without a ref, so no push was attempted after that failed verification.
+  - Forced-IPv4 probes to `/`, `/login`, `/api/health`, `/api/ready`, `/rest/v1/`, and `/auth/v1/health` on `aria-mantu-app.fly.dev` all returned curl exit 28 / HTTP `000` after five-second connect timeouts.
 - Archived the prior Baton to `_relay/archive/2026-07-12-2244-codex-gpt-5.md`.
 - Updated `_relay/codex-findings.md` with fixed source findings, the reviewer-integrity incident, and current remote blockers.
 
