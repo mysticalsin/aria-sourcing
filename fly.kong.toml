@@ -26,6 +26,9 @@ primary_region = "cdg"
     interval = "15s"
     timeout  = "5s"
 
+# Kong is the ONE public Supabase surface and proxies every browser data call;
+# 512mb leaves no headroom for the 160k proxy buffers under concurrency. 1gb keeps
+# the hot gateway from swapping. (auth/rest stay 512mb — internal, low-traffic.)
 [[vm]]
   size   = "shared-cpu-1x"
-  memory = "512mb"
+  memory = "1gb"

@@ -51,6 +51,10 @@ primary_region = "cdg"
     timeout      = "5s"
     grace_period = "30s"
 
+# shared-cpu-1x starves Next.js SSR under load (oversubscribed fractional vCPU →
+# render latency + CPU steal jitter). shared-cpu-2x doubles vCPU/RAM for a modest
+# cost bump. If SSR still feels slow, go performance-1x (a DEDICATED vCPU removes
+# oversubscription jitter entirely) — that's the next lever, not a bigger shared VM.
 [[vm]]
-  size   = "shared-cpu-1x"
-  memory = "1gb"
+  size   = "shared-cpu-2x"
+  memory = "2gb"

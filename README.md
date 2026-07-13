@@ -75,6 +75,13 @@ npm run build:isolated
 Use `npm run build:isolated` in this OneDrive-synced checkout. It copies the
 project to a temporary workspace and runs the normal Next build there.
 
+## Documentation
+
+[`docs/README.md`](docs/README.md) is the documentation map — it says what every
+top-level directory and doc is for, and separates product docs from the operational
+dossier (`production-readiness/`) and agent working-state (`_relay/`, `_agent_state/`).
+Start there when you're looking for something and don't know which file holds it.
+
 ## Deployment
 
 The canonical deploy story is

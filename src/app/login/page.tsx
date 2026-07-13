@@ -188,8 +188,8 @@ function LoginInner() {
 
       <nav className="relative z-20 flex items-center justify-between gap-4 px-5 py-6 sm:px-8">
         <span className="flex items-center md:absolute md:left-8">
-          {/* Aria "M" brandmark (transparent PNG) — clean over the dark hero video. */}
-          <img src="/aria-mark.png" alt="Aria by Mantu" className="h-12 w-auto object-contain sm:h-14" />
+          {/* Full Aria brand logo (M + ARIA wordmark) — the real logo, not the bare M. */}
+          <img src="/aria-logo.png" alt="Aria — Agentic Sourcing Platform by Mantu" className="h-16 w-auto object-contain sm:h-20" />
         </span>
         <span className="hidden text-xs uppercase tracking-[0.2em] text-white/60 md:absolute md:right-8 md:block">
           by Mantu
