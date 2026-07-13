@@ -18,14 +18,16 @@ import {
   interviewerPrepEmail,
   newOutreachMessage,
   sourceCandidates,
-  mapGithubCandidates,
-  mapWebSearchCandidates,
-  mapApolloCandidates,
-  mapSeamlessCandidates,
   type GeneratedOutreach,
   type ReplyClassification,
-  type SourceResult,
 } from "./mock-ai";
+import {
+  mapApolloCandidates,
+  mapGithubCandidates,
+  mapSeamlessCandidates,
+  mapWebSearchCandidates,
+  type SourceResult,
+} from "./sourcing/candidate-mappers";
 import type { GithubUser } from "./sourcing/github";
 import { ensureWebQueryScope, isWebSearchPlatform, type WebLead } from "./sourcing/web-leads";
 import type { SillageProfile } from "./sourcing/sillage";

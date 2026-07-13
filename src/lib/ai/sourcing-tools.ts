@@ -18,7 +18,7 @@ import type { Campaign, Candidate, ScoringWeights, SourcePlatform } from "@/lib/
 import { searchGithubUsers } from "@/lib/sourcing/github";
 import { runWebTool, type WebFetch } from "@/lib/ai/web-tools";
 import { ensureWebQueryScope, extractLead, isWebSearchPlatform } from "@/lib/sourcing/web-leads";
-import { mapGithubCandidates, mapWebSearchCandidates } from "@/lib/mock-ai";
+import { mapGithubCandidates, mapWebSearchCandidates } from "@/lib/sourcing/candidate-mappers";
 
 export const SOURCING_TOOL_DEFS: McpTool[] = [
   {

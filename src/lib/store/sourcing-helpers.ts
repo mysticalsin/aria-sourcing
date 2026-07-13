@@ -1,4 +1,4 @@
-import type { SourceResult } from "../mock-ai";
+import type { SourceResult } from "../sourcing/candidate-mappers";
 import { dedupeCandidates } from "../rules";
 import { scoreCandidate } from "../scoring";
 import type { SillageProfile } from "../sourcing/sillage";
@@ -40,7 +40,7 @@ export function parseSillageIdentifier(input: string): { domain?: string; linked
 
 /**
  * Map real Sillage account-mapping profiles into scored, deduped Candidates —
- * the live counterpart to mapGithubCandidates/mapWebSearchCandidates (mock-ai.ts),
+ * the live counterpart to mapGithubCandidates/mapWebSearchCandidates,
  * same scoring + dedupe pipeline, real data. Kept here rather than mock-ai.ts
  * because it needs the campaign's live effective weights, which only exist in
  * this client-side store — /api/source/sillage/status has no access to campaign

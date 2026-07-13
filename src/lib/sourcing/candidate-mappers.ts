@@ -1,0 +1,263 @@
+import { dedupeCandidates } from "@/lib/rules";
+import { scoreCandidate } from "@/lib/scoring";
+import type { ApolloPerson } from "@/lib/sourcing/apollo";
+import type { GithubUser } from "@/lib/sourcing/github";
+import type { SeamlessContact } from "@/lib/sourcing/seamless";
+import type { WebLead, WebSearchPlatform } from "@/lib/sourcing/web-leads";
+import type { Campaign, Candidate, ScoringWeights } from "@/lib/types";
+import { clamp, genId, initialsFrom } from "@/lib/utils";
+
+export interface SourceResult {
+  accepted: Candidate[];
+  skipped: { name: string; reason: string }[];
+}
+
+export function mapGithubCandidates(
+  users: GithubUser[],
+  campaign: Campaign,
+  query: string,
+  existing: Candidate[],
+  weights: ScoringWeights = campaign.scoringWeights,
+): SourceResult {
+  const jd = campaign.jobAnalysis;
+  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
+  const raw: Candidate[] = users.map((user) => {
+    const name = (user.name && user.name.trim()) || user.login;
+    const bio = (user.bio ?? "").trim();
+    const bioLower = bio.toLowerCase();
+    const matched = allSkills.filter((skill) => bioLower.includes(skill.toLowerCase()));
+    const techStack = Array.from(new Set([...(user.topLanguage ? [user.topLanguage] : []), ...matched]));
+    const accountYears = user.createdAt
+      ? clamp(Math.floor((Date.now() - new Date(user.createdAt).getTime()) / (365 * 86_400_000)), 1, 25)
+      : 4;
+    return {
+      id: genId("cand"),
+      campaignId: campaign.id,
+      name,
+      email: user.email ?? "",
+      avatarInitials: initialsFrom(name),
+      currentTitle: bio ? bio.slice(0, 64) : jd.title,
+      currentCompany: (user.company ?? "").replace(/^@/, "").trim(),
+      location: user.location ?? "",
+      timezone: "",
+      linkedinUrl: "",
+      githubUrl: user.htmlUrl,
+      sourcePlatform: "GitHub",
+      sourceQuery: query,
+      matchScore: 0,
+      matchBreakdown: [],
+      techStack,
+      yearsExperience: accountYears,
+      companyStageExperience: [],
+      industryExperience: [],
+      recentActivity: `${user.publicRepos} public repos, ${user.followers} followers`,
+      stage: "Sourced",
+      lastContactedAt: null,
+      outreachHistory: [],
+      replyHistory: [],
+      booking: null,
+      complianceFlags: {
+        doNotContact: false,
+        suppressed: false,
+        unsubscribed: false,
+        gdprExportRequested: false,
+        anonymized: false,
+        suppressedUntil: null,
+      },
+      createdAt: new Date().toISOString(),
+      provenance: "live",
+    };
+  });
+
+  return scoreAndDedupe(raw, campaign, existing, weights);
+}
+
+export function mapApolloCandidates(
+  people: ApolloPerson[],
+  campaign: Campaign,
+  query: string,
+  existing: Candidate[],
+  weights: ScoringWeights = campaign.scoringWeights,
+): SourceResult {
+  const jd = campaign.jobAnalysis;
+  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
+  const raw: Candidate[] = people.map((person) => {
+    const headline = (person.headline || person.title || "").toLowerCase();
+    const matched = allSkills.filter((skill) => headline.includes(skill.toLowerCase()));
+    const location = [person.city, person.state, person.country].filter(Boolean).join(", ");
+    const recentActivity = person.seniority
+      ? `${person.seniority}${person.departments.length ? ` · ${person.departments.join(", ")}` : ""}`
+      : "Apollo profile";
+    return {
+      id: genId("cand"),
+      campaignId: campaign.id,
+      name: person.name,
+      email: "",
+      avatarInitials: initialsFrom(person.name),
+      currentTitle: person.title || jd.title,
+      currentCompany: person.company,
+      location,
+      timezone: "",
+      linkedinUrl: person.linkedinUrl,
+      githubUrl: "",
+      sourceExternalId: person.id || undefined,
+      sourcePlatform: "Apollo",
+      sourceQuery: query,
+      matchScore: 0,
+      matchBreakdown: [],
+      techStack: matched,
+      yearsExperience: 4,
+      companyStageExperience: [],
+      industryExperience: [],
+      recentActivity,
+      stage: "Sourced",
+      lastContactedAt: null,
+      outreachHistory: [],
+      replyHistory: [],
+      booking: null,
+      complianceFlags: {
+        doNotContact: false,
+        suppressed: false,
+        unsubscribed: false,
+        gdprExportRequested: false,
+        anonymized: false,
+        suppressedUntil: null,
+      },
+      createdAt: new Date().toISOString(),
+      provenance: "live",
+    };
+  });
+
+  return scoreAndDedupe(raw, campaign, existing, weights);
+}
+
+export function mapSeamlessCandidates(
+  contacts: SeamlessContact[],
+  campaign: Campaign,
+  query: string,
+  existing: Candidate[],
+  weights: ScoringWeights = campaign.scoringWeights,
+): SourceResult {
+  const jd = campaign.jobAnalysis;
+  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
+  const raw: Candidate[] = contacts.map((contact) => {
+    const headline = (contact.title || "").toLowerCase();
+    const matched = allSkills.filter((skill) => headline.includes(skill.toLowerCase()));
+    const location = [contact.city, contact.state, contact.country].filter(Boolean).join(", ");
+    const recentActivity = contact.seniority
+      ? `${contact.seniority}${contact.department ? ` · ${contact.department}` : ""}`
+      : "Seamless profile";
+    return {
+      id: genId("cand"),
+      campaignId: campaign.id,
+      name: contact.name,
+      email: "",
+      avatarInitials: initialsFrom(contact.name),
+      currentTitle: contact.title || jd.title,
+      currentCompany: contact.company,
+      location,
+      timezone: "",
+      linkedinUrl: contact.liUrl,
+      githubUrl: "",
+      sourceExternalId: contact.searchResultId || undefined,
+      sourcePlatform: "Seamless",
+      sourceQuery: query,
+      matchScore: 0,
+      matchBreakdown: [],
+      techStack: matched,
+      yearsExperience: 4,
+      companyStageExperience: [],
+      industryExperience: [],
+      recentActivity,
+      stage: "Sourced",
+      lastContactedAt: null,
+      outreachHistory: [],
+      replyHistory: [],
+      booking: null,
+      complianceFlags: {
+        doNotContact: false,
+        suppressed: false,
+        unsubscribed: false,
+        gdprExportRequested: false,
+        anonymized: false,
+        suppressedUntil: null,
+      },
+      createdAt: new Date().toISOString(),
+      provenance: "live",
+    };
+  });
+
+  return scoreAndDedupe(raw, campaign, existing, weights);
+}
+
+export function mapWebSearchCandidates(
+  leads: WebLead[],
+  campaign: Campaign,
+  query: string,
+  platform: WebSearchPlatform,
+  existing: Candidate[],
+  weights: ScoringWeights = campaign.scoringWeights,
+): SourceResult {
+  const jd = campaign.jobAnalysis;
+  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
+  const raw: Candidate[] = leads.map((lead) => {
+    const haystack = `${lead.title} ${lead.snippet}`.toLowerCase();
+    const techStack = allSkills.filter((skill) => haystack.includes(skill.toLowerCase()));
+    return {
+      id: genId("cand"),
+      campaignId: campaign.id,
+      name: lead.name,
+      email: "",
+      avatarInitials: initialsFrom(lead.name),
+      currentTitle: lead.title || jd.title,
+      currentCompany: lead.company,
+      location: "",
+      timezone: "",
+      linkedinUrl: platform === "LinkedIn" ? lead.url : "",
+      githubUrl: "",
+      sourceUrl: platform === "LinkedIn" ? undefined : lead.url,
+      sourcePlatform: platform,
+      sourceQuery: query,
+      matchScore: 0,
+      matchBreakdown: [],
+      techStack,
+      yearsExperience: jd.minYearsExperience ?? (jd.seniority === "Senior" ? 6 : 4),
+      companyStageExperience: [],
+      industryExperience: [],
+      recentActivity: lead.snippet || `Found via ${platform} search.`,
+      stage: "Sourced",
+      lastContactedAt: null,
+      outreachHistory: [],
+      replyHistory: [],
+      booking: null,
+      complianceFlags: {
+        doNotContact: false,
+        suppressed: false,
+        unsubscribed: false,
+        gdprExportRequested: false,
+        anonymized: false,
+        suppressedUntil: null,
+      },
+      createdAt: new Date().toISOString(),
+      provenance: "live",
+    };
+  });
+
+  return scoreAndDedupe(raw, campaign, existing, weights);
+}
+
+function scoreAndDedupe(
+  raw: Candidate[],
+  campaign: Campaign,
+  existing: Candidate[],
+  weights: ScoringWeights,
+): SourceResult {
+  const { accepted, skipped } = dedupeCandidates(raw, existing, {
+    excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
+  });
+  const scored = accepted.map((candidate) => {
+    const { score, breakdown } = scoreCandidate(candidate, campaign.jobAnalysis, weights);
+    return { ...candidate, matchScore: score, matchBreakdown: breakdown };
+  });
+  return { accepted: scored, skipped };
+}

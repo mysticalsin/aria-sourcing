@@ -2,6 +2,10 @@
   "recent_learnings": [
     {
       "date": "2026-07-13",
+      "lesson": "Keep live candidate normalization in a neutral sourcing module; mock modules may expose compatibility re-exports but cannot own live behavior."
+    },
+    {
+      "date": "2026-07-13",
       "lesson": "Retry-safety classification needs one neutral owner across provider adapters; HTTP 408 and server failures remain ambiguous."
     },
     {

@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import { buildSeedState } from "../src/lib/seed";
 import { mapGithubCandidates, mapWebSearchCandidates } from "../src/lib/mock-ai";
 import type { GithubUser } from "../src/lib/sourcing/github";
@@ -18,6 +19,23 @@ function ok(name: string, cond: boolean) {
 const s = buildSeedState();
 const campaign = s.campaigns[0];
 const W = campaign.scoringWeights;
+
+const mapperModulePath = new URL("../src/lib/sourcing/candidate-mappers.ts", import.meta.url);
+ok("live candidate mappers have a neutral sourcing module", existsSync(mapperModulePath));
+const mockAiSource = readFileSync(new URL("../src/lib/mock-ai.ts", import.meta.url), "utf8");
+const storeSource = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
+const sourcingToolsSource = readFileSync(new URL("../src/lib/ai/sourcing-tools.ts", import.meta.url), "utf8");
+ok(
+  "mock AI only re-exports live candidate mappers for compatibility",
+  /export\s+\{[\s\S]*mapGithubCandidates[\s\S]*\}\s+from\s+["']\.\/sourcing\/candidate-mappers["']/.test(mockAiSource) &&
+    !/export function map(?:Github|Apollo|Seamless|WebSearch)Candidates\s*\(/.test(mockAiSource),
+);
+ok(
+  "live store and sourcing tools import candidate mappers from the neutral module",
+  storeSource.includes('from "./sourcing/candidate-mappers"') &&
+    sourcingToolsSource.includes('from "@/lib/sourcing/candidate-mappers"') &&
+    !sourcingToolsSource.includes('from "@/lib/mock-ai"'),
+);
 
 const mk = (over: Partial<GithubUser> & { login: string; htmlUrl: string }): GithubUser => ({
   login: over.login,

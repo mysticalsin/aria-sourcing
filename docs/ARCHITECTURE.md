@@ -148,6 +148,9 @@ available. Do not add login automation, scraping, or rate-limit bypass.
 ## Integration boundaries
 
 - AI providers are called only from server routes after credential resolution.
+- Live GitHub, Apollo, Seamless, and web-search records are normalized by
+  `src/lib/sourcing/candidate-mappers.ts`. `src/lib/mock-ai.ts` contains
+  deterministic synthetic behavior and compatibility re-exports only.
 - Provider keys and OAuth tokens are encrypted at rest and never returned to
   the browser.
 - Databricks and Dust use normalized admin-owned connection authority; shared
@@ -212,9 +215,6 @@ These are current facts, not permission for a broad rewrite:
   resynchronization path.
 - `src/lib/types.ts` is the central persisted-domain model. Move types only
   with migration, serialization, and compatibility evidence.
-- `src/lib/mock-ai.ts` still contains live candidate-normalization helpers.
-  Move those helpers into a neutral sourcing module before treating that file
-  as a mock-only boundary.
 - Many API routes repeat authentication, role, workspace, and rate-limit
   resolution. Consolidate them one route family at a time behind a typed
   workspace-access helper with negative tests.
