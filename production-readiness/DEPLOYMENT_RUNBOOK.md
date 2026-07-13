@@ -521,7 +521,7 @@ All checks must pass before a production deploy is triggered. Block the deploy i
 # From the repo root:
 npm run typecheck       # tsc --noEmit; must exit 0
 npm run lint            # next lint; must be "No ESLint warnings or errors."
-npm run test            # 18 pretest + 118 test commands; all must pass
+npm run test            # 19 pretest + 118 test commands; all must pass
 npm run test:security   # security-specific subset (faster); must be 0 failures
 npm run build           # must complete without error in CI or an unsynced checkout
 npm run build:isolated  # required for this OneDrive-synced checkout

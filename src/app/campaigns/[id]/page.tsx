@@ -430,10 +430,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     setSourcing(false);
     if (!res.ok) {
       toast({
-        title:
-          res.source === "paused"
-            ? "Campaign is paused"
-            : `${res.source === "github" ? "GitHub" : "Web"} sourcing failed`,
+        title: res.source === "paused" ? "Campaign is paused" : "Sourcing failed",
         description: res.error,
         variant: "error",
       });

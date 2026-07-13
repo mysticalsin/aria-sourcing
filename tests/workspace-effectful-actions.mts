@@ -12,6 +12,10 @@ function ok(name: string, condition: boolean) {
 }
 
 const source = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
+const sourcingActionsSource = readFileSync(
+  new URL("../src/lib/store/sourcing-actions.ts", import.meta.url),
+  "utf8",
+);
 
 function actionBody(name: string, nextName: string): string {
   const start = source.indexOf(`const ${name} = useCallback`);
@@ -31,10 +35,9 @@ ok(
     /const workspaceFetch = useCallback[\s\S]{0,500}\bfetch\(/.test(source),
 );
 
-const sourceNextBatch = actionBody("sourceNextBatch", "addCandidateFromGithub");
 ok(
   "source and provider paths preflight before live dispatch",
-  guardedBefore(sourceNextBatch, /workspaceFetch\("\/api\/source"/) &&
+  guardedBefore(sourcingActionsSource, /workspaceFetch\("\/api\/source"/) &&
     guardedBefore(actionBody("runSourcingAgent", "generateOutreachFor"), /workspaceFetch\("\/api\/sourcing-agent"/) &&
     guardedBefore(actionBody("generateOutreachLive", "draftFollowUpFor"), /runWorkspaceEffect\(/),
 );

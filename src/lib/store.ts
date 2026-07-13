@@ -25,15 +25,12 @@ import {
   mapApolloCandidates,
   mapGithubCandidates,
   mapSeamlessCandidates,
-  mapWebSearchCandidates,
   type SourceResult,
 } from "./sourcing/candidate-mappers";
 import type { GithubUser } from "./sourcing/github";
-import { ensureWebQueryScope, isWebSearchPlatform, type WebLead } from "./sourcing/web-leads";
 import type { SillageProfile } from "./sourcing/sillage";
 import type { ApolloPerson } from "./sourcing/apollo";
 import type { SeamlessContact, SeamlessResearchContact } from "./sourcing/seamless";
-import { roleProfile } from "./roles";
 import {
   buildOutreachPrompt,
   hermesAvailable,
@@ -71,9 +68,10 @@ import {
 } from "./integrations";
 import { interviewerIsBusy, resolveBookingSlot } from "./store/booking-slot";
 import { createCampaignActions } from "./store/campaign-actions";
+import { createSourcingActions } from "./store/sourcing-actions";
 import { resolveInboundEmailIdentity } from "./store/inbound-identity";
 import { loadState, normalizeHermesState } from "./store/migrations";
-import { baseWebQuery, mapSillageCandidates, parseSillageIdentifier } from "./store/sourcing-helpers";
+import { mapSillageCandidates, parseSillageIdentifier } from "./store/sourcing-helpers";
 import { appendWinRecord } from "./store/winlog-derive";
 import type { HermesActions, HermesContextValue } from "./store/contracts";
 import type {
@@ -265,12 +263,6 @@ function recomputeMetrics(state: HermesState, campaignId: string): HermesState {
 /* ============================================================================
    Provider
    ========================================================================== */
-
-function githubLocationQualifier(location: string | undefined, query: string): string {
-  if (!location?.trim() || /(?:^|\s)location:/i.test(query)) return "";
-  const city = location.split(",")[0]?.trim();
-  return city ? ` location:"${city}"` : "";
-}
 
 /**
  * Shared live-generation attempt for follow-up / re-contact drafts — the same
@@ -721,13 +713,19 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  const campaignMutationAllowed = useCallback(() => {
-    if (!workspaceAllowsMutation(workspaceStatusRef.current)) return false;
+  const sourcingMutationAllowed = useCallback(() => {
     const role = supabaseEnabled
       ? liveRoleRef.current
       : stateRef.current?.currentRole;
     return role != null && can(role, "source");
   }, []);
+
+  const syntheticSourcingAllowed = useCallback(() => !supabaseEnabled, []);
+
+  const campaignMutationAllowed = useCallback(
+    () => workspaceEffectAllowed() && sourcingMutationAllowed(),
+    [sourcingMutationAllowed, workspaceEffectAllowed],
+  );
 
   const runWorkspaceEffect = useCallback(
     <T,>(effect: () => T) => runWorkspaceEffectBoundary(workspaceStatusRef.current, effect),
@@ -767,136 +765,34 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit, campaignMutationAllowed],
   );
 
+  const { sourceNextBatch } = useMemo(
+    () =>
+      createSourcingActions({
+        commit,
+        currentState: () => stateRef.current,
+        sourcingMutationAllowed,
+        workspaceEffectAllowed,
+        syntheticSourcingAllowed,
+        workspaceFetch,
+        makeActivity,
+        withActivity,
+        recomputeMetrics,
+        effectiveWeights,
+        emitSource: emit,
+      }),
+    [
+      commit,
+      sourcingMutationAllowed,
+      syntheticSourcingAllowed,
+      workspaceEffectAllowed,
+      workspaceFetch,
+    ],
+  );
+
   const logActivity = useCallback(
     (a: Omit<Activity, "id" | "createdAt"> & { createdAt?: string }) =>
       commit((s) => withActivity(s, makeActivity(a), a.campaignId ?? null)),
     [commit],
-  );
-
-  const sourceNextBatch = useCallback(
-    async (
-      campaignId: string,
-      opts?: { platform?: SourcePlatform; count?: number },
-    ): Promise<
-      | (SourceResult & { source: "github" | "web" | "mock"; ok: true })
-      | { ok: false; error: string; source: "github" | "web" | "paused" | "unavailable" }
-    > => {
-      if (!workspaceEffectAllowed()) {
-        return { ok: false, error: "Workspace unavailable. Retry before sourcing.", source: "unavailable" };
-      }
-      const s = current();
-      const campaign = s.campaigns.find((c) => c.id === campaignId);
-      if (!campaign) return { accepted: [], skipped: [], source: "mock", ok: true };
-      if (campaign.status === "Paused") {
-        return { ok: false, error: "Campaign is paused.", source: "paused" };
-      }
-      const platform: SourcePlatform = opts?.platform ?? roleProfile(campaign.jobAnalysis).platforms[0];
-      const count = opts?.count ?? 6;
-      const weights = effectiveWeights(campaign.scoringWeights, s.skills); // learned scoring
-
-      let result: SourceResult = { accepted: [], skipped: [] };
-      let source: "github" | "web" | "mock" = "mock";
-
-      // Try REAL sourcing first, on whichever backend the platform actually has:
-      // GitHub via its Search API, everything else with a real presence (LinkedIn,
-      // Stack Overflow, Dribbble, Behance) via site:-scoped web search. Both run
-      // keyless by default. Once a real attempt runs, its result is authoritative
-      // even at zero hits — no synthetic backfill. A failed real attempt is a
-      // genuine error, surfaced to the caller — never silently backfilled with
-      // synthetic profiles. Talent Pool / Referral are internal-pipeline concepts
-      // with no external source, so they stay synthetic (demo mode).
-      if (platform === "GitHub") {
-        const baseQuery =
-          campaign.sourcingStrategy.githubQueries[0]?.query ??
-          `language:${(campaign.jobAnalysis.requiredSkills[0] ?? "typescript").toLowerCase()}`;
-        const query = `${baseQuery}${githubLocationQualifier(campaign.jobAnalysis.location, baseQuery)}`;
-        try {
-          const res = await workspaceFetch("/api/source", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query, count, platform }),
-          });
-          const out = (await res.json().catch(() => null)) as
-            | { ok?: boolean; source?: string; users?: GithubUser[]; error?: string }
-            | null;
-          if (out?.ok && out.source === "github") {
-            result =
-              out.users && out.users.length > 0
-                ? mapGithubCandidates(out.users, campaign, query, s.candidates, weights)
-                : { accepted: [], skipped: [] };
-            source = "github";
-          } else {
-            return { ok: false, error: out?.error ?? "GitHub sourcing failed.", source: "github" };
-          }
-        } catch (err) {
-          return {
-            ok: false,
-            error: err instanceof Error ? err.message : "Network error reaching GitHub sourcing.",
-            source: "github",
-          };
-        }
-      } else if (isWebSearchPlatform(platform)) {
-        const query = ensureWebQueryScope(platform, baseWebQuery(campaign, platform));
-        try {
-          const res = await workspaceFetch("/api/source", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query, count, platform }),
-          });
-          const out = (await res.json().catch(() => null)) as
-            | { ok?: boolean; source?: string; leads?: WebLead[]; error?: string }
-            | null;
-          if (out?.ok && out.source === "web") {
-            result =
-              out.leads && out.leads.length > 0
-                ? mapWebSearchCandidates(out.leads, campaign, query, platform, s.candidates, weights)
-                : { accepted: [], skipped: [] };
-            source = "web";
-          } else {
-            return { ok: false, error: out?.error ?? "Web sourcing failed.", source: "web" };
-          }
-        } catch (err) {
-          return {
-            ok: false,
-            error: err instanceof Error ? err.message : "Network error reaching web sourcing.",
-            source: "web",
-          };
-        }
-      } else {
-        // Referral / Talent Pool: internal-pipeline concepts, no external source to
-        // search — synthetic by design, not a fallback from a failed live attempt.
-        result = sourceCandidates(campaign, platform, count, s.candidates, s.candidates.length, weights);
-      }
-
-      commit((prev) => {
-        let next: HermesState = {
-          ...prev,
-          candidates: [...result.accepted, ...prev.candidates],
-        };
-        next = recomputeMetrics(next, campaignId);
-        const liveLabel = source === "github" ? "Live GitHub" : source === "web" ? `Live ${platform} search` : `${platform} synthetic`;
-        next = withActivity(
-          next,
-          makeActivity({
-            type: "sourcing",
-            title: `Sourced ${result.accepted.length} candidates`,
-            notes: `${liveLabel} batch. ${result.skipped.length} skipped by dedupe (${result.skipped
-              .slice(0, 3)
-              .map((x) => x.reason)
-              .join(", ")}${result.skipped.length > 3 ? "…" : ""}).`,
-            outcome: `${result.accepted.length} accepted, ${result.skipped.length} skipped${source !== "mock" ? " (live)" : ""}`,
-            campaignId,
-            linkedEntityType: "campaign",
-            linkedEntityId: campaignId,
-          }),
-          campaignId,
-        );
-        return next;
-      });
-      emit({ kind: "source", campaignId, count: result.accepted.length });
-      return { ...result, source, ok: true };
-    },
-    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const addCandidateFromGithub = useCallback(
@@ -4840,7 +4736,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           }
 
           if (step.verb === "source") {
-            const res = await sourceNextBatch(campaignId, { platform: "Talent Pool", count: step.count ?? 10 });
+            const res = await sourceNextBatch(campaignId, {
+              platform: syntheticSourcingAllowed() ? "Talent Pool" : undefined,
+              count: step.count ?? 10,
+            });
             if (res.ok) {
               onStep?.(i, "done", {
                 count: res.accepted.length,
@@ -4955,7 +4854,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [current, sourceNextBatch, generateOutreachLive, draftFollowUpFor, createBookingFor, toggleVivier, generateReport],
+    [current, sourceNextBatch, syntheticSourcingAllowed, generateOutreachLive, draftFollowUpFor, createBookingFor, toggleVivier, generateReport],
   );
 
   // "Ask Aria" — first tries to parse the instruction as an Aria Command (see

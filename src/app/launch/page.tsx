@@ -21,19 +21,18 @@ import {
   summarizeCampaignLaunch,
   type LaunchRoleResult,
 } from "@/lib/store/campaign-launch";
+import { supabaseEnabled } from "@/lib/supabase/config";
 import { Radio, Rocket, ShieldCheck, Sparkles } from "lucide-react";
 
 /* ============================================================================
    2.2 Sourcing War Room — paste a multi-role brief, launch N campaigns that
-   source in parallel. Offline-safe by construction:
+   source in parallel. Local demo mode is offline-safe by construction:
      - Role blocks are split on a line of `---` (pure string parsing, no I/O).
      - parseIntakeLive already carries its own three-layer fallback (mock-ai.ts
        heuristic is canonical whenever no cloud provider is configured).
-     - Sourcing runs via sourceNextBatch with platform "Talent Pool", which is
-       the one branch of sourceNextBatch that never calls `/api/source` — it
-       goes straight to the deterministic synthetic generator (see the
-       Referral/Talent Pool branch, store.ts sourceNextBatch). No network,
-       ever, regardless of how settings are configured.
+     - Local demo sourcing uses the deterministic Talent Pool generator.
+     - Live workspaces use the campaign's primary real source and never persist
+       synthetic candidates.
    ========================================================================== */
 
 const DELIMITER_RE = /^\s*-{3,}\s*$/;
@@ -72,9 +71,8 @@ Adding an Account Executive to close new logos, remote (US). 3+ years selling Sa
 Expanding product with a Product Manager for the platform line, hybrid (EU). 5+ years shipping B2B SaaS. Salary 90k-115k EUR.`,
 ].join("\n---\n");
 
-/** Deterministic offline sourcing waves per launched role — every wave calls
- *  sourceNextBatch with platform "Talent Pool" (synthetic, no fetch); the
- *  short delay between waves is purely cosmetic staging for the count-up. */
+/** Sourcing waves per launched role. Local demo mode uses deterministic Talent
+ *  Pool profiles; live workspaces use the campaign's primary real source. */
 const SOURCING_WAVES = 5;
 const PER_WAVE = 3;
 const WAVE_DELAY_MS = 220;
@@ -126,21 +124,23 @@ export default function LaunchPage() {
     if (launchSeqRef.current !== seq) return null;
     setLanes((prev) => [...prev, { campaignId: campaign.id, sourcing: true }]);
 
+    let sourcedCount = 0;
     for (let wave = 0; wave < SOURCING_WAVES; wave++) {
       if (launchSeqRef.current !== seq) return null;
       const sourceResult = await actions.sourceNextBatch(campaign.id, {
-        platform: "Talent Pool",
+        platform: supabaseEnabled ? undefined : "Talent Pool",
         count: PER_WAVE,
       });
       if (!sourceResult.ok) {
         setLaneSourcing(campaign.id, false);
         return { created: true, sourcingComplete: false };
       }
+      sourcedCount += sourceResult.accepted.length;
       if (wave < SOURCING_WAVES - 1) await wait(WAVE_DELAY_MS);
     }
     if (launchSeqRef.current === seq) setLaneSourcing(campaign.id, false);
     return launchSeqRef.current === seq
-      ? { created: true, sourcingComplete: true }
+      ? { created: true, sourcingComplete: sourcedCount > 0 }
       : null;
   }
 
@@ -253,8 +253,9 @@ export default function LaunchPage() {
                 </Button>
               </div>
               <p className="text-xs text-muted">
-                Each block is parsed offline into a structured brief, then becomes its own campaign with
-                deterministic sourcing: zero network required, nothing is sent.
+                {supabaseEnabled
+                  ? "Each block becomes its own campaign and sources from its primary live channel. Nothing is sent."
+                  : "Each block is parsed offline into a campaign with deterministic demo sourcing. Zero network required; nothing is sent."}
               </p>
             </CardBody>
           </Card>

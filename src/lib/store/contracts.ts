@@ -56,6 +56,19 @@ export type CampaignUpdate = Partial<
   Pick<Campaign, "status" | "previousStatus" | "jobAnalysis" | "scoringWeights">
 >;
 
+export type SourceNextBatchErrorSource =
+  | "github"
+  | "web"
+  | "paused"
+  | "unavailable"
+  | "forbidden"
+  | "not_found"
+  | "invalid";
+
+export type SourceNextBatchResult =
+  | (SourceResult & { source: "github" | "web" | "mock"; ok: true })
+  | { ok: false; error: string; source: SourceNextBatchErrorSource };
+
 export interface HermesActions {
   // campaigns
   setActiveCampaign: (id: string | null) => void;
@@ -70,10 +83,7 @@ export interface HermesActions {
   sourceNextBatch: (
     campaignId: string,
     opts?: { platform?: SourcePlatform; count?: number },
-  ) => Promise<
-    | (SourceResult & { source: "github" | "web" | "mock"; ok: true })
-    | { ok: false; error: string; source: "github" | "web" | "paused" | "unavailable" }
-  >;
+  ) => Promise<SourceNextBatchResult>;
   /** One tool-calling agent pass: searches real candidates, scores them, and
    *  drafts outreach for the best matches in a single loop (/api/sourcing-agent),
    *  instead of sourceNextBatch + generateOutreachLive called one at a time.
