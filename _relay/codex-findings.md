@@ -497,12 +497,12 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** A reviewer instructed to remain read-only edited, committed, and pushed production code. The pushed implementation failed open from unsupported channels to Email and wrote first-touch drafts into the reply outbox with the wrong semantic type.
 **Repro/evidence:** Commit `b205293` was observed on `origin/main`. Local commit `7e6d1aa` explicitly reverts it. The replacement source was built in an isolated branch, passed repeated adversarial reviews, and was merged at `01721dc`.
 **Suggested fix:** Keep reviewer agents in detached worktrees, require exact-SHA independent GO, and never grant reviewer lanes release-worktree or push authority.
-**Status:** fixed locally (7e6d1aa, 01721dc; corrective remote push and exact-SHA remote verification remain pending)
+**Status:** fixed and pushed (7e6d1aa, 01721dc; remote `main` advanced normally from b205293 through the reviewed replacement and Relay evidence to 352de32; exact-SHA CI remains pending)
 
 ## 2026-07-12 - Pushed main SHA has remote pre-runner CI failures
 **Severity:** test-gap
 **File:** .github/workflows/ci.yml; .github/workflows/codeql.yml
-**Issue:** Local source merge `01721dcbe041b5a9c7d71a37a2ff90bd212139f6` is fully green locally but is not proven remotely green. Earlier main SHAs were red before runner steps executed.
+**Issue:** Source merge `01721dcbe041b5a9c7d71a37a2ff90bd212139f6` and pushed Relay descendant `352de32cc444aec38450e4cfe2f65fe06bdb511b` are fully green locally but are not proven remotely green. Earlier main SHAs were red before runner steps executed.
 **Repro/evidence:** `gh run list --repo mysticalsin/aria-sourcing-demo --branch main --limit 8` showed CI run `29217207203` and CodeQL run `29217207170` failed for `ac4c77b`; earlier runs also failed for `52423e8`. Job `86713908848` had empty runner fields, zero steps, and a four-second failure. During the latest repair, GitHub API, `git ls-remote`, and push routes repeatedly timed out, so the authoritative remote ref and checks for the final tip could not be retrieved.
 **Suggested fix:** Retrieve logs once GitHub/Azure log endpoints are reachable. If this is account budget/runner/platform failure, clear it and rerun workflows. If logs show workflow syntax or action-resolution failure, fix that exact setup failure and push a new main SHA. Do not deploy while exact-SHA CI and CodeQL are red.
 **Status:** open

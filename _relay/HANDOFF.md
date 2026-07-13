@@ -2,8 +2,8 @@
 project: MSourcing / ARIA
 shift: 31
 agent: codex-gpt-5
-updated: 2026-07-12 22:46 EDT
-status: local-main-green-corrective-push-and-production-acceptance-pending
+updated: 2026-07-12 22:49 EDT
+status: main-pushed-local-gates-green-production-acceptance-pending
 ---
 
 # Handoff - runtime authority repaired; production release still gated
@@ -14,7 +14,8 @@ status: local-main-green-corrective-push-and-production-acceptance-pending
 - Branch: `main`.
 - Verified source merge: `01721dcbe041b5a9c7d71a37a2ff90bd212139f6` (`merge agent spec runtime authority hardening`).
 - Local `main` includes explicit revert `7e6d1aa` of unsafe reviewer push `b205293`, then the independently reviewed replacement through `35d17ed`.
-- The authoritative remote `main` ref is unknown because GitHub and Git transport timed out. The local cached `origin/main` is `b205293`; treat that only as stale local evidence until `git ls-remote` succeeds.
+- GitHub connectivity recovered at 22:48 EDT. `git ls-remote` proved remote `main` was still `b205293`, then a normal non-force push advanced it through the explicit revert, reviewed replacement, and Relay commits to `352de32cc444aec38450e4cfe2f65fe06bdb511b`.
+- Local and remote `main` were verified equal and the worktree was clean immediately after that push. This Relay-only follow-up is a descendant and must also be pushed normally.
 - Source/runtime verdict: GO locally. Production verdict: NO-GO until remote, protected-release, recovery, and live acceptance gates below pass.
 - Default GitHub branch was last verified as `vercel-demo`, not `main`. The protected production workflow must exist on the default branch before manual dispatch can work.
 
@@ -48,33 +49,32 @@ status: local-main-green-corrective-push-and-production-acceptance-pending
   - DNS resolved `github.com` to `140.82.114.4`, but both forced IPv4 and forced IPv6 TLS connections timed out on port 443 after five seconds.
   - `git ls-remote origin refs/heads/main` hung and was interrupted without a ref, so no push was attempted after that failed verification.
   - Forced-IPv4 probes to `/`, `/login`, `/api/health`, `/api/ready`, `/rest/v1/`, and `/auth/v1/health` on `aria-mantu-app.fly.dev` all returned curl exit 28 / HTTP `000` after five-second connect timeouts.
+- GitHub connectivity recovered at 22:48 EDT. Verified remote `main=b205293`, pushed `b205293..352de32` normally, then verified local and remote both equaled `352de32cc444aec38450e4cfe2f65fe06bdb511b` with a clean worktree.
 - Archived the prior Baton to `_relay/archive/2026-07-12-2244-codex-gpt-5.md`.
 - Updated `_relay/codex-findings.md` with fixed source findings, the reviewer-integrity incident, and current remote blockers.
 
 ## Blockers
 
-1. **Corrective remote push is not proven.** `git ls-remote`, GitHub API, and earlier pushes timed out. Do not assume local `origin/main` is current and do not force-push.
-2. **Exact-SHA GitHub CI and CodeQL are not green.** Earlier runs failed before runner steps. The final pushed tip must pass all required checks before deployment.
-3. **Fly DB volume recovery gate remains network-blocked.** `npm run test:fly-db-volume` cannot fetch Alpine 3.23 APK indexes from this network. Do not use `--force-missing-repositories`, disable the patch layer, or pin an unreviewed mirror.
-4. **Owner-controlled release gates remain open:**
+1. **Exact-SHA GitHub CI and CodeQL are not green.** Earlier runs failed before runner steps. The final pushed tip must pass all required checks before deployment.
+2. **Fly DB volume recovery gate remains network-blocked.** `npm run test:fly-db-volume` cannot fetch Alpine 3.23 APK indexes from this network. Do not use `--force-missing-repositories`, disable the patch layer, or pin an unreviewed mirror.
+3. **Owner-controlled release gates remain open:**
    - revoke the exposed Fly token and record only rotation evidence;
    - remove repository-level `ARIA_DEPLOY_BUNDLE` and install split Production-environment secrets;
    - protect the default/release branches and Production environment, require independent review, block self-review and administrator bypass;
    - preserve and inspect a disposable clone of `aria_db_data`, then produce the release-bound recovery receipt.
-5. **Protected production deploy is not proven for the final SHA.** The workflow must run from the default branch and deploy the exact reviewed artifact digest.
-6. **Live acceptance is not proven:** stable app/login/health/readiness; DB/Auth/REST/Kong; two DB/Auth restarts; admin provisioning/login; and a synthetic zero-send campaign with durable run history and no delivery authority.
+4. **Protected production deploy is not proven for the final SHA.** The workflow must run from the default branch and deploy the exact reviewed artifact digest.
+5. **Live acceptance is not proven:** stable app/login/health/readiness; DB/Auth/REST/Kong; two DB/Auth restarts; admin provisioning/login; and a synthetic zero-send campaign with durable run history and no delivery authority.
 
 ## Next steps
 
-1. From the integration worktree, run `git status --short --branch`, `git rev-parse HEAD origin/main`, then `git ls-remote origin refs/heads/main` on a working network.
-2. If remote `main` is exactly `b205293` or another ancestor of local `main`, push normally with `git push origin main`. Never force. If remote has unrelated new work, fetch and reconcile it before pushing.
-3. Record the final pushed SHA, then require CI, CodeQL, dependency audit, secret scan, database security, image supply-chain, and aggregate quality checks for that exact SHA.
-4. Retry `npm run test:fly-db-volume` only where Alpine repositories are reachable. Require the exact image, existing-data detection, and two-restart persistence assertions to pass.
-5. Complete the owner-controlled token, secret, branch/environment protection, and recovery-receipt gates. Do not store secret values in Relay.
-6. Dispatch the protected production workflow for the exact approved SHA and verify the running image digest matches release evidence.
-7. Run live acceptance in order: `/`, `/login`, `/api/health`, `/api/ready`, Kong `/rest/v1/`, GoTrue `/auth/v1/health`, DB/Auth machine inventory, two controlled restarts, first-admin provisioning/login, then the synthetic zero-send campaign.
-8. Confirm the campaign creates owner-bound run/event/memory receipts, retains drafts only in run history, and creates zero provider outbox rows or sends.
-9. Update this Baton and `_relay/codex-findings.md` with exact command outputs. Mark production ready only after every gate above is proven.
+1. Verify this Relay-only follow-up is pushed and run `git rev-parse HEAD origin/main` plus `git ls-remote origin refs/heads/main`; all three must match.
+2. Require CI, CodeQL, dependency audit, secret scan, database security, image supply-chain, and aggregate quality checks for that exact final SHA.
+3. Retry `npm run test:fly-db-volume` only where Alpine repositories are reachable. Require the exact image, existing-data detection, and two-restart persistence assertions to pass.
+4. Complete the owner-controlled token, secret, branch/environment protection, and recovery-receipt gates. Do not store secret values in Relay.
+5. Dispatch the protected production workflow for the exact approved SHA and verify the running image digest matches release evidence.
+6. Run live acceptance in order: `/`, `/login`, `/api/health`, `/api/ready`, Kong `/rest/v1/`, GoTrue `/auth/v1/health`, DB/Auth machine inventory, two controlled restarts, first-admin provisioning/login, then the synthetic zero-send campaign.
+7. Confirm the campaign creates owner-bound run/event/memory receipts, retains drafts only in run history, and creates zero provider outbox rows or sends.
+8. Update this Baton and `_relay/codex-findings.md` with exact command outputs. Mark production ready only after every gate above is proven.
 
 ## Decisions made (don't relitigate)
 
@@ -90,7 +90,7 @@ status: local-main-green-corrective-push-and-production-acceptance-pending
 
 - The repository root checkout is on `deploy/fly-github-actions`; use the integration worktree above for `main`.
 - OneDrive can distort builds; keep using the repository's isolated build gate.
-- `origin/main` is a cached local ref, not current remote proof while GitHub is unreachable.
+- Always compare `HEAD`, `origin/main`, and `git ls-remote`; a local tracking ref alone is not remote proof.
 - A hung push has an ambiguous outcome. Verify the remote ref before retrying.
 - Do not expose or reuse the compromised Fly token.
 - Do not weaken the Alpine patch/recovery gate to make a network failure look green.
