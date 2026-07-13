@@ -506,3 +506,27 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** `gh run list --repo mysticalsin/aria-sourcing-demo --branch main --limit 8` showed CI run `29217207203` and CodeQL run `29217207170` failed for `ac4c77b`; earlier runs also failed for `52423e8`. Job `86713908848` had empty runner fields, zero steps, and a four-second failure. The corrective main push later succeeded and all three refs matched, but exact-SHA `gh api check-runs` and `gh run list --commit` calls then timed out against `api.github.com`, so no final check conclusion is claimed.
 **Suggested fix:** Retrieve logs once GitHub/Azure log endpoints are reachable. If this is account budget/runner/platform failure, clear it and rerun workflows. If logs show workflow syntax or action-resolution failure, fix that exact setup failure and push a new main SHA. Do not deploy while exact-SHA CI and CodeQL are red.
 **Status:** open
+
+## 2026-07-12 - Release candidate exact-SHA CI and CodeQL fail before meaningful execution
+**Severity:** test-gap
+**File:** .github/workflows/ci.yml; .github/workflows/codeql.yml
+**Issue:** Candidate `c3e94b2b5694825c613e127a69c811f7935a1dd8` passes the complete local gate but is not eligible for production because its GitHub CI and CodeQL runs are red.
+**Repro/evidence:** CI run `29221158898` failed eight seconds after creation and CodeQL run `29221158901` failed four seconds after creation. The exact job annotation is unknown because the job and check-run endpoints timed out. The older Actions-budget diagnosis is obsolete and must not be reused without current evidence.
+**Suggested fix:** Capture the exact top-level and job annotations, repair that specific workflow-start or account-policy failure, then rerun both workflows for exact `c3e94b2`.
+**Status:** open
+
+## 2026-07-12 - GitHub CLI credential exposed through process arguments
+**Severity:** security
+**File:** _relay/HANDOFF.md
+**Issue:** A read-only CI diagnostic interpolated the GitHub CLI credential into a curl Authorization argument, making the credential visible to local process inspection.
+**Repro/evidence:** The process command line was observed during the release audit. Matching curl processes were terminated, authenticated GitHub access was stopped, and the credential is not reproduced in this finding.
+**Suggested fix:** Revoke and rotate the credential, review GitHub account and repository access history, use least privilege, and keep credentials out of argv and diagnostic output.
+**Status:** open
+
+## 2026-07-12 - Live production is healthy only on an older migration ledger
+**Severity:** spec-mismatch
+**File:** src/app/api/ready/route.ts; supabase/migrations/0024_cross_channel_claim_serialization.sql; supabase/migrations/0025_agent_memory_authority.sql
+**Issue:** Public readiness is green, but the running build is not the reviewed release candidate and does not include the latest authority migrations.
+**Repro/evidence:** Three consecutive `/api/ready` calls returned HTTP 200 with build `d2040b534177f5bd2abb28f22de19af57b58dc3a`, migration `0023_conversation_identity.sql`, and all reported components true. Candidate `c3e94b2` contains migrations `0024` and `0025`.
+**Suggested fix:** Complete the protected exact-SHA release path, verify the running digest and build identity, and require the live migration ledger through `0025` before acceptance.
+**Status:** open

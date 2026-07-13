@@ -1,6 +1,10 @@
 {
   "recent_learnings": [
     {
+      "date": "2026-07-12",
+      "lesson": "Never interpolate credentials into shell argv; use client-native auth and inspect process commands only after excluding authorization arguments."
+    },
+    {
       "date": "2026-07-10",
       "lesson": "For pure store splits, extract React-free helpers only; leave provider-bound hooks/contracts when cycle risk exceeds comprehension gain."
     },
