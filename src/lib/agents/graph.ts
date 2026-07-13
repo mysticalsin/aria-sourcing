@@ -82,8 +82,8 @@ export interface AgentGraphState {
 
 const DEFAULT_EXECUTION_POLICY: AgentExecutionPolicy = {
   channel: "Email",
-  queueMode: "human_review",
-  autopilotRequested: false,
+  draftStorage: "run_history",
+  deliveryAuthority: "none",
 };
 
 export function initialState(

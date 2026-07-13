@@ -63,7 +63,7 @@ const POOL: Record<string, CandidateLite[]> = {
   );
   ok(
     "policy resolver: supported queue-only defaults produce an auditable Email policy",
-    email.ok && email.policy.queueMode === "human_review" && !email.policy.autopilotRequested,
+    email.ok && email.policy.draftStorage === "run_history" && email.policy.deliveryAuthority === "none",
   );
   ok("policy resolver: autonomous flags fail closed", !autonomous.ok);
   ok("policy resolver: unenforced topic rules fail closed", !topicRules.ok);
@@ -126,8 +126,8 @@ function makeDeps(overrides?: Partial<GraphDeps> & { planJson?: string; draftBod
   const checkedNodes: string[] = [];
   const policy = {
     channel: "Email" as const,
-    queueMode: "human_review" as const,
-    autopilotRequested: false,
+    draftStorage: "run_history" as const,
+    deliveryAuthority: "none" as const,
   };
   const result = await runGraph(
     initialState(BRIEF, 1, policy),
@@ -137,7 +137,7 @@ function makeDeps(overrides?: Partial<GraphDeps> & { planJson?: string; draftBod
     0,
     async (node) => { checkedNodes.push(node); },
   );
-  ok("policy: stored snapshot remains in persisted graph state", result.state.executionPolicy?.queueMode === "human_review");
+  ok("policy: stored snapshot records run-history storage with no delivery authority", result.state.executionPolicy?.draftStorage === "run_history" && result.state.executionPolicy?.deliveryAuthority === "none");
   ok("policy: every executed node is preceded by status revalidation", checkedNodes.length === result.steps && checkedNodes[0] === "planner");
 }
 

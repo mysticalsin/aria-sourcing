@@ -15,8 +15,8 @@ export const SupportedAgentChannelsSchema = z.tuple([z.literal("Email")]);
 
 export interface AgentExecutionPolicy {
   channel: "Email";
-  queueMode: "human_review";
-  autopilotRequested: boolean;
+  draftStorage: "run_history";
+  deliveryAuthority: "none";
 }
 
 export type AgentRuntimePolicyResult =
@@ -47,8 +47,8 @@ export function resolveStoredAgentRuntimePolicy(
     ok: true,
     policy: {
       channel: "Email",
-      queueMode: "human_review",
-      autopilotRequested: false,
+      draftStorage: "run_history",
+      deliveryAuthority: "none",
     },
   };
 }

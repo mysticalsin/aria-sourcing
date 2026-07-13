@@ -330,7 +330,9 @@ try {
   ok("admin can run the live cloud graph agent", adminAgent.status === 200 && adminAgentBody.ok === true);
   ok(
     "graph agent snapshots stored channels and guardrails into its runtime policy",
-      capturedAgentPolicy?.channel === "Email" && capturedAgentPolicy.queueMode === "human_review",
+      capturedAgentPolicy?.channel === "Email" &&
+      capturedAgentPolicy.draftStorage === "run_history" &&
+      capturedAgentPolicy.deliveryAuthority === "none",
   );
   ok(
     "graph agent persists its stored runtime snapshot before memory or provider access",
