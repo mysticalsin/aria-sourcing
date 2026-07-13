@@ -490,3 +490,11 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** On 2026-07-12, `npm run test:fly-db-volume` failed in Docker layer `RUN apk upgrade --no-cache && apk add --no-cache su-exec && rm -f /usr/local/bin/gosu` with `APKINDEX.tar.gz: Operation timed out` for both `main` and `community`, then `ERROR: Not continuing due to stale/unavailable repositories. Use --force-missing-repositories to continue.` Alternate mirrors tested from the host (`dl-2.alpinelinux.org`, `mirrors.edge.kernel.org`, `mirror.leaseweb.com`) also timed out. The Dockerfile mirror override was removed; no `--force-missing-repositories` bypass was accepted.
 **Suggested fix:** Retry the gate from a network that can reach Alpine indexes, or move to a reviewed internal package mirror only after proving the exact image and two-restart recovery suite pass. Do not weaken the CVE patch layer.
 **Status:** open
+
+## 2026-07-12 - Pushed main SHA has remote pre-runner CI failures
+**Severity:** test-gap
+**File:** .github/workflows/ci.yml; .github/workflows/codeql.yml
+**Issue:** Exact pushed SHA `52423e8f88b056c38c188c4066d6433f6a2c617d` is locally green but remote GitHub checks are red. The one job metadata record retrieved successfully shows failure before any runner step executed.
+**Repro/evidence:** `gh api repos/mysticalsin/aria-sourcing-demo/commits/52423e8f88b056c38c188c4066d6433f6a2c617d/check-runs` showed failures for CI jobs and CodeQL. Log retrieval repeatedly timed out from the local network. Direct metadata for CodeQL job `86713908848` returned `runner_name=""`, `runner_group_name=""`, `steps_len=0`, started `2026-07-13T01:06:13Z`, completed `2026-07-13T01:06:17Z`, conclusion `failure`, which means no checkout/test/analyze step ran.
+**Suggested fix:** Retrieve logs once GitHub/Azure log endpoints are reachable. If this is account budget/runner/platform failure, clear it and rerun workflows. If logs show workflow syntax or action-resolution failure, fix that exact setup failure and push a new main SHA. Do not deploy while exact-SHA CI and CodeQL are red.
+**Status:** open
