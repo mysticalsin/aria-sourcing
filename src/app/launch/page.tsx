@@ -17,6 +17,10 @@ import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { WarRoomBoard, type WarRoomLane } from "@/components/launch/war-room-board";
 import { parseIntakeLive } from "@/lib/ai/intake";
 import { useActions, useHydrated, useSettings } from "@/lib/store";
+import {
+  summarizeCampaignLaunch,
+  type LaunchRoleResult,
+} from "@/lib/store/campaign-launch";
 import { Radio, Rocket, ShieldCheck, Sparkles } from "lucide-react";
 
 /* ============================================================================
@@ -107,23 +111,37 @@ export default function LaunchPage() {
     setLanes((prev) => prev.map((l) => (l.campaignId === campaignId ? { ...l, sourcing } : l)));
   }
 
-  async function launchRole(seq: number, block: string) {
+  async function launchRole(
+    seq: number,
+    block: string,
+  ): Promise<LaunchRoleResult | null> {
     const parsed = await parseIntakeLive(settings, { email: block });
-    if (launchSeqRef.current !== seq) return; // superseded by a newer launch
+    if (launchSeqRef.current !== seq) return null; // superseded by a newer launch
 
     const campaign = actions.createCampaignFromAnalysis(parsed.jobAnalysis, {
       hiringManager: parsed.sender.name || "Hiring Manager",
       hiringManagerEmail: parsed.sender.email || "unknown@company.example",
     });
-    if (launchSeqRef.current !== seq) return;
+    if (!campaign) return { created: false, sourcingComplete: false };
+    if (launchSeqRef.current !== seq) return null;
     setLanes((prev) => [...prev, { campaignId: campaign.id, sourcing: true }]);
 
     for (let wave = 0; wave < SOURCING_WAVES; wave++) {
-      if (launchSeqRef.current !== seq) return;
-      await actions.sourceNextBatch(campaign.id, { platform: "Talent Pool", count: PER_WAVE });
+      if (launchSeqRef.current !== seq) return null;
+      const sourceResult = await actions.sourceNextBatch(campaign.id, {
+        platform: "Talent Pool",
+        count: PER_WAVE,
+      });
+      if (!sourceResult.ok) {
+        setLaneSourcing(campaign.id, false);
+        return { created: true, sourcingComplete: false };
+      }
       if (wave < SOURCING_WAVES - 1) await wait(WAVE_DELAY_MS);
     }
     if (launchSeqRef.current === seq) setLaneSourcing(campaign.id, false);
+    return launchSeqRef.current === seq
+      ? { created: true, sourcingComplete: true }
+      : null;
   }
 
   async function handleLaunch() {
@@ -140,15 +158,42 @@ export default function LaunchPage() {
     setLaunching(true);
     setLanes([]);
 
-    await Promise.all(roleBlocks.map((block) => launchRole(seq, block)));
+    const results = await Promise.all(roleBlocks.map((block) => launchRole(seq, block)));
 
     if (launchSeqRef.current === seq) {
       setLaunching(false);
-      toast({
-        title: "War room live",
-        description: `${roleBlocks.length} role${roleBlocks.length === 1 ? "" : "s"} sourcing in parallel: nothing sent, drafts only.`,
-        variant: "success",
-      });
+      const summary = summarizeCampaignLaunch(roleBlocks.length, results);
+
+      if (summary.status === "success") {
+        toast({
+          title: "War room live",
+          description: `${summary.sourcingComplete} role${summary.sourcingComplete === 1 ? "" : "s"} sourced in parallel: nothing sent, drafts only.`,
+          variant: "success",
+        });
+      } else if (summary.status === "partial") {
+        const failures = [
+          summary.creationFailed > 0
+            ? `${summary.creationFailed} campaign creation${summary.creationFailed === 1 ? "" : "s"} failed.`
+            : "",
+          summary.sourcingFailed > 0
+            ? `${summary.sourcingFailed} sourcing run${summary.sourcingFailed === 1 ? "" : "s"} stopped.`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        toast({
+          title: "Launch needs attention",
+          description: `${summary.created} of ${summary.requested} campaigns were created. ${failures} Retry from the campaign workspace.`,
+          variant: "warning",
+        });
+      } else {
+        toast({
+          title: "No campaigns created",
+          description:
+            "Your workspace is unavailable or your access is read-only. Retry after access is restored.",
+          variant: "error",
+        });
+      }
     }
   }
 

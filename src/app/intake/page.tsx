@@ -329,6 +329,15 @@ export default function IntakePage() {
       hiringManager: senderName.trim() || "Hiring Manager",
       hiringManagerEmail,
     });
+    if (!campaign) {
+      toast({
+        title: "Campaign not created",
+        description:
+          "Your workspace is unavailable or your access is read-only. Retry after access is restored.",
+        variant: "error",
+      });
+      return;
+    }
     // Sourcing starts immediately — first batch on the strategy's lead platform.
     // Fire-and-forget: the campaign page renders candidates as they land, and a
     // failure surfaces as a toast without blocking campaign creation.

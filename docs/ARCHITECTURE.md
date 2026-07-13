@@ -211,7 +211,11 @@ These are current facts, not permission for a broad rewrite:
   `src/lib/store/contracts.ts`; callers retain the compatibility export from
   `src/lib/store.ts`. New domain calculations and action factories should move
   behind that contract in small React-free modules under `src/lib/store/` and
-  remain covered by focused tests.
+  remain covered by focused tests. The first action boundary is
+  `store/campaign-actions.ts`; it owns four campaign/intake actions, filters
+  updates to editable fields, and fails closed for viewers or unavailable
+  workspaces. `store/campaign-launch.ts` keeps multi-role launch aggregation
+  React-free and requires every requested role to complete before success.
 - Normalized outreach rows own approval and delivery authority while
   `workspace_state` also carries the UI projection. Server mutations should
   return canonical records, and projection save failures need an explicit

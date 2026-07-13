@@ -52,15 +52,19 @@ import type {
   WeeklyReport,
 } from "../types";
 
+export type CampaignUpdate = Partial<
+  Pick<Campaign, "status" | "previousStatus" | "jobAnalysis" | "scoringWeights">
+>;
+
 export interface HermesActions {
   // campaigns
   setActiveCampaign: (id: string | null) => void;
   createCampaignFromAnalysis: (
     jd: JobAnalysis,
     meta: { hiringManager: string; hiringManagerEmail: string },
-  ) => Campaign;
-  updateCampaign: (id: string, patch: Partial<Campaign>) => void;
-  regenerateQueries: (id: string) => void;
+  ) => Campaign | null;
+  updateCampaign: (id: string, patch: CampaignUpdate) => boolean;
+  regenerateQueries: (id: string) => boolean;
 
   // sourcing
   sourceNextBatch: (

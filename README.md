@@ -17,7 +17,7 @@ Verified from `package.json` on 2026-07-13:
 | Data/auth | Supabase Postgres, Supabase Auth, RLS tenancy, service-role server APIs |
 | UI/runtime | Tailwind, Recharts, lucide-react, Framer Motion, Three.js/R3F |
 | Node | `22.x` |
-| Verification | `npm test` runs 135 chained checks: 18 `pretest` commands plus 117 test commands |
+| Verification | `npm test` runs 136 chained checks: 18 `pretest` commands plus 118 test commands |
 | Quality gates | `npm run typecheck`, `npm run lint`, `npm test`, `npm run build:isolated` for this OneDrive checkout |
 
 ## Shipped Surfaces
@@ -150,6 +150,10 @@ Important code anchors:
 - `src/lib/store.ts` owns client state and local/demo persistence.
 - `src/lib/store/contracts.ts` owns the React-free public action and context
   contracts used to decompose the client store without breaking callers.
+- `src/lib/store/campaign-actions.ts` owns campaign/intake mutations, editable
+  field filtering, and viewer-safe mutation checks.
+- `src/lib/store/campaign-launch.ts` summarizes multi-role creation and sourcing
+  results without allowing partial success to appear complete.
 - `src/lib/supabase/*` owns live-mode Supabase config and server helpers.
 - `src/lib/crypto-secrets.ts` encrypts provider/OAuth secrets at rest when
   `DATA_ENCRYPTION_KEY` is set and supports bounded rotation through

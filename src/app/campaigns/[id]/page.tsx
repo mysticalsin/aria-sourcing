@@ -478,7 +478,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   };
 
   const handlePause = () => {
-    actions.updateCampaign(c.id, { status: "Paused", previousStatus: c.status });
+    if (!actions.updateCampaign(c.id, { status: "Paused", previousStatus: c.status })) {
+      toast({ title: "Campaign not changed", description: "Your workspace is unavailable or your access is read-only.", variant: "error" });
+      return;
+    }
     toast({
       title: "Campaign paused",
       description: "Sourcing and new outreach drafts are blocked until you resume.",
@@ -488,7 +491,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   const handleResume = () => {
     const restored: CampaignStatus = c.previousStatus ?? "Sourcing";
-    actions.updateCampaign(c.id, { status: restored, previousStatus: null });
+    if (!actions.updateCampaign(c.id, { status: restored, previousStatus: null })) {
+      toast({ title: "Campaign not changed", description: "Your workspace is unavailable or your access is read-only.", variant: "error" });
+      return;
+    }
     toast({
       title: "Campaign resumed",
       description: `Status restored to ${restored}.`,
@@ -504,7 +510,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       danger: true,
     });
     if (!proceed) return;
-    actions.updateCampaign(c.id, { status: "Filled", previousStatus: null });
+    if (!actions.updateCampaign(c.id, { status: "Filled", previousStatus: null })) {
+      toast({ title: "Campaign not changed", description: "Your workspace is unavailable or your access is read-only.", variant: "error" });
+      return;
+    }
     toast({
       title: "Campaign marked Filled",
       description: `${c.title} is now marked as filled.`,
@@ -513,7 +522,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   };
 
   const handleReopen = () => {
-    actions.updateCampaign(c.id, { status: "Sourcing" });
+    if (!actions.updateCampaign(c.id, { status: "Sourcing" })) {
+      toast({ title: "Campaign not changed", description: "Your workspace is unavailable or your access is read-only.", variant: "error" });
+      return;
+    }
     toast({
       title: "Campaign reopened",
       description: `${c.title} is back to Sourcing.`,
@@ -522,7 +534,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   };
 
   const handleMoreQueries = () => {
-    actions.regenerateQueries(c.id);
+    if (!actions.regenerateQueries(c.id)) {
+      toast({ title: "Query not generated", description: "Your workspace is unavailable or your access is read-only.", variant: "error" });
+      return;
+    }
     toast({
       title: "New sourcing query generated",
       description: "Added an adjacent query to widen the search.",
@@ -566,7 +581,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   const handleSaveJd = (patch: Partial<JobAnalysis>) => {
     const candidateCount = candidates.length;
-    actions.updateCampaign(c.id, { jobAnalysis: { ...c.jobAnalysis, ...patch } });
+    if (!actions.updateCampaign(c.id, { jobAnalysis: { ...c.jobAnalysis, ...patch } })) {
+      toast({ title: "Requirements not changed", description: "Your workspace is unavailable or your access is read-only.", variant: "error" });
+      return;
+    }
     setEditingJd(false);
     toast({
       title: "Requirements updated",
@@ -579,7 +597,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   const handleSaveWeights = (patch: ScoringWeights) => {
     const candidateCount = candidates.length;
-    actions.updateCampaign(c.id, { scoringWeights: patch });
+    if (!actions.updateCampaign(c.id, { scoringWeights: patch })) {
+      toast({ title: "Weights not changed", description: "Your workspace is unavailable or your access is read-only.", variant: "error" });
+      return;
+    }
     setEditingWeights(false);
     toast({
       title: "Scoring weights updated",

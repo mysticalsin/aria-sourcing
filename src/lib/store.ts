@@ -70,6 +70,7 @@ import {
   type ConnectionTestResult,
 } from "./integrations";
 import { interviewerIsBusy, resolveBookingSlot } from "./store/booking-slot";
+import { createCampaignActions } from "./store/campaign-actions";
 import { resolveInboundEmailIdentity } from "./store/inbound-identity";
 import { loadState, normalizeHermesState } from "./store/migrations";
 import { baseWebQuery, mapSillageCandidates, parseSillageIdentifier } from "./store/sourcing-helpers";
@@ -195,6 +196,70 @@ function unavailableWorkspaceStatus(dependency: WorkspaceDependency): WorkspaceS
     agent_seats: "The authoritative agent roster is temporarily unavailable. Stale workspace seats are not shown.",
   };
   return { phase: "unavailable", mode: "live", dependency, message: messages[dependency] };
+}
+
+function makeActivity(
+  activity: Omit<Activity, "id" | "createdAt"> & { createdAt?: string },
+): Activity {
+  return {
+    id: genId("act"),
+    createdAt: activity.createdAt ?? new Date().toISOString(),
+    ...activity,
+  };
+}
+
+function withActivity(
+  state: HermesState,
+  activity: Activity,
+  campaignId: string | null,
+): HermesState {
+  const campaigns = campaignId
+    ? state.campaigns.map((campaign) =>
+        campaign.id === campaignId
+          ? {
+              ...campaign,
+              activities: [activity, ...campaign.activities].slice(0, 80),
+            }
+          : campaign,
+      )
+    : state.campaigns;
+  return {
+    ...state,
+    campaigns,
+    activities: [activity, ...state.activities].slice(0, 300),
+  };
+}
+
+function recomputeMetrics(state: HermesState, campaignId: string): HermesState {
+  const candidates = state.candidates.filter(
+    (candidate) => candidate.campaignId === campaignId,
+  );
+  const campaign = state.campaigns.find((item) => item.id === campaignId);
+  const firstInterviewHours = campaign
+    ? firstInterviewElapsedHours(
+        state.bookings.filter((booking) => booking.campaignId === campaignId),
+        campaign.createdAt,
+      )
+    : null;
+  return {
+    ...state,
+    campaigns: state.campaigns.map((item) =>
+      item.id === campaignId
+        ? {
+            ...item,
+            metrics: computeCampaignMetrics(
+              candidates,
+              item.metrics,
+              firstInterviewHours,
+              realFunnelFacts(state, {
+                live: !state.settings.dryRunMode,
+                campaignId,
+              }),
+            ),
+          }
+        : item,
+    ),
+  };
 }
 
 /* ============================================================================
@@ -637,14 +702,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   }, [state, flushLocalSave]);
 
   const commit = useCallback((fn: (s: HermesState) => HermesState) => {
-    if (!workspaceAllowsMutation(workspaceStatusRef.current)) return;
-    setState((prev) => {
-      const base = prev ?? stateRef.current;
-      if (!base) return prev;
-      const next = fn(base);
-      stateRef.current = next;
-      return next;
-    });
+    if (!workspaceAllowsMutation(workspaceStatusRef.current)) return false;
+    const base = stateRef.current;
+    if (!base) return false;
+    const next = fn(base);
+    stateRef.current = next;
+    setState(next);
+    return true;
   }, []);
 
   const current = useCallback(
@@ -656,6 +720,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     () => workspaceAllowsMutation(workspaceStatusRef.current),
     [],
   );
+
+  const campaignMutationAllowed = useCallback(() => {
+    if (!workspaceAllowsMutation(workspaceStatusRef.current)) return false;
+    const role = supabaseEnabled
+      ? liveRoleRef.current
+      : stateRef.current?.currentRole;
+    return role != null && can(role, "source");
+  }, []);
 
   const runWorkspaceEffect = useCallback(
     <T,>(effect: () => T) => runWorkspaceEffectBoundary(workspaceStatusRef.current, effect),
@@ -672,187 +744,32 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [runWorkspaceEffect],
   );
 
-  /* ---- helpers ---------------------------------------------------------- */
-
-  const makeActivity = (
-    a: Omit<Activity, "id" | "createdAt"> & { createdAt?: string },
-  ): Activity => ({
-    id: genId("act"),
-    createdAt: a.createdAt ?? new Date().toISOString(),
-    ...a,
-  });
-
-  const withActivity = (s: HermesState, a: Activity, campaignId: string | null): HermesState => {
-    const campaigns = campaignId
-      ? s.campaigns.map((c) =>
-          c.id === campaignId
-            ? { ...c, activities: [a, ...c.activities].slice(0, 80) }
-            : c,
-        )
-      : s.campaigns;
-    return { ...s, campaigns, activities: [a, ...s.activities].slice(0, 300) };
-  };
-
-  const recomputeMetrics = (s: HermesState, campaignId: string): HermesState => {
-    const cands = s.candidates.filter((c) => c.campaignId === campaignId);
-    const campaign = s.campaigns.find((c) => c.id === campaignId);
-    // Elapsed time from campaign creation to the first *scheduled* interview
-    // (shared with seed.ts via firstInterviewElapsedHours so live and seeded
-    // campaigns report the same KPI meaning — see metrics.ts).
-    const firstInterviewHours = campaign
-      ? firstInterviewElapsedHours(
-          s.bookings.filter((b) => b.campaignId === campaignId),
-          campaign.createdAt,
-        )
-      : null;
-    return {
-      ...s,
-      campaigns: s.campaigns.map((c) =>
-        c.id === campaignId
-          ? {
-              ...c,
-              metrics: computeCampaignMetrics(
-                cands,
-                c.metrics,
-                firstInterviewHours,
-                realFunnelFacts(s, { live: !s.settings.dryRunMode, campaignId }),
-              ),
-            }
-          : c,
-      ),
-    };
-  };
-
   /* ---- actions ---------------------------------------------------------- */
 
-  const setActiveCampaign = useCallback(
-    (id: string | null) => commit((s) => ({ ...s, activeCampaignId: id })),
-    [commit],
+  const {
+    setActiveCampaign,
+    createCampaignFromAnalysis,
+    updateCampaign,
+    regenerateQueries,
+  } = useMemo(
+    () =>
+      createCampaignActions({
+        commit,
+        buildCampaign,
+        makeActivity,
+        withActivity,
+        recomputeMetrics,
+        effectiveWeights,
+        scoreCandidate,
+        campaignMutationAllowed,
+        currentState: () => stateRef.current,
+      }),
+    [commit, campaignMutationAllowed],
   );
 
   const logActivity = useCallback(
     (a: Omit<Activity, "id" | "createdAt"> & { createdAt?: string }) =>
       commit((s) => withActivity(s, makeActivity(a), a.campaignId ?? null)),
-    [commit],
-  );
-
-  const createCampaignFromAnalysis = useCallback(
-    (jd: JobAnalysis, meta: { hiringManager: string; hiringManagerEmail: string }) => {
-      const campaign = buildCampaign(jd, meta);
-      commit((s) => {
-        let next: HermesState = {
-          ...s,
-          campaigns: [campaign, ...s.campaigns],
-          activeCampaignId: campaign.id,
-        };
-        next = withActivity(
-          next,
-          makeActivity({
-            type: "campaign",
-            title: "Campaign created",
-            notes: `Created “${campaign.title}” from parsed intake.`,
-            outcome: "Sourcing strategy generated",
-            campaignId: campaign.id,
-            linkedEntityType: "campaign",
-            linkedEntityId: campaign.id,
-          }),
-          campaign.id,
-        );
-        return next;
-      });
-      return campaign;
-    },
-    [commit],
-  );
-
-  const updateCampaign = useCallback(
-    (id: string, patch: Partial<Campaign>) =>
-      commit((s) => {
-        const existing = s.campaigns.find((c) => c.id === id);
-        if (!existing) return s;
-        const merged: Campaign = { ...existing, ...patch };
-        let next: HermesState = {
-          ...s,
-          campaigns: s.campaigns.map((c) => (c.id === id ? merged : c)),
-        };
-
-        // Reactive re-score: editing the JD or scoring weights silently re-ranks
-        // existing candidates (via the recommendation queue's match-score input)
-        // instead of leaving them frozen at their original sourcing-time score.
-        // Adaptive, not autonomous -- it reacts to a human's own edit here; it
-        // never touches anything already approved/sent/booked, and never sends.
-        if (patch.jobAnalysis || patch.scoringWeights) {
-          const weights = effectiveWeights(merged.scoringWeights, s.skills);
-          const affected = next.candidates.filter((c) => c.campaignId === id);
-          next = {
-            ...next,
-            candidates: next.candidates.map((c) => {
-              if (c.campaignId !== id) return c;
-              const { score, breakdown } = scoreCandidate(c, merged.jobAnalysis, weights);
-              return { ...c, matchScore: score, matchBreakdown: breakdown };
-            }),
-          };
-          next = recomputeMetrics(next, id);
-          if (affected.length > 0) {
-            next = withActivity(
-              next,
-              makeActivity({
-                type: "score",
-                title: "Candidates re-scored",
-                notes: `${affected.length} candidate${affected.length === 1 ? "" : "s"} re-scored after the JD/weights update.`,
-                outcome: "Priority queue updated",
-                campaignId: id,
-                linkedEntityType: "campaign",
-                linkedEntityId: id,
-              }),
-              id,
-            );
-          }
-        }
-
-        return next;
-      }),
-    [commit],
-  );
-
-  const regenerateQueries = useCallback(
-    (id: string) =>
-      commit((s) => {
-        const campaign = s.campaigns.find((c) => c.id === id);
-        if (!campaign) return s;
-        const extra = {
-          label: `Adjacent: ${campaign.jobAnalysis.requiredSkills[1] ?? "stack"} maintainers`,
-          query: `language:${(campaign.jobAnalysis.requiredSkills[1] ?? "go").replace(/\s+/g, "")} sort:updated location:${campaign.jobAnalysis.regions[0] ?? "EU"} forks:>5`,
-          estimatedResults: 80 + Math.round((campaign.metrics.sourced + 1) * 3.5),
-        };
-        const next = {
-          ...s,
-          campaigns: s.campaigns.map((c) =>
-            c.id === id
-              ? {
-                  ...c,
-                  sourcingStrategy: {
-                    ...c.sourcingStrategy,
-                    githubQueries: [...c.sourcingStrategy.githubQueries, extra],
-                  },
-                }
-              : c,
-          ),
-        };
-        return withActivity(
-          next,
-          makeActivity({
-            type: "sourcing",
-            title: "Generated additional query",
-            notes: extra.query,
-            outcome: `~${extra.estimatedResults} estimated results`,
-            campaignId: id,
-            linkedEntityType: "campaign",
-            linkedEntityId: id,
-          }),
-          id,
-        );
-      }),
     [commit],
   );
 
