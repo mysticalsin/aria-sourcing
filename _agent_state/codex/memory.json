@@ -2,6 +2,10 @@
   "recent_learnings": [
     {
       "date": "2026-07-13",
+      "lesson": "Campaign mutations need synchronous commit results, authoritative role gates, exact runtime projection, non-reflective tests, and aggregate success only when every requested role completes."
+    },
+    {
+      "date": "2026-07-13",
       "lesson": "Store refactors need hook behavior, exact action parity, and static/runtime cycle gates; negative assertions must never reflect full workspace state."
     },
     {

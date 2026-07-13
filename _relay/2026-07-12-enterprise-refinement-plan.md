@@ -1,7 +1,7 @@
 # ARIA enterprise refinement execution plan
 
 **Prepared:** 2026-07-12 23:59 EDT  
-**Current verified source baseline:** `316aecb3056a67ac908d0065070c0827560856e2`
+**Current verified source baseline:** `1450f858d50e0f53cdd323a730ec6b058b152899`
 **Local `origin/main` tracking ref:** `bc4633663c9a7ba3b3b4d52b7f3654384e471cb6`
 **Production verdict:** NO-GO  
 **Purpose:** Executable handoff for Claude Code, Codex, security reviewers, and QA.
@@ -27,19 +27,26 @@ Completion is not a source-only claim. It requires:
 
 ### Source
 
-- The verified source baseline is one source commit ahead of the local
-  `origin/main` tracking ref; Relay documentation commits follow it:
+- The verified source baseline is three local commits ahead of the local
+  `origin/main` tracking ref:
   - `316aecb`: React-free store contracts, hook characterization, and source
     dependency-cycle gates.
+  - `8775096`: Wave 1A Relay and audit handoff.
+  - `1450f85`: campaign/intake action factory, exact runtime projection,
+    viewer denial, fail-closed results, and multi-role launch aggregation.
 - The tracking ref advanced to `bc46336` through a push recorded locally at
   2026-07-13 00:24 EDT. The actor and credential used are unknown. Do not treat
   this as credential-rotation evidence or resume authenticated release work.
 - `npx tsc --noEmit`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed all 135 chained commands.
+- `npm test`: passed all 136 chained commands.
 - `tests/store-contracts.mts`: passed 10/10, covering the 124-action parity,
   provider-bound hook behavior, outside-provider rejection, static cycles,
   runtime cycles, dynamic imports, and positive cycle fixtures.
+- `tests/store-campaign-actions.mts`: passed 22/22, covering permission and
+  commit rejection, exact editable-field projection, JD validation and secret
+  stripping, re-score behavior, query behavior, caller failure handling, and
+  complete-versus-partial launch aggregation.
 - `npm run build`: passed, 59/59 static pages generated.
 - `docker compose config --quiet`: passed after the app and GoTrue default
   port were aligned at 3000.
@@ -139,8 +146,8 @@ Completion is not a source-only claim. It requires:
 
 Current evidence after Wave 1A:
 
-- `src/lib/store.ts` is 6,608 lines.
-- `src/lib/store/contracts.ts` is 445 lines and React-free.
+- `src/lib/store.ts` is 6,525 lines.
+- `src/lib/store/contracts.ts` is 449 lines and React-free.
 - `HermesActions` exposes 124 operations.
 - About 92 source files import the store.
 - Hydration, persistence, actions, chat, memory, selectors, and React context
@@ -165,7 +172,7 @@ passed `npx tsc --noEmit && npm test`, lint, and a 59/59 production build.
 
 Extract one domain per commit:
 
-1. campaign and intake;
+1. campaign and intake: completed in `1450f85` on 2026-07-13;
 2. sourcing and enrichment;
 3. outreach and compliance;
 4. fleet and integrations;
@@ -173,6 +180,20 @@ Extract one domain per commit:
 
 Each factory receives explicit dependencies and returns the existing action
 shape. No factory imports React context.
+
+Campaign/intake exit evidence:
+
+- `src/lib/store/campaign-actions.ts` owns four actions behind explicit
+  dependencies and authoritative mutation checks.
+- `src/lib/store/campaign-launch.ts` makes partial launch results explicit.
+- Campaign updates project only canonical status, previous status, JD, and
+  scoring-weight fields; unknown or malformed data never reaches shared state.
+- Create returns `null`, while update and query return `false`, when authority,
+  state, identity, validation, or commit application fails.
+- Senior full-stack, QA, and cybersecurity reviewers returned GO after closing
+  false-success, undefined-field, opaque-JD, and partial-launch findings.
+- Exact final snapshot passed 22/22 focused tests, 10/10 store-contract tests,
+  all 136 chained commands, zero-warning lint, and a 59/59 production build.
 
 **Exit evidence:** each wave reduces `store.ts`, preserves serialized state,
 and passes before/after behavior fixtures.

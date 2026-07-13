@@ -546,3 +546,19 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Independent security review reproduced Node's direct-object assertion output. The final test compares the boolean `context.state === null` with a fixed message, so a failure cannot reflect `HermesState`.
 **Suggested fix:** Keep security-sensitive negative assertions non-reflective and never print full workspace objects in CI failures.
 **Status:** fixed (`316aecb`; independent closure review and focused 10/10 suite passed)
+
+## 2026-07-13 - Campaign updates trusted broad and opaque client patches
+**Severity:** security
+**File:** src/lib/store/contracts.ts:55; src/lib/store/campaign-actions.ts:213
+**Issue:** The public update accepted `Partial<Campaign>`, allowing client code to replace identifiers, timestamps, metrics, and activity history. The first allowlist still accepted undefined values, invalid enums, malformed warnings, and unknown JD fields that could retain opaque or secret-like data in shared state.
+**Repro/evidence:** Independent reviewers reproduced `status: undefined` corrupting a required field and a valid-looking JD persisting an invalid seniority plus top-level and nested sentinel fields. The final factory projects only four editable fields, validates canonical enums and exact warning fields, strips unknown JD data, validates strict finite scoring weights, and denies live viewers through the authoritative role ref.
+**Suggested fix:** Keep runtime projection at the state boundary even when TypeScript narrows callers, and treat shared workspace JSON as untrusted input.
+**Status:** fixed (`1450f85`; adversarial projection cases and focused 22/22 suite passed)
+
+## 2026-07-13 - Campaign flows reported success after rejected or partial work
+**Severity:** correctness
+**File:** src/lib/store.ts:704; src/app/launch/page.tsx:111; src/lib/store/campaign-launch.ts:15
+**Issue:** The old void commit could reject a mutation while creation returned an orphan campaign. Callers then navigated or sourced that nonexistent ID. Multi-role launch also ignored failed sourcing waves and could report success when only some requested roles completed.
+**Repro/evidence:** Reviewers reproduced commit rejection, viewer denial, failed sourcing, and one-success plus one-creation-failure result sets. The commit boundary now returns a synchronous application result; callers branch on nullable or boolean action outcomes; launch success requires every requested role to be created and sourced.
+**Suggested fix:** Preserve explicit applied/rejected results and keep multi-step UI completion logic in a pure decision function with a complete decision table.
+**Status:** fixed (`1450f85`; focused 22/22, full 136-command gate, and production build passed)
