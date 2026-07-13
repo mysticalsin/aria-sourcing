@@ -19,8 +19,10 @@ function sha256(value: string): string {
 
 const migrationPath = new URL("../supabase/migrations/0025_agent_memory_authority.sql", import.meta.url);
 const routePath = new URL("../src/app/api/agents/run/route.ts", import.meta.url);
+const specsRoutePath = new URL("../src/app/api/agents/specs/route.ts", import.meta.url);
 const migration = existsSync(migrationPath) ? readFileSync(migrationPath, "utf8") : "";
 const route = readFileSync(routePath, "utf8");
+const specsRoute = readFileSync(specsRoutePath, "utf8");
 
 ok("migration 0025 is reserved for agent-memory authority", migration.length > 0);
 ok("normalized encrypted agent memories are created", /create table if not exists public\.agent_memories[\s\S]*content_ciphertext\s+text\s+not null/i.test(migration));
@@ -79,18 +81,17 @@ const runGraphIndex = route.indexOf("runGraph(", postIndex);
 const contextReceiptIndex = route.indexOf("createAgentRunWithMemoryContext(", postIndex);
 
 ok("agent run requires specId", /specId:\s*z\.string\(\)\.uuid\(\)\s*,/.test(route) && !/specId:\s*z\.string\(\)\.uuid\(\)\.optional\(\)/.test(route));
-ok("agent run loads the exact stored spec", specLookupIndex > postIndex && /owner_id,\s*role_brief,\s*channels,\s*guardrails[\s\S]*\.eq\("status",\s*"active"\)/.test(route));
+ok("agent run loads the exact owned stored spec", specLookupIndex > postIndex && /owner_id,\s*role_brief,\s*channels,\s*guardrails[\s\S]*\.eq\("owner_id",\s*userId\)[\s\S]*\.eq\("status",\s*"active"\)/.test(route));
 ok("stored spec authority precedes credential and model egress", specLookupIndex > postIndex && specLookupIndex < keyLookupIndex && specLookupIndex < modelEgressIndex);
 ok(
   "stored channels and guardrails are resolved before durable run receipt",
   route.indexOf("resolveStoredAgentRuntimePolicy", specLookupIndex) > specLookupIndex &&
     route.indexOf("resolveStoredAgentRuntimePolicy", specLookupIndex) < contextReceiptIndex,
 );
-ok(
-  "passing drafts leave the durable run awaiting human review",
-  /const terminalStatus\s*=\s*hasReviewableDrafts\s*\?\s*"awaiting_gate"\s*:\s*"done"/.test(route) &&
-    /status:\s*node\s*===\s*"done"\s*\?\s*terminalStatus\s*:\s*"running"/.test(route),
-);
+ok("runtime policy snapshot persists before memory decryption", /persistAgentRuntimeSnapshot/.test(route) && route.indexOf("persistAgentRuntimeSnapshot") < memoryLoadIndex);
+ok("agent drafts are durable run history without delivery authority", /draftStorage:\s*"run_history"/.test(route) && /deliveryAuthority:\s*"none"/.test(route));
+ok("agent route never misclassifies first-touch drafts as provider outbox replies", !route.includes('.from("messages_outbound")'));
+ok("spec writes trim and reject blank allowed-topic values", /topics_allow:\s*z\.array\(z\.string\(\)\.trim\(\)\.min\(1\)/.test(specsRoute));
 ok("agent run never uses caller campaign authority", !route.includes("validated.data.campaign"));
 ok("agent run never loads shared workspace memory", !route.includes('.from("workspace_state")'));
 ok("agent run retrieves normalized bounded memory", route.includes("loadAgentMemoryContext("));

@@ -140,9 +140,10 @@ export async function POST(req: NextRequest) {
     .select("id,workspace_id,owner_id,role_brief,channels,guardrails,status")
     .eq("id", specId)
     .eq("workspace_id", workspaceId)
+    .eq("owner_id", userId)
     .eq("status", "active")
     .maybeSingle();
-  if (specError || !spec) {
+  if (specError || !spec || spec.owner_id !== userId) {
     return NextResponse.json({ ok: false, reason: "Active agent spec not found." }, { status: 404 });
   }
 
@@ -179,6 +180,30 @@ export async function POST(req: NextRequest) {
       .eq("owner_id", spec.owner_id)
       .eq("spec_id", spec.id);
   };
+
+  const state = initialState(
+    jobAnalysis as unknown as Record<string, unknown>,
+    count,
+    runtimePolicy.policy,
+  );
+  const persistAgentRuntimeSnapshot = async () => {
+    const { data: persisted, error } = await service
+      .from("agent_runs")
+      .update({ node: "planner", state_json: state as unknown as Record<string, unknown>, step_count: 0, status: "running" })
+      .eq("id", runId)
+      .eq("workspace_id", workspaceId)
+      .eq("owner_id", spec.owner_id)
+      .eq("spec_id", spec.id)
+      .select("id")
+      .maybeSingle();
+    if (error || !persisted) throw new Error("Agent runtime snapshot persistence failed.");
+  };
+  try {
+    await persistAgentRuntimeSnapshot();
+  } catch {
+    await failPersistedRun();
+    return NextResponse.json({ ok: false, reason: "Agent runtime snapshot persistence failed." }, { status: 503 });
+  }
 
   let memoryContext;
   try {
@@ -247,23 +272,16 @@ export async function POST(req: NextRequest) {
 
   // stepGraph applies candidateDisclosureContextForCampaignLike before any
   // candidate-facing model prompt; the raw brief remains server-side for sink scans.
-  const state = initialState(
-    campaign.jobAnalysis as unknown as Record<string, unknown>,
-    count,
-    runtimePolicy.policy,
-  );
   let result: Awaited<ReturnType<typeof runGraph>>;
   try {
     result = await runGraph(state, deps, async (node, s, event) => {
-      const hasReviewableDrafts = s.drafts.some((draft) => draft.gatePassed);
-      const terminalStatus = hasReviewableDrafts ? "awaiting_gate" : "done";
       const { error: runError } = await service
         .from("agent_runs")
         .update({
           node,
           state_json: s as unknown as Record<string, unknown>,
           step_count: s.drafts.length + s.planCursor,
-          status: node === "done" ? terminalStatus : "running",
+          status: node === "done" ? "done" : "running",
           ...(node === "done" ? { finished_at: new Date().toISOString() } : {}),
         })
         .eq("id", runId)
@@ -309,7 +327,8 @@ export async function POST(req: NextRequest) {
     candidates,
     totalFound: found.length,
     heldByGate: result.state.drafts.filter((d) => !d.gatePassed).length,
-    reviewQueueStatus: result.state.drafts.some((d) => d.gatePassed) ? "awaiting_gate" : "empty",
+    draftStorage: "run_history",
+    deliveryAuthority: "none",
     errors: result.state.errors,
   });
 }

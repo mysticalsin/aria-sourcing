@@ -33,16 +33,31 @@ const POOL: Record<string, CandidateLite[]> = {
 {
   const email = resolveStoredAgentRuntimePolicy(
     ["Email"],
-    { autopilot: true, canary_remaining: 3, topics_allow: ["architecture", "architecture"] },
+    { autopilot: false, canary_remaining: 5 },
+  );
+  const autonomous = resolveStoredAgentRuntimePolicy(
+    ["Email"],
+    { autopilot: true, canary_remaining: 0 },
+  );
+  const topicRules = resolveStoredAgentRuntimePolicy(
+    ["Email"],
+    { autopilot: false, canary_remaining: 5, topics_allow: ["architecture"] },
+  );
+  const specCap = resolveStoredAgentRuntimePolicy(
+    ["Email"],
+    { autopilot: false, canary_remaining: 5, max_per_day: 1 },
   );
   const mixed = resolveStoredAgentRuntimePolicy(
     ["Email", "WhatsApp"],
     { autopilot: false, canary_remaining: 5 },
   );
   ok(
-    "policy resolver: legacy autopilot remains human-review-only and topics are deduplicated",
-    email.ok && email.policy.queueMode === "human_review" && email.policy.autopilotRequested && email.policy.topicsAllow.length === 1,
+    "policy resolver: supported queue-only defaults produce an auditable Email policy",
+    email.ok && email.policy.queueMode === "human_review" && !email.policy.autopilotRequested,
   );
+  ok("policy resolver: autonomous flags fail closed", !autonomous.ok);
+  ok("policy resolver: unenforced topic rules fail closed", !topicRules.ok);
+  ok("policy resolver: unenforced spec-level daily caps fail closed", !specCap.ok);
   ok("policy resolver: mixed channels fail closed instead of silently dropping one", !mixed.ok);
 }
 
@@ -85,9 +100,8 @@ function makeDeps(overrides?: Partial<GraphDeps> & { planJson?: string; draftBod
   const checkedNodes: string[] = [];
   const policy = {
     channel: "Email" as const,
-    topicsAllow: ["architecture", "career growth"],
     queueMode: "human_review" as const,
-    autopilotRequested: true,
+    autopilotRequested: false,
   };
   const result = await runGraph(
     initialState(BRIEF, 1, policy),
@@ -99,10 +113,20 @@ function makeDeps(overrides?: Partial<GraphDeps> & { planJson?: string; draftBod
   );
   ok("policy: stored snapshot remains in persisted graph state", result.state.executionPolicy?.queueMode === "human_review");
   ok("policy: every executed node is preceded by status revalidation", checkedNodes.length === result.steps && checkedNodes[0] === "planner");
-  ok(
-    "policy: stored allowed topics constrain candidate-facing drafting context",
-    deps.promptCalls.some((prompt) => prompt.includes("Allowed outreach topics: architecture, career growth")),
-  );
+}
+
+{
+  const deps = makeDeps();
+  let stopped = false;
+  try {
+    await runGraph(initialState(BRIEF, 1), deps, undefined, "planner", 0, async (node) => {
+      if (node === "sourcer") throw new Error("spec-paused");
+    });
+  } catch (error) {
+    stopped = error instanceof Error && error.message === "spec-paused";
+  }
+  ok("pause: revalidation failure stops the graph", stopped);
+  ok("pause: no search or later model work runs after the rejected node", deps.generateCalls.length === 1 && deps.promptCalls.length === 1);
 }
 
 // ---------------------------------------------------------------------------

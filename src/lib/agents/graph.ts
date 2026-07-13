@@ -82,7 +82,6 @@ export interface AgentGraphState {
 
 const DEFAULT_EXECUTION_POLICY: AgentExecutionPolicy = {
   channel: "Email",
-  topicsAllow: [],
   queueMode: "human_review",
   autopilotRequested: false,
 };
@@ -207,11 +206,7 @@ export async function stepGraph(node: AgentNode, state: AgentGraphState, deps: G
       if (!target) return { node: "reporter", state, event: { type: "outreach_complete", payload: { drafts: state.drafts.length } } };
       const raw = await deps.generate(
         OUTREACH_SYSTEM,
-        `Role brief:\n${candidateDisclosureContextForCampaignLike(state.brief).slice(0, 2_000)}` +
-          (state.executionPolicy.topicsAllow.length
-            ? `\n\nAllowed outreach topics: ${state.executionPolicy.topicsAllow.join(", ")}`
-            : "") +
-          `\n\nCandidate:\n${JSON.stringify(target)}`,
+        `Role brief:\n${candidateDisclosureContextForCampaignLike(state.brief).slice(0, 2_000)}\n\nCandidate:\n${JSON.stringify(target)}`,
       );
       const parsed = extractJson(raw) as { subject?: string; body?: string } | null;
       const subject = String(parsed?.subject ?? "").slice(0, 255);

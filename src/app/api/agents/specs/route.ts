@@ -20,7 +20,7 @@ const ChannelEnum = z.enum(["Email", "LinkedIn", "WhatsApp", "SMS"]);
 const GuardrailsSchema = z.object({
   autopilot: z.boolean().default(false),
   canary_remaining: z.number().int().min(0).max(50).default(5),
-  topics_allow: z.array(z.string().max(60)).max(20).optional(),
+  topics_allow: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
   max_per_day: z.number().int().min(1).max(200).optional(),
 });
 

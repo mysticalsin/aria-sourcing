@@ -25,7 +25,10 @@ let vaultProvider = "OpenAI";
 let agentSpecAvailable = true;
 let runPersistenceFails = false;
 let agentSpecChannels = ["Email"];
-let agentSpecGuardrails = { autopilot: false, canary_remaining: 5, topics_allow: ["role fit"] };
+let agentSpecGuardrails: Record<string, unknown> = { autopilot: false, canary_remaining: 5 };
+let agentSpecOwnerId = "user-1";
+let agentSpecReadCount = 0;
+let agentSpecRemainsActive = true;
 let capturedAgentPolicy: Record<string, unknown> | undefined;
 const resolverCalls: Array<{ id?: string; provider?: string }> = [];
 const serviceReadTables: string[] = [];
@@ -41,17 +44,18 @@ const session = {
     error: null,
   }),
   from: (table: string) => {
+    const specReadAllowed = agentSpecReadCount++ === 0 || agentSpecRemainsActive;
     const query: any = {
       insert: () => query,
       update: () => query,
       select: () => query,
       eq: () => query,
       maybeSingle: async () => ({
-        data: table === "agent_specs" && agentSpecAvailable
+        data: table === "agent_specs" && agentSpecAvailable && specReadAllowed
           ? {
               id: agentSpecId,
               workspace_id: workspaceId,
-              owner_id: "user-1",
+              owner_id: agentSpecOwnerId,
               role_brief: { title: "Platform Engineer", skills: ["TypeScript"] },
               channels: agentSpecChannels,
               guardrails: agentSpecGuardrails,
@@ -76,16 +80,21 @@ const service = {
     if (["agent_run_memory_context", "agent_memories", "api_keys"].includes(table)) {
       serviceReadTables.push(table);
     }
+    let updated = false;
     const query: any = {
       insert: () => query,
-      update: () => query,
+      update: (value: Record<string, unknown>) => {
+        updated = true;
+        if (table === "agent_runs" && value.state_json) serviceReadTables.push("runtime-policy-snapshot");
+        return query;
+      },
       select: () => query,
       eq: () => query,
       is: () => query,
       or: () => query,
       order: () => query,
       limit: () => query,
-      maybeSingle: async () => ({ data: null, error: null }),
+      maybeSingle: async () => ({ data: table === "agent_runs" && updated ? { id: agentRunId } : null, error: null }),
     };
     return query;
   },
@@ -132,10 +141,19 @@ mock.module(moduleUrl("src/lib/agents/graph.ts"), {
       capturedAgentPolicy = policy;
       return { drafts: [], planCursor: 0, errors: [], report: "", executionPolicy: policy };
     },
-    runGraph: async (state: Record<string, unknown>, deps: { generate: (system: string, prompt: string) => Promise<string> }) => {
+    runGraph: async (
+      state: Record<string, unknown>,
+      deps: { generate: (system: string, prompt: string) => Promise<string> },
+      onStep?: (node: string, state: Record<string, unknown>, event: { type: string; payload: Record<string, unknown> }) => Promise<void>,
+      _startNode?: string,
+      _startStep?: number,
+      beforeStep?: (node: string, state: Record<string, unknown>, step: number) => Promise<void>,
+    ) => {
       graphCalls += 1;
+      if (beforeStep) await beforeStep("planner", state, 0);
       await deps.generate("system", "prompt");
-      return { state };
+      if (onStep) await onStep("done", state, { type: "report", payload: {} });
+      return { state, node: "done", steps: 1 };
     },
   },
 });
@@ -204,6 +222,8 @@ try {
     graphCalls = 0;
     capturedAgentPolicy = undefined;
     serviceReadTables.length = 0;
+    agentSpecReadCount = 0;
+    agentSpecRemainsActive = true;
   };
 
   const viewerResponse = await hermesRoute.POST(hermesRequest());
@@ -310,15 +330,28 @@ try {
   ok("admin can run the live cloud graph agent", adminAgent.status === 200 && adminAgentBody.ok === true);
   ok(
     "graph agent snapshots stored channels and guardrails into its runtime policy",
-    capturedAgentPolicy?.channel === "Email" &&
-      Array.isArray(capturedAgentPolicy?.topicsAllow) &&
-      capturedAgentPolicy.topicsAllow[0] === "role fit" &&
-      capturedAgentPolicy.queueMode === "human_review",
+      capturedAgentPolicy?.channel === "Email" && capturedAgentPolicy.queueMode === "human_review",
+  );
+  ok(
+    "graph agent persists its stored runtime snapshot before memory or provider access",
+    serviceReadTables[0] === "runtime-policy-snapshot",
+  );
+  ok(
+    "graph agent response labels drafts as run history with no delivery authority",
+    (adminAgentBody as Record<string, unknown>).draftStorage === "run_history" &&
+      (adminAgentBody as Record<string, unknown>).deliveryAuthority === "none",
   );
   ok(
     "admin graph agent binds its key before one provider call",
     resolverCalls.some((call) => call.provider === "OpenAI") && graphCalls === 1 && upstreamCalls === 1,
   );
+
+  agentSpecOwnerId = "user-2";
+  resetCalls();
+  const otherOwnerAgent = await agentRoute.POST(agentRequest());
+  ok("graph agent rejects another owner's spec", otherOwnerAgent.status === 404);
+  ok("owner mismatch fails before receipt, memory, vault, graph, or model egress", resolverCalls.length === 0 && serviceReadTables.length === 0 && graphCalls === 0 && upstreamCalls === 0);
+  agentSpecOwnerId = "user-1";
 
   agentSpecChannels = ["WhatsApp"];
   resetCalls();
@@ -329,6 +362,21 @@ try {
     resolverCalls.length === 0 && serviceReadTables.length === 0 && graphCalls === 0 && upstreamCalls === 0,
   );
   agentSpecChannels = ["Email"];
+
+  agentSpecGuardrails = { autopilot: true, canary_remaining: 0 };
+  resetCalls();
+  const unsupportedGuardrailAgent = await agentRoute.POST(agentRequest());
+  ok("graph agent rejects stored guardrails it cannot enforce", unsupportedGuardrailAgent.status === 409);
+  ok("unsupported guardrails fail before receipt, memory, vault, graph, or model egress", resolverCalls.length === 0 && serviceReadTables.length === 0 && graphCalls === 0 && upstreamCalls === 0);
+  agentSpecGuardrails = { autopilot: false, canary_remaining: 5 };
+
+  agentSpecRemainsActive = false;
+  resetCalls();
+  agentSpecRemainsActive = false;
+  const pausedDuringRunAgent = await agentRoute.POST(agentRequest());
+  ok("graph agent stops when its stored spec is paused before the next step", pausedDuringRunAgent.status === 503);
+  ok("mid-run pause prevents provider egress", upstreamCalls === 0);
+  agentSpecRemainsActive = true;
 
   vaultProvider = "Anthropic";
   resetCalls();

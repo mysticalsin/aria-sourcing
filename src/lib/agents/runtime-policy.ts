@@ -11,10 +11,8 @@ const StoredChannelsSchema = z.array(z.enum(["Email", "LinkedIn", "WhatsApp", "S
 
 export interface AgentExecutionPolicy {
   channel: "Email";
-  topicsAllow: string[];
   queueMode: "human_review";
   autopilotRequested: boolean;
-  maxPerDay?: number;
 }
 
 export type AgentRuntimePolicyResult =
@@ -39,17 +37,20 @@ export function resolveStoredAgentRuntimePolicy(
   if (parsedChannels.data.length !== 1 || parsedChannels.data[0] !== "Email") {
     return { ok: false, reason: "Stored agent has no supported queue-only draft channel." };
   }
+  if (
+    parsedGuardrails.data.autopilot ||
+    parsedGuardrails.data.topics_allow.length > 0 ||
+    parsedGuardrails.data.max_per_day !== undefined
+  ) {
+    return { ok: false, reason: "Stored agent uses guardrails this queue-only runtime cannot enforce." };
+  }
 
   return {
     ok: true,
     policy: {
       channel: "Email",
-      topicsAllow: [...new Set(parsedGuardrails.data.topics_allow)],
       queueMode: "human_review",
-      autopilotRequested: parsedGuardrails.data.autopilot,
-      ...(parsedGuardrails.data.max_per_day === undefined
-        ? {}
-        : { maxPerDay: parsedGuardrails.data.max_per_day }),
+      autopilotRequested: false,
     },
   };
 }
