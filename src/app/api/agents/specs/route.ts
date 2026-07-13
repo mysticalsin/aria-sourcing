@@ -68,15 +68,22 @@ export async function GET(req: NextRequest) {
   if ("response" in auth) return auth.response;
   const { data, error } = await auth.supabase
     .from("agent_specs")
-    .select("id, name, role_brief, channels, guardrails, seat_id, flowise_chatflow_id, status, created_at")
+    .select("id, name, role_brief, channels, guardrails, owner_id, seat_id, flowise_chatflow_id, status, created_at")
     .neq("status", "archived")
     .order("created_at", { ascending: false });
   if (error) return NextResponse.json({ ok: false, reason: "Failed to load agents." }, { status: 500 });
   return NextResponse.json({
     ok: true,
-    specs: (data ?? []).map((spec) => ({
+    specs: (data ?? []).map(({ owner_id, ...spec }) => ({
       ...spec,
-      ...describeStoredAgentRuntimeAvailability(spec.role_brief, spec.channels, spec.guardrails),
+      ...describeStoredAgentRuntimeAvailability(
+        spec.role_brief,
+        spec.channels,
+        spec.guardrails,
+        spec.status,
+        owner_id,
+        auth.user.id,
+      ),
     })),
   });
 }

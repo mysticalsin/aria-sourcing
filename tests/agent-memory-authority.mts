@@ -96,6 +96,11 @@ ok("spec writes reuse the fail-closed runtime channel schema", /channels:\s*Supp
 ok("spec writes reuse the fail-closed runtime guardrail schema", /guardrails:\s*SupportedAgentGuardrailsSchema/.test(specsRoute));
 ok("spec writes reuse the executable role-brief schema", /role_brief:\s*SupportedAgentRoleBriefSchema/.test(specsRoute));
 ok("spec reads expose stored runtime availability instead of presenting legacy specs as runnable", /describeStoredAgentRuntimeAvailability/.test(specsRoute));
+ok(
+  "spec read eligibility includes status and exact caller ownership",
+  /select\("id, name, role_brief, channels, guardrails, owner_id,[^\"]*status/.test(specsRoute) &&
+    /describeStoredAgentRuntimeAvailability\([\s\S]*spec\.status,[\s\S]*owner_id,[\s\S]*auth\.user\.id/.test(specsRoute),
+);
 ok("agent run never uses caller campaign authority", !route.includes("validated.data.campaign"));
 ok("agent run never loads shared workspace memory", !route.includes('.from("workspace_state")'));
 ok("agent run retrieves normalized bounded memory", route.includes("loadAgentMemoryContext("));

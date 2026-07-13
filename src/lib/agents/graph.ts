@@ -13,8 +13,8 @@
    Guardrails inherited from the platform:
    - The sourcer only reports candidates the injected search actually returned
      (the runner accumulates real results — the model never invents people).
-   - Every outreach draft passes gateOutbound(); failing drafts are kept as
-     'blocked' for human review, never silently dropped or sent.
+   - Every outreach draft passes gateOutbound(); failing drafts remain blocked
+     in run history with reasons and are never silently dropped or sent.
    - step_count is bounded by MAX_STEPS — a runaway plan halts as 'failed'.
    ========================================================================== */
 
@@ -236,7 +236,7 @@ export async function stepGraph(node: AgentNode, state: AgentGraphState, deps: G
       const report =
         `Sourced ${state.candidates.length} real candidates across ${state.plan?.steps.length ?? 0} searches; ` +
         `${state.screened.length} passed screening (score >= ${state.minScore}); ` +
-        `${passed} drafts ready for approval, ${state.drafts.length - passed} held by the gate` +
+        `${passed} drafts retained in run history, ${state.drafts.length - passed} held by the gate` +
         (state.errors.length ? `; ${state.errors.length} step error(s).` : ".");
       return { node: "done", state: { ...state, report }, event: { type: "report", payload: { passed } } };
     }

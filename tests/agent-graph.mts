@@ -62,7 +62,7 @@ const POOL: Record<string, CandidateLite[]> = {
     { autopilot: false, canary_remaining: 5, quiet_hours: { start: "18:00" } },
   );
   ok(
-    "policy resolver: supported queue-only defaults produce an auditable Email policy",
+    "policy resolver: supported run-history defaults produce an auditable Email policy",
     email.ok && email.policy.draftStorage === "run_history" && email.policy.deliveryAuthority === "none",
   );
   ok("policy resolver: autonomous flags fail closed", !autonomous.ok);
@@ -76,15 +76,39 @@ const POOL: Record<string, CandidateLite[]> = {
     BRIEF,
     ["WhatsApp"],
     { autopilot: false, canary_remaining: 5 },
+    "active",
+    "owner-1",
+    "owner-1",
   );
   ok("read model: legacy unsupported specs are explicitly marked unavailable", !legacyAvailability.runtime_eligible && Boolean(legacyAvailability.runtime_reason));
   const invalidBriefAvailability = describeStoredAgentRuntimeAvailability(
     {},
     ["Email"],
     { autopilot: false, canary_remaining: 5 },
+    "active",
+    "owner-1",
+    "owner-1",
   );
   ok("spec writes: a non-empty role title is required", !SupportedAgentRoleBriefSchema.safeParse({}).success);
   ok("read model: invalid legacy role briefs are explicitly marked unavailable", !invalidBriefAvailability.runtime_eligible && Boolean(invalidBriefAvailability.runtime_reason));
+  const pausedAvailability = describeStoredAgentRuntimeAvailability(
+    BRIEF,
+    ["Email"],
+    { autopilot: false, canary_remaining: 5 },
+    "paused",
+    "owner-1",
+    "owner-1",
+  );
+  const otherOwnerAvailability = describeStoredAgentRuntimeAvailability(
+    BRIEF,
+    ["Email"],
+    { autopilot: false, canary_remaining: 5 },
+    "active",
+    "owner-2",
+    "owner-1",
+  );
+  ok("read model: paused specs are not runnable", !pausedAvailability.runtime_eligible && /active/i.test(pausedAvailability.runtime_reason ?? ""));
+  ok("read model: another owner's specs are not runnable", !otherOwnerAvailability.runtime_eligible && /owner/i.test(otherOwnerAvailability.runtime_reason ?? ""));
 }
 
 function makeDeps(overrides?: Partial<GraphDeps> & { planJson?: string; draftBody?: string }): GraphDeps & { generateCalls: string[]; promptCalls: string[] } {
@@ -173,6 +197,7 @@ function makeDeps(overrides?: Partial<GraphDeps> & { planJson?: string; draftBod
   ok("run: one draft per screened candidate", result.state.drafts.length === 3);
   ok("run: all clean drafts pass gate", result.state.drafts.every((d) => d.gatePassed));
   ok("run: report mentions counts", (result.state.report ?? "").includes("4 real candidates"));
+  ok("run: report truthfully retains drafts in run history without claiming approval", (result.state.report ?? "").includes("retained in run history") && !(result.state.report ?? "").includes("ready for approval"));
   ok("run: events narrate lifecycle", events.includes("plan_ready") && events.includes("screened") && events.includes("report"));
   ok("run: no errors", result.state.errors.length === 0);
 }

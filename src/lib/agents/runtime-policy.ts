@@ -100,7 +100,16 @@ export function describeStoredAgentRuntimeAvailability(
   roleBrief: unknown,
   channels: unknown,
   guardrails: unknown,
+  status: unknown,
+  ownerId: unknown,
+  actorId: unknown,
 ): AgentRuntimeAvailability {
+  if (typeof ownerId !== "string" || typeof actorId !== "string" || ownerId !== actorId) {
+    return { runtime_eligible: false, runtime_reason: "Only the agent owner can run this spec." };
+  }
+  if (status !== "active") {
+    return { runtime_eligible: false, runtime_reason: "Stored agent must be active before it can run." };
+  }
   if (!normalizeStoredAgentRoleBrief(roleBrief)) {
     return { runtime_eligible: false, runtime_reason: "Stored agent role brief is invalid." };
   }

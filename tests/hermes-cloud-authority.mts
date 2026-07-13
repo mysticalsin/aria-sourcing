@@ -358,7 +358,7 @@ try {
   agentSpecChannels = ["WhatsApp"];
   resetCalls();
   const unsupportedChannelAgent = await agentRoute.POST(agentRequest());
-  ok("graph agent rejects a spec with no supported queue-only draft channel", unsupportedChannelAgent.status === 409);
+  ok("graph agent rejects a spec with no supported run-history draft channel", unsupportedChannelAgent.status === 409);
   ok(
     "unsupported stored channels fail before receipt, vault, graph, or model egress",
     resolverCalls.length === 0 && serviceReadTables.length === 0 && graphCalls === 0 && upstreamCalls === 0,
