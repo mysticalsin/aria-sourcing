@@ -1,6 +1,10 @@
 {
   "recent_learnings": [
     {
+      "date": "2026-07-13",
+      "lesson": "Derive documentation facts from package, migration, and config sources; label current operations separately from historical audit evidence."
+    },
+    {
       "date": "2026-07-12",
       "lesson": "Never interpolate credentials into shell argv; use client-native auth and inspect process commands only after excluding authorization arguments."
     },

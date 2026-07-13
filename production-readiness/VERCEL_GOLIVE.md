@@ -1,5 +1,9 @@
 # Vercel go-live runbook — MSourcing LIVE (real tenant)
 
+> LEGACY VERCEL PATH. Retained for historical setup context. It is not the Fly
+> production runbook and its migration range, suite count, and live-state
+> claims are not current. Use `DEPLOYMENT_RUNBOOK.md` and `STATUS.md`.
+
 > Purpose: take the app from "code is ready" to "Tony pastes a need on a public URL and it gets worked."
 > The app is deliberately fail-closed: production without a real Supabase backend refuses to run
 > (it will NOT silently demo). So a cloud Supabase project is mandatory. Steps marked **[YOU]**

@@ -9,7 +9,7 @@ mode.
 
 ## Current Stack
 
-Verified from `package.json` on 2026-07-10:
+Verified from `package.json` on 2026-07-13:
 
 | Area | Current truth |
 |---|---|
@@ -17,7 +17,7 @@ Verified from `package.json` on 2026-07-10:
 | Data/auth | Supabase Postgres, Supabase Auth, RLS tenancy, service-role server APIs |
 | UI/runtime | Tailwind, Recharts, lucide-react, Framer Motion, Three.js/R3F |
 | Node | `22.x` |
-| Verification | `npm test` runs 121 chained checks: 17 `pretest` commands plus 104 test commands |
+| Verification | `npm test` runs 134 chained checks: 18 `pretest` commands plus 116 test commands |
 | Quality gates | `npm run typecheck`, `npm run lint`, `npm test`, `npm run build:isolated` for this OneDrive checkout |
 
 ## Shipped Surfaces
@@ -77,10 +77,17 @@ project to a temporary workspace and runs the normal Next build there.
 
 ## Documentation
 
-[`docs/README.md`](docs/README.md) is the documentation map — it says what every
+[`docs/README.md`](docs/README.md) is the documentation map. It says what every
 top-level directory and doc is for, and separates product docs from the operational
 dossier (`production-readiness/`) and agent working-state (`_relay/`, `_agent_state/`).
 Start there when you're looking for something and don't know which file holds it.
+
+The current developer architecture is
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Change workflow and verification are documented in
+[`CONTRIBUTING.md`](CONTRIBUTING.md) and
+[`docs/TESTING.md`](docs/TESTING.md). Security reporting and invariants are in
+[`SECURITY.md`](SECURITY.md).
 
 ## Deployment
 
@@ -117,7 +124,7 @@ is available.
 The current dated status page is
 [`production-readiness/STATUS.md`](production-readiness/STATUS.md).
 
-## Architecture Map
+## Architecture map
 
 ```text
 src/
@@ -133,6 +140,9 @@ tests/                       Root-level TypeScript test suites
 scripts/                     Local setup, backup/restore, smoke, build helpers
 production-readiness/        Canonical deployment runbook, checklist, status, older evidence pack
 ```
+
+For data ownership, agent isolation, request flows, and deployment boundaries,
+read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 Important code anchors:
 

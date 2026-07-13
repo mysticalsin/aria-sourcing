@@ -45,7 +45,7 @@ primary_region = "cdg"
 # Postgres on 1gb gives tiny shared_buffers → constant disk hits on a starved
 # shared vCPU. shared-cpu-2x/2gb lets the working set stay in cache and doubles
 # query CPU. This is the single biggest DB-side latency win short of collapsing
-# the stack (see DEPLOYMENT.md "Collapse the Supabase stack").
+# the stack (see docs/operations/FLY_SIZING.md for the evidence gate).
 [[vm]]
   size   = "shared-cpu-2x"
   memory = "2gb"

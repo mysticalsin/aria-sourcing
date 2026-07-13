@@ -57,5 +57,6 @@ Rules: facts over narrative; name files/commands/errors; never delete `archive/`
 npx tsc --noEmit && npm test
 ```
 
-55 suites, 0 failures as of 2026-07-09 shift 2. If either tool's change
-breaks this, fix it before committing — never commit red.
+The command list is owned by `package.json`; do not copy a suite count into
+this contract. If either tool's change breaks the gate, fix it before
+committing. Never commit red.

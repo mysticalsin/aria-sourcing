@@ -521,7 +521,7 @@ All checks must pass before a production deploy is triggered. Block the deploy i
 # From the repo root:
 npm run typecheck       # tsc --noEmit; must exit 0
 npm run lint            # next lint; must be "No ESLint warnings or errors."
-npm run test            # 17 pretest + 104 test commands; all must pass
+npm run test            # 18 pretest + 116 test commands; all must pass
 npm run test:security   # security-specific subset (faster); must be 0 failures
 npm run build           # must complete without error in CI or an unsynced checkout
 npm run build:isolated  # required for this OneDrive-synced checkout
@@ -580,6 +580,8 @@ supabase db push
 # 0021_claim_serialization.sql → per-seat FOR UPDATE lock serializes the daily-cap count in claim_and_record
 # 0022_email_send_reconciliation.sql → immutable send_attempt_id + non-retryable 'ambiguous' state for unknown post-acceptance outcomes
 # 0023_conversation_identity.sql → canonical agent_conversations + provider-thread binding; ambiguous inbound fails closed to triage
+# 0024_cross_channel_claim_serialization.sql → shared per-seat cap lock across email and WhatsApp claims
+# 0025_agent_memory_authority.sql → exact owner/spec memory authority, receipts, and legacy-memory quarantine
 ```
 
 **IMPORTANT:** RLS must be enabled on every table listed above. Verify after each migration:

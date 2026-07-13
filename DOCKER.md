@@ -36,7 +36,7 @@ docker compose restart app     # restart just the app after a code change
 | `auth` | supabase/gotrue | email+password login, JWT issuance |
 | `rest` | postgrest | RLS-enforced CRUD + RPCs over `/rest/v1` |
 | `kong` | kong | single API gateway (routes `/auth/v1` + `/rest/v1`), exposed on `:54321` |
-| `supabase-bootstrap` | postgres+curl | one-shot: applies migrations `0001` through `0015`, seeds + promotes the admin user, reloads PostgREST |
+| `supabase-bootstrap` | postgres+curl | one-shot: applies every numbered migration in `supabase/migrations/`, seeds + promotes the local admin user, reloads PostgREST |
 | `obscura` | pinned Rust source build | read-only browser-research sidecar; no host port, stealth, or private-network access |
 | `app` | (this repo) | the Next.js dev server on `:3000` |
 

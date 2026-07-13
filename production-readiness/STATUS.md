@@ -1,6 +1,6 @@
 # Production Readiness Status
 
-**Date:** 2026-07-11
+**Date:** 2026-07-13
 
 This page describes source and release-gate status. It is not evidence that a
 particular production deployment is healthy.
@@ -28,9 +28,10 @@ particular production deployment is healthy.
   mutation and again before receipt creation. Previous encryption keys use a
   key-ID ring; retiring a deployed ring requires exact release-bound owner
   approval.
-- Reply drafting is queue-only: every generated candidate reply enters named
-  human review, and legacy AgentSpec reply flags never grant provider delivery
-  authority.
+- Inbound candidate replies are queue-only and require named human review;
+  legacy reply flags never grant provider delivery authority.
+- Agent graph drafts stay in exact-owner run history with no delivery authority.
+  They do not create a review queue or provider outbox row.
 - Email and WhatsApp claims share one serialized per-seat capacity lock, and an
   ambiguous provider outcome continues to reserve capacity.
 - Agent memory is encrypted, owner/spec scoped, bounded, receipt-bound before

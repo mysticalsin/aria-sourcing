@@ -18,10 +18,12 @@ const tracked = trackedResult.stdout.split("\0").filter(Boolean);
 
 ok("release tip tracks no machine-local Supabase binaries", !tracked.some((path) => path.startsWith(".localbin/")));
 ok("release tip tracks no raw agent execution logs", !tracked.some((path) => path.startsWith(".rocket-fuel/")));
+ok("release tip tracks no machine-local Graphify state", !tracked.some((path) => path.startsWith("graphify-out/")));
 
 const gitignore = readFileSync(".gitignore", "utf8");
 ok("machine-local tool directory is ignored", /^\/\.localbin\/$/m.test(gitignore));
 ok("raw agent execution directory is ignored", /^\/\.rocket-fuel\/$/m.test(gitignore));
+ok("generated Graphify output is ignored", /^\/graphify-out\/$/m.test(gitignore));
 
 const setupSources = [
   "DEPLOY_VERCEL_DEMO.md",

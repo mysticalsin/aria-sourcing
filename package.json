@@ -2,7 +2,7 @@
   "name": "hermes-sourcing",
   "version": "1.0.0",
   "private": true,
-  "description": "Hermes Sourcing — autonomous recruiting operations console (MVP demo, mock integrations, synthetic data).",
+  "description": "ARIA recruiting operations platform with guarded sourcing agents, tenant-scoped memory, and audited outreach.",
   "engines": {
     "node": "22.x"
   },

@@ -130,7 +130,7 @@ that domain lands in the **same shared workspace** automatically
 (`ensure_workspace()` keys the workspace by email domain). For hard enforcement,
 use single-tenant in Azure and/or Supabase auth hooks.
 
-## 6. Run
+## 8. Run
 
 ```bash
 npm install
@@ -138,23 +138,27 @@ npm run dev
 ```
 
 Visit `http://localhost:3000` → you’ll be redirected to **/login** → *Continue
-with Microsoft*. After sign-in, your workspace is created and seeded with the
-synthetic demo data on first load; every action thereafter is persisted to
-Supabase and shared with teammates on your domain.
+with Microsoft*. After sign-in, a missing live workspace starts empty. Demo
+seed data is never substituted into live mode. Saved collaborative state is
+shared with teammates in the same authorized workspace.
 
 ---
 
 ## How persistence works
 
-The app keeps its working state in memory (the React store) and persists the full
-state document to `workspace_state.state` (JSONB), debounced, on every change —
-so the audit trail, campaigns, candidates, outreach, replies, bookings, and
-reports are all tracked server-side and shared across the org via RLS.
+The React store coordinates browser state and persists the shared product
+document in `workspace_state.state` (JSONB). That document is collaboration
+state, not security authority. Live seats, AgentSpecs, runs, memory, integration
+origins, secret bindings, approvals, suppression, delivery claims, and provider
+receipts use normalized tables and server routes.
 
-The domain types in `src/lib/types.ts` map 1:1 to a normalized schema if you later
-want per-table rows (e.g. `candidates`, `outreach_messages`, `activities`). The
-document model is the fast, safe default; normalize when you need SQL analytics.
+The domain types in `src/lib/types.ts` define the persisted browser document
+contract. Any change to that contract must preserve store migrations and live
+workspace compatibility. Database authority changes require a new numbered SQL
+migration and matching negative tests.
 
-**Security notes:** mock integrations stay mock; the service-role key is never
-shipped to the browser; RLS denies cross-workspace reads by default; outreach
-remains dry-run regardless of mode.
+**Security notes:** the service-role key is never shipped to the browser; RLS
+denies cross-workspace reads by default; live delivery requires server-side
+identity, role, approval, suppression, capacity, sender, and provider checks.
+Without all required provider authority, the request fails closed or remains a
+dry run.

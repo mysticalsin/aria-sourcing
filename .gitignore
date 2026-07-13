@@ -2,6 +2,7 @@
 /node_modules
 /.localbin/
 /.rocket-fuel/
+/graphify-out/
 /.pnp
 .pnp.js
 
