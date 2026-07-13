@@ -1,219 +1,218 @@
 ---
 project: MSourcing / ARIA
-shift: 36
+shift: 37
 agent: codex-gpt-5
-updated: 2026-07-13 02:18 EDT
-status: candidate-intake-green-local-main-release-and-live-no-go
+updated: 2026-07-13 14:00 EDT
+status: apollo-authority-source-green-protected-release-and-live-no-go
 ---
 
-# Handoff - guarded candidate intake complete, provider enrichment next
+# Handoff - Apollo paid authority complete, protected production release blocked
 
 ## Current state
 
-- Continue in:
+- Continue only in:
   `/Users/tony/.codex/worktrees/msourcing-campaign-integration`.
 - Branch: `main`.
-- Current verified source commit:
-  `1f898138d7d8c403f8a0adfbcf10fc6bcad0244b`.
-- Local `origin/main` tracking ref:
+- Apollo authority source commit:
+  `ced2a58aa3c06530e46a712ddb2e0e155104a62e`.
+- Local `origin/main` tracking ref remains:
   `bc4633663c9a7ba3b3b4d52b7f3654384e471cb6`.
-- Local `main` is six commits ahead of that tracking ref:
-  `316aecb`, `8775096`, `1450f85`, `7327b2b`, `e070e55`, and
-  `1f89813`.
-- Working tree contains this Relay, findings, plan, and learning update only.
-  Run `git status --short` before touching source because Claude and Codex share
-  the worktree.
-- Bounded source verdict through guarded GitHub/manual intake: GO.
+- Before this Relay evidence commit, local `main` was eight commits ahead of
+  that tracking ref. Re-run `git rev-list --left-right --count
+  origin/main...main` before any remote action.
+- Bounded source verdict for Apollo paid enrichment: GO.
+- Protected-release source verdict: GO, conditional on all external owner and
+  credential gates below.
 - Release verdict: NO-GO.
 - Production verdict: NO-GO.
+- The latest source migration is
+  `supabase/migrations/0026_apollo_enrichment_authority.sql`.
+- Canonical local gate: 146 checks, comprising 28 pretest commands and 118
+  test commands.
 - Detailed execution plan:
-  `_relay/2026-07-12-enterprise-refinement-plan.md`.
+  `/Users/tony/.codex/plans/msourcing-aria-remaining-campaign-blockers-20260712.md`.
 - Adversarial audit record:
   `_relay/codex-findings.md`.
-- Shift 35 archive:
-  `_relay/archive/2026-07-13-0218-codex-gpt-5.md`.
+- Prior baton archive:
+  `_relay/archive/2026-07-13-1400-codex-gpt-5.md`.
 
 ## Done this shift
 
-- Completed the first sourcing action slice in `e070e55`:
-  - extracted `sourceNextBatch` into the React-free
-    `src/lib/store/sourcing-actions.ts` factory;
-  - enforced authoritative source permission, workspace availability, campaign
-    existence and pause state, current-state dedupe, explicit commit truth, and
-    positive-only source events and metric updates;
-  - preserved synthetic sourcing behind its independent demo capability.
-- Completed guarded GitHub and manual candidate intake in `1f89813`:
-  - moved `addCandidateFromGithub` and `addCandidateManual` behind the same
-    explicit factory dependencies;
-  - revalidated workspace, role, campaign, pause state, latest candidates, and
-    scoring weights after provider I/O;
-  - required exact `github.com` profile identity, bounded response DTOs, safe
-    integers and dates, canonical email and URL fields, and redacted bounded
-    provider errors;
-  - projected manual input through a strict allowlist with field, collection,
-    URL, email, control-character, and private-network bounds;
-  - prevented unknown input from overriding IDs, campaign, stage, provenance,
-    source, or other authority-owned fields;
-  - required an operator-selected manual lawful basis and recorded canonical
-    millisecond UTC time plus `operator_selection` source;
-  - added a shared fail-closed lawful-basis validator used by approval, consent
-    display, and Quick Draft eligibility.
-- Corrected the candidate truth model across live sourcing:
-  - unknown experience is `null`, never zero or a generated fallback;
-  - GitHub, Apollo, Seamless, web, Sillage, and chatbox mappings preserve
-    unknown tenure and titles;
-  - unknown experience, company stage, industry, location/timezone, and
-    activity score neutrally;
-  - region matching uses token boundaries, so `Eugene` does not match `EU`;
-  - UI and prompts render unknown facts as not provided rather than fabricated
-    evidence.
-- Corrected multilingual outreach truthfulness:
-  - missing-company greetings are grammatical in English, French, Spanish,
-    German, Portuguese, Italian, and Dutch;
-  - evidence-free profiles use translated generic subjects;
-  - fit-style subjects and personalized greetings require a case-normalized
-    intersection with the role's required skills;
-  - an unrelated profile skill cannot create personalization evidence or a fit
-    claim;
-  - years-only profiles keep a generic subject and use only the verified tenure
-    evidence.
-- Added and expanded adversarial tests:
-  - `tests/store-sourcing-actions.mts`: 23/23;
-  - `tests/rules-confidential.mts`: 58/58;
-  - `tests/mock-ai.mts`: 52/52;
-  - `tests/sourcing.mts`: 48/48;
-  - `tests/web-leads.mts`: 22/22;
-  - `tests/scoring-metrics.mts`: 160/160;
-  - `tests/roles-i18n.mts`: 17/17;
-  - `tests/hermes-live.mts`: 32/32.
-- Final unchanged-snapshot proof for source commit `1f89813`:
-  - `npx tsc --noEmit && npm test && npm run build`: exit 0;
-  - all 137 chained test commands passed;
-  - `npm run lint`: exit 0 with no warnings;
-  - `git diff --check`: exit 0;
-  - production build compiled and generated 59/59 static pages;
-  - full `npm run test:security`: green in the independent security review.
-- Independent closure on working diff SHA-256
-  `41688ff384b9cfdbac7247f16c634fbeb3fa272d3badc1d5af89071cee28f3d6`:
-  - Senior Full-Stack Validator: GO;
-  - QA: GO after finding and closing no-evidence, unrelated-skill, and
-    timestamp parsing gaps;
-  - Cybersecurity Director: bounded GO with no remaining P0/P1 in this slice.
-- Updated the execution plan and Codex findings with exact completed evidence
-  and the remaining provider-enrichment risks.
-- Added the candidate-truth lesson to `_agent_state/codex/memory.json`.
-- Archived shift 35 before rewriting this Baton.
+- Implemented exact Apollo paid-operation authority in migration 0026:
+  - search persists the provider candidate before paid selection;
+  - selection creates an opaque server-owned binding to workspace, tenant,
+    campaign, candidate, provider target, and current persisted candidate;
+  - prepare claims that binding before a human confirmation is issued;
+  - commit serializes quota and idempotency authority, revalidates the persisted
+    candidate and target, and records append-only audit evidence;
+  - candidate removal, mismatch, provider change, or anonymization revokes the
+    authority;
+  - same-workspace authorized teammates may complete a prepared operation;
+    cross-workspace, cross-tenant, campaign, candidate, target, and replay
+    attempts fail closed.
+- Implemented bounded retention and erasure:
+  - encrypted receipts are retained for 30 days;
+  - terminal expired target handles are replaced with `expired:<uuid>` and the
+    provider profile hash is zeroed;
+  - unresolved `in_progress` and `ambiguous` provider handles remain available
+    only for reconciliation;
+  - the exact erasure RPC is idempotent and converges after a lost response.
+- Moved Apollo paid work into the React-free sourcing action factory and added
+  exact typed public errors, current-role checks, current-candidate checks, and
+  persisted commit truth.
+- Made shared-state persistence authoritative before selection or enrichment
+  can report success. A failed save retains one retryable combined snapshot;
+  successful retry installs that exact snapshot locally under the skip-persist
+  guard before clearing recovery state.
+- Added `src/lib/candidate-privacy.ts` as the canonical candidate-rights
+  projection. It removes provider IDs and authority, content, outreach,
+  replies, bookings, wins, ledger PII, suppression mirrors, linked activities,
+  chatbox submissions, ingested IDs, and structured chat PII while preserving
+  unrelated boundary-safe text.
+- Added selection, admin reconciliation, and admin erasure APIs with strict
+  JSON media type, streamed-body byte bounds, no-store typed errors, and exact
+  workspace authority.
+- Added the 5-route, 187-reference OpenAPI contract plus API, retention, and
+  reconciliation documentation.
+- Added the Fly cleanup process and release verifier:
+  - native Node fetch with `redirect: "error"` and a 10-second abort;
+  - startup plus six-hour bounded cleanup passes with workspace isolation;
+  - structured release SHA and cleanup counters, including
+    `expired_targets_scrubbed`;
+  - exact promoted image digest on every web and cleanup Machine;
+  - at least one started web Machine;
+  - exactly one started cleanup Machine plus one stopped, explicitly paired
+    standby on the same digest;
+  - one success event for the exact release SHA created after app activation.
+- A real two-origin redirect test proved the privileged cleanup request did
+  not send `apikey` to the redirected origin.
+- Bound the release verifier into `deploy-fly.sh` before deployment receipt
+  issuance and copied the worker into the production image.
+- Updated the canonical documentation truth to 146 checks and migration 0026.
+- Closed the independent full-stack, Cybersecurity Director, and release QA
+  findings for the bounded Apollo and protected-deploy source scope. All three
+  issued GO after the corrections above.
+- Committed the reviewed source on local `main` as `ced2a58`.
+
+## Verification evidence
+
+- One unchanged source snapshot completed with exit 0:
+  - `npm run lint`;
+  - `npx tsc --noEmit`;
+  - `npm test`;
+  - `npm run build`;
+  - production-image-layout cleanup-worker smoke;
+  - `git diff --check`.
+- The final application chain reported zero failures. Focused results include:
+  - deploy contract 131/131;
+  - bootstrap contract 54/54;
+  - infrastructure release contract 132/132;
+  - volume recovery 35/35;
+  - readiness 9/9;
+  - public fetch 43/43;
+  - function privilege 21/21;
+  - Apollo cleanup 5/5;
+  - candidate privacy 9/9;
+  - erasure route 3/3;
+  - store sourcing actions 35/35;
+  - OpenAPI 5 routes and 187 references;
+  - Apollo authority 47/47;
+  - source authority helper 9/9;
+  - selection 3/3;
+  - reconciliation 8/8;
+  - live-role authority 23/23;
+  - workspace runtime 18/18;
+  - documentation truth 35/35.
+- The production Next.js 16.2.10 build compiled and generated every route.
+- `npm run test:db-apollo-enrichment` exited 0 on the final database snapshot:
+  migration 0026 only, serialized concurrency, same-workspace teammate handoff
+  allowed, terminal provider handle scrubbed, unresolved reconciliation handle
+  preserved.
+- `npm run test:db-privileges` exited 0 on the final database snapshot:
+  restricted direct owner sessions, approved legacy baseline and ledger, and no
+  secret leak.
 
 ## Blockers
 
-1. **GitHub credential rotation is unproven.** A prior CLI credential was
-   exposed through process arguments. Do not reuse it or authenticate until
-   revocation, audit review, and least-privilege replacement are proven.
-2. **The 00:24 push actor is unknown.** The local tracking ref moved to
-   `bc46336`, but the actor and credential remain unknown.
-3. **Current main is not pushed.** Local `main` is six commits ahead of the
-   local tracking ref. Do not push until fresh credentials and remote identity
-   are proven.
-4. **Fly credential rotation is unproven.** Do not perform production Fly
-   mutations with the previously exposed credential.
-5. **Exact CI and CodeQL cause is unknown.** Runs `29221158898` and
-   `29221158901` failed before meaningful execution; exact annotations need
-   fresh authenticated inspection.
-6. **The old release candidate is superseded.** `c3e94b2` does not contain the
-   current store boundaries or guarded intake work.
-7. **Fly DB recovery is still blocked by Alpine package-index networking.**
-   Do not weaken the CVE patch layer or accept a stale repository bypass.
-8. **Owner-controlled release settings are unverified.** Branch protection,
-   protected-environment review, administrator bypass, secret scopes, and
-   bundle-secret removal need current evidence.
-9. **Production is behind reviewed source.** Last verified readiness reported
-   build `d2040b...` and migration `0023`, not current source and migrations
-   through `0025`.
-10. **Enterprise behavior is not fully proven live.** Two-user browser
-    isolation, real email, official WhatsApp, recovery, two restarts, first
-    admin, and final campaign acceptance remain open.
-11. **Paid enrichment is not server-bound to a candidate.** Apollo and
-    Seamless accept client-supplied provider IDs without proving a matching
-    workspace candidate before spending credits or returning contact data.
-12. **Async provider handles are not bound to persistence targets.** Seamless
-    and Sillage polling accept raw request IDs while the browser independently
-    chooses the candidate or campaign receiving the result.
-13. **Sillage returns a company-wide profile batch.** The current status route
-    returns all mapped profiles and the client persists all accepted contacts
-    without a per-candidate reveal decision.
-14. **Remaining provider callbacks use the old effect contract.** Apollo,
-    Seamless, Sillage, and sourcing-agent actions do not yet share the new
-    post-I/O authority, latest-state, exact-DTO, and commit-result gates.
-15. **Sourcing-agent payloads are overbroad.** The route casts opaque campaign
-    and candidate records and sends more candidate context than a bounded
-    dedupe and disclosure projection requires.
-16. **Provider error translation is inconsistent.** Several source routes pass
-    raw exception or upstream detail strings to the browser without one shared
-    redaction and length boundary.
+1. GitHub credential rotation is not proven. Do not reuse any previously
+   exposed or uncertain credential.
+2. The identity and authority of the actor that advanced the remote tracking
+   ref are still unexplained. Prove provenance before trusting the remote.
+3. The local source and Relay commits have not been pushed.
+4. Fly credential rotation and owner-controlled organization access are not
+   proven.
+5. Exact-SHA CI and CodeQL evidence for `ced2a58` and the final Relay commit do
+   not exist because those commits are local.
+6. The protected production workflow has not applied migration 0026 or
+   deployed the new web and cleanup process groups.
+7. Read-only live inspection during this wave showed the existing app on the
+   older `app` process group with one started and one stopped Machine. That is
+   not evidence for the new `web` plus `cleanup` topology.
+8. The owner-controlled branch, environment, secret, approval, first-admin,
+   and recovery controls remain unverified live.
+9. No staging or production receipt yet proves the exact promoted digest on
+   active web, active cleanup, and cleanup standby Machines with a fresh
+   post-activation cleanup success event.
+10. Admin provisioning, restart recovery, two-user authority, one real
+    campaign, and real email and WhatsApp acceptance remain unproven.
+11. `npm run test:fly-db-volume` previously failed before recovery assertions
+    because Docker could not fetch Alpine 3.23 APK indexes. Re-run on a clean
+    network; do not bypass the repository or recovery check.
+12. Seamless and Sillage still accept raw paid-operation or asynchronous
+    provider handles without the Apollo server-owned binding model. The
+    sourcing-agent route still accepts overly broad client objects.
 
 ## Next steps
 
-1. Start with the paid Apollo reveal boundary:
-   - write a red route test showing an arbitrary provider ID can spend or reveal
-     without a workspace candidate binding;
-   - accept a canonical candidate ID, resolve the workspace-owned record
-     server-side, and compare stored platform and external ID;
-   - fail closed before provider I/O on missing, foreign, duplicate, or
-     mismatched records;
-   - return an exact bounded DTO and never expose upstream error text;
-   - require security, full-stack, and QA closure before commit.
-2. Apply the same binding to Seamless start and poll:
-   - persist an opaque workspace-scoped job record bound to candidate and
-     provider external ID;
-   - authorize polling from that record, not a raw client target;
-   - revalidate candidate and workspace before applying contact details;
-   - reject replay, cross-candidate, cross-workspace, and stale handles.
-3. Redesign Sillage as a minimized preview plus explicit candidate selection:
-   - bind every mapping job to workspace and campaign;
-   - return only fields needed to preview and dedupe;
-   - reveal and persist contact data per selected candidate;
-   - prove no company-wide PII batch reaches client state by default.
-4. Extract Apollo, Seamless, Sillage, and sourcing-agent callbacks into the
-   React-free sourcing factory one provider group per commit. Preserve all 124
-   public action names and the store-contract cycle gate.
-5. Replace sourcing-agent opaque casts with exact schemas and minimum-necessary
-   existing-candidate context. Validate every returned candidate with the live
-   candidate DTO before any draft or shared-state commit.
-6. Add one shared provider-error translator with public codes, secret and URL
-   redaction, a hard length cap, and non-reflective tests.
-7. After sourcing/enrichment closes, continue Wave 1B in order:
-   outreach/compliance, fleet/integrations, then chat/sessions/shared UI memory.
-8. Build the Wave 1C persistence adapter and canonical outreach projection
-   resync path.
-9. Rotate GitHub and Fly credentials, audit access, verify remote main, and
-   push only through fresh least-privilege authentication.
-10. Capture exact CI and CodeQL annotations, create a new current-SHA release
-    candidate, then complete protected release, migration, recovery, restart,
-    first-admin, two-user, real-channel, and campaign acceptance gates.
+1. Rotate GitHub credentials, audit repository access, identify the remote
+   actor, and prove the current remote `main` SHA through owner-controlled
+   authentication.
+2. Reconcile local `main` with verified remote truth without force or history
+   destruction. Push `ced2a58` and the Relay evidence commit only after that
+   proof.
+3. Inspect and capture exact-SHA CI and CodeQL results. Fix every current
+   annotation before release.
+4. Use the protected production environment and owner approval to create the
+   exact recovery receipt and run the hardened deployment workflow. No manual
+   unprotected deployment is an acceptable substitute.
+5. Apply migration 0026 through the migration ledger, then verify database,
+   Auth, PostgREST, Kong, application, and readiness behavior against the exact
+   deployed SHA and image digests.
+6. Prove the new live topology: started web, started cleanup, explicitly paired
+   stopped cleanup standby, every Machine on the promoted digest, and one
+   cleanup event for the exact release SHA after app activation with every
+   counter present.
+7. In staging, prove receipt expiry, terminal provider-handle scrubbing,
+   unresolved-handle retention, erasure lost-response convergence, replay
+   denial, cross-boundary denial, and same-workspace authorized teammate
+   completion.
+8. Provision the first admin through the owner-controlled path. Run restart,
+   two-user role separation, a complete campaign, candidate sourcing, Apollo
+   selection and enrichment, approval, real email, real WhatsApp, reply,
+   booking, reporting, export, erasure, and recovery acceptance.
+9. After Apollo is live and accepted, apply the same opaque server binding,
+   bounded DTO, public-error, retention, erasure, and reconciliation model to
+   Seamless and Sillage. Then harden the sourcing-agent client contract.
 
 ## Decisions made (don't relitigate)
 
-- `src/lib/store/contracts.ts` owns the React-free public store contracts;
-  `src/lib/store.ts` remains the compatibility entry point.
-- `src/lib/store/campaign-actions.ts` owns campaign/intake actions.
-- `src/lib/store/sourcing-actions.ts` owns guarded live-batch, exact GitHub, and
-  manual candidate intake actions.
-- Every action factory receives explicit dependencies and imports no React
-  context.
-- Effectful actions check authoritative workspace and role state before I/O and
-  again after I/O, then report success only after a positive commit result.
-- Browser and provider data are runtime projected even when callers are typed.
-- Manual lawful basis is an operator input, not a legal conclusion. The record
-  is complete only with allowed basis, `operator_selection`, and exact
-  millisecond UTC timestamp.
-- Unknown sourced facts remain unknown through mapping, scoring, prompts, UI,
-  consent, and outreach. No role, title, tenure, or fit evidence is invented.
-- Personalized outreach claims require canonical shared evidence. Generic copy
-  is the fail-safe when evidence is absent or unrelated.
-- Normalized outreach rows own delivery authority; `workspace_state` remains a
-  UI projection.
-- Source, release, and live evidence are separate claims.
-- No exposed credential may be reused.
+- Paid provider authority is server-owned and opaque. A raw client provider ID
+  never authorizes spend or disclosure.
+- Persist the candidate before selection, prepare before human confirmation,
+  and commit only against the exact receipt-bound authority.
+- Same-workspace authorized teammate handoff is allowed. Tenant, workspace,
+  campaign, candidate, target, and replay boundaries remain exact.
+- Scrub terminal expired provider handles. Retain unresolved handles only for
+  bounded reconciliation.
+- Candidate-rights UI must state what the system actually removes and saves;
+  it must not claim immediate global deletion.
+- Privileged worker requests deny redirects and have bounded timeouts.
+- Release proof binds the exact SHA, image digest, process topology, activation
+  window, and complete cleanup counters.
+- Source, release, and live acceptance are separate claims.
+- No exposed or unproven credential may be reused.
+- No push or production deploy is authorized until remote actor provenance and
+  credential rotation are proven.
 
 ## Watch out
 
@@ -223,17 +222,15 @@ status: candidate-intake-green-local-main-release-and-live-no-go
   intentionally created.
 - Claude and Codex share this worktree. Treat every uncommitted file as real
   work and inspect `git status` before editing or committing.
-- Do not put credentials into argv, process listings, logs, Relay, URLs, or
-  fixtures.
-- Do not infer safe authentication from the unexplained tracking-ref advance.
-- Do not run `git push` until credential rotation and remote identity are
-  proven.
-- Do not authorize paid provider work from a client-supplied external ID or raw
-  polling handle.
-- Do not return a full provider record when an exact bounded DTO is sufficient.
-- Do not make provider-action factories both transport adapters and opaque
-  state reducers. Keep effect, validation, and commit boundaries explicit.
-- Do not treat interrupted exit-130 runs as evidence. The valid final gate is
-  the unchanged-snapshot exit-0 run recorded above.
-- Do not claim production readiness from local source gates or live migration
-  `0023`.
+- Do not put credentials, cookies, emails, Machine IDs, or tokens into argv,
+  process listings, logs, Relay, URLs, or fixtures.
+- Do not infer safe authentication from a tracking ref or successful network
+  connection.
+- Do not push through unrotated authentication and do not run an unprotected
+  production deploy.
+- The current live `app` process group is old topology, not proof of the new
+  `web` plus `cleanup` release.
+- An interrupted test is not evidence. The valid final source proof is the
+  unchanged-snapshot exit-0 gate and the two exit-0 PostgreSQL gates above.
+- Keep the broader enterprise verdict open until Seamless, Sillage, the
+  sourcing-agent boundary, the protected release, and live acceptance close.

@@ -574,10 +574,10 @@ Historical and current findings follow. The current consolidated audit is
 ## 2026-07-13 - Paid enrichment accepts unbound provider identifiers
 **Severity:** security
 **File:** src/app/api/source/apollo/enrich/route.ts:19; src/app/api/source/seamless/research/route.ts:19
-**Issue:** An authenticated source-capable caller can submit any bounded Apollo or Seamless provider identifier. The server checks role and resolves a workspace key but does not prove that the identifier belongs to a candidate sourced into that workspace before spending provider credits or revealing contact data.
-**Repro/evidence:** `ApolloEnrichSchema` accepts only `apolloId` and `revealPhone`; `SeamlessResearchSchema` accepts only `searchResultId`. Neither route resolves a workspace candidate or compares a stored platform and external ID before calling the paid provider operation.
+**Issue:** The original Apollo and current Seamless flows accepted bounded raw provider identifiers without a server-owned binding to the persisted workspace candidate before spending provider credits or revealing contact data.
+**Repro/evidence:** Apollo is fixed in `ced2a58`: search persists the candidate, selection creates an exact server-owned workspace, campaign, candidate, target binding, prepare claims it before confirmation, and commit revalidates it. `SeamlessResearchSchema` still accepts `searchResultId` without the equivalent binding.
 **Suggested fix:** Accept a canonical candidate ID, resolve the workspace-owned candidate server-side, verify provider and external ID, then spend or reveal only for that exact record.
-**Status:** open
+**Status:** open (Apollo fixed in `ced2a58`; Seamless remains open)
 
 ## 2026-07-13 - Async enrichment handles are not bound to their persistence target
 **Severity:** security
@@ -597,11 +597,11 @@ Historical and current findings follow. The current consolidated audit is
 
 ## 2026-07-13 - Remaining provider actions lack the guarded action contract
 **Severity:** correctness
-**File:** src/lib/store.ts:795; src/lib/store.ts:992; src/lib/store.ts:1151
-**Issue:** Apollo, Seamless, Sillage, and sourcing-agent actions still live in the React coordinator. Several snapshot authority and campaign data before I/O, then commit after await without rechecking current role, workspace, campaign state, dedupe state, or whether the commit applied.
-**Repro/evidence:** The completed GitHub/manual factory has explicit pre-I/O and post-I/O checks plus boolean commit truth. The remaining callbacks use the old `workspaceEffectAllowed` precheck and do not test an applied result before reporting completion or emitting activity.
+**File:** src/lib/store.ts:946; src/lib/store.ts:1115; src/lib/store.ts:1145; src/lib/store.ts:1222
+**Issue:** Seamless, Sillage, and sourcing-agent actions still live in the React coordinator. Several snapshot authority and campaign data before I/O, then commit after await without rechecking current role, workspace, campaign state, dedupe state, or whether the commit applied.
+**Repro/evidence:** Apollo now uses the guarded sourcing factory in `ced2a58`, including exact pre-I/O, post-I/O, DTO, binding, persistence, and commit-result gates. The remaining callbacks still use the old coordinator pattern.
 **Suggested fix:** Extract one provider action group at a time into the sourcing factory and port the same authority, response projection, latest-state, and applied-result decision table.
-**Status:** open
+**Status:** open (Apollo fixed in `ced2a58`; Seamless, Sillage, and sourcing-agent remain open)
 
 ## 2026-07-13 - Sourcing agent trusts full client objects and returns full candidates
 **Severity:** security
@@ -613,8 +613,40 @@ Historical and current findings follow. The current consolidated audit is
 
 ## 2026-07-13 - Provider errors cross the server boundary without one bounded translator
 **Severity:** security
-**File:** src/app/api/source/apollo/enrich/route.ts:73; src/app/api/source/sillage/start/route.ts:68
-**Issue:** Source routes return raw exception messages or provider detail strings to the browser. Upstream bodies can contain request details, identifiers, or unbounded text, and each adapter applies a different error policy.
-**Repro/evidence:** Apollo returns `err.message`; Seamless and Sillage routes return `result.detail || result.title`. There is no shared redaction, length cap, or allowlisted public-error mapping across these routes.
+**File:** src/app/api/source/seamless/research/route.ts:56; src/app/api/source/sillage/start/route.ts:68
+**Issue:** Remaining source routes return provider detail strings to the browser. Upstream bodies can contain request details, identifiers, or unbounded text, and each adapter applies a different error policy.
+**Repro/evidence:** Apollo now returns bounded typed errors in `ced2a58`. Seamless and Sillage still return `result.detail || result.title`; there is no shared allowlisted public-error mapping across those routes.
 **Suggested fix:** Centralize provider error classification, redact known secret and URL material, cap length, log only a safe diagnostic code, and return a bounded public message.
-**Status:** open
+**Status:** open (Apollo fixed in `ced2a58`; Seamless and Sillage remain open)
+
+## 2026-07-13 - Apollo paid work lacked exact persisted authority
+**Severity:** security
+**File:** supabase/migrations/0026_apollo_enrichment_authority.sql:1; src/lib/store/sourcing-actions.ts:1309
+**Issue:** Apollo enrichment previously spent against a client-supplied external identifier without a durable, replay-safe server record proving the exact workspace, campaign, candidate, target, confirmation, and attempt authority.
+**Repro/evidence:** Migration 0026 and the guarded sourcing factory now require a persisted Apollo candidate and exact target binding, revoke stale or anonymized targets, serialize prepare and commit, permit only same-workspace authorized teammate handoff, and deny cross-workspace, tenant, campaign, candidate, and replay cases. The TypeScript authority matrix passed 47/47 and the real PostgreSQL authority gate exited 0.
+**Suggested fix:** Keep all future paid providers on the same select, prepare, confirm, commit, reconcile authority model.
+**Status:** fixed (`ced2a58`)
+
+## 2026-07-13 - Successful retry could leave local state behind persisted state
+**Severity:** correctness
+**File:** src/lib/store.ts:639; src/lib/store.ts:657
+**Issue:** A failed authoritative save retained a retryable snapshot, but a later successful retry could clear recovery state without installing that exact snapshot locally. A subsequent save could overwrite the recovered server document with stale local state.
+**Repro/evidence:** Retry success now installs `pending.snapshot` in the local state and state ref under the exact skip-persist guard before clearing recovery state. The focused recovery convergence matrix passed 18/18 and the unchanged-snapshot full gate passed.
+**Suggested fix:** Preserve remote and local convergence as one atomic success condition for every retryable shared-state save.
+**Status:** fixed (`ced2a58`)
+
+## 2026-07-13 - Candidate anonymization left linked privacy data behind
+**Severity:** security
+**File:** src/lib/candidate-privacy.ts:14; src/lib/candidate-privacy.ts:156
+**Issue:** Candidate removal needed one canonical projection covering provider authority and receipts, outreach, replies, bookings, wins, activity, chat, suppression, ingestion, and structured content without deleting unrelated short-name text.
+**Repro/evidence:** `anonymizeHermesState` removes exact candidate-linked data, redacts structured content, revokes Apollo authority, handles punctuation around identifiers, and uses boundary-aware matching to avoid cases such as Ian inside compliance. The focused privacy suite passed 9/9 and the real PostgreSQL erasure path proved lost-response convergence.
+**Suggested fix:** Route every candidate-rights operation through the canonical privacy projection and server erasure RPC.
+**Status:** fixed (`ced2a58`)
+
+## 2026-07-13 - Cleanup worker could leak authority or accept stale release proof
+**Severity:** security
+**File:** scripts/apollo-authority-cleanup-worker.mjs:25; scripts/verify-apollo-cleanup-release.mjs:38
+**Issue:** A privileged cleanup worker must not forward its service-role header across redirects, and release verification must not accept an old success event, partial process topology, a mismatched image, or incomplete counters.
+**Repro/evidence:** The worker denies redirects, applies a 10-second abort, emits the exact release SHA and all counters, and isolates bounded workspace failures. A real two-origin test proved the redirected origin received no `apikey`. The verifier requires the promoted digest on all web and cleanup Machines, one active cleanup Machine, one explicitly paired stopped standby, and a success event created after app activation with every expected counter. Focused cleanup tests passed 5/5 and deploy-contract tests passed 131/131.
+**Suggested fix:** Keep privileged background workers redirect-denying and bind operational receipts to the exact promoted artifact, topology, release, and activation window.
+**Status:** fixed (`ced2a58`)
