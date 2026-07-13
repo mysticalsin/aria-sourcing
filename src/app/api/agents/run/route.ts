@@ -34,9 +34,9 @@ export const runtime = "nodejs";
  * (planner → sourcer → screener → outreach → reporter) over the same real
  * search + deterministic scoring the single-shot /api/sourcing-agent uses.
  *
- * Same posture as that route: TEXT + SEARCH ONLY. This never sends anything;
- * gate-passing drafts enter queue-only human review before send. This route
- * never approves or sends candidate communication.
+ * Same posture as that route: TEXT + SEARCH ONLY. This never sends anything.
+ * Gate-passing drafts remain in run history with no delivery authority; this
+ * route creates no approval queue and sends no candidate communication.
  *
  * Every run is bound to one active stored agent spec. Its approved encrypted
  * memory selection is receipted before model execution, and every graph node

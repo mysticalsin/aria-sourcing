@@ -2,8 +2,8 @@
 
 /* Agent Studio — create and tune on-demand sourcing agents. Flow execution is
    limited to ARIA-owned runtime bindings; Flowise authoring is intentionally
-   private until a per-workspace deployment boundary exists. Reply drafting is
-   queue-only: every generated reply waits for a named human reviewer. */
+   private until a per-workspace deployment boundary exists. Generated drafts
+   remain in run history and have no delivery authority. */
 
 import * as React from "react";
 import { Bot, ShieldCheck, Wand2 } from "lucide-react";
@@ -26,6 +26,8 @@ interface SpecRow {
   channels: string[];
   flowise_chatflow_id: string | null;
   status: string;
+  runtime_eligible: boolean;
+  runtime_reason: string | null;
 }
 
 const SUPPORTED_CHANNELS = ["Email"] as const;
@@ -91,7 +93,7 @@ export default function StudioPage() {
       });
       const json = (await res.json()) as { ok: boolean; reason?: string };
       if (!json.ok) throw new Error(json.reason ?? "Create failed");
-      toast({ title: "Agent created. Generated replies will wait for human review.", variant: "success" });
+      toast({ title: "Agent created. Generated drafts will remain in run history.", variant: "success" });
       setName("");
       setRoleTitle("");
       setSkills("");
@@ -164,8 +166,8 @@ export default function StudioPage() {
                 {saving ? "Creating…" : "Create agent"}
               </Button>
               <p className="text-xs text-muted">
-                Reply drafting is queue-only. Every generated reply stays in human review until a named operator
-                approves its exact content and recipient.
+                Generated Email drafts are stored in run history only. This workflow has no review queue and no
+                delivery authority.
               </p>
             </form>
           </CardContent>
@@ -218,11 +220,19 @@ export default function StudioPage() {
                       </div>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-2">
-                      <div className="flex items-center gap-2 text-xs text-muted">
-                        <ShieldCheck className="h-3.5 w-3.5" />
-                        Reply drafting
-                        <Badge tone="success">Human review</Badge>
-                      </div>
+                      {spec.runtime_eligible ? (
+                        <div className="flex items-center gap-2 text-xs text-muted">
+                          <ShieldCheck className="h-3.5 w-3.5" />
+                          Draft storage
+                          <Badge tone="neutral">Run history only</Badge>
+                        </div>
+                      ) : (
+                        <div className="flex max-w-sm flex-col items-end gap-1 text-xs text-danger">
+                          <Badge tone="danger">Execution blocked</Badge>
+                          <span className="text-right">{spec.runtime_reason ?? "Stored policy is not executable by this runtime."}</span>
+                        </div>
+                      )}
+                      <span className="text-xs text-muted">No delivery authority</span>
                       {spec.flowise_chatflow_id && <Badge tone="neutral">Workspace-bound Flowise runtime</Badge>}
                     </div>
                   </div>

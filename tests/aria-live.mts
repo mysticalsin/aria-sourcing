@@ -60,15 +60,23 @@ ok(
     !/variant:\s*"success"[^)]*Synthetic demo reset/s.test(`${topbar}\n${settingsPage}`),
 );
 ok(
-  "agent specs route user-facing wording is queue-only human review, not autopilot/canary",
-  specsRouteBanner.includes("queue-only") &&
-    specsRouteBanner.includes("human review") &&
+  "agent specs route truthfully describes run-history storage with no delivery authority",
+  specsRouteBanner.includes("run history") &&
+    specsRouteBanner.includes("no delivery authority") &&
     !/autopilot|canary/i.test(specsRouteBanner),
 );
 ok(
   "Agent Studio exposes only the channel its runtime can execute",
   /const SUPPORTED_CHANNELS = \["Email"\] as const/.test(studioPage) &&
     !/const (?:ALL|SUPPORTED)_CHANNELS = \[[^\]]*(?:WhatsApp|LinkedIn|SMS)/.test(studioPage),
+);
+ok(
+  "Agent Studio distinguishes runnable and legacy-blocked specs without claiming an approval queue",
+  studioPage.includes("runtime_eligible") &&
+    studioPage.includes("Run history only") &&
+    studioPage.includes("No delivery authority") &&
+    studioPage.includes("Execution blocked") &&
+    !/wait(?:s|ing)? (?:in|for) (?:named )?human review|awaiting approval/i.test(studioPage),
 );
 
 console.log(`RESULT aria-live: ${pass} passed, ${fail} failed`);

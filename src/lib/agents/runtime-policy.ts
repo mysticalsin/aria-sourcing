@@ -18,6 +18,11 @@ export type AgentRuntimePolicyResult =
   | { ok: true; policy: AgentExecutionPolicy }
   | { ok: false; reason: string };
 
+export interface AgentRuntimeAvailability {
+  runtime_eligible: boolean;
+  runtime_reason: string | null;
+}
+
 /**
  * The graph currently produces first-touch email drafts only. Stored specs for
  * other channels fail closed instead of silently running with Email semantics.
@@ -41,4 +46,14 @@ export function resolveStoredAgentRuntimePolicy(
       autopilotRequested: false,
     },
   };
+}
+
+export function describeStoredAgentRuntimeAvailability(
+  channels: unknown,
+  guardrails: unknown,
+): AgentRuntimeAvailability {
+  const resolved = resolveStoredAgentRuntimePolicy(channels, guardrails);
+  return resolved.ok
+    ? { runtime_eligible: true, runtime_reason: null }
+    : { runtime_eligible: false, runtime_reason: resolved.reason };
 }
