@@ -1,63 +1,81 @@
 ---
 project: MSourcing / ARIA
-shift: 29
-agent: claude-opus-4-8
-updated: 2026-07-11 23:55 EDT
-status: exact-sha-ci-codeql-green-owner-gates-are-the-only-blockers
+shift: 30
+agent: codex-gpt-5
+updated: 2026-07-12 20:57 EDT
+status: source-integration-green-fly-volume-build-blocked-by-alpine-network-live-release-not-proven
 ---
 
-# Handoff — recovery candidate integrated; owner gates are the critical path
+# Handoff - source integration green; production release still gated
 
 ## Current state
 
-- **Integration complete.** The reviewed recovery candidate `c6c7a0ae5bb85ce7d31d56106d153fc488daae80` is now the tip of the shared branch `deploy/fly-github-actions` (fast-forward from base `4b24d39`, real SHA preserved — no cherry-pick, no rewrite).
-- Worktree = candidate content exactly, plus 4 newer meta files kept from the shared tree (`_relay/HANDOFF.md`, `_relay/codex-findings.md`, both `_agent_state/*/memory.json`) and 12 untracked intentionally-excluded paths (incident, 2026-07-11 relay archives, enterprise audit, superseded scripts). Nothing was discarded.
-- **Full pre-integration state is preserved** in ref `snapshot/shared-20260711-preintegration` (commit `3ec69a3`, tree `8c54d4c`) — every tracked and untracked file as it stood before integration. Recover any path with `git show 3ec69a3:<path>`.
-- Post-integration verification: `npx tsc --noEmit` clean; `tests/login-page.mts` 15/15. (Codex ran the complete gate suite on this exact content as `c6c7a0a` — see shift 28.)
-- Login page carries BOTH change sets with no conflict: Tony's layout (Aria M mark top-left, background-motion toggle bottom-left) + Codex's azure-login gating and email-focus CTA fallback.
-- Push safety was verified before pushing: `ci.yml`/`codeql.yml` trigger on push (wanted — exact-SHA proof), zero workflows reference `ARIA_DEPLOY_BUNDLE`, deploy workflow is `workflow_dispatch`-only and remotely disabled. Repo visibility: Tony decided (2026-07-11) the repo stays PUBLIC until the backend is live and a campaign runs; flip to private is the final closeout step.
-- Production verdict remains **NO-GO** — unchanged from shift 28. Nothing was deployed; no Fly access was used; the token incident stays open.
+- Integration branch: `codex/aria-campaign-integration-20260712`.
+- Current local integration tip includes `main` merged in cleanly, so Tony's local `main` commits for login branding, Supabase browser retry, Fly VM sizing, and docs are present.
+- Remote truth checked on 2026-07-12: `origin/HEAD` points to `vercel-demo`, not `main`. Remote `main` is `ed002dc43217c94349edf210edc6a05503b80666`; local `main` is `128b03678fc4619fdf4572e0579b1a80994e2493`; integration branch is ahead of both after the local `main` merge.
+- Source-level campaign blockers fixed locally: queue-only reply drafting, SMS containment, cross-channel daily-cap serialization, agent memory authority, recovery schema allowlists, repo hygiene, workspace degraded-state fail-closed behavior, and page-level unavailable/error states.
+- Production is not declared done. The protected deploy, live DB/Auth restart survival, `/api/ready`, admin provisioning, and synthetic zero-send campaign acceptance are not proven on the pushed release SHA.
 
 ## Done this shift
 
-- Triaged the 2 open findings from the Claude adversarial review (secret-provisioning trap, dotfile-restart footgun): both already fixed by Codex in `c6c7a0a` (seven-secret staged verification; HISTFILE suppression + regular-file cleanup in the entrypoint). Statuses reflect that in `_relay/codex-findings.md`.
-- Snapshotted the shared dirty tree (tracked+untracked) to `snapshot/shared-20260711-preintegration` before touching anything (HANDOFF shift-28 next-step 1).
-- Computed the TRUE content diff via a temp index (raw `git status` was misleading: untracked-on-disk files showed as `D`), classified all 112 differing paths, confirmed `c6c7a0a` is a direct child of the shared HEAD.
-- Fast-forwarded `deploy/fly-github-actions` to `c6c7a0a` via `git reset --mixed` + selective checkout, keeping the 4 newer meta files and all excluded confidential paths untracked on disk (HANDOFF shift-28 next-step 2 / blocker 6 resolved).
-- Verified integrated tree (tsc clean, login-page 15/15) and pushed the branch to origin to start exact-SHA CI + CodeQL (gate-9 evidence).
+- Merged local `main` into `codex/aria-campaign-integration-20260712` with no conflicts.
+- Re-ran the post-merge release gates:
+  - `npx tsc --noEmit` passed.
+  - `npm run lint` passed.
+  - `npm run test:security` passed, including agent memory, queue-only autopilot, MCP, Dust, Hermes, Vault, callback, RBAC, API, guardrail, web, browser, gate, and autopilot suites.
+  - `npm test` passed end to end after the `main` merge. It includes 18 pretest contracts plus the full app chain through repository hygiene, workspace availability, docs truth, font/build-output, and isolated build.
+  - `npm audit --audit-level=high` passed with `found 0 vulnerabilities`.
+  - `gitleaks git . --redact=100 --no-banner --config .gitleaks.toml --log-opts='--all'` scanned 247 commits and found no leaks.
+  - `npm run test:db-cross-channel-cap` passed: `concurrent_claims=1 active_claims=1 ambiguous=blocked deadlock=none privileges=service-only`.
+  - `npm run test:db-agent-memory` passed: `authority=pass isolation=pass quarantine=hash-only receipts=content-free concurrency=pass idempotence=pass`.
+  - `npm run test:db-privileges` passed: `postgres=restricted-direct supabase_admin=direct cross_owner=denied rotation=pass idempotence=pass empty_preflight=read-only legacy_preflight=read-only complete_preflight=read-only legacy_baseline=approved ledger=filename-sha secret_leak=none`.
+  - `git diff --check` passed and the integration worktree was clean before Baton edits.
+- Re-ran the Fly DB volume recovery gate. It did not reach the app assertions because the Docker build failed at Alpine package index fetch:
+  - command: `npm run test:fly-db-volume`
+  - failing layer: `RUN apk upgrade --no-cache && apk add --no-cache su-exec && rm -f /usr/local/bin/gosu`
+  - exact error: `WARNING: fetching https://dl-cdn.alpinelinux.org/alpine/v3.23/main/aarch64/APKINDEX.tar.gz: Operation timed out`
+  - exact error: `WARNING: fetching https://dl-cdn.alpinelinux.org/alpine/v3.23/community/aarch64/APKINDEX.tar.gz: Operation timed out`
+  - terminal error: `ERROR: Not continuing due to stale/unavailable repositories. Use --force-missing-repositories to continue.`
+  - exit: Docker build exit code 99.
+- Tried mirror overrides during diagnosis and rejected them because `dl-2.alpinelinux.org`, `mirrors.edge.kernel.org`, and `mirror.leaseweb.com` were also unreachable from this machine. The Dockerfile mirror override was removed before this Baton was written.
+- Archived previous Baton to `_relay/archive/2026-07-12-2057-codex-gpt-5.md`.
 
-- Fixed the exact-SHA CI supply-chain gate through three diagnosed rounds (first real runs of the hardened pipeline): (1) app image — stripped npm/corepack/yarn from the runner stage (fixable sigstore/picomatch HIGHs lived in npm's bundled deps) and flipped both workflows to --ignore-unfixed=true so only actionable CVEs block (19 unfixable Debian CVEs incl. CVE-2023-45853 no longer permanently redline the gate); (2) app secret scan — disabled only Trivy's linkedin-client-id public-identifier rule (Sillage field-name false positive, same family as the Gitleaks line-allows), linkedin-client-secret stays armed, contract-pinned unbroadenable; (3) db image — apk upgrade + gosu->su-exec swap (12 fixable Go-stdlib HIGHs in gosu), pre-emptive apt upgrades + gosu removal for bootstrap, apt upgrade for kong. Commits f518572, b75f93c, b1fc503.
-- Fixed the three campaign-blocking product findings via a 6-agent build (maps -> builders, disjoint ownership): 0021 per-seat FOR UPDATE cap serialization (d29cd40, 14/14), 0022 email ambiguity doctrine — immutable send_attempt_id + non-retryable 'ambiguous' + phase-aware adapters (aa60671, 54/54), 0023 canonical agent_conversations + claim-bound WhatsApp resolver RPC + provider-thread-first email matching, ambiguity fails closed to triage (318f552, 30/30).
-- Integration: wired the three suites into npm test (124 chained checks), STATUS.md/RUNBOOK updated, resolve_whatsapp_inbound_conversation added to the live-PG service-RPC assertion list, findings ledger updated (3 fixed, 2 follow-ups filed: SMS unknown-outcome retry; cross-channel cap race in claim_whatsapp_outbound). Full gate: npm test exit 0, tsc clean. Commit 9aee49e.
+## Blockers
 
-## Blockers (owner-controlled — the critical path, unchanged from shift 28)
-
-1. Revoke the exposed Fly token (`_relay/incidents/2026-07-11-fly-deploy-token-exposure.md`), prove rejection, review activity, issue split-scope short-lived credentials.
-2. Delete repository-level `ARIA_DEPLOY_BUNDLE`; install individual Production-environment secrets per `production-readiness/.fly-secrets.example`.
-3. Branch protection: put the workflow on the default branch (`vercel-demo`), protect `vercel-demo` + `deploy/fly-github-actions`, require exact-SHA CI/CodeQL, block self-review, re-enable the workflow.
-4. Preserve + inspect a disposable clone of `aria_db_data`; produce the release-bound recovery receipt.
-5. Dispatch the protected workflow with the exact SHA + receipt hash; complete live acceptance (DB ready + 2-restart survival, Auth/REST 200, `/api/ready` 200, digests match, admin login, synthetic zero-send campaign).
-6. Remaining product findings in `_relay/codex-findings.md`: the three campaign blockers (email ambiguity, daily-cap race, inbound identity) are FIXED in source as of this shift; still open: agent memory ownership, autopilot contract, SMS unknown-outcome retry, cross-channel cap race, repo binaries/logs retention. Backend deploy alone does NOT make campaigns production-ready.
+1. **Fly DB volume gate is blocked by local outbound access to Alpine repositories.** This is not a schema assertion failure. The test cannot complete while Docker cannot fetch Alpine indexes during the DB image build.
+2. **Live production acceptance is not proven.** Do not call the app fully production-ready until the exact pushed release SHA has passed the protected deploy and live acceptance checklist.
+3. **Owner-controlled secret and release gates remain mandatory:**
+   - Revoke the exposed Fly token and prove rejection/review.
+   - Delete repository-level `ARIA_DEPLOY_BUNDLE`; use individual Production-environment secrets.
+   - Put the protected workflow on the default branch or change the default branch intentionally; require exact-SHA CI/CodeQL/security gates; block self-review.
+   - Preserve and inspect a disposable clone of `aria_db_data`; produce the release-bound recovery receipt.
+   - Dispatch the protected workflow using the exact release SHA plus receipt hash.
+   - Verify DB/Auth/REST/Kong/readiness, two DB restarts, digests, admin login, and a synthetic zero-send campaign.
 
 ## Next steps
 
-1. DONE: CI + CodeQL fully green on `8b460c863893977152009467df6697e5a59fc8d3` (round 5; runs on 2026-07-12). Gate-9 evidence exists. Round-by-round CI fixes: ignore-unfixed policy + npm strip (f518572), linkedin-client-id secret-rule scoping (b75f93c), image CVE patching (b1fc503), gosu explicit-whiteout + reviewed-pin moves (8b460c8). Meta commits after 8b460c8 re-trigger CI on the new tip; dispatch uses the green tip at dispatch time.
-2. Owner executes blockers 1–4 (token, secrets, protection, volume receipt). Everything is written to be executable without conversation context in shift 28's next-steps 3–7 (archived at `_relay/archive/2026-07-11-2020-codex-gpt-5.md`).
-3. Dispatch: `gh workflow run "Deploy Aria Mantu (Fly)" --ref deploy/fly-github-actions -f release_sha=<green-tip-40-char-sha> -f recovery_receipt_sha256=<reviewed-receipt-sha>` (only after gates 1–4; use the exact green tip, currently `6deeccd...`).
-4. Live acceptance per shift-28 step 12, then admin provisioning via `scripts/provision-first-admin.sh` (out-of-band credential), then synthetic campaign acceptance.
-5. Only after full acceptance: flip repo private (`gh repo edit mysticalsin/aria-sourcing-demo --visibility private`) — Tony's explicit final gate.
-6. Continue open product findings before any real-candidate campaign.
+1. Commit the Baton/findings update with the already-green source integration.
+2. Merge the verified integration branch into local `main` only after checking `git status` is clean except intended Baton/finding files.
+3. Run at least: `npx tsc --noEmit`, `npm run lint`, `npm run test:security`, `npm test`, `npm audit --audit-level=high`, `gitleaks git . --redact=100 --no-banner --config .gitleaks.toml --log-opts='--all'`, and `git diff --check` from `main`.
+4. Retry `npm run test:fly-db-volume` only when Alpine repository access is reachable from Docker. Do not use `--force-missing-repositories`; that would weaken the CVE patch gate.
+5. Push `main` only after the local `main` test gate is green and the Fly-volume blocker is either green or explicitly accepted as an external network retry blocker by Tony.
+6. After push, verify remote CI for the exact commit. If GitHub Actions or CodeQL fail, fix the failing gate before any deploy.
+7. Do not deploy until the owner-controlled secret, protection, recovery-receipt, and approval gates are closed.
 
-## Decisions made — do not relitigate
+## Decisions made - do not relitigate
 
-- All shift-28 decisions stand (volume mount at `/var/lib/postgresql`, owner-separated reconciliation, staged-vs-deployed secrets, immutable artifact chain, approver independence, degraded-not-demo, LinkedIn assisted-only, never use the exposed token).
-- Repo stays public until live acceptance passes; private flip is the last step (Tony, 2026-07-11).
-- Integration used fast-forward to preserve the reviewed SHA identity — the exact-SHA pipeline depends on it; do not squash/rebase this branch.
-- The snapshot ref `snapshot/shared-20260711-preintegration` is retention evidence — do not delete without a reviewed decision.
+- Queue-only reply drafting is the release authority. No channel has autonomous provider delivery authority in this release.
+- Unknown provider outcomes stay non-retryable or require operator reconciliation. Never free capacity or retry after an ambiguous transport outcome.
+- Cross-channel daily caps use one serialized per-seat authority and count ambiguous outcomes against the safety budget.
+- Agent memory is owner/spec scoped, bounded, approved, content-hash auditable, and loaded only after durable receipt authority.
+- Live backend failure must render unavailable/degraded state, not synthetic demo data or empty success.
+- Do not ship mirror overrides for Alpine unless the chosen mirror is reachable and the Fly-volume test completes.
+- Do not use the exposed Fly token. Do not commit `_relay/incidents`.
 
 ## Watch out
 
-- All shift-28 watch-outs stand (postgres HOME dotfiles, single DB machine, `.internal` DNS = symptom, staged secrets ambiguity, rerun triggering actor, previous-key retirement, no Gitleaks broadening).
-- The 12 untracked confidential paths must NEVER be committed to the public origin — recheck `git status` before any `git add -A`.
-- `deploy-fly-2.sh` and `.gitlab-ci.yml` on disk are superseded artifacts excluded from the candidate — do not resurrect them into builds.
-- The 4 kept meta files are newer than their tracked versions; committing them is fine (relay history is already public precedent) but never commit the incident file.
+- `origin/HEAD` is `vercel-demo`. If Tony says "main", verify whether he means GitHub default branch, local `main`, or production deploy branch before changing branch protection or workflows.
+- The integration branch now includes local `main`, but remote `main` is behind. Pushes can change the public branch materially.
+- Keep `_relay/` committed, but do not include incident files or raw secrets.
+- The Fly DB volume test failure is at dependency fetch time. If it fails later after Alpine becomes reachable, treat that later failure as a new source blocker and diagnose from scratch.
+- The public production URL may answer basic probes while still being behind the local source migration set. Live acceptance must prove the exact release SHA, schema, restart survival, admin provisioning, and zero-send campaign behavior.
