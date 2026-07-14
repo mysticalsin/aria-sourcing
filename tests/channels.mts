@@ -69,9 +69,14 @@ process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
   ok("WhatsApp success -> status sent", res.status === "sent");
   ok("WhatsApp success -> accepted delivery state", res.deliveryState === "accepted");
   ok("WhatsApp success -> id taken from the response body", res.id === "wamid.ABCD");
+  const requestUrl = new URL(calledUrl);
+  const pathSegments = requestUrl.pathname.split("/").filter(Boolean);
   ok(
     "WhatsApp success -> hits the Graph API messages endpoint for the configured phone number id",
-    calledUrl.includes("graph.facebook.com") && calledUrl.includes("1234567890"),
+    requestUrl.protocol === "https:" &&
+      requestUrl.hostname === "graph.facebook.com" &&
+      pathSegments.at(-2) === "1234567890" &&
+      pathSegments.at(-1) === "messages",
   );
   restoreFetch();
 }
@@ -188,7 +193,13 @@ process.env.TWILIO_FROM = "+15005550006";
   ok("SMS success -> status sent", res.status === "sent");
   ok("SMS success -> accepted delivery state", res.deliveryState === "accepted");
   ok("SMS success -> id taken from the response body", res.id === "SM999");
-  ok("SMS success -> hits the Twilio Messages endpoint for the configured account", calledUrl.includes("api.twilio.com") && calledUrl.includes("AC123"));
+  const requestUrl = new URL(calledUrl);
+  ok(
+    "SMS success -> hits the Twilio Messages endpoint for the configured account",
+    requestUrl.protocol === "https:" &&
+      requestUrl.hostname === "api.twilio.com" &&
+      requestUrl.pathname === "/2010-04-01/Accounts/AC123/Messages.json",
+  );
   restoreFetch();
 }
 

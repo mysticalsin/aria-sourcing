@@ -22,7 +22,7 @@ import {
 import { HydrationGate, PageHeader } from "@/components/app/page-header";
 import { useHydrated, useRole, useWins } from "@/lib/store";
 import type { WinRecord } from "@/lib/types";
-import { downloadText, formatDateTime, formatNumber } from "@/lib/utils";
+import { downloadText, escapeMarkdownTableCell, formatDateTime, formatNumber } from "@/lib/utils";
 import { ROLE_LABEL } from "@/lib/rbac";
 
 function formatDuration(ms: number | null): string {
@@ -31,10 +31,6 @@ function formatDuration(ms: number | null): string {
   if (hours < 1) return `${Math.round(ms / 60_000)}m`;
   if (hours < 48) return `${Math.round(hours * 10) / 10}h`;
   return `${Math.round((hours / 24) * 10) / 10}d`;
-}
-
-function markdownEscape(value: string): string {
-  return value.replace(/\|/g, "\\|").replace(/\n/g, " ");
 }
 
 function winlogMarkdown(wins: WinRecord[]): string {
@@ -51,8 +47,8 @@ function winlogMarkdown(wins: WinRecord[]): string {
     lines.push(
       [
         formatDateTime(win.at),
-        markdownEscape(win.candidateName),
-        markdownEscape(win.campaignTitle),
+        escapeMarkdownTableCell(win.candidateName),
+        escapeMarkdownTableCell(win.campaignTitle),
         win.sourcePlatform,
         win.outreachChannel ?? "Unknown",
         String(win.touchCount),

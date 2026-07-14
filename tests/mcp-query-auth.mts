@@ -138,7 +138,7 @@ else process.env.NODE_ENV = originalNodeEnv;
 if (originalRemoteMcpFlag === undefined) delete process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION;
 else process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION = originalRemoteMcpFlag;
 const error = failed.error ?? "";
-ok("failing query-auth error contains host", failed.ok === false && error.includes("mcp.tavily.com"));
+ok("failing query-auth error contains only the expected host context", failed.ok === false && error === "MCP initialize failed (mcp.tavily.com).");
 ok("failing query-auth error omits raw key", !error.includes(rawSecret));
 ok("failing query-auth error omits auth query field", !error.includes("tavilyApiKey"));
 
