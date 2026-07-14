@@ -14,9 +14,11 @@ import {
   browserEgressReady,
 } from "../src/lib/ai/browser-tools";
 import { readFileSync } from "fs";
+import { createProcessEnvScope } from "./helpers/process-env.mts";
 
-process.env.NODE_ENV = "test";
-process.env.OBSCURA_TEST_MODE = "true";
+const envScope = createProcessEnvScope(["NODE_ENV", "OBSCURA_TEST_MODE"]);
+envScope.set({ NODE_ENV: "test", OBSCURA_TEST_MODE: "true" });
+process.once("exit", () => envScope.restore());
 
 let pass = 0,
   fail = 0;

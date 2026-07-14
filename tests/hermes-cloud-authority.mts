@@ -1,6 +1,7 @@
 import { mock } from "node:test";
 import { NextRequest } from "next/server";
 import { buildSeedState } from "../src/lib/seed";
+import { createProcessEnvScope } from "./helpers/process-env.mts";
 
 let pass = 0;
 let fail = 0;
@@ -12,11 +13,18 @@ function ok(name: string, condition: boolean) {
   }
 }
 
-const originalEnv = { ...process.env };
-delete process.env.OPENAI_API_KEY;
-delete process.env.HERMES_API_URL;
-delete process.env.HERMES_API_KEY;
-process.env.NODE_ENV = "test";
+const envScope = createProcessEnvScope([
+  "OPENAI_API_KEY",
+  "HERMES_API_URL",
+  "HERMES_API_KEY",
+  "NODE_ENV",
+]);
+envScope.set({
+  OPENAI_API_KEY: undefined,
+  HERMES_API_URL: undefined,
+  HERMES_API_KEY: undefined,
+  NODE_ENV: "test",
+});
 
 let role: "viewer" | "member" | "admin" = "viewer";
 let upstreamCalls = 0;
@@ -409,7 +417,7 @@ try {
   );
 } finally {
   globalThis.fetch = originalFetch;
-  process.env = originalEnv;
+  envScope.restore();
 }
 
 console.log(`RESULT hermes-cloud-authority: ${pass} passed, ${fail} failed`);

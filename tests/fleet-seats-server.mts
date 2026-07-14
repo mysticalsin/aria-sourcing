@@ -2,8 +2,10 @@ import { mock } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { AgentSeatRow } from "../src/lib/fleet-seats";
+import { createProcessEnvScope } from "./helpers/process-env.mts";
 
-process.env.NODE_ENV = "test";
+const envScope = createProcessEnvScope(["NODE_ENV"]);
+envScope.set({ NODE_ENV: "test" });
 
 let pass = 0;
 let fail = 0;
@@ -201,5 +203,6 @@ function req(body: unknown) {
   );
 }
 
+envScope.restore();
 console.log(`RESULT fleet-seats-server: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

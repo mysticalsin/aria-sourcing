@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { mock, test } from "node:test";
+import { after, mock, test } from "node:test";
 
 import { NextRequest } from "next/server";
+import { createProcessEnvScope } from "./helpers/process-env.mts";
 
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -10,8 +11,9 @@ const specId = "33333333-3333-4333-8333-333333333333";
 const memoryId = "44444444-4444-4444-8444-444444444444";
 const encryptionKey = Buffer.alloc(32, 7).toString("base64");
 
-process.env.NODE_ENV = "test";
-process.env.DATA_ENCRYPTION_KEY = encryptionKey;
+const envScope = createProcessEnvScope(["NODE_ENV", "DATA_ENCRYPTION_KEY"]);
+envScope.set({ NODE_ENV: "test", DATA_ENCRYPTION_KEY: encryptionKey });
+after(() => envScope.restore());
 
 type RpcCall = { name: string; args: Record<string, unknown> };
 type MemoryRow = {
@@ -143,7 +145,7 @@ function reset() {
   mutateResult = { status: "updated" };
   deleteResult = { status: "deleted", revision: 4 };
   queryCount = 0;
-  process.env.DATA_ENCRYPTION_KEY = encryptionKey;
+  envScope.set({ DATA_ENCRYPTION_KEY: encryptionKey });
 }
 
 test("memory mutations use the shared same-origin JSON boundary", async () => {
@@ -239,7 +241,7 @@ test("active framework memory egress returns a retryable conflict for edits and 
 
 test("memory persistence fails closed without encryption authority", async () => {
   reset();
-  delete process.env.DATA_ENCRYPTION_KEY;
+  envScope.set({ DATA_ENCRYPTION_KEY: undefined });
   const response = await route.POST(request("POST", {
     specId,
     kind: "fact",
@@ -249,5 +251,5 @@ test("memory persistence fails closed without encryption authority", async () =>
   assert.equal((await response.json()).code, "memory_authority_unavailable");
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.equal(rpcCalls.length, 0);
-  process.env.DATA_ENCRYPTION_KEY = encryptionKey;
+  envScope.set({ DATA_ENCRYPTION_KEY: encryptionKey });
 });

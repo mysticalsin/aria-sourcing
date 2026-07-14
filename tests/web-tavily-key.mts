@@ -2,6 +2,7 @@ import { buildSeedState } from "../src/lib/seed";
 import { encryptSecret, decryptSecret, encryptionRequiredButMissing } from "../src/lib/crypto-secrets";
 import { validateApiKeyFormat } from "../src/lib/providers";
 import { resolveStoredTavilyKey } from "../src/lib/sourcing/tavily";
+import { createProcessEnvScope } from "./helpers/process-env.mts";
 
 let pass = 0,
   fail = 0;
@@ -13,7 +14,14 @@ function ok(name: string, cond: boolean) {
   }
 }
 
-const originalEnv = { ...process.env };
+const envScope = createProcessEnvScope([
+  "DATA_ENCRYPTION_KEY",
+  "TAVILY_API_KEY",
+  "NODE_ENV",
+  "NEXT_PUBLIC_ENABLE_DEMO_LOGIN",
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+]);
 
 interface Row {
   [key: string]: unknown;
@@ -63,7 +71,7 @@ function makeFakeSession(workspaceId: string) {
 }
 
 try {
-  process.env.DATA_ENCRYPTION_KEY = Buffer.alloc(32, 5).toString("base64");
+  envScope.set({ DATA_ENCRYPTION_KEY: Buffer.alloc(32, 5).toString("base64") });
   const secret = "tvly-stored-key-123456";
   const encrypted = encryptSecret(secret);
   ok("encryptSecret returns versioned ciphertext when key is configured", encrypted.startsWith("enc:v2:") && encrypted !== secret);
@@ -104,7 +112,7 @@ try {
     } as Response;
   }) as typeof fetch;
 
-  delete process.env.TAVILY_API_KEY;
+  envScope.set({ TAVILY_API_KEY: undefined });
   const sourceRouteSearch = await runWebTool(
     "web_search",
     { query: `site:linkedin.com/in ari ${secret}` },
@@ -232,11 +240,11 @@ try {
   ok("makeSourcingToolRunner web_search path uses stored Tavily key when env is unset", runnerResult.ok && seenKeys.at(-1) === secret);
 
   const envKey = "tvly-env-fallback-123456";
-  process.env.TAVILY_API_KEY = envKey;
+  envScope.set({ TAVILY_API_KEY: envKey });
   const envSearch = await runWebTool("web_search", { query: "site:linkedin.com/in env fallback" }, { fetchImpl: fakeFetch });
   ok("env fallback works when no stored key is passed", envSearch.ok && seenKeys.at(-1) === envKey);
 
-  delete process.env.DATA_ENCRYPTION_KEY;
+  envScope.set({ DATA_ENCRYPTION_KEY: undefined });
   const decryptFailResolved = await resolveStoredTavilyKey(makeFakeSession("ws-1") as never, makeFakeApiKeysService({ secret: encrypted }).client as never);
   ok("resolveStoredTavilyKey returns null when stored Tavily decrypt fails", decryptFailResolved === null);
   const decryptFailSearch = await runWebTool(
@@ -251,14 +259,16 @@ try {
   const valid = validateApiKeyFormat("Tavily", "tvly-plausible_123456");
   ok("Tavily validator accepts plausible tvly-prefixed key", valid.valid === true);
 
-  delete process.env.DATA_ENCRYPTION_KEY;
-  process.env.NODE_ENV = "development";
-  process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN = "false";
-  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://supabase.example.test";
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
+  envScope.set({
+    DATA_ENCRYPTION_KEY: undefined,
+    NODE_ENV: "development",
+    NEXT_PUBLIC_ENABLE_DEMO_LOGIN: "false",
+    NEXT_PUBLIC_SUPABASE_URL: "https://supabase.example.test",
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon-key",
+  });
   ok("encryptionRequiredButMissing blocks real-data workspace without DATA_ENCRYPTION_KEY", encryptionRequiredButMissing());
 } finally {
-  process.env = originalEnv;
+  envScope.restore();
 }
 
 console.log(`RESULT web-tavily-key: ${pass} passed, ${fail} failed`);

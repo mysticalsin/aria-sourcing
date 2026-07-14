@@ -65,6 +65,10 @@ const v6Blob = {
   apiKeys: undefined as unknown as HermesState["apiKeys"],
   currentRole: undefined as unknown as HermesState["currentRole"],
   chats: undefined as unknown as HermesState["chats"],
+  wins: undefined as unknown as HermesState["wins"],
+  interviewers: undefined as unknown as HermesState["interviewers"],
+  memory: undefined as unknown as HermesState["memory"],
+  schedules: undefined as unknown as HermesState["schedules"],
 };
 
 // Apply the same fills that migrateToCurrentVersion performs.
@@ -86,6 +90,10 @@ const migrated: HermesState = {
   suppression: v6Blob.suppression ?? [],
   ledger: v6Blob.ledger ?? [],
   chats: v6Blob.chats ?? [],
+  wins: v6Blob.wins ?? [],
+  interviewers: v6Blob.interviewers ?? [],
+  memory: v6Blob.memory ?? [],
+  schedules: v6Blob.schedules ?? [],
   settings: {
     ...v6Blob.settings,
     llmProviders: v6Blob.settings.llmProviders ?? defs.llmProviders,
@@ -118,6 +126,10 @@ ok("D-2 migration: skills filled to []", Array.isArray(migrated.skills));
 ok("D-2 migration: suppression filled to []", Array.isArray(migrated.suppression));
 ok("D-2 migration: ledger filled to []", Array.isArray(migrated.ledger));
 ok("D-2 migration: chats filled to []", Array.isArray(migrated.chats));
+ok("D-2 migration: wins filled to []", Array.isArray(migrated.wins));
+ok("D-2 migration: interviewers filled to []", Array.isArray(migrated.interviewers));
+ok("D-2 migration: memory filled to []", Array.isArray(migrated.memory));
+ok("D-2 migration: schedules filled to []", Array.isArray(migrated.schedules));
 ok("D-2 migration: llmProviders filled", Array.isArray(migrated.settings.llmProviders));
 ok("D-2 migration: savedModels filled", Array.isArray(migrated.settings.savedModels));
 ok("D-2 migration: tools filled", Array.isArray(migrated.settings.tools));

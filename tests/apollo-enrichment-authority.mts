@@ -42,6 +42,9 @@ let completeOk = true;
 let productionBlock: Response | null = null;
 let authDependencyError = false;
 let lastSafeLogMeta: Record<string, unknown> | null = null;
+function getLastSafeLogMeta(): Record<string, unknown> | null {
+  return lastSafeLogMeta;
+}
 let prepareResult: Record<string, unknown> = {
   status: "prepared",
   confirmationNonce: nonce,
@@ -419,11 +422,12 @@ const ambiguous = await post(request(
   false,
 ));
 const ambiguousBody = await json(ambiguous);
+const ambiguousLogMeta = getLastSafeLogMeta();
 ok("unknown provider outcome becomes non-retryable reconciliation", ambiguous.status === 502 && ambiguousBody.code === "APOLLO_OUTCOME_UNKNOWN" && ambiguousCalls === 1);
 ok("provider errors never cross the public boundary", !JSON.stringify(ambiguousBody).includes("secret-token-value") && !JSON.stringify(ambiguousBody).includes("person@example.test"));
 ok(
   "generated request ids correlate ambiguous logs and responses",
-  typeof ambiguousBody.requestId === "string" && lastSafeLogMeta?.requestId === ambiguousBody.requestId,
+  typeof ambiguousBody.requestId === "string" && ambiguousLogMeta?.requestId === ambiguousBody.requestId,
 );
 
 reset();

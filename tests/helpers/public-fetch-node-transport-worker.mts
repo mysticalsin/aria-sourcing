@@ -35,7 +35,8 @@ const server = createServer(
     const path = request.url ?? "/";
     if (path === "/ok") {
       seenHost = request.headers.host ?? "";
-      seenServerName = (request.socket as TLSSocket).servername ?? "";
+      const serverName = (request.socket as TLSSocket).servername;
+      seenServerName = typeof serverName === "string" ? serverName : "";
       response.end("ok");
       return;
     }

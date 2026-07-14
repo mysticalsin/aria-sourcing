@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { mock } from "node:test";
 import { NextRequest } from "next/server";
+import { createProcessEnvScope } from "./helpers/process-env.mts";
 
 mock.module("server-only", { namedExports: {} });
 
@@ -16,12 +17,16 @@ function ok(name: string, condition: boolean) {
   console.error(`FAIL: ${name}`);
 }
 
-const originalNodeEnv = process.env.NODE_ENV;
-const originalSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const originalSupabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-process.env.NODE_ENV = "test";
-process.env.NEXT_PUBLIC_SUPABASE_URL = "https://supabase.example.test";
-process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "test-anon-key";
+const envScope = createProcessEnvScope([
+  "NODE_ENV",
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+]);
+envScope.set({
+  NODE_ENV: "test",
+  NEXT_PUBLIC_SUPABASE_URL: "https://supabase.example.test",
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: "test-anon-key",
+});
 
 let providerCalls = 0;
 const originalFetch = globalThis.fetch;
@@ -106,12 +111,7 @@ try {
   );
 } finally {
   globalThis.fetch = originalFetch;
-  if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
-  else process.env.NODE_ENV = originalNodeEnv;
-  if (originalSupabaseUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
-  else process.env.NEXT_PUBLIC_SUPABASE_URL = originalSupabaseUrl;
-  if (originalSupabaseAnonKey === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  else process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = originalSupabaseAnonKey;
+  envScope.restore();
 }
 
 console.log(`RESULT agent-run-disabled: ${pass} passed, ${fail} failed`);

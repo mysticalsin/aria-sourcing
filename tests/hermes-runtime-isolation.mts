@@ -4,6 +4,7 @@ import {
   evaluateHermesProxyOperation,
   evaluateHermesWorkspaceBinding,
 } from "../src/lib/api/hermes-runtime-isolation";
+import { createProcessEnvScope } from "./helpers/process-env.mts";
 
 let pass = 0;
 let fail = 0;
@@ -51,10 +52,20 @@ ok(
   evaluateHermesProxyOperation({ production: true, method: "GET", upstreamPath: "api/health", canManageSettings: false }).ok,
 );
 
-process.env.NODE_ENV = "production";
-process.env.HERMES_API_URL = "http://127.0.0.1:8642";
-process.env.HERMES_API_KEY = "test-global-runtime-key";
-process.env.OPENAI_API_KEY = "test-cloud-key";
+const envScope = createProcessEnvScope([
+  "NODE_ENV",
+  "HERMES_API_URL",
+  "HERMES_API_KEY",
+  "OPENAI_API_KEY",
+  "HERMES_RUNTIME_WORKSPACE_ID",
+]);
+envScope.set({
+  NODE_ENV: "production",
+  HERMES_API_URL: "http://127.0.0.1:8642",
+  HERMES_API_KEY: "test-global-runtime-key",
+  OPENAI_API_KEY: "test-cloud-key",
+  HERMES_RUNTIME_WORKSPACE_ID: undefined,
+});
 
 let workspaceId = workspaceA;
 let role = "viewer";
@@ -118,12 +129,12 @@ try {
   const proxyGet = ((proxyModule as any).GET ?? (proxyModule as any).default?.GET) as (request: NextRequest) => Promise<Response>;
   const proxyPost = ((proxyModule as any).POST ?? (proxyModule as any).default?.POST) as (request: NextRequest) => Promise<Response>;
 
-  delete process.env.HERMES_RUNTIME_WORKSPACE_ID;
+  envScope.set({ HERMES_RUNTIME_WORKSPACE_ID: undefined });
   upstreamCalls = 0;
   const unbound = await proxyGet(new NextRequest("http://localhost/api/hermes/proxy?upstreamPath=api/status"));
   ok("unbound production proxy returns 503 before upstream", unbound.status === 503 && upstreamCalls === 0);
 
-  process.env.HERMES_RUNTIME_WORKSPACE_ID = workspaceA;
+  envScope.set({ HERMES_RUNTIME_WORKSPACE_ID: workspaceA });
   workspaceId = workspaceB;
   const crossWorkspace = await proxyGet(new NextRequest("http://localhost/api/hermes/proxy?upstreamPath=api/status"));
   const crossWorkspaceText = await crossWorkspace.text();
@@ -161,11 +172,11 @@ try {
     body: JSON.stringify(body),
   });
 
-  delete process.env.HERMES_RUNTIME_WORKSPACE_ID;
+  envScope.set({ HERMES_RUNTIME_WORKSPACE_ID: undefined });
   const unboundChat = await chatPost(chatRequest({ provider: "hermes", prompt: "Hello" }));
   ok("typed Hermes chat also fails closed when unbound", unboundChat.status === 503 && upstreamCalls === 2);
 
-  process.env.HERMES_RUNTIME_WORKSPACE_ID = workspaceA;
+  envScope.set({ HERMES_RUNTIME_WORKSPACE_ID: workspaceA });
   vaultSecret = "";
   const invalidChatKey = await chatPost(chatRequest({ provider: "hermes", prompt: "Hello", hermesApiKeyId: invalidKeyId }));
   ok("typed Hermes chat rejects invalid key without env fallback", invalidChatKey.status === 403 && upstreamCalls === 2);
@@ -174,11 +185,12 @@ try {
   ok("bound typed Hermes chat reaches its runtime", boundedChat.status === 200 && upstreamCalls === 3);
   ok("bound typed Hermes chat may use the configured env credential", lastAuthorization === "Bearer test-global-runtime-key");
 
-  delete process.env.HERMES_RUNTIME_WORKSPACE_ID;
+  envScope.set({ HERMES_RUNTIME_WORKSPACE_ID: undefined });
   const cloudChat = await chatPost(chatRequest({ provider: "openai", model: "gpt-4o-mini", prompt: "Hello" }));
   ok("cloud-provider chat remains independent of Hermes binding", cloudChat.status === 200 && upstreamCalls === 4);
 } finally {
   globalThis.fetch = originalFetch;
+  envScope.restore();
 }
 
 console.log(`RESULT hermes-runtime-isolation: ${pass} passed, ${fail} failed`);

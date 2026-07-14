@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { createProcessEnvScope } from "./helpers/process-env.mts";
 
 let pass = 0;
 let fail = 0;
@@ -10,12 +11,22 @@ function ok(name: string, condition: boolean) {
   }
 }
 
-process.env.NODE_ENV = "production";
-delete process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN;
-delete process.env.NEXT_PUBLIC_SUPABASE_URL;
-delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-delete process.env.SUPABASE_URL;
-process.env.ELEVENLABS_API_KEY = "test-key-never-logged";
+const envScope = createProcessEnvScope([
+  "NODE_ENV",
+  "NEXT_PUBLIC_ENABLE_DEMO_LOGIN",
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+  "SUPABASE_URL",
+  "ELEVENLABS_API_KEY",
+]);
+envScope.set({
+  NODE_ENV: "production",
+  NEXT_PUBLIC_ENABLE_DEMO_LOGIN: undefined,
+  NEXT_PUBLIC_SUPABASE_URL: undefined,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: undefined,
+  SUPABASE_URL: undefined,
+  ELEVENLABS_API_KEY: "test-key-never-logged",
+});
 
 let providerCalls = 0;
 const originalFetch = globalThis.fetch;
@@ -36,6 +47,7 @@ try {
   ok("production fail-closed response never reaches the paid provider", providerCalls === 0);
 } finally {
   globalThis.fetch = originalFetch;
+  envScope.restore();
 }
 
 console.log(`RESULT voice-tts-production-fail-closed: ${pass} passed, ${fail} failed`);
