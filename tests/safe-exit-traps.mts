@@ -25,11 +25,15 @@ async function signalProbe(signal: "SIGINT" | "SIGTERM", expectedCode: number) {
   `;
   const child = spawn("/bin/bash", ["-c", script], { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
+  let signalSent = false;
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk) => {
     output += chunk;
-    if (output.includes("READY\n")) child.kill(signal);
+    if (!signalSent && output.includes("READY\n")) {
+      signalSent = true;
+      child.kill(signal);
+    }
   });
   child.stderr.on("data", (chunk) => { output += chunk; });
   const code = await new Promise<number | null>((resolve, reject) => {

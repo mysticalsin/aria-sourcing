@@ -207,7 +207,7 @@ try {
     return { calls, result };
   }
 
-  const partialEncoding = await encodedFallbackAttempt(encodedKey.replace("/", "%2F"));
+  const partialEncoding = await encodedFallbackAttempt(encodedKey.replace(/\//g, "%2F"));
   ok("a partially percent-encoded Tavily key fails closed", !partialEncoding.result.ok);
   ok(
     "a partially percent-encoded Tavily key never reaches DuckDuckGo",

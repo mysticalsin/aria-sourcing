@@ -12,6 +12,7 @@ import {
 } from "../src/lib/store";
 import { buildSeedState } from "../src/lib/seed";
 import type { Booking, Campaign, Candidate, HermesState, OutreachMessage, WinRecord } from "../src/lib/types";
+import { escapeMarkdownTableCell } from "../src/lib/utils";
 
 let pass = 0,
   fail = 0;
@@ -197,6 +198,8 @@ const winlogPage = readFileSync("src/app/winlog/page.tsx", "utf8");
 ok("winlog export uses browser download helper", winlogPage.includes('downloadText("winlog.md"'));
 ok("winlog page does not import fs", !/from ["']node:fs["']|from ["']fs["']/.test(winlogPage));
 ok("winlog page does not write docs/public/_relay/.rocket-fuel", !/docs\/|public\/|_relay\/|\.rocket-fuel\/|writeFile/.test(winlogPage));
+ok("winlog export escapes backslashes before Markdown table delimiters", escapeMarkdownTableCell(String.raw`a\|b`) === String.raw`a\\\|b`);
+ok("winlog export flattens CRLF, CR, and LF", escapeMarkdownTableCell("a\r\nb\rc\nd") === "a b c d");
 
 console.log(`RESULT winlog: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

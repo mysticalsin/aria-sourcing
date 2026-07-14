@@ -121,5 +121,14 @@ ok("keeps visible text", stripped.text.includes("Visible text."));
 ok("drops script contents", !stripped.text.includes("bad()"));
 ok("drops style contents", !stripped.text.includes("x{}"));
 
+const adversarialHtml = stripHtml(
+  "<title>&amp;lt;safe&amp;gt;</title><body><script>hidden-script()</script data-extra><style>hidden-style{}</style data-extra><noscript>hidden-noscript</noscript\t data-extra><p>&amp;lt;b&amp;gt;</p></body>",
+);
+ok("decodes entities exactly once in titles", adversarialHtml.title === "&lt;safe&gt;");
+ok("decodes entities exactly once in body text", adversarialHtml.text.includes("&lt;b&gt;"));
+ok("drops script contents with a browser-tolerated closing tag", !adversarialHtml.text.includes("hidden-script()"));
+ok("drops style contents with a browser-tolerated closing tag", !adversarialHtml.text.includes("hidden-style"));
+ok("drops noscript contents with a browser-tolerated closing tag", !adversarialHtml.text.includes("hidden-noscript"));
+
 console.log(`RESULT web-tools: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
