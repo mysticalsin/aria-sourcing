@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 plan: senior-developer-structure-orchestrator
 owner: Sonnet-Integrator
 model: claude-sonnet-4-6
-status: blocked-until-shift-40-closes
+status: in-progress-plan-01-complete
 updated: 2026-07-14
 ---
 

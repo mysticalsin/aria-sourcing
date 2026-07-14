@@ -2,25 +2,31 @@
 project: MSourcing / ARIA
 shift: 41
 agent: codex-gpt-5
-updated: 2026-07-14 18:38 EDT
-status: source-verified-organization-execution-next
+updated: 2026-07-14 18:51 EDT
+status: structure-plan-01-complete-plan-02-in-progress
 ---
 
 # Handoff - shift 40 and CodeQL are committed; release remains NO-GO
 
 ## Current state
 
-- Worktree: `/Users/tony/.codex/worktrees/msourcing-campaign-integration`.
-- Branch: local `main`; the verified shift-40 integration is
+- Active organization worktree:
+  `/Users/tony/.codex/worktrees/msourcing-structure-hygiene` on branch
+  `codex/aria-structure-hygiene-20260714`. Plan 01 tip is
+  `b067a8a4623b91e918d77d6b52bb8db73d049547`. Local `main` remains at the
+  Relay checkpoint `57b9abe9dc061f3c1fd64119376a46f1d4651303`; the verified
+  shift-40 integration is
   `42b0d1c01dd7d50eccbee03f87f5b5f96217a7ea` and the separate CodeQL
   reconciliation is `8a63a8f293136464b5d79a6399dc0e11ba601a7e`.
-  The worktree is clean at this checkpoint.
 - Migration tip is `0033_candidate_erasure_authority.sql`. The reviewed legacy
   public-schema digest is
   `3e1d5f6c2aea60ef7b47f3ce27f1e5dec8afed2a4731e11417dd65332f4561cd`.
 - Source gates are green on this exact working tree:
-  - `npx tsc --noEmit && npm test` exited 0. `npm test` currently executes 169
-    top-level lifecycle commands: 36 pretest, 132 application, and 1 posttest.
+  - Before the organization branch, `npx tsc --noEmit && npm test` exited 0.
+    Plan 01 permanently added the module-boundary contract, so the current
+    package definition contains 170 top-level lifecycle commands: 36 pretest,
+    133 application, and 1 posttest. A full branch gate is still pending after
+    the remaining structure plans.
   - `npm run lint` and `npm run test:security` exited 0.
   - `npm run build:isolated` compiled successfully and generated 62 static pages.
   - `npm audit --offline --audit-level=moderate` found 0 vulnerabilities.
@@ -51,6 +57,15 @@ status: source-verified-organization-execution-next
   Obscura live-sidecar probe skipped because no verified local sidecar was
   configured; its source-level assertion is still included in the committed
   patch.
+- The required Graphify start query failed with `graph file not found` for
+  `graphify-out/graph.json`, and `graphify-out/wiki/index.md` is also absent in
+  this worktree. That exact fallback is recorded here; source inspection is the
+  active navigation method.
+- Plan 01 focused proof is green: module boundaries, store contracts,
+  documentation truth 41/41, repository hygiene 11/11, typecheck, lint,
+  security, and diff checks. Independent review returned READY after JavaScript
+  module edges, direct server-only client markers, and documentation facts were
+  corrected.
 
 ## Done this shift
 
@@ -93,6 +108,10 @@ status: source-verified-organization-execution-next
   `_relay/codex-findings.md`.
 - Committed the complete verified hardening baseline as `42b0d1c`, then applied
   and committed the exact ten-file CodeQL patch separately as `8a63a8f`.
+- Completed structure Plan 01 in two isolated commits: `0faf855` extracts the
+  reusable import graph, adds poison-fixture boundary enforcement, and registers
+  it permanently; `b067a8a` adds verified maps for domain logic, tests, scripts,
+  infrastructure, and document ownership.
 
 ## Blockers
 
@@ -119,25 +138,32 @@ status: source-verified-organization-execution-next
   identity/readiness results, two disabled-role absence proofs, and a real
   approved campaign E2E. The last reviewed Kimi authority returned HTTP 402;
   provider funding/entitlement and exact model approval remain external.
-- The repository-organization plans are committed but not yet executed. Their
-  output must remain behavior-preserving and pass the permanent release gates.
+- Structure Plans 02-04 remain. The Plan 04 audit proved the four booking/report
+  actions currently ignore rejected persistence and exposed additional
+  consistency gaps. They require characterization and a separate correctness
+  commit before any extraction; do not treat them as cleanup-only.
 
 ## Next steps
 
-1. Execute `_relay/plans/00-aria-structure-orchestrator.md` through
-   `_relay/plans/04-store-extraction-and-release-proof.md` in the documented
-   order from an isolated `codex/aria-structure-hygiene-20260714` worktree.
-   Preserve small commits and permanent manifest/CI registration for every new
-   regression. Remove the temporary `test:shift40` name when its commands are
-   represented by durable groups.
-2. Integrate the organization commits back into local `main`, rerun the full
+1. Execute Plan 02 from the current clean branch tip: freeze the exact recursive
+   186-process lifecycle, add the validated declarative manifest and runner,
+   prove npm/direct trace parity, then remove only the four proven lifecycle
+   duplicates in a separate commit. Preserve module-boundaries and remove the
+   shift-numbered script only after its coverage is mapped.
+2. Execute Plan 03: add strict test typechecking, resolve diagnostics in bounded
+   families without weakening strictness, and derive documentation counts and
+   migration tip from the manifest and migration directory.
+3. Execute Plan 04 only after characterization: fix proven booking/report false
+   success separately, extract the four actions behind the stable facade, then
+   add the synthetic isolated Playwright release smoke and permanent CI gate.
+4. Integrate the organization commits back into local `main`, rerun the full
    source, security, build, database, recovery, Graphify, and four-review-lane
    gate on one SHA, then archive/rewrite this baton again.
-3. Push only after Tony supplies evidence that the exposed credentials were
+5. Push only after Tony supplies evidence that the exposed credentials were
    rotated and that the current identity has approved least-privilege release
    authority. After a successful push, read back the remote SHA and inspect
    exact-SHA CI, CodeQL, annotations, and open alerts with `gh`.
-4. Dispatch production only through the protected workflow after every external
+6. Dispatch production only through the protected workflow after every external
    blocker above is closed. Prove migration 0033, immutable digests, backup and
    restore, restarts, auth, provider/model readiness, zero-send controls, and a
    real approved campaign before allowing real candidate use.

@@ -2,7 +2,7 @@
 plan: 02-test-manifest
 owner: Sonnet-FullStack
 reviewer: Sonnet-QA-Manifest
-status: pending
+status: in-progress
 ---
 
 # 02: Declarative test manifest
