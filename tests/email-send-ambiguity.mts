@@ -20,8 +20,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { mock } from "node:test";
 import { NextRequest } from "next/server";
-import { sendViaProvider } from "../src/lib/providers";
-import { sendViaGmailApi, sendViaMicrosoftGraph } from "../src/lib/email-oauth";
+import { sendViaProvider, type SendRequest } from "../src/lib/providers";
+import {
+  sendViaGmailApi,
+  sendViaMicrosoftGraph,
+  type OAuthSendRequest,
+} from "../src/lib/email-oauth";
 import { approvalHash, approvalScopeHash } from "../src/lib/outreach-content";
 import { LEDGER_STATUSES, type EmailConnection } from "../src/lib/types";
 
@@ -40,13 +44,23 @@ function ok(name: string, condition: boolean) {
   }
 }
 
-function jsonResponse(status: number, body: unknown) {
-  return {
-    ok: status >= 200 && status < 300,
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
     status,
-    json: async () => body,
-    text: async () => JSON.stringify(body),
-  } as Response;
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function stringHeader(payload: unknown, name: string): string | undefined {
+  const headers = record(record(payload)?.headers);
+  const value = headers?.[name];
+  return typeof value === "string" ? value : undefined;
 }
 
 const UNSUBSCRIBE_URL = "https://aria.example.test/api/unsubscribe/abcDEF0123456789_abcDEF0123456789_abcDEF01234";
@@ -85,7 +99,7 @@ const emailReq = {
   subject: "Role",
   body: "Hello",
   unsubscribeUrl: UNSUBSCRIBE_URL,
-};
+} satisfies Omit<SendRequest, "provider"> & OAuthSendRequest;
 
 try {
   // Silence adapter audit logs; FAIL lines go through realLog above.
@@ -159,22 +173,22 @@ try {
   const missingLink = await sendViaProvider({ provider: "Resend", ...emailReq, unsubscribeUrl: undefined });
   ok("Resend without an unsubscribe link is a not-sent refusal", missingLink.status === "error" && missingLink.deliveryState === "not-sent");
 
-  let resendPayload: Record<string, unknown> | null = null;
+  let resendPayload: unknown = null;
   globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
-    resendPayload = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+    resendPayload = JSON.parse(String(init?.body ?? "{}")) as unknown;
     return jsonResponse(200, { id: "email-1" });
   }) as typeof fetch;
   const resendSent = await sendViaProvider({ provider: "Resend", ...emailReq, attemptId: "attempt-resend-1" });
   ok("Resend acceptance -> accepted delivery", resendSent.status === "sent" && resendSent.deliveryState === "accepted");
   ok(
     "Resend payload carries the X-Aria-Send-Attempt identity",
-    (resendPayload?.headers as Record<string, string> | undefined)?.["X-Aria-Send-Attempt"] === "attempt-resend-1",
+    stringHeader(resendPayload, "X-Aria-Send-Attempt") === "attempt-resend-1",
   );
   resendPayload = null;
   await sendViaProvider({ provider: "Resend", ...emailReq });
   ok(
     "Resend omits the attempt header when no attemptId is given",
-    (resendPayload?.headers as Record<string, string> | undefined)?.["X-Aria-Send-Attempt"] === undefined,
+    stringHeader(resendPayload, "X-Aria-Send-Attempt") === undefined,
   );
 
   globalThis.fetch = throwingFetch;
@@ -183,16 +197,16 @@ try {
   ok("SendGrid upstream 503 -> ambiguous delivery", (await sendViaProvider({ provider: "SendGrid", ...emailReq })).deliveryState === "unknown");
   globalThis.fetch = fetchWith(400);
   ok("SendGrid definitive 400 rejection -> not-sent (retryable)", (await sendViaProvider({ provider: "SendGrid", ...emailReq })).deliveryState === "not-sent");
-  let sendgridPayload: Record<string, unknown> | null = null;
+  let sendgridPayload: unknown = null;
   globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
-    sendgridPayload = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+    sendgridPayload = JSON.parse(String(init?.body ?? "{}")) as unknown;
     return jsonResponse(202, {});
   }) as typeof fetch;
   const sendgridSent = await sendViaProvider({ provider: "SendGrid", ...emailReq, attemptId: "attempt-sendgrid-1" });
   ok("SendGrid acceptance -> accepted delivery", sendgridSent.status === "sent" && sendgridSent.deliveryState === "accepted");
   ok(
     "SendGrid payload carries the X-Aria-Send-Attempt identity",
-    (sendgridPayload?.headers as Record<string, string> | undefined)?.["X-Aria-Send-Attempt"] === "attempt-sendgrid-1",
+    stringHeader(sendgridPayload, "X-Aria-Send-Attempt") === "attempt-sendgrid-1",
   );
 
   const oauthDryRun = await sendViaProvider({ provider: "Gmail API", ...emailReq });

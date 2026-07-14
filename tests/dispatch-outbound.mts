@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest } from "next/server";
 import * as dispatchModule from "../src/lib/dispatch-outbound";
+import type { AgentSeat } from "../src/lib/types";
 import {
   APPROVED_WHATSAPP_TEMPLATE_AUDIT_SUBJECT,
   buildApprovedWhatsAppTemplateAudit,
@@ -21,6 +22,13 @@ function ok(name: string, cond: boolean) { if (cond) { pass++; } else { fail++; 
    rpc(name, args)                             → { data, error }
 --------------------------------------------------------------------------- */
 interface Row { [k: string]: unknown }
+
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
 
 function makeFakeDb(seed: {
   outbound: Row[];
@@ -178,13 +186,13 @@ function baseMsg(over: Row = {}): Row {
     ...over,
   };
 }
-const LIVE_SEAT: Row = {
+const LIVE_SEAT = {
   id: "seat-1",
   workspace_id: "ws-1",
   provider: "WhatsApp Cloud",
   status: "active",
   mode: "live",
-};
+} satisfies Pick<AgentSeat, "id" | "provider" | "status" | "mode"> & { workspace_id: string };
 const LIVE_WHATSAPP_CONTACT: Row = {
   workspace_id: "ws-1",
   recipient_e164: "33612345678",
@@ -503,7 +511,7 @@ const LIVE_WHATSAPP_CONTACT: Row = {
   let providerCalls = 0;
   globalThis.fetch = (async () => {
     providerCalls++;
-    return { ok: true, status: 200, json: async () => ({ messages: [{ id: "wamid.must-not-send" }] }) };
+    return jsonResponse(200, { messages: [{ id: "wamid.must-not-send" }] });
   }) as typeof fetch;
   try {
     const db = makeFakeDb({
@@ -574,7 +582,7 @@ const LIVE_WHATSAPP_CONTACT: Row = {
   const originalPhone = process.env.WHATSAPP_PHONE_NUMBER_ID;
   process.env.WHATSAPP_TOKEN = "test-token";
   process.env.WHATSAPP_PHONE_NUMBER_ID = "sender-1";
-  globalThis.fetch = (async () => ({ ok: false, status: 401, json: async () => ({}) })) as typeof fetch;
+  globalThis.fetch = (async () => jsonResponse(401, {})) as typeof fetch;
   try {
     const outbound = [baseMsg()];
     const ledgers = [{ id: "led-1", outbound_message_id: "m-1", status: "claimed" }];
@@ -646,7 +654,7 @@ const LIVE_WHATSAPP_CONTACT: Row = {
   const originalPhone = process.env.WHATSAPP_PHONE_NUMBER_ID;
   process.env.WHATSAPP_TOKEN = "test-token";
   process.env.WHATSAPP_PHONE_NUMBER_ID = "sender-1";
-  globalThis.fetch = (async () => ({ ok: false, status: 503, json: async () => ({}) })) as typeof fetch;
+  globalThis.fetch = (async () => jsonResponse(503, {})) as typeof fetch;
   try {
     const outbound = [baseMsg()];
     const ledgers = [{ id: "led-1", outbound_message_id: "m-1", status: "claimed" }];
@@ -700,7 +708,7 @@ const LIVE_WHATSAPP_CONTACT: Row = {
   const originalPhone = process.env.WHATSAPP_PHONE_NUMBER_ID;
   process.env.WHATSAPP_TOKEN = "test-token";
   process.env.WHATSAPP_PHONE_NUMBER_ID = "sender-1";
-  globalThis.fetch = (async () => ({ ok: true, status: 200, json: async () => ({ messages: [{ id: "wamid.accepted" }] }) })) as typeof fetch;
+  globalThis.fetch = (async () => jsonResponse(200, { messages: [{ id: "wamid.accepted" }] })) as typeof fetch;
   try {
     const db = makeFakeDb({
       outbound: [baseMsg()],
@@ -735,7 +743,7 @@ const LIVE_WHATSAPP_CONTACT: Row = {
   const originalPhone = process.env.WHATSAPP_PHONE_NUMBER_ID;
   process.env.WHATSAPP_TOKEN = "test-token";
   process.env.WHATSAPP_PHONE_NUMBER_ID = "sender-1";
-  globalThis.fetch = (async () => ({ ok: true, status: 200, json: async () => ({ messages: [{ id: "wamid.ambiguous" }] }) })) as typeof fetch;
+  globalThis.fetch = (async () => jsonResponse(200, { messages: [{ id: "wamid.ambiguous" }] })) as typeof fetch;
   try {
     const db = makeFakeDb({
       outbound: [baseMsg()],
@@ -770,7 +778,7 @@ const LIVE_WHATSAPP_CONTACT: Row = {
   let providerCalls = 0;
   globalThis.fetch = (async () => {
     providerCalls++;
-    return { ok: true, status: 200, json: async () => ({ messages: [{ id: "wamid.concurrent" }] }) };
+    return jsonResponse(200, { messages: [{ id: "wamid.concurrent" }] });
   }) as typeof fetch;
   try {
     const outbound = [baseMsg()];
