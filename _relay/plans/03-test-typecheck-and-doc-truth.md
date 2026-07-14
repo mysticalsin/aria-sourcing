@@ -2,10 +2,19 @@
 plan: 03-test-typecheck-and-doc-truth
 owner: Sonnet-QA-Types
 reviewer: Sonnet-Final-Validator
-status: pending
+status: in-progress
 ---
 
 # 03: Strict test typecheck and derived documentation truth
+
+## Fresh baseline (2026-07-14)
+
+- `npm run typecheck:tests` initially reported 152 diagnostics after enabling
+  `allowImportingTsExtensions` across 187 TypeScript test roots.
+- Narrow spawn-dependency types in the two manifest runners removed the two
+  Plan 02-owned diagnostics. The bounded repair baseline is 150 diagnostics
+  across 45 test files.
+- `typecheck:tests` is intentionally not in CI until the count reaches zero.
 
 ## Scope
 

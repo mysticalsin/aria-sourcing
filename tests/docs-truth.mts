@@ -99,17 +99,22 @@ const packageJson = JSON.parse(source("package.json")) as {
   description?: string;
   scripts?: Record<string, string>;
 };
-const canonicalTestCommands = resolveTestGroup(testManifest, "all").length;
-const pretestCommands = resolveTestGroup(testManifest, "pretest").length;
-const testCommands = resolveTestGroup(testManifest, "application").length;
-const posttestCommands = resolveTestGroup(testManifest, "posttest").length;
+const canonicalLifecycle = resolveTestGroup(testManifest, "all");
 ok(
-  "STATUS.md reports the manifest-derived lifecycle process count",
-  canonicalTestCommands > 0 && status.includes(`${canonicalTestCommands} manifest processes`),
+  "canonical manifest resolves a non-empty lifecycle for documentation commands",
+  canonicalLifecycle.length > 0,
 );
 ok(
-  "README reports the manifest-derived lifecycle process count",
-  canonicalTestCommands > 0 && readme.includes(`${canonicalTestCommands} manifest processes`),
+  "STATUS.md points operators to the canonical manifest instead of copied counts",
+  status.includes("tests/test-manifest.mjs") &&
+    status.includes("node scripts/run-test-manifest.mjs --list all") &&
+    !/\b\d+\s+manifest processes\b/i.test(status),
+);
+ok(
+  "README points developers to the canonical manifest instead of copied counts",
+  readme.includes("tests/test-manifest.mjs") &&
+    readme.includes("node scripts/run-test-manifest.mjs --list all") &&
+    !/\b\d+\s+manifest processes\b/i.test(readme),
 );
 ok(
   "package description names the current product instead of the old mock MVP",
@@ -204,18 +209,25 @@ ok(
 );
 
 ok(
-  "deployment runbook reports the manifest-derived lifecycle process counts",
-  deploymentRunbook.includes(
-    `${pretestCommands} pretest + ${testCommands} test + ${posttestCommands} posttest processes`,
-  ),
+  "deployment runbook does not copy lifecycle process counts",
+  deploymentRunbook.includes("validated pretest, application, and posttest manifest") &&
+    !/\b\d+\s+pretest\s*\+\s*\d+\s+(?:test|application)\s*\+\s*\d+\s+posttest/i.test(
+      deploymentRunbook,
+    ),
 );
-const migrationFiles = readdirSync(new URL("../supabase/migrations/", import.meta.url))
-  .filter((file) => /^\d{4}_.+\.sql$/.test(file))
+const migrationFiles = readdirSync(new URL("../supabase/migrations/", import.meta.url), {
+  withFileTypes: true,
+})
+  .filter((entry) => entry.isFile() && /^\d{4}_.+\.sql$/.test(entry.name))
+  .map((entry) => entry.name)
   .sort();
 const latestMigration = migrationFiles.at(-1) ?? "";
 ok(
-  "deployment runbook includes the current migration tip",
-  Boolean(latestMigration) && deploymentRunbook.includes(latestMigration),
+  "deployment runbook derives the current migration order and tip",
+  Boolean(latestMigration) &&
+    deploymentRunbook.includes("find supabase/migrations -type f") &&
+    deploymentRunbook.includes("LC_ALL=C sort | tail -n 1") &&
+    !/^# \d{4}_.+\.sql/m.test(deploymentRunbook),
 );
 
 const composeAppPort = dockerCompose.match(/\$\{APP_PORT:-(\d+)\}:3000/)?.[1];

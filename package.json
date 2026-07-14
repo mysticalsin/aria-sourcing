@@ -15,6 +15,7 @@
     "docker:build": "docker compose up --build",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.tests.json --pretty false",
     "test:candidate-erasure": "node scripts/run-test-manifest.mjs --group candidate-erasure",
     "test:db-candidate-erasure": "bash tests/candidate-erasure-db.sh",
     "test:db-agent-operational-rollback": "bash tests/agent-operational-authority-rollback-db.sh",

@@ -127,8 +127,7 @@ function invocationFor(command) {
 export function executeResolvedCommands(
   commands,
   {
-    /** @type {ManifestSpawn} */
-    spawn = spawnSync,
+    spawn = /** @type {ManifestSpawn} */ (spawnSync),
     cwd = repositoryRoot,
     env = process.env,
     keepGoing = false,

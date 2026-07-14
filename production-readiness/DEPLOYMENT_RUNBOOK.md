@@ -586,7 +586,7 @@ All checks must pass before a production deploy is triggered. Block the deploy i
 # From the repo root:
 npm run typecheck       # tsc --noEmit; must exit 0
 npm run lint            # next lint; must be "No ESLint warnings or errors."
-npm run test            # 51 pretest + 130 test + 2 posttest processes; all must pass
+npm run test            # validated pretest, application, and posttest manifest; all must pass
 npm run test:security   # security-specific subset (faster); must be 0 failures
 npm run build           # must complete without error in CI or an unsynced checkout
 npm run build:isolated  # required for this OneDrive-synced checkout
@@ -627,41 +627,9 @@ If the diff is empty, the DB is already at HEAD — skip to step 3.
 # Recommended: use the Supabase CLI (linked to your project)
 supabase db push
 
-# Alternative: run the SQL files manually in Supabase SQL Editor.
-# Order matters. Apply every file below:
-# 0001_init.sql → workspaces, profiles, workspace_state, base RLS, ensure_workspace()
-# 0002_fleet.sql → agent_seats, suppression_list, outreach_ledger, claim_and_record() RPC
-# 0003_api_keys.sql → api_keys, column-level grants for server-side secrets
-# 0004_email_connections.sql → email_connections for Gmail/Microsoft OAuth tokens
-# 0005_rls_tenant_isolation.sql → hardened tenant grants, anon revoke, role-gated writes
-# 0006_outreach_approvals.sql → durable human approval records
-# 0007_agent_runtime.sql → agent runtime and durable message ledgers
-# 0008_human_outbound_approvals.sql → human approval provenance
-# 0009_whatsapp_delivery_policy.sql → consent/template/window dispatch policy
-# 0010_whatsapp_delivery_reconciliation.sql → Meta acceptance and receipt audit
-# 0011_outreach_approval_lifecycle.sql → approval revoke and atomic email claims
-# 0012_email_unsubscribe.sql → opaque one-click unsubscribe token hashes
-# 0013_outreach_approval_race_safety.sql → serialized approval/revoke/dispatch lifecycle
-# 0014_whatsapp_review_and_inbound_recovery.sql → human review and recoverable inbound work
-# 0015_whatsapp_webhook_late_event_safety.sql → late receipt and draft-collision safety
-# 0016 intentionally unreleased — gap is deliberate
-# 0017_dispatch_concurrency.sql → dispatcher claim concurrency safety
-# 0018_first_admin.sql → first-admin bootstrap path
-# 0019_agent_authority_and_integrations.sql → normalized Databricks authority and final routine ACLs
-# 0020_dust_authority.sql → normalized Dust authority, append-only config audit, and legacy-state removal
-# 0021_claim_serialization.sql → per-seat FOR UPDATE lock serializes the daily-cap count in claim_and_record
-# 0022_email_send_reconciliation.sql → immutable send_attempt_id + non-retryable 'ambiguous' state for unknown post-acceptance outcomes
-# 0023_conversation_identity.sql → canonical agent_conversations + provider-thread binding; ambiguous inbound fails closed to triage
-# 0024_cross_channel_claim_serialization.sql → shared per-seat cap lock across email and WhatsApp claims
-# 0025_agent_memory_authority.sql → exact owner/spec memory authority, receipts, and legacy-memory quarantine
-# 0026_apollo_enrichment_authority.sql → exact paid-enrichment authority, quota, reconciliation, retention, and erasure
-# 0027_sourcing_learning_authority.sql → sourcing run ledger, feedback receipts, aggregate Graphify artifacts, human lesson review, quota, retention, and kill switch
-# 0028_conversation_authority_hardening.sql → service-owned normalized-message writes and durable workspace/owner/spec conversation binding
-# 0029_agent_framework_authority.sql → approved Flowise workflow versions, DeerFlow run claims, immutable runtime identity, and fail-closed receipts
-# 0030_agent_framework_provisioning_authority.sql → reviewed prepare/confirm/activate framework provisioning with replay-safe configuration authority
-# 0031_orphan_owner_recovery_authority.sql → service-only, approval-bound recovery for an exact orphaned workspace owner
-# 0032_agent_operational_authority.sql → exact workspace-seat, framework-memory egress, and operational rollback authority
-# 0033_candidate_erasure_authority.sql → tenant-bound erasure state machine, legal holds, provider obligations, and HMAC suppression tombstones
+# Inspect the exact source order and current tip. Do not maintain a copied list.
+find supabase/migrations -type f -name '[0-9][0-9][0-9][0-9]_*.sql' -print | LC_ALL=C sort
+find supabase/migrations -type f -name '[0-9][0-9][0-9][0-9]_*.sql' -print | LC_ALL=C sort | tail -n 1
 ```
 
 **IMPORTANT:** RLS must be enabled on every public application table. The

@@ -39,8 +39,7 @@ function sandboxInvocation(command) {
 export function executeSandboxCommands(
   commands,
   {
-    /** @type {SandboxSpawn} */
-    spawn = spawnSync,
+    spawn = /** @type {SandboxSpawn} */ (spawnSync),
     cwd = repositoryRoot,
     env = process.env,
     writeLine = console.log,
