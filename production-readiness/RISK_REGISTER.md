@@ -1,5 +1,8 @@
 # Risk Register — MSourcing (Hermes Sourcing) — AGGREGATE
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **Date:** 2026-06-27 · **Owner of register:** Release Manager (final synthesis) · **Supersedes** the Phase-2 register, which is preserved in `THREAT_MODEL.md`.
 **Scope:** de-duplicated aggregate of all 13 review phases + foundation + red team, against the **dirty working tree (no git remote; migrations 0004/0005 + config.toml untracked).**
 **Severity model:** per prompt. "today" = current demo posture (synthetic data, no deploy, `supabaseEnabled` typically false). "prod" = real users/PII on a real deploy. Red-team overrides applied (downgrade-only).

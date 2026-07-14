@@ -12,7 +12,7 @@ import { memo, useRef, type MutableRefObject, type RefObject } from "react";
 import * as THREE from "three";
 import { RobotCharacter } from "@/components/floor3d/RobotCharacter";
 import { RiggedCharacter, RIGGED_MAN_URL } from "@/components/floor3d/RiggedCharacter";
-import type { RenderAgent3D } from "@/components/floor3d/types";
+import type { RenderAgent3D } from "@/lib/floor3d";
 import { CHAIR_SEAT_OFFSET } from "../core/constants";
 import { toWorld } from "../core/geometry";
 import type { RenderAgent } from "../core/types";

@@ -19,18 +19,22 @@ opened only by the explicit `NEXT_PUBLIC_ENABLE_DEMO_LOGIN` flag set below.
    - `anon public`  → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `service_role` → `SUPABASE_SERVICE_ROLE_KEY` (server-only secret)
 
-## 2. Apply the schema (migrations 0001 → 0006)
+## 2. Apply the complete schema
 
-**Option A — Supabase CLI (vendored):**
+**Option A — Supabase CLI:**
+
+Install the repository-compatible Supabase CLI version documented in
+`production-readiness/LOCAL_SETUP.md`, then run:
 
 ```bash
-./.localbin/supabase login                       # opens browser, one-time
-./.localbin/supabase link --project-ref <ref>    # <ref> = the project ref in the URL
-./.localbin/supabase db push                      # applies all migrations in order
+supabase login                       # opens browser, one-time
+supabase link --project-ref <ref>    # <ref> = the project ref in the URL
+supabase db push                     # applies every numbered migration in order
 ```
 
 **Option B — SQL Editor:** paste each file in `supabase/migrations/` in order
-(`0001_init.sql` … `0006_outreach_approvals.sql`) and run. Do not stop before 0006.
+and run it. Do not stop at a hard-coded migration number; the directory and
+release migration ledger are the authority.
 
 ## 3. Seed the demo admin account
 

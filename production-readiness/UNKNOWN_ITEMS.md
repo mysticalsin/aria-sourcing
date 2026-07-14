@@ -1,5 +1,8 @@
 # UNKNOWN / UNVERIFIABLE ITEMS — MSourcing
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **Audit date:** 2026-06-27. Supersedes prior version (which incorrectly listed "no CI
 pipeline / no IaC" — CI + CodeQL workflows and 5 Supabase migrations now exist).
 

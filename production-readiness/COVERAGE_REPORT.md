@@ -1,5 +1,8 @@
 # Coverage Report — MSourcing ("hermes-sourcing")
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 - **Gate:** Gate 9 — QA
 - **Date:** 2026-06-27
 - **Method:** No coverage instrumentation exists in the repo (`grep -E "c8|nyc|istanbul|vitest|jest|coverage" package.json` → none). This report uses an **import-graph proxy**: a `src/` module is counted "exercised" only if at least one `tests/*.mts` suite imports it. This **over-states** real coverage (importing a module ≠ exercising all its branches) and **cannot** measure line/branch %. Per the binding rule, **un-instrumented coverage = UNKNOWN, not PASS.**

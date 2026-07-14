@@ -1,11 +1,19 @@
 "use client";
 
-import type { HermesState } from "@/lib/types";
+import type { HermesState, Role } from "@/lib/types";
 import { getBrowserSupabase } from "./client";
+import { stripSharedRole } from "@/lib/live-role-authority";
+import { AGENT_SEAT_SELECT, type AgentSeatRow } from "@/lib/fleet-seats";
+
+function profileRole(value: unknown): Role {
+  return value === "admin" || value === "member" || value === "viewer" ? value : "viewer";
+}
 
 export interface RemoteLoad {
   workspaceId: string;
   state: HermesState | null;
+  /** Signed-in profile authority. Shared workspace JSON is never authoritative. */
+  role: Role;
   /** The row's `updated_at` when loaded — the optimistic-concurrency token. */
   updatedAt: string | null;
 }
@@ -24,6 +32,7 @@ export interface CurrentUser {
   id: string;
   email: string;
   name: string;
+  role: Role;
 }
 
 /** Resolve the signed-in user (browser). Returns null in demo mode / signed out. */
@@ -37,7 +46,8 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     (u.user_metadata?.full_name as string) ||
     (u.user_metadata?.name as string) ||
     (u.email ? u.email.split("@")[0] : "Operator");
-  return { id: u.id, email: u.email ?? "", name };
+  const { data: role } = await supabase.rpc("current_profile_role");
+  return { id: u.id, email: u.email ?? "", name, role: profileRole(role) };
 }
 
 /**
@@ -57,8 +67,13 @@ export async function loadRemoteState(): Promise<RemoteLoad | null> {
     const { data: workspaceId, error: rpcError } = await supabase.rpc("ensure_workspace");
     if (rpcError || !workspaceId) {
       console.warn("ensure_workspace failed; running in-memory only:", rpcError?.message);
-      return { workspaceId: "", state: null, updatedAt: null };
+      return { workspaceId: "", state: null, updatedAt: null, role: "viewer" };
     }
+    const { data: resolvedRole, error: roleError } = await supabase.rpc("current_profile_role");
+    if (roleError) {
+      console.warn("current_profile_role failed; using read-only authority:", roleError.message);
+    }
+    const role = roleError ? "viewer" : profileRole(resolvedRole);
     const { data: row, error: rowError } = await supabase
       .from("workspace_state")
       .select("state, updated_at")
@@ -70,17 +85,32 @@ export async function loadRemoteState(): Promise<RemoteLoad | null> {
       // which would overwrite the whole shared blob during a transient backend
       // blip. Run in-memory only (no workspaceId → nothing ever persists).
       console.warn("workspace_state load failed; running in-memory only:", rowError.message);
-      return { workspaceId: "", state: null, updatedAt: null };
+      return { workspaceId: "", state: null, updatedAt: null, role };
     }
     return {
       workspaceId: workspaceId as string,
       state: (row?.state as HermesState) ?? null,
       updatedAt: (row?.updated_at as string) ?? null,
+      role,
     };
   } catch (err) {
     console.warn("loadRemoteState error:", err);
-    return { workspaceId: "", state: null, updatedAt: null };
+    return { workspaceId: "", state: null, updatedAt: null, role: "viewer" };
   }
+}
+
+export async function loadRemoteAgentSeats(): Promise<AgentSeatRow[] | null> {
+  const supabase = getBrowserSupabase();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("agent_seats")
+    .select(AGENT_SEAT_SELECT)
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.warn("agent_seats load failed; keeping workspace-state seats:", error.message);
+    return null;
+  }
+  return (data ?? []) as AgentSeatRow[];
 }
 
 /**
@@ -103,6 +133,7 @@ export async function saveRemoteState(
 ): Promise<SaveResult> {
   const supabase = getBrowserSupabase();
   if (!supabase || !workspaceId) return { ok: false };
+  const sharedState = stripSharedRole(state);
   try {
     if (expectedUpdatedAt === null) {
       // No known prior version — create (or adopt) the row. `updated_at` is owned by
@@ -111,7 +142,7 @@ export async function saveRemoteState(
       // trusting a client clock the trigger would overwrite anyway.
       const { data, error } = await supabase
         .from("workspace_state")
-        .upsert({ workspace_id: workspaceId, state }, { onConflict: "workspace_id" })
+        .upsert({ workspace_id: workspaceId, state: sharedState }, { onConflict: "workspace_id" })
         .select("updated_at")
         .maybeSingle();
       if (error) {
@@ -126,7 +157,7 @@ export async function saveRemoteState(
     // authoritative next token (never via a JS Date, which would drop microseconds).
     const { data, error } = await supabase
       .from("workspace_state")
-      .update({ state })
+      .update({ state: sharedState })
       .eq("workspace_id", workspaceId)
       .eq("updated_at", expectedUpdatedAt)
       .select("updated_at")
@@ -150,6 +181,7 @@ export async function saveRemoteState(
           workspaceId,
           state: (latestRow?.state as HermesState) ?? null,
           updatedAt: (latestRow?.updated_at as string) ?? null,
+          role: "viewer",
         },
       };
     }

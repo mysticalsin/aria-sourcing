@@ -11,8 +11,12 @@ import {
   BROWSER_TOOL_DEFS,
   parseRobotsTxt,
   isPathAllowed,
+  browserEgressReady,
 } from "../src/lib/ai/browser-tools";
 import { readFileSync } from "fs";
+
+process.env.NODE_ENV = "test";
+process.env.OBSCURA_TEST_MODE = "true";
 
 let pass = 0,
   fail = 0;
@@ -47,6 +51,26 @@ ok(
 ok("all 5 tools registered", BROWSER_TOOL_DEFS.length === 5);
 ok("isBrowserTool true for browser_open", isBrowserTool("browser_open"));
 ok("isBrowserTool false for an unregistered name", !isBrowserTool("browser_type"));
+ok(
+  "production browser tools fail closed without isolated egress proof",
+  browserEgressReady({ NODE_ENV: "production" }) === false,
+);
+ok(
+  "production browser tools require the explicit egress proof gate",
+  browserEgressReady({ NODE_ENV: "production", OBSCURA_PUBLIC_EGRESS_VERIFIED: "true" }) === true,
+);
+ok(
+  "development browser tools also fail closed without egress proof",
+  browserEgressReady({ NODE_ENV: "development" }) === false,
+);
+ok(
+  "test mode does not enable browser egress implicitly",
+  browserEgressReady({ NODE_ENV: "test" }) === false,
+);
+ok(
+  "explicit test-only mode keeps isolated integration tests possible",
+  browserEgressReady({ NODE_ENV: "test", OBSCURA_TEST_MODE: "true" }) === true,
+);
 
 /* -------- dispatch-level defense in depth (no live session needed) -------- */
 

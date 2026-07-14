@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { validateBody } from "@/lib/api/validate";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
+import { prodFailClosed } from "@/lib/supabase/config";
+import { resolveAuthenticatedPrincipal } from "@/lib/server/authenticated-principal";
 
 /**
  * Server-side ElevenLabs TTS proxy for the "Hey Aria" voice.
@@ -36,15 +38,26 @@ const TtsSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const prodBlock = prodFailClosed();
+  if (prodBlock) return prodBlock;
+
+  // Authenticate before reading the paid-provider key, parsing user text, or
+  // making any upstream request. Signed demo sessions are principals too.
+  const auth = await resolveAuthenticatedPrincipal(req);
+  if (!auth.ok) {
+    return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+  }
+
+  // Principal plus IP prevents a shared demo principal from collapsing every
+  // visitor into one quota while retaining per-user limits for real tenants.
+  const limit = checkRateLimit(rateLimitKey(req, "voice-tts", auth.principal.id), { windowMs: 60_000, max: 20 });
+  if (!limit.ok) return tooManyRequests(limit.retryAfterSec);
+
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
     // Not configured: clean, error-free signal for the client to use browser TTS.
     return new NextResponse(null, { status: 204 });
   }
-
-  // Throttle: each request drives a paid TTS call — cost/abuse-prone.
-  const limit = checkRateLimit(rateLimitKey(req, "voice-tts"), { windowMs: 60_000, max: 20 });
-  if (!limit.ok) return tooManyRequests(limit.retryAfterSec);
 
   const validated = await validateBody(req, TtsSchema, { maxBytes: 8_000 });
   if (!validated.ok) return validated.response;

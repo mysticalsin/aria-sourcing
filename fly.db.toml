@@ -1,0 +1,52 @@
+# aria-mantu-db — supabase/postgres on a dedicated volume. INTERNAL ONLY: never gets a public IP,
+# NEVER scaled past 1 machine (no replication in this topology — a 2nd machine = a 2nd empty
+# volume). Reached by siblings at aria-mantu-db.internal:5432 over the IPv6 6PN network.
+app            = "aria-mantu-db"
+primary_region = "cdg"
+
+[build]
+  dockerfile = "docker/db/Dockerfile.fly"
+
+[env]
+  POSTGRES_HOST = "/var/run/postgresql"
+  POSTGRES_PORT = "5432"
+  POSTGRES_DB   = "postgres"
+  JWT_EXP       = "3600"
+  # Secrets (fly secrets set): POSTGRES_PASSWORD and SUPABASE_ADMIN_TARGET_PASSWORD
+  # (=FLY_SUPABASE_ADMIN_TARGET_PASSWORD), POSTGRES_TARGET_PASSWORD (=FLY_PG_PASSWORD),
+  # SUPABASE_AUTH_ADMIN_TARGET_PASSWORD (=FLY_AUTH_DB_PASSWORD),
+  # AUTHENTICATOR_TARGET_PASSWORD (=FLY_REST_DB_PASSWORD),
+  # JWT_SECRET (=FLY_JWT_SECRET). Unused internal login roles are disabled.
+  # supabase/postgres ships listen_addresses='*' → binds IPv6, so aria-mantu-db.internal:5432 works.
+
+[mounts]
+  source      = "aria_db_data"
+  # Fly volumes contain lost+found at their root. The Supabase image uses
+  # /var/lib/postgresql/data as PGDATA, so mount its parent and keep PGDATA on
+  # an empty, durable subdirectory. Mounting the volume at PGDATA makes initdb
+  # exit before PostgreSQL can start.
+  destination = "/var/lib/postgresql"
+  # New volumes retain daily provider snapshots for two weeks. Existing
+  # production volumes must be updated and verified separately in the runbook.
+  snapshot_retention = 14
+  scheduled_snapshots = true
+
+[[services]]
+  internal_port = 5432
+  protocol      = "tcp"
+  auto_stop_machines   = "off"
+  auto_start_machines  = false
+  min_machines_running = 1
+  [[services.tcp_checks]]
+    grace_period = "30s"
+    interval     = "15s"
+    timeout      = "3s"
+
+# Postgres on 1gb gives tiny shared_buffers → constant disk hits on a starved
+# shared vCPU. shared-cpu-2x/2gb lets the working set stay in cache and doubles
+# query CPU. This is the single biggest DB-side latency win short of collapsing
+# the stack (see DEPLOYMENT.md "Collapse the Supabase stack").
+[[vm]]
+  size   = "shared-cpu-2x"
+  memory = "2gb"
+# The service has no external ports or public IP, so it remains internal-only.

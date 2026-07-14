@@ -1,259 +1,164 @@
-# Hermes Sourcing
+# MSourcing / ARIA
 
-**An industrial-grade autonomous recruiting operations console.**
+MSourcing is the repo name; ARIA is the product identity used in the UI; older
+Hermes names remain on some runtime and adapter surfaces for continuity. Today
+the product is a recruiting operations console that turns intake into sourced
+candidates, guarded outreach, reply handling, booking workflows, executive
+visibility, and audit evidence with Supabase-backed live mode and a dry-run demo
+mode.
 
-![Aria Sourcing — Command Center](docs/screenshots/01-console.png)
+## Current Stack
 
-<sub>Live demo: <https://aria-sourcing-demo.vercel.app> — sign in with `admin` / `admin`. Synthetic data, mock integrations, dry-run by default.</sub>
+Verified from `package.json` on 2026-07-10:
 
-Hermes turns inbound job requests into booked interviews: it parses a job
-description from an email, builds a sourcing campaign, finds and scores synthetic
-candidates, drafts personalized outreach, processes replies, books interviews
-with mock Cal.com / Outlook / Teams links, logs everything, and proposes weekly
-skill improvements.
+| Area | Current truth |
+|---|---|
+| App | Next.js `^16.2.6` App Router, React `^19.2.7`, TypeScript `^5.6.3` |
+| Data/auth | Supabase Postgres, Supabase Auth, RLS tenancy, service-role server APIs |
+| UI/runtime | Tailwind, Recharts, lucide-react, Framer Motion, Three.js/R3F |
+| Node | `22.x` |
+| Verification | `npm test` runs 121 chained checks: 17 `pretest` commands plus 104 test commands |
+| Quality gates | `npm run typecheck`, `npm run lint`, `npm test`, `npm run build:isolated` for this OneDrive checkout |
 
-> **Human approval. Machine speed.** This is a runnable MVP/demo. Every
-> integration runs in **mock mode**, all data is **synthetic**, and all outreach
-> is **dry-run** by default — nothing is ever actually sent.
+## Shipped Surfaces
 
-## Screens
+| Surface | Where it lives | Status |
+|---|---|---|
+| Sourcing and campaign flow | `src/app/intake`, `src/app/campaigns`, `src/app/api/source`, `src/app/api/sourcing-agent` | Built |
+| Outreach guardrails | `src/app/outreach`, `src/lib/dispatch-outbound.ts`, `src/lib/gate.ts`, `src/lib/outreach-*` | Built |
+| Candidate disclosure security layer | `src/lib/agent-disclosure-policy.ts`, `tests/agent-disclosure-policy.mts`, `tests/salary-boundary-adversarial.mts` | Built |
+| Public careers intake | `src/app/careers`, `src/app/api/careers/route.ts`, `src/lib/careers*` | Built |
+| Executive dashboard | `src/app/exec`, `src/lib/exec-dashboard.ts` | Built |
+| Win log | `src/app/winlog`, `tests/winlog.mts` | Built |
+| Databricks intake | `src/app/api/integrations/databricks/{config,needs}`, `src/lib/integrations/databricks-authority.ts`, `tests/{databricks-intake,integration-authority}.mts` | Built in source; migration 0019, deployment `DATABRICKS_ALLOWED_ORIGINS`, and admin rebinding required |
+| MCP discovery and query auth | `src/app/api/mcp/test`, `tests/mcp-query-auth.mts` | Built; HTTPS port 443 only |
+| Third-party MCP execution | `src/lib/mcp-client.ts`, `tests/mcp-runtime-policy.mts` | Disabled in production; nonproduction requires explicit opt-in |
+| Hermes runtime proxy | `src/app/api/hermes/*`, `src/lib/api/hermes-proxy.ts` | Built, private runtime required |
+| Google/Microsoft mailbox OAuth | `src/app/auth/google/*`, `src/app/auth/microsoft/*`, `src/lib/email-oauth.ts` | Built, provider credentials required |
+| WhatsApp review and inbound safety | `src/app/api/webhooks/whatsapp/route.ts`, `src/app/api/outreach/whatsapp-review/route.ts`, `src/lib/channels.ts` | Built, Meta credentials required |
 
-### Ops Floor — the agents, at work in 3D
-![3D operations floor with the Mantu office, desks and live agents](docs/screenshots/02-floor3d.png)
+LinkedIn remains compliant assisted-manual unless an official signed integration
+is provided. The app must not automate LinkedIn login, scraping, or rate-limit
+bypass.
 
-### Campaigns — every open role, funnel and bottleneck
-![Campaigns board showing sourced/contacted/replied/booked funnels](docs/screenshots/03-campaigns.png)
+## Local Run
 
-### Outreach — human approval, machine speed
-![Outreach approval queue with a personalized draft, guardrails and rate limits](docs/screenshots/04-outreach.png)
-
-### Weekly reports — funnel economics and self-improvement
-![Weekly performance report with funnel chart and metrics](docs/screenshots/05-reports.png)
-
-### Chat — talk to any agent, live or demo
-![Chat with an Aria agent answering an outreach-prioritization question](docs/screenshots/06-chat.png)
-
-### Agent fleet, learning skills & confidentiality
-
-- **Agent fleet (`/fleet`)** — run **multiple coordinated Hermes agents**, each a
-  real, authorized sending seat (Microsoft Graph / Gmail / SendGrid / Resend via
-  official APIs). Connect Gmail or Microsoft mailboxes via OAuth directly from the
-  seat card. A shared **outreach ledger + suppression list** guarantees no
-  candidate is ever contacted twice across the whole fleet. Anti-ban guardrails:
-  per-account daily caps, **warm-up ramps**, send windows, human-paced jitter,
-  global re-contact window, domain verification (SPF/DKIM/DMARC), and **auto-pause**
-  on bounce/complaint spikes. This is team coordination *within* each platform's
-  official limits — **never** scraping, LinkedIn automation, or rate-limit evasion.
-  LinkedIn stays assisted-manual.
-- **Learning skills (`/skills`)** — the four Hermes skills (outreach / sourcing /
-  scoring / reply-classification) are versioned, editable playbooks. **Run
-  learning** analyses real outcomes (which tone converted, which score dimension
-  predicted interest, the reply mix) and proposes concrete changes; accepting one
-  bumps the skill version and **feeds back into behavior** (tone, scoring weights,
-  classification thresholds).
-- **Humanizer — always on.** Every generated message is run through the Humanizer:
-  it strips AI tells (em-dashes, "leverage/robust/seamless/delve", filler phrases)
-  before anything is shown or sent. No AI slop, ever. Per-agent **editable prompts**
-  set each agent's voice in Settings → the Humanizer still cleans the output.
-- **Candidate confidentiality.** PII is **purpose-limited to outreach**. With
-  confidentiality mode on, names/emails/profiles are masked everywhere except an
-  active outreach context, and any reveal is written to the audit trail.
-
-### Two run modes
-
-- **Demo mode (default)** — no setup. State persists to `localStorage`, the app is
-  open, no login.
-- **Live mode** — set the Supabase env vars and the console runs on a real
-  backend: state persists to **Supabase** in a shared **org workspace** (RLS by
-  email domain) and the whole app is gated behind **Microsoft (Entra) sign-in**.
-  Flip modes with env vars only — no code changes. Full guide:
-  **[SUPABASE_SETUP.md](SUPABASE_SETUP.md)** (`cp .env.local.example .env.local`).
-
-> **Operator's guide:** [NEEDS_GUIDE.md](NEEDS_GUIDE.md) — how to give Aria a
-> need (paste, email, or webhook) and get sourcing running, on any run mode.
-
----
-
-## 1. Install & run
+Install and run the demo UI:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open **http://localhost:3000**.
+Open `http://localhost:3000`.
 
-Other scripts:
+To run against local Supabase instead of browser demo state:
 
 ```bash
-npm run build      # production build
-npm run start      # serve the production build
-npm run typecheck  # tsc --noEmit
-npm run lint       # next lint
+bash scripts/local-supabase-up.sh
+npm run dev
 ```
 
-Requirements: Node 18.18+ (tested on Node 22). No database, no API keys, no
-network calls required — demo state is seeded and persisted to **localStorage**.
+The script starts local Supabase, applies every numbered migration in
+`supabase/migrations/`, and writes a local `.env.local`. It requires Docker
+Desktop and the Supabase CLI.
 
----
-
-## 2. Demo flow (the golden path)
-
-1. **Command Center (`/`)** — review live KPIs, the sourcing funnel, active
-   campaigns, integration health, and the "Attention needed" panel.
-2. **Intake (`/intake`)** — click **"Load sample urgent backend role"**, then
-   **Parse JD**. Review the structured `JobAnalysis`, confidence badges, and
-   validation warnings. Edit any field, then **Create Campaign**.
-3. **Campaign detail (`/campaigns/[id]`)** — click **Source next batch** to
-   generate scored candidates (dedupe rules skip duplicates / excluded / current
-   companies). Explore the tabs: JD Analysis, Sourcing Strategy, Candidates,
-   Outreach, Replies, Booking, Learning.
-4. **Candidate (drawer)** — open a candidate to see the score gauge, weighted
-   score breakdown, source query, history, and compliance controls.
-5. **Generate outreach** — from a candidate, draft a personalized message. It
-   lands in the **Outreach** approval queue.
-6. **Approve message (`/outreach`)** — tune the tone, edit inline, then
-   **Approve**. The gate blocks candidates under the score floor or over the
-   daily rate limit. Approved messages become *"Approved / Dry-run scheduled"*
-   and the candidate moves to **Contacted** — nothing is sent.
-7. **Classify reply (`/replies`)** — paste a reply (or use a sample) and watch
-   Hermes classify intent, confidence, and the recommended next action with a
-   drafted response.
-8. **Book interview (`/calendar`)** — book an interested candidate. Hermes
-   assigns an interviewer round-robin and generates mock Cal.com + Teams links
-   plus interviewer-prep and candidate-confirmation emails.
-9. **Weekly report (`/reports`)** — generate the funnel + performance report,
-   export it as Markdown, and accept/reject proposed **skill updates**
-   (outreach / sourcing / scoring / reply-classification).
-
-Use **⌘K** anywhere for the command palette. The user menu has **Reset demo
-data** to restore the seed.
-
----
-
-## 3. Mock-integration philosophy
-
-Hermes is **production-shaped but safe by default**:
-
-- **No real scraping, sending, LinkedIn automation, or enrichment calls.** Every
-  external system is an adapter stub in mock mode (`src/lib/integrations.ts`).
-- **Synthetic data only** — candidate names, companies, and emails are generated
-  (`*.example` domains) in `src/lib/seed.ts` / `src/lib/mock-ai.ts`.
-- **Dry-run + human-approval gate are ON** by default. No candidate is contacted
-  without explicit approval, and approval never triggers a real send.
-- **Platform terms are respected** — no bypassing login walls, rate limits, or
-  privacy restrictions. Daily caps (15 emails / 20 LinkedIn DMs) are enforced and
-  visualised.
-- **Compliance built in** — GDPR export/anonymize, suppression, do-not-contact,
-  unsubscribe enforcement, retention windows, CCPA "do not sell".
-
-The deterministic "AI" pipeline lives in `src/lib/mock-ai.ts`
-(`parseEmailAndJD`, `sourceCandidates`, `generateOutreach`, `classifyReply`,
-`createBooking`, `generateWeeklyReport`, …) and the scoring in
-`src/lib/scoring.ts`. Business rules (approval gate, dedupe, rate limits, SLA) are
-in `src/lib/rules.ts`.
-
----
-
-## 4. Where to plug in real APIs later
-
-The app is architected so a real backend can be wired without touching the UI:
-
-| Concern | Demo (now) | Production (later) |
-| --- | --- | --- |
-| Persistence | `localStorage` via `src/lib/store.ts` | **Supabase (built-in)** — `workspace_state` doc per org, RLS; see SUPABASE_SETUP.md |
-| Auth | none (open demo) | **Microsoft / Entra via Supabase Auth (built-in)** — middleware-gated |
-| CRM | mock activities | Twenty CRM adapter |
-| Inbox / parsing | `parseEmailAndJD()` heuristics | Microsoft Graph + an LLM parser |
-| Sourcing | `sourceCandidates()` synthetic gen | GitHub / LinkedIn official partner APIs |
-| Scoring | `scoreCandidate()` | Resume Matcher API |
-| Enrichment | none | Apollo / Hunter / Clearbit (official APIs) |
-| Email send | dry-run | Gmail / Microsoft Graph OAuth seats, plus SendGrid / Resend (gated behind the dry-run flag) |
-| LinkedIn | assisted-manual drafts | Official RSC integration only — Hermes drafts, human sends |
-| Hermes runtime | n/a in demo | Full proxy to local hermes-agent: status, memory, skills, sessions, schedules, curator, files |
-| Scheduling | mock links | Cal.com + Microsoft Graph / Teams |
-| Notifications | in-app toasts | Slack / Telegram |
-
-Each integration card in **Settings** carries a `mode: mock | live` flag and a
-"test connection" stub — the seam where real credentials and clients attach.
-
----
-
-## 5. Hermes runtime integration (now wired)
-
-When `HERMES_API_URL` is set, the app talks directly to a local
-[`hermes-agent`](https://github.com/project-hermes/hermes-agent) instance:
-
-- **Status** — `/settings` shows Hermes health, version, and device info.
-- **Chat** — `/chat` uses the Hermes gateway with streaming response support,
-  session history, and a searchable sidebar.
-- **Memory** — `/memory` reads and searches the Hermes memory graph.
-- **Soul** — `/soul` exposes model listing and session inspection.
-- **Skills** — `/skills` lists Hermes skills and can update their prompts through
-  a proxy that injects anti-bypass LinkedIn guardrails.
-- **Schedules** — `/schedules` bridges to Hermes scheduled tasks.
-- **Curator** — `/curator` browses Hermes files and curator status.
-
-The proxy (`src/app/api/hermes/proxy/route.ts`) is **allow-listed** and
-server-side authenticated so the browser never sees the Hermes API key. All
-requests are validated with Zod and the upstream URL is checked against an
-explicit allow-list to avoid SSRF.
-
----
-
-## 6. Tests & security audit
-
-The repo includes a growing test suite under `tests/`:
+## Verification
 
 ```bash
-npm run test           # node --test with tsx
-npm run test:security  # security-audit suite only
 npm run typecheck
 npm run lint
-npm run build
+npm test
+npm run build:isolated
 ```
 
-`tests/security-audit.mts` enforces static invariants:
-- No dangerous client-side APIs (`dangerouslySetInnerHTML`, `eval`, `Function`)
-- No hardcoded secrets or API key patterns
-- SSRF allow-list coverage for the Hermes proxy
-- `rel="noreferrer"` on every `target="_blank"` link
+Use `npm run build:isolated` in this OneDrive-synced checkout. It copies the
+project to a temporary workspace and runs the normal Next build there.
 
-For full production guidance see **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+## Documentation
 
----
+[`docs/README.md`](docs/README.md) is the documentation map — it says what every
+top-level directory and doc is for, and separates product docs from the operational
+dossier (`production-readiness/`) and agent working-state (`_relay/`, `_agent_state/`).
+Start there when you're looking for something and don't know which file holds it.
 
-## 7. Architecture
+## Deployment
 
-```
+The canonical deploy story is
+[`production-readiness/DEPLOYMENT_RUNBOOK.md`](production-readiness/DEPLOYMENT_RUNBOOK.md).
+The short root pointer is [`DEPLOYMENT.md`](DEPLOYMENT.md).
+
+Production requires, at minimum:
+
+- Fly-hosted PostgreSQL recovered and migrated only through the protected
+  bootstrap ledger path in the canonical workflow. Do not run `supabase db
+  push` against the Fly production database.
+- Required production env vars from `.env.production.example`.
+- Protected GitHub `Production` environment secrets for the Fly deployment and
+  a separate registry-only `FLY_REGISTRY_TOKEN` restricted to the app, DB,
+  bootstrap, and Kong registries. Do not reuse a general operator token.
+- A verified delivery provider path before any live outreach.
+- Domain, OAuth, and unsubscribe settings matching the deployment URL.
+- Green local/CI gates against the release SHA.
+
+The protected Fly workflow builds the app, DB, bootstrap, and Kong images from
+the exact release SHA, pushes isolated candidates, pulls and scans their exact
+registry digests, signs provenance and SBOM attestations, promotes immutable SHA
+tags, and deploys without rebuilding. It also pulls the config-pinned upstream
+Auth and REST images for `linux/amd64`, applies the same CycloneDX,
+HIGH/CRITICAL, and secret gates, records them as upstream rather than claiming a
+local build attestation, and compares all six running digests. Its always-run
+evidence upload retains rollback, manifest, schema-validated SBOM, vulnerability,
+filesystem plus image-config/history secret, attestation, and release receipts
+even when a later gate fails.
+The workflow must exist on the repository default branch before manual dispatch
+is available.
+
+The current dated status page is
+[`production-readiness/STATUS.md`](production-readiness/STATUS.md).
+
+## Architecture Map
+
+```text
 src/
-  app/                 # routes (App Router) — all pages are client components
-  components/
-    ui/                # design-system primitives (Button, Badge, Drawer, …)
-    app/               # shell (AppShell, Sidebar, TopBar, CommandSearch, nav)
-    charts/            # recharts wrappers (funnel, gauge, distribution, …)
-    dashboard/ shared/ campaigns/ candidates/ outreach/ replies/ calendar/
-    settings/ reports/ chat/ memory/ soul/ schedules/ curator/ # feature components
-  lib/
-    types.ts           # domain model (single source of truth)
-    store.ts           # React context + actions + localStorage persistence
-    seed.ts            # synthetic world (3 campaigns, ~52 candidates, …)
-    mock-ai.ts         # deterministic parse/source/outreach/classify/report
-    api/               # server-side helpers (Hermes proxy auth, integrations)
-    email-oauth.ts     # Gmail / Microsoft OAuth token exchange + refresh
-    fleet.ts           # seat orchestration, rate limits, health
-    linkedin-policy.ts # guardrails that block automation/scraping prompts
-    providers.ts       # structured provider logging
-    scoring.ts metrics.ts rules.ts integrations.ts utils.ts
-  supabase/migrations/ # Supabase schema (live mode)
-  tests/               # static security audit and validation tests
-  styles/globals.css   # design tokens + base styles
+  app/                       Next App Router pages and API routes
+  components/                App shell, feature UI, dashboard, settings, trust, 3D floor
+  lib/                       Domain logic, providers, Supabase helpers, security gates
+  styles/                    Global CSS and design tokens
+
+supabase/
+  migrations/                Root-level Supabase SQL migrations, apply in order
+
+tests/                       Root-level TypeScript test suites
+scripts/                     Local setup, backup/restore, smoke, build helpers
+production-readiness/        Canonical deployment runbook, checklist, status, older evidence pack
 ```
 
-**Stack:** Next.js 14 (App Router), TypeScript, Tailwind CSS, Recharts,
-lucide-react, Framer Motion, Zod. Mantu-inspired editorial UI — original Hermes
-identity, no third-party brand assets.
+Important code anchors:
 
----
+- `src/lib/types.ts` is the central domain model.
+- `src/lib/store.ts` owns client state and local/demo persistence.
+- `src/lib/supabase/*` owns live-mode Supabase config and server helpers.
+- `src/lib/crypto-secrets.ts` encrypts provider/OAuth secrets at rest when
+  `DATA_ENCRYPTION_KEY` is set and supports bounded rotation through
+  `DATA_ENCRYPTION_PREVIOUS_KEYS`.
+- `src/lib/agent-disclosure-policy.ts` blocks candidate-facing disclosure leaks.
+- `src/lib/metrics.ts` and `src/lib/exec-dashboard.ts` define metric semantics.
+- `src/app/api/cron/dispatch-outbound/route.ts` is protected by `CRON_SECRET`.
 
-_Hermes Sourcing · synthetic data · dry-run mode · built for demonstration._
+## Environment
+
+Use `.env.local.example` for local development and `.env.production.example` for
+Vercel/self-hosted production. Both examples are regenerated from the actual
+`process.env.*` reads under `src/`, plus the provider-map keys used through
+`process.env[PROVIDER_ENV[provider]]`.
+
+Do not commit real secrets.
+
+## Migration Rule
+
+Do not hand-pick a partial migration range. Apply every file in
+`supabase/migrations/` in order. Fly production uses only the protected
+bootstrap ledger path. `supabase db push` is limited to a separately linked
+legacy Vercel demo project, and `supabase db reset` is local development only.
+The only annotated per-migration list lives in the canonical deploy runbook.

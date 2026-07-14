@@ -1,0 +1,60 @@
+# aria-mantu-app, the public Next.js service.
+# The protected workflow builds Dockerfile.prod with the public build inputs,
+# scans and publishes that exact image, then deploys its immutable registry
+# digest with `fly deploy --image`. The [build] block documents the canonical
+# Dockerfile and public defaults; the protected release does not rebuild here.
+app            = "aria-mantu-app"
+primary_region = "cdg"
+
+[build]
+  dockerfile = "Dockerfile.prod"
+  [build.args]
+    NEXT_PUBLIC_SUPABASE_URL         = "https://aria-mantu-kong.fly.dev"   # browser → Supabase (public Kong)
+    NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN = ""
+    NEXT_PUBLIC_ENABLE_DEMO_LOGIN    = "false"                       # real tenant: OFF → strict fail-closed
+    NEXT_PUBLIC_ENABLE_AZURE_LOGIN   = "false"                       # enable only with complete GoTrue Azure config
+    # NEXT_PUBLIC_SUPABASE_ANON_KEY passed on the CLI (see deploy cmd above)
+
+[env]
+  NODE_ENV                      = "production"
+  PORT                          = "3000"
+  HOSTNAME                      = "0.0.0.0"
+  NEXT_TELEMETRY_DISABLED       = "1"
+  # Server (Node) reaches Supabase over the 6PN private net, NOT the public URL:
+  SUPABASE_URL                  = "http://aria-mantu-kong.internal:8000"
+  # Inert until a seat goes live (also needs a provider key + verified domain); safe to set now:
+  OUTREACH_UNSUBSCRIBE_BASE_URL = "https://aria-mantu-app.fly.dev"
+  # Secrets (fly secrets set): SUPABASE_SERVICE_ROLE_KEY (=FLY_SUPABASE_SERVICE_KEY),
+  #   DATA_ENCRYPTION_KEY (=FLY_DATA_ENCRYPTION_KEY), CRON_SECRET (=FLY_CRON_SECRET).
+  # Do NOT set NEXT_PUBLIC_ENABLE_DEMO_LOGIN / DEMO_ADMIN_PASSWORD on a real tenant.
+
+[http_service]
+  internal_port        = 3000
+  force_https          = true
+  auto_stop_machines   = "suspend"
+  auto_start_machines  = true
+  min_machines_running = 1
+  [http_service.concurrency]
+    type       = "requests"
+    soft_limit = 200
+    hard_limit = 250
+  [[http_service.checks]]
+    method       = "GET"
+    path         = "/api/health"     # unauthenticated, force-dynamic; returns {ok,status:'healthy'} 200
+    interval     = "15s"
+    timeout      = "5s"
+    grace_period = "20s"
+  [[http_service.checks]]
+    method       = "GET"
+    path         = "/api/ready"      # DB, Auth, queue, migration hash, and release identity
+    interval     = "30s"
+    timeout      = "5s"
+    grace_period = "30s"
+
+# shared-cpu-1x starves Next.js SSR under load (oversubscribed fractional vCPU →
+# render latency + CPU steal jitter). shared-cpu-2x doubles vCPU/RAM for a modest
+# cost bump. If SSR still feels slow, go performance-1x (a DEDICATED vCPU removes
+# oversubscription jitter entirely) — that's the next lever, not a bigger shared VM.
+[[vm]]
+  size   = "shared-cpu-2x"
+  memory = "2gb"

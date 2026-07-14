@@ -1,5 +1,8 @@
 # Evidence Index — MSourcing production-readiness review
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **Date:** 2026-06-27 · **Maintainer:** Release Manager. Indexes every deliverable under `production-readiness/` with a one-line purpose and the gate(s) it supports. All evidence is local (no deployed systems; no git remote; dirty working tree). Reproduce read-only commands from repo root.
 
 ## Reproducible quality-gate evidence (verified 2026-06-27)

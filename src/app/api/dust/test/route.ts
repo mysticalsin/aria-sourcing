@@ -50,8 +50,9 @@ export async function POST(req: NextRequest) {
   try {
     const agents = await listDustAgents(workspaceId, apiKey, region);
     return NextResponse.json({ ok: true, agents });
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : "Failed to connect to Dust.";
-    return NextResponse.json({ ok: false, error: detail }, { status: 502 });
+  } catch {
+    // Never reflect provider-controlled error text: it may echo the submitted
+    // bearer credential in raw or encoded form.
+    return NextResponse.json({ ok: false, error: "Dust connection failed." }, { status: 502 });
   }
 }

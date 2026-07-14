@@ -9,6 +9,7 @@
 
 import type { McpTool } from "@/lib/mcp-client";
 import { assertPublicUrl } from "@/lib/api/url";
+import { fetchPublicUrl } from "@/lib/api/public-fetch";
 import {
   openObscuraSession,
   touchObscuraSession,
@@ -24,6 +25,24 @@ const NAV_TIMEOUT_MS = 15_000;
 const ROBOTS_TIMEOUT_MS = 15_000;
 const MAX_TEXT = 6_000;
 const MAX_SCREENSHOT_BYTES = 1_500_000;
+
+type BrowserEgressEnvironment = {
+  NODE_ENV?: string;
+  OBSCURA_PUBLIC_EGRESS_VERIFIED?: string;
+  OBSCURA_TEST_MODE?: string;
+};
+
+/**
+ * Chromium owns its own DNS and sockets, so Node-side URL validation cannot
+ * close DNS rebinding. Production stays disabled until the sidecar is isolated
+ * behind a verified public-only egress proxy and container network policy.
+ */
+export function browserEgressReady(env: BrowserEgressEnvironment = process.env): boolean {
+  return (
+    env.OBSCURA_PUBLIC_EGRESS_VERIFIED === "true" ||
+    (env.NODE_ENV === "test" && env.OBSCURA_TEST_MODE === "true")
+  );
+}
 
 export interface ToolResult {
   ok: boolean;
@@ -41,7 +60,7 @@ export const BROWSER_TOOL_DEFS: McpTool[] = [
       "Open a PUBLIC web page in a real (read-only, JS-executing) browser session and return its rendered text. Use only when fetch_page can't read a JS-rendered page. Returns a sessionId for follow-up browser_act/browser_extract/browser_close calls. Sessions auto-expire (idle 60s / hard cap 5min).",
     inputSchema: {
       type: "object",
-      properties: { url: { type: "string", description: "Absolute http(s) URL of a public page." } },
+      properties: { url: { type: "string", description: "Absolute HTTPS URL of a public page." } },
       required: ["url"],
     },
   },
@@ -165,16 +184,14 @@ const OUR_UA_TOKEN = "ariaresearchbot";
 /** robots.txt check for a navigation target. Fails CLOSED on network/server errors. */
 async function checkRobotsAllowed(target: URL): Promise<{ allowed: boolean; reason?: string }> {
   const robotsUrl = `${target.protocol}//${target.host}/robots.txt`;
-  const guard = await assertPublicUrl(robotsUrl);
-  if (!guard.ok) return { allowed: false, reason: `robots.txt check blocked: ${guard.reason}` };
-
   let res: Response;
   try {
-    res = await fetch(robotsUrl, {
+    res = await fetchPublicUrl(robotsUrl, {
       method: "GET",
       headers: { accept: "text/plain", "user-agent": USER_AGENT },
       redirect: "manual",
-      signal: AbortSignal.timeout(ROBOTS_TIMEOUT_MS),
+      timeoutMs: ROBOTS_TIMEOUT_MS,
+      maxResponseBytes: 256_000,
     });
   } catch {
     return { allowed: false, reason: "robots.txt unreachable; blocking to be safe." };
@@ -375,6 +392,10 @@ async function browserClose(sessionId: string): Promise<ToolResult> {
  */
 export async function runBrowserTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {
   try {
+    if (!browserEgressReady()) {
+      if (name === "browser_close") return await browserClose(String(args.sessionId ?? ""));
+      return { ok: false, error: "Browser research is disabled until public-only sidecar egress is verified." };
+    }
     switch (name) {
       case "browser_open":
         return await browserOpen(String(args.url ?? ""));

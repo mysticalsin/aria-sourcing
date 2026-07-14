@@ -1,5 +1,8 @@
 # INVENTORY — MSourcing (Hermes Sourcing by Mantu)
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **Phase 1 — Full inventory & architecture.** Orchestrator / Inventory Lead.
 **Audit date:** 2026-06-27 · **Repo:** `/Users/tony/Library/CloudStorage/OneDrive-MantuGroup/Documents/TEST/MSourcing`
 **Branch:** `main` · **Working tree:** DIRTY (73 modified, 86 untracked, 134 tracked — `git status --porcelain`). Audited as-is.

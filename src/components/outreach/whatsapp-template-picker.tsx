@@ -28,7 +28,7 @@ type TemplateListResponse = {
 
 type QueueResponse = {
   ok: boolean;
-  status?: "sent" | "queued" | "skipped" | "error" | "reconciliation-required";
+  status?: "sent" | "queued" | "skipped" | "error" | "reconciliation-required" | "dry-run";
   detail?: string;
   error?: string;
 };
@@ -135,6 +135,14 @@ export function WhatsAppTemplatePicker() {
       });
       const result = (await response.json().catch(() => ({ ok: false }))) as QueueResponse;
       if (!response.ok || !result.ok) throw new Error(result.error ?? result.detail ?? "Could not queue the approved template.");
+
+      if (result.status === "dry-run") {
+        const detail = result.detail ?? "Public demo: no WhatsApp template was queued.";
+        setOutcome(detail);
+        setHumanApproval(false);
+        toast({ title: "Public demo only", description: detail, variant: "info" });
+        return;
+      }
 
       const status = result.status === "sent" ? "Sent through the guarded WhatsApp dispatcher." : "Queued for policy-checked delivery.";
       setOutcome(status);

@@ -46,6 +46,11 @@ export function escapeRegExp(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** Escape one GitHub-Flavored Markdown table cell without changing its text. */
+export function escapeMarkdownTableCell(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r\n?|\n/g, " ");
+}
+
 export function slugify(input: string): string {
   return input
     .toLowerCase()

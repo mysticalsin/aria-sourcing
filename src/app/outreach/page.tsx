@@ -241,12 +241,17 @@ function OutreachView() {
     setApprovingAll(true);
     let approved = 0;
     let blocked = 0;
+    let simulated = 0;
     const blockers = new Set<string>();
     const blockedIds = new Set<string>();
     try {
       for (const id of ids) {
         const res = await actions.approveOutreach(id);
-        if (res.allowed) approved += 1;
+        if (res.dryRun) {
+          simulated += 1;
+          blockedIds.add(id);
+          res.warnings.forEach((warning) => blockers.add(warning));
+        } else if (res.allowed) approved += 1;
         else {
           blocked += 1;
           blockedIds.add(id);
@@ -257,12 +262,16 @@ function OutreachView() {
       // rather than silently losing the selection after a partial failure.
       setSelectedIds(blockedIds);
       toast({
-        title: blocked > 0 ? `Approved ${approved}, ${blocked} blocked` : `Approved ${approved}`,
+        title: simulated > 0
+          ? `Approved ${approved}, simulated ${simulated}, blocked ${blocked}`
+          : blocked > 0
+            ? `Approved ${approved}, ${blocked} blocked`
+            : `Approved ${approved}`,
         description:
-          blocked > 0
-            ? `Blocked drafts stayed selected in the queue. ${Array.from(blockers).join(" ")}`
+          blocked > 0 || simulated > 0
+            ? `Unchanged drafts stayed selected in the queue. ${Array.from(blockers).join(" ")}`
             : "Queued for send per the usual approval flow.",
-        variant: blocked > 0 ? "warning" : "success",
+        variant: blocked > 0 || simulated > 0 ? "warning" : "success",
       });
     } finally {
       setApprovingAll(false);

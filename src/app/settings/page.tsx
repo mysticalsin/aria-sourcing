@@ -30,6 +30,7 @@ import { ModelsPanel } from "@/components/settings/models-panel";
 import { ToolsPanel } from "@/components/settings/tools-panel";
 import { McpServersPanel } from "@/components/settings/mcp-servers-panel";
 import { DustAgentPanel } from "@/components/settings/dust-agent-panel";
+import { DatabricksPanel } from "@/components/settings/databricks-panel";
 import { HermesRuntimePanel } from "@/components/settings/hermes-runtime-panel";
 import { SchedulesPanel } from "@/components/settings/schedules-panel";
 import { HermesSchedulesPanel } from "@/components/settings/hermes-schedules-panel";
@@ -392,16 +393,18 @@ export default function SettingsPage() {
             <Card>
               <CardContent className="space-y-5">
                 <div className="divide-y divide-line rounded-2xl border border-line">
-                  <ToggleRow
-                    id="humanApprovalGate"
-                    icon={<ShieldCheck className="h-4 w-4" />}
-                    label="Human approval gate"
-                    description="Every outreach message must be approved by a person before it can be scheduled."
-                    checked={settings.humanApprovalGate}
-                    onCheckedChange={(v) =>
-                      setToggle({ humanApprovalGate: v }, "Human approval gate", v)
-                    }
-                  />
+                  <div className="flex items-center justify-between gap-4 p-4">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+                      <div>
+                        <p className="text-sm font-semibold text-ink">Human approval required</p>
+                        <p className="mt-1 text-xs text-muted">
+                          Every generated message stays in human review until a named operator approves its exact content and recipient.
+                        </p>
+                      </div>
+                    </div>
+                    <Badge tone="success" size="sm">Always on</Badge>
+                  </div>
                   <ToggleRow
                     id="dryRunMode"
                     icon={<Lock className="h-4 w-4" />}
@@ -566,11 +569,14 @@ export default function SettingsPage() {
                 description="Integrations appear here once Aria is provisioned with its tool connections."
               />
             ) : (
-              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                {integrations.map((i) => (
-                  <IntegrationCard key={i.id} integration={i} />
-                ))}
-              </div>
+              <>
+                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                  {integrations.map((i) => (
+                    <IntegrationCard key={i.id} integration={i} />
+                  ))}
+                </div>
+                <DatabricksPanel />
+              </>
             )}
           </Section>
 

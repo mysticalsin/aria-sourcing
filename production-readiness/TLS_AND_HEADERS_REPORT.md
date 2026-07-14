@@ -1,5 +1,8 @@
 # TLS & Security Headers Report — MSourcing (hermes-sourcing)
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 Phase 6 — Infrastructure / Network / IAM / TLS · **Sub-area: TLS / HTTPS / HSTS / security headers**
 Reviewer: Cloud / Network / IAM Engineer
 Date: 2026-06-27

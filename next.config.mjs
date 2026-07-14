@@ -19,6 +19,9 @@ export function resolveNextDistDir(configuredDistDir) {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Emit a self-contained server bundle (.next/standalone/server.js) for the Fly
+  // production container (Dockerfile.prod). Vercel ignores it; local dev unaffected.
+  output: "standalone",
   // Do not advertise the framework via X-Powered-By (information disclosure).
   poweredByHeader: false,
   // Defaults to `.next` so CI/Vercel are unaffected. For synced checkouts,
@@ -33,6 +36,16 @@ const nextConfig = {
     const scriptSrc = isProd
       ? "script-src 'self' 'unsafe-inline'"
       : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
+    // connect-src: always allow hosted Supabase (Vercel demo) + the self-hosted Fly Kong
+    // gateway (Fly prod). Local Supabase on :54321 is dev-only (compose end-to-end).
+    const connectSrc = [
+      "connect-src 'self' blob:",
+      "https://*.supabase.co wss://*.supabase.co",
+      "https://aria-mantu-kong.fly.dev wss://aria-mantu-kong.fly.dev",
+      ...(isProd
+        ? []
+        : ["http://127.0.0.1:54321 ws://127.0.0.1:54321 http://localhost:54321 ws://localhost:54321"]),
+    ].join(" ");
     const csp = [
       "default-src 'self'",
       scriptSrc,
@@ -43,8 +56,7 @@ const nextConfig = {
       "media-src 'self' blob: https://d8j0ntlcm91z4.cloudfront.net",
       // blob: lets three's GLTFLoader fetch each GLB's own embedded textures
       // (same-origin in-memory data the page itself creates).
-      // Local Supabase (127.0.0.1:54321) added for local end-to-end runs; cloud uses *.supabase.co.
-      "connect-src 'self' blob: https://*.supabase.co wss://*.supabase.co http://127.0.0.1:54321 ws://127.0.0.1:54321 http://localhost:54321 ws://localhost:54321",
+      connectSrc,
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -58,6 +70,9 @@ const nextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=()" },
+          ...(isProd
+            ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }]
+            : []),
         ],
       },
       {

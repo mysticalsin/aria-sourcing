@@ -1,5 +1,8 @@
 # Software Bill of Materials (SBOM) — MSourcing ("hermes-sourcing")
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 - **Component:** MSourcing application (`package.json` name `hermes-sourcing@1.0.0`)
 - **Repo:** `/Users/tony/Library/CloudStorage/OneDrive-MantuGroup/Documents/TEST/MSourcing` (git `main`, **working tree DIRTY**)
 - **Generated:** 2026-06-27, manually compiled from `package.json` + `package-lock.json` + `npm ls` + `npm audit`

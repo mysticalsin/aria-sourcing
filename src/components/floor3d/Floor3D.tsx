@@ -4,7 +4,7 @@ import * as React from "react";
 import { Suspense } from "react";
 import { Box } from "lucide-react";
 import RetroOfficeScene from "./retro/RetroOfficeScene";
-import type { OfficeAgent } from "./types";
+import type { OfficeAgent } from "@/lib/floor3d";
 
 /* ============================================================================
    Client wrapper for the 3D floor. Sizes the canvas container and provides a

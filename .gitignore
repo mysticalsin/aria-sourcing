@@ -1,5 +1,7 @@
 # dependencies
 /node_modules
+/.localbin/
+/.rocket-fuel/
 /.pnp
 .pnp.js
 
@@ -36,6 +38,7 @@ backups/
 *.jpeg
 
 # local 3D verification screenshots
+/*.png
 /floor3d-*.png
 /office-*.png
 
@@ -49,3 +52,10 @@ tmp/
 # NEXT_DIST_DIR is an absolute path (e.g. $TMPDIR) -- it lands nested in here
 # instead of truly outside the repo. Ignore defensively so it can never be committed.
 var/
+
+production-readiness/.fly-secrets.env
+production-readiness/.fly-token.env
+aria-mark.png
+
+# operational one-off admin setup helper (reads gitignored secrets)
+set-admin-password.sh

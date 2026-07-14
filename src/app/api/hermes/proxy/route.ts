@@ -13,6 +13,10 @@ import {
 } from "@/lib/api/hermes-proxy";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { redactObject, redactSecrets, redactEmail } from "@/lib/log-redact";
+import {
+  evaluateHermesProxyOperation,
+  evaluateHermesWorkspaceBinding,
+} from "@/lib/api/hermes-runtime-isolation";
 
 /**
  * Aria runtime proxy (SERVER ONLY).
@@ -52,6 +56,8 @@ async function handler(req: NextRequest) {
   // AND prod. The proxy must never be an open relay (closes the unauthenticated-GET
   // BFLA / open-relay hole). No demo bypass.
   let userId: string | null = null;
+  let workspaceId: string | null = null;
+  let callerRole: Role | null = null;
   if (supabaseEnabled) {
     if (!supabase) return NextResponse.json({ ok: false, reason: "No Supabase client." }, { status: 500 });
     const {
@@ -74,23 +80,39 @@ async function handler(req: NextRequest) {
   const rl = checkRateLimit(rateLimitKey(req, "hermes-proxy", userId), { windowMs: 60_000, max: 60 });
   if (!rl.ok) return tooManyRequests(rl.retryAfterSec);
 
-  // S-3: admin gate for mutating methods (role resolved server-side via Supabase).
+  // S-3: bind the one-process runtime to the caller's server-resolved workspace.
   if (supabaseEnabled && supabase) {
-    // Mutating methods reach admin-level Aria config paths (config, memory,
-    // schedules, tools, models, gateway, …) — require admin. POST is allowed for
-    // non-admins ONLY on the runtime chat/session endpoints; every other POST
-    // (and all PUT/PATCH/DELETE) is admin-only, closing a privilege-escalation
-    // path to Aria config.
+    const [{ data: resolvedWorkspaceId, error: workspaceError }, { data: role }] = await Promise.all([
+      supabase.rpc("current_workspace_id"),
+      supabase.rpc("current_profile_role"),
+    ]);
+    workspaceId = typeof resolvedWorkspaceId === "string" ? resolvedWorkspaceId : null;
+    callerRole = role as Role;
+    if (workspaceError || !workspaceId) {
+      return NextResponse.json({ ok: false, reason: "Workspace not available." }, { status: 403 });
+    }
+  }
+  const production = process.env.NODE_ENV === "production";
+  const binding = evaluateHermesWorkspaceBinding({
+    production,
+    supabaseEnabled,
+    workspaceId,
+    boundWorkspaceId: process.env.HERMES_RUNTIME_WORKSPACE_ID,
+  });
+  if (!binding.ok) {
+    return NextResponse.json({ ok: false, reason: binding.reason }, { status: binding.status });
+  }
+
+  // Preserve the development admin boundary. Production is stricter below:
+  // every generic mutation is disabled, including chat and session creation.
+  if (!production && supabaseEnabled && supabase) {
     const requestedPath = (req.nextUrl.searchParams.get("upstreamPath") ?? "").replace(/^\/+/, "");
-    const NON_ADMIN_POST_PATHS = ["v1/chat/completions", "api/sessions"];
-    const isAdminMutation =
+    const nonAdminPostPaths = ["v1/chat/completions", "api/sessions"];
+    const adminMutation =
       ["PUT", "PATCH", "DELETE"].includes(req.method) ||
-      (req.method === "POST" && !NON_ADMIN_POST_PATHS.includes(requestedPath));
-    if (isAdminMutation) {
-      const { data: role } = await supabase.rpc("current_profile_role");
-      if (!can(role as Role, "manage_settings")) {
-        return NextResponse.json({ ok: false, reason: "Admins only." }, { status: 403 });
-      }
+      (req.method === "POST" && !nonAdminPostPaths.includes(requestedPath));
+    if (adminMutation && !can(callerRole as Role, "manage_settings")) {
+      return NextResponse.json({ ok: false, reason: "Admins only." }, { status: 403 });
     }
   }
 
@@ -112,6 +134,19 @@ async function handler(req: NextRequest) {
     return NextResponse.json({ ok: false, reason: pathCheck.reason }, { status: 404 });
   }
 
+  const operation = evaluateHermesProxyOperation({
+    production,
+    method: req.method,
+    upstreamPath: pathCheck.upstreamPath,
+    canManageSettings: can(callerRole as Role, "manage_settings"),
+  });
+  if (!operation.ok) {
+    return NextResponse.json(
+      { ok: false, reason: operation.reason },
+      { status: operation.status, ...(operation.status === 405 ? { headers: { Allow: "GET" } } : {}) },
+    );
+  }
+
   // S-6: base URL from env only.
   const baseUrlResult = getHermesBaseUrl();
   if (!baseUrlResult.ok) {
@@ -120,10 +155,13 @@ async function handler(req: NextRequest) {
 
   // S-7: resolve bearer token server-side.
   const bearerToken = await resolveHermesBearerToken(queryCheck.data.hermesApiKeyId);
+  if (!bearerToken.ok) {
+    return NextResponse.json({ ok: false, reason: bearerToken.reason }, { status: 403 });
+  }
   const headers: Record<string, string> = {};
   const contentType = req.headers.get("content-type");
   if (contentType) headers["Content-Type"] = contentType;
-  if (bearerToken) headers["Authorization"] = `Bearer ${bearerToken}`;
+  if (bearerToken.token) headers["Authorization"] = `Bearer ${bearerToken.token}`;
 
   const upstreamUrl = new URL(`${baseUrlResult.baseUrl}/${pathCheck.upstreamPath}`);
   // Forward only an explicit safe-param allowlist — never blindly relay client-supplied

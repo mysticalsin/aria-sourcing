@@ -1,5 +1,8 @@
 # DATABASE_REVIEW.md — MSourcing (hermes-sourcing)
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **Phase 5 — Database** · Maps to **Gate 5 — Data/database**
 Reviewer: Database & Data Engineer (production-readiness review)
 Date: 2026-06-27 · Branch `main`, **working tree DIRTY**

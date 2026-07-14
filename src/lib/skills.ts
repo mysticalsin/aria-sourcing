@@ -7,6 +7,7 @@ import type {
   ScoringWeights,
   SkillKey,
   SkillUpdate,
+  SourcePlatform,
 } from "./types";
 import { OUTREACH_TONES } from "./types";
 import { genId, round } from "./utils";
@@ -179,6 +180,28 @@ export function analyzeOutcomes(state: HermesState): OutcomeAnalysis {
 
 /* ---- Proposals (concrete, data-backed) ----------------------------------- */
 
+function rankedWinTones(state: HermesState): { tone: OutreachTone; wins: number }[] {
+  const counts = new Map<OutreachTone, number>();
+  for (const win of state.wins ?? []) {
+    const tone = win.messageTraits.tone;
+    if (!tone) continue;
+    counts.set(tone, (counts.get(tone) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([tone, wins]) => ({ tone, wins }))
+    .sort((a, b) => b.wins - a.wins);
+}
+
+function rankedWinPlatforms(state: HermesState): SourcePlatform[] {
+  const counts = new Map<SourcePlatform, number>();
+  for (const win of state.wins ?? []) {
+    counts.set(win.sourcePlatform, (counts.get(win.sourcePlatform) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([platform]) => platform);
+}
+
 export function proposeSkillUpdates(state: HermesState): SkillUpdate[] {
   const a = analyzeOutcomes(state);
   const now = new Date().toISOString();
@@ -223,9 +246,12 @@ function mk(skill: SkillKey, title: string, rationale: string, before: string, a
 /** Compute the empirically-best params for a skill from current outcomes. */
 export function learnedParamsFor(key: SkillKey, state: HermesState): AgentSkillParams {
   const a = analyzeOutcomes(state);
+  const winTones = rankedWinTones(state);
+  const bestWinTone = winTones[0]?.wins >= 2 ? winTones[0].tone : null;
+  const winPlatforms = rankedWinPlatforms(state).slice(0, 3);
   switch (key) {
     case "outreach_skill":
-      return { preferredTone: a.bestTone ?? "Casual Professional", leadWithArtifact: true };
+      return { preferredTone: bestWinTone ?? a.bestTone ?? "Casual Professional", leadWithArtifact: true };
     case "scoring_skill": {
       const cur = getSkill(state.skills, "scoring_skill")?.params.weights ?? {};
       if (a.topDimension && a.topDimension.key !== "skills") {
@@ -236,7 +262,12 @@ export function learnedParamsFor(key: SkillKey, state: HermesState): AgentSkillP
     case "reply_classification_skill":
       return { qualifiedInterestFloor: a.unclearRate > 0.15 ? 0.66 : 0.7 };
     case "sourcing_skill":
-      return { preferredPlatforms: getSkill(state.skills, "sourcing_skill")?.params.preferredPlatforms ?? ["GitHub", "LinkedIn"] };
+      return {
+        preferredPlatforms:
+          winPlatforms.length > 0
+            ? winPlatforms
+            : getSkill(state.skills, "sourcing_skill")?.params.preferredPlatforms ?? ["GitHub", "LinkedIn"],
+      };
     default:
       return {};
   }

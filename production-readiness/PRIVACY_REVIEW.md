@@ -1,5 +1,8 @@
 # Privacy Review — Hermes Sourcing (MSourcing)
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **Phase:** 13 — Privacy / Compliance / Governance
 **Gate:** Gate 13 — Privacy / compliance
 **Date:** 2026-06-27

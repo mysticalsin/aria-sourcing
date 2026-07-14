@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { sendViaProvider, type SendRequest } from "@/lib/providers";
 import { sendViaGmailApi, sendViaMicrosoftGraph } from "@/lib/email-oauth";
 import { domainVerified } from "@/lib/domain-verification";
@@ -18,6 +18,8 @@ import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/
 import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
 import { dispatchDue } from "@/lib/dispatch-outbound";
 import { createEmailUnsubscribeLink } from "@/lib/email-unsubscribe";
+import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
+import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 
 const OutreachSendSchema = z.object({
   seatId: z.string().uuid().optional(),
@@ -33,6 +35,10 @@ const OutreachSendSchema = z.object({
   confirmLive: z.boolean().default(false),
 });
 
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
 /**
  * Outreach send endpoint — safe by construction.
  *
@@ -41,8 +47,9 @@ const OutreachSendSchema = z.object({
  *   2. The caller has an authenticated session.
  *   3. The named seat belongs to the caller's workspace, is `live`, and has a
  *      verified domain. The From address is taken from the SEAT, never the body.
- *   4. Email/SMS clears `claim_and_record`; WhatsApp is written to the durable
+ *   4. Email clears `claim_email_outbound`; WhatsApp is written to the durable
  *      outbox and clears `claim_whatsapp_outbound` before the dispatcher sends.
+ *      SMS remains disabled before any database or provider work.
  *   5. `confirmLive` is explicitly true.
  * Anything else degrades to dry-run. In DEMO mode there is no enforcement
  * backend, so the route NEVER sends — it always returns dry-run.
@@ -129,6 +136,23 @@ export async function POST(req: NextRequest) {
   if (!approvalWid) {
     return NextResponse.json({ status: "error", detail: "Workspace not found." }, { status: 400 });
   }
+  const { data: workspaceState } = await supabase
+    .from("workspace_state")
+    .select("state")
+    .eq("workspace_id", approvalWid)
+    .maybeSingle();
+  const campaigns = Array.isArray(record(workspaceState?.state)?.campaigns)
+    ? record(workspaceState?.state)?.campaigns as unknown[]
+    : [];
+  const campaign = campaigns.find((item) => record(item)?.id === campaignId);
+  const disclosure = validateCandidateBoundText(body, disclosureInternalFromCampaignLike(campaign));
+  const injection = detectInjection(body);
+  if (!disclosure.safe || injection.flagged) {
+    return NextResponse.json(
+      { status: "error", detail: disclosure.reason ?? "injection-suspected" },
+      { status: 422 },
+    );
+  }
   const approvedContentHash = approvalHash(subject, body);
   const approvedScopeHash = approvalScopeHash({
     candidateId,
@@ -202,6 +226,10 @@ export async function POST(req: NextRequest) {
     }
     if (phoneSeat.provider !== "WhatsApp Cloud") {
       return NextResponse.json({ status: "skipped", detail: "Seat is not a WhatsApp Cloud sender." });
+    }
+
+    if (publicDemoSideEffectsDisabled()) {
+      return NextResponse.json({ status: "dry-run", detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
     }
 
     const { data: queued, error: queueErr } = await supabase
@@ -308,6 +336,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "dry-run", detail: "Seat not live, nothing sent." });
   }
 
+  if (publicDemoSideEffectsDisabled()) {
+    return NextResponse.json({ status: "dry-run", detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
+  }
+
   // Domain verification happens before the irreversible claim. A dry-run
   // decision must never leave a claimed ledger row that blocks later outreach.
   if (!seat.domain_verified) {
@@ -376,13 +408,22 @@ export async function POST(req: NextRequest) {
   if (claimObj?.allowed !== true) {
     return NextResponse.json({ status: "skipped", detail: `Guardrail blocked: ${claimObj?.reason ?? "blocked by guardrails"}` });
   }
-  // The claim is recorded as 'claimed' (holds the de-dupe slot). We reconcile it to
-  // 'sent' or 'skipped' after the provider actually responds — so a failed send is
-  // retryable and never counts as contacted.
+  // The claim is recorded as 'claimed' (holds the de-dupe slot). We reconcile it
+  // after the provider actually responds: 'sent' on acceptance, 'skipped' for a
+  // proven pre-transport failure (retryable — never counts as contacted), or
+  // 'ambiguous' when the outcome is unknown after transport began. 'ambiguous'
+  // keeps the de-dupe slot (the partial unique indexes include it) and is only
+  // ever released by a human — retrying an unknown acceptance could deliver the
+  // same approved message twice.
   const ledgerId = claimObj.ledger_id;
-  const reconcile = async (status: "sent" | "skipped", reason: string | null) => {
+  const reconcile = async (status: "sent" | "skipped" | "ambiguous", reason: string | null) => {
     if (ledgerId) await supabase.from("outreach_ledger").update({ status, reason }).eq("id", ledgerId);
   };
+  // Immutable per-attempt identity, generated BEFORE any provider call and
+  // stamped on the claimed row via the service client below (clients hold no
+  // update grant on it). It travels to the provider as an X-Aria-Send-Attempt
+  // header, so a human can match an ambiguous attempt against provider logs.
+  const sendAttemptId = randomUUID();
 
   // Token hashes are service-only data. Bind this exact recipient token to the
   // just-claimed ledger before touching any provider; failure releases the claim
@@ -397,7 +438,7 @@ export async function POST(req: NextRequest) {
   }
   const { data: tokenBound, error: tokenBindErr } = await serviceSupabase
     .from("outreach_ledger")
-    .update({ email_unsubscribe_token_hash: unsubscribe.tokenHash })
+    .update({ email_unsubscribe_token_hash: unsubscribe.tokenHash, send_attempt_id: sendAttemptId })
     .eq("id", ledgerId)
     .eq("workspace_id", approvalWid)
     .is("email_unsubscribe_token_hash", null)
@@ -413,8 +454,18 @@ export async function POST(req: NextRequest) {
   }
 
   // 5. Send — From is the SEAT's verified mailbox, never the request body.
+  // `transportStarted` separates a proven pre-transport throw (connection
+  // lookup, secret decryption — safe to retry) from a throw once a provider
+  // call is possible (the provider may already hold the message — never retry).
+  let transportStarted = false;
   try {
-    let outcome: { status: "sent" | "dry-run" | "error"; provider: string; detail: string; id?: string };
+    let outcome: {
+      status: "sent" | "dry-run" | "error";
+      deliveryState?: "accepted" | "not-sent" | "unknown";
+      provider: string;
+      detail: string;
+      id?: string;
+    };
 
     if (seat.provider === "Gmail API" || seat.provider === "Microsoft Graph") {
       const svc = serviceSupabase;
@@ -448,11 +499,16 @@ export async function POST(req: NextRequest) {
         updatedAt: "",
       };
 
+      transportStarted = true;
       if (seat.provider === "Gmail API") {
-        outcome = await sendViaGmailApi({ from: seat.operator_email, to: candidateEmail, subject, body, unsubscribeUrl: unsubscribe.url }, connection);
+        outcome = await sendViaGmailApi({ from: seat.operator_email, to: candidateEmail, subject, body, unsubscribeUrl: unsubscribe.url, attemptId: sendAttemptId }, connection);
       } else {
-        outcome = await sendViaMicrosoftGraph({ from: seat.operator_email, to: candidateEmail, subject, body, unsubscribeUrl: unsubscribe.url }, connection);
+        outcome = await sendViaMicrosoftGraph({ from: seat.operator_email, to: candidateEmail, subject, body, unsubscribeUrl: unsubscribe.url, attemptId: sendAttemptId }, connection);
       }
+      // Reconcile an accepted send BEFORE any post-send bookkeeping. A throw
+      // while persisting the refreshed token must never mark a delivered email
+      // 'skipped' — that would free the de-dupe slot and invite a duplicate.
+      if (outcome.status === "sent") await reconcile("sent", null);
 
       // Persist refreshed token if it changed. Fail closed: never write a refreshed
       // token in cleartext when production requires encryption at rest but no key is
@@ -463,12 +519,19 @@ export async function POST(req: NextRequest) {
         (origAccessToken !== connection.accessToken || conn.expires_at !== connection.expiresAt) &&
         !encryptionRequiredButMissing()
       ) {
-        await svc
-          .from("email_connections")
-          .update({ access_token: encryptSecret(connection.accessToken), expires_at: connection.expiresAt, updated_at: new Date().toISOString() })
-          .eq("id", connection.id);
+        try {
+          await svc
+            .from("email_connections")
+            .update({ access_token: encryptSecret(connection.accessToken), expires_at: connection.expiresAt, updated_at: new Date().toISOString() })
+            .eq("id", connection.id);
+        } catch (persistErr) {
+          // Storage-only failure after the send outcome is known: log and move
+          // on. The next send simply refreshes the token again.
+          safeLog("email refreshed token persist error", { message: persistErr instanceof Error ? persistErr.message : "unknown" });
+        }
       }
     } else {
+      transportStarted = true;
       outcome = await sendViaProvider({
         provider: seat.provider as SendRequest["provider"],
         from: seat.operator_email,
@@ -476,15 +539,50 @@ export async function POST(req: NextRequest) {
         subject,
         body,
         unsubscribeUrl: unsubscribe.url,
+        attemptId: sendAttemptId,
       });
+      if (outcome.status === "sent") await reconcile("sent", null);
     }
 
-    if (outcome.status === "sent") await reconcile("sent", null);
-    else await reconcile("skipped", outcome.detail); // dry-run / provider error → free the slot
-    return NextResponse.json(outcome);
+    if (outcome.status === "sent") return NextResponse.json(outcome);
+    if (outcome.status === "dry-run" || outcome.deliveryState === "not-sent") {
+      // Proven pre-transport failure (or an intentional dry-run): the provider
+      // definitively never accepted this message, so the slot is retryable.
+      await reconcile("skipped", outcome.detail);
+      return NextResponse.json(outcome);
+    }
+    // Any other failure (deliveryState 'unknown' — or absent, which fails
+    // closed) may follow provider acceptance: a timeout or 5xx can arrive after
+    // the message was queued for delivery. Park the claim as 'ambiguous' so it
+    // keeps holding the de-dupe slot until a human reconciles it against the
+    // provider's logs using the send_attempt_id.
+    await reconcile("ambiguous", outcome.detail);
+    return NextResponse.json(
+      {
+        status: "reconciliation-required",
+        delivery: "email-reconciliation-required",
+        sendAttemptId,
+        detail: "Email provider acceptance is not yet reconciled. Do not retry this message.",
+      },
+      { status: 502 },
+    );
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Send failed.";
-    await reconcile("skipped", detail);
+    if (transportStarted) {
+      // Unknown post-transport outcome — the provider may have accepted the
+      // message before the failure. Fail closed: hold the slot, never retry.
+      await reconcile("ambiguous", detail);
+      return NextResponse.json(
+        {
+          status: "reconciliation-required",
+          delivery: "email-reconciliation-required",
+          sendAttemptId,
+          detail: "Email delivery state could not be confirmed. Do not retry this message.",
+        },
+        { status: 502 },
+      );
+    }
+    await reconcile("skipped", detail); // provably pre-transport → free the slot
     return NextResponse.json({ status: "error", detail }, { status: 500 });
   }
 }

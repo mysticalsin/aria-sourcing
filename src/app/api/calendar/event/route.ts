@@ -9,6 +9,7 @@ import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit"
 import { createGoogleCalendarEvent, createGraphCalendarEvent, type CalendarEventInput } from "@/lib/calendar";
 import { safeLog } from "@/lib/log-redact";
 import { decryptSecret, encryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
+import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 
 /**
  * Create a REAL interview calendar event on the seat's connected mailbox calendar.
@@ -69,6 +70,10 @@ export async function POST(req: NextRequest) {
   if (seat.mode !== "live") return NextResponse.json({ status: "dry-run", detail: "Seat not live: no event created." });
   if (seat.provider !== "Gmail API" && seat.provider !== "Microsoft Graph") {
     return NextResponse.json({ status: "skipped", detail: "Seat provider has no calendar integration." });
+  }
+
+  if (publicDemoSideEffectsDisabled()) {
+    return NextResponse.json({ status: "dry-run", detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
   }
 
   // Resolve the email_connection (service-role) + verify workspace (defense-in-depth).

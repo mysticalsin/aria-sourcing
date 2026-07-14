@@ -1,5 +1,8 @@
 # Authorization Matrix — MSourcing (hermes-sourcing)
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 Phase 4 — Authorization review. Gate mapping: **Gate 4 — authz**.
 
 - Auditor role: Authorization Engineer

@@ -5,7 +5,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { clone as SkeletonClone } from "three/examples/jsm/utils/SkeletonUtils.js";
-import type { RenderAgent3D } from "./types";
+import type { RenderAgent3D } from "@/lib/floor3d";
 
 /* ============================================================================
    Rigged human GLB character — used ONLY for the CEO/lead seat. Ported from the

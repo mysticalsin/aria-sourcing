@@ -3,8 +3,10 @@ import type {
   CampaignMetrics,
   Candidate,
   CandidateStage,
+  ClassifiedReply,
   FunnelPoint,
   HermesState,
+  OutreachMessage,
 } from "./types";
 import { FUNNEL_STAGES } from "./types";
 import { round } from "./utils";
@@ -91,6 +93,134 @@ export function funnelForCandidates(candidates: Candidate[]): FunnelPoint[] {
   }));
 }
 
+export interface RealFunnelFacts {
+  sourced: number;
+  contacted: number;
+  repliedCount: number;
+  positiveReplies: number;
+  booked: number;
+  replyRate: number;
+  positiveReplyRate: number;
+  candidateIds: string[];
+  contactedCandidateIds: string[];
+}
+
+export interface RealFunnelOptions {
+  live: boolean;
+  campaignId?: string;
+}
+
+export type RealFunnelState = Pick<
+  HermesState,
+  "candidates" | "outreach" | "replies" | "bookings"
+>;
+
+export function isRealSendFact(
+  message: Pick<OutreachMessage, "dryRun" | "sentAt">,
+): boolean {
+  return message.dryRun === false && message.sentAt != null;
+}
+
+function candidatesInScope(
+  candidates: Candidate[],
+  { live, campaignId }: RealFunnelOptions,
+): Candidate[] {
+  return candidates.filter(
+    (candidate) =>
+      (campaignId == null || candidate.campaignId === campaignId) &&
+      (!live || candidate.provenance !== "synthetic"),
+  );
+}
+
+function replyIsPositive(reply: Pick<ClassifiedReply, "intent">): boolean {
+  return reply.intent === "INTERESTED" || reply.intent === "QUALIFIED_INTEREST";
+}
+
+/* Canonical real-send funnel facts.
+   Pipeline-stage high-water counts remain available via effectiveStageRank() and
+   funnelForCandidates(); this derivation is for executive/contact KPIs that
+   must only count completed real sends, replies, and bookings. */
+export function realFunnelFacts(
+  state: RealFunnelState,
+  options: RealFunnelOptions,
+): RealFunnelFacts {
+  const eligibleCandidates = candidatesInScope(state.candidates, options);
+  const eligibleCandidateIds = new Set(eligibleCandidates.map((candidate) => candidate.id));
+  const inCampaign = (campaignId: string) =>
+    options.campaignId == null || campaignId === options.campaignId;
+
+  const contactedCandidateIds = new Set(
+    state.outreach
+      .filter(
+        (message) =>
+          inCampaign(message.campaignId) &&
+          eligibleCandidateIds.has(message.candidateId) &&
+          isRealSendFact(message),
+      )
+      .map((message) => message.candidateId),
+  );
+
+  const replies = state.replies.filter(
+    (reply) =>
+      inCampaign(reply.campaignId) &&
+      contactedCandidateIds.has(reply.candidateId),
+  );
+  const repliedCandidateIds = new Set(replies.map((reply) => reply.candidateId));
+  const positiveReplyCandidateIds = new Set(
+    replies.filter(replyIsPositive).map((reply) => reply.candidateId),
+  );
+  const bookings = state.bookings.filter(
+    (booking) =>
+      inCampaign(booking.campaignId) &&
+      contactedCandidateIds.has(booking.candidateId),
+  );
+
+  const contacted = contactedCandidateIds.size;
+  const repliedCount = repliedCandidateIds.size;
+  const positiveReplies = positiveReplyCandidateIds.size;
+
+  return {
+    sourced: eligibleCandidates.length,
+    contacted,
+    repliedCount,
+    positiveReplies,
+    booked: bookings.length,
+    replyRate: contacted ? repliedCount / contacted : 0,
+    positiveReplyRate: contacted ? positiveReplies / contacted : 0,
+    candidateIds: [...eligibleCandidateIds],
+    contactedCandidateIds: [...contactedCandidateIds],
+  };
+}
+
+export interface MissionControlHudValues {
+  sourced: number;
+  contacted: number;
+  drafted: number;
+  approved: number;
+  booked: number;
+}
+
+export function missionControlHudValues(
+  state: RealFunnelState,
+  options: RealFunnelOptions,
+): MissionControlHudValues {
+  const facts = realFunnelFacts(state, options);
+  const eligibleCandidateIds = new Set(facts.candidateIds);
+  const scopedOutreach = state.outreach.filter(
+    (message) =>
+      eligibleCandidateIds.has(message.candidateId) &&
+      (options.campaignId == null || message.campaignId === options.campaignId),
+  );
+
+  return {
+    sourced: facts.sourced,
+    contacted: facts.contacted,
+    drafted: scopedOutreach.length,
+    approved: scopedOutreach.filter((message) => message.approvedBy != null).length,
+    booked: facts.booked,
+  };
+}
+
 export function computeCampaignMetrics(
   candidates: Candidate[],
   prev?: Partial<CampaignMetrics>,
@@ -99,14 +229,15 @@ export function computeCampaignMetrics(
    *  store.ts). `undefined` preserves whatever was already on `prev`; pass
    *  `null` explicitly once no booking exists yet. */
   timeToFirstInterviewHours?: number | null,
+  realFacts?: Pick<RealFunnelFacts, "contacted" | "repliedCount" | "booked" | "replyRate">,
 ): CampaignMetrics {
   const sourced = candidates.length;
-  const contacted = candidates.filter((c) => effectiveStageRank(c) >= 1).length;
-  const replied = candidates.filter((c) => effectiveStageRank(c) >= 2).length;
+  const stageContacted = candidates.filter((c) => effectiveStageRank(c) >= 1).length;
+  const stageReplied = candidates.filter((c) => effectiveStageRank(c) >= 2).length;
   const interested = candidates.filter(
     (c) => effectiveStageRank(c) >= 3 && c.stage !== "Not Interested",
   ).length;
-  const booked = candidates.filter((c) => effectiveStageRank(c) >= 4).length;
+  const stageBooked = candidates.filter((c) => effectiveStageRank(c) >= 4).length;
   const interviewed = candidates.filter((c) =>
     ["Interviewed", "Offer", "Hired"].includes(c.stage),
   ).length;
@@ -115,6 +246,9 @@ export function computeCampaignMetrics(
   const notInterested = candidates.filter((c) => c.stage === "Not Interested").length;
   const scores = candidates.map((c) => c.matchScore).filter(Boolean);
   const avg = scores.length ? round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+  const contacted = realFacts?.contacted ?? stageContacted;
+  const replied = realFacts?.repliedCount ?? stageReplied;
+  const booked = realFacts?.booked ?? stageBooked;
 
   return {
     sourced,
@@ -126,7 +260,7 @@ export function computeCampaignMetrics(
     offer,
     hired,
     notInterested,
-    replyRate: contacted ? replied / contacted : 0,
+    replyRate: realFacts?.replyRate ?? (contacted ? replied / contacted : 0),
     avgMatchScore: avg,
     timeToFirstInterviewHours:
       timeToFirstInterviewHours !== undefined
@@ -153,13 +287,15 @@ export interface GlobalKpis {
 }
 
 export function globalKpis(
-  state: Pick<HermesState, "campaigns" | "candidates" | "outreach" | "replies">,
+  state: Pick<
+    HermesState,
+    "campaigns" | "candidates" | "outreach" | "replies" | "bookings" | "settings"
+  >,
 ): GlobalKpis {
   const active = state.campaigns.filter((c) => !["Filled", "Paused"].includes(c.status));
-  const cands = state.candidates;
-  const contacted = cands.filter((c) => effectiveStageRank(c) >= 1).length;
-  const replied = cands.filter((c) => effectiveStageRank(c) >= 2).length;
-  const booked = cands.filter((c) => effectiveStageRank(c) >= 4).length;
+  const facts = realFunnelFacts(state, { live: !state.settings.dryRunMode });
+  const candidateIds = new Set(facts.candidateIds);
+  const cands = state.candidates.filter((c) => candidateIds.has(c.id));
   const interested = cands.filter(
     (c) => effectiveStageRank(c) >= 3 && c.stage !== "Not Interested",
   ).length;
@@ -174,19 +310,24 @@ export function globalKpis(
   return {
     activeCampaigns: active.length,
     totalCampaigns: state.campaigns.length,
-    candidatesSourced: cands.length,
-    contacted,
-    replyRate: contacted ? replied / contacted : 0,
-    interviewsBooked: booked,
+    candidatesSourced: facts.sourced,
+    contacted: facts.contacted,
+    replyRate: facts.replyRate,
+    interviewsBooked: facts.booked,
     interested,
     awaitingBooking,
     avgMatchScore: avg,
     timeToFirstInterviewHours: ttfi.length ? round(ttfi.reduce((a, b) => a + b, 0) / ttfi.length) : null,
     pendingApprovals: state.outreach.filter(
-      (m) => m.status === "Needs Approval" || m.status === "Pending Manual Send",
+      (m) =>
+        candidateIds.has(m.candidateId) &&
+        (m.status === "Needs Approval" || m.status === "Pending Manual Send"),
     ).length,
     hotReplies: state.replies.filter(
-      (r) => !r.handled && ["INTERESTED", "QUALIFIED_INTEREST"].includes(r.intent),
+      (r) =>
+        candidateIds.has(r.candidateId) &&
+        !r.handled &&
+        ["INTERESTED", "QUALIFIED_INTEREST"].includes(r.intent),
     ).length,
   };
 }

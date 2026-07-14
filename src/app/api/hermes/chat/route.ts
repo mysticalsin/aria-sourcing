@@ -5,8 +5,9 @@ import { supabaseEnabled, prodFailClosed, demoLoginEnabled, DEMO_COOKIE_NAME } f
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
 import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
-import { isAllowedHermesUrl, assertPublicUrl } from "@/lib/api/url";
+import { isAllowedHermesUrl } from "@/lib/api/url";
 import { can } from "@/lib/rbac";
+import { AUTH_QUERY_PARAMS } from "@/lib/types";
 import type { Campaign, Candidate, Role, ScoringWeights } from "@/lib/types";
 import {
   buildCloudRequest,
@@ -14,13 +15,45 @@ import {
   PROVIDER_ENV,
   type AiProviderSlug,
   DEFAULT_MODEL,
+  VAULT_PROVIDER,
 } from "@/lib/ai/provider";
-import { connectAndListTools } from "@/lib/mcp-client";
+import { applyMcpAuth, connectAndListTools, remoteMcpExecutionEnabled } from "@/lib/mcp-client";
+import { validateMcpBaseUrl } from "@/lib/mcp-auth-params";
 import { runAnthropicWithTools, runOpenAiWithTools, type ResolvedMcpServer } from "@/lib/ai/tool-loop";
 import { BUILTIN_WEB_URL, WEB_TOOL_DEFS } from "@/lib/ai/web-tools";
 import { SOURCING_TOOL_DEFS, makeSourcingToolRunner } from "@/lib/ai/sourcing-tools";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { redactObject, redactSecrets, redactEmail } from "@/lib/log-redact";
+import { evaluateHermesWorkspaceBinding } from "@/lib/api/hermes-runtime-isolation";
+import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
+import { DISCLOSURE_SYSTEM } from "@/lib/agent-disclosure-policy";
+
+export const runtime = "nodejs";
+
+const McpAuthStyleSchema = z.enum(["bearer", "query"]);
+const McpAuthQueryParamSchema = z.enum(AUTH_QUERY_PARAMS);
+const McpServerPayloadSchema = z
+  .object({
+    url: z
+      .string()
+      .url()
+      .max(500)
+      .refine((url) => validateMcpBaseUrl(url).ok, {
+        message: "MCP server URL must use HTTPS port 443 and contain no credentials, query, or fragment.",
+      }),
+    apiKeyId: z.string().uuid().optional(),
+    authStyle: McpAuthStyleSchema.optional(),
+    authQueryParam: McpAuthQueryParamSchema.optional(),
+  })
+  .superRefine((server, ctx) => {
+    if ((server.authStyle ?? "bearer") === "query" && !server.authQueryParam) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["authQueryParam"],
+        message: "authQueryParam is required for query-auth MCP servers.",
+      });
+    }
+  });
 
 /**
  * Aria runtime proxy (SERVER ONLY).
@@ -54,11 +87,10 @@ const HermesChatSchema = z.object({
   apiKeyId: z.string().uuid().optional(),
   // Reject path-traversal / injection in the model id; allow valid model slugs.
   model: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/).default("hermes"),
-  /** Enabled MCP servers to expose to the model as tools (chat task only). Only the
-   *  {url, apiKeyId} is sent — the bearer token is resolved server-side from the vault,
-   *  so the browser never holds it. */
+  /** Enabled MCP servers to expose to the model as tools (chat task only). The raw
+   *  secret is resolved server-side from the vault, so the browser never holds it. */
   mcpServers: z
-    .array(z.object({ url: z.string().url().max(500), apiKeyId: z.string().uuid().optional() }))
+    .array(McpServerPayloadSchema)
     .max(20)
     .optional(),
   /** Expose the built-in, read-only web-research tools (web_search / fetch_page / rss)
@@ -77,7 +109,8 @@ const TASK_SYSTEM: Record<"outreach" | "classify" | "sourcing" | "chat", string>
     "You are a senior technical recruiter writing first-touch candidate outreach. " +
     "Lead with the candidate's specific recent work, give one genuine reason for reaching out, " +
     "and end with a soft, low-pressure ask. Keep it under 120 words. No AI slop, no corporate filler, no em-dashes. " +
-    "Reply with exactly: a line 'Subject: <subject>' then a blank line then the message body. No preamble.",
+    "Reply with exactly: a line 'Subject: <subject>' then a blank line then the message body. No preamble. " +
+    DISCLOSURE_SYSTEM,
   classify:
     "You are a reply-classification engine for recruiting outreach. Read the candidate reply and respond with " +
     "compact JSON only: {\"intent\": one of INTERESTED|QUALIFIED_INTEREST|NOT_INTERESTED|REFERRAL|OOO|UNCLEAR|NEGATIVE, " +
@@ -116,13 +149,15 @@ function isRedirectResponse(res: Response): boolean {
 
 /**
  * Resolve the caller's enabled MCP servers into connectable servers with their tools.
- * The bearer token for each is resolved from the vault server-side (never from the
- * browser). http(s) only (SSRF). Servers that fail to connect or expose no tools are
- * skipped, so a broken server can't block the chat.
+ * The auth secret for each is resolved from the vault server-side (never from the
+ * browser). HTTPS port 443 only. Servers that fail to connect or expose no tools are
+ * skipped. Runtime policy is checked here as a second guard so production never
+ * discovers or exposes third-party descriptions to a model loop.
  */
 async function gatherMcpServers(
-  servers: { url: string; apiKeyId?: string }[],
+  servers: z.infer<typeof McpServerPayloadSchema>[],
 ): Promise<ResolvedMcpServer[]> {
+  if (!remoteMcpExecutionEnabled()) return [];
   const resolved: ResolvedMcpServer[] = [];
   for (const s of servers) {
     let parsed: URL;
@@ -131,17 +166,17 @@ async function gatherMcpServers(
     } catch {
       continue;
     }
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") continue;
-    // SSRF guard: block private/loopback/link-local/metadata hosts (and DNS-rebinding)
-    // before the server ever dials the caller-supplied URL. This server is reused for
-    // every tool call the model makes during the loop, so this is a repeatable channel
-    // — not just a one-shot probe.
-    const guard = await assertPublicUrl(s.url);
-    if (!guard.ok) continue;
-    const token = s.apiKeyId ? await resolveVaultSecret(s.apiKeyId) : "";
-    const conn = await connectAndListTools(s.url, token);
+    if (parsed.protocol !== "https:") continue;
+    const secret = s.apiKeyId ? await resolveVaultSecret(s.apiKeyId) : "";
+    let auth: { url: string; token: string };
+    try {
+      auth = applyMcpAuth(s.url, secret, { authStyle: s.authStyle, authQueryParam: s.authQueryParam });
+    } catch {
+      continue;
+    }
+    const conn = await connectAndListTools(auth.url, auth.token);
     if (conn.ok && conn.tools && conn.tools.length) {
-      resolved.push({ url: s.url, token, tools: conn.tools });
+      resolved.push({ url: auth.url, token: auth.token, tools: conn.tools });
     }
   }
   return resolved;
@@ -184,9 +219,6 @@ export async function POST(req: NextRequest) {
   if (!validated.ok) return validated.response;
   const { task, prompt, stream, hermesApiKeyId, model, provider, apiKeyId, mcpServers, webResearch, campaign, existing } =
     validated.data;
-  // keyId: cloud provider key id takes precedence over the hermes key id.
-  const keyId = apiKeyId ?? hermesApiKeyId;
-
   // Per-task authorization — outreach/sourcing/classify need the matching permission.
   // Also resolved for the chat task so the search_candidates tool (below) can be gated
   // by the "source" permission, same as /api/sourcing-agent.
@@ -198,6 +230,7 @@ export async function POST(req: NextRequest) {
       outreach: "outreach",
       sourcing: "source",
       classify: "source",
+      chat: "source",
     };
     const perm = TASK_PERM[task as string];
     if (perm && !can(callerRole, perm)) {
@@ -217,6 +250,12 @@ export async function POST(req: NextRequest) {
 
   /* ---- Cloud provider branch (Anthropic / OpenAI-compatible) -------------- */
   if (provider !== "hermes") {
+    // The request controls provider, model, and key id. Until those choices are
+    // normalized into an admin-owned authority table, only an administrator may
+    // spend a live cloud credential. Internal Hermes remains separately gated.
+    if (supabaseEnabled && !can(callerRole as Role, "manage_providers")) {
+      return NextResponse.json({ ok: false, reason: "Live cloud providers require admin authority." }, { status: 403 });
+    }
     // Open-demo cost gate: env-resident provider keys are spendable ONLY by a caller
     // holding a valid demo session (admin/admin → signed httpOnly cookie). The Supabase
     // path already authenticated above; local dev (no demoLoginEnabled) stays open.
@@ -229,7 +268,17 @@ export async function POST(req: NextRequest) {
     // Key resolution: vault by id (workspace-scoped) → env fallback → error.
     // The raw secret is NEVER logged or returned to the caller.
     const slug = provider as AiProviderSlug;
-    const vaultKey = await resolveVaultSecret(keyId);
+    const vaultKey = apiKeyId ? await resolveVaultSecret(apiKeyId, VAULT_PROVIDER[slug]) : "";
+    // A supplied id is an explicit authority choice. Never fall back to an env
+    // credential when it is missing, invalid, or belongs to another provider.
+    if (apiKeyId && !vaultKey) {
+      return NextResponse.json({ ok: false, reason: `No valid API key configured for ${provider}.` }, { status: 403 });
+    }
+    // Deployment-level env credentials may be used directly only by admins.
+    // Normal member execution uses an admin-created, tested workspace key.
+    if (!apiKeyId && supabaseEnabled && !can(callerRole as Role, "manage_providers")) {
+      return NextResponse.json({ ok: false, reason: "A workspace provider key is required." }, { status: 403 });
+    }
     const key = vaultKey || process.env[PROVIDER_ENV[slug]] || "";
     if (!key) {
       return NextResponse.json({ ok: false, reason: `No API key configured for ${provider}.` });
@@ -241,20 +290,21 @@ export async function POST(req: NextRequest) {
     const sourcingCampaign =
       canSourceInChat && campaignObj?.jobAnalysis && campaignObj?.scoringWeights ? campaignObj : null;
 
-    // MCP tool-calling (chat task, Anthropic): when the workspace has enabled MCP
-    // servers, or web research, or a sourceable campaign is in context, let the model
-    // call their tools and loop to a final answer. Additive — falls through to the
-    // normal single-shot completion when no usable servers resolve.
+    // Tool-calling for chat: built-in web research and sourcing remain available.
+    // Third-party MCP is included only for an explicitly opted-in development/test
+    // runtime. The normal single-shot completion remains the fallback.
     // Kimi Code (kimi-for-coding) rejects the OpenAI `tools` param (no function-calling),
     // so skip the tool loop for it and answer with a plain completion. Other providers
     // still get the MCP / built-in web-research / sourcing tool loop.
     // Only an admin-level caller (manage_tools) may attach MCP servers to this
     // request — a viewer/member's mcpServers array is dropped, not honored.
-    const usableMcpServers = canUseMcpToolsInChat && mcpServers && mcpServers.length ? mcpServers : undefined;
+    const usableMcpServers =
+      canUseMcpToolsInChat && remoteMcpExecutionEnabled() && mcpServers?.length ? mcpServers : undefined;
     if (task === "chat" && slug !== "kimi" && (webResearch || usableMcpServers || sourcingCampaign)) {
       const resolvedServers: ResolvedMcpServer[] = [];
+      const tavilyKey = canSourceInChat && supabase ? await resolveStoredTavilyKey(supabase) : null;
       // Built-in read-only web-research tools (in-process; no vault token, SSRF-guarded).
-      if (webResearch) resolvedServers.push({ url: BUILTIN_WEB_URL, token: "", tools: WEB_TOOL_DEFS });
+      if (webResearch) resolvedServers.push({ url: BUILTIN_WEB_URL, token: "", tools: WEB_TOOL_DEFS, tavilyKey: tavilyKey ?? undefined });
       // Compliant sourcing tool: real search (GitHub Search API / site:-scoped web
       // search), real dedupe, real deterministic scoring — never a stealth browser.
       if (sourcingCampaign) {
@@ -264,6 +314,7 @@ export async function POST(req: NextRequest) {
           (existing ?? []) as unknown as Candidate[],
           sourcingCampaign.scoringWeights as ScoringWeights,
           githubToken,
+          tavilyKey ?? undefined,
         );
         resolvedServers.push({ url: "builtin:sourcing-chat", token: "", tools: SOURCING_TOOL_DEFS, run: runner.run });
       }
@@ -312,6 +363,25 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const production = process.env.NODE_ENV === "production";
+  let runtimeWorkspaceId: string | null = null;
+  if (production && supabaseEnabled && supabase) {
+    const { data: resolvedWorkspaceId, error: workspaceError } = await supabase.rpc("current_workspace_id");
+    runtimeWorkspaceId = typeof resolvedWorkspaceId === "string" ? resolvedWorkspaceId : null;
+    if (workspaceError || !runtimeWorkspaceId) {
+      return NextResponse.json({ ok: false, reason: "Workspace not available." }, { status: 403 });
+    }
+  }
+  const binding = evaluateHermesWorkspaceBinding({
+    production,
+    supabaseEnabled,
+    workspaceId: runtimeWorkspaceId,
+    boundWorkspaceId: process.env.HERMES_RUNTIME_WORKSPACE_ID,
+  });
+  if (!binding.ok) {
+    return NextResponse.json({ ok: false, reason: binding.reason }, { status: binding.status });
+  }
+
   // S-1: URL is env-only — never use client-supplied hermesApiUrl (SSRF risk).
   const rawBaseUrl = process.env.HERMES_API_URL ?? "";
   const baseUrl = rawBaseUrl.replace(/\/$/, "");
@@ -325,10 +395,16 @@ export async function POST(req: NextRequest) {
   }
 
   // Resolve the bearer token server-side. Vault by id (workspace-scoped) first;
-  // env fallback second. The raw secret is NEVER logged or returned.
+  // env fallback is allowed only when no key id was requested. A supplied id
+  // that does not resolve in this workspace must fail closed.
   let bearerToken = process.env.HERMES_API_KEY ?? "";
-  const vaultSecret = await resolveVaultSecret(hermesApiKeyId);
-  if (vaultSecret) bearerToken = vaultSecret;
+  if (hermesApiKeyId) {
+    const vaultSecret = await resolveVaultSecret(hermesApiKeyId, "Aria Agent");
+    if (!vaultSecret) {
+      return NextResponse.json({ ok: false, reason: "Aria runtime key is not available." }, { status: 403 });
+    }
+    bearerToken = vaultSecret;
+  }
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (bearerToken) headers["Authorization"] = `Bearer ${bearerToken}`;

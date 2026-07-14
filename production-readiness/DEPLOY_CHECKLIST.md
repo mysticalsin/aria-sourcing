@@ -28,31 +28,9 @@ required for launch but must be done before the relevant feature is used.
   - `Project URL` → `NEXT_PUBLIC_SUPABASE_URL`
   - `anon public` key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
   - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY`
-- [ ] Run migrations in order via **SQL Editor** (or `supabase db push`):
-  1. `supabase/migrations/0001_init.sql` — workspaces, profiles,
-     workspace_state, RLS, `ensure_workspace()`.
-  2. `supabase/migrations/0002_fleet.sql` — agent_seats, suppression_list,
-     outreach_ledger, `claim_and_record()` RPC.
-  3. `supabase/migrations/0003_api_keys.sql` — api_keys table with
-     column-level grants (secrets server-side only).
-  4. `supabase/migrations/0004_email_connections.sql` — email_connections
-     table for Gmail / Microsoft Graph OAuth tokens.
-  5. `supabase/migrations/0005_rls_tenant_isolation.sql` — hardened tenant
-     grants and RLS policies.
-  6. `supabase/migrations/0006_outreach_approvals.sql` through
-     `0008_human_outbound_approvals.sql` — durable approval records and human
-     provenance.
-  7. `supabase/migrations/0009_whatsapp_delivery_policy.sql` and
-     `0010_whatsapp_delivery_reconciliation.sql` — consent/template/window
-     policy plus Meta acceptance and receipt audit history.
-  8. `supabase/migrations/0011_outreach_approval_lifecycle.sql` and
-     `0012_email_unsubscribe.sql` — authoritative revoke/claim lifecycle and
-     opaque one-click unsubscribe hashes.
-  9. `supabase/migrations/0013_outreach_approval_race_safety.sql` — one lock
-     order for approve, revoke, and dispatch; retry-safe WhatsApp claims.
-  10. `supabase/migrations/0014_whatsapp_review_and_inbound_recovery.sql` and
-      `0015_whatsapp_webhook_late_event_safety.sql` — durable human review,
-      inbound recovery, and late-receipt safety.
+- [ ] Apply every file in `supabase/migrations/` in order with `supabase db push`.
+      If SQL Editor is required, follow the single annotated list in
+      `production-readiness/DEPLOYMENT_RUNBOOK.md`; do not stop at a partial range.
 - [ ] Verify RLS is active for every table: in the SQL Editor, run
       `SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname = 'public';`
       — every row must show `rowsecurity = true`.
@@ -117,6 +95,9 @@ required for launch but must be done before the relevant feature is used.
       restricts sign-in to your org.
 - [ ] Confirm `HERMES_API_KEY` is a freshly generated random token
       (`openssl rand -hex 32`), not the placeholder value.
+- [ ] If Hermes is enabled, set `HERMES_RUNTIME_WORKSPACE_ID` to the one
+      workspace assigned to that dedicated runtime and prove a second workspace
+      receives 403 without any upstream call.
 - [ ] Confirm `SUPABASE_SERVICE_ROLE_KEY` is set as a **Secret** (encrypted,
       not plain text) in Vercel and is absent from all browser-exposed env vars.
 - [ ] Set `DATA_ENCRYPTION_KEY`, `CRON_SECRET`, and the canonical HTTPS

@@ -5,22 +5,52 @@ import { resolveVaultSecret } from "@/lib/ai/vault-secret";
 import { supabaseEnabled, prodFailClosed, demoLoginEnabled, DEMO_COOKIE_NAME } from "@/lib/supabase/config";
 import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
-import { assertPublicUrl } from "@/lib/api/url";
 import { can } from "@/lib/rbac";
+import { AUTH_QUERY_PARAMS } from "@/lib/types";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
-import { connectAndListTools } from "@/lib/mcp-client";
+import { applyMcpAuth, connectAndListTools, remoteMcpDiscoveryEnabled } from "@/lib/mcp-client";
+import { validateMcpBaseUrl } from "@/lib/mcp-auth-params";
+
+export const runtime = "nodejs";
 
 /**
  * Connection test for a registered MCP (Model Context Protocol) server. Runs the MCP
  * `initialize` JSON-RPC handshake against the server's HTTP endpoint and reports
- * whether it answered as a valid MCP server. Admin-gated (manage_tools) in live mode;
- * the Bearer token is resolved server-side from the key vault and never returned.
+ * whether it answered as a valid MCP server. Admin-gated (manage_tools) and available
+ * only behind the explicit development/test remote-MCP opt-in. Production refuses the
+ * probe before resolving any auth secret from the key vault.
  */
-const McpTestSchema = z.object({
-  url: z.string().url().max(500),
-  apiKeyId: z.string().uuid().optional(),
-});
+const McpTestSchema = z
+  .object({
+    url: z
+      .string()
+      .url()
+      .max(500)
+      .refine((url) => validateMcpBaseUrl(url).ok, {
+        message: "MCP server URL must be HTTPS and contain no credentials, query, or fragment.",
+      }),
+    apiKeyId: z.string().uuid().optional(),
+    authStyle: z.enum(["bearer", "query"]).optional(),
+    authQueryParam: z.enum(AUTH_QUERY_PARAMS).optional(),
+  })
+  .superRefine((server, ctx) => {
+    if ((server.authStyle ?? "bearer") === "query" && !server.authQueryParam) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["authQueryParam"],
+        message: "authQueryParam is required for query-auth MCP servers.",
+      });
+    }
+  });
+
+function hostFor(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "MCP server";
+  }
+}
 
 export async function POST(req: NextRequest) {
   const prodBlock = prodFailClosed();
@@ -51,24 +81,25 @@ export async function POST(req: NextRequest) {
 
   const validated = await validateBody(req, McpTestSchema, { maxBytes: 5_000 });
   if (!validated.ok) return validated.response;
-  const { url, apiKeyId } = validated.data;
+  const { url, apiKeyId, authStyle, authQueryParam } = validated.data;
+  const host = hostFor(url);
 
-  // Only http(s); never follow redirects (SSRF hardening). The URL is admin-entered.
+  // HTTPS only; never follow redirects (SSRF hardening). The URL is admin-entered.
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
     return NextResponse.json({ ok: false, error: "Invalid URL." });
   }
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    return NextResponse.json({ ok: false, error: "Only http(s) MCP endpoints are supported." });
+  if (parsed.protocol !== "https:") {
+    return NextResponse.json({ ok: false, error: "Only HTTPS MCP endpoints are supported." });
   }
 
-  // SSRF guard: block private/loopback/link-local/metadata hosts (and DNS-rebinding)
-  // before the server ever dials the admin-entered URL.
-  const guard = await assertPublicUrl(url);
-  if (!guard.ok) {
-    return NextResponse.json({ ok: false, error: guard.reason ?? "URL blocked." }, { status: 400 });
+  // Credentialed third-party discovery is intentionally unavailable in
+  // production. Check before resolving the vault id so a denied probe touches
+  // neither secret material nor the remote server.
+  if (!remoteMcpDiscoveryEnabled()) {
+    return NextResponse.json({ ok: false, error: "Remote MCP discovery is disabled." }, { status: 403 });
   }
 
   // Resolve the Bearer token from the vault if one was linked, scoped to the
@@ -76,10 +107,16 @@ export async function POST(req: NextRequest) {
   if (apiKeyId) {
     token = await resolveVaultSecret(apiKeyId);
   }
+  let auth: { url: string; token: string };
+  try {
+    auth = applyMcpAuth(url, token, { authStyle, authQueryParam });
+  } catch {
+    return NextResponse.json({ ok: false, error: `MCP authentication is misconfigured for ${host}.` }, { status: 400 });
+  }
 
   // initialize + tools/list via the MCP client, so the test reports the real tools.
   try {
-    const result = await connectAndListTools(url, token);
+    const result = await connectAndListTools(auth.url, auth.token);
     if (result.ok) {
       return NextResponse.json({
         ok: true,
@@ -89,7 +126,7 @@ export async function POST(req: NextRequest) {
       });
     }
     return NextResponse.json({ ok: false, error: result.error ?? "MCP connection failed." });
-  } catch (err) {
-    return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : "MCP connection failed." });
+  } catch {
+    return NextResponse.json({ ok: false, error: `MCP connection failed for ${host}.` });
   }
 }

@@ -1,0 +1,36 @@
+# aria-db image: Supabase Postgres plus first-init and post-base reconciliation.
+# Top-level 00-* policy runs before migrate.sh. The pinned migrate.sh invokes
+# /etc/postgresql.schema.sql directly as supabase_admin after every bundled
+# migration, which is the only safe fresh-cluster point for owner-local ACLs and
+# split credentials. The init-complete marker remains last and fail-closed.
+FROM supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00
+# Patch upstream-fixable HIGH CVEs without moving the empirically-proven postgres
+# base digest: apk patch-upgrades the alpine 3.23 libs with released fixes (c-ares,
+# OpenSSL), and gosu — a Go binary carrying fixable Go-stdlib CVEs — is replaced by
+# alpine's C su-exec, argument-compatible for the entrypoint's `gosu user cmd` use
+# (the official postgres:alpine idiom).
+RUN apk upgrade --no-cache \
+  && apk add --no-cache su-exec \
+  && rm -f /usr/local/bin/gosu
+# Recreate the gosu entrypoint shim in a SEPARATE layer: deleting and recreating the
+# path in one RUN produces a same-path override instead of an explicit whiteout, and
+# image scanners then still see (and flag) the original Go binary in the layer stack.
+# A shell shim to C su-exec keeps `gosu user cmd` working with no Go CVE surface.
+RUN printf '#!/bin/sh\nexec su-exec "$@"\n' > /usr/local/bin/gosu \
+  && chmod 0755 /usr/local/bin/gosu
+# /var/lib/postgresql is both the durable volume root and postgres HOME.
+# Configure every process, including Fly SSH consoles, to keep history off the
+# volume; the entrypoint also removes known regular history files defensively.
+ENV HISTFILE=/dev/null \
+  PSQL_HISTORY=/dev/null \
+  LESSHISTFILE=-
+COPY docker/db/entrypoint.fly.sh /usr/local/bin/aria-db-entrypoint
+COPY docker/db/00-aria-init-log-policy.sql /docker-entrypoint-initdb.d/00-aria-init-log-policy.sql
+COPY docker/db/mark-init-complete.sh /docker-entrypoint-initdb.d/zz-aria-init-complete.sh
+COPY docker/bootstrap/supabase-admin-reconciliation.sql /opt/aria/supabase-admin-reconciliation.sql
+COPY docker/db/postgresql.schema.sql /etc/postgresql.schema.sql
+RUN chmod 0755 \
+  /usr/local/bin/aria-db-entrypoint \
+  /docker-entrypoint-initdb.d/zz-aria-init-complete.sh
+ENTRYPOINT ["/usr/local/bin/aria-db-entrypoint"]
+CMD ["postgres", "-D", "/etc/postgresql"]

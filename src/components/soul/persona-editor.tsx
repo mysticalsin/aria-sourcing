@@ -134,17 +134,21 @@ function AddAgentForm({ onAdded }: { onAdded?: (id: string) => void }) {
   const nameId = React.useId();
   const emailId = React.useId();
 
-  function add() {
+  async function add() {
     const clean = name.trim();
     if (!clean) {
       toast({ title: "Name the agent", description: "Give the new agent a name to add it.", variant: "warning" });
       return;
     }
     const slug = clean.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "");
-    const seat = actions.addSeat({
+    const seat = await actions.addSeat({
       name: clean,
       operatorEmail: email.trim() || `${slug || "agent"}@hermes.example`,
     });
+    if (!seat) {
+      toast({ title: "Admins only", description: "Your profile cannot add fleet agents.", variant: "warning" });
+      return;
+    }
     toast({
       title: `${seat.name} added`,
       description: "New agent created in dry-run mode. Bench or assign it any time.",

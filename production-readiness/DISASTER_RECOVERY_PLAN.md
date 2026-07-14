@@ -1,5 +1,8 @@
 # Disaster Recovery Plan — Hermes Sourcing (MSourcing)
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **Gate:** Gate 12 — Backup/DR · **Companion to:** `BACKUP_RESTORE_REPORT.md`, `BUSINESS_CONTINUITY_PLAN.md`
 **Stack:** Next.js 14.2 on Vercel serverless (region `cdg1`) · Supabase managed Postgres · Microsoft Entra · optional Hermes/Aria inference host
 **Date:** 2026-06-27 · **Status:** DRAFT — **not exercised** (no DR test on record; see F-BR-02)

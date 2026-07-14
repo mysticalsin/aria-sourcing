@@ -6,7 +6,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence, useInView } from "framer-motion";
 import { AlertTriangle, Lock } from "lucide-react";
 import { getBrowserSupabase } from "@/lib/supabase/client";
-import { supabaseEnabled, ALLOWED_EMAIL_DOMAIN, demoLoginEnabled } from "@/lib/supabase/config";
+import {
+  supabaseEnabled,
+  ALLOWED_EMAIL_DOMAIN,
+  azureLoginEnabled,
+  demoLoginEnabled,
+} from "@/lib/supabase/config";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 
 const VIDEO_URL =
@@ -55,6 +60,7 @@ function LoginInner() {
   const [password, setPassword] = React.useState("admin");
   const [authError, setAuthError] = React.useState<string | null>(null);
   const videoRef = React.useRef<HTMLVideoElement>(null);
+  const emailRef = React.useRef<HTMLInputElement>(null);
 
   // Respect prefers-reduced-motion for the background hero video: only play /
   // loop it when the user hasn't asked the OS to reduce motion. Controlled here
@@ -74,6 +80,7 @@ function LoginInner() {
   }, [reducedMotion, videoPausedByUser]);
 
   const signInWithMicrosoft = async () => {
+    if (!azureLoginEnabled) return;
     const supabase = getBrowserSupabase();
     if (!supabase) return;
     setLoading(true);
@@ -146,7 +153,11 @@ function LoginInner() {
     // Demo (LIVE or open): one-click admin/admin sign-in. runDemoLogin sets the session
     // (Supabase cookie in LIVE mode, signed demo cookie in the open demo) then redirects.
     if (demoLoginEnabled) void runDemoLogin();
-    else if (supabaseEnabled) void signInWithMicrosoft();
+    else if (supabaseEnabled && azureLoginEnabled) void signInWithMicrosoft();
+    else if (supabaseEnabled) {
+      setShowEmail(true);
+      window.requestAnimationFrame(() => emailRef.current?.focus());
+    }
     else router.push(safeRedirect(redirect));
   };
 
@@ -155,7 +166,7 @@ function LoginInner() {
     : demoLoginEnabled
       ? "Enter the demo console"
       : supabaseEnabled
-        ? "Sign in with Microsoft"
+        ? azureLoginEnabled ? "Sign in with Microsoft" : "Sign in with email"
         : "Enter the console";
 
   return (
@@ -177,18 +188,9 @@ function LoginInner() {
 
       <nav className="relative z-20 flex items-center justify-between gap-4 px-5 py-6 sm:px-8">
         <span className="flex items-center md:absolute md:left-8">
-          {/* Full transparent logo (white ARIA reads on the dark hero) — shown whole. */}
-          <img src="/aria-logo.png" alt="Aria: Agentic Sourcing Platform by Mantu" className="h-16 w-auto object-contain" />
+          {/* Full Aria brand logo (M + ARIA wordmark) — the real logo, not the bare M. */}
+          <img src="/aria-logo.png" alt="Aria — Agentic Sourcing Platform by Mantu" className="h-16 w-auto object-contain sm:h-20" />
         </span>
-        <button
-          type="button"
-          className="rounded-full border border-white/20 px-3.5 py-2 text-[0.65rem] uppercase tracking-[0.16em] text-white/80 transition-[border-color,color,background-color] duration-150 hover:border-white/40 hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-70"
-          onClick={() => setVideoPausedByUser((paused) => !paused)}
-          aria-pressed={reducedMotion || videoPausedByUser}
-          disabled={reducedMotion}
-        >
-          {reducedMotion ? "Background motion paused by system" : videoPausedByUser ? "Play background motion" : "Pause background motion"}
-        </button>
         <span className="hidden text-xs uppercase tracking-[0.2em] text-white/60 md:absolute md:right-8 md:block">
           by Mantu
         </span>
@@ -253,6 +255,7 @@ function LoginInner() {
                     Username or email
                   </label>
                   <input
+                    ref={emailRef}
                     id="login-username"
                     name="username"
                     type="text"
@@ -322,6 +325,17 @@ function LoginInner() {
           </a>
         </p>
       </main>
+
+      {/* Background-motion toggle — pinned bottom-left so it never overlaps the logo. */}
+      <button
+        type="button"
+        className="absolute bottom-5 left-5 z-20 rounded-full border border-white/20 bg-black/20 px-3.5 py-2 text-[0.65rem] uppercase tracking-[0.16em] text-white/80 backdrop-blur-sm transition-[border-color,color,background-color] duration-150 hover:border-white/40 hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-70 sm:bottom-6 sm:left-8"
+        onClick={() => setVideoPausedByUser((paused) => !paused)}
+        aria-pressed={reducedMotion || videoPausedByUser}
+        disabled={reducedMotion}
+      >
+        {reducedMotion ? "Background motion paused by system" : videoPausedByUser ? "Play background motion" : "Pause background motion"}
+      </button>
     </div>
   );
 }

@@ -37,12 +37,20 @@ function isWhatsAppTemplateRequest(req: WhatsAppSendRequest): req is WhatsAppTem
 
 export interface ChannelSendOutcome {
   status: "sent" | "dry-run" | "error";
+  /** Whether an external provider definitely accepted, definitely rejected, or may have accepted the request. */
+  deliveryState: "accepted" | "not-sent" | "unknown";
   provider: string;
   detail: string;
   id?: string;
 }
 
 const TIMEOUT = 15_000;
+
+function failedHttpDeliveryState(status: number): "not-sent" | "unknown" {
+  // A timeout or server failure can be returned after the provider processed
+  // the request. Client rejections are definitive; these responses are not.
+  return status === 408 || status >= 500 ? "unknown" : "not-sent";
+}
 
 // Graph API versions expire ~2 years after release (v18.0 died early 2026).
 // v21.0 is the early-2026 stable; override without a deploy if Meta sunsets it.
@@ -64,12 +72,13 @@ export async function sendWhatsApp(req: WhatsAppSendRequest): Promise<ChannelSen
   if (!token || !phoneNumberId) {
     return {
       status: "dry-run",
+      deliveryState: "not-sent",
       provider: "WhatsApp Cloud",
       detail: "WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID not set, nothing sent.",
     };
   }
   const to = normalizePhone(req.to);
-  if (!to) return { status: "error", provider: "WhatsApp Cloud", detail: "No phone number on file for this candidate." };
+  if (!to) return { status: "error", deliveryState: "not-sent", provider: "WhatsApp Cloud", detail: "No phone number on file for this candidate." };
 
   let payload: Record<string, unknown>;
   if (isWhatsAppTemplateRequest(req)) {
@@ -103,20 +112,22 @@ export async function sendWhatsApp(req: WhatsAppSendRequest): Promise<ChannelSen
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(TIMEOUT),
     });
-    if (!res.ok) return { status: "error", provider: "WhatsApp Cloud", detail: `WhatsApp API ${res.status}` };
+    if (!res.ok) return { status: "error", deliveryState: failedHttpDeliveryState(res.status), provider: "WhatsApp Cloud", detail: `WhatsApp API ${res.status}` };
     const data = (await res.json().catch(() => ({}))) as { messages?: { id?: string }[] };
     const providerMessageId = data.messages?.[0]?.id;
     if (!providerMessageId) {
       return {
         status: "error",
+        deliveryState: "unknown",
         provider: "WhatsApp Cloud",
         detail: "WhatsApp API response did not include a message ID for reconciliation.",
       };
     }
-    return { status: "sent", provider: "WhatsApp Cloud", detail: "Sent via WhatsApp.", id: providerMessageId };
+    return { status: "sent", deliveryState: "accepted", provider: "WhatsApp Cloud", detail: "Sent via WhatsApp.", id: providerMessageId };
   } catch (err) {
     return {
       status: "error",
+      deliveryState: "unknown",
       provider: "WhatsApp Cloud",
       detail: err instanceof Error ? err.message : "WhatsApp send failed.",
     };
@@ -131,12 +142,13 @@ export async function sendSms(req: ChannelSendRequest): Promise<ChannelSendOutco
   if (!sid || !token || !from) {
     return {
       status: "dry-run",
+      deliveryState: "not-sent",
       provider: "Twilio SMS",
       detail: "TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM not set, nothing sent.",
     };
   }
   const to = normalizePhone(req.to);
-  if (!to) return { status: "error", provider: "Twilio SMS", detail: "No phone number on file for this candidate." };
+  if (!to) return { status: "error", deliveryState: "not-sent", provider: "Twilio SMS", detail: "No phone number on file for this candidate." };
 
   try {
     const auth = Buffer.from(`${sid}:${token}`).toString("base64");
@@ -147,10 +159,19 @@ export async function sendSms(req: ChannelSendRequest): Promise<ChannelSendOutco
       body: form.toString(),
       signal: AbortSignal.timeout(TIMEOUT),
     });
-    if (!res.ok) return { status: "error", provider: "Twilio SMS", detail: `Twilio ${res.status}` };
+    if (!res.ok) return { status: "error", deliveryState: failedHttpDeliveryState(res.status), provider: "Twilio SMS", detail: `Twilio ${res.status}` };
     const data = (await res.json().catch(() => ({}))) as { sid?: string };
-    return { status: "sent", provider: "Twilio SMS", detail: "Sent via SMS.", id: data.sid };
+    const providerMessageId = data.sid?.trim();
+    if (!providerMessageId) {
+      return {
+        status: "error",
+        deliveryState: "unknown",
+        provider: "Twilio SMS",
+        detail: "Twilio response did not include a message SID for reconciliation.",
+      };
+    }
+    return { status: "sent", deliveryState: "accepted", provider: "Twilio SMS", detail: "Sent via SMS.", id: providerMessageId };
   } catch (err) {
-    return { status: "error", provider: "Twilio SMS", detail: err instanceof Error ? err.message : "SMS send failed." };
+    return { status: "error", deliveryState: "unknown", provider: "Twilio SMS", detail: err instanceof Error ? err.message : "SMS send failed." };
   }
 }

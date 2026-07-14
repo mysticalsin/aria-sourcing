@@ -1,0 +1,1542 @@
+name: Deploy Aria Mantu (Fly)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Exact 40-character commit SHA already passed by CI and CodeQL
+        required: true
+        type: string
+      recovery_receipt_sha256:
+        description: SHA-256 of the independently reviewed production recovery receipt
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: aria-production
+  cancel-in-progress: false
+
+jobs:
+  validate-dispatch:
+    name: Validate protected release dispatch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ARIA_RELEASE_SHA: ${{ inputs.release_sha }}
+      ARIA_RECOVERY_RECEIPT_SHA256: ${{ inputs.recovery_receipt_sha256 }}
+      ARIA_WORKFLOW_REF: ${{ github.ref }}
+      ARIA_WORKFLOW_REF_TYPE: ${{ github.ref_type }}
+      ARIA_WORKFLOW_REF_PROTECTED: ${{ github.ref_protected }}
+      ARIA_WORKFLOW_SHA: ${{ github.sha }}
+    steps:
+      - name: Validate release input and workflow identity
+        shell: bash
+        run: |
+          if [[ ! "$ARIA_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::release_sha must be an exact lowercase 40-character Git SHA"
+            exit 1
+          fi
+          if [[ ! "$ARIA_RECOVERY_RECEIPT_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::recovery_receipt_sha256 must be an exact lowercase SHA-256"
+            exit 1
+          fi
+          if [ "$ARIA_WORKFLOW_REF" != "refs/heads/deploy/fly-github-actions" ] \
+             || [ "$ARIA_WORKFLOW_REF_TYPE" != "branch" ] \
+             || [ "$ARIA_WORKFLOW_REF_PROTECTED" != "true" ]; then
+            echo "::error::production dispatch must execute from the protected release branch"
+            exit 1
+          fi
+          if [ "$ARIA_WORKFLOW_SHA" != "$ARIA_RELEASE_SHA" ]; then
+            echo "::error::release_sha must equal the commit that supplied this workflow definition"
+            exit 1
+          fi
+
+  deploy:
+    name: Protected production deploy
+    needs: validate-dispatch
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment: Production
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+      security-events: read
+    env:
+      ARIA_RELEASE_SHA: ${{ inputs.release_sha }}
+      ARIA_RECOVERY_RECEIPT_SHA256: ${{ inputs.recovery_receipt_sha256 }}
+      ARIA_LOCAL_APP_IMAGE: aria-mantu-app:sha-${{ inputs.release_sha }}
+      ARIA_LOCAL_DB_IMAGE: aria-mantu-db:sha-${{ inputs.release_sha }}
+      ARIA_LOCAL_BOOTSTRAP_IMAGE: aria-mantu-bootstrap:sha-${{ inputs.release_sha }}
+      ARIA_LOCAL_KONG_IMAGE: aria-mantu-kong:sha-${{ inputs.release_sha }}
+      TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
+      CYCLONEDX_CLI_IMAGE: cyclonedx/cyclonedx-cli:0.32.0@sha256:9a858a15e7b0843606efc0ff19d5f7575011a5428d7f3d343b4f6cf09d8f0d4e
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout exact release
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify release identity and required workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          if [ "$actual_sha" != "$ARIA_RELEASE_SHA" ]; then
+            echo "::error::checked out $actual_sha instead of $ARIA_RELEASE_SHA"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$ARIA_RELEASE_SHA" "origin/deploy/fly-github-actions"; then
+            echo "::error::release SHA is not on the production release branch"
+            exit 1
+          fi
+
+          require_workflow_success() {
+            local workflow="$1" result
+            result="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --commit "$ARIA_RELEASE_SHA" --limit 1 --json conclusion,headSha,status --jq '.[0] | "\(.headSha) \(.status) \(.conclusion)"')"
+            if [ "$result" != "$ARIA_RELEASE_SHA completed success" ]; then
+              echo "::error::$workflow has no successful completed run for $ARIA_RELEASE_SHA (result: ${result:-none})"
+              exit 1
+            fi
+          }
+
+          require_workflow_success ci.yml
+          require_workflow_success codeql.yml
+
+          for severity in critical high; do
+            alerts="$(gh api --method GET \
+              "repos/$GITHUB_REPOSITORY/code-scanning/alerts" \
+              -f state=open \
+              -f ref=refs/heads/deploy/fly-github-actions \
+              -f severity="$severity" \
+              -f per_page=1)"
+            open_code_alerts="$(printf '%s' "$alerts" | node -e '
+              let body = "";
+              process.stdin.setEncoding("utf8");
+              process.stdin.on("data", (chunk) => body += chunk);
+              process.stdin.on("end", () => {
+                const rows = JSON.parse(body);
+                if (!Array.isArray(rows)) process.exit(1);
+                process.stdout.write(String(rows.length));
+              });
+            ')"
+            if [ "$open_code_alerts" -ne 0 ]; then
+              echo "::error::open $severity code-scanning alert blocks release $ARIA_RELEASE_SHA"
+              exit 1
+            fi
+          done
+
+      - name: Install pinned flyctl action
+        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # v1.6
+        with:
+          version: 0.4.69
+
+      - name: Validate preserved production recovery point
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_RECOVERY_AUDIT_TOKEN }}
+          ARIA_VOLUME_RECOVERY_RECEIPT_JSON: ${{ secrets.ARIA_VOLUME_RECOVERY_RECEIPT_JSON }}
+          ARIA_VOLUME_RESTORE_CREATE_REQUEST_JSON: ${{ secrets.ARIA_VOLUME_RESTORE_CREATE_REQUEST_JSON }}
+          ARIA_VOLUME_RESTORE_CREATE_RESPONSE_JSON: ${{ secrets.ARIA_VOLUME_RESTORE_CREATE_RESPONSE_JSON }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$FLY_API_TOKEN"
+          test -n "$ARIA_VOLUME_RECOVERY_RECEIPT_JSON"
+          test -n "$ARIA_VOLUME_RESTORE_CREATE_REQUEST_JSON"
+          test -n "$ARIA_VOLUME_RESTORE_CREATE_RESPONSE_JSON"
+          receipt="$RUNNER_TEMP/aria-volume-recovery-receipt.json"
+          restore_request="$RUNNER_TEMP/aria-volume-restore-create-request.json"
+          restore_response="$RUNNER_TEMP/aria-volume-restore-create-response.json"
+          volumes="$RUNNER_TEMP/aria-volume-recovery-volumes.json"
+          snapshots="$RUNNER_TEMP/aria-volume-recovery-snapshots.json"
+          restore_volumes="$RUNNER_TEMP/aria-volume-recovery-restore-volumes.json"
+          source_machines="$RUNNER_TEMP/aria-volume-recovery-source-machines.json"
+          restore_machines="$RUNNER_TEMP/aria-volume-recovery-restore-machines.json"
+          source_ips="$RUNNER_TEMP/aria-volume-recovery-source-ips.json"
+          restore_ips="$RUNNER_TEMP/aria-volume-recovery-restore-ips.json"
+          cleanup_target="$RUNNER_TEMP/aria-volume-recovery-cleanup-target.json"
+          reviews="$RUNNER_TEMP/aria-production-approval-reviews.json"
+          evidence="$RUNNER_TEMP/aria-volume-recovery-evidence.json"
+          export receipt restore_request restore_response
+          node <<'NODE'
+          const fs = require("node:fs");
+          const inputs = [
+            ["ARIA_VOLUME_RECOVERY_RECEIPT_JSON", "receipt"],
+            ["ARIA_VOLUME_RESTORE_CREATE_REQUEST_JSON", "restore_request"],
+            ["ARIA_VOLUME_RESTORE_CREATE_RESPONSE_JSON", "restore_response"],
+          ];
+          for (const [valueName, pathName] of inputs) {
+            const value = process.env[valueName];
+            if (!value || Buffer.byteLength(value, "utf8") > 65_536) {
+              throw new Error(`${valueName} is missing or oversized`);
+            }
+            const document = JSON.parse(value);
+            if (!document || typeof document !== "object" || Array.isArray(document)) {
+              throw new Error(`${valueName} must contain one JSON object`);
+            }
+            fs.writeFileSync(process.env[pathName], `${JSON.stringify(document)}\n`, { mode: 0o600 });
+          }
+          NODE
+          actual_receipt_sha256="$(sha256sum "$receipt" | awk '{print $1}')"
+          if [ "$actual_receipt_sha256" != "$ARIA_RECOVERY_RECEIPT_SHA256" ]; then
+            echo "::error::protected recovery receipt does not match the visible dispatch digest"
+            exit 1
+          fi
+          volume_id="$(node -e '
+            const fs = require("node:fs");
+            const document = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const value = document?.production?.volumeId;
+            if (!/^vol_[A-Za-z0-9]+$/.test(value ?? "")) process.exit(1);
+            process.stdout.write(value);
+          ' "$receipt")"
+          restore_app="$(node -e '
+            const fs = require("node:fs");
+            const document = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const value = document?.restoreDrill?.targetApp;
+            if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(value ?? "")) process.exit(1);
+            if (value === "aria-mantu-db") process.exit(1);
+            process.stdout.write(value);
+          ' "$receipt")"
+          flyctl volumes list --app aria-mantu-db --json > "$volumes"
+          flyctl volumes snapshots list "$volume_id" --app aria-mantu-db --json > "$snapshots"
+          flyctl volumes list --app "$restore_app" --json > "$restore_volumes"
+          flyctl machines list --app aria-mantu-db --json > "$source_machines"
+          flyctl machines list --app "$restore_app" --json > "$restore_machines"
+          flyctl ips list --app aria-mantu-db --json > "$source_ips"
+          flyctl ips list --app "$restore_app" --json > "$restore_ips"
+          node scripts/validate-volume-recovery-receipt.mjs \
+            "$receipt" "$volumes" "$snapshots" "$restore_volumes" \
+            "$source_ips" "$restore_ips" "$restore_request" "$restore_response" \
+            "$source_machines" "$restore_machines" "$ARIA_RELEASE_SHA"
+          export cleanup_target actual_receipt_sha256 restore_volumes restore_machines
+          node <<'NODE'
+          const fs = require("node:fs");
+          const receipt = JSON.parse(fs.readFileSync(process.env.receipt, "utf8"));
+          const volumes = JSON.parse(fs.readFileSync(process.env.restore_volumes, "utf8"));
+          const machines = JSON.parse(fs.readFileSync(process.env.restore_machines, "utf8"));
+          const expectedApp = `aria-mantu-db-recovery-${process.env.ARIA_RELEASE_SHA.slice(0, 12)}`;
+          if (
+            receipt.restoreDrill.targetApp !== expectedApp ||
+            !Array.isArray(volumes) || volumes.length !== 1 ||
+            !Array.isArray(machines) || machines.length !== 1
+          ) throw new Error("validated recovery target is not singular");
+          const volume = volumes[0];
+          const machine = machines[0];
+          if (
+            volume.id !== receipt.restoreDrill.targetVolumeId ||
+            volume.attached_machine_id !== receipt.restoreDrill.targetMachineId ||
+            machine.id !== receipt.restoreDrill.targetMachineId ||
+            !/^vol_[A-Za-z0-9]+$/.test(volume.id ?? "") ||
+            !/^[0-9a-f]{14}$/.test(machine.id ?? "")
+          ) throw new Error("validated recovery target identity changed");
+          const target = {
+            schemaVersion: 1,
+            releaseSha: process.env.ARIA_RELEASE_SHA,
+            receiptSha256: process.env.actual_receipt_sha256,
+            app: expectedApp,
+            volumeId: volume.id,
+            machineId: machine.id,
+          };
+          fs.writeFileSync(process.env.cleanup_target, `${JSON.stringify(target)}\n`, { mode: 0o600 });
+          NODE
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/approvals" > "$reviews"
+          export reviews evidence actual_receipt_sha256 volumes snapshots restore_volumes source_machines restore_machines source_ips restore_ips
+          node <<'NODE'
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+          const receipt = JSON.parse(fs.readFileSync(process.env.receipt, "utf8"));
+          const reviews = JSON.parse(fs.readFileSync(process.env.reviews, "utf8"));
+          const actor = String(process.env.GITHUB_ACTOR ?? "").toLowerCase();
+          const triggeringActor = String(process.env.GITHUB_TRIGGERING_ACTOR ?? "").toLowerCase();
+          const approvedBy = String(receipt.approval.approvedBy).toLowerCase();
+          const expectedComment = `recovery-receipt-sha256:${process.env.actual_receipt_sha256}`;
+          const matching = Array.isArray(reviews) && reviews.some((review) =>
+            review?.state === "approved" &&
+            String(review?.comment ?? "").trim() === expectedComment &&
+            String(review?.user?.login ?? "").toLowerCase() === approvedBy &&
+            Array.isArray(review?.environments) &&
+            review.environments.some((environment) => environment?.name === "Production")
+          );
+          if (
+            !matching || !actor || !triggeringActor ||
+            approvedBy === actor || approvedBy === triggeringActor
+          ) {
+            throw new Error("Production approval is absent, mismatched, or self-approved");
+          }
+          const sha256 = (path) => crypto.createHash("sha256").update(fs.readFileSync(path)).digest("hex");
+          const evidence = {
+            schemaVersion: 1,
+            validatedAt: new Date().toISOString(),
+            releaseSha: process.env.ARIA_RELEASE_SHA,
+            receiptSha256: process.env.actual_receipt_sha256,
+            reviewerBound: true,
+            approvalActors: {
+              initialActor: actor,
+              triggeringActor,
+              approvedBy,
+            },
+            providerStateSha256: {
+              restoreCreateRequest: sha256(process.env.restore_request),
+              restoreCreateResponse: sha256(process.env.restore_response),
+              sourceVolume: sha256(process.env.volumes),
+              sourceSnapshots: sha256(process.env.snapshots),
+              restoreVolume: sha256(process.env.restore_volumes),
+              sourceMachines: sha256(process.env.source_machines),
+              restoreMachines: sha256(process.env.restore_machines),
+              sourcePublicIps: sha256(process.env.source_ips),
+              restorePublicIps: sha256(process.env.restore_ips),
+            },
+          };
+          fs.writeFileSync(process.env.evidence, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });
+          NODE
+
+      - name: Install pinned Cosign verifier
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Verify the pinned Trivy scanner signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          cosign verify "$TRIVY_IMAGE" \
+            --certificate-identity-regexp 'https://github\.com/aquasecurity/trivy/\.github/workflows/.+' \
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+            >/dev/null
+
+      - name: Build exact release custom images
+        shell: bash
+        env:
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.FLY_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN: ${{ vars.ARIA_ALLOWED_EMAIL_DOMAIN }}
+        run: |
+          set -euo pipefail
+          test -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY"
+          node scripts/validate-email-domain.mjs "$NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN"
+          docker build \
+            --pull \
+            --platform linux/amd64 \
+            --file Dockerfile.prod \
+            --tag "$ARIA_LOCAL_APP_IMAGE" \
+            --label "org.opencontainers.image.revision=$ARIA_RELEASE_SHA" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --build-arg NEXT_PUBLIC_SUPABASE_URL=https://aria-mantu-kong.fly.dev \
+            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
+            --build-arg NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN="$NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN" \
+            --build-arg NEXT_PUBLIC_ENABLE_DEMO_LOGIN=false \
+            --build-arg NEXT_PUBLIC_ENABLE_AZURE_LOGIN=false \
+            .
+          docker build --pull --platform linux/amd64 \
+            --file docker/db/Dockerfile.fly \
+            --tag "$ARIA_LOCAL_DB_IMAGE" \
+            --label "org.opencontainers.image.revision=$ARIA_RELEASE_SHA" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            .
+          docker build --pull --platform linux/amd64 \
+            --file docker/bootstrap/Dockerfile.fly \
+            --tag "$ARIA_LOCAL_BOOTSTRAP_IMAGE" \
+            --label "org.opencontainers.image.revision=$ARIA_RELEASE_SHA" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            .
+          docker build --pull --platform linux/amd64 \
+            --file docker/kong/Dockerfile.fly \
+            --tag "$ARIA_LOCAL_KONG_IMAGE" \
+            --label "org.opencontainers.image.revision=$ARIA_RELEASE_SHA" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            .
+          mkdir -p "$RUNNER_TEMP/aria-release-supply-chain/input"
+
+      - name: Publish candidate images and materialize exact registry inputs
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$FLY_API_TOKEN"
+          evidence="$RUNNER_TEMP/aria-release-supply-chain"
+          mkdir -p "$evidence/input"
+          cleanup_registry() { docker logout registry.fly.io >/dev/null 2>&1 || true; }
+          trap cleanup_registry EXIT
+          flyctl auth docker >/dev/null
+
+          digest_for() {
+            local image="$1" manifest="" attempt digest
+            for attempt in 1 2 3 4 5 6; do
+              if manifest="$(docker buildx imagetools inspect "$image" --raw 2>/dev/null)" && [ -n "$manifest" ]; then
+                break
+              fi
+              sleep 5
+            done
+            [ -n "$manifest" ] || return 1
+            digest="$(
+              printf '%s' "$manifest" | node -e '
+                const crypto = require("node:crypto");
+                const hash = crypto.createHash("sha256");
+                process.stdin.on("data", (chunk) => hash.update(chunk));
+                process.stdin.on("end", () => process.stdout.write(`sha256:${hash.digest("hex")}`));
+              '
+            )" || return 1
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+            printf '%s' "$digest"
+          }
+
+          : > "$evidence/candidate-images.tsv"
+          for specification in \
+            "app|aria-mantu-app|$ARIA_LOCAL_APP_IMAGE|ARIA_APP_CANDIDATE_REF" \
+            "db|aria-mantu-db|$ARIA_LOCAL_DB_IMAGE|ARIA_DB_CANDIDATE_REF" \
+            "bootstrap|aria-mantu-bootstrap|$ARIA_LOCAL_BOOTSTRAP_IMAGE|ARIA_BOOTSTRAP_CANDIDATE_REF" \
+            "kong|aria-mantu-kong|$ARIA_LOCAL_KONG_IMAGE|ARIA_KONG_CANDIDATE_REF"
+          do
+            IFS='|' read -r component app local_image variable <<< "$specification"
+            candidate_tag="registry.fly.io/$app:candidate-$ARIA_RELEASE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            docker tag "$local_image" "$candidate_tag"
+            docker push "$candidate_tag"
+            digest="$(digest_for "$candidate_tag")"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            candidate_ref="$candidate_tag@$digest"
+            docker pull "$candidate_ref"
+            docker image save --output "$evidence/input/aria-$component-image.tar" "$candidate_ref"
+            printf '%s=%s\n' "$variable" "$candidate_ref" >> "$GITHUB_ENV"
+            printf '%s\t%s\t%s\n' "$component" "$app" "$candidate_ref" >> "$evidence/candidate-images.tsv"
+          done
+
+          export ARIA_UPSTREAM_IMAGES_FILE="$evidence/upstream-images.tsv"
+          node <<'NODE'
+          const fs = require("node:fs");
+          const specifications = [
+            ["auth", "fly.auth.toml", "supabase/gotrue"],
+            ["rest", "fly.rest.toml", "postgrest/postgrest"],
+          ];
+          const rows = specifications.map(([component, file, repository]) => {
+            const source = fs.readFileSync(file, "utf8");
+            const matches = [...source.matchAll(/^\s*image\s*=\s*"([^"]+)"\s*$/gm)].map((match) => match[1]);
+            const escaped = repository.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            if (matches.length !== 1 || !new RegExp(`^${escaped}:[^@\\s]+@sha256:[0-9a-f]{64}$`).test(matches[0])) {
+              process.exit(1);
+            }
+            return `${component}\t${repository}\t${matches[0]}`;
+          });
+          fs.writeFileSync(process.env.ARIA_UPSTREAM_IMAGES_FILE, `${rows.join("\n")}\n`, { mode: 0o600 });
+          NODE
+          while IFS=$'\t' read -r component repository upstream_ref; do
+            docker pull --platform linux/amd64 "$upstream_ref"
+            docker image save --output "$evidence/input/aria-$component-image.tar" "$upstream_ref"
+            variable="ARIA_${component^^}_UPSTREAM_IMAGE_REF"
+            printf '%s=%s\n' "$variable" "$upstream_ref" >> "$GITHUB_ENV"
+          done < "$evidence/upstream-images.tsv"
+
+      - name: Scan exact registry candidate images
+        shell: bash
+        env:
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.FLY_SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/aria-release-supply-chain"
+          mkdir -p "$evidence/cache"
+          test -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY"
+          validate_cyclonedx() {
+            local host_dir="$1" file="$2"
+            docker run --rm \
+              --network none \
+              --read-only \
+              --cap-drop ALL \
+              --security-opt no-new-privileges:true \
+              --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+              --volume "$host_dir:/artifacts:ro" \
+              "$CYCLONEDX_CLI_IMAGE" validate \
+              --input-file "/artifacts/$file" \
+              --input-format json \
+              --input-version v1_7 \
+              --fail-on-errors
+          }
+
+          export ARIA_CYCLONEDX_PROBE_DIR="$evidence"
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const dir = process.env.ARIA_CYCLONEDX_PROBE_DIR;
+          fs.writeFileSync(
+            path.join(dir, "validator-valid.cdx.json"),
+            `${JSON.stringify({ bomFormat: "CycloneDX", specVersion: "1.7", version: 1 })}\n`,
+          );
+          fs.writeFileSync(
+            path.join(dir, "validator-invalid.cdx.json"),
+            `${JSON.stringify({ bomFormat: "CycloneDX", specVersion: "1.7", version: 0, unexpected: true })}\n`,
+          );
+          NODE
+          validate_cyclonedx "$evidence" validator-valid.cdx.json
+          if validate_cyclonedx "$evidence" validator-invalid.cdx.json >/dev/null 2>&1; then
+            echo "::error::CycloneDX validator accepted the malformed control document"
+            exit 1
+          fi
+          rm -f "$evidence/validator-valid.cdx.json" "$evidence/validator-invalid.cdx.json"
+
+          export ARIA_TRIVY_SECRET_CONFIG="$evidence/trivy-secret.yaml"
+          node <<'NODE'
+          const fs = require("node:fs");
+          const value = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+          const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const config = {
+            // linkedin-client-id detects a public OAuth client identifier (not a
+            // credential) and false-fires on Sillage request field names compiled
+            // into the app bundle. linkedin-client-secret remains armed.
+            "disable-rules": ["linkedin-client-id"],
+            "allow-rules": [{
+              id: "aria-public-browser-anon-key",
+              description: "Supabase anon JWT is an intentionally public browser build input",
+              regex: escaped,
+            }],
+          };
+          fs.writeFileSync(process.env.ARIA_TRIVY_SECRET_CONFIG, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+          NODE
+          for component in app db bootstrap kong auth rest; do
+            docker run --rm \
+              --volume "$evidence/input:/image:ro" \
+              --volume "$evidence/cache:/trivy-cache" \
+              --volume "$evidence:/artifacts" \
+              "$TRIVY_IMAGE" image \
+              --input "/image/aria-$component-image.tar" \
+              --cache-dir /trivy-cache \
+              --format cyclonedx \
+              --output "/artifacts/aria-$component.cdx.json" \
+              --timeout 15m
+            validate_cyclonedx "$evidence" "aria-$component.cdx.json"
+            docker run --rm \
+              --volume "$evidence/input:/image:ro" \
+              --volume "$evidence/cache:/trivy-cache" \
+              --volume "$evidence:/artifacts" \
+              "$TRIVY_IMAGE" image \
+              --input "/image/aria-$component-image.tar" \
+              --cache-dir /trivy-cache \
+              --scanners vuln \
+              --severity HIGH,CRITICAL \
+              --ignore-unfixed=true \
+              --exit-code 1 \
+              --format json \
+              --output "/artifacts/aria-$component-vulnerabilities.json" \
+              --timeout 15m
+            docker run --rm \
+              --volume "$evidence/input:/image:ro" \
+              --volume "$evidence/cache:/trivy-cache" \
+              --volume "$evidence:/artifacts" \
+              "$TRIVY_IMAGE" image \
+              --input "/image/aria-$component-image.tar" \
+              --cache-dir /trivy-cache \
+              --scanners secret \
+              --image-config-scanners secret \
+              --secret-config /artifacts/trivy-secret.yaml \
+              --exit-code 1 \
+              --format json \
+              --output "/artifacts/aria-$component-secrets.json" \
+              --timeout 15m
+          done
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          evidence = Path(os.environ["RUNNER_TEMP"]) / "aria-release-supply-chain"
+          for component in ("app", "db", "bootstrap", "kong", "auth", "rest"):
+              path = evidence / f"aria-{component}.cdx.json"
+              document = json.loads(path.read_text(encoding="utf-8"))
+              if document.get("bomFormat") != "CycloneDX":
+                  raise SystemExit(f"{component} SBOM is not CycloneDX")
+              if document.get("metadata", {}).get("component", {}).get("type") != "container":
+                  raise SystemExit(f"{component} SBOM metadata is not a container")
+              if not document.get("components"):
+                  raise SystemExit(f"{component} SBOM component inventory is empty")
+          PY
+          (
+            cd "$evidence"
+            for component in app db bootstrap kong auth rest; do
+              sha256sum \
+                "aria-$component.cdx.json" \
+                "aria-$component-vulnerabilities.json" \
+                "aria-$component-secrets.json" \
+                > "aria-$component-artifacts.sha256"
+            done
+          )
+
+      - name: Promote only exact scanned candidate digests
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$FLY_API_TOKEN"
+          evidence="$RUNNER_TEMP/aria-release-supply-chain"
+          cleanup_registry() { docker logout registry.fly.io >/dev/null 2>&1 || true; }
+          trap cleanup_registry EXIT
+          flyctl auth docker >/dev/null
+
+          digest_for() {
+            local image="$1" manifest digest error_file
+            error_file="$(mktemp "$RUNNER_TEMP/aria-registry-inspect.XXXXXX")" || return 45
+            if ! manifest="$(docker buildx imagetools inspect "$image" --raw 2>"$error_file")"; then
+              if grep -Eiq 'manifest unknown|name unknown|: not found$' "$error_file"; then
+                rm -f "$error_file"
+                return 44
+              fi
+              echo "::error::registry lookup failed for $image; refusing to treat it as an absent tag" >&2
+              rm -f "$error_file"
+              return 45
+            fi
+            rm -f "$error_file"
+            [ -n "$manifest" ] || return 45
+            digest="$(
+              printf '%s' "$manifest" | node -e '
+                const crypto = require("node:crypto");
+                const hash = crypto.createHash("sha256");
+                process.stdin.on("data", (chunk) => hash.update(chunk));
+                process.stdin.on("end", () => process.stdout.write(`sha256:${hash.digest("hex")}`));
+              '
+            )" || return 45
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || return 45
+            printf '%s' "$digest"
+          }
+
+          : > "$evidence/promoted-images.tsv"
+          while IFS=$'\t' read -r component app candidate_ref; do
+            candidate_digest="${candidate_ref##*@}"
+            release_tag="registry.fly.io/$app:sha-$ARIA_RELEASE_SHA"
+            if existing_digest="$(digest_for "$release_tag")"; then
+              if [ "$existing_digest" != "$candidate_digest" ]; then
+                echo "::error::$release_tag already exists with a different digest"
+                exit 1
+              fi
+            else
+              lookup_status=$?
+              if [ "$lookup_status" -ne 44 ]; then
+                echo "::error::unable to prove whether $release_tag exists; refusing promotion"
+                exit 1
+              fi
+              docker tag "$candidate_ref" "$release_tag"
+              docker push "$release_tag"
+            fi
+            promoted_digest="$(digest_for "$release_tag")"
+            [ "$promoted_digest" = "$candidate_digest" ]
+            variable="ARIA_${component^^}_IMAGE_REF"
+            digest_variable="ARIA_${component^^}_IMAGE_DIGEST"
+            promoted_ref="$release_tag@$promoted_digest"
+            printf '%s=%s\n' "$variable" "$promoted_ref" >> "$GITHUB_ENV"
+            printf '%s=%s\n' "$digest_variable" "$promoted_digest" >> "$GITHUB_ENV"
+            printf '%s\t%s\n' "$component" "$promoted_ref" >> "$evidence/promoted-images.tsv"
+          done < "$evidence/candidate-images.tsv"
+
+          export ARIA_PROMOTED_IMAGES_FILE="$evidence/promoted-images.tsv"
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const images = Object.fromEntries(
+            fs.readFileSync(process.env.ARIA_PROMOTED_IMAGES_FILE, "utf8")
+              .trim()
+              .split("\n")
+              .filter(Boolean)
+              .map((line) => line.split("\t")),
+          );
+          const upstreamImages = Object.fromEntries(
+            fs.readFileSync(path.join(path.dirname(process.env.ARIA_PROMOTED_IMAGES_FILE), "upstream-images.tsv"), "utf8")
+              .trim()
+              .split("\n")
+              .filter(Boolean)
+              .map((line) => {
+                const [component, repository, image] = line.split("\t");
+                return [component, { repository, image }];
+              }),
+          );
+          const receipt = {
+            schemaVersion: 2,
+            releaseSha: process.env.ARIA_RELEASE_SHA,
+            platform: "linux/amd64",
+            scanner: process.env.TRIVY_IMAGE,
+            sbomValidator: process.env.CYCLONEDX_CLI_IMAGE,
+            images,
+            upstreamImages,
+          };
+          const evidence = path.dirname(process.env.ARIA_PROMOTED_IMAGES_FILE);
+          fs.writeFileSync(path.join(evidence, "aria-release-images.json"), `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
+          NODE
+
+      - name: Attest app build provenance
+        id: attest_app_provenance
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-name: registry.fly.io/aria-mantu-app
+          subject-digest: ${{ env.ARIA_APP_IMAGE_DIGEST }}
+
+      - name: Attest app SBOM
+        id: attest_app_sbom
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-name: registry.fly.io/aria-mantu-app
+          subject-digest: ${{ env.ARIA_APP_IMAGE_DIGEST }}
+          sbom-path: ${{ runner.temp }}/aria-release-supply-chain/aria-app.cdx.json
+
+      - name: Attest database build provenance
+        id: attest_db_provenance
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-name: registry.fly.io/aria-mantu-db
+          subject-digest: ${{ env.ARIA_DB_IMAGE_DIGEST }}
+
+      - name: Attest database SBOM
+        id: attest_db_sbom
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-name: registry.fly.io/aria-mantu-db
+          subject-digest: ${{ env.ARIA_DB_IMAGE_DIGEST }}
+          sbom-path: ${{ runner.temp }}/aria-release-supply-chain/aria-db.cdx.json
+
+      - name: Attest bootstrap build provenance
+        id: attest_bootstrap_provenance
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-name: registry.fly.io/aria-mantu-bootstrap
+          subject-digest: ${{ env.ARIA_BOOTSTRAP_IMAGE_DIGEST }}
+
+      - name: Attest bootstrap SBOM
+        id: attest_bootstrap_sbom
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-name: registry.fly.io/aria-mantu-bootstrap
+          subject-digest: ${{ env.ARIA_BOOTSTRAP_IMAGE_DIGEST }}
+          sbom-path: ${{ runner.temp }}/aria-release-supply-chain/aria-bootstrap.cdx.json
+
+      - name: Attest Kong build provenance
+        id: attest_kong_provenance
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-name: registry.fly.io/aria-mantu-kong
+          subject-digest: ${{ env.ARIA_KONG_IMAGE_DIGEST }}
+
+      - name: Attest Kong SBOM
+        id: attest_kong_sbom
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-name: registry.fly.io/aria-mantu-kong
+          subject-digest: ${{ env.ARIA_KONG_IMAGE_DIGEST }}
+          sbom-path: ${{ runner.temp }}/aria-release-supply-chain/aria-kong.cdx.json
+
+      - name: Collect signed attestation bundles
+        shell: bash
+        env:
+          APP_PROVENANCE: ${{ steps.attest_app_provenance.outputs.bundle-path }}
+          APP_SBOM: ${{ steps.attest_app_sbom.outputs.bundle-path }}
+          DB_PROVENANCE: ${{ steps.attest_db_provenance.outputs.bundle-path }}
+          DB_SBOM: ${{ steps.attest_db_sbom.outputs.bundle-path }}
+          BOOTSTRAP_PROVENANCE: ${{ steps.attest_bootstrap_provenance.outputs.bundle-path }}
+          BOOTSTRAP_SBOM: ${{ steps.attest_bootstrap_sbom.outputs.bundle-path }}
+          KONG_PROVENANCE: ${{ steps.attest_kong_provenance.outputs.bundle-path }}
+          KONG_SBOM: ${{ steps.attest_kong_sbom.outputs.bundle-path }}
+          APP_PROVENANCE_ID: ${{ steps.attest_app_provenance.outputs.attestation-id }}
+          APP_SBOM_ID: ${{ steps.attest_app_sbom.outputs.attestation-id }}
+          DB_PROVENANCE_ID: ${{ steps.attest_db_provenance.outputs.attestation-id }}
+          DB_SBOM_ID: ${{ steps.attest_db_sbom.outputs.attestation-id }}
+          BOOTSTRAP_PROVENANCE_ID: ${{ steps.attest_bootstrap_provenance.outputs.attestation-id }}
+          BOOTSTRAP_SBOM_ID: ${{ steps.attest_bootstrap_sbom.outputs.attestation-id }}
+          KONG_PROVENANCE_ID: ${{ steps.attest_kong_provenance.outputs.attestation-id }}
+          KONG_SBOM_ID: ${{ steps.attest_kong_sbom.outputs.attestation-id }}
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/aria-release-supply-chain"
+          for specification in \
+            "app-provenance|$APP_PROVENANCE" \
+            "app-sbom|$APP_SBOM" \
+            "db-provenance|$DB_PROVENANCE" \
+            "db-sbom|$DB_SBOM" \
+            "bootstrap-provenance|$BOOTSTRAP_PROVENANCE" \
+            "bootstrap-sbom|$BOOTSTRAP_SBOM" \
+            "kong-provenance|$KONG_PROVENANCE" \
+            "kong-sbom|$KONG_SBOM"
+          do
+            IFS='|' read -r name source <<< "$specification"
+            test -s "$source"
+            cp "$source" "$evidence/aria-$name.sigstore.json"
+          done
+          printf '%s\t%s\t%s\n' \
+            app "$APP_PROVENANCE_ID" "$APP_SBOM_ID" \
+            db "$DB_PROVENANCE_ID" "$DB_SBOM_ID" \
+            bootstrap "$BOOTSTRAP_PROVENANCE_ID" "$BOOTSTRAP_SBOM_ID" \
+            kong "$KONG_PROVENANCE_ID" "$KONG_SBOM_ID" \
+            > "$evidence/attestation-ids.tsv"
+
+          export ARIA_RELEASE_EVIDENCE_DIR="$evidence"
+          node <<'NODE'
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const evidence = process.env.ARIA_RELEASE_EVIDENCE_DIR;
+          const workspace = process.env.GITHUB_WORKSPACE;
+          const sha256 = (file) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+          const rows = (file) => fs.readFileSync(path.join(evidence, file), "utf8")
+            .trim().split("\n").filter(Boolean).map((line) => line.split("\t"));
+          const promoted = Object.fromEntries(rows("promoted-images.tsv"));
+          const candidates = Object.fromEntries(rows("candidate-images.tsv").map(([component, , image]) => [component, image]));
+          const attestations = Object.fromEntries(rows("attestation-ids.tsv").map(([component, provenance, sbom]) => [component, { provenance, sbom }]));
+          const upstream = Object.fromEntries(rows("upstream-images.tsv").map(([component, repository, image]) => [component, { repository, image }]));
+          const dockerfiles = {
+            app: "Dockerfile.prod",
+            db: "docker/db/Dockerfile.fly",
+            bootstrap: "docker/bootstrap/Dockerfile.fly",
+            kong: "docker/kong/Dockerfile.fly",
+          };
+          const components = Object.fromEntries(Object.keys(dockerfiles).map((component) => {
+            const files = [
+              `aria-${component}.cdx.json`,
+              `aria-${component}-vulnerabilities.json`,
+              `aria-${component}-secrets.json`,
+              `aria-${component}-artifacts.sha256`,
+              `aria-${component}-provenance.sigstore.json`,
+              `aria-${component}-sbom.sigstore.json`,
+            ];
+            return [component, {
+              candidateImage: candidates[component],
+              promotedImage: promoted[component],
+              dockerfile: dockerfiles[component],
+              dockerfileSha256: sha256(path.join(workspace, dockerfiles[component])),
+              attestations: attestations[component],
+              evidence: Object.fromEntries(files.map((file) => [file, sha256(path.join(evidence, file))])),
+            }];
+          }));
+          const upstreamComponents = Object.fromEntries(Object.entries(upstream).map(([component, authority]) => {
+            const files = [
+              `aria-${component}.cdx.json`,
+              `aria-${component}-vulnerabilities.json`,
+              `aria-${component}-secrets.json`,
+              `aria-${component}-artifacts.sha256`,
+            ];
+            return [component, {
+              ...authority,
+              provenance: "upstream-digest-pinned-runtime",
+              evidence: Object.fromEntries(files.map((file) => [file, sha256(path.join(evidence, file))])),
+            }];
+          }));
+          const manifest = {
+            schemaVersion: 1,
+            releaseSha: process.env.ARIA_RELEASE_SHA,
+            platform: "linux/amd64",
+            scanner: process.env.TRIVY_IMAGE,
+            sbomValidator: process.env.CYCLONEDX_CLI_IMAGE,
+            components,
+            upstreamComponents,
+          };
+          fs.writeFileSync(path.join(evidence, "aria-release-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
+          NODE
+
+      - name: Refresh recovery state immediately before production mutation
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_RECOVERY_AUDIT_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$FLY_API_TOKEN"
+          receipt="$RUNNER_TEMP/aria-volume-recovery-receipt.json"
+          restore_request="$RUNNER_TEMP/aria-volume-restore-create-request.json"
+          restore_response="$RUNNER_TEMP/aria-volume-restore-create-response.json"
+          volumes="$RUNNER_TEMP/aria-volume-recovery-volumes.json"
+          snapshots="$RUNNER_TEMP/aria-volume-recovery-snapshots.json"
+          restore_volumes="$RUNNER_TEMP/aria-volume-recovery-restore-volumes.json"
+          source_machines="$RUNNER_TEMP/aria-volume-recovery-source-machines.json"
+          restore_machines="$RUNNER_TEMP/aria-volume-recovery-restore-machines.json"
+          source_ips="$RUNNER_TEMP/aria-volume-recovery-source-ips.json"
+          restore_ips="$RUNNER_TEMP/aria-volume-recovery-restore-ips.json"
+          actual_receipt_sha256="$(sha256sum "$receipt" | awk '{print $1}')"
+          [ "$actual_receipt_sha256" = "$ARIA_RECOVERY_RECEIPT_SHA256" ] || {
+            echo "::error::recovery receipt changed after initial validation"
+            exit 1
+          }
+          readarray -t recovery_identity < <(node -e '
+            const fs = require("node:fs");
+            const receipt = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const volume = receipt?.production?.volumeId;
+            const app = receipt?.restoreDrill?.targetApp;
+            if (!/^vol_[A-Za-z0-9]+$/.test(volume ?? "")) process.exit(1);
+            if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(app ?? "")) process.exit(1);
+            process.stdout.write(`${volume}\n${app}\n`);
+          ' "$receipt")
+          [ "${#recovery_identity[@]}" -eq 2 ]
+          volume_id="${recovery_identity[0]}"
+          restore_app="${recovery_identity[1]}"
+          flyctl volumes list --app aria-mantu-db --json > "$volumes"
+          flyctl volumes snapshots list "$volume_id" --app aria-mantu-db --json > "$snapshots"
+          flyctl volumes list --app "$restore_app" --json > "$restore_volumes"
+          flyctl machines list --app aria-mantu-db --json > "$source_machines"
+          flyctl machines list --app "$restore_app" --json > "$restore_machines"
+          flyctl ips list --app aria-mantu-db --json > "$source_ips"
+          flyctl ips list --app "$restore_app" --json > "$restore_ips"
+          node scripts/validate-volume-recovery-receipt.mjs \
+            "$receipt" "$volumes" "$snapshots" "$restore_volumes" \
+            "$source_ips" "$restore_ips" "$restore_request" "$restore_response" \
+            "$source_machines" "$restore_machines" "$ARIA_RELEASE_SHA"
+
+      - name: Deploy exact checked release
+        shell: bash
+        env:
+          ARIA_PROTECTED_RELEASE_CONTEXT: aria-protected-release-v1:${{ github.run_id }}:${{ github.run_attempt }}:${{ inputs.release_sha }}
+          ARIA_DEPLOYMENT_RECEIPT_PATH: ${{ runner.temp }}/aria-deployment-receipt.json
+          ARIA_PREDEPLOY_RECEIPT_PATH: ${{ runner.temp }}/aria-predeploy-receipt.json
+          ARIA_VOLUME_RECOVERY_RECEIPT_PATH: ${{ runner.temp }}/aria-volume-recovery-receipt.json
+          ARIA_VOLUME_RESTORE_CREATE_REQUEST_PATH: ${{ runner.temp }}/aria-volume-restore-create-request.json
+          ARIA_VOLUME_RESTORE_CREATE_RESPONSE_PATH: ${{ runner.temp }}/aria-volume-restore-create-response.json
+          ARIA_VOLUME_RECOVERY_VOLUMES_PATH: ${{ runner.temp }}/aria-volume-recovery-volumes.json
+          ARIA_VOLUME_RECOVERY_SNAPSHOTS_PATH: ${{ runner.temp }}/aria-volume-recovery-snapshots.json
+          ARIA_VOLUME_RECOVERY_RESTORE_VOLUMES_PATH: ${{ runner.temp }}/aria-volume-recovery-restore-volumes.json
+          ARIA_VOLUME_RECOVERY_SOURCE_MACHINES_PATH: ${{ runner.temp }}/aria-volume-recovery-source-machines.json
+          ARIA_VOLUME_RECOVERY_RESTORE_MACHINES_PATH: ${{ runner.temp }}/aria-volume-recovery-restore-machines.json
+          ARIA_VOLUME_RECOVERY_SOURCE_IPS_PATH: ${{ runner.temp }}/aria-volume-recovery-source-ips.json
+          ARIA_VOLUME_RECOVERY_RESTORE_IPS_PATH: ${{ runner.temp }}/aria-volume-recovery-restore-ips.json
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          ARIA_FIRST_DEPLOY_APPROVAL: ${{ secrets.ARIA_FIRST_DEPLOY_APPROVAL }}
+          FLY_PG_PASSWORD: ${{ secrets.FLY_PG_PASSWORD }}
+          FLY_SUPABASE_ADMIN_CURRENT_PASSWORD: ${{ secrets.FLY_SUPABASE_ADMIN_CURRENT_PASSWORD }}
+          FLY_SUPABASE_ADMIN_TARGET_PASSWORD: ${{ secrets.FLY_SUPABASE_ADMIN_TARGET_PASSWORD }}
+          FLY_AUTH_DB_PASSWORD: ${{ secrets.FLY_AUTH_DB_PASSWORD }}
+          FLY_REST_DB_PASSWORD: ${{ secrets.FLY_REST_DB_PASSWORD }}
+          FLY_JWT_SECRET: ${{ secrets.FLY_JWT_SECRET }}
+          FLY_SUPABASE_ANON_KEY: ${{ secrets.FLY_SUPABASE_ANON_KEY }}
+          FLY_SUPABASE_SERVICE_KEY: ${{ secrets.FLY_SUPABASE_SERVICE_KEY }}
+          FLY_DATA_ENCRYPTION_KEY: ${{ secrets.FLY_DATA_ENCRYPTION_KEY }}
+          FLY_DATA_ENCRYPTION_PREVIOUS_KEYS: ${{ secrets.FLY_DATA_ENCRYPTION_PREVIOUS_KEYS }}
+          ARIA_DATA_KEY_RING_RETIREMENT_APPROVAL: ${{ secrets.ARIA_DATA_KEY_RING_RETIREMENT_APPROVAL }}
+          FLY_CRON_SECRET: ${{ secrets.FLY_CRON_SECRET }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          GITHUB_SOURCE_TOKEN: ${{ secrets.ARIA_GITHUB_SOURCE_TOKEN }}
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+          KIMI_BASE_URL: ${{ secrets.KIMI_BASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const values = [
+            process.env.FLY_PG_PASSWORD,
+            process.env.FLY_SUPABASE_ADMIN_CURRENT_PASSWORD,
+            process.env.FLY_SUPABASE_ADMIN_TARGET_PASSWORD,
+            process.env.FLY_AUTH_DB_PASSWORD,
+            process.env.FLY_REST_DB_PASSWORD,
+          ].filter(Boolean);
+          for (const value of values) {
+            console.log(`::add-mask::${value}`);
+            console.log(`::add-mask::${encodeURIComponent(value)}`);
+          }
+          const host = "aria-mantu-db.internal:5432/postgres";
+          if (process.env.FLY_AUTH_DB_PASSWORD) {
+            console.log(`::add-mask::postgres://supabase_auth_admin:${encodeURIComponent(process.env.FLY_AUTH_DB_PASSWORD)}@${host}`);
+          }
+          if (process.env.FLY_REST_DB_PASSWORD) {
+            console.log(`::add-mask::postgres://authenticator:${encodeURIComponent(process.env.FLY_REST_DB_PASSWORD)}@${host}`);
+          }
+          NODE
+          flyctl version
+          bash deploy-fly.sh
+
+      - name: Verify tenant administrator gate
+        shell: bash
+        env:
+          KONG_URL: https://aria-mantu-kong.fly.dev
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.FLY_SUPABASE_SERVICE_KEY }}
+          ANON_KEY: ${{ secrets.FLY_SUPABASE_ANON_KEY }}
+          ARIA_ALLOWED_EMAIL_DOMAIN: ${{ vars.ARIA_ALLOWED_EMAIL_DOMAIN }}
+          ARIA_ADMIN_BOOTSTRAP_APPROVAL: ${{ vars.ARIA_ADMIN_BOOTSTRAP_APPROVAL }}
+          ARIA_FIRST_ADMIN_EMAIL: ${{ secrets.ARIA_FIRST_ADMIN_EMAIL }}
+          ARIA_FIRST_ADMIN_PASSWORD: ${{ secrets.ARIA_FIRST_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          deployment_receipt="$RUNNER_TEMP/aria-deployment-receipt.json"
+          verification_receipt="$RUNNER_TEMP/aria-tenant-admin-verification.json"
+          admin_response=""
+          admin_config=""
+          admin_candidate_ids=""
+          admin_user_response=""
+          admin_user_config=""
+          cleanup_admin_gate() {
+            [ -z "$admin_response" ] || rm -f -- "$admin_response"
+            [ -z "$admin_config" ] || rm -f -- "$admin_config"
+            [ -z "$admin_candidate_ids" ] || rm -f -- "$admin_candidate_ids"
+            [ -z "$admin_user_response" ] || rm -f -- "$admin_user_response"
+            [ -z "$admin_user_config" ] || rm -f -- "$admin_user_config"
+            unset SUPABASE_SERVICE_ROLE_KEY ANON_KEY ARIA_ADMIN_BOOTSTRAP_APPROVAL ARIA_FIRST_ADMIN_EMAIL ARIA_FIRST_ADMIN_PASSWORD
+          }
+          trap cleanup_admin_gate EXIT HUP INT TERM
+          test -s "$deployment_receipt"
+          node scripts/validate-email-domain.mjs "$ARIA_ALLOWED_EMAIL_DOMAIN"
+          printf '::add-mask::%s\n' "$SUPABASE_SERVICE_ROLE_KEY"
+          printf '::add-mask::%s\n' "$ANON_KEY"
+          [ -z "$ARIA_FIRST_ADMIN_EMAIL" ] || printf '::add-mask::%s\n' "$ARIA_FIRST_ADMIN_EMAIL"
+          [ -z "$ARIA_FIRST_ADMIN_PASSWORD" ] || printf '::add-mask::%s\n' "$ARIA_FIRST_ADMIN_PASSWORD"
+
+          deployment_mode="$(node -e '
+            const fs = require("node:fs");
+            const receipt = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (
+              receipt.schemaVersion !== 2 ||
+              receipt.releaseSha !== process.env.ARIA_RELEASE_SHA ||
+              receipt.status !== "pending-application-acceptance" ||
+              !["owner-approved-first-deploy", "existing-release"].includes(receipt.deploymentMode)
+            ) process.exit(1);
+            process.stdout.write(receipt.deploymentMode);
+          ' "$deployment_receipt")"
+
+          admin_response="$RUNNER_TEMP/aria-existing-admins.json"
+          admin_config="$RUNNER_TEMP/aria-existing-admins.curl"
+          admin_candidate_ids="$RUNNER_TEMP/aria-existing-admin-ids.txt"
+          admin_user_response="$RUNNER_TEMP/aria-existing-admin-user.json"
+          admin_user_config="$RUNNER_TEMP/aria-existing-admin-user.curl"
+
+          inventory_real_admin() {
+            local expected_email="${1:-}"
+            local admin_code candidate_id admin_user_code
+            {
+              printf 'silent\nshow-error\nconnect-timeout = 10\nmax-time = 30\n'
+              printf 'request = "GET"\n'
+              printf 'url = "%s/rest/v1/profiles?role=eq.admin&select=id,role,workspace_id,workspaces!inner(id,allowed_domain)&workspaces.allowed_domain=eq.%s"\n' "$KONG_URL" "$ARIA_ALLOWED_EMAIL_DOMAIN"
+              printf 'header = "apikey: %s"\n' "$SUPABASE_SERVICE_ROLE_KEY"
+              printf 'header = "Authorization: Bearer %s"\n' "$SUPABASE_SERVICE_ROLE_KEY"
+              printf 'output = "%s"\n' "$admin_response"
+              printf 'write-out = "%%{http_code}"\n'
+            } > "$admin_config"
+            admin_code="$(curl --config "$admin_config")"
+            [ "$admin_code" = 200 ]
+            node -e '
+              const fs = require("node:fs");
+              const domain = process.argv[2];
+              const rows = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+              if (!Array.isArray(rows)) process.exit(1);
+              const ids = [];
+              const seen = new Set();
+              for (const row of rows) {
+                const workspace = row?.workspaces;
+                if (
+                  row?.role !== "admin" ||
+                  typeof row?.id !== "string" ||
+                  !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(row.id) ||
+                  !workspace || typeof workspace !== "object" || Array.isArray(workspace) ||
+                  workspace.id !== row.workspace_id || workspace.allowed_domain !== domain ||
+                  seen.has(row.id)
+                ) process.exit(1);
+                seen.add(row.id);
+                ids.push(row.id);
+              }
+              process.stdout.write(ids.length ? `${ids.join("\n")}\n` : "");
+            ' "$admin_response" "$ARIA_ALLOWED_EMAIL_DOMAIN" > "$admin_candidate_ids"
+
+            admin_state=absent
+            while IFS= read -r candidate_id; do
+              [ -n "$candidate_id" ] || continue
+              {
+                printf 'silent\nshow-error\nconnect-timeout = 10\nmax-time = 30\n'
+                printf 'request = "GET"\n'
+                printf 'url = "%s/auth/v1/admin/users/%s"\n' "$KONG_URL" "$candidate_id"
+                printf 'header = "apikey: %s"\n' "$SUPABASE_SERVICE_ROLE_KEY"
+                printf 'header = "Authorization: Bearer %s"\n' "$SUPABASE_SERVICE_ROLE_KEY"
+                printf 'output = "%s"\n' "$admin_user_response"
+                printf 'write-out = "%%{http_code}"\n'
+              } > "$admin_user_config"
+              admin_user_code="$(curl --config "$admin_user_config")"
+              [ "$admin_user_code" = 200 ]
+              if node -e '
+                const fs = require("node:fs");
+                const expectedId = process.argv[2];
+                const domain = process.argv[3];
+                const expectedEmail = process.argv[4].toLowerCase();
+                const user = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+                if (user?.id !== expectedId || typeof user?.email !== "string") process.exit(1);
+                const email = user.email.toLowerCase();
+                const [local, emailDomain, ...extra] = email.split("@");
+                const providers = new Set([
+                  ...(Array.isArray(user.app_metadata?.providers) ? user.app_metadata.providers : []),
+                  user.app_metadata?.provider,
+                  ...(Array.isArray(user.identities) ? user.identities.map((identity) => identity?.provider) : []),
+                ].filter((value) => typeof value === "string"));
+                const confirmedAt = Date.parse(user.email_confirmed_at ?? user.confirmed_at ?? "");
+                const lastSignInAt = Date.parse(user.last_sign_in_at ?? "");
+                const bannedUntil = user.banned_until ? Date.parse(user.banned_until) : Number.NaN;
+                if (
+                  !local || extra.length !== 0 || emailDomain !== domain || local.startsWith("aria.acceptance+") ||
+                  (expectedEmail && email !== expectedEmail) || !providers.has("email") ||
+                  !Number.isFinite(confirmedAt) || !Number.isFinite(lastSignInAt) ||
+                  user.deleted_at || user.user_metadata?.aria_acceptance_marker ||
+                  (user.banned_until && (!Number.isFinite(bannedUntil) || bannedUntil > Date.now()))
+                ) process.exit(1);
+              ' "$admin_user_response" "$candidate_id" "$ARIA_ALLOWED_EMAIL_DOMAIN" "$expected_email"; then
+                admin_state=present
+                break
+              fi
+            done < "$admin_candidate_ids"
+          }
+
+          inventory_real_admin
+
+          if [ "$admin_state" = present ]; then
+            [ -z "$ARIA_ADMIN_BOOTSTRAP_APPROVAL" ]
+            [ -z "$ARIA_FIRST_ADMIN_EMAIL" ]
+            [ -z "$ARIA_FIRST_ADMIN_PASSWORD" ]
+            verification_mode=existing-admin-verified
+          else
+            [ "$admin_state" = absent ]
+            expected_bootstrap_approval="aria-admin-bootstrap-v1:${ARIA_RELEASE_SHA}:${ARIA_RECOVERY_RECEIPT_SHA256}"
+            [ "$ARIA_ADMIN_BOOTSTRAP_APPROVAL" = "$expected_bootstrap_approval" ]
+            test -n "$ARIA_FIRST_ADMIN_EMAIL"
+            test -n "$ARIA_FIRST_ADMIN_PASSWORD"
+            ADMIN_EMAIL="$ARIA_FIRST_ADMIN_EMAIL" \
+            ADMIN_PASSWORD="$ARIA_FIRST_ADMIN_PASSWORD" \
+            ARIA_RELEASE_SHA="$ARIA_RELEASE_SHA" \
+            ARIA_RECOVERY_RECEIPT_SHA256="$ARIA_RECOVERY_RECEIPT_SHA256" \
+            ARIA_ADMIN_BOOTSTRAP_APPROVAL="$ARIA_ADMIN_BOOTSTRAP_APPROVAL" \
+            bash scripts/provision-first-admin.sh >/dev/null
+            inventory_real_admin "$ARIA_FIRST_ADMIN_EMAIL"
+            [ "$admin_state" = present ]
+            verification_mode=protected-admin-bootstrap
+          fi
+
+          export deployment_mode verification_mode verification_receipt
+          node <<'NODE'
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+          const bootstrapApprovalSha256 = process.env.verification_mode === "protected-admin-bootstrap"
+            ? crypto.createHash("sha256").update(process.env.ARIA_ADMIN_BOOTSTRAP_APPROVAL, "utf8").digest("hex")
+            : null;
+          const receipt = {
+            schemaVersion: 1,
+            releaseSha: process.env.ARIA_RELEASE_SHA,
+            recoveryReceiptSha256: process.env.ARIA_RECOVERY_RECEIPT_SHA256,
+            status: "passed",
+            deploymentMode: process.env.deployment_mode,
+            verificationMode: process.env.verification_mode,
+            adminBootstrapApprovalSha256: bootstrapApprovalSha256,
+            identityProof: "gotrue-active-email-provider-last-sign-in+profile-workspace-domain",
+            realTenantAdminVerified: true,
+            verifiedAt: new Date().toISOString(),
+          };
+          fs.writeFileSync(process.env.verification_receipt, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
+          NODE
+          cleanup_admin_gate
+          trap - EXIT HUP INT TERM
+
+      - name: Run isolated authenticated campaign acceptance
+        shell: bash
+        env:
+          APP_URL: https://aria-mantu-app.fly.dev
+          KONG_URL: https://aria-mantu-kong.fly.dev
+          ANON_KEY: ${{ secrets.FLY_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.FLY_SUPABASE_SERVICE_KEY }}
+          ARIA_ALLOWED_EMAIL_DOMAIN: ${{ vars.ARIA_ALLOWED_EMAIL_DOMAIN }}
+          ARIA_ACCEPTANCE_RECEIPT_PATH: ${{ runner.temp }}/aria-application-acceptance.json
+        run: |
+          set -euo pipefail
+          umask 077
+          receipt_pending="$ARIA_ACCEPTANCE_RECEIPT_PATH.pending"
+          rm -f "$receipt_pending" "$ARIA_ACCEPTANCE_RECEIPT_PATH"
+          bash scripts/acceptance-campaign-dry-run.sh > "$receipt_pending"
+          node -e '
+            const fs = require("node:fs");
+            const receipt = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (
+              receipt.schemaVersion !== 1 ||
+              receipt.releaseSha !== process.env.ARIA_RELEASE_SHA ||
+              receipt.status !== "passed" ||
+              receipt.checks?.authenticatedWorkspaceBinding !== true ||
+              receipt.checks?.authenticatedStateReload !== true ||
+              receipt.checks?.outreachLedgerRows !== 0 ||
+              receipt.checks?.messagesOutboundRows !== 0 ||
+              receipt.checks?.cleanupVerified !== true ||
+              receipt.safety?.syntheticDataOnly !== true ||
+              receipt.safety?.liveSendIntentProvided !== false ||
+              receipt.safety?.requestsWithConfirmLiveTrue !== 0 ||
+              receipt.safety?.providerCallPreventionProof !== "exact-sha-ci-normal-tenant-route-counters"
+            ) process.exit(1);
+          ' "$receipt_pending"
+          mv "$receipt_pending" "$ARIA_ACCEPTANCE_RECEIPT_PATH"
+          chmod 0600 "$ARIA_ACCEPTANCE_RECEIPT_PATH"
+
+      - name: Destroy the disposable recovery target
+        if: always()
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_RECOVERY_CLEANUP_TOKEN }}
+        run: |
+          set -euo pipefail
+          cleanup_target="$RUNNER_TEMP/aria-volume-recovery-cleanup-target.json"
+          cleanup="$RUNNER_TEMP/aria-volume-recovery-cleanup.json"
+          apps_after="$RUNNER_TEMP/aria-volume-recovery-apps-after-cleanup.json"
+          if [ ! -s "$cleanup_target" ]; then
+            echo "No validated disposable recovery target is available for cleanup."
+            exit 0
+          fi
+          test -n "$FLY_API_TOKEN"
+          readarray -t target < <(node -e '
+            const fs = require("node:fs");
+            const target = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const expectedApp = `aria-mantu-db-recovery-${process.env.ARIA_RELEASE_SHA.slice(0, 12)}`;
+            const keys = Object.keys(target).sort().join(",");
+            if (
+              keys !== "app,machineId,receiptSha256,releaseSha,schemaVersion,volumeId" ||
+              target.schemaVersion !== 1 ||
+              target.releaseSha !== process.env.ARIA_RELEASE_SHA ||
+              target.receiptSha256 !== process.env.ARIA_RECOVERY_RECEIPT_SHA256 ||
+              target.app !== expectedApp ||
+              !/^vol_[A-Za-z0-9]+$/.test(target.volumeId ?? "") ||
+              !/^[0-9a-f]{14}$/.test(target.machineId ?? "")
+            ) process.exit(1);
+            process.stdout.write(`${target.app}\n${target.volumeId}\n${target.machineId}\n`);
+          ' "$cleanup_target")
+          [ "${#target[@]}" -eq 3 ]
+          restore_app="${target[0]}"
+          restore_volume="${target[1]}"
+          restore_machine="${target[2]}"
+
+          retry_cleanup() {
+            local description="$1" attempt
+            shift
+            for attempt in 1 2 3 4 5; do
+              if "$@"; then
+                return 0
+              fi
+              echo "Cleanup retry $attempt/5 failed: $description" >&2
+              [ "$attempt" -eq 5 ] || sleep $((attempt * 2))
+            done
+            return 1
+          }
+          retry_cleanup "destroy restore machine" \
+            flyctl machine destroy "$restore_machine" --app "$restore_app" --force \
+            || echo "Machine cleanup remained inconclusive; continuing to volume and app cleanup." >&2
+          retry_cleanup "destroy restore volume" \
+            flyctl volumes destroy "$restore_volume" --app "$restore_app" --yes \
+            || echo "Volume cleanup remained inconclusive; continuing to app cleanup." >&2
+          retry_cleanup "destroy restore app" \
+            flyctl apps destroy "$restore_app" --yes \
+            || echo "App cleanup remained inconclusive; verifying provider inventory." >&2
+
+          verify_recovery_absent() {
+            flyctl apps list --json > "$apps_after" || return 1
+            node -e '
+              const fs = require("node:fs");
+              const app = process.argv[1];
+              const rows = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+              if (!Array.isArray(rows)) process.exit(2);
+              if (rows.some((row) => String(row?.Name ?? row?.name ?? "") === app)) {
+                process.stderr.write("disposable recovery target still exists after cleanup\n");
+                process.exit(1);
+              }
+            ' "$restore_app" "$apps_after"
+          }
+          retry_cleanup "verify disposable recovery target absence" verify_recovery_absent || {
+            echo "::error::disposable recovery target still exists after cleanup or absence could not be proven"
+            exit 1
+          }
+          export cleanup
+          node <<'NODE'
+          const fs = require("node:fs");
+          const evidence = {
+            schemaVersion: 1,
+            releaseSha: process.env.ARIA_RELEASE_SHA,
+            receiptSha256: process.env.ARIA_RECOVERY_RECEIPT_SHA256,
+            disposableRecoveryTargetDestroyed: true,
+            destroyedAt: new Date().toISOString(),
+          };
+          fs.writeFileSync(process.env.cleanup, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });
+          NODE
+
+      - name: Materialize release candidate receipt
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          export deployment_receipt="$RUNNER_TEMP/aria-deployment-receipt.json"
+          export admin_receipt="$RUNNER_TEMP/aria-tenant-admin-verification.json"
+          export application_receipt="$RUNNER_TEMP/aria-application-acceptance.json"
+          export recovery_cleanup="$RUNNER_TEMP/aria-volume-recovery-cleanup.json"
+          export release_candidate_receipt="$RUNNER_TEMP/aria-release-candidate-receipt.json"
+          for receipt in "$deployment_receipt" "$admin_receipt" "$application_receipt" "$recovery_cleanup"; do
+            test -s "$receipt"
+          done
+          node <<'NODE'
+          const fs = require("node:fs");
+          const read = (name) => JSON.parse(fs.readFileSync(process.env[name], "utf8"));
+          const deployment = read("deployment_receipt");
+          const tenantAdmin = read("admin_receipt");
+          const application = read("application_receipt");
+          const recoveryCleanup = read("recovery_cleanup");
+          const releaseSha = process.env.ARIA_RELEASE_SHA;
+          const adminVerificationValid =
+            (tenantAdmin.verificationMode === "existing-admin-verified" &&
+              tenantAdmin.adminBootstrapApprovalSha256 === null) ||
+            (tenantAdmin.verificationMode === "protected-admin-bootstrap" &&
+              /^[0-9a-f]{64}$/.test(tenantAdmin.adminBootstrapApprovalSha256 ?? ""));
+          if (
+            deployment.schemaVersion !== 2 ||
+            deployment.releaseSha !== releaseSha ||
+            deployment.status !== "pending-application-acceptance" ||
+            tenantAdmin.schemaVersion !== 1 ||
+            tenantAdmin.releaseSha !== releaseSha ||
+            tenantAdmin.recoveryReceiptSha256 !== process.env.ARIA_RECOVERY_RECEIPT_SHA256 ||
+            tenantAdmin.status !== "passed" ||
+            tenantAdmin.deploymentMode !== deployment.deploymentMode ||
+            !adminVerificationValid ||
+            tenantAdmin.identityProof !== "gotrue-active-email-provider-last-sign-in+profile-workspace-domain" ||
+            tenantAdmin.realTenantAdminVerified !== true ||
+            application.releaseSha !== releaseSha ||
+            application.status !== "passed" ||
+            application.checks?.cleanupVerified !== true ||
+            application.safety?.liveSendIntentProvided !== false ||
+            application.safety?.requestsWithConfirmLiveTrue !== 0 ||
+            application.safety?.providerCallPreventionProof !== "exact-sha-ci-normal-tenant-route-counters" ||
+            recoveryCleanup.releaseSha !== releaseSha ||
+            recoveryCleanup.disposableRecoveryTargetDestroyed !== true
+          ) process.exit(1);
+          const receipt = {
+            ...deployment,
+            schemaVersion: 2,
+            status: "pending-evidence-archive",
+            applicationAcceptedAt: new Date().toISOString(),
+            tenantAdmin: {
+              status: tenantAdmin.status,
+              verificationMode: tenantAdmin.verificationMode,
+              recoveryReceiptSha256: tenantAdmin.recoveryReceiptSha256,
+              adminBootstrapApprovalSha256: tenantAdmin.adminBootstrapApprovalSha256,
+              identityProof: tenantAdmin.identityProof,
+              realTenantAdminVerified: true,
+              verifiedAt: tenantAdmin.verifiedAt,
+            },
+            applicationAcceptance: application,
+            recoveryCleanup: {
+              disposableRecoveryTargetDestroyed: true,
+              destroyedAt: recoveryCleanup.destroyedAt,
+            },
+          };
+          fs.writeFileSync(process.env.release_candidate_receipt, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
+          NODE
+
+      - name: Record release evidence inventory
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/aria-release-supply-chain"
+          mkdir -p "$evidence"
+          node <<'NODE'
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+          const path = require("node:path");
+
+          const temp = process.env.RUNNER_TEMP;
+          const evidence = path.join(temp, "aria-release-supply-chain");
+          const scannedComponents = ["app", "db", "bootstrap", "kong", "auth", "rest"];
+          const attestedComponents = ["app", "db", "bootstrap", "kong"];
+          const expected = [
+            path.join(temp, "aria-deployment-receipt.json"),
+            path.join(temp, "aria-tenant-admin-verification.json"),
+            path.join(temp, "aria-application-acceptance.json"),
+            path.join(temp, "aria-release-candidate-receipt.json"),
+            path.join(temp, "aria-predeploy-receipt.json"),
+            path.join(temp, "aria-volume-recovery-evidence.json"),
+            path.join(temp, "aria-volume-recovery-cleanup.json"),
+            path.join(evidence, "candidate-images.tsv"),
+            path.join(evidence, "promoted-images.tsv"),
+            path.join(evidence, "upstream-images.tsv"),
+            path.join(evidence, "attestation-ids.tsv"),
+            path.join(evidence, "aria-release-images.json"),
+            path.join(evidence, "aria-release-manifest.json"),
+            ...scannedComponents.flatMap((component) => [
+              path.join(evidence, `aria-${component}.cdx.json`),
+              path.join(evidence, `aria-${component}-vulnerabilities.json`),
+              path.join(evidence, `aria-${component}-secrets.json`),
+              path.join(evidence, `aria-${component}-artifacts.sha256`),
+            ]),
+            ...attestedComponents.flatMap((component) => [
+              path.join(evidence, `aria-${component}-provenance.sigstore.json`),
+              path.join(evidence, `aria-${component}-sbom.sigstore.json`),
+            ]),
+          ];
+          const files = expected.map((file) => {
+            const exists = fs.existsSync(file) && fs.statSync(file).isFile();
+            return {
+              path: path.relative(temp, file),
+              exists,
+              bytes: exists ? fs.statSync(file).size : null,
+              sha256: exists
+                ? crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex")
+                : null,
+            };
+          });
+          const inventory = {
+            schemaVersion: 1,
+            releaseSha: process.env.ARIA_RELEASE_SHA,
+            runId: process.env.GITHUB_RUN_ID,
+            runAttempt: process.env.GITHUB_RUN_ATTEMPT,
+            complete: files.every((file) => file.exists),
+            files,
+          };
+          fs.writeFileSync(
+            path.join(evidence, "aria-release-evidence-inventory.json"),
+            `${JSON.stringify(inventory, null, 2)}\n`,
+            { mode: 0o600 },
+          );
+          NODE
+
+      - name: Verify successful release evidence is complete
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          for artifact in \
+            "$RUNNER_TEMP/aria-deployment-receipt.json" \
+            "$RUNNER_TEMP/aria-tenant-admin-verification.json" \
+            "$RUNNER_TEMP/aria-application-acceptance.json" \
+            "$RUNNER_TEMP/aria-release-candidate-receipt.json" \
+            "$RUNNER_TEMP/aria-predeploy-receipt.json" \
+            "$RUNNER_TEMP/aria-volume-recovery-evidence.json" \
+            "$RUNNER_TEMP/aria-volume-recovery-cleanup.json" \
+            "$RUNNER_TEMP/aria-release-supply-chain/candidate-images.tsv" \
+            "$RUNNER_TEMP/aria-release-supply-chain/promoted-images.tsv" \
+            "$RUNNER_TEMP/aria-release-supply-chain/upstream-images.tsv" \
+            "$RUNNER_TEMP/aria-release-supply-chain/attestation-ids.tsv" \
+            "$RUNNER_TEMP/aria-release-supply-chain/aria-release-images.json" \
+            "$RUNNER_TEMP/aria-release-supply-chain/aria-release-manifest.json"
+          do
+            if [ ! -s "$artifact" ]; then
+              echo "::error::successful release is missing evidence: $artifact"
+              exit 1
+            fi
+          done
+          for component in app db bootstrap kong auth rest; do
+            for suffix in .cdx.json -vulnerabilities.json -secrets.json -artifacts.sha256; do
+              artifact="$RUNNER_TEMP/aria-release-supply-chain/aria-$component$suffix"
+              if [ ! -s "$artifact" ]; then
+                echo "::error::successful release is missing evidence: $artifact"
+                exit 1
+              fi
+            done
+          done
+          for component in app db bootstrap kong; do
+            for suffix in -provenance.sigstore.json -sbom.sigstore.json; do
+              artifact="$RUNNER_TEMP/aria-release-supply-chain/aria-$component$suffix"
+              if [ ! -s "$artifact" ]; then
+                echo "::error::successful release is missing attestation evidence: $artifact"
+                exit 1
+              fi
+            done
+          done
+
+      - name: Archive non-secret release candidate and supply-chain evidence
+        if: always()
+        id: archive_candidate_evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aria-release-candidate-evidence-${{ inputs.release_sha }}-attempt-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/aria-deployment-receipt.json
+            ${{ runner.temp }}/aria-tenant-admin-verification.json
+            ${{ runner.temp }}/aria-application-acceptance.json
+            ${{ runner.temp }}/aria-release-candidate-receipt.json
+            ${{ runner.temp }}/aria-predeploy-receipt.json
+            ${{ runner.temp }}/aria-volume-recovery-evidence.json
+            ${{ runner.temp }}/aria-volume-recovery-cleanup.json
+            ${{ runner.temp }}/aria-release-supply-chain/candidate-images.tsv
+            ${{ runner.temp }}/aria-release-supply-chain/promoted-images.tsv
+            ${{ runner.temp }}/aria-release-supply-chain/upstream-images.tsv
+            ${{ runner.temp }}/aria-release-supply-chain/attestation-ids.tsv
+            ${{ runner.temp }}/aria-release-supply-chain/aria-release-images.json
+            ${{ runner.temp }}/aria-release-supply-chain/aria-release-manifest.json
+            ${{ runner.temp }}/aria-release-supply-chain/aria-*.cdx.json
+            ${{ runner.temp }}/aria-release-supply-chain/aria-*-vulnerabilities.json
+            ${{ runner.temp }}/aria-release-supply-chain/aria-*-secrets.json
+            ${{ runner.temp }}/aria-release-supply-chain/aria-*-artifacts.sha256
+            ${{ runner.temp }}/aria-release-supply-chain/aria-*-provenance.sigstore.json
+            ${{ runner.temp }}/aria-release-supply-chain/aria-*-sbom.sigstore.json
+            ${{ runner.temp }}/aria-release-supply-chain/aria-release-evidence-inventory.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Finalize accepted release receipt
+        if: success()
+        shell: bash
+        env:
+          ARIA_RELEASE_EVIDENCE_ARTIFACT_ID: ${{ steps.archive_candidate_evidence.outputs.artifact-id }}
+          ARIA_RELEASE_EVIDENCE_ARTIFACT_SHA256: ${{ steps.archive_candidate_evidence.outputs.artifact-digest }}
+        run: |
+          set -euo pipefail
+          umask 077
+          export release_candidate_receipt="$RUNNER_TEMP/aria-release-candidate-receipt.json"
+          export evidence_inventory="$RUNNER_TEMP/aria-release-supply-chain/aria-release-evidence-inventory.json"
+          export release_receipt="$RUNNER_TEMP/aria-release-receipt.json"
+          test -s "$release_candidate_receipt"
+          test -s "$evidence_inventory"
+          node <<'NODE'
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+          const candidateBytes = fs.readFileSync(process.env.release_candidate_receipt);
+          const inventoryBytes = fs.readFileSync(process.env.evidence_inventory);
+          const candidate = JSON.parse(candidateBytes.toString("utf8"));
+          const inventory = JSON.parse(inventoryBytes.toString("utf8"));
+          const releaseSha = process.env.ARIA_RELEASE_SHA;
+          const evidenceArtifactId = process.env.ARIA_RELEASE_EVIDENCE_ARTIFACT_ID ?? "";
+          const evidenceArtifactSha256 = process.env.ARIA_RELEASE_EVIDENCE_ARTIFACT_SHA256 ?? "";
+          const candidateSha256 = crypto.createHash("sha256").update(candidateBytes).digest("hex");
+          const inventoryEntry = inventory.files?.find(
+            (file) => file?.path === "aria-release-candidate-receipt.json",
+          );
+          if (
+            candidate.schemaVersion !== 2 ||
+            candidate.releaseSha !== releaseSha ||
+            candidate.status !== "pending-evidence-archive" ||
+            inventory.schemaVersion !== 1 ||
+            inventory.releaseSha !== releaseSha ||
+            inventory.complete !== true ||
+            inventoryEntry?.exists !== true ||
+            inventoryEntry?.sha256 !== candidateSha256 ||
+            !/^[1-9][0-9]*$/.test(evidenceArtifactId) ||
+            !/^[0-9a-f]{64}$/.test(evidenceArtifactSha256)
+          ) process.exit(1);
+          const receipt = {
+            ...candidate,
+            status: "accepted",
+            acceptedAt: new Date().toISOString(),
+            evidenceInventorySha256: crypto.createHash("sha256").update(inventoryBytes).digest("hex"),
+            evidenceArtifact: {
+              id: evidenceArtifactId,
+              sha256: evidenceArtifactSha256,
+            },
+          };
+          fs.writeFileSync(process.env.release_receipt, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
+          NODE
+
+      - name: Archive accepted release receipt
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aria-accepted-release-${{ inputs.release_sha }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/aria-release-receipt.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Announce accepted release
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_receipt="$RUNNER_TEMP/aria-release-receipt.json"
+          test -s "$release_receipt"
+          node -e '
+            const fs = require("node:fs");
+            const receipt = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (
+              receipt.schemaVersion !== 2 ||
+              receipt.releaseSha !== process.env.ARIA_RELEASE_SHA ||
+              receipt.status !== "accepted" ||
+              !/^[0-9a-f]{64}$/.test(receipt.evidenceInventorySha256 ?? "") ||
+              !/^[1-9][0-9]*$/.test(receipt.evidenceArtifact?.id ?? "") ||
+              !/^[0-9a-f]{64}$/.test(receipt.evidenceArtifact?.sha256 ?? "")
+            ) process.exit(1);
+          ' "$release_receipt"
+          echo "RELEASE_ACCEPTED sha=$ARIA_RELEASE_SHA receipt=$release_receipt"

@@ -2,15 +2,15 @@
    OUTBOUND DISPATCHER — the ONLY path from messages_outbound to the wire.
 
    Every queued message that is due must clear, in order:
-     1. an approval row for exactly this message id + body hash (autopilot
-        writes one when scheduling; a human click writes one in the Replies UI),
+     1. a named human approval row for exactly this message id + body hash,
      2. the human-likeness gate — again, defence in depth,
      3. a live seat of the right provider,
      4. claim_whatsapp_outbound for WhatsApp, which atomically validates
         consent, DNC, template/window, seat, and the delivery ledger.
-        SMS uses the existing claim_and_record path.
-   Anything that fails flips to 'blocked' (human queue) or 'failed'; a message
-   never silently retries into a double-send (dedupe_hash UNIQUE + ledger claim).
+        SMS stays disabled before any claim until it has equivalent controls.
+   Anything that fails flips to 'blocked' (human queue) or 'failed'; an
+   unconfigured provider is counted separately. A message never silently retries
+   into a double-send (dedupe_hash UNIQUE + ledger claim).
 
    Called from two places (Vercel Hobby forbids minute crons):
      - /api/webhooks/whatsapp — opportunistic drain after each inbound event
@@ -21,7 +21,7 @@
 
 import { createHash } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { sendWhatsApp, sendSms } from "@/lib/channels";
+import { sendWhatsApp, sendSms, type ChannelSendOutcome } from "@/lib/channels";
 import { gateOutbound } from "@/lib/gate";
 import { safeLog } from "@/lib/log-redact";
 import { approvalHash } from "@/lib/outreach-content";
@@ -32,15 +32,55 @@ import {
 } from "@/lib/whatsapp-template-queue";
 import { assessWhatsAppDispatch, type WhatsAppPermission } from "@/lib/whatsapp-policy";
 import { shouldReopenWhatsAppReview } from "@/lib/whatsapp-review-policy";
+import { publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
+import { detectInjection, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 
 const WHATSAPP_GATE_CACHE_VERSION = "whatsapp-outbound-gate-v1";
 const WHATSAPP_GATE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function disclosureInternalFromBrief(value: unknown): Parameters<typeof validateCandidateBoundText>[1] {
+  const brief = record(value);
+  if (!brief) return {};
+  return {
+    salaryMin: typeof brief.salaryMin === "number" ? brief.salaryMin : null,
+    salaryMax: typeof brief.salaryMax === "number" ? brief.salaryMax : null,
+    forbidden: [brief.department, brief.teamSize, brief.reportingTo, brief.currency]
+      .filter((item): item is string => typeof item === "string" && item.trim().length > 0),
+  };
+}
 
 export interface DispatchStats {
   processed: number;
   sent: number;
   blocked: number;
   failed: number;
+  unconfigured: number;
+}
+
+type DispatchOutcomeCounter = Exclude<keyof DispatchStats, "processed">;
+
+/**
+ * Maps a Twilio result to the durable ledger state used if SMS is enabled in a
+ * future release. Only a definitive provider rejection may release the claim.
+ * A timeout, 5xx, disconnect, contradictory result, or response without a
+ * durable SID remains ambiguous and therefore holds the de-duplication slot.
+ */
+export function resolveSmsLedgerStatus(outcome: ChannelSendOutcome): "sent" | "skipped" | "ambiguous" {
+  if (
+    outcome.status === "sent" &&
+    outcome.deliveryState === "accepted" &&
+    typeof outcome.id === "string" &&
+    outcome.id.trim().length > 0
+  ) {
+    return "sent";
+  }
+  if (outcome.status !== "sent" && outcome.deliveryState === "not-sent") return "skipped";
+  return "ambiguous";
 }
 
 async function cacheWhatsAppGateVerdict(
@@ -69,7 +109,11 @@ async function cacheWhatsAppGateVerdict(
 }
 
 export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageId?: string): Promise<DispatchStats> {
-  const stats: DispatchStats = { processed: 0, sent: 0, blocked: 0, failed: 0 };
+  const stats: DispatchStats = { processed: 0, sent: 0, blocked: 0, failed: 0, unconfigured: 0 };
+
+  // A public demo may still use a real Supabase database. Never let a queued
+  // row from that shared environment reach a provider, regardless of caller.
+  if (publicDemoSideEffectsDisabled()) return stats;
 
   let dueQuery = supabase
     .from("messages_outbound")
@@ -87,7 +131,8 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
 
   for (const msg of due ?? []) {
     stats.processed++;
-    const finish = async (status: "sent" | "blocked" | "failed", gateResult?: unknown) => {
+    let deliveryAttemptId: string | null = null;
+    const finish = async (status: "sent" | "blocked" | "failed", gateResult?: unknown, countAs?: DispatchOutcomeCounter) => {
       const reopenReview =
         status === "blocked" &&
         shouldReopenWhatsAppReview({
@@ -96,7 +141,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           status,
           reviewDecision: msg.review_decision ?? null,
         });
-      await supabase
+      let transition = supabase
         .from("messages_outbound")
         .update({
           status,
@@ -104,8 +149,19 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           ...(gateResult !== undefined ? { gate_result: gateResult } : {}),
           ...(reopenReview ? { review_decision: null, reviewed_at: null, reviewed_by: null } : {}),
         })
-        .eq("id", msg.id);
-      stats[status]++;
+        .eq("id", msg.id)
+        .eq("status", deliveryAttemptId ? "dispatching" : "queued");
+      if (deliveryAttemptId) {
+        transition = transition.eq("delivery_attempt_id", deliveryAttemptId);
+      }
+      const { data: transitioned, error: transitionError } = await transition
+        .select("id")
+        .maybeSingle();
+      if (transitionError) {
+        safeLog("dispatch-outbound: terminal transition error", { message: transitionError.message });
+        return;
+      }
+      if (transitioned) stats[countAs ?? status]++;
     };
 
     try {
@@ -212,6 +268,19 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           await finish("blocked", { pass: false, reasons: gate.reasons });
           continue;
         }
+        const { data: spec } = msg.spec_id
+          ? await supabase
+              .from("agent_specs")
+              .select("role_brief")
+              .eq("id", msg.spec_id)
+              .maybeSingle()
+          : { data: null };
+        const disclosure = validateCandidateBoundText(msg.body, disclosureInternalFromBrief(record(spec)?.role_brief));
+        const injection = detectInjection(msg.body);
+        if (!disclosure.safe || injection.flagged) {
+          await finish("blocked", { pass: false, reasons: [disclosure.reason ?? "injection-suspected"] });
+          continue;
+        }
       }
 
       // 2b. WhatsApp has its own legal/provider boundary. A free-form reply
@@ -296,7 +365,21 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         meta_phone_number_id?: string;
       } | null;
       if (claimObj?.allowed !== true) {
+        if (msg.channel === "WhatsApp" && (claimObj?.reason === "not-queued" || claimObj?.reason === "message-not-found")) {
+          // Another worker already owns or completed this row. Its state is
+          // authoritative; a losing selector must never downgrade it.
+          continue;
+        }
         await finish("blocked", { pass: false, reasons: [`guardrail:${claimObj?.reason ?? "blocked"}`] });
+        continue;
+      }
+      deliveryAttemptId = claimObj.delivery_attempt_id ?? null;
+      if (msg.channel === "WhatsApp" && (!deliveryAttemptId || !UUID_PATTERN.test(deliveryAttemptId))) {
+        // A provider call without the database-issued ownership token could
+        // never be reconciled or finalized safely. Leave the claimed row for
+        // operator recovery rather than guessing a terminal state.
+        safeLog("dispatch-outbound: WhatsApp claim returned no valid delivery attempt");
+        stats.failed++;
         continue;
       }
 
@@ -353,16 +436,73 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           continue;
         }
       }
+      if (msg.channel === "WhatsApp") {
+        if (outcome.status === "dry-run") {
+          if (claimObj.ledger_id) {
+            await supabase
+              .from("outreach_ledger")
+              .update({
+                status: "skipped",
+                reason: outcome.detail,
+              })
+              .eq("id", claimObj.ledger_id);
+          }
+          await finish("blocked", { pass: false, reasons: ["provider-unconfigured"] }, "unconfigured");
+          continue;
+        }
+        if (outcome.deliveryState !== "not-sent") {
+          // A timeout, disconnect, or successful response without Meta's
+          // durable id may have been accepted. Releasing the claim would make
+          // a retry capable of double-contacting the candidate.
+          safeLog("dispatch-outbound: WhatsApp result requires reconciliation", {
+            deliveryState: outcome.deliveryState,
+          });
+          stats.failed++;
+          continue;
+        }
+        try {
+          const { data: failure, error: failureErr } = await supabase.rpc(
+            "finalize_whatsapp_provider_failure",
+            {
+              p_message_id: msg.id,
+              p_delivery_attempt_id: deliveryAttemptId,
+              p_reason: outcome.detail.slice(0, 512),
+            },
+          );
+          const failureObj = failure as { allowed?: boolean; reason?: string } | null;
+          if (failureErr || failureObj?.allowed !== true) {
+            safeLog("dispatch-outbound: WhatsApp failure finalization failed", {
+              message: failureErr?.message ?? failureObj?.reason ?? "unknown",
+            });
+          }
+        } catch (err) {
+          safeLog("dispatch-outbound: WhatsApp failure finalization error", {
+            message: err instanceof Error ? err.message : "unknown",
+          });
+        }
+        stats.failed++;
+        continue;
+      }
+      const smsLedgerStatus = resolveSmsLedgerStatus(outcome);
       if (claimObj.ledger_id) {
         await supabase
           .from("outreach_ledger")
           .update({
-            status: outcome.status === "sent" ? "sent" : "skipped",
-            reason: outcome.status === "sent" ? null : outcome.detail,
+            status: smsLedgerStatus,
+            reason: smsLedgerStatus === "sent" ? null : outcome.detail,
           })
           .eq("id", claimObj.ledger_id);
       }
-      await finish(outcome.status === "sent" ? "sent" : "failed");
+      const providerUnconfigured = outcome.status === "dry-run" && smsLedgerStatus === "skipped";
+      await finish(
+        smsLedgerStatus === "sent" ? "sent" : providerUnconfigured ? "blocked" : "failed",
+        smsLedgerStatus === "ambiguous"
+          ? { pass: false, reasons: ["sms-provider-reconciliation-required"] }
+          : providerUnconfigured
+            ? { pass: false, reasons: ["provider-unconfigured"] }
+            : undefined,
+        providerUnconfigured ? "unconfigured" : undefined,
+      );
     } catch (err) {
       safeLog("dispatch-outbound: error", { message: err instanceof Error ? err.message : "unknown" });
       await finish("failed");

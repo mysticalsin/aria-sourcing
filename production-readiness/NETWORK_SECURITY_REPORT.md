@@ -1,5 +1,8 @@
 # Network Security Report — MSourcing (hermes-sourcing)
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 Phase 6 — Infrastructure / Network / IAM / TLS · **Sub-area: network exposure, segmentation, SSRF/egress, rate-limiting, dependency-driven network risk**
 Reviewer: Cloud / Network / IAM Engineer
 Date: 2026-06-27

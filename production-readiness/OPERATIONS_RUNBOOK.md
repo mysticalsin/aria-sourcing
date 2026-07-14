@@ -1,5 +1,8 @@
 # Operations Runbook — Hermes Sourcing
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **App:** Hermes Sourcing (MSourcing)
 **Stack:** Next.js 14 App Router · Supabase · Vercel · Microsoft Entra
 **Last updated:** 2026-06-27 (Phase 11 observability review)

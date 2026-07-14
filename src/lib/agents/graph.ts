@@ -20,6 +20,12 @@
 
 import { z } from "zod";
 import { gateOutbound } from "@/lib/gate";
+import {
+  DISCLOSURE_SYSTEM,
+  candidateDisclosureContextForCampaignLike,
+  disclosureInternalFromCampaignLike,
+  validateCandidateBoundText,
+} from "@/lib/agent-disclosure-policy";
 
 export type AgentNode = "planner" | "sourcer" | "screener" | "outreach" | "reporter" | "done";
 
@@ -99,13 +105,15 @@ const PLANNER_SYSTEM =
   '(no prose, no fences): {"thought": "<one line>", "steps": [{"title": "...", ' +
   '"platform": "GitHub"|"LinkedIn"|"Stack Overflow"|"Dribbble"|"Behance", "query": "<search query>"}]}. ' +
   "1-6 steps. Pick only platforms that genuinely fit the role (no Dribbble for backend). " +
-  "Queries are what a senior sourcer would type into that platform's search.";
+  "Queries are what a senior sourcer would type into that platform's search. " +
+  DISCLOSURE_SYSTEM;
 
 const OUTREACH_SYSTEM =
   "You draft one first-touch outreach message from a recruiter to a candidate. Output ONLY JSON " +
   '(no prose, no fences): {"subject": "<under 60 chars>", "body": "<under 120 words>"}. ' +
   "Lead with their specific real work, one genuine reason for reaching out, soft low-pressure ask. " +
-  "No AI slop, no corporate filler, no em-dashes, never mention tools or automation.";
+  "No AI slop, no corporate filler, no em-dashes, never mention tools or automation. " +
+  DISCLOSURE_SYSTEM;
 
 export interface StepResult {
   node: AgentNode;
@@ -118,7 +126,10 @@ export interface StepResult {
 export async function stepGraph(node: AgentNode, state: AgentGraphState, deps: GraphDeps): Promise<StepResult> {
   switch (node) {
     case "planner": {
-      const raw = await deps.generate(PLANNER_SYSTEM, `Role brief:\n${JSON.stringify(state.brief).slice(0, 4_000)}`);
+      const raw = await deps.generate(
+        PLANNER_SYSTEM,
+        `Role brief:\n${candidateDisclosureContextForCampaignLike(state.brief).slice(0, 4_000)}`,
+      );
       const parsed = PlanSchema.safeParse(extractJson(raw));
       if (!parsed.success) {
         const errors = [...state.errors, "planner: invalid plan JSON"];
@@ -171,15 +182,22 @@ export async function stepGraph(node: AgentNode, state: AgentGraphState, deps: G
       if (!target) return { node: "reporter", state, event: { type: "outreach_complete", payload: { drafts: state.drafts.length } } };
       const raw = await deps.generate(
         OUTREACH_SYSTEM,
-        `Role brief:\n${JSON.stringify(state.brief).slice(0, 2_000)}\n\nCandidate:\n${JSON.stringify(target)}`,
+        `Role brief:\n${candidateDisclosureContextForCampaignLike(state.brief).slice(0, 2_000)}\n\nCandidate:\n${JSON.stringify(target)}`,
       );
       const parsed = extractJson(raw) as { subject?: string; body?: string } | null;
       const subject = String(parsed?.subject ?? "").slice(0, 255);
       const body = String(parsed?.body ?? "").slice(0, 5_000);
       const gate = body ? gateOutbound(body) : { pass: false as const, reasons: ["empty-draft"], text: "" };
-      const draft: DraftLite = gate.pass
+      const disclosure = validateCandidateBoundText(body, disclosureInternalFromCampaignLike(state.brief));
+      const draft: DraftLite = gate.pass && disclosure.safe
         ? { candidateId: target.id, subject, body: gate.text, gatePassed: true }
-        : { candidateId: target.id, subject, body, gatePassed: false, gateReasons: gate.reasons };
+        : {
+            candidateId: target.id,
+            subject,
+            body,
+            gatePassed: false,
+            gateReasons: [...(gate.pass ? [] : gate.reasons), ...(disclosure.safe ? [] : [disclosure.reason ?? "disclosure-leak-blocked"])],
+          };
       const drafts = [...state.drafts, draft];
       return {
         node: drafts.length < state.screened.length ? "outreach" : "reporter",

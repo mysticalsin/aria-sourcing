@@ -1,5 +1,8 @@
 # Candidate PII Data Flow — Hermes Sourcing (MSourcing)
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 > **Phase 1 re-verification (2026-06-27):** Re-checked against the current (dirty) tree.
 > The flows below remain ACCURATE. Confirmed still-valid: `workspace_state` JSONB blob,
 > `localStorage` key `hermes-sourcing:v1`, 600 ms debounced upsert, `claim_and_record` RPC,

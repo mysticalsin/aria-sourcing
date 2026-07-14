@@ -218,10 +218,10 @@ export function TopBar() {
 
         <span
           className="hidden items-center gap-1.5 rounded-full bg-success-soft/80 px-3 py-1.5 text-xs font-bold text-success ring-1 ring-success/15 lg:inline-flex"
-          title="Human approval gate is on"
+          title="Human approval is required for every external message"
         >
           <ShieldCheck className="h-3.5 w-3.5" />
-          {settings.humanApprovalGate ? "Approval gate ON" : "Gate OFF"}
+          Approval required
         </span>
 
         {/* Aria Live (Demo Director) — plays the whole hire funnel hands-free

@@ -28,29 +28,36 @@ export function getHermesBaseUrl(): { ok: true; baseUrl: string } | { ok: false;
   return { ok: true, baseUrl };
 }
 
-export async function resolveHermesBearerToken(hermesApiKeyId?: string): Promise<string> {
-  let bearerToken = process.env.HERMES_API_KEY ?? "";
-  if (supabaseEnabled && hermesApiKeyId) {
-    const session = await getServerSupabase();
-    const svc = getServiceSupabase();
-    if (session && svc) {
-      const {
-        data: { user },
-      } = await session.auth.getUser();
-      if (user) {
-        const { data: wid } = await session.rpc("current_workspace_id");
-        const { data: row } = await svc
-          .from("api_keys")
-          .select("secret, workspace_id")
-          .eq("id", hermesApiKeyId)
-          .single();
-        if (row && row.workspace_id === wid && typeof row.secret === "string") {
-          bearerToken = decryptSecret(row.secret);
-        }
-      }
-    }
+export async function resolveHermesBearerToken(
+  hermesApiKeyId?: string,
+): Promise<{ ok: true; token: string } | { ok: false; reason: string }> {
+  if (!hermesApiKeyId) return { ok: true, token: process.env.HERMES_API_KEY ?? "" };
+  if (!supabaseEnabled) return { ok: false, reason: "Aria runtime key is not available." };
+
+  const session = await getServerSupabase();
+  const svc = getServiceSupabase();
+  if (!session || !svc) return { ok: false, reason: "Aria runtime key is not available." };
+  const {
+    data: { user },
+  } = await session.auth.getUser();
+  if (!user) return { ok: false, reason: "Aria runtime key is not available." };
+  const { data: wid } = await session.rpc("current_workspace_id");
+  const { data: row } = await svc
+    .from("api_keys")
+    .select("secret, workspace_id")
+    .eq("id", hermesApiKeyId)
+    .single();
+  if (!row || row.workspace_id !== wid || typeof row.secret !== "string") {
+    return { ok: false, reason: "Aria runtime key is not available." };
   }
-  return bearerToken;
+  try {
+    const token = decryptSecret(row.secret);
+    return token
+      ? { ok: true, token }
+      : { ok: false, reason: "Aria runtime key is not available." };
+  } catch {
+    return { ok: false, reason: "Aria runtime key is not available." };
+  }
 }
 
 /**

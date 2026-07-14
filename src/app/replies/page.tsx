@@ -35,6 +35,8 @@ const HOT_INTENTS: ReplyIntent[] = ["INTERESTED", "QUALIFIED_INTEREST"];
 
 type SyncApiResponse = {
   ok: boolean;
+  status?: "dry-run";
+  detail?: string;
   messages?: (InboundMessage & { seatId: string })[];
   errors?: string[];
 };
@@ -62,6 +64,11 @@ function SyncInboxButton() {
           description: "Check your connection settings and try again.",
           variant: "error",
         });
+        return;
+      }
+
+      if (json.status === "dry-run") {
+        toast({ title: "Public demo only", description: json.detail, variant: "info" });
         return;
       }
 

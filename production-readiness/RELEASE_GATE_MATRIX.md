@@ -1,5 +1,8 @@
 # Release Gate Matrix — MSourcing (Hermes Sourcing)
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **Role:** Release Manager (final synthesis) · **Date:** 2026-06-27
 **Inputs:** 13 review phases + foundation inventory + Red-Team review (`RED_TEAM_REVIEW.md`).
 **Tree state:** git `main`, **WORKING TREE DIRTY** (~70 modified files, security migrations `0004`/`0005` + `supabase/config.toml` UNTRACKED, **no git remote**). All evidence is against the uncommitted tree.

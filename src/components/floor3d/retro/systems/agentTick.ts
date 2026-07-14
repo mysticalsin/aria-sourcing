@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import type { OfficeAgent } from "@/components/floor3d/types";
+import type { OfficeAgent } from "@/lib/floor3d";
 import type { RenderAgent } from "../core/types";
 import {
   BUMP_FREEZE_MS,

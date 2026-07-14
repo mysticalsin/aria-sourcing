@@ -1,0 +1,15 @@
+# aria-kong image: Kong's declarative config must live INSIDE the image on Fly (no bind
+# mounts). Reuses the existing kong-entrypoint.sh unchanged — it substitutes $SUPABASE_*
+# env into temp.yml, and because the sb_-style keys are unset, its legacy branch passes the
+# HS256 anon/service JWTs straight through as key-auth credentials (exactly compose behaviour).
+FROM kong/kong:3.9.1@sha256:6addf50e6bd8d578314cb9ce4f2d2d1e3781d2edecef59f707e00c6e05d384f5
+# Patch upstream-fixable CVEs at build time (distro patch upgrades only); the base
+# image runs as the unprivileged kong user, so escalate just for the upgrade.
+USER root
+RUN apt-get update \
+  && apt-get upgrade -y \
+  && rm -rf /var/lib/apt/lists/*
+USER kong
+COPY docker/kong.fly.yml        /home/kong/temp.yml
+COPY docker/kong-entrypoint.sh  /home/kong/kong-entrypoint.sh
+ENTRYPOINT ["/bin/sh", "/home/kong/kong-entrypoint.sh"]

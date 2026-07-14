@@ -11,6 +11,10 @@ function ok(name: string, condition: boolean) {
 }
 
 const login = readFileSync(new URL("../src/app/login/page.tsx", import.meta.url), "utf8");
+const config = readFileSync(new URL("../src/lib/supabase/config.ts", import.meta.url), "utf8");
+const flyApp = readFileSync(new URL("../fly.app.toml", import.meta.url), "utf8");
+const productionDockerfile = readFileSync(new URL("../Dockerfile.prod", import.meta.url), "utf8");
+const deployWorkflow = readFileSync(new URL("../.github/workflows/deploy-aria-mantu.yml", import.meta.url), "utf8");
 
 ok("login has no dead hash navigation", !login.includes('href="#"'));
 ok("login removes the unbacked public navigation list", !login.includes("NAV_LINKS"));
@@ -23,6 +27,26 @@ ok("login pause control reports its pressed state", login.includes("aria-pressed
 ok("login email disclosure reports its expanded state", login.includes("aria-expanded={showEmail}"));
 ok("login email disclosure identifies its controlled form", login.includes('aria-controls="login-email-form"'));
 ok("login email form has the controlled id", login.includes('id="login-email-form"'));
+ok(
+  "Microsoft login is exposed only when the public Azure capability flag is enabled",
+  /azureLoginEnabled/.test(login) &&
+    /supabaseEnabled\s*&&\s*azureLoginEnabled/.test(login) &&
+    /export const azureLoginEnabled/.test(config),
+);
+ok(
+  "Fly production defaults to email login until Azure secrets are explicitly wired",
+  /NEXT_PUBLIC_ENABLE_AZURE_LOGIN\s*=\s*"false"/.test(flyApp) &&
+    /NEXT_PUBLIC_ENABLE_AZURE_LOGIN=false/.test(deployWorkflow),
+);
+ok(
+  "the production image treats the Azure login flag as an explicit build input",
+  /ARG NEXT_PUBLIC_ENABLE_AZURE_LOGIN/.test(productionDockerfile) &&
+    /NEXT_PUBLIC_ENABLE_AZURE_LOGIN=\$NEXT_PUBLIC_ENABLE_AZURE_LOGIN/.test(productionDockerfile),
+);
+ok(
+  "email is the primary live login action when Azure is disabled",
+  /azureLoginEnabled\s*\?\s*"Sign in with Microsoft"\s*:\s*"Sign in with email"/.test(login),
+);
 
 console.log(`RESULT login-page: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

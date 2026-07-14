@@ -11,40 +11,62 @@ export interface OAuthSendRequest {
   body: string;
   /** Server-generated opaque recipient link; required for any live delivery. */
   unsubscribeUrl?: string;
+  /** Immutable per-attempt identity stamped on the ledger claim before the
+   *  provider call. Emitted as an X-Aria-Send-Attempt MIME header so an
+   *  ambiguous outcome can be matched against the mailbox by a human. */
+  attemptId?: string;
 }
 
 export interface OAuthSendOutcome {
   status: "sent" | "dry-run" | "error";
+  /** Whether an external provider definitely accepted, definitely rejected, or may have accepted the request. */
+  deliveryState: "accepted" | "not-sent" | "unknown";
   provider: EmailConnectionProvider;
   detail: string;
   id?: string;
+}
+
+/** Classify a failed HTTP response by whether the provider may still have
+ *  processed the request before failing. */
+function failedHttpDeliveryState(status: number): "not-sent" | "unknown" {
+  // A timeout or server failure can be returned after the provider processed
+  // the request. Client rejections are definitive; these responses are not.
+  return status === 408 || status >= 500 ? "unknown" : "not-sent";
 }
 
 /** Send via Gmail API using a stored OAuth connection. */
 export async function sendViaGmailApi(req: OAuthSendRequest, connection: EmailConnection): Promise<OAuthSendOutcome> {
   const provider = connection.provider;
   if (!req.unsubscribeUrl) {
-    return { status: "error", provider, detail: "No compliant unsubscribe link is configured for this email." };
+    return { status: "error", deliveryState: "not-sent", provider, detail: "No compliant unsubscribe link is configured for this email." };
   }
+  // Token refresh is a separate pre-transport endpoint: its failure proves the
+  // message never reached the send API, so the attempt stays retryable.
   const token = await ensureAccessToken(connection);
   if (!token) {
-    return { status: "error", provider, detail: "Unable to refresh Gmail access token." };
+    return { status: "error", deliveryState: "not-sent", provider, detail: "Unable to refresh Gmail access token." };
   }
 
   const mime = buildMimeMessage(req, renderEmailWithUnsubscribe(req.body, req.unsubscribeUrl));
   const raw = Buffer.from(mime).toString("base64url");
 
-  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ raw }),
-    signal: AbortSignal.timeout(15_000),
-  });
-  const json = (await res.json().catch(() => ({}))) as { id?: string };
-  if (!res.ok) {
-    return { status: "error", provider, detail: `Gmail API error ${res.status}.` };
+  try {
+    const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ raw }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const json = (await res.json().catch(() => ({}))) as { id?: string };
+    if (!res.ok) {
+      return { status: "error", deliveryState: failedHttpDeliveryState(res.status), provider, detail: `Gmail API error ${res.status}.` };
+    }
+    return { status: "sent", deliveryState: "accepted", provider, detail: "Sent via Gmail API.", id: json.id };
+  } catch {
+    // A timeout or disconnect after the request left this process may have
+    // been accepted by Gmail. Never report it as a definitive failure.
+    return { status: "error", deliveryState: "unknown", provider, detail: "Gmail transport failure: delivery state unknown." };
   }
-  return { status: "sent", provider, detail: "Sent via Gmail API.", id: json.id };
 }
 
 /** Send via Microsoft Graph using a stored OAuth connection. */
@@ -54,28 +76,34 @@ export async function sendViaMicrosoftGraph(
 ): Promise<OAuthSendOutcome> {
   const provider = connection.provider;
   if (!req.unsubscribeUrl) {
-    return { status: "error", provider, detail: "No compliant unsubscribe link is configured for this email." };
+    return { status: "error", deliveryState: "not-sent", provider, detail: "No compliant unsubscribe link is configured for this email." };
   }
+  // Token refresh is a separate pre-transport endpoint: its failure proves the
+  // message never reached the send API, so the attempt stays retryable.
   const token = await ensureAccessToken(connection);
   if (!token) {
-    return { status: "error", provider, detail: "Unable to refresh Microsoft access token." };
+    return { status: "error", deliveryState: "not-sent", provider, detail: "Unable to refresh Microsoft access token." };
   }
 
   // Graph's JSON message shape only permits x-* custom headers. Send a raw MIME
   // message so standard List-Unsubscribe headers survive the provider boundary.
   const mime = buildMimeMessage(req, renderEmailWithUnsubscribe(req.body, req.unsubscribeUrl));
-  const res = await fetch("https://graph.microsoft.com/v1.0/me/sendMail", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "text/plain" },
-    body: Buffer.from(mime).toString("base64"),
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    console.error("Microsoft Graph send error", { status: res.status, body: redactSecrets(redactEmail(txt.slice(0, 500))) });
-    return { status: "error", provider, detail: `Microsoft Graph send error ${res.status}.` };
+  try {
+    const res = await fetch("https://graph.microsoft.com/v1.0/me/sendMail", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "text/plain" },
+      body: Buffer.from(mime).toString("base64"),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      console.error("Microsoft Graph send error", { status: res.status, body: redactSecrets(redactEmail(txt.slice(0, 500))) });
+      return { status: "error", deliveryState: failedHttpDeliveryState(res.status), provider, detail: `Microsoft Graph send error ${res.status}.` };
+    }
+    return { status: "sent", deliveryState: "accepted", provider, detail: "Sent via Microsoft Graph." };
+  } catch {
+    return { status: "error", deliveryState: "unknown", provider, detail: "Microsoft Graph transport failure: delivery state unknown." };
   }
-  return { status: "sent", provider, detail: "Sent via Microsoft Graph." };
 }
 
 /**
@@ -218,6 +246,8 @@ function buildMimeMessage(req: OAuthSendRequest, rendered: RenderedUnsubscribeEm
     `Subject: ${req.subject}`,
     `List-Unsubscribe: ${rendered.headers["List-Unsubscribe"]}`,
     `List-Unsubscribe-Post: ${rendered.headers["List-Unsubscribe-Post"]}`,
+    // Per-attempt identity for human reconciliation of ambiguous outcomes.
+    ...(req.attemptId ? [`X-Aria-Send-Attempt: ${req.attemptId}`] : []),
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
     "MIME-Version: 1.0",
     "",

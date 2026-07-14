@@ -45,7 +45,7 @@
    completely external one (the user closes the tab mid-run).
    ========================================================================== */
 
-import { pickResponderIndex } from "@/components/floor3d/retro/scene/packet-shared";
+import { pickResponderIndex } from "@/lib/floor3d";
 import type { HermesActions } from "@/lib/store";
 import type { AgentSeat, Campaign, HermesState } from "@/lib/types";
 import { supabaseEnabled } from "@/lib/supabase/config";
@@ -217,7 +217,7 @@ async function runSequence(actions: HermesActions, campaign: Campaign, seats: Ag
   const chapterAt = (chapter: AriaLiveChapter) => ARIA_LIVE_CHAPTERS.indexOf(chapter);
   // Index 0 is the CEO by convention (src/lib/floor3d.ts) — everyone else is
   // an "employee" robot eligible to be the acting seat for a given event,
-  // exactly like the floor page's own 2D/3D reaction (packet-shared.ts).
+  // exactly like the floor page's own 2D/3D reaction (src/lib/floor3d.ts).
   const employees = seats.length > 1 ? seats.slice(1) : seats;
 
   const setChapter = (chapter: AriaLiveChapter, caption: string, candidateName?: string | null) => {
@@ -257,7 +257,7 @@ async function runSequence(actions: HermesActions, campaign: Campaign, seats: Ag
   if (restoring) return;
 
   // Same deterministic responder-selection the floor already uses (see
-  // packet-shared.ts) so the camera tracks whichever robot the floor's own
+  // src/lib/floor3d.ts) so the camera tracks whichever robot the floor's own
   // 2D ticker / packet FX also lights up as "working" for this event.
   const actingSeat = employees.length
     ? employees[pickResponderIndex({ kind: "allocate", campaignId: campaign.id, candidateName: candidate.name, at: Date.now() }, employees.length)]

@@ -43,6 +43,19 @@ function response(okValue: boolean, status = 200, body: unknown = { ok: okValue 
   ok("approval persistence sends the exact approval payload", captured?.body === JSON.stringify(request));
 }
 
+{
+  const simulated = await recordOutreachApproval(request, async () =>
+    response(true, 200, {
+      ok: true,
+      status: "dry-run",
+      persisted: false,
+      detail: "Public demo: approval is simulated.",
+    }),
+  );
+  ok("approval persistence exposes a typed public-demo result", simulated.ok && simulated.dryRun === true);
+  ok("approval persistence preserves the public-demo explanation", simulated.ok && simulated.detail === "Public demo: approval is simulated.");
+}
+
 for (const failedResponse of [
   response(false, 200, { ok: false, error: "not recorded" }),
   response(false, 401, { ok: false }),
@@ -79,6 +92,11 @@ for (const failedResponse of [
   ok("approval revocation accepts an explicit successful response", revoked.ok);
   ok("approval revocation uses a POST", captured?.method === "POST");
   ok("approval revocation sends only the message id", captured?.body === JSON.stringify({ messageId: "msg-1" }));
+
+  const simulated = await revokeOutreachApproval("msg-1", async () =>
+    response(true, 200, { ok: true, status: "dry-run", persisted: false, detail: "Public demo only." }),
+  );
+  ok("approval revocation exposes a typed public-demo result", simulated.ok && simulated.dryRun === true);
 
   const conflict = await revokeOutreachApproval("msg-1", async () => response(false, 409, { ok: false }));
   ok("approval revocation rejects a send-cutoff conflict", !conflict.ok);

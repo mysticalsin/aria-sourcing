@@ -7,7 +7,7 @@
  *  - the hermesAvailable guard gates on BOTH live mode AND a configured URL
  *  - the "Aria Agent" key provider is registered
  *  - the parser tolerates Aria replies and falls back when unusable
- *  - the human-approval gate decides a live-drafted message's status (never auto-sent)
+ *  - browser settings never bypass named human review for a generated message
  */
 import { buildSeedState, defaultSettings, STATE_VERSION } from "../src/lib/seed.js";
 import { hermesAvailable, parseHermesOutreach, buildOutreachPrompt } from "../src/lib/ai/hermes.js";
@@ -117,7 +117,7 @@ ok("prompt mentions the candidate", prompt.includes("Maya Okafor"));
 ok("prompt mentions the role", prompt.includes("Principal Platform Engineer"));
 ok("prompt requests Subject: format", prompt.includes("Subject:"));
 
-/* ---- 7. Approval-gate invariant on a (live-drafted-shaped) message ------- */
+/* ---- 7. Approval-authority invariant on a live-drafted-shaped message ---- */
 
 const cand = seed.candidates[0];
 const camp = seed.campaigns.find((c) => c.id === cand?.campaignId) ?? seed.campaigns[0];
@@ -135,19 +135,19 @@ if (cand && camp) {
   ok("live-drafted message has no sentAt", gated.sentAt === null);
   ok("live-drafted message has no approvedBy", gated.approvedBy === null);
 
-  // Gate OFF → "Approved" but still not sent (sentAt null until approveOutreach runs).
+  // A legacy browser flag cannot grant delivery authority.
   const ungated = newOutreachMessage(cand, camp, gen, "Casual Professional", { ...defs, humanApprovalGate: false });
-  ok("approval gate OFF → status 'Approved'", ungated.status === "Approved");
-  ok("even ungated message is not auto-sent (sentAt null)", ungated.sentAt === null);
+  ok("legacy approval flag OFF still requires human review", ungated.status === "Needs Approval");
+  ok("legacy flag cannot mark a message sent", ungated.sentAt === null);
 
   // LinkedIn live messages never auto-send — they wait for manual copy/paste.
   const linkedInGen: GeneratedOutreach = { ...gen, channel: "LinkedIn" };
   const linkedInGated = newOutreachMessage(cand, camp, linkedInGen, "Casual Professional", { ...defs, humanApprovalGate: true, dryRunMode: false });
-  ok("linkedin live + gate ON → status 'Needs Approval'", linkedInGated.status === "Needs Approval");
+  ok("linkedin live + gate ON requires human review", linkedInGated.status === "Needs Approval");
 
   const linkedInUngated = newOutreachMessage(cand, camp, linkedInGen, "Casual Professional", { ...defs, humanApprovalGate: false, dryRunMode: false });
-  ok("linkedin live + gate OFF → status 'Pending Manual Send'", linkedInUngated.status === "Pending Manual Send");
-  ok("linkedin pending manual message is not auto-sent", linkedInUngated.sentAt === null);
+  ok("linkedin live + legacy gate OFF still requires human review", linkedInUngated.status === "Needs Approval");
+  ok("linkedin generated message is not auto-sent", linkedInUngated.sentAt === null);
 } else {
   ok("seed has a candidate + campaign for the gate test", false);
 }

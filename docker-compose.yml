@@ -17,10 +17,16 @@ name: aria-sourcing
 x-keys:
   jwt_secret: &jwt_secret "your-super-secret-jwt-token-with-at-least-32-characters-long"
   jwt_exp: &jwt_exp "3600"
-  pg_password: &pg_password "postgres"
+  owner_current_password: &owner_current_password "local_owner_current_password_00000000000000000"
+  owner_password: &owner_password "local_owner_database_password_000000000000000000"
+  postgres_password: &postgres_password "local_postgres_database_password_000000000000000"
+  auth_password: &auth_password "local_auth_database_password_0000000000000000000"
+  rest_password: &rest_password "local_rest_database_password_0000000000000000000"
+  auth_db_url: &auth_db_url "postgres://supabase_auth_admin:local_auth_database_password_0000000000000000000@db:5432/postgres"
+  rest_db_url: &rest_db_url "postgres://authenticator:local_rest_database_password_0000000000000000000@db:5432/postgres"
   demo_admin_pw: &demo_admin_pw "admindemo123"
-  anon_key: &anon_key "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE"
-  service_key: &service_key "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q"
+  anon_key: &anon_key "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE" # gitleaks:allow -- public Supabase local-demo JWT
+  service_key: &service_key "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q" # gitleaks:allow -- public Supabase local-demo JWT
 
 services:
   # ---- Postgres (Supabase image: roles, auth schema, auth.uid(), extensions) --------
@@ -31,12 +37,13 @@ services:
       POSTGRES_HOST: /var/run/postgresql
       POSTGRES_PORT: "5432"
       POSTGRES_DB: postgres
-      POSTGRES_PASSWORD: *pg_password
+      # The pinned image needs one bootstrap password while its bundled
+      # migrations run. db-init immediately splits every active role before
+      # Auth or REST starts.
+      POSTGRES_PASSWORD: *owner_current_password
       JWT_SECRET: *jwt_secret
       JWT_EXP: *jwt_exp
     volumes:
-      - ./docker/db/01-roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:Z
-      - ./docker/db/02-jwt.sql:/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql:Z
       - db_data:/var/lib/postgresql/data
     ports:
       - "${DB_HOST_PORT:-54322}:5432"   # host access for psql / Studio parity
@@ -46,22 +53,31 @@ services:
       timeout: 5s
       retries: 12
 
-  # ---- One-shot: hand the auth schema to supabase_auth_admin BEFORE GoTrue starts ----
-  # The supabase/postgres image creates auth.uid()/role()/email() owned by postgres, which
-  # makes GoTrue crash-loop ("must be owner of function uid"). Reassign first so GoTrue
-  # comes up clean on its first try.
+  # ---- One-shot owner reconciliation BEFORE GoTrue and PostgREST start --------------
   db-init:
-    image: postgres:17-bookworm
+    image: supabase/postgres:17.6.1.136
     depends_on:
       db:
         condition: service_healthy
+    environment:
+      SUPABASE_ADMIN_CURRENT_PASSWORD: *owner_current_password
+      SUPABASE_ADMIN_TARGET_PASSWORD: *owner_password
+      POSTGRES_TARGET_PASSWORD: *postgres_password
+      SUPABASE_AUTH_ADMIN_TARGET_PASSWORD: *auth_password
+      AUTHENTICATOR_TARGET_PASSWORD: *rest_password
+      JWT_SECRET: *jwt_secret
+      JWT_EXP: *jwt_exp
     volumes:
-      - ./docker/db/03-auth-owner.sql:/auth-owner.sql:ro
+      - ./docker/bootstrap/supabase-admin-reconciliation.sql:/opt/aria/supabase-admin-reconciliation.sql:ro
+    entrypoint: ["/bin/sh", "-c"]
     command:
-      - sh
-      - -c
-      - 'until pg_isready -h db -U postgres -q; do sleep 2; done;
-         psql postgres://postgres:postgres@db:5432/postgres -v ON_ERROR_STOP=1 -f /auth-owner.sql'
+      - 'owner_password="";
+         until [ -n "$$owner_password" ]; do
+           if PGPASSWORD="$$SUPABASE_ADMIN_CURRENT_PASSWORD" psql -X -w -h db -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -qc "select 1" >/dev/null 2>&1; then owner_password="$$SUPABASE_ADMIN_CURRENT_PASSWORD";
+           elif PGPASSWORD="$$SUPABASE_ADMIN_TARGET_PASSWORD" psql -X -w -h db -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -qc "select 1" >/dev/null 2>&1; then owner_password="$$SUPABASE_ADMIN_TARGET_PASSWORD";
+           else sleep 2; fi;
+         done;
+         PGPASSWORD="$$owner_password" psql -X -w -h db -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -q -f /opt/aria/supabase-admin-reconciliation.sql'
     restart: "no"
 
   # ---- GoTrue (email+password auth, JWT issuance) -----------------------------------
@@ -78,7 +94,7 @@ services:
       GOTRUE_API_PORT: "9999"
       API_EXTERNAL_URL: http://localhost:54321
       GOTRUE_DB_DRIVER: postgres
-      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:postgres@db:5432/postgres
+      GOTRUE_DB_DATABASE_URL: *auth_db_url
       GOTRUE_SITE_URL: http://localhost:3000
       GOTRUE_URI_ALLOW_LIST: "*"
       GOTRUE_DISABLE_SIGNUP: "false"
@@ -102,8 +118,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     environment:
-      PGRST_DB_URI: postgres://authenticator:postgres@db:5432/postgres
+      PGRST_DB_URI: *rest_db_url
       PGRST_DB_SCHEMAS: public
       PGRST_DB_ANON_ROLE: anon
       PGRST_JWT_SECRET: *jwt_secret
@@ -163,12 +181,20 @@ services:
       auth:
         condition: service_started
     environment:
-      ADMIN_DB_URL: postgres://postgres:postgres@db:5432/postgres
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: postgres
+      SUPABASE_ADMIN_CURRENT_PASSWORD: *owner_current_password
+      SUPABASE_ADMIN_TARGET_PASSWORD: *owner_password
+      POSTGRES_TARGET_PASSWORD: *postgres_password
+      SUPABASE_AUTH_ADMIN_TARGET_PASSWORD: *auth_password
+      AUTHENTICATOR_TARGET_PASSWORD: *rest_password
+      JWT_SECRET: *jwt_secret
+      JWT_EXP: *jwt_exp
       SERVICE_ROLE_KEY: *service_key
       DEMO_ADMIN_PASSWORD: *demo_admin_pw
     volumes:
       - ./supabase/migrations:/migrations:ro
-      - ./docker/db/03-auth-owner.sql:/auth-owner.sql:ro
     restart: "no"
 
   # ---- Obscura sidecar: read-only multi-step browser tool for Aria (§11) ------------

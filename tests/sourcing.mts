@@ -87,7 +87,9 @@ ok("same github URL is deduped", rdup.accepted.length === 1);
 {
   const originalFetch = globalThis.fetch;
   const seenAuth: (string | undefined)[] = [];
-  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+  const seenUrls: string[] = [];
+  globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
+    seenUrls.push(String(url));
     seenAuth.push((init?.headers as Record<string, string> | undefined)?.Authorization);
     return {
       ok: true,
@@ -97,10 +99,13 @@ ok("same github URL is deduped", rdup.accepted.length === 1);
 
   await searchGithubUsers("language:typescript", 1, "");
   await searchGithubUsers("language:typescript", 1, "tok_123");
+  await searchGithubUsers("language:typescript type:org", 1, "");
   globalThis.fetch = originalFetch;
 
   ok("anonymous call sends no Authorization header", seenAuth[0] === undefined);
   ok("token call sends Bearer Authorization header", seenAuth[1] === "Bearer tok_123");
+  ok("GitHub user search appends type:user by default", decodeURIComponent(seenUrls[0] ?? "").includes("language:typescript type:user"));
+  ok("GitHub user search does not duplicate caller type qualifier", decodeURIComponent(seenUrls[2] ?? "").includes("language:typescript type:org") && !decodeURIComponent(seenUrls[2] ?? "").includes("type:org type:user"));
 }
 
 // --- web-leads: platform classification --------------------------------

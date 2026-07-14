@@ -1,5 +1,7 @@
 # Production Readiness Report — MSourcing (Hermes Sourcing by Mantu)
 
+> SUPERSEDED by `STATUS.md` 2026-07-10. Kept as the 2026-06-27 due-diligence snapshot; do not treat its stack versions, suite counts, migration range, or release verdict as current.
+
 **Date:** 2026-06-27 · **Synthesized by:** Release Manager (final verdict) · **Stage assessed:** local git `main`, **dirty working tree, no git remote** · **App self-description:** "MVP demo, mock integrations, synthetic data."
 
 > This is an **evidence package for human review, not a certification.** No legal, regulatory, or compliance certification is claimed. It supersedes the prior `PRODUCTION_READINESS_REPORT.md` with the current code and the full 13-phase + red-team review set. Where the prior report said "0/14 PASS, NOT READY," that conclusion **stands and is reaffirmed** with deeper, file:line-cited evidence.

@@ -40,6 +40,8 @@ export interface ApprovalResult {
   allowed: boolean;
   blockers: string[];
   warnings: string[];
+  /** True when the public showcase simulated the action without persistence. */
+  dryRun?: boolean;
   /** Optional so any pre-existing hand-built `ApprovalResult` literal (e.g.
    *  the early-return "message not found" cases in store.ts) stays valid
    *  without modification — additive only, never required. */

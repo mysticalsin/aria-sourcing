@@ -1,86 +1,44 @@
-# Hermes Sourcing — Production Deployment Guide
+# Deployment
 
-This guide covers the security, infrastructure, and operational steps required to run Hermes Sourcing in production beyond the local demo.
+Canonical Fly production runbook: [`production-readiness/DEPLOYMENT_RUNBOOK.md`](production-readiness/DEPLOYMENT_RUNBOOK.md).
 
-## 1. Pre-flight security checklist
+Production release is accepted only after the runbook's credential, recovery,
+branch-protection, exact-SHA CI, and readiness gates have evidence. Use dedicated,
+least-privilege deployment and registry credentials.
 
-- [ ] **Supabase project** is provisioned and migrations in `supabase/migrations/` are applied in order.
-- [ ] **RLS policies** are active: `workspace_state`, `api_keys`, `email_connections`, and `outreach_ledger` are scoped to the workspace; only service-role reads secrets.
-- [ ] **Admin role** is enforced: server-side `requireAdmin` protects all key/connection/seat mutations.
-- [ ] **Microsoft Entra / Supabase Auth** is configured so the middleware can gate routes.
-- [ ] **ALLOWED_EMAIL_DOMAIN** is set to restrict sign-in to the company domain (optional but recommended).
-- [ ] **HERMES_API_URL** points to a private/internal hermes-agent instance; it is SSRF allow-listed.
-- [ ] **HERMES_API_KEY** is a strong random token, stored server-side only.
-- [ ] **OAuth credentials** (`GOOGLE_CLIENT_ID/SECRET`, `MICROSOFT_CLIENT_ID/SECRET`) are server-side only; redirect URIs are registered exactly.
-- [ ] **SendGrid / Resend API keys** are server-side env vars; not exposed to the browser.
-- [ ] **Domain verification** (SPF/DKIM/DMARC) is completed before any seat is flipped to `live`.
-- [ ] **LinkedIn** is configured for assisted-manual only unless a signed **LinkedIn Recruiter System Connect** partnership exists.
+The Vercel `vercel-demo` branch is a separate demo path documented in the legacy
+appendix. Keep its credentials and claims separate from Fly production.
 
-## 2. Environment variables
+Required env examples: [`.env.production.example`](.env.production.example) and [`.env.local.example`](.env.local.example).
 
-Copy `.env.local.example` to `.env.local` and fill in at least:
+Current release posture: [`production-readiness/STATUS.md`](production-readiness/STATUS.md).
 
-```bash
-# Supabase (required for live mode)
-NEXT_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
-SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
-NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN=yourcompany.com
+## Performance / VM sizing
 
-# Hermes runtime (required for live AI drafts)
-HERMES_API_URL=http://127.0.0.1:8642
-HERMES_API_KEY=<strong-random-token>
+The stack is five Fly apps in `cdg`: `aria-mantu-app` (Next.js SSR), `aria-mantu-kong`
+(the one public Supabase gateway), and the internal `aria-mantu-auth` / `aria-mantu-rest`
+/ `aria-mantu-db`. Every browser data call fans out **browser → Kong → PostgREST →
+Postgres** — three machine hops over the 6PN network per query.
 
-# Email OAuth (required for Gmail / Microsoft Graph live sends)
-GOOGLE_CLIENT_ID=<...>
-GOOGLE_CLIENT_SECRET=<...>
-GOOGLE_REDIRECT_URI=https://<app>/auth/google/callback
-MICROSOFT_CLIENT_ID=<...>
-MICROSOFT_CLIENT_SECRET=<...>
-MICROSOFT_REDIRECT_URI=https://<app>/auth/microsoft/callback
+**Applied (right-sizing, effective on next `fly deploy`):**
 
-# Transactional email providers (optional)
-RESEND_API_KEY=re_...
-SENDGRID_API_KEY=SG...
-```
+| App | Before | After | Why |
+|---|---|---|---|
+| `aria-mantu-app` | shared-cpu-1x / 1gb | **shared-cpu-2x / 2gb** | SSR was starved on an oversubscribed fractional vCPU. |
+| `aria-mantu-db` | shared-cpu-1x / 1gb | **shared-cpu-2x / 2gb** | 1gb → tiny `shared_buffers`, constant disk hits. |
+| `aria-mantu-kong` | shared-cpu-1x / 512mb | **shared-cpu-1x / 1gb** | Public gateway proxy buffers had no headroom under concurrency. |
 
-## 3. Build & deploy
+If SSR still feels slow after this, the next lever is `performance-1x` on the app (a
+**dedicated** vCPU removes shared-tenant CPU-steal jitter) — not a bigger shared VM.
 
-```bash
-npm install
-npm run typecheck
-npm run lint
-npm run test
-npm run build
-```
+**Structural next step (not yet applied — needs a tested deploy, do not do blind):**
+the largest win is to **collapse the four Supabase VMs into one machine** (Kong +
+GoTrue + PostgREST + Postgres in a single Fly app via a supervisor/compose, exactly as
+`docker-compose.yml` already runs them locally). That removes two inter-VM network hops
+per query. Alternative: move to **managed Supabase Cloud** and keep only the thin app on
+Fly — `*.supabase.co` is already allowed in the CSP (`next.config.mjs`).
 
-Deploy the `.next` output to your hosting target (Vercel, self-hosted Node, Docker, etc.). The app is a standard Next.js 14 App Router application.
-
-## 4. Operational notes
-
-- **Demo mode** — if Supabase env vars are missing, the app runs entirely in the browser with `localStorage` persistence and never sends live data.
-- **Dry-run default** — even in live mode, outreach remains dry-run until a seat is live, domain-verified, and `confirmLive` is true.
-- **Human approval gate** — all generated outreach must be approved in the UI before it is scheduled or sent.
-- **Rate limits** — per-seat daily caps, warm-up ramps, send windows, and jitter are enforced by `src/lib/fleet.ts` and the `claim_and_record` Postgres RPC.
-- **Suppression / de-dupe** — the `outreach_ledger` is the single source of truth; a candidate cannot be re-contacted inside the configured window.
-- **Audit trail** — every approval, rejection, PII reveal, and live send is written to `activities` and `outreach_ledger`.
-
-## 5. LinkedIn compliance
-
-Hermes Sourcing does **not** automate LinkedIn logins, scraping, or unsolicited bulk DMs. That violates LinkedIn's User Agreement and Recruiter terms and will get accounts banned.
-
-Supported LinkedIn paths:
-1. **Assisted-manual** (default) — Hermes drafts the message; a human copies it, opens the candidate's profile, pastes/sends, and confirms in the UI.
-2. **LinkedIn Recruiter System Connect (RSC)** — only available with a LinkedIn partnership agreement and RSC OAuth credentials. Wire the `int_linkedin_rsc` integration when credentials are provided.
-
-## 6. Monitoring & incident response
-
-- Watch structured logs from `src/lib/providers.ts`, `src/lib/api/hermes-proxy.ts`, and the outreach send route.
-- Alert on: bounce rate > 5%, complaint rate > 0.1%, seat health auto-pause, Hermes runtime unreachable, failed OAuth refreshes.
-- Run the security audit test regularly: `npm run test` includes `tests/security-audit.mts`.
-
-## 7. Backups & data retention
-
-- Supabase provides managed backups for Postgres state.
-- Candidate PII should be anonymized or deleted on request via the candidate drawer (GDPR/CCPA).
-- Retention windows for the ledger and activities are configured in fleet settings.
+Front-end note: the 22 MB `public/office3d` GLB scene loads only on the authenticated
+**Floor** view (`src/components/floor3d`, via `useGLTF.preload`), not the landing/login —
+so it is not first-paint latency. Draco/meshopt compression (22 MB → ~2–4 MB) is a
+worthwhile follow-up for that view but out of scope here.

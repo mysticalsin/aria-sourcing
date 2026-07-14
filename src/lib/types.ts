@@ -168,6 +168,8 @@ export interface JobAnalysis {
   seniority: Seniority;
   employmentType: "Full-time" | "Contract" | "Part-time";
   locationType: "Remote" | "Hybrid" | "On-site";
+  /** Concrete place parsed from the brief, e.g. "London". Empty/absent when unknown. */
+  location?: string;
   regions: string[];
   timezone: string;
   salaryMin: number | null;
@@ -592,6 +594,37 @@ export interface Booking {
   createdAt: string;
 }
 
+/* ---- Wins ----------------------------------------------------------------
+   Structured conversion records captured when a booking is accepted. These
+   stay inside HermesState because they can contain candidate PII. */
+
+export interface WinRecord {
+  id: string;
+  at: string;
+  candidateId: string;
+  candidateName: string;
+  campaignId: string;
+  campaignTitle: string;
+  bookingId: string;
+  sourcePlatform: SourcePlatform;
+  leadSource: LeadSource | null;
+  matchScore: number;
+  seniority: Seniority;
+  roleTitle: string;
+  outreachChannel: OutreachChannel | null;
+  touchCount: number;
+  timeToBookMs: number | null;
+  triggeringReplyIntent: {
+    intent: ReplyIntent;
+    confidence: number;
+  } | null;
+  messageTraits: {
+    subjectLength?: number;
+    bodyLength?: number;
+    tone?: OutreachTone;
+  };
+}
+
 /* ---- Activity ------------------------------------------------------------ */
 
 export interface Activity {
@@ -941,7 +974,7 @@ export interface AgentSeat {
   toolIds?: ToolId[];
 }
 
-export const SUPPRESSION_TYPES = ["email", "domain", "linkedin"] as const;
+export const SUPPRESSION_TYPES = ["email", "domain", "phone", "linkedin"] as const;
 export type SuppressionType = (typeof SUPPRESSION_TYPES)[number];
 
 export interface SuppressionEntry {
@@ -961,6 +994,9 @@ export const LEDGER_STATUSES = [
   "bounced",
   "complained",
   "skipped",
+  // Unknown provider outcome after transport began — holds the de-dupe slot;
+  // resolved only by human reconciliation, never by an automatic retry.
+  "ambiguous",
 ] as const;
 export type LedgerStatus = (typeof LEDGER_STATUSES)[number];
 
@@ -1030,6 +1066,8 @@ export const API_KEY_PROVIDERS = [
   "Sillage",
   "Apollo",
   "Seamless",
+  "Tavily",
+  "Databricks",
   "Custom",
 ] as const;
 export type ApiKeyProvider = (typeof API_KEY_PROVIDERS)[number];
@@ -1098,6 +1136,9 @@ export interface ToolDef {
 
 export type McpServerStatus = "untested" | "connected" | "error";
 
+export const AUTH_QUERY_PARAMS = ["tavilyApiKey"] as const;
+export type AuthQueryParam = (typeof AUTH_QUERY_PARAMS)[number];
+
 /** A registered Model Context Protocol server — an external source of tools the fleet
  *  can call. Mirrors LlmProvider: the auth token lives in the key vault by id, never
  *  inline. */
@@ -1106,7 +1147,11 @@ export interface McpServerConfig {
   name: string;
   /** The MCP server's HTTP(S) endpoint (streamable-HTTP / SSE transport). */
   url: string;
-  /** References an ApiKey.id for the Bearer token; the raw secret never lives here. */
+  /** How the resolved vault secret is sent to the MCP server. Defaults to bearer. */
+  authStyle?: "bearer" | "query";
+  /** Closed-list query parameter for query-auth MCP servers. */
+  authQueryParam?: AuthQueryParam;
+  /** References an ApiKey.id; the raw secret never lives here. */
   apiKeyId?: string;
   enabled: boolean;
   status: McpServerStatus;
@@ -1124,7 +1169,7 @@ export type DustTask = (typeof DUST_TASKS)[number];
 
 /** One agent configuration in a Dust workspace, as returned by
  *  `assistant/agent_configurations`. Non-secret (name/description only) — the
- *  client-safe counterpart to the server-only `DustAgentSummary` the SDK call
+ *  client-safe counterpart to the server-only `DustAgentSummary` REST client
  *  produces in `src/lib/dust/client.ts` (re-exported from there). */
 export interface DustAgentSummary {
   sId: string;
@@ -1135,9 +1180,9 @@ export interface DustAgentSummary {
 /** Dust's public API is region-hosted: https://dust.tt (US) or https://eu.dust.tt (EU). */
 export type DustRegion = "us" | "eu";
 
-/** Non-secret Dust workspace config. The API key itself lives in the vault
- *  (references an ApiKey.id with provider "Dust"), never inline here — same
- *  convention as LlmProvider.apiKeyId / McpServerConfig.apiKeyId. */
+/** Non-secret Dust config returned by the normalized integration endpoint.
+ * The legacy settings.dust field is stripped during state normalization and by
+ * the database; this shape remains the client contract for the Settings panel. */
 export interface DustSettings {
   /** The Dust workspace id (path segment in every Dust API call), e.g. "abc123". */
   workspaceId: string;
@@ -1159,6 +1204,15 @@ export interface DustSettings {
    *  re-entering the API key on every Settings visit — same convention as
    *  `McpServerConfig.toolNames`. Non-secret. */
   agents?: DustAgentSummary[];
+}
+
+export interface DatabricksSettings {
+  host: string;
+  warehouseId: string;
+  authMode: "pat" | "m2m";
+  clientId?: string;
+  apiKeyId: string;
+  needsQuery: string;
 }
 
 /** Stored metadata only — the secret value never lives in client state. */
@@ -1254,6 +1308,7 @@ export interface HermesState {
   outreach: OutreachMessage[];
   replies: ClassifiedReply[];
   bookings: Booking[];
+  wins: WinRecord[];
   /** Registered real staff available for interview round-robin (replaces the
    *  hardcoded mock-ai roster). Empty = no interviewer assigned on booking. */
   interviewers: Interviewer[];

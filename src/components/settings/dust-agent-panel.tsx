@@ -2,9 +2,9 @@
 
 import * as React from "react";
 import { Button, Card, CardContent, Field, Input, Select, useToast } from "@/components/ui";
-import { useActions, useDustSettings, useRole } from "@/lib/store";
+import { useActions, useRole } from "@/lib/store";
 import { can } from "@/lib/rbac";
-import { DUST_TASKS, type DustRegion, type DustTask } from "@/lib/types";
+import { DUST_TASKS, type DustRegion, type DustSettings, type DustTask } from "@/lib/types";
 import { Link2, Unlink, Zap } from "lucide-react";
 
 const TASK_LABEL: Record<DustTask, string> = {
@@ -28,15 +28,36 @@ const TASK_DESCRIPTION: Record<DustTask, string> = {
 export function DustAgentPanel() {
   const role = useRole();
   const isAdmin = can(role, "manage_keys");
-  const dust = useDustSettings();
   const actions = useActions();
   const { toast } = useToast();
+  const [dust, setDust] = React.useState<DustSettings>();
+  const [loadingConfig, setLoadingConfig] = React.useState(true);
   const connected = !!dust?.connected;
 
   const [workspaceId, setWorkspaceId] = React.useState(dust?.workspaceId ?? "");
   const [region, setRegion] = React.useState<DustRegion>(dust?.region ?? "us");
   const [apiKey, setApiKey] = React.useState("");
   const [connecting, setConnecting] = React.useState(false);
+
+  const loadConfig = React.useCallback(async () => {
+    try {
+      const response = await fetch("/api/integrations/dust/config", { cache: "no-store" });
+      const body = (await response.json().catch(() => ({ ok: false }))) as {
+        ok?: boolean;
+        configured?: boolean;
+        config?: DustSettings | null;
+      };
+      setDust(body.ok && body.configured && body.config ? body.config : undefined);
+    } catch {
+      setDust(undefined);
+    } finally {
+      setLoadingConfig(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void loadConfig();
+  }, [loadConfig]);
 
   // Keep the workspace-id/region fields in sync if settings load/change after mount
   // (e.g. a teammate connects Dust and this workspace document refreshes).
@@ -54,6 +75,7 @@ export function DustAgentPanel() {
     const res = await actions.connectDust(workspaceId.trim(), apiKey.trim(), region);
     setConnecting(false);
     if (res.ok) {
+      await loadConfig();
       setApiKey(""); // never retain the secret in the form
       toast({
         title: "Dust connected",
@@ -65,8 +87,13 @@ export function DustAgentPanel() {
     }
   }
 
-  function handleDisconnect() {
-    actions.disconnectDust();
+  async function handleDisconnect() {
+    const result = await actions.disconnectDust();
+    if (!result.ok) {
+      toast({ title: "Couldn't disconnect Dust", description: result.error, variant: "error" });
+      return;
+    }
+    setDust(undefined);
     setApiKey("");
     toast({
       title: "Dust disconnected",
@@ -75,7 +102,26 @@ export function DustAgentPanel() {
     });
   }
 
+  async function handleAgentLock(task: DustTask, agentSId: string) {
+    const result = await actions.updateDustAgentLock(task, agentSId);
+    if (!result.ok) {
+      toast({ title: "Couldn't save the Dust agent lock", description: result.error, variant: "error" });
+      return;
+    }
+    await loadConfig();
+  }
+
   const agentOptions = (dust?.agents ?? []).map((a) => ({ value: a.sId, label: a.name }));
+
+  if (loadingConfig) {
+    return (
+      <Card>
+        <CardContent>
+          <p className="text-sm text-muted">Loading Dust configuration…</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (!connected) {
     return (
@@ -149,7 +195,7 @@ export function DustAgentPanel() {
             </p>
           </div>
           {isAdmin && (
-            <Button variant="subtle" size="sm" leftIcon={<Unlink className="h-4 w-4" />} onClick={handleDisconnect}>
+            <Button variant="subtle" size="sm" leftIcon={<Unlink className="h-4 w-4" />} onClick={() => void handleDisconnect()}>
               Disconnect
             </Button>
           )}
@@ -169,7 +215,7 @@ export function DustAgentPanel() {
                     id={`dust-lock-${task}`}
                     aria-label={`Agent locked to ${TASK_LABEL[task]}`}
                     value={dust.agentLocks?.[task] ?? ""}
-                    onChange={(e) => actions.updateDustAgentLock(task, e.target.value)}
+                    onChange={(e) => void handleAgentLock(task, e.target.value)}
                     disabled={!isAdmin || agentOptions.length === 0}
                     options={[{ value: "", label: "(none locked)" }, ...agentOptions]}
                   />

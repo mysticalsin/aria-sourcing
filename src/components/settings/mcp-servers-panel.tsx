@@ -3,7 +3,8 @@
 import * as React from "react";
 import { Badge, Button, Card, CardContent, Field, Input, Select, Switch, useToast } from "@/components/ui";
 import { useActions, useApiKeys, useMcpServers, useRole, useSettings } from "@/lib/store";
-import type { McpServerConfig, McpServerStatus } from "@/lib/types";
+import { AUTH_QUERY_PARAMS } from "@/lib/types";
+import type { AuthQueryParam, McpServerConfig, McpServerStatus } from "@/lib/types";
 import { can } from "@/lib/rbac";
 import { Globe, Plug, Plus, Trash2, Zap } from "lucide-react";
 
@@ -29,6 +30,7 @@ function McpRow({
   onTest: () => Promise<void>;
 }) {
   const [testing, setTesting] = React.useState(false);
+  const authStyle = server.authStyle ?? "bearer";
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-4 sm:flex-row sm:items-start sm:gap-4">
       <div className="flex items-start gap-3 sm:flex-1">
@@ -65,18 +67,48 @@ function McpRow({
             </div>
           )}
           {isAdmin && (
-            <Field
-              label="Auth key (optional)"
-              htmlFor={`mcp-key-${server.id}`}
-              hint="A saved key used as the Bearer token for this server."
-            >
-              <Select
-                id={`mcp-key-${server.id}`}
-                value={server.apiKeyId ?? ""}
-                onChange={(e) => onUpdate({ apiKeyId: e.target.value || undefined })}
-                options={[{ value: "", label: "(none)" }, ...apiKeyOptions]}
-              />
-            </Field>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Field label="Auth style" htmlFor={`mcp-auth-style-${server.id}`}>
+                <Select
+                  id={`mcp-auth-style-${server.id}`}
+                  value={authStyle}
+                  onChange={(e) => {
+                    const next = e.target.value as "bearer" | "query";
+                    onUpdate(
+                      next === "query"
+                        ? { authStyle: next, authQueryParam: server.authQueryParam ?? AUTH_QUERY_PARAMS[0] }
+                        : { authStyle: "bearer", authQueryParam: undefined },
+                    );
+                  }}
+                  options={[
+                    { value: "bearer", label: "Bearer header" },
+                    { value: "query", label: "URL query param" },
+                  ]}
+                />
+              </Field>
+              {authStyle === "query" && (
+                <Field label="Query param" htmlFor={`mcp-auth-param-${server.id}`}>
+                  <Select
+                    id={`mcp-auth-param-${server.id}`}
+                    value={server.authQueryParam ?? AUTH_QUERY_PARAMS[0]}
+                    onChange={(e) => onUpdate({ authQueryParam: e.target.value as AuthQueryParam })}
+                    options={AUTH_QUERY_PARAMS.map((p) => ({ value: p, label: p }))}
+                  />
+                </Field>
+              )}
+              <Field
+                label="Auth key (optional)"
+                htmlFor={`mcp-key-${server.id}`}
+                hint={authStyle === "query" ? "A saved key appended server-side at connect time." : "A saved key used as the Bearer token for this server."}
+              >
+                <Select
+                  id={`mcp-key-${server.id}`}
+                  value={server.apiKeyId ?? ""}
+                  onChange={(e) => onUpdate({ apiKeyId: e.target.value || undefined })}
+                  options={[{ value: "", label: "(none)" }, ...apiKeyOptions]}
+                />
+              </Field>
+            </div>
           )}
         </div>
       </div>
@@ -130,6 +162,8 @@ export function McpServersPanel() {
 
   const [name, setName] = React.useState("");
   const [url, setUrl] = React.useState("");
+  const [authStyle, setAuthStyle] = React.useState<"bearer" | "query">("bearer");
+  const [authQueryParam, setAuthQueryParam] = React.useState<AuthQueryParam>(AUTH_QUERY_PARAMS[0]);
   const [adding, setAdding] = React.useState(false);
 
   const apiKeyOptions = apiKeys.map((k) => ({ value: k.id, label: `${k.name} (••••${k.last4})` }));
@@ -141,10 +175,23 @@ export function McpServersPanel() {
       toast({ title: "Name and URL are required", variant: "error" });
       return;
     }
-    actions.addMcpServer({ name: n, url: u, enabled: false });
+    try {
+      actions.addMcpServer({
+        name: n,
+        url: u,
+        enabled: false,
+        authStyle,
+        ...(authStyle === "query" ? { authQueryParam } : {}),
+      });
+    } catch (err) {
+      toast({ title: "MCP server not saved", description: err instanceof Error ? err.message : "Invalid MCP server URL.", variant: "error" });
+      return;
+    }
     toast({ title: `MCP server added: ${n}`, description: "Test the connection to confirm it works.", variant: "success" });
     setName("");
     setUrl("");
+    setAuthStyle("bearer");
+    setAuthQueryParam(AUTH_QUERY_PARAMS[0]);
     setAdding(false);
   }
 
@@ -206,7 +253,17 @@ export function McpServersPanel() {
               server={m}
               apiKeyOptions={apiKeyOptions}
               isAdmin={isAdmin}
-              onUpdate={(patch) => actions.updateMcpServer(m.id, patch)}
+              onUpdate={(patch) => {
+                try {
+                  actions.updateMcpServer(m.id, patch);
+                } catch (err) {
+                  toast({
+                    title: "MCP server not saved",
+                    description: err instanceof Error ? err.message : "Invalid MCP server URL.",
+                    variant: "error",
+                  });
+                }
+              }}
               onRemove={() => {
                 actions.removeMcpServer(m.id);
                 toast({ title: "MCP server removed", variant: "info" });
@@ -231,6 +288,27 @@ export function McpServersPanel() {
                     placeholder="https://mcp.example.com/mcp"
                   />
                 </Field>
+                <Field label="Auth style" htmlFor="new-mcp-auth-style" className="min-w-[160px]">
+                  <Select
+                    id="new-mcp-auth-style"
+                    value={authStyle}
+                    onChange={(e) => setAuthStyle(e.target.value as "bearer" | "query")}
+                    options={[
+                      { value: "bearer", label: "Bearer header" },
+                      { value: "query", label: "URL query param" },
+                    ]}
+                  />
+                </Field>
+                {authStyle === "query" && (
+                  <Field label="Query param" htmlFor="new-mcp-auth-param" className="min-w-[160px]">
+                    <Select
+                      id="new-mcp-auth-param"
+                      value={authQueryParam}
+                      onChange={(e) => setAuthQueryParam(e.target.value as AuthQueryParam)}
+                      options={AUTH_QUERY_PARAMS.map((p) => ({ value: p, label: p }))}
+                    />
+                  </Field>
+                )}
                 <div className="flex gap-2 pb-1">
                   <Button size="sm" onClick={handleAdd}>
                     Add server

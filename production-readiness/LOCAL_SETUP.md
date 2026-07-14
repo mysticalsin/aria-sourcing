@@ -2,20 +2,26 @@
 
 Runs the whole platform locally with a real Postgres backend (no cloud / no Vercel).
 
-## One-time prerequisite (the only manual step)
+## One-time prerequisites
 1. **Open Docker Desktop** and accept the first-launch onboarding. Wait until the
    whale icon says **"Engine running"**. (Headless tooling cannot click this gate.)
+2. Install Supabase CLI `2.108.0` on your `PATH` using the official Supabase CLI
+   installation instructions. Verify it before continuing:
+   ```bash
+   supabase --version
+   ```
 
-The Supabase CLI is already vendored at `./.localbin/supabase` (v2.108.0).
+The repository does not commit platform-specific CLI binaries. The startup
+script refuses a missing or different CLI version so local schema behavior is
+reproducible across macOS, Linux, and Windows development hosts.
 
 ## Bring it up (one command)
 ```bash
 bash scripts/local-supabase-up.sh
 ```
-This runs `supabase start` (pulls images on first run), applies **all migrations
-0001–0012 including tenant isolation, durable approval lifecycle, WhatsApp
-delivery reconciliation, and email unsubscribe policy**, and writes `.env.local`
-with the local URL + anon + service-role keys. Then:
+This runs `supabase start` (pulls images on first run), applies **all numbered
+migrations in `supabase/migrations/`**, and writes `.env.local` with the local
+URL + anon + service-role keys. Then:
 ```bash
 npm run dev      # restart so .env.local is picked up → app now runs in LIVE mode
 ```

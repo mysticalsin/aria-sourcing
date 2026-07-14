@@ -7,6 +7,8 @@ import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
+import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
+import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 
 /**
  * Record a human approval for a SPECIFIC outbound message.
@@ -25,6 +27,14 @@ const ApproveSchema = z.object({
   subject: z.string().min(1).max(255),
   body: z.string().min(1).max(50_000),
 });
+
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function arrayRecord(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => record(item) !== null) : [];
+}
 
 export async function POST(req: NextRequest) {
   // Fail closed in production when the enforcement backend is absent.
@@ -57,11 +67,41 @@ export async function POST(req: NextRequest) {
   const { data: wid } = await supabase.rpc("current_workspace_id");
   if (!wid) return NextResponse.json({ ok: false, error: "Workspace not found." }, { status: 400 });
 
+  const { data: workspaceState } = await supabase
+    .from("workspace_state")
+    .select("state")
+    .eq("workspace_id", wid)
+    .maybeSingle();
+  const state = record(workspaceState?.state);
+  const outreach = arrayRecord(state?.outreach);
+  const candidates = arrayRecord(state?.candidates);
+  const campaigns = arrayRecord(state?.campaigns);
+  const message = outreach.find((item) => item.id === messageId);
+  const candidate = candidates.find((item) => item.id === candidateId);
+  const campaignId = typeof message?.campaignId === "string"
+    ? message.campaignId
+    : typeof candidate?.campaignId === "string"
+      ? candidate.campaignId
+      : "";
+  const campaign = campaigns.find((item) => item.id === campaignId);
+
   // Hash the EXACT content the operator approved; the send route recomputes this
   // and refuses if it differs (the body was changed after approval).
   const bodyHash = approvalHash(subject, body);
   const scopeHash = approvalScopeHash({ candidateId, channel, recipient });
   if (!scopeHash) return NextResponse.json({ ok: false, error: "Invalid approval recipient." }, { status: 400 });
+  const disclosure = validateCandidateBoundText(body, disclosureInternalFromCampaignLike(campaign));
+  const injection = detectInjection(body);
+  if (!disclosure.safe || injection.flagged) {
+    return NextResponse.json(
+      { ok: false, error: disclosure.reason ?? "injection-suspected" },
+      { status: 422 },
+    );
+  }
+
+  if (publicDemoSideEffectsDisabled()) {
+    return NextResponse.json({ ok: true, status: "dry-run", persisted: false, detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
+  }
 
   const { data: recorded, error } = await supabase.rpc("record_outreach_approval", {
     p_message_id: messageId,

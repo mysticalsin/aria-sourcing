@@ -1,5 +1,8 @@
 # Business Continuity Plan — Hermes Sourcing (MSourcing)
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **Gate:** Gate 12 — Backup/DR · **Companion to:** `DISASTER_RECOVERY_PLAN.md`, `BACKUP_RESTORE_REPORT.md`
 **Date:** 2026-06-27 · **Status:** DRAFT — **not exercised**; multiple ownership/decision items open (B-series)
 

@@ -1,0 +1,130 @@
+# Trimmed from docker/kong.yml for Fly: only the routes with a backing app on Fly
+# (aria-mantu-auth, aria-mantu-rest) plus a /healthz. The stock config's /realtime, /storage,
+# /functions, /graphql, /pg, /mcp and the catch-all / -> studio:3000 all have NO backend
+# on Fly and would 502, so they are removed. Upstreams rewritten to Fly .internal names.
+# $SUPABASE_ANON_KEY / $SUPABASE_SERVICE_KEY are substituted by kong-entrypoint.sh.
+_format_version: '2.1'
+_transform: true
+
+consumers:
+  - username: anon
+    keyauth_credentials:
+      - key: $SUPABASE_ANON_KEY
+  - username: service_role
+    keyauth_credentials:
+      - key: $SUPABASE_SERVICE_KEY
+
+acls:
+  - consumer: anon
+    group: anon
+  - consumer: service_role
+    group: admin
+
+services:
+  ## Liveness for the Fly health check — independent of auth/rest being up.
+  - name: healthz
+    url: http://aria-mantu-auth.internal:9999/health
+    routes:
+      - name: healthz
+        strip_path: true
+        paths:
+          - /healthz
+    plugins:
+      - name: request-termination
+        config:
+          status_code: 200
+          message: "ok"
+
+  ## Open Auth routes (no key-auth: email verify / oauth callback / authorize / jwks)
+  - name: auth-v1-open
+    url: http://aria-mantu-auth.internal:9999/verify
+    routes:
+      - name: auth-v1-open
+        strip_path: true
+        paths:
+          - /auth/v1/verify
+    plugins:
+      - name: cors
+  - name: auth-v1-open-callback
+    url: http://aria-mantu-auth.internal:9999/callback
+    routes:
+      - name: auth-v1-open-callback
+        strip_path: true
+        paths:
+          - /auth/v1/callback
+    plugins:
+      - name: cors
+  - name: auth-v1-open-authorize
+    url: http://aria-mantu-auth.internal:9999/authorize
+    routes:
+      - name: auth-v1-open-authorize
+        strip_path: true
+        paths:
+          - /auth/v1/authorize
+    plugins:
+      - name: cors
+  - name: auth-v1-open-jwks
+    url: http://aria-mantu-auth.internal:9999/.well-known/jwks.json
+    routes:
+      - name: auth-v1-open-jwks
+        strip_path: true
+        paths:
+          - /auth/v1/.well-known/jwks.json
+    plugins:
+      - name: cors
+
+  ## Secure Auth routes (/auth/v1/token, /user, ...)
+  - name: auth-v1
+    url: http://aria-mantu-auth.internal:9999/
+    routes:
+      - name: auth-v1-all
+        strip_path: true
+        paths:
+          - /auth/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - "Authorization: $LUA_AUTH_EXPR"
+          replace:
+            headers:
+              - "Authorization: $LUA_AUTH_EXPR"
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+            - anon
+
+  ## Secure PostgREST routes (/rest/v1/*)
+  - name: rest-v1
+    url: http://aria-mantu-rest.internal:3000/
+    routes:
+      - name: rest-v1-all
+        strip_path: true
+        paths:
+          - /rest/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - "Authorization: $LUA_AUTH_EXPR"
+          replace:
+            headers:
+              - "Authorization: $LUA_AUTH_EXPR"
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+            - anon

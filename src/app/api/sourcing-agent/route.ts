@@ -6,12 +6,19 @@ import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Campaign, Candidate, Role, ScoringWeights } from "@/lib/types";
-import { DEFAULT_MODEL, PROVIDER_ENV, type AiProviderSlug } from "@/lib/ai/provider";
+import { DEFAULT_MODEL, PROVIDER_ENV, VAULT_PROVIDER, type AiProviderSlug } from "@/lib/ai/provider";
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
 import { runAnthropicWithTools, runOpenAiWithTools, type ResolvedMcpServer } from "@/lib/ai/tool-loop";
 import { SOURCING_TOOL_DEFS, makeSourcingToolRunner } from "@/lib/ai/sourcing-tools";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
+import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
+import {
+  DISCLOSURE_SYSTEM,
+  candidateDisclosureContextForCampaignLike,
+  validateCandidateBoundText,
+} from "@/lib/agent-disclosure-policy";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
@@ -51,18 +58,12 @@ const SYSTEM_PROMPT =
   "\"body\": \"<first-touch outreach, under 120 words, leads with their specific real work, one genuine " +
   "reason for reaching out, soft low-pressure ask, no AI slop, no corporate filler, no em-dashes>\"}]}. " +
   "Draft for the requested number of candidates, choosing the best-scored real matches you found. Every " +
-  "candidateId MUST be one that a search_candidates result actually returned.";
+  "candidateId MUST be one that a search_candidates result actually returned. " +
+  DISCLOSURE_SYSTEM;
 
 function buildPrompt(campaign: Campaign, count: number): string {
-  const jd = campaign.jobAnalysis;
   return [
-    `Role: ${jd.title} (${jd.seniority}, ${jd.department})`,
-    `Location: ${jd.locationType}${jd.regions.length ? ` — ${jd.regions.join("/")}` : ""}`,
-    `Required skills: ${jd.requiredSkills.join(", ") || "n/a"}`,
-    `Nice-to-have: ${jd.niceToHaveSkills.join(", ") || "n/a"}`,
-    jd.minYearsExperience != null ? `Minimum experience: ${jd.minYearsExperience} years` : "",
-    jd.companyStageTarget.length ? `Target company stage: ${jd.companyStageTarget.join(", ")}` : "",
-    jd.industryExperience.length ? `Industry experience: ${jd.industryExperience.join(", ")}` : "",
+    candidateDisclosureContextForCampaignLike(campaign),
     "",
     `Find and draft outreach for ${count} real candidates for this role.`,
   ]
@@ -98,6 +99,7 @@ export async function POST(req: NextRequest) {
 
   const supabase = supabaseEnabled ? await getServerSupabase() : null;
   let userId: string | null = null;
+  let callerRole: Role | null = null;
   if (supabaseEnabled) {
     if (!supabase) return NextResponse.json({ ok: false, reason: "No Supabase client." }, { status: 500 });
     const {
@@ -106,8 +108,12 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ ok: false, reason: "Not authenticated." }, { status: 401 });
     userId = user.id;
     const { data: role } = await supabase.rpc("current_profile_role");
-    if (!can(role as Role, "source")) {
+    callerRole = role as Role;
+    if (!can(callerRole, "source")) {
       return NextResponse.json({ ok: false, reason: "Insufficient permissions." }, { status: 403 });
+    }
+    if (!can(callerRole, "manage_providers")) {
+      return NextResponse.json({ ok: false, reason: "Live cloud agents require admin authority." }, { status: 403 });
     }
   } else if (demoLoginEnabled) {
     // Same open-demo cost gate as /api/hermes/chat: env-resident provider keys
@@ -132,14 +138,21 @@ export async function POST(req: NextRequest) {
   }
 
   const slug = provider as AiProviderSlug;
-  const vaultKey = await resolveVaultSecret(apiKeyId);
+  const vaultKey = apiKeyId ? await resolveVaultSecret(apiKeyId, VAULT_PROVIDER[slug]) : "";
+  if (apiKeyId && !vaultKey) {
+    return NextResponse.json({ ok: false, reason: `No valid API key configured for ${provider}.` }, { status: 403 });
+  }
+  if (!apiKeyId && supabaseEnabled && !can(callerRole as Role, "manage_providers")) {
+    return NextResponse.json({ ok: false, reason: "A workspace provider key is required." }, { status: 403 });
+  }
   const key = vaultKey || process.env[PROVIDER_ENV[slug]] || "";
   if (!key) {
     return NextResponse.json({ ok: false, reason: `No API key configured for ${provider}.` });
   }
 
   const githubToken = process.env.GITHUB_TOKEN ?? "";
-  const runner = makeSourcingToolRunner(campaign, existing, weights, githubToken);
+  const tavilyKey = supabase ? await resolveStoredTavilyKey(supabase) : null;
+  const runner = makeSourcingToolRunner(campaign, existing, weights, githubToken, tavilyKey ?? undefined);
   const servers: ResolvedMcpServer[] = [
     { url: "builtin:sourcing-agent", token: "", tools: SOURCING_TOOL_DEFS, run: runner.run },
   ];
@@ -172,6 +185,17 @@ export async function POST(req: NextRequest) {
     .map((d) => {
       const cand = byId.get(d.candidateId);
       if (!cand) return null;
+      const disclosure = validateCandidateBoundText(d.body, {
+        salaryMin: campaign.jobAnalysis.salaryMin,
+        salaryMax: campaign.jobAnalysis.salaryMax,
+        forbidden: [
+          campaign.jobAnalysis.department,
+          campaign.jobAnalysis.teamSize,
+          campaign.jobAnalysis.reportingTo,
+          campaign.jobAnalysis.currency,
+        ],
+      });
+      if (!disclosure.safe) return null;
       return { ...cand, draftSubject: d.subject, draftBody: d.body };
     })
     .filter((c): c is Candidate & { draftSubject: string; draftBody: string } => c !== null);

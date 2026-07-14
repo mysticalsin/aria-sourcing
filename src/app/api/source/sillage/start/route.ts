@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
 
   const validated = await validateBody(req, SillageStartSchema, { maxBytes: 4_000 });
   if (!validated.ok) return validated.response;
-  const { domain, linkedinUrl, linkedinHandle } = validated.data;
+  const { domain, linkedinUrl, linkedinHandle } = validated.data; // gitleaks:allow -- request field names, not a client id
 
   // A stored key only exists once a real backend is configured (demo mode never
   // persists secrets — saveApiKey discards the value after computing last4).
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Connect a Sillage key in Settings first." });
   }
 
-  const result = await startAccountMapping(apiKey, { domain, linkedinUrl, linkedinHandle });
+  const result = await startAccountMapping(apiKey, { domain, linkedinUrl, linkedinHandle }); // gitleaks:allow -- request field names
   if (!result.ok) {
     // Passes through Sillage's real status (402 no credits, 403 feature gated, 409
     // ambiguous domain, ...) so the client sees the honest cause; a network-level

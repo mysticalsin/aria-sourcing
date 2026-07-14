@@ -1,0 +1,7 @@
+# aria-mantu-bootstrap — one-off migrations runner (real tenant). Built, pushed, then run once as a
+# throwaway Machine (see runbook step 9); it has no long-running service.
+app            = "aria-mantu-bootstrap"
+primary_region = "cdg"
+
+[build]
+  dockerfile = "docker/bootstrap/Dockerfile.fly"

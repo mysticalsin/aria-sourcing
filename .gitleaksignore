@@ -1,0 +1,13 @@
+# Exact, reviewed false-positive fingerprints from committed history. Keep this
+# list fingerprint-specific so new findings in the same files still fail CI.
+e1edfeaa551622422d6d21fe0479670ec2e47775:tests/databricks-intake.mts:generic-api-key:88
+5ea23208120ed528511c42e14ba84f66eb3c66f8:.rocket-fuel/codex/rock-5.events.jsonl:generic-api-key:54
+51b0a3058aec43f0dcf0874d2b1e0c0fc91de06e:.rocket-fuel/codex/r3-docs.events.jsonl:generic-api-key:56
+c09be844030fb2e88b8cdc1f7090b6012872c7d2:src/app/api/source/sillage/start/route.ts:linkedin-client-id:53
+c09be844030fb2e88b8cdc1f7090b6012872c7d2:src/app/api/source/sillage/start/route.ts:linkedin-client-id:62
+51b0a3058aec43f0dcf0874d2b1e0c0fc91de06e:.rocket-fuel/codex/r4-store.events.jsonl:generic-api-key:80
+df6fa3398f1f6ee5cd4289056fff762704a674bc:docker-compose.yml:jwt:22
+df6fa3398f1f6ee5cd4289056fff762704a674bc:docker-compose.yml:jwt:23
+5c4270c88a42e1b83561f77e7394f29f4529e5ca:.env.production.example:generic-api-key:23
+5c4270c88a42e1b83561f77e7394f29f4529e5ca:tests/log-redact.mts:generic-api-key:33
+5c4270c88a42e1b83561f77e7394f29f4529e5ca:tests/audit-fixes.mts:generic-api-key:83

@@ -18,23 +18,27 @@ import { useSuppression, useActions } from "@/lib/store";
 import { SUPPRESSION_TYPES } from "@/lib/types";
 import type { SuppressionType } from "@/lib/types";
 import { formatTimeAgo, cn, type Tone } from "@/lib/utils";
-import { ShieldBan, Plus, Trash2, Mail, Globe, Linkedin } from "lucide-react";
+import { supabaseEnabled } from "@/lib/supabase/config";
+import { ShieldBan, Plus, Trash2, Mail, Globe, Linkedin, Phone } from "lucide-react";
 
 const TYPE_TONE: Record<SuppressionType, Tone> = {
   email: "electric",
   domain: "violet",
+  phone: "warning",
   linkedin: "aqua",
 };
 
 const TYPE_ICON: Record<SuppressionType, React.ReactNode> = {
   email: <Mail className="h-3.5 w-3.5" aria-hidden />,
   domain: <Globe className="h-3.5 w-3.5" aria-hidden />,
+  phone: <Phone className="h-3.5 w-3.5" aria-hidden />,
   linkedin: <Linkedin className="h-3.5 w-3.5" aria-hidden />,
 };
 
 const PLACEHOLDER: Record<SuppressionType, string> = {
   email: "person@example.com",
   domain: "competitor.com",
+  phone: "+1 416 555 0123",
   linkedin: "linkedin.com/in/handle",
 };
 
@@ -46,29 +50,45 @@ export function SuppressionPanel() {
   const [type, setType] = React.useState<SuppressionType>("email");
   const [value, setValue] = React.useState("");
   const [reason, setReason] = React.useState("");
+  const [submitting, setSubmitting] = React.useState(false);
+  const [removingId, setRemovingId] = React.useState<string | null>(null);
 
   const typeId = React.useId();
   const valueId = React.useId();
   const reasonId = React.useId();
 
-  function handleAdd() {
+  async function handleAdd() {
+    if (submitting) return;
     const v = value.trim();
     if (!v) {
       toast({ title: "Enter a value to suppress", variant: "error" });
       return;
     }
-    actions.addSuppression({ type, value: v, reason: reason.trim() || "Manual suppression" });
+    setSubmitting(true);
+    const result = await actions.addSuppression({ type, value: v, reason: reason.trim() || "Manual suppression" });
+    setSubmitting(false);
+    if (!result.ok) {
+      toast({ title: "Suppression not added", description: result.error, variant: "error" });
+      return;
+    }
     setValue("");
     setReason("");
     toast({
       title: "Suppression added",
-      description: `${type}: ${v} will never be contacted by the fleet.`,
+      description: `${type}: ${result.entry?.value ?? v} is now enforced across the fleet.`,
       variant: "success",
     });
   }
 
-  function handleRemove(id: string, label: string) {
-    actions.removeSuppression(id);
+  async function handleRemove(id: string, label: string) {
+    if (removingId) return;
+    setRemovingId(id);
+    const result = await actions.removeSuppression(id);
+    setRemovingId(null);
+    if (!result.ok) {
+      toast({ title: "Suppression not removed", description: result.error, variant: "error" });
+      return;
+    }
     toast({ title: "Suppression removed", description: label, variant: "info" });
   }
 
@@ -96,7 +116,7 @@ export function SuppressionPanel() {
               id={typeId}
               value={type}
               onChange={(e) => setType(e.target.value as SuppressionType)}
-              options={SUPPRESSION_TYPES.map((t) => ({ value: t, label: t[0].toUpperCase() + t.slice(1) }))}
+              options={SUPPRESSION_TYPES.filter((t) => !supabaseEnabled || t !== "linkedin").map((t) => ({ value: t, label: t[0].toUpperCase() + t.slice(1) }))}
             />
           </Field>
           <Field label="Value" htmlFor={valueId}>
@@ -121,7 +141,7 @@ export function SuppressionPanel() {
               }}
             />
           </Field>
-          <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={handleAdd}>
+          <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={handleAdd} loading={submitting}>
             Add
           </Button>
         </div>
@@ -153,6 +173,8 @@ export function SuppressionPanel() {
                   size="icon"
                   aria-label={`Remove suppression ${e.value}`}
                   onClick={() => handleRemove(e.id, `${e.type}: ${e.value}`)}
+                  disabled={removingId !== null}
+                  loading={removingId === e.id}
                 >
                   <Trash2 className="h-4 w-4 text-danger" />
                 </Button>

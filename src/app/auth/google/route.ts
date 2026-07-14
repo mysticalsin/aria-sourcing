@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getServerSupabase, requireAdmin } from "@/lib/supabase/server";
+import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 
 // Auth-gated, never cacheable — and without this, Next tries to prerender the
 // route at build time (calling requireAdmin() before it touches any request
@@ -31,6 +32,10 @@ export async function GET(req: NextRequest) {
   const seatId = searchParams.get("seat_id");
   if (!seatId) {
     return NextResponse.json({ ok: false, error: "Missing seat_id." }, { status: 400 });
+  }
+
+  if (publicDemoSideEffectsDisabled()) {
+    return NextResponse.json({ ok: false, status: "dry-run", error: PUBLIC_DEMO_DRY_RUN_DETAIL }, { status: 403 });
   }
 
   const redirectUri = process.env.GOOGLE_REDIRECT_URI ?? "http://localhost:3000/auth/google/callback";

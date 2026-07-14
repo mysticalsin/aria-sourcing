@@ -1,0 +1,68 @@
+{
+  "recent_learnings": [
+    {
+      "date": "2026-07-10",
+      "lesson": "For pure store splits, extract React-free helpers only; leave provider-bound hooks/contracts when cycle risk exceeds comprehension gain."
+    },
+    {
+      "date": "2026-07-10",
+      "lesson": "Supersede old evidence packs with dated status plus banners; keep one annotated migration list to avoid stale deploy contradictions."
+    },
+    {
+      "date": "2026-07-10",
+      "lesson": "Move shared floor contracts into lib before deleting 3D branches; component-owned pure helpers create lib-to-component inversions."
+    },
+    {
+      "date": "2026-07-10",
+      "lesson": "Live fleet seats must persist before UI adoption; local seat_* IDs break OAuth, send, domain, and calendar UUID gates."
+    },
+    {
+      "date": "2026-07-10",
+      "lesson": "Query-auth MCP secrets need closed param enums, base-url save rejection, host-only errors, and centralized redaction before URL assembly."
+    },
+    {
+      "date": "2026-07-10",
+      "lesson": "Exec dashboards need a pure shared derivation over canonical metrics so page UI and tests cannot fork live KPI filters."
+    },
+    {
+      "date": "2026-07-10",
+      "lesson": "Databricks intake must check public host before secrets or fetches; SQL time filters stay bound parameters, never interpolated."
+    },
+    {
+      "date": "2026-07-10",
+      "lesson": "Win derivation must join outreachHistory messageIds to outreach, then apply real-send predicate; candidate history alone can count dry-runs."
+    },
+    {
+      "date": "2026-07-10",
+      "lesson": "Real contact KPIs need dryRun:false plus sentAt; ledger sent and approval state are not enough."
+    },
+    {
+      "date": "2026-07-10",
+      "lesson": "Possessive compensation nouns like our range/band/budget must be topic-gated; safe target questions stay explicit allowlist exceptions."
+    },
+    {
+      "date": "2026-07-10",
+      "lesson": "Candidate compensation safety needs allowlisted reply moves; denylist euphemisms and salary numbers are only secondary backup checks."
+    },
+    {
+      "date": "2026-07-10",
+      "lesson": "Compliant LinkedIn discovery must scope web_search server-side; UI-built queries alone do not prove site:linkedin.com/in enforcement."
+    },
+    {
+      "date": "2026-07-10",
+      "lesson": "Plain tsx route tests cannot use node:test module mocks; use existing local admin harness or run with Node mock flags."
+    },
+    {
+      "date": "2026-07-10",
+      "lesson": "Candidate-facing model prompts need whitelist source minimization plus sink scans; injection regex is only triage, not the boundary."
+    },
+    {
+      "date": "2026-07-09",
+      "lesson": "Stored spendable keys need permission-gated resolution and null-on-decrypt-failure fallback tests."
+    },
+    {
+      "date": "2026-07-09",
+      "lesson": "Integration placeholders need seed and persisted-state migrations; fixing defaults alone leaves fabricated connected statuses in existing workspaces."
+    }
+  ]
+}

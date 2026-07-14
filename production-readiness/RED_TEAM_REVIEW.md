@@ -1,5 +1,8 @@
 # RED TEAM / ADVERSARIAL REVIEW — Gate 14
 
+> SUPERSEDED by `STATUS.md` 2026-07-10 for current release posture. Historical 2026-06-27 evidence may contain stale stack versions, suite counts, migration ranges, and verdicts.
+
+
 **Target:** MSourcing ("hermes-sourcing") — autonomous recruiting operations console
 **Repo:** `/Users/tony/Library/CloudStorage/OneDrive-MantuGroup/Documents/TEST/MSourcing`
 **Branch:** `main` — **WORKING TREE DIRTY** (60+ modified files; migrations `0004`/`0005` untracked; no git remote, no upstream)

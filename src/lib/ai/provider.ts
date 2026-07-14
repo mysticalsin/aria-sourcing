@@ -128,6 +128,18 @@ export const PROVIDER_ENV: Record<AiProviderSlug, string> = {
   kimi: "KIMI_API_KEY",
 };
 
+/** Canonical api_keys.provider value for each callable cloud provider. The
+ * server uses this to bind a caller-selected key id to the intended egress
+ * provider before decrypting it. */
+export const VAULT_PROVIDER: Record<AiProviderSlug, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  groq: "Groq",
+  xai: "xAI",
+  mistral: "Mistral",
+  kimi: "Kimi (Moonshot)",
+};
+
 /**
  * Build the fetch args for a cloud provider call.
  *

@@ -4,7 +4,7 @@ import { RoundedBox } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useRef } from "react";
 import * as THREE from "three";
-import type { RenderAgent3D } from "./types";
+import type { RenderAgent3D } from "@/lib/floor3d";
 
 /* ============================================================================
    Procedural glossy toy robot — built entirely from three.js primitives and

@@ -22,6 +22,9 @@ import { openObscuraSession, closeObscuraSession } from "../src/lib/ai/obscura-a
 import { runBrowserTool } from "../src/lib/ai/browser-tools";
 import { ensureObscuraRunning } from "../src/lib/ai/obscura-launcher";
 
+process.env.NODE_ENV = "test";
+process.env.OBSCURA_TEST_MODE = "true";
+
 let pass = 0,
   fail = 0;
 function ok(name: string, cond: boolean, extra?: unknown) {
@@ -98,10 +101,13 @@ async function toolLevelTest() {
   // full guarded path (dispatch -> click -> post-navigation SSRF+robots recheck).
   const clickResult = await runBrowserTool("browser_act", { sessionId, type: "click", selector: "a" });
   ok("browser_act click navigates via the real link", clickResult.ok === true, clickResult);
+  const navigatedUrl = (clickResult.content as { url?: string } | undefined)?.url;
+  const navigatedHost = typeof navigatedUrl === "string" && URL.canParse(navigatedUrl)
+    ? new URL(navigatedUrl).hostname
+    : "";
   ok(
-    "the click actually navigated away from example.com",
-    typeof (clickResult.content as { url?: string } | undefined)?.url === "string" &&
-      !(clickResult.content as { url?: string }).url!.includes("example.com"),
+    "the click navigates to IANA's expected host",
+    navigatedHost === "iana.org" || navigatedHost === "www.iana.org",
     clickResult,
   );
 

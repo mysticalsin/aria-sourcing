@@ -31,9 +31,9 @@ export function defaultIntegrations(): IntegrationStatus[] {
       name: "Resume Matcher API",
       category: "Enrichment",
       description: "Structured CV ↔ JD scoring service for composite match breakdowns.",
-      status: "connected",
+      status: "not_configured",
       mode: "mock",
-      lastSync: isoHoursBefore(1.2),
+      lastSync: null,
       errors: [],
       real: false,
     },
@@ -53,9 +53,9 @@ export function defaultIntegrations(): IntegrationStatus[] {
       name: "LinkedIn Sourcing",
       category: "Sourcing",
       description: "Official partner search. Never bypasses login walls or scraping limits.",
-      status: "degraded",
+      status: "not_configured",
       mode: "mock",
-      lastSync: isoHoursBefore(6),
+      lastSync: null,
       errors: ["Awaiting official partner API credentials."],
       real: false,
     },
@@ -75,9 +75,9 @@ export function defaultIntegrations(): IntegrationStatus[] {
       name: "Twenty CRM",
       category: "CRM",
       description: "Sync candidates, activities, and outcomes to the CRM of record.",
-      status: "connected",
+      status: "not_configured",
       mode: "mock",
-      lastSync: isoHoursBefore(0.6),
+      lastSync: null,
       errors: [],
       real: false,
     },
@@ -86,9 +86,9 @@ export function defaultIntegrations(): IntegrationStatus[] {
       name: "SMART (ATS)",
       category: "CRM",
       description: "Bidirectional ATS of record: needs, lead + candidate records (all sources), Cvtheque, pipeline, offer tracking, hire registration, source-of-hire capture.",
-      status: "connected",
+      status: "not_configured",
       mode: "mock",
-      lastSync: isoHoursBefore(0.5),
+      lastSync: null,
       errors: [],
       real: false,
     },
@@ -97,9 +97,9 @@ export function defaultIntegrations(): IntegrationStatus[] {
       name: "Knight M",
       category: "Enrichment",
       description: "Job-ad compliance check, re-run on every edit before publish (inclusive language, pay transparency, accessibility).",
-      status: "connected",
+      status: "not_configured",
       mode: "mock",
-      lastSync: isoHoursBefore(1.5),
+      lastSync: null,
       errors: [],
       real: false,
     },
@@ -108,9 +108,9 @@ export function defaultIntegrations(): IntegrationStatus[] {
       name: "My Referral app",
       category: "Sourcing",
       description: "Employee referral submissions → Referral Evaluator trigger, referrer notification, and source traceability.",
-      status: "connected",
+      status: "not_configured",
       mode: "mock",
-      lastSync: isoHoursBefore(2.5),
+      lastSync: null,
       errors: [],
       real: false,
     },
@@ -144,9 +144,9 @@ export function defaultIntegrations(): IntegrationStatus[] {
       name: "n8n",
       category: "Infra",
       description: "Workflow automation for cross-system orchestration & webhooks.",
-      status: "connected",
+      status: "not_configured",
       mode: "mock",
-      lastSync: isoHoursBefore(2),
+      lastSync: null,
       errors: [],
       real: false,
     },
@@ -155,9 +155,9 @@ export function defaultIntegrations(): IntegrationStatus[] {
       name: "Cal.com",
       category: "Calendar",
       description: "Generate scheduling links and capture interview bookings.",
-      status: "connected",
+      status: "not_configured",
       mode: "mock",
-      lastSync: isoHoursBefore(0.3),
+      lastSync: null,
       errors: [],
       real: false,
     },
@@ -178,9 +178,9 @@ export function defaultIntegrations(): IntegrationStatus[] {
       name: "Apollo / Hunter / Clearbit",
       category: "Enrichment",
       description: "Contact enrichment via official APIs only: no scraping.",
-      status: "connected",
+      status: "not_configured",
       mode: "mock",
-      lastSync: isoHoursBefore(3),
+      lastSync: null,
       errors: [],
       real: false,
     },
@@ -200,13 +200,26 @@ export function defaultIntegrations(): IntegrationStatus[] {
       name: "Slack / Telegram",
       category: "Comms",
       description: "Operator notifications for approvals, hot replies, and SLA breaches.",
-      status: "connected",
+      status: "not_configured",
       mode: "mock",
-      lastSync: isoHoursBefore(0.2),
+      lastSync: null,
       errors: [],
       real: false,
     },
   ];
+}
+
+/** Configuration catalogue for a new live tenant. Seed connection timestamps
+ * are demo fixtures, so every adapter starts explicitly unconfigured. Real
+ * adapters remain labelled live to expose their actual setup surfaces. */
+export function defaultLiveIntegrations(): IntegrationStatus[] {
+  return defaultIntegrations().map((integration) => ({
+    ...integration,
+    status: "not_configured",
+    mode: integration.real ? "live" : "mock",
+    lastSync: null,
+    connectedAccount: undefined,
+  }));
 }
 
 export interface ConnectionTestResult {
@@ -220,6 +233,13 @@ export interface ConnectionTestResult {
  * credentials are validated server-side on the next real sync, not faked here.
  */
 export function testConnection(integration: IntegrationStatus): ConnectionTestResult {
+  if (!integration.real) {
+    return {
+      ok: false,
+      latencyMs: 0,
+      message: `${integration.name}: not configured. This card is a roadmap placeholder with no live adapter.`,
+    };
+  }
   if (integration.status === "not_configured") {
     return {
       ok: false,
