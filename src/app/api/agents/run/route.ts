@@ -6,6 +6,7 @@ import { z } from "zod";
 import { detectInjection } from "@/lib/agent-disclosure-policy";
 import { executeAgentFrameworkRun } from "@/lib/agents/framework/execution";
 import { agentFrameworkRuntimeFromEnvironment } from "@/lib/agents/framework/runtime-config";
+import { loadAgentFrameworkMemoryContext } from "@/lib/agents/memory";
 import {
   AgentFrameworkNeedSchema,
   AgentFrameworkRunSuccessResponseSchema,
@@ -235,6 +236,7 @@ export async function POST(req: NextRequest) {
     reviewedGithubQueries: governedGithubQueries,
     need: frameworkNeed.data,
     sourcingCount: validated.data.count ?? 5,
+    loadMemoryContext: (scope, runId) => loadAgentFrameworkMemoryContext(service, scope, runId),
     revalidateAuthority: async () => {
       const [{ data: latestRole }, { data: latestWorkspaceId }, latest, latestSpec] = await Promise.all([
         session.rpc("current_profile_role"),

@@ -11,22 +11,13 @@ const localDockerfile = readFileSync("docker/bootstrap/Dockerfile", "utf8");
 const ownerReconciliationSource = readFileSync("docker/bootstrap/supabase-admin-reconciliation.sql", "utf8");
 const legacyInvariantPath = "docker/bootstrap/legacy-baseline-invariants.sql";
 const legacyInvariantSource = existsSync(legacyInvariantPath) ? readFileSync(legacyInvariantPath, "utf8") : "";
+const legacyTableInventoryPath = "docker/bootstrap/legacy-table-inventory.txt";
+const legacyTables = readFileSync(legacyTableInventoryPath, "utf8").trim().split("\n");
 const emptySchemaDigestPath = "docker/bootstrap/recovery-empty-public-schema.sha256";
 const emptySchemaDigestSource = existsSync(emptySchemaDigestPath) ? readFileSync(emptySchemaDigestPath, "utf8").trim() : "";
 const numberedMigrations = readdirSync("supabase/migrations")
   .filter((name) => /^\d{4}_.+\.sql$/.test(name))
   .map((name) => ({ name, source: readFileSync(`supabase/migrations/${name}`, "utf8") }));
-const legacyTables = [
-  "agent_conversations", "agent_events", "agent_memories", "agent_memory_events",
-  "agent_memory_legacy_quarantine", "agent_run_memory_context",
-  "agent_runs", "agent_seats", "agent_specs", "api_keys",
-  "databricks_connection_events", "databricks_connections", "dust_connection_events", "dust_connections", "email_connections",
-  "messages_inbound", "messages_outbound", "outbound_content_cache", "outreach_approvals",
-  "outreach_ledger", "owner_recovery_receipts", "profiles", "suppression_list", "whatsapp_contacts",
-  "whatsapp_conversation_windows", "whatsapp_delivery_events", "whatsapp_senders",
-  "whatsapp_templates", "workspace_state", "workspaces",
-];
-
 let passed = 0;
 let failed = 0;
 
@@ -48,6 +39,14 @@ ok(
   numberedMigrations.every(
     ({ source }) => !/^\s*(?:begin|commit|rollback)\s*;\s*(?:--.*)?$/im.test(source),
   ),
+);
+ok(
+  "bootstrap contract models the canonical recovery table inventory",
+  legacyTables.includes("agent_framework_run_memory_context") &&
+    legacyTables.includes("candidate_erasure_suppression_tombstones") &&
+    legacyTables.includes("candidate_erasure_obligations") &&
+    legacyTables.includes("email_connection_seat_mismatch_quarantine") &&
+    legacyTables.join("\n") === [...new Set(legacyTables)].sort().join("\n"),
 );
 
 type Phase = "recovery-preflight" | "legacy-preflight" | "legacy-baseline" | "owner" | "migrations" | "all";
@@ -285,10 +284,15 @@ ok(
     /USER\s+postgres[\s\S]*ENTRYPOINT/i.test(localDockerfile),
 );
 ok(
-  "production bootstrap image contains every reviewed recovery-preflight input",
+  "bootstrap images contain every reviewed recovery-preflight input",
   /legacy-baseline-invariants\.sql/.test(flyDockerfile) &&
+    /legacy-table-inventory\.txt/.test(flyDockerfile) &&
     /legacy-baseline-public-schema\.sha256/.test(flyDockerfile) &&
-    /recovery-empty-public-schema\.sha256/.test(flyDockerfile),
+    /recovery-empty-public-schema\.sha256/.test(flyDockerfile) &&
+    /legacy-baseline-invariants\.sql/.test(localDockerfile) &&
+    /legacy-table-inventory\.txt/.test(localDockerfile) &&
+    /legacy-baseline-public-schema\.sha256/.test(localDockerfile) &&
+    /recovery-empty-public-schema\.sha256/.test(localDockerfile),
 );
 ok(
   "verified-empty schema fingerprint is pinned as lowercase SHA-256",

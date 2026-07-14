@@ -56,8 +56,8 @@ function LoginInner() {
   const reducedMotion = usePrefersReducedMotion();
   const [videoPausedByUser, setVideoPausedByUser] = React.useState(false);
   const [showEmail, setShowEmail] = React.useState(true);
-  const [email, setEmail] = React.useState("admin");
-  const [password, setPassword] = React.useState("admin");
+  const [email, setEmail] = React.useState(demoLoginEnabled ? "admin" : "");
+  const [password, setPassword] = React.useState(demoLoginEnabled ? "admin" : "");
   const [authError, setAuthError] = React.useState<string | null>(null);
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const emailRef = React.useRef<HTMLInputElement>(null);
@@ -93,9 +93,9 @@ function LoginInner() {
     if (err) setLoading(false);
   };
 
-  // One-click demo sign-in: admin/admin is resolved SERVER-SIDE (the real account
-  // password never reaches the client bundle). Used by both the hero CTA (when
-  // NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true) and the admin/admin email-form path.
+  // One-click demo sign-in: admin/admin is resolved SERVER-SIDE. This path is
+  // available only when NEXT_PUBLIC_ENABLE_DEMO_LOGIN explicitly marks the
+  // deployment as a synthetic public demo.
   const runDemoLogin = async () => {
     setLoading(true);
     setAuthError(null);
@@ -116,16 +116,8 @@ function LoginInner() {
     e.preventDefault();
     setLoading(true);
     setAuthError(null);
-    if (email.trim() === "admin" && password === "admin") {
-      // With a backend OR a public demo, resolve admin/admin server-side: LIVE mode
-      // signs into the seeded account; the open demo mints the signed session cookie
-      // that unlocks the live model. Only a bare local dev instance (no Supabase, no
-      // demo flag) treats admin/admin as a cosmetic gate.
-      if (supabaseEnabled || demoLoginEnabled) {
-        await runDemoLogin();
-      } else {
-        window.location.href = safeRedirect(redirect);
-      }
+    if (email.trim() === "admin" && password === "admin" && demoLoginEnabled) {
+      await runDemoLogin();
       return;
     }
     if (!supabaseEnabled) {
@@ -150,8 +142,8 @@ function LoginInner() {
   };
 
   const handleCTA = () => {
-    // Demo (LIVE or open): one-click admin/admin sign-in. runDemoLogin sets the session
-    // (Supabase cookie in LIVE mode, signed demo cookie in the open demo) then redirects.
+    // Explicit public demo: one-click admin/admin sign-in. runDemoLogin sets the
+    // demo-backed session and then redirects.
     if (demoLoginEnabled) void runDemoLogin();
     else if (supabaseEnabled && azureLoginEnabled) void signInWithMicrosoft();
     else if (supabaseEnabled) {
@@ -263,7 +255,7 @@ function LoginInner() {
                     autoComplete="username"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="admin"
+                    placeholder={demoLoginEnabled ? "admin" : "name@company.com"}
                     className="rounded-full bg-white/5 px-5 py-3 text-sm text-white placeholder-white/40 outline-none ring-1 ring-inset ring-white/15 transition focus:ring-white/40"
                   />
                   <label htmlFor="login-password" className="sr-only">

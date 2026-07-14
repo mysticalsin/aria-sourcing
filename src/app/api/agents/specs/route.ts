@@ -1,8 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
+import { classifySameOriginJsonRequest } from "@/lib/api/same-origin-json";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
@@ -74,6 +76,31 @@ type ApprovedWorkflowAuthority = {
   workflows: Map<string, ApprovedAgentWorkflowBinding>;
 };
 
+type WorkspaceSeatValidation =
+  | { ok: true }
+  | { ok: false; status: 400 | 503; reason: string };
+
+async function validateWorkspaceSeat(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  seatId: string | null | undefined,
+): Promise<WorkspaceSeatValidation> {
+  if (seatId == null) return { ok: true };
+  const { data, error } = await supabase
+    .from("agent_seats")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .eq("id", seatId)
+    .maybeSingle();
+  if (error) {
+    return { ok: false, status: 503, reason: "Seat authority is unavailable." };
+  }
+  if (!data) {
+    return { ok: false, status: 400, reason: "Selected seat does not exist in this workspace." };
+  }
+  return { ok: true };
+}
+
 async function loadApprovedWorkflowAuthority(
   workspaceId: string,
   ownerId: string,
@@ -113,7 +140,12 @@ async function requireOperator(req: NextRequest) {
   if (prodBlock) return { response: prodBlock } as const;
   if (!supabaseEnabled) {
     return {
-      response: NextResponse.json({ ok: true, demo: true, specs: [] }),
+      response: req.method === "GET"
+        ? NextResponse.json({ ok: true, demo: true, specs: [] })
+        : NextResponse.json(
+          { ok: false, reason: "Agent persistence is unavailable in demo mode." },
+          { status: 503 },
+        ),
     } as const;
   }
   const supabase = await getServerSupabase();
@@ -128,6 +160,15 @@ async function requireOperator(req: NextRequest) {
   }
   const { data: wid } = await supabase.rpc("current_workspace_id");
   return { supabase, user, workspaceId: wid as string } as const;
+}
+
+function rejectUnsafeMutation(req: NextRequest): NextResponse | null {
+  const result = classifySameOriginJsonRequest(req);
+  if (result === "ok") return null;
+  return NextResponse.json(
+    { ok: false, code: result, reason: "The request origin or media type is not allowed." },
+    { status: result === "unsupported_media_type" ? 415 : 403 },
+  );
 }
 
 export async function GET(req: NextRequest) {
@@ -181,12 +222,25 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const unsafe = rejectUnsafeMutation(req);
+  if (unsafe) return unsafe;
   const rl = checkRateLimit(rateLimitKey(req, "agent-specs"), { windowMs: 60_000, max: 20 });
   if (!rl.ok) return tooManyRequests(rl.retryAfterSec);
   const auth = await requireOperator(req);
   if ("response" in auth) return auth.response;
   const validated = await validateBody(req, CreateSpecSchema, { maxBytes: 50_000 });
   if (!validated.ok) return validated.response;
+  const seatValidation = await validateWorkspaceSeat(
+    auth.supabase,
+    auth.workspaceId,
+    validated.data.seat_id,
+  );
+  if (!seatValidation.ok) {
+    return NextResponse.json(
+      { ok: false, reason: seatValidation.reason },
+      { status: seatValidation.status },
+    );
+  }
   const { data, error } = await auth.supabase
     .from("agent_specs")
     .insert({ ...validated.data, workspace_id: auth.workspaceId, owner_id: auth.user.id })
@@ -197,6 +251,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const unsafe = rejectUnsafeMutation(req);
+  if (unsafe) return unsafe;
   const rl = checkRateLimit(rateLimitKey(req, "agent-specs"), { windowMs: 60_000, max: 30 });
   if (!rl.ok) return tooManyRequests(rl.retryAfterSec);
   const auth = await requireOperator(req);
@@ -204,10 +260,26 @@ export async function PATCH(req: NextRequest) {
   const validated = await validateBody(req, UpdateSpecSchema, { maxBytes: 50_000 });
   if (!validated.ok) return validated.response;
   const { id, ...updates } = validated.data;
-  const { error } = await auth.supabase
+  const seatValidation = await validateWorkspaceSeat(
+    auth.supabase,
+    auth.workspaceId,
+    updates.seat_id,
+  );
+  if (!seatValidation.ok) {
+    return NextResponse.json(
+      { ok: false, reason: seatValidation.reason },
+      { status: seatValidation.status },
+    );
+  }
+  const { data, error } = await auth.supabase
     .from("agent_specs")
     .update({ ...updates, updated_at: new Date().toISOString() })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("workspace_id", auth.workspaceId)
+    .eq("owner_id", auth.user.id)
+    .select("id")
+    .maybeSingle();
   if (error) return NextResponse.json({ ok: false, reason: "Failed to update agent." }, { status: 500 });
+  if (!data) return NextResponse.json({ ok: false, reason: "Agent not found." }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

@@ -30,7 +30,16 @@ target "redis" {
 target "deerflow" {
   context = "."
   dockerfile = "infra/agent-frameworks/fly/runtime/deerflow.Dockerfile"
-  args = { UPSTREAM_IMAGE = "${DEERFLOW_UPSTREAM_IMAGE}" }
+  args = {
+    UPSTREAM_IMAGE = "${DEERFLOW_UPSTREAM_IMAGE}"
+    DEERFLOW_PATCHED_RUNS_SHA256 = "79b6601066faa937a2d0b5551f7e1a5311304f1e7b28962c1ccee72cea05d6e7"
+    DEERFLOW_CLEANUP_GUARD_SHA256 = "4e4b0006ad7486b5b028dfa9168e3e45d26d33eca46e7b653db29db4683918e6"
+    DEERFLOW_RUNTIME_POLICY_SHA256 = "9312dff2f23f04fc8c2a92600d47d8d4958094e4c37e010c10ff1e011dce6025"
+    DEERFLOW_RUNTIME_CONFIG_SHA256 = "a5a41ab4a2772e74203820d65a6efb488bc3b6a5948c47a8d1f9dd6cd3a30369"
+    DEERFLOW_DATABASE_BACKEND = "memory"
+    DEERFLOW_RUN_EVENTS_BACKEND = "memory"
+    DEERFLOW_STREAM_BRIDGE_TYPE = "memory"
+  }
   tags = ["${FLY_WRAPPER_REGISTRY}/deerflow:fabadae4168db81f0eaaf62f209050f978e2f691-aria-fly-v1"]
   attest = ["type=sbom", "type=provenance,mode=max"]
 }

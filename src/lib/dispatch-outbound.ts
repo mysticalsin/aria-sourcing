@@ -273,6 +273,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
               .from("agent_specs")
               .select("role_brief")
               .eq("id", msg.spec_id)
+              .eq("workspace_id", msg.workspace_id)
               .maybeSingle()
           : { data: null };
         const disclosure = validateCandidateBoundText(msg.body, disclosureInternalFromBrief(record(spec)?.role_brief));
@@ -334,6 +335,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         .from("agent_seats")
         .select("id, provider, status, mode")
         .eq("id", msg.seat_id ?? "")
+        .eq("workspace_id", msg.workspace_id)
         .maybeSingle();
       if (!seat || seat.status !== "active" || seat.mode !== "live" || seat.provider !== expectedProvider) {
         await finish("blocked", { pass: false, reasons: ["seat-not-live"] });

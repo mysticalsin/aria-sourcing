@@ -47,6 +47,17 @@ ok(
   "email is the primary live login action when Azure is disabled",
   /azureLoginEnabled\s*\?\s*"Sign in with Microsoft"\s*:\s*"Sign in with email"/.test(login),
 );
+ok(
+  "well-known demo credentials are prefilled only on an explicitly enabled public demo",
+  /useState\(demoLoginEnabled\s*\?\s*"admin"\s*:\s*""\)/.test(login) &&
+    !/useState\("admin"\)/.test(login) &&
+    /placeholder=\{demoLoginEnabled\s*\?\s*"admin"\s*:\s*"name@company\.com"\}/.test(login),
+);
+ok(
+  "the server-side demo-login shortcut is selected only by explicit demo authority",
+  /email\.trim\(\)\s*===\s*"admin"\s*&&\s*password\s*===\s*"admin"\s*&&\s*demoLoginEnabled/.test(login) &&
+    !/if\s*\(\s*supabaseEnabled\s*\|\|\s*demoLoginEnabled/.test(login),
+);
 
 console.log(`RESULT login-page: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

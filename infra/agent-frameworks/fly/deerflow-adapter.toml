@@ -19,11 +19,6 @@ kill_timeout = 30
   DEERFLOW_MODEL = "aria-model"
   AGENT_FRAMEWORK_CAPABILITY_SECRET_FILE = "/run/secrets/agent_framework_capability_secret"
   MODEL_GATEWAY_TOKEN_FILE = "/run/secrets/deerflow_model_gateway_token"
-  REDIS_PASSWORD_FILE = "/run/secrets/deerflow_redis_password"
-  REDIS_HOST = "aria-mantu-deerflow-redis.internal"
-  REDIS_FLY_HOST = "aria-mantu-deerflow-redis.internal"
-  REDIS_PORT = "6379"
-  REDIS_DB = "0"
   DEERFLOW_POLICY_REFERENCE_DIR = "/opt/aria/policy/reference"
   DEERFLOW_POLICY_RUNTIME_DIR = "/opt/aria/policy/runtime"
 
@@ -36,9 +31,6 @@ kill_timeout = 30
 [[files]]
   guest_path = "/run/secrets/agent_framework_capability_secret"
   secret_name = "ARIA_CAPABILITY_SECRET_B64"
-[[files]]
-  guest_path = "/run/secrets/deerflow_redis_password"
-  secret_name = "ARIA_REDIS_PASSWORD_B64"
 [[files]]
   guest_path = "/run/secrets/deerflow_model_gateway_token"
   secret_name = "ARIA_GATEWAY_TOKEN_B64"

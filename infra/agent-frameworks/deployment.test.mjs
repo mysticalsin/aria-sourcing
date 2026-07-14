@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -47,9 +50,9 @@ test("stack environment example names secret files and never accepts gateway sec
     "DEERFLOW_MODEL_CREDENTIAL_VERSION",
     "DEERFLOW_MODEL_GATEWAY_TOKEN_FILE",
     "DEERFLOW_MODEL_PROVIDER_API_KEY_FILE",
-    "DEERFLOW_REDIS_PASSWORD_FILE",
     "FLOWISE_REDIS_PASSWORD_FILE",
   ]) assert.match(example, new RegExp(`^${name}=`, "m"), name);
+  assert.doesNotMatch(example, /^DEERFLOW_REDIS_PASSWORD_FILE=/m);
   assert.doesNotMatch(example, /^MODEL_GATEWAY_(?:INTERNAL_TOKEN|UPSTREAM_API_KEY)=/m);
   assert.doesNotMatch(example, /^REDIS_PASSWORD_FILE=/m);
 });
@@ -58,6 +61,10 @@ test("upstream build graph uses exact audited commits and emits SBOM plus proven
   const bake = read("docker-bake.hcl");
   assert.match(bake, /bytedance\/deer-flow\.git#fabadae4168db81f0eaaf62f209050f978e2f691/);
   assert.match(bake, /dockerfile\s*=\s*"backend\/Dockerfile"/);
+  assert.match(bake, /target\s+"deerflow-upstream"/);
+  assert.match(bake, /deerflow_upstream\s*=\s*"target:deerflow-upstream"/);
+  assert.match(bake, /dockerfile\s*=\s*"infra\/agent-frameworks\/deerflow-runtime\/Dockerfile"/);
+  assert.doesNotMatch(bake, /UV_EXTRAS\s*=\s*"(?:postgres|redis)"/);
   assert.match(bake, /FlowiseAI\/Flowise\.git#bb773ffa710bd22639c4ba2643413a0ea2b679d3/g);
   assert.match(bake, /dockerfile\s*=\s*"Dockerfile"/);
   assert.match(bake, /dockerfile\s*=\s*"docker\/worker\/Dockerfile"/);
@@ -79,7 +86,7 @@ test("deployment is private, digest-only, isolated, and fail-closed on missing s
   const services = compose.services;
   assert.equal(services["framework-secrets-preflight"].network_mode, "none");
   assert.equal(services["framework-secrets-preflight"].read_only, true);
-  assert.ok(services["framework-secrets-preflight"].secrets.length >= 15);
+  assert.ok(services["framework-secrets-preflight"].secrets.length >= 13);
   assert.equal(services["framework-secrets-preflight"].secrets.includes("flowise_api_key"), false);
   const flowiseRuntimePreflight = services["flowise-runtime-secrets-preflight"];
   assert.equal(flowiseRuntimePreflight.network_mode, "none");
@@ -95,7 +102,9 @@ test("deployment is private, digest-only, isolated, and fail-closed on missing s
     "service_completed_successfully",
     "the private Flowise adapter must not start until its post-bootstrap key passes reuse validation",
   );
-  for (const name of ["deerflow", "flowise", "flowise-worker", "deerflow-redis", "flowise-redis", "deerflow-db", "flowise-db", "deerflow-adapter", "flowise-adapter"]) {
+  assert.equal(services["deerflow-db"], undefined, "the ephemeral DeerFlow runtime must not start a database");
+  assert.equal(services["deerflow-redis"], undefined, "the ephemeral DeerFlow boundary must not start an unused Redis service");
+  for (const name of ["deerflow", "flowise", "flowise-worker", "flowise-redis", "flowise-db", "deerflow-adapter", "flowise-adapter"]) {
     assert.ok(services[name], `${name} service is required`);
     assert.deepEqual(services[name].networks, ["framework_private"]);
     assert.ok(services[name].mem_limit, `${name} must have a memory ceiling`);
@@ -127,7 +136,7 @@ test("deployment is private, digest-only, isolated, and fail-closed on missing s
   assert.ok(services.deerflow.secrets.includes("deerflow_model_gateway_token"));
   assert.equal(services.deerflow.secrets.includes("deerflow_model_provider_api_key"), false);
   assert.doesNotMatch(composeText, /deerflow_model_api_key/);
-  for (const name of ["deerflow", "flowise", "flowise-worker", "deerflow-redis", "flowise-redis", "deerflow-db", "flowise-db", "deerflow-adapter", "flowise-adapter"]) {
+  for (const name of ["deerflow", "flowise", "flowise-worker", "flowise-redis", "flowise-db", "deerflow-adapter", "flowise-adapter"]) {
     assert.match(
       services[name].image,
       /^\$\{[A-Z0-9_]+_REPOSITORY:\?.+\}@sha256:\$\{[A-Z0-9_]+_SHA256:\?.+\}$/,
@@ -168,36 +177,35 @@ test("deployment is private, digest-only, isolated, and fail-closed on missing s
     ]) assert.equal(Object.hasOwn(service.environment, key), true, `${name} must receive canonical ${key}`);
     assert.equal(service.environment.DEERFLOW_MODEL_PROVIDER, "langchain-openai");
   }
-  for (const name of ["deerflow_db_password", "flowise_db_password", "deerflow_redis_password", "flowise_redis_password"]) {
+  for (const name of ["flowise_db_password", "flowise_redis_password"]) {
     assert.match(compose.secrets[name].file, /^\$\{[A-Z0-9_]+:\?.+\}$/);
     assert.notEqual(compose.secrets[name].external, true);
   }
-  assert.equal(services["deerflow-db"].cap_drop, undefined, "the official Postgres root entrypoint must initialize and drop privileges");
   assert.equal(services["flowise-db"].cap_drop, undefined, "the official Postgres root entrypoint must initialize and drop privileges");
-  for (const name of ["deerflow-redis", "flowise-redis"]) {
-    assert.notEqual(services[name].user, "0:0");
-  }
+  assert.notEqual(services["flowise-redis"].user, "0:0");
   assert.doesNotMatch(composeText, /--requirepass|redis-cli[^\n]*\s-a\s/);
-  assert.equal((composeText.match(/maxmemory 384mb/g) ?? []).length, 2);
+  assert.equal((composeText.match(/maxmemory 384mb/g) ?? []).length, 1);
   assert.equal(services.deerflow.environment.DEERFLOW_STREAM_BRIDGE_REDIS_HOST, undefined);
-  assert.equal(services["deerflow-adapter"].environment.REDIS_HOST, "deerflow-redis");
+  assert.equal(services.deerflow.environment.DEERFLOW_DATABASE_HOST, undefined);
+  assert.equal(services["deerflow-adapter"].environment.REDIS_HOST, undefined);
   assert.equal(services["flowise-adapter"].environment.REDIS_HOST, "flowise-redis");
   assert.equal(services["deerflow-adapter"].environment.REDIS_FLY_HOST, undefined);
   assert.equal(services["flowise-adapter"].environment.REDIS_FLY_HOST, undefined);
-  assert.ok(services.deerflow.secrets.includes("deerflow_redis_password"));
+  assert.equal(services.deerflow.secrets.includes("deerflow_redis_password"), false);
+  assert.equal(services.deerflow.secrets.includes("deerflow_db_password"), false);
   assert.equal(services.deerflow.secrets.includes("flowise_redis_password"), false);
   assert.ok(services.flowise.secrets.includes("flowise_redis_password"));
   assert.equal(services.flowise.secrets.includes("deerflow_redis_password"), false);
   assert.ok(services["flowise-worker"].secrets.includes("flowise_redis_password"));
   assert.equal(services["flowise-worker"].secrets.includes("deerflow_redis_password"), false);
-  assert.ok(services["deerflow-adapter"].secrets.includes("deerflow_redis_password"));
+  assert.equal(services["deerflow-adapter"].secrets.includes("deerflow_redis_password"), false);
   assert.equal(services["deerflow-adapter"].secrets.includes("flowise_redis_password"), false);
   assert.ok(services["deerflow-adapter"].secrets.includes("deerflow_model_gateway_token"));
   assert.equal(services["deerflow-adapter"].environment.MODEL_GATEWAY_TOKEN_FILE, "/run/secrets/deerflow_model_gateway_token");
   assert.ok(services["flowise-adapter"].secrets.includes("flowise_redis_password"));
   assert.equal(services["flowise-adapter"].secrets.includes("deerflow_redis_password"), false);
-  assert.notEqual(services["deerflow-redis"].volumes[0], services["flowise-redis"].volumes[0]);
-  assert.ok(services.deerflow.depends_on["deerflow-redis"]);
+  assert.equal(services.deerflow.depends_on["deerflow-redis"], undefined);
+  assert.equal(services.deerflow.depends_on["deerflow-db"], undefined);
   assert.equal(services.deerflow.depends_on["flowise-redis"], undefined);
   assert.ok(services["deerflow-adapter"].depends_on["model-gateway"]);
   assert.ok(services.flowise.depends_on["flowise-redis"]);
@@ -206,7 +214,8 @@ test("deployment is private, digest-only, isolated, and fail-closed on missing s
   assert.equal(services["flowise-worker"].depends_on["deerflow-redis"], undefined);
   assert.equal(compose.secrets.redis_url, undefined);
   assert.equal(compose.secrets.redis_password, undefined);
-  assert.match(compose.secrets.deerflow_redis_password.file, /^\$\{DEERFLOW_REDIS_PASSWORD_FILE:\?.+\}$/);
+  assert.equal(compose.secrets.deerflow_db_password, undefined);
+  assert.equal(compose.secrets.deerflow_redis_password, undefined);
   assert.match(compose.secrets.flowise_redis_password.file, /^\$\{FLOWISE_REDIS_PASSWORD_FILE:\?.+\}$/);
   assert.match(adapterServer, /CLIENT", "LIST", "TYPE", "normal/);
   assert.match(composeText, /FLOWISE_TENANT_ISOLATION:\s*instance-per-workspace/);
@@ -247,9 +256,11 @@ test("DeerFlow runtime config uses the pinned schema and production dependencies
     true,
     "the bounded non-streaming gateway requires ChatOpenAI to fall back from DeerFlow astream to ainvoke",
   );
-  assert.equal(config.database.backend, "postgres");
-  assert.equal(config.run_events.backend, "db");
-  assert.equal(config.stream_bridge.type, "redis");
+  assert.equal(config.database.backend, "memory");
+  assert.equal(config.database.postgres_url, undefined);
+  assert.equal(config.run_events.backend, "memory");
+  assert.equal(config.stream_bridge.type, "memory");
+  assert.equal(config.stream_bridge.redis_url, undefined);
   assert.equal(config.sandbox.allow_host_bash, false);
   assert.equal(config.memory.enabled, false);
   assert.ok(config.memory.max_facts >= 10, "disabled memory still must satisfy the pinned Pydantic schema");
@@ -259,4 +270,62 @@ test("DeerFlow runtime config uses the pinned schema and production dependencies
   assert.equal(config.skills.deferred_discovery, false);
   assert.equal(config.skill_evolution.enabled, false);
   assert.equal(config.scheduler.enabled, false);
+});
+
+test("DeerFlow wait cleanup is checksum-pinned to the audited source and fails closed", () => {
+  const patcher = path.join(here, "deerflow-runtime/patch-ephemeral-wait.py");
+  const cleanupGuard = path.join(here, "deerflow-runtime/cleanup-guard.py");
+  const guardVerifier = path.join(here, "deerflow-runtime/verify-cleanup-deadline.py");
+  const runtimePolicy = path.join(here, "deerflow-runtime/runtime-policy.py");
+  const policyVerifier = path.join(here, "deerflow-runtime/verify-runtime-policy.py");
+  const fixture = path.join(here, "deerflow-runtime/testdata/runs.py.fabadae4168");
+  const dockerfile = read("deerflow-runtime/Dockerfile");
+  const compose = read("compose.yaml");
+  const flyEntrypoint = read("fly/runtime/deerflow-entrypoint.sh");
+  const patchSource = fs.readFileSync(patcher, "utf8");
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "aria-deerflow-patch-"));
+  const target = path.join(temp, "runs.py");
+  fs.copyFileSync(fixture, target);
+
+  assert.match(patchSource, /fabadae4168db81f0eaaf62f209050f978e2f691/);
+  assert.match(patchSource, /60d4a8c7d17d4336d183165464853eb24ba5a07c3b7ccf4786a170fa8ca6fa40/);
+  assert.match(dockerfile, /patch-ephemeral-wait\.py/);
+  assert.match(dockerfile, /backend\/app\/gateway\/routers\/runs\.py/);
+
+  execFileSync("python3", [patcher, target], { stdio: "pipe" });
+  execFileSync("python3", [path.join(here, "deerflow-runtime/verify-ephemeral-wait.py"), target], { stdio: "pipe" });
+  execFileSync("python3", [guardVerifier, cleanupGuard], { stdio: "pipe" });
+  execFileSync("python3", [policyVerifier, runtimePolicy], { stdio: "pipe" });
+  const patched = fs.readFileSync(target, "utf8");
+  assert.equal(createHash("sha256").update(fs.readFileSync(target)).digest("hex"),
+    "79b6601066faa937a2d0b5551f7e1a5311304f1e7b28962c1ccee72cea05d6e7");
+  assert.match(patched, /body\.on_completion == "delete"/);
+  assert.match(patched, /serialize_channel_values_for_api\(channel_values\)/);
+  assert.match(patched, /finally:\s+if body\.on_completion == "delete":\s+await _shielded_delete_temporary_wait_state\(request, record, thread_id\)/);
+  assert.ok(
+    patched.indexOf("serialize_channel_values_for_api(channel_values)") <
+      patched.indexOf("await _shielded_delete_temporary_wait_state(request, record, thread_id)"),
+    "the final state must be serialized before its exact temporary state is erased",
+  );
+  assert.match(patched, /asyncio\.shield\(cleanup_task\)/);
+  assert.match(patched, /except asyncio\.CancelledError/);
+  assert.match(patched, /os\._exit\(70\)/);
+  assert.match(patched, /run_store\.delete\(run_id\)/);
+  assert.match(patched, /event_store\.delete_by_thread\(thread_id\)/);
+  assert.match(patched, /getattr\(checkpointer, "adelete_thread"/);
+  assert.match(patched, /delete_checkpoints\(thread_id\)/);
+  assert.match(patched, /thread_store\.delete\(thread_id\)/);
+  assert.match(patched, /bridge\.cleanup\(run_id, delay=0\)/);
+  assert.match(patched, /run_mgr\.cleanup\(run_id, delay=0\)/);
+  assert.match(patched, /get_paths\(\)\.delete_thread_dir/);
+  assert.match(dockerfile, /cleanup-guard\.py \/app\/backend\/aria_cleanup_guard\.py/);
+  assert.match(dockerfile, /runtime-policy\.py \/app\/backend\/aria_runtime_policy\.py/);
+  assert.match(dockerfile, /aria-deerflow-app\.py \/app\/backend\/aria_deerflow_app\.py/);
+  assert.match(compose, /uvicorn aria_deerflow_app:app/);
+  assert.match(flyEntrypoint, /uvicorn aria_deerflow_app:app/);
+  assert.throws(
+    () => execFileSync("python3", [patcher, target], { stdio: "pipe" }),
+    /Command failed/,
+    "the patch must reject an already-patched or drifted source file",
+  );
 });

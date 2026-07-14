@@ -78,9 +78,10 @@ ok(
     route.indexOf("prodFailClosed()", postIndex) < route.indexOf("getServerSupabase()", postIndex),
 );
 ok(
-  "framework route reads only reviewed campaign, owner spec, and database framework authority",
+  "framework route reads only reviewed campaign, owner spec, receipted memory, and database framework authority",
   /projectSourcingAgentWorkspace/.test(route) && /agent_specs/.test(route) && /executeAgentFrameworkRun/.test(route) &&
-    !/loadAgentMemoryContext|resolveVaultSecret|resolveStoredTavilyKey/.test(route),
+    /loadAgentFrameworkMemoryContext/.test(route) &&
+    !/\bloadAgentMemoryContext\b|resolveVaultSecret|resolveStoredTavilyKey/.test(route),
 );
 ok("agent route delegates orchestration only to the private framework executor", !/runGraph|makeSourcingToolRunner|await\s+fetch\s*\(/.test(route));
 ok("disabled agent route never writes run history or provider outbox", !/agent_runs|agent_events|messages_outbound/.test(route));

@@ -15,16 +15,32 @@ export interface AgentFrameworkServiceTokens {
   flowiseToken: string;
 }
 
-const AdapterReadinessSchema = z.object({
+const ReadinessIdentitySchema = z.object({
   ok: z.literal(true),
-  framework: z.enum(["deerflow", "flowise"]),
-  contract: z.enum(["aria.deerflow.run.v1", "aria.flowise.import.v1"]),
+  readinessSchema: z.literal("aria.agent-framework-adapter-readiness.v2"),
   sourceCommit: z.string().regex(/^[0-9a-f]{40}$/),
   imageDigest: z.string().regex(/^[a-z0-9][a-z0-9./:_-]*@sha256:[0-9a-f]{64}$/),
   configurationSha256: z.string().regex(/^[0-9a-f]{64}$/),
   workspaceId: z.string().uuid(),
   frameworkInstanceId: z.string().uuid(),
-  isolation: z.enum(["instance-per-workspace", "licensed-enterprise-workspace"]).optional(),
+}).strict();
+
+const DeerFlowAdapterReadinessSchema = ReadinessIdentitySchema.extend({
+  framework: z.literal("deerflow"),
+  contract: z.literal("aria.deerflow.run.v1"),
+  dependencies: z.object({
+    modelGateway: z.literal(true),
+    runtimeHealth: z.literal(true),
+    modelBinding: z.literal(true),
+    assistantBinding: z.literal(true),
+    policyBundle: z.literal(true),
+  }).strict(),
+}).strict();
+
+const FlowiseAdapterReadinessSchema = ReadinessIdentitySchema.extend({
+  framework: z.literal("flowise"),
+  contract: z.literal("aria.flowise.import.v1"),
+  isolation: z.enum(["instance-per-workspace", "licensed-enterprise-workspace"]),
   dependencies: z.object({
     database: z.literal(true),
     queue: z.literal(true),
@@ -32,6 +48,11 @@ const AdapterReadinessSchema = z.object({
     policy: z.literal(true),
   }).strict(),
 }).strict();
+
+const AdapterReadinessSchema = z.discriminatedUnion("framework", [
+  DeerFlowAdapterReadinessSchema,
+  FlowiseAdapterReadinessSchema,
+]);
 
 export function agentFrameworkRuntimeFromEnvironment(): {
   config: AgentFrameworkRuntimeConfiguration;
@@ -124,7 +145,9 @@ async function probeAdapter(
       parsed.data.configurationSha256 === input.configurationSha256 &&
       parsed.data.workspaceId === input.workspaceId &&
       parsed.data.frameworkInstanceId === input.frameworkInstanceId &&
-      (input.framework !== "flowise" || parsed.data.isolation === input.isolation);
+      (input.framework !== "flowise" || (
+        parsed.data.framework === "flowise" && parsed.data.isolation === input.isolation
+      ));
   } catch (error) {
     if (error instanceof BoundedResponseError) return false;
     return false;
@@ -132,7 +155,7 @@ async function probeAdapter(
 }
 
 /** A plain upstream `/ping` is deliberately insufficient. Each adapter must
- * prove its pinned identity plus database, queue, worker, and policy health. */
+ * prove its pinned identity and its framework-specific runtime facts. */
 export async function probeAgentFrameworkAdapters(
   config: AgentFrameworkRuntimeConfiguration,
   tokens: AgentFrameworkServiceTokens,

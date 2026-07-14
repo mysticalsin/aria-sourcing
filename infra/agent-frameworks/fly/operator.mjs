@@ -10,6 +10,7 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import {
   APP_BY_ROLE,
   FLY_PLAN_SCHEMA,
+  RELEASE_DISABLED_ROLES,
   ROLE_ORDER,
   confirmationForPlan,
   createApproval,
@@ -17,6 +18,8 @@ import {
   digestJson,
   secretImportForRole,
   validateApproval,
+  validateDeerFlowRuntimeHealth,
+  validateFlySecretInventory,
   validateMachineInventory,
   validateManifest,
 } from "./operator-core.mjs";
@@ -26,7 +29,7 @@ const PROJECT_ROOT = path.resolve(HERE, "../../..");
 const RECEIPT_SCHEMA = "aria.agent-framework.fly-receipt.v1";
 const HASH = /^[0-9a-f]{64}$/;
 const SAFE_ID = /^[a-z0-9][a-z0-9-]{0,127}$/;
-const REQUIRED_FLY_CHECKS = new Set(["deerflow-db", "deerflow-redis", "flowise-db", "flowise-redis", "flowise-worker"]);
+const REQUIRED_FLY_CHECKS = new Set(["flowise-db", "flowise-redis", "flowise-worker"]);
 const MAX_JSON_BYTES = 4 * 1024 * 1024;
 const MAX_EVIDENCE_BYTES = 32 * 1024 * 1024;
 
@@ -208,13 +211,35 @@ function containsExactString(value, expected, depth = 0) {
   return false;
 }
 
-function validateAttestation(output, image, label, { sourceCommit } = {}) {
+function containsExactParameter(value, expectedKey, expectedValue, depth = 0) {
+  if (depth > 30 || !value || typeof value !== "object") return false;
+  if (Array.isArray(value)) {
+    return value.some((item) => containsExactParameter(item, expectedKey, expectedValue, depth + 1));
+  }
+  for (const [key, item] of Object.entries(value)) {
+    if ((key === expectedKey || key === `build-arg:${expectedKey}`) && item === expectedValue) return true;
+    if (containsExactParameter(item, expectedKey, expectedValue, depth + 1)) return true;
+  }
+  return false;
+}
+
+function validateAttestation(output, image, label, { sourceCommit, runtimeParameters } = {}) {
   const expectedDigest = image.split("@sha256:")[1];
   const statements = attestationStatements(output, label);
   const bound = statements.filter((statement) => statementBindsImage(statement, expectedDigest));
   if (bound.length < 1) fail(`${label} does not bind the reviewed image digest`);
   if (sourceCommit && !bound.some((statement) => containsExactString(statement.predicate, sourceCommit))) {
     fail(`${label} does not bind the reviewed source commit`);
+  }
+  if (runtimeParameters && !bound.some((statement) => {
+    const roots = [
+      statement.predicate?.invocation?.parameters,
+      statement.predicate?.buildDefinition?.externalParameters,
+    ].filter((value) => value && typeof value === "object" && !Array.isArray(value));
+    return roots.some((root) => Object.entries(runtimeParameters).every(([key, value]) =>
+      containsExactParameter(root, key, value)));
+  })) {
+    fail(`${label} does not bind the audited DeerFlow runtime provenance`);
   }
 }
 
@@ -234,7 +259,7 @@ function validateVulnerabilityScan(output) {
   if (blocked > 0) fail(`Trivy blocked ${blocked} high or critical vulnerabilities`);
 }
 
-export async function verifySupplyChainForImage(role, image, runner = runCommand) {
+export async function verifySupplyChainForImage(role, image, runner = runCommand, deerflowRuntime) {
   const identityArguments = [
     "--certificate-identity", image.certificateIdentity,
     "--certificate-oidc-issuer", image.certificateIssuer,
@@ -252,7 +277,22 @@ export async function verifySupplyChainForImage(role, image, runner = runCommand
   const provenance = await runner("cosign", [
     "verify-attestation", ...identityArguments, "--type", "slsaprovenance", "--output", "json", image.ref,
   ], { maxBytes: MAX_EVIDENCE_BYTES });
-  validateAttestation(provenance.stdout, image.ref, `${role} provenance`, { sourceCommit: image.sourceCommit });
+  const runtimeParameters = role === "deerflow" ? {
+    DEERFLOW_PATCHED_RUNS_SHA256: deerflowRuntime?.patchedRunsSha256,
+    DEERFLOW_CLEANUP_GUARD_SHA256: deerflowRuntime?.cleanupGuardSha256,
+    DEERFLOW_RUNTIME_POLICY_SHA256: deerflowRuntime?.runtimePolicySha256,
+    DEERFLOW_RUNTIME_CONFIG_SHA256: deerflowRuntime?.runtimeConfigSha256,
+    DEERFLOW_DATABASE_BACKEND: deerflowRuntime?.databaseBackend,
+    DEERFLOW_RUN_EVENTS_BACKEND: deerflowRuntime?.runEventsBackend,
+    DEERFLOW_STREAM_BRIDGE_TYPE: deerflowRuntime?.streamBridgeType,
+  } : undefined;
+  if (runtimeParameters && Object.values(runtimeParameters).some((value) => typeof value !== "string" || !value)) {
+    fail("DeerFlow runtime provenance identity is incomplete");
+  }
+  validateAttestation(provenance.stdout, image.ref, `${role} provenance`, {
+    sourceCommit: image.sourceCommit,
+    runtimeParameters,
+  });
 
   const scan = await runner("trivy", [
     "image", "--quiet", "--exit-code", "0", "--severity", "HIGH,CRITICAL", "--format", "json", image.ref,
@@ -365,6 +405,19 @@ async function publicIpInventory(app, runner = runCommand) {
   return inventory;
 }
 
+async function validateCurrentSecretInventory(role, app, manifest, runner, options) {
+  const result = await runner("flyctl", ["secrets", "list", "--app", app, "--json"]);
+  const parsed = parseJson(result.stdout, `${app} Fly secret inventory`);
+  const nestedInventory = parsed && typeof parsed === "object" ? parsed.secrets ?? parsed.Secrets : null;
+  const inventory = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(nestedInventory)
+      ? nestedInventory
+      : null;
+  if (!inventory) fail(`${app} Fly secret inventory is invalid`);
+  return validateFlySecretInventory(role, manifest, inventory, options);
+}
+
 async function validateFlyConfigs(runner = runCommand) {
   const digests = {};
   for (const role of ROLE_ORDER) {
@@ -397,9 +450,10 @@ function assertPlanMatchesManifest(plan, manifest, { requireFresh = false, now =
   }
   for (const role of ROLE_ORDER) {
     const application = plan.applications[role];
-    exactKeys(application, ["app", "config", "configSha256", "image", "sourceCommit", "supplyChain", "priorState"], `${role} plan`);
+    exactKeys(application, ["app", "config", "releaseDisabled", "configSha256", "image", "sourceCommit", "supplyChain", "priorState"], `${role} plan`);
     if (
       application.app !== APP_BY_ROLE[role] || application.config !== `${role}.toml` ||
+      application.releaseDisabled !== RELEASE_DISABLED_ROLES.includes(role) ||
       !HASH.test(application.configSha256) || application.image !== manifest.images[role].ref ||
       application.sourceCommit !== manifest.images[role].sourceCommit
     ) fail(`${role} plan binding is invalid`);
@@ -428,7 +482,12 @@ export async function prepareDeployment({ manifestFile, planFile }, dependencies
   const configSha256ByRole = await validateFlyConfigs(runner);
   const supplyChainEvidence = {};
   for (const role of ROLE_ORDER) {
-    supplyChainEvidence[role] = await verifySupplyChainForImage(role, manifest.images[role], runner);
+    supplyChainEvidence[role] = await verifySupplyChainForImage(
+      role,
+      manifest.images[role],
+      runner,
+      role === "deerflow" ? manifest.deerflowRuntime : undefined,
+    );
   }
   const apps = await organizationApps(manifest.organization, apiOptions);
   const priorState = {};
@@ -441,10 +500,15 @@ export async function prepareDeployment({ manifestFile, planFile }, dependencies
     }
     if (existing.network !== manifest.network) fail(`${app} is attached to an unreviewed Fly network`);
     await publicIpInventory(app, runner);
+    await validateCurrentSecretInventory(role, app, manifest, runner, { requireComplete: false });
+    const machines = await machineInventory(app, apiOptions);
+    if (RELEASE_DISABLED_ROLES.includes(role) && machines.length > 0) {
+      fail(`${app} is release-disabled but still has Fly machines`);
+    }
     priorState[role] = Object.freeze({
       exists: true,
       network: existing.network,
-      machines: sanitizePriorMachines(await machineInventory(app, apiOptions)),
+      machines: sanitizePriorMachines(machines),
     });
   }
   const plan = createPlan(manifest, {
@@ -519,11 +583,10 @@ async function validateFlyChecks(role, app, runner) {
 }
 
 function privateHealthCommand(role) {
-  if (role === "deerflow-db" || role === "flowise-db") {
-    const database = role === "deerflow-db" ? "deerflow" : "flowise";
-    return `sh -lc 'export PGPASSWORD="$(tr -d "\\r\\n" < /run/secrets/db_password)"; test "$(psql -h "$FLY_PRIVATE_IP" -U ${database} -d ${database} -Atqc "SELECT 1")" = "1"; printf "%s\\n" "{\\"mode\\":\\"postgres\\",\\"status\\":\\"ready\\"}"'`;
+  if (role === "flowise-db") {
+    return `sh -lc 'export PGPASSWORD="$(tr -d "\\r\\n" < /run/secrets/db_password)"; test "$(psql -h "$FLY_PRIVATE_IP" -U flowise -d flowise -Atqc "SELECT 1")" = "1"; printf "%s\\n" "{\\"mode\\":\\"postgres\\",\\"status\\":\\"ready\\"}"'`;
   }
-  if (role === "deerflow-redis" || role === "flowise-redis") {
+  if (role === "flowise-redis") {
     return "sh -lc 'export REDISCLI_AUTH=\"$(tr -d \"\\r\\n\" < /run/secrets/redis_password)\"; test \"$(redis-cli -h \"$FLY_PRIVATE_IP\" -p 6379 --no-auth-warning ping)\" = \"PONG\"; printf \"%s\\n\" \"{\\\"mode\\\":\\\"redis\\\",\\\"status\\\":\\\"ready\\\"}\"'";
   }
   if (role === "deerflow") return "python /opt/aria/private-probe.py deerflow";
@@ -540,6 +603,7 @@ async function privateHealth(role, app, machineId, manifest, runner) {
   ], { timeoutMs: 60_000 });
   const health = record(parseJson(result.stdout.trim(), `${app} private readiness`), `${app} private readiness`);
   if (health.status !== "ready") fail(`${app} private readiness failed`);
+  if (role === "deerflow") validateDeerFlowRuntimeHealth(health, manifest);
   if (role === "model-gateway" && (health.provider !== manifest.model.providerId || health.model !== manifest.model.modelId)) {
     fail(`${app} model identity does not match the manifest`);
   }
@@ -559,6 +623,7 @@ async function verifyApplication(role, manifest, plan, runner, apiOptions) {
   const apps = await organizationApps(manifest.organization, apiOptions);
   if (apps.get(app)?.network !== "default") fail(`${app} network identity changed`);
   await publicIpInventory(app, runner);
+  await validateCurrentSecretInventory(role, app, manifest, runner);
   const machine = validateMachineInventory(role, plan.applications[role].image, await machineInventory(app, apiOptions));
   await validateFlyChecks(role, app, runner);
   const health = await privateHealth(role, app, machine.machineId, manifest, runner);
@@ -569,6 +634,28 @@ async function verifyApplication(role, manifest, plan, runner, apiOptions) {
     machineId: machine.machineId,
     imageDigest: machine.imageDigest,
     health,
+  });
+}
+
+async function verifyReleaseDisabledApplication(role, manifest, plan, runner, apiOptions) {
+  const app = APP_BY_ROLE[role];
+  const apps = await organizationApps(manifest.organization, apiOptions);
+  const existing = apps.get(app);
+  if (existing) {
+    if (existing.network !== "default") fail(`${app} network identity changed`);
+    await publicIpInventory(app, runner);
+    await validateCurrentSecretInventory(role, app, manifest, runner);
+    if ((await machineInventory(app, apiOptions)).length > 0) {
+      fail(`${app} is release-disabled but still has Fly machines`);
+    }
+  }
+  return Object.freeze({
+    app,
+    network: existing?.network ?? "default",
+    noFlyProxyIps: true,
+    machineId: null,
+    imageDigest: plan.applications[role].image,
+    health: Object.freeze({ status: "release-disabled" }),
   });
 }
 
@@ -618,17 +705,27 @@ export async function deployApproved({ manifestFile, planFile, approvalFile, rec
   if (await fileExists(output)) {
     validateReceipt(await readJsonFile(output, "receipt", { privateFile: true }), manifest, plan);
     const applications = {};
-    for (const role of ROLE_ORDER) applications[role] = await verifyApplication(role, manifest, plan, runner, apiOptions);
+    for (const role of ROLE_ORDER) {
+      applications[role] = RELEASE_DISABLED_ROLES.includes(role)
+        ? await verifyReleaseDisabledApplication(role, manifest, plan, runner, apiOptions)
+        : await verifyApplication(role, manifest, plan, runner, apiOptions);
+    }
     return Object.freeze({ receipt: output, planSha256: confirmationForPlan(plan), replay: true, applications });
   }
 
   assertPlanMatchesManifest(plan, manifest, { requireFresh: true });
   const applications = {};
   for (const role of ROLE_ORDER) {
+    if (RELEASE_DISABLED_ROLES.includes(role)) {
+      applications[role] = await verifyReleaseDisabledApplication(role, manifest, plan, runner, apiOptions);
+      continue;
+    }
     await ensureApplication(role, manifest, apiOptions);
     await publicIpInventory(APP_BY_ROLE[role], runner);
+    await validateCurrentSecretInventory(role, APP_BY_ROLE[role], manifest, runner, { requireComplete: false });
     const secretInput = await secretImportForRole(role, manifest);
     await runner("flyctl", ["secrets", "import", "--stage", "--app", APP_BY_ROLE[role]], { stdin: secretInput });
+    await validateCurrentSecretInventory(role, APP_BY_ROLE[role], manifest, runner);
     await runner("flyctl", ["deploy", ...deploymentArguments(role, plan)], { timeoutMs: 12 * 60_000, maxBytes: 16 * 1024 * 1024 });
     applications[role] = await verifyApplication(role, manifest, plan, runner, apiOptions);
   }

@@ -11,21 +11,19 @@ function ok(name: string, condition: boolean) {
   }
 }
 
-const allowlistFiles = [
-  "docker/bootstrap/legacy-table-inventory.txt",
-  "docker/bootstrap/legacy-baseline-invariants.sql",
-  "scripts/backup.sh",
-  "scripts/restore-drill.sh",
-  "tests/bootstrap-contract.mts",
-  "tests/restore-drill-contract.mts",
-];
-
 const requiredTables = [
   "agent_conversations",
+  "agent_framework_run_memory_context",
   "agent_memories",
   "agent_memory_events",
   "agent_memory_legacy_quarantine",
   "agent_run_memory_context",
+  "candidate_erasure_obligations",
+  "candidate_erasure_receipts",
+  "candidate_erasure_requests",
+  "candidate_erasure_suppression_tombstones",
+  "candidate_legal_holds",
+  "email_connection_seat_mismatch_quarantine",
 ];
 
 const inventory = readFileSync("docker/bootstrap/legacy-table-inventory.txt", "utf8")
@@ -42,17 +40,16 @@ ok(
     JSON.stringify(inventory) === JSON.stringify(invariantTables),
 );
 ok(
-  "bootstrap and database proof consume the canonical inventory",
+  "bootstrap, database proof, backup, and restore consume the canonical inventory",
   readFileSync("docker/bootstrap/run.fly.sh", "utf8").includes("legacy-table-inventory.txt") &&
     readFileSync("scripts/test-db-privileges.sh", "utf8").includes("legacy-table-inventory.txt") &&
-    readFileSync("docker/bootstrap/Dockerfile.fly", "utf8").includes("legacy-table-inventory.txt"),
+    readFileSync("docker/bootstrap/Dockerfile.fly", "utf8").includes("legacy-table-inventory.txt") &&
+    readFileSync("scripts/backup.sh", "utf8").includes("legacy-table-inventory.txt") &&
+    readFileSync("scripts/restore-drill.sh", "utf8").includes("legacy-table-inventory.txt"),
 );
 
-for (const file of allowlistFiles) {
-  const source = readFileSync(file, "utf8");
-  for (const table of requiredTables) {
-    ok(`${file} binds ${table}`, source.includes(table));
-  }
+for (const table of requiredTables) {
+  ok(`canonical inventory binds ${table}`, inventory.includes(table));
 }
 
 console.log(`RESULT recovery-schema-allowlists: ${passed} passed, ${failed} failed`);

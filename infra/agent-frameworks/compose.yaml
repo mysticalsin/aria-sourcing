@@ -100,11 +100,9 @@ services:
     network_mode: none
     command: ["node", "infra/agent-frameworks/adapter/secret-preflight.mjs"]
     environment:
-      SECRET_PREFLIGHT_FILES: /run/secrets/deerflow_db_password,/run/secrets/flowise_db_password,/run/secrets/deerflow_redis_password,/run/secrets/flowise_redis_password,/run/secrets/deerflow_model_gateway_token,/run/secrets/deerflow_model_provider_api_key,/run/secrets/deerflow_internal_token,/run/secrets/deerflow_adapter_token,/run/secrets/flowise_adapter_token,/run/secrets/flowise_encryption_key,/run/secrets/flowise_jwt_auth_secret,/run/secrets/flowise_jwt_refresh_secret,/run/secrets/flowise_session_secret,/run/secrets/flowise_token_hash_secret,/run/secrets/agent_framework_capability_secret
+      SECRET_PREFLIGHT_FILES: /run/secrets/flowise_db_password,/run/secrets/flowise_redis_password,/run/secrets/deerflow_model_gateway_token,/run/secrets/deerflow_model_provider_api_key,/run/secrets/deerflow_internal_token,/run/secrets/deerflow_adapter_token,/run/secrets/flowise_adapter_token,/run/secrets/flowise_encryption_key,/run/secrets/flowise_jwt_auth_secret,/run/secrets/flowise_jwt_refresh_secret,/run/secrets/flowise_session_secret,/run/secrets/flowise_token_hash_secret,/run/secrets/agent_framework_capability_secret
     secrets:
-      - deerflow_db_password
       - flowise_db_password
-      - deerflow_redis_password
       - flowise_redis_password
       - deerflow_model_gateway_token
       - deerflow_model_provider_api_key
@@ -139,11 +137,9 @@ services:
     network_mode: none
     command: ["node", "infra/agent-frameworks/adapter/secret-preflight.mjs"]
     environment:
-      SECRET_PREFLIGHT_FILES: /run/secrets/deerflow_db_password,/run/secrets/flowise_db_password,/run/secrets/deerflow_redis_password,/run/secrets/flowise_redis_password,/run/secrets/deerflow_model_gateway_token,/run/secrets/deerflow_model_provider_api_key,/run/secrets/deerflow_internal_token,/run/secrets/deerflow_adapter_token,/run/secrets/flowise_adapter_token,/run/secrets/flowise_api_key,/run/secrets/flowise_encryption_key,/run/secrets/flowise_jwt_auth_secret,/run/secrets/flowise_jwt_refresh_secret,/run/secrets/flowise_session_secret,/run/secrets/flowise_token_hash_secret,/run/secrets/agent_framework_capability_secret
+      SECRET_PREFLIGHT_FILES: /run/secrets/flowise_db_password,/run/secrets/flowise_redis_password,/run/secrets/deerflow_model_gateway_token,/run/secrets/deerflow_model_provider_api_key,/run/secrets/deerflow_internal_token,/run/secrets/deerflow_adapter_token,/run/secrets/flowise_adapter_token,/run/secrets/flowise_api_key,/run/secrets/flowise_encryption_key,/run/secrets/flowise_jwt_auth_secret,/run/secrets/flowise_jwt_refresh_secret,/run/secrets/flowise_session_secret,/run/secrets/flowise_token_hash_secret,/run/secrets/agent_framework_capability_secret
     secrets:
-      - deerflow_db_password
       - flowise_db_password
-      - deerflow_redis_password
       - flowise_redis_password
       - deerflow_model_gateway_token
       - deerflow_model_provider_api_key
@@ -166,36 +162,6 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    logging: *bounded_logging
-
-  deerflow-db:
-    image: "${DEERFLOW_POSTGRES_IMAGE_REPOSITORY:?Set the DeerFlow Postgres image repository}@sha256:${DEERFLOW_POSTGRES_IMAGE_SHA256:?Set its 64-hex image digest}"
-    restart: unless-stopped
-    command: ["postgres", "-c", "max_connections=100", "-c", "shared_buffers=256MB", "-c", "work_mem=4MB"]
-    mem_limit: 1g
-    cpus: 1.0
-    pids_limit: 256
-    environment:
-      POSTGRES_DB: deerflow
-      POSTGRES_USER: deerflow
-      POSTGRES_PASSWORD_FILE: /run/secrets/deerflow_db_password
-    secrets:
-      - deerflow_db_password
-    depends_on:
-      framework-secrets-preflight:
-        condition: service_completed_successfully
-    volumes:
-      - deerflow_db_data:/var/lib/postgresql/data
-    networks:
-      - framework_private
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U deerflow -d deerflow"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 20s
-    security_opt:
-      - no-new-privileges:true
     logging: *bounded_logging
 
   flowise-db:
@@ -226,49 +192,6 @@ services:
       start_period: 20s
     security_opt:
       - no-new-privileges:true
-    logging: *bounded_logging
-
-  deerflow-redis:
-    image: "${REDIS_IMAGE_REPOSITORY:?Set the Redis image repository}@sha256:${REDIS_IMAGE_SHA256:?Set its 64-hex image digest}"
-    restart: unless-stopped
-    user: "999:999"
-    mem_limit: 512m
-    cpus: 0.5
-    pids_limit: 128
-    entrypoint: ["/bin/sh", "-ec"]
-    command:
-      - |
-        umask 077
-        password="$$(cat /run/secrets/deerflow_redis_password)"
-        [ "$${#password}" -ge 32 ]
-        case "$$password" in *[!A-Za-z0-9_-]*) exit 64 ;; esac
-        {
-          printf 'appendonly yes\nappendfsync everysec\n'
-          printf 'requirepass %s\n' "$$password"
-          printf 'maxmemory 384mb\nmaxmemory-policy noeviction\n'
-        } > /run/redis/redis.conf
-        exec redis-server /run/redis/redis.conf
-    secrets:
-      - deerflow_redis_password
-    depends_on:
-      framework-secrets-preflight:
-        condition: service_completed_successfully
-    volumes:
-      - deerflow_redis_data:/data
-    networks:
-      - framework_private
-    healthcheck:
-      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /run/secrets/deerflow_redis_password)\" redis-cli --no-auth-warning ping | grep -qx PONG"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    tmpfs:
-      - /run/redis:rw,noexec,nosuid,nodev,uid=999,gid=999,mode=0700
     logging: *bounded_logging
 
   flowise-redis:
@@ -375,25 +298,26 @@ services:
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
-        db_password="$$(python -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))' < /run/secrets/deerflow_db_password)"
-        redis_password="$$(python -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))' < /run/secrets/deerflow_redis_password)"
-        export DEERFLOW_DATABASE_URL="postgresql://deerflow:$${db_password}@deerflow-db:5432/deerflow"
-        export DEERFLOW_STREAM_BRIDGE_REDIS_URL="redis://default:$${redis_password}@deerflow-redis:6379/0"
         export DEERFLOW_MODEL_API_KEY="$$(cat /run/secrets/deerflow_model_gateway_token)"
         export DEER_FLOW_INTERNAL_AUTH_TOKEN="$$(cat /run/secrets/deerflow_internal_token)"
+        unset DATABASE_URL DEERFLOW_DATABASE_URL DEERFLOW_DATABASE_HOST DEERFLOW_DATABASE_PASSWORD DEERFLOW_DATABASE_PASSWORD_FILE DEER_FLOW_STREAM_BRIDGE_REDIS_URL DEERFLOW_STREAM_BRIDGE_REDIS_URL DEERFLOW_STREAM_BRIDGE_REDIS_HOST REDIS_URL DEERFLOW_REDIS_PASSWORD DEERFLOW_REDIS_PASSWORD_FILE ARIA_DB_PASSWORD_B64 ARIA_REDIS_PASSWORD_B64 LANGSMITH_API_KEY LANGCHAIN_API_KEY LANGFUSE_PUBLIC_KEY LANGFUSE_SECRET_KEY LANGFUSE_BASE_URL MONOCLE_EXPORTERS OKAHU_API_KEY
+        export LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false LANGCHAIN_TRACING=false LANGFUSE_TRACING=false MONOCLE_TRACING=false
         cd /app/backend
-        exec env PYTHONPATH=. uv run --no-sync uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001 --workers 1
+        exec env PYTHONPATH=. uv run --no-sync uvicorn aria_deerflow_app:app --host 0.0.0.0 --port 8001 --workers 1
     environment:
       DEER_FLOW_CONFIG_PATH: /opt/aria/deerflow/config.yaml
       DEER_FLOW_HOME: /var/lib/deerflow
       DEERFLOW_MODEL_ID: "${DEERFLOW_MODEL_ID:?Set the exact provider model identifier}"
       DEERFLOW_MODEL_BASE_URL: http://model-gateway.service.internal:8090/v1
+      LANGSMITH_TRACING: "false"
+      LANGCHAIN_TRACING_V2: "false"
+      LANGCHAIN_TRACING: "false"
+      LANGFUSE_TRACING: "false"
+      MONOCLE_TRACING: "false"
       PYTHONDONTWRITEBYTECODE: "1"
       UV_CACHE_DIR: /tmp/uv-cache
       HOME: /tmp
     secrets:
-      - deerflow_db_password
-      - deerflow_redis_password
       - deerflow_model_gateway_token
       - deerflow_internal_token
     volumes:
@@ -408,10 +332,6 @@ services:
     depends_on:
       framework-secrets-preflight:
         condition: service_completed_successfully
-      deerflow-db:
-        condition: service_healthy
-      deerflow-redis:
-        condition: service_healthy
       model-gateway:
         condition: service_healthy
     healthcheck:
@@ -548,10 +468,6 @@ services:
       AGENT_FRAMEWORK_CAPABILITY_SECRET_FILE: /run/secrets/agent_framework_capability_secret
       FLOWISE_IMAGE_DIGEST: "${FLOWISE_IMAGE_REPOSITORY:?Set the promoted Flowise image repository}@sha256:${FLOWISE_IMAGE_SHA256:?Set its 64-hex image digest}"
       FLOWISE_TENANT_ISOLATION: instance-per-workspace
-      REDIS_PASSWORD_FILE: /run/secrets/deerflow_redis_password
-      REDIS_HOST: deerflow-redis
-      REDIS_PORT: "6379"
-      REDIS_DB: "0"
       DEERFLOW_POLICY_REFERENCE_DIR: /opt/aria/policy/reference
       DEERFLOW_POLICY_RUNTIME_DIR: /opt/aria/policy/runtime
     volumes:
@@ -563,7 +479,6 @@ services:
       - deerflow_internal_token
       - deerflow_model_gateway_token
       - agent_framework_capability_secret
-      - deerflow_redis_password
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,uid=1000,gid=1000,mode=0700
     networks:
@@ -574,8 +489,6 @@ services:
       deerflow:
         condition: service_healthy
       model-gateway:
-        condition: service_healthy
-      deerflow-redis:
         condition: service_healthy
     stop_grace_period: 15s
     pids_limit: 128
@@ -649,18 +562,12 @@ networks:
     driver: bridge
 
 volumes:
-  deerflow_db_data:
   flowise_db_data:
-  deerflow_redis_data:
   flowise_redis_data:
 
 secrets:
-  deerflow_db_password:
-    file: "${DEERFLOW_DB_PASSWORD_FILE:?Set the host path to the DeerFlow database-password secret}"
   flowise_db_password:
     file: "${FLOWISE_DB_PASSWORD_FILE:?Set the host path to the Flowise database-password secret}"
-  deerflow_redis_password:
-    file: "${DEERFLOW_REDIS_PASSWORD_FILE:?Set the host path to the DeerFlow Redis-password secret}"
   flowise_redis_password:
     file: "${FLOWISE_REDIS_PASSWORD_FILE:?Set the host path to the Flowise Redis-password secret}"
   deerflow_model_gateway_token:

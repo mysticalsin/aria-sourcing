@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 
 import { executeAgentFrameworkRun } from "../src/lib/agents/framework/execution";
 import {
@@ -42,6 +43,9 @@ const workflow = {
   ],
 };
 
+const memoryContent = "Prefer reviewed TypeScript community signals.";
+const memoryContentSha256 = createHash("sha256").update(memoryContent, "utf8").digest("hex");
+
 function responseAt(url: string, body: unknown): Response {
   const response = Response.json(body);
   Object.defineProperty(response, "url", { value: url });
@@ -51,13 +55,19 @@ function responseAt(url: string, body: unknown): Response {
 function harness(overrides?: {
   configurationSha256?: string;
   mutationStatus?: string;
+  egressAuthorizeStatus?: string;
+  egressExpiresAt?: string;
+  egressReleaseStatus?: string;
   recovery?: boolean;
+  recoveryReports?: unknown;
   workflow?: typeof workflow | { version: 1; name: string; nodes: Array<{ id: string; kind: "report" }>; edges: [] };
 }) {
   const calls: string[] = [];
+  const rpcArgs: Array<{ name: string; args: Record<string, unknown> }> = [];
   const client: FrameworkRpcClient = {
-    async rpc(name) {
+    async rpc(name, args) {
       calls.push(name);
+      rpcArgs.push({ name, args });
       if (name === "claim_agent_framework_run") {
         if (overrides?.recovery) {
           return {
@@ -68,6 +78,9 @@ function harness(overrides?: {
               run_status: "proposed",
               source_query: "language:typescript location:montreal",
               sourcing_count: 5,
+              reports: Object.prototype.hasOwnProperty.call(overrides, "recoveryReports")
+                ? overrides?.recoveryReports
+                : ["Run the exact reviewed campaign query."],
             },
           };
         }
@@ -94,6 +107,25 @@ function harness(overrides?: {
           },
         };
       }
+      if (name === "authorize_agent_framework_memory_egress") {
+        return {
+          error: null,
+          data: overrides?.egressAuthorizeStatus === undefined
+            ? {
+                status: "authorized",
+                egress_lease_id: "b0000000-0000-4000-8000-000000000001",
+                expires_at: overrides?.egressExpiresAt ?? "2099-07-14T20:01:15.000Z",
+                replayed: false,
+              }
+            : { status: overrides.egressAuthorizeStatus },
+        };
+      }
+      if (name === "release_agent_framework_memory_egress") {
+        return {
+          error: null,
+          data: { status: overrides?.egressReleaseStatus ?? "released" },
+        };
+      }
       const defaultStatus = name === "record_agent_framework_step_receipt"
         ? "recorded"
         : name === "complete_agent_framework_run"
@@ -102,7 +134,7 @@ function harness(overrides?: {
       return { data: { status: overrides?.mutationStatus ?? defaultStatus }, error: null };
     },
   };
-  return { client, calls };
+  return { client, calls, rpcArgs };
 }
 
 const baseInput = {
@@ -132,6 +164,21 @@ const baseInput = {
     industryExperience: ["SaaS"],
   },
   sourcingCount: 5,
+  loadMemoryContext: async () => ({
+    items: [{
+      memoryId: "a0000000-0000-4000-8000-000000000001",
+      kind: "preference",
+      content: memoryContent,
+    }],
+    receipts: [{
+      memoryId: "a0000000-0000-4000-8000-000000000001",
+      memoryRevision: 2,
+      contentSha256: memoryContentSha256,
+      position: 0,
+      byteCount: 45,
+    }],
+    totalBytes: 45,
+  }),
 };
 
 function proposal(query = "language:typescript location:montreal") {
@@ -153,17 +200,28 @@ function proposal(query = "language:typescript location:montreal") {
 }
 
 await test("DeerFlow executes an approved Flowise workflow and can request only exact reviewed sourcing", async () => {
-  const { client, calls } = harness();
+  const { client, calls, rpcArgs } = harness();
+  let authorityChecks = 0;
   const result = await executeAgentFrameworkRun({
     ...baseInput,
     client,
-    revalidateAuthority: async () => true,
+    revalidateAuthority: async () => {
+      authorityChecks += 1;
+      return true;
+    },
     fetcher: async (input, init) => {
+      assert.equal(calls.at(-1), "authorize_agent_framework_memory_egress");
       assert.equal(String(input), "https://deerflow.service.internal/v1/aria/runs");
       const body = JSON.parse(String(init?.body));
       assert.deepEqual(body.workflow, workflow);
       assert.equal(body.need.title, "Staff Backend Engineer");
       assert.deepEqual(body.reviewedQueries, [{ platform: "GitHub", query: "language:typescript location:montreal" }]);
+      assert.deepEqual(body.agentMemory.items, [{
+        kind: "preference",
+        content: "Prefer reviewed TypeScript community signals.",
+      }]);
+      assert.equal(body.agentMemory.policy, "untrusted-reference-v1");
+      assert.match(body.agentMemory.receiptSha256, /^[0-9a-f]{64}$/);
       assert.equal(body.flowiseInstanceId, "50000000-0000-4000-8000-000000000005");
       assert.equal(JSON.stringify(body).includes("candidate"), false);
       return responseAt(String(input), proposal());
@@ -181,7 +239,18 @@ await test("DeerFlow executes an approved Flowise workflow and can request only 
     reports: ["Run the exact reviewed campaign query."],
   });
   assert.equal(calls.filter((name) => name === "record_agent_framework_step_receipt").length, 3);
+  assert.equal(calls.filter((name) => name === "release_agent_framework_memory_egress").length, 1);
   assert.equal(calls.at(-1), "complete_agent_framework_run");
+  const completion = rpcArgs.at(-1);
+  assert.equal(completion?.name, "complete_agent_framework_run");
+  assert.equal(completion?.args.p_run_id, "10000000-0000-4000-8000-000000000001");
+  assert.equal(completion?.args.p_lease_id, "20000000-0000-4000-8000-000000000002");
+  assert.match(String(completion?.args.p_proposal_sha256), /^[0-9a-f]{64}$/);
+  assert.match(String(completion?.args.p_sourcing_capability_sha256), /^[0-9a-f]{64}$/);
+  assert.equal(completion?.args.p_sourcing_count, 5);
+  assert.equal(completion?.args.p_source_query, "language:typescript location:montreal");
+  assert.deepEqual(completion?.args.p_reports, ["Run the exact reviewed campaign query."]);
+  assert.equal(authorityChecks, 3, "authority must be checked before memory, before egress, and after response");
 });
 
 await test("lost framework responses recover the same deterministic sourcing authority without adapter egress", async () => {
@@ -209,8 +278,54 @@ await test("lost framework responses recover the same deterministic sourcing aut
   assert.equal(replay.ok, true);
   if (!replay.ok) throw new Error("expected framework recovery success");
   assert.equal(fetched, false);
-  assert.equal(replay.sourcingCapabilityToken, initial.sourcingCapabilityToken);
-  assert.equal(replay.sourceQuery, initial.sourceQuery);
+  assert.deepEqual(replay, initial);
+  assert.deepEqual(recovered.calls, ["claim_agent_framework_run"]);
+});
+
+await test("memory plaintext drift fails before adapter egress and records the run failure", async () => {
+  const { client, calls } = harness();
+  const tamperedMemoryContent = "Prefer reviewed JavaScript community signals.";
+  let fetched = false;
+  const result = await executeAgentFrameworkRun({
+    ...baseInput,
+    client,
+    loadMemoryContext: async () => ({
+      items: [{
+        memoryId: "a0000000-0000-4000-8000-000000000001",
+        kind: "preference",
+        content: tamperedMemoryContent,
+      }],
+      receipts: [{
+        memoryId: "a0000000-0000-4000-8000-000000000001",
+        memoryRevision: 2,
+        contentSha256: memoryContentSha256,
+        position: 0,
+        byteCount: Buffer.byteLength(tamperedMemoryContent, "utf8"),
+      }],
+      totalBytes: Buffer.byteLength(tamperedMemoryContent, "utf8"),
+    }),
+    revalidateAuthority: async () => true,
+    fetcher: async () => {
+      fetched = true;
+      return responseAt("https://deerflow.service.internal/v1/aria/runs", proposal());
+    },
+  });
+  assert.deepEqual(result, { ok: false, code: "framework_unavailable" });
+  assert.equal(fetched, false);
+  assert.deepEqual(calls, ["claim_agent_framework_run", "fail_agent_framework_run"]);
+});
+
+await test("completed-run recovery fails closed when the durable reports are malformed", async () => {
+  const recovered = harness({ recovery: true, recoveryReports: [""] });
+  const result = await executeAgentFrameworkRun({
+    ...baseInput,
+    client: recovered.client,
+    revalidateAuthority: async () => true,
+    fetcher: async () => {
+      throw new Error("invalid recovery must not call DeerFlow");
+    },
+  });
+  assert.deepEqual(result, { ok: false, code: "authority_unavailable" });
   assert.deepEqual(recovered.calls, ["claim_agent_framework_run"]);
 });
 
@@ -298,15 +413,133 @@ await test("database and environment provenance mismatch fails before adapter eg
   assert.equal(calls.at(-1), "fail_agent_framework_run");
 });
 
-await test("authority revocation during DeerFlow work blocks every receipt and effect", async () => {
+await test("authority revocation before memory selection blocks plaintext access and adapter egress", async () => {
   const { client, calls } = harness();
+  let loadedMemory = false;
+  let fetched = false;
   const result = await executeAgentFrameworkRun({
     ...baseInput,
     client,
+    loadMemoryContext: async (...args) => {
+      loadedMemory = true;
+      return baseInput.loadMemoryContext(...args);
+    },
     revalidateAuthority: async () => false,
+    fetcher: async () => {
+      fetched = true;
+      return responseAt("https://deerflow.service.internal/v1/aria/runs", proposal());
+    },
+  });
+  assert.deepEqual(result, { ok: false, code: "authority_changed" });
+  assert.equal(loadedMemory, false);
+  assert.equal(fetched, false);
+  assert.equal(calls.at(-1), "fail_agent_framework_run");
+});
+
+await test("authority revocation after memory selection blocks plaintext adapter egress", async () => {
+  const { client, calls } = harness();
+  let authorityChecks = 0;
+  let loadedMemory = false;
+  let fetched = false;
+  const result = await executeAgentFrameworkRun({
+    ...baseInput,
+    client,
+    loadMemoryContext: async (...args) => {
+      loadedMemory = true;
+      return baseInput.loadMemoryContext(...args);
+    },
+    revalidateAuthority: async () => {
+      authorityChecks += 1;
+      return authorityChecks === 1;
+    },
+    fetcher: async () => {
+      fetched = true;
+      return responseAt("https://deerflow.service.internal/v1/aria/runs", proposal());
+    },
+  });
+  assert.deepEqual(result, { ok: false, code: "authority_changed" });
+  assert.equal(loadedMemory, true);
+  assert.equal(fetched, false);
+  assert.equal(calls.at(-1), "fail_agent_framework_run");
+});
+
+await test("authority revocation during DeerFlow work blocks every receipt and effect", async () => {
+  const { client, calls } = harness();
+  let authorityChecks = 0;
+  const result = await executeAgentFrameworkRun({
+    ...baseInput,
+    client,
+    revalidateAuthority: async () => {
+      authorityChecks += 1;
+      return authorityChecks < 3;
+    },
     fetcher: async (input) => responseAt(String(input), proposal()),
   });
   assert.deepEqual(result, { ok: false, code: "authority_changed" });
+  assert.equal(calls.includes("record_agent_framework_step_receipt"), false);
+  assert.equal(calls.at(-1), "fail_agent_framework_run");
+});
+
+await test("memory egress authorization failure blocks plaintext before adapter egress", async () => {
+  const { client, calls } = harness({ egressAuthorizeStatus: "memory_changed" });
+  let fetched = false;
+  const result = await executeAgentFrameworkRun({
+    ...baseInput,
+    client,
+    revalidateAuthority: async () => true,
+    fetcher: async () => {
+      fetched = true;
+      return responseAt("https://deerflow.service.internal/v1/aria/runs", proposal());
+    },
+  });
+  assert.deepEqual(result, { ok: false, code: "authority_changed" });
+  assert.equal(fetched, false);
+  assert.equal(calls.includes("release_agent_framework_memory_egress"), false);
+  assert.equal(calls.at(-1), "fail_agent_framework_run");
+});
+
+await test("a near-expiry memory egress authorization blocks plaintext before adapter egress", async () => {
+  const { client, calls } = harness({
+    egressExpiresAt: new Date(Date.now() + 30_000).toISOString(),
+  });
+  let fetched = false;
+  const result = await executeAgentFrameworkRun({
+    ...baseInput,
+    client,
+    revalidateAuthority: async () => true,
+    fetcher: async () => {
+      fetched = true;
+      return responseAt("https://deerflow.service.internal/v1/aria/runs", proposal());
+    },
+  });
+  assert.deepEqual(result, { ok: false, code: "framework_unavailable" });
+  assert.equal(fetched, false);
+  assert.equal(calls.includes("release_agent_framework_memory_egress"), false);
+  assert.equal(calls.at(-1), "fail_agent_framework_run");
+});
+
+await test("memory egress lease release failure prevents proposal receipts and effects", async () => {
+  const { client, calls } = harness({ egressReleaseStatus: "authority_unavailable" });
+  const result = await executeAgentFrameworkRun({
+    ...baseInput,
+    client,
+    revalidateAuthority: async () => true,
+    fetcher: async (input) => responseAt(String(input), proposal()),
+  });
+  assert.deepEqual(result, { ok: false, code: "framework_unavailable" });
+  assert.equal(calls.includes("record_agent_framework_step_receipt"), false);
+  assert.equal(calls.at(-1), "fail_agent_framework_run");
+});
+
+await test("an expired memory egress lease prevents proposal receipts and effects", async () => {
+  const { client, calls } = harness({ egressReleaseStatus: "lease_expired" });
+  const result = await executeAgentFrameworkRun({
+    ...baseInput,
+    client,
+    revalidateAuthority: async () => true,
+    fetcher: async (input) => responseAt(String(input), proposal()),
+  });
+  assert.deepEqual(result, { ok: false, code: "framework_unavailable" });
   assert.equal(calls.includes("record_agent_framework_step_receipt"), false);
   assert.equal(calls.at(-1), "fail_agent_framework_run");
 });

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
+import { classifySameOriginJsonRequest } from "@/lib/api/same-origin-json";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { safeLog } from "@/lib/log-redact";
 import { can } from "@/lib/rbac";
@@ -29,7 +30,18 @@ const SuppressSchema = z.object({
   expiresAt: z.string().datetime().nullable().optional(),
 });
 
+function rejectUnsafeMutation(req: NextRequest): NextResponse | null {
+  const result = classifySameOriginJsonRequest(req);
+  if (result === "ok") return null;
+  return NextResponse.json(
+    { ok: false, code: result, error: "The request origin or media type is not allowed." },
+    { status: result === "unsupported_media_type" ? 415 : 403 },
+  );
+}
+
 export async function POST(req: NextRequest) {
+  const unsafe = rejectUnsafeMutation(req);
+  if (unsafe) return unsafe;
   const prodBlock = prodFailClosed();
   if (prodBlock) return prodBlock;
 
@@ -51,7 +63,7 @@ export async function POST(req: NextRequest) {
 
   const supabase = await getServerSupabase();
   if (!supabase) {
-    return NextResponse.json({ ok: true, synced: false, detail: "No Supabase client: not synced." });
+    return NextResponse.json({ ok: false, error: "Compliance storage is unavailable." }, { status: 503 });
   }
 
   const {
@@ -104,6 +116,8 @@ export async function POST(req: NextRequest) {
  * the original suppress.
  */
 export async function DELETE(req: NextRequest) {
+  const unsafe = rejectUnsafeMutation(req);
+  if (unsafe) return unsafe;
   const prodBlock = prodFailClosed();
   if (prodBlock) return prodBlock;
 
@@ -122,7 +136,7 @@ export async function DELETE(req: NextRequest) {
 
   const supabase = await getServerSupabase();
   if (!supabase) {
-    return NextResponse.json({ ok: true, synced: false, detail: "No Supabase client: not synced." });
+    return NextResponse.json({ ok: false, error: "Compliance storage is unavailable." }, { status: 503 });
   }
 
   const {

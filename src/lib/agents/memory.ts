@@ -164,16 +164,18 @@ export function applyAgentMemoryContext(
   };
 }
 
-export async function loadAgentMemoryContext(
+async function loadReceiptedAgentMemoryContext(
   service: Pick<SupabaseClient, "from">,
   scope: AgentMemoryScope,
   runId: string,
+  receiptTable: "agent_run_memory_context" | "agent_framework_run_memory_context",
+  runColumn: "run_id" | "framework_run_id",
   now = new Date(),
 ): Promise<AgentMemoryContext> {
   const { data: receiptData, error: receiptError } = await service
-    .from("agent_run_memory_context")
+    .from(receiptTable)
     .select("memory_id,memory_revision,content_sha256,position,byte_count")
-    .eq("run_id", runId)
+    .eq(runColumn, runId)
     .eq("workspace_id", scope.workspaceId)
     .eq("owner_id", scope.ownerId)
     .eq("spec_id", scope.specId)
@@ -210,6 +212,39 @@ export async function loadAgentMemoryContext(
     throw new Error("Agent memory decryption key is unavailable.");
   }
   return buildReceiptedAgentMemoryContext(rows, receipts);
+}
+
+export async function loadAgentMemoryContext(
+  service: Pick<SupabaseClient, "from">,
+  scope: AgentMemoryScope,
+  runId: string,
+  now = new Date(),
+): Promise<AgentMemoryContext> {
+  return loadReceiptedAgentMemoryContext(
+    service,
+    scope,
+    runId,
+    "agent_run_memory_context",
+    "run_id",
+    now,
+  );
+}
+
+/** Reconstruct only the memory snapshot atomically receipted by a framework claim. */
+export async function loadAgentFrameworkMemoryContext(
+  service: Pick<SupabaseClient, "from">,
+  scope: AgentMemoryScope,
+  frameworkRunId: string,
+  now = new Date(),
+): Promise<AgentMemoryContext> {
+  return loadReceiptedAgentMemoryContext(
+    service,
+    scope,
+    frameworkRunId,
+    "agent_framework_run_memory_context",
+    "framework_run_id",
+    now,
+  );
 }
 
 export async function createAgentRunWithMemoryContext(

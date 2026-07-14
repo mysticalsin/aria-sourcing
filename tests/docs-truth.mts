@@ -19,6 +19,8 @@ const readme = source("README.md");
 const envLocal = source(".env.local.example");
 const documentationMap = source("docs/README.md");
 const deploymentRunbook = source("production-readiness/DEPLOYMENT_RUNBOOK.md");
+const architecture = source("docs/ARCHITECTURE.md");
+const releaseWorkflow = source(".github/workflows/deploy-aria-mantu.yml");
 const dockerGuide = source("DOCKER.md");
 const dockerCompose = source("docker-compose.yml");
 const supabaseSetup = source("SUPABASE_SETUP.md");
@@ -55,22 +57,60 @@ ok(
   Number.isFinite(statusDateMs) && ageDays >= -1 && ageDays <= 31,
 );
 
+function workflowComponents(name: string): string[] {
+  const encoded = releaseWorkflow.match(
+    new RegExp(`const ${name} = (\\[[^;]+\\]);`),
+  )?.[1];
+  if (!encoded) return [];
+  const parsed = JSON.parse(encoded) as unknown;
+  return Array.isArray(parsed) && parsed.every((value) => typeof value === "string")
+    ? parsed
+    : [];
+}
+
+const scannedComponents = workflowComponents("scannedComponents");
+const attestedComponents = workflowComponents("attestedComponents");
+const supplyChainDocs = [readme, status, deploymentRunbook, architecture];
+ok(
+  "release docs derive scanned and locally attested image totals from the workflow",
+  scannedComponents.length > 0
+    && attestedComponents.length > 0
+    && supplyChainDocs.every((document) =>
+      document.includes(`${scannedComponents.length} images`)
+      && document.includes(`${attestedComponents.length} local`)
+      && document.includes("Graphify")),
+);
+
+const legacyTableInventory = source("docker/bootstrap/legacy-table-inventory.txt")
+  .split(/\r?\n/)
+  .map((line) => line.trim())
+  .filter(Boolean);
+ok(
+  "runbook derives legacy table coverage from the canonical inventory",
+  legacyTableInventory.length > 0
+    && deploymentRunbook.includes("docker/bootstrap/legacy-table-inventory.txt")
+    && !/\b\d+\s+(?:reviewed public\s+)?application tables\b/i.test(deploymentRunbook),
+);
+
 const packageJson = JSON.parse(source("package.json")) as {
   description?: string;
   scripts?: Record<string, string>;
 };
 const countCommands = (script: string | undefined) => script?.split(/\s+&&\s+/).length ?? 0;
 const canonicalTestCommands =
-  countCommands(packageJson.scripts?.pretest) + countCommands(packageJson.scripts?.test);
+  countCommands(packageJson.scripts?.pretest)
+  + countCommands(packageJson.scripts?.test)
+  + countCommands(packageJson.scripts?.posttest);
 const pretestCommands = countCommands(packageJson.scripts?.pretest);
 const testCommands = countCommands(packageJson.scripts?.test);
+const posttestCommands = countCommands(packageJson.scripts?.posttest);
 ok(
-  "STATUS.md reports the package-derived canonical test command count",
-  canonicalTestCommands > 0 && status.includes(`${canonicalTestCommands} chained checks`),
+  "STATUS.md reports the package-derived top-level lifecycle command count",
+  canonicalTestCommands > 0 && status.includes(`${canonicalTestCommands} top-level lifecycle commands`),
 );
 ok(
-  "README reports the package-derived canonical test command count",
-  canonicalTestCommands > 0 && readme.includes(`${canonicalTestCommands} chained checks`),
+  "README reports the package-derived top-level lifecycle command count",
+  canonicalTestCommands > 0 && readme.includes(`${canonicalTestCommands} top-level lifecycle commands`),
 );
 ok(
   "package description names the current product instead of the old mock MVP",
@@ -125,7 +165,9 @@ ok(
 
 ok(
   "deployment runbook reports the package-derived pretest and test command counts",
-  deploymentRunbook.includes(`${pretestCommands} pretest + ${testCommands} test commands`),
+  deploymentRunbook.includes(
+    `${pretestCommands} pretest + ${testCommands} test + ${posttestCommands} posttest commands`,
+  ),
 );
 const migrationFiles = readdirSync(new URL("../supabase/migrations/", import.meta.url))
   .filter((file) => /^\d{4}_.+\.sql$/.test(file))

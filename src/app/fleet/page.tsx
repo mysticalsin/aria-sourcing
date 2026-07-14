@@ -32,6 +32,7 @@ import {
   useRole,
 } from "@/lib/store";
 import { can } from "@/lib/rbac";
+import { supabaseEnabled } from "@/lib/supabase/config";
 import { SEAT_PROVIDERS, SEAT_STATUSES, type SeatProvider, type SeatStatus, type AllocationResult } from "@/lib/types";
 import {
   Bot,
@@ -126,13 +127,21 @@ export default function FleetPage() {
       toast({ title: "Admins only", description: "Only an admin can deploy agents.", variant: "warning" });
       return;
     }
+    if (supabaseEnabled) {
+      toast({
+        title: "Verified accounts required",
+        description: "Use Add one to bind each live agent to its real operator mailbox.",
+        variant: "warning",
+      });
+      return;
+    }
     const n = Math.max(1, Math.min(Number(deployN) || 0, maxAgents));
     const res = actions.deployAgents(n);
     toast({
-      title: res.created > 0 ? `Deployed ${res.created} agents` : "Fleet at capacity",
+      title: res.created > 0 ? `Generated ${res.created} demo agents` : "Demo fleet at capacity",
       description:
         res.created > 0
-          ? `Fleet now ${res.total}/${res.max}. Each obeys official limits + shared guardrails.${res.capped ? " (capped at max)" : ""}`
+          ? `Synthetic demo fleet now ${res.total}/${res.max}. No mailbox or live sender was provisioned.${res.capped ? " (capped at max)" : ""}`
           : `Already at the ${res.max}-agent ceiling.`,
       variant: res.created > 0 ? "success" : "warning",
     });
@@ -160,24 +169,58 @@ export default function FleetPage() {
   const scopeLabel =
     campaigns.find((c) => c.id === scopeId)?.title ?? "the whole fleet";
 
-  function handleRunSourcing() {
+  async function handleRunSourcing() {
+    if (sourcing) return;
+    if (!campaignId) {
+      toast({
+        title: "Select a campaign",
+        description: "Select one reviewed campaign before sourcing.",
+        variant: "warning",
+      });
+      return;
+    }
+    const selectedCampaign = campaigns.find((campaign) => campaign.id === campaignId);
+    if (!selectedCampaign) {
+      toast({
+        title: "Campaign unavailable",
+        description: "The selected campaign is no longer available. Choose another campaign.",
+        variant: "error",
+      });
+      return;
+    }
+
     setSourcing(true);
-    const result = actions.runFleetSourcing({ campaignId });
-    setSourcing(false);
-    const lines = result.perSeat
-      .filter((p) => p.sourced > 0)
-      .map((p) => `${p.seatName}: +${p.sourced} (${p.campaignTitle})`);
-    toast({
-      title:
-        result.sourced > 0
-          ? `Sourced ${result.sourced} new candidate${result.sourced === 1 ? "" : "s"}`
-          : "No new candidates this run",
-      description:
-        result.sourced > 0
-          ? `${lines.join(" · ")}${result.skipped ? ` (${result.skipped} skipped)` : ""}`
-          : "Every active agent is at capacity or this scope is exhausted. Add an agent or widen the campaign scope.",
-      variant: result.sourced > 0 ? "success" : "warning",
-    });
+    try {
+      const result = await actions.sourceNextBatch(campaignId);
+      if (!result.ok) {
+        toast({
+          title: result.source === "paused" ? "Campaign is paused" : "Sourcing failed",
+          description: result.error,
+          variant: "error",
+        });
+        return;
+      }
+      const sourced = result.accepted.length;
+      const skipped = result.skipped.length;
+      const demo = result.source === "mock";
+      toast({
+        title: sourced > 0
+          ? `${demo ? "Generated" : "Sourced"} ${sourced} candidate${sourced === 1 ? "" : "s"}${demo ? " in demo mode" : ""}`
+          : "No new candidates found",
+        description: demo
+          ? `${selectedCampaign.title} · ${skipped} excluded or already present. Demo candidates are synthetic and are not provider results.`
+          : `${selectedCampaign.title} · ${skipped} excluded or already present. Results came through the reviewed provider sourcing path.`,
+        variant: sourced > 0 ? "success" : "info",
+      });
+    } catch {
+      toast({
+        title: "Sourcing unavailable",
+        description: "The sourcing request did not complete. No candidate result was assumed or generated locally.",
+        variant: "error",
+      });
+    } finally {
+      setSourcing(false);
+    }
   }
 
   function handleAllocate() {
@@ -240,8 +283,8 @@ export default function FleetPage() {
   }
 
   const campaignOptions = [
-    { value: "", label: "All agents · fleet-wide" },
-    ...campaigns.map((c) => ({ value: c.id, label: `${c.title} · ${c.department}` })),
+    { value: "", label: "All campaigns · allocation only" },
+    ...campaigns.map((c) => ({ value: c.id, label: `${c.title} · ${c.department} · ${c.status}` })),
   ];
 
   return (
@@ -321,7 +364,7 @@ export default function FleetPage() {
                 <Field
                   label="Scope"
                   htmlFor={scopeFieldId}
-                  hint="Scopes both fleet sourcing and outreach allocation to one campaign, or the whole fleet."
+                  hint="Sourcing requires one selected, reviewed campaign. Allocation may use all campaigns."
                   className="w-full lg:max-w-md"
                 >
                   <Select
@@ -340,7 +383,7 @@ export default function FleetPage() {
                     leftIcon={<Play className="h-4 w-4" />}
                     onClick={handleRunSourcing}
                   >
-                    Run fleet sourcing
+                    Source selected campaign
                   </Button>
                   <Button
                     variant="secondary"
@@ -355,10 +398,10 @@ export default function FleetPage() {
               </div>
 
               <p className="text-xs text-muted">
-                Sourcing fans new candidates across active agents; allocation hands ready candidates
-                to in-window seats with capacity left for{" "}
-                <span className="font-semibold text-ink-soft">{scopeLabel}</span>. Both honour the
-                global suppression ledger.
+                Sourcing runs the selected campaign through the canonical provider path; no local
+                fleet generator is used. Allocation hands ready candidates to in-window seats with
+                capacity left for <span className="font-semibold text-ink-soft">{scopeLabel}</span>
+                {" "}and rechecks the shared suppression ledger before delivery.
               </p>
 
               <AllocationResultView result={allocation} />
@@ -380,9 +423,9 @@ export default function FleetPage() {
                 </div>
               </div>
               {canManage && <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1.5 rounded-full border border-ink/12 bg-surface p-1 pl-3">
+                {!supabaseEnabled && <div className="flex items-center gap-1.5 rounded-full border border-ink/12 bg-surface p-1 pl-3">
                   <label htmlFor="deploy-n" className="text-xs font-semibold text-muted">
-                    Deploy
+                    Demo agents
                   </label>
                   <Input
                     id="deploy-n"
@@ -393,7 +436,7 @@ export default function FleetPage() {
                     value={deployN}
                     onChange={(e) => setDeployN(e.target.value)}
                     className="h-8 w-16 px-2 text-center"
-                    aria-label="Number of agents to deploy"
+                    aria-label="Number of demo agents to generate"
                   />
                   <Button
                     variant="secondary"
@@ -401,9 +444,9 @@ export default function FleetPage() {
                     leftIcon={<Bot className="h-4 w-4" />}
                     onClick={handleDeploy}
                   >
-                    Deploy agents
+                    Generate demo agents
                   </Button>
-                </div>
+                </div>}
                 <Button
                   variant="outline"
                   size="sm"

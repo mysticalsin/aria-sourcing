@@ -10,25 +10,18 @@ kill_timeout = 60
 [env]
   DEER_FLOW_CONFIG_PATH = "/opt/aria/deerflow/config.yaml"
   DEER_FLOW_HOME = "/tmp/deerflow"
-  DEERFLOW_DATABASE_HOST = "aria-mantu-deerflow-db.internal"
-  DEERFLOW_STREAM_BRIDGE_REDIS_HOST = "aria-mantu-deerflow-redis.internal"
   DEERFLOW_MODEL_BASE_URL = "http://aria-mantu-model-gateway.internal:8090/v1"
-  DEERFLOW_DATABASE_PASSWORD_FILE = "/run/secrets/deerflow_db_password"
-  DEERFLOW_REDIS_PASSWORD_FILE = "/run/secrets/deerflow_redis_password"
   DEERFLOW_MODEL_API_KEY_FILE = "/run/secrets/deerflow_model_gateway_token"
   DEER_FLOW_INTERNAL_AUTH_TOKEN_FILE = "/run/secrets/deerflow_internal_token"
   DEERFLOW_BIND_HOST = "fly-local-6pn"
+  LANGSMITH_TRACING = "false"
+  LANGCHAIN_TRACING_V2 = "false"
+  LANGCHAIN_TRACING = "false"
+  LANGFUSE_TRACING = "false"
+  MONOCLE_TRACING = "false"
   PYTHONDONTWRITEBYTECODE = "1"
   UV_CACHE_DIR = "/tmp/uv-cache"
   HOME = "/tmp"
-
-[[files]]
-  guest_path = "/run/secrets/deerflow_db_password"
-  secret_name = "ARIA_DEERFLOW_DB_PASSWORD_B64"
-
-[[files]]
-  guest_path = "/run/secrets/deerflow_redis_password"
-  secret_name = "ARIA_DEERFLOW_REDIS_PASSWORD_B64"
 
 [[files]]
   guest_path = "/run/secrets/deerflow_model_gateway_token"

@@ -9,7 +9,8 @@ export DB_HOST_PORT=0
 
 cleanup() {
   docker compose -p "$project" down -v --remove-orphans >/dev/null 2>&1 || true
-  rm -f "${race_kill_log:-}" "${race_complete_log:-}"
+  rm -f "${race_kill_log:-}" "${race_complete_log:-}" \
+    "${race_egress_log:-}" "${race_mutate_log:-}"
 }
 trap cleanup EXIT
 
@@ -210,6 +211,50 @@ begin
 end;
 $$;
 
+create function aria_agent_framework_test.authorize_memory_egress_for_run(
+  run_idempotency_key text
+) returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public, aria_agent_framework_test, pg_temp
+as $$
+declare
+  framework_run_id uuid;
+  framework_run_lease_id uuid;
+begin
+  select id, lease_id into framework_run_id, framework_run_lease_id
+  from public.agent_framework_runs
+  where idempotency_key=run_idempotency_key;
+  return public.authorize_agent_framework_memory_egress(
+    framework_run_id, framework_run_lease_id
+  );
+end;
+$$;
+
+create function aria_agent_framework_test.release_memory_egress_for_run(
+  run_idempotency_key text
+) returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public, aria_agent_framework_test, pg_temp
+as $$
+declare
+  framework_run_id uuid;
+  framework_run_lease_id uuid;
+  memory_egress_lease_id uuid;
+begin
+  select run.id, run.lease_id, egress.id
+    into framework_run_id, framework_run_lease_id, memory_egress_lease_id
+  from public.agent_framework_runs as run
+  join public.agent_framework_memory_egress_leases as egress
+    on egress.framework_run_id=run.id and egress.run_lease_id=run.lease_id
+  where run.idempotency_key=run_idempotency_key;
+  return public.release_agent_framework_memory_egress(
+    framework_run_id, framework_run_lease_id, memory_egress_lease_id
+  );
+end;
+$$;
+
 revoke all on all functions in schema aria_agent_framework_test from public;
 grant execute on all functions in schema aria_agent_framework_test to authenticated, service_role;
 SQL
@@ -328,6 +373,13 @@ select aria_agent_framework_test.assert_sqlstate(
     '11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001',
     'a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001',
     'campaign-a',repeat('4',64),'73000000-0000-4000-8000-000000000003','run-a',repeat('5',64)
+  )$$,
+  array['42501']
+);
+select aria_agent_framework_test.assert_sqlstate(
+  'authenticated cannot authorize framework memory plaintext egress',
+  $$select public.authorize_agent_framework_memory_egress(
+    gen_random_uuid(),gen_random_uuid()
   )$$,
   array['42501']
 );
@@ -481,6 +533,24 @@ set execution_enabled = true,
     version = version + 1,
     updated_at = now()
 where workspace_id = '11111111-1111-4111-8111-111111111111';
+
+insert into public.agent_memories (
+  id, workspace_id, owner_id, spec_id, kind, content_ciphertext,
+  content_sha256, content_byte_count, revision, status, source_type, created_by
+) values (
+  '75000000-0000-4000-8000-000000000005',
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  '61000000-0000-4000-8000-000000000001',
+  'fact',
+  'enc:v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:AA==:AA==:AA==',
+  repeat('a',64),
+  128,
+  1,
+  'approved',
+  'operator',
+  'a1000000-0000-4000-8000-000000000001'
+);
 SQL
 
 # Claim, replay, conflict, owner isolation, lease, append-only receipts, and completion.
@@ -502,6 +572,113 @@ select aria_agent_framework_test.assert_scalar(
   $$select result->>'status' from aria_framework_claim$$,
   'claimed'
 );
+reset role;
+select aria_agent_framework_test.assert_scalar(
+  'framework claim atomically stores the exact approved memory receipt',
+  $$select concat(context.memory_revision,':',context.content_sha256,':',context.position,':',context.byte_count)
+      from public.agent_framework_run_memory_context as context
+      join aria_framework_claim as claim
+        on context.framework_run_id=(claim.result->>'run_id')::uuid$$,
+  '1:' || repeat('a',64) || ':0:128'
+);
+select aria_agent_framework_test.assert_scalar(
+  'framework claim marks its memory snapshot attached',
+  $$select (run.memory_context_attached_at is not null)::text
+      from public.agent_framework_runs as run
+      join aria_framework_claim as claim on run.id=(claim.result->>'run_id')::uuid$$,
+  'true'
+);
+set local role service_role;
+select aria_agent_framework_test.assert_scalar(
+  'wrong run lease cannot authorize memory plaintext egress',
+  $$select public.authorize_agent_framework_memory_egress(
+      (result->>'run_id')::uuid, gen_random_uuid()
+    )->>'status' from aria_framework_claim$$,
+  'lease_invalid'
+);
+create temporary table aria_memory_egress(result jsonb) on commit drop;
+insert into aria_memory_egress(result)
+select public.authorize_agent_framework_memory_egress(
+  (result->>'run_id')::uuid, (result->>'lease_id')::uuid
+)
+from aria_framework_claim;
+select aria_agent_framework_test.assert_scalar(
+  'exact run lease authorizes one bounded memory plaintext egress',
+  $$select concat(result->>'status',':',result->>'replayed') from aria_memory_egress$$,
+  'authorized:false'
+);
+select aria_agent_framework_test.assert_scalar(
+  'memory egress authorization is one-shot even while its lease is active',
+  $$select public.authorize_agent_framework_memory_egress(
+      (select (result->>'run_id')::uuid from aria_framework_claim),
+      (select (result->>'lease_id')::uuid from aria_framework_claim)
+    )->>'status'$$,
+  'lease_invalid'
+);
+select aria_agent_framework_test.assert_scalar(
+  'active memory egress lease blocks a concurrent metadata mutation',
+  $$select public.mutate_agent_memory(
+      '11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001',
+      '61000000-0000-4000-8000-000000000001','75000000-0000-4000-8000-000000000005',
+      'a1000000-0000-4000-8000-000000000001',1,'edit',null,null,null,null,true,false,null
+    )->>'status'$$,
+  'memory_in_use'
+);
+select aria_agent_framework_test.assert_scalar(
+  'active memory egress lease blocks content deletion',
+  $$select public.delete_agent_memory_content(
+      '11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001',
+      '61000000-0000-4000-8000-000000000001','75000000-0000-4000-8000-000000000005',
+      'a1000000-0000-4000-8000-000000000001',1,
+      'enc:v2:' || repeat('e',64) || ':AA==:AA==:AA==',repeat('e',64),16
+    )->>'status'$$,
+  'memory_in_use'
+);
+select aria_agent_framework_test.assert_scalar(
+  'blocked memory operations leave the receipted revision unchanged',
+  $$select concat(revision,':',status,':',pinned) from public.agent_memories
+    where id='75000000-0000-4000-8000-000000000005'$$,
+  '1:approved:f'
+);
+savepoint before_memory_egress_expiry_drill;
+reset role;
+update public.agent_framework_memory_egress_leases
+   set created_at = clock_timestamp() - interval '2 seconds',
+       expires_at = clock_timestamp() - interval '1 second'
+ where id=(select (result->>'egress_lease_id')::uuid from aria_memory_egress);
+set local role service_role;
+select aria_agent_framework_test.assert_scalar(
+  'an expired egress lease cannot authorize plaintext-derived proposal effects',
+  $$select public.release_agent_framework_memory_egress(
+      (claim.result->>'run_id')::uuid,(claim.result->>'lease_id')::uuid,
+      (egress.result->>'egress_lease_id')::uuid
+    )->>'status'
+    from aria_framework_claim as claim cross join aria_memory_egress as egress$$,
+  'lease_expired'
+);
+rollback to savepoint before_memory_egress_expiry_drill;
+reset role;
+set local role service_role;
+select aria_agent_framework_test.assert_scalar(
+  'exact egress lease release is recorded before proposal effects',
+  $$select public.release_agent_framework_memory_egress(
+      (claim.result->>'run_id')::uuid,(claim.result->>'lease_id')::uuid,
+      (egress.result->>'egress_lease_id')::uuid
+    )->>'status'
+    from aria_framework_claim as claim cross join aria_memory_egress as egress$$,
+  'released'
+);
+savepoint after_memory_egress_release;
+select aria_agent_framework_test.assert_scalar(
+  'memory mutation resumes after the exact egress lease is released',
+  $$select public.mutate_agent_memory(
+      '11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001',
+      '61000000-0000-4000-8000-000000000001','75000000-0000-4000-8000-000000000005',
+      'a1000000-0000-4000-8000-000000000001',1,'edit',null,null,null,null,true,false,null
+    )->>'status'$$,
+  'updated'
+);
+rollback to savepoint after_memory_egress_release;
 select aria_agent_framework_test.assert_scalar(
   'run snapshots both exact framework images, isolation, and readiness receipts',
   $$select concat(
@@ -570,11 +747,21 @@ select aria_agent_framework_test.assert_scalar(
   'idempotency_conflict'
 );
 select aria_agent_framework_test.assert_scalar(
+  'proposal reports must be a bounded public response array',
+  $$select public.complete_agent_framework_run(
+      (result->>'run_id')::uuid, (result->>'lease_id')::uuid, repeat('c',64),
+      encode(extensions.digest(convert_to(repeat('s',43),'UTF8'),'sha256'),'hex'), 5,
+      'language:typescript location:montreal', '[]'::jsonb
+    )->>'status' from aria_framework_claim$$,
+  'invalid_request'
+);
+select aria_agent_framework_test.assert_scalar(
   'exact lease completes one typed proposal',
   $$select public.complete_agent_framework_run(
       (result->>'run_id')::uuid, (result->>'lease_id')::uuid, repeat('c',64),
       encode(extensions.digest(convert_to(repeat('s',43),'UTF8'),'sha256'),'hex'), 5,
-      'language:typescript location:montreal'
+      'language:typescript location:montreal',
+      jsonb_build_array('Run the exact reviewed campaign query.')
     )->>'status' from aria_framework_claim$$,
   'proposed'
 );
@@ -583,9 +770,20 @@ select aria_agent_framework_test.assert_scalar(
   $$select public.complete_agent_framework_run(
       (result->>'run_id')::uuid, (result->>'lease_id')::uuid, repeat('c',64),
       encode(extensions.digest(convert_to(repeat('s',43),'UTF8'),'sha256'),'hex'), 5,
-      'language:typescript location:montreal'
+      'language:typescript location:montreal',
+      jsonb_build_array('Run the exact reviewed campaign query.')
     )->>'status' from aria_framework_claim$$,
   'replay'
+);
+select aria_agent_framework_test.assert_scalar(
+  'completed proposal reports cannot change on replay',
+  $$select public.complete_agent_framework_run(
+      (result->>'run_id')::uuid, (result->>'lease_id')::uuid, repeat('c',64),
+      encode(extensions.digest(convert_to(repeat('s',43),'UTF8'),'sha256'),'hex'), 5,
+      'language:typescript location:montreal',
+      jsonb_build_array('Different public report.')
+    )->>'status' from aria_framework_claim$$,
+  'idempotency_conflict'
 );
 select aria_agent_framework_test.assert_scalar(
   'wrong sourcing capability cannot consume proposal authority',
@@ -809,6 +1007,15 @@ select aria_agent_framework_test.assert_scalar(
   'already_completed'
 );
 select aria_agent_framework_test.assert_scalar(
+  'closed claim replay returns the original public reports',
+  $$select (public.claim_agent_framework_run(
+    '11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001',
+    'a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001',
+    'campaign-a',encode(extensions.digest(convert_to('campaign-state-v1','UTF8'),'sha256'),'hex'),'73000000-0000-4000-8000-000000000003','run-a',repeat('5',64)
+  )->'reports')::text$$,
+  '["Run the exact reviewed campaign query."]'
+);
+select aria_agent_framework_test.assert_scalar(
   'a second active run is claimed for the kill-switch drill',
   $$select public.claim_agent_framework_run(
     '11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001',
@@ -818,6 +1025,183 @@ select aria_agent_framework_test.assert_scalar(
   'claimed'
 );
 commit;
+SQL
+
+# The database revalidates every receipted memory revision immediately before
+# egress, then serializes that authorization against an actual concurrent edit.
+psql_stdin <<'SQL'
+begin;
+update public.agent_memories
+set content_ciphertext='enc:v2:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:AA==:AA==:AA==',
+    content_sha256=repeat('b',64),
+    content_byte_count=64,
+    updated_by='a1000000-0000-4000-8000-000000000001'
+where id='75000000-0000-4000-8000-000000000005';
+select aria_agent_framework_test.set_claims(null,'service_role');
+set local role service_role;
+select aria_agent_framework_test.assert_scalar(
+  'memory revision drift before egress is rejected',
+  $$select aria_agent_framework_test.authorize_memory_egress_for_run(
+      'run-kill-active'
+    )->>'status'$$,
+  'memory_changed'
+);
+rollback;
+SQL
+
+race_egress_log="$(mktemp /tmp/aria-memory-egress-race.XXXXXX)"
+race_mutate_log="$(mktemp /tmp/aria-memory-mutate-race.XXXXXX)"
+(
+  psql_stdin >"$race_egress_log" 2>&1 <<'SQL'
+begin;
+select aria_agent_framework_test.set_claims(null,'service_role');
+set local role service_role;
+select 'RACE_EGRESS=' || (
+  aria_agent_framework_test.authorize_memory_egress_for_run(
+    'run-kill-active'
+  )->>'status'
+);
+select pg_sleep(2);
+commit;
+SQL
+) &
+race_egress_pid=$!
+
+sleep 0.5
+
+(
+  psql_stdin >"$race_mutate_log" 2>&1 <<'SQL'
+begin;
+select aria_agent_framework_test.set_claims(null,'service_role');
+set local role service_role;
+select 'RACE_MUTATE=' || (
+  public.mutate_agent_memory(
+    '11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001',
+    '61000000-0000-4000-8000-000000000001','75000000-0000-4000-8000-000000000005',
+    'a1000000-0000-4000-8000-000000000001',1,'edit',null,null,null,null,true,false,null
+  )->>'status'
+);
+commit;
+SQL
+) &
+race_mutate_pid=$!
+
+if ! wait "$race_egress_pid"; then
+  echo "memory egress race session failed" >&2
+  cat "$race_egress_log" >&2
+  exit 1
+fi
+if ! wait "$race_mutate_pid"; then
+  echo "memory mutation race session failed" >&2
+  cat "$race_mutate_log" >&2
+  exit 1
+fi
+if ! grep -Eq '^[[:space:]]*RACE_EGRESS=authorized[[:space:]]*$' "$race_egress_log"; then
+  echo "memory egress race did not authorize the exact receipted revision" >&2
+  cat "$race_egress_log" >&2
+  exit 1
+fi
+if ! grep -Eq '^[[:space:]]*RACE_MUTATE=memory_in_use[[:space:]]*$' "$race_mutate_log"; then
+  echo "concurrent memory mutation escaped the committed egress lease" >&2
+  cat "$race_mutate_log" >&2
+  exit 1
+fi
+
+psql_stdin <<'SQL'
+begin;
+select aria_agent_framework_test.set_claims(null,'service_role');
+set local role service_role;
+select aria_agent_framework_test.assert_scalar(
+  'race egress lease is released under its exact run authority',
+  $$select aria_agent_framework_test.release_memory_egress_for_run(
+      'run-kill-active'
+    )->>'status'$$,
+  'released'
+);
+commit;
+
+begin;
+select aria_agent_framework_test.set_claims(null,'service_role');
+set local role service_role;
+select aria_agent_framework_test.assert_scalar(
+  'mutation proceeds after the race egress lease is released',
+  $$select public.mutate_agent_memory(
+      '11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001',
+      '61000000-0000-4000-8000-000000000001','75000000-0000-4000-8000-000000000005',
+      'a1000000-0000-4000-8000-000000000001',1,'edit',null,null,null,null,true,false,null
+    )->>'status'$$,
+  'updated'
+);
+rollback;
+SQL
+
+# A content edit after receipt creation must remain possible, and an empty
+# snapshot must stay empty across expired-lease recovery even if memory is
+# approved later.
+psql_stdin <<'SQL'
+begin;
+update public.agent_memories
+set content_ciphertext='enc:v2:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:AA==:AA==:AA==',
+    content_sha256=repeat('b',64),
+    content_byte_count=64,
+    updated_by='a1000000-0000-4000-8000-000000000001'
+where id='75000000-0000-4000-8000-000000000005';
+select aria_agent_framework_test.assert_scalar(
+  'content can enter a new pending revision after an immutable framework receipt',
+  $$select concat(status,':',revision) from public.agent_memories
+    where id='75000000-0000-4000-8000-000000000005'$$,
+  'pending_review:2'
+);
+
+select aria_agent_framework_test.set_claims(null,'service_role');
+set local role service_role;
+create temporary table aria_zero_memory_claim(result jsonb) on commit drop;
+insert into aria_zero_memory_claim(result)
+select public.claim_agent_framework_run(
+  '11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001',
+  'a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001',
+  'campaign-zero-memory',repeat('e',64),'73000000-0000-4000-8000-000000000003',
+  'run-zero-memory',repeat('f',64)
+);
+reset role;
+select aria_agent_framework_test.assert_scalar(
+  'zero-memory framework claim still persists an attached snapshot marker',
+  $$select concat(
+      run.memory_context_attached_at is not null,':',count(context.memory_id)
+    )
+    from aria_zero_memory_claim as claim
+    join public.agent_framework_runs as run on run.id=(claim.result->>'run_id')::uuid
+    left join public.agent_framework_run_memory_context as context
+      on context.framework_run_id=run.id
+    group by run.memory_context_attached_at$$,
+  't:0'
+);
+update public.agent_memories
+set status='approved'
+where id='75000000-0000-4000-8000-000000000005';
+update public.agent_framework_runs
+set lease_expires_at=now()-interval '1 second'
+where idempotency_key='run-zero-memory';
+set local role service_role;
+select aria_agent_framework_test.assert_scalar(
+  'expired zero-memory claim can recover its lease',
+  $$select public.claim_agent_framework_run(
+    '11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001',
+    'a1000000-0000-4000-8000-000000000001','61000000-0000-4000-8000-000000000001',
+    'campaign-zero-memory',repeat('e',64),'73000000-0000-4000-8000-000000000003',
+    'run-zero-memory',repeat('f',64)
+  )->>'status'$$,
+  'claimed'
+);
+reset role;
+select aria_agent_framework_test.assert_scalar(
+  'expired zero-memory recovery never selects newly approved memory',
+  $$select count(*)::text from public.agent_framework_run_memory_context
+    where framework_run_id=(select id from public.agent_framework_runs
+      where idempotency_key='run-zero-memory')$$,
+  '0'
+);
+rollback;
 SQL
 
 # A real two-session kill-vs-complete race: the kill transaction takes the

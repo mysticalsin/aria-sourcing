@@ -5,6 +5,7 @@ import {
   LOCATION_TYPES,
   SENIORITY_LEVELS,
 } from "@/lib/types";
+import { normalizePrivateInternalUrl } from "@/lib/agents/framework/configuration-core.mjs";
 
 /** Audited upstream revisions. Branch names and floating tags are forbidden. */
 export const DEERFLOW_SOURCE_COMMIT = "fabadae4168db81f0eaaf62f209050f978e2f691";
@@ -119,6 +120,31 @@ const BoundedId = z.string().trim().min(1).max(120).regex(/^[A-Za-z0-9][A-Za-z0-
 const Sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 const BoundedNeedText = z.string().trim().max(200);
 
+const AgentMemoryItemSchema = z.object({
+  kind: z.string().min(1).max(64).refine((value) => value.trim() === value),
+  content: z.string().min(1).max(8_192),
+}).strict();
+
+export const AgentFrameworkMemorySchema = z.object({
+  policy: z.literal("untrusted-reference-v1"),
+  receiptSha256: Sha256,
+  items: z.array(AgentMemoryItemSchema).max(8),
+}).strict().superRefine((memory, ctx) => {
+  const totalBytes = memory.items.reduce(
+    (total, item) => total + new TextEncoder().encode(item.content).byteLength,
+    0,
+  );
+  if (totalBytes > 8_192) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["items"],
+      message: "Agent memory exceeds the context byte limit.",
+    });
+  }
+});
+
+export type AgentFrameworkMemory = z.infer<typeof AgentFrameworkMemorySchema>;
+
 export const AgentFrameworkNeedSchema = z.object({
   title: BoundedNeedText.min(1),
   seniority: z.enum(SENIORITY_LEVELS),
@@ -161,6 +187,7 @@ export const AgentFrameworkRunRequestSchema = z.object({
     platform: z.literal("GitHub"),
     query: z.string().trim().min(3).max(256),
   }).strict()).min(1).max(20),
+  agentMemory: AgentFrameworkMemorySchema,
   deerflowInstanceId: z.string().uuid(),
   flowiseInstanceId: z.string().uuid(),
   flowiseSourceCommit: z.literal(FLOWISE_SOURCE_COMMIT),
@@ -265,8 +292,8 @@ const ImmutableImageDigest = /^[a-z0-9][a-z0-9./:_-]*@sha256:[0-9a-f]{64}$/;
 function isPrivateServiceUrl(value: string | undefined): boolean {
   if (!value) return false;
   try {
-    const parsed = new URL(value);
-    return parsed.protocol === "https:" && parsed.hostname.endsWith(".internal");
+    normalizePrivateInternalUrl(value, "framework adapter URL");
+    return true;
   } catch {
     return false;
   }

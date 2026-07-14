@@ -1,9 +1,10 @@
 openapi: 3.1.0
 info:
   title: ARIA internal sourcing API
-  version: '2026-07-13'
+  version: '2026-07-14'
   description: >-
-    Additive-only browser-to-server contract for paid sourcing operations.
+    Additive-only browser-to-server contract for paid sourcing and governed
+    AgentSpec memory and candidate-erasure operations.
     Breaking changes move to /api/v2 and retain the prior contract for at least
     three months.
 servers:
@@ -257,6 +258,187 @@ paths:
           $ref: '#/components/responses/ErasureRateLimitedError'
         '503':
           $ref: '#/components/responses/ErasureDependencyError'
+  /api/admin/candidates/erasure:
+    post:
+      operationId: requestCandidateErasure
+      summary: Scrub one exact candidate and track external provider obligations
+      description: >-
+        Canonical administrator-only candidate-rights operation. One database
+        transaction binds the workspace, campaign, candidate, actor, and
+        idempotency key; blocks on an active legal hold; scrubs local candidate
+        data; and emits content-free per-store row counts. A 200 response means
+        no external provider obligation remains. A 202 response is explicitly
+        non-final and identifies provider work that is pending, manual, or
+        retryable. Unsupported provider deletion is manual_required and is
+        never represented as completed. If more than 100 provider records are
+        linked, the transaction returns a typed 409 before any local data is
+        changed so an administrator can route the request to the documented
+        manual privacy process.
+      x-aria-contract-version: '2026-07-14'
+      x-aria-max-body-bytes: 1000
+      x-aria-request-throttle:
+        storage: per-instance-memory
+        windowSeconds: 60
+        maxRequests: 10
+        keyDimensions: [route, trusted-proxy-address, authenticated-user]
+      parameters:
+        - $ref: '#/components/parameters/SameOriginHeader'
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Replays the original exact-candidate receipt without a second scrub.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CandidateErasureRequest'
+      responses:
+        '200':
+          description: Local erasure completed and no provider obligation remains.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Pragma:
+              $ref: '#/components/headers/PragmaNoCache'
+            X-Content-Type-Options:
+              $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CandidateErasureResponse'
+        '202':
+          description: >-
+            Local data was scrubbed, but at least one provider obligation is
+            pending_provider, manual_required, or retryable_failure. This is not
+            a completed erasure.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Pragma:
+              $ref: '#/components/headers/PragmaNoCache'
+            X-Content-Type-Options:
+              $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CandidateErasureResponse'
+        '400':
+          $ref: '#/components/responses/CandidateErasureErrorResponse'
+        '401':
+          $ref: '#/components/responses/CandidateErasureErrorResponse'
+        '403':
+          $ref: '#/components/responses/CandidateErasureErrorResponse'
+        '404':
+          $ref: '#/components/responses/CandidateErasureErrorResponse'
+        '409':
+          description: >-
+            Idempotency conflict, or the candidate has more than 100 provider
+            obligations. The latter returns
+            candidate_erasure_obligation_limit_exceeded and changes no data.
+          $ref: '#/components/responses/CandidateErasureErrorResponse'
+        '413':
+          $ref: '#/components/responses/CandidateErasureErrorResponse'
+        '415':
+          $ref: '#/components/responses/CandidateErasureErrorResponse'
+        '423':
+          description: Erasure blocked by an active legal hold; no local data was changed.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Pragma:
+              $ref: '#/components/headers/PragmaNoCache'
+            X-Content-Type-Options:
+              $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CandidateErasureBlockedResponse'
+        '429':
+          $ref: '#/components/responses/CandidateErasureRateLimitedResponse'
+        '503':
+          $ref: '#/components/responses/CandidateErasureErrorResponse'
+    patch:
+      operationId: operateCandidateErasureQueue
+      summary: List durable work, inspect provider authority, or record administrator-reported evidence
+      description: >-
+        Administrator-only queue and provider-obligation operation. List
+        returns at most 100 non-final requests without provider authority.
+        Inspect decrypts one exact workspace-bound authority reference and audits the access.
+        Complete uses optimistic attempt authority and records an
+        administrator-reported SHA-256 evidence digest plus provider case
+        reference. ARIA does not inspect the evidence artifact or call the
+        provider. It remains 202 until all obligations have
+        administrator-recorded completion. A legal hold placed after local
+        scrubbing blocks both inspection and completion with a typed 423.
+      x-aria-contract-version: '2026-07-14'
+      x-aria-max-body-bytes: 2500
+      x-aria-request-throttle:
+        storage: per-instance-memory
+        windowSeconds: 60
+        maxRequests: 20
+        keyDimensions: [route, trusted-proxy-address, authenticated-user]
+      parameters:
+        - $ref: '#/components/parameters/SameOriginHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CandidateErasureObligationAction'
+      responses:
+        '200':
+          description: Queue returned, provider authority returned for explicit admin use, or every erasure obligation completed.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Pragma:
+              $ref: '#/components/headers/PragmaNoCache'
+            X-Content-Type-Options:
+              $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/CandidateErasureQueueResponse'
+                  - $ref: '#/components/schemas/CandidateErasureAuthorityResponse'
+                  - $ref: '#/components/schemas/CandidateErasureResponse'
+        '202':
+          description: One provider deletion was recorded but other obligations remain non-final.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Pragma:
+              $ref: '#/components/headers/PragmaNoCache'
+            X-Content-Type-Options:
+              $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CandidateErasureResponse'
+        '400':
+          $ref: '#/components/responses/CandidateErasureErrorResponse'
+        '401':
+          $ref: '#/components/responses/CandidateErasureErrorResponse'
+        '403':
+          $ref: '#/components/responses/CandidateErasureErrorResponse'
+        '404':
+          $ref: '#/components/responses/CandidateErasureErrorResponse'
+        '409':
+          $ref: '#/components/responses/CandidateErasureErrorResponse'
+        '413':
+          $ref: '#/components/responses/CandidateErasureErrorResponse'
+        '415':
+          $ref: '#/components/responses/CandidateErasureErrorResponse'
+        '423':
+          $ref: '#/components/responses/CandidateErasureErrorResponse'
+        '429':
+          $ref: '#/components/responses/CandidateErasureRateLimitedResponse'
+        '503':
+          $ref: '#/components/responses/CandidateErasureErrorResponse'
   /api/admin/source/apollo/reconciliation:
     post:
       operationId: listOrReconcileApolloEnrichmentAttempts
@@ -320,6 +502,243 @@ paths:
           $ref: '#/components/responses/ReconciliationRateLimitedError'
         '503':
           $ref: '#/components/responses/ReconciliationDependencyError'
+  /api/agents/memories:
+    get:
+      operationId: listAgentMemories
+      summary: List AgentSpecs or one exact AgentSpec memory page
+      description: >-
+        Without specId, returns one stable keyset page of the owned AgentSpec
+        list. With specId, returns one stable keyset page of decrypted memory
+        for that exact authenticated owner, workspace, and AgentSpec.
+        Ciphertext, content hashes, and framework receipt identifiers are never
+        returned. Every response is non-cacheable.
+      x-aria-contract-version: '2026-07-14'
+      parameters:
+        - in: query
+          name: specId
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Select one AgentSpec owned by the caller for memory paging.
+        - in: query
+          name: specCursor
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 512
+            pattern: '^[A-Za-z0-9_-]+$'
+          description: >-
+            Opaque, strictly validated created-at plus identifier keyset cursor
+            returned by the preceding AgentSpec page. Invalid with specId,
+            limit, or cursor.
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+          description: >-
+            Page size for an exact specId query. Invalid without specId. The
+            server reads one additional row only to determine whether a cursor
+            is required.
+        - in: query
+          name: cursor
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 512
+            pattern: '^[A-Za-z0-9_-]+$'
+          description: >-
+            Opaque, strictly validated keyset cursor returned by the preceding
+            page for the same specId. Invalid without specId and cannot be reused
+            for another AgentSpec.
+      responses:
+        '200':
+          description: >-
+            Bounded owned AgentSpecs, plus a non-deleted memory page only when an
+            exact specId was requested.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Pragma:
+              $ref: '#/components/headers/PragmaNoCache'
+            X-Content-Type-Options:
+              $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentMemoryListResponse'
+        '400':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '401':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '403':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '404':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '503':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+    post:
+      operationId: createAgentMemory
+      summary: Create an encrypted pending-review memory
+      description: >-
+        Encrypts content server-side and persists the memory plus a content-free
+        audit receipt atomically. New memory cannot reach an agent until the
+        owner explicitly approves it.
+      x-aria-contract-version: '2026-07-14'
+      x-aria-max-body-bytes: 12000
+      x-aria-request-throttle:
+        storage: per-instance-memory
+        windowSeconds: 60
+        maxRequests: 20
+        keyDimensions: [route, trusted-proxy-address, authenticated-user]
+      parameters:
+        - $ref: '#/components/parameters/SameOriginHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentMemoryCreateRequest'
+      responses:
+        '201':
+          description: Memory encrypted and durably created in pending review.
+          headers:
+            Location:
+              description: Exact AgentSpec memory collection URL.
+              schema:
+                type: string
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Pragma:
+              $ref: '#/components/headers/PragmaNoCache'
+            X-Content-Type-Options:
+              $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentMemoryMutationResponse'
+        '400':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '401':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '403':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '404':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '415':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '429':
+          $ref: '#/components/responses/AgentMemoryRateLimitedResponse'
+        '503':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+    patch:
+      operationId: updateOrReviewAgentMemory
+      summary: Edit, approve, or reject one exact memory revision
+      description: >-
+        Uses optimistic revision authority. Content or kind edits always return
+        the memory to pending review before it can be selected for another run.
+      x-aria-contract-version: '2026-07-14'
+      x-aria-max-body-bytes: 12000
+      x-aria-request-throttle:
+        storage: per-instance-memory
+        windowSeconds: 60
+        maxRequests: 40
+        keyDimensions: [route, trusted-proxy-address, authenticated-user]
+      parameters:
+        - $ref: '#/components/parameters/SameOriginHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentMemoryUpdateRequest'
+      responses:
+        '200':
+          description: Exact revision edited or reviewed.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Pragma:
+              $ref: '#/components/headers/PragmaNoCache'
+            X-Content-Type-Options:
+              $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentMemoryMutationResponse'
+        '400':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '401':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '403':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '404':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '409':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '415':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '429':
+          $ref: '#/components/responses/AgentMemoryRateLimitedResponse'
+        '503':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+    delete:
+      operationId: deleteAgentMemory
+      summary: Erase one exact memory revision from live storage
+      description: >-
+        Atomically records a content-free deletion receipt, replaces live
+        ciphertext with a fixed encrypted tombstone, and marks the row deleted.
+      x-aria-contract-version: '2026-07-14'
+      x-aria-max-body-bytes: 2000
+      x-aria-request-throttle:
+        storage: per-instance-memory
+        windowSeconds: 60
+        maxRequests: 20
+        keyDimensions: [route, trusted-proxy-address, authenticated-user]
+      parameters:
+        - $ref: '#/components/parameters/SameOriginHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentMemoryDeleteRequest'
+      responses:
+        '200':
+          description: Live memory content replaced and row marked deleted.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Pragma:
+              $ref: '#/components/headers/PragmaNoCache'
+            X-Content-Type-Options:
+              $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentMemoryDeleteResponse'
+        '400':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '401':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '403':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '404':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '409':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '415':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
+        '429':
+          $ref: '#/components/responses/AgentMemoryRateLimitedResponse'
+        '503':
+          $ref: '#/components/responses/AgentMemoryErrorResponse'
 components:
   securitySchemes:
     supabaseSession:
@@ -327,6 +746,15 @@ components:
       in: cookie
       name: sb-auth-token
       description: Fixed Supabase session cookie shared by browser and server clients. The SSR client may split a large value across numbered cookie chunks.
+  parameters:
+    SameOriginHeader:
+      in: header
+      name: Origin
+      required: true
+      schema:
+        type: string
+        format: uri
+      description: Must exactly equal the request URL origin.
   headers:
     CacheControlNoStore:
       description: Prevents storage of sourcing and enrichment responses.
@@ -349,6 +777,281 @@ components:
         type: integer
         minimum: 1
   schemas:
+    AgentMemorySpec:
+      type: object
+      additionalProperties: false
+      required: [id, name, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+        status:
+          type: string
+          enum: [active, paused, archived]
+    AgentMemory:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - specId
+        - kind
+        - content
+        - revision
+        - status
+        - sourceType
+        - pinned
+        - expiresAt
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        specId:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [fact, preference, instruction, episodic]
+        content:
+          type: string
+          minLength: 1
+          maxLength: 8192
+          x-aria-max-utf8-bytes: 8192
+          description: Decrypted only for the exact authenticated owner.
+        revision:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [pending_review, approved, rejected]
+        sourceType:
+          type: string
+          enum: [operator, run, import]
+        pinned:
+          type: boolean
+        expiresAt:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AgentMemoryListResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, specs, memories, nextCursor, nextSpecCursor, bounds, requestId]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        specs:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/AgentMemorySpec'
+        memories:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/AgentMemory'
+        nextCursor:
+          description: >-
+            Cursor for the next exact-spec page, or null when no further memory
+            was observed. Always null for the AgentSpec-only listing.
+          oneOf:
+            - type: string
+              minLength: 1
+              maxLength: 512
+              pattern: '^[A-Za-z0-9_-]+$'
+            - type: 'null'
+        nextSpecCursor:
+          description: >-
+            Cursor for the next owned AgentSpec page, or null when no further
+            AgentSpec was observed. Always null for exact-spec memory pages.
+          oneOf:
+            - type: string
+              minLength: 1
+              maxLength: 512
+              pattern: '^[A-Za-z0-9_-]+$'
+            - type: 'null'
+        bounds:
+          $ref: '#/components/schemas/AgentMemoryListBounds'
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 100
+    AgentMemoryListBounds:
+      type: object
+      additionalProperties: false
+      required: [specLimit, specsTruncated]
+      properties:
+        specLimit:
+          type: integer
+          const: 100
+        specsTruncated:
+          type: boolean
+    AgentMemoryCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [specId, kind, content]
+      properties:
+        specId:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [fact, preference, instruction, episodic]
+        content:
+          type: string
+          minLength: 1
+          maxLength: 8192
+          x-aria-max-utf8-bytes: 8192
+        pinned:
+          type: boolean
+          default: false
+        expiresAt:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+          default: null
+    AgentMemoryEditRequest:
+      type: object
+      additionalProperties: false
+      required: [action, id, specId, revision]
+      properties:
+        action:
+          type: string
+          const: edit
+        id:
+          type: string
+          format: uuid
+        specId:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+          minimum: 1
+        kind:
+          type: string
+          enum: [fact, preference, instruction, episodic]
+        content:
+          type: string
+          minLength: 1
+          maxLength: 8192
+          x-aria-max-utf8-bytes: 8192
+        pinned:
+          type: boolean
+        expiresAt:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+      anyOf:
+        - required: [kind]
+        - required: [content]
+        - required: [pinned]
+        - required: [expiresAt]
+    AgentMemoryReviewRequest:
+      type: object
+      additionalProperties: false
+      required: [action, id, specId, revision]
+      properties:
+        action:
+          type: string
+          enum: [approve, reject]
+        id:
+          type: string
+          format: uuid
+        specId:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+          minimum: 1
+    AgentMemoryUpdateRequest:
+      oneOf:
+        - $ref: '#/components/schemas/AgentMemoryEditRequest'
+        - $ref: '#/components/schemas/AgentMemoryReviewRequest'
+    AgentMemoryDeleteRequest:
+      type: object
+      additionalProperties: false
+      required: [id, specId, revision]
+      properties:
+        id:
+          type: string
+          format: uuid
+        specId:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+          minimum: 1
+    AgentMemoryMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, memory, requestId]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        memory:
+          $ref: '#/components/schemas/AgentMemory'
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 100
+    AgentMemoryDeleteResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, id, revision, requestId]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        id:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+          minimum: 1
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 100
+    AgentMemoryError:
+      type: object
+      additionalProperties: false
+      required: [ok, code, requestId]
+      properties:
+        ok:
+          type: boolean
+          const: false
+        code:
+          type: string
+          enum:
+            - invalid_request
+            - cross_origin_request
+            - not_authenticated
+            - insufficient_permissions
+            - memory_not_found
+            - revision_conflict
+            - memory_in_use
+            - invalid_state
+            - rate_limited
+            - memory_authority_unavailable
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 100
     ApolloSearchRequest:
       type: object
       additionalProperties: false
@@ -708,6 +1411,369 @@ components:
         targetId:
           type: string
           format: uuid
+    CandidateErasureRequest:
+      type: object
+      additionalProperties: false
+      required: [campaignId, candidateId]
+      properties:
+        campaignId:
+          type: string
+          minLength: 1
+          maxLength: 120
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$'
+        candidateId:
+          type: string
+          minLength: 1
+          maxLength: 120
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$'
+    CandidateErasureObligation:
+      type: object
+      additionalProperties: false
+      required: [id, provider, status, attemptCount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z][a-z0-9._:-]{0,63}$'
+        status:
+          type: string
+          enum: [pending_provider, manual_required, retryable_failure, completed, blocked_legal_hold]
+        attemptCount:
+          type: integer
+          minimum: 0
+          maximum: 100
+    CandidateErasureResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - ok
+        - completed
+        - status
+        - requestId
+        - campaignId
+        - candidateId
+        - replayed
+        - scrubCounts
+        - obligations
+      properties:
+        ok:
+          type: boolean
+          const: true
+        completed:
+          type: boolean
+          description: True only when status is completed and every provider obligation is completed.
+        status:
+          type: string
+          enum: [pending_provider, manual_required, retryable_failure, completed]
+        requestId:
+          type: string
+          format: uuid
+        campaignId:
+          type: string
+        candidateId:
+          type: string
+        replayed:
+          type: boolean
+        scrubCounts:
+          type: object
+          maxProperties: 20
+          additionalProperties:
+            type: integer
+            minimum: 0
+          description: Per-store row counts only; never candidate content.
+        obligations:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/CandidateErasureObligation'
+    CandidateErasureQueueItem:
+      type: object
+      additionalProperties: false
+      required:
+        - ok
+        - completed
+        - status
+        - requestId
+        - campaignId
+        - candidateId
+        - replayed
+        - scrubCounts
+        - obligations
+      properties:
+        ok:
+          type: boolean
+          const: true
+        completed:
+          type: boolean
+          const: false
+          description: Always false for a non-final queue item.
+        status:
+          type: string
+          enum: [pending_provider, manual_required, retryable_failure, blocked_legal_hold]
+        requestId:
+          type: string
+          format: uuid
+        campaignId:
+          type: string
+        candidateId:
+          type: string
+        replayed:
+          type: boolean
+        scrubCounts:
+          type: object
+          maxProperties: 20
+          additionalProperties:
+            type: integer
+            minimum: 0
+          description: Per-store row counts only; never candidate content.
+        obligations:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/CandidateErasureObligation'
+    CandidateErasureQueueResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, requests]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        requests:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/CandidateErasureQueueItem'
+          description: Non-final requests only; encrypted provider authority is omitted.
+    CandidateErasureObligationAction:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [action]
+          properties:
+            action:
+              type: string
+              const: list
+        - type: object
+          additionalProperties: false
+          required: [action, obligationId]
+          properties:
+            action:
+              type: string
+              const: inspect
+            obligationId:
+              type: string
+              format: uuid
+        - type: object
+          additionalProperties: false
+          required: [action, obligationId, expectedAttemptCount, evidenceSha256, caseReference]
+          properties:
+            action:
+              type: string
+              const: complete
+            obligationId:
+              type: string
+              format: uuid
+            expectedAttemptCount:
+              type: integer
+              minimum: 0
+              maximum: 100
+            evidenceSha256:
+              type: string
+              pattern: '^[0-9a-f]{64}$'
+            caseReference:
+              type: string
+              minLength: 1
+              maxLength: 120
+              pattern: '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,119}$'
+    CandidateErasureSourceRecordReference:
+      type: object
+      additionalProperties: false
+      required: [kind, provider, campaignId]
+      properties:
+        kind:
+          type: string
+          const: source_record
+        provider:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z][a-z0-9._:-]{0,63}$'
+        campaignId:
+          type: string
+          minLength: 1
+          maxLength: 120
+        externalId:
+          type: string
+          minLength: 1
+          maxLength: 200
+        authorityId:
+          type: string
+          minLength: 1
+          maxLength: 200
+        sourceUrl:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        lookupEmail:
+          type: string
+          minLength: 1
+          maxLength: 320
+        lookupName:
+          type: string
+          minLength: 1
+          maxLength: 200
+    CandidateErasureMessageRecordReference:
+      type: object
+      additionalProperties: false
+      required: [kind, recordId, direction, channel, providerMessageId]
+      properties:
+        kind:
+          type: string
+          const: message_record
+        recordId:
+          type: string
+          format: uuid
+        direction:
+          type: string
+          enum: [inbound, outbound]
+        channel:
+          type: string
+          enum: [email, linkedin, whatsapp, sms]
+        providerMessageId:
+          type: string
+          minLength: 1
+          maxLength: 512
+    CandidateErasureApolloProfileReference:
+      type: object
+      additionalProperties: false
+      required: [kind, targetId, campaignId, providerExternalId]
+      properties:
+        kind:
+          type: string
+          const: apollo_profile
+        targetId:
+          type: string
+          format: uuid
+        campaignId:
+          type: string
+          minLength: 1
+          maxLength: 120
+        providerExternalId:
+          type: string
+          minLength: 1
+          maxLength: 200
+    CandidateErasureProviderReference:
+      oneOf:
+        - $ref: '#/components/schemas/CandidateErasureSourceRecordReference'
+        - $ref: '#/components/schemas/CandidateErasureMessageRecordReference'
+        - $ref: '#/components/schemas/CandidateErasureApolloProfileReference'
+    CandidateErasureAuthorityResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, status, obligationId, provider, attemptCount, reference]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        status:
+          type: string
+          enum: [pending_provider, manual_required, retryable_failure]
+        obligationId:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z][a-z0-9._:-]{0,63}$'
+        attemptCount:
+          type: integer
+          minimum: 0
+          maximum: 100
+        reference:
+          $ref: '#/components/schemas/CandidateErasureProviderReference'
+    CandidateErasureError:
+      type: object
+      additionalProperties: false
+      required: [ok, completed, code, requestId]
+      properties:
+        ok:
+          type: boolean
+          const: false
+        completed:
+          type: boolean
+          const: false
+        code:
+          type: string
+          enum:
+            - invalid_request
+            - cross_origin_request
+            - not_authenticated
+            - insufficient_permissions
+            - candidate_not_found
+            - idempotency_conflict
+            - candidate_erasure_obligation_not_found
+            - candidate_erasure_obligation_conflict
+            - candidate_erasure_obligation_completed
+            - candidate_erasure_obligation_limit_exceeded
+            - candidate_erasure_blocked_legal_hold
+            - candidate_erasure_rate_limited
+            - candidate_erasure_unavailable
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 100
+    CandidateErasureBlockedResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - ok
+        - completed
+        - code
+        - status
+        - requestId
+        - campaignId
+        - candidateId
+        - replayed
+        - scrubCounts
+        - obligations
+      properties:
+        ok:
+          type: boolean
+          const: false
+        completed:
+          type: boolean
+          const: false
+        code:
+          type: string
+          const: candidate_erasure_blocked_legal_hold
+        status:
+          type: string
+          const: blocked_legal_hold
+        requestId:
+          type: string
+          format: uuid
+        campaignId:
+          type: string
+        candidateId:
+          type: string
+        replayed:
+          type: boolean
+        scrubCounts:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+        obligations:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/CandidateErasureObligation'
     ApolloErasureResponse:
       type: object
       additionalProperties: false
@@ -1103,6 +2169,62 @@ components:
               type: string
               const: APOLLO_RECONCILIATION_UNAVAILABLE
   responses:
+    CandidateErasureErrorResponse:
+      description: Candidate erasure request rejected or unavailable; completion is always false.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CandidateErasureError'
+    CandidateErasureRateLimitedResponse:
+      description: The route-specific per-instance admin throttle rejected the request.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfterSeconds'
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CandidateErasureError'
+    AgentMemoryErrorResponse:
+      description: Bounded AgentSpec memory error with no content or storage detail.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AgentMemoryError'
+    AgentMemoryRateLimitedResponse:
+      description: The per-instance owner throttle rejected the memory mutation.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfterSeconds'
+        Cache-Control:
+          $ref: '#/components/headers/CacheControlNoStore'
+        Pragma:
+          $ref: '#/components/headers/PragmaNoCache'
+        X-Content-Type-Options:
+          $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AgentMemoryError'
     BadRequestError:
       description: Invalid request or no workspace is available to the caller.
       headers:

@@ -29,13 +29,18 @@ target "model-gateway" {
   attest = ["type=sbom", "type=provenance,mode=max"]
 }
 
-target "deerflow" {
-  inherits = ["release"]
+target "deerflow-upstream" {
   context = "https://github.com/bytedance/deer-flow.git#fabadae4168db81f0eaaf62f209050f978e2f691"
   dockerfile = "backend/Dockerfile"
   target = "runtime"
-  args = {
-    UV_EXTRAS = "postgres"
+}
+
+target "deerflow" {
+  inherits = ["release"]
+  context = "."
+  dockerfile = "infra/agent-frameworks/deerflow-runtime/Dockerfile"
+  contexts = {
+    deerflow_upstream = "target:deerflow-upstream"
   }
   tags = ["${REGISTRY}/deerflow:fabadae4168db81f0eaaf62f209050f978e2f691"]
   attest = ["type=sbom", "type=provenance,mode=max"]

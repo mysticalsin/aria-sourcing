@@ -39,7 +39,7 @@ function identifier(value, name) {
   return normalized;
 }
 
-function origin(value, name, { allowPath = false } = {}) {
+export function normalizePrivateInternalUrl(value, name, { allowPath = false } = {}) {
   const raw = required(value, name, 2_048);
   let parsed;
   try {
@@ -74,7 +74,7 @@ export function deriveAgentFrameworkConfiguration(raw) {
     adapterImageDigest: image(raw.adapterImageDigest, "adapterImageDigest"),
     redisImageDigest: image(raw.redisImageDigest, "redisImageDigest"),
     deerflow: Object.freeze({
-      adapterOrigin: origin(raw.deerflowAdapterOrigin, "deerflowAdapterOrigin"),
+      adapterOrigin: normalizePrivateInternalUrl(raw.deerflowAdapterOrigin, "deerflowAdapterOrigin"),
       instanceId: uuid(raw.deerflowInstanceId, "deerflowInstanceId"),
       sourceCommit: commit(raw.deerflowSourceCommit, "deerflowSourceCommit"),
       imageDigest: image(raw.deerflowImageDigest, "deerflowImageDigest"),
@@ -83,11 +83,11 @@ export function deriveAgentFrameworkConfiguration(raw) {
       cloudProviderId: identifier(raw.deerflowCloudProviderId, "deerflowCloudProviderId"),
       modelProvider: identifier(raw.deerflowModelProvider, "deerflowModelProvider"),
       modelId: identifier(raw.deerflowModelId, "deerflowModelId"),
-      modelBaseUrl: origin(raw.deerflowModelBaseUrl, "deerflowModelBaseUrl", { allowPath: true }),
+      modelBaseUrl: normalizePrivateInternalUrl(raw.deerflowModelBaseUrl, "deerflowModelBaseUrl", { allowPath: true }),
       modelCredentialVersion: identifier(raw.deerflowModelCredentialVersion, "deerflowModelCredentialVersion"),
     }),
     flowise: Object.freeze({
-      adapterOrigin: origin(raw.flowiseAdapterOrigin, "flowiseAdapterOrigin"),
+      adapterOrigin: normalizePrivateInternalUrl(raw.flowiseAdapterOrigin, "flowiseAdapterOrigin"),
       instanceId: uuid(raw.flowiseInstanceId, "flowiseInstanceId"),
       sourceCommit: commit(raw.flowiseSourceCommit, "flowiseSourceCommit"),
       imageDigest: image(raw.flowiseImageDigest, "flowiseImageDigest"),

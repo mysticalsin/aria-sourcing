@@ -35,6 +35,14 @@ function workflowAuthority(workflow) {
   ];
 }
 
+function memoryAuthority(memory) {
+  return [
+    memory.policy,
+    memory.receiptSha256,
+    memory.items.map((item) => [item.kind, item.content]),
+  ];
+}
+
 export function buildAgentFrameworkRequestAuthority(input) {
   return [
     "aria.deerflow.run.v1",
@@ -57,6 +65,7 @@ export function buildAgentFrameworkRequestAuthority(input) {
     input.idempotencyKey,
     needAuthority(input.need),
     queryAuthority(input.reviewedQueries),
+    memoryAuthority(input.agentMemory),
   ];
 }
 

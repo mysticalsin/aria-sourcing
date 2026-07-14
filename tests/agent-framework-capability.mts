@@ -39,6 +39,11 @@ const request = {
     industryExperience: ["SaaS"],
   },
   reviewedQueries: [{ platform: "GitHub" as const, query: "language:typescript location:montreal" }],
+  agentMemory: {
+    policy: "untrusted-reference-v1" as const,
+    receiptSha256: "f".repeat(64),
+    items: [{ kind: "preference", content: "Prefer reviewed TypeScript community signals." }],
+  },
   deerflowInstanceId: "55000000-0000-4000-8000-000000000005",
   flowiseInstanceId: "60000000-0000-4000-8000-000000000006",
   flowiseSourceCommit: FLOWISE_SOURCE_COMMIT,
@@ -54,6 +59,16 @@ assert.equal(
   verifyAgentFrameworkRequestCapability(secret, {
     ...request,
     reviewedQueries: [{ platform: "GitHub", query: "language:rust" }],
+  }, token),
+  false,
+);
+assert.equal(
+  verifyAgentFrameworkRequestCapability(secret, {
+    ...request,
+    agentMemory: {
+      ...request.agentMemory,
+      items: [{ kind: "preference", content: "Injected replacement memory." }],
+    },
   }, token),
   false,
 );
@@ -99,4 +114,4 @@ assert.match(claim, /^[A-Za-z0-9_-]{43}$/);
 assert.notEqual(claim, token);
 
 assert.throws(() => signAgentFrameworkRequestCapability("short", request));
-console.log("RESULT agent-framework-capability: 11 passed, 0 failed");
+console.log("RESULT agent-framework-capability: 12 passed, 0 failed");

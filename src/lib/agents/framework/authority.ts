@@ -60,6 +60,7 @@ const RecoveryClaimSchema = z.object({
   run_status: z.literal("proposed"),
   source_query: z.string().trim().min(3).max(256),
   sourcing_count: z.number().int().min(1).max(8),
+  reports: z.array(z.string().trim().min(1).max(500)).length(1),
 }).passthrough();
 
 export type AgentFrameworkClaim = {
@@ -91,6 +92,7 @@ export type AgentFrameworkClaimResult =
         runId: string;
         sourceQuery: string;
         sourcingCount: number;
+        reports: string[];
       };
     }
   | { ok: false; status: z.infer<typeof ClaimFailureSchema>["status"] | "authority_unavailable" };
@@ -156,8 +158,16 @@ export async function claimAgentFrameworkRun(
         runId: recovery.data.run_id,
         sourceQuery: recovery.data.source_query,
         sourcingCount: recovery.data.sourcing_count,
+        reports: recovery.data.reports,
       },
     };
+  }
+  const malformedRecovery = z.object({
+    status: z.literal("already_completed"),
+    run_status: z.literal("proposed"),
+  }).passthrough().safeParse(data);
+  if (malformedRecovery.success) {
+    return { ok: false, status: "authority_unavailable" };
   }
   const failure = ClaimFailureSchema.safeParse(data);
   return failure.success
@@ -222,6 +232,7 @@ export function completeAgentFrameworkRun(
   sourcingCapabilitySha256: string,
   sourcingCount: number,
   sourceQuery: string,
+  reports: string[],
 ) {
   return mutate(client, "complete_agent_framework_run", {
     p_run_id: runId,
@@ -230,6 +241,7 @@ export function completeAgentFrameworkRun(
     p_sourcing_capability_sha256: sourcingCapabilitySha256,
     p_sourcing_count: sourcingCount,
     p_source_query: sourceQuery,
+    p_reports: reports,
   });
 }
 
@@ -244,4 +256,70 @@ export function failAgentFrameworkRun(
     p_lease_id: leaseId,
     p_error_code: errorCode,
   });
+}
+
+const MemoryEgressAuthorizationSchema = z.object({
+  status: z.literal("authorized"),
+  egress_lease_id: z.string().uuid(),
+  expires_at: z.string().datetime({ offset: true }),
+  replayed: z.literal(false),
+}).strict();
+
+const MIN_MEMORY_EGRESS_TTL_MS = 65_000;
+
+const MemoryEgressFailureSchema = z.object({
+  status: z.enum([
+    "invalid_request",
+    "not_found",
+    "lease_invalid",
+    "memory_changed",
+    "memory_in_use",
+  ]),
+}).passthrough();
+
+export async function authorizeAgentFrameworkMemoryEgress(
+  client: FrameworkRpcClient,
+  runId: string,
+  runLeaseId: string,
+): Promise<
+  | { ok: true; egressLeaseId: string; expiresAt: string }
+  | { ok: false; status: z.infer<typeof MemoryEgressFailureSchema>["status"] | "authority_unavailable" }
+> {
+  const { data, error } = await client.rpc("authorize_agent_framework_memory_egress", {
+    p_framework_run_id: runId,
+    p_run_lease_id: runLeaseId,
+  });
+  if (error) return { ok: false, status: "authority_unavailable" };
+  const authorized = MemoryEgressAuthorizationSchema.safeParse(data);
+  if (authorized.success) {
+    const remainingTtlMs = Date.parse(authorized.data.expires_at) - Date.now();
+    if (!Number.isFinite(remainingTtlMs) || remainingTtlMs < MIN_MEMORY_EGRESS_TTL_MS) {
+      return { ok: false, status: "authority_unavailable" };
+    }
+    return {
+      ok: true,
+      egressLeaseId: authorized.data.egress_lease_id,
+      expiresAt: authorized.data.expires_at,
+    };
+  }
+  const failure = MemoryEgressFailureSchema.safeParse(data);
+  return failure.success
+    ? { ok: false, status: failure.data.status }
+    : { ok: false, status: "authority_unavailable" };
+}
+
+export async function releaseAgentFrameworkMemoryEgress(
+  client: FrameworkRpcClient,
+  runId: string,
+  runLeaseId: string,
+  egressLeaseId: string,
+): Promise<"released" | "authority_unavailable"> {
+  const { data, error } = await client.rpc("release_agent_framework_memory_egress", {
+    p_framework_run_id: runId,
+    p_run_lease_id: runLeaseId,
+    p_egress_lease_id: egressLeaseId,
+  });
+  if (error) return "authority_unavailable";
+  const parsed = z.object({ status: z.literal("released") }).passthrough().safeParse(data);
+  return parsed.success ? "released" : "authority_unavailable";
 }

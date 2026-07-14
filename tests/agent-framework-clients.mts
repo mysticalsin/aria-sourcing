@@ -80,6 +80,11 @@ const request = {
     industryExperience: ["SaaS"],
   },
   reviewedQueries: [{ platform: "GitHub", query: "language:typescript location:montreal" }],
+  agentMemory: {
+    policy: "untrusted-reference-v1" as const,
+    receiptSha256: "f".repeat(64),
+    items: [],
+  },
   deerflowInstanceId: "50000000-0000-4000-8000-000000000005",
   flowiseInstanceId: "60000000-0000-4000-8000-000000000006",
   flowiseSourceCommit: FLOWISE_SOURCE_COMMIT,
@@ -305,6 +310,7 @@ await test("readiness verifies exact framework identity and real dependencies", 
       assert.equal(new Headers(init?.headers).get("x-aria-workspace-id"), config.readinessWorkspaceId);
       return responseAt(url, {
         ok: true,
+        readinessSchema: "aria.agent-framework-adapter-readiness.v2",
         framework,
         contract: framework === "deerflow" ? "aria.deerflow.run.v1" : "aria.flowise.import.v1",
         sourceCommit: framework === "deerflow" ? DEERFLOW_SOURCE_COMMIT : FLOWISE_SOURCE_COMMIT,
@@ -314,7 +320,15 @@ await test("readiness verifies exact framework identity and real dependencies", 
         frameworkInstanceId: framework === "deerflow"
           ? config.readinessDeerflowInstanceId
           : config.readinessFlowiseInstanceId,
-        dependencies: { database: true, queue: true, worker: true, policy: true },
+        dependencies: framework === "deerflow"
+          ? {
+              modelGateway: true,
+              runtimeHealth: true,
+              modelBinding: true,
+              assistantBinding: true,
+              policyBundle: true,
+            }
+          : { database: true, queue: true, worker: true, policy: true },
         ...(framework === "flowise" ? { isolation: "instance-per-workspace" } : {}),
       });
     },
@@ -335,6 +349,7 @@ await test("deployment health remains probeable while execution is kill-switched
       const framework = url.includes("deerflow") ? "deerflow" : "flowise";
       return responseAt(url, {
         ok: true,
+        readinessSchema: "aria.agent-framework-adapter-readiness.v2",
         framework,
         contract: framework === "deerflow" ? "aria.deerflow.run.v1" : "aria.flowise.import.v1",
         sourceCommit: framework === "deerflow" ? DEERFLOW_SOURCE_COMMIT : FLOWISE_SOURCE_COMMIT,
@@ -344,7 +359,15 @@ await test("deployment health remains probeable while execution is kill-switched
         frameworkInstanceId: framework === "deerflow"
           ? config.readinessDeerflowInstanceId
           : config.readinessFlowiseInstanceId,
-        dependencies: { database: true, queue: true, worker: true, policy: true },
+        dependencies: framework === "deerflow"
+          ? {
+              modelGateway: true,
+              runtimeHealth: true,
+              modelBinding: true,
+              assistantBinding: true,
+              policyBundle: true,
+            }
+          : { database: true, queue: true, worker: true, policy: true },
         ...(framework === "flowise" ? { isolation: "instance-per-workspace" } : {}),
       });
     },

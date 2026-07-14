@@ -66,6 +66,32 @@ export function anonymizeCandidateRecord(candidate: Candidate): Candidate {
   };
 }
 
+/**
+ * An anonymized candidate is a permanent suppression tombstone. The flag is
+ * intentionally the only discriminator so a partially rendered legacy record
+ * cannot become mutable or contactable again.
+ */
+export function isCandidateErasureTombstone(candidate: Candidate): boolean {
+  return candidate.complianceFlags.anonymized === true;
+}
+
+/**
+ * Reject the entire local mutation when it rewrites or removes a tombstone.
+ * This also prevents companion activity, outreach, or metric writes from
+ * claiming that an incompatible candidate mutation succeeded.
+ */
+export function preserveCandidateErasureTombstones(
+  current: HermesState,
+  next: HermesState,
+): HermesState {
+  for (const tombstone of current.candidates.filter(isCandidateErasureTombstone)) {
+    if (next.candidates.find((candidate) => candidate.id === tombstone.id) !== tombstone) {
+      return current;
+    }
+  }
+  return next;
+}
+
 export function redactCandidateLinkedActivities(
   activities: Activity[],
   candidateId: string,

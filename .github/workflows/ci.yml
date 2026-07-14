@@ -134,6 +134,12 @@ jobs:
       - name: Verify agent memory authority
         run: npm run test:db-agent-memory
 
+      - name: Verify agent operational rollback authority
+        run: npm run test:db-agent-operational-rollback
+
+      - name: Verify candidate erasure authority
+        run: npm run test:db-candidate-erasure
+
       - name: Verify Apollo enrichment authority
         run: npm run test:db-apollo-enrichment
 

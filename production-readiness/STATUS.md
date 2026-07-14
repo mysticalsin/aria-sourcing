@@ -8,16 +8,18 @@ particular production deployment is healthy.
 ## Source candidate
 
 - Node 22, Next.js 16, React 19, and TypeScript 5 are enforced by the repository.
-- `npm test` runs 164 chained checks: 36 pretest commands plus 128 application
-  test commands.
+- `npm test` runs 169 top-level lifecycle commands: 36 pretest, 132 application,
+  and 1 posttest command.
 - Local acceptance requires typecheck, lint, the full test chain, the isolated
   production build, the exact database restart test, and the database authority
   test.
-- The Fly release builds the application, database, bootstrap, and Kong images
-  for `linux/amd64`; pulls Auth and REST at their exact config-pinned upstream
-  digests; schema-validates CycloneDX 1.7 SBOMs and applies HIGH/CRITICAL plus
-  secret gates to all six images; attests and promotes only the four local
-  builds; and verifies every running digest before acceptance.
+- The Fly release builds the application, database, bootstrap, Kong, and
+  one-shot Graphify lesson-worker images for `linux/amd64`; pulls Auth and REST
+  at their exact config-pinned upstream digests; schema-validates CycloneDX 1.7
+  SBOMs and applies HIGH/CRITICAL plus secret gates to all 7 images; attests and
+  promotes the 5 local builds; and verifies all 6 deployed service digests.
+  Graphify has a pre-publication container test and immutable supply-chain
+  evidence, not a post-promotion execution receipt.
 - Database recovery mounts the durable volume at `/var/lib/postgresql`, keeps the
   image data directory at `/var/lib/postgresql/data`, and refuses legacy or
   partial layouts rather than initializing an empty replacement.
@@ -28,6 +30,9 @@ particular production deployment is healthy.
   mutation and again before receipt creation. Previous encryption keys use a
   key-ID ring; retiring a deployed ring requires exact release-bound owner
   approval.
+- The 0032 application-surface fallback passes its disposable database test but
+  is not production-executable. A protected apply job and append-only,
+  ledger-safe forward migration are still required.
 - Inbound candidate replies are queue-only and require named human review;
   legacy reply flags never grant provider delivery authority.
 - Agent graph drafts stay in exact-owner run history with no delivery authority.
@@ -43,6 +48,11 @@ particular production deployment is healthy.
 - Graphify receives only aggregate query fingerprints and outcome counts in an
   isolated no-network worker. It has no runtime sourcing authority and cannot
   promote lessons; a separate admin review with independent evidence is required.
+- Candidate erasure uses tenant-bound authority, local tombstones, non-final
+  provider obligations, and transaction advisory locks for every normalized
+  contact reimport path covered by migration 0033. Two-session tests prove both
+  writer-first and erasure-first lock orders. This does not cover candidate data
+  embedded in agent-run JSON, framework results, or encrypted agent memory.
 
 ## Release acceptance still required
 
@@ -58,6 +68,13 @@ particular production deployment is healthy.
 5. Prove database, Auth, REST, Kong, `/api/ready`, migration identity, persistence,
    two restart cycles, backup restore, rollback, login, and controlled campaign
    behavior before real tenant or candidate use.
+6. Before enabling candidate erasure for production acceptance, add explicit
+   candidate provenance and erasure receipts for run, framework, and memory
+   payloads; an independently retained restore-replay journal; verified provider
+   deletion evidence; and a supported path above 100 provider obligations.
+7. Keep the 0032 application-surface fallback disabled unless a protected apply
+   job and append-only, ledger-safe forward migration are independently reviewed;
+   otherwise use approved restore or a new forward migration.
 
 Until those release gates pass, source readiness must not be described as live
 production readiness.

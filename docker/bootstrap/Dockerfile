@@ -8,6 +8,7 @@ COPY run.sh /usr/local/bin/run.sh
 COPY run.fly.sh /usr/local/bin/run.fly.sh
 COPY supabase-admin-reconciliation.sql /opt/aria/supabase-admin-reconciliation.sql
 COPY legacy-baseline-invariants.sql /opt/aria/legacy-baseline-invariants.sql
+COPY legacy-table-inventory.txt /opt/aria/legacy-table-inventory.txt
 COPY legacy-baseline-public-schema.sha256 /opt/aria/legacy-baseline-public-schema.sha256
 COPY recovery-empty-public-schema.sha256 /opt/aria/recovery-empty-public-schema.sha256
 RUN chmod +x /usr/local/bin/run.sh /usr/local/bin/run.fly.sh

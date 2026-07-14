@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
-import { deriveAgentFrameworkConfigurationFromEnvironment } from "../src/lib/agents/framework/configuration-core.mjs";
+import {
+  deriveAgentFrameworkConfigurationFromEnvironment,
+  normalizePrivateInternalUrl,
+} from "../src/lib/agents/framework/configuration-core.mjs";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const COMMIT_RE = /^[0-9a-f]{40}$/;
@@ -16,7 +19,16 @@ const TARGET_KEYS = [
   "isolation_mode",
   "configuration_sha256",
 ];
-const READINESS_DEPENDENCY_KEYS = ["database", "policy", "queue", "worker"];
+const READINESS_DEPENDENCY_KEYS = Object.freeze({
+  deerflow: Object.freeze([
+    "assistantBinding",
+    "modelBinding",
+    "modelGateway",
+    "policyBundle",
+    "runtimeHealth",
+  ]),
+  flowise: Object.freeze(["database", "policy", "queue", "worker"]),
+});
 const DEFAULT_INTERVAL_MS = 60_000;
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_MAX_TARGETS = 100;
@@ -47,21 +59,9 @@ function validServiceToken(value) {
   return typeof value === "string" && value.length >= 32 && value.length <= 4_096 && !/\s/.test(value);
 }
 
-function privateInternalUrl(value, { requireHttps }) {
-  if (typeof value !== "string" || value.length < 1 || value.length > 2_048) return null;
+function privateInternalUrl(value) {
   try {
-    const parsed = new URL(value);
-    if (
-      (requireHttps ? parsed.protocol !== "https:" : !["http:", "https:"].includes(parsed.protocol)) ||
-      !parsed.hostname.endsWith(".internal") ||
-      parsed.hostname === ".internal" ||
-      parsed.username ||
-      parsed.password ||
-      parsed.pathname !== "/" ||
-      parsed.search ||
-      parsed.hash
-    ) return null;
-    return parsed;
+    return new URL(normalizePrivateInternalUrl(value, "framework adapter URL"));
   } catch {
     return null;
   }
@@ -169,7 +169,7 @@ function identityMatches(target, configuration) {
 }
 
 function adapterConfigurationIsValid(framework) {
-  return privateInternalUrl(framework.url, { requireHttps: true }) !== null &&
+  return privateInternalUrl(framework.url) !== null &&
     validServiceToken(framework.token) &&
     COMMIT_RE.test(framework.sourceCommit) &&
     IMAGE_DIGEST_RE.test(framework.imageDigest) &&
@@ -181,15 +181,17 @@ function adapterConfigurationIsValid(framework) {
 function readinessResponse(value, target, framework) {
   const parsed = record(value);
   const expectedKeys = target.framework === "flowise"
-    ? ["configurationSha256", "contract", "dependencies", "framework", "frameworkInstanceId", "imageDigest", "isolation", "ok", "sourceCommit", "workspaceId"]
-    : ["configurationSha256", "contract", "dependencies", "framework", "frameworkInstanceId", "imageDigest", "ok", "sourceCommit", "workspaceId"];
+    ? ["configurationSha256", "contract", "dependencies", "framework", "frameworkInstanceId", "imageDigest", "isolation", "ok", "readinessSchema", "sourceCommit", "workspaceId"]
+    : ["configurationSha256", "contract", "dependencies", "framework", "frameworkInstanceId", "imageDigest", "ok", "readinessSchema", "sourceCommit", "workspaceId"];
   if (!parsed || !hasExactKeys(parsed, expectedKeys)) return { valid: false };
   const dependencies = record(parsed.dependencies);
+  const dependencyKeys = READINESS_DEPENDENCY_KEYS[target.framework];
   if (
     !dependencies ||
-    !hasExactKeys(dependencies, READINESS_DEPENDENCY_KEYS) ||
-    READINESS_DEPENDENCY_KEYS.some((key) => typeof dependencies[key] !== "boolean") ||
+    !hasExactKeys(dependencies, dependencyKeys) ||
+    dependencyKeys.some((key) => typeof dependencies[key] !== "boolean") ||
     typeof parsed.ok !== "boolean" ||
+    parsed.readinessSchema !== "aria.agent-framework-adapter-readiness.v2" ||
     parsed.framework !== target.framework ||
     parsed.contract !== framework.contract ||
     parsed.sourceCommit !== target.source_commit ||
@@ -201,14 +203,14 @@ function readinessResponse(value, target, framework) {
   ) return { valid: false };
   return {
     valid: true,
-    ready: parsed.ok === true && READINESS_DEPENDENCY_KEYS.every((key) => dependencies[key] === true),
+    ready: parsed.ok === true && dependencyKeys.every((key) => dependencies[key] === true),
     evidence: parsed,
   };
 }
 
 function readinessSha256(target, ready, code, evidence) {
   return createHash("sha256").update(JSON.stringify({
-    schema: "aria.agent-framework-readiness.v1",
+    schema: "aria.agent-framework-readiness.v2",
     workspaceId: target.workspace_id,
     instanceId: target.instance_id,
     framework: target.framework,
@@ -239,7 +241,7 @@ async function probeTarget(target, configuration, fetcher) {
     };
   }
 
-  const baseUrl = privateInternalUrl(framework.url, { requireHttps: true });
+  const baseUrl = privateInternalUrl(framework.url);
   const endpoint = new URL("/readyz", baseUrl);
   let response;
   try {

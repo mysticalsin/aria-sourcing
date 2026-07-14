@@ -12,19 +12,20 @@ boundaries are changed.
 
 ## Error contract
 
-Contracted routes return errors as:
+Contracted routes return at least the following error fields:
 
 ```json
 {
   "ok": false,
   "code": "STABLE_MACHINE_CODE",
-  "error": "Bounded operator-safe message.",
   "requestId": "opaque-correlation-id"
 }
 ```
 
-Messages never contain upstream bodies, secrets, personal data, internal paths,
-or database details. Callers branch on `code`, not message text.
+Some route families add an optional bounded `error` message when their existing
+contract requires one. Memory and candidate-erasure routes intentionally omit
+it. Messages never contain upstream bodies, secrets, personal data, internal
+paths, or database details. Callers branch on `code`, not message text.
 
 ## Paid provider actions
 

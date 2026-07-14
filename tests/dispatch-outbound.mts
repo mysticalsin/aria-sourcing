@@ -178,7 +178,13 @@ function baseMsg(over: Row = {}): Row {
     ...over,
   };
 }
-const LIVE_SEAT: Row = { id: "seat-1", provider: "WhatsApp Cloud", status: "active", mode: "live" };
+const LIVE_SEAT: Row = {
+  id: "seat-1",
+  workspace_id: "ws-1",
+  provider: "WhatsApp Cloud",
+  status: "active",
+  mode: "live",
+};
 const LIVE_WHATSAPP_CONTACT: Row = {
   workspace_id: "ws-1",
   recipient_e164: "33612345678",

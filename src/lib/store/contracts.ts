@@ -34,8 +34,6 @@ import type {
   LeadSource,
   LlmProvider,
   McpServerConfig,
-  MemoryEntry,
-  MemoryKind,
   ModelTask,
   OutreachChannel,
   OutreachMessage,
@@ -85,7 +83,37 @@ export type CandidateIntakeResult =
   | { ok: true; added: number; skipped: number; skipReason?: string }
   | { ok: false; error: string };
 
-export type CandidateAnonymizeResult = { ok: true } | { ok: false; error: string };
+export type CandidateErasureStatus =
+  | "pending_provider"
+  | "manual_required"
+  | "retryable_failure"
+  | "completed"
+  | "blocked_legal_hold";
+
+export type CandidateErasureObligation = {
+  id: string;
+  provider: string;
+  status: CandidateErasureStatus;
+  attemptCount: number;
+};
+
+export type CandidateAnonymizeResult =
+  | {
+      ok: true;
+      completed: boolean;
+      status: Exclude<CandidateErasureStatus, "blocked_legal_hold">;
+      requestId?: string;
+      scrubCounts: Record<string, number>;
+      obligations: CandidateErasureObligation[];
+      workspaceRefreshRequired: boolean;
+    }
+  | {
+      ok: false;
+      completed: false;
+      error: string;
+      status?: CandidateErasureStatus;
+      requestId?: string;
+    };
 
 export type SourcingFeedbackReceipt = SourcingFeedbackReceiptDto;
 
@@ -377,6 +405,7 @@ export interface HermesActions {
 
   // fleet — multi-seat coordination + anti-ban guardrails
   addSeat: (partial: Partial<AgentSeat> & { name: string; operatorEmail: string }) => Promise<AgentSeat | null>;
+  /** Seeds synthetic seats only when Supabase is disabled. Live workspaces use addSeat. */
   deployAgents: (
     n: number,
     opts?: { language?: string; namePrefix?: string },
@@ -395,11 +424,6 @@ export interface HermesActions {
   }) => Promise<{ ok: boolean; entry?: SuppressionEntry; error?: string }>;
   removeSuppression: (id: string) => Promise<{ ok: boolean; error?: string }>;
   allocateOutreach: (opts?: { campaignId?: string; pool?: "ready" | "interested" }) => AllocationResult;
-  runFleetSourcing: (opts?: { campaignId?: string; perAgent?: number }) => {
-    sourced: number;
-    skipped: number;
-    perSeat: { seatName: string; campaignTitle: string; sourced: number }[];
-  };
 
   // skills — learning loop
   runLearning: () => SkillUpdate[];
@@ -491,12 +515,6 @@ export interface HermesActions {
   sendChat: (threadId: string, text: string) => Promise<void>;
   /** Abort an in-flight sendChat for the given thread (call on unmount / thread delete). */
   cancelChat: (threadId: string) => void;
-
-  // memory
-  addMemory: (seatId: string, kind: MemoryKind, content: string) => MemoryEntry;
-  updateMemory: (id: string, patch: Partial<Pick<MemoryEntry, "kind" | "content" | "pinned">>) => void;
-  removeMemory: (id: string) => void;
-  togglePinMemory: (id: string) => void;
 
   // schedules
   addSchedule: (job: Omit<CronJob, "id" | "createdAt" | "lastRunAt">) => CronJob;

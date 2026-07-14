@@ -1,3 +1,5 @@
+# RELEASE-DISABLED: provenance-only legacy role. The reviewed operator refuses
+# to create or deploy this app while DeerFlow uses the memory-only topology.
 app = "aria-mantu-deerflow-db"
 primary_region = "cdg"
 kill_signal = "SIGTERM"

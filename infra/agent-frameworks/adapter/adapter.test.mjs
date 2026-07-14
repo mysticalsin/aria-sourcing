@@ -112,6 +112,11 @@ const runRequestWithoutCapability = {
     { platform: "GitHub", query: "language:typescript location:montreal" },
     { platform: "GitHub", query: "language:typescript topic:postgres location:canada" },
   ],
+  agentMemory: {
+    policy: "untrusted-reference-v1",
+    receiptSha256: "f".repeat(64),
+    items: [{ kind: "preference", content: "Prefer reviewed TypeScript community signals." }],
+  },
   deerflowInstanceId: INSTANCE_ID,
   flowiseInstanceId: FLOWISE_INSTANCE_ID,
   flowiseSourceCommit: FLOWISE_SOURCE_COMMIT,
@@ -217,6 +222,7 @@ test("adapter startup accepts only private listener bindings and its own Compose
     const redis = new URL(internalRedisUrlFromEnvironment({
       ...environment,
       ADAPTER_MODE: mode,
+      ...(mode === "deerflow" ? { REDIS_PLANE_OWNER: "aria-adapter" } : {}),
       REDIS_HOST: host,
       ...(reviewedFlyHost ? { REDIS_FLY_HOST: reviewedFlyHost } : {}),
     }));
@@ -243,6 +249,12 @@ test("adapter startup accepts only private listener bindings and its own Compose
     assert.throws(() => internalRedisUrlFromEnvironment({ ...environment, ADAPTER_MODE: "deerflow", REDIS_HOST: host }), host);
   }
   assert.throws(() => internalRedisUrlFromEnvironment({ ...environment, ADAPTER_MODE: "deerflow", REDIS_HOST: "flowise-redis" }));
+  assert.throws(() => internalRedisUrlFromEnvironment({
+    ...environment,
+    ADAPTER_MODE: "deerflow",
+    REDIS_PLANE_OWNER: "deerflow",
+    REDIS_HOST: "deerflow-redis",
+  }));
   assert.throws(() => internalRedisUrlFromEnvironment({ ...environment, ADAPTER_MODE: "flowise", REDIS_HOST: "deerflow-redis" }));
   assert.throws(() => internalRedisUrlFromEnvironment({
     ...environment,
@@ -321,6 +333,13 @@ test("DeerFlow adapter invokes the pinned official wait API and can select only 
     assert.equal(prompt.contract, "aria.deerflow.proposal.v1");
     assert.deepEqual(prompt.need, expectedRequest.need);
     assert.deepEqual(prompt.reviewedQueries, expectedRequest.reviewedQueries.map((query, index) => ({ index, ...query })));
+    assert.deepEqual(prompt.agentMemory, {
+      policy: expectedRequest.agentMemory.policy,
+      items: expectedRequest.agentMemory.items,
+    });
+    assert.equal(Object.hasOwn(prompt.agentMemory, "receiptSha256"), false);
+    assert.match(expectedRequest.agentMemory.receiptSha256, /^[0-9a-f]{64}$/);
+    assert.match(prompt.memoryPolicy, /untrusted reference data/i);
     assert.equal(prompt.output.report, 'literal "complete" when the workflow reports, otherwise null');
     assert.equal(Object.hasOwn(prompt, "candidates"), false);
     assert.equal(Object.hasOwn(prompt, "capabilityToken"), false);
@@ -765,11 +784,10 @@ test("Flowise adapter rejects cross-workspace bindings before upstream egress", 
   assert.equal(upstreamCalls, 0);
 });
 
-test("readiness proves exact identity plus database, queue, worker, and policy dependencies", async (t) => {
+test("DeerFlow readiness reports only the exact runtime facts it proves", async (t) => {
   const seen = [];
   const upstream = await listen(async (req, res) => {
     seen.push(`${req.method} ${req.url}`);
-    if (req.method === "POST") await readJson(req);
     if (req.url === "/health") return sendJson(res, 200, { status: "healthy", service: "deer-flow-gateway" });
     if (req.url === "/api/models") return sendJson(res, 200, { models: [{ name: "aria-model", model: "gpt-test" }], token_usage: { enabled: true } });
     if (req.url === "/api/assistants/aria-proposal") return sendJson(res, 200, {
@@ -777,11 +795,9 @@ test("readiness proves exact identity plus database, queue, worker, and policy d
       graph_id: "lead_agent",
       name: "aria-proposal",
     });
-    if (req.url === "/api/threads/search") return sendJson(res, 200, []);
     return sendJson(res, 404, {});
   });
   t.after(() => upstream.close());
-  let redisProbes = 0;
   let policyMatches = true;
   let modelGatewayReady = true;
   const adapter = await listen(createAdapterRequestListener({
@@ -799,13 +815,7 @@ test("readiness proves exact identity plus database, queue, worker, and policy d
     capabilitySecret: CAPABILITY_SECRET,
     acceptedFlowiseImageDigest: FLOWISE_IMAGE,
     acceptedFlowiseIsolation: "instance-per-workspace",
-    redisUrl: "redis://redis.internal:6379/0",
   }, {
-    redisProbe: async (url) => {
-      redisProbes += 1;
-      assert.equal(url, "redis://redis.internal:6379/0");
-      return true;
-    },
     policyProbe: async () => policyMatches,
     modelGatewayProbe: async () => modelGatewayReady,
   }));
@@ -815,6 +825,7 @@ test("readiness proves exact identity plus database, queue, worker, and policy d
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
     ok: true,
+    readinessSchema: "aria.agent-framework-adapter-readiness.v2",
     framework: "deerflow",
     contract: "aria.deerflow.run.v1",
     sourceCommit: DEERFLOW_SOURCE_COMMIT,
@@ -822,19 +833,25 @@ test("readiness proves exact identity plus database, queue, worker, and policy d
     configurationSha256: CONFIGURATION_SHA,
     workspaceId: WORKSPACE_ID,
     frameworkInstanceId: INSTANCE_ID,
-    dependencies: { database: true, queue: true, worker: true, policy: true },
+    dependencies: {
+      modelGateway: true,
+      runtimeHealth: true,
+      modelBinding: true,
+      assistantBinding: true,
+      policyBundle: true,
+    },
   });
-  assert.deepEqual(seen, ["GET /health", "GET /api/models", "GET /api/assistants/aria-proposal", "POST /api/threads/search"]);
-  assert.equal(redisProbes, 1);
+  assert.deepEqual(seen, ["GET /health", "GET /api/models", "GET /api/assistants/aria-proposal"]);
 
   policyMatches = false;
   const mismatch = await fetch(`${adapter.origin}/readyz`, { headers: adapterHeaders("aria.deerflow.run.v1") });
   assert.equal(mismatch.status, 503);
   assert.deepEqual((await mismatch.json()).dependencies, {
-    database: false,
-    queue: false,
-    worker: true,
-    policy: false,
+    modelGateway: true,
+    runtimeHealth: true,
+    modelBinding: true,
+    assistantBinding: true,
+    policyBundle: false,
   });
 
   policyMatches = true;
@@ -842,10 +859,11 @@ test("readiness proves exact identity plus database, queue, worker, and policy d
   const unavailableModel = await fetch(`${adapter.origin}/readyz`, { headers: adapterHeaders("aria.deerflow.run.v1") });
   assert.equal(unavailableModel.status, 503);
   assert.deepEqual((await unavailableModel.json()).dependencies, {
-    database: false,
-    queue: false,
-    worker: false,
-    policy: false,
+    modelGateway: false,
+    runtimeHealth: false,
+    modelBinding: false,
+    assistantBinding: false,
+    policyBundle: false,
   });
 });
 
@@ -947,6 +965,7 @@ test("Flowise readiness verifies the official ping, workspace database query, qu
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
     ok: true,
+    readinessSchema: "aria.agent-framework-adapter-readiness.v2",
     framework: "flowise",
     contract: "aria.flowise.import.v1",
     sourceCommit: FLOWISE_SOURCE_COMMIT,

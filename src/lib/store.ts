@@ -17,7 +17,6 @@ import {
   generateWeeklyReport,
   interviewerPrepEmail,
   newOutreachMessage,
-  sourceCandidates,
   type GeneratedOutreach,
   type ReplyClassification,
 } from "./mock-ai";
@@ -36,6 +35,8 @@ import {
 import { resolveAiProvider } from "./ai/provider";
 import {
   anonymizeHermesState,
+  isCandidateErasureTombstone,
+  preserveCandidateErasureTombstones,
 } from "./candidate-privacy";
 import {
   candidateDisclosureContextForCampaignLike,
@@ -80,6 +81,8 @@ import { demoStateAllowsCandidatePersistence } from "./store/demo-persistence";
 import { mapSillageCandidates, parseSillageIdentifier } from "./store/sourcing-helpers";
 import { appendWinRecord } from "./store/winlog-derive";
 import type {
+  CandidateErasureObligation,
+  CandidateErasureStatus,
   HermesActions,
   HermesContextValue,
   SourcingFeedbackReceipt,
@@ -99,7 +102,6 @@ import type {
   LlmProvider,
   McpServerConfig,
   MemoryEntry,
-  MemoryKind,
   ModelTask,
   Role,
   Booking,
@@ -133,7 +135,6 @@ import type {
   SavedModel,
   SkillKey,
   SkillUpdate,
-  SourcePlatform,
   SuppressionEntry,
   SystemSettings,
   ToolId,
@@ -773,7 +774,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     ) return false;
     const base = stateRef.current;
     if (!base) return false;
-    const next = fn(base);
+    const next = preserveCandidateErasureTombstones(base, fn(base));
     if (!supabaseEnabled && !demoStateAllowsCandidatePersistence(next)) return false;
     stateRef.current = next;
     setState(next);
@@ -790,7 +791,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     ) return false;
     const base = stateRef.current;
     if (!base) return false;
-    const next = fn(base);
+    const next = preserveCandidateErasureTombstones(base, fn(base));
     if (next === base) return true;
     if (!supabaseEnabled && !demoStateAllowsCandidatePersistence(next)) return false;
 
@@ -3595,6 +3596,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       commit((s) => {
         const cand = s.candidates.find((c) => c.id === id);
         if (!cand) return s;
+        if (isCandidateErasureTombstone(cand)) return s;
         let next: HermesState = {
           ...s,
           // Any complianceMutate caller may change `stage` (e.g. suppressCandidate,
@@ -3679,6 +3681,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   const restoreCandidateContact = useCallback(
     (id: string) => {
       const cand = current().candidates.find((c) => c.id === id);
+      if (!cand || isCandidateErasureTombstone(cand)) return;
       complianceMutate(
         id,
         (c) => ({
@@ -3698,7 +3701,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // Mirror suppressCandidate/markDoNotContact: also remove the candidate
       // from the real, server-enforced suppression_list so the outreach send
       // route stops blocking them, not just the local view.
-      if (cand) syncCandidateSuppressionToServer(cand, "Restored", "DELETE");
+      syncCandidateSuppressionToServer(cand, "Restored", "DELETE");
     },
     [complianceMutate, current, syncCandidateSuppressionToServer],
   );
@@ -3719,92 +3722,162 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const anonymizeCandidate = useCallback(async (id: string) => {
     if (!workspaceEffectAllowed()) {
-      return { ok: false as const, error: "Workspace unavailable. Retry before anonymizing." };
+      return {
+        ok: false as const,
+        completed: false as const,
+        error: "Workspace unavailable. Retry before anonymizing.",
+      };
     }
     const candidate = current().candidates.find((item) => item.id === id);
-    if (!candidate) return { ok: false as const, error: "Candidate not found." };
-    if (candidate.complianceFlags.anonymized) return { ok: true as const };
+    if (!candidate) {
+      return { ok: false as const, completed: false as const, error: "Candidate not found." };
+    }
 
     const role = supabaseEnabled ? liveRoleRef.current : current().currentRole;
     if (!role || !can(role, "compliance")) {
-      return { ok: false as const, error: "You do not have permission to anonymize candidates." };
-    }
-
-    if (candidate.sourcePlatform === "Apollo" && candidate.sourceAuthorityId) {
-      if (role !== "admin") {
-        return {
-          ok: false as const,
-          error: "Administrator permission is required to erase Apollo enrichment receipts.",
-        };
-      }
-      let response: Response;
-      let body: unknown;
-      try {
-        response = await workspaceFetch("/api/admin/source/apollo/erasure", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            campaignId: candidate.campaignId,
-            candidateId: candidate.id,
-            targetId: candidate.sourceAuthorityId,
-          }),
-        });
-        body = await response.json().catch(() => null);
-      } catch {
-        return { ok: false as const, error: "Could not reach the Apollo erasure service." };
-      }
-      const receipt = body !== null && typeof body === "object" && !Array.isArray(body)
-        ? body as Record<string, unknown>
-        : null;
-      if (
-        !response.ok ||
-        receipt?.ok !== true ||
-        receipt.campaignId !== candidate.campaignId ||
-        receipt.candidateId !== candidate.id ||
-        receipt.targetId !== candidate.sourceAuthorityId
-      ) {
-        const message = typeof receipt?.error === "string" && receipt.error.length <= 300
-          ? receipt.error
-          : "Apollo receipt erasure failed.";
-        return { ok: false as const, error: message };
-      }
-    }
-
-    let changed = false;
-    const persisted = await commitPersisted((state) => {
-      const exact = state.candidates.find((item) => item.id === id);
-      if (
-        !exact ||
-        (candidate.sourcePlatform === "Apollo" &&
-          exact.sourceAuthorityId !== candidate.sourceAuthorityId)
-      ) {
-        return state;
-      }
-      changed = true;
-      let next = anonymizeHermesState(state, id);
-      next = recomputeMetrics(next, exact.campaignId);
-      return withActivity(
-        next,
-        makeActivity({
-          type: "compliance",
-          title: "Candidate record anonymized",
-          notes: "Direct identifiers and candidate-linked content were redacted.",
-          outcome: "Anonymized",
-          campaignId: exact.campaignId,
-          linkedEntityType: "candidate",
-          linkedEntityId: id,
-        }),
-        exact.campaignId,
-      );
-    });
-    if (!persisted || !changed) {
       return {
         ok: false as const,
-        error: "The server receipt was erased, but the shared candidate record could not be saved. Retry anonymization.",
+        completed: false as const,
+        error: "You do not have permission to anonymize candidates.",
       };
     }
-    return { ok: true as const };
-  }, [commitPersisted, current, workspaceEffectAllowed, workspaceFetch]);
+    if (!supabaseEnabled) {
+      const changed = commit((state) => {
+        const exact = state.candidates.find((item) => item.id === id);
+        if (!exact) return state;
+        return recomputeMetrics(anonymizeHermesState(state, id), exact.campaignId);
+      });
+      if (!changed) {
+        return {
+          ok: false as const,
+          completed: false as const,
+          error: "The local demo record could not be anonymized.",
+        };
+      }
+      return {
+        ok: true as const,
+        completed: true,
+        status: "completed" as const,
+        scrubCounts: { browser_demo_state: 1 },
+        obligations: [],
+        workspaceRefreshRequired: false,
+      };
+    }
+    if (role !== "admin") {
+      return {
+        ok: false as const,
+        completed: false as const,
+        error: "Administrator permission is required for candidate erasure.",
+      };
+    }
+
+    let response: Response;
+    let body: unknown;
+    try {
+      response = await workspaceFetch("/api/admin/candidates/erasure", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({ campaignId: candidate.campaignId, candidateId: candidate.id }),
+      });
+      body = await response.json().catch(() => null);
+    } catch {
+      return {
+        ok: false as const,
+        completed: false as const,
+        error: "Could not reach the candidate erasure service.",
+      };
+    }
+    const receipt = body !== null && typeof body === "object" && !Array.isArray(body)
+      ? body as Record<string, unknown>
+      : null;
+    const requestId = typeof receipt?.requestId === "string" ? receipt.requestId : undefined;
+    if (!response.ok && response.status !== 202) {
+      const code = typeof receipt?.code === "string" ? receipt.code : "";
+      const blocked = code === "candidate_erasure_blocked_legal_hold";
+      return {
+        ok: false as const,
+        completed: false as const,
+        status: blocked ? "blocked_legal_hold" as const : undefined,
+        requestId,
+        error: blocked
+          ? "Erasure blocked by legal hold. No candidate data was changed."
+          : code === "candidate_erasure_obligation_limit_exceeded"
+            ? "Candidate erasure requires manual handling because more than 100 provider records are linked. No candidate data was changed."
+          : code === "candidate_not_found"
+            ? "The candidate was not found in this workspace."
+            : code === "insufficient_permissions"
+              ? "Administrator permission is required for candidate erasure."
+              : "Candidate erasure is unavailable. No completion was recorded.",
+      };
+    }
+    const status = receipt?.status;
+    const acceptedStatus = status === "completed"
+      || status === "manual_required"
+      || status === "pending_provider"
+      || status === "retryable_failure";
+    if (
+      receipt?.ok !== true
+      || receipt.campaignId !== candidate.campaignId
+      || receipt.candidateId !== candidate.id
+      || !acceptedStatus
+      || typeof receipt.completed !== "boolean"
+      || (status === "completed") !== receipt.completed
+      || !Array.isArray(receipt.obligations)
+      || !receipt.obligations.every((item) => {
+        if (item === null || typeof item !== "object" || Array.isArray(item)) return false;
+        const obligation = item as Record<string, unknown>;
+        return typeof obligation.id === "string"
+          && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(obligation.id)
+          && typeof obligation.provider === "string"
+          && obligation.provider.length >= 1
+          && obligation.provider.length <= 64
+          && [
+            "pending_provider",
+            "manual_required",
+            "retryable_failure",
+            "completed",
+          ].includes(String(obligation.status))
+          && Number.isInteger(obligation.attemptCount)
+          && Number(obligation.attemptCount) >= 0
+          && Number(obligation.attemptCount) <= 100;
+      })
+      || receipt.scrubCounts === null
+      || typeof receipt.scrubCounts !== "object"
+      || Array.isArray(receipt.scrubCounts)
+    ) {
+      return {
+        ok: false as const,
+        completed: false as const,
+        error: "Candidate erasure returned an invalid authority receipt.",
+      };
+    }
+
+    const erasureStatus = status as Exclude<CandidateErasureStatus, "blocked_legal_hold">;
+    const maskedState = recomputeMetrics(
+      anonymizeHermesState(current(), candidate.id),
+      candidate.campaignId,
+    );
+    stateRef.current = maskedState;
+    setState(maskedState);
+    try {
+      await hydrateWorkspace();
+    } catch {
+      // The server erasure receipt remains authoritative. Keep the local
+      // tombstone masked and require a later workspace refresh.
+    }
+    return {
+      ok: true as const,
+      completed: receipt.completed,
+      status: erasureStatus,
+      requestId,
+      scrubCounts: receipt.scrubCounts as Record<string, number>,
+      obligations: receipt.obligations as CandidateErasureObligation[],
+      workspaceRefreshRequired: workspaceStatusRef.current.phase !== "ready",
+    };
+  }, [commit, current, hydrateWorkspace, workspaceEffectAllowed, workspaceFetch]);
 
   const exportCandidate = useCallback(
     (id: string) => {
@@ -3982,14 +4055,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit, current, runWorkspaceEffect, workspaceEffectAllowed],
   );
 
-  // Bulk-deploy up to maxAgents coordinated agents. Each is a distinct seat that
-  // still obeys every guardrail (official-API only, per-account caps, warm-up,
-  // suppression, shared de-dupe) — scale, not rate-limit evasion.
+  // Demo-only fleet seeding. Live workspaces require one real operator mailbox
+  // per normalized seat and use addSeat's server-persisted authority path.
   const deployAgents = useCallback(
     (n: number, opts?: { language?: string; namePrefix?: string }) => {
       const s = stateRef.current;
       if (!s) return { created: 0, total: 0, capped: false, max: 0 };
       const max = s.settings.fleet.maxAgents || 300;
+      if (supabaseEnabled) {
+        return { created: 0, total: s.seats.length, capped: false, max };
+      }
       if (!can(s.currentRole, "manage_fleet")) {
         return { created: 0, total: s.seats.length, capped: false, max };
       }
@@ -4031,9 +4106,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           { ...prev, seats: [...prev.seats, ...newSeats] },
           makeActivity({
             type: "system",
-            title: `Deployed ${newSeats.length} Aria agents`,
-            notes: `Fleet now ${s.seats.length + newSeats.length}/${max} agents (mock, dry-run; each within official limits).`,
-            outcome: `${newSeats.length} deployed`,
+            title: `Generated ${newSeats.length} demo agents`,
+            notes: `Synthetic demo fleet now ${s.seats.length + newSeats.length}/${max}; no mailbox or live sender was provisioned.`,
+            outcome: `${newSeats.length} demo agents generated`,
             campaignId: null,
             linkedEntityType: null,
             linkedEntityId: null,
@@ -4421,60 +4496,6 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       emit({ kind: "allocate", count: drafted.length, campaignId: opts?.campaignId });
       return result;
-    },
-    [commit, current],
-  );
-
-  /* ---- Fleet: parallel sourcing (multiple Aria agents) --------------- */
-
-  const runFleetSourcing = useCallback(
-    (opts?: { campaignId?: string; perAgent?: number }) => {
-      const s = current();
-      const activeSeats = s.seats.filter((x) => x.status === "active");
-      const workCampaigns = opts?.campaignId
-        ? s.campaigns.filter((c) => c.id === opts.campaignId && c.status !== "Paused")
-        : s.campaigns.filter((c) => !["Filled", "Paused"].includes(c.status));
-      if (activeSeats.length === 0 || workCampaigns.length === 0)
-        return { sourced: 0, skipped: 0, perSeat: [] as { seatName: string; campaignTitle: string; sourced: number }[] };
-
-      const perAgent = opts?.perAgent ?? 4;
-      let acc = [...s.candidates];
-      const added: Candidate[] = [];
-      const perSeat: { seatName: string; campaignTitle: string; sourced: number }[] = [];
-      let totalSkipped = 0;
-      const affected = new Set<string>();
-
-      activeSeats.forEach((seat, i) => {
-        const campaign = workCampaigns[i % workCampaigns.length];
-        const platform: SourcePlatform = campaign.jobAnalysis.department === "Design" ? "LinkedIn" : "GitHub";
-        const weights = effectiveWeights(campaign.scoringWeights, s.skills);
-        const res = sourceCandidates(campaign, platform, perAgent, acc, acc.length + i * 13, weights);
-        acc = [...res.accepted, ...acc];
-        added.push(...res.accepted);
-        totalSkipped += res.skipped.length;
-        affected.add(campaign.id);
-        perSeat.push({ seatName: seat.name, campaignTitle: campaign.title, sourced: res.accepted.length });
-      });
-
-      commit((prev) => {
-        let next: HermesState = { ...prev, candidates: [...added, ...prev.candidates] };
-        affected.forEach((cid) => (next = recomputeMetrics(next, cid)));
-        next = withActivity(
-          next,
-          makeActivity({
-            type: "sourcing",
-            title: `Fleet sourcing: ${added.length} candidates`,
-            notes: `${activeSeats.length} Aria agents sourced in parallel across ${affected.size} campaign(s). ${totalSkipped} deduped.`,
-            outcome: `${added.length} added`,
-            campaignId: opts?.campaignId ?? null,
-            linkedEntityType: null,
-            linkedEntityId: null,
-          }),
-          opts?.campaignId ?? null,
-        );
-        return next;
-      });
-      return { sourced: added.length, skipped: totalSkipped, perSeat };
     },
     [commit, current],
   );
@@ -5779,68 +5800,6 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  /* ---- Memory -------------------------------------------------------------- */
-
-  const addMemory = useCallback(
-    (seatId: string, kind: MemoryKind, content: string): MemoryEntry => {
-      const now = new Date().toISOString();
-      const entry: MemoryEntry = {
-        id: genId("mem"),
-        seatId,
-        kind,
-        content: content.trim(),
-        pinned: false,
-        createdAt: now,
-        updatedAt: now,
-      };
-      commit((s) =>
-        withActivity(
-          { ...s, memory: [entry, ...s.memory] },
-          makeActivity({
-            type: "system",
-            title: `Memory stored: ${kind}`,
-            notes: content.trim().slice(0, 80),
-            outcome: "Stored",
-            campaignId: null,
-            linkedEntityType: null,
-            linkedEntityId: null,
-          }),
-          null,
-        ),
-      );
-      return entry;
-    },
-    [commit],
-  );
-
-  const updateMemory = useCallback(
-    (id: string, patch: Partial<Pick<MemoryEntry, "kind" | "content" | "pinned">>) =>
-      commit((s) => ({
-        ...s,
-        memory: s.memory.map((m) =>
-          m.id === id ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m,
-        ),
-      })),
-    [commit],
-  );
-
-  const removeMemory = useCallback(
-    (id: string) =>
-      commit((s) => ({ ...s, memory: s.memory.filter((m) => m.id !== id) })),
-    [commit],
-  );
-
-  const togglePinMemory = useCallback(
-    (id: string) =>
-      commit((s) => ({
-        ...s,
-        memory: s.memory.map((m) =>
-          m.id === id ? { ...m, pinned: !m.pinned, updatedAt: new Date().toISOString() } : m,
-        ),
-      })),
-    [commit],
-  );
-
   /* ---- Schedules ----------------------------------------------------------- */
 
   const addSchedule = useCallback(
@@ -6053,7 +6012,6 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       addSuppression,
       removeSuppression,
       allocateOutreach,
-      runFleetSourcing,
       runLearning,
       acceptSkillLearning,
       updateSkillContent,
@@ -6098,10 +6056,6 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       updateChatMessage,
       sendChat,
       cancelChat,
-      addMemory,
-      updateMemory,
-      removeMemory,
-      togglePinMemory,
       addSchedule,
       updateSchedule,
       removeSchedule,
@@ -6122,7 +6076,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       unsubscribeCandidate, anonymizeCandidate, exportCandidate, updateSettings,
       updateIntegration, toggleIntegrationMode, testIntegration,
       addSeat, deployAgents, updateSeat, setSeatStatus, connectSeatAccount, disconnectSeatAccount, toggleSeatLive, verifySeatDomain,
-      addSuppression, removeSuppression, allocateOutreach, runFleetSourcing,
+      addSuppression, removeSuppression, allocateOutreach,
       runLearning, acceptSkillLearning, updateSkillContent, recordPiiReveal,
       saveApiKey, testApiKey, removeApiKey, setCurrentRole,
       updateAriaPrompt, addGuardrailRule, toggleGuardrailRule, removeGuardrailRule, askAria, runAriaPlan,
@@ -6134,7 +6088,6 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       assignAgentProvider, assignAgentModel, assignAgentTools,
       logActivity, resetDemo,
       createChatThread, deleteChatThread, clearChatThread, appendChatMessage, updateChatMessage, sendChat, cancelChat,
-      addMemory, updateMemory, removeMemory, togglePinMemory,
       addSchedule, updateSchedule, removeSchedule, toggleSchedule,
       addInterviewer, updateInterviewer, removeInterviewer,
     ],

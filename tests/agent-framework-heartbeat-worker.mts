@@ -29,7 +29,7 @@ const baseEnvironmentWithoutConfigurationSha = {
   AGENT_FRAMEWORK_READINESS_WORKSPACE_ID: WORKSPACE_A,
   FRAMEWORK_ADAPTER_IMAGE_DIGEST: `registry.internal/framework-adapter@sha256:${"1".repeat(64)}`,
   REDIS_IMAGE_DIGEST: `registry.internal/redis@sha256:${"2".repeat(64)}`,
-  DEERFLOW_ADAPTER_URL: "https://deerflow.service.internal",
+  DEERFLOW_ADAPTER_URL: "http://aria-mantu-deerflow-adapter.internal:8080",
   DEERFLOW_ADAPTER_TOKEN: DEERFLOW_TOKEN,
   DEERFLOW_FRAMEWORK_INSTANCE_ID: DEERFLOW_INSTANCE,
   DEERFLOW_SOURCE_COMMIT: DEERFLOW_COMMIT,
@@ -39,9 +39,9 @@ const baseEnvironmentWithoutConfigurationSha = {
   DEERFLOW_CLOUD_PROVIDER_ID: "openai",
   DEERFLOW_MODEL_PROVIDER: "langchain-openai",
   DEERFLOW_MODEL_ID: "aria-model",
-  DEERFLOW_MODEL_BASE_URL: "https://model-gateway.service.internal/v1",
+  DEERFLOW_MODEL_BASE_URL: "http://aria-mantu-model-gateway.internal:8090/v1",
   DEERFLOW_MODEL_CREDENTIAL_VERSION: "model-key-v1",
-  FLOWISE_ADAPTER_URL: "https://flowise.service.internal",
+  FLOWISE_ADAPTER_URL: "http://aria-mantu-flowise-adapter.internal:8080",
   FLOWISE_ADAPTER_TOKEN: FLOWISE_TOKEN,
   FLOWISE_FRAMEWORK_INSTANCE_ID: FLOWISE_INSTANCE,
   FLOWISE_SOURCE_COMMIT: FLOWISE_COMMIT,
@@ -94,6 +94,7 @@ function responseAt(url: string, value: unknown, init: ResponseInit = {}): Respo
 function readinessFor(target: typeof deerflowTarget | typeof flowiseTarget) {
   return {
     ok: true,
+    readinessSchema: "aria.agent-framework-adapter-readiness.v2",
     framework: target.framework,
     contract: target.framework === "deerflow"
       ? "aria.deerflow.run.v1"
@@ -104,7 +105,15 @@ function readinessFor(target: typeof deerflowTarget | typeof flowiseTarget) {
     workspaceId: target.workspace_id,
     frameworkInstanceId: target.instance_id,
     ...(target.framework === "flowise" ? { isolation: target.isolation_mode } : {}),
-    dependencies: { database: true, queue: true, worker: true, policy: true },
+    dependencies: target.framework === "deerflow"
+      ? {
+          modelGateway: true,
+          runtimeHealth: true,
+          modelBinding: true,
+          assistantBinding: true,
+          policyBundle: true,
+        }
+      : { database: true, queue: true, worker: true, policy: true },
   };
 }
 
@@ -196,8 +205,8 @@ test("healthy targets are probed with exact private identity and recorded indepe
   );
 
   assert.deepEqual([...seen].sort(), [
-    "https://deerflow.service.internal/readyz",
-    "https://flowise.service.internal/readyz",
+    "http://aria-mantu-deerflow-adapter.internal:8080/readyz",
+    "http://aria-mantu-flowise-adapter.internal:8080/readyz",
   ]);
   assert.equal(result.status, "ok");
   assert.equal(result.targets, 2);

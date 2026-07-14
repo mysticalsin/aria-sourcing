@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Badge,
   Button,
   Drawer,
   Eyebrow,
+  Input,
+  Label,
   useToast,
   useConfirm,
 } from "@/components/ui";
@@ -14,8 +16,9 @@ import { ScoreGauge } from "@/components/charts/score-gauge";
 import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
-import { useActions, useCampaign, useCandidate, useOutreach, useSettings } from "@/lib/store";
-import { experimentalPaidSourcingEnabled } from "@/lib/supabase/config";
+import { useActions, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
+import type { CandidateErasureObligation, CandidateErasureStatus } from "@/lib/store/contracts";
+import { experimentalPaidSourcingEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import {
   downloadText,
   formatTimeAgo,
@@ -24,6 +27,7 @@ import {
   toneForStage,
 } from "@/lib/utils";
 import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
+import { isCandidateErasureTombstone } from "@/lib/candidate-privacy";
 import { StarBadge, SourceBadge } from "@/components/tania/badges";
 import {
   deriveLeadSource,
@@ -77,6 +81,60 @@ import {
   UserX,
   Zap,
 } from "lucide-react";
+
+type CandidateErasureAuthority = {
+  obligationId: string;
+  provider: string;
+  attemptCount: number;
+  reference: Record<string, unknown>;
+};
+
+type CandidateErasureScope = {
+  generation: number;
+  open: boolean;
+  candidateId: string | null;
+  campaignId: string | null;
+};
+
+function isCandidateErasureLegalHoldResponse(response: Response, body: unknown): boolean {
+  return response.status === 423
+    && body !== null
+    && typeof body === "object"
+    && !Array.isArray(body)
+    && (body as Record<string, unknown>).code === "candidate_erasure_blocked_legal_hold";
+}
+
+function parseCandidateErasureObligations(value: unknown): CandidateErasureObligation[] | null {
+  if (!Array.isArray(value) || value.length > 100) return null;
+  const parsed: CandidateErasureObligation[] = [];
+  for (const item of value) {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) return null;
+    const obligation = item as Record<string, unknown>;
+    if (
+      typeof obligation.id !== "string"
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(obligation.id)
+      || typeof obligation.provider !== "string"
+      || typeof obligation.status !== "string"
+      || ![
+        "pending_provider",
+        "manual_required",
+        "retryable_failure",
+        "completed",
+        "blocked_legal_hold",
+      ].includes(obligation.status)
+      || !Number.isInteger(obligation.attemptCount)
+      || Number(obligation.attemptCount) < 0
+      || Number(obligation.attemptCount) > 100
+    ) return null;
+    parsed.push({
+      id: obligation.id,
+      provider: obligation.provider,
+      status: obligation.status as CandidateErasureStatus,
+      attemptCount: Number(obligation.attemptCount),
+    });
+  }
+  return parsed;
+}
 
 function Section({
   title,
@@ -163,6 +221,7 @@ function WhyThisPerson({ candidate, message }: { candidate: Candidate; message: 
  *  rounds and #Vivier. All actions are recruiter-initiated ("Human Always Decides"). */
 function TaniaPanel({ c }: { c: Candidate }) {
   const actions = useActions();
+  const role = useRole();
   const { toast } = useToast();
   const settings = useSettings();
   const thresholds = settings.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
@@ -364,6 +423,7 @@ export function CandidateDrawer({
   onClose: () => void;
 }) {
   const actions = useActions();
+  const role = useRole();
   const { toast } = useToast();
   const confirm = useConfirm();
   // Always read the LIVE record so in-drawer mutations (stage, compliance, history)
@@ -376,6 +436,17 @@ export function CandidateDrawer({
   const [generating, setGenerating] = useState(false);
   const [enrichingApollo, setEnrichingApollo] = useState(false);
   const [revealingSeamless, setRevealingSeamless] = useState(false);
+  const [erasing, setErasing] = useState(false);
+  const [erasureNotice, setErasureNotice] = useState<{
+    status: CandidateErasureStatus;
+    requestId?: string;
+  } | null>(null);
+  const [erasureObligations, setErasureObligations] = useState<CandidateErasureObligation[]>([]);
+  const [erasureAuthority, setErasureAuthority] = useState<CandidateErasureAuthority | null>(null);
+  const [erasureEvidenceSha256, setErasureEvidenceSha256] = useState("");
+  const [erasureCaseReference, setErasureCaseReference] = useState("");
+  const [erasureActionId, setErasureActionId] = useState<string | null>(null);
+  const [erasureQueueError, setErasureQueueError] = useState<string | null>(null);
   const rejectionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const phoneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seamlessPollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -388,10 +459,162 @@ export function CandidateDrawer({
   actionsRef.current = actions;
 
   const candidateId = candidate?.id ?? null;
+  const candidateCampaignId = candidate?.campaignId ?? null;
+  const erasureGenerationRef = useRef(0);
+  const erasureControllersRef = useRef(new Set<AbortController>());
+  const erasureScopeRef = useRef<Omit<CandidateErasureScope, "generation">>({
+    open,
+    candidateId,
+    campaignId: candidateCampaignId,
+  });
+  erasureScopeRef.current = {
+    open,
+    candidateId,
+    campaignId: candidateCampaignId,
+  };
+
+  const captureErasureScope = useCallback((): CandidateErasureScope => ({
+    generation: erasureGenerationRef.current,
+    ...erasureScopeRef.current,
+  }), []);
+
+  const isErasureScopeCurrent = useCallback((scope: CandidateErasureScope): boolean => {
+    const currentScope = erasureScopeRef.current;
+    return scope.generation === erasureGenerationRef.current
+      && currentScope.open
+      && currentScope.candidateId === scope.candidateId
+      && currentScope.campaignId === scope.campaignId;
+  }, []);
+
+  const abortErasureRequests = useCallback(() => {
+    for (const controller of erasureControllersRef.current) controller.abort();
+    erasureControllersRef.current.clear();
+  }, []);
+
+  const invalidateErasureRequests = useCallback(() => {
+    erasureGenerationRef.current += 1;
+    abortErasureRequests();
+  }, [abortErasureRequests]);
+
+  const beginErasureRequest = useCallback(() => {
+    const controller = new AbortController();
+    erasureControllersRef.current.add(controller);
+    return { controller, scope: captureErasureScope() };
+  }, [captureErasureScope]);
+
+  const releaseErasureRequest = useCallback((controller: AbortController) => {
+    erasureControllersRef.current.delete(controller);
+  }, []);
+
   useEffect(() => {
+    invalidateErasureRequests();
     setRevealed(false);
     setNoteText("");
-  }, [candidateId, open]);
+    setErasing(false);
+    setErasureNotice(null);
+    setErasureObligations([]);
+    setErasureAuthority(null);
+    setErasureEvidenceSha256("");
+    setErasureCaseReference("");
+    setErasureActionId(null);
+    setErasureQueueError(null);
+    return invalidateErasureRequests;
+  }, [candidateId, invalidateErasureRequests, open]);
+
+  const refreshErasureQueue = useCallback(async () => {
+    if (!open || role !== "admin" || !supabaseEnabled || !candidateId || !candidateCampaignId) {
+      return;
+    }
+    const { controller, scope } = beginErasureRequest();
+    if (!isErasureScopeCurrent(scope)) {
+      releaseErasureRequest(controller);
+      return;
+    }
+    try {
+      const response = await fetch("/api/admin/candidates/erasure", {
+        method: "PATCH",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ action: "list" }),
+        signal: controller.signal,
+      });
+      if (!isErasureScopeCurrent(scope)) return;
+      const body: unknown = await response.json().catch(() => null);
+      if (!isErasureScopeCurrent(scope)) return;
+      if (!response.ok || body === null || typeof body !== "object" || Array.isArray(body)) {
+        throw new Error("queue unavailable");
+      }
+      const requests = (body as Record<string, unknown>).requests;
+      if (!Array.isArray(requests) || requests.length > 100) throw new Error("invalid queue");
+      const matching = requests.find((item) => {
+        if (item === null || typeof item !== "object" || Array.isArray(item)) return false;
+        const request = item as Record<string, unknown>;
+        return request.candidateId === candidateId && request.campaignId === candidateCampaignId;
+      });
+      if (!matching || typeof matching !== "object" || Array.isArray(matching)) return;
+      const request = matching as Record<string, unknown>;
+      const status = request.status;
+      const obligations = parseCandidateErasureObligations(request.obligations);
+      if (
+        typeof request.requestId !== "string"
+        || typeof status !== "string"
+        || ![
+          "pending_provider",
+          "manual_required",
+          "retryable_failure",
+          "blocked_legal_hold",
+        ].includes(status)
+        || obligations === null
+      ) throw new Error("invalid queue item");
+      setErasureNotice({
+        status: status as CandidateErasureStatus,
+        requestId: request.requestId,
+      });
+      setErasureObligations(obligations);
+      setErasureQueueError(null);
+    } catch {
+      if (controller.signal.aborted || !isErasureScopeCurrent(scope)) return;
+      setErasureQueueError("The durable provider-erasure queue could not be loaded.");
+    } finally {
+      releaseErasureRequest(controller);
+    }
+  }, [
+    beginErasureRequest,
+    candidateCampaignId,
+    candidateId,
+    isErasureScopeCurrent,
+    open,
+    releaseErasureRequest,
+    role,
+  ]);
+
+  useEffect(() => {
+    void refreshErasureQueue();
+  }, [refreshErasureQueue]);
+
+  const applyErasureLegalHold = useCallback((
+    scope: CandidateErasureScope,
+    requestId?: string,
+  ) => {
+    if (!isErasureScopeCurrent(scope)) return false;
+    setErasureAuthority(null);
+    setErasureEvidenceSha256("");
+    setErasureCaseReference("");
+    setErasureNotice((current) => ({
+      status: "blocked_legal_hold",
+      requestId: requestId ?? current?.requestId,
+    }));
+    setErasureQueueError(
+      "Erasure is blocked by a legal hold. Decrypted provider authority was cleared.",
+    );
+    toast({
+      title: "Erasure blocked by legal hold",
+      description: "No erasure state transition was recorded. Decrypted provider authority was cleared.",
+      variant: "warning",
+    });
+    return true;
+  }, [isErasureScopeCurrent, toast]);
 
   // Stop polling on unmount so a closed drawer never keeps hitting
   // /api/source/seamless/research-status in the background.
@@ -443,6 +666,7 @@ export function CandidateDrawer({
   }
 
   const c = liveCandidate ?? candidate;
+  const erasureTombstone = isCandidateErasureTombstone(c);
   const purpose = hasOutreachPurpose(c.stage);
   const masked = confidentialityMode && !purpose && !revealed;
   const dc = applyConfidentiality(c, {
@@ -491,6 +715,7 @@ export function CandidateDrawer({
   };
 
   const handleSetStage = (stage: CandidateStage) => {
+    if (erasureTombstone) return;
     actions.setCandidateStage(c.id, stage);
     toast({
       title: `Stage updated: ${stage}`,
@@ -505,6 +730,7 @@ export function CandidateDrawer({
   };
 
   const handleAddNote = () => {
+    if (erasureTombstone) return;
     const clean = noteText.trim();
     if (!clean) return;
     actions.addCandidateNote(c.id, clean);
@@ -515,6 +741,7 @@ export function CandidateDrawer({
   // Committed on every keystroke (debounced), not onBlur — so an edit isn't lost
   // if the user hits Escape before ever blurring the field (see CAND-P0-1).
   const handleRejectionReasonChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
+    if (erasureTombstone) return;
     const value = e.target.value;
     pendingRejection.current = { id: c.id, value };
     if (rejectionTimer.current) clearTimeout(rejectionTimer.current);
@@ -527,6 +754,7 @@ export function CandidateDrawer({
   };
 
   const handlePhoneChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (erasureTombstone) return;
     const value = e.target.value;
     pendingPhone.current = { id: c.id, value };
     if (phoneTimer.current) clearTimeout(phoneTimer.current);
@@ -576,16 +804,220 @@ export function CandidateDrawer({
   };
 
   const handleAnonymize = async () => {
-    if (!(await confirm({ title: `Anonymize ${c.name}?`, description: "This removes operational candidate data and provider receipts. Required suppression records follow their controlled retention policy. This cannot be undone.", confirmLabel: "Anonymize", danger: true }))) return;
-    const result = await actions.anonymizeCandidate(c.id);
-    if (!result.ok) {
-      toast({ title: "Candidate anonymization failed", description: result.error, variant: "error" });
+    if (erasureTombstone) return;
+    const scope = captureErasureScope();
+    const confirmed = await confirm({ title: `Anonymize ${c.name}?`, description: "This removes operational candidate data and provider receipts. Required suppression records follow their controlled retention policy. This cannot be undone.", confirmLabel: "Anonymize", danger: true });
+    if (!isErasureScopeCurrent(scope) || !confirmed) return;
+    if (rejectionTimer.current) clearTimeout(rejectionTimer.current);
+    if (phoneTimer.current) clearTimeout(phoneTimer.current);
+    rejectionTimer.current = null;
+    phoneTimer.current = null;
+    pendingRejection.current = null;
+    pendingPhone.current = null;
+    setErasing(true);
+    try {
+      const result = await actions.anonymizeCandidate(c.id);
+      if (!isErasureScopeCurrent(scope)) return;
+      if (!result.ok) {
+        if (result.status === "blocked_legal_hold") {
+          applyErasureLegalHold(scope, result.requestId);
+          await refreshErasureQueue();
+          if (!isErasureScopeCurrent(scope)) return;
+          return;
+        }
+        if (result.status) {
+          setErasureNotice({ status: result.status, requestId: result.requestId });
+          setErasureObligations([]);
+        }
+        toast({
+          title: "Candidate anonymization failed",
+          description: result.error,
+          variant: "error",
+        });
+        return;
+      }
+      setErasureAuthority(null);
+      setErasureEvidenceSha256("");
+      setErasureCaseReference("");
+      invalidateErasureRequests();
+      onClose();
+      if (result.completed) {
+        toast({
+          title: "Candidate erasure completed",
+          description: result.workspaceRefreshRequired
+            ? "Server erasure completed. Refresh the workspace before reopening this record."
+            : "Candidate data was scrubbed and the permanent suppression tombstone is in place.",
+          variant: "success",
+        });
+        return;
+      }
+      toast({
+        title: "Provider action required",
+        description: result.status === "manual_required"
+          ? "Candidate data was scrubbed. Reopen the tombstone to record manual provider deletion evidence."
+          : result.status === "retryable_failure"
+            ? "Candidate data was scrubbed. Reopen the tombstone to retry the provider deletion record."
+            : "Candidate data was scrubbed. Reopen the tombstone to manage the pending provider deletion.",
+        variant: "warning",
+      });
+    } catch {
+      if (!isErasureScopeCurrent(scope)) return;
+      toast({
+        title: "Candidate anonymization failed",
+        description: "Candidate erasure did not return a valid completion receipt.",
+        variant: "error",
+      });
+    } finally {
+      if (isErasureScopeCurrent(scope)) setErasing(false);
+    }
+  };
+
+  const handleInspectErasureAuthority = async (obligation: CandidateErasureObligation) => {
+    const { controller, scope } = beginErasureRequest();
+    if (!isErasureScopeCurrent(scope)) {
+      releaseErasureRequest(controller);
       return;
     }
-    toast({ title: "Candidate anonymized", description: "Operational candidate data and provider receipts were redacted and saved.", variant: "success" });
+    setErasureActionId(obligation.id);
+    setErasureQueueError(null);
+    try {
+      const response = await fetch("/api/admin/candidates/erasure", {
+        method: "PATCH",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ action: "inspect", obligationId: obligation.id }),
+        signal: controller.signal,
+      });
+      if (!isErasureScopeCurrent(scope)) return;
+      const body: unknown = await response.json().catch(() => null);
+      if (!isErasureScopeCurrent(scope)) return;
+      if (isCandidateErasureLegalHoldResponse(response, body)) {
+        applyErasureLegalHold(scope);
+        await refreshErasureQueue();
+        if (!isErasureScopeCurrent(scope)) return;
+        return;
+      }
+      if (!response.ok || body === null || typeof body !== "object" || Array.isArray(body)) {
+        throw new Error("authority unavailable");
+      }
+      const result = body as Record<string, unknown>;
+      if (
+        result.ok !== true
+        || result.obligationId !== obligation.id
+        || typeof result.provider !== "string"
+        || !Number.isInteger(result.attemptCount)
+        || result.reference === null
+        || typeof result.reference !== "object"
+        || Array.isArray(result.reference)
+      ) throw new Error("invalid authority");
+      setErasureAuthority({
+        obligationId: obligation.id,
+        provider: result.provider,
+        attemptCount: Number(result.attemptCount),
+        reference: result.reference as Record<string, unknown>,
+      });
+      setErasureEvidenceSha256("");
+      setErasureCaseReference("");
+    } catch {
+      if (controller.signal.aborted || !isErasureScopeCurrent(scope)) return;
+      setErasureAuthority(null);
+      setErasureEvidenceSha256("");
+      setErasureCaseReference("");
+      setErasureQueueError("The provider deletion reference could not be opened.");
+    } finally {
+      releaseErasureRequest(controller);
+      if (isErasureScopeCurrent(scope)) setErasureActionId(null);
+    }
+  };
+
+  const handleCompleteErasureObligation = async () => {
+    if (!erasureAuthority) return;
+    const authority = erasureAuthority;
+    const evidenceSha256 = erasureEvidenceSha256.trim().toLowerCase();
+    const caseReference = erasureCaseReference.trim();
+    if (!/^[0-9a-f]{64}$/.test(evidenceSha256)) {
+      setErasureQueueError("Evidence SHA-256 must be exactly 64 hexadecimal characters.");
+      return;
+    }
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,119}$/.test(caseReference)) {
+      setErasureQueueError("Case reference must use 1–120 safe reference characters.");
+      return;
+    }
+    const { controller, scope } = beginErasureRequest();
+    if (!isErasureScopeCurrent(scope)) {
+      releaseErasureRequest(controller);
+      return;
+    }
+    setErasureActionId(authority.obligationId);
+    setErasureQueueError(null);
+    try {
+      const response = await fetch("/api/admin/candidates/erasure", {
+        method: "PATCH",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          action: "complete",
+          obligationId: authority.obligationId,
+          expectedAttemptCount: authority.attemptCount,
+          evidenceSha256,
+          caseReference,
+        }),
+        signal: controller.signal,
+      });
+      if (!isErasureScopeCurrent(scope)) return;
+      const body: unknown = await response.json().catch(() => null);
+      if (!isErasureScopeCurrent(scope)) return;
+      if (isCandidateErasureLegalHoldResponse(response, body)) {
+        applyErasureLegalHold(scope);
+        await refreshErasureQueue();
+        if (!isErasureScopeCurrent(scope)) return;
+        return;
+      }
+      if (!response.ok || body === null || typeof body !== "object" || Array.isArray(body)) {
+        throw new Error("completion unavailable");
+      }
+      const result = body as Record<string, unknown>;
+      const status = result.status;
+      const obligations = parseCandidateErasureObligations(result.obligations);
+      if (
+        result.ok !== true
+        || typeof result.requestId !== "string"
+        || typeof status !== "string"
+        || !["pending_provider", "manual_required", "retryable_failure", "completed"].includes(status)
+        || obligations === null
+        || (status === "completed") !== (result.completed === true)
+      ) throw new Error("invalid completion receipt");
+      setErasureNotice({
+        status: status as CandidateErasureStatus,
+        requestId: result.requestId,
+      });
+      setErasureObligations(obligations);
+      setErasureAuthority(null);
+      setErasureEvidenceSha256("");
+      setErasureCaseReference("");
+      toast({
+        title: status === "completed" ? "Candidate erasure completed" : "Provider deletion recorded",
+        description: status === "completed"
+          ? "Every provider obligation now has an administrator-recorded evidence reference."
+          : "Other provider obligations remain in the durable queue.",
+        variant: status === "completed" ? "success" : "warning",
+      });
+    } catch {
+      if (controller.signal.aborted || !isErasureScopeCurrent(scope)) return;
+      setErasureAuthority(null);
+      setErasureEvidenceSha256("");
+      setErasureCaseReference("");
+      setErasureQueueError("Provider deletion completion was not recorded. Refresh and retry.");
+    } finally {
+      releaseErasureRequest(controller);
+      if (isErasureScopeCurrent(scope)) setErasureActionId(null);
+    }
   };
 
   const handleSuppress = async () => {
+    if (erasureTombstone) return;
     if (
       !(await confirm({
         title: `Suppress contact with ${c.name}?`,
@@ -600,6 +1032,7 @@ export function CandidateDrawer({
   };
 
   const handleDoNotContact = async () => {
+    if (erasureTombstone) return;
     if (
       !(await confirm({
         title: `Mark ${c.name} as do-not-contact?`,
@@ -695,6 +1128,7 @@ export function CandidateDrawer({
   };
 
   const handleUnsubscribe = async () => {
+    if (erasureTombstone) return;
     if (
       !(await confirm({
         title: `Unsubscribe ${c.name}?`,
@@ -709,6 +1143,7 @@ export function CandidateDrawer({
   };
 
   const handleRestoreContact = async () => {
+    if (erasureTombstone) return;
     if (
       !(await confirm({
         title: `Restore contact with ${c.name}?`,
@@ -732,7 +1167,7 @@ export function CandidateDrawer({
     });
   };
 
-  const contactBlocked = flags.doNotContact || flags.suppressed || flags.unsubscribed;
+  const contactBlocked = erasureTombstone || flags.doNotContact || flags.suppressed || flags.unsubscribed;
 
   const footer = (
     <div className="flex flex-wrap items-center gap-2">
@@ -833,7 +1268,7 @@ export function CandidateDrawer({
                   PII minimized (confidential)
                 </span>
               )}
-              {c.sourcePlatform === "Apollo" && !c.email && (
+              {!erasureTombstone && c.sourcePlatform === "Apollo" && !c.email && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -845,7 +1280,7 @@ export function CandidateDrawer({
                   {enrichingApollo ? "Preparing…" : "Enrich via Apollo"}
                 </Button>
               )}
-              {experimentalPaidSourcingEnabled && c.sourcePlatform === "Seamless" && !c.email && (
+              {!erasureTombstone && experimentalPaidSourcingEnabled && c.sourcePlatform === "Seamless" && !c.email && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -858,7 +1293,7 @@ export function CandidateDrawer({
                 </Button>
               )}
             </div>
-            {!masked && (
+            {!masked && !erasureTombstone && (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
                 <span className="inline-flex items-center gap-1.5 text-ink-soft">
                   <Phone className="h-4 w-4" aria-hidden />
@@ -926,7 +1361,7 @@ export function CandidateDrawer({
                     {c.sourcePlatform}
                   </a>
                 ))}
-              {masked && (
+              {masked && !erasureTombstone && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -986,7 +1421,7 @@ export function CandidateDrawer({
         {latestOutreachMessage && <WhyThisPerson candidate={c} message={latestOutreachMessage} />}
 
         {/* TAnIA — source, star rating, prequal, interviews, #Vivier */}
-        <TaniaPanel c={c} />
+        {!erasureTombstone && <TaniaPanel c={c} />}
 
         {/* Onboarding journey (Stages III→IV) — only once at offer/hired */}
         {(c.stage === "Offer" || c.stage === "Hired") && <OnboardingPanel c={c} />}
@@ -1004,7 +1439,8 @@ export function CandidateDrawer({
                 key={stage}
                 variant={c.stage === stage ? "primary" : "outline"}
                 size="sm"
-                disabled={c.stage === stage}
+                disabled={erasureTombstone || c.stage === stage}
+                title={erasureTombstone ? "Permanent erasure tombstones cannot change stage" : undefined}
                 onClick={() => handleSetStage(stage)}
               >
                 {stage}
@@ -1024,6 +1460,7 @@ export function CandidateDrawer({
                 key={c.id}
                 defaultValue={c.rejectionReason ?? ""}
                 onChange={handleRejectionReasonChange}
+                disabled={erasureTombstone}
                 placeholder="Why was this candidate rejected? Logged to the activity trail."
                 rows={2}
                 className="w-full rounded-2xl border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted"
@@ -1070,12 +1507,13 @@ export function CandidateDrawer({
             <textarea
               value={noteText}
               onChange={(e) => setNoteText(e.target.value)}
+              disabled={erasureTombstone}
               placeholder="Add a note for the team…"
               rows={2}
               aria-label="Add a recruiter note"
               className="min-h-[44px] flex-1 rounded-2xl border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted"
             />
-            <Button variant="outline" size="sm" onClick={handleAddNote} disabled={!noteText.trim()}>
+            <Button variant="outline" size="sm" onClick={handleAddNote} disabled={erasureTombstone || !noteText.trim()}>
               Add
             </Button>
           </div>
@@ -1145,24 +1583,154 @@ export function CandidateDrawer({
             Honor candidate rights immediately. Export and anonymize support GDPR; suppression and
             do-not-contact enforce exclusion across all outreach.
           </p>
+          {erasureNotice && (
+            <div
+              className={`rounded-xl border px-3 py-2 text-sm ${
+                erasureNotice.status === "completed"
+                  ? "border-success/30 bg-success/5 text-success"
+                  : erasureNotice.status === "blocked_legal_hold"
+                    ? "border-danger/30 bg-danger/5 text-danger"
+                    : "border-warning/30 bg-warning/5 text-warning"
+              }`}
+              role="status"
+            >
+              <p className="font-semibold">
+                {erasureNotice.status === "completed"
+                  ? "Candidate erasure completed"
+                  : erasureNotice.status === "blocked_legal_hold"
+                    ? "Erasure blocked by legal hold"
+                    : erasureNotice.status === "manual_required"
+                      ? "Provider action required"
+                      : erasureNotice.status === "retryable_failure"
+                        ? "Provider erasure retry required"
+                        : "Provider erasure pending"}
+              </p>
+              {erasureNotice.requestId && (
+                <p className="mt-1 font-mono text-xs opacity-80">
+                  Request {erasureNotice.requestId}
+                </p>
+              )}
+            </div>
+          )}
+          {erasureQueueError && (
+            <p className="rounded-xl border border-danger/30 bg-danger/5 px-3 py-2 text-sm text-danger" role="alert">
+              {erasureQueueError}
+            </p>
+          )}
+          {erasureObligations.some((item) => item.status !== "completed") && (
+            <div className="space-y-2 rounded-xl border border-warning/30 bg-warning/5 p-3">
+              <div>
+                <p className="text-sm font-semibold text-ink">Durable provider-erasure queue</p>
+                <p className="mt-1 text-xs text-muted">
+                  Provider deletion is not complete until an administrator confirms the provider outcome in the approved case system and records its evidence reference.
+                </p>
+              </div>
+              <ul className="space-y-2">
+                {erasureObligations.filter((item) => item.status !== "completed").map((obligation) => (
+                  <li key={obligation.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-ink">{obligation.provider}</p>
+                      <p className="text-xs text-muted">
+                        {obligation.status.replaceAll("_", " ")} · attempt {obligation.attemptCount}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={erasureActionId !== null}
+                      onClick={() => void handleInspectErasureAuthority(obligation)}
+                    >
+                      {erasureActionId === obligation.id ? "Opening…" : "Open authority"}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {erasureAuthority && (
+            <div className="space-y-3 rounded-xl border border-ink/10 bg-ink/[0.03] p-3">
+              <div>
+                <p className="text-sm font-semibold text-ink">
+                  Record {erasureAuthority.provider} deletion evidence
+                </p>
+                <p className="mt-1 text-xs text-muted">
+                  Sensitive provider authority is decrypted only for this explicit admin action. ARIA records the reference and SHA-256 but does not inspect the evidence artifact or contact the provider.
+                </p>
+              </div>
+              <pre className="max-h-40 overflow-auto rounded-lg bg-ink p-3 text-xs text-white">
+                {JSON.stringify(erasureAuthority.reference, null, 2)}
+              </pre>
+              <div className="space-y-1.5">
+                <Label htmlFor={`candidate-erasure-evidence-${erasureAuthority.obligationId}`}>
+                  Provider evidence SHA-256
+                </Label>
+                <Input
+                  id={`candidate-erasure-evidence-${erasureAuthority.obligationId}`}
+                  value={erasureEvidenceSha256}
+                  onChange={(event) => setErasureEvidenceSha256(event.target.value)}
+                  placeholder="64 lowercase hexadecimal characters"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor={`candidate-erasure-case-${erasureAuthority.obligationId}`}>
+                  Provider case reference
+                </Label>
+                <Input
+                  id={`candidate-erasure-case-${erasureAuthority.obligationId}`}
+                  value={erasureCaseReference}
+                  onChange={(event) => setErasureCaseReference(event.target.value)}
+                  placeholder="case:provider-123"
+                  maxLength={120}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="danger"
+                  size="sm"
+                  disabled={erasureActionId !== null}
+                  onClick={() => void handleCompleteErasureObligation()}
+                >
+                  {erasureActionId === erasureAuthority.obligationId
+                    ? "Recording…"
+                    : "Record evidence reference"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={erasureActionId !== null}
+                  onClick={() => setErasureAuthority(null)}
+                >
+                  Close authority
+                </Button>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Button variant="outline" size="sm" leftIcon={<Download className="h-4 w-4" />} onClick={handleExport}>
               Export data
             </Button>
-            <Button variant="outline" size="sm" leftIcon={<UserX className="h-4 w-4" />} onClick={handleAnonymize}>
-              Anonymize
-            </Button>
-            <Button variant="outline" size="sm" leftIcon={<EyeOff className="h-4 w-4" />} onClick={handleSuppress}>
-              Suppress contact
-            </Button>
-            <Button variant="danger" size="sm" leftIcon={<Ban className="h-4 w-4" />} onClick={handleDoNotContact}>
-              Mark do-not-contact
-            </Button>
-            <Button variant="outline" size="sm" leftIcon={<MailX className="h-4 w-4" />} onClick={handleUnsubscribe}>
-              Unsubscribe
-            </Button>
+            {!erasureTombstone && (
+              <>
+                <Button variant="outline" size="sm" leftIcon={<UserX className="h-4 w-4" />} onClick={handleAnonymize} disabled={erasing}>
+                  {erasing ? "Erasing…" : "Anonymize"}
+                </Button>
+                <Button variant="outline" size="sm" leftIcon={<EyeOff className="h-4 w-4" />} onClick={handleSuppress}>
+                  Suppress contact
+                </Button>
+                <Button variant="danger" size="sm" leftIcon={<Ban className="h-4 w-4" />} onClick={handleDoNotContact}>
+                  Mark do-not-contact
+                </Button>
+                <Button variant="outline" size="sm" leftIcon={<MailX className="h-4 w-4" />} onClick={handleUnsubscribe}>
+                  Unsubscribe
+                </Button>
+              </>
+            )}
           </div>
-          {(flags.suppressed || flags.doNotContact) && (
+          {!erasureTombstone && (flags.suppressed || flags.doNotContact) && (
             <Button
               variant="secondary"
               size="sm"

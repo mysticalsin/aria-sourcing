@@ -192,9 +192,12 @@ aria-mantu-bootstrap
 ```
 
 The protected workflow builds the application, database, bootstrap, and Kong
-images from one release SHA. Auth and REST are pinned upstream images. Release
-acceptance requires exact image digests, scans, attestations, migration
-identity, recovery evidence, and live behavior. See
+service images plus a separately built one-shot Graphify lesson-worker image
+from one release SHA. Auth and REST are pinned upstream images. All 7 images are
+scanned; the 5 local images are attested and promoted. Graphify receives a
+pre-publication container test but no post-promotion execution receipt. Release
+acceptance requires exact image digests, migration identity, recovery evidence,
+and live behavior. See
 [`production-readiness/DEPLOYMENT_RUNBOOK.md`](../production-readiness/DEPLOYMENT_RUNBOOK.md).
 
 ## Verification layers
@@ -205,8 +208,8 @@ identity, recovery evidence, and live behavior. See
 | Lint | `npm run lint` |
 | Deterministic contracts | `npm test` |
 | OneDrive-safe production build | `npm run build:isolated` |
-| Database authority | `npm run test:db-privileges` and `npm run test:db-agent-memory` |
-| Cross-channel capacity | `npm run test:db-cross-channel-cap` |
+| Database authority | Full disposable-database gate documented in `docs/TESTING.md` and `.github/workflows/ci.yml` |
+| Cross-channel capacity | Included in the disposable-database gate as `npm run test:db-cross-channel-cap` |
 | Exact DB image and restart behavior | `npm run test:fly-db-volume` |
 | Release identity | Exact-SHA CI, CodeQL, image evidence, and protected workflow receipts |
 | Live acceptance | Readiness, authenticated DB/Auth/REST/Kong, restarts, login, and zero-send campaign proof |

@@ -17,7 +17,7 @@ Verified from `package.json` on 2026-07-14:
 | Data/auth | Supabase Postgres, Supabase Auth, RLS tenancy, service-role server APIs |
 | UI/runtime | Tailwind, Recharts, lucide-react, Framer Motion, Three.js/R3F |
 | Node | `22.x` |
-| Verification | `npm test` runs 164 chained checks: 36 `pretest` commands plus 128 test commands |
+| Verification | `npm test` runs 169 top-level lifecycle commands: 36 `pretest`, 132 test, and 1 `posttest` command |
 | Quality gates | `npm run typecheck`, `npm run lint`, `npm test`, `npm run build:isolated` for this OneDrive checkout |
 
 ## Shipped Surfaces
@@ -104,21 +104,26 @@ Production requires, at minimum:
 - Required production env vars from `.env.production.example`.
 - Protected GitHub `Production` environment secrets for the Fly deployment and
   a separate registry-only `FLY_REGISTRY_TOKEN` restricted to the app, DB,
-  bootstrap, and Kong registries. Do not reuse a general operator token.
+  bootstrap, Kong, and Graphify worker registries. Do not reuse a general
+  operator token.
 - A verified delivery provider path before any live outreach.
 - Domain, OAuth, and unsubscribe settings matching the deployment URL.
 - Green local/CI gates against the release SHA.
 
-The protected Fly workflow builds the app, DB, bootstrap, and Kong images from
-the exact release SHA, pushes isolated candidates, pulls and scans their exact
-registry digests, signs provenance and SBOM attestations, promotes immutable SHA
-tags, and deploys without rebuilding. It also pulls the config-pinned upstream
-Auth and REST images for `linux/amd64`, applies the same CycloneDX,
-HIGH/CRITICAL, and secret gates, records them as upstream rather than claiming a
-local build attestation, and compares all six running digests. Its always-run
-evidence upload retains rollback, manifest, schema-validated SBOM, vulnerability,
-filesystem plus image-config/history secret, attestation, and release receipts
-even when a later gate fails.
+The protected Fly workflow builds the app, DB, bootstrap, Kong, and one-shot
+Graphify lesson-worker images from the exact release SHA, pushes isolated
+candidates, pulls and scans their exact registry digests, signs provenance and
+SBOM attestations for all 5 local images, promotes immutable SHA tags, and
+deploys without rebuilding.
+It also pulls the config-pinned upstream Auth and REST images for `linux/amd64`,
+applies the same CycloneDX, HIGH/CRITICAL, and secret gates, and records them as
+upstream rather than claiming local build attestations. All 7 images are bound
+into release evidence; running-digest equality applies to the 6 deployed
+services. The Graphify worker has a pre-publication container test plus immutable
+scan, attestation, and promotion evidence; this workflow does not claim a
+post-promotion worker execution receipt. The always-run evidence upload retains rollback, manifest,
+schema-validated SBOM, vulnerability, filesystem plus image-config/history
+secret, attestation, and release receipts even when a later gate fails.
 The workflow must exist on the repository default branch before manual dispatch
 is available.
 

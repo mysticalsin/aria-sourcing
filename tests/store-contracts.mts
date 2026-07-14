@@ -57,6 +57,21 @@ const storeAst = ts.createSourceFile(
   ts.ScriptKind.TSX,
 );
 
+test("workspace hydration discards stale remote save authority before reload", () => {
+  const start = storeSource.indexOf("const hydrateWorkspace = useCallback(async");
+  const end = storeSource.indexOf("// Hydrate once on mount", start);
+  const hydrateWorkspace = storeSource.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  for (const reset of [
+    "queuedRemoteSnapshot.current = null",
+    "pendingRemoteSave.current = null",
+    "remoteSaveOperation.current = null",
+    "remoteSaveInFlight.current = false",
+  ]) {
+    assert.match(hydrateWorkspace, new RegExp(reset.replaceAll(".", "\\.")));
+  }
+});
+
 function declaredName(node: { name?: ts.PropertyName }): string | null {
   if (!node.name) return null;
   if (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)) {
@@ -128,7 +143,7 @@ test("action contract, implementation object, and memo dependencies stay in pari
     .filter((name): name is string => name !== null);
   const dependencyNames = dependencyList.elements.map((element) => element.getText());
 
-  assert.equal(contractNames.length, 127);
+  assert.equal(contractNames.length, 122);
   assert.deepEqual([...implementationNames].sort(), [...contractNames].sort());
   assert.deepEqual([...dependencyNames].sort(), [...contractNames].sort());
 });
@@ -175,7 +190,7 @@ test("public hooks preserve their provider-bound initial behavior", () => {
   const markup = renderToStaticMarkup(
     createElement(HermesProvider, null, createElement(StoreHookProbe)),
   );
-  assert.equal(markup, "<output>loading:false:127</output>");
+  assert.equal(markup, "<output>loading:false:122</output>");
 });
 
 test("useHermes still rejects consumers outside HermesProvider", () => {

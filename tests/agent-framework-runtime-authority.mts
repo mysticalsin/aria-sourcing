@@ -111,7 +111,7 @@ await test("malformed or failed database receipts never invent run authority", a
   assert.deepEqual(await claimAgentFrameworkRun(failed, input), { ok: false, status: "authority_unavailable" });
 });
 
-await test("step, completion, and failure mutations carry only lease-bound hashes or codes", async () => {
+await test("step, completion, and failure mutations carry only bounded public receipts", async () => {
   assert.equal(await recordAgentFrameworkStep(client, {
     runId: claimReceipt.run_id,
     leaseId: claimReceipt.lease_id,
@@ -129,7 +129,9 @@ await test("step, completion, and failure mutations carry only lease-bound hashe
     "c".repeat(64),
     5,
     "language:typescript location:montreal",
+    ["Run the exact reviewed campaign query."],
   ), "proposed");
+  assert.deepEqual(calls.at(-1)?.args.p_reports, ["Run the exact reviewed campaign query."]);
   assert.equal(await failAgentFrameworkRun(client, claimReceipt.run_id, claimReceipt.lease_id, "ADAPTER_FAILED"), "failed");
   assert.equal(JSON.stringify(calls.slice(-3)).includes("candidate"), false);
 });

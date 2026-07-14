@@ -129,6 +129,11 @@ test("run input is server-owned authority, not raw candidates or credentials", (
       industryExperience: ["SaaS"],
     },
     reviewedQueries: [{ platform: "GitHub", query: "language:typescript location:montreal" }],
+    agentMemory: {
+      policy: "untrusted-reference-v1",
+      receiptSha256: "f".repeat(64),
+      items: [{ kind: "preference", content: "Prefer reviewed TypeScript community signals." }],
+    },
     deerflowInstanceId: "50000000-0000-4000-8000-000000000005",
     flowiseInstanceId: "60000000-0000-4000-8000-000000000006",
     flowiseSourceCommit: FLOWISE_SOURCE_COMMIT,
@@ -148,6 +153,23 @@ test("run input is server-owned authority, not raw candidates or credentials", (
   );
   assert.equal(AgentFrameworkRunRequestSchema.safeParse({ ...input, need: undefined }).success, false);
   assert.equal(AgentFrameworkRunRequestSchema.safeParse({ ...input, reviewedQueries: [] }).success, false);
+  assert.equal(
+    AgentFrameworkRunRequestSchema.safeParse({
+      ...input,
+      agentMemory: { ...input.agentMemory, items: Array.from({ length: 9 }, () => input.agentMemory.items[0]) },
+    }).success,
+    false,
+  );
+  assert.equal(
+    AgentFrameworkRunRequestSchema.safeParse({
+      ...input,
+      agentMemory: {
+        ...input.agentMemory,
+        items: [{ kind: "fact", content: "x".repeat(8_193) }],
+      },
+    }).success,
+    false,
+  );
   assert.equal(
     AgentFrameworkRunRequestSchema.safeParse({ ...input, apiKey: "secret", candidates: [{ name: "Invented" }] }).success,
     false,
@@ -255,6 +277,18 @@ test("authoring readiness keeps immutable private bindings but is independent of
     killSwitch: true,
   });
   assert.deepEqual(authoring, { ready: true, reasons: [] });
+
+  const flyPrivateAuthoring = assessAgentFrameworkAuthoringRuntime({
+    deerflowUrl: "http://aria-mantu-deerflow-adapter.internal:8080",
+    deerflowSourceCommit: DEERFLOW_SOURCE_COMMIT,
+    deerflowImageDigest: `registry.internal/deerflow@sha256:${"c".repeat(64)}`,
+    flowiseUrl: "http://aria-mantu-flowise-adapter.internal:8080",
+    flowiseSourceCommit: FLOWISE_SOURCE_COMMIT,
+    flowiseImageDigest: `registry.internal/flowise@sha256:${"d".repeat(64)}`,
+    flowiseIsolation: "instance-per-workspace",
+    configurationSha256: "e".repeat(64),
+  });
+  assert.deepEqual(flyPrivateAuthoring, { ready: true, reasons: [] });
 
   const unsafe = assessAgentFrameworkAuthoringRuntime({
     flowiseUrl: "https://flowise.example.com",

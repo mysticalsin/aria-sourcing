@@ -525,10 +525,10 @@ Historical and current findings follow. The current consolidated audit is
 
 ## 2026-07-12 - Live production is healthy only on an older migration ledger
 **Severity:** spec-mismatch
-**File:** src/app/api/ready/route.ts; supabase/migrations/0024_cross_channel_claim_serialization.sql through 0031_orphan_owner_recovery_authority.sql
+**File:** src/app/api/ready/route.ts; supabase/migrations/0024_cross_channel_claim_serialization.sql through 0033_candidate_erasure_authority.sql
 **Issue:** Public readiness is green, but the running build is not the reviewed release candidate and does not include the latest authority migrations.
-**Repro/evidence:** The final 2026-07-14 `/api/ready` call returned HTTP 200 with build `d2040b534177f5bd2abb28f22de19af57b58dc3a`, migration `0023_conversation_identity.sql`, and all reported components true. Reviewed local source now contains migrations 0024 through 0031.
-**Suggested fix:** Complete the protected exact-SHA release path, verify the running digest and build identity, and require the live migration ledger through `0031` before acceptance.
+**Repro/evidence:** The final 2026-07-14 `/api/ready` call returned HTTP 200 with build `d2040b534177f5bd2abb28f22de19af57b58dc3a`, migration `0023_conversation_identity.sql`, and all reported components true. Reviewed local source now contains migrations 0024 through 0033.
+**Suggested fix:** Complete the protected exact-SHA release path, verify the running digest and build identity, and require the live migration ledger through `0033` before acceptance.
 **Status:** open
 
 ## 2026-07-13 - Store contract drift had no executable boundary
@@ -717,10 +717,10 @@ Historical and current findings follow. The current consolidated audit is
 ## 2026-07-13 - Candidate erasure does not cover normalized conversations and provider lifecycle
 **Severity:** spec-mismatch
 **File:** src/lib/store.ts:3743; src/lib/candidate-privacy.ts:156
-**Issue:** Current anonymization covers workspace state and Apollo authority but does not prove erasure of normalized message bodies and addresses, conversation keys containing phone numbers, agent run/event payloads, provider-held data, caches, logs, or backup expiry.
-**Repro/evidence:** The current privacy path has no service-owned cross-table/provider erasure receipt, and the source plan still leaves end-to-end lifecycle verification incomplete.
+**Issue:** The original anonymization covered workspace state and Apollo authority but did not prove the broader candidate data lifecycle.
+**Repro/evidence:** Migration 0033 now performs one service-owned local scrub across normalized messages, conversations, WhatsApp rows, runs/events, framework results, caches, and content-free receipts. Provider-held data, logs, restore replay, and retention ownership remain in the narrower open findings below.
 **Suggested fix:** Add a legal-hold-aware service workflow that enumerates and scrubs every candidate-bearing store, calls supported provider DSRs, and produces a bounded durable receipt with automated proof.
-**Status:** open
+**Status:** fixed in source and superseded by the narrower open restore, reimport/memory, provider-evidence, and bulk-obligation findings
 
 ## 2026-07-14 - Flowise binding treated caller input as tenant authority
 **Severity:** security
@@ -857,3 +857,139 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** The operator requires final signed digests, an SPDX SBOM, SLSA provenance containing the exact source commit, and a zero-high/critical Trivy result, but `cosign`, `trivy`, and `syft` are unavailable in this workspace and no promoted manifests were supplied. No Fly deploy was authorized. A private Flowise bootstrap, provider readiness, PostgreSQL HA decision, timed snapshot restore, failure injection, and real approved-campaign canary remain absent.
 **Suggested fix:** Pin or independently attest every upstream base input, install the verification tools in a protected runner, enforce and test egress, complete the Flowise bootstrap, accept an HA/RTO/RPO design, execute restore/failure drills, then deploy and canary through the approved operator.
 **Status:** open; framework activation remains NO-GO
+
+## 2026-07-14 - Restored backups can reintroduce erased candidate data
+**Severity:** security
+**File:** scripts/restore-drill.sh:73
+**Issue:** The restore drill verifies the restored archive's internal schema and rows, but it has no external erasure journal to replay deletions that happened after the backup was created.
+**Repro/evidence:** A backup taken before a candidate erasure can restore the deleted candidate and still pass the current drill because both the archive and restored database predate the erasure receipt.
+**Suggested fix:** Keep an independently retained erasure journal outside the restored database and make post-restore replay plus verification a mandatory recovery gate.
+**Status:** open; production restore and candidate erasure remain NO-GO
+
+## 2026-07-14 - Candidate reimport and memory erasure authority is incomplete
+**Severity:** security
+**File:** supabase/migrations/0025_agent_memory_authority.sql:196; supabase/migrations/0033_candidate_erasure_authority.sql:289
+**Issue:** Candidate data embedded in agent-run/event JSON, framework-result payloads, and encrypted AgentSpec memory has no explicit candidate provenance that an administrator can target for erasure.
+**Repro/evidence:** Migration 0033 guards and transaction-serializes workspace state, normalized messages, outreach, suppression, WhatsApp contact/window, conversations, and Apollo writes; both writer-first and erasure-first PostgreSQL sessions now pass. Migration 0025 still permits bounded encrypted memory content without a candidate identifier or administrator erasure receipt, and run/framework payloads remain unstructured for erasure authority.
+**Suggested fix:** Add explicit candidate provenance and administrator erasure receipts for run, framework, and memory payloads before production activation.
+**Status:** open; production candidate erasure remains NO-GO
+
+## 2026-07-14 - Provider erasure evidence is manual and not independently verified
+**Severity:** security
+**File:** src/app/api/admin/candidates/erasure/route.ts:36; supabase/migrations/0033_candidate_erasure_authority.sql:1839
+**Issue:** ARIA exposes a manual provider-reference workflow and accepts a case reference plus syntactically valid SHA-256, but it neither executes provider deletion nor verifies that the evidence artifact exists and proves deletion.
+**Repro/evidence:** The completion request validates the hash format and expected attempt count. The database records that assertion; no approved evidence store or provider adapter is queried.
+**Suggested fix:** Bind completion to an approved evidence-store object and provider account, or add provider-specific deletion and receipt adapters with replay-safe reconciliation.
+**Status:** open; provider-held candidate data remains a production NO-GO
+
+## 2026-07-14 - Large provider-obligation sets have no safe completion path
+**Severity:** correctness
+**File:** supabase/migrations/0033_candidate_erasure_authority.sql:201
+**Issue:** The 100-obligation guard prevents partial local scrubbing, but candidates with more than 100 linked provider records cannot enter the application erasure workflow.
+**Repro/evidence:** The before-insert trigger raises SQLSTATE 54000 at the 101st obligation, and the route returns a typed 409 before destructive data changes. There is no paginated bulk workflow that can complete the request.
+**Suggested fix:** Replace the fixed durable-obligation cap with paginated response authority while preserving atomic request creation and bounded API pages.
+**Status:** open; documented Security and DPO escalation is required
+
+## 2026-07-14 - Candidate scrub implementations lack parity proof
+**Severity:** test-gap
+**File:** supabase/migrations/0033_candidate_erasure_authority.sql:289; src/lib/candidate-privacy.ts:95
+**Issue:** The live path previously applied the database scrub and then persisted a second browser scrub whose token rules were not equivalent.
+**Repro/evidence:** Successful live erasure now clears all queued or failed browser save authority and reloads the exact server-owned workspace. `anonymizeHermesState()` remains only in synthetic demo mode, where no real candidate data is permitted.
+**Suggested fix:** Keep the database as the only live erasure authority and preserve the hydration regression.
+**Status:** fixed (uncommitted; candidate privacy passes 9/9, store contracts pass 11/11, and TypeScript passes)
+
+## 2026-07-14 - Late legal hold state disappeared from the reloaded admin queue
+**Severity:** correctness
+**File:** src/components/candidates/candidate-drawer.tsx:91; src/components/candidates/candidate-drawer.tsx:458
+**Issue:** The API and database could return `blocked_legal_hold`, but the drawer's obligation parser and durable-queue validator rejected that valid state after a page reload.
+**Repro/evidence:** A regression first failed because neither validator allowlisted `blocked_legal_hold`; the focused contract now requires both paths to preserve it.
+**Suggested fix:** Keep the UI status allowlist aligned with the canonical erasure state type and OpenAPI enum.
+**Status:** fixed (uncommitted; candidate erasure contract passes 4/4 and TypeScript passes)
+
+## 2026-07-14 - Late legal hold degraded provider actions to an availability error
+**Severity:** correctness
+**File:** src/app/api/admin/candidates/erasure/route.ts:390
+**Issue:** The database returned `blocked_legal_hold` for both provider-authority inspection and reconciliation, but the PATCH route rejected that valid state as an untyped 503.
+**Repro/evidence:** The regression first received HTTP 503 for both actions after a late hold. The route now maps both database results to the canonical non-final HTTP 423 response.
+**Suggested fix:** Keep route, database, and OpenAPI legal-hold states aligned.
+**Status:** fixed (uncommitted; candidate route passes 10/10, OpenAPI contract passes, and TypeScript passes)
+
+## 2026-07-14 - Stale inbound workers could recreate erased contact rows
+**Severity:** security
+**File:** supabase/migrations/0033_candidate_erasure_authority.sql:837
+**Issue:** A worker that claimed inbound work before erasure could later recreate raw suppression, WhatsApp contact/window, or conversation identity after the local scrub committed.
+**Repro/evidence:** The tombstone trigger originally guarded workspace state, messages, outreach, and Apollo only. It now also rejects erased email, phone, LinkedIn, and candidate identifiers in suppression, WhatsApp contact/window, and conversation writes with SQLSTATE 23514.
+**Suggested fix:** Preserve these guards and the shared normalized identity locks; add candidate provenance for the remaining run/event/framework/memory paths in the next migration.
+**Status:** fixed for the bounded contact paths (uncommitted; both transaction lock orders pass and leave zero raw rows after rejected writes)
+
+## 2026-07-14 - AgentSpec dependency failures appeared as missing memory
+**Severity:** correctness
+**File:** src/app/api/agents/memories/route.ts
+**Issue:** The owned-AgentSpec lookup collapsed database errors and confirmed absence into null, so GET, POST, PATCH, and DELETE returned 404 during a retryable database failure. The authentication lookup also ignored its returned error.
+**Repro/evidence:** Adversarial route tests first received 404 or 201 with injected AgentSpec/auth dependency errors. The lookup now has found, not_found, and unavailable states; auth and database errors return non-cacheable 503 while only confirmed absence returns 404.
+**Suggested fix:** Keep dependency errors distinct from resource absence at every authority boundary.
+**Status:** fixed (uncommitted; memory route tests pass 20/20)
+
+## 2026-07-14 - Candidate drawer could cross candidate erasure authority
+**Severity:** security
+**File:** src/components/candidates/candidate-drawer.tsx; src/lib/store.ts
+**Issue:** Late queue, inspect, or completion responses could update a newly opened candidate. Typed 423 holds discarded their body, successful erasure could leave click-time PII visible after hydration failure, and an anonymized tombstone still exposed incompatible restore controls.
+**Repro/evidence:** Every request now carries an abort controller and candidate/open generation scope checked after each await. A 423 clears decrypted authority and reloads the queue; a valid receipt masks local state before fallible hydration and closes the drawer; the store commit boundary preserves tombstones and restore exits before any suppression DELETE.
+**Suggested fix:** Keep UI request authority candidate-scoped and treat erasure tombstones as permanently immutable.
+**Status:** fixed (uncommitted; candidate erasure, privacy, and store contract suites pass)
+
+## 2026-07-14 - Framework recovery changed a successful idempotent response
+**Severity:** correctness
+**File:** src/lib/agents/framework/execution.ts; supabase/migrations/0032_agent_operational_authority.sql
+**Issue:** A first successful framework run returned its bounded report summary, but recovery after a lost response returned reports as an empty array for the same idempotency key.
+**Repro/evidence:** Migration 0032 now persists exactly one bounded public report summary with the proposal digest. Recovery validates it and returns the original complete response; missing or malformed reports fail closed and changed replay reports conflict.
+**Suggested fix:** Preserve the full public response contract in durable idempotency authority.
+**Status:** fixed (uncommitted; framework execution passes 15/15 and database/rollback authority passes)
+
+## 2026-07-14 - Fly adapter configuration mixed provider and private runtime URLs
+**Severity:** correctness
+**File:** infra/agent-frameworks/fly/operator-core.mjs; src/lib/agents/framework/configuration-core.mjs; scripts/agent-framework-heartbeat-worker.mjs
+**Issue:** The Fly operator injected the public Moonshot/OpenAI origin as DeerFlow's private model-gateway URL, while its HTTP-only private adapters were rejected by ARIA and heartbeat's HTTPS-only checks.
+**Repro/evidence:** The operator now injects the exact private gateway and adapter origins, derives and verifies the configuration digest from that environment, and shares one credential-free .internal URL policy across configuration, ARIA readiness, and heartbeat. Public origins remain rejected.
+**Suggested fix:** Keep cloud-provider identity distinct from private gateway identity and test generated deployment values across every consumer.
+**Status:** fixed (uncommitted; Fly deployment 15/15, framework configuration/contract, and heartbeat tests pass)
+
+## 2026-07-14 - Candidate erasure queue mutated state through an unprotected GET
+**Severity:** security
+**File:** src/app/api/admin/candidates/erasure/route.ts; docs/api/openapi.yaml
+**Issue:** Queue listing refreshes expired holds and request states in PostgreSQL, but GET accepted a missing Origin and therefore performed state changes outside the same-origin JSON mutation boundary.
+**Repro/evidence:** Queue listing is now PATCH action list with the exact same-origin JSON boundary. GET is side-effect free and returns 405 with Allow: POST, PATCH; the drawer and OpenAPI use the new contract.
+**Suggested fix:** Keep all state-changing reads behind an explicit mutation contract.
+**Status:** fixed (uncommitted; route 11/11 and OpenAPI contract pass)
+
+## 2026-07-14 - Candidate erasure and stale reimport were not transaction-serialized
+**Severity:** security
+**File:** supabase/migrations/0033_candidate_erasure_authority.sql; tests/candidate-erasure-db.sh
+**Issue:** Reimport triggers read tombstones without sharing a transaction lock with erasure, so a concurrent writer could pass before tombstone commit and recreate PII afterward.
+**Repro/evidence:** Erasure and all nine reimport triggers now lock the same normalized workspace/identity keys in deterministic order. Real two-session tests prove writer-first erasure waits then scrubs the committed row, while erasure-first writer waits then rejects with SQLSTATE 23514 and persists no row.
+**Suggested fix:** Preserve the shared identity-lock authority and both lock-order regressions.
+**Status:** fixed (uncommitted; candidate database authority and database privilege gates pass)
+
+## 2026-07-14 - Private readiness could leave the reviewed Machine through redirects or proxies
+**Severity:** security
+**File:** infra/agent-frameworks/fly/runtime/private-probe.py:63
+**Issue:** The DeerFlow in-Machine readiness probe used default urllib redirect and environment-proxy behavior, so readiness could be supplied by an origin other than the exact `FLY_PRIVATE_IP`.
+**Repro/evidence:** The regression rejects a 302 and an inherited `HTTP_PROXY`, asserting that neither the redirect target nor proxy receives a request.
+**Suggested fix:** Keep the no-redirect, no-proxy transport isolated in `private_http.py` and preserve the executable regression in the Fly deployment suite.
+**Status:** fixed (uncommitted; Fly deployment suite passes 15/15)
+
+## 2026-07-14 - Release documentation drifted from workflow-derived evidence
+**Severity:** test-gap
+**File:** README.md; production-readiness/STATUS.md; production-readiness/DEPLOYMENT_RUNBOOK.md; docs/ARCHITECTURE.md; tests/docs-truth.mts
+**Issue:** Current release docs still described six scanned images, four local attestations, 24 application tables, and ten active framework apps after the workflow, inventory, and operator had changed.
+**Repro/evidence:** The protected workflow declares seven scanned and five locally attested components; the table inventory is canonical; the framework operator has eight active and two release-disabled roles. The docs test previously passed without checking those facts.
+**Suggested fix:** Derive supply-chain counts from the workflow, refer to the canonical table inventory without a copied count, and keep active/disabled topology explicit.
+**Status:** fixed (uncommitted; documentation truth passes 39/39)
+
+## 2026-07-14 - The 0032 SQL fallback had no ledger-safe production operator path
+**Severity:** spec-mismatch
+**File:** supabase/rollbacks/0032_agent_operational_authority.sql; production-readiness/DEPLOYMENT_RUNBOOK.md
+**Issue:** The fallback SQL was described as operational, but no protected apply job existed and the migration ledger would prevent a normal 0032 forward reapply.
+**Repro/evidence:** The database test manually applies rollback SQL and reapplies migration 0032. The production bootstrap records 0032 as applied and has no receipt-bound reverse/forward action for this file.
+**Suggested fix:** Keep production use prohibited until a protected job and new append-only forward migration are reviewed; use restore or a forward migration meanwhile.
+**Status:** open (documentation now fails closed; production machinery remains absent)

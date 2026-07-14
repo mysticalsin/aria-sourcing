@@ -16,7 +16,7 @@ discarded.
 | Component | Source revision | Official build file | Runtime API used |
 | --- | --- | --- | --- |
 | ARIA model gateway | this repository release SHA | `model-gateway/Dockerfile` | `GET /v1/models`, `POST /v1/chat/completions`, `GET /readyz` |
-| DeerFlow | `fabadae4168db81f0eaaf62f209050f978e2f691` | `backend/Dockerfile` | `POST /api/runs/wait` |
+| DeerFlow | `fabadae4168db81f0eaaf62f209050f978e2f691` | upstream `backend/Dockerfile` plus checksum-pinned `deerflow-runtime/Dockerfile` | `POST /api/runs/wait` |
 | Flowise | `bb773ffa710bd22639c4ba2643413a0ea2b679d3` | `Dockerfile` | `GET /api/v1/chatflows/:id` |
 | Flowise worker | same Flowise revision | `docker/worker/Dockerfile` | `GET /healthz` |
 
@@ -50,8 +50,9 @@ Before promotion:
 `compose.yaml` is an executable, tested one-workspace stack for an operator
 that provides the listed images, volumes, secret files, and private network.
 It is not invoked by the protected Fly workflow. A separate reviewed source
-deployment pack now exists in [`fly/README.md`](fly/README.md) for ten private
-Fly apps and a prepare/confirm/deploy operator. It has not been executed in
+deployment pack now exists in [`fly/README.md`](fly/README.md) for eight active
+private Fly apps and two release-disabled provenance roles, and a
+prepare/confirm/deploy operator. It has not been executed in
 production. Immutable promotion evidence, egress enforcement, Flowise private
 bootstrap, stateful HA/restore proof, live provider readiness, and a real
 campaign canary remain release blockers. Do not treat a successful Compose or
@@ -61,10 +62,22 @@ Deploy one copy of this stack per ARIA workspace. This is the supported
 open-source Flowise isolation boundary. Do not place multiple ARIA workspaces
 inside one unlicensed Flowise instance.
 
-All ten runtime services join the `framework_private` internal network. The
+All active runtime services join the `framework_private` internal network. The
 file declares no host ports. Only `model-gateway` also joins the dedicated
 `model_gateway_egress` network. DeerFlow has no Internet route and always uses
 `http://model-gateway.service.internal:8090/v1`.
+
+DeerFlow is intentionally ephemeral. Its supported `database`, `run_events`,
+and `stream_bridge` backends are all `memory`; the process receives no database
+or Redis URL, credential, dependency, or readiness probe and runs one Uvicorn
+worker. ARIA's checksum-pinned wrapper accepts only the audited `runs.py` from
+the source revision above. For `POST /api/runs/wait` with
+`on_completion=delete`, it serializes the terminal result, then unconditionally
+cancels and drains the generated-thread run and erases its checkpoint, run,
+event, thread, stream, manager, and temporary-file state. Cleanup is shielded
+from request cancellation. Any cleanup uncertainty terminates the worker so
+its memory and ephemeral root are cleared before it can become ready again.
+Caller-owned thread IDs are rejected for delete mode.
 
 The gateway has two compiled provider allowlist entries: `kimi` maps to
 `https://api.moonshot.ai/v1`, and `openai` maps to
@@ -101,9 +114,12 @@ readiness and requires the gateway to return the exact configured provider and
 model. The gateway reads that token and the separate
 `deerflow_model_provider_api_key` from secret files. It does not log headers,
 bodies, secrets, or provider responses. No
-fallback, sample response, or fake sourcing result exists. If the gateway,
-configured model, database, queue, or worker is unavailable, readiness is 503
-and ARIA remains fail closed.
+fallback, sample response, or fake sourcing result exists. If a required
+dependency is unavailable, readiness is 503 and ARIA remains fail closed. The
+DeerFlow readiness v2 dependencies are exactly `modelGateway`,
+`runtimeHealth`, `modelBinding`, `assistantBinding`, and `policyBundle`. The
+Flowise readiness v2 dependencies are exactly `database`, `queue`, `worker`,
+and `policy`.
 
 The Fly source pack uses an app with no public service, sets
 `MODEL_GATEWAY_BIND_HOST=fly-local-6pn`, and binds the gateway to its 6PN
@@ -119,8 +135,8 @@ and [Fly internal app services](https://fly.io/docs/networking/app-services/).
 Create these in the deployment platform; never put their values in Git, image
 layers, Compose variables, logs, or the Relay baton:
 
-- `deerflow_db_password`, `flowise_db_password`
-- `deerflow_redis_password`, `flowise_redis_password`
+- `flowise_db_password`
+- `flowise_redis_password` for the Flowise queue
 - `deerflow_model_gateway_token`, `deerflow_model_provider_api_key`,
   `deerflow_internal_token`
 - `deerflow_adapter_token`, `flowise_adapter_token`
@@ -156,21 +172,17 @@ activate the framework while the provider returns 402.
 the Compose secrets mechanism. In production, point those variables at
 short-lived files materialized by the platform's secret manager. The adapters
 consume `_FILE` variables and never require secret values in their environment.
-DeerFlow and Flowise use different Redis services, persistent volumes, and
-password authorities. Each adapter derives queue authority only from its own
-framework's mounted Redis-password secret and fixed Compose hostname
-(`deerflow-redis:6379/0` or `flowise-redis:6379/0`). A Flowise compromise
-therefore cannot authenticate to or mutate DeerFlow stream state. Both Redis
-services may use the same promoted image digest, but they never share state or
-credentials.
+The DeerFlow runtime and DeerFlow adapter receive no Redis URL, password, or
+authority. Flowise alone uses the `flowise-redis` service for its queue. The
+Flowise adapter derives authority from the mounted Flowise Redis-password
+secret and the fixed Compose hostname `flowise-redis:6379/0`.
 
-On Fly, each adapter must receive `REDIS_HOST` and `REDIS_FLY_HOST` set to the
-same exact reviewed lowercase `<app>.internal` hostname for its own Redis app.
-The DeerFlow hostname must end in `deerflow-redis.internal`; the Flowise
-hostname must end in `flowise-redis.internal`. The adapter rejects an absent or
+On Fly, only the Flowise adapter receives `REDIS_HOST` and `REDIS_FLY_HOST`.
+Both must be the same exact reviewed lowercase hostname,
+`aria-mantu-flowise-redis.internal`. The adapter rejects an absent or
 mismatched `REDIS_FLY_HOST`, a cross-framework hostname, every public hostname,
 and any port or database other than `6379/0`. Compose intentionally omits
-`REDIS_FLY_HOST` and permits only its exact service names.
+`REDIS_FLY_HOST` and permits only its exact service name.
 
 ## Required deployment inputs
 
@@ -179,16 +191,21 @@ values are paths to secret-manager material, never secret values.
 
 The Compose deployment fails interpolation when any identity is absent:
 
-- image repository and 64-hex digest pairs for both Postgres images, Redis,
+- image repository and 64-hex digest pairs for the active Flowise Postgres and
+  Redis identities, the provenance-only DeerFlow Postgres and Redis identities,
   DeerFlow, Flowise, the Flowise worker, the adapter, and the model gateway.
   Compose always joins each pair as `repository@sha256:digest`, so a mutable
-  tag cannot replace the required digest;
+  tag cannot replace the required digest. The DeerFlow Postgres identity is
+  retained only for canonical-manifest compatibility and provenance. The same
+  is true of the DeerFlow Redis identity. Compose starts neither service, and
+  the Fly operator marks both roles release-disabled;
 - the ARIA workspace UUID and separately registered DeerFlow and Flowise
   framework-instance UUIDs;
 - the Flowise workspace UUID returned by that private Flowise instance;
 - the Flowise workflow ID of the workspace-bound readiness sentinel;
 - the exact ARIA framework-configuration SHA-256;
-- the adapter, Redis, framework database, and Flowise-worker image digests;
+- the adapter, active Flowise Redis and database, provenance-only DeerFlow Redis
+  and database, and Flowise-worker image digests;
 - the exact `langchain-openai` integration, allowlisted cloud-provider identity,
   model ID, private model-gateway URL, promoted gateway digest, and opaque
   credential-version identifier.
@@ -284,8 +301,9 @@ The canary passes only when:
 - DeerFlow returns an allowed reviewed-query index and never query text;
 - ARIA persists step receipts and the selected action as a proposal;
 - the campaign's actual sourcing connector returns live provider evidence;
-- killing either Redis service, either database, the Flowise worker, or either upstream makes
-  readiness fail and prevents new framework runs.
+- killing Flowise Redis, the Flowise database, the Flowise worker, either
+  framework upstream, or the model gateway makes the applicable readiness fail
+  and prevents new framework runs.
 
 Before that canary, authenticate directly over the private network and prove
 the model boundary without printing tokens or response bodies:
@@ -304,10 +322,12 @@ of a live model, a configured Flowise workspace, or a real candidate result.
 
 ## Recovery and rollback
 
-- Back up the two Postgres volumes independently and exercise a restore before
-  activation. The two isolated Redis volumes are queue/stream dependencies,
-  not systems of record; never restore one framework's Redis data into the
-  other framework's service.
+- Back up the Flowise Postgres volume and exercise a restore before activation.
+  DeerFlow has no database or Redis volume.
+- Flowise Redis is not a system of record. Recover it by creating an empty
+  Redis volume and service, restarting Flowise, its worker, and its adapter,
+  then reconciling in-flight jobs against Flowise Postgres and ARIA receipts.
+  Do not attach a restored Redis snapshot to the active service.
 - Roll back by restoring the last signed image digests and their matching ARIA
   registrations. Never point a registration at a different digest in place.
 - Rotate adapter and upstream tokens after any suspected exposure. Rotation

@@ -5,6 +5,8 @@ import test from "node:test";
 import {
   anonymizeCandidateRecord,
   anonymizeHermesState,
+  isCandidateErasureTombstone,
+  preserveCandidateErasureTombstones,
   redactCandidateLinkedActivities,
 } from "../src/lib/candidate-privacy";
 import { buildSeedState } from "../src/lib/seed";
@@ -73,6 +75,41 @@ test("candidate anonymization removes direct identifiers, authority, content, an
   assert.equal(JSON.stringify(redacted).includes("Ada Lovelace"), false);
   assert.equal(JSON.stringify(redacted).includes("ada@example.test"), false);
   assert.equal(JSON.stringify(redacted).includes("provider-person-1"), false);
+});
+
+test("candidate erasure tombstones remain immutable across later local mutations", () => {
+  const state = buildSeedState();
+  const candidate = state.candidates[0];
+  const tombstone = anonymizeCandidateRecord(candidate);
+  const current = {
+    ...state,
+    candidates: [tombstone, ...state.candidates.slice(1)],
+  };
+  const rewritten = {
+    ...current,
+    candidates: current.candidates.map((item) => item.id === tombstone.id
+      ? {
+          ...item,
+          name: "Restored Person",
+          stage: "Sourced" as const,
+          complianceFlags: {
+            ...item.complianceFlags,
+            anonymized: false,
+            doNotContact: false,
+            suppressed: false,
+          },
+        }
+      : item),
+  };
+
+  assert.equal(isCandidateErasureTombstone(tombstone), true);
+  assert.strictEqual(preserveCandidateErasureTombstones(current, rewritten), current);
+  assert.strictEqual(
+    preserveCandidateErasureTombstones(current, { ...rewritten, candidates: rewritten.candidates.slice(1) }),
+    current,
+  );
+  const unrelated = { ...current, activeCampaignId: "another-campaign" };
+  assert.strictEqual(preserveCandidateErasureTombstones(current, unrelated), unrelated);
 });
 
 test("candidate-linked activities are redacted without changing unrelated audit facts", () => {
@@ -446,9 +483,30 @@ test("candidate-rights UI waits for server erasure and shared persistence before
   const actionEnd = storeSource.indexOf("const exportCandidate", actionStart);
   const action = storeSource.slice(actionStart, actionEnd);
   assert.ok(actionStart >= 0 && actionEnd > actionStart);
-  assert.ok(action.indexOf('workspaceFetch("/api/admin/source/apollo/erasure"') >= 0);
-  assert.ok(action.indexOf("await commitPersisted(") > action.indexOf("workspaceFetch("));
-  assert.match(action, /server receipt was erased[\s\S]*Retry anonymization/i);
+  assert.ok(action.indexOf('workspaceFetch("/api/admin/candidates/erasure"') >= 0);
+  assert.doesNotMatch(action, /\/api\/admin\/source\/apollo\/erasure/);
+  assert.match(action, /\(status === "completed"\) !== receipt\.completed/);
+  assert.match(action, /invalid authority receipt/i);
+  const liveResultStart = action.indexOf("let response: Response;");
+  const liveResult = action.slice(liveResultStart);
+  assert.ok(liveResultStart >= 0);
+  assert.match(liveResult, /await hydrateWorkspace\(\)/);
+  const receiptValidated = liveResult.indexOf("invalid authority receipt");
+  const localMask = liveResult.indexOf("anonymizeHermesState");
+  const hydration = liveResult.indexOf("await hydrateWorkspace()");
+  assert.ok(
+    receiptValidated >= 0 && localMask > receiptValidated && hydration > localMask,
+    "live erasure must mask the candidate only after a valid server receipt and before hydration",
+  );
+  assert.match(
+    liveResult,
+    /try\s*\{\s*await hydrateWorkspace\(\);\s*\}\s*catch\s*\{[\s\S]*server erasure receipt remains authoritative/,
+  );
   assert.match(drawerSource, /const result = await actions\.anonymizeCandidate\(c\.id\)/);
   assert.match(drawerSource, /if \(!result\.ok\)[\s\S]*Candidate anonymization failed/);
+  assert.match(drawerSource, /invalidateErasureRequests\(\);\s*onClose\(\)/);
+  assert.match(drawerSource, /\/api\/admin\/candidates\/erasure[\s\S]*method: "PATCH"[\s\S]*action: "list"/);
+  assert.match(drawerSource, /action: "inspect"/);
+  assert.match(drawerSource, /action: "complete"/);
+  assert.match(drawerSource, /Evidence SHA-256/);
 });

@@ -71,15 +71,11 @@ mkdir "$STAGE_DIR"
 
 [ ! -e "$ARCHIVE" ] && [ ! -e "$MANIFEST" ] || { echo "Backup id collision." >&2; exit 1; }
 
-REQUIRED_TABLES=(
-  agent_conversations agent_events agent_memories agent_memory_events agent_memory_legacy_quarantine
-  agent_run_memory_context agent_runs agent_seats agent_specs api_keys aria_schema_migrations databricks_connection_events
-  databricks_connections dust_connection_events dust_connections email_connections
-  messages_inbound messages_outbound outbound_content_cache outreach_approvals
-  outreach_ledger profiles suppression_list whatsapp_contacts
-  whatsapp_conversation_windows whatsapp_delivery_events whatsapp_senders
-  whatsapp_templates workspace_state workspaces
-)
+REQUIRED_TABLES=()
+while IFS= read -r table; do
+  [ -z "$table" ] || REQUIRED_TABLES+=("$table")
+done < docker/bootstrap/legacy-table-inventory.txt
+REQUIRED_TABLES+=(aria_schema_migrations)
 EXPECTED_TABLES="$(printf '%s\n' "${REQUIRED_TABLES[@]}" | LC_ALL=C sort | tr '\n' ',' | sed 's/,$//')"
 ACTUAL_TABLES="$(dex -d postgres -tA -c "select coalesce(string_agg(tablename, ',' order by tablename), '') from pg_tables where schemaname = 'public';" | tr -d '[:space:]')"
 [ "$ACTUAL_TABLES" = "$EXPECTED_TABLES" ] || { echo "Source public table set does not match this checkout." >&2; exit 1; }

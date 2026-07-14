@@ -4,7 +4,7 @@
 
 **Production stack:** Fly application plus Fly-hosted Kong, PostgREST, GoTrue, and PostgreSQL services
 
-**Last updated:** 2026-07-11
+**Last updated:** 2026-07-14
 
 ---
 
@@ -318,8 +318,9 @@ The fingerprints have one canonical representation:
 - Schema: `pg_dump --schema-only --no-owner --no-privileges --schema=public
   --exclude-table=public.aria_schema_migrations`, with random `\\restrict` /
   `\\unrestrict` lines and dump-version headers removed, then SHA-256.
-- Rows: for `verified-pre-ledger` and `complete-ledger`, the 24 reviewed public
-  application tables in lexical order. Each row is converted to canonical JSON
+- Rows: for `verified-pre-ledger` and `complete-ledger`, every reviewed public
+  application table named by `docker/bootstrap/legacy-table-inventory.txt`, in
+  lexical order. Each row is converted to canonical JSON
   text inside PostgreSQL and hashed; the sorted row hashes are hashed again for
   the table. The manifest contains one
   `public.<table>=<count>:<ordered-row-content-sha256>` line per table, with a
@@ -349,8 +350,9 @@ ARIA_LEGACY_BASELINE_APPROVAL_SHA256=<exact preflight output approved by owner>
 
 The baseline phase repeats the read-only proof, then opens a `READ COMMITTED`
 write transaction so a snapshot is not fixed before lock waits finish. It
-acquires the migration advisory lock, locks all 24 application tables and any
-pre-existing empty ledger in `SHARE` mode, and rechecks the schema invariants,
+acquires the migration advisory lock, locks every table in the canonical
+application inventory and any pre-existing empty ledger in `SHARE` mode, and
+rechecks the schema invariants,
 row counts, and exact content hashes before recording the filename-plus-SHA
 ledger. A concurrent data or ledger change fails the baseline. It never rotates
 credentials. Only after it succeeds may the release call `owner`, followed by
@@ -404,13 +406,14 @@ omission stops before production mutation.
 The workflow must perform this one-way artifact chain:
 
 ```text
-exact SHA -> build app/DB/bootstrap/Kong for linux/amd64
+exact SHA -> build app/DB/bootstrap/Kong/Graphify for linux/amd64
           -> push isolated candidate tags -> resolve + pull registry digests
 Auth/REST config pins -> pull exact upstream linux/amd64 digests
-all six images -> schema-validated CycloneDX + HIGH/CRITICAL gates
-               -> filesystem + image-config/history secret gates
-          -> signed provenance/SBOM attestations -> immutable SHA promotion
-          -> fly deploy/run --image tag@digest -> running digest equality
+all 7 images -> schema-validated CycloneDX + HIGH/CRITICAL gates
+                 -> filesystem + image-config/history secret gates
+5 local images -> signed provenance/SBOM attestations -> immutable SHA promotion
+deployed services -> fly deploy/run --image tag@digest -> running digest equality
+Graphify worker -> pre-publication container test; no post-promotion execution receipt
 ```
 
 Fly must not rebuild any custom image during this path. Auth and REST use the
@@ -486,9 +489,10 @@ partial bundle. A successful release additionally requires non-empty copies of:
 - `aria-release-manifest.json` binding candidate/promoted images, Dockerfile
   hashes, scanner reports, and attestation IDs
 - per-component CycloneDX, vulnerability, filesystem and image-config/history
-  secret, and checksum files for app, DB, bootstrap, Kong, Auth, and REST
-- provenance-attestation and SBOM-attestation files for the four locally built
-  images only: app, DB, bootstrap, and Kong
+  secret, and checksum files for app, DB, bootstrap, Kong, Graphify, Auth, and
+  REST
+- provenance-attestation and SBOM-attestation files for the 5 locally built
+  images only: app, DB, bootstrap, Kong, and Graphify
 - `upstream-images.tsv` plus release-manifest entries binding Auth and REST to
   their upstream repositories and exact config-pinned digests
 
@@ -511,6 +515,19 @@ If any check fails, stop external traffic and use the last accepted receipt to
 select the prior application digest. Database rollback is restore/forward-fix
 work, not an automatic reverse migration. Never delete or recreate the sole
 production volume without approved recovery proof.
+
+The repository contains a source-tested 0032 **application-surface** fallback
+in `supabase/rollbacks/0032_agent_operational_authority.sql`. It keeps additive
+schema, audit receipts, 0033 candidate-erasure authority, and tenant constraints
+while restoring the reviewed 0029 framework-claim RPC and disabling 0032 memory
+mutation/egress functions. It is not currently production-executable: there is
+no protected apply job, and the migration ledger would prevent 0032 from being
+reapplied as forward recovery. Do not apply this SQL to production. Production
+response remains traffic stop plus approved restore or a new append-only forward
+migration. Enabling the fallback requires a separately reviewed protected job,
+ledger-safe forward migration, Security/DBA approval, and archived pre/post
+evidence. `npm run test:db-agent-operational-rollback` proves only the disposable
+database behavior.
 
 #### Fly database rollback after the root-to-child layout cutover
 
@@ -543,21 +560,21 @@ run the receipt-bound production preflight, and check PostgreSQL, Auth, REST,
 Kong, and `/api/ready`. An ambiguous provider-side deployment remains a manual
 recovery event; never guess and start a second database Machine.
 
-# Legacy Vercel demo appendix
+# Shared platform operations
 
-The remainder of this document describes the isolated Vercel demo path. It is
-not the ARIA production release procedure and must not be used to recover or
-deploy the Fly data plane.
+The preflight, environment, candidate-erasure, Graphify, and agent-framework
+procedures below are current shared controls. The separately labeled legacy
+Supabase section is not. These controls supplement the canonical Fly release;
+they do not authorize an ad hoc Fly deployment.
 
 ## Prerequisites
 
 | Requirement | Where to check |
 |---|---|
-| Vercel CLI installed (`npm i -g vercel`) | `vercel --version` |
-| Supabase CLI installed | `supabase --version` |
 | Node 22.x | `node --version` and `package.json` `engines.node` |
-| GitHub Actions CI green on `main` | GitHub → Actions tab |
-| All required env vars set in Vercel project | Vercel → Project → Settings → Environment Variables |
+| Exact release SHA has green protected CI | GitHub Actions exact-SHA readback |
+| Procedure-specific CLI is installed | `fly version` or `supabase --version` |
+| Required authorities are owner-controlled | Reviewed secret-manager inventory; never shell history |
 
 ---
 
@@ -569,7 +586,7 @@ All checks must pass before a production deploy is triggered. Block the deploy i
 # From the repo root:
 npm run typecheck       # tsc --noEmit; must exit 0
 npm run lint            # next lint; must be "No ESLint warnings or errors."
-npm run test            # 36 pretest + 128 test commands; all must pass
+npm run test            # 36 pretest + 132 test + 1 posttest commands; all must pass
 npm run test:security   # security-specific subset (faster); must be 0 failures
 npm run build           # must complete without error in CI or an unsynced checkout
 npm run build:isolated  # required for this OneDrive-synced checkout
@@ -585,7 +602,14 @@ project root.
 
 ---
 
-## 2. Database migrations (Supabase)
+# Legacy Supabase migration reference
+
+This section is for the isolated Supabase/Vercel demo only. Never run
+`supabase db push` or SQL Editor migrations against Fly production. Fly applies
+migrations only through the protected bootstrap ledger in the canonical release
+workflow above.
+
+## 2. Database migrations (Supabase demo only)
 
 Migrations must be applied **before** the new code is live. The migration files live in `supabase/migrations/`. Apply every file in strict numeric order.
 
@@ -636,64 +660,104 @@ supabase db push
 # 0029_agent_framework_authority.sql → approved Flowise workflow versions, DeerFlow run claims, immutable runtime identity, and fail-closed receipts
 # 0030_agent_framework_provisioning_authority.sql → reviewed prepare/confirm/activate framework provisioning with replay-safe configuration authority
 # 0031_orphan_owner_recovery_authority.sql → service-only, approval-bound recovery for an exact orphaned workspace owner
+# 0032_agent_operational_authority.sql → exact workspace-seat, framework-memory egress, and operational rollback authority
+# 0033_candidate_erasure_authority.sql → tenant-bound erasure state machine, legal holds, provider obligations, and HMAC suppression tombstones
 ```
 
-**IMPORTANT:** RLS must be enabled on every table listed above. Verify after each migration:
+**IMPORTANT:** RLS must be enabled on every public application table. The
+canonical automated proof is `npm run test:db-privileges`; it checks the exact
+schema inventory, function privileges, and current migration ledger. Record the
+following production query after migration. It must return zero rows, including
+for every 0032 operational-memory/quarantine table and every 0033 candidate-
+erasure table:
 
 ```sql
--- In Supabase SQL Editor, confirm RLS is ON:
+-- Any row is a release blocker.
 SELECT tablename, rowsecurity
 FROM pg_tables
 WHERE schemaname = 'public'
-  AND tablename IN ('workspaces','profiles','workspace_state','agent_seats',
-                    'suppression_list','outreach_ledger','outreach_approvals',
-                    'api_keys','email_connections',
-                    'agent_specs','agent_runs','agent_events','messages_outbound',
-                    'messages_inbound','whatsapp_contacts','whatsapp_senders',
-                    'whatsapp_templates','whatsapp_conversation_windows',
-                    'outbound_content_cache','whatsapp_delivery_events',
-                    'databricks_connections','databricks_connection_events',
-                    'dust_connections','dust_connection_events',
-                    'sourcing_learning_secrets','sourcing_learning_controls',
-                    'sourcing_runs','sourcing_run_quota','sourcing_query_receipts',
-                    'sourcing_query_feedback','sourcing_graphify_exports',
-                    'sourcing_lessons','sourcing_lesson_evidence',
-                    'sourcing_lesson_reviews');
--- Every row must show rowsecurity = true
+  AND tablename <> 'aria_schema_migrations'
+  AND rowsecurity IS FALSE
+ORDER BY tablename;
 ```
 
 ### 2c. Verify RPC exists
 
+The exhaustive privilege matrix remains `npm run test:db-privileges`. This
+production readback checks the exact new recovery, framework-memory, and
+candidate-erasure signatures. It must return zero rows; checking routine names
+alone is insufficient because PostgreSQL functions can be overloaded.
+
 ```sql
-SELECT routine_name FROM information_schema.routines
-WHERE routine_schema = 'public'
-  AND routine_name IN (
-    'claim_and_record', 'claim_email_outbound', 'claim_whatsapp_outbound',
-    'record_outreach_approval', 'revoke_outreach_approval',
-    'review_whatsapp_outbound', 'claim_whatsapp_inbound_processing',
-    'complete_whatsapp_inbound_processing',
-    'record_whatsapp_provider_acceptance', 'record_whatsapp_delivery_event',
-    'stamp_databricks_connection_authority',
-    'audit_databricks_connection_authority',
-    'strip_legacy_databricks_authority',
-    'stamp_dust_connection_authority', 'audit_dust_connection_authority',
-    'strip_legacy_dust_authority',
-    'begin_sourcing_run', 'complete_sourcing_run', 'fail_sourcing_run',
-    'record_sourcing_query_feedback', 'list_pending_sourcing_feedback',
-    'list_promoted_sourcing_lessons',
-    'export_graphify_sourcing_lessons', 'complete_graphify_sourcing_export',
-    'attach_graphify_sourcing_lesson',
-    'review_sourcing_lesson', 'configure_sourcing_learning',
-    'cleanup_sourcing_learning_authority'
-  );
--- Must return every named routine.
+WITH required(signature) AS (VALUES
+  ('recover_orphan_workspace_owner(uuid,uuid,text,text,text,text,text,text,uuid,text,text)'),
+  ('claim_agent_framework_run(uuid,uuid,uuid,uuid,text,text,uuid,text,text)'),
+  ('attach_agent_framework_run_memory_context(uuid,uuid,uuid,uuid,uuid)'),
+  ('authorize_agent_framework_memory_egress(uuid,uuid)'),
+  ('release_agent_framework_memory_egress(uuid,uuid,uuid)'),
+  ('create_agent_memory(uuid,uuid,uuid,uuid,text,text,text,integer,boolean,timestamp with time zone)'),
+  ('mutate_agent_memory(uuid,uuid,uuid,uuid,uuid,integer,text,text,text,text,integer,boolean,boolean,timestamp with time zone)'),
+  ('delete_agent_memory_content(uuid,uuid,uuid,uuid,uuid,integer,text,text,integer)'),
+  ('list_candidate_erasure_requests(uuid,uuid,integer)'),
+  ('request_candidate_erasure(uuid,uuid,text,text,uuid)'),
+  ('read_candidate_erasure_obligation_authority(uuid,uuid,uuid)'),
+  ('reconcile_candidate_erasure_obligation(uuid,uuid,uuid,integer,text,text,text,text)'),
+  ('place_candidate_legal_hold(uuid,uuid,text,text,text,text,timestamp with time zone)'),
+  ('release_candidate_legal_hold(uuid,uuid,uuid,text)'),
+  ('refresh_candidate_erasure_legal_hold_state(uuid)')
+)
+SELECT signature AS missing_signature
+FROM required
+WHERE to_regprocedure('public.' || signature) IS NULL
+ORDER BY signature;
 ```
+
+# Shared candidate-erasure operations
+
+### Operate candidate erasure without overstating completion
+
+Candidate erasure is an administrator-only privacy workflow. Use the Candidate
+drawer in the application; do not invoke service-role functions from a browser,
+edit erasure tables, or copy decrypted provider references into tickets, Relay,
+logs, or chat.
+
+1. Confirm the candidate and campaign, check the applicable retention policy,
+   and confirm that no legal hold is active. Start **Anonymize** once. The API
+   uses a unique idempotency key and returns either a final `completed` receipt
+   or a non-final provider queue.
+2. Treat `pending_provider`, `manual_required`, and `retryable_failure` as
+   incomplete. Local scrubbing does not mean the provider copy is deleted.
+3. For each obligation, use **Open authority** as an authenticated
+   administrator. Perform deletion through the provider's approved privacy
+   console or support process using an approved operator account. ARIA does not
+   currently automate provider deletion.
+4. Store the provider confirmation in the approved restricted privacy-case
+   system. Calculate its SHA-256 outside ARIA, then record only that hash and
+   the non-sensitive case reference in the drawer. The hash is an integrity
+   locator; the case system remains the evidence source.
+5. Refresh the durable queue and continue until the request reports
+   `completed`. Do not close the privacy case while any obligation remains
+   non-final. A late legal hold changes the request and its obligations to
+   `blocked_legal_hold`; stop processing until the hold is formally released.
+6. A `candidate_erasure_obligation_limit_exceeded` response means more than
+   100 provider records were found and no local data was changed. Open a
+   Security and DPO escalation and keep the request open. The current
+   self-service flow cannot erase that candidate safely; do not bypass the cap
+   with direct SQL or partial deletion.
+
+Before production acceptance, the owner must provide the approved privacy-case
+system, provider operator accounts, retention policy, DPO escalation owner, and
+a restore-replay control for erasures that occurred after a backup was taken.
+Until those controls and a tested path for more than 100 obligations exist,
+candidate erasure is source-tested but remains a production NO-GO.
 
 ---
 
-## 3. Environment variables
+## Platform configuration reference
 
-All variables below must be set in Vercel **before** deploying. Production values only — never commit secrets to git.
+Supply these variables through the target platform's owner-controlled secret or
+configuration manager before activation. Use production values only and never
+commit secrets to git.
 
 Minimum live production set: the Supabase trio
 (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
@@ -800,9 +864,10 @@ The gateway image supports this binding only when
 non-published container network.
 
 Fly framework activation status remains NO-GO, but the missing source operator
-path now exists under `infra/agent-frameworks/fly/`. It defines separate
-private apps for both databases, both Redis planes, the model gateway,
-DeerFlow, Flowise, its worker, and both adapters. The operator requires a
+path now exists under `infra/agent-frameworks/fly/`. It declares ten signed
+roles: eight active private apps for Flowise PostgreSQL and Redis, the model
+gateway, DeerFlow, Flowise, its worker, and both adapters; plus release-disabled
+DeerFlow database and Redis provenance roles. The operator requires a
 15-minute prepare/confirm/deploy approval, exact signed image digests, SPDX
 SBOM and SLSA provenance verification, a zero-high/critical Trivy result,
 owner-only secret files imported over stdin, no public IPs or services, default
@@ -815,9 +880,10 @@ workflow does not deploy it. Activation stays blocked until immutable upstream
 base resolution and promotion evidence exist; Fly egress is proven to allow
 only the model gateway's reviewed provider; Flowise is privately bootstrapped;
 PostgreSQL HA and a timed snapshot restore drill are accepted; the provider
-returns the approved model; all ten apps pass live identity/readiness; and a
-real approved campaign succeeds end to end. Local rendering and tests are not
-production deployment evidence.
+returns the approved model; all eight active apps pass live identity/readiness;
+the two disabled roles prove exact signed provenance plus the absence of any
+Machine or secret; and a real approved campaign succeeds end to end. Local
+rendering and tests are not production deployment evidence.
 
 Only the gateway joins the dedicated egress network. DeerFlow receives a
 separate internal bearer token, never the cloud-provider key. The gateway
@@ -931,6 +997,17 @@ After any configure, activate, or kill action, retain the returned change UUID,
 prior/resulting control versions, configuration SHA, and immutable database
 receipt reference in the production change record. Never copy the service key
 or adapter tokens into the plan or ticket.
+
+# Legacy Vercel demo appendix
+
+The remainder of this document describes the isolated Vercel demo path. It is
+not the ARIA production release procedure and must not be used to recover or
+deploy the Fly data plane.
+
+| Requirement | Where to check |
+|---|---|
+| Vercel CLI installed (`npm i -g vercel`) | `vercel --version` |
+| All required env vars set in Vercel project | Vercel project settings |
 
 Verify all variables are visible in Vercel before continuing:
 

@@ -1,9 +1,23 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 
-export const FLY_MANIFEST_SCHEMA = "aria.agent-framework.fly-manifest.v1";
+import {
+  agentFrameworkConfigurationInputFromEnvironment,
+  deriveAgentFrameworkConfiguration,
+} from "../../../src/lib/agents/framework/configuration-core.mjs";
+
+export const FLY_MANIFEST_SCHEMA = "aria.agent-framework.fly-manifest.v2";
 export const FLY_PLAN_SCHEMA = "aria.agent-framework.fly-plan.v1";
 export const FLY_APPROVAL_SCHEMA = "aria.agent-framework.fly-approval.v1";
+export const DEERFLOW_RUNTIME_IDENTITY = Object.freeze({
+  patchedRunsSha256: "79b6601066faa937a2d0b5551f7e1a5311304f1e7b28962c1ccee72cea05d6e7",
+  cleanupGuardSha256: "4e4b0006ad7486b5b028dfa9168e3e45d26d33eca46e7b653db29db4683918e6",
+  runtimePolicySha256: "9312dff2f23f04fc8c2a92600d47d8d4958094e4c37e010c10ff1e011dce6025",
+  runtimeConfigSha256: "a5a41ab4a2772e74203820d65a6efb488bc3b6a5948c47a8d1f9dd6cd3a30369",
+  databaseBackend: "memory",
+  runEventsBackend: "memory",
+  streamBridgeType: "memory",
+});
 export const ROLE_ORDER = Object.freeze([
   "deerflow-db",
   "deerflow-redis",
@@ -16,6 +30,10 @@ export const ROLE_ORDER = Object.freeze([
   "deerflow-adapter",
   "flowise-adapter",
 ]);
+export const RELEASE_DISABLED_ROLES = Object.freeze(["deerflow-db", "deerflow-redis"]);
+const DEERFLOW_ADAPTER_ORIGIN = "http://aria-mantu-deerflow-adapter.internal:8080";
+const FLOWISE_ADAPTER_ORIGIN = "http://aria-mantu-flowise-adapter.internal:8080";
+const MODEL_GATEWAY_BASE_URL = "http://aria-mantu-model-gateway.internal:8090/v1";
 
 export const APP_BY_ROLE = Object.freeze({
   "deerflow-db": "aria-mantu-deerflow-db",
@@ -37,13 +55,13 @@ const IMAGE = /^[a-z0-9][a-z0-9./:_-]*@sha256:[0-9a-f]{64}$/;
 const NAME = /^[a-z][a-z0-9-]{0,62}$/;
 const TOKEN = /^[A-Za-z0-9_-]{32,4096}$/;
 const MACHINE_ID = /^[a-z0-9]{10,32}$/;
+const FLY_SECRET_NAME = /^[A-Z][A-Z0-9_]{0,127}$/;
 
 const SECRET_FILES = Object.freeze({
   "deerflow-db": Object.freeze([
     ["ARIA_FLY_SECRET_DEERFLOW_DB_PASSWORD_FILE", "ARIA_DB_PASSWORD_B64"],
   ]),
   "deerflow-redis": Object.freeze([
-    ["ARIA_FLY_SECRET_DEERFLOW_REDIS_PASSWORD_FILE", "ARIA_REDIS_PASSWORD_B64"],
   ]),
   "flowise-db": Object.freeze([
     ["ARIA_FLY_SECRET_FLOWISE_DB_PASSWORD_FILE", "ARIA_DB_PASSWORD_B64"],
@@ -56,8 +74,6 @@ const SECRET_FILES = Object.freeze({
     ["ARIA_FLY_SECRET_DEERFLOW_MODEL_PROVIDER_API_KEY_FILE", "ARIA_PROVIDER_API_KEY_B64"],
   ]),
   deerflow: Object.freeze([
-    ["ARIA_FLY_SECRET_DEERFLOW_DB_PASSWORD_FILE", "ARIA_DEERFLOW_DB_PASSWORD_B64"],
-    ["ARIA_FLY_SECRET_DEERFLOW_REDIS_PASSWORD_FILE", "ARIA_DEERFLOW_REDIS_PASSWORD_B64"],
     ["ARIA_FLY_SECRET_DEERFLOW_MODEL_GATEWAY_TOKEN_FILE", "ARIA_GATEWAY_TOKEN_B64"],
     ["ARIA_FLY_SECRET_DEERFLOW_INTERNAL_TOKEN_FILE", "ARIA_DEERFLOW_INTERNAL_TOKEN_B64"],
   ]),
@@ -83,7 +99,6 @@ const SECRET_FILES = Object.freeze({
     ["ARIA_FLY_SECRET_DEERFLOW_ADAPTER_TOKEN_FILE", "ARIA_ADAPTER_TOKEN_B64"],
     ["ARIA_FLY_SECRET_DEERFLOW_INTERNAL_TOKEN_FILE", "ARIA_UPSTREAM_TOKEN_B64"],
     ["ARIA_FLY_SECRET_AGENT_FRAMEWORK_CAPABILITY_SECRET_FILE", "ARIA_CAPABILITY_SECRET_B64"], // gitleaks:allow - environment variable names only
-    ["ARIA_FLY_SECRET_DEERFLOW_REDIS_PASSWORD_FILE", "ARIA_REDIS_PASSWORD_B64"],
     ["ARIA_FLY_SECRET_DEERFLOW_MODEL_GATEWAY_TOKEN_FILE", "ARIA_GATEWAY_TOKEN_B64"],
   ]),
   "flowise-adapter": Object.freeze([
@@ -187,7 +202,7 @@ function normalizeImage(value, role) {
 export function validateManifest(value) {
   exactKeys(value, [
     "schema", "phase", "deploymentId", "organization", "network", "region",
-    "sourceReleaseSha", "configurationSha256", "workspaceId", "frameworkInstances",
+    "sourceReleaseSha", "configurationSha256", "deerflowRuntime", "workspaceId", "frameworkInstances",
     "model", "flowise", "images",
   ], "manifest");
   if (value.schema !== FLY_MANIFEST_SCHEMA || value.phase !== "runtime") fail("manifest schema or phase is invalid");
@@ -202,6 +217,20 @@ export function validateManifest(value) {
   const deerflowInstance = uuid(value.frameworkInstances.deerflow, "DeerFlow instance");
   const flowiseInstance = uuid(value.frameworkInstances.flowise, "Flowise instance");
   if (deerflowInstance === flowiseInstance) fail("framework instance IDs must be independent");
+
+  exactKeys(value.deerflowRuntime, Object.keys(DEERFLOW_RUNTIME_IDENTITY), "DeerFlow runtime");
+  const deerflowRuntime = Object.freeze({
+    patchedRunsSha256: sha256(value.deerflowRuntime.patchedRunsSha256, "DeerFlow runtime patched runs SHA"),
+    cleanupGuardSha256: sha256(value.deerflowRuntime.cleanupGuardSha256, "DeerFlow runtime cleanup guard SHA"),
+    runtimePolicySha256: sha256(value.deerflowRuntime.runtimePolicySha256, "DeerFlow runtime policy SHA"),
+    runtimeConfigSha256: sha256(value.deerflowRuntime.runtimeConfigSha256, "DeerFlow runtime config SHA"),
+    databaseBackend: required(value.deerflowRuntime.databaseBackend, "DeerFlow runtime database backend", 32),
+    runEventsBackend: required(value.deerflowRuntime.runEventsBackend, "DeerFlow runtime run-events backend", 32),
+    streamBridgeType: required(value.deerflowRuntime.streamBridgeType, "DeerFlow runtime stream-bridge type", 32),
+  });
+  if (canonicalJson(deerflowRuntime) !== canonicalJson(DEERFLOW_RUNTIME_IDENTITY)) {
+    fail("DeerFlow runtime identity does not match the audited runtime");
+  }
 
   exactKeys(value.model, ["providerId", "modelId", "baseUrl", "credentialVersion"], "model");
   const providerId = required(value.model.providerId, "model provider", 64);
@@ -233,6 +262,7 @@ export function validateManifest(value) {
     region,
     sourceReleaseSha: commit(value.sourceReleaseSha, "source release SHA"),
     configurationSha256: sha256(value.configurationSha256, "configuration SHA"),
+    deerflowRuntime,
     workspaceId: uuid(value.workspaceId, "workspaceId"),
     frameworkInstances: Object.freeze({ deerflow: deerflowInstance, flowise: flowiseInstance }),
     model: Object.freeze({
@@ -247,6 +277,12 @@ export function validateManifest(value) {
     }),
     images: normalizedImages,
   });
+  const generatedConfigurationSha256 = deriveAgentFrameworkConfiguration(
+    agentFrameworkConfigurationInputFromEnvironment(dynamicEnvironment("deerflow-adapter", normalized)),
+  ).sha256;
+  if (generatedConfigurationSha256 !== normalized.configurationSha256) {
+    fail("configuration SHA does not match the generated private adapter environment");
+  }
   return Object.freeze({ ...normalized, sha256: digestJson(normalized) });
 }
 
@@ -294,6 +330,7 @@ export function createPlan(manifest, { now = new Date(), supplyChainEvidence, pr
     applications: Object.freeze(Object.fromEntries(ROLE_ORDER.map((role) => [role, Object.freeze({
       app: APP_BY_ROLE[role],
       config: `${role}.toml`,
+      releaseDisabled: RELEASE_DISABLED_ROLES.includes(role),
       configSha256: sha256(configSha256ByRole[role], `${role} Fly config SHA`),
       image: manifest.images[role].ref,
       sourceCommit: manifest.images[role].sourceCommit,
@@ -347,7 +384,7 @@ async function readSecretFile(file, label) {
   return value;
 }
 
-function dynamicEnvironment(role, manifest) {
+export function dynamicEnvironment(role, manifest) {
   const common = {
     ARIA_RELEASE_SHA: manifest.sourceReleaseSha,
   };
@@ -369,7 +406,7 @@ function dynamicEnvironment(role, manifest) {
     AGENT_FRAMEWORK_CONFIGURATION_SHA256: manifest.configurationSha256,
     FRAMEWORK_ADAPTER_IMAGE_DIGEST: manifest.images[role].ref,
     REDIS_IMAGE_DIGEST: manifest.images[role.startsWith("deerflow") ? "deerflow-redis" : "flowise-redis"].ref,
-    DEERFLOW_ADAPTER_URL: "http://aria-mantu-deerflow-adapter.internal:8080",
+    DEERFLOW_ADAPTER_URL: DEERFLOW_ADAPTER_ORIGIN,
     DEERFLOW_FRAMEWORK_INSTANCE_ID: manifest.frameworkInstances.deerflow,
     DEERFLOW_SOURCE_COMMIT: manifest.images.deerflow.sourceCommit,
     DEERFLOW_IMAGE_DIGEST: manifest.images.deerflow.ref,
@@ -378,9 +415,9 @@ function dynamicEnvironment(role, manifest) {
     DEERFLOW_CLOUD_PROVIDER_ID: manifest.model.providerId,
     DEERFLOW_MODEL_PROVIDER: "langchain-openai",
     DEERFLOW_MODEL_ID: manifest.model.modelId,
-    DEERFLOW_MODEL_BASE_URL: manifest.model.baseUrl,
+    DEERFLOW_MODEL_BASE_URL: MODEL_GATEWAY_BASE_URL,
     DEERFLOW_MODEL_CREDENTIAL_VERSION: manifest.model.credentialVersion,
-    FLOWISE_ADAPTER_URL: "http://aria-mantu-flowise-adapter.internal:8080",
+    FLOWISE_ADAPTER_URL: FLOWISE_ADAPTER_ORIGIN,
     FLOWISE_FRAMEWORK_INSTANCE_ID: manifest.frameworkInstances.flowise,
     FLOWISE_SOURCE_COMMIT: manifest.images.flowise.sourceCommit,
     FLOWISE_IMAGE_DIGEST: manifest.images.flowise.ref,
@@ -401,6 +438,7 @@ function dynamicEnvironment(role, manifest) {
 
 export async function secretImportForRole(role, manifest, environment = process.env) {
   if (!ROLE_ORDER.includes(role)) fail("Fly role is invalid");
+  if (RELEASE_DISABLED_ROLES.includes(role)) fail(`${role} is release-disabled`);
   const entries = [];
   for (const [fileVariable, flySecret] of SECRET_FILES[role]) {
     const value = await readSecretFile(environment[fileVariable], fileVariable);
@@ -411,6 +449,36 @@ export async function secretImportForRole(role, manifest, environment = process.
   }
   entries.sort(([left], [right]) => left.localeCompare(right));
   return `${entries.map(([name, value]) => `${name}=${value}`).join("\n")}\n`;
+}
+
+export function validateFlySecretInventory(role, manifest, value, { requireComplete = true } = {}) {
+  if (!ROLE_ORDER.includes(role) || !Array.isArray(value) || typeof requireComplete !== "boolean") {
+    fail("Fly secret inventory is invalid");
+  }
+  const expected = RELEASE_DISABLED_ROLES.includes(role)
+    ? []
+    : [...new Set([
+        ...SECRET_FILES[role].map((entry) => entry[1]),
+        ...Object.keys(dynamicEnvironment(role, manifest)),
+      ])].sort();
+  const accepted = new Set(expected);
+  const actual = new Set();
+  for (const item of value) {
+    plainRecord(item, `${role} Fly secret`);
+    const upper = item.Name;
+    const lower = item.name;
+    if (upper !== undefined && lower !== undefined && upper !== lower) fail("Fly secret inventory is invalid");
+    const name = upper ?? lower;
+    if (typeof name !== "string" || !FLY_SECRET_NAME.test(name) || actual.has(name)) {
+      fail("Fly secret inventory is invalid");
+    }
+    if (!accepted.has(name)) fail(`${role} has a stale Fly secret: ${name}`);
+    actual.add(name);
+  }
+  if (requireComplete && expected.some((name) => !actual.has(name))) {
+    fail(`${role} Fly secret inventory is incomplete`);
+  }
+  return Object.freeze([...actual].sort());
 }
 
 export function validateMachineInventory(role, expectedImage, value) {
@@ -432,4 +500,34 @@ export function validateMachineInventory(role, expectedImage, value) {
       : null;
   if (actualImage !== expectedImage) fail(`${role} machine image does not match the plan`);
   return Object.freeze({ machineId, imageDigest: expectedImage, state: "started" });
+}
+
+export function validateDeerFlowRuntimeHealth(value, manifest) {
+  exactKeys(value, [
+    "mode", "status", "patchedRunsSha256", "cleanupGuardSha256", "runtimePolicySha256", "runtimeConfigSha256",
+    "databaseBackend", "runEventsBackend", "streamBridgeType", "tracingDisabled", "persistenceEnvironmentClean",
+  ], "DeerFlow runtime health");
+  if (
+    value.mode !== "deerflow" || value.status !== "ready" ||
+    value.tracingDisabled !== true || value.persistenceEnvironmentClean !== true
+  ) fail("DeerFlow runtime readiness failed");
+  const runtime = Object.freeze({
+    patchedRunsSha256: sha256(value.patchedRunsSha256, "DeerFlow health patched runs SHA"),
+    cleanupGuardSha256: sha256(value.cleanupGuardSha256, "DeerFlow health cleanup guard SHA"),
+    runtimePolicySha256: sha256(value.runtimePolicySha256, "DeerFlow health runtime policy SHA"),
+    runtimeConfigSha256: sha256(value.runtimeConfigSha256, "DeerFlow health runtime config SHA"),
+    databaseBackend: required(value.databaseBackend, "DeerFlow health database backend", 32),
+    runEventsBackend: required(value.runEventsBackend, "DeerFlow health run-events backend", 32),
+    streamBridgeType: required(value.streamBridgeType, "DeerFlow health stream-bridge type", 32),
+  });
+  if (!manifest?.deerflowRuntime || canonicalJson(runtime) !== canonicalJson(manifest.deerflowRuntime)) {
+    fail("DeerFlow runtime identity does not match the manifest");
+  }
+  return Object.freeze({
+    mode: "deerflow",
+    status: "ready",
+    ...runtime,
+    tracingDisabled: true,
+    persistenceEnvironmentClean: true,
+  });
 }
