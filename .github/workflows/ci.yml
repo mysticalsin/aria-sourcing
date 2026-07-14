@@ -37,6 +37,9 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Verify orphan-owner recovery operator contract
+        run: npm run test:owner-recovery
+
       - name: Build Obscura sidecar image
         run: docker build -t aria-obscura-ci ./docker/obscura
 
@@ -131,6 +134,21 @@ jobs:
       - name: Verify agent memory authority
         run: npm run test:db-agent-memory
 
+      - name: Verify Apollo enrichment authority
+        run: npm run test:db-apollo-enrichment
+
+      - name: Verify adaptive sourcing authority
+        run: npm run test:db-sourcing-learning
+
+      - name: Verify conversation and message authority
+        run: npm run test:db-conversation-authority
+
+      - name: Verify DeerFlow and Flowise database authority
+        run: npm run test:db-agent-framework
+
+      - name: Verify orphan-owner recovery database authority
+        run: npm run test:db-owner-recovery
+
       - name: Prove Fly database volume and restart behavior
         run: npm run test:fly-db-volume
 
@@ -143,6 +161,7 @@ jobs:
       ARIA_CI_DB_IMAGE: aria-msourcing-db:ci-${{ github.sha }}
       ARIA_CI_BOOTSTRAP_IMAGE: aria-msourcing-bootstrap:ci-${{ github.sha }}
       ARIA_CI_KONG_IMAGE: aria-msourcing-kong:ci-${{ github.sha }}
+      ARIA_CI_GRAPHIFY_IMAGE: aria-graphify-lessons:ci-${{ github.sha }}
       # Trivy v0.72.0 OCI index digest, verified against Docker Hub on 2026-07-11.
       TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
       # Official CycloneDX CLI v0.32.0 OCI index digest, verified on 2026-07-11.
@@ -188,12 +207,18 @@ jobs:
             --file docker/kong/Dockerfile.fly \
             --tag "$ARIA_CI_KONG_IMAGE" \
             .
+          docker build --pull --platform linux/amd64 \
+            --file workers/graphify-lessons/Dockerfile \
+            --tag "$ARIA_CI_GRAPHIFY_IMAGE" \
+            workers/graphify-lessons
+          GRAPHIFY_IMAGE="$ARIA_CI_GRAPHIFY_IMAGE" npm run test:graphify-learning
           mkdir -p "$RUNNER_TEMP/aria-scan-input"
           for specification in \
             "app|$ARIA_CI_IMAGE" \
             "db|$ARIA_CI_DB_IMAGE" \
             "bootstrap|$ARIA_CI_BOOTSTRAP_IMAGE" \
-            "kong|$ARIA_CI_KONG_IMAGE"
+            "kong|$ARIA_CI_KONG_IMAGE" \
+            "graphify|$ARIA_CI_GRAPHIFY_IMAGE"
           do
             IFS='|' read -r component image <<< "$specification"
             docker image save \
@@ -242,7 +267,7 @@ jobs:
           fi
           rm -f artifacts/supply-chain/validator-valid.cdx.json artifacts/supply-chain/validator-invalid.cdx.json
 
-          for component in app db bootstrap kong; do
+          for component in app db bootstrap kong graphify; do
             docker run --rm \
               --volume "$RUNNER_TEMP/aria-scan-input:/image:ro" \
               --volume "$PWD/.trivy-cache:/trivy-cache" \
@@ -259,7 +284,7 @@ jobs:
           import json
           from pathlib import Path
 
-          for name in ("app", "db", "bootstrap", "kong"):
+          for name in ("app", "db", "bootstrap", "kong", "graphify"):
               path = Path(f"artifacts/supply-chain/aria-{name}.cdx.json")
               document = json.loads(path.read_text(encoding="utf-8"))
               component = document.get("metadata", {}).get("component", {})
@@ -272,7 +297,7 @@ jobs:
           PY
           (
             cd artifacts/supply-chain
-            for component in app db bootstrap kong; do
+            for component in app db bootstrap kong graphify; do
               sha256sum "aria-$component.cdx.json" > "aria-$component.cdx.json.sha256"
             done
           )
@@ -287,7 +312,7 @@ jobs:
           disable-rules:
             - linkedin-client-id
           YAML
-          for component in app db bootstrap kong; do
+          for component in app db bootstrap kong graphify; do
             docker run --rm \
               --volume "$RUNNER_TEMP/aria-scan-input:/image:ro" \
               --volume "$PWD/.trivy-cache:/trivy-cache" \

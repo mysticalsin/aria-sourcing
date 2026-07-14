@@ -51,10 +51,14 @@ if (!candidate || !campaign) {
 }
 
 const studio = source("src/app/studio/page.tsx");
-ok("Studio names the graph output as draft storage", studio.includes("Draft storage"));
 ok(
-  "Studio states that graph drafts remain in run history with no delivery authority",
-  studio.includes("Run history only") && studio.includes("No delivery authority"),
+  "Studio names the governed graph output as a real search",
+  studio.includes("Running real search") && studio.includes("Sourced ${result.accepted} real candidate"),
+);
+ok(
+  "Studio keeps candidate persistence under ARIA authority with no delivery authority",
+  studio.includes("Candidate search and persistence remain under ARIA authority") &&
+    studio.includes("No delivery authority"),
 );
 ok("Studio exposes no Autopilot or canary control", !/autopilot|canary/i.test(studio));
 

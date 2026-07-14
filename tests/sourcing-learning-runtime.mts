@@ -5,6 +5,7 @@ const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const actorId = "22222222-2222-4222-8222-222222222222";
 const runId = "33333333-3333-4333-8333-333333333333";
+const frameworkRunId = "88888888-8888-4888-8888-888888888888";
 const lessonId = "44444444-4444-4444-8444-444444444444";
 const roleFingerprint = "a".repeat(64);
 const configurationFingerprint = "b".repeat(64);
@@ -295,4 +296,225 @@ test("query feedback is bound to one opaque receipt and replay key", async () =>
     p_verdict: "useful",
     p_request_id: "feedback-request-1",
   });
+});
+
+test("framework sourcing begin binds the exact query, campaign fingerprint, count, and capability", async () => {
+  reset();
+  response = {
+    data: {
+      status: "claimed",
+      run_id: runId,
+      role_fingerprint: roleFingerprint,
+      lessons_enabled: false,
+      framework_run_id: frameworkRunId,
+    },
+    error: null,
+  };
+  const input = {
+    workspaceId,
+    actorId,
+    campaignId: "campaign-1",
+    roleBasis,
+    configurationFingerprint,
+    mode: "deterministic" as const,
+    provider: null,
+    model: null,
+    idempotencyKey: frameworkRunId,
+    requestId: "framework-source-1",
+    count: 5,
+    campaignFingerprint: "c".repeat(64),
+    sourceQuery: "language:go location:canada",
+    frameworkRunId,
+    capabilityToken: "s".repeat(43),
+  };
+  assert.deepEqual(
+    await authority.beginAgentFrameworkSourcingRun(input, service as never),
+    {
+      status: "claimed",
+      runId,
+      roleFingerprint,
+      lessonsEnabled: false,
+      frameworkRunId,
+    },
+  );
+  assert.equal(lastRpc?.name, "begin_agent_framework_sourcing_run");
+  assert.equal(lastRpc?.args.p_source_query, input.sourceQuery);
+  assert.equal(lastRpc?.args.p_campaign_fingerprint, input.campaignFingerprint);
+  assert.equal(lastRpc?.args.p_count, 5);
+  assert.equal(lastRpc?.args.p_sourcing_capability_token, input.capabilityToken);
+
+  reset();
+  assert.deepEqual(
+    await authority.beginAgentFrameworkSourcingRun(
+      { ...input, idempotencyKey: runId },
+      service as never,
+    ),
+    { status: "invalid_request" },
+  );
+  assert.equal(lastRpc, null);
+});
+
+test("framework sourcing result recovery accepts only content-bound staged receipts", async () => {
+  reset();
+  const resultPayload = { ok: true, campaignId: "campaign-1" };
+  response = {
+    data: {
+      status: "result_ready",
+      run_id: runId,
+      framework_run_id: frameworkRunId,
+      result_sha256: "d".repeat(64),
+      result_payload: resultPayload,
+    },
+    error: null,
+  };
+  const result = await authority.completeAgentFrameworkSourcingEffect(
+    {
+      workspaceId,
+      actorId,
+      frameworkRunId,
+      sourcingRunId: runId,
+      queryReceipts: [{
+        platform: "GitHub",
+        query: "language:go location:canada",
+        ok: true,
+        candidateCount: 1,
+        skippedCount: 0,
+      }],
+      resultPayload,
+    },
+    service as never,
+  );
+  assert.deepEqual(result, {
+    status: "result_ready",
+    runId,
+    frameworkRunId,
+    resultSha256: "d".repeat(64),
+    resultPayload,
+  });
+  assert.equal(lastRpc?.name, "complete_agent_framework_sourcing_effect");
+
+  response = {
+    data: {
+      status: "result_ready",
+      run_id: runId,
+      framework_run_id: "99999999-9999-4999-8999-999999999999",
+      result_sha256: "d".repeat(64),
+      result_payload: resultPayload,
+    },
+    error: null,
+  };
+  assert.deepEqual(
+    await authority.completeAgentFrameworkSourcingEffect(
+      {
+        workspaceId,
+        actorId,
+        frameworkRunId,
+        sourcingRunId: runId,
+        queryReceipts: [],
+        resultPayload,
+      },
+      service as never,
+    ),
+    { status: "dependency_unavailable" },
+  );
+});
+
+test("framework execution recheck and persistence acknowledgement fail closed", async () => {
+  reset();
+  response = { data: { status: "allowed" }, error: null };
+  assert.equal(
+    await authority.checkAgentFrameworkSourcingExecution(
+      { workspaceId, actorId, frameworkRunId, sourcingRunId: runId },
+      service as never,
+    ),
+    true,
+  );
+  assert.equal(lastRpc?.name, "check_agent_framework_sourcing_execution");
+
+  response = {
+    data: {
+      status: "completed",
+      framework_run_id: frameworkRunId,
+      sourcing_run_id: runId,
+      result_sha256: "d".repeat(64),
+    },
+    error: null,
+  };
+  assert.equal(
+    await authority.ackAgentFrameworkSourcingEffect(
+      {
+        workspaceId,
+        actorId,
+        frameworkRunId,
+        capabilityToken: "s".repeat(43),
+        resultSha256: "d".repeat(64),
+      },
+      service as never,
+    ),
+    true,
+  );
+  assert.equal(lastRpc?.name, "ack_agent_framework_sourcing_effect");
+
+  response = { data: { status: "completed", framework_run_id: frameworkRunId }, error: null };
+  assert.equal(
+    await authority.ackAgentFrameworkSourcingEffect(
+      {
+        workspaceId,
+        actorId,
+        frameworkRunId,
+        capabilityToken: "s".repeat(43),
+        resultSha256: "d".repeat(64),
+      },
+      service as never,
+    ),
+    false,
+  );
+});
+
+test("framework sourcing failure is bound to both framework and sourcing run IDs", async () => {
+  reset();
+  response = {
+    data: {
+      status: "failed",
+      framework_run_id: frameworkRunId,
+      sourcing_run_id: runId,
+    },
+    error: null,
+  };
+  assert.equal(
+    await authority.failAgentFrameworkSourcingEffect(
+      {
+        workspaceId,
+        actorId,
+        frameworkRunId,
+        sourcingRunId: runId,
+        errorCode: "PROVIDER_FAILED",
+      },
+      service as never,
+    ),
+    true,
+  );
+  assert.equal(lastRpc?.name, "fail_agent_framework_sourcing_effect");
+
+  response = {
+    data: {
+      status: "failed",
+      framework_run_id: frameworkRunId,
+      sourcing_run_id: "99999999-9999-4999-8999-999999999999",
+    },
+    error: null,
+  };
+  assert.equal(
+    await authority.failAgentFrameworkSourcingEffect(
+      {
+        workspaceId,
+        actorId,
+        frameworkRunId,
+        sourcingRunId: runId,
+        errorCode: "PROVIDER_FAILED",
+      },
+      service as never,
+    ),
+    false,
+  );
 });

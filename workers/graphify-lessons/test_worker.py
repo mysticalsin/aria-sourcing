@@ -226,13 +226,24 @@ class GraphifyLessonsWorkerTests(unittest.TestCase):
             encoding="utf-8"
         )
         dockerfile = (WORKER_DIRECTORY / "Dockerfile").read_text(encoding="utf-8")
+        wheel = WORKER_DIRECTORY / "vendor" / "graphifyy-0.9.14-py3-none-any.whl"
 
         self.assertIn(worker.GRAPHIFY_REPOSITORY.removesuffix(".git"), requirements)
         self.assertIn(worker.GRAPHIFY_COMMIT, requirements)
         self.assertIn("networkx==3.6.1", dependency_lock)
         self.assertIn("--hash=sha256:", dependency_lock)
         self.assertNotIn("[", requirements)
-        self.assertIn("--require-hashes", dockerfile)
+        self.assertIn("vendor/graphifyy-0.9.14-py3-none-any.whl", requirements)
+        self.assertIn(
+            "--hash=sha256:8c9410e3ac190f7f35863f5ef4d6cb89f3cce560f34719cbfebd29a06cf79f9c",
+            requirements,
+        )
+        self.assertTrue(wheel.is_file())
+        self.assertEqual(
+            hashlib.sha256(wheel.read_bytes()).hexdigest(),
+            "8c9410e3ac190f7f35863f5ef4d6cb89f3cce560f34719cbfebd29a06cf79f9c",
+        )
+        self.assertGreaterEqual(dockerfile.count("--require-hashes"), 2)
         self.assertIn("--no-deps", dockerfile)
         self.assertIn("pip check", dockerfile)
         self.assertNotIn("apt-get", dockerfile)

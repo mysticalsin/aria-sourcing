@@ -73,7 +73,9 @@ ok(
 ok(
   "Agent Studio distinguishes runnable and legacy-blocked specs without claiming an approval queue",
   studioPage.includes("runtime_eligible") &&
-    studioPage.includes("Run history only") &&
+    studioPage.includes("Approved Flowise workflow") &&
+    studioPage.includes("DeerFlow") &&
+    studioPage.includes("Run approved agent") &&
     studioPage.includes("No delivery authority") &&
     studioPage.includes("Execution blocked") &&
     !/wait(?:s|ing)? (?:in|for) (?:named )?human review|awaiting approval/i.test(studioPage),

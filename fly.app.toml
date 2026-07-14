@@ -7,8 +7,9 @@ app            = "aria-mantu-app"
 primary_region = "cdg"
 
 [processes]
-  web     = "node server.js"
-  cleanup = "node scripts/apollo-authority-cleanup-worker.mjs"
+  web                = "node server.js"
+  cleanup            = "node scripts/apollo-authority-cleanup-worker.mjs"
+  framework_heartbeat = "node scripts/agent-framework-heartbeat-worker.mjs"
 
 [build]
   dockerfile = "Dockerfile.prod"
@@ -67,5 +68,10 @@ primary_region = "cdg"
 
 [[vm]]
   processes = ["cleanup"]
+  size      = "shared-cpu-1x"
+  memory    = "256mb"
+
+[[vm]]
+  processes = ["framework_heartbeat"]
   size      = "shared-cpu-1x"
   memory    = "256mb"

@@ -1,293 +1,281 @@
+import { createHash, randomUUID } from "node:crypto";
+
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
-import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
+
+import { detectInjection } from "@/lib/agent-disclosure-policy";
+import { executeAgentFrameworkRun } from "@/lib/agents/framework/execution";
+import { agentFrameworkRuntimeFromEnvironment } from "@/lib/agents/framework/runtime-config";
+import {
+  AgentFrameworkNeedSchema,
+  AgentFrameworkRunSuccessResponseSchema,
+  assessAgentFrameworkRuntime,
+  normalizeAgentRoleTitle,
+} from "@/lib/agents/framework/contracts";
+import { resolveStoredAgentRuntimePolicy, SupportedAgentRoleBriefSchema } from "@/lib/agents/runtime-policy";
 import { validateBody } from "@/lib/api/validate";
-import { can } from "@/lib/rbac";
-import type { Campaign, Candidate, Role } from "@/lib/types";
-import {
-  DEFAULT_MODEL,
-  PROVIDER_ENV,
-  VAULT_PROVIDER,
-  buildCloudRequest,
-  parseCloudResponse,
-  type AiProviderSlug,
-} from "@/lib/ai/provider";
-import { resolveVaultSecret } from "@/lib/ai/vault-secret";
-import { makeSourcingToolRunner } from "@/lib/ai/sourcing-tools";
+import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
-import { initialState, runGraph, type CandidateLite, type GraphDeps } from "@/lib/agents/graph";
+import { can } from "@/lib/rbac";
+import { campaignAllowsLiveSourcing } from "@/lib/sourcing/campaign-lifecycle";
+import { prioritizeReviewedGithubQueries } from "@/lib/sourcing/framework-learning-selection";
+import { listPromotedSourcingLessons } from "@/lib/sourcing/learning-authority";
+import { sourcingRoleBasisForCampaign } from "@/lib/sourcing/role-basis";
 import {
-  applyAgentMemoryContext,
-  createAgentRunWithMemoryContext,
-  loadAgentMemoryContext,
-} from "@/lib/agents/memory";
-import {
-  normalizeStoredAgentRoleBrief,
-  resolveStoredAgentRuntimePolicy,
-} from "@/lib/agents/runtime-policy";
-import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
-import { DEFAULT_SCORING_WEIGHTS } from "@/lib/scoring";
+  projectSourcingAgentWorkspace,
+  type SourcingAgentCampaign,
+} from "@/lib/sourcing/sourcing-agent-contract";
+import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
+import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
+import type { Role } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-/**
- * On-demand sourcing agent run — the deer-flow-style graph
- * (planner → sourcer → screener → outreach → reporter) over the same real
- * search + deterministic scoring the single-shot /api/sourcing-agent uses.
- *
- * Same posture as that route: TEXT + SEARCH ONLY. This never sends anything.
- * Gate-passing drafts remain in run history with no delivery authority; this
- * route creates no approval queue and sends no candidate communication.
- *
- * Every run is bound to one active stored agent spec. Its approved encrypted
- * memory selection is receipted before model execution, and every graph node
- * persists to agent_runs plus the append-only agent_events narration stream.
- */
-const AGENT_PROVIDERS = ["anthropic", "openai", "groq", "xai", "mistral"] as const;
-
-const AgentRunSchema = z.object({
-  existing: z.array(z.record(z.string(), z.unknown())).max(500).default([]),
-  count: z.number().int().min(1).max(8).default(5),
-  provider: z.enum(AGENT_PROVIDERS),
-  apiKeyId: z.string().uuid().optional(),
-  model: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/).optional(),
+const AgentFrameworkRunSchema = z.object({
+  campaignId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/),
   specId: z.string().uuid(),
-});
+  workflowVersionId: z.string().uuid(),
+  count: z.number().int().min(1).max(8).default(5),
+}).strict();
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function noStoreJson(body: unknown, status = 200) {
+  return NextResponse.json(body, {
+    status,
+    headers: {
+      "Cache-Control": "no-store",
+      Pragma: "no-cache",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
+
+function unsafeCampaignInput(campaign: SourcingAgentCampaign): boolean {
+  const job = campaign.jobAnalysis;
+  return [
+    job.title,
+    job.department,
+    job.education,
+    job.reportingTo,
+    job.teamSize,
+    ...job.requiredSkills,
+    ...job.niceToHaveSkills,
+    ...job.industryExperience,
+    ...job.regions,
+    ...campaign.sourcingStrategy.githubQueries.map((query) => query.query),
+  ].some((value) => detectInjection(value).flagged);
+}
+
+function stableCampaignSha256(fingerprint: string): string {
+  return createHash("sha256").update(fingerprint, "utf8").digest("hex");
+}
+
+function executionFailure(code: string, requestId: string) {
+  const status = code === "idempotency_conflict" || code === "in_progress" || code === "already_completed" ||
+      code === "authority_changed" || code === "workflow_unavailable"
+    ? 409
+    : code === "proposal_invalid"
+      ? 502
+      : 503;
+  return noStoreJson({ ok: false, code: `agent_${code}`, requestId }, status);
+}
+
+/**
+ * Executes only an approved Flowise IR through the private DeerFlow adapter.
+ * The framework can propose the exact persisted GitHub query; the browser must
+ * then call the canonical campaign sourcing action, which rechecks authority,
+ * performs the real provider search, and persists candidates before success.
+ */
 export async function POST(req: NextRequest) {
+  const correlationId = /^[A-Za-z0-9._:-]{1,100}$/.test(req.headers.get("x-request-id") ?? "")
+    ? req.headers.get("x-request-id") as string
+    : randomUUID();
   const prodBlock = prodFailClosed();
   if (prodBlock) return prodBlock;
 
+  const contentType = req.headers.get("content-type")?.toLowerCase() ?? "";
+  if (contentType.split(";", 1)[0]?.trim() !== "application/json") {
+    return noStoreJson({ ok: false, code: "invalid_request", requestId: correlationId }, 415);
+  }
+  const origin = req.headers.get("origin");
+  if (!origin || origin !== req.nextUrl.origin) {
+    return noStoreJson({ ok: false, code: "cross_origin_request", requestId: correlationId }, 403);
+  }
   if (!supabaseEnabled) {
-    return NextResponse.json({ ok: false, reason: "Agent authority backend is required." }, { status: 503 });
+    return executionFailure("authority_unavailable", correlationId);
   }
 
-  const supabase = await getServerSupabase();
-  let workspaceId: string | null = null;
-  let userId: string | null = null;
-  let callerRole: Role | null = null;
-  if (!supabase) return NextResponse.json({ ok: false, reason: "No Supabase client." }, { status: 500 });
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, reason: "Not authenticated." }, { status: 401 });
-  userId = user.id;
-  const { data: role } = await supabase.rpc("current_profile_role");
-  callerRole = role as Role;
-  if (!can(callerRole, "source")) {
-    return NextResponse.json({ ok: false, reason: "Insufficient permissions." }, { status: 403 });
+  const runtimeConfig = agentFrameworkRuntimeFromEnvironment();
+  if (!assessAgentFrameworkRuntime(runtimeConfig.config).ready) {
+    return executionFailure("framework_unavailable", correlationId);
   }
-  if (!can(callerRole, "manage_providers")) {
-    return NextResponse.json({ ok: false, reason: "Live cloud agents require admin authority." }, { status: 403 });
+  const session = await getServerSupabase();
+  if (!session) return executionFailure("authority_unavailable", correlationId);
+  const { data: { user } } = await session.auth.getUser();
+  if (!user) return noStoreJson({ ok: false, code: "not_authenticated", requestId: correlationId }, 401);
+
+  const [{ data: role }, { data: workspaceId }] = await Promise.all([
+    session.rpc("current_profile_role"),
+    session.rpc("current_workspace_id"),
+  ]);
+  if (!can(role as Role, "source")) {
+    return noStoreJson({ ok: false, code: "insufficient_permissions", requestId: correlationId }, 403);
   }
-  const { data: wid } = await supabase.rpc("current_workspace_id");
-  workspaceId = (wid as string) ?? null;
-  if (!workspaceId) return NextResponse.json({ ok: false, reason: "Workspace authority is unavailable." }, { status: 403 });
+  if (typeof workspaceId !== "string" || !UUID_RE.test(workspaceId)) {
+    return executionFailure("authority_unavailable", correlationId);
+  }
 
-  const rl = checkRateLimit(rateLimitKey(req, "agents-run", userId), { windowMs: 60_000, max: 6 });
-  if (!rl.ok) return tooManyRequests(rl.retryAfterSec);
-
-  const validated = await validateBody(req, AgentRunSchema, { maxBytes: 200_000 });
+  const limited = checkRateLimit(rateLimitKey(req, "agent-framework-run", user.id), {
+    windowMs: 60_000,
+    max: 5,
+  });
+  if (!limited.ok) return tooManyRequests(limited.retryAfterSec);
+  const validated = await validateBody(req, AgentFrameworkRunSchema, { maxBytes: 2_000 });
   if (!validated.ok) return validated.response;
-  const { count = 5, provider, apiKeyId, model, specId } = validated.data;
-  const existing = validated.data.existing as unknown as Candidate[];
-
-  const { data: spec, error: specError } = await supabase
-    .from("agent_specs")
-    .select("id,workspace_id,owner_id,role_brief,channels,guardrails,status")
-    .eq("id", specId)
-    .eq("workspace_id", workspaceId)
-    .eq("owner_id", userId)
-    .eq("status", "active")
-    .maybeSingle();
-  if (specError || !spec || spec.owner_id !== userId) {
-    return NextResponse.json({ ok: false, reason: "Active agent spec not found." }, { status: 404 });
+  const idempotencyKey = req.headers.get("idempotency-key")?.trim() ?? "";
+  if (!UUID_RE.test(idempotencyKey)) {
+    return noStoreJson({ ok: false, code: "invalid_request", requestId: correlationId }, 400);
   }
 
-  const jobAnalysis = normalizeStoredAgentRoleBrief(spec.role_brief);
-  if (!jobAnalysis) return NextResponse.json({ ok: false, reason: "Stored agent role brief is invalid." }, { status: 409 });
-  const runtimePolicy = resolveStoredAgentRuntimePolicy(spec.channels, spec.guardrails);
-  if (!runtimePolicy.ok) {
-    return NextResponse.json({ ok: false, reason: runtimePolicy.reason }, { status: 409 });
+  const readWorkspace = async () => {
+    const { data, error } = await session
+      .from("workspace_state")
+      .select("state")
+      .eq("workspace_id", workspaceId)
+      .maybeSingle();
+    if (error) return { status: "unavailable" as const };
+    return projectSourcingAgentWorkspace(data?.state, validated.data.campaignId);
+  };
+
+  const initial = await readWorkspace();
+  if (initial.status !== "ok") {
+    return noStoreJson({ ok: false, code: "campaign_not_found", requestId: correlationId }, initial.status === "campaign_not_found" ? 404 : 503);
+  }
+  const campaign = initial.value.campaign;
+  if (!campaignAllowsLiveSourcing(campaign.status)) {
+    return noStoreJson({ ok: false, code: "campaign_not_active", requestId: correlationId }, 409);
+  }
+  if (!evaluateNeedReadiness(campaign.jobAnalysis).ready || unsafeCampaignInput(campaign)) {
+    return noStoreJson({ ok: false, code: "campaign_not_ready", requestId: correlationId }, 409);
+  }
+  const reviewedGithubQueries = campaign.sourcingStrategy.githubQueries
+    .map((query) => query.query.trim())
+    .filter(Boolean)
+    .slice(0, 20);
+  const frameworkNeed = AgentFrameworkNeedSchema.safeParse({
+    title: campaign.jobAnalysis.title,
+    seniority: campaign.jobAnalysis.seniority,
+    employmentType: campaign.jobAnalysis.employmentType,
+    locationType: campaign.jobAnalysis.locationType,
+    ...(campaign.jobAnalysis.location ? { location: campaign.jobAnalysis.location } : {}),
+    regions: campaign.jobAnalysis.regions,
+    requiredSkills: campaign.jobAnalysis.requiredSkills,
+    niceToHaveSkills: campaign.jobAnalysis.niceToHaveSkills,
+    minYearsExperience: campaign.jobAnalysis.minYearsExperience,
+    maxYearsExperience: campaign.jobAnalysis.maxYearsExperience,
+    industryExperience: campaign.jobAnalysis.industryExperience,
+  });
+  if (
+    reviewedGithubQueries.length === 0 ||
+    reviewedGithubQueries.some((query) => query.length < 3 || query.length > 256) ||
+    !frameworkNeed.success
+  ) {
+    return noStoreJson({ ok: false, code: "campaign_not_ready", requestId: correlationId }, 409);
+  }
+
+  const { data: spec, error: specError } = await session
+    .from("agent_specs")
+    .select("id,owner_id,role_brief,channels,guardrails,status")
+    .eq("id", validated.data.specId)
+    .maybeSingle();
+  const roleBrief = SupportedAgentRoleBriefSchema.safeParse(spec?.role_brief);
+  const policy = resolveStoredAgentRuntimePolicy(spec?.channels, spec?.guardrails);
+  if (
+    specError || !spec || spec.owner_id !== user.id || spec.status !== "active" ||
+    !roleBrief.success || !policy.ok ||
+    normalizeAgentRoleTitle(roleBrief.data.title) !== normalizeAgentRoleTitle(campaign.jobAnalysis.title)
+  ) {
+    return noStoreJson({ ok: false, code: "agent_spec_unavailable", requestId: correlationId }, 409);
   }
 
   const service = getServiceSupabase();
-  if (!service) {
-    return NextResponse.json({ ok: false, reason: "Agent persistence service is unavailable." }, { status: 503 });
-  }
-  const memoryScope = {
+  if (!service) return executionFailure("authority_unavailable", correlationId);
+
+  const roleBasis = sourcingRoleBasisForCampaign(campaign);
+  const listedLessons = await listPromotedSourcingLessons({
     workspaceId,
-    ownerId: spec.owner_id,
-    specId: spec.id,
-  };
-
-  let runId: string;
-  try {
-    runId = await createAgentRunWithMemoryContext(service, memoryScope, userId);
-  } catch {
-    return NextResponse.json({ ok: false, reason: "Agent run or context persistence failed." }, { status: 503 });
+    actorId: user.id,
+    roleBasis,
+    limit: 10,
+  }, service);
+  if (listedLessons.status !== "ready" && listedLessons.status !== "learning_disabled") {
+    return executionFailure("authority_unavailable", correlationId);
   }
-
-  const failPersistedRun = async () => {
-    await service
-      .from("agent_runs")
-      .update({ status: "failed", finished_at: new Date().toISOString() })
-      .eq("id", runId)
-      .eq("workspace_id", workspaceId)
-      .eq("owner_id", spec.owner_id)
-      .eq("spec_id", spec.id);
-  };
-
-  const state = initialState(
-    jobAnalysis as unknown as Record<string, unknown>,
-    count,
-    runtimePolicy.policy,
+  const governedGithubQueries = prioritizeReviewedGithubQueries(
+    reviewedGithubQueries,
+    listedLessons.status === "ready" ? listedLessons.lessons : [],
   );
-  const persistAgentRuntimeSnapshot = async () => {
-    const { data: persisted, error } = await service
-      .from("agent_runs")
-      .update({ node: "planner", state_json: state as unknown as Record<string, unknown>, step_count: 0, status: "running" })
-      .eq("id", runId)
-      .eq("workspace_id", workspaceId)
-      .eq("owner_id", spec.owner_id)
-      .eq("spec_id", spec.id)
-      .select("id")
-      .maybeSingle();
-    if (error || !persisted) throw new Error("Agent runtime snapshot persistence failed.");
-  };
-  try {
-    await persistAgentRuntimeSnapshot();
-  } catch {
-    await failPersistedRun();
-    return NextResponse.json({ ok: false, reason: "Agent runtime snapshot persistence failed." }, { status: 503 });
-  }
 
-  let memoryContext;
-  try {
-    memoryContext = await loadAgentMemoryContext(service, memoryScope, runId);
-  } catch {
-    await failPersistedRun();
-    return NextResponse.json({ ok: false, reason: "Agent memory retrieval failed." }, { status: 503 });
-  }
-
-  const campaign = {
-    id: spec.id,
-    title: jobAnalysis.title,
-    jobAnalysis,
-    scoringWeights: { ...DEFAULT_SCORING_WEIGHTS },
-    sourcingStrategy: { excludedCompanies: [] },
-  } as unknown as Campaign;
-  const weights = campaign.scoringWeights;
-
-  const slug = provider as AiProviderSlug;
-  const vaultKey = apiKeyId ? await resolveVaultSecret(apiKeyId, VAULT_PROVIDER[slug]) : "";
-  if (apiKeyId && !vaultKey) {
-    await failPersistedRun();
-    return NextResponse.json({ ok: false, reason: `No valid API key configured for ${provider}.` }, { status: 403 });
-  }
-  if (!apiKeyId && supabaseEnabled && !can(callerRole as Role, "manage_providers")) {
-    await failPersistedRun();
-    return NextResponse.json({ ok: false, reason: "A workspace provider key is required." }, { status: 403 });
-  }
-  const key = vaultKey || process.env[PROVIDER_ENV[slug]] || "";
-  if (!key) {
-    await failPersistedRun();
-    return NextResponse.json({ ok: false, reason: `No API key configured for ${provider}.` });
-  }
-  const llmModel = model || DEFAULT_MODEL[slug];
-
-  const tavilyKey = supabase ? await resolveStoredTavilyKey(supabase) : null;
-  const runner = makeSourcingToolRunner(campaign, existing, weights, process.env.GITHUB_TOKEN ?? "", tavilyKey ?? undefined);
-  const deps: GraphDeps = {
-    async generate(system, prompt) {
-      const applied = applyAgentMemoryContext(system, prompt, memoryContext);
-      const reqSpec = buildCloudRequest(slug, llmModel, applied.system, applied.prompt, key, 1024);
-      const res = await fetch(reqSpec.url, {
-        method: "POST",
-        headers: reqSpec.headers,
-        body: reqSpec.body,
-        signal: AbortSignal.timeout(45_000),
-      });
-      if (!res.ok) throw new Error(`${provider} ${res.status}`);
-      return parseCloudResponse(slug, await res.json());
+  const initialFingerprint = initial.value.fingerprint;
+  const result = await executeAgentFrameworkRun({
+    client: service,
+    runtime: runtimeConfig.config,
+    deerflowToken: runtimeConfig.tokens.deerflowToken,
+    capabilitySecret: process.env.AGENT_FRAMEWORK_CAPABILITY_SECRET ?? "",
+    workspaceId,
+    ownerId: user.id,
+    actorId: user.id,
+    specId: spec.id,
+    campaignId: campaign.id,
+    campaignFingerprint: stableCampaignSha256(initialFingerprint),
+    workflowVersionId: validated.data.workflowVersionId,
+    idempotencyKey,
+    reviewedGithubQueries: governedGithubQueries,
+    need: frameworkNeed.data,
+    sourcingCount: validated.data.count ?? 5,
+    revalidateAuthority: async () => {
+      const [{ data: latestRole }, { data: latestWorkspaceId }, latest, latestSpec] = await Promise.all([
+        session.rpc("current_profile_role"),
+        session.rpc("current_workspace_id"),
+        readWorkspace(),
+        session.from("agent_specs")
+          .select("owner_id,status,role_brief,channels,guardrails")
+          .eq("id", spec.id)
+          .maybeSingle(),
+      ]);
+      const latestRoleBrief = SupportedAgentRoleBriefSchema.safeParse(latestSpec.data?.role_brief);
+      return can(latestRole as Role, "source") &&
+        latestWorkspaceId === workspaceId &&
+        latest.status === "ok" &&
+        latest.value.fingerprint === initialFingerprint &&
+        campaignAllowsLiveSourcing(latest.value.campaign.status) &&
+        !latestSpec.error &&
+        latestSpec.data?.owner_id === user.id &&
+        latestSpec.data?.status === "active" &&
+        latestRoleBrief.success &&
+        normalizeAgentRoleTitle(latestRoleBrief.data.title) ===
+          normalizeAgentRoleTitle(latest.value.campaign.jobAnalysis.title) &&
+        resolveStoredAgentRuntimePolicy(latestSpec.data?.channels, latestSpec.data?.guardrails).ok;
     },
-    async search(platform, query, searchCount) {
-      const before = runner.getFound().length;
-      await runner.run("search_candidates", { platform, query, count: searchCount });
-      return runner
-        .getFound()
-        .slice(before)
-        .map((c) => ({
-          id: c.id,
-          name: c.name,
-          matchScore: c.matchScore,
-          currentTitle: c.currentTitle,
-          currentCompany: c.currentCompany,
-        })) as CandidateLite[];
-    },
-  };
-
-  // stepGraph applies candidateDisclosureContextForCampaignLike before any
-  // candidate-facing model prompt; the raw brief remains server-side for sink scans.
-  let result: Awaited<ReturnType<typeof runGraph>>;
-  try {
-    result = await runGraph(state, deps, async (node, s, event) => {
-      const { error: runError } = await service
-        .from("agent_runs")
-        .update({
-          node,
-          state_json: s as unknown as Record<string, unknown>,
-          step_count: s.drafts.length + s.planCursor,
-          status: node === "done" ? "done" : "running",
-          ...(node === "done" ? { finished_at: new Date().toISOString() } : {}),
-        })
-        .eq("id", runId)
-        .eq("workspace_id", workspaceId)
-        .eq("owner_id", spec.owner_id)
-        .eq("spec_id", spec.id);
-      if (runError) throw new Error("Agent run persistence failed.");
-
-      const { error: eventError } = await service
-        .from("agent_events")
-        .insert({ run_id: runId, workspace_id: workspaceId, type: event.type, payload: event.payload });
-      if (eventError) throw new Error("Agent run persistence failed.");
-    }, "planner", 0, async () => {
-      const { data: activeSpec, error: activeSpecError } = await supabase
-        .from("agent_specs")
-        .select("id")
-        .eq("id", spec.id)
-        .eq("workspace_id", workspaceId)
-        .eq("owner_id", spec.owner_id)
-        .eq("status", "active")
-        .maybeSingle();
-      if (activeSpecError || !activeSpec) throw new Error("Agent spec is no longer active.");
-    });
-  } catch {
-    await failPersistedRun();
-    return NextResponse.json({ ok: false, reason: "Agent run persistence or execution failed." }, { status: 503 });
-  }
-
-  const found = runner.getFound();
-  const byId = new Map(found.map((c) => [c.id, c]));
-  const candidates = result.state.drafts
-    .filter((d) => d.gatePassed)
-    .map((d) => {
-      const cand = byId.get(d.candidateId);
-      return cand ? { ...cand, draftSubject: d.subject, draftBody: d.body } : null;
-    })
-    .filter((c): c is Candidate & { draftSubject: string; draftBody: string } => c !== null);
-
-  return NextResponse.json({
-    ok: true,
-    runId,
-    report: result.state.report ?? "",
-    candidates,
-    totalFound: found.length,
-    heldByGate: result.state.drafts.filter((d) => !d.gatePassed).length,
-    draftStorage: "run_history",
-    deliveryAuthority: "none",
-    errors: result.state.errors,
   });
+  if (!result.ok) return executionFailure(result.code, correlationId);
+
+  const response = AgentFrameworkRunSuccessResponseSchema.safeParse({
+    ok: true,
+    runId: result.runId,
+    reports: result.reports,
+    command: {
+      kind: "source_reviewed_campaign",
+      campaignId: campaign.id,
+      count: validated.data.count ?? 5,
+      query: result.sourceQuery,
+      capabilityToken: result.sourcingCapabilityToken,
+    },
+    requestId: correlationId,
+  });
+  return response.success
+    ? noStoreJson(response.data)
+    : executionFailure("proposal_invalid", correlationId);
 }

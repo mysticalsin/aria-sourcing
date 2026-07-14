@@ -42,7 +42,7 @@ However, **the storage and lifecycle layers are not production-grade for real ca
 | Data retention enforcement | **FAIL** | Retention settings unenforced (no consumer, no cron) — DP-2 |
 | Account / workspace removal | **FAIL** | No self-service account or workspace deletion path — DP-7 |
 
-**Overall Gate 5: FAIL** (open HIGH: DP-1, DP-2, DP-3; open MEDIUM: DP-4, DP-5, DP-6, DP-7, DP-8, DP-9; encryption-at-rest UNKNOWN — blocked on infra access).
+**Overall Gate 5: FAIL** (open HIGH: DP-1, DP-2, DP-3; open MEDIUM: DP-4, DP-5, DP-6, DP-7, DP-9; DP-8 fixed in the 2026-07-14 working tree; encryption-at-rest UNKNOWN, blocked on infra access).
 
 ---
 
@@ -177,17 +177,17 @@ Positive controls confirmed: service-role client is server-only and never import
 - **Owner:** Eng (data) + Ops.
 - **Residual risk after fix:** LOW.
 
-## [MEDIUM] DP-8 — Demo-mode localStorage persists full PII unencrypted and same-origin-readable
+## [MEDIUM - FIXED] DP-8 - Demo-mode localStorage previously accepted real candidate PII
 - **Area:** Encryption at rest / client storage (ASVS V9, A02)
 - **Affected:** `src/lib/store.ts` localStorage path (key `hermes-sourcing:v1`); documented in `DATA_FLOW.md` "Demo Mode".
-- **Description:** When Supabase is not configured, the **entire** `HermesState` (candidates, reply bodies, outreach content, chats, memory) is serialized to `localStorage` in cleartext on every change. It is readable by any same-origin JS (no `HttpOnly`), unencrypted, and persists until manually cleared. This is acceptable for synthetic demo data but is a real-PII hazard if demo mode is ever pointed at real candidates, and there is no hard guard preventing that.
+- **Description:** Before the 2026-07-14 fix, a no-Supabase deployment could serialize real-provider or manual candidate records into cleartext `localStorage`. Browser-local persistence remains suitable only for synthetic demo content.
 - **Impact:** Plaintext PII at rest on the device; XSS or shared-device access exposes everything.
 - **Likelihood:** Low in intended use; High if misused with real data.
-- **Reproduction:** Run without Supabase env; inspect `localStorage["hermes-sourcing:v1"]`.
-- **Evidence:** `DATA_FLOW.md` "Demo Mode — localStorage"; `store.ts` persistence.
+- **Reproduction:** The pre-fix store allowed explicit GitHub, web, and manual intake in no-Supabase mode, then serialized the resulting candidate state to `localStorage["hermes-sourcing:v1"]`.
+- **Evidence:** `src/lib/store/demo-persistence.ts`; store commit, hydration, and flush guards; `tests/demo-candidate-persistence.mts`; focused sourcing-action demo regressions.
 - **Recommended fix:** Keep demo mode synthetic-only with a visible banner; refuse to persist if any record lacks a "synthetic" marker; never document localStorage mode for real candidates.
-- **Tests to add:** Guard test that demo persistence rejects non-synthetic candidate records.
-- **Status:** OPEN (documented in DATA_FLOW; reaffirmed here).
+- **Tests added:** Real GitHub, web, and manual attempts fail before I/O; default demo sourcing persists synthetic Talent Pool records; live/manual/missing provenance fails the persistence predicate; legacy unsafe blobs are removed during hydration; commit and flush wiring is asserted.
+- **Status:** FIXED in the uncommitted 2026-07-14 working tree. Focused privacy and sourcing boundary gate: 46/46.
 - **Owner:** Eng (frontend).
 - **Residual risk after fix:** LOW.
 

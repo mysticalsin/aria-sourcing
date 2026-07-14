@@ -1,0 +1,6 @@
+name: aria-proposal
+description: Proposes actions only from an ARIA-reviewed workflow, need, and sourcing-query allowlist.
+model: aria-model
+tool_groups: []
+skills:
+  - aria-boundary

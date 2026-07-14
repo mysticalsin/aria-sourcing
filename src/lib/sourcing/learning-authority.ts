@@ -73,6 +73,34 @@ export type BeginSourcingRunResult =
         | "dependency_unavailable";
     };
 
+export type BeginAgentFrameworkSourcingRunResult =
+  | {
+      status: "claimed";
+      runId: string;
+      roleFingerprint: string;
+      lessonsEnabled: boolean;
+      frameworkRunId: string;
+    }
+  | { status: "in_progress"; runId: string }
+  | {
+      status: "result_ready";
+      runId: string;
+      frameworkRunId: string;
+      resultSha256: string;
+      resultPayload: unknown;
+    }
+  | {
+      status:
+        | "quota_exceeded"
+        | "idempotency_conflict"
+        | "invalid_request"
+        | "not_found"
+        | "already_consumed"
+        | "authorization_expired"
+        | "framework_disabled"
+        | "dependency_unavailable";
+    };
+
 export type ListSourcingLessonsResult =
   | {
       status: "ready";
@@ -95,6 +123,27 @@ export type CompleteSourcingRunResult =
         | "invalid_receipts"
         | "not_found"
         | "completion_conflict"
+        | "dependency_unavailable";
+    };
+
+export type CompleteAgentFrameworkSourcingEffectResult =
+  | {
+      status: "result_ready";
+      runId: string;
+      frameworkRunId: string;
+      resultSha256: string;
+      resultPayload: unknown;
+    }
+  | {
+      status:
+        | "invalid_receipts"
+        | "not_found"
+        | "completion_conflict"
+        | "framework_disabled"
+        | "authorization_expired"
+        | "authority_changed"
+        | "result_invalid"
+        | "idempotency_conflict"
         | "dependency_unavailable";
     };
 
@@ -204,6 +253,222 @@ export async function beginSourcingRun(
     return { status };
   }
   return { status: "dependency_unavailable" };
+}
+
+export async function beginAgentFrameworkSourcingRun(
+  input: {
+    workspaceId: string;
+    actorId: string;
+    campaignId: string;
+    roleBasis: SourcingRoleBasis;
+    configurationFingerprint: string;
+    mode: "cloud" | "deterministic";
+    provider: string | null;
+    model: string | null;
+    idempotencyKey: string;
+    requestId: string;
+    count: number;
+    campaignFingerprint: string;
+    sourceQuery: string;
+    frameworkRunId: string;
+    capabilityToken: string;
+  },
+  serviceClient?: ServiceClient | null,
+): Promise<BeginAgentFrameworkSourcingRunResult> {
+  if (
+    !SHA256_RE.test(input.configurationFingerprint) ||
+    !SHA256_RE.test(input.campaignFingerprint) ||
+    input.sourceQuery.trim() !== input.sourceQuery ||
+    input.sourceQuery.length < 3 ||
+    input.sourceQuery.length > 256 ||
+    input.idempotencyKey !== input.frameworkRunId ||
+    !UUID_RE.test(input.frameworkRunId) ||
+    !/^[A-Za-z0-9_-]{43}$/.test(input.capabilityToken) ||
+    !Number.isInteger(input.count) ||
+    input.count < 1 ||
+    input.count > 8
+  ) {
+    return { status: "invalid_request" };
+  }
+  const service = client(serviceClient);
+  if (!service) return { status: "dependency_unavailable" };
+  const { data, error } = await service.rpc("begin_agent_framework_sourcing_run", {
+    p_workspace_id: input.workspaceId,
+    p_actor_id: input.actorId,
+    p_campaign_id: input.campaignId,
+    p_role_basis: input.roleBasis,
+    p_configuration_fingerprint: input.configurationFingerprint,
+    p_mode: input.mode,
+    p_provider: input.provider,
+    p_model: input.model,
+    p_idempotency_key: input.idempotencyKey,
+    p_request_id: input.requestId,
+    p_count: input.count,
+    p_campaign_fingerprint: input.campaignFingerprint,
+    p_source_query: input.sourceQuery,
+    p_framework_run_id: input.frameworkRunId,
+    p_sourcing_capability_token: input.capabilityToken,
+  });
+  if (error) return { status: "dependency_unavailable" };
+  const result = record(data);
+  if (!result) return { status: "dependency_unavailable" };
+  const status = result?.status;
+  if (status === "claimed") {
+    const runId = uuid(result.run_id);
+    const roleFingerprint = fingerprint(result.role_fingerprint);
+    const frameworkRunId = uuid(result.framework_run_id);
+    return runId && roleFingerprint && frameworkRunId === input.frameworkRunId &&
+      typeof result.lessons_enabled === "boolean"
+      ? {
+          status,
+          runId,
+          roleFingerprint,
+          lessonsEnabled: result.lessons_enabled,
+          frameworkRunId,
+        }
+      : { status: "dependency_unavailable" };
+  }
+  if (status === "in_progress") {
+    const runId = uuid(result.run_id);
+    return runId ? { status, runId } : { status: "dependency_unavailable" };
+  }
+  if (status === "result_ready") {
+    const runId = uuid(result.run_id);
+    const frameworkRunId = uuid(result.framework_run_id);
+    const resultSha256 = fingerprint(result.result_sha256);
+    return runId && frameworkRunId === input.frameworkRunId && resultSha256 && record(result.result_payload)
+      ? { status, runId, frameworkRunId, resultSha256, resultPayload: result.result_payload }
+      : { status: "dependency_unavailable" };
+  }
+  if (
+    status === "quota_exceeded" ||
+    status === "idempotency_conflict" ||
+    status === "invalid_request" ||
+    status === "not_found" ||
+    status === "already_consumed" ||
+    status === "authorization_expired" ||
+    status === "framework_disabled"
+  ) {
+    return { status };
+  }
+  return { status: "dependency_unavailable" };
+}
+
+export async function completeAgentFrameworkSourcingEffect(
+  input: {
+    workspaceId: string;
+    actorId: string;
+    frameworkRunId: string;
+    sourcingRunId: string;
+    queryReceipts: SourcingQueryExecution[];
+    resultPayload: unknown;
+  },
+  serviceClient?: ServiceClient | null,
+): Promise<CompleteAgentFrameworkSourcingEffectResult> {
+  const service = client(serviceClient);
+  if (!service) return { status: "dependency_unavailable" };
+  const { data, error } = await service.rpc("complete_agent_framework_sourcing_effect", {
+    p_workspace_id: input.workspaceId,
+    p_actor_id: input.actorId,
+    p_framework_run_id: input.frameworkRunId,
+    p_sourcing_run_id: input.sourcingRunId,
+    p_query_receipts: input.queryReceipts,
+    p_result_payload: input.resultPayload,
+  });
+  if (error) return { status: "dependency_unavailable" };
+  const result = record(data);
+  if (result?.status === "result_ready") {
+    const runId = uuid(result.run_id);
+    const frameworkRunId = uuid(result.framework_run_id);
+    const resultSha256 = fingerprint(result.result_sha256);
+    return runId === input.sourcingRunId && frameworkRunId === input.frameworkRunId && resultSha256 && record(result.result_payload)
+      ? { status: "result_ready", runId, frameworkRunId, resultSha256, resultPayload: result.result_payload }
+      : { status: "dependency_unavailable" };
+  }
+  if (
+    result?.status === "invalid_receipts" ||
+    result?.status === "not_found" ||
+    result?.status === "completion_conflict" ||
+    result?.status === "framework_disabled" ||
+    result?.status === "authorization_expired" ||
+    result?.status === "authority_changed" ||
+    result?.status === "result_invalid" ||
+    result?.status === "idempotency_conflict"
+  ) return { status: result.status };
+  return { status: "dependency_unavailable" };
+}
+
+export async function checkAgentFrameworkSourcingExecution(
+  input: {
+    workspaceId: string;
+    actorId: string;
+    frameworkRunId: string;
+    sourcingRunId: string;
+  },
+  serviceClient?: ServiceClient | null,
+): Promise<boolean> {
+  const service = client(serviceClient);
+  if (!service) return false;
+  const { data, error } = await service.rpc("check_agent_framework_sourcing_execution", {
+    p_workspace_id: input.workspaceId,
+    p_actor_id: input.actorId,
+    p_framework_run_id: input.frameworkRunId,
+    p_sourcing_run_id: input.sourcingRunId,
+  });
+  const result = record(data);
+  return !error && result?.status === "allowed";
+}
+
+export async function ackAgentFrameworkSourcingEffect(
+  input: {
+    workspaceId: string;
+    actorId: string;
+    frameworkRunId: string;
+    capabilityToken: string;
+    resultSha256: string;
+  },
+  serviceClient?: ServiceClient | null,
+): Promise<boolean> {
+  if (!UUID_RE.test(input.frameworkRunId) || !/^[A-Za-z0-9_-]{43}$/.test(input.capabilityToken) ||
+      !SHA256_RE.test(input.resultSha256)) return false;
+  const service = client(serviceClient);
+  if (!service) return false;
+  const { data, error } = await service.rpc("ack_agent_framework_sourcing_effect", {
+    p_workspace_id: input.workspaceId,
+    p_actor_id: input.actorId,
+    p_framework_run_id: input.frameworkRunId,
+    p_sourcing_capability_token: input.capabilityToken,
+    p_result_sha256: input.resultSha256,
+  });
+  const result = record(data);
+  return !error && result?.status === "completed" &&
+    uuid(result.framework_run_id) === input.frameworkRunId &&
+    fingerprint(result.result_sha256) === input.resultSha256;
+}
+
+export async function failAgentFrameworkSourcingEffect(
+  input: {
+    workspaceId: string;
+    actorId: string;
+    frameworkRunId: string;
+    sourcingRunId: string;
+    errorCode: string;
+  },
+  serviceClient?: ServiceClient | null,
+): Promise<boolean> {
+  const service = client(serviceClient);
+  if (!service) return false;
+  const { data, error } = await service.rpc("fail_agent_framework_sourcing_effect", {
+    p_workspace_id: input.workspaceId,
+    p_actor_id: input.actorId,
+    p_framework_run_id: input.frameworkRunId,
+    p_sourcing_run_id: input.sourcingRunId,
+    p_error_code: input.errorCode,
+  });
+  const result = record(data);
+  return !error && result?.status === "failed" &&
+    uuid(result.framework_run_id) === input.frameworkRunId &&
+    uuid(result.sourcing_run_id) === input.sourcingRunId;
 }
 
 export async function listPromotedSourcingLessons(
@@ -345,24 +610,7 @@ export async function listPendingSourcingFeedback(
   return { status: "ready", receipts };
 }
 
-export async function completeSourcingRun(
-  input: {
-    workspaceId: string;
-    actorId: string;
-    runId: string;
-    queryReceipts: SourcingQueryExecution[];
-  },
-  serviceClient?: ServiceClient | null,
-): Promise<CompleteSourcingRunResult> {
-  const service = client(serviceClient);
-  if (!service) return { status: "dependency_unavailable" };
-  const { data, error } = await service.rpc("complete_sourcing_run", {
-    p_workspace_id: input.workspaceId,
-    p_actor_id: input.actorId,
-    p_run_id: input.runId,
-    p_query_receipts: input.queryReceipts,
-  });
-  if (error) return { status: "dependency_unavailable" };
+function parseCompleteSourcingRunResult(data: unknown): CompleteSourcingRunResult {
   const result = record(data);
   if (result?.status === "completed") {
     const runId = uuid(result.run_id);
@@ -373,7 +621,7 @@ export async function completeSourcingRun(
       !queryCount ||
       candidateCount < 0 ||
       !Array.isArray(result.receipts) ||
-      result.receipts.length !== queryCount
+      result.receipts.length > queryCount
     ) {
       return { status: "dependency_unavailable" };
     }
@@ -398,6 +646,26 @@ export async function completeSourcingRun(
     return { status: result.status };
   }
   return { status: "dependency_unavailable" };
+}
+
+export async function completeSourcingRun(
+  input: {
+    workspaceId: string;
+    actorId: string;
+    runId: string;
+    queryReceipts: SourcingQueryExecution[];
+  },
+  serviceClient?: ServiceClient | null,
+): Promise<CompleteSourcingRunResult> {
+  const service = client(serviceClient);
+  if (!service) return { status: "dependency_unavailable" };
+  const { data, error } = await service.rpc("complete_sourcing_run", {
+    p_workspace_id: input.workspaceId,
+    p_actor_id: input.actorId,
+    p_run_id: input.runId,
+    p_query_receipts: input.queryReceipts,
+  });
+  return error ? { status: "dependency_unavailable" } : parseCompleteSourcingRunResult(data);
 }
 
 export async function failSourcingRun(

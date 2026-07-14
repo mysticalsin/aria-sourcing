@@ -95,16 +95,8 @@ canonical_public_schema() {
 
 build_legacy_row_manifest() {
   : > "$legacy_row_manifest"
-  for table_name in \
-    agent_conversations agent_events agent_memories agent_memory_events \
-    agent_memory_legacy_quarantine agent_run_memory_context \
-    agent_runs agent_seats agent_specs api_keys \
-    databricks_connection_events databricks_connections dust_connection_events dust_connections email_connections \
-    messages_inbound messages_outbound outbound_content_cache outreach_approvals \
-    outreach_ledger profiles suppression_list whatsapp_contacts \
-    whatsapp_conversation_windows whatsapp_delivery_events whatsapp_senders \
-    whatsapp_templates workspace_state workspaces
-  do
+  while IFS= read -r table_name; do
+    [[ "$table_name" =~ ^[a-z][a-z0-9_]*$ ]]
     row_state="$(psql_external supabase_admin "$owner_target_password" -Atqc "
       set timezone = 'UTC';
       set datestyle = 'ISO, YMD';
@@ -120,7 +112,7 @@ build_legacy_row_manifest() {
     ")"
     [[ "$row_state" =~ ^[0-9]+:[0-9a-f]{64}$ ]]
     printf 'public.%s=%s\n' "$table_name" "$row_state" >> "$legacy_row_manifest"
-  done
+  done < docker/bootstrap/legacy-table-inventory.txt
 }
 
 run_fly_bootstrap_phase() {
@@ -145,6 +137,7 @@ run_fly_bootstrap_phase() {
     "${environment[@]}" \
     --volume "$PWD/docker/bootstrap/run.fly.sh:/usr/local/bin/run.fly.sh:ro" \
     --volume "$PWD/docker/bootstrap/legacy-baseline-invariants.sql:/opt/aria/legacy-baseline-invariants.sql:ro" \
+    --volume "$PWD/docker/bootstrap/legacy-table-inventory.txt:/opt/aria/legacy-table-inventory.txt:ro" \
     --volume "$PWD/docker/bootstrap/legacy-baseline-public-schema.sha256:/opt/aria/legacy-baseline-public-schema.sha256:ro" \
     --volume "$PWD/docker/bootstrap/recovery-empty-public-schema.sha256:/opt/aria/recovery-empty-public-schema.sha256:ro" \
     --volume "$PWD/supabase/migrations:/migrations:ro" \

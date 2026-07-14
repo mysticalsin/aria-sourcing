@@ -9,7 +9,7 @@ mode.
 
 ## Current Stack
 
-Verified from `package.json` on 2026-07-13:
+Verified from `package.json` on 2026-07-14:
 
 | Area | Current truth |
 |---|---|
@@ -17,7 +17,7 @@ Verified from `package.json` on 2026-07-13:
 | Data/auth | Supabase Postgres, Supabase Auth, RLS tenancy, service-role server APIs |
 | UI/runtime | Tailwind, Recharts, lucide-react, Framer Motion, Three.js/R3F |
 | Node | `22.x` |
-| Verification | `npm test` runs 156 chained checks: 34 `pretest` commands plus 122 test commands |
+| Verification | `npm test` runs 164 chained checks: 36 `pretest` commands plus 128 test commands |
 | Quality gates | `npm run typecheck`, `npm run lint`, `npm test`, `npm run build:isolated` for this OneDrive checkout |
 
 ## Shipped Surfaces

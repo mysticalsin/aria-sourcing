@@ -1,12 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { getServerSupabase } from "@/lib/supabase/server";
+import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
+import { assessAgentFrameworkRuntime } from "@/lib/agents/framework/contracts";
+import { agentFrameworkRuntimeFromEnvironment } from "@/lib/agents/framework/runtime-config";
 import {
+  type ApprovedAgentWorkflowBinding,
   describeStoredAgentRuntimeAvailability,
   SupportedAgentChannelsSchema,
   SupportedAgentGuardrailsSchema,
@@ -27,7 +30,6 @@ const CreateSpecSchema = z.object({
   channels: SupportedAgentChannelsSchema.default(["Email"]),
   guardrails: SupportedAgentGuardrailsSchema.default({ autopilot: false, canary_remaining: 5 }),
   seat_id: z.string().uuid().optional(),
-  flowise_chatflow_id: z.string().max(120).optional(),
 });
 
 const UpdateSpecSchema = z.object({
@@ -37,9 +39,74 @@ const UpdateSpecSchema = z.object({
   channels: SupportedAgentChannelsSchema.optional(),
   guardrails: SupportedAgentGuardrailsSchema.optional(),
   seat_id: z.string().uuid().nullable().optional(),
-  flowise_chatflow_id: z.string().max(120).nullable().optional(),
   status: z.enum(["active", "paused", "archived"]).optional(),
 });
+
+const ApprovedWorkflowRowSchema = z.object({
+  spec_id: z.string().uuid(),
+  workflow_version_id: z.string().uuid(),
+  version: z.number().int().min(1),
+  external_workflow_ref: z.string().trim().min(1).max(120).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/),
+  workflow_sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  workflow_name: z.string().trim().min(1).max(120),
+}).strict();
+
+const ApprovedWorkflowListSchema = z.object({
+  status: z.literal("ok"),
+  workflows: z.array(ApprovedWorkflowRowSchema).max(500),
+}).strict().superRefine((value, ctx) => {
+  const specIds = new Set<string>();
+  for (const [index, workflow] of value.workflows.entries()) {
+    if (specIds.has(workflow.spec_id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["workflows", index, "spec_id"],
+        message: "Only one approved workflow may be returned per spec.",
+      });
+      return;
+    }
+    specIds.add(workflow.spec_id);
+  }
+});
+
+type ApprovedWorkflowAuthority = {
+  available: boolean;
+  workflows: Map<string, ApprovedAgentWorkflowBinding>;
+};
+
+async function loadApprovedWorkflowAuthority(
+  workspaceId: string,
+  ownerId: string,
+  listedSpecIds: ReadonlySet<string>,
+): Promise<ApprovedWorkflowAuthority> {
+  try {
+    const service = getServiceSupabase();
+    if (!service) return { available: false, workflows: new Map() };
+    const { data, error } = await service.rpc("list_agent_framework_workflows", {
+      p_workspace_id: workspaceId,
+      p_owner_id: ownerId,
+      p_actor_id: ownerId,
+    });
+    if (error) return { available: false, workflows: new Map() };
+    const parsed = ApprovedWorkflowListSchema.safeParse(data);
+    if (!parsed.success || parsed.data.workflows.some((workflow) => !listedSpecIds.has(workflow.spec_id))) {
+      return { available: false, workflows: new Map() };
+    }
+    return {
+      available: true,
+      workflows: new Map(parsed.data.workflows.map((workflow) => [
+        workflow.spec_id,
+        {
+          workflowVersionId: workflow.workflow_version_id,
+          workflowName: workflow.workflow_name,
+          workflowSha256: workflow.workflow_sha256,
+        },
+      ])),
+    };
+  } catch {
+    return { available: false, workflows: new Map() };
+  }
+}
 
 async function requireOperator(req: NextRequest) {
   const prodBlock = prodFailClosed();
@@ -68,23 +135,48 @@ export async function GET(req: NextRequest) {
   if ("response" in auth) return auth.response;
   const { data, error } = await auth.supabase
     .from("agent_specs")
-    .select("id, name, role_brief, channels, guardrails, owner_id, seat_id, flowise_chatflow_id, status, created_at")
+    .select("id, name, role_brief, channels, guardrails, owner_id, seat_id, status, created_at")
     .neq("status", "archived")
     .order("created_at", { ascending: false });
   if (error) return NextResponse.json({ ok: false, reason: "Failed to load agents." }, { status: 500 });
+  const specs = data ?? [];
+  const workflowAuthority = await loadApprovedWorkflowAuthority(
+    auth.workspaceId,
+    auth.user.id,
+    new Set(specs.map((spec) => spec.id)),
+  );
+  let runtimeReady = false;
+  try {
+    runtimeReady = assessAgentFrameworkRuntime(
+      agentFrameworkRuntimeFromEnvironment().config,
+    ).ready;
+  } catch {
+    runtimeReady = false;
+  }
   return NextResponse.json({
     ok: true,
-    specs: (data ?? []).map(({ owner_id, ...spec }) => ({
-      ...spec,
-      ...describeStoredAgentRuntimeAvailability(
-        spec.role_brief,
-        spec.channels,
-        spec.guardrails,
-        spec.status,
-        owner_id,
-        auth.user.id,
-      ),
-    })),
+    specs: specs.map(({ owner_id, ...spec }) => {
+      const approvedWorkflow = workflowAuthority.workflows.get(spec.id);
+      return {
+        ...spec,
+        workflowVersionId: approvedWorkflow?.workflowVersionId ?? null,
+        workflowName: approvedWorkflow?.workflowName ?? null,
+        workflowSha256: approvedWorkflow?.workflowSha256 ?? null,
+        ...describeStoredAgentRuntimeAvailability(
+          spec.role_brief,
+          spec.channels,
+          spec.guardrails,
+          spec.status,
+          owner_id,
+          auth.user.id,
+          {
+            authorityAvailable: workflowAuthority.available,
+            runtimeReady,
+            approvedWorkflow,
+          },
+        ),
+      };
+    }),
   });
 }
 

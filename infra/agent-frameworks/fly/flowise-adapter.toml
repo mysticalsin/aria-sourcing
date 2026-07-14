@@ -1,0 +1,43 @@
+app = "aria-mantu-flowise-adapter"
+primary_region = "cdg"
+kill_signal = "SIGTERM"
+kill_timeout = 30
+
+[deploy]
+  strategy = "rolling"
+  wait_timeout = "10m"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  BIND_HOST = "fly-local-6pn"
+  ADAPTER_MODE = "flowise"
+  ADAPTER_TOKEN_FILE = "/run/secrets/flowise_adapter_token"
+  UPSTREAM_BASE_URL = "http://aria-mantu-flowise.internal:3000"
+  UPSTREAM_TOKEN_FILE = "/run/secrets/flowise_api_key"
+  FLOWISE_TENANT_ISOLATION = "instance-per-workspace"
+  FLOWISE_QUEUE_NAME = "aria-flowise"
+  FLOWISE_WORKER_HEALTH_URL = "http://aria-mantu-flowise-worker.internal:5566/healthz"
+  REDIS_PASSWORD_FILE = "/run/secrets/flowise_redis_password"
+  REDIS_HOST = "aria-mantu-flowise-redis.internal"
+  REDIS_FLY_HOST = "aria-mantu-flowise-redis.internal"
+  REDIS_PORT = "6379"
+  REDIS_DB = "0"
+
+[[files]]
+  guest_path = "/run/secrets/flowise_adapter_token"
+  secret_name = "ARIA_ADAPTER_TOKEN_B64"
+[[files]]
+  guest_path = "/run/secrets/flowise_api_key"
+  secret_name = "ARIA_UPSTREAM_TOKEN_B64"
+[[files]]
+  guest_path = "/run/secrets/flowise_redis_password"
+  secret_name = "ARIA_REDIS_PASSWORD_B64"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  persist_rootfs = "never"
+
+[[restart]]
+  policy = "always"

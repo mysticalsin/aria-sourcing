@@ -6,8 +6,9 @@ import { RevealStream } from "@/components/reveal/reveal-stream";
 import { useTypewriter } from "@/components/reveal/use-typewriter";
 import { useCountUp } from "@/components/reveal/use-count-up";
 import { FitRadar } from "@/components/charts/fit-radar";
-import { useActions, useCampaignOutreach, useSettings } from "@/lib/store";
-import { supabaseEnabled } from "@/lib/supabase/config";
+import { executePrimaryAgentSourcing } from "@/lib/agents/studio-runner";
+import { useActions, useCampaign, useCampaignOutreach, useSettings } from "@/lib/store";
+import { demoLoginEnabled, isProduction, supabaseEnabled } from "@/lib/supabase/config";
 import type { Candidate, OutreachMessage } from "@/lib/types";
 import { initialsFrom, scoreTone, toneForOutreachStatus } from "@/lib/utils";
 import { AlertTriangle, Bot, PlayCircle, ShieldCheck, Sparkles, X } from "lucide-react";
@@ -126,18 +127,20 @@ export interface AgentRunStreamProps {
  * while a live "queued — awaiting approval" counter climbs next to the
  * approval-gate pill.
  *
- * Both steps call the REAL store actions (`sourceNextBatch`,
- * `generateOutreachFor`) synchronously/eagerly — the reveal only stages the
- * presentation of data that is already committed, exactly like
- * `SourcingFeed` does for 1.4. Local demo mode uses the deterministic Talent
- * Pool source; live workspaces use the campaign's primary real source.
+ * Live sourcing first executes the campaign's one exact runtime-eligible,
+ * independently approved Flowise workflow through DeerFlow, then passes its
+ * short-lived command to the canonical store persistence action. An explicit
+ * demo deployment may use the deterministic Talent Pool source. The reveal
+ * only stages presentation of data that is already committed.
  * `generateOutreachFor` never calls a send path; it only ever leaves a Draft
  * in the human approval queue.
  */
 export function AgentRunStream({ campaignId, autoStart = false, onClose, className }: AgentRunStreamProps) {
   const actions = useActions();
   const settings = useSettings();
+  const campaign = useCampaign(campaignId);
   const campaignOutreach = useCampaignOutreach(campaignId);
+  const pendingRunIdempotencyKeys = React.useRef(new Map<string, string>());
 
   const [phase, setPhase] = React.useState<RunPhase>("idle");
   const [queue, setQueue] = React.useState<DraftedPair[]>([]);
@@ -162,22 +165,33 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
     setRevealedCount(0);
     setSourcedCount(0);
 
-    let sourced: Candidate[] = [];
-    try {
-      const res = await actions.sourceNextBatch(campaignId, {
-        platform: supabaseEnabled ? undefined : "Talent Pool",
-      });
-      if (!res.ok) {
-        setErrorMessage(res.error);
-        setPhase("error");
-        return;
-      }
-      sourced = res.accepted;
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Sourcing failed unexpectedly.");
+    if (!campaign) {
+      setErrorMessage("Campaign state is unavailable. No sourcing was started.");
       setPhase("error");
       return;
     }
+
+    let retryStorage: Storage | null = null;
+    try {
+      retryStorage = globalThis.sessionStorage ?? null;
+    } catch {
+      retryStorage = null;
+    }
+    const result = await executePrimaryAgentSourcing({
+      campaignId,
+      campaignTitle: campaign.jobAnalysis.title,
+      count: 6,
+      demoAuthorized: !supabaseEnabled && (!isProduction || demoLoginEnabled),
+      idempotencyMemory: pendingRunIdempotencyKeys.current,
+      retryStorage,
+      sourceNextBatch: actions.sourceNextBatch,
+    });
+    if (!result.ok) {
+      setErrorMessage(result.error);
+      setPhase("error");
+      return;
+    }
+    const sourced: Candidate[] = result.candidates;
 
     setSourcedCount(sourced.length);
     if (sourced.length === 0) {
@@ -204,7 +218,7 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
     setRunKey((k) => k + 1);
     // phase flips to "done" from the RevealStream's onDone once every card
     // has materialized (or instantly, on Skip / prefers-reduced-motion).
-  }, [phase, campaignId, campaignOutreach, actions]);
+  }, [phase, campaignId, campaign, campaignOutreach, actions]);
 
   const autoStartedRef = React.useRef(false);
   React.useEffect(() => {

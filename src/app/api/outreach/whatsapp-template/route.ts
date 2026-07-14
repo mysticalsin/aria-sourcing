@@ -1,9 +1,8 @@
-import { createHash, randomUUID } from "crypto";
+import { randomUUID } from "crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { validateBody } from "@/lib/api/validate";
 import { dispatchDue } from "@/lib/dispatch-outbound";
-import { dedupeHash } from "@/lib/gate";
 import { safeLog } from "@/lib/log-redact";
 import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
 import { can } from "@/lib/rbac";
@@ -287,41 +286,33 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Could not record the human template approval." }, { status: 500 });
   }
 
-  const now = new Date().toISOString();
-  const { data: queued, error: queueErr } = await actor.supabase
-    .from("messages_outbound")
-    .insert({
-      workspace_id: workspaceId,
-      candidate_id: payload.candidateId,
-      seat_id: payload.seatId,
-      channel: "WhatsApp",
-      to_address: recipient,
-      recipient_e164: recipient,
-      approval_message_id: approvalMessageId,
-      type: "approved_template",
-      template_id: trustedTemplate.id,
-      template_parameters: audit.parameters,
-      subject: APPROVED_WHATSAPP_TEMPLATE_AUDIT_SUBJECT,
-      body: audit.body,
-      status: "queued",
-      gate_result: { pass: true, reasons: [], human_likeness: "not-applicable-meta-approved-template" },
-      content_hash: createHash("sha256").update(audit.body, "utf8").digest("hex"),
-      dedupe_hash: dedupeHash(payload.candidateId, "WhatsApp", audit.body),
-      scheduled_at: now,
-    })
-    .select("id")
-    .maybeSingle();
-  if (queueErr || !queued) {
+  const { data: queuedData, error: queueErr } = await actor.supabase.rpc("enqueue_whatsapp_outbound", {
+    p_message_id: approvalMessageId,
+    p_candidate_id: payload.candidateId,
+    p_campaign_id: null,
+    p_seat_id: payload.seatId,
+    p_recipient: recipient,
+    p_type: "approved_template",
+    p_subject: APPROVED_WHATSAPP_TEMPLATE_AUDIT_SUBJECT,
+    p_body: audit.body,
+    p_template_id: trustedTemplate.id,
+    p_template_parameters: audit.parameters,
+  });
+  const queued = queuedData as { ok?: boolean; status?: string; id?: string; reason?: string } | null;
+  if (queueErr || queued?.ok !== true || queued.status !== "queued" || !queued.id) {
     // The approval cannot authorize anything without an outbox row. Revoke it
     // so a failed queue write never leaves a misleading active approval behind.
     await actor.supabase.rpc("revoke_outreach_approval", {
       p_message_id: approvalMessageId,
       p_reason: "Template queue write did not complete.",
     });
-    if (queueErr?.code === "23505") {
+    if (queued?.reason === "duplicate") {
       return NextResponse.json({ ok: false, status: "skipped", detail: "This exact template dispatch is already queued or was sent." }, { status: 409 });
     }
-    safeLog("whatsapp template queue error", { message: queueErr?.message ?? "no row", code: queueErr?.code });
+    safeLog("whatsapp template queue error", {
+      message: queueErr?.message ?? queued?.reason ?? "no result",
+      code: queueErr?.code,
+    });
     return NextResponse.json({ ok: false, error: "Could not queue the approved template." }, { status: 500 });
   }
 

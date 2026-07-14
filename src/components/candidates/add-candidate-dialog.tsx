@@ -86,13 +86,13 @@ export function AddCandidateButton({ campaignId }: { campaignId: string }) {
     resetAndClose();
   }
 
-  function handleManualSubmit() {
+  async function handleManualSubmit() {
     const trimmedName = name.trim();
     if (!trimmedName) {
       toast({ title: "Name is required", variant: "warning" });
       return;
     }
-    const res = actions.addCandidateManual(campaignId, {
+    const res = await actions.addCandidateManual(campaignId, {
       name: trimmedName,
       title: title.trim() || undefined,
       skills: skills.split(",").map((s) => s.trim()).filter(Boolean),

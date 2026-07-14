@@ -22,7 +22,7 @@ const legacyTables = [
   "agent_runs", "agent_seats", "agent_specs", "api_keys",
   "databricks_connection_events", "databricks_connections", "dust_connection_events", "dust_connections", "email_connections",
   "messages_inbound", "messages_outbound", "outbound_content_cache", "outreach_approvals",
-  "outreach_ledger", "profiles", "suppression_list", "whatsapp_contacts",
+  "outreach_ledger", "owner_recovery_receipts", "profiles", "suppression_list", "whatsapp_contacts",
   "whatsapp_conversation_windows", "whatsapp_delivery_events", "whatsapp_senders",
   "whatsapp_templates", "workspace_state", "workspaces",
 ];
@@ -193,6 +193,7 @@ exit 0
       MIGRATIONS_DIR: migrations,
       RECONCILIATION_DIR: reconciliation,
       LEGACY_BASELINE_INVARIANTS_FILE: join(reconciliation, "legacy-baseline-invariants.sql"),
+      LEGACY_TABLE_INVENTORY_FILE: join(process.cwd(), "docker/bootstrap/legacy-table-inventory.txt"),
       LEGACY_BASELINE_EXPECTED_SCHEMA_SHA256_FILE: expectedSchemaDigest,
       RECOVERY_EMPTY_EXPECTED_SCHEMA_SHA256_FILE: expectedEmptySchemaDigest,
       CAPTURED_OWNER_PLAN: capturedOwnerPlan,

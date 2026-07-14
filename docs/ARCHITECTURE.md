@@ -81,30 +81,42 @@ intentional; do not renumber migrations or hand-pick a partial range.
 
 ## Independent agent execution
 
-An ARIA sourcing agent is an owner-bound `agent_specs` row, not a shared seat
-or UI card.
+An ARIA agent is an owner-bound `agent_specs` row plus one independently
+reviewed workflow version. DeerFlow orchestrates the approved graph and Flowise
+authors the bounded graph; neither framework owns candidate truth, provider
+credentials, persistence, delivery, or tenant authority.
 
-1. `src/app/api/agents/specs/route.ts` creates and lists specs after validating
-   the role brief and stored execution policy.
-2. `src/app/api/agents/run/route.ts` requires an authenticated caller with the
-   required provider-management permission and loads the exact active spec for
-   that caller, workspace, and owner.
-3. The route persists the execution-policy snapshot before memory retrieval or
-   model/provider access.
-4. `src/lib/agents/memory.ts` loads only memory matching workspace, owner, and
-   spec. Legacy shared memory is not activated.
-5. `src/lib/agents/graph.ts` runs one bounded step at a time and persists state
-   after every step. The spec is rechecked before each step.
-6. The current graph supports Email drafting only. Drafts stay in run history
-   with `deliveryAuthority=none`. The graph does not create an approval queue
-   and does not write the provider outbox.
-7. Migration `0023` binds inbound provider threads to an agent conversation.
-   Missing or ambiguous identity goes to triage instead of being guessed from
-   the latest message or active campaign.
+1. `src/app/api/agents/specs/route.ts` lists only the latest approved workflow
+   binding returned by service-role database authority. A spec without that
+   binding is visible but not runnable.
+2. The private Flowise adapter compiles only ARIA's three-node workflow
+   vocabulary. Arbitrary code, HTTP, MCP, nested-flow, credential, and delivery
+   nodes are rejected. A different administrator must approve the immutable
+   workflow hash before execution.
+3. `src/app/api/agents/run/route.ts` claims a workspace + owner + actor + spec +
+   campaign run. The database snapshots exact DeerFlow/Flowise commits, image
+   digests, instance IDs, readiness receipts, workflow hash, and kill-switch
+   state before the private DeerFlow adapter is called.
+4. DeerFlow returns a proposal only. ARIA accepts exactly one reviewed GitHub
+   query and records hash-only step receipts. Candidate and message effects from
+   framework output are rejected.
+5. The resulting one-time sourcing capability is consumed by
+   `src/app/api/sourcing-agent/route.ts`. That route performs the real provider
+   search, rechecks campaign and framework authority before external work and
+   completion, then stages a content-bound result in Postgres.
+6. The browser persists the strict candidate DTO through the canonical store
+   transaction and calls `/api/sourcing-agent/ack`. The run becomes terminal
+   only after Postgres verifies the staged candidates in authoritative
+   `workspace_state`; response loss replays the staged result without repeating
+   provider egress.
+7. Migration `0025` keeps memory isolated by workspace + owner + spec. Migration
+   `0023` binds inbound provider threads to one agent conversation; missing or
+   ambiguous identity goes to triage rather than being guessed.
 
-This separation prevents one agent from reading another owner's memory,
-resuming another agent's run, or taking over a candidate conversation through
-address-only matching.
+Framework execution defaults disabled with the kill switch active. Readiness is
+bound to one workspace and immutable instance IDs, not a generic process ping.
+The earlier browser-owned Flowise proxy and legacy graph executor remain
+disabled; there is one production sourcing-effect path.
 
 ### Identity glossary
 

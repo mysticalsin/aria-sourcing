@@ -24,7 +24,9 @@ services, workers, or daemons in this repo**. It runs in two mutually-exclusive 
 decided purely by the presence of Supabase env vars:
 
 - **DEMO mode** (no `NEXT_PUBLIC_SUPABASE_*`): no auth gate, state persisted to
-  browser `localStorage` key `hermes-sourcing:v1`. All email sends forced to dry-run.
+  browser `localStorage` key `hermes-sourcing:v1` only when every candidate has
+  explicit synthetic provenance. Real and manual candidate intake fail closed.
+  All email sends are forced to dry-run.
 - **LIVE mode** (Supabase env present): Supabase SSR auth + middleware gate, state
   persisted to a per-workspace `workspace_state` JSONB row, real sends possible only
   behind a multi-condition guardrail.
@@ -33,11 +35,13 @@ A separate **NousResearch "hermes-agent" / "Aria" Python aiohttp inference serve
 referenced as an upstream dependency but **is not in this repo and is not deployed by
 it** — the app only *proxies* to it (server-side, SSRF-allow-listed to private hosts).
 
-The package.json self-description ("MVP demo, mock integrations, synthetic data") is now
-**only partially accurate**: sourcing/enrichment/CRM/calendar are still mock, but email
-send (Resend, SendGrid, Gmail API, Microsoft Graph), OAuth mailbox connect, DNS
-deliverability checks, and cloud LLM calls (Anthropic/OpenAI/Groq/xAI/Mistral) are
-**real wired adapters** gated behind live-mode + explicit confirmation.
+The old package.json self-description ("MVP demo, mock integrations, synthetic data")
+no longer describes the live sourcing path. Live workspaces source only through
+authenticated, role-bound campaign authority: reviewed queries execute against real
+providers, durable receipts are completed, and only then may the browser persist the
+validated candidates. The separate public-demo path remains synthetic and dry-run.
+Email send (Resend, SendGrid, Gmail API, Microsoft Graph), OAuth mailbox connect, DNS
+deliverability checks, and cloud LLM calls are also real adapters with their own gates.
 
 ---
 
@@ -106,8 +110,8 @@ pull/parse endpoint, not a verified webhook (no signature check). See DATA_FLOW.
 ## 4. Databases / tables / migrations / storage / caches
 
 **Database of record:** PostgreSQL via Supabase (live mode only). Migrations under
-`supabase/migrations/` (5 files, applied in order). Demo mode has **no DB** —
-browser `localStorage` only.
+`supabase/migrations/` (5 files, applied in order). Demo mode has **no DB** and uses
+browser `localStorage` only for explicitly synthetic candidate state.
 
 | Table | Key columns | Sensitivity | Migration |
 |---|---|---|---|
@@ -217,9 +221,11 @@ SendGrid/Resend, Slack/Telegram.
 - Aria/Hermes self-hosted runtime (private host only) — `api/url.ts` allow-list
 - Web fonts / login hero video: `fonts.googleapis.com`, `db.onlinewebfonts.com`, CloudFront — `next.config.mjs` CSP
 
-**Mock-only (no live adapter):** sourcing (GitHub/LinkedIn), enrichment (Apollo/Hunter/Clearbit),
-CRM (Twenty), calendar (Cal.com), n8n, Slack/Telegram. Sourcing returns synthetic candidates
-from `src/lib/mock-ai.ts` / `seed.ts` (`STATE_VERSION = 11`).
+**No complete production adapter:** Hunter/Clearbit enrichment, Twenty CRM, Cal.com,
+n8n, and Slack/Telegram remain placeholders or partial surfaces. Sourcing is not in this
+category: the canonical live path uses `/api/sourcing-agent`, server-owned campaign and
+provider authority, real GitHub or approved web-provider results, and durable sourcing
+receipts. `src/lib/mock-ai.ts` remains for the explicitly synthetic demo path only.
 
 ---
 

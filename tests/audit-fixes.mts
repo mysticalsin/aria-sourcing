@@ -80,7 +80,7 @@ const migrated: HermesState = {
   integrations: v6Blob.integrations ?? [],
   activities: v6Blob.activities ?? [],
   activeCampaignId: v6Blob.activeCampaignId ?? null,
-  apiKeys: v6Blob.apiKeys ?? [],
+  apiKeys: v6Blob.apiKeys ?? [], // gitleaks:allow - property projection, not a credential
   currentRole: v6Blob.currentRole ?? "admin",
   skills: v6Blob.skills ?? [],
   suppression: v6Blob.suppression ?? [],

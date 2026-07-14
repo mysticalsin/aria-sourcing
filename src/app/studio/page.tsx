@@ -1,9 +1,8 @@
 "use client";
 
-/* Agent Studio — create and tune on-demand sourcing agents. Flow execution is
-   limited to ARIA-owned runtime bindings; Flowise authoring is intentionally
-   private until a per-workspace deployment boundary exists. Generated drafts
-   remain in run history and have no delivery authority. */
+/* Agent Studio runs only owner-scoped specs bound to an independently approved
+   Flowise workflow. DeerFlow may orchestrate the exact reviewed campaign query;
+   the canonical store action remains the only candidate persistence authority. */
 
 import * as React from "react";
 import { Bot, ShieldCheck, Wand2 } from "lucide-react";
@@ -18,22 +17,41 @@ import {
   useToast,
 } from "@/components/ui";
 import { PageHeader } from "@/components/app/page-header";
+import { useActions, useCampaigns } from "@/lib/store";
+import {
+  acquireStudioRunIdempotencyKey,
+  executeStudioAgentRun,
+  resolveStudioCampaign,
+  settleStudioRunIdempotencyKey,
+} from "@/lib/agents/studio-runner";
 
 interface SpecRow {
   id: string;
   name: string;
   role_brief: { title?: string; requiredSkills?: string[] } & Record<string, unknown>;
   channels: string[];
-  flowise_chatflow_id: string | null;
   status: string;
   runtime_eligible: boolean;
   runtime_reason: string | null;
+  workflowVersionId: string | null;
+  workflowName: string | null;
+  workflowSha256: string | null;
 }
 
 const SUPPORTED_CHANNELS = ["Email"] as const;
 
+function getStudioSessionStorage(): Storage | null {
+  try {
+    return globalThis.sessionStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export default function StudioPage() {
   const { toast } = useToast();
+  const actions = useActions();
+  const campaigns = useCampaigns();
   const [loading, setLoading] = React.useState(true);
   const [availability, setAvailability] = React.useState<"loading" | "ready" | "unavailable">("loading");
   const [demo, setDemo] = React.useState(false);
@@ -42,6 +60,8 @@ export default function StudioPage() {
   const [roleTitle, setRoleTitle] = React.useState("");
   const [skills, setSkills] = React.useState("");
   const [saving, setSaving] = React.useState(false);
+  const [runningSpecId, setRunningSpecId] = React.useState<string | null>(null);
+  const pendingRunIdempotencyKeys = React.useRef(new Map<string, string>());
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -93,7 +113,11 @@ export default function StudioPage() {
       });
       const json = (await res.json()) as { ok: boolean; reason?: string };
       if (!json.ok) throw new Error(json.reason ?? "Create failed");
-      toast({ title: "Agent created. Generated drafts will remain in run history.", variant: "success" });
+      toast({
+        title: "Agent definition created.",
+        description: "An administrator must import and independently approve its Flowise workflow before it can run.",
+        variant: "success",
+      });
       setName("");
       setRoleTitle("");
       setSkills("");
@@ -105,12 +129,64 @@ export default function StudioPage() {
     }
   }
 
+  async function runSpec(spec: SpecRow) {
+    if (runningSpecId || !spec.runtime_eligible || !spec.workflowVersionId) return;
+    const campaign = resolveStudioCampaign(spec.role_brief.title ?? "", campaigns);
+    if (!campaign.ok) {
+      toast({ title: "No unambiguous reviewed campaign", description: campaign.reason, variant: "error" });
+      return;
+    }
+    setRunningSpecId(spec.id);
+    try {
+      const idempotencyScope = {
+        specId: spec.id,
+        workflowVersionId: spec.workflowVersionId,
+        campaignId: campaign.campaignId,
+      };
+      const retryStorage = getStudioSessionStorage();
+      const idempotencyKey = acquireStudioRunIdempotencyKey(
+        idempotencyScope,
+        pendingRunIdempotencyKeys.current,
+        retryStorage,
+      );
+      const result = await executeStudioAgentRun({
+        specId: spec.id,
+        workflowVersionId: spec.workflowVersionId,
+        campaignId: campaign.campaignId,
+        count: 5,
+        idempotencyKey,
+        sourceNextBatch: actions.sourceNextBatch,
+      });
+      settleStudioRunIdempotencyKey(
+        idempotencyScope,
+        result,
+        pendingRunIdempotencyKeys.current,
+        retryStorage,
+      );
+      if (!result.ok) {
+        toast({ title: "Agent run failed", description: result.error, variant: "error" });
+        return;
+      }
+      toast({
+        title: result.accepted === 0
+          ? "Real search completed with no new candidates"
+          : `Sourced ${result.accepted} real candidate${result.accepted === 1 ? "" : "s"}`,
+        description: result.skipped > 0
+          ? `${result.skipped} provider result${result.skipped === 1 ? " was" : "s were"} excluded or already present.`
+          : `DeerFlow completed approved workflow ${spec.workflowName ?? spec.workflowVersionId}.`,
+        variant: result.accepted === 0 ? "info" : "success",
+      });
+    } finally {
+      setRunningSpecId(null);
+    }
+  }
+
   return (
     <div>
       <PageHeader
         eyebrow="System"
         title="Agent Studio"
-        description="Build on-demand sourcing agents: one role, one task, hard guardrails. Runtime flows stay bound to this workspace; Flowise authoring remains private."
+        description="Run approved Flowise workflows through DeerFlow against exact reviewed campaign needs. Candidate search and persistence remain under ARIA authority."
       />
 
       {demo && (
@@ -160,14 +236,13 @@ export default function StudioPage() {
                     <Badge key={channel} tone="neutral">{channel}</Badge>
                   ))}
                 </div>
-                <p className="mt-2 text-xs text-muted">This runtime currently produces Email drafts only. Other channels remain unavailable until their guardrails are enforced end to end.</p>
+                <p className="mt-2 text-xs text-muted">Email is the only stored channel currently accepted. Creating a spec does not approve or execute a workflow.</p>
               </Field>
               <Button type="submit" disabled={availability !== "ready" || saving || !name.trim() || !roleTitle.trim()}>
                 {saving ? "Creating…" : "Create agent"}
               </Button>
               <p className="text-xs text-muted">
-                Generated Email drafts are stored in run history only. This workflow has no review queue and no
-                delivery authority.
+                A second administrator must approve the imported Flowise version. DeerFlow can then orchestrate only an exact active campaign match.
               </p>
             </form>
           </CardContent>
@@ -195,10 +270,17 @@ export default function StudioPage() {
             <EmptyState
               icon={<Bot className="h-6 w-6" />}
               title="No agents yet"
-              description="Create your first on-demand sourcing agent — one role, one task, fully guardrailed."
+              description="Create an owner-scoped definition, then have an administrator import and independently approve its Flowise workflow."
             />
           ) : (
-            specs.map((spec) => (
+            specs.map((spec) => {
+              const campaign = resolveStudioCampaign(spec.role_brief.title ?? "", campaigns);
+              const runBlockedReason = !spec.runtime_eligible
+                ? spec.runtime_reason ?? "Stored policy is not executable by this runtime."
+                : !campaign.ok
+                  ? campaign.reason
+                  : null;
+              return (
               <Card key={spec.id}>
                 <CardContent>
                   <div className="flex flex-wrap items-start justify-between gap-4">
@@ -217,14 +299,27 @@ export default function StudioPage() {
                             {c}
                           </Badge>
                         ))}
+                        {spec.workflowName && <Badge tone="neutral">Flowise: {spec.workflowName}</Badge>}
                       </div>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-2">
                       {spec.runtime_eligible ? (
-                        <div className="flex items-center gap-2 text-xs text-muted">
-                          <ShieldCheck className="h-3.5 w-3.5" />
-                          Draft storage
-                          <Badge tone="neutral">Run history only</Badge>
+                        <div className="flex flex-col items-end gap-2">
+                          <div className="flex items-center gap-2 text-xs text-muted">
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            Approved Flowise workflow
+                            <Badge tone="neutral">DeerFlow</Badge>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => void runSpec(spec)}
+                            disabled={Boolean(runBlockedReason) || runningSpecId !== null}
+                            title={runBlockedReason ?? "Run against the exact matching active campaign"}
+                          >
+                            {runningSpecId === spec.id ? "Running real search…" : "Run approved agent"}
+                          </Button>
+                          {runBlockedReason && <span className="max-w-sm text-right text-xs text-danger">{runBlockedReason}</span>}
                         </div>
                       ) : (
                         <div className="flex max-w-sm flex-col items-end gap-1 text-xs text-danger">
@@ -233,12 +328,12 @@ export default function StudioPage() {
                         </div>
                       )}
                       <span className="text-xs text-muted">No delivery authority</span>
-                      {spec.flowise_chatflow_id && <Badge tone="neutral">Workspace-bound Flowise runtime</Badge>}
                     </div>
                   </div>
                 </CardContent>
               </Card>
-            ))
+              );
+            })
           )}
         </div>
       </div>

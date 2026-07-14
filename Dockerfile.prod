@@ -44,6 +44,8 @@ COPY --from=builder --chown=node:node /app/public ./public
 COPY --from=builder --chown=node:node /app/.next/standalone ./
 COPY --from=builder --chown=node:node /app/.next/static ./.next/static
 COPY --from=builder --chown=node:node /app/scripts/apollo-authority-cleanup-worker.mjs ./scripts/apollo-authority-cleanup-worker.mjs
+COPY --from=builder --chown=node:node /app/scripts/agent-framework-heartbeat-worker.mjs ./scripts/agent-framework-heartbeat-worker.mjs
+COPY --from=builder --chown=node:node /app/src/lib/agents/framework/configuration-core.mjs ./src/lib/agents/framework/configuration-core.mjs
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \

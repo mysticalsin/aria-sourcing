@@ -56,6 +56,7 @@ import {
   useReportForCampaign,
 } from "@/lib/store";
 import { campaignHealth, nextActionForCampaign } from "@/lib/rules";
+import { campaignAllowsLiveSourcing } from "@/lib/sourcing/campaign-lifecycle";
 import type {
   SourcingFeedbackReceipt,
   SourcingFeedbackVerdict,
@@ -408,6 +409,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   }
 
   const c: Campaign = campaign;
+  const liveSourcingAllowed = campaignAllowsLiveSourcing(c.status);
   const m = c.metrics;
   const jd = c.jobAnalysis;
   const strategy = c.sourcingStrategy;
@@ -478,6 +480,17 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       });
       return;
     }
+    setFeedbackState((current) =>
+      current.campaignId === c.id
+        ? {
+            campaignId: c.id,
+            receipts: mergeSourcingFeedbackReceipts(
+              current.receipts,
+              res.feedbackReceipts ?? [],
+            ),
+          }
+        : current,
+    );
     // Stage the reveal with the exact, already-committed batch — never a
     // re-derived or re-scored copy — and jump to the Candidates tab so the
     // stream is immediately visible instead of resolving behind a toast.
@@ -826,8 +839,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               leftIcon={<Sparkles className="h-4 w-4" />}
               onClick={handleSource}
               loading={sourcing}
-              disabled={sourcing || c.status === "Paused"}
-              title={c.status === "Paused" ? "Resume the campaign to source new candidates" : undefined}
+              disabled={sourcing || !liveSourcingAllowed}
+              title={!liveSourcingAllowed ? "Move the campaign to Sourcing or Outreach to source candidates" : undefined}
             >
               {sourcing ? "Sourcing…" : "Source next batch"}
             </Button>
@@ -835,20 +848,20 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               variant="secondary"
               leftIcon={<Bot className="h-4 w-4" />}
               onClick={handleRunAgent}
-              disabled={agentRunning || c.status === "Paused"}
-              title={c.status === "Paused" ? "Resume the campaign to run the sourcing agent" : undefined}
+              disabled={agentRunning || !liveSourcingAllowed}
+              title={!liveSourcingAllowed ? "Move the campaign to Sourcing or Outreach to run the sourcing agent" : undefined}
             >
               {agentRunning ? "Agent working…" : "Run sourcing agent"}
             </Button>
-            <SourceSillageButton campaignId={c.id} disabled={c.status === "Paused"} />
-            <SourceApolloButton campaignId={c.id} disabled={c.status === "Paused"} />
-            <SourceSeamlessButton campaignId={c.id} disabled={c.status === "Paused"} />
+            <SourceSillageButton campaignId={c.id} disabled={!liveSourcingAllowed} />
+            <SourceApolloButton campaignId={c.id} disabled={!liveSourcingAllowed} />
+            <SourceSeamlessButton campaignId={c.id} disabled={!liveSourcingAllowed} />
             <Button
               variant="primary"
               leftIcon={<PlayCircle className="h-4 w-4" />}
               onClick={handleOpenRun}
-              disabled={c.status === "Paused"}
-              title={c.status === "Paused" ? "Resume the campaign to run Aria" : undefined}
+              disabled={!liveSourcingAllowed}
+              title={!liveSourcingAllowed ? "Move the campaign to Sourcing or Outreach to run Aria" : undefined}
             >
               Run Aria
             </Button>

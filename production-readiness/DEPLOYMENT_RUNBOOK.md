@@ -138,6 +138,54 @@ The disposable app name is exactly
 uses one encrypted volume at least as large as the source, and has a destruction
 deadline no more than 24 hours after restore completion.
 
+#### Reviewed orphan-owner recovery (existing tenant only)
+
+Do not use `provision-first-admin.sh` when the tenant workspace already exists.
+The only reviewed recovery topology is an existing workspace whose
+`allowed_domain` is exactly `workspace`, one persisted `workspace_state` row,
+one and only one profile in that workspace, and that profile is a blank-email
+`admin` placeholder whose UUID has no GoTrue user. The pre-mutation GoTrue
+inventory must contain zero users. Any different row count, member, user,
+domain, profile role, missing state, or ambiguous response is a stop condition;
+do not edit the database manually.
+
+After an owner has reviewed the snapshot/restore evidence, use
+[`scripts/recover-orphan-workspace-owner.sh`](../scripts/recover-orphan-workspace-owner.sh)
+from a clean checkout of the exact release. Supply all values through an
+owner-controlled secret manager, never shell history:
+
+- `KONG_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `ANON_KEY` for the exact stack;
+- `ADMIN_EMAIL`, canonical lowercase on `ARIA_ALLOWED_EMAIL_DOMAIN`, plus a
+  unique `ADMIN_PASSWORD` of at least 24 characters;
+- exact `ARIA_RECOVERY_WORKSPACE_ID`, `ARIA_RECOVERY_PROFILE_ID`,
+  `ARIA_RECOVERY_EXPECTED_DOMAIN=workspace`, and a reviewed
+  `ARIA_RECOVERY_FULL_NAME`;
+- exact 40-character `ARIA_RELEASE_SHA`, 64-character
+  `ARIA_RECOVERY_RECEIPT_SHA256`, and fresh non-nil
+  `ARIA_RECOVERY_REQUEST_ID`;
+- `ARIA_RECOVERY_OPERATOR_APPROVAL` exactly equal to
+  `aria-owner-recovery-v1:<workspace-id>:<profile-id>:<release-sha>:<recovery-receipt-sha256>:<request-id>`,
+  plus its lowercase SHA-256 as `ARIA_RECOVERY_OPERATOR_APPROVAL_SHA256`.
+
+The script performs read-only workspace/profile/state/Auth inventories before
+creating anything. It creates one uniquely marked GoTrue email user with the
+exact orphan profile UUID, proves the exact password can establish that active
+local email identity, then calls only the service-role `SECURITY DEFINER`
+`recover_orphan_workspace_owner` RPC and proves the exact workspace/admin
+binding. Migration 0031 writes one forced-RLS,
+postgres-readable `owner_recovery_receipts` row and updates only the workspace
+domain and placeholder profile email/full name in the same transaction. The
+workspace state is fingerprinted before and after and must be identical.
+
+On a proven pre-binding failure the helper deletes only the new GoTrue user
+carrying both its exact request marker and its per-attempt cleanup ID, then
+verifies absence. Once binding is present, or an RPC transport
+outcome is ambiguous, it preserves the user for owner reconciliation. Never
+retry with a new request UUID until the receipt and exact binding have been
+inspected. An exact RPC replay is idempotent; changed material under the same
+request UUID is an `idempotency_conflict`. Remove all recovery inputs from the
+secret manager after independent receipt, login, state, and backup checks.
+
 Capture the restore-create request and provider response without logging either
 JSON document. The same shell variables must drive both the request contract and
 the Fly call:
@@ -521,7 +569,7 @@ All checks must pass before a production deploy is triggered. Block the deploy i
 # From the repo root:
 npm run typecheck       # tsc --noEmit; must exit 0
 npm run lint            # next lint; must be "No ESLint warnings or errors."
-npm run test            # 34 pretest + 122 test commands; all must pass
+npm run test            # 36 pretest + 128 test commands; all must pass
 npm run test:security   # security-specific subset (faster); must be 0 failures
 npm run build           # must complete without error in CI or an unsynced checkout
 npm run build:isolated  # required for this OneDrive-synced checkout
@@ -584,6 +632,10 @@ supabase db push
 # 0025_agent_memory_authority.sql → exact owner/spec memory authority, receipts, and legacy-memory quarantine
 # 0026_apollo_enrichment_authority.sql → exact paid-enrichment authority, quota, reconciliation, retention, and erasure
 # 0027_sourcing_learning_authority.sql → sourcing run ledger, feedback receipts, aggregate Graphify artifacts, human lesson review, quota, retention, and kill switch
+# 0028_conversation_authority_hardening.sql → service-owned normalized-message writes and durable workspace/owner/spec conversation binding
+# 0029_agent_framework_authority.sql → approved Flowise workflow versions, DeerFlow run claims, immutable runtime identity, and fail-closed receipts
+# 0030_agent_framework_provisioning_authority.sql → reviewed prepare/confirm/activate framework provisioning with replay-safe configuration authority
+# 0031_orphan_owner_recovery_authority.sql → service-only, approval-bound recovery for an exact orphaned workspace owner
 ```
 
 **IMPORTANT:** RLS must be enabled on every table listed above. Verify after each migration:
@@ -689,7 +741,28 @@ delivery path before any live email is enabled.
 | `WHATSAPP_API_VERSION` | Server | Optional with WhatsApp | Defaults to `v21.0` |
 | `WHATSAPP_VERIFY_TOKEN` / `WHATSAPP_APP_SECRET` | Server | If WhatsApp webhooks used | Verify Meta subscription and signatures |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM` | Server | Reserved | SMS remains disabled until equivalent controls exist |
-| `FLOWISE_URL` / `FLOWISE_API_KEY` | Server | If Flowise inference used | Private runtime only; browser authoring remains disabled |
+| `AGENT_FRAMEWORKS_REQUIRED` | Server | Yes for the accepted production architecture | `true`; missing also defaults to required in production readiness |
+| `AGENT_FRAMEWORK_EXECUTION_ENABLED` | Server | Yes before framework runs | Keep `false` until every framework gate and approval passes |
+| `AGENT_FRAMEWORK_KILL_SWITCH` | Server | Yes | Keep `true` until activation; missing/malformed values fail closed to active |
+| `AGENT_FRAMEWORK_CAPABILITY_SECRET` | Server | Required with frameworks | Independent random secret, at least 32 characters; shared only with the private adapters and rotated through a controlled stop/re-register procedure |
+| `AGENT_FRAMEWORK_CONFIGURATION_SHA256` | Server | Required with frameworks | Output of `node scripts/agent-framework-configuration.mjs --sha-only`; never hand-enter an arbitrary digest |
+| `AGENT_FRAMEWORK_READINESS_WORKSPACE_ID` | Server | Required with frameworks | Exact dedicated workspace UUID used to bind readiness to one tenant |
+| `FRAMEWORK_ADAPTER_IMAGE_DIGEST` / `REDIS_IMAGE_DIGEST` | Server | Required with frameworks | Immutable full `repo@sha256:...` identities included in the canonical receipt |
+| `DEERFLOW_ADAPTER_URL` / `DEERFLOW_ADAPTER_TOKEN` | Server | Required with frameworks | ARIA-owned private adapter only; never the broad DeerFlow Gateway |
+| `DEERFLOW_SOURCE_COMMIT` / `DEERFLOW_IMAGE_DIGEST` | Server | Required with frameworks | Exact audited commit and immutable accepted image digest |
+| `DEERFLOW_DATABASE_IMAGE_DIGEST` | Server | Required with frameworks | Immutable DeerFlow Postgres image identity |
+| `DEERFLOW_FRAMEWORK_INSTANCE_ID` | Server | Required with frameworks | Exact immutable database-registered DeerFlow instance UUID |
+| `DEERFLOW_MODEL_GATEWAY_IMAGE_DIGEST` | Server | Required with frameworks | Immutable promoted ARIA model-gateway image included in the canonical receipt |
+| `DEERFLOW_CLOUD_PROVIDER_ID` | Server | Required with frameworks | Exact compiled provider identity: `kimi` or `openai`; production example uses `kimi` to reuse the governed Kimi authority |
+| `DEERFLOW_MODEL_PROVIDER` / `DEERFLOW_MODEL_ID` | Server | Required with frameworks | `langchain-openai` and the exact provider model exposed by the private gateway |
+| `DEERFLOW_MODEL_BASE_URL` / `DEERFLOW_MODEL_CREDENTIAL_VERSION` | Server | Required with frameworks | Private `.internal` HTTP or HTTPS gateway path and non-secret provider-credential revision ID |
+| `FLOWISE_ADAPTER_URL` / `FLOWISE_ADAPTER_TOKEN` | Server | Required with frameworks | ARIA-owned private import adapter only; no browser or direct broad API access |
+| `FLOWISE_SOURCE_COMMIT` / `FLOWISE_IMAGE_DIGEST` | Server | Required with frameworks | Exact audited commit and immutable accepted image digest |
+| `FLOWISE_WORKER_IMAGE_DIGEST` / `FLOWISE_DATABASE_IMAGE_DIGEST` | Server | Required with frameworks | Immutable worker and Postgres identities included in the receipt |
+| `FLOWISE_FRAMEWORK_INSTANCE_ID` | Server | Required with frameworks | Exact immutable database-registered Flowise instance UUID |
+| `FLOWISE_WORKSPACE_ID` / `FLOWISE_READINESS_WORKFLOW_ID` | Server | Required with frameworks | Exact private Flowise workspace and sanitized readiness-sentinel binding |
+| `FLOWISE_TENANT_ISOLATION` | Server | Required with frameworks | `instance-per-workspace` or independently proven licensed enterprise workspace isolation |
+| `FLOWISE_QUEUE_NAME` | Server | Required with frameworks | Exact worker queue; current audited value is `aria-flowise` |
 | `OBSCURA_URL` / `OBSCURA_BIN_PATH` | Server | Optional research sidecar | Read-only browser research sidecar endpoint or binary path |
 
 Third-party MCP discovery and execution are both denied in production before a
@@ -705,6 +778,159 @@ as untrusted data. The label is model context, not a security boundary.
 Adaptive sourcing operations, including the digest-pinned Graphify worker,
 manual promotion command, kill switch, and evidence checks, are documented in
 [`docs/operations/SOURCING_LEARNING.md`](../docs/operations/SOURCING_LEARNING.md).
+
+`/api/ready` rejects framework-required production until both adapters return
+their exact source commit, image digest, contract version, tenant isolation,
+and positive database, queue, worker, and policy dependency checks. A Flowise
+`/ping`, a DeerFlow process liveness response, or a floating image tag is not
+readiness evidence. Keep the kill switch active if any identity or dependency
+cannot be proven.
+
+The model gateway must be a separate private service with no public Fly
+service or public IP. On Fly, bind it to `fly-local-6pn:<port>` and use an
+`http://<app>.internal:<port>/v1` URL, or use private HTTPS when the platform
+terminates it inside the private network. Fly 6PN is a mesh of encrypted
+WireGuard tunnels, so HTTP on a `.internal` address does not cross the public
+Internet. The canonical validator rejects HTTP or HTTPS URLs unless the host
+ends in `.internal`; it also rejects URL credentials, queries, and fragments.
+See [Fly private networking](https://fly.io/docs/networking/private-networking/)
+and [connecting to an internal app service](https://fly.io/docs/networking/app-services/).
+The gateway image supports this binding only when
+`MODEL_GATEWAY_BIND_HOST=fly-local-6pn`; Compose uses `0.0.0.0` inside its
+non-published container network.
+
+Fly framework activation status remains NO-GO, but the missing source operator
+path now exists under `infra/agent-frameworks/fly/`. It defines separate
+private apps for both databases, both Redis planes, the model gateway,
+DeerFlow, Flowise, its worker, and both adapters. The operator requires a
+15-minute prepare/confirm/deploy approval, exact signed image digests, SPDX
+SBOM and SLSA provenance verification, a zero-high/critical Trivy result,
+owner-only secret files imported over stdin, no public IPs or services, default
+6PN identity, exact Machine image identity, authenticated private readiness,
+and a replay-safe receipt. Follow
+[`infra/agent-frameworks/fly/README.md`](../infra/agent-frameworks/fly/README.md).
+
+This source pack has not been run against production. The protected ARIA
+workflow does not deploy it. Activation stays blocked until immutable upstream
+base resolution and promotion evidence exist; Fly egress is proven to allow
+only the model gateway's reviewed provider; Flowise is privately bootstrapped;
+PostgreSQL HA and a timed snapshot restore drill are accepted; the provider
+returns the approved model; all ten apps pass live identity/readiness; and a
+real approved campaign succeeds end to end. Local rendering and tests are not
+production deployment evidence.
+
+Only the gateway joins the dedicated egress network. DeerFlow receives a
+separate internal bearer token, never the cloud-provider key. The gateway
+reads both authorities from distinct secret files, maps the reviewed provider
+identity to a compiled API origin, requires one exact model, disables
+streaming, caps JSON input and provider output, and bounds time, concurrency,
+and request rate. The pinned DeerFlow runtime unavoidably binds its
+framework-owned `review_skill_package` builtin. The gateway accepts only that
+exact locked schema, strips it and optional `tool_choice: "none"` before cloud
+egress, and rejects all other tool material. Never widen or forward this
+exception; a DeerFlow or LangChain schema change requires a new reviewed
+gateway image and configuration receipt. Rotate the provider key by updating its secret file and
+`DEERFLOW_MODEL_CREDENTIAL_VERSION`, deriving a new configuration receipt,
+restarting the gateway, and repeating the private readiness plus model canary.
+The DeerFlow adapter mounts the internal gateway bearer token, never the
+provider key, and its authenticated readiness probe requires the gateway to
+return the exact canonical provider and model. A provider outage, payment
+failure, or model drift therefore makes adapter and ARIA readiness fail closed.
+For `DEERFLOW_CLOUD_PROVIDER_ID=kimi`, the secret manager must materialize the
+existing `KIMI_API_KEY` value as the file referenced by
+`DEERFLOW_MODEL_PROVIDER_API_KEY_FILE`; never expose it as a gateway
+environment variable. The gateway ignores `KIMI_BASE_URL` and always routes
+Kimi to the compiled `https://api.moonshot.ai/v1` origin. Set
+`DEERFLOW_MODEL_ID` to the exact approved Kimi model and do not activate until
+authenticated `/readyz`, `/v1/models`, and a non-streaming chat canary all
+return that same model identifier.
+
+As of 2026-07-14, the only available `KIMI_API_KEY` returned HTTP 402 from an
+authenticated `GET https://api.moonshot.ai/v1/models`. Production activation
+is blocked until the Moonshot account has the required funding or entitlement,
+that call succeeds, and an owner approves an exact returned model identifier.
+The gateway maps the 402 to unavailable readiness and never relays the provider
+error body. Leave `DEERFLOW_MODEL_ID` unset and the kill switch active until
+that external prerequisite is closed.
+
+### Provision and activate framework authority
+
+Framework deployment variables do not grant execution by themselves. Run the
+control-plane CLI from a protected operator shell that has the complete
+canonical framework environment plus `NEXT_PUBLIC_SUPABASE_URL` and
+`SUPABASE_SERVICE_ROLE_KEY`. The named actor must already be an admin in
+`AGENT_FRAMEWORK_READINESS_WORKSPACE_ID`. Plans contain no secret and expire
+after 15 minutes. Each plan binds the exact Supabase HTTPS authority origin as
+well as the workspace and immutable framework identity. Delete it after
+recording the database receipt in the change ticket.
+
+First prepare, review, and explicitly confirm the fail-closed configuration:
+
+```bash
+npm run agent-framework:authority -- prepare configure \
+  --actor-id <same-workspace-admin-uuid> > /tmp/aria-framework-configure-plan.json
+
+# Independently review the action, workspace, exact instance UUIDs, pinned
+# commits, full image digests, configuration SHA-256, and expected DB version.
+npm run agent-framework:authority -- apply \
+  --plan /tmp/aria-framework-configure-plan.json \
+  --confirm <confirmationSha256-from-reviewed-plan>
+```
+
+The configure receipt must say `configured` (or an exact `replay`) and must
+leave `execution_enabled=false` and `kill_switch=true`. It registers exactly
+the `DEERFLOW_FRAMEWORK_INSTANCE_ID` and `FLOWISE_FRAMEWORK_INSTANCE_ID` from
+the canonical environment; it never accepts mutable images or floating source
+revisions.
+
+If the apply connection fails after the database may have committed, retry the
+same unexpired plan with the same confirmation. The database checks the change
+receipt before control-version drift and returns only the exact `replay`; never
+prepare a replacement plan to guess whether the first operation committed.
+
+Start or restart the deployed `framework_heartbeat` Fly process. That worker
+probes each private adapter's authenticated `/readyz`, verifies its exact
+workspace, instance UUID, commit, image, canonical configuration SHA, queue,
+worker, database, and policy dependencies, and then records readiness through
+the service-only database RPC. Do not write readiness rows manually. Wait for
+the PII-free `framework_heartbeat` healthy receipt in Fly logs. Preparing an
+activation plan independently re-reads the database and refuses unless both
+receipts are still fresh (less than five minutes old) and exact.
+
+Activation is a separate reviewed change and requires a second explicit
+confirmation:
+
+```bash
+npm run agent-framework:authority -- prepare activate \
+  --actor-id <same-workspace-admin-uuid> > /tmp/aria-framework-activate-plan.json
+
+npm run agent-framework:authority -- apply \
+  --plan /tmp/aria-framework-activate-plan.json \
+  --confirm <confirmationSha256-from-reviewed-plan>
+```
+
+The activation receipt must say `activated` (or an exact `replay`) and bind
+the control to the two exact instance UUIDs. Any version drift, stale
+heartbeat, identity mismatch, disabled dependency, or reused change UUID with
+different material is a hard stop.
+
+The emergency kill path intentionally does not depend on a healthy framework
+configuration. It remains admin-checked and receipt-backed, but engages the
+kill switch even if its prepared control version has become stale:
+
+```bash
+npm run agent-framework:authority -- prepare kill \
+  --actor-id <same-workspace-admin-uuid> > /tmp/aria-framework-kill-plan.json
+
+npm run agent-framework:authority -- apply \
+  --plan /tmp/aria-framework-kill-plan.json \
+  --confirm <confirmationSha256-from-reviewed-plan>
+```
+
+After any configure, activate, or kill action, retain the returned change UUID,
+prior/resulting control versions, configuration SHA, and immutable database
+receipt reference in the production change record. Never copy the service key
+or adapter tokens into the plan or ticket.
 
 Verify all variables are visible in Vercel before continuing:
 

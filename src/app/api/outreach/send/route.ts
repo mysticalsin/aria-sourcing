@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { createHash, randomUUID } from "crypto";
+import { randomUUID } from "crypto";
 import { sendViaProvider, type SendRequest } from "@/lib/providers";
 import { sendViaGmailApi, sendViaMicrosoftGraph } from "@/lib/email-oauth";
 import { domainVerified } from "@/lib/domain-verification";
@@ -11,7 +11,7 @@ import type { EmailConnection, Role } from "@/lib/types";
 import { can } from "@/lib/rbac";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { safeLog } from "@/lib/log-redact";
-import { dedupeHash, gateOutbound } from "@/lib/gate";
+import { gateOutbound } from "@/lib/gate";
 import { encryptSecret, decryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
 import { getOutboundChannelPolicy } from "@/lib/linkedin-policy";
 import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
@@ -232,32 +232,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "dry-run", detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
     }
 
-    const { data: queued, error: queueErr } = await supabase
-      .from("messages_outbound")
-      .insert({
-        workspace_id: approvalWid,
-        candidate_id: candidateId,
-        seat_id: seatId,
-        channel: "WhatsApp",
-        to_address: recipientE164,
-        recipient_e164: recipientE164,
-        approval_message_id: payload.messageId,
-        type: "candidate_reply",
-        subject,
-        body,
-        status: "queued",
-        gate_result: { pass: true, reasons: [] },
-        content_hash: createHash("sha256").update(body, "utf8").digest("hex"),
-        dedupe_hash: dedupeHash(candidateId, "WhatsApp", body),
-        scheduled_at: new Date().toISOString(),
-      })
-      .select("id")
-      .maybeSingle();
-    if (queueErr || !queued) {
-      if (queueErr?.code === "23505") {
+    const { data: queuedData, error: queueErr } = await supabase.rpc("enqueue_whatsapp_outbound", {
+      p_message_id: payload.messageId,
+      p_candidate_id: candidateId,
+      p_campaign_id: campaignId,
+      p_seat_id: seatId,
+      p_recipient: recipientE164,
+      p_type: "candidate_reply",
+      p_subject: subject,
+      p_body: body,
+      p_template_id: null,
+      p_template_parameters: [],
+    });
+    const queued = queuedData as { ok?: boolean; status?: string; id?: string; reason?: string } | null;
+    if (queueErr || queued?.ok !== true || queued.status !== "queued" || !queued.id) {
+      if (queued?.reason === "duplicate") {
         return NextResponse.json({ status: "skipped", detail: "This WhatsApp message is already queued or was sent." });
       }
-      safeLog("whatsapp outbox queue error", { message: queueErr?.message ?? "no row", code: queueErr?.code });
+      safeLog("whatsapp outbox queue error", {
+        message: queueErr?.message ?? queued?.reason ?? "no result",
+        code: queueErr?.code,
+      });
       return NextResponse.json({ status: "error", detail: "Could not queue the WhatsApp message." }, { status: 500 });
     }
     const dispatcher = getServiceSupabase();

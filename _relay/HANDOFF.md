@@ -1,246 +1,363 @@
 ---
 project: MSourcing / ARIA
-shift: 38
+shift: 39
 agent: codex-gpt-5
-updated: 2026-07-13 16:03 EDT
-status: evidence-grounded-adaptive-sourcing-source-green-release-and-live-no-go
+updated: 2026-07-14 14:02 EDT
+status: source-green-frameworks-integrated-production-no-go
 ---
 
-# Handoff - real sourcing and Graphify learning built; protected release blocked
+# Handoff - governed frameworks and real sourcing are source-green; production activation is blocked
 
 ## Current state
 
 - Work only in `/Users/tony/.codex/worktrees/msourcing-campaign-integration`.
 - Branch: `main`.
-- Source commit: `f19bcb1` (`feat: make sourcing evidence-grounded and adaptive`).
-- `origin/main...main` was `0 10` after the source commit and before this Relay
-  evidence commit.
-- Bounded source verdict for evidence-grounded intake, real GitHub sourcing,
-  sourcing receipts, feedback, and adaptive lessons: GO.
-- Exact Graphify 0.9.14 container acceptance: NO-GO because the current route to
-  PyPI timed out on the hash-locked `networkx==3.6.1` dependency.
+- Base at shift start: `ac66f4d05327d98048041c23751006a16904d700`.
+- The commit containing this baton is the local source of truth after shift
+  close. Run `git rev-parse HEAD` and `git status --short --branch` before
+  doing anything.
+- Do not touch, reset, clean, or switch the original OneDrive checkout. It is a
+  separate dirty worktree owned by concurrent activity.
+- Public remote reads at 14:02 EDT:
+  - `origin/main`: `bc4633663c9a7ba3b3b4d52b7f3654384e471cb6`;
+  - `origin/vercel-demo`: `14f76f1d351f97bff1c25cfba9be97355bd91851`.
+- Local source is a fast-forward descendant of public `main`, but credential
+  rotation and the authority of prior remote writes are not proven. Do not push
+  with an exposed or unproven credential.
+- Source verdict: GO for local commit and review.
 - Protected release verdict: NO-GO.
 - Production verdict: NO-GO.
-- Latest migration: `supabase/migrations/0027_sourcing_learning_authority.sql`.
-- Canonical application chain: 156 commands, comprising 34 pretest commands and
-  122 application-test commands.
-- Detailed continuation plan:
+- Current public app readiness is HTTP 200, build
+  `d2040b534177f5bd2abb28f22de19af57b58dc3a`, migration
+  `0023_conversation_identity.sql`, with reported database, auth, queue,
+  migration, and release identity true.
+- Current Kong `/healthz` is HTTP 200. Unauthenticated Kong Auth and REST
+  correctly return HTTP 401.
+- Local migration tip is
+  `0031_orphan_owner_recovery_authority.sql`. Production is eight migration
+  files behind the reviewed source.
+- Canonical local application gate is 164 chained commands: 36 pretest plus
+  128 application commands.
+- Exact reviewed framework source pins:
+  - DeerFlow: `fabadae4168db81f0eaaf62f209050f978e2f691`;
+  - Flowise: `bb773ffa710bd22639c4ba2643413a0ea2b679d3`;
+  - Graphify: `94d3099540550d58dd121ec3e67cf93e80364079`,
+    package 0.9.14.
+- Detailed plan:
   `/Users/tony/.codex/plans/msourcing-aria-remaining-campaign-blockers-20260712.md`.
-- Audit paper trail: `_relay/codex-findings.md`.
-- Prior baton archive: `_relay/archive/2026-07-13-1603-codex-gpt-5.md`.
+- Audit ledger: `_relay/codex-findings.md`.
+- Prior baton archive:
+  `_relay/archive/2026-07-14-1402-codex-gpt-5.md`.
+- Graph navigation was attempted first, but
+  `graphify-out/graph.json` and `graphify-out/wiki/index.md` are absent.
+  Raw source was used only after that recorded fallback.
 
 ## Done this shift
 
-- Removed fabricated sourcing inputs:
-  - missing title, skills, location, seniority, description, and experience stay
-    unknown instead of receiving plausible defaults;
-  - cloud intake fields are retained only when grounded in submitted evidence;
-  - incomplete needs and missing reviewed queries block provider, vault, search,
-    and state work;
-  - labeled launch samples remain separate, explicit complete examples.
-- Made sourcing work without a mandatory cloud LLM:
-  - the browser sends only a campaign ID;
-  - the server loads campaign, workspace, provider, model, and key authority;
-  - deterministic mode executes real reviewed GitHub queries without a cloud
-    provider or model key;
-  - cloud mode must execute a real search tool and cannot return invented people;
+- Replaced framework-inspired claims with actual pinned framework integration:
+  - Flowise is a private authoring/import dependency. ARIA accepts only a
+    strict bounded workflow vocabulary and compiles it into immutable ARIA IR;
+  - a separate admin must approve the exact imported workflow hash;
+  - DeerFlow runs only an approved workflow and receives opaque authority,
+    never provider credentials or candidate records;
+  - DeerFlow may propose one exact reviewed GitHub query and a report action;
+  - ARIA owns provider calls, quota, idempotency, persistence, learning
+    receipts, candidate DTOs, and every effect.
+- Closed the browser-owned Flowise authority path:
+  - agent spec create/update no longer accepts external Flowise IDs;
+  - the public Flowise proxy performs no upstream fetch;
+  - private admin import revalidates authority after Flowise egress;
+  - arbitrary code, HTTP, MCP, tool, disconnected, duplicate, and cyclic nodes
+    fail closed.
+- Added model gateway and adapter controls:
+  - only the exact unavoidable pinned DeerFlow
+    `review_skill_package` schema is recognized and stripped;
+  - all other tools and all returned tool/function calls are rejected;
+  - only one exact non-streaming provider/model request is allowed;
+  - prompt, response, concurrency, and request-rate bounds are enforced;
+  - streamed overflows cancel the upstream reader;
+  - readiness authenticates the gateway and proves the exact provider/model.
+- Added database authority:
+  - 0028 makes normalized message writes service-owned and owner-binds
+    conversations to durable sent receipts;
+  - 0029 adds approved workflow versions, framework instances, run claims,
+    immutable provenance, step/terminal receipts, and one-time sourcing
+    capabilities;
+  - 0030 adds replay-safe prepare/confirm/activate provisioning plans with
+    exact origin, image, source, isolation, provider, model, credential, and
+    control-version authority;
+  - 0031 adds approval-bound orphan-owner recovery with pre-binding password
+    login proof, request markers, per-attempt cleanup IDs, append-only receipts,
+    and service-only database mutation.
+- Reconciled protected database recovery with the complete 0031 schema:
+  - canonical public-schema SHA updated;
+  - exact table inventory and function allowlists updated;
+  - filename plus SHA migration ledger remains authoritative;
+  - empty, legacy, complete, replay, rotation, and cross-owner cases are tested.
+- Made adaptive sourcing real and bounded:
+  - cloud LLM configuration is not required for canonical deterministic
+    GitHub sourcing;
+  - incomplete needs and missing reviewed queries fail before provider work;
+  - no model response can substitute for a real provider result;
   - zero results remain an honest empty result;
-  - candidate DTOs are strict and candidate data is withheld unless the
-    database completion receipt succeeds.
-- Closed effect-boundary and replay gaps:
-  - database claim and quota happen before vault or provider access;
-  - current campaign, role, configuration, and need authority is rechecked
-    before credential resolution, every model/tool call, after external I/O,
-    and before client commit;
-  - idempotent replay and quota rejection perform no provider or secret work;
-  - client commit revalidates latest campaign fingerprint and dedupe state.
-- Production-disabled incomplete paid providers:
-  - Seamless and Sillage fail closed before rate limits, secrets, or egress in
-    production;
-  - their production UI controls are hidden;
-  - re-enable only after Apollo-equivalent server-owned bindings, minimized
-    disclosure, retention, reconciliation, and erasure exist.
-- Implemented migration 0027 adaptive-learning authority:
-  - workspace HMAC role/query bindings, per-user/workspace quota, idempotent run
-    claims, aggregate receipts, actor/campaign-scoped durable feedback, lesson
-    evidence, Graphify exports, separate human review, TTL, and kill switch;
-  - RLS is enabled and forced on every learning table, direct DML is denied,
-    and security-definer RPCs assert and grant only `service_role`;
-  - no candidate identity or profile data enters the learning authority;
-  - only successful receipts become feedback prompts or lesson evidence;
-  - feedback survives reload, merges across later runs by opaque receipt ID,
-    and cannot cross campaign component state.
-- Integrated Graphify-Labs/graphify as an internal aggregate learner:
-  - exact source commit `94d3099540550d58dd121ec3e67cf93e80364079`,
-    package version 0.9.14, digest-pinned Python base image, and hash-locked
-    dependency set;
-  - non-root, read-only, capability-free, bounded, no-network runtime test;
-  - deterministic worker output with query logging and semantic LLM disabled;
-  - exact input, graph bytes, manifest, image digest, source commit, graph hash,
-    lesson IDs, and optimistic versions are stored before attachment;
-  - Graphify cannot invent needs/candidates/queries or promote a lesson;
-  - a separate admin reviews exact evidence and version;
-  - later exact-role deterministic sourcing diversifies human-promoted queries
-    across Graphify cluster references/ranks, so learning affects runtime
-    selection without gaining authority.
-- Added operator commands and the runbook:
-  - `npm run configure:graphify-learning`;
-  - `npm run run:graphify-learning`;
-  - `npm run review:graphify-learning`;
-  - `docs/operations/SOURCING_LEARNING.md`.
-- Hardened clean builds after a real registry hang:
-  - isolated `npm ci` now prefers verified cache entries and bounds registry
-    retries and request time to fail rather than wait indefinitely;
-  - exact isolated production build then completed successfully.
-- Removed the `js-yaml` advisory by pinning 4.3.0; offline audit reports zero
-  known vulnerabilities.
-- Reconciled migration 0027 with protected recovery authority:
-  - regenerated and reviewed the canonical public-schema SHA-256;
-  - added all ten learning tables and all sixteen functions to the exact legacy
-    recovery allowlists;
-  - proved restricted `postgres` migrations, direct `supabase_admin` recovery,
-    read-only empty/legacy/complete preflights, exact ledger, password rotation,
-    tenant isolation, and no secret leak.
-- Four QA lanes plus the coordinating audit challenged credential ordering,
-  TOCTOU, artifact forgeability, output locking, zero-result accounting,
-  runtime learning use, feedback durability, failed-receipt handling, campaign
-  UI isolation, and stale test contracts. Every source finding was corrected.
+  - Graphify receives aggregate/redacted evidence only, runs without network,
+    and cannot invent needs, people, or queries;
+  - only a separate human-reviewed lesson can reprioritize an existing exact
+    reviewed GitHub query for the same role.
+- Closed demo/localStorage candidate PII:
+  - no-Supabase mode defaults to the synthetic Talent Pool;
+  - explicit GitHub, web, manual, Apollo, Seamless, Sillage, live-agent, and
+    enrichment paths fail before I/O;
+  - both commit paths and final localStorage flush reject any non-synthetic
+    candidate snapshot;
+  - hydration removes legacy unsafe localStorage blobs and reseeds the demo.
+- Added a controlled private Fly source deployment pack under
+  `infra/agent-frameworks/fly`:
+  - ten no-service apps for two databases, two Redis planes, model gateway,
+    DeerFlow, Flowise, Flowise worker, and two narrow adapters;
+  - no Fly Proxy services or public IP allocation;
+  - separate state volumes and independent secrets;
+  - non-root wrappers and private authenticated identity probes;
+  - `prepare -> confirm -> deploy` operator with a 15-minute hash-bound
+    approval, staged stdin secret import, replay validation, and exact receipt;
+  - exact final image digest, cosign signature, SPDX SBOM, SLSA provenance,
+    source commit, and zero-high/critical Trivy gates;
+  - seven Bake wrapper targets with SBOM and provenance attestations.
+- Hardened cleanup and release verification:
+  - privileged cleanup responses are content-type checked and bounded before
+    parsing;
+  - release proof requires sourcing and framework retention counters;
+  - provisioning replay is bound to the exact Supabase origin and can recover
+    lost configure/activate responses without repeating effects.
+- Closed stale documentation:
+  - inventory and data-flow docs no longer describe production sourcing as
+    mock-only;
+  - status, README, runbook counts, and migration tip are derived from current
+    package and migration truth.
+- Four independent QA lanes reviewed owner recovery, model gateway/release,
+  provisioning/concurrency, and final full-stack/privacy behavior. Every
+  concrete source defect is recorded in `_relay/codex-findings.md`.
 
 ## Verification evidence
 
-- Final unchanged dependency/source snapshot exited 0 for:
-  - `npx tsc --noEmit`;
+- Final unchanged functional snapshot exited 0:
+  - `npm run typecheck`;
   - `npm run lint`;
-  - `npm test` - all 34 pretest and 122 application commands;
-  - `npm run build:isolated` - clean install, Next.js 16.2.10 compile,
-    TypeScript, 62 static pages, and all dynamic routes;
-  - `npm audit --offline --audit-level=moderate` - 0 vulnerabilities;
+  - `npm run test:security`;
+  - `npm test`, all 164 chained commands;
+  - `npm run build:isolated`, clean install and Next.js 16.2.10 production
+    build with 62 generated static pages and every dynamic route;
+  - `npm audit --offline --audit-level=moderate`, zero vulnerabilities;
+  - `gitleaks dir . --no-banner --redact --verbose`, no leaks;
   - `git diff --check`.
-- `npm run test:db-sourcing-learning` exited 0:
-  `authority=pass isolation=pass idempotency=pass review-separation=pass
-  kill-switch=pass no-candidate-pii=pass`, migration replay, direct DML denied,
-  and service RPC allowed.
-- `npm run test:db-privileges` exited 0 after the 0027 recovery reconciliation:
-  `postgres=restricted-direct supabase_admin=direct cross_owner=denied
-  rotation=pass idempotence=pass empty_preflight=read-only
-  legacy_preflight=read-only complete_preflight=read-only
-  legacy_baseline=approved ledger=filename-sha secret_leak=none`.
-- Focused final results include:
-  - sourcing-agent route authority 19/19;
-  - Hermes cloud authority 40/40;
-  - sourcing-learning static authority 85/85;
-  - sourcing-learning operations 19/19;
-  - feedback route/runtime 13/13;
-  - sourcing agent 20/20;
-  - intake grounding 5/5;
-  - campaign sourcing contract 7/7;
-  - store sourcing actions 37/37;
-  - build-isolated contract 7/7;
-  - bootstrap contract 54/54;
-  - recovery schema allowlists 35/35.
-- `npm run test:graphify-learning` exited 1 only at dependency download:
-  Docker resolved the exact Python base digest, then pip retried PyPI five times
-  and ended with `Could not find a version that satisfies the requirement
-  networkx==3.6.1` after repeated `Connection to pypi.org timed out` errors.
-  This is not exact Graphify runtime proof and remains a hard release gate.
+- Framework/Fly aggregate: `npm run test:agent-framework-adapter`, 42/42.
+  This includes all ten `flyctl config validate` checks and nine Fly operator
+  tests.
+- Framework application aggregate: `npm run test:agent-framework`, exit 0.
+- Deploy contract: 133/133. Release contract: 132/132.
+- Exact Graphify gate:
+  `npm run test:graphify-learning`, exact-runtime pass, no-network pass,
+  deterministic graph pass, receipt pass.
+- Exact Fly database recovery gate:
+  `npm run test:fly-db-volume`, exit 0, including unsafe-root and PGDATA-only
+  rejection, approved legacy cutover/recreate, two restarts, partial/ambiguous
+  layout blocks, operator-history protection, and recreate without init
+  secrets.
+- Restricted database owner gate: `npm run test:db-privileges`, exit 0 with
+  restricted direct postgres, direct supabase_admin, cross-owner denial,
+  rotation, idempotence, read-only preflights, approved baseline, exact ledger,
+  and no secret leak.
+- Framework database gates: `npm run test:db-agent-framework`, authority and
+  provisioning pass.
+- Conversation, sourcing-learning, and owner-recovery database gates pass.
+- Owner recovery operator plus real PostgreSQL result:
+  exact-only topology, confirmed-email local auth, active non-banned/non-deleted
+  identity, workspace/profile/domain CAS, preserved state, two-field mutation,
+  append-only receipt, exact replay, service-RPC-only privilege.
+- Live checks at shift close:
+  - app `/api/ready`: HTTP 200 on build `d2040b...`, migration 0023;
+  - Kong `/healthz`: HTTP 200;
+  - unauthenticated Kong Auth/REST: expected HTTP 401.
 
 ## Blockers
 
-1. GitHub credential rotation is not proven. Do not reuse any exposed or
-   uncertain credential.
-2. The actor and authority that previously advanced the remote tracking ref
-   remain unexplained. Prove provenance before trusting or pushing to remote.
-3. This shift's local commits have not been pushed; exact-SHA CI and CodeQL do
-   not exist for them.
-4. Exact Graphify 0.9.14 container execution is blocked by the PyPI timeout.
-   Host tests against a different installed Graphify version are not a release
-   substitute.
-5. The digest-pinned Graphify worker image has not been built on a clean
-   network, scanned, SBOM-attested, published, or configured in production.
-6. Migration 0027 is not applied live. No production row proves the Graphify
-   image binding, durable feedback, export, attachment, or human review path.
-7. The protected release has not deployed this source. No current live check
-   this shift proves database, Auth, REST, Kong, application, or migration
-   identity for this candidate.
-8. Admin provisioning, restart recovery, two-user separation, real GitHub
-   campaign sourcing, feedback reload, Graphify artifact review, learned-query
-   reuse, real email/WhatsApp, erasure, rollback, and restore remain unproven
-   end to end in staging/production.
-9. The separate Fly DB volume test previously remained network-blocked on
-   Alpine indexes. Re-run it on the accepted SHA and clean network; do not
-   bypass package-index or recovery checks.
+1. Production is not running this source. It reports build `d2040b...` and
+   migration 0023 while local source reaches 0031.
+2. None of the ten framework Fly apps has been created or deployed. No
+   production manifest, approval, receipt, private readiness, restart, restore,
+   or campaign canary exists.
+3. The recorded Kimi provider credential returns HTTP 402. DeerFlow readiness
+   must remain red until an approved funded provider/model succeeds through the
+   authenticated private gateway.
+4. Upstream DeerFlow and Flowise inputs include mutable base tags. A protected
+   runner must resolve and attest bases, build final wrappers, sign final
+   digests, publish SBOM/provenance, and pass Trivy. `cosign`, `trivy`, and
+   `syft` are not installed in this workspace.
+5. Private Fly ingress is specified, but gateway-only outbound egress is not
+   enforced or tested. Private 6PN ingress does not deny Internet egress.
+6. The source stateful framework topology is one Machine and one volume per
+   store. PostgreSQL HA, accepted RTO/RPO, timed snapshot restore, and failure
+   injection are not approved.
+7. Flowise private administrator bootstrap, workspace binding, least-privilege
+   API key, readiness sentinel, tenant-isolation evidence, and commercial
+   entitlement are not complete.
+8. `production-readiness/AI_GOVERNANCE_GATE.md` remains NO-GO. AI
+   Compliance, Legal/DPO, CTO/model owner, DPIA/FRIA, independent validation,
+   fairness/drift/challenger monitoring, incident evidence, and exact
+   model/vendor approvals are missing.
+9. Previously exposed GitHub, Fly, and ElevenLabs credentials have open
+   rotation findings. Prior remote-actor provenance is unproven. Do not push or
+   deploy with those credentials.
+10. The local candidate has no exact-SHA GitHub CI, CodeQL, protected-environment
+    approval, promoted image, or deployment receipt.
+11. First-admin creation, two-user isolation, approved Flowise import, real
+    framework run, real GitHub campaign, feedback reload, Graphify
+    export/review/reuse, real email/WhatsApp, erasure, rollback, and restore are
+    not proven end to end on the live environment.
+12. Broader data-protection findings remain open for provider-held records,
+    normalized conversation bodies/addresses, logs, caches, backups, legal
+    hold, and expiry proof. DP-8 localStorage candidate PII is fixed, but it is
+    not the entire data-lifecycle gate.
 
 ## Next steps
 
-1. Read this baton, `_relay/codex-findings.md`, and `git status`; preserve every
-   uncommitted/shared-worktree file.
-2. Rotate GitHub and Fly credentials, audit repository access, identify the
-   unexplained remote actor, and verify owner-controlled remote `main` before
-   any fetch/reconcile/push that uses authentication.
-3. Reconcile local `main` with verified remote truth without force or history
-   destruction. Push only through rotated least-privilege credentials.
-4. Run exact-SHA CI, CodeQL, secret scan, dependency audit, database gates,
-   `npm run test:fly-db-volume`, and `npm run test:graphify-learning` on a clean
-   network. Any red gate blocks release.
-5. Build the worker from `workers/graphify-lessons/Dockerfile`, verify Graphify
-   commit/version and manifest, scan it, produce SBOM/provenance, publish by
-   immutable digest, and configure that exact digest with the protected admin
-   command and expected version.
-6. Apply migration 0027 through the protected migration ledger, deploy the
-   accepted application digest, and verify exact build/migration identity plus
-   DB, Auth, REST, Kong, `/api/ready`, worker, and cleanup health.
-7. Provision the first admin through the owner path. With two users, prove:
-   incomplete needs block; a complete real need produces reviewed queries; real
-   GitHub sourcing works without a cloud LLM; zero results stay empty; returned
-   candidates have provider evidence; feedback survives reload; failed
-   receipts never prompt; cross-user/campaign/tenant attempts fail.
-8. Produce two independent successful campaigns for the same role, record
-   aggregate feedback with separate actors, export through the no-network
-   Graphify worker, verify durable hashes/manifest, attach, have a different
-   admin promote the exact version, and prove the next matching role uses the
-   promoted cluster-ranked query while a different role does not.
-9. Prove kill switch, TTL cleanup, replay, quota, role revocation during
-   credential resolution/provider I/O, Graphify artifact mismatch, review
-   conflict, restart persistence, backup/restore, rollback, erasure, and real
-   approved email/WhatsApp acceptance. Archive the exact receipts.
+1. Start with:
+
+   ```sh
+   cd /Users/tony/.codex/worktrees/msourcing-campaign-integration
+   git status --short --branch
+   git rev-parse HEAD
+   sed -n '1,260p' _relay/HANDOFF.md
+   rg -n '\*\*Status:\*\* open' _relay/codex-findings.md
+   ```
+
+2. Verify this shift commit is clean and contains the complete source. Do not
+   discard any uncommitted files if the worktree is dirty.
+3. Owner action before any write: revoke and rotate exposed GitHub, Fly, and
+   ElevenLabs credentials; review repository/Fly access history; identify the
+   prior remote actor; provision least-privilege protected-runner credentials.
+4. Fetch public refs without force. Confirm public `main` remains an ancestor.
+   Push local `main` only with the rotated credential and owner approval.
+5. Require exact-SHA CI, CodeQL, dependency audit, full Gitleaks history and
+   staged scan, all 164 commands, isolated build, database gates, Graphify, and
+   Fly DB recovery before release promotion.
+6. Close AI governance and vendor gates. Obtain written model/provider,
+   Flowise entitlement/isolation, Legal/DPO, AI Compliance, Security, and
+   operational-owner approvals. Do not turn off the framework kill switch
+   without them.
+7. In a protected runner, build the seven wrappers from
+   `infra/agent-frameworks/fly/docker-bake.hcl`, resolve every final digest,
+   sign it, attach SPDX SBOM and SLSA provenance with exact source commit, and
+   pass Trivy with no HIGH/CRITICAL findings.
+8. Enforce and test gateway-only outbound egress. Decide and document
+   PostgreSQL HA plus RTO/RPO. Complete timed snapshot restore and failure
+   injection before accepting stateful production.
+9. Bootstrap Flowise privately, bind one workspace and sentinel, create a
+   least-privilege API key, and prove tenant isolation. Configure a funded
+   approved provider/model and pass authenticated gateway readiness.
+10. Create an owner-reviewed manifest and execute the documented operator
+    sequence:
+
+    ```sh
+    node infra/agent-frameworks/fly/operator.mjs prepare \
+      --manifest /secure/aria-fly-manifest.json \
+      --plan /secure/aria-fly-plan.json
+
+    node infra/agent-frameworks/fly/operator.mjs confirm \
+      --manifest /secure/aria-fly-manifest.json \
+      --plan /secure/aria-fly-plan.json \
+      --confirmation <reviewed-plan-sha256> \
+      --approval /secure/aria-fly-approval.json
+
+    node infra/agent-frameworks/fly/operator.mjs deploy \
+      --manifest /secure/aria-fly-manifest.json \
+      --plan /secure/aria-fly-plan.json \
+      --approval /secure/aria-fly-approval.json \
+      --receipt-dir /secure/aria-fly-receipts \
+      --execute
+    ```
+
+11. Apply migrations 0028 through 0031 through the protected migration ledger,
+    then deploy the exact accepted app/worker images. Verify build identity,
+    migration tip, Kong, Auth, REST, queue, cleanup, framework heartbeat,
+    private readiness, and rollback receipts.
+12. Provision the first admin using
+    `scripts/recover-orphan-workspace-owner.sh` only if the exact orphan
+    topology and owner approval apply. Never put credentials in argv or Relay.
+13. Run live two-user acceptance:
+    - incomplete needs block with unknown facts preserved;
+    - complete reviewed needs produce exact reviewed queries;
+    - a separately approved Flowise workflow executes through DeerFlow;
+    - DeerFlow chooses only one approved query;
+    - ARIA returns only real provider-backed candidates and durable receipts;
+    - zero results remain empty;
+    - cross-user, cross-workspace, cross-campaign, replay, kill-switch, and role
+      revocation attempts fail.
+14. Run the learning proof with two successful same-role campaigns, aggregate
+    feedback, no-network Graphify export, independent lesson review, and next
+    exact-role query reprioritization. Prove a different role is unaffected.
+15. Complete real channel acceptance, provider ambiguity reconciliation,
+    retention/erasure/legal-hold coverage, restart, restore, rollback, and
+    incident drills. Archive bounded receipts without candidate data or
+    secrets.
+16. Update this baton at every milestone or blocker. At shift end, archive it
+    and rewrite a fresh snapshot before stopping.
 
 ## Decisions made (don't relitigate)
 
-- Unknown need facts remain unknown. Plausible defaults are not evidence.
-- No candidate exists in product truth without a real provider result and an
-  accepted database completion receipt.
-- A cloud LLM is optional for deterministic reviewed GitHub sourcing. It may
-  assist cloud tool selection but cannot replace a real search.
-- Graphify is an internal aggregate learner only. It receives no candidate PII
-  or raw query/campaign text, has no network at runtime, and cannot invent,
-  promote, contact, spend, or mutate campaign authority.
-- Only separately human-reviewed, exact-version lessons may affect later exact
-  role sourcing, through cluster-aware query selection.
-- Paid provider authority is server-owned and opaque. Incomplete providers stay
-  production-disabled; a feature flag is not a substitute for the full model.
+- ARIA owns authority and effects. DeerFlow orchestrates proposals; Flowise
+  authors reviewed workflow IR; neither framework contacts candidates, spends,
+  selects provider credentials, or writes candidate data directly.
+- Actual pinned DeerFlow and Flowise runtimes are required. Framework-inspired
+  naming alone does not satisfy the requirement.
+- Production framework ingress is private and adapter-only. The broad upstream
+  gateways are never exposed publicly.
+- Flowise imports are drafts until a separate admin approves the exact hash.
+- DeerFlow can select only one existing exact reviewed GitHub query. It cannot
+  invent a need, query, candidate, provider, or effect.
+- Canonical deterministic GitHub sourcing works without a cloud LLM. A model is
+  an optional governed framework dependency, not a substitute for provider
+  evidence.
+- No candidate is product truth without a real provider result and durable
+  database completion receipt.
+- Unknown need and candidate facts remain unknown. No plausible defaults.
+- Graphify is aggregate/redacted, no-network, digest-bound, and human-reviewed.
+  It may reprioritize an exact reviewed query only for the same exact role.
+- Demo/localStorage mode is synthetic-only. Real/manual candidate data is
+  rejected before I/O and again at commit, storage, and hydration boundaries.
+- Paid-provider authority is server-owned, prepare/confirm/commit, opaque,
+  replay-safe, and receipt-bound.
 - LinkedIn remains compliant assisted-manual unless an official signed
-  integration is provided. No login automation, scraping, or bypass.
-- Source, exact container, protected release, and live acceptance are separate
-  claims.
+  integration exists. No login automation, scraping, evasion, or bypass.
+- Named human approval remains the delivery authority. Framework execution has
+  no delivery authority.
+- Source proof, signed artifacts, protected release, and live acceptance are
+  separate claims.
 - No exposed or unproven credential may be reused.
-- No push or production deploy is safe until credential rotation and remote
-  actor provenance are proven.
+- No push or production deploy is safe until credential rotation and prior
+  remote-actor provenance are proven.
 
 ## Watch out
 
-- The original OneDrive checkout is dirty and remains on
-  `deploy/fly-github-actions`. Do not clean, reset, switch, or discard it.
-- Claude and Codex share this integration worktree. Uncommitted files are real
-  work; inspect status before every edit, test, or commit.
-- Do not place credentials, cookies, user emails, provider identifiers,
-  Machine IDs, raw queries, candidate data, or tokens in argv, logs, fixtures,
-  Relay, URLs, or Graphify artifacts.
-- Do not infer safe authentication from a tracking ref or successful network
-  connection.
-- Do not describe the app as production-ready from local source proof. The
-  exact Graphify container, push, CI, protected deploy, and live E2E are open.
-- A failed Graphify dependency download is not permission to relax hashes,
-  change the pinned source, enable worker egress, or use the host Graphify
-  installation as release proof.
-- The reviewed recovery schema fingerprint and exact table/function allowlists
-  must move with every future migration.
+- The original OneDrive checkout is not this worktree. Do not clean, reset,
+  switch, merge, or discard it.
+- Claude and Codex share this integration worktree. Uncommitted content is real
+  work. Check status before every edit, test, commit, push, or deploy.
+- Do not put credentials, cookies, user emails, provider IDs, Machine IDs, raw
+  queries, candidate data, approval material, or tokens in argv, logs, URLs,
+  fixtures, Relay, Graphify artifacts, or git commits.
+- Do not infer write authority from `gh auth status`, a tracking ref, a
+  successful public read, or a fast-forward graph.
+- Do not call the app enterprise-ready or production-ready from local source
+  evidence. The live build/migration, model credit, governance, signed
+  promotion, framework deployment, tenant isolation, egress, HA/restore, and
+  acceptance receipts are still open.
+- Keep `AGENT_FRAMEWORK_EXECUTION_ENABLED=false` and
+  `AGENT_FRAMEWORK_KILL_SWITCH=true` until every activation gate is reviewed.
+- Never weaken image digests, dependency hashes, secret-file rules, Gitleaks,
+  signature/SBOM/provenance/scan checks, database ownership, RLS, or recovery
+  preflight to make a release green.
+- The canonical recovery fingerprint, table inventory, function allowlists, and
+  migration ledger must move atomically with every new migration.
+- Gitleaks allow comments in this shift are limited to exact environment names
+  and deterministic rejection/redaction fixtures. New findings still fail.

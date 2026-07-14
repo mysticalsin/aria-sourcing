@@ -123,11 +123,11 @@ RECOVERY_RESTORE_HOST="${RECOVERY_RESTORE_MACHINE_ID}.vm.${RECOVERY_RESTORE_APP}
 RECOVERY_SOURCE_HOST="${RECOVERY_SOURCE_MACHINE_ID}.vm.aria-mantu-db.internal"
 export RECOVERY_RESTORE_HOST RECOVERY_SOURCE_HOST
 
-required_secrets=(FLY_PG_PASSWORD FLY_SUPABASE_ADMIN_TARGET_PASSWORD FLY_AUTH_DB_PASSWORD FLY_REST_DB_PASSWORD FLY_JWT_SECRET FLY_SUPABASE_ANON_KEY FLY_SUPABASE_SERVICE_KEY FLY_DATA_ENCRYPTION_KEY FLY_CRON_SECRET)
+required_secrets=(FLY_PG_PASSWORD FLY_SUPABASE_ADMIN_TARGET_PASSWORD FLY_AUTH_DB_PASSWORD FLY_REST_DB_PASSWORD FLY_JWT_SECRET FLY_SUPABASE_ANON_KEY FLY_SUPABASE_SERVICE_KEY FLY_DATA_ENCRYPTION_KEY FLY_CRON_SECRET FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET FLY_DEERFLOW_ADAPTER_TOKEN FLY_FLOWISE_ADAPTER_TOKEN)
 for key in "${required_secrets[@]}"; do [ -n "${!key:-}" ] || die "required deployment secret is unset: $key"; done
 FLY_SUPABASE_ADMIN_CURRENT_PASSWORD="${FLY_SUPABASE_ADMIN_CURRENT_PASSWORD:-$FLY_SUPABASE_ADMIN_TARGET_PASSWORD}"
 FLY_DATA_ENCRYPTION_PREVIOUS_KEYS="${FLY_DATA_ENCRYPTION_PREVIOUS_KEYS:-}"
-export FLY_PG_PASSWORD FLY_SUPABASE_ADMIN_TARGET_PASSWORD FLY_AUTH_DB_PASSWORD FLY_REST_DB_PASSWORD FLY_JWT_SECRET FLY_DATA_ENCRYPTION_KEY FLY_DATA_ENCRYPTION_PREVIOUS_KEYS FLY_CRON_SECRET
+export FLY_PG_PASSWORD FLY_SUPABASE_ADMIN_TARGET_PASSWORD FLY_AUTH_DB_PASSWORD FLY_REST_DB_PASSWORD FLY_JWT_SECRET FLY_DATA_ENCRYPTION_KEY FLY_DATA_ENCRYPTION_PREVIOUS_KEYS FLY_CRON_SECRET FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET FLY_DEERFLOW_ADAPTER_TOKEN FLY_FLOWISE_ADAPTER_TOKEN
 node <<'NODE'
 const targets = [
   ["FLY_PG_PASSWORD", process.env.FLY_PG_PASSWORD],
@@ -164,6 +164,25 @@ if (previousKeysRaw) {
 }
 if (!/^[0-9a-f]{64}$/.test(process.env.FLY_CRON_SECRET ?? "")) {
   throw new Error("FLY_CRON_SECRET must be 64 lowercase hexadecimal characters");
+}
+const frameworkAuthorities = [
+  ["FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET", process.env.FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET],
+  ["FLY_DEERFLOW_ADAPTER_TOKEN", process.env.FLY_DEERFLOW_ADAPTER_TOKEN],
+  ["FLY_FLOWISE_ADAPTER_TOKEN", process.env.FLY_FLOWISE_ADAPTER_TOKEN],
+];
+for (const [name, value] of frameworkAuthorities) {
+  if (typeof value !== "string" || value.length < 32 || value.length > 4_096 || /\s/.test(value)) {
+    throw new Error(`${name} must be 32-4096 non-whitespace characters`);
+  }
+}
+const independentAuthorities = [
+  ...frameworkAuthorities.map(([, value]) => value),
+  process.env.FLY_JWT_SECRET,
+  process.env.FLY_DATA_ENCRYPTION_KEY,
+  process.env.FLY_CRON_SECRET,
+];
+if (new Set(independentAuthorities).size !== independentAuthorities.length) {
+  throw new Error("framework and application authorities must be independent");
 }
 for (const [name, value] of targets) {
   if (!/^[A-Za-z0-9_-]{43,128}$/.test(value ?? "")) {
@@ -207,6 +226,51 @@ GITHUB_SOURCE_TOKEN="${GITHUB_SOURCE_TOKEN:-}"
 KIMI_API_KEY="${KIMI_API_KEY:-}"
 KIMI_BASE_URL="${KIMI_BASE_URL:-}"
 ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
+
+FRAMEWORK_ENV_NAMES=(
+  AGENT_FRAMEWORKS_REQUIRED
+  AGENT_FRAMEWORK_EXECUTION_ENABLED
+  AGENT_FRAMEWORK_KILL_SWITCH
+  AGENT_FRAMEWORK_CONFIGURATION_SHA256
+  AGENT_FRAMEWORK_READINESS_WORKSPACE_ID
+  FRAMEWORK_ADAPTER_IMAGE_DIGEST
+  REDIS_IMAGE_DIGEST
+  DEERFLOW_ADAPTER_URL
+  DEERFLOW_SOURCE_COMMIT
+  DEERFLOW_IMAGE_DIGEST
+  DEERFLOW_DATABASE_IMAGE_DIGEST
+  DEERFLOW_FRAMEWORK_INSTANCE_ID
+  DEERFLOW_MODEL_GATEWAY_IMAGE_DIGEST
+  DEERFLOW_CLOUD_PROVIDER_ID
+  DEERFLOW_MODEL_PROVIDER
+  DEERFLOW_MODEL_ID
+  DEERFLOW_MODEL_BASE_URL
+  DEERFLOW_MODEL_CREDENTIAL_VERSION
+  FLOWISE_ADAPTER_URL
+  FLOWISE_SOURCE_COMMIT
+  FLOWISE_IMAGE_DIGEST
+  FLOWISE_WORKER_IMAGE_DIGEST
+  FLOWISE_DATABASE_IMAGE_DIGEST
+  FLOWISE_FRAMEWORK_INSTANCE_ID
+  FLOWISE_WORKSPACE_ID
+  FLOWISE_READINESS_WORKFLOW_ID
+  FLOWISE_TENANT_ISOLATION
+  FLOWISE_QUEUE_NAME
+)
+for key in "${FRAMEWORK_ENV_NAMES[@]}"; do
+  [ -n "${!key:-}" ] || die "required framework deployment identity is unset: $key"
+done
+[ "$AGENT_FRAMEWORKS_REQUIRED" = true ] || die "production framework readiness must remain required"
+[[ "$AGENT_FRAMEWORK_EXECUTION_ENABLED" =~ ^(true|false)$ ]] || die "AGENT_FRAMEWORK_EXECUTION_ENABLED must be boolean"
+[[ "$AGENT_FRAMEWORK_KILL_SWITCH" =~ ^(true|false)$ ]] || die "AGENT_FRAMEWORK_KILL_SWITCH must be boolean"
+DERIVED_FRAMEWORK_CONFIGURATION_SHA256="$(node scripts/agent-framework-configuration.mjs --sha-only)" \
+  || die "canonical framework configuration is invalid"
+[ "$AGENT_FRAMEWORK_CONFIGURATION_SHA256" = "$DERIVED_FRAMEWORK_CONFIGURATION_SHA256" ] \
+  || die "configured framework SHA-256 does not match the canonical manifest"
+declare -a FRAMEWORK_DEPLOY_ENV_ARGS=()
+for key in "${FRAMEWORK_ENV_NAMES[@]}"; do
+  FRAMEWORK_DEPLOY_ENV_ARGS+=(--env "$key=${!key}")
+done
 
 read_pinned_runtime_image(){
   local config="$1" expected_repository="$2"
@@ -504,7 +568,7 @@ BOOTSTRAP_ALLOWED_SECRET_NAMES=("${BOOTSTRAP_OWNER_SECRET_NAMES[@]}" POSTGRES_TA
 AUTH_SECRET_NAMES=(GOTRUE_JWT_SECRET GOTRUE_DB_DATABASE_URL)
 REST_SECRET_NAMES=(PGRST_JWT_SECRET PGRST_APP_SETTINGS_JWT_SECRET PGRST_DB_URI)
 KONG_SECRET_NAMES=(SUPABASE_ANON_KEY SUPABASE_SERVICE_KEY)
-APP_REQUIRED_SECRET_NAMES=(SUPABASE_SERVICE_ROLE_KEY DATA_ENCRYPTION_KEY CRON_SECRET)
+APP_REQUIRED_SECRET_NAMES=(SUPABASE_SERVICE_ROLE_KEY DATA_ENCRYPTION_KEY CRON_SECRET AGENT_FRAMEWORK_CAPABILITY_SECRET DEERFLOW_ADAPTER_TOKEN FLOWISE_ADAPTER_TOKEN)
 APP_OPTIONAL_SECRET_NAMES=(DATA_ENCRYPTION_PREVIOUS_KEYS TAVILY_API_KEY KIMI_API_KEY KIMI_BASE_URL ANTHROPIC_API_KEY GITHUB_TOKEN)
 APP_ALLOWED_SECRET_NAMES=("${APP_REQUIRED_SECRET_NAMES[@]}" "${APP_OPTIONAL_SECRET_NAMES[@]}")
 set_component_secret_state(){
@@ -677,20 +741,28 @@ app_image_digest(){
 }
 
 verify_apollo_cleanup_release(){
-  local expected_digest="$1" release_sha="$2" not_before="$3" machines cleanup_machine logs attempt=1
+  local expected_digest="$1" release_sha="$2" not_before="$3" machines process_receipt machine_ids cleanup_machine heartbeat_machine cleanup_logs heartbeat_logs attempt=1
   machines="$(fly machines list --app aria-mantu-app --json)" || return
-  cleanup_machine="$(node scripts/verify-apollo-cleanup-release.mjs machines "$expected_digest" <<< "$machines")" || return
+  process_receipt="$(node scripts/verify-apollo-cleanup-release.mjs machines "$expected_digest" <<< "$machines")" || return
+  machine_ids="$(node -e '
+    const receipt = JSON.parse(process.argv[1]);
+    if (typeof receipt.cleanupMachineId !== "string" || typeof receipt.frameworkHeartbeatMachineId !== "string") process.exit(1);
+    process.stdout.write(`${receipt.cleanupMachineId}\t${receipt.frameworkHeartbeatMachineId}`);
+  ' "$process_receipt")" || return
+  IFS=$'\t' read -r cleanup_machine heartbeat_machine <<< "$machine_ids"
   while [ "$attempt" -le 6 ]; do
-    if logs="$(fast 30 fly logs --app aria-mantu-app --machine "$cleanup_machine" --no-tail --json 2>&1)" &&
-      node scripts/verify-apollo-cleanup-release.mjs logs "$release_sha" "$not_before" <<< "$logs"
+    if cleanup_logs="$(fast 30 fly logs --app aria-mantu-app --machine "$cleanup_machine" --no-tail --json 2>&1)" &&
+      node scripts/verify-apollo-cleanup-release.mjs logs "$release_sha" "$not_before" <<< "$cleanup_logs" &&
+      heartbeat_logs="$(fast 30 fly logs --app aria-mantu-app --machine "$heartbeat_machine" --no-tail --json 2>&1)" &&
+      node scripts/verify-apollo-cleanup-release.mjs heartbeat-logs "$release_sha" "$not_before" <<< "$heartbeat_logs"
     then
-      echo "   OK cleanup process group and healthy startup event"
+      echo "   OK app process topology and healthy cleanup/agent-framework heartbeat events"
       return 0
     fi
     attempt=$((attempt+1))
     [ "$attempt" -gt 6 ] || sleep 10
   done
-  echo "ERROR: cleanup process did not emit a healthy bounded startup receipt" >&2
+  echo "ERROR: application background processes did not emit healthy bounded release receipts" >&2
   return 1
 }
 
@@ -762,7 +834,7 @@ const receipt = {
 fs.writeFileSync(process.env.PREDEPLOY_RECEIPT_PATH, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
 NODE
 
-declare -a A=(SUPABASE_SERVICE_ROLE_KEY="$FLY_SUPABASE_SERVICE_KEY" DATA_ENCRYPTION_KEY="$FLY_DATA_ENCRYPTION_KEY" CRON_SECRET="$FLY_CRON_SECRET")
+declare -a A=(SUPABASE_SERVICE_ROLE_KEY="$FLY_SUPABASE_SERVICE_KEY" DATA_ENCRYPTION_KEY="$FLY_DATA_ENCRYPTION_KEY" CRON_SECRET="$FLY_CRON_SECRET" AGENT_FRAMEWORK_CAPABILITY_SECRET="$FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET" DEERFLOW_ADAPTER_TOKEN="$FLY_DEERFLOW_ADAPTER_TOKEN" FLOWISE_ADAPTER_TOKEN="$FLY_FLOWISE_ADAPTER_TOKEN")
 declare -a APP_DESIRED_SECRET_NAMES=("${APP_REQUIRED_SECRET_NAMES[@]}")
 declare -a APP_RETIRED_OPTIONAL_SECRET_NAMES=()
 if [ -n "$FLY_DATA_ENCRYPTION_PREVIOUS_KEYS" ]; then
@@ -975,7 +1047,7 @@ stage_secrets aria-mantu-app "app secrets" "${A[@]}"
 stage_optional_secret_removals aria-mantu-app "${APP_RETIRED_OPTIONAL_SECRET_NAMES[@]}"
 APOLLO_CLEANUP_NOT_BEFORE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 activate_component_secrets aria-mantu-app "app" \
-  fly deploy --config fly.app.toml --image "$ARIA_APP_IMAGE_REF" --wait-timeout 10m --env ARIA_RELEASE_SHA="$ARIA_RELEASE_SHA" --env ARIA_EXPECTED_MIGRATION="$EXPECTED_MIGRATION_FILE" --env ARIA_EXPECTED_MIGRATION_SHA="$EXPECTED_MIGRATION_SHA" --env ARIA_EXPECTED_MIGRATION_COUNT="$EXPECTED_MIGRATION_COUNT" --env ARIA_EXPECTED_LEDGER_SHA="$EXPECTED_LEDGER_SHA"
+  fly deploy --config fly.app.toml --image "$ARIA_APP_IMAGE_REF" --wait-timeout 10m --env ARIA_RELEASE_SHA="$ARIA_RELEASE_SHA" --env ARIA_EXPECTED_MIGRATION="$EXPECTED_MIGRATION_FILE" --env ARIA_EXPECTED_MIGRATION_SHA="$EXPECTED_MIGRATION_SHA" --env ARIA_EXPECTED_MIGRATION_COUNT="$EXPECTED_MIGRATION_COUNT" --env ARIA_EXPECTED_LEDGER_SHA="$EXPECTED_LEDGER_SHA" "${FRAMEWORK_DEPLOY_ENV_ARGS[@]}"
 validate_secret_inventory aria-mantu-app exact "${APP_DESIRED_SECRET_NAMES[@]}" \
   || die "application activation did not deploy the exact managed secret set"
 rs 3 50 "app v4" ensure_fly_ip aria-mantu-app v4
@@ -997,7 +1069,7 @@ APP_IMAGE_DIGEST="$(app_image_digest aria-mantu-app)"
 [ "$AUTH_IMAGE_DIGEST" = "$AUTH_EXPECTED_DIGEST" ] || die "running Auth image digest does not match fly.auth.toml"
 [ "$REST_IMAGE_DIGEST" = "$REST_EXPECTED_DIGEST" ] || die "running REST image digest does not match fly.rest.toml"
 verify_apollo_cleanup_release "$APP_IMAGE_DIGEST" "$ARIA_RELEASE_SHA" "$APOLLO_CLEANUP_NOT_BEFORE" \
-  || die "Apollo authority cleanup process failed release acceptance"
+  || die "application background process release acceptance failed"
 
 # Re-read the complete secret topology immediately before materializing release
 # evidence. This catches late manual or concurrent drift, including dangerous

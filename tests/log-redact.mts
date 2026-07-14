@@ -30,7 +30,7 @@ ok("text with no email is unchanged", redactEmail("no address here") === "no add
 /* ---- redactSecrets ---- */
 ok("masks a Bearer token (keeps scheme)", redactSecrets("Authorization: Bearer abc123def456ghi") === "Authorization: Bearer ***");
 ok("masks a Basic credential", redactSecrets("Basic dXNlcjpwYXNzd29yZA") === "Basic ***");
-ok("masks a provider sk- key", (() => { const o = redactSecrets("key=sk-abcdef123456"); return o.includes("sk-***") && !o.includes("abcdef123456"); })());
+ok("masks a provider sk- key", (() => { const o = redactSecrets("key=sk-abcdef123456"); return o.includes("sk-***") && !o.includes("abcdef123456"); })()); // gitleaks:allow - redaction canary
 ok("masks a JWT", redactSecrets("token eyJhbGciOiJIUzI1.eyJzdWIiOiIxMjM.SflKxwRJSMeKKF2") === "token ***");
 ok("masks an AWS access key id", redactSecrets("AKIAIOSFODNN7EXAMPLE") === "***");
 ok("masks a long hex secret", redactSecrets("sig=" + "a".repeat(40)) === "sig=***");

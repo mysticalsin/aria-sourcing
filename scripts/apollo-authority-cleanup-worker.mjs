@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const RESPONSE_MAX_BYTES = 65_536;
 const COUNTERS = [
   "processed",
   "expired_receipts_cleared",
@@ -9,6 +10,69 @@ const COUNTERS = [
   "expired_targets_scrubbed",
   "quota_rows_deleted",
 ];
+const SOURCING_COUNTERS = {
+  retired: "sourcing_lessons_retired",
+  lessons_deleted: "sourcing_lessons_deleted",
+  artifacts_deleted: "sourcing_artifacts_deleted",
+  runs_deleted: "sourcing_runs_deleted",
+  quota_deleted: "sourcing_quota_rows_deleted",
+};
+const FRAMEWORK_COUNTERS = {
+  deleted: "framework_authorizations_deleted",
+};
+const ALL_COUNTERS = [
+  ...COUNTERS,
+  ...Object.values(SOURCING_COUNTERS),
+  ...Object.values(FRAMEWORK_COUNTERS),
+];
+const CLEANUP_RPCS = new Set([
+  "cleanup_apollo_enrichment_authority",
+  "cleanup_sourcing_learning_authority",
+  "cleanup_agent_framework_authority",
+]);
+
+async function readBoundedJson(response) {
+  const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+  if (contentType !== "application/json" || !response.body) {
+    await response.body?.cancel().catch(() => undefined);
+    return { data: null, error: { code: "invalid_json_response" } };
+  }
+  const declared = response.headers.get("content-length");
+  if (declared !== null) {
+    const length = /^[0-9]+$/.test(declared) ? Number(declared) : Number.NaN;
+    if (!Number.isSafeInteger(length) || length > RESPONSE_MAX_BYTES) {
+      await response.body.cancel().catch(() => undefined);
+      return { data: null, error: { code: "response_too_large" } };
+    }
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > RESPONSE_MAX_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        return { data: null, error: { code: "response_too_large" } };
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+  } catch {
+    return { data: null, error: { code: "invalid_json_response" } };
+  } finally {
+    reader.releaseLock();
+  }
+  try {
+    return { data: JSON.parse(text), error: null };
+  } catch {
+    return { data: null, error: { code: "invalid_json_response" } };
+  }
+}
 
 export function createSupabaseServiceClient(baseUrl, serviceKey, fetchImpl = fetch) {
   const endpoint = new URL(baseUrl);
@@ -28,14 +92,10 @@ export function createSupabaseServiceClient(baseUrl, serviceKey, fetchImpl = fet
     } catch {
       return { data: null, error: { code: "transport_unavailable" } };
     }
-    let data = null;
-    try {
-      data = await response.json();
-    } catch {
-      return { data: null, error: { code: "invalid_json_response" } };
-    }
+    const parsed = await readBoundedJson(response);
+    if (parsed.error) return parsed;
     return response.ok
-      ? { data, error: null }
+      ? parsed
       : { data: null, error: { code: `http_${response.status}` } };
   };
 
@@ -69,7 +129,7 @@ export function createSupabaseServiceClient(baseUrl, serviceKey, fetchImpl = fet
       };
     },
     rpc(name, args) {
-      if (name !== "cleanup_apollo_enrichment_authority") {
+      if (!CLEANUP_RPCS.has(name)) {
         throw new Error("unsupported cleanup RPC");
       }
       return request(`/rest/v1/rpc/${name}`, {
@@ -92,6 +152,23 @@ function cleanupReceipt(value) {
   return receipt;
 }
 
+function mappedCleanupReceipt(value, mapping) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.status !== "cleaned") {
+    return null;
+  }
+  const receipt = {};
+  for (const [source, target] of Object.entries(mapping)) {
+    const parsed = value[source];
+    if (!Number.isSafeInteger(parsed) || parsed < 0) return null;
+    receipt[target] = parsed;
+  }
+  return receipt;
+}
+
+function receiptTotal(receipt, keys) {
+  return keys.reduce((total, key) => total + receipt[key], 0);
+}
+
 export async function cleanupApolloAuthorityOnce(client, options = {}) {
   const pageSize = options.pageSize ?? 100;
   const maxPages = options.maxPages ?? 100;
@@ -104,7 +181,7 @@ export async function cleanupApolloAuthorityOnce(client, options = {}) {
     !Number.isSafeInteger(maxPassesPerWorkspace) || maxPassesPerWorkspace < 1 || maxPassesPerWorkspace > 100
   ) throw new Error("invalid cleanup worker bounds");
 
-  const totals = Object.fromEntries(COUNTERS.map((key) => [key, 0]));
+  const totals = Object.fromEntries(ALL_COUNTERS.map((key) => [key, 0]));
   const failures = [];
   let workspacesProcessed = 0;
   let incomplete = false;
@@ -130,18 +207,59 @@ export async function cleanupApolloAuthorityOnce(client, options = {}) {
       }
       let workspaceFailed = false;
       for (let pass = 0; pass < maxPassesPerWorkspace; pass += 1) {
-        const { data: rawReceipt, error: cleanupError } = await client.rpc(
+        const { data: rawApolloReceipt, error: apolloCleanupError } = await client.rpc(
           "cleanup_apollo_enrichment_authority",
           { p_workspace_id: workspaceId, p_limit: perCallLimit },
         );
-        const receipt = cleanupError ? null : cleanupReceipt(rawReceipt);
-        if (!receipt) {
-          failures.push({ workspaceId, code: "cleanup_rpc_unavailable" });
+        const apolloReceipt = apolloCleanupError ? null : cleanupReceipt(rawApolloReceipt);
+        if (!apolloReceipt) {
+          failures.push({ workspaceId, code: "apollo_cleanup_rpc_unavailable" });
           workspaceFailed = true;
           break;
         }
-        for (const key of COUNTERS) totals[key] += receipt[key];
-        if (receipt.processed < perCallLimit) break;
+        for (const key of COUNTERS) totals[key] += apolloReceipt[key];
+
+        const { data: rawSourcingReceipt, error: sourcingCleanupError } = await client.rpc(
+          "cleanup_sourcing_learning_authority",
+          { p_workspace_id: workspaceId, p_limit: perCallLimit },
+        );
+        const sourcingReceipt = sourcingCleanupError
+          ? null
+          : mappedCleanupReceipt(rawSourcingReceipt, SOURCING_COUNTERS);
+        if (!sourcingReceipt) {
+          failures.push({ workspaceId, code: "sourcing_cleanup_rpc_unavailable" });
+          workspaceFailed = true;
+          break;
+        }
+        for (const key of Object.values(SOURCING_COUNTERS)) totals[key] += sourcingReceipt[key];
+
+        const { data: rawFrameworkReceipt, error: frameworkCleanupError } = await client.rpc(
+          "cleanup_agent_framework_authority",
+          { p_workspace_id: workspaceId, p_limit: perCallLimit },
+        );
+        const frameworkReceipt = frameworkCleanupError
+          ? null
+          : mappedCleanupReceipt(rawFrameworkReceipt, FRAMEWORK_COUNTERS);
+        if (!frameworkReceipt) {
+          failures.push({ workspaceId, code: "framework_cleanup_rpc_unavailable" });
+          workspaceFailed = true;
+          break;
+        }
+        for (const key of Object.values(FRAMEWORK_COUNTERS)) totals[key] += frameworkReceipt[key];
+
+        const sourcingProcessed = receiptTotal(
+          sourcingReceipt,
+          Object.values(SOURCING_COUNTERS),
+        );
+        const frameworkProcessed = receiptTotal(
+          frameworkReceipt,
+          Object.values(FRAMEWORK_COUNTERS),
+        );
+        const moreWorkMayRemain =
+          apolloReceipt.processed >= perCallLimit ||
+          sourcingProcessed >= perCallLimit ||
+          frameworkProcessed >= perCallLimit;
+        if (!moreWorkMayRemain) break;
         if (pass === maxPassesPerWorkspace - 1) {
           failures.push({ workspaceId, code: "workspace_cleanup_bound_reached" });
           workspaceFailed = true;

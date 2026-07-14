@@ -11,8 +11,19 @@ import {
   type SourceResult,
 } from "../sourcing/candidate-mappers";
 import type { ApolloSearchProfile } from "../sourcing/apollo";
+import {
+  campaignAllowsLiveSourcing,
+  campaignAllowsManualCandidateIntake,
+} from "../sourcing/campaign-lifecycle";
 import { GITHUB_USERNAME_RE, type GithubUser } from "../sourcing/github";
-import { sourcingAgentCampaignFingerprint } from "../sourcing/sourcing-agent-contract";
+import {
+  candidateFromSourcingAgentDto,
+  sourcingAgentCampaignFingerprint,
+} from "../sourcing/sourcing-agent-contract";
+import {
+  acknowledgeReviewedSourcing,
+  requestReviewedSourcing,
+} from "../sourcing/sourcing-agent-client";
 import {
   ensureWebQueryScope,
   isWebSearchPlatform,
@@ -23,6 +34,7 @@ import {
   SOURCE_PLATFORMS,
   type Activity,
   type AgentSkill,
+  type CampaignStatus,
   type Candidate,
   type CandidateLawfulBasis,
   type HermesState,
@@ -31,7 +43,11 @@ import {
 } from "../types";
 import { genId, initialsFrom } from "../utils";
 import { baseWebQuery } from "./sourcing-helpers";
-import type { ApolloEnrichmentErrorCode, HermesActions } from "./contracts";
+import type {
+  ApolloEnrichmentErrorCode,
+  HermesActions,
+  SourceNextBatchResult,
+} from "./contracts";
 
 export type SourcingActions = Pick<
   HermesActions,
@@ -54,6 +70,9 @@ export interface SourcingActionDependencies {
   sourcingMutationAllowed: () => boolean;
   workspaceEffectAllowed: () => boolean;
   syntheticSourcingAllowed: () => boolean;
+  candidatePersistenceAllowed: (
+    provenance: NonNullable<Candidate["provenance"]>,
+  ) => boolean;
   workspaceFetch: typeof fetch;
   makeActivity: (activity: SourcingActivityDraft) => Activity;
   withActivity: (
@@ -634,13 +653,25 @@ function invalidRequest(error: string) {
   return { ok: false as const, error, source: "invalid" as const };
 }
 
+function liveSourcingUnavailable(status: CampaignStatus): string {
+  return status === "Paused"
+    ? "Campaign is paused."
+    : "Campaign is not active for sourcing.";
+}
+
+function manualIntakeUnavailable(status: CampaignStatus): string {
+  return status === "Paused"
+    ? "Campaign is paused."
+    : "Campaign is already filled.";
+}
+
 export function createSourcingActions({
-  commit,
   commitPersisted,
   currentState,
   sourcingMutationAllowed,
   workspaceEffectAllowed,
   syntheticSourcingAllowed,
+  candidatePersistenceAllowed,
   workspaceFetch,
   makeActivity,
   withActivity,
@@ -648,6 +679,141 @@ export function createSourcingActions({
   effectiveWeights,
   emitSource,
 }: SourcingActionDependencies): SourcingActions {
+  const sourceReviewedCampaignBatch = async (
+    campaignId: string,
+    count: number,
+    initialFingerprint: string,
+    agentFramework?: { runId: string; capabilityToken: string; query: string },
+  ): Promise<SourceNextBatchResult> => {
+    const reviewed = await requestReviewedSourcing(
+      workspaceFetch,
+      campaignId,
+      count,
+      agentFramework,
+    );
+    if (!reviewed.ok) {
+      return { ok: false, error: reviewed.error, source: "unavailable" };
+    }
+    if (!workspaceEffectAllowed()) {
+      return {
+        ok: false,
+        error: "Workspace unavailable. Retry before saving sourced candidates.",
+        source: "unavailable",
+      };
+    }
+    if (!sourcingMutationAllowed()) {
+      return {
+        ok: false,
+        error: "You do not have permission to source candidates in this workspace.",
+        source: "forbidden",
+      };
+    }
+    const latest = currentState();
+    const latestCampaign = latest?.campaigns.find((item) => item.id === campaignId);
+    if (
+      !latest ||
+      !latestCampaign ||
+      !campaignAllowsLiveSourcing(latestCampaign.status) ||
+      !evaluateNeedReadiness(latestCampaign.jobAnalysis).ready ||
+      reviewed.value.campaignFingerprint !== initialFingerprint ||
+      sourcingAgentCampaignFingerprint(latestCampaign) !== initialFingerprint
+    ) {
+      return invalidRequest(
+        "Campaign authority changed during sourcing. Review the current brief and retry.",
+      );
+    }
+
+    const observedPlatforms = [
+      ...reviewed.value.feedbackReceipts.map((receipt) => receipt.platform),
+      ...reviewed.value.candidates.map((candidate) => candidate.sourcePlatform),
+    ];
+    const source = observedPlatforms.every((platform) => platform === "GitHub")
+      ? "github" as const
+      : "web" as const;
+    let authorized = false;
+    let result: SourceResult = { accepted: [], skipped: [] };
+    const applied = await commitPersisted((previous) => {
+      if (!workspaceEffectAllowed() || !sourcingMutationAllowed()) return previous;
+      const campaign = previous.campaigns.find((item) => item.id === campaignId);
+      if (
+        !campaign ||
+        !campaignAllowsLiveSourcing(campaign.status) ||
+        !evaluateNeedReadiness(campaign.jobAnalysis).ready ||
+        sourcingAgentCampaignFingerprint(campaign) !== reviewed.value.campaignFingerprint
+      ) {
+        return previous;
+      }
+      authorized = true;
+      const weights = effectiveWeights(campaign.scoringWeights, previous.skills);
+      const scored = reviewed.value.candidates.map((dto) => {
+        const candidate = candidateFromSourcingAgentDto(dto);
+        const score = scoreCandidate(candidate, campaign.jobAnalysis, weights);
+        return {
+          ...candidate,
+          matchScore: score.score,
+          matchBreakdown: score.breakdown,
+        };
+      });
+      result = dedupeCandidates(scored, previous.candidates, {
+        excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
+      });
+      let next: HermesState = {
+        ...previous,
+        candidates: [...result.accepted, ...previous.candidates],
+      };
+      if (result.accepted.length > 0) next = recomputeMetrics(next, campaignId);
+      const executionLabel =
+        reviewed.value.mode === "cloud"
+          ? "Reviewed cloud tool-calling"
+          : "Reviewed deterministic GitHub";
+      return withActivity(
+        next,
+        makeActivity({
+          type: "sourcing",
+          title: `Sourced ${result.accepted.length} candidates`,
+          notes: `${executionLabel} batch. ${result.skipped.length} skipped by dedupe and exclusions.`,
+          outcome: `${result.accepted.length} accepted, ${result.skipped.length} skipped (live)`,
+          campaignId,
+          linkedEntityType: "campaign",
+          linkedEntityId: campaignId,
+        }),
+        campaignId,
+      );
+    });
+    if (!applied || !authorized) {
+      return {
+        ok: false,
+        error: "Workspace changed before the sourced candidates could be saved. Retry sourcing.",
+        source: "unavailable",
+      };
+    }
+    if (agentFramework) {
+      const resultSha256 = reviewed.value.agentFrameworkResultSha256;
+      if (!resultSha256 || !await acknowledgeReviewedSourcing(
+        workspaceFetch,
+        agentFramework,
+        resultSha256,
+      )) {
+        return {
+          ok: false,
+          error: "Candidates were saved, but the framework persistence receipt could not be confirmed. Retry this run to reconcile it.",
+          source: "unavailable",
+          retryable: "agent_framework_reconcile",
+        };
+      }
+    }
+    if (result.accepted.length > 0) {
+      emitSource({ kind: "source", campaignId, count: result.accepted.length });
+    }
+    return {
+      ...result,
+      source,
+      ok: true,
+      mode: reviewed.value.mode,
+      feedbackReceipts: reviewed.value.feedbackReceipts,
+    };
+  };
+
   const sourceNextBatch: SourcingActions["sourceNextBatch"] = async (
     campaignId,
     opts,
@@ -685,7 +851,10 @@ export function createSourcingActions({
         source: "not_found",
       };
     }
-    if (initialCampaign.status === "Paused") {
+    if (!campaignAllowsLiveSourcing(initialCampaign.status)) {
+      if (initialCampaign.status !== "Paused") {
+        return invalidRequest(liveSourcingUnavailable(initialCampaign.status));
+      }
       return { ok: false, error: "Campaign is paused.", source: "paused" };
     }
     if (!evaluateNeedReadiness(initialCampaign.jobAnalysis).ready) {
@@ -693,15 +862,20 @@ export function createSourcingActions({
     }
     const initialFingerprint = sourcingAgentCampaignFingerprint(initialCampaign);
 
-    const requestedPlatform =
-      opts?.platform ?? roleProfile(initialCampaign.jobAnalysis).platforms[0];
+    const demoSourcing = syntheticSourcingAllowed();
+    const requestedPlatform = opts?.platform ?? (
+      demoSourcing && !candidatePersistenceAllowed("live")
+        ? "Talent Pool"
+        : roleProfile(initialCampaign.jobAnalysis).platforms[0]
+    );
     if (!isSourcePlatform(requestedPlatform)) {
       return invalidRequest("Unsupported sourcing platform.");
     }
     const count = opts?.count ?? 6;
-    if (!Number.isInteger(count) || count < 1 || count > MAX_SOURCE_COUNT) {
+    const maxCount = demoSourcing ? MAX_SOURCE_COUNT : 8;
+    if (!Number.isInteger(count) || count < 1 || count > maxCount) {
       return invalidRequest(
-        `Source count must be an integer between 1 and ${MAX_SOURCE_COUNT}.`,
+        `Source count must be an integer between 1 and ${maxCount}.`,
       );
     }
     if (DEDICATED_PLATFORMS.has(requestedPlatform)) {
@@ -709,12 +883,26 @@ export function createSourcingActions({
         `${requestedPlatform} sourcing must use its dedicated provider action.`,
       );
     }
+    if (!SYNTHETIC_PLATFORMS.has(requestedPlatform) && !candidatePersistenceAllowed("live")) {
+      return invalidRequest(
+        "Real candidate sourcing requires a live workspace. This browser-local demo can persist only synthetic candidates.",
+      );
+    }
     if (
       SYNTHETIC_PLATFORMS.has(requestedPlatform) &&
-      !syntheticSourcingAllowed()
+      !demoSourcing
     ) {
       return invalidRequest(
         `${requestedPlatform} simulation is available only in demo environments.`,
+      );
+    }
+
+    if (!demoSourcing) {
+      return await sourceReviewedCampaignBatch(
+        campaignId,
+        count,
+        initialFingerprint,
+        opts?.agentFramework,
       );
     }
 
@@ -828,7 +1016,10 @@ export function createSourcingActions({
     if (!campaign) {
       return { ok: false, error: "Campaign not found.", source: "not_found" };
     }
-    if (campaign.status === "Paused") {
+    if (!campaignAllowsLiveSourcing(campaign.status)) {
+      if (campaign.status !== "Paused") {
+        return invalidRequest(liveSourcingUnavailable(campaign.status));
+      }
       return { ok: false, error: "Campaign is paused.", source: "paused" };
     }
     if (
@@ -874,10 +1065,11 @@ export function createSourcingActions({
     }
 
     let authorized = false;
-    const applied = commit((previous) => {
+    const applied = await commitPersisted((previous) => {
       const currentCampaign = previous.campaigns.find((item) => item.id === campaignId);
       if (
         !currentCampaign ||
+        !campaignAllowsLiveSourcing(currentCampaign.status) ||
         !evaluateNeedReadiness(currentCampaign.jobAnalysis).ready ||
         sourcingAgentCampaignFingerprint(currentCampaign) !== initialFingerprint
       ) {
@@ -932,6 +1124,9 @@ export function createSourcingActions({
     campaignId,
     username,
   ) => {
+    if (!candidatePersistenceAllowed("live")) {
+      return { ok: false, error: "GitHub candidate intake requires a live workspace." };
+    }
     if (!workspaceEffectAllowed()) {
       return { ok: false, error: "Workspace unavailable. Retry before sourcing." };
     }
@@ -949,8 +1144,8 @@ export function createSourcingActions({
       (campaign) => campaign.id === campaignId,
     );
     if (!initialCampaign) return { ok: false, error: "Campaign not found." };
-    if (initialCampaign.status === "Paused") {
-      return { ok: false, error: "Campaign is paused." };
+    if (!campaignAllowsLiveSourcing(initialCampaign.status)) {
+      return { ok: false, error: liveSourcingUnavailable(initialCampaign.status) };
     }
     const login = normalizeGithubLogin(username);
     if (!login) return { ok: false, error: "Enter a valid GitHub username." };
@@ -1011,7 +1206,9 @@ export function createSourcingActions({
     }
     const campaign = latestState.campaigns.find((item) => item.id === campaignId);
     if (!campaign) return { ok: false, error: "Campaign not found." };
-    if (campaign.status === "Paused") return { ok: false, error: "Campaign is paused." };
+    if (!campaignAllowsLiveSourcing(campaign.status)) {
+      return { ok: false, error: liveSourcingUnavailable(campaign.status) };
+    }
 
     const weights = effectiveWeights(campaign.scoringWeights, latestState.skills);
     const { accepted, skipped } = mapGithubCandidates(
@@ -1021,7 +1218,14 @@ export function createSourcingActions({
       latestState.candidates,
       weights,
     );
-    const applied = commit((previous) => {
+    let authorized = false;
+    const applied = await commitPersisted((previous) => {
+      if (!workspaceEffectAllowed() || !sourcingMutationAllowed()) return previous;
+      const currentCampaign = previous.campaigns.find((item) => item.id === campaignId);
+      if (!currentCampaign || !campaignAllowsLiveSourcing(currentCampaign.status)) {
+        return previous;
+      }
+      authorized = true;
       let next: HermesState = {
         ...previous,
         candidates: [...accepted, ...previous.candidates],
@@ -1045,7 +1249,7 @@ export function createSourcingActions({
         campaignId,
       );
     });
-    if (!applied) {
+    if (!applied || !authorized) {
       return {
         ok: false,
         error: "Workspace changed before the GitHub profile could be saved. Retry.",
@@ -1062,10 +1266,13 @@ export function createSourcingActions({
     };
   };
 
-  const addCandidateManual: SourcingActions["addCandidateManual"] = (
+  const addCandidateManual: SourcingActions["addCandidateManual"] = async (
     campaignId,
     input,
   ) => {
+    if (!candidatePersistenceAllowed("manual")) {
+      return { ok: false, error: "Manual candidate intake requires a live workspace." };
+    }
     if (!workspaceEffectAllowed()) {
       return { ok: false, error: "Workspace unavailable. Retry before adding a candidate." };
     }
@@ -1081,7 +1288,9 @@ export function createSourcingActions({
     }
     const campaign = state.campaigns.find((item) => item.id === campaignId);
     if (!campaign) return { ok: false, error: "Campaign not found." };
-    if (campaign.status === "Paused") return { ok: false, error: "Campaign is paused." };
+    if (!campaignAllowsManualCandidateIntake(campaign.status)) {
+      return { ok: false, error: manualIntakeUnavailable(campaign.status) };
+    }
     const fields = sanitizeManualCandidateInput(input);
     if (!fields) return { ok: false, error: "Candidate details are invalid." };
 
@@ -1143,7 +1352,14 @@ export function createSourcingActions({
       );
       return { ...candidate, matchScore: score, matchBreakdown: breakdown };
     });
-    const applied = commit((previous) => {
+    let authorized = false;
+    const applied = await commitPersisted((previous) => {
+      if (!workspaceEffectAllowed() || !sourcingMutationAllowed()) return previous;
+      const currentCampaign = previous.campaigns.find((item) => item.id === campaignId);
+      if (!currentCampaign || !campaignAllowsManualCandidateIntake(currentCampaign.status)) {
+        return previous;
+      }
+      authorized = true;
       let next: HermesState = {
         ...previous,
         candidates: [...scored, ...previous.candidates],
@@ -1167,7 +1383,7 @@ export function createSourcingActions({
         campaignId,
       );
     });
-    if (!applied) {
+    if (!applied || !authorized) {
       return {
         ok: false,
         error: "Workspace changed before the candidate could be saved. Retry.",
@@ -1194,6 +1410,9 @@ export function createSourcingActions({
       source: "error" as const,
       error,
     });
+    if (!candidatePersistenceAllowed("live")) {
+      return fail("Apollo candidate sourcing requires a live workspace.");
+    }
     if (!workspaceEffectAllowed()) {
       return fail("Workspace unavailable. Retry before sourcing.");
     }
@@ -1204,7 +1423,9 @@ export function createSourcingActions({
     if (!initialState) return fail("Workspace unavailable. Retry before sourcing.");
     const initialCampaign = initialState.campaigns.find((item) => item.id === campaignId);
     if (!initialCampaign) return fail("Campaign not found.");
-    if (initialCampaign.status === "Paused") return fail("Campaign is paused.");
+    if (!campaignAllowsLiveSourcing(initialCampaign.status)) {
+      return fail(liveSourcingUnavailable(initialCampaign.status));
+    }
 
     const request = sanitizeApolloSearchRequest(filters);
     if (!request) return fail("Apollo search filters are invalid.");
@@ -1265,7 +1486,9 @@ export function createSourcingActions({
     }
     const latestCampaign = latestState.campaigns.find((item) => item.id === campaignId);
     if (!latestCampaign) return fail("Campaign not found.");
-    if (latestCampaign.status === "Paused") return fail("Campaign is paused.");
+    if (!campaignAllowsLiveSourcing(latestCampaign.status)) {
+      return fail(liveSourcingUnavailable(latestCampaign.status));
+    }
 
     if (profiles.length === 0) {
       return { accepted: [], skipped: [], source: "apollo" };
@@ -1286,7 +1509,7 @@ export function createSourcingActions({
     const applied = await commitPersisted((previous) => {
       if (!workspaceEffectAllowed() || !sourcingMutationAllowed()) return previous;
       const campaign = previous.campaigns.find((item) => item.id === campaignId);
-      if (!campaign || campaign.status === "Paused") return previous;
+      if (!campaign || !campaignAllowsLiveSourcing(campaign.status)) return previous;
       const weights = effectiveWeights(campaign.scoringWeights, previous.skills);
       const result = mapApolloBatch(
         profiles,
@@ -1332,6 +1555,9 @@ export function createSourcingActions({
   const prepareApolloEnrichment: SourcingActions["prepareApolloEnrichment"] = async (
     candidateId,
   ) => {
+    if (!candidatePersistenceAllowed("live")) {
+      return { ok: false, error: "Apollo enrichment requires a live workspace." };
+    }
     if (!workspaceEffectAllowed()) {
       return { ok: false, error: "Workspace unavailable. Retry before enrichment." };
     }
@@ -1479,6 +1705,9 @@ export function createSourcingActions({
     candidateId,
     confirmationNonce,
   ) => {
+    if (!candidatePersistenceAllowed("live")) {
+      return { ok: false, revealed: false, detail: "Apollo enrichment requires a live workspace." };
+    }
     if (!workspaceEffectAllowed()) {
       return { ok: false, revealed: false, detail: "Workspace unavailable. Retry before enrichment." };
     }

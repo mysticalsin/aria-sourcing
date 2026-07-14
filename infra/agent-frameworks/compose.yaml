@@ -1,0 +1,691 @@
+x-logging: &bounded_logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
+# Secret-free authority manifest consumed independently by both adapters. The
+# bootstrap-safe empty defaults make only the adapters fail closed; database,
+# Flowise, and worker services can still be started to create the initial
+# workspace and readiness sentinel.
+x-framework-configuration: &framework_configuration
+  AGENT_FRAMEWORK_READINESS_WORKSPACE_ID: "${ARIA_WORKSPACE_ID:-}"
+  AGENT_FRAMEWORK_CONFIGURATION_SHA256: "${AGENT_FRAMEWORK_CONFIGURATION_SHA256:-}"
+  FRAMEWORK_ADAPTER_IMAGE_DIGEST: "${FRAMEWORK_ADAPTER_IMAGE_REPOSITORY:-invalid}@sha256:${FRAMEWORK_ADAPTER_IMAGE_SHA256:-invalid}"
+  REDIS_IMAGE_DIGEST: "${REDIS_IMAGE_REPOSITORY:-invalid}@sha256:${REDIS_IMAGE_SHA256:-invalid}"
+  DEERFLOW_ADAPTER_URL: "${DEERFLOW_ADAPTER_URL:-}"
+  DEERFLOW_FRAMEWORK_INSTANCE_ID: "${DEERFLOW_INSTANCE_ID:-}"
+  DEERFLOW_SOURCE_COMMIT: fabadae4168db81f0eaaf62f209050f978e2f691
+  DEERFLOW_IMAGE_DIGEST: "${DEERFLOW_IMAGE_REPOSITORY:-invalid}@sha256:${DEERFLOW_IMAGE_SHA256:-invalid}"
+  DEERFLOW_DATABASE_IMAGE_DIGEST: "${DEERFLOW_POSTGRES_IMAGE_REPOSITORY:-invalid}@sha256:${DEERFLOW_POSTGRES_IMAGE_SHA256:-invalid}"
+  DEERFLOW_MODEL_GATEWAY_IMAGE_DIGEST: "${MODEL_GATEWAY_IMAGE_REPOSITORY:-invalid}@sha256:${MODEL_GATEWAY_IMAGE_SHA256:-invalid}"
+  DEERFLOW_CLOUD_PROVIDER_ID: "${DEERFLOW_CLOUD_PROVIDER_ID:-}"
+  DEERFLOW_MODEL_PROVIDER: langchain-openai
+  DEERFLOW_MODEL_ID: "${DEERFLOW_MODEL_ID:-}"
+  DEERFLOW_MODEL_BASE_URL: "${DEERFLOW_MODEL_BASE_URL:-}"
+  DEERFLOW_MODEL_CREDENTIAL_VERSION: "${DEERFLOW_MODEL_CREDENTIAL_VERSION:-}"
+  FLOWISE_ADAPTER_URL: "${FLOWISE_ADAPTER_URL:-}"
+  FLOWISE_FRAMEWORK_INSTANCE_ID: "${FLOWISE_INSTANCE_ID:-}"
+  FLOWISE_SOURCE_COMMIT: bb773ffa710bd22639c4ba2643413a0ea2b679d3
+  FLOWISE_IMAGE_DIGEST: "${FLOWISE_IMAGE_REPOSITORY:-invalid}@sha256:${FLOWISE_IMAGE_SHA256:-invalid}"
+  FLOWISE_WORKER_IMAGE_DIGEST: "${FLOWISE_WORKER_IMAGE_REPOSITORY:-invalid}@sha256:${FLOWISE_WORKER_IMAGE_SHA256:-invalid}"
+  FLOWISE_DATABASE_IMAGE_DIGEST: "${FLOWISE_POSTGRES_IMAGE_REPOSITORY:-invalid}@sha256:${FLOWISE_POSTGRES_IMAGE_SHA256:-invalid}"
+  FLOWISE_WORKSPACE_ID: "${FLOWISE_WORKSPACE_ID:-}"
+  FLOWISE_READINESS_WORKFLOW_ID: "${FLOWISE_READINESS_WORKFLOW_ID:-}"
+  FLOWISE_TENANT_ISOLATION: instance-per-workspace
+  FLOWISE_QUEUE_NAME: aria-flowise
+
+x-flowise-environment: &flowise_environment
+  NODE_ENV: production
+  PORT: "3000"
+  APP_URL: http://flowise:3000
+  DATABASE_TYPE: postgres
+  DATABASE_HOST: flowise-db
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: flowise
+  DATABASE_USER: flowise
+  DATABASE_SSL: "false"
+  MODE: queue
+  QUEUE_NAME: aria-flowise
+  REDIS_HOST: flowise-redis
+  REDIS_PORT: "6379"
+  REDIS_USERNAME: default
+  REDIS_TLS: "false"
+  WORKER_CONCURRENCY: "4"
+  NODE_OPTIONS: --max-old-space-size=1536
+  REMOVE_ON_AGE: "86400"
+  REMOVE_ON_COUNT: "10000"
+  DISABLE_FLOWISE_TELEMETRY: "true"
+  SHOW_COMMUNITY_NODES: "false"
+  ALLOW_BUILTIN_DEP: "false"
+  TOOL_FUNCTION_BUILTIN_DEP: ""
+  TOOL_FUNCTION_EXTERNAL_DEP: ""
+  CUSTOM_MCP_SECURITY_CHECK: "true"
+  CUSTOM_MCP_PROTOCOL: sse
+  CUSTOM_MCP_ALLOWED_ENV_VARS: ""
+  CUSTOM_MCP_ALLOWED_COMMANDS: ""
+  HTTP_SECURITY_CHECK: "true"
+  PATH_TRAVERSAL_SAFETY: "true"
+  OAUTH2_SECURITY_CHECK: "true"
+  CORS_ORIGINS: http://flowise:3000
+  MCP_CORS_ORIGINS: http://flowise:3000
+  IFRAME_ORIGINS: "'none'"
+  FLOWISE_FILE_SIZE_LIMIT: 1mb
+  LOG_LEVEL: warn
+  LOG_PATH: /tmp/flowise-logs
+  LOG_SANITIZE_BODY_FIELDS: password,pwd,pass,secret,token,apikey,api_key,accesstoken,access_token,refreshtoken,refresh_token,clientsecret,client_secret,privatekey,private_key,secretkey,secret_key,auth,authorization,credential,credentials
+  LOG_SANITIZE_HEADER_FIELDS: authorization,x-api-key,x-auth-token,cookie
+  SECRETKEY_STORAGE_TYPE: local
+  SECRETKEY_PATH: /tmp/flowise-secrets
+  SECURE_COOKIES: "false"
+  EXPIRE_AUTH_TOKENS_ON_RESTART: "false"
+  PASSWORD_SALT_HASH_ROUNDS: "12"
+  HOME: /tmp
+
+x-flowise-secrets: &flowise_secrets
+  - flowise_db_password
+  - flowise_redis_password
+  - flowise_encryption_key
+  - flowise_jwt_auth_secret
+  - flowise_jwt_refresh_secret
+  - flowise_session_secret
+  - flowise_token_hash_secret
+
+services:
+  framework-secrets-preflight:
+    image: "${FRAMEWORK_ADAPTER_IMAGE_REPOSITORY:?Set the promoted adapter image repository}@sha256:${FRAMEWORK_ADAPTER_IMAGE_SHA256:?Set its 64-hex image digest}"
+    restart: "no"
+    user: "1000:1000"
+    read_only: true
+    network_mode: none
+    command: ["node", "infra/agent-frameworks/adapter/secret-preflight.mjs"]
+    environment:
+      SECRET_PREFLIGHT_FILES: /run/secrets/deerflow_db_password,/run/secrets/flowise_db_password,/run/secrets/deerflow_redis_password,/run/secrets/flowise_redis_password,/run/secrets/deerflow_model_gateway_token,/run/secrets/deerflow_model_provider_api_key,/run/secrets/deerflow_internal_token,/run/secrets/deerflow_adapter_token,/run/secrets/flowise_adapter_token,/run/secrets/flowise_encryption_key,/run/secrets/flowise_jwt_auth_secret,/run/secrets/flowise_jwt_refresh_secret,/run/secrets/flowise_session_secret,/run/secrets/flowise_token_hash_secret,/run/secrets/agent_framework_capability_secret
+    secrets:
+      - deerflow_db_password
+      - flowise_db_password
+      - deerflow_redis_password
+      - flowise_redis_password
+      - deerflow_model_gateway_token
+      - deerflow_model_provider_api_key
+      - deerflow_internal_token
+      - deerflow_adapter_token
+      - flowise_adapter_token
+      - flowise_encryption_key
+      - flowise_jwt_auth_secret
+      - flowise_jwt_refresh_secret
+      - flowise_session_secret
+      - flowise_token_hash_secret
+      - agent_framework_capability_secret
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,uid=1000,gid=1000,mode=0700
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *bounded_logging
+
+  # The Flowise workspace API key is created only after the private service is
+  # bootstrapped. Keep it out of the bootstrap preflight, but validate it
+  # together with every other authority before the Flowise adapter can start.
+  flowise-runtime-secrets-preflight:
+    image: "${FRAMEWORK_ADAPTER_IMAGE_REPOSITORY:?Set the promoted adapter image repository}@sha256:${FRAMEWORK_ADAPTER_IMAGE_SHA256:?Set its 64-hex image digest}"
+    restart: "no"
+    user: "1000:1000"
+    read_only: true
+    network_mode: none
+    command: ["node", "infra/agent-frameworks/adapter/secret-preflight.mjs"]
+    environment:
+      SECRET_PREFLIGHT_FILES: /run/secrets/deerflow_db_password,/run/secrets/flowise_db_password,/run/secrets/deerflow_redis_password,/run/secrets/flowise_redis_password,/run/secrets/deerflow_model_gateway_token,/run/secrets/deerflow_model_provider_api_key,/run/secrets/deerflow_internal_token,/run/secrets/deerflow_adapter_token,/run/secrets/flowise_adapter_token,/run/secrets/flowise_api_key,/run/secrets/flowise_encryption_key,/run/secrets/flowise_jwt_auth_secret,/run/secrets/flowise_jwt_refresh_secret,/run/secrets/flowise_session_secret,/run/secrets/flowise_token_hash_secret,/run/secrets/agent_framework_capability_secret
+    secrets:
+      - deerflow_db_password
+      - flowise_db_password
+      - deerflow_redis_password
+      - flowise_redis_password
+      - deerflow_model_gateway_token
+      - deerflow_model_provider_api_key
+      - deerflow_internal_token
+      - deerflow_adapter_token
+      - flowise_adapter_token
+      - flowise_api_key
+      - flowise_encryption_key
+      - flowise_jwt_auth_secret
+      - flowise_jwt_refresh_secret
+      - flowise_session_secret
+      - flowise_token_hash_secret
+      - agent_framework_capability_secret
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,uid=1000,gid=1000,mode=0700
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *bounded_logging
+
+  deerflow-db:
+    image: "${DEERFLOW_POSTGRES_IMAGE_REPOSITORY:?Set the DeerFlow Postgres image repository}@sha256:${DEERFLOW_POSTGRES_IMAGE_SHA256:?Set its 64-hex image digest}"
+    restart: unless-stopped
+    command: ["postgres", "-c", "max_connections=100", "-c", "shared_buffers=256MB", "-c", "work_mem=4MB"]
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 256
+    environment:
+      POSTGRES_DB: deerflow
+      POSTGRES_USER: deerflow
+      POSTGRES_PASSWORD_FILE: /run/secrets/deerflow_db_password
+    secrets:
+      - deerflow_db_password
+    depends_on:
+      framework-secrets-preflight:
+        condition: service_completed_successfully
+    volumes:
+      - deerflow_db_data:/var/lib/postgresql/data
+    networks:
+      - framework_private
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U deerflow -d deerflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    logging: *bounded_logging
+
+  flowise-db:
+    image: "${FLOWISE_POSTGRES_IMAGE_REPOSITORY:?Set the Flowise Postgres image repository}@sha256:${FLOWISE_POSTGRES_IMAGE_SHA256:?Set its 64-hex image digest}"
+    restart: unless-stopped
+    command: ["postgres", "-c", "max_connections=100", "-c", "shared_buffers=256MB", "-c", "work_mem=4MB"]
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 256
+    environment:
+      POSTGRES_DB: flowise
+      POSTGRES_USER: flowise
+      POSTGRES_PASSWORD_FILE: /run/secrets/flowise_db_password
+    secrets:
+      - flowise_db_password
+    depends_on:
+      framework-secrets-preflight:
+        condition: service_completed_successfully
+    volumes:
+      - flowise_db_data:/var/lib/postgresql/data
+    networks:
+      - framework_private
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowise -d flowise"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    logging: *bounded_logging
+
+  deerflow-redis:
+    image: "${REDIS_IMAGE_REPOSITORY:?Set the Redis image repository}@sha256:${REDIS_IMAGE_SHA256:?Set its 64-hex image digest}"
+    restart: unless-stopped
+    user: "999:999"
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 128
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        umask 077
+        password="$$(cat /run/secrets/deerflow_redis_password)"
+        [ "$${#password}" -ge 32 ]
+        case "$$password" in *[!A-Za-z0-9_-]*) exit 64 ;; esac
+        {
+          printf 'appendonly yes\nappendfsync everysec\n'
+          printf 'requirepass %s\n' "$$password"
+          printf 'maxmemory 384mb\nmaxmemory-policy noeviction\n'
+        } > /run/redis/redis.conf
+        exec redis-server /run/redis/redis.conf
+    secrets:
+      - deerflow_redis_password
+    depends_on:
+      framework-secrets-preflight:
+        condition: service_completed_successfully
+    volumes:
+      - deerflow_redis_data:/data
+    networks:
+      - framework_private
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /run/secrets/deerflow_redis_password)\" redis-cli --no-auth-warning ping | grep -qx PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /run/redis:rw,noexec,nosuid,nodev,uid=999,gid=999,mode=0700
+    logging: *bounded_logging
+
+  flowise-redis:
+    image: "${REDIS_IMAGE_REPOSITORY:?Set the Redis image repository}@sha256:${REDIS_IMAGE_SHA256:?Set its 64-hex image digest}"
+    restart: unless-stopped
+    user: "999:999"
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 128
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        umask 077
+        password="$$(cat /run/secrets/flowise_redis_password)"
+        [ "$${#password}" -ge 32 ]
+        case "$$password" in *[!A-Za-z0-9_-]*) exit 64 ;; esac
+        {
+          printf 'appendonly yes\nappendfsync everysec\n'
+          printf 'requirepass %s\n' "$$password"
+          printf 'maxmemory 384mb\nmaxmemory-policy noeviction\n'
+        } > /run/redis/redis.conf
+        exec redis-server /run/redis/redis.conf
+    secrets:
+      - flowise_redis_password
+    depends_on:
+      framework-secrets-preflight:
+        condition: service_completed_successfully
+    volumes:
+      - flowise_redis_data:/data
+    networks:
+      - framework_private
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /run/secrets/flowise_redis_password)\" redis-cli --no-auth-warning ping | grep -qx PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /run/redis:rw,noexec,nosuid,nodev,uid=999,gid=999,mode=0700
+    logging: *bounded_logging
+
+  model-gateway:
+    image: "${MODEL_GATEWAY_IMAGE_REPOSITORY:?Set the promoted model-gateway image repository}@sha256:${MODEL_GATEWAY_IMAGE_SHA256:?Set its 64-hex image digest}"
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    environment:
+      NODE_ENV: production
+      MODEL_GATEWAY_PORT: "8090"
+      MODEL_GATEWAY_BIND_HOST: 0.0.0.0
+      MODEL_GATEWAY_PROVIDER_ID: "${DEERFLOW_CLOUD_PROVIDER_ID:?Set the exact allowlisted cloud provider identity}"
+      MODEL_GATEWAY_MODEL_ID: "${DEERFLOW_MODEL_ID:?Set the exact provider model identifier}"
+      MODEL_GATEWAY_INTERNAL_TOKEN_FILE: /run/secrets/deerflow_model_gateway_token
+      MODEL_GATEWAY_UPSTREAM_API_KEY_FILE: /run/secrets/deerflow_model_provider_api_key
+      MODEL_GATEWAY_TIMEOUT_MS: "30000"
+      MODEL_GATEWAY_REQUEST_MAX_BYTES: "262144"
+      MODEL_GATEWAY_RESPONSE_MAX_BYTES: "1048576"
+      MODEL_GATEWAY_MAX_CONCURRENCY: "8"
+      MODEL_GATEWAY_REQUESTS_PER_MINUTE: "60"
+    secrets:
+      - deerflow_model_gateway_token
+      - deerflow_model_provider_api_key
+    networks:
+      framework_private:
+        aliases:
+          - model-gateway.service.internal
+      model_gateway_egress: {}
+    depends_on:
+      framework-secrets-preflight:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - |
+          const fs=require('node:fs'),http=require('node:http');
+          const token=fs.readFileSync('/run/secrets/deerflow_model_gateway_token','utf8').trim();
+          const request=http.get({host:'127.0.0.1',port:8090,path:'/readyz',headers:{authorization:`Bearer $${token}`}},response=>{response.resume();process.exit(response.statusCode===200?0:1)});
+          request.setTimeout(4000,()=>request.destroy());request.on('error',()=>process.exit(1));
+    stop_grace_period: 15s
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,uid=1000,gid=1000,mode=0700
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *bounded_logging
+
+  deerflow:
+    image: "${DEERFLOW_IMAGE_REPOSITORY:?Set the promoted DeerFlow image repository}@sha256:${DEERFLOW_IMAGE_SHA256:?Set its 64-hex image digest}"
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: 1.5
+    user: "65532:65532"
+    read_only: true
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        db_password="$$(python -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))' < /run/secrets/deerflow_db_password)"
+        redis_password="$$(python -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))' < /run/secrets/deerflow_redis_password)"
+        export DEERFLOW_DATABASE_URL="postgresql://deerflow:$${db_password}@deerflow-db:5432/deerflow"
+        export DEERFLOW_STREAM_BRIDGE_REDIS_URL="redis://default:$${redis_password}@deerflow-redis:6379/0"
+        export DEERFLOW_MODEL_API_KEY="$$(cat /run/secrets/deerflow_model_gateway_token)"
+        export DEER_FLOW_INTERNAL_AUTH_TOKEN="$$(cat /run/secrets/deerflow_internal_token)"
+        cd /app/backend
+        exec env PYTHONPATH=. uv run --no-sync uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001 --workers 1
+    environment:
+      DEER_FLOW_CONFIG_PATH: /opt/aria/deerflow/config.yaml
+      DEER_FLOW_HOME: /var/lib/deerflow
+      DEERFLOW_MODEL_ID: "${DEERFLOW_MODEL_ID:?Set the exact provider model identifier}"
+      DEERFLOW_MODEL_BASE_URL: http://model-gateway.service.internal:8090/v1
+      PYTHONDONTWRITEBYTECODE: "1"
+      UV_CACHE_DIR: /tmp/uv-cache
+      HOME: /tmp
+    secrets:
+      - deerflow_db_password
+      - deerflow_redis_password
+      - deerflow_model_gateway_token
+      - deerflow_internal_token
+    volumes:
+      - ./deerflow-config.yaml:/opt/aria/deerflow/config.yaml:ro
+      - ./deerflow-agent:/var/lib/deerflow/agents/aria-proposal:ro
+      - ./deerflow-skills:/opt/aria/deerflow/skills:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,uid=65532,gid=65532,mode=0700
+      - /var/lib/deerflow:rw,noexec,nosuid,nodev,uid=65532,gid=65532,mode=0700
+    networks:
+      - framework_private
+    depends_on:
+      framework-secrets-preflight:
+        condition: service_completed_successfully
+      deerflow-db:
+        condition: service_healthy
+      deerflow-redis:
+        condition: service_healthy
+      model-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=4)); assert data.get('status') == 'healthy'"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    stop_grace_period: 30s
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *bounded_logging
+
+  flowise:
+    image: "${FLOWISE_IMAGE_REPOSITORY:?Set the promoted Flowise image repository}@sha256:${FLOWISE_IMAGE_SHA256:?Set its 64-hex image digest}"
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: 1.5
+    user: "1000:1000"
+    read_only: true
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        export DATABASE_PASSWORD="$$(cat /run/secrets/flowise_db_password)"
+        export REDIS_PASSWORD="$$(cat /run/secrets/flowise_redis_password)"
+        export FLOWISE_SECRETKEY_OVERWRITE="$$(cat /run/secrets/flowise_encryption_key)"
+        export JWT_AUTH_TOKEN_SECRET="$$(cat /run/secrets/flowise_jwt_auth_secret)"
+        export JWT_REFRESH_TOKEN_SECRET="$$(cat /run/secrets/flowise_jwt_refresh_secret)"
+        export EXPRESS_SESSION_SECRET="$$(cat /run/secrets/flowise_session_secret)"
+        export TOKEN_HASH_SECRET="$$(cat /run/secrets/flowise_token_hash_secret)"
+        exec pnpm start
+    environment:
+      <<: *flowise_environment
+    secrets: *flowise_secrets
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,uid=1000,gid=1000,mode=0700
+    networks:
+      - framework_private
+    depends_on:
+      framework-secrets-preflight:
+        condition: service_completed_successfully
+      flowise-db:
+        condition: service_healthy
+      flowise-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:3000/api/v1/ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    stop_grace_period: 30s
+    pids_limit: 512
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *bounded_logging
+
+  flowise-worker:
+    image: "${FLOWISE_WORKER_IMAGE_REPOSITORY:?Set the promoted Flowise worker image repository}@sha256:${FLOWISE_WORKER_IMAGE_SHA256:?Set its 64-hex image digest}"
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: 1.5
+    user: "1000:1000"
+    read_only: true
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        export DATABASE_PASSWORD="$$(cat /run/secrets/flowise_db_password)"
+        export REDIS_PASSWORD="$$(cat /run/secrets/flowise_redis_password)"
+        export FLOWISE_SECRETKEY_OVERWRITE="$$(cat /run/secrets/flowise_encryption_key)"
+        export JWT_AUTH_TOKEN_SECRET="$$(cat /run/secrets/flowise_jwt_auth_secret)"
+        export JWT_REFRESH_TOKEN_SECRET="$$(cat /run/secrets/flowise_jwt_refresh_secret)"
+        export EXPRESS_SESSION_SECRET="$$(cat /run/secrets/flowise_session_secret)"
+        export TOKEN_HASH_SECRET="$$(cat /run/secrets/flowise_token_hash_secret)"
+        node /app/healthcheck/healthcheck.js &
+        exec pnpm run start-worker
+    environment:
+      <<: *flowise_environment
+      WORKER_PORT: "5566"
+    secrets: *flowise_secrets
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,uid=1000,gid=1000,mode=0700
+    networks:
+      - framework_private
+    depends_on:
+      framework-secrets-preflight:
+        condition: service_completed_successfully
+      flowise-db:
+        condition: service_healthy
+      flowise-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:5566/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    stop_grace_period: 30s
+    pids_limit: 512
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *bounded_logging
+
+  deerflow-adapter:
+    image: "${FRAMEWORK_ADAPTER_IMAGE_REPOSITORY:?Set the promoted adapter image repository}@sha256:${FRAMEWORK_ADAPTER_IMAGE_SHA256:?Set its 64-hex image digest}"
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
+    user: "1000:1000"
+    read_only: true
+    environment:
+      <<: *framework_configuration
+      NODE_ENV: production
+      PORT: "8080"
+      BIND_HOST: 0.0.0.0
+      ADAPTER_MODE: deerflow
+      ADAPTER_TOKEN_FILE: /run/secrets/deerflow_adapter_token
+      UPSTREAM_BASE_URL: http://deerflow:8001
+      UPSTREAM_TOKEN_FILE: /run/secrets/deerflow_internal_token
+      UPSTREAM_SOURCE_COMMIT: fabadae4168db81f0eaaf62f209050f978e2f691
+      UPSTREAM_IMAGE_DIGEST: "${DEERFLOW_IMAGE_REPOSITORY:?Set the promoted DeerFlow image repository}@sha256:${DEERFLOW_IMAGE_SHA256:?Set its 64-hex image digest}"
+      ARIA_WORKSPACE_ID: "${ARIA_WORKSPACE_ID:?Set the bound ARIA workspace UUID}"
+      FRAMEWORK_INSTANCE_ID: "${DEERFLOW_INSTANCE_ID:?Set the registered DeerFlow instance UUID}"
+      DEERFLOW_AGENT_ID: aria-proposal
+      DEERFLOW_MODEL: aria-model
+      MODEL_GATEWAY_TOKEN_FILE: /run/secrets/deerflow_model_gateway_token
+      AGENT_FRAMEWORK_CAPABILITY_SECRET_FILE: /run/secrets/agent_framework_capability_secret
+      FLOWISE_IMAGE_DIGEST: "${FLOWISE_IMAGE_REPOSITORY:?Set the promoted Flowise image repository}@sha256:${FLOWISE_IMAGE_SHA256:?Set its 64-hex image digest}"
+      FLOWISE_TENANT_ISOLATION: instance-per-workspace
+      REDIS_PASSWORD_FILE: /run/secrets/deerflow_redis_password
+      REDIS_HOST: deerflow-redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      DEERFLOW_POLICY_REFERENCE_DIR: /opt/aria/policy/reference
+      DEERFLOW_POLICY_RUNTIME_DIR: /opt/aria/policy/runtime
+    volumes:
+      - ./deerflow-config.yaml:/opt/aria/policy/runtime/deerflow-config.yaml:ro
+      - ./deerflow-agent:/opt/aria/policy/runtime/agent:ro
+      - ./deerflow-skills:/opt/aria/policy/runtime/skills:ro
+    secrets:
+      - deerflow_adapter_token
+      - deerflow_internal_token
+      - deerflow_model_gateway_token
+      - agent_framework_capability_secret
+      - deerflow_redis_password
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,uid=1000,gid=1000,mode=0700
+    networks:
+      - framework_private
+    depends_on:
+      framework-secrets-preflight:
+        condition: service_completed_successfully
+      deerflow:
+        condition: service_healthy
+      model-gateway:
+        condition: service_healthy
+      deerflow-redis:
+        condition: service_healthy
+    stop_grace_period: 15s
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *bounded_logging
+
+  flowise-adapter:
+    image: "${FRAMEWORK_ADAPTER_IMAGE_REPOSITORY:?Set the promoted adapter image repository}@sha256:${FRAMEWORK_ADAPTER_IMAGE_SHA256:?Set its 64-hex image digest}"
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
+    user: "1000:1000"
+    read_only: true
+    environment:
+      <<: *framework_configuration
+      NODE_ENV: production
+      PORT: "8080"
+      BIND_HOST: 0.0.0.0
+      ADAPTER_MODE: flowise
+      ADAPTER_TOKEN_FILE: /run/secrets/flowise_adapter_token
+      UPSTREAM_BASE_URL: http://flowise:3000
+      UPSTREAM_TOKEN_FILE: /run/secrets/flowise_api_key
+      UPSTREAM_SOURCE_COMMIT: bb773ffa710bd22639c4ba2643413a0ea2b679d3
+      UPSTREAM_IMAGE_DIGEST: "${FLOWISE_IMAGE_REPOSITORY:?Set the promoted Flowise image repository}@sha256:${FLOWISE_IMAGE_SHA256:?Set its 64-hex image digest}"
+      FLOWISE_TENANT_ISOLATION: instance-per-workspace
+      ARIA_WORKSPACE_ID: "${ARIA_WORKSPACE_ID:?Set the bound ARIA workspace UUID}"
+      FRAMEWORK_INSTANCE_ID: "${FLOWISE_INSTANCE_ID:?Set the registered Flowise instance UUID}"
+      FLOWISE_WORKSPACE_ID: "${FLOWISE_WORKSPACE_ID:-}"
+      FLOWISE_READINESS_WORKFLOW_ID: "${FLOWISE_READINESS_WORKFLOW_ID:-}"
+      FLOWISE_QUEUE_NAME: aria-flowise
+      FLOWISE_WORKER_HEALTH_URL: http://flowise-worker:5566/healthz
+      REDIS_PASSWORD_FILE: /run/secrets/flowise_redis_password
+      REDIS_HOST: flowise-redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+    secrets:
+      - flowise_adapter_token
+      - flowise_api_key
+      - flowise_redis_password
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,uid=1000,gid=1000,mode=0700
+    networks:
+      - framework_private
+    depends_on:
+      framework-secrets-preflight:
+        condition: service_completed_successfully
+      flowise-runtime-secrets-preflight:
+        condition: service_completed_successfully
+      flowise:
+        condition: service_healthy
+      flowise-worker:
+        condition: service_healthy
+      flowise-redis:
+        condition: service_healthy
+    stop_grace_period: 15s
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *bounded_logging
+
+networks:
+  framework_private:
+    driver: bridge
+    internal: true
+  model_gateway_egress:
+    driver: bridge
+
+volumes:
+  deerflow_db_data:
+  flowise_db_data:
+  deerflow_redis_data:
+  flowise_redis_data:
+
+secrets:
+  deerflow_db_password:
+    file: "${DEERFLOW_DB_PASSWORD_FILE:?Set the host path to the DeerFlow database-password secret}"
+  flowise_db_password:
+    file: "${FLOWISE_DB_PASSWORD_FILE:?Set the host path to the Flowise database-password secret}"
+  deerflow_redis_password:
+    file: "${DEERFLOW_REDIS_PASSWORD_FILE:?Set the host path to the DeerFlow Redis-password secret}"
+  flowise_redis_password:
+    file: "${FLOWISE_REDIS_PASSWORD_FILE:?Set the host path to the Flowise Redis-password secret}"
+  deerflow_model_gateway_token:
+    file: "${DEERFLOW_MODEL_GATEWAY_TOKEN_FILE:?Set the host path to the DeerFlow-to-gateway bearer-token secret}"
+  deerflow_model_provider_api_key:
+    file: "${DEERFLOW_MODEL_PROVIDER_API_KEY_FILE:?Set the host path to the cloud-provider API-key secret}"
+  deerflow_internal_token:
+    file: "${DEERFLOW_INTERNAL_TOKEN_FILE:?Set the host path to the DeerFlow internal-token secret}"
+  deerflow_adapter_token:
+    file: "${DEERFLOW_ADAPTER_TOKEN_FILE:?Set the host path to the DeerFlow adapter-token secret}"
+  flowise_adapter_token:
+    file: "${FLOWISE_ADAPTER_TOKEN_FILE:?Set the host path to the Flowise adapter-token secret}"
+  flowise_api_key:
+    # /dev/null is bootstrap-only. The runtime preflight rejects it before the
+    # adapter starts, so an absent key never becomes an active runtime.
+    file: "${FLOWISE_API_KEY_FILE:-/dev/null}"
+  flowise_encryption_key:
+    file: "${FLOWISE_ENCRYPTION_KEY_FILE:?Set the host path to the Flowise encryption-key secret}"
+  flowise_jwt_auth_secret:
+    file: "${FLOWISE_JWT_AUTH_SECRET_FILE:?Set the host path to the Flowise JWT auth-secret}"
+  flowise_jwt_refresh_secret:
+    file: "${FLOWISE_JWT_REFRESH_SECRET_FILE:?Set the host path to the Flowise JWT refresh-secret}"
+  flowise_session_secret:
+    file: "${FLOWISE_SESSION_SECRET_FILE:?Set the host path to the Flowise session-secret}"
+  flowise_token_hash_secret:
+    file: "${FLOWISE_TOKEN_HASH_SECRET_FILE:?Set the host path to the Flowise token-hash secret}"
+  agent_framework_capability_secret:
+    file: "${AGENT_FRAMEWORK_CAPABILITY_SECRET_FILE:?Set the host path to the ARIA capability secret}"

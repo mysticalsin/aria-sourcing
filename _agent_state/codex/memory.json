@@ -1,6 +1,22 @@
 {
   "recent_learnings": [
     {
+      "date": "2026-07-14",
+      "lesson": "Archive and rewrite the MSourcing Relay Baton every shift; Claude continuation must never depend on chat context."
+    },
+    {
+      "date": "2026-07-14",
+      "lesson": "Audit actual LangChain payloads; disabled framework tools can still inject pinned built-ins that strict gateways must strip exactly."
+    },
+    {
+      "date": "2026-07-14",
+      "lesson": "Never call source enterprise-ready while live SHA, migrations, model credit, governance, deployment receipts, or acceptance evidence remain unproven."
+    },
+    {
+      "date": "2026-07-14",
+      "lesson": "Demo mode must block non-synthetic candidate data before I/O and again at commit, storage, and hydration boundaries."
+    },
+    {
       "date": "2026-07-13",
       "lesson": "Durable sourcing feedback must reload from server authority and merge by receipt; component-only prompts lose lessons and can cross campaign state."
     },

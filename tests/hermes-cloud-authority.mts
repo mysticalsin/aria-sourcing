@@ -260,7 +260,7 @@ try {
   const hermesRequest = (provider = "openai") =>
     new NextRequest("http://localhost/api/hermes/chat", {
       method: "POST",
-      headers: { "content-type": "application/json", "x-forwarded-for": crypto.randomUUID() },
+      headers: { "content-type": "application/json", "x-forwarded-for": crypto.randomUUID(), origin: "http://localhost" },
       body: JSON.stringify({
         task: "chat",
         prompt: "Confidential candidate context",
@@ -291,7 +291,7 @@ try {
   const agentRequest = (includeSpec = true) =>
     new NextRequest("http://localhost/api/agents/run", {
       method: "POST",
-      headers: { "content-type": "application/json", "x-forwarded-for": crypto.randomUUID() },
+      headers: { "content-type": "application/json", "x-forwarded-for": crypto.randomUUID(), origin: "http://localhost" },
       body: JSON.stringify({
         campaign,
         existing: [],
@@ -385,101 +385,28 @@ try {
   vaultProvider = "OpenAI";
   resetCalls();
   const memberAgent = await agentRoute.POST(agentRequest());
-  ok("member cannot run the live cloud graph agent", memberAgent.status === 403);
+  const memberAgentBody = (await memberAgent.json()) as { code?: string };
   ok(
-    "member graph-agent denial happens before vault resolution or model egress",
-    resolverCalls.length === 0 && graphCalls === 0 && upstreamCalls === 0,
+    "unconfigured private framework execution fails closed for members",
+    memberAgent.status === 503 && memberAgentBody.code === "agent_framework_unavailable",
+  );
+  ok(
+    "member graph-agent denial happens before authority, persistence, vault, or model access",
+    agentSpecReadCount === 0 && serviceReadTables.length === 0 && resolverCalls.length === 0 && graphCalls === 0 && upstreamCalls === 0,
   );
 
   role = "admin";
   resetCalls();
-  const missingSpecIdAgent = await agentRoute.POST(agentRequest(false));
-  ok("graph agent requires a stored spec id", missingSpecIdAgent.status === 400);
-  ok("missing spec id fails before vault resolution or model egress", resolverCalls.length === 0 && graphCalls === 0 && upstreamCalls === 0);
-
-  agentSpecAvailable = false;
-  resetCalls();
-  const unknownSpecAgent = await agentRoute.POST(agentRequest());
-  ok("graph agent rejects an unavailable active spec", unknownSpecAgent.status === 404);
-  ok("spec authorization fails before vault resolution or model egress", resolverCalls.length === 0 && graphCalls === 0 && upstreamCalls === 0);
-
-  agentSpecAvailable = true;
-  runPersistenceFails = true;
-  resetCalls();
-  const persistenceFailureAgent = await agentRoute.POST(agentRequest());
-  ok("graph agent fails closed when run-context persistence fails", persistenceFailureAgent.status === 503);
-  ok("run-context persistence failure prevents model egress", graphCalls === 0 && upstreamCalls === 0);
-  ok(
-    "run-context persistence failure performs zero vault, memory-key, or Tavily-key resolution",
-    resolverCalls.length === 0 && serviceReadTables.length === 0,
-  );
-
-  runPersistenceFails = false;
-  resetCalls();
   const adminAgent = await agentRoute.POST(agentRequest());
-  const adminAgentBody = (await adminAgent.json()) as { ok?: boolean };
-  ok("admin can run the live cloud graph agent", adminAgent.status === 200 && adminAgentBody.ok === true);
+  const adminAgentBody = (await adminAgent.json()) as { code?: string };
   ok(
-    "graph agent snapshots stored channels and guardrails into its runtime policy",
-      capturedAgentPolicy?.channel === "Email" &&
-      capturedAgentPolicy.draftStorage === "run_history" &&
-      capturedAgentPolicy.deliveryAuthority === "none",
+    "unconfigured private framework execution fails closed for administrators",
+    adminAgent.status === 503 && adminAgentBody.code === "agent_framework_unavailable",
   );
   ok(
-    "graph agent persists its stored runtime snapshot before memory or provider access",
-    serviceReadTables[0] === "runtime-policy-snapshot",
+    "administrator denial ignores caller-selected spec, provider, model, key, and candidates",
+    agentSpecReadCount === 0 && serviceReadTables.length === 0 && resolverCalls.length === 0 && graphCalls === 0 && upstreamCalls === 0,
   );
-  ok(
-    "graph agent response labels drafts as run history with no delivery authority",
-    (adminAgentBody as Record<string, unknown>).draftStorage === "run_history" &&
-      (adminAgentBody as Record<string, unknown>).deliveryAuthority === "none",
-  );
-  ok(
-    "admin graph agent binds its key before one provider call",
-    resolverCalls.some((call) => call.provider === "OpenAI") && graphCalls === 1 && upstreamCalls === 1,
-  );
-
-  agentSpecOwnerId = "user-2";
-  resetCalls();
-  const otherOwnerAgent = await agentRoute.POST(agentRequest());
-  ok("graph agent rejects another owner's spec", otherOwnerAgent.status === 404);
-  ok("owner mismatch fails before receipt, memory, vault, graph, or model egress", resolverCalls.length === 0 && serviceReadTables.length === 0 && graphCalls === 0 && upstreamCalls === 0);
-  agentSpecOwnerId = "user-1";
-
-  agentSpecChannels = ["WhatsApp"];
-  resetCalls();
-  const unsupportedChannelAgent = await agentRoute.POST(agentRequest());
-  ok("graph agent rejects a spec with no supported run-history draft channel", unsupportedChannelAgent.status === 409);
-  ok(
-    "unsupported stored channels fail before receipt, vault, graph, or model egress",
-    resolverCalls.length === 0 && serviceReadTables.length === 0 && graphCalls === 0 && upstreamCalls === 0,
-  );
-  agentSpecChannels = ["Email"];
-
-  agentSpecGuardrails = { autopilot: true, canary_remaining: 0 };
-  resetCalls();
-  const unsupportedGuardrailAgent = await agentRoute.POST(agentRequest());
-  ok("graph agent rejects stored guardrails it cannot enforce", unsupportedGuardrailAgent.status === 409);
-  ok("unsupported guardrails fail before receipt, memory, vault, graph, or model egress", resolverCalls.length === 0 && serviceReadTables.length === 0 && graphCalls === 0 && upstreamCalls === 0);
-  agentSpecGuardrails = { autopilot: false, canary_remaining: 5, quiet_hours: { start: "18:00" } };
-  resetCalls();
-  const unknownGuardrailAgent = await agentRoute.POST(agentRequest());
-  ok("graph agent rejects unknown stored authority fields", unknownGuardrailAgent.status === 409);
-  ok("unknown stored authority fails before receipt, memory, vault, graph, or model egress", resolverCalls.length === 0 && serviceReadTables.length === 0 && graphCalls === 0 && upstreamCalls === 0);
-  agentSpecGuardrails = { autopilot: false, canary_remaining: 5 };
-
-  agentSpecRemainsActive = false;
-  resetCalls();
-  agentSpecRemainsActive = false;
-  const pausedDuringRunAgent = await agentRoute.POST(agentRequest());
-  ok("graph agent stops when its stored spec is paused before the next step", pausedDuringRunAgent.status === 503);
-  ok("mid-run pause prevents provider egress", upstreamCalls === 0);
-  agentSpecRemainsActive = true;
-
-  vaultProvider = "Anthropic";
-  resetCalls();
-  const mismatchAgent = await agentRoute.POST(agentRequest());
-  ok("graph-agent cross-provider key mismatch fails closed before model egress", mismatchAgent.status === 403 && graphCalls === 0 && upstreamCalls === 0);
 } finally {
   globalThis.fetch = originalFetch;
   process.env = originalEnv;

@@ -10,6 +10,7 @@ export type ReadinessProbes = {
   database: () => Promise<boolean>;
   auth: () => Promise<boolean>;
   queue: () => Promise<boolean>;
+  agentFrameworks: () => Promise<boolean>;
   migration: () => Promise<MigrationState | null>;
 };
 
@@ -19,6 +20,7 @@ export type ReadinessInput = {
   expectedMigrationSha: string;
   expectedMigrationCount: number;
   expectedLedgerSha256: string;
+  agentFrameworksRequired: boolean;
 };
 
 async function booleanProbe(probe: () => Promise<boolean>) {
@@ -46,10 +48,11 @@ export async function evaluateReadiness(input: ReadinessInput, probes: Readiness
     input.expectedMigrationCount > 0 &&
     /^[0-9a-f]{64}$/.test(input.expectedLedgerSha256);
 
-  const [database, auth, queue, migration] = await Promise.all([
+  const [database, auth, queue, agentFrameworks, migration] = await Promise.all([
     booleanProbe(probes.database),
     booleanProbe(probes.auth),
     booleanProbe(probes.queue),
+    input.agentFrameworksRequired ? booleanProbe(probes.agentFrameworks) : Promise.resolve(true),
     migrationProbe(probes.migration),
   ]);
 
@@ -58,7 +61,7 @@ export async function evaluateReadiness(input: ReadinessInput, probes: Readiness
     migration.latest.sha256 === input.expectedMigrationSha &&
     migration.count === input.expectedMigrationCount &&
     migration.ledgerSha256 === input.expectedLedgerSha256;
-  const ok = metadata && database && auth && queue && migrationMatches;
+  const ok = metadata && database && auth && queue && agentFrameworks && migrationMatches;
 
   return {
     ok,
@@ -69,6 +72,7 @@ export async function evaluateReadiness(input: ReadinessInput, probes: Readiness
       database,
       auth,
       queue,
+      agentFrameworks,
       migration: migrationMatches,
       releaseIdentity: metadata,
     },

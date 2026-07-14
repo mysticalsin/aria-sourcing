@@ -61,9 +61,10 @@ import {
 } from "./rules";
 import {
   candidateFromSourcingAgentDto,
-  parseSourcingAgentCandidates,
   sourcingAgentCampaignFingerprint,
 } from "./sourcing/sourcing-agent-contract";
+import { requestReviewedSourcing } from "./sourcing/sourcing-agent-client";
+import { campaignAllowsLiveSourcing } from "./sourcing/campaign-lifecycle";
 import { validateMcpBaseUrl } from "./mcp-auth-params";
 import {
   defaultLiveIntegrations,
@@ -75,6 +76,7 @@ import { createCampaignActions } from "./store/campaign-actions";
 import { createSourcingActions } from "./store/sourcing-actions";
 import { resolveInboundEmailIdentity } from "./store/inbound-identity";
 import { loadState, normalizeHermesState } from "./store/migrations";
+import { demoStateAllowsCandidatePersistence } from "./store/demo-persistence";
 import { mapSillageCandidates, parseSillageIdentifier } from "./store/sourcing-helpers";
 import { appendWinRecord } from "./store/winlog-derive";
 import type {
@@ -453,7 +455,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     const pending = pendingLocalSave.current;
     if (pending) {
       try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(pending));
+        if (demoStateAllowsCandidatePersistence(pending)) {
+          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(pending));
+        }
       } catch {
         /* quota / private mode — ignore for demo */
       }
@@ -770,6 +774,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     const base = stateRef.current;
     if (!base) return false;
     const next = fn(base);
+    if (!supabaseEnabled && !demoStateAllowsCandidatePersistence(next)) return false;
     stateRef.current = next;
     setState(next);
     return true;
@@ -787,6 +792,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     if (!base) return false;
     const next = fn(base);
     if (next === base) return true;
+    if (!supabaseEnabled && !demoStateAllowsCandidatePersistence(next)) return false;
 
     if (!supabaseEnabled) {
       stateRef.current = next;
@@ -880,6 +886,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const syntheticSourcingAllowed = useCallback(() => !supabaseEnabled, []);
 
+  const candidatePersistenceAllowed = useCallback(
+    (provenance: NonNullable<Candidate["provenance"]>) =>
+      supabaseEnabled || provenance === "synthetic",
+    [],
+  );
+
   const campaignMutationAllowed = useCallback(
     () => workspaceEffectAllowed() && sourcingMutationAllowed(),
     [sourcingMutationAllowed, workspaceEffectAllowed],
@@ -939,6 +951,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         sourcingMutationAllowed,
         workspaceEffectAllowed,
         syntheticSourcingAllowed,
+        candidatePersistenceAllowed,
         workspaceFetch,
         makeActivity,
         withActivity,
@@ -951,6 +964,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       commitPersisted,
       sourcingMutationAllowed,
       syntheticSourcingAllowed,
+      candidatePersistenceAllowed,
       workspaceEffectAllowed,
       workspaceFetch,
     ],
@@ -967,6 +981,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       campaignId: string,
       identifier: string,
     ): Promise<{ ok: true; requestId: string } | { ok: false; error: string }> => {
+      if (!candidatePersistenceAllowed("live")) {
+        return { ok: false, error: "Sillage candidate sourcing requires a live workspace." };
+      }
       if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before sourcing." };
       const s = current();
       const campaign = s.campaigns.find((c) => c.id === campaignId);
@@ -992,7 +1009,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
       return { ok: true, requestId: out.requestId };
     },
-    [current, workspaceEffectAllowed, workspaceFetch],
+    [candidatePersistenceAllowed, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const checkSillageMapping = useCallback(
@@ -1004,6 +1021,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       | { ok: true; status: "completed"; added: number; company: string }
       | { ok: false; error: string }
     > => {
+      if (!candidatePersistenceAllowed("live")) {
+        return { ok: false, error: "Sillage candidate sourcing requires a live workspace." };
+      }
       if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before sourcing." };
       const s = current();
       const campaign = s.campaigns.find((c) => c.id === campaignId);
@@ -1062,7 +1082,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (accepted.length > 0) emit({ kind: "source", campaignId, count: accepted.length });
       return { ok: true, status: "completed", added: accepted.length, company: companyLabel };
     },
-    [commit, current, workspaceEffectAllowed, workspaceFetch],
+    [candidatePersistenceAllowed, commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const sourceFromSeamless = useCallback(
@@ -1080,6 +1100,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         count?: number;
       },
     ): Promise<SourceResult & { source: "seamless" | "not_configured" | "error"; error?: string }> => {
+      if (!candidatePersistenceAllowed("live")) {
+        return {
+          accepted: [],
+          skipped: [],
+          source: "error",
+          error: "Seamless candidate sourcing requires a live workspace.",
+        };
+      }
       if (!workspaceEffectAllowed()) {
         return { accepted: [], skipped: [], source: "error", error: "Workspace unavailable. Retry before sourcing." };
       }
@@ -1161,11 +1189,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
       return { ...result, source, error };
     },
-    [commit, current, workspaceEffectAllowed, workspaceFetch],
+    [candidatePersistenceAllowed, commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const startSeamlessResearch = useCallback(
     async (candidateId: string): Promise<{ ok: true; requestId: string } | { ok: false; error: string }> => {
+      if (!candidatePersistenceAllowed("live")) {
+        return { ok: false, error: "Seamless enrichment requires a live workspace." };
+      }
       if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before enrichment." };
       const s = current();
       const cand = s.candidates.find((c) => c.id === candidateId);
@@ -1191,7 +1222,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
       return { ok: true, requestId: out.requestId };
     },
-    [current, workspaceEffectAllowed, workspaceFetch],
+    [candidatePersistenceAllowed, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const checkSeamlessResearch = useCallback(
@@ -1203,6 +1234,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       | { ok: true; status: "completed"; revealed: boolean }
       | { ok: false; error: string }
     > => {
+      if (!candidatePersistenceAllowed("live")) {
+        return { ok: false, error: "Seamless enrichment requires a live workspace." };
+      }
       if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before enrichment." };
       const s = current();
       const cand = s.candidates.find((c) => c.id === candidateId);
@@ -1268,7 +1302,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return { ok: true, status: "completed", revealed: true };
     },
-    [commit, current, workspaceEffectAllowed, workspaceFetch],
+    [candidatePersistenceAllowed, commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   const runSourcingAgent = useCallback(
@@ -1282,92 +1316,35 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       feedbackReceipts?: SourcingFeedbackReceipt[];
       error?: string;
     }> => {
+      if (!candidatePersistenceAllowed("live")) {
+        return {
+          ok: false,
+          added: 0,
+          error: "The live sourcing agent requires a live workspace.",
+        };
+      }
       if (!workspaceEffectAllowed() || !sourcingMutationAllowed()) {
         return { ok: false, added: 0, error: "Workspace unavailable. Retry before running the sourcing agent." };
       }
       const s = current();
       const campaign = s.campaigns.find((c) => c.id === campaignId);
       if (!campaign) return { ok: false, added: 0, error: "Campaign not found." };
-      if (campaign.status === "Paused") {
-        return { ok: false, added: 0, error: "Campaign is paused." };
+      if (!campaignAllowsLiveSourcing(campaign.status)) {
+        return { ok: false, added: 0, error: "Campaign is not active for sourcing." };
       }
       const requestedCount = Math.min(Math.max(Math.trunc(count) || 5, 1), 8);
-      let response: Response;
-      try {
-        const operationId = crypto.randomUUID();
-        response = await workspaceFetch("/api/sourcing-agent", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Idempotency-Key": operationId,
-            "X-Request-Id": operationId,
-          },
-          body: JSON.stringify({
-            campaignId,
-            count: requestedCount,
-          }),
-        });
-      } catch {
-        return { ok: false, added: 0, error: "The sourcing agent could not be reached." };
-      }
-      const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-      if (contentType.split(";", 1)[0]?.trim() !== "application/json") {
-        return { ok: false, added: 0, error: "The sourcing agent returned an invalid response." };
-      }
-      const out = (await response.json().catch(() => null)) as
-        | {
-            ok?: boolean;
-            code?: string;
-            error?: string;
-            campaignId?: string;
-            campaignFingerprint?: string;
-            mode?: string;
-            candidates?: unknown;
-            feedbackReceipts?: unknown;
-          }
-        | null;
-      if (!response.ok || !out?.ok) {
-        const safeErrors: Record<string, string> = {
-          CAMPAIGN_NOT_FOUND: "Campaign not found.",
-          CAMPAIGN_NOT_ACTIVE: "Campaign is not active for sourcing.",
-          CAMPAIGN_NOT_READY: "Complete and review the campaign brief before sourcing.",
-          CAMPAIGN_INPUT_UNSAFE: "Review unsafe instructions in the campaign brief before sourcing.",
-          CAMPAIGN_CHANGED: "Campaign authority changed. Retry from the current campaign.",
-          INSUFFICIENT_PERMISSIONS: "Sourcing authority is no longer available.",
-          SOURCING_AGENT_RATE_LIMITED: "The sourcing-agent rate limit was reached. Try again later.",
-          SOURCING_AGENT_REPLAY_BLOCKED: "This sourcing request was already claimed. Start a new sourcing run.",
-          SOURCING_AGENT_NOT_CONFIGURED: "The selected sourcing provider is not configured.",
-          SOURCING_AGENT_UPSTREAM_FAILED: "The sourcing agent did not complete.",
-          SOURCING_AGENT_RESPONSE_INVALID: "The sourcing agent returned an invalid result.",
-        };
-        return {
-          ok: false,
-          added: 0,
-          error: safeErrors[out?.code ?? ""] ?? "The sourcing agent is unavailable.",
-        };
-      }
-      if (out.campaignId !== campaignId) {
-        return { ok: false, added: 0, error: "The sourcing agent returned a mismatched campaign." };
-      }
-      if (out.mode !== "cloud" && out.mode !== "deterministic") {
-        return { ok: false, added: 0, error: "The sourcing agent returned an invalid execution mode." };
-      }
-      const executionMode = out.mode;
-      if (
-        typeof out.campaignFingerprint !== "string" ||
-        out.campaignFingerprint.length > 100_000
-      ) {
-        return { ok: false, added: 0, error: "The sourcing agent returned an invalid campaign version." };
-      }
-      const received = parseSourcingAgentCandidates(
-        out.candidates,
+      const reviewed = await requestReviewedSourcing(
+        workspaceFetch,
         campaignId,
         requestedCount,
       );
-      const feedbackReceipts = parseSourcingFeedbackReceipts(out.feedbackReceipts);
-      if (!received || !feedbackReceipts) {
-        return { ok: false, added: 0, error: "The sourcing agent returned an invalid result." };
+      if (!reviewed.ok) {
+        return { ok: false, added: 0, error: reviewed.error };
       }
+      const out = reviewed.value;
+      const executionMode = out.mode;
+      const received = out.candidates;
+      const feedbackReceipts = out.feedbackReceipts;
       if (!workspaceEffectAllowed() || !sourcingMutationAllowed()) {
         return { ok: false, added: 0, error: "Sourcing authority changed during the operation." };
       }
@@ -1376,9 +1353,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       let added = 0;
       let drafted = 0;
       const persisted = await commitPersisted((prev) => {
-        if (!sourcingMutationAllowed()) return prev;
+        if (!workspaceEffectAllowed() || !sourcingMutationAllowed()) return prev;
         const latestCampaign = prev.campaigns.find((item) => item.id === campaignId);
-        if (!latestCampaign || latestCampaign.status === "Paused" || latestCampaign.status === "Filled") {
+        if (!latestCampaign || !campaignAllowsLiveSourcing(latestCampaign.status)) {
           return prev;
         }
         if (sourcingAgentCampaignFingerprint(latestCampaign) !== out.campaignFingerprint) {
@@ -1485,7 +1462,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         ...(drafted === 0 && added > 0 ? { error: "Candidates were saved without drafts." } : {}),
       };
     },
-    [commitPersisted, current, sourcingMutationAllowed, workspaceEffectAllowed, workspaceFetch],
+    [candidatePersistenceAllowed, commitPersisted, current, sourcingMutationAllowed, workspaceEffectAllowed, workspaceFetch],
   );
 
   const recordSourcingFeedback = useCallback(

@@ -14,6 +14,7 @@ COPY docker/bootstrap/run.fly.sh /usr/local/bin/run.fly.sh
 COPY supabase/migrations         /migrations
 COPY docker/bootstrap/supabase-admin-reconciliation.sql /opt/aria/supabase-admin-reconciliation.sql
 COPY docker/bootstrap/legacy-baseline-invariants.sql /opt/aria/legacy-baseline-invariants.sql
+COPY docker/bootstrap/legacy-table-inventory.txt /opt/aria/legacy-table-inventory.txt
 COPY docker/bootstrap/legacy-baseline-public-schema.sha256 /opt/aria/legacy-baseline-public-schema.sha256
 COPY docker/bootstrap/recovery-empty-public-schema.sha256 /opt/aria/recovery-empty-public-schema.sha256
 RUN chmod +x /usr/local/bin/run.fly.sh

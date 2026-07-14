@@ -1,20 +1,9 @@
-export type FlowiseProxyPolicy =
-  | { ok: true; flowId: string }
-  | { ok: false; reason: string };
+export type FlowiseProxyPolicy = { ok: false; reason: string };
 
 /**
- * ARIA can safely proxy inference only when the requested Flowise flow is
- * bound to the caller's workspace by agent_specs. Flow authoring and API-key
- * management remain disabled until Flowise has per-workspace isolation.
+ * Public Flowise proxying is not an authority boundary. The private adapter
+ * resolves server-owned workflow bindings and never accepts a browser flow ID.
  */
-export function getFlowiseProxyPolicy(method: string, path: readonly string[]): FlowiseProxyPolicy {
-  if (method !== "POST") return { ok: false, reason: "Only POST prediction requests are allowed." };
-  if (path.length !== 2 || path[0] !== "prediction") {
-    return { ok: false, reason: "Only a single prediction flow is allowed." };
-  }
-  const flowId = path[1] ?? "";
-  if (!/^[A-Za-z0-9_-]{1,120}$/.test(flowId)) {
-    return { ok: false, reason: "Invalid Flowise flow ID." };
-  }
-  return { ok: true, flowId };
+export function getFlowiseProxyPolicy(_method: string, _path: readonly string[]): FlowiseProxyPolicy {
+  return { ok: false, reason: "Public Flowise proxying is disabled." };
 }

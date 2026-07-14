@@ -115,8 +115,22 @@ export const SourcingAgentRequestSchema = z
   .object({
     campaignId: bounded(100).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/),
     count: z.number().int().min(1).max(8).default(5),
+    agentFrameworkRunId: z.string().uuid().optional(),
+    agentFrameworkCapabilityToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional(),
+    agentFrameworkQuery: z.string().trim().min(3).max(256).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (request) => {
+      const fields = [
+        request.agentFrameworkRunId,
+        request.agentFrameworkCapabilityToken,
+        request.agentFrameworkQuery,
+      ];
+      return fields.every(Boolean) || fields.every((value) => value === undefined);
+    },
+    { message: "Framework run, capability, and reviewed query must be supplied together." },
+  );
 
 const LlmProviderSchema = z
   .object({
@@ -307,6 +321,44 @@ export type SourcingAgentCandidateDto = z.infer<
   typeof SourcingAgentCandidateDtoSchema
 >;
 
+export const SourcingFeedbackReceiptDtoSchema = z
+  .object({
+    receiptId: z.string().uuid(),
+    platform: z.enum(["GitHub", "LinkedIn", "Stack Overflow", "Dribbble", "Behance"]),
+    candidateCount: z.number().int().min(0).max(100),
+  })
+  .strict();
+
+export type SourcingFeedbackReceiptDto = z.infer<
+  typeof SourcingFeedbackReceiptDtoSchema
+>;
+
+const SourcingAgentSuccessResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    mode: z.enum(["cloud", "deterministic"]),
+    campaignId: bounded(100),
+    campaignFingerprint: bounded(100_000).min(1),
+    candidates: z.array(SourcingAgentCandidateDtoSchema).max(8),
+    totalFound: z.number().int().min(0).max(100_000),
+    requestId: bounded(100).regex(/^[A-Za-z0-9._:-]{1,100}$/),
+    idempotencyKey: z.string().uuid(),
+    sourcingRunId: z.string().uuid(),
+    agentFrameworkRunId: z.string().uuid().optional(),
+    agentFrameworkResultSha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+    appliedLessonIds: z.array(z.string().uuid()).max(100),
+    feedbackReceipts: z.array(SourcingFeedbackReceiptDtoSchema).min(1).max(20),
+  })
+  .strict()
+  .refine(
+    (response) => Boolean(response.agentFrameworkRunId) === Boolean(response.agentFrameworkResultSha256),
+    { message: "Framework run and staged result receipt must be supplied together." },
+  );
+
+export type SourcingAgentSuccessResponse = z.infer<
+  typeof SourcingAgentSuccessResponseSchema
+>;
+
 function safeHttps(value: string): boolean {
   if (!value) return true;
   try {
@@ -376,6 +428,27 @@ export function parseSourcingAgentCandidates(
     parsed.push(result.data);
   }
   return parsed;
+}
+
+export function parseSourcingAgentSuccessResponse(
+  value: unknown,
+  campaignId: string,
+  maxCount: number,
+  expectedAgentFrameworkRunId?: string,
+): SourcingAgentSuccessResponse | null {
+  const parsed = SourcingAgentSuccessResponseSchema.safeParse(value);
+  if (
+    !parsed.success ||
+    parsed.data.campaignId !== campaignId ||
+    parsed.data.agentFrameworkRunId !== expectedAgentFrameworkRunId
+  ) return null;
+  const candidates = parseSourcingAgentCandidates(
+    parsed.data.candidates,
+    campaignId,
+    maxCount,
+  );
+  if (!candidates) return null;
+  return { ...parsed.data, candidates };
 }
 
 export function candidateFromSourcingAgentDto(

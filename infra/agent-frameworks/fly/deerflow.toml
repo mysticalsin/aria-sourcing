@@ -1,0 +1,47 @@
+app = "aria-mantu-deerflow"
+primary_region = "cdg"
+kill_signal = "SIGTERM"
+kill_timeout = 60
+
+[deploy]
+  strategy = "rolling"
+  wait_timeout = "10m"
+
+[env]
+  DEER_FLOW_CONFIG_PATH = "/opt/aria/deerflow/config.yaml"
+  DEER_FLOW_HOME = "/tmp/deerflow"
+  DEERFLOW_DATABASE_HOST = "aria-mantu-deerflow-db.internal"
+  DEERFLOW_STREAM_BRIDGE_REDIS_HOST = "aria-mantu-deerflow-redis.internal"
+  DEERFLOW_MODEL_BASE_URL = "http://aria-mantu-model-gateway.internal:8090/v1"
+  DEERFLOW_DATABASE_PASSWORD_FILE = "/run/secrets/deerflow_db_password"
+  DEERFLOW_REDIS_PASSWORD_FILE = "/run/secrets/deerflow_redis_password"
+  DEERFLOW_MODEL_API_KEY_FILE = "/run/secrets/deerflow_model_gateway_token"
+  DEER_FLOW_INTERNAL_AUTH_TOKEN_FILE = "/run/secrets/deerflow_internal_token"
+  DEERFLOW_BIND_HOST = "fly-local-6pn"
+  PYTHONDONTWRITEBYTECODE = "1"
+  UV_CACHE_DIR = "/tmp/uv-cache"
+  HOME = "/tmp"
+
+[[files]]
+  guest_path = "/run/secrets/deerflow_db_password"
+  secret_name = "ARIA_DEERFLOW_DB_PASSWORD_B64"
+
+[[files]]
+  guest_path = "/run/secrets/deerflow_redis_password"
+  secret_name = "ARIA_DEERFLOW_REDIS_PASSWORD_B64"
+
+[[files]]
+  guest_path = "/run/secrets/deerflow_model_gateway_token"
+  secret_name = "ARIA_GATEWAY_TOKEN_B64"
+
+[[files]]
+  guest_path = "/run/secrets/deerflow_internal_token"
+  secret_name = "ARIA_DEERFLOW_INTERNAL_TOKEN_B64"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"
+  persist_rootfs = "never"
+
+[[restart]]
+  policy = "always"

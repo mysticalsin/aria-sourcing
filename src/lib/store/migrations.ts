@@ -2,6 +2,7 @@ import { defaultIntegrations } from "../integrations";
 import { buildSeedState, defaultSettings, seedInterviewers, STATE_VERSION } from "../seed";
 import { DEFAULT_STAR_THRESHOLDS, deriveLeadSource, deriveStarRating } from "../tania";
 import type { HermesState } from "../types";
+import { demoStateAllowsCandidatePersistence } from "./demo-persistence";
 
 const STORAGE_KEY = "hermes-sourcing:v1";
 
@@ -115,12 +116,20 @@ export function loadState(): HermesState {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as HermesState;
-      if (parsed && parsed.version === STATE_VERSION) return normalizeHermesState(parsed);
+      if (parsed && parsed.version === STATE_VERSION) {
+        const normalized = normalizeHermesState(parsed);
+        if (demoStateAllowsCandidatePersistence(normalized)) return normalized;
+        window.localStorage.removeItem(STORAGE_KEY);
+        return buildSeedState();
+      }
       // Migrate ANY prior version rather than wiping all data — migrateToCurrentVersion
       // defensively defaults every field, so it can handle arbitrarily old blobs. Only
       // missing/corrupt/unparseable JSON or a non-numeric version falls through to reseed.
       if (parsed && typeof parsed.version === "number") {
-        return normalizeHermesState(parsed);
+        const normalized = normalizeHermesState(parsed);
+        if (demoStateAllowsCandidatePersistence(normalized)) return normalized;
+        window.localStorage.removeItem(STORAGE_KEY);
+        return buildSeedState();
       }
     }
   } catch {

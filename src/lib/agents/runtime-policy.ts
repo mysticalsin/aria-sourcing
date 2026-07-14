@@ -1,5 +1,4 @@
 import { z } from "zod";
-import type { JobAnalysis } from "@/lib/types";
 
 export const SupportedAgentRoleBriefSchema = z.object({
   title: z.string().trim().min(1).max(120),
@@ -28,6 +27,20 @@ export interface AgentRuntimeAvailability {
   runtime_reason: string | null;
 }
 
+export const ApprovedAgentWorkflowBindingSchema = z.object({
+  workflowVersionId: z.string().uuid(),
+  workflowName: z.string().trim().min(1).max(120),
+  workflowSha256: z.string().regex(/^[0-9a-f]{64}$/),
+}).strict();
+
+export type ApprovedAgentWorkflowBinding = z.infer<typeof ApprovedAgentWorkflowBindingSchema>;
+
+export interface AgentFrameworkRuntimeAvailabilityContext {
+  authorityAvailable: boolean;
+  runtimeReady: boolean;
+  approvedWorkflow?: unknown;
+}
+
 /**
  * The graph currently produces first-touch email drafts only. Stored specs for
  * other channels fail closed instead of silently running with Email semantics.
@@ -53,49 +66,6 @@ export function resolveStoredAgentRuntimePolicy(
   };
 }
 
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-}
-
-/** Legacy role briefs may contain additional descriptive fields. Normalize the
- * stored value, but require the title that the graph needs to execute. */
-export function normalizeStoredAgentRoleBrief(value: unknown): JobAnalysis | null {
-  const parsed = SupportedAgentRoleBriefSchema.safeParse(value);
-  if (!parsed.success) return null;
-  const brief = parsed.data;
-  const numberOrNull = (candidate: unknown) =>
-    typeof candidate === "number" && Number.isFinite(candidate) ? candidate : null;
-
-  return {
-    ...brief,
-    title: brief.title,
-    department: typeof brief.department === "string" ? brief.department : "",
-    seniority: typeof brief.seniority === "string" ? brief.seniority : "Senior",
-    employmentType: typeof brief.employmentType === "string" ? brief.employmentType : "Full-time",
-    locationType: typeof brief.locationType === "string" ? brief.locationType : "Remote",
-    location: typeof brief.location === "string" ? brief.location : "",
-    regions: stringArray(brief.regions),
-    timezone: typeof brief.timezone === "string" ? brief.timezone : "",
-    salaryMin: numberOrNull(brief.salaryMin),
-    salaryMax: numberOrNull(brief.salaryMax),
-    currency: typeof brief.currency === "string" ? brief.currency : "",
-    equity: brief.equity === true,
-    requiredSkills: stringArray(brief.requiredSkills).length
-      ? stringArray(brief.requiredSkills)
-      : stringArray(brief.skills),
-    niceToHaveSkills: stringArray(brief.niceToHaveSkills),
-    minYearsExperience: numberOrNull(brief.minYearsExperience),
-    maxYearsExperience: numberOrNull(brief.maxYearsExperience),
-    education: typeof brief.education === "string" ? brief.education : "",
-    industryExperience: stringArray(brief.industryExperience),
-    companyStageTarget: stringArray(brief.companyStageTarget),
-    teamSize: typeof brief.teamSize === "string" ? brief.teamSize : "",
-    reportingTo: typeof brief.reportingTo === "string" ? brief.reportingTo : "",
-    urgency: typeof brief.urgency === "string" ? brief.urgency : "Standard",
-    validationWarnings: [],
-  } as JobAnalysis;
-}
-
 export function describeStoredAgentRuntimeAvailability(
   roleBrief: unknown,
   channels: unknown,
@@ -103,6 +73,10 @@ export function describeStoredAgentRuntimeAvailability(
   status: unknown,
   ownerId: unknown,
   actorId: unknown,
+  framework: AgentFrameworkRuntimeAvailabilityContext = {
+    authorityAvailable: false,
+    runtimeReady: false,
+  },
 ): AgentRuntimeAvailability {
   if (typeof ownerId !== "string" || typeof actorId !== "string" || ownerId !== actorId) {
     return { runtime_eligible: false, runtime_reason: "Only the agent owner can run this spec." };
@@ -110,11 +84,33 @@ export function describeStoredAgentRuntimeAvailability(
   if (status !== "active") {
     return { runtime_eligible: false, runtime_reason: "Stored agent must be active before it can run." };
   }
-  if (!normalizeStoredAgentRoleBrief(roleBrief)) {
+  if (!SupportedAgentRoleBriefSchema.safeParse(roleBrief).success) {
     return { runtime_eligible: false, runtime_reason: "Stored agent role brief is invalid." };
   }
   const resolved = resolveStoredAgentRuntimePolicy(channels, guardrails);
-  return resolved.ok
-    ? { runtime_eligible: true, runtime_reason: null }
-    : { runtime_eligible: false, runtime_reason: resolved.reason };
+  if (!resolved.ok) {
+    return { runtime_eligible: false, runtime_reason: resolved.reason };
+  }
+  if (!framework.authorityAvailable) {
+    return {
+      runtime_eligible: false,
+      runtime_reason: "Approved workflow authority is unavailable.",
+    };
+  }
+  if (!ApprovedAgentWorkflowBindingSchema.safeParse(framework.approvedWorkflow).success) {
+    return {
+      runtime_eligible: false,
+      runtime_reason: "An approved workflow from the agent framework is required before this spec can run.",
+    };
+  }
+  if (!framework.runtimeReady) {
+    return {
+      runtime_eligible: false,
+      runtime_reason: "Agent framework runtime is unavailable.",
+    };
+  }
+  return {
+    runtime_eligible: true,
+    runtime_reason: null,
+  };
 }

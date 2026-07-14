@@ -1,0 +1,41 @@
+app = "aria-mantu-deerflow-redis"
+primary_region = "cdg"
+kill_signal = "SIGTERM"
+kill_timeout = 30
+
+[deploy]
+  strategy = "rolling"
+  wait_timeout = "10m"
+
+[env]
+  ARIA_REDIS_PASSWORD_FILE = "/run/secrets/redis_password"
+  ARIA_REDIS_MAXMEMORY = "384mb"
+
+[[files]]
+  guest_path = "/run/secrets/redis_password"
+  secret_name = "ARIA_REDIS_PASSWORD_B64"
+
+[[mounts]]
+  source = "deerflow_redis_data"
+  destination = "/data"
+  initial_size = "3GB"
+  snapshot_retention = 14
+  scheduled_snapshots = true
+  auto_extend_size_threshold = 80
+  auto_extend_size_increment = "1GB"
+  auto_extend_size_limit = "10GB"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  persist_rootfs = "never"
+
+[[restart]]
+  policy = "always"
+
+[checks.redis]
+  type = "tcp"
+  port = 6379
+  interval = "15s"
+  timeout = "5s"
+  grace_period = "20s"

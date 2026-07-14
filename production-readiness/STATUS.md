@@ -1,6 +1,6 @@
 # Production Readiness Status
 
-**Date:** 2026-07-13
+**Date:** 2026-07-14
 
 This page describes source and release-gate status. It is not evidence that a
 particular production deployment is healthy.
@@ -8,7 +8,7 @@ particular production deployment is healthy.
 ## Source candidate
 
 - Node 22, Next.js 16, React 19, and TypeScript 5 are enforced by the repository.
-- `npm test` runs 156 chained checks: 34 pretest commands plus 122 application
+- `npm test` runs 164 chained checks: 36 pretest commands plus 128 application
   test commands.
 - Local acceptance requires typecheck, lint, the full test chain, the isolated
   production build, the exact database restart test, and the database authority

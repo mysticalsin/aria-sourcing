@@ -38,7 +38,7 @@ ok(
 ok(
   "source and provider paths preflight before live dispatch",
   guardedBefore(sourcingActionsSource, /workspaceFetch\("\/api\/source"/) &&
-    guardedBefore(actionBody("runSourcingAgent", "generateOutreachFor"), /workspaceFetch\("\/api\/sourcing-agent"/) &&
+    guardedBefore(actionBody("runSourcingAgent", "generateOutreachFor"), /requestReviewedSourcing\(/) &&
     guardedBefore(actionBody("generateOutreachLive", "draftFollowUpFor"), /runWorkspaceEffect\(/),
 );
 

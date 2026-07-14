@@ -46,6 +46,7 @@ interface ResolvedConversation {
   conversation_id?: string | null;
   candidate_id?: string | null;
   spec_id?: string | null;
+  owner_id?: string | null;
 }
 
 /** First server-configured reply model wins. No browser-supplied model keys. */
@@ -200,12 +201,14 @@ export async function processStoredWhatsAppInbound(
     const conversationId = convo.conversation_id;
     const conversationCandidateId = convo.candidate_id;
     if (!conversationId || !conversationCandidateId) return complete("triage", "no-conversation");
-    if (!convo.spec_id) return complete("triage", "agent-spec-unavailable");
+    if (!convo.spec_id || !convo.owner_id) return complete("triage", "agent-spec-unavailable");
 
     const { data: spec, error: specErr } = await supabase
       .from("agent_specs")
       .select("id, seat_id, role_brief, guardrails, status")
       .eq("id", convo.spec_id)
+      .eq("workspace_id", workspaceId)
+      .eq("owner_id", convo.owner_id)
       .maybeSingle();
     if (specErr) return retry("agent-spec-lookup-failed");
     if (!spec || spec.status !== "active") return complete("triage", "agent-spec-unavailable");
@@ -216,6 +219,8 @@ export async function processStoredWhatsAppInbound(
       .from("messages_outbound")
       .select("body")
       .eq("workspace_id", workspaceId)
+      .eq("owner_id", convo.owner_id)
+      .eq("conversation_id", conversationId)
       .eq("spec_id", convo.spec_id)
       .eq("to_address", recipient)
       .order("created_at", { ascending: false })
@@ -254,6 +259,7 @@ export async function processStoredWhatsAppInbound(
     const reviewDraftDedupeHash = dedupeHash(conversationCandidateId, "WhatsApp", decision.text);
     const { error: outboundErr } = await supabase.from("messages_outbound").insert({
       workspace_id: workspaceId,
+      owner_id: convo.owner_id,
       inbound_message_id: input.inboundId,
       conversation_id: conversationId,
       spec_id: spec.id,

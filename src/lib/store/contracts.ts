@@ -4,6 +4,7 @@ import type { ReplyClassification } from "../mock-ai";
 import type { Recommendation } from "../recommendations";
 import type { ApprovalResult } from "../rules";
 import type { SourceResult } from "../sourcing/candidate-mappers";
+import type { SourcingFeedbackReceiptDto } from "../sourcing/sourcing-agent-contract";
 import type { WorkspaceStatus } from "../workspace-status";
 import type {
   Activity,
@@ -67,8 +68,18 @@ export type SourceNextBatchErrorSource =
   | "invalid";
 
 export type SourceNextBatchResult =
-  | (SourceResult & { source: "github" | "web" | "mock"; ok: true })
-  | { ok: false; error: string; source: SourceNextBatchErrorSource };
+  | (SourceResult & {
+      source: "github" | "web" | "mock";
+      ok: true;
+      mode?: "cloud" | "deterministic";
+      feedbackReceipts?: SourcingFeedbackReceipt[];
+    })
+  | {
+      ok: false;
+      error: string;
+      source: SourceNextBatchErrorSource;
+      retryable?: "agent_framework_reconcile";
+    };
 
 export type CandidateIntakeResult =
   | { ok: true; added: number; skipped: number; skipReason?: string }
@@ -76,11 +87,7 @@ export type CandidateIntakeResult =
 
 export type CandidateAnonymizeResult = { ok: true } | { ok: false; error: string };
 
-export interface SourcingFeedbackReceipt {
-  receiptId: string;
-  platform: "GitHub" | "LinkedIn" | "Stack Overflow" | "Dribbble" | "Behance";
-  candidateCount: number;
-}
+export type SourcingFeedbackReceipt = SourcingFeedbackReceiptDto;
 
 export type SourcingFeedbackVerdict = "useful" | "dead_end" | "corrected";
 
@@ -110,7 +117,11 @@ export interface HermesActions {
   // sourcing
   sourceNextBatch: (
     campaignId: string,
-    opts?: { platform?: SourcePlatform; count?: number },
+    opts?: {
+      platform?: SourcePlatform;
+      count?: number;
+      agentFramework?: { runId: string; capabilityToken: string; query: string };
+    },
   ) => Promise<SourceNextBatchResult>;
   /** Searches real provider results and drafts for human review. Cloud mode uses
    * a tool-capable model; deterministic mode executes persisted GitHub queries
@@ -155,7 +166,7 @@ export interface HermesActions {
       notes?: string;
       lawfulBasis: CandidateLawfulBasis;
     },
-  ) => CandidateIntakeResult;
+  ) => Promise<CandidateIntakeResult>;
   /** Sillage Account Mapping (third real sourcing channel): resolves a company
    *  (domain or LinkedIn URL) into real enriched employee profiles. Enrichment is
    *  async — this kicks off the job server-side and returns a requestId to poll

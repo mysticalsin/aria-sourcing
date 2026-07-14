@@ -132,12 +132,13 @@ test("store consumer uses strict response parsing, current authority, commit-tim
   const end = store.indexOf("const generateOutreachFor = useCallback", start);
   const action = store.slice(start, end);
   assert.ok(start >= 0 && end > start);
-  assert.match(action, /body: JSON\.stringify\(\{\s*campaignId,/s);
+  assert.match(action, /requestReviewedSourcing\(\s*workspaceFetch,\s*campaignId,\s*requestedCount,?\s*\)/);
+  assert.doesNotMatch(action, /workspaceFetch\("\/api\/sourcing-agent"/);
   assert.doesNotMatch(action, /campaign:\s*\{/);
   assert.doesNotMatch(action, /existing:/);
   assert.doesNotMatch(action, /provider:\s*cloudConfig/);
   assert.doesNotMatch(action, /apiKeyId:/);
-  assert.match(action, /parseSourcingAgentCandidates/);
+  assert.match(action, /campaignAllowsLiveSourcing\(/);
   assert.match(action, /sourcingAgentCampaignFingerprint\(latestCampaign\)/);
   assert.match(action, /workspaceEffectAllowed\(\).*sourcingMutationAllowed\(\)/s);
   assert.match(action, /commitPersisted\(\(prev\)/);
@@ -168,6 +169,8 @@ test("campaign UI keeps durable feedback scoped and merges new run receipts", ()
   const start = page.indexOf("const handleRunAgent = async () =>");
   const end = page.indexOf("const handleOpenRun", start);
   const action = page.slice(start, end);
+  const batchStart = page.indexOf("const handleSource = async () =>");
+  const batchAction = page.slice(batchStart, start);
 
   assert.match(
     page,
@@ -178,4 +181,8 @@ test("campaign UI keeps durable feedback scoped and merges new run receipts", ()
     /current\.campaignId === campaignId[\s\S]*?mergeSourcingFeedbackReceipts\([\s\S]*?current\.receipts,[\s\S]*?res\.feedbackReceipts/,
   );
   assert.doesNotMatch(action, /setFeedbackReceipts\(res\.feedbackReceipts/);
+  assert.match(
+    batchAction,
+    /current\.campaignId === c\.id[\s\S]*?mergeSourcingFeedbackReceipts\([\s\S]*?current\.receipts,[\s\S]*?res\.feedbackReceipts/,
+  );
 });

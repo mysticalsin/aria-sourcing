@@ -1,0 +1,98 @@
+config_version: 24
+log_level: info
+
+logging:
+  enhance:
+    enabled: false
+    format: text
+
+token_usage:
+  enabled: true
+
+token_budget:
+  enabled: true
+  max_tokens: 12000
+  max_input_tokens: 10000
+  max_output_tokens: 2000
+  warn_threshold: 0.8
+  hard_stop_threshold: 1.0
+
+max_recursion_limit: 24
+
+models:
+  - name: aria-model
+    display_name: ARIA governed model
+    use: langchain_openai:ChatOpenAI
+    model: $DEERFLOW_MODEL_ID
+    api_key: $DEERFLOW_MODEL_API_KEY
+    base_url: $DEERFLOW_MODEL_BASE_URL
+    request_timeout: 45.0
+    max_retries: 2
+    max_tokens: 2000
+    temperature: 0
+    # DeerFlow executes the graph through astream(), while the governed model
+    # gateway intentionally accepts only complete, schema-validatable replies.
+    # BaseChatModel therefore falls back to ainvoke() for this model.
+    disable_streaming: true
+    supports_vision: false
+
+database:
+  backend: postgres
+  postgres_url: $DEERFLOW_DATABASE_URL
+
+run_events:
+  backend: db
+  max_trace_content: 10240
+  track_token_usage: true
+
+scheduler:
+  enabled: false
+  poll_interval_seconds: 5
+  lease_seconds: 120
+  max_concurrent_runs: 1
+  min_once_delay_seconds: 60
+
+run_ownership:
+  lease_seconds: 30
+  grace_seconds: 10
+  heartbeat_enabled: false
+
+stream_bridge:
+  type: redis
+  redis_url: $DEERFLOW_STREAM_BRIDGE_REDIS_URL
+  queue_maxsize: 64
+  stream_ttl_seconds: 3600
+  recovered_stream_cleanup_delay_seconds: 60
+  max_connections: 20
+
+sandbox:
+  use: deerflow.sandbox.local:LocalSandboxProvider
+  allow_host_bash: false
+  bash_output_max_chars: 20000
+  read_file_output_max_chars: 50000
+  ls_output_max_chars: 20000
+  bash_command_timeout: 60
+
+memory:
+  enabled: false
+  mode: middleware
+  storage_path: memory.json
+  debounce_seconds: 30
+  model_name: null
+  # Disabled sections are still Pydantic-validated by DeerFlow.
+  max_facts: 10
+  fact_confidence_threshold: 1.0
+  injection_enabled: false
+  max_injection_tokens: 100
+  token_counting: char
+
+agents_api:
+  enabled: false
+
+skills:
+  path: /opt/aria/deerflow/skills
+  container_path: /mnt/skills
+  deferred_discovery: false
+
+skill_evolution:
+  enabled: false

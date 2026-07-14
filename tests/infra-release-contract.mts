@@ -545,8 +545,8 @@ ok(
 );
 ok(
   "release creates provenance and SBOM attestations for every custom image",
-  (deployWorkflow.match(/uses:\s*actions\/attest@[0-9a-f]{40}/g) ?? []).length === 8 &&
-    ["APP", "DB", "BOOTSTRAP", "KONG"].every(
+  (deployWorkflow.match(/uses:\s*actions\/attest@[0-9a-f]{40}/g) ?? []).length === 10 &&
+    ["APP", "DB", "BOOTSTRAP", "KONG", "GRAPHIFY"].every(
       (component) =>
         deployWorkflow.includes(`ARIA_${component}_IMAGE_DIGEST`) &&
         deployWorkflow.includes(`aria-${component.toLowerCase()}.cdx.json`),
@@ -568,7 +568,7 @@ ok("CI has an independent secret-scan job", /^\s{2}secret-scan:\s*$/m.test(ciWor
 ok("CI has an independent production-image supply-chain job", /^\s{2}supply-chain:\s*$/m.test(ciWorkflow));
 ok(
   "supply-chain job builds every production custom Dockerfile",
-  ["Dockerfile.prod", "docker/db/Dockerfile.fly", "docker/bootstrap/Dockerfile.fly", "docker/kong/Dockerfile.fly"].every(
+  ["Dockerfile.prod", "docker/db/Dockerfile.fly", "docker/bootstrap/Dockerfile.fly", "docker/kong/Dockerfile.fly", "workers/graphify-lessons/Dockerfile"].every(
     (dockerfile) => ciWorkflow.includes(`--file ${dockerfile}`),
   ),
 );
@@ -740,9 +740,9 @@ ok(
 );
 ok(
   "Auth and REST exact images receive the same SBOM vulnerability and secret gates as custom images",
-  /for component in app db bootstrap kong auth rest/.test(deployWorkflow) &&
-    /\["app", "db", "bootstrap", "kong", "auth", "rest"\]/.test(releaseEvidenceInventoryStep) &&
-    /for component in app db bootstrap kong auth rest/.test(releaseEvidenceVerificationStep),
+  /for component in app db bootstrap kong graphify auth rest/.test(deployWorkflow) &&
+    /\["app", "db", "bootstrap", "kong", "graphify", "auth", "rest"\]/.test(releaseEvidenceInventoryStep) &&
+    /for component in app db bootstrap kong graphify auth rest/.test(releaseEvidenceVerificationStep),
 );
 ok("remote deploys are not locally killed and blindly retried", remoteDeployBody.length > 0 && !/\bfast\b|\bwhile\b/.test(remoteDeployBody));
 ok(
@@ -804,9 +804,9 @@ ok(
     /aria-tenant-admin-verification\.json/.test(releaseEvidenceVerificationStep) &&
     /aria-application-acceptance\.json/.test(releaseEvidenceVerificationStep) &&
     /aria-release-candidate-receipt\.json/.test(releaseEvidenceVerificationStep) &&
-    /for component in app db bootstrap kong auth rest/.test(releaseEvidenceVerificationStep) &&
+    /for component in app db bootstrap kong graphify auth rest/.test(releaseEvidenceVerificationStep) &&
     /\.cdx\.json -vulnerabilities\.json -secrets\.json -artifacts\.sha256/.test(releaseEvidenceVerificationStep) &&
-    /for component in app db bootstrap kong; do[\s\S]*-provenance\.sigstore\.json -sbom\.sigstore\.json/.test(
+    /for component in app db bootstrap kong graphify; do[\s\S]*-provenance\.sigstore\.json -sbom\.sigstore\.json/.test(
       releaseEvidenceVerificationStep,
     ) &&
     /aria-release-images\.json/.test(releaseEvidenceVerificationStep) &&

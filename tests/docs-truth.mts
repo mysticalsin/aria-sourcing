@@ -25,6 +25,8 @@ const supabaseSetup = source("SUPABASE_SETUP.md");
 const localSetup = source("production-readiness/LOCAL_SETUP.md");
 const legacyRootBaton = source("CLAUDE_RELAY_BATON.md");
 const agentInstructions = source("AGENTS.md");
+const inventory = source("production-readiness/INVENTORY.md");
+const dataFlow = source("production-readiness/DATA_FLOW.md");
 const allDocs = [
   "README.md",
   "DEPLOYMENT.md",
@@ -170,6 +172,17 @@ ok(
   "agent instructions do not freeze a stale suite count",
   !/\d+ suites,\s*0 failures as of/i.test(agentInstructions) &&
     agentInstructions.includes("package.json"),
+);
+ok(
+  "production inventory does not classify sourcing as mock-only",
+  !/\*\*Mock-only[^\n]*\*\*[^\n]*sourcing/i.test(inventory) &&
+    !/Sourcing returns synthetic candidates\s+from `src\/lib\/mock-ai\.ts`/i.test(inventory),
+);
+ok(
+  "data-flow report describes the current live sourcing authority path",
+  /\/api\/sourcing-agent/.test(dataFlow) &&
+    /real provider/i.test(dataFlow) &&
+    !/current implementation this calls `sourceCandidates\(\)`/i.test(dataFlow),
 );
 
 console.log(`RESULT docs-truth: ${pass} passed, ${fail} failed`);

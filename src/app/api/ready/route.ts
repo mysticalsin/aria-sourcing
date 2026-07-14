@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { evaluateReadiness, type MigrationIdentity, type MigrationState } from "@/lib/readiness";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase/config";
 import { getServiceSupabase } from "@/lib/supabase/server";
+import {
+  agentFrameworkRuntimeFromEnvironment,
+  probeAgentFrameworkAdapters,
+} from "@/lib/agents/framework/runtime-config";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -15,6 +19,8 @@ const expectedMigrationCount = /^[1-9][0-9]*$/.test(expectedMigrationCountRaw)
   ? Number(expectedMigrationCountRaw)
   : Number.NaN;
 const expectedLedgerSha256 = process.env.ARIA_EXPECTED_LEDGER_SHA ?? "";
+const agentFrameworksRequired = process.env.NODE_ENV === "production" ||
+  process.env.AGENT_FRAMEWORKS_REQUIRED === "true";
 
 export async function GET() {
   try {
@@ -28,6 +34,7 @@ export async function GET() {
         expectedMigrationSha,
         expectedMigrationCount,
         expectedLedgerSha256,
+        agentFrameworksRequired,
       },
       {
         database: async () => {
@@ -47,6 +54,10 @@ export async function GET() {
             .limit(1)
             .abortSignal(AbortSignal.timeout(3_000));
           return error === null;
+        },
+        agentFrameworks: async () => {
+          const runtime = agentFrameworkRuntimeFromEnvironment();
+          return probeAgentFrameworkAdapters(runtime.config, runtime.tokens);
         },
         migration: async (): Promise<MigrationState | null> => {
           if (!client) return null;
@@ -85,8 +96,9 @@ export async function GET() {
             cache: "no-store",
             headers: { apikey: SUPABASE_ANON_KEY },
             signal: AbortSignal.timeout(3_000),
+            redirect: "error",
           });
-          return response.status === 200;
+          return response.status === 200 && response.url === authHealthUrl;
         },
       },
     );

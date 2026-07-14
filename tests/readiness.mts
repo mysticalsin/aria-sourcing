@@ -1,4 +1,5 @@
 import { evaluateReadiness, type ReadinessProbes } from "../src/lib/readiness";
+import { readFileSync } from "node:fs";
 
 const releaseSha = "a".repeat(40);
 const expectedMigration = "0018_first_login_admin_grant.sql";
@@ -11,6 +12,7 @@ const readinessInput = {
   expectedMigrationSha,
   expectedMigrationCount,
   expectedLedgerSha256,
+  agentFrameworksRequired: true,
 };
 
 let passed = 0;
@@ -29,6 +31,7 @@ function healthyProbes(overrides: Partial<ReadinessProbes> = {}): ReadinessProbe
     database: async () => true,
     auth: async () => true,
     queue: async () => true,
+    agentFrameworks: async () => true,
     migration: async () => ({
       latest: { filename: expectedMigration, sha256: expectedMigrationSha },
       count: expectedMigrationCount,
@@ -99,6 +102,28 @@ const queueDown = await evaluateReadiness(
 );
 ok("queue failure makes readiness fail", !queueDown.ok && !queueDown.components.queue);
 
+const frameworksDown = await evaluateReadiness(
+  readinessInput,
+  healthyProbes({ agentFrameworks: async () => false }),
+);
+ok("required DeerFlow and Flowise adapter failure makes readiness fail", !frameworksDown.ok && !frameworksDown.components.agentFrameworks);
+
+const frameworksOptional = await evaluateReadiness(
+  { ...readinessInput, agentFrameworksRequired: false },
+  healthyProbes({ agentFrameworks: async () => false }),
+);
+ok("a deliberately framework-free deployment does not inherit the optional probe failure", frameworksOptional.ok && frameworksOptional.components.agentFrameworks);
+
+const readinessRoute = readFileSync(
+  new URL("../src/app/api/ready/route.ts", import.meta.url),
+  "utf8",
+);
+ok(
+  "production readiness cannot opt out of DeerFlow and Flowise with an environment flag",
+  /process\.env\.NODE_ENV === "production"\s*\|\|\s*process\.env\.AGENT_FRAMEWORKS_REQUIRED === "true"/.test(readinessRoute) &&
+    !/frameworkRequirement !== "false"/.test(readinessRoute),
+);
+
 const missingIdentity = await evaluateReadiness(
   {
     releaseSha: "",
@@ -106,6 +131,7 @@ const missingIdentity = await evaluateReadiness(
     expectedMigrationSha: "",
     expectedMigrationCount: 0,
     expectedLedgerSha256: "",
+    agentFrameworksRequired: true,
   },
   healthyProbes(),
 );
