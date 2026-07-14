@@ -482,3 +482,35 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Surfaced by the F2 builder; the two claim functions count the same ledger under different locking disciplines.
 **Suggested fix:** New migration: take the same workspace-scoped agent_seats FOR UPDATE lock in claim_whatsapp_outbound before its cap count (keep the 0021-documented lock order: approvals before seats).
 **Status:** open
+
+## 2026-07-14 — Safe-exit test could signal the child twice
+**Severity:** test-gap
+**File:** tests/safe-exit-traps.mts:28
+**Issue:** The stdout listener searched an accumulated buffer, so cleanup output triggered a second signal after the trap had been removed and made numeric exit assertions nondeterministic.
+**Repro/evidence:** Quality jobs `86713174530` and `86713180539` failed numeric SIGINT/SIGTERM assertions while cleanup assertions passed; the same SHA passed other runs.
+**Suggested fix:** Latch the first signal before calling `child.kill`.
+**Status:** fixed (ee0cee9)
+
+## 2026-07-14 — Web extraction double-decoded and leaked hidden raw-tag content
+**Severity:** security
+**File:** src/lib/ai/web-tools.ts:127
+**Issue:** Decoding `&amp;` first double-decoded encoded markup, while strict closing-tag regexes missed browser-tolerated forms such as `</script >`, allowing hidden page text into LLM tool context.
+**Repro/evidence:** GHAS check `87188360113` raised `js/double-escaping` and `js/bad-tag-filter`; focused adversarial tests reproduce both inputs.
+**Suggested fix:** Decode ampersands last and accept browser-tolerated raw-tag close syntax before generic tag removal.
+**Status:** fixed (ee0cee9)
+
+## 2026-07-14 — Winlog Markdown escaping could be neutralized by backslashes
+**Severity:** correctness
+**File:** src/app/winlog/page.tsx:36
+**Issue:** The export escaped pipes without escaping existing backslashes first, so input such as `a\|b` could corrupt the generated table cell.
+**Repro/evidence:** GHAS check `87188360113` raised `js/incomplete-sanitization`; the regression test proves `a\|b` becomes `a\\\|b` and all newline forms flatten.
+**Suggested fix:** Use the shared table-cell encoder that escapes backslashes before pipes.
+**Status:** fixed (ee0cee9)
+
+## 2026-07-14 — CodeQL treated non-secret API-key metadata as cleartext credentials
+**Severity:** test-gap
+**File:** src/lib/store.ts:692
+**Issue:** CodeQL inferred sensitivity from the `apiKeys` property name even though `ApiKey` contains only ID, label, provider, last four characters, status, timestamps, and creator.
+**Repro/evidence:** `saveApiKey` never copies `input.value`; `/api/keys` encrypts the raw value server-side and returns only ID/last-four metadata. Alert `13` predates PR `#3`.
+**Suggested fix:** Preserve the metadata contract and document the verified false positive instead of breaking provider references.
+**Status:** wontfix (CodeQL alert 13 dismissed as false positive on 2026-07-14 with audit comment)
