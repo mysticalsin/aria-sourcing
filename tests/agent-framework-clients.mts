@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   DEERFLOW_SOURCE_COMMIT,
   FLOWISE_SOURCE_COMMIT,
+  type AgentFrameworkRunRequest,
   type AgentFrameworkRuntimeConfiguration,
 } from "../src/lib/agents/framework/contracts";
 import {
@@ -42,7 +43,7 @@ const config: AgentFrameworkRuntimeConfiguration = {
   killSwitch: false,
 };
 
-const request = {
+const request: AgentFrameworkRunRequest = {
   runId: "10000000-0000-4000-8000-000000000001",
   workspaceId: "20000000-0000-4000-8000-000000000002",
   ownerId: "30000000-0000-4000-8000-000000000003",

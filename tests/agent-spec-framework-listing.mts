@@ -134,6 +134,12 @@ function request() {
   return new NextRequest("http://localhost/api/agents/specs", { method: "GET" });
 }
 
+async function getResponse() {
+  const response = await route.GET(request());
+  assert.ok(response, "GET must return a response");
+  return response;
+}
+
 test("runtime policy admits only an exact approved workflow binding on a ready framework", () => {
   const common = [
     { title: "Staff Backend Engineer" },
@@ -168,7 +174,7 @@ test("runtime policy admits only an exact approved workflow binding on a ready f
 
 test("GET lists strict approved workflow bindings through service-only authority", async () => {
   reset();
-  const response = await route.GET(request());
+  const response = await getResponse();
   const body = await response.json();
 
   assert.equal(response.status, 200);
@@ -205,7 +211,7 @@ test("GET lists strict approved workflow bindings through service-only authority
 test("GET fails closed per spec when service workflow authority is unavailable", async () => {
   reset();
   serviceAvailable = false;
-  const response = await route.GET(request());
+  const response = await getResponse();
   const body = await response.json();
 
   assert.equal(response.status, 200);
@@ -221,7 +227,7 @@ test("GET fails closed per spec when service workflow authority is unavailable",
 test("GET fails closed per spec when the service workflow RPC errors", async () => {
   reset();
   serviceError = { message: "database unavailable" };
-  const response = await route.GET(request());
+  const response = await getResponse();
   const body = await response.json();
 
   assert.equal(response.status, 200);
@@ -247,7 +253,7 @@ test("GET rejects malformed or unexpected workflow authority payloads", async ()
       unreviewed_field: true,
     }],
   };
-  const response = await route.GET(request());
+  const response = await getResponse();
   const body = await response.json();
 
   assert.equal(response.status, 200);
@@ -259,7 +265,7 @@ test("GET rejects malformed or unexpected workflow authority payloads", async ()
 test("GET exposes the approved binding but blocks execution when framework runtime is stopped", async () => {
   reset();
   killSwitch = true;
-  const response = await route.GET(request());
+  const response = await getResponse();
   const body = await response.json();
 
   assert.equal(body.specs[0].workflowVersionId, workflowVersionId);

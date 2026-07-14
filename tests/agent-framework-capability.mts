@@ -3,12 +3,13 @@ import assert from "node:assert/strict";
 import {
   signAgentFrameworkClaimCapability,
   signAgentFrameworkRequestCapability,
+  type AgentFrameworkRequestCapabilityInput,
   verifyAgentFrameworkRequestCapability,
 } from "../src/lib/agents/framework/capability";
 import { FLOWISE_SOURCE_COMMIT } from "../src/lib/agents/framework/contracts";
 
 const secret = "z".repeat(48);
-const request = {
+const request: AgentFrameworkRequestCapabilityInput = {
   runId: "10000000-0000-4000-8000-000000000001",
   workspaceId: "20000000-0000-4000-8000-000000000002",
   ownerId: "30000000-0000-4000-8000-000000000003",

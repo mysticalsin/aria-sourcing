@@ -75,6 +75,7 @@ await test("claim maps only server-owned authority and exact framework provenanc
   });
   assert.equal(result.ok, true);
   if (!result.ok) return;
+  if (!("claim" in result)) assert.fail("Expected an active claim receipt");
   assert.equal(result.claim.flowiseImageDigest, claimReceipt.flowise_image_digest);
   assert.equal(result.claim.deerflowReadinessSha256, claimReceipt.deerflow_readiness_sha256);
   assert.deepEqual(calls.at(-1), {
