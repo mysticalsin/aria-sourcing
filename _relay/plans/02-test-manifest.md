@@ -2,7 +2,7 @@
 plan: 02-test-manifest
 owner: Sonnet-FullStack
 reviewer: Sonnet-QA-Manifest
-status: in-progress
+status: completed
 ---
 
 # 02: Declarative test manifest
@@ -41,9 +41,16 @@ status: in-progress
    durable named manifest groups or remove it once every command it contains is
    represented by the canonical, security, framework, database, or recovery
    groups. No shift-numbered script may remain.
-9. Limit modifications to `package.json`, `scripts/run-tests-sandbox.mjs`,
-   `docs/TESTING.md`, `tests/README.md`, and `tests/docs-truth.mts`, plus the
-   three new manifest files.
+9. Keep implementation changes limited to `package.json`,
+   `scripts/run-tests-sandbox.mjs`, `docs/TESTING.md`, `tests/README.md`, and
+   `tests/docs-truth.mts`, plus the three new manifest files.
+10. The parity review proved six dependent truth updates are also required:
+    `README.md`, `production-readiness/DEPLOYMENT_RUNBOOK.md`, and
+    `production-readiness/STATUS.md` publish the derived lifecycle inventory;
+    `tests/public-fetch.mts`, `tests/fly-backend-stability.mts`, and
+    `tests/databricks-database-contract.mts` previously inspected shell-chain
+    source text. These files may change only to consume the manifest-derived
+    truth. No other scope expansion is approved.
 
 ## Verification
 

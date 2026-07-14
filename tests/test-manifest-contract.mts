@@ -9,6 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import test from "node:test";
 
 import {
@@ -64,7 +65,7 @@ function traceRecords(path: string): unknown[] {
     .map((line) => JSON.parse(line));
 }
 
-test("manifest freezes the exact recursive lifecycle baseline", () => {
+test("manifest preserves parity and freezes the exact deduplicated lifecycle", () => {
   assert.deepEqual(
     Object.fromEntries(
       ["pretest", "application", "posttest", "all"].map((group) => [
@@ -72,14 +73,52 @@ test("manifest freezes the exact recursive lifecycle baseline", () => {
         resolveTestGroup(testManifest, group).length,
       ]),
     ),
-    { pretest: 51, application: 133, posttest: 2, all: 186 },
+    { pretest: 51, application: 130, posttest: 2, all: 183 },
   );
-  const commandLines = resolveTestGroup(testManifest, "all")
-    .map(({ executable, argv }) => `${executable} ${argv.join(" ")}`)
-    .join("\n");
+  const commands = resolveTestGroup(testManifest, "all");
+  const commandLines = commands.map(({ executable, argv }) => `${executable} ${argv.join(" ")}`);
   assert.equal(
-    createHash("sha256").update(commandLines).digest("hex"),
+    createHash("sha256").update(commandLines.join("\n")).digest("hex"),
+    "3f361d4c526cb41167911c935bd891e745aac3c57cabc22873a43200c79cba01",
+  );
+  assert.equal(new Set(commandLines).size, commandLines.length, "canonical lifecycle must be duplicate-free");
+  assert.equal(
+    commands.filter(({ id }) => id === "test-manifest-contract").length,
+    1,
+    "the manifest contract must be permanently registered exactly once",
+  );
+
+  const parityApplication = resolveTestGroup(testManifest, "application")
+    .filter(({ id }) => id !== "test-manifest-contract")
+    .flatMap((command) => {
+      const line = `${command.executable} ${command.argv.join(" ")}`;
+      if (command.id === "agent-run-disabled") {
+        return [
+          line,
+          "tsx tests/agent-framework-contract.mts",
+          "tsx tests/agent-framework-clients.mts",
+          "tsx tests/agent-framework-authority.mts",
+        ];
+      }
+      if (command.id === "integration-authority") {
+        return [line, "tsx tests/mcp-query-auth.mts"];
+      }
+      return [line];
+    });
+  const parityLines = [
+    ...resolveTestGroup(testManifest, "pretest").map(
+      ({ executable, argv }) => `${executable} ${argv.join(" ")}`,
+    ),
+    ...parityApplication,
+    ...resolveTestGroup(testManifest, "posttest").map(
+      ({ executable, argv }) => `${executable} ${argv.join(" ")}`,
+    ),
+  ];
+  assert.equal(parityLines.length, 186);
+  assert.equal(
+    createHash("sha256").update(parityLines.join("\n")).digest("hex"),
     "cfdceeac26565ac1051441493605a3b63da6ac32b0767b19eb59d5d1030522f5",
+    "deduplication must remove only the four exact parity-baseline duplicates",
   );
   assert.ok(
     resolveTestGroup(testManifest, "application").some(
@@ -187,47 +226,57 @@ test("durable groups exactly cover every retired shift-40 process", () => {
   );
 });
 
-test("npm lifecycle trace is identical to the direct derived all group", () => {
-  assert.equal(packageWiringMatches, true, "package lifecycle must be rewired before trace proof");
-  const root = mkdtempSync(join(tmpdir(), "aria-test-manifest-"));
-  const npmTrace = join(root, "npm.jsonl");
-  const directTrace = join(root, "direct.jsonl");
-  writeFileSync(npmTrace, "", { mode: 0o600 });
-  writeFileSync(directTrace, "", { mode: 0o600 });
-  try {
-    const npmResult = spawnSync("npm", ["test", "--silent"], {
-      cwd: process.cwd(),
-      encoding: "utf8",
-      env: { ...process.env, [TEST_MANIFEST_TRACE_FILE]: npmTrace },
-    });
-    assert.equal(npmResult.status, 0, npmResult.stderr || npmResult.stdout);
-    const directResult = spawnSync(
-      process.execPath,
-      ["scripts/run-test-manifest.mjs", "--group", "all"],
-      {
+test(
+  "npm lifecycle trace is identical to the direct derived all group",
+  { skip: process.env.npm_execpath ? false : "requires an npm lifecycle" },
+  () => {
+    assert.equal(packageWiringMatches, true, "package lifecycle must be rewired before trace proof");
+    const root = mkdtempSync(join(tmpdir(), "aria-test-manifest-"));
+    const npmTrace = join(root, "npm.jsonl");
+    const directTrace = join(root, "direct.jsonl");
+    writeFileSync(npmTrace, "", { mode: 0o600 });
+    writeFileSync(directTrace, "", { mode: 0o600 });
+    try {
+      const npmExecPath = process.env.npm_execpath;
+      assert.ok(npmExecPath, "npm_execpath is required to prove lifecycle trace parity");
+      const npmResult = spawnSync(process.execPath, [npmExecPath, "test", "--silent"], {
         cwd: process.cwd(),
         encoding: "utf8",
-        env: { ...process.env, [TEST_MANIFEST_TRACE_FILE]: directTrace },
-      },
-    );
-    assert.equal(directResult.status, 0, directResult.stderr || directResult.stdout);
-    assert.deepEqual(traceRecords(npmTrace), traceRecords(directTrace));
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
+        env: { ...process.env, [TEST_MANIFEST_TRACE_FILE]: npmTrace },
+        shell: false,
+      });
+      assert.equal(npmResult.status, 0, npmResult.stderr || npmResult.stdout);
+      const directResult = spawnSync(
+        process.execPath,
+        ["scripts/run-test-manifest.mjs", "--group", "all"],
+        {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          env: { ...process.env, [TEST_MANIFEST_TRACE_FILE]: directTrace },
+        },
+      );
+      assert.equal(directResult.status, 0, directResult.stderr || directResult.stdout);
+      assert.deepEqual(traceRecords(npmTrace), traceRecords(directTrace));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
 
 test("canonical execution is shell-free and fail-fast", () => {
   const commands = resolveTestGroup(testManifest, "candidate-erasure");
-  const calls: Array<{ options: { shell?: boolean }; argv: string[] }> = [];
+  const calls: Array<{ executable: string; options: { shell?: boolean }; argv: string[] }> = [];
   const result = executeResolvedCommands(commands, {
-    spawn: (_executable: string, argv: string[], options: { shell?: boolean }) => {
-      calls.push({ argv, options });
+    spawn: (executable: string, argv: string[], options: { shell?: boolean }) => {
+      calls.push({ executable, argv, options });
       return { status: 1, signal: null };
     },
   });
   assert.equal(result.ok, false);
   assert.equal(calls.length, 1);
+  assert.equal(calls[0].executable, process.execPath);
+  assert.equal(calls[0].argv[0], createRequire(import.meta.url).resolve("tsx/cli"));
+  assert.deepEqual(calls[0].argv.slice(1), commands[0].argv);
   assert.equal(calls[0].options.shell, false);
 });
 

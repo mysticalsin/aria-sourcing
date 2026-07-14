@@ -8,7 +8,7 @@ particular production deployment is healthy.
 ## Source candidate
 
 - Node 22, Next.js 16, React 19, and TypeScript 5 are enforced by the repository.
-- `npm test` runs 186 manifest processes: 51 pretest, 133 application, and 2
+- `npm test` runs 183 manifest processes: 51 pretest, 130 application, and 2
   posttest processes.
 - Local acceptance requires typecheck, lint, the full test chain, the isolated
   production build, the exact database restart test, and the database authority
