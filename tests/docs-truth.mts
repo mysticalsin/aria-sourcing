@@ -130,6 +130,47 @@ ok("contributor guide exists", existsSync(contributingPath));
 ok("security guide exists", existsSync(securityPath));
 ok("testing guide exists", existsSync(testingPath));
 ok("Fly sizing guide exists", existsSync(flySizingPath));
+const developerMapPaths = [
+  "src/lib/README.md",
+  "tests/README.md",
+  "scripts/README.md",
+  "infra/README.md",
+  "docs/OWNERSHIP.md",
+];
+ok(
+  "developer maps exist for logic, tests, scripts, infrastructure, and ownership",
+  developerMapPaths.every((path) =>
+    existsSync(new URL(`../${path}`, import.meta.url)),
+  ),
+);
+ok(
+  "primary developer entrypoints link every developer map",
+  [
+    [readme, developerMapPaths],
+    [
+      documentationMap,
+      [
+        "../src/lib/README.md",
+        "../tests/README.md",
+        "../scripts/README.md",
+        "../infra/README.md",
+        "OWNERSHIP.md",
+      ],
+    ],
+    [
+      architecture,
+      [
+        "../src/lib/README.md",
+        "../tests/README.md",
+        "../scripts/README.md",
+        "../infra/README.md",
+        "OWNERSHIP.md",
+      ],
+    ],
+  ].every(([document, links]) =>
+    (links as string[]).every((link) => (document as string).includes(link)),
+  ),
+);
 ok(
   "documentation map points to the current architecture guide",
   documentationMap.includes("docs/ARCHITECTURE.md") &&

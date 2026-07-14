@@ -25,6 +25,16 @@ the same authority.
 | [`NEEDS_GUIDE.md`](../NEEDS_GUIDE.md) | Intake "needs" model guide | Working on intake/sourcing needs |
 | [`AGENTS.md`](../AGENTS.md) | Instructions for AI coding agents on this repo | You are (or are configuring) an agent |
 
+## Developer maps
+
+| Map | Use it for |
+|---|---|
+| [`src/lib/README.md`](../src/lib/README.md) | Domain layers, stable entrypoints, and import rules |
+| [`tests/README.md`](../tests/README.md) | Test taxonomy, focused gates, and permanent registration |
+| [`scripts/README.md`](../scripts/README.md) | Build, recovery, provisioning, validation, and worker helpers |
+| [`infra/README.md`](../infra/README.md) | Agent-framework infrastructure and related root deployment paths |
+| [`docs/OWNERSHIP.md`](OWNERSHIP.md) | Verified working roles and document authority |
+
 ## Release and audit material: `production-readiness/`
 
 Start with

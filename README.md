@@ -90,6 +90,14 @@ Change workflow and verification are documented in
 [`docs/TESTING.md`](docs/TESTING.md). Security reporting and invariants are in
 [`SECURITY.md`](SECURITY.md).
 
+Developer maps:
+
+- Domain and runtime logic: [`src/lib/README.md`](src/lib/README.md)
+- Test suite: [`tests/README.md`](tests/README.md)
+- Operational scripts: [`scripts/README.md`](scripts/README.md)
+- Infrastructure source: [`infra/README.md`](infra/README.md)
+- Responsibility and document authority: [`docs/OWNERSHIP.md`](docs/OWNERSHIP.md)
+
 ## Deployment
 
 The canonical deploy story is

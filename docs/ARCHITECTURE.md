@@ -45,6 +45,14 @@ Use `@/...` imports within `src/`. Keep browser components out of
 `src/lib/server/`, and keep provider credentials and service-role clients out
 of client bundles.
 
+Developer maps:
+
+- [`src/lib/README.md`](../src/lib/README.md) for domain layers and import rules
+- [`tests/README.md`](../tests/README.md) for test taxonomy and registration
+- [`scripts/README.md`](../scripts/README.md) for operational helpers
+- [`infra/README.md`](../infra/README.md) for framework and deployment sources
+- [`docs/OWNERSHIP.md`](OWNERSHIP.md) for verified roles and document authority
+
 ## Request and data flow
 
 ```text
