@@ -8,7 +8,7 @@ particular production deployment is healthy.
 ## Source candidate
 
 - Node 22, Next.js 16, React 19, and TypeScript 5 are enforced by the repository.
-- `npm test` runs 169 top-level lifecycle commands: 36 pretest, 132 application,
+- `npm test` runs 170 top-level lifecycle commands: 36 pretest, 133 application,
   and 1 posttest command.
 - Local acceptance requires typecheck, lint, the full test chain, the isolated
   production build, the exact database restart test, and the database authority
