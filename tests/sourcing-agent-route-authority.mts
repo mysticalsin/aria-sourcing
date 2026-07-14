@@ -5,6 +5,7 @@ import { NextRequest } from "next/server";
 
 import { buildSeedState } from "../src/lib/seed";
 import { sourcingAgentCampaignFingerprint } from "../src/lib/sourcing/sourcing-agent-contract";
+import type { Campaign } from "../src/lib/types";
 
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -49,7 +50,7 @@ const deterministicSettings = {
 
 let role: "admin" | "member" | "viewer" = "admin";
 let user: { id: string } | null = { id: userId };
-let campaign = structuredClone(baseCampaign);
+let campaign: Campaign = structuredClone(baseCampaign);
 let stateReads = 0;
 let providerCalls = 0;
 let vaultCalls = 0;

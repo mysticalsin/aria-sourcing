@@ -12,6 +12,12 @@ function ok(name: string, cond: boolean) {
   }
 }
 
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    headers: { "content-type": "application/json" },
+  });
+}
+
 const s = buildSeedState();
 const campaign = s.campaigns[0];
 const W = campaign.scoringWeights;
@@ -24,9 +30,8 @@ ok("isSourcingTool rejects an unrelated name", !isSourcingTool("web_search"));
 // --- makeSourcingToolRunner: GitHub branch, mocked fetch --------------------
 {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () => ({
-    ok: true,
-    json: async () => ({
+  globalThis.fetch = async () =>
+    jsonResponse({
       items: [{ login: "alice" }],
       login: "alice",
       name: "Alice Dev",
@@ -38,8 +43,7 @@ ok("isSourcingTool rejects an unrelated name", !isSourcingTool("web_search"));
       public_repos: 10,
       followers: 50,
       created_at: "2018-01-01T00:00:00Z",
-    }),
-  })) as typeof fetch;
+    });
 
   const runner = makeSourcingToolRunner(campaign, [], W, "");
   const result = await runner.run("search_candidates", { platform: "GitHub", query: "language:Go", count: 3 });
@@ -56,9 +60,8 @@ ok("isSourcingTool rejects an unrelated name", !isSourcingTool("web_search"));
 // --- makeSourcingToolRunner: dedupe across repeated calls -------------------
 {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () => ({
-    ok: true,
-    json: async () => ({
+  globalThis.fetch = async () =>
+    jsonResponse({
       items: [{ login: "bob" }],
       login: "bob",
       name: null,
@@ -70,8 +73,7 @@ ok("isSourcingTool rejects an unrelated name", !isSourcingTool("web_search"));
       public_repos: 1,
       followers: 1,
       created_at: null,
-    }),
-  })) as typeof fetch;
+    });
 
   const runner = makeSourcingToolRunner(campaign, [], W, "");
   await runner.run("search_candidates", { platform: "GitHub", query: "language:Go", count: 1 });
@@ -135,19 +137,19 @@ ok("isSourcingTool rejects an unrelated name", !isSourcingTool("web_search"));
 
   const originalFetch = globalThis.fetch;
   let round = 0;
-  globalThis.fetch = (async () => {
+  globalThis.fetch = async () => {
     round += 1;
     if (round === 1) {
-      return {
-        ok: true,
-        json: async () => ({
-          stop_reason: "tool_use",
-          content: [{ type: "tool_use", id: "t1", name: "probe", input: { foo: "bar" } }],
-        }),
-      };
+      return jsonResponse({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "probe", input: { foo: "bar" } }],
+      });
     }
-    return { ok: true, json: async () => ({ stop_reason: "end_turn", content: [{ type: "text", text: "done" }] }) };
-  }) as typeof fetch;
+    return jsonResponse({
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "done" }],
+    });
+  };
 
   const result = await runAnthropicWithTools({
     model: "claude-x",
@@ -177,30 +179,26 @@ ok("isSourcingTool rejects an unrelated name", !isSourcingTool("web_search"));
   };
   const originalFetch = globalThis.fetch;
   let round = 0;
-  globalThis.fetch = (async () => {
+  globalThis.fetch = async () => {
     round += 1;
     if (round === 1) {
-      return {
-        ok: true,
-        json: async () => ({
-          choices: [
-            {
-              finish_reason: "tool_calls",
-              message: {
-                role: "assistant",
-                content: null,
-                tool_calls: [{ id: "c1", type: "function", function: { name: "probe", arguments: "{}" } }],
-              },
+      return jsonResponse({
+        choices: [
+          {
+            finish_reason: "tool_calls",
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [{ id: "c1", type: "function", function: { name: "probe", arguments: "{}" } }],
             },
-          ],
-        }),
-      };
+          },
+        ],
+      });
     }
-    return {
-      ok: true,
-      json: async () => ({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: "final" } }] }),
-    };
-  }) as typeof fetch;
+    return jsonResponse({
+      choices: [{ finish_reason: "stop", message: { role: "assistant", content: "final" } }],
+    });
+  };
 
   const result = await runOpenAiWithTools({
     provider: "groq",

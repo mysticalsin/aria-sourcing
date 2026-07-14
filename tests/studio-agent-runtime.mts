@@ -8,6 +8,12 @@ import {
   resolveStudioCampaign,
   settleStudioRunIdempotencyKey,
 } from "../src/lib/agents/studio-runner";
+import { buildSeedState } from "../src/lib/seed";
+import type { Candidate } from "../src/lib/types";
+
+type StudioSourceNextBatch = Parameters<
+  typeof executeStudioAgentRun
+>[0]["sourceNextBatch"];
 
 let pass = 0;
 
@@ -60,6 +66,12 @@ const input = {
   idempotencyKey: "30000000-0000-4000-8000-000000000003",
 };
 
+function candidateFixture(id: string): Candidate {
+  const candidate = buildSeedState().candidates[0];
+  if (!candidate) throw new Error("The seed state must include a candidate fixture.");
+  return { ...candidate, id, campaignId: input.campaignId };
+}
+
 await test("a lost persistence acknowledgement reuses one run authority without repeating framework or provider work", async () => {
   const scope = {
     specId: input.specId,
@@ -109,7 +121,7 @@ await test("a lost persistence acknowledgement reuses one run authority without 
       requestId: "req-reconcile",
     });
   };
-  const sourceNextBatch = async () => {
+  const sourceNextBatch: StudioSourceNextBatch = async () => {
     if (!staged) {
       staged = true;
       providerSearches += 1;
@@ -124,7 +136,7 @@ await test("a lost persistence acknowledgement reuses one run authority without 
       ok: true as const,
       source: "github" as const,
       accepted: [],
-      skipped: [{ reason: "already persisted" }],
+      skipped: [{ name: "Existing Candidate", reason: "already persisted" }],
     };
   };
 
@@ -184,12 +196,17 @@ await test("a lost persistence acknowledgement reuses one run authority without 
 });
 
 await test("approved framework command invokes canonical real sourcing and reports persisted result", async () => {
-  let request: { url: string; init?: RequestInit } | null = null;
+  const request: { url: string; init: RequestInit | undefined } = {
+    url: "",
+    init: undefined,
+  };
+  const acceptedCandidate = candidateFixture("real-candidate");
   let sourced = 0;
   const result = await executeStudioAgentRun({
     ...input,
     fetcher: async (url, init) => {
-      request = { url: String(url), init };
+      request.url = String(url);
+      request.init = init;
       return responseAt({
         ok: true,
         runId: "40000000-0000-4000-8000-000000000004",
@@ -218,15 +235,15 @@ await test("approved framework command invokes canonical real sourcing and repor
       return {
         ok: true,
         source: "github",
-        accepted: [{ id: "real-candidate" }],
-        skipped: [{ reason: "duplicate" }],
+        accepted: [acceptedCandidate],
+        skipped: [{ name: "Duplicate Candidate", reason: "duplicate" }],
       };
     },
   });
 
-  assert.equal(request?.url, "/api/agents/run");
-  assert.equal(request?.init?.method, "POST");
-  assert.equal(new Headers(request?.init?.headers).get("idempotency-key"), input.idempotencyKey);
+  assert.equal(request.url, "/api/agents/run");
+  assert.equal(request.init?.method, "POST");
+  assert.equal(new Headers(request.init?.headers).get("idempotency-key"), input.idempotencyKey);
   assert.equal(sourced, 1);
   assert.deepEqual(result, {
     ok: true,
@@ -235,7 +252,7 @@ await test("approved framework command invokes canonical real sourcing and repor
     skipped: 1,
     source: "github",
     reports: ["Exact reviewed campaign query approved."],
-    candidates: [{ id: "real-candidate" }],
+    candidates: [acceptedCandidate],
   });
 });
 
@@ -272,7 +289,7 @@ await test("wrong or malformed framework commands never call sourcing", async ()
 });
 
 await test("canonical sourcing failures and empty real searches stay honest", async () => {
-  const frameworkResponse = () => responseAt({
+  const frameworkResponse: typeof fetch = async () => responseAt({
     ok: true,
     runId: "40000000-0000-4000-8000-000000000004",
     reports: [],
@@ -329,6 +346,7 @@ await test("primary agent selection fails closed for missing, disabled, or ambig
 });
 
 await test("primary Run Aria executes one approved framework before using its persisted real candidates", async () => {
+  const acceptedCandidate = candidateFixture("persisted-real-candidate");
   const urls: string[] = [];
   const sourceOptions: unknown[] = [];
   const stored = new Map<string, string>();
@@ -368,7 +386,7 @@ await test("primary Run Aria executes one approved framework before using its pe
       return {
         ok: true,
         source: "github",
-        accepted: [{ id: "persisted-real-candidate" }],
+        accepted: [acceptedCandidate],
         skipped: [],
       };
     },
@@ -387,7 +405,7 @@ await test("primary Run Aria executes one approved framework before using its pe
   assert.deepEqual(result, {
     ok: true,
     mode: "framework",
-    candidates: [{ id: "persisted-real-candidate" }],
+    candidates: [acceptedCandidate],
     skipped: 0,
     source: "github",
     reports: ["Reviewed query authorized."],

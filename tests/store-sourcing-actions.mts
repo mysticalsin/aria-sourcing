@@ -592,6 +592,7 @@ test("specific GitHub and manual intake fail closed for unavailable or unauthori
   const githubDenied = await viewer.actions.addCandidateFromGithub(campaignId, "live-user");
   const manualDenied = await viewer.actions.addCandidateManual(campaignId, {
     name: "Manual Person",
+    lawfulBasis: "consent",
   });
 
   assert.equal(githubDenied.ok, false);
@@ -607,7 +608,10 @@ test("specific GitHub and manual intake fail closed for unavailable or unauthori
     false,
   );
   assert.equal(
-    (await unavailable.actions.addCandidateManual(unavailableCampaignId, { name: "Manual Person" })).ok,
+    (await unavailable.actions.addCandidateManual(unavailableCampaignId, {
+      name: "Manual Person",
+      lawfulBasis: "consent",
+    })).ok,
     false,
   );
   assert.equal(unavailable.fetchCalls, 0);
@@ -619,7 +623,10 @@ test("specific GitHub and manual intake reject missing and paused campaigns", as
   const campaignId = harness.state.campaigns[0].id;
 
   assert.equal((await harness.actions.addCandidateFromGithub("missing", "live-user")).ok, false);
-  assert.equal((await harness.actions.addCandidateManual("missing", { name: "Manual Person" })).ok, false);
+  assert.equal((await harness.actions.addCandidateManual("missing", {
+    name: "Manual Person",
+    lawfulBasis: "consent",
+  })).ok, false);
 
   harness.state = {
     ...harness.state,
@@ -628,7 +635,10 @@ test("specific GitHub and manual intake reject missing and paused campaigns", as
     ),
   };
   assert.equal((await harness.actions.addCandidateFromGithub(campaignId, "live-user")).ok, false);
-  assert.equal((await harness.actions.addCandidateManual(campaignId, { name: "Manual Person" })).ok, false);
+  assert.equal((await harness.actions.addCandidateManual(campaignId, {
+    name: "Manual Person",
+    lawfulBasis: "consent",
+  })).ok, false);
   assert.equal(harness.fetchCalls, 0);
   assert.equal(harness.commitCalls, 0);
 });
