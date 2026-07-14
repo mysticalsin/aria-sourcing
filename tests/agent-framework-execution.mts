@@ -137,7 +137,10 @@ function harness(overrides?: {
   return { client, calls, rpcArgs };
 }
 
-const baseInput = {
+const baseInput: Omit<
+  Parameters<typeof executeAgentFrameworkRun>[0],
+  "client" | "revalidateAuthority" | "fetcher"
+> = {
   runtime,
   deerflowToken: "private-deerflow-token-at-least-32-characters",
   capabilitySecret: "framework-capability-secret-value-1234567890",
@@ -164,7 +167,7 @@ const baseInput = {
     industryExperience: ["SaaS"],
   },
   sourcingCount: 5,
-  loadMemoryContext: async () => ({
+  loadMemoryContext: async (_scope, _runId) => ({
     items: [{
       memoryId: "a0000000-0000-4000-8000-000000000001",
       kind: "preference",
