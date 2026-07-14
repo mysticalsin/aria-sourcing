@@ -17,7 +17,7 @@ Verified from `package.json` on 2026-07-14:
 | Data/auth | Supabase Postgres, Supabase Auth, RLS tenancy, service-role server APIs |
 | UI/runtime | Tailwind, Recharts, lucide-react, Framer Motion, Three.js/R3F |
 | Node | `22.x` |
-| Verification | `npm test` runs 170 top-level lifecycle commands: 36 `pretest`, 133 test, and 1 `posttest` command |
+| Verification | `npm test` runs 186 manifest processes: 51 `pretest`, 133 application, and 2 `posttest` processes |
 | Quality gates | `npm run typecheck`, `npm run lint`, `npm test`, `npm run build:isolated` for this OneDrive checkout |
 
 ## Shipped Surfaces

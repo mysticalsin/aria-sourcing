@@ -25,10 +25,11 @@ diagnose a change but do not replace that complete gate.
 | Imports or module layout | `npx tsx tests/module-boundaries.mts` |
 | Documentation truth | `npx tsx tests/docs-truth.mts` |
 
-New regressions must be registered in the canonical test definition in the same
-commit as the fix. A one-off passing command is not permanent coverage. Preserve
-fail-fast behavior for the canonical gate and keep the sandbox runner as a
-separate keep-going diagnostic.
+New regressions must be registered in `tests/test-manifest.mjs` in the same
+commit as the fix. A one-off passing command is not permanent coverage. The
+canonical runner is fail-fast and shell-free; `scripts/run-tests-sandbox.mjs`
+uses the same derived `all` group as a separate keep-going diagnostic that still
+returns nonzero when any child fails.
 
 Use synthetic identities and records only. Never place candidate PII, provider
 credentials, private evidence, decrypted memory, or production identifiers in

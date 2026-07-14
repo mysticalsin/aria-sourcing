@@ -1,55 +1,99 @@
 #!/usr/bin/env node
-// Sandbox-safe test runner: reproduces the `npm test` (+pretest) gate exactly,
-// but rewrites `tsx <file>` -> `node --import tsx <file>` because the tsx CLI
-// tries to listen() on a unix IPC pipe that this sandbox blocks (EPERM).
-// `node --experimental-test-module-mocks --import tsx <file>` commands run verbatim.
-import { readFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 
-const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));
-const commands = [pkg.scripts.pretest, pkg.scripts.test]
-  .join(' && ')
-  .split('&&')
-  .map((c) => c.trim())
-  .filter(Boolean);
+// Keep-going diagnostic runner for environments where the tsx CLI's IPC pipe
+// is unavailable. The canonical fail-fast gate remains npm test.
+import { spawnSync } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-let passedCmds = 0;
-let failedCmds = 0;
-const failures = [];
+import { resolveTestGroup } from "./run-test-manifest.mjs";
+import { testManifest } from "../tests/test-manifest.mjs";
 
-for (const cmd of commands) {
-  const parts = cmd.split(/\s+/);
-  let argv;
-  if (parts[0] === 'tsx') {
-    argv = ['--import', 'tsx', ...parts.slice(1)];
-  } else if (parts[0] === 'node') {
-    argv = parts.slice(1); // already node --... --import tsx <file>
-  } else {
-    console.error(`SKIP unknown command shape: ${cmd}`);
-    continue;
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+/**
+ * @typedef {(executable: string, argv: string[], options: {
+ *   cwd: string,
+ *   encoding: string,
+ *   env: NodeJS.ProcessEnv,
+ *   shell: false,
+ * }) => {
+ *   error?: Error,
+ *   signal?: NodeJS.Signals | null,
+ *   status: number | null,
+ *   stderr?: string,
+ *   stdout?: string,
+ * }} SandboxSpawn
+ */
+
+function sandboxInvocation(command) {
+  if (command.executable === "node") {
+    return { executable: process.execPath, argv: command.argv };
   }
-  const file = argv[argv.length - 1];
-  const res = spawnSync('node', argv, { encoding: 'utf8' });
-  const out = (res.stdout || '') + (res.stderr || '');
-  const ok = res.status === 0;
-  if (ok) {
-    passedCmds++;
-    const m = out.match(/RESULT [^\n]+/);
-    console.log(`PASS ${file}  ${m ? '| ' + m[0] : ''}`);
-  } else {
-    failedCmds++;
-    failures.push({ file, status: res.status, tail: out.split('\n').slice(-25).join('\n') });
-    console.log(`FAIL ${file}  (exit ${res.status})`);
+  if (command.executable === "tsx") {
+    return { executable: process.execPath, argv: ["--import", "tsx", ...command.argv] };
   }
+  return { executable: "bash", argv: command.argv };
 }
 
-console.log('\n==================== SUMMARY ====================');
-console.log(`commands: ${commands.length}  passed: ${passedCmds}  failed: ${failedCmds}`);
-if (failures.length) {
-  console.log('\n---------------- FAILURE DETAIL ----------------');
-  for (const f of failures) {
-    console.log(`\n### ${f.file} (exit ${f.status})`);
-    console.log(f.tail);
+export function executeSandboxCommands(
+  commands,
+  {
+    /** @type {SandboxSpawn} */
+    spawn = spawnSync,
+    cwd = repositoryRoot,
+    env = process.env,
+    writeLine = console.log,
+  } = {},
+) {
+  const failures = [];
+  let passed = 0;
+
+  for (const command of commands) {
+    const invocation = sandboxInvocation(command);
+    const result = spawn(invocation.executable, invocation.argv, {
+      cwd,
+      encoding: "utf8",
+      env,
+      shell: false,
+    });
+    const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+    if (!result.error && result.status === 0) {
+      passed += 1;
+      const summary = output.match(/RESULT [^\n]+/)?.[0];
+      writeLine(`PASS ${command.id}${summary ? `  | ${summary}` : ""}`);
+      continue;
+    }
+
+    failures.push({
+      id: command.id,
+      status: result.status,
+      signal: result.signal ?? null,
+      error: result.error instanceof Error ? result.error.message : null,
+      tail: output.split("\n").slice(-25).join("\n"),
+    });
+    writeLine(`FAIL ${command.id}  (exit ${String(result.status)})`);
   }
+
+  writeLine("");
+  writeLine("==================== SUMMARY ====================");
+  writeLine(`commands: ${commands.length}  passed: ${passed}  failed: ${failures.length}`);
+  if (failures.length > 0) {
+    writeLine("");
+    writeLine("---------------- FAILURE DETAIL ----------------");
+    for (const failure of failures) {
+      writeLine("");
+      writeLine(`### ${failure.id} (exit ${String(failure.status)})`);
+      writeLine(failure.error ?? failure.tail);
+    }
+  }
+  return { ok: failures.length === 0, failures, passed };
 }
-process.exit(failedCmds ? 1 : 0);
+
+export function main() {
+  const commands = resolveTestGroup(testManifest, "all");
+  return executeSandboxCommands(commands).ok ? 0 : 1;
+}
+
+const isMain = process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url;
+if (isMain) process.exitCode = main();

@@ -9,6 +9,8 @@ import {
 } from "../src/lib/api/public-fetch";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { resolveTestGroup } from "../scripts/run-test-manifest.mjs";
+import { testManifest } from "./test-manifest.mjs";
 
 let pass = 0;
 let fail = 0;
@@ -208,7 +210,6 @@ async function rejects(name: string, fn: () => Promise<unknown>, pattern: RegExp
   const mcpClient = readFileSync("src/lib/mcp-client.ts", "utf8");
   const browserTools = readFileSync("src/lib/ai/browser-tools.ts", "utf8");
   const publicFetchSource = readFileSync("src/lib/api/public-fetch.ts", "utf8");
-  const packageSource = readFileSync("package.json", "utf8");
   ok(
     "public web tools use the pinned transport for every request",
     webTools.includes("fetchPublicUrl") && !/(?<!PublicUrl)\bfetch\s*\(/.test(webTools),
@@ -255,7 +256,9 @@ async function rejects(name: string, fn: () => Promise<unknown>, pattern: RegExp
   );
   ok(
     "targeted security suite runs the public egress contract",
-    /"test:security"\s*:\s*"[^"]*tests\/public-fetch\.mts/.test(packageSource),
+    resolveTestGroup(testManifest, "security").some(({ argv }) =>
+      argv.includes("tests/public-fetch.mts"),
+    ),
   );
   for (const route of [
     "src/app/api/agents/run/route.ts",

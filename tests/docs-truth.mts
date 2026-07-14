@@ -1,5 +1,8 @@
 import { readFileSync, existsSync, readdirSync } from "fs";
 
+import { resolveTestGroup } from "../scripts/run-test-manifest.mjs";
+import { testManifest } from "./test-manifest.mjs";
+
 let pass = 0;
 let fail = 0;
 
@@ -96,21 +99,17 @@ const packageJson = JSON.parse(source("package.json")) as {
   description?: string;
   scripts?: Record<string, string>;
 };
-const countCommands = (script: string | undefined) => script?.split(/\s+&&\s+/).length ?? 0;
-const canonicalTestCommands =
-  countCommands(packageJson.scripts?.pretest)
-  + countCommands(packageJson.scripts?.test)
-  + countCommands(packageJson.scripts?.posttest);
-const pretestCommands = countCommands(packageJson.scripts?.pretest);
-const testCommands = countCommands(packageJson.scripts?.test);
-const posttestCommands = countCommands(packageJson.scripts?.posttest);
+const canonicalTestCommands = resolveTestGroup(testManifest, "all").length;
+const pretestCommands = resolveTestGroup(testManifest, "pretest").length;
+const testCommands = resolveTestGroup(testManifest, "application").length;
+const posttestCommands = resolveTestGroup(testManifest, "posttest").length;
 ok(
-  "STATUS.md reports the package-derived top-level lifecycle command count",
-  canonicalTestCommands > 0 && status.includes(`${canonicalTestCommands} top-level lifecycle commands`),
+  "STATUS.md reports the manifest-derived lifecycle process count",
+  canonicalTestCommands > 0 && status.includes(`${canonicalTestCommands} manifest processes`),
 );
 ok(
-  "README reports the package-derived top-level lifecycle command count",
-  canonicalTestCommands > 0 && readme.includes(`${canonicalTestCommands} top-level lifecycle commands`),
+  "README reports the manifest-derived lifecycle process count",
+  canonicalTestCommands > 0 && readme.includes(`${canonicalTestCommands} manifest processes`),
 );
 ok(
   "package description names the current product instead of the old mock MVP",
@@ -205,9 +204,9 @@ ok(
 );
 
 ok(
-  "deployment runbook reports the package-derived pretest and test command counts",
+  "deployment runbook reports the manifest-derived lifecycle process counts",
   deploymentRunbook.includes(
-    `${pretestCommands} pretest + ${testCommands} test + ${posttestCommands} posttest commands`,
+    `${pretestCommands} pretest + ${testCommands} test + ${posttestCommands} posttest processes`,
   ),
 );
 const migrationFiles = readdirSync(new URL("../supabase/migrations/", import.meta.url))

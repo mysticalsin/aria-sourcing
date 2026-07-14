@@ -23,8 +23,10 @@ npm test
 npm run build:isolated
 ```
 
-`npm test` is the canonical chained contract suite defined in
-`package.json`. Do not copy its individual commands into another script.
+`npm test` is the canonical contract suite. `package.json` maps its three npm
+lifecycle phases to `tests/test-manifest.mjs`, and
+`scripts/run-test-manifest.mjs` validates and executes that literal process
+inventory without a shell. Do not create another copied command list.
 `build:isolated` is required in the OneDrive checkout because it copies build
 inputs to a temporary unsynced directory before running the Next.js build.
 
@@ -76,9 +78,9 @@ npx tsx tests/docs-truth.mts
 npx tsx tests/repository-hygiene.mts
 ```
 
-These tests derive current counts and migration tips from source files. Avoid
-hard-coded totals in current documentation unless a contract derives and checks
-them.
+These tests derive current process counts from the manifest and migration tips
+from the migration directory. Avoid unchecked hand-entered totals in current
+documentation.
 
 ## CI and protected release
 
