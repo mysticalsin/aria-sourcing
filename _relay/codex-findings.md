@@ -993,3 +993,19 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** The database test manually applies rollback SQL and reapplies migration 0032. The production bootstrap records 0032 as applied and has no receipt-bound reverse/forward action for this file.
 **Suggested fix:** Keep production use prohibited until a protected job and new append-only forward migration are reviewed; use restore or a forward migration meanwhile.
 **Status:** open (documentation now fails closed; production machinery remains absent)
+
+## 2026-07-14 - Test manifest could pass without validating itself
+**Severity:** test-gap
+**File:** tests/test-manifest.mjs:389
+**Issue:** The manifest contract was exposed as an optional package script but was absent from the canonical lifecycle, so `npm test` could pass after manifest hashes, wiring, trace parity, or fail-fast behavior drifted.
+**Repro/evidence:** The initial 186-process parity run exited 0 without executing `tests/test-manifest-contract.mts`. The final application group registers it exactly once; the untouched-tree lifecycle ran the contract 8/8 and exited 0.
+**Suggested fix:** Keep every runner-integrity contract in the canonical manifest exactly once.
+**Status:** fixed (`e58992a`)
+
+## 2026-07-14 - Canonical test execution was not process-portable
+**Severity:** correctness
+**File:** scripts/run-test-manifest.mjs:122; tests/test-manifest-contract.mts:230
+**Issue:** Canonical `tsx` entries were executed through the loader shortcut rather than the installed CLI, and the trace proof launched the Windows-incompatible `npm` command directly with `shell: false`.
+**Repro/evidence:** The runner now resolves `tsx/cli` and executes it through `process.execPath`. The npm trace uses the lifecycle-provided `npm_execpath`; bare non-npm execution skips only that lifecycle-specific trace subtest while retaining the other seven runner checks.
+**Suggested fix:** Preserve logical command identity while resolving package CLIs through Node and keep platform shims out of shell-free spawns.
+**Status:** fixed (`e58992a`)
