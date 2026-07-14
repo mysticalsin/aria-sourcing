@@ -2,18 +2,19 @@
 project: MSourcing / ARIA
 shift: 41
 agent: codex-gpt-5
-updated: 2026-07-14 18:34 EDT
-status: source-verified-local-commit-and-codeql-reconciliation-next
+updated: 2026-07-14 18:38 EDT
+status: source-verified-organization-execution-next
 ---
 
-# Handoff - shift 40 is source-verified; release remains NO-GO
+# Handoff - shift 40 and CodeQL are committed; release remains NO-GO
 
 ## Current state
 
 - Worktree: `/Users/tony/.codex/worktrees/msourcing-campaign-integration`.
-- Branch: local `main`; shift-40 base commit is
-  `7658d65c168a127b2f79b27b53cf10d3305476ab`. The full reviewed shift is still
-  uncommitted when this snapshot is written. Preserve every dirty file.
+- Branch: local `main`; the verified shift-40 integration is
+  `42b0d1c01dd7d50eccbee03f87f5b5f96217a7ea` and the separate CodeQL
+  reconciliation is `8a63a8f293136464b5d79a6399dc0e11ba601a7e`.
+  The worktree is clean at this checkpoint.
 - Migration tip is `0033_candidate_erasure_authority.sql`. The reviewed legacy
   public-schema digest is
   `3e1d5f6c2aea60ef7b47f3ce27f1e5dec8afed2a4731e11417dd65332f4561cd`.
@@ -43,9 +44,13 @@ status: source-verified-local-commit-and-codeql-reconciliation-next
   container test plus immutable scan/attestation/promotion evidence; there is no
   post-promotion Graphify execution receipt.
 - PR 3's current GitHub checks were green when inspected. The failures pasted by
-  Tony were historical. Commit
-  `ee0cee9344086011a5bd85bd85c7e745e7286b1a` contains the existing CodeQL fixes
-  for exactly ten files and is not yet reconciled into this local branch.
+  Tony were historical. The reviewed ten-file CodeQL patch from
+  `ee0cee9344086011a5bd85bd85c7e745e7286b1a` is now reconciled locally as
+  `8a63a8f293136464b5d79a6399dc0e11ba601a7e`. Its focused tests, typecheck,
+  lint, full security suite, and staged diff check all exited 0. The optional
+  Obscura live-sidecar probe skipped because no verified local sidecar was
+  configured; its source-level assertion is still included in the committed
+  patch.
 
 ## Done this shift
 
@@ -86,6 +91,8 @@ status: source-verified-local-commit-and-codeql-reconciliation-next
   Playwright smoke, four review lanes, and exact-SHA release readback.
 - Recorded each correctness, security, spec, and test-gap finding in
   `_relay/codex-findings.md`.
+- Committed the complete verified hardening baseline as `42b0d1c`, then applied
+  and committed the exact ten-file CodeQL patch separately as `8a63a8f`.
 
 ## Blockers
 
@@ -112,38 +119,25 @@ status: source-verified-local-commit-and-codeql-reconciliation-next
   identity/readiness results, two disabled-role absence proofs, and a real
   approved campaign E2E. The last reviewed Kimi authority returned HTTP 402;
   provider funding/entitlement and exact model approval remain external.
-- The verified shift-40 baseline is not yet committed. The separate CodeQL fix
-  commit and the repository-organization plans are also not yet integrated.
+- The repository-organization plans are committed but not yet executed. Their
+  output must remain behavior-preserving and pass the permanent release gates.
 
 ## Next steps
 
-1. Confirm `git status --short`, `git diff --check`, branch `main`, and that no
-   test/build process is still active. Stage the complete reviewed shift-40 file
-   set explicitly. Do not use reset, clean, checkout, or stash.
-2. Commit the verified baseline as one honest shift-40 integration commit. Read
-   back `git status`, `git show --stat --oneline HEAD`, and the commit SHA.
-3. Inspect `git show ee0cee9344086011a5bd85bd85c7e745e7286b1a`, then reconcile
-   that existing CodeQL commit separately. Its intended scope is exactly:
-   `src/app/winlog/page.tsx`, `src/lib/ai/web-tools.ts`, `src/lib/utils.ts`,
-   `tests/channels.mts`, `tests/mcp-query-auth.mts`,
-   `tests/obscura-integration.mts`, `tests/safe-exit-traps.mts`,
-   `tests/web-tavily-key.mts`, `tests/web-tools.mts`, and `tests/winlog.mts`.
-   Run those focused tests, typecheck, lint, security, and diff checks; commit it
-   without unrelated edits.
-4. Execute `_relay/plans/00-aria-structure-orchestrator.md` through
+1. Execute `_relay/plans/00-aria-structure-orchestrator.md` through
    `_relay/plans/04-store-extraction-and-release-proof.md` in the documented
    order from an isolated `codex/aria-structure-hygiene-20260714` worktree.
    Preserve small commits and permanent manifest/CI registration for every new
    regression. Remove the temporary `test:shift40` name when its commands are
    represented by durable groups.
-5. Integrate the organization commits back into local `main`, rerun the full
+2. Integrate the organization commits back into local `main`, rerun the full
    source, security, build, database, recovery, Graphify, and four-review-lane
    gate on one SHA, then archive/rewrite this baton again.
-6. Push only after Tony supplies evidence that the exposed credentials were
+3. Push only after Tony supplies evidence that the exposed credentials were
    rotated and that the current identity has approved least-privilege release
    authority. After a successful push, read back the remote SHA and inspect
    exact-SHA CI, CodeQL, annotations, and open alerts with `gh`.
-7. Dispatch production only through the protected workflow after every external
+4. Dispatch production only through the protected workflow after every external
    blocker above is closed. Prove migration 0033, immutable digests, backup and
    restore, restarts, auth, provider/model readiness, zero-send controls, and a
    real approved campaign before allowing real candidate use.
@@ -178,8 +172,9 @@ status: source-verified-local-commit-and-codeql-reconciliation-next
   Never discard or overwrite it because it is not yet in `HEAD`.
 - OneDrive can break or slow direct Next builds. Use `npm run build:isolated`
   for the source checkout.
-- The CodeQL commit can conflict with the large shift-40 baseline. Resolve only
-  within its ten-file scope and compare the resulting diff to `git show ee0cee9`.
+- Treat the organization program as structure-only unless a failing permanent
+  gate proves a correctness defect. Do not mix unrelated behavior changes into
+  cleanup commits.
 - Database tests create Docker projects and volumes. If interrupted, inspect
   named `aria-*` resources and clean only resources created by the interrupted
   test; never remove unrelated volumes.
