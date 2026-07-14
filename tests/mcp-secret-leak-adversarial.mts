@@ -2,11 +2,10 @@
 // refuse a base URL that already carries the auth param. Visionary Level-10 guard.
 import { applyMcpAuth, callMcpTool, connectAndListTools } from "../src/lib/mcp-client";
 import { redactSecrets } from "../src/lib/log-redact";
+import { createProcessEnvScope } from "./helpers/process-env.mts";
 
-const originalNodeEnv = process.env.NODE_ENV;
-const originalRemoteMcpFlag = process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION;
-process.env.NODE_ENV = "test";
-process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION = "true";
+const environment = createProcessEnvScope(["NODE_ENV", "ARIA_ENABLE_REMOTE_MCP_EXECUTION"]);
+environment.set({ NODE_ENV: "test", ARIA_ENABLE_REMOTE_MCP_EXECUTION: "true" });
 
 let pass = 0, fail = 0;
 const ok = (n: string, c: boolean) => { c ? pass++ : (fail++, console.log("FAIL:", n)); };
@@ -142,10 +141,7 @@ ok("marker-shaped bearer credential cannot survive MCP metadata sanitization", !
 ok("marker-shaped bearer credential cannot survive MCP tool-output sanitization", !JSON.stringify(markerCall).includes(markerSecret));
 ok("tool names containing a marker-shaped credential are dropped", markerList.tools?.length === 1);
 
-if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
-else process.env.NODE_ENV = originalNodeEnv;
-if (originalRemoteMcpFlag === undefined) delete process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION;
-else process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION = originalRemoteMcpFlag;
+environment.restore();
 
 console.log(`RESULT mcp-secret-leak-adversarial: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

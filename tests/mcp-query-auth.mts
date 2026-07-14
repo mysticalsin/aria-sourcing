@@ -2,6 +2,7 @@ import { connectAndListTools, applyMcpAuth } from "../src/lib/mcp-client";
 import { redactSecrets } from "../src/lib/log-redact";
 import { validateMcpBaseUrl } from "../src/lib/mcp-auth-params";
 import { readFileSync } from "node:fs";
+import { createProcessEnvScope } from "./helpers/process-env.mts";
 
 let pass = 0,
   fail = 0;
@@ -128,15 +129,15 @@ const failingFetch = async (input: string | URL) =>
     }),
     { status: 200, headers: { "Content-Type": "application/json" } },
   );
-const originalNodeEnv = process.env.NODE_ENV;
-const originalRemoteMcpFlag = process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION;
-process.env.NODE_ENV = "test";
-process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION = "true";
-const failed = await connectAndListTools(failingAuth.url, failingAuth.token, { fetchImpl: failingFetch });
-if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
-else process.env.NODE_ENV = originalNodeEnv;
-if (originalRemoteMcpFlag === undefined) delete process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION;
-else process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION = originalRemoteMcpFlag;
+const failed = await (async () => {
+  const environment = createProcessEnvScope(["NODE_ENV", "ARIA_ENABLE_REMOTE_MCP_EXECUTION"]);
+  environment.set({ NODE_ENV: "test", ARIA_ENABLE_REMOTE_MCP_EXECUTION: "true" });
+  try {
+    return await connectAndListTools(failingAuth.url, failingAuth.token, { fetchImpl: failingFetch });
+  } finally {
+    environment.restore();
+  }
+})();
 const error = failed.error ?? "";
 ok("failing query-auth error contains only the expected host context", failed.ok === false && error === "MCP initialize failed (mcp.tavily.com).");
 ok("failing query-auth error omits raw key", !error.includes(rawSecret));

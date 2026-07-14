@@ -7,6 +7,7 @@ import {
   runOpenAiWithTools,
   type ResolvedMcpServer,
 } from "../src/lib/ai/tool-loop";
+import { createProcessEnvScope } from "./helpers/process-env.mts";
 
 let pass = 0;
 let fail = 0;
@@ -18,7 +19,7 @@ function ok(name: string, condition: boolean) {
   }
 }
 
-const originalEnv = { ...process.env };
+const environment = createProcessEnvScope(["NODE_ENV", "ARIA_ENABLE_REMOTE_MCP_EXECUTION"]);
 const originalFetch = globalThis.fetch;
 
 function rpcFetch(onCall?: (method: string) => void) {
@@ -57,8 +58,7 @@ function rpcFetch(onCall?: (method: string) => void) {
 
 try {
   {
-    process.env.NODE_ENV = "production";
-    process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION = "true";
+    environment.set({ NODE_ENV: "production", ARIA_ENABLE_REMOTE_MCP_EXECUTION: "true" });
     let requests = 0;
     const result = await callMcpTool("https://mcp.example.test/mcp", "secret", "read_fixture", {}, {
       fetchImpl: rpcFetch(() => {
@@ -69,8 +69,7 @@ try {
   }
 
   {
-    process.env.NODE_ENV = "development";
-    delete process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION;
+    environment.set({ NODE_ENV: "development", ARIA_ENABLE_REMOTE_MCP_EXECUTION: undefined });
     let requests = 0;
     const result = await callMcpTool("https://mcp.example.test/mcp", "secret", "read_fixture", {}, {
       fetchImpl: rpcFetch(() => {
@@ -81,8 +80,7 @@ try {
   }
 
   {
-    process.env.NODE_ENV = "development";
-    process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION = "true";
+    environment.set({ NODE_ENV: "development", ARIA_ENABLE_REMOTE_MCP_EXECUTION: "true" });
     let requests = 0;
     const result = await callMcpTool("https://mcp.example.test/mcp", "secret", "read_fixture", {}, {
       fetchImpl: rpcFetch(() => {
@@ -93,8 +91,7 @@ try {
   }
 
   {
-    process.env.NODE_ENV = "staging";
-    process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION = "true";
+    environment.set({ NODE_ENV: "staging", ARIA_ENABLE_REMOTE_MCP_EXECUTION: "true" });
     let requests = 0;
     const result = await callMcpTool("https://mcp.example.test/mcp", "secret", "read_fixture", {}, {
       fetchImpl: rpcFetch(() => {
@@ -105,8 +102,7 @@ try {
   }
 
   {
-    process.env.NODE_ENV = "production";
-    process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION = "true";
+    environment.set({ NODE_ENV: "production", ARIA_ENABLE_REMOTE_MCP_EXECUTION: "true" });
     let requests = 0;
     const result = await connectAndListTools("https://mcp.example.test/mcp", "secret", {
       fetchImpl: rpcFetch(() => {
@@ -117,8 +113,7 @@ try {
   }
 
   {
-    process.env.NODE_ENV = "development";
-    delete process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION;
+    environment.set({ NODE_ENV: "development", ARIA_ENABLE_REMOTE_MCP_EXECUTION: undefined });
     let requests = 0;
     const result = await connectAndListTools("https://mcp.example.test/mcp", "secret", {
       fetchImpl: rpcFetch(() => {
@@ -129,8 +124,7 @@ try {
   }
 
   {
-    process.env.NODE_ENV = "development";
-    process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION = "true";
+    environment.set({ NODE_ENV: "development", ARIA_ENABLE_REMOTE_MCP_EXECUTION: "true" });
     let requests = 0;
     const result = await connectAndListTools("https://mcp.example.test/mcp", "secret", {
       fetchImpl: rpcFetch(() => {
@@ -141,8 +135,7 @@ try {
   }
 
   {
-    process.env.NODE_ENV = "test";
-    process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION = "true";
+    environment.set({ NODE_ENV: "test", ARIA_ENABLE_REMOTE_MCP_EXECUTION: "true" });
     const hugeDescription = "d".repeat(20_000);
     const hugeSchema = { type: "object", description: "s".repeat(40_000) };
     const tools = Array.from({ length: 40 }, (_, index) => ({
@@ -231,8 +224,7 @@ try {
       });
     }) as typeof fetch;
 
-    process.env.NODE_ENV = "production";
-    process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION = "true";
+    environment.set({ NODE_ENV: "production", ARIA_ENABLE_REMOTE_MCP_EXECUTION: "true" });
     const production = await runAnthropicWithTools({
       model: "m",
       system: "s",
@@ -245,8 +237,7 @@ try {
       !production.ok && production.reason === "No MCP tools available." && providerRequests === 0,
     );
 
-    process.env.NODE_ENV = "development";
-    delete process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION;
+    environment.set({ NODE_ENV: "development", ARIA_ENABLE_REMOTE_MCP_EXECUTION: undefined });
     const defaultOff = await runAnthropicWithTools({
       model: "m",
       system: "s",
@@ -261,8 +252,7 @@ try {
   }
 
   {
-    process.env.NODE_ENV = "production";
-    process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION = "true";
+    environment.set({ NODE_ENV: "production", ARIA_ENABLE_REMOTE_MCP_EXECUTION: "true" });
     let executions = 0;
     let providerRound = 0;
     const server: ResolvedMcpServer = {
@@ -414,7 +404,7 @@ try {
     /remoteMcpExecutionEnabled\(\)[\s\S]{0,300}mcpServers/.test(routeSource),
   );
 } finally {
-  process.env = originalEnv;
+  environment.restore();
   globalThis.fetch = originalFetch;
 }
 

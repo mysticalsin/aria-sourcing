@@ -1,5 +1,6 @@
 import { mock } from "node:test";
 import { NextRequest } from "next/server";
+import { createProcessEnvScope } from "./helpers/process-env.mts";
 
 let pass = 0;
 let fail = 0;
@@ -11,9 +12,8 @@ function ok(name: string, condition: boolean) {
   }
 }
 
-const originalEnv = { ...process.env };
-process.env.NODE_ENV = "production";
-process.env.ARIA_ENABLE_REMOTE_MCP_EXECUTION = "true";
+const environment = createProcessEnvScope(["NODE_ENV", "ARIA_ENABLE_REMOTE_MCP_EXECUTION"]);
+environment.set({ NODE_ENV: "production", ARIA_ENABLE_REMOTE_MCP_EXECUTION: "true" });
 
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
 let vaultResolutions = 0;
@@ -79,7 +79,7 @@ try {
   ok("production MCP discovery resolves zero vault credentials", vaultResolutions === 0);
   ok("production MCP discovery makes zero remote calls", remoteCalls === 0);
 } finally {
-  process.env = originalEnv;
+  environment.restore();
 }
 
 console.log(`RESULT mcp-production-discovery-route: ${pass} passed, ${fail} failed`);
