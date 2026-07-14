@@ -23,6 +23,7 @@ const DEERFLOW_TOKEN = "D".repeat(32);
 const FLOWISE_TOKEN = "F".repeat(32);
 
 const baseEnvironmentWithoutConfigurationSha = {
+  NODE_ENV: "test",
   SUPABASE_URL: "http://aria-mantu-kong.internal:8000",
   SUPABASE_SERVICE_ROLE_KEY: SERVICE_KEY,
   ARIA_RELEASE_SHA: "d".repeat(40),
@@ -52,7 +53,7 @@ const baseEnvironmentWithoutConfigurationSha = {
   FLOWISE_READINESS_WORKFLOW_ID: "flowise-readiness",
   FLOWISE_TENANT_ISOLATION: "instance-per-workspace",
   FLOWISE_QUEUE_NAME: "aria-flowise",
-};
+} satisfies NodeJS.ProcessEnv;
 const CONFIGURATION_SHA = deriveAgentFrameworkConfigurationFromEnvironment(
   baseEnvironmentWithoutConfigurationSha,
 ).sha256;
@@ -446,7 +447,10 @@ test("the loop defaults to one non-overlapping cycle per 60 seconds and logs no 
     },
     configuration,
     signal: controller.signal,
-    logger(event: unknown) { events.push(event); },
+    logger(event?: unknown): undefined {
+      events.push(event);
+      return undefined;
+    },
     now: () => 1_000,
     async sleep(milliseconds: number) {
       waits.push(milliseconds);

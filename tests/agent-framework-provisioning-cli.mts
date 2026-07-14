@@ -13,11 +13,12 @@ import {
 
 const path = "scripts/provision-agent-framework-authority.mjs";
 const source = readFileSync(path, "utf8");
+const invalidEnvironment: NodeJS.ProcessEnv = { NODE_ENV: "test" };
 
 const invalid = spawnSync(process.execPath, [path], {
   cwd: process.cwd(),
   encoding: "utf8",
-  env: {},
+  env: invalidEnvironment,
 });
 assert.equal(invalid.status, 1, "operator CLI rejects a missing explicit action");
 assert.match(invalid.stderr, /usage: prepare/, "operator CLI reports bounded usage without a stack trace");

@@ -665,6 +665,7 @@ esac
       encoding: "utf8",
       timeout: 20_000,
       env: {
+        NODE_ENV: "test",
         PATH: `${bin}:${process.env.PATH ?? ""}`,
         HOME: root,
         TMPDIR: temp,

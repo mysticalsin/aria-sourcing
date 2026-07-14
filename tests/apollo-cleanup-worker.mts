@@ -84,8 +84,11 @@ test("cleanup worker paginates, drains bounded batches, and isolates workspace f
   });
   assert.equal(result.status, "degraded");
   assert.equal(result.workspacesProcessed, 1);
+  assert.ok("expired_receipts_cleared" in result);
   assert.equal(result.expired_receipts_cleared, 2);
+  assert.ok("sourcing_lessons_retired" in result);
   assert.equal(result.sourcing_lessons_retired, 1);
+  assert.ok("framework_authorizations_deleted" in result);
   assert.equal(result.framework_authorizations_deleted, 2);
   assert.deepEqual(result.failures, [{ workspaceId: workspaceB, code: "apollo_cleanup_rpc_unavailable" }]);
   assert.equal(calls.get(`${workspaceA}:cleanup_apollo_enrichment_authority`), 2);

@@ -301,6 +301,7 @@ function runScenario(scenario: string): RunResult {
       cwd: process.cwd(),
       encoding: "utf8",
       env: {
+        NODE_ENV: "test",
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
         TMPDIR: root,
