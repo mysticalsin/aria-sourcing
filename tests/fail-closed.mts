@@ -50,8 +50,7 @@ type Probe = { threw: boolean; enabled: boolean; prod: boolean };
 /** Run the guard in a fresh process with `over` applied on top of the current
     env (an `undefined` value deletes the key). */
 function probe(over: Record<string, string | undefined>): Probe {
-  const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
+  const env: NodeJS.ProcessEnv = { ...process.env };
   for (const [k, v] of Object.entries(over)) {
     if (v === undefined) delete env[k];
     else env[k] = v;

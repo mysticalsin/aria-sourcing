@@ -22,6 +22,11 @@ function jsonResponse(status: number, body: unknown) {
   } as Response;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  return Object.fromEntries(Object.entries(value));
+}
+
 const originalFetch = globalThis.fetch;
 const originalLog = console.log;
 const originalError = console.error;
@@ -63,8 +68,10 @@ try {
   ok("provider logs do not expose raw recipient email", !successfulLog.includes("candidate@example.test"));
   ok("provider logs retain the audit message", successfulLog.includes("Send attempt"));
   ok("Resend success remains a sent outcome", sent.status === "sent" && sent.id === "email-1");
-  ok("Resend includes standard one-click unsubscribe headers", (resendPayload?.headers as Record<string, string> | undefined)?.["List-Unsubscribe"] === `<${UNSUBSCRIBE_URL}>`);
-  ok("Resend includes an unsubscribe footer", String(resendPayload?.text).includes(UNSUBSCRIBE_URL));
+  const successfulPayload = asRecord(resendPayload);
+  const successfulHeaders = asRecord(successfulPayload?.headers);
+  ok("Resend includes standard one-click unsubscribe headers", successfulHeaders?.["List-Unsubscribe"] === `<${UNSUBSCRIBE_URL}>`);
+  ok("Resend includes an unsubscribe footer", String(successfulPayload?.text).includes(UNSUBSCRIBE_URL));
 
   logs.length = 0;
   globalThis.fetch = (async () =>

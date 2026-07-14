@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { NextRequest } from "next/server";
 import { isAllowedHermesUrl } from "../src/lib/api/url";
 import { validateBody } from "../src/lib/api/validate";
 
@@ -32,8 +33,8 @@ const TestSchema = z.object({
   count: z.number().int().min(0),
 });
 
-async function makeRequest(body: unknown, contentLength?: number): Promise<Request> {
-  return new Request("http://localhost/api/test", {
+async function makeRequest(body: unknown, contentLength?: number): Promise<NextRequest> {
+  return new NextRequest("http://localhost/api/test", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -56,7 +57,7 @@ async function testValidate() {
   const oversized = await validateBody(await makeRequest({ name: "x" }), TestSchema, { maxBytes: 1 });
   ok("oversized body rejected", !oversized.ok);
 
-  const invalidJson = new Request("http://localhost/api/test", {
+  const invalidJson = new NextRequest("http://localhost/api/test", {
     method: "POST",
     headers: { "Content-Type": "application/json", "content-length": "5" },
     body: "{bad",
@@ -76,7 +77,7 @@ async function testValidate() {
         cancel: async () => undefined,
       }),
     },
-  } as unknown as Request;
+  } as unknown as NextRequest;
   const earlyRejected = await validateBody(declaredOversize, TestSchema, { maxBytes: 100 });
   ok("declared oversized bodies are rejected before reading", !earlyRejected.ok && earlyReadCalls === 0);
 
@@ -97,7 +98,7 @@ async function testValidate() {
         },
       }),
     },
-  } as unknown as Request;
+  } as unknown as NextRequest;
   const streamedRejected = await validateBody(streamedOversize, TestSchema, { maxBytes: 100 });
   ok(
     "chunked oversized bodies stop at max plus one and cancel the reader",

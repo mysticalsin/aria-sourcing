@@ -39,14 +39,12 @@ ok(
 );
 
 const mk = (over: Partial<GithubUser> & { login: string; htmlUrl: string }): GithubUser => ({
-  login: over.login,
   name: null,
   email: null,
   company: null,
   location: null,
   bio: null,
   blog: null,
-  htmlUrl: over.htmlUrl,
   publicRepos: 0,
   followers: 0,
   createdAt: null,
@@ -84,6 +82,7 @@ ok("GitHub biography is not presented as a job title", a?.currentTitle === "");
 
 const apolloProfile: ApolloSearchProfile = {
   targetId: "22222222-2222-4222-8222-222222222222",
+  candidateId: "apollo-candidate",
   name: "Apollo Candidate",
   title: "Platform Engineer",
   company: "Example Corp",

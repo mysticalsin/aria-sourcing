@@ -38,12 +38,14 @@ function candidate(id: string, provenance: Candidate["provenance"] = "live"): Ca
     id,
     campaignId,
     name: id,
-    title: "Engineer",
-    company: "Example",
+    avatarInitials: id.slice(0, 2).toUpperCase(),
+    currentTitle: "Engineer",
+    currentCompany: "Example",
     location: "Paris",
+    timezone: "Europe/Paris",
     email: `${id}@example.com`,
-    linkedinUrl: null,
-    githubUrl: null,
+    linkedinUrl: "",
+    githubUrl: "",
     sourcePlatform: "GitHub",
     sourceQuery: "engineer",
     matchScore: 82,
@@ -58,10 +60,17 @@ function candidate(id: string, provenance: Candidate["provenance"] = "live"): Ca
     outreachHistory: [],
     replyHistory: [],
     booking: null,
-    complianceFlags: { needsVisaCheck: false, missingContactInfo: false, gdprSensitive: false },
+    complianceFlags: {
+      doNotContact: false,
+      suppressed: false,
+      unsubscribed: false,
+      gdprExportRequested: false,
+      anonymized: false,
+      suppressedUntil: null,
+    },
     createdAt: sentAt,
     provenance,
-  } as Candidate;
+  };
 }
 
 function outreach(
