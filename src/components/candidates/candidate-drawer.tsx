@@ -784,8 +784,8 @@ export function CandidateDrawer({
     const res = await actions.createBookingFor(c.id);
     if (res.ok) {
       toast({
-        title: "Interview booked (dry-run)",
-        description: `With ${res.booking.interviewer}. Teams + Cal.com links generated.`,
+        title: "Interview booked",
+        description: `With ${res.booking.interviewer || "an interviewer to be confirmed"}. ${res.booking.calLink || res.booking.teamsLink ? "Calendar link confirmed." : "Meeting link pending calendar provider confirmation."}`,
         variant: "success",
       });
     } else {

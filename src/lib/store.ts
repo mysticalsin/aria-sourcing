@@ -81,6 +81,7 @@ import { demoStateAllowsCandidatePersistence } from "./store/demo-persistence";
 import { mapSillageCandidates, parseSillageIdentifier } from "./store/sourcing-helpers";
 import { appendWinRecord } from "./store/winlog-derive";
 import type {
+  BookingUpdate,
   CandidateErasureObligation,
   CandidateErasureStatus,
   HermesActions,
@@ -88,6 +89,7 @@ import type {
   SourcingFeedbackReceipt,
   SourcingFeedbackVerdict,
 } from "./store/contracts";
+import { BOOKING_STATUSES } from "./types";
 import type {
   Activity,
   AgentSeat,
@@ -3027,7 +3029,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      commit((prev) => {
+      const committed = commit((prev) => {
         const candidates = prev.candidates.map((c) =>
           c.id === candidate.id
             ? { ...c, ...withStage(c, "Booked"), booking }
@@ -3046,7 +3048,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           makeActivity({
             type: "booking",
             title: `Interview booked: ${candidate.name}`,
-            notes: `${booking.interviewer || "No interviewer assigned yet"}. Teams + Cal.com links generated. Stage → Booked.`,
+            notes: `${booking.interviewer || "No interviewer assigned yet"}. ${booking.calLink || booking.teamsLink ? "Calendar link confirmed by the connected provider." : "Meeting link pending calendar provider confirmation."} Stage → Booked.`,
             outcome: "Confirmed",
             campaignId: campaign.id,
             linkedEntityType: "booking",
@@ -3057,6 +3059,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
 
+      if (!committed) {
+        return { ok: false, error: "Booking could not be saved. Refresh and retry." };
+      }
       emit({ kind: "book", candidateName: candidate.name, campaignId: campaign.id });
       return { ok: true, booking, prepEmail: prep, confirmationEmail: confirm };
     },
@@ -3064,16 +3069,51 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateBooking = useCallback(
-    (id: string, patch: Partial<Booking>): { ok: true } | { ok: false; error: string } => {
+    (id: string, patch: BookingUpdate): { ok: true } | { ok: false; error: string } => {
+      const s = current();
+      const booking = s.bookings.find((item) => item.id === id);
+      if (!booking) return { ok: false, error: "Booking not found." };
+
+      const keys = Object.keys(patch);
+      if (
+        keys.length === 0 ||
+        keys.some((key) => key !== "startTime" && key !== "endTime" && key !== "status")
+      ) {
+        return { ok: false, error: "Booking update is invalid." };
+      }
+      const safePatch: BookingUpdate = {};
+      if (Object.hasOwn(patch, "status")) {
+        if (!BOOKING_STATUSES.includes(patch.status as Booking["status"])) {
+          return { ok: false, error: "Booking status is invalid." };
+        }
+        safePatch.status = patch.status;
+      }
+      if (Object.hasOwn(patch, "startTime")) {
+        if (typeof patch.startTime !== "string") {
+          return { ok: false, error: "Booking start time is invalid." };
+        }
+        safePatch.startTime = patch.startTime;
+      }
+      if (Object.hasOwn(patch, "endTime")) {
+        if (typeof patch.endTime !== "string") {
+          return { ok: false, error: "Booking end time is invalid." };
+        }
+        safePatch.endTime = patch.endTime;
+      }
+
       // Rescheduling to a new time is the one patch shape that can create a
       // fresh double-booking (status-only patches like "Completed"/"Cancelled"
       // never move a slot) — guard it before committing.
-      if (patch.startTime || patch.endTime) {
-        const s = current();
-        const booking = s.bookings.find((b) => b.id === id);
-        if (!booking) return { ok: false, error: "Booking not found." };
-        const start = new Date(patch.startTime ?? booking.startTime);
-        const end = new Date(patch.endTime ?? booking.endTime);
+      if (Object.hasOwn(safePatch, "startTime") || Object.hasOwn(safePatch, "endTime")) {
+        const start = new Date(safePatch.startTime ?? booking.startTime);
+        const end = new Date(safePatch.endTime ?? booking.endTime);
+        if (
+          !Number.isFinite(start.getTime()) ||
+          !Number.isFinite(end.getTime()) ||
+          end.getTime() <= start.getTime()
+        ) {
+          return { ok: false, error: "Booking time range is invalid." };
+        }
         // No interviewer assigned (empty roster at booking time) — nothing to
         // conflict-check; an empty interviewerEmail must never collide with
         // another interviewer-less booking's empty string.
@@ -3081,32 +3121,44 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           return { ok: false, error: `${booking.interviewer} is already booked at that time.` };
         }
       }
-      commit((s) => {
-        const booking = s.bookings.find((b) => b.id === id);
+      let updated = false;
+      const committed = commit((s) => {
+        const liveBooking = s.bookings.find((item) => item.id === id);
+        if (!liveBooking) return s;
+        updated = true;
         let next: HermesState = {
           ...s,
-          bookings: s.bookings.map((b) => (b.id === id ? { ...b, ...patch } : b)),
+          bookings: s.bookings.map((item) =>
+            item.id === id ? { ...item, ...safePatch } : item,
+          ),
+          candidates: s.candidates.map((candidate) =>
+            candidate.id === liveBooking.candidateId && candidate.booking?.id === id
+              ? { ...candidate, booking: { ...candidate.booking, ...safePatch } }
+              : candidate,
+          ),
         };
         // Completing an interview naturally advances the candidate past "Booked" --
         // only when they're still sitting there, so this never fights a stage the
         // human already set manually (Interviewed/Offer/Hired/Rejected/...).
-        if (booking && patch.status === "Completed") {
-          const cand = next.candidates.find((c) => c.id === booking.candidateId);
+        if (safePatch.status === "Completed") {
+          const cand = next.candidates.find((c) => c.id === liveBooking.candidateId);
           if (cand?.stage === "Booked") {
             next = {
               ...next,
               candidates: next.candidates.map((c) =>
-                c.id === booking.candidateId
+                c.id === liveBooking.candidateId
                   ? { ...c, ...withStage(c, "Interviewed") }
                   : c,
               ),
             };
-            next = recomputeMetrics(next, booking.campaignId);
+            next = recomputeMetrics(next, liveBooking.campaignId);
           }
         }
         return next;
       });
-      return { ok: true };
+      return committed && updated
+        ? { ok: true }
+        : { ok: false, error: "Booking could not be saved. Refresh and retry." };
     },
     [commit, current],
   );
@@ -3117,7 +3169,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const campaign = s.campaigns.find((c) => c.id === campaignId);
       if (!campaign) return null;
       const report = generateWeeklyReport(campaign, s.candidates, s.outreach);
-      commit((prev) => {
+      const committed = commit((prev) => {
         let next: HermesState = {
           ...prev,
           reports: [report, ...prev.reports.filter((r) => r.campaignId !== campaignId)],
@@ -3153,14 +3205,29 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         );
         return next;
       });
-      return report;
+      return committed ? report : null;
     },
     [commit, current],
   );
 
   const setSkillUpdateStatus = useCallback(
-    (campaignId: string, skillId: string, status: SkillUpdate["status"]) =>
-      commit((s) => {
+    (campaignId: string, skillId: string, status: SkillUpdate["status"]) => {
+      const state = current();
+      const campaign = state.campaigns.find((item) => item.id === campaignId);
+      const skill = campaign?.skillUpdates.find((item) => item.id === skillId);
+      if (!campaign || !skill) return false;
+      if (skill.status !== "proposed") return false;
+      if (status !== "accepted" && status !== "rejected") return false;
+
+      let updated = false;
+      const committed = commit((s) => {
+        const currentCampaign = s.campaigns.find((item) => item.id === campaignId);
+        const currentSkill = currentCampaign?.skillUpdates.find((item) => item.id === skillId);
+        if (!currentCampaign || !currentSkill || currentSkill.status !== "proposed") return s;
+        const agentSkill = status === "accepted" ? getSkill(s.skills, currentSkill.skill) : null;
+        if (status === "accepted" && !agentSkill) return s;
+        updated = true;
+
         const next: HermesState = {
           ...s,
           campaigns: s.campaigns.map((c) =>
@@ -3174,15 +3241,32 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               : r,
           ),
         };
-        const skill = s.campaigns
-          .find((c) => c.id === campaignId)
-          ?.skillUpdates.find((u) => u.id === skillId);
+        let learned = next;
+        if (status === "accepted") {
+          const patch = learnedParamsFor(currentSkill.skill, s);
+          const summary =
+            currentSkill.skill === "outreach_skill"
+              ? `Adopt ${patch.preferredTone} as the default tone`
+              : currentSkill.skill === "scoring_skill"
+                ? "Re-weight scoring from observed conversions"
+                : currentSkill.skill === "reply_classification_skill"
+                  ? `Tune qualified-interest floor to ${patch.qualifiedInterestFloor}`
+                  : "Refine sourcing query strategy";
+          learned = {
+            ...next,
+            skills: next.skills.map((item) =>
+              item.key === currentSkill.skill
+                ? applyLearning(item, patch, summary)
+                : item,
+            ),
+          };
+        }
         return withActivity(
-          next,
+          learned,
           makeActivity({
             type: "learning",
             title: `Skill update ${status}`,
-            notes: skill ? `${skill.skill}: ${skill.title}` : skillId,
+            notes: `${currentSkill.skill}: ${currentSkill.title}`,
             outcome: status,
             campaignId,
             linkedEntityType: "skill",
@@ -3190,8 +3274,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           }),
           campaignId,
         );
-      }),
-    [commit],
+      });
+      return committed && updated;
+    },
+    [commit, current],
   );
 
   /* ---- candidate compliance -------------------------------------------- */

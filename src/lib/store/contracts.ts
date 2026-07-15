@@ -56,6 +56,10 @@ export type CampaignUpdate = Partial<
   Pick<Campaign, "status" | "previousStatus" | "jobAnalysis" | "scoringWeights">
 >;
 
+export type BookingUpdate = Partial<
+  Pick<Booking, "startTime" | "endTime" | "status">
+>;
+
 export type SourceNextBatchErrorSource =
   | "github"
   | "web"
@@ -346,7 +350,7 @@ export interface HermesActions {
   >;
   updateBooking: (
     id: string,
-    patch: Partial<Booking>,
+    patch: BookingUpdate,
   ) => { ok: true } | { ok: false; error: string };
 
   // reports + learning
@@ -355,7 +359,7 @@ export interface HermesActions {
     campaignId: string,
     skillId: string,
     status: SkillUpdate["status"],
-  ) => void;
+  ) => boolean;
 
   // candidates / compliance
   setCandidateStage: (id: string, stage: CandidateStage) => void;

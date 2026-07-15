@@ -681,7 +681,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     if (res.ok) {
       toast({
         title: `Interview booked: ${cand.name}`,
-        description: `With ${res.booking.interviewer}. Teams + Cal.com links generated (dry-run).`,
+        description: `With ${res.booking.interviewer || "an interviewer to be confirmed"}. ${res.booking.calLink || res.booking.teamsLink ? "Calendar link confirmed." : "Meeting link pending calendar provider confirmation."}`,
         variant: "success",
       });
     } else {

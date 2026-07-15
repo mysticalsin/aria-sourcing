@@ -319,8 +319,12 @@ async function runSequence(actions: HermesActions, campaign: Campaign, seats: Ag
   directorChannel.set({ establishing: true });
   setChapter("reporting", "Generating the weekly report…", candidate.name);
   await sleep(700);
-  actions.generateReport(campaign.id);
+  const report = actions.generateReport(campaign.id);
   if (restoring) return;
+  if (!report) {
+    fail("Couldn't save the campaign report.");
+    return;
+  }
   setChapter("done", `Hire funnel complete for ${candidate.name}. Report ready.`, candidate.name);
 }
 
