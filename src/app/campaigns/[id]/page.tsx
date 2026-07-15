@@ -45,6 +45,7 @@ import { BookingCalendar } from "@/components/calendar/booking-calendar";
 import { InterviewerPanel } from "@/components/calendar/interviewer-panel";
 import { WeeklyReportCard } from "@/components/reports/weekly-report-card";
 import { SkillUpdateCard } from "@/components/reports/skill-update-card";
+import { bookingCalendarSummary } from "@/lib/booking-status";
 import {
   useActions,
   useBookings,
@@ -681,7 +682,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     if (res.ok) {
       toast({
         title: `Interview booked: ${cand.name}`,
-        description: `With ${res.booking.interviewer || "an interviewer to be confirmed"}. ${res.booking.calLink || res.booking.teamsLink ? "Calendar link confirmed." : "Meeting link pending calendar provider confirmation."}`,
+        description: `With ${res.booking.interviewer || "an interviewer to be confirmed"}. ${bookingCalendarSummary(res.booking)}`,
         variant: "success",
       });
     } else {

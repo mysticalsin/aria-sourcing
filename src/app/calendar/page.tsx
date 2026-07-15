@@ -18,6 +18,7 @@ import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { BookingCalendar } from "@/components/calendar/booking-calendar";
 import { InterviewerPanel } from "@/components/calendar/interviewer-panel";
 import { useHydrated, useBookings, useCandidates, useActions } from "@/lib/store";
+import { bookingCalendarSummary } from "@/lib/booking-status";
 import type { Booking, Candidate } from "@/lib/types";
 import {
   cn,
@@ -194,7 +195,11 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
         open={preview !== null}
         onClose={() => setPreview(null)}
         title={preview ? `Interview booked: ${preview.booking.candidateName}` : "Interview booked"}
-        description="Dry-run scheduled. Prep and confirmation emails are drafted below. Nothing is sent automatically."
+        description={
+          preview?.booking.calendarSync
+            ? "Live calendar event created. Prep and confirmation emails are drafted below; review before sending."
+            : "Dry-run scheduled. Prep and confirmation emails are drafted below. Nothing is sent automatically."
+        }
         footer={
           <Button variant="primary" size="sm" onClick={() => setPreview(null)}>
             Done
@@ -243,6 +248,10 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
                       </a>
                     )}
                   </>
+                ) : preview.booking.calendarSync ? (
+                  <p className="text-xs text-muted">
+                    {bookingCalendarSummary(preview.booking)}
+                  </p>
                 ) : (
                   <p className="text-xs text-muted">
                     Meeting links are issued when the calendar integration goes live.

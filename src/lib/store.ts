@@ -10,12 +10,8 @@ import React, {
   useState,
 } from "react";
 import {
-  candidateConfirmationEmail,
   classifyReply,
-  createBooking,
   generateOutreach,
-  generateWeeklyReport,
-  interviewerPrepEmail,
   newOutreachMessage,
   type GeneratedOutreach,
   type ReplyClassification,
@@ -72,16 +68,14 @@ import {
   testConnection,
   type ConnectionTestResult,
 } from "./integrations";
-import { interviewerIsBusy, resolveBookingSlot } from "./store/booking-slot";
+import { createBookingReportActions } from "./store/booking-report-actions";
 import { createCampaignActions } from "./store/campaign-actions";
 import { createSourcingActions } from "./store/sourcing-actions";
 import { resolveInboundEmailIdentity } from "./store/inbound-identity";
 import { loadState, normalizeHermesState } from "./store/migrations";
 import { demoStateAllowsCandidatePersistence } from "./store/demo-persistence";
 import { mapSillageCandidates, parseSillageIdentifier } from "./store/sourcing-helpers";
-import { appendWinRecord } from "./store/winlog-derive";
 import type {
-  BookingUpdate,
   CandidateErasureObligation,
   CandidateErasureStatus,
   HermesActions,
@@ -89,7 +83,6 @@ import type {
   SourcingFeedbackReceipt,
   SourcingFeedbackVerdict,
 } from "./store/contracts";
-import { BOOKING_STATUSES } from "./types";
 import type {
   Activity,
   AgentSeat,
@@ -879,6 +872,20 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       workspaceAllowsMutation(workspaceStatusRef.current),
     [],
   );
+
+  const bookingMutationAllowed = useCallback(() => {
+    const role = supabaseEnabled
+      ? liveRoleRef.current
+      : stateRef.current?.currentRole;
+    return role != null && can(role, "book");
+  }, []);
+
+  const learningMutationAllowed = useCallback(() => {
+    const role = supabaseEnabled
+      ? liveRoleRef.current
+      : stateRef.current?.currentRole;
+    return role != null && can(role, "skills");
+  }, []);
 
   const sourcingMutationAllowed = useCallback(() => {
     const role = supabaseEnabled
@@ -2954,330 +2961,33 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit, current],
   );
 
-  const createBookingFor = useCallback(
-    async (
-      candidateId: string,
-      opts?: { startTime?: string; interviewerName?: string },
-    ): Promise<
-      | { ok: true; booking: Booking; prepEmail: string; confirmationEmail: string }
-      | { ok: false; error: string }
-    > => {
-      if (!workspaceEffectAllowed()) {
-        return { ok: false, error: "Workspace unavailable. Retry before creating a booking." };
-      }
-      const s = current();
-      const candidate = s.candidates.find((c) => c.id === candidateId);
-      const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
-      if (!candidate || !campaign) return { ok: false, error: "Candidate or campaign not found." };
-      // Never book a candidate who opted out / is suppressed (compliance).
-      const cf = candidate.complianceFlags;
-      if (cf.doNotContact || cf.suppressed || cf.unsubscribed) {
-        return { ok: false, error: "Candidate has opted out or is suppressed. Cannot book." };
-      }
-
-      const activeInterviewers = s.interviewers.filter((iv) => iv.active);
-      const slot = resolveBookingSlot(s.bookings, activeInterviewers, s.bookings.length, opts);
-      if ("error" in slot) return { ok: false, error: slot.error };
-      const booking = createBooking(candidate, campaign, slot.interviewer, slot.start);
-      const prep = interviewerPrepEmail(booking, candidate);
-      const confirm = candidateConfirmationEmail(booking);
-
-      // Create a REAL calendar event FIRST when a live mailbox is connected — a
-      // failed remote call must not produce a "Booked" candidate carrying a fake
-      // calendar link. Demo mode / no live seat skips this and commits immediately
-      // below with the synthetic link, exactly as before.
-      const seat = s.seats.find(
-        (x) =>
-          x.status === "active" &&
-          x.mode === "live" &&
-          (x.provider === "Gmail API" || x.provider === "Microsoft Graph"),
-      );
-      if (supabaseEnabled && seat) {
-        try {
-          const res = await workspaceFetch("/api/calendar/event", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              seatId: seat.id,
-              candidateName: booking.candidateName,
-              candidateEmail: candidate.email || undefined,
-              role: booking.role,
-              startTime: booking.startTime,
-              endTime: booking.endTime,
-              timezone: booking.timezone,
-              interviewerEmail: booking.interviewerEmail || undefined,
-              agenda: booking.agenda,
-              confirmLive: true,
-            }),
-          });
-          const out = (await res.json().catch(() => null)) as
-            | { status?: string; link?: string | null; detail?: string }
-            | null;
-          if (!res.ok) {
-            return { ok: false, error: out?.detail ?? `Calendar request failed (${res.status}).` };
-          }
-          if (out?.status === "created" && out.link) {
-            booking.calLink = out.link;
-          }
-          // status "dry-run" / "skipped" (mail-only connection, seat not live, etc.)
-          // is documented graceful degradation, not a failure — keep the synthetic link.
-        } catch (err) {
-          return {
-            ok: false,
-            error: err instanceof Error ? err.message : "Calendar service unreachable.",
-          };
-        }
-      }
-
-      const committed = commit((prev) => {
-        const candidates = prev.candidates.map((c) =>
-          c.id === candidate.id
-            ? { ...c, ...withStage(c, "Booked"), booking }
-            : c,
-        );
-        const bookedCandidate = candidates.find((c) => c.id === candidate.id) ?? candidate;
-        let next: HermesState = {
-          ...prev,
-          bookings: [booking, ...prev.bookings],
-          candidates,
-        };
-        next = appendWinRecord(next, bookedCandidate, campaign, booking);
-        next = recomputeMetrics(next, campaign.id);
-        next = withActivity(
-          next,
-          makeActivity({
-            type: "booking",
-            title: `Interview booked: ${candidate.name}`,
-            notes: `${booking.interviewer || "No interviewer assigned yet"}. ${booking.calLink || booking.teamsLink ? "Calendar link confirmed by the connected provider." : "Meeting link pending calendar provider confirmation."} Stage → Booked.`,
-            outcome: "Confirmed",
-            campaignId: campaign.id,
-            linkedEntityType: "booking",
-            linkedEntityId: booking.id,
-          }),
-          campaign.id,
-        );
-        return next;
-      });
-
-      if (!committed) {
-        return { ok: false, error: "Booking could not be saved. Refresh and retry." };
-      }
-      emit({ kind: "book", candidateName: candidate.name, campaignId: campaign.id });
-      return { ok: true, booking, prepEmail: prep, confirmationEmail: confirm };
-    },
-    [commit, current, workspaceEffectAllowed, workspaceFetch],
-  );
-
-  const updateBooking = useCallback(
-    (id: string, patch: BookingUpdate): { ok: true } | { ok: false; error: string } => {
-      const s = current();
-      const booking = s.bookings.find((item) => item.id === id);
-      if (!booking) return { ok: false, error: "Booking not found." };
-
-      const keys = Object.keys(patch);
-      if (
-        keys.length === 0 ||
-        keys.some((key) => key !== "startTime" && key !== "endTime" && key !== "status")
-      ) {
-        return { ok: false, error: "Booking update is invalid." };
-      }
-      const safePatch: BookingUpdate = {};
-      if (Object.hasOwn(patch, "status")) {
-        if (!BOOKING_STATUSES.includes(patch.status as Booking["status"])) {
-          return { ok: false, error: "Booking status is invalid." };
-        }
-        safePatch.status = patch.status;
-      }
-      if (Object.hasOwn(patch, "startTime")) {
-        if (typeof patch.startTime !== "string") {
-          return { ok: false, error: "Booking start time is invalid." };
-        }
-        safePatch.startTime = patch.startTime;
-      }
-      if (Object.hasOwn(patch, "endTime")) {
-        if (typeof patch.endTime !== "string") {
-          return { ok: false, error: "Booking end time is invalid." };
-        }
-        safePatch.endTime = patch.endTime;
-      }
-
-      // Rescheduling to a new time is the one patch shape that can create a
-      // fresh double-booking (status-only patches like "Completed"/"Cancelled"
-      // never move a slot) — guard it before committing.
-      if (Object.hasOwn(safePatch, "startTime") || Object.hasOwn(safePatch, "endTime")) {
-        const start = new Date(safePatch.startTime ?? booking.startTime);
-        const end = new Date(safePatch.endTime ?? booking.endTime);
-        if (
-          !Number.isFinite(start.getTime()) ||
-          !Number.isFinite(end.getTime()) ||
-          end.getTime() <= start.getTime()
-        ) {
-          return { ok: false, error: "Booking time range is invalid." };
-        }
-        // No interviewer assigned (empty roster at booking time) — nothing to
-        // conflict-check; an empty interviewerEmail must never collide with
-        // another interviewer-less booking's empty string.
-        if (booking.interviewerEmail && interviewerIsBusy(s.bookings, booking.interviewerEmail, start, end, booking.id)) {
-          return { ok: false, error: `${booking.interviewer} is already booked at that time.` };
-        }
-      }
-      let updated = false;
-      const committed = commit((s) => {
-        const liveBooking = s.bookings.find((item) => item.id === id);
-        if (!liveBooking) return s;
-        updated = true;
-        let next: HermesState = {
-          ...s,
-          bookings: s.bookings.map((item) =>
-            item.id === id ? { ...item, ...safePatch } : item,
-          ),
-          candidates: s.candidates.map((candidate) =>
-            candidate.id === liveBooking.candidateId && candidate.booking?.id === id
-              ? { ...candidate, booking: { ...candidate.booking, ...safePatch } }
-              : candidate,
-          ),
-        };
-        // Completing an interview naturally advances the candidate past "Booked" --
-        // only when they're still sitting there, so this never fights a stage the
-        // human already set manually (Interviewed/Offer/Hired/Rejected/...).
-        if (safePatch.status === "Completed") {
-          const cand = next.candidates.find((c) => c.id === liveBooking.candidateId);
-          if (cand?.stage === "Booked") {
-            next = {
-              ...next,
-              candidates: next.candidates.map((c) =>
-                c.id === liveBooking.candidateId
-                  ? { ...c, ...withStage(c, "Interviewed") }
-                  : c,
-              ),
-            };
-            next = recomputeMetrics(next, liveBooking.campaignId);
-          }
-        }
-        return next;
-      });
-      return committed && updated
-        ? { ok: true }
-        : { ok: false, error: "Booking could not be saved. Refresh and retry." };
-    },
-    [commit, current],
-  );
-
-  const generateReport = useCallback(
-    (campaignId: string) => {
-      const s = current();
-      const campaign = s.campaigns.find((c) => c.id === campaignId);
-      if (!campaign) return null;
-      const report = generateWeeklyReport(campaign, s.candidates, s.outreach);
-      const committed = commit((prev) => {
-        let next: HermesState = {
-          ...prev,
-          reports: [report, ...prev.reports.filter((r) => r.campaignId !== campaignId)],
-          campaigns: prev.campaigns.map((c) =>
-            c.id === campaignId
-              ? {
-                  ...c,
-                  // Append newly proposed updates only — overwriting here discarded any
-                  // Accept/Reject decision the recruiter already made on a prior report
-                  // (proposeSkillUpdates re-proposes the same fixed titles every run).
-                  skillUpdates: [
-                    ...c.skillUpdates,
-                    ...report.skillUpdates
-                      .filter((nu) => !c.skillUpdates.some((ex) => ex.title === nu.title))
-                      .map((x) => ({ ...x })),
-                  ],
-                }
-              : c,
-          ),
-        };
-        next = withActivity(
-          next,
-          makeActivity({
-            type: "learning",
-            title: "Weekly report generated",
-            notes: `${report.skillUpdates.length} skill updates proposed.`,
-            outcome: "Report ready",
-            campaignId,
-            linkedEntityType: "report",
-            linkedEntityId: report.id,
-          }),
-          campaignId,
-        );
-        return next;
-      });
-      return committed ? report : null;
-    },
-    [commit, current],
-  );
-
-  const setSkillUpdateStatus = useCallback(
-    (campaignId: string, skillId: string, status: SkillUpdate["status"]) => {
-      const state = current();
-      const campaign = state.campaigns.find((item) => item.id === campaignId);
-      const skill = campaign?.skillUpdates.find((item) => item.id === skillId);
-      if (!campaign || !skill) return false;
-      if (skill.status !== "proposed") return false;
-      if (status !== "accepted" && status !== "rejected") return false;
-
-      let updated = false;
-      const committed = commit((s) => {
-        const currentCampaign = s.campaigns.find((item) => item.id === campaignId);
-        const currentSkill = currentCampaign?.skillUpdates.find((item) => item.id === skillId);
-        if (!currentCampaign || !currentSkill || currentSkill.status !== "proposed") return s;
-        const agentSkill = status === "accepted" ? getSkill(s.skills, currentSkill.skill) : null;
-        if (status === "accepted" && !agentSkill) return s;
-        updated = true;
-
-        const next: HermesState = {
-          ...s,
-          campaigns: s.campaigns.map((c) =>
-            c.id === campaignId
-              ? { ...c, skillUpdates: c.skillUpdates.map((u) => (u.id === skillId ? { ...u, status } : u)) }
-              : c,
-          ),
-          reports: s.reports.map((r) =>
-            r.campaignId === campaignId
-              ? { ...r, skillUpdates: r.skillUpdates.map((u) => (u.id === skillId ? { ...u, status } : u)) }
-              : r,
-          ),
-        };
-        let learned = next;
-        if (status === "accepted") {
-          const patch = learnedParamsFor(currentSkill.skill, s);
-          const summary =
-            currentSkill.skill === "outreach_skill"
-              ? `Adopt ${patch.preferredTone} as the default tone`
-              : currentSkill.skill === "scoring_skill"
-                ? "Re-weight scoring from observed conversions"
-                : currentSkill.skill === "reply_classification_skill"
-                  ? `Tune qualified-interest floor to ${patch.qualifiedInterestFloor}`
-                  : "Refine sourcing query strategy";
-          learned = {
-            ...next,
-            skills: next.skills.map((item) =>
-              item.key === currentSkill.skill
-                ? applyLearning(item, patch, summary)
-                : item,
-            ),
-          };
-        }
-        return withActivity(
-          learned,
-          makeActivity({
-            type: "learning",
-            title: `Skill update ${status}`,
-            notes: `${currentSkill.skill}: ${currentSkill.title}`,
-            outcome: status,
-            campaignId,
-            linkedEntityType: "skill",
-            linkedEntityId: skillId,
-          }),
-          campaignId,
-        );
-      });
-      return committed && updated;
-    },
-    [commit, current],
+  const {
+    createBookingFor,
+    updateBooking,
+    generateReport,
+    setSkillUpdateStatus,
+  } = useMemo(
+    () =>
+      createBookingReportActions({
+        commit,
+        currentState: () => stateRef.current,
+        workspaceEffectAllowed,
+        bookingMutationAllowed,
+        learningMutationAllowed,
+        workspaceFetch,
+        liveCalendarEnabled: supabaseEnabled,
+        makeActivity,
+        withActivity,
+        recomputeMetrics,
+        emitBooking: emit,
+      }),
+    [
+      commit,
+      bookingMutationAllowed,
+      learningMutationAllowed,
+      workspaceEffectAllowed,
+      workspaceFetch,
+    ],
   );
 
   /* ---- candidate compliance -------------------------------------------- */

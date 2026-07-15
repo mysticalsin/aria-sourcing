@@ -612,6 +612,15 @@ export interface Booking {
   interviewerEmail: string;
   teamsLink: string;
   calLink: string;
+  /** Provider receipt retained even when the provider does not issue a browser
+   *  link. This is operational state only; durable provider authority belongs
+   *  in the server-side booking-attempt ledger. */
+  calendarSync?: {
+    status: "created";
+    seatId: string;
+    provider: "Gmail API" | "Microsoft Graph";
+    eventId: string;
+  };
   status: BookingStatus;
   agenda: string[];
   createdAt: string;

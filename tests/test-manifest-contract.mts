@@ -73,13 +73,13 @@ test("manifest preserves parity and freezes the exact deduplicated lifecycle", (
         resolveTestGroup(testManifest, group).length,
       ]),
     ),
-    { pretest: 51, application: 130, posttest: 2, all: 183 },
+    { pretest: 51, application: 131, posttest: 2, all: 184 },
   );
   const commands = resolveTestGroup(testManifest, "all");
   const commandLines = commands.map(({ executable, argv }) => `${executable} ${argv.join(" ")}`);
   assert.equal(
     createHash("sha256").update(commandLines.join("\n")).digest("hex"),
-    "3f361d4c526cb41167911c935bd891e745aac3c57cabc22873a43200c79cba01",
+    "703bcf87722b3cb09d14c28126fb10aa9a2897105670abecf76abce2f41e473d",
   );
   assert.equal(new Set(commandLines).size, commandLines.length, "canonical lifecycle must be duplicate-free");
   assert.equal(
@@ -87,9 +87,17 @@ test("manifest preserves parity and freezes the exact deduplicated lifecycle", (
     1,
     "the manifest contract must be permanently registered exactly once",
   );
+  assert.equal(
+    commands.filter(({ id }) => id === "store-booking-report-actions").length,
+    1,
+    "the booking and report action runtime suite must be registered exactly once",
+  );
 
   const parityApplication = resolveTestGroup(testManifest, "application")
-    .filter(({ id }) => id !== "test-manifest-contract")
+    .filter(
+      ({ id }) =>
+        id !== "test-manifest-contract" && id !== "store-booking-report-actions",
+    )
     .flatMap((command) => {
       const line = `${command.executable} ${command.argv.join(" ")}`;
       if (command.id === "agent-run-disabled") {
@@ -118,7 +126,7 @@ test("manifest preserves parity and freezes the exact deduplicated lifecycle", (
   assert.equal(
     createHash("sha256").update(parityLines.join("\n")).digest("hex"),
     "cfdceeac26565ac1051441493605a3b63da6ac32b0767b19eb59d5d1030522f5",
-    "deduplication must remove only the four exact parity-baseline duplicates",
+    "deduplication must preserve the frozen pre-expansion baseline while registering new suites additively",
   );
   assert.ok(
     resolveTestGroup(testManifest, "application").some(

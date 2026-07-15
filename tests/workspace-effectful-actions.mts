@@ -16,6 +16,10 @@ const sourcingActionsSource = readFileSync(
   new URL("../src/lib/store/sourcing-actions.ts", import.meta.url),
   "utf8",
 );
+const bookingReportActionsSource = readFileSync(
+  new URL("../src/lib/store/booking-report-actions.ts", import.meta.url),
+  "utf8",
+);
 
 function actionBody(name: string, nextName: string): string {
   const start = source.indexOf(`const ${name} = useCallback`);
@@ -70,7 +74,7 @@ ok(
 
 ok(
   "calendar and integration probes preflight before external work",
-  guardedBefore(actionBody("createBookingFor", "updateBooking"), /workspaceFetch\("\/api\/calendar\/event"/) &&
+  /if \(!bookingMutationAllowed\(\) \|\| !workspaceEffectAllowed\(\)\)[\s\S]*?workspaceFetch\("\/api\/calendar\/event"/.test(bookingReportActionsSource) &&
     guardedBefore(actionBody("testIntegration", "addSeat"), /workspaceFetch\("\/api\/source"/),
 );
 

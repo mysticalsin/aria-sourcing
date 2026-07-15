@@ -1,9 +1,9 @@
 ---
 project: MSourcing / ARIA
-shift: 41
+shift: 42
 agent: codex-gpt-5
-updated: 2026-07-14 20:42 EDT
-status: structure-plans-01-03-complete-plan-04-pending
+updated: 2026-07-14 22:15 EDT
+status: local-source-green-release-blocked
 ---
 
 # Handoff - structure Plans 01-03 are committed; release remains NO-GO
@@ -12,7 +12,7 @@ status: structure-plans-01-03-complete-plan-04-pending
 
 - Active organization worktree:
   `/Users/tony/.codex/worktrees/msourcing-structure-hygiene` on branch
-  `codex/aria-structure-hygiene-20260714`. Current tip is `11ef0db`; Plan 01 tip is
+  `codex/aria-structure-hygiene-20260714`. Current committed tip is `908d409`; Plan 01 tip is
   `b067a8a4623b91e918d77d6b52bb8db73d049547`. Local `main` remains at the
   Relay checkpoint `57b9abe9dc061f3c1fd64119376a46f1d4651303`; the verified
   shift-40 integration is
@@ -43,6 +43,15 @@ status: structure-plans-01-03-complete-plan-04-pending
     Fly database volume/restart behavior.
   - `npm run test:graphify-learning` passed all 10 worker tests with network
     disabled and emitted the bounded receipt.
+- Plan 04 current working-tree proof is green: booking/report runtime 25/25,
+  workspace-effectful-actions 13/13, store contracts 11/11, manifest 8/8,
+  application/test typechecks, lint, module boundaries, and diff check. The
+  canonical `npm test` is still being rerun after the final calendar-page
+  wording correction; record its exit before commit.
+- Sonnet's executable continuation is in
+  `_relay/plans/plan-04-sonnet-execution.md`. It contains exact commands for
+  local proof, commit, main integration, GitHub readback, protected Fly deploy,
+  and real sourcing acceptance.
 - Independent application/QA, security, and docs/release reviews all returned
   ready-to-commit after the fixes below. This is local source evidence only.
 - The protected release workflow truth is 7 scanned images, 5 locally built and
@@ -166,10 +175,12 @@ status: structure-plans-01-03-complete-plan-04-pending
   identity/readiness results, two disabled-role absence proofs, and a real
   approved campaign E2E. The last reviewed Kimi authority returned HTTP 402;
   provider funding/entitlement and exact model approval remain external.
-- Structure Plan 04 remains. Its audit proved the four booking/report
-  actions currently ignore rejected persistence and exposed additional
-  consistency gaps. They require characterization and a separate correctness
-  commit before any extraction; do not treat them as cleanup-only.
+- Structure Plan 04 local correctness is ready for commit after the final
+  canonical lifecycle run. The extraction, race guards, provider receipt
+  marker, terminal-round semantics, honest calendar UI, and runtime tests are
+  complete on the working tree. The durable server-side calendar booking
+  ledger, idempotency, provider reconciliation, and production approval
+  authority remain open and are not closed by this local change.
 - Live calendar release remains blocked. The endpoint has no server-owned
   booking approval, idempotency claim, provider attempt ledger, ambiguous
   outcome reconciliation, reschedule/cancel synchronization, or provider
@@ -181,19 +192,20 @@ status: structure-plans-01-03-complete-plan-04-pending
 
 ## Next steps
 
-1. Continue Plan 04 from `11ef0db`: extract the four characterized actions
-   behind the stable facade with a runtime state harness, then
-   add the synthetic isolated Playwright release smoke and permanent CI gate.
-2. Add server-owned calendar prepare/confirm/claim/reconcile authority and
+1. Finish the canonical `npm test` rerun, commit the Plan 04 working tree as
+   one focused change, and record its SHA. Follow
+   `_relay/plans/plan-04-sonnet-execution.md` exactly.
+2. Add the synthetic isolated Playwright release smoke and permanent CI gate.
+3. Add server-owned calendar prepare/confirm/claim/reconcile authority and
    remove unverified report intelligence before any production-readiness claim.
-3. Integrate the organization commits back into local `main`, rerun the full
+4. Integrate the organization commits back into local `main`, rerun the full
    source, security, build, database, recovery, Graphify, and four-review-lane
    gate on one SHA, then archive/rewrite this baton again.
-4. Push only after Tony supplies evidence that the exposed credentials were
+5. Push only after Tony supplies evidence that the exposed credentials were
    rotated and that the current identity has approved least-privilege release
    authority. After a successful push, read back the remote SHA and inspect
    exact-SHA CI, CodeQL, annotations, and open alerts with `gh`.
-5. Dispatch production only through the protected workflow after every external
+6. Dispatch production only through the protected workflow after every external
    blocker above is closed. Prove migration 0033, immutable digests, backup and
    restore, restarts, auth, provider/model readiness, zero-send controls, and a
    real approved campaign before allowing real candidate use.

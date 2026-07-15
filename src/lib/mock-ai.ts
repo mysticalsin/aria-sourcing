@@ -1114,7 +1114,7 @@ You're interviewing ${b.candidateName} (${candidate.currentTitle} @ ${candidate.
 Match score: ${candidate.matchScore}. Stack: ${candidate.techStack.slice(0, 5).join(", ")}.
 
 Focus areas: ${candidate.matchBreakdown.slice(0, 2).map((x) => x.label).join(", ")}.
-Teams link: ${b.teamsLink}
+Calendar link: ${b.teamsLink || b.calLink || "To be confirmed"}
 
 Agenda:
 ${b.agenda.map((a) => `- ${a}`).join("\n")}
@@ -1139,7 +1139,7 @@ Hi ${b.candidateName.split(" ")[0]},
 You're booked in. Details:
 • When: ${when}
 • With: ${b.interviewer || "Interviewer to be confirmed"}
-• Where: ${b.teamsLink}
+• Where: ${b.teamsLink || b.calLink || "To be confirmed"}
 
 No prep needed, just bring your questions. Reply here if you need to move it.
 

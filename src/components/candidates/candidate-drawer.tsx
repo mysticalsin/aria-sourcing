@@ -16,6 +16,7 @@ import { ScoreGauge } from "@/components/charts/score-gauge";
 import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
+import { bookingCalendarSummary } from "@/lib/booking-status";
 import { useActions, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
 import type { CandidateErasureObligation, CandidateErasureStatus } from "@/lib/store/contracts";
 import { experimentalPaidSourcingEnabled, supabaseEnabled } from "@/lib/supabase/config";
@@ -785,7 +786,7 @@ export function CandidateDrawer({
     if (res.ok) {
       toast({
         title: "Interview booked",
-        description: `With ${res.booking.interviewer || "an interviewer to be confirmed"}. ${res.booking.calLink || res.booking.teamsLink ? "Calendar link confirmed." : "Meeting link pending calendar provider confirmation."}`,
+        description: `With ${res.booking.interviewer || "an interviewer to be confirmed"}. ${bookingCalendarSummary(res.booking)}`,
         variant: "success",
       });
     } else {

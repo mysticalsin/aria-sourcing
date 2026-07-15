@@ -17,8 +17,8 @@ import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib
  * when Supabase is configured, the caller is authenticated with the `book`
  * permission, the seat is live with a connected Gmail/Graph mailbox in the caller's
  * workspace, and `confirmLive` is true. Anything else degrades to dry-run. A mail-only
- * connection (no calendar scope) returns `skipped`, and the caller keeps its synthetic
- * link — so booking stays fully functional whether or not calendar access is granted.
+ * connection (no calendar scope) returns `skipped`; the client surfaces that outcome
+ * as reconciliation-required and does not commit a local booking.
  */
 const CalendarEventSchema = z.object({
   seatId: z.string().uuid(),
@@ -121,8 +121,8 @@ export async function POST(req: NextRequest) {
         ? await createGoogleCalendarEvent(ev, connection)
         : await createGraphCalendarEvent(ev, connection);
     if (!outcome.ok) {
-      // Most likely insufficient calendar scope on a mail-only connection — the caller
-      // keeps its synthetic link.
+      // A skipped provider outcome is not proof that no event was created. The client
+      // treats it as ambiguous and requires reconciliation before any local booking.
       return NextResponse.json({ status: "skipped", detail: outcome.detail });
     }
     // Persist a refreshed token if it changed. Fail closed: never write a refreshed
