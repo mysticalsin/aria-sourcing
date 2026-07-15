@@ -6,10 +6,11 @@ import { supabaseEnabled } from "./supabase/config";
    Integration adapters — MOCK MODE by default.
    Most of these cards are roadmap placeholders (`real: false`): no code in this
    repo talks to them. A few (`real: true`) do have actual backend wiring —
-   GitHub Sourcing (/api/source), the Outlook/Graph mailbox + calendar (Agent
-   Fleet's OAuth connect flow), and SendGrid/Resend (sendViaProvider) — but this
-   card's own "Configure"/"Live mode" controls still don't drive them; see
-   setupHref and testIntegration (store.ts) for the real config surface.
+   GitHub Sourcing (/api/source), Apify LinkedIn profile search (/api/source/apify),
+   the Outlook/Graph mailbox + calendar (Agent Fleet's OAuth connect flow), and
+   SendGrid/Resend (sendViaProvider) — but this card's own "Configure"/"Live
+   mode" controls still don't drive them; see setupHref and testIntegration
+   (store.ts) for the real config surface.
    ========================================================================== */
 
 export function defaultIntegrations(): IntegrationStatus[] {
@@ -49,15 +50,16 @@ export function defaultIntegrations(): IntegrationStatus[] {
       real: true,
     },
     {
-      id: "int_linkedin",
-      name: "LinkedIn Sourcing",
+      id: "int_apify",
+      name: "Apify (LinkedIn profile search)",
       category: "Sourcing",
-      description: "Official partner search. Never bypasses login walls or scraping limits.",
-      status: "not_configured",
+      description:
+        "LinkedIn public-profile data via a compliant third-party provider (Apify harvestapi); no direct LinkedIn login, scraping, or session automation.",
+      status: "connected",
       mode: "mock",
-      lastSync: null,
-      errors: ["Awaiting official partner API credentials."],
-      real: false,
+      lastSync: isoHoursBefore(0.6),
+      errors: [],
+      real: true,
     },
     {
       id: "int_linkedin_rsc",

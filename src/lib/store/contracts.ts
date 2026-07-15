@@ -3,6 +3,7 @@ import type { ConnectionTestResult } from "../integrations";
 import type { ReplyClassification } from "../mock-ai";
 import type { Recommendation } from "../recommendations";
 import type { ApprovalResult } from "../rules";
+import type { ApifyProfileSearchInput } from "../sourcing/apify";
 import type { SourceResult } from "../sourcing/candidate-mappers";
 import type { SourcingFeedbackReceiptDto } from "../sourcing/sourcing-agent-contract";
 import type { WorkspaceStatus } from "../workspace-status";
@@ -283,6 +284,30 @@ export interface HermesActions {
   ) => Promise<
     | { ok: true; status: "processing" }
     | { ok: true; status: "completed"; revealed: boolean }
+    | { ok: false; error: string }
+  >;
+  /** Real Apify search (harvestapi/linkedin-profile-search — sixth real
+   *  sourcing channel): third-party public LinkedIn profile data, not a
+   *  first-party scrape (see sourcing/apify.ts). Enrichment is async — this
+   *  kicks off the actor run server-side and returns a runId + datasetId to
+   *  poll with checkApifyRun. Requires a stored Apify key (Settings). */
+  startApifyRun: (
+    campaignId: string,
+    criteria: ApifyProfileSearchInput,
+  ) => Promise<{ ok: true; runId: string; datasetId: string } | { ok: false; error: string }>;
+  /** Polls one Apify actor run. While processing: {ok:true, status:"processing"}.
+   *  On completion: maps + scores + dedupes the real profiles exactly like
+   *  checkSillageMapping, commits the accepted candidates, logs an activity
+   *  entry, and updates campaign metrics. Never backfills a failed/empty
+   *  result with synthetic profiles. */
+  checkApifyRun: (
+    campaignId: string,
+    runId: string,
+    datasetId: string,
+    query: string,
+  ) => Promise<
+    | { ok: true; status: "processing" }
+    | { ok: true; status: "completed"; added: number }
     | { ok: false; error: string }
   >;
 

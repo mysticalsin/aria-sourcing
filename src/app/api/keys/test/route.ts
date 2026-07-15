@@ -9,6 +9,7 @@ import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit"
 import { testSillageConnection } from "@/lib/sourcing/sillage";
 import { checkApolloAuth } from "@/lib/sourcing/apollo";
 import { checkSeamlessAuth } from "@/lib/sourcing/seamless";
+import { testApifyConnection } from "@/lib/sourcing/apify";
 
 const ApiKeyTestSchema = z.object({
   provider: z.string().max(80).optional(),
@@ -64,6 +65,28 @@ async function testSeamlessKey(value: string): Promise<{ valid: boolean; detail:
 }
 
 /**
+ * Live Apify auth check (GET /v2/users/me, free of charge) with a format-only
+ * fallback on network/timeout error — mirrors testApolloKey's try/catch shape.
+ * testApifyConnection never throws (its request wrapper swallows transport
+ * errors as status 0), so that case is also routed to the format-only
+ * fallback here rather than only on a thrown exception.
+ */
+async function testApifyKey(value: string): Promise<{ valid: boolean; detail: string }> {
+  try {
+    const live = await testApifyConnection(value);
+    if (live.ok) return { valid: true, detail: `Apify key accepted (HTTP ${live.status}).` };
+    if (live.status === 401) return { valid: false, detail: live.detail || live.title || "Apify rejected this key (401)." };
+    if (live.status === 0) {
+      const fmt = validateApiKeyFormat("Apify", value);
+      return { valid: fmt.valid, detail: `${fmt.detail} Apify was unreachable, format check only.` };
+    }
+    return { valid: false, detail: live.detail || live.title || `Apify returned an unexpected HTTP ${live.status}.` };
+  } catch {
+    return validateApiKeyFormat("Apify", value);
+  }
+}
+
+/**
  * Test an API key. Either test a value passed directly (just-entered), or test a
  * stored key by id — the secret is read server-side via the service-role client
  * (workspace-scoped), validated, and the row's status is updated. Never returns
@@ -108,6 +131,10 @@ export async function POST(req: NextRequest) {
       const result = await testSeamlessKey(value);
       return NextResponse.json({ ok: true, valid: result.valid, detail: result.detail });
     }
+    if ((provider ?? "") === "Apify") {
+      const result = await testApifyKey(value);
+      return NextResponse.json({ ok: true, valid: result.valid, detail: result.detail });
+    }
     const fmt = validateApiKeyFormat(provider ?? "", value);
     return NextResponse.json({ ok: true, valid: fmt.valid, detail: fmt.detail });
   }
@@ -141,6 +168,8 @@ export async function POST(req: NextRequest) {
     fmt = await testApolloKey(secret);
   } else if (row.provider === "Seamless") {
     fmt = await testSeamlessKey(secret);
+  } else if (row.provider === "Apify") {
+    fmt = await testApifyKey(secret);
   } else {
     fmt = validateApiKeyFormat(row.provider, secret);
   }

@@ -14,6 +14,8 @@ const integrations = defaultIntegrations();
 const placeholders = integrations.filter((integration) => integration.real === false);
 const realCards = integrations.filter((integration) => integration.real === true);
 const github = integrations.find((integration) => integration.id === "int_github");
+const apify = integrations.find((integration) => integration.id === "int_apify");
+const linkedinRsc = integrations.find((integration) => integration.id === "int_linkedin_rsc");
 
 ok("has roadmap placeholder integrations to audit", placeholders.length > 0);
 ok(
@@ -35,6 +37,20 @@ ok(
 ok(
   "real:false connection tests fail closed",
   placeholders.every((integration) => testConnection(integration).ok === false),
+);
+ok(
+  "Apify LinkedIn profile search is a truthfully real card, not a roadmap placeholder",
+  apify?.real === true && apify.status === "connected" && typeof apify.lastSync === "string",
+);
+ok(
+  "Apify card's description names the third-party vendor and disclaims first-party LinkedIn automation",
+  /apify/i.test(apify?.description ?? "") &&
+    /third-party/i.test(apify?.description ?? "") &&
+    /no direct linkedin login, scraping, or session automation/i.test(apify?.description ?? ""),
+);
+ok(
+  "Official LinkedIn Recruiter System Connect remains an honest, unbuilt placeholder",
+  linkedinRsc?.real === false && linkedinRsc.status !== "connected",
 );
 
 console.log(`RESULT integrations-honesty: ${pass} passed, ${fail} failed`);
