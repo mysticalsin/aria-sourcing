@@ -12,7 +12,7 @@ status: local-source-green-release-blocked
 
 - Active organization worktree:
   `/Users/tony/.codex/worktrees/msourcing-structure-hygiene` on branch
-  `codex/aria-structure-hygiene-20260714`. Current committed tip is `908d409`; Plan 01 tip is
+  `codex/aria-structure-hygiene-20260714`. Current committed tip is `43f1001`; Plan 01 tip is
   `b067a8a4623b91e918d77d6b52bb8db73d049547`. Local `main` remains at the
   Relay checkpoint `57b9abe9dc061f3c1fd64119376a46f1d4651303`; the verified
   shift-40 integration is
@@ -22,8 +22,8 @@ status: local-source-green-release-blocked
   public-schema digest is
   `3e1d5f6c2aea60ef7b47f3ce27f1e5dec8afed2a4731e11417dd65332f4561cd`.
 - Source gates are green on this exact working tree:
-  - Fresh `npm test` exited 0 after Plan 02. Its validated manifest contains 183
-    unique processes: 51 pretest, 130 application, and 2 posttest. The manifest
+  - Fresh `npm test` exited 0 after Plan 02. Its validated manifest contains 184
+    unique processes: 51 pretest, 131 application, and 2 posttest. The manifest
     contract ran 8/8 inside the canonical lifecycle and reconstructed the exact
     prior 186-process parity digest before proving only four duplicates were
     removed.
@@ -43,11 +43,12 @@ status: local-source-green-release-blocked
     Fly database volume/restart behavior.
   - `npm run test:graphify-learning` passed all 10 worker tests with network
     disabled and emitted the bounded receipt.
-- Plan 04 current working-tree proof is green: booking/report runtime 25/25,
+- Plan 04 commit `43f1001` is locally verified: booking/report runtime 25/25,
   workspace-effectful-actions 13/13, store contracts 11/11, manifest 8/8,
   application/test typechecks, lint, module boundaries, and diff check. The
-  canonical `npm test` is still being rerun after the final calendar-page
-  wording correction; record its exit before commit.
+  canonical `npm test` exited 0 after the final calendar-page and route-comment
+  corrections. Post-commit application/test typechecks, lint, manifest 8/8,
+  and diff check also exited 0.
 - Sonnet's executable continuation is in
   `_relay/plans/plan-04-sonnet-execution.md`. It contains exact commands for
   local proof, commit, main integration, GitHub readback, protected Fly deploy,
