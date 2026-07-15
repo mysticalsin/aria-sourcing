@@ -76,6 +76,7 @@ import { resolveInboundEmailIdentity } from "./store/inbound-identity";
 import { loadState, normalizeHermesState } from "./store/migrations";
 import { demoStateAllowsCandidatePersistence } from "./store/demo-persistence";
 import { mapApifyCandidates, mapSillageCandidates, parseSillageIdentifier } from "./store/sourcing-helpers";
+import { computeCoverage } from "./enrichment/merge";
 import type {
   CandidateErasureObligation,
   CandidateErasureStatus,
@@ -117,6 +118,8 @@ import type {
   DustAgentSummary,
   DustRegion,
   DustTask,
+  EnrichableField,
+  EnrichmentAttempt,
   HermesState,
   IntegrationStatus,
   Interviewer,
@@ -230,6 +233,16 @@ function parseSourcingFeedbackReceipts(value: unknown): SourcingFeedbackReceipt[
   }
   return receipts;
 }
+
+/** Core contact/richness fields enrichCandidate/enrichCampaign fill when the
+ *  caller doesn't specify `want` explicitly (docs/superpowers/plans/
+ *  2026-07-15-enrichment-orchestrator.md). */
+const DEFAULT_ENRICH_FIELDS: EnrichableField[] = ["email", "phone", "skills", "experience", "headline"];
+/** Generous per-workspace fallback spend cap (registry cost units, not real
+ *  currency) used when `state.enrichmentBudgetUnits` hasn't been configured. */
+const DEFAULT_ENRICHMENT_BUDGET_UNITS = 1000;
+/** Concurrency cap enrichCampaign uses when the caller doesn't specify one. */
+const DEFAULT_ENRICH_CONCURRENCY = 3;
 
 const HermesContext = createContext<HermesContextValue | null>(null);
 const UNSAVED_WORKSPACE_MESSAGE =
@@ -1412,6 +1425,185 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       return { ok: true, status: "completed", added: accepted.length };
     },
     [candidatePersistenceAllowed, commit, current, workspaceEffectAllowed, workspaceFetch],
+  );
+
+  const enrichCandidate = useCallback(
+    async (
+      candidateId: string,
+      opts?: { want?: EnrichableField[] },
+    ): Promise<{ ok: boolean; filled: EnrichableField[]; spend: number; detail: string }> => {
+      if (!candidatePersistenceAllowed("live")) {
+        return { ok: false, filled: [], spend: 0, detail: "Enrichment requires a live workspace." };
+      }
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, filled: [], spend: 0, detail: "Workspace unavailable. Retry before enrichment." };
+      }
+      const s = current();
+      const cand = s.candidates.find((c) => c.id === candidateId);
+      if (!cand) return { ok: false, filled: [], spend: 0, detail: "Candidate not found." };
+
+      const want = opts?.want ?? DEFAULT_ENRICH_FIELDS;
+      const budgetCap = s.enrichmentBudgetUnits ?? DEFAULT_ENRICHMENT_BUDGET_UNITS;
+      const alreadySpent = (s.enrichmentLedger ?? []).reduce((sum, e) => sum + e.units, 0);
+      const budgetRemaining = Math.max(0, budgetCap - alreadySpent);
+
+      let res: Response;
+      try {
+        res = await workspaceFetch("/api/source/enrich", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ candidate: cand, want, budgetRemaining }),
+        });
+      } catch (err) {
+        return {
+          ok: false,
+          filled: [],
+          spend: 0,
+          detail: err instanceof Error ? err.message : "Network error reaching the enrichment service.",
+        };
+      }
+      const out = (await res.json().catch(() => null)) as
+        | {
+            ok?: boolean;
+            patch?: Partial<
+              Pick<
+                Candidate,
+                | "email"
+                | "phone"
+                | "currentTitle"
+                | "location"
+                | "currentCompany"
+                | "techStack"
+                | "externalIds"
+                | "matchScore"
+                | "matchBreakdown"
+                | "enrichment"
+              >
+            >;
+            attempts?: EnrichmentAttempt[];
+            spend?: number;
+            error?: string;
+          }
+        | null;
+      if (!out?.ok || !out.patch) {
+        return { ok: false, filled: [], spend: 0, detail: out?.error ?? "Enrichment failed." };
+      }
+
+      const patch = out.patch;
+      const attempts = out.attempts ?? [];
+      const spend = out.spend ?? 0;
+      const filled = Array.from(new Set(attempts.flatMap((a) => a.fieldsFilled)));
+      const byProvider = attempts
+        .filter((a) => a.fieldsFilled.length > 0)
+        .map((a) => `${a.provider}: ${a.fieldsFilled.join(", ")}`);
+      // One ledger entry per provider CALL this run, whether or not it found
+      // data (costUnits may be 0) — the audit trail behind
+      // state.enrichmentBudgetUnits (see HermesState.enrichmentLedger).
+      const ledgerEntries = attempts.map((a) => ({ provider: a.provider, candidateId, units: a.costUnits, at: a.at }));
+
+      commit((prev) => {
+        const next: HermesState = {
+          ...prev,
+          candidates: prev.candidates.map((c) => (c.id === candidateId ? { ...c, ...patch } : c)),
+          enrichmentLedger: ledgerEntries.length
+            ? [...(prev.enrichmentLedger ?? []), ...ledgerEntries]
+            : prev.enrichmentLedger,
+        };
+        return withActivity(
+          next,
+          makeActivity({
+            type: "sourcing",
+            title: `Enriched: ${cand.name}`,
+            notes: byProvider.length
+              ? `${byProvider.join("; ")}.`
+              : "No configured provider had new data for this candidate.",
+            outcome: filled.length
+              ? `${filled.length} field(s) filled (${spend} unit(s) spent)`
+              : `No new data (${spend} unit(s) spent)`,
+            campaignId: cand.campaignId,
+            linkedEntityType: "candidate",
+            linkedEntityId: cand.id,
+          }),
+          cand.campaignId,
+        );
+      });
+
+      return { ok: true, filled, spend, detail: byProvider.join("; ") || "No new data found." };
+    },
+    [candidatePersistenceAllowed, commit, current, workspaceEffectAllowed, workspaceFetch],
+  );
+
+  const enrichCampaign = useCallback(
+    async (
+      campaignId: string,
+      opts?: { want?: EnrichableField[]; concurrency?: number },
+    ): Promise<{ ok: boolean; total: number; done: number; filled: number; spend: number; error?: string }> => {
+      if (!candidatePersistenceAllowed("live")) {
+        return { ok: false, total: 0, done: 0, filled: 0, spend: 0, error: "Enrichment requires a live workspace." };
+      }
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, total: 0, done: 0, filled: 0, spend: 0, error: "Workspace unavailable. Retry before enrichment." };
+      }
+      const s = current();
+      const campaign = s.campaigns.find((c) => c.id === campaignId);
+      if (!campaign) return { ok: false, total: 0, done: 0, filled: 0, spend: 0, error: "Campaign not found." };
+
+      const want = opts?.want ?? DEFAULT_ENRICH_FIELDS;
+      const concurrency = Math.max(1, opts?.concurrency ?? DEFAULT_ENRICH_CONCURRENCY);
+      const targets = s.candidates.filter(
+        (c) => c.campaignId === campaignId && !want.every((field) => computeCoverage(c).includes(field)),
+      );
+      if (targets.length === 0) return { ok: true, total: 0, done: 0, filled: 0, spend: 0 };
+
+      let done = 0;
+      let filledTotal = 0;
+      let spendTotal = 0;
+      let stoppedForBudget = false;
+      let cursor = 0;
+
+      const worker = async () => {
+        for (;;) {
+          const idx = cursor++;
+          if (idx >= targets.length) return;
+          const liveState = current();
+          const budgetCap = liveState.enrichmentBudgetUnits ?? DEFAULT_ENRICHMENT_BUDGET_UNITS;
+          const alreadySpent = (liveState.enrichmentLedger ?? []).reduce((sum, e) => sum + e.units, 0);
+          if (alreadySpent >= budgetCap) {
+            stoppedForBudget = true;
+            return;
+          }
+          const result = await enrichCandidate(targets[idx].id, { want });
+          done += 1;
+          if (result.ok) {
+            filledTotal += result.filled.length;
+            spendTotal += result.spend;
+          }
+        }
+      };
+
+      await Promise.all(Array.from({ length: Math.min(concurrency, targets.length) }, () => worker()));
+
+      commit((prev) =>
+        withActivity(
+          prev,
+          makeActivity({
+            type: "sourcing",
+            title: `Batch enrichment: ${campaign.jobAnalysis.title}`,
+            notes: stoppedForBudget
+              ? `Stopped early — enrichment budget exhausted after ${done}/${targets.length} candidate(s).`
+              : `Ran the enrichment waterfall for ${done}/${targets.length} candidate(s) missing ${want.join(", ")}.`,
+            outcome: `${filledTotal} field(s) filled across ${done} candidate(s), ${spendTotal} unit(s) spent`,
+            campaignId,
+            linkedEntityType: "campaign",
+            linkedEntityId: campaignId,
+          }),
+          campaignId,
+        ),
+      );
+
+      return { ok: true, total: targets.length, done, filled: filledTotal, spend: spendTotal };
+    },
+    [candidatePersistenceAllowed, commit, current, enrichCandidate, workspaceEffectAllowed],
   );
 
   const runSourcingAgent = useCallback(
@@ -5853,6 +6045,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       checkSeamlessResearch,
       startApifyRun,
       checkApifyRun,
+      enrichCandidate,
+      enrichCampaign,
       runSourcingAgent,
       recordSourcingFeedback,
       listPendingSourcingFeedback,
@@ -5963,7 +6157,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       setActiveCampaign, createCampaignFromAnalysis, updateCampaign, regenerateQueries,
-      sourceNextBatch, addCandidateFromGithub, addCandidateManual, startSillageMapping, checkSillageMapping, sourceFromApollo, prepareApolloEnrichment, enrichApolloCandidate, sourceFromSeamless, startSeamlessResearch, checkSeamlessResearch, startApifyRun, checkApifyRun, runSourcingAgent, recordSourcingFeedback, listPendingSourcingFeedback, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
+      sourceNextBatch, addCandidateFromGithub, addCandidateManual, startSillageMapping, checkSillageMapping, sourceFromApollo, prepareApolloEnrichment, enrichApolloCandidate, sourceFromSeamless, startSeamlessResearch, checkSeamlessResearch, startApifyRun, checkApifyRun, enrichCandidate, enrichCampaign, runSourcingAgent, recordSourcingFeedback, listPendingSourcingFeedback, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
       approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, draftFollowUpFor, draftRecontactFor, classifyAndStoreReply, markReplyHandled,
       applyReplyAction, draftReplyResponse, createBookingFor, updateBooking, generateReport,
       setSkillUpdateStatus, setCandidateStage, setCandidatePhone, addCandidateNote, setRejectionReason,

@@ -23,6 +23,7 @@ import { decryptSecret } from "@/lib/crypto-secrets";
 
 const APIFY_API = "https://api.apify.com/v2";
 const ACTOR_PATH = "/actors/harvestapi~linkedin-profile-search/runs";
+const DEV_FUSION_PATH = "/actors/dev_fusion~linkedin-profile-scraper/run-sync-get-dataset-items";
 
 // Actor input is capped server-side regardless of what the caller requests —
 // this is the single funnel every Apify run goes through.
@@ -404,6 +405,39 @@ export async function fetchDatasetItems(
 /** Cheap, no-run connectivity check used by the API-key "Test connection" flow. */
 export async function testApifyConnection(token: string): Promise<ApifyResult<unknown>> {
   return apifyRequest("/users/me", token, { timeoutMs: 8_000 });
+}
+
+/**
+ * dev_fusion (Apify family) — URL-in, full-profile-out LinkedIn enrichment, used
+ * by the unified enrichment orchestrator (enrichment/runners.ts) to enrich a
+ * candidate discovered by ANY provider as long as it has a `linkedinUrl`.
+ * Unlike harvestapi/linkedin-profile-search (async run + poll + fetch-dataset),
+ * run-sync-get-dataset-items runs the actor and returns the dataset's items
+ * directly in one call — same response shape as fetchDatasetItems's endpoint
+ * (a plain JSON array), so it reuses the same `mapProfile` normalization.
+ *
+ * dev_fusion is a "full permission" actor: an Apify account that hasn't
+ * approved it yet gets a 403 with `error.type` "full-permission-actor-not-
+ * approved". That's remapped here to a distinct `title: "not_approved"` (kept
+ * separate from a generic error) so the runner can surface a graceful "needs
+ * owner approval" not_configured state instead of a hard failure.
+ */
+export async function enrichProfilesByUrl(token: string, urls: string[]): Promise<ApifyResult<ApifyProfile[]>> {
+  const profileUrls = urls.map((u) => u.trim()).filter(Boolean);
+  if (profileUrls.length === 0) return { ok: true, status: 200, data: [] };
+  const res = await apifyRequest<RawApifyProfile[]>(DEV_FUSION_PATH, token, {
+    method: "POST",
+    body: { profileUrls },
+    timeoutMs: 60_000,
+  });
+  if (!res.ok) {
+    if (res.status === 403 && res.title === "full-permission-actor-not-approved") {
+      return { ok: false, status: res.status, title: "not_approved", detail: res.detail };
+    }
+    return res;
+  }
+  const items = Array.isArray(res.data) ? res.data : [];
+  return { ok: true, status: res.status, data: items.map(mapProfile) };
 }
 
 /**

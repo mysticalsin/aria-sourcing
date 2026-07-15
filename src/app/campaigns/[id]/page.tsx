@@ -14,6 +14,7 @@ import {
   Eyebrow,
   Field,
   Input,
+  Meter,
   Progress,
   Select,
   SkeletonCard,
@@ -53,10 +54,14 @@ import {
   useCampaign,
   useCampaignCandidates,
   useCampaignOutreach,
+  useHermes,
   useHydrated,
   useReplies,
   useReportForCampaign,
+  useRole,
 } from "@/lib/store";
+import { can } from "@/lib/rbac";
+import { computeCoverage } from "@/lib/enrichment/merge";
 import { campaignHealth, nextActionForCampaign } from "@/lib/rules";
 import { campaignAllowsLiveSourcing } from "@/lib/sourcing/campaign-lifecycle";
 import type {
@@ -79,6 +84,7 @@ import {
   type Campaign,
   type CampaignStatus,
   type Candidate,
+  type EnrichableField,
   type JobAnalysis,
   type ScoringWeights,
   type ValidationWarning,
@@ -120,7 +126,17 @@ import {
   UserRound,
   Users,
   X,
+  Zap,
 } from "lucide-react";
+
+/** Core contact/richness fields the "Enrich all" panel reports coverage % for
+ *  — mirrors `DEFAULT_ENRICH_FIELDS` in store.ts (enrichCandidate/
+ *  enrichCampaign's default `want` when the caller doesn't specify one), kept
+ *  as a local constant here since that const isn't exported. */
+const ENRICH_ALL_WANT_FIELDS: EnrichableField[] = ["email", "phone", "skills", "experience", "headline"];
+/** Mirrors store.ts's DEFAULT_ENRICHMENT_BUDGET_UNITS fallback for when
+ *  `state.enrichmentBudgetUnits` hasn't been configured. */
+const DEFAULT_ENRICHMENT_BUDGET_UNITS = 1000;
 
 const STATUS_TONE: Record<CampaignStatus, Tone> = {
   Intake: "neutral",
@@ -332,6 +348,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const allBookings = useBookings();
   const report = useReportForCampaign(id);
   const actions = useActions();
+  const role = useRole();
+  const hermesState = useHermes().state;
   const { toast } = useToast();
   const confirm = useConfirm();
   const router = useRouter();
@@ -349,6 +367,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const feedbackReceipts = feedbackState.campaignId === id ? feedbackState.receipts : [];
   const [feedbackSubmitting, setFeedbackSubmitting] = React.useState<Set<string>>(new Set());
   const [sourcing, setSourcing] = React.useState(false);
+  const [enrichingAll, setEnrichingAll] = React.useState(false);
   // The just-sourced batch, staged for the streaming reveal below — purely a
   // display buffer; the store already committed these candidates for real.
   // `sourceBatchKey` remounts <SourcingFeed> on every new batch (even one of
@@ -447,6 +466,26 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   const weightTotal = Object.values(c.scoringWeights).reduce((a, b) => a + b, 0) || 1;
 
+  const canEnrich = can(role, "source");
+  // Coverage % across ENRICH_ALL_WANT_FIELDS, averaged over this campaign's
+  // candidates — the same fields enrichCampaign fills by default, so 100%
+  // here means "Enrich all" has nothing left to do.
+  const enrichmentCoveragePct =
+    candidates.length === 0
+      ? 0
+      : Math.round(
+          (candidates.reduce(
+            (sum, cand) => sum + computeCoverage(cand).filter((f) => ENRICH_ALL_WANT_FIELDS.includes(f)).length,
+            0,
+          ) /
+            (candidates.length * ENRICH_ALL_WANT_FIELDS.length)) *
+            100,
+        );
+  // Workspace-wide (not per-campaign): the server enforces one shared budget
+  // across every candidate/campaign, so the meter reports that same total.
+  const enrichmentSpend = (hermesState?.enrichmentLedger ?? []).reduce((sum, e) => sum + e.units, 0);
+  const enrichmentBudget = hermesState?.enrichmentBudgetUnits ?? DEFAULT_ENRICHMENT_BUDGET_UNITS;
+
   const tabs: TabItem[] = [
     { value: "overview", label: "Overview", icon: <LayoutDashboard className="h-4 w-4" /> },
     { value: "jd", label: "JD Analysis", icon: <FileSearch className="h-4 w-4" /> },
@@ -517,6 +556,31 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         : isLive
           ? `Live results from ${res.source === "github" ? "GitHub" : "the web"}.`
           : "All matched candidates accepted into the pipeline.",
+      variant: "success",
+    });
+  };
+
+  // Batch variant of the drawer's unified enrichment waterfall (docs/
+  // superpowers/plans/2026-07-15-enrichment-orchestrator.md, "Wow UI") — runs
+  // every configured provider against every candidate in this campaign still
+  // missing core contact/richness fields, sharing the workspace budget.
+  const handleEnrichAll = async () => {
+    setEnrichingAll(true);
+    const res = await actions.enrichCampaign(c.id);
+    setEnrichingAll(false);
+    if (!res.ok) {
+      toast({ title: "Batch enrichment failed", description: res.error, variant: "error" });
+      return;
+    }
+    toast({
+      title:
+        res.total === 0
+          ? "All candidates already covered"
+          : `Enriched ${res.done}/${res.total} candidate${res.total === 1 ? "" : "s"}`,
+      description:
+        res.total === 0
+          ? "No candidates were missing email, phone, skills, experience, or headline."
+          : `${res.filled} field(s) filled, ${res.spend} unit(s) spent.`,
       variant: "success",
     });
   };
@@ -1323,6 +1387,43 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 </span>
                 <AddCandidateButton campaignId={c.id} />
               </div>
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <Eyebrow>Unified enrichment</Eyebrow>
+                <CardTitle className="mt-1">Enrich all candidates</CardTitle>
+              </div>
+              {canEnrich ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  leftIcon={<Zap className="h-4 w-4" />}
+                  onClick={handleEnrichAll}
+                  loading={enrichingAll}
+                  disabled={enrichingAll || candidates.length === 0}
+                >
+                  {enrichingAll ? "Enriching…" : "Enrich all"}
+                </Button>
+              ) : (
+                <span className="text-xs text-muted">Requires sourcing permission.</span>
+              )}
+            </CardHeader>
+            <CardBody className="space-y-4">
+              <div className="space-y-1.5">
+                <div className="flex items-baseline justify-between text-sm">
+                  <span className="font-semibold text-ink-soft">Coverage (email, phone, skills, experience, headline)</span>
+                  <span className="font-bold tabular-nums text-ink">{enrichmentCoveragePct}%</span>
+                </div>
+                <Progress
+                  value={enrichmentCoveragePct}
+                  tone="aqua"
+                  aria-label={`Enrichment coverage across candidates: ${enrichmentCoveragePct}%`}
+                />
+              </div>
+              <Meter label="Workspace enrichment spend" used={enrichmentSpend} limit={enrichmentBudget} tone="electric" />
             </CardBody>
           </Card>
 

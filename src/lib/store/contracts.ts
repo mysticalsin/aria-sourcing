@@ -26,6 +26,7 @@ import type {
   DustAgentSummary,
   DustRegion,
   DustTask,
+  EnrichableField,
   HermesState,
   IntegrationStatus,
   Interviewer,
@@ -310,6 +311,33 @@ export interface HermesActions {
     | { ok: true; status: "completed"; added: number }
     | { ok: false; error: string }
   >;
+  /** Unified cross-provider enrichment orchestrator (docs/superpowers/plans/
+   *  2026-07-15-enrichment-orchestrator.md) — a candidate discovered by ANY
+   *  provider can be enriched by every OTHER configured provider (Apify
+   *  dev_fusion, Apollo, Seamless, Sillage). Calls /api/source/enrich, which
+   *  runs the cost-ordered waterfall server-side, then merges the returned
+   *  patch (email/phone/headline/location/company/skills/enrichment/
+   *  externalIds/matchScore) into the candidate and logs one Activity
+   *  summarizing which provider filled what. Respects
+   *  `state.enrichmentBudgetUnits` (generous default when unset); a
+   *  provider-by-provider spend ledger is appended to
+   *  `state.enrichmentLedger` regardless of whether data was found. Defaults
+   *  `want` to the core contact/richness fields. Never throws — network/
+   *  server failures come back as `{ok:false}` with a `detail`. */
+  enrichCandidate: (
+    candidateId: string,
+    opts?: { want?: EnrichableField[] },
+  ) => Promise<{ ok: boolean; filled: EnrichableField[]; spend: number; detail: string }>;
+  /** Batch variant of enrichCandidate — runs the waterfall for every candidate
+   *  in a campaign not yet covered for `want`, with a concurrency cap
+   *  (default 3) sharing the same workspace enrichment budget. Stops
+   *  dispatching new candidates once the shared budget is exhausted
+   *  (candidates already in flight still complete); logs one summary
+   *  Activity for the whole batch rather than one per candidate. */
+  enrichCampaign: (
+    campaignId: string,
+    opts?: { want?: EnrichableField[]; concurrency?: number },
+  ) => Promise<{ ok: boolean; total: number; done: number; filled: number; spend: number; error?: string }>;
 
   // outreach
   generateOutreachFor: (

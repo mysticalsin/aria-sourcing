@@ -296,6 +296,50 @@ export interface ComplianceFlags {
   preSuppressionStage?: CandidateStage | null;
 }
 
+/* ---- Enrichment orchestrator (additive; unified cross-provider waterfall) --
+   A candidate discovered by ANY provider can be enriched by ALL configured
+   providers. Field-level provenance tracks who supplied which value so a
+   later, higher-confidence provider can safely overwrite an earlier one. */
+
+export const ENRICHABLE_FIELDS = [
+  "email",
+  "phone",
+  "headline",
+  "skills",
+  "experience",
+  "education",
+  "languages",
+  "location",
+  "company",
+] as const;
+export type EnrichableField = (typeof ENRICHABLE_FIELDS)[number];
+
+/** Which provider supplied a field's current value, and how confident it was. */
+export interface FieldProvenance {
+  provider: SourcePlatform; // who supplied this field's value
+  at: string; // ISO
+  confidence?: number; // 0..1 (e.g. email deliverable/qualityScore)
+}
+
+/** One provider run against one candidate — recorded whether or not it found data. */
+export interface EnrichmentAttempt {
+  provider: SourcePlatform;
+  at: string;
+  status: "ok" | "no_data" | "not_configured" | "no_key_field" | "budget_exceeded" | "error" | "deferred";
+  fieldsFilled: EnrichableField[];
+  costUnits: number; // credits/$ consumed (0 if free/no-match)
+  detail?: string; // terse, never leaks a key
+}
+
+/** Enrichment state carried on a candidate — merged in by field, never replaced wholesale. */
+export interface CandidateEnrichment {
+  status: "unenriched" | "partial" | "enriched" | "failed";
+  lastEnrichedAt?: string;
+  fieldProvenance: Partial<Record<EnrichableField, FieldProvenance>>;
+  attempts: EnrichmentAttempt[];
+  coverage: EnrichableField[]; // fields currently present
+}
+
 export interface Candidate {
   id: string;
   campaignId: string;
@@ -320,6 +364,12 @@ export interface Candidate {
   /** Opaque server-issued authority for a paid provider action. The browser
    *  never receives the underlying provider person id. */
   sourceAuthorityId?: string;
+  /** Per-provider external record ids, keyed by SourcePlatform, so a candidate
+   *  discovered by one provider can still be precisely re-identified by every
+   *  OTHER configured provider (Apollo person id, Seamless searchResultId, …)
+   *  instead of colliding on the single legacy `sourceExternalId` slot. Mapping
+   *  helpers seed `externalIds[sourcePlatform] = sourceExternalId` on migration. */
+  externalIds?: Partial<Record<SourcePlatform, string>>;
   sourcePlatform: SourcePlatform;
   sourceQuery: string;
   matchScore: number;
@@ -387,6 +437,10 @@ export interface Candidate {
   /** Skills + signals captured across the process — the candidate "DNA" stored
    *  back into the talent pool (TAnIA Talent Pool & Community Mgr). */
   dna?: string[];
+  /** Cross-provider enrichment state — field-level provenance, attempt log and
+   *  coverage produced by the unified enrichment orchestrator. Absent = never
+   *  run through the orchestrator yet. */
+  enrichment?: CandidateEnrichment;
 }
 
 /* ============================================================================
@@ -1366,4 +1420,11 @@ export interface HermesState {
   /** Scored external applications from the career-website chatbox, awaiting
    *  recruiter handoff to the Applicant Screener (TAnIA §5). Additive. */
   chatboxSubmissions?: ChatboxSubmission[];
+  /** Append-only spend ledger for the unified enrichment orchestrator — one
+   *  entry per provider call, whether or not it found data (costUnits may be 0).
+   *  The audit trail behind enrichmentBudgetUnits. Additive. */
+  enrichmentLedger?: { provider: SourcePlatform; candidateId: string; units: number; at: string }[];
+  /** Per-workspace cap on total enrichment spend (arbitrary provider-defined
+   *  cost units). Absent = no cap enforced (treated as unlimited upstream). */
+  enrichmentBudgetUnits?: number;
 }
