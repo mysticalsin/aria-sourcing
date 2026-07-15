@@ -32,7 +32,7 @@ is used by multiple tools in shared and linked worktrees.
 ## Mandatory gate
 
 ```bash
-npx tsc --noEmit && npm test
+npm run typecheck && npm run typecheck:tests && npm test
 ```
 
 Also run `npm run lint` for source changes. Use

@@ -2,8 +2,9 @@
  * Integration test against a REAL Obscura sidecar. Not part of `npm test` --
  * run separately via `npm run test:obscura` once the sidecar is reachable
  * (`docker compose up -d obscura` locally, or the CI service container in m9).
- * Skips gracefully (exit 0) if no sidecar is reachable, so it never breaks a
- * plain `npm test` run or a machine without Docker.
+ * Skips gracefully (exit 0) if no sidecar is reachable during an optional local
+ * run. CI sets `ARIA_REQUIRE_OBSCURA_TEST=true`, which turns an unreachable
+ * sidecar into a hard failure after the workflow's bounded readiness check.
  *
  * Two levels, deliberately:
  *  - Adapter-level (bypasses browser-tools.ts's SSRF guard on purpose): proves
@@ -39,6 +40,7 @@ function ok(name: string, cond: boolean, extra?: unknown) {
 }
 
 const OBSCURA_HTTP_URL = process.env.OBSCURA_URL || "http://127.0.0.1:9222";
+const OBSCURA_TEST_REQUIRED = process.env.ARIA_REQUIRE_OBSCURA_TEST === "true";
 
 async function sidecarReachable(): Promise<boolean> {
   try {
@@ -136,6 +138,10 @@ async function main() {
   }
 
   if (!(await sidecarReachable())) {
+    if (OBSCURA_TEST_REQUIRED) {
+      console.error(`REQUIRED: no Obscura sidecar reachable at ${OBSCURA_HTTP_URL}`);
+      process.exit(1);
+    }
     console.log(`SKIPPED: no Obscura sidecar reachable at ${OBSCURA_HTTP_URL} (run \`docker compose up -d obscura\` first)`);
     process.exit(0);
   }

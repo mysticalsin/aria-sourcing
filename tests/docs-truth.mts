@@ -24,12 +24,17 @@ const documentationMap = source("docs/README.md");
 const deploymentRunbook = source("production-readiness/DEPLOYMENT_RUNBOOK.md");
 const architecture = source("docs/ARCHITECTURE.md");
 const releaseWorkflow = source(".github/workflows/deploy-aria-mantu.yml");
+const ciWorkflow = source(".github/workflows/ci.yml");
 const dockerGuide = source("DOCKER.md");
 const dockerCompose = source("docker-compose.yml");
 const supabaseSetup = source("SUPABASE_SETUP.md");
 const localSetup = source("production-readiness/LOCAL_SETUP.md");
+const deploymentChecklist = source("production-readiness/DEPLOY_CHECKLIST.md");
 const legacyRootBaton = source("CLAUDE_RELAY_BATON.md");
 const agentInstructions = source("AGENTS.md");
+const contributingGuide = source("CONTRIBUTING.md");
+const testingGuide = source("docs/TESTING.md");
+const testSuiteMap = source("tests/README.md");
 const inventory = source("production-readiness/INVENTORY.md");
 const dataFlow = source("production-readiness/DATA_FLOW.md");
 const allDocs = [
@@ -100,6 +105,25 @@ const packageJson = JSON.parse(source("package.json")) as {
   scripts?: Record<string, string>;
 };
 const canonicalLifecycle = resolveTestGroup(testManifest, "all");
+ok(
+  "CI enforces application and test TypeScript contracts separately",
+  packageJson.scripts?.["typecheck:tests"] === "tsc -p tsconfig.tests.json --pretty false" &&
+    ciWorkflow.includes("run: npm run typecheck\n") &&
+    ciWorkflow.includes("run: npm run typecheck:tests"),
+);
+ok(
+  "primary developer and release gates include strict test typechecking",
+  [
+    readme,
+    contributingGuide,
+    testingGuide,
+    testSuiteMap,
+    architecture,
+    deploymentRunbook,
+    deploymentChecklist,
+    agentInstructions,
+  ].every((document) => document.includes("npm run typecheck:tests")),
+);
 ok(
   "canonical manifest resolves a non-empty lifecycle for documentation commands",
   canonicalLifecycle.length > 0,

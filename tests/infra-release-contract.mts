@@ -19,6 +19,7 @@ const kongDockerfile = readFileSync("docker/kong/Dockerfile.fly", "utf8");
 const ownerReconciliation = readFileSync("docker/bootstrap/supabase-admin-reconciliation.sql", "utf8");
 const gitleaksConfig = readFileSync(".gitleaks.toml", "utf8");
 const gitleaksIgnore = readFileSync(".gitleaksignore", "utf8");
+const obscuraIntegration = readFileSync("tests/obscura-integration.mts", "utf8");
 const remoteDeployBody = deploy.match(/rd\(\)\{([\s\S]*?)^\}/m)?.[1] ?? "";
 const workflowBeforeDeployStep = deployWorkflow.slice(0, deployWorkflow.indexOf("- name: Deploy exact checked release"));
 const deployJobStart = deployWorkflow.indexOf("\n  deploy:");
@@ -129,6 +130,14 @@ function shellFunction(source: string, name: string) {
     .split("\n")
     .map((line) => line.replace(/^ {10}/, ""))
     .join("\n");
+}
+
+function workflowStep(source: string, name: string): string {
+  const marker = `\n      - name: ${name}\n`;
+  const start = source.indexOf(marker);
+  if (start < 0) return "";
+  const next = source.indexOf("\n      - name: ", start + marker.length);
+  return source.slice(start, next < 0 ? source.length : next);
 }
 
 ok("production deploy is manual-only", /^\s{2}workflow_dispatch:\s*$/m.test(deployWorkflow) && !/^\s{2}push:\s*$/m.test(deployWorkflow));
@@ -563,6 +572,40 @@ ok(
 );
 
 ok("CI uses the repository Node 22 contract", /node-version:\s*["']?22["']?/.test(ciWorkflow));
+const requiredObscuraProbe = spawnSync(
+  process.execPath,
+  ["--import", "tsx", "tests/obscura-integration.mts"],
+  {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      NODE_ENV: "test",
+      ARIA_REQUIRE_OBSCURA_TEST: "true",
+      OBSCURA_BIN_PATH: "",
+      OBSCURA_URL: "http://127.0.0.1:1",
+    },
+    timeout: 10_000,
+  },
+);
+const obscuraReadinessStep = workflowStep(ciWorkflow, "Wait for Obscura sidecar");
+const obscuraIntegrationStep = workflowStep(ciWorkflow, "Obscura integration test");
+ok(
+  "required Obscura integration mode fails when the sidecar is unreachable",
+  requiredObscuraProbe.status === 1 &&
+    requiredObscuraProbe.error === undefined &&
+    requiredObscuraProbe.signal === null &&
+    /REQUIRED: no Obscura sidecar reachable/.test(
+      `${requiredObscuraProbe.stdout}${requiredObscuraProbe.stderr}`,
+    ) &&
+    /ARIA_REQUIRE_OBSCURA_TEST/.test(obscuraIntegration),
+);
+ok(
+  "CI waits for Obscura readiness and makes the integration test mandatory",
+  /\/json\/version/.test(obscuraReadinessStep) &&
+    /for attempt in \$\(seq 1 30\)/.test(obscuraReadinessStep) &&
+    /ARIA_REQUIRE_OBSCURA_TEST:\s*["']true["']/.test(obscuraIntegrationStep),
+);
 ok("CI has an independent dependency-audit job", /^\s{2}dependency-audit:\s*$/m.test(ciWorkflow));
 ok("CI has an independent secret-scan job", /^\s{2}secret-scan:\s*$/m.test(ciWorkflow));
 ok("CI has an independent production-image supply-chain job", /^\s{2}supply-chain:\s*$/m.test(ciWorkflow));

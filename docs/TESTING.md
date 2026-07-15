@@ -18,6 +18,7 @@ Route tests that use Node module mocks must keep the repository's existing
 
 ```bash
 npm run typecheck
+npm run typecheck:tests
 npm run lint
 npm test
 npm run build:isolated

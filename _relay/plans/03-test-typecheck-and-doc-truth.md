@@ -2,7 +2,7 @@
 plan: 03-test-typecheck-and-doc-truth
 owner: Sonnet-QA-Types
 reviewer: Sonnet-Final-Validator
-status: in-progress
+status: complete
 ---
 
 # 03: Strict test typecheck and derived documentation truth
@@ -15,6 +15,26 @@ status: in-progress
   Plan 02-owned diagnostics. The bounded repair baseline is 150 diagnostics
   across 45 test files.
 - `typecheck:tests` is intentionally not in CI until the count reaches zero.
+
+## Completion evidence (2026-07-14)
+
+- The strict test compiler now exits 0 across every TypeScript test root. The
+  repair reduced the measured baseline from 152 diagnostics to zero without
+  exclusions, suppressions, or weaker compiler settings.
+- Eight bounded fixture commits separate framework, process, MCP, sourcing,
+  outbound, route/provider, and platform changes. `tests/helpers/process-env.mts`
+  provides scoped mutation and exact restoration for environment-based tests.
+- The Quality job now runs `npm run typecheck:tests` immediately after the
+  application typecheck. `tests/docs-truth.mts` permanently rejects CI drift
+  from either TypeScript contract.
+- The canonical 183-process lifecycle exited 0 after the final fixture changes.
+  The independent Obscura command exited 0 with an explicit skip because no
+  verified local binary or reachable sidecar was configured. CI now performs a
+  bounded sidecar readiness check and sets a required-test mode that exits 1
+  when Obscura is unavailable; the release contract executes that failure path.
+- Final focused proof: application typecheck, test typecheck, manifest contract
+  8/8, documentation truth 44/44, infrastructure release contract 134/134,
+  lint, and `git diff --check` all exited 0.
 
 ## Scope
 

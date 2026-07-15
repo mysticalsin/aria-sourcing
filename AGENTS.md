@@ -6,7 +6,7 @@ worktree. Read this file before touching anything.
 ## Division of labor (Tony, 2026-07-09)
 
 - **Claude Code = builder + integrator.** Implements features, runs the full
-  test gate (`npm test` + `npx tsc --noEmit`), commits in small reviewable
+  test gate (`npm run typecheck` + `npm run typecheck:tests` + `npm test`), commits in small reviewable
   chunks, pushes, verifies deploys, keeps the goal state
   (`_agent_state/mantu-goal/*.json`) and this project's baton honest.
 - **Codex = adversarial auditor.** Reviews the code Claude (or Codex itself)
@@ -54,7 +54,7 @@ Rules: facts over narrative; name files/commands/errors; never delete `archive/`
 ## Test gate (both tools must keep this green)
 
 ```
-npx tsc --noEmit && npm test
+npm run typecheck && npm run typecheck:tests && npm test
 ```
 
 The command list is owned by `package.json`; do not copy a suite count into

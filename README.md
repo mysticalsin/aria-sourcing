@@ -18,7 +18,7 @@ Verified from `package.json` on 2026-07-14:
 | UI/runtime | Tailwind, Recharts, lucide-react, Framer Motion, Three.js/R3F |
 | Node | `22.x` |
 | Verification | `npm test` executes the validated inventory in `tests/test-manifest.mjs`; inspect it with `node scripts/run-test-manifest.mjs --list all` |
-| Quality gates | `npm run typecheck`, `npm run lint`, `npm test`, `npm run build:isolated` for this OneDrive checkout |
+| Quality gates | `npm run typecheck`, `npm run typecheck:tests`, `npm run lint`, `npm test`, `npm run build:isolated` for this OneDrive checkout |
 
 ## Shipped Surfaces
 
@@ -68,6 +68,7 @@ Desktop and the Supabase CLI.
 
 ```bash
 npm run typecheck
+npm run typecheck:tests
 npm run lint
 npm test
 npm run build:isolated

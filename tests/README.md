@@ -1,7 +1,7 @@
 # Test suite map
 
 The tests are executable product, security, data, and release contracts. The
-mandatory project gate is `npx tsc --noEmit && npm test`; focused commands help
+mandatory project gate is `npm run typecheck && npm run typecheck:tests && npm test`; focused commands help
 diagnose a change but do not replace that complete gate.
 
 ## Where tests live

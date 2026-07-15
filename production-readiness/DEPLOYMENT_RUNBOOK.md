@@ -101,6 +101,7 @@ From a clean checkout of the candidate SHA:
 ```bash
 npm ci
 npm run typecheck
+npm run typecheck:tests
 npm run lint
 npm test
 npm run test:security
@@ -585,6 +586,7 @@ All checks must pass before a production deploy is triggered. Block the deploy i
 ```bash
 # From the repo root:
 npm run typecheck       # tsc --noEmit; must exit 0
+npm run typecheck:tests # strict test TypeScript contract; must exit 0
 npm run lint            # next lint; must be "No ESLint warnings or errors."
 npm run test            # validated pretest, application, and posttest manifest; all must pass
 npm run test:security   # security-specific subset (faster); must be 0 failures
@@ -1114,6 +1116,7 @@ Time: <UTC timestamp>
 ## Deployment checklist (quick reference)
 
 - [ ] `npm run typecheck` → exit 0
+- [ ] `npm run typecheck:tests` → exit 0
 - [ ] `npm run lint` → no errors
 - [ ] `npm run test` → 0 failures
 - [ ] `npm run build` (CI or unsynced checkout) or `npm run build:isolated` (OneDrive checkout) → no errors

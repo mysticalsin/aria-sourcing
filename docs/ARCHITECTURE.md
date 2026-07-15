@@ -212,7 +212,8 @@ and live behavior. See
 
 | Layer | Command or evidence |
 |---|---|
-| Type safety | `npm run typecheck` |
+| Application type safety | `npm run typecheck` |
+| Test type safety | `npm run typecheck:tests` |
 | Lint | `npm run lint` |
 | Deterministic contracts | `npm test` |
 | OneDrive-safe production build | `npm run build:isolated` |

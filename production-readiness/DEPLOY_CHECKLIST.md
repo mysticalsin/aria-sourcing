@@ -12,7 +12,7 @@ required for launch but must be done before the relevant feature is used.
 
 ## Phase 1 — Pre-flight (local, before touching production)
 
-- [ ] `npm ci && npm run typecheck` — zero TypeScript errors.
+- [ ] `npm ci && npm run typecheck && npm run typecheck:tests` — zero application or test TypeScript errors.
 - [ ] `npm run lint` — clean.
 - [ ] `npm run test` — full deterministic suite passes.
 - [ ] `npm run build` (CI or unsynced checkout) or `npm run build:isolated`
