@@ -2,18 +2,18 @@
 project: MSourcing / ARIA
 shift: 41
 agent: codex-gpt-5
-updated: 2026-07-14 19:28 EDT
-status: structure-plans-01-02-complete-plan-03-pending
+updated: 2026-07-14 20:05 EDT
+status: structure-plans-01-03-complete-plan-04-pending
 ---
 
-# Handoff - structure Plans 01-02 are committed; release remains NO-GO
+# Handoff - structure Plans 01-03 are committed; release remains NO-GO
 
 ## Current state
 
 - Active organization worktree:
   `/Users/tony/.codex/worktrees/msourcing-structure-hygiene` on branch
   `codex/aria-structure-hygiene-20260714`. Current tip is
-  `e58992a7728cfb5122bc82d3d1a9c2d6d6519d1a`; Plan 01 tip is
+  `3bddcd61ab412d0654bdf5aae8ce473542838596`; Plan 01 tip is
   `b067a8a4623b91e918d77d6b52bb8db73d049547`. Local `main` remains at the
   Relay checkpoint `57b9abe9dc061f3c1fd64119376a46f1d4651303`; the verified
   shift-40 integration is
@@ -67,6 +67,15 @@ status: structure-plans-01-02-complete-plan-03-pending
   security, and diff checks. Independent review returned READY after JavaScript
   module edges, direct server-only client markers, and documentation facts were
   corrected.
+- Plan 03 is committed as `3bddcd6`. Strict application and test TypeScript
+  gates, lint, manifest 8/8, documentation truth 44/44, infrastructure release
+  contract 134/134, and `git diff --check` all exited 0. The exact final tree
+  also passed the complete 183-process lifecycle with exit 0. Local Obscura
+  remains optional and skipped honestly without a verified sidecar; CI now
+  performs a bounded readiness check and runs the same test in required mode,
+  whose unreachable-sidecar probe exits exactly 1. Independent full-stack, QA,
+  and security reviewers all returned READY after the regression contract was
+  bounded to exact workflow steps and exact child exit state.
 
 ## Done this shift
 
@@ -119,6 +128,11 @@ status: structure-plans-01-02-complete-plan-03-pending
   the manifest contract once, executes the installed `tsx/cli` portably, keeps
   direct non-npm execution usable, and freezes the final 183-process digest.
   Independent parity and code-quality reviewers both returned READY.
+- Completed structure Plan 03 in bounded fixture commits plus `3bddcd6`: every
+  TypeScript test root is now checked under strict settings with zero
+  diagnostics, CI enforces both application and test type contracts, primary
+  developer and release documentation names the same mandatory gate, and
+  Obscura cannot false-green in CI when the sidecar is missing or late.
 
 ## Blockers
 
@@ -145,27 +159,24 @@ status: structure-plans-01-02-complete-plan-03-pending
   identity/readiness results, two disabled-role absence proofs, and a real
   approved campaign E2E. The last reviewed Kimi authority returned HTTP 402;
   provider funding/entitlement and exact model approval remain external.
-- Structure Plans 03-04 remain. The Plan 04 audit proved the four booking/report
+- Structure Plan 04 remains. Its audit proved the four booking/report
   actions currently ignore rejected persistence and exposed additional
   consistency gaps. They require characterization and a separate correctness
   commit before any extraction; do not treat them as cleanup-only.
 
 ## Next steps
 
-1. Execute Plan 03: add strict test typechecking, resolve diagnostics in bounded
-   families without weakening strictness, and derive documentation counts and
-   migration tip from the manifest and migration directory.
-2. Execute Plan 04 only after characterization: fix proven booking/report false
+1. Execute Plan 04 only after characterization: fix proven booking/report false
    success separately, extract the four actions behind the stable facade, then
    add the synthetic isolated Playwright release smoke and permanent CI gate.
-3. Integrate the organization commits back into local `main`, rerun the full
+2. Integrate the organization commits back into local `main`, rerun the full
    source, security, build, database, recovery, Graphify, and four-review-lane
    gate on one SHA, then archive/rewrite this baton again.
-4. Push only after Tony supplies evidence that the exposed credentials were
+3. Push only after Tony supplies evidence that the exposed credentials were
    rotated and that the current identity has approved least-privilege release
    authority. After a successful push, read back the remote SHA and inspect
    exact-SHA CI, CodeQL, annotations, and open alerts with `gh`.
-5. Dispatch production only through the protected workflow after every external
+4. Dispatch production only through the protected workflow after every external
    blocker above is closed. Prove migration 0033, immutable digests, backup and
    restore, restarts, auth, provider/model readiness, zero-send controls, and a
    real approved campaign before allowing real candidate use.
