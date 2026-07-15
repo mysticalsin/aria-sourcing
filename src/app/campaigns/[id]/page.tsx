@@ -35,6 +35,7 @@ import { AddCandidateButton } from "@/components/candidates/add-candidate-dialog
 import { SourceSillageButton } from "@/components/candidates/source-sillage-dialog";
 import { SourceApolloButton } from "@/components/candidates/source-apollo-dialog";
 import { SourceSeamlessButton } from "@/components/candidates/source-seamless-dialog";
+import { SourceApifyButton } from "@/components/candidates/source-apify-dialog";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
 import { AgentRunStream } from "@/components/run/agent-run-stream";
 import { OutreachMessageCard } from "@/components/outreach/outreach-message-card";
@@ -707,6 +708,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             <SourceSillageButton campaignId={c.id} disabled={c.status === "Paused"} />
             <SourceApolloButton campaignId={c.id} disabled={c.status === "Paused"} />
             <SourceSeamlessButton campaignId={c.id} disabled={c.status === "Paused"} />
+            <SourceApifyButton campaignId={c.id} disabled={c.status === "Paused"} />
             <Button
               variant="primary"
               leftIcon={<PlayCircle className="h-4 w-4" />}

@@ -135,6 +135,7 @@ export const SOURCE_PLATFORMS = [
   "Sillage",
   "Apollo",
   "Seamless",
+  "Apify",
   "Referral",
   "Talent Pool",
 ] as const;
@@ -1066,6 +1067,7 @@ export const API_KEY_PROVIDERS = [
   "Sillage",
   "Apollo",
   "Seamless",
+  "Apify",
   "Tavily",
   "Databricks",
   "Custom",

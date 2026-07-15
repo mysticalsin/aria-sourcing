@@ -1,6 +1,7 @@
 import type { SourceResult } from "../mock-ai";
 import { dedupeCandidates } from "../rules";
 import { scoreCandidate } from "../scoring";
+import type { ApifyProfile } from "../sourcing/apify";
 import type { SillageProfile } from "../sourcing/sillage";
 import type { WebSearchPlatform } from "../sourcing/web-leads";
 import type { Campaign, Candidate, ScoringWeights } from "../types";
@@ -99,6 +100,90 @@ export function mapSillageCandidates(
       },
       createdAt: new Date().toISOString(),
       provenance: "live",
+    };
+  });
+
+  const { accepted, skipped } = dedupeCandidates(raw, existing, {
+    excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
+  });
+  const scored = accepted.map((c) => {
+    const { score, breakdown } = scoreCandidate(c, jd, weights);
+    return { ...c, matchScore: score, matchBreakdown: breakdown };
+  });
+  return { accepted: scored, skipped };
+}
+
+/**
+ * Map real Apify (harvestapi/linkedin-profile-search) profiles into scored,
+ * deduped Candidates — same scoring + dedupe pipeline as mapSillageCandidates,
+ * real data. This is third-party public-profile data bought from a vendor API,
+ * not a first-party LinkedIn scrape (see sourcing/apify.ts's header comment
+ * and linkedin-policy.ts): every candidate is stamped with a recruiter-facing
+ * note recording that provenance and that lawful-basis/consent review under
+ * GDPR is the recruiter's responsibility before outreach.
+ */
+export function mapApifyCandidates(
+  profiles: ApifyProfile[],
+  campaign: Campaign,
+  query: string,
+  existing: Candidate[],
+  weights: ScoringWeights = campaign.scoringWeights,
+): SourceResult {
+  const jd = campaign.jobAnalysis;
+  const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
+  const raw: Candidate[] = profiles.map((p) => {
+    const name = [p.firstName, p.lastName].filter(Boolean).join(" ").trim() || "Unknown";
+    const headline = p.headline.trim();
+    const about = p.about.trim();
+    const hay = `${headline} ${about} ${p.topSkills.join(" ")} ${p.skills.join(" ")}`.toLowerCase();
+    const techStack = allSkills.filter((s) => hay.includes(s.toLowerCase()));
+    const currentCompany = p.currentPosition[0]?.companyName ?? "";
+    return {
+      id: genId("cand"),
+      campaignId: campaign.id,
+      name,
+      email: p.email ?? "",
+      avatarInitials: initialsFrom(name),
+      currentTitle: headline || jd.title,
+      currentCompany,
+      location: p.location?.text ?? "",
+      timezone: "",
+      linkedinUrl: p.linkedinUrl,
+      githubUrl: "",
+      sourceExternalId: p.publicIdentifier || p.id || undefined,
+      sourcePlatform: "Apify",
+      sourceQuery: query,
+      matchScore: 0,
+      matchBreakdown: [],
+      techStack,
+      yearsExperience: jd.minYearsExperience ?? (jd.seniority === "Senior" ? 6 : 4),
+      companyStageExperience: [],
+      industryExperience: [],
+      recentActivity: headline || about.slice(0, 140) || "Sourced via Apify LinkedIn profile search.",
+      stage: "Sourced",
+      lastContactedAt: null,
+      outreachHistory: [],
+      replyHistory: [],
+      booking: null,
+      complianceFlags: {
+        doNotContact: false,
+        suppressed: false,
+        unsubscribed: false,
+        gdprExportRequested: false,
+        anonymized: false,
+        suppressedUntil: null,
+      },
+      createdAt: new Date().toISOString(),
+      provenance: "live",
+      notes: [
+        {
+          id: genId("note"),
+          text:
+            "Sourced via Apify (harvestapi/linkedin-profile-search) — third-party public LinkedIn profile data. " +
+            "Lawful-basis/consent review under GDPR is the recruiter's responsibility before outreach.",
+          at: new Date().toISOString(),
+        },
+      ],
     };
   });
 

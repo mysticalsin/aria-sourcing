@@ -10,6 +10,16 @@ import { KeyRound, Plus, ShieldAlert, Trash2, Zap } from "lucide-react";
 
 const STATUS_TONE: Record<string, Tone> = { valid: "success", invalid: "danger", untested: "neutral" };
 
+// Provider-specific format hints for the API key value field. Most providers
+// rely on the generic placeholder below; Apify's token shape is distinctive
+// enough (and easy to confuse with a project/actor id) to call out explicitly.
+const KEY_VALUE_HINT: Partial<Record<ApiKeyProvider, string>> = {
+  Apify: "Personal API token from the Apify console (Settings → Integrations), format apify_api_…",
+};
+const KEY_VALUE_PLACEHOLDER: Partial<Record<ApiKeyProvider, string>> = {
+  Apify: "apify_api_…  (stored server-side, never shown again)",
+};
+
 export function ApiKeysPanel() {
   const keys = useApiKeys();
   const role = useRole();
@@ -91,7 +101,12 @@ export function ApiKeysPanel() {
                 options={API_KEY_PROVIDERS.map((p) => ({ value: p, label: p }))}
               />
             </Field>
-            <Field label="API key" htmlFor="key-value" className="sm:col-span-3">
+            <Field
+              label="API key"
+              htmlFor="key-value"
+              hint={KEY_VALUE_HINT[provider]}
+              className="sm:col-span-3"
+            >
               <div className="flex gap-2">
                 <Input
                   id="key-value"
@@ -99,7 +114,7 @@ export function ApiKeysPanel() {
                   autoComplete="off"
                   value={value}
                   onChange={(e) => setValue(e.target.value)}
-                  placeholder="sk-…  (stored server-side, never shown again)"
+                  placeholder={KEY_VALUE_PLACEHOLDER[provider] ?? "sk-…  (stored server-side, never shown again)"}
                 />
                 <Button variant="secondary" loading={busy} leftIcon={<Plus className="h-4 w-4" />} onClick={handleSave}>
                   Save key
