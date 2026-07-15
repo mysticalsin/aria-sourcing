@@ -14,15 +14,19 @@ import { ScoreGauge } from "@/components/charts/score-gauge";
 import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
-import { useActions, useCampaign, useCandidate, useOutreach, useSettings } from "@/lib/store";
+import { useActions, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
 import {
   downloadText,
   formatTimeAgo,
   toneForIntent,
   toneForOutreachStatus,
   toneForStage,
+  type Tone,
 } from "@/lib/utils";
 import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
+import { can } from "@/lib/rbac";
+import { computeCoverage } from "@/lib/enrichment/merge";
+import { ENRICHMENT_PROVIDERS } from "@/lib/enrichment/registry";
 import { StarBadge, SourceBadge } from "@/components/tania/badges";
 import {
   deriveLeadSource,
@@ -35,6 +39,9 @@ import {
 import type {
   Candidate,
   CandidateStage,
+  EnrichableField,
+  EnrichmentAttempt,
+  FieldProvenance,
   InterviewKind,
   InterviewOutcome,
   LeadSource,
@@ -61,6 +68,7 @@ import {
   EyeOff,
   Github,
   Linkedin,
+  Loader2,
   Lock,
   Mail,
   MailX,
@@ -76,6 +84,62 @@ import {
   UserX,
   Zap,
 } from "lucide-react";
+
+/** The 7 richness fields the drawer's enrichment panel surfaces as coverage
+ *  chips (docs/superpowers/plans/2026-07-15-enrichment-orchestrator.md, "Wow
+ *  UI") — narrower than the full `ENRICHABLE_FIELDS` (which also has
+ *  `location`/`company`, already shown elsewhere in this drawer). */
+const DRAWER_ENRICHMENT_FIELDS: EnrichableField[] = [
+  "email",
+  "phone",
+  "skills",
+  "experience",
+  "headline",
+  "education",
+  "languages",
+];
+
+const ENRICHMENT_FIELD_LABELS: Record<EnrichableField, string> = {
+  email: "Email",
+  phone: "Phone",
+  headline: "Headline",
+  skills: "Skills",
+  experience: "Experience",
+  education: "Education",
+  languages: "Languages",
+  location: "Location",
+  company: "Company",
+};
+
+const ATTEMPT_STATUS_LABEL: Record<EnrichmentAttempt["status"], string> = {
+  ok: "Found data",
+  no_data: "No match",
+  not_configured: "Connect key",
+  no_key_field: "Can't identify",
+  budget_exceeded: "Budget reached",
+  error: "Error",
+  deferred: "Time budget — re-run",
+};
+
+const ATTEMPT_STATUS_TONE: Record<EnrichmentAttempt["status"], Tone> = {
+  ok: "success",
+  no_data: "neutral",
+  not_configured: "warning",
+  no_key_field: "neutral",
+  budget_exceeded: "danger",
+  error: "danger",
+  deferred: "warning",
+};
+
+/** Confidence -> dot color for a filled coverage chip. Undefined confidence
+ *  (a value present with no recorded score, e.g. legacy/manual data) reads as
+ *  neutral rather than fabricating a level of trust that was never measured. */
+function confidenceDotTone(confidence: number | undefined): string {
+  if (confidence === undefined) return "bg-ink/25";
+  if (confidence >= 0.7) return "bg-success";
+  if (confidence >= 0.4) return "bg-warning";
+  return "bg-danger";
+}
 
 function Section({
   title,
@@ -364,6 +428,7 @@ export function CandidateDrawer({
   const actions = useActions();
   const { toast } = useToast();
   const confirm = useConfirm();
+  const role = useRole();
   // Always read the LIVE record so in-drawer mutations (stage, compliance, history)
   // reflect immediately instead of showing the click-time snapshot.
   const liveCandidate = useCandidate(candidate?.id);
@@ -372,10 +437,14 @@ export function CandidateDrawer({
   const [revealed, setRevealed] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [generating, setGenerating] = useState(false);
-  const [revealingSeamless, setRevealingSeamless] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  // Index into enrichment.attempts marking where the LAST "Enrich" click's
+  // results start — null until the first click this session, so the
+  // per-provider progress list stays empty (not a wall of prior history)
+  // until the recruiter actually runs the waterfall from this drawer.
+  const [attemptsBaseline, setAttemptsBaseline] = useState<number | null>(null);
   const rejectionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const phoneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const seamlessPollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   // Latest not-yet-committed edit for each debounced field, so the unmount
   // cleanup below can flush it instead of dropping it — the cleanup closure is
   // fixed at mount time, so it can't read fresh render-scoped state directly.
@@ -388,16 +457,8 @@ export function CandidateDrawer({
   useEffect(() => {
     setRevealed(false);
     setNoteText("");
+    setAttemptsBaseline(null);
   }, [candidateId, open]);
-
-  // Stop polling on unmount so a closed drawer never keeps hitting
-  // /api/source/seamless/research-status in the background.
-  useEffect(
-    () => () => {
-      if (seamlessPollTimer.current) clearInterval(seamlessPollTimer.current);
-    },
-    [],
-  );
 
   // Latest drafted/queued outreach for this candidate (any status — Draft
   // through Scheduled), newest first, so the "why this person" chips below
@@ -606,57 +667,21 @@ export function CandidateDrawer({
     toast({ title: "Marked do-not-contact", description: `${c.name} added to the exclusion list.`, variant: "warning" });
   };
 
-  const handleEnrichApollo = async () => {
-    if (
-      !(await confirm({
-        title: `Enrich ${c.name} via Apollo?`,
-        description:
-          "Reveals their personal email (and phone, if Apollo has one). Costs 1 Apollo credit on a match, 0 if not found.",
-        confirmLabel: "Enrich (1 credit)",
-      }))
-    )
-      return;
-    const res = await actions.enrichApolloCandidate(c.id);
+  // Unified cross-provider enrichment (docs/superpowers/plans/
+  // 2026-07-15-enrichment-orchestrator.md) — replaces the old single-provider
+  // Apollo/Seamless buttons. Runs the cost-ordered waterfall across every
+  // configured provider that can identify this candidate, regardless of which
+  // platform originally sourced them.
+  const handleEnrich = async () => {
+    setAttemptsBaseline((c.enrichment?.attempts ?? []).length);
+    setEnriching(true);
+    const res = await actions.enrichCandidate(c.id);
+    setEnriching(false);
     toast({
-      title: res.revealed ? "Contact details revealed" : res.ok ? "No contact details found" : "Enrichment failed",
+      title: res.ok ? (res.filled.length > 0 ? "Enrichment complete" : "No new data found") : "Enrichment failed",
       description: res.detail,
-      variant: res.revealed ? "success" : res.ok ? "info" : "error",
+      variant: res.ok ? (res.filled.length > 0 ? "success" : "info") : "error",
     });
-  };
-
-  const handleRevealSeamless = async () => {
-    if (
-      !(await confirm({
-        title: `Reveal ${c.name}'s contact via Seamless?`,
-        description: "Starts an async research job to find their email/phone. Costs Seamless research credits.",
-        confirmLabel: "Reveal contact",
-      }))
-    )
-      return;
-    const start = await actions.startSeamlessResearch(c.id);
-    if (!start.ok) {
-      toast({ title: "Seamless research failed to start", description: start.error, variant: "error" });
-      return;
-    }
-    setRevealingSeamless(true);
-    const candidateId = c.id;
-    const requestId = start.requestId;
-    seamlessPollTimer.current = setInterval(async () => {
-      const res = await actionsRef.current.checkSeamlessResearch(candidateId, requestId);
-      if (res.ok && res.status === "processing") return; // keep polling
-      if (seamlessPollTimer.current) clearInterval(seamlessPollTimer.current);
-      seamlessPollTimer.current = null;
-      setRevealingSeamless(false);
-      if (!res.ok) {
-        toast({ title: "Seamless research failed", description: res.error, variant: "error" });
-        return;
-      }
-      toast({
-        title: res.revealed ? "Contact details revealed" : "No contact details found",
-        description: res.revealed ? "Revealed via Seamless." : "Research completed but found no email or phone.",
-        variant: res.revealed ? "success" : "info",
-      });
-    }, 4_000);
   };
 
   const handleUnsubscribe = async () => {
@@ -698,6 +723,19 @@ export function CandidateDrawer({
   };
 
   const contactBlocked = flags.doNotContact || flags.suppressed || flags.unsubscribed;
+
+  // Unified enrichment panel derivations. `coverage` is the source of truth
+  // for "is this field present" (a homed field like email can be present from
+  // sourcing time with no provenance record); `fieldProvenance` supplies the
+  // "who filled it" badge only when known — a covered-but-unattributed field
+  // (legacy/manual data) still renders as filled, just without a provider tag.
+  const canEnrich = can(role, "source");
+  const enrichmentCoverage = computeCoverage(c);
+  const fieldProvenance: Partial<Record<EnrichableField, FieldProvenance>> = c.enrichment?.fieldProvenance ?? {};
+  const eligibleProviders = ENRICHMENT_PROVIDERS.filter((p) => p.keyField(c) != null);
+  const enrichmentSpend = (c.enrichment?.attempts ?? []).reduce((sum, a) => sum + a.costUnits, 0);
+  const recentEnrichmentAttempts: EnrichmentAttempt[] =
+    attemptsBaseline !== null ? (c.enrichment?.attempts ?? []).slice(attemptsBaseline) : [];
 
   const footer = (
     <div className="flex flex-wrap items-center gap-2">
@@ -788,23 +826,6 @@ export function CandidateDrawer({
                   <Lock className="h-3.5 w-3.5" aria-hidden />
                   PII minimized (confidential)
                 </span>
-              )}
-              {c.sourcePlatform === "Apollo" && !c.email && (
-                <Button variant="outline" size="sm" leftIcon={<Zap className="h-4 w-4" />} onClick={handleEnrichApollo}>
-                  Enrich via Apollo
-                </Button>
-              )}
-              {c.sourcePlatform === "Seamless" && !c.email && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  leftIcon={<Zap className="h-4 w-4" />}
-                  onClick={handleRevealSeamless}
-                  loading={revealingSeamless}
-                  disabled={revealingSeamless}
-                >
-                  {revealingSeamless ? "Researching…" : "Reveal via Seamless"}
-                </Button>
               )}
             </div>
             {!masked && (
@@ -917,6 +938,103 @@ export function CandidateDrawer({
             </div>
           )}
         </div>
+
+        <Section title="Enrichment" icon={<Zap className="h-4 w-4" />}>
+          {!canEnrich ? (
+            <p className="text-sm text-muted">You don&apos;t have permission to enrich candidates.</p>
+          ) : (
+            <div className="space-y-3">
+              <ul className="flex flex-wrap gap-1.5" aria-label="Field coverage">
+                {DRAWER_ENRICHMENT_FIELDS.map((field) => {
+                  const filled = enrichmentCoverage.includes(field);
+                  const prov = fieldProvenance[field];
+                  return (
+                    <li key={field}>
+                      {filled ? (
+                        <span
+                          className="inline-flex items-center gap-1.5 rounded-full bg-success-soft px-2.5 py-1 text-xs font-semibold text-success ring-1 ring-inset ring-success/20"
+                          title={
+                            prov
+                              ? `Supplied by ${prov.provider}${prov.confidence !== undefined ? ` · confidence ${Math.round(prov.confidence * 100)}%` : ""}`
+                              : "Present (source not tracked)"
+                          }
+                        >
+                          <span className={`h-2 w-2 rounded-full ${confidenceDotTone(prov?.confidence)}`} aria-hidden />
+                          {ENRICHMENT_FIELD_LABELS[field]}
+                          {prov && <span className="text-[0.625rem] font-medium text-success/70">· {prov.provider}</span>}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-ink/[0.04] px-2.5 py-1 text-xs font-medium text-muted ring-1 ring-inset ring-ink/10">
+                          <Circle className="h-2.5 w-2.5" aria-hidden />
+                          {ENRICHMENT_FIELD_LABELS[field]} · missing
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  leftIcon={<Zap className="h-4 w-4" />}
+                  onClick={handleEnrich}
+                  loading={enriching}
+                  disabled={enriching}
+                >
+                  {enriching ? "Enriching…" : "Enrich"}
+                </Button>
+                <span className="text-xs text-muted">
+                  {enrichmentSpend > 0 ? `${enrichmentSpend} unit(s) spent on this candidate` : "No spend yet"}
+                </span>
+              </div>
+
+              {(enriching || recentEnrichmentAttempts.length > 0) && (
+                <ul
+                  className="space-y-1.5"
+                  role="status"
+                  aria-live="polite"
+                  aria-label="Enrichment progress by provider"
+                >
+                  {enriching && eligibleProviders.length === 0 && (
+                    <li className="text-sm text-muted">
+                      No configured provider can identify this candidate (missing name, company, or LinkedIn URL).
+                    </li>
+                  )}
+                  {enriching
+                    ? eligibleProviders.map((p) => (
+                        <li
+                          key={p.id}
+                          className="flex items-center gap-2 rounded-xl bg-ink/[0.03] px-3 py-1.5 text-sm text-muted"
+                        >
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                          {p.label} — running…
+                        </li>
+                      ))
+                    : recentEnrichmentAttempts.map((a, i) => (
+                        <li
+                          key={`${a.provider}-${a.at}-${i}`}
+                          className="flex items-center justify-between gap-2 rounded-xl bg-ink/[0.03] px-3 py-1.5 text-sm"
+                        >
+                          <span className="font-medium text-ink-soft">{a.provider}</span>
+                          <span className="flex items-center gap-2">
+                            {a.fieldsFilled.length > 0 && (
+                              <span className="text-xs text-muted">
+                                {a.fieldsFilled.map((f) => ENRICHMENT_FIELD_LABELS[f]).join(", ")}
+                              </span>
+                            )}
+                            <Badge tone={ATTEMPT_STATUS_TONE[a.status]} size="sm" title={a.detail}>
+                              {ATTEMPT_STATUS_LABEL[a.status]}
+                            </Badge>
+                          </span>
+                        </li>
+                      ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </Section>
 
         <Section title="Match score" icon={<Sparkles className="h-4 w-4" />}>
           <div className="grid gap-6 sm:grid-cols-[auto_auto_1fr] sm:items-start">

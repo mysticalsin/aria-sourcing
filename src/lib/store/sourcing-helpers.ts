@@ -1,11 +1,50 @@
+import { computeCoverage } from "../enrichment/merge";
 import type { SourceResult } from "../mock-ai";
 import { dedupeCandidates } from "../rules";
 import { scoreCandidate } from "../scoring";
 import type { ApifyProfile } from "../sourcing/apify";
 import type { SillageProfile } from "../sourcing/sillage";
 import type { WebSearchPlatform } from "../sourcing/web-leads";
-import type { Campaign, Candidate, ScoringWeights } from "../types";
+import type { Campaign, Candidate, CandidateEnrichment, EnrichableField, FieldProvenance, ScoringWeights, SourcePlatform } from "../types";
 import { genId, initialsFrom } from "../utils";
+
+/**
+ * Seed a freshly-sourced candidate's enrichment coverage from whichever
+ * enrichable fields the source provider already supplied at discovery time
+ * (e.g. a harvestapi "Full" Apify candidate arrives with email/headline/
+ * skills already filled in) — so the unified enrichment orchestrator
+ * (src/lib/enrichment/orchestrator.ts) sees those fields as already covered
+ * by THIS provider instead of re-querying every other configured provider for
+ * data the candidate already has, and the candidate drawer's provenance
+ * badges show the right source from the moment a candidate is sourced.
+ * `present` reflects the RAW provider signal, not the Candidate object's
+ * post-fallback fields — e.g. `currentTitle` defaults to the job title when
+ * no real headline was scraped, and that fallback must never be attributed
+ * to the provider as "supplied" data.
+ */
+function seedEnrichmentCoverage(
+  candidate: Candidate,
+  provider: SourcePlatform,
+  at: string,
+  present: { email: boolean; phone: boolean; headline: boolean; location: boolean; skills: boolean },
+): CandidateEnrichment {
+  const fieldProvenance: Partial<Record<EnrichableField, FieldProvenance>> = {};
+  if (present.email) fieldProvenance.email = { provider, at };
+  if (present.phone) fieldProvenance.phone = { provider, at };
+  if (present.headline) fieldProvenance.headline = { provider, at };
+  if (present.location) fieldProvenance.location = { provider, at };
+  if (present.skills) fieldProvenance.skills = { provider, at };
+  const coverage = computeCoverage({
+    ...candidate,
+    enrichment: { status: "unenriched", fieldProvenance, attempts: [], coverage: [] },
+  });
+  // Mirrors merge.ts's own (unexported) deriveStatus: "enriched" only once
+  // both email AND phone are covered — the two fields every outreach channel
+  // depends on — else "partial" once anything is covered, else "unenriched".
+  const status: CandidateEnrichment["status"] =
+    coverage.length === 0 ? "unenriched" : coverage.includes("email") && coverage.includes("phone") ? "enriched" : "partial";
+  return { status, fieldProvenance, attempts: [], coverage };
+}
 
 /**
  * Base query text for a web-search-sourced platform, built from the campaign's
@@ -63,7 +102,8 @@ export function mapSillageCandidates(
     const hay = `${p.position ?? ""} ${headline} ${about}`.toLowerCase();
     const techStack = allSkills.filter((s) => hay.includes(s.toLowerCase()));
     const location = [p.location?.city, p.location?.region, p.location?.country].filter(Boolean).join(", ");
-    return {
+    const at = new Date().toISOString();
+    const base: Candidate = {
       id: genId("cand"),
       campaignId: campaign.id,
       name,
@@ -76,6 +116,8 @@ export function mapSillageCandidates(
       timezone: "",
       linkedinUrl: p.linkedinUrl ?? "",
       githubUrl: "",
+      sourceExternalId: p.id || undefined,
+      externalIds: p.id ? { Sillage: p.id } : undefined,
       sourcePlatform: "Sillage",
       sourceQuery: companyLabel,
       matchScore: 0,
@@ -98,8 +140,18 @@ export function mapSillageCandidates(
         anonymized: false,
         suppressedUntil: null,
       },
-      createdAt: new Date().toISOString(),
+      createdAt: at,
       provenance: "live",
+    };
+    return {
+      ...base,
+      enrichment: seedEnrichmentCoverage(base, "Sillage", at, {
+        email: Boolean(p.email),
+        phone: Boolean(p.phone),
+        headline: Boolean(p.position),
+        location: Boolean(location),
+        skills: techStack.length > 0,
+      }),
     };
   });
 
@@ -138,7 +190,9 @@ export function mapApifyCandidates(
     const hay = `${headline} ${about} ${p.topSkills.join(" ")} ${p.skills.join(" ")}`.toLowerCase();
     const techStack = allSkills.filter((s) => hay.includes(s.toLowerCase()));
     const currentCompany = p.currentPosition[0]?.companyName ?? "";
-    return {
+    const externalId = p.publicIdentifier || p.id || undefined;
+    const at = new Date().toISOString();
+    const base: Candidate = {
       id: genId("cand"),
       campaignId: campaign.id,
       name,
@@ -150,7 +204,8 @@ export function mapApifyCandidates(
       timezone: "",
       linkedinUrl: p.linkedinUrl,
       githubUrl: "",
-      sourceExternalId: p.publicIdentifier || p.id || undefined,
+      sourceExternalId: externalId,
+      externalIds: externalId ? { Apify: externalId } : undefined,
       sourcePlatform: "Apify",
       sourceQuery: query,
       matchScore: 0,
@@ -173,7 +228,7 @@ export function mapApifyCandidates(
         anonymized: false,
         suppressedUntil: null,
       },
-      createdAt: new Date().toISOString(),
+      createdAt: at,
       provenance: "live",
       notes: [
         {
@@ -181,9 +236,19 @@ export function mapApifyCandidates(
           text:
             "Sourced via Apify (harvestapi/linkedin-profile-search) — third-party public LinkedIn profile data. " +
             "Lawful-basis/consent review under GDPR is the recruiter's responsibility before outreach.",
-          at: new Date().toISOString(),
+          at,
         },
       ],
+    };
+    return {
+      ...base,
+      enrichment: seedEnrichmentCoverage(base, "Apify", at, {
+        email: Boolean(p.email),
+        phone: false,
+        headline: Boolean(headline),
+        location: Boolean(p.location?.text),
+        skills: techStack.length > 0,
+      }),
     };
   });
 
