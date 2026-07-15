@@ -52,6 +52,10 @@ export function WeeklyReportCard({ report }: { report: WeeklyReport }) {
     });
   }
 
+  // Which fields are fixed reference values rather than computed from this
+  // campaign comes from the report itself (set by generateWeeklyReport in
+  // mock-ai.ts) — not hardcoded here, so the label can't drift from the data.
+  const illustrative = report.illustrativeFields;
   const stats: { label: string; value: string; illustrative?: boolean }[] = [
     { label: "Reply rate", value: formatPercent(p.replyRate) },
     { label: "Interest rate", value: formatPercent(p.interestRate) },
@@ -61,9 +65,17 @@ export function WeeklyReportCard({ report }: { report: WeeklyReport }) {
       label: "Time to interview",
       value: p.timeToFirstInterviewHours == null ? "—" : `${round(p.timeToFirstInterviewHours)}h`,
     },
-    { label: "Cost per hire", value: formatCurrency(p.costPerHire), illustrative: true },
+    {
+      label: "Cost per hire",
+      value: formatCurrency(p.costPerHire),
+      illustrative: illustrative.includes("performance.costPerHire"),
+    },
     { label: "Best channel", value: p.bestChannel },
-    { label: "Best slot", value: `${p.bestDay} · ${p.bestTime}`, illustrative: true },
+    {
+      label: "Best slot",
+      value: `${p.bestDay} · ${p.bestTime}`,
+      illustrative: illustrative.includes("performance.bestDay"),
+    },
   ];
 
   return (
@@ -135,7 +147,7 @@ export function WeeklyReportCard({ report }: { report: WeeklyReport }) {
             title="Winning patterns"
             items={report.winningPatterns}
             tone="success"
-            illustrative
+            illustrative={illustrative.includes("winningPatterns")}
           />
           <InsightList
             icon={<AlertTriangle className="h-4 w-4 text-warning" aria-hidden />}

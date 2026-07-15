@@ -211,7 +211,9 @@ export function mapApifyCandidates(
       matchScore: 0,
       matchBreakdown: [],
       techStack,
-      yearsExperience: jd.minYearsExperience ?? (jd.seniority === "Senior" ? 6 : 4),
+      // Never fabricate tenure from the job's requirement — leave unknown (mirrors
+      // candidate-mappers.ts). Real years come from provider enrichment, not the JD.
+      yearsExperience: null,
       companyStageExperience: [],
       industryExperience: [],
       recentActivity: headline || about.slice(0, 140) || "Sourced via Apify LinkedIn profile search.",

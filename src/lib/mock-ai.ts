@@ -1188,6 +1188,10 @@ export function generateWeeklyReport(
       bookingRate,
       avgMatchScore: avg,
       timeToFirstInterviewHours: m.timeToFirstInterviewHours,
+      // Fixed industry-reference figures below (costPerHire, bestDay, bestTime) —
+      // no hire-cost or send-time-vs-outcome data exists in this app to compute
+      // them from. Listed in illustrativeFields so every consumer labels them
+      // as illustrative instead of presenting them as this campaign's real numbers.
       costPerHire: 4200,
       bestChannel: computeBestChannel(inCampaign, messages.filter((msg) => msg.campaignId === campaign.id)),
       bestDay: "Tuesday",
@@ -1200,6 +1204,9 @@ export function generateWeeklyReport(
       `Average match score of accepted candidates is ${avg}.`,
       `${m.interested} candidates expressed interest; ${m.booked} converted to booked interviews.`,
     ],
+    // Generic sourcing-industry patterns, not measured from this campaign's own
+    // messages/replies (see computeBestChannel above for the one metric here
+    // that IS derived from real data). Also listed in illustrativeFields.
     winningPatterns: [
       "Messages that lead with a specific open-source reference reply ~2.1× more often.",
       "Tuesday 09:00–11:00 local sends outperform afternoon sends.",
@@ -1207,6 +1214,7 @@ export function generateWeeklyReport(
     ],
     skillUpdates,
     attentionNeeded: buildAttention(campaign),
+    illustrativeFields: ["performance.costPerHire", "performance.bestDay", "performance.bestTime", "winningPatterns"],
   };
 }
 
@@ -1291,6 +1299,7 @@ function proposeSkillUpdates(
 
 export function exportMarkdownReport(report: WeeklyReport): string {
   const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
+  const illustrative = (path: string) => (report.illustrativeFields.includes(path) ? " _(illustrative)_" : "");
   const lines: string[] = [];
   lines.push(`# Weekly Sourcing Report: ${report.campaignTitle}`);
   lines.push("");
@@ -1315,11 +1324,15 @@ export function exportMarkdownReport(report: WeeklyReport): string {
         : "N/A"
     }`,
   );
-  lines.push(`- **Cost per hire (est.):** $${report.performance.costPerHire.toLocaleString()}`);
+  lines.push(
+    `- **Cost per hire:** $${report.performance.costPerHire.toLocaleString()}${illustrative("performance.costPerHire")}`,
+  );
   lines.push(`- **Best channel:** ${report.performance.bestChannel}`);
-  lines.push(`- **Best day / time:** ${report.performance.bestDay}, ${report.performance.bestTime}`);
+  lines.push(
+    `- **Best day / time:** ${report.performance.bestDay}, ${report.performance.bestTime}${illustrative("performance.bestDay")}`,
+  );
   lines.push("");
-  lines.push("## Winning patterns");
+  lines.push(`## Winning patterns${illustrative("winningPatterns")}`);
   lines.push("");
   report.winningPatterns.forEach((p) => lines.push(`- ${p}`));
   lines.push("");

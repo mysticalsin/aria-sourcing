@@ -864,6 +864,15 @@ export interface WeeklyReport {
   winningPatterns: string[];
   skillUpdates: SkillUpdate[];
   attentionNeeded: string[];
+  /** Dot-paths (e.g. "performance.costPerHire", "winningPatterns") into this report
+   *  that are fixed reference/benchmark values rather than computed from this
+   *  campaign's actual state — e.g. an industry-average cost-per-hire, a generic
+   *  best-send-time heuristic, "patterns" copy. Set by generateWeeklyReport in
+   *  mock-ai.ts, the single place that knows which fields it fabricated vs.
+   *  derived from real candidate/message data. Every consumer (report card,
+   *  Markdown export, any future surface) must read this list and label those
+   *  fields as illustrative rather than presenting them as verified figures. */
+  illustrativeFields: string[];
 }
 
 /* ---- Integrations -------------------------------------------------------- */
