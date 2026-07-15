@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 41
 agent: codex-gpt-5
-updated: 2026-07-14 20:05 EDT
+updated: 2026-07-14 20:42 EDT
 status: structure-plans-01-03-complete-plan-04-pending
 ---
 
@@ -12,8 +12,7 @@ status: structure-plans-01-03-complete-plan-04-pending
 
 - Active organization worktree:
   `/Users/tony/.codex/worktrees/msourcing-structure-hygiene` on branch
-  `codex/aria-structure-hygiene-20260714`. Current tip is
-  `3bddcd61ab412d0654bdf5aae8ce473542838596`; Plan 01 tip is
+  `codex/aria-structure-hygiene-20260714`. Current tip is `11ef0db`; Plan 01 tip is
   `b067a8a4623b91e918d77d6b52bb8db73d049547`. Local `main` remains at the
   Relay checkpoint `57b9abe9dc061f3c1fd64119376a46f1d4651303`; the verified
   shift-40 integration is
@@ -76,6 +75,14 @@ status: structure-plans-01-03-complete-plan-04-pending
   whose unreachable-sidecar probe exits exactly 1. Independent full-stack, QA,
   and security reviewers all returned READY after the regression contract was
   bounded to exact workflow steps and exact child exit state.
+- Plan 04 correctness characterization is committed as `11ef0db`. Booking,
+  report, update, and learning callers now reject immediate local commit
+  refusal; booking updates validate their mutable surface and synchronize the
+  candidate snapshot; accepted learning is one local commit; UI and Aria Live
+  no longer announce success after those rejections. Focused contract 4/4,
+  both typechecks, lint, store contracts, workspace effects, skills, mock AI,
+  scoring, and Aria Live all exited 0. This does not prove a durable Supabase
+  save or live calendar safety.
 
 ## Done this shift
 
@@ -163,20 +170,30 @@ status: structure-plans-01-03-complete-plan-04-pending
   actions currently ignore rejected persistence and exposed additional
   consistency gaps. They require characterization and a separate correctness
   commit before any extraction; do not treat them as cleanup-only.
+- Live calendar release remains blocked. The endpoint has no server-owned
+  booking approval, idempotency claim, provider attempt ledger, ambiguous
+  outcome reconciliation, reschedule/cancel synchronization, or provider
+  erasure obligation. A provider event is currently attempted before the
+  debounced workspace document is durable. Do not enable or certify real
+  calendar invitations until this authority is implemented and database-tested.
+- Weekly reports still contain fixed cost, timing, pattern, and impact claims
+  from `src/lib/mock-ai.ts`; they are not evidence-backed campaign facts.
 
 ## Next steps
 
-1. Execute Plan 04 only after characterization: fix proven booking/report false
-   success separately, extract the four actions behind the stable facade, then
+1. Continue Plan 04 from `11ef0db`: extract the four characterized actions
+   behind the stable facade with a runtime state harness, then
    add the synthetic isolated Playwright release smoke and permanent CI gate.
-2. Integrate the organization commits back into local `main`, rerun the full
+2. Add server-owned calendar prepare/confirm/claim/reconcile authority and
+   remove unverified report intelligence before any production-readiness claim.
+3. Integrate the organization commits back into local `main`, rerun the full
    source, security, build, database, recovery, Graphify, and four-review-lane
    gate on one SHA, then archive/rewrite this baton again.
-3. Push only after Tony supplies evidence that the exposed credentials were
+4. Push only after Tony supplies evidence that the exposed credentials were
    rotated and that the current identity has approved least-privilege release
    authority. After a successful push, read back the remote SHA and inspect
    exact-SHA CI, CodeQL, annotations, and open alerts with `gh`.
-4. Dispatch production only through the protected workflow after every external
+5. Dispatch production only through the protected workflow after every external
    blocker above is closed. Prove migration 0033, immutable digests, backup and
    restore, restarts, auth, provider/model readiness, zero-send controls, and a
    real approved campaign before allowing real candidate use.
