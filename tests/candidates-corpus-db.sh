@@ -31,10 +31,6 @@ for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
   psql_stdin -q < "$migration"
 done
 
-# Re-apply the new migration to prove the DDL is replay-safe in the same style
-# as the existing disposable database gates.
-psql_stdin -q < supabase/migrations/0035_candidate_corpus_mirror.sql
-
 psql_stdin -q <<'SQL'
 \set ON_ERROR_STOP on
 
@@ -110,6 +106,39 @@ begin
 end;
 $$;
 
+create function candidates_corpus_test.expect_authenticated_sqlstate(
+  p_case_name text,
+  p_statement text,
+  p_expected_codes text[]
+) returns void
+language plpgsql
+set search_path = pg_catalog, public, candidates_corpus_test
+as $$
+declare
+  caught text;
+begin
+  begin
+    execute 'set local role authenticated';
+    execute p_statement;
+  exception when others then
+    get stacked diagnostics caught = returned_sqlstate;
+    execute 'reset role';
+    perform candidates_corpus_test.expect(
+      p_case_name,
+      caught = any(p_expected_codes),
+      format('sqlstate=%s expected=%s', caught, p_expected_codes::text)
+    );
+    return;
+  end;
+  execute 'reset role';
+  perform candidates_corpus_test.expect(
+    p_case_name,
+    false,
+    'statement unexpectedly succeeded'
+  );
+end;
+$$;
+
 create function candidates_corpus_test.set_service_claims(subject uuid)
 returns void
 language plpgsql
@@ -123,6 +152,22 @@ begin
   );
   perform set_config('request.jwt.claim.sub', subject::text, false);
   perform set_config('request.jwt.claim.role', 'service_role', false);
+end;
+$$;
+
+create function candidates_corpus_test.set_authenticated_claims(subject uuid)
+returns void
+language plpgsql
+set search_path = pg_catalog
+as $$
+begin
+  perform set_config(
+    'request.jwt.claims',
+    jsonb_build_object('sub', subject, 'role', 'authenticated')::text,
+    false
+  );
+  perform set_config('request.jwt.claim.sub', subject::text, false);
+  perform set_config('request.jwt.claim.role', 'authenticated', false);
 end;
 $$;
 
@@ -143,6 +188,77 @@ insert into public.workspaces(id, name, allowed_domain) values
 insert into public.profiles(id, email, full_name, workspace_id, role) values
   ('b1000000-0000-4000-8000-000000000001','corpus-admin-a@example.test','Corpus Admin A','41111111-1111-4111-8111-111111111111','admin'),
   ('b2000000-0000-4000-8000-000000000002','corpus-admin-b@example.test','Corpus Admin B','42222222-2222-4222-8222-222222222222','admin');
+
+insert into public.workspaces(id, name, allowed_domain) values
+  ('43333333-3333-4333-8333-333333333333','Candidates Corpus Backfill','corpus-backfill.example.test');
+
+insert into public.workspace_state(workspace_id, state) values (
+  '43333333-3333-4333-8333-333333333333',
+  '{
+    "candidates":[
+      {
+        "id":"cand-backfill",
+        "campaignId":"campaign-backfill",
+        "name":"Blake Backfill",
+        "email":"blake@example.test",
+        "sourcePlatform":"Manual",
+        "currentTitle":"Engineer",
+        "currentCompany":"Backfill Co",
+        "matchScore":64,
+        "stage":"Sourced",
+        "createdAt":"2026-07-16T09:00:00Z"
+      }
+    ],
+    "activities":[],"outreach":[],"replies":[],"bookings":[],"wins":[],
+    "ledger":[],"suppression":[],"campaigns":[],"chats":[],
+    "ingestedMessageIds":[],"chatboxSubmissions":[]
+  }'
+);
+
+delete from public.candidates
+ where workspace_id='43333333-3333-4333-8333-333333333333';
+
+select * from public.backfill_candidates_corpus();
+
+select candidates_corpus_test.expect_scalar(
+  'backfill-simulation',
+  $$select string_agg(id, ',' order by id)
+      from public.candidates
+     where workspace_id='43333333-3333-4333-8333-333333333333'$$,
+  'cand-backfill'
+);
+
+create temporary table backfill_row_set as
+select workspace_id, campaign_id, id, payload
+  from public.candidates
+ where workspace_id='43333333-3333-4333-8333-333333333333';
+
+select * from public.backfill_candidates_corpus();
+
+select candidates_corpus_test.expect_scalar(
+  'backfill-row-set-idempotent',
+  $$select count(*)::text
+      from (
+        (select workspace_id, campaign_id, id, payload
+           from public.candidates
+          where workspace_id='43333333-3333-4333-8333-333333333333'
+         except
+         select workspace_id, campaign_id, id, payload from backfill_row_set)
+        union all
+        (select workspace_id, campaign_id, id, payload from backfill_row_set
+         except
+         select workspace_id, campaign_id, id, payload
+           from public.candidates
+          where workspace_id='43333333-3333-4333-8333-333333333333')
+      ) diff$$,
+  '0'
+);
+
+select candidates_corpus_test.expect_authenticated_sqlstate(
+  'helper-acl-authenticated-denied',
+  $$select public.mirror_workspace_candidates('41111111-1111-4111-8111-111111111111', '{}'::jsonb)$$,
+  array['42501']
+);
 
 insert into public.workspace_state(workspace_id, state) values (
   '41111111-1111-4111-8111-111111111111',
@@ -356,6 +472,46 @@ select candidates_corpus_test.expect_scalar(
   '0:Principal Engineer'
 );
 
+update public.workspace_state
+   set state = jsonb_set(
+     state,
+     '{candidates}',
+     (state->'candidates') || '[
+       {
+        "id":"cand-pct",
+        "campaignId":"campaign-main",
+        "name":"Percent % Literal",
+        "email":"percent@example.test",
+        "sourcePlatform":"GitHub",
+        "currentTitle":"Architect",
+        "currentCompany":"Example Percent",
+        "location":"Ottawa",
+        "matchScore":88,
+        "stage":"Qualified",
+        "yearsExperience":9,
+        "createdAt":"2026-07-16T12:00:00Z",
+        "lastContactedAt":null
+       },
+       {
+        "id":"cand-high",
+        "campaignId":"campaign-main",
+        "name":"High Match",
+        "email":"high@example.test",
+        "sourcePlatform":"Manual",
+        "currentTitle":"Director",
+        "currentCompany":"Example High",
+        "location":"Vancouver",
+        "matchScore":99,
+        "stage":"Sourced",
+        "yearsExperience":12,
+        "createdAt":"2026-07-16T08:00:00Z",
+        "lastContactedAt":null
+       }
+     ]'::jsonb,
+     false
+   )
+ where workspace_id='41111111-1111-4111-8111-111111111111';
+
 insert into public.workspace_state(workspace_id, state) values (
   '42222222-2222-4222-8222-222222222222',
   '{
@@ -412,9 +568,116 @@ select candidates_corpus_test.expect_scalar(
   'completed:0'
 );
 
-select candidates_corpus_test.expect_sqlstate(
+update public.workspace_state
+   set state = jsonb_set(
+     state,
+     '{candidates}',
+     (state->'candidates') || '[
+       {
+        "id":"cand-b-only",
+        "campaignId":"campaign-b-only",
+        "name":"Tenant B Only",
+        "email":"tenant-b@example.test",
+        "sourcePlatform":"Manual",
+        "currentTitle":"Engineer",
+        "currentCompany":"Tenant B",
+        "location":"Quebec",
+        "matchScore":70,
+        "stage":"Sourced",
+        "yearsExperience":null,
+        "createdAt":"2026-07-16T13:00:00Z",
+        "lastContactedAt":null
+       }
+     ]'::jsonb,
+     false
+   )
+ where workspace_id='42222222-2222-4222-8222-222222222222';
+
+select candidates_corpus_test.set_authenticated_claims('b1000000-0000-4000-8000-000000000001');
+set role authenticated;
+create temporary table rpc_tenant_a_b_rows as
+select * from public.list_workspace_candidates(p_campaign_id => 'campaign-b-only');
+reset role;
+
+select candidates_corpus_test.expect_scalar(
+  'rpc-tenant-isolation',
+  $$select count(*)::text from rpc_tenant_a_b_rows where payload is not null$$,
+  '0'
+);
+
+select set_config('request.jwt.claims', '{}'::text, false);
+select set_config('request.jwt.claim.sub', '', false);
+select set_config('request.jwt.claim.role', '', false);
+set role authenticated;
+create temporary table rpc_null_uid_rows as
+select * from public.list_workspace_candidates();
+reset role;
+
+select candidates_corpus_test.expect_scalar(
+  'rpc-null-uid',
+  $$select count(*)::text from rpc_null_uid_rows$$,
+  '0'
+);
+
+select candidates_corpus_test.set_authenticated_claims('b1000000-0000-4000-8000-000000000001');
+set role authenticated;
+create temporary table rpc_source_rows as
+select * from public.list_workspace_candidates(p_source => 'GitHub');
+create temporary table rpc_match_rows as
+select * from public.list_workspace_candidates(p_sort => 'match', p_limit => 3);
+create temporary table rpc_recent_rows as
+select * from public.list_workspace_candidates(p_sort => 'recent', p_limit => 3);
+create temporary table rpc_page_rows as
+select * from public.list_workspace_candidates(p_limit => 1, p_offset => 1);
+create temporary table rpc_literal_percent_rows as
+select * from public.list_workspace_candidates(p_search => '%');
+reset role;
+
+select candidates_corpus_test.expect_scalar(
+  'rpc-source-filter',
+  $$select string_agg(payload->>'id', ',' order by payload->>'id')
+      from rpc_source_rows
+     where payload is not null$$,
+  'cand-pct'
+);
+
+select candidates_corpus_test.expect_scalar(
+  'rpc-sort-match',
+  $$select payload->>'id'
+      from rpc_match_rows
+     where payload is not null
+     limit 1$$,
+  'cand-high'
+);
+
+select candidates_corpus_test.expect_scalar(
+  'rpc-sort-recent',
+  $$select payload->>'id'
+      from rpc_recent_rows
+     where payload is not null
+     limit 1$$,
+  'cand-pct'
+);
+
+select candidates_corpus_test.expect_scalar(
+  'rpc-limit-offset-total',
+  $$select count(*)::text || ':' || max(total)::text
+      from rpc_page_rows
+     where payload is not null$$,
+  '1:3'
+);
+
+select candidates_corpus_test.expect_scalar(
+  'rpc-escaped-wildcard-search',
+  $$select string_agg(payload->>'id', ',' order by payload->>'id')
+      from rpc_literal_percent_rows
+     where payload is not null$$,
+  'cand-pct'
+);
+
+select candidates_corpus_test.expect_authenticated_sqlstate(
   'RLS',
-  $$set local role authenticated; select count(*) from public.candidates$$,
+  $$select count(*) from public.candidates$$,
   array['42501']
 );
 
@@ -424,10 +687,10 @@ update public.workspace_state
 
 select candidates_corpus_test.expect_scalar(
   'malformed',
-  $$select concat_ws(':', count(*)::text, max(current_title))
+  $$select concat_ws(':', count(*)::text, string_agg(id, ',' order by id))
       from public.candidates
      where workspace_id='41111111-1111-4111-8111-111111111111'$$,
-  '1:Principal Engineer'
+  '3:cand-b,cand-high,cand-pct'
 );
 
 do $$
@@ -450,4 +713,5 @@ end;
 $$;
 SQL
 
-echo "candidates-corpus-db: insert-sync populate remove-one idempotent unchanged-skip erase(manual_required+completed) re-materialization-blocked RLS malformed: 9 scenarios, 10 assertions, 0 failed"
+assertions="$(psql_stdin -Atc "select count(*) from candidates_corpus_test.results")"
+echo "candidates-corpus-db: post-0036 mirror, backfill, RPC, RLS, malformed: ${assertions} assertions, 0 failed"

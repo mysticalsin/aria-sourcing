@@ -38,6 +38,11 @@ export const isProduction = process.env.NODE_ENV === "production";
 export const experimentalPaidSourcingEnabled =
   !isProduction && process.env.NEXT_PUBLIC_ENABLE_EXPERIMENTAL_PAID_SOURCING === "true";
 
+/** Preview-only: read /candidates listing rows from the server corpus mirror.
+ *  Default off keeps the existing store-backed page path unchanged. */
+export const corpusServerReadEnabled =
+  process.env.NEXT_PUBLIC_ENABLE_CORPUS_SERVER_READ === "true";
+
 /**
  * Fail-closed guard. In production the app MUST run in LIVE mode: if Supabase env
  * is missing, the open DEMO fallbacks (no login gate, every caller treated as

@@ -20,6 +20,7 @@ import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
 import { useActions, useActiveCampaign, useCandidates, useHydrated } from "@/lib/store";
+import { corpusServerReadEnabled } from "@/lib/supabase/config";
 import { CANDIDATE_STAGES, SOURCE_PLATFORMS, type Candidate, type CandidateStage } from "@/lib/types";
 import { pluralize } from "@/lib/utils";
 import { Bookmark, Radar, Search, Sparkles } from "lucide-react";
@@ -56,6 +57,80 @@ const PAGE_SIZE_OPTIONS = [
 ];
 const DEFAULT_PAGE_SIZE = 50;
 
+type CandidateSort = "match" | "recent";
+
+interface ServerCandidatesState {
+  candidates: Candidate[];
+  total: number;
+  loading: boolean;
+}
+
+function isCandidateArray(value: unknown): value is Candidate[] {
+  return Array.isArray(value);
+}
+
+function useServerCandidates({
+  enabled,
+  query,
+  sort,
+  stage,
+  source,
+  limit,
+  offset,
+}: {
+  enabled: boolean;
+  query: string;
+  sort: CandidateSort;
+  stage: string;
+  source: string;
+  limit: number;
+  offset: number;
+}): ServerCandidatesState {
+  const [state, setState] = React.useState<ServerCandidatesState>({
+    candidates: [],
+    total: 0,
+    loading: false,
+  });
+
+  React.useEffect(() => {
+    if (!enabled) return;
+    const ctrl = new AbortController();
+    const params = new URLSearchParams();
+    const trimmed = query.trim();
+    if (trimmed) params.set("search", trimmed);
+    if (stage !== "all") params.set("stage", stage);
+    if (source !== "all") params.set("source", source);
+    params.set("sort", sort);
+    params.set("limit", String(limit));
+    params.set("offset", String(offset));
+    setState((prev) => ({ ...prev, loading: true }));
+    fetch(`/api/candidates?${params.toString()}`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: ctrl.signal,
+    })
+      .then(async (res) => {
+        const json = (await res.json()) as unknown;
+        if (!res.ok || typeof json !== "object" || json === null) {
+          throw new Error("Candidate corpus read failed.");
+        }
+        const body = json as { candidates?: unknown; total?: unknown };
+        setState({
+          candidates: isCandidateArray(body.candidates) ? body.candidates : [],
+          total: typeof body.total === "number" ? body.total : 0,
+          loading: false,
+        });
+      })
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setState({ candidates: [], total: 0, loading: false });
+      });
+    return () => ctrl.abort();
+  }, [enabled, query, sort, stage, source, limit, offset]);
+
+  return state;
+}
+
 function lastActivityIso(c: Candidate): number {
   return new Date(c.lastContactedAt ?? c.createdAt).getTime();
 }
@@ -69,9 +144,10 @@ function CandidatesView() {
   const { toast } = useToast();
   const searchParams = useSearchParams();
   const focus = searchParams.get("focus");
+  const serverPreview = corpusServerReadEnabled;
 
   const [query, setQuery] = React.useState("");
-  const [sort, setSort] = React.useState("match");
+  const [sort, setSort] = React.useState<CandidateSort>("match");
   const [stage, setStage] = React.useState("all");
   const [source, setSource] = React.useState("all");
   const [selected, setSelected] = React.useState<Candidate | null>(null);
@@ -129,12 +205,32 @@ function CandidatesView() {
     setPage(0);
   }, [query, stage, source, sort, pageSize]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const localTotalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const localClampedPage = Math.min(page, localTotalPages - 1);
+  const serverCandidates = useServerCandidates({
+    enabled: hydrated && serverPreview,
+    query,
+    sort,
+    stage,
+    source,
+    limit: pageSize,
+    offset: page * pageSize,
+  });
+  const totalPages = serverPreview
+    ? Math.max(1, Math.ceil(serverCandidates.total / pageSize))
+    : localTotalPages;
   const clampedPage = Math.min(page, totalPages - 1);
   const paged = React.useMemo(
-    () => filtered.slice(clampedPage * pageSize, clampedPage * pageSize + pageSize),
-    [filtered, clampedPage, pageSize],
+    () =>
+      serverPreview
+        ? serverCandidates.candidates
+        : filtered.slice(localClampedPage * pageSize, localClampedPage * pageSize + pageSize),
+    [filtered, localClampedPage, pageSize, serverPreview, serverCandidates.candidates],
   );
+
+  React.useEffect(() => {
+    if (page !== clampedPage) setPage(clampedPage);
+  }, [page, clampedPage]);
 
   const stageOptions = [
     { value: "all", label: "All stages" },
@@ -157,8 +253,8 @@ function CandidatesView() {
   // after selecting); drop stale ids so "N selected" never counts hidden rows.
   const filteredIds = React.useMemo(() => new Set(filtered.map((c) => c.id)), [filtered]);
   const visibleSelectedIds = React.useMemo(
-    () => new Set(Array.from(selectedIds).filter((id) => filteredIds.has(id))),
-    [selectedIds, filteredIds],
+    () => (serverPreview ? new Set<string>() : new Set(Array.from(selectedIds).filter((id) => filteredIds.has(id)))),
+    [selectedIds, filteredIds, serverPreview],
   );
 
   function toggleSelect(id: string) {
@@ -173,6 +269,7 @@ function CandidatesView() {
   // Selects the current PAGE (standard pagination convention), not every
   // filtered result — selections still persist across pages via selectedIds.
   function toggleSelectAll() {
+    if (serverPreview) return;
     const allPageSelected = paged.length > 0 && paged.every((c) => visibleSelectedIds.has(c.id));
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -294,7 +391,7 @@ function CandidatesView() {
   }
 
   const tableEmptyState =
-    filtered.length === 0 && candidates.length > 0 && hasActiveFilters
+    paged.length === 0 && (serverPreview ? serverCandidates.total > 0 : candidates.length > 0) && hasActiveFilters
       ? {
           title: "No candidates match your filters",
           description: "Try a different search term, or reset the filters below.",
@@ -338,7 +435,7 @@ function CandidatesView() {
               id="candidate-sort"
               options={SORT_OPTIONS}
               value={sort}
-              onChange={(e) => setSort(e.target.value)}
+              onChange={(e) => setSort(e.target.value === "recent" ? "recent" : "match")}
             />
           </Field>
           <Field label="Stage" htmlFor="candidate-stage">
@@ -362,8 +459,13 @@ function CandidatesView() {
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted">
-          <span className="font-semibold text-ink">{filtered.length}</span> of{" "}
-          {pluralize(candidates.length, "candidate")} across all campaigns
+          <span className="font-semibold text-ink">
+            {serverPreview ? serverCandidates.total : filtered.length}
+          </span>{" "}
+          {serverPreview
+            ? pluralize(serverCandidates.total, "server candidate")
+            : `of ${pluralize(candidates.length, "candidate")} across all campaigns`}
+          {serverPreview && serverCandidates.loading ? " (loading)" : ""}
         </p>
         <Button
           variant="secondary"
@@ -394,7 +496,7 @@ function CandidatesView() {
         </div>
       )}
 
-      {visibleSelectedIds.size > 0 && (
+      {!serverPreview && visibleSelectedIds.size > 0 && (
         <Card className="mb-4 border-electric/30 bg-electric-soft/40">
           <CardBody className="flex flex-wrap items-center gap-3">
             <span className="text-sm font-semibold text-ink">
@@ -467,18 +569,26 @@ function CandidatesView() {
             candidates={paged}
             showCampaign
             emptyState={tableEmptyState}
-            selectedIds={visibleSelectedIds}
-            onToggleSelect={toggleSelect}
-            onToggleSelectAll={toggleSelectAll}
+            selectedIds={serverPreview ? undefined : visibleSelectedIds}
+            onToggleSelect={serverPreview ? undefined : toggleSelect}
+            onToggleSelectAll={serverPreview ? undefined : toggleSelectAll}
             onSelect={(c) => {
-              setSelected(c);
+              const candidate = serverPreview ? candidates.find((local) => local.id === c.id) : c;
+              if (!candidate) {
+                toast({
+                  title: "Candidate not yet synced locally — refresh to open",
+                  variant: "warning",
+                });
+                return;
+              }
+              setSelected(candidate);
               setDrawerOpen(true);
             }}
           />
         </CardBody>
       </Card>
 
-      {filtered.length > 0 && (
+      {(serverPreview ? serverCandidates.total : filtered.length) > 0 && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <Select
             aria-label="Rows per page"
