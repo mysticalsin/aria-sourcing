@@ -24,6 +24,36 @@ const DIMENSION_LABELS: Record<keyof ScoringWeights, string> = {
   activity: "Signal & activity",
 };
 
+const UNKNOWN_ANCHOR = 30;
+const SCORE_DIMENSIONS: (keyof ScoringWeights)[] = [
+  "skills",
+  "experience",
+  "companyStage",
+  "industry",
+  "location",
+  "activity",
+];
+// Activity vocabulary — the SINGLE source of truth. scoreActivity picks a tier
+// from these; ACTIVITY_SIGNAL_RE (used by the classifier to decide scored-vs-
+// excluded) is DERIVED from their union so the two can never drift apart.
+const ACTIVITY_HIGH_RE = /this week|days ago|active|shipped|merged|launched|speaking/;
+const ACTIVITY_MED_RE = /this month|recently|published|maintains|contribut/;
+const ACTIVITY_LOW_RE = /last year|inactive|dormant|quiet/;
+const ACTIVITY_SIGNAL_RE = new RegExp(
+  [ACTIVITY_HIGH_RE, ACTIVITY_MED_RE, ACTIVITY_LOW_RE].map((r) => r.source).join("|"),
+);
+
+// One rationale for every "role asked, candidate value missing" dimension.
+const UNKNOWN_RATIONALE = "Requested but candidate value unknown - counted as unverified.";
+
+type ApplicabilityState = "scored" | "not_applicable" | "unknown";
+
+interface DimensionResult {
+  score: number;
+  rationale: string;
+  state: ApplicabilityState;
+}
+
 function lower(arr: string[]): string[] {
   return arr.map((s) => s.toLowerCase().trim());
 }
@@ -156,10 +186,92 @@ function scoreActivity(c: Candidate): { score: number; rationale: string } {
   const txt = c.recentActivity.toLowerCase();
   let score = 62;
   if (/no activity signal/.test(txt)) score = 50;
-  else if (/this week|days ago|active|shipped|merged|launched|speaking/.test(txt)) score = 92;
-  else if (/this month|recently|published|maintains|contribut/.test(txt)) score = 80;
-  else if (/last year|inactive|dormant|quiet/.test(txt)) score = 45;
+  else if (ACTIVITY_HIGH_RE.test(txt)) score = 92;
+  else if (ACTIVITY_MED_RE.test(txt)) score = 80;
+  else if (ACTIVITY_LOW_RE.test(txt)) score = 45;
   return { score, rationale: c.recentActivity };
+}
+
+function effectiveWeight(weights: ScoringWeights, dim: keyof ScoringWeights): number {
+  return Number.isFinite(weights[dim]) ? Math.max(0, weights[dim]) : 0;
+}
+
+function classifyDimensions(candidate: Candidate, jd: JobAnalysis): Record<keyof ScoringWeights, DimensionResult> {
+  const skills = scoreSkills(candidate, jd);
+  const experience = scoreExperience(candidate, jd);
+  const companyStage = scoreCompanyStage(candidate, jd);
+  const industry = scoreIndustry(candidate, jd);
+  const location = scoreLocation(candidate, jd);
+  const activity = scoreActivity(candidate);
+  const roleRequestsExperience = jd.minYearsExperience != null || jd.maxYearsExperience != null;
+  const hasActivitySignal = ACTIVITY_SIGNAL_RE.test(candidate.recentActivity.toLowerCase());
+
+  return {
+    skills: {
+      ...skills,
+      state: candidate.techStack.length > 0 ? "scored" : "unknown",
+      rationale:
+        candidate.techStack.length > 0
+          ? skills.rationale
+          : UNKNOWN_RATIONALE,
+    },
+    experience: {
+      ...experience,
+      state: !roleRequestsExperience
+        ? "not_applicable"
+        : candidate.yearsExperience != null
+          ? "scored"
+          : "unknown",
+      rationale: !roleRequestsExperience
+        ? "Not requested by this role."
+        : candidate.yearsExperience != null
+          ? experience.rationale
+          : UNKNOWN_RATIONALE,
+    },
+    companyStage: {
+      ...companyStage,
+      state:
+        jd.companyStageTarget.length === 0
+          ? "not_applicable"
+          : candidate.companyStageExperience.length > 0
+            ? "scored"
+            : "unknown",
+      rationale:
+        jd.companyStageTarget.length === 0
+          ? "Not requested by this role."
+          : candidate.companyStageExperience.length > 0
+            ? companyStage.rationale
+            : UNKNOWN_RATIONALE,
+    },
+    industry: {
+      ...industry,
+      state:
+        jd.industryExperience.length === 0
+          ? "not_applicable"
+          : candidate.industryExperience.length > 0
+            ? "scored"
+            : "unknown",
+      rationale:
+        jd.industryExperience.length === 0
+          ? "Not requested by this role."
+          : candidate.industryExperience.length > 0
+            ? industry.rationale
+            : UNKNOWN_RATIONALE,
+    },
+    location: {
+      ...location,
+      state: candidate.location.trim() || candidate.timezone.trim() ? "scored" : "unknown",
+      rationale:
+        candidate.location.trim() || candidate.timezone.trim()
+          ? location.rationale
+          : UNKNOWN_RATIONALE,
+    },
+    activity: {
+      ...activity,
+      state: hasActivitySignal ? "scored" : "not_applicable",
+      rationale: hasActivitySignal ? activity.rationale : "Not requested by this role.",
+    },
+  };
 }
 
 /* ---- Composite ----------------------------------------------------------- */
@@ -174,38 +286,27 @@ export function scoreCandidate(
   jd: JobAnalysis,
   weights: ScoringWeights = DEFAULT_SCORING_WEIGHTS,
 ): ScoreResult {
-  const dims: Record<keyof ScoringWeights, { score: number; rationale: string }> = {
-    skills: scoreSkills(candidate, jd),
-    experience: scoreExperience(candidate, jd),
-    companyStage: scoreCompanyStage(candidate, jd),
-    industry: scoreIndustry(candidate, jd),
-    location: scoreLocation(candidate, jd),
-    activity: scoreActivity(candidate),
-  };
+  const dims = classifyDimensions(candidate, jd);
+  const applicable = SCORE_DIMENSIONS.filter((key) => dims[key].state !== "not_applicable");
+  const denom = applicable.reduce((sum, key) => sum + effectiveWeight(weights, key), 0);
 
-  const totalWeight =
-    weights.skills +
-    weights.experience +
-    weights.companyStage +
-    weights.industry +
-    weights.location +
-    weights.activity || 1;
-
-  const keys = Object.keys(dims) as (keyof ScoringWeights)[];
-  let composite = 0;
-  const breakdown: MatchBreakdownItem[] = keys.map((key) => {
-    const norm = weights[key] / totalWeight;
-    const contribution = dims[key].score * norm;
-    composite += contribution;
+  const breakdown: MatchBreakdownItem[] = SCORE_DIMENSIONS.map((key) => {
+    const dim = dims[key];
+    const excluded = dim.state === "not_applicable" || denom === 0;
+    const weight = excluded ? 0 : effectiveWeight(weights, key) / denom;
+    const effectiveScore = dim.state === "unknown" ? UNKNOWN_ANCHOR : dim.score;
+    const displayScore = excluded ? dim.score : effectiveScore;
+    const contribution = excluded ? 0 : effectiveScore * weight;
     return {
       key,
       label: DIMENSION_LABELS[key],
-      score: round(dims[key].score),
-      weight: round(norm, 3),
+      score: round(clamp(displayScore, 0, 100)),
+      weight: round(weight, 3),
       contribution: round(contribution, 1),
-      rationale: dims[key].rationale,
+      rationale: dim.rationale,
     };
   });
+  const composite = breakdown.reduce((sum, item) => sum + item.contribution, 0);
 
   return { score: round(clamp(composite, 0, 100)), breakdown };
 }

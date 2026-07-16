@@ -18,7 +18,7 @@ import {
   firstInterviewElapsedHours,
 } from "../src/lib/metrics";
 import { FUNNEL_STAGES } from "../src/lib/types";
-import type { Candidate } from "../src/lib/types";
+import type { Candidate, JobAnalysis, ScoringWeights } from "../src/lib/types";
 import { buildSeedState } from "../src/lib/seed";
 
 let pass = 0,
@@ -75,6 +75,147 @@ ok("scored at least one candidate", scoredCount >= 1);
 // Default weights are a normalisable positive set.
 const wSum = Object.values(DEFAULT_SCORING_WEIGHTS).reduce((a, b) => a + b, 0);
 ok("default scoring weights sum > 0", wSum > 0);
+
+const baseScoringCandidate = cands[0] as Candidate;
+const signalAwareJd: JobAnalysis = {
+  ...jd,
+  requiredSkills: ["typescript"],
+  niceToHaveSkills: ["react"],
+  minYearsExperience: 4,
+  maxYearsExperience: 8,
+  companyStageTarget: [],
+  industryExperience: [],
+  locationType: "Remote",
+  regions: ["Canada"],
+  timezone: "EST",
+};
+const signalCandidate: Candidate = {
+  ...baseScoringCandidate,
+  techStack: ["typescript", "react"],
+  yearsExperience: 6,
+  companyStageExperience: [],
+  industryExperience: [],
+  location: "Toronto, Canada",
+  timezone: "EST",
+  recentActivity: "",
+};
+const unknownExperienceCandidate: Candidate = { ...signalCandidate, yearsExperience: null };
+const verifiedExperience = scoreCandidate(signalCandidate, signalAwareJd, DEFAULT_SCORING_WEIGHTS);
+const unknownExperience = scoreCandidate(
+  unknownExperienceCandidate,
+  signalAwareJd,
+  DEFAULT_SCORING_WEIGHTS,
+);
+ok(
+  "signal-aware scoring: verified requested experience outranks unknown requested experience",
+  verifiedExperience.score > unknownExperience.score,
+);
+
+const thinHighSkill = scoreCandidate(
+  {
+    ...signalCandidate,
+    yearsExperience: null,
+    location: "",
+    timezone: "",
+  },
+  signalAwareJd,
+  DEFAULT_SCORING_WEIGHTS,
+);
+ok(
+  "signal-aware scoring: skills-only-high candidate stays below MIN_SCORE_FLOOR 70",
+  thinHighSkill.score < 70,
+);
+
+const broadVerified = scoreCandidate(
+  {
+    ...signalCandidate,
+    techStack: ["typescript"],
+    yearsExperience: 6,
+    location: "Toronto, Canada",
+    timezone: "EST",
+  },
+  signalAwareJd,
+  DEFAULT_SCORING_WEIGHTS,
+);
+ok(
+  "signal-aware scoring: thin high-skill candidate does not outrank broad verified candidate",
+  thinHighSkill.score < broadVerified.score,
+);
+
+const skillsOnlyJd: JobAnalysis = {
+  ...signalAwareJd,
+  requiredSkills: ["typescript", "react", "node", "postgres"],
+  niceToHaveSkills: ["next"],
+  minYearsExperience: null,
+  maxYearsExperience: null,
+  companyStageTarget: [],
+  industryExperience: [],
+  regions: ["EU"],
+  timezone: "CET",
+};
+const skillsOnly = scoreCandidate(
+  {
+    ...signalCandidate,
+    techStack: ["typescript", "react", "node", "next"],
+    yearsExperience: null,
+    location: "Toronto, Canada",
+    timezone: "",
+  },
+  skillsOnlyJd,
+  DEFAULT_SCORING_WEIGHTS,
+);
+const skillsOnlySkillScore = skillsOnly.breakdown.find((item) => item.key === "skills")?.score;
+ok(
+  "signal-aware scoring: role requests only skills -> composite equals skills score",
+  skillsOnly.score === skillsOnlySkillScore,
+);
+
+const finiteZeroedScoredDims = scoreCandidate(
+  signalCandidate,
+  signalAwareJd,
+  { ...DEFAULT_SCORING_WEIGHTS, skills: 0, experience: 0, location: 0 },
+);
+ok(
+  "signal-aware scoring: custom weights zeroing scored dims keep composite finite",
+  Number.isFinite(finiteZeroedScoredDims.score) &&
+    finiteZeroedScoredDims.score >= 0 &&
+    finiteZeroedScoredDims.score <= 100,
+);
+
+for (const unsafeWeight of [Number.NaN, Number.POSITIVE_INFINITY, -5]) {
+  const unsafeWeights = { ...DEFAULT_SCORING_WEIGHTS, skills: unsafeWeight } as ScoringWeights;
+  const unsafeResult = scoreCandidate(signalCandidate, signalAwareJd, unsafeWeights);
+  ok(
+    `signal-aware scoring: non-finite/negative skills weight ${String(unsafeWeight)} stays finite`,
+    Number.isFinite(unsafeResult.score) &&
+      unsafeResult.breakdown.every(
+        (item) => Number.isFinite(item.weight) && item.weight >= 0 && item.weight <= 1,
+      ),
+  );
+}
+
+const degenerateZeroApplicable = scoreCandidate(
+  {
+    ...signalCandidate,
+    yearsExperience: null,
+    location: "",
+    timezone: "",
+  },
+  signalAwareJd,
+  {
+    skills: 0,
+    experience: 0,
+    companyStage: 10,
+    industry: 10,
+    location: 0,
+    activity: 10,
+  },
+);
+ok(
+  "signal-aware scoring: zero applicable effective weight gives composite 0 and contribution sum 0",
+  degenerateZeroApplicable.score === 0 &&
+    degenerateZeroApplicable.breakdown.reduce((sum, item) => sum + item.contribution, 0) === 0,
+);
 
 /* ---- scoreDistribution --------------------------------------------------- */
 const seedScores = cands.map((c) => c.matchScore);
