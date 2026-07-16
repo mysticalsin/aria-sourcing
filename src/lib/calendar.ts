@@ -6,6 +6,7 @@
 
 import type { EmailConnection } from "./types";
 import { getAccessTokenForReading } from "./email-oauth";
+import { classifyFailedHttpDeliveryState } from "./delivery-outcome";
 
 export interface CalendarEventInput {
   candidateName: string;
@@ -24,6 +25,10 @@ export interface CalendarEventOutcome {
   link?: string;
   eventId?: string;
   detail: string;
+  /** Whether the provider definitely accepted, definitely rejected, or may
+   *  have accepted the request. Same contract as OAuthSendOutcome — a caller
+   *  must only ever treat "not-sent" as safe to retry / free a claimed slot. */
+  deliveryState: "accepted" | "not-sent" | "unknown";
 }
 
 function attendeeEmails(ev: CalendarEventInput): string[] {
@@ -43,7 +48,9 @@ export async function createGoogleCalendarEvent(
   connection: EmailConnection,
 ): Promise<CalendarEventOutcome> {
   const token = await getAccessTokenForReading(connection);
-  if (!token) return { ok: false, provider: "Gmail API", detail: "No access token." };
+  // A missing/unrefreshable token is proven pre-transport: no request ever
+  // reached Google, so this is always safe to retry.
+  if (!token) return { ok: false, provider: "Gmail API", deliveryState: "not-sent", detail: "No access token." };
 
   const body = {
     summary: `Interview: ${ev.candidateName}, ${ev.role}`,
@@ -52,18 +59,38 @@ export async function createGoogleCalendarEvent(
     end: { dateTime: ev.endTime, timeZone: ev.timezone || "UTC" },
     attendees: attendeeEmails(ev).map((email) => ({ email })),
   };
-  const res = await fetch(
-    "https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all",
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(15_000),
-    },
-  );
-  if (!res.ok) return { ok: false, provider: "Gmail API", detail: `Google Calendar ${res.status}` };
-  const event = (await res.json().catch(() => ({}))) as { id?: string; htmlLink?: string };
-  return { ok: true, provider: "Gmail API", eventId: event.id, link: event.htmlLink, detail: "Event created." };
+  try {
+    const res = await fetch(
+      "https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    if (!res.ok) {
+      return {
+        ok: false,
+        provider: "Gmail API",
+        deliveryState: classifyFailedHttpDeliveryState(res.status),
+        detail: `Google Calendar ${res.status}`,
+      };
+    }
+    const event = (await res.json().catch(() => ({}))) as { id?: string; htmlLink?: string };
+    return {
+      ok: true,
+      provider: "Gmail API",
+      eventId: event.id,
+      link: event.htmlLink,
+      deliveryState: "accepted",
+      detail: "Event created.",
+    };
+  } catch {
+    // A timeout or disconnect after the request left this process may have
+    // been accepted by Google. Never report it as a definitive failure.
+    return { ok: false, provider: "Gmail API", deliveryState: "unknown", detail: "Google Calendar transport failure: delivery state unknown." };
+  }
 }
 
 /** Create the event on the connection owner's Microsoft 365 calendar. */
@@ -72,7 +99,9 @@ export async function createGraphCalendarEvent(
   connection: EmailConnection,
 ): Promise<CalendarEventOutcome> {
   const token = await getAccessTokenForReading(connection);
-  if (!token) return { ok: false, provider: "Microsoft Graph", detail: "No access token." };
+  // A missing/unrefreshable token is proven pre-transport: no request ever
+  // reached Graph, so this is always safe to retry.
+  if (!token) return { ok: false, provider: "Microsoft Graph", deliveryState: "not-sent", detail: "No access token." };
 
   const body = {
     subject: `Interview: ${ev.candidateName}, ${ev.role}`,
@@ -84,13 +113,33 @@ export async function createGraphCalendarEvent(
       type: "required",
     })),
   };
-  const res = await fetch("https://graph.microsoft.com/v1.0/me/events", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!res.ok) return { ok: false, provider: "Microsoft Graph", detail: `Graph calendar ${res.status}` };
-  const event = (await res.json().catch(() => ({}))) as { id?: string; webLink?: string };
-  return { ok: true, provider: "Microsoft Graph", eventId: event.id, link: event.webLink, detail: "Event created." };
+  try {
+    const res = await fetch("https://graph.microsoft.com/v1.0/me/events", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) {
+      return {
+        ok: false,
+        provider: "Microsoft Graph",
+        deliveryState: classifyFailedHttpDeliveryState(res.status),
+        detail: `Graph calendar ${res.status}`,
+      };
+    }
+    const event = (await res.json().catch(() => ({}))) as { id?: string; webLink?: string };
+    return {
+      ok: true,
+      provider: "Microsoft Graph",
+      eventId: event.id,
+      link: event.webLink,
+      deliveryState: "accepted",
+      detail: "Event created.",
+    };
+  } catch {
+    // A timeout or disconnect after the request left this process may have
+    // been accepted by Graph. Never report it as a definitive failure.
+    return { ok: false, provider: "Microsoft Graph", deliveryState: "unknown", detail: "Graph calendar transport failure: delivery state unknown." };
+  }
 }

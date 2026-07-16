@@ -273,6 +273,11 @@ export function createBookingReportActions({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             seatId: seat.id,
+            // The booking's own id is a stable per-attempt identifier: it never
+            // changes across a network-level retry of this exact fetch, so it
+            // doubles as the server's calendar-booking idempotency key.
+            requestId: booking.id,
+            candidateId: candidate.id,
             candidateName: booking.candidateName,
             candidateEmail: candidate.email || undefined,
             role: booking.role,

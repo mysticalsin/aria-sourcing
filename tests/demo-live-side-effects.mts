@@ -125,6 +125,10 @@ let currentService: any = null;
 
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
 
+// src/lib/calendar-authority.ts (imported transitively by the calendar route
+// below) is server-only.
+mock.module("server-only", { namedExports: {} });
+
 mock.module(moduleUrl("src/lib/server/demo-side-effects.ts"), {
   namedExports: {
     PUBLIC_DEMO_DRY_RUN_DETAIL: "Public demo: provider effects disabled.",
@@ -404,12 +408,26 @@ currentService = {
     account_email: "recruiter@example.test",
     workspace_id: workspaceId,
   }),
+  // The calendar route claims/reconciles a durable booking authority row
+  // (0034) via these two service-role RPCs before/after the provider call.
+  rpc: async (name: string) => {
+    if (name === "claim_calendar_booking") {
+      durableMutations += 1;
+      return { data: { status: "claimed", id: "booking-1", booking_status: "claimed", external_event_id: null, replay: false }, error: null };
+    }
+    if (name === "reconcile_calendar_booking") {
+      durableMutations += 1;
+      return { data: { status: "reconciled", id: "booking-1", booking_status: "confirmed" }, error: null };
+    }
+    return { data: null, error: null };
+  },
 };
 currentSupabase = calendarSupabase;
 const calendarModule = await import("../src/app/api/calendar/event/route");
 const calendarPost = ((calendarModule as any).POST ?? (calendarModule as any).default?.POST) as (req: NextRequest) => Promise<Response>;
 const calendarPayload = {
   seatId,
+  candidateId: "candidate-1",
   candidateName: "Candidate One",
   candidateEmail: "candidate@example.test",
   role: "Platform Engineer",
