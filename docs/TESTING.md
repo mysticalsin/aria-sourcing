@@ -52,6 +52,7 @@ npm run test:db-privileges
 npm run test:db-agent-memory
 npm run test:db-agent-operational-rollback
 npm run test:db-candidate-erasure
+npm run test:db-candidates-corpus
 npm run test:db-cross-channel-cap
 npm run test:db-apollo-enrichment
 npm run test:db-sourcing-learning
@@ -64,8 +65,9 @@ npm run test:fly-db-volume
 They cover direct-session privilege separation, migration idempotence, retired
 credentials, exact-scope agent memory, current-tip operational fallback and
 forward recovery, candidate-erasure authority, cross-channel daily-cap
-serialization, Apollo authority, adaptive-sourcing lessons, conversation and
-framework authority, orphan-owner recovery, legacy-volume refusal, and restart
+serialization, candidate-corpus mirror authority, Apollo authority,
+adaptive-sourcing lessons, conversation and framework authority, orphan-owner
+recovery, legacy-volume refusal, and restart
 persistence. This list mirrors the disposable-database jobs in
 `.github/workflows/ci.yml`; update both when adding a database gate.
 

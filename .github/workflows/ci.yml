@@ -157,6 +157,9 @@ jobs:
       - name: Verify candidate erasure authority
         run: npm run test:db-candidate-erasure
 
+      - name: Verify candidates corpus mirror authority
+        run: npm run test:db-candidates-corpus
+
       - name: Verify Apollo enrichment authority
         run: npm run test:db-apollo-enrichment
 
