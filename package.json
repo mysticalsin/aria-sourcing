@@ -19,6 +19,7 @@
     "test:candidate-erasure": "node scripts/run-test-manifest.mjs --group candidate-erasure",
     "test:db-candidate-erasure": "bash tests/candidate-erasure-db.sh",
     "test:db-candidates-corpus": "bash tests/candidates-corpus-db.sh",
+    "test:db-person-model": "bash tests/person-model-db.sh",
     "test:db-agent-operational-rollback": "bash tests/agent-operational-authority-rollback-db.sh",
     "posttest": "node scripts/run-test-manifest.mjs --group posttest",
     "test:agent-framework-adapter": "node scripts/run-test-manifest.mjs --group framework-adapter",

@@ -160,6 +160,9 @@ jobs:
       - name: Verify candidates corpus mirror authority
         run: npm run test:db-candidates-corpus
 
+      - name: Verify person identity model
+        run: npm run test:db-person-model
+
       - name: Verify Apollo enrichment authority
         run: npm run test:db-apollo-enrichment
 
