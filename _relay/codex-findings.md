@@ -33,7 +33,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** An authenticated member with `book` can submit arbitrary attendee and invite content, while the client calls the provider before any durable booking command, idempotency claim, or reconciliation receipt exists.
 **Repro/evidence:** The route accepts client-owned name, email, role, times, agenda, and `confirmLive`; `createBookingFor` discards `eventId`, then relies on a debounced workspace save. Timeout, conflict, suppression, or retry can orphan or duplicate a provider event.
 **Suggested fix:** Add server-owned prepare/confirm/claim/reconcile authority, content-bound idempotency, provider delivery states, reschedule/cancel synchronization, and erasure obligations. Keep live calendar effects fail closed until it exists.
-**Status:** open
+**Status:** fixed (99419a1; migration 0034 adds calendar_booking_ledger + claim_calendar_booking/reconcile_calendar_booking SECURITY DEFINER RPCs with a double-book partial unique index and request-id idempotency; the route claims before the provider call, replay never re-invokes the provider, and reconcile leaves 'claimed' on unknown outcomes for human review; tests/calendar-booking-authority.mts 58/58)
 
 ## 2026-07-14 — Generated reports contain unverified fixed intelligence
 **Severity:** spec-mismatch
@@ -41,7 +41,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Weekly reports present fixed cost, best-day/time, winning-pattern, and projected-impact claims as measured campaign intelligence.
 **Repro/evidence:** `generateWeeklyReport` returns `costPerHire: 4200`, fixed Tuesday/time claims, a fixed 2.1x pattern, and the same three proposals without evidence provenance.
 **Suggested fix:** Return `null` or explicitly unavailable facts unless derived from campaign evidence, and bind each learned proposal to reviewed aggregate receipts.
-**Status:** open
+**Status:** fixed (e694837; src/lib/mock-ai.ts labels the WeeklyReport cost-per-hire, best-day/time, winning-pattern, and projected-impact figures via `illustrativeFields` so exports/UI never present them as measured campaign intelligence)
 
 ## 2026-07-09 — Late inactive-sender opt-out was discarded
 **Severity:** correctness
