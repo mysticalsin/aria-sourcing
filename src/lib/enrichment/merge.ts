@@ -38,7 +38,7 @@ export type EnrichedFields = Partial<Record<EnrichableField, EnrichedFieldResult
 /** Fields with a dedicated scalar/array slot elsewhere on `Candidate` — the
  *  only fields whose "is this present?" question can be answered from live
  *  candidate data. See the module header for the field -> slot mapping. */
-const HOMED_FIELDS: ReadonlySet<EnrichableField> = new Set(["email", "phone", "headline", "location", "company", "skills"]);
+const HOMED_FIELDS: ReadonlySet<EnrichableField> = new Set(["email", "phone", "headline", "location", "company", "skills", "experience", "education", "languages"]);
 
 /** Fields every configured provider can realistically fill and that outreach
  *  directly depends on (email/phone drive every send channel). Deliberately
@@ -78,6 +78,12 @@ function readHomedValue(candidate: Candidate, field: EnrichableField): string | 
       return candidate.currentCompany ? candidate.currentCompany : undefined;
     case "skills":
       return candidate.techStack.length ? candidate.techStack : undefined;
+    case "experience":
+      return candidate.experience?.length ? candidate.experience : undefined;
+    case "education":
+      return candidate.education?.length ? candidate.education : undefined;
+    case "languages":
+      return candidate.languages?.length ? candidate.languages : undefined;
     default:
       return undefined;
   }
@@ -153,12 +159,14 @@ function applyFieldValue(candidate: Candidate, field: EnrichableField, value: st
     }
     case "experience":
     case "education":
-    case "languages":
-      // No dedicated slot to write (see module header) — a well-shaped array
-      // still counts as "applied" so provenance/coverage get recorded and the
-      // waterfall stops re-querying this field, even though the literal
-      // content isn't persisted anywhere yet.
-      return Array.isArray(value) ? candidate : null;
+    case "languages": {
+      // Homed to dedicated Candidate slots. Clean + drop empties; an all-blank
+      // or non-array value contributes nothing real, so return null (no
+      // provenance recorded) exactly like every other field.
+      if (!Array.isArray(value)) return null;
+      const cleaned = value.map((s) => s.trim()).filter(Boolean);
+      return cleaned.length ? { ...candidate, [field]: cleaned } : null;
+    }
     default:
       return null;
   }

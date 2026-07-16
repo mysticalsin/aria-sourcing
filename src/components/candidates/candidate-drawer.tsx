@@ -1695,6 +1695,32 @@ export function CandidateDrawer({
             <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Industry</p>
             <Chips items={c.industryExperience} label="Industry experience" />
           </div>
+          {c.experience?.length ? (
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Work history</p>
+              <ul className="space-y-1 text-sm leading-relaxed text-ink-soft">
+                {c.experience.map((line, i) => (
+                  <li key={`exp-${i}-${line}`}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {c.education?.length ? (
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Education</p>
+              <ul className="space-y-1 text-sm leading-relaxed text-ink-soft">
+                {c.education.map((line, i) => (
+                  <li key={`edu-${i}-${line}`}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {c.languages?.length ? (
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Languages</p>
+              <Chips items={c.languages} label="Languages" />
+            </div>
+          ) : null}
         </Section>
 
         <Section title="Recent activity" icon={<Clock className="h-4 w-4" />}>

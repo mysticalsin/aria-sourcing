@@ -375,6 +375,15 @@ export interface Candidate {
   matchScore: number;
   matchBreakdown: MatchBreakdownItem[];
   techStack: string[];
+  /** Enriched work-history lines, formatted "Title @ Company (dates)", newest
+   *  first. Provider free-text (Apify/dev_fusion) — displayed to recruiters but
+   *  deliberately NOT parsed into `yearsExperience` (dates are unstructured; see
+   *  the fabrication contract on that field). Absent until enriched. */
+  experience?: string[];
+  /** Enriched education lines, formatted "Degree @ School (dates)". Absent until enriched. */
+  education?: string[];
+  /** Enriched spoken/written languages. Absent until enriched. */
+  languages?: string[];
   /** Verified professional experience in years. Null means not provided and
    *  must never be rendered or scored as zero years. */
   yearsExperience: number | null;
