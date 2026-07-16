@@ -166,11 +166,13 @@ const validBody = { candidate: validCandidate, want: ["email", "phone"] };
   const json = await res.json();
 
   ok("happy path returns 200 ok:true and invokes the orchestrator once", res.status === 200 && json.ok === true && orchestrateCalls === 1);
+  const forwarded = lastOrchestrateInput as { candidate: unknown; want: unknown; budgetRemaining: unknown } | null;
   ok(
     "happy path forwards the validated candidate + want to the orchestrator",
-    (lastOrchestrateInput?.candidate as { id?: string } | undefined)?.id === "cand-1" &&
-      Array.isArray(lastOrchestrateInput?.want) &&
-      (lastOrchestrateInput?.want as string[]).includes("email"),
+    forwarded !== null &&
+      (forwarded.candidate as { id?: string } | undefined)?.id === "cand-1" &&
+      Array.isArray(forwarded.want) &&
+      (forwarded.want as string[]).includes("email"),
   );
   ok(
     "happy path echoes the orchestrator's patch fields",
@@ -191,16 +193,17 @@ const validBody = { candidate: validCandidate, want: ["email", "phone"] };
   // clamps it to MAX_ENRICH_UNITS_PER_REQUEST (10) server-side so a request
   // can never authorize more spend than the server allows, regardless of
   // what the client sends (or omits).
+  type OrchestrateInput = { candidate: unknown; want: unknown; budgetRemaining: unknown } | null;
   orchestrateCalls = 0;
   lastOrchestrateInput = null;
   await enrichRoute.POST(enrichReq(validBody));
-  ok("omitted budgetRemaining defaults to the server ceiling, not Infinity", lastOrchestrateInput?.budgetRemaining === 10);
+  ok("omitted budgetRemaining defaults to the server ceiling, not Infinity", (lastOrchestrateInput as OrchestrateInput)?.budgetRemaining === 10);
 
   await enrichRoute.POST(enrichReq({ ...validBody, budgetRemaining: 5 }));
-  ok("a supplied budgetRemaining under the ceiling is forwarded as-is", lastOrchestrateInput?.budgetRemaining === 5);
+  ok("a supplied budgetRemaining under the ceiling is forwarded as-is", (lastOrchestrateInput as OrchestrateInput)?.budgetRemaining === 5);
 
   await enrichRoute.POST(enrichReq({ ...validBody, budgetRemaining: 999 }));
-  ok("a supplied budgetRemaining above the ceiling is clamped down to it", lastOrchestrateInput?.budgetRemaining === 10);
+  ok("a supplied budgetRemaining above the ceiling is clamped down to it", (lastOrchestrateInput as OrchestrateInput)?.budgetRemaining === 10);
 }
 
 console.log(`RESULT source-enrich-auth: ${pass} passed, ${fail} failed`);

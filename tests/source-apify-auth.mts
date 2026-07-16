@@ -204,7 +204,8 @@ const statusReq = (query: string) => new NextRequest(`http://localhost/api/sourc
       resolveKeyCalls === 1,
   );
   ok("start: never echoes the stored token in the response", JSON.stringify(startJson).includes("TEST_PLACEHOLDER") === false);
-  ok("start: forwards the validated search criteria to the adapter", lastStartInput?.searchQuery === "typescript engineer");
+  const startInput = lastStartInput as ApifyProfileSearchInput | null;
+  ok("start: forwards the validated search criteria to the adapter", startInput !== null && startInput.searchQuery === "typescript engineer");
 
   statusCalls = 0;
   itemsCalls = 0;

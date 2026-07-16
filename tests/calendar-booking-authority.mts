@@ -238,10 +238,12 @@ try {
     requestId: "req-1",
     provider: "Gmail API",
   });
+  const claimRpc = lastRpc as { name: string; args: Record<string, unknown> } | null;
   ok(
     "claimCalendarBooking calls the exact RPC with the exact argument shape",
-    lastRpc?.name === "claim_calendar_booking" &&
-      JSON.stringify(lastRpc.args) ===
+    claimRpc !== null &&
+      claimRpc.name === "claim_calendar_booking" &&
+      JSON.stringify(claimRpc.args) ===
         JSON.stringify({
           p_workspace_id: "workspace-1",
           p_candidate_id: "candidate-1",
@@ -291,10 +293,12 @@ try {
     externalEventId: "evt-1",
     detail: "Event created.",
   });
+  const reconcileRpc = lastRpc as { name: string; args: Record<string, unknown> } | null;
   ok(
     "reconcileCalendarBooking calls the exact RPC with the exact argument shape",
-    lastRpc?.name === "reconcile_calendar_booking" &&
-      JSON.stringify(lastRpc.args) ===
+    reconcileRpc !== null &&
+      reconcileRpc.name === "reconcile_calendar_booking" &&
+      JSON.stringify(reconcileRpc.args) ===
         JSON.stringify({
           p_workspace_id: "workspace-1",
           p_id: "booking-1",
