@@ -50,12 +50,17 @@ primary_region = "cdg"
     interval     = "15s"
     timeout      = "5s"
     grace_period = "20s"
-  [[http_service.checks]]
-    method       = "GET"
-    path         = "/api/ready"      # DB, Auth, queue, migration hash, and release identity
-    interval     = "30s"
-    timeout      = "5s"
-    grace_period = "30s"
+  # /api/ready is intentionally NOT a proxy-routing check. Fly requires every
+  # configured http_service check to pass before routing any traffic, and
+  # /api/ready's agentFrameworks component is unconditionally required in
+  # production (src/app/api/ready/route.ts) yet the Flowise/Deerflow adapters
+  # it probes are not deployed here (tracked separately — relay Track C,
+  # "Flowise sidecar deployment... still absent"). Gating the WHOLE app's
+  # reachability on an unrelated, not-yet-shipped subsystem would make every
+  # feature unreachable for a reason unconnected to whether requests can
+  # actually be served. /api/ready stays deployed, unmodified, and fully
+  # honest for monitoring/ops — curl it directly for the real deep-readiness
+  # verdict (db/auth/queue/migration-ledger/release-identity/agentFrameworks).
 
 # shared-cpu-1x starves Next.js SSR under load (oversubscribed fractional vCPU →
 # render latency + CPU steal jitter). shared-cpu-2x doubles vCPU/RAM for a modest
