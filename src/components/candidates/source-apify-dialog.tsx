@@ -44,6 +44,8 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
   const [locations, setLocations] = React.useState("");
   const [currentJobTitles, setCurrentJobTitles] = React.useState("");
   const [currentCompanies, setCurrentCompanies] = React.useState("");
+  const [firstNames, setFirstNames] = React.useState("");
+  const [lastNames, setLastNames] = React.useState("");
   const [maxItems, setMaxItems] = React.useState(String(DEFAULT_MAX_ITEMS));
   const [emailSearch, setEmailSearch] = React.useState(false);
   const [starting, setStarting] = React.useState(false);
@@ -70,6 +72,8 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
     setLocations("");
     setCurrentJobTitles("");
     setCurrentCompanies("");
+    setFirstNames("");
+    setLastNames("");
     setMaxItems(String(DEFAULT_MAX_ITEMS));
     setEmailSearch(false);
     setStarting(false);
@@ -108,7 +112,9 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
     const locs = splitList(locations);
     const titles = splitList(currentJobTitles);
     const companies = splitList(currentCompanies);
-    if (!trimmedQuery && !locs.length && !titles.length && !companies.length) {
+    const first = splitList(firstNames);
+    const last = splitList(lastNames);
+    if (!trimmedQuery && !locs.length && !titles.length && !companies.length && !first.length && !last.length) {
       toast({ title: "Enter a search query or at least one filter", variant: "warning" });
       return;
     }
@@ -124,9 +130,12 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
     if (locs.length) criteria.locations = locs;
     if (titles.length) criteria.currentJobTitles = titles;
     if (companies.length) criteria.currentCompanies = companies;
+    if (first.length) criteria.firstNames = first;
+    if (last.length) criteria.lastNames = last;
     if (emailSearch) criteria.profileScraperMode = "Full + email search";
 
-    const label = trimmedQuery || [titles.join(", "), companies.join(", "), locs.join(", ")].filter(Boolean).join(" · ") || "LinkedIn search";
+    const nameLabel = [first.join(" "), last.join(" ")].filter(Boolean).join(" ").trim();
+    const label = trimmedQuery || nameLabel || [titles.join(", "), companies.join(", "), locs.join(", ")].filter(Boolean).join(" · ") || "LinkedIn search";
 
     setStarting(true);
     const res = await actions.startApifyRun(campaignId, criteria);
@@ -196,6 +205,22 @@ export function SourceApifyButton({ campaignId, disabled }: { campaignId: string
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="e.g. Staff Engineer Kubernetes"
+              />
+            </Field>
+            <Field label="First name" htmlFor={`${idBase}-first-names`} hint="Comma-separated. Narrows to exact people.">
+              <Input
+                id={`${idBase}-first-names`}
+                value={firstNames}
+                onChange={(e) => setFirstNames(e.target.value)}
+                placeholder="e.g. Tony"
+              />
+            </Field>
+            <Field label="Last name" htmlFor={`${idBase}-last-names`} hint="Comma-separated. Pair with first name for a named lookup.">
+              <Input
+                id={`${idBase}-last-names`}
+                value={lastNames}
+                onChange={(e) => setLastNames(e.target.value)}
+                placeholder="e.g. Walteur"
               />
             </Field>
             <Field label="Location" htmlFor={`${idBase}-locations`} hint="Comma-separated">
