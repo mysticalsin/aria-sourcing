@@ -16,6 +16,11 @@ export interface OAuthSendRequest {
    *  provider call. Emitted as an X-Aria-Send-Attempt MIME header so an
    *  ambiguous outcome can be matched against the mailbox by a human. */
   attemptId?: string;
+  /** RFC 5322 Message-ID (e.g. "<uuid@domain>") minted by the durable claim
+   *  BEFORE the send and stamped into the MIME headers, so the durable ledger,
+   *  the provider send, and later inbound reply correlation all agree on one
+   *  value. When absent (legacy synchronous path) no Message-ID is stamped. */
+  messageId?: string;
 }
 
 export interface OAuthSendOutcome {
@@ -237,6 +242,9 @@ function buildMimeMessage(req: OAuthSendRequest, rendered: RenderedUnsubscribeEm
     `From: ${fromHeader}`,
     `To: ${req.to}`,
     `Subject: ${req.subject}`,
+    // Durable correlation key: the RFC Message-ID the ledger recorded, so an
+    // inbound reply's In-Reply-To/References threads back to this exact send.
+    ...(req.messageId ? [`Message-ID: ${req.messageId}`] : []),
     `List-Unsubscribe: ${rendered.headers["List-Unsubscribe"]}`,
     `List-Unsubscribe-Post: ${rendered.headers["List-Unsubscribe-Post"]}`,
     // Per-attempt identity for human reconciliation of ambiguous outcomes.

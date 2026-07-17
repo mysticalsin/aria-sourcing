@@ -64,6 +64,9 @@ export interface SendRequest {
    *  provider call. Emitted as an X-Aria-Send-Attempt header so an ambiguous
    *  outcome can be matched against the provider's logs by a human. */
   attemptId?: string;
+  /** RFC 5322 Message-ID ("<uuid@domain>") minted by the durable claim; emitted
+   *  as the Message-ID header so an inbound reply threads back to this send. */
+  messageId?: string;
 }
 
 export interface SendOutcome {
@@ -89,9 +92,11 @@ export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
     };
   }
   const rendered = renderEmailWithUnsubscribe(req.body, req.unsubscribeUrl);
-  const headers: Record<string, string> = req.attemptId
-    ? { ...rendered.headers, "X-Aria-Send-Attempt": req.attemptId }
-    : { ...rendered.headers };
+  const headers: Record<string, string> = {
+    ...rendered.headers,
+    ...(req.attemptId ? { "X-Aria-Send-Attempt": req.attemptId } : {}),
+    ...(req.messageId ? { "Message-ID": req.messageId } : {}),
+  };
   switch (req.provider) {
     case "Resend": {
       const key = process.env.RESEND_API_KEY;

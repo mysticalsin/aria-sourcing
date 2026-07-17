@@ -125,7 +125,13 @@ begin
       ('public.list_loop_events(bigint,integer)',                             'authenticated', true),
       ('public.record_loop_worker_heartbeat(text,text)',                      'service_role',  true),
       ('public.reject_loop_event_mutation()',                                 'owner_only',    false),
-      ('public.seed_sourcing_loop_control()',                                 'owner_only',    true)
+      ('public.seed_sourcing_loop_control()',                                 'owner_only',    true),
+      ('public.enqueue_email_outbound(text,text,text,uuid,text,text,text)',    'authenticated', true),
+      ('public.claim_email_outbound_queued(uuid)',                            'service_role',  true),
+      ('public.record_email_send_message_id(uuid,uuid,text)',                 'service_role',  true),
+      ('public.finalize_email_provider_failure(uuid,uuid,text)',              'service_role',  true),
+      ('public.record_email_delivery_event(uuid,text,text,timestamptz,integer,boolean)', 'service_role', true),
+      ('public.enforce_active_email_approval()',                              'owner_only',    true)
     ) as expected_matrix(signature, allowed_role, security_definer)
   loop
     if to_regprocedure(item.signature) is null then
@@ -245,7 +251,11 @@ begin
       ('public.reap_expired_aria_job_leases(integer)'),
       ('public.reap_expired_agent_framework_leases(integer)'),
       ('public.get_sourcing_loop_controls(uuid)'),
-      ('public.record_loop_worker_heartbeat(text,text)')
+      ('public.record_loop_worker_heartbeat(text,text)'),
+      ('public.claim_email_outbound_queued(uuid)'),
+      ('public.record_email_send_message_id(uuid,uuid,text)'),
+      ('public.finalize_email_provider_failure(uuid,uuid,text)'),
+      ('public.record_email_delivery_event(uuid,text,text,timestamptz,integer,boolean)')
     ) as service_functions(signature)
   loop
     select pg_get_functiondef(to_regprocedure(item.signature)) into function_def;
