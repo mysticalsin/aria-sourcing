@@ -73,13 +73,13 @@ test("manifest preserves parity and freezes the exact deduplicated lifecycle", (
         resolveTestGroup(testManifest, group).length,
       ]),
     ),
-    { pretest: 51, application: 138, posttest: 2, all: 191 },
+    { pretest: 51, application: 139, posttest: 2, all: 192 },
   );
   const commands = resolveTestGroup(testManifest, "all");
   const commandLines = commands.map(({ executable, argv }) => `${executable} ${argv.join(" ")}`);
   assert.equal(
     createHash("sha256").update(commandLines.join("\n")).digest("hex"),
-    "244d605e7b84056a6b8bba871d4a96b9b03bf09943c6c53424f77a4f121a4e14",
+    "a0a2c954f3ccdf9f978fe78ab0893968c618591fb129d56f97b2865d2aca3c0b",
   );
   assert.equal(new Set(commandLines).size, commandLines.length, "canonical lifecycle must be duplicate-free");
   assert.equal(
@@ -122,10 +122,10 @@ test("manifest preserves parity and freezes the exact deduplicated lifecycle", (
       ({ executable, argv }) => `${executable} ${argv.join(" ")}`,
     ),
   ];
-  assert.equal(parityLines.length, 193);
+  assert.equal(parityLines.length, 194);
   assert.equal(
     createHash("sha256").update(parityLines.join("\n")).digest("hex"),
-    "b7c26b08a533d6cbec4a55b43d0a1ec9b5f919d334c57b9ece5c26d2b25776b4",
+    "4460d5387b0191f01e1a55e82e094f2ac8f0320933cf5f8db543eaa3f26557c7",
     "deduplication must preserve the frozen pre-expansion baseline while registering new suites additively",
   );
   assert.ok(
@@ -183,7 +183,7 @@ test("named manifest groups freeze their recursive baselines", () => {
     "framework-adapter": [1, "4228d976b2e63e34f97bf910208ffcf3263da48861744f187eef8781c5cb9f48"],
     "candidate-erasure": [2, "42ee1e6bf280c482f01bcfdb41d601ea8cdaaeb8891a210777901771f56212b7"],
     "owner-recovery": [2, "2ac6a4c9232561d07292eefd046f87d301995becd14048d270972adcbc14ded3"],
-    database: [16, "442c6f4dd7209b91adcfc1c981349150fbffe147aae6e34e52370a504e7e8459"],
+    database: [17, "0b1223b5e4ef922da44abe10c6533a1dd2adc28fb781a73255032786d6c08f24"],
     recovery: [2, "2ac6a4c9232561d07292eefd046f87d301995becd14048d270972adcbc14ded3"],
     obscura: [1, "c3fe29ff86819660733b568917fd0e39d09d275d94261387747da26da852f544"],
     "authority-regression": [9, "6e51deb44286815d3e0f6cf75e59a603b79da3823dfa876a0fc1c030e2b740a4"],
