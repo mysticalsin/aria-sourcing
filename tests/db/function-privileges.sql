@@ -136,7 +136,21 @@ begin
       ('public.record_inbound_email(uuid,text,text,text)',                    'service_role',  true),
       ('public.correlate_inbound_email(uuid,text)',                           'service_role',  true),
       ('public.record_candidate_outcome(uuid,text,text,text,uuid)',           'service_role',  true),
-      ('public.cleanup_erased_candidate_outcomes()',                          'owner_only',    true)
+      ('public.cleanup_erased_candidate_outcomes()',                          'owner_only',    true),
+      ('public.apply_workspace_patch(uuid,timestamptz,text,jsonb,text)',       'service_role',  true),
+      ('public.ingest_requisition(uuid,text,text)',                           'service_role',  true),
+      ('public.record_requisition_parse(uuid,jsonb,jsonb,numeric,boolean)',   'service_role',  true),
+      ('public.record_requisition_campaign(uuid,text)',                       'service_role',  true),
+      ('public.list_workspace_requisitions(integer,integer)',                 'authenticated', true),
+      ('public.begin_provider_run(uuid,text,text,text)',                      'service_role',  true),
+      ('public.settle_provider_run(uuid,boolean)',                            'service_role',  true),
+      ('public.claim_enrichment_budget(uuid,text,text,integer,text)',         'service_role',  true),
+      ('public.settle_enrichment_spend(uuid,integer)',                        'service_role',  true),
+      ('public.release_enrichment_claim(uuid)',                               'service_role',  true),
+      ('public.create_outreach_sequence(uuid,text,text,integer,jsonb)',       'service_role',  true),
+      ('public.activate_outreach_sequence(uuid)',                             'service_role',  true),
+      ('public.stop_outreach_sequence(uuid,text)',                            'service_role',  true),
+      ('public.cleanup_erased_candidate_sequences()',                         'owner_only',    true)
     ) as expected_matrix(signature, allowed_role, security_definer)
   loop
     if to_regprocedure(item.signature) is null then
@@ -264,7 +278,19 @@ begin
       ('public.resolve_inbound_mailbox_route(text)'),
       ('public.record_inbound_email(uuid,text,text,text)'),
       ('public.correlate_inbound_email(uuid,text)'),
-      ('public.record_candidate_outcome(uuid,text,text,text,uuid)')
+      ('public.record_candidate_outcome(uuid,text,text,text,uuid)'),
+      ('public.apply_workspace_patch(uuid,timestamptz,text,jsonb,text)'),
+      ('public.ingest_requisition(uuid,text,text)'),
+      ('public.record_requisition_parse(uuid,jsonb,jsonb,numeric,boolean)'),
+      ('public.record_requisition_campaign(uuid,text)'),
+      ('public.begin_provider_run(uuid,text,text,text)'),
+      ('public.settle_provider_run(uuid,boolean)'),
+      ('public.claim_enrichment_budget(uuid,text,text,integer,text)'),
+      ('public.settle_enrichment_spend(uuid,integer)'),
+      ('public.release_enrichment_claim(uuid)'),
+      ('public.create_outreach_sequence(uuid,text,text,integer,jsonb)'),
+      ('public.activate_outreach_sequence(uuid)'),
+      ('public.stop_outreach_sequence(uuid,text)')
     ) as service_functions(signature)
   loop
     select pg_get_functiondef(to_regprocedure(item.signature)) into function_def;
