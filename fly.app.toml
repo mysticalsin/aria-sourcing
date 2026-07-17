@@ -10,6 +10,7 @@ primary_region = "cdg"
   web                = "node server.js"
   cleanup            = "node scripts/apollo-authority-cleanup-worker.mjs"
   framework_heartbeat = "node scripts/agent-framework-heartbeat-worker.mjs"
+  loop               = "node scripts/sourcing-loop-worker.mjs"
 
 [build]
   dockerfile = "Dockerfile.prod"
@@ -29,6 +30,9 @@ primary_region = "cdg"
   SUPABASE_URL                  = "http://aria-mantu-kong.internal:8000"
   # Inert until a seat goes live (also needs a provider key + verified domain); safe to set now:
   OUTREACH_UNSUBSCRIBE_BASE_URL = "https://aria-mantu-app.fly.dev"
+  # Loop worker → web process, over 6PN (process-group DNS). Used only by the
+  # "loop" process for its minute-level outbound drain; harmless elsewhere.
+  ARIA_WEB_INTERNAL_URL         = "http://web.process.aria-mantu-app.internal:3000"
   # Secrets (fly secrets set): SUPABASE_SERVICE_ROLE_KEY (=FLY_SUPABASE_SERVICE_KEY),
   #   DATA_ENCRYPTION_KEY (=FLY_DATA_ENCRYPTION_KEY), CRON_SECRET (=FLY_CRON_SECRET).
   # Do NOT set NEXT_PUBLIC_ENABLE_DEMO_LOGIN / DEMO_ADMIN_PASSWORD on a real tenant.
@@ -78,5 +82,16 @@ primary_region = "cdg"
 
 [[vm]]
   processes = ["framework_heartbeat"]
+  size      = "shared-cpu-1x"
+  memory    = "256mb"
+
+# Autonomous-loop tick worker (PLAN.md Rock 1). SHIPS DARK: the worker does
+# NOTHING unless ARIA_LOOP_KILL_SWITCH is set to the exact string "false"
+# (fly secrets/env — deliberately NOT set here, so a fresh deploy is inert).
+# When live it reuses the cron dispatch route on the web process, so every
+# send-side guardrail (approval re-verification, suppression, quiet hours,
+# atomic claims) applies verbatim — just minute-level instead of daily.
+[[vm]]
+  processes = ["loop"]
   size      = "shared-cpu-1x"
   memory    = "256mb"

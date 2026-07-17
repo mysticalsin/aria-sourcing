@@ -111,7 +111,21 @@ begin
       ('public.touch_updated_at()',                                           'owner_only',    false),
       ('public.enforce_active_whatsapp_approval()',                           'owner_only',    true),
       ('public.reject_apollo_reconciliation_event_mutation()',               'owner_only',    false),
-      ('public.reject_apollo_erasure_event_mutation()',                     'owner_only',    false)
+      ('public.reject_apollo_erasure_event_mutation()',                     'owner_only',    false),
+      ('public.enqueue_aria_job(uuid,text,text,jsonb,timestamptz,integer)',  'service_role',  true),
+      ('public.claim_due_aria_jobs(text,integer,text[],integer)',            'service_role',  true),
+      ('public.heartbeat_aria_job(uuid,uuid,integer)',                        'service_role',  true),
+      ('public.complete_aria_job(uuid,uuid,text,jsonb,jsonb)',               'service_role',  true),
+      ('public.fail_aria_job(uuid,uuid,text,boolean)',                        'service_role',  true),
+      ('public.requeue_dead_aria_job(uuid)',                                  'authenticated', true),
+      ('public.reap_expired_aria_job_leases(integer)',                        'service_role',  true),
+      ('public.reap_expired_agent_framework_leases(integer)',                 'service_role',  true),
+      ('public.get_sourcing_loop_controls(uuid)',                             'service_role',  true),
+      ('public.set_sourcing_loop_controls(boolean,boolean,boolean,boolean,boolean,integer,integer,integer)', 'authenticated', true),
+      ('public.list_loop_events(bigint,integer)',                             'authenticated', true),
+      ('public.record_loop_worker_heartbeat(text,text)',                      'service_role',  true),
+      ('public.reject_loop_event_mutation()',                                 'owner_only',    false),
+      ('public.seed_sourcing_loop_control()',                                 'owner_only',    true)
     ) as expected_matrix(signature, allowed_role, security_definer)
   loop
     if to_regprocedure(item.signature) is null then
@@ -222,7 +236,16 @@ begin
       ('public.reconcile_candidate_erasure_obligation(uuid,uuid,uuid,integer,text,text,text,text)'),
       ('public.place_candidate_legal_hold(uuid,uuid,text,text,text,text,timestamptz)'),
       ('public.release_candidate_legal_hold(uuid,uuid,uuid,text)'),
-      ('public.resolve_whatsapp_inbound_conversation(uuid,uuid)')
+      ('public.resolve_whatsapp_inbound_conversation(uuid,uuid)'),
+      ('public.enqueue_aria_job(uuid,text,text,jsonb,timestamptz,integer)'),
+      ('public.claim_due_aria_jobs(text,integer,text[],integer)'),
+      ('public.heartbeat_aria_job(uuid,uuid,integer)'),
+      ('public.complete_aria_job(uuid,uuid,text,jsonb,jsonb)'),
+      ('public.fail_aria_job(uuid,uuid,text,boolean)'),
+      ('public.reap_expired_aria_job_leases(integer)'),
+      ('public.reap_expired_agent_framework_leases(integer)'),
+      ('public.get_sourcing_loop_controls(uuid)'),
+      ('public.record_loop_worker_heartbeat(text,text)')
     ) as service_functions(signature)
   loop
     select pg_get_functiondef(to_regprocedure(item.signature)) into function_def;
