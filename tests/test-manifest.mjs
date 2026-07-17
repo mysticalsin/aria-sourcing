@@ -215,6 +215,8 @@ export const testManifest = {
     {"id":"email-durability-db","executable":"bash","argv":["tests/email-durability-db.sh"]},
     {"id":"email-inbound-contract","executable":"tsx","argv":["tests/email-inbound-contract.mts"]},
     {"id":"email-inbound-db","executable":"bash","argv":["tests/email-inbound-db.sh"]},
+    {"id":"email-outcomes-contract","executable":"tsx","argv":["tests/email-outcomes-contract.mts"]},
+    {"id":"email-outcomes-db","executable":"bash","argv":["tests/email-outcomes-db.sh"]},
   ],
   groups: {
     "pretest": [
@@ -409,6 +411,7 @@ export const testManifest = {
       "sourcing-query-policy",
       "email-durability-contract",
       "email-inbound-contract",
+      "email-outcomes-contract",
       "test-manifest-contract",
     ],
     "posttest": [
@@ -493,6 +496,7 @@ export const testManifest = {
       "test-fly-db-volume",
       "email-durability-db",
       "email-inbound-db",
+      "email-outcomes-db",
     ],
     "recovery": [
       "orphan-owner-recovery-contract",

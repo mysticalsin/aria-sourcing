@@ -134,7 +134,9 @@ begin
       ('public.enforce_active_email_approval()',                              'owner_only',    true),
       ('public.resolve_inbound_mailbox_route(text)',                          'service_role',  true),
       ('public.record_inbound_email(uuid,text,text,text)',                    'service_role',  true),
-      ('public.correlate_inbound_email(uuid,text)',                           'service_role',  true)
+      ('public.correlate_inbound_email(uuid,text)',                           'service_role',  true),
+      ('public.record_candidate_outcome(uuid,text,text,text,uuid)',           'service_role',  true),
+      ('public.cleanup_erased_candidate_outcomes()',                          'owner_only',    true)
     ) as expected_matrix(signature, allowed_role, security_definer)
   loop
     if to_regprocedure(item.signature) is null then
@@ -261,7 +263,8 @@ begin
       ('public.record_email_delivery_event(uuid,text,text,timestamptz,integer,boolean)'),
       ('public.resolve_inbound_mailbox_route(text)'),
       ('public.record_inbound_email(uuid,text,text,text)'),
-      ('public.correlate_inbound_email(uuid,text)')
+      ('public.correlate_inbound_email(uuid,text)'),
+      ('public.record_candidate_outcome(uuid,text,text,text,uuid)')
     ) as service_functions(signature)
   loop
     select pg_get_functiondef(to_regprocedure(item.signature)) into function_def;
