@@ -1080,15 +1080,18 @@ test("unknown experience never becomes a false score, prompt fact, or UI consent
     industryExperience: [],
   };
   const scored = scoreCandidate(candidate, campaign.jobAnalysis, campaign.scoringWeights);
+  // Signal-aware scoring (bc31d54): a requested-but-unknown dimension anchors
+  // at UNKNOWN_ANCHOR (30), is excluded from the weighted composite, and says
+  // so — it never silently invents a neutral 50.
   const experience = scored.breakdown.find((item) => item.key === "experience");
-  assert.equal(experience?.score, 50);
-  assert.match(experience?.rationale ?? "", /not provided/i);
+  assert.equal(experience?.score, 30);
+  assert.match(experience?.rationale ?? "", /unknown/i);
   const companyStage = scored.breakdown.find((item) => item.key === "companyStage");
   const industry = scored.breakdown.find((item) => item.key === "industry");
-  assert.equal(companyStage?.score, 50);
-  assert.match(companyStage?.rationale ?? "", /not provided/i);
-  assert.equal(industry?.score, 50);
-  assert.match(industry?.rationale ?? "", /not provided/i);
+  assert.equal(companyStage?.score, 30);
+  assert.match(companyStage?.rationale ?? "", /unknown/i);
+  assert.equal(industry?.score, 30);
+  assert.match(industry?.rationale ?? "", /unknown/i);
 
   const prompt = buildOutreachPrompt({
     candidateName: candidate.name,

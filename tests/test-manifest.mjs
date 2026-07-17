@@ -202,6 +202,7 @@ export const testManifest = {
     {"id":"candidate-erasure-db","executable":"bash","argv":["tests/candidate-erasure-db.sh"]},
     {"id":"candidates-corpus-db","executable":"bash","argv":["tests/candidates-corpus-db.sh"]},
     {"id":"person-model-db","executable":"bash","argv":["tests/person-model-db.sh"]},
+    {"id":"loop-jobs-db","executable":"bash","argv":["tests/loop-jobs-db.sh"]},
     {"id":"cross-channel-cap-postgres","executable":"bash","argv":["tests/cross-channel-cap-postgres.sh"]},
     {"id":"apollo-enrichment-db","executable":"bash","argv":["tests/apollo-enrichment-db.sh"]},
     {"id":"sourcing-learning-db","executable":"bash","argv":["tests/sourcing-learning-db.sh"]},
@@ -210,6 +211,12 @@ export const testManifest = {
     {"id":"agent-framework-provisioning-db","executable":"bash","argv":["tests/agent-framework-provisioning-db.sh"]},
     {"id":"orphan-owner-recovery-db","executable":"bash","argv":["tests/orphan-owner-recovery-db.sh"]},
     {"id":"test-fly-db-volume","executable":"bash","argv":["scripts/test-fly-db-volume.sh"]},
+    {"id":"email-durability-contract","executable":"tsx","argv":["tests/email-durability-contract.mts"]},
+    {"id":"email-durability-db","executable":"bash","argv":["tests/email-durability-db.sh"]},
+    {"id":"email-inbound-contract","executable":"tsx","argv":["tests/email-inbound-contract.mts"]},
+    {"id":"email-inbound-db","executable":"bash","argv":["tests/email-inbound-db.sh"]},
+    {"id":"email-outcomes-contract","executable":"tsx","argv":["tests/email-outcomes-contract.mts"]},
+    {"id":"email-outcomes-db","executable":"bash","argv":["tests/email-outcomes-db.sh"]},
   ],
   groups: {
     "pretest": [
@@ -402,6 +409,9 @@ export const testManifest = {
       "sourcing-agent-contract",
       "sourcing-campaign-lifecycle",
       "sourcing-query-policy",
+      "email-durability-contract",
+      "email-inbound-contract",
+      "email-outcomes-contract",
       "test-manifest-contract",
     ],
     "posttest": [
@@ -475,6 +485,7 @@ export const testManifest = {
       "candidate-erasure-db",
       "candidates-corpus-db",
       "person-model-db",
+      "loop-jobs-db",
       "cross-channel-cap-postgres",
       "apollo-enrichment-db",
       "sourcing-learning-db",
@@ -483,6 +494,9 @@ export const testManifest = {
       "agent-framework-provisioning-db",
       "orphan-owner-recovery-db",
       "test-fly-db-volume",
+      "email-durability-db",
+      "email-inbound-db",
+      "email-outcomes-db",
     ],
     "recovery": [
       "orphan-owner-recovery-contract",

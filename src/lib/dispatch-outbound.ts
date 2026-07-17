@@ -34,6 +34,8 @@ import { assessWhatsAppDispatch, type WhatsAppPermission } from "@/lib/whatsapp-
 import { shouldReopenWhatsAppReview } from "@/lib/whatsapp-review-policy";
 import { publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
+import { performEmailSend } from "@/lib/email-send";
+import { createEmailUnsubscribeLink } from "@/lib/email-unsubscribe";
 
 const WHATSAPP_GATE_CACHE_VERSION = "whatsapp-outbound-gate-v1";
 const WHATSAPP_GATE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
@@ -282,6 +284,138 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           await finish("blocked", { pass: false, reasons: [disclosure.reason ?? "injection-suspected"] });
           continue;
         }
+      }
+
+      // 2c. Email joins the durable outbox (Rock 2). Approval, human-likeness, and
+      // disclosure already cleared above. The service-only claim re-verifies the
+      // approval, suppression, a LIVE domain-verified email seat, the 90-day
+      // window, and the warmup cap in ONE transaction, transitions the outbox row
+      // queued -> dispatching under a delivery_attempt_id (the pre-dispatch trigger
+      // is the final race-safe gate), and mints the RFC Message-ID the send stamps
+      // and a reply threads back to. Never calls a provider from the request path.
+      if (msg.channel === "Email") {
+        const unsubscribe = createEmailUnsubscribeLink();
+        if (!unsubscribe) {
+          await finish("blocked", { pass: false, reasons: ["email-unsubscribe-unavailable"] });
+          continue;
+        }
+
+        const { data: claim, error: claimErr } = await supabase.rpc("claim_email_outbound_queued", {
+          p_message_id: msg.id,
+        });
+        if (claimErr) {
+          safeLog("dispatch-outbound: email claim error", { message: claimErr.message });
+          await finish("failed");
+          continue;
+        }
+        const emailClaim = claim as {
+          allowed?: boolean;
+          reason?: string;
+          ledger_id?: string;
+          delivery_attempt_id?: string;
+          rfc_message_id?: string;
+          operator_email?: string;
+          provider?: string;
+        } | null;
+        if (emailClaim?.allowed !== true) {
+          if (emailClaim?.reason === "not-queued" || emailClaim?.reason === "message-not-found") {
+            // Another worker already owns or completed this row; its state is
+            // authoritative and a losing selector must never downgrade it.
+            continue;
+          }
+          await finish("blocked", { pass: false, reasons: [`guardrail:${emailClaim?.reason ?? "blocked"}`] });
+          continue;
+        }
+        deliveryAttemptId = emailClaim.delivery_attempt_id ?? null;
+        const rfcMessageId = emailClaim.rfc_message_id ?? "";
+        if (
+          !deliveryAttemptId ||
+          !UUID_PATTERN.test(deliveryAttemptId) ||
+          !rfcMessageId ||
+          !emailClaim.operator_email ||
+          !emailClaim.provider ||
+          !emailClaim.ledger_id
+        ) {
+          // A provider call without the DB-issued ownership token / message id
+          // could never be reconciled safely. Leave the claimed row for operator
+          // recovery rather than guessing a terminal state.
+          safeLog("dispatch-outbound: email claim returned no valid ownership token or rfc id");
+          stats.failed++;
+          continue;
+        }
+
+        // Bind the one-click unsubscribe token to the claimed ledger BEFORE any
+        // provider call; a failure finalizes the attempt without sending.
+        const { data: tokenBound, error: tokenBindErr } = await supabase
+          .from("outreach_ledger")
+          .update({ email_unsubscribe_token_hash: unsubscribe.tokenHash })
+          .eq("id", emailClaim.ledger_id)
+          .eq("workspace_id", msg.workspace_id)
+          .is("email_unsubscribe_token_hash", null)
+          .select("id")
+          .maybeSingle();
+        if (tokenBindErr || !tokenBound) {
+          safeLog("dispatch-outbound: email unsubscribe token bind error", { message: tokenBindErr?.message ?? "no ledger row" });
+          await supabase.rpc("finalize_email_provider_failure", {
+            p_message_id: msg.id,
+            p_delivery_attempt_id: deliveryAttemptId,
+            p_reason: "Unsubscribe token storage failed.",
+          });
+          stats.failed++;
+          continue;
+        }
+
+        const outcome = await performEmailSend(supabase, {
+          workspaceId: msg.workspace_id,
+          seatId: msg.seat_id ?? "",
+          provider: emailClaim.provider,
+          operatorEmail: emailClaim.operator_email,
+          to: msg.to_address,
+          subject: msg.subject ?? "",
+          body: msg.body,
+          unsubscribeUrl: unsubscribe.url,
+          attemptId: deliveryAttemptId,
+          rfcMessageId,
+        });
+
+        if (outcome.status === "sent" && outcome.deliveryState === "accepted") {
+          const { data: acceptance, error: acceptanceErr } = await supabase.rpc("record_email_send_message_id", {
+            p_message_id: msg.id,
+            p_delivery_attempt_id: deliveryAttemptId,
+            p_rfc_message_id: rfcMessageId,
+          });
+          const acceptanceObj = acceptance as { allowed?: boolean; reason?: string } | null;
+          if (acceptanceErr || acceptanceObj?.allowed !== true) {
+            // The provider accepted but the durable acceptance record failed: leave
+            // the row dispatching for human recovery, never retry (double-send risk).
+            safeLog("dispatch-outbound: email acceptance reconciliation failed", {
+              message: acceptanceErr?.message ?? acceptanceObj?.reason ?? "unknown",
+            });
+            stats.failed++;
+            continue;
+          }
+          stats.sent++;
+          continue;
+        }
+        if (outcome.deliveryState === "not-sent") {
+          // Provably pre-transport (or an intentional dry-run): the provider never
+          // accepted, so the ledger slot is retryable. outbox -> failed, ledger ->
+          // skipped. A dry-run means the provider is unconfigured.
+          const providerUnconfigured = outcome.status === "dry-run";
+          await supabase.rpc("finalize_email_provider_failure", {
+            p_message_id: msg.id,
+            p_delivery_attempt_id: deliveryAttemptId,
+            p_reason: outcome.detail.slice(0, 512),
+          });
+          stats[providerUnconfigured ? "unconfigured" : "failed"]++;
+          continue;
+        }
+        // deliveryState 'unknown' — a timeout or 5xx may have followed provider
+        // acceptance. Leave the row dispatching (ledger stays claimed) for human
+        // reconciliation via send_attempt_id; retrying could double-contact.
+        safeLog("dispatch-outbound: email result requires reconciliation", { deliveryState: outcome.deliveryState });
+        stats.failed++;
+        continue;
       }
 
       // 2b. WhatsApp has its own legal/provider boundary. A free-form reply

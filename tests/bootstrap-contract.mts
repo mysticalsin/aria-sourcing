@@ -84,6 +84,7 @@ function runBootstrap(options: BootstrapOptions = {}) {
     writeFileSync(psqlLog, "");
     writeFileSync(join(migrations, "0001_first.sql"), "select 1;\n");
     writeFileSync(join(migrations, "0002_second.sql"), "select 2;\n");
+    writeFileSync(join(root, "legacy-table-inventory.txt"), readFileSync(legacyTableInventoryPath));
     for (const file of ["supabase-admin-reconciliation.sql", "legacy-baseline-invariants.sql", "jwt.sql", "auth-owner.sql", "roles.sql"]) {
       writeFileSync(join(reconciliation, file), `select '${file}';\n`);
     }
@@ -192,7 +193,10 @@ exit 0
       MIGRATIONS_DIR: migrations,
       RECONCILIATION_DIR: reconciliation,
       LEGACY_BASELINE_INVARIANTS_FILE: join(reconciliation, "legacy-baseline-invariants.sql"),
-      LEGACY_TABLE_INVENTORY_FILE: join(process.cwd(), "docker/bootstrap/legacy-table-inventory.txt"),
+      // Copied into the temp root: run.fly.sh's unsafe-path guard rejects any
+      // path with characters outside [A-Za-z0-9_./:-], so a checkout whose
+      // absolute path contains spaces must never leak into the env.
+      LEGACY_TABLE_INVENTORY_FILE: join(root, "legacy-table-inventory.txt"),
       LEGACY_BASELINE_EXPECTED_SCHEMA_SHA256_FILE: expectedSchemaDigest,
       RECOVERY_EMPTY_EXPECTED_SCHEMA_SHA256_FILE: expectedEmptySchemaDigest,
       CAPTURED_OWNER_PLAN: capturedOwnerPlan,

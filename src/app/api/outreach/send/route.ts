@@ -1,23 +1,18 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { randomUUID } from "crypto";
-import { sendViaProvider, type SendRequest } from "@/lib/providers";
-import { sendViaGmailApi, sendViaMicrosoftGraph } from "@/lib/email-oauth";
 import { domainVerified } from "@/lib/domain-verification";
 import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
-import type { EmailConnection, Role } from "@/lib/types";
+import type { Role } from "@/lib/types";
 import { can } from "@/lib/rbac";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { safeLog } from "@/lib/log-redact";
 import { gateOutbound } from "@/lib/gate";
-import { encryptSecret, decryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
 import { getOutboundChannelPolicy } from "@/lib/linkedin-policy";
 import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
 import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
 import { dispatchDue } from "@/lib/dispatch-outbound";
-import { createEmailUnsubscribeLink } from "@/lib/email-unsubscribe";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 
@@ -348,236 +343,87 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "dry-run", detail: "Domain not verified (SPF/DKIM/DMARC), dry-run." });
   }
 
-  // 3b. Server-side suppression / do-not-contact gate — enforced BEFORE any send
-  // and before the atomic claim. `suppression_list` (RLS-scoped to the caller's
-  // workspace) is the only DNC source reachable server-side; candidate-level
-  // compliance flags live solely in the client store and cannot be enforced here.
-  // claim_and_record re-checks this atomically; this is explicit defence-in-depth.
-  const emailLc = candidateEmail.toLowerCase();
-  const domainLc = emailLc.split("@")[1] ?? "";
-  const { data: suppRows, error: suppErr } = await supabase
-    .from("suppression_list")
-    .select("type, value, expires_at")
-    .eq("workspace_id", approvalWid)
-    .in("type", ["email", "domain"])
-    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`);
-  if (suppErr) {
-    safeLog("suppression_list check error", { message: suppErr.message, code: suppErr.code });
-    return NextResponse.json({ status: "error", detail: "Suppression check failed." }, { status: 500 });
-  }
-  const suppressed = (suppRows ?? []).some((s) => {
-    const v = String(s.value).toLowerCase();
-    return (s.type === "email" && v === emailLc) || (s.type === "domain" && domainLc !== "" && v === domainLc);
-  });
-  if (suppressed) {
-    return NextResponse.json({ status: "skipped", detail: "Recipient is on the suppression / do-not-contact list." });
-  }
-
-  // Live email is disabled unless every recipient receives a real public
-  // one-click unsubscribe link. There is no provider-only fallback.
-  const unsubscribe = createEmailUnsubscribeLink();
-  if (!unsubscribe) {
-    return NextResponse.json(
-      { status: "error", detail: "Email delivery is unavailable until the unsubscribe endpoint is configured." },
-      { status: 503 },
-    );
-  }
-
-  // 4. Atomic approval + guardrail claim. The function locks the active human
-  // approval and creates the ledger claim in one transaction, so a revoke cannot
-  // land between client-visible approval validation and provider dispatch.
-  const { data: claim, error: claimErr } = await supabase.rpc("claim_email_outbound", {
+  // 4. Durable outbox (Rock 2): email now follows the same enqueue-then-dispatch
+  // shape as WhatsApp. The approved message becomes a queued messages_outbound
+  // row, then the service-only dispatcher re-checks the human approval,
+  // suppression, the live seat, the re-contact window, and the warmup cap inside
+  // one DB claim (claim_email_outbound_queued) — the pre-dispatch trigger being
+  // the final race-safe gate — before any provider call. A closed browser no
+  // longer means no send: the same worker drains the outbox on its own.
+  const { data: queuedData, error: queueErr } = await supabase.rpc("enqueue_email_outbound", {
     p_message_id: payload.messageId,
-    p_body_hash: approvedContentHash,
-    p_approval_scope_hash: approvedScopeHash,
     p_candidate_id: candidateId,
-    p_candidate_email: candidateEmail,
     p_campaign_id: campaignId,
     p_seat_id: seatId,
+    p_recipient: candidateEmail,
+    p_subject: subject,
+    p_body: body,
   });
-  if (claimErr) {
-    safeLog("claim_and_record error", { message: claimErr.message, code: claimErr.code });
-    return NextResponse.json({ status: "error", detail: "Guardrail check failed." }, { status: 500 });
-  }
-  const claimObj = claim as { allowed?: boolean; reason?: string; ledger_id?: string } | null;
-  if (claimObj?.allowed !== true) {
-    return NextResponse.json({ status: "skipped", detail: `Guardrail blocked: ${claimObj?.reason ?? "blocked by guardrails"}` });
-  }
-  // The claim is recorded as 'claimed' (holds the de-dupe slot). We reconcile it
-  // after the provider actually responds: 'sent' on acceptance, 'skipped' for a
-  // proven pre-transport failure (retryable — never counts as contacted), or
-  // 'ambiguous' when the outcome is unknown after transport began. 'ambiguous'
-  // keeps the de-dupe slot (the partial unique indexes include it) and is only
-  // ever released by a human — retrying an unknown acceptance could deliver the
-  // same approved message twice.
-  const ledgerId = claimObj.ledger_id;
-  const reconcile = async (status: "sent" | "skipped" | "ambiguous", reason: string | null) => {
-    if (ledgerId) await supabase.from("outreach_ledger").update({ status, reason }).eq("id", ledgerId);
-  };
-  // Immutable per-attempt identity, generated BEFORE any provider call and
-  // stamped on the claimed row via the service client below (clients hold no
-  // update grant on it). It travels to the provider as an X-Aria-Send-Attempt
-  // header, so a human can match an ambiguous attempt against provider logs.
-  const sendAttemptId = randomUUID();
-
-  // Token hashes are service-only data. Bind this exact recipient token to the
-  // just-claimed ledger before touching any provider; failure releases the claim
-  // and sends nothing.
-  const serviceSupabase = getServiceSupabase();
-  if (!serviceSupabase || !ledgerId) {
-    await reconcile("skipped", "Unsubscribe token storage is unavailable.");
-    return NextResponse.json(
-      { status: "error", detail: "Email delivery is unavailable until unsubscribe storage is configured." },
-      { status: 503 },
-    );
-  }
-  const { data: tokenBound, error: tokenBindErr } = await serviceSupabase
-    .from("outreach_ledger")
-    .update({ email_unsubscribe_token_hash: unsubscribe.tokenHash, send_attempt_id: sendAttemptId })
-    .eq("id", ledgerId)
-    .eq("workspace_id", approvalWid)
-    .is("email_unsubscribe_token_hash", null)
-    .select("id")
-    .maybeSingle();
-  if (tokenBindErr || !tokenBound) {
-    safeLog("email unsubscribe token bind error", { message: tokenBindErr?.message ?? "no ledger row" });
-    await reconcile("skipped", "Unsubscribe token storage failed.");
-    return NextResponse.json(
-      { status: "error", detail: "Email delivery could not prepare the unsubscribe link." },
-      { status: 503 },
-    );
+  const queued = queuedData as { ok?: boolean; status?: string; id?: string; reason?: string } | null;
+  if (queueErr || queued?.ok !== true || queued.status !== "queued" || !queued.id) {
+    if (queued?.reason === "duplicate") {
+      return NextResponse.json({ status: "skipped", detail: "This email is already queued or was sent." });
+    }
+    safeLog("email outbox queue error", {
+      message: queueErr?.message ?? queued?.reason ?? "no result",
+      code: queueErr?.code,
+    });
+    return NextResponse.json({ status: "error", detail: "Could not queue the email." }, { status: 500 });
   }
 
-  // 5. Send — From is the SEAT's verified mailbox, never the request body.
-  // `transportStarted` separates a proven pre-transport throw (connection
-  // lookup, secret decryption — safe to retry) from a throw once a provider
-  // call is possible (the provider may already hold the message — never retry).
-  let transportStarted = false;
-  try {
-    let outcome: {
-      status: "sent" | "dry-run" | "error";
-      deliveryState?: "accepted" | "not-sent" | "unknown";
-      provider: string;
-      detail: string;
-      id?: string;
-    };
-
-    if (seat.provider === "Gmail API" || seat.provider === "Microsoft Graph") {
-      const svc = serviceSupabase;
-      // Defence-in-depth workspace check: resolve the caller's workspace_id via
-      // the RPC (same pattern as hermes/chat resolveVaultSecret), then verify
-      // the service-role result matches — RLS alone is not sufficient when the
-      // service role bypasses row-level policies.
-      const { data: wid } = await supabase.rpc("current_workspace_id");
-      const { data: conn } = await svc
-        ?.from("email_connections")
-        .select("id, access_token, refresh_token, expires_at, scope, account_email, workspace_id")
-        .eq("seat_id", seatId)
-        .single() ?? { data: null };
-      if (!conn || conn.workspace_id !== wid) {
-        await reconcile("skipped", `${seat.provider} mailbox not connected.`);
-        return NextResponse.json({ status: "dry-run", detail: `${seat.provider} mailbox not connected, dry-run.` });
-      }
-      // Tokens are stored encrypted at rest; decrypt for use. Keep the decrypted
-      // original to detect a refresh below.
-      const origAccessToken = decryptSecret(conn.access_token);
-      const connection: EmailConnection = {
-        id: conn.id,
-        seatId,
-        provider: seat.provider,
-        accountEmail: conn.account_email,
-        accessToken: origAccessToken,
-        refreshToken: conn.refresh_token ? decryptSecret(conn.refresh_token) : conn.refresh_token,
-        expiresAt: conn.expires_at,
-        scope: conn.scope,
-        connectedAt: "",
-        updatedAt: "",
-      };
-
-      transportStarted = true;
-      if (seat.provider === "Gmail API") {
-        outcome = await sendViaGmailApi({ from: seat.operator_email, to: candidateEmail, subject, body, unsubscribeUrl: unsubscribe.url, attemptId: sendAttemptId }, connection);
-      } else {
-        outcome = await sendViaMicrosoftGraph({ from: seat.operator_email, to: candidateEmail, subject, body, unsubscribeUrl: unsubscribe.url, attemptId: sendAttemptId }, connection);
-      }
-      // Reconcile an accepted send BEFORE any post-send bookkeeping. A throw
-      // while persisting the refreshed token must never mark a delivered email
-      // 'skipped' — that would free the de-dupe slot and invite a duplicate.
-      if (outcome.status === "sent") await reconcile("sent", null);
-
-      // Persist refreshed token if it changed. Fail closed: never write a refreshed
-      // token in cleartext when production requires encryption at rest but no key is
-      // configured — skip the persist (the send itself already happened above)
-      // rather than silently degrade the stored credential to plaintext.
-      if (
-        svc &&
-        (origAccessToken !== connection.accessToken || conn.expires_at !== connection.expiresAt) &&
-        !encryptionRequiredButMissing()
-      ) {
-        try {
-          await svc
-            .from("email_connections")
-            .update({ access_token: encryptSecret(connection.accessToken), expires_at: connection.expiresAt, updated_at: new Date().toISOString() })
-            .eq("id", connection.id);
-        } catch (persistErr) {
-          // Storage-only failure after the send outcome is known: log and move
-          // on. The next send simply refreshes the token again.
-          safeLog("email refreshed token persist error", { message: persistErr instanceof Error ? persistErr.message : "unknown" });
-        }
-      }
-    } else {
-      transportStarted = true;
-      outcome = await sendViaProvider({
-        provider: seat.provider as SendRequest["provider"],
-        from: seat.operator_email,
-        to: candidateEmail,
-        subject,
-        body,
-        unsubscribeUrl: unsubscribe.url,
-        attemptId: sendAttemptId,
-      });
-      if (outcome.status === "sent") await reconcile("sent", null);
+  const dispatcher = getServiceSupabase();
+  if (dispatcher) {
+    try {
+      await dispatchDue(dispatcher, 1, queued.id);
+    } catch (err) {
+      safeLog("email immediate dispatch error", { message: err instanceof Error ? err.message : "unknown" });
     }
 
-    if (outcome.status === "sent") return NextResponse.json(outcome);
-    if (outcome.status === "dry-run" || outcome.deliveryState === "not-sent") {
-      // Proven pre-transport failure (or an intentional dry-run): the provider
-      // definitively never accepted this message, so the slot is retryable.
-      await reconcile("skipped", outcome.detail);
-      return NextResponse.json(outcome);
+    // A worker can intentionally leave an accepted provider request in
+    // `dispatching` when its durable acceptance record failed. That state is not
+    // queued and must never invite a client retry, which could double-send.
+    const { data: dispatched, error: dispatchedErr } = await dispatcher
+      .from("messages_outbound")
+      .select("status")
+      .eq("id", queued.id)
+      .maybeSingle();
+    if (dispatched?.status === "sent") {
+      return NextResponse.json({ status: "sent", detail: "Sent through the policy-checked email dispatcher." });
     }
-    // Any other failure (deliveryState 'unknown' — or absent, which fails
-    // closed) may follow provider acceptance: a timeout or 5xx can arrive after
-    // the message was queued for delivery. Park the claim as 'ambiguous' so it
-    // keeps holding the de-dupe slot until a human reconciles it against the
-    // provider's logs using the send_attempt_id.
-    await reconcile("ambiguous", outcome.detail);
-    return NextResponse.json(
-      {
-        status: "reconciliation-required",
-        delivery: "email-reconciliation-required",
-        sendAttemptId,
-        detail: "Email provider acceptance is not yet reconciled. Do not retry this message.",
-      },
-      { status: 502 },
-    );
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : "Send failed.";
-    if (transportStarted) {
-      // Unknown post-transport outcome — the provider may have accepted the
-      // message before the failure. Fail closed: hold the slot, never retry.
-      await reconcile("ambiguous", detail);
+    if (dispatched?.status === "blocked") {
+      return NextResponse.json({ status: "skipped", detail: "Policy blocked this email before delivery." });
+    }
+    if (dispatched?.status === "failed") {
+      return NextResponse.json({ status: "error", detail: "Email delivery failed after the policy checks." }, { status: 502 });
+    }
+    if (dispatched?.status === "dispatching") {
       return NextResponse.json(
         {
           status: "reconciliation-required",
           delivery: "email-reconciliation-required",
-          sendAttemptId,
+          messageId: queued.id,
+          detail: "Email provider acceptance is not yet reconciled. Do not retry this message.",
+        },
+        { status: 502 },
+      );
+    }
+    if (dispatchedErr || !dispatched || dispatched.status !== "queued") {
+      safeLog("email immediate dispatch state unavailable", { message: dispatchedErr?.message ?? "no outbox row" });
+      return NextResponse.json(
+        {
+          status: "reconciliation-required",
+          delivery: "email-reconciliation-required",
+          messageId: queued.id,
           detail: "Email delivery state could not be confirmed. Do not retry this message.",
         },
         { status: 502 },
       );
     }
-    await reconcile("skipped", detail); // provably pre-transport → free the slot
-    return NextResponse.json({ status: "error", detail }, { status: 500 });
   }
+  return NextResponse.json({
+    status: "queued",
+    delivery: "email-delivery-queued",
+    messageId: queued.id,
+    detail: "Queued for policy-checked email delivery. No message was sent by this request.",
+  }, { status: 202 });
 }

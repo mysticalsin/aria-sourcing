@@ -762,7 +762,15 @@ ok(
     indexOfOrInfinity(deploy, "fly deploy --config fly.rest.toml") < indexOfOrInfinity(deploy, "ARIA_BOOTSTRAP_PHASE=migrations"),
 );
 ok("post-mutation acceptance requires app readiness", /require_http_200[^\n]*app \/api\/ready[^\n]*\/api\/ready/.test(deploy));
-ok("Fly app deployment has a readiness health check", /path\s*=\s*"\/api\/ready"/.test(appFlyConfig));
+// 082178e: /api/ready is deliberately NOT a proxy-routing check — its
+// agentFrameworks component is required in production while the sidecars are
+// not deployed on Fly, so routing on it would 503 the whole app for an
+// unrelated subsystem. The app routes on /api/health; deep readiness stays
+// monitoring-only (asserted above via require_http_200 in the deploy script).
+ok(
+  "Fly app deployment health check routes on /api/health, not deep readiness",
+  /path\s*=\s*"\/api\/health"/.test(appFlyConfig) && !/path\s*=\s*"\/api\/ready"/.test(appFlyConfig),
+);
 ok("readiness dependency calls have bounded timeouts", (readinessRoute.match(/AbortSignal\.timeout\(3_000\)/g) ?? []).length >= 4);
 ok("app readiness checks the complete ordered migration ledger", /\.order\("filename", \{ ascending: true \}\)/.test(readinessRoute) && /ledgerSha256/.test(readinessRoute) && /expectedMigrationCount/.test(readinessRoute));
 ok("database deployment cannot accept a stopped machine as healthy", /internal_port\s*=\s*5432[\s\S]*services\.tcp_checks/.test(dbFlyConfig));
