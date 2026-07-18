@@ -121,7 +121,7 @@ begin
       ('public.reap_expired_aria_job_leases(integer)',                        'service_role',  true),
       ('public.reap_expired_agent_framework_leases(integer)',                 'service_role',  true),
       ('public.get_sourcing_loop_controls(uuid)',                             'service_role',  true),
-      ('public.set_sourcing_loop_controls(boolean,boolean,boolean,boolean,boolean,integer,integer,integer)', 'authenticated', true),
+      ('public.set_sourcing_loop_controls(boolean,boolean,boolean,boolean,boolean,boolean,integer,integer,integer)', 'authenticated', true),
       ('public.list_loop_events(bigint,integer)',                             'authenticated', true),
       ('public.record_loop_worker_heartbeat(text,text)',                      'service_role',  true),
       ('public.reject_loop_event_mutation()',                                 'owner_only',    false),
@@ -150,7 +150,23 @@ begin
       ('public.create_outreach_sequence(uuid,text,text,integer,jsonb)',       'service_role',  true),
       ('public.activate_outreach_sequence(uuid)',                             'service_role',  true),
       ('public.stop_outreach_sequence(uuid,text)',                            'service_role',  true),
-      ('public.cleanup_erased_candidate_sequences()',                         'owner_only',    true)
+      ('public.cleanup_erased_candidate_sequences()',                         'owner_only',    true),
+      ('public.seed_swarm_roster()',                                          'authenticated', true),
+      ('public.set_swarm_agent(uuid,boolean,integer,boolean,text)',           'authenticated', true),
+      ('public.create_swarm_mission(uuid,text,text,text,jsonb,jsonb,jsonb,jsonb,jsonb,text,text,uuid,uuid)', 'service_role', true),
+      ('public.plan_swarm_assignments(uuid,uuid,jsonb)',                      'service_role',  true),
+      ('public.dispatch_ready_swarm_assignments(integer)',                    'service_role',  true),
+      ('public.record_swarm_checkpoint(uuid,uuid,text,jsonb,jsonb,text,text,text,jsonb)', 'service_role', true),
+      ('public.route_swarm_reviews(integer)',                                 'service_role',  true),
+      ('public.mark_stale_swarm_assignments(integer,integer)',                'service_role',  true),
+      ('public.get_swarm_runtime(uuid)',                                      'service_role',  true),
+      ('public.get_swarm_assignment_envelope(uuid,uuid)',                     'service_role',  true),
+      ('public.answer_swarm_escalation(uuid,text,text)',                      'authenticated', true),
+      ('public.cancel_swarm_mission(uuid,text)',                              'authenticated', true),
+      ('public.list_swarm_missions(integer)',                                 'authenticated', true),
+      ('public.list_swarm_escalations(text,integer)',                         'authenticated', true),
+      ('public.swarm_recompute_mission_status(uuid)',                         'owner_only',    true),
+      ('public.reject_swarm_checkpoint_mutation()',                           'owner_only',    false)
     ) as expected_matrix(signature, allowed_role, security_definer)
   loop
     if to_regprocedure(item.signature) is null then
@@ -290,7 +306,15 @@ begin
       ('public.release_enrichment_claim(uuid)'),
       ('public.create_outreach_sequence(uuid,text,text,integer,jsonb)'),
       ('public.activate_outreach_sequence(uuid)'),
-      ('public.stop_outreach_sequence(uuid,text)')
+      ('public.stop_outreach_sequence(uuid,text)'),
+      ('public.create_swarm_mission(uuid,text,text,text,jsonb,jsonb,jsonb,jsonb,jsonb,text,text,uuid,uuid)'),
+      ('public.plan_swarm_assignments(uuid,uuid,jsonb)'),
+      ('public.dispatch_ready_swarm_assignments(integer)'),
+      ('public.record_swarm_checkpoint(uuid,uuid,text,jsonb,jsonb,text,text,text,jsonb)'),
+      ('public.route_swarm_reviews(integer)'),
+      ('public.mark_stale_swarm_assignments(integer,integer)'),
+      ('public.get_swarm_runtime(uuid)'),
+      ('public.get_swarm_assignment_envelope(uuid,uuid)')
     ) as service_functions(signature)
   loop
     select pg_get_functiondef(to_regprocedure(item.signature)) into function_def;

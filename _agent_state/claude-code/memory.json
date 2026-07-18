@@ -1,17 +1,20 @@
 {
   "recent_learnings": [
     {
-      "date": "2026-07-09",
-      "lesson": "OneDrive ETIMEDOUT reads on fresh files = jammed File Provider; killall OneDrive + reopen recovers; isolate with per-file read probe."
+      "date": "2026-07-17",
+      "lesson": "Port orchestration shapes (hermes swarm) onto existing authority idioms: enforce declared-but-unenforced gates (greenlight, DAG, concurrency, checkpoint auth) in-DB, ship dark."
     },
     {
-      "at": "2026-07-09",
-      "lesson": "OneDrive Files-On-Demand re-evicts node_modules and other-device files; local builds fail ETIMEDOUT — build remotely from git, never trust local disk."
+      "at": "2026-07-17",
+      "lesson": "MSourcing OneDrive checkout: node_modules dehydration blocks tsx/tsc/eslint (>6min, procs vanish); recursive grep/cp/find + background agents hang (lose TCC). Use the single-file Read tool + bare-node .mjs ports of the .mts contract to verify structure."
     },
     {
-      "at": "2026-07-09",
-      "lesson": "Background subagents stalled 4/7 times (stream watchdog); when infra flaky, audit and build inline in main loop instead of retrying spawns."
+      "at": "2026-07-17",
+      "lesson": "Extend the queued->dispatching never-auto-send trigger to a new channel via a SEPARATE channel-guarded trigger, never by editing the existing WhatsApp one (zero blast radius). Mint an email RFC Message-ID from the SENDER mailbox domain (RFC 5322), not the recipient."
     },
+    "Run FULL npm test before claiming a rock green: it surfaced 3 latent gate drifts + a missing declared dep (server-only) absent from local node_modules.",
+    "DB-test harness: pass role-switched temp-row ids across roles via GUC current_setting, not cross-role temp-table SELECT (permission denied for pg_temp table).",
+    "Rocket-fuel doctor MUST run before long planning workflows so Codex availability shapes the plan-review path (learned when Codex hit usage-limit mid-engagement).",
     {
       "at": "2026-07-09",
       "lesson": "Permission denials came in transient bursts; probe with a different action class before assuming deliberate user block."
@@ -39,6 +42,50 @@
     {
       "at": "2026-07-10",
       "lesson": "Fly 'trial has ended, please add a credit card' fails apps create with rc=1 — a billing gate like the GitHub one. Check Fly account billing BEFORE driving a deploy; Tony's card must be added at fly.io/trial."
+    },
+    {
+      "at": "2026-07-16",
+      "lesson": "Concurrent Workflow runs sharing one non-worktree checkout corrupt git: parallel cherry-picks/resets wiped each other's staged state mid-op. Give any git-mutating workflow agent isolation:'worktree', or serialize with no other repo access."
+    },
+    {
+      "at": "2026-07-16",
+      "lesson": "harvestapi/linkedin-profile-search is fuzzy keyword search, not URL fetch: a specific person only surfaces via structured firstNames[]/lastNames[] input (or dev_fusion by-URL). The dialog hid those fields — backend supported them all along."
+    },
+    {
+      "at": "2026-07-16",
+      "lesson": "TS tsc -p narrows a mock-capture let assigned only inside a closure to 'never' at reads. Fix by reading through an `as` assertion (not an annotated-assignment alias, which inherits the never) + explicit !==null guard."
+    },
+    {
+      "at": "2026-07-16",
+      "lesson": "GDPR erasure TOMBSTONES a candidate in place inside workspace_state.state->'candidates' (doesn't remove it); any derived/mirror table MUST skip tombstoned elements (hash-id lookup in the suppression table) or it re-materializes erased PII on the next save."
+    },
+    {
+      "at": "2026-07-16",
+      "lesson": "rocket-fuel rf-codex protocol gate parses only meet-rN labels for the round number; a prefixed label like meet-p1r5 is invisible, so the gate falls back to a stale earlier receipt. Keep meeting labels meet-r<N> continuing one counter per statedir."
+    },
+    {
+      "at": "2026-07-16",
+      "lesson": "MSourcing migration count/tip/ledger-sha + ARIA_EXPECTED_MIGRATION_* are all computed dynamically (deploy-fly.sh, /api/ready, docs-truth); adding a migration needs zero count/tip doc edits — only a new test:db-* + ci.yml job if it adds an RLS/privilege surface."
+    },
+    {
+      "at": "2026-07-16",
+      "lesson": "GitHub Actions budget exhausted on mysticalsin repos: every CI job fails at startup, zero steps, no logs ('Actions budget is preventing further use' annotation). Check the annotation before diagnosing red CI as code failure."
+    },
+    {
+      "at": "2026-07-16",
+      "lesson": "Fly manual deploy of a new migration MUST recompute+stage ARIA_RELEASE_SHA/ARIA_EXPECTED_* secrets (deploy-fly.sh:316-330 node algorithm) BEFORE the app deploy, or /api/ready releaseIdentity/migration go false; deploy-fly-2.sh omits this step."
+    },
+    {
+      "at": "2026-07-16",
+      "lesson": "0033 reject_candidate_erasure_reimport BLOCKS erasing a candidate whose identifier a SURVIVING candidacy shares (the scrubbed-state write reintroduces the just-tombstoned value → 23514). So any derived-layer 'purge tombstoned identity shared by survivor' logic is unreachable dead code — the delete-GC on candidacy delete covers it."
+    },
+    {
+      "at": "2026-07-16",
+      "lesson": "Postgres hoists a STABLE function out of an EXISTS predicate and evaluates it even against zero rows; a helper that RAISES without a workspace secret (candidate_erasure_identifier_hmac) then fires spuriously. Gate it behind a prior no-helper existence check (tombstones exist?) before calling."
+    },
+    {
+      "at": "2026-07-16",
+      "lesson": "Identity resolution: link people ONLY on linkedin.com/in/ profiles. GitHub URLs can't distinguish user vs org; email/phone are shared. Under-link (over-split) rather than ever merge two humans' PII — a false merge is a GDPR incident."
     }
   ]
 }
