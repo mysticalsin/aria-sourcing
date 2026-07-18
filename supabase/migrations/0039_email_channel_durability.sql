@@ -542,13 +542,18 @@ begin
     end if;
     suppress := (p_event_status = 'bounced' and coalesce(p_permanent, false)) or p_event_status = 'complained';
     if suppress and recipient <> '' then
+      -- Reactivate an existing EXPIRED suppression: a fresh hard bounce or
+      -- complaint must never leave the address sendable (Codex P1).
       insert into public.suppression_list(workspace_id, type, value, reason, source)
         values (
           p_workspace_id, 'email', recipient,
           case when p_event_status = 'complained' then 'spam-complaint' else 'hard-bounce' end,
           'system'
         )
-      on conflict (workspace_id, type, value) do nothing;
+      on conflict (workspace_id, type, value)
+        do update set expires_at = null,
+                      reason = excluded.reason,
+                      source = excluded.source;
     end if;
     return json_build_object('recorded', true, 'reason', 'ledger-correlated', 'suppressed', coalesce(suppress, false));
   end if;
@@ -584,6 +589,8 @@ begin
   if suppress then
     recipient := lower(btrim(coalesce(outbound.to_address, '')));
     if recipient <> '' then
+      -- Reactivate an EXPIRED suppression (Codex P1): DO NOTHING would report
+      -- suppressed while leaving a lapsed row sendable.
       insert into public.suppression_list(workspace_id, type, value, reason, source)
         values (
           outbound.workspace_id,
@@ -592,7 +599,10 @@ begin
           case when p_event_status = 'complained' then 'spam-complaint' else 'hard-bounce' end,
           'system'
         )
-      on conflict (workspace_id, type, value) do nothing;
+      on conflict (workspace_id, type, value)
+        do update set expires_at = null,
+                      reason = excluded.reason,
+                      source = excluded.source;
     end if;
   end if;
 
