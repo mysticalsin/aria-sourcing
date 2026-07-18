@@ -90,10 +90,19 @@ const correlate = section(
   "alter function public.record_candidate_outcome",
 );
 ok(
-  "a correlated reply records a reply_received outcome keyed by the inbound id",
-  /perform public\.record_candidate_outcome\(\s*inbound\.workspace_id, ledger\.candidate_id, 'reply_received', 'reply:' \|\| inbound\.id::text, inbound\.id\)/i.test(
+  "a correlated reply records a reply_received outcome keyed by the inbound id (result captured)",
+  /outcome_result :=\s*public\.record_candidate_outcome\(\s*inbound\.workspace_id, ledger\.candidate_id, 'reply_received', 'reply:' \|\| inbound\.id::text, inbound\.id\)/i.test(
     correlate,
   ),
+);
+ok(
+  "an erased-candidate outcome skips stamping candidate_id on the inbound",
+  /if outcome_result->>'reason' = 'candidate-erased' then/i.test(correlate)
+    && /last_processing_error = 'candidate-erased'/i.test(correlate),
+);
+ok(
+  "outcome_recorded reflects the real record_candidate_outcome result",
+  /'outcome_recorded', coalesce\(outcome_result->>'ok', 'false'\)::boolean/i.test(correlate),
 );
 
 // ── grants + registry ──

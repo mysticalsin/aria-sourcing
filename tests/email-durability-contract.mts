@@ -178,10 +178,15 @@ const deliveryEvent = section(
   "revoke all on function public.record_email_delivery_event",
 );
 ok(
-  "a permanent bounce or complaint upserts the suppression list",
+  "a permanent bounce or complaint upserts the suppression list, reactivating an expired row",
   /suppress := \(p_event_status = 'bounced' and coalesce\(p_permanent, false\)\) or p_event_status = 'complained'/i.test(
     deliveryEvent,
-  ) && /insert into public\.suppression_list\([\s\S]*?on conflict \(workspace_id, type, value\) do nothing/i.test(deliveryEvent),
+  ) && /insert into public\.suppression_list\([\s\S]*?on conflict \(workspace_id, type, value\)\s*do update set expires_at = null/i.test(deliveryEvent),
+);
+ok(
+  "a bounce/complaint for a synchronously-sent email correlates via the ledger rfc_message_id and suppresses",
+  /from public\.outreach_ledger l[\s\S]*?and l\.rfc_message_id = p_rfc_message_id/i.test(deliveryEvent)
+    && /'ledger-correlated'/i.test(deliveryEvent),
 );
 ok(
   "record_email_delivery_event and finalize_email_provider_failure are service-only",
@@ -225,13 +230,16 @@ ok(
     dispatch.indexOf('if (msg.channel === "Email")') < dispatch.indexOf("channel-not-dispatchable"),
 );
 
-// ── the send route no longer sends email synchronously ────────────────────
+// ── the interactive send route sends Email synchronously and stamps the
+//    ledger rfc_message_id so a later bounce/complaint can suppress it. The
+//    durable outbox (enqueue/claim_email_outbound_queued) remains the WORKER
+//    path (asserted above via dispatch-outbound.ts); the button is synchronous
+//    by design so the client receives "sent". ───────────────────────────────
 ok(
-  "the send route enqueues email into the durable outbox then drains it (no in-request provider call)",
-  route.indexOf('rpc("enqueue_email_outbound"') >= 0 &&
-    route.indexOf("email-delivery-queued") >= 0 &&
-    route.indexOf("sendViaGmailApi") < 0 &&
-    route.indexOf("sendViaMicrosoftGraph") < 0,
+  "the send route sends Email synchronously via claim_email_outbound + performEmailSend and stamps rfc_message_id",
+  route.indexOf('rpc("claim_email_outbound"') >= 0 &&
+    route.indexOf("performEmailSend(") >= 0 &&
+    route.indexOf("rfc_message_id: rfcMessageId") >= 0,
 );
 
 console.log(`RESULT email-durability-contract: ${pass} passed, ${fail} failed`);

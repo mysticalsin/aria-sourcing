@@ -83,6 +83,14 @@ begin
   if p_candidate_id is null or p_candidate_id !~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$' then
     return json_build_object('ok', false, 'reason', 'invalid-candidate');
   end if;
+  -- Erasure rewrites outreach_ledger.candidate_id to the reserved scrub token
+  -- 'erased:<request-id>:<ledger-id>' (0033). That token was never tombstoned
+  -- (the tombstone HMAC is over the ORIGINAL id), so the tombstone check below
+  -- would MISS it and record a fresh outcome for an erased candidate. Fail
+  -- closed on the reserved prefix (Codex P1).
+  if p_candidate_id like 'erased:%' then
+    return json_build_object('ok', false, 'reason', 'candidate-erased');
+  end if;
   if p_kind is null or p_kind not in (
       'reply_received', 'interested', 'not_interested', 'ooo', 'booked',
       'bounced', 'unsubscribed', 'manual_stage_change', 'sequence_exhausted') then

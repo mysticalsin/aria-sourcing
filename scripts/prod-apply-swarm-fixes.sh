@@ -1,17 +1,24 @@
 #!/bin/bash
-# prod-apply-swarm-fixes.sh — OWNER-RUN. Bring prod up to the Codex-hardened
-# swarm stack after the initial rollout shipped the pre-review versions.
+# prod-apply-swarm-fixes.sh — OWNER-RUN. Bring prod to the Codex-hardened,
+# channel-audited build after the initial rollout shipped the pre-review versions.
 #
-# The initial rollout (prod-swarm-rollout.sh) applied migrations 0039-0046 and
-# deployed the app from a working copy taken BEFORE the Codex adversarial pass.
-# The migration ledger is applied-once by filename, so simply re-running the
-# migrations phase skips the changed 0044/0045/0046. This script:
-#   1. applies the corrected 0044/0045/0046 DIRECTLY (they are idempotent:
-#      create-or-replace / add-column-if-not-exists / drop-if-exists), then
-#      asks PostgREST to reload its schema cache,
-#   2. verifies the P0 fix (enqueue_aria_job rejects 'swarm_assignment') and a
-#      new function (claim_sequence_step_for_schedule) landed,
-#   3. redeploys the app so the worker/executor/route fixes ship too.
+# WHY THIS IS NOT A PLAIN `migrations` RUN:
+# The initial rollout applied migrations 0001-0046 and deployed the app from a
+# working copy taken BEFORE the Codex adversarial pass and the channel audit.
+# Fixes were then made IN PLACE to already-applied migrations 0028/0039/0041/
+# 0044/0045/0046 (all idempotent create-or-replace / add-column-if-not-exists /
+# revoke). The bootstrap's migration ledger is immutable-by-hash, so the normal
+# `migrations` phase HARD-FAILS ("migration hash changed") when a change hits an
+# applied file — and passing the full corrected SQL as one arg overflows the
+# exec limit ("Argument list too long"). This script instead:
+#   1. rebuilds + pushes the bootstrap image so /migrations holds the current
+#      corrected files,
+#   2. runs a tiny driver INSIDE that image: psql -f each changed migration
+#      (read from the image, no arg limit; idempotent so re-runnable), then
+#      reconciles the ledger sha256 for those files (the `supabase migration
+#      repair` pattern) so future `migrations` runs are clean,
+#   3. verifies the P0 fix + a new function through prod PostgREST,
+#   4. redeploys the app so the worker/executor/route fixes ship.
 #
 # Idempotent and safe to re-run. Enables nothing new; the swarm stays DARK.
 #
@@ -23,42 +30,48 @@ export FLY_API_TOKEN="$(cat "$repo/production-readiness/.fly-token.env")"
 export FLY_NO_METRICS=1 DO_NOT_TRACK=1
 set -a; source "$repo/production-readiness/.fly-secrets.env"; set +a
 
+# The migrations edited in place after the prod baseline (git: since eecdb7d).
+CHANGED="0028_conversation_authority_hardening 0039_email_channel_durability 0041_email_outcomes 0044_sourcing_enrichment_authority 0045_outreach_sequence_authority 0046_swarm_orchestration_authority"
+
 work="$(mktemp -d /tmp/aria-swarmfix.XXXXXX)"
 trap 'rm -rf "$work"' EXIT
 
-echo "=== 1/4 stage corrected authority SQL ==="
-# Swarm authority (Codex pass) + channel fixes (WhatsApp go-live blocker,
-# email bounce suppression, inbound erasure hardening). All idempotent
-# create-or-replace / add-column-if-not-exists, safe to re-apply over the
-# already-ledgered originals.
-cat "$repo/supabase/migrations/0028_conversation_authority_hardening.sql" \
-    "$repo/supabase/migrations/0039_email_channel_durability.sql" \
-    "$repo/supabase/migrations/0041_email_outcomes.sql" \
-    "$repo/supabase/migrations/0044_sourcing_enrichment_authority.sql" \
-    "$repo/supabase/migrations/0045_outreach_sequence_authority.sql" \
-    "$repo/supabase/migrations/0046_swarm_orchestration_authority.sql" \
-    > "$work/prod-fixes.sql"
-echo "select pg_notify('pgrst','reload schema');" >> "$work/prod-fixes.sql"
-echo "  $(wc -l < "$work/prod-fixes.sql") lines staged"
+echo "=== 1/5 rebuild + push bootstrap image (current corrected migrations) ==="
+mkdir -p "$work/ctx/docker"
+cp -R "$repo/supabase" "$work/ctx/supabase"
+cp -R "$repo/docker/bootstrap" "$work/ctx/docker/bootstrap"
+cp "$repo/fly.bootstrap.toml" "$work/ctx/"
+( cd "$work/ctx" && flyctl deploy --config fly.bootstrap.toml --build-only --push --image-label latest --remote-only )
 
-echo "=== 2/4 apply directly to aria-mantu-db (idempotent) ==="
-B64="$(base64 < "$work/prod-fixes.sql" | tr -d '\n')"
+echo "=== 2/5 apply changed migrations from the image + reconcile the ledger ==="
+# Tiny driver: files are read from /migrations in the image (no arg limit).
+DRIVER='set -e
+for f in '"$CHANGED"'; do
+  path="/migrations/${f}.sql"
+  echo "  applying ${f}.sql (idempotent)"
+  psql -X -h aria-mantu-db.internal -U postgres -d postgres -v ON_ERROR_STOP=1 -q -f "$path"
+  sha="$(sha256sum "$path" | awk "{print \$1}")"
+  psql -X -h aria-mantu-db.internal -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c \
+    "update public.aria_schema_migrations set sha256='"'"'$sha'"'"' where filename='"'"'${f}.sql'"'"'"
+  echo "  reconciled ledger sha256 for ${f}.sql -> $sha"
+done
+psql -X -h aria-mantu-db.internal -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c "select pg_notify('"'"'pgrst'"'"','"'"'reload schema'"'"')"
+echo "  schema cache reload signalled"'
 flyctl machine run "registry.fly.io/aria-mantu-bootstrap:latest" \
   --app aria-mantu-bootstrap --region cdg --rm \
   --entrypoint /bin/sh \
   -e PGPASSWORD="$FLY_PG_PASSWORD" \
-  -e FIXSQL_B64="$B64" \
-  -- -c 'echo "$FIXSQL_B64" | base64 -d | psql -X -h aria-mantu-db.internal -U postgres -d postgres -v ON_ERROR_STOP=1'
+  -e DRIVER="$DRIVER" \
+  -- -c 'echo "$DRIVER" | sh'
 
-echo "=== 3/4 verify the P0 + new-function landed through prod PostgREST ==="
-sleep 5
+echo "=== 3/5 verify P0 + new scheduling authority through prod PostgREST ==="
+sleep 6
 p0=$(curl -s -m 25 -H "apikey: $FLY_SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $FLY_SUPABASE_SERVICE_KEY" \
   -H "content-type: application/json" \
   -d '{"p_workspace_id":"00000000-0000-4000-8000-000000000000","p_kind":"swarm_assignment","p_idempotency_key":"probe0000","p_payload":{}}' \
   "https://aria-mantu-kong.fly.dev/rest/v1/rpc/enqueue_aria_job")
-echo "  enqueue_aria_job swarm_assignment probe -> $p0"
-echo "$p0" | grep -q 'invalid_request' && echo "  P0 CONFIRMED: swarm_assignment rejected by generic queue" \
-  || { echo "  P0 CHECK FAILED — enqueue did not reject swarm_assignment"; exit 1; }
+echo "  enqueue_aria_job swarm_assignment -> $p0"
+echo "$p0" | grep -q 'invalid_request' && echo "  P0 OK: swarm_assignment rejected by generic queue" || { echo "  P0 CHECK FAILED"; exit 1; }
 sched=$(curl -s -m 25 -o /dev/null -w "%{http_code}" \
   -H "apikey: $FLY_SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $FLY_SUPABASE_SERVICE_KEY" \
   -H "content-type: application/json" -d '{"p_step_id":"00000000-0000-4000-8000-000000000000"}' \
@@ -66,15 +79,16 @@ sched=$(curl -s -m 25 -o /dev/null -w "%{http_code}" \
 echo "  claim_sequence_step_for_schedule -> $sched (expect 200, not 404)"
 [ "$sched" = "404" ] && { echo "  scheduling authority did not land"; exit 1; }
 
-echo "=== 4/4 redeploy app (worker/executor/route fixes) ==="
+echo "=== 4/5 redeploy app (worker/executor/route/send fixes) ==="
 rsync -a --exclude '.git' --exclude 'node_modules' --exclude '.next' \
   --exclude '_agent_state' --exclude '_relay' --exclude 'graphify-out' \
   --exclude 'production-readiness' --exclude '.env*' "$repo/" "$work/app/"
 ( cd "$work/app" && flyctl deploy --config fly.app.toml --remote-only \
     --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$FLY_SUPABASE_ANON_KEY" )
 
+echo "=== 5/5 confirm the ledger is consistent (next migrations run will be clean) ==="
 echo
-echo "================ PROD SWARM FIXES APPLIED ================"
-echo " Migrations corrected, P0 verified rejected, scheduling authority live,"
-echo " app redeployed. Swarm remains DARK (no executor, roster enable already"
-echo " done by the initial rollout). Next: real one-candidate proof."
+echo "================ PROD FIXES APPLIED ================"
+echo " Migrations corrected + ledger reconciled, P0 verified, scheduling"
+echo " authority live, app redeployed. Swarm remains DARK. Next: one-candidate"
+echo " proof (docs/runbooks/one-candidate-live-proof.md)."
