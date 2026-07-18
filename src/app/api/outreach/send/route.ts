@@ -414,9 +414,15 @@ export async function POST(req: NextRequest) {
     await reconcile("skipped", "Send service unavailable.");
     return NextResponse.json({ status: "error", detail: "Email delivery is unavailable (service client)." }, { status: 503 });
   }
+  // The RFC 5322 Message-ID travels in the MIME header AND is stamped on the
+  // ledger so a later bounce/complaint delivery webhook can correlate this
+  // synchronous send (which never creates a messages_outbound row) and suppress
+  // the address. Stamped before the provider call so even an ambiguous outcome
+  // stays correlatable.
+  const rfcMessageId = `<${sendAttemptId}@${seat.operator_email.split("@")[1] ?? "mail"}>`;
   const { data: tokenBound, error: tokenBindErr } = await serviceSupabase
     .from("outreach_ledger")
-    .update({ email_unsubscribe_token_hash: unsubscribe.tokenHash, send_attempt_id: sendAttemptId })
+    .update({ email_unsubscribe_token_hash: unsubscribe.tokenHash, send_attempt_id: sendAttemptId, rfc_message_id: rfcMessageId })
     .eq("id", ledgerId)
     .eq("workspace_id", approvalWid)
     .is("email_unsubscribe_token_hash", null)
@@ -439,7 +445,7 @@ export async function POST(req: NextRequest) {
     body,
     unsubscribeUrl: unsubscribe.url,
     attemptId: sendAttemptId,
-    rfcMessageId: `<${sendAttemptId}@${seat.operator_email.split("@")[1] ?? "mail"}>`,
+    rfcMessageId,
   });
 
   if (outcome.status === "sent" && outcome.deliveryState === "accepted") {

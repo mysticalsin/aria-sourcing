@@ -1,3 +1,5 @@
+import { timingSafeEqual } from "node:crypto";
+
 import { NextResponse, type NextRequest } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import { dispatchDue } from "@/lib/dispatch-outbound";
@@ -13,7 +15,16 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET ?? "";
-  if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
+  // Constant-time compare so the CRON_SECRET can't be recovered via a timing
+  // side channel on the bearer check.
+  const presented = req.headers.get("authorization") ?? "";
+  const expected = `Bearer ${secret}`;
+  const presentedBuf = Buffer.from(presented);
+  const expectedBuf = Buffer.from(expected);
+  const authOk = secret !== ""
+    && presentedBuf.length === expectedBuf.length
+    && timingSafeEqual(presentedBuf, expectedBuf);
+  if (!authOk) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
   const supabase = getServiceSupabase();
