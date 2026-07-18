@@ -316,6 +316,10 @@ export async function executeClaimedSwarmJob(client, configuration, job, fetcher
   }
 
   const checkpoint = executed.checkpoint;
+  // record_swarm_checkpoint is the WHOLE commit: it verifies the live lease,
+  // records the checkpoint, consumes this job as succeeded, and mints any
+  // in_progress/handoff continuation — all in one DB transaction (a crash
+  // between separate record/complete calls used to strand the chain).
   const recorded = await client.rpc("record_swarm_checkpoint", {
     p_job_id: job.id,
     p_lease_id: job.lease_id,
@@ -338,33 +342,7 @@ export async function executeClaimedSwarmJob(client, configuration, job, fetcher
     return { status: "record_failed", reason };
   }
 
-  // Continuation rides the transactional outbox: an in_progress/handoff
-  // checkpoint completes THIS job while enqueueing the next execution cycle
-  // in the same transaction, so the chain cannot be silently dropped.
-  const followOn = checkpoint.state === "in_progress" || checkpoint.state === "handoff"
-    ? [{
-        kind: "swarm_assignment",
-        idempotency_key: `swarm:${envelope.assignment_id}:job:${job.id}:next`,
-        payload: {
-          assignment_id: envelope.assignment_id,
-          mission_id: envelope.mission_id,
-          attempt: envelope.continuation?.attempt ?? 0,
-        },
-      }]
-    : [];
-
-  const completed = await client.rpc("complete_aria_job", {
-    p_job_id: job.id,
-    p_lease_id: job.lease_id,
-    p_result_sha256: null,
-    p_events: [],
-    p_enqueue: followOn,
-  });
-  if (completed.error || completed.data !== true) {
-    return { status: "complete_failed", reason: completed.error?.code ?? "not_completed" };
-  }
-
-  return { status: "ok", state: checkpoint.state, continued: followOn.length > 0 };
+  return { status: "ok", state: checkpoint.state, continued: recorded.data?.continued === true };
 }
 
 export async function runSwarmOrchestratorTick(client, configuration, environment, fetcher = fetch) {
@@ -397,17 +375,24 @@ export async function runSwarmOrchestratorTick(client, configuration, environmen
 
   let claimed = 0;
   let executed = 0;
+  // Small batch + per-job lease heartbeat: serial execution of a batch must
+  // never let a later job's lease expire while an earlier one is at the LLM.
   const claim = await client.rpc("claim_due_aria_jobs", {
     p_worker_id: configuration.workerId,
     p_lease_seconds: 120,
     p_kinds: [...HANDLER_KINDS],
-    p_limit: 10,
+    p_limit: 3,
   });
   if (claim.error) {
     failureCodes.push(`claim:${claim.error.code}`);
   } else if (Array.isArray(claim.data)) {
     claimed = claim.data.length;
     for (const job of claim.data) {
+      await client.rpc("heartbeat_aria_job", {
+        p_job_id: job.id,
+        p_lease_id: job.lease_id,
+        p_lease_seconds: 120,
+      });
       const outcome = await executeClaimedSwarmJob(client, configuration, job, fetcher);
       if (outcome.status === "ok") {
         executed += 1;
