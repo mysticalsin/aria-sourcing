@@ -238,3 +238,46 @@ drafts; email sends need a hash+scope-bound human approval re-verified at claim)
 - Operator surface for outbound rows stranded in 'dispatching' after an accepted-
   but-unrecorded provider send (both channels).
 - Suppression re-check inside claim_email_outbound (close the route-level TOCTOU).
+
+## Codex adversarial loop on the channel fixes — 5 rounds (2026-07-18)
+
+Ran Codex round after round against the WhatsApp/email fixes. Each pass found
+progressively narrower defects; every one was real. Closed and re-proven each time.
+
+- **Round 1:** WhatsApp domain_verified drop + cron constant-time = correct.
+  Found: 0039 suppression ON CONFLICT DO NOTHING left an EXPIRED suppression
+  sendable; 0041 erasure guard ineffective (checked the scrub token, not the
+  original id). Both fixed.
+- **Round 2:** erased '%' prefix would falsely reject a legit 'erased:external-123';
+  suppression replay reset an admin's expiry. Fixed: exact scrub-token regex
+  (erased:<uuid>:<uuid>); event-new gating.
+- **Round 3:** ledger fallback had no receipt so it couldn't dedup replays;
+  delivery key omitted is_permanent. Fixed: new locked-down
+  email_ledger_delivery_receipts table keyed incl. is_permanent.
+- **Round 4:** messages_outbound branch still omitted is_permanent; receipt
+  growth unbounded; contract could pass with a gate removed. Fixed: named
+  is_permanent key + converge DO block; scheduled receipt GC; per-branch locks.
+- **Round 5:** DO block over-broad (dropped any key lacking is_permanent);
+  future-dated event dodged the age check. Fixed: exact-column match; future-skew
+  bound.
+
+**Lessons:**
+- *A migration ledger is immutable by hash. NEVER edit an applied migration —
+  the prod bootstrap RAISES 'migration hash changed'. Fixes to applied
+  migrations are either new migrations or a deliberate reconcile (apply
+  idempotent DDL + repair the ledger sha256). Editing 0028-0046 in place after
+  they were applied is what forced the reconcile-based prod-apply-swarm-fixes.sh.*
+- *Idempotency has to cover SIDE EFFECTS, not just the primary write. An event
+  whose primary insert is a no-op on replay must also make its suppression
+  mutation a no-op — gate the side effect on the insert's row_count / a receipt.*
+- *A reserved prefix isn't reserved unless enforced at every boundary. Match the
+  exact structure (uuid:uuid), not the prefix, or a legit value collides.*
+- *Time-window guards need BOTH bounds. An age check that only rejects old
+  events lets a future-dated one through with negative age.*
+- *When dropping/replacing a constraint programmatically, match by exact column
+  set, never by name or by "lacks column X" — or you can silently drop an
+  unrelated integrity constraint.*
+- *Adversarial review pays compounding dividends: 5 rounds turned a "looks fine"
+  set of fixes into ones with proven idempotency, GDPR-safety, and replay
+  closure. Cost: cheap. Value: the difference between fail-safe-by-luck and
+  correct-by-construction.*
