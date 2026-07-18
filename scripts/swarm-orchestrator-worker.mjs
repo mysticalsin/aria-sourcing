@@ -43,7 +43,9 @@ const SHA1_RE = /^[0-9a-f]{40}$/;
 const WORKER_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
 const DEFAULT_TICK_MS = 30_000;
 const DEFAULT_TIMEOUT_MS = 10_000;
-const EXECUTOR_TIMEOUT_MS = 55_000;
+// Must stay under the 120s job lease so a live execution can never outlast
+// its own lease and be double-claimed.
+const EXECUTOR_TIMEOUT_MS = 100_000;
 const RPC_RESPONSE_BYTES = 256_000;
 const EXECUTOR_RESPONSE_BYTES = 128_000;
 const HANDLER_KINDS = Object.freeze(["swarm_assignment"]);
