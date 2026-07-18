@@ -28,6 +28,12 @@ export const dynamic = "force-dynamic";
 
 const WEBHOOK_MAX_BODY_BYTES = 1_000_000;
 const SECRET = () => process.env.EMAIL_DELIVERY_WEBHOOK_SECRET ?? "";
+// Replay horizon: reject events older than this. It MUST stay shorter than the
+// dedup receipt retention floor (90 days) so a receipt always outlives any
+// event the webhook will still process — a replay of an event older than the
+// horizon is refused outright, so a garbage-collected receipt can never be
+// re-processed. Providers deliver bounce/complaint events within hours/days.
+const EVENT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 const EventSchema = z.object({
   workspaceId: z.string().uuid(),
@@ -76,7 +82,15 @@ export async function POST(req: NextRequest) {
 
   let recorded = 0;
   let failed = 0;
+  let skippedStale = 0;
+  const now = Date.now();
   for (const event of parsed.events) {
+    // Refuse events older than the replay horizon: beyond it the dedup receipt
+    // may have been garbage-collected, so re-processing could reopen a replay.
+    if (now - Date.parse(event.occurredAt) > EVENT_MAX_AGE_MS) {
+      skippedStale += 1;
+      continue;
+    }
     const { data, error } = await supabase.rpc("record_email_delivery_event", {
       p_workspace_id: event.workspaceId,
       p_rfc_message_id: event.rfcMessageId,
@@ -97,7 +111,7 @@ export async function POST(req: NextRequest) {
   // Any failure returns 503 so the adapter retries the batch; the RPC is
   // idempotent, so a redelivered event is a no-op.
   if (failed > 0) {
-    return NextResponse.json({ ok: false, recorded, failed }, { status: 503 });
+    return NextResponse.json({ ok: false, recorded, failed, skippedStale }, { status: 503 });
   }
-  return NextResponse.json({ ok: true, recorded });
+  return NextResponse.json({ ok: true, recorded, skippedStale });
 }

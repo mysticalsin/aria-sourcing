@@ -194,11 +194,15 @@ ok(
     && /on conflict on constraint email_delivery_events_dedupe_uniq do nothing/i.test(deliveryEvent),
 );
 ok(
-  "BOTH correlation branches suppress only on a genuinely new event (replay-idempotent)",
-  // messages_outbound branch: gated on the delivery-event insert row_count
-  /get diagnostics event_is_new = row_count;[\s\S]*?if suppress and event_is_new = 1 then/i.test(deliveryEvent)
-    // ledger branch: gated on a durable receipt insert row_count
-    && /insert into public\.email_ledger_delivery_receipts\([\s\S]*?on conflict \(workspace_id, rfc_message_id, event_status, is_permanent, provider_occurred_at\) do nothing;\s*get diagnostics event_is_new = row_count;\s*suppress :=[\s\S]*?if suppress and event_is_new = 1 and recipient/i.test(deliveryEvent),
+  "the ledger branch suppresses only on a genuinely new receipt (replay-idempotent)",
+  /insert into public\.email_ledger_delivery_receipts\([\s\S]*?on conflict \(workspace_id, rfc_message_id, event_status, is_permanent, provider_occurred_at\) do nothing;\s*get diagnostics event_is_new = row_count;\s*suppress :=[\s\S]*?if suppress and event_is_new = 1 and recipient/i.test(deliveryEvent),
+);
+ok(
+  "the messages_outbound branch suppresses only on a genuinely new delivery event (replay-idempotent)",
+  // the delivery-event insert's row_count gates the outbound suppression that
+  // reads outbound.to_address — asserted as one contiguous block so removing
+  // the gate cannot pass by matching the ledger branch.
+  /on conflict on constraint email_delivery_events_dedupe_uniq do nothing;\s*get diagnostics event_is_new = row_count;[\s\S]*?if suppress and event_is_new = 1 then\s*recipient := lower\(btrim\(coalesce\(outbound\.to_address/i.test(deliveryEvent),
 );
 ok(
   "the ledger dedup receipts table is force-RLS + postgres-only with an is_permanent key, and has a bounded cleanup",

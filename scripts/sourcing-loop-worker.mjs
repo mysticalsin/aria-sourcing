@@ -205,6 +205,11 @@ export async function runSourcingLoopTick(client, configuration, environment, fe
   const frameworkReap = await client.rpc("reap_expired_agent_framework_leases", { p_limit: 50 });
   if (frameworkReap.error) failureCodes.push(`framework_reap:${frameworkReap.error.code}`);
 
+  // Bound the email delivery-receipt dedup spine (default 180-day retention,
+  // floored at 90 in-DB). Keeps the table from growing without limit.
+  const receiptGc = await client.rpc("cleanup_email_ledger_delivery_receipts", { p_retention_days: 180 });
+  if (receiptGc.error) failureCodes.push(`receipt_gc:${receiptGc.error.code}`);
+
   const dispatch = await drainOutbound(configuration, fetcher);
   if (dispatch.status !== "ok" && dispatch.status !== "unconfigured") {
     failureCodes.push(`dispatch:${dispatch.status}`);
