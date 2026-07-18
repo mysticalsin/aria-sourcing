@@ -64,6 +64,9 @@ create table if not exists public.outreach_sequence_steps (
                  'waiting', 'due', 'scheduled', 'sent', 'skipped', 'cancelled', 'expired', 'manual_task')),
   scheduled_at  timestamptz,
   sent_at       timestamptz,
+  -- The outbound this step handed to the send path, so stop/erasure can
+  -- cancel a still-queued send (Codex P1-19). Null until scheduled.
+  queued_outbound_id uuid,
   unique (sequence_id, ordinal)
 );
 
@@ -76,8 +79,11 @@ alter table public.outreach_sequence_steps enable row level security;
 alter table public.outreach_sequence_steps force row level security;
 revoke all on public.outreach_sequences from public, anon, authenticated, service_role, authenticator;
 revoke all on public.outreach_sequence_steps from public, anon, authenticated, service_role, authenticator;
-grant select on public.outreach_sequences to authenticated;
-grant select on public.outreach_sequence_steps to authenticated;
+-- No direct table reads (Codex P2-22): sequence bodies are outreach content —
+-- member visibility ships as a bounded RPC alongside the (pre-enable)
+-- scheduling authority.
+revoke all on public.outreach_sequences from authenticated;
+revoke all on public.outreach_sequence_steps from authenticated;
 drop policy if exists outreach_sequences_owner_access on public.outreach_sequences;
 create policy outreach_sequences_owner_access on public.outreach_sequences
   for all to postgres, supabase_admin using (true) with check (true);
@@ -136,6 +142,19 @@ begin
   if not found then return json_build_object('ok', false, 'reason', 'not-found'); end if;
   if seq.status <> 'pending_approval' then return json_build_object('ok', false, 'reason', 'not-pending'); end if;
 
+  -- The HARD OWNER GATE, enforced in the authority itself (Codex P1-17):
+  -- no service-role component can activate a sequence while the workspace
+  -- switchboard has sequences disabled or the kill switch engaged.
+  if not exists (
+    select 1 from public.sourcing_loop_controls controls
+     where controls.workspace_id = seq.workspace_id
+       and controls.kill_switch = false
+       and controls.sequences_enabled = true
+     for share
+  ) then
+    return json_build_object('ok', false, 'reason', 'sequences_disabled');
+  end if;
+
   -- Every step must have an unrevoked human approval with matching hashes.
   select count(*) into unapproved
     from public.outreach_sequence_steps s
@@ -184,12 +203,112 @@ begin
    where id = p_sequence_id and status in ('active', 'paused_ambiguous', 'pending_approval');
   get diagnostics updated = row_count;
   if updated = 0 then return json_build_object('ok', false, 'reason', 'not-stoppable'); end if;
+  -- Cancel a still-queued outbound for any scheduled step before cancelling
+  -- the step (Codex P1-19): a stopped ladder must not leave a send in flight.
+  update public.messages_outbound mo
+     set status = 'cancelled', updated_at = now()
+    from public.outreach_sequence_steps s
+   where s.sequence_id = p_sequence_id
+     and s.queued_outbound_id = mo.id
+     and s.status = 'scheduled'
+     and mo.status in ('queued', 'blocked');
   update public.outreach_sequence_steps set status = 'cancelled'
    where sequence_id = p_sequence_id and status in ('waiting', 'due', 'scheduled');
   return json_build_object('ok', true, 'status', new_status);
 end; $$;
 revoke all on function public.stop_outreach_sequence(uuid, text) from public, anon, authenticated, authenticator;
 grant execute on function public.stop_outreach_sequence(uuid, text) to service_role;
+
+-- ---------------------------------------------------------------------------
+-- 4b. claim_sequence_step_for_schedule — the scheduling authority (Codex
+--     P1-20: previously referenced in comments but never defined). A due step
+--     may only be claimed for scheduling when, atomically under locks:
+--       * the workspace switchboard still allows sequences (hard owner gate),
+--       * the sequence is still 'active',
+--       * a live, human, unrevoked outreach approval still matches THIS step's
+--         stored message_id + body_hash + scope_hash (approve-once re-verified
+--         at send time, never trusted from activation),
+--       * the candidate is not suppressed,
+--       * the step is actually due (scheduled_at <= now or ordinal 0).
+--     It flips the step to 'scheduled' and returns the body the caller hands to
+--     the EXISTING send path (claim_email_outbound / WhatsApp claim). It mints
+--     NO new approval and NO new send authority.
+-- ---------------------------------------------------------------------------
+create or replace function public.claim_sequence_step_for_schedule(p_step_id uuid) returns json
+language plpgsql security definer set search_path = pg_catalog, public, pg_temp as $$
+declare step public.outreach_sequence_steps%rowtype; seq public.outreach_sequences%rowtype;
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then return json_build_object('ok', false, 'reason', 'service-only'); end if;
+
+  select * into step from public.outreach_sequence_steps where id = p_step_id for update;
+  if not found then return json_build_object('ok', false, 'reason', 'not-found'); end if;
+  if step.status <> 'due' then return json_build_object('ok', false, 'reason', 'not-due'); end if;
+
+  select * into seq from public.outreach_sequences where id = step.sequence_id for update;
+  if not found or seq.status <> 'active' then return json_build_object('ok', false, 'reason', 'sequence-not-active'); end if;
+
+  -- Hard owner gate, re-checked at schedule time.
+  if not exists (
+    select 1 from public.sourcing_loop_controls controls
+     where controls.workspace_id = seq.workspace_id
+       and controls.kill_switch = false
+       and controls.sequences_enabled = true
+     for share
+  ) then
+    return json_build_object('ok', false, 'reason', 'sequences_disabled');
+  end if;
+
+  -- Live approval re-verification against THIS step's stored identity.
+  if not exists (
+    select 1 from public.outreach_approvals a
+     where a.workspace_id = seq.workspace_id
+       and a.message_id = step.message_id
+       and a.body_hash = step.body_hash
+       and a.approval_scope_hash = step.scope_hash
+       and a.approval_source = 'human'
+       and a.revoked_at is null
+  ) then
+    return json_build_object('ok', false, 'reason', 'approval-revoked');
+  end if;
+
+  -- Suppression check (channel-aware): a suppressed candidate never schedules.
+  if exists (
+    select 1 from public.suppression_list sl
+     where sl.workspace_id = seq.workspace_id
+       and sl.candidate_id = seq.candidate_id
+  ) then
+    return json_build_object('ok', false, 'reason', 'suppressed');
+  end if;
+
+  update public.outreach_sequence_steps
+     set status = 'scheduled', scheduled_at = now()
+   where id = p_step_id;
+
+  return json_build_object(
+    'ok', true, 'reason', 'scheduled',
+    'step_id', step.id, 'sequence_id', seq.id, 'ordinal', step.ordinal,
+    'channel', step.channel, 'message_id', step.message_id,
+    'candidate_id', seq.candidate_id, 'workspace_id', seq.workspace_id,
+    'body', step.body
+  );
+end; $$;
+revoke all on function public.claim_sequence_step_for_schedule(uuid) from public, anon, authenticated, authenticator;
+grant execute on function public.claim_sequence_step_for_schedule(uuid) to service_role;
+
+-- Bind a scheduled step to the outbound it produced, so stop can reach it.
+create or replace function public.bind_sequence_step_outbound(p_step_id uuid, p_outbound_id uuid) returns json
+language plpgsql security definer set search_path = pg_catalog, public, pg_temp as $$
+declare updated int;
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then return json_build_object('ok', false, 'reason', 'service-only'); end if;
+  update public.outreach_sequence_steps
+     set queued_outbound_id = p_outbound_id
+   where id = p_step_id and status = 'scheduled' and queued_outbound_id is null;
+  get diagnostics updated = row_count;
+  return json_build_object('ok', updated = 1, 'reason', case when updated = 1 then 'bound' else 'not-bindable' end);
+end; $$;
+revoke all on function public.bind_sequence_step_outbound(uuid, uuid) from public, anon, authenticated, authenticator;
+grant execute on function public.bind_sequence_step_outbound(uuid, uuid) to service_role;
 
 -- ---------------------------------------------------------------------------
 -- 5. Erasure enrollment (0035/0037 pattern): an erased candidate's sequences +
@@ -212,4 +331,6 @@ create trigger candidate_erasure_requests_sequences_cleanup
 alter function public.create_outreach_sequence(uuid, text, text, int, jsonb) owner to postgres;
 alter function public.activate_outreach_sequence(uuid) owner to postgres;
 alter function public.stop_outreach_sequence(uuid, text) owner to postgres;
+alter function public.claim_sequence_step_for_schedule(uuid) owner to postgres;
+alter function public.bind_sequence_step_outbound(uuid, uuid) owner to postgres;
 alter function public.cleanup_erased_candidate_sequences() owner to postgres;

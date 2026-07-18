@@ -319,7 +319,11 @@ create policy swarm_escalations_owner_access on public.swarm_escalations
   for all to postgres, supabase_admin using (true) with check (true);
 
 -- ---------------------------------------------------------------------------
--- enqueue_aria_job — recreated with the 12th kind (body otherwise 0038)
+-- enqueue_aria_job — recreated. 'swarm_assignment' is legal at the TABLE level
+-- but REJECTED here: swarm jobs may only be minted by the postgres-internal
+-- dispatch/continuation paths that atomically bind an authorized assignment
+-- state. A service component can therefore never conjure a swarm execution
+-- that skipped the dispatch gates (Codex P0 finding, 2026-07-18).
 -- ---------------------------------------------------------------------------
 create or replace function public.enqueue_aria_job(
   p_workspace_id uuid,
@@ -345,8 +349,7 @@ begin
      or p_kind not in (
        'email_sync', 'inbound_classify', 'requisition_parse', 'campaign_create',
        'sourcing_batch', 'provider_poll', 'enrich_candidate', 'shortlist_build',
-       'draft_generate', 'delivery_reconcile', 'outcome_feedback',
-       'swarm_assignment'
+       'draft_generate', 'delivery_reconcile', 'outcome_feedback'
      )
      or p_idempotency_key is null
      or p_idempotency_key !~ '^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$'
@@ -964,9 +967,10 @@ begin
           raise exception 'invalid depends_on' using errcode = '22023';
         end if;
         dep_idx := (dep_value#>>'{}')::integer;
-        if dep_idx is null or dep_idx < 0 or dep_idx >= item_count
-           or dep_idx = idx - 1 then
-          raise exception 'invalid depends_on ordinal' using errcode = '22023';
+        -- Forward-only DAG: a dependency must reference a STRICTLY EARLIER
+        -- ordinal, which makes cycles unrepresentable (Codex P1-7).
+        if dep_idx is null or dep_idx < 0 or dep_idx >= idx - 1 then
+          raise exception 'invalid depends_on ordinal (must reference an earlier item)' using errcode = '22023';
         end if;
         dep_ids := dep_ids || new_ids[dep_idx + 1];
       end loop;
@@ -1009,7 +1013,9 @@ create or replace function public.dispatch_ready_swarm_assignments(
 language plpgsql security definer set search_path = pg_catalog, public, pg_temp as $$
 declare
   assignment_row public.swarm_assignments%rowtype;
-  enqueue_result jsonb;
+  agent_row public.swarm_agents%rowtype;
+  new_job_id uuid;
+  job_payload jsonb;
   dispatched integer := 0;
   skipped integer := 0;
 begin
@@ -1048,47 +1054,64 @@ begin
       continue;
     end if;
 
-    -- Concurrency cap: live work per agent.
+    -- Concurrency cap under a per-agent row lock: concurrent dispatchers
+    -- serialize on the agent before counting, so two of them can never both
+    -- observe a free slot for a max_concurrent=1 agent (Codex P1-8).
+    select * into agent_row
+      from public.swarm_agents
+     where id = assignment_row.agent_id
+     for update;
+    if not agent_row.enabled then
+      skipped := skipped + 1;
+      continue;
+    end if;
     if (
       select count(*)
         from public.swarm_assignments live
        where live.agent_id = assignment_row.agent_id
          and live.status in ('dispatched', 'executing')
-    ) >= (
-      select max_concurrent from public.swarm_agents where id = assignment_row.agent_id
-    ) then
+    ) >= agent_row.max_concurrent then
       skipped := skipped + 1;
       continue;
     end if;
 
-    enqueue_result := public.enqueue_aria_job(
-      assignment_row.workspace_id,
-      'swarm_assignment',
-      'swarm:' || assignment_row.id::text || ':' || assignment_row.attempt_count::text,
-      jsonb_build_object(
-        'assignment_id', assignment_row.id::text,
-        'mission_id', assignment_row.mission_id::text,
-        'attempt', assignment_row.attempt_count
-      ),
-      now(),
-      100
+    -- Mint the job INTERNALLY: 'swarm_assignment' is rejected by the public
+    -- enqueue RPC, so this insert — bound to the authorized assignment state
+    -- inside this transaction — is the only way a swarm job exists (P0 fix).
+    job_payload := jsonb_build_object(
+      'assignment_id', assignment_row.id::text,
+      'mission_id', assignment_row.mission_id::text,
+      'attempt', assignment_row.attempt_count
     );
-    if enqueue_result->>'status' <> 'enqueued' then
-      raise exception 'swarm dispatch enqueue failed: %', enqueue_result->>'status'
-        using errcode = '22023';
+    insert into public.aria_jobs (
+      workspace_id, kind, idempotency_key, payload, payload_sha256,
+      next_run_at, priority
+    ) values (
+      assignment_row.workspace_id, 'swarm_assignment',
+      'swarm:' || assignment_row.id::text || ':' || assignment_row.attempt_count::text,
+      job_payload,
+      encode(sha256(convert_to(job_payload::text, 'UTF8')), 'hex'),
+      now(), 100
+    )
+    on conflict on constraint aria_jobs_workspace_kind_idem_uniq do nothing
+    returning id into new_job_id;
+    if new_job_id is null then
+      -- This attempt was already minted (crash replay); leave it be.
+      skipped := skipped + 1;
+      continue;
     end if;
 
     update public.swarm_assignments
        set status = 'dispatched',
            attempt_count = assignment_row.attempt_count + 1,
-           aria_job_id = (enqueue_result->>'id')::uuid,
+           aria_job_id = new_job_id,
            updated_at = now()
      where id = assignment_row.id;
 
     insert into public.loop_events (workspace_id, event_type, subject_kind, subject_id, job_id, payload)
     values (
       assignment_row.workspace_id, 'swarm.assignment_dispatched', 'swarm_assignment',
-      assignment_row.id::text, (enqueue_result->>'id')::uuid,
+      assignment_row.id::text, new_job_id,
       jsonb_build_object('mission_id', assignment_row.mission_id::text,
                          'attempt', assignment_row.attempt_count + 1)
     );
@@ -1125,6 +1148,8 @@ declare
   reviewed_row public.swarm_assignments%rowtype;
   verdict text;
   next_assignment_status text;
+  continuation_payload jsonb;
+  continued boolean := false;
 begin
   if coalesce(auth.role(), '') <> 'service_role' then
     raise exception 'service role required' using errcode = '42501';
@@ -1146,13 +1171,15 @@ begin
     return jsonb_build_object('status', 'invalid_request');
   end if;
 
-  -- Lease authentication: live lease on a swarm_assignment job.
+  -- Lease authentication: live, UNEXPIRED lease on a swarm_assignment job
+  -- (Codex P1-4: expiry checked here, not just by the reaper).
   select * into job_row
     from public.aria_jobs
    where id = p_job_id
      and kind = 'swarm_assignment'
      and status = 'leased'
      and lease_id = p_lease_id
+     and lease_expires_at > now()
    for update;
   if not found then
     return jsonb_build_object('status', 'lease_invalid');
@@ -1166,8 +1193,13 @@ begin
   if not found then
     return jsonb_build_object('status', 'not_found');
   end if;
-  if assignment_row.status in ('done', 'cancelled') then
-    return jsonb_build_object('status', 'terminal');
+  -- CAS transition table (Codex P1-9): a lease may only report progress for
+  -- an assignment that is actually mid-execution. checkpointed/reviewing/
+  -- blocked/needs_input/queued states belong to the orchestrator and the
+  -- human inbox — a stale or replayed lease can never regress them.
+  if assignment_row.status not in ('dispatched', 'executing') then
+    return jsonb_build_object('status', 'terminal',
+                              'assignment_status', assignment_row.status);
   end if;
 
   insert into public.swarm_checkpoints (
@@ -1181,8 +1213,12 @@ begin
   );
 
   next_assignment_status := case p_state
+    -- in_progress AND handoff keep the assignment executable: the
+    -- continuation minted below is what carries the work forward
+    -- (Codex P1-5: handoff used to strand the assignment in a state the
+    -- envelope treats as terminal).
     when 'in_progress' then 'executing'
-    when 'handoff' then 'checkpointed'
+    when 'handoff' then 'executing'
     when 'needs_review' then 'checkpointed'
     when 'blocked' then 'blocked'
     when 'needs_input' then 'needs_input'
@@ -1255,18 +1291,63 @@ begin
     end if;
   end if;
 
+  -- Consume the reporting job IN THIS TRANSACTION (Codex P1-6): checkpoint,
+  -- job success, and any continuation commit or roll back together. The
+  -- worker no longer calls complete_aria_job for swarm jobs.
+  update public.aria_jobs
+     set status = 'succeeded',
+         lease_id = null,
+         lease_expires_at = null,
+         last_error = null,
+         updated_at = now()
+   where id = p_job_id;
+
+  -- Continuation for in_progress/handoff, minted internally and ONLY while
+  -- the workspace switchboard still allows swarm work (Codex P1-2): with the
+  -- kill switch engaged or swarm disabled no new execution is created — the
+  -- assignment stays 'executing' with no live job, and the stale sweep will
+  -- requeue it into the (closed) dispatch gate.
+  if p_state in ('in_progress', 'handoff') then
+    if exists (
+      select 1 from public.sourcing_loop_controls controls
+       where controls.workspace_id = assignment_row.workspace_id
+         and controls.kill_switch = false
+         and controls.swarm_enabled = true
+    ) then
+      continuation_payload := jsonb_build_object(
+        'assignment_id', assignment_row.id::text,
+        'mission_id', assignment_row.mission_id::text,
+        'attempt', assignment_row.attempt_count
+      );
+      insert into public.aria_jobs (
+        workspace_id, kind, idempotency_key, payload, payload_sha256,
+        next_run_at, priority
+      ) values (
+        assignment_row.workspace_id, 'swarm_assignment',
+        'swarm:' || assignment_row.id::text || ':job:' || p_job_id::text || ':next',
+        continuation_payload,
+        encode(sha256(convert_to(continuation_payload::text, 'UTF8')), 'hex'),
+        now(), 100
+      )
+      on conflict on constraint aria_jobs_workspace_kind_idem_uniq do nothing;
+      continued := true;
+    end if;
+  end if;
+
   insert into public.loop_events (workspace_id, event_type, subject_kind, subject_id, job_id, payload)
   values (
     assignment_row.workspace_id, 'swarm.checkpoint', 'swarm_assignment',
     assignment_row.id::text, p_job_id,
-    jsonb_build_object('state', p_state, 'mission_id', assignment_row.mission_id::text)
+    jsonb_build_object('state', p_state, 'mission_id', assignment_row.mission_id::text,
+                       'continued', continued)
   );
 
   perform public.swarm_recompute_mission_status(assignment_row.mission_id);
 
   return jsonb_build_object(
     'status', 'recorded',
-    'assignment_status', next_assignment_status
+    'assignment_status', next_assignment_status,
+    'continued', continued
   );
 end;
 $$;
@@ -1298,10 +1379,12 @@ begin
      where assignment.kind = 'task'
        and assignment.status = 'checkpointed'
        and assignment.review_required = true
+       -- Only an ACTIVE review blocks routing: a completed (rejecting) review
+       -- must not prevent the versioned re-review after rework (Codex P1-10).
        and not exists (
          select 1 from public.swarm_assignments review
           where review.reviews_assignment_id = assignment.id
-            and review.status not in ('cancelled')
+            and review.status not in ('cancelled', 'done')
        )
      order by assignment.updated_at asc
      limit p_limit
@@ -1535,9 +1618,9 @@ begin
   end if;
 
   if p_escalation_id is null
-     or p_action is null or p_action not in ('answer', 'dismiss')
+     or p_action is null or p_action not in ('answer', 'approve', 'reject', 'dismiss')
      or (p_answer is not null and char_length(p_answer) > 4000)
-     or (p_action = 'answer' and (p_answer is null or char_length(p_answer) < 1)) then
+     or (p_action in ('answer', 'reject') and (p_answer is null or char_length(p_answer) < 1)) then
     return jsonb_build_object('status', 'invalid_request');
   end if;
 
@@ -1553,15 +1636,28 @@ begin
     return jsonb_build_object('status', 'already_closed');
   end if;
 
+  -- Greenlight is a decision, not a chat (Codex P1-12): it accepts ONLY
+  -- approve or reject, and only approve stamps the dispatch gate. Every
+  -- other escalation kind uses answer/dismiss and never touches the gate.
+  if escalation_row.kind = 'greenlight' and p_action not in ('approve', 'reject') then
+    return jsonb_build_object('status', 'invalid_request',
+                              'hint', 'greenlight requires approve or reject');
+  end if;
+  if escalation_row.kind <> 'greenlight' and p_action in ('approve', 'reject') then
+    return jsonb_build_object('status', 'invalid_request',
+                              'hint', 'approve/reject apply only to greenlight');
+  end if;
+
   update public.swarm_escalations
-     set status = case when p_action = 'answer' then 'answered' else 'dismissed' end,
-         answer = p_answer,
+     set status = case when p_action = 'dismiss' then 'dismissed' else 'answered' end,
+         answer = case when p_action = 'approve' then coalesce(p_answer, 'approved')
+                       else p_answer end,
          answered_by = auth.uid(),
          answered_at = now()
    where id = p_escalation_id;
 
-  if p_action = 'answer' and escalation_row.assignment_id is not null then
-    if escalation_row.kind = 'greenlight' then
+  if escalation_row.assignment_id is not null then
+    if p_action = 'approve' then
       update public.swarm_assignments
          set greenlight_answered_by = auth.uid(),
              greenlight_answered_at = now(),
@@ -1569,7 +1665,19 @@ begin
        where id = escalation_row.assignment_id
          and workspace_id = caller_workspace
          and greenlight_category is not null;
-    elsif escalation_row.kind in ('needs_input', 'blocked', 'stale') then
+    elsif p_action = 'reject' then
+      update public.swarm_assignments
+         set status = 'cancelled', updated_at = now()
+       where id = escalation_row.assignment_id
+         and workspace_id = caller_workspace
+         and status not in ('done', 'cancelled');
+      perform public.swarm_recompute_mission_status(
+        (select mission_id from public.swarm_assignments
+          where id = escalation_row.assignment_id));
+    elsif p_action = 'answer'
+          and escalation_row.kind in ('needs_input', 'blocked', 'stale', 'review') then
+      -- An answered review escalation requeues the reworked assignment so the
+      -- versioned re-review can route (Codex P1-10).
       update public.swarm_assignments
          set status = 'queued', updated_at = now()
        where id = escalation_row.assignment_id
@@ -1581,12 +1689,13 @@ begin
   insert into public.loop_events (workspace_id, event_type, subject_kind, subject_id, payload)
   values (
     caller_workspace, 'swarm.escalation_' ||
-      case when p_action = 'answer' then 'answered' else 'dismissed' end,
+      case when p_action = 'dismiss' then 'dismissed' else 'answered' end,
     'swarm_escalation', p_escalation_id::text,
-    jsonb_build_object('actor_id', auth.uid()::text, 'kind', escalation_row.kind)
+    jsonb_build_object('actor_id', auth.uid()::text, 'kind', escalation_row.kind,
+                       'action', p_action)
   );
 
-  return jsonb_build_object('status', 'ok');
+  return jsonb_build_object('status', 'ok', 'action', p_action);
 end;
 $$;
 
@@ -1749,9 +1858,21 @@ begin
    where id = p_job_id
      and kind = 'swarm_assignment'
      and status = 'leased'
-     and lease_id = p_lease_id;
+     and lease_id = p_lease_id
+     and lease_expires_at > now();
   if not found then
     return jsonb_build_object('status', 'lease_invalid');
+  end if;
+
+  -- Workspace switchboard recheck (Codex P1-2): queued work stops executing
+  -- the moment an admin kills the workspace, not just at dispatch time.
+  if not exists (
+    select 1 from public.sourcing_loop_controls controls
+     where controls.workspace_id = job_row.workspace_id
+       and controls.kill_switch = false
+       and controls.swarm_enabled = true
+  ) then
+    return jsonb_build_object('status', 'suspended');
   end if;
 
   select * into assignment_row
@@ -1761,7 +1882,9 @@ begin
   if not found then
     return jsonb_build_object('status', 'not_found');
   end if;
-  if assignment_row.status not in ('dispatched', 'executing', 'queued') then
+  -- Only actually-dispatched work is executable: a directly-minted job for a
+  -- queued assignment must never yield an envelope (part of the P0 fix).
+  if assignment_row.status not in ('dispatched', 'executing') then
     return jsonb_build_object('status', 'terminal',
                               'assignment_status', assignment_row.status);
   end if;

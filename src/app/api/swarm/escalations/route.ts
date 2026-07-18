@@ -18,13 +18,16 @@ import { getServerSupabase } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+// "answer" resolves needs_input/blocked/stale/review escalations;
+// greenlight escalations take ONLY the explicit decisions "approve" or
+// "reject" — a negative reply can never stamp the dispatch gate.
 const AnswerSchema = z.object({
   escalationId: z.string().uuid(),
-  action: z.enum(["answer", "dismiss"]),
+  action: z.enum(["answer", "approve", "reject", "dismiss"]),
   answer: z.string().trim().min(1).max(4000).optional(),
 }).strict().refine(
-  (value) => value.action !== "answer" || value.answer !== undefined,
-  { message: "answer text is required when action is answer" },
+  (value) => !["answer", "reject"].includes(value.action) || value.answer !== undefined,
+  { message: "answer text is required for answer and reject" },
 );
 
 export async function GET(req: NextRequest) {

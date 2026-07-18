@@ -142,7 +142,12 @@ export async function POST(req: NextRequest) {
   }
 
   let planned: unknown = null;
-  if (body.data.assignments && !mission.replay) {
+  // Plan on a fresh mission AND on a replayed mission still stuck in
+  // 'planning' (a prior planning failure must be retryable, not a dead end).
+  const missionStatus = (mission as { mission_status?: string }).mission_status;
+  const shouldPlan = body.data.assignments
+    && (!mission.replay || missionStatus === "planning");
+  if (shouldPlan && body.data.assignments) {
     const plan = await service.rpc("plan_swarm_assignments", {
       p_workspace_id: workspaceId,
       p_mission_id: mission.id,

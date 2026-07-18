@@ -78,8 +78,10 @@ alter table public.enrichment_spend_ledger enable row level security;
 alter table public.enrichment_spend_ledger force row level security;
 revoke all on public.enrichment_budgets from public, anon, authenticated, service_role, authenticator;
 revoke all on public.enrichment_spend_ledger from public, anon, authenticated, service_role, authenticator;
-grant select on public.enrichment_budgets to authenticated;
-grant select on public.enrichment_spend_ledger to authenticated;
+-- No direct table reads (Codex P2-22): budget visibility ships as a bounded
+-- member-read RPC when the console needs it.
+revoke all on public.enrichment_budgets from authenticated;
+revoke all on public.enrichment_spend_ledger from authenticated;
 drop policy if exists enrichment_budgets_owner_access on public.enrichment_budgets;
 create policy enrichment_budgets_owner_access on public.enrichment_budgets
   for all to postgres, supabase_admin using (true) with check (true);
@@ -147,7 +149,15 @@ begin
   select * into existing from public.enrichment_spend_ledger
     where workspace_id = p_workspace_id and idempotency_key = p_idempotency_key for update;
   if found then
-    return json_build_object('allowed', existing.status <> 'released', 'reason', 'already-claimed', 'ledger_id', existing.id, 'duplicate', true);
+    -- A replay is only a replay when the REQUEST matches: a reused key with a
+    -- different period/amount/provider is a drift, never an authorization
+    -- (Codex P1-15: old cheap keys must not authorize new expensive spend).
+    if existing.period is distinct from p_period
+       or existing.amount_cents is distinct from p_amount_cents
+       or existing.provider is distinct from p_provider then
+      return json_build_object('allowed', false, 'reason', 'idempotency_conflict', 'ledger_id', existing.id);
+    end if;
+    return json_build_object('allowed', existing.status = 'claimed', 'reason', 'already-claimed', 'ledger_id', existing.id, 'duplicate', true);
   end if;
 
   select * into budget from public.enrichment_budgets
@@ -169,15 +179,27 @@ grant execute on function public.claim_enrichment_budget(uuid, text, text, integ
 
 create or replace function public.settle_enrichment_spend(p_ledger_id uuid, p_actual_cents integer) returns json
 language plpgsql security definer set search_path = pg_catalog, public, pg_temp as $$
-declare updated int;
+declare claim public.enrichment_spend_ledger%rowtype;
 begin
   if coalesce(auth.role(), '') <> 'service_role' then return json_build_object('ok', false, 'reason', 'service-only'); end if;
   if p_actual_cents is null or p_actual_cents < 0 then return json_build_object('ok', false, 'reason', 'invalid-amount'); end if;
+  select * into claim from public.enrichment_spend_ledger
+   where id = p_ledger_id and status = 'claimed' for update;
+  if not found then
+    return json_build_object('ok', false, 'reason', 'not-claimed');
+  end if;
+  -- Settlement is capped at the reservation (Codex P1-16): a claim reserves
+  -- authority up to amount_cents; a larger actual charge needs a NEW claim
+  -- against the current budget, never a retroactive settlement.
+  if p_actual_cents > claim.amount_cents then
+    return json_build_object('ok', false, 'reason', 'exceeds-claim',
+                             'claimed_cents', claim.amount_cents,
+                             'actual_cents', p_actual_cents);
+  end if;
   update public.enrichment_spend_ledger
      set status = 'settled', amount_cents = p_actual_cents, settled_at = now()
-   where id = p_ledger_id and status = 'claimed';
-  get diagnostics updated = row_count;
-  return json_build_object('ok', updated = 1, 'reason', case when updated = 1 then 'settled' else 'not-claimed' end);
+   where id = p_ledger_id;
+  return json_build_object('ok', true, 'reason', 'settled');
 end; $$;
 revoke all on function public.settle_enrichment_spend(uuid, integer) from public, anon, authenticated, authenticator;
 grant execute on function public.settle_enrichment_spend(uuid, integer) to service_role;
