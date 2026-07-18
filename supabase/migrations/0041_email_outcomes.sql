@@ -84,11 +84,13 @@ begin
     return json_build_object('ok', false, 'reason', 'invalid-candidate');
   end if;
   -- Erasure rewrites outreach_ledger.candidate_id to the reserved scrub token
-  -- 'erased:<request-id>:<ledger-id>' (0033). That token was never tombstoned
-  -- (the tombstone HMAC is over the ORIGINAL id), so the tombstone check below
-  -- would MISS it and record a fresh outcome for an erased candidate. Fail
-  -- closed on the reserved prefix (Codex P1).
-  if p_candidate_id like 'erased:%' then
+  -- 'erased:<request-uuid>:<ledger-uuid>' (0033). That token was never
+  -- tombstoned (the tombstone HMAC is over the ORIGINAL id), so the tombstone
+  -- check below would MISS it and record a fresh outcome for an erased
+  -- candidate. Fail closed on the EXACT scrub-token structure (two UUIDs) so a
+  -- legitimate imported id like 'erased:external-123' is NOT falsely rejected
+  -- (Codex P1).
+  if p_candidate_id ~ '^erased:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
     return json_build_object('ok', false, 'reason', 'candidate-erased');
   end if;
   if p_kind is null or p_kind not in (

@@ -507,6 +507,7 @@ declare
   outbound public.messages_outbound%rowtype;
   recipient text;
   suppress boolean;
+  event_is_new integer;
 begin
   if coalesce(auth.role(), '') <> 'service_role' then
     return json_build_object('recorded', false, 'reason', 'service-only');
@@ -542,8 +543,9 @@ begin
     end if;
     suppress := (p_event_status = 'bounced' and coalesce(p_permanent, false)) or p_event_status = 'complained';
     if suppress and recipient <> '' then
-      -- Reactivate an existing EXPIRED suppression: a fresh hard bounce or
-      -- complaint must never leave the address sendable (Codex P1).
+      -- Reactivate an EXPIRED suppression (Codex P1); the WHERE keeps this
+      -- idempotent for the common replay — a row that is already active is left
+      -- untouched, so a re-delivered event does not mutate it.
       insert into public.suppression_list(workspace_id, type, value, reason, source)
         values (
           p_workspace_id, 'email', recipient,
@@ -553,7 +555,8 @@ begin
       on conflict (workspace_id, type, value)
         do update set expires_at = null,
                       reason = excluded.reason,
-                      source = excluded.source;
+                      source = excluded.source
+        where public.suppression_list.expires_at is not null;
     end if;
     return json_build_object('recorded', true, 'reason', 'ledger-correlated', 'suppressed', coalesce(suppress, false));
   end if;
@@ -583,14 +586,15 @@ begin
       else jsonb_build_object('code', p_provider_error_code)
     end
   ) on conflict (workspace_id, rfc_message_id, event_status, provider_occurred_at) do nothing;
+  get diagnostics event_is_new = row_count;
 
   -- Permanent bounce or spam complaint -> never contact this address again.
+  -- Only act on a genuinely NEW event (Codex P1): a replayed event inserts no
+  -- delivery row and must not mutate a suppression an admin later expired.
   suppress := (p_event_status = 'bounced' and coalesce(p_permanent, false)) or p_event_status = 'complained';
-  if suppress then
+  if suppress and event_is_new = 1 then
     recipient := lower(btrim(coalesce(outbound.to_address, '')));
     if recipient <> '' then
-      -- Reactivate an EXPIRED suppression (Codex P1): DO NOTHING would report
-      -- suppressed while leaving a lapsed row sendable.
       insert into public.suppression_list(workspace_id, type, value, reason, source)
         values (
           outbound.workspace_id,
@@ -606,7 +610,7 @@ begin
     end if;
   end if;
 
-  return json_build_object('recorded', true, 'reason', 'recorded', 'suppressed', suppress);
+  return json_build_object('recorded', true, 'reason', 'recorded', 'suppressed', suppress and event_is_new = 1);
 end;
 $$;
 
