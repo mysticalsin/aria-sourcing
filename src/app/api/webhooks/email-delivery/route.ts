@@ -28,12 +28,17 @@ export const dynamic = "force-dynamic";
 
 const WEBHOOK_MAX_BODY_BYTES = 1_000_000;
 const SECRET = () => process.env.EMAIL_DELIVERY_WEBHOOK_SECRET ?? "";
-// Replay horizon: reject events older than this. It MUST stay shorter than the
+// Replay horizon: reject events OLDER than this. It MUST stay shorter than the
 // dedup receipt retention floor (90 days) so a receipt always outlives any
 // event the webhook will still process — a replay of an event older than the
 // horizon is refused outright, so a garbage-collected receipt can never be
-// re-processed. Providers deliver bounce/complaint events within hours/days.
-const EVENT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+// re-processed. Providers deliver bounce/complaint events within hours/days;
+// 60 days is generous while keeping the receipt-outlives-horizon invariant.
+const EVENT_MAX_AGE_MS = 60 * 24 * 60 * 60 * 1000;
+// And reject events dated in the FUTURE beyond a small clock-skew allowance: a
+// future-dated occurredAt would otherwise sidestep the age check (negative age)
+// and could be replayed after its receipt is GC'd (Codex).
+const EVENT_MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
 
 const EventSchema = z.object({
   workspaceId: z.string().uuid(),
@@ -85,9 +90,11 @@ export async function POST(req: NextRequest) {
   let skippedStale = 0;
   const now = Date.now();
   for (const event of parsed.events) {
-    // Refuse events older than the replay horizon: beyond it the dedup receipt
-    // may have been garbage-collected, so re-processing could reopen a replay.
-    if (now - Date.parse(event.occurredAt) > EVENT_MAX_AGE_MS) {
+    // Refuse events outside the processing window: older than the replay horizon
+    // (receipt may be GC'd) OR dated in the future beyond clock skew (a future
+    // date would otherwise dodge the age check and be replayable after GC).
+    const ageMs = now - Date.parse(event.occurredAt);
+    if (ageMs > EVENT_MAX_AGE_MS || ageMs < -EVENT_MAX_FUTURE_SKEW_MS) {
       skippedStale += 1;
       continue;
     }

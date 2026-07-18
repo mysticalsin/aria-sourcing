@@ -82,26 +82,38 @@ create table if not exists public.email_delivery_events (
 do $email_delivery_events_dedupe$
 declare
   old_name text;
-  is_permanent_attnum int2 := (
-    select attnum from pg_attribute
-     where attrelid = 'public.email_delivery_events'::regclass and attname = 'is_permanent'
-  );
+  -- Column sets compared by exact NAME (alphabetically ordered), so this only
+  -- ever matches the intended keys and never an unrelated unique constraint.
+  legacy_cols constant text[] := array['event_status', 'provider_occurred_at', 'rfc_message_id', 'workspace_id'];
+  target_cols constant text[] := array['event_status', 'is_permanent', 'provider_occurred_at', 'rfc_message_id', 'workspace_id'];
 begin
-  -- Drop ONLY the legacy dedup key: a UNIQUE constraint that does NOT include
-  -- is_permanent. The new named key includes it, so this can never drop the
-  -- replacement, and it never touches any unrelated unique constraint.
+  -- Drop ONLY a unique constraint whose columns are EXACTLY the legacy dedup
+  -- set (no is_permanent). Never the replacement, never anything unrelated.
   for old_name in
-    select conname from pg_constraint
-     where conrelid = 'public.email_delivery_events'::regclass
-       and contype = 'u'
-       and not (is_permanent_attnum = any(conkey))
+    select c.conname
+      from pg_constraint c
+     where c.conrelid = 'public.email_delivery_events'::regclass
+       and c.contype = 'u'
+       and (
+         select array_agg(a.attname::text order by a.attname::text)
+           from pg_attribute a
+          where a.attrelid = c.conrelid and a.attnum = any(c.conkey)
+       ) = legacy_cols
   loop
     execute format('alter table public.email_delivery_events drop constraint %I', old_name);
   end loop;
+  -- Add the is_permanent-bearing key only if no unique constraint with EXACTLY
+  -- those five columns already exists (verified by columns, not just by name).
   if not exists (
-    select 1 from pg_constraint
-     where conrelid = 'public.email_delivery_events'::regclass
-       and conname = 'email_delivery_events_dedupe_uniq'
+    select 1
+      from pg_constraint c
+     where c.conrelid = 'public.email_delivery_events'::regclass
+       and c.contype = 'u'
+       and (
+         select array_agg(a.attname::text order by a.attname::text)
+           from pg_attribute a
+          where a.attrelid = c.conrelid and a.attnum = any(c.conkey)
+       ) = target_cols
   ) then
     alter table public.email_delivery_events
       add constraint email_delivery_events_dedupe_uniq
