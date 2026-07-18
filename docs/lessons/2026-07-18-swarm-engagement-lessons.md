@@ -169,3 +169,72 @@ read-only. Verdict: BLOCK. Every P0/P1 fixed and re-proven on the full chain.
   function inventory advanced for the 2 new RPCs); function-privileges-contract
   21/21; worker contract harness (atomic record/continuation, lease heartbeat,
   suspended-workspace fail-closed) all green.
+
+## Channel audit — WhatsApp + email + inbound/webhooks (2026-07-18)
+
+Owner: "make sure WhatsApp works and everything else too." Ran the WhatsApp
+DB suites + an adversarial per-channel audit (6 paths, opus readers). Verdict
+across every channel: WORKS-WITH-GAPS, ZERO P0. Never-auto-send holds
+structurally everywhere (WhatsApp replies become human-approved 'blocked'
+drafts; email sends need a hash+scope-bound human approval re-verified at claim).
+
+### Proven working (real Docker Postgres)
+- WhatsApp send DB suite (cross-channel-cap): concurrent-claim=1, ambiguous
+  blocked, service-only — PASS. Structural: review-durability 25/0, late-event
+  34/0, template-queue 8/0, template-picker 7/0, queue-route 11/0, cap 14/0.
+- WhatsApp FIRST-CONTACT send end-to-end: opted-in + open window + live Cloud
+  seat + human approval + domain_verified=false → claim allowed=true (proof).
+- Inbound reply correlation (conversation-authority) — PASS.
+- Acceptance campaign dry-run + store-sourcing-actions — PASS.
+
+### Fixed
+- **WhatsApp go-live blocker (P1):** enqueue_whatsapp_outbound (0028) required
+  `seat.domain_verified = true` — an EMAIL SPF/DKIM/DMARC flag no WhatsApp Cloud
+  seat can ever set, and one claim_whatsapp_outbound never required. Every
+  WhatsApp enqueue returned 'sender-unavailable'. Dropped the predicate; WhatsApp
+  sender legitimacy is the Meta phone registration (whatsapp_senders active) on
+  a live Cloud seat. Proven: first-contact send now allowed with
+  domain_verified=false.
+- **Email bounce/complaint suppression gap (P1, compliance):** the synchronous
+  /api/outreach/send never creates a messages_outbound row, but
+  record_email_delivery_event resolved ONLY via messages_outbound.provider_
+  message_id — so a hard bounce or spam complaint on a sync-sent email never
+  suppressed the address (CAN-SPAM/deliverability risk). Fix: the RPC now falls
+  back to outreach_ledger.rfc_message_id and suppresses; the sync send stamps
+  outreach_ledger.rfc_message_id. Proven: sync-sent permanent bounce →
+  suppression_list row created (reason 'ledger-correlated').
+- **Email inbound erased-candidate hardening (P1 defense-in-depth):**
+  correlate_inbound_email now records the reply outcome first and, if the
+  candidate is tombstoned, marks the inbound 'candidate-erased' WITHOUT stamping
+  candidate_id — closing the erase-during-correlate race (erasure already
+  scrubs the ledger candidate_id, so this is belt-and-suspenders). Also fixed
+  the outcome_recorded:true observability lie (now reflects the actual write).
+- **Cron secret timing side channel (P2):** /api/cron/dispatch-outbound now
+  compares the bearer with crypto.timingSafeEqual.
+
+### Owner decision — deliberately NOT changed
+- **WhatsApp/email reply contact-cap (audit P1).** A free-form reply to a
+  candidate who replied to your outreach is blocked by TWO deliberate,
+  fail-closed guarantees: the 90-day recently-contacted cap AND the
+  outreach_ledger_active_reconcile_uniq UNIQUE(workspace, candidate) WHERE
+  status IN (claimed/sent/ambiguous). The 0022 comment states this is an
+  intentional "one active outreach per candidate, fails closed to
+  already-contacted" anti-double-contact guarantee — not a bug. I drafted a
+  one-line exemption for candidate_reply, PROVED it lifted the recently-
+  contacted block, then reverted it: it touches send-safety policy on
+  inference and is incomplete (the uniqueness still blocks). **DECISION FOR
+  TONY:** should a free-form reply inside an open window be exempt from the
+  per-candidate contact cap? If yes, it needs a coherent change to BOTH layers
+  (recently-contacted + the active-ledger uniqueness), not one. Until decided,
+  first-contact outreach works; multi-message conversations are capped.
+
+### Hardening backlog (P2, documented, not blocking)
+- Per-tenant (not single global) webhook secrets for email inbound/delivery;
+  assert rfcMessageId belongs to the claimed workspace before suppressing.
+- Reply-based opt-out: a candidate reply of "STOP"/"unsubscribe" should add a
+  suppression row (currently only records a reply outcome).
+- Offload the WhatsApp webhook's inline LLM composition to a worker so Meta is
+  acked immediately (reliability, not correctness — redelivery is idempotent).
+- Operator surface for outbound rows stranded in 'dispatching' after an accepted-
+  but-unrecorded provider send (both channels).
+- Suppression re-check inside claim_email_outbound (close the route-level TOCTOU).

@@ -173,6 +173,7 @@ declare
   needle text := btrim(coalesce(p_in_reply_to, ''));
   match_count int;
   ledger public.outreach_ledger%rowtype;
+  outcome_result json;
 begin
   if coalesce(auth.role(), '') <> 'service_role' then
     return json_build_object('ok', false, 'reason', 'service-only');
@@ -212,6 +213,25 @@ begin
       and l.rfc_message_id = needle
       and l.status in ('sent', 'ambiguous');
 
+  -- Record the reply outcome FIRST (idempotent, tombstone-skipping). Its
+  -- result is the authoritative tombstone check: erasure scrubs
+  -- outreach_ledger.candidate_id to 'erased:…' so re-materialization is
+  -- already prevented, but if an erase races an in-flight correlate this
+  -- catches it and we must not stamp the erased candidate onto the inbound.
+  outcome_result := public.record_candidate_outcome(
+    inbound.workspace_id, ledger.candidate_id, 'reply_received', 'reply:' || inbound.id::text, inbound.id);
+
+  if outcome_result->>'reason' = 'candidate-erased' then
+    update public.messages_inbound
+       set correlated_ledger_id = ledger.id,
+           correlated_outbound_id = ledger.outbound_message_id,
+           processed = true,
+           last_processing_error = 'candidate-erased'
+     where id = inbound.id
+       and processed = false;
+    return json_build_object('ok', true, 'correlated', false, 'reason', 'candidate-erased');
+  end if;
+
   update public.messages_inbound
      set candidate_id = ledger.candidate_id,
          correlated_ledger_id = ledger.id,
@@ -224,17 +244,13 @@ begin
     return json_build_object('ok', true, 'correlated', false, 'reason', 'race-lost');
   end if;
 
-  -- Append-only reply outcome for the query-ranking feedback loop (idempotent).
-  perform public.record_candidate_outcome(
-    inbound.workspace_id, ledger.candidate_id, 'reply_received', 'reply:' || inbound.id::text, inbound.id);
-
   return json_build_object(
     'ok', true,
     'correlated', true,
     'candidate_id', ledger.candidate_id,
     'ledger_id', ledger.id,
     'outbound_message_id', ledger.outbound_message_id,
-    'outcome_recorded', true
+    'outcome_recorded', coalesce(outcome_result->>'ok', 'false')::boolean
   );
 end;
 $$;

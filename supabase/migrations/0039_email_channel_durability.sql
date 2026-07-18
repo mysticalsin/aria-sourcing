@@ -527,7 +527,31 @@ begin
       and provider_message_id = p_rfc_message_id
       and channel = 'Email'
     for share;
-  if not found then return json_build_object('recorded', false, 'reason', 'outbound-not-found'); end if;
+  if not found then
+    -- Synchronous-send path: the interactive /api/outreach/send never creates a
+    -- messages_outbound row — it sends off outreach_ledger and stamps the RFC
+    -- Message-ID there. A bounce/complaint for such a send MUST still suppress
+    -- the address (CAN-SPAM / deliverability), so fall back to the ledger.
+    select lower(btrim(coalesce(l.candidate_email, ''))) into recipient
+      from public.outreach_ledger l
+      where l.workspace_id = p_workspace_id
+        and l.rfc_message_id = p_rfc_message_id
+      for share;
+    if recipient is null then
+      return json_build_object('recorded', false, 'reason', 'outbound-not-found');
+    end if;
+    suppress := (p_event_status = 'bounced' and coalesce(p_permanent, false)) or p_event_status = 'complained';
+    if suppress and recipient <> '' then
+      insert into public.suppression_list(workspace_id, type, value, reason, source)
+        values (
+          p_workspace_id, 'email', recipient,
+          case when p_event_status = 'complained' then 'spam-complaint' else 'hard-bounce' end,
+          'system'
+        )
+      on conflict (workspace_id, type, value) do nothing;
+    end if;
+    return json_build_object('recorded', true, 'reason', 'ledger-correlated', 'suppressed', coalesce(suppress, false));
+  end if;
   if outbound.delivery_attempt_id is null then
     return json_build_object('recorded', false, 'reason', 'attempt-not-found');
   end if;

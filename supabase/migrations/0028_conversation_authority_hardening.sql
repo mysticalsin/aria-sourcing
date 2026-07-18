@@ -301,6 +301,11 @@ begin
     return json_build_object('ok', false, 'reason', 'approval-mismatch');
   end if;
 
+  -- WhatsApp sender legitimacy is the Meta phone-number registration
+  -- (whatsapp_senders.status='active') on a live WhatsApp Cloud seat — NOT
+  -- email domain_verified (SPF/DKIM/DMARC), which no WhatsApp seat can ever
+  -- satisfy and which claim_whatsapp_outbound deliberately does not require.
+  -- Requiring it here made every WhatsApp enqueue fail 'sender-unavailable'.
   select whatsapp_sender.* into sender
     from public.whatsapp_senders as whatsapp_sender
     join public.agent_seats as seat
@@ -309,7 +314,6 @@ begin
      and seat.provider = 'WhatsApp Cloud'
      and seat.status = 'active'
      and seat.mode = 'live'
-     and seat.domain_verified = true
     where whatsapp_sender.workspace_id = wid
       and whatsapp_sender.seat_id = p_seat_id
       and whatsapp_sender.status = 'active'
