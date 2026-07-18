@@ -105,7 +105,11 @@ export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
         return { status: "dry-run", deliveryState: "not-sent", provider: req.provider, detail: "No RESEND_API_KEY, dry-run only." };
       }
       try {
-        const res = await fetch("https://api.resend.com/emails", {
+        // Base URL is overridable for staging/test harnesses; defaults to the
+        // production Resend API. Never affects which provider is chosen — only
+        // where the already-authenticated request is sent.
+        const base = (process.env.RESEND_BASE_URL || "https://api.resend.com").replace(/\/$/, "");
+        const res = await fetch(`${base}/emails`, {
           method: "POST",
           signal: AbortSignal.timeout(15_000),
           headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
