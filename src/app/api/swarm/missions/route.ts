@@ -65,6 +65,12 @@ export async function GET(req: NextRequest) {
   if (!session) {
     return NextResponse.json({ ok: false, error: "Supabase is not configured." }, { status: 503 });
   }
+  // Authenticated-only read: reject an anonymous caller with a clean 401 rather
+  // than letting the anon RPC call fail into a 502.
+  const { data: { user } } = await session.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ ok: false, error: "Not authenticated." }, { status: 401 });
+  }
   const limit = checkRateLimit(rateLimitKey(req, "swarm-missions"), { windowMs: 60_000, max: 60 });
   if (!limit.ok) {
     const response = NextResponse.json({ ok: false, error: "Rate limited." }, { status: 429 });
