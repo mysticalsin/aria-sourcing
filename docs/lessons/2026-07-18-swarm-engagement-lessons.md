@@ -281,3 +281,18 @@ progressively narrower defects; every one was real. Closed and re-proven each ti
   set of fixes into ones with proven idempotency, GDPR-safety, and replay
   closure. Cost: cheap. Value: the difference between fail-safe-by-luck and
   correct-by-construction.*
+
+## Codex final verdict: SHIP (2026-07-18)
+
+After 5 adversarial rounds, Codex confirmed both remaining P1s CONFIRMED-CLOSED
+and issued **VERDICT: SHIP**. The DO-block now matches the exact legacy column
+set (cannot drop an unrelated constraint, idempotent); both delivery-event
+correlation branches are replay-idempotent with is_permanent in the dedup key.
+Every channel + swarm authority fix is adversarially verified.
+
+Prod DB: all six hardened migrations applied + ledger reconciled + new functions
+verified live via PostgREST (claim_sequence_step_for_schedule,
+record_swarm_checkpoint, get_swarm_runtime, cleanup_email_ledger_delivery_receipts
+all 200). Deploy auth root cause: the driver connected as postgres with
+FLY_PG_PASSWORD but the owner phase had rotated it to *_TARGET_PASSWORD; the
+driver now discovers the working (role, password).
