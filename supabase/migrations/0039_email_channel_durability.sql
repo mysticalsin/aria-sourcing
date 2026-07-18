@@ -89,6 +89,32 @@ create policy email_delivery_events_select on public.email_delivery_events
   for select using (workspace_id = public.current_workspace_id());
 
 -- ---------------------------------------------------------------------------
+-- 3b. email_ledger_delivery_receipts — dedup spine for delivery events that
+--     correlate to a SYNCHRONOUS send (an outreach_ledger row, no
+--     messages_outbound). email_delivery_events requires an outbound row so it
+--     cannot host these; without a receipt the ledger fallback could not tell a
+--     fresh bounce from a replay and would re-mutate a suppression an admin had
+--     expired or deleted (Codex). Keyed INCLUDING is_permanent so a soft->
+--     permanent bounce correction is a distinct event. postgres-only.
+-- ---------------------------------------------------------------------------
+create table if not exists public.email_ledger_delivery_receipts (
+  id                    uuid primary key default gen_random_uuid(),
+  workspace_id          uuid not null references public.workspaces(id) on delete cascade,
+  rfc_message_id        text not null check (rfc_message_id ~ '^<[^<>@\s]+@[^<>@\s]+>$'),
+  event_status          text not null check (event_status in ('delivered', 'bounced', 'complained', 'opened')),
+  is_permanent          boolean not null default false,
+  provider_occurred_at  timestamptz not null,
+  received_at           timestamptz not null default now(),
+  unique (workspace_id, rfc_message_id, event_status, is_permanent, provider_occurred_at)
+);
+alter table public.email_ledger_delivery_receipts enable row level security;
+alter table public.email_ledger_delivery_receipts force row level security;
+revoke all on public.email_ledger_delivery_receipts from anon, public, authenticated, service_role, authenticator;
+drop policy if exists email_ledger_delivery_receipts_owner on public.email_ledger_delivery_receipts;
+create policy email_ledger_delivery_receipts_owner on public.email_ledger_delivery_receipts
+  for all to postgres, supabase_admin using (true) with check (true);
+
+-- ---------------------------------------------------------------------------
 -- 4. enqueue_email_outbound — authenticated SECURITY DEFINER. Places an approved
 --    email draft into the durable outbox as a queued row. Mirrors the WhatsApp
 --    enqueue contract used by /api/outreach/send: returns {ok, status, id,
@@ -541,11 +567,17 @@ begin
     if recipient is null then
       return json_build_object('recorded', false, 'reason', 'outbound-not-found');
     end if;
+    -- Durable receipt makes this branch replay-idempotent: a re-delivered event
+    -- inserts nothing and does not touch the suppression (Codex).
+    insert into public.email_ledger_delivery_receipts(
+      workspace_id, rfc_message_id, event_status, is_permanent, provider_occurred_at
+    ) values (
+      p_workspace_id, p_rfc_message_id, p_event_status, coalesce(p_permanent, false), p_provider_occurred_at
+    ) on conflict (workspace_id, rfc_message_id, event_status, is_permanent, provider_occurred_at) do nothing;
+    get diagnostics event_is_new = row_count;
+
     suppress := (p_event_status = 'bounced' and coalesce(p_permanent, false)) or p_event_status = 'complained';
-    if suppress and recipient <> '' then
-      -- Reactivate an EXPIRED suppression (Codex P1); the WHERE keeps this
-      -- idempotent for the common replay — a row that is already active is left
-      -- untouched, so a re-delivered event does not mutate it.
+    if suppress and event_is_new = 1 and recipient <> '' then
       insert into public.suppression_list(workspace_id, type, value, reason, source)
         values (
           p_workspace_id, 'email', recipient,
@@ -555,10 +587,9 @@ begin
       on conflict (workspace_id, type, value)
         do update set expires_at = null,
                       reason = excluded.reason,
-                      source = excluded.source
-        where public.suppression_list.expires_at is not null;
+                      source = excluded.source;
     end if;
-    return json_build_object('recorded', true, 'reason', 'ledger-correlated', 'suppressed', coalesce(suppress, false));
+    return json_build_object('recorded', true, 'reason', 'ledger-correlated', 'suppressed', suppress and event_is_new = 1);
   end if;
   if outbound.delivery_attempt_id is null then
     return json_build_object('recorded', false, 'reason', 'attempt-not-found');
