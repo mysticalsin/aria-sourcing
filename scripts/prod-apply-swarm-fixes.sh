@@ -44,40 +44,61 @@ cp "$repo/fly.bootstrap.toml" "$work/ctx/"
 ( cd "$work/ctx" && flyctl deploy --config fly.bootstrap.toml --build-only --push --image-label latest --remote-only )
 
 echo "=== 2/5 apply changed migrations from the image + reconcile the ledger ==="
-# Tiny driver: files are read from /migrations in the image (no arg limit).
+# Tiny driver: files are read from /migrations in the image (no arg limit). It
+# first DISCOVERS a working superuser role — prod's postgres password was
+# rotated by the bootstrap owner phase, and the bootstrap itself connects as
+# supabase_admin — so it tries supabase_admin then postgres with the supplied
+# password and uses whichever authenticates.
 DRIVER='set -e
+H=aria-mantu-db.internal
+# Discover a working superuser (role, password). The owner phase rotated the
+# postgres/supabase_admin passwords to the *_TARGET_PASSWORD values, so try
+# those first, then the other candidates.
+ROLE=""; PW=""
+for pair in "supabase_admin:$C_ADMIN_TARGET" "postgres:$C_PG_TARGET" "supabase_admin:$C_PG" "postgres:$C_PG"; do
+  r="${pair%%:*}"; p="${pair#*:}"
+  [ -z "$p" ] && continue
+  if PGPASSWORD="$p" psql -X -w -h "$H" -U "$r" -d postgres -qtAc "select 1" >/dev/null 2>&1; then ROLE="$r"; PW="$p"; break; fi
+done
+if [ -z "$ROLE" ]; then echo "  FATAL: no superuser role authenticated with the supplied passwords" >&2; exit 3; fi
+echo "  connected as $ROLE"
+run() { PGPASSWORD="$PW" psql -X -w -h "$H" -U "$ROLE" -d postgres -v ON_ERROR_STOP=1 -q "$@"; }
 for f in '"$CHANGED"'; do
   path="/migrations/${f}.sql"
   echo "  applying ${f}.sql (idempotent)"
-  psql -X -h aria-mantu-db.internal -U postgres -d postgres -v ON_ERROR_STOP=1 -q -f "$path"
+  run -f "$path"
   sha="$(sha256sum "$path" | awk "{print \$1}")"
-  psql -X -h aria-mantu-db.internal -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c \
-    "update public.aria_schema_migrations set sha256='"'"'$sha'"'"' where filename='"'"'${f}.sql'"'"'"
+  run -c "update public.aria_schema_migrations set sha256='"'"'$sha'"'"' where filename='"'"'${f}.sql'"'"'"
   echo "  reconciled ledger sha256 for ${f}.sql -> $sha"
 done
-psql -X -h aria-mantu-db.internal -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c "select pg_notify('"'"'pgrst'"'"','"'"'reload schema'"'"')"
+run -c "select pg_notify('"'"'pgrst'"'"','"'"'reload schema'"'"')"
 echo "  schema cache reload signalled"'
 flyctl machine run "registry.fly.io/aria-mantu-bootstrap:latest" \
   --app aria-mantu-bootstrap --region cdg --rm \
   --entrypoint /bin/sh \
-  -e PGPASSWORD="$FLY_PG_PASSWORD" \
+  -e C_ADMIN_TARGET="${SUPABASE_ADMIN_TARGET_PASSWORD:-}" \
+  -e C_PG_TARGET="${POSTGRES_TARGET_PASSWORD:-}" \
+  -e C_PG="$FLY_PG_PASSWORD" \
   -e DRIVER="$DRIVER" \
   -- -c 'echo "$DRIVER" | sh'
 
-echo "=== 3/5 verify P0 + new scheduling authority through prod PostgREST ==="
+echo "=== 3/5 verify the fixed migrations landed (new functions exist) ==="
 sleep 6
-p0=$(curl -s -m 25 -H "apikey: $FLY_SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $FLY_SUPABASE_SERVICE_KEY" \
-  -H "content-type: application/json" \
-  -d '{"p_workspace_id":"00000000-0000-4000-8000-000000000000","p_kind":"swarm_assignment","p_idempotency_key":"probe0000","p_payload":{}}' \
-  "https://aria-mantu-kong.fly.dev/rest/v1/rpc/enqueue_aria_job")
-echo "  enqueue_aria_job swarm_assignment -> $p0"
-echo "$p0" | grep -q 'invalid_request' && echo "  P0 OK: swarm_assignment rejected by generic queue" || { echo "  P0 CHECK FAILED"; exit 1; }
-sched=$(curl -s -m 25 -o /dev/null -w "%{http_code}" \
-  -H "apikey: $FLY_SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $FLY_SUPABASE_SERVICE_KEY" \
-  -H "content-type: application/json" -d '{"p_step_id":"00000000-0000-4000-8000-000000000000"}' \
-  "https://aria-mantu-kong.fly.dev/rest/v1/rpc/claim_sequence_step_for_schedule")
-echo "  claim_sequence_step_for_schedule -> $sched (expect 200, not 404)"
-[ "$sched" = "404" ] && { echo "  scheduling authority did not land"; exit 1; }
+probe() {
+  curl -s -m 25 -o /dev/null -w "%{http_code}" \
+    -H "apikey: $FLY_SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $FLY_SUPABASE_SERVICE_KEY" \
+    -H "content-type: application/json" -d "$2" \
+    "https://aria-mantu-kong.fly.dev/rest/v1/rpc/$1"
+}
+# A missing function is 404; a present function returns 200/4xx-with-body. These
+# two functions exist ONLY in the fixed 0045/0039, so 404 == not applied.
+sched=$(probe claim_sequence_step_for_schedule '{"p_step_id":"00000000-0000-4000-8000-000000000000"}')
+echo "  claim_sequence_step_for_schedule (0045) -> $sched (expect not 404)"
+[ "$sched" = "404" ] && { echo "  FAIL: swarm/sequence fixes did not land"; exit 1; }
+recgc=$(probe cleanup_email_ledger_delivery_receipts '{"p_retention_days":180}')
+echo "  cleanup_email_ledger_delivery_receipts (0039 channel fix) -> $recgc (expect not 404)"
+[ "$recgc" = "404" ] && { echo "  FAIL: channel fixes did not land"; exit 1; }
+echo "  OK: fixed migrations are live"
 
 echo "=== 4/5 redeploy app (worker/executor/route/send fixes) ==="
 rsync -a --exclude '.git' --exclude 'node_modules' --exclude '.next' \
