@@ -72,8 +72,38 @@ create table if not exists public.email_delivery_events (
   provider_occurred_at  timestamptz not null,
   received_at           timestamptz not null default now(),
   provider_error        jsonb not null default '{}'::jsonb,
-  unique (workspace_id, rfc_message_id, event_status, provider_occurred_at)
+  constraint email_delivery_events_dedupe_uniq
+    unique (workspace_id, rfc_message_id, event_status, is_permanent, provider_occurred_at)
 );
+-- Converge existing databases (the original key omitted is_permanent, so a
+-- soft->permanent bounce correction at the same timestamp was mis-read as a
+-- replay and did not suppress — Codex). Drop any prior unique key on the old
+-- column set, then ensure the is_permanent-bearing key exists. Idempotent.
+do $email_delivery_events_dedupe$
+declare
+  old_name text;
+begin
+  -- Drop any legacy UNIQUE key (there is only ever the one dedup key) that is
+  -- not the is_permanent-bearing named constraint.
+  for old_name in
+    select conname from pg_constraint
+     where conrelid = 'public.email_delivery_events'::regclass
+       and contype = 'u'
+       and conname <> 'email_delivery_events_dedupe_uniq'
+  loop
+    execute format('alter table public.email_delivery_events drop constraint %I', old_name);
+  end loop;
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.email_delivery_events'::regclass
+       and conname = 'email_delivery_events_dedupe_uniq'
+  ) then
+    alter table public.email_delivery_events
+      add constraint email_delivery_events_dedupe_uniq
+      unique (workspace_id, rfc_message_id, event_status, is_permanent, provider_occurred_at);
+  end if;
+end
+$email_delivery_events_dedupe$;
 
 create index if not exists email_delivery_events_outbound_idx
   on public.email_delivery_events (workspace_id, outbound_message_id, provider_occurred_at desc);
@@ -113,6 +143,31 @@ revoke all on public.email_ledger_delivery_receipts from anon, public, authentic
 drop policy if exists email_ledger_delivery_receipts_owner on public.email_ledger_delivery_receipts;
 create policy email_ledger_delivery_receipts_owner on public.email_ledger_delivery_receipts
   for all to postgres, supabase_admin using (true) with check (true);
+
+-- Bounded cleanup for the dedup spine (Codex: receipts grow unbounded). Safe to
+-- schedule from the loop worker. Retention is floored at 90 days so it can never
+-- delete a receipt inside any realistic provider replay window — deleting a
+-- receipt early would reopen the replay it exists to prevent.
+create or replace function public.cleanup_email_ledger_delivery_receipts(p_retention_days integer default 180)
+returns integer
+language plpgsql security definer set search_path = pg_catalog, public, pg_temp as $$
+declare
+  deleted integer;
+  retention integer := greatest(coalesce(p_retention_days, 180), 90);
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'service role required' using errcode = '42501';
+  end if;
+  delete from public.email_ledger_delivery_receipts
+   where received_at < now() - make_interval(days => retention);
+  get diagnostics deleted = row_count;
+  return deleted;
+end;
+$$;
+alter function public.cleanup_email_ledger_delivery_receipts(integer) owner to postgres;
+revoke all on function public.cleanup_email_ledger_delivery_receipts(integer)
+  from public, anon, authenticated, service_role, authenticator;
+grant execute on function public.cleanup_email_ledger_delivery_receipts(integer) to service_role;
 
 -- ---------------------------------------------------------------------------
 -- 4. enqueue_email_outbound — authenticated SECURITY DEFINER. Places an approved
@@ -616,7 +671,7 @@ begin
       when p_provider_error_code is null then '{}'::jsonb
       else jsonb_build_object('code', p_provider_error_code)
     end
-  ) on conflict (workspace_id, rfc_message_id, event_status, provider_occurred_at) do nothing;
+  ) on conflict on constraint email_delivery_events_dedupe_uniq do nothing;
   get diagnostics event_is_new = row_count;
 
   -- Permanent bounce or spam complaint -> never contact this address again.

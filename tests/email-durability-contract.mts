@@ -57,7 +57,7 @@ ok(
   "email_delivery_events mirrors the whatsapp event set for email",
   /event_status\s+text not null check \(event_status in \('delivered', 'bounced', 'complained', 'opened'\)\)/i.test(
     events,
-  ) && /unique \(workspace_id, rfc_message_id, event_status, provider_occurred_at\)/i.test(events),
+  ) && /unique \(workspace_id, rfc_message_id, event_status, is_permanent, provider_occurred_at\)/i.test(events),
 );
 ok(
   "email_delivery_events forces RLS and grants only SELECT to authenticated",
@@ -187,6 +187,26 @@ ok(
   "a bounce/complaint for a synchronously-sent email correlates via the ledger rfc_message_id and suppresses",
   /from public\.outreach_ledger l[\s\S]*?and l\.rfc_message_id = p_rfc_message_id/i.test(deliveryEvent)
     && /'ledger-correlated'/i.test(deliveryEvent),
+);
+ok(
+  "the delivery-event dedup key includes is_permanent (soft->permanent is a distinct event)",
+  /constraint email_delivery_events_dedupe_uniq\s*unique \(workspace_id, rfc_message_id, event_status, is_permanent, provider_occurred_at\)/i.test(migration)
+    && /on conflict on constraint email_delivery_events_dedupe_uniq do nothing/i.test(deliveryEvent),
+);
+ok(
+  "BOTH correlation branches suppress only on a genuinely new event (replay-idempotent)",
+  // messages_outbound branch: gated on the delivery-event insert row_count
+  /get diagnostics event_is_new = row_count;[\s\S]*?if suppress and event_is_new = 1 then/i.test(deliveryEvent)
+    // ledger branch: gated on a durable receipt insert row_count
+    && /insert into public\.email_ledger_delivery_receipts\([\s\S]*?on conflict \(workspace_id, rfc_message_id, event_status, is_permanent, provider_occurred_at\) do nothing;\s*get diagnostics event_is_new = row_count;\s*suppress :=[\s\S]*?if suppress and event_is_new = 1 and recipient/i.test(deliveryEvent),
+);
+ok(
+  "the ledger dedup receipts table is force-RLS + postgres-only with an is_permanent key, and has a bounded cleanup",
+  /create table if not exists public\.email_ledger_delivery_receipts/i.test(migration)
+    && /alter table public\.email_ledger_delivery_receipts force row level security/i.test(migration)
+    && /revoke all on public\.email_ledger_delivery_receipts from anon, public, authenticated, service_role, authenticator/i.test(migration)
+    && /create or replace function public\.cleanup_email_ledger_delivery_receipts\(p_retention_days integer/i.test(migration)
+    && /greatest\(coalesce\(p_retention_days, 180\), 90\)/i.test(migration),
 );
 ok(
   "record_email_delivery_event and finalize_email_provider_failure are service-only",
