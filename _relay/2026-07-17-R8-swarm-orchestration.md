@@ -83,3 +83,37 @@ scheduler; mission ledger without GC; fire-and-forget tmux notifications.
    enable agents → swarm_enabled → executor URL. Every step admin-attributed.
 4. Executor endpoint choice (Dust / Flowise / Claude runner) is an owner
    decision — the worker only speaks the checkpoint contract to a URL you set.
+
+## ADDENDUM 2026-07-17 (same day): PROVEN LIVE-FIRE — walls down
+
+Owner ordered step 3 ("don't stop until fully done"). Results:
+
+1. **Docker wall DOWN** (colima was running all along, sandbox had masked it):
+   - `tests/loop-jobs-db.sh`: full chain 0001→0046 applied in real Postgres,
+     41 assertions + SKIP LOCKED race, 0 failed (9-param controls included).
+   - `scripts/test-db-privileges.sh`: FULL PASS after advancing the reviewed
+     baseline (schema sha256 pin + table/function inventories were stale since
+     0038 — refreshed through 0046). `legacy_baseline=approved secret_leak=none`.
+   - `tests/candidate-erasure-db.sh`: FULL PASS — the erasure authority that
+     blocked prod applies is now verified.
+2. **Full E2E on the repo's own local Supabase stack** (db+auth+rest+kong,
+   bootstrap applied all 46 migrations): seeded roster, enabled 6 agents,
+   flipped swarm_enabled (admin-attributed), ran swarm-orchestrator-worker +
+   swarm-executor-server (checkpoint-contract HTTP executor; local Claude CLI
+   shim as brain). Mission "Pilot: senior data engineers" ran the ENTIRE state
+   machine live: dispatch → execute → lease-bound checkpoint → auto review
+   routing → reviewer needs_input → durable escalation → admin answer →
+   requeue → verdict approved → DAG release → drafter (real outreach draft
+   with {{first_name}}/{{signal}} slots, terminates at draft) → second review
+   → changes_requested/blocked path → operator loop → **verdict approved →
+   mission COMPLETE. 0 open escalations.** Retry/backoff, executor-down
+   fail-closed, and restart-resume were all exercised by real failures
+   (expired Kimi key, slow CLI) and behaved as designed.
+3. **Hardening found by the loop itself** (all committed): envelopes now carry
+   the reviewed checkpoint, the reviewed work's dependencies, and dependency
+   context for DAG tasks — reviewers refused to rubber-stamp until they could
+   SEE evidence, which is exactly the designed behavior.
+4. **Prod path prepared, blocked only at the human gate**: prod is self-hosted
+   Supabase on Fly (aria-mantu-*). Runbook stage E/F scripts staged; the
+   auto-mode permission classifier (correctly) refuses an autonomous
+   credentialed prod deploy. One owner command remains (see final report).

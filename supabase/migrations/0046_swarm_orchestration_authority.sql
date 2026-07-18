@@ -1734,6 +1734,8 @@ declare
   mission_row public.swarm_missions%rowtype;
   latest_next_action text;
   answers jsonb;
+  reviewed jsonb;
+  dependency_context jsonb;
 begin
   if coalesce(auth.role(), '') <> 'service_role' then
     raise exception 'service role required' using errcode = '42501';
@@ -1781,6 +1783,79 @@ begin
    where escalation.assignment_id = assignment_row.id
      and escalation.status = 'answered';
 
+  -- A review envelope carries the reviewed assignment's task and its latest
+  -- checkpoint verbatim — a reviewer must never be asked to verify work it
+  -- cannot see.
+  if assignment_row.kind = 'review' and assignment_row.reviews_assignment_id is not null then
+    select jsonb_build_object(
+             'assignment_id', target.id,
+             'task', target.task,
+             'expected_output', target.expected_output,
+             'checkpoint', (
+               select jsonb_build_object(
+                        'state', checkpoint.state,
+                        'result', checkpoint.result,
+                        'files_changed', checkpoint.files_changed,
+                        'commands_run', checkpoint.commands_run,
+                        'proof', checkpoint.proof,
+                        'next_action', checkpoint.next_action
+                      )
+                 from public.swarm_checkpoints checkpoint
+                where checkpoint.assignment_id = target.id
+                order by checkpoint.id desc
+                limit 1
+             ),
+             -- what the reviewed work was BUILT ON, so the reviewer can verify
+             -- against upstream output instead of asking the human for it
+             'dependencies', (
+               select coalesce(jsonb_agg(jsonb_build_object(
+                        'assignment_id', dep.id,
+                        'task', dep.task,
+                        'checkpoint', (
+                          select jsonb_build_object(
+                                   'state', checkpoint.state,
+                                   'result', checkpoint.result,
+                                   'proof', checkpoint.proof
+                                 )
+                            from public.swarm_checkpoints checkpoint
+                           where checkpoint.assignment_id = dep.id
+                           order by checkpoint.id desc
+                           limit 1
+                        )
+                      )), '[]'::jsonb)
+                 from public.swarm_assignments dep
+                where dep.id = any(target.depends_on)
+             )
+           )
+      into reviewed
+      from public.swarm_assignments target
+     where target.id = assignment_row.reviews_assignment_id;
+  end if;
+
+  -- A task that depends on other assignments receives their latest DONE
+  -- checkpoints verbatim — downstream work must never guess upstream output.
+  if assignment_row.kind = 'task'
+     and coalesce(array_length(assignment_row.depends_on, 1), 0) > 0 then
+    select coalesce(jsonb_agg(jsonb_build_object(
+             'assignment_id', dep.id,
+             'task', dep.task,
+             'checkpoint', (
+               select jsonb_build_object(
+                        'state', checkpoint.state,
+                        'result', checkpoint.result,
+                        'proof', checkpoint.proof
+                      )
+                 from public.swarm_checkpoints checkpoint
+                where checkpoint.assignment_id = dep.id
+                order by checkpoint.id desc
+                limit 1
+             )
+           )), '[]'::jsonb)
+      into dependency_context
+      from public.swarm_assignments dep
+     where dep.id = any(assignment_row.depends_on);
+  end if;
+
   -- Mark executing: the envelope handoff is the execution start.
   update public.swarm_assignments
      set status = 'executing', updated_at = now()
@@ -1805,6 +1880,8 @@ begin
       'proof_contract', mission_row.proof_contract,
       'constraints', mission_row.constraints
     ),
+    'reviewed', reviewed,
+    'dependencies', dependency_context,
     'continuation', jsonb_build_object(
       'attempt', assignment_row.attempt_count,
       'last_next_action', latest_next_action,
