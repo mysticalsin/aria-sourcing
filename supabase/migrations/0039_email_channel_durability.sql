@@ -82,14 +82,19 @@ create table if not exists public.email_delivery_events (
 do $email_delivery_events_dedupe$
 declare
   old_name text;
+  is_permanent_attnum int2 := (
+    select attnum from pg_attribute
+     where attrelid = 'public.email_delivery_events'::regclass and attname = 'is_permanent'
+  );
 begin
-  -- Drop any legacy UNIQUE key (there is only ever the one dedup key) that is
-  -- not the is_permanent-bearing named constraint.
+  -- Drop ONLY the legacy dedup key: a UNIQUE constraint that does NOT include
+  -- is_permanent. The new named key includes it, so this can never drop the
+  -- replacement, and it never touches any unrelated unique constraint.
   for old_name in
     select conname from pg_constraint
      where conrelid = 'public.email_delivery_events'::regclass
        and contype = 'u'
-       and conname <> 'email_delivery_events_dedupe_uniq'
+       and not (is_permanent_attnum = any(conkey))
   loop
     execute format('alter table public.email_delivery_events drop constraint %I', old_name);
   end loop;
