@@ -599,7 +599,7 @@ select loop_jobs_test.expect_sqlstate(
     begin
       set local role authenticated;
       perform loop_jobs_test.set_authenticated_claims('c1000000-0000-4000-8000-000000000001');
-      perform public.set_sourcing_loop_controls(true, false, true, false, false, 10, 50, 200);
+      perform public.set_sourcing_loop_controls(true, false, true, false, false, false, 10, 50, 200);
     end;
     $body$
   $$,
@@ -613,7 +613,7 @@ select loop_jobs_test.expect_sqlstate(
     begin
       set local role authenticated;
       perform loop_jobs_test.set_authenticated_claims('c2000000-0000-4000-8000-000000000002');
-      perform public.set_sourcing_loop_controls(false, false, true, false, false, 10, 50, 200);
+      perform public.set_sourcing_loop_controls(false, false, true, false, false, false, 10, 50, 200);
     end;
     $body$
   $$,
@@ -623,7 +623,7 @@ select loop_jobs_test.expect_sqlstate(
 set role authenticated;
 select loop_jobs_test.set_authenticated_claims('c1000000-0000-4000-8000-000000000001');
 create temporary table controls_update as
-select public.set_sourcing_loop_controls(false, false, true, false, false, 10, 50, 200) as result;
+select public.set_sourcing_loop_controls(false, false, true, false, false, false, 10, 50, 200) as result;
 reset role;
 
 select loop_jobs_test.expect_scalar(
