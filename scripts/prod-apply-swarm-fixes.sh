@@ -27,7 +27,14 @@ work="$(mktemp -d /tmp/aria-swarmfix.XXXXXX)"
 trap 'rm -rf "$work"' EXIT
 
 echo "=== 1/4 stage corrected authority SQL ==="
-cat "$repo/supabase/migrations/0044_sourcing_enrichment_authority.sql" \
+# Swarm authority (Codex pass) + channel fixes (WhatsApp go-live blocker,
+# email bounce suppression, inbound erasure hardening). All idempotent
+# create-or-replace / add-column-if-not-exists, safe to re-apply over the
+# already-ledgered originals.
+cat "$repo/supabase/migrations/0028_conversation_authority_hardening.sql" \
+    "$repo/supabase/migrations/0039_email_channel_durability.sql" \
+    "$repo/supabase/migrations/0041_email_outcomes.sql" \
+    "$repo/supabase/migrations/0044_sourcing_enrichment_authority.sql" \
     "$repo/supabase/migrations/0045_outreach_sequence_authority.sql" \
     "$repo/supabase/migrations/0046_swarm_orchestration_authority.sql" \
     > "$work/prod-fixes.sql"
