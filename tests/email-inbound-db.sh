@@ -129,7 +129,7 @@ create temporary table resolve_hit as select public.resolve_inbound_mailbox_rout
 create temporary table resolve_miss as select public.resolve_inbound_mailbox_route('nobody@nowhere.test') r;
 reset role;
 select email_inbound_test.expect_scalar('resolve-hit-lowercased',
-  $$select concat_ws(':', r->>'ok', (r->>'workspace_id')='71111111-1111-4111-8111-111111111111') from resolve_hit$$, 'true:true');
+  $$select concat_ws(':', r->>'ok', ((r->>'workspace_id')='71111111-1111-4111-8111-111111111111')::text) from resolve_hit$$, 'true:true');
 select email_inbound_test.expect_scalar('resolve-miss-no-route',
   $$select concat_ws(':', r->>'ok', r->>'reason') from resolve_miss$$, 'false:no-route');
 
