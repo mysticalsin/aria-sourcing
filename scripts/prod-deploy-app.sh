@@ -15,6 +15,8 @@
 #   bash scripts/prod-deploy-app.sh
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$repo/scripts/lib/prod-release-guard.sh"
+aria_require_reviewed_production_release prod-deploy-app aria-mantu-app
 export FLY_API_TOKEN="$(cat "$repo/production-readiness/.fly-token.env")"
 export FLY_NO_METRICS=1 DO_NOT_TRACK=1
 set -a; source "$repo/production-readiness/.fly-secrets.env"; set +a

@@ -79,10 +79,25 @@ const releaseEvidenceArtifactDigestOutput = releaseEvidenceArchiveId
   ? `\${{ steps.${releaseEvidenceArchiveId}.outputs.artifact-digest }}`
   : "";
 const appDeployLine = deploy.split("\n").find((line) => /fly deploy --config fly\.app\.toml/.test(line)) ?? "";
+const reviewedAlternateDeploySurfaces = [
+  "scripts/prod-apply-swarm-fixes.sh",
+  "scripts/prod-deploy-app.sh",
+  "scripts/prod-swarm-rollout.sh",
+];
+const reviewedAlternateDeploySources = new Map(
+  reviewedAlternateDeploySurfaces.map((path) => [path, existsSync(path) ? readFileSync(path, "utf8") : ""]),
+);
+const productionReleaseGuard = existsSync("scripts/lib/prod-release-guard.sh")
+  ? readFileSync("scripts/lib/prod-release-guard.sh", "utf8")
+  : "";
 const trackedFiles = spawnSync("git", ["ls-files", "-z"], { encoding: "utf8" }).stdout
   .split("\0")
   .filter(Boolean);
-const canonicalProductionDeploySurfaces = new Set(["deploy-fly.sh", ".github/workflows/deploy-aria-mantu.yml"]);
+const canonicalProductionDeploySurfaces = new Set([
+  "deploy-fly.sh",
+  ".github/workflows/deploy-aria-mantu.yml",
+  ...reviewedAlternateDeploySurfaces,
+]);
 const executableReleaseSurfaces = trackedFiles.filter(
   (path) => path === ".gitlab-ci.yml" || path.endsWith(".sh") || path.startsWith(".github/workflows/"),
 );
@@ -351,8 +366,27 @@ if (unsafeAlternateDeploySurfaces.length > 0) {
   console.error("Unsafe alternate production deploy surfaces:", unsafeAlternateDeploySurfaces.join(", "));
 }
 ok(
-  "only the reviewed GitHub workflow and hardened deploy script can mutate Fly production",
-  unsafeAlternateDeploySurfaces.length === 0,
+  "only reviewed release-authorized surfaces can mutate Fly production",
+  unsafeAlternateDeploySurfaces.length === 0 &&
+    reviewedAlternateDeploySurfaces.every((path) => canonicalProductionDeploySurfaces.has(path)) &&
+    /ARIA_RELEASE_SHA[\s\S]*\{40\}/.test(productionReleaseGuard) &&
+    /git rev-parse --verify --quiet "\$\{ARIA_RELEASE_SHA\}\^\{commit\}"/.test(productionReleaseGuard) &&
+    /git status --porcelain --untracked-files=all/.test(productionReleaseGuard) &&
+    /ARIA_PROD_DEPLOY_CONFIRM/.test(productionReleaseGuard) &&
+    /ARIA_PROD_DEPLOY_RECEIPT_PATH/.test(productionReleaseGuard) &&
+    reviewedAlternateDeploySurfaces.every((path) => {
+      const source = reviewedAlternateDeploySources.get(path) ?? "";
+      const guardIndex = source.indexOf("aria_require_reviewed_production_release");
+      const firstMutationIndex = source.search(/(?:fly|flyctl)\s+(?:deploy|machine\s+run)\b/);
+      const firstCredentialIndex = source.indexOf("production-readiness/");
+      return (
+        source.includes("source \"$repo/scripts/lib/prod-release-guard.sh\"") &&
+        guardIndex >= 0 &&
+        firstMutationIndex >= 0 &&
+        guardIndex < firstMutationIndex &&
+        (firstCredentialIndex < 0 || guardIndex < firstCredentialIndex)
+      );
+    }),
 );
 ok(
   "alternate-deploy detector rejects wrappers around the canonical mutation script",
