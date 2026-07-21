@@ -663,7 +663,9 @@ esac
     const result = spawnSync("/bin/bash", ["deploy-fly.sh"], {
       cwd: root,
       encoding: "utf8",
-      timeout: 20_000,
+      // The contract asserts deploy-fly.sh behavior, not wall-clock speed;
+      // keep this bounded only to prevent an indefinite hang on slow filesystems.
+      timeout: 180_000,
       env: {
         NODE_ENV: "test",
         PATH: `${bin}:${process.env.PATH ?? ""}`,

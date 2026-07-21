@@ -8,7 +8,6 @@ import {
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
-import { createRequire } from "node:module";
 
 import { testManifest } from "../tests/test-manifest.mjs";
 
@@ -17,7 +16,6 @@ export const TEST_MANIFEST_TRACE_FILE = "ARIA_TEST_MANIFEST_TRACE_FILE";
 const allowedExecutables = new Set(["bash", "node", "tsx"]);
 const lifecycleGroups = ["pretest", "application", "posttest"];
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const tsxCliPath = createRequire(import.meta.url).resolve("tsx/cli");
 
 /**
  * @typedef {(executable: string, argv: string[], options: {
@@ -119,7 +117,7 @@ function invocationFor(command) {
     return { executable: process.execPath, argv: command.argv };
   }
   if (command.executable === "tsx") {
-    return { executable: process.execPath, argv: [tsxCliPath, ...command.argv] };
+    return { executable: process.execPath, argv: ["--import", "tsx", ...command.argv] };
   }
   return { executable: "bash", argv: command.argv };
 }

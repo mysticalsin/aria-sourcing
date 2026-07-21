@@ -9,7 +9,6 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { createRequire } from "node:module";
 import test from "node:test";
 
 import {
@@ -283,8 +282,7 @@ test("canonical execution is shell-free and fail-fast", () => {
   assert.equal(result.ok, false);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].executable, process.execPath);
-  assert.equal(calls[0].argv[0], createRequire(import.meta.url).resolve("tsx/cli"));
-  assert.deepEqual(calls[0].argv.slice(1), commands[0].argv);
+  assert.deepEqual(calls[0].argv, ["--import", "tsx", ...commands[0].argv]);
   assert.equal(calls[0].options.shell, false);
 });
 

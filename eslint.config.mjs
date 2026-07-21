@@ -14,7 +14,23 @@ const config = [
   includeIgnoreFile(gitignorePath),
   ...nextCoreWebVitals,
   {
-    ignores: [".localbin/**", "**/dist/**"],
+    ignores: [
+      ".localbin/**",
+      ".next/**",
+      ".turbo/**",
+      ".vercel/**",
+      "node_modules/**",
+      "out/**",
+      "build/**",
+      "coverage/**",
+      "playwright-report/**",
+      "test-results/**",
+      "graphify-out/**",
+      "production-readiness/**",
+      "tmp/**",
+      "var/**",
+      "**/dist/**",
+    ],
   },
   {
     rules: {
