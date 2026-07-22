@@ -5,7 +5,7 @@ import { NextRequest } from "next/server";
 
 import { buildSeedState } from "../src/lib/seed";
 import { sourcingAgentCampaignFingerprint } from "../src/lib/sourcing/sourcing-agent-contract";
-import type { Campaign } from "../src/lib/types";
+import type { Campaign, SystemSettings } from "../src/lib/types";
 
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -19,7 +19,9 @@ const baseCampaign = {
   id: campaignId,
   status: "Sourcing" as const,
 };
-const cloudSettings = {
+type AiSettings = Pick<SystemSettings, "llmProviders" | "savedModels" | "defaultModels">;
+
+const cloudSettings: AiSettings = {
   llmProviders: [
     {
       id: "provider-openai",
@@ -42,7 +44,7 @@ const cloudSettings = {
   ],
   defaultModels: { sourcing: "model-openai-sourcing" },
 };
-const deterministicSettings = {
+const deterministicSettings: AiSettings = {
   llmProviders: [],
   savedModels: [],
   defaultModels: {},
@@ -55,6 +57,7 @@ let stateReads = 0;
 let providerCalls = 0;
 let vaultCalls = 0;
 let runnerCalls = 0;
+let runnerTavilyKeys: Array<string | null | undefined> = [];
 let beginCalls = 0;
 let frameworkBeginCalls = 0;
 let frameworkCheckCalls = 0;
@@ -73,6 +76,8 @@ let providerUsesTool = true;
 let foundCandidates: unknown[] = [];
 let runnerCandidatesAfterRun: unknown[] = [];
 let beginStatus = "claimed";
+let resumeStatus = "no_pending";
+let ordinaryRecoveredPayload: Record<string, unknown> | null = null;
 let frameworkBeginStatus = "claimed";
 let frameworkExecutionAllowed = true;
 let frameworkBeginInput: Record<string, unknown> | null = null;
@@ -80,15 +85,45 @@ let frameworkCompletionInput: Record<string, unknown> | null = null;
 let frameworkRecoveredPayload: Record<string, unknown> | null = null;
 let lessonsEnabled = true;
 let promotedLessons: unknown[] = [];
-let completionStatus = "completed";
+let completionStatus = "result_ready";
 let cloudConfigured = true;
 let requestSequence = 0;
 let currentWorkspaceId = workspaceId;
 let liveSettings = structuredClone(cloudSettings);
 let resolvedVaultKeyId = "";
 let resolvedVaultProvider = "";
+let resolvedVaultWorkspaceId = "";
+let vaultSecretAvailable = true;
 let requestedCloudProvider = "";
 let requestedCloudModel = "";
+
+const bindingApiKeyId = "88888888-8888-4888-8888-888888888888";
+const baseBinding = {
+  workspaceId,
+  bindingSetId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  setSha256: "1".repeat(64),
+  bindingId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  purpose: "sourcing" as const,
+  provider: "openai" as const,
+  credentialProvider: "OpenAI",
+  endpointProfile: "default",
+  model: "gpt-4o-mini-binding",
+  apiKeyId: bindingApiKeyId,
+  catalogRevision: 1,
+  configSha256: "2".repeat(64),
+};
+let serviceClientAvailable = true;
+let bindingStatus:
+  | "configured"
+  | "not_configured"
+  | "credential_unavailable"
+  | "authority_invalid"
+  | "backend_error" = "configured";
+let bindingOverride: Record<string, unknown> = {};
+let bindingCalls = 0;
+let tavilyCredential: { apiKeyId: string; key: string } | null = null;
+let tavilyAuthorized = true;
+let tavilyAuthorizationChecks = 0;
 
 const query: Record<string, unknown> = {};
 Object.assign(query, {
@@ -134,26 +169,76 @@ mock.module(moduleUrl("src/lib/supabase/config.ts"), {
     supabaseEnabled: true,
   },
 });
+const serviceClient = { rpc: async () => ({ data: null, error: null }) };
 mock.module(moduleUrl("src/lib/supabase/server.ts"), {
-  namedExports: { getServerSupabase: async () => session },
+  namedExports: {
+    getServerSupabase: async () => session,
+    getServiceSupabase: () => (serviceClientAvailable ? serviceClient : null),
+  },
+});
+mock.module(moduleUrl("src/lib/ai/runtime-binding.ts"), {
+  namedExports: {
+    resolveActiveAiRuntimeBinding: async (_client: unknown, wid: string, purpose: string) => {
+      bindingCalls += 1;
+      if (bindingStatus !== "configured") {
+        return { ok: false, code: bindingStatus };
+      }
+      return {
+        ok: true,
+        binding: { ...baseBinding, workspaceId: wid, purpose, ...bindingOverride },
+      };
+    },
+  },
 });
 mock.module(moduleUrl("src/lib/ai/vault-secret.ts"), {
   namedExports: {
-    resolveVaultSecret: async (keyId: string, provider: string) => {
+    resolveVaultSecret: async (keyId: string, provider: string, wid?: string) => {
       vaultCalls += 1;
       eventOrder.push("vault");
       resolvedVaultKeyId = keyId;
       resolvedVaultProvider = provider;
+      resolvedVaultWorkspaceId = wid ?? "";
       mutateDuringVault?.();
-      return "workspace-provider-secret";
+      return vaultSecretAvailable ? "workspace-provider-secret" : null;
     },
   },
 });
 mock.module(moduleUrl("src/lib/sourcing/tavily.ts"), {
-  namedExports: { resolveStoredTavilyKey: async () => null },
+  namedExports: {
+    resolveStoredTavilyKey: async () => tavilyCredential?.key ?? null,
+    resolveStoredTavilyCredential: async () => tavilyCredential,
+    isStoredTavilyCredentialAuthorized: async (
+      _service: unknown,
+      wid: string,
+      apiKeyId: string,
+    ) => {
+      tavilyAuthorizationChecks += 1;
+      return tavilyAuthorized &&
+        wid === workspaceId &&
+        apiKeyId === tavilyCredential?.apiKeyId;
+    },
+  },
 });
 mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
   namedExports: {
+    resumeSourcingRunResult: async () => {
+      if (resumeStatus === "result_ready") {
+        return {
+          status: "result_ready",
+          runId: "55555555-5555-4555-8555-555555555555",
+          requestedCount: 1,
+          resultSha256: "c".repeat(64),
+          resultPayload: ordinaryRecoveredPayload,
+        };
+      }
+      if (resumeStatus === "in_progress") {
+        return {
+          status: "in_progress",
+          runId: "55555555-5555-4555-8555-555555555555",
+        };
+      }
+      return { status: resumeStatus };
+    },
     beginSourcingRun: async () => {
       beginCalls += 1;
       eventOrder.push("begin");
@@ -165,7 +250,7 @@ mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
           lessonsEnabled,
         };
       }
-      if (["in_progress", "completed", "failed"].includes(beginStatus)) {
+      if (beginStatus === "in_progress") {
         return {
           status: beginStatus,
           runId: "55555555-5555-4555-8555-555555555555",
@@ -231,19 +316,21 @@ mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
         lessons: promotedLessons,
       };
     },
-    completeSourcingRun: async () => {
+    completeSourcingRun: async (input: Record<string, unknown>) => {
       completeCalls += 1;
-      return completionStatus === "completed"
+      return completionStatus === "result_ready"
         ? {
-            status: "completed",
+            status: "result_ready",
             runId: "55555555-5555-4555-8555-555555555555",
-            queryCount: Math.max(runnerQueries.length, 1),
-            candidateCount: foundCandidates.length,
-            receipts: runnerQueries.map((query, index) => ({
-              receiptId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
-              platform: query.platform,
-              candidateCount: foundCandidates.length,
-            })),
+            resultSha256: "c".repeat(64),
+            resultPayload: {
+              ...(input.resultPayload as Record<string, unknown>),
+              feedbackReceipts: runnerQueries.map((query, index) => ({
+                receiptId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+                platform: query.platform,
+                candidateCount: foundCandidates.length,
+              })),
+            },
           }
         : { status: completionStatus };
     },
@@ -256,8 +343,21 @@ mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
 mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
   namedExports: {
     SOURCING_TOOL_DEFS: [],
-    makeSourcingToolRunner: () => ({
+    makeSourcingToolRunner: (
+      _campaign: unknown,
+      _existing: unknown,
+      _weights: unknown,
+      _githubToken: string,
+      tavilyKey?: string | null,
+      _webFetch?: unknown,
+      beforeExternalCall?: () => Promise<boolean>,
+    ) => {
+      runnerTavilyKeys.push(tavilyKey);
+      return ({
       run: async (_name: string, args: { platform?: string; query?: string }) => {
+        if (beforeExternalCall && !(await beforeExternalCall())) {
+          return { ok: false, error: "Sourcing authority changed." };
+        }
         runnerCalls += 1;
         eventOrder.push("runner");
         runnerQueries.push({
@@ -278,7 +378,8 @@ mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
         candidateCount: foundCandidates.length,
         skippedCount: 0,
       })),
-    }),
+      });
+    },
   },
 });
 mock.module(moduleUrl("src/lib/ai/tool-loop.ts"), {
@@ -342,6 +443,7 @@ function reset() {
   providerCalls = 0;
   vaultCalls = 0;
   runnerCalls = 0;
+  runnerTavilyKeys = [];
   beginCalls = 0;
   frameworkBeginCalls = 0;
   frameworkCheckCalls = 0;
@@ -361,6 +463,8 @@ function reset() {
   runnerCandidatesAfterRun = [];
   cloudConfigured = true;
   beginStatus = "claimed";
+  resumeStatus = "no_pending";
+  ordinaryRecoveredPayload = null;
   frameworkBeginStatus = "claimed";
   frameworkExecutionAllowed = true;
   frameworkBeginInput = null;
@@ -368,13 +472,22 @@ function reset() {
   frameworkRecoveredPayload = null;
   lessonsEnabled = true;
   promotedLessons = [];
-  completionStatus = "completed";
+  completionStatus = "result_ready";
   currentWorkspaceId = workspaceId;
   liveSettings = structuredClone(cloudSettings);
   resolvedVaultKeyId = "";
   resolvedVaultProvider = "";
+  resolvedVaultWorkspaceId = "";
+  vaultSecretAvailable = true;
   requestedCloudProvider = "";
   requestedCloudModel = "";
+  serviceClientAvailable = true;
+  bindingStatus = "configured";
+  bindingOverride = {};
+  bindingCalls = 0;
+  tavilyCredential = null;
+  tavilyAuthorized = true;
+  tavilyAuthorizationChecks = 0;
 }
 
 test("active campaign is loaded from authoritative workspace state before and after provider I/O", async () => {
@@ -386,7 +499,7 @@ test("active campaign is loaded from authoritative workspace state before and af
   assert.equal(body.ok, true);
   assert.equal(body.mode, "cloud");
   assert.equal(typeof body.campaignFingerprint, "string");
-  assert.equal(stateReads, 4);
+  assert.ok(stateReads >= 6, "authority is re-read before each external boundary and finalization");
   assert.equal(vaultCalls, 1);
   assert.equal(providerCalls, 1);
   assert.equal(beginCalls, 1);
@@ -399,16 +512,177 @@ test("active campaign is loaded from authoritative workspace state before and af
   assert.equal(body.feedbackReceipts.length, 1);
 });
 
-test("cloud provider, model, and key are selected only from current workspace settings", async () => {
+test("cloud provider, model, and key are selected only from the normalized runtime binding, never workspace settings", async () => {
   reset();
+  // Workspace settings point at a different provider/model/key entirely —
+  // the binding must win regardless of what workspace_state says.
+  liveSettings = {
+    llmProviders: [
+      {
+        id: "provider-anthropic",
+        kind: "Anthropic",
+        label: "Workspace Anthropic",
+        apiKeyId: "99999999-9999-4999-8999-999999999999",
+        enabled: true,
+        isDefault: true,
+      },
+    ],
+    savedModels: [],
+    defaultModels: {},
+  };
   const response = await post(request());
   const body = await response.json();
 
   assert.equal(response.status, 200, JSON.stringify(body));
-  assert.equal(requestedCloudProvider, "openai");
-  assert.equal(requestedCloudModel, "gpt-4o-mini");
-  assert.equal(resolvedVaultKeyId, apiKeyId);
-  assert.equal(resolvedVaultProvider, "OpenAI");
+  assert.equal(bindingCalls >= 1, true);
+  assert.equal(requestedCloudProvider, baseBinding.provider);
+  assert.equal(requestedCloudModel, baseBinding.model);
+  assert.equal(resolvedVaultKeyId, baseBinding.apiKeyId);
+  assert.equal(resolvedVaultProvider, baseBinding.credentialProvider);
+  assert.equal(resolvedVaultWorkspaceId, workspaceId);
+  assert.deepEqual(
+    runnerTavilyKeys,
+    [null],
+    "missing workspace Tavily authority must be explicit and cannot select the process fallback",
+  );
+});
+
+test("revoking the exact workspace Tavily row stops the next search egress", async () => {
+  reset();
+  tavilyCredential = {
+    apiKeyId: "77777777-7777-4777-8777-777777777777",
+    key: "tvly-workspace-authorized-key",
+  };
+  mutateDuringProvider = () => {
+    tavilyAuthorized = false;
+  };
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 409, JSON.stringify(body));
+  assert.equal(body.code, "CAMPAIGN_CHANGED");
+  assert.equal(providerCalls, 1, "the already-started model call cannot be recalled");
+  assert.equal(runnerCalls, 0, "revocation must stop the next real search request");
+  assert.ok(tavilyAuthorizationChecks >= 2, "the exact Tavily row is checked before each egress boundary");
+});
+
+test("a stale enabled workspace provider with no key never blocks deterministic real GitHub sourcing once the binding is not_configured", async () => {
+  reset();
+  bindingStatus = "not_configured";
+  // Simulates the live incident: an enabled provider persisted in mutable
+  // workspace_state with no apiKeyId. Under the old code this produced
+  // SOURCING_AGENT_NOT_CONFIGURED; it must now be entirely ignored.
+  liveSettings = {
+    llmProviders: [
+      {
+        id: "provider-kimi-stale",
+        kind: "Kimi",
+        label: "Stale Kimi",
+        enabled: true,
+        isDefault: true,
+      },
+    ],
+    savedModels: [],
+    defaultModels: {},
+  };
+  const candidate = {
+    ...seed.candidates[0],
+    id: "not-configured-fallback-candidate",
+    campaignId,
+    email: "",
+    phone: "",
+    linkedinUrl: "",
+    githubUrl: "https://github.com/not-configured-fallback",
+    sourceUrl: "https://github.com/not-configured-fallback",
+    sourcePlatform: "GitHub" as const,
+    sourceQuery: "language:TypeScript",
+    provenance: "live" as const,
+    lastContactedAt: null,
+  };
+  runnerCandidatesAfterRun = [candidate];
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.mode, "deterministic");
+  assert.equal(body.candidates[0]?.id, candidate.id);
+  assert.equal(vaultCalls, 0);
+  assert.equal(providerCalls, 0);
+  assert.ok(runnerCalls >= 1);
+});
+
+test("credential_unavailable, authority_invalid, backend_error, and an absent service client all fail closed before any egress", async () => {
+  for (const failure of ["credential_unavailable", "authority_invalid", "backend_error"] as const) {
+    reset();
+    bindingStatus = failure;
+    const response = await post(request());
+    const body = await response.json();
+    assert.equal(response.status, 503, JSON.stringify(body));
+    assert.equal(body.code, "SOURCING_AGENT_UNAVAILABLE");
+    assert.equal(vaultCalls, 0);
+    assert.equal(providerCalls, 0);
+    assert.equal(runnerCalls, 0);
+    assert.equal(beginCalls, 0);
+    assert.equal(completeCalls, 0);
+  }
+
+  reset();
+  serviceClientAvailable = false;
+  const response = await post(request());
+  const body = await response.json();
+  assert.equal(response.status, 503, JSON.stringify(body));
+  assert.equal(body.code, "SOURCING_AGENT_UNAVAILABLE");
+  assert.equal(vaultCalls, 0);
+  assert.equal(providerCalls, 0);
+  assert.equal(runnerCalls, 0);
+  assert.equal(beginCalls, 0);
+});
+
+test("a missing tenant-bound vault secret fails with 503 before provider egress", async () => {
+  reset();
+  vaultSecretAvailable = false;
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 503, JSON.stringify(body));
+  assert.equal(body.code, "SOURCING_AGENT_UNAVAILABLE");
+  assert.equal(vaultCalls, 1);
+  assert.equal(providerCalls, 0);
+  assert.deepEqual(failedRunCodes, ["SOURCING_AGENT_UNAVAILABLE"]);
+});
+
+test("a binding revoked or reassigned during credential resolution stops cloud egress", async () => {
+  reset();
+  mutateDuringVault = () => {
+    bindingOverride = { bindingId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" };
+  };
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 409, JSON.stringify(body));
+  assert.equal(body.code, "CAMPAIGN_CHANGED");
+  assert.equal(vaultCalls, 1);
+  assert.equal(providerCalls, 0);
+  assert.deepEqual(failedRunCodes, ["CAMPAIGN_CHANGED"]);
+});
+
+test("a binding config change mid provider-call is caught before the sourcing result is finalized", async () => {
+  reset();
+  mutateDuringProvider = () => {
+    bindingOverride = { configSha256: "9".repeat(64) };
+  };
+
+  const response = await post(request());
+  const body = await response.json();
+
+  assert.equal(response.status, 409, JSON.stringify(body));
+  assert.equal(body.code, "CAMPAIGN_CHANGED");
+  assert.equal(providerCalls, 1);
+  assert.equal(completeCalls, 0);
 });
 
 test("client-owned campaign objects, unknown fields, cross-origin, and non-JSON requests fail before egress", async () => {
@@ -626,6 +900,7 @@ test("deterministic mode runs real GitHub search without a cloud model or provid
   reset();
   role = "member";
   cloudConfigured = false;
+  bindingStatus = "not_configured";
   const candidate = {
     ...seed.candidates[0],
     id: "deterministic-github-candidate",
@@ -663,6 +938,7 @@ test("deterministic mode runs real GitHub search without a cloud model or provid
 test("a completed real search with no matches reports an honest empty result", async () => {
   reset();
   cloudConfigured = false;
+  bindingStatus = "not_configured";
 
   const response = await post(request());
   const body = await response.json();
@@ -680,6 +956,7 @@ test("a completed real search with no matches reports an honest empty result", a
 test("deterministic search stops before a second query after campaign authority changes", async () => {
   reset();
   cloudConfigured = false;
+  bindingStatus = "not_configured";
   mutateDuringRunner = () => {
     campaign.status = "Paused";
   };
@@ -697,6 +974,7 @@ test("deterministic search stops before a second query after campaign authority 
 test("deterministic mode requires a reviewed persisted query and never invents one from a skill", async () => {
   reset();
   cloudConfigured = false;
+  bindingStatus = "not_configured";
   campaign.sourcingStrategy.githubQueries = [];
 
   const response = await post(request());
@@ -710,7 +988,14 @@ test("deterministic mode requires a reviewed persisted query and never invents o
 });
 
 test("quota and idempotency replays never reach provider or sourcing transport", async () => {
-  for (const authorityStatus of ["quota_exceeded", "in_progress", "completed", "failed", "idempotency_conflict"]) {
+  for (const authorityStatus of [
+    "quota_exceeded",
+    "in_progress",
+    "idempotency_conflict",
+    "pending_conflict",
+    "already_consumed",
+    "result_expired",
+  ]) {
     reset();
     beginStatus = authorityStatus;
 
@@ -776,6 +1061,7 @@ test("candidate data is withheld when the sourcing receipt cannot be completed",
 test("deterministic sourcing applies a human-promoted role lesson before baseline queries", async () => {
   reset();
   cloudConfigured = false;
+  bindingStatus = "not_configured";
   const lessonId = "66666666-6666-4666-8666-666666666666";
   promotedLessons = [{
     lessonId,
@@ -940,6 +1226,50 @@ test("framework sourcing recovers a staged result without repeating provider egr
   assert.equal(vaultCalls, 0);
   assert.equal(frameworkCheckCalls, 0);
   assert.equal(frameworkCompleteCalls, 0);
+});
+
+test("ordinary sourcing recovers a staged result after reload with a new idempotency key", async () => {
+  reset();
+  const stagedIdempotencyKey = "88888888-8888-4888-8888-888888888888";
+  const reloadIdempotencyKey = "99999999-9999-4999-8999-999999999999";
+  const sourcingRunId = "55555555-5555-4555-8555-555555555555";
+  resumeStatus = "result_ready";
+  ordinaryRecoveredPayload = {
+    ok: true,
+    mode: "deterministic",
+    campaignId,
+    campaignFingerprint: sourcingAgentCampaignFingerprint(campaign),
+    candidates: [],
+    totalFound: 0,
+    requestId: "ordinary-source-recovered",
+    idempotencyKey: stagedIdempotencyKey,
+    sourcingRunId,
+    appliedLessonIds: [],
+    feedbackReceipts: [{
+      receiptId: "00000000-0000-4000-8000-000000000001",
+      platform: "GitHub",
+      candidateCount: 0,
+    }],
+  };
+
+  const response = await post(request(
+    { count: 2 },
+    "http://localhost",
+    "application/json",
+    reloadIdempotencyKey,
+  ));
+  const body = await response.json();
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.idempotencyKey, stagedIdempotencyKey);
+  assert.equal(body.sourcingRunId, sourcingRunId);
+  assert.equal(body.sourcingResultSha256, "c".repeat(64));
+  assert.equal(beginCalls, 0);
+  assert.equal(bindingCalls, 0);
+  assert.equal(runnerCalls, 0);
+  assert.equal(providerCalls, 0);
+  assert.equal(vaultCalls, 0);
+  assert.equal(completeCalls, 0);
 });
 
 test("framework kill-switch revocation blocks an already claimed real search", async () => {

@@ -101,6 +101,137 @@ ok(
     apolloMapped.accepted[0]?.sourceExternalId === undefined,
 );
 
+function campaignWithRequiredSkills(requiredSkills: string[]) {
+  return {
+    ...campaign,
+    jobAnalysis: {
+      ...campaign.jobAnalysis,
+      requiredSkills,
+      niceToHaveSkills: [],
+    },
+    sourcingStrategy: {
+      ...campaign.sourcingStrategy,
+      excludedCompanies: [],
+    },
+  };
+}
+
+// --- Skill evidence: exact, bounded provider text only --------------------
+const shortSkillCampaign = campaignWithRequiredSkills(["Go", "R", "C"]);
+const misleadingSkillText = "Google researcher and CTO";
+const githubBoundaryResult = mapGithubCandidates(
+  [mk({ login: "boundary-github", htmlUrl: "https://github.com/boundary-github", bio: misleadingSkillText })],
+  shortSkillCampaign,
+  "q",
+  [],
+  W,
+);
+ok(
+  "GitHub bio substrings do not become short-skill evidence",
+  githubBoundaryResult.accepted[0]?.techStack.length === 0,
+);
+
+const apolloBoundaryResult = mapApolloCandidates(
+  [
+    {
+      ...apolloProfile,
+      targetId: "33333333-3333-4333-8333-333333333333",
+      candidateId: "apollo-boundary-candidate",
+      title: misleadingSkillText,
+      headline: misleadingSkillText,
+    },
+  ],
+  shortSkillCampaign,
+  "q",
+  [],
+  W,
+);
+ok(
+  "Apollo headline substrings do not become short-skill evidence",
+  apolloBoundaryResult.accepted[0]?.techStack.length === 0,
+);
+
+const webBoundaryResult = mapWebSearchCandidates(
+  [
+    {
+      name: "Boundary Web Candidate",
+      title: "Google researcher",
+      company: "Example Corp",
+      url: "https://stackoverflow.com/users/12345/boundary-web-candidate",
+      snippet: "CTO",
+    },
+  ],
+  shortSkillCampaign,
+  "q",
+  "Stack Overflow",
+  [],
+  W,
+);
+ok(
+  "Web result substrings do not become short-skill evidence",
+  webBoundaryResult.accepted[0]?.techStack.length === 0,
+);
+
+const punctuatedSkillCampaign = campaignWithRequiredSkills(["C++", "C#", "Node.js", ".NET", "TypeScript"]);
+const punctuatedResult = mapGithubCandidates(
+  [
+    mk({
+      login: "punctuated-skills",
+      htmlUrl: "https://github.com/punctuated-skills",
+      bio: "Engineer using (c++), C#, NODE.JS, .net, and TYPESCRIPT.",
+    }),
+  ],
+  punctuatedSkillCampaign,
+  "q",
+  [],
+  W,
+);
+ok(
+  "Skill evidence preserves punctuation and matches case-insensitively",
+  ["C++", "C#", "Node.js", ".NET", "TypeScript"].every((skill) =>
+    punctuatedResult.accepted[0]?.techStack.includes(skill),
+  ),
+);
+
+const canonicalAliasResult = mapGithubCandidates(
+  [
+    mk({
+      login: "canonical-aliases",
+      htmlUrl: "https://github.com/canonical-aliases",
+      bio: "Golang services backed by Postgres.",
+    }),
+  ],
+  campaignWithRequiredSkills(["Go", "PostgreSQL"]),
+  "q",
+  [],
+  W,
+);
+ok(
+  "Canonical aliases retain the campaign's reviewed skill names",
+  canonicalAliasResult.accepted[0]?.techStack.join(",") === "Go,PostgreSQL",
+);
+
+const reverseAliasResult = mapWebSearchCandidates(
+  [
+    {
+      name: "Reverse Alias Candidate",
+      title: "Go engineer",
+      company: "Example Corp",
+      url: "https://stackoverflow.com/users/67890/reverse-alias-candidate",
+      snippet: "Production PostgreSQL systems.",
+    },
+  ],
+  campaignWithRequiredSkills(["Golang", "Postgres"]),
+  "q",
+  "Stack Overflow",
+  [],
+  W,
+);
+ok(
+  "Canonical aliases match in both directions without changing reviewed labels",
+  reverseAliasResult.accepted[0]?.techStack.join(",") === "Golang,Postgres",
+);
+
 // --- Name fallback + honest blank email ------------------------------------
 const bob = mk({ login: "bob", htmlUrl: "https://github.com/bob" });
 const rb = mapGithubCandidates([bob], campaign, "q", [], W);

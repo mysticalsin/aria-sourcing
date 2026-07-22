@@ -60,14 +60,43 @@ export type BeginSourcingRunResult =
       lessonsEnabled: boolean;
     }
   | {
-      status: "in_progress" | "completed" | "failed";
+      status: "in_progress";
       runId: string;
-      roleFingerprint: string;
+    }
+  | {
+      status: "result_ready";
+      runId: string;
+      requestedCount: number;
+      resultSha256: string;
+      resultPayload: unknown;
     }
   | {
       status:
         | "quota_exceeded"
         | "idempotency_conflict"
+        | "pending_conflict"
+        | "already_consumed"
+        | "result_expired"
+        | "invalid_request"
+        | "not_found"
+        | "dependency_unavailable";
+    };
+
+export type ResumeSourcingRunResult =
+  | { status: "no_pending" }
+  | { status: "in_progress"; runId: string }
+  | {
+      status: "result_ready";
+      runId: string;
+      requestedCount: number;
+      resultSha256: string;
+      resultPayload: unknown;
+    }
+  | {
+      status:
+        | "pending_conflict"
+        | "already_consumed"
+        | "result_expired"
         | "invalid_request"
         | "not_found"
         | "dependency_unavailable";
@@ -112,15 +141,18 @@ export type ListSourcingLessonsResult =
 
 export type CompleteSourcingRunResult =
   | {
-      status: "completed";
+      status: "result_ready";
       runId: string;
-      queryCount: number;
-      candidateCount: number;
-      receipts: SourcingFeedbackReceipt[];
+      resultSha256: string;
+      resultPayload: unknown;
     }
   | {
       status:
+        | "invalid_request"
         | "invalid_receipts"
+        | "result_invalid"
+        | "authority_changed"
+        | "idempotency_conflict"
         | "not_found"
         | "completion_conflict"
         | "dependency_unavailable";
@@ -201,15 +233,23 @@ export async function beginSourcingRun(
     model: string | null;
     idempotencyKey: string;
     requestId: string;
+    count: number;
+    campaignFingerprint: string;
   },
   serviceClient?: ServiceClient | null,
 ): Promise<BeginSourcingRunResult> {
-  if (!SHA256_RE.test(input.configurationFingerprint)) {
+  if (
+    !SHA256_RE.test(input.configurationFingerprint) ||
+    !SHA256_RE.test(input.campaignFingerprint) ||
+    !Number.isInteger(input.count) ||
+    input.count < 1 ||
+    input.count > 8
+  ) {
     return { status: "invalid_request" };
   }
   const service = client(serviceClient);
   if (!service) return { status: "dependency_unavailable" };
-  const { data, error } = await service.rpc("begin_sourcing_run", {
+  const { data, error } = await service.rpc("begin_ordinary_sourcing_run", {
     p_workspace_id: input.workspaceId,
     p_actor_id: input.actorId,
     p_campaign_id: input.campaignId,
@@ -220,6 +260,8 @@ export async function beginSourcingRun(
     p_model: input.model,
     p_idempotency_key: input.idempotencyKey,
     p_request_id: input.requestId,
+    p_count: input.count,
+    p_campaign_fingerprint: input.campaignFingerprint,
   });
   if (error) return { status: "dependency_unavailable" };
   const result = record(data);
@@ -237,21 +279,80 @@ export async function beginSourcingRun(
         }
       : { status: "dependency_unavailable" };
   }
-  if (status === "in_progress" || status === "completed" || status === "failed") {
+  if (status === "in_progress") {
     const runId = uuid(result.run_id);
-    const roleFingerprint = fingerprint(result.role_fingerprint);
-    return runId && roleFingerprint
-      ? { status, runId, roleFingerprint }
+    return runId ? { status, runId } : { status: "dependency_unavailable" };
+  }
+  if (status === "result_ready") {
+    const runId = uuid(result.run_id);
+    const requestedCount = positiveInteger(result.requested_count, 8);
+    const resultSha256 = fingerprint(result.result_sha256);
+    return runId && requestedCount && resultSha256 && record(result.result_payload)
+      ? { status, runId, requestedCount, resultSha256, resultPayload: result.result_payload }
       : { status: "dependency_unavailable" };
   }
   if (
     status === "quota_exceeded" ||
     status === "idempotency_conflict" ||
+    status === "pending_conflict" ||
+    status === "already_consumed" ||
+    status === "result_expired" ||
     status === "invalid_request" ||
     status === "not_found"
   ) {
     return { status };
   }
+  return { status: "dependency_unavailable" };
+}
+
+export async function resumeSourcingRunResult(
+  input: {
+    workspaceId: string;
+    actorId: string;
+    campaignId: string;
+    campaignFingerprint: string;
+    count: number;
+  },
+  serviceClient?: ServiceClient | null,
+): Promise<ResumeSourcingRunResult> {
+  if (
+    !SHA256_RE.test(input.campaignFingerprint) ||
+    !Number.isInteger(input.count) ||
+    input.count < 1 ||
+    input.count > 8
+  ) return { status: "invalid_request" };
+  const service = client(serviceClient);
+  if (!service) return { status: "dependency_unavailable" };
+  const { data, error } = await service.rpc("resume_ordinary_sourcing_run", {
+    p_workspace_id: input.workspaceId,
+    p_actor_id: input.actorId,
+    p_campaign_id: input.campaignId,
+    p_campaign_fingerprint: input.campaignFingerprint,
+    p_count: input.count,
+  });
+  if (error) return { status: "dependency_unavailable" };
+  const result = record(data);
+  if (!result) return { status: "dependency_unavailable" };
+  if (result.status === "no_pending") return { status: "no_pending" };
+  if (result.status === "in_progress") {
+    const runId = uuid(result.run_id);
+    return runId ? { status: "in_progress", runId } : { status: "dependency_unavailable" };
+  }
+  if (result.status === "result_ready") {
+    const runId = uuid(result.run_id);
+    const requestedCount = positiveInteger(result.requested_count, 8);
+    const resultSha256 = fingerprint(result.result_sha256);
+    return runId && requestedCount && resultSha256 && record(result.result_payload)
+      ? { status: "result_ready", runId, requestedCount, resultSha256, resultPayload: result.result_payload }
+      : { status: "dependency_unavailable" };
+  }
+  if (
+    result.status === "pending_conflict" ||
+    result.status === "already_consumed" ||
+    result.status === "result_expired" ||
+    result.status === "invalid_request" ||
+    result.status === "not_found"
+  ) return { status: result.status };
   return { status: "dependency_unavailable" };
 }
 
@@ -612,34 +713,19 @@ export async function listPendingSourcingFeedback(
 
 function parseCompleteSourcingRunResult(data: unknown): CompleteSourcingRunResult {
   const result = record(data);
-  if (result?.status === "completed") {
+  if (result?.status === "result_ready") {
     const runId = uuid(result.run_id);
-    const queryCount = positiveInteger(result.query_count, 20);
-    const candidateCount = nonNegativeInteger(result.candidate_count, 1_000);
-    if (
-      !runId ||
-      !queryCount ||
-      candidateCount < 0 ||
-      !Array.isArray(result.receipts) ||
-      result.receipts.length > queryCount
-    ) {
-      return { status: "dependency_unavailable" };
-    }
-    const receipts: SourcingFeedbackReceipt[] = [];
-    for (const value of result.receipts) {
-      const row = record(value);
-      const receiptId = uuid(row?.receiptId);
-      const sourcePlatform = platform(row?.platform);
-      const receiptCandidateCount = nonNegativeInteger(row?.candidateCount, 100);
-      if (!receiptId || !sourcePlatform || receiptCandidateCount < 0) {
-        return { status: "dependency_unavailable" };
-      }
-      receipts.push({ receiptId, platform: sourcePlatform, candidateCount: receiptCandidateCount });
-    }
-    return { status: "completed", runId, queryCount, candidateCount, receipts };
+    const resultSha256 = fingerprint(result.result_sha256);
+    return runId && resultSha256 && record(result.result_payload)
+      ? { status: "result_ready", runId, resultSha256, resultPayload: result.result_payload }
+      : { status: "dependency_unavailable" };
   }
   if (
+    result?.status === "invalid_request" ||
     result?.status === "invalid_receipts" ||
+    result?.status === "result_invalid" ||
+    result?.status === "authority_changed" ||
+    result?.status === "idempotency_conflict" ||
     result?.status === "not_found" ||
     result?.status === "completion_conflict"
   ) {
@@ -654,18 +740,44 @@ export async function completeSourcingRun(
     actorId: string;
     runId: string;
     queryReceipts: SourcingQueryExecution[];
+    resultPayload: unknown;
   },
   serviceClient?: ServiceClient | null,
 ): Promise<CompleteSourcingRunResult> {
   const service = client(serviceClient);
   if (!service) return { status: "dependency_unavailable" };
-  const { data, error } = await service.rpc("complete_sourcing_run", {
+  const { data, error } = await service.rpc("complete_ordinary_sourcing_run", {
     p_workspace_id: input.workspaceId,
     p_actor_id: input.actorId,
     p_run_id: input.runId,
     p_query_receipts: input.queryReceipts,
+    p_result_payload: input.resultPayload,
   });
   return error ? { status: "dependency_unavailable" } : parseCompleteSourcingRunResult(data);
+}
+
+export async function ackSourcingRunResult(
+  input: {
+    workspaceId: string;
+    actorId: string;
+    runId: string;
+    resultSha256: string;
+  },
+  serviceClient?: ServiceClient | null,
+): Promise<boolean> {
+  if (!UUID_RE.test(input.runId) || !SHA256_RE.test(input.resultSha256)) return false;
+  const service = client(serviceClient);
+  if (!service) return false;
+  const { data, error } = await service.rpc("ack_ordinary_sourcing_result", {
+    p_workspace_id: input.workspaceId,
+    p_actor_id: input.actorId,
+    p_run_id: input.runId,
+    p_result_sha256: input.resultSha256,
+  });
+  const result = record(data);
+  return !error && result?.status === "completed" &&
+    uuid(result.run_id) === input.runId &&
+    fingerprint(result.result_sha256) === input.resultSha256;
 }
 
 export async function failSourcingRun(
@@ -679,7 +791,7 @@ export async function failSourcingRun(
 ): Promise<boolean> {
   const service = client(serviceClient);
   if (!service) return false;
-  const { data, error } = await service.rpc("fail_sourcing_run", {
+  const { data, error } = await service.rpc("fail_ordinary_sourcing_run", {
     p_workspace_id: input.workspaceId,
     p_actor_id: input.actorId,
     p_run_id: input.runId,

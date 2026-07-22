@@ -61,7 +61,12 @@ import {
   candidateFromSourcingAgentDto,
   sourcingAgentCampaignFingerprint,
 } from "./sourcing/sourcing-agent-contract";
-import { requestReviewedSourcing } from "./sourcing/sourcing-agent-client";
+import {
+  acknowledgeReviewedSourcing,
+  completeReviewedSourcingOperation,
+  markReviewedSourcingOperationPersisted,
+  requestReviewedSourcing,
+} from "./sourcing/sourcing-agent-client";
 import { campaignAllowsLiveSourcing } from "./sourcing/campaign-lifecycle";
 import { validateMcpBaseUrl } from "./mcp-auth-params";
 import {
@@ -1643,6 +1648,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, added: 0, error: reviewed.error };
       }
       const out = reviewed.value;
+      const resultSha256 = out.sourcingResultSha256;
+      if (!resultSha256) {
+        return { ok: false, added: 0, error: "The sourcing result receipt is missing." };
+      }
       const executionMode = out.mode;
       const received = out.candidates;
       const feedbackReceipts = out.feedbackReceipts;
@@ -1698,7 +1707,6 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           prev.candidates,
           { excludedCompanies: latestCampaign.sourcingStrategy.excludedCompanies },
         ).accepted;
-        if (unique.length === 0) return prev;
         const dtoById = new Map(candidates.map((item) => [item.candidate.id, item.dto]));
         const messages = unique.map((candidate) => {
           const dto = dtoById.get(candidate.id)!;
@@ -1733,27 +1741,55 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           candidates: [...unique, ...prev.candidates],
           outreach: [...messages, ...prev.outreach],
         };
-        next = recomputeMetrics(next, campaignId);
+        if (unique.length > 0) next = recomputeMetrics(next, campaignId);
+        const activityId = `sourcing-run:${out.sourcingRunId}:${resultSha256}`;
+        if (
+          prev.activities.some((activity) => activity.id === activityId) ||
+          latestCampaign.activities.some((activity) => activity.id === activityId)
+        ) return next;
         return withActivity(
           next,
-          makeActivity({
-            type: "sourcing",
-            title: `Sourcing agent found ${unique.length} candidates`,
-            notes:
-              executionMode === "cloud"
-                ? `${messages.length} drafted for human review after a cloud tool-calling pass.`
-                : `${messages.length} drafted for human review after direct GitHub search. No cloud model ran.`,
-            outcome: `${unique.length} added, ${messages.length} drafted`,
-            campaignId,
-            linkedEntityType: "campaign",
-            linkedEntityId: campaignId,
-          }),
+          {
+            ...makeActivity({
+              type: "sourcing",
+              title: `Sourcing agent found ${unique.length} candidates`,
+              notes:
+                executionMode === "cloud"
+                  ? `${messages.length} drafted for human review after a cloud tool-calling pass.`
+                  : `${messages.length} drafted for human review after direct GitHub search. No cloud model ran.`,
+              outcome: `${unique.length} added, ${messages.length} drafted`,
+              campaignId,
+              linkedEntityType: "campaign",
+              linkedEntityId: campaignId,
+            }),
+            id: activityId,
+          },
           campaignId,
         );
       });
       if (!persisted || !authorized) {
         return { ok: false, added: 0, error: "The sourcing result could not be saved. Retry safely." };
       }
+      markReviewedSourcingOperationPersisted(
+        campaignId,
+        out.idempotencyKey,
+        out.sourcingRunId,
+        resultSha256,
+      );
+      if (
+        !await acknowledgeReviewedSourcing(
+          workspaceFetch,
+          { sourcingRunId: out.sourcingRunId },
+          resultSha256,
+        )
+      ) {
+        return {
+          ok: false,
+          added,
+          error: "Candidates were saved, but the persistence receipt could not be confirmed. Retry safely to reconcile it.",
+        };
+      }
+      completeReviewedSourcingOperation(campaignId, out.idempotencyKey);
       if (added > 0) emit({ kind: "source", campaignId, count: added });
       return {
         ok: true,
@@ -4746,7 +4782,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   const testApiKey = useCallback(
     async (id: string) => {
       if (!workspaceEffectAllowed()) {
-        return { ok: false, valid: false, detail: "Workspace unavailable. Retry before testing credentials." };
+        return {
+          ok: false,
+          valid: false,
+          status: "untested" as const,
+          detail: "Workspace unavailable. Retry before testing credentials.",
+        };
       }
       const k = current().apiKeys.find((x) => x.id === id);
       try {
@@ -4756,16 +4797,36 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           body: JSON.stringify({ id, provider: k?.provider }),
         });
         const json = await res.json();
-        const valid = !!(json.ok && json.valid);
+        if (!json.ok) {
+          return {
+            ok: false,
+            valid: false,
+            status: k?.status ?? "untested",
+            detail: json.error ?? "Credential test failed.",
+          };
+        }
+        const valid = !!json.valid;
+        const status: ApiKey["status"] = json.status === "valid" ||
+          json.status === "invalid" ||
+          json.status === "untested"
+          ? json.status
+          : valid
+            ? "valid"
+            : "invalid";
         commit((prev) => ({
           ...prev,
           apiKeys: prev.apiKeys.map((x) =>
-            x.id === id ? { ...x, status: valid ? "valid" : "invalid", lastTestedAt: new Date().toISOString() } : x,
+            x.id === id ? { ...x, status, lastTestedAt: new Date().toISOString() } : x,
           ),
         }));
-        return { ok: !!json.ok, valid, detail: json.detail ?? json.error ?? "" };
+        return { ok: true, valid, status, detail: json.detail ?? "" };
       } catch (e) {
-        return { ok: false, valid: false, detail: e instanceof Error ? e.message : "Network error." };
+        return {
+          ok: false,
+          valid: false,
+          status: k?.status ?? "untested",
+          detail: e instanceof Error ? e.message : "Network error.",
+        };
       }
     },
     [commit, current, workspaceEffectAllowed, workspaceFetch],

@@ -37,7 +37,7 @@ const ValidationWarningSchema = z
   })
   .strict();
 
-const JobAnalysisSchema = z
+export const JobAnalysisSchema = z
   .object({
     title: bounded(200),
     department: bounded(200),
@@ -51,6 +51,7 @@ const JobAnalysisSchema = z
     salaryMax: z.number().finite().nonnegative().nullable(),
     currency: bounded(20),
     equity: z.boolean(),
+    equityKnown: z.boolean().optional(),
     requiredSkills: boundedArray(100, 100),
     niceToHaveSkills: boundedArray(100, 100),
     minYearsExperience: z.number().finite().nonnegative().nullable(),
@@ -61,6 +62,7 @@ const JobAnalysisSchema = z
     teamSize: bounded(100),
     reportingTo: bounded(200),
     urgency: z.enum(URGENCY_LEVELS),
+    urgencyKnown: z.boolean().optional(),
     language: bounded(20).optional(),
     expectedStartDate: bounded(100).nullable().optional(),
     validationWarnings: z.array(ValidationWarningSchema).max(100),
@@ -92,7 +94,7 @@ const CampaignProjectionSchema = z.object({
           .object({
             label: bounded(200),
             query: bounded(500).min(1),
-            estimatedResults: z.number().finite().nonnegative(),
+            estimatedResults: z.number().finite().nonnegative().nullable(),
           })
           .strict(),
       )
@@ -159,6 +161,15 @@ const SavedModelSchema = z
   })
   .strict();
 
+const DefaultModelsSchema = z
+  .object({
+    sourcing: bounded(100).min(1).optional(),
+    outreach: bounded(100).min(1).optional(),
+    classification: bounded(100).min(1).optional(),
+    chat: bounded(100).min(1).optional(),
+  })
+  .strict();
+
 type SourcingAiSettings = Pick<
   SystemSettings,
   "llmProviders" | "savedModels" | "defaultModels"
@@ -205,6 +216,25 @@ function record(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+/**
+ * Runtime-validate the only workspace settings that may influence provider
+ * egress. Workspace state is JSONB and therefore untrusted at this boundary;
+ * callers must never cast it directly to SystemSettings.
+ */
+export function parseSourcingAiSettings(value: unknown): SourcingAiSettings | null {
+  const settings = value === undefined ? {} : record(value);
+  if (!settings) return null;
+  const providers = z.array(LlmProviderSchema).max(50).safeParse(settings.llmProviders ?? []);
+  const models = z.array(SavedModelSchema).max(100).safeParse(settings.savedModels ?? []);
+  const defaults = DefaultModelsSchema.safeParse(settings.defaultModels ?? {});
+  if (!providers.success || !models.success || !defaults.success) return null;
+  return {
+    llmProviders: providers.data,
+    savedModels: models.data,
+    defaultModels: defaults.data,
+  };
+}
+
 export function projectSourcingAgentWorkspace(
   state: unknown,
   campaignId: string,
@@ -213,24 +243,8 @@ export function projectSourcingAgentWorkspace(
   if (!root || !Array.isArray(root.campaigns) || !Array.isArray(root.candidates)) {
     return { status: "invalid_state" };
   }
-  const settings = record(root.settings);
-  const providers = z.array(LlmProviderSchema).max(50).safeParse(settings?.llmProviders ?? []);
-  const models = z.array(SavedModelSchema).max(100).safeParse(settings?.savedModels ?? []);
-  const rawDefaults = record(settings?.defaultModels);
-  const sourcingDefault = rawDefaults?.sourcing;
-  if (
-    !providers.success ||
-    !models.success ||
-    (sourcingDefault !== undefined && typeof sourcingDefault !== "string")
-  ) {
-    return { status: "invalid_state" };
-  }
-  const aiSettings: SourcingAiSettings = {
-    llmProviders: providers.data,
-    savedModels: models.data,
-    defaultModels:
-      typeof sourcingDefault === "string" ? { sourcing: sourcingDefault } : {},
-  };
+  const aiSettings = parseSourcingAiSettings(root.settings);
+  if (!aiSettings) return { status: "invalid_state" };
   const rawCampaign = root.campaigns.find(
     (item) => record(item)?.id === campaignId,
   );
@@ -344,6 +358,7 @@ const SourcingAgentSuccessResponseSchema = z
     requestId: bounded(100).regex(/^[A-Za-z0-9._:-]{1,100}$/),
     idempotencyKey: z.string().uuid(),
     sourcingRunId: z.string().uuid(),
+    sourcingResultSha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
     agentFrameworkRunId: z.string().uuid().optional(),
     agentFrameworkResultSha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
     appliedLessonIds: z.array(z.string().uuid()).max(100),
@@ -351,8 +366,10 @@ const SourcingAgentSuccessResponseSchema = z
   })
   .strict()
   .refine(
-    (response) => Boolean(response.agentFrameworkRunId) === Boolean(response.agentFrameworkResultSha256),
-    { message: "Framework run and staged result receipt must be supplied together." },
+    (response) => response.agentFrameworkRunId
+      ? Boolean(response.agentFrameworkResultSha256) && !response.sourcingResultSha256
+      : Boolean(response.sourcingResultSha256) && !response.agentFrameworkResultSha256,
+    { message: "Exactly one ordinary or framework staged-result receipt is required." },
   );
 
 export type SourcingAgentSuccessResponse = z.infer<

@@ -224,11 +224,17 @@ async function tavilySearch(
 
 async function webSearch(
   queryRaw: string,
-  storedTavilyKey: string | undefined,
+  storedTavilyKey: string | null | undefined,
   fetchImpl: WebFetch,
   signal?: AbortSignal,
 ): Promise<ToolResult> {
-  const tavilyKey = storedTavilyKey ?? process.env.TAVILY_API_KEY;
+  // `undefined` preserves the legacy system-managed fallback for callers that
+  // explicitly opt into it. `null` is an authority boundary: a tenant-scoped
+  // lookup was performed and no approved workspace credential is available,
+  // so the process-wide key must not be selected implicitly.
+  const tavilyKey = storedTavilyKey === undefined
+    ? process.env.TAVILY_API_KEY
+    : storedTavilyKey || undefined;
   const rawQueryContainsCredential = tavilyKey ? queryContainsSecret(queryRaw, tavilyKey) : false;
   const query = queryRaw.trim().slice(0, 300);
   if (!query) return { ok: false, error: "Empty query." };
@@ -334,7 +340,7 @@ async function rss(urlRaw: string, fetchImpl: WebFetch, signal?: AbortSignal): P
 export async function runWebTool(
   name: string,
   args: Record<string, unknown>,
-  opts: { tavilyKey?: string; fetchImpl?: WebFetch; signal?: AbortSignal } = {},
+  opts: { tavilyKey?: string | null; fetchImpl?: WebFetch; signal?: AbortSignal } = {},
 ): Promise<ToolResult> {
   const fetchImpl = opts.fetchImpl ?? fetchPublicUrl;
   try {

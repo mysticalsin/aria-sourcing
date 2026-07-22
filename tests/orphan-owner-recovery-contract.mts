@@ -1,13 +1,22 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
+import { testManifest } from "./test-manifest.mjs";
+
 const migrationPath = "supabase/migrations/0031_orphan_owner_recovery_authority.sql";
+const bridgeMigrationPath = "supabase/migrations/0062_orphan_owner_recovery_auth_bridge.sql";
+const bridgeRollbackPath = "supabase/rollbacks/0062_orphan_owner_recovery_auth_bridge.sql";
 const scriptPath = "scripts/recover-orphan-workspace-owner.sh";
 
 assert.ok(existsSync(migrationPath), `${migrationPath} must exist`);
+assert.ok(existsSync(bridgeMigrationPath), `${bridgeMigrationPath} must exist`);
+assert.ok(existsSync(bridgeRollbackPath), `${bridgeRollbackPath} must exist`);
 assert.ok(existsSync(scriptPath), `${scriptPath} must exist`);
 
 const migration = readFileSync(migrationPath, "utf8");
+const bridgeMigration = readFileSync(bridgeMigrationPath, "utf8");
+const bridgeMigrationSql = bridgeMigration.replace(/--.*$/gm, "");
+const bridgeRollback = readFileSync(bridgeRollbackPath, "utf8");
 const script = readFileSync(scriptPath, "utf8");
 const packageJson = readFileSync("package.json", "utf8");
 const runbook = readFileSync("production-readiness/DEPLOYMENT_RUNBOOK.md", "utf8");
@@ -15,6 +24,14 @@ const ciWorkflow = readFileSync(".github/workflows/ci.yml", "utf8");
 const inventory = readFileSync("docker/bootstrap/legacy-table-inventory.txt", "utf8");
 const invariants = readFileSync("docker/bootstrap/legacy-baseline-invariants.sql", "utf8");
 const privileges = readFileSync("tests/db/function-privileges.sql", "utf8");
+
+function recoveryDefinition(source: string): string {
+  const start = source.indexOf("create or replace function public.recover_orphan_workspace_owner(");
+  assert.notEqual(start, -1, "recovery function definition must exist");
+  const end = source.indexOf("\n$$;", start);
+  assert.notEqual(end, -1, "recovery function definition must have a complete body");
+  return source.slice(start, end + "\n$$;".length);
+}
 
 const checks: Array<[string, boolean]> = [
   [
@@ -81,6 +98,46 @@ const checks: Array<[string, boolean]> = [
       /aria-owner-recovery-v1:/i.test(migration) &&
       /p_request_id::text/i.test(migration) &&
       /p_operator_approval_sha256/i.test(migration),
+  ],
+  [
+    "0062 delegates only the Auth-owner identity decision to the exact bridge",
+    /auth\.aria_orphan_owner_recovery_identity_status\(\s*p_profile_id,\s*p_canonical_email,\s*expected_identity_marker\s*\)/i.test(
+      bridgeMigrationSql,
+    ) &&
+      !/\bauth\.users\b/i.test(bridgeMigrationSql) &&
+      !/\bauth_user_(?:record|json|count)\b|\bbanned_until_value\b/i.test(bridgeMigrationSql),
+  ],
+  [
+    "0062 maps every known bridge status and rejects unknown or null status fail-closed",
+    /case identity_status[\s\S]*when 'eligible'[\s\S]*when 'auth_inventory_mismatch'[\s\S]*when 'identity_not_eligible'[\s\S]*when 'identity_schema_unsupported'[\s\S]*else[\s\S]*errcode\s*=\s*'55000'[\s\S]*end case;/i.test(
+      bridgeMigrationSql,
+    ),
+  ],
+  [
+    "0062 verifies the bridge owner, definer mode, volatility, search path, and restricted execution",
+    /function_owner\.rolname = 'supabase_auth_admin'/i.test(bridgeMigrationSql) &&
+      /function_definition\.prosecdef/i.test(bridgeMigrationSql) &&
+      /function_definition\.provolatile = 'v'/i.test(bridgeMigrationSql) &&
+      /search_path=pg_catalog, pg_temp/i.test(bridgeMigrationSql) &&
+      /has_function_privilege\('postgres',[\s\S]*'EXECUTE'\)/i.test(bridgeMigrationSql) &&
+      /has_function_privilege\('service_role',[\s\S]*'EXECUTE'\)/i.test(bridgeMigrationSql),
+  ],
+  [
+    "0062 rollback restores the exact 0031 function definition",
+    recoveryDefinition(bridgeRollback) === recoveryDefinition(migration),
+  ],
+  [
+    "0062 forward and rollback restore the exact postgres owner and service-only ACL",
+    [bridgeMigration, bridgeRollback].every(
+      (source) =>
+        /alter function public\.recover_orphan_workspace_owner\([\s\S]*?\) owner to postgres;/i.test(source) &&
+        /revoke all on function public\.recover_orphan_workspace_owner\([\s\S]*?\) from public, anon, authenticated, service_role, authenticator;/i.test(
+          source,
+        ) &&
+        /grant execute on function public\.recover_orphan_workspace_owner\([\s\S]*?\) to service_role;/i.test(
+          source,
+        ),
+    ),
   ],
   [
     "database and shell enforce the same canonical public email-domain grammar",
@@ -164,7 +221,13 @@ const checks: Array<[string, boolean]> = [
   [
     "CI invokes both the operator-contract and database recovery gates",
     ciWorkflow.includes("npm run test:owner-recovery") &&
-      ciWorkflow.includes("npm run test:db-owner-recovery"),
+      (
+        ciWorkflow.includes("npm run test:db-owner-recovery") ||
+        (
+          ciWorkflow.includes("npm run test:database") &&
+          testManifest.groups.database.includes("orphan-owner-recovery-db")
+        )
+      ),
   ],
 ];
 

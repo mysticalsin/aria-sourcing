@@ -11,9 +11,12 @@ import {
   agentFrameworkConfigurationInputFromEnvironment,
   deriveAgentFrameworkConfiguration,
 } from "../../../src/lib/agents/framework/configuration-core.mjs";
+import {
+  DEERFLOW_SOURCE_COMMIT,
+  FLOWISE_SOURCE_COMMIT,
+} from "../../../src/lib/agents/framework/source-identity.mjs";
 
-export const DEERFLOW_SOURCE_COMMIT = "fabadae4168db81f0eaaf62f209050f978e2f691";
-export const FLOWISE_SOURCE_COMMIT = "bb773ffa710bd22639c4ba2643413a0ea2b679d3";
+export { DEERFLOW_SOURCE_COMMIT, FLOWISE_SOURCE_COMMIT };
 
 const CONTRACTS = Object.freeze({
   deerflow: "aria.deerflow.run.v1",
@@ -723,12 +726,14 @@ async function probeFlowise(config, redisProbe) {
     }
   });
   let worker = false;
-  try {
-    const response = await upstreamFetch(config.workerHealthUrl, { method: "GET" }, 5_000);
-    worker = (await readBoundedResponse(response, { json: false })).trim() === "OK";
-  } catch {
-    worker = false;
-  }
+  worker = await checkJson(config.workerHealthUrl, { method: "GET" }, (body) =>
+    hasExactKeys(body, ["schema", "status", "queueName", "database", "queue", "worker"]) &&
+    body.schema === "aria.flowise-worker-readiness.v1" &&
+    body.status === "ready" &&
+    body.queueName === config.flowiseQueueName &&
+    body.database === true &&
+    body.queue === true &&
+    body.worker === true);
   const workerClientNames = ["prediction", "upsertion", "schedule"].map((suffix) =>
     `bull:${Buffer.from(`${config.flowiseQueueName}-${suffix}`, "utf8").toString("base64")}`);
   const queue = database && worker && await redisProbe(config.redisUrl, 2_000, workerClientNames);

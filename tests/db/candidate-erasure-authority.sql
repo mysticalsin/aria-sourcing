@@ -88,6 +88,20 @@ insert into public.agent_events(run_id,workspace_id,type,payload) values (
   'note',
   '{"message":"Ian confidential detail without candidate id"}'
 );
+insert into public.agent_memories(
+  id, workspace_id, owner_id, spec_id, kind, content_ciphertext,
+  content_sha256, content_byte_count, status, source_type, created_by, updated_by
+) values (
+  '56000000-0000-4000-8000-000000000001',
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  '51000000-0000-4000-8000-000000000001',
+  'episodic',
+  'enc:v2:' || repeat('1',64) || ':QUFBQQ==:QkJCQg==:Q0NDQw==',
+  repeat('2',64), 24, 'approved', 'operator',
+  'a1000000-0000-4000-8000-000000000001',
+  'a1000000-0000-4000-8000-000000000001'
+);
 
 insert into public.messages_outbound(
   id,workspace_id,candidate_id,channel,to_address,type,subject,body,status,
@@ -157,6 +171,260 @@ $$;
 
 grant usage on schema candidate_erasure_test to service_role;
 grant execute on all functions in schema candidate_erasure_test to service_role;
+
+select candidate_erasure_test.assert_scalar(
+  'service role retains read-only legacy run and event access',
+  $$select concat_ws(':',
+      has_table_privilege('service_role','public.agent_runs','SELECT'),
+      has_table_privilege('service_role','public.agent_runs','INSERT'),
+      has_table_privilege('service_role','public.agent_runs','UPDATE'),
+      has_table_privilege('service_role','public.agent_runs','DELETE'),
+      has_table_privilege('service_role','public.agent_events','SELECT'),
+      has_table_privilege('service_role','public.agent_events','INSERT'),
+      has_table_privilege('service_role','public.agent_events','UPDATE'),
+      has_table_privilege('service_role','public.agent_events','DELETE'))$$,
+  't:f:f:f:t:f:f:f'
+);
+set role service_role;
+select candidate_erasure_test.set_service_claims('a1000000-0000-4000-8000-000000000001');
+select candidate_erasure_test.assert_sqlstate(
+  'service role cannot update legacy agent runs directly',
+  $$update public.agent_runs set node='reporter'
+      where id='52000000-0000-4000-8000-000000000001'$$,
+  array['42501']
+);
+select candidate_erasure_test.assert_sqlstate(
+  'service role cannot insert legacy agent events directly',
+  $$insert into public.agent_events(run_id,workspace_id,type,payload) values (
+      '52000000-0000-4000-8000-000000000001',
+      '11111111-1111-4111-8111-111111111111','note','{}'::jsonb)$$,
+  array['42501']
+);
+select public.create_agent_run_with_memory_context(
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  '51000000-0000-4000-8000-000000000001',
+  'a1000000-0000-4000-8000-000000000001'
+);
+reset role;
+select candidate_erasure_test.assert_scalar(
+  'postgres-owned security-definer run receipt RPC remains functional',
+  $$select exists (
+      select 1 from public.agent_runs
+       where workspace_id='11111111-1111-4111-8111-111111111111'
+         and spec_id='51000000-0000-4000-8000-000000000001'
+         and actor_id='a1000000-0000-4000-8000-000000000001'
+         and node='planner' and state_json='{}'::jsonb
+    )::text$$,
+  'true'
+);
+
+set role service_role;
+select candidate_erasure_test.set_service_claims('a1000000-0000-4000-8000-000000000001');
+select public.mutate_agent_memory_with_candidate_provenance(
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  '51000000-0000-4000-8000-000000000001',
+  '56000000-0000-4000-8000-000000000001',
+  'a1000000-0000-4000-8000-000000000001',
+  1,
+  'edit',
+  null,
+  'enc:v2:' || repeat('3',64) || ':QUFBQQ==:QkJCQg==:Q0NDQw==',
+  repeat('4',64),
+  24,
+  null,
+  false,
+  null,
+  true,
+  'campaign-a',
+  '[{"kind":"email","value":" IAN@EXAMPLE.TEST "}]'::jsonb
+);
+reset role;
+select candidate_erasure_test.assert_scalar(
+  'candidate payload provenance stores no plaintext alias value',
+  $$select (position('ian@example.test' in row_to_json(provenance)::text)=0)::text
+      from public.candidate_payload_provenance provenance
+     where memory_id='56000000-0000-4000-8000-000000000001'$$,
+  'true'
+);
+
+set role service_role;
+select candidate_erasure_test.set_service_claims('a1000000-0000-4000-8000-000000000001');
+select candidate_erasure_test.assert_sqlstate(
+  'service role cannot bypass atomic provenance through legacy create',
+  $$select public.create_agent_memory(
+      '11111111-1111-4111-8111-111111111111',
+      'a1000000-0000-4000-8000-000000000001',
+      '51000000-0000-4000-8000-000000000001',
+      'a1000000-0000-4000-8000-000000000001', 'fact',
+      'enc:v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:QUFBQQ==:QkJCQg==:Q0NDQw==',
+      'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      24, false, null
+    )$$,
+  array['42501']
+);
+select candidate_erasure_test.assert_sqlstate(
+  'service role cannot bypass atomic provenance through legacy mutate',
+  $$select public.mutate_agent_memory(
+      '11111111-1111-4111-8111-111111111111',
+      'a1000000-0000-4000-8000-000000000001',
+      '51000000-0000-4000-8000-000000000001',
+      '56000000-0000-4000-8000-000000000001',
+      'a1000000-0000-4000-8000-000000000001', 2, 'edit', null,
+      'enc:v2:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc:QUFBQQ==:QkJCQg==:Q0NDQw==',
+      'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+      24, null, false, null
+    )$$,
+  array['42501']
+);
+
+create temporary table candidate_memory_writer_result as
+select public.create_agent_memory_with_candidate_provenance(
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  '51000000-0000-4000-8000-000000000001',
+  'a1000000-0000-4000-8000-000000000001', 'fact',
+  'enc:v2:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee:QUFBQQ==:QkJCQg==:Q0NDQw==',
+  'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+  24, false, null, 'campaign-writer',
+  '[{"kind":"email","value":"writer-old@example.test"}]'::jsonb
+) result;
+reset role;
+select candidate_erasure_test.assert_scalar(
+  'atomic memory create reports one HMAC-only identity',
+  $$select concat_ws(':', result->>'status', result->>'candidate_identities_recorded')
+      from candidate_memory_writer_result$$,
+  'created:1'
+);
+create temporary table generic_memory_writer_result as
+select public.create_agent_memory_with_candidate_provenance(
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  '51000000-0000-4000-8000-000000000001',
+  'a1000000-0000-4000-8000-000000000001', 'instruction',
+  'enc:v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:QUFBQQ==:QkJCQg==:Q0NDQw==',
+  'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+  24, false, null, null, '[]'::jsonb
+) result;
+select candidate_erasure_test.assert_scalar(
+  'explicit no-candidate classification creates no provenance rows',
+  $$select concat_ws(':', result->>'status', result->>'candidate_identities_recorded',
+      (select count(*) from public.candidate_payload_provenance provenance
+        where provenance.memory_id=(result->>'id')::uuid))
+      from generic_memory_writer_result$$,
+  'created:0:0'
+);
+select candidate_erasure_test.assert_scalar(
+  'atomic memory create is tenant-bound',
+  $$select public.create_agent_memory_with_candidate_provenance(
+      '22222222-2222-4222-8222-222222222222',
+      'a1000000-0000-4000-8000-000000000001',
+      '51000000-0000-4000-8000-000000000001',
+      'a1000000-0000-4000-8000-000000000001', 'fact',
+      'enc:v2:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee:QUFBQQ==:QkJCQg==:Q0NDQw==',
+      'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+      24, false, null, null, '[]'::jsonb
+    )->>'status'$$,
+  'not_found'
+);
+create temporary table candidate_memory_replace_result as
+select public.mutate_agent_memory_with_candidate_provenance(
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  '51000000-0000-4000-8000-000000000001',
+  (result->>'id')::uuid,
+  'a1000000-0000-4000-8000-000000000001', 1, 'edit', null,
+  'enc:v2:1111111111111111111111111111111111111111111111111111111111111111:QUFBQQ==:QkJCQg==:Q0NDQw==',
+  '2222222222222222222222222222222222222222222222222222222222222222',
+  25, null, false, null, true, 'campaign-writer',
+  '[{"kind":"candidate_id","value":"writer-new-id"}]'::jsonb
+) result from candidate_memory_writer_result;
+select candidate_erasure_test.assert_scalar(
+  'atomic content replacement swaps only the exact memory provenance set',
+  $$select concat_ws(':', changed.result->>'status',
+      (select count(*) from public.candidate_payload_provenance provenance
+        where provenance.memory_id=(select (result->>'id')::uuid from candidate_memory_writer_result)
+          and provenance.identifier_kind='email'),
+      (select count(*) from public.candidate_payload_provenance provenance
+        where provenance.memory_id=(select (result->>'id')::uuid from candidate_memory_writer_result)
+          and provenance.identifier_kind='candidate_id')
+    ) from candidate_memory_replace_result changed$$,
+  'updated:0:1'
+);
+create temporary table candidate_memory_metadata_result as
+select public.mutate_agent_memory_with_candidate_provenance(
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  '51000000-0000-4000-8000-000000000001',
+  (result->>'id')::uuid,
+  'a1000000-0000-4000-8000-000000000001', 2, 'edit', null,
+  null, null, null, true, false, null, false, null, null
+) result from candidate_memory_writer_result;
+select candidate_erasure_test.assert_scalar(
+  'content cannot bypass classification through metadata preserve mode',
+  $$select public.mutate_agent_memory_with_candidate_provenance(
+      '11111111-1111-4111-8111-111111111111',
+      'a1000000-0000-4000-8000-000000000001',
+      '51000000-0000-4000-8000-000000000001',
+      (result->>'id')::uuid,
+      'a1000000-0000-4000-8000-000000000001', 3, 'edit', null,
+      'enc:v2:3333333333333333333333333333333333333333333333333333333333333333:QUFBQQ==:QkJCQg==:Q0NDQw==',
+      '4444444444444444444444444444444444444444444444444444444444444444',
+      24, null, false, null, false, null, null
+    )->>'status' from candidate_memory_writer_result$$,
+  'invalid_request'
+);
+select candidate_erasure_test.assert_scalar(
+  'metadata-only edits preserve candidate provenance',
+  $$select concat_ws(':', changed.result->>'status',
+      (select count(*) from public.candidate_payload_provenance provenance
+        where provenance.memory_id=(select (result->>'id')::uuid from candidate_memory_writer_result))
+    ) from candidate_memory_metadata_result changed$$,
+  'updated:1'
+);
+select candidate_erasure_test.assert_scalar(
+  'stale classified content replay preserves the current revision and alias set',
+  $$with replay as (
+      select public.mutate_agent_memory_with_candidate_provenance(
+        '11111111-1111-4111-8111-111111111111',
+        'a1000000-0000-4000-8000-000000000001',
+        '51000000-0000-4000-8000-000000000001',
+        (result->>'id')::uuid,
+        'a1000000-0000-4000-8000-000000000001', 2, 'edit', null,
+        'enc:v2:5555555555555555555555555555555555555555555555555555555555555555:QUFBQQ==:QkJCQg==:Q0NDQw==',
+        '6666666666666666666666666666666666666666666666666666666666666666',
+        24, null, false, null, true, null,
+        '[{"kind":"email","value":"stale-replay@example.test"}]'::jsonb
+      ) result from candidate_memory_writer_result
+    )
+    select concat_ws(':', replay.result->>'status',
+      (select revision from public.agent_memories memory
+        where memory.id=(select (result->>'id')::uuid from candidate_memory_writer_result)),
+      (select string_agg(identifier_kind, ',' order by identifier_kind)
+        from public.candidate_payload_provenance provenance
+       where provenance.memory_id=(select (result->>'id')::uuid from candidate_memory_writer_result))
+    ) from replay$$,
+  'revision_conflict:3:candidate_id'
+);
+create temporary table candidate_memory_review_result as
+select public.mutate_agent_memory_with_candidate_provenance(
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  '51000000-0000-4000-8000-000000000001',
+  (result->>'id')::uuid,
+  'a1000000-0000-4000-8000-000000000001', 3, 'approve', null,
+  null, null, null, null, false, null, false, null, null
+) result from candidate_memory_writer_result;
+select candidate_erasure_test.assert_scalar(
+  'review transitions preserve candidate provenance',
+  $$select concat_ws(':', changed.result->>'status',
+      (select count(*) from public.candidate_payload_provenance provenance
+        where provenance.memory_id=(select (result->>'id')::uuid from candidate_memory_writer_result))
+    ) from candidate_memory_review_result changed$$,
+  'updated:1'
+);
+reset role;
 
 select candidate_erasure_test.assert_scalar(
   'candidate erasure lock keys normalize equivalent email and phone identities',
@@ -369,6 +637,20 @@ select candidate_erasure_test.assert_scalar(
   '{"reason": "candidate_erasure", "redacted": true}'
 );
 select candidate_erasure_test.assert_scalar(
+  'encrypted AgentSpec memory is erased through normalized alias provenance',
+  $$select concat_ws(':', status, deleted_at is not null, pinned, content_byte_count)
+      from public.agent_memories
+     where id='56000000-0000-4000-8000-000000000001'$$,
+  'deleted:t:f:9'
+);
+select candidate_erasure_test.assert_scalar(
+  'erased AgentSpec memory retains no candidate provenance mapping',
+  $$select count(*)::text
+      from public.candidate_payload_provenance provenance
+     where memory_id='56000000-0000-4000-8000-000000000001'$$,
+  '0'
+);
+select candidate_erasure_test.assert_scalar(
   'plaintext suppression rows are minimized',
   $$select count(*)::text from public.suppression_list where workspace_id='11111111-1111-4111-8111-111111111111' and value in ('ian@example.test','14155550101')$$,
   '0'
@@ -386,7 +668,7 @@ select candidate_erasure_test.assert_scalar(
 select candidate_erasure_test.assert_scalar(
   'one content-free counter exists for every scrubbed store',
   $$select count(*)::text from public.candidate_erasure_receipts$$,
-  '15'
+  '19'
 );
 select candidate_erasure_test.assert_scalar(
   'receipt schema has no candidate content column',
@@ -437,6 +719,66 @@ select candidate_erasure_test.assert_sqlstate(
   $$insert into public.agent_conversations(workspace_id,spec_id,candidate_id,channel,provider_thread_key) values('11111111-1111-4111-8111-111111111111','51000000-0000-4000-8000-000000000001','33333333-3333-4333-8333-333333333333','Email','stale-provider-thread')$$,
   array['23514']
 );
+select candidate_erasure_test.assert_sqlstate(
+  'agent run cannot reimport an erased candidate alias through structured JSON',
+  $$insert into public.agent_runs(
+      id,spec_id,workspace_id,owner_id,actor_id,node,state_json,status
+    ) values (
+      '52000000-0000-4000-8000-000000000009',
+      '51000000-0000-4000-8000-000000000001',
+      '11111111-1111-4111-8111-111111111111',
+      'a1000000-0000-4000-8000-000000000001',
+      'a1000000-0000-4000-8000-000000000001','sourcer',
+      '{"candidates":[{"id":"new-alias-id","email":"ian@example.test"}]}'::jsonb,
+      'running'
+    )$$,
+  array['23514']
+);
+insert into public.agent_memories(
+  id, workspace_id, owner_id, spec_id, kind, content_ciphertext,
+  content_sha256, content_byte_count, status, source_type, created_by, updated_by
+) values (
+  '56000000-0000-4000-8000-000000000009',
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  '51000000-0000-4000-8000-000000000001', 'episodic',
+  'enc:v2:' || repeat('3',64) || ':QUFBQQ==:QkJCQg==:Q0NDQw==',
+  repeat('4',64), 24, 'pending_review', 'operator',
+  'a1000000-0000-4000-8000-000000000001',
+  'a1000000-0000-4000-8000-000000000001'
+);
+set role service_role;
+select candidate_erasure_test.set_service_claims('a1000000-0000-4000-8000-000000000001');
+select candidate_erasure_test.assert_sqlstate(
+  'atomic AgentSpec content edit rolls back when an exact alias is erased',
+  $$select public.mutate_agent_memory_with_candidate_provenance(
+      '11111111-1111-4111-8111-111111111111',
+      'a1000000-0000-4000-8000-000000000001',
+      '51000000-0000-4000-8000-000000000001',
+      '56000000-0000-4000-8000-000000000009',
+      'a1000000-0000-4000-8000-000000000001', 1, 'edit', null,
+      'enc:v2:' || repeat('5',64) || ':QUFBQQ==:QkJCQg==:Q0NDQw==',
+      repeat('6',64), 25, null, false, null, true, 'campaign-a',
+      '[{"kind":"email","value":"ian@example.test"}]'::jsonb
+    )$$,
+  array['23514']
+);
+reset role;
+select candidate_erasure_test.assert_scalar(
+  'tombstoned alias failure leaves the encrypted memory revision and digest unchanged',
+  $$select concat_ws(':', revision, content_sha256, content_byte_count)
+      from public.agent_memories
+     where id='56000000-0000-4000-8000-000000000009'$$,
+  '1:' || repeat('4',64) || ':24'
+);
+select candidate_erasure_test.assert_scalar(
+  'tombstoned alias failure leaves no partial memory provenance',
+  $$select count(*)::text
+      from public.candidate_payload_provenance
+     where memory_id='56000000-0000-4000-8000-000000000009'$$,
+  '0'
+);
+delete from public.agent_memories where id='56000000-0000-4000-8000-000000000009';
 select candidate_erasure_test.assert_scalar(
   'rejected stale-worker writes leave no raw candidate identifiers',
   $$select concat_ws(':',
@@ -646,6 +988,170 @@ select candidate_erasure_test.assert_sqlstate(
   ),
   array['22023']
 );
+select candidate_erasure_test.assert_scalar(
+  'caller-supplied hash cannot complete an unsupported provider obligation',
+  format(
+    $$select public.reconcile_candidate_erasure_obligation(
+      '11111111-1111-4111-8111-111111111111',
+      'a1000000-0000-4000-8000-000000000001',
+      %L, 0, 'completed', null, repeat('b',64), 'case:unsupported-evidence'
+    )->>'status'$$,
+    (select id from obligation_fixture order by provider, id limit 1)
+  ),
+  'unverified_evidence'
+);
+select candidate_erasure_test.assert_sqlstate(
+  'service callers cannot manufacture provider evidence receipts',
+  $$insert into public.candidate_erasure_provider_evidence_receipts(id)
+    values (gen_random_uuid())$$,
+  array['42501']
+);
+reset role;
+
+select candidate_erasure_test.assert_sqlstate(
+  'future provider verification evidence is rejected',
+  format($statement$
+    with evidence as materialized (
+      select obligation.*, clock_timestamp() + interval '1 second' verified_at
+        from public.candidate_erasure_obligations obligation
+       where obligation.id=%L
+    )
+    insert into public.candidate_erasure_provider_evidence_receipts(
+      workspace_id, request_id, obligation_id, provider,
+      expected_attempt_count, verification_method, adapter_id, adapter_version,
+      provider_receipt_hmac, evidence_sha256, case_reference, verified_at
+    )
+    select evidence.workspace_id, evidence.request_id, evidence.id,
+           evidence.provider, evidence.attempt_count,
+           'approved_evidence_store', 'fixture-verifier', '1',
+           public.candidate_erasure_reference_hmac(
+             evidence.workspace_id,
+             public.candidate_erasure_provider_evidence_document(
+               evidence.workspace_id, evidence.request_id, evidence.id,
+               evidence.provider, evidence.attempt_count,
+               'approved_evidence_store', 'fixture-verifier', '1',
+               repeat('a',64), 'case:provider-future', evidence.verified_at
+             )
+           ),
+           repeat('a',64), 'case:provider-future', evidence.verified_at
+      from evidence
+  $statement$, (select id from obligation_fixture order by provider, id limit 1)),
+  array['22023']
+);
+select candidate_erasure_test.assert_sqlstate(
+  'stale provider verification evidence is rejected',
+  format($statement$
+    with evidence as materialized (
+      select obligation.*, clock_timestamp() - interval '11 minutes' verified_at
+        from public.candidate_erasure_obligations obligation
+       where obligation.id=%L
+    )
+    insert into public.candidate_erasure_provider_evidence_receipts(
+      workspace_id, request_id, obligation_id, provider,
+      expected_attempt_count, verification_method, adapter_id, adapter_version,
+      provider_receipt_hmac, evidence_sha256, case_reference, verified_at
+    )
+    select evidence.workspace_id, evidence.request_id, evidence.id,
+           evidence.provider, evidence.attempt_count,
+           'approved_evidence_store', 'fixture-verifier', '1',
+           public.candidate_erasure_reference_hmac(
+             evidence.workspace_id,
+             public.candidate_erasure_provider_evidence_document(
+               evidence.workspace_id, evidence.request_id, evidence.id,
+               evidence.provider, evidence.attempt_count,
+               'approved_evidence_store', 'fixture-verifier', '1',
+               repeat('a',64), 'case:provider-stale', evidence.verified_at
+             )
+           ),
+           repeat('a',64), 'case:provider-stale', evidence.verified_at
+      from evidence
+  $statement$, (select id from obligation_fixture order by provider, id limit 1)),
+  array['22023']
+);
+select candidate_erasure_test.assert_sqlstate(
+  'provider evidence HMAC binds the verifier adapter identity',
+  format($statement$
+    with evidence as materialized (
+      select obligation.*, clock_timestamp() verified_at
+        from public.candidate_erasure_obligations obligation
+       where obligation.id=%L
+    )
+    insert into public.candidate_erasure_provider_evidence_receipts(
+      workspace_id, request_id, obligation_id, provider,
+      expected_attempt_count, verification_method, adapter_id, adapter_version,
+      provider_receipt_hmac, evidence_sha256, case_reference, verified_at
+    )
+    select evidence.workspace_id, evidence.request_id, evidence.id,
+           evidence.provider, evidence.attempt_count,
+           'approved_evidence_store', 'forged-verifier', '1',
+           public.candidate_erasure_reference_hmac(
+             evidence.workspace_id,
+             public.candidate_erasure_provider_evidence_document(
+               evidence.workspace_id, evidence.request_id, evidence.id,
+               evidence.provider, evidence.attempt_count,
+               'approved_evidence_store', 'fixture-verifier', '1',
+               repeat('a',64), 'case:provider-forged-adapter', evidence.verified_at
+             )
+           ),
+           repeat('a',64), 'case:provider-forged-adapter', evidence.verified_at
+      from evidence
+  $statement$, (select id from obligation_fixture order by provider, id limit 1)),
+  array['23514']
+);
+select candidate_erasure_test.assert_sqlstate(
+  'direct completion cannot bypass independently recorded evidence',
+  format(
+    $$update public.candidate_erasure_obligations
+         set status='completed', completed_at=now(), completed_by=%L,
+             completion_evidence_sha256=repeat('c',64),
+             completion_case_reference='case:direct-forgery',
+             reference_ciphertext=null
+       where id=%L$$,
+    'a1000000-0000-4000-8000-000000000001',
+    (select id from obligation_fixture order by provider, id limit 1)
+  ),
+  array['23514']
+);
+
+with evidence as materialized (
+  select obligation.*, clock_timestamp() verified_at
+    from public.candidate_erasure_obligations obligation
+   where obligation.id in (select id from obligation_fixture)
+)
+insert into public.candidate_erasure_provider_evidence_receipts(
+  workspace_id, request_id, obligation_id, provider,
+  expected_attempt_count, verification_method, adapter_id, adapter_version,
+  provider_receipt_hmac, evidence_sha256, case_reference, verified_at
+)
+select evidence.workspace_id, evidence.request_id, evidence.id,
+       evidence.provider, evidence.attempt_count,
+       'approved_evidence_store', 'fixture-verifier', '1',
+       public.candidate_erasure_reference_hmac(
+         evidence.workspace_id,
+         public.candidate_erasure_provider_evidence_document(
+           evidence.workspace_id, evidence.request_id, evidence.id,
+           evidence.provider, evidence.attempt_count,
+           'approved_evidence_store', 'fixture-verifier', '1',
+           repeat('a',64), 'case:provider-manual-1', evidence.verified_at
+         )
+       ),
+       repeat('a',64), 'case:provider-manual-1', evidence.verified_at
+  from evidence;
+select candidate_erasure_test.assert_sqlstate(
+  'provider evidence receipts are immutable',
+  $$update public.candidate_erasure_provider_evidence_receipts
+       set recorded_at=recorded_at
+     where id=(select id from public.candidate_erasure_provider_evidence_receipts order by id limit 1)$$,
+  array['42501']
+);
+select candidate_erasure_test.assert_sqlstate(
+  'provider evidence receipts cannot be deleted',
+  $$delete from public.candidate_erasure_provider_evidence_receipts
+     where id=(select id from public.candidate_erasure_provider_evidence_receipts order by id limit 1)$$,
+  array['42501']
+);
+set role service_role;
+select candidate_erasure_test.set_service_claims('a1000000-0000-4000-8000-000000000001');
 create temporary table actionable_authority as
 select public.read_candidate_erasure_obligation_authority(
   '11111111-1111-4111-8111-111111111111',
@@ -749,7 +1255,7 @@ select candidate_erasure_test.assert_scalar(
 select candidate_erasure_test.assert_scalar(
   'replay creates no duplicate receipts or obligations',
   $$select (select count(*) from public.candidate_erasure_receipts)::text || ':' || (select count(*) from public.candidate_erasure_obligations)::text$$,
-  '15:4'
+  '19:4'
 );
 select candidate_erasure_test.assert_scalar(
   'verified completion cryptographically erases every actionable provider reference',

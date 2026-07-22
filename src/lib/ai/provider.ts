@@ -71,7 +71,7 @@ export function resolveAiProvider(
   const providerSupportsTask = (provider: (typeof llmProviders)[number] | undefined) => {
     if (!provider?.enabled) return false;
     const slug = KIND_TO_SLUG[provider.kind];
-    return Boolean(slug) && !(task === "sourcing" && slug === "kimi");
+    return Boolean(slug);
   };
 
   const usableModel = (model: (typeof savedModels)[number] | undefined) =>
@@ -93,6 +93,11 @@ export function resolveAiProvider(
 
   // 2. Resolve SavedModel
   const savedModel = modelId ? savedModels.find((m) => m.id === modelId) : undefined;
+
+  // Sourcing uses tool calls and must never guess a provider's default model.
+  // A concrete enabled SavedModel is required; the normalized production path
+  // additionally requires fresh exact-model capability evidence in the database.
+  if (task === "sourcing" && !savedModel) return null;
 
   // 3. Resolve providerId (saved model wins over override)
   const providerId = savedModel?.providerId ?? override?.providerId;
@@ -126,11 +131,86 @@ export function aiProviderConfigured(settings: SystemSettings): boolean {
    SERVER-ONLY pure helpers
    ========================================================================== */
 
-// Kimi/Moonshot base URL is overridable so a non-standard gateway key (e.g. an
-// "sk-kimi-…" reseller key) can point elsewhere without a code change. Server-only:
-// non-NEXT_PUBLIC env is undefined in the browser bundle, but CLOUD_ENDPOINT is only
-// read server-side (buildCloudRequest / tool-loop), so the default applies there.
-const KIMI_BASE = (process.env.KIMI_BASE_URL || "https://api.moonshot.ai/v1").replace(/\/+$/, "");
+const DEFAULT_KIMI_BASE_URL = "https://api.moonshot.ai/v1";
+// Kimi Code subscription credentials use this separate official endpoint.
+const KIMI_CODE_BASE_URL = "https://api.kimi.com/coding/v1";
+
+/**
+ * Resolve Kimi's credential-bearing egress origin. This is deliberately an
+ * exact allowlist, not a generic URL safety check: even a public HTTPS host is
+ * not authority to receive a decrypted Kimi key. Invalid configuration fails
+ * closed during module initialization before a request can be built.
+ */
+export function resolveKimiBaseUrl(configured: string | undefined): string {
+  if (configured === undefined || configured === "") return DEFAULT_KIMI_BASE_URL;
+  if (configured !== configured.trim() || configured.includes("\\")) {
+    throw new Error("invalid KIMI_BASE_URL");
+  }
+
+  // Preserve the prior harmless trailing-slash normalization while rejecting
+  // every other textual rewrite (userinfo, ports, encoded paths, or lookalike
+  // hosts). Parsing first also makes query and fragment rejection explicit.
+  const candidate = configured.replace(/\/+$/, "");
+  let endpoint: URL;
+  try {
+    endpoint = new URL(candidate);
+  } catch {
+    throw new Error("invalid KIMI_BASE_URL");
+  }
+  const canonical = `${endpoint.origin}${endpoint.pathname}`;
+  if (
+    endpoint.protocol !== "https:" ||
+    endpoint.username !== "" ||
+    endpoint.password !== "" ||
+    endpoint.port !== "" ||
+    endpoint.search !== "" ||
+    endpoint.hash !== "" ||
+    candidate !== canonical
+  ) {
+    throw new Error("invalid KIMI_BASE_URL");
+  }
+  // Return a compile-time literal rather than the validated input itself so a
+  // credential-bearing request can never inherit attacker-controlled URL text.
+  if (canonical === DEFAULT_KIMI_BASE_URL) return DEFAULT_KIMI_BASE_URL;
+  if (canonical === KIMI_CODE_BASE_URL) return KIMI_CODE_BASE_URL;
+  throw new Error("invalid KIMI_BASE_URL");
+}
+
+// Non-NEXT_PUBLIC env is undefined in the browser bundle, where the safe
+// default is used. Credential-bearing requests are server-only.
+export const KIMI_BASE_URL = resolveKimiBaseUrl(process.env.KIMI_BASE_URL);
+
+const STATIC_ENDPOINT_PROFILE: Omit<Record<AiProviderSlug, string>, "kimi"> = {
+  anthropic: "anthropic_messages_2023_06_01",
+  openai: "openai_chat_completions_v1",
+  groq: "groq_chat_completions_v1",
+  xai: "xai_chat_completions_v1",
+  mistral: "mistral_chat_completions_v1",
+};
+
+/**
+ * Return the exact reviewed endpoint profile implemented by this process.
+ * Kimi Code remains available to the legacy interactive chat path, but it is
+ * deliberately distinct from the Moonshot profile approved by the durable AI
+ * runtime-binding catalog. A binding can therefore never attest one origin
+ * while sending its credential to the other.
+ */
+export function providerRuntimeEndpointProfile(
+  provider: AiProviderSlug,
+  kimiBaseUrl: string = KIMI_BASE_URL,
+): string {
+  if (provider !== "kimi") return STATIC_ENDPOINT_PROFILE[provider];
+  return kimiBaseUrl === DEFAULT_KIMI_BASE_URL
+    ? "moonshot_chat_completions_v1"
+    : "kimi_code_chat_completions_v1";
+}
+
+export function providerRuntimeMatchesEndpointProfile(
+  provider: AiProviderSlug,
+  endpointProfile: string,
+): boolean {
+  return providerRuntimeEndpointProfile(provider) === endpointProfile;
+}
 
 export const CLOUD_ENDPOINT: Record<AiProviderSlug, string> = {
   anthropic: "https://api.anthropic.com/v1/messages",
@@ -138,7 +218,7 @@ export const CLOUD_ENDPOINT: Record<AiProviderSlug, string> = {
   groq: "https://api.groq.com/openai/v1/chat/completions",
   xai: "https://api.x.ai/v1/chat/completions",
   mistral: "https://api.mistral.ai/v1/chat/completions",
-  kimi: `${KIMI_BASE}/chat/completions`,
+  kimi: `${KIMI_BASE_URL}/chat/completions`,
 };
 
 export const PROVIDER_ENV: Record<AiProviderSlug, string> = {
@@ -219,12 +299,10 @@ export function buildCloudRequest(
  */
 export function parseCloudResponse(provider: AiProviderSlug, json: unknown): string {
   if (provider === "anthropic") {
-    return (
-      (json as { content?: { text?: string }[] } | null)?.content?.[0]?.text ?? ""
-    );
+    const text = (json as { content?: { text?: unknown }[] } | null)?.content?.[0]?.text;
+    return typeof text === "string" ? text : "";
   }
-  return (
-    (json as { choices?: { message?: { content?: string } }[] } | null)?.choices?.[0]
-      ?.message?.content ?? ""
-  );
+  const content = (json as { choices?: { message?: { content?: unknown } }[] } | null)
+    ?.choices?.[0]?.message?.content;
+  return typeof content === "string" ? content : "";
 }

@@ -7,10 +7,10 @@ app            = "aria-mantu-app"
 primary_region = "cdg"
 
 [processes]
-  web                = "node server.js"
-  cleanup            = "node scripts/apollo-authority-cleanup-worker.mjs"
-  framework_heartbeat = "node scripts/agent-framework-heartbeat-worker.mjs"
-  loop               = "node scripts/sourcing-loop-worker.mjs"
+  web                 = "server.js"
+  cleanup             = "scripts/apollo-authority-cleanup-worker.mjs"
+  framework_heartbeat = "scripts/agent-framework-heartbeat-worker.mjs"
+  loop                = "scripts/sourcing-loop-worker.mjs"
 
 [build]
   dockerfile = "Dockerfile.prod"
@@ -33,8 +33,36 @@ primary_region = "cdg"
   # Loop worker → web process, over 6PN (process-group DNS). Used only by the
   # "loop" process for its minute-level outbound drain; harmless elsewhere.
   ARIA_WEB_INTERNAL_URL         = "http://web.process.aria-mantu-app.internal:3000"
+  # Every protected release starts the autonomous loop dark. Activation is a
+  # separate reviewed operation and cannot be inherited from an older Machine.
+  ARIA_LOOP_KILL_SWITCH         = "true"
+  ARIA_LOOP_ENABLE_OUTBOUND_DRAIN = "false"
+  # Release readiness is explicit while the loop is dark. The reviewed
+  # activation workflow sets this and ARIA_LOOP_KILL_SWITCH to "true"/"false"
+  # respectively for the exact deployed release.
+  ARIA_SOURCING_OPERATIONAL_REQUIRED = "false"
+  # Production readiness requires an external OTLP collector. Endpoint and
+  # authorization headers are Fly secrets; only non-secret exporter metadata
+  # is checked in here. Traces and aggregate metrics share the standard OTLP
+  # HTTP/protobuf transport. Application logs remain available to a separately
+  # owner-configured Fly log drain.
+  ARIA_OBSERVABILITY_REQUIRED     = "true"
+  OTEL_SERVICE_NAME               = "aria-msourcing"
+  OTEL_EXPORTER_OTLP_PROTOCOL     = "http/protobuf"
+  OTEL_TRACES_EXPORTER            = "otlp"
+  OTEL_METRICS_EXPORTER           = "otlp"
+  OTEL_LOGS_EXPORTER              = "none"
+  OTEL_METRIC_EXPORT_INTERVAL     = "60000"
+  # Fail closed until a shared or edge throttle covers every public origin and
+  # the cross-machine proof in docs/operations/NEED_INGRESS.md has passed.
+  ARIA_NEED_INGRESS_SHARED_THROTTLE_VERIFIED = "false"
+  # Set only by the protected activation gate after it validates the signed,
+  # exact-release shared-throttle receipt. A bare `true` is never authority.
+  ARIA_NEED_INGRESS_SHARED_THROTTLE_EVIDENCE_SHA256 = ""
   # Secrets (fly secrets set): SUPABASE_SERVICE_ROLE_KEY (=FLY_SUPABASE_SERVICE_KEY),
-  #   DATA_ENCRYPTION_KEY (=FLY_DATA_ENCRYPTION_KEY), CRON_SECRET (=FLY_CRON_SECRET).
+  #   DATA_ENCRYPTION_KEY (=FLY_DATA_ENCRYPTION_KEY), CRON_SECRET (=FLY_CRON_SECRET),
+  #   OTEL_EXPORTER_OTLP_ENDPOINT (=FLY_OTEL_EXPORTER_OTLP_ENDPOINT), and
+  #   OTEL_EXPORTER_OTLP_HEADERS (=FLY_OTEL_EXPORTER_OTLP_HEADERS).
   # Do NOT set NEXT_PUBLIC_ENABLE_DEMO_LOGIN / DEMO_ADMIN_PASSWORD on a real tenant.
 
 [http_service]
@@ -66,10 +94,9 @@ primary_region = "cdg"
   # honest for monitoring/ops — curl it directly for the real deep-readiness
   # verdict (db/auth/queue/migration-ledger/release-identity/agentFrameworks).
 
-# shared-cpu-1x starves Next.js SSR under load (oversubscribed fractional vCPU →
-# render latency + CPU steal jitter). shared-cpu-2x doubles vCPU/RAM for a modest
-# cost bump. If SSR still feels slow, go performance-1x (a DEDICATED vCPU removes
-# oversubscription jitter entirely) — that's the next lever, not a bigger shared VM.
+# Intended web baseline only. It is not a capacity or latency claim. Follow the
+# measurement and one-variable-at-a-time procedure in docs/operations/FLY_SIZING.md
+# before changing CPU class, Machine count, memory, or region placement.
 [[vm]]
   processes = ["web"]
   size   = "shared-cpu-2x"
@@ -86,8 +113,8 @@ primary_region = "cdg"
   memory    = "256mb"
 
 # Autonomous-loop tick worker (PLAN.md Rock 1). SHIPS DARK: the worker does
-# NOTHING unless ARIA_LOOP_KILL_SWITCH is set to the exact string "false"
-# (fly secrets/env — deliberately NOT set here, so a fresh deploy is inert).
+# NOTHING unless ARIA_LOOP_KILL_SWITCH is set to the exact string "false".
+# The protected config pins it to "true" so a fresh deploy is provably inert.
 # When live it reuses the cron dispatch route on the web process, so every
 # send-side guardrail (approval re-verification, suppression, quiet hours,
 # atomic claims) applies verbatim — just minute-level instead of daily.

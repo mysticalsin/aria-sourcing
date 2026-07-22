@@ -11,6 +11,11 @@ on:
         description: SHA-256 of the independently reviewed production recovery receipt
         required: true
         type: string
+      activate_sourcing:
+        description: Request separately approved autonomous sourcing activation after the dark release passes
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   actions: read
@@ -44,7 +49,7 @@ jobs:
             echo "::error::recovery_receipt_sha256 must be an exact lowercase SHA-256"
             exit 1
           fi
-          if [ "$ARIA_WORKFLOW_REF" != "refs/heads/deploy/fly-github-actions" ] \
+          if [ "$ARIA_WORKFLOW_REF" != "refs/heads/main" ] \
              || [ "$ARIA_WORKFLOW_REF_TYPE" != "branch" ] \
              || [ "$ARIA_WORKFLOW_REF_PROTECTED" != "true" ]; then
             echo "::error::production dispatch must execute from the protected release branch"
@@ -97,7 +102,7 @@ jobs:
             echo "::error::checked out $actual_sha instead of $ARIA_RELEASE_SHA"
             exit 1
           fi
-          if ! git merge-base --is-ancestor "$ARIA_RELEASE_SHA" "origin/deploy/fly-github-actions"; then
+          if ! git merge-base --is-ancestor "$ARIA_RELEASE_SHA" "origin/main"; then
             echo "::error::release SHA is not on the production release branch"
             exit 1
           fi
@@ -118,7 +123,7 @@ jobs:
             alerts="$(gh api --method GET \
               "repos/$GITHUB_REPOSITORY/code-scanning/alerts" \
               -f state=open \
-              -f ref=refs/heads/deploy/fly-github-actions \
+              -f ref=refs/heads/main \
               -f severity="$severity" \
               -f per_page=1)"
             open_code_alerts="$(printf '%s' "$alerts" | node -e '
@@ -528,7 +533,6 @@ jobs:
               --cache-dir /trivy-cache \
               --scanners vuln \
               --severity HIGH,CRITICAL \
-              --ignore-unfixed=true \
               --exit-code 1 \
               --format json \
               --output "/artifacts/aria-$component-vulnerabilities.json" \
@@ -940,9 +944,13 @@ jobs:
           FLY_DATA_ENCRYPTION_PREVIOUS_KEYS: ${{ secrets.FLY_DATA_ENCRYPTION_PREVIOUS_KEYS }}
           ARIA_DATA_KEY_RING_RETIREMENT_APPROVAL: ${{ secrets.ARIA_DATA_KEY_RING_RETIREMENT_APPROVAL }}
           FLY_CRON_SECRET: ${{ secrets.FLY_CRON_SECRET }}
+          FLY_REQUISITION_PARSE_SECRET: ${{ secrets.FLY_REQUISITION_PARSE_SECRET }}
+          FLY_SOURCING_EXECUTION_SECRET: ${{ secrets.FLY_SOURCING_EXECUTION_SECRET }}
           FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET: ${{ secrets.FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET }}
           FLY_DEERFLOW_ADAPTER_TOKEN: ${{ secrets.FLY_DEERFLOW_ADAPTER_TOKEN }}
           FLY_FLOWISE_ADAPTER_TOKEN: ${{ secrets.FLY_FLOWISE_ADAPTER_TOKEN }}
+          FLY_OTEL_EXPORTER_OTLP_ENDPOINT: ${{ secrets.FLY_OTEL_EXPORTER_OTLP_ENDPOINT }}
+          FLY_OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.FLY_OTEL_EXPORTER_OTLP_HEADERS }}
           AGENT_FRAMEWORKS_REQUIRED: "true"
           AGENT_FRAMEWORK_EXECUTION_ENABLED: ${{ vars.ARIA_AGENT_FRAMEWORK_EXECUTION_ENABLED }}
           AGENT_FRAMEWORK_KILL_SWITCH: ${{ vars.ARIA_AGENT_FRAMEWORK_KILL_SWITCH }}
@@ -951,7 +959,7 @@ jobs:
           FRAMEWORK_ADAPTER_IMAGE_DIGEST: ${{ vars.ARIA_FRAMEWORK_ADAPTER_IMAGE_DIGEST }}
           REDIS_IMAGE_DIGEST: ${{ vars.ARIA_FRAMEWORK_REDIS_IMAGE_DIGEST }}
           DEERFLOW_ADAPTER_URL: ${{ vars.ARIA_DEERFLOW_ADAPTER_URL }}
-          DEERFLOW_SOURCE_COMMIT: fabadae4168db81f0eaaf62f209050f978e2f691
+          DEERFLOW_SOURCE_COMMIT: 3c0a45ad772cdba388009b8d5ecad5e48cd22429
           DEERFLOW_IMAGE_DIGEST: ${{ vars.ARIA_DEERFLOW_IMAGE_DIGEST }}
           DEERFLOW_DATABASE_IMAGE_DIGEST: ${{ vars.ARIA_DEERFLOW_DATABASE_IMAGE_DIGEST }}
           DEERFLOW_FRAMEWORK_INSTANCE_ID: ${{ vars.ARIA_DEERFLOW_INSTANCE_ID }}
@@ -962,7 +970,7 @@ jobs:
           DEERFLOW_MODEL_BASE_URL: ${{ vars.ARIA_DEERFLOW_MODEL_BASE_URL }}
           DEERFLOW_MODEL_CREDENTIAL_VERSION: ${{ vars.ARIA_DEERFLOW_MODEL_CREDENTIAL_VERSION }}
           FLOWISE_ADAPTER_URL: ${{ vars.ARIA_FLOWISE_ADAPTER_URL }}
-          FLOWISE_SOURCE_COMMIT: bb773ffa710bd22639c4ba2643413a0ea2b679d3
+          FLOWISE_SOURCE_COMMIT: ed9e100fb71643cd3922b005908f9732bc0e07dc
           FLOWISE_IMAGE_DIGEST: ${{ vars.ARIA_FLOWISE_IMAGE_DIGEST }}
           FLOWISE_WORKER_IMAGE_DIGEST: ${{ vars.ARIA_FLOWISE_WORKER_IMAGE_DIGEST }}
           FLOWISE_DATABASE_IMAGE_DIGEST: ${{ vars.ARIA_FLOWISE_DATABASE_IMAGE_DIGEST }}
@@ -985,9 +993,13 @@ jobs:
             process.env.FLY_SUPABASE_ADMIN_TARGET_PASSWORD,
             process.env.FLY_AUTH_DB_PASSWORD,
             process.env.FLY_REST_DB_PASSWORD,
+            process.env.FLY_REQUISITION_PARSE_SECRET,
+            process.env.FLY_SOURCING_EXECUTION_SECRET,
             process.env.FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET,
             process.env.FLY_DEERFLOW_ADAPTER_TOKEN,
             process.env.FLY_FLOWISE_ADAPTER_TOKEN,
+            process.env.FLY_OTEL_EXPORTER_OTLP_ENDPOINT,
+            process.env.FLY_OTEL_EXPORTER_OTLP_HEADERS,
           ].filter(Boolean);
           for (const value of values) {
             console.log(`::add-mask::${value}`);
@@ -1211,6 +1223,13 @@ jobs:
               receipt.releaseSha !== process.env.ARIA_RELEASE_SHA ||
               receipt.status !== "passed" ||
               receipt.checks?.authenticatedWorkspaceBinding !== true ||
+              receipt.checks?.agentMemoryProvenanceBoundary !== true ||
+              receipt.checks?.agentMemoryFreeTextCreateBlocked !== true ||
+              receipt.checks?.agentMemoryFreeTextEditBlocked !== true ||
+              receipt.checks?.agentMemoryReadAvailable !== true ||
+              receipt.checks?.agentMemoryMetadataEditAvailable !== true ||
+              receipt.checks?.agentMemoryReviewAvailable !== true ||
+              receipt.checks?.agentMemoryDeleteAvailable !== true ||
               receipt.checks?.authenticatedStateReload !== true ||
               receipt.checks?.outreachLedgerRows !== 0 ||
               receipt.checks?.messagesOutboundRows !== 0 ||
@@ -1606,3 +1625,407 @@ jobs:
             ) process.exit(1);
           ' "$release_receipt"
           echo "RELEASE_ACCEPTED sha=$ARIA_RELEASE_SHA receipt=$release_receipt"
+
+  verify-need-ingress-throttle-evidence:
+    name: Verify signed shared-throttle evidence
+    needs: deploy
+    if: ${{ inputs.activate_sourcing }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: Production-Need-Ingress-Throttle-Proof
+    permissions:
+      actions: read
+      artifact-metadata: write
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.archive_shared_throttle_evidence.outputs.artifact-id }}
+      artifact_digest: ${{ steps.archive_shared_throttle_evidence.outputs.artifact-digest }}
+    env:
+      ARIA_RELEASE_SHA: ${{ inputs.release_sha }}
+
+    steps:
+      - name: Checkout exact accepted release
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pinned flyctl action
+        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # v1.6
+        with:
+          version: 0.4.69
+
+      - name: Validate external two-Machine throttle receipt
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          ARIA_NEED_INGRESS_THROTTLE_EVIDENCE_JSON: ${{ secrets.ARIA_NEED_INGRESS_THROTTLE_EVIDENCE_JSON }}
+          ARIA_NEED_INGRESS_THROTTLE_EVIDENCE_HMAC_KEY: ${{ secrets.ARIA_NEED_INGRESS_THROTTLE_EVIDENCE_HMAC_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$FLY_API_TOKEN"
+          test -n "$ARIA_NEED_INGRESS_THROTTLE_EVIDENCE_JSON"
+          test -n "$ARIA_NEED_INGRESS_THROTTLE_EVIDENCE_HMAC_KEY"
+
+          accepted_dir="$RUNNER_TEMP/aria-accepted-release-throttle-proof"
+          accepted_name="aria-accepted-release-${{ inputs.release_sha }}-attempt-${{ github.run_attempt }}"
+          inventory="$RUNNER_TEMP/aria-need-ingress-throttle-machines.json"
+          raw_evidence="$RUNNER_TEMP/aria-need-ingress-throttle-evidence.raw.json"
+          verified_evidence="$RUNNER_TEMP/aria-need-ingress-throttle-evidence.json"
+          mkdir -p "$accepted_dir"
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "$accepted_name" --dir "$accepted_dir"
+          test -s "$accepted_dir/aria-release-receipt.json"
+          printf '%s' "$ARIA_NEED_INGRESS_THROTTLE_EVIDENCE_JSON" > "$raw_evidence"
+          flyctl machines list --app aria-mantu-app --json > "$inventory"
+          node scripts/sourcing-activation-gate.mjs validate-shared-throttle-evidence \
+            --machines "$inventory" \
+            --release-receipt "$accepted_dir/aria-release-receipt.json" \
+            --shared-throttle-evidence "$raw_evidence" \
+            --release-sha "$ARIA_RELEASE_SHA" \
+            --output "$verified_evidence"
+          test -s "$verified_evidence"
+
+      - name: Archive exact verified throttle receipt
+        id: archive_shared_throttle_evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aria-need-ingress-throttle-proof-${{ inputs.release_sha }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/aria-need-ingress-throttle-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
+  activate-sourcing:
+    name: Owner-approved autonomous sourcing activation
+    needs: [deploy, verify-need-ingress-throttle-evidence]
+    if: ${{ inputs.activate_sourcing }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: Production-Sourcing-Activation
+    permissions:
+      actions: read
+      artifact-metadata: write
+      contents: read
+    env:
+      ARIA_RELEASE_SHA: ${{ inputs.release_sha }}
+      ARIA_LOOP_KILL_SWITCH: "false"
+      ARIA_SOURCING_OPERATIONAL_REQUIRED: "true"
+      ARIA_LOOP_ENABLE_OUTBOUND_DRAIN: "false"
+      GH_TOKEN: ${{ github.token }}
+      APP_URL: https://aria-mantu-app.fly.dev
+      KONG_URL: https://aria-mantu-kong.fly.dev
+
+    steps:
+      - name: Checkout exact accepted release
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pinned flyctl action
+        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # v1.6
+        with:
+          version: 0.4.69
+
+      - name: Verify exact same-run throttle artifact identity
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARIA_NEED_INGRESS_THROTTLE_ARTIFACT_ID: ${{ needs.verify-need-ingress-throttle-evidence.outputs.artifact_id }}
+          ARIA_NEED_INGRESS_THROTTLE_ARTIFACT_DIGEST: ${{ needs.verify-need-ingress-throttle-evidence.outputs.artifact_digest }}
+        run: |
+          set -euo pipefail
+          metadata="$RUNNER_TEMP/aria-need-ingress-throttle-artifact.json"
+          [[ "$ARIA_NEED_INGRESS_THROTTLE_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$ARIA_NEED_INGRESS_THROTTLE_ARTIFACT_DIGEST" =~ ^[0-9a-f]{64}$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARIA_NEED_INGRESS_THROTTLE_ARTIFACT_ID" > "$metadata"
+          node - "$metadata" <<'NODE'
+          const fs = require("node:fs");
+          const artifact = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          const expectedName = `aria-need-ingress-throttle-proof-${process.env.ARIA_RELEASE_SHA}-run-${process.env.GITHUB_RUN_ID}-attempt-${process.env.GITHUB_RUN_ATTEMPT}`;
+          if (
+            String(artifact.id) !== process.env.ARIA_NEED_INGRESS_THROTTLE_ARTIFACT_ID
+            || artifact.name !== expectedName
+            || artifact.expired !== false
+            || artifact.digest !== `sha256:${process.env.ARIA_NEED_INGRESS_THROTTLE_ARTIFACT_DIGEST}`
+            || artifact.workflow_run?.id !== Number(process.env.GITHUB_RUN_ID)
+            || artifact.workflow_run?.head_sha !== process.env.ARIA_RELEASE_SHA
+            || !Number.isSafeInteger(artifact.size_in_bytes)
+            || artifact.size_in_bytes < 2
+            || artifact.size_in_bytes > 131072
+          ) process.exit(1);
+          NODE
+
+      - name: Retrieve exact verified throttle artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.verify-need-ingress-throttle-evidence.outputs.artifact_id }}
+          path: ${{ runner.temp }}/aria-need-ingress-throttle-proof
+
+      - name: Verify protected release and independent activation approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          [ "$GITHUB_REF" = "refs/heads/main" ]
+          [ "$GITHUB_REF_TYPE" = "branch" ]
+          [ "$GITHUB_REF_PROTECTED" = "true" ]
+          [ "$(git rev-parse HEAD)" = "$ARIA_RELEASE_SHA" ]
+          git merge-base --is-ancestor "$ARIA_RELEASE_SHA" origin/main
+
+          accepted_dir="$RUNNER_TEMP/aria-accepted-release"
+          accepted_name="aria-accepted-release-${{ inputs.release_sha }}-attempt-${{ github.run_attempt }}"
+          reviews="$RUNNER_TEMP/aria-sourcing-activation-approvals.json"
+          approval="$RUNNER_TEMP/aria-sourcing-activation-approval.json"
+          mkdir -p "$accepted_dir"
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "$accepted_name" --dir "$accepted_dir"
+          test -s "$accepted_dir/aria-release-receipt.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/approvals" > "$reviews"
+          node scripts/sourcing-activation-gate.mjs validate-approval \
+            --reviews "$reviews" \
+            --release-receipt "$accepted_dir/aria-release-receipt.json" \
+            --release-sha "$ARIA_RELEASE_SHA" \
+            --output "$approval"
+
+      - name: Activate exact Machines and run no-contact provider canary
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          SUPABASE_ANON_KEY: ${{ secrets.FLY_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.FLY_SUPABASE_SERVICE_KEY }}
+          ARIA_SOURCING_CANARY_EMAIL: ${{ secrets.ARIA_SOURCING_CANARY_EMAIL }}
+          ARIA_SOURCING_CANARY_PASSWORD: ${{ secrets.ARIA_SOURCING_CANARY_PASSWORD }}
+          ARIA_SOURCING_CANARY_NEED_KEY: ${{ secrets.ARIA_SOURCING_CANARY_NEED_KEY }}
+          ARIA_SOURCING_CANARY_CREDENTIAL_ID: ${{ vars.ARIA_SOURCING_CANARY_CREDENTIAL_ID }}
+          ARIA_SOURCING_CANARY_TAVILY_CREDENTIAL_ID: ${{ vars.ARIA_SOURCING_CANARY_TAVILY_CREDENTIAL_ID }}
+          ARIA_SOURCING_CANARY_WORKSPACE_ID: ${{ vars.ARIA_SOURCING_CANARY_WORKSPACE_ID }}
+          ARIA_NEED_INGRESS_THROTTLE_EVIDENCE_HMAC_KEY: ${{ secrets.ARIA_NEED_INGRESS_THROTTLE_EVIDENCE_HMAC_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          for value in \
+            "$FLY_API_TOKEN" "$SUPABASE_ANON_KEY" "$SUPABASE_SERVICE_ROLE_KEY" \
+            "$ARIA_SOURCING_CANARY_EMAIL" "$ARIA_SOURCING_CANARY_PASSWORD" \
+            "$ARIA_SOURCING_CANARY_NEED_KEY"
+          do
+            test -n "$value"
+            printf '::add-mask::%s\n' "$value"
+            printf '::add-mask::%s\n' "$(node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$value")"
+          done
+          test -n "$ARIA_NEED_INGRESS_THROTTLE_EVIDENCE_HMAC_KEY"
+          test -n "$ARIA_SOURCING_CANARY_CREDENTIAL_ID"
+          test -n "$ARIA_SOURCING_CANARY_TAVILY_CREDENTIAL_ID"
+          test -n "$ARIA_SOURCING_CANARY_WORKSPACE_ID"
+
+          accepted_receipt="$RUNNER_TEMP/aria-accepted-release/aria-release-receipt.json"
+          reviews="$RUNNER_TEMP/aria-sourcing-activation-approvals.json"
+          state="$RUNNER_TEMP/aria-sourcing-activation-state.json"
+          operational_plan="$RUNNER_TEMP/aria-sourcing-operational-plan.json"
+          operational_configs="$RUNNER_TEMP/aria-sourcing-operational-configs"
+          operational_inventory="$RUNNER_TEMP/aria-sourcing-operational-machines.json"
+          operational_proof="$RUNNER_TEMP/aria-sourcing-operational-machine-proof.json"
+          heartbeat_logs="$RUNNER_TEMP/aria-sourcing-operational-loop-logs.jsonl"
+          activation_receipt="$RUNNER_TEMP/aria-sourcing-activation-candidate.json"
+          shared_throttle_evidence="$RUNNER_TEMP/aria-need-ingress-throttle-proof/aria-need-ingress-throttle-evidence.json"
+          mutation_marker="$RUNNER_TEMP/aria-sourcing-activation-mutated"
+          test -s "$shared_throttle_evidence"
+
+          apply_plan() {
+            local plan="$1" id machine_state config_path
+            while IFS=$'\t' read -r id machine_state config_path; do
+              args=(machine update "$id" --app aria-mantu-app --machine-config "$config_path" --yes --wait-timeout 300)
+              if [ "$machine_state" = stopped ]; then
+                args+=(--skip-start)
+              fi
+              flyctl "${args[@]}" >/dev/null
+            done < <(node -e '
+              const fs = require("node:fs");
+              const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+              for (const target of plan.targets) {
+                if (!/^[0-9a-f]{14}$/.test(target.id) || !["started", "stopped"].includes(target.state)) process.exit(1);
+                process.stdout.write(`${target.id}\t${target.state}\t${target.configPath}\n`);
+              }
+            ' "$plan")
+          }
+
+          redark() {
+            local original_status=$?
+            trap - EXIT HUP INT TERM
+            if [ ! -f "$mutation_marker" ]; then
+              exit "$original_status"
+            fi
+            set +e
+            redark_inventory="$RUNNER_TEMP/aria-sourcing-redark-machines.json"
+            redark_plan="$RUNNER_TEMP/aria-sourcing-redark-plan.json"
+            redark_configs="$RUNNER_TEMP/aria-sourcing-redark-configs"
+            redark_proof="$RUNNER_TEMP/aria-sourcing-redark-proof.json"
+            flyctl machines list --app aria-mantu-app --json > "$redark_inventory" \
+              && node scripts/sourcing-activation-gate.mjs redark \
+                --machines "$redark_inventory" --state "$state" \
+                --plan "$redark_plan" --config-dir "$redark_configs" \
+              && apply_plan "$redark_plan" \
+              && flyctl machines list --app aria-mantu-app --json > "$redark_inventory" \
+              && node scripts/sourcing-activation-gate.mjs verify-machines \
+                --machines "$redark_inventory" --state "$state" \
+                --plan "$redark_plan" --output "$redark_proof"
+            redark_status=$?
+            if [ "$redark_status" -ne 0 ]; then
+              echo "::error::autonomous sourcing activation failed and exact re-dark proof also failed"
+              exit 1
+            fi
+            rm -f "$mutation_marker"
+            echo "SOURCING_REDARKED release=$ARIA_RELEASE_SHA"
+            exit "$original_status"
+          }
+          trap redark EXIT HUP INT TERM
+
+          flyctl machines list --app aria-mantu-app --json > "$operational_inventory"
+          node scripts/sourcing-activation-gate.mjs snapshot \
+            --machines "$operational_inventory" \
+            --release-receipt "$accepted_receipt" \
+            --shared-throttle-evidence "$shared_throttle_evidence" \
+            --release-sha "$ARIA_RELEASE_SHA" \
+            --state "$state" \
+            --plan "$operational_plan" \
+            --config-dir "$operational_configs"
+
+          heartbeat_not_before="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          : > "$mutation_marker"
+          apply_plan "$operational_plan"
+          flyctl machines list --app aria-mantu-app --json > "$operational_inventory"
+          node scripts/sourcing-activation-gate.mjs verify-machines \
+            --machines "$operational_inventory" --state "$state" \
+            --plan "$operational_plan" --output "$operational_proof"
+
+          loop_machine="$(node -e '
+            const fs = require("node:fs");
+            const state = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (!/^[0-9a-f]{14}$/.test(state.activeLoopId ?? "")) process.exit(1);
+            process.stdout.write(state.activeLoopId);
+          ' "$state")"
+          heartbeat_ok=0
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if flyctl logs --app aria-mantu-app --machine "$loop_machine" --no-tail --json > "$heartbeat_logs" 2>&1 \
+              && node scripts/sourcing-activation-gate.mjs verify-heartbeat \
+                --logs "$heartbeat_logs" --release-sha "$ARIA_RELEASE_SHA" \
+                --not-before "$heartbeat_not_before"
+            then
+              heartbeat_ok=1
+              break
+            fi
+            sleep 10
+          done
+          [ "$heartbeat_ok" -eq 1 ]
+
+          node scripts/sourcing-activation-gate.mjs canary \
+            --release-receipt "$accepted_receipt" \
+            --state "$state" \
+            --machine-proof "$operational_proof" \
+            --reviews "$reviews" \
+            --output "$activation_receipt"
+          test -s "$activation_receipt"
+          trap - EXIT HUP INT TERM
+
+      - name: Archive bounded activation candidate receipt
+        id: archive_sourcing_activation_candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aria-sourcing-activation-candidate-${{ inputs.release_sha }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/aria-sourcing-activation-candidate.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Finalize immutable activation receipt
+        shell: bash
+        env:
+          ARIA_SOURCING_ACTIVATION_ARTIFACT_ID: ${{ steps.archive_sourcing_activation_candidate.outputs.artifact-id }}
+          ARIA_SOURCING_ACTIVATION_ARTIFACT_SHA256: ${{ steps.archive_sourcing_activation_candidate.outputs.artifact-digest }}
+        run: |
+          set -euo pipefail
+          node scripts/sourcing-activation-gate.mjs finalize-receipt \
+            --candidate "$RUNNER_TEMP/aria-sourcing-activation-candidate.json" \
+            --artifact-id "$ARIA_SOURCING_ACTIVATION_ARTIFACT_ID" \
+            --artifact-sha256 "$ARIA_SOURCING_ACTIVATION_ARTIFACT_SHA256" \
+            --output "$RUNNER_TEMP/aria-sourcing-activation-receipt.json"
+
+      - name: Archive accepted sourcing activation receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aria-sourcing-activation-receipt-${{ inputs.release_sha }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/aria-sourcing-activation-receipt.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Announce accepted sourcing activation
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("node:fs");
+            const receipt = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (
+              receipt.schemaVersion !== 1 || receipt.status !== "accepted" ||
+              receipt.releaseSha !== process.env.ARIA_RELEASE_SHA ||
+              receipt.canary?.provider !== "tavily" ||
+              receipt.canary?.providerMode !== "workspace_credential" ||
+              receipt.canary?.candidateCount < 1 ||
+              receipt.canary?.providerAttemptCount < 1 ||
+              receipt.canary?.providerAttemptCount !== receipt.canary?.providerReceiptCount ||
+              receipt.canary?.providerAttemptCount !== receipt.canary?.providerConfirmationCount ||
+              receipt.canary?.providerFailureCount !== 0 ||
+              receipt.canary?.providerProofBeforeReplaySha256 !== receipt.canary?.providerProofAfterReplaySha256 ||
+              receipt.canary?.replayVerified !== true ||
+              receipt.canary?.messagesOutboundBefore !== receipt.canary?.messagesOutboundAfter ||
+              receipt.canary?.messagesOutboundBefore !== receipt.canary?.messagesOutboundConfirmed ||
+              receipt.canary?.messagesOutboundBeforeSha256 !== receipt.canary?.messagesOutboundAfterSha256 ||
+              receipt.canary?.messagesOutboundBeforeSha256 !== receipt.canary?.messagesOutboundConfirmedSha256 ||
+              receipt.safety?.contactAttempted !== false ||
+              receipt.safety?.outboundDrainEnabled !== false
+            ) process.exit(1);
+          ' "$RUNNER_TEMP/aria-sourcing-activation-receipt.json"
+          echo "SOURCING_ACTIVATED sha=$ARIA_RELEASE_SHA"
+
+      - name: Re-dark autonomous sourcing after any activation failure
+        if: ${{ failure() || cancelled() }}
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          ARIA_LOOP_KILL_SWITCH: "true"
+          ARIA_SOURCING_OPERATIONAL_REQUIRED: "false"
+          ARIA_LOOP_ENABLE_OUTBOUND_DRAIN: "false"
+        run: |
+          set -euo pipefail
+          marker="$RUNNER_TEMP/aria-sourcing-activation-mutated"
+          state="$RUNNER_TEMP/aria-sourcing-activation-state.json"
+          if [ ! -f "$marker" ]; then
+            echo "Activation failed before any Machine mutation. Re-dark was not required."
+            exit 0
+          fi
+          inventory="$RUNNER_TEMP/aria-sourcing-failure-redark-machines.json"
+          plan="$RUNNER_TEMP/aria-sourcing-failure-redark-plan.json"
+          configs="$RUNNER_TEMP/aria-sourcing-failure-redark-configs"
+          proof="$RUNNER_TEMP/aria-sourcing-failure-redark-proof.json"
+          flyctl machines list --app aria-mantu-app --json > "$inventory"
+          node scripts/sourcing-activation-gate.mjs redark \
+            --machines "$inventory" --state "$state" --plan "$plan" --config-dir "$configs"
+          while IFS=$'\t' read -r id machine_state config_path; do
+            args=(machine update "$id" --app aria-mantu-app --machine-config "$config_path" --yes --wait-timeout 300)
+            if [ "$machine_state" = stopped ]; then args+=(--skip-start); fi
+            flyctl "${args[@]}" >/dev/null
+          done < <(node -e '
+            const fs = require("node:fs");
+            const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            for (const target of plan.targets) {
+              if (!/^[0-9a-f]{14}$/.test(target.id) || !["started", "stopped"].includes(target.state)) process.exit(1);
+              process.stdout.write(`${target.id}\t${target.state}\t${target.configPath}\n`);
+            }
+          ' "$plan")
+          flyctl machines list --app aria-mantu-app --json > "$inventory"
+          node scripts/sourcing-activation-gate.mjs verify-machines \
+            --machines "$inventory" --state "$state" --plan "$plan" --output "$proof"
+          echo "SOURCING_REDARKED release=$ARIA_RELEASE_SHA"

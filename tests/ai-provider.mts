@@ -15,6 +15,8 @@ import {
   aiProviderConfigured,
   buildCloudRequest,
   parseCloudResponse,
+  providerRuntimeEndpointProfile,
+  resolveKimiBaseUrl,
 } from "../src/lib/ai/provider.js";
 import type { SystemSettings, LlmProvider, SavedModel } from "../src/lib/types.js";
 import { defaultSettings } from "../src/lib/seed.js";
@@ -149,12 +151,41 @@ const staleSourcingDefault = settingsWith(
       modelName: "claude-stale",
       defaultForTask: ["sourcing"],
     }),
+    makeModel({
+      id: "available-sourcing-model",
+      providerId: "enabled-openai",
+      modelName: "gpt-4o-mini",
+      defaultForTask: ["sourcing"],
+    }),
   ],
   { sourcing: "stale-sourcing-model" },
 );
 const sourcingFallback = resolveAiProvider(staleSourcingDefault, "sourcing");
 ok("stale sourcing model on a disabled provider falls back to an enabled provider", sourcingFallback?.provider === "openai");
 ok("stale sourcing model does not leak its disabled-provider model name", sourcingFallback?.model === "gpt-4o-mini");
+
+const kimiSourcing = resolveAiProvider(
+  settingsWith(
+    [makeProvider({ id: "kimi-provider", kind: "Kimi", apiKeyId: "kimi-key" })],
+    [makeModel({
+      id: "kimi-tool-model",
+      providerId: "kimi-provider",
+      modelName: "kimi-k2.5",
+      defaultForTask: ["sourcing"],
+    })],
+    { sourcing: "kimi-tool-model" },
+  ),
+  "sourcing",
+);
+ok("Kimi sourcing resolves only the configured exact model and vault key", (
+  kimiSourcing?.provider === "kimi" &&
+  kimiSourcing.model === "kimi-k2.5" &&
+  kimiSourcing.apiKeyId === "kimi-key"
+));
+ok(
+  "sourcing never guesses an implicit provider model",
+  resolveAiProvider(defaultSettings(), "sourcing") === null,
+);
 
 /* ---- 8. buildCloudRequest — Anthropic shape ------------------------------- */
 
@@ -185,14 +216,60 @@ ok("OpenAI body does not have top-level system field", !("system" in openaiBody)
 const groqReq = buildCloudRequest("groq", "llama-3.3-70b-versatile", "Sys", "Prompt", "gsk-test");
 ok("Groq request has authorization Bearer header", groqReq.headers.authorization === "Bearer gsk-test");
 
-/* ---- 10. parseCloudResponse — Anthropic shape ----------------------------- */
+/* ---- 10. Kimi credential egress origin ----------------------------------- */
+
+ok(
+  "Kimi defaults to the official Moonshot API origin",
+  resolveKimiBaseUrl(undefined) === "https://api.moonshot.ai/v1",
+);
+ok(
+  "Kimi preserves the official Kimi Code endpoint from the existing contract",
+  resolveKimiBaseUrl("https://api.kimi.com/coding/v1/") === "https://api.kimi.com/coding/v1",
+);
+ok(
+  "the durable Kimi binding profile resolves only for the Moonshot origin",
+  providerRuntimeEndpointProfile("kimi", "https://api.moonshot.ai/v1") === "moonshot_chat_completions_v1",
+);
+ok(
+  "the separate Kimi Code chat origin cannot masquerade as the Moonshot binding profile",
+  providerRuntimeEndpointProfile("kimi", "https://api.kimi.com/coding/v1") === "kimi_code_chat_completions_v1",
+);
+
+const unsafeKimiOrigins = [
+  "http://api.moonshot.ai/v1",
+  "https://localhost/v1",
+  "https://127.0.0.1/v1",
+  "https://10.0.0.1/v1",
+  "https://169.254.169.254/v1",
+  "https://[::1]/v1",
+  "https://user:password@api.moonshot.ai/v1",
+  "https://api.moonshot.ai:8443/v1",
+  "https://api.moonshot.ai/v1?target=private",
+  "https://api.moonshot.ai/v1#fragment",
+  "https://api.moonshot.ai.attacker.invalid/v1",
+  "https://attacker.invalid/v1",
+  "https://api.moonshot.ai/v1/chat/completions",
+  " https://api.moonshot.ai/v1",
+  "https://api.moonshot.ai\\v1",
+];
+for (const value of unsafeKimiOrigins) {
+  let rejected = false;
+  try {
+    resolveKimiBaseUrl(value);
+  } catch (error) {
+    rejected = error instanceof Error && error.message === "invalid KIMI_BASE_URL";
+  }
+  ok(`Kimi rejects an unauthorized credential egress URL: ${value}`, rejected);
+}
+
+/* ---- 11. parseCloudResponse — Anthropic shape ----------------------------- */
 
 const anthropicJson = { content: [{ type: "text", text: "Hello from Anthropic" }] };
 ok("parseCloudResponse extracts text from Anthropic shape", parseCloudResponse("anthropic", anthropicJson) === "Hello from Anthropic");
 ok("parseCloudResponse returns empty string for missing anthropic content", parseCloudResponse("anthropic", {}) === "");
 ok("parseCloudResponse returns empty string for null", parseCloudResponse("anthropic", null) === "");
 
-/* ---- 11. parseCloudResponse — OpenAI shape -------------------------------- */
+/* ---- 12. parseCloudResponse — OpenAI shape -------------------------------- */
 
 const openaiJson = { choices: [{ message: { role: "assistant", content: "Hello from OpenAI" } }] };
 ok("parseCloudResponse extracts text from OpenAI shape", parseCloudResponse("openai", openaiJson) === "Hello from OpenAI");

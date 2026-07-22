@@ -35,12 +35,16 @@ psql_stdin() {
     --env PGPASSWORD="$bootstrap_password" \
     --entrypoint psql \
     "$client_image" \
-    -X -v ON_ERROR_STOP=1 -h db -U postgres -d postgres "$@"
+    -X -v ON_ERROR_STOP=1 -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d postgres "$@"
 }
+
+source tests/db/install-gotrue-test-authority.sh
+aria_install_gotrue_test_authority
 
 for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
   psql_stdin -q < "$migration"
 done
+psql_stdin -q < tests/db/gotrue-lifecycle-fixture.sql
 
 psql_stdin -q <<'SQL'
 \set ON_ERROR_STOP on
@@ -129,7 +133,7 @@ create temporary table resolve_hit as select public.resolve_inbound_mailbox_rout
 create temporary table resolve_miss as select public.resolve_inbound_mailbox_route('nobody@nowhere.test') r;
 reset role;
 select email_inbound_test.expect_scalar('resolve-hit-lowercased',
-  $$select concat_ws(':', r->>'ok', (r->>'workspace_id')='71111111-1111-4111-8111-111111111111') from resolve_hit$$, 'true:true');
+  $$select concat_ws(':', r->>'ok', ((r->>'workspace_id')='71111111-1111-4111-8111-111111111111')::text) from resolve_hit$$, 'true:true');
 select email_inbound_test.expect_scalar('resolve-miss-no-route',
   $$select concat_ws(':', r->>'ok', r->>'reason') from resolve_miss$$, 'false:no-route');
 

@@ -67,9 +67,15 @@ export function ApiKeysPanel() {
     const r = await actions.testApiKey(id);
     setTesting(null);
     toast({
-      title: r.valid ? "Format looks valid (not a live test)" : "Format check failed",
+      title: !r.ok
+        ? "Credential test could not complete"
+        : r.valid
+          ? "Provider credential verified"
+          : r.status === "untested"
+            ? "Live verification unavailable"
+            : "Provider rejected the credential",
       description: r.detail,
-      variant: r.valid ? "success" : "error",
+      variant: !r.ok ? "error" : r.valid ? "success" : r.status === "untested" ? "warning" : "error",
     });
   }
 
@@ -161,7 +167,7 @@ export function ApiKeysPanel() {
                       leftIcon={<Zap className="h-4 w-4" />}
                       onClick={() => handleTest(k.id)}
                     >
-                      Format check
+                      Test key
                     </Button>
                     <Button
                       variant="ghost"

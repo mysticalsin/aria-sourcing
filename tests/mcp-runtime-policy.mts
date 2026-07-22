@@ -3,6 +3,7 @@ import { callMcpTool, connectAndListTools } from "../src/lib/mcp-client";
 import {
   buildAnthropicToolDefs,
   buildOpenAiToolDefs,
+  MAX_TOOL_LOOP_RESPONSE_BYTES,
   runAnthropicWithTools,
   runOpenAiWithTools,
   type ResolvedMcpServer,
@@ -396,6 +397,166 @@ try {
     const elapsed = Date.now() - started;
     ok("one absolute deadline covers provider and tool work", !result.ok && result.reason === "Tool loop deadline exceeded.");
     ok("the loop returns at its overall deadline", elapsed < 70);
+  }
+
+  {
+    let bodyCancelled = false;
+    const server: ResolvedMcpServer = {
+      url: "builtin:test",
+      token: "",
+      tools: [{ name: "probe", description: "Fixture", inputSchema: { type: "object" } }],
+      run: async () => ({ ok: true }),
+    };
+    globalThis.fetch = (async () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("{}"));
+      },
+      cancel() {
+        bodyCancelled = true;
+      },
+    }), {
+      status: 200,
+      headers: { "content-length": String(MAX_TOOL_LOOP_RESPONSE_BYTES + 1) },
+    })) as typeof fetch;
+
+    const result = await runAnthropicWithTools({
+      model: "m",
+      system: "s",
+      prompt: "p",
+      key: "k",
+      servers: [server],
+    });
+    ok(
+      "Anthropic rejects an oversized declared provider body before buffering it",
+      !result.ok && result.reason === "Invalid response from provider.",
+    );
+    ok("oversized declared provider bodies are actively cancelled", bodyCancelled);
+  }
+
+  {
+    let bodyCancelled = false;
+    const server: ResolvedMcpServer = {
+      url: "builtin:test",
+      token: "",
+      tools: [{ name: "probe", description: "Fixture", inputSchema: { type: "object" } }],
+      run: async () => ({ ok: true }),
+    };
+    globalThis.fetch = (async () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("provider error"));
+      },
+      cancel() {
+        bodyCancelled = true;
+      },
+    }), { status: 503 })) as typeof fetch;
+
+    const result = await runAnthropicWithTools({
+      model: "m",
+      system: "s",
+      prompt: "p",
+      key: "k",
+      servers: [server],
+    });
+    ok("Anthropic reports a non-success provider status without buffering its body", !result.ok && result.reason === "Upstream error 503");
+    ok("Anthropic cancels non-success provider response bodies", bodyCancelled);
+  }
+
+  {
+    let bodyCancelled = false;
+    const server: ResolvedMcpServer = {
+      url: "builtin:test",
+      token: "",
+      tools: [{ name: "probe", description: "Fixture", inputSchema: { type: "object" } }],
+      run: async () => ({ ok: true }),
+    };
+    globalThis.fetch = (async () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("provider error"));
+      },
+      cancel() {
+        bodyCancelled = true;
+      },
+    }), { status: 429 })) as typeof fetch;
+
+    const result = await runOpenAiWithTools({
+      provider: "openai",
+      model: "m",
+      system: "s",
+      prompt: "p",
+      key: "k",
+      servers: [server],
+    });
+    ok("OpenAI-compatible loops report a non-success provider status without buffering its body", !result.ok && result.reason === "Upstream error 429");
+    ok("OpenAI-compatible loops cancel non-success provider response bodies", bodyCancelled);
+  }
+
+  {
+    let bodyCancelled = false;
+    const server: ResolvedMcpServer = {
+      url: "builtin:test",
+      token: "",
+      tools: [{ name: "probe", description: "Fixture", inputSchema: { type: "object" } }],
+      run: async () => ({ ok: true }),
+    };
+    globalThis.fetch = (async () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(MAX_TOOL_LOOP_RESPONSE_BYTES + 1));
+      },
+      cancel() {
+        bodyCancelled = true;
+      },
+    }), { status: 200 })) as typeof fetch;
+
+    const result = await runOpenAiWithTools({
+      provider: "openai",
+      model: "m",
+      system: "s",
+      prompt: "p",
+      key: "k",
+      servers: [server],
+    });
+    ok(
+      "OpenAI-compatible loops enforce the streamed provider byte cap without Content-Length",
+      !result.ok && result.reason === "Invalid response from provider.",
+    );
+    ok("streamed provider bodies above the byte cap are actively cancelled", bodyCancelled);
+  }
+
+  {
+    let bodyCancelled = false;
+    let pendingChunk: ReturnType<typeof setTimeout> | undefined;
+    const server: ResolvedMcpServer = {
+      url: "builtin:test",
+      token: "",
+      tools: [{ name: "probe", description: "Fixture", inputSchema: { type: "object" } }],
+      run: async () => ({ ok: true }),
+    };
+    globalThis.fetch = (async () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"choices":['));
+        pendingChunk = setTimeout(() => controller.enqueue(new Uint8Array([32])), 1_000);
+      },
+      cancel() {
+        bodyCancelled = true;
+        if (pendingChunk) clearTimeout(pendingChunk);
+      },
+    }), { status: 200 })) as typeof fetch;
+
+    const result = await runOpenAiWithTools({
+      provider: "openai",
+      model: "m",
+      system: "s",
+      prompt: "p",
+      key: "k",
+      servers: [server],
+      timeoutMs: 20,
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    ok(
+      "a slow provider body is governed by the same absolute tool-loop deadline",
+      !result.ok && result.reason === "Tool loop deadline exceeded.",
+    );
+    ok("deadline expiry actively cancels the slow provider response stream", bodyCancelled);
   }
 
   const routeSource = readFileSync("src/app/api/hermes/chat/route.ts", "utf8");

@@ -9,9 +9,9 @@ import sys
 from pathlib import Path
 
 
-PINNED_COMMIT = "fabadae4168db81f0eaaf62f209050f978e2f691"
-EXPECTED_INPUT_SHA256 = "60d4a8c7d17d4336d183165464853eb24ba5a07c3b7ccf4786a170fa8ca6fa40"
-EXPECTED_OUTPUT_SHA256 = "79b6601066faa937a2d0b5551f7e1a5311304f1e7b28962c1ccee72cea05d6e7"
+PINNED_COMMIT = "3c0a45ad772cdba388009b8d5ecad5e48cd22429"
+EXPECTED_INPUT_SHA256 = "c4c65471bea48b5981c96cc8bbe802a5795da4d13c03329892efb2645339625e"
+EXPECTED_OUTPUT_SHA256 = "d5ee9ebcf676656ca9380e866b414d1ff4fa70cfac587a9fbc7d7a60506a6db4"
 
 
 IMPORTS_BEFORE = """import logging
@@ -57,7 +57,7 @@ from deerflow.utils.file_io import run_file_io
 
 RESOLVER_BEFORE = '''def _resolve_thread_id(body: RunCreateRequest) -> str:
     """Return the thread_id from the request body, or generate a new one."""
-    thread_id = (body.config or {}).get("configurable", {}).get("thread_id")
+    thread_id = ((body.config or {}).get("configurable") or {}).get("thread_id")
     if thread_id:
         return str(thread_id)
     return str(uuid.uuid4())

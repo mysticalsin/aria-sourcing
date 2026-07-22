@@ -739,6 +739,80 @@ paths:
           $ref: '#/components/responses/AgentMemoryRateLimitedResponse'
         '503':
           $ref: '#/components/responses/AgentMemoryErrorResponse'
+  /api/internal/sourcing-execute:
+    post:
+      operationId: executeAutonomousSourcingLease
+      summary: Validate the reserved autonomous provider-sourcing entry point
+      description: >-
+        Internal worker-only contract. The caller supplies only identifiers
+        from a database-leased sourcing job. Actor, provider, model, key,
+        query, candidates, and completion authority are never caller fields.
+        This version returns 503 before provider egress because the source
+        adapters do not yet emit evidence accepted by a durable DB commit.
+      x-aria-contract-version: '2026-07-21'
+      x-aria-max-body-bytes: 2048
+      security:
+        - sourcingExecutionBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutonomousSourcingLeaseLocator'
+      responses:
+        '400':
+          description: The lease locator is malformed or contains an unapproved field.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Pragma:
+              $ref: '#/components/headers/PragmaNoCache'
+            X-Content-Type-Options:
+              $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+        '401':
+          description: The dedicated internal bearer is absent, invalid, weak, or reused.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Pragma:
+              $ref: '#/components/headers/PragmaNoCache'
+            X-Content-Type-Options:
+              $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutonomousSourcingUnauthorized'
+        '413':
+          description: The lease locator exceeds 2048 bytes.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Pragma:
+              $ref: '#/components/headers/PragmaNoCache'
+            X-Content-Type-Options:
+              $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+        '415':
+          description: Content-Type is not application/json.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Pragma:
+              $ref: '#/components/headers/PragmaNoCache'
+            X-Content-Type-Options:
+              $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+        '503':
+          description: Durable provider evidence is not available, so no provider call was made.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Pragma:
+              $ref: '#/components/headers/PragmaNoCache'
+            X-Content-Type-Options:
+              $ref: '#/components/headers/ContentTypeOptionsNoSniff'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutonomousSourcingUnavailable'
 components:
   securitySchemes:
     supabaseSession:
@@ -746,6 +820,13 @@ components:
       in: cookie
       name: sb-auth-token
       description: Fixed Supabase session cookie shared by browser and server clients. The SSR client may split a large value across numbered cookie chunks.
+    sourcingExecutionBearer:
+      type: http
+      scheme: bearer
+      description: >-
+        Dedicated worker-only secret. It must be distinct from CRON_SECRET and
+        ARIA_REQUISITION_PARSE_SECRET and is sent only over Fly private DNS or
+        loopback.
   parameters:
     SameOriginHeader:
       in: header
@@ -777,6 +858,66 @@ components:
         type: integer
         minimum: 1
   schemas:
+    AutonomousSourcingLeaseLocator:
+      type: object
+      additionalProperties: false
+      required: [jobId, leaseId, workspaceId, campaignId, campaignSha256, batchOrdinal]
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        leaseId:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        campaignId:
+          type: string
+          format: uuid
+        campaignSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        batchOrdinal:
+          type: integer
+          minimum: 0
+          maximum: 10000
+    AutonomousSourcingUnauthorized:
+      type: object
+      additionalProperties: false
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          const: false
+    AutonomousSourcingUnavailable:
+      type: object
+      additionalProperties: false
+      required: [ok, code, error, requestId, missing]
+      properties:
+        ok:
+          type: boolean
+          const: false
+        code:
+          type: string
+          const: SOURCING_PROVIDER_EVIDENCE_UNAVAILABLE
+        error:
+          type: string
+          const: Autonomous provider sourcing is not available.
+        requestId:
+          type: string
+          format: uuid
+        missing:
+          type: array
+          minItems: 3
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - provider_response_sha256
+              - canonical_source_external_id
+              - durable_query_receipt
     AgentMemorySpec:
       type: object
       additionalProperties: false

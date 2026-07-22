@@ -63,8 +63,10 @@ KONG_URL="$(normalize_origin "$KONG_URL" 2>/dev/null)" || fail "KONG_URL must be
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/aria-acceptance.XXXXXX")"
 HTTP_CODE=""
 HTTP_BODY=""
+HTTP_HEADERS=""
 WORKSPACE_ID=""
 USER_ID=""
+SPEC_ID=""
 ACCESS_TOKEN=""
 APP_COOKIE_HEADER=""
 MAIN_COMPLETE=0
@@ -91,6 +93,7 @@ request() {
   local cookie="${8:-}"
   local config="$WORK/${label}.curl"
   local output="$WORK/${label}.response.json"
+  local headers="$WORK/${label}.response.headers"
 
   {
     printf 'silent\nshow-error\n'
@@ -102,13 +105,34 @@ request() {
     [ -z "$body_file" ] || printf 'header = "Content-Type: application/json"\n'
     [ -z "$prefer" ] || printf 'header = "Prefer: %s"\n' "$prefer"
     [ -z "$cookie" ] || printf 'header = "Cookie: %s"\n' "$cookie"
+    [ -z "$cookie" ] || printf 'header = "Origin: %s"\n' "$APP_URL"
     [ -z "$body_file" ] || printf 'data-binary = "@%s"\n' "$body_file"
     printf 'output = "%s"\n' "$output"
+    printf 'dump-header = "%s"\n' "$headers"
     printf 'write-out = "%%{http_code}"\n'
   } > "$config"
 
   HTTP_CODE="$(curl --config "$config")" || return 1
   HTTP_BODY="$output"
+  HTTP_HEADERS="$headers"
+}
+
+response_header() {
+  local header_name="$1"
+  awk -F ':' -v expected="$header_name" '
+    tolower($1) == tolower(expected) {
+      sub(/^[^:]*:[[:space:]]*/, "")
+      sub(/\r$/, "")
+      value = tolower($0)
+    }
+    END { print value }
+  ' "$HTTP_HEADERS"
+}
+
+require_no_store() {
+  local label="$1"
+  [ "$(response_header Cache-Control)" = "no-store" ] || \
+    fail "$label did not return the exact Cache-Control: no-store boundary."
 }
 
 service_request() {
@@ -337,6 +361,13 @@ on_exit() {
           ephemeralWorkspaceAllowedDomain: null,
           authenticatedWorkspaceBinding: true,
           appSessionAuthority: true,
+          agentMemoryProvenanceBoundary: true,
+          agentMemoryFreeTextCreateBlocked: true,
+          agentMemoryFreeTextEditBlocked: true,
+          agentMemoryReadAvailable: true,
+          agentMemoryMetadataEditAvailable: true,
+          agentMemoryReviewAvailable: true,
+          agentMemoryDeleteAvailable: true,
           authenticatedStateReload: true,
           campaignDryRunMode: true,
           draftStatus: "Needs Approval",
@@ -462,6 +493,88 @@ app_request app-session GET "$APP_URL/api/agents/specs" || fail "app-session aut
 [ "$HTTP_CODE" = 200 ] || fail "app-session authority probe returned HTTP $HTTP_CODE."
 jq -e '.ok == true and .specs == []' "$HTTP_BODY" >/dev/null || \
   fail "the app session did not resolve the empty ephemeral workspace."
+
+log "Proving the production agent-memory provenance boundary through the authenticated app API."
+AGENT_SPEC_BODY="$WORK/agent-spec.json"
+jq -n '{
+  name:"ARIA acceptance memory boundary",
+  role_brief:{title:"Synthetic acceptance memory boundary"},
+  channels:["Email"],
+  guardrails:{autopilot:false,canary_remaining:0,topics_allow:[]}
+}' > "$AGENT_SPEC_BODY"
+app_request create-agent-spec POST "$APP_URL/api/agents/specs" "$AGENT_SPEC_BODY" || \
+  fail "agent-spec creation request failed."
+[ "$HTTP_CODE" = 200 ] || fail "agent-spec creation returned HTTP $HTTP_CODE."
+SPEC_ID="$(jq -er '.id | select(type == "string" and test("^[0-9a-fA-F-]{36}$"))' "$HTTP_BODY")" || \
+  fail "agent-spec creation returned no valid identifier."
+
+app_request memory-read GET "$APP_URL/api/agents/memories?specId=$SPEC_ID" || \
+  fail "agent-memory read request failed."
+[ "$HTTP_CODE" = 200 ] || fail "agent-memory read returned HTTP $HTTP_CODE."
+jq -e --arg spec "$SPEC_ID" '
+  .ok == true and .memories == [] and
+  ([.specs[] | select(.id == $spec)] | length) == 1
+' "$HTTP_BODY" >/dev/null || fail "agent-memory read did not resolve the created spec."
+require_no_store "agent-memory read"
+
+MEMORY_CREATE_BODY="$WORK/memory-create.json"
+jq -n --arg spec "$SPEC_ID" '{
+  specId:$spec,kind:"fact",content:"Synthetic free-text memory must be blocked.",
+  candidateProvenance:{classification:"none"},pinned:false,expiresAt:null
+}' > "$MEMORY_CREATE_BODY"
+app_request memory-create-blocked POST "$APP_URL/api/agents/memories" "$MEMORY_CREATE_BODY" || \
+  fail "agent-memory create boundary request failed."
+[ "$HTTP_CODE" = 403 ] || fail "agent-memory free-text create returned HTTP $HTTP_CODE."
+jq -e '.ok == false and .code == "memory_content_writes_disabled"' "$HTTP_BODY" >/dev/null || \
+  fail "agent-memory free-text create did not return memory_content_writes_disabled."
+require_no_store "agent-memory free-text create"
+
+MISSING_MEMORY_ID="11111111-1111-4111-8111-111111111112"
+MEMORY_CONTENT_EDIT_BODY="$WORK/memory-content-edit.json"
+jq -n --arg spec "$SPEC_ID" --arg id "$MISSING_MEMORY_ID" '{
+  action:"edit",id:$id,specId:$spec,revision:1,kind:"fact",
+  content:"Synthetic free-text edit must be blocked.",
+  candidateProvenance:{classification:"none"}
+}' > "$MEMORY_CONTENT_EDIT_BODY"
+app_request memory-content-edit-blocked PATCH "$APP_URL/api/agents/memories" "$MEMORY_CONTENT_EDIT_BODY" || \
+  fail "agent-memory content-edit boundary request failed."
+[ "$HTTP_CODE" = 403 ] || fail "agent-memory free-text edit returned HTTP $HTTP_CODE."
+jq -e '.ok == false and .code == "memory_content_writes_disabled"' "$HTTP_BODY" >/dev/null || \
+  fail "agent-memory free-text edit did not return memory_content_writes_disabled."
+require_no_store "agent-memory free-text edit"
+
+MEMORY_METADATA_EDIT_BODY="$WORK/memory-metadata-edit.json"
+jq -n --arg spec "$SPEC_ID" --arg id "$MISSING_MEMORY_ID" '{
+  action:"edit",id:$id,specId:$spec,revision:1,pinned:true
+}' > "$MEMORY_METADATA_EDIT_BODY"
+app_request memory-metadata-edit PATCH "$APP_URL/api/agents/memories" "$MEMORY_METADATA_EDIT_BODY" || \
+  fail "agent-memory metadata-edit availability request failed."
+[ "$HTTP_CODE" = 404 ] || fail "agent-memory metadata edit returned HTTP $HTTP_CODE instead of the expected missing-row result."
+jq -e '.ok == false and .code == "memory_not_found"' "$HTTP_BODY" >/dev/null || \
+  fail "agent-memory metadata edit did not reach memory authority."
+require_no_store "agent-memory metadata edit"
+
+MEMORY_REVIEW_BODY="$WORK/memory-review.json"
+jq -n --arg spec "$SPEC_ID" --arg id "$MISSING_MEMORY_ID" '{
+  action:"approve",id:$id,specId:$spec,revision:1
+}' > "$MEMORY_REVIEW_BODY"
+app_request memory-review PATCH "$APP_URL/api/agents/memories" "$MEMORY_REVIEW_BODY" || \
+  fail "agent-memory review availability request failed."
+[ "$HTTP_CODE" = 404 ] || fail "agent-memory review returned HTTP $HTTP_CODE instead of the expected missing-row result."
+jq -e '.ok == false and .code == "memory_not_found"' "$HTTP_BODY" >/dev/null || \
+  fail "agent-memory review did not reach memory authority."
+require_no_store "agent-memory review"
+
+MEMORY_DELETE_BODY="$WORK/memory-delete.json"
+jq -n --arg spec "$SPEC_ID" --arg id "$MISSING_MEMORY_ID" '{
+  id:$id,specId:$spec,revision:1
+}' > "$MEMORY_DELETE_BODY"
+app_request memory-delete DELETE "$APP_URL/api/agents/memories" "$MEMORY_DELETE_BODY" || \
+  fail "agent-memory delete availability request failed."
+[ "$HTTP_CODE" = 404 ] || fail "agent-memory delete returned HTTP $HTTP_CODE instead of the expected missing-row result."
+jq -e '.ok == false and .code == "memory_not_found"' "$HTTP_BODY" >/dev/null || \
+  fail "agent-memory delete did not reach memory authority."
+require_no_store "agent-memory delete"
 
 log "Persisting and reloading the synthetic dry-run campaign through authenticated PostgREST."
 STATE_BODY="$WORK/workspace-state.json"

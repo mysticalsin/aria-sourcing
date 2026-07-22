@@ -22,14 +22,24 @@ import {
   validateMachineInventory,
   validateManifest,
 } from "./operator-core.mjs";
+import * as operatorCore from "./operator-core.mjs";
 import { verifySupplyChainForImage } from "./operator.mjs";
+import * as operator from "./operator.mjs";
+import { agentFrameworkProvenancePolicy } from "./provenance-policy.mjs";
 import {
   agentFrameworkConfigurationInputFromEnvironment,
   deriveAgentFrameworkConfiguration,
 } from "../../../src/lib/agents/framework/configuration-core.mjs";
+import {
+  FLOWISE_FAISS_PREBUILD_SHA256,
+  FLOWISE_PNPM_TARBALL_SHA256,
+  FLOWISE_SQLITE_PREBUILD_SHA256,
+} from "../../../src/lib/agents/framework/source-identity.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(here, "../../..");
 const read = (name) => fs.readFileSync(path.join(here, name), "utf8");
+const readProject = (name) => fs.readFileSync(path.join(projectRoot, name), "utf8");
 const CONFIGS = Object.freeze([
   "deerflow-db",
   "deerflow-redis",
@@ -45,8 +55,9 @@ const CONFIGS = Object.freeze([
 const SHA = "a".repeat(64);
 const SHA_B = "b".repeat(64);
 const COMMIT = "c".repeat(40);
+const UPSTREAM_COMMIT = "d".repeat(40);
 const DEERFLOW_RUNTIME = Object.freeze({
-  patchedRunsSha256: "79b6601066faa937a2d0b5551f7e1a5311304f1e7b28962c1ccee72cea05d6e7",
+  patchedRunsSha256: "d5ee9ebcf676656ca9380e866b414d1ff4fa70cfac587a9fbc7d7a60506a6db4",
   cleanupGuardSha256: "4e4b0006ad7486b5b028dfa9168e3e45d26d33eca46e7b653db29db4683918e6",
   runtimePolicySha256: "9312dff2f23f04fc8c2a92600d47d8d4958094e4c37e010c10ff1e011dce6025",
   runtimeConfigSha256: "a5a41ab4a2772e74203820d65a6efb488bc3b6a5948c47a8d1f9dd6cd3a30369",
@@ -61,6 +72,61 @@ const UUIDS = Object.freeze({
   flowise: "40000000-0000-4000-8000-000000000004",
   flowiseWorkspace: "50000000-0000-4000-8000-000000000005",
 });
+
+function validBuildProvenance(component, releaseSha = COMMIT) {
+  const policy = agentFrameworkProvenancePolicy(component, releaseSha);
+  return {
+    builder: { id: "" },
+    buildType: "https://mobyproject.org/buildkit@v1",
+    materials: structuredClone(policy.materials),
+    invocation: {
+      configSource: {
+        uri: policy.releaseMaterial.uri,
+        digest: structuredClone(policy.releaseMaterial.digest),
+        entryPoint: policy.entryPoint,
+      },
+      parameters: {
+        frontend: "dockerfile.v0",
+        args: structuredClone(policy.args),
+        secrets: [
+          { id: "GIT_AUTH_HEADER", optional: true },
+          { id: "GIT_AUTH_TOKEN", optional: true },
+        ],
+        root: {
+          configSource: {
+            uri: policy.releaseMaterial.uri,
+            digest: structuredClone(policy.releaseMaterial.digest),
+            path: policy.entryPoint,
+          },
+          request: { args: structuredClone(policy.args) },
+        },
+        compatibilityVersion: 20,
+      },
+      environment: { dockerfileVersion: "1.24.0", platform: "linux/amd64" },
+    },
+    buildConfig: {
+      llbDefinition: [{
+        id: "step0",
+        op: {
+          Op: { source: { identifier: policy.releaseMaterial.uri, attrs: {
+            "git.authheadersecret": "GIT_AUTH_HEADER",
+            "git.authtokensecret": "GIT_AUTH_TOKEN",
+          } } },
+          constraints: {},
+        },
+      }],
+      digestMapping: { [`sha256:${SHA}`]: "step0" },
+    },
+    metadata: {
+      buildInvocationID: `fixture-${component}`,
+      buildStartedOn: "2026-07-19T00:00:00Z",
+      buildFinishedOn: "2026-07-19T00:00:01Z",
+      completeness: { parameters: true, environment: true, materials: true },
+      reproducible: false,
+      "https://mobyproject.org/buildkit@v1#metadata": { source: { infos: [] } },
+    },
+  };
+}
 
 function image(role) {
   const sharedRole = role.endsWith("-adapter")
@@ -306,8 +372,9 @@ test("runtime wrappers inherit promoted digests, enforce steady-state users, and
   for (const name of ["postgres", "redis", "deerflow", "flowise", "flowise-worker", "adapter", "model-gateway"]) {
     assert.match(bake, new RegExp(`target\\s+"${name}"`), name);
   }
-  assert.ok((bake.match(/type=sbom/g) ?? []).length >= 7);
-  assert.ok((bake.match(/type=provenance,mode=max/g) ?? []).length >= 7);
+  assert.equal((bake.match(/type=sbom/g) ?? []).length, 0);
+  assert.equal((bake.match(/type=provenance,mode=max/g) ?? []).length, 1);
+  assert.equal((bake.match(/inherits\s*=\s*\["release"\]/g) ?? []).length, 7);
   assert.doesNotMatch(bake, /:latest|#main|#master/);
   for (const [name, value] of Object.entries({
     DEERFLOW_PATCHED_RUNS_SHA256: DEERFLOW_RUNTIME.patchedRunsSha256,
@@ -317,7 +384,11 @@ test("runtime wrappers inherit promoted digests, enforce steady-state users, and
     DEERFLOW_DATABASE_BACKEND: DEERFLOW_RUNTIME.databaseBackend,
     DEERFLOW_RUN_EVENTS_BACKEND: DEERFLOW_RUNTIME.runEventsBackend,
     DEERFLOW_STREAM_BRIDGE_TYPE: DEERFLOW_RUNTIME.streamBridgeType,
-  })) assert.match(bake, new RegExp(`${name}\\s*=\\s*"${value}"`), name);
+  })) {
+    assert.match(bake, new RegExp(`variable\\s+"${name}"\\s*\\{`), name);
+    assert.match(bake, new RegExp(`${name}\\s*=\\s*"\\$\\{${name}\\}"`), name);
+    assert.doesNotMatch(bake, new RegExp(`${name}\\s*=\\s*"${value}"`), `${name} must come from operator authority`);
+  }
   const deerflowDockerfile = read("runtime/deerflow.Dockerfile");
   for (const name of [
     "DEERFLOW_PATCHED_RUNS_SHA256",
@@ -334,6 +405,18 @@ test("runtime wrappers inherit promoted digests, enforce steady-state users, and
   for (const name of ["postgres", "redis", "deerflow", "flowise", "flowise-worker", "adapter", "model-gateway"]) {
     const dockerfile = read(`runtime/${name}.Dockerfile`);
     assert.match(dockerfile, /^ARG UPSTREAM_IMAGE\nFROM \$\{UPSTREAM_IMAGE\}/m, name);
+    assert.match(dockerfile, /^ARG RELEASE_SOURCE_COMMIT$/m, `${name} release source`);
+    assert.match(dockerfile, /^ARG UPSTREAM_SOURCE_COMMIT$/m, `${name} upstream source`);
+    assert.match(
+      dockerfile,
+      /org\.opencontainers\.image\.revision="\$\{RELEASE_SOURCE_COMMIT\}"/,
+      `${name} OCI revision must identify the reviewed ARIA release`,
+    );
+    assert.match(
+      dockerfile,
+      /io\.mantu\.aria\.upstream-revision="\$\{UPSTREAM_SOURCE_COMMIT\}"/,
+      `${name} must preserve the reviewed upstream revision separately`,
+    );
     assert.doesNotMatch(dockerfile, /:latest/, name);
     if (new Set(["postgres", "redis"]).has(name)) {
       assert.match(
@@ -348,44 +431,370 @@ test("runtime wrappers inherit promoted digests, enforce steady-state users, and
 });
 
 test("DeerFlow image provenance binds the audited patch, cleanup guard, policy, config, and memory-only modes", async () => {
-  const image = manifest().images.deerflow;
+  const image = { ...manifest().images.deerflow, sourceCommit: UPSTREAM_COMMIT };
   const digest = image.ref.split("@sha256:")[1];
   const statement = (predicate) => JSON.stringify([{ payload: Buffer.from(JSON.stringify({
     subject: [{ name: "aria-deerflow", digest: { sha256: digest } }],
     predicate,
   })).toString("base64") }]);
-  const runnerFor = (parameters, unrelatedMetadata) => async (command, args) => {
-    if (command === "trivy") return { code: 0, stdout: JSON.stringify({ Results: [] }), stderr: "" };
+  const validScan = {
+    SchemaVersion: 2,
+    ArtifactName: image.ref,
+    Results: [{
+      Target: image.ref,
+      Class: "os-pkgs",
+      Type: "debian",
+      Vulnerabilities: [],
+      Secrets: [],
+      Misconfigurations: [],
+    }],
+  };
+  const validSbom = {
+    spdxVersion: "SPDX-2.3",
+    SPDXID: "SPDXRef-DOCUMENT",
+    dataLicense: "CC0-1.0",
+    name: "aria-deerflow",
+    documentNamespace: "https://aria.invalid/spdx/deerflow",
+    creationInfo: { created: "2026-07-19T00:00:00Z", creators: ["Tool: trivy"] },
+    packages: [{ SPDXID: "SPDXRef-Package-deerflow", name: "deerflow" }],
+  };
+  const runnerFor = (provenance, { scan = validScan, sbom = validSbom } = {}) => async (command, args) => {
+    if (command === "trivy") return { code: 0, stdout: JSON.stringify(scan), stderr: "" };
     if (command !== "cosign") throw new Error("unexpected command");
     if (!args.includes("verify-attestation")) return { code: 0, stdout: "{}", stderr: "" };
-    if (args.includes("spdxjson")) return { code: 0, stdout: statement({}), stderr: "" };
-    return { code: 0, stdout: statement({
-      sourceCommit: image.sourceCommit,
-      invocation: { parameters },
-      ...(unrelatedMetadata ? { metadata: unrelatedMetadata } : {}),
-    }), stderr: "" };
+    if (args.includes("spdxjson")) return { code: 0, stdout: statement(sbom), stderr: "" };
+    return { code: 0, stdout: statement(provenance), stderr: "" };
   };
-  const parameters = {
-    DEERFLOW_PATCHED_RUNS_SHA256: DEERFLOW_RUNTIME.patchedRunsSha256,
-    DEERFLOW_CLEANUP_GUARD_SHA256: DEERFLOW_RUNTIME.cleanupGuardSha256,
-    DEERFLOW_RUNTIME_POLICY_SHA256: DEERFLOW_RUNTIME.runtimePolicySha256,
-    DEERFLOW_RUNTIME_CONFIG_SHA256: DEERFLOW_RUNTIME.runtimeConfigSha256,
-    DEERFLOW_DATABASE_BACKEND: DEERFLOW_RUNTIME.databaseBackend,
-    DEERFLOW_RUN_EVENTS_BACKEND: DEERFLOW_RUNTIME.runEventsBackend,
-    DEERFLOW_STREAM_BRIDGE_TYPE: DEERFLOW_RUNTIME.streamBridgeType,
-  };
-  await verifySupplyChainForImage("deerflow", image, runnerFor(parameters), DEERFLOW_RUNTIME);
-  const missingMode = { ...parameters };
-  delete missingMode.DEERFLOW_RUN_EVENTS_BACKEND;
+  const provenance = validBuildProvenance("deerflow");
+  await verifySupplyChainForImage("deerflow", image, runnerFor(provenance), DEERFLOW_RUNTIME, COMMIT);
+  const missingMode = structuredClone(provenance);
+  delete missingMode.invocation.parameters.args["build-arg:DEERFLOW_RUN_EVENTS_BACKEND"];
   await assert.rejects(
-    verifySupplyChainForImage("deerflow", image, runnerFor(missingMode), DEERFLOW_RUNTIME),
-    /runtime provenance/i,
+    verifySupplyChainForImage("deerflow", image, runnerFor(missingMode), DEERFLOW_RUNTIME, COMMIT),
+    /provenance predicate/i,
+  );
+  const unexpectedMaterial = structuredClone(provenance);
+  unexpectedMaterial.materials.push({ uri: "https://evil.invalid/material", digest: { sha256: SHA } });
+  await assert.rejects(
+    verifySupplyChainForImage("deerflow", image, runnerFor(unexpectedMaterial), DEERFLOW_RUNTIME, COMMIT),
+    /provenance predicate/i,
+    "unexpected provenance materials must not authorize an image",
   );
   await assert.rejects(
-    verifySupplyChainForImage("deerflow", image, runnerFor({}, parameters), DEERFLOW_RUNTIME),
-    /runtime provenance/i,
-    "runtime claims outside canonical SLSA parameters must not authorize an image",
+    verifySupplyChainForImage("deerflow", image, runnerFor(provenance), {
+      ...DEERFLOW_RUNTIME,
+      runEventsBackend: "db",
+    }, COMMIT),
+    /runtime identity/i,
   );
+  await assert.rejects(
+    verifySupplyChainForImage(
+      "deerflow",
+      image,
+      runnerFor(provenance, { scan: { ...validScan, Results: null } }),
+      DEERFLOW_RUNTIME,
+      COMMIT,
+    ),
+    /Trivy scan results/i,
+  );
+  await assert.rejects(
+    verifySupplyChainForImage(
+      "deerflow",
+      image,
+      runnerFor(provenance, { scan: { ...validScan, Results: [{}] } }),
+      DEERFLOW_RUNTIME,
+      COMMIT,
+    ),
+    /Trivy result/i,
+  );
+  await assert.rejects(
+    verifySupplyChainForImage(
+      "deerflow",
+      image,
+      runnerFor(provenance, {
+        scan: {
+          ...validScan,
+          Results: [{ ...validScan.Results[0], Vulnerabilities: [{}] }],
+        },
+      }),
+      DEERFLOW_RUNTIME,
+      COMMIT,
+    ),
+    /Trivy vulnerability/i,
+  );
+  await assert.rejects(
+    verifySupplyChainForImage(
+      "deerflow",
+      image,
+      runnerFor(provenance, {
+        scan: {
+          ...validScan,
+          Results: [{ ...validScan.Results[0], Secrets: [{ Severity: "CRITICAL", RuleID: "secret" }] }],
+        },
+      }),
+      DEERFLOW_RUNTIME,
+      COMMIT,
+    ),
+    /Trivy blocked/i,
+  );
+  await assert.rejects(
+    verifySupplyChainForImage(
+      "deerflow",
+      image,
+      runnerFor(provenance, { sbom: {} }),
+      DEERFLOW_RUNTIME,
+      COMMIT,
+    ),
+    /SBOM predicate/i,
+  );
+  for (const sbom of [
+    { ...validSbom, creationInfo: [] },
+    { ...validSbom, packages: [{}], files: [{ SPDXID: "SPDXRef-file", fileName: "/app/server.mjs" }] },
+  ]) {
+    await assert.rejects(
+      verifySupplyChainForImage(
+        "deerflow",
+        image,
+        runnerFor(provenance, { sbom }),
+        DEERFLOW_RUNTIME,
+        COMMIT,
+      ),
+      /SBOM predicate/i,
+    );
+  }
+});
+
+test("release inputs use a canonical tagged-image parser that preserves registry ports", () => {
+  assert.equal(typeof operatorCore.canonicalTaggedImageReference, "function");
+  assert.deepEqual(
+    operatorCore.canonicalTaggedImageReference("registry.example.test:5443/team/postgres:16.4-bookworm"),
+    {
+      repository: "registry.example.test:5443/team/postgres",
+      tag: "16.4-bookworm",
+    },
+  );
+  assert.deepEqual(operatorCore.canonicalTaggedImageReference("postgres:16.4"), {
+    repository: "postgres",
+    tag: "16.4",
+  });
+  assert.throws(
+    () => operatorCore.canonicalTaggedImageReference("registry.example.test:5443/team/postgres"),
+    /tagged image/i,
+  );
+  assert.throws(
+    () => operatorCore.canonicalTaggedImageReference(`registry.example.test/team/postgres@sha256:${SHA}`),
+    /tagged image/i,
+  );
+  assert.throws(
+    () => operatorCore.canonicalTaggedImageReference("registry.example.test/team/postgres:latest"),
+    /pinned tag/i,
+  );
+  for (const unsafe of [
+    "https://registry.example.test/team/postgres:16.4",
+    "registry.example.test/team/postgres:16.4\n",
+    "registry.example.test/Team/postgres:16.4",
+    "registry.example.test:70000/team/postgres:16.4",
+    "registry.example.test/team//postgres:16.4",
+  ]) assert.throws(() => operatorCore.canonicalTaggedImageReference(unsafe), /tagged image/i, unsafe);
+});
+
+test("operator isolates and removes ephemeral Fly registry credentials", async () => {
+  assert.equal(typeof operator.withFlyRegistryAuthentication, "function");
+  const calls = [];
+  let dockerConfig;
+  let temporaryHome;
+  const priorToken = process.env.FLY_API_TOKEN;
+  process.env.FLY_API_TOKEN = `FlyV1 ${"t".repeat(32)}`;
+  await operator.withFlyRegistryAuthentication(async (command, args, options = {}) => {
+    calls.push([command, args, options]);
+    if (command === "flyctl") {
+      dockerConfig = options.env?.DOCKER_CONFIG;
+      temporaryHome = options.env?.HOME;
+      assert.equal(typeof dockerConfig, "string");
+      assert.equal(fs.statSync(dockerConfig).isDirectory(), true);
+      assert.equal(path.dirname(dockerConfig), temporaryHome);
+      assert.equal(options.env.FLY_API_TOKEN, process.env.FLY_API_TOKEN);
+    } else {
+      assert.equal(options.env?.FLY_API_TOKEN, undefined);
+    }
+    assert.equal(options.inheritEnv, false);
+    return { code: 0, stdout: "", stderr: "" };
+  }, async (authenticatedRunner) => {
+    await authenticatedRunner("cosign", ["verify", "image"]);
+    await authenticatedRunner("trivy", ["image", "image"]);
+    assert.equal(fs.statSync(dockerConfig).isDirectory(), true);
+  });
+  if (priorToken === undefined) delete process.env.FLY_API_TOKEN;
+  else process.env.FLY_API_TOKEN = priorToken;
+  assert.deepEqual(calls.map(([command, args]) => [command, args]), [
+    ["flyctl", ["auth", "docker"]],
+    ["cosign", ["verify", "image"]],
+    ["flyctl", ["auth", "docker"]],
+    ["trivy", ["image", "image"]],
+  ]);
+  assert.equal(calls[0][2].env.DOCKER_CONFIG, calls[3][2].env.DOCKER_CONFIG);
+  assert.equal(fs.existsSync(temporaryHome), false);
+  const source = read("operator.mjs");
+  assert.match(
+    source,
+    /for \(const role of ROLE_ORDER\)[\s\S]*?withFlyRegistryAuthentication\(\s*runner,[\s\S]*?verifySupplyChainForImage/,
+    "the five-minute Fly registry credential must be refreshed for each role verification",
+  );
+});
+
+test("runCommand can launch registry consumers without inheriting the Fly token", async () => {
+  const prior = process.env.FLY_API_TOKEN;
+  process.env.FLY_API_TOKEN = `FlyV1 ${"s".repeat(32)}`;
+  try {
+    const result = await operator.runCommand(process.execPath, [
+      "-e",
+      "process.stdout.write(String(Object.hasOwn(process.env, 'FLY_API_TOKEN')))",
+    ], { inheritEnv: false });
+    assert.equal(result.stdout, "false");
+  } finally {
+    if (prior === undefined) delete process.env.FLY_API_TOKEN;
+    else process.env.FLY_API_TOKEN = prior;
+  }
+});
+
+test("registry authentication removes credentials after authentication and callback failures", async () => {
+  const priorToken = process.env.FLY_API_TOKEN;
+  process.env.FLY_API_TOKEN = `FlyV1 ${"u".repeat(32)}`;
+  try {
+    for (const failure of ["authentication", "callback"]) {
+      let temporaryHome;
+      await assert.rejects(
+        operator.withFlyRegistryAuthentication(async (command, _args, options = {}) => {
+          temporaryHome = options.env?.HOME;
+          if (failure === "authentication" && command === "flyctl") throw new Error("auth failed");
+          return { code: 0, stdout: "", stderr: "" };
+        }, async (runner) => {
+          await runner("cosign", ["verify", "image"]);
+          if (failure === "callback") {
+            throw new Error("callback failed");
+          }
+        }),
+        new RegExp(`${failure === "authentication" ? "auth" : "callback"} failed`),
+      );
+      assert.equal(fs.existsSync(temporaryHome), false);
+    }
+  } finally {
+    if (priorToken === undefined) delete process.env.FLY_API_TOKEN;
+    else process.env.FLY_API_TOKEN = priorToken;
+  }
+});
+
+test("agent-framework release workflow uses one provisioned app repository with component tags", () => {
+  const workflow = readProject(".github/workflows/deploy-agent-frameworks.yml");
+  assert.match(workflow, /^  AF_REGISTRY_APP: aria-mantu-agent-frameworks$/m);
+  assert.match(workflow, /^  AF_REGISTRY_REPOSITORY: registry\.fly\.io\/aria-mantu-agent-frameworks$/m);
+  assert.doesNotMatch(workflow, /flyctl apps create/, "the release job must use a pre-provisioned app-scoped registry token");
+  for (const target of ["postgres", "redis", "model-gateway", "deerflow", "flowise", "flowise-worker", "adapter"]) {
+    assert.match(
+      workflow,
+      new RegExp(`\\[${target}\\]=\"\\$AF_REGISTRY_REPOSITORY:${target}-\\$suffix\"`),
+      `${target} must receive a unique tag in the holder app repository`,
+    );
+  }
+  assert.equal(
+    (workflow.match(/--set "\$target\.tags=\$\{tags\[\$target\]\}"/g) ?? []).length,
+    1,
+    "one direct final-image build must use the explicit target-to-tag map",
+  );
+  assert.match(workflow, /DEERFLOW_RUNTIME_IMAGE/);
+  assert.match(workflow, /FLOWISE_NODE_IMAGE/);
+  assert.match(workflow, /FLOWISE_PNPM_LOCK_SHA256/);
+  assert.match(workflow, /FLOWISE_RUNTIME_IMAGE/);
+  assert.match(workflow, /NODE_22_RUNTIME_IMAGE/);
+  assert.doesNotMatch(workflow, /registry\.fly\.io\/[^\s:"']+\/[^\s:"']+/, "Fly registry paths are app-scoped, not nested namespaces");
+  assert.doesNotMatch(workflow, /\$\{AF_NAMESPACE\}\/\$\{target\}/, "digest refs must come from the exact target-to-app map");
+  assert.match(workflow, /DEERFLOW_RUNTIME_IDENTITY/, "the audited runtime identity must have one source of truth");
+  assert.match(workflow, /verifySupplyChainForImage/, "CI must use the operator's exact provenance and scan validator");
+  assert.doesNotMatch(workflow, /setup-qemu-action/, "the amd64 Fly release must not run a mutable privileged binfmt image");
+  assert.match(workflow, /version: v0\.35\.0/, "Buildx must be version-pinned");
+  assert.match(workflow, /moby\/buildkit:v0\.31\.2@sha256:2f5adac4ecd194d9f8c10b7b5d7bceb5186853db1b26e5abd3a657af0b7e26ec/);
+  assert.match(read("operator.mjs"), /--certificate-github-workflow-sha/);
+  assert.match(workflow, /verifySupplyChainForImage\([\s\S]*?process\.env\.AF_RELEASE_SHA/);
+});
+
+test("agent-framework bake files reject missing identities and use the real DeerFlow final stage", () => {
+  const upstreamBake = readProject("infra/agent-frameworks/docker-bake.hcl");
+  assert.doesNotMatch(upstreamBake, /target\s*=\s*"runtime"/);
+  assert.match(upstreamBake, /\$\{DEERFLOW_SOURCE_COMMIT\}/);
+  assert.match(upstreamBake, /\$\{FLOWISE_SOURCE_COMMIT\}/);
+  assert.doesNotMatch(upstreamBake, /fabadae4168db81f0eaaf62f209050f978e2f691|bb773ffa710bd22639c4ba2643413a0ea2b679d3/);
+
+  const required = [
+    "POSTGRES_UPSTREAM_IMAGE", "REDIS_UPSTREAM_IMAGE", "DEERFLOW_UPSTREAM_IMAGE", "FLOWISE_UPSTREAM_IMAGE",
+    "FLOWISE_WORKER_UPSTREAM_IMAGE", "FLOWISE_RUNTIME_IMAGE", "FLOWISE_PNPM_LOCK_SHA256", "ADAPTER_UPSTREAM_IMAGE", "MODEL_GATEWAY_UPSTREAM_IMAGE",
+    "RELEASE_SOURCE_COMMIT", "POSTGRES_SOURCE_COMMIT", "REDIS_SOURCE_COMMIT",
+    "DEERFLOW_SOURCE_COMMIT", "FLOWISE_SOURCE_COMMIT",
+  ];
+  assert.throws(() => execFileSync("docker", [
+    "buildx", "bake", "-f", path.join(here, "docker-bake.hcl"), "--print",
+  ], {
+    env: { ...process.env, ...Object.fromEntries(required.map((name) => [name, ""])) },
+    stdio: "pipe",
+  }));
+});
+
+test("production framework builds are direct, lock-bound, and never execute upstream Dockerfiles", () => {
+  const workflow = readProject(".github/workflows/deploy-agent-frameworks.yml");
+  const bake = read("docker-bake.hcl");
+  const deerflow = readProject("infra/agent-frameworks/upstream/deerflow.Dockerfile");
+  const flowise = readProject("infra/agent-frameworks/upstream/flowise.Dockerfile");
+  const workerHealth = readProject("infra/agent-frameworks/upstream/flowise-worker-healthcheck.mjs");
+  const workerWrapper = read("runtime/flowise-worker.Dockerfile");
+  const identityProbe = read("runtime/identity-probe.mjs");
+
+  assert.doesNotMatch(
+    workflow,
+    /docker buildx bake -f infra\/agent-frameworks\/docker-bake\.hcl/,
+    "production must not publish unsigned intermediate images",
+  );
+  assert.equal((workflow.match(/docker buildx bake/g) ?? []).length, 1, "seven final images build in one reviewed graph");
+  assert.match(
+    workflow,
+    /- name: Build and push final images[\s\S]*?env:\s*\n\s+GIT_AUTH_TOKEN: \$\{\{ github\.token \}\}/,
+    "the private exact Git context must receive only the step-scoped contents-read token as a BuildKit secret",
+  );
+  assert.match(bake, /target\s+"release"\s*\{[\s\S]*?secret\s*=\s*\["id=GIT_AUTH_TOKEN,env=GIT_AUTH_TOKEN"\]/);
+  assert.equal((bake.match(/inherits\s*=\s*\["release"\]/g) ?? []).length, 7);
+  assert.doesNotMatch(bake, /type=sbom/, "production must not invoke BuildKit's mutable default SBOM scanner");
+  assert.match(workflow, /--format spdx-json/, "the signed SPDX must come from the independently pinned Trivy scanner");
+  assert.match(bake, /dockerfile\s*=\s*"infra\/agent-frameworks\/upstream\/deerflow\.Dockerfile"/);
+  assert.equal(
+    (bake.match(/context\s*=\s*"https:\/\/github\.com\/mysticalsin\/aria-sourcing\.git#\$\{RELEASE_SOURCE_COMMIT\}"/g) ?? []).length,
+    7,
+    "each production image must bind its ARIA Dockerfile and context to the release commit",
+  );
+  assert.match(bake, /deerflow_source\s*=\s*"https:\/\/github\.com\/bytedance\/deer-flow\.git#\$\{DEERFLOW_SOURCE_COMMIT\}"/);
+  assert.match(bake, /dockerfile\s*=\s*"infra\/agent-frameworks\/upstream\/flowise\.Dockerfile"/g);
+  assert.match(bake, /flowise_source\s*=\s*"https:\/\/github\.com\/FlowiseAI\/Flowise\.git#\$\{FLOWISE_SOURCE_COMMIT\}"/g);
+  assert.doesNotMatch(bake, /dockerfile\s*=\s*"(?:backend\/Dockerfile|Dockerfile|docker\/worker\/Dockerfile)"/);
+
+  assert.match(deerflow, /uv sync --locked --no-dev --no-editable --extra redis/);
+  assert.match(deerflow, /DEERFLOW_UV_LOCK_SHA256/);
+  assert.doesNotMatch(deerflow, /apt-get|nodesource|docker:cli|curl\s/);
+  assert.match(flowise, /pnpm fetch --frozen-lockfile/);
+  assert.match(flowise, /--network=none[\s\S]+?pnpm install[\s\\]+--offline[\s\\]+--frozen-lockfile[\s\\]+--verify-store-integrity[\s\\]+--ignore-scripts/);
+  assert.match(flowise, /onlyBuiltDependencies[\s\S]+?\['faiss-node','sqlite3'\]/);
+  assert.match(flowise, /--network=none[\s\S]+?npm_config_faiss_node_local_prebuilds=\/opt\/aria\/prebuilds[\s\S]+?prebuild-install\/bin\.js --runtime napi/);
+  assert.match(flowise, /--network=none[\s\S]+?npm_config_sqlite3_local_prebuilds=\/opt\/aria\/prebuilds[\s\S]+?prebuild-install\/bin\.js --runtime napi/);
+  assert.doesNotMatch(flowise, /pnpm rebuild/, "native lifecycle scripts must be invoked explicitly from checksum-pinned local artifacts");
+  assert.match(flowise, new RegExp(`ADD --checksum=sha256:${FLOWISE_PNPM_TARBALL_SHA256}`));
+  assert.match(flowise, new RegExp(`ADD --checksum=sha256:${FLOWISE_FAISS_PREBUILD_SHA256}`));
+  assert.match(flowise, new RegExp(`ADD --checksum=sha256:${FLOWISE_SQLITE_PREBUILD_SHA256}`));
+  assert.doesNotMatch(flowise, /apt-get|apk add|npm install[^\n]*https?:|chromium|express/);
+  assert.match(workerHealth, /node:http/);
+  assert.doesNotMatch(workerHealth, /express|fetch\(|https?:/);
+  assert.match(workerHealth, /aria\.flowise-worker-readiness-evidence\.v1/);
+  assert.match(workerHealth, /O_NOFOLLOW/);
+  assert.match(flowise, /patch-flowise-worker-readiness\.mjs/);
+  assert.match(flowise, /packages\/server\/src\/commands\/worker\.ts/);
+  assert.match(workerWrapper, /\/opt\/aria\/flowise-worker-healthcheck\.mjs/);
+  assert.doesNotMatch(workerWrapper, /\/app\/healthcheck\/healthcheck\.js/);
+  assert.match(identityProbe, /aria\.flowise-worker-readiness\.v1/);
 });
 
 test("manifest, plan, and approval bind exact immutable identities", () => {
@@ -418,6 +827,9 @@ test("manifest rejects tags, missing evidence identities, duplicate framework ID
   const tagged = manifest();
   tagged.images.deerflow.ref = "registry.fly.io/deerflow:main";
   assert.throws(() => validateManifest(tagged), /digest/i);
+  const nestedFlyRepository = manifest();
+  nestedFlyRepository.images.deerflow.ref = `registry.fly.io/aria-mantu-agent-frameworks/deerflow@sha256:${SHA}`;
+  assert.throws(() => validateManifest(nestedFlyRepository), /digest/i);
   const unsigned = manifest();
   delete unsigned.images.flowise.certificateIdentity;
   assert.throws(() => validateManifest(unsigned), /image/i);

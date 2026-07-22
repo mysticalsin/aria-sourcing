@@ -27,10 +27,12 @@ import { RolesPanel } from "@/components/settings/roles-panel";
 import { GuardrailsPanel } from "@/components/settings/guardrails-panel";
 import { ProvidersPanel } from "@/components/settings/providers-panel";
 import { ModelsPanel } from "@/components/settings/models-panel";
+import { AiRuntimeBindingsPanel } from "@/components/settings/ai-runtime-bindings-panel";
 import { ToolsPanel } from "@/components/settings/tools-panel";
 import { McpServersPanel } from "@/components/settings/mcp-servers-panel";
 import { DustAgentPanel } from "@/components/settings/dust-agent-panel";
 import { DatabricksPanel } from "@/components/settings/databricks-panel";
+import { NeedIngressCredentialsPanel } from "@/components/settings/need-ingress-credentials-panel";
 import { HermesRuntimePanel } from "@/components/settings/hermes-runtime-panel";
 import { SchedulesPanel } from "@/components/settings/schedules-panel";
 import { HermesSchedulesPanel } from "@/components/settings/hermes-schedules-panel";
@@ -66,11 +68,11 @@ const SettingsTabContext = React.createContext("integrations");
 /** Maps each numbered section to the tab it lives under. */
 const N_TO_TAB: Record<string, string> = {
   "04": "integrations",
-  "14": "ai", "15": "ai", "16": "ai", "17": "ai", "19": "ai",
+  "14": "ai", "15": "ai", "16": "ai", "17": "ai", "19": "ai", "20": "ai",
   "03": "fleet", "06": "fleet", "09": "fleet", "18": "fleet",
   "02": "compliance", "05": "compliance", "07": "compliance",
   "08": "voice", "13": "voice",
-  "11": "access", "12": "access",
+  "11": "access", "12": "access", "21": "access",
   "01": "workspace", "10": "workspace",
 };
 
@@ -917,6 +919,16 @@ export default function SettingsPage() {
             <ApiKeysPanel />
           </Section>
 
+          {/* 21 — Need ingress credentials */}
+          <Section
+            n="21"
+            eyebrow="Intake authority"
+            title="Need ingress credentials"
+            description="Issue and revoke tenant-bound credentials for systems that submit signed hiring needs. Admin only."
+          >
+            <NeedIngressCredentialsPanel />
+          </Section>
+
           {/* 12 — Access & roles */}
           <Section
             n="12"
@@ -942,7 +954,7 @@ export default function SettingsPage() {
             n="14"
             eyebrow="AI backbone"
             title="LLM providers"
-            description="Connect the language model backends the sourcing fleet runs on. Each provider links to a saved API key (secrets never leave the server). Admin only."
+            description="Planning metadata for operator discovery. These cards do not configure live runtime execution; reviewed execution authority is managed below. Admin only."
           >
             <ProvidersPanel />
           </Section>
@@ -952,9 +964,19 @@ export default function SettingsPage() {
             n="15"
             eyebrow="Models"
             title="Saved models"
-            description="Register the specific models your fleet uses and set which model handles each task type: sourcing, outreach, classification, and chat. Admin only."
+            description="Save exact provider model names as planning metadata and UI suggestions. Defaults here are not execution authority. Admin only."
           >
             <ModelsPanel />
+          </Section>
+
+          {/* 20: Reviewed AI runtime authority */}
+          <Section
+            n="20"
+            eyebrow="Execution authority"
+            title="Need parsing & sourcing runtime"
+            description="Stage a complete tenant-scoped provider, model, and validated vault-key binding. A different workspace admin must activate it before production uses it."
+          >
+            <AiRuntimeBindingsPanel />
           </Section>
 
           {/* 16 — Tools */}

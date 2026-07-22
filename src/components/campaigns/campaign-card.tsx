@@ -56,8 +56,8 @@ export function CampaignCard({ campaign }: { campaign: Campaign }) {
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Badge tone={toneForUrgency(campaign.urgency)} size="sm" dot>
-            {campaign.urgency}
+          <Badge tone={campaign.jobAnalysis.urgencyKnown === false ? "neutral" : toneForUrgency(campaign.urgency)} size="sm" dot>
+            {campaign.jobAnalysis.urgencyKnown === false ? "Urgency not stated" : campaign.urgency}
           </Badge>
           <Badge tone={STATUS_TONE[campaign.status]} size="sm">
             {campaign.status}

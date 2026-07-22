@@ -18,7 +18,7 @@ ARIA_DATA_KEY_RING_RETIREMENT_APPROVAL="${ARIA_DATA_KEY_RING_RETIREMENT_APPROVAL
 [[ "$ARIA_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || die "ARIA_RELEASE_SHA must be an exact lowercase 40-character Git SHA"
 [ "${GITHUB_ACTIONS:-}" = true ] || die "production mutation is restricted to GitHub Actions"
 [ "${GITHUB_REF_PROTECTED:-}" = true ] || die "production mutation requires a protected Git ref"
-[[ "${GITHUB_WORKFLOW_REF:-}" == */.github/workflows/deploy-aria-mantu.yml@refs/heads/deploy/fly-github-actions ]] \
+[[ "${GITHUB_WORKFLOW_REF:-}" == */.github/workflows/deploy-aria-mantu.yml@refs/heads/main ]] \
   || die "production mutation requires the canonical protected workflow ref"
 [[ "${GITHUB_RUN_ID:-}" =~ ^[0-9]+$ ]] || die "GITHUB_RUN_ID is invalid"
 [[ "${GITHUB_RUN_ATTEMPT:-}" =~ ^[0-9]+$ ]] || die "GITHUB_RUN_ATTEMPT is invalid"
@@ -123,11 +123,11 @@ RECOVERY_RESTORE_HOST="${RECOVERY_RESTORE_MACHINE_ID}.vm.${RECOVERY_RESTORE_APP}
 RECOVERY_SOURCE_HOST="${RECOVERY_SOURCE_MACHINE_ID}.vm.aria-mantu-db.internal"
 export RECOVERY_RESTORE_HOST RECOVERY_SOURCE_HOST
 
-required_secrets=(FLY_PG_PASSWORD FLY_SUPABASE_ADMIN_TARGET_PASSWORD FLY_AUTH_DB_PASSWORD FLY_REST_DB_PASSWORD FLY_JWT_SECRET FLY_SUPABASE_ANON_KEY FLY_SUPABASE_SERVICE_KEY FLY_DATA_ENCRYPTION_KEY FLY_CRON_SECRET FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET FLY_DEERFLOW_ADAPTER_TOKEN FLY_FLOWISE_ADAPTER_TOKEN)
+required_secrets=(FLY_PG_PASSWORD FLY_SUPABASE_ADMIN_TARGET_PASSWORD FLY_AUTH_DB_PASSWORD FLY_REST_DB_PASSWORD FLY_JWT_SECRET FLY_SUPABASE_ANON_KEY FLY_SUPABASE_SERVICE_KEY FLY_DATA_ENCRYPTION_KEY FLY_CRON_SECRET FLY_REQUISITION_PARSE_SECRET FLY_SOURCING_EXECUTION_SECRET FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET FLY_DEERFLOW_ADAPTER_TOKEN FLY_FLOWISE_ADAPTER_TOKEN FLY_OTEL_EXPORTER_OTLP_ENDPOINT FLY_OTEL_EXPORTER_OTLP_HEADERS)
 for key in "${required_secrets[@]}"; do [ -n "${!key:-}" ] || die "required deployment secret is unset: $key"; done
 FLY_SUPABASE_ADMIN_CURRENT_PASSWORD="${FLY_SUPABASE_ADMIN_CURRENT_PASSWORD:-$FLY_SUPABASE_ADMIN_TARGET_PASSWORD}"
 FLY_DATA_ENCRYPTION_PREVIOUS_KEYS="${FLY_DATA_ENCRYPTION_PREVIOUS_KEYS:-}"
-export FLY_PG_PASSWORD FLY_SUPABASE_ADMIN_TARGET_PASSWORD FLY_AUTH_DB_PASSWORD FLY_REST_DB_PASSWORD FLY_JWT_SECRET FLY_DATA_ENCRYPTION_KEY FLY_DATA_ENCRYPTION_PREVIOUS_KEYS FLY_CRON_SECRET FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET FLY_DEERFLOW_ADAPTER_TOKEN FLY_FLOWISE_ADAPTER_TOKEN
+export FLY_PG_PASSWORD FLY_SUPABASE_ADMIN_TARGET_PASSWORD FLY_AUTH_DB_PASSWORD FLY_REST_DB_PASSWORD FLY_JWT_SECRET FLY_DATA_ENCRYPTION_KEY FLY_DATA_ENCRYPTION_PREVIOUS_KEYS FLY_CRON_SECRET FLY_REQUISITION_PARSE_SECRET FLY_SOURCING_EXECUTION_SECRET FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET FLY_DEERFLOW_ADAPTER_TOKEN FLY_FLOWISE_ADAPTER_TOKEN FLY_OTEL_EXPORTER_OTLP_ENDPOINT FLY_OTEL_EXPORTER_OTLP_HEADERS
 node <<'NODE'
 const targets = [
   ["FLY_PG_PASSWORD", process.env.FLY_PG_PASSWORD],
@@ -165,24 +165,26 @@ if (previousKeysRaw) {
 if (!/^[0-9a-f]{64}$/.test(process.env.FLY_CRON_SECRET ?? "")) {
   throw new Error("FLY_CRON_SECRET must be 64 lowercase hexadecimal characters");
 }
-const frameworkAuthorities = [
+const internalAuthorities = [
+  ["FLY_REQUISITION_PARSE_SECRET", process.env.FLY_REQUISITION_PARSE_SECRET],
+  ["FLY_SOURCING_EXECUTION_SECRET", process.env.FLY_SOURCING_EXECUTION_SECRET],
   ["FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET", process.env.FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET],
   ["FLY_DEERFLOW_ADAPTER_TOKEN", process.env.FLY_DEERFLOW_ADAPTER_TOKEN],
   ["FLY_FLOWISE_ADAPTER_TOKEN", process.env.FLY_FLOWISE_ADAPTER_TOKEN],
 ];
-for (const [name, value] of frameworkAuthorities) {
+for (const [name, value] of internalAuthorities) {
   if (typeof value !== "string" || value.length < 32 || value.length > 4_096 || /\s/.test(value)) {
     throw new Error(`${name} must be 32-4096 non-whitespace characters`);
   }
 }
 const independentAuthorities = [
-  ...frameworkAuthorities.map(([, value]) => value),
+  ...internalAuthorities.map(([, value]) => value),
   process.env.FLY_JWT_SECRET,
   process.env.FLY_DATA_ENCRYPTION_KEY,
   process.env.FLY_CRON_SECRET,
 ];
 if (new Set(independentAuthorities).size !== independentAuthorities.length) {
-  throw new Error("framework and application authorities must be independent");
+  throw new Error("internal, framework, and application authorities must be independent");
 }
 for (const [name, value] of targets) {
   if (!/^[A-Za-z0-9_-]{43,128}$/.test(value ?? "")) {
@@ -198,6 +200,26 @@ for (let left = 0; left < targets.length; left++) {
       throw new Error(`${targets[left][0]} and ${targets[right][0]} must be distinct`);
     }
   }
+}
+NODE
+node --input-type=module <<'NODE'
+import { observabilityConfiguration } from "./src/lib/observability/configuration.mjs";
+
+const configuration = observabilityConfiguration({
+  NODE_ENV: "production",
+  ARIA_OBSERVABILITY_REQUIRED: "true",
+  ARIA_RELEASE_SHA: process.env.ARIA_RELEASE_SHA,
+  OTEL_SERVICE_NAME: "aria-msourcing",
+  OTEL_EXPORTER_OTLP_ENDPOINT: process.env.FLY_OTEL_EXPORTER_OTLP_ENDPOINT,
+  OTEL_EXPORTER_OTLP_HEADERS: process.env.FLY_OTEL_EXPORTER_OTLP_HEADERS,
+  OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf",
+  OTEL_TRACES_EXPORTER: "otlp",
+  OTEL_METRICS_EXPORTER: "otlp",
+  OTEL_LOGS_EXPORTER: "none",
+  OTEL_METRIC_EXPORT_INTERVAL: "60000",
+});
+if (!configuration.configured) {
+  throw new Error(`production observability configuration is invalid: ${configuration.reason}`);
 }
 NODE
 uri_encode(){ printf '%s' "$1" | node -e 'let input=""; process.stdin.setEncoding("utf8"); process.stdin.on("data", chunk => input += chunk); process.stdin.on("end", () => process.stdout.write(encodeURIComponent(input)));'; }
@@ -568,7 +590,7 @@ BOOTSTRAP_ALLOWED_SECRET_NAMES=("${BOOTSTRAP_OWNER_SECRET_NAMES[@]}" POSTGRES_TA
 AUTH_SECRET_NAMES=(GOTRUE_JWT_SECRET GOTRUE_DB_DATABASE_URL)
 REST_SECRET_NAMES=(PGRST_JWT_SECRET PGRST_APP_SETTINGS_JWT_SECRET PGRST_DB_URI)
 KONG_SECRET_NAMES=(SUPABASE_ANON_KEY SUPABASE_SERVICE_KEY)
-APP_REQUIRED_SECRET_NAMES=(SUPABASE_SERVICE_ROLE_KEY DATA_ENCRYPTION_KEY CRON_SECRET AGENT_FRAMEWORK_CAPABILITY_SECRET DEERFLOW_ADAPTER_TOKEN FLOWISE_ADAPTER_TOKEN)
+APP_REQUIRED_SECRET_NAMES=(SUPABASE_SERVICE_ROLE_KEY DATA_ENCRYPTION_KEY CRON_SECRET ARIA_REQUISITION_PARSE_SECRET ARIA_SOURCING_EXECUTION_SECRET AGENT_FRAMEWORK_CAPABILITY_SECRET DEERFLOW_ADAPTER_TOKEN FLOWISE_ADAPTER_TOKEN OTEL_EXPORTER_OTLP_ENDPOINT OTEL_EXPORTER_OTLP_HEADERS)
 APP_OPTIONAL_SECRET_NAMES=(DATA_ENCRYPTION_PREVIOUS_KEYS TAVILY_API_KEY KIMI_API_KEY KIMI_BASE_URL ANTHROPIC_API_KEY GITHUB_TOKEN)
 APP_ALLOWED_SECRET_NAMES=("${APP_REQUIRED_SECRET_NAMES[@]}" "${APP_OPTIONAL_SECRET_NAMES[@]}")
 set_component_secret_state(){
@@ -741,22 +763,28 @@ app_image_digest(){
 }
 
 verify_apollo_cleanup_release(){
-  local expected_digest="$1" release_sha="$2" not_before="$3" machines process_receipt machine_ids cleanup_machine heartbeat_machine cleanup_logs heartbeat_logs attempt=1
+  local expected_digest="$1" release_sha="$2" not_before="$3" machines process_receipt machine_ids cleanup_machine heartbeat_machine loop_machine cleanup_logs heartbeat_logs loop_logs attempt=1
   machines="$(fly machines list --app aria-mantu-app --json)" || return
   process_receipt="$(node scripts/verify-apollo-cleanup-release.mjs machines "$expected_digest" <<< "$machines")" || return
   machine_ids="$(node -e '
     const receipt = JSON.parse(process.argv[1]);
-    if (typeof receipt.cleanupMachineId !== "string" || typeof receipt.frameworkHeartbeatMachineId !== "string") process.exit(1);
-    process.stdout.write(`${receipt.cleanupMachineId}\t${receipt.frameworkHeartbeatMachineId}`);
+    if (
+      typeof receipt.cleanupMachineId !== "string" ||
+      typeof receipt.frameworkHeartbeatMachineId !== "string" ||
+      typeof receipt.loopMachineId !== "string"
+    ) process.exit(1);
+    process.stdout.write(`${receipt.cleanupMachineId}\t${receipt.frameworkHeartbeatMachineId}\t${receipt.loopMachineId}`);
   ' "$process_receipt")" || return
-  IFS=$'\t' read -r cleanup_machine heartbeat_machine <<< "$machine_ids"
+  IFS=$'\t' read -r cleanup_machine heartbeat_machine loop_machine <<< "$machine_ids"
   while [ "$attempt" -le 6 ]; do
     if cleanup_logs="$(fast 30 fly logs --app aria-mantu-app --machine "$cleanup_machine" --no-tail --json 2>&1)" &&
       node scripts/verify-apollo-cleanup-release.mjs logs "$release_sha" "$not_before" <<< "$cleanup_logs" &&
       heartbeat_logs="$(fast 30 fly logs --app aria-mantu-app --machine "$heartbeat_machine" --no-tail --json 2>&1)" &&
-      node scripts/verify-apollo-cleanup-release.mjs heartbeat-logs "$release_sha" "$not_before" <<< "$heartbeat_logs"
+      node scripts/verify-apollo-cleanup-release.mjs heartbeat-logs "$release_sha" "$not_before" <<< "$heartbeat_logs" &&
+      loop_logs="$(fast 30 fly logs --app aria-mantu-app --machine "$loop_machine" --no-tail --json 2>&1)" &&
+      node scripts/verify-apollo-cleanup-release.mjs loop-dark-logs "$release_sha" "$not_before" <<< "$loop_logs"
     then
-      echo "   OK app process topology and healthy cleanup/agent-framework heartbeat events"
+      echo "   OK app process topology and healthy cleanup/framework/dark-loop events"
       return 0
     fi
     attempt=$((attempt+1))
@@ -834,7 +862,7 @@ const receipt = {
 fs.writeFileSync(process.env.PREDEPLOY_RECEIPT_PATH, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
 NODE
 
-declare -a A=(SUPABASE_SERVICE_ROLE_KEY="$FLY_SUPABASE_SERVICE_KEY" DATA_ENCRYPTION_KEY="$FLY_DATA_ENCRYPTION_KEY" CRON_SECRET="$FLY_CRON_SECRET" AGENT_FRAMEWORK_CAPABILITY_SECRET="$FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET" DEERFLOW_ADAPTER_TOKEN="$FLY_DEERFLOW_ADAPTER_TOKEN" FLOWISE_ADAPTER_TOKEN="$FLY_FLOWISE_ADAPTER_TOKEN")
+declare -a A=(SUPABASE_SERVICE_ROLE_KEY="$FLY_SUPABASE_SERVICE_KEY" DATA_ENCRYPTION_KEY="$FLY_DATA_ENCRYPTION_KEY" CRON_SECRET="$FLY_CRON_SECRET" ARIA_REQUISITION_PARSE_SECRET="$FLY_REQUISITION_PARSE_SECRET" ARIA_SOURCING_EXECUTION_SECRET="$FLY_SOURCING_EXECUTION_SECRET" AGENT_FRAMEWORK_CAPABILITY_SECRET="$FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET" DEERFLOW_ADAPTER_TOKEN="$FLY_DEERFLOW_ADAPTER_TOKEN" FLOWISE_ADAPTER_TOKEN="$FLY_FLOWISE_ADAPTER_TOKEN" OTEL_EXPORTER_OTLP_ENDPOINT="$FLY_OTEL_EXPORTER_OTLP_ENDPOINT" OTEL_EXPORTER_OTLP_HEADERS="$FLY_OTEL_EXPORTER_OTLP_HEADERS")
 declare -a APP_DESIRED_SECRET_NAMES=("${APP_REQUIRED_SECRET_NAMES[@]}")
 declare -a APP_RETIRED_OPTIONAL_SECRET_NAMES=()
 if [ -n "$FLY_DATA_ENCRYPTION_PREVIOUS_KEYS" ]; then

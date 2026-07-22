@@ -26,6 +26,11 @@ lesson or contact a person.
    aggregate lessons. The worker returns a digest and cluster reference only.
 7. A different admin explicitly reviews the exact lesson version. Only a
    `promoted` decision makes that lesson eligible for a later matching role.
+8. Migration `0054` may consume a current promoted lesson only to select or
+   reorder the finite same-page GitHub query variants already derived by the
+   server for that exact role and workspace. It freezes the lesson, review,
+   export, and query snapshot before egress. Learning cannot add a need,
+   provider or credential authority, candidate fact, or delivery permission.
 
 Graphify input excludes names, profile URLs, emails, phone numbers, raw provider
 IDs, raw search queries, and campaign text. It contains opaque lesson IDs,
@@ -38,8 +43,10 @@ counts, independent evidence counts, and the optimistic authority version.
   migration ledger.
 - A Graphify worker image built from `workers/graphify-lessons/Dockerfile` and
   stored by immutable registry digest.
-- Python base image digest
-  `sha256:090ba77e2958f6af52a5341f788b50b032dd4ca28377d2893dcf1ecbdfdfe203`.
+- Chainguard Python builder digest
+  `sha256:5233e2961d13485e80cd9adc5515cf4242dc43d23045a6540466eee82764879b`
+  and minimal runtime digest
+  `sha256:2c6a2e8bdeb1336cd8545d3586d1c1e5b4f7564ef00924b0447ebfbe57a549ee`.
 - Graphify source commit
   `94d3099540550d58dd121ec3e67cf93e80364079` (`graphifyy` 0.9.14).
 - `requirements.lock` hash verification, `pip check`, image scan, SBOM, and
@@ -51,8 +58,9 @@ counts, independent evidence counts, and the optimistic authority version.
   attached to an uncompleted or mismatched export.
 
 The application does not need Graphify to source candidates. If the worker or
-review path is unavailable, live sourcing continues using campaign evidence and
-reviewed queries without adaptive lessons.
+review path is unavailable, an independently activated GitHub sourcing path can
+continue using campaign evidence and server-derived queries without adaptive
+lessons.
 
 ## Verification before activation
 

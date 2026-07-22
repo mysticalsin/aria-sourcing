@@ -15,6 +15,10 @@ the same authority.
 | [`docs/api/openapi.yaml`](api/openapi.yaml) | Machine-readable contract for covered internal routes | Implementing or consuming a contracted route |
 | [`docs/operations/APOLLO_AUTHORITY_RETENTION.md`](operations/APOLLO_AUTHORITY_RETENTION.md) | Apollo receipt retention, Fly cleanup monitoring, erasure, and evidence | Operating candidate-data retention controls |
 | [`docs/operations/SOURCING_LEARNING.md`](operations/SOURCING_LEARNING.md) | Evidence-grounded sourcing, Graphify aggregate analysis, human promotion, kill switch, and recovery | Operating or auditing adaptive sourcing |
+| [`docs/operations/NEED_INGRESS.md`](operations/NEED_INGRESS.md) | Public need-ingress edge-throttle gate and required multi-Machine evidence | Activating signed autonomous intake |
+| [`docs/operations/AUTONOMOUS_PROVIDER_SOURCING.md`](operations/AUTONOMOUS_PROVIDER_SOURCING.md) | GitHub-only autonomous loop with anonymous default, explicit authenticated mode, and a still-closed multi-provider bridge | Reviewing autonomous provider scope |
+| [`docs/operations/capacity/README.md`](operations/capacity/README.md) | Capacity model, staged load gates, evidence schema, and explicit 50k acceptance boundary | Planning or approving scale tests |
+| [`docs/operations/OBSERVABILITY.md`](operations/OBSERVABILITY.md) | OTLP critical-path telemetry, redaction, candidate SLOs, alerts, and external owner gates | Operating or accepting production monitoring |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Change workflow, architecture rules, review, and completion evidence | Preparing a code change |
 | [`SECURITY.md`](../SECURITY.md) | Private reporting, credential response, and security invariants | Reporting or reviewing a security issue |
 | [`docs/operations/FLY_SIZING.md`](operations/FLY_SIZING.md) | Source-derived Fly machine configuration and evidence needed for tuning | Reviewing performance or topology |
@@ -60,7 +64,7 @@ separates current operating instructions from the dated 2026-06-27 audit set.
 | `Dockerfile` / `Dockerfile.prod` | Dev image / standalone production image |
 | `fly.*.toml` | Fly apps: `app`, `db`, `auth`, `rest`, `kong`, `bootstrap` |
 | `scripts/` | Operational shell/TS helpers (local Supabase, backups, admin provisioning, screenshots) |
-| `tests/` | The `npm test` gate — 100+ chained `.mts` checks (security, auth, gates, docs-truth, hygiene) |
+| `tests/` | The manifest-driven `npm test` gate (security, auth, gates, docs-truth, hygiene, and database wrappers) |
 | `public/` | Static assets, incl. `public/office3d/` (the Floor 3D scene, ~22 MB) and brand/logos |
 | `docs/` | This dir: `screenshots/`, `partnerships/`, and design/plan docs |
 

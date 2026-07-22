@@ -4,6 +4,7 @@ set -Eeuo pipefail
 project="aria-db-privileges-${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-0}"
 export DB_HOST_PORT=0
 owner_reconciliation="docker/bootstrap/supabase-admin-reconciliation.sql"
+auth_owner_bridges="docker/bootstrap/auth-owner-bridges.sql"
 client_image="supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00"
 network="${project}_default"
 secret_prefix="aria-db-owner-secret-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}-$$"
@@ -45,6 +46,7 @@ trap cleanup EXIT
 
 docker info >/dev/null
 test -f "$owner_reconciliation"
+test -f "$auth_owner_bridges"
 docker compose -p "$project" up -d --wait db
 container_id="$(docker compose -p "$project" ps -q db)"
 test -n "$container_id"
@@ -136,6 +138,8 @@ run_fly_bootstrap_phase() {
     --network "$network" \
     "${environment[@]}" \
     --volume "$PWD/docker/bootstrap/run.fly.sh:/usr/local/bin/run.fly.sh:ro" \
+    --volume "$PWD/docker/bootstrap/supabase-admin-reconciliation.sql:/opt/aria/supabase-admin-reconciliation.sql:ro" \
+    --volume "$PWD/docker/bootstrap/auth-owner-bridges.sql:/opt/aria/auth-owner-bridges.sql:ro" \
     --volume "$PWD/docker/bootstrap/legacy-baseline-invariants.sql:/opt/aria/legacy-baseline-invariants.sql:ro" \
     --volume "$PWD/docker/bootstrap/legacy-table-inventory.txt:/opt/aria/legacy-table-inventory.txt:ro" \
     --volume "$PWD/docker/bootstrap/legacy-baseline-public-schema.sha256:/opt/aria/legacy-baseline-public-schema.sha256:ro" \
@@ -149,7 +153,7 @@ run_fly_bootstrap_phase() {
 run_owner_reconciliation() {
   local current_password="$1" postgres_password="$2" owner_password="$3"
   local auth_admin_password="$4" authenticator_password="$5"
-  if ! docker run --rm -i \
+  if ! docker run --rm \
     --network "$network" \
     --env PGPASSWORD="$current_password" \
     --env POSTGRES_TARGET_PASSWORD="$postgres_password" \
@@ -158,10 +162,12 @@ run_owner_reconciliation() {
     --env AUTHENTICATOR_TARGET_PASSWORD="$authenticator_password" \
     --env JWT_SECRET="$jwt_secret" \
     --env JWT_EXP=3600 \
+    --volume "$PWD/docker/bootstrap/supabase-admin-reconciliation.sql:/opt/aria/supabase-admin-reconciliation.sql:ro" \
+    --volume "$PWD/docker/bootstrap/auth-owner-bridges.sql:/opt/aria/auth-owner-bridges.sql:ro" \
     --entrypoint psql \
     "$client_image" \
     -X -v ON_ERROR_STOP=1 -h db -U supabase_admin -d postgres \
-    >>"$owner_log" 2>&1 < "$owner_reconciliation"; then
+    -f /opt/aria/supabase-admin-reconciliation.sql >>"$owner_log" 2>&1; then
     echo "supabase_admin reconciliation failed" >&2
     exit 1
   fi
@@ -309,6 +315,10 @@ psql_external supabase_admin "$owner_target_password" -Atqc "
     join pg_roles member_role on member_role.oid = membership.member
    where member_role.rolname = 'postgres'
 " | grep -qx '0'
+
+psql_external_stdin postgres "$postgres_target_password" \
+  < tests/db/auth-owner-bridges.sql
+echo "[test] Auth-owner bridges expose only bounded decisions to postgres" >&2
 
 # Numbered migrations always run as a separate direct postgres session. In
 # particular, 0019 must not try to mutate supabase_admin-owned default ACLs.

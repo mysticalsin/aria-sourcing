@@ -93,10 +93,10 @@ mock.module(moduleUrl("src/lib/agents/framework/runtime-config.ts"), {
     agentFrameworkRuntimeFromEnvironment: () => ({
       config: {
         deerflowUrl: "https://deerflow.service.internal",
-        deerflowSourceCommit: "fabadae4168db81f0eaaf62f209050f978e2f691",
+        deerflowSourceCommit: "3c0a45ad772cdba388009b8d5ecad5e48cd22429",
         deerflowImageDigest: `registry.internal/deerflow@sha256:${"c".repeat(64)}`,
         flowiseUrl: authoringReady ? "https://flowise.service.internal" : "https://flowise.example.com",
-        flowiseSourceCommit: "bb773ffa710bd22639c4ba2643413a0ea2b679d3",
+        flowiseSourceCommit: "ed9e100fb71643cd3922b005908f9732bc0e07dc",
         flowiseImageDigest: `registry.internal/flowise@sha256:${"d".repeat(64)}`,
         flowiseIsolation: "instance-per-workspace",
         configurationSha256: "e".repeat(64),

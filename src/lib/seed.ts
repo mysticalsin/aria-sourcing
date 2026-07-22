@@ -102,10 +102,9 @@ export function defaultSavedModels(): SavedModel[] {
       label: "Kimi K2 (Code)",
       contextWindow: 256000,
       enabled: true,
-      // No "sourcing": the sourcing agent requires tool-calling, which Kimi doesn't
-      // support (runSourcingAgent in store.ts hard-rejects it). Leaving it out of
-      // this list — and out of defaultModels.sourcing below — lets resolveAiProvider
-      // fall through to its "no provider configured" path instead of a guaranteed failure.
+      // This seeded Kimi Code model is intentionally not a sourcing default. A
+      // sourcing model must be selected explicitly and pass the exact-model
+      // nonce-bound tool-call probes at proposal and activation time.
       defaultForTask: ["outreach", "classification", "chat"],
     },
     {
@@ -174,9 +173,8 @@ export function defaultSettings(): SystemSettings {
     tools: defaultTools(),
     mcpServers: [],
     defaultModels: {
-      // No sourcing default: Kimi can't run it (no tool-calling) and no other
-      // provider is enabled out of the box, so resolveAiProvider correctly reports
-      // "not configured" until an operator sets a tool-calling-capable provider.
+      // No sourcing default: an operator must select an exact tool-capable model
+      // and complete the independently reviewed runtime-binding activation.
       outreach: "model_kimi_coding",
       classification: "model_kimi_coding",
       chat: "model_kimi_coding",

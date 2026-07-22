@@ -42,11 +42,42 @@ const MemoryContentSchema = z.string().trim().min(1).max(8192).refine(
   (value) => Buffer.byteLength(value, "utf8") <= 8192,
   { message: "Memory content exceeds the UTF-8 byte limit." },
 );
+const CampaignIdSchema = z.string().min(1).max(120).regex(
+  /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/,
+);
+const CandidateIdentifierKindSchema = z.enum([
+  "candidate_id",
+  "email",
+  "phone",
+  "linkedin",
+  "github",
+  "source_url",
+  "source_external_id",
+  "source_authority_id",
+  "provider_external_id",
+]);
+const CandidateIdentifierValueSchema = z.string().trim().min(1).max(2048).refine(
+  (value) => Buffer.byteLength(value, "utf8") <= 2048,
+  { message: "Candidate identifier exceeds the UTF-8 byte limit." },
+);
+const CandidateIdentifierSchema = z.object({
+  kind: CandidateIdentifierKindSchema,
+  value: CandidateIdentifierValueSchema,
+}).strict();
+const CandidateProvenanceSchema = z.discriminatedUnion("classification", [
+  z.object({ classification: z.literal("none") }).strict(),
+  z.object({
+    classification: z.literal("exact"),
+    campaignId: CampaignIdSchema.nullable().optional().default(null),
+    identifiers: z.array(CandidateIdentifierSchema).min(1).max(32),
+  }).strict(),
+]);
 
 const CreateMemorySchema = z.object({
   specId: UUID,
   kind: MemoryKindSchema,
   content: MemoryContentSchema,
+  candidateProvenance: CandidateProvenanceSchema,
   pinned: z.boolean().optional().default(false),
   expiresAt: ExpiresAtSchema.optional().default(null),
 }).strict();
@@ -58,13 +89,33 @@ const EditMemorySchema = z.object({
   revision: z.number().int().min(1),
   kind: MemoryKindSchema.optional(),
   content: MemoryContentSchema.optional(),
+  candidateProvenance: CandidateProvenanceSchema.optional(),
   pinned: z.boolean().optional(),
   expiresAt: ExpiresAtSchema.optional(),
-}).strict().refine(
-  (value) => value.kind !== undefined || value.content !== undefined
-    || value.pinned !== undefined || value.expiresAt !== undefined,
-  { message: "At least one memory field must change." },
-);
+}).strict().superRefine((value, context) => {
+  if (
+    value.kind === undefined
+    && value.content === undefined
+    && value.pinned === undefined
+    && value.expiresAt === undefined
+  ) {
+    context.addIssue({ code: "custom", message: "At least one memory field must change." });
+  }
+  if (value.content !== undefined && value.candidateProvenance === undefined) {
+    context.addIssue({
+      code: "custom",
+      path: ["candidateProvenance"],
+      message: "Content edits require an explicit candidate provenance classification.",
+    });
+  }
+  if (value.content === undefined && value.candidateProvenance !== undefined) {
+    context.addIssue({
+      code: "custom",
+      path: ["candidateProvenance"],
+      message: "Candidate provenance can change only with encrypted memory content.",
+    });
+  }
+});
 
 const ReviewMemorySchema = z.object({
   action: z.enum(["approve", "reject"]),
@@ -121,6 +172,8 @@ type ErrorCode =
   | "revision_conflict"
   | "memory_in_use"
   | "invalid_state"
+  | "candidate_provenance_blocked"
+  | "memory_content_writes_disabled"
   | "rate_limited"
   | "memory_authority_unavailable";
 
@@ -146,6 +199,18 @@ function fail(status: number, code: ErrorCode, correlationId: string): NextRespo
 
 function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function candidateProvenanceParams(
+  provenance: z.input<typeof CandidateProvenanceSchema>,
+): { campaignId: string | null; identifiers: Array<{ kind: string; value: string }> } {
+  if (provenance.classification === "none") {
+    return { campaignId: null, identifiers: [] };
+  }
+  return {
+    campaignId: provenance.campaignId ?? null,
+    identifiers: provenance.identifiers,
+  };
 }
 
 function encodeMemoryCursor(row: Pick<MemoryRow, "id" | "spec_id" | "created_at">): string {
@@ -214,6 +279,10 @@ function parseMemoryPageLimit(value: string | null): number | null {
 
 function encryptionAvailable(): boolean {
   return !encryptionRequiredButMissing() && secretEncryptionEnabled();
+}
+
+function productionMemoryContentWritesDisabled(): boolean {
+  return process.env.NODE_ENV === "production";
 }
 
 function encryptMemoryContent(content: string): {
@@ -472,6 +541,9 @@ export async function POST(req: NextRequest) {
     const checked = await authority(req, correlationId);
     if (!checked.ok) return checked.response;
     const auth = checked.value;
+    if (productionMemoryContentWritesDisabled()) {
+      return fail(403, "memory_content_writes_disabled", correlationId);
+    }
     if (!encryptionAvailable()) return fail(503, "memory_authority_unavailable", correlationId);
     const limit = checkRateLimit(rateLimitKey(req, "agent-memory-create", auth.userId), {
       windowMs: 60_000,
@@ -482,7 +554,7 @@ export async function POST(req: NextRequest) {
       response.headers.set("Retry-After", String(limit.retryAfterSec));
       return response;
     }
-    const validated = await validateBody(req, CreateMemorySchema, { maxBytes: 12_000 });
+    const validated = await validateBody(req, CreateMemorySchema, { maxBytes: 82_000 });
     if (!validated.ok) return fail(400, "invalid_request", correlationId);
     const specLookup = await ownedSpec(auth, validated.data.specId);
     if (specLookup.status === "unavailable") {
@@ -493,7 +565,8 @@ export async function POST(req: NextRequest) {
     }
     const encrypted = encryptMemoryContent(validated.data.content);
     if (!encrypted) return fail(503, "memory_authority_unavailable", correlationId);
-    const { data, error } = await auth.service.rpc("create_agent_memory", {
+    const provenance = candidateProvenanceParams(validated.data.candidateProvenance);
+    const { data, error } = await auth.service.rpc("create_agent_memory_with_candidate_provenance", {
       p_workspace_id: auth.workspaceId,
       p_owner_id: auth.userId,
       p_spec_id: validated.data.specId,
@@ -504,8 +577,13 @@ export async function POST(req: NextRequest) {
       p_content_byte_count: encrypted.contentByteCount,
       p_pinned: validated.data.pinned,
       p_expires_at: validated.data.expiresAt,
+      p_campaign_id: provenance.campaignId,
+      p_candidate_identifiers: provenance.identifiers,
     });
     const result = data as { status?: string; id?: string } | null;
+    if (error?.code === "23514") {
+      return fail(409, "candidate_provenance_blocked", correlationId);
+    }
     if (result?.status === "invalid_request") return fail(400, "invalid_request", correlationId);
     if (error || result?.status !== "created" || !result.id) {
       return fail(503, "memory_authority_unavailable", correlationId);
@@ -544,8 +622,15 @@ export async function PATCH(req: NextRequest) {
       response.headers.set("Retry-After", String(limit.retryAfterSec));
       return response;
     }
-    const validated = await validateBody(req, UpdateMemorySchema, { maxBytes: 12_000 });
+    const validated = await validateBody(req, UpdateMemorySchema, { maxBytes: 82_000 });
     if (!validated.ok) return fail(400, "invalid_request", correlationId);
+    if (
+      productionMemoryContentWritesDisabled()
+      && validated.data.action === "edit"
+      && validated.data.content !== undefined
+    ) {
+      return fail(403, "memory_content_writes_disabled", correlationId);
+    }
     const specLookup = await ownedSpec(auth, validated.data.specId);
     if (specLookup.status === "unavailable") {
       return fail(503, "memory_authority_unavailable", correlationId);
@@ -557,7 +642,12 @@ export async function PATCH(req: NextRequest) {
     if (validated.data.action === "edit" && validated.data.content !== undefined && !encrypted) {
       return fail(503, "memory_authority_unavailable", correlationId);
     }
-    const { data, error } = await auth.service.rpc("mutate_agent_memory", {
+    const replaceCandidateProvenance = validated.data.action === "edit"
+      && validated.data.content !== undefined;
+    const provenance = validated.data.action === "edit" && validated.data.candidateProvenance
+      ? candidateProvenanceParams(validated.data.candidateProvenance)
+      : null;
+    const { data, error } = await auth.service.rpc("mutate_agent_memory_with_candidate_provenance", {
       p_workspace_id: auth.workspaceId,
       p_owner_id: auth.userId,
       p_spec_id: validated.data.specId,
@@ -572,8 +662,14 @@ export async function PATCH(req: NextRequest) {
       p_pinned: validated.data.action === "edit" ? validated.data.pinned ?? null : null,
       p_set_expires: validated.data.action === "edit" && validated.data.expiresAt !== undefined,
       p_expires_at: validated.data.action === "edit" ? validated.data.expiresAt ?? null : null,
+      p_replace_candidate_provenance: replaceCandidateProvenance,
+      p_campaign_id: provenance?.campaignId ?? null,
+      p_candidate_identifiers: provenance?.identifiers ?? null,
     });
     const result = data as { status?: string } | null;
+    if (error?.code === "23514") {
+      return fail(409, "candidate_provenance_blocked", correlationId);
+    }
     if (error) return fail(503, "memory_authority_unavailable", correlationId);
     if (result?.status === "revision_conflict") return fail(409, "revision_conflict", correlationId);
     if (result?.status === "memory_in_use") return fail(409, "memory_in_use", correlationId);

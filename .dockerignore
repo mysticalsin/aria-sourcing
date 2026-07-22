@@ -14,6 +14,7 @@ npm-debug.log*
 next-env.d.ts
 *.tsbuildinfo
 coverage
+.trivy-cache
 .playwright-mcp
 .vscode
 ultraplan

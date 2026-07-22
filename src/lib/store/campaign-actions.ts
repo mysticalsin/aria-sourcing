@@ -127,6 +127,7 @@ function sanitizeJobAnalysis(value: unknown): JobAnalysis | null {
     !isFiniteNumberOrNull(value.salaryMax) ||
     typeof value.currency !== "string" ||
     typeof value.equity !== "boolean" ||
+    (value.equityKnown !== undefined && typeof value.equityKnown !== "boolean") ||
     !isStringArray(value.requiredSkills) ||
     !isStringArray(value.niceToHaveSkills) ||
     !isFiniteNumberOrNull(value.minYearsExperience) ||
@@ -140,6 +141,7 @@ function sanitizeJobAnalysis(value: unknown): JobAnalysis | null {
     typeof value.teamSize !== "string" ||
     typeof value.reportingTo !== "string" ||
     !isOneOf(URGENCY_LEVELS, value.urgency) ||
+    (value.urgencyKnown !== undefined && typeof value.urgencyKnown !== "boolean") ||
     validationWarnings === null ||
     (value.location !== undefined && typeof value.location !== "string") ||
     (value.language !== undefined && typeof value.language !== "string") ||
@@ -175,6 +177,8 @@ function sanitizeJobAnalysis(value: unknown): JobAnalysis | null {
     validationWarnings,
   };
   if (value.location !== undefined) sanitized.location = value.location;
+  if (value.equityKnown !== undefined) sanitized.equityKnown = value.equityKnown;
+  if (value.urgencyKnown !== undefined) sanitized.urgencyKnown = value.urgencyKnown;
   if (value.language !== undefined) sanitized.language = value.language;
   if (value.expectedStartDate !== undefined) {
     sanitized.expectedStartDate = value.expectedStartDate;
@@ -381,8 +385,8 @@ export function createCampaignActions({
 
       const extra = {
         label: `Adjacent: ${skill} maintainers`,
-        query: `language:${skill.replace(/\s+/g, "")} sort:updated${region ? ` location:"${region}"` : ""} forks:>5`,
-        estimatedResults: 80 + Math.round((campaign.metrics.sourced + 1) * 3.5),
+        query: `language:${skill.replace(/\s+/g, "")}${region ? ` location:"${region}"` : ""} type:user`,
+        estimatedResults: null,
       };
       generated = true;
       const next = {
@@ -405,7 +409,7 @@ export function createCampaignActions({
           type: "sourcing",
           title: "Generated additional query",
           notes: extra.query,
-          outcome: `~${extra.estimatedResults} estimated results`,
+          outcome: "Estimate unavailable until provider execution",
           campaignId: id,
           linkedEntityType: "campaign",
           linkedEntityId: id,

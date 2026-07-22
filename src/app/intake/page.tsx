@@ -513,8 +513,8 @@ export default function IntakePage() {
                     </div>
                     <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                       <Badge tone={INTENT_TONE[parsed.intent]}>{parsed.intent}</Badge>
-                      <Badge tone={toneForUrgency(job.urgency)} dot>
-                        {job.urgency}
+                      <Badge tone={job.urgencyKnown === false ? "neutral" : toneForUrgency(job.urgency)} dot>
+                        {job.urgencyKnown === false ? "Urgency not stated" : job.urgency}
                       </Badge>
                     </div>
                   </div>
@@ -593,7 +593,7 @@ export default function IntakePage() {
                       <Select
                         id="job-urgency"
                         value={job.urgency}
-                        onChange={(e) => patchJob({ urgency: e.target.value as Urgency })}
+                        onChange={(e) => patchJob({ urgency: e.target.value as Urgency, urgencyKnown: true })}
                         options={URGENCY_LEVELS.map((u) => ({ value: u, label: u }))}
                       />
                     </Field>
@@ -603,7 +603,7 @@ export default function IntakePage() {
                   <Field
                     label="Expected start date"
                     htmlFor="job-start-date"
-                    hint="From the client's stated start date, when given. Falls back to a default when creating the campaign if left blank."
+                    hint="From the client's stated start date, when given. Left unknown when blank."
                   >
                     <Input
                       id="job-start-date"
@@ -647,7 +647,11 @@ export default function IntakePage() {
                         {formatSalaryRange(job.salaryMin, job.salaryMax, job.currency)}
                       </span>{" "}
                       ({job.currency}
-                      {job.equity ? " · equity on the table" : ""})
+                      {job.equityKnown === false
+                        ? " · equity not stated"
+                        : job.equity
+                          ? " · equity on the table"
+                          : " · no equity"})
                     </p>
                   </div>
 

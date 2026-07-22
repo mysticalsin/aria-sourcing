@@ -1,4 +1,4 @@
-FROM node:22.22.0-alpine3.23@sha256:e4bf2a82ad0a4037d28035ae71529873c069b13eb0455466ae0bc13363826e34
+FROM mirror.gcr.io/library/node:22.22.0-alpine3.23@sha256:48f53c3f0105ccddcc5e4f520347398dfc0ba9b3008fbfd98a2add27e5797957
 
 ENV NODE_ENV=production \
     PORT=8080
@@ -7,6 +7,7 @@ WORKDIR /app
 
 COPY --chown=node:node src/lib/agents/framework/capability-core.mjs src/lib/agents/framework/capability-core.mjs
 COPY --chown=node:node src/lib/agents/framework/configuration-core.mjs src/lib/agents/framework/configuration-core.mjs
+COPY --chown=node:node src/lib/agents/framework/source-identity.mjs src/lib/agents/framework/source-identity.mjs
 COPY --chown=node:node infra/agent-frameworks/adapter/server.mjs infra/agent-frameworks/adapter/server.mjs
 COPY --chown=node:node infra/agent-frameworks/adapter/secret-preflight.mjs infra/agent-frameworks/adapter/secret-preflight.mjs
 COPY --chown=node:node infra/agent-frameworks/deerflow-config.yaml /opt/aria/policy/reference/deerflow-config.yaml

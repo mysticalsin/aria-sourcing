@@ -19,6 +19,7 @@ const deploySource = readFileSync("deploy-fly.sh", "utf8");
 const firstAdminPath = "scripts/provision-first-admin.sh";
 const firstAdminSource = existsSync(firstAdminPath) ? readFileSync(firstAdminPath, "utf8") : "";
 const deployedE2eSource = readFileSync("e2e-workflow-test.sh", "utf8");
+const campaignAcceptanceSource = readFileSync("scripts/acceptance-campaign-dry-run.sh", "utf8");
 
 let pass = 0;
 let fail = 0;
@@ -44,6 +45,7 @@ type Scenario = {
   kong?: string;
   cleanupStatus?: "ok" | "degraded";
   heartbeatStatus?: "ok" | "degraded";
+  activeLoopConfiguration?: boolean;
   failFlyMatch?: string;
   invalidJwt?: boolean;
   weakDbPassword?: boolean;
@@ -54,6 +56,8 @@ type Scenario = {
   previousEncryptionKeys?: string;
   ringRetirementApproval?: boolean;
   weakCronSecret?: boolean;
+  duplicateParseSecret?: boolean;
+  duplicateSourcingSecret?: boolean;
   appImageRef?: string;
   dbImageRef?: string;
   bootstrapImageRef?: string;
@@ -109,16 +113,20 @@ const contractRestPassword = "RestTarget_0123456789abcdefghijklmnopqrstuvwxyzABC
 const contractDataEncryptionKey = Buffer.alloc(32, 0x42).toString("base64");
 const contractPreviousEncryptionKeys = JSON.stringify([Buffer.alloc(32, 0x43).toString("base64")]);
 const contractCronSecret = "c".repeat(64);
+const contractRequisitionParseSecret = "requisition-parse-contract-value-0005";
+const contractSourcingExecutionSecret = "sourcing-execution-contract-value-0006";
 const contractFrameworkCapabilitySecret = "framework-capability-secret-contract-value-0001";
 const contractDeerFlowAdapterToken = "deerflow-adapter-token-contract-value-0002";
 const contractFlowiseAdapterToken = "flowise-adapter-token-contract-value-0003";
+const contractOtelEndpoint = "https://otel-collector.example.com/otel";
+const contractOtelHeaders = "authorization=Bearer%20otel-contract-token";
 const contractFrameworkInput = {
   workspaceId: "10000000-0000-4000-8000-000000000001",
   adapterImageDigest: `registry.internal/aria-adapter@sha256:${"1".repeat(64)}`,
   redisImageDigest: `registry.internal/redis@sha256:${"2".repeat(64)}`,
   deerflowAdapterOrigin: "https://deerflow.service.internal",
   deerflowInstanceId: "20000000-0000-4000-8000-000000000002",
-  deerflowSourceCommit: "fabadae4168db81f0eaaf62f209050f978e2f691",
+  deerflowSourceCommit: "3c0a45ad772cdba388009b8d5ecad5e48cd22429",
   deerflowImageDigest: `registry.internal/deerflow@sha256:${"3".repeat(64)}`,
   deerflowDatabaseImageDigest: `registry.internal/deerflow-db@sha256:${"4".repeat(64)}`,
   deerflowModelGatewayImageDigest: `registry.internal/model-gateway@sha256:${"8".repeat(64)}`,
@@ -129,7 +137,7 @@ const contractFrameworkInput = {
   deerflowModelCredentialVersion: "model-key-contract-v1",
   flowiseAdapterOrigin: "https://flowise.service.internal",
   flowiseInstanceId: "30000000-0000-4000-8000-000000000003",
-  flowiseSourceCommit: "bb773ffa710bd22639c4ba2643413a0ea2b679d3",
+  flowiseSourceCommit: "ed9e100fb71643cd3922b005908f9732bc0e07dc",
   flowiseImageDigest: `registry.internal/flowise@sha256:${"5".repeat(64)}`,
   flowiseWorkerImageDigest: `registry.internal/flowise-worker@sha256:${"6".repeat(64)}`,
   flowiseDatabaseImageDigest: `registry.internal/flowise-db@sha256:${"7".repeat(64)}`,
@@ -235,6 +243,7 @@ function runDeploy(scenario: Scenario = {}) {
     mkdirSync(join(root, "supabase", "migrations"), { recursive: true });
     mkdirSync(join(root, "scripts"), { recursive: true });
     mkdirSync(join(root, "src", "lib", "agents", "framework"), { recursive: true });
+    mkdirSync(join(root, "src", "lib", "observability"), { recursive: true });
     copyFileSync("deploy-fly.sh", join(root, "deploy-fly.sh"));
     copyFileSync("fly.auth.toml", join(root, "fly.auth.toml"));
     copyFileSync("fly.rest.toml", join(root, "fly.rest.toml"));
@@ -253,6 +262,10 @@ function runDeploy(scenario: Scenario = {}) {
     copyFileSync(
       "src/lib/agents/framework/configuration-core.mjs",
       join(root, "src", "lib", "agents", "framework", "configuration-core.mjs"),
+    );
+    copyFileSync(
+      "src/lib/observability/configuration.mjs",
+      join(root, "src", "lib", "observability", "configuration.mjs"),
     );
     writeFileSync(join(root, ".env.local"), "\n", { mode: 0o600 });
     writeFileSync(join(root, "supabase", "migrations", "0018_contract.sql"), "select 1;\n");
@@ -407,9 +420,13 @@ function runDeploy(scenario: Scenario = {}) {
         `FLY_DATA_ENCRYPTION_KEY=${scenario.invalidDataEncryptionKey ? "not-canonical-base64" : contractDataEncryptionKey}`,
         `FLY_DATA_ENCRYPTION_PREVIOUS_KEYS=${scenario.invalidPreviousEncryptionKeys ? "not-json" : scenario.previousEncryptionKeys ?? ""}`,
         `FLY_CRON_SECRET=${scenario.weakCronSecret ? "abc123" : contractCronSecret}`,
+        `FLY_REQUISITION_PARSE_SECRET=${scenario.duplicateParseSecret ? contractFrameworkCapabilitySecret : contractRequisitionParseSecret}`,
+        `FLY_SOURCING_EXECUTION_SECRET=${scenario.duplicateSourcingSecret ? contractRequisitionParseSecret : contractSourcingExecutionSecret}`,
         `FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET=${contractFrameworkCapabilitySecret}`,
         `FLY_DEERFLOW_ADAPTER_TOKEN=${contractDeerFlowAdapterToken}`,
         `FLY_FLOWISE_ADAPTER_TOKEN=${contractFlowiseAdapterToken}`,
+        `FLY_OTEL_EXPORTER_OTLP_ENDPOINT=${contractOtelEndpoint}`,
+        `FLY_OTEL_EXPORTER_OTLP_HEADERS=${contractOtelHeaders}`,
         "",
       ].join("\n"),
       { mode: 0o600 },
@@ -590,9 +607,9 @@ elif [[ "$*" == *"image show"*"--json"* ]]; then
   printf '[{"Digest":"%s","Tag":"%s"}]\\n' "$digest" "$tag"
 elif [[ "$*" == *"machines list"*"--json"* ]]; then
   digest="sha256:$(printf '0%.0s' {1..64})"
-  printf '[{"id":"contract-web","state":"started","config":{"image":"registry.fly.io/aria-mantu-app@%s","metadata":{"fly_process_group":"web"}}},{"id":"contract-cleanup","state":"started","config":{"image":"registry.fly.io/aria-mantu-app@%s","metadata":{"fly_process_group":"cleanup"}}},{"id":"contract-cleanup-standby","state":"stopped","image_ref":"registry.fly.io/aria-mantu-app@%s","config":{"metadata":{"fly_process_group":"cleanup"},"standbys":["contract-cleanup"]}},{"id":"contract-heartbeat","state":"started","config":{"image":"registry.fly.io/aria-mantu-app@%s","metadata":{"fly_process_group":"framework_heartbeat"}}},{"id":"contract-heartbeat-standby","state":"stopped","image_ref":"registry.fly.io/aria-mantu-app@%s","config":{"metadata":{"fly_process_group":"framework_heartbeat"},"standbys":["contract-heartbeat"]}}]\\n' "$digest" "$digest" "$digest" "$digest" "$digest"
+  printf '[{"id":"contract-web","state":"started","config":{"image":"registry.fly.io/aria-mantu-app@%s","metadata":{"fly_process_group":"web"}}},{"id":"contract-cleanup","state":"started","config":{"image":"registry.fly.io/aria-mantu-app@%s","metadata":{"fly_process_group":"cleanup"}}},{"id":"contract-cleanup-standby","state":"stopped","image_ref":"registry.fly.io/aria-mantu-app@%s","config":{"metadata":{"fly_process_group":"cleanup"},"standbys":["contract-cleanup"]}},{"id":"contract-heartbeat","state":"started","config":{"image":"registry.fly.io/aria-mantu-app@%s","metadata":{"fly_process_group":"framework_heartbeat"}}},{"id":"contract-heartbeat-standby","state":"stopped","image_ref":"registry.fly.io/aria-mantu-app@%s","config":{"metadata":{"fly_process_group":"framework_heartbeat"},"standbys":["contract-heartbeat"]}},{"id":"contract-loop","state":"started","config":{"image":"registry.fly.io/aria-mantu-app@%s","metadata":{"fly_process_group":"loop"},"env":{"ARIA_LOOP_KILL_SWITCH":"${scenario.activeLoopConfiguration ? "false" : "true"}","ARIA_LOOP_ENABLE_OUTBOUND_DRAIN":"false"}}},{"id":"contract-loop-standby","state":"stopped","image_ref":"registry.fly.io/aria-mantu-app@%s","config":{"metadata":{"fly_process_group":"loop"},"standbys":["contract-loop"],"env":{"ARIA_LOOP_KILL_SWITCH":"${scenario.activeLoopConfiguration ? "false" : "true"}","ARIA_LOOP_ENABLE_OUTBOUND_DRAIN":"false"}}}]\\n' "$digest" "$digest" "$digest" "$digest" "$digest" "$digest" "$digest"
 elif [[ "$*" == *"logs --app aria-mantu-app"* && "$*" == *"--machine contract-cleanup"* ]]; then
-  printf '{"event":"apollo_authority_cleanup","status":"%s","releaseSha":"%s","startedAt":"%s","workspacesProcessed":1,"processed":0,"expired_receipts_cleared":0,"confirmations_deleted":0,"targets_deleted":0,"expired_targets_scrubbed":0,"quota_rows_deleted":0,"sourcing_lessons_retired":0,"sourcing_lessons_deleted":0,"sourcing_artifacts_deleted":0,"sourcing_runs_deleted":0,"sourcing_quota_rows_deleted":0,"framework_authorizations_deleted":0}\\n' "\${FAKE_CLEANUP_STATUS:-ok}" "$FAKE_RELEASE_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '{"event":"apollo_authority_cleanup","status":"%s","releaseSha":"%s","startedAt":"%s","workspacesProcessed":1,"processed":0,"expired_receipts_cleared":0,"confirmations_deleted":0,"targets_deleted":0,"expired_targets_scrubbed":0,"quota_rows_deleted":0,"sourcing_lessons_retired":0,"sourcing_lessons_deleted":0,"sourcing_artifacts_deleted":0,"sourcing_runs_deleted":0,"sourcing_quota_rows_deleted":0,"ordinary_sourcing_results_expired":0,"ordinary_sourcing_result_payloads_scrubbed":0,"framework_authorizations_deleted":0,"requisition_inputs_processed":0,"requisition_inputs_scrubbed":0,"requisition_cleanup_receipts_written":0}\\n' "\${FAKE_CLEANUP_STATUS:-ok}" "$FAKE_RELEASE_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 elif [[ "$*" == *"logs --app aria-mantu-app"* && "$*" == *"--machine contract-heartbeat"* ]]; then
   node -e '
     const [releaseSha, status, timestamp] = process.argv.slice(1);
@@ -610,6 +627,20 @@ elif [[ "$*" == *"logs --app aria-mantu-app"* && "$*" == *"--machine contract-he
       }),
     }) + "\\n");
   ' "$FAKE_RELEASE_SHA" "${scenario.heartbeatStatus ?? "ok"}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+elif [[ "$*" == *"logs --app aria-mantu-app"* && "$*" == *"--machine contract-loop"* ]]; then
+  node -e '
+    const [releaseSha, status, timestamp] = process.argv.slice(1);
+    process.stdout.write(JSON.stringify({
+      timestamp,
+      message: JSON.stringify({
+        event: "sourcing_loop_tick",
+        workerId: "contract-loop",
+        releaseSha,
+        status,
+        durationMs: 0,
+      }),
+    }) + "\\n");
+  ' "$FAKE_RELEASE_SHA" "$FAKE_LOOP_STATUS" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 fi
 `,
     );
@@ -694,11 +725,12 @@ esac
         FAKE_READY_STATUS: scenario.ready ?? "200",
         FAKE_KONG_STATUS: scenario.kong ?? "200",
         FAKE_CLEANUP_STATUS: scenario.cleanupStatus ?? "ok",
+        FAKE_LOOP_STATUS: "kill_switch_engaged",
         TAVILY_API_KEY: scenario.tavilyApiKey ?? "",
         GITHUB_ACTIONS: "true",
         GITHUB_REF_PROTECTED: "true",
         GITHUB_WORKFLOW_REF:
-          "mantu/msourcing/.github/workflows/deploy-aria-mantu.yml@refs/heads/deploy/fly-github-actions",
+          "mantu/msourcing/.github/workflows/deploy-aria-mantu.yml@refs/heads/main",
         GITHUB_RUN_ID: "123456789",
         GITHUB_RUN_ATTEMPT: "1",
         ARIA_RELEASE_SHA: releaseSha,
@@ -723,9 +755,17 @@ esac
           ? "not-json"
           : scenario.previousEncryptionKeys ?? "",
         FLY_CRON_SECRET: scenario.weakCronSecret ? "abc123" : contractCronSecret,
+        FLY_REQUISITION_PARSE_SECRET: scenario.duplicateParseSecret
+          ? contractFrameworkCapabilitySecret
+          : contractRequisitionParseSecret,
+        FLY_SOURCING_EXECUTION_SECRET: scenario.duplicateSourcingSecret
+          ? contractRequisitionParseSecret
+          : contractSourcingExecutionSecret,
         FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET: contractFrameworkCapabilitySecret,
         FLY_DEERFLOW_ADAPTER_TOKEN: contractDeerFlowAdapterToken,
         FLY_FLOWISE_ADAPTER_TOKEN: contractFlowiseAdapterToken,
+        FLY_OTEL_EXPORTER_OTLP_ENDPOINT: contractOtelEndpoint,
+        FLY_OTEL_EXPORTER_OTLP_HEADERS: contractOtelHeaders,
         ...contractFrameworkEnvironment,
         ARIA_RECOVERY_RECEIPT_SHA256: createHash("sha256")
           .update(readFileSync(recoveryReceiptPath))
@@ -849,6 +889,13 @@ ok("degraded framework heartbeat evidence fails the deploy", heartbeatFailure.st
 ok(
   "framework heartbeat failure cannot report a pending deployment",
   !heartbeatFailure.output.includes("DEPLOYED_PENDING_ACCEPTANCE"),
+);
+
+const activeLoopConfiguration = runDeploy({ activeLoopConfiguration: true });
+ok("an autonomous-loop Machine configured active fails release acceptance", activeLoopConfiguration.status !== 0);
+ok(
+  "active loop configuration cannot write an acceptance receipt",
+  activeLoopConfiguration.receipt === null,
 );
 
 const flyFailure = runDeploy({ failFlyMatch: "deploy --config fly.auth.toml" });
@@ -1021,6 +1068,14 @@ const weakCronSecret = runDeploy({ weakCronSecret: true });
 ok("weak CRON_SECRET material fails before deployment", weakCronSecret.status !== 0);
 ok("weak CRON_SECRET material never reaches Fly", weakCronSecret.flyCommands.length === 0);
 
+const duplicateParseSecret = runDeploy({ duplicateParseSecret: true });
+ok("reused internal parse/framework authority fails before deployment", duplicateParseSecret.status !== 0);
+ok("reused internal parse/framework authority never reaches Fly", duplicateParseSecret.flyCommands.length === 0);
+
+const duplicateSourcingSecret = runDeploy({ duplicateSourcingSecret: true });
+ok("reused sourcing/parse authority fails before deployment", duplicateSourcingSecret.status !== 0);
+ok("reused sourcing/parse authority never reaches Fly", duplicateSourcingSecret.flyCommands.length === 0);
+
 for (const [description, inventoryStatus] of [
   ["unknown", "Unknown"],
   ["missing", "missing"],
@@ -1151,7 +1206,14 @@ ok(
     Buffer.from(contractDataEncryptionKey, "base64").toString("base64") === contractDataEncryptionKey &&
     /^[0-9a-f]{64}$/.test(contractCronSecret) &&
     success.flyCommands.includes(`stdin:DATA_ENCRYPTION_KEY=${contractDataEncryptionKey}`) &&
-    success.flyCommands.includes(`stdin:CRON_SECRET=${contractCronSecret}`),
+    success.flyCommands.includes(`stdin:CRON_SECRET=${contractCronSecret}`) &&
+    success.flyCommands.includes(`stdin:ARIA_REQUISITION_PARSE_SECRET=${contractRequisitionParseSecret}`) &&
+    success.flyCommands.includes(`stdin:ARIA_SOURCING_EXECUTION_SECRET=${contractSourcingExecutionSecret}`),
+);
+ok(
+  "tenant-bound need credentials retire the global ingress HMAC secret from release authority",
+  !/NEED_INGRESS_HMAC_SECRET/.test(deploySource) &&
+    !success.flyCommands.includes("NEED_INGRESS_HMAC_SECRET"),
 );
 ok(
   "temporary database and bootstrap credentials are removed and verified absent",
@@ -1339,6 +1401,15 @@ ok(
 ok(
   "deployed acceptance stops unless the authenticated profile is admin",
   /ROLE[^\n]*admin[\s\S]{0,300}die\s+"Authenticated profile is not an admin/.test(deployedE2eSource),
+);
+ok(
+  "protected authenticated acceptance blocks free-text memory writes without disabling memory lifecycle APIs",
+  /api\/agents\/memories\?specId=\$SPEC_ID/.test(campaignAcceptanceSource) &&
+    /memory_content_writes_disabled/.test(campaignAcceptanceSource) &&
+    /memory-metadata-edit/.test(campaignAcceptanceSource) &&
+    /memory-review/.test(campaignAcceptanceSource) &&
+    /memory-delete/.test(campaignAcceptanceSource) &&
+    /Cache-Control: no-store/.test(campaignAcceptanceSource),
 );
 
 console.log(`RESULT deploy-contract: ${pass} passed, ${fail} failed`);

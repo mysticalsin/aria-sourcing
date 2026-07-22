@@ -14,7 +14,9 @@ email_pid=""
 failures=0
 export DB_HOST_PORT=0
 postgres_password="$(docker compose -p "$project" config --format json | jq -er '.services["db-init"].environment.POSTGRES_TARGET_PASSWORD')"
+owner_password="$(docker compose -p "$project" config --format json | jq -er '.services["db-init"].environment.SUPABASE_ADMIN_TARGET_PASSWORD')"
 test -n "$postgres_password"
+test -n "$owner_password"
 
 cleanup() {
   if [ -n "$email_pid" ]; then
@@ -29,19 +31,19 @@ trap cleanup EXIT HUP INT TERM
 psql_external() {
   docker run --rm \
     --network "$network" \
-    --env PGPASSWORD="$postgres_password" \
+    --env PGPASSWORD="${ARIA_DB_TEST_PASSWORD:-$postgres_password}" \
     --entrypoint psql \
     "$client_image" \
-    -X -v ON_ERROR_STOP=1 -h db -U postgres -d postgres "$@"
+    -X -v ON_ERROR_STOP=1 -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d postgres "$@"
 }
 
 psql_external_stdin() {
   docker run --rm -i \
     --network "$network" \
-    --env PGPASSWORD="$postgres_password" \
+    --env PGPASSWORD="${ARIA_DB_TEST_PASSWORD:-$postgres_password}" \
     --entrypoint psql \
     "$client_image" \
-    -X -v ON_ERROR_STOP=1 -h db -U postgres -d postgres "$@"
+    -X -v ON_ERROR_STOP=1 -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d postgres "$@"
 }
 
 json_field() {
@@ -63,6 +65,11 @@ if [ "$db_init_status" != "0" ]; then
   exit 1
 fi
 
+source tests/db/install-gotrue-test-authority.sh
+ARIA_DB_TEST_PASSWORD="$owner_password" \
+  aria_install_gotrue_test_authority psql_external_stdin
+psql_external_stdin -q < tests/db/auth-owner-bridges.sql
+
 for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
   if ! psql_external_stdin -q < "$migration" >"$migration_log" 2>&1; then
     echo "migration failed: $migration" >&2
@@ -70,6 +77,22 @@ for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
     exit 1
   fi
 done
+psql_external_stdin -q < tests/db/gotrue-lifecycle-fixture.sql
+
+# auth.users remains RLS-protected after the owner phase; create the synthetic
+# GoTrue identity only through a direct owner session.
+ARIA_DB_TEST_ROLE=supabase_admin ARIA_DB_TEST_PASSWORD="$owner_password" \
+  psql_external_stdin -q <<'SQL'
+insert into auth.users (
+  id, instance_id, aud, role, email, encrypted_password, confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+) values (
+  'ca000000-0000-4000-8000-000000000002',
+  '00000000-0000-4000-8000-000000000000',
+  'authenticated', 'authenticated', 'cap-owner@example.test', '', now(),
+  '{}'::jsonb, '{}'::jsonb, now(), now()
+);
+SQL
 
 psql_external_stdin -q <<'SQL'
 create schema aria_cap_test;
@@ -140,15 +163,8 @@ create trigger aria_cap_pause_email_insert
 before insert on public.outreach_ledger
 for each row execute function aria_cap_test.pause_email_insert();
 
-insert into auth.users (
-  id, instance_id, aud, role, email, encrypted_password, confirmed_at,
-  raw_app_meta_data, raw_user_meta_data, created_at, updated_at
-) values (
-  'ca000000-0000-4000-8000-000000000002',
-  '00000000-0000-0000-0000-000000000000',
-  'authenticated', 'authenticated', 'cap-owner@example.test', '', now(),
-  '{}'::jsonb, '{}'::jsonb, now(), now()
-);
+-- The Auth identity was seeded by the direct owner session above; remaining
+-- application fixtures are created by restricted postgres.
 
 insert into public.workspaces (id, name, allowed_domain)
 values ('ca000000-0000-4000-8000-000000000001', 'Cap Test', 'example.test');

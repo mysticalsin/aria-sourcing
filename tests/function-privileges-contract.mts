@@ -5,6 +5,10 @@ import { existsSync, readFileSync } from "node:fs";
 
 const migrationPath = "supabase/migrations/0019_agent_authority_and_integrations.sql";
 const migration = readFileSync(migrationPath, "utf8");
+const activeIdentityMigration = readFileSync(
+  "supabase/migrations/0061_active_auth_identity_workspace_authority.sql",
+  "utf8",
+);
 const ownerReconciliationPath = "docker/bootstrap/supabase-admin-reconciliation.sql";
 const ownerReconciliation = existsSync(ownerReconciliationPath)
   ? readFileSync(ownerReconciliationPath, "utf8")
@@ -48,6 +52,13 @@ const signatures = [
 ];
 
 ok("migration resets every public routine before allowlisting", signatures.every((signature) => migration.includes(`'${signature}'`)));
+ok(
+  "active identity helpers have exact database privilege contracts",
+  activeIdentityMigration.includes("create or replace function public.current_active_identity_id()") &&
+    activeIdentityMigration.includes("create or replace function public.auth_identity_lifecycle_schema_ready()") &&
+    /\('public\.current_active_identity_id\(\)'\s*,\s*'authenticated'\s*,\s*true\)/.test(databaseTest) &&
+    /\('public\.auth_identity_lifecycle_schema_ready\(\)'\s*,\s*'service_role'\s*,\s*true\)/.test(databaseTest),
+);
 ok(
   "postgres-owned future public-schema objects lose default API-role privileges",
   /alter default privileges revoke all on tables from public/i.test(migration) &&
@@ -153,7 +164,11 @@ ok(
 ok("real database test rejects the removed overload", databaseTest.includes("record_whatsapp_delivery_event(uuid,text,text,timestamptz,integer)"));
 ok("disposable database harness applies every migration", /migrations\/\[0-9\]\[0-9\]\[0-9\]\[0-9\]_\*\.sql/.test(harness));
 ok("package exposes the real database privilege test", packageJson.includes('"test:db-privileges"'));
-ok("CI runs database privilege verification", /database-security:[\s\S]*test:db-privileges/i.test(workflow));
+ok(
+  "CI runs the canonical database group containing privilege verification",
+  /database-security:[\s\S]*npm run test:database/i.test(workflow) &&
+    packageJson.includes('"test:database": "node scripts/run-test-manifest.mjs --group database"'),
+);
 
 console.log(`RESULT function-privileges-contract: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

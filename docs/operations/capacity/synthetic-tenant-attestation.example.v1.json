@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "kind": "aria-capacity-synthetic-tenant-attestation-example",
+  "environment": "staging",
+  "profileId": "aria-enterprise-registered-50000-v1",
+  "origin": "https://aria-capacity-staging.example.invalid",
+  "syntheticTenantId": "synthetic-capacity-example",
+  "workspaceId": "00000000-0000-4000-8000-000000000000",
+  "sessionCookieSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "dataClassification": "synthetic-only",
+  "externalEffects": "forbidden",
+  "approvedBy": "replace-with-named-owner",
+  "approvedAt": "2026-07-21T15:00:00.000Z",
+  "expiresAt": "2026-07-21T17:00:00.000Z"
+}

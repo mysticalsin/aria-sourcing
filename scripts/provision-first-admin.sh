@@ -65,7 +65,8 @@ ADMIN_EMAIL_DOMAIN="$(printf '%s' "$ADMIN_EMAIL_DOMAIN" | tr '[:upper:]' '[:lowe
 [ "$ADMIN_EMAIL_DOMAIN" = "$ARIA_ALLOWED_EMAIL_DOMAIN" ] || \
   fail "ADMIN_EMAIL email domain does not match ARIA_ALLOWED_EMAIL_DOMAIN."
 [ "${#ADMIN_PASSWORD}" -ge 24 ] || fail "ADMIN_PASSWORD must contain at least 24 characters."
-[ "${#ADMIN_PASSWORD}" -le 256 ] || fail "ADMIN_PASSWORD must contain at most 256 characters."
+[ "$(printf '%s' "$ADMIN_PASSWORD" | LC_ALL=C wc -c | tr -d '[:space:]')" -le 72 ] || \
+  fail "ADMIN_PASSWORD must contain at most 72 bytes."
 case "$ADMIN_PASSWORD" in
   *$'\n'*|*$'\r'*) fail "ADMIN_PASSWORD must not contain line breaks." ;;
 esac

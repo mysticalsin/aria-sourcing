@@ -2,6 +2,7 @@ import { pathToFileURL } from "node:url";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const RESPONSE_MAX_BYTES = 65_536;
+const FAILURE_REPORT_LIMIT = 100;
 const COUNTERS = [
   "processed",
   "expired_receipts_cleared",
@@ -16,20 +17,63 @@ const SOURCING_COUNTERS = {
   artifacts_deleted: "sourcing_artifacts_deleted",
   runs_deleted: "sourcing_runs_deleted",
   quota_deleted: "sourcing_quota_rows_deleted",
+  ordinary_results_expired: "ordinary_sourcing_results_expired",
+  ordinary_result_payloads_scrubbed: "ordinary_sourcing_result_payloads_scrubbed",
 };
 const FRAMEWORK_COUNTERS = {
   deleted: "framework_authorizations_deleted",
+};
+const REQUISITION_COUNTERS = {
+  processed: "requisition_inputs_processed",
+  raw_inputs_scrubbed: "requisition_inputs_scrubbed",
+  receipts_written: "requisition_cleanup_receipts_written",
 };
 const ALL_COUNTERS = [
   ...COUNTERS,
   ...Object.values(SOURCING_COUNTERS),
   ...Object.values(FRAMEWORK_COUNTERS),
+  ...Object.values(REQUISITION_COUNTERS),
 ];
 const CLEANUP_RPCS = new Set([
   "cleanup_apollo_enrichment_authority",
   "cleanup_sourcing_learning_authority",
   "cleanup_agent_framework_authority",
+  "cleanup_requisition_input_authority",
 ]);
+const CLEANUP_DOMAINS = [
+  {
+    rpc: "cleanup_apollo_enrichment_authority",
+    unavailableCode: "apollo_cleanup_rpc_unavailable",
+    boundCode: "apollo_cleanup_bound_reached",
+    parseReceipt: (value) => cleanupReceipt(value),
+    counterKeys: COUNTERS,
+    processed: (receipt) => receipt.processed,
+  },
+  {
+    rpc: "cleanup_sourcing_learning_authority",
+    unavailableCode: "sourcing_cleanup_rpc_unavailable",
+    boundCode: "sourcing_cleanup_bound_reached",
+    parseReceipt: (value) => mappedCleanupReceipt(value, SOURCING_COUNTERS),
+    counterKeys: Object.values(SOURCING_COUNTERS),
+    processed: (receipt) => receiptTotal(receipt, Object.values(SOURCING_COUNTERS)),
+  },
+  {
+    rpc: "cleanup_agent_framework_authority",
+    unavailableCode: "framework_cleanup_rpc_unavailable",
+    boundCode: "framework_cleanup_bound_reached",
+    parseReceipt: (value) => mappedCleanupReceipt(value, FRAMEWORK_COUNTERS),
+    counterKeys: Object.values(FRAMEWORK_COUNTERS),
+    processed: (receipt) => receiptTotal(receipt, Object.values(FRAMEWORK_COUNTERS)),
+  },
+  {
+    rpc: "cleanup_requisition_input_authority",
+    unavailableCode: "requisition_cleanup_rpc_unavailable",
+    boundCode: "requisition_cleanup_bound_reached",
+    parseReceipt: (value, limit) => requisitionCleanupReceipt(value, limit),
+    counterKeys: Object.values(REQUISITION_COUNTERS),
+    processed: (receipt) => receipt.requisition_inputs_processed,
+  },
+];
 
 async function readBoundedJson(response) {
   const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
@@ -104,6 +148,7 @@ export function createSupabaseServiceClient(baseUrl, serviceKey, fetchImpl = fet
       if (name !== "workspaces") throw new Error("unsupported cleanup relation");
       let columns = "";
       let ordering = "";
+      let lowerBound = "";
       return {
         select(value) {
           if (value !== "id") throw new Error("unsupported cleanup projection");
@@ -117,11 +162,19 @@ export function createSupabaseServiceClient(baseUrl, serviceKey, fetchImpl = fet
           ordering = `${column}.asc`;
           return this;
         },
+        gt(column, value) {
+          if (column !== "id" || typeof value !== "string" || !UUID_RE.test(value)) {
+            throw new Error("invalid cleanup cursor");
+          }
+          lowerBound = value;
+          return this;
+        },
         range(from, to) {
           if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from) {
             throw new Error("invalid cleanup range");
           }
           const query = new URLSearchParams({ select: columns, order: ordering });
+          if (lowerBound) query.set("id", `gt.${lowerBound}`);
           return request(`/rest/v1/workspaces?${query}`, {
             headers: { Range: `${from}-${to}` },
           });
@@ -165,8 +218,58 @@ function mappedCleanupReceipt(value, mapping) {
   return receipt;
 }
 
+function requisitionCleanupReceipt(value, limit) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const expectedKeys = ["processed", "raw_inputs_scrubbed", "receipts_written", "status"];
+  const actualKeys = Object.keys(value).sort();
+  if (
+    actualKeys.length !== expectedKeys.length ||
+    actualKeys.some((key, index) => key !== expectedKeys[index]) ||
+    value.status !== "cleaned"
+  ) return null;
+  const { processed, raw_inputs_scrubbed, receipts_written } = value;
+  if (
+    !Number.isSafeInteger(processed) || processed < 0 || processed > limit ||
+    !Number.isSafeInteger(raw_inputs_scrubbed) || raw_inputs_scrubbed < 0 || raw_inputs_scrubbed > limit ||
+    !Number.isSafeInteger(receipts_written) || receipts_written < 0 || receipts_written > limit ||
+    processed !== raw_inputs_scrubbed || processed !== receipts_written
+  ) return null;
+  return {
+    requisition_inputs_processed: processed,
+    requisition_inputs_scrubbed: raw_inputs_scrubbed,
+    requisition_cleanup_receipts_written: receipts_written,
+  };
+}
+
 function receiptTotal(receipt, keys) {
   return keys.reduce((total, key) => total + receipt[key], 0);
+}
+
+async function cleanupDomain(client, domain, workspaceId, perCallLimit, maxPasses, totals) {
+  for (let pass = 0; pass < maxPasses; pass += 1) {
+    let response;
+    try {
+      response = await client.rpc(domain.rpc, {
+        p_workspace_id: workspaceId,
+        p_limit: perCallLimit,
+      });
+    } catch {
+      return { failureCode: domain.unavailableCode, incomplete: true };
+    }
+    const receipt = response?.error
+      ? null
+      : domain.parseReceipt(response?.data, perCallLimit);
+    if (!receipt) return { failureCode: domain.unavailableCode, incomplete: true };
+
+    for (const key of domain.counterKeys) totals[key] += receipt[key];
+    if (domain.processed(receipt) < perCallLimit) {
+      return { failureCode: null, incomplete: false };
+    }
+    if (pass === maxPasses - 1) {
+      return { failureCode: domain.boundCode, incomplete: true };
+    }
+  }
+  throw new Error("unreachable cleanup domain state");
 }
 
 export async function cleanupApolloAuthorityOnce(client, options = {}) {
@@ -174,110 +277,110 @@ export async function cleanupApolloAuthorityOnce(client, options = {}) {
   const maxPages = options.maxPages ?? 100;
   const perCallLimit = options.perCallLimit ?? 500;
   const maxPassesPerWorkspace = options.maxPassesPerWorkspace ?? 20;
+  const afterWorkspaceId = options.afterWorkspaceId ?? null;
   if (
     !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 500 ||
     !Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 1_000 ||
     !Number.isSafeInteger(perCallLimit) || perCallLimit < 1 || perCallLimit > 500 ||
-    !Number.isSafeInteger(maxPassesPerWorkspace) || maxPassesPerWorkspace < 1 || maxPassesPerWorkspace > 100
+    !Number.isSafeInteger(maxPassesPerWorkspace) || maxPassesPerWorkspace < 1 || maxPassesPerWorkspace > 100 ||
+    (afterWorkspaceId !== null && (typeof afterWorkspaceId !== "string" || !UUID_RE.test(afterWorkspaceId)))
   ) throw new Error("invalid cleanup worker bounds");
 
   const totals = Object.fromEntries(ALL_COUNTERS.map((key) => [key, 0]));
   const failures = [];
+  let failureCount = 0;
+  let failuresTruncated = false;
   let workspacesProcessed = 0;
   let incomplete = false;
+  let scanIncomplete = false;
+  let nextWorkspaceCursor = afterWorkspaceId;
+
+  const recordFailure = (workspaceId, code) => {
+    failureCount += 1;
+    if (failures.length < FAILURE_REPORT_LIMIT) {
+      failures.push({ workspaceId, code });
+    } else {
+      failuresTruncated = true;
+    }
+  };
 
   for (let page = 0; page < maxPages; page += 1) {
     const from = page * pageSize;
-    const { data, error } = await client
-      .from("workspaces")
-      .select("id")
-      .order("id", { ascending: true })
-      .range(from, from + pageSize - 1);
+    let pageResult;
+    try {
+      let query = client
+        .from("workspaces")
+        .select("id")
+        .order("id", { ascending: true });
+      if (afterWorkspaceId) query = query.gt("id", afterWorkspaceId);
+      pageResult = await query.range(from, from + pageSize - 1);
+    } catch {
+      pageResult = { data: null, error: { code: "workspace_page_unavailable" } };
+    }
+    const { data, error } = pageResult ?? {};
     if (error || !Array.isArray(data)) {
-      failures.push({ workspaceId: null, code: "workspace_page_unavailable" });
+      recordFailure(null, "workspace_page_unavailable");
+      incomplete = true;
       break;
     }
-    if (data.length === 0) break;
+    if (data.length === 0) {
+      nextWorkspaceCursor = null;
+      break;
+    }
 
     for (const row of data) {
       const workspaceId = typeof row?.id === "string" && UUID_RE.test(row.id) ? row.id : "";
       if (!workspaceId) {
-        failures.push({ workspaceId: null, code: "workspace_id_invalid" });
+        recordFailure(null, "workspace_id_invalid");
+        incomplete = true;
         continue;
       }
+      nextWorkspaceCursor = workspaceId;
       let workspaceFailed = false;
-      for (let pass = 0; pass < maxPassesPerWorkspace; pass += 1) {
-        const { data: rawApolloReceipt, error: apolloCleanupError } = await client.rpc(
-          "cleanup_apollo_enrichment_authority",
-          { p_workspace_id: workspaceId, p_limit: perCallLimit },
+      for (const domain of CLEANUP_DOMAINS) {
+        const outcome = await cleanupDomain(
+          client,
+          domain,
+          workspaceId,
+          perCallLimit,
+          maxPassesPerWorkspace,
+          totals,
         );
-        const apolloReceipt = apolloCleanupError ? null : cleanupReceipt(rawApolloReceipt);
-        if (!apolloReceipt) {
-          failures.push({ workspaceId, code: "apollo_cleanup_rpc_unavailable" });
+        if (outcome.failureCode) {
+          recordFailure(workspaceId, outcome.failureCode);
           workspaceFailed = true;
-          break;
         }
-        for (const key of COUNTERS) totals[key] += apolloReceipt[key];
-
-        const { data: rawSourcingReceipt, error: sourcingCleanupError } = await client.rpc(
-          "cleanup_sourcing_learning_authority",
-          { p_workspace_id: workspaceId, p_limit: perCallLimit },
-        );
-        const sourcingReceipt = sourcingCleanupError
-          ? null
-          : mappedCleanupReceipt(rawSourcingReceipt, SOURCING_COUNTERS);
-        if (!sourcingReceipt) {
-          failures.push({ workspaceId, code: "sourcing_cleanup_rpc_unavailable" });
-          workspaceFailed = true;
-          break;
-        }
-        for (const key of Object.values(SOURCING_COUNTERS)) totals[key] += sourcingReceipt[key];
-
-        const { data: rawFrameworkReceipt, error: frameworkCleanupError } = await client.rpc(
-          "cleanup_agent_framework_authority",
-          { p_workspace_id: workspaceId, p_limit: perCallLimit },
-        );
-        const frameworkReceipt = frameworkCleanupError
-          ? null
-          : mappedCleanupReceipt(rawFrameworkReceipt, FRAMEWORK_COUNTERS);
-        if (!frameworkReceipt) {
-          failures.push({ workspaceId, code: "framework_cleanup_rpc_unavailable" });
-          workspaceFailed = true;
-          break;
-        }
-        for (const key of Object.values(FRAMEWORK_COUNTERS)) totals[key] += frameworkReceipt[key];
-
-        const sourcingProcessed = receiptTotal(
-          sourcingReceipt,
-          Object.values(SOURCING_COUNTERS),
-        );
-        const frameworkProcessed = receiptTotal(
-          frameworkReceipt,
-          Object.values(FRAMEWORK_COUNTERS),
-        );
-        const moreWorkMayRemain =
-          apolloReceipt.processed >= perCallLimit ||
-          sourcingProcessed >= perCallLimit ||
-          frameworkProcessed >= perCallLimit;
-        if (!moreWorkMayRemain) break;
-        if (pass === maxPassesPerWorkspace - 1) {
-          failures.push({ workspaceId, code: "workspace_cleanup_bound_reached" });
-          workspaceFailed = true;
+        if (outcome.incomplete) {
           incomplete = true;
         }
       }
       if (!workspaceFailed) workspacesProcessed += 1;
     }
-    if (data.length < pageSize) break;
-    if (page === maxPages - 1) incomplete = true;
+    if (data.length < pageSize) {
+      nextWorkspaceCursor = null;
+      break;
+    }
+    if (page === maxPages - 1) {
+      incomplete = true;
+      scanIncomplete = true;
+    }
   }
 
   return {
-    status: failures.length > 0 ? "degraded" : incomplete ? "incomplete" : "ok",
+    status: failureCount > 0 ? "degraded" : incomplete ? "incomplete" : "ok",
     workspacesProcessed,
     failures,
+    failureCount,
+    failuresTruncated,
     incomplete,
+    scanIncomplete,
+    nextWorkspaceCursor,
     ...totals,
+    ordinary_sourcing_results_expired: totals.ordinary_sourcing_results_expired,
+    ordinary_sourcing_result_payloads_scrubbed: totals.ordinary_sourcing_result_payloads_scrubbed,
+    requisition_inputs_processed: totals.requisition_inputs_processed,
+    requisition_inputs_scrubbed: totals.requisition_inputs_scrubbed,
+    requisition_cleanup_receipts_written: totals.requisition_cleanup_receipts_written,
   };
 }
 
@@ -311,12 +414,16 @@ async function main() {
   const client = createSupabaseServiceClient(url, key);
   const controller = new AbortController();
   for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => controller.abort());
+  let workspaceCursor = null;
 
   while (!controller.signal.aborted) {
     const startedAt = new Date().toISOString();
     const started = Date.now();
     try {
-      const result = await cleanupApolloAuthorityOnce(client);
+      const result = await cleanupApolloAuthorityOnce(client, {
+        afterWorkspaceId: workspaceCursor,
+      });
+      workspaceCursor = result.nextWorkspaceCursor;
       const output = {
         event: "apollo_authority_cleanup",
         releaseSha,
@@ -327,6 +434,7 @@ async function main() {
       };
       const writer = result.status === "ok" ? console.log : console.error;
       writer(JSON.stringify(output));
+      if (result.scanIncomplete && workspaceCursor && !controller.signal.aborted) continue;
     } catch {
       console.error(JSON.stringify({
         event: "apollo_authority_cleanup",

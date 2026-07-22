@@ -36,7 +36,9 @@ ok("operator cannot promote lessons", !/review_sourcing_lesson/.test(script));
 ok("operator removes temporary aggregate input", /await rm\(work, \{ recursive: true, force: true \}\)/.test(script));
 ok("container acceptance also denies network", /--network none/.test(containerTest));
 ok("both worker stages pin the Python base by immutable digest",
-  (dockerfile.match(/^FROM python:3\.12-slim@sha256:[a-f0-9]{64}/gm) ?? []).length === 2);
+  (dockerfile.match(/^FROM cgr\.dev\/chainguard\/python:latest(?:-dev)?@sha256:[a-f0-9]{64}/gm) ?? []).length === 2);
+ok("Graphify worker runs as the Chainguard non-root identity",
+  /USER 65532:65532/.test(dockerfile));
 ok("container acceptance trusts the immutable base instead of pulling a mutable tag",
   !/docker build[^\n]*--pull/.test(containerTest));
 ok("human review operator exists", reviewScript.length > 0);

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence, useInView } from "framer-motion";
 import { AlertTriangle, Lock } from "lucide-react";
 import { getBrowserSupabase } from "@/lib/supabase/client";
+import { normalizeLoginEmail } from "@/lib/auth/login-email";
 import {
   supabaseEnabled,
   ALLOWED_EMAIL_DOMAIN,
@@ -130,7 +131,16 @@ function LoginInner() {
       setLoading(false);
       return;
     }
-    const loginEmail = email.includes("@") ? email : `${email}@hermes.local`;
+    const loginEmail = normalizeLoginEmail(email, ALLOWED_EMAIL_DOMAIN);
+    if (!loginEmail) {
+      setAuthError(
+        ALLOWED_EMAIL_DOMAIN
+          ? `Enter your complete @${ALLOWED_EMAIL_DOMAIN} email address.`
+          : "Enter a complete email address.",
+      );
+      setLoading(false);
+      return;
+    }
     const { error: err } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
     if (err) {
       setAuthError(err.message);
@@ -249,8 +259,8 @@ function LoginInner() {
                   <input
                     ref={emailRef}
                     id="login-username"
-                    name="username"
-                    type="text"
+                    name="email"
+                    type="email"
                     required
                     autoComplete="username"
                     value={email}

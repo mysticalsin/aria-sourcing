@@ -18,11 +18,25 @@ function sha256(value: string): string {
 }
 
 const migrationPath = new URL("../supabase/migrations/0025_agent_memory_authority.sql", import.meta.url);
+const provenanceMigrationPath = new URL("../supabase/migrations/0059_candidate_payload_provenance.sql", import.meta.url);
+const provenanceRollbackPath = new URL("../supabase/rollbacks/0059_candidate_payload_provenance.sql", import.meta.url);
 const routePath = new URL("../src/app/api/agents/run/route.ts", import.meta.url);
+const memoryRoutePath = new URL("../src/app/api/agents/memories/route.ts", import.meta.url);
 const specsRoutePath = new URL("../src/app/api/agents/specs/route.ts", import.meta.url);
+const productionBoundaryDocPath = new URL("../docs/operations/AGENT_MEMORY_PRODUCTION_BOUNDARY.md", import.meta.url);
 const migration = existsSync(migrationPath) ? readFileSync(migrationPath, "utf8") : "";
+const provenanceMigration = existsSync(provenanceMigrationPath)
+  ? readFileSync(provenanceMigrationPath, "utf8")
+  : "";
+const provenanceRollback = existsSync(provenanceRollbackPath)
+  ? readFileSync(provenanceRollbackPath, "utf8")
+  : "";
 const route = readFileSync(routePath, "utf8");
+const memoryRoute = readFileSync(memoryRoutePath, "utf8");
 const specsRoute = readFileSync(specsRoutePath, "utf8");
+const productionBoundaryDoc = existsSync(productionBoundaryDocPath)
+  ? readFileSync(productionBoundaryDocPath, "utf8")
+  : "";
 
 ok("migration 0025 is reserved for agent-memory authority", migration.length > 0);
 ok("normalized encrypted agent memories are created", /create table if not exists public\.agent_memories[\s\S]*content_ciphertext\s+text\s+not null/i.test(migration));
@@ -55,6 +69,28 @@ ok("receipt transaction locks selected memory against concurrent revocation", /f
 ok("receipt RPC selects bounded memory itself instead of trusting caller receipts", !/p_receipts\s+jsonb/i.test(receiptRpc) && /content_byte_count/i.test(receiptRpc));
 ok("memory content changes force a fresh approval review", /content_ciphertext is distinct from old\.content_ciphertext[\s\S]*status\s*:=\s*'pending_review'/i.test(migration));
 ok("memory source provenance is immutable", /source_type is distinct from old\.source_type[\s\S]*source_run_id is distinct from old\.source_run_id/i.test(migration));
+ok(
+  "production disables free-text memory create and content edits with one typed response",
+  /NODE_ENV\s*===\s*["']production["']/.test(memoryRoute)
+    && /memory_content_writes_disabled/.test(memoryRoute)
+    && /export async function POST[\s\S]*memory_content_writes_disabled/.test(memoryRoute)
+    && /export async function PATCH[\s\S]*data\.content\s*!==\s*undefined[\s\S]*memory_content_writes_disabled/.test(memoryRoute),
+);
+ok(
+  "0059 removes direct legacy run and event mutation from service role",
+  /revoke\s+insert\s*,\s*update\s*,\s*delete\s+on\s+public\.agent_runs\s*,\s*public\.agent_events\s+from\s+service_role/i.test(provenanceMigration),
+);
+ok(
+  "0059 rollback restores only the pre-migration legacy mutation grants",
+  /grant\s+update\s*,\s*delete\s+on\s+public\.agent_runs\s+to\s+service_role/i.test(provenanceRollback)
+    && /grant\s+insert\s*,\s*update\s*,\s*delete\s+on\s+public\.agent_events\s+to\s+service_role/i.test(provenanceRollback),
+);
+ok(
+  "production memory boundary runbook keeps Graphify lessons independent",
+  /POST[\s\S]*content edit[\s\S]*disabled/i.test(productionBoundaryDoc)
+    && /GET[\s\S]*metadata[\s\S]*remain/i.test(productionBoundaryDoc)
+    && /Graphify[\s\S]*do(?:es)? not depend on[\s\S]*agent memory/i.test(productionBoundaryDoc),
+);
 
 const createdPolicies = [...migration.matchAll(/create policy\s+([a-zA-Z0-9_]+)/gi)].map((match) => match[1]);
 ok(

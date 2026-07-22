@@ -9,6 +9,8 @@ const frameworkRunId = "88888888-8888-4888-8888-888888888888";
 const lessonId = "44444444-4444-4444-8444-444444444444";
 const roleFingerprint = "a".repeat(64);
 const configurationFingerprint = "b".repeat(64);
+const campaignFingerprint = "c".repeat(64);
+const resultSha256 = "d".repeat(64);
 
 mock.module("server-only", { namedExports: {} });
 mock.module(moduleUrl("src/lib/supabase/server.ts"), {
@@ -63,6 +65,8 @@ test("begin maps exact server-owned authority inputs and accepts only a strict c
       model: null,
       idempotencyKey: "55555555-5555-4555-8555-555555555555",
       requestId: "request-1",
+      count: 5,
+      campaignFingerprint,
     },
     service as never,
   );
@@ -73,11 +77,13 @@ test("begin maps exact server-owned authority inputs and accepts only a strict c
     roleFingerprint,
     lessonsEnabled: true,
   });
-  assert.equal(lastRpc?.name, "begin_sourcing_run");
+  assert.equal(lastRpc?.name, "begin_ordinary_sourcing_run");
   assert.deepEqual(lastRpc?.args.p_role_basis, roleBasis);
   assert.equal(lastRpc?.args.p_configuration_fingerprint, configurationFingerprint);
   assert.equal(lastRpc?.args.p_provider, null);
   assert.equal(lastRpc?.args.p_model, null);
+  assert.equal(lastRpc?.args.p_count, 5);
+  assert.equal(lastRpc?.args.p_campaign_fingerprint, campaignFingerprint);
 });
 
 test("begin rejects malformed local and database receipts without inventing authority", async () => {
@@ -94,6 +100,8 @@ test("begin rejects malformed local and database receipts without inventing auth
       model: "gpt-4o-mini",
       idempotencyKey: "55555555-5555-4555-8555-555555555555",
       requestId: "request-2",
+      count: 5,
+      campaignFingerprint,
     },
     service as never,
   );
@@ -121,6 +129,8 @@ test("begin rejects malformed local and database receipts without inventing auth
       model: "gpt-4o-mini",
       idempotencyKey: "55555555-5555-4555-8555-555555555555",
       requestId: "request-3",
+      count: 5,
+      campaignFingerprint,
     },
     service as never,
   );
@@ -188,15 +198,30 @@ test("promoted lessons are parsed only from the bounded runtime schema", async (
   );
 });
 
-test("completion sends only aggregate query receipts and strictly parses the receipt", async () => {
+test("ordinary completion atomically stages the bounded result and strictly parses its hash", async () => {
   reset();
+  const resultPayload = {
+    ok: true,
+    mode: "deterministic",
+    campaignId: "campaign-1",
+    campaignFingerprint: "campaign-json",
+    candidates: [],
+    totalFound: 0,
+    requestId: "request-1",
+    idempotencyKey: "55555555-5555-4555-8555-555555555555",
+    sourcingRunId: runId,
+    appliedLessonIds: [],
+  };
   response = {
     data: {
-      status: "completed",
+      status: "result_ready",
       run_id: runId,
-      query_count: 1,
-      candidate_count: 0,
-      receipts: [{ receiptId: lessonId, platform: "GitHub", candidateCount: 0 }],
+      requested_count: 5,
+      result_sha256: resultSha256,
+      result_payload: {
+        ...resultPayload,
+        feedbackReceipts: [{ receiptId: lessonId, platform: "GitHub", candidateCount: 0 }],
+      },
     },
     error: null,
   };
@@ -208,20 +233,74 @@ test("completion sends only aggregate query receipts and strictly parses the rec
     skippedCount: 1,
   }];
   const result = await authority.completeSourcingRun(
-    { workspaceId, actorId, runId, queryReceipts },
+    { workspaceId, actorId, runId, queryReceipts, resultPayload },
     service as never,
   );
   assert.deepEqual(result, {
-    status: "completed",
+    status: "result_ready",
     runId,
-    queryCount: 1,
-    candidateCount: 0,
-    receipts: [{ receiptId: lessonId, platform: "GitHub", candidateCount: 0 }],
+    resultSha256,
+    resultPayload: {
+      ...resultPayload,
+      feedbackReceipts: [{ receiptId: lessonId, platform: "GitHub", candidateCount: 0 }],
+    },
   });
-  assert.equal(lastRpc?.name, "complete_sourcing_run");
+  assert.equal(lastRpc?.name, "complete_ordinary_sourcing_run");
   assert.deepEqual(lastRpc?.args.p_query_receipts, queryReceipts);
-  assert.equal(JSON.stringify(lastRpc?.args).includes("candidateId"), false);
-  assert.equal(JSON.stringify(lastRpc?.args).includes("profile"), false);
+  assert.deepEqual(lastRpc?.args.p_result_payload, resultPayload);
+});
+
+test("ordinary pending results resume before provider setup and ack with exact authority", async () => {
+  reset();
+  const resultPayload = {
+    ok: true,
+    mode: "deterministic",
+    campaignId: "campaign-1",
+    campaignFingerprint: "campaign-json",
+    candidates: [],
+    totalFound: 0,
+    requestId: "request-1",
+    idempotencyKey: "55555555-5555-4555-8555-555555555555",
+    sourcingRunId: runId,
+    appliedLessonIds: [],
+    feedbackReceipts: [{ receiptId: lessonId, platform: "GitHub", candidateCount: 0 }],
+  };
+  response = {
+    data: {
+      status: "result_ready",
+      run_id: runId,
+      requested_count: 5,
+      result_sha256: resultSha256,
+      result_payload: resultPayload,
+    },
+    error: null,
+  };
+  assert.deepEqual(
+    await authority.resumeSourcingRunResult({
+      workspaceId,
+      actorId,
+      campaignId: "campaign-1",
+      campaignFingerprint,
+      count: 5,
+    }, service as never),
+    { status: "result_ready", runId, requestedCount: 5, resultSha256, resultPayload },
+  );
+  assert.equal(lastRpc?.name, "resume_ordinary_sourcing_run");
+
+  response = {
+    data: { status: "completed", run_id: runId, result_sha256: resultSha256 },
+    error: null,
+  };
+  assert.equal(
+    await authority.ackSourcingRunResult({
+      workspaceId,
+      actorId,
+      runId,
+      resultSha256,
+    }, service as never),
+    true,
+  );
+  assert.equal(lastRpc?.name, "ack_ordinary_sourcing_result");
 });
 
 test("pending feedback is strictly parsed and scoped through the service RPC", async () => {
@@ -255,7 +334,7 @@ test("failure marking requires the exact server run receipt", async () => {
     ),
     true,
   );
-  assert.equal(lastRpc?.name, "fail_sourcing_run");
+  assert.equal(lastRpc?.name, "fail_ordinary_sourcing_run");
 
   response = {
     data: { status: "failed", run_id: "66666666-6666-4666-8666-666666666666" },

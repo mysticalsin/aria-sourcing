@@ -6,7 +6,13 @@
 - The Fly `cleanup` process runs once at startup and every six hours, so normal
   physical clearance occurs no later than approximately 30 days and six hours.
 - Each database call processes at most 500 rows. A workspace receives at most
-  20 calls per pass, and workspace pagination is bounded.
+  20 calls per cleanup domain, and workspace pagination is bounded.
+- Apollo, sourcing-learning, agent-framework, and raw-requisition cleanup run
+  independently for every workspace. A failure in one domain does not skip the
+  remaining domains.
+- A scan that reaches 10,000 workspaces carries the last validated workspace
+  UUID into an immediate keyset continuation. The normal six-hour wait resumes
+  only after the ordered workspace sweep reaches its end.
 - One workspace failure does not stop cleanup for other workspaces.
 - Candidate anonymization invokes exact admin erasure before it saves the
   redacted shared document. A retry returns the original erasure event.
@@ -15,13 +21,21 @@
 
 The cleanup process emits one JSON event named `apollo_authority_cleanup` per
 pass. Alert when `status` is not `ok`, `failures` is non-empty, or no successful
-event has arrived for eight hours. Counters include:
+event has arrived for eight hours. Failure entries contain only a workspace UUID
+and a fixed domain code. At most 100 entries are emitted; `failureCount` and
+`failuresTruncated` preserve bounded incident evidence without copying database
+errors, requisition text, candidate data, or provider responses into logs.
+Counters include:
 
 - `expired_receipts_cleared`
 - `confirmations_deleted`
 - `targets_deleted`
 - `expired_targets_scrubbed`
 - `quota_rows_deleted`
+- `sourcing_lessons_retired`
+- `framework_authorizations_deleted`
+- `requisition_inputs_scrubbed`
+- `requisition_cleanup_receipts_written`
 - `workspacesProcessed`
 
 Fly logs are operational evidence, not the source of truth for candidate data.

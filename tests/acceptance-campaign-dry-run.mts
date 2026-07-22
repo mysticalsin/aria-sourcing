@@ -40,18 +40,20 @@ const serviceKey = "contract-service-key";
 const accessToken = "contract-access-token";
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const userId = "22222222-2222-4222-8222-222222222222";
+const specId = "33333333-3333-4333-8333-333333333333";
 let workspace = null;
 let user = null;
 let profile = null;
 let workspaceState = null;
+let agentSpec = null;
 
 function event(name) {
   appendFileSync(logFile, JSON.stringify({ event: name }) + "\n");
 }
 
-function json(res, status, value) {
+function json(res, status, value, headers = {}) {
   const body = JSON.stringify(value);
-  res.writeHead(status, { "content-type": "application/json" });
+  res.writeHead(status, { "content-type": "application/json", ...headers });
   res.end(body);
 }
 
@@ -66,6 +68,15 @@ function isService(req) {
 
 function isAuthenticated(req) {
   return req.headers.apikey === anonKey && req.headers.authorization === "Bearer " + accessToken;
+}
+
+function assertAppRequest(req) {
+  assert.match(req.headers.cookie || "", /sb-auth-token(?:\.0)?=/);
+  assert.equal(req.headers.origin, "http://" + req.headers.host);
+}
+
+function memoryJson(res, status, value) {
+  return json(res, status, value, { "cache-control": "no-store" });
 }
 
 function readBody(req) {
@@ -203,9 +214,63 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/api/agents/specs") {
-    assert.match(req.headers.cookie || "", /sb-auth-token(?:\.0)?=/);
+    assertAppRequest(req);
     event("app.session-authority-proved");
-    return json(res, 200, { ok: true, specs: [] });
+    return json(res, 200, { ok: true, specs: agentSpec ? [agentSpec] : [] });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/agents/specs") {
+    assertAppRequest(req);
+    assert.equal(body.name, "ARIA acceptance memory boundary");
+    assert.equal(body.role_brief.title, "Synthetic acceptance memory boundary");
+    assert.deepEqual(body.channels, ["Email"]);
+    assert.deepEqual(body.guardrails, { autopilot: false, canary_remaining: 0, topics_allow: [] });
+    agentSpec = { id: specId, name: body.name, status: "active" };
+    event("app.agent-spec-created");
+    return json(res, 200, { ok: true, id: specId });
+  }
+
+  if (url.pathname === "/api/agents/memories") {
+    assertAppRequest(req);
+    if (req.method === "GET") {
+      assert.equal(url.searchParams.get("specId"), specId);
+      event("app.memory-read-available");
+      return memoryJson(res, 200, {
+        ok: true,
+        specs: [agentSpec],
+        memories: [],
+        nextCursor: null,
+        nextSpecCursor: null,
+      });
+    }
+    if (req.method === "POST") {
+      assert.equal(body.specId, specId);
+      assert.equal(body.content, "Synthetic free-text memory must be blocked.");
+      event("app.memory-create-blocked");
+      return memoryJson(res, 403, { ok: false, code: "memory_content_writes_disabled" });
+    }
+    if (req.method === "PATCH" && typeof body.content === "string") {
+      assert.equal(body.action, "edit");
+      assert.equal(body.specId, specId);
+      event("app.memory-content-edit-blocked");
+      return memoryJson(res, 403, { ok: false, code: "memory_content_writes_disabled" });
+    }
+    if (req.method === "PATCH" && body.action === "edit") {
+      assert.equal(body.specId, specId);
+      assert.equal(body.pinned, true);
+      event("app.memory-metadata-edit-available");
+      return memoryJson(res, 404, { ok: false, code: "memory_not_found" });
+    }
+    if (req.method === "PATCH" && body.action === "approve") {
+      assert.equal(body.specId, specId);
+      event("app.memory-review-available");
+      return memoryJson(res, 404, { ok: false, code: "memory_not_found" });
+    }
+    if (req.method === "DELETE") {
+      assert.equal(body.specId, specId);
+      event("app.memory-delete-available");
+      return memoryJson(res, 404, { ok: false, code: "memory_not_found" });
+    }
   }
 
   if (req.method === "GET" && url.pathname === "/rest/v1/outreach_ledger") {
@@ -254,6 +319,7 @@ const server = http.createServer(async (req, res) => {
       const deleted = workspace;
       workspace = null;
       workspaceState = null;
+      agentSpec = null;
       event("cleanup.workspace-deleted");
       return json(res, 200, deleted ? [deleted] : []);
     }
@@ -335,6 +401,13 @@ assert.equal(receipt.status, "passed");
 assert.equal(receipt.releaseSha, "a".repeat(40));
 assert.equal(receipt.checks.authenticatedWorkspaceBinding, true);
 assert.equal(receipt.checks.appSessionAuthority, true);
+assert.equal(receipt.checks.agentMemoryProvenanceBoundary, true);
+assert.equal(receipt.checks.agentMemoryFreeTextCreateBlocked, true);
+assert.equal(receipt.checks.agentMemoryFreeTextEditBlocked, true);
+assert.equal(receipt.checks.agentMemoryReadAvailable, true);
+assert.equal(receipt.checks.agentMemoryMetadataEditAvailable, true);
+assert.equal(receipt.checks.agentMemoryReviewAvailable, true);
+assert.equal(receipt.checks.agentMemoryDeleteAvailable, true);
 assert.equal(receipt.checks.authenticatedStateReload, true);
 assert.equal(receipt.checks.emailConfirmLiveFalse, "dry-run");
 assert.equal(receipt.checks.linkedinPolicy, "manual-required");
@@ -356,6 +429,12 @@ assert.deepEqual(happy.events.slice(-5), [
 assert.ok(happy.events.indexOf("ledger.zero-proved") < happy.events.indexOf("cleanup.user-deleted"));
 assert.ok(happy.events.includes("app.email-dry-run"));
 assert.ok(happy.events.includes("app.linkedin-manual"));
+assert.ok(happy.events.includes("app.memory-read-available"));
+assert.ok(happy.events.includes("app.memory-create-blocked"));
+assert.ok(happy.events.includes("app.memory-content-edit-blocked"));
+assert.ok(happy.events.includes("app.memory-metadata-edit-available"));
+assert.ok(happy.events.includes("app.memory-review-available"));
+assert.ok(happy.events.includes("app.memory-delete-available"));
 
 const appFailure = runScenario("linkedin_fail");
 assert.notEqual(appFailure.status, 0, "an invalid LinkedIn safety response must fail acceptance");

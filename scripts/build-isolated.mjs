@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const isolatedRoot = await mkdtemp(path.join(os.tmpdir(), "aria-build-"));
-const sourceDirectories = ["src", "public"];
+const sourceDirectories = ["src", "public", "scripts/sourcing-loop-handlers"];
 const projectFiles = [
   "package.json",
   "package-lock.json",

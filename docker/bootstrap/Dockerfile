@@ -7,6 +7,7 @@ RUN apt-get update \
 COPY run.sh /usr/local/bin/run.sh
 COPY run.fly.sh /usr/local/bin/run.fly.sh
 COPY supabase-admin-reconciliation.sql /opt/aria/supabase-admin-reconciliation.sql
+COPY auth-owner-bridges.sql /opt/aria/auth-owner-bridges.sql
 COPY legacy-baseline-invariants.sql /opt/aria/legacy-baseline-invariants.sql
 COPY legacy-table-inventory.txt /opt/aria/legacy-table-inventory.txt
 COPY legacy-baseline-public-schema.sha256 /opt/aria/legacy-baseline-public-schema.sha256

@@ -44,12 +44,50 @@ psql_stdin() {
     --env PGPASSWORD="$bootstrap_password" \
     --entrypoint psql \
     "$client_image" \
-    -X -v ON_ERROR_STOP=1 -h db -U postgres -d postgres "$@"
+    -X -v ON_ERROR_STOP=1 -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d postgres "$@"
 }
+
+legacy_service_mutation_privileges() {
+  psql_stdin -Atqc "select concat_ws(':',
+    has_table_privilege('service_role','public.agent_runs','INSERT'),
+    has_table_privilege('service_role','public.agent_runs','UPDATE'),
+    has_table_privilege('service_role','public.agent_runs','DELETE'),
+    has_table_privilege('service_role','public.agent_events','INSERT'),
+    has_table_privilege('service_role','public.agent_events','UPDATE'),
+    has_table_privilege('service_role','public.agent_events','DELETE'))"
+}
+
+source tests/db/install-gotrue-test-authority.sh
+aria_install_gotrue_test_authority
 
 for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
   psql_stdin -q < "$migration"
 done
+psql_stdin -q < tests/db/gotrue-lifecycle-fixture.sql
+
+if [[ "$(legacy_service_mutation_privileges)" != "f:f:f:f:f:f" ]]; then
+  echo "0059 did not revoke direct service-role legacy run/event mutation" >&2
+  exit 1
+fi
+
+# The rollback is safe and idempotent before 0059 has recorded provenance or
+# verified evidence, and the forward migration reapplies cleanly from that
+# exact pre-0059 state.
+psql_stdin -q < supabase/rollbacks/0059_candidate_payload_provenance.sql
+if [[ "$(legacy_service_mutation_privileges)" != "f:t:t:t:t:t" ]]; then
+  echo "0059 rollback did not restore the exact pre-0059 legacy mutation grants" >&2
+  exit 1
+fi
+psql_stdin -q < supabase/rollbacks/0059_candidate_payload_provenance.sql
+if [[ "$(legacy_service_mutation_privileges)" != "f:t:t:t:t:t" ]]; then
+  echo "0059 rollback privilege restoration is not idempotent" >&2
+  exit 1
+fi
+psql_stdin -q < supabase/migrations/0059_candidate_payload_provenance.sql
+if [[ "$(legacy_service_mutation_privileges)" != "f:f:f:f:f:f" ]]; then
+  echo "0059 reapply did not close direct legacy mutation again" >&2
+  exit 1
+fi
 
 psql_stdin -q < tests/db/candidate-erasure-authority.sql
 
@@ -348,4 +386,16 @@ end;
 $assert_inverse_race_closed$;
 SQL
 
-echo "RESULT candidate-erasure-db: tenant=bound legal-hold=active-expired-release idempotency=replayed local-scrub=transactional suppression=hmac-tombstone reimport=blocked concurrency=both-lock-orders provider=manual-evidence retryable=no-false-success receipts=content-free idempotence=pass"
+set +e
+rollback_output="$(psql_stdin -qAt 2>&1 < supabase/rollbacks/0059_candidate_payload_provenance.sql)"
+rollback_status=$?
+set -e
+if [[ "$rollback_status" -eq 0 ]] || ! rg -q \
+  'refusing 0059 rollback because candidate provenance or verified erasure evidence exists' \
+  <<<"$rollback_output"; then
+  printf '%s\n' "$rollback_output" >&2
+  echo "0059 rollback did not preserve candidate provenance and erasure evidence" >&2
+  exit 1
+fi
+
+echo "RESULT candidate-erasure-db: tenant=bound legal-hold=active-expired-release idempotency=replayed local-scrub=transactional suppression=hmac-tombstone reimport=blocked concurrency=both-lock-orders provider=verified-receipt retryable=no-false-success receipts=content-free rollback=guarded idempotence=pass"

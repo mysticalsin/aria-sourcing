@@ -15,10 +15,25 @@ assert.deepEqual(Object.keys(paths).sort(), [
   "/api/admin/source/apollo/erasure",
   "/api/admin/source/apollo/reconciliation",
   "/api/agents/memories",
+  "/api/internal/sourcing-execute",
   "/api/source/apollo/enrich",
   "/api/source/apollo/search",
   "/api/source/apollo/select",
 ]);
+
+const internalSourcingPath = paths["/api/internal/sourcing-execute"] as Record<string, unknown>;
+const internalSourcingPost = internalSourcingPath.post as {
+  security?: Array<Record<string, unknown>>;
+  requestBody?: { content?: { "application/json"?: { schema?: { $ref?: string } } } };
+  responses?: Record<string, unknown>;
+};
+assert.deepEqual(internalSourcingPost.security, [{ sourcingExecutionBearer: [] }]);
+assert.equal(
+  internalSourcingPost.requestBody?.content?.["application/json"]?.schema?.$ref,
+  "#/components/schemas/AutonomousSourcingLeaseLocator",
+);
+assert.ok(internalSourcingPost.responses?.["401"]);
+assert.ok(internalSourcingPost.responses?.["503"]);
 
 const references: string[] = [];
 function collect(value: unknown): void {

@@ -7,9 +7,14 @@ candidates, guarded outreach, reply handling, booking workflows, executive
 visibility, and audit evidence with Supabase-backed live mode and a dry-run demo
 mode.
 
+This README describes checked-in source. It is not proof that the current
+branch, migrations, images, provider bindings, or framework plane are deployed
+or accepted in production. See the dated status and deployment runbook for the
+remaining release gates.
+
 ## Current Stack
 
-Verified from `package.json` on 2026-07-14:
+Verified from `package.json` on 2026-07-21:
 
 | Area | Current truth |
 |---|---|
@@ -20,11 +25,11 @@ Verified from `package.json` on 2026-07-14:
 | Verification | `npm test` executes the validated inventory in `tests/test-manifest.mjs`; inspect it with `node scripts/run-test-manifest.mjs --list all` |
 | Quality gates | `npm run typecheck`, `npm run typecheck:tests`, `npm run lint`, `npm test`, `npm run build:isolated` for this OneDrive checkout |
 
-## Shipped Surfaces
+## Implemented Source Surfaces
 
 | Surface | Where it lives | Status |
 |---|---|---|
-| Sourcing and campaign flow | `src/app/intake`, `src/app/campaigns`, `src/app/api/source`, `src/app/api/sourcing-agent` | Built |
+| Sourcing and campaign flow | `src/app/intake`, `src/app/campaigns`, `src/app/api/source`, `src/app/api/sourcing-agent` | Built in source; exact-release live sourcing canary absent |
 | Review-gated sourcing lessons | `supabase/migrations/0027_sourcing_learning_authority.sql`, `workers/graphify-lessons`, `docs/operations/SOURCING_LEARNING.md` | Built in source; database migration, digest-pinned worker image, and human review operations required |
 | Outreach guardrails | `src/app/outreach`, `src/lib/dispatch-outbound.ts`, `src/lib/gate.ts`, `src/lib/outreach-*` | Built |
 | Candidate disclosure security layer | `src/lib/agent-disclosure-policy.ts`, `tests/agent-disclosure-policy.mts`, `tests/salary-boundary-adversarial.mts` | Built |
@@ -118,12 +123,17 @@ Production requires, at minimum:
 - A verified delivery provider path before any live outreach.
 - Domain, OAuth, and unsubscribe settings matching the deployment URL.
 - Green local/CI gates against the release SHA.
+- Accepted Auth and private framework image receipts, private bootstrap and
+  restore evidence, and an exact-model LLM canary before framework execution.
+- A ratified capacity model plus staged load, soak, failover, restore, and
+  recovery evidence before a 50,000-user claim.
+- A real zero-contact need-to-candidate canary for the exact deployed SHA.
 
-The protected Fly workflow builds the app, DB, bootstrap, Kong, and one-shot
-Graphify lesson-worker images from the exact release SHA, pushes isolated
-candidates, pulls and scans their exact registry digests, signs provenance and
-SBOM attestations for all 5 local images, promotes immutable SHA tags, and
-deploys without rebuilding.
+The checked-in protected Fly workflow is designed to build the app, DB,
+bootstrap, Kong, and one-shot Graphify lesson-worker images from the exact
+release SHA, push isolated candidates, pull and scan their exact registry
+digests, sign provenance and SBOM attestations for all 5 local images, promote
+immutable SHA tags, and deploy without rebuilding.
 It also pulls the config-pinned upstream Auth and REST images for `linux/amd64`,
 applies the same CycloneDX, HIGH/CRITICAL, and secret gates, and records them as
 upstream rather than claiming local build attestations. All 7 images are bound
@@ -135,6 +145,13 @@ schema-validated SBOM, vulnerability, filesystem plus image-config/history
 secret, attestation, and release receipts even when a later gate fails.
 The workflow must exist on the repository default branch before manual dispatch
 is available.
+
+That design is not current deployment evidence. GitHub Actions presently stops
+before job steps because of the repository Actions budget, the production
+workflow is manually disabled, and there is no accepted exact-SHA deployment
+receipt. The private DeerFlow/Flowise plane is released separately and remains
+NO-GO until its complete images, bootstrap, restore, model, and campaign canary
+evidence pass.
 
 The current dated status page is
 [`production-readiness/STATUS.md`](production-readiness/STATUS.md).

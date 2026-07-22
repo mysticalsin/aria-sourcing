@@ -906,6 +906,7 @@ test("readiness rejects a mismatched framework instance before dependency probes
 test("Flowise readiness verifies the official ping, workspace database query, queue, and worker", async (t) => {
   const upstreamWorkspaceId = "90000000-0000-4000-8000-000000000009";
   let returnedWorkspaceId = upstreamWorkspaceId;
+  let workerQueueName = "aria-flowise";
   const seen = [];
   const upstream = await listen((req, res) => {
     seen.push(`${req.method} ${req.url}`);
@@ -926,8 +927,14 @@ test("Flowise readiness verifies the official ping, workspace database query, qu
       });
     }
     if (req.url === "/healthz") {
-      res.writeHead(200, { "content-type": "text/plain" });
-      return res.end("OK");
+      return sendJson(res, 200, {
+        schema: "aria.flowise-worker-readiness.v1",
+        status: "ready",
+        queueName: workerQueueName,
+        database: true,
+        queue: true,
+        worker: true,
+      });
     }
     return sendJson(res, 404, {});
   });
@@ -990,6 +997,17 @@ test("Flowise readiness verifies the official ping, workspace database query, qu
     queue: false,
     worker: true,
     policy: false,
+  });
+
+  returnedWorkspaceId = upstreamWorkspaceId;
+  workerQueueName = "other-queue";
+  const mismatchedWorker = await fetch(`${adapter.origin}/readyz`, { headers: adapterHeaders("aria.flowise.import.v1") });
+  assert.equal(mismatchedWorker.status, 503);
+  assert.deepEqual((await mismatchedWorker.json()).dependencies, {
+    database: true,
+    queue: false,
+    worker: false,
+    policy: true,
   });
 });
 

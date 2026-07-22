@@ -9,7 +9,6 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { createRequire } from "node:module";
 import test from "node:test";
 
 import {
@@ -31,6 +30,7 @@ type MutableManifest = {
 const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
   scripts: Record<string, string>;
 };
+const ciWorkflow = readFileSync(".github/workflows/ci.yml", "utf8");
 const expectedLifecycleScripts = {
   pretest: "node scripts/run-test-manifest.mjs --group pretest",
   test: "node scripts/run-test-manifest.mjs --group application",
@@ -73,13 +73,13 @@ test("manifest preserves parity and freezes the exact deduplicated lifecycle", (
         resolveTestGroup(testManifest, group).length,
       ]),
     ),
-    { pretest: 51, application: 141, posttest: 2, all: 194 },
+    { pretest: 56, application: 165, posttest: 2, all: 223 },
   );
   const commands = resolveTestGroup(testManifest, "all");
   const commandLines = commands.map(({ executable, argv }) => `${executable} ${argv.join(" ")}`);
   assert.equal(
     createHash("sha256").update(commandLines.join("\n")).digest("hex"),
-    "99bb0a5deb7f5cb6a275a15c381b5696024917ab890d04e5df29ae1a163570ed",
+    "ce8fb56e73bb10efc48d2d9ac9e14b48800c4203d19901be73f06e2ff54b7800",
   );
   assert.equal(new Set(commandLines).size, commandLines.length, "canonical lifecycle must be duplicate-free");
   assert.equal(
@@ -122,10 +122,10 @@ test("manifest preserves parity and freezes the exact deduplicated lifecycle", (
       ({ executable, argv }) => `${executable} ${argv.join(" ")}`,
     ),
   ];
-  assert.equal(parityLines.length, 196);
+  assert.equal(parityLines.length, 225);
   assert.equal(
     createHash("sha256").update(parityLines.join("\n")).digest("hex"),
-    "ce5b6877f9e08c09287be53a30c4c5fbf772583c4a710711ed7e5e0ddac1e4a9",
+    "b7bfdccd9e8b377e782ffc2282c8526676bb37259ba7441c2e00fc232180236a",
     "deduplication must preserve the frozen pre-expansion baseline while registering new suites additively",
   );
   assert.ok(
@@ -133,6 +133,173 @@ test("manifest preserves parity and freezes the exact deduplicated lifecycle", (
       ({ argv }) => argv.at(-1) === "tests/module-boundaries.mts",
     ),
   );
+});
+
+test("enterprise sourcing suites are each registered in exactly one lifecycle phase", () => {
+  const expectedLifecycleIds = [
+    "agent-framework-pin-rotation",
+    "observability",
+    "ai-runtime-binding",
+    "ai-runtime-binding-service",
+    "ai-runtime-binding-admin-route",
+    "ai-runtime-binding-settings",
+    "need-ingress-authority",
+    "need-ingress",
+    "need-ingress-admin-route",
+    "need-ingress-settings",
+    "requisition-parse",
+    "requisition-parse-route",
+    "campaign-create",
+    "sourcing-loop-worker",
+    "sourcing-batch-authority",
+    "sourcing-batch-worker",
+    "sourcing-agent-client",
+    "requisition-input-retention",
+    "requisition-input-retention-worker",
+    "sourcing-activation-gate",
+    "capacity-release-gate",
+    "internal-sourcing-execution-route",
+    "tavily-autonomous-runtime",
+    "autonomous-web-sourcing-job",
+  ];
+  const lifecycleIds = ["pretest", "application", "posttest"].flatMap((group) =>
+    resolveTestGroup(testManifest, group).map(({ id }) => id),
+  );
+  for (const id of expectedLifecycleIds) {
+    assert.equal(
+      lifecycleIds.filter((candidate) => candidate === id).length,
+      1,
+      `${id} lifecycle registration`,
+    );
+  }
+
+  const mockedRouteIds = [
+    "ai-runtime-binding-admin-route",
+    "need-ingress-admin-route",
+    "requisition-parse-route",
+    "internal-sourcing-execution-route",
+  ];
+  for (const id of mockedRouteIds) {
+    const command = testManifest.commands.find((candidate) => candidate.id === id);
+    assert.deepEqual(command, {
+      id,
+      executable: "node",
+      argv: [
+        "--experimental-test-module-mocks",
+        "--import",
+        "tsx",
+        "--test",
+        `tests/${id}.mts`,
+      ],
+    });
+  }
+
+  const expectedDatabaseIds = [
+    "gotrue-active-identity-integration",
+    "agent-framework-pin-rotation-db",
+    "ai-runtime-binding-db",
+    "need-ingress-db",
+    "need-ingress-credential-rollback-db",
+    "requisition-parse-db",
+    "requisition-parse-reconciliation-db",
+    "campaign-create-db",
+    "sourcing-batch-db",
+    "sourcing-result-durability-db",
+    "requisition-input-retention-db",
+    "autonomous-web-sourcing-db",
+  ];
+  const databaseIds = resolveTestGroup(testManifest, "database").map(({ id }) => id);
+  for (const id of expectedDatabaseIds) {
+    assert.equal(
+      databaseIds.filter((candidate) => candidate === id).length,
+      1,
+      `${id} database registration`,
+    );
+  }
+
+  assert.equal(
+    resolveTestGroup(testManifest, "framework").filter(
+      ({ id }) => id === "agent-framework-pin-rotation",
+    ).length,
+    1,
+  );
+  const securityIds = new Set(resolveTestGroup(testManifest, "security").map(({ id }) => id));
+  for (const id of [
+    "ai-runtime-binding",
+    "ai-runtime-binding-admin-route",
+    "need-ingress-authority",
+    "need-ingress-admin-route",
+    "requisition-parse-route",
+    "sourcing-batch-authority",
+    "sourcing-activation-gate",
+    "internal-sourcing-execution-route",
+    "tavily-autonomous-runtime",
+    "autonomous-web-sourcing-job",
+  ]) {
+    assert.ok(securityIds.has(id), `${id} security registration`);
+  }
+});
+
+test("CI executes the canonical database manifest exactly once", () => {
+  const databaseJob = ciWorkflow.match(/\n  database-security:[\s\S]*?\n  supply-chain:/)?.[0] ?? "";
+  assert.ok(databaseJob, "database-security job is missing");
+  assert.equal((databaseJob.match(/run:\s+npm run test:database/g) ?? []).length, 1);
+  assert.doesNotMatch(databaseJob, /run:\s+npm run test:db-/);
+});
+
+test("full-migration database harnesses install GoTrue authority before migrations", () => {
+  const ownerFixture = readFileSync("tests/db/gotrue-owner-phase-fixture.sql", "utf8");
+  const assertionFixture = readFileSync("tests/db/gotrue-lifecycle-fixture.sql", "utf8");
+  const installer = readFileSync("tests/db/install-gotrue-test-authority.sh", "utf8");
+  assert.match(ownerFixture, /alter table auth\.users add column if not exists deleted_at timestamptz/);
+  assert.match(ownerFixture, /alter table auth\.users add column if not exists banned_until timestamptz/);
+  assert.match(ownerFixture, /alter table auth\.users enable row level security/);
+  assert.match(ownerFixture, /alter table auth\.users no force row level security/);
+  assert.match(installer, /ARIA_DB_TEST_ROLE=supabase_admin[\s\S]*auth-owner-bridges\.sql/);
+  assert.doesNotMatch(assertionFixture, /alter table auth\.users/);
+  assert.match(assertionFixture, /auth_identity_lifecycle_schema_ready\(\)/);
+
+  const fullMigrationGlob = "supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql";
+  for (const command of resolveTestGroup(testManifest, "database")) {
+    if (command.executable !== "bash" || command.id === "test-db-privileges") continue;
+    const path = command.argv.at(-1);
+    assert.ok(path, `${command.id} script path`);
+    const source = readFileSync(path, "utf8");
+    if (command.id === "gotrue-active-identity-integration") {
+      assert.match(source, /supabase\/gotrue:v2\.189\.0@sha256:385184459f57569c54c25209f51f3b2be99ddd7c4ce9e3555b5d3eea8447b7cf/);
+      assert.match(source, /run_http_probe provision/);
+      assert.equal((source.match(/run_http_probe expect-revoked/g) ?? []).length, 3);
+      assert.doesNotMatch(source, /tests\/db\/gotrue-(?:owner-phase|lifecycle)-fixture\.sql/);
+      continue;
+    }
+    const appliesEveryMigration = source.includes(fullMigrationGlob) &&
+      !/10#\$sequence\s*>\s*56/.test(source);
+    if (appliesEveryMigration) {
+      const installerCall = source.indexOf("aria_install_gotrue_test_authority");
+      const migrationStart = path.endsWith("agent-framework-pin-rotation-db.sh")
+        ? source.indexOf("apply_pre_rotation_migrations postgres")
+        : source.indexOf(`for migration in ${fullMigrationGlob}`);
+      const assertionCall = source.indexOf("tests/db/gotrue-lifecycle-fixture.sql");
+      assert.match(
+        source,
+        /source tests\/db\/install-gotrue-test-authority\.sh/,
+        `${command.id} must source the shared GoTrue owner-phase installer`,
+      );
+      assert.ok(
+        installerCall >= 0 && migrationStart > installerCall,
+        `${command.id} must install GoTrue authority before application migrations`,
+      );
+      assert.match(
+        source,
+        /tests\/db\/gotrue-lifecycle-fixture\.sql/,
+        `${command.id} must assert the healthy GoTrue schema after migration 0061`,
+      );
+      assert.ok(
+        assertionCall > migrationStart,
+        `${command.id} must run the GoTrue assertion fixture after migrations`,
+      );
+    }
+  }
 });
 
 test("manifest validation rejects malformed authority", () => {
@@ -178,12 +345,12 @@ test("package lifecycle is wired to one manifest phase each", () => {
 
 test("named manifest groups freeze their recursive baselines", () => {
   const expected = {
-    security: [29, "695034f2928b18033634d9617128526865b9471e5e03efd79c2a36fda6fe5ccd"],
-    framework: [16, "2d9fa255f4c284f3701105080f02ed2369bfb7ac71751d7c08616fff828a45be"],
-    "framework-adapter": [1, "4228d976b2e63e34f97bf910208ffcf3263da48861744f187eef8781c5cb9f48"],
+    security: [49, "14fceef3dc70432c1e948c87b091f6d502c610d48f3a6c8de0a9e00d146b6c29"],
+    framework: [18, "13dcf09cdf39c3c06d0b42b918a4e7ddb45752ba595cb030fadec77d2f32fa1e"],
+    "framework-adapter": [2, "93c2091d26e285e65c8abbe4315913998f0528b61dc1089574755d997cc28bc2"],
     "candidate-erasure": [2, "42ee1e6bf280c482f01bcfdb41d601ea8cdaaeb8891a210777901771f56212b7"],
     "owner-recovery": [2, "2ac6a4c9232561d07292eefd046f87d301995becd14048d270972adcbc14ded3"],
-    database: [18, "ac603cb3e1f38c3dd6ede282ae26c0e1cb6a8fdb7d3015d9448358ae50bba0b6"],
+    database: [30, "2a77ad32ab08d2c6bfe7c942a9676f0c368ef1675d32e2f4494de433dd4ad678"],
     recovery: [2, "2ac6a4c9232561d07292eefd046f87d301995becd14048d270972adcbc14ded3"],
     obscura: [1, "c3fe29ff86819660733b568917fd0e39d09d275d94261387747da26da852f544"],
     "authority-regression": [9, "6e51deb44286815d3e0f6cf75e59a603b79da3823dfa876a0fc1c030e2b740a4"],
@@ -283,8 +450,7 @@ test("canonical execution is shell-free and fail-fast", () => {
   assert.equal(result.ok, false);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].executable, process.execPath);
-  assert.equal(calls[0].argv[0], createRequire(import.meta.url).resolve("tsx/cli"));
-  assert.deepEqual(calls[0].argv.slice(1), commands[0].argv);
+  assert.deepEqual(calls[0].argv, ["--import", "tsx", ...commands[0].argv]);
   assert.equal(calls[0].options.shell, false);
 });
 

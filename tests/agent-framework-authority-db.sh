@@ -23,12 +23,16 @@ psql_stdin() {
     --env PGPASSWORD="$bootstrap_password" \
     --entrypoint psql \
     "$client_image" \
-    -X -q -v ON_ERROR_STOP=1 -h db -U postgres -d postgres "$@"
+    -X -q -v ON_ERROR_STOP=1 -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d postgres "$@"
 }
+
+source tests/db/install-gotrue-test-authority.sh
+aria_install_gotrue_test_authority
 
 for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
   psql_stdin < "$migration" >/dev/null
 done
+psql_stdin -q < tests/db/gotrue-lifecycle-fixture.sql
 
 psql_stdin <<'SQL'
 insert into auth.users (
@@ -72,13 +76,13 @@ insert into public.agent_framework_instances (
 ) values
   (
     '71000000-0000-4000-8000-000000000001','11111111-1111-4111-8111-111111111111',
-    'deerflow','deerflow-workspace-a','fabadae4168db81f0eaaf62f209050f978e2f691',
+    'deerflow','deerflow-workspace-a','3c0a45ad772cdba388009b8d5ecad5e48cd22429',
     'registry.internal/deerflow@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
     'dedicated-worker','ready',repeat('1',64),now(),'a3000000-0000-4000-8000-000000000003'
   ),
   (
     '72000000-0000-4000-8000-000000000002','11111111-1111-4111-8111-111111111111',
-    'flowise','flowise-workspace-a','bb773ffa710bd22639c4ba2643413a0ea2b679d3',
+    'flowise','flowise-workspace-a','ed9e100fb71643cd3922b005908f9732bc0e07dc',
     'registry.internal/flowise@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
     'instance-per-workspace','ready',repeat('2',64),now(),'a3000000-0000-4000-8000-000000000003'
   );
@@ -276,7 +280,7 @@ select aria_agent_framework_test.assert_scalar(
   'configuration drift cannot mutate a registered framework heartbeat',
   $$select public.record_agent_framework_readiness(
       '11111111-1111-4111-8111-111111111111','71000000-0000-4000-8000-000000000001',
-      'fabadae4168db81f0eaaf62f209050f978e2f691',
+      '3c0a45ad772cdba388009b8d5ecad5e48cd22429',
       'registry.internal/deerflow@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
       'dedicated-worker',repeat('0',64),repeat('7',64),false
     )->>'status'$$,
@@ -294,7 +298,7 @@ select aria_agent_framework_test.assert_scalar(
   'an exact unhealthy heartbeat degrades and clears fresh readiness',
   $$select public.record_agent_framework_readiness(
       '11111111-1111-4111-8111-111111111111','71000000-0000-4000-8000-000000000001',
-      'fabadae4168db81f0eaaf62f209050f978e2f691',
+      '3c0a45ad772cdba388009b8d5ecad5e48cd22429',
       'registry.internal/deerflow@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
       'dedicated-worker',repeat('6',64),repeat('7',64),false
     )->>'status'$$,
@@ -312,7 +316,7 @@ select aria_agent_framework_test.assert_scalar(
   'an exact healthy heartbeat restores the same registered instance',
   $$select public.record_agent_framework_readiness(
       '11111111-1111-4111-8111-111111111111','71000000-0000-4000-8000-000000000001',
-      'fabadae4168db81f0eaaf62f209050f978e2f691',
+      '3c0a45ad772cdba388009b8d5ecad5e48cd22429',
       'registry.internal/deerflow@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
       'dedicated-worker',repeat('6',64),repeat('8',64),true
     )->>'status'$$,
@@ -340,7 +344,7 @@ select aria_agent_framework_test.assert_scalar(
   'a direct heartbeat cannot reopen a paused instance',
   $$select public.record_agent_framework_readiness(
       '11111111-1111-4111-8111-111111111111','71000000-0000-4000-8000-000000000001',
-      'fabadae4168db81f0eaaf62f209050f978e2f691',
+      '3c0a45ad772cdba388009b8d5ecad5e48cd22429',
       'registry.internal/deerflow@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
       'dedicated-worker',repeat('6',64),repeat('9',64),true
     )->>'status'$$,
@@ -617,10 +621,11 @@ select aria_agent_framework_test.assert_scalar(
 );
 select aria_agent_framework_test.assert_scalar(
   'active memory egress lease blocks a concurrent metadata mutation',
-  $$select public.mutate_agent_memory(
+  $$select public.mutate_agent_memory_with_candidate_provenance(
       '11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001',
       '61000000-0000-4000-8000-000000000001','75000000-0000-4000-8000-000000000005',
-      'a1000000-0000-4000-8000-000000000001',1,'edit',null,null,null,null,true,false,null
+      'a1000000-0000-4000-8000-000000000001',1,'edit',null,null,null,null,true,false,null,
+      false,null,null
     )->>'status'$$,
   'memory_in_use'
 );
@@ -671,10 +676,11 @@ select aria_agent_framework_test.assert_scalar(
 savepoint after_memory_egress_release;
 select aria_agent_framework_test.assert_scalar(
   'memory mutation resumes after the exact egress lease is released',
-  $$select public.mutate_agent_memory(
+  $$select public.mutate_agent_memory_with_candidate_provenance(
       '11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001',
       '61000000-0000-4000-8000-000000000001','75000000-0000-4000-8000-000000000005',
-      'a1000000-0000-4000-8000-000000000001',1,'edit',null,null,null,null,true,false,null
+      'a1000000-0000-4000-8000-000000000001',1,'edit',null,null,null,null,true,false,null,
+      false,null,null
     )->>'status'$$,
   'updated'
 );
@@ -976,6 +982,20 @@ select aria_agent_framework_test.assert_scalar(
   'persistence_unverified'
 );
 reset role;
+select aria_agent_framework_test.assert_scalar(
+  'staged framework candidates record exact HMAC provenance',
+  $$select count(*)::text
+      from public.candidate_payload_provenance provenance
+     where provenance.workspace_id='11111111-1111-4111-8111-111111111111'
+       and provenance.framework_run_id=(
+         select (result->>'run_id')::uuid from aria_framework_claim
+       )
+       and provenance.identifier_kind='candidate_id'
+       and provenance.identifier_hmac=public.candidate_erasure_identifier_hmac(
+         '11111111-1111-4111-8111-111111111111', 'candidate_id', 'candidate-1'
+       )$$,
+  '1'
+);
 update public.workspace_state
 set state=jsonb_set(state,'{candidates}','[{"id":"candidate-1","campaignId":"campaign-a","sourcePlatform":"GitHub","sourceQuery":"language:typescript location:montreal"}]'::jsonb),
     updated_at=now()
@@ -1075,10 +1095,11 @@ begin;
 select aria_agent_framework_test.set_claims(null,'service_role');
 set local role service_role;
 select 'RACE_MUTATE=' || (
-  public.mutate_agent_memory(
+  public.mutate_agent_memory_with_candidate_provenance(
     '11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001',
     '61000000-0000-4000-8000-000000000001','75000000-0000-4000-8000-000000000005',
-    'a1000000-0000-4000-8000-000000000001',1,'edit',null,null,null,null,true,false,null
+    'a1000000-0000-4000-8000-000000000001',1,'edit',null,null,null,null,true,false,null,
+    false,null,null
   )->>'status'
 );
 commit;
@@ -1125,10 +1146,11 @@ select aria_agent_framework_test.set_claims(null,'service_role');
 set local role service_role;
 select aria_agent_framework_test.assert_scalar(
   'mutation proceeds after the race egress lease is released',
-  $$select public.mutate_agent_memory(
+  $$select public.mutate_agent_memory_with_candidate_provenance(
       '11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001',
       '61000000-0000-4000-8000-000000000001','75000000-0000-4000-8000-000000000005',
-      'a1000000-0000-4000-8000-000000000001',1,'edit',null,null,null,null,true,false,null
+      'a1000000-0000-4000-8000-000000000001',1,'edit',null,null,null,null,true,false,null,
+      false,null,null
     )->>'status'$$,
   'updated'
 );

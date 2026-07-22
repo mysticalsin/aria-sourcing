@@ -3,12 +3,14 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { constants as fsConstants } from "node:fs";
-import { lstat, mkdir, open, readFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, open, readFile, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 
 import {
   APP_BY_ROLE,
+  DEERFLOW_RUNTIME_IDENTITY,
   FLY_PLAN_SCHEMA,
   RELEASE_DISABLED_ROLES,
   ROLE_ORDER,
@@ -23,6 +25,7 @@ import {
   validateMachineInventory,
   validateManifest,
 } from "./operator-core.mjs";
+import { validateAgentFrameworkProvenance } from "./provenance-policy.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(HERE, "../../..");
@@ -32,6 +35,31 @@ const SAFE_ID = /^[a-z0-9][a-z0-9-]{0,127}$/;
 const REQUIRED_FLY_CHECKS = new Set(["flowise-db", "flowise-redis", "flowise-worker"]);
 const MAX_JSON_BYTES = 4 * 1024 * 1024;
 const MAX_EVIDENCE_BYTES = 32 * 1024 * 1024;
+const PROVENANCE_COMPONENT_BY_ROLE = Object.freeze({
+  "deerflow-db": "postgres",
+  "flowise-db": "postgres",
+  "deerflow-redis": "redis",
+  "flowise-redis": "redis",
+  "model-gateway": "model-gateway",
+  deerflow: "deerflow",
+  flowise: "flowise",
+  "flowise-worker": "flowise-worker",
+  "deerflow-adapter": "adapter",
+  "flowise-adapter": "adapter",
+});
+const SAFE_CHILD_ENVIRONMENT = Object.freeze([
+  "HTTPS_PROXY",
+  "HTTP_PROXY",
+  "NO_PROXY",
+  "SSL_CERT_DIR",
+  "SSL_CERT_FILE",
+  "NODE_EXTRA_CA_CERTS",
+  "LANG",
+  "LC_ALL",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+]);
 
 function fail(message) {
   throw new Error(message);
@@ -118,14 +146,30 @@ export async function runCommand(command, args, {
   timeoutMs = 120_000,
   maxBytes = MAX_JSON_BYTES,
   allowFailure = false,
+  env = {},
+  inheritEnv = true,
 } = {}) {
   if (typeof command !== "string" || !Array.isArray(args) || args.some((value) => typeof value !== "string")) {
     fail("operator command is invalid");
   }
+  if (
+    !env || typeof env !== "object" || Array.isArray(env) || Object.getPrototypeOf(env) !== Object.prototype ||
+    Object.entries(env).some(([key, value]) =>
+      !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || typeof value !== "string" || value.includes("\0"))
+  ) fail("operator command environment is invalid");
+  if (typeof inheritEnv !== "boolean") fail("operator command environment mode is invalid");
+  const baseEnvironment = inheritEnv
+    ? process.env
+    : Object.fromEntries(SAFE_CHILD_ENVIRONMENT
+      .filter((name) => typeof process.env[name] === "string")
+      .map((name) => [name, process.env[name]]));
+  if (!inheritEnv && typeof baseEnvironment.PATH !== "string") {
+    baseEnvironment.PATH = process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin";
+  }
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
-      env: { ...process.env, NO_COLOR: "1" },
+      env: { ...baseEnvironment, ...env, NO_COLOR: "1" },
       shell: false,
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -168,6 +212,46 @@ export async function runCommand(command, args, {
   });
 }
 
+export async function withFlyRegistryAuthentication(runner = runCommand, callback) {
+  if (typeof runner !== "function" || typeof callback !== "function") fail("Fly registry authentication scope is invalid");
+  const temporaryHome = await mkdtemp(path.join(os.tmpdir(), "aria-fly-registry-"));
+  const dockerConfig = path.join(temporaryHome, ".docker");
+  let primaryError;
+  try {
+    await chmod(temporaryHome, 0o700);
+    await mkdir(dockerConfig, { mode: 0o700 });
+    const scopeEnvironment = Object.freeze({ HOME: temporaryHome, DOCKER_CONFIG: dockerConfig });
+    const authenticatedRunner = async (command, args, options = {}) => {
+      if (Object.hasOwn(options.env ?? {}, "FLY_API_TOKEN")) fail("registry consumer cannot receive the Fly API token");
+      await runner("flyctl", ["auth", "docker"], {
+        inheritEnv: false,
+        env: { ...scopeEnvironment, FLY_API_TOKEN: flyToken() },
+      });
+      return runner(command, args, {
+        ...options,
+        inheritEnv: false,
+        env: { ...(options.env ?? {}), ...scopeEnvironment },
+      });
+    };
+    return await callback(authenticatedRunner);
+  } catch (error) {
+    primaryError = error;
+    throw error;
+  } finally {
+    try {
+      await rm(temporaryHome, { recursive: true, force: true });
+    } catch (cleanupError) {
+      if (primaryError) {
+        throw new AggregateError(
+          [primaryError, cleanupError],
+          `${primaryError instanceof Error ? primaryError.message : "registry operation failed"}; credential cleanup failed`,
+        );
+      }
+      throw cleanupError;
+    }
+  }
+}
+
 function jsonDocuments(output, label) {
   const trimmed = output.trim();
   if (!trimmed) fail(`${label} evidence is empty`);
@@ -201,68 +285,93 @@ function statementBindsImage(statement, expectedDigest) {
     subject && typeof subject === "object" && subject.digest?.sha256 === expectedDigest);
 }
 
-function containsExactString(value, expected, depth = 0) {
-  if (depth > 30) return false;
-  if (value === expected) return true;
-  if (Array.isArray(value)) return value.some((item) => containsExactString(item, expected, depth + 1));
-  if (value && typeof value === "object") {
-    return Object.values(value).some((item) => containsExactString(item, expected, depth + 1));
+function validateSpdxPredicate(predicate) {
+  record(predicate, "SBOM predicate");
+  const creationInfo = predicate.creationInfo;
+  const packages = predicate.packages;
+  const files = predicate.files;
+  if (
+    !/^SPDX-2\.[0-9]+$/.test(predicate.spdxVersion ?? "") ||
+    predicate.SPDXID !== "SPDXRef-DOCUMENT" ||
+    predicate.dataLicense !== "CC0-1.0" ||
+    typeof predicate.name !== "string" || !predicate.name ||
+    typeof predicate.documentNamespace !== "string" || !predicate.documentNamespace ||
+    !creationInfo || typeof creationInfo !== "object" || Array.isArray(creationInfo) ||
+    typeof creationInfo.created !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(creationInfo.created) ||
+    !Array.isArray(creationInfo.creators) || creationInfo.creators.length < 1 ||
+    !creationInfo.creators.every((creator) => typeof creator === "string" && creator.trim() && creator.length <= 512) ||
+    (packages !== undefined && !Array.isArray(packages)) ||
+    (files !== undefined && !Array.isArray(files)) ||
+    (!Array.isArray(packages) && !Array.isArray(files)) ||
+    (packages?.length ?? 0) + (files?.length ?? 0) < 1
+  ) fail("SBOM predicate is incomplete");
+  for (const item of packages ?? []) {
+    record(item, "SBOM package");
+    if (!/^SPDXRef-[A-Za-z0-9.-]+$/.test(item.SPDXID ?? "") || typeof item.name !== "string" || !item.name.trim()) {
+      fail("SBOM package is invalid");
+    }
   }
-  return false;
+  for (const item of files ?? []) {
+    record(item, "SBOM file");
+    if (!/^SPDXRef-[A-Za-z0-9.-]+$/.test(item.SPDXID ?? "") || typeof item.fileName !== "string" || !item.fileName.trim()) {
+      fail("SBOM file is invalid");
+    }
+  }
 }
 
-function containsExactParameter(value, expectedKey, expectedValue, depth = 0) {
-  if (depth > 30 || !value || typeof value !== "object") return false;
-  if (Array.isArray(value)) {
-    return value.some((item) => containsExactParameter(item, expectedKey, expectedValue, depth + 1));
-  }
-  for (const [key, item] of Object.entries(value)) {
-    if ((key === expectedKey || key === `build-arg:${expectedKey}`) && item === expectedValue) return true;
-    if (containsExactParameter(item, expectedKey, expectedValue, depth + 1)) return true;
-  }
-  return false;
-}
-
-function validateAttestation(output, image, label, { sourceCommit, runtimeParameters } = {}) {
+function validateAttestation(output, image, label, { predicateValidator, predicateLabel = "predicate" } = {}) {
   const expectedDigest = image.split("@sha256:")[1];
   const statements = attestationStatements(output, label);
   const bound = statements.filter((statement) => statementBindsImage(statement, expectedDigest));
   if (bound.length < 1) fail(`${label} does not bind the reviewed image digest`);
-  if (sourceCommit && !bound.some((statement) => containsExactString(statement.predicate, sourceCommit))) {
-    fail(`${label} does not bind the reviewed source commit`);
-  }
-  if (runtimeParameters && !bound.some((statement) => {
-    const roots = [
-      statement.predicate?.invocation?.parameters,
-      statement.predicate?.buildDefinition?.externalParameters,
-    ].filter((value) => value && typeof value === "object" && !Array.isArray(value));
-    return roots.some((root) => Object.entries(runtimeParameters).every(([key, value]) =>
-      containsExactParameter(root, key, value)));
-  })) {
-    fail(`${label} does not bind the audited DeerFlow runtime provenance`);
-  }
+  if (predicateValidator && !bound.some((statement) => {
+    try {
+      predicateValidator(statement.predicate);
+      return true;
+    } catch {
+      return false;
+    }
+  })) fail(`${label} contains an invalid ${predicateLabel}`);
 }
 
-function validateVulnerabilityScan(output) {
+function validateVulnerabilityScan(output, expectedImage) {
   const scan = parseJson(output, "Trivy scan");
   record(scan, "Trivy scan");
-  if (scan.Results !== null && !Array.isArray(scan.Results)) fail("Trivy scan results are invalid");
+  if (scan.SchemaVersion !== 2 || scan.ArtifactName !== expectedImage) fail("Trivy scan identity is invalid");
+  if (!Array.isArray(scan.Results) || scan.Results.length < 1) fail("Trivy scan results are invalid");
   let blocked = 0;
-  for (const result of scan.Results ?? []) {
-    if (result?.Vulnerabilities !== null && result?.Vulnerabilities !== undefined && !Array.isArray(result.Vulnerabilities)) {
-      fail("Trivy vulnerability results are invalid");
+  for (const result of scan.Results) {
+    record(result, "Trivy result");
+    if (typeof result.Target !== "string" || !result.Target.trim() || result.Target.length > 4096) {
+      fail("Trivy result target is invalid");
     }
-    for (const vulnerability of result?.Vulnerabilities ?? []) {
-      if (new Set(["HIGH", "CRITICAL"]).has(vulnerability?.Severity)) blocked += 1;
+    for (const field of ["Vulnerabilities", "Secrets", "Misconfigurations"]) {
+      const findingLabel = field === "Vulnerabilities" ? "vulnerability" : field === "Secrets" ? "secret" : "misconfiguration";
+      if (result[field] !== null && result[field] !== undefined && !Array.isArray(result[field])) {
+        fail(`Trivy ${field.toLowerCase()} results are invalid`);
+      }
+      for (const finding of result[field] ?? []) {
+        record(finding, `Trivy ${findingLabel}`);
+        const identifier = field === "Vulnerabilities"
+          ? finding.VulnerabilityID
+          : field === "Secrets" ? finding.RuleID : finding.ID;
+        if (
+          typeof identifier !== "string" || !identifier.trim() || identifier.length > 512 ||
+          !new Set(["HIGH", "CRITICAL"]).has(finding.Severity)
+        ) fail(`Trivy ${findingLabel} is invalid`);
+      }
+      blocked += (result[field] ?? []).length;
     }
   }
-  if (blocked > 0) fail(`Trivy blocked ${blocked} high or critical vulnerabilities`);
+  if (blocked > 0) fail(`Trivy blocked ${blocked} vulnerabilities, secrets, or misconfigurations`);
 }
 
-export async function verifySupplyChainForImage(role, image, runner = runCommand, deerflowRuntime) {
+export async function verifySupplyChainForImage(role, image, runner = runCommand, deerflowRuntime, releaseSourceCommit) {
+  if (!/^[0-9a-f]{40}$/.test(releaseSourceCommit ?? "")) fail("reviewed release source commit is invalid");
   const identityArguments = [
     "--certificate-identity", image.certificateIdentity,
     "--certificate-oidc-issuer", image.certificateIssuer,
+    "--certificate-github-workflow-sha", releaseSourceCommit,
   ];
   const signature = await runner("cosign", ["verify", ...identityArguments, "--output", "json", image.ref], {
     maxBytes: MAX_EVIDENCE_BYTES,
@@ -272,32 +381,35 @@ export async function verifySupplyChainForImage(role, image, runner = runCommand
   const sbom = await runner("cosign", [
     "verify-attestation", ...identityArguments, "--type", "spdxjson", "--output", "json", image.ref,
   ], { maxBytes: MAX_EVIDENCE_BYTES });
-  validateAttestation(sbom.stdout, image.ref, `${role} SBOM`);
+  validateAttestation(sbom.stdout, image.ref, `${role} SBOM`, {
+    predicateValidator: validateSpdxPredicate,
+    predicateLabel: "SBOM predicate",
+  });
 
   const provenance = await runner("cosign", [
     "verify-attestation", ...identityArguments, "--type", "slsaprovenance", "--output", "json", image.ref,
   ], { maxBytes: MAX_EVIDENCE_BYTES });
-  const runtimeParameters = role === "deerflow" ? {
-    DEERFLOW_PATCHED_RUNS_SHA256: deerflowRuntime?.patchedRunsSha256,
-    DEERFLOW_CLEANUP_GUARD_SHA256: deerflowRuntime?.cleanupGuardSha256,
-    DEERFLOW_RUNTIME_POLICY_SHA256: deerflowRuntime?.runtimePolicySha256,
-    DEERFLOW_RUNTIME_CONFIG_SHA256: deerflowRuntime?.runtimeConfigSha256,
-    DEERFLOW_DATABASE_BACKEND: deerflowRuntime?.databaseBackend,
-    DEERFLOW_RUN_EVENTS_BACKEND: deerflowRuntime?.runEventsBackend,
-    DEERFLOW_STREAM_BRIDGE_TYPE: deerflowRuntime?.streamBridgeType,
-  } : undefined;
-  if (runtimeParameters && Object.values(runtimeParameters).some((value) => typeof value !== "string" || !value)) {
-    fail("DeerFlow runtime provenance identity is incomplete");
+  const component = PROVENANCE_COMPONENT_BY_ROLE[role];
+  if (!component) fail("reviewed provenance component is missing");
+  if (component === "deerflow") {
+    exactKeys(deerflowRuntime, Object.keys(DEERFLOW_RUNTIME_IDENTITY), "reviewed DeerFlow runtime identity");
+    for (const [key, value] of Object.entries(DEERFLOW_RUNTIME_IDENTITY)) {
+      if (deerflowRuntime[key] !== value) fail("reviewed DeerFlow runtime identity is invalid");
+    }
   }
   validateAttestation(provenance.stdout, image.ref, `${role} provenance`, {
-    sourceCommit: image.sourceCommit,
-    runtimeParameters,
+    predicateValidator: (predicate) => validateAgentFrameworkProvenance(predicate, {
+      component,
+      releaseSha: releaseSourceCommit,
+    }),
+    predicateLabel: "provenance predicate",
   });
 
   const scan = await runner("trivy", [
-    "image", "--quiet", "--exit-code", "0", "--severity", "HIGH,CRITICAL", "--format", "json", image.ref,
+    "image", "--quiet", "--exit-code", "0", "--scanners", "vuln,secret,misconfig",
+    "--severity", "HIGH,CRITICAL", "--format", "json", image.ref,
   ], { timeoutMs: 10 * 60_000, maxBytes: MAX_EVIDENCE_BYTES });
-  validateVulnerabilityScan(scan.stdout);
+  validateVulnerabilityScan(scan.stdout, image.ref);
 
   return Object.freeze({
     signatureSha256: hashText(signature.stdout),
@@ -309,7 +421,10 @@ export async function verifySupplyChainForImage(role, image, runner = runCommand
 
 function flyToken(environment = process.env) {
   const value = environment.FLY_API_TOKEN;
-  if (typeof value !== "string" || value.length < 20 || value.length > 4096 || /\s|\0/.test(value)) {
+  if (
+    typeof value !== "string" || value.length < 20 || value.length > 4096 || /[\r\n\t\0]/.test(value) ||
+    !/^(?:FlyV1 [A-Za-z0-9_-]+|fm2_[A-Za-z0-9_-]+|[A-Za-z0-9_-]+)$/.test(value)
+  ) {
     fail("FLY_API_TOKEN is missing or invalid");
   }
   return value;
@@ -482,11 +597,15 @@ export async function prepareDeployment({ manifestFile, planFile }, dependencies
   const configSha256ByRole = await validateFlyConfigs(runner);
   const supplyChainEvidence = {};
   for (const role of ROLE_ORDER) {
-    supplyChainEvidence[role] = await verifySupplyChainForImage(
-      role,
-      manifest.images[role],
+    supplyChainEvidence[role] = await withFlyRegistryAuthentication(
       runner,
-      role === "deerflow" ? manifest.deerflowRuntime : undefined,
+      (authenticatedRunner) => verifySupplyChainForImage(
+        role,
+        manifest.images[role],
+        authenticatedRunner,
+        role === "deerflow" ? manifest.deerflowRuntime : undefined,
+        manifest.sourceReleaseSha,
+      ),
     );
   }
   const apps = await organizationApps(manifest.organization, apiOptions);

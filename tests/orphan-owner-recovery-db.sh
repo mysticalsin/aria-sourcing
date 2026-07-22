@@ -24,7 +24,7 @@ psql_stdin() {
     --env PGPASSWORD="$postgres_password" \
     --entrypoint psql \
     "$client_image" \
-    -X -q -v ON_ERROR_STOP=1 -h db -U postgres -d postgres "$@"
+    -X -q -v ON_ERROR_STOP=1 -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d postgres "$@"
 }
 
 psql_owner_stdin() {
@@ -36,17 +36,15 @@ psql_owner_stdin() {
     -X -q -v ON_ERROR_STOP=1 -h db -U supabase_admin -d postgres "$@"
 }
 
+source tests/db/install-gotrue-test-authority.sh
+aria_install_gotrue_test_authority
+
 for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
   psql_stdin < "$migration" >/dev/null
 done
+psql_stdin -q < tests/db/gotrue-lifecycle-fixture.sql
 
 psql_owner_stdin <<'SQL'
--- GoTrue owns these columns in the deployed schema. The minimal database image
--- starts from a deliberately old Auth bootstrap, so add only the fields needed
--- to exercise the 0031 runtime guard.
-alter table auth.users add column if not exists banned_until timestamptz;
-alter table auth.users add column if not exists deleted_at timestamptz;
-
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, confirmed_at,
   raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
@@ -219,7 +217,102 @@ begin
   end loop;
 end
 $privilege_proof$;
+
+do $bridge_contract_proof$
+declare
+  public_definition text;
+  recovery_bridge oid :=
+    to_regprocedure('auth.aria_orphan_owner_recovery_identity_status(uuid,text,text)');
+  role_name text;
+begin
+  select pg_get_functiondef(
+    'public.recover_orphan_workspace_owner(uuid,uuid,text,text,text,text,text,text,uuid,text,text)'::regprocedure
+  ) into public_definition;
+  if position('auth.aria_orphan_owner_recovery_identity_status' in public_definition) = 0
+     or position('lock table auth.users' in lower(public_definition)) > 0
+     or position('from auth.users' in lower(public_definition)) > 0
+     or position('auth.users%rowtype' in lower(public_definition)) > 0
+     or position('auth_user_record' in lower(public_definition)) > 0
+     or position('auth_user_json' in lower(public_definition)) > 0
+     or position('auth_user_count' in lower(public_definition)) > 0
+     or position('banned_until_value' in lower(public_definition)) > 0 then
+    raise exception 'public recovery authority did not delegate only the Auth-owner decision';
+  end if;
+
+  if recovery_bridge is null or not exists (
+    select 1
+      from pg_catalog.pg_proc function_definition
+      join pg_catalog.pg_roles function_owner
+        on function_owner.oid = function_definition.proowner
+     where function_definition.oid = recovery_bridge
+       and function_owner.rolname = 'supabase_auth_admin'
+       and function_definition.prosecdef
+       and function_definition.provolatile = 'v'
+       and function_definition.proconfig =
+         array['search_path=pg_catalog, pg_temp']::text[]
+  ) then
+    raise exception 'recovery bridge metadata is not exact';
+  end if;
+
+  foreach role_name in array array[
+    'anon', 'authenticator', 'authenticated', 'service_role',
+    'postgres', 'supabase_auth_admin'
+  ] loop
+    if has_function_privilege(role_name, recovery_bridge, 'EXECUTE')
+       is distinct from (role_name in ('postgres', 'supabase_auth_admin')) then
+      raise exception 'unexpected recovery bridge execution privilege for %', role_name;
+    end if;
+  end loop;
+end
+$bridge_contract_proof$;
 SQL
+
+# The public authority must fail closed if an Auth-owner implementation ever
+# returns a status outside the reviewed finite contract, including NULL.
+psql_owner_stdin <<'SQL'
+create or replace function auth.aria_orphan_owner_recovery_identity_status(
+  p_profile_id uuid,
+  p_canonical_email text,
+  p_expected_identity_marker text
+)
+returns text
+language sql
+volatile
+security definer
+set search_path = pg_catalog, pg_temp
+as $aria_test_unknown_recovery_status$
+  select case current_setting('aria.test.bridge_status', true)
+    when 'null' then null
+    else current_setting('aria.test.bridge_status', true)
+  end
+$aria_test_unknown_recovery_status$;
+SQL
+
+psql_owner_stdin <<'SQL'
+begin;
+select set_config('aria.test.bridge_status', 'unknown_status', true);
+select aria_owner_recovery_test.set_claims('service_role');
+set local role service_role;
+select aria_owner_recovery_test.assert_sqlstate(
+  'an unknown Auth-owner bridge status fails closed',
+  $$select aria_owner_recovery_test.recover('31000000-0000-4000-8000-000000000112')$$,
+  array['55000']
+);
+rollback;
+
+begin;
+select set_config('aria.test.bridge_status', 'null', true);
+select aria_owner_recovery_test.set_claims('service_role');
+set local role service_role;
+select aria_owner_recovery_test.assert_sqlstate(
+  'a null Auth-owner bridge status fails closed',
+  $$select aria_owner_recovery_test.recover('31000000-0000-4000-8000-000000000113')$$,
+  array['55000']
+);
+rollback;
+SQL
+
+psql_owner_stdin < docker/bootstrap/auth-owner-bridges.sql >/dev/null
 
 # Adversarial topology and identity states fail before mutation.
 psql_owner_stdin <<'SQL'
@@ -402,8 +495,10 @@ select aria_owner_recovery_test.assert_sqlstate(
 );
 SQL
 
-# The migration is safe to reapply; replay remains exact and changed material conflicts.
+# The original migration and bridge migration are safe to reapply together;
+# replay remains exact and changed material conflicts.
 psql_stdin < supabase/migrations/0031_orphan_owner_recovery_authority.sql >/dev/null
+psql_stdin < supabase/migrations/0062_orphan_owner_recovery_auth_bridge.sql >/dev/null
 psql_owner_stdin <<'SQL'
 begin;
 select aria_owner_recovery_test.set_claims('service_role');
@@ -431,4 +526,58 @@ rollback;
 select count(*) = 1 from public.owner_recovery_receipts;
 SQL
 
-printf 'RESULT orphan-owner-recovery-db: topology=exact-only auth=confirmed-email-local non-banned=true non-deleted=true cas=workspace-profile-domain state=preserved mutation=two-fields receipt=append-only replay=exact privileges=service-rpc-only\n'
+# Rollback restores the exact direct-Auth 0031 definition and ACL; reapplying
+# 0062 restores the bridge boundary without changing the recovery data.
+psql_stdin < supabase/rollbacks/0062_orphan_owner_recovery_auth_bridge.sql >/dev/null
+psql_owner_stdin <<'SQL'
+do $rollback_proof$
+declare
+  definition text;
+  function_oid oid :=
+    to_regprocedure('public.recover_orphan_workspace_owner(uuid,uuid,text,text,text,text,text,text,uuid,text,text)');
+  role_name text;
+begin
+  select pg_get_functiondef(function_oid) into definition;
+  if position('lock table auth.users' in lower(definition)) = 0
+     or position('from auth.users' in lower(definition)) = 0
+     or position('auth.aria_orphan_owner_recovery_identity_status' in definition) > 0
+     or pg_get_userbyid((select proowner from pg_proc where oid = function_oid)) <> 'postgres' then
+    raise exception '0062 rollback did not restore the 0031 recovery authority';
+  end if;
+  foreach role_name in array array['anon','authenticator','authenticated','service_role'] loop
+    if has_function_privilege(role_name, function_oid, 'EXECUTE')
+       is distinct from (role_name = 'service_role') then
+      raise exception 'unexpected rolled-back recovery RPC privilege for %', role_name;
+    end if;
+  end loop;
+end
+$rollback_proof$;
+SQL
+
+psql_stdin < supabase/migrations/0062_orphan_owner_recovery_auth_bridge.sql >/dev/null
+psql_owner_stdin <<'SQL'
+do $reapply_proof$
+declare
+  definition text;
+  function_oid oid :=
+    to_regprocedure('public.recover_orphan_workspace_owner(uuid,uuid,text,text,text,text,text,text,uuid,text,text)');
+  role_name text;
+begin
+  select pg_get_functiondef(function_oid) into definition;
+  if position('auth.aria_orphan_owner_recovery_identity_status' in definition) = 0
+     or position('lock table auth.users' in lower(definition)) > 0
+     or position('from auth.users' in lower(definition)) > 0
+     or pg_get_userbyid((select proowner from pg_proc where oid = function_oid)) <> 'postgres' then
+    raise exception '0062 reapply did not restore the bridge recovery authority';
+  end if;
+  foreach role_name in array array['anon','authenticator','authenticated','service_role'] loop
+    if has_function_privilege(role_name, function_oid, 'EXECUTE')
+       is distinct from (role_name = 'service_role') then
+      raise exception 'unexpected reapplied recovery RPC privilege for %', role_name;
+    end if;
+  end loop;
+end
+$reapply_proof$;
+SQL
+
+printf 'RESULT orphan-owner-recovery-db: topology=exact-only auth=owner-bridge confirmed-email-local non-banned=true non-deleted=true cas=workspace-profile-domain state=preserved mutation=two-fields receipt=append-only replay=exact rollback=verified privileges=service-rpc-only\n'

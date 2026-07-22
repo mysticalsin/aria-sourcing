@@ -226,6 +226,7 @@ function JdEditForm({
 }) {
   const [seniority, setSeniority] = React.useState(jd.seniority);
   const [urgency, setUrgency] = React.useState(jd.urgency);
+  const [urgencyKnown, setUrgencyKnown] = React.useState(jd.urgencyKnown);
   const [minYears, setMinYears] = React.useState(jd.minYearsExperience?.toString() ?? "");
   const [required, setRequired] = React.useState(jd.requiredSkills.join(", "));
   const [niceToHave, setNiceToHave] = React.useState(jd.niceToHaveSkills.join(", "));
@@ -234,6 +235,7 @@ function JdEditForm({
     onSave({
       seniority,
       urgency,
+      urgencyKnown,
       minYearsExperience: minYears.trim() ? Number(minYears) : null,
       requiredSkills: parseSkillList(required),
       niceToHaveSkills: parseSkillList(niceToHave),
@@ -255,7 +257,10 @@ function JdEditForm({
           <Select
             id="jd-urgency"
             value={urgency}
-            onChange={(e) => setUrgency(e.target.value as JobAnalysis["urgency"])}
+            onChange={(e) => {
+              setUrgency(e.target.value as JobAnalysis["urgency"]);
+              setUrgencyKnown(true);
+            }}
             options={URGENCY_LEVELS.map((u) => ({ value: u, label: u }))}
           />
         </Field>
@@ -829,12 +834,12 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     { label: "Regions", value: jd.regions.join(", ") || "—" },
     { label: "Timezone", value: jd.timezone },
     { label: "Salary", value: formatSalaryRange(jd.salaryMin, jd.salaryMax, jd.currency) },
-    { label: "Equity", value: jd.equity ? "Yes" : "No" },
+    { label: "Equity", value: jd.equityKnown === false ? "Not stated" : jd.equity ? "Yes" : "No" },
     { label: "Experience", value: yearsLabel(jd.minYearsExperience, jd.maxYearsExperience) },
     { label: "Education", value: jd.education || "—" },
     { label: "Team size", value: jd.teamSize || "—" },
     { label: "Reporting to", value: jd.reportingTo || "—" },
-    { label: "Urgency", value: jd.urgency },
+    { label: "Urgency", value: jd.urgencyKnown === false ? "Not stated" : jd.urgency },
   ];
 
   const stageOptions = [
@@ -867,8 +872,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             <Eyebrow>{c.department}</Eyebrow>
             <h1 className="display mt-2 text-3xl text-ink sm:text-4xl">{c.title}</h1>
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              <Badge tone={toneForUrgency(c.urgency)} dot>
-                {c.urgency}
+              <Badge tone={jd.urgencyKnown === false ? "neutral" : toneForUrgency(c.urgency)} dot>
+                {jd.urgencyKnown === false ? "Urgency not stated" : c.urgency}
               </Badge>
               <Badge tone={STATUS_TONE[c.status]}>{c.status}</Badge>
               <Badge tone={health.tone} dot title={health.detail}>
@@ -1237,7 +1242,9 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                       <p className="mt-1 font-semibold text-ink">{gq.label}</p>
                     </div>
                     <Badge tone="aqua" size="sm">
-                      ~{formatNumber(gq.estimatedResults)} results
+                      {gq.estimatedResults == null
+                        ? "Not estimated"
+                        : `~${formatNumber(gq.estimatedResults)} results`}
                     </Badge>
                   </div>
                   <p className="break-words rounded-2xl bg-ink/[0.03] px-3 py-2 font-mono text-xs text-ink-soft">

@@ -19,6 +19,10 @@ const script = existsSync(scriptUrl) ? readFileSync(scriptUrl, "utf8") : "";
 ok("absolute NEXT_DIST_DIR values fail with the isolated-build instruction", config.includes("path.isAbsolute") && config.includes("build:isolated"));
 ok("isolated build script exists", existsSync(scriptUrl));
 ok("isolated build copies application source", script.includes('"src"') && script.includes('"public"'));
+ok(
+  "isolated build copies internal sourcing handlers imported by API routes",
+  script.includes('"scripts/sourcing-loop-handlers"'),
+);
 ok("isolated build installs from the lockfile", script.includes('"ci"'));
 ok(
   "isolated install prefers verified cache entries and bounds registry failure time",

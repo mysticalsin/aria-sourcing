@@ -42,12 +42,16 @@ psql_stdin() {
     --env PGPASSWORD="$bootstrap_password" \
     --entrypoint psql \
     "$client_image" \
-    -X -v ON_ERROR_STOP=1 -h db -U postgres -d postgres "$@"
+    -X -v ON_ERROR_STOP=1 -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d postgres "$@"
 }
+
+source tests/db/install-gotrue-test-authority.sh
+aria_install_gotrue_test_authority
 
 for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
   psql_stdin -q < "$migration"
 done
+psql_stdin -q < tests/db/gotrue-lifecycle-fixture.sql
 
 psql_stdin -q <<'SQL'
 \set ON_ERROR_STOP on
@@ -420,10 +424,6 @@ create temporary table ev_soft as
 select public.record_email_delivery_event(
   '61111111-1111-4111-8111-111111111111', current_setting('emaildurability.rfc_id'),
   'bounced', now(), 421, false) result;
-create temporary table ev_hard as
-select public.record_email_delivery_event(
-  '61111111-1111-4111-8111-111111111111', current_setting('emaildurability.rfc_id'),
-  'bounced', now(), 550, true) result;
 reset role;
 
 select email_durability_test.expect_scalar(
@@ -443,6 +443,13 @@ select email_durability_test.expect_scalar(
            and type = 'email' and lower(value) = 'cand1@target.example.test'))$$,
   'false:0'
 );
+set role service_role;
+select email_durability_test.set_service_claims('e1000000-0000-4000-8000-000000000001');
+create temporary table ev_hard as
+select public.record_email_delivery_event(
+  '61111111-1111-4111-8111-111111111111', current_setting('emaildurability.rfc_id'),
+  'bounced', now(), 550, true) result;
+reset role;
 select email_durability_test.expect_scalar(
   'hard-bounce-suppresses-email',
   $$select concat_ws(':', (select result->>'suppressed' from ev_hard),
@@ -471,10 +478,11 @@ select public.enqueue_email_outbound(
   'draft-supp','cand-1','camp-1','6a000000-0000-4000-8000-0000000000aa',
   'cand1@target.example.test','Subject S','Body supp') result;
 reset role;
+select set_config('emaildurability.supp_id', (select result->>'id' from enqueue_supp), false);
 set role service_role;
 select email_durability_test.set_service_claims('e1000000-0000-4000-8000-000000000001');
 create temporary table claim_suppressed as
-select public.claim_email_outbound_queued((select (result->>'id')::uuid from enqueue_supp)) result;
+select public.claim_email_outbound_queued(current_setting('emaildurability.supp_id')::uuid) result;
 reset role;
 select email_durability_test.expect_scalar(
   'claim-suppressed-after-hard-bounce',
@@ -500,9 +508,9 @@ select public.enqueue_email_outbound(
   'draft-fail','cand-3','camp-1','6a000000-0000-4000-8000-0000000000aa',
   'cand3@target.example.test','Subject F','Body fail') result;
 reset role;
+select set_config('emaildurability.fail_id', (select (result->>'id') from enqueue_fail), false);
 set role service_role;
 select email_durability_test.set_service_claims('e1000000-0000-4000-8000-000000000001');
-select set_config('emaildurability.fail_id', (select (result->>'id') from enqueue_fail), false);
 create temporary table claim_fail as
 select public.claim_email_outbound_queued(current_setting('emaildurability.fail_id')::uuid) result;
 create temporary table finalize_fail as

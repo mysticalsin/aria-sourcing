@@ -8,7 +8,16 @@ const runFlySource = readFileSync("docker/bootstrap/run.fly.sh", "utf8");
 const localRunSource = readFileSync("docker/bootstrap/run.sh", "utf8");
 const flyDockerfile = readFileSync("docker/bootstrap/Dockerfile.fly", "utf8");
 const localDockerfile = readFileSync("docker/bootstrap/Dockerfile", "utf8");
+const databaseDockerfile = readFileSync("docker/db/Dockerfile.fly", "utf8");
+const composeSource = readFileSync("docker-compose.yml", "utf8");
 const ownerReconciliationSource = readFileSync("docker/bootstrap/supabase-admin-reconciliation.sql", "utf8");
+const authOwnerBridgesSource = readFileSync("docker/bootstrap/auth-owner-bridges.sql", "utf8");
+const databasePrivilegeHarness = readFileSync("scripts/test-db-privileges.sh", "utf8");
+const lifecycleFixtureSource = readFileSync("tests/db/gotrue-lifecycle-fixture.sql", "utf8");
+const lifecycleHarnesses = readdirSync("tests")
+  .filter((name) => name.endsWith(".sh"))
+  .map((name) => ({ name, source: readFileSync(`tests/${name}`, "utf8") }))
+  .filter(({ source }) => source.includes("tests/db/gotrue-lifecycle-fixture.sql"));
 const legacyInvariantPath = "docker/bootstrap/legacy-baseline-invariants.sql";
 const legacyInvariantSource = existsSync(legacyInvariantPath) ? readFileSync(legacyInvariantPath, "utf8") : "";
 const legacyTableInventoryPath = "docker/bootstrap/legacy-table-inventory.txt";
@@ -62,6 +71,7 @@ type BootstrapOptions = {
   ownerApplyFails?: boolean;
   postgresTargetFails?: boolean;
   migrationApplyFails?: boolean;
+  boundaryReadbackFails?: boolean;
 };
 
 function runBootstrap(options: BootstrapOptions = {}) {
@@ -71,6 +81,7 @@ function runBootstrap(options: BootstrapOptions = {}) {
   const reconciliation = join(root, "reconciliation");
   const capturedOwnerPlan = join(root, "captured-owner.sql");
   const capturedMigrationPlan = join(root, "captured-migrations.sql");
+  const capturedBoundaryPlan = join(root, "captured-agent-memory-boundary.sql");
   const capturedPreflightPlan = join(root, "captured-preflight.sql");
   const capturedBaselinePlan = join(root, "captured-baseline.sql");
   const psqlLog = join(root, "psql.log");
@@ -85,7 +96,7 @@ function runBootstrap(options: BootstrapOptions = {}) {
     writeFileSync(join(migrations, "0001_first.sql"), "select 1;\n");
     writeFileSync(join(migrations, "0002_second.sql"), "select 2;\n");
     writeFileSync(join(root, "legacy-table-inventory.txt"), readFileSync(legacyTableInventoryPath));
-    for (const file of ["supabase-admin-reconciliation.sql", "legacy-baseline-invariants.sql", "jwt.sql", "auth-owner.sql", "roles.sql"]) {
+    for (const file of ["supabase-admin-reconciliation.sql", "auth-owner-bridges.sql", "legacy-baseline-invariants.sql", "jwt.sql", "auth-owner.sql", "roles.sql"]) {
       writeFileSync(join(reconciliation, file), `select '${file}';\n`);
     }
     const schemaDump = "contract-public-schema\n";
@@ -171,8 +182,13 @@ case " $* " in
           cp "$plan" "$CAPTURED_OWNER_PLAN"
         fi ;;
       postgres-target)
-        [ "\${FAKE_MIGRATION_APPLY_FAIL:-0}" = 0 ] || exit 41
-        cp "$plan" "$CAPTURED_MIGRATION_PLAN" ;;
+        if grep -q 'aria_agent_memory_provenance_boundary' "$plan"; then
+          cp "$plan" "$CAPTURED_BOUNDARY_PLAN"
+          [ "\${FAKE_BOUNDARY_READBACK_FAIL:-0}" = 0 ] || exit 40
+        else
+          [ "\${FAKE_MIGRATION_APPLY_FAIL:-0}" = 0 ] || exit 41
+          cp "$plan" "$CAPTURED_MIGRATION_PLAN"
+        fi ;;
     esac
     ;;
 esac
@@ -201,6 +217,7 @@ exit 0
       RECOVERY_EMPTY_EXPECTED_SCHEMA_SHA256_FILE: expectedEmptySchemaDigest,
       CAPTURED_OWNER_PLAN: capturedOwnerPlan,
       CAPTURED_MIGRATION_PLAN: capturedMigrationPlan,
+      CAPTURED_BOUNDARY_PLAN: capturedBoundaryPlan,
       CAPTURED_PREFLIGHT_PLAN: capturedPreflightPlan,
       CAPTURED_BASELINE_PLAN: capturedBaselinePlan,
       FAKE_PSQL_LOG: psqlLog,
@@ -209,6 +226,7 @@ exit 0
       FAKE_OWNER_APPLY_FAIL: options.ownerApplyFails ? "1" : "0",
       FAKE_POSTGRES_TARGET_FAIL: options.postgresTargetFails ? "1" : "0",
       FAKE_MIGRATION_APPLY_FAIL: options.migrationApplyFails ? "1" : "0",
+      FAKE_BOUNDARY_READBACK_FAIL: options.boundaryReadbackFails ? "1" : "0",
       FAKE_LEDGER_MANIFEST: options.ledgerManifestMismatch ? "0001_first.sql=wrong\n" : migrationManifest,
       FAKE_LEDGER_MISMATCH: options.ledgerManifestMismatch ? "1" : "0",
       FAKE_ROW_MANIFEST: rowManifest,
@@ -246,6 +264,7 @@ exit 0
       output: `${result.stdout ?? ""}${result.stderr ?? ""}`,
       ownerPlan: existsSync(capturedOwnerPlan) ? readFileSync(capturedOwnerPlan, "utf8") : "",
       migrationPlan: existsSync(capturedMigrationPlan) ? readFileSync(capturedMigrationPlan, "utf8") : "",
+      boundaryPlan: existsSync(capturedBoundaryPlan) ? readFileSync(capturedBoundaryPlan, "utf8") : "",
       preflightPlan: existsSync(capturedPreflightPlan) ? readFileSync(capturedPreflightPlan, "utf8") : "",
       baselinePlan: existsSync(capturedBaselinePlan) ? readFileSync(capturedBaselinePlan, "utf8") : "",
       psqlLog: readFileSync(psqlLog, "utf8"),
@@ -297,6 +316,50 @@ ok(
     /legacy-table-inventory\.txt/.test(localDockerfile) &&
     /legacy-baseline-public-schema\.sha256/.test(localDockerfile) &&
     /recovery-empty-public-schema\.sha256/.test(localDockerfile),
+);
+ok(
+  "Auth-owner bridges are distributed to every owner-reconciliation runtime",
+  /\\ir auth-owner-bridges\.sql/.test(ownerReconciliationSource) &&
+    /auth-owner-bridges\.sql/.test(flyDockerfile) &&
+    /auth-owner-bridges\.sql/.test(localDockerfile) &&
+    /auth-owner-bridges\.sql/.test(databaseDockerfile) &&
+    /auth-owner-bridges\.sql/.test(composeSource) &&
+    (databasePrivilegeHarness.match(/auth-owner-bridges\.sql/g) ?? []).length >= 3,
+);
+ok(
+  "Auth-owner bridges expose only bounded Auth-owned decisions to postgres",
+  /create or replace function auth\.aria_current_active_identity\(\)[\s\S]*returns table\(identity_id uuid, email text\)/i.test(
+    authOwnerBridgesSource,
+  ) &&
+    /create or replace function auth\.aria_orphan_owner_recovery_identity_status\([\s\S]*returns text/i.test(
+      authOwnerBridgesSource,
+    ) &&
+    (authOwnerBridgesSource.match(/security definer/gi) ?? []).length === 2 &&
+    (authOwnerBridgesSource.match(/owner to supabase_auth_admin/gi) ?? []).length === 2 &&
+    /revoke all on function auth\.aria_current_active_identity\(\)[\s\S]*from public, anon, authenticator, authenticated, service_role, postgres/i.test(
+      authOwnerBridgesSource,
+    ) &&
+    /grant execute on function auth\.aria_current_active_identity\(\) to postgres/i.test(
+      authOwnerBridgesSource,
+    ),
+);
+ok(
+  "disposable full-migration suites install GoTrue authority before migrations and only assert afterward",
+  lifecycleHarnesses.length > 0 &&
+    lifecycleHarnesses.every(({ name, source }) => {
+      const migrationStart = name === "agent-framework-pin-rotation-db.sh"
+        ? source.indexOf("apply_pre_rotation_migrations postgres")
+        : source.indexOf("for migration in");
+      return source.includes("source tests/db/install-gotrue-test-authority.sh") &&
+        source.indexOf("aria_install_gotrue_test_authority") < migrationStart;
+    }) &&
+    !/alter table auth\.users/i.test(lifecycleFixtureSource),
+);
+ok(
+  "local GoTrue uses the exact production Auth image identity",
+  composeSource.includes(
+    "supabase/gotrue:v2.189.0@sha256:385184459f57569c54c25209f51f3b2be99ddd7c4ce9e3555b5d3eea8447b7cf",
+  ),
 );
 ok(
   "verified-empty schema fingerprint is pinned as lowercase SHA-256",
@@ -466,7 +529,27 @@ ok("migration plan rejects an empty legacy migration ledger", /raise exception '
 ok("migration plan never relies on unsupported psql quit exit codes", !/\\quit\s+[0-9]+/.test(migrationsOnly.migrationPlan));
 ok("migration plan records both filenames", /0001_first\.sql[\s\S]*0002_second\.sql/.test(migrationsOnly.migrationPlan));
 ok("migration plan records SHA-256 identities", (migrationsOnly.migrationPlan.match(/[0-9a-f]{64}/g) ?? []).length >= 2);
-ok("migrations phase applies exactly one target-postgres plan", planApplyCount(migrationsOnly.psqlLog, "postgres-target") === 1);
+ok(
+  "migrations phase applies one transaction and one independent authority readback",
+  planApplyCount(migrationsOnly.psqlLog, "postgres-target") === 2,
+);
+ok(
+  "agent-memory authority readback is read-only and checks effective service-role privileges",
+  /begin transaction read only;/.test(migrationsOnly.boundaryPlan) &&
+    /public\.agent_runs/.test(migrationsOnly.boundaryPlan) &&
+    /public\.agent_events/.test(migrationsOnly.boundaryPlan) &&
+    /has_table_privilege\('service_role', table_name, 'SELECT'\)/.test(migrationsOnly.boundaryPlan) &&
+    ["INSERT", "UPDATE", "DELETE"].every((privilege) =>
+      migrationsOnly.boundaryPlan.includes(
+        `has_table_privilege('service_role', table_name, '${privilege}')`,
+      )
+    ) &&
+    /function_owner is distinct from 'postgres'/.test(migrationsOnly.boundaryPlan) &&
+    /has_function_privilege\('service_role', function_oid, 'EXECUTE'\)/.test(
+      migrationsOnly.boundaryPlan,
+    ) &&
+    /rollback;/.test(migrationsOnly.boundaryPlan),
+);
 ok("migrations phase never attempts a current-postgres connection", !migrationsOnly.psqlLog.includes("postgres-current "));
 ok(
   "psql argv and captured output contain neither passwords nor DSNs",
@@ -480,7 +563,11 @@ const all = runBootstrap({ phase: "all" });
 const ownerApplyAt = all.psqlLog.split("\n").findIndex((line) => line.startsWith("owner-current ") && line.includes(" -f "));
 const migrationApplyAt = all.psqlLog.split("\n").findIndex((line) => line.startsWith("postgres-target ") && line.includes(" -f "));
 ok("all phase succeeds", all.status === 0);
-ok("all phase preserves one owner plan and one migration plan", planApplyCount(all.psqlLog, "owner-current") === 1 && planApplyCount(all.psqlLog, "postgres-target") === 1);
+ok(
+  "all phase preserves one owner plan, one migration plan, and one authority readback",
+  planApplyCount(all.psqlLog, "owner-current") === 1 &&
+    planApplyCount(all.psqlLog, "postgres-target") === 2,
+);
 ok("all phase applies owner reconciliation before migrations", ownerApplyAt >= 0 && migrationApplyAt > ownerApplyAt);
 
 const ownerFailure = runBootstrap({ phase: "all", ownerApplyFails: true });
@@ -494,6 +581,13 @@ ok("target postgres reconnect failure prevents migration apply", reconnectFailur
 const migrationFailure = runBootstrap({ phase: "migrations", migrationApplyFails: true });
 ok("migration transaction failure propagates", migrationFailure.status === 41);
 ok("failed migration never prints completion", !migrationFailure.output.includes("[migrate] complete"));
+
+const boundaryFailure = runBootstrap({ phase: "migrations", boundaryReadbackFails: true });
+ok("agent-memory authority readback failure propagates", boundaryFailure.status === 40);
+ok(
+  "failed authority readback never prints migration completion",
+  !boundaryFailure.output.includes("[migrate] complete"),
+);
 
 console.log(`RESULT bootstrap-contract: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;

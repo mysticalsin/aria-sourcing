@@ -5,6 +5,11 @@ function required(value, name) {
   return value;
 }
 
+function hasExactKeys(value, keys) {
+  return value !== null && typeof value === "object" && !Array.isArray(value) &&
+    Object.keys(value).sort().join("\0") === [...keys].sort().join("\0");
+}
+
 function token(file) {
   const value = fs.readFileSync(required(file, "secret file"), "utf8").trim();
   if (value.length < 32 || /\s/.test(value)) throw new Error("secret material is invalid");
@@ -80,9 +85,18 @@ async function main() {
     return { mode, status: "ready" };
   }
   if (mode === "flowise-worker") {
-    const body = (await request("http://127.0.0.1:5566/healthz", {}, true)).trim();
-    if (body !== "OK") throw new Error("Flowise worker is not ready");
-    return { mode, status: "ready" };
+    const body = await request("http://127.0.0.1:5566/healthz");
+    const queueName = required(process.env.QUEUE_NAME, "QUEUE_NAME");
+    if (
+      !hasExactKeys(body, ["schema", "status", "queueName", "database", "queue", "worker"]) ||
+      body.schema !== "aria.flowise-worker-readiness.v1" ||
+      body.status !== "ready" ||
+      body.queueName !== queueName ||
+      body.database !== true ||
+      body.queue !== true ||
+      body.worker !== true
+    ) throw new Error("Flowise worker is not ready");
+    return { mode, status: "ready", queueName };
   }
   throw new Error("probe mode is invalid");
 }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { mock, test } from "node:test";
 
@@ -14,6 +15,8 @@ const workspaceId = "11111111-1111-4111-8111-111111111111";
 const ownerId = "22222222-2222-4222-8222-222222222222";
 const specId = "33333333-3333-4333-8333-333333333333";
 const memoryId = "44444444-4444-4444-8444-444444444444";
+const noCandidateProvenance = { classification: "none" } as const;
+const memoryPanel = readFileSync("src/components/memory/memory-panel.tsx", "utf8");
 
 type QueryCall = {
   table: string;
@@ -171,7 +174,7 @@ const service = {
   from: (table: string) => queryFor(table),
   rpc: async (name: string, args: Record<string, unknown>) => {
     serviceRpcCalls.push({ name, args });
-    if (name === "create_agent_memory") {
+    if (name === "create_agent_memory_with_candidate_provenance") {
       activeMemory = memoryRow(
         String(args.p_content_ciphertext),
         String(args.p_content_sha256),
@@ -184,7 +187,7 @@ const service = {
       );
       return { data: { status: "created", id: memoryId }, error: null };
     }
-    if (name === "mutate_agent_memory") {
+    if (name === "mutate_agent_memory_with_candidate_provenance") {
       return { data: { status: mutateStatus }, error: null };
     }
     if (name === "delete_agent_memory_content") {
@@ -301,6 +304,18 @@ function assertNoAuthorityOrPersistenceWork() {
   assert.deepEqual(encryptCalls, []);
 }
 
+test("memory UI requires an explicit candidate classification for every free-text content write", () => {
+  assert.match(memoryPanel, /useState<CandidateClassification>\(""\)/);
+  assert.doesNotMatch(memoryPanel, /useState<CandidateClassification>\("none"\)/);
+  assert.match(memoryPanel, /Choose candidate scope/);
+  assert.match(memoryPanel, /I confirm: no candidate identity is present/);
+  assert.match(memoryPanel, /References specific candidate aliases/);
+  assert.match(memoryPanel, /candidateProvenance:\s*provenance\.payload/);
+  assert.match(memoryPanel, /!provenance\.payload/);
+  assert.match(memoryPanel, /Add candidate alias/);
+  assert.match(memoryPanel, /Candidate-bound memories require every exact alias/);
+});
+
 if (disabledScenario) {
   test("Supabase-disabled memory authority fails closed before session access", async () => {
     reset();
@@ -308,6 +323,7 @@ if (disabledScenario) {
       specId,
       kind: "instruction",
       content: "Do not contact suppressed candidates.",
+      candidateProvenance: noCandidateProvenance,
     }));
     const body = await json(response);
     assert.equal(response.status, 503);
@@ -328,6 +344,7 @@ if (disabledScenario) {
         specId,
         kind: "fact",
         content: "secret",
+        candidateProvenance: noCandidateProvenance,
       }, options));
       const body = await json(response);
       assert.equal(response.status, expectedStatus, label);
@@ -393,6 +410,7 @@ if (disabledScenario) {
         specId,
         kind: "instruction",
         content: "Use only reviewed role requirements.",
+        candidateProvenance: noCandidateProvenance,
       }));
       const body = await json(response);
       assert.equal(response.status, 503, label);
@@ -410,6 +428,7 @@ if (disabledScenario) {
       specId,
       kind: "instruction",
       content: "Use only reviewed role requirements.",
+      candidateProvenance: noCandidateProvenance,
     }));
     const body = await json(response);
     assert.equal(response.status, 503);
@@ -432,6 +451,7 @@ if (disabledScenario) {
         specId,
         kind: "fact",
         content: "Reviewed role fact.",
+        candidateProvenance: noCandidateProvenance,
       }))],
       ["PATCH", () => route.PATCH(request("PATCH", {
         action: "approve",
@@ -468,6 +488,11 @@ if (disabledScenario) {
       content,
       pinned: true,
       expiresAt: null,
+      candidateProvenance: {
+        classification: "exact",
+        campaignId: "campaign-a",
+        identifiers: [{ kind: "candidate_id", value: "candidate-123" }],
+      },
     }));
     const body = await json(response);
 
@@ -477,7 +502,7 @@ if (disabledScenario) {
     assert.deepEqual(encryptCalls, [content]);
     assert.equal(serviceRpcCalls.length, 1);
     const create = serviceRpcCalls[0];
-    assert.equal(create.name, "create_agent_memory");
+    assert.equal(create.name, "create_agent_memory_with_candidate_provenance");
     assert.equal(create.args.p_workspace_id, workspaceId);
     assert.equal(create.args.p_owner_id, ownerId);
     assert.equal(create.args.p_spec_id, specId);
@@ -485,6 +510,10 @@ if (disabledScenario) {
     assert.match(String(create.args.p_content_ciphertext), /^enc:v2:opaque-/);
     assert.equal(create.args.p_content_sha256, sha256(content));
     assert.equal(create.args.p_content_byte_count, Buffer.byteLength(content, "utf8"));
+    assert.equal(create.args.p_campaign_id, "campaign-a");
+    assert.deepEqual(create.args.p_candidate_identifiers, [
+      { kind: "candidate_id", value: "candidate-123" },
+    ]);
     assert.equal(JSON.stringify(create.args).includes(content), false);
     assert.deepEqual(
       queryCalls.filter((call) => call.operation === "eq")
@@ -791,6 +820,7 @@ if (disabledScenario) {
       specId,
       kind: "fact",
       content: "Foreign workspace data",
+      candidateProvenance: noCandidateProvenance,
     }));
     const body = await json(response);
     assert.equal(response.status, 404);
@@ -819,12 +849,15 @@ if (disabledScenario) {
     assert.equal(body.code, "revision_conflict");
     assertNoStore(response);
     assert.equal(serviceRpcCalls.length, 1);
-    assert.equal(serviceRpcCalls[0].name, "mutate_agent_memory");
+    assert.equal(serviceRpcCalls[0].name, "mutate_agent_memory_with_candidate_provenance");
     assert.equal(serviceRpcCalls[0].args.p_workspace_id, workspaceId);
     assert.equal(serviceRpcCalls[0].args.p_owner_id, ownerId);
     assert.equal(serviceRpcCalls[0].args.p_spec_id, specId);
     assert.equal(serviceRpcCalls[0].args.p_memory_id, memoryId);
     assert.equal(serviceRpcCalls[0].args.p_expected_revision, 3);
+    assert.equal(serviceRpcCalls[0].args.p_replace_candidate_provenance, false);
+    assert.equal(serviceRpcCalls[0].args.p_campaign_id, null);
+    assert.equal(serviceRpcCalls[0].args.p_candidate_identifiers, null);
     assert.equal(queryCalls.some((call) => call.table === "agent_memories"), false);
     assert.equal(JSON.stringify(body).includes("cipher"), false);
     assert.equal(JSON.stringify(body).includes("sha256"), false);
@@ -839,6 +872,7 @@ if (disabledScenario) {
       specId,
       kind: "episodic",
       content,
+      candidateProvenance: noCandidateProvenance,
     }));
     const body = await json(response);
     assert.equal(response.status, 400);

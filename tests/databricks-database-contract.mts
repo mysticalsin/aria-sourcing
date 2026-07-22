@@ -97,7 +97,7 @@ ok(
 );
 ok(
   "CI runs the disposable database security test",
-  /database-security:[\s\S]*test:db-privileges/i.test(workflow),
+  /database-security:[\s\S]*npm run test:database/i.test(workflow),
 );
 
 console.log(`RESULT databricks-database-contract: ${pass} passed, ${fail} failed`);

@@ -1,9 +1,11 @@
 # ARIA Sourcing — Architecture & Operations Guide
 
-This document describes the sourcing experience as it is actually implemented in this
-repository (MSourcing / ARIA) on `integration/sourcing-enrichment-on-main`
-(HEAD `3ff4852`). Every claim below is grounded in a real file; line references point at
-the code that backs the claim as of this commit and will drift as the code moves.
+This document describes the sourcing experience implemented by the checked-in source.
+It is an architecture and operations guide, not proof that the same release is live.
+Current source, release, and deployment evidence are tracked separately in
+[`production-readiness/STATUS.md`](../production-readiness/STATUS.md) and
+[`_relay/HANDOFF.md`](../_relay/HANDOFF.md). File and migration references below are
+navigation aids and can move as the code evolves.
 
 For the broader system map (agent runtime, outreach, deployment), see
 [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md). This file goes one layer deeper on sourcing,
@@ -51,17 +53,23 @@ behavior (no login gate, implicit admin) in production. The one sanctioned excep
 
 | Provider | Platform id | Discovery mechanism | Key requirement | Notes |
 |---|---|---|---|---|
-| GitHub | `GitHub` | GitHub Users Search API, read-only | None — keyless by default (60 req/hr/IP anonymous, 5,000/hr with optional `GITHUB_TOKEN`) | `src/lib/sourcing/github.ts:1-17` |
-| Web search (LinkedIn / Stack Overflow / Dribbble / Behance) | `LinkedIn`, `Stack Overflow`, `Dribbble`, `Behance` | `site:`-scoped Tavily web search, honest User-Agent, SSRF-guarded | Workspace-stored Tavily key, or `TAVILY_API_KEY` env fallback | `src/lib/sourcing/web-leads.ts:1-9`, `src/lib/ai/web-tools.ts:191-256` |
+| GitHub | `GitHub` | GitHub Users Search API, read-only | Autonomous batches default to anonymous mode or use explicit authenticated mode with the deployment `GITHUB_TOKEN`; each mode has separate database-bound quotas. Authenticated interactive sourcing may also use that optional token. | `scripts/sourcing-loop-handlers/github-discovery.mjs`, `src/lib/sourcing/github.ts` |
+| Reviewed cloud sourcing | `GitHub` plus bounded web tools | An independently approved workspace LLM binding selects tool calls; a separately verified workspace Tavily credential may support scoped web search | Exact active runtime binding and tenant credential rows. Tenant routes fail closed and never select `TAVILY_API_KEY` after workspace resolution fails. | `src/app/api/sourcing-agent/route.ts`, `src/lib/ai/runtime-binding.ts`, `src/lib/sourcing/tavily.ts` |
 | Apify — profile search | `Apify` | `harvestapi~linkedin-profile-search` actor, async run + poll + dataset fetch | Workspace-stored Apify key | `src/lib/sourcing/apify.ts:1-25`; supports `firstNames`/`lastNames` as explicit search filters (§below) |
 | Apollo | `Apollo` | Free `mixed_people/search`, then a paid `people/match` for email/phone | Workspace-stored Apollo key | `src/lib/sourcing/apollo.ts`, receipt-ledgered via `src/lib/sourcing/source-authority.ts` |
 | Seamless.AI | `Seamless` | Free search + async paid research/poll | Workspace-stored key | **Production-disabled by design** (see below) |
 | Sillage | `Sillage` | Company-domain account mapping, async | Workspace-stored key | **Production-disabled by design** (see below) |
 
-All provider keys except `GITHUB_TOKEN` and the Tavily env fallback are entered via
-**Settings → API Keys**, encrypted at rest, and never sent to the browser
-(`validateApiKeyFormat` in `src/lib/providers.ts:18-37` does client-safe format checks
-before the key is even submitted).
+Tenant provider keys are entered through **Settings → API Keys**, encrypted at rest,
+and never returned to the browser. A credential used by the sourcing runtime must have
+live provider-authentication evidence and belong to an independently reviewed active
+runtime binding. Credential identity is append-only while bound; rotation creates and
+reviews a new row. `GITHUB_TOKEN` remains a deployment-scoped optional credential for
+authenticated GitHub paths. The autonomous worker must explicitly select
+`authenticated` before the token can be used; otherwise it claims anonymous mode.
+Provider model inventory proves that a credential can authenticate, not that an exact
+model can perform an approved purpose. Runtime-binding proposal and activation require
+separate, fresh, exact-model capability evidence for requisition parsing or sourcing.
 
 **The Apify profile-search filter (commit `3c29b23`, extended `25b65de`).** The
 `harvestapi/linkedin-profile-search` actor input accepts structured filters —
@@ -421,14 +429,13 @@ layer never accumulates dangling identities.
 
 ### Framing
 
-This is explicitly a **foundation**, not a finished feature: the shadow table, the
-tenant-isolated read RPC, and the person-identity layer exist so that a future server-side
-pipeline (embeddings over the corpus, cross-campaign candidate reuse, "redeployment" of an
-already-sourced person into a new role) has a normalized, RLS-safe, erasure-consistent
-place to read from — without ever having touched how or where a client writes a
-candidate. None of embeddings, a server-side sourcing pipeline, or automated
-redeployment exist yet; `corpusServerReadEnabled` gates even the read-only listing
-endpoint off by default.
+This remains a **corpus and identity foundation**, not an embeddings or automated
+redeployment feature. A server-owned sourcing pipeline now exists, but it writes each
+batch only through its campaign-bound authority and evidence contract; it does not use
+the corpus to infer identity or silently move a person between campaigns. Embeddings,
+cross-campaign recommendations, and automated redeployment remain absent.
+`corpusServerReadEnabled` still gates the separate read-only corpus listing endpoint off
+by default.
 
 ---
 
@@ -439,7 +446,7 @@ endpoint off by default.
 | Never-auto-send | DB table `outreach_approvals`, keyed to the exact message body hash; send route refuses without a matching row | `supabase/migrations/0006_outreach_approvals.sql:1-4` |
 | App-level approval gate | Score floor, personalization evidence, do-not-contact/unsubscribed/suppressed checks, per-channel contact-info and rate-limit checks | `checkOutreachApproval`, `src/lib/rules.ts:52-160`+ |
 | Multi-tenancy | Row-Level Security on every workspace-scoped table; force-RLS on the corpus mirror and person tables | `0035:45-46`, `0037:28-31` |
-| GDPR erasure | Legal-hold-aware, idempotency-keyed erasure transaction scrubbing every candidate-addressable store; tombstones drive corpus-mirror and person-linkage suppression | `0033_candidate_erasure_authority.sql`, extended by `0035`/`0037` |
+| Candidate erasure controls | Legal-hold-aware, idempotency-keyed local erasure, tombstones, bounded provider obligations, and explicit provenance for covered payload shapes | `0033_candidate_erasure_authority.sql`, extended by `0035`, `0037`, and `0059` |
 | Lawful basis capture | Operator-recorded `consent` / `legitimate_interest` basis with source + timestamp, required before outreach approval on any manually-entered candidate | `src/lib/candidate-lawful-basis.ts`, enforced in `rules.ts:84-97` |
 | Field provenance | Per-field `{ provider, at, confidence }` on every enriched value | `src/lib/enrichment/merge.ts:225` |
 | Discrimination-proxy filter | Sourcing queries are rejected if they reference age/gender/race/religion/disability/marital/nationality/university-graduation proxies, or aren't bound to the approved role's own JD terms | `src/lib/sourcing/query-policy.ts:5-56` |
@@ -447,12 +454,21 @@ endpoint off by default.
 
 **Erasure request lifecycle** (`0033_candidate_erasure_authority.sql`): a request binds
 an exact workspace + campaign + candidate + administrator + idempotency key, blocks on
-an active legal hold (`candidate_legal_holds`), scrubs every candidate-addressable
-operational store, and records only row counts plus opaque provider-reference hashes.
-External provider-side deletion is never assumed complete — unsupported provider work is
-left `manual_required` until independently closed by an operator. `0035` and `0037`
-extend this same tombstone mechanism to the corpus mirror and the person-identity layer,
-so an erased candidate can't resurface through either.
+an active legal hold (`candidate_legal_holds`), scrubs the normalized stores covered by
+the migration, and records only row counts plus opaque provider-reference hashes.
+External provider-side deletion is never assumed complete. Migration `0059` adds
+provenance and erasure handling for specified top-level candidate shapes in agent-run,
+agent-event, and framework-result JSON. The memory write route requires an explicit
+`none` or candidate-alias classification and uses atomic database wrappers for create
+and content edits, so candidate-bearing encrypted memory cannot be written through that
+route without its HMAC-only provenance index. Arbitrary or nested JSON outside the
+document shapes covered by the migration remains outside proven coverage. Provider
+completion also requires a fresh, adapter-bound evidence receipt created through an
+independent owner channel. The provider verifier/writer, independently retained
+restore-replay journal, and supported path above 100 obligations do not yet exist, so
+production erasure remains a NO-GO.
+Migrations `0035` and `0037` extend tombstones to the corpus mirror and person-identity
+layer.
 
 **Lawful basis**: `recordedCandidateLawfulBasis()` only returns a basis when all three of
 `lawfulBasis` (`"consent"` | `"legitimate_interest"`), `lawfulBasisSource ===
@@ -473,11 +489,15 @@ candidate without one.
 | `NEXT_PUBLIC_ENABLE_DEMO_LOGIN` | Sanctioned public-demo exception to the prod fail-closed rule; outreach stays dry-run regardless |
 | `NEXT_PUBLIC_ENABLE_EXPERIMENTAL_PAID_SOURCING` | Combined with a non-production build, unlocks Seamless/Sillage locally — never in prod |
 | `NEXT_PUBLIC_ENABLE_CORPUS_SERVER_READ` | Preview flag for the `/api/candidates` server-corpus read path; default off |
-| `GITHUB_TOKEN` | Optional; raises GitHub Users Search API from 60 to 5,000 req/hr — never required |
-| `TAVILY_API_KEY` | Server-side fallback for web-search sourcing when no workspace Tavily key is stored |
-| Apify / Apollo / Seamless / Sillage keys | Entered via Settings → API Keys, encrypted at rest, never env vars |
+| `GITHUB_TOKEN` | Optional for authenticated interactive GitHub sourcing and for explicit authenticated autonomous mode; it is ignored by the autonomous worker in default anonymous mode |
+| `ARIA_SOURCING_GITHUB_PROVIDER_MODE` | Selects `anonymous` by default or explicit `authenticated` GitHub claims; each mode has separate database quota ceilings |
+| `ARIA_SOURCING_CLAIM_CONCURRENCY` | Sourcing-worker claim concurrency, default `1` and hard-capped at `3`; this safety bound is not capacity proof |
+| `ARIA_LOOP_KILL_SWITCH` / `ARIA_SOURCING_OPERATIONAL_REQUIRED` | Keep the autonomous worker dark by default and require exact-release operational proof before activation |
+| `ARIA_LOOP_ENABLE_OUTBOUND_DRAIN` | Independent outbound capability; stays false for a sourcing-only activation and zero-send canary |
+| Tenant LLM, Tavily, Apify, and Apollo keys | Entered via Settings → API Keys, encrypted at rest, live-tested where the provider exposes a non-billable check, and activated only by normalized authority |
+| `TAVILY_API_KEY` | Legacy system-managed web-tool fallback only. A tenant sourcing request passes an explicit null boundary when no approved workspace key exists, so this value cannot silently replace missing tenant authority. |
 
-### Fly topology (as deployed)
+### Fly topology defined in source
 
 ```
 Internet
@@ -490,10 +510,44 @@ Internet
 aria-mantu-bootstrap  -> privileged reconciliation + ordered migrations, exits after
 ```
 
-Five long-running Fly services plus a one-shot migration/bootstrap app — self-hosted
-Supabase, not the managed Supabase cloud (`docs/ARCHITECTURE.md:184-200`).
+The source defines five long-running Fly services plus a one-shot
+migration/bootstrap app, using self-hosted Supabase rather than managed Supabase cloud.
+The current branch, migrations, framework plane, and exact image set do not have an
+accepted live deployment receipt.
 
-### Running one role end to end
+### Autonomous need-to-candidate path
+
+When the independently controlled sourcing loop is enabled for an exact accepted
+release, one signed external need follows this durable chain:
+
+1. `/api/webhooks/needs` authenticates the tenant credential, verifies the exact raw
+   body signature and idempotency key, and atomically stores one private requisition
+   input plus one `requisition_parse` job.
+2. The loop claims the parse job, fences the external model call, resolves only the
+   approved workspace runtime binding, validates the structured result, and stores a
+   content-hash-bound receipt. There is no synthetic parser fallback.
+3. `campaign_create` projects the reviewed result into one deterministic campaign and
+   queues the first `sourcing_batch` only when workspace controls and activation-admin
+   authority still match.
+4. The sourcing worker derives bounded GitHub query variants from the snapshotted role
+   basis, claims either default anonymous or explicitly configured authenticated mode,
+   reserves that mode's provider quota, records external search/detail receipts, and
+   atomically appends only evidence-valid public-profile candidates.
+5. Graphify can select or reorder only a finite, same-page set of server-derived query
+   variants for an exact-role, human-promoted, unexpired lesson. The lesson, review,
+   export, and query snapshot is frozen before egress. It cannot introduce a role need,
+   candidate, provider credential, or delivery permission.
+6. The batch continues through bounded ordinals until the target is filled, the provider
+   is exhausted, the campaign pauses, or a control gate stops it. Replay never repeats a
+   completed provider effect.
+7. Sourcing activation does not activate outbound delivery. The zero-contact release
+   canary requires the outbound queue count and hash to remain unchanged.
+
+Public need ingress remains disabled until a shared edge limiter covers every public
+hostname and passes multi-Machine burst proof. A checked-in path is not evidence that
+the live switch, provider binding, or edge control has been activated.
+
+### Running one role through the operator UI
 
 1. **Intake** — recruiter enters a job description; ARIA parses it into a `JobAnalysis`
    (required/nice-to-have skills, experience band, company-stage target, industry,
@@ -526,6 +580,13 @@ decision) — compiled from `_relay/2026-07-16-owner-actions.md`:
 |---|---|---|
 | **dev_fusion Apify actor approval** | The secondary LinkedIn profile enricher used by the enrichment waterfall (currently returns `403 full-permission-actor-not-approved`, surfaced gracefully as `not_configured`) | One click in the Apify console — approve the actor's permissions |
 | **Apollo / Seamless / Sillage API keys** | The full cost-ascending enrichment waterfall beyond Apify | Enter via Settings → API Keys (Seamless/Sillage still won't run in prod without the receipt-authority work described in §2) |
+| **Two real workspace administrators** | Four-eyes activation of the immutable LLM model and credential binding used for requisition parsing and reviewed cloud sourcing | One administrator stages the binding; a different active tenant administrator approves it. Never create a synthetic reviewer. |
+| **Public edge limiter proof** | Safe signed need intake across both the custom hostname and direct Fly hostname | Deploy one shared atomic limiter using trusted edge identity, then pass the two-Machine burst and valid-request tests before enabling ingress. |
+| **Flowise runtime promotion evidence** | Private Flowise authoring/worker availability | Neither the current pin nor the audited official `3.1.3` comparison passes the zero HIGH/CRITICAL gate. Keep execution disabled until a complete accepted image is signed, privately bootstrapped, restored, and canary-tested. |
+| **Auth supply-chain evidence** | Acceptance of the self-hosted authentication image | Produce and review the exact-digest scan, SBOM, provenance, and release receipt; none is currently accepted. |
+| **Candidate-erasure external controls** | Production privacy-operation acceptance | Implement the independent provider evidence writer/verifier, enforce provenance on every candidate-bearing memory/JSON write, retain a restore-replay journal outside the restored database, and test the path above 100 obligations. |
+| **Capacity and availability proof** | A defensible 50,000-user operating envelope | Ratify the workload and pass staged write/provider load, soak, failover, restore, and recovery tests with production telemetry and an approved DB/session-pool design. |
+| **Protected exact-release approval** | A deployable release receipt | Restore GitHub Actions budget, require the independent last-push approval, and complete CI, CodeQL, image, migration, deploy, and live-canary evidence for one exact SHA. |
 | **GitHub Actions budget** | CI/CodeQL — every job currently fails at startup with "Actions budget…" | Raise the spending limit / add payment in GitHub billing |
 
 harvestapi (the primary Apify discovery actor) already covers discover + enrich + email

@@ -1,17 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { NextResponse, type NextRequest } from "next/server";
-import { z } from "zod";
-
 import {
-  DISCLOSURE_SYSTEM,
-  candidateDisclosureContextForCampaignLike,
   detectInjection,
   validateCandidateBoundText,
 } from "@/lib/agent-disclosure-policy";
-import { DEFAULT_MODEL, VAULT_PROVIDER, resolveAiProvider, type AiProviderSlug } from "@/lib/ai/provider";
-import { SOURCING_TOOL_DEFS, makeSourcingToolRunner } from "@/lib/ai/sourcing-tools";
-import { runAnthropicWithTools, runOpenAiWithTools, type ResolvedMcpServer } from "@/lib/ai/tool-loop";
+import type { AiProviderSlug } from "@/lib/ai/provider";
+import { resolveActiveAiRuntimeBinding, type ActiveAiRuntimeBinding } from "@/lib/ai/runtime-binding";
+import { makeSourcingToolRunner, type SourcingQueryExecution } from "@/lib/ai/sourcing-tools";
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
 import { validateBody } from "@/lib/api/validate";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
@@ -27,6 +23,7 @@ import {
   failSourcingRun,
   failAgentFrameworkSourcingEffect,
   listPromotedSourcingLessons,
+  resumeSourcingRunResult,
   type SourcingLearningLesson,
   type SourcingRoleBasis,
 } from "@/lib/sourcing/learning-authority";
@@ -41,30 +38,20 @@ import {
   sourcingAgentCampaignFingerprint,
   type SourcingAgentCampaign,
 } from "@/lib/sourcing/sourcing-agent-contract";
-import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
+import {
+  isStoredTavilyCredentialAuthorized,
+  resolveStoredTavilyCredential,
+} from "@/lib/sourcing/tavily";
+import {
+  executeBoundSourcingPipeline,
+  type BoundSourcingDraft,
+} from "@/lib/sourcing/bound-sourcing-execution";
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
-import { getServerSupabase } from "@/lib/supabase/server";
+import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
 import type { Candidate, Role } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const SYSTEM_PROMPT =
-  "You are Aria's autonomous sourcing agent. You have a search_candidates tool that returns real, " +
-  "already-scored people found through live search. Never invent a candidate, score, company, or URL. " +
-  "Search only relevant platforms and stop when enough strong matches exist. Respond with only strict " +
-  "JSON: {\"drafts\":[{\"candidateId\":\"<tool result id>\",\"subject\":\"<email subject>\",\"body\":\"<first-touch outreach under 120 words>\"}]}. " +
-  "Every candidateId must come from a tool result. Drafts lead with specific verified work, give one " +
-  "genuine reason for contact, use a low-pressure ask, and contain no fabricated facts. " +
-  DISCLOSURE_SYSTEM;
-
-const DraftSchema = z
-  .object({
-    candidateId: z.string().min(1).max(100),
-    subject: z.string().trim().min(1).max(255),
-    body: z.string().trim().min(1).max(5_000),
-  })
-  .strict();
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -117,51 +104,6 @@ function errorResponse(
   );
   if (retryAfter !== undefined) response.headers.set("Retry-After", String(retryAfter));
   return response;
-}
-
-function buildPrompt(
-  campaign: SourcingAgentCampaign,
-  count: number,
-  lessons: SourcingLearningLesson[],
-): string {
-  const promotedQueries = lessons.length
-    ? [
-        "Human-promoted search lessons for this exact role are optional suggestions:",
-        ...lessons.map((lesson) => `- ${lesson.platform}: ${lesson.query}`),
-        "Use a suggestion only when it remains relevant. The search tool policy is authoritative.",
-      ]
-    : [];
-  return [
-    candidateDisclosureContextForCampaignLike(campaign),
-    "",
-    `Find and draft outreach for ${count} real candidates for this role.`,
-    ...promotedQueries,
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-function parseDrafts(text: string, maxCount: number) {
-  let json: unknown;
-  try {
-    json = JSON.parse(text.trim());
-  } catch {
-    return null;
-  }
-  const parsed = z
-    .object({ drafts: z.array(DraftSchema).max(maxCount) })
-    .strict()
-    .safeParse(json);
-  if (!parsed.success) return null;
-  const ids = new Set<string>();
-  for (const draft of parsed.data.drafts) {
-    if (ids.has(draft.candidateId)) return null;
-    if (draft.body.split(/\s+/).filter(Boolean).length > 120) return null;
-    if (/[\u0000-\u001f\u007f]/.test(draft.subject)) return null;
-    if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(draft.body)) return null;
-    ids.add(draft.candidateId);
-  }
-  return parsed.data.drafts;
 }
 
 async function readWorkspace(
@@ -299,28 +241,95 @@ async function handlePost(req: NextRequest, correlationId: string) {
   if (frameworkAuthorization && !configuredQueries.includes(frameworkAuthorization.query)) {
     return fail(409, "CAMPAIGN_CHANGED", "The framework query is no longer approved for this campaign.");
   }
-  const cloudConfig = resolveAiProvider(initial.value.aiSettings, "sourcing");
-  const deterministic = Boolean(frameworkAuthorization) || !cloudConfig;
-  if (deterministic && configuredQueries.length === 0) {
-    return fail(409, "CAMPAIGN_NOT_READY", "Campaign has no reviewed real-sourcing query.");
-  }
   const roleBasis: SourcingRoleBasis = sourcingRoleBasisForCampaign(initial.value.campaign);
   if (roleBasis.skills.length === 0) {
     return fail(409, "CAMPAIGN_NOT_READY", "Campaign brief requires a reviewed role skill.");
   }
+  const campaignFingerprint = createHash("sha256")
+    .update(initial.value.fingerprint, "utf8")
+    .digest("hex");
 
-  let cloudSlug: AiProviderSlug | null = null;
-  let toolModel: string | null = null;
-  if (!frameworkAuthorization && cloudConfig) {
-    cloudSlug = cloudConfig.provider as AiProviderSlug;
-    toolModel = cloudConfig.model || DEFAULT_MODEL[cloudSlug];
-    if (!cloudConfig.apiKeyId) {
-      return fail(503, "SOURCING_AGENT_NOT_CONFIGURED", "The selected provider has no workspace key.");
+  // Recover a completed ordinary result before resolving a model binding,
+  // decrypting credentials, or performing any provider egress. A lost HTTP
+  // response or browser persistence conflict therefore reuses the exact
+  // staged result even if runtime provider configuration changed afterward.
+  if (!frameworkAuthorization) {
+    const pending = await resumeSourcingRunResult({
+      workspaceId,
+      actorId: user.id,
+      campaignId,
+      campaignFingerprint,
+      count,
+    });
+    if (pending.status === "result_ready") {
+      const recovered = parseSourcingAgentSuccessResponse({
+        ...(pending.resultPayload as Record<string, unknown>),
+        sourcingResultSha256: pending.resultSha256,
+      }, campaignId, pending.requestedCount);
+      return recovered && recovered.sourcingRunId === pending.runId
+        ? noStoreJson(recovered)
+        : fail(503, "SOURCING_AGENT_UNAVAILABLE", "The staged sourcing result is invalid.");
+    }
+    if (
+      pending.status === "in_progress" ||
+      pending.status === "pending_conflict" ||
+      pending.status === "already_consumed" ||
+      pending.status === "result_expired"
+    ) {
+      return fail(409, "SOURCING_AGENT_REPLAY_BLOCKED", "A sourcing result is already pending for this campaign.");
+    }
+    if (pending.status === "not_found") {
+      return fail(403, "INSUFFICIENT_PERMISSIONS", "Live sourcing authority is unavailable.");
+    }
+    if (pending.status !== "no_pending") {
+      return fail(503, "SOURCING_AGENT_UNAVAILABLE", "Sourcing-result recovery is unavailable.");
     }
   }
-  const configurationFingerprint = createHash("sha256")
-    .update(initial.value.configurationFingerprint)
-    .digest("hex");
+  // Mutable workspace_state AI provider settings are never execution authority:
+  // only the database-approved runtime binding may select a cloud provider,
+  // model, or key. The framework path is always deterministic already and
+  // never needs a binding.
+  let binding: ActiveAiRuntimeBinding | null = null;
+  let tavilyCredentialId: string | null = null;
+  if (!frameworkAuthorization) {
+    const service = getServiceSupabase();
+    if (!service) {
+      return fail(503, "SOURCING_AGENT_UNAVAILABLE", "Sourcing-agent runtime authority is unavailable.");
+    }
+    const bindingResult = await resolveActiveAiRuntimeBinding(service, workspaceId, "sourcing");
+    if (bindingResult.ok) {
+      binding = bindingResult.binding;
+    } else if (bindingResult.code !== "not_configured") {
+      // credential_unavailable, authority_invalid, backend_error: fail closed
+      // before any provider egress rather than falling back to a stale or
+      // fabricated cloud configuration.
+      return fail(503, "SOURCING_AGENT_UNAVAILABLE", "Sourcing-agent runtime authority is unavailable.");
+    }
+  }
+  const deterministic = Boolean(frameworkAuthorization) || !binding;
+  if (deterministic && configuredQueries.length === 0) {
+    return fail(409, "CAMPAIGN_NOT_READY", "Campaign has no reviewed real-sourcing query.");
+  }
+  let cloudSlug: AiProviderSlug | null = null;
+  let toolModel: string | null = null;
+  if (binding) {
+    cloudSlug = binding.provider;
+    toolModel = binding.model;
+  }
+  // Binds this sourcing run's configuration fingerprint to the exact binding
+  // set/config in effect, so a later replay or comparison can detect a
+  // provider/model/key change even though the workspace-state fingerprint
+  // above never reflects the binding.
+  const configurationFingerprintHash = createHash("sha256")
+    .update(initial.value.configurationFingerprint, "utf8")
+    .update("\0", "utf8");
+  if (binding) {
+    configurationFingerprintHash
+      .update(binding.setSha256, "utf8")
+      .update("\0", "utf8")
+      .update(binding.configSha256, "utf8");
+  }
+  const configurationFingerprint = configurationFingerprintHash.digest("hex");
   const beginInput: {
     workspaceId: string;
     actorId: string;
@@ -332,6 +341,8 @@ async function handlePost(req: NextRequest, correlationId: string) {
     model: string | null;
     idempotencyKey: string;
     requestId: string;
+    count: number;
+    campaignFingerprint: string;
   } = {
     workspaceId,
     actorId: user.id,
@@ -343,14 +354,12 @@ async function handlePost(req: NextRequest, correlationId: string) {
     model: toolModel,
     idempotencyKey,
     requestId: correlationId,
+    count,
+    campaignFingerprint,
   };
   const begun = frameworkAuthorization
     ? await beginAgentFrameworkSourcingRun({
         ...beginInput,
-        count,
-        campaignFingerprint: createHash("sha256")
-          .update(initial.value.fingerprint, "utf8")
-          .digest("hex"),
         sourceQuery: frameworkAuthorization.query,
         frameworkRunId: frameworkAuthorization.runId,
         capabilityToken: frameworkAuthorization.capabilityToken,
@@ -359,21 +368,31 @@ async function handlePost(req: NextRequest, correlationId: string) {
   if (begun.status === "quota_exceeded") {
     return fail(429, "SOURCING_AGENT_RATE_LIMITED", "Daily live-sourcing limit reached.");
   }
-  if (begun.status === "result_ready" && frameworkAuthorization) {
+  if (begun.status === "result_ready") {
+    const recoveredCount = frameworkAuthorization
+      ? count
+      : "requestedCount" in begun && typeof begun.requestedCount === "number"
+        ? begun.requestedCount
+        : 0;
+    if (recoveredCount < 1 || recoveredCount > 8) {
+      return fail(503, "SOURCING_AGENT_UNAVAILABLE", "The staged sourcing result is invalid.");
+    }
     const recovered = parseSourcingAgentSuccessResponse({
       ...(begun.resultPayload as Record<string, unknown>),
-      agentFrameworkResultSha256: begun.resultSha256,
-    }, campaignId, count, frameworkAuthorization.runId);
+      ...(frameworkAuthorization
+        ? { agentFrameworkResultSha256: begun.resultSha256 }
+        : { sourcingResultSha256: begun.resultSha256 }),
+    }, campaignId, recoveredCount, frameworkAuthorization?.runId);
     return recovered && recovered.sourcingRunId === begun.runId
       ? noStoreJson(recovered)
       : fail(503, "SOURCING_AGENT_UNAVAILABLE", "The staged sourcing result is invalid.");
   }
   if (
     begun.status === "in_progress" ||
-    begun.status === "completed" ||
-    begun.status === "failed" ||
     begun.status === "idempotency_conflict" ||
+    begun.status === "pending_conflict" ||
     begun.status === "already_consumed" ||
+    begun.status === "result_expired" ||
     begun.status === "authorization_expired"
     || begun.status === "framework_disabled"
   ) {
@@ -464,6 +483,47 @@ async function handlePost(req: NextRequest, correlationId: string) {
         message: "Agent framework execution authority changed during the operation.",
       };
     }
+    // Re-resolves the runtime binding itself (not just the workspace-state
+    // fingerprint, which never reflects it) so a mid-run activation or
+    // revocation of the binding stops egress before the next secret
+    // resolution or external call.
+    if (binding) {
+      const service = getServiceSupabase();
+      const recheck = service
+        ? await resolveActiveAiRuntimeBinding(service, workspaceId, "sourcing")
+        : ({ ok: false, code: "backend_error" } as const);
+      if (
+        !recheck.ok ||
+        recheck.binding.bindingId !== binding.bindingId ||
+        recheck.binding.setSha256 !== binding.setSha256 ||
+        recheck.binding.configSha256 !== binding.configSha256
+      ) {
+        return {
+          ok: false,
+          status: 409,
+          code: "CAMPAIGN_CHANGED",
+          message: "Sourcing-agent runtime authority changed during the operation.",
+        };
+      }
+    }
+    if (tavilyCredentialId) {
+      const service = getServiceSupabase();
+      if (
+        !service ||
+        !await isStoredTavilyCredentialAuthorized(
+          service,
+          workspaceId,
+          tavilyCredentialId,
+        )
+      ) {
+        return {
+          ok: false,
+          status: 409,
+          code: "CAMPAIGN_CHANGED",
+          message: "Sourcing search credential authority changed during the operation.",
+        };
+      }
+    }
     return { ok: true, workspace: latest };
   };
 
@@ -477,17 +537,21 @@ async function handlePost(req: NextRequest, correlationId: string) {
     const beforeSecrets = await failIfAuthorityChanged();
     if (beforeSecrets) return await beforeSecrets;
     let vaultKey: string | null = null;
-    if (cloudConfig && cloudSlug) {
-      vaultKey = await resolveVaultSecret(cloudConfig.apiKeyId, VAULT_PROVIDER[cloudSlug]);
+    if (binding && cloudSlug) {
+      vaultKey = await resolveVaultSecret(binding.apiKeyId, binding.credentialProvider, workspaceId);
       if (!vaultKey) {
         return await failClaimed(
-          403,
-          "SOURCING_AGENT_NOT_CONFIGURED",
-          "The selected provider key is unavailable.",
+          503,
+          "SOURCING_AGENT_UNAVAILABLE",
+          "Sourcing-agent runtime authority is unavailable.",
         );
       }
     }
-    const tavilyKey = deterministic ? null : await resolveStoredTavilyKey(session);
+    const tavilyCredential = deterministic
+      ? null
+      : await resolveStoredTavilyCredential(session);
+    tavilyCredentialId = tavilyCredential?.apiKeyId ?? null;
+    const tavilyKey = tavilyCredential?.key ?? null;
     const beforeExecution = await failIfAuthorityChanged();
     if (beforeExecution) return await beforeExecution;
 
@@ -531,25 +595,19 @@ async function handlePost(req: NextRequest, correlationId: string) {
     }
 
     const githubToken = process.env.GITHUB_TOKEN ?? "";
-    const runner = makeSourcingToolRunner(
-      initial.value.campaign,
-      initial.value.existing,
-      initial.value.campaign.scoringWeights,
-      githubToken,
-      tavilyKey ?? undefined,
-      undefined,
-      async () => (await currentAuthority()).ok,
-    );
-    const servers: ResolvedMcpServer[] = [
-      {
-        url: "builtin:sourcing-agent",
-        token: "",
-        tools: SOURCING_TOOL_DEFS,
-        run: runner.run,
-      },
-    ];
-    let drafts: ReturnType<typeof parseDrafts> = [];
+    let foundByExecution: Candidate[] = [];
+    let executions: SourcingQueryExecution[] = [];
+    let drafts: BoundSourcingDraft[] = [];
     if (deterministic) {
+      const runner = makeSourcingToolRunner(
+        initial.value.campaign,
+        initial.value.existing,
+        initial.value.campaign.scoringWeights,
+        githubToken,
+        tavilyKey,
+        undefined,
+        async () => (await currentAuthority()).ok,
+      );
       const searchSignal = AbortSignal.timeout(45_000);
       const queries = frameworkAuthorization
         ? [frameworkAuthorization.query]
@@ -592,56 +650,51 @@ async function handlePost(req: NextRequest, correlationId: string) {
           "Real candidate search did not complete.",
         );
       }
+      foundByExecution = runner.getFound();
+      executions = runner.getExecutions();
     } else {
-      if (!cloudSlug || !toolModel || !vaultKey) {
+      const result = await executeBoundSourcingPipeline({
+        workspaceId,
+        campaign: initial.value.campaign,
+        existing: initial.value.existing,
+        count,
+        binding,
+        apiKey: vaultKey ?? "",
+        githubToken,
+        tavilyKey,
+        promotedLessons,
+        beforeExternalCall: async () => (await currentAuthority()).ok,
+      });
+      if (!result.ok && result.code === "authority_changed") {
+        const authorityFailure = await failIfAuthorityChanged();
+        if (authorityFailure) return await authorityFailure;
+      }
+      if (!result.ok && result.code === "not_configured") {
         return await failClaimed(
           503,
           "SOURCING_AGENT_NOT_CONFIGURED",
           "The selected provider is unavailable.",
         );
       }
-      const prompt = buildPrompt(initial.value.campaign, count, promotedLessons);
-      const result =
-        cloudSlug === "anthropic"
-          ? await runAnthropicWithTools({
-              model: toolModel,
-              system: SYSTEM_PROMPT,
-              prompt,
-              key: vaultKey,
-              servers,
-              maxRounds: 6,
-              beforeExternalCall: async () => (await currentAuthority()).ok,
-            })
-          : await runOpenAiWithTools({
-              provider: cloudSlug,
-              model: toolModel,
-              system: SYSTEM_PROMPT,
-              prompt,
-              key: vaultKey,
-              servers,
-              maxRounds: 6,
-              beforeExternalCall: async () => (await currentAuthority()).ok,
-            });
-      if (!result.ok) {
-        const authorityFailure = await failIfAuthorityChanged();
-        if (authorityFailure) return await authorityFailure;
-        return await failClaimed(
-          502,
-          "SOURCING_AGENT_UPSTREAM_FAILED",
-          "The sourcing agent did not complete.",
-        );
-      }
-      drafts = parseDrafts(result.text ?? "", count);
-      if (!drafts) {
+      if (!result.ok && result.code === "response_invalid") {
         return await failClaimed(
           502,
           "SOURCING_AGENT_RESPONSE_INVALID",
           "The sourcing-agent response was invalid.",
         );
       }
+      if (!result.ok) {
+        return await failClaimed(
+          502,
+          "SOURCING_AGENT_UPSTREAM_FAILED",
+          "The sourcing agent did not complete.",
+        );
+      }
+      foundByExecution = result.found;
+      executions = result.executions;
+      drafts = result.drafts;
     }
 
-    const executions = runner.getExecutions();
     if (executions.length === 0 || !executions.some((execution) => execution.ok)) {
       return await failClaimed(
         502,
@@ -659,7 +712,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
     }
     const latest = finalAuthority.workspace;
 
-    const found = dedupeCandidates(runner.getFound(), latest.value.existing, {
+    const found = dedupeCandidates(foundByExecution, latest.value.existing, {
       excludedCompanies: latest.value.campaign.sourcingStrategy.excludedCompanies,
     }).accepted;
     const byId = new Map(found.map((candidate) => [candidate.id, candidate]));
@@ -773,12 +826,19 @@ async function handlePost(req: NextRequest, correlationId: string) {
       actorId: user.id,
       runId: begun.runId,
       queryReceipts: executions,
+      resultPayload,
     });
-    if (completion.status !== "completed" || completion.runId !== begun.runId) {
+    if (completion.status !== "result_ready" || completion.runId !== begun.runId) {
       await recordClaimFailure("RUN_COMPLETION_FAILED");
-      return fail(503, "SOURCING_AGENT_UNAVAILABLE", "Sourcing-run completion could not be recorded.");
+      return fail(503, "SOURCING_AGENT_UNAVAILABLE", "Sourcing result staging could not be recorded.");
     }
-    return noStoreJson({ ...resultPayload, feedbackReceipts: completion.receipts });
+    const staged = parseSourcingAgentSuccessResponse({
+      ...(completion.resultPayload as Record<string, unknown>),
+      sourcingResultSha256: completion.resultSha256,
+    }, campaignId, count);
+    return staged && staged.sourcingRunId === begun.runId
+      ? noStoreJson(staged)
+      : fail(503, "SOURCING_AGENT_UNAVAILABLE", "The staged sourcing result is invalid.");
   } catch {
     await recordClaimFailure("UNHANDLED_EXECUTION_FAILURE");
     return fail(

@@ -10,7 +10,7 @@ export const FLY_MANIFEST_SCHEMA = "aria.agent-framework.fly-manifest.v2";
 export const FLY_PLAN_SCHEMA = "aria.agent-framework.fly-plan.v1";
 export const FLY_APPROVAL_SCHEMA = "aria.agent-framework.fly-approval.v1";
 export const DEERFLOW_RUNTIME_IDENTITY = Object.freeze({
-  patchedRunsSha256: "79b6601066faa937a2d0b5551f7e1a5311304f1e7b28962c1ccee72cea05d6e7",
+  patchedRunsSha256: "d5ee9ebcf676656ca9380e866b414d1ff4fa70cfac587a9fbc7d7a60506a6db4",
   cleanupGuardSha256: "4e4b0006ad7486b5b028dfa9168e3e45d26d33eca46e7b653db29db4683918e6",
   runtimePolicySha256: "9312dff2f23f04fc8c2a92600d47d8d4958094e4c37e010c10ff1e011dce6025",
   runtimeConfigSha256: "a5a41ab4a2772e74203820d65a6efb488bc3b6a5948c47a8d1f9dd6cd3a30369",
@@ -51,7 +51,7 @@ export const APP_BY_ROLE = Object.freeze({
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const COMMIT = /^[0-9a-f]{40}$/;
-const IMAGE = /^[a-z0-9][a-z0-9./:_-]*@sha256:[0-9a-f]{64}$/;
+const IMAGE = /^registry\.fly\.io\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?@sha256:[0-9a-f]{64}$/;
 const NAME = /^[a-z][a-z0-9-]{0,62}$/;
 const TOKEN = /^[A-Za-z0-9_-]{32,4096}$/;
 const MACHINE_ID = /^[a-z0-9]{10,32}$/;
@@ -156,6 +156,42 @@ function imageRef(value, label) {
   const normalized = required(value, label, 460);
   if (!IMAGE.test(normalized) || /@sha256:0{64}$/.test(normalized)) fail(`${label} must be an immutable image digest`);
   return normalized;
+}
+
+const IMAGE_TAG = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/;
+const IMAGE_PATH_COMPONENT = /^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$/;
+const IMAGE_DOMAIN = /^(?:localhost|[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*)(?::[1-9][0-9]{0,4})?$/;
+
+export function canonicalTaggedImageReference(value) {
+  if (
+    typeof value !== "string" || value.length < 3 || value.length > 384 ||
+    /[\s\0-\x1f\x7f]/.test(value) || value.includes("://") || value.includes("@")
+  ) fail("tagged image reference is invalid");
+  const lastSlash = value.lastIndexOf("/");
+  const lastColon = value.lastIndexOf(":");
+  if (lastColon <= lastSlash || lastColon < 1 || lastColon === value.length - 1) {
+    fail("tagged image reference must include an explicit tag");
+  }
+  const repository = value.slice(0, lastColon);
+  const tag = value.slice(lastColon + 1);
+  if (!IMAGE_TAG.test(tag)) fail("tagged image reference has an invalid tag");
+  if (tag.toLowerCase() === "latest") fail("tagged image reference must use a pinned tag");
+  if (repository.length > 255 || repository.startsWith("/") || repository.endsWith("/")) {
+    fail("tagged image reference has an invalid repository");
+  }
+  const components = repository.split("/");
+  const domainLike = components[0].includes(".") || components[0].includes(":") || components[0] === "localhost";
+  if (domainLike) {
+    if (components.length < 2 || !IMAGE_DOMAIN.test(components.shift())) {
+      fail("tagged image reference has an invalid repository");
+    }
+    const port = repository.match(/^[^/]+:([0-9]+)\//)?.[1];
+    if (port && Number(port) > 65_535) fail("tagged image reference has an invalid repository");
+  }
+  if (components.length < 1 || components.some((component) => !IMAGE_PATH_COMPONENT.test(component))) {
+    fail("tagged image reference has an invalid repository");
+  }
+  return Object.freeze({ repository, tag });
 }
 
 function httpsUrl(value, label, { originOnly = false } = {}) {

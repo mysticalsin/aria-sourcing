@@ -136,6 +136,7 @@ const service = {
       },
       select: () => query,
       eq: () => query,
+      in: () => query,
       is: () => query,
       or: () => query,
       order: () => query,
@@ -159,6 +160,23 @@ mock.module(moduleUrl("src/lib/supabase/server.ts"), {
     getServerSupabase: async () => session,
     getServiceSupabase: () => service,
     requireAdmin: async () => ({ ok: false, response: new Response(null, { status: 403 }) }),
+  },
+});
+mock.module(moduleUrl("src/lib/ai/runtime-binding.ts"), {
+  namedExports: {
+    resolveActiveAiRuntimeBinding: async (_client: unknown, wid: string, purpose: string) => ({
+      ok: true,
+      binding: {
+        workspaceId: wid,
+        purpose,
+        provider: "openai",
+        model: "gpt-4o-mini",
+        apiKeyId: "11111111-1111-4111-8111-111111111111",
+        credentialProvider: "OpenAI",
+        setSha256: "a".repeat(64),
+        configSha256: "b".repeat(64),
+      },
+    }),
   },
 });
 mock.module(moduleUrl("src/lib/ai/vault-secret.ts"), {
@@ -212,6 +230,7 @@ mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
 });
 mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
   namedExports: {
+    resumeSourcingRunResult: async () => ({ status: "no_pending" }),
     beginSourcingRun: async () => ({
       status: "claimed",
       runId: "55555555-5555-4555-8555-555555555555",
@@ -219,12 +238,18 @@ mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
       lessonsEnabled: false,
     }),
     listPromotedSourcingLessons: async () => ({ status: "learning_disabled", lessons: [] }),
-    completeSourcingRun: async () => ({
-      status: "completed",
+    completeSourcingRun: async (input: Record<string, unknown>) => ({
+      status: "result_ready",
       runId: "55555555-5555-4555-8555-555555555555",
-      queryCount: 1,
-      candidateCount: 0,
-      receipts: [],
+      resultSha256: "c".repeat(64),
+      resultPayload: {
+        ...(input.resultPayload as Record<string, unknown>),
+        feedbackReceipts: [{
+          receiptId: "00000000-0000-4000-8000-000000000001",
+          platform: "GitHub",
+          candidateCount: 0,
+        }],
+      },
     }),
     failSourcingRun: async () => true,
   },
@@ -387,7 +412,7 @@ try {
   vaultProvider = "Anthropic";
   resetCalls();
   const mismatchSourcing = await sourcingRoute.POST(sourcingRequest());
-  ok("sourcing cross-provider key mismatch fails closed before model egress", mismatchSourcing.status === 403 && toolLoopCalls === 0);
+  ok("sourcing runtime secret mismatch fails closed before model egress", mismatchSourcing.status === 503 && toolLoopCalls === 0);
 
   role = "member";
   vaultProvider = "OpenAI";

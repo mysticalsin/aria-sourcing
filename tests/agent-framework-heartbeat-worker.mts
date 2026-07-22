@@ -14,8 +14,8 @@ const WORKSPACE_A = "10000000-0000-4000-8000-000000000001";
 const WORKSPACE_B = "20000000-0000-4000-8000-000000000002";
 const DEERFLOW_INSTANCE = "30000000-0000-4000-8000-000000000003";
 const FLOWISE_INSTANCE = "40000000-0000-4000-8000-000000000004";
-const DEERFLOW_COMMIT = "fabadae4168db81f0eaaf62f209050f978e2f691";
-const FLOWISE_COMMIT = "bb773ffa710bd22639c4ba2643413a0ea2b679d3";
+const DEERFLOW_COMMIT = "3c0a45ad772cdba388009b8d5ecad5e48cd22429";
+const FLOWISE_COMMIT = "ed9e100fb71643cd3922b005908f9732bc0e07dc";
 const DEERFLOW_IMAGE = `registry.internal/deerflow@sha256:${"a".repeat(64)}`;
 const FLOWISE_IMAGE = `registry.internal/flowise@sha256:${"b".repeat(64)}`;
 const SERVICE_KEY = "service-role-key-that-is-at-least-thirty-two-characters";
@@ -475,7 +475,7 @@ test("the production image runs the heartbeat as a non-HTTP isolated process", (
   assert.match(dockerfile, /src\/lib\/agents\/framework\/configuration-core\.mjs/);
   assert.match(
     fly,
-    /\[processes\][\s\S]*framework_heartbeat\s*=\s*"node scripts\/agent-framework-heartbeat-worker\.mjs"/,
+    /\[processes\][\s\S]*framework_heartbeat\s*=\s*"scripts\/agent-framework-heartbeat-worker\.mjs"/,
   );
   assert.match(fly, /\[http_service\][\s\S]*processes\s*=\s*\["web"\]/);
   assert.match(

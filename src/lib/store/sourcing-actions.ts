@@ -22,6 +22,8 @@ import {
 } from "../sourcing/sourcing-agent-contract";
 import {
   acknowledgeReviewedSourcing,
+  completeReviewedSourcingOperation,
+  markReviewedSourcingOperationPersisted,
   requestReviewedSourcing,
 } from "../sourcing/sourcing-agent-client";
 import {
@@ -730,6 +732,12 @@ export function createSourcingActions({
     const source = observedPlatforms.every((platform) => platform === "GitHub")
       ? "github" as const
       : "web" as const;
+    const resultSha256 = agentFramework
+      ? reviewed.value.agentFrameworkResultSha256
+      : reviewed.value.sourcingResultSha256;
+    if (!resultSha256) {
+      return { ok: false, error: "The sourcing result receipt is missing.", source: "unavailable" };
+    }
     let authorized = false;
     let result: SourceResult = { accepted: [], skipped: [] };
     const applied = await commitPersisted((previous) => {
@@ -766,17 +774,25 @@ export function createSourcingActions({
         reviewed.value.mode === "cloud"
           ? "Reviewed cloud tool-calling"
           : "Reviewed deterministic GitHub";
+      const activityId = `sourcing-run:${reviewed.value.sourcingRunId}:${resultSha256}`;
+      if (
+        previous.activities.some((activity) => activity.id === activityId) ||
+        campaign.activities.some((activity) => activity.id === activityId)
+      ) return next;
       return withActivity(
         next,
-        makeActivity({
-          type: "sourcing",
-          title: `Sourced ${result.accepted.length} candidates`,
-          notes: `${executionLabel} batch. ${result.skipped.length} skipped by dedupe and exclusions.`,
-          outcome: `${result.accepted.length} accepted, ${result.skipped.length} skipped (live)`,
-          campaignId,
-          linkedEntityType: "campaign",
-          linkedEntityId: campaignId,
-        }),
+        {
+          ...makeActivity({
+            type: "sourcing",
+            title: `Sourced ${result.accepted.length} candidates`,
+            notes: `${executionLabel} batch. ${result.skipped.length} skipped by dedupe and exclusions.`,
+            outcome: `${result.accepted.length} accepted, ${result.skipped.length} skipped (live)`,
+            campaignId,
+            linkedEntityType: "campaign",
+            linkedEntityId: campaignId,
+          }),
+          id: activityId,
+        },
         campaignId,
       );
     });
@@ -787,20 +803,33 @@ export function createSourcingActions({
         source: "unavailable",
       };
     }
-    if (agentFramework) {
-      const resultSha256 = reviewed.value.agentFrameworkResultSha256;
-      if (!resultSha256 || !await acknowledgeReviewedSourcing(
-        workspaceFetch,
-        agentFramework,
+    if (!agentFramework) {
+      markReviewedSourcingOperationPersisted(
+        campaignId,
+        reviewed.value.idempotencyKey,
+        reviewed.value.sourcingRunId,
         resultSha256,
-      )) {
-        return {
-          ok: false,
-          error: "Candidates were saved, but the framework persistence receipt could not be confirmed. Retry this run to reconcile it.",
-          source: "unavailable",
-          retryable: "agent_framework_reconcile",
-        };
-      }
+      );
+    }
+    const acknowledgementAuthority = agentFramework
+      ? { frameworkRunId: agentFramework.runId, capabilityToken: agentFramework.capabilityToken }
+      : { sourcingRunId: reviewed.value.sourcingRunId };
+    if (!await acknowledgeReviewedSourcing(
+      workspaceFetch,
+      acknowledgementAuthority,
+      resultSha256,
+    )) {
+      return {
+        ok: false,
+        error: agentFramework
+          ? "Candidates were saved, but the framework persistence receipt could not be confirmed. Retry this run to reconcile it."
+          : "Candidates were saved, but the persistence receipt could not be confirmed. Retry this run to reconcile it.",
+        source: "unavailable",
+        retryable: agentFramework ? "agent_framework_reconcile" : undefined,
+      };
+    }
+    if (!agentFramework) {
+      completeReviewedSourcingOperation(campaignId, reviewed.value.idempotencyKey);
     }
     if (result.accepted.length > 0) {
       emitSource({ kind: "source", campaignId, count: result.accepted.length });

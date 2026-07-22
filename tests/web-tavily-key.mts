@@ -1,7 +1,10 @@
 import { buildSeedState } from "../src/lib/seed";
 import { encryptSecret, decryptSecret, encryptionRequiredButMissing } from "../src/lib/crypto-secrets";
 import { validateApiKeyFormat } from "../src/lib/providers";
-import { resolveStoredTavilyKey } from "../src/lib/sourcing/tavily";
+import {
+  isStoredTavilyCredentialAuthorized,
+  resolveStoredTavilyKey,
+} from "../src/lib/sourcing/tavily";
 import { createProcessEnvScope } from "./helpers/process-env.mts";
 
 let pass = 0,
@@ -39,6 +42,10 @@ function makeFakeApiKeysService(row: Row | null) {
       filters.push({ col, value });
       return query;
     },
+    in: (col: string, value: unknown[]) => {
+      filters.push({ col, value });
+      return query;
+    },
     order: (col: string, opts: Row) => {
       calls.push(`order:${col}:${String(opts.ascending)}`);
       return query;
@@ -73,20 +80,59 @@ function makeFakeSession(workspaceId: string) {
 try {
   envScope.set({ DATA_ENCRYPTION_KEY: Buffer.alloc(32, 5).toString("base64") });
   const secret = "tvly-stored-key-123456";
+  const apiKeyId = "77777777-7777-4777-8777-777777777777";
   const encrypted = encryptSecret(secret);
   ok("encryptSecret returns versioned ciphertext when key is configured", encrypted.startsWith("enc:v2:") && encrypted !== secret);
   ok("encryptSecret round-trips with decryptSecret", decryptSecret(encrypted) === secret);
 
-  const fake = makeFakeApiKeysService({ secret: encrypted });
+  const fake = makeFakeApiKeysService({
+    id: apiKeyId,
+    secret: encrypted,
+    workspace_id: "ws-1",
+    provider: "Tavily",
+    status: "valid",
+    verification_method: "tavily_usage_v1",
+  });
   const resolved = await resolveStoredTavilyKey(makeFakeSession("ws-1") as never, fake.client as never);
   ok("resolveStoredTavilyKey returns decrypted workspace key", resolved === secret);
   ok(
     "resolveStoredTavilyKey queries the workspace-scoped Tavily api_keys row",
     fake.calls.includes("from:api_keys") &&
-      fake.calls.includes("select:secret") &&
+      fake.calls.includes("select:id, secret, workspace_id, provider, status, verification_method") &&
       fake.filters.some((f) => f.col === "workspace_id" && f.value === "ws-1") &&
-      fake.filters.some((f) => f.col === "provider" && f.value === "Tavily"),
+      fake.filters.some((f) => f.col === "provider" && f.value === "Tavily") &&
+      fake.filters.some((f) => f.col === "status" && f.value === "valid") &&
+      fake.filters.some((f) =>
+        f.col === "verification_method" &&
+        Array.isArray(f.value) &&
+        f.value.includes("tavily_usage_v1") &&
+        f.value.includes("tavily_key_info_v1")
+      ),
   );
+  const exactCredentialAuthorized = await isStoredTavilyCredentialAuthorized(
+    fake.client as never,
+    "ws-1",
+    apiKeyId,
+  );
+  ok(
+    "Tavily egress rechecks the exact tenant key identity and valid status",
+    exactCredentialAuthorized &&
+      fake.filters.some((f) => f.col === "id" && f.value === apiKeyId),
+  );
+
+  for (const row of [
+    { id: apiKeyId, secret: encrypted, workspace_id: "ws-1", provider: "Tavily", status: "invalid", verification_method: "tavily_usage_v1" },
+    { id: apiKeyId, secret: encrypted, workspace_id: "ws-1", provider: "Tavily", status: "untested", verification_method: "tavily_usage_v1" },
+    { id: apiKeyId, secret: encrypted, workspace_id: "ws-2", provider: "Tavily", status: "valid", verification_method: "tavily_usage_v1" },
+    { id: apiKeyId, secret: encrypted, workspace_id: "ws-1", provider: "OpenAI", status: "valid", verification_method: "tavily_usage_v1" },
+    { id: apiKeyId, secret: encrypted, workspace_id: "ws-1", provider: "Tavily", status: "valid", verification_method: null },
+  ]) {
+    const refused = await resolveStoredTavilyKey(
+      makeFakeSession("ws-1") as never,
+      makeFakeApiKeysService(row).client as never,
+    );
+    ok(`resolveStoredTavilyKey refuses ${String(row.status)} or mismatched authority`, refused === null);
+  }
 
   const { runWebTool } = await import("../src/lib/ai/web-tools");
   const { makeSourcingToolRunner } = await import("../src/lib/ai/sourcing-tools");
@@ -244,15 +290,46 @@ try {
   const envSearch = await runWebTool("web_search", { query: "site:linkedin.com/in env fallback" }, { fetchImpl: fakeFetch });
   ok("env fallback works when no stored key is passed", envSearch.ok && seenKeys.at(-1) === envKey);
 
+  const explicitNoFallbackCalls: string[] = [];
+  const explicitNoFallbackFetch = (async (url: unknown) => {
+    explicitNoFallbackCalls.push(String(url));
+    if (String(url) === "https://api.tavily.com/search") {
+      return new Response("workspace key unavailable", { status: 503 });
+    }
+    return new Response(
+      JSON.stringify({
+        Heading: "Tenant-safe keyless result",
+        AbstractText: "No shared credential used.",
+        AbstractURL: "https://example.com/tenant-safe",
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }) as typeof fetch;
+
   envScope.set({ DATA_ENCRYPTION_KEY: undefined });
-  const decryptFailResolved = await resolveStoredTavilyKey(makeFakeSession("ws-1") as never, makeFakeApiKeysService({ secret: encrypted }).client as never);
+  const decryptFailResolved = await resolveStoredTavilyKey(
+    makeFakeSession("ws-1") as never,
+    makeFakeApiKeysService({
+      id: apiKeyId,
+      secret: encrypted,
+      workspace_id: "ws-1",
+      provider: "Tavily",
+      status: "valid",
+      verification_method: "tavily_usage_v1",
+    }).client as never,
+  );
   ok("resolveStoredTavilyKey returns null when stored Tavily decrypt fails", decryptFailResolved === null);
   const decryptFailSearch = await runWebTool(
     "web_search",
-    { query: "site:linkedin.com/in decrypt fallback" },
-    { tavilyKey: decryptFailResolved ?? undefined, fetchImpl: fakeFetch },
+    { query: "site:linkedin.com/in tenant-safe fallback" },
+    { tavilyKey: decryptFailResolved as never, fetchImpl: explicitNoFallbackFetch },
   );
-  ok("env fallback works when stored Tavily decrypt fails", decryptFailSearch.ok && seenKeys.at(-1) === envKey);
+  ok(
+    "an explicit missing workspace Tavily authority uses only the keyless provider",
+    decryptFailSearch.ok &&
+      explicitNoFallbackCalls.length === 1 &&
+      explicitNoFallbackCalls[0]?.startsWith("https://api.duckduckgo.com/") === true,
+  );
 
   const invalid = validateApiKeyFormat("Tavily", "not-a-real-key");
   ok("Tavily validator rejects obvious junk", invalid.valid === false);

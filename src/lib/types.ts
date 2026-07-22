@@ -193,6 +193,9 @@ export interface JobAnalysis {
   salaryMax: number | null;
   currency: string;
   equity: boolean;
+  /** True only when the brief or a human explicitly states the equity position.
+   *  `equity: false` is otherwise an internal default, not evidence of no equity. */
+  equityKnown?: boolean;
   requiredSkills: string[];
   niceToHaveSkills: string[];
   minYearsExperience: number | null;
@@ -203,11 +206,13 @@ export interface JobAnalysis {
   teamSize: string;
   reportingTo: string;
   urgency: Urgency;
+  /** True only when urgency was stated in the brief or confirmed by a human.
+   *  `urgency: "Standard"` is otherwise an operational default. */
+  urgencyKnown?: boolean;
   /** Detected language of the need (ISO code, e.g. "en", "fr"). */
   language?: string;
   /** ISO date explicitly stated in the inbound brief (e.g. "Start date: 7/13/2026").
-   *  Null when the brief doesn't state one — createCampaign then falls back to a
-   *  default target. Absent covers analyses predating this field. */
+   *  Null when the brief doesn't state one. Absent covers analyses predating this field. */
   expectedStartDate?: string | null;
   validationWarnings: ValidationWarning[];
 }
@@ -234,7 +239,8 @@ export interface SourcingStrategy {
 export interface GithubQuery {
   label: string;
   query: string;
-  estimatedResults: number;
+  /** A provider-observed estimate, when available. Never a generated guess. */
+  estimatedResults: number | null;
 }
 
 /* ---- Scoring ------------------------------------------------------------- */

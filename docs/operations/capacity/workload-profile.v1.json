@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "profileId": "aria-enterprise-registered-50000-v1",
+  "description": "Proposed staging capacity workload for 50,000 registered users. Every numeric load value is an unmeasured planning assumption pending owner ratification.",
+  "assumptions": {
+    "classification": "planning-assumption-unmeasured",
+    "registeredUsers": 50000,
+    "peakConcurrentSessions": 500,
+    "requestsPerActiveSessionPerMinute": 2,
+    "targetRequestsPerSecond": 16.67,
+    "ratification": {
+      "status": "pending-owner",
+      "approvedBy": null,
+      "approvedAt": null
+    }
+  },
+  "safety": {
+    "allowedOrigins": [
+      "https://aria-capacity-staging.example.invalid"
+    ],
+    "syntheticTenantPrefix": "synthetic-capacity-",
+    "authCookieEnv": "ARIA_CAPACITY_AUTH_COOKIE",
+    "syntheticTenantEnv": "ARIA_CAPACITY_SYNTHETIC_TENANT_ID"
+  },
+  "execution": {
+    "durationSeconds": 300,
+    "targetRequestsPerSecond": 16.67,
+    "maxInFlight": 50,
+    "requestTimeoutMs": 5000,
+    "maxResponseBytes": 65536
+  },
+  "httpScenarios": [
+    {
+      "id": "health",
+      "method": "GET",
+      "path": "/api/health",
+      "weight": 10,
+      "authentication": "none",
+      "expectedStatuses": [
+        200
+      ],
+      "thresholds": {
+        "minimumSamples": 450,
+        "p95Ms": 250,
+        "p99Ms": 500,
+        "maximumErrorRate": 0.001
+      }
+    },
+    {
+      "id": "readiness",
+      "method": "GET",
+      "path": "/api/ready",
+      "weight": 10,
+      "authentication": "none",
+      "expectedStatuses": [
+        200
+      ],
+      "thresholds": {
+        "minimumSamples": 450,
+        "p95Ms": 750,
+        "p99Ms": 1500,
+        "maximumErrorRate": 0.001
+      }
+    },
+    {
+      "id": "candidate-page-read",
+      "method": "GET",
+      "path": "/api/candidates?limit=20&offset=0",
+      "weight": 40,
+      "authentication": "synthetic-session-cookie",
+      "expectedStatuses": [
+        200
+      ],
+      "thresholds": {
+        "minimumSamples": 1800,
+        "p95Ms": 500,
+        "p99Ms": 1000,
+        "maximumErrorRate": 0.005
+      }
+    },
+    {
+      "id": "agent-spec-list-read",
+      "method": "GET",
+      "path": "/api/agents/specs",
+      "weight": 40,
+      "authentication": "synthetic-session-cookie",
+      "expectedStatuses": [
+        200
+      ],
+      "thresholds": {
+        "minimumSamples": 1800,
+        "p95Ms": 500,
+        "p99Ms": 1000,
+        "maximumErrorRate": 0.005
+      }
+    }
+  ],
+  "queueThresholds": {
+    "minimumSamples": 10,
+    "p95AgeMs": 60000,
+    "maximumAgeMs": 120000,
+    "maximumDuplicateDeliveries": 0
+  },
+  "faultThresholds": {
+    "requiredScenarios": [
+      "database-unavailable",
+      "queue-worker-restart",
+      "provider-timeout-no-contact"
+    ],
+    "maximumRecoveryMs": 30000,
+    "maximumErrorRate": 0.01
+  },
+  "resourceThresholds": {
+    "maximumCpuPercent": 70,
+    "maximumMemoryPercent": 75,
+    "maximumDatabaseConnectionsPercent": 70,
+    "minimumHeadroomPercent": 25
+  }
+}

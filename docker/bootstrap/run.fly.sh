@@ -35,6 +35,7 @@ esac
 
 OWNER_PLAN=""
 MIGRATION_PLAN=""
+AGENT_MEMORY_BOUNDARY_PLAN=""
 LEGACY_PREFLIGHT_PLAN=""
 LEGACY_BASELINE_PLAN=""
 LEGACY_MIGRATION_MANIFEST=""
@@ -53,6 +54,7 @@ cleanup() {
   [ -z "$RECOVERY_SNAPSHOT_DIR" ] || rm -rf "$RECOVERY_SNAPSHOT_DIR"
   [ -z "$OWNER_PLAN" ] || rm -f "$OWNER_PLAN"
   [ -z "$MIGRATION_PLAN" ] || rm -f "$MIGRATION_PLAN"
+  [ -z "$AGENT_MEMORY_BOUNDARY_PLAN" ] || rm -f "$AGENT_MEMORY_BOUNDARY_PLAN"
   [ -z "$LEGACY_PREFLIGHT_PLAN" ] || rm -f "$LEGACY_PREFLIGHT_PLAN"
   [ -z "$LEGACY_BASELINE_PLAN" ] || rm -f "$LEGACY_BASELINE_PLAN"
   [ -z "$LEGACY_MIGRATION_MANIFEST" ] || rm -f "$LEGACY_MIGRATION_MANIFEST"
@@ -825,6 +827,69 @@ SQL
   } > "$MIGRATION_PLAN"
 }
 
+build_agent_memory_boundary_plan() {
+  AGENT_MEMORY_BOUNDARY_PLAN="$(mktemp /tmp/aria-agent-memory-boundary.sql.XXXXXX)"
+  cat > "$AGENT_MEMORY_BOUNDARY_PLAN" <<'SQL'
+\set ON_ERROR_STOP on
+begin transaction read only;
+do $aria_agent_memory_provenance_boundary$
+declare
+  table_name text;
+  function_signature text;
+  function_oid regprocedure;
+  function_owner text;
+begin
+  foreach table_name in array array[
+    'public.agent_runs',
+    'public.agent_events'
+  ]
+  loop
+    if to_regclass(table_name) is null then
+      raise exception 'agent memory provenance table is missing: %', table_name
+        using errcode = '42P01';
+    end if;
+    if has_table_privilege('service_role', table_name, 'SELECT') is not true then
+      raise exception 'service_role lacks required SELECT on %', table_name
+        using errcode = '42501';
+    end if;
+    if has_table_privilege('service_role', table_name, 'INSERT') is true
+       or has_table_privilege('service_role', table_name, 'UPDATE') is true
+       or has_table_privilege('service_role', table_name, 'DELETE') is true then
+      raise exception 'service_role has forbidden mutation privilege on %', table_name
+        using errcode = '42501';
+    end if;
+  end loop;
+
+  foreach function_signature in array array[
+    'public.create_agent_memory_with_candidate_provenance(uuid,uuid,uuid,uuid,text,text,text,integer,boolean,timestamptz,text,jsonb)',
+    'public.mutate_agent_memory_with_candidate_provenance(uuid,uuid,uuid,uuid,uuid,integer,text,text,text,text,integer,boolean,boolean,timestamptz,boolean,text,jsonb)'
+  ]
+  loop
+    function_oid := to_regprocedure(function_signature);
+    if function_oid is null then
+      raise exception 'agent memory provenance function is missing: %', function_signature
+        using errcode = '42883';
+    end if;
+    select role.rolname
+      into function_owner
+      from pg_proc function_row
+      join pg_roles role on role.oid = function_row.proowner
+     where function_row.oid = function_oid;
+    if function_owner is distinct from 'postgres' then
+      raise exception 'agent memory provenance function has unexpected owner: %', function_signature
+        using errcode = '42501';
+    end if;
+    if has_function_privilege('service_role', function_oid, 'EXECUTE') is not true then
+      raise exception 'service_role lacks required EXECUTE on %', function_signature
+        using errcode = '42501';
+    end if;
+  end loop;
+end
+$aria_agent_memory_provenance_boundary$;
+rollback;
+SQL
+}
+
 run_migrations_phase() {
   : "${POSTGRES_TARGET_PASSWORD:?POSTGRES_TARGET_PASSWORD required}"
 
@@ -834,6 +899,11 @@ run_migrations_phase() {
   PGPASSWORD="$POSTGRES_TARGET_PASSWORD" \
     psql -X -w -h "$DB_HOST" -p "$DB_PORT" -U postgres -d "$DB_NAME" \
     -v ON_ERROR_STOP=1 -q -f "$MIGRATION_PLAN"
+  build_agent_memory_boundary_plan
+  echo "[migrate] verifying the agent-memory provenance authority boundary..."
+  PGPASSWORD="$POSTGRES_TARGET_PASSWORD" \
+    psql -X -w -h "$DB_HOST" -p "$DB_PORT" -U postgres -d "$DB_NAME" \
+    -v ON_ERROR_STOP=1 -q -f "$AGENT_MEMORY_BOUNDARY_PLAN"
   echo "[migrate] complete"
 }
 

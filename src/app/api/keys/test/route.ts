@@ -10,12 +10,35 @@ import { testSillageConnection } from "@/lib/sourcing/sillage";
 import { checkApolloAuth } from "@/lib/sourcing/apollo";
 import { checkSeamlessAuth } from "@/lib/sourcing/seamless";
 import { testApifyConnection } from "@/lib/sourcing/apify";
+import { safeLog } from "@/lib/log-redact";
+import {
+  isExecutionCredentialProvider,
+  verifyExecutionCredential,
+} from "@/lib/ai/provider-key-verification";
 
 const ApiKeyTestSchema = z.object({
   provider: z.string().max(80).optional(),
   value: z.string().max(1000).optional(),
   id: z.string().uuid().optional(),
 });
+
+type KeyTestStatus = "untested" | "valid" | "invalid";
+type KeyTestResult = {
+  valid: boolean;
+  status: KeyTestStatus;
+  detail: string;
+  verificationMethod: "provider_models_list_v1" | "tavily_usage_v1" | null;
+  verificationHttpStatus: number | null;
+};
+
+function legacyResult(result: { valid: boolean; detail: string }): KeyTestResult {
+  return {
+    ...result,
+    status: result.valid ? "valid" : "invalid",
+    verificationMethod: null,
+    verificationHttpStatus: null,
+  };
+}
 
 /**
  * Classify a live Sillage contents/query probe into a valid/invalid verdict.
@@ -86,6 +109,31 @@ async function testApifyKey(value: string): Promise<{ valid: boolean; detail: st
   }
 }
 
+async function testKey(provider: string, value: string): Promise<KeyTestResult> {
+  if (isExecutionCredentialProvider(provider)) {
+    const result = await verifyExecutionCredential(provider, value);
+    return {
+      valid: result.status === "valid",
+      status: result.status,
+      detail: result.detail,
+      verificationMethod: result.method,
+      verificationHttpStatus: result.httpStatus,
+    };
+  }
+  if (provider === "Sillage") {
+    return legacyResult(
+      classifySillageTest(
+        await testSillageConnection(value),
+        () => validateApiKeyFormat(provider, value),
+      ),
+    );
+  }
+  if (provider === "Apollo") return legacyResult(await testApolloKey(value));
+  if (provider === "Seamless") return legacyResult(await testSeamlessKey(value));
+  if (provider === "Apify") return legacyResult(await testApifyKey(value));
+  return legacyResult(validateApiKeyFormat(provider, value));
+}
+
 /**
  * Test an API key. Either test a value passed directly (just-entered), or test a
  * stored key by id — the secret is read server-side via the service-role client
@@ -118,32 +166,25 @@ export async function POST(req: NextRequest) {
 
   // Direct value test (e.g. on the entry form) — now behind the auth gate above.
   if (value) {
-    if ((provider ?? "") === "Sillage") {
-      const live = await testSillageConnection(value);
-      const result = classifySillageTest(live, () => validateApiKeyFormat(provider ?? "", value));
-      return NextResponse.json({ ok: true, valid: result.valid, detail: result.detail });
-    }
-    if ((provider ?? "") === "Apollo") {
-      const result = await testApolloKey(value);
-      return NextResponse.json({ ok: true, valid: result.valid, detail: result.detail });
-    }
-    if ((provider ?? "") === "Seamless") {
-      const result = await testSeamlessKey(value);
-      return NextResponse.json({ ok: true, valid: result.valid, detail: result.detail });
-    }
-    if ((provider ?? "") === "Apify") {
-      const result = await testApifyKey(value);
-      return NextResponse.json({ ok: true, valid: result.valid, detail: result.detail });
-    }
-    const fmt = validateApiKeyFormat(provider ?? "", value);
-    return NextResponse.json({ ok: true, valid: fmt.valid, detail: fmt.detail });
+    const result = await testKey(provider ?? "", value);
+    return NextResponse.json({
+      ok: true,
+      valid: result.valid,
+      status: result.status,
+      detail: result.detail,
+    });
   }
 
   if (!id) return NextResponse.json({ ok: false, error: "Provide a key value or id." }, { status: 400 });
 
   // Stored-key test by id.
   if (!supabaseEnabled) {
-    return NextResponse.json({ ok: true, valid: true, detail: "Simulated test (demo mode)." });
+    return NextResponse.json({
+      ok: true,
+      valid: false,
+      status: "untested",
+      detail: "Live credential verification is unavailable in demo mode.",
+    });
   }
   const svc = getServiceSupabase();
   if (!session || !svc) {
@@ -161,21 +202,31 @@ export async function POST(req: NextRequest) {
   if (row.workspace_id !== wid) return NextResponse.json({ ok: false, error: "Forbidden." }, { status: 403 });
 
   const secret = decryptSecret(row.secret);
-  let fmt: { valid: boolean; detail: string };
-  if (row.provider === "Sillage") {
-    fmt = classifySillageTest(await testSillageConnection(secret), () => validateApiKeyFormat(row.provider, secret));
-  } else if (row.provider === "Apollo") {
-    fmt = await testApolloKey(secret);
-  } else if (row.provider === "Seamless") {
-    fmt = await testSeamlessKey(secret);
-  } else if (row.provider === "Apify") {
-    fmt = await testApifyKey(secret);
-  } else {
-    fmt = validateApiKeyFormat(row.provider, secret);
-  }
-  await svc
+  const result = await testKey(row.provider, secret);
+  const testedAt = new Date().toISOString();
+  const { error: statusUpdateError } = await svc
     .from("api_keys")
-    .update({ status: fmt.valid ? "valid" : "invalid", last_tested_at: new Date().toISOString() })
+    .update({
+      status: result.status,
+      last_tested_at: testedAt,
+      verification_method: result.verificationMethod,
+      verification_http_status: result.verificationHttpStatus,
+    })
     .eq("id", id);
-  return NextResponse.json({ ok: true, valid: fmt.valid, detail: fmt.detail });
+  if (statusUpdateError) {
+    safeLog("could not persist API key test evidence", {
+      message: statusUpdateError.message,
+      code: statusUpdateError.code,
+    });
+    return NextResponse.json(
+      { ok: false, error: "Key test evidence could not be saved. Try again." },
+      { status: 503 },
+    );
+  }
+  return NextResponse.json({
+    ok: true,
+    valid: result.valid,
+    status: result.status,
+    detail: result.detail,
+  });
 }

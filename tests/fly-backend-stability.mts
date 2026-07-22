@@ -17,6 +17,8 @@ const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
   scripts?: Record<string, string>;
 };
 const workflow = readFileSync(".github/workflows/ci.yml", "utf8");
+const databaseSecurityJob =
+  workflow.match(/\n  database-security:[\s\S]*?\n  supply-chain:/)?.[0] ?? "";
 
 let passed = 0;
 let failed = 0;
@@ -137,7 +139,11 @@ ok(
 );
 ok(
   "database security CI runs the real volume and restart test",
-  /database-security:[\s\S]*npm run test:db-privileges[\s\S]*npm run test:fly-db-volume/.test(workflow),
+  (databaseSecurityJob.match(/run:\s+npm run test:database/g) ?? []).length === 1 &&
+    !/run:\s+npm run test:fly-db-volume/.test(databaseSecurityJob) &&
+    resolveTestGroup(testManifest, "database").filter(
+      ({ id }) => id === "test-fly-db-volume",
+    ).length === 1,
 );
 
 console.log(`RESULT fly-backend-stability: ${passed} passed, ${failed} failed`);

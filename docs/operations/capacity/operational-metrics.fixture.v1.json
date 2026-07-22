@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "synthetic-operational-fixture",
+  "environment": "offline-fixture",
+  "origin": "https://aria-capacity-staging.example.invalid",
+  "syntheticTenantId": "synthetic-capacity-example",
+  "syntheticTenantAttestationSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "releaseSha": "0000000000000000000000000000000000000000",
+  "windowStartedAt": "2026-07-21T15:54:30.000Z",
+  "windowEndedAt": "2026-07-21T16:00:30.000Z",
+  "queue": {
+    "agesMs": [
+      1000,
+      2000,
+      3000,
+      4000,
+      5000,
+      6000,
+      7000,
+      8000,
+      9000,
+      10000
+    ],
+    "duplicateDeliveries": 0
+  },
+  "faults": {
+    "database-unavailable": {
+      "injected": true,
+      "recovered": true,
+      "recoveryMs": 5000,
+      "errorRate": 0
+    },
+    "queue-worker-restart": {
+      "injected": true,
+      "recovered": true,
+      "recoveryMs": 10000,
+      "errorRate": 0
+    },
+    "provider-timeout-no-contact": {
+      "injected": true,
+      "recovered": true,
+      "recoveryMs": 2000,
+      "errorRate": 0,
+      "externalContacts": 0
+    }
+  },
+  "resources": {
+    "cpuPeakPercent": 50,
+    "memoryPeakPercent": 60,
+    "databaseConnectionsPeakPercent": 55
+  }
+}

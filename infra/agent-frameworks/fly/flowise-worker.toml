@@ -10,6 +10,8 @@ kill_timeout = 60
 [env]
   NODE_ENV = "production"
   WORKER_PORT = "5566"
+  ARIA_FLOWISE_WORKER_READINESS_FILE = "/tmp/aria-flowise-worker-readiness.json"
+  ARIA_FLOWISE_WORKER_READINESS_MAX_AGE_MS = "15000"
   DATABASE_TYPE = "postgres"
   DATABASE_HOST = "aria-mantu-flowise-db.internal"
   DATABASE_PORT = "5432"

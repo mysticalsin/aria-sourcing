@@ -37,6 +37,8 @@ const testingGuide = source("docs/TESTING.md");
 const testSuiteMap = source("tests/README.md");
 const inventory = source("production-readiness/INVENTORY.md");
 const dataFlow = source("production-readiness/DATA_FLOW.md");
+const sourcingGuide = source("docs/SOURCING.md");
+const autonomousProviderGuide = source("docs/operations/AUTONOMOUS_PROVIDER_SOURCING.md");
 const allDocs = [
   "README.md",
   "DEPLOYMENT.md",
@@ -301,6 +303,31 @@ ok(
   /\/api\/sourcing-agent/.test(dataFlow) &&
     /real provider/i.test(dataFlow) &&
     !/current implementation this calls `sourceCandidates\(\)`/i.test(dataFlow),
+);
+ok(
+  "sourcing guide is release-neutral and does not freeze a branch SHA",
+  !/\(HEAD `[0-9a-f]{7,40}`\)/i.test(sourcingGuide) &&
+    !/on `integration\/sourcing-enrichment-on-main`/i.test(sourcingGuide),
+);
+ok(
+  "sourcing guide keeps tenant Tavily authority fail closed",
+  /tenant sourcing request passes an explicit null boundary/i.test(sourcingGuide) &&
+    !/Tavily env fallback are entered via/i.test(sourcingGuide) &&
+    !/TAVILY_API_KEY` \| Server-side fallback for web-search sourcing when no workspace/i.test(sourcingGuide),
+);
+ok(
+  "sourcing guide documents the durable autonomous chain and separate no-send control",
+  /signed external need follows this durable chain/i.test(sourcingGuide) &&
+    /Sourcing activation does not activate outbound delivery/i.test(sourcingGuide) &&
+    /Replay never repeats a\s+completed provider effect/i.test(sourcingGuide),
+);
+ok(
+  "autonomous provider guide keeps 0054, 0058, and 0060 authority separate",
+  /Migration 0054 authorizes bounded GitHub discovery/i.test(autonomousProviderGuide) &&
+    /Migration 0058 remains the separate ordinary browser-result durability\s+authority/i.test(
+      autonomousProviderGuide,
+    ) &&
+    /Migration 0060 authorizes one deterministic Tavily search/i.test(autonomousProviderGuide),
 );
 
 console.log(`RESULT docs-truth: ${pass} passed, ${fail} failed`);

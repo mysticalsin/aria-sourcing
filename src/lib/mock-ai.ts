@@ -39,7 +39,6 @@ import {
   genId,
   ianaForAbbrev,
   initialsFrom,
-  isoDaysAfter,
   makeRng,
   pick,
   pickN,
@@ -254,11 +253,14 @@ export function parseMantuNeed(text: string): ParsedIntake {
   const senderName = manager || recruiter;
   const senderEmail = emailMatch?.[0] ?? "";
 
-  // Priority / importance → urgency
+  // Priority / importance → urgency. Standard is only an operational default;
+  // urgencyKnown preserves whether the brief actually stated a priority.
   let urgency: Urgency = "Standard";
   if (/critical/i.test(priority) || /\b1\b/.test(priority) || /high importance|importance:\s*high/i.test(text))
     urgency = "Critical";
   else if (/urgent/i.test(priority) || /\b2\b/.test(priority)) urgency = "Urgent";
+  const urgencyKnown = /\b(?:asap|critical|urgent|standard|normal|no rush|high)\b|\bp?[0-3]\b/i.test(priority)
+    || /high importance|importance:\s*high/i.test(text);
 
   const intent: IntakeIntent = urgency === "Critical" ? "Urgent Hire" : "New Role";
 
@@ -283,8 +285,7 @@ export function parseMantuNeed(text: string): ParsedIntake {
   const tz = text.match(/\b(CET|CEST|GMT|UTC|EST|PST|IST|SGT|BRT)\b/i)?.[1]?.toUpperCase() ?? "";
   const regions = loc ? [loc] : [];
 
-  // Start date m/d/yyyy → ISO. Null when the need email doesn't state one —
-  // createCampaign applies its own default rather than baking a guess in here.
+  // Start date m/d/yyyy → ISO. Null when the need email doesn't state one.
   const d = startRaw ? new Date(startRaw) : null;
   const targetStartDate: string | null = d && !isNaN(d.getTime()) ? d.toISOString() : null;
 
@@ -315,7 +316,8 @@ export function parseMantuNeed(text: string): ParsedIntake {
     salaryMin: null,
     salaryMax: null,
     currency: /\bCAD\b|C\$/i.test(text) ? "CAD" : /\bUSD\b|\$/i.test(text) ? "USD" : "",
-    equity: /equity|options|esop/i.test(text),
+    equity: /\b(?:equity|options|esop)\b/i.test(text) && !/\b(?:no|without)\s+(?:equity|options|esop)\b/i.test(text),
+    equityKnown: /\b(?:equity|options|esop)\b/i.test(text),
     requiredSkills,
     niceToHaveSkills,
     minYearsExperience,
@@ -330,6 +332,7 @@ export function parseMantuNeed(text: string): ParsedIntake {
     teamSize: "",
     reportingTo: "",
     urgency,
+    urgencyKnown,
     language: detectLanguage(text),
     expectedStartDate: targetStartDate,
     validationWarnings: [],
@@ -450,12 +453,15 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   else if (/asap|urgent|immediately|yesterday|critical/i.test(text)) intent = "Urgent Hire";
   else if (/exploratory|pipeline|future|keep warm|no rush/i.test(text)) intent = "Exploratory";
 
-  // Urgency
+  // Urgency. Standard remains a safe operational default, while urgencyKnown
+  // prevents the UI from presenting it as a fact from the brief.
   let urgency: Urgency = "Standard";
   if (/\basap\b|immediately|yesterday/i.test(text)) urgency = "ASAP";
   else if (/critical|p0|blocking/i.test(text)) urgency = "Critical";
-  else if (/urgent|high priority|priority/i.test(text)) urgency = "Urgent";
+  else if (/\burgent\b|high priority|\bpriority\s*:?\s*(?:high|urgent|2)\b/i.test(text)) urgency = "Urgent";
   else if (/this week|by friday|next few days/i.test(text)) urgency = "This Week";
+  const urgencyKnown = /\b(?:asap|immediately|yesterday|critical|p0|blocking|urgent|high priority|this week|by friday|next few days|standard|normal|no rush)\b/i.test(text)
+    || /\bpriority\s*:?\s*(?:p?[0-3]|high|urgent|critical|standard|normal)\b/i.test(text);
 
   // Title
   const titleMatch =
@@ -528,7 +534,8 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   ).slice(0, 4);
 
   // Equity / company stage
-  const equity = /equity|options|esop|stock/i.test(text);
+  const equityKnown = /\b(?:equity|options|esop|stock(?: options?)?)\b/i.test(text);
+  const equity = equityKnown && !/\b(?:no|without)\s+(?:equity|options|esop|stock(?: options?)?)\b/i.test(text);
   const companyStageTarget: CompanyStage[] = /series\s*b/i.test(text)
     ? ["Series A", "Series B"]
     : /series\s*a/i.test(text)
@@ -559,6 +566,7 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
     salaryMax,
     currency,
     equity,
+    equityKnown,
     requiredSkills,
     niceToHaveSkills,
     minYearsExperience,
@@ -571,6 +579,7 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
     teamSize: text.match(/team of (\d+)/i)?.[0] ?? "",
     reportingTo: text.match(/report(?:s|ing) to (?:the )?([A-Za-z ]+?)[.,\n]/i)?.[1]?.trim() ?? "",
     urgency,
+    urgencyKnown,
     language: detectLanguage(text),
     validationWarnings: [],
   };
@@ -649,12 +658,12 @@ export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
   // Note: only user-search qualifiers are valid here (language:, location:,
   // followers:, repos:, created:). Repo qualifiers like `stars:` silently zero
   // out the whole query on /search/users.
-  const githubQueries: GithubQuery[] = topSkills.slice(0, 3).map((skill, i) => ({
+  const githubQueries: GithubQuery[] = topSkills.slice(0, 3).map((skill) => ({
     label: `${skill} contributors`,
-    query: `language:${skill.replace(/\s+/g, "")}${locationQualifier} followers:>40 ${
-      i === 0 ? "repos:>10" : "repos:>5"
-    }`,
-    estimatedResults: 120 + i * 60,
+    query: `language:${skill.replace(/\s+/g, "")}${locationQualifier} type:user`,
+    // GitHub does not expose a count until this exact query is executed. Never
+    // turn a heuristic into a user-visible provider result.
+    estimatedResults: null,
   }));
 
   const linkedinBoolean = `("${jd.title}" OR "${jd.seniority} ${jd.department}") AND (${topSkills
@@ -671,7 +680,7 @@ export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
     linkedinBoolean,
     stackOverflowTags: topSkills.map((s) => s.toLowerCase().replace(/\s+/g, "-")),
     geoTargets: jd.regions,
-    excludedCompanies: ["Granite Industries", "Eastfield Group"],
+    excludedCompanies: [],
     targetCompanyStages: jd.companyStageTarget,
   };
 }
@@ -709,7 +718,7 @@ export function createCampaign(
     hiringManager: meta.hiringManager,
     hiringManagerEmail: meta.hiringManagerEmail,
     createdAt: new Date().toISOString(),
-    targetStartDate: jd.expectedStartDate ?? isoDaysAfter(45, new Date()),
+    targetStartDate: jd.expectedStartDate ?? "",
     jobAnalysis: jd,
     sourcingStrategy: buildSourcingStrategy(jd),
     scoringWeights: { ...DEFAULT_SCORING_WEIGHTS },

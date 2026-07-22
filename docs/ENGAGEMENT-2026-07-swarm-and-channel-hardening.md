@@ -4,6 +4,14 @@ Authoritative record of what was built, upgraded, adversarially verified, and
 deployed. Companion to the fix-by-fix ledger in
 [docs/lessons/2026-07-18-swarm-engagement-lessons.md](lessons/2026-07-18-swarm-engagement-lessons.md).
 
+> **Historical record, not current production evidence.** The deployment and
+> provider-boundary statements below describe the 2026-07-18 engagement. They
+> do not prove the current Fly release, live inbox delivery, or autonomous
+> sourcing activation. Production mutation is now restricted to the protected
+> [`Deploy Aria Mantu (Fly)` workflow](../.github/workflows/deploy-aria-mantu.yml)
+> on protected `main`, following the
+> [canonical deployment runbook](../production-readiness/DEPLOYMENT_RUNBOOK.md).
+
 ---
 
 ## 1. Executive summary
@@ -17,9 +25,11 @@ channels; all P0/P1 were closed and re-proven. The hardened stack was deployed t
 prod (Fly + self-hosted Supabase), and the outreach send path was proven
 end-to-end with the real application code.
 
-**Status:** built · hardened (Codex verdict SHIP) · deployed (DB + app live) ·
-send proven to the provider boundary. The only remaining step is a provider
-credential (a config, not code) for a real inbox send.
+**Historical status recorded on 2026-07-18:** built · hardened (Codex verdict
+SHIP) · deployed (DB + app reported live) · send exercised to a mock provider
+boundary. Current release and delivery status must be re-proven through the
+protected workflow and current runbooks; a provider credential alone is not
+sufficient.
 
 ---
 
@@ -134,22 +144,37 @@ contract suites green.
 - **Auth root cause:** the deploy driver connected as `postgres` with
   `FLY_PG_PASSWORD`, but the bootstrap owner phase had rotated credentials to the
   `*_TARGET_PASSWORD` values; the driver now discovers a working (role, password).
-- Owner-run scripts: `scripts/prod-apply-swarm-fixes.sh` (DB reconcile + verify +
-  app deploy), `scripts/prod-deploy-app.sh` (app-only, local mirror).
+- **Retired historical mechanism:** the engagement used
+  `scripts/prod-apply-swarm-fixes.sh` and `scripts/prod-deploy-app.sh`. Those
+  direct-mutation scripts have been removed. Do not restore or run them.
+- **Current mechanism:** merge the reviewed release to protected `main`, prove
+  CI and CodeQL for that exact SHA, obtain independent recovery and
+  `Production` approvals, then dispatch
+  [`.github/workflows/deploy-aria-mantu.yml`](../.github/workflows/deploy-aria-mantu.yml)
+  with the exact `release_sha`, reviewed `recovery_receipt_sha256`, and
+  `activate_sourcing=false` for a dark release. Autonomous sourcing requires
+  `activate_sourcing=true`, a separate `Production-Sourcing-Activation`
+  approval, the no-contact canary, and the terminal `SOURCING_ACTIVATED`
+  receipt. The workflow itself rejects any ref other than protected `main`.
 
 ---
 
 ## 6. Proof the send works
 
-The **real application send code** (`sendViaProvider`) delivered a correct,
-compliant email to a mock provider — 11/11 assertions: status `sent`/`accepted`,
+The **real application send code** (`sendViaProvider`) delivered a correctly
+structured email request to a mock provider — 11/11 assertions: status
+`sent`/`accepted`,
 Bearer key, recipient, subject, plain+HTML body, one-click unsubscribe with the
 exact token, RFC Message-ID (bounce key), send-attempt header. Combined with the
 proven bounce→suppression, the human-approval gate, and the route returning
-`sent` on acceptance, the whole chain is verified. The only element swapped for
-the proof was the provider endpoint (mock via `RESEND_BASE_URL`); a real
-`RESEND_API_KEY` (or SendGrid, or Gmail/Graph OAuth) sends to a real inbox.
-Quickstart: `docs/runbooks/resend-live-send-quickstart.md`.
+`sent` on acceptance, this verifies the source behavior to the provider
+boundary. It does not prove a real provider accepted or delivered a message.
+The provider endpoint was a mock via `RESEND_BASE_URL`.
+
+The current protected Fly secret contract does not admit the outbound provider
+credentials. Do not install one out of band. The reviewed stop condition and
+protected release steps are in
+[`docs/runbooks/resend-live-send-quickstart.md`](runbooks/resend-live-send-quickstart.md).
 
 ---
 
@@ -174,9 +199,16 @@ Quickstart: `docs/runbooks/resend-live-send-quickstart.md`.
 
 ---
 
-## 8. What remains (owner)
+## 8. Historical closeout and current authority
 
-A real inbox send needs one provider credential — a Resend/SendGrid API key or a
-Gmail/Outlook mailbox OAuth. The never-auto-send design deliberately keeps the
-approve-and-send click a human's. `docs/runbooks/resend-live-send-quickstart.md`
-and `docs/runbooks/one-candidate-live-proof.md` walk the last mile.
+The 2026-07-18 closeout identified a provider credential as the next step. That
+statement is now superseded: production credentials and deployment must pass
+the protected secret allowlist, exact-SHA workflow, independent approvals, and
+current release gates. The never-auto-send design still keeps the approval and
+send action human-controlled.
+
+Use the current
+[Resend runbook](runbooks/resend-live-send-quickstart.md) and
+[one-candidate proof](runbooks/one-candidate-live-proof.md). Neither document
+claims a current live send until the protected release and inbox evidence both
+exist for the same exact SHA.

@@ -69,8 +69,8 @@ value. The workflow uses these separate credential groups:
   `ARIA_FIRST_ADMIN_EMAIL` plus `ARIA_FIRST_ADMIN_PASSWORD`. This approval is
   independent of image history, which allows recovery of an already-deployed
   but uninitialized environment. The email must use the allowed domain and the
-  unique password must be at least 24 characters. Remove the variable and both
-  secrets immediately after the run. A later release with an existing real
+  unique password must be at least 24 characters and at most 72 UTF-8 bytes.
+  Remove the variable and both secrets immediately after the run. A later release with an existing real
   administrator rejects stale bootstrap approval or credentials.
 
 Use [`.fly-secrets.example`](.fly-secrets.example) as the name-only template.
@@ -88,6 +88,15 @@ Keep `NEXT_PUBLIC_ENABLE_AZURE_LOGIN=false` until the Entra application,
 callback URI, and provider credentials are separately approved and tested.
 Email and password is the primary production login path in that state; the UI
 must not present a Microsoft button that cannot work.
+
+The checked-in GoTrue configuration is a restricted owner-operated posture:
+self-signup is disabled, email identities must be explicitly confirmed, passwords
+require at least 24 characters and at most 72 UTF-8 bytes, password changes require the current password and
+reauthentication, and refresh-token rotation is enabled. It does not implement
+MFA/AAL2 enforcement, SSO, SCIM, invite lifecycle, joiner-mover-leaver automation,
+or periodic access review. Do not approve broad multi-user or 50,000-user access
+on this posture. That expansion requires a separately reviewed enterprise IAM
+release and live IdP evidence.
 
 Set `DATABRICKS_ALLOWED_ORIGINS` in deployment-controlled application
 configuration before enabling Databricks. Follow
@@ -157,7 +166,7 @@ owner-controlled secret manager, never shell history:
 
 - `KONG_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `ANON_KEY` for the exact stack;
 - `ADMIN_EMAIL`, canonical lowercase on `ARIA_ALLOWED_EMAIL_DOMAIN`, plus a
-  unique `ADMIN_PASSWORD` of at least 24 characters;
+  unique `ADMIN_PASSWORD` of at least 24 characters and at most 72 UTF-8 bytes;
 - exact `ARIA_RECOVERY_WORKSPACE_ID`, `ARIA_RECOVERY_PROFILE_ID`,
   `ARIA_RECOVERY_EXPECTED_DOMAIN=workspace`, and a reviewed
   `ARIA_RECOVERY_FULL_NAME`;
@@ -368,9 +377,10 @@ Use `Deploy Aria Mantu (Fly)` only after its definition is present on the GitHub
 default branch and the `Production` approval has been granted by a reviewer who
 is neither the original workflow actor nor the actor who triggered a rerun. The
 recovery evidence records the initial actor, triggering actor, and approver.
-Select the protected `deploy/fly-github-actions` ref and enter its exact tip SHA;
-the workflow rejects any ref/SHA mismatch. Do not invoke `deploy-fly.sh` directly
-from an operator shell.
+Select protected `main` and enter its exact tip SHA; the workflow rejects any
+other ref, any ref/SHA mismatch, and any release whose workflow definition does
+not come from that same commit. Do not invoke `deploy-fly.sh` directly from an
+operator shell.
 
 Before mutation, the deploy captures exact prior image digests for DB, Auth,
 REST, Kong, and app. Missing history fails closed. The only exception is a true
@@ -410,12 +420,18 @@ The workflow must perform this one-way artifact chain:
 exact SHA -> build app/DB/bootstrap/Kong/Graphify for linux/amd64
           -> push isolated candidate tags -> resolve + pull registry digests
 Auth/REST config pins -> pull exact upstream linux/amd64 digests
-all 7 images -> schema-validated CycloneDX + HIGH/CRITICAL gates
+all 7 images -> schema-validated CycloneDX + HIGH/CRITICAL gates with no unfixed-finding exemption
                  -> filesystem + image-config/history secret gates
 5 local images -> signed provenance/SBOM attestations -> immutable SHA promotion
 deployed services -> fly deploy/run --image tag@digest -> running digest equality
 Graphify worker -> pre-publication container test; no post-promotion execution receipt
 ```
+
+The application image finishes on the exact digest-pinned nonroot Distroless
+Node 22 Debian 13 base declared in `Dockerfile.prod`. Distroless supplies the
+Node entrypoint, so `CMD` and every `fly.app.toml` process value are Node script
+arguments. Release evidence must include an in-image Sharp and libvips transform
+smoke as UID 65532, plus the unsuppressed scan of the exact saved image.
 
 Fly must not rebuild any custom image during this path. Auth and REST use the
 digest-pinned stock images declared in their Fly configurations. They are
@@ -702,10 +718,16 @@ logs, or chat.
    console or support process using an approved operator account. ARIA does not
    currently automate provider deletion.
 4. Store the provider confirmation in the approved restricted privacy-case
-   system. Calculate its SHA-256 outside ARIA, then record only that hash and
-   the non-sensitive case reference in the drawer. The hash is an integrity
-   locator; the case system remains the evidence source.
-5. Refresh the durable queue and continue until the request reports
+   system. An approved provider adapter and evidence-store verifier, operating
+   through an independent owner channel, must validate the exact adapter,
+   obligation, case reference, and evidence digest and append the fresh
+   evidence receipt. The browser and administrator drawer cannot create that
+   authority. This verifier/writer is not yet implemented.
+5. Only after that independent receipt exists may an administrator submit the
+   matching non-sensitive case reference and SHA-256 evidence digest in the
+   drawer. An absent, stale, or mismatched receipt must leave the obligation
+   non-final; a manually calculated hash by itself is never provider-deletion
+   proof. Refresh the durable queue and continue until the request reports
    `completed`. Do not close the privacy case while any obligation remains
    non-final. A late legal hold changes the request and its obligations to
    `blocked_legal_hold`; stop processing until the hold is formally released.
@@ -716,10 +738,12 @@ logs, or chat.
    with direct SQL or partial deletion.
 
 Before production acceptance, the owner must provide the approved privacy-case
-system, provider operator accounts, retention policy, DPO escalation owner, and
-a restore-replay control for erasures that occurred after a backup was taken.
-Until those controls and a tested path for more than 100 obligations exist,
-candidate erasure is source-tested but remains a production NO-GO.
+system, provider operator accounts, retention policy, DPO escalation owner, an
+implemented provider evidence verifier/writer, enforced provenance registration
+for every candidate-bearing agent-memory and JSON write, and an independently
+retained restore-replay journal for erasures that occurred after a backup was
+taken. Until those controls and a tested path for more than 100 obligations
+exist, candidate erasure is source-tested but remains a production NO-GO.
 
 ---
 
@@ -745,6 +769,8 @@ delivery path before any live email is enabled.
 | `DATA_ENCRYPTION_KEY` | Server | Yes | Base64 32-byte key for provider/OAuth secrets at rest |
 | `DATA_ENCRYPTION_PREVIOUS_KEYS` | Server | During key rotation only | JSON array of up to eight distinct prior canonical base64 32-byte keys. New ciphertext carries a SHA-256 key ID; keep prior keys until all older `enc:v1`/`enc:v2` rows have been re-encrypted and verified. |
 | `CRON_SECRET` | Server | Yes for dispatcher | Strong random bearer secret for `/api/cron/dispatch-outbound` |
+| `ARIA_REQUISITION_PARSE_SECRET` | Server | Yes for autonomous intake | Independent internal capability for durable requisition parsing; must differ from every other authority |
+| `ARIA_SOURCING_EXECUTION_SECRET` | Server | Yes for autonomous sourcing | Independent internal capability for the locator-only sourcing executor; must differ from cron, parsing, framework, JWT, and encryption authorities |
 | `CAREERS_WORKSPACE_ID` | Server | Yes to enable `/careers` | UUID of the single workspace allowed to publish public roles; leave unset to fail closed |
 | `NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN` | Public | Recommended | Locks sign-in to one domain (e.g. `mantu.com`) |
 | `NEXT_PUBLIC_ENABLE_DEMO_LOGIN` | Public | No for live prod | Synthetic demo-login escape hatch; keep false/unset in real production |
@@ -764,10 +790,10 @@ delivery path before any live email is enabled.
 | `SENDGRID_API_KEY` | Server | If SendGrid email used | |
 | `OUTREACH_UNSUBSCRIBE_BASE_URL` | Server | Yes for live email | Canonical HTTPS app origin, no query/fragment |
 | `GITHUB_TOKEN` | Server | If GitHub sourcing is used | Read-only token for source search |
-| `TAVILY_API_KEY` | Server | If Tavily web sourcing is used | Server-side fallback; stored workspace key can take precedence |
+| `TAVILY_API_KEY` | Server | Optional browser research fallback | Autonomous Tavily sourcing requires an exact tested workspace key and never falls back to this deployment value |
 | `ARIA_ENABLE_REMOTE_MCP_EXECUTION` | Server | No | Keep false/unset. Production code denies third-party MCP execution even if set true; development/test requires explicit true |
 | `KIMI_API_KEY` | Server | If Kimi provider is used | Kimi/Moonshot provider key |
-| `KIMI_BASE_URL` | Server | Optional | Defaults to `https://api.moonshot.ai/v1` |
+| `KIMI_BASE_URL` | Server | Optional | Exact allowlist only: `https://api.moonshot.ai/v1` (default) or `https://api.kimi.com/coding/v1`; no other origin, port, query, or path is accepted. Durable runtime bindings currently attest only the Moonshot endpoint profile; Kimi Code remains a separate legacy interactive-chat profile. |
 | `ELEVENLABS_API_KEY` | Server | If voice TTS is used | ElevenLabs API key |
 | `ELEVENLABS_VOICE_ID` | Server | Optional with voice TTS | Defaults in code when unset |
 | `WHATSAPP_TOKEN` | Server | If WhatsApp used | Meta Cloud API token |
@@ -819,6 +845,12 @@ and positive database, queue, worker, and policy dependency checks. A Flowise
 `/ping`, a DeerFlow process liveness response, or a floating image tag is not
 readiness evidence. Keep the kill switch active if any identity or dependency
 cannot be proven.
+
+When autonomous sourcing is activated, `/api/ready` also requires a fresh
+heartbeat from the exact release, at least one expected handler, no dead jobs,
+no ambiguous provider attempts, and an oldest runnable job age of at most 120
+seconds. Missing, stale, malformed, or over-bound evidence returns HTTP 503 and
+blocks release acceptance.
 
 The model gateway must be a separate private service with no public Fly
 service or public IP. On Fly, bind it to `fly-local-6pn:<port>` and use an
@@ -1027,10 +1059,13 @@ Run these manually within 10 minutes of a production deploy. If any step fails, 
 ### 5a. Auth flow
 
 1. Open `https://<app>/login` in an incognito window.
-2. Click **Continue with Microsoft**.
-3. Complete Entra SSO.
-4. Confirm redirect to `/` or `/floor` (not an error page).
-5. Check browser console — 0 errors expected.
+2. Enter the complete, explicitly confirmed allowed-domain email address. A local
+   part such as `admin` is invalid and must never be expanded to an invented domain.
+3. Sign in with the owner-provisioned password and confirm redirect to `/` or
+   `/floor` (not an error page).
+4. If Entra was separately approved and `NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true`,
+   repeat with the corporate Microsoft account and exact registered callback.
+5. Check the browser console and network log; zero unexpected errors are accepted.
 
 ### 5b. Critical routes
 

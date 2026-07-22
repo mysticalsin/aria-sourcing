@@ -244,6 +244,11 @@ begin
 end
 $aria_auth_owner$;
 
+-- Install the bounded Auth-owner routines next to this reconciliation file.
+-- The included file guards early base-image passes where auth.users does not
+-- exist yet; the final owner pass installs and reasserts the exact ACLs.
+\ir auth-owner-bridges.sql
+
 -- Keep database JWT settings in the same owner transaction as credential and
 -- ownership changes. Values are SQL-literal quoted and statement logging is
 -- disabled before they are materialized.

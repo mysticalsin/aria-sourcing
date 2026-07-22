@@ -23,15 +23,17 @@ docker run --rm \
   --pids-limit 64 \
   --memory 512m \
   --cpus 1 \
-  --tmpfs /tmp:rw,noexec,nosuid,nodev,uid=10001,gid=10001,mode=0700 \
+  --tmpfs /tmp:rw,noexec,nosuid,nodev,uid=65532,gid=65532,mode=0700 \
   --volume "$ROOT/workers/graphify-lessons:/tests:ro" \
-  --entrypoint python \
+  --entrypoint /opt/venv/bin/python \
   "$IMAGE" \
   -m unittest discover -s /tests -p test_worker.py -v
 
 # Docker Desktop presents bind-mounted macOS directories as root-owned 0755,
 # even after a host chmod. Use an ephemeral managed volume so the production
-# worker still runs as its declared uid 10001 rather than weakening the test.
+# worker still runs as its declared non-root uid 65532 rather than weakening
+# the test. The minimal runtime intentionally has no shell or chown utility, so
+# its pinned Python interpreter performs this one-time volume initialization.
 docker volume create "$OUTPUT_VOLUME" >/dev/null
 docker run --rm \
   --network none \
@@ -41,9 +43,9 @@ docker run --rm \
   --security-opt no-new-privileges \
   --user 0:0 \
   --volume "$OUTPUT_VOLUME:/data/output:rw" \
-  --entrypoint chown \
+  --entrypoint /opt/venv/bin/python \
   "$IMAGE" \
-  10001:10001 /data/output
+  -c 'import os; os.chown("/data/output", 65532, 65532)'
 
 docker run --rm \
   --network none \
@@ -66,7 +68,7 @@ docker run --rm \
   --memory 128m \
   --cpus 0.5 \
   --volume "$OUTPUT_VOLUME:/data/output:ro" \
-  --entrypoint python \
+  --entrypoint /opt/venv/bin/python \
   "$IMAGE" \
   -c '
 import json

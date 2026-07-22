@@ -177,14 +177,17 @@ function createHarness(options: {
       if (fetchCalls === 1) options.afterFetch?.();
       const requestUrl = String(input);
       const requestBody = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {};
-      const automaticBody = requestUrl.endsWith("/api/source/apollo/select")
+      const automaticBody = requestUrl.endsWith("/api/sourcing-agent/ack")
+        ? { ok: true, status: "completed" }
+        : requestUrl.endsWith("/api/source/apollo/select")
         ? { ok: true, selected: requestBody.candidates }
         : { ok: true, source: "github", users: [githubUser] };
       return new Response(
         options.responseText ??
           JSON.stringify(
             options.responseBodies?.[fetchCalls - 1] ??
-              (requestUrl.endsWith("/api/source/apollo/select")
+              (requestUrl.endsWith("/api/sourcing-agent/ack") ||
+              requestUrl.endsWith("/api/source/apollo/select")
                 ? automaticBody
                 : options.responseBody ?? automaticBody),
           ),
@@ -280,6 +283,7 @@ test("live batch sourcing uses reviewed campaign authority and returns durable f
       requestId: "request-reviewed-1",
       idempotencyKey: "11111111-1111-4111-8111-111111111111",
       sourcingRunId: "22222222-2222-4222-8222-222222222222",
+      sourcingResultSha256: "c".repeat(64),
       appliedLessonIds: [],
       candidates: [
         {
@@ -327,6 +331,65 @@ test("live batch sourcing uses reviewed campaign authority and returns durable f
   ]);
   assert.equal(harness.persistedCalls, 1);
   assert.equal(harness.events.length, 1);
+  assert.equal(String(harness.requests[1]?.input), "/api/sourcing-agent/ack");
+});
+
+test("zero-hit reviewed sourcing persists one receipt marker and acknowledges it", async () => {
+  const seed = buildSeedState();
+  const campaign = { ...seed.campaigns[0], status: "Sourcing" as const };
+  const sourcingRunId = "22222222-2222-4222-8222-222222222223";
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign] },
+    syntheticSourcingAllowed: false,
+    responseBody: {
+      ok: true,
+      campaignId: campaign.id,
+      campaignFingerprint: sourcingAgentCampaignFingerprint(campaign),
+      mode: "deterministic",
+      totalFound: 0,
+      requestId: "request-reviewed-empty",
+      idempotencyKey: "11111111-1111-4111-8111-111111111112",
+      sourcingRunId,
+      sourcingResultSha256: "d".repeat(64),
+      appliedLessonIds: [],
+      candidates: [],
+      feedbackReceipts: [{
+        receiptId: "33333333-3333-4333-8333-333333333334",
+        platform: "GitHub",
+        candidateCount: 0,
+      }],
+    },
+  });
+
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 1 });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.accepted.length, 0);
+  assert.equal(result.skipped.length, 0);
+  assert.equal(harness.persistedCalls, 1);
+  assert.equal(harness.activityDrafts.length, 1);
+  assert.equal(
+    harness.state.activities[0]?.id,
+    `sourcing-run:${sourcingRunId}:${"d".repeat(64)}`,
+  );
+  assert.equal(String(harness.requests[1]?.input), "/api/sourcing-agent/ack");
+  assert.equal(harness.events.length, 0);
+});
+
+test("legacy sourcing-agent path has a deterministic marker for zero and duplicate results", () => {
+  const legacyStart = storeSource.indexOf("const runSourcingAgent = useCallback");
+  const legacyEnd = storeSource.indexOf("const recordSourcingFeedback", legacyStart);
+  const legacyBody = storeSource.slice(legacyStart, legacyEnd);
+
+  assert.ok(legacyStart >= 0 && legacyEnd > legacyStart);
+  assert.doesNotMatch(legacyBody, /if \(unique\.length === 0\) return prev/);
+  assert.match(
+    legacyBody,
+    /const activityId = `sourcing-run:\$\{out\.sourcingRunId\}:\$\{resultSha256\}`/,
+  );
+  assert.match(legacyBody, /markReviewedSourcingOperationPersisted\(/);
+  assert.match(legacyBody, /acknowledgeReviewedSourcing\(/);
 });
 
 test("a lost framework acknowledgement is typed for reconciliation and the staged replay does not duplicate candidates", async () => {
@@ -378,6 +441,7 @@ test("a lost framework acknowledgement is typed for reconciliation and the stage
     responseBodies: [
       stagedResult,
       { ok: false, code: "SOURCING_AGENT_UNAVAILABLE" },
+      { ok: false, code: "SOURCING_AGENT_UNAVAILABLE" },
       stagedResult,
       { ok: true, status: "completed" },
     ],
@@ -410,12 +474,19 @@ test("a lost framework acknowledgement is typed for reconciliation and the stage
   assert.equal(reconciled.accepted.length, 0);
   assert.equal(reconciled.skipped.length, 1);
   assert.equal(harness.state.candidates.filter((item) => item.id === candidate.id).length, 1);
-  assert.equal(harness.fetchCalls, 4);
-  assert.equal(String(harness.requests[2]?.input), "/api/sourcing-agent");
-  assert.equal(String(harness.requests[3]?.input), "/api/sourcing-agent/ack");
+  assert.equal(harness.fetchCalls, 5);
+  assert.equal(String(harness.requests[3]?.input), "/api/sourcing-agent");
+  assert.equal(String(harness.requests[4]?.input), "/api/sourcing-agent/ack");
   assert.equal(
-    new Headers(harness.requests[2]?.init?.headers).get("idempotency-key"),
+    new Headers(harness.requests[3]?.init?.headers).get("idempotency-key"),
     frameworkRunId,
+  );
+  assert.equal(
+    harness.state.activities.filter(
+      (activity) => activity.id ===
+        `sourcing-run:${stagedResult.sourcingRunId}:${stagedResult.agentFrameworkResultSha256}`,
+    ).length,
+    1,
   );
 });
 

@@ -6,7 +6,10 @@ import { z } from "zod";
 import { validateBody } from "@/lib/api/validate";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
-import { ackAgentFrameworkSourcingEffect } from "@/lib/sourcing/learning-authority";
+import {
+  ackAgentFrameworkSourcingEffect,
+  ackSourcingRunResult,
+} from "@/lib/sourcing/learning-authority";
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import { getServerSupabase } from "@/lib/supabase/server";
 import type { Role } from "@/lib/types";
@@ -14,11 +17,17 @@ import type { Role } from "@/lib/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const AckSchema = z.object({
-  frameworkRunId: z.string().uuid(),
-  capabilityToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
-  resultSha256: z.string().regex(/^[0-9a-f]{64}$/),
-}).strict();
+const AckSchema = z.union([
+  z.object({
+    sourcingRunId: z.string().uuid(),
+    resultSha256: z.string().regex(/^[0-9a-f]{64}$/),
+  }).strict(),
+  z.object({
+    frameworkRunId: z.string().uuid(),
+    capabilityToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+    resultSha256: z.string().regex(/^[0-9a-f]{64}$/),
+  }).strict(),
+]);
 
 function response(body: unknown, status: number) {
   return NextResponse.json(body, {
@@ -61,13 +70,20 @@ export async function POST(req: NextRequest) {
     });
     if (!limit.ok) return fail(429, "SOURCING_AGENT_RATE_LIMITED");
 
-    const acknowledged = await ackAgentFrameworkSourcingEffect({
-      workspaceId,
-      actorId: user.id,
-      frameworkRunId: validated.data.frameworkRunId,
-      capabilityToken: validated.data.capabilityToken,
-      resultSha256: validated.data.resultSha256,
-    });
+    const acknowledged = "frameworkRunId" in validated.data
+      ? await ackAgentFrameworkSourcingEffect({
+          workspaceId,
+          actorId: user.id,
+          frameworkRunId: validated.data.frameworkRunId,
+          capabilityToken: validated.data.capabilityToken,
+          resultSha256: validated.data.resultSha256,
+        })
+      : await ackSourcingRunResult({
+          workspaceId,
+          actorId: user.id,
+          runId: validated.data.sourcingRunId,
+          resultSha256: validated.data.resultSha256,
+        });
     return acknowledged
       ? response({ ok: true, status: "completed", requestId }, 200)
       : fail(409, "SOURCING_AGENT_PERSISTENCE_UNVERIFIED");

@@ -3,7 +3,7 @@ app            = "aria-mantu-rest"
 primary_region = "cdg"
 
 [build]
-  image = "postgrest/postgrest:v14.12@sha256:54000f24847d01a2c2302e0041cf0618b875c57fb48507d743cfa9aaa50bf43c"
+  image = "postgrest/postgrest:v14.15@sha256:2f8e7b656f09db697a8875177694b417b35cb76c21370de07fc54e711e902326"
 
 [env]
   PGRST_SERVER_HOST          = "*6"     # bind IPv6 for the 6PN .internal net (default !4 = IPv4 only)

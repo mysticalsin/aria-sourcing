@@ -18,7 +18,7 @@ const input = {
   redisImageDigest: `registry.internal/redis@sha256:${"2".repeat(64)}`,
   deerflowAdapterOrigin: "https://deerflow.service.internal",
   deerflowInstanceId: "20000000-0000-4000-8000-000000000002",
-  deerflowSourceCommit: "fabadae4168db81f0eaaf62f209050f978e2f691",
+  deerflowSourceCommit: "3c0a45ad772cdba388009b8d5ecad5e48cd22429",
   deerflowImageDigest: `registry.internal/deerflow@sha256:${"a".repeat(64)}`,
   deerflowDatabaseImageDigest: `registry.internal/postgres-deerflow@sha256:${"3".repeat(64)}`,
   deerflowModelGatewayImageDigest: `registry.internal/model-gateway@sha256:${"6".repeat(64)}`,
@@ -29,7 +29,7 @@ const input = {
   deerflowModelCredentialVersion: "model-key-v1",
   flowiseAdapterOrigin: "https://flowise.service.internal",
   flowiseInstanceId: "30000000-0000-4000-8000-000000000003",
-  flowiseSourceCommit: "bb773ffa710bd22639c4ba2643413a0ea2b679d3",
+  flowiseSourceCommit: "ed9e100fb71643cd3922b005908f9732bc0e07dc",
   flowiseImageDigest: `registry.internal/flowise@sha256:${"b".repeat(64)}`,
   flowiseWorkerImageDigest: `registry.internal/flowise-worker@sha256:${"4".repeat(64)}`,
   flowiseDatabaseImageDigest: `registry.internal/postgres-flowise@sha256:${"5".repeat(64)}`,
@@ -42,7 +42,7 @@ const input = {
 test("canonical runtime identity has one stable cross-runtime SHA-256", () => {
   const first = deriveAgentFrameworkConfiguration(input);
   const reversed = deriveAgentFrameworkConfiguration(Object.fromEntries(Object.entries(input).reverse()));
-  assert.equal(first.sha256, "76a289497f9bf1f8f8511af8e130d7fc6c90fa2b4e7a27d94e3dc8009d6e2f87");
+  assert.equal(first.sha256, "db0ba9060ef51d819e044ee879c4d645b24d4ce2b0822808c614c2cb75516ede");
   assert.equal(reversed.sha256, first.sha256);
   assert.equal(first.manifest.deerflow.modelId, "gpt-test");
   assert.equal(first.manifest.flowise.workspaceId, input.flowiseWorkspaceId);

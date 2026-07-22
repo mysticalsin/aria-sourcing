@@ -249,7 +249,9 @@ class GraphifyLessonsWorkerTests(unittest.TestCase):
         self.assertNotIn("apt-get", dockerfile)
         self.assertNotIn("git+", requirements)
         self.assertIn("GRAPHIFY_QUERY_LOG_DISABLE=1", dockerfile)
-        self.assertIn("USER 10001:10001", dockerfile)
+        self.assertIn("cgr.dev/chainguard/python:latest-dev@sha256:", dockerfile)
+        self.assertIn("cgr.dev/chainguard/python:latest@sha256:", dockerfile)
+        self.assertIn("USER 65532:65532", dockerfile)
         self.assertNotIn("EXPOSE", dockerfile)
         self.assertNotIn("graphify.serve", dockerfile)
 

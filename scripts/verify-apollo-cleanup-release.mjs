@@ -2,7 +2,9 @@ import { pathToFileURL } from "node:url";
 
 const DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
 const RELEASE_SHA_RE = /^[0-9a-f]{40}$/;
-const PROCESS_GROUPS = ["web", "cleanup", "framework_heartbeat"];
+const PROCESS_GROUPS = ["web", "cleanup", "framework_heartbeat", "loop"];
+const LOOP_WORKER_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
+const DARK_LOOP_EVENT_KEYS = ["durationMs", "event", "releaseSha", "status", "workerId"];
 const COUNTERS = [
   "workspacesProcessed",
   "processed",
@@ -16,7 +18,12 @@ const COUNTERS = [
   "sourcing_artifacts_deleted",
   "sourcing_runs_deleted",
   "sourcing_quota_rows_deleted",
+  "ordinary_sourcing_results_expired",
+  "ordinary_sourcing_result_payloads_scrubbed",
   "framework_authorizations_deleted",
+  "requisition_inputs_processed",
+  "requisition_inputs_scrubbed",
+  "requisition_cleanup_receipts_written",
 ];
 
 function imageHasExactDigest(image, expectedDigest) {
@@ -54,7 +61,7 @@ export function verifyReleaseProcessGroups(raw, expectedDigest) {
     throw new Error("incomplete Fly machine inventory");
   }
 
-  const groups = { web: [], cleanup: [], framework_heartbeat: [] };
+  const groups = { web: [], cleanup: [], framework_heartbeat: [], loop: [] };
   const machineIds = new Set();
   for (const machine of machines) {
     const id = typeof machine?.id === "string" ? machine.id : "";
@@ -72,6 +79,18 @@ export function verifyReleaseProcessGroups(raw, expectedDigest) {
     if (!imageHasExactDigest(image, expectedDigest)) {
       throw new Error(`${group} process image digest mismatch`);
     }
+    if (machine.state !== "started" && machine.state !== "stopped") {
+      throw new Error(`${group} process machine state is not stable`);
+    }
+    if (
+      group === "loop" &&
+      (
+        machine?.config?.env?.ARIA_LOOP_KILL_SWITCH !== "true" ||
+        machine?.config?.env?.ARIA_LOOP_ENABLE_OUTBOUND_DRAIN !== "false"
+      )
+    ) {
+      throw new Error("loop process group is not pinned to the protected dark configuration");
+    }
     groups[group].push({ id, state: machine.state, standbys: machine?.config?.standbys });
   }
   if (!groups.web.some((machine) => machine.state === "started")) {
@@ -80,6 +99,7 @@ export function verifyReleaseProcessGroups(raw, expectedDigest) {
   return {
     cleanupMachineId: activeWithStandby(groups.cleanup, "cleanup"),
     frameworkHeartbeatMachineId: activeWithStandby(groups.framework_heartbeat, "framework_heartbeat"),
+    loopMachineId: activeWithStandby(groups.loop, "loop"),
   };
 }
 
@@ -121,25 +141,45 @@ function eventFrom(value, eventName, inheritedTimestamp = "", depth = 0) {
   }
 }
 
-function logHasEvent(raw, eventName, healthy) {
-  for (const line of raw.split(/\r?\n/)) {
+function latestReleaseEvent(raw, eventName, expectedReleaseSha, lowerBound, timestampOf) {
+  let latest = null;
+  for (const [lineIndex, line] of raw.split(/\r?\n/).entries()) {
     const receipt = eventFrom(line, eventName);
-    if (receipt && healthy(receipt)) return true;
+    if (!receipt || receipt.event?.releaseSha !== expectedReleaseSha) continue;
+    const timestamp = Date.parse(timestampOf(receipt));
+    if (!Number.isFinite(timestamp)) return null;
+    if (timestamp < lowerBound) continue;
+    if (
+      !latest ||
+      timestamp > latest.timestamp ||
+      (timestamp === latest.timestamp && lineIndex > latest.lineIndex)
+    ) {
+      latest = { lineIndex, receipt, timestamp };
+    }
   }
-  return false;
+  return latest?.receipt ?? null;
 }
 
 export function verifyHealthyCleanupEvent(raw, expectedReleaseSha, notBefore) {
   if (!RELEASE_SHA_RE.test(expectedReleaseSha)) return false;
   const lowerBound = Date.parse(notBefore);
   if (!Number.isFinite(lowerBound)) return false;
-  return logHasEvent(raw, "apollo_authority_cleanup", ({ event }) =>
+  const receipt = latestReleaseEvent(
+    raw,
+    "apollo_authority_cleanup",
+    expectedReleaseSha,
+    lowerBound,
+    ({ event }) => event?.startedAt,
+  );
+  if (!receipt) return false;
+  const { event } = receipt;
+  return (
     event?.event === "apollo_authority_cleanup" &&
     event.status === "ok" &&
     event.releaseSha === expectedReleaseSha &&
     Number.isFinite(Date.parse(event.startedAt)) &&
     Date.parse(event.startedAt) >= lowerBound &&
-    COUNTERS.every((key) => Number.isSafeInteger(event[key]) && event[key] >= 0),
+    COUNTERS.every((key) => Number.isSafeInteger(event[key]) && event[key] >= 0)
   );
 }
 
@@ -147,7 +187,16 @@ export function verifyHealthyFrameworkHeartbeatEvent(raw, expectedReleaseSha, no
   if (!RELEASE_SHA_RE.test(expectedReleaseSha)) return false;
   const lowerBound = Date.parse(notBefore);
   if (!Number.isFinite(lowerBound)) return false;
-  return logHasEvent(raw, "agent_framework_heartbeat", ({ event, timestamp }) =>
+  const receipt = latestReleaseEvent(
+    raw,
+    "agent_framework_heartbeat",
+    expectedReleaseSha,
+    lowerBound,
+    ({ timestamp }) => timestamp,
+  );
+  if (!receipt) return false;
+  const { event, timestamp } = receipt;
+  return (
     event?.event === "agent_framework_heartbeat" &&
     event.status === "ok" &&
     event.releaseSha === expectedReleaseSha &&
@@ -161,7 +210,32 @@ export function verifyHealthyFrameworkHeartbeatEvent(raw, expectedReleaseSha, no
     Array.isArray(event.failureCodes) &&
     event.failureCodes.length === 0 &&
     Number.isSafeInteger(event.durationMs) &&
-    event.durationMs >= 0,
+    event.durationMs >= 0
+  );
+}
+
+export function verifyHealthyDarkLoopEvent(raw, expectedReleaseSha, notBefore) {
+  if (!RELEASE_SHA_RE.test(expectedReleaseSha)) return false;
+  const lowerBound = Date.parse(notBefore);
+  if (!Number.isFinite(lowerBound)) return false;
+  const receipt = latestReleaseEvent(
+    raw,
+    "sourcing_loop_tick",
+    expectedReleaseSha,
+    lowerBound,
+    ({ timestamp }) => timestamp,
+  );
+  if (!receipt) return false;
+  const { event } = receipt;
+  return (
+    event?.event === "sourcing_loop_tick" &&
+    event.status === "kill_switch_engaged" &&
+    event.releaseSha === expectedReleaseSha &&
+    LOOP_WORKER_ID_RE.test(event.workerId ?? "") &&
+    Number.isSafeInteger(event.durationMs) &&
+    event.durationMs >= 0 &&
+    event.durationMs <= 5_000 &&
+    Object.keys(event).sort().join("\n") === DARK_LOOP_EVENT_KEYS.join("\n")
   );
 }
 
@@ -176,6 +250,8 @@ async function main() {
   }
   if (mode === "logs" && verifyHealthyCleanupEvent(raw, expectedDigest, process.argv[4] ?? "")) return;
   if (mode === "heartbeat-logs" && verifyHealthyFrameworkHeartbeatEvent(raw, expectedDigest, process.argv[4] ?? "")) return;
+  if (mode === "loop-dark-logs" && verifyHealthyDarkLoopEvent(raw, expectedDigest, process.argv[4] ?? "")) return;
+  if (mode === "loop-dark-logs") throw new Error("bounded dark sourcing loop release evidence is absent");
   if (mode === "heartbeat-logs") throw new Error("healthy agent framework heartbeat release evidence is absent");
   throw new Error("healthy Apollo cleanup release evidence is absent");
 }

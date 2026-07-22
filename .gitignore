@@ -36,6 +36,7 @@ backups/
 
 # test artifacts
 .playwright-mcp/
+.trivy-cache/
 *.jpeg
 __pycache__/
 *.py[cod]

@@ -54,6 +54,7 @@ ok("backup serializes publication with an owned atomic lock", /ln -s "\$\$" "\$L
 ok("backup publishes one archive plus manifest", /pg_dump[^\n]*-Fc/.test(backup) && /MANIFEST/.test(backup));
 ok("backup and restore use the same manifest generator", /db-manifest\.sh/.test(backup) && /db-manifest\.sh/.test(restore));
 const manifestSource = readFileSync("scripts/lib/db-manifest.sh", "utf8");
+ok("manifest version records the Auth-owner bridge fingerprint expansion", /manifest_version=5/.test(manifestSource));
 ok(
   "backup and restore use the direct owner for cross-schema archive access",
   /pg_dump -U supabase_admin/.test(backup) &&
@@ -91,6 +92,19 @@ ok(
     /proacl/.test(manifestSource) &&
     /proconfig/.test(manifestSource) &&
     /has_function_privilege/.test(manifestSource),
+);
+const exactAuthBridgeScope =
+  /n\.nspname = 'auth' and p\.oid in \(to_regprocedure\('auth\.aria_current_active_identity\(\)'\), to_regprocedure\('auth\.aria_orphan_owner_recovery_identity_status\(uuid,text,text\)'\)\)/g;
+ok(
+  "definition and ACL fingerprints include exactly the two ARIA Auth-owner bridges",
+  (manifestSource.match(exactAuthBridgeScope) ?? []).length === 2 &&
+    !/n\.nspname\s+in\s*\([^)]*'auth'/i.test(manifestSource),
+);
+ok(
+  "function ACL fingerprints include effective postgres and Auth-owner execution",
+  /r\.rolname in \('anon', 'authenticator', 'authenticated', 'service_role', 'postgres', 'supabase_auth_admin'\)/.test(
+    manifestSource,
+  ),
 );
 const backupArm = backup.indexOf("SCRATCH_CLEANUP_ARMED=1");
 const backupCreate = backup.indexOf('dex_owner -d postgres -c "create database');

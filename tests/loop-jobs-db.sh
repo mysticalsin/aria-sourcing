@@ -37,12 +37,16 @@ psql_stdin() {
     --env PGPASSWORD="$bootstrap_password" \
     --entrypoint psql \
     "$client_image" \
-    -X -v ON_ERROR_STOP=1 -h db -U postgres -d postgres "$@"
+    -X -v ON_ERROR_STOP=1 -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d postgres "$@"
 }
+
+source tests/db/install-gotrue-test-authority.sh
+aria_install_gotrue_test_authority
 
 for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
   psql_stdin -q < "$migration"
 done
+psql_stdin -q < tests/db/gotrue-lifecycle-fixture.sql
 
 psql_stdin -q <<'SQL'
 \set ON_ERROR_STOP on
@@ -236,19 +240,19 @@ select loop_jobs_test.set_service_claims('c1000000-0000-4000-8000-000000000001')
 
 create temporary table enqueue_first as
 select public.enqueue_aria_job(
-  '51111111-1111-4111-8111-111111111111', 'sourcing_batch', 'batch:camp-1:001',
+  '51111111-1111-4111-8111-111111111111', 'provider_poll', 'batch:camp-1:001',
   '{"campaignId":"camp-1"}'::jsonb, now(), 100
 ) result;
 
 create temporary table enqueue_replay as
 select public.enqueue_aria_job(
-  '51111111-1111-4111-8111-111111111111', 'sourcing_batch', 'batch:camp-1:001',
+  '51111111-1111-4111-8111-111111111111', 'provider_poll', 'batch:camp-1:001',
   '{"campaignId":"camp-1"}'::jsonb, now(), 100
 ) result;
 
 create temporary table enqueue_drift as
 select public.enqueue_aria_job(
-  '51111111-1111-4111-8111-111111111111', 'sourcing_batch', 'batch:camp-1:001',
+  '51111111-1111-4111-8111-111111111111', 'provider_poll', 'batch:camp-1:001',
   '{"campaignId":"camp-OTHER"}'::jsonb, now(), 100
 ) result;
 
@@ -284,7 +288,7 @@ select loop_jobs_test.expect_scalar(
 );
 select loop_jobs_test.expect_authenticated_sqlstate(
   'enqueue-authenticated-denied',
-  $$select public.enqueue_aria_job('51111111-1111-4111-8111-111111111111','sourcing_batch','batch:x:0000001','{}'::jsonb, now(), 100)$$,
+  $$select public.enqueue_aria_job('51111111-1111-4111-8111-111111111111','provider_poll','batch:x:0000001','{}'::jsonb, now(), 100)$$,
   array['42501']
 );
 
@@ -296,10 +300,10 @@ select loop_jobs_test.set_service_claims('c1000000-0000-4000-8000-000000000001')
 
 create temporary table claim_first as
 select id, kind, status, lease_id, attempt_count, claimed_by
-  from public.claim_due_aria_jobs('worker-test-1', 120, array['sourcing_batch'], 10);
+  from public.claim_due_aria_jobs('worker-test-1', 120, array['provider_poll'], 10);
 
 create temporary table claim_second as
-select id from public.claim_due_aria_jobs('worker-test-2', 120, array['sourcing_batch'], 10);
+select id from public.claim_due_aria_jobs('worker-test-2', 120, array['provider_poll'], 10);
 
 reset role;
 
@@ -561,9 +565,9 @@ insert into public.agent_framework_runs (
   gen_random_uuid(), 'camp-1', repeat('b', 64),
   gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), 'run:expired:001',
   repeat('c', 64), repeat('d', 64), repeat('e', 64),
-  'fabadae4168db81f0eaaf62f209050f978e2f691',
+  '3c0a45ad772cdba388009b8d5ecad5e48cd22429',
   'registry.example/deerflow@sha256:' || repeat('0', 64), repeat('f', 64), now(),
-  'bb773ffa710bd22639c4ba2643413a0ea2b679d3',
+  'ed9e100fb71643cd3922b005908f9732bc0e07dc',
   'registry.example/flowise@sha256:' || repeat('0', 64), 'instance-per-workspace', repeat('a', 64), now(),
   'running', gen_random_uuid(), now() - interval '1 minute'
 );

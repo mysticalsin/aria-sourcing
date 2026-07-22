@@ -24,8 +24,11 @@ psql_stdin() {
     --env PGPASSWORD="$bootstrap_password" \
     --entrypoint psql \
     "$client_image" \
-    -X -v ON_ERROR_STOP=1 -h db -U postgres -d postgres "$@"
+    -X -v ON_ERROR_STOP=1 -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d postgres "$@"
 }
+
+source tests/db/install-gotrue-test-authority.sh
+aria_install_gotrue_test_authority
 
 for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
   case "$(basename "$migration")" in
@@ -33,6 +36,7 @@ for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
   esac
   psql_stdin -q < "$migration"
 done
+psql_stdin -q < tests/db/gotrue-lifecycle-fixture.sql
 
 psql_stdin -q <<'SQL'
 \set ON_ERROR_STOP on

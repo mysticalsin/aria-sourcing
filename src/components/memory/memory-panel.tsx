@@ -14,7 +14,7 @@ import {
   X,
 } from "lucide-react";
 
-import { Badge, Button, Select, Textarea, useToast } from "@/components/ui";
+import { Badge, Button, Input, Select, Textarea, useToast } from "@/components/ui";
 import { can } from "@/lib/rbac";
 import { useRole } from "@/lib/store";
 import { MEMORY_KINDS, type MemoryKind } from "@/lib/types";
@@ -40,6 +40,30 @@ type AgentMemory = {
   updatedAt: string;
 };
 
+type CandidateIdentifierKind =
+  | "candidate_id"
+  | "email"
+  | "phone"
+  | "linkedin"
+  | "github"
+  | "source_url"
+  | "source_external_id"
+  | "source_authority_id"
+  | "provider_external_id";
+
+type CandidateIdentifier = { kind: CandidateIdentifierKind; value: string };
+type CandidateProvenance =
+  | { classification: "none" }
+  | {
+    classification: "exact";
+    campaignId: string | null;
+    identifiers: CandidateIdentifier[];
+  };
+type CandidateClassification = "" | CandidateProvenance["classification"];
+type MemoryEdit = Partial<Pick<AgentMemory, "kind" | "content" | "pinned">> & {
+  candidateProvenance?: CandidateProvenance;
+};
+
 type MemoryResponse = {
   ok: boolean;
   code?: string;
@@ -55,6 +79,22 @@ type MemoryResponse = {
 };
 
 const MEMORY_PAGE_LIMIT = 25;
+const MAX_CANDIDATE_IDENTIFIERS = 32;
+const CAMPAIGN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
+const CANDIDATE_IDENTIFIER_OPTIONS: ReadonlyArray<{
+  value: CandidateIdentifierKind;
+  label: string;
+}> = [
+  { value: "candidate_id", label: "Candidate ID" },
+  { value: "email", label: "Email" },
+  { value: "phone", label: "Phone" },
+  { value: "linkedin", label: "LinkedIn URL" },
+  { value: "github", label: "GitHub URL" },
+  { value: "source_url", label: "Source URL" },
+  { value: "source_external_id", label: "Source external ID" },
+  { value: "source_authority_id", label: "Source authority ID" },
+  { value: "provider_external_id", label: "Provider external ID" },
+];
 
 const KIND_TONE: Record<MemoryKind, "electric" | "warning" | "violet" | "aqua"> = {
   fact: "electric",
@@ -74,7 +114,7 @@ function statusLabel(status: AgentMemory["status"]): string {
 }
 
 function apiErrorMessage(code?: string): string {
-  if (code === "invalid_request") return "Memory content is invalid or exceeds the 8 KiB limit.";
+  if (code === "invalid_request") return "Memory content or its candidate classification is invalid.";
   if (code === "revision_conflict") return "This memory changed in another session. The current version has been reloaded.";
   if (code === "memory_in_use") return "An active agent run is using this memory. Try again after the run finishes.";
   if (code === "invalid_state") return "This memory is no longer waiting for review.";
@@ -82,7 +122,151 @@ function apiErrorMessage(code?: string): string {
   if (code === "memory_not_found") return "This memory or agent is no longer available.";
   if (code === "rate_limited") return "Too many memory changes were requested. Wait briefly, then try again.";
   if (code === "cross_origin_request") return "The memory request was blocked by the application security policy. Reload and try again.";
+  if (code === "candidate_provenance_blocked") return "This candidate identity was erased and cannot be written back into agent memory.";
   return "Agent memory is unavailable. No change was saved.";
+}
+
+function candidateProvenancePayload(
+  classification: CandidateClassification,
+  campaignId: string,
+  identifiers: CandidateIdentifier[],
+): CandidateProvenance | null {
+  if (classification === "none") return { classification: "none" };
+  if (classification !== "exact" || identifiers.length < 1) return null;
+  const normalizedCampaignId = campaignId.trim();
+  if (normalizedCampaignId && !CAMPAIGN_ID_PATTERN.test(normalizedCampaignId)) return null;
+  const normalizedIdentifiers = identifiers.map((identifier) => ({
+    kind: identifier.kind,
+    value: identifier.value.trim(),
+  }));
+  if (normalizedIdentifiers.some((identifier) => (
+    !identifier.value
+    || new TextEncoder().encode(identifier.value).byteLength > 2048
+  ))) return null;
+  return {
+    classification: "exact",
+    campaignId: normalizedCampaignId || null,
+    identifiers: normalizedIdentifiers,
+  };
+}
+
+function useCandidateProvenanceDraft() {
+  const [classification, setClassification] = React.useState<CandidateClassification>("");
+  const [campaignId, setCampaignId] = React.useState("");
+  const [identifiers, setIdentifiers] = React.useState<CandidateIdentifier[]>([]);
+  const reset = React.useCallback(() => {
+    setClassification("");
+    setCampaignId("");
+    setIdentifiers([]);
+  }, []);
+  const selectClassification = React.useCallback((next: CandidateClassification) => {
+    setClassification(next);
+    setCampaignId("");
+    setIdentifiers(next === "exact" ? [{ kind: "candidate_id", value: "" }] : []);
+  }, []);
+  return {
+    classification,
+    campaignId,
+    identifiers,
+    setCampaignId,
+    setIdentifiers,
+    selectClassification,
+    reset,
+    payload: candidateProvenancePayload(classification, campaignId, identifiers),
+  };
+}
+
+function CandidateProvenanceFields({
+  draft,
+  disabled,
+}: {
+  draft: ReturnType<typeof useCandidateProvenanceDraft>;
+  disabled: boolean;
+}) {
+  return (
+    <div className="space-y-2 rounded-2xl border border-violet/10 bg-surface/50 p-3">
+      <p className="text-xs font-semibold text-ink-soft">Candidate identity classification</p>
+      <Select
+        aria-label="Candidate reference classification"
+        value={draft.classification}
+        disabled={disabled}
+        onChange={(event) => draft.selectClassification(event.target.value as CandidateClassification)}
+      >
+        <option value="" disabled>Choose candidate scope</option>
+        <option value="none">I confirm: no candidate identity is present</option>
+        <option value="exact">References specific candidate aliases</option>
+      </Select>
+      {draft.classification === "exact" && (
+        <div className="space-y-2">
+          <Input
+            aria-label="Candidate campaign ID"
+            placeholder="Campaign ID (optional)"
+            maxLength={120}
+            autoComplete="off"
+            value={draft.campaignId}
+            disabled={disabled}
+            onChange={(event) => draft.setCampaignId(event.target.value)}
+          />
+          {draft.identifiers.map((identifier, index) => (
+            <div key={index} className="grid grid-cols-[minmax(9rem,0.4fr)_1fr_auto] gap-2">
+              <Select
+                aria-label={`Candidate identifier kind ${index + 1}`}
+                value={identifier.kind}
+                disabled={disabled}
+                onChange={(event) => draft.setIdentifiers((current) => current.map((item, itemIndex) => (
+                  itemIndex === index
+                    ? { ...item, kind: event.target.value as CandidateIdentifierKind }
+                    : item
+                )))}
+              >
+                {CANDIDATE_IDENTIFIER_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </Select>
+              <Input
+                aria-label={`Candidate identifier value ${index + 1}`}
+                placeholder="Exact alias"
+                maxLength={2048}
+                autoComplete="off"
+                value={identifier.value}
+                disabled={disabled}
+                onChange={(event) => draft.setIdentifiers((current) => current.map((item, itemIndex) => (
+                  itemIndex === index ? { ...item, value: event.target.value } : item
+                )))}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={`Remove candidate identifier ${index + 1}`}
+                disabled={disabled || draft.identifiers.length === 1}
+                onClick={() => draft.setIdentifiers((current) => (
+                  current.filter((_, itemIndex) => itemIndex !== index)
+                ))}
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={disabled || draft.identifiers.length >= MAX_CANDIDATE_IDENTIFIERS}
+            onClick={() => draft.setIdentifiers((current) => [
+              ...current,
+              { kind: "candidate_id", value: "" },
+            ])}
+          >
+            Add candidate alias
+          </Button>
+        </div>
+      )}
+      <p className="text-xs text-muted">
+        Choose explicitly. Candidate-bound memories require every exact alias; otherwise the save is blocked.
+      </p>
+    </div>
+  );
 }
 
 function AddEntryForm({
@@ -94,15 +278,29 @@ function AddEntryForm({
   specId: string;
   busy: boolean;
   onCancel: () => void;
-  onCreate: (body: { specId: string; kind: MemoryKind; content: string }) => Promise<boolean>;
+  onCreate: (body: {
+    specId: string;
+    kind: MemoryKind;
+    content: string;
+    candidateProvenance: CandidateProvenance;
+  }) => Promise<boolean>;
 }) {
   const [kind, setKind] = React.useState<MemoryKind>("fact");
   const [content, setContent] = React.useState("");
+  const provenance = useCandidateProvenanceDraft();
 
   async function submit() {
     const trimmed = content.trim();
-    if (!trimmed || busy) return;
-    if (await onCreate({ specId, kind, content: trimmed })) setContent("");
+    if (!trimmed || !provenance.payload || busy) return;
+    if (await onCreate({
+      specId,
+      kind,
+      content: trimmed,
+      candidateProvenance: provenance.payload,
+    })) {
+      setContent("");
+      provenance.reset();
+    }
   }
 
   return (
@@ -132,12 +330,13 @@ function AddEntryForm({
           className="flex-1 resize-none"
         />
       </div>
+      <CandidateProvenanceFields draft={provenance} disabled={busy} />
       <p className="text-xs text-muted">
         New and edited entries stay pending until you explicitly approve them.
       </p>
       <div className="flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>Cancel</Button>
-        <Button size="sm" disabled={busy || !content.trim()} onClick={() => void submit()}>
+        <Button size="sm" disabled={busy || !content.trim() || !provenance.payload} onClick={() => void submit()}>
           Save for review
         </Button>
       </div>
@@ -156,23 +355,30 @@ function EntryRow({
   entry: AgentMemory;
   canEdit: boolean;
   busy: boolean;
-  onEdit: (entry: AgentMemory, update: Partial<Pick<AgentMemory, "kind" | "content" | "pinned">>) => Promise<boolean>;
+  onEdit: (entry: AgentMemory, update: MemoryEdit) => Promise<boolean>;
   onReview: (entry: AgentMemory, action: "approve" | "reject") => Promise<void>;
   onDelete: (entry: AgentMemory) => Promise<void>;
 }) {
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(entry.content);
   const [kind, setKind] = React.useState(entry.kind);
+  const provenance = useCandidateProvenanceDraft();
+  const resetProvenance = provenance.reset;
 
   React.useEffect(() => {
     setDraft(entry.content);
     setKind(entry.kind);
-  }, [entry.content, entry.kind]);
+    resetProvenance();
+  }, [entry.content, entry.kind, resetProvenance]);
 
   async function saveEdit() {
     const content = draft.trim();
-    if (!content || busy) return;
-    if (await onEdit(entry, { content, kind })) setEditing(false);
+    if (!content || !provenance.payload || busy) return;
+    if (await onEdit(entry, {
+      content,
+      kind,
+      candidateProvenance: provenance.payload,
+    })) setEditing(false);
   }
 
   return (
@@ -202,11 +408,15 @@ function EntryRow({
               }}
               className="resize-none text-sm"
             />
+            <CandidateProvenanceFields draft={provenance} disabled={busy} />
             <div className="flex gap-1.5 justify-end">
-              <Button variant="ghost" size="icon" aria-label="Cancel edit" onClick={() => setEditing(false)}>
+              <Button variant="ghost" size="icon" aria-label="Cancel edit" onClick={() => {
+                setEditing(false);
+                provenance.reset();
+              }}>
                 <X className="h-3.5 w-3.5 text-muted" />
               </Button>
-              <Button size="icon" aria-label="Save edit" onClick={() => void saveEdit()} disabled={busy || !draft.trim()}>
+              <Button size="icon" aria-label="Save edit" onClick={() => void saveEdit()} disabled={busy || !draft.trim() || !provenance.payload}>
                 <Check className="h-3.5 w-3.5" />
               </Button>
             </div>
@@ -254,7 +464,10 @@ function EntryRow({
             size="icon"
             aria-label="Edit memory"
             disabled={busy}
-            onClick={() => setEditing(true)}
+            onClick={() => {
+              provenance.reset();
+              setEditing(true);
+            }}
           >
             <Pencil className="h-3.5 w-3.5 text-muted" />
           </Button>

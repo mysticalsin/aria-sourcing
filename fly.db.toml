@@ -42,10 +42,9 @@ primary_region = "cdg"
     interval     = "15s"
     timeout      = "3s"
 
-# Postgres on 1gb gives tiny shared_buffers → constant disk hits on a starved
-# shared vCPU. shared-cpu-2x/2gb lets the working set stay in cache and doubles
-# query CPU. This is the single biggest DB-side latency win short of collapsing
-# the stack (see docs/operations/FLY_SIZING.md for the evidence gate).
+# Intended single-volume database baseline only. It is not cache, latency, or
+# throughput evidence. Follow docs/operations/FLY_SIZING.md before changing the
+# Machine, database settings, or topology.
 [[vm]]
   size   = "shared-cpu-2x"
   memory = "2gb"

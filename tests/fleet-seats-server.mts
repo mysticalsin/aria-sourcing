@@ -172,13 +172,30 @@ function req(body: unknown) {
 }
 
 {
-  const sql = readFileSync("supabase/migrations/0018_first_admin.sql", "utf8");
+  const sql = readFileSync("supabase/migrations/0061_active_auth_identity_workspace_authority.sql", "utf8");
+  const authOwnerBridges = readFileSync("docker/bootstrap/auth-owner-bridges.sql", "utf8");
   const databaseTest = readFileSync("tests/db/ensure-workspace-authority.sql", "utf8");
   const databaseHarness = readFileSync("scripts/test-db-privileges.sh", "utf8");
   const createdBranch = sql.indexOf("workspace_was_created := true");
   const adminBranch = sql.indexOf("case when workspace_was_created then 'admin'");
-  ok("migration 0018 exists and replaces ensure_workspace", sql.includes("create or replace function public.ensure_workspace()"));
-  ok("migration contains role='admin' marker", sql.includes("role='admin'"));
+  ok("migration 0061 replaces ensure_workspace with active identity authority", sql.includes("create or replace function public.ensure_workspace()"));
+  ok(
+    "migration 0061 binds workspace, role, and profile RLS to active GoTrue identity",
+    sql.includes("create or replace function public.current_active_identity_id()") &&
+      /create or replace function public\.current_workspace_id\(\)[\s\S]*current_active_identity_id\(\)/.test(sql) &&
+      /create or replace function public\.current_profile_role\(\)[\s\S]*current_active_identity_id\(\)/.test(sql) &&
+      (sql.match(/create policy "own profile (?:read|insert|update)"/g) ?? []).length === 3,
+  );
+  ok(
+    "workspace provisioning rejects unconfirmed, deleted, and banned identities before profile reuse",
+    /identity\.confirmed_at is not null/.test(authOwnerBridges) &&
+      /auth_identity_lifecycle_schema_ready\(\)/.test(sql) &&
+      /to_jsonb\(identity\) \? 'deleted_at'/.test(authOwnerBridges) &&
+      /to_jsonb\(identity\) \? 'banned_until'/.test(authOwnerBridges) &&
+      /aria_current_active_identity\(\)/.test(sql) &&
+      sql.indexOf("aria_current_active_identity()") < sql.indexOf("already has a profile row"),
+  );
+  ok("migration retains the first-workspace admin branch", sql.includes("then 'admin'"));
   ok("admin assignment is tied to workspace creation branch", createdBranch > 0 && adminBranch > createdBranch);
   ok("join branch keeps existing/default role", /else 'member'/.test(sql) && /else public\.profiles\.role/.test(sql));
   for (const marker of [
@@ -188,6 +205,26 @@ function req(body: unknown) {
     "repeat ensure_workspace calls never elevate an existing member profile",
     "pre-existing member profile remains a member after ensure_workspace",
     "cross-domain users receive distinct exact-domain workspaces",
+    "unconfirmed identity cannot provision a workspace",
+    "deleted identity cannot provision a workspace",
+    "currently banned identity cannot provision a workspace",
+    "inactive identities create no workspace or profile rows",
+    "missing GoTrue lifecycle columns fail Auth readiness closed",
+    "missing GoTrue lifecycle columns deny active identity authority",
+    "exact GoTrue lifecycle columns satisfy Auth readiness",
+    "complete profile RLS policy set requires an active backing identity",
+    "active identity helpers are owned by postgres",
+    "active identity retains direct PostgREST RLS authority",
+    "active administrator retains direct PostgREST write authority",
+    "currently banned identity loses direct PostgREST RLS authority",
+    "currently banned identity cannot use direct PostgREST admin write",
+    "expired ban restores active identity authority",
+    "soft-deleted identity loses direct PostgREST RLS authority",
+    "soft-deleted identity cannot use direct PostgREST admin write",
+    "unconfirmed existing identity loses direct PostgREST RLS authority",
+    "unconfirmed existing identity cannot use direct PostgREST admin write",
+    "missing identity loses direct PostgREST RLS authority",
+    "missing identity cannot use direct PostgREST admin write",
   ]) {
     ok(`real ensure_workspace database test covers ${marker}`, databaseTest.includes(marker));
   }

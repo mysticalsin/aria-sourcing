@@ -368,7 +368,10 @@ function waitForFile(path: string) {
   throw new Error(`timed out waiting for ${path}`);
 }
 
-function runScenario(scenario: string): RunResult {
+function runScenario(
+  scenario: string,
+  overrides: Partial<NodeJS.ProcessEnv> = {},
+): RunResult {
   const root = mkdtempSync(join(tmpdir(), "aria-first-admin-behavior-"));
   const binPath = join(root, "bin");
   const serverPath = join(root, "mock-server.mjs");
@@ -457,6 +460,7 @@ exec "\$REAL_CURL" "\$@"
             : "first.admin@example.test",
         ADMIN_PASSWORD: "FirstAdmin_0123456789abcdef!",
         ARIA_ALLOWED_EMAIL_DOMAIN: "example.test",
+        ...overrides,
       },
       timeout: 30_000,
     });
@@ -641,6 +645,12 @@ const multipleAtEmail = runScenario("multiple_at_admin_email");
 check("an administrator email with multiple at-signs fails before mutation", () => {
   assert.notEqual(multipleAtEmail.status, 0);
   assert.ok(!names(multipleAtEmail).includes("auth.create-attempted"));
+});
+
+const oversizedPassword = runScenario("fresh_success", { ADMIN_PASSWORD: "x".repeat(73) });
+check("an administrator password above GoTrue's 72-byte maximum fails before mutation", () => {
+  assert.notEqual(oversizedPassword.status, 0);
+  assert.ok(!names(oversizedPassword).includes("auth.create-attempted"));
 });
 
 const createdLoginMismatch = runScenario("created_login_id_mismatch");

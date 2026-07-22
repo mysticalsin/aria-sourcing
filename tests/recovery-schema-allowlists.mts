@@ -24,15 +24,18 @@ const requiredTables = [
   "candidate_erasure_suppression_tombstones",
   "candidate_legal_holds",
   "email_connection_seat_mismatch_quarantine",
+  "sourcing_run_results",
 ];
 
 const inventory = readFileSync("docker/bootstrap/legacy-table-inventory.txt", "utf8")
   .trim()
   .split("\n");
 const invariant = readFileSync("docker/bootstrap/legacy-baseline-invariants.sql", "utf8");
-const invariantTables = invariant
-  .match(/expected_tables constant text :=\s*'([^']+)'/)?.[1]
-  ?.split(",") ?? [];
+const invariantTables = [...invariant.matchAll(
+  /expected(?:_[a-z]+)*_tables constant text :=\s*'([^']+)'/g,
+)]
+  .flatMap((match) => match[1].split(","))
+  .sort();
 ok(
   "one sorted inventory exactly matches the schema invariant table set",
   inventory.length > 0 &&

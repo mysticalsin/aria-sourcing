@@ -1005,7 +1005,7 @@ ok(
 const sendRouteSource = readFileSync(new URL("../src/app/api/outreach/send/route.ts", import.meta.url), "utf8");
 const smsApiGuard = sendRouteSource.indexOf('if (channel === "SMS")');
 const serverClientOpen = sendRouteSource.indexOf("const supabase = await getServerSupabase()", smsApiGuard);
-const providerCall = sendRouteSource.indexOf("sendViaProvider({", smsApiGuard);
+const providerCall = sendRouteSource.indexOf("performEmailSend(", smsApiGuard);
 ok(
   "SMS policy: API guard precedes database and provider side effects",
   smsApiGuard >= 0 && serverClientOpen > smsApiGuard && providerCall > smsApiGuard,

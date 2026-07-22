@@ -28,6 +28,7 @@ COPY docker/db/entrypoint.fly.sh /usr/local/bin/aria-db-entrypoint
 COPY docker/db/00-aria-init-log-policy.sql /docker-entrypoint-initdb.d/00-aria-init-log-policy.sql
 COPY docker/db/mark-init-complete.sh /docker-entrypoint-initdb.d/zz-aria-init-complete.sh
 COPY docker/bootstrap/supabase-admin-reconciliation.sql /opt/aria/supabase-admin-reconciliation.sql
+COPY docker/bootstrap/auth-owner-bridges.sql /opt/aria/auth-owner-bridges.sql
 COPY docker/db/postgresql.schema.sql /etc/postgresql.schema.sql
 RUN chmod 0755 \
   /usr/local/bin/aria-db-entrypoint \

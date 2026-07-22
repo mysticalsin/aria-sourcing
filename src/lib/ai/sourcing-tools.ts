@@ -92,7 +92,7 @@ export function makeSourcingToolRunner(
   existing: CandidateDedupeIdentity[],
   weights: ScoringWeights,
   githubToken: string,
-  tavilyKey?: string,
+  tavilyKey?: string | null,
   webFetchImpl?: WebFetch,
   beforeExternalCall?: () => Promise<boolean>,
 ) {

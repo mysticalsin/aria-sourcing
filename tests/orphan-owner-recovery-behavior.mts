@@ -293,6 +293,10 @@ const shortPassword = runScenario("success", { ADMIN_PASSWORD: "too-short" });
 assert.notEqual(shortPassword.status, 0, "short owner password unexpectedly passed");
 assert.equal(shortPassword.events.length, 0, "network inventory began before password validation");
 
+const oversizedPassword = runScenario("success", { ADMIN_PASSWORD: "x".repeat(73) });
+assert.notEqual(oversizedPassword.status, 0, "oversized owner password unexpectedly passed");
+assert.equal(oversizedPassword.events.length, 0, "network inventory began before password maximum validation");
+
 const uppercaseEmail = runScenario("success", { ADMIN_EMAIL: "Owner@Example.Test" });
 assert.notEqual(uppercaseEmail.status, 0, "non-canonical owner email unexpectedly passed");
 assert.equal(uppercaseEmail.events.length, 0, "network inventory began before canonical email validation");

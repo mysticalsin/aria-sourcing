@@ -9,6 +9,7 @@ const userId = "22222222-2222-4222-8222-222222222222";
 const frameworkRunId = "33333333-3333-4333-8333-333333333333";
 const capabilityToken = "s".repeat(43);
 const resultSha256 = "d".repeat(64);
+const sourcingRunId = "44444444-4444-4444-8444-444444444444";
 
 let user: { id: string } | null = { id: userId };
 let role: "admin" | "member" | "viewer" = "member";
@@ -39,6 +40,12 @@ mock.module(moduleUrl("src/lib/supabase/server.ts"), {
 mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
   namedExports: {
     ackAgentFrameworkSourcingEffect: async (input: Record<string, unknown>) => {
+      authorityCalls += 1;
+      authorityInput = input;
+      if (authorityThrows) throw new Error("database detail must not escape");
+      return authorityResult;
+    },
+    ackSourcingRunResult: async (input: Record<string, unknown>) => {
       authorityCalls += 1;
       authorityInput = input;
       if (authorityThrows) throw new Error("database detail must not escape");
@@ -93,6 +100,18 @@ test("persisted framework results are acknowledged with exact actor and workspac
     actorId: userId,
     frameworkRunId,
     capabilityToken,
+    resultSha256,
+  });
+});
+
+test("persisted ordinary results are acknowledged with exact actor, workspace, run, and hash", async () => {
+  reset();
+  const response = await route.POST(request({ sourcingRunId, resultSha256 }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(authorityInput, {
+    workspaceId,
+    actorId: userId,
+    runId: sourcingRunId,
     resultSha256,
   });
 });

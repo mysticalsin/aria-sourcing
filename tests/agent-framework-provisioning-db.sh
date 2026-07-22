@@ -21,12 +21,16 @@ psql_stdin() {
     --env PGPASSWORD="$bootstrap_password" \
     --entrypoint psql \
     "$client_image" \
-    -X -q -v ON_ERROR_STOP=1 -h db -U postgres -d postgres "$@"
+    -X -q -v ON_ERROR_STOP=1 -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d postgres "$@"
 }
+
+source tests/db/install-gotrue-test-authority.sh
+aria_install_gotrue_test_authority
 
 for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
   psql_stdin < "$migration" >/dev/null
 done
+psql_stdin -q < tests/db/gotrue-lifecycle-fixture.sql
 
 psql_stdin <<'SQL'
 insert into auth.users (
@@ -100,10 +104,10 @@ create function aria_framework_provisioning_test.configure_a(
     expected_version,
     configuration_sha256,
     '71000000-0000-4000-8000-000000000001',
-    'fabadae4168db81f0eaaf62f209050f978e2f691',
+    '3c0a45ad772cdba388009b8d5ecad5e48cd22429',
     'registry.internal/deerflow@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
     '72000000-0000-4000-8000-000000000002',
-    'bb773ffa710bd22639c4ba2643413a0ea2b679d3',
+    'ed9e100fb71643cd3922b005908f9732bc0e07dc',
     'registry.internal/flowise@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
     'instance-per-workspace'
   );
@@ -141,10 +145,10 @@ select aria_framework_provisioning_test.assert_scalar(
     'b3000000-0000-4000-8000-000000000003',
     '81000000-0000-4000-8000-000000000001',1,repeat('6',64),
     '71000000-0000-4000-8000-000000000001',
-    'fabadae4168db81f0eaaf62f209050f978e2f691',
+    '3c0a45ad772cdba388009b8d5ecad5e48cd22429',
     'registry.internal/deerflow@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
     '72000000-0000-4000-8000-000000000002',
-    'bb773ffa710bd22639c4ba2643413a0ea2b679d3',
+    'ed9e100fb71643cd3922b005908f9732bc0e07dc',
     'registry.internal/flowise@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
     'instance-per-workspace'
   )->>'status'$$,
@@ -157,10 +161,10 @@ select aria_framework_provisioning_test.assert_scalar(
     'a3000000-0000-4000-8000-000000000003',
     '81000000-0000-4000-8000-000000000002',1,repeat('6',64),
     '71000000-0000-4000-8000-000000000001',
-    'fabadae4168db81f0eaaf62f209050f978e2f691',
+    '3c0a45ad772cdba388009b8d5ecad5e48cd22429',
     'registry.internal/deerflow:latest',
     '72000000-0000-4000-8000-000000000002',
-    'bb773ffa710bd22639c4ba2643413a0ea2b679d3',
+    'ed9e100fb71643cd3922b005908f9732bc0e07dc',
     'registry.internal/flowise@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
     'instance-per-workspace'
   )->>'status'$$,
@@ -237,7 +241,7 @@ select aria_framework_provisioning_test.assert_scalar(
   'DeerFlow readiness binds the configured immutable identity',
   $$select public.record_agent_framework_readiness(
     '11111111-1111-4111-8111-111111111111','71000000-0000-4000-8000-000000000001',
-    'fabadae4168db81f0eaaf62f209050f978e2f691',
+    '3c0a45ad772cdba388009b8d5ecad5e48cd22429',
     'registry.internal/deerflow@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
     'dedicated-worker',repeat('6',64),repeat('1',64),true
   )->>'status'$$,
@@ -247,7 +251,7 @@ select aria_framework_provisioning_test.assert_scalar(
   'Flowise readiness binds the configured immutable identity',
   $$select public.record_agent_framework_readiness(
     '11111111-1111-4111-8111-111111111111','72000000-0000-4000-8000-000000000002',
-    'bb773ffa710bd22639c4ba2643413a0ea2b679d3',
+    'ed9e100fb71643cd3922b005908f9732bc0e07dc',
     'registry.internal/flowise@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
     'instance-per-workspace',repeat('6',64),repeat('2',64),true
   )->>'status'$$,
@@ -348,10 +352,10 @@ select aria_framework_provisioning_test.assert_scalar(
     'b3000000-0000-4000-8000-000000000003',
     '84000000-0000-4000-8000-000000000001',1,repeat('8',64),
     'b1000000-0000-4000-8000-000000000001',
-    'fabadae4168db81f0eaaf62f209050f978e2f691',
+    '3c0a45ad772cdba388009b8d5ecad5e48cd22429',
     'registry.internal/deerflow@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
     'b2000000-0000-4000-8000-000000000002',
-    'bb773ffa710bd22639c4ba2643413a0ea2b679d3',
+    'ed9e100fb71643cd3922b005908f9732bc0e07dc',
     'registry.internal/flowise@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
     'licensed-enterprise-workspace'
   )->>'status'$$,
@@ -359,13 +363,13 @@ select aria_framework_provisioning_test.assert_scalar(
 );
 select public.record_agent_framework_readiness(
   '22222222-2222-4222-8222-222222222222','b1000000-0000-4000-8000-000000000001',
-  'fabadae4168db81f0eaaf62f209050f978e2f691',
+  '3c0a45ad772cdba388009b8d5ecad5e48cd22429',
   'registry.internal/deerflow@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
   'dedicated-worker',repeat('8',64),repeat('1',64),true
 );
 select public.record_agent_framework_readiness(
   '22222222-2222-4222-8222-222222222222','b2000000-0000-4000-8000-000000000002',
-  'bb773ffa710bd22639c4ba2643413a0ea2b679d3',
+  'ed9e100fb71643cd3922b005908f9732bc0e07dc',
   'registry.internal/flowise@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
   'licensed-enterprise-workspace',repeat('8',64),repeat('2',64),true
 );
@@ -387,10 +391,10 @@ select aria_framework_provisioning_test.assert_scalar(
     'b3000000-0000-4000-8000-000000000003',
     '84000000-0000-4000-8000-000000000003',3,repeat('9',64),
     'b1000000-0000-4000-8000-000000000011',
-    'fabadae4168db81f0eaaf62f209050f978e2f691',
+    '3c0a45ad772cdba388009b8d5ecad5e48cd22429',
     'registry.internal/deerflow@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     'b2000000-0000-4000-8000-000000000012',
-    'bb773ffa710bd22639c4ba2643413a0ea2b679d3',
+    'ed9e100fb71643cd3922b005908f9732bc0e07dc',
     'registry.internal/flowise@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     'instance-per-workspace'
   )->>'status'$$,
@@ -407,13 +411,13 @@ select aria_framework_provisioning_test.assert_scalar(
   '4:f:t:' || repeat('9',64) || ':b1000000-0000-4000-8000-000000000011:b2000000-0000-4000-8000-000000000012'
 );
 select aria_framework_provisioning_test.assert_scalar(
-  'rotation retires old identities and registers only the new pair',
+  'rotation degrades old identities and registers only the new pair',
   $$select string_agg(id::text || ':' || status,',' order by id)
     from public.agent_framework_instances
     where workspace_id='22222222-2222-4222-8222-222222222222'$$,
-  'b1000000-0000-4000-8000-000000000001:revoked,' ||
+  'b1000000-0000-4000-8000-000000000001:degraded,' ||
   'b1000000-0000-4000-8000-000000000011:registered,' ||
-  'b2000000-0000-4000-8000-000000000002:revoked,' ||
+  'b2000000-0000-4000-8000-000000000002:degraded,' ||
   'b2000000-0000-4000-8000-000000000012:registered'
 );
 select aria_framework_provisioning_test.assert_scalar(
@@ -470,9 +474,9 @@ insert into public.agent_framework_runs (
     '73000000-0000-4000-8000-000000000003','71000000-0000-4000-8000-000000000001',
     '72000000-0000-4000-8000-000000000002','cleanup-expired',repeat('5',64),repeat('6',64),
     (select workflow_sha256 from public.agent_workflow_versions where id='73000000-0000-4000-8000-000000000003'),
-    'fabadae4168db81f0eaaf62f209050f978e2f691',
+    '3c0a45ad772cdba388009b8d5ecad5e48cd22429',
     'registry.internal/deerflow@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',repeat('1',64),now(),
-    'bb773ffa710bd22639c4ba2643413a0ea2b679d3',
+    'ed9e100fb71643cd3922b005908f9732bc0e07dc',
     'registry.internal/flowise@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
     'instance-per-workspace',repeat('2',64),now(),'proposed',
     '92000000-0000-4000-8000-000000000001',now()+interval '5 minutes',repeat('9',64),now()
@@ -484,9 +488,9 @@ insert into public.agent_framework_runs (
     '73000000-0000-4000-8000-000000000003','71000000-0000-4000-8000-000000000001',
     '72000000-0000-4000-8000-000000000002','cleanup-future',repeat('7',64),repeat('6',64),
     (select workflow_sha256 from public.agent_workflow_versions where id='73000000-0000-4000-8000-000000000003'),
-    'fabadae4168db81f0eaaf62f209050f978e2f691',
+    '3c0a45ad772cdba388009b8d5ecad5e48cd22429',
     'registry.internal/deerflow@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',repeat('1',64),now(),
-    'bb773ffa710bd22639c4ba2643413a0ea2b679d3',
+    'ed9e100fb71643cd3922b005908f9732bc0e07dc',
     'registry.internal/flowise@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
     'instance-per-workspace',repeat('2',64),now(),'proposed',
     '92000000-0000-4000-8000-000000000002',now()+interval '5 minutes',repeat('9',64),now()
@@ -602,7 +606,7 @@ insert into public.agent_framework_instances (
 ) values (
   '72000000-0000-4000-8000-000000000099',
   '11111111-1111-4111-8111-111111111111','flowise','revoked-lookalike',
-  'bb773ffa710bd22639c4ba2643413a0ea2b679d3',
+  'ed9e100fb71643cd3922b005908f9732bc0e07dc',
   'registry.internal/flowise@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
   'instance-per-workspace','revoked','a3000000-0000-4000-8000-000000000003'
 );
@@ -618,7 +622,7 @@ select aria_framework_provisioning_test.assert_scalar(
 );
 select aria_framework_provisioning_test.set_claims(null, 'service_role');
 set local role service_role;
-select aria_framework_provisioning_test.assert_sqlstate(
+select aria_framework_provisioning_test.assert_scalar(
   'a claim cannot snapshot instance IDs other than the provisioned control IDs',
   $$select public.claim_agent_framework_run(
     '11111111-1111-4111-8111-111111111111',
@@ -628,8 +632,8 @@ select aria_framework_provisioning_test.assert_sqlstate(
     'campaign-control-id-mismatch',repeat('4',64),
     '73000000-0000-4000-8000-000000000003',
     'control-id-mismatch-claim',repeat('5',64)
-  )$$,
-  array['42501']
+  )->>'status'$$,
+  'flowise_unavailable'
 );
 rollback;
 SQL
@@ -686,8 +690,10 @@ end
 $privilege_assertions$;
 SQL
 
-# Reapplying the migration does not reset control state or duplicate receipts.
-psql_stdin < supabase/migrations/0030_agent_framework_provisioning_authority.sql >/dev/null
+# Reapplying the current pin-rotation migration does not reset control state or
+# duplicate receipts. The migration ledger never reapplies superseded 0030
+# after 0048; replaying 0030 here would recreate its obsolete uniqueness rule.
+psql_stdin < supabase/migrations/0048_agent_framework_upstream_pin_rotation.sql >/dev/null
 psql_stdin <<'SQL'
 select aria_framework_provisioning_test.assert_scalar(
   'migration replay preserves the fail-safe control and receipt ledger',

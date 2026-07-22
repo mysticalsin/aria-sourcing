@@ -32,11 +32,15 @@ from browser state.
 | `src/components/` | Feature UI and shared presentation components |
 | `src/lib/` | Domain rules, provider adapters, security policy, state helpers, and server services |
 | `src/lib/agents/` | Agent graph, execution policy, and exact-scope memory handling |
+| `src/lib/needs/` | Signed need-ingress validation, requisition parsing contracts, and readiness policy |
+| `src/lib/sourcing/` | Candidate normalization, provider boundaries, query policy, learning authority, and staged-result clients |
 | `src/lib/server/` | Server-only authenticated-principal and side-effect boundaries |
 | `src/lib/supabase/` | Supabase configuration, clients, and live workspace persistence |
 | `supabase/migrations/` | Ordered database schema and authority source of truth |
 | `tests/` | Executable contracts used by `npm test` |
 | `scripts/` | Local setup, recovery, admin provisioning, and acceptance helpers |
+| `scripts/sourcing-loop-handlers/` | React-free handlers for parse, campaign-create, and bounded real-candidate jobs |
+| `infra/agent-frameworks/` | Pinned DeerFlow and Flowise sources, private adapters, images, Fly definitions, and release policy |
 | `docker/` and `fly.*.toml` | Container and Fly runtime definitions |
 | `production-readiness/` | Current release instructions plus a dated historical audit set |
 | `_relay/` | Agent handoff state; never use it as product or deployment documentation |
@@ -87,6 +91,50 @@ Key data ownership:
 Apply every numbered migration in order. The missing `0016` number is
 intentional; do not renumber migrations or hand-pick a partial range.
 
+## Autonomous need-to-candidate execution
+
+The autonomous path is a durable job chain, not a browser macro and not a
+free-form agent conversation:
+
+1. `POST /api/webhooks/needs` authenticates an exact tenant credential, raw-body
+   HMAC, timestamp, and idempotency key. Migration `0049` stores the bounded
+   private input and first job atomically.
+2. `requisition_parse` resolves only a database-approved tenant model binding,
+   fences every model effect, validates the structured role evidence, and
+   records a content-bound receipt through migrations `0050`, `0051`, and
+   `0053`. There is no synthetic production fallback.
+3. `campaign_create` uses migration `0052` to project that receipt into one
+   deterministic campaign and enqueue the first sourcing batch in the same
+   database transaction.
+4. `sourcing_batch` uses migration `0054` to snapshot campaign authority,
+   reserve bounded mode-specific GitHub quota, record an egress attempt before
+   the request, retain response digests, and atomically persist only candidates
+   that match the provider evidence. Anonymous mode is the default;
+   authenticated mode requires an explicit worker setting and deployment
+   `GITHUB_TOKEN`.
+5. A promoted Graphify lesson may select or reorder only a finite, same-page
+   query variant already derived by the server from the exact approved role.
+   The lesson, review, export, query, and digest snapshot is frozen before
+   egress; Graphify cannot create a role requirement, provider credential,
+   candidate fact, or delivery permission.
+6. The next batch is bounded by a finite ordinal and stops on capacity,
+   provider exhaustion, pause, kill switch, stale authority, or terminal
+   policy failure. Exact replay reads receipts instead of repeating egress.
+
+The human-in-the-loop control is an activation boundary. Administrators issue
+the ingress credential, approve runtime bindings and framework versions, and
+can keep the sourcing loop dark. Once independently activated, each valid need
+does not require a browser click. Outbound delivery remains a separate,
+default-off capability, so autonomous sourcing never implies autonomous
+contact.
+
+The checked-in autonomous provider is evidence-bound public GitHub discovery.
+The multi-provider bridge described in
+[`docs/operations/AUTONOMOUS_PROVIDER_SOURCING.md`](operations/AUTONOMOUS_PROVIDER_SOURCING.md)
+remains fail-closed until its separate database receipt contract and live proof
+exist. Do not describe browser Tavily support as autonomous multi-provider
+coverage.
+
 ## Independent agent execution
 
 An ARIA agent is an owner-bound `agent_specs` row plus one independently
@@ -125,6 +173,12 @@ Framework execution defaults disabled with the kill switch active. Readiness is
 bound to one workspace and immutable instance IDs, not a generic process ping.
 The earlier browser-owned Flowise proxy and legacy graph executor remain
 disabled; there is one production sourcing-effect path.
+
+This is a source architecture, not a live framework receipt. No complete
+Flowise runtime currently passes the release zero HIGH/CRITICAL policy, and no
+accepted DeerFlow/Flowise production deployment, restore drill, exact-model
+canary, or campaign canary exists for this branch. Framework execution must
+remain disabled until those separate acceptance gates pass.
 
 ### Identity glossary
 
@@ -183,8 +237,9 @@ available. Do not add login automation, scraping, or rate-limit bypass.
 
 ## Deployment topology
 
-The production definition has five long-running Fly services plus a one-shot
-bootstrap app:
+The checked-in core Fly design defines five long-running applications plus a
+one-shot bootstrap application. `aria-mantu-app` contains separately governed
+web, cleanup, framework-heartbeat, and sourcing-loop process groups:
 
 ```text
 Internet
@@ -199,13 +254,35 @@ aria-mantu-bootstrap
   -> exits after evidence is recorded
 ```
 
-The protected workflow builds the application, database, bootstrap, and Kong
-service images plus a separately built one-shot Graphify lesson-worker image
-from one release SHA. Auth and REST are pinned upstream images. All 7 images are
-scanned; the 5 local images are attested and promoted. Graphify receives a
-pre-publication container test but no post-promotion execution receipt. Release
-acceptance requires exact image digests, migration identity, recovery evidence,
-and live behavior. See
+The private framework deployment pack in `infra/agent-frameworks/fly/` defines
+this target topology and no public service, but it has not been deployed or
+accepted for this branch:
+
+```text
+aria-mantu-app
+  -> aria-mantu-deerflow-adapter -> aria-mantu-deerflow
+                                 -> aria-mantu-model-gateway
+  -> aria-mantu-flowise-adapter  -> aria-mantu-flowise
+                                 -> aria-mantu-flowise-worker
+
+DeerFlow state -> aria-mantu-deerflow-db + aria-mantu-deerflow-redis
+Flowise state  -> aria-mantu-flowise-db  + aria-mantu-flowise-redis
+```
+
+Private DNS, workload identity, immutable source/image pins, database-backed
+readiness receipts, and the ARIA adapters are part of the authority boundary.
+A process health response without those exact identities is not framework
+readiness.
+
+The checked-in protected workflow is designed to build the application,
+database, bootstrap, and Kong service images plus a separately built one-shot
+Graphify lesson-worker image from one release SHA. Auth and REST are pinned
+upstream images. All 7 images are scanned; the 5 local images are attested and
+promoted. Graphify receives a pre-publication container test but no
+post-promotion execution receipt. That workflow has not completed for the
+current source SHA, and the separate framework plane has no accepted release or
+deployment receipt. Release acceptance requires exact image digests, migration
+identity, recovery evidence, and live behavior. See
 [`production-readiness/DEPLOYMENT_RUNBOOK.md`](../production-readiness/DEPLOYMENT_RUNBOOK.md).
 
 ## Verification layers
@@ -221,7 +298,7 @@ and live behavior. See
 | Cross-channel capacity | Included in the disposable-database gate as `npm run test:db-cross-channel-cap` |
 | Exact DB image and restart behavior | `npm run test:fly-db-volume` |
 | Release identity | Exact-SHA CI, CodeQL, image evidence, and protected workflow receipts |
-| Live acceptance | Readiness, authenticated DB/Auth/REST/Kong, restarts, login, and zero-send campaign proof |
+| Live acceptance | Readiness, authenticated DB/Auth/REST/Kong, restarts, login, restore and failover evidence, ratified capacity proof, exact-model LLM proof, and a real zero-contact sourcing campaign canary |
 
 Passing source tests does not prove a live deployment. Keep source, release,
 and live evidence separate.

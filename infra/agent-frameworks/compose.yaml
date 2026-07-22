@@ -15,7 +15,7 @@ x-framework-configuration: &framework_configuration
   REDIS_IMAGE_DIGEST: "${REDIS_IMAGE_REPOSITORY:-invalid}@sha256:${REDIS_IMAGE_SHA256:-invalid}"
   DEERFLOW_ADAPTER_URL: "${DEERFLOW_ADAPTER_URL:-}"
   DEERFLOW_FRAMEWORK_INSTANCE_ID: "${DEERFLOW_INSTANCE_ID:-}"
-  DEERFLOW_SOURCE_COMMIT: fabadae4168db81f0eaaf62f209050f978e2f691
+  DEERFLOW_SOURCE_COMMIT: 3c0a45ad772cdba388009b8d5ecad5e48cd22429
   DEERFLOW_IMAGE_DIGEST: "${DEERFLOW_IMAGE_REPOSITORY:-invalid}@sha256:${DEERFLOW_IMAGE_SHA256:-invalid}"
   DEERFLOW_DATABASE_IMAGE_DIGEST: "${DEERFLOW_POSTGRES_IMAGE_REPOSITORY:-invalid}@sha256:${DEERFLOW_POSTGRES_IMAGE_SHA256:-invalid}"
   DEERFLOW_MODEL_GATEWAY_IMAGE_DIGEST: "${MODEL_GATEWAY_IMAGE_REPOSITORY:-invalid}@sha256:${MODEL_GATEWAY_IMAGE_SHA256:-invalid}"
@@ -26,7 +26,7 @@ x-framework-configuration: &framework_configuration
   DEERFLOW_MODEL_CREDENTIAL_VERSION: "${DEERFLOW_MODEL_CREDENTIAL_VERSION:-}"
   FLOWISE_ADAPTER_URL: "${FLOWISE_ADAPTER_URL:-}"
   FLOWISE_FRAMEWORK_INSTANCE_ID: "${FLOWISE_INSTANCE_ID:-}"
-  FLOWISE_SOURCE_COMMIT: bb773ffa710bd22639c4ba2643413a0ea2b679d3
+  FLOWISE_SOURCE_COMMIT: ed9e100fb71643cd3922b005908f9732bc0e07dc
   FLOWISE_IMAGE_DIGEST: "${FLOWISE_IMAGE_REPOSITORY:-invalid}@sha256:${FLOWISE_IMAGE_SHA256:-invalid}"
   FLOWISE_WORKER_IMAGE_DIGEST: "${FLOWISE_WORKER_IMAGE_REPOSITORY:-invalid}@sha256:${FLOWISE_WORKER_IMAGE_SHA256:-invalid}"
   FLOWISE_DATABASE_IMAGE_DIGEST: "${FLOWISE_POSTGRES_IMAGE_REPOSITORY:-invalid}@sha256:${FLOWISE_POSTGRES_IMAGE_SHA256:-invalid}"
@@ -355,19 +355,16 @@ services:
     cpus: 1.5
     user: "1000:1000"
     read_only: true
-    entrypoint: ["/bin/sh", "-ec"]
-    command:
-      - |
-        export DATABASE_PASSWORD="$$(cat /run/secrets/flowise_db_password)"
-        export REDIS_PASSWORD="$$(cat /run/secrets/flowise_redis_password)"
-        export FLOWISE_SECRETKEY_OVERWRITE="$$(cat /run/secrets/flowise_encryption_key)"
-        export JWT_AUTH_TOKEN_SECRET="$$(cat /run/secrets/flowise_jwt_auth_secret)"
-        export JWT_REFRESH_TOKEN_SECRET="$$(cat /run/secrets/flowise_jwt_refresh_secret)"
-        export EXPRESS_SESSION_SECRET="$$(cat /run/secrets/flowise_session_secret)"
-        export TOKEN_HASH_SECRET="$$(cat /run/secrets/flowise_token_hash_secret)"
-        exec pnpm start
+    command: ["start"]
     environment:
       <<: *flowise_environment
+      FLOWISE_DATABASE_PASSWORD_FILE: /run/secrets/flowise_db_password
+      FLOWISE_REDIS_PASSWORD_FILE: /run/secrets/flowise_redis_password
+      FLOWISE_ENCRYPTION_KEY_FILE: /run/secrets/flowise_encryption_key
+      FLOWISE_JWT_AUTH_SECRET_FILE: /run/secrets/flowise_jwt_auth_secret
+      FLOWISE_JWT_REFRESH_SECRET_FILE: /run/secrets/flowise_jwt_refresh_secret
+      FLOWISE_SESSION_SECRET_FILE: /run/secrets/flowise_session_secret
+      FLOWISE_TOKEN_HASH_SECRET_FILE: /run/secrets/flowise_token_hash_secret
     secrets: *flowise_secrets
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,uid=1000,gid=1000,mode=0700
@@ -381,7 +378,12 @@ services:
       flowise-redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:3000/api/v1/ping"]
+      test:
+        - CMD
+        - node
+        - -e
+        - |
+          fetch('http://127.0.0.1:3000/api/v1/ping',{signal:AbortSignal.timeout(4000)}).then(async response=>{const body=(await response.text()).trim();process.exit(response.status===200&&body==='pong'?0:1)}).catch(()=>process.exit(1))
       interval: 15s
       timeout: 5s
       retries: 12
@@ -401,21 +403,19 @@ services:
     cpus: 1.5
     user: "1000:1000"
     read_only: true
-    entrypoint: ["/bin/sh", "-ec"]
-    command:
-      - |
-        export DATABASE_PASSWORD="$$(cat /run/secrets/flowise_db_password)"
-        export REDIS_PASSWORD="$$(cat /run/secrets/flowise_redis_password)"
-        export FLOWISE_SECRETKEY_OVERWRITE="$$(cat /run/secrets/flowise_encryption_key)"
-        export JWT_AUTH_TOKEN_SECRET="$$(cat /run/secrets/flowise_jwt_auth_secret)"
-        export JWT_REFRESH_TOKEN_SECRET="$$(cat /run/secrets/flowise_jwt_refresh_secret)"
-        export EXPRESS_SESSION_SECRET="$$(cat /run/secrets/flowise_session_secret)"
-        export TOKEN_HASH_SECRET="$$(cat /run/secrets/flowise_token_hash_secret)"
-        node /app/healthcheck/healthcheck.js &
-        exec pnpm run start-worker
+    command: ["worker"]
     environment:
       <<: *flowise_environment
       WORKER_PORT: "5566"
+      ARIA_FLOWISE_WORKER_READINESS_FILE: /tmp/aria-flowise-worker-readiness.json
+      ARIA_FLOWISE_WORKER_READINESS_MAX_AGE_MS: "15000"
+      FLOWISE_DATABASE_PASSWORD_FILE: /run/secrets/flowise_db_password
+      FLOWISE_REDIS_PASSWORD_FILE: /run/secrets/flowise_redis_password
+      FLOWISE_ENCRYPTION_KEY_FILE: /run/secrets/flowise_encryption_key
+      FLOWISE_JWT_AUTH_SECRET_FILE: /run/secrets/flowise_jwt_auth_secret
+      FLOWISE_JWT_REFRESH_SECRET_FILE: /run/secrets/flowise_jwt_refresh_secret
+      FLOWISE_SESSION_SECRET_FILE: /run/secrets/flowise_session_secret
+      FLOWISE_TOKEN_HASH_SECRET_FILE: /run/secrets/flowise_token_hash_secret
     secrets: *flowise_secrets
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,uid=1000,gid=1000,mode=0700
@@ -429,7 +429,12 @@ services:
       flowise-redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:5566/healthz"]
+      test:
+        - CMD
+        - node
+        - -e
+        - |
+          fetch('http://127.0.0.1:5566/healthz',{signal:AbortSignal.timeout(4000)}).then(async response=>{const body=await response.json();if(response.status!==200||body?.schema!=='aria.flowise-worker-readiness.v1'||body?.status!=='ready'||body?.database!==true||body?.queue!==true||body?.worker!==true)throw new Error('unavailable');process.exit(0)}).catch(()=>process.exit(1))
       interval: 15s
       timeout: 5s
       retries: 12
@@ -458,7 +463,7 @@ services:
       ADAPTER_TOKEN_FILE: /run/secrets/deerflow_adapter_token
       UPSTREAM_BASE_URL: http://deerflow:8001
       UPSTREAM_TOKEN_FILE: /run/secrets/deerflow_internal_token
-      UPSTREAM_SOURCE_COMMIT: fabadae4168db81f0eaaf62f209050f978e2f691
+      UPSTREAM_SOURCE_COMMIT: 3c0a45ad772cdba388009b8d5ecad5e48cd22429
       UPSTREAM_IMAGE_DIGEST: "${DEERFLOW_IMAGE_REPOSITORY:?Set the promoted DeerFlow image repository}@sha256:${DEERFLOW_IMAGE_SHA256:?Set its 64-hex image digest}"
       ARIA_WORKSPACE_ID: "${ARIA_WORKSPACE_ID:?Set the bound ARIA workspace UUID}"
       FRAMEWORK_INSTANCE_ID: "${DEERFLOW_INSTANCE_ID:?Set the registered DeerFlow instance UUID}"
@@ -514,7 +519,7 @@ services:
       ADAPTER_TOKEN_FILE: /run/secrets/flowise_adapter_token
       UPSTREAM_BASE_URL: http://flowise:3000
       UPSTREAM_TOKEN_FILE: /run/secrets/flowise_api_key
-      UPSTREAM_SOURCE_COMMIT: bb773ffa710bd22639c4ba2643413a0ea2b679d3
+      UPSTREAM_SOURCE_COMMIT: ed9e100fb71643cd3922b005908f9732bc0e07dc
       UPSTREAM_IMAGE_DIGEST: "${FLOWISE_IMAGE_REPOSITORY:?Set the promoted Flowise image repository}@sha256:${FLOWISE_IMAGE_SHA256:?Set its 64-hex image digest}"
       FLOWISE_TENANT_ISOLATION: instance-per-workspace
       ARIA_WORKSPACE_ID: "${ARIA_WORKSPACE_ID:?Set the bound ARIA workspace UUID}"

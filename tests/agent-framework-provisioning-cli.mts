@@ -93,10 +93,10 @@ const actorId = "22222222-2222-4222-8222-222222222222";
 const identity = Object.freeze({
   configurationSha256: "a".repeat(64),
   deerflowInstanceId: "33333333-3333-4333-8333-333333333333",
-  deerflowSourceCommit: "fabadae4168db81f0eaaf62f209050f978e2f691",
+  deerflowSourceCommit: "3c0a45ad772cdba388009b8d5ecad5e48cd22429",
   deerflowImageDigest: `registry.internal/deerflow@sha256:${"b".repeat(64)}`,
   flowiseInstanceId: "44444444-4444-4444-8444-444444444444",
-  flowiseSourceCommit: "bb773ffa710bd22639c4ba2643413a0ea2b679d3",
+  flowiseSourceCommit: "ed9e100fb71643cd3922b005908f9732bc0e07dc",
   flowiseImageDigest: `registry.internal/flowise@sha256:${"c".repeat(64)}`,
   flowiseIsolationMode: "instance-per-workspace",
 });

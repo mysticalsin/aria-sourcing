@@ -69,6 +69,7 @@ services:
       JWT_EXP: *jwt_exp
     volumes:
       - ./docker/bootstrap/supabase-admin-reconciliation.sql:/opt/aria/supabase-admin-reconciliation.sql:ro
+      - ./docker/bootstrap/auth-owner-bridges.sql:/opt/aria/auth-owner-bridges.sql:ro
     entrypoint: ["/bin/sh", "-c"]
     command:
       - 'owner_password="";
@@ -82,7 +83,7 @@ services:
 
   # ---- GoTrue (email+password auth, JWT issuance) -----------------------------------
   auth:
-    image: supabase/gotrue:v2.189.0
+    image: supabase/gotrue:v2.189.0@sha256:385184459f57569c54c25209f51f3b2be99ddd7c4ce9e3555b5d3eea8447b7cf
     restart: unless-stopped
     depends_on:
       db:
@@ -113,7 +114,7 @@ services:
 
   # ---- PostgREST (RLS-enforced CRUD + RPC over /rest/v1) ----------------------------
   rest:
-    image: postgrest/postgrest:v14.12
+    image: postgrest/postgrest:v14.15@sha256:2f8e7b656f09db697a8875177694b417b35cb76c21370de07fc54e711e902326
     restart: unless-stopped
     depends_on:
       db:
@@ -141,7 +142,7 @@ services:
 
   # ---- Kong (single API gateway; routes /auth/v1 + /rest/v1 like supabase-js wants) --
   kong:
-    image: kong/kong:3.9.1
+    image: kong/kong:3.9.3@sha256:9a2ae6699a2ce0d60592eb176555d3594a22782c20cc6557a61ff3a7e8b559a3
     restart: unless-stopped
     depends_on:
       auth:

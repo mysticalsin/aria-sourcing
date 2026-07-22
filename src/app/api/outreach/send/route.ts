@@ -434,40 +434,60 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "error", detail: "Email could not prepare the unsubscribe link." }, { status: 503 });
   }
 
-  // 5. Send — From is the SEAT's verified mailbox, never the request body.
-  const outcome = await performEmailSend(serviceSupabase, {
-    workspaceId: approvalWid,
-    seatId,
-    provider: seat.provider,
-    operatorEmail: seat.operator_email,
-    to: candidateEmail,
-    subject,
-    body,
-    unsubscribeUrl: unsubscribe.url,
-    attemptId: sendAttemptId,
-    rfcMessageId,
-  });
+  const reconciliationRequired = () =>
+    NextResponse.json(
+      {
+        status: "reconciliation-required",
+        delivery: "email-reconciliation-required",
+        sendAttemptId,
+        detail: "Email delivery state could not be confirmed. Do not retry this message.",
+      },
+      { status: 502 },
+    );
+  let transportStarted = false;
+  try {
+    // 5. Send — From is the SEAT's verified mailbox, never the request body.
+    transportStarted = true;
+    const outcome = await performEmailSend(serviceSupabase, {
+      workspaceId: approvalWid,
+      seatId,
+      provider: seat.provider,
+      operatorEmail: seat.operator_email,
+      to: candidateEmail,
+      subject,
+      body,
+      unsubscribeUrl: unsubscribe.url,
+      attemptId: sendAttemptId,
+      rfcMessageId,
+    });
 
-  if (outcome.status === "sent" && outcome.deliveryState === "accepted") {
-    await reconcile("sent", null);
-    return NextResponse.json({ status: "sent", detail: outcome.detail });
+    if (outcome.status === "sent" && outcome.deliveryState === "accepted") {
+      await reconcile("sent", null);
+      return NextResponse.json({ status: "sent", detail: outcome.detail });
+    }
+    if (outcome.deliveryState === "not-sent") {
+      // Proven pre-transport failure, or a dry-run (provider unconfigured): the
+      // provider definitively never accepted, so the de-dupe slot is retryable.
+      await reconcile("skipped", outcome.detail);
+      return NextResponse.json({ status: outcome.status === "dry-run" ? "dry-run" : "error", detail: outcome.detail });
+    }
+    // deliveryState 'unknown' — a timeout/5xx may have followed acceptance. Hold the
+    // slot as 'ambiguous' for human reconciliation; never retry (double-send risk).
+    await reconcile("ambiguous", outcome.detail);
+    return reconciliationRequired();
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : "Email send reconciliation failed.";
+    if (transportStarted) {
+      try {
+        await reconcile("ambiguous", detail);
+      } catch (reconcileErr) {
+        safeLog("email ambiguous reconciliation failed", {
+          message: reconcileErr instanceof Error ? reconcileErr.message : "unknown",
+        });
+      }
+      return reconciliationRequired();
+    }
+    await reconcile("skipped", detail);
+    return NextResponse.json({ status: "error", detail });
   }
-  if (outcome.deliveryState === "not-sent") {
-    // Proven pre-transport failure, or a dry-run (provider unconfigured): the
-    // provider definitively never accepted, so the de-dupe slot is retryable.
-    await reconcile("skipped", outcome.detail);
-    return NextResponse.json({ status: outcome.status === "dry-run" ? "dry-run" : "error", detail: outcome.detail });
-  }
-  // deliveryState 'unknown' — a timeout/5xx may have followed acceptance. Hold the
-  // slot as 'ambiguous' for human reconciliation; never retry (double-send risk).
-  await reconcile("ambiguous", outcome.detail);
-  return NextResponse.json(
-    {
-      status: "reconciliation-required",
-      delivery: "email-reconciliation-required",
-      sendAttemptId,
-      detail: "Email delivery state could not be confirmed. Do not retry this message.",
-    },
-    { status: 502 },
-  );
 }

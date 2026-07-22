@@ -5,6 +5,10 @@ const deploy = readFileSync("deploy-fly.sh", "utf8");
 const bootstrap = readFileSync("docker/bootstrap/run.fly.sh", "utf8");
 const bootstrapImage = readFileSync("docker/bootstrap/Dockerfile.fly", "utf8");
 const deployWorkflow = readFileSync(".github/workflows/deploy-aria-mantu.yml", "utf8");
+const agentFrameworkDeployWorkflow = readFileSync(
+  ".github/workflows/deploy-agent-frameworks.yml",
+  "utf8",
+);
 const ciWorkflow = readFileSync(".github/workflows/ci.yml", "utf8");
 const codeqlWorkflow = readFileSync(".github/workflows/codeql.yml", "utf8");
 const appFlyConfig = readFileSync("fly.app.toml", "utf8");
@@ -14,6 +18,9 @@ const restFlyConfig = readFileSync("fly.rest.toml", "utf8");
 const readinessRoute = readFileSync("src/app/api/ready/route.ts", "utf8");
 const dockerIgnore = readFileSync(".dockerignore", "utf8");
 const productionDockerfile = readFileSync("Dockerfile.prod", "utf8");
+const flySecretTemplate = readFileSync("production-readiness/.fly-secrets.example", "utf8");
+const instrumentation = readFileSync("src/instrumentation.ts", "utf8");
+const campaignAcceptance = readFileSync("scripts/acceptance-campaign-dry-run.sh", "utf8");
 const databaseDockerfile = readFileSync("docker/db/Dockerfile.fly", "utf8");
 const kongDockerfile = readFileSync("docker/kong/Dockerfile.fly", "utf8");
 const ownerReconciliation = readFileSync("docker/bootstrap/supabase-admin-reconciliation.sql", "utf8");
@@ -141,6 +148,12 @@ function workflowStep(source: string, name: string): string {
 }
 
 ok("production deploy is manual-only", /^\s{2}workflow_dispatch:\s*$/m.test(deployWorkflow) && !/^\s{2}push:\s*$/m.test(deployWorkflow));
+ok(
+  "protected releases start in explicit non-operational sourcing mode with no global need-ingress secret",
+  /ARIA_SOURCING_OPERATIONAL_REQUIRED\s*=\s*"false"/.test(appFlyConfig) &&
+    /ARIA_LOOP_KILL_SWITCH\s*=\s*"true"/.test(appFlyConfig) &&
+    !/NEED_INGRESS_HMAC_SECRET/.test(`${deploy}\n${deployWorkflow}\n${appFlyConfig}`),
+);
 ok("production deploy declares least-privilege permissions", /^permissions:\s*\n(?:\s{2}.+\n)+/m.test(deployWorkflow));
 ok(
   "production deploy grants only the additional permissions required for signed attestations",
@@ -237,6 +250,18 @@ ok(
     /SUPABASE_SERVICE_ROLE_KEY:\s*\$\{\{ secrets\.FLY_SUPABASE_SERVICE_KEY \}\}/.test(campaignAcceptanceStep) &&
     /ANON_KEY:\s*\$\{\{ secrets\.FLY_SUPABASE_ANON_KEY \}\}/.test(campaignAcceptanceStep) &&
     /ARIA_ACCEPTANCE_RECEIPT_PATH:\s*\$\{\{ runner\.temp \}\}\/aria-application-acceptance\.json/.test(campaignAcceptanceStep),
+);
+ok(
+  "protected release proves the production agent-memory provenance boundary through the authenticated app",
+  /api\/agents\/memories\?specId=\$SPEC_ID/.test(campaignAcceptance) &&
+    /memory_content_writes_disabled/.test(campaignAcceptance) &&
+    /require_no_store/.test(campaignAcceptance) &&
+    /agentMemoryFreeTextCreateBlocked/.test(campaignAcceptanceStep) &&
+    /agentMemoryFreeTextEditBlocked/.test(campaignAcceptanceStep) &&
+    /agentMemoryReadAvailable/.test(campaignAcceptanceStep) &&
+    /agentMemoryMetadataEditAvailable/.test(campaignAcceptanceStep) &&
+    /agentMemoryReviewAvailable/.test(campaignAcceptanceStep) &&
+    /agentMemoryDeleteAvailable/.test(campaignAcceptanceStep),
 );
 ok(
   "release acceptance follows campaign proof and recovery-target cleanup",
@@ -340,7 +365,7 @@ ok(
   "production deploy blocks open high or critical code-scanning alerts on the exact protected release ref",
   /security-events:\s*read/.test(deployJobConfiguration) &&
     /code-scanning\/alerts/.test(deployWorkflow) &&
-    /refs\/heads\/deploy\/fly-github-actions/.test(deployWorkflow) &&
+    /refs\/heads\/main/.test(deployWorkflow) &&
     /for severity in critical high/.test(deployWorkflow) &&
     /open_code_alerts/.test(deployWorkflow) &&
     /process\.exit\(1\)/.test(deployWorkflow),
@@ -360,7 +385,7 @@ ok(
 );
 ok(
   "production Docker context excludes internal agent state and retired deploy surfaces",
-  [".rocket-fuel", "_relay", "_agent_state", ".gitlab-ci.yml", "deploy-fly-*.sh"].every((pattern) =>
+  [".rocket-fuel", "_relay", "_agent_state", ".trivy-cache", ".gitlab-ci.yml", "deploy-fly-*.sh"].every((pattern) =>
     dockerIgnorePatterns.has(pattern),
   ),
 );
@@ -608,6 +633,12 @@ ok(
 );
 ok("CI has an independent dependency-audit job", /^\s{2}dependency-audit:\s*$/m.test(ciWorkflow));
 ok("CI has an independent secret-scan job", /^\s{2}secret-scan:\s*$/m.test(ciWorkflow));
+ok(
+  "database-security installs the exact lockfile before running the canonical manifest",
+  /database-security:[\s\S]*?npm ci --ignore-scripts --no-audit --no-fund[\s\S]*?npm run test:database[\s\S]*?^\s{2}supply-chain:/m.test(
+    ciWorkflow,
+  ),
+);
 ok("CI has an independent production-image supply-chain job", /^\s{2}supply-chain:\s*$/m.test(ciWorkflow));
 ok(
   "supply-chain job builds every production custom Dockerfile",
@@ -628,24 +659,29 @@ ok(
   ),
 );
 ok(
-  // ignore-unfixed=true: block every HIGH/CRITICAL with an available remediation; do
-  // not permanently redline on Debian CVEs that have no fix (e.g. CVE-2023-45853).
-  // The gate re-arms automatically the moment upstream publishes a fixed version.
-  "supply-chain scan is fail-closed for all fixable high and critical vulnerabilities",
+  "CI and release scans block every high and critical vulnerability, including unfixed findings",
   /--scanners vuln/.test(ciWorkflow) &&
     /--severity HIGH,CRITICAL/.test(ciWorkflow) &&
-    /--ignore-unfixed=true/.test(ciWorkflow) &&
-    !/--ignore-unfixed=false/.test(ciWorkflow) &&
+    !/--ignore-unfixed(?:=true|=false)?/.test(ciWorkflow) &&
     /--exit-code 1/.test(ciWorkflow) &&
-    !/supply-chain:[\s\S]*continue-on-error:\s*true/m.test(ciWorkflow),
+    !/supply-chain:[\s\S]*continue-on-error:\s*true/m.test(ciWorkflow) &&
+    /--scanners vuln/.test(deployWorkflow) &&
+    /--severity HIGH,CRITICAL/.test(deployWorkflow) &&
+    !/--ignore-unfixed(?:=true|=false)?/.test(deployWorkflow) &&
+    /--exit-code 1/.test(deployWorkflow),
 );
 ok(
-  // The standalone Next.js runtime needs only `node`; npm's bundled node_modules
-  // (sigstore, picomatch) otherwise reintroduce fixable HIGH CVEs into the image.
-  "production runner image strips npm, corepack, and yarn",
-  /AS runner[\s\S]*RUN rm -rf \/usr\/local\/lib\/node_modules \/usr\/local\/bin\/npm \/usr\/local\/bin\/npx/m.test(
+  "production runner is a pinned nonroot Distroless Node image with exec-form health and process commands",
+  /FROM gcr\.io\/distroless\/nodejs22-debian13:nonroot@sha256:a2723a2817c5b01b8e7b98d567bc8b5a6b0e713e25bfb0a82b6ade4b9db06f50 AS runner/.test(
     productionDockerfile,
-  ),
+  ) &&
+    /USER 65532:65532/.test(productionDockerfile) &&
+    /HEALTHCHECK[\s\S]*CMD \["\/nodejs\/bin\/node", "-e"/.test(productionDockerfile) &&
+    /CMD \["server\.js"\]/.test(productionDockerfile) &&
+    !/AS runner[\s\S]*\bRUN\b/.test(productionDockerfile) &&
+    /\[processes\][\s\S]*web\s*=\s*"server\.js"[\s\S]*cleanup\s*=\s*"scripts\/apollo-authority-cleanup-worker\.mjs"/.test(
+      appFlyConfig,
+    ),
 );
 ok(
   "supply-chain scan only reads a local immutable image archive",
@@ -674,6 +710,21 @@ ok("CI actions are pinned to immutable commits", actionUsesAreImmutable(ciWorkfl
 ok("CodeQL actions are pinned to immutable commits", actionUsesAreImmutable(codeqlWorkflow));
 
 ok("deploy script does not execute secret files as shell code", !/\bsource\s+production-readiness\/\.fly-secrets\.env/.test(deploy));
+const protectedWorkflowSecretNames = [
+  ...new Set(
+    [deployWorkflow, agentFrameworkDeployWorkflow].flatMap((workflow) =>
+      [...workflow.matchAll(/\$\{\{\s*secrets\.([A-Z][A-Z0-9_]*)\s*\}\}/g)].map(
+        (match) => match[1],
+      ),
+    ),
+  ),
+];
+ok(
+  "name-only Fly secret template covers every protected workflow secret",
+  protectedWorkflowSecretNames.length > 0 &&
+    protectedWorkflowSecretNames.every((name) => new RegExp(`^${name}=$`, "m").test(flySecretTemplate)) &&
+    flySecretTemplate.split("\n").filter((line) => /^[A-Z][A-Z0-9_]*=/.test(line)).every((line) => line.endsWith("=")),
+);
 ok(
   "production mutator accepts credentials only from the protected workflow environment",
   /GITHUB_ACTIONS/.test(deploy) &&
@@ -762,6 +813,36 @@ ok(
     indexOfOrInfinity(deploy, "fly deploy --config fly.rest.toml") < indexOfOrInfinity(deploy, "ARIA_BOOTSTRAP_PHASE=migrations"),
 );
 ok("post-mutation acceptance requires app readiness", /require_http_200[^\n]*app \/api\/ready[^\n]*\/api\/ready/.test(deploy));
+ok(
+  "production readiness requires standard OTLP trace and aggregate-metric export metadata",
+  /ARIA_OBSERVABILITY_REQUIRED\s*=\s*"true"/.test(appFlyConfig) &&
+    /OTEL_SERVICE_NAME\s*=\s*"aria-msourcing"/.test(appFlyConfig) &&
+    /OTEL_EXPORTER_OTLP_PROTOCOL\s*=\s*"http\/protobuf"/.test(appFlyConfig) &&
+    /OTEL_TRACES_EXPORTER\s*=\s*"otlp"/.test(appFlyConfig) &&
+    /OTEL_METRICS_EXPORTER\s*=\s*"otlp"/.test(appFlyConfig) &&
+    /OTEL_LOGS_EXPORTER\s*=\s*"none"/.test(appFlyConfig),
+);
+ok(
+  "protected deploy validates and stages collector authority without placing it on flyctl argv",
+  ["FLY_OTEL_EXPORTER_OTLP_ENDPOINT", "FLY_OTEL_EXPORTER_OTLP_HEADERS"].every(
+    (name) => deployReleaseStep.includes(`${name}: \${{ secrets.${name} }}`),
+  ) &&
+    /observabilityConfiguration/.test(deploy) &&
+    /OTEL_EXPORTER_OTLP_ENDPOINT="\$FLY_OTEL_EXPORTER_OTLP_ENDPOINT"/.test(deploy) &&
+    /OTEL_EXPORTER_OTLP_HEADERS="\$FLY_OTEL_EXPORTER_OTLP_HEADERS"/.test(deploy) &&
+    /APP_REQUIRED_SECRET_NAMES=.*OTEL_EXPORTER_OTLP_ENDPOINT OTEL_EXPORTER_OTLP_HEADERS/.test(deploy),
+);
+ok(
+  "protected deploy masks collector endpoint and authorization headers",
+  /process\.env\.FLY_OTEL_EXPORTER_OTLP_ENDPOINT/.test(deployReleaseStep) &&
+    /process\.env\.FLY_OTEL_EXPORTER_OTLP_HEADERS/.test(deployReleaseStep),
+);
+ok(
+  "production image contains Next and worker observability entrypoints",
+  /src\/lib\/observability/.test(productionDockerfile) &&
+    /\.next\/standalone/.test(productionDockerfile) &&
+    /registerObservability/.test(instrumentation),
+);
 // 082178e: /api/ready is deliberately NOT a proxy-routing check — its
 // agentFrameworks component is required in production while the sidecars are
 // not deployed on Fly, so routing on it would 503 the whole app for an
@@ -780,6 +861,18 @@ ok("production Node base image is digest pinned", /^FROM node:22-bookworm-slim@s
 ok("production database base image is digest pinned", /^FROM supabase\/postgres:[^\s]+@sha256:[0-9a-f]{64}/m.test(databaseDockerfile));
 ok("production Kong base image is digest pinned", /^FROM kong\/kong:[^\s]+@sha256:[0-9a-f]{64}/m.test(kongDockerfile));
 ok("production Auth image is digest pinned", /image\s*=\s*"supabase\/gotrue:[^"]+@sha256:[0-9a-f]{64}"/.test(authFlyConfig));
+ok(
+  "production Auth keeps public signup disabled and requires explicit identity confirmation",
+  /GOTRUE_DISABLE_SIGNUP\s*=\s*"true"/.test(authFlyConfig) &&
+    /GOTRUE_MAILER_AUTOCONFIRM\s*=\s*"false"/.test(authFlyConfig),
+);
+ok(
+  "production Auth enforces the owner password and session-rotation contract",
+  /GOTRUE_PASSWORD_MIN_LENGTH\s*=\s*"24"/.test(authFlyConfig) &&
+    /GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_CURRENT_PASSWORD\s*=\s*"true"/.test(authFlyConfig) &&
+    /GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION\s*=\s*"true"/.test(authFlyConfig) &&
+    /GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED\s*=\s*"true"/.test(authFlyConfig),
+);
 ok("production REST image is digest pinned", /image\s*=\s*"postgrest\/postgrest:[^"]+@sha256:[0-9a-f]{64}"/.test(restFlyConfig));
 ok(
   "release materializes and inventories exact upstream Auth and REST images without claiming local build provenance",
@@ -904,6 +997,24 @@ ok(
 );
 ok("bootstrap serializes migrations with a database advisory lock", /pg_advisory_xact_lock/.test(bootstrap));
 ok("bootstrap records migration filename and SHA-256", /schema_migrations/.test(bootstrap) && /sha256/.test(bootstrap));
+ok(
+  "protected migration completion requires a read-only agent-memory authority readback",
+  /begin transaction read only;/.test(bootstrap) &&
+    /public\.agent_runs/.test(bootstrap) &&
+    /public\.agent_events/.test(bootstrap) &&
+    /has_table_privilege\('service_role', table_name, 'SELECT'\) is not true/.test(bootstrap) &&
+    ["INSERT", "UPDATE", "DELETE"].every((privilege) =>
+      bootstrap.includes(`has_table_privilege('service_role', table_name, '${privilege}') is true`)
+    ) &&
+    /create_agent_memory_with_candidate_provenance/.test(bootstrap) &&
+    /mutate_agent_memory_with_candidate_provenance/.test(bootstrap) &&
+    /function_owner is distinct from 'postgres'/.test(bootstrap) &&
+    /has_function_privilege\('service_role', function_oid, 'EXECUTE'\) is not true/.test(bootstrap) &&
+    bootstrap.indexOf('-f "$MIGRATION_PLAN"') <
+      bootstrap.indexOf('-f "$AGENT_MEMORY_BOUNDARY_PLAN"') &&
+    bootstrap.indexOf('-f "$AGENT_MEMORY_BOUNDARY_PLAN"') <
+      bootstrap.indexOf('echo "[migrate] complete"'),
+);
 ok("bootstrap legacy-schema guards raise transactional SQL errors", /raise exception 'existing ARIA schema has no migration ledger/.test(bootstrap) && /raise exception 'existing ARIA schema has an empty migration ledger/.test(bootstrap) && !/\\quit\s+[0-9]+/.test(bootstrap));
 
 console.log(`RESULT infra-release-contract: ${passed} passed, ${failed} failed`);

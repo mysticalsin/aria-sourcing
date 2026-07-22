@@ -136,50 +136,22 @@ jobs:
   database-security:
     name: Database security
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
-      - name: Verify effective database authority
-        run: npm run test:db-privileges
+      - name: Setup Node 22
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
 
-      - name: Verify cross-channel cap serialization
-        run: npm run test:db-cross-channel-cap
+      - name: Install lockfile dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Verify agent memory authority
-        run: npm run test:db-agent-memory
-
-      - name: Verify agent operational rollback authority
-        run: npm run test:db-agent-operational-rollback
-
-      - name: Verify candidate erasure authority
-        run: npm run test:db-candidate-erasure
-
-      - name: Verify candidates corpus mirror authority
-        run: npm run test:db-candidates-corpus
-
-      - name: Verify person identity model
-        run: npm run test:db-person-model
-
-      - name: Verify Apollo enrichment authority
-        run: npm run test:db-apollo-enrichment
-
-      - name: Verify adaptive sourcing authority
-        run: npm run test:db-sourcing-learning
-
-      - name: Verify conversation and message authority
-        run: npm run test:db-conversation-authority
-
-      - name: Verify DeerFlow and Flowise database authority
-        run: npm run test:db-agent-framework
-
-      - name: Verify orphan-owner recovery database authority
-        run: npm run test:db-owner-recovery
-
-      - name: Prove Fly database volume and restart behavior
-        run: npm run test:fly-db-volume
+      - name: Verify canonical database authority manifest
+        run: npm run test:database
 
   supply-chain:
     name: Production image supply chain
@@ -351,7 +323,6 @@ jobs:
               --cache-dir /trivy-cache \
               --scanners vuln \
               --severity HIGH,CRITICAL \
-              --ignore-unfixed=true \
               --exit-code 1 \
               --format json \
               --output "/artifacts/aria-$component-vulnerabilities.json" \

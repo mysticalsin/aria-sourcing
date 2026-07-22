@@ -12,7 +12,7 @@ authorities. The DeerFlow runtime is single-process and memory-only. It receives
 no database or Redis authority.
 
 The DeerFlow image keeps the audited upstream `runs.py` patch at SHA-256
-`79b6601066faa937a2d0b5551f7e1a5311304f1e7b28962c1ccee72cea05d6e7`.
+`d5ee9ebcf676656ca9380e866b414d1ff4fa70cfac587a9fbc7d7a60506a6db4`.
 A separate cleanup-deadline guard at SHA-256
 `4e4b0006ad7486b5b028dfa9168e3e45d26d33eca46e7b653db29db4683918e6`
 terminates the single worker with exit code 70 if temporary-state cleanup does
@@ -28,6 +28,17 @@ The runtime configuration SHA-256 is
 `a5a41ab4a2772e74203820d65a6efb488bc3b6a5948c47a8d1f9dd6cd3a30369`.
 It fixes the database, run-event store, and stream bridge to `memory`.
 
+The Flowise worker build accepts only upstream `worker.ts` SHA-256
+`c1bd833235bcfde0fc1593a9a2cb49bce4e6c5e5fe9a9fc0d1435946223eced4`
+from the pinned Flowise commit and produces patched SHA-256
+`47f2efd0187dc104ac112a05eb13af60f072e43f4d6e51a122c470ed271f75cb`.
+Its private HTTP check is ready only while the worker has refreshed owner-only
+evidence within 15 seconds after a successful database query and live
+prediction, upsertion, and schedule BullMQ connections. A running parent
+process alone is never accepted. The Fly platform check and the in-Machine
+identity probe both consume this contract. The Flowise adapter also performs
+its own workspace-database and Redis client-name probes.
+
 The source pack is not live deployment evidence. Keep
 `AGENT_FRAMEWORK_EXECUTION_ENABLED=false` and
 `AGENT_FRAMEWORK_KILL_SWITCH=true` until all release blockers below are closed
@@ -35,15 +46,21 @@ and a production receipt plus canary evidence has been reviewed.
 
 ## Release blockers
 
-- The upstream DeerFlow and Flowise Dockerfiles consume some mutable base
-  tags. A source Git commit is not a reproducible image identity. The release
-  pipeline must resolve every base to a digest, build and promote a final
-  wrapper digest, and publish a signed SBOM and SLSA provenance statement that
-  binds the final digest and exact reviewed source commit.
-- `cosign` and `trivy` must be installed in the protected operator environment.
-  `prepare` fails if the signature, SPDX SBOM, provenance, or zero-high/critical
-  vulnerability gate cannot be verified. These tools are not installed in the
-  current local workspace, so no promotion evidence was verified here.
+- Recorded complete-runtime scans for both the current Flowise pin and the
+  audited official `3.1.3` comparison fail the zero HIGH/CRITICAL policy. No
+  Flowise image is promotable from those candidates. Keep framework execution
+  disabled until a complete replacement image passes the same gate and its
+  exact evidence bundle is reviewed.
+- The protected image-publishing workflow now resolves every built base to a
+  digest, builds one reviewed `linux/amd64` wrapper per component, scans it,
+  signs it, publishes SPDX and maximal SLSA provenance, verifies the evidence,
+  and associates every final digest with a stopped holder Machine for Fly
+  registry retention. This source is not production evidence until that
+  workflow completes for the exact release SHA and its artifact is reviewed.
+- `cosign` and `trivy` remain mandatory in the protected operator environment.
+  `prepare` fails if the signature, populated SPDX SBOM, exact release and
+  upstream provenance, or vulnerability/secret/misconfiguration gate cannot
+  be verified.
 - Fly outbound traffic has not yet been constrained and tested so that only the
   model gateway can reach a public model provider. Private ingress does not, by
   itself, deny outbound Internet access.
@@ -61,7 +78,9 @@ and a production receipt plus canary evidence has been reviewed.
 ## Immutable image promotion
 
 `docker-bake.hcl` wraps seven promoted upstream image digests and emits SBOM
-and maximal provenance attestations. Supply only `repo@sha256:...` values:
+and maximal provenance attestations. The protected workflow is canonical. For
+an offline Bake inspection, supply every identity explicitly; empty inputs fail
+before a build starts:
 
 ```sh
 FLY_WRAPPER_REGISTRY=registry.example/aria-agent-frameworks \
@@ -72,13 +91,26 @@ FLOWISE_UPSTREAM_IMAGE=registry.example/flowise@sha256:<digest> \
 FLOWISE_WORKER_UPSTREAM_IMAGE=registry.example/flowise-worker@sha256:<digest> \
 ADAPTER_UPSTREAM_IMAGE=registry.example/aria-adapter@sha256:<digest> \
 MODEL_GATEWAY_UPSTREAM_IMAGE=registry.example/aria-model-gateway@sha256:<digest> \
+RELEASE_SOURCE_COMMIT=<aria-release-40-hex> \
+POSTGRES_SOURCE_COMMIT=<postgres-source-40-hex> \
+REDIS_SOURCE_COMMIT=<redis-source-40-hex> \
+DEERFLOW_SOURCE_COMMIT=<deerflow-source-40-hex> \
+FLOWISE_SOURCE_COMMIT=<flowise-source-40-hex> \
+DEERFLOW_PATCHED_RUNS_SHA256=<sha256> \
+DEERFLOW_CLEANUP_GUARD_SHA256=<sha256> \
+DEERFLOW_RUNTIME_POLICY_SHA256=<sha256> \
+DEERFLOW_RUNTIME_CONFIG_SHA256=<sha256> \
+DEERFLOW_DATABASE_BACKEND=memory \
+DEERFLOW_RUN_EVENTS_BACKEND=memory \
+DEERFLOW_STREAM_BRIDGE_TYPE=memory \
 docker buildx bake -f infra/agent-frameworks/fly/docker-bake.hcl --push
 ```
 
 Resolve each pushed wrapper to its final digest. Sign that digest with the
 reviewed keyless identity. Publish `spdxjson` and `slsaprovenance`
-attestations. The provenance predicate must contain the exact 40-hex
-`sourceCommit` from the deployment manifest. The two adapter roles must use
+attestations. The provenance predicate must contain the exact 40-hex ARIA
+release commit and the independently reviewed upstream commit at canonical
+BuildKit parameter paths. The two adapter roles must use
 one identical adapter image digest, and the two Redis manifest roles must use
 one identical Redis image digest. Only the Flowise Redis role may have an
 active Machine, volume, or password. DeerFlow provenance must also contain the

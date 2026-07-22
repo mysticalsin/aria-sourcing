@@ -202,7 +202,20 @@ ok(
     readFileSync(new URL("../src/app/api/agents/run/route.ts", import.meta.url), "utf8"),
   ),
 );
-ok("drift: sourcing agent uses disclosure context", /candidateDisclosureContextForCampaignLike/.test(readFileSync(new URL("../src/app/api/sourcing-agent/route.ts", import.meta.url), "utf8")));
+const sourcingRouteText = readFileSync(
+  new URL("../src/app/api/sourcing-agent/route.ts", import.meta.url),
+  "utf8",
+);
+const boundSourcingText = readFileSync(
+  new URL("../src/lib/sourcing/bound-sourcing-execution.ts", import.meta.url),
+  "utf8",
+);
+ok(
+  "drift: sourcing route delegates to a disclosure-bound executor",
+  /executeBoundSourcingPipeline\(/.test(sourcingRouteText) &&
+    /candidateDisclosureContextForCampaignLike\(campaign\)/.test(boundSourcingText) &&
+    /DISCLOSURE_SYSTEM/.test(boundSourcingText),
+);
 
 const storeText = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
 const outreachPromptCalls = storeText.match(/buildOutreachPrompt\(/g)?.length ?? 0;

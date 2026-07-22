@@ -63,3 +63,24 @@ network exposure, scaling, and rollback. Either option requires:
 
 Until that evidence exists, the multi-service Fly topology remains the
 checked-in production design.
+
+## Capacity release gate
+
+The dependency-free staging gate, proposed workload contract, safety boundary,
+and evidence procedure are in [`capacity/README.md`](capacity/README.md). The
+current proposal distinguishes 50,000 registered users from an unmeasured 500
+peak-concurrent-session assumption. It refuses the production Fly origin,
+requires an explicitly allowlisted synthetic staging tenant, uses read-only
+requests, and fails when required HTTP, queue, fault, duplicate, or resource
+metrics are absent.
+
+No staging run or receipt exists today. The current live topology therefore has
+no proven capacity for 50,000 registered users. Clearing that status requires an
+owner-ratified workload, a paid production-shaped staging environment, the exact
+release under test, platform telemetry covering the test window, safe fault
+stubs, and a passing integrity-checked receipt.
+
+The application telemetry source contract is documented in
+[`OBSERVABILITY.md`](OBSERVABILITY.md). Valid OTLP configuration and deep
+readiness are prerequisites, but they are not evidence that the collector,
+log drain, alerts, or capacity profile worked for the test window.

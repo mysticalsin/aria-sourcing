@@ -1,4 +1,6 @@
-FROM python:3.12-slim@sha256:090ba77e2958f6af52a5341f788b50b032dd4ca28377d2893dcf1ecbdfdfe203 AS builder
+FROM cgr.dev/chainguard/python:latest-dev@sha256:5233e2961d13485e80cd9adc5515cf4242dc43d23045a6540466eee82764879b AS builder
+
+USER root
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1
@@ -13,7 +15,7 @@ RUN python -m venv /opt/venv \
     && /opt/venv/bin/python -c "import importlib.metadata; assert importlib.metadata.version('graphifyy') == '0.9.14'" \
     && /opt/venv/bin/python -c "from graphify.build import build_from_json; from graphify.cluster import cluster, score_all; from graphify.export import to_json"
 
-FROM python:3.12-slim@sha256:090ba77e2958f6af52a5341f788b50b032dd4ca28377d2893dcf1ecbdfdfe203 AS runtime
+FROM cgr.dev/chainguard/python:latest@sha256:2c6a2e8bdeb1336cd8545d3586d1c1e5b4f7564ef00924b0447ebfbe57a549ee AS runtime
 
 LABEL org.opencontainers.image.source="https://github.com/Graphify-Labs/graphify.git" \
       org.opencontainers.image.revision="94d3099540550d58dd121ec3e67cf93e80364079" \
@@ -24,15 +26,12 @@ ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     GRAPHIFY_QUERY_LOG_DISABLE=1
 
-RUN groupadd --gid 10001 graphify \
-    && useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin graphify
-
 WORKDIR /app
-COPY --from=builder /opt/venv /opt/venv
-COPY --chown=10001:10001 worker.py ./worker.py
+COPY --from=builder --chown=65532:65532 /opt/venv /opt/venv
+COPY --chown=65532:65532 worker.py ./worker.py
 
-USER 10001:10001
+USER 65532:65532
 HEALTHCHECK NONE
 
-ENTRYPOINT ["python", "/app/worker.py"]
+ENTRYPOINT ["/opt/venv/bin/python", "/app/worker.py"]
 CMD ["/data/input.json", "/data/output"]

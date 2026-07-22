@@ -8,8 +8,8 @@ import {
 import { normalizePrivateInternalUrl } from "@/lib/agents/framework/configuration-core.mjs";
 
 /** Audited upstream revisions. Branch names and floating tags are forbidden. */
-export const DEERFLOW_SOURCE_COMMIT = "fabadae4168db81f0eaaf62f209050f978e2f691";
-export const FLOWISE_SOURCE_COMMIT = "bb773ffa710bd22639c4ba2643413a0ea2b679d3";
+export const DEERFLOW_SOURCE_COMMIT = "3c0a45ad772cdba388009b8d5ecad5e48cd22429";
+export const FLOWISE_SOURCE_COMMIT = "ed9e100fb71643cd3922b005908f9732bc0e07dc";
 
 const WorkflowNodeSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),

@@ -2,7 +2,7 @@
 # mounts). Reuses the existing kong-entrypoint.sh unchanged — it substitutes $SUPABASE_*
 # env into temp.yml, and because the sb_-style keys are unset, its legacy branch passes the
 # HS256 anon/service JWTs straight through as key-auth credentials (exactly compose behaviour).
-FROM kong/kong:3.9.1@sha256:6addf50e6bd8d578314cb9ce4f2d2d1e3781d2edecef59f707e00c6e05d384f5
+FROM kong/kong:3.9.3@sha256:9a2ae6699a2ce0d60592eb176555d3594a22782c20cc6557a61ff3a7e8b559a3
 # Patch upstream-fixable CVEs at build time (distro patch upgrades only); the base
 # image runs as the unprivileged kong user, so escalate just for the upgrade.
 USER root

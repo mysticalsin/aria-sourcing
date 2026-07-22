@@ -22,36 +22,100 @@ export type ReviewedSourcingRequestResult =
   | { ok: true; value: SourcingAgentSuccessResponse }
   | { ok: false; error: string };
 
+type OrdinarySourcingOperation = {
+  operationId: string;
+  count: number;
+  createdAt: number;
+  inFlight?: Promise<ReviewedSourcingRequestResult>;
+  persistedReceipt?: {
+    sourcingRunId: string;
+    resultSha256: string;
+  };
+};
+
+const MAX_ORDINARY_OPERATIONS = 32;
+const ORDINARY_OPERATION_TTL_MS = 24 * 60 * 60 * 1_000;
+
+// Store only bounded operation authority. Candidate payloads remain in the
+// database staging row and are fetched again on retry, so browser memory never
+// becomes a second unbounded PII store.
+const ordinaryOperations = new Map<string, OrdinarySourcingOperation>();
+
+function pruneOrdinaryOperations(now = Date.now()): void {
+  for (const [campaignId, operation] of ordinaryOperations) {
+    if (now - operation.createdAt >= ORDINARY_OPERATION_TTL_MS) {
+      ordinaryOperations.delete(campaignId);
+    }
+  }
+  while (ordinaryOperations.size >= MAX_ORDINARY_OPERATIONS) {
+    const oldest = ordinaryOperations.keys().next().value as string | undefined;
+    if (!oldest) break;
+    ordinaryOperations.delete(oldest);
+  }
+}
+
+export function completeReviewedSourcingOperation(
+  campaignId: string,
+  idempotencyKey: string,
+): void {
+  const current = ordinaryOperations.get(campaignId);
+  if (current?.operationId === idempotencyKey) ordinaryOperations.delete(campaignId);
+}
+
+export function markReviewedSourcingOperationPersisted(
+  campaignId: string,
+  idempotencyKey: string,
+  sourcingRunId: string,
+  resultSha256: string,
+): void {
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sourcingRunId) ||
+    !/^[0-9a-f]{64}$/.test(resultSha256)
+  ) return;
+  const current = ordinaryOperations.get(campaignId);
+  if (current?.operationId !== idempotencyKey) return;
+  current.persistedReceipt = { sourcingRunId, resultSha256 };
+}
+
 export async function acknowledgeReviewedSourcing(
   workspaceFetch: typeof fetch,
-  agentFramework: { runId: string; capabilityToken: string },
+  authority:
+    | { sourcingRunId: string }
+    | { frameworkRunId: string; capabilityToken: string },
   resultSha256: string,
 ): Promise<boolean> {
   if (!/^[0-9a-f]{64}$/.test(resultSha256)) return false;
-  try {
-    const response = await workspaceFetch("/api/sourcing-agent/ack", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Request-Id": agentFramework.runId,
-      },
-      body: JSON.stringify({
-        frameworkRunId: agentFramework.runId,
-        capabilityToken: agentFramework.capabilityToken,
-        resultSha256,
-      }),
-    });
-    if (!response.ok || response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
-      await response.body?.cancel().catch(() => undefined);
-      return false;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await workspaceFetch("/api/sourcing-agent/ack", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Request-Id": "frameworkRunId" in authority
+            ? authority.frameworkRunId
+            : authority.sourcingRunId,
+        },
+        body: JSON.stringify({
+          ...authority,
+          resultSha256,
+        }),
+      });
+      if (!response.ok || response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
+        await response.body?.cancel().catch(() => undefined);
+        continue;
+      }
+      const body = await response.json().catch(() => null);
+      if (
+        body !== null && typeof body === "object" && !Array.isArray(body) &&
+        (body as Record<string, unknown>).ok === true &&
+        (body as Record<string, unknown>).status === "completed"
+      ) return true;
+    } catch {
+      // Exact acknowledgement is idempotent. One bounded retry covers a lost
+      // response without repeating persistence or provider work.
     }
-    const body = await response.json().catch(() => null);
-    return body !== null && typeof body === "object" && !Array.isArray(body) &&
-      (body as Record<string, unknown>).ok === true &&
-      (body as Record<string, unknown>).status === "completed";
-  } catch {
-    return false;
   }
+  return false;
 }
 
 export async function requestReviewedSourcing(
@@ -70,58 +134,108 @@ export async function requestReviewedSourcing(
   ) {
     return { ok: false, error: "The agent framework sourcing authorization is invalid." };
   }
-  const operationId = agentFramework?.runId ?? crypto.randomUUID();
-  let response: Response;
+  let ordinaryOperation: OrdinarySourcingOperation | undefined;
+  if (!agentFramework) {
+    pruneOrdinaryOperations();
+    ordinaryOperation = ordinaryOperations.get(campaignId);
+    if (!ordinaryOperation) {
+      ordinaryOperation = { operationId: crypto.randomUUID(), count, createdAt: Date.now() };
+      ordinaryOperations.set(campaignId, ordinaryOperation);
+    }
+    if (ordinaryOperation.inFlight) return ordinaryOperation.inFlight;
+  }
+  const execute = async (): Promise<ReviewedSourcingRequestResult> => {
+    if (ordinaryOperation?.persistedReceipt) {
+      const receipt = ordinaryOperation.persistedReceipt;
+      const reconciled = await acknowledgeReviewedSourcing(
+        workspaceFetch,
+        { sourcingRunId: receipt.sourcingRunId },
+        receipt.resultSha256,
+      );
+      if (!reconciled) {
+        return {
+          ok: false,
+          error: "The prior sourcing persistence receipt could not be reconciled.",
+        };
+      }
+      ordinaryOperation.operationId = crypto.randomUUID();
+      ordinaryOperation.count = count;
+      ordinaryOperation.createdAt = Date.now();
+      delete ordinaryOperation.persistedReceipt;
+    }
+    const effectiveCount = ordinaryOperation?.count ?? count;
+    const operationId = agentFramework?.runId ?? ordinaryOperation?.operationId ?? crypto.randomUUID();
+    let response: Response;
+    try {
+      response = await workspaceFetch("/api/sourcing-agent", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": operationId,
+          "X-Request-Id": operationId,
+        },
+        body: JSON.stringify({
+          campaignId,
+          count: effectiveCount,
+          ...(agentFramework
+            ? {
+                agentFrameworkRunId: agentFramework.runId,
+                agentFrameworkCapabilityToken: agentFramework.capabilityToken,
+                agentFrameworkQuery: agentFramework.query,
+              }
+            : {}),
+        }),
+      });
+    } catch {
+      return { ok: false, error: "The sourcing agent could not be reached." };
+    }
+
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    if (contentType.split(";", 1)[0]?.trim() !== "application/json") {
+      return { ok: false, error: "The sourcing agent returned an invalid response." };
+    }
+    const body = (await response.json().catch(() => null)) as unknown;
+    if (!response.ok) {
+      const code =
+        body !== null && typeof body === "object" && !Array.isArray(body)
+          ? (body as Record<string, unknown>).code
+          : null;
+      const safeCode = typeof code === "string" ? code : "";
+      if (
+        ordinaryOperation &&
+        safeCode !== "SOURCING_AGENT_REPLAY_BLOCKED" &&
+        safeCode !== "SOURCING_AGENT_RATE_LIMITED" &&
+        safeCode !== "SOURCING_AGENT_UPSTREAM_FAILED" &&
+        safeCode !== "SOURCING_AGENT_UNAVAILABLE" &&
+        ordinaryOperations.get(campaignId) === ordinaryOperation
+      ) {
+        ordinaryOperations.delete(campaignId);
+      }
+      return {
+        ok: false,
+        error:
+          safeCode && SAFE_SOURCING_ERRORS[safeCode]
+            ? SAFE_SOURCING_ERRORS[safeCode]
+            : "The sourcing agent is unavailable.",
+      };
+    }
+
+    const parsed = parseSourcingAgentSuccessResponse(
+      body,
+      campaignId,
+      agentFramework ? effectiveCount : 8,
+      agentFramework?.runId,
+    );
+    return parsed
+      ? { ok: true, value: parsed }
+      : { ok: false, error: "The sourcing agent returned an invalid result." };
+  };
+  if (!ordinaryOperation) return execute();
+  const inFlight = execute();
+  ordinaryOperation.inFlight = inFlight;
   try {
-    response = await workspaceFetch("/api/sourcing-agent", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Idempotency-Key": operationId,
-        "X-Request-Id": operationId,
-      },
-      body: JSON.stringify({
-        campaignId,
-        count,
-        ...(agentFramework
-          ? {
-              agentFrameworkRunId: agentFramework.runId,
-              agentFrameworkCapabilityToken: agentFramework.capabilityToken,
-              agentFrameworkQuery: agentFramework.query,
-            }
-          : {}),
-      }),
-    });
-  } catch {
-    return { ok: false, error: "The sourcing agent could not be reached." };
+    return await inFlight;
+  } finally {
+    if (ordinaryOperation.inFlight === inFlight) delete ordinaryOperation.inFlight;
   }
-
-  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-  if (contentType.split(";", 1)[0]?.trim() !== "application/json") {
-    return { ok: false, error: "The sourcing agent returned an invalid response." };
-  }
-  const body = (await response.json().catch(() => null)) as unknown;
-  if (!response.ok) {
-    const code =
-      body !== null && typeof body === "object" && !Array.isArray(body)
-        ? (body as Record<string, unknown>).code
-        : null;
-    return {
-      ok: false,
-      error:
-        typeof code === "string" && SAFE_SOURCING_ERRORS[code]
-          ? SAFE_SOURCING_ERRORS[code]
-          : "The sourcing agent is unavailable.",
-    };
-  }
-
-  const parsed = parseSourcingAgentSuccessResponse(
-    body,
-    campaignId,
-    count,
-    agentFramework?.runId,
-  );
-  return parsed
-    ? { ok: true, value: parsed }
-    : { ok: false, error: "The sourcing agent returned an invalid result." };
 }

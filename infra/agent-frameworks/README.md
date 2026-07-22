@@ -16,9 +16,9 @@ discarded.
 | Component | Source revision | Official build file | Runtime API used |
 | --- | --- | --- | --- |
 | ARIA model gateway | this repository release SHA | `model-gateway/Dockerfile` | `GET /v1/models`, `POST /v1/chat/completions`, `GET /readyz` |
-| DeerFlow | `fabadae4168db81f0eaaf62f209050f978e2f691` | upstream `backend/Dockerfile` plus checksum-pinned `deerflow-runtime/Dockerfile` | `POST /api/runs/wait` |
-| Flowise | `bb773ffa710bd22639c4ba2643413a0ea2b679d3` | `Dockerfile` | `GET /api/v1/chatflows/:id` |
-| Flowise worker | same Flowise revision | `docker/worker/Dockerfile` | `GET /healthz` |
+| DeerFlow | `3c0a45ad772cdba388009b8d5ecad5e48cd22429` | upstream `backend/Dockerfile` plus checksum-pinned `deerflow-runtime/Dockerfile` | `POST /api/runs/wait` |
+| Flowise | `ed9e100fb71643cd3922b005908f9732bc0e07dc` | `Dockerfile` | `GET /api/v1/chatflows/:id` |
+| Flowise worker | same Flowise revision plus ARIA's checksum-bound readiness patch | `infra/agent-frameworks/upstream/flowise.Dockerfile` | `GET /healthz` |
 
 `docker-bake.hcl` builds those exact Git objects and emits BuildKit SBOM and
 maximal provenance attestations. The upstream Dockerfiles still reference
@@ -26,7 +26,13 @@ some mutable base tags. Therefore a Git revision alone is not a release
 identity: scan, sign, and promote the resulting image digest, then configure
 ARIA and the adapters with that exact digest.
 
-## Build and promote
+> **Current release status: NO-GO.** No complete Flowise runtime at either
+> audited candidate passes the zero HIGH/CRITICAL release gate. The framework
+> pack has no accepted production deployment or restore receipt. DeerFlow also
+> has no accepted exact-model canary; the last recorded Kimi authentication
+> check returned HTTP 402. Keep execution disabled.
+
+## Build candidate images and promote only after acceptance
 
 Run Bake from the repository root:
 
@@ -99,8 +105,8 @@ returned object before ARIA can use it.
 The pinned DeerFlow runtime always binds its framework-owned
 `review_skill_package` builtin, even when this custom agent declares
 `tool_groups: []` and its only skill declares `allowed-tools: []` (see the
-[pinned builtin list](https://github.com/bytedance/deer-flow/blob/fabadae4168db81f0eaaf62f209050f978e2f691/backend/packages/harness/deerflow/tools/tools.py#L15-L19)
-and [framework allowlist](https://github.com/bytedance/deer-flow/blob/fabadae4168db81f0eaaf62f209050f978e2f691/backend/packages/harness/deerflow/skills/tool_policy.py#L13-L16)).
+[pinned builtin list](https://github.com/bytedance/deer-flow/blob/3c0a45ad772cdba388009b8d5ecad5e48cd22429/backend/packages/harness/deerflow/tools/tools.py#L15-L19)
+and [framework allowlist](https://github.com/bytedance/deer-flow/blob/3c0a45ad772cdba388009b8d5ecad5e48cd22429/backend/packages/harness/deerflow/skills/tool_policy.py#L13-L16)).
 The gateway accepts only the exact schema emitted by the pinned
 `langchain-openai` runtime and removes both that schema and the optional literal
 `tool_choice: "none"` before provider egress. It rejects any additional tool,
@@ -120,6 +126,19 @@ DeerFlow readiness v2 dependencies are exactly `modelGateway`,
 `runtimeHealth`, `modelBinding`, `assistantBinding`, and `policyBundle`. The
 Flowise readiness v2 dependencies are exactly `database`, `queue`, `worker`,
 and `policy`.
+
+The pinned Flowise worker's upstream health server returns `200` without
+checking the worker. ARIA does not use that signal. The build verifies the
+exact upstream `worker.ts` SHA-256, applies a deterministic patch, and rejects
+any source or patched-output drift. The patched worker refreshes an atomic
+owner-only receipt every five seconds only after `SELECT 1` succeeds, all three
+BullMQ workers are running, their normal Redis clients answer `PING`, and their
+blocking clients are ready. ARIA's dependency-free `/healthz` validates that
+receipt, its live worker PID, exact queue names, file ownership and mode, and a
+15-second freshness limit. Missing, stale, mismatched, unsafe, or unprovable
+evidence returns `503`. The adapter separately checks the workspace sentinel
+through Flowise and the exact BullMQ client names through Redis, so the worker
+receipt does not replace either independent dependency check.
 
 The Fly source pack uses an app with no public service, sets
 `MODEL_GATEWAY_BIND_HOST=fly-local-6pn`, and binds the gateway to its 6PN

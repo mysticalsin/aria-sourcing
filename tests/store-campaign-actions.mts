@@ -691,7 +691,6 @@ test("regenerateQueries appends the derived query and records sourcing activity"
   assert.ok(expectedSkill);
   const expectedLanguage = expectedSkill.replace(/\s+/g, "");
   const expectedRegion = campaign.jobAnalysis.regions[0] ?? "EU";
-  const expectedResults = 80 + Math.round((campaign.metrics.sourced + 1) * 3.5);
 
   const regenerated = harness.actions.regenerateQueries(campaign.id);
 
@@ -702,12 +701,12 @@ test("regenerateQueries appends the derived query and records sourcing activity"
   assert.equal(appended?.label, `Adjacent: ${expectedSkill} maintainers`);
   assert.equal(
     appended?.query,
-    `language:${expectedLanguage} sort:updated location:"${expectedRegion}" forks:>5`,
+    `language:${expectedLanguage} location:"${expectedRegion}" type:user`,
   );
-  assert.equal(appended?.estimatedResults, expectedResults);
+  assert.equal(appended?.estimatedResults, null);
   assert.equal(harness.activityDrafts[0]?.title, "Generated additional query");
   assert.equal(harness.activityDrafts[0]?.notes, appended?.query);
-  assert.equal(harness.activityDrafts[0]?.outcome, `~${expectedResults} estimated results`);
+  assert.equal(harness.activityDrafts[0]?.outcome, "Estimate unavailable until provider execution");
 });
 
 test("regenerateQueries is a strict no-op for an unknown campaign", () => {
@@ -741,8 +740,8 @@ test("regenerateQueries reuses only explicit role facts and preserves unrelated 
   const explicitSkill = campaign.jobAnalysis.requiredSkills[0];
   assert.ok(explicitSkill);
   assert.equal(appended?.label, `Adjacent: ${explicitSkill} maintainers`);
-  assert.equal(appended?.query, `language:${explicitSkill.replace(/\s+/g, "")} sort:updated forks:>5`);
-  assert.equal(appended?.estimatedResults, 84);
+  assert.equal(appended?.query, `language:${explicitSkill.replace(/\s+/g, "")} type:user`);
+  assert.equal(appended?.estimatedResults, null);
   assert.equal(
     harness.state.campaigns.find((item) => item.id === unrelated.id)?.sourcingStrategy
       .githubQueries.length,

@@ -33,6 +33,7 @@
     "test:db-agent-memory": "bash tests/agent-memory-db.sh",
     "test:db-apollo-enrichment": "bash tests/apollo-enrichment-db.sh",
     "test:db-sourcing-learning": "bash tests/sourcing-learning-db.sh",
+    "test:db-sourcing-results": "bash tests/sourcing-result-durability-db.sh",
     "test:db-conversation-authority": "bash tests/conversation-authority-db.sh",
     "test:db-agent-framework": "bash tests/agent-framework-authority-db.sh && bash tests/agent-framework-provisioning-db.sh",
     "test:owner-recovery": "node scripts/run-test-manifest.mjs --group owner-recovery",
@@ -50,6 +51,8 @@
     "test:authority-regression": "node scripts/run-test-manifest.mjs --group authority-regression"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/sdk-node": "^0.221.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "@supabase/ssr": "^0.5.2",
@@ -86,7 +89,8 @@
   },
   "overrides": {
     "next": {
-      "postcss": "8.5.16"
+      "postcss": "8.5.16",
+      "sharp": "0.35.3"
     }
   }
 }
