@@ -1,3 +1,8 @@
+# ARCHIVED: agent-framework deployment plan from the superseded first draft
+
+The executable handoff is `_relay/HANDOFF.md`; the canonical workflow is
+`.github/workflows/deploy-agent-frameworks.yml` on protected `main`.
+
 # ROCKS — agent-framework deployment (post-G2, proofs locked)
 ## Rock 1: Configure GitHub for the pipeline  [Owner]
 Done means: FLY_REGISTRY_TOKEN (deploy-scoped org token) + Production environment + protected branch deploy/fly-github-actions carry the workflow.

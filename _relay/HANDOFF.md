@@ -1,56 +1,131 @@
 ---
 project: MSourcing / ARIA
-shift: 43
-agent: claude-opus-4-8
-updated: 2026-07-19 19:30 EDT
-status: in-progress — supply-chain pipeline Codex-APPROVED, deploy owner-gated
+shift: 45
+agent: codex-gpt-5
+updated: 2026-07-22 01:54 EDT
+status: source-closed - PR 5 open; protected production acceptance blocked
 ---
 
-# Handoff — MSourcing / ARIA
+# Handoff - MSourcing / ARIA
 
 ## Current state
-- **Prod app: v17 live** on Fly (`aria-mantu-app`). `/api/health` 200; swarm routes return clean 401 for anon (fix live). Branch `integration/sourcing-enrichment-on-main`, repo `mysticalsin/aria-sourcing` (id 1285297923).
-- **Prod DB: migrations 0001→0046 applied** (45 rows). `/api/ready` = **5/6 green** — only `agentFrameworks` red (by design: the two runtimes aren't deployed yet). `migration` pin fixed this shift.
-- **Agent-framework supply-chain CI workflow is Codex-APPROVED** (Rocket Fuel, 5 rounds, REVISE×4→APPROVED, score 72→98). It is NOT yet in git — preserved at `_relay/artifacts/deploy-agent-frameworks.yml` (853 lines, 0 TODO(verify), all actions SHA-pinned). Owner deferred the push (G6).
-- Working git clone for this effort: a fresh `git clone` of the branch into scratch sidesteps the OneDrive git stall. All framework infra is at `infra/agent-frameworks/`.
+
+- Canonical clone: `/Users/tony/msourcing-enterprise-go-20260721`. Do not modify the OneDrive checkout.
+- Branch: `codex/enterprise-go-20260721`, now tracking `origin/codex/enterprise-go-20260721`.
+- Tested source commit: `33b0aed47cd4850bd27689b5e8ffcb45210bfd27`.
+- Protected-main PR: `https://github.com/mysticalsin/aria-sourcing/pull/5`. PR state is OPEN, `mergeStateStatus=BLOCKED`, `reviewDecision=REVIEW_REQUIRED`.
+- This baton and the Relay/Codex-state closeout are the only changes after the tested source commit. When this file is read from Git, they are committed in the current branch HEAD.
+- Schema now runs through migration 0062. Canonical public-schema digest: `8937fbb792900ac9f099058717f512562a644e68eebf7bf12e87fa9efa84eab4`.
+- Production Fly still runs older application build `3ff485...` with migration 0046. Latest verified readback: `/api/health` 200; `/api/ready` 503 with database, auth, queue, migration, and release identity true and only `agentFrameworks=false`. This is not evidence for PR 5.
+- No production deployment, secret mutation, sourcing activation, or candidate contact was performed from this branch.
 
 ## Done this shift
-- Fixed prod `/api/ready` `migration` pin: set `ARIA_EXPECTED_MIGRATION=0046_swarm_orchestration_authority.sql`, `_SHA=a4bcd248fcd39b3a92f27d8b94d420763e7d2a8f7c181d1e9a3ec28c7a7ab226`, `_COUNT=45`, `ARIA_EXPECTED_LEDGER_SHA=d0c3aa94413ffe61c1ad035e7e6bc23c3ad744893111315381ac28760b837474` on `aria-mantu-app` (computed from the live ledger by the route's exact algorithm). `migration` flipped true.
-- Fixed a real build blocker: `readBoundedBody` existed only in the working tree, never pushed → git HEAD didn't compile (`next build` exit 1). Pushed it (commit `d3d404b`) so HEAD builds. Redeployed → v17.
-- Pushed docs: `docs/ENGAGEMENT-2026-07-swarm-and-channel-hardening.md` (`ffe444`), `docs/runbooks/resend-live-send-quickstart.md` (`7683c02`).
-- Discovered the real blocker for `agentFrameworks`: the 8-image supply-chain **CI pipeline was never built**. Operator (`infra/agent-frameworks/fly/operator.mjs`) verifies keyless (Fulcio) cosign signatures + spdxjson SBOM + slsaprovenance + trivy; `certificateIdentity` must be an https URL = a GitHub-Actions OIDC workflow identity. No workflow built/signed these images.
-- Authored + hardened `deploy-agent-frameworks.yml` through Rocket Fuel (V: claude, I: codex gpt-5.5). Fixed 12 findings: Fly per-app registry (holder app + tags, refs by @digest), per-op registry re-auth, metadata-driven digests, DeerFlow identity single-sourced from `operator-core.mjs`, operator-contract CI self-check, proper OCI-ref parsing, action pins, runtime org+holder-app ownership proof, stdout-only JSON capture. Receipts at `_relay/artifacts/rocket-fuel/`.
-- Installed cosign + trivy. Generated 12 secret authorities + UUIDs (in scratch `secure/` — EPHEMERAL, will be lost; regenerate or owner-provide; see Next step 2).
-- Validated both docker-bake HCLs with `--print` (5 base + 7 wrapper targets resolve).
 
-## Blockers (all OWNER-gated — cannot proceed without these)
-1. **Moonshot provider unfunded.** `KIMI_API_KEY` on the app → HTTP 402 at `api.moonshot.ai/v1`. The local `.env.local` key is a *coding* key (`api.kimi.com/coding/v1` → 401), NOT usable for the gateway. Need a funded **platform.moonshot.ai** key. Without it the model-gateway `/readyz` is 503 → **deerflow can never be green → agentFrameworks stays red**. (Flowise is provider-independent and CAN go green alone, but the probe needs BOTH.)
-2. **GitHub repo config.** `FLY_REGISTRY_TOKEN` must be a **deploy-scoped org token** (app create/list + registry push + cosign write, NOT registry-only). Plus the `Production` environment + protected branch `deploy/fly-github-actions` (exists) must carry the new workflow.
-3. **Flowise private bootstrap** (admin registration → workspace UUID + readiness-sentinel chatflow + least-priv API key) must happen before the manifest, because those feed `configurationSha256`.
+- Closed real need-to-candidate source authority:
+  - bounded authenticated need ingress;
+  - real approved-model requisition parsing with no synthetic fallback;
+  - deterministic campaign creation;
+  - bounded GitHub and Tavily provider execution;
+  - exact source/evidence receipts and durable candidate persistence;
+  - retry-safe result staging and acknowledgement;
+  - human-reviewed Graphify lesson selection bound before egress;
+  - zero outbound sends during sourcing.
+- Added exact DeerFlow and Flowise framework source boundaries, private adapters, release-bundle verification, provenance policy, image pinning, and fail-closed readiness. Framework source exists, but Flowise remains deployment NO-GO because its current complete runtime scan is not acceptable.
+- Added standard OpenTelemetry configuration, redacted critical-path events, operational readiness checks, activation controls, and a truthful capacity gate that refuses to claim 50,000-user readiness without accepted staging evidence.
+- Added migration 0061 active-GoTrue identity enforcement. A token issued before ban, unconfirmation, or soft deletion is rejected by the database authority.
+- Added migration 0062 and `docker/bootstrap/auth-owner-bridges.sql` so orphan-owner recovery crosses the real `supabase_auth_admin` ownership boundary through one restricted Auth-owner decision function.
+- Fixed the 0058/0059 replay interaction:
+  - 0058 rollback refuses while 0059 remains applied;
+  - 0059 rollback restores the exact 0058 receipt allowlist;
+  - 0058 rollback restores the exact pre-0058 allowlist;
+  - forward reapply restores both exact lists;
+  - a later 0058 replay preserves the byte-identical 0059 constraint.
+- Fixed the requisition parser test fixture to use the canonical endpoint profile `anthropic_messages_2023_06_01`.
+- Removed the obsolete DeerFlow fixture and archived the superseded first-draft agent-framework deployment packet under `_relay/archive/2026-07-22-agent-framework-first-draft/`.
+- Reconstructed missing shift 43 from the committed baton and archived shift 44 at `_relay/archive/2026-07-22-0144-codex.md`.
+- Committed and pushed the 294-file source slice as `33b0aed47cd4850bd27689b5e8ffcb45210bfd27`.
+- Opened PR 5 directly to protected `main`.
 
-## Next steps (in order)
-1. **Owner G6 decision:** move `_relay/artifacts/deploy-agent-frameworks.yml` → `.github/workflows/deploy-agent-frameworks.yml`, commit, push. (Safe: `workflow_dispatch`-only; won't auto-run.) Then set `FLY_REGISTRY_TOKEN` (deploy-scoped) in repo secrets + `Production` environment. Proof: `gh workflow run deploy-agent-frameworks.yml -f release_sha=<40hex> -f fly_org=personal` starts and passes the org + holder-app asserts.
-2. **Owner:** fund `platform.moonshot.ai`, get a working key. Proof: `curl -s -o/dev/null -w '%{http_code}' -H "Authorization: Bearer $KEY" https://api.moonshot.ai/v1/models` → **200**. Confirm an approved model id from `/v1/models`.
-3. **Run the workflow** (Rock 3): it bakes+scans+signs the 8 images to `registry.fly.io/aria-mantu-agent-frameworks` (holder app, per-image tags), emits the manifest `images` block artifact. Proof: `cosign verify --certificate-identity <wf-url> --certificate-oidc-issuer https://token.actions.githubusercontent.com <ref>` → exit 0 each.
-4. **Flowise bootstrap** (Rock 4) per `infra/agent-frameworks/README.md` §bootstrap → record workspace UUID + sentinel workflow id + API key.
-5. **Author signed manifest** (`aria.agent-framework.fly-manifest.v2`) from the workflow's emitted images block + UUIDs (scratch `secure/identities.json` had: deploymentId, workspaceId, deerflow/flowise frameworkInstanceIds — regenerate if scratch gone) + the config sha (`node scripts/agent-framework-configuration.mjs --sha-only` with the Fly `.internal` hostnames).
-6. **Operator deploy** (Rock 5): `node infra/agent-frameworks/fly/operator.mjs prepare|confirm|deploy --execute` (credentialed — owner authorizes each). Deploy order: flowise-db → flowise-redis → model-gateway → deerflow → flowise → flowise-worker → deerflow-adapter → flowise-adapter.
-7. **Set app pins** (Rock 6): `flyctl secrets set` on `aria-mantu-app` the `DEERFLOW_*`/`FLOWISE_*`/`AGENT_FRAMEWORK_*` values (see `.env.production.example:73-103`) using the Fly `.internal` URLs. Proof: `curl -s https://aria-mantu-app.fly.dev/api/ready | grep '"agentFrameworks":true'` and `"ok":true`.
+## Verification evidence
 
-Full rocks with proofs: `_relay/artifacts/rocket-fuel/ROCKS.md`.
+All commands ran from the canonical clone.
 
-## Decisions made (don't relitigate)
-- **Keep `AGENT_FRAMEWORK_EXECUTION_ENABLED=false` + `KILL_SWITCH=true`.** `/api/ready` goes green WITHOUT execution (the readiness gate doesn't require it). Execution-enable blockers (Fly egress lockdown, Postgres HA + snapshot drill, live canary) stay for a later, separate decision. README mandates this interim posture.
-- **Fly registry is per-app** → ONE holder app `aria-mantu-agent-frameworks` + per-image tags; manifest refs by `@sha256`. Shared adapter/redis pushed once (operator requires `deerflow-adapter.ref===flowise-adapter.ref`, `redis===redis`).
-- **Signing is keyless via GitHub Actions OIDC** (not `actions/attest` — that emits SLSA v1.0; operator verifies v0.2 via `cosign attest`). Not hand-signed locally (local OIDC yields an email identity; manifest requires an https-URL identity).
-- **DeerFlow's 7 runtime identities** are read from `operator-core.mjs` DEERFLOW_RUNTIME_IDENTITY at CI runtime (single source; drift impossible).
-- **Never auto-send / never the approving human** for candidate outreach. Never weaken the operator's security gates to force green.
-- `fly_org` = `personal` (verified: `flyctl orgs list`; `aria-mantu-app` owner=personal).
+- `npm run typecheck && npm run typecheck:tests && npm test`: exit 0.
+- `npm run test:database`: exit 0 across the canonical 30-command database manifest.
+- Pinned real-GoTrue line: `[gotrue-active-identity] PASS: pinned GoTrue, Auth-owner bridge ACL, workspace provisioning, and stale-token revocation`.
+- Focused 0058 result: `RESULT sourcing-result-durability-db: behavior=pass concurrency=pass acl=pass rollback=guarded reapply=pass rows=8`.
+- `npm run test:authority-regression`: exit 0.
+- `npm run test:recovery`: exit 0.
+- `npm run build:isolated`: exit 0; Next 16.2.10 compiled and generated all 66 static pages.
+- `npm audit --audit-level=high`: zero vulnerabilities.
+- `npm run lint`: exit 0.
+- `git diff --check HEAD`: exit 0 before source commit.
+- Staged Gitleaks scan: no leaks.
+- `gitleaks git . --redact=100 --no-banner --config .gitleaks.toml --log-opts='--all'`: 325 commits, no leaks.
+- Docker Compose and every Fly TOML parsed/validated locally.
+- Final local contract counts include deploy 141/141, infrastructure release 145/145, capacity harness 11/11, readiness 31/31, and manifest 11/11.
+- `npm run test:obscura` exited 0 but its live sidecar probe was SKIPPED because `OBSCURA_BIN_PATH` was not configured and no sidecar was reachable. Do not call this live Obscura proof.
+- Earlier exact ARIA image proof remains green at zero HIGH/CRITICAL with the pinned unsuppressed Trivy gate. No later application/Docker change invalidated that image-content result.
+- Flowise remains NO-GO: current canonical complete runtime 15 CRITICAL/116 HIGH; official 3.1.3 comparison 18 CRITICAL/167 HIGH.
+
+## GitHub evidence
+
+- PR run `29895093683` (CI) and `29895093710` (CodeQL) target exact source SHA `33b0aed47cd4850bd27689b5e8ffcb45210bfd27`.
+- Every GitHub CI and CodeQL job has `steps: []`.
+- `gh run view --log-failed` returns `log not found` because no runner step started.
+- Check-run annotations for Quality and CodeQL both say exactly: `The job was not started because an Actions budget is preventing further use.`
+- Required contexts remain failed only at the account budget gate: Quality, Dependency audit, Secret scan, Database security, Production image supply chain, Release gate, and Analyze (javascript-typescript).
+- Vercel preview is pending and is not the protected Fly production release.
+- Protected `main` still requires all required contexts, one independent approval, last-push approval, administrator enforcement, linear history, and no force push.
+
+## Blockers
+
+1. GitHub Actions budget prevents CI and CodeQL from executing. This is an account-owner action.
+2. PR 5 needs independent review and last-push approval. Do not self-approve or bypass protection.
+3. `Deploy Aria Mantu (Fly)` workflow ID 311052846 remains manually disabled.
+4. GitHub `Production` has no required reviewers, no environment secrets, and a stale custom branch policy for `deploy/fly-github-actions`; the workflow accepts only protected `main`.
+5. Required environments `Production-Need-Ingress-Throttle-Proof` and `Production-Sourcing-Activation` do not exist.
+6. Repository secrets expose only stale `ARIA_DEPLOY_BUNDLE`. The hardened workflow deliberately does not consume it.
+7. Purpose-bound secret names still needing authorized provisioning are defined by the workflows. Current exact set:
+   `ANTHROPIC_API_KEY`, `ARIA_DATA_KEY_RING_RETIREMENT_APPROVAL`, `ARIA_FIRST_ADMIN_EMAIL`, `ARIA_FIRST_ADMIN_PASSWORD`, `ARIA_FIRST_DEPLOY_APPROVAL`, `ARIA_GITHUB_SOURCE_TOKEN`, `ARIA_NEED_INGRESS_THROTTLE_EVIDENCE_HMAC_KEY`, `ARIA_NEED_INGRESS_THROTTLE_EVIDENCE_JSON`, `ARIA_SOURCING_CANARY_EMAIL`, `ARIA_SOURCING_CANARY_NEED_KEY`, `ARIA_SOURCING_CANARY_PASSWORD`, `ARIA_VOLUME_RECOVERY_RECEIPT_JSON`, `ARIA_VOLUME_RESTORE_CREATE_REQUEST_JSON`, `ARIA_VOLUME_RESTORE_CREATE_RESPONSE_JSON`, `FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET`, `FLY_AGENT_FRAMEWORK_REGISTRY_TOKEN`, `FLY_API_TOKEN`, `FLY_AUTH_DB_PASSWORD`, `FLY_CRON_SECRET`, `FLY_DATA_ENCRYPTION_KEY`, `FLY_DATA_ENCRYPTION_PREVIOUS_KEYS`, `FLY_DEERFLOW_ADAPTER_TOKEN`, `FLY_FLOWISE_ADAPTER_TOKEN`, `FLY_JWT_SECRET`, `FLY_OTEL_EXPORTER_OTLP_ENDPOINT`, `FLY_OTEL_EXPORTER_OTLP_HEADERS`, `FLY_PG_PASSWORD`, `FLY_RECOVERY_AUDIT_TOKEN`, `FLY_RECOVERY_CLEANUP_TOKEN`, `FLY_REGISTRY_TOKEN`, `FLY_REQUISITION_PARSE_SECRET`, `FLY_REST_DB_PASSWORD`, `FLY_SOURCING_EXECUTION_SECRET`, `FLY_SUPABASE_ADMIN_CURRENT_PASSWORD`, `FLY_SUPABASE_ADMIN_TARGET_PASSWORD`, `FLY_SUPABASE_ANON_KEY`, `FLY_SUPABASE_SERVICE_KEY`, `KIMI_API_KEY`, `KIMI_BASE_URL`, and `TAVILY_API_KEY`. Never print or copy values into Relay.
+8. Flowise has no scan-acceptable complete production image and therefore cannot be promoted, signed, or activated.
+9. Production has only one proven active administrator. Runtime binding activation requires two distinct active administrators.
+10. Last recorded Kimi probe returned HTTP 402. A funded exact model binding has not been proven.
+11. No live workspace-bound Tavily binding, shared multi-Machine need-ingress throttle, external OTLP collector/alerts/on-call, restore/failover drill, second database failure domain, or accepted 50,000-user staging receipt is proven.
+12. No authenticated exact-release zero-send need-to-candidate canary has run.
+13. Fable 5 remains quota-exhausted: `You've reached your Fable 5 limit. Run /usage-credits to continue or switch models with /model.`
+
+## Next steps
+
+1. Verify PR 5 head matches the current remote branch before any rerun; if it differs, inspect the intervening diff and rerun the relevant gates.
+2. Owner restores GitHub Actions budget.
+3. Configure `Production`, `Production-Need-Ingress-Throttle-Proof`, and `Production-Sourcing-Activation` with protected-main branch policy, independent reviewers, and the exact purpose-bound secrets/variables from both deploy workflows. Do not restore the legacy bundle path.
+4. Re-enable the production workflow only after environment review.
+5. Rerun CI and CodeQL for the exact PR head. Inspect each run and annotation with `gh`; do not infer a source failure from the current zero-step budget failures.
+6. Obtain independent and last-push approval, then merge PR 5 to protected `main`. Do not push directly to `main`.
+7. Build all seven agent-framework component images from the merged SHA. Require complete runtime startup, zero HIGH/CRITICAL Trivy results, SPDX SBOM, max-provenance, keyless signature, immutable digest, and accepted release bundle. Flowise must stay dark until this passes.
+8. Dispatch the protected Fly workflow from merged `main`. Require the ledger-aware migration job through 0062, exact image/release readback, one healthy loop Machine with the canonical four-handler digest, and all readiness probes.
+9. Provision a second real administrator. Verify the exact cloud model and Tavily credentials through their approved non-billable checks, then activate one two-person runtime binding.
+10. Prove the shared need-ingress throttle on at least two application Machines.
+11. Run the protected no-contact canary with a synthetic need: ingress -> model parse -> campaign -> real provider sourcing -> persisted source-backed candidates. Verify zero outbound messages.
+12. Capture external OTLP receipt/alert routing, database restore/failover, restart, and production-shaped load/stress/soak receipts. Only then consider the 50,000-user and production-ready acceptance gates satisfied.
+
+## Decisions made (do not relitigate)
+
+- `main` is the only production release target; direct main pushes and protection bypass are prohibited.
+- ARIA owns tenant, budget, approval, persistence, audit, and egress authority. DeerFlow and Flowise are bounded execution frameworks, not authority owners.
+- Production never invents needs, candidate identities, skills, experience, consent, or provider evidence.
+- Graphify lessons require human promotion, exact role/workspace/version/expiry binding, and immutable claim-time snapshots.
+- Human approval remains default for outreach. Disabling human-in-the-loop requires a separately reviewed production control; sourcing itself sends nothing.
+- Public ingress and autonomous sourcing activate only after exact-release proof and can be re-darkened independently.
+- The obsolete `ARIA_DEPLOY_BUNDLE` must not be unpacked or reintroduced.
+- Flowise remains disabled until a complete production runtime meets the zero-HIGH/CRITICAL policy.
+- Source-green, protected-CI-green, deployed, live-canary-green, restore-green, and capacity-green are separate proof states.
 
 ## Watch out
-- **OneDrive git is broken** for this repo (rsync/large ops stall). Use the GitHub REST API (blobs→tree→commit→ref) for pushes, and a fresh `git clone` into non-OneDrive scratch for builds. Single-file reads on OneDrive usually work.
-- **Fly deploys are classifier-gated** for the AI: credentialed `flyctl secrets set` / `deploy` need the Owner to authorize (it went through once Tony explicitly said so). Hand credentialed prod actions to the Owner.
-- **`flyctl auth docker` creds expire ~5 min** — the workflow re-auths before every registry op; keep it that way.
-- The scratch `secure/` dir (12 secret files + identities.json) is EPHEMERAL (`/private/tmp/...`). Regenerate with the workflow's own secret-authority steps or owner-provide; the Moonshot key + Flowise API key were always owner/bootstrap-supplied.
-- The operator verifies ALL 10 roles even though `deerflow-db`/`deerflow-redis` are release-disabled (they reuse the signed postgres/redis refs).
-- Task list: #23 (one-candidate live email — owner, needs Resend key) and #29 (these owner gates) remain open.
+
+- Do not use the OneDrive checkout. It is not the canonical release tree.
+- Do not deploy PR 5 or mutate Fly secrets directly; the protected workflow and owner gates are intentional.
+- Do not treat Vercel preview, `/api/health` 200, the older Fly build, or a local fixture as production acceptance.
+- Do not mark the overall goal complete while any production blocker above remains.
+- Do not remove or rewrite Relay archives.

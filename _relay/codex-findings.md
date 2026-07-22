@@ -49,7 +49,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The webhook skipped every inbound message whenever a registered sender was paused or revoked, including signed STOP requests.
 **Repro/evidence:** A candidate sends STOP after an operator pauses the sender. The prior status guard ran before the inbound row, contact opt-out, and phone suppression writes.
 **Suggested fix:** Persist all known-sender inbound events; route only inactive-sender opt-outs through the deterministic processor and mark other late text non-recoverable.
-**Status:** fixed (uncommitted, targeted tests and disposable database verification passed)
+**Status:** fixed (33b0aed, targeted tests and disposable database verification passed)
 
 ## 2026-07-09 — Receipt RPC false outcome was acknowledged as durable
 **Severity:** correctness
@@ -57,7 +57,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The webhook used only the RPC transport error, so `{recorded:false, reason:'outbound-not-found'}` was acknowledged as if a delivery event had been persisted.
 **Repro/evidence:** A provider receipt arriving before `record_whatsapp_provider_acceptance` commits cannot find `provider_message_id`; the old route returned 200 because the RPC itself succeeded.
 **Suggested fix:** Classify explicit unknown receipts separately from a same-sender dispatching acceptance race and return 503 for the latter.
-**Status:** fixed (uncommitted, migration 0015 and direct SQL outcome probe passed)
+**Status:** fixed (33b0aed, migration 0015 and direct SQL outcome probe passed)
 
 ## 2026-07-09 — Approved WhatsApp review draft could become orphaned
 **Severity:** correctness
@@ -65,7 +65,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** A previously approved WhatsApp candidate reply re-blocked by a later transient policy check retained `review_decision='approved'`, which the review RPC refuses to review again.
 **Repro/evidence:** A queued approved reply hits a temporary missing-contact policy block, transitions to blocked, then fails the `review_decision is null` review eligibility check.
 **Suggested fix:** Reset only approved candidate-reply review metadata whenever dispatcher policy returns it to blocked.
-**Status:** fixed (uncommitted, dispatcher regression test passed)
+**Status:** fixed (33b0aed, dispatcher regression test passed)
 
 ## 2026-07-09 — Inbound recovery could starve mapped messages
 **Severity:** correctness
@@ -73,7 +73,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Recovery applied its limit before excluding rows with no WhatsApp sender mapping, allowing unmapped rows to consume the bounded batch.
 **Repro/evidence:** A workspace with enough legacy unmapped inbound rows could repeatedly skip its limit and never reach recoverable rows.
 **Suggested fix:** Filter `whatsapp_sender_id IS NOT NULL` in the query before the limit.
-**Status:** fixed (uncommitted, regression test passed)
+**Status:** fixed (33b0aed, regression test passed)
 
 ## 2026-07-09 — Any generated-draft duplicate was treated as idempotent
 **Severity:** correctness
@@ -81,7 +81,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** A `23505` on review-draft insert was treated as success without proving the existing row belonged to the same inbound event.
 **Repro/evidence:** Two messages yielding the same dedupe hash could mark the second inbound processed without a visible review draft.
 **Suggested fix:** Accept idempotency only for a matching `inbound_message_id`; retain all other collisions as durable triage.
-**Status:** fixed (uncommitted, regression test and SQL triage-retention probe passed)
+**Status:** fixed (33b0aed, regression test and SQL triage-retention probe passed)
 
 ## 2026-07-09 — Public demo admin can reach live side effects
 **Severity:** security
@@ -209,7 +209,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** URL validation resolves a hostname once, then the later `fetch()` resolves it again. An attacker-controlled DNS name can return a public address for validation and an internal address for the actual request.
 **Repro/evidence:** `src/lib/ai/web-tools.ts:135-157` fetches by the original hostname after `assertPublicUrl()` completes. The same shape exists in the MCP client.
 **Suggested fix:** Use a controlled outbound proxy or a dispatcher that pins the validated address while preserving TLS hostname validation and redirect denial.
-**Status:** fixed (uncommitted; the Node transport pins one validated public address while preserving Host/SNI, disables pooling and redirects, and passes deterministic DNS-rebinding/TLS tests; independent security review accepted the exact tree)
+**Status:** fixed (33b0aed; the Node transport pins one validated public address while preserving Host/SNI, disables pooling and redirects, and passes deterministic DNS-rebinding/TLS tests; independent security review accepted the exact tree)
 
 ## 2026-07-09 — Email provider ambiguity releases the duplicate guard
 **Severity:** correctness
@@ -227,13 +227,13 @@ Historical and current findings follow. The current consolidated audit is
 **Suggested fix:** Lock the seat or use a transactional daily counter before count and reservation; test two simultaneous claims at cap minus one.
 **Status:** fixed (d29cd40; migration 0021 create-or-replaces claim_and_record with a workspace-scoped SELECT ... FOR UPDATE on agent_seats before the cap count; 0019 search_path and service_role-only ACL preserved; tests/claim-serialization.mts 14/14; live-PG proof via scripts/test-db-privileges.sh in CI)
 
-## 2026-07-11 - Production data plane is down while deploy is green
+## 2026-07-11 - Historical production data-plane outage was reported green
 **Severity:** correctness
 **File:** deploy-fly.sh; fly.db.toml; live Fly applications
-**Issue:** The audited Fly release serves the app shell, but the sole database machine and both authentication machines are stopped. Auth, REST, and careers requests return 503. The local replacement now fails closed, but it has not recovered or revalidated production.
+**Issue:** The audited Fly release served the app shell while the sole database machine and both authentication machines were stopped. Auth, REST, and careers returned 503 even though deployment reported success.
 **Repro/evidence:** Fly machine inventory for exact SHA `05cda612` shows database stopped and GoTrue stopped. In deploy run `29139277754`, the database machine reached `stopped`, Fly classified that state as good because no service health check existed, and the script printed `OK deploy db`. It then logged REST 503 and six Auth 503 probes, continued to migrations, and succeeded because app `/api/health` returned 200.
 **Suggested fix:** Diagnose the machine exit-code-1 root cause, require running-state plus dependency readiness, and make every failed retry or probe fail the deploy.
-**Status:** open (local false-green release path is repaired and public `/api/ready` now reports database/auth/queue true on build `d2040b...`; exact Machine restart, restore, and sustained-stability evidence remain unproven)
+**Status:** fixed historically (the latest readback reports database, auth, queue, migration, and release identity ready on older build `3ff485...`; `/api/ready` remains 503 only at `agentFrameworks`. Exact-release restart, restore, HA, and sustained-stability proof remain open in the current release findings)
 
 ## 2026-07-11 - Deploy can publish a red exact SHA
 **Severity:** security
@@ -249,7 +249,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** A regular member can update the shared workspace JSON that supplies the Databricks host and secret ID, then invoke a route that resolves the server-held secret and forwards it to that host.
 **Repro/evidence:** `0005_rls_tenant_isolation.sql:184-208` permits member writes to the full document. The needs route loads `settings.databricks`; `src/lib/integrations/databricks.ts:91-100,133-151` sends Basic credentials or a PAT Bearer token to the configured host.
 **Suggested fix:** Move integration origins and secret bindings to normalized admin-only records and bind every secret to one approved origin and purpose.
-**Status:** fixed in source (uncommitted; normalized admin-only connection authority, deployment-owned origin policy, composite key binding, legacy-state stripping, audit trail, and application tests pass; real PostgreSQL and restored-clone execution remain unproven)
+**Status:** fixed in source (33b0aed; normalized admin-only connection authority, deployment-owned origin policy, composite key binding, legacy-state stripping, audit trail, and application tests pass; real PostgreSQL and restored-clone execution remain unproven)
 
 ## 2026-07-11 - SSRF guard allows hexadecimal IPv4-mapped IPv6 literals
 **Severity:** security
@@ -257,7 +257,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The private-IP parser handles only dotted `::ffff:a.b.c.d`, but Node URL canonicalizes mapped literals to hexadecimal IPv6. Private and metadata addresses are classified as public.
 **Repro/evidence:** At the audited SHA, `http://[::ffff:127.0.0.1]/`, mapped `10.0.0.1`, and mapped `169.254.169.254` all passed `assertPublicUrl()` after URL canonicalization.
 **Suggested fix:** Use a standards-complete address parser and a fetch path that pins the validated connection address; add mapped-literal and DNS-rebinding tests.
-**Status:** fixed (uncommitted; mapped, reserved, link-local, metadata, NAT64, non-global IPv6, redirect, and DNS-rebinding cases pass the focused suites and independent security review)
+**Status:** fixed (33b0aed; mapped, reserved, link-local, metadata, NAT64, non-global IPv6, redirect, and DNS-rebinding cases pass the focused suites and independent security review)
 
 ## 2026-07-11 - Service-only claim RPC does not revoke PUBLIC execute
 **Severity:** security
@@ -265,7 +265,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The migration revokes `claim_and_record()` from `authenticated` and grants `service_role`, but it does not remove PostgreSQL's default function EXECUTE privilege from PUBLIC.
 **Repro/evidence:** No later migration revokes the function from PUBLIC or asserts the caller role. Production ACL could not be queried because the database is down.
 **Suggested fix:** Revoke from PUBLIC, anon, and authenticated, add a caller-role assertion, and test final privileges after every migration.
-**Status:** fixed in source (uncommitted; migration 0019 resets current and future API-role privileges, explicitly allowlists routines, and static contracts pass; disposable PostgreSQL execution remains blocked by unavailable Docker registry/backend access)
+**Status:** fixed in source (33b0aed; migration 0019 resets current and future API-role privileges, explicitly allowlists routines, and static contracts pass; disposable PostgreSQL execution remains blocked by unavailable Docker registry/backend access)
 
 ## 2026-07-11 - Inbound replies have no agent conversation identity
 **Severity:** correctness
@@ -305,7 +305,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The audited SHA had one high and three moderate dependency advisories, including an IPv4-mapped IPv6 rate-limit bypass in a transitive dependency.
 **Repro/evidence:** The local repair removes `@dust-tt/client`, replaces it with a schema-validated REST client with bounded time, streaming response bytes, and cancellation, and moves audit and secret scan into independent CI jobs with an aggregate gate. `npm audit --audit-level=high` now exits 0; two moderate PostCSS advisories remain inside Next.js and have no non-breaking published fix in the installed stable line.
 **Suggested fix:** Upgrade or replace the dependency chain, run security gates independently, and block deploy on their aggregate result.
-**Status:** fixed (uncommitted; local high/critical audit gate, Dust 32/32, full tests, lint, typecheck, and isolated build pass; exact-SHA GitHub proof pending)
+**Status:** fixed (33b0aed; local high/critical audit gate, Dust 32/32, full tests, lint, typecheck, and isolated build pass; exact-SHA GitHub proof pending)
 
 ## 2026-07-11 - Remote third-party MCP tools can cross the production tool boundary
 **Severity:** security
@@ -313,7 +313,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Environment-enabled remote MCP discovery and execution could expose third-party tool definitions to production model loops and run an administrator-configured remote tool without a production-specific deny boundary.
 **Repro/evidence:** The prior policy relied on an enable flag rather than an explicit production denial at route, loop, and client layers.
 **Suggested fix:** Make production denial unconditional, require an exact nonproduction environment plus explicit opt-in, and bound discovery, definitions, calls, results, and time.
-**Status:** fixed (uncommitted; production/default-off route and low-level environment probes, model-loop filtering, result-envelope injection tests, port policy, and encoded-secret containment passed independent review)
+**Status:** fixed (33b0aed; production/default-off route and low-level environment probes, model-loop filtering, result-envelope injection tests, port policy, and encoded-secret containment passed independent review)
 
 ## 2026-07-11 - Supabase default privileges can regrant future public objects
 **Severity:** security
@@ -321,7 +321,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Revoking current table and routine privileges is not durable when the Supabase initializer retains default API-role grants for objects later created by the migration owner or `supabase_admin`.
 **Repro/evidence:** The official Supabase Postgres initializer defines default grants. A later table, sequence, or function could therefore regain API-role access without appearing in the current-object allowlist.
 **Suggested fix:** Reset default privileges for both owners and test newly created probe objects against every API role.
-**Status:** fixed in source (uncommitted; current and future table, sequence, function, schema, and PG17 MAINTAIN checks are in the disposable database matrix; live PostgreSQL execution remains pending)
+**Status:** fixed in source (33b0aed; current and future table, sequence, function, schema, and PG17 MAINTAIN checks are in the disposable database matrix; live PostgreSQL execution remains pending)
 
 ## 2026-07-11 - Image scan was not bound to the deployed application artifact
 **Severity:** security
@@ -329,7 +329,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** CI scanned a locally built application image while Fly rebuilt the application during deployment, so a green scan did not prove the deployed image was the scanned artifact. Failure paths also skipped release evidence upload.
 **Repro/evidence:** The earlier workflow generated CI supply-chain evidence, then invoked a source build in Fly. Its artifact step ran only after every prior step succeeded.
 **Suggested fix:** Build once with production inputs, scan the saved image, publish the same image, deploy its immutable digest, verify the running digest, and archive partial evidence on every outcome.
-**Status:** fixed in source (uncommitted; release-chain validator accepted YAML, actionlint, 83/83 infrastructure, 34/34 deploy, 17/17 bootstrap, failure inventory, and digest binding; online registry and Fly execution remain unproven)
+**Status:** fixed in source (33b0aed; release-chain validator accepted YAML, actionlint, 83/83 infrastructure, 34/34 deploy, 17/17 bootstrap, failure inventory, and digest binding; online registry and Fly execution remain unproven)
 
 ## 2026-07-11 - Repository includes machine binaries and raw agent logs
 **Severity:** spec-mismatch
@@ -353,7 +353,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The Fly volume root contains `lost+found`, but it was mounted directly at the pinned image's `/var/lib/postgresql/data`; `initdb` exits 1 before PostgreSQL starts. A PGDATA-only override is also invalid because `/etc/postgresql/postgresql.conf` still pins `data_directory` to the original path.
 **Repro/evidence:** The exact pinned image failed on the root mount, failed with only `PGDATA=/var/lib/postgresql/data/pgdata`, and passed when the volume mounted at `/var/lib/postgresql`. The passing cluster used `/var/lib/postgresql/data` and retained a probe across two restarts.
 **Suggested fix:** Mount the volume parent, keep the image's data directory unchanged, and prove the exact image and two restarts in CI.
-**Status:** fixed in source (uncommitted; static 12/12 and exact-image container/restart test pass; preserved production-volume inspection and Fly deployment remain pending)
+**Status:** fixed in source (33b0aed; static 12/12 and exact-image container/restart test pass; preserved production-volume inspection and Fly deployment remain pending)
 
 ## 2026-07-11 - Volume remount can silently hide a legacy PostgreSQL cluster
 **Severity:** correctness
@@ -361,7 +361,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Reusing the same volume at `/var/lib/postgresql` could hide a cluster previously written at the volume root and let the image initialize an empty cluster under `data/`.
 **Repro/evidence:** A synthetic legacy volume with root-level `PG_VERSION`, `base`, `global`, and `pg_wal` was remounted at the parent path. Without a guard those markers are outside the image data directory.
 **Suggested fix:** Fail before entrypoint initialization when legacy or unexpected root entries exist, and inspect a preserved production-volume clone before deployment.
-**Status:** fixed in source (uncommitted; wrapper exits 78 and creates no child cluster; production clone inspection remains pending)
+**Status:** fixed in source (33b0aed; wrapper exits 78 and creates no child cluster; production clone inspection remains pending)
 
 ## 2026-07-11 - Optional Supabase role makes database first boot fail
 **Severity:** correctness
@@ -369,7 +369,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The first-boot script unconditionally altered `supabase_functions_admin`, but the pinned image creates that role only when its pg_net setup path applies. The missing role aborted database initialization.
 **Repro/evidence:** The exact custom database image exited 3 at `ALTER USER supabase_functions_admin`; after making only that extension-dependent role conditional, the same image became ready and survived two restarts with persisted data.
 **Suggested fix:** Keep required connection roles fail-closed and conditionally alter only the extension-dependent role.
-**Status:** fixed in source (uncommitted; exact-image first boot and restart proof pass; Fly execution remains pending)
+**Status:** fixed in source (33b0aed; exact-image first boot and restart proof pass; Fly execution remains pending)
 
 ## 2026-07-11 - Shared database credential preserved privileged substitution paths
 **Severity:** security
@@ -377,7 +377,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The former bootstrap path reused one database password and could perform owner work through inherited role authority, so a runtime or migrator credential could retain more authority than its service required.
 **Repro/evidence:** The replacement requires four distinct active database passwords, performs owner work only in a direct `supabase_admin` superuser session, performs numbered migrations only in a direct `postgres` NOSUPERUSER session, and disables unused login roles.
 **Suggested fix:** Preserve the direct-session boundary and retire every temporary bootstrap credential before runtime activation.
-**Status:** fixed in source (uncommitted; real PostgreSQL authority, rotation, idempotence, retired-password, and cross-owner denial tests pass; live Fly proof pending)
+**Status:** fixed in source (33b0aed; real PostgreSQL authority, rotation, idempotence, retired-password, and cross-owner denial tests pass; live Fly proof pending)
 
 ## 2026-07-11 - Database initialization could log role passwords and JWT policy
 **Severity:** security
@@ -385,7 +385,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The pinned initializer expands secret-bearing role statements before role-local logging policy exists, and bootstrap reconciliation rotates credentials and writes JWT settings.
 **Repro/evidence:** The replacement suppresses statement text, failed-statement text, and error parameter values across first initialization and the owner transaction, then resets normal logging only after successful reconciliation. Canary scans found none of the injected credential or JWT markers.
 **Suggested fix:** Keep the early log policy first in lexical init order and preserve the completion marker as the boundary for re-enabling normal logging.
-**Status:** fixed in source (uncommitted; first-init and post-restart canary scans pass; managed Fly log proof pending)
+**Status:** fixed in source (33b0aed; first-init and post-restart canary scans pass; managed Fly log proof pending)
 
 ## 2026-07-11 - Numbered migration attempted cross-owner privilege mutation
 **Severity:** correctness
@@ -393,7 +393,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Migration 0019 mixed application-schema work with owner-local default ACL and Auth ownership changes that a direct NOSUPERUSER `postgres` migrator cannot reliably perform.
 **Repro/evidence:** Owner-local ACL, role rotation, Auth ownership, and JWT configuration now execute in one direct `supabase_admin` transaction; migration 0019 contains only work permitted to the direct `postgres` migrator. Cross-owner mutation probes are denied while the complete ledger remains idempotent.
 **Suggested fix:** Keep privileged reconciliation separate from numbered application migrations and test both identities independently.
-**Status:** fixed in source (uncommitted; two-phase real-PostgreSQL test passes; production migration ledger pending)
+**Status:** fixed in source (33b0aed; two-phase real-PostgreSQL test passes; production migration ledger pending)
 
 ## 2026-07-11 - Three custom production images bypassed release promotion controls
 **Severity:** security
@@ -401,7 +401,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Database, bootstrap, and Kong images were remotely rebuilt or pushed without the application image's scan, provenance, immutable-reference, and running-digest controls.
 **Repro/evidence:** The replacement builds all four custom images for `linux/amd64`, pulls and scans the exact candidate digest, creates CycloneDX and signed attestation evidence, promotes only the same digest, deploys exact digest references, and compares running digests before acceptance.
 **Suggested fix:** Keep every custom runtime image inside one exact-SHA build-scan-attest-promote-deploy chain.
-**Status:** fixed in source (uncommitted; CI/release contracts pass 98/98 and deploy contracts pass 60/60; exact-SHA GitHub registry and amd64 execution pending)
+**Status:** fixed in source (33b0aed; CI/release contracts pass 98/98 and deploy contracts pass 60/60; exact-SHA GitHub registry and amd64 execution pending)
 
 ## 2026-07-11 - First immutable-tag promotion hashed an empty manifest
 **Severity:** correctness
@@ -409,7 +409,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Bash suppresses `set -e` inside a function used as an `if` condition. When an exact-SHA tag did not yet exist, `digest_for` continued after the failed inspect and returned the SHA-256 of empty input, falsely classifying the tag as an existing conflicting artifact.
 **Repro/evidence:** Both digest functions now explicitly return on inspect failure, empty manifest, hash failure, or malformed digest. An executable absent-tag regression probe passes, and the infrastructure release contract is 96/96.
 **Suggested fix:** Preserve explicit returns inside conditional shell functions; never rely on inherited `errexit` semantics for release identity.
-**Status:** fixed in source (uncommitted; live registry first-promotion proof pending)
+**Status:** fixed in source (33b0aed; live registry first-promotion proof pending)
 
 ## 2026-07-11 - Image secret scan omitted config and build history
 **Severity:** security
@@ -417,7 +417,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Trivy secret scanning inspected image files but did not enable image-config scanning, so a credential embedded in ENV, config, or build history could pass.
 **Repro/evidence:** Both four-image scan loops now add `--image-config-scanners secret` beside the filesystem secret scanner. The release contract asserts the flag, order, and fail-closed exit in CI and release.
 **Suggested fix:** Preserve both filesystem and image-config scanning for every custom image.
-**Status:** fixed in source (uncommitted; infrastructure release contract 98/98; exact registry-image execution pending)
+**Status:** fixed in source (33b0aed; infrastructure release contract 98/98; exact registry-image execution pending)
 
 ## 2026-07-11 - CycloneDX evidence was not schema validated
 **Severity:** test-gap
@@ -425,7 +425,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The SBOM gate checked only three JSON fields and could accept a malformed document that did not conform to the CycloneDX schema.
 **Repro/evidence:** Every app, database, bootstrap, and Kong SBOM now runs through the digest-pinned official CycloneDX CLI v0.32.0 with JSON, v1.6, and fail-on-errors selected. The validator digest is included in release evidence.
 **Suggested fix:** Keep full schema validation in both CI and release before attestation or promotion.
-**Status:** fixed in source (uncommitted; static contracts pass; local Docker Hub route timed out, so exact-SHA amd64 execution pending)
+**Status:** fixed in source (33b0aed; static contracts pass; local Docker Hub route timed out, so exact-SHA amd64 execution pending)
 
 ## 2026-07-11 - Known Gitleaks false positives made the protected CI gate red
 **Severity:** test-gap
@@ -433,7 +433,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Six reviewed non-secret matches in committed history and one synthetic current fixture caused Gitleaks to exit 1, preventing an exact-SHA release even though no credential was present.
 **Repro/evidence:** The replacement uses six exact historical fingerprints, restructures the synthetic Databricks token fixture, and allows only two source lines whose Sillage request field names trigger the LinkedIn client-id rule. A 205-commit scan plus current tests and src scans report no findings.
 **Suggested fix:** Keep ignores fingerprint- or line-specific; never allowlist an entire source, relay, or credential directory.
-**Status:** fixed in source (uncommitted; local Gitleaks 8.30.1 is green; exact GitHub action proof pending)
+**Status:** fixed in source (33b0aed; local Gitleaks 8.30.1 is green; exact GitHub action proof pending)
 
 ## 2026-07-11 - aria-mantu-db first boot needs ALL reconciliation secrets on the DB app itself, not just bootstrap (one-shot crash-loop trap)
 **Severity:** correctness
@@ -513,7 +513,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The local `npm run test:fly-db-volume` gate cannot reach its recovery assertions because Docker times out fetching Alpine 3.23 package indexes during the DB image CVE-patch layer.
 **Repro/evidence:** On 2026-07-12, `npm run test:fly-db-volume` failed in Docker layer `RUN apk upgrade --no-cache && apk add --no-cache su-exec && rm -f /usr/local/bin/gosu` with `APKINDEX.tar.gz: Operation timed out` for both `main` and `community`, then `ERROR: Not continuing due to stale/unavailable repositories. Use --force-missing-repositories to continue.` Alternate mirrors tested from the host (`dl-2.alpinelinux.org`, `mirrors.edge.kernel.org`, `mirror.leaseweb.com`) also timed out. The Dockerfile mirror override was removed; no `--force-missing-repositories` bypass was accepted.
 **Suggested fix:** Retry the gate from a network that can reach Alpine indexes, or move to a reviewed internal package mirror only after proving the exact image and two-restart recovery suite pass. Do not weaken the CVE patch layer.
-**Status:** fixed (uncommitted; 2026-07-14 rerun reached every recovery assertion and exited 0, including the exact image, two restarts, legacy cutover/recreate, unsafe-layout blocks, and init-secret-free recreate)
+**Status:** fixed (33b0aed; 2026-07-14 rerun reached every recovery assertion and exited 0, including the exact image, two restarts, legacy cutover/recreate, unsafe-layout blocks, and init-secret-free recreate)
 
 ## 2026-07-12 - Read-only QA lane pushed unsafe production authority code
 **Severity:** correctness
@@ -673,7 +673,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The exact Graphify 0.9.14 container acceptance gate cannot install its hash-locked Python dependencies because the current route to PyPI times out.
 **Repro/evidence:** Docker resolves the digest-pinned Python base, then pip repeatedly reports `Connection to pypi.org timed out` while requesting `/simple/networkx/`. Host API checks used a different installed Graphify version and are not exact-runtime proof.
 **Suggested fix:** Run `npm run test:graphify-learning` in clean CI/network, scan and publish the resulting immutable image, then configure only that accepted digest.
-**Status:** fixed (uncommitted; dependencies and Graphify 0.9.14 are vendored with checked hashes, the container builds without network, and `npm run test:graphify-learning` passed exact-runtime, network-none, deterministic graph, and receipt checks)
+**Status:** fixed (33b0aed; dependencies and Graphify 0.9.14 are vendored with checked hashes, the container builds without network, and `npm run test:graphify-learning` passed exact-runtime, network-none, deterministic graph, and receipt checks)
 
 ## 2026-07-13 - Migration 0027 was missing from reviewed recovery authority
 **Severity:** correctness
@@ -720,7 +720,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Authenticated workspace members retain direct message-table writes. A member can insert a workspace-local outbound row whose simple `spec_id` foreign key points to another workspace, and the inbound resolver accepts composed or unsent history. The service worker then trusts the returned spec identity. Authenticated inbound insertion also lets a member forge a WhatsApp STOP event that reaches suppression processing.
 **Repro/evidence:** An isolated PostgreSQL run with migrations 0001 through 0027 allowed a viewer to insert both message rows, accepted the foreign spec binding, and returned the other workspace's spec from `resolve_whatsapp_inbound_conversation`.
 **Suggested fix:** Make normalized message writes service/RPC-only, bind messages and conversations to immutable workspace-owner-spec authority, derive conversations only from provider-accepted outbound receipts, and reselect the runtime spec by workspace plus owner plus spec.
-**Status:** fixed (uncommitted; migration 0028 removes authenticated message DML, owner-binds message/conversation/spec authority, accepts only durable sent receipts, routes human queueing through one bounded RPC, and passes 46/46 static plus disposable PostgreSQL authority/replay/isolation proof)
+**Status:** fixed (33b0aed; migration 0028 removes authenticated message DML, owner-binds message/conversation/spec authority, accepts only durable sent receipts, routes human queueing through one bounded RPC, and passes 46/46 static plus disposable PostgreSQL authority/replay/isolation proof)
 
 ## 2026-07-13 - Alternate agent-run route invents missing hiring requirements
 **Severity:** correctness
@@ -728,7 +728,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** A title-only stored brief is expanded to Senior, Full-time, Remote, and Standard urgency, then the alternate agent route can run real model and search work without the reviewed-need and role-evidence gates used by the sourcing route.
 **Repro/evidence:** `normalizeStoredAgentRoleBrief` supplies those defaults and the route does not call the campaign readiness, unsafe-input, reviewed-query, or sourcing-receipt authority.
 **Suggested fix:** Fail this incomplete legacy execution path closed in production until it consumes the same reviewed campaign and receipt authority as `/api/sourcing-agent`; preserve unknown facts as unknown.
-**Status:** fixed (uncommitted; the route returns 503 before parsing input or resolving credentials, invented role defaults were removed, and the disabled-path/need-authority suites pass)
+**Status:** fixed (33b0aed; the route returns 503 before parsing input or resolving credentials, invented role defaults were removed, and the disabled-path/need-authority suites pass)
 
 ## 2026-07-13 - Alternate agent-run route has browser-owned provider authority and no durable replay receipt
 **Severity:** security
@@ -736,7 +736,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The browser selects provider, key identifier, model, and an arbitrary existing-candidate array. The route lacks same-origin enforcement, a database idempotency/quota claim, a server-owned configuration fingerprint, completion receipt, and live role/config/key revalidation around each external call.
 **Repro/evidence:** The request schema accepts every authority input directly; the key is resolved once and reused; the per-node callback rechecks only active spec ownership.
 **Suggested fix:** Disable the incomplete route in production or rebuild it on server-owned configuration, database claims, exact receipts, and per-egress revalidation.
-**Status:** fixed (uncommitted; the route returns 503 before parsing browser authority or touching providers, secrets, candidates, or persistence; focused disabled-route tests pass)
+**Status:** fixed (33b0aed; the route returns 503 before parsing browser authority or touching providers, secrets, candidates, or persistence; focused disabled-route tests pass)
 
 ## 2026-07-13 - Candidate erasure does not cover normalized conversations and provider lifecycle
 **Severity:** spec-mismatch
@@ -752,7 +752,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** An operator could assign an arbitrary `flowise_chatflow_id` to an owner-visible spec, after which the public proxy treated that circular binding as proof of ownership and forwarded arbitrary query/body/session controls to one shared Flowise runtime.
 **Repro/evidence:** The old create/update schemas accepted the raw ID; the proxy queried the same client-writable column, appended the caller query string, and forwarded the unvalidated body under one global API key. Flowise OSS does not independently prove ARIA workspace ownership.
 **Suggested fix:** Remove browser-owned external IDs, disable the public proxy, and resolve immutable server-owned instance/workflow bindings only through a private typed adapter.
-**Status:** fixed (uncommitted; browser Flowise identifiers and the upstream proxy were removed, all public methods fail closed, and the private compiler accepts only ARIA's strict node vocabulary; focused policy/client tests pass)
+**Status:** fixed (33b0aed; browser Flowise identifiers and the upstream proxy were removed, all public methods fail closed, and the private compiler accepts only ARIA's strict node vocabulary; focused policy/client tests pass)
 
 ## 2026-07-14 - DeerFlow and Flowise were described as frameworks without being used
 **Severity:** spec-mismatch
@@ -760,7 +760,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The current agent graph explicitly implements an older DeerFlow-inspired pattern in plain TypeScript, the executor is now disabled, and Flowise was only an unsafe optional prediction proxy. Goal milestone m5 records the custom graph as done even though Tony now requires actual DeerFlow and Flowise frameworks.
 **Repro/evidence:** Before this shift neither pinned runtime existed in deployment definitions. Current source pins DeerFlow `fabadae4168db81f0eaaf62f209050f978e2f691` and Flowise `bb773ffa710bd22639c4ba2643413a0ea2b679d3`, executes approved Flowise IR through the private DeerFlow adapter, and provides a ten-app private Fly deployment pack. The aggregate framework suite passes 42/42.
 **Suggested fix:** Reopen framework milestones, keep ARIA as authority, use a pinned private DeerFlow adapter plus isolated Flowise authoring/import, and require live two-tenant framework E2E before completion.
-**Status:** fixed in source (uncommitted; actual pinned framework runtimes, private adapters, governed execution, and deployment definitions now exist; promoted image digests, deployed adapters, and live E2E remain release blockers below)
+**Status:** fixed in source (33b0aed; actual pinned framework runtimes, private adapters, governed execution, and deployment definitions now exist; promoted image digests, deployed adapters, and live E2E remain release blockers below)
 
 ## 2026-07-14 - Flowise and DeerFlow enterprise dependencies are unproven
 **Severity:** security
@@ -776,7 +776,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The POSIX regular expression uses `{1,512}`; PostgreSQL rejects that repetition bound when the constraint is evaluated, so a valid approved template insert fails with SQLSTATE 2201B instead of validating the name.
 **Repro/evidence:** The disposable conversation-authority database test stopped at template seed with `invalid regular expression: invalid repetition count(s)`. Migration 0028 replaces it with an explicit 1..512 length predicate plus an unbounded allowlisted character class.
 **Suggested fix:** Preserve the corrected validated constraint in the migration ledger and recovery fingerprint.
-**Status:** fixed (uncommitted; the full disposable PostgreSQL conversation authority test including migration replay passes)
+**Status:** fixed (33b0aed; the full disposable PostgreSQL conversation authority test including migration replay passes)
 
 ## 2026-07-14 - Owner recovery was absent from CI
 **Severity:** test-gap
@@ -784,7 +784,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The source exposed operator and database recovery test scripts, but neither gate ran in CI or through the aggregate `npm test` command.
 **Repro/evidence:** The pre-fix workflow contained no `test:owner-recovery` or `test:db-owner-recovery` invocation. The operator gate also needs the quality job's installed Node dependencies, while the database gate belongs in the Docker-backed database job.
 **Suggested fix:** Run the operator contract in `quality` after `npm ci` and the PostgreSQL authority test in `database-security`.
-**Status:** fixed (uncommitted; workflow YAML parses and the recovery contract verifies both actual run commands)
+**Status:** fixed (33b0aed; workflow YAML parses and the recovery contract verifies both actual run commands)
 
 ## 2026-07-14 - Owner binding committed before password login was proven
 **Severity:** correctness
@@ -792,7 +792,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The script called the durable recovery RPC before attempting password login. A confirmed-looking but non-login-capable GoTrue identity could therefore commit the workspace/profile binding and fail only afterward, leaving the tenant recovered on paper but unusable.
 **Repro/evidence:** The behavior test originally required `recovery.rpc` before `auth.password-login`. A new rejected-login scenario proves the RPC is never reached and the exact pre-binding identity is cleaned up.
 **Suggested fix:** Prove the exact active email identity through password login before the recovery RPC, then use its token for post-binding RLS verification.
-**Status:** fixed (uncommitted; operator contract and behavior suite pass with `login=prebinding-verified`)
+**Status:** fixed (33b0aed; operator contract, behavior suite, disposable owner-recovery database proof, and pinned real-GoTrue integration pass with `login=prebinding-verified`)
 
 ## 2026-07-14 - Recovery RPC accepted an unmarked GoTrue identity
 **Severity:** security
@@ -800,7 +800,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The shell required a deterministic request marker, but the service-role database RPC checked only email/provider/account fields. A direct RPC caller could bypass the reviewed marked-identity invariant.
 **Repro/evidence:** The disposable database test now clears `raw_user_meta_data` and invokes the RPC with otherwise valid service-role authority; it receives `identity_not_eligible` and performs no recovery mutation.
 **Suggested fix:** Derive the exact marker from request ID and verified approval SHA inside the RPC and require it in `raw_user_meta_data`.
-**Status:** fixed (uncommitted; `test:db-owner-recovery` passes including the unmarked direct-call rejection)
+**Status:** fixed (33b0aed; migration 0062 delegates the exact identity decision to the restricted Auth-owner bridge, and both owner-recovery database and pinned real-GoTrue integration proofs pass)
 
 ## 2026-07-14 - Concurrent retry cleanup could delete another attempt's user
 **Severity:** correctness
@@ -808,7 +808,23 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Exact retries share the deterministic request marker. If two operators observed empty Auth and one create lost with a conflict, its cleanup could mistake the other in-flight attempt's user for its own and hard-delete it before binding.
 **Repro/evidence:** The adversarial mock returns a create conflict while exposing another attempt's exact-request user. Pre-fix cleanup matched only the shared marker and deleted it.
 **Suggested fix:** Add a random per-attempt cleanup ID to GoTrue metadata and require both the deterministic marker and attempt ID before deletion.
-**Status:** fixed (uncommitted; behavior suite proves the foreign-attempt user is preserved while own failed pre-binding users are deleted)
+**Status:** fixed (33b0aed; behavior suite proves the foreign-attempt user is preserved while own failed pre-binding users are deleted)
+
+## 2026-07-22 - Tenant authorization trusted stale GoTrue tokens until JWT expiry
+**Severity:** security
+**File:** supabase/migrations/0061_active_auth_identity_workspace_authority.sql; docker/bootstrap/auth-owner-bridges.sql
+**Issue:** Tenant profile policies and workspace-role helpers trusted `auth.uid()` without rechecking the backing GoTrue identity. A banned, soft-deleted, or no-longer-confirmed user could retain database access until an already-issued token expired.
+**Repro/evidence:** Migration 0061 delegates the bounded active-identity decision to an Auth-owner bridge, then rebinds profile policies, workspace lookup, role lookup, and workspace provisioning. `tests/gotrue-active-identity-integration.sh` runs pinned GoTrue against the real ownership model and reports `PASS: pinned GoTrue, Auth-owner bridge ACL, workspace provisioning, and stale-token revocation` after replaying one pre-ban token across banned, unconfirmed, and soft-deleted states. The canonical database manifest exits zero.
+**Suggested fix:** Preserve the exact bridge owner and ACL, and require the active identity predicate at every tenant-authority entry point.
+**Status:** fixed (33b0aed; real pinned-GoTrue and full database proofs pass)
+
+## 2026-07-22 - Owner recovery crossed the real Auth-owner boundary directly
+**Severity:** security
+**File:** supabase/migrations/0062_orphan_owner_recovery_auth_bridge.sql; docker/bootstrap/auth-owner-bridges.sql
+**Issue:** A postgres-owned recovery RPC could not safely inspect `auth.users` directly under GoTrue's real `supabase_auth_admin` ownership and row-security boundary without either failing or broadening authority.
+**Repro/evidence:** Migration 0062 delegates only the exact recovery identity decision to `auth.aria_orphan_owner_recovery_identity_status`, owned by `supabase_auth_admin`. Forward, rollback, and bootstrap tests require the exact owner, SECURITY DEFINER mode, volatility, search path, return type, and service-only execution ACL. `tests/orphan-owner-recovery-db.sh` and the pinned real-GoTrue integration both pass inside the canonical database manifest.
+**Suggested fix:** Keep Auth-owner reads inside the narrow bridge and leave all tenant mutation and CAS authority in the postgres-owned recovery RPC.
+**Status:** fixed (33b0aed; forward, rollback, ACL, real-owner, and stale-token proofs pass)
 
 ## 2026-07-14 - Pinned DeerFlow tool schema made every real model request fail
 **Severity:** correctness
@@ -816,7 +832,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The pinned DeerFlow runtime always binds its built-in `review_skill_package` tool even when the ARIA agent and skill declare no tools. The model gateway rejected every request containing `tools`, so a real proposal could never reach the cloud model.
 **Repro/evidence:** The exact pinned DeerFlow commit and locked `langchain-openai` 1.2.1 request included the built-in schema. The gateway now accepts only that byte-semantically exact schema, strips it and optional literal `tool_choice: "none"` before egress, disables streaming fallback, and rejects every schema drift or additional tool. Focused gateway tests pass.
 **Suggested fix:** Keep the exact locked schema contract synchronized with the promoted DeerFlow image; never forward tool authority to the provider.
-**Status:** fixed (uncommitted; exact-schema acceptance, negative drift, egress stripping, and non-streaming compatibility tests pass)
+**Status:** fixed (33b0aed; exact-schema acceptance, negative drift, egress stripping, and non-streaming compatibility tests pass)
 
 ## 2026-07-14 - Provider responses could restore stripped local tool authority
 **Severity:** security
@@ -824,7 +840,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** After request-side tool stripping, a malicious or compromised provider could still return `tool_calls` or legacy `function_call`; LangChain would parse that response and DeerFlow could execute its locally bound built-in.
 **Repro/evidence:** Adversarial upstream fixtures return valid assistant text plus each tool-call shape. The gateway now returns a generic 502 and never relays either response; focused tests pass for both formats.
 **Suggested fix:** Preserve response-side tool-call rejection whenever the request boundary strips all tool authority.
-**Status:** fixed (uncommitted; both current and legacy provider tool-injection tests pass)
+**Status:** fixed (33b0aed; both current and legacy provider tool-injection tests pass)
 
 ## 2026-07-14 - Shared Redis let Flowise mutate DeerFlow stream authority
 **Severity:** security
@@ -832,7 +848,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** DeerFlow, Flowise, their worker, and both adapters shared one Redis service, volume, and password. Compromise of Flowise's broad OSS runtime therefore granted authentication to DeerFlow's stream state.
 **Repro/evidence:** The stack now has distinct `deerflow-redis` and `flowise-redis` services, volumes, password files, dependency graphs, and mode-bound adapter host authority. Fly adapter startup additionally requires `REDIS_HOST` to equal the exact reviewed `REDIS_FLY_HOST`. Cross-framework host/secret assertions and Compose rendering pass.
 **Suggested fix:** Keep Redis credentials and state per framework even when both services use the same promoted Redis image digest.
-**Status:** fixed (uncommitted; 31/31 framework adapter/gateway/deployment tests and `docker compose config -q` pass)
+**Status:** fixed (33b0aed; 31/31 framework adapter/gateway/deployment tests and `docker compose config -q` pass)
 
 ## 2026-07-14 - Gateway rejected schema-valid large grounded needs
 **Severity:** correctness
@@ -840,7 +856,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The gateway imposed a hidden 16 KiB per-message limit and production configured only 64 KiB total, while the reviewed ARIA need contract permits a UTF-8 prompt of about 126 KiB before DeerFlow's system envelope.
 **Repro/evidence:** A 130 KiB framework prompt failed with 400 before the fix. The production ceiling is now 256 KiB, individual messages share that total bound, and the same regression returns 200 while oversized bodies still fail before egress.
 **Suggested fix:** Keep application schema bounds and gateway byte ceilings in one tested compatibility contract.
-**Status:** fixed (uncommitted; 130 KiB compatibility and request-overflow tests pass)
+**Status:** fixed (33b0aed; 130 KiB compatibility and request-overflow tests pass)
 
 ## 2026-07-14 - Adapter readiness did not prove the cloud model was usable
 **Severity:** correctness
@@ -848,7 +864,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** DeerFlow adapter readiness checked only the framework's configured model list. After startup, a provider outage, HTTP 402 account failure, or gateway model drift could still leave adapter and ARIA readiness green.
 **Repro/evidence:** Readiness now derives `/readyz` from the canonical private model base URL, authenticates with the internal gateway token, and requires the exact configured provider and model before any DeerFlow dependency can be healthy. Wrong provider/model fixtures and unavailable-gateway readiness fail closed.
 **Suggested fix:** Preserve authenticated live provider/model proof in every activation heartbeat; a configured model name is not readiness.
-**Status:** fixed (uncommitted; exact authenticated gateway and negative drift/readiness tests pass)
+**Status:** fixed (33b0aed; exact authenticated gateway and negative drift/readiness tests pass)
 
 ## 2026-07-14 - Oversized upstream streams were rejected without cancellation
 **Severity:** security
@@ -856,7 +872,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** When a chunked DeerFlow or Flowise response exceeded 2 MB, the adapter threw and released the stream reader without cancelling it, allowing the upstream connection and response production to continue after rejection.
 **Repro/evidence:** An incremental 6 MB upstream fixture remained open before the fix. The adapter now cancels the reader on overflow; the fixture observes connection closure before completion while the client receives the same generic 502.
 **Suggested fix:** Cancel bounded response streams before releasing their reader on every overflow path.
-**Status:** fixed (uncommitted; streamed-overflow cancellation regression passes)
+**Status:** fixed (33b0aed; streamed-overflow cancellation regression passes)
 
 ## 2026-07-14 - Demo localStorage accepted real and manual candidate PII
 **Severity:** security
@@ -864,7 +880,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The no-Supabase demo could call real GitHub or web providers and accept manual candidates, then serialize the resulting candidate PII into cleartext localStorage with no provenance guard.
 **Repro/evidence:** Before the fix, `syntheticSourcingAllowed()` selected a branch that still called `/api/source` for explicit GitHub and web platforms, manual intake used the same persisted commit, and both commit paths plus the final localStorage flush accepted non-synthetic candidates.
 **Suggested fix:** Make browser-local candidate authority synthetic-only, reject real and manual actions before I/O, recheck explicit provenance at commit and flush, and purge legacy unsafe snapshots during hydration.
-**Status:** fixed (uncommitted; focused privacy and sourcing boundary gate passes 46/46, legacy unsafe snapshots are purged, and the final 164-command aggregate passes)
+**Status:** fixed (33b0aed; focused privacy and sourcing boundary gate passes 46/46, legacy unsafe snapshots are purged, and the final 164-command aggregate passes)
 
 ## 2026-07-14 - Framework stack had no controlled private Fly deployment path
 **Severity:** spec-mismatch
@@ -872,7 +888,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Compose contracts could not create or verify the ten private production services, and there was no approval, immutable artifact, secret-import, network, readiness, or replay authority for a Fly rollout.
 **Repro/evidence:** The new source pack defines separate private apps for both PostgreSQL stores, both Redis planes, gateway, DeerFlow, Flowise, worker, and adapters. Its prepare/confirm/deploy operator binds a 15-minute approval to config and image digests, verifies cosign signature/SBOM/provenance and Trivy results, imports file secrets over stdin, uses exact `--image` and `--no-public-ips`, and requires current network, Machine, platform-check, and authenticated private identity evidence before a receipt. `npm run test:agent-framework-adapter` passes 42/42, all ten TOML files pass `flyctl config validate`, shell/Node/Python syntax checks pass, and Bake renders seven wrapper targets.
 **Suggested fix:** Keep this operator in the protected release gate and archive its owner-reviewed manifest, plan, approval, and receipt without secret material.
-**Status:** fixed in source (uncommitted; no Fly mutation or production receipt was produced)
+**Status:** fixed in source (33b0aed; no Fly mutation or production receipt was produced)
 
 ## 2026-07-14 - Private Fly source pack still lacks enterprise release evidence
 **Severity:** security
@@ -892,11 +908,11 @@ Historical and current findings follow. The current consolidated audit is
 
 ## 2026-07-14 - Candidate reimport and memory erasure authority is incomplete
 **Severity:** security
-**File:** supabase/migrations/0025_agent_memory_authority.sql:196; supabase/migrations/0033_candidate_erasure_authority.sql:289
+**File:** supabase/migrations/0059_candidate_payload_provenance.sql; src/app/api/agents/memories/route.ts
 **Issue:** Candidate data embedded in agent-run/event JSON, framework-result payloads, and encrypted AgentSpec memory has no explicit candidate provenance that an administrator can target for erasure.
-**Repro/evidence:** Migration 0033 guards and transaction-serializes workspace state, normalized messages, outreach, suppression, WhatsApp contact/window, conversations, and Apollo writes; both writer-first and erasure-first PostgreSQL sessions now pass. Migration 0025 still permits bounded encrypted memory content without a candidate identifier or administrator erasure receipt, and run/framework payloads remain unstructured for erasure authority.
-**Suggested fix:** Add explicit candidate provenance and administrator erasure receipts for run, framework, and memory payloads before production activation.
-**Status:** open; production candidate erasure remains NO-GO
+**Repro/evidence:** Migration 0059 attaches explicit candidate provenance to run, event, and framework result payloads and removes direct `service_role` mutation of the legacy payload tables. Production POST and content PATCH operations on AgentSpec memory now return non-cacheable `403 memory_content_writes_disabled`; reads, metadata, review, and deletion remain available. The focused provenance, memory-route, candidate-erasure, privilege, rollback, and canonical lifecycle gates pass.
+**Suggested fix:** Preserve the provenance and production free-text boundary. Provider-held data and post-restore erasure replay remain separate external obligations.
+**Status:** fixed in source; provider-erasure evidence and restore replay remain open under their dedicated findings
 
 ## 2026-07-14 - Provider erasure evidence is manual and not independently verified
 **Severity:** security
@@ -920,7 +936,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The live path previously applied the database scrub and then persisted a second browser scrub whose token rules were not equivalent.
 **Repro/evidence:** Successful live erasure now clears all queued or failed browser save authority and reloads the exact server-owned workspace. `anonymizeHermesState()` remains only in synthetic demo mode, where no real candidate data is permitted.
 **Suggested fix:** Keep the database as the only live erasure authority and preserve the hydration regression.
-**Status:** fixed (uncommitted; candidate privacy passes 9/9, store contracts pass 11/11, and TypeScript passes)
+**Status:** fixed (33b0aed; candidate privacy passes 9/9, store contracts pass 11/11, and TypeScript passes)
 
 ## 2026-07-14 - Late legal hold state disappeared from the reloaded admin queue
 **Severity:** correctness
@@ -928,7 +944,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The API and database could return `blocked_legal_hold`, but the drawer's obligation parser and durable-queue validator rejected that valid state after a page reload.
 **Repro/evidence:** A regression first failed because neither validator allowlisted `blocked_legal_hold`; the focused contract now requires both paths to preserve it.
 **Suggested fix:** Keep the UI status allowlist aligned with the canonical erasure state type and OpenAPI enum.
-**Status:** fixed (uncommitted; candidate erasure contract passes 4/4 and TypeScript passes)
+**Status:** fixed (33b0aed; candidate erasure contract passes 4/4 and TypeScript passes)
 
 ## 2026-07-14 - Late legal hold degraded provider actions to an availability error
 **Severity:** correctness
@@ -936,7 +952,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The database returned `blocked_legal_hold` for both provider-authority inspection and reconciliation, but the PATCH route rejected that valid state as an untyped 503.
 **Repro/evidence:** The regression first received HTTP 503 for both actions after a late hold. The route now maps both database results to the canonical non-final HTTP 423 response.
 **Suggested fix:** Keep route, database, and OpenAPI legal-hold states aligned.
-**Status:** fixed (uncommitted; candidate route passes 10/10, OpenAPI contract passes, and TypeScript passes)
+**Status:** fixed (33b0aed; candidate route passes 10/10, OpenAPI contract passes, and TypeScript passes)
 
 ## 2026-07-14 - Stale inbound workers could recreate erased contact rows
 **Severity:** security
@@ -944,7 +960,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** A worker that claimed inbound work before erasure could later recreate raw suppression, WhatsApp contact/window, or conversation identity after the local scrub committed.
 **Repro/evidence:** The tombstone trigger originally guarded workspace state, messages, outreach, and Apollo only. It now also rejects erased email, phone, LinkedIn, and candidate identifiers in suppression, WhatsApp contact/window, and conversation writes with SQLSTATE 23514.
 **Suggested fix:** Preserve these guards and the shared normalized identity locks; add candidate provenance for the remaining run/event/framework/memory paths in the next migration.
-**Status:** fixed for the bounded contact paths (uncommitted; both transaction lock orders pass and leave zero raw rows after rejected writes)
+**Status:** fixed for the bounded contact paths (33b0aed; both transaction lock orders pass and leave zero raw rows after rejected writes)
 
 ## 2026-07-14 - AgentSpec dependency failures appeared as missing memory
 **Severity:** correctness
@@ -952,7 +968,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The owned-AgentSpec lookup collapsed database errors and confirmed absence into null, so GET, POST, PATCH, and DELETE returned 404 during a retryable database failure. The authentication lookup also ignored its returned error.
 **Repro/evidence:** Adversarial route tests first received 404 or 201 with injected AgentSpec/auth dependency errors. The lookup now has found, not_found, and unavailable states; auth and database errors return non-cacheable 503 while only confirmed absence returns 404.
 **Suggested fix:** Keep dependency errors distinct from resource absence at every authority boundary.
-**Status:** fixed (uncommitted; memory route tests pass 20/20)
+**Status:** fixed (33b0aed; memory route tests pass 20/20)
 
 ## 2026-07-14 - Candidate drawer could cross candidate erasure authority
 **Severity:** security
@@ -960,7 +976,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Late queue, inspect, or completion responses could update a newly opened candidate. Typed 423 holds discarded their body, successful erasure could leave click-time PII visible after hydration failure, and an anonymized tombstone still exposed incompatible restore controls.
 **Repro/evidence:** Every request now carries an abort controller and candidate/open generation scope checked after each await. A 423 clears decrypted authority and reloads the queue; a valid receipt masks local state before fallible hydration and closes the drawer; the store commit boundary preserves tombstones and restore exits before any suppression DELETE.
 **Suggested fix:** Keep UI request authority candidate-scoped and treat erasure tombstones as permanently immutable.
-**Status:** fixed (uncommitted; candidate erasure, privacy, and store contract suites pass)
+**Status:** fixed (33b0aed; candidate erasure, privacy, and store contract suites pass)
 
 ## 2026-07-14 - Framework recovery changed a successful idempotent response
 **Severity:** correctness
@@ -968,7 +984,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** A first successful framework run returned its bounded report summary, but recovery after a lost response returned reports as an empty array for the same idempotency key.
 **Repro/evidence:** Migration 0032 now persists exactly one bounded public report summary with the proposal digest. Recovery validates it and returns the original complete response; missing or malformed reports fail closed and changed replay reports conflict.
 **Suggested fix:** Preserve the full public response contract in durable idempotency authority.
-**Status:** fixed (uncommitted; framework execution passes 15/15 and database/rollback authority passes)
+**Status:** fixed (33b0aed; framework execution passes 15/15 and database/rollback authority passes)
 
 ## 2026-07-14 - Fly adapter configuration mixed provider and private runtime URLs
 **Severity:** correctness
@@ -976,7 +992,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The Fly operator injected the public Moonshot/OpenAI origin as DeerFlow's private model-gateway URL, while its HTTP-only private adapters were rejected by ARIA and heartbeat's HTTPS-only checks.
 **Repro/evidence:** The operator now injects the exact private gateway and adapter origins, derives and verifies the configuration digest from that environment, and shares one credential-free .internal URL policy across configuration, ARIA readiness, and heartbeat. Public origins remain rejected.
 **Suggested fix:** Keep cloud-provider identity distinct from private gateway identity and test generated deployment values across every consumer.
-**Status:** fixed (uncommitted; Fly deployment 15/15, framework configuration/contract, and heartbeat tests pass)
+**Status:** fixed (33b0aed; Fly deployment 15/15, framework configuration/contract, and heartbeat tests pass)
 
 ## 2026-07-14 - Candidate erasure queue mutated state through an unprotected GET
 **Severity:** security
@@ -984,7 +1000,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Queue listing refreshes expired holds and request states in PostgreSQL, but GET accepted a missing Origin and therefore performed state changes outside the same-origin JSON mutation boundary.
 **Repro/evidence:** Queue listing is now PATCH action list with the exact same-origin JSON boundary. GET is side-effect free and returns 405 with Allow: POST, PATCH; the drawer and OpenAPI use the new contract.
 **Suggested fix:** Keep all state-changing reads behind an explicit mutation contract.
-**Status:** fixed (uncommitted; route 11/11 and OpenAPI contract pass)
+**Status:** fixed (33b0aed; route 11/11 and OpenAPI contract pass)
 
 ## 2026-07-14 - Candidate erasure and stale reimport were not transaction-serialized
 **Severity:** security
@@ -992,7 +1008,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Reimport triggers read tombstones without sharing a transaction lock with erasure, so a concurrent writer could pass before tombstone commit and recreate PII afterward.
 **Repro/evidence:** Erasure and all nine reimport triggers now lock the same normalized workspace/identity keys in deterministic order. Real two-session tests prove writer-first erasure waits then scrubs the committed row, while erasure-first writer waits then rejects with SQLSTATE 23514 and persists no row.
 **Suggested fix:** Preserve the shared identity-lock authority and both lock-order regressions.
-**Status:** fixed (uncommitted; candidate database authority and database privilege gates pass)
+**Status:** fixed (33b0aed; candidate database authority and database privilege gates pass)
 
 ## 2026-07-14 - Private readiness could leave the reviewed Machine through redirects or proxies
 **Severity:** security
@@ -1000,7 +1016,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The DeerFlow in-Machine readiness probe used default urllib redirect and environment-proxy behavior, so readiness could be supplied by an origin other than the exact `FLY_PRIVATE_IP`.
 **Repro/evidence:** The regression rejects a 302 and an inherited `HTTP_PROXY`, asserting that neither the redirect target nor proxy receives a request.
 **Suggested fix:** Keep the no-redirect, no-proxy transport isolated in `private_http.py` and preserve the executable regression in the Fly deployment suite.
-**Status:** fixed (uncommitted; Fly deployment suite passes 15/15)
+**Status:** fixed (33b0aed; Fly deployment suite passes 15/15)
 
 ## 2026-07-14 - Release documentation drifted from workflow-derived evidence
 **Severity:** test-gap
@@ -1008,7 +1024,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Current release docs still described six scanned images, four local attestations, 24 application tables, and ten active framework apps after the workflow, inventory, and operator had changed.
 **Repro/evidence:** The protected workflow declares seven scanned and five locally attested components; the table inventory is canonical; the framework operator has eight active and two release-disabled roles. The docs test previously passed without checking those facts.
 **Suggested fix:** Derive supply-chain counts from the workflow, refer to the canonical table inventory without a copied count, and keep active/disabled topology explicit.
-**Status:** fixed (uncommitted; documentation truth passes 39/39)
+**Status:** fixed (33b0aed; documentation truth passes 39/39)
 
 ## 2026-07-14 - The 0032 SQL fallback had no ledger-safe production operator path
 **Severity:** spec-mismatch
@@ -1033,3 +1049,227 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** The runner now resolves `tsx/cli` and executes it through `process.execPath`. The npm trace uses the lifecycle-provided `npm_execpath`; bare non-npm execution skips only that lifecycle-specific trace subtest while retaining the other seven runner checks.
 **Suggested fix:** Preserve logical command identity while resolving package CLIs through Node and keep platform shims out of shell-free spawns.
 **Status:** fixed (`e58992a`)
+
+## 2026-07-21 - Autonomous sourcing worker cannot execute a sourcing job
+**Severity:** spec-mismatch
+**File:** scripts/sourcing-loop-worker.mjs; scripts/sourcing-loop-handlers/
+**Issue:** The production `loop` process has an empty handler allowlist, so it records maintenance heartbeats and may drain outbound messages but can never claim or execute a sourcing, provider-poll, enrichment, shortlist, or draft job.
+**Repro/evidence:** The worker now exposes the exact four-handler contract `autonomous_web_sourcing|campaign_create|requisition_parse|sourcing_batch`, claims only those purpose-bound jobs, and dispatches through isolated handlers. Runtime proof passes 35/35, autonomous provider runtime passes 15/15, and the disposable PostgreSQL authority passes 51 assertions including crash recovery, replay, kill switch, ambiguity, erasure, guarded rollback, and reapply.
+**Suggested fix:** Keep sourcing activation dark until the exact release passes the protected live canary and shared-throttle gates.
+**Status:** fixed in source; live activation remains gated
+
+## 2026-07-21 - Protected Fly release proof excludes the loop process
+**Severity:** correctness
+**File:** fly.app.toml; scripts/verify-apollo-cleanup-release.mjs; .github/workflows/deploy-aria-mantu.yml
+**Issue:** Fly configuration declares the `loop` process, but release verification allowlists only `web`, `cleanup`, and `framework_heartbeat`. A real loop Machine is therefore either absent from the accepted inventory or rejected as an unexpected process group.
+**Repro/evidence:** Release verification now requires the loop topology, exact image/release identity, and a fresh database heartbeat whose handler digest matches the canonical four-handler contract. Deploy fixtures and infrastructure contracts pass 141/141 and 142/142. Live Fly still runs an older build and is not evidence for this source repair.
+**Suggested fix:** Preserve exact process inventory and verify it again after the protected deployment.
+**Status:** fixed in source; exact-release Fly proof remains pending
+
+## 2026-07-21 - Durable need-to-campaign runtime is absent
+**Severity:** spec-mismatch
+**File:** supabase/migrations/0049_need_ingress_authority.sql; supabase/migrations/0050_requisition_parse_authority.sql; supabase/migrations/0052_campaign_create_authority.sql
+**Issue:** The schema can store and transition requisitions, but no application route or worker invokes `ingest_requisition`, `record_requisition_parse`, or `record_requisition_campaign`. A received need therefore cannot become a reviewed campaign and sourcing job without browser-driven manual state changes.
+**Repro/evidence:** Migrations 0049 through 0053 and the need, parser, campaign, and worker routes provide tenant-bound idempotent ingress, private raw-input authority, a real approved cloud-model parse, deterministic campaign creation, clarification for incomplete needs, reconciliation, and sourcing enqueue. The canonical lifecycle, focused route/runtime suites, and disposable PostgreSQL gates pass.
+**Suggested fix:** Keep public ingress disabled until shared edge-throttle evidence exists, then prove the exact live zero-send chain.
+**Status:** fixed in source; public ingress and live canary remain gated
+
+## 2026-07-21 - Ordinary sourcing results are lost after a persistence failure
+**Severity:** correctness
+**File:** supabase/migrations/0027_sourcing_learning_authority.sql:36; src/app/api/sourcing-agent/route.ts:737; src/lib/sourcing/sourcing-agent-client.ts:73; src/lib/store/sourcing-actions.ts:735
+**Issue:** Non-framework sourcing completes its durable run with counts and query receipts, returns candidate data only in the HTTP response, and then relies on the browser to replace the full workspace document. If that client write conflicts, disconnects, or is superseded, the original candidates cannot be recovered; the offered retry creates a new idempotency key and can repeat provider work.
+**Repro/evidence:** Migration 0058 now stages a bounded result before completion, recovers it under the original run without provider egress, and scrubs it after receipt-backed acknowledgement, expiry, or erasure. Its rollback refuses while migration 0059 remains applied; its replay preserves the byte-identical 0059 receipt constraint. The focused durability gate and the full 30-command database manifest both exit zero.
+**Suggested fix:** Persist a bounded encrypted or normalized candidate result under the run before completion, and make the same idempotency key atomically commit or replay that result without another provider call.
+**Status:** fixed (33b0aed; ordinary sourcing stages a bounded result, recovers it without provider egress, binds an exact durable workspace receipt, acknowledges idempotently, and scrubs on acknowledgement, expiry, and erasure)
+
+## 2026-07-21 - Empty and all-skipped sourcing results had no durable persistence proof
+**Severity:** correctness
+**File:** supabase/migrations/0058_ordinary_sourcing_result_durability.sql; src/lib/store/sourcing-actions.ts; src/lib/store.ts
+**Issue:** Candidate-presence acknowledgement cannot prove an empty batch and cannot finish when every observed candidate is intentionally skipped by dedupe, exclusions, or contact-window policy. Such runs would remain staged until expiry and block clean sequential recovery.
+**Repro/evidence:** The database regression first rejects acknowledgement without a marker, then accepts zero-hit and all-skipped commits only after an activity ID binds the exact sourcing run UUID and result SHA-256. The marker is written atomically with accepted candidates and intentional skips.
+**Suggested fix:** Keep the exact `sourcing-run:<run-id>:<result-sha256>` marker as the durable processing receipt and never acknowledge from an unbound activity or candidate count alone.
+**Status:** fixed (33b0aed; application lifecycle, both typechecks, exact 0058/0059 constraint transitions, and the full database manifest pass; the focused gate reports `behavior=pass concurrency=pass acl=pass rollback=guarded reapply=pass rows=8`)
+
+## 2026-07-21 - Readiness can be green while autonomous sourcing is inert
+**Severity:** correctness
+**File:** src/app/api/ready/route.ts; src/lib/readiness.ts; supabase/migrations/0054_sourcing_batch_authority.sql
+**Issue:** Production readiness proves only that the outbound queue table is queryable. It does not require a fresh loop heartbeat, the exact release identity, a non-empty expected handler set, bounded oldest-job age, or absence of dead jobs.
+**Repro/evidence:** The route now calls the service-owned readiness RPC for the exact release and accepts only its exact bounded schema. Operational readiness requires at least one expected handler, a fresh heartbeat no older than 90 seconds, oldest runnable job age at most 120 seconds, and zero overdue, dead, ambiguous, or overdue-begun work. A dark release remains ready without claiming autonomous sourcing or public need ingress. The real database suite passes 59 assertions and the pure readiness suite passes 23/23.
+**Suggested fix:** Preserve the release-bound RPC, exact response schema, dark-versus-operational capability split, and queue-health limits.
+**Status:** fixed (33b0aed; sourcing database 59 assertions and readiness 23/23 pass)
+
+## 2026-07-21 - 50,000-user capacity has no accepted staging receipt
+**Severity:** test-gap
+**File:** docs/operations/capacity/workload-profile.v1.json; scripts/capacity-release-gate.mjs; docs/operations/FLY_SIZING.md
+**Issue:** A bounded staging gate now exists, but its proposed workload is not owner-ratified and no staging observation, platform-metrics export, or accepted receipt exists. It cannot establish 50,000-user readiness from source alone.
+**Repro/evidence:** The deterministic harness passes 11/11 and truthfully rejects production, unapproved profiles, synthetic metric fixtures, and missing telemetry. The checked-in profile remains `pending-owner`, points to an `.invalid` origin, assumes 500 peak sessions and 16.67 RPS, uses one synthetic session, and exercises read-only health, readiness, candidate, and agent-spec routes. It does not test 500 distinct sessions, multi-tenant distribution, writes, provider throughput, stress, soak, or failover.
+**Suggested fix:** Ratify measured workload profiles, provision production-shaped isolated staging, add session-pool, write, provider-stub, stress, and soak revisions, capture exact-window platform telemetry, and accept signed or independently reviewed receipts for the exact release before a 50,000-user claim.
+**Status:** open; the harness is executable, but capacity remains UNKNOWN until external staging evidence is accepted
+
+## 2026-07-21 - Substring matching invents skill evidence and inflates candidate rank
+**Severity:** correctness
+**File:** src/lib/sourcing/candidate-mappers.ts:31; src/lib/sourcing/candidate-mappers.ts:88; src/lib/sourcing/candidate-mappers.ts:206
+**Issue:** GitHub, Apollo, and web candidate mapping treat any case-insensitive substring as proof of a required skill. Short skills such as `Go`, `R`, or `C` therefore match unrelated words and are added to `techStack`, where they increase the candidate's skills score.
+**Repro/evidence:** With required skill `Go`, no top language, and GitHub bio `Google engineer`, `mapGithubCandidates` returned `techStack: ["Go"]`, a skills score of 82, and rationale `1/1 required ... skills present`. The same `includes` predicate is used for Apollo headlines and web title/snippet text.
+**Suggested fix:** Use a canonical, boundary-aware skill and alias matcher that records the exact evidence span and source. Keep ambiguous or absent evidence unknown, and add regressions for `Go`/`Google`, `R`/`research`, `C`/`CTO`, aliases, punctuation, and case.
+**Status:** fixed (33b0aed; red-to-green sourcing regression 57/57, focused TypeScript and ESLint pass)
+
+## 2026-07-21 - LLM-bound autonomous sourcing lacks a durable provider-evidence contract
+**Severity:** spec-mismatch
+**File:** supabase/migrations/0060_autonomous_web_sourcing_authority.sql; src/lib/sourcing/autonomous-web-runtime.ts
+**Issue:** The reusable LLM sourcing runner returns mapped candidates and query summaries, but not a normalized provider-response digest or a canonical external identifier for every source. Migration 0054 can validate only one anonymous GitHub query, so it cannot authorize or atomically attest multi-provider LLM-bound execution.
+**Repro/evidence:** Migration 0060 binds job, lease, fence, tenant, exact verified Tavily credential version, finite SQL-derived LinkedIn query, request/response digests, observed canonical profile URLs, staged candidate evidence, quota, ambiguity, final settlement, retention, and erasure. Lost-response and commit-uncertainty paths never repeat provider egress. Runtime passes 15/15 and database authority passes 51 assertions with rollback/reapply proof.
+**Suggested fix:** Do not widen the provider or query set without an equally purpose-bound migration and observed-evidence contract.
+**Status:** fixed in source; live credential, activation, and no-contact canary remain pending
+
+## 2026-07-21 - Runtime binding approval did not bind immutable credential material
+**Severity:** security
+**File:** supabase/migrations/0055_ai_runtime_binding_authority.sql:404
+**Issue:** Independent review approved an `api_key_id`, but an administrator could update that row's encrypted secret, provider, tenant, or display fingerprint after activation. The binding hashes would remain unchanged while runtime secret resolution returned different credential material.
+**Repro/evidence:** Migration 0003 grants administrators update access to `api_keys`. Before this fix, neither the table nor migration 0055 rejected an in-place secret replacement. The disposable database regression now attempts active and unbound secret substitution plus tenant and provider substitution and receives SQLSTATE 55000 in every case.
+**Suggested fix:** Keep credential identity append-only, rotate by inserting a new untested row and independently approving a new binding set, allow immediate invalidation, and reserve monotonic test-evidence updates and restoration to valid for the service-owned key-test workflow.
+**Status:** fixed (33b0aed; AI runtime binding database outcomes 32/32, static contract 12/12, and function privilege contract 21/21 pass)
+
+## 2026-07-21 - Workspace Tavily resolution accepted unverified key rows
+**Severity:** security
+**File:** src/lib/sourcing/tavily.ts:18
+**Issue:** Workspace sourcing selected the newest Tavily row without requiring `status = valid` and trusted an incompletely projected response, so invalid, untested, cross-workspace, or wrong-provider credential material could reach decryption and provider use.
+**Repro/evidence:** The former query selected only `secret` and had no status predicate. Regressions now reject invalid, untested, cross-workspace, wrong-provider, and live-verification-missing rows, while asserting the query and returned row are tenant, provider, validity, and verification-method bound.
+**Suggested fix:** Preserve both the database predicates and the defensive response-shape checks before decryption.
+**Status:** fixed (33b0aed; Tavily credential and redaction suite 30/30 passes)
+
+## 2026-07-21 - Missing workspace Tavily authority silently selected a process-wide key
+**Severity:** security
+**File:** src/lib/ai/web-tools.ts:225; src/app/api/sourcing-agent/route.ts:478
+**Issue:** Bound sourcing converted a missing or undecryptable workspace Tavily key to `undefined`; the web tool interpreted `undefined` as permission to use `process.env.TAVILY_API_KEY`. Tenant-scoped authority failure could therefore cause unreviewed egress under a shared deployment credential.
+**Repro/evidence:** Red tests proved the cloud route passed `undefined` to its runner and the web tool called Tavily with the process key after workspace resolution returned null. The explicit authority contract now reserves `undefined` for deliberate system fallback and treats `null` as a fail-closed tenant boundary; bound sourcing normalizes omitted keys to null.
+**Suggested fix:** Keep null and undefined semantically distinct and require tenant-scoped routes to pass null after an unsuccessful workspace lookup unless a separate reviewed global-fallback authority is introduced.
+**Status:** fixed (33b0aed; route boundary, web-tool fallback, and bound execution regressions pass)
+
+## 2026-07-21 - Credential valid status does not prove live provider authentication
+**Severity:** spec-mismatch
+**File:** src/app/api/keys/test/route.ts:166
+**Issue:** Stored OpenAI, Anthropic, Groq, XAI, Mistral, Kimi, and Tavily credentials were marked `valid` after format validation only. Runtime binding activation therefore proved reviewed credential identity and structural plausibility, not live provider authentication.
+**Repro/evidence:** Each LLM execution credential uses a fixed official model-list authentication endpoint with redirect refusal, an eight-second timeout, bounded response parsing, and no provider-body return or logging. Tavily standard keys use the authenticated non-search `/usage` endpoint and persist `tavily_usage_v1`; existing Enterprise `tavily_key_info_v1` evidence remains accepted. Migration 0055 persists the exact method and HTTP status, downgrades legacy format-only execution rows, and rejects missing or NULL evidence at staging, activation, resolution, and Tavily selection.
+**Suggested fix:** Preserve the live evidence requirement and retest stored execution credentials after migration 0055. Keep legacy non-binding integrations separate from runtime-binding authority.
+**Status:** fixed in source; Tavily 30/30, binding database 35 assertions, provider/runtime suites, both TypeScript checks, and canonical lifecycle pass
+
+## 2026-07-21 - Cached Tavily authority survived row revocation during a sourcing run
+**Severity:** security
+**File:** src/app/api/sourcing-agent/route.ts:459; src/lib/sourcing/tavily.ts:67
+**Issue:** The route decrypted a valid tenant Tavily key once, then reused it without rechecking that exact credential row before later search egress. Revocation or deletion during an in-flight model call could therefore allow one more external search.
+**Repro/evidence:** The route now retains only the credential row ID beside the in-memory key and rechecks the exact ID, workspace, provider, status, and live-verification method at every external boundary. The regression revokes the row during the model call and proves the following search runner is never invoked.
+**Suggested fix:** Keep credential-row authorization in the shared per-egress callback and preserve the post-provider authority recheck before any result classification.
+**Status:** fixed (33b0aed; sourcing route authority 29/29 and bound execution 6/6 pass)
+
+## 2026-07-21 - Zero-vulnerability Flowise worker image contained no runtime dependencies
+**Severity:** correctness
+**File:** infra/agent-frameworks/upstream/flowise.Dockerfile
+**Issue:** The first distroless Flowise worker build passed the zero-HIGH/CRITICAL scan only because `pnpm prune --prod` removed the workspace runtime dependencies. The resulting image could not start Flowise.
+**Repro/evidence:** The image was only 65.7 MB; its exported filesystem contained an empty `app/node_modules/.pnpm` and empty package `node_modules` directories. Running Node against `/app/packages/server/bin/run` exited with `MODULE_NOT_FOUND`.
+**Suggested fix:** Produce a lock-bound offline production deployment containing every transitive runtime dependency, prove Oclif and native module startup inside the exact image, then rerun the unsuppressed Trivy policy.
+**Status:** fixed (33b0aed; final official-tag comparison image `sha256:dcc584efb8df74fa1301de7271ac1726aa46210d697c34ae5cd4a603d4e5f257` is 535,139,124 bytes, loads every asserted server/component/native runtime module, starts the real worker through Oclif, and reaches only the deliberately unreachable Redis boundary)
+
+## 2026-07-21 - Audited Flowise revisions fail the unsuppressed release policy
+**Severity:** security
+**File:** infra/agent-frameworks/upstream/flowise.Dockerfile; src/lib/agents/framework/source-identity.mjs
+**Issue:** Neither the current canonical Flowise revision nor official Flowise 3.1.3 satisfies the required zero-HIGH/CRITICAL production-image policy once the complete runtime dependency graph is present.
+**Repro/evidence:** The current canonical image scan reported 15 CRITICAL and 116 HIGH findings. The hardened official-tag comparison image above was scanned with pinned Trivy 0.72.0 digest `sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f`, scanners `vuln,secret,misconfig`, severities `HIGH,CRITICAL`, and no suppression flags. It reported 18 CRITICAL, 167 HIGH, zero secrets, and zero HIGH/CRITICAL misconfigurations. The official tag is therefore worse, not a safe pin rotation.
+**Suggested fix:** Keep Flowise execution disabled, remediate or replace the affected production dependency graph at a newly audited immutable revision, rebuild from a clean cache, and require the same exact zero-finding scan before promotion.
+**Status:** open; Flowise activation and deployment remain NO-GO
+
+## 2026-07-21 - Sourcing loop polling leaked one abort listener per normal wake
+**Severity:** correctness
+**File:** scripts/sourcing-loop-worker.mjs:607
+**Issue:** The worker's normal sleep path resolved its timer without removing the abort listener registered for that tick. A continuously running worker accumulated one listener every polling cycle and could eventually emit listener warnings or retain avoidable closures.
+**Repro/evidence:** A red unit test used a counting AbortSignal and observed one add with zero removes after a normal timer wake. The revised delay removes the listener on every settle, clears the timer, and closes the abort-registration race.
+**Suggested fix:** Preserve the symmetric timer and listener cleanup in the exported delay helper.
+**Status:** fixed (33b0aed; sourcing loop worker 30/30 and test typecheck pass)
+
+## 2026-07-21 - Database regression gates were stale after dedicated job and manifest authority landed
+**Severity:** test-gap
+**File:** tests/loop-jobs-db.sh:239; tests/orphan-owner-recovery-contract.mts:165; tests/requisition-parse-db.sh:1824
+**Issue:** Three recovery gates exercised obsolete contracts: the generic queue suite completed a sourcing batch through the now-forbidden generic RPC, the recovery contract required an explicitly named CI command even when the canonical database manifest contained the gate, and the parse race harness invoked a deliberately revoked internal ingestion primitive as service_role.
+**Repro/evidence:** The suites failed respectively with `sourcing batch completion requires its dedicated authority`, a false CI assertion, and `permission denied for function ingest_requisition_and_enqueue`. The tests now use an ordinary queue kind, validate the canonical manifest membership, and exercise the internal lock-order primitive only through the postgres-owned harness while retaining service claims.
+**Suggested fix:** Keep generic queue tests on generic kinds and update integration contracts whenever an authority path becomes purpose-bound.
+**Status:** fixed (33b0aed; recovery 20/20 plus behavior, loop queue 41 assertions plus race, requisition parse 119 assertions, and retention 22 assertions all pass)
+
+## 2026-07-21 - Next image runtime inherited newly disclosed libvips vulnerabilities
+**Severity:** security
+**File:** package.json
+**Issue:** The current Next.js package resolved `sharp` 0.34.5, which the current npm advisory database marks affected by four high-severity inherited libvips CVEs under GHSA-f88m-g3jw-g9cj.
+**Repro/evidence:** `npm audit --audit-level=moderate` reported two high findings through `next -> sharp` with affected range `<0.35.0`. The package override now resolves `sharp` 0.35.3 and libvips 8.18.3; `npm audit --audit-level=moderate` reports zero findings, a native transform passed, and Next's own `optimizeImage` path produced a valid resized WebP.
+**Suggested fix:** Keep the tested Next-scoped `sharp` override until Next's declared optional dependency accepts a fixed release, and retain both dependency-audit and exact-image scan gates.
+**Status:** fixed (33b0aed; lock resolution, zero audit, native transform, Next image-optimizer smoke, production build, and exact Linux image scan pass)
+
+## 2026-07-21 - Production image policy exempted unfixed high and critical vulnerabilities
+**Severity:** security
+**File:** .github/workflows/ci.yml; .github/workflows/deploy-aria-mantu.yml; Dockerfile.prod
+**Issue:** CI and production promotion passed `--ignore-unfixed=true` to Trivy. An exact image could pass even when its runtime contained unfixed HIGH or CRITICAL findings.
+**Repro/evidence:** After removing the exemption, the prior Debian 12 runner failed with 22 findings: 17 HIGH and 5 CRITICAL. The final stage now uses the exact pinned nonroot Distroless Node 22 Debian 13 image. Local exact image `sha256:b7d12374c82a311ab9d2e460b683be24e0d452baeaad1694846577f70eaba5c6` built successfully, ran as UID 65532, executed Sharp 0.35.3 with libvips 8.18.3, passed web and worker command smokes, and returned zero findings under the pinned unsuppressed Trivy 0.72.0 gate.
+**Suggested fix:** Preserve the no-exemption scan policy, pinned minimal runner, native-module smoke, and exact saved-image scan in every promotion.
+**Status:** fixed (33b0aed; infrastructure release contract 136/136 and exact image scan 0 HIGH/CRITICAL)
+
+## 2026-07-21 - Database security job lacked its lockfile dependencies
+**Severity:** test-gap
+**File:** .github/workflows/ci.yml
+**Issue:** The consolidated `database-security` job invoked the canonical database manifest on a fresh GitHub runner without installing Node dependencies. Node/tsx-backed manifest entries would fail before the database authority gate ran.
+**Repro/evidence:** The job had checkout and setup-node followed directly by `npm run test:database`. It now runs `npm ci --ignore-scripts --no-audit --no-fund` first, and the release contract verifies ordering.
+**Suggested fix:** Keep the exact lockfile install ahead of the canonical database manifest.
+**Status:** fixed (33b0aed; infrastructure release contract 136/136)
+
+## 2026-07-21 - Single-volume database and unmeasured connection budget block HA claims
+**Severity:** spec-mismatch
+**File:** fly.db.toml; fly.app.toml; fly.auth.toml; fly.rest.toml; docs/operations/FLY_SIZING.md
+**Issue:** The source topology explicitly permits only one PostgreSQL Machine and one durable volume, while the repository defines no measured PostgreSQL, PostgREST, or Auth pool budget. This is a single failure domain and cannot support a high-availability or 50,000-user capacity claim.
+**Repro/evidence:** `fly.db.toml` warns that a second Machine would have an empty independent volume. Source files declare intended VM sizes and request concurrency, but no replication, failover target, connection-pool limit, query saturation result, or accepted load receipt exists. `docs/operations/FLY_SIZING.md` correctly labels source sizing as intent only.
+**Suggested fix:** Select an approved replicated or managed database design, bind every service pool to a measured database connection budget, prove restore and failover objectives, and accept production-shaped load, stress, and soak receipts before raising capacity status.
+**Status:** open; architecture, paid staging, telemetry, and owner approval are external gates
+
+## 2026-07-21 - Promoted Graphify lessons were not consumed by durable sourcing authority
+**Severity:** spec-mismatch
+**File:** supabase/migrations/0054_sourcing_batch_authority.sql; scripts/sourcing-loop-handlers/sourcing-batch.mjs
+**Issue:** The autonomous GitHub batch used only its deterministic role query. Human-promoted Graphify lessons existed, but no pre-egress authority selected, froze, validated, replayed, or attested an applied lesson.
+**Repro/evidence:** The authority now accepts only a human-promoted, unexpired, exact-workspace and exact-role lesson at its current reviewed version, linked to a current completed Graphify export. Its query must already equal the server-derived GitHub query and match the workspace HMAC. The exact lesson, review, artifact, query identity, and snapshot hash are stored in the claim before egress, reused across retries, and copied into the append-only completion receipt.
+**Suggested fix:** Preserve query equality, exact review and Graphify binding, worker-side snapshot validation, and claim-based replay. Do not reread mutable lesson rows after the claim exists.
+**Status:** fixed (33b0aed; worker 28/28, authority 14/14, sourcing-batch database 66 assertions, sourcing-result durability database pass, both TypeScript checks, and diff hygiene pass)
+
+## 2026-07-21 - Autonomous worker and database readiness advertised different handler contracts
+**Severity:** correctness
+**File:** supabase/migrations/0060_autonomous_web_sourcing_authority.sql; scripts/sourcing-loop-worker.mjs
+**Issue:** The worker advertised four handlers after autonomous web sourcing landed, but database readiness still expected the three-handler 0054 digest and count. Every fresh exact-release worker would be reported as `contract_mismatch`.
+**Repro/evidence:** Migration 0060 now replaces the expected digest and combined readiness atomically with the four-handler authority. It includes autonomous dead jobs, ambiguous failures, and attempts unsettled for more than five minutes without double-counting dead job IDs. Its guarded rollback restores normalized byte-equivalent 0054 three-handler definitions before dropping 0060 tables. Worker proof passes 35/35, autonomous database proof passes 51 assertions, sourcing-batch database proof passes 78 assertions, and rollback/reapply return 4 to 3 to 4 exactly.
+**Suggested fix:** Keep handler-set expansion, readiness, worker identity, rollback, and deploy acceptance in the same reviewed release slice.
+**Status:** fixed in source
+
+## 2026-07-21 - Production observability had no standard export or release SLO gate
+**Severity:** spec-mismatch
+**File:** src/instrumentation.ts; src/lib/observability/; docs/operations/OBSERVABILITY.md
+**Issue:** Local structured logs alone could not prove production-stage latency, error rate, queue lag, provider ambiguity, or exact-release readiness to an external operator.
+**Repro/evidence:** Source now initializes the standard OpenTelemetry Node SDK with OTLP trace and aggregate metric export, redacts receipts, emits critical sourcing-stage evidence, and fails production readiness closed when required telemetry configuration is missing. Observability, readiness, bootstrap, deploy, infrastructure, typecheck, lint, and isolated-build gates pass.
+**Suggested fix:** Provision the approved OTLP collector, retention, alert destinations, and on-call ownership, then verify receipt arrival for the exact deployed SHA.
+**Status:** fixed in source; external collector, alert routing, retention, and on-call proof remain open
+
+## 2026-07-21 - GitHub release gates cannot execute and Production targets a stale branch
+**Severity:** correctness
+**File:** .github/workflows/ci.yml; .github/workflows/deploy-aria-mantu.yml
+**Issue:** Required CI and CodeQL checks cannot start because of the repository Actions budget, and the only Production environment branch policy still names `deploy/fly-github-actions` while the hardened workflow accepts only `refs/heads/main`.
+**Repro/evidence:** Every latest failing job has zero steps and the annotation `The job was not started because an Actions budget is preventing further use.` Workflow `Deploy Aria Mantu (Fly)` is `disabled_manually`. The `Production` environment has no required reviewers, no environment secrets, and one custom branch policy for `deploy/fly-github-actions`. The additional workflow environments `Production-Need-Ingress-Throttle-Proof` and `Production-Sourcing-Activation` do not exist. Protected `main` requires all seven checks, one independent approval, last-push approval, administrators included, linear history, and no force push.
+**Suggested fix:** Restore Actions capacity, configure the three environments with reviewed branch and reviewer policies, add the individually required secrets without restoring the legacy bundle, re-enable the workflow, and rerun every required context for the exact merged SHA.
+**Status:** open; protected merge and production deployment are externally blocked
+
+## 2026-07-21 - Hardened deployment has no usable GitHub secret set
+**Severity:** security
+**File:** .github/workflows/deploy-aria-mantu.yml
+**Issue:** The workflow now requires purpose-bound database, auth, registry, recovery, sourcing, framework, telemetry, and canary secrets, but GitHub exposes only the obsolete repository-level `ARIA_DEPLOY_BUNDLE` and no Production environment secrets.
+**Repro/evidence:** `gh secret list` returned only `ARIA_DEPLOY_BUNDLE`; `gh secret list --env Production` returned no entries. The workflow deliberately no longer consumes the bundle and requires individual names including Fly tokens, Supabase keys, database passwords, sourcing execution authority, framework adapter tokens, OTLP configuration, and protected canary credentials.
+**Suggested fix:** Have an authorized owner populate each exact environment secret and variable through the approved secret manager. Never unpack or recommit the legacy bundle.
+**Status:** open; deploy preflight must fail until owner provisioning is complete
+
+## 2026-07-21 - Live release cannot activate a real sourcing binding
+**Severity:** spec-mismatch
+**File:** supabase/migrations/0055_ai_runtime_binding_authority.sql; .github/workflows/deploy-aria-mantu.yml
+**Issue:** Real cloud parsing and Tavily sourcing require a current tenant binding approved by two distinct active administrators, plus live authenticated credential evidence. The observed production workspace has one real administrator, and the last Kimi provider probe returned HTTP 402.
+**Repro/evidence:** Source enforces two-person activation and exact live credential methods. Fly secret-name inventory shows legacy provider names but does not prove a tenant-bound valid Tavily row, a funded Kimi account, or an active independently approved binding. No authenticated live need-to-candidate canary exists for this branch.
+**Suggested fix:** Add a second real tenant administrator, fund or replace the approved cloud-model provider, verify the workspace Tavily credential through the non-search usage endpoint, activate one exact binding set, and run the protected zero-send canary.
+**Status:** open; real production sourcing is not yet proven usable

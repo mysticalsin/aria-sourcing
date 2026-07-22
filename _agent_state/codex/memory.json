@@ -1,6 +1,14 @@
 {
   "recent_learnings": [
     {
+      "date": "2026-07-21",
+      "lesson": "Model activation requires nonce-bound purpose capability on the exact production endpoint; model-list membership cannot prove parse or tool-call compatibility."
+    },
+    {
+      "date": "2026-07-21",
+      "lesson": "Execute the enterprise plan through proof, commit, and deployment gates; do not stop at a handoff plan."
+    },
+    {
       "date": "2026-07-14",
       "lesson": "Archive and rewrite the MSourcing Relay Baton every shift; Claude continuation must never depend on chat context."
     },
