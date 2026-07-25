@@ -31,6 +31,18 @@ export const SUPABASE_AUTH_COOKIE_NAME = "sb-auth-token";
 export const isProduction = process.env.NODE_ENV === "production";
 
 /**
+ * Shared cookie options for every @supabase/ssr client. `secure` is set in
+ * production so the session cookie is only ever sent over HTTPS (the Fly proxy
+ * and Kong both force_https); left off in dev so `localhost` over http still
+ * works. Must be identical at every call site or the sides pick different
+ * cookies (see SUPABASE_AUTH_COOKIE_NAME above).
+ */
+export const SUPABASE_COOKIE_OPTIONS = {
+  name: SUPABASE_AUTH_COOKIE_NAME,
+  secure: isProduction,
+} as const;
+
+/**
  * Sillage and Seamless do not yet have the server-owned receipt authority used
  * by Apollo. They remain available only for explicit local development and
  * can never be enabled in a production build.
