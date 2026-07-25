@@ -87,15 +87,22 @@ info "Kong: $KONG_URL"
 info "Admin credential supplied. Agent provider: $AGENT_PROVIDER   Model: ${OUTREACH_MODEL:-<default>}"
 
 # api METHOD URL [datafile] -> writes body to $RESP, echoes HTTP status into $HTTP
+#
+# Sends Origin: $APP_URL. The sourcing routes classify the request boundary before
+# doing any work and answer 403 CROSS_ORIGIN_REQUEST when Origin is absent or
+# foreign (src/app/api/source/route.ts:68, sourcing-agent/route.ts:223,
+# source/apollo/search/route.ts:101, source/apollo/select/route.ts:76). A browser
+# always sends Origin on these calls, so a harness that omits it is not modelling
+# the real client — it was silently unable to exercise sourcing at all.
 HTTP=""
 api() {
   local method="$1" url="$2" data="${3:-}" tmo="${API_TIMEOUT:-60}"
   if [ -n "$data" ]; then
     HTTP=$(curl -sS -m "$tmo" -o "$RESP" -w '%{http_code}' -X "$method" "$url" \
-      -H 'Content-Type: application/json' -H "Cookie: $COOKIE_HDR" --data-binary @"$data")
+      -H 'Content-Type: application/json' -H "Origin: $APP_URL" -H "Cookie: $COOKIE_HDR" --data-binary @"$data")
   else
     HTTP=$(curl -sS -m "$tmo" -o "$RESP" -w '%{http_code}' -X "$method" "$url" \
-      -H "Cookie: $COOKIE_HDR")
+      -H "Origin: $APP_URL" -H "Cookie: $COOKIE_HDR")
   fi
 }
 
