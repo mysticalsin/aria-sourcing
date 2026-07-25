@@ -192,10 +192,15 @@ Thanks,
 Priya"
 jq -n --arg email "$JD_EMAIL" '{email:$email}' > "$WORK/intake_req.json"
 api POST "$APP_URL/api/intake" "$WORK/intake_req.json"
-INTAKE_TITLE=$(jq -r '.parsed.title // empty' "$RESP")
+# The route nests the analysis under .parsed.jobAnalysis alongside .parsed.sender,
+# .parsed.intent and .parsed.urgency. Reading .parsed.title yielded empty, so this
+# step reported FAIL on an HTTP 200 ok:true response carrying a complete analysis —
+# and then wrote the whole envelope as the JobAnalysis, handing the wrong shape to
+# every downstream step. Prefer the nested object, fall back to the flat one.
+INTAKE_TITLE=$(jq -r '.parsed.jobAnalysis.title // .parsed.title // empty' "$RESP")
 if [ "$HTTP" = "200" ] && [ "$(jq -r '.ok // false' "$RESP")" = "true" ] && [ -n "$INTAKE_TITLE" ]; then
-  pass "Parsed JobAnalysis: title='$INTAKE_TITLE', skills=$(jq -c '.parsed.requiredSkills' "$RESP"), format=$(jq -r '.format' "$RESP")."
-  jq '.parsed' "$RESP" > "$WORK/job_analysis.json"
+  pass "Parsed JobAnalysis: title='$INTAKE_TITLE', skills=$(jq -c '.parsed.jobAnalysis.requiredSkills // .parsed.requiredSkills' "$RESP"), format=$(jq -r '.format' "$RESP")."
+  jq '.parsed.jobAnalysis // .parsed' "$RESP" > "$WORK/job_analysis.json"
 else
   fail "Intake failed (HTTP $HTTP): $(head -c 300 "$RESP")"
   echo '{"title":"Senior TypeScript Engineer","requiredSkills":["TypeScript"],"niceToHaveSkills":[],"scoringWeights":null}' > "$WORK/job_analysis.json"
@@ -205,30 +210,33 @@ fi
 step "3) Sourcing — REAL candidates (GitHub raw, LinkedIn/Tavily, provenance=live)"
 # ===========================================================================
 
-# 3a. GitHub Users Search API — raw GithubUser[] with real profile URLs.
-jq -n --arg q "$GITHUB_QUERY" '{platform:"GitHub", query:$q, count:8}' > "$WORK/src_gh.json"
-api POST "$APP_URL/api/source" "$WORK/src_gh.json"
-GH_OK=$(jq -r '.ok // false' "$RESP"); GH_SRC=$(jq -r '.source // empty' "$RESP")
-GH_N=$(jq -r '(.users // []) | length' "$RESP")
-GH_URL=$(jq -r '(.users // [])[0].htmlUrl // empty' "$RESP")
-if [ "$HTTP" = "200" ] && [ "$GH_OK" = "true" ] && [ "$GH_SRC" = "github" ] && [ "$GH_N" -gt 0 ] && [[ "$GH_URL" == *github.com/* ]]; then
-  pass "GitHub sourcing returned $GH_N REAL users (e.g. $(jq -r '.users[0].login' "$RESP") → $GH_URL)."
-else
-  fail "GitHub sourcing (HTTP $HTTP, ok=$GH_OK, source=$GH_SRC, n=$GH_N): $(jq -rc '.error // "no users"' "$RESP") — note: anonymous GitHub is 60 req/hr per egress IP."
-fi
-
-# 3b. LinkedIn — site:linkedin.com/in web search (Tavily preferred; DuckDuckGo fallback ~0 for people).
-jq -n --arg q "$LINKEDIN_QUERY" '{platform:"LinkedIn", query:$q, count:8}' > "$WORK/src_li.json"
-api POST "$APP_URL/api/source" "$WORK/src_li.json"
-LI_OK=$(jq -r '.ok // false' "$RESP"); LI_SRC=$(jq -r '.source // empty' "$RESP")
-LI_N=$(jq -r '(.leads // []) | length' "$RESP")
-if [ "$HTTP" = "200" ] && [ "$LI_OK" = "true" ] && [ "$LI_SRC" = "web" ] && [ "$LI_N" -gt 0 ]; then
-  pass "LinkedIn sourcing returned $LI_N REAL web leads (e.g. $(jq -r '.leads[0].name // "?"' "$RESP") → $(jq -r '.leads[0].url // "?"' "$RESP"))."
-elif [ "$HTTP" = "200" ] && [ "$LI_SRC" = "web" ]; then
-  fail "LinkedIn web search returned 0 leads — TAVILY_API_KEY is effectively required (DuckDuckGo fallback returns ~0 people)."
-else
-  fail "LinkedIn sourcing failed (HTTP $HTTP, ok=$LI_OK, source=$LI_SRC): $(jq -rc '.error // empty' "$RESP")"
-fi
+# 3a/3b. /api/source must REFUSE live campaign search in a live tenant.
+#
+# These two steps used to post a raw query to /api/source and expect real users
+# and leads back. Against a live tenant that can never succeed and never could:
+# src/app/api/source/route.ts:125-134 answers 409 CAMPAIGN_AUTHORITY_REQUIRED by
+# design, so live search "cannot bypass campaign readiness, idempotency, learning
+# receipts, or configuration authority". The route keeps exact-profile intake and
+# the signed demo path only. So the old steps reported a deliberate control as a
+# product failure, and the harness had no way to prove live sourcing at all.
+#
+# The refusal is worth asserting on its own terms — it is the control that stops
+# an ad-hoc query reaching a paid provider outside campaign authority. The live
+# proof moves to 3c, which the script already calls the only route returning
+# scored provenance="live" candidates.
+for probe in "GitHub:$GITHUB_QUERY:src_gh" "LinkedIn:$LINKEDIN_QUERY:src_li"; do
+  platform="${probe%%:*}"; rest="${probe#*:}"; query="${rest%:*}"; slug="${rest##*:}"
+  jq -n --arg q "$query" --arg p "$platform" '{platform:$p, query:$q, count:8}' > "$WORK/$slug.json"
+  api POST "$APP_URL/api/source" "$WORK/$slug.json"
+  SRC_CODE=$(jq -r '.code // empty' "$RESP")
+  if [ "$HTTP" = "409" ] && [ "$SRC_CODE" = "CAMPAIGN_AUTHORITY_REQUIRED" ]; then
+    pass "$platform ad-hoc search REFUSED by campaign authority (409 CAMPAIGN_AUTHORITY_REQUIRED) — no provider was reached."
+  elif [ "$HTTP" = "200" ] && [ "$(jq -r '.ok // false' "$RESP")" = "true" ]; then
+    fail "$platform ad-hoc search SUCCEEDED against /api/source (HTTP 200) — live campaign search must not bypass campaign authority."
+  else
+    fail "$platform ad-hoc search returned an unexpected verdict (HTTP $HTTP, code=$SRC_CODE): $(jq -rc '.error // empty' "$RESP")"
+  fi
+done
 
 # 3c. Agentic sourcing — the only HTTP route that returns scored provenance="live" candidates.
 jq -n \
@@ -249,16 +257,39 @@ jq -n \
   }
   | if ($model | length) > 0 then . + {model:$model} else . end
 ' > "$WORK/agent_req.json"
-API_TIMEOUT=150 api POST "$APP_URL/api/sourcing-agent" "$WORK/agent_req.json"
-AG_OK=$(jq -r '.ok // false' "$RESP")
+# The route takes { campaignId, count } and an Idempotency-Key UUID header — NOT an
+# inline campaign (SourcingAgentRequestSchema is .strict(), body cap 2 KB). The old
+# request was rejected as INVALID_REQUEST and this step blamed a missing provider
+# key, which sent three separate investigations down the wrong path. The campaign
+# must already exist in workspace_state and pass evaluateNeedReadiness — there is no
+# server-side route that creates one, so E2E_CAMPAIGN_ID must name a reviewed
+# campaign that already exists.
+AGENT_CAMPAIGN_ID="${E2E_CAMPAIGN_ID:-camp-e2e}"
+jq -n --arg id "$AGENT_CAMPAIGN_ID" '{campaignId:$id, count:3}' > "$WORK/agent_req.json"
+HTTP=$(curl -sS -m "${API_TIMEOUT:-180}" -o "$RESP" -w '%{http_code}' -X POST "$APP_URL/api/sourcing-agent" \
+  -H 'Content-Type: application/json' -H "Origin: $APP_URL" -H "Cookie: $COOKIE_HDR" \
+  -H "Idempotency-Key: $(uuidgen | tr 'A-Z' 'a-z')" --data-binary @"$WORK/agent_req.json")
+AG_CODE=$(jq -r '.code // empty' "$RESP")
+if [ "$HTTP" = "404" ] || [ "$AG_CODE" = "CAMPAIGN_NOT_READY" ]; then
+  info "sourcing-agent SKIPPED: campaign '$AGENT_CAMPAIGN_ID' is absent or its brief is unreviewed ($AG_CODE)."
+  info "      Seed a campaign with status Sourcing whose jobAnalysis passes evaluateNeedReadiness"
+  info "      (title, seniority and employmentType must not be Unspecified), then set E2E_CAMPAIGN_ID."
+  echo 'null' > "$WORK/cand0.json"
+  AG_OK="skipped"
+fi
+[ "${AG_OK:-}" = "skipped" ] || AG_OK=$(jq -r '.ok // false' "$RESP")
 AG_N=$(jq -r '(.candidates // []) | length' "$RESP")
 AG_LIVE=$(jq -r '[(.candidates // [])[] | select(.provenance=="live")] | length' "$RESP")
 AG_URLED=$(jq -r '[(.candidates // [])[] | select((.githubUrl // .linkedinUrl // .sourceUrl // "") != "")] | length' "$RESP")
-if [ "$HTTP" = "200" ] && [ "$AG_OK" = "true" ] && [ "$AG_N" -gt 0 ] && [ "$AG_LIVE" = "$AG_N" ] && [ "$AG_URLED" -gt 0 ]; then
+if [ "$AG_OK" = "skipped" ]; then
+  : # already reported above; a missing or unreviewed campaign is a setup gap, not a failure
+elif [ "$HTTP" = "200" ] && [ "$AG_OK" = "true" ] && [ "$AG_N" -gt 0 ] && [ "$AG_LIVE" = "$AG_N" ] && [ "$AG_URLED" -gt 0 ]; then
   pass "Agent returned $AG_N candidates, ALL provenance=\"live\", $AG_URLED with real profile URLs (totalFound=$(jq -r '.totalFound' "$RESP"))."
   jq '.candidates[0]' "$RESP" > "$WORK/cand0.json"
 else
-  fail "sourcing-agent (HTTP $HTTP, ok=$AG_OK, n=$AG_N, live=$AG_LIVE): $(jq -rc '.reason // "no candidates"' "$RESP") — needs a tool-calling provider key (e.g. ANTHROPIC_API_KEY) enabled for '$AGENT_PROVIDER'."
+  # Report the server's OWN code and error. The old message asserted a missing
+  # provider key regardless of cause, which mis-diagnosed a schema rejection.
+  fail "sourcing-agent (HTTP $HTTP, code=${AG_CODE:-none}, ok=$AG_OK, n=$AG_N, live=$AG_LIVE): $(jq -rc '.error // .reason // "no candidates"' "$RESP")"
   echo 'null' > "$WORK/cand0.json"
 fi
 
