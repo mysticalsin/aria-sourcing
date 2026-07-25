@@ -2,27 +2,33 @@
 project: MSourcing / ARIA
 shift: 50
 agent: claude-code (Opus 5, 1M)
-updated: 2026-07-24
-status: full-gate-green-at-a-clean-sha · 14+2 commits landed · product plane still blocked
+updated: 2026-07-25
+status: full-gate-green-at-a-clean-sha · 18 commits landed · H1+H3-bearer done · product plane still blocked
 ---
 
 # Handoff — Shift 50
 
-## Read these three first
+## Read these four first
 
 1. `_relay/2026-07-24-state-of-the-union.md` — the canonical audit. What is true, what was
    proven false, 32 deduped open blockers with file:line evidence.
 2. `docs/lessons/2026-07-24-continuity-lessons.md` — **tracked**, unlike `.rocket-fuel/IMPROVE.md`.
    Sixteen lessons, most of them about how this handoff chain kept losing information.
 3. `_relay/2026-07-24-hermes-upstream-adoption-plan.md` — H1–H7 for bringing the Hermes process
-   agents onto current upstream. H4 gates H5 and needs owner sign-off.
+   agents onto current upstream. **H1 and the H3 bearer half are DONE** (see below). H4 gates H5
+   and needs owner sign-off.
+4. `_relay/2026-07-25-next-engagement-plan.md` — the blockers `PLAN.md` rev 7 cannot absorb:
+   Rock 4's defective premise, the swarm plane, why Rock 2 is really a server-side migration, the
+   readiness decision, and the branch topology.
 
 ## Current state
 
 - Branch `integration/sourcing-enrichment-on-main`. Working tree **clean**.
-- **THE FULL GATE is green at a clean SHA.** All seven commands, run separately and never
-  chained: `typecheck` 0, `typecheck:tests` 0, `lint` 0 (10 pre-existing warnings, 0 errors),
-  `test:all` 0, `test:database` 0, `test:manifest` 0, `docs-truth` 0.
+- **THE FULL GATE is green at a clean SHA — `2083a0d355c4d20e7344073056984db91aa4dcfb`.** All
+  seven commands, run separately and never chained: `typecheck` 0, `typecheck:tests` 0, `lint` 0
+  (10 pre-existing warnings, 0 errors), `test:all` 0 across 150 suites, `test:database` 0 across
+  17 suites, `test:manifest` 0, `docs-truth` 0. Re-verified at `9ac5913` and again at `2083a0d`.
+  Only documentation has been committed on top.
 - `test:database` is real, not structural: 17 suites under Docker including `loop-jobs-db` 41
   assertions plus a SKIP LOCKED race, `person-model-db` 42, `email-durability-db` 22,
   `candidates-corpus-db` 20, `email-inbound-db` 10, `email-outcomes-db` 9.
@@ -68,6 +74,29 @@ Full content and reasoning: `_relay/incidents/2026-07-24-gitlab-ci-secret-bundle
 **Gitignored e2e run evidence.** Candidate lists, match scores, experience history and a raw
 scraped profile JSON. Git history is immutable, so committing them would put personal data
 permanently beyond the reach of the erasure authority in `0033`/`0041`.
+
+**Landed H1 and the H3 bearer half of the Hermes plan** — both self-contained, neither needs the
+runtime upgrade:
+
+- `9acbd03` **Hermes was unreachable in production.** `isAllowedHermesUrl` accepted only loopback
+  and RFC1918, while production reaches Hermes over Fly private DNS, so every reachable host was
+  refused and the client silently degraded to the mock. `HERMES_ALLOWED_HOSTS` now lets the
+  deployment name hosts exactly; wildcards/schemes/paths are ignored so it stays an allow-list,
+  and the SSRF block-list still runs first. Readiness gained a `hermesRuntime` component so a
+  configured-but-refused URL **fails the probe** instead of looking healthy.
+  - Found while testing it: WHATWG `URL.hostname` keeps the brackets on an IPv6 literal, so every
+    IPv6 block pattern (`^::1$`, `^fc00:`, `^fe80:`, `^ff00:`) was unreachable. Latent while
+    default-deny rejected all IPv6; not latent once a deployment can name one. Hostname is now
+    bracket-stripped, with assertions that loopback, link-local and multicast stay blocked even
+    when named.
+- `2083a0d` **Bearer resolver hardened.** `resolveHermesBearerToken` selected on `workspace_id`
+  alone — no `provider`, no `status='valid'` — so any workspace member could name any secret,
+  including a **revoked** one, and have it sent upstream as a Bearer token. The typed chat route
+  already did this correctly; the generic proxy now delegates to the same hardened resolver.
+
+**Still open in the Hermes plan:** H2 (the two-server split — six of nine management paths 404
+today), the response-shape half of H3, and H4–H7. H2 changes the proxy's public contract shape;
+H4/H5 touch the live Amaris HR bot. All want owner sign-off.
 
 ## Blockers — none of them mine to clear unilaterally
 
