@@ -1,6 +1,10 @@
 {
   "recent_learnings": [
     {
+      "date": "2026-07-16",
+      "lesson": "Separate source proof from sandbox socket blockers; Docker and TSX IPC failures are environment evidence, not DB behavior proof."
+    },
+    {
       "date": "2026-07-14",
       "lesson": "Archive and rewrite the MSourcing Relay Baton every shift; Claude continuation must never depend on chat context."
     },

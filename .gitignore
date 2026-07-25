@@ -69,3 +69,12 @@ set-admin-password.sh
 .claude/launch.json
 .claude/worktrees/
 .claude/.cc-writes/
+
+# End-to-end run evidence. Screenshots, video and raw provider responses from
+# real sourcing runs contain candidate PII (candidate lists, match scores,
+# experience history, scraped profile JSON). Git history is immutable, so
+# committing them would put personal data permanently beyond the reach of the
+# erasure authority in 0033/0041 - the opposite of what that authority exists
+# for. Keep this evidence local, or attach it to a review out of band.
+# .dockerignore and scripts/prod-deploy-app.sh already exclude these paths.
+production-readiness/e2e-*/

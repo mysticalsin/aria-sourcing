@@ -1033,3 +1033,35 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** The runner now resolves `tsx/cli` and executes it through `process.execPath`. The npm trace uses the lifecycle-provided `npm_execpath`; bare non-npm execution skips only that lifecycle-specific trace subtest while retaining the other seven runner checks.
 **Suggested fix:** Preserve logical command identity while resolving package CLIs through Node and keep platform shims out of shell-free spawns.
 **Status:** fixed (`e58992a`)
+
+## 2026-07-19 - Direct sourcing adapters can bypass the central recruiting policy
+**Severity:** security
+**File:** src/app/api/source/apify/start/route.ts:21; src/app/api/source/apollo/search/route.ts:107; src/lib/sourcing/query-policy.ts:5
+**Issue:** The central query policy rejects protected traits and proxy criteria, but the direct Apify route accepts raw queries, schools, first names, and last names without invoking it; Apollo search is not bound to a verified approved requisition.
+**Repro/evidence:** Static route tracing found no call from either direct adapter to the canonical policy/requisition authority. The Apify UI exposes the same name filters. A user can therefore reach provider side effects through a path with weaker policy controls than the canonical agent.
+**Suggested fix:** Enforce one server-side prohibited-criteria and approved-requisition check before every provider call, with an immutable policy receipt.
+**Status:** open; real sourcing remains NO-GO
+
+## 2026-07-19 - Enrichment spend authority is defined but not used by application calls
+**Severity:** correctness
+**File:** supabase/migrations/0044_sourcing_enrichment_authority.sql:138; src/app/api/source/enrich/route.ts:42
+**Issue:** Migration 0044 defines database claim, settle, and release authority, but no application source calls those RPCs. The enrichment route treats the client budget as a hint and caps only one request, not total workspace spend.
+**Repro/evidence:** `rg` found no `claim_enrichment_budget`, `settle_enrichment_spend`, or `release_enrichment_claim` call under `src`. Repeated or parallel requests across app instances can exceed a tenant budget while each individual request remains within ten units.
+**Suggested fix:** Wrap every paid enrichment/provider call in durable database claim, settle, and release operations and test concurrent multi-instance replays against a hard ceiling.
+**Status:** open; paid enrichment remains NO-GO
+
+## 2026-07-19 - Autonomous sourcing workers have no executable job handlers
+**Severity:** spec-mismatch
+**File:** scripts/sourcing-loop-worker.mjs:19; scripts/sourcing-loop-worker.mjs:218
+**Issue:** The production loop worker declares an empty handler set and cannot claim any durable sourcing job, so a need cannot progress headlessly from intake through sourcing when the browser is closed.
+**Repro/evidence:** `HANDLER_KINDS` is empty and the worker's claim path therefore has no eligible job kinds. Live aggregate inspection showed zero job/heartbeat activity, one loop control with sourcing disabled, and no deployed framework executor plane.
+**Suggested fix:** Implement bounded idempotent handlers for the approved workflow, deploy supervised executors, and prove lease recovery and zero duplicate sends during worker failure.
+**Status:** open; autonomous campaign execution remains NO-GO
+
+## 2026-07-19 - Live browser-agent image is missing a declared Playwright runtime asset
+**Severity:** correctness
+**File:** package.json:62
+**Issue:** The live web process logs an external-module load failure because `/app/node_modules/playwright-core/browsers.json` is absent.
+**Repro/evidence:** `flyctl logs -a aria-mantu-app --no-tail` returned `Cannot find module '/app/node_modules/playwright-core/browsers.json'` from the running web machine on 2026-07-19. Health remains 200, so shallow liveness does not detect this browser-tool failure.
+**Suggested fix:** Correct standalone image tracing/runtime packaging, add a browser-tool readiness probe, and verify the signed production image contains the exact required Playwright assets without enabling broader browser privileges.
+**Status:** open; browser-agent capability remains NO-GO

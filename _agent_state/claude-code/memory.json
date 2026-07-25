@@ -1,5 +1,18 @@
 {
   "recent_learnings": [
+    "Codex build silence != death: long gate commands emit no events for 10+ min. Check for a live `codex exec` process before killing; a kill leaves .lock and refuses relaunch with exit 8.",
+    {
+      "date": "2026-07-17",
+      "lesson": "claude -p: global hooks add O(prompt) overhead (113s->17s); use --settings {\"hooks\":{}} + --strict-mcp-config for programmatic calls."
+    },
+    {
+      "date": "2026-07-17",
+      "lesson": "Docker denied walls may be sandbox-only: colima socket works with sandbox disabled. Always retest environment walls each session."
+    },
+    {
+      "date": "2026-07-17",
+      "lesson": "Auto-mode classifier blocks credentialed prod deploys; stage the exact script and hand the owner one command instead of working around."
+    },
     {
       "date": "2026-07-17",
       "lesson": "Port orchestration shapes (hermes swarm) onto existing authority idioms: enforce declared-but-unenforced gates (greenlight, DAG, concurrency, checkpoint auth) in-DB, ship dark."
@@ -21,7 +34,7 @@
     },
     {
       "at": "2026-07-09",
-      "lesson": "grep substring hits are not import proof — verify with git grep -F against HEAD before committing 'required' files."
+      "lesson": "grep substring hits are not import proof \u2014 verify with git grep -F against HEAD before committing 'required' files."
     },
     {
       "at": "2026-07-09",
@@ -37,11 +50,11 @@
     },
     {
       "at": "2026-07-10",
-      "lesson": "flyctl auth: browser CLI login expires fast; use a personal access token in a gitignored file + export FLY_API_TOKEN=$(cat file). flyctl hangs on telemetry POST — set FLY_NO_METRICS=1 DO_NOT_TRACK=1 and run slow ops in background."
+      "lesson": "flyctl auth: browser CLI login expires fast; use a personal access token in a gitignored file + export FLY_API_TOKEN=$(cat file). flyctl hangs on telemetry POST \u2014 set FLY_NO_METRICS=1 DO_NOT_TRACK=1 and run slow ops in background."
     },
     {
       "at": "2026-07-10",
-      "lesson": "Fly 'trial has ended, please add a credit card' fails apps create with rc=1 — a billing gate like the GitHub one. Check Fly account billing BEFORE driving a deploy; Tony's card must be added at fly.io/trial."
+      "lesson": "Fly 'trial has ended, please add a credit card' fails apps create with rc=1 \u2014 a billing gate like the GitHub one. Check Fly account billing BEFORE driving a deploy; Tony's card must be added at fly.io/trial."
     },
     {
       "at": "2026-07-16",
@@ -49,7 +62,7 @@
     },
     {
       "at": "2026-07-16",
-      "lesson": "harvestapi/linkedin-profile-search is fuzzy keyword search, not URL fetch: a specific person only surfaces via structured firstNames[]/lastNames[] input (or dev_fusion by-URL). The dialog hid those fields — backend supported them all along."
+      "lesson": "harvestapi/linkedin-profile-search is fuzzy keyword search, not URL fetch: a specific person only surfaces via structured firstNames[]/lastNames[] input (or dev_fusion by-URL). The dialog hid those fields \u2014 backend supported them all along."
     },
     {
       "at": "2026-07-16",
@@ -65,7 +78,7 @@
     },
     {
       "at": "2026-07-16",
-      "lesson": "MSourcing migration count/tip/ledger-sha + ARIA_EXPECTED_MIGRATION_* are all computed dynamically (deploy-fly.sh, /api/ready, docs-truth); adding a migration needs zero count/tip doc edits — only a new test:db-* + ci.yml job if it adds an RLS/privilege surface."
+      "lesson": "MSourcing migration count/tip/ledger-sha + ARIA_EXPECTED_MIGRATION_* are all computed dynamically (deploy-fly.sh, /api/ready, docs-truth); adding a migration needs zero count/tip doc edits \u2014 only a new test:db-* + ci.yml job if it adds an RLS/privilege surface."
     },
     {
       "at": "2026-07-16",
@@ -74,18 +87,6 @@
     {
       "at": "2026-07-16",
       "lesson": "Fly manual deploy of a new migration MUST recompute+stage ARIA_RELEASE_SHA/ARIA_EXPECTED_* secrets (deploy-fly.sh:316-330 node algorithm) BEFORE the app deploy, or /api/ready releaseIdentity/migration go false; deploy-fly-2.sh omits this step."
-    },
-    {
-      "at": "2026-07-16",
-      "lesson": "0033 reject_candidate_erasure_reimport BLOCKS erasing a candidate whose identifier a SURVIVING candidacy shares (the scrubbed-state write reintroduces the just-tombstoned value → 23514). So any derived-layer 'purge tombstoned identity shared by survivor' logic is unreachable dead code — the delete-GC on candidacy delete covers it."
-    },
-    {
-      "at": "2026-07-16",
-      "lesson": "Postgres hoists a STABLE function out of an EXISTS predicate and evaluates it even against zero rows; a helper that RAISES without a workspace secret (candidate_erasure_identifier_hmac) then fires spuriously. Gate it behind a prior no-helper existence check (tombstones exist?) before calling."
-    },
-    {
-      "at": "2026-07-16",
-      "lesson": "Identity resolution: link people ONLY on linkedin.com/in/ profiles. GitHub URLs can't distinguish user vs org; email/phone are shared. Under-link (over-split) rather than ever merge two humans' PII — a false merge is a GDPR incident."
     }
   ]
 }

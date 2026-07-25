@@ -1,253 +1,111 @@
 ---
 project: MSourcing / ARIA
-shift: 42
-agent: codex-gpt-5
-updated: 2026-07-14 22:15 EDT
-status: local-source-green-release-blocked
+shift: 49
+agent: codex
+updated: 2026-07-21 15:59 EDT
+status: rock-1-deploy-surface-fixed-gates-green-commit-blocked-by-sandbox-git-permission
 ---
 
-# Handoff - structure Plans 01-03 are committed; release remains NO-GO
+# Handoff - Shift 49
 
-## Current state
+## Current State
 
-- Active organization worktree:
-  `/Users/tony/.codex/worktrees/msourcing-structure-hygiene` on branch
-  `codex/aria-structure-hygiene-20260714`. Current committed tip is `43f1001`; Plan 01 tip is
-  `b067a8a4623b91e918d77d6b52bb8db73d049547`. Local `main` remains at the
-  Relay checkpoint `57b9abe9dc061f3c1fd64119376a46f1d4651303`; the verified
-  shift-40 integration is
-  `42b0d1c01dd7d50eccbee03f87f5b5f96217a7ea` and the separate CodeQL
-  reconciliation is `8a63a8f293136464b5d79a6399dc0e11ba601a7e`.
-- Migration tip is `0033_candidate_erasure_authority.sql`. The reviewed legacy
-  public-schema digest is
-  `3e1d5f6c2aea60ef7b47f3ce27f1e5dec8afed2a4731e11417dd65332f4561cd`.
-- Source gates are green on this exact working tree:
-  - Fresh `npm test` exited 0 after Plan 02. Its validated manifest contains 184
-    unique processes: 51 pretest, 131 application, and 2 posttest. The manifest
-    contract ran 8/8 inside the canonical lifecycle and reconstructed the exact
-    prior 186-process parity digest before proving only four duplicates were
-    removed.
-  - `npm run lint` and `npm run test:security` exited 0.
-  - `npm run build:isolated` compiled successfully and generated 62 static pages.
-  - `npm audit --offline --audit-level=moderate` found 0 vulnerabilities.
-  - `gitleaks dir . --no-banner --redact --verbose` found no leaks.
-  - `git diff --check` exited 0.
-  - `npx tsx tests/docs-truth.mts` passed 39/39; the OpenAPI contract parsed all
-    7 documented routes and 314 internal references.
-  - `node --test infra/agent-frameworks/fly/deployment.test.mjs` passed 15/15,
-    including executable no-redirect and no-proxy private-readiness tests.
-  - The complete disposable database sequence exited 0: privileges,
-    cross-channel capacity, agent memory, 0032 fallback behavior, candidate
-    erasure and both concurrency orders, Apollo, sourcing learning,
-    conversation authority, framework plus provisioning, owner recovery, and
-    Fly database volume/restart behavior.
-  - `npm run test:graphify-learning` passed all 10 worker tests with network
-    disabled and emitted the bounded receipt.
-- Plan 04 commit `43f1001` is locally verified: booking/report runtime 25/25,
-  workspace-effectful-actions 13/13, store contracts 11/11, manifest 8/8,
-  application/test typechecks, lint, module boundaries, and diff check. The
-  canonical `npm test` exited 0 after the final calendar-page and route-comment
-  corrections. Post-commit application/test typechecks, lint, manifest 8/8,
-  and diff check also exited 0.
-- Sonnet's executable continuation is in
-  `_relay/plans/plan-04-sonnet-execution.md`. It contains exact commands for
-  local proof, commit, main integration, GitHub readback, protected Fly deploy,
-  and real sourcing acceptance.
-- Independent application/QA, security, and docs/release reviews all returned
-  ready-to-commit after the fixes below. This is local source evidence only.
-- The protected release workflow truth is 7 scanned images, 5 locally built and
-  attested images, and 6 deployed service images. Graphify has a pre-publication
-  container test plus immutable scan/attestation/promotion evidence; there is no
-  post-promotion Graphify execution receipt.
-- PR 3's current GitHub checks were green when inspected. The failures pasted by
-  Tony were historical. The reviewed ten-file CodeQL patch from
-  `ee0cee9344086011a5bd85bd85c7e745e7286b1a` is now reconciled locally as
-  `8a63a8f293136464b5d79a6399dc0e11ba601a7e`. Its focused tests, typecheck,
-  lint, full security suite, and staged diff check all exited 0. The optional
-  Obscura live-sidecar probe skipped because no verified local sidecar was
-  configured; its source-level assertion is still included in the committed
-  patch.
-- The required Graphify start query failed with `graph file not found` for
-  `graphify-out/graph.json`, and `graphify-out/wiki/index.md` is also absent in
-  this worktree. That exact fallback is recorded here; source inspection is the
-  active navigation method.
-- Plan 01 focused proof is green: module boundaries, store contracts,
-  documentation truth 41/41, repository hygiene 11/11, typecheck, lint,
-  security, and diff checks. Independent review returned READY after JavaScript
-  module edges, direct server-only client markers, and documentation facts were
-  corrected.
-- Plan 03 is committed as `3bddcd6`. Strict application and test TypeScript
-  gates, lint, manifest 8/8, documentation truth 44/44, infrastructure release
-  contract 134/134, and `git diff --check` all exited 0. The exact final tree
-  also passed the complete 183-process lifecycle with exit 0. Local Obscura
-  remains optional and skipped honestly without a verified sidecar; CI now
-  performs a bounded readiness check and runs the same test in required mode,
-  whose unreachable-sidecar probe exits exactly 1. Independent full-stack, QA,
-  and security reviewers all returned READY after the regression contract was
-  bounded to exact workflow steps and exact child exit state.
-- Plan 04 correctness characterization is committed as `11ef0db`. Booking,
-  report, update, and learning callers now reject immediate local commit
-  refusal; booking updates validate their mutable surface and synchronize the
-  candidate snapshot; accepted learning is one local commit; UI and Aria Live
-  no longer announce success after those rejections. Focused contract 4/4,
-  both typechecks, lint, store contracts, workspace effects, skills, mock AI,
-  scoring, and Aria Live all exited 0. This does not prove a durable Supabase
-  save or live calendar safety.
+- The sixth FULL GATE defect is fixed in the working tree:
+  - `scripts/prod-deploy-app.sh`
+  - `scripts/prod-swarm-rollout.sh`
+  - `scripts/prod-apply-swarm-fixes.sh`
+  - `scripts/lib/prod-release-guard.sh`
+  - `tests/infra-release-contract.mts`
+- The three tracked owner-run Fly production scripts remain tracked and functional; they are not deleted, untracked, hidden, or detector-bypassed.
+- Each script now sources `scripts/lib/prod-release-guard.sh` and calls `aria_require_reviewed_production_release` before loading `production-readiness/.fly-token.env`, sourcing `production-readiness/.fly-secrets.env`, or invoking `flyctl`.
+- The shared guard requires:
+  - exact lowercase 40-character `ARIA_RELEASE_SHA`;
+  - resolvable Git commit for that SHA;
+  - checked-out `HEAD` equal to the release SHA;
+  - clean tracked and untracked working tree via `git status --porcelain --untracked-files=all`;
+  - exact `ARIA_PROD_DEPLOY_CONFIRM` or interactive confirmation naming operation, SHA, and target app list;
+  - non-secret JSON release receipt at `ARIA_PROD_DEPLOY_RECEIPT_PATH` or `${TMPDIR:-/tmp}/aria-prod-release-receipts/...`.
+- `tests/infra-release-contract.mts` now registers the three scripts as canonical reviewed production deploy surfaces only while proving they carry the guard before credentials or Fly mutations.
+- No shipped numbered migration was edited. `0047` remains the highest migration.
+- `.env*`, secrets, production data, `.rocket-fuel/PLAN.md`, and `.rocket-fuel/ROCKS.md` were not touched.
+- Local commits are still BLOCKED by sandbox `.git` write permissions:
+  `fatal: Unable to create '/Users/tony/Library/CloudStorage/OneDrive-MantuGroup/Documents/Chief of Staff/Apps Source/MSourcing/.git/index.lock': Operation not permitted`
 
-## Done this shift
+## Done This Shift
 
-- Added migration 0032 operational authority: exact workspace/seat bindings,
-  normalized AgentSpec memory management, bounded framework-memory egress,
-  quarantine evidence, replay-safe proposal reports, and disposable fallback
-  behavior.
-- Added migration 0033 candidate-erasure authority: tenant-bound idempotent
-  requests, legal holds, HMAC tombstones, bounded provider obligations,
-  content-free receipts, all covered contact-path reimport guards, and shared
-  transaction advisory locks. Real two-session tests prove writer-first and
-  erasure-first orderings.
-- Made the memory API fail closed on authentication or AgentSpec dependency
-  failure, added stable keyset pagination, and covered all route methods with
-  adversarial dependency tests.
-- Made candidate erasure UI authority candidate-scoped and abortable, preserved
-  typed 423 legal holds, masked local PII before hydration, and made anonymized
-  tombstones immutable and non-restorable.
-- Moved the state-changing erasure queue read to same-origin JSON `PATCH
-  {action:"list"}`; `GET` is side-effect free and returns 405.
-- Preserved full framework idempotent responses, including the bounded public
-  report summary, and made missing, malformed, or changed replay reports fail
-  closed.
-- Aligned Fly private adapter/model-gateway URLs and configuration digests across
-  operator, ARIA, and heartbeat. Private readiness now rejects both redirects
-  and inherited proxy configuration before any authority can leave the exact
-  `FLY_PRIVATE_IP`.
-- Corrected OpenAPI legal-hold schemas, route-specific throttling text, API error
-  policy, full CI database-gate documentation, release image counts, canonical
-  table-inventory references, and the eight-active/two-disabled framework
-  topology. Derived docs tests now prevent the release-count drift.
-- Clarified that the 0032 SQL fallback is source-tested but production-prohibited
-  until a protected apply job and append-only, ledger-safe forward migration
-  exist.
-- Wrote Sonnet-executable repository-organization plans in `_relay/plans/` for
-  CodeQL reconciliation, import boundaries/navigation, declarative test
-  manifests, TypeScript/docs truth, one bounded store extraction, synthetic
-  Playwright smoke, four review lanes, and exact-SHA release readback.
-- Recorded each correctness, security, spec, and test-gap finding in
-  `_relay/codex-findings.md`.
-- Committed the complete verified hardening baseline as `42b0d1c`, then applied
-  and committed the exact ten-file CodeQL patch separately as `8a63a8f`.
-- Completed structure Plan 01 in two isolated commits: `0faf855` extracts the
-  reusable import graph, adds poison-fixture boundary enforcement, and registers
-  it permanently; `b067a8a` adds verified maps for domain logic, tests, scripts,
-  infrastructure, and document ownership.
-- Completed structure Plan 02 in two isolated commits: `d2462c5` replaces
-  recursive shell chains with a validated literal manifest while freezing exact
-  186-process parity; `e58992a` removes only four exact duplicates, registers
-  the manifest contract once, executes the installed `tsx/cli` portably, keeps
-  direct non-npm execution usable, and freezes the final 183-process digest.
-  Independent parity and code-quality reviewers both returned READY.
-- Completed structure Plan 03 in bounded fixture commits plus `3bddcd6`: every
-  TypeScript test root is now checked under strict settings with zero
-  diagnostics, CI enforces both application and test type contracts, primary
-  developer and release documentation names the same mandatory gate, and
-  Obscura cannot false-green in CI when the sidecar is missing or late.
+- Read mandatory project memory and prior baton.
+- Attempted mandated graphify first pass:
+  - `graphify query "MSourcing infra release contract Fly production deploy surfaces Rock 1" --budget 1500`
+  - Result: `error: graph file not found: .../graphify-out/graph.json`
+  - `graphify-out/wiki/index.md` is absent.
+- Added the failing contract expectation first, then verified red:
+  - `node --import tsx tests/infra-release-contract.mts`
+  - Output:
+    `Unsafe alternate production deploy surfaces: scripts/prod-apply-swarm-fixes.sh, scripts/prod-deploy-app.sh, scripts/prod-swarm-rollout.sh`
+    `FAIL: only reviewed release-authorized surfaces can mutate Fly production`
+    `RESULT infra-release-contract: 133 passed, 1 failed`
+- Implemented `scripts/lib/prod-release-guard.sh`.
+- Wired the guard into:
+  - `scripts/prod-deploy-app.sh` for `aria-mantu-app`;
+  - `scripts/prod-swarm-rollout.sh` for `aria-mantu-bootstrap,aria-mantu-app`;
+  - `scripts/prod-apply-swarm-fixes.sh` for `aria-mantu-bootstrap,aria-mantu-app`.
+- Registered the reviewed alternate deploy surfaces in `tests/infra-release-contract.mts` and strengthened the existing assertion so the final count remains `134`.
+- Ran available proofs:
+  - `bash -n scripts/lib/prod-release-guard.sh`: exit 0.
+  - `bash -n scripts/prod-deploy-app.sh`: exit 0.
+  - `bash -n scripts/prod-swarm-rollout.sh`: exit 0.
+  - `bash -n scripts/prod-apply-swarm-fixes.sh`: exit 0.
+  - `npm run typecheck && npm run typecheck:tests`: exit 0.
+  - `npx eslint .`: exit 0, 0 errors, 10 existing warnings.
+  - `node --import tsx tests/infra-release-contract.mts`: `RESULT infra-release-contract: 134 passed, 0 failed`.
+- Probed delegated Docker database group:
+  - `npm run test:database`: blocked by Docker socket permission.
+  - Verbatim error: `permission denied while trying to connect to the docker API at unix:///Users/tony/.colima/default/docker.sock`
+- Attempted to stage the first Rock 1 commit:
+  - `git add -- docker/bootstrap/legacy-table-inventory.txt`
+  - Result: `.git/index.lock` creation denied before staging.
 
 ## Blockers
 
-- **Push and production release are not authorized.** GitHub, Fly, and
-  ElevenLabs credentials were previously exposed. Rotation, access-history
-  review, and proof that the current operator has least-privilege release
-  authority have not been provided. `gh auth status` alone is not rotation proof.
-- The live deployment previously reported build
-  `d2040b534177f5bd2abb28f22de19af57b58dc3a` and migration
-  `0023_conversation_identity.sql`; it is not evidence for this source tree or
-  migrations 0024-0033. No exact-SHA protected deploy or current live readback
-  has been completed.
-- Candidate erasure is not production-acceptable until run/framework/memory
-  payloads have explicit candidate provenance and erasure receipts, an
-  independently retained restore-replay journal exists, provider deletion
-  evidence is verified independently, and the path above 100 obligations is
-  supported.
-- The 0032 application-surface fallback has no protected production apply job or
-  ledger-safe forward migration. Do not apply
-  `supabase/rollbacks/0032_agent_operational_authority.sql` in production.
-- DeerFlow/Flowise activation still lacks promoted immutable upstream-base
-  evidence, live private Fly deployment, constrained-egress proof, Flowise
-  bootstrap proof, PostgreSQL HA and timed restore evidence, eight active-role
-  identity/readiness results, two disabled-role absence proofs, and a real
-  approved campaign E2E. The last reviewed Kimi authority returned HTTP 402;
-  provider funding/entitlement and exact model approval remain external.
-- Structure Plan 04 local correctness is ready for commit after the final
-  canonical lifecycle run. The extraction, race guards, provider receipt
-  marker, terminal-round semantics, honest calendar UI, and runtime tests are
-  complete on the working tree. The durable server-side calendar booking
-  ledger, idempotency, provider reconciliation, and production approval
-  authority remain open and are not closed by this local change.
-- Live calendar release remains blocked. The endpoint has no server-owned
-  booking approval, idempotency claim, provider attempt ledger, ambiguous
-  outcome reconciliation, reschedule/cancel synchronization, or provider
-  erasure obligation. A provider event is currently attempted before the
-  debounced workspace document is durable. Do not enable or certify real
-  calendar invitations until this authority is implemented and database-tested.
-- Weekly reports still contain fixed cost, timing, pattern, and impact claims
-  from `src/lib/mock-ai.ts`; they are not evidence-backed campaign facts.
+- Cannot stage or commit from this sandbox because `.git/index.lock` creation is denied.
+- Cannot execute Docker database suites from this sandbox because Colima socket access is denied.
 
-## Next steps
+## Next Steps
 
-1. Finish the canonical `npm test` rerun, commit the Plan 04 working tree as
-   one focused change, and record its SHA. Follow
-   `_relay/plans/plan-04-sonnet-execution.md` exactly.
-2. Add the synthetic isolated Playwright release smoke and permanent CI gate.
-3. Add server-owned calendar prepare/confirm/claim/reconcile authority and
-   remove unverified report intelligence before any production-readiness claim.
-4. Integrate the organization commits back into local `main`, rerun the full
-   source, security, build, database, recovery, Graphify, and four-review-lane
-   gate on one SHA, then archive/rewrite this baton again.
-5. Push only after Tony supplies evidence that the exposed credentials were
-   rotated and that the current identity has approved least-privilege release
-   authority. After a successful push, read back the remote SHA and inspect
-   exact-SHA CI, CodeQL, annotations, and open alerts with `gh`.
-6. Dispatch production only through the protected workflow after every external
-   blocker above is closed. Prove migration 0033, immutable digests, backup and
-   restore, restarts, auth, provider/model readiness, zero-send controls, and a
-   real approved campaign before allowing real candidate use.
+1. From a normal local shell with `.git` write access, commit the existing Rock 1 dirty files in logical conventional commits:
+   - `fix: refresh recovery schema inventory`
+   - `test: pin sms send side-effect assertion`
+   - `fix: hold ambiguous email sends after reconciliation failure`
+   - `fix: grant service role delivery event reads`
+   - `test: fix inbound mailbox db assertion`
+   - `test: run manifest tsx tests through node import`
+   - `test: fix email durability db harness assertions`
+   - `chore: ignore generated eslint paths`
+   - `fix: require release authority for owner Fly deploy scripts`
+2. For the deploy-surface hardening commit, stage only:
+   - `scripts/lib/prod-release-guard.sh`
+   - `scripts/prod-deploy-app.sh`
+   - `scripts/prod-swarm-rollout.sh`
+   - `scripts/prod-apply-swarm-fixes.sh`
+   - `tests/infra-release-contract.mts`
+3. Include this body in the deploy-surface hardening commit:
+   - `FULL GATE and the database group were executed by the Visionary outside the build sandbox.`
+   - `This sixth defect was found by the full gate rather than by Rock 1's own original scope.`
+   - `Codex sandbox proof: typecheck, typecheck:tests, eslint, shell syntax, and infra-release-contract passed.`
+   - `Database runtime proof is delegated because this sandbox cannot reach Docker: permission denied while trying to connect to the docker API at unix:///Users/tony/.colima/default/docker.sock`
+4. Do not push until Tony asks.
 
-## Decisions made (don't relitigate)
+## Decisions Made (Don't Relitigate)
 
-- Local source commits are allowed; push and deploy remain prohibited until
-  credential rotation and release authority are proven.
-- Current GitHub PR checks, not the pasted historical run list, are the CI source
-  of truth. Reuse the already-reviewed `ee0cee9` CodeQL fix; do not reimplement it.
-- Candidate erasure never claims provider deletion from local scrubbing or an
-  administrator-entered hash. Provider evidence remains in the approved privacy
-  system and completion stays non-final until every obligation is proven.
-- The 0032 SQL fallback is a disposable-test artifact, not a production runbook
-  action, until protected reverse/forward machinery exists.
-- DeerFlow stays memory-only and tracing-disabled. Flowise owns the only active
-  framework PostgreSQL/Redis pair. Ten signed roles mean eight active apps plus
-  two release-disabled DeerFlow persistence provenance roles.
-- HTTP is permitted only for credential-free `.internal` Fly 6PN authorities.
-  Redirects, environment proxies, queries, fragments, public origins, and URL
-  credentials fail closed.
-- Migrations are append-only. Fly production uses only the protected bootstrap
-  ledger; never use `supabase db push` or SQL Editor against Fly production.
-- Graphify receives only reviewed aggregate, content-free sourcing evidence. No
-  candidate PII or free text enters the lesson worker.
-- Do not claim production readiness from local tests, local containers, a green
-  shell page, or an older live deployment.
+- Do not untrack, delete, or hide the owner-run deploy scripts.
+- Do not widen `alternateProductionDeployPattern`.
+- The three scripts are canonical only because they now carry the shared release guard before credentials and Fly mutations.
+- No production Fly command was run.
+- No `.env*`, secret, production data, shipped numbered migration, `.rocket-fuel/PLAN.md`, or `.rocket-fuel/ROCKS.md` was changed.
+- Docker database runtime proof remains delegated to the Visionary.
 
-## Watch out
+## Watch Out
 
-- Claude and Codex share this worktree. Every uncommitted file is real work.
-  Never discard or overwrite it because it is not yet in `HEAD`.
-- OneDrive can break or slow direct Next builds. Use `npm run build:isolated`
-  for the source checkout.
-- Treat the organization program as structure-only unless a failing permanent
-  gate proves a correctness defect. Do not mix unrelated behavior changes into
-  cleanup commits.
-- Database tests create Docker projects and volumes. If interrupted, inspect
-  named `aria-*` resources and clean only resources created by the interrupted
-  test; never remove unrelated volumes.
-- Never put credentials, provider references, candidate data, decrypted memory,
-  or private evidence into Relay, logs, commits, test fixtures, or chat.
-- Keep production effect flags and the framework kill switch off while external
-  evidence remains incomplete.
+- The worktree has many unrelated dirty and untracked files. Do not sweep them into Rock 1 commits.
+- Current baton archived at `_relay/archive/2026-07-21-1559-codex.md`.
+- Commit remains the only unmet user stop condition, blocked by sandbox permissions rather than code or tests.
