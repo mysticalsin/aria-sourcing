@@ -1,6 +1,5 @@
-import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled } from "@/lib/supabase/config";
-import { decryptSecret } from "@/lib/crypto-secrets";
+import { resolveVaultSecret } from "@/lib/ai/vault-secret";
 import { isAllowedHermesUrl } from "./url";
 
 /**
@@ -28,36 +27,29 @@ export function getHermesBaseUrl(): { ok: true; baseUrl: string } | { ok: false;
   return { ok: true, baseUrl };
 }
 
+/**
+ * Provider slug that a Hermes runtime credential is stored under. The typed chat
+ * route already pins this (`src/app/api/hermes/chat/route.ts`), and the generic
+ * proxy must agree with it or the two paths accept different sets of secrets.
+ */
+const HERMES_VAULT_PROVIDER = "Aria Agent";
+
 export async function resolveHermesBearerToken(
   hermesApiKeyId?: string,
 ): Promise<{ ok: true; token: string } | { ok: false; reason: string }> {
   if (!hermesApiKeyId) return { ok: true, token: process.env.HERMES_API_KEY ?? "" };
   if (!supabaseEnabled) return { ok: false, reason: "Aria runtime key is not available." };
 
-  const session = await getServerSupabase();
-  const svc = getServiceSupabase();
-  if (!session || !svc) return { ok: false, reason: "Aria runtime key is not available." };
-  const {
-    data: { user },
-  } = await session.auth.getUser();
-  if (!user) return { ok: false, reason: "Aria runtime key is not available." };
-  const { data: wid } = await session.rpc("current_workspace_id");
-  const { data: row } = await svc
-    .from("api_keys")
-    .select("secret, workspace_id")
-    .eq("id", hermesApiKeyId)
-    .single();
-  if (!row || row.workspace_id !== wid || typeof row.secret !== "string") {
-    return { ok: false, reason: "Aria runtime key is not available." };
-  }
-  try {
-    const token = decryptSecret(row.secret);
-    return token
-      ? { ok: true, token }
-      : { ok: false, reason: "Aria runtime key is not available." };
-  } catch {
-    return { ok: false, reason: "Aria runtime key is not available." };
-  }
+  // Delegate to the single hardened resolver rather than re-implementing it.
+  // This function used to select on `workspace_id` alone — no `provider`, no
+  // `status = 'valid'` — so any authenticated workspace member could name any
+  // secret in their workspace, including a REVOKED one, and have it sent as a
+  // Bearer token to the Hermes host. resolveVaultSecret filters on workspace,
+  // status and provider in the query and re-checks each in code.
+  const token = await resolveVaultSecret(hermesApiKeyId, HERMES_VAULT_PROVIDER);
+  return token
+    ? { ok: true, token }
+    : { ok: false, reason: "Aria runtime key is not available." };
 }
 
 /**
