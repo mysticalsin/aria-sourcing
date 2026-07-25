@@ -123,6 +123,26 @@
     {
       "at": "2026-07-24",
       "lesson": "Run the real gate first, each command separate and unchained. One pass falsified three recorded claims that every project document asserted."
+    },
+    {
+      "at": "2026-07-25",
+      "lesson": "WHATWG URL.hostname keeps brackets on IPv6 literals, so host regexes written against bare addresses never fire. Strip brackets before matching."
+    },
+    {
+      "at": "2026-07-25",
+      "lesson": "Verify each audit finding against source before acting: two of this audit's own findings were overstated and its adversarial reviewer was right both times."
+    },
+    {
+      "at": "2026-07-25",
+      "lesson": "Hermes upstream is two processes with disjoint routes (aiohttp gateway 8642, FastAPI management 8080). One base URL 404s every management path."
+    },
+    {
+      "at": "2026-07-25",
+      "lesson": "Never let a secondary base URL fall back to the primary; silent fallback is how seven Hermes management paths 404'd unnoticed for weeks."
+    },
+    {
+      "at": "2026-07-25",
+      "lesson": "When a test asserts against a path that does not exist upstream, fix the test to the real path rather than reinstating the dead path."
     }
   ]
 }
