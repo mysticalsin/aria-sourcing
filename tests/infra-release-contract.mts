@@ -80,6 +80,7 @@ const releaseEvidenceArtifactDigestOutput = releaseEvidenceArchiveId
   : "";
 const appDeployLine = deploy.split("\n").find((line) => /fly deploy --config fly\.app\.toml/.test(line)) ?? "";
 const reviewedAlternateDeploySurfaces = [
+  "deploy-fly-2.sh",
   "scripts/prod-apply-swarm-fixes.sh",
   "scripts/prod-deploy-app.sh",
   "scripts/prod-swarm-rollout.sh",
