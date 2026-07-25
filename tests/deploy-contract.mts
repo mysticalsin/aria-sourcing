@@ -906,6 +906,41 @@ ok(
   ),
 );
 
+/* ---- identity posture is a package, not three independent settings ----------
+   fly.auth.toml deliberately carries two production-unsafe values: a 5-character
+   password floor (GOTRUE_PASSWORD_MIN_LENGTH, default is 6) and mailer
+   auto-confirm (GOTRUE_MAILER_AUTOCONFIRM). Both are tolerable ONLY because
+   GOTRUE_DISABLE_SIGNUP is "true", so nobody but the owner can create an
+   account. Nothing asserted that coupling, which meant a single edit flipping
+   signup back on would silently open a tenant that accepts 5-character
+   passwords and self-confirms its own email addresses.
+
+   This does not freeze the values or decide whether the floor should be raised —
+   it enforces the dependency between them. Open signup requires the other two to
+   be safe first. ------------------------------------------------------------ */
+
+const authConfig = readFileSync("fly.auth.toml", "utf8");
+function gotrueSetting(name: string): string | undefined {
+  return new RegExp(`^\\s*${name}\\s*=\\s*"([^"]*)"`, "m").exec(authConfig)?.[1];
+}
+
+const signupDisabled = gotrueSetting("GOTRUE_DISABLE_SIGNUP");
+const passwordFloor = Number(gotrueSetting("GOTRUE_PASSWORD_MIN_LENGTH") ?? "0");
+const mailerAutoconfirm = gotrueSetting("GOTRUE_MAILER_AUTOCONFIRM");
+
+ok(
+  "fly.auth.toml declares all three identity-posture settings explicitly",
+  signupDisabled !== undefined && mailerAutoconfirm !== undefined && Number.isFinite(passwordFloor) && passwordFloor > 0,
+);
+ok(
+  "a short password floor is only permitted while signup is disabled",
+  passwordFloor >= 6 || signupDisabled === "true",
+);
+ok(
+  "mailer auto-confirm is only permitted while signup is disabled",
+  mailerAutoconfirm !== "true" || signupDisabled === "true",
+);
+
 const persistentFlyState = mkdtempSync(join(tmpdir(), "aria-deploy-contract-state-"));
 try {
   const firstRun = runDeploy({
