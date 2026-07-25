@@ -163,6 +163,9 @@ jobs:
       - name: Verify person identity model
         run: npm run test:db-person-model
 
+      - name: Verify autonomous-loop job spine authority
+        run: npm run test:db-loop-jobs
+
       - name: Verify Apollo enrichment authority
         run: npm run test:db-apollo-enrichment
 
