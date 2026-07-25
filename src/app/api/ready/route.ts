@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
+import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { evaluateReadiness, type MigrationIdentity, type MigrationState } from "@/lib/readiness";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase/config";
 import { getServiceSupabase } from "@/lib/supabase/server";
@@ -22,7 +23,13 @@ const expectedLedgerSha256 = process.env.ARIA_EXPECTED_LEDGER_SHA ?? "";
 const agentFrameworksRequired = process.env.NODE_ENV === "production" ||
   process.env.AGENT_FRAMEWORKS_REQUIRED === "true";
 
-export async function GET() {
+export async function GET(req: Request) {
+  // Unauthenticated deep-readiness probe: 3 DB queries + adapter network
+  // probes per call. Throttle per IP so it can't be turned into a cheap DoS.
+  // Liveness monitors should hit the far cheaper /api/health instead.
+  const limit = checkRateLimit(rateLimitKey(req, "ready"), { windowMs: 60_000, max: 20 });
+  if (!limit.ok) return tooManyRequests(limit.retryAfterSec);
+
   try {
     const client = getServiceSupabase();
     const authHealthUrl = new URL("/auth/v1/health", SUPABASE_URL).toString();

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { candidateFromPayload } from "@/lib/candidate-payload";
+import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import { getServerSupabase } from "@/lib/supabase/server";
@@ -75,6 +76,11 @@ export async function GET(req: NextRequest) {
     data: { user },
   } = await session.auth.getUser();
   if (!user) return noStoreJson({ ok: false, error: "Not authenticated." }, 401);
+
+  // The listing runs a multi-column ILIKE + sort + count per page; throttle it
+  // per authenticated principal so a search loop cannot hammer the DB.
+  const limit = checkRateLimit(rateLimitKey(req, "candidates", user.id), { windowMs: 60_000, max: 60 });
+  if (!limit.ok) return withSensitiveHeaders(tooManyRequests(limit.retryAfterSec));
 
   const { data: role } = await session.rpc("current_profile_role");
   if (!can(role as Role, "view")) {
