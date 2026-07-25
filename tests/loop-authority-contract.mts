@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 
-// Rocks 4-6 authority (migrations 0042-0045). Pins the safety-critical invariants:
+// Rocks 4-6 authority plus Rock 1's loop patch bridge (migrations 0042-0045, 0049).
+// Pins the safety-critical invariants:
 // the D1 single write path (optimistic concurrency + receipt + patch whitelist),
 // requisition idempotency, fail-closed enrichment budget, and — most important —
 // the never-auto-send sequence gate (activate requires every step approved; ships
@@ -11,6 +12,7 @@ const commit = read("supabase/migrations/0042_workspace_commit_authority.sql");
 const req = read("supabase/migrations/0043_requisition_authority.sql");
 const src = read("supabase/migrations/0044_sourcing_enrichment_authority.sql");
 const seq = read("supabase/migrations/0045_outreach_sequence_authority.sql");
+const loopPatch = read("supabase/migrations/0049_loop_workspace_patch_completion.sql");
 const priv = read("tests/db/function-privileges.sql");
 
 let pass = 0, fail = 0;
@@ -31,6 +33,14 @@ ok(
   "workspace_patch_receipts force RLS + apply grant service_role only",
   /alter table public\.workspace_patch_receipts force row level security/i.test(commit) &&
     /grant execute on function public\.apply_workspace_patch\(uuid, timestamptz, text, jsonb, text\) to service_role;/i.test(commit),
+);
+ok("0049 exists, no txn control", loopPatch.length > 0 && noTxn(loopPatch));
+ok(
+  "0049 completes workspace patch and aria job through existing authorities",
+  /public\.apply_workspace_patch\(/i.test(loopPatch) &&
+    /public\.complete_aria_job\(/i.test(loopPatch) &&
+    !/update public\.workspace_state/i.test(loopPatch) &&
+    /grant execute on function public\.complete_aria_job_with_workspace_patch/i.test(loopPatch),
 );
 
 // ── 0043 requisitions ──
@@ -85,6 +95,8 @@ ok(
 ok(
   "function-privileges registers the 4a-6 authority",
   /public\.apply_workspace_patch\(uuid,timestamptz,text,jsonb,text\)'\s*,\s*'service_role'/i.test(priv) &&
+    /public\.complete_aria_job_with_workspace_patch\(uuid,uuid,timestamp with time zone,text,jsonb,text,text,jsonb,jsonb\)'\s*,\s*'service_role'/i.test(priv) &&
+    /public\.read_workspace_state_for_loop\(uuid\)'\s*,\s*'service_role'/i.test(priv) &&
     /public\.claim_enrichment_budget\(uuid,text,text,integer,text\)'\s*,\s*'service_role'/i.test(priv) &&
     /public\.activate_outreach_sequence\(uuid\)'\s*,\s*'service_role'/i.test(priv) &&
     /public\.list_workspace_requisitions\(integer,integer\)'\s*,\s*'authenticated'/i.test(priv),

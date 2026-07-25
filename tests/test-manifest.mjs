@@ -219,6 +219,7 @@ export const testManifest = {
     {"id":"email-outcomes-contract","executable":"tsx","argv":["tests/email-outcomes-contract.mts"]},
     {"id":"email-outcomes-db","executable":"bash","argv":["tests/email-outcomes-db.sh"]},
     {"id":"loop-authority-contract","executable":"tsx","argv":["tests/loop-authority-contract.mts"]},
+    {"id":"sourcing-loop-worker","executable":"tsx","argv":["tests/sourcing-loop-worker.mts"]},
   ],
   groups: {
     "pretest": [
@@ -416,6 +417,7 @@ export const testManifest = {
       "email-inbound-contract",
       "email-outcomes-contract",
       "loop-authority-contract",
+      "sourcing-loop-worker",
       "test-manifest-contract",
     ],
     "posttest": [
