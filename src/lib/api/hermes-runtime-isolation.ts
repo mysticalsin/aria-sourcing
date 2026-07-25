@@ -3,7 +3,12 @@ export type HermesAccessDecision =
   | { ok: false; status: 403 | 405 | 503; reason: string };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const PUBLIC_RUNTIME_READS = new Set(["api/status", "api/system/stats", "api/health"]);
+// Non-admin-readable runtime paths. `api/health` was listed here but exists on
+// neither upstream process — the aiohttp gateway serves `/health` — so it was
+// dead weight, not the load-bearing public read it looked like. Replaced with
+// the path that does exist; api/status and api/system/stats are unaffected and
+// were always the working public reads.
+const PUBLIC_RUNTIME_READS = new Set(["api/status", "api/system/stats", "health"]);
 
 /**
  * One global Hermes process is not multi-tenant. Production may expose it only

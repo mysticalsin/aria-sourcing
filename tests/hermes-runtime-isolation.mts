@@ -48,20 +48,31 @@ ok(
   evaluateHermesProxyOperation({ production: true, method: "GET", upstreamPath: "api/memory", canManageSettings: false }).status === 403,
 );
 ok(
+  // `api/health` exists on NEITHER upstream process — the aiohttp gateway serves
+  // `/health`. This assertion previously guarded a path that could only 404.
   "viewer can read bounded health",
-  evaluateHermesProxyOperation({ production: true, method: "GET", upstreamPath: "api/health", canManageSettings: false }).ok,
+  evaluateHermesProxyOperation({ production: true, method: "GET", upstreamPath: "health", canManageSettings: false }).ok,
+);
+ok(
+  "the non-existent api/health path is not a public read",
+  !evaluateHermesProxyOperation({ production: true, method: "GET", upstreamPath: "api/health", canManageSettings: false }).ok,
 );
 
 const envScope = createProcessEnvScope([
   "NODE_ENV",
   "HERMES_API_URL",
+  "HERMES_WEB_URL",
   "HERMES_API_KEY",
   "OPENAI_API_KEY",
   "HERMES_RUNTIME_WORKSPACE_ID",
 ]);
 envScope.set({
   NODE_ENV: "production",
+  // Upstream is two processes with disjoint route sets: the aiohttp gateway
+  // (8642) and the FastAPI management server (8080). Both must be configured or
+  // the management reads below cannot resolve a base URL.
   HERMES_API_URL: "http://127.0.0.1:8642",
+  HERMES_WEB_URL: "http://127.0.0.1:8080",
   HERMES_API_KEY: "test-global-runtime-key",
   OPENAI_API_KEY: "test-cloud-key",
   HERMES_RUNTIME_WORKSPACE_ID: undefined,
@@ -143,8 +154,12 @@ try {
 
   workspaceId = workspaceA;
   role = "viewer";
-  const health = await proxyGet(new NextRequest("http://localhost/api/hermes/proxy?upstreamPath=api/health"));
+  // `health` on the gateway, not `api/health` — the latter exists on neither
+  // upstream process, so it never reached a runtime and now 404s at the allow-list.
+  const health = await proxyGet(new NextRequest("http://localhost/api/hermes/proxy?upstreamPath=health"));
   ok("bound workspace viewer can read health", health.status === 200 && upstreamCalls === 1);
+  const deadHealth = await proxyGet(new NextRequest("http://localhost/api/hermes/proxy?upstreamPath=api/health"));
+  ok("the non-existent api/health path 404s before any upstream call", deadHealth.status === 404 && upstreamCalls === 1);
 
   const memory = await proxyGet(new NextRequest("http://localhost/api/hermes/proxy?upstreamPath=api/memory"));
   ok("viewer cannot read global runtime memory", memory.status === 403 && upstreamCalls === 1);
@@ -161,7 +176,7 @@ try {
   ok("generic production chat proxy is closed", mutation.status === 405 && upstreamCalls === 2);
 
   const invalidKeyId = "33333333-3333-4333-8333-333333333333";
-  const invalidKey = await proxyGet(new NextRequest(`http://localhost/api/hermes/proxy?upstreamPath=api/health&hermesApiKeyId=${invalidKeyId}`));
+  const invalidKey = await proxyGet(new NextRequest(`http://localhost/api/hermes/proxy?upstreamPath=health&hermesApiKeyId=${invalidKeyId}`));
   ok("invalid vault key id cannot fall back to env credential", invalidKey.status === 403 && upstreamCalls === 2);
 
   const chatModule = await import("../src/app/api/hermes/chat/route");

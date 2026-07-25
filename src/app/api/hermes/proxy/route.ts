@@ -147,8 +147,10 @@ async function handler(req: NextRequest) {
     );
   }
 
-  // S-6: base URL from env only.
-  const baseUrlResult = getHermesBaseUrl();
+  // S-6: base URL from env only, chosen by the path's owning upstream process.
+  // Upstream is two servers with disjoint route sets; the allow-list records
+  // which one owns each path so the decision is data, not convention.
+  const baseUrlResult = getHermesBaseUrl(pathCheck.base);
   if (!baseUrlResult.ok) {
     return NextResponse.json({ ok: false, reason: baseUrlResult.reason });
   }
