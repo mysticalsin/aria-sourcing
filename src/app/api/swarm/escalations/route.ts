@@ -12,6 +12,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { validateBody } from "@/lib/api/validate";
+import { swarmRequestBoundary } from "@/lib/api/swarm-request-boundary";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { getServerSupabase } from "@/lib/supabase/server";
 
@@ -61,6 +62,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  // Request boundary first — before authentication, parsing or any side effect.
+  const boundary = swarmRequestBoundary(req);
+  if (boundary) return boundary;
   const session = await getServerSupabase();
   if (!session) {
     return NextResponse.json({ ok: false, error: "Supabase is not configured." }, { status: 503 });

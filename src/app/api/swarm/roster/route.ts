@@ -14,6 +14,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { validateBody } from "@/lib/api/validate";
+import { swarmRequestBoundary } from "@/lib/api/swarm-request-boundary";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { getServerSupabase, getServiceSupabase, requireAdmin } from "@/lib/supabase/server";
 
@@ -59,6 +60,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  // Request boundary first — before authentication, parsing or any side effect.
+  const boundary = swarmRequestBoundary(req);
+  if (boundary) return boundary;
   const session = await getServerSupabase();
   const admin = await requireAdmin(session);
   if (!admin.ok) return admin.response;
