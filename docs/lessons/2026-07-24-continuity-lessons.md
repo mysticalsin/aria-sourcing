@@ -134,3 +134,39 @@ These are not hypotheticals. Each one cost a later shift real time.
     the next shift to disbelieve the ledger.
     *Rule: every audit finding carries the code check that proves it still open, dated. Findings
     proven closed move to an explicit "no longer true" list.*
+
+---
+
+## Plan-review evidence hygiene (added 2026-07-25, from a 5-round Same Page Meeting)
+
+Four of eleven review findings across that engagement were not about the plan's substance at all —
+they were about how I cited evidence. Each one cost a full round. The pattern is worth more than the
+individual fixes.
+
+17. **Evidence must be committed at the SHA the reviewer reads, not merely present in your working
+    tree.** I cited a document as proving a claim while, at `HEAD`, that same document still concluded
+    the opposite — I had edited it and never committed. Verify with
+    `git log -1 --format=%H -- <path>` before citing. A reviewer reads the repo, not your editor.
+
+18. **When you copy a brief forward, diff it against the plan header.** Base SHA, branch and revision
+    must agree. A stale SHA in a copied brief made an approval target ambiguous and pointed the
+    reviewer at a commit where the cited evidence did not exist. The brief is an artefact the reviewer
+    trusts as much as the plan.
+
+19. **A value from a network call is not evidence until it exists locally.** I recorded a remote head
+    SHA obtained from `git ls-remote`; `git show` could not resolve it because the object had never
+    been fetched, and the local tracking ref was stale by 23 commits. Either materialise it
+    (`git fetch`) or cite the method rather than the value. Fetching also produced the real numbers,
+    which corrected a repo-wide belief: divergence was `23 62`, not the "~21 local-only" recorded
+    elsewhere.
+
+20. **A placeholder inside a locked proof command is an unexecutable proof.** `origin/<branch>` cannot
+    run. "Locked at approval" has to mean executable as written, with no substitution step — otherwise
+    the rock cannot be proved and nobody notices until build time.
+
+21. **Brief a shape-level reviewer, not only a defect-level one.** Asking a second model "is this the
+    right architecture" — rather than "find the bugs" — surfaced more than either the plan author or
+    the defect reviewer: that the keystone rock was scheduled last and mislabelled independent, that
+    invented job-kind names would have been rejected by `enqueue_aria_job`, and that a missing
+    shortlist gate would have reduced the human approval gate to a rubber stamp. Two reviewers with
+    different questions beat two reviewers with the same question.
