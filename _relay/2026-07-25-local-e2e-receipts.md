@@ -86,10 +86,23 @@ separate harness correction.
 2. **`tests/isolated-build.mts` does not build anything.** It passes 7 assertions by checking that
    `scripts/build-isolated.mjs` *contains the strings* `"src"`, `"public"`, `"ci"` and
    `delete buildEnv.NEXT_DIST_DIR`, plus that a guide mentions the command. It never executes a
-   build. That is why defect 1 shipped green. **`npm run build` is in no gate at all** — the FULL
-   GATE is typecheck, typecheck:tests, lint, test:all, test:database.
-   *Recommendation: add a real build to CI (not to `test:all`, which would add minutes to every
-   run). Changing the locked FULL GATE definition is an owner decision.*
+   build.
+
+   **Corrected:** an earlier draft of this document said "`npm run build` is in no gate at all".
+   That was wrong. `.github/workflows/ci.yml:75-76` runs `npm run build` after `npm ci` at `:29`,
+   so **hosted CI would have caught defect 1**. What is true is narrower and more useful:
+
+   - the **locally-runnable** FULL GATE contains no build — it is typecheck, typecheck:tests, lint,
+     test:all, test:database — and `isolated-build` only string-matches a script, so it reads like
+     build coverage while providing none;
+   - hosted CI has the build and **has not been executing** (the 2026-07-19 audit records every job
+     failing to start on an exhausted Actions budget).
+
+   So this project has been running on a local-only gate that structurally cannot catch an
+   undeclared dependency. *The fix is restoring CI — already an owner action — not adding a step.
+   A second-order improvement would be making `isolated-build` actually execute the script it
+   describes, which changes it from a text match into a real build proof; that costs minutes and
+   changing the locked FULL GATE definition is an owner decision.*
 3. **`next dev` from the CloudStorage working tree is unusable, not merely slow.** It logged
    `✓ Ready in 6.8min` and then answered nothing: 240 s on `/api/health`, process at **0.0% CPU,
    sleeping, zero request lines logged**. Stronger than the existing "builds stall" note.
