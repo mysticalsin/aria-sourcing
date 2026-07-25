@@ -577,6 +577,16 @@ async function main() {
     process.exitCode = 78;
     return;
   }
+  for (const [event, kind] of [["unhandledRejection", "unhandled_rejection"], ["uncaughtException", "uncaught_exception"]]) {
+    process.on(event, (err) => {
+      console.error(JSON.stringify({
+        event: "agent_framework_heartbeat_crash",
+        kind,
+        message: err instanceof Error ? err.message : String(err),
+      }));
+      process.exit(1);
+    });
+  }
   const client = createAgentFrameworkHeartbeatClient(
     configuration.supabaseUrl,
     configuration.serviceRoleKey,

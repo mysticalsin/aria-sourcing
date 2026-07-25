@@ -308,6 +308,17 @@ async function main() {
     process.exit(78);
   }
 
+  for (const [event, kind] of [["unhandledRejection", "unhandled_rejection"], ["uncaughtException", "uncaught_exception"]]) {
+    process.on(event, (err) => {
+      console.error(JSON.stringify({
+        event: "apollo_authority_cleanup_crash",
+        kind,
+        message: err instanceof Error ? err.message : String(err),
+      }));
+      process.exit(1);
+    });
+  }
+
   const client = createSupabaseServiceClient(url, key);
   const controller = new AbortController();
   for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => controller.abort());
