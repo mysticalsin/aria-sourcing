@@ -13,6 +13,7 @@ const readinessInput = {
   expectedMigrationCount,
   expectedLedgerSha256,
   agentFrameworksRequired: true,
+  hermesRuntimeMisconfigured: false,
 };
 
 let passed = 0;
@@ -114,6 +115,22 @@ const frameworksOptional = await evaluateReadiness(
 );
 ok("a deliberately framework-free deployment does not inherit the optional probe failure", frameworksOptional.ok && frameworksOptional.components.agentFrameworks);
 
+/* A Hermes URL the SSRF allow-list refuses used to be invisible: every call fell
+   back to the deterministic mock and readiness still reported healthy. The
+   deployment must fail its own probe instead. */
+const hermesMisconfigured = await evaluateReadiness(
+  { ...readinessInput, hermesRuntimeMisconfigured: true },
+  healthyProbes(),
+);
+ok(
+  "an unroutable Hermes runtime URL makes readiness fail instead of degrading silently",
+  !hermesMisconfigured.ok && !hermesMisconfigured.components.hermesRuntime,
+);
+ok(
+  "a correctly configured or absent Hermes runtime does not fail readiness",
+  healthy.ok && healthy.components.hermesRuntime,
+);
+
 const readinessRoute = readFileSync(
   new URL("../src/app/api/ready/route.ts", import.meta.url),
   "utf8",
@@ -132,6 +149,7 @@ const missingIdentity = await evaluateReadiness(
     expectedMigrationCount: 0,
     expectedLedgerSha256: "",
     agentFrameworksRequired: true,
+    hermesRuntimeMisconfigured: false,
   },
   healthyProbes(),
 );

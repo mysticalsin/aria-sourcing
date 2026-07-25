@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { NextRequest } from "next/server";
-import { isAllowedHermesUrl } from "../src/lib/api/url";
+import { hermesRuntimeMisconfigured, isAllowedHermesUrl } from "../src/lib/api/url";
 import { validateBody } from "../src/lib/api/validate";
 
 let pass = 0,
@@ -26,6 +26,102 @@ ok("Loopback variant 127.0.0.2 blocked", !isAllowedHermesUrl("http://127.0.0.2:8
 ok("File scheme blocked", !isAllowedHermesUrl("file:///etc/passwd").ok);
 ok("FTP scheme blocked", !isAllowedHermesUrl("ftp://127.0.0.1").ok);
 ok("Invalid URL blocked", !isAllowedHermesUrl("not-a-url").ok);
+
+/* ---- deployment-owned Hermes host allow-list (HERMES_ALLOWED_HOSTS) ----
+   The built-in patterns only cover loopback and RFC1918, so no host reachable in
+   a real Fly deployment (`<app>.internal` on 6PN) could ever pass and the live
+   runtime silently degraded to the mock. The deployment now names its own hosts
+   exactly. These assertions pin that it stays an allow-list. */
+const savedAllowedHosts = process.env.HERMES_ALLOWED_HOSTS;
+function withAllowedHosts<T>(value: string | undefined, run: () => T): T {
+  if (value === undefined) delete process.env.HERMES_ALLOWED_HOSTS;
+  else process.env.HERMES_ALLOWED_HOSTS = value;
+  try {
+    return run();
+  } finally {
+    if (savedAllowedHosts === undefined) delete process.env.HERMES_ALLOWED_HOSTS;
+    else process.env.HERMES_ALLOWED_HOSTS = savedAllowedHosts;
+  }
+}
+
+ok(
+  "Fly .internal host rejected when the deployment has not named it",
+  withAllowedHosts(undefined, () => !isAllowedHermesUrl("http://aria-mantu-hermes.internal:8642").ok),
+);
+ok(
+  "Fly .internal host allowed once named exactly",
+  withAllowedHosts("aria-mantu-hermes.internal", () => isAllowedHermesUrl("http://aria-mantu-hermes.internal:8642").ok),
+);
+ok(
+  "6PN IPv6 literal allowed once named exactly",
+  withAllowedHosts("fdaa:0:1234::3", () => isAllowedHermesUrl("http://[fdaa:0:1234::3]:8642").ok),
+);
+// WHATWG URL.hostname keeps the brackets on an IPv6 literal, so every IPv6
+// block pattern in the validator was previously unreachable. Harmless while
+// default-deny rejected all IPv6; not harmless once a deployment can name one.
+ok(
+  "IPv6 loopback is blocked, proving the bracket-stripped block patterns fire",
+  withAllowedHosts("::1", () => !isAllowedHermesUrl("http://[::1]:8642").ok),
+);
+ok(
+  "IPv6 link-local and multicast stay blocked even when named",
+  withAllowedHosts("fe80::1,ff00::1", () =>
+    !isAllowedHermesUrl("http://[fe80::1]:8642").ok && !isAllowedHermesUrl("http://[ff00::1]:8642").ok),
+);
+ok(
+  "a named host does not admit its siblings",
+  withAllowedHosts("aria-mantu-hermes.internal", () => !isAllowedHermesUrl("http://other-app.internal:8642").ok),
+);
+ok(
+  "wildcard entries are not a pattern language",
+  withAllowedHosts("*.internal", () => !isAllowedHermesUrl("http://aria-mantu-hermes.internal:8642").ok),
+);
+ok(
+  "bare suffix entries do not admit a subdomain",
+  withAllowedHosts("internal", () => !isAllowedHermesUrl("http://aria-mantu-hermes.internal:8642").ok),
+);
+// A public host reaches the runtime only when the DEPLOYMENT names it. This is an
+// operator decision expressed in server-side env at deploy time, never from
+// request data, so it widens egress deliberately and not by user input. Asserted
+// in both directions so the distinction cannot rot into "public hosts are fine".
+ok(
+  "an unnamed public host is refused",
+  withAllowedHosts(undefined, () => !isAllowedHermesUrl("https://runtime.example.com").ok),
+);
+ok(
+  "a public host is reachable only because the deployment named it exactly",
+  withAllowedHosts("runtime.example.com", () =>
+    isAllowedHermesUrl("https://runtime.example.com").ok &&
+    !isAllowedHermesUrl("https://other.example.com").ok),
+);
+ok(
+  "naming a cloud metadata endpoint cannot unblock it (block-list wins)",
+  withAllowedHosts("metadata.google.internal,169.254.169.254", () =>
+    !isAllowedHermesUrl("http://metadata.google.internal").ok &&
+    !isAllowedHermesUrl("http://169.254.169.254/latest/meta-data").ok),
+);
+ok(
+  "an entry carrying a scheme or path is ignored",
+  withAllowedHosts("http://aria-mantu-hermes.internal/x", () => !isAllowedHermesUrl("http://aria-mantu-hermes.internal:8642").ok),
+);
+ok(
+  "built-in loopback still allowed with an unrelated allow-list set",
+  withAllowedHosts("aria-mantu-hermes.internal", () => isAllowedHermesUrl("http://127.0.0.1:8642").ok),
+);
+
+/* ---- silent-misconfiguration detector consumed by readiness ---- */
+ok(
+  "unconfigured Hermes is not a misconfiguration",
+  withAllowedHosts(undefined, () => !hermesRuntimeMisconfigured(undefined) && !hermesRuntimeMisconfigured("   ")),
+);
+ok(
+  "a configured but unroutable Hermes URL is a misconfiguration",
+  withAllowedHosts(undefined, () => hermesRuntimeMisconfigured("http://aria-mantu-hermes.internal:8642")),
+);
+ok(
+  "a configured and named Hermes URL is not a misconfiguration",
+  withAllowedHosts("aria-mantu-hermes.internal", () => !hermesRuntimeMisconfigured("http://aria-mantu-hermes.internal:8642")),
+);
 
 /* ---- validateBody helper ---- */
 const TestSchema = z.object({

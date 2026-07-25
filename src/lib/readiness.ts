@@ -21,6 +21,14 @@ export type ReadinessInput = {
   expectedMigrationCount: number;
   expectedLedgerSha256: string;
   agentFrameworksRequired: boolean;
+  /**
+   * True when HERMES_API_URL is set to a value the SSRF allow-list will refuse.
+   * The runtime is then unreachable and every call silently falls back to the
+   * deterministic mock, so the deployment must fail readiness rather than look
+   * healthy. False both when Hermes is unconfigured (feature off) and when it is
+   * configured correctly.
+   */
+  hermesRuntimeMisconfigured: boolean;
 };
 
 async function booleanProbe(probe: () => Promise<boolean>) {
@@ -61,7 +69,9 @@ export async function evaluateReadiness(input: ReadinessInput, probes: Readiness
     migration.latest.sha256 === input.expectedMigrationSha &&
     migration.count === input.expectedMigrationCount &&
     migration.ledgerSha256 === input.expectedLedgerSha256;
-  const ok = metadata && database && auth && queue && agentFrameworks && migrationMatches;
+  const hermesRuntime = !input.hermesRuntimeMisconfigured;
+  const ok =
+    metadata && database && auth && queue && agentFrameworks && migrationMatches && hermesRuntime;
 
   return {
     ok,
@@ -73,6 +83,7 @@ export async function evaluateReadiness(input: ReadinessInput, probes: Readiness
       auth,
       queue,
       agentFrameworks,
+      hermesRuntime,
       migration: migrationMatches,
       releaseIdentity: metadata,
     },

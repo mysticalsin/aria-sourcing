@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
+import { hermesRuntimeMisconfigured } from "@/lib/api/url";
 import { evaluateReadiness, type MigrationIdentity, type MigrationState } from "@/lib/readiness";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase/config";
 import { getServiceSupabase } from "@/lib/supabase/server";
@@ -42,6 +43,11 @@ export async function GET(req: Request) {
         expectedMigrationCount,
         expectedLedgerSha256,
         agentFrameworksRequired,
+        // Evaluated per request, not at module load: HERMES_API_URL and
+        // HERMES_ALLOWED_HOSTS are deployment config, and a probe that answered
+        // from a cached module-load reading would keep reporting the old verdict
+        // after the config was corrected.
+        hermesRuntimeMisconfigured: hermesRuntimeMisconfigured(process.env.HERMES_API_URL),
       },
       {
         database: async () => {
