@@ -62,3 +62,10 @@ aria-mark.png
 
 # operational one-off admin setup helper (reads gitignored secrets)
 set-admin-password.sh
+
+# Claude Code machine-local state. Registered worktrees here also inflate the
+# Bash sandbox profile (one deny rule each) until they are pruned, so they must
+# never be shared between checkouts.
+.claude/launch.json
+.claude/worktrees/
+.claude/.cc-writes/
