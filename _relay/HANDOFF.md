@@ -1,210 +1,120 @@
 ---
 project: MSourcing / ARIA
-shift: 50
-agent: claude-code (Opus 5, 1M)
-updated: 2026-07-25
-status: full-gate-green-at-a-clean-sha · 18 commits landed · H1+H3-bearer done · product plane still blocked
+shift: 51
+agent: codex
+updated: 2026-07-25 16:25 America/Toronto
+status: partial-rock-1-implementation-verification-blocked-by-local-sandbox-and-docker
 ---
 
-# Handoff — Shift 50
-
-## Read these four first
-
-1. `_relay/2026-07-24-state-of-the-union.md` — the canonical audit. What is true, what was
-   proven false, 32 deduped open blockers with file:line evidence.
-2. `docs/lessons/2026-07-24-continuity-lessons.md` — **tracked**, unlike `.rocket-fuel/IMPROVE.md`.
-   Sixteen lessons, most of them about how this handoff chain kept losing information.
-3. `_relay/2026-07-24-hermes-upstream-adoption-plan.md` — H1–H7 for bringing the Hermes process
-   agents onto current upstream. **H1 and the H3 bearer half are DONE** (see below). H4 gates H5
-   and needs owner sign-off.
-4. `_relay/2026-07-25-next-engagement-plan.md` — the blockers `PLAN.md` rev 7 cannot absorb:
-   Rock 4's defective premise, the swarm plane, why Rock 2 is really a server-side migration, the
-   readiness decision, and the branch topology.
+# Handoff - Shift 51
 
 ## Current state
 
-- Branch `integration/sourcing-enrichment-on-main`. Working tree **clean**.
-- **THE FULL GATE is green at a clean SHA — `2083a0d355c4d20e7344073056984db91aa4dcfb`.** All
-  seven commands, run separately and never chained: `typecheck` 0, `typecheck:tests` 0, `lint` 0
-  (10 pre-existing warnings, 0 errors), `test:all` 0 across 150 suites, `test:database` 0 across
-  17 suites, `test:manifest` 0, `docs-truth` 0. Re-verified at `9ac5913` and again at `2083a0d`.
-  Only documentation has been committed on top.
-- `test:database` is real, not structural: 17 suites under Docker including `loop-jobs-db` 41
-  assertions plus a SKIP LOCKED race, `person-model-db` 42, `email-durability-db` 22,
-  `candidates-corpus-db` 20, `email-inbound-db` 10, `email-outcomes-db` 9.
-- Highest migration is **`0048`**.
-- colima is running (cpu4/mem8/disk60, docker 29.5.2). It was **dead** at session start despite
-  `state.json` claiming otherwise — probe it, do not trust the note.
+- Branch: `integration/sourcing-enrichment-on-main`.
+- Start SHA for this shift: `d475e2fe62b1374eb270c992fea0288646e8a6e1`.
+- Working tree is intentionally dirty with Rock 1 implementation files listed below.
+- No git commit was created because the locked proof gate did not exit 0.
+- Highest shipped migration before this shift was `0048`; this shift adds new migration
+  `supabase/migrations/0049_loop_workspace_patch_completion.sql`. No shipped migration was edited.
+- Graphify remains unavailable in this checkout:
+  `graphify query ...` failed with `error: graph file not found: .../graphify-out/graph.json`,
+  and `graphify-out/wiki/index.md` is absent.
 
-## What this shift did
+## Done this shift
 
-**Audited.** Eight dimensions in parallel, adversarially reviewed. Result: the gate had been
-fixed and every artefact still said it was red; the sourcing product was described as nearly
-autonomous and cannot run without a browser. Both backwards. See the state-of-the-union.
+- Implemented durable loop handlers in `scripts/sourcing-loop-worker.mjs`.
+  - `HANDLER_KINDS` now comes from one declarative `PIPELINE_STAGE_TRANSITIONS` map.
+  - Every handler completion validates successor jobs against that map before calling
+    `complete_aria_job`.
+  - `shortlist_build` commits selected candidates through the new transactional wrapper around
+    `0042` `apply_workspace_patch`, then fans out one `draft_generate` job per candidate.
+  - `inbound_classify` builds the same `CANDIDATE_REPLY` untrusted-data envelope and includes the
+    `DISCLOSURE_SYSTEM` policy in the prompt handed to the model client.
+  - Sourcing/provider/enrichment handlers record durable completion events and stop at the human
+    shortlist boundary. They do not auto-enqueue shortlist jobs.
+  - No send path was added. `sequences_enabled`, `outreach_ledger`, `messages_outbound`, and approval
+    gates were not touched.
+- Added `0049_loop_workspace_patch_completion.sql`.
+  - `read_workspace_state_for_loop(uuid)`: service-only read of `workspace_state` and `updated_at`.
+  - `complete_aria_job_with_workspace_patch(...)`: service-only function that calls
+    `apply_workspace_patch` and `complete_aria_job` in one transaction.
+- Extended tests:
+  - `tests/sourcing-loop-worker.mts`: transition-map authority, handler registration, shortlist patch
+    commit, draft fan-out, and reply-classify prompt envelope.
+  - `tests/loop-jobs-db.sh`: declared kind acceptance, patch-completion success, patch replay
+    idempotency, rollback on follow-on conflict, lease reclaim, and SKIP LOCKED race per declared kind.
+  - `tests/loop-authority-contract.mts`: pins `0049` to `apply_workspace_patch` +
+    `complete_aria_job`.
+  - `tests/db/function-privileges.sql`: registers the two new service-only RPCs.
+  - `tests/test-manifest.mjs` and `tests/test-manifest-contract.mts`: registers the new application
+    suite and updates additive lifecycle digests.
 
-**Committed the tree so green attributes to a SHA.** 94 dirty and untracked entries down to
-zero. Fourteen commits `b1c5653..85ab870`, then documentation. Highlights:
+## Verification
 
-- Supabase session cookie now `Secure` in production (all four `@supabase/ssr` call sites
-  unified into `SUPABASE_COOKIE_OPTIONS`).
-- WhatsApp webhook body bounded before buffering and before the signature check — new
-  `readBoundedBody()`.
-- Classify task wraps candidate replies in the `CANDIDATE_REPLY` untrusted-data envelope.
-- Rate limits on `/api/ready`, `/api/unsubscribe/[token]`, `/api/candidates`.
-- Worker crash handlers; `RESEND_BASE_URL` override; `test:db-loop-jobs` in CI;
-  `docs-truth` asserts unique migration prefixes.
+Passed:
 
-**Fixed three release-integrity defects the audit surfaced:**
+- `node --import tsx tests/sourcing-loop-worker.mts` -> 6 tests, 0 failed.
+- `node --import tsx tests/loop-authority-contract.mts` -> `RESULT loop-authority-contract: 18 passed, 0 failed`.
+- `node --import tsx tests/test-manifest-contract.mts` -> 7 passed, 0 failed, 1 skipped.
+- `npm run typecheck` -> exit 0.
+- `npm run typecheck:tests` -> exit 0.
+- `npm run lint` -> exit 0 with 4 existing warnings in
+  `src/components/floor3d/retro/objects/AgentModel.tsx`.
+- `node --check scripts/sourcing-loop-worker.mjs` -> exit 0.
+- `bash -n tests/loop-jobs-db.sh` -> exit 0.
+- `git diff --check` -> exit 0.
 
-- `0043` was **edited in place** — a shipped, production-applied migration. That silently
-  disables `scripts/backup.sh` and the restore drill (`:86-90` compares file sha256 against
-  `public.aria_schema_migrations`). Reverted; re-issued as `0048`.
-- `deploy-fly-2.sh` was an **untracked** production deploy surface reading the Fly token off
-  disk with no release authority, invisible to `tests/infra-release-contract.mts` because that
-  test enumerates from `git ls-files`. Now guarded and registered.
-- `scripts/prod-swarm-rollout.sh:40` hard-coded `= "45"` migration files against 47 on disk, so
-  **your swarm rollout aborted 100% of the time**. Replaced with a mirror-vs-checkout integrity
-  check; the release guard above it already pins the migration set via exact SHA + clean tree.
+Blocked or failed by local environment:
 
-**Retired `.gitlab-ci.yml`** rather than committing it. It could not deploy (`deploy-fly.sh`
-requires `GITHUB_ACTIONS` + `GITHUB_REF_PROTECTED`) but did base64-restore the Fly token,
-production secrets and `.env.local` onto a third-party runner and `ls` them into the job log.
-Full content and reasoning: `_relay/incidents/2026-07-24-gitlab-ci-secret-bundle-retired.md`.
+- `colima status` -> `time="2026-07-25T16:22:43-04:00" level=fatal msg="colima is not running"`.
+- `docker info --format '{{.ServerVersion}}'` ->
+  `permission denied while trying to connect to the docker API at unix:///Users/tony/.colima/default/docker.sock`.
+- `colima start` ->
+  `error preparing config file: error writing yaml file: open /Users/tony/.colima/default/colima.yaml: operation not permitted`.
+- `npm run test:database` -> same Docker socket permission error.
+- `npm run test:db-loop-jobs` -> same Docker socket permission error.
+- `npm run test:all` -> `tests/apollo-cleanup-worker.mts` failed on
+  `listen EPERM: operation not permitted 127.0.0.1`.
+- `npm run test:manifest` -> `tsx` CLI failed on
+  `listen EPERM: operation not permitted /var/folders/5m/c_klcrrj4yj_jxhf4t6vhb080000gn/T/tsx-501/28111.pipe`.
+  The equivalent `node --import tsx tests/test-manifest-contract.mts` passed.
 
-**Gitignored e2e run evidence.** Candidate lists, match scores, experience history and a raw
-scraped profile JSON. Git history is immutable, so committing them would put personal data
-permanently beyond the reach of the erasure authority in `0033`/`0041`.
+## Blockers
 
-**Landed H1 and the H3 bearer half of the Hermes plan** — both self-contained, neither needs the
-runtime upgrade:
-
-- `9acbd03` **Hermes was unreachable in production.** `isAllowedHermesUrl` accepted only loopback
-  and RFC1918, while production reaches Hermes over Fly private DNS, so every reachable host was
-  refused and the client silently degraded to the mock. `HERMES_ALLOWED_HOSTS` now lets the
-  deployment name hosts exactly; wildcards/schemes/paths are ignored so it stays an allow-list,
-  and the SSRF block-list still runs first. Readiness gained a `hermesRuntime` component so a
-  configured-but-refused URL **fails the probe** instead of looking healthy.
-  - Found while testing it: WHATWG `URL.hostname` keeps the brackets on an IPv6 literal, so every
-    IPv6 block pattern (`^::1$`, `^fc00:`, `^fe80:`, `^ff00:`) was unreachable. Latent while
-    default-deny rejected all IPv6; not latent once a deployment can name one. Hostname is now
-    bracket-stripped, with assertions that loopback, link-local and multicast stay blocked even
-    when named.
-- `2083a0d` **Bearer resolver hardened.** `resolveHermesBearerToken` selected on `workspace_id`
-  alone — no `provider`, no `status='valid'` — so any workspace member could name any secret,
-  including a **revoked** one, and have it sent upstream as a Bearer token. The typed chat route
-  already did this correctly; the generic proxy now delegates to the same hardened resolver.
-
-- `b76d213` **Seven management paths were being asked of the wrong server.** Upstream is two
-  processes with disjoint route sets — the aiohttp gateway (8642) and the FastAPI management server
-  (8080) — and both were addressed off one `HERMES_API_URL`. The allow-list is now `{path, base}`
-  records so routing is data, not convention, and `HERMES_WEB_URL` addresses the management server
-  with **no fallback** between the two. Six entries that exist on neither process were deleted and
-  asserted un-restorable. The isolation suite had encoded the same mistake and went 10 failures →
-  23/23.
-
-**Still open in the Hermes plan:** the response-shape half of H3 (verified and scoped — see the
-plan; it is smaller than the audit claimed) and H4–H7. H4/H5 touch the live Amaris HR bot and want
-owner sign-off.
-
-**One decision waiting in H3:** `api/files` navigation is inert because the `path` parameter is
-never forwarded. Adding it hands the client control of which path on the Hermes host is read.
-Upstream applies its own managed-path policy and our proxy is admin-only in production, but this is
-a deliberate traversal-surface decision, not a typo fix, so it was left alone.
-
-## Second pass, 2026-07-25 — five more fixes and one escalated finding
-
-- `56ad585` **the unsafe identity defaults now have an enforced dependency.** A 5-character password
-  floor and mailer auto-confirm are tolerable only because `GOTRUE_DISABLE_SIGNUP` is true. Nothing
-  asserted that, so one edit would have opened a tenant accepting 5-character self-confirming
-  accounts. Asserts the coupling, not the values — Rock 4's question stays open.
-- `61a0fe2` **`api/files` navigation works, safely.** The `path` parameter was never forwarded so
-  browsing always returned the default root. Now validated by `isSafeRelativeBrowsePath`
-  (deny-by-default: absolute paths, drive letters, UNC, backslashes, `.`/`..`, empty segments,
-  control characters, >512 chars, and percent-encoding **outright** — decoding here would leave
-  upstream free to decode again), forwarded only for the one path that consumes it.
-- `2b01a6c` **one base-URL resolver.** The chat route re-read the env and re-ran the SSRF check
-  itself — the same twin-implementation pattern that let the bearer resolver drift. Also: the
-  settings hint claimed the Runtime API URL field decides where requests go; it does not.
-- `1c4c544` **the three swarm mutations are behind the same-origin JSON boundary, and the swarm
-  plane has its first test.** They went straight to `validateBody`, which has no origin or
-  media-type check, so a cross-site form post carrying the caller's cookies could answer an
-  escalation, create a mission or change the roster. The test's structural half fails when a NEW
-  swarm mutation route is added without the guard. Note the audit said four handlers; there are
-  three — `/api/swarm/runtime` is GET-only.
-
-**Escalated finding — read `_relay/2026-07-25-sourcing-egress-and-swarm-0049-spec.md`.** The
-prohibited-criteria bypass is far worse than the audit recorded. The policy is enforced on **one of
-nine** provider-reaching paths, there are **15 raw `fetch(` sites across 7 modules** with no egress
-chokepoint at all, and the paid Apify route accepts `schools`, `firstNames` and `lastNames` while
-carrying **no `campaignId`** — so it could not call the policy even if it wanted to. Four enrichment
-runners are unguarded too. `docs/SOURCING.md:445` is currently false.
-
-That spec also carries the full 0049 design for the two remaining swarm defects. **Neither is
-implemented**: all three adversarial critics and the swarm-test designer died on a session limit, and
-neither a 15-site egress refactor nor replacing three functions inside a production-applied migration
-should land unreviewed — especially with 0049's own proof suite not yet written.
-
-## Blockers — none of them mine to clear unilaterally
-
-**Product plane (code, in scope for a next engagement):**
-- Sourcing loop registers zero handlers (`sourcing-loop-worker.mjs:35`).
-- The only live sourcing authority route is browser-bound; scoring, dedupe and the candidate
-  commit all run in the browser store. "Headless" is architecturally blocked, not just unwired.
-- The swarm plane — 2122 lines of `0046` authority, two workers, four routes — has **zero
-  tests** and **no scheduler**, so it is outside every gate reported green above.
-- Prohibited-criteria gate bypassed by both vendor-API adapters; `0044`'s enrichment budget has
-  no caller.
-
-**Owner-gated:**
-- `/api/ready` can never return 200 in production — `agentFrameworks` is unconditionally required
-  and no artefact in this repo can satisfy it. Decide: deploy the sidecars or descope the flag.
-- Single-machine Postgres, no replication, no pooler, no proven restore.
-- The four production-unsafe identity defaults — and **Rock 4 collides with a green DB contract**
-  that asserts two of them are correct. Reopen the plan before building it.
-- Hermes: the install is a dirty fork 4444 commits behind carrying a live safety control as an
-  uncommitted diff, and it serves the Amaris "Mina" HR bot as well as MSourcing. H4 must not
-  start without your sign-off.
+1. Docker/colima cannot be used from this sandbox, so the database group and `test:db-loop-jobs`
+   could not execute.
+2. Loopback listen is denied in this sandbox, so `npm run test:all` stops in
+   `apollo-cleanup-worker`.
+3. The `tsx` CLI IPC pipe is denied in this sandbox, so package scripts that invoke `tsx` directly
+   can fail even when `node --import tsx ...` passes.
 
 ## Next steps
 
-1. Decide the Hermes scope. H1–H3 (our side: reachability, two-base routing, bearer resolver +
-   response shapes) are self-contained, verified, and need no Hermes upgrade — start there.
-   H4/H5 touch a live HR bot.
-2. Reopen `PLAN.md` for Rock 4. Its proof contradicts a green contract; that is a plan defect,
-   not a build problem.
-3. Give the swarm plane tests before giving it a scheduler. Enabling a scheduler on 2122 lines of
-   untested authority is the wrong order.
-4. Restore graphify (`graphify-out/graph.json` and `wiki/index.md` are both absent) or drop it
-   from the operating rules. Three shifts have now opened with a mandated query that fails.
-5. Nothing has been pushed. Local and remote integration histories are different commit graphs —
-   roughly 21 commits including all release hardening are local-only, because earlier pushes went
-   through the GitHub REST API rather than `git push`. Reconcile deliberately.
+1. Run the locked DB proof from a shell with Docker access:
+   `npm run test:db-loop-jobs`.
+2. Run the database group from the same shell:
+   `npm run test:database`.
+3. Run the full gate from an environment that permits loopback listeners and `tsx` IPC:
+   `npm run typecheck && npm run typecheck:tests && npm run lint && npm run test:all && npm run test:database`.
+4. If those pass, run `git status --porcelain --untracked-files=all`, review the intended files,
+   then commit the Rock 1 slice.
 
 ## Decisions made (don't relitigate)
 
-- Shipped numbered migrations are immutable. `0043` reverted, intent preserved in `0048`.
-- `.gitlab-ci.yml` stays retired. If a GitLab runner is wanted, it needs its own release
-  authority — OIDC-federated short-lived token, not a tarball of dotfiles.
-- e2e evidence containing candidate PII stays out of git history.
-- `.rocket-fuel/` is scratch. Durable lessons go to `docs/lessons/` (tracked). Do not try to
-  un-ignore `.rocket-fuel/` — `tests/repository-hygiene.mts:20,25` asserts the ignore rule and
-  that test is right.
-- Owner-run deploy scripts are kept and guarded, never deleted or hidden.
+- Shipped migrations remain immutable. `0049` is the only new migration in this slice.
+- Existing job-kind vocabulary was reused; no new job kind was declared.
+- Stage succession is enforced by `PIPELINE_STAGE_TRANSITIONS`.
+- Sourcing/provider/enrichment handlers do not auto-cross the human shortlist gate.
+- Candidate PII is not written to logs or loop events. Synthetic candidate names in tests are not
+  real candidate data.
+- No external send path was added.
 
 ## Watch out
 
-- **`git worktree prune` after worktree work.** 51 registered worktrees put 189 deny rules in the
-  Bash sandbox profile and pushed spawn arguments past the OS exec limit — every command failed
-  with `E2BIG`, in subagents too. The profile is built at session start, so pruning needs a
-  restart.
-- **Never write a sandbox bypass into a subagent prompt.** The safety classifier killed 7 of 8
-  audit dimensions for exactly that, after ~1.1M subagent tokens had been spent.
-- Two of three adversarial review lenses died on a session limit. The surviving lens upheld every
-  finding it judged, so treat the blocker list as verified but the *absence* of further findings
-  as unproven.
-- `tests/final-stealth-proof.mts` was landed as-is: a manual browser probe with no assertions that
-  reaches the live internet, registered in no test group. Promote it or drop it.
-- Docker is not persistent. Probe `colima status` before claiming the database lane.
-- `scripts/test-fly-db-volume.sh:512` prints its `RESULT` line as a hardcoded `printf`. It is
-  honest — unreachable on failure under `set -Eeuo pipefail` — but it reads like measured output.
-  Twelve suites share the pattern.
+- `tests/loop-jobs-db.sh` changes are shell-syntax-checked only in this sandbox; the SQL body still
+  needs real Docker execution.
+- The new `0049` wrapper intentionally raises on `complete_aria_job` failure after patch application,
+  so PostgreSQL rolls back both the patch receipt/state write and the follow-on enqueue.
+- The worker duplicates the disclosure policy text in runtime JavaScript because the production
+  `.mjs` script cannot import TypeScript via `tsx`; the test asserts the prompt text includes the
+  TypeScript `DISCLOSURE_SYSTEM` value.

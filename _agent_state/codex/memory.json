@@ -1,6 +1,10 @@
 {
   "recent_learnings": [
     {
+      "date": "2026-07-25",
+      "lesson": "Human-gated loop stages stop at gates; wrap workspace patches and job follow-ons in one SQL transaction."
+    },
+    {
       "date": "2026-07-16",
       "lesson": "Separate source proof from sandbox socket blockers; Docker and TSX IPC failures are environment evidence, not DB behavior proof."
     },
