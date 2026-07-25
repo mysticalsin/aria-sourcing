@@ -2,6 +2,42 @@ import { NextRequest, NextResponse } from "next/server";
 import { ZodSchema, ZodError } from "zod";
 
 /**
+ * Read a request body as raw text, bounded by maxBytes, streaming and
+ * cancelling the moment the cap is exceeded. Throws "payload_too_large" on
+ * overflow. Use this for routes that must verify a signature over the exact
+ * raw bytes (e.g. HMAC webhooks) and therefore cannot use validateBody's
+ * JSON parse.
+ */
+export async function readBoundedBody(req: NextRequest, maxBytes: number): Promise<string> {
+  const declaredLength = req.headers.get("content-length")?.trim() ?? "";
+  if (/^\d+$/.test(declaredLength) && Number(declaredLength) > maxBytes) {
+    throw new Error("payload_too_large");
+  }
+  const reader = req.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let receivedBytes = 0;
+  if (reader) {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      receivedBytes += value.byteLength;
+      if (receivedBytes > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error("payload_too_large");
+      }
+      chunks.push(value);
+    }
+  }
+  const buf = new Uint8Array(receivedBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    buf.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(buf);
+}
+
+/**
  * Shared API input validation helper.
  *
  * - Rejects oversized bodies before buffering.
