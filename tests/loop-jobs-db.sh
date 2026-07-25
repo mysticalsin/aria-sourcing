@@ -55,12 +55,20 @@ create table loop_jobs_test.results (
   detail text
 );
 
+-- security definer so a case running under a switched role (service_role,
+-- authenticated) can record its result without holding write access to the
+-- harness table. Cases that exercise role-scoped RPCs must switch role, and a
+-- plain function would insert as the caller and fail with
+-- "permission denied for table results". Granting those roles INSERT instead
+-- would widen the harness surface for every future case; definer keeps the
+-- write inside the owner.
 create function loop_jobs_test.expect(
   p_case_name text,
   p_passed boolean,
   p_detail text default null
 ) returns void
 language plpgsql
+security definer
 set search_path = pg_catalog, public, loop_jobs_test
 as $$
 begin
@@ -68,6 +76,8 @@ begin
   values (p_case_name, p_passed, p_detail);
 end;
 $$;
+
+alter function loop_jobs_test.expect(text, boolean, text) owner to postgres;
 
 create function loop_jobs_test.expect_scalar(
   p_case_name text,
@@ -216,6 +226,10 @@ insert into public.profiles(id, email, full_name, workspace_id, role) values
   ('c2000000-0000-4000-8000-000000000002','loop-member-a@example.test','Loop Member A','51111111-1111-4111-8111-111111111111','member'),
   ('c3000000-0000-4000-8000-000000000003','loop-admin-b@example.test','Loop Admin B','52222222-2222-4222-8222-222222222222','admin');
 
+insert into public.workspace_state(workspace_id, state) values
+  ('51111111-1111-4111-8111-111111111111', '{"campaigns":[],"candidates":[],"replies":[],"activities":[]}'::jsonb),
+  ('52222222-2222-4222-8222-222222222222', '{"campaigns":[],"candidates":[],"replies":[],"activities":[]}'::jsonb);
+
 -- ---------------------------------------------------------------------------
 -- 1. Seeding: the workspaces above were created AFTER the trigger existed.
 -- ---------------------------------------------------------------------------
@@ -282,6 +296,70 @@ select loop_jobs_test.expect_scalar(
   $$select result->>'status' from enqueue_bad_kind$$,
   'invalid_request'
 );
+do $$
+declare
+  declared_kind text;
+  enqueue_result jsonb;
+begin
+  set local role service_role;
+  perform loop_jobs_test.set_service_claims('c1000000-0000-4000-8000-000000000001');
+  -- Exactly the kinds enqueue_aria_job accepts (0038_loop_job_authority.sql:234-238)
+  -- and exactly the keys of the worker's PIPELINE_STAGE_TRANSITIONS. 'swarm_assignment'
+  -- was in this list and is NOT a declared kind, so it returned invalid_request and
+  -- made this case fail; the swarm plane is deliberately not part of this pipeline
+  -- (see PLAN.md non-goals). Rejection of an undeclared kind is covered by
+  -- 'enqueue-invalid-kind' above and by 'enqueue-undeclared-kind-refused' below.
+  foreach declared_kind in array array[
+    'email_sync', 'inbound_classify', 'requisition_parse', 'campaign_create',
+    'sourcing_batch', 'provider_poll', 'enrich_candidate', 'shortlist_build',
+    'draft_generate', 'delivery_reconcile', 'outcome_feedback'
+  ]
+  loop
+    -- run_at is deliberately FAR IN THE FUTURE. This case proves only that
+    -- enqueue_aria_job accepts every declared kind; it must never make those
+    -- jobs claimable, because later sections claim by kind from this same
+    -- workspace and several do so with a limit above 1 on purpose. Section 3's
+    -- claim_first uses limit 10 to prove "leases once", so a second due
+    -- sourcing_batch job put two rows in that temp table and section 4's
+    -- heartbeat_aria_job((select id from claim_first), ...) then failed with
+    -- "more than one row returned by a subquery used as an expression".
+    -- Keeping these jobs not-yet-due isolates this case without weakening it.
+    enqueue_result := public.enqueue_aria_job(
+      '51111111-1111-4111-8111-111111111111',
+      declared_kind,
+      'declared:' || declared_kind || ':0001',
+      jsonb_build_object('kind', declared_kind),
+      -- 29 days: inside enqueue_aria_job's `p_run_at > now() + interval '30 days'`
+      -- rejection bound (0038:245), and far enough out that no later section can
+      -- claim these jobs as due.
+      now() + interval '29 days',
+      500
+    );
+    perform loop_jobs_test.expect(
+      'enqueue-declared-kind-' || declared_kind,
+      enqueue_result->>'status' = 'enqueued',
+      enqueue_result::text
+    );
+  end loop;
+
+  -- The worker's stage map and the SQL kind whitelist must agree. An undeclared
+  -- kind the worker does not know must be refused by enqueue_aria_job, so a
+  -- handler can never be scheduled for a stage that does not exist.
+  enqueue_result := public.enqueue_aria_job(
+    '51111111-1111-4111-8111-111111111111',
+    'swarm_assignment',
+    'declared:swarm_assignment:0001',
+    jsonb_build_object('kind', 'swarm_assignment'),
+    now() + interval '29 days',
+    500
+  );
+  perform loop_jobs_test.expect(
+    'enqueue-undeclared-kind-refused',
+    enqueue_result->>'status' = 'invalid_request',
+    enqueue_result::text
+  );
+end;
+$$;
 select loop_jobs_test.expect_authenticated_sqlstate(
   'enqueue-authenticated-denied',
   $$select public.enqueue_aria_job('51111111-1111-4111-8111-111111111111','sourcing_batch','batch:x:0000001','{}'::jsonb, now(), 100)$$,
@@ -416,6 +494,141 @@ select loop_jobs_test.expect_scalar(
 );
 
 -- ---------------------------------------------------------------------------
+-- 6b. Workspace patch + completion wrapper: 0042 apply_workspace_patch and
+--     0038 complete_aria_job commit or roll back together.
+-- ---------------------------------------------------------------------------
+set role service_role;
+select loop_jobs_test.set_service_claims('c1000000-0000-4000-8000-000000000001');
+select public.enqueue_aria_job(
+  '51111111-1111-4111-8111-111111111111', 'shortlist_build', 'shortlist:commit:0001',
+  '{"campaignId":"camp-commit"}'::jsonb, now(), 100
+);
+create temporary table shortlist_commit_claim as
+select id, lease_id from public.claim_due_aria_jobs('worker-shortlist-commit', 120, array['shortlist_build'], 1)
+ where idempotency_key = 'shortlist:commit:0001';
+create temporary table shortlist_commit_snapshot as
+select public.read_workspace_state_for_loop('51111111-1111-4111-8111-111111111111') as result;
+create temporary table shortlist_commit_result as
+select public.complete_aria_job_with_workspace_patch(
+  (select id from shortlist_commit_claim),
+  (select lease_id from shortlist_commit_claim),
+  ((select result from shortlist_commit_snapshot)->>'updated_at')::timestamptz,
+  'append_candidates',
+  '[{"id":"cand-commit-1","campaignId":"camp-commit","name":"Synthetic Candidate","stage":"Sourced"}]'::jsonb,
+  'shortlist:receipt:commit:0001',
+  repeat('1', 64),
+  '[{"event_type":"shortlist.committed","subject_kind":"campaign","subject_id":"camp-commit","payload":{"candidateCount":1}}]'::jsonb,
+  '[{"kind":"draft_generate","idempotency_key":"draft:camp-commit:cand-commit-1","payload":{"campaignId":"camp-commit","candidateId":"cand-commit-1"}}]'::jsonb
+) as result;
+create temporary table shortlist_replay as
+select public.apply_workspace_patch(
+  '51111111-1111-4111-8111-111111111111',
+  -- The function returns json, so a bare `select result from <func>()` has no
+  -- such column — the output column is named after the function. Call it as a
+  -- scalar expression instead, matching how shortlist_rollback_snapshot aliases
+  -- it with `as result` before selecting.
+  ((public.read_workspace_state_for_loop('51111111-1111-4111-8111-111111111111'))->>'updated_at')::timestamptz,
+  'append_candidates',
+  '[{"id":"cand-commit-1","campaignId":"camp-commit","name":"Synthetic Candidate","stage":"Sourced"}]'::jsonb,
+  'shortlist:receipt:commit:0001'
+) as result;
+reset role;
+
+select loop_jobs_test.expect_scalar(
+  'workspace-patch-completion-applies',
+  $$select result->>'status' from shortlist_commit_result$$,
+  'completed'
+);
+select loop_jobs_test.expect_scalar(
+  'workspace-patch-completion-writes-candidate-once',
+  $$select count(*)::text
+      from public.workspace_state ws,
+           jsonb_array_elements(ws.state->'candidates') candidate
+     where ws.workspace_id = '51111111-1111-4111-8111-111111111111'
+       and candidate->>'id' = 'cand-commit-1'$$,
+  '1'
+);
+select loop_jobs_test.expect_scalar(
+  'workspace-patch-completion-enqueues-draft',
+  $$select concat_ws(':', status, kind) from public.aria_jobs
+     where workspace_id = '51111111-1111-4111-8111-111111111111'
+       and idempotency_key = 'draft:camp-commit:cand-commit-1'$$,
+  'queued:draft_generate'
+);
+select loop_jobs_test.expect_scalar(
+  'workspace-patch-replay-idempotent',
+  $$select concat_ws(':', result->>'status',
+      (select count(*)::text
+         from public.workspace_state ws,
+              jsonb_array_elements(ws.state->'candidates') candidate
+        where ws.workspace_id = '51111111-1111-4111-8111-111111111111'
+          and candidate->>'id' = 'cand-commit-1')) from shortlist_replay$$,
+  'already_applied:1'
+);
+
+set role service_role;
+select loop_jobs_test.set_service_claims('c1000000-0000-4000-8000-000000000001');
+select public.enqueue_aria_job(
+  '51111111-1111-4111-8111-111111111111', 'draft_generate', 'draft:conflict:cand-rollback',
+  '{"campaignId":"camp-rollback","candidateId":"original"}'::jsonb, now(), 100
+);
+select public.enqueue_aria_job(
+  '51111111-1111-4111-8111-111111111111', 'shortlist_build', 'shortlist:rollback:0001',
+  '{"campaignId":"camp-rollback"}'::jsonb, now(), 100
+);
+create temporary table shortlist_rollback_claim as
+select id, lease_id from public.claim_due_aria_jobs('worker-shortlist-rollback', 120, array['shortlist_build'], 1)
+ where idempotency_key = 'shortlist:rollback:0001';
+create temporary table shortlist_rollback_snapshot as
+select public.read_workspace_state_for_loop('51111111-1111-4111-8111-111111111111') as result;
+reset role;
+
+select loop_jobs_test.expect_sqlstate(
+  'workspace-patch-completion-conflict-raises',
+  $$
+    do $body$
+    begin
+      set local role service_role;
+      perform loop_jobs_test.set_service_claims('c1000000-0000-4000-8000-000000000001');
+      perform public.complete_aria_job_with_workspace_patch(
+        (select id from shortlist_rollback_claim),
+        (select lease_id from shortlist_rollback_claim),
+        ((select result from shortlist_rollback_snapshot)->>'updated_at')::timestamptz,
+        'append_candidates',
+        '[{"id":"cand-rollback","campaignId":"camp-rollback","name":"Synthetic Rollback","stage":"Sourced"}]'::jsonb,
+        'shortlist:receipt:rollback:0001',
+        repeat('2', 64),
+        '[{"event_type":"shortlist.committed","subject_kind":"campaign","subject_id":"camp-rollback","payload":{"candidateCount":1}}]'::jsonb,
+        '[{"kind":"draft_generate","idempotency_key":"draft:conflict:cand-rollback","payload":{"campaignId":"camp-rollback","candidateId":"DIFFERENT"}}]'::jsonb
+      );
+    end;
+    $body$
+  $$,
+  array['22023']
+);
+select loop_jobs_test.expect_scalar(
+  'workspace-patch-completion-rollback-keeps-job-leased',
+  $$select status from public.aria_jobs where id = (select id from shortlist_rollback_claim)$$,
+  'leased'
+);
+select loop_jobs_test.expect_scalar(
+  'workspace-patch-completion-rollback-no-candidate',
+  $$select count(*)::text
+      from public.workspace_state ws,
+           jsonb_array_elements(ws.state->'candidates') candidate
+     where ws.workspace_id = '51111111-1111-4111-8111-111111111111'
+       and candidate->>'id' = 'cand-rollback'$$,
+  '0'
+);
+select loop_jobs_test.expect_scalar(
+  'workspace-patch-completion-rollback-no-receipt',
+  $$select count(*)::text from public.workspace_patch_receipts
+     where workspace_id = '51111111-1111-4111-8111-111111111111'
+       and receipt_key = 'shortlist:receipt:rollback:0001'$$,
+  '0'
+);
+
+-- ---------------------------------------------------------------------------
 -- 7. Fail: retry backoff schedule, then dead-letter at max attempts.
 -- ---------------------------------------------------------------------------
 set role service_role;
@@ -539,6 +752,32 @@ select loop_jobs_test.expect_scalar(
   $$select concat_ws(':', (select reaped::text from reap_result),
                      (select status from public.aria_jobs where id = (select id from reap_claim)))$$,
   '1:queued'
+);
+
+-- The reaper requeues with a randomised 30-60s backoff
+-- (0038_loop_job_authority.sql: next_run_at = now() + make_interval(secs => 30 + random()*30)),
+-- so the job is 'queued' but NOT yet due. Re-claiming immediately would return
+-- zero rows every time. Bring it due first — the point of this case is that a
+-- reaped job is reclaimable exactly once by a NEW worker, not that the backoff
+-- is skippable, so the backoff is respected rather than removed.
+update public.aria_jobs
+   set next_run_at = now() - interval '1 second'
+ where id = (select id from reap_claim);
+
+set role service_role;
+select loop_jobs_test.set_service_claims('c1000000-0000-4000-8000-000000000001');
+create temporary table reclaim_after_crash_once as
+select id, lease_id, claimed_by from public.claim_due_aria_jobs('worker-reclaim-once', 120, array['email_sync'], 1)
+ where id = (select id from reap_claim);
+reset role;
+
+select loop_jobs_test.expect_scalar(
+  'reaper-reclaimed-exactly-once',
+  $$select concat_ws(':',
+      (select count(*)::text from reclaim_after_crash_once),
+      (select min(claimed_by) from reclaim_after_crash_once),
+      (select status from public.aria_jobs where id = (select id from reap_claim)))$$,
+  '1:worker-reclaim-once:leased'
 );
 
 -- ---------------------------------------------------------------------------
@@ -784,6 +1023,8 @@ $$;
 SQL
 
 concurrent_claim() {
+  local kind="$1"
+  local prefix="race:${kind}:"
   # Genuine SKIP LOCKED race: session 1 claims job R1 inside an OPEN
   # transaction and sleeps; session 2 claims concurrently and must get the
   # OTHER job (R2), never blocking, never double-claiming.
@@ -792,27 +1033,34 @@ set role service_role;
 select set_config('request.jwt.claims', '{"sub":"c1000000-0000-4000-8000-000000000001","role":"service_role"}', false);
 select set_config('request.jwt.claim.sub', 'c1000000-0000-4000-8000-000000000001', false);
 select set_config('request.jwt.claim.role', 'service_role', false);
-select public.enqueue_aria_job('51111111-1111-4111-8111-111111111111','provider_poll','race:job:00001','{"n":1}'::jsonb, now(), 100);
-select public.enqueue_aria_job('51111111-1111-4111-8111-111111111111','provider_poll','race:job:00002','{"n":2}'::jsonb, now(), 100);
 reset role;
 RACE_SETUP
+  psql_stdin -q <<RACE_SETUP_KIND
+set role service_role;
+select set_config('request.jwt.claims', '{"sub":"c1000000-0000-4000-8000-000000000001","role":"service_role"}', false);
+select set_config('request.jwt.claim.sub', 'c1000000-0000-4000-8000-000000000001', false);
+select set_config('request.jwt.claim.role', 'service_role', false);
+select public.enqueue_aria_job('51111111-1111-4111-8111-111111111111','$kind','${prefix}00001','{"n":1}'::jsonb, now(), 0);
+select public.enqueue_aria_job('51111111-1111-4111-8111-111111111111','$kind','${prefix}00002','{"n":2}'::jsonb, now(), 0);
+reset role;
+RACE_SETUP_KIND
 
   # The holder takes a raw row lock on job 00001 inside an OPEN transaction
   # (an uncommitted claim would be invisible to polling under READ COMMITTED,
   # so the lock — not a status flip — is the contended resource). The
   # challenger's claim must SKIP the locked row and lease exactly job 00002,
   # without blocking.
-  psql_stdin -q <<'RACE_HOLDER' &
+  psql_stdin -q <<RACE_HOLDER &
 begin;
-select id from public.aria_jobs where idempotency_key = 'race:job:00001' for update;
-select pg_sleep(8);
+select id from public.aria_jobs where idempotency_key = '${prefix}00001' for update;
+select pg_sleep(3);
 commit;
 RACE_HOLDER
   holder_pid=$!
 
   ready=""
   for _ in $(seq 1 60); do
-    ready="$(psql_stdin -Atc "select count(*) from pg_stat_activity where state = 'active' and query like '%pg_sleep(8)%' and query not like '%pg_stat_activity%'")"
+    ready="$(psql_stdin -Atc "select count(*) from pg_stat_activity where state = 'active' and query like '%pg_sleep(3)%' and query not like '%pg_stat_activity%'")"
     [ "$ready" = "1" ] && break
     sleep 0.5
   done
@@ -821,24 +1069,32 @@ RACE_HOLDER
     exit 1
   fi
 
-  raced="$(psql_stdin -Atq <<'RACE_CHALLENGER' | tail -n 1
+  raced="$(psql_stdin -Atq <<RACE_CHALLENGER | tail -n 1
 set role service_role;
 select set_config('request.jwt.claims', '{"sub":"c1000000-0000-4000-8000-000000000001","role":"service_role"}', false);
 select set_config('request.jwt.claim.sub', 'c1000000-0000-4000-8000-000000000001', false);
 select set_config('request.jwt.claim.role', 'service_role', false);
-select coalesce(string_agg(idempotency_key, ',') filter (where idempotency_key like 'race:job:%'), '<none>')
-  from public.claim_due_aria_jobs('race-challenger', 120, array['provider_poll'], 3);
+select coalesce(string_agg(idempotency_key, ',') filter (where idempotency_key like '${prefix}%'), '<none>')
+  from public.claim_due_aria_jobs('race-challenger-$kind', 120, array['$kind'], 1);
 RACE_CHALLENGER
 )"
   wait "$holder_pid"
 
-  held_status="$(psql_stdin -Atc "select status from public.aria_jobs where idempotency_key = 'race:job:00001'")"
-  if [ "$raced" != "race:job:00002" ] || [ "$held_status" != "queued" ]; then
-    echo "loop-jobs-db: SKIP LOCKED race FAILED (challenger got '${raced}', held job status '${held_status}')" >&2
+  held_status="$(psql_stdin -Atc "select status from public.aria_jobs where idempotency_key = '${prefix}00001'")"
+  if [ "$raced" != "${prefix}00002" ] || [ "$held_status" != "queued" ]; then
+    echo "loop-jobs-db: SKIP LOCKED race FAILED for ${kind} (challenger got '${raced}', held job status '${held_status}')" >&2
     exit 1
   fi
 }
-concurrent_claim
+# Exactly the kinds enqueue_aria_job accepts and the worker's stage map declares.
+# 'swarm_assignment' was listed here and is not a declared kind, so enqueue refused
+# it and the race found no job to contend for.
+for kind in \
+  email_sync inbound_classify requisition_parse campaign_create sourcing_batch provider_poll \
+  enrich_candidate shortlist_build draft_generate delivery_reconcile outcome_feedback
+do
+  concurrent_claim "$kind"
+done
 
 assertions="$(psql_stdin -Atc "select count(*) from loop_jobs_test.results")"
-echo "loop-jobs-db: spine, idempotency, leases, outbox, backoff, reapers, controls, append-only, ACL: ${assertions} assertions + SKIP LOCKED race, 0 failed"
+echo "loop-jobs-db: spine, idempotency, leases, outbox, workspace patch, backoff, reapers, controls, append-only, ACL: ${assertions} assertions + SKIP LOCKED race per kind, 0 failed"
