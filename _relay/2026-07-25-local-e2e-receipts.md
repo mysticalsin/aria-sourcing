@@ -2,7 +2,7 @@
 project: ARIA / MSourcing
 agent: claude-code (Opus 5, 1M)
 updated: 2026-07-25
-status: login PROVEN · send-guardrails PROVEN · live sourcing UNPROVABLE on this machine
+status: login PROVEN · send-guardrails PROVEN · live sourcing PROVEN (see the correction block) · live email send still blocked
 scope: executed end-to-end run against a local stack — receipts, not assertions
 ---
 
@@ -49,9 +49,41 @@ configured is not a fault. `agentFrameworks:false` is the known unsatisfiable bl
 `migration`/`releaseIdentity` are false only because the release-identity env vars are unset
 locally; that is expected for a local run.
 
-## NOT proven — live sourcing, and why
+## SUPERSEDED BELOW — live sourcing WAS subsequently proven
 
-Live sourcing was **not** demonstrated. Three layers, in the order they were hit:
+**Correction, appended 2026-07-25 after the section that follows was written.** The three layers
+below were real and are kept as the diagnostic record, but the conclusion "live sourcing was not
+demonstrated" is **no longer true**. After adding a tool-calling provider key and satisfying the
+remaining gates, `POST /api/sourcing-agent` returned **HTTP 200 with three real GitHub
+candidates**:
+
+```
+sourcing-agent HTTP 200 in 0.749975s
+OK  candidates=3  totalFound=3
+  * Neil Cummings      | score=30 | https://github.com/TryCatchLearn
+  * Sergie Code        | score=30 | https://github.com/sergiecode
+  * Fabio Spampinato   | score=30 | https://github.com/fabiospampinato
+```
+
+Four gates had to be satisfied in sequence, and each one was a deliberate control working:
+
+1. **Same-origin boundary** — 403 until the harness sent `Origin` (fixed in `7be026c`).
+2. **Campaign authority** — 409; `/api/source` refuses ad-hoc live search
+   (`src/app/api/source/route.ts:125-134`). The canonical route is `/api/sourcing-agent`.
+3. **Request contract** — 503 `invalid_state` then `INVALID_REQUEST`. The real contract is
+   `{campaignId, count}` plus an `Idempotency-Key` UUID header under a 2 KB cap, **not** an inline
+   campaign; `sourcingStrategy.githubQueries` are objects, not strings. Fixed in `1d37afd`.
+4. **Brief readiness** — 409 `CAMPAIGN_NOT_READY`. `evaluateNeedReadiness` requires `seniority` and
+   `employmentType` to not be `"Unspecified"`, and the JD never stated employment type. Satisfied
+   by confirming the brief, i.e. by doing the human review the product demands.
+
+**Two caveats that matter.** Scores came back flat at 30 with no titles or companies, in 0.75 s —
+that is the *deterministic* path, because the seeded workspace had no `llmProviders`, so
+`resolveAiProvider` returned nothing and no LLM enrichment ran. And the campaign had to be seeded
+directly into `workspace_state`: **there is no server-side route that creates a campaign**, which is
+the audit's browser-bound-commit blocker observed from the inside.
+
+## The original diagnostic — three layers, kept for the record
 
 1. **403 `CROSS_ORIGIN_REQUEST`.** The harness sent no `Origin` header, so every sourcing route
    refused it at the request boundary. Fixed in `7be026c` — a browser always sends `Origin`, so a
