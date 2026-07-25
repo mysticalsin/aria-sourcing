@@ -9,6 +9,7 @@ import {
   resolveHermesBearerToken,
   logHermesProxy,
   isAllowedHermesPath,
+  isSafeRelativeBrowsePath,
   HERMES_PROXY_TIMEOUT_MS,
 } from "@/lib/api/hermes-proxy";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
@@ -171,6 +172,25 @@ async function handler(req: NextRequest) {
   for (const key of ["page", "limit", "cursor", "q", "level"]) {
     const val = searchParams.get(key);
     if (val !== null) upstreamUrl.searchParams.set(key, val);
+  }
+  // `api/files` is a directory listing and needs the directory to list. Without
+  // this the endpoint always returned its default root, so browsing was inert.
+  //
+  // A path parameter is a traversal surface, so it is forwarded ONLY for the one
+  // path that consumes it, and only after local validation. Upstream applies its
+  // own managed-path policy on top (_resolve_managed_path / _is_sensitive_path),
+  // and in production this route is already admin-only — three independent
+  // layers, none of them relied on alone.
+  if (pathCheck.upstreamPath === "api/files") {
+    const requestedDir = searchParams.get("path");
+    if (requestedDir !== null) {
+      const check = isSafeRelativeBrowsePath(requestedDir);
+      if (!check.ok) {
+        logHermesProxy("error", "Blocked Aria file-browse path", { reason: check.reason });
+        return NextResponse.json({ ok: false, reason: check.reason }, { status: 400 });
+      }
+      upstreamUrl.searchParams.set("path", requestedDir);
+    }
   }
   logHermesProxy("info", "Proxying Aria request", { method: req.method, path: pathCheck.upstreamPath });
 

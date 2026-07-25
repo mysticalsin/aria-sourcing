@@ -122,6 +122,35 @@ export const HERMES_PROXY_ALLOW_LIST: readonly { path: string; base: HermesProxy
   { path: "api/files", base: "web" },
 ];
 
+/**
+ * Validate a client-supplied directory path before it is forwarded to the
+ * runtime's file browser. Deny-by-default: only a relative POSIX-style path made
+ * of ordinary segments is accepted.
+ *
+ * Rejected: absolute paths, Windows drive letters and UNC prefixes, backslashes,
+ * any `.` or `..` segment, NUL and control characters, percent-encoding (which
+ * would let `%2e%2e` survive this check and be decoded upstream), and anything
+ * over 512 characters. Upstream enforces its own managed-path policy as well;
+ * this exists so a traversal attempt never leaves our process.
+ */
+export function isSafeRelativeBrowsePath(raw: string): { ok: true } | { ok: false; reason: string } {
+  if (raw.length > 512) return { ok: false, reason: "Path is too long." };
+  // Unicode escapes, not literal control bytes: the source stays readable and
+  // no-control-regex has nothing to flag.
+  if (/[\u0000-\u001f\u007f]/.test(raw)) return { ok: false, reason: "Path contains control characters." };
+  if (raw.includes("%")) return { ok: false, reason: "Percent-encoded paths are not accepted." };
+  if (raw.includes("\\")) return { ok: false, reason: "Backslashes are not accepted in a path." };
+  if (raw.startsWith("/") || /^[a-zA-Z]:/.test(raw)) return { ok: false, reason: "Path must be relative." };
+  // An empty string means "the default root", which upstream already handles.
+  if (raw === "") return { ok: true };
+  const segments = raw.split("/");
+  for (const segment of segments) {
+    if (segment === "" ) return { ok: false, reason: "Path contains an empty segment." };
+    if (segment === "." || segment === "..") return { ok: false, reason: "Relative path segments are not accepted." };
+  }
+  return { ok: true };
+}
+
 export function isAllowedHermesPath(
   path: string[],
 ): { ok: true; upstreamPath: string; base: HermesProxyBase } | { ok: false; reason: string; upstreamPath: string } {

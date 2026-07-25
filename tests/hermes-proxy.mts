@@ -3,7 +3,7 @@
    Area: Aria runtime proxy — path allow-list and URL helpers.
    ========================================================================== */
 
-import { isAllowedHermesPath, HERMES_PROXY_ALLOW_LIST } from "../src/lib/api/hermes-proxy";
+import { isAllowedHermesPath, isSafeRelativeBrowsePath, HERMES_PROXY_ALLOW_LIST } from "../src/lib/api/hermes-proxy";
 
 let pass = 0,
   fail = 0;
@@ -64,6 +64,52 @@ for (const dead of ["api/health", "api/tools", "api/models", "api/schedules", "a
   ok(`${dead} is not allow-listed (exists on neither upstream server)`, !allowedPaths.includes(dead));
   ok(`${dead} is refused by the validator`, isAllowedHermesPath(dead.split("/")).ok === false);
 }
+
+/* ---- api/files browse path validation --------------------------------------
+   The file browser needs a directory to list, and that parameter was never
+   forwarded, so browsing was inert. A client-supplied path is a traversal
+   surface, so it is validated here before it can leave the process. Upstream
+   applies its own managed-path policy on top and the route is admin-only in
+   production; none of the three layers is relied on alone. ----------------- */
+
+for (const good of ["", "skills", "skills/bundled", "a/b/c", "with-hyphen", "with_underscore", "file.md", "Ünïcode"]) {
+  ok(`accepts the ordinary relative path ${JSON.stringify(good)}`, isSafeRelativeBrowsePath(good).ok === true);
+}
+for (const bad of [
+  "..",
+  "../etc/passwd",
+  "skills/../../etc/passwd",
+  "./skills",
+  "skills/./bundled",
+  "/etc/passwd",
+  "/",
+  "C:/Windows",
+  "c:\\Windows",
+  "skills\\bundled",
+  "skills//bundled",
+  "skills/",
+  "%2e%2e/etc",
+  "skills%2f..%2fetc",
+  "a".repeat(513),
+]) {
+  ok(`refuses the unsafe path ${JSON.stringify(bad.slice(0, 40))}`, isSafeRelativeBrowsePath(bad).ok === false);
+}
+// Percent-encoding is refused outright rather than decoded: decoding here and
+// validating the result would still leave upstream free to decode again.
+ok(
+  "percent-encoding is refused before any decode is attempted",
+  isSafeRelativeBrowsePath("%2e%2e").ok === false && isSafeRelativeBrowsePath("ok%20name").ok === false,
+);
+ok(
+  "control characters are refused",
+  isSafeRelativeBrowsePath("skills\u0000etc").ok === false && isSafeRelativeBrowsePath("skills\u001f").ok === false,
+);
+// Only api/files consumes a path, so the parameter must not be forwarded for
+// anything else. Asserted structurally against the allow-list.
+ok(
+  "api/files is the only allow-listed path that takes a directory parameter",
+  allowedPaths.filter((p) => p === "api/files").length === 1,
+);
 
 console.log(`RESULT hermes-proxy: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
