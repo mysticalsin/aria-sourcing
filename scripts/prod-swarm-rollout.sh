@@ -3,8 +3,8 @@
 #
 # Runs the whole chain in one deliberate command, from a local (non-OneDrive)
 # working copy it creates itself:
-#   1. rebuild + push the bootstrap image (bakes migrations 0001-0046 and the
-#      refreshed reviewed-baseline pins),
+#   1. rebuild + push the bootstrap image (bakes every numbered migration in the
+#      reviewed checkout and the refreshed reviewed-baseline pins),
 #   2. apply migrations to aria-mantu-db (idempotent, ledgered phase),
 #   3. verify the swarm authority answers through prod PostgREST,
 #   4. deploy the app (synchronous Send fix + /api/swarm routes),
@@ -36,8 +36,19 @@ rsync -a \
   --exclude 'production-readiness' --exclude '.env*' \
   "$repo/" "$work/"
 cd "$work"
-migration_count="$(ls supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql | wc -l | tr -d ' ')"
-[ "$migration_count" = "45" ] || { echo "ABORT: expected 45 migration files, found $migration_count"; exit 1; }
+# The release guard above already binds HEAD to an exact reviewed SHA with a
+# clean tree, which pins the migration set far harder than a literal count could
+# — and a count that must be hand-bumped goes stale and aborts every run instead
+# (it sat at 45 while the checkout carried more). So assert the thing the guard
+# cannot see: that the local mirror this script just built actually matches the
+# checkout it was copied from.
+mirror_migrations="$(ls supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql | wc -l | tr -d ' ')"
+repo_migrations="$(ls "$repo"/supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql | wc -l | tr -d ' ')"
+[ "$mirror_migrations" = "$repo_migrations" ] || {
+  echo "ABORT: mirror has $mirror_migrations migrations, checkout has $repo_migrations — rsync did not reproduce the checkout"
+  exit 1
+}
+echo "    migrations: $mirror_migrations files, tip $(ls supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql | tail -1 | xargs basename)"
 
 echo "=== 1/5 bootstrap image (remote builder) ==="
 flyctl deploy --config fly.bootstrap.toml --build-only --push --image-label latest --remote-only
