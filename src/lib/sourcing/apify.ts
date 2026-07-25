@@ -20,6 +20,7 @@
 import type { getServerSupabase } from "@/lib/supabase/server";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import { decryptSecret } from "@/lib/crypto-secrets";
+import { sourcingFetch, type ProviderClearance } from "@/lib/sourcing/provider-transport";
 
 const APIFY_API = "https://api.apify.com/v2";
 const ACTOR_PATH = "/actors/harvestapi~linkedin-profile-search/runs";
@@ -328,12 +329,13 @@ function buildActorInput(input: ApifyProfileSearchInput): Record<string, unknown
  * honestly to the caller. Never logs the token.
  */
 async function apifyRequest<T>(
+  clearance: ProviderClearance,
   path: string,
   token: string,
   opts: { method?: "GET" | "POST"; body?: unknown; timeoutMs?: number } = {},
 ): Promise<ApifyResult<T>> {
   try {
-    const res = await fetch(`${APIFY_API}${path}`, {
+    const res = await sourcingFetch(clearance, `${APIFY_API}${path}`, {
       method: opts.method ?? "GET",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
@@ -359,11 +361,12 @@ interface RawRunEnvelope {
 
 /** Start the actor run. Async — the caller polls getRunStatus() for completion. */
 export async function startProfileSearchRun(
+  clearance: ProviderClearance,
   token: string,
   input: ApifyProfileSearchInput,
 ): Promise<ApifyResult<{ runId: string; datasetId: string; status: string }>> {
   const body = buildActorInput(input);
-  const res = await apifyRequest<RawRunEnvelope>(ACTOR_PATH, token, { method: "POST", body, timeoutMs: 15_000 });
+  const res = await apifyRequest<RawRunEnvelope>(clearance, ACTOR_PATH, token, { method: "POST", body, timeoutMs: 15_000 });
   if (!res.ok) return res;
   const r = res.data.data ?? {};
   return {
@@ -378,8 +381,12 @@ interface RawStatusEnvelope {
 }
 
 /** Poll the async run's status. Terminal: SUCCEEDED / FAILED / TIMED-OUT / ABORTED. */
-export async function getRunStatus(token: string, runId: string): Promise<ApifyResult<{ status: string }>> {
-  const res = await apifyRequest<RawStatusEnvelope>(`/actor-runs/${encodeURIComponent(runId)}`, token, {
+export async function getRunStatus(
+  clearance: ProviderClearance,
+  token: string,
+  runId: string,
+): Promise<ApifyResult<{ status: string }>> {
+  const res = await apifyRequest<RawStatusEnvelope>(clearance, `/actor-runs/${encodeURIComponent(runId)}`, token, {
     timeoutMs: 15_000,
   });
   if (!res.ok) return res;
@@ -388,11 +395,13 @@ export async function getRunStatus(token: string, runId: string): Promise<ApifyR
 
 /** Fetch a completed run's dataset items, normalized into ApifyProfile[]. */
 export async function fetchDatasetItems(
+  clearance: ProviderClearance,
   token: string,
   datasetId: string,
   limit: number,
 ): Promise<ApifyResult<ApifyProfile[]>> {
   const res = await apifyRequest<RawApifyProfile[]>(
+    clearance,
     `/datasets/${encodeURIComponent(datasetId)}/items?format=json&limit=${encodeURIComponent(String(limit))}`,
     token,
     { timeoutMs: 30_000 },
@@ -403,8 +412,8 @@ export async function fetchDatasetItems(
 }
 
 /** Cheap, no-run connectivity check used by the API-key "Test connection" flow. */
-export async function testApifyConnection(token: string): Promise<ApifyResult<unknown>> {
-  return apifyRequest("/users/me", token, { timeoutMs: 8_000 });
+export async function testApifyConnection(clearance: ProviderClearance, token: string): Promise<ApifyResult<unknown>> {
+  return apifyRequest(clearance, "/users/me", token, { timeoutMs: 8_000 });
 }
 
 /**
@@ -422,10 +431,14 @@ export async function testApifyConnection(token: string): Promise<ApifyResult<un
  * separate from a generic error) so the runner can surface a graceful "needs
  * owner approval" not_configured state instead of a hard failure.
  */
-export async function enrichProfilesByUrl(token: string, urls: string[]): Promise<ApifyResult<ApifyProfile[]>> {
+export async function enrichProfilesByUrl(
+  clearance: ProviderClearance,
+  token: string,
+  urls: string[],
+): Promise<ApifyResult<ApifyProfile[]>> {
   const profileUrls = urls.map((u) => u.trim()).filter(Boolean);
   if (profileUrls.length === 0) return { ok: true, status: 200, data: [] };
-  const res = await apifyRequest<RawApifyProfile[]>(DEV_FUSION_PATH, token, {
+  const res = await apifyRequest<RawApifyProfile[]>(clearance, DEV_FUSION_PATH, token, {
     method: "POST",
     body: { profileUrls },
     timeoutMs: 60_000,

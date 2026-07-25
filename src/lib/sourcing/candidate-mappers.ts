@@ -1,7 +1,7 @@
 import { dedupeCandidates } from "@/lib/rules";
 import { scoreCandidate } from "@/lib/scoring";
 import type { ApolloSearchProfile } from "@/lib/sourcing/apollo";
-import type { GithubUser } from "@/lib/sourcing/github";
+import type { GithubUser } from "@/lib/sourcing/github-identity";
 import type { SeamlessContact } from "@/lib/sourcing/seamless";
 import type { WebLead, WebSearchPlatform } from "@/lib/sourcing/web-leads";
 import type { Campaign, Candidate, ScoringWeights } from "@/lib/types";

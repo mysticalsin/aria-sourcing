@@ -15,7 +15,7 @@ import {
   campaignAllowsLiveSourcing,
   campaignAllowsManualCandidateIntake,
 } from "../sourcing/campaign-lifecycle";
-import { GITHUB_USERNAME_RE, type GithubUser } from "../sourcing/github";
+import { GITHUB_USERNAME_RE, type GithubUser } from "../sourcing/github-identity";
 import {
   candidateFromSourcingAgentDto,
   sourcingAgentCampaignFingerprint,

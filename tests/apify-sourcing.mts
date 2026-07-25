@@ -1,7 +1,13 @@
 import { buildSeedState } from "../src/lib/seed";
 import { mapApifyCandidates } from "../src/lib/store/sourcing-helpers";
 import type { ApifyProfile } from "../src/lib/sourcing/apify";
-import { startProfileSearchRun, getRunStatus, fetchDatasetItems, testApifyConnection } from "../src/lib/sourcing/apify";
+import { mock } from "node:test";
+
+mock.module("server-only", { namedExports: {} });
+
+const { startProfileSearchRun, getRunStatus, fetchDatasetItems, testApifyConnection } = await import("../src/lib/sourcing/apify");
+const { clearProviderProbe } = await import("../src/lib/sourcing/provider-egress");
+const apifyClearance = clearProviderProbe("Apify");
 
 let pass = 0,
   fail = 0;
@@ -154,7 +160,7 @@ try {
       });
     }) as typeof fetch;
 
-    const res = await startProfileSearchRun("apify_api_tok123", {
+    const res = await startProfileSearchRun(apifyClearance, "apify_api_tok123", {
       searchQuery: "Senior Go Engineer",
       profileScraperMode: "Short",
       maxItems: 10,
@@ -180,26 +186,26 @@ try {
       seenBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
       return jsonResponse(201, { data: { id: "run_2", defaultDatasetId: "dataset_2", status: "READY" } });
     }) as typeof fetch;
-    await startProfileSearchRun("tok", { searchQuery: "q", maxItems: 500 });
+    await startProfileSearchRun(apifyClearance, "tok", { searchQuery: "q", maxItems: 500 });
     ok("start caps maxItems at the server-side ceiling", seenBody.maxItems === 50);
   }
 
   // --- getRunStatus: parses status -------------------------------------------
   {
     globalThis.fetch = (async () => jsonResponse(200, { data: { status: "SUCCEEDED" } })) as typeof fetch;
-    const res = await getRunStatus("tok", "run_1");
+    const res = await getRunStatus(apifyClearance, "tok", "run_1");
     ok("getRunStatus result is ok", res.ok === true);
     if (res.ok) ok("getRunStatus parses SUCCEEDED", res.data.status === "SUCCEEDED");
 
     globalThis.fetch = (async () => jsonResponse(200, { data: { status: "RUNNING" } })) as typeof fetch;
-    const res2 = await getRunStatus("tok", "run_1");
+    const res2 = await getRunStatus(apifyClearance, "tok", "run_1");
     if (res2.ok) ok("getRunStatus parses RUNNING", res2.data.status === "RUNNING");
   }
 
   // --- getRunStatus: error path -----------------------------------------------
   {
     globalThis.fetch = (async () => jsonResponse(404, { error: { type: "run-not-found", message: "Run not found" } })) as typeof fetch;
-    const res = await getRunStatus("tok", "missing_run");
+    const res = await getRunStatus(apifyClearance, "tok", "missing_run");
     ok("getRunStatus surfaces a 404 as not-ok", res.ok === false && res.status === 404);
   }
 
@@ -210,7 +216,7 @@ try {
       seenUrl = String(url);
       return jsonResponse(200, [sampleFullRawItem]);
     }) as typeof fetch;
-    const res = await fetchDatasetItems("tok", "dataset_1", 10);
+    const res = await fetchDatasetItems(apifyClearance, "tok", "dataset_1", 10);
     ok("fetchDatasetItems hits the datasets items path", seenUrl.includes("/datasets/dataset_1/items") && seenUrl.includes("format=json") && seenUrl.includes("limit=10"));
     ok("fetchDatasetItems result is ok", res.ok === true);
     if (res.ok) {
@@ -254,7 +260,7 @@ try {
   {
     globalThis.fetch = (async () =>
       jsonResponse(200, [{ ...sampleFullRawItem, id: "objshape1", topSkills: [{ name: "Rust" }, "Postgres"] }])) as typeof fetch;
-    const res = await fetchDatasetItems("tok", "dataset_objshape", 10);
+    const res = await fetchDatasetItems(apifyClearance, "tok", "dataset_objshape", 10);
     if (res.ok) {
       const p = res.data[0];
       ok(
@@ -267,7 +273,7 @@ try {
   // --- fetchDatasetItems: normalizes a Short-mode item ------------------------
   {
     globalThis.fetch = (async () => jsonResponse(200, [sampleShortRawItem])) as typeof fetch;
-    const res = await fetchDatasetItems("tok", "dataset_short", 10);
+    const res = await fetchDatasetItems(apifyClearance, "tok", "dataset_short", 10);
     ok("fetchDatasetItems (Short) result is ok", res.ok === true);
     if (res.ok) {
       const p = res.data[0];
@@ -291,7 +297,7 @@ try {
   // --- fetchDatasetItems: honestly returns empty, never fabricates ----------
   {
     globalThis.fetch = (async () => jsonResponse(200, [])) as typeof fetch;
-    const res = await fetchDatasetItems("tok", "dataset_empty", 10);
+    const res = await fetchDatasetItems(apifyClearance, "tok", "dataset_empty", 10);
     ok("fetchDatasetItems returns an honest empty array", res.ok === true && res.ok && res.data.length === 0);
   }
 
@@ -302,12 +308,12 @@ try {
       seenUrl = String(url);
       return jsonResponse(200, { data: { id: "user_1" } });
     }) as typeof fetch;
-    const res = await testApifyConnection("apify_api_valid");
+    const res = await testApifyConnection(apifyClearance, "apify_api_valid");
     ok("testApifyConnection hits /users/me", seenUrl.includes("/users/me"));
     ok("testApifyConnection: 200 maps to ok:true (valid)", res.ok === true);
 
     globalThis.fetch = (async () => jsonResponse(401, { error: { type: "token-not-provided", message: "no token" } })) as typeof fetch;
-    const bad = await testApifyConnection("apify_api_bad");
+    const bad = await testApifyConnection(apifyClearance, "apify_api_bad");
     ok("testApifyConnection: 401 maps to ok:false (invalid)", bad.ok === false && bad.status === 401);
   }
 } finally {

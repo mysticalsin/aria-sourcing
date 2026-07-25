@@ -10,6 +10,7 @@ import { testSillageConnection } from "@/lib/sourcing/sillage";
 import { checkApolloAuth } from "@/lib/sourcing/apollo";
 import { checkSeamlessAuth } from "@/lib/sourcing/seamless";
 import { testApifyConnection } from "@/lib/sourcing/apify";
+import { clearProviderProbe } from "@/lib/sourcing/provider-egress";
 
 const ApiKeyTestSchema = z.object({
   provider: z.string().max(80).optional(),
@@ -45,7 +46,7 @@ function classifySillageTest(
  */
 async function testApolloKey(value: string): Promise<{ valid: boolean; detail: string }> {
   try {
-    return await checkApolloAuth(value);
+    return await checkApolloAuth(clearProviderProbe("Apollo"), value);
   } catch {
     return validateApiKeyFormat("Apollo", value);
   }
@@ -58,7 +59,7 @@ async function testApolloKey(value: string): Promise<{ valid: boolean; detail: s
  */
 async function testSeamlessKey(value: string): Promise<{ valid: boolean; detail: string }> {
   try {
-    return await checkSeamlessAuth(value);
+    return await checkSeamlessAuth(clearProviderProbe("Seamless"), value);
   } catch {
     return validateApiKeyFormat("Seamless", value);
   }
@@ -73,7 +74,7 @@ async function testSeamlessKey(value: string): Promise<{ valid: boolean; detail:
  */
 async function testApifyKey(value: string): Promise<{ valid: boolean; detail: string }> {
   try {
-    const live = await testApifyConnection(value);
+    const live = await testApifyConnection(clearProviderProbe("Apify"), value);
     if (live.ok) return { valid: true, detail: `Apify key accepted (HTTP ${live.status}).` };
     if (live.status === 401) return { valid: false, detail: live.detail || live.title || "Apify rejected this key (401)." };
     if (live.status === 0) {
@@ -119,7 +120,7 @@ export async function POST(req: NextRequest) {
   // Direct value test (e.g. on the entry form) — now behind the auth gate above.
   if (value) {
     if ((provider ?? "") === "Sillage") {
-      const live = await testSillageConnection(value);
+      const live = await testSillageConnection(clearProviderProbe("Sillage"), value);
       const result = classifySillageTest(live, () => validateApiKeyFormat(provider ?? "", value));
       return NextResponse.json({ ok: true, valid: result.valid, detail: result.detail });
     }
@@ -163,7 +164,7 @@ export async function POST(req: NextRequest) {
   const secret = decryptSecret(row.secret);
   let fmt: { valid: boolean; detail: string };
   if (row.provider === "Sillage") {
-    fmt = classifySillageTest(await testSillageConnection(secret), () => validateApiKeyFormat(row.provider, secret));
+    fmt = classifySillageTest(await testSillageConnection(clearProviderProbe("Sillage"), secret), () => validateApiKeyFormat(row.provider, secret));
   } else if (row.provider === "Apollo") {
     fmt = await testApolloKey(secret);
   } else if (row.provider === "Seamless") {

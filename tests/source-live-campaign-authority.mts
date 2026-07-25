@@ -18,6 +18,7 @@ let tavilySecretReads = 0;
 let sessionReads = 0;
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
 
+mock.module("server-only", { namedExports: {} });
 mock.module(moduleUrl("src/lib/supabase/config.ts"), {
   namedExports: {
     supabaseEnabled: true,
@@ -56,7 +57,7 @@ mock.module(moduleUrl("src/lib/sourcing/tavily.ts"), {
 mock.module(moduleUrl("src/lib/sourcing/github.ts"), {
   namedExports: {
     GITHUB_USERNAME_RE: /^(?!-)(?!.*--)[A-Za-z0-9-]{1,39}(?<!-)$/,
-    getGithubUser: async (login: string) => {
+    getGithubUser: async (_clearance: unknown, login: string) => {
       providerCalls += 1;
       return { login, id: 1, html_url: `https://github.com/${login}` };
     },

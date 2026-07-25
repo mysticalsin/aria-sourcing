@@ -6,6 +6,8 @@ import {
 } from "../src/lib/api/hermes-runtime-isolation";
 import { createProcessEnvScope } from "./helpers/process-env.mts";
 
+mock.module("server-only", { namedExports: {} });
+
 let pass = 0;
 let fail = 0;
 function ok(name: string, condition: boolean) {

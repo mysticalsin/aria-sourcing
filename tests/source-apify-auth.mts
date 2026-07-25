@@ -1,6 +1,7 @@
 import { mock } from "node:test";
 import { NextRequest } from "next/server";
 import type { ApifyResult, ApifyProfile, ApifyProfileSearchInput } from "../src/lib/sourcing/apify.ts";
+import { buildSeedState } from "../src/lib/seed";
 
 let pass = 0;
 let fail = 0;
@@ -13,6 +14,7 @@ function ok(name: string, condition: boolean) {
 }
 
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
+const policyCampaign = buildSeedState().campaigns[0];
 
 /* ---- mutable fixtures the mocked modules read at call time ---------------- */
 
@@ -72,6 +74,7 @@ function makeFakeSupabase() {
   };
 }
 
+mock.module("server-only", { namedExports: {} });
 mock.module(moduleUrl("src/lib/supabase/config.ts"), {
   namedExports: {
     supabaseEnabled: true,
@@ -83,18 +86,23 @@ mock.module(moduleUrl("src/lib/supabase/server.ts"), {
     getServerSupabase: async () => makeFakeSupabase(),
   },
 });
+mock.module(moduleUrl("src/lib/sourcing/campaign-context.ts"), {
+  namedExports: {
+    loadSourcingCampaign: async () => policyCampaign,
+  },
+});
 mock.module(moduleUrl("src/lib/sourcing/apify.ts"), {
   namedExports: {
-    startProfileSearchRun: async (_token: string, input: ApifyProfileSearchInput) => {
+    startProfileSearchRun: async (_clearance: unknown, _token: string, input: ApifyProfileSearchInput) => {
       startCalls++;
       lastStartInput = input;
       return startResult;
     },
-    getRunStatus: async (_token: string, _runId: string) => {
+    getRunStatus: async () => {
       statusCalls++;
       return statusResult;
     },
-    fetchDatasetItems: async (_token: string, _datasetId: string, _limit: number) => {
+    fetchDatasetItems: async () => {
       itemsCalls++;
       return itemsResult;
     },
@@ -108,11 +116,11 @@ mock.module(moduleUrl("src/lib/sourcing/apify.ts"), {
 const startRoute = await import("../src/app/api/source/apify/start/route.ts");
 const statusRoute = await import("../src/app/api/source/apify/status/route.ts");
 
-const startReq = () =>
+const startReq = (body: Record<string, unknown> = { campaignId: policyCampaign.id, searchQuery: "language:Go" }) =>
   new NextRequest("http://localhost/api/source/apify/start", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ searchQuery: "typescript engineer" }),
+    body: JSON.stringify(body),
   });
 
 const statusReq = (query: string) => new NextRequest(`http://localhost/api/source/apify/status${query}`);
@@ -205,7 +213,7 @@ const statusReq = (query: string) => new NextRequest(`http://localhost/api/sourc
   );
   ok("start: never echoes the stored token in the response", JSON.stringify(startJson).includes("TEST_PLACEHOLDER") === false);
   const startInput = lastStartInput as ApifyProfileSearchInput | null;
-  ok("start: forwards the validated search criteria to the adapter", startInput !== null && startInput.searchQuery === "typescript engineer");
+  ok("start: forwards the validated search criteria to the adapter", startInput !== null && startInput.searchQuery === "language:Go");
 
   statusCalls = 0;
   itemsCalls = 0;
@@ -225,6 +233,36 @@ const statusReq = (query: string) => new NextRequest(`http://localhost/api/sourc
       itemsCalls === 1,
   );
   ok("status: never echoes the stored token in the response", JSON.stringify(statusJson).includes("TEST_PLACEHOLDER") === false);
+}
+
+/* ---- criteria policy: name fields differ from discovery fields ------------- */
+{
+  startCalls = 0;
+  const allowedRes = await startRoute.POST(startReq({
+    campaignId: policyCampaign.id,
+    searchQuery: "language:Go",
+    lastNames: ["Young"],
+  }));
+  const allowedJson = await allowedRes.json();
+  ok(
+    "start: ordinary surnames matching protected-proxy words are allowed in lastNames",
+    allowedRes.status === 200 && allowedJson.ok === true && startCalls === 1,
+  );
+
+  startCalls = 0;
+  const refusedRes = await startRoute.POST(startReq({
+    campaignId: policyCampaign.id,
+    searchQuery: "language:Go",
+    schools: ["Stanford University"],
+  }));
+  const refusedJson = await refusedRes.json();
+  ok(
+    "start: prohibited terms in discovery fields are refused before provider invocation",
+    refusedRes.status === 422 &&
+      refusedJson.ok === false &&
+      refusedJson.error === "Search query requires policy review." &&
+      startCalls === 0,
+  );
 }
 
 console.log(`RESULT source-apify-auth: ${pass} passed, ${fail} failed`);

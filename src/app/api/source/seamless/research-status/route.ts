@@ -5,6 +5,7 @@ import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { pollSeamlessResearch, resolveStoredSeamlessKey } from "@/lib/sourcing/seamless";
+import { clearIdentityResolution } from "@/lib/sourcing/provider-egress";
 
 /**
  * Poll a Seamless contact-research (reveal) job. While in progress ("queued" /
@@ -49,7 +50,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Connect a Seamless key in Settings first." });
   }
 
-  const res = await pollSeamlessResearch(apiKey, requestId);
+  const clearance = clearIdentityResolution("Seamless", { requestId });
+  if (!clearance.ok) return NextResponse.json({ ok: false, error: clearance.error }, { status: 422 });
+
+  const res = await pollSeamlessResearch(clearance.clearance, apiKey, requestId);
   if (!res.ok) {
     return NextResponse.json(
       { ok: false, status: res.status, error: res.detail || res.title },

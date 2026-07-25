@@ -36,6 +36,7 @@ import {
   type SillageProfile,
 } from "@/lib/sourcing/sillage";
 import type { EnrichedFields } from "@/lib/enrichment/merge";
+import { clearIdentityResolution } from "@/lib/sourcing/provider-egress";
 import type { Candidate, EnrichmentAttempt } from "@/lib/types";
 
 type Session = NonNullable<Awaited<ReturnType<typeof getServerSupabase>>>;
@@ -100,7 +101,10 @@ export const devFusionRunner: EnrichmentRunner = async (session, candidate) => {
   const token = await resolveStoredApifyKey(session);
   if (!token) return { fields: {}, costUnits: 0, status: "not_configured", detail: "No Apify key configured." };
 
-  const res = await enrichProfilesByUrl(token, [linkedinUrl]);
+  const clearance = clearIdentityResolution("Apify", { linkedinUrl });
+  if (!clearance.ok) return { fields: {}, costUnits: 0, status: "error", detail: clearance.error };
+
+  const res = await enrichProfilesByUrl(clearance.clearance, token, [linkedinUrl]);
   if (!res.ok) {
     if (res.title === "not_approved") {
       return {
@@ -164,7 +168,9 @@ export const apolloRunner: EnrichmentRunner = async (session, candidate) => {
     }
     let people: ApolloPerson[];
     try {
-      people = await searchApolloPeople({ keywords: `${name} ${company}` }, 10, apiKey);
+      const clearance = clearIdentityResolution("Apollo", { name, company });
+      if (!clearance.ok) return { fields: {}, costUnits: 0, status: "error", detail: clearance.error };
+      people = await searchApolloPeople(clearance.clearance, { keywords: `${name} ${company}` }, 10, apiKey);
     } catch (err) {
       return { fields: {}, costUnits: 0, status: "error", detail: err instanceof Error ? err.message : "Apollo search failed." };
     }
@@ -176,7 +182,9 @@ export const apolloRunner: EnrichmentRunner = async (session, candidate) => {
   }
 
   try {
-    const match = await matchApolloPerson(apolloId, apiKey, { revealPhone: true });
+    const clearance = clearIdentityResolution("Apollo", { apolloId });
+    if (!clearance.ok) return { fields: {}, costUnits: 0, status: "error", detail: clearance.error, externalId: apolloId };
+    const match = await matchApolloPerson(clearance.clearance, apolloId, apiKey, { revealPhone: true });
     if (!match) {
       return {
         fields: {},
@@ -231,7 +239,9 @@ export const seamlessRunner: EnrichmentRunner = async (session, candidate) => {
     }
     let contacts: SeamlessContact[];
     try {
-      contacts = await searchSeamlessContacts({ companyNames: [company] }, 25, apiKey);
+      const clearance = clearIdentityResolution("Seamless", { name, company });
+      if (!clearance.ok) return { fields: {}, costUnits: 0, status: "error", detail: clearance.error };
+      contacts = await searchSeamlessContacts(clearance.clearance, { companyNames: [company] }, 25, apiKey);
     } catch (err) {
       return { fields: {}, costUnits: 0, status: "error", detail: err instanceof Error ? err.message : "Seamless search failed." };
     }
@@ -242,7 +252,10 @@ export const seamlessRunner: EnrichmentRunner = async (session, candidate) => {
     searchResultId = best.searchResultId;
   }
 
-  const startRes = await startSeamlessResearch(apiKey, searchResultId);
+  const clearance = clearIdentityResolution("Seamless", { searchResultId });
+  if (!clearance.ok) return { fields: {}, costUnits: 0, status: "error", detail: clearance.error, externalId: searchResultId };
+
+  const startRes = await startSeamlessResearch(clearance.clearance, apiKey, searchResultId);
   if (!startRes.ok) {
     return { fields: {}, costUnits: 0, status: "error", detail: startRes.detail || startRes.title, externalId: searchResultId };
   }
@@ -251,7 +264,7 @@ export const seamlessRunner: EnrichmentRunner = async (session, candidate) => {
   const deadline = Date.now() + POLL_BUDGET_MS;
   while (Date.now() < deadline) {
     await sleep(POLL_INTERVAL_MS);
-    const pollRes = await pollSeamlessResearch(apiKey, requestId);
+    const pollRes = await pollSeamlessResearch(clearance.clearance, apiKey, requestId);
     if (!pollRes.ok) {
       return { fields: {}, costUnits: 0, status: "error", detail: pollRes.detail || pollRes.title, externalId: searchResultId };
     }
@@ -310,7 +323,10 @@ export const sillageRunner: EnrichmentRunner = async (session, candidate) => {
     return { fields: {}, costUnits: 0, status: "no_key_field", detail: "No company domain to map via Sillage." };
   }
 
-  const startRes = await startAccountMapping(apiKey, { domain });
+  const clearance = clearIdentityResolution("Sillage", { domain });
+  if (!clearance.ok) return { fields: {}, costUnits: 0, status: "error", detail: clearance.error };
+
+  const startRes = await startAccountMapping(clearance.clearance, apiKey, { domain });
   if (!startRes.ok) return { fields: {}, costUnits: 0, status: "error", detail: startRes.detail || startRes.title };
   const { requestId } = startRes.data;
 
@@ -318,7 +334,7 @@ export const sillageRunner: EnrichmentRunner = async (session, candidate) => {
   let mappedCompany: { id: string; domain: string | null } | null = null;
   while (Date.now() < deadline) {
     await sleep(POLL_INTERVAL_MS);
-    const stageRes = await getMappingStage(apiKey, requestId);
+    const stageRes = await getMappingStage(clearance.clearance, apiKey, requestId);
     if (!stageRes.ok) return { fields: {}, costUnits: 0, status: "error", detail: stageRes.detail || stageRes.title };
     if (stageRes.data.stage === "completed") {
       mappedCompany = { id: stageRes.data.company.id, domain: stageRes.data.company.domain };
@@ -333,11 +349,11 @@ export const sillageRunner: EnrichmentRunner = async (session, candidate) => {
     return { fields: {}, costUnits: 0, status: "ok", detail: "pending" };
   }
 
-  const idRes = await findMappingId(apiKey, mappedCompany);
+  const idRes = await findMappingId(clearance.clearance, apiKey, mappedCompany);
   if (!idRes.ok) return { fields: {}, costUnits: 0, status: "error", detail: idRes.detail || idRes.title };
   if (!idRes.data) return { fields: {}, costUnits: 0, status: "no_data", detail: "Mapping completed but no mapping id was found." };
 
-  const mappingRes = await getCompanyMapping(apiKey, idRes.data);
+  const mappingRes = await getCompanyMapping(clearance.clearance, apiKey, idRes.data);
   if (!mappingRes.ok) return { fields: {}, costUnits: 0, status: "error", detail: mappingRes.detail || mappingRes.title };
 
   const match = pickBestSillageProfile(mappingRes.data.profiles, candidate);

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { mock } from "node:test";
 import { NextRequest } from "next/server";
+import { buildSeedState } from "../src/lib/seed";
 
 let pass = 0;
 let fail = 0;
@@ -13,6 +14,7 @@ function ok(name: string, condition: boolean) {
 }
 
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
+const policyCampaign = buildSeedState().campaigns[0];
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const targetId = "22222222-2222-4222-8222-222222222222";
 const candidateId = "99999999-9999-4999-8999-999999999999";
@@ -80,6 +82,7 @@ const session = {
   }),
 };
 
+mock.module("server-only", { namedExports: {} });
 mock.module(moduleUrl("src/lib/supabase/config.ts"), {
   namedExports: { supabaseEnabled: true, prodFailClosed: () => productionBlock },
 });
@@ -92,6 +95,11 @@ mock.module(moduleUrl("src/lib/supabase/server.ts"), {
     getServiceSupabase: () => ({ from: () => ({}) }),
   },
 });
+mock.module(moduleUrl("src/lib/sourcing/campaign-context.ts"), {
+  namedExports: {
+    loadSourcingCampaign: async () => policyCampaign,
+  },
+});
 mock.module(moduleUrl("src/lib/sourcing/apollo.ts"), {
   namedExports: {
     resolveStoredApolloKey: async () => storedKey,
@@ -100,7 +108,7 @@ mock.module(moduleUrl("src/lib/sourcing/apollo.ts"), {
       if (providerError) throw new Error(providerError);
       return [rawSearchPerson];
     },
-    matchApolloPerson: async (providerId: string) => {
+    matchApolloPerson: async (_clearance: unknown, providerId: string) => {
       providerCalls += 1;
       lastProviderId = providerId;
       if (providerError) throw new Error(providerError);

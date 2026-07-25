@@ -7,6 +7,8 @@ import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { startProfileSearchRun, resolveStoredApifyKey } from "@/lib/sourcing/apify";
+import { loadSourcingCampaign } from "@/lib/sourcing/campaign-context";
+import { clearDiscoveryCriteria } from "@/lib/sourcing/provider-egress";
 
 export const runtime = "nodejs";
 
@@ -20,6 +22,7 @@ export const runtime = "nodejs";
  */
 const ApifyStartSchema = z
   .object({
+    campaignId: z.string().min(1).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/),
     searchQuery: z.string().min(1).max(300).optional(),
     profileScraperMode: z.enum(["Short", "Full", "Full + email search"]).optional(),
     maxItems: z.number().int().min(1).max(50).optional(),
@@ -73,7 +76,7 @@ export async function POST(req: NextRequest) {
 
   const validated = await validateBody(req, ApifyStartSchema, { maxBytes: 4_000 });
   if (!validated.ok) return validated.response;
-  const input = validated.data;
+  const { campaignId, ...input } = validated.data;
 
   // A stored key only exists once a real backend is configured (demo mode never
   // persists secrets — saveApiKey discards the value after computing last4).
@@ -82,7 +85,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Connect an Apify key in Settings first." });
   }
 
-  const result = await startProfileSearchRun(apiKey, input);
+  if (!session) return NextResponse.json({ ok: false, error: "Campaign authority is unavailable." }, { status: 503 });
+  const campaign = await loadSourcingCampaign(session, campaignId);
+  if (!campaign) return NextResponse.json({ ok: false, error: "Campaign not found." }, { status: 404 });
+  const clearance = clearDiscoveryCriteria(
+    "Apify",
+    {
+      searchQuery: input.searchQuery ?? "",
+      locations: input.locations ?? [],
+      currentJobTitles: input.currentJobTitles ?? [],
+      pastJobTitles: input.pastJobTitles ?? [],
+      currentCompanies: input.currentCompanies ?? [],
+      pastCompanies: input.pastCompanies ?? [],
+      schools: input.schools ?? [],
+      firstNames: input.firstNames ?? [],
+      lastNames: input.lastNames ?? [],
+    },
+    campaign,
+  );
+  if (!clearance.ok) return NextResponse.json({ ok: false, error: clearance.error }, { status: 422 });
+
+  const result = await startProfileSearchRun(clearance.clearance, apiKey, input);
   if (!result.ok) {
     // A network-level failure (status 0) reports as 502, matching /api/source's
     // upstream-error convention; a real Apify status (401 bad token, 429, ...)

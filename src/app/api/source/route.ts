@@ -9,6 +9,8 @@ import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import {
   GITHUB_USERNAME_RE,
+  getGithubAuthenticatedUser,
+  getGithubRateLimit,
   searchGithubUsers,
   getGithubUser,
   type GithubUser,
@@ -16,6 +18,9 @@ import {
 import { SOURCE_PLATFORMS } from "@/lib/types";
 import { ensureWebQueryScope, isWebSearchPlatform, extractLead, type WebLead } from "@/lib/sourcing/web-leads";
 import { runWebTool } from "@/lib/ai/web-tools";
+import { buildSeedState } from "@/lib/seed";
+import { clearDiscoveryCriteria, clearIdentityResolution, clearProviderProbe } from "@/lib/sourcing/provider-egress";
+import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
 
 export const runtime = "nodejs";
 
@@ -110,8 +115,10 @@ export async function POST(req: NextRequest) {
       );
     }
     const token = process.env.GITHUB_TOKEN ?? "";
+    const clearance = clearIdentityResolution("GitHub", { username });
+    if (!clearance.ok) return NextResponse.json({ ok: false, error: clearance.error }, { status: 422 });
     try {
-      const user = await getGithubUser(username, token);
+      const user = await getGithubUser(clearance.clearance, username, token);
       if (!user) {
         return NextResponse.json({ ok: false, error: "GitHub user not found." }, { status: 404 });
       }
@@ -147,10 +154,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const demoCampaign = buildSeedState().campaigns[0];
+
   if (platform === "GitHub") {
+    const policy = clearDiscoveryCriteria(platform, { query }, demoCampaign);
+    if (!policy.ok) return NextResponse.json({ ok: false, error: policy.error }, { status: 422 });
     const token = process.env.GITHUB_TOKEN ?? "";
     try {
-      const users = await searchGithubUsers(query, count, token);
+      const users = await searchGithubUsers(policy.clearance, query, count, token);
       return NextResponse.json({ ok: true, source: "github", platform, users });
     } catch (err) {
       // GitHub error bodies never contain the token; keep the client message terse.
@@ -160,6 +171,8 @@ export async function POST(req: NextRequest) {
   }
 
   if (isWebSearchPlatform(platform)) {
+    const webPolicy = validateSourcingQuery(platform, query, demoCampaign);
+    if (!webPolicy.ok) return NextResponse.json({ ok: false, error: webPolicy.error }, { status: 422 });
     const scopedQuery = ensureWebQueryScope(platform, query);
     const result = await runWebTool("web_search", { query: scopedQuery });
     if (!result.ok) {
@@ -211,10 +224,7 @@ export async function GET(req: NextRequest) {
 
   if (!token) {
     try {
-      const res = await fetch("https://api.github.com/rate_limit", {
-        headers: { Accept: "application/vnd.github+json", "User-Agent": "aria-sourcing" },
-        signal: AbortSignal.timeout(10_000),
-      });
+      const res = await getGithubRateLimit(clearProviderProbe("GitHub"));
       if (!res.ok) {
         return NextResponse.json({ ok: true, connected: false, reason: `GitHub unreachable (${res.status}).` });
       }
@@ -238,19 +248,15 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const res = await fetch("https://api.github.com/user", {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "aria-sourcing",
-      },
-      signal: AbortSignal.timeout(10_000),
-    });
+    const res = await getGithubAuthenticatedUser(clearProviderProbe("GitHub"), token);
     if (!res.ok) {
       return NextResponse.json({ ok: true, connected: false, reason: `GitHub token rejected (${res.status}).` });
     }
-    const u = (await res.json().catch(() => ({}))) as { login?: string; name?: string; public_repos?: number };
+    const u = (await res.json().catch(() => ({}))) as {
+      login?: string;
+      name?: string;
+      public_repos?: number;
+    };
     return NextResponse.json({
       ok: true,
       connected: true,

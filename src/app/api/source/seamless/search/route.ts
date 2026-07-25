@@ -7,6 +7,8 @@ import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { searchSeamlessContacts, resolveStoredSeamlessKey, type SeamlessContact } from "@/lib/sourcing/seamless";
+import { loadSourcingCampaign } from "@/lib/sourcing/campaign-context";
+import { clearDiscoveryCriteria } from "@/lib/sourcing/provider-egress";
 
 /**
  * Real candidate sourcing via Seamless.AI's search/contacts. Search returns
@@ -17,6 +19,7 @@ import { searchSeamlessContacts, resolveStoredSeamlessKey, type SeamlessContact 
  * polling needed here (only the research/reveal step is async).
  */
 const SeamlessSearchSchema = z.object({
+  campaignId: z.string().min(1).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/),
   jobTitles: z.array(z.string().min(1).max(120)).max(10).optional(),
   seniorities: z.array(z.string().min(1).max(60)).max(5).optional(),
   departments: z.array(z.string().min(1).max(60)).max(5).optional(),
@@ -57,7 +60,7 @@ export async function POST(req: NextRequest) {
 
   const validated = await validateBody(req, SeamlessSearchSchema, { maxBytes: 10_000 });
   if (!validated.ok) return validated.response;
-  const { count = 25, ...filters } = validated.data;
+  const { campaignId, count = 25, ...filters } = validated.data;
 
   const apiKey = session ? await resolveStoredSeamlessKey(session) : null;
   if (!apiKey) {
@@ -70,7 +73,12 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const contacts = await searchSeamlessContacts(filters, count, apiKey);
+    if (!session) return NextResponse.json({ ok: false, error: "Campaign authority is unavailable." }, { status: 503 });
+    const campaign = await loadSourcingCampaign(session, campaignId);
+    if (!campaign) return NextResponse.json({ ok: false, error: "Campaign not found." }, { status: 404 });
+    const clearance = clearDiscoveryCriteria("Seamless", filters, campaign);
+    if (!clearance.ok) return NextResponse.json({ ok: false, source: "seamless", error: clearance.error }, { status: 422 });
+    const contacts = await searchSeamlessContacts(clearance.clearance, filters, count, apiKey);
     return NextResponse.json({ ok: true, source: "seamless", contacts });
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Seamless search failed.";

@@ -72,13 +72,13 @@ test("manifest preserves parity and freezes the exact deduplicated lifecycle", (
         resolveTestGroup(testManifest, group).length,
       ]),
     ),
-    { pretest: 51, application: 143, posttest: 2, all: 196 },
+    { pretest: 51, application: 145, posttest: 2, all: 198 },
   );
   const commands = resolveTestGroup(testManifest, "all");
   const commandLines = commands.map(({ executable, argv }) => `${executable} ${argv.join(" ")}`);
   assert.equal(
     createHash("sha256").update(commandLines.join("\n")).digest("hex"),
-    "154ba76c60dfb1defeec2b1aad8b885a393e4aec0d30669a8d48b1c053f873f7",
+    "486efbba410b0fc019e9db3f7e8739b58c4ed14f7e81efbd638888361dadf80e",
   );
   assert.equal(new Set(commandLines).size, commandLines.length, "canonical lifecycle must be duplicate-free");
   assert.equal(
@@ -121,10 +121,10 @@ test("manifest preserves parity and freezes the exact deduplicated lifecycle", (
       ({ executable, argv }) => `${executable} ${argv.join(" ")}`,
     ),
   ];
-  assert.equal(parityLines.length, 198);
+  assert.equal(parityLines.length, 200);
   assert.equal(
     createHash("sha256").update(parityLines.join("\n")).digest("hex"),
-    "dde18b803528bf4d38d6c834b413901f68f4c42a7dce111dae25ab196607da8c",
+    "1dcb31795a3b6b22bb1caa1fff51baa4c78641e46cc8f06f9988a93465f62834",
     "deduplication must preserve the frozen pre-expansion baseline while registering new suites additively",
   );
   assert.ok(
@@ -177,7 +177,7 @@ test("package lifecycle is wired to one manifest phase each", () => {
 
 test("named manifest groups freeze their recursive baselines", () => {
   const expected = {
-    security: [29, "695034f2928b18033634d9617128526865b9471e5e03efd79c2a36fda6fe5ccd"],
+    security: [29, "a3739eec6d0eaabfa5455ce2d46edf3cee81e40d277740be762fdaa18dd2c0f0"],
     framework: [16, "2d9fa255f4c284f3701105080f02ed2369bfb7ac71751d7c08616fff828a45be"],
     "framework-adapter": [1, "4228d976b2e63e34f97bf910208ffcf3263da48861744f187eef8781c5cb9f48"],
     "candidate-erasure": [2, "42ee1e6bf280c482f01bcfdb41d601ea8cdaaeb8891a210777901771f56212b7"],

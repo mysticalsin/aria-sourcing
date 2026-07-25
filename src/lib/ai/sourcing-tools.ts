@@ -20,6 +20,7 @@ import { searchGithubUsers } from "@/lib/sourcing/github";
 import { runWebTool, type WebFetch } from "@/lib/ai/web-tools";
 import { ensureWebQueryScope, extractLead, isWebSearchPlatform } from "@/lib/sourcing/web-leads";
 import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
+import { clearDiscoveryCriteria } from "@/lib/sourcing/provider-egress";
 import {
   mapGithubCandidates,
   mapWebSearchCandidates,
@@ -123,7 +124,9 @@ export function makeSourcingToolRunner(
 
     if (platform === "GitHub") {
       try {
-        const users = await searchGithubUsers(query, count, githubToken, signal);
+        const clearance = clearDiscoveryCriteria(platform, { query }, campaign);
+        if (!clearance.ok) return clearance;
+        const users = await searchGithubUsers(clearance.clearance, query, count, githubToken, signal);
         const result = mapGithubCandidates(users, campaign, query, alreadySeen, weights);
         accepted = result.accepted;
         skippedCount = result.skipped.length;

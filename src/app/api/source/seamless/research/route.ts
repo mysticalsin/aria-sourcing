@@ -7,6 +7,7 @@ import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { startSeamlessResearch, resolveStoredSeamlessKey } from "@/lib/sourcing/seamless";
+import { clearIdentityResolution } from "@/lib/sourcing/provider-egress";
 
 /**
  * Kick off async contact-detail research for one Seamless search result — the
@@ -56,7 +57,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Connect a Seamless key in Settings first." });
   }
 
-  const result = await startSeamlessResearch(apiKey, searchResultId);
+  const clearance = clearIdentityResolution("Seamless", { searchResultId });
+  if (!clearance.ok) return NextResponse.json({ ok: false, error: clearance.error }, { status: 422 });
+
+  const result = await startSeamlessResearch(clearance.clearance, apiKey, searchResultId);
   if (!result.ok) {
     return NextResponse.json(
       { ok: false, status: result.status, error: result.detail || result.title },

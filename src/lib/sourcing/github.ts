@@ -11,34 +11,26 @@
 // the public email when present and otherwise leave it blank — the candidate is a
 // real person you found; finding their email is a separate enrichment step.
 
+import { type GithubUser } from "@/lib/sourcing/github-identity";
+import { sourcingFetch, type ProviderClearance } from "@/lib/sourcing/provider-transport";
+
 const GH_API = "https://api.github.com";
 
-/** GitHub's documented login grammar, shared by the API and client action. */
-export const GITHUB_USERNAME_RE = /^[a-zA-Z\d](?:[a-zA-Z\d]|-(?=[a-zA-Z\d])){0,38}$/;
+export { GITHUB_USERNAME_RE, type GithubUser } from "@/lib/sourcing/github-identity";
 
-export interface GithubUser {
-  login: string;
-  name: string | null;
-  email: string | null;
-  company: string | null;
-  location: string | null;
-  bio: string | null;
-  blog: string | null;
-  htmlUrl: string;
-  publicRepos: number;
-  followers: number;
-  createdAt: string | null; // account creation — a rough proxy for time in the field
-  topLanguage: string | null; // parsed from the search query's `language:` filter
-}
-
-async function gh(path: string, token: string, externalSignal?: AbortSignal): Promise<unknown> {
+async function gh(
+  clearance: ProviderClearance,
+  path: string,
+  token: string,
+  externalSignal?: AbortSignal,
+): Promise<unknown> {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
     "User-Agent": "aria-sourcing",
   };
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`${GH_API}${path}`, {
+  const res = await sourcingFetch(clearance, `${GH_API}${path}`, {
     headers,
     // Single-use signal per call; the route bounds the overall work.
     signal: externalSignal
@@ -55,12 +47,13 @@ async function gh(path: string, token: string, externalSignal?: AbortSignal): Pr
  *  handle it (searchGithubUsers skips it and keeps the rest of the batch,
  *  getGithubUser reports a 404 as "not found" and re-throws anything else). */
 async function fetchGithubUser(
+  clearance: ProviderClearance,
   login: string,
   token: string,
   topLanguage: string | null,
   signal?: AbortSignal,
 ): Promise<GithubUser> {
-  const u = (await gh(`/users/${encodeURIComponent(login)}`, token, signal)) as Record<string, unknown>;
+  const u = (await gh(clearance, `/users/${encodeURIComponent(login)}`, token, signal)) as Record<string, unknown>;
   return {
     login: String(u.login ?? login),
     name: (u.name as string) ?? null,
@@ -87,6 +80,7 @@ async function fetchGithubUser(
  * by `count`.
  */
 export async function searchGithubUsers(
+  clearance: ProviderClearance,
   query: string,
   count: number,
   token = "",
@@ -95,6 +89,7 @@ export async function searchGithubUsers(
   const perPage = Math.min(Math.max(Math.trunc(count) || 1, 1), 20);
   const effectiveQuery = /(?:^|\s)type:/i.test(query) ? query.trim() : `${query.trim()} type:user`;
   const search = (await gh(
+    clearance,
     `/search/users?q=${encodeURIComponent(effectiveQuery)}&per_page=${perPage}`,
     token,
     signal,
@@ -109,7 +104,7 @@ export async function searchGithubUsers(
   const users: GithubUser[] = [];
   for (const login of logins) {
     try {
-      users.push(await fetchGithubUser(login, token, lang, signal));
+      users.push(await fetchGithubUser(clearance, login, token, lang, signal));
     } catch {
       // Skip a user whose detail fetch fails; keep the rest of the batch.
     }
@@ -127,11 +122,34 @@ export async function searchGithubUsers(
  * `language:` filter from). Returns null on a 404 (no such user); any other
  * failure (network, rate limit, ...) throws.
  */
-export async function getGithubUser(login: string, token = ""): Promise<GithubUser | null> {
+export async function getGithubUser(
+  clearance: ProviderClearance,
+  login: string,
+  token = "",
+): Promise<GithubUser | null> {
   try {
-    return await fetchGithubUser(login, token, null);
+    return await fetchGithubUser(clearance, login, token, null);
   } catch (err) {
     if (err instanceof Error && /GitHub API 404/.test(err.message)) return null;
     throw err;
   }
+}
+
+export async function getGithubRateLimit(clearance: ProviderClearance): Promise<Response> {
+  return sourcingFetch(clearance, `${GH_API}/rate_limit`, {
+    headers: { Accept: "application/vnd.github+json", "User-Agent": "aria-sourcing" },
+    signal: AbortSignal.timeout(10_000),
+  });
+}
+
+export async function getGithubAuthenticatedUser(clearance: ProviderClearance, token: string): Promise<Response> {
+  return sourcingFetch(clearance, `${GH_API}/user`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "aria-sourcing",
+    },
+    signal: AbortSignal.timeout(10_000),
+  });
 }

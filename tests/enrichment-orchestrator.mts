@@ -8,6 +8,8 @@
 import { mock } from "node:test";
 import type { Candidate, ComplianceFlags } from "../src/lib/types.ts";
 
+mock.module("server-only", { namedExports: {} });
+
 let pass = 0;
 let fail = 0;
 function ok(name: string, condition: boolean) {

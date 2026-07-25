@@ -5,6 +5,7 @@ import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { getMappingStage, findMappingId, getCompanyMapping, resolveStoredSillageKey } from "@/lib/sourcing/sillage";
+import { clearIdentityResolution } from "@/lib/sourcing/provider-egress";
 
 /**
  * Poll a Sillage account-mapping job. While in progress: {status:"processing"}.
@@ -50,7 +51,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Connect a Sillage key in Settings first." });
   }
 
-  const stageRes = await getMappingStage(apiKey, requestId);
+  const clearance = clearIdentityResolution("Sillage", { requestId });
+  if (!clearance.ok) return NextResponse.json({ ok: false, error: clearance.error }, { status: 422 });
+
+  const stageRes = await getMappingStage(clearance.clearance, apiKey, requestId);
   if (!stageRes.ok) {
     return NextResponse.json(
       { ok: false, status: stageRes.status, error: stageRes.detail || stageRes.title },
@@ -66,7 +70,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, status: "processing" });
   }
 
-  const mappingIdRes = await findMappingId(apiKey, { id: company.id, domain: company.domain });
+  const mappingIdRes = await findMappingId(clearance.clearance, apiKey, { id: company.id, domain: company.domain });
   if (!mappingIdRes.ok) {
     return NextResponse.json(
       { ok: false, status: mappingIdRes.status, error: mappingIdRes.detail || mappingIdRes.title },
@@ -81,7 +85,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const mappingRes = await getCompanyMapping(apiKey, mappingIdRes.data);
+  const mappingRes = await getCompanyMapping(clearance.clearance, apiKey, mappingIdRes.data);
   if (!mappingRes.ok) {
     return NextResponse.json(
       { ok: false, status: mappingRes.status, error: mappingRes.detail || mappingRes.title },

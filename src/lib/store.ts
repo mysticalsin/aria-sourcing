@@ -1161,7 +1161,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const res = await workspaceFetch("/api/source/seamless/search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...filters, count }),
+          body: JSON.stringify({ campaignId, ...filters, count }),
         });
         const out = (await res.json().catch(() => null)) as
           | { ok?: boolean; source?: string; contacts?: SeamlessContact[]; error?: string }
@@ -1347,7 +1347,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         res = await workspaceFetch("/api/source/apify/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(criteria),
+          body: JSON.stringify({ campaignId, ...criteria }),
         });
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : "Network error reaching Apify." };

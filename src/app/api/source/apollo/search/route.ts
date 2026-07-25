@@ -7,6 +7,8 @@ import { validateBody } from "@/lib/api/validate";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
 import { searchApolloPeople, resolveStoredApolloKey, type ApolloPerson } from "@/lib/sourcing/apollo";
+import { loadSourcingCampaign } from "@/lib/sourcing/campaign-context";
+import { clearDiscoveryCriteria } from "@/lib/sourcing/provider-egress";
 import { registerApolloEnrichmentTargets } from "@/lib/sourcing/source-authority";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { getServerSupabase } from "@/lib/supabase/server";
@@ -147,9 +149,19 @@ async function handlePost(req: NextRequest, correlationId: string) {
     });
   }
 
+  const campaign = await loadSourcingCampaign(session, campaignId, workspaceId);
+  if (!campaign) return fail(404, "INVALID_REQUEST", "Campaign not found.");
+  const clearance = clearDiscoveryCriteria(
+    "Apollo",
+    { titles: titles ?? [], seniorities: seniorities ?? [], locations: locations ?? [], organizationDomains: organizationDomains ?? [], keywords: keywords ?? "" },
+    campaign,
+  );
+  if (!clearance.ok) return fail(422, "INVALID_REQUEST", clearance.error);
+
   let rawPeople: ApolloPerson[];
   try {
     rawPeople = await searchApolloPeople(
+      clearance.clearance,
       { titles, seniorities, locations, organizationDomains, keywords },
       count,
       apiKey,

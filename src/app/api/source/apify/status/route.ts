@@ -5,6 +5,7 @@ import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { getRunStatus, fetchDatasetItems, resolveStoredApifyKey } from "@/lib/sourcing/apify";
+import { clearIdentityResolution } from "@/lib/sourcing/provider-egress";
 
 export const runtime = "nodejs";
 
@@ -49,7 +50,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Connect an Apify key in Settings first." });
   }
 
-  const statusRes = await getRunStatus(apiKey, runId);
+  const clearance = clearIdentityResolution("Apify", { runId, datasetId: datasetId ?? "" });
+  if (!clearance.ok) return NextResponse.json({ ok: false, error: clearance.error }, { status: 422 });
+
+  const statusRes = await getRunStatus(clearance.clearance, apiKey, runId);
   if (!statusRes.ok) {
     return NextResponse.json(
       { ok: false, status: statusRes.status, error: statusRes.detail || statusRes.title },
@@ -68,7 +72,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "datasetId is required." }, { status: 400 });
   }
 
-  const itemsRes = await fetchDatasetItems(apiKey, datasetId, DATASET_ITEMS_LIMIT);
+  const itemsRes = await fetchDatasetItems(clearance.clearance, apiKey, datasetId, DATASET_ITEMS_LIMIT);
   if (!itemsRes.ok) {
     return NextResponse.json(
       { ok: false, status: itemsRes.status, error: itemsRes.detail || itemsRes.title },

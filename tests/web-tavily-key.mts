@@ -1,8 +1,12 @@
+import { mock } from "node:test";
+
 import { buildSeedState } from "../src/lib/seed";
 import { encryptSecret, decryptSecret, encryptionRequiredButMissing } from "../src/lib/crypto-secrets";
 import { validateApiKeyFormat } from "../src/lib/providers";
 import { resolveStoredTavilyKey } from "../src/lib/sourcing/tavily";
 import { createProcessEnvScope } from "./helpers/process-env.mts";
+
+mock.module("server-only", { namedExports: {} });
 
 let pass = 0,
   fail = 0;

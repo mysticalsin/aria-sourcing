@@ -18,6 +18,7 @@
 import type { getServerSupabase } from "@/lib/supabase/server";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import { decryptSecret } from "@/lib/crypto-secrets";
+import { sourcingFetch, type ProviderClearance } from "@/lib/sourcing/provider-transport";
 
 const SILLAGE_API = "https://api.getsillage.com";
 
@@ -80,12 +81,13 @@ function mapCompany(c?: RawCompany): SillageCompany {
  * a field is present, and surface it honestly to the caller.
  */
 async function sillageRequest<T>(
+  clearance: ProviderClearance,
   path: string,
   apiKey: string,
   opts: { method?: "GET" | "POST"; body?: unknown; timeoutMs?: number } = {},
 ): Promise<SillageResult<T>> {
   try {
-    const res = await fetch(`${SILLAGE_API}${path}`, {
+    const res = await sourcingFetch(clearance, `${SILLAGE_API}${path}`, {
       method: opts.method ?? "GET",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", Accept: "application/json" },
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
@@ -107,6 +109,7 @@ async function sillageRequest<T>(
 
 /** Kick off async account-mapping enrichment. Exactly one identifier is sent. */
 export async function startAccountMapping(
+  clearance: ProviderClearance,
   apiKey: string,
   identifier: { domain?: string; linkedinUrl?: string; linkedinHandle?: string },
 ): Promise<SillageResult<{ status: string; requestId: string; stage: string }>> {
@@ -115,6 +118,7 @@ export async function startAccountMapping(
   if (identifier.linkedinUrl) body.linkedin_url = identifier.linkedinUrl;
   if (identifier.linkedinHandle) body.linkedin_handle = identifier.linkedinHandle;
   const res = await sillageRequest<{ status?: string; request_id?: string; stage?: string }>(
+    clearance,
     "/api/v2/enrich-company-mapping",
     apiKey,
     { method: "POST", body, timeoutMs: 15_000 },
@@ -132,7 +136,11 @@ export async function startAccountMapping(
 }
 
 /** Poll the async enrichment job's stage. Terminal stages: completed / account_mapping_failed. */
-export async function getMappingStage(apiKey: string, requestId: string): Promise<SillageResult<SillageStage>> {
+export async function getMappingStage(
+  clearance: ProviderClearance,
+  apiKey: string,
+  requestId: string,
+): Promise<SillageResult<SillageStage>> {
   const res = await sillageRequest<{
     id?: string;
     type?: string;
@@ -140,7 +148,7 @@ export async function getMappingStage(apiKey: string, requestId: string): Promis
     created_at?: string;
     updated_at?: string;
     company?: RawCompany;
-  }>(`/api/v2/account-mapping/${encodeURIComponent(requestId)}/stage`, apiKey);
+  }>(clearance, `/api/v2/account-mapping/${encodeURIComponent(requestId)}/stage`, apiKey);
   if (!res.ok) return res;
   const r = res.data;
   return {
@@ -159,11 +167,13 @@ export async function getMappingStage(apiKey: string, requestId: string): Promis
 
 /** One page of the free, no-credit list-company-mappings endpoint. */
 async function listCompanyMappingsPage(
+  clearance: ProviderClearance,
   apiKey: string,
   page: number,
   pageSize: number,
 ): Promise<SillageResult<{ items: { id: string; company: SillageCompany }[]; hasMore: boolean }>> {
   const res = await sillageRequest<{ data?: { id?: string; company?: RawCompany }[] }>(
+    clearance,
     `/api/v2/company-mappings?page=${page}&page_size=${pageSize}`,
     apiKey,
   );
@@ -180,12 +190,13 @@ async function listCompanyMappingsPage(
  * — most workspaces have few mappings — rather than assuming sort order.
  */
 export async function findMappingId(
+  clearance: ProviderClearance,
   apiKey: string,
   company: { id: string; domain: string | null },
   maxPages = 5,
 ): Promise<SillageResult<string | null>> {
   for (let page = 1; page <= maxPages; page++) {
-    const res = await listCompanyMappingsPage(apiKey, page, 25);
+    const res = await listCompanyMappingsPage(clearance, apiKey, page, 25);
     if (!res.ok) return res;
     const match = res.data.items.find(
       (m) => (company.id && m.company.id === company.id) || (company.domain && m.company.domain === company.domain),
@@ -197,7 +208,11 @@ export async function findMappingId(
 }
 
 /** Full profile list for a resolved mapping. */
-export async function getCompanyMapping(apiKey: string, mappingId: string): Promise<SillageResult<SillageMapping>> {
+export async function getCompanyMapping(
+  clearance: ProviderClearance,
+  apiKey: string,
+  mappingId: string,
+): Promise<SillageResult<SillageMapping>> {
   const res = await sillageRequest<{
     id?: string;
     company?: RawCompany;
@@ -215,7 +230,7 @@ export async function getCompanyMapping(apiKey: string, mappingId: string): Prom
       linkedin_headline?: string | null;
       location?: { city?: string | null; region?: string | null; country?: string | null } | null;
     }[];
-  }>(`/api/v2/company-mappings/${encodeURIComponent(mappingId)}`, apiKey);
+  }>(clearance, `/api/v2/company-mappings/${encodeURIComponent(mappingId)}`, apiKey);
   if (!res.ok) return res;
   const r = res.data;
   const profiles: SillageProfile[] = (r.profiles ?? []).map((p) => ({
@@ -238,8 +253,8 @@ export async function getCompanyMapping(apiKey: string, mappingId: string): Prom
 }
 
 /** Cheap, no-credit connectivity check used by the API-key "Test connection" flow. */
-export async function testSillageConnection(apiKey: string): Promise<SillageResult<unknown>> {
-  return sillageRequest("/api/v2/contents/query", apiKey, { method: "POST", body: { page_size: 1 }, timeoutMs: 8_000 });
+export async function testSillageConnection(clearance: ProviderClearance, apiKey: string): Promise<SillageResult<unknown>> {
+  return sillageRequest(clearance, "/api/v2/contents/query", apiKey, { method: "POST", body: { page_size: 1 }, timeoutMs: 8_000 });
 }
 
 /**

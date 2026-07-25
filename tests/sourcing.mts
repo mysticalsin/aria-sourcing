@@ -1,11 +1,17 @@
 import { existsSync, readFileSync } from "node:fs";
+import { mock } from "node:test";
 import { buildSeedState } from "../src/lib/seed";
 import { mapApolloCandidates, mapGithubCandidates, mapWebSearchCandidates } from "../src/lib/mock-ai";
 import type { ApolloSearchProfile } from "../src/lib/sourcing/apollo";
 import type { GithubUser } from "../src/lib/sourcing/github";
-import { searchGithubUsers } from "../src/lib/sourcing/github";
 import { extractLead, buildWebQuery, isWebSearchPlatform, type SearchHit } from "../src/lib/sourcing/web-leads";
 import { dedupeCandidates } from "../src/lib/rules";
+
+mock.module("server-only", { namedExports: {} });
+
+const { searchGithubUsers } = await import("../src/lib/sourcing/github");
+const { clearProviderProbe } = await import("../src/lib/sourcing/provider-egress");
+const githubClearance = clearProviderProbe("GitHub");
 
 let pass = 0,
   fail = 0;
@@ -137,9 +143,9 @@ ok("same github URL is deduped", rdup.accepted.length === 1);
     } as Response;
   }) as typeof fetch;
 
-  await searchGithubUsers("language:typescript", 1, "");
-  await searchGithubUsers("language:typescript", 1, "tok_123");
-  await searchGithubUsers("language:typescript type:org", 1, "");
+  await searchGithubUsers(githubClearance, "language:typescript", 1, "");
+  await searchGithubUsers(githubClearance, "language:typescript", 1, "tok_123");
+  await searchGithubUsers(githubClearance, "language:typescript type:org", 1, "");
   globalThis.fetch = originalFetch;
 
   ok("anonymous call sends no Authorization header", seenAuth[0] === undefined);
@@ -175,7 +181,7 @@ ok("same github URL is deduped", rdup.accepted.length === 1);
       } as Response;
     }) as typeof fetch;
 
-    const partial = await searchGithubUsers("language:typescript", 2, "");
+    const partial = await searchGithubUsers(githubClearance, "language:typescript", 2, "");
     ok(
       "GitHub partial profile failure returns only profiles with completed evidence",
       partial.length === 1 && partial[0]?.login === "available",
@@ -194,7 +200,7 @@ ok("same github URL is deduped", rdup.accepted.length === 1);
 
     let allProfilesFailed = false;
     try {
-      await searchGithubUsers("language:typescript", 2, "");
+      await searchGithubUsers(githubClearance, "language:typescript", 2, "");
     } catch (error) {
       allProfilesFailed =
         error instanceof Error && error.message === "GitHub profile resolution failed.";

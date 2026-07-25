@@ -13,6 +13,7 @@
 import type { getServerSupabase } from "@/lib/supabase/server";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import { decryptSecret } from "@/lib/crypto-secrets";
+import { sourcingFetch, type ProviderClearance } from "@/lib/sourcing/provider-transport";
 
 const APOLLO_API = "https://api.apollo.io/v1";
 
@@ -95,6 +96,7 @@ function toApolloPerson(raw: Record<string, unknown>): ApolloPerson {
  * consume Apollo credits. `count` is capped at 100 (Apollo's per-page max).
  */
 export async function searchApolloPeople(
+  clearance: ProviderClearance,
   filters: ApolloSearchFilters,
   count: number,
   apiKey: string,
@@ -107,7 +109,7 @@ export async function searchApolloPeople(
   if (filters.organizationDomains?.length) body.q_organization_domains_list = filters.organizationDomains;
   if (filters.keywords?.trim()) body.q_keywords = filters.keywords.trim();
 
-  const res = await fetch(`${APOLLO_API}/mixed_people/search`, {
+  const res = await sourcingFetch(clearance, `${APOLLO_API}/mixed_people/search`, {
     method: "POST",
     headers: apolloHeaders(apiKey),
     body: JSON.stringify(body),
@@ -132,11 +134,12 @@ export async function searchApolloPeople(
  * for the final billing outcome.
  */
 export async function matchApolloPerson(
+  clearance: ProviderClearance,
   apolloId: string,
   apiKey: string,
   opts: { revealPhone?: boolean } = {},
 ): Promise<ApolloMatch | null> {
-  const res = await fetch(`${APOLLO_API}/people/match`, {
+  const res = await sourcingFetch(clearance, `${APOLLO_API}/people/match`, {
     method: "POST",
     headers: apolloHeaders(apiKey),
     body: JSON.stringify({
@@ -183,8 +186,8 @@ export async function matchApolloPerson(
  * assumed. Throws on network/timeout error so the caller can fall back to a
  * format-only check.
  */
-export async function checkApolloAuth(apiKey: string): Promise<{ valid: boolean; detail: string }> {
-  const res = await fetch(`${APOLLO_API}/auth/health`, {
+export async function checkApolloAuth(clearance: ProviderClearance, apiKey: string): Promise<{ valid: boolean; detail: string }> {
+  const res = await sourcingFetch(clearance, `${APOLLO_API}/auth/health`, {
     method: "GET",
     headers: apolloHeaders(apiKey),
     signal: AbortSignal.timeout(10_000),

@@ -2,6 +2,10 @@
   "recent_learnings": [
     {
       "date": "2026-07-25",
+      "lesson": "Provider adapters import transport only; policy egress may mint clearance, but importing policy from adapters recreates Rock 2 cycles."
+    },
+    {
+      "date": "2026-07-25",
       "lesson": "Human-gated loop stages stop at gates; wrap workspace patches and job follow-ons in one SQL transaction."
     },
     {

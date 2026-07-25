@@ -7,6 +7,8 @@ import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { startAccountMapping, resolveStoredSillageKey } from "@/lib/sourcing/sillage";
+import { loadSourcingCampaign } from "@/lib/sourcing/campaign-context";
+import { clearDiscoveryCriteria } from "@/lib/sourcing/provider-egress";
 
 /**
  * Real candidate sourcing via Sillage Account Mapping — kicks off the async
@@ -17,7 +19,7 @@ import { startAccountMapping, resolveStoredSillageKey } from "@/lib/sourcing/sil
  */
 const SillageStartSchema = z
   .object({
-    campaignId: z.string().min(1).max(80).optional(),
+    campaignId: z.string().min(1).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/),
     domain: z.string().min(1).max(253).optional(),
     linkedinUrl: z.string().url().max(500).optional(),
     linkedinHandle: z.string().min(1).max(200).optional(),
@@ -65,7 +67,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Connect a Sillage key in Settings first." });
   }
 
-  const result = await startAccountMapping(apiKey, { domain, linkedinUrl, linkedinHandle }); // gitleaks:allow -- request field names
+  if (!session) return NextResponse.json({ ok: false, error: "Campaign authority is unavailable." }, { status: 503 });
+  const campaign = await loadSourcingCampaign(session, validated.data.campaignId);
+  if (!campaign) return NextResponse.json({ ok: false, error: "Campaign not found." }, { status: 404 });
+  const clearance = clearDiscoveryCriteria(
+    "Sillage",
+    { domain: domain ?? "", linkedinUrl: linkedinUrl ?? "", linkedinHandle: linkedinHandle ?? "" },
+    campaign,
+  );
+  if (!clearance.ok) return NextResponse.json({ ok: false, error: clearance.error }, { status: 422 });
+
+  const result = await startAccountMapping(clearance.clearance, apiKey, { domain, linkedinUrl, linkedinHandle }); // gitleaks:allow -- request field names
   if (!result.ok) {
     // Passes through Sillage's real status (402 no credits, 403 feature gated, 409
     // ambiguous domain, ...) so the client sees the honest cause; a network-level

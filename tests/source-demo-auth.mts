@@ -15,6 +15,7 @@ let signedDemoSession = false;
 let providerCalls = 0;
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
 
+mock.module("server-only", { namedExports: {} });
 mock.module(moduleUrl("src/lib/supabase/config.ts"), {
   namedExports: {
     supabaseEnabled: false,
@@ -34,6 +35,7 @@ mock.module(moduleUrl("src/lib/demo-auth.ts"), {
 });
 mock.module(moduleUrl("src/lib/sourcing/github.ts"), {
   namedExports: {
+    GITHUB_USERNAME_RE: /^(?!-)(?!.*--)[A-Za-z0-9-]{1,39}(?<!-)$/,
     getGithubUser: async () => { providerCalls++; return null; },
     searchGithubUsers: async () => { providerCalls++; return []; },
   },
@@ -51,7 +53,7 @@ const get = ((routeModule as any).GET ?? (routeModule as any).default?.GET) as (
 const postRequest = (cookie?: string) => new NextRequest("http://localhost/api/source", {
   method: "POST",
   headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
-  body: JSON.stringify({ query: "typescript", count: 1, platform: "GitHub" }),
+  body: JSON.stringify({ query: "language:Go", count: 1, platform: "GitHub" }),
 });
 
 signedDemoSession = false;

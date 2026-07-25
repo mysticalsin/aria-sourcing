@@ -15,6 +15,7 @@ import {
   prepareApolloEnrichmentTarget,
 } from "@/lib/sourcing/source-authority";
 import { matchApolloPerson, resolveStoredApolloKey } from "@/lib/sourcing/apollo";
+import { clearIdentityResolution } from "@/lib/sourcing/provider-egress";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { getServerSupabase } from "@/lib/supabase/server";
 import type { Role } from "@/lib/types";
@@ -261,7 +262,12 @@ async function handlePost(req: NextRequest, correlationId: string) {
   }
 
   try {
-    const match = await matchApolloPerson(claim.providerExternalId, apiKey, { revealPhone: false });
+    const clearance = clearIdentityResolution("Apollo", { providerExternalId: claim.providerExternalId });
+    if (!clearance.ok) {
+      await markApolloEnrichmentAmbiguous({ ...authority, attemptId: claim.attemptId });
+      return fail(503, "APOLLO_RECONCILIATION_REQUIRED", "Enrichment requires reconciliation.");
+    }
+    const match = await matchApolloPerson(clearance.clearance, claim.providerExternalId, apiKey, { revealPhone: false });
     const parsedEmail = match?.email ? EmailSchema.safeParse(match.email.trim().toLowerCase()) : null;
     const email = parsedEmail?.success ? parsedEmail.data : "";
     const found = Boolean(email);

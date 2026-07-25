@@ -1,6 +1,10 @@
+import { mock } from "node:test";
+
 import { buildSeedState } from "../src/lib/seed";
-import { makeSourcingToolRunner, isSourcingTool, SOURCING_TOOL_DEFS } from "../src/lib/ai/sourcing-tools";
 import { runAnthropicWithTools, runOpenAiWithTools, type ResolvedMcpServer } from "../src/lib/ai/tool-loop";
+
+mock.module("server-only", { namedExports: {} });
+const { makeSourcingToolRunner, isSourcingTool, SOURCING_TOOL_DEFS } = await import("../src/lib/ai/sourcing-tools");
 
 let pass = 0,
   fail = 0;

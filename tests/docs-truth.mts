@@ -37,6 +37,7 @@ const testingGuide = source("docs/TESTING.md");
 const testSuiteMap = source("tests/README.md");
 const inventory = source("production-readiness/INVENTORY.md");
 const dataFlow = source("production-readiness/DATA_FLOW.md");
+const sourcingDoc = source("docs/SOURCING.md");
 const allDocs = [
   "README.md",
   "DEPLOYMENT.md",
@@ -309,6 +310,12 @@ ok(
   /\/api\/sourcing-agent/.test(dataFlow) &&
     /real provider/i.test(dataFlow) &&
     !/current implementation this calls `sourceCandidates\(\)`/i.test(dataFlow),
+);
+ok(
+  "sourcing compliance doc pins provider-egress clearance authority",
+  /ProviderClearance/.test(sourcingDoc) &&
+    /src\/lib\/sourcing\/provider-egress\.ts/.test(sourcingDoc) &&
+    !/Sourcing queries are rejected if they reference age\/gender\/race\/religion/.test(sourcingDoc),
 );
 
 console.log(`RESULT docs-truth: ${pass} passed, ${fail} failed`);
