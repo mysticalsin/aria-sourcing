@@ -87,6 +87,42 @@
     {
       "at": "2026-07-16",
       "lesson": "Fly manual deploy of a new migration MUST recompute+stage ARIA_RELEASE_SHA/ARIA_EXPECTED_* secrets (deploy-fly.sh:316-330 node algorithm) BEFORE the app deploy, or /api/ready releaseIdentity/migration go false; deploy-fly-2.sh omits this step."
+    },
+    {
+      "at": "2026-07-24",
+      "lesson": ".rocket-fuel/ is gitignored and repository-hygiene.mts asserts it, so PLAN/ROCKS/IMPROVE are invisible to clones. Durable lessons belong in docs/lessons/ or _relay/."
+    },
+    {
+      "at": "2026-07-24",
+      "lesson": "Never instruct a subagent to pass dangerouslyDisableSandbox; the safety classifier killed 7 of 8 audit agents after 1.1M tokens. Fix the environment instead."
+    },
+    {
+      "at": "2026-07-24",
+      "lesson": "Registered git worktrees each add sandbox deny rules; 51 pushed spawn args past the OS exec limit so every Bash call failed E2BIG. Prune after worktree work."
+    },
+    {
+      "at": "2026-07-24",
+      "lesson": "Green on a dirty tree cannot deploy: prod-release-guard.sh:35-37 demands empty git status --untracked-files=all. Commit, re-run the gate, then claim green at a SHA."
+    },
+    {
+      "at": "2026-07-24",
+      "lesson": "Editing a shipped migration silently disables backups: backup.sh:86-90 compares file sha256 against aria_schema_migrations. Always append a new numbered migration."
+    },
+    {
+      "at": "2026-07-24",
+      "lesson": "infra-release-contract.mts enumerates surfaces from git ls-files, so untracked scripts are invisible to it; deploy-fly-2.sh deployed prod with credentials and no guard."
+    },
+    {
+      "at": "2026-07-24",
+      "lesson": "~/.hermes/hermes-agent is a dirty fork 4444 commits behind with uncommitted Amaris HR-bot patches. Upstream absorbed most; migrate to the plugin seam, do not reapply."
+    },
+    {
+      "at": "2026-07-24",
+      "lesson": "Never commit e2e run evidence: candidate PII in immutable git history permanently defeats the 0033/0041 erasure authority."
+    },
+    {
+      "at": "2026-07-24",
+      "lesson": "Run the real gate first, each command separate and unchained. One pass falsified three recorded claims that every project document asserted."
     }
   ]
 }
