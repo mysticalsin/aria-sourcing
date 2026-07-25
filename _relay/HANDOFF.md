@@ -111,6 +111,39 @@ never forwarded. Adding it hands the client control of which path on the Hermes 
 Upstream applies its own managed-path policy and our proxy is admin-only in production, but this is
 a deliberate traversal-surface decision, not a typo fix, so it was left alone.
 
+## Second pass, 2026-07-25 — five more fixes and one escalated finding
+
+- `56ad585` **the unsafe identity defaults now have an enforced dependency.** A 5-character password
+  floor and mailer auto-confirm are tolerable only because `GOTRUE_DISABLE_SIGNUP` is true. Nothing
+  asserted that, so one edit would have opened a tenant accepting 5-character self-confirming
+  accounts. Asserts the coupling, not the values — Rock 4's question stays open.
+- `61a0fe2` **`api/files` navigation works, safely.** The `path` parameter was never forwarded so
+  browsing always returned the default root. Now validated by `isSafeRelativeBrowsePath`
+  (deny-by-default: absolute paths, drive letters, UNC, backslashes, `.`/`..`, empty segments,
+  control characters, >512 chars, and percent-encoding **outright** — decoding here would leave
+  upstream free to decode again), forwarded only for the one path that consumes it.
+- `2b01a6c` **one base-URL resolver.** The chat route re-read the env and re-ran the SSRF check
+  itself — the same twin-implementation pattern that let the bearer resolver drift. Also: the
+  settings hint claimed the Runtime API URL field decides where requests go; it does not.
+- `1c4c544` **the three swarm mutations are behind the same-origin JSON boundary, and the swarm
+  plane has its first test.** They went straight to `validateBody`, which has no origin or
+  media-type check, so a cross-site form post carrying the caller's cookies could answer an
+  escalation, create a mission or change the roster. The test's structural half fails when a NEW
+  swarm mutation route is added without the guard. Note the audit said four handlers; there are
+  three — `/api/swarm/runtime` is GET-only.
+
+**Escalated finding — read `_relay/2026-07-25-sourcing-egress-and-swarm-0049-spec.md`.** The
+prohibited-criteria bypass is far worse than the audit recorded. The policy is enforced on **one of
+nine** provider-reaching paths, there are **15 raw `fetch(` sites across 7 modules** with no egress
+chokepoint at all, and the paid Apify route accepts `schools`, `firstNames` and `lastNames` while
+carrying **no `campaignId`** — so it could not call the policy even if it wanted to. Four enrichment
+runners are unguarded too. `docs/SOURCING.md:445` is currently false.
+
+That spec also carries the full 0049 design for the two remaining swarm defects. **Neither is
+implemented**: all three adversarial critics and the swarm-test designer died on a session limit, and
+neither a 15-site egress refactor nor replacing three functions inside a production-applied migration
+should land unreviewed — especially with 0049's own proof suite not yet written.
+
 ## Blockers — none of them mine to clear unilaterally
 
 **Product plane (code, in scope for a next engagement):**
