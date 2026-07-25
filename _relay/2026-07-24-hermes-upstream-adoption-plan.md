@@ -1,13 +1,28 @@
 ---
 project: ARIA / MSourcing
 agent: claude-code (Opus 5, 1M)
-updated: 2026-07-24
-status: plan-awaiting-owner-approval
+updated: 2026-07-25
+status: H1 + H2 + H3-bearer SHIPPED · H3-shapes verified-and-scoped · H4-H7 await owner sign-off
 scope: bring the Hermes process agents onto current upstream (NousResearch/hermes-agent)
 depends_on: _relay/2026-07-24-state-of-the-union.md
 ---
 
 # Hermes upstream adoption plan
+
+## Progress
+
+| Rock | State |
+|---|---|
+| H1 reachability + readiness assertion | **DONE** `9acbd03` |
+| H2 two-server routing | **DONE** `b76d213` |
+| H3 bearer resolver | **DONE** `2083a0d` |
+| H3 response shapes | **VERIFIED, NOT CHANGED** — see the revised section below; smaller than the audit claimed and one item needs an owner decision |
+| H4 de-risk the Mina fork | NOT STARTED — owner sign-off required, touches a live HR bot |
+| H5 upgrade the runtime | NOT STARTED — gated by H4 |
+| H6 profile multiplexing | NOT STARTED |
+| H7 capability adoption | NOT STARTED |
+
+Everything shipped above was proven by the full gate on a clean tree, not by inspection.
 
 ## The situation in one paragraph
 
@@ -49,6 +64,24 @@ forms — a `^[a-z0-9-]+\.internal$` suffix rule and the `fdaa::/16` 6PN prefix 
 host also appears in that env list, so the SSRF posture stays deny-by-default. Then assert at
 readiness: if `HERMES_API_URL` is set and fails `isAllowedHermesUrl`, fail the probe.
 
+**SHIPPED `9acbd03`, simplified from the above.** The suffix and prefix rules were dropped as
+redundant: if a host must appear in the env list anyway, exact membership is the whole gate, and
+adding pattern rules on top would only create a second way to be wrong. Entries are exact
+hostnames or IP literals; wildcards, schemes and paths are ignored; the SSRF block-list still runs
+first, so naming a cloud metadata endpoint cannot unblock it. A public host is reachable only when
+the deployment names it — an operator decision in server-side env, never from request data —
+asserted in both directions. Readiness gained a `hermesRuntime` component, evaluated per request so
+a corrected deployment stops failing without a restart.
+
+**Found while building it, and fixed in the same commit:** WHATWG `URL.hostname` keeps the
+brackets on an IPv6 literal, so `http://[::1]/` yields `"[::1]"`. Every IPv6 pattern in the
+validator (`^::1$`, `^fc00:`, `^fe80:`, `^ff00:`) is written against the bare address and was
+therefore **unreachable** — the loopback, ULA, link-local and multicast blocks had never fired.
+Latent rather than exploitable, because default-deny rejected all IPv6 anyway; that stops being
+true the moment a deployment can name an IPv6 host, which is what this rock adds. The hostname is
+now bracket-stripped before matching, with assertions that loopback, link-local and multicast stay
+blocked even when explicitly named.
+
 **Proof:** `THE FULL GATE` exit 0; AND a new test asserting (a) each production-shaped host is
 rejected when absent from `HERMES_ALLOWED_HOSTS` and accepted when present, (b) a wildcard or
 bare-suffix entry is rejected, (c) a public host absent from the list is rejected, (d) readiness
@@ -81,6 +114,29 @@ a `web`-based path is never sent to the api base or vice versa, that a path abse
 returns 404 before any fetch, and that the non-admin public read set contains only paths that
 exist upstream.
 
+**SHIPPED `b76d213`.** `HERMES_PROXY_ALLOW_LIST` is now `{path, base}` records;
+`isAllowedHermesPath` surfaces the base; `getHermesBaseUrl(base)` reads `HERMES_API_URL` or the
+new `HERMES_WEB_URL`, with **no fallback between them** — falling back is exactly how these paths
+came to 404 silently. `api/sessions` is registered on both processes and routes to the gateway,
+which owns the chat session lifecycle, so GET and POST cannot straddle two servers. The six
+non-existent entries are deleted and asserted un-restorable. `PUBLIC_RUNTIME_READS` carried
+`api/health` for the same reason and now carries `health`.
+
+Correction to the audit worth recording: it called `api/health` "the only non-admin-readable
+runtime path in production". It was not — `PUBLIC_RUNTIME_READS` has three entries and the other
+two, `api/status` and `api/system/stats`, both exist upstream and always worked.
+
+The isolation suite had encoded the same mistake: it asserted viewer access *against*
+`api/health`, so it was guarding a path that could never reach a runtime. It now asserts the real
+path and additionally that `api/health` 404s at the allow-list before any upstream call. Its
+fixture gained `HERMES_WEB_URL`, without which the management reads correctly report an
+unconfigured base. 10 failures → 23/23.
+
+`hermesWebUrl` in `SystemSettings` is still read by nothing and is still half-implemented. It was
+deliberately left alone: the proxy must resolve base URLs from server-side env only, never from
+request data, so the field can only ever be a display value. Either wire it to the settings panel
+as read-only or delete it with its seed and migration lines — a small, separate change.
+
 ## H3 — close the bearer-resolver and response-shape defects
 
 **Why, bearer:** `resolveHermesBearerToken` (`src/lib/api/hermes-proxy.ts:45-49`) selects
@@ -89,13 +145,29 @@ unlike the stronger `resolveVaultSecret`. Any authenticated workspace member can
 workspace secret, **including a revoked one**, to be sent as a Bearer token to the Hermes host.
 Confirmed by execution during the audit.
 
-**Why, shapes:** four of eight parsed upstream response shapes are wrong against today's
-upstream, so the panels render empty or unknown against a healthy runtime: `/api/status` has no
-`status`/`uptime`, `/api/memory` returns an object not an array, `/api/sessions` returns
-`{object, data}` not an array, `/api/files` sends `mtime` not `modified_at`. One reviewer partly
-refuted the framing of this finding — three of four mismatches were confirmed and the "renders
-empty" claim was overstated — so **re-verify each shape against `origin/main` before changing a
-parser**, and treat the count as three-confirmed-plus-one-to-check.
+**Why, shapes — REVISED 2026-07-25 after verifying each against `origin/main` source.** The
+audit claimed four of eight parsed shapes were wrong and that the affected panels render empty. A
+reviewer partly refuted the framing. Both were partly right, and the verified picture is smaller
+and more precise than either:
+
+| Claim | Verdict, read at `origin/main` |
+|---|---|
+| `/api/memory` returns an object, not an array | **CONFIRMED.** `web_server.py` returns `{active, providers, builtin_files}`. We declare `HermesProxyResult<unknown[]>`. `hermes-memory-panel.tsx:27` guards with `Array.isArray`, so the panel renders **empty** — it never crashes. Display defect, not a blocker. |
+| `/api/files` shape is wrong and navigation is inert | **CONFIRMED, two separate faults.** Upstream returns `{path, parent, entries, …meta}`. And `proxy/route.ts` forwards only `page, limit, cursor, q, level`, so the `path` parameter the endpoint needs is never sent. |
+| `/api/status` has no `status`/`uptime` | **OVERSTATED.** The payload carries both `status` and `version`; only `uptime` is genuinely absent (`gateway_state` and `gateway_updated_at` cover that ground). Our type is all-optional with an index signature, so nothing can break on it. The reviewer was right. |
+| `/api/sessions` returns `{object, data}` not an array | **UNVERIFIED.** The gateway handler did not resolve cleanly from source reading. Do not touch this parser until a real response is captured. |
+
+**Deliberately not changed yet, and why.** Rewriting a parser against a shape nobody has observed
+from a running server is how the current mismatches got here. The memory and files corrections are
+worth making, but they change what the panels *render*, and that cannot be validated without real
+responses — which arrive with H5. Correcting the declared types alone would also fight
+`Array.isArray` narrowing at the call sites for no user-visible gain.
+
+**One item needs an owner decision, not a fix.** Forwarding `path` to `api/files` hands the client
+control of which path on the Hermes host is read. Upstream applies its own managed-path policy
+(`_resolve_managed_path`, `_is_sensitive_path`), and our proxy already restricts this to admins in
+production — but adding a client-controlled `path` to the forwarded-parameter allowlist is a
+deliberate traversal-surface decision. It is not a typo fix and is not being made unilaterally.
 
 **Done means:** the proxy resolves secrets through one hardened path, and every parsed shape is
 asserted against a fixture captured from upstream rather than from our own assumptions.

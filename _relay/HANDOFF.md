@@ -94,9 +94,22 @@ runtime upgrade:
   including a **revoked** one, and have it sent upstream as a Bearer token. The typed chat route
   already did this correctly; the generic proxy now delegates to the same hardened resolver.
 
-**Still open in the Hermes plan:** H2 (the two-server split — six of nine management paths 404
-today), the response-shape half of H3, and H4–H7. H2 changes the proxy's public contract shape;
-H4/H5 touch the live Amaris HR bot. All want owner sign-off.
+- `b76d213` **Seven management paths were being asked of the wrong server.** Upstream is two
+  processes with disjoint route sets — the aiohttp gateway (8642) and the FastAPI management server
+  (8080) — and both were addressed off one `HERMES_API_URL`. The allow-list is now `{path, base}`
+  records so routing is data, not convention, and `HERMES_WEB_URL` addresses the management server
+  with **no fallback** between the two. Six entries that exist on neither process were deleted and
+  asserted un-restorable. The isolation suite had encoded the same mistake and went 10 failures →
+  23/23.
+
+**Still open in the Hermes plan:** the response-shape half of H3 (verified and scoped — see the
+plan; it is smaller than the audit claimed) and H4–H7. H4/H5 touch the live Amaris HR bot and want
+owner sign-off.
+
+**One decision waiting in H3:** `api/files` navigation is inert because the `path` parameter is
+never forwarded. Adding it hands the client control of which path on the Hermes host is read.
+Upstream applies its own managed-path policy and our proxy is admin-only in production, but this is
+a deliberate traversal-surface decision, not a typo fix, so it was left alone.
 
 ## Blockers — none of them mine to clear unilaterally
 
