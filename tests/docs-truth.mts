@@ -246,6 +246,14 @@ const migrationFiles = readdirSync(new URL("../supabase/migrations/", import.met
   .map((entry) => entry.name)
   .sort();
 const latestMigration = migrationFiles.at(-1) ?? "";
+const migrationPrefixes = migrationFiles.map((name) => name.slice(0, 4));
+const duplicatePrefixes = migrationPrefixes.filter(
+  (prefix, index) => migrationPrefixes.indexOf(prefix) !== index,
+);
+ok(
+  `no two migrations share a numeric prefix (${duplicatePrefixes.join(", ") || "none"})`,
+  duplicatePrefixes.length === 0,
+);
 ok(
   "deployment runbook derives the current migration order and tip",
   Boolean(latestMigration) &&
