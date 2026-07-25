@@ -5,7 +5,7 @@ import { supabaseEnabled, prodFailClosed, demoLoginEnabled, DEMO_COOKIE_NAME } f
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
 import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
-import { isAllowedHermesUrl } from "@/lib/api/url";
+import { getHermesBaseUrl } from "@/lib/api/hermes-proxy";
 import { can } from "@/lib/rbac";
 import { AUTH_QUERY_PARAMS } from "@/lib/types";
 import type { Campaign, Candidate, Role, ScoringWeights } from "@/lib/types";
@@ -395,16 +395,19 @@ export async function POST(req: NextRequest) {
   }
 
   // S-1: URL is env-only — never use client-supplied hermesApiUrl (SSRF risk).
-  const rawBaseUrl = process.env.HERMES_API_URL ?? "";
-  const baseUrl = rawBaseUrl.replace(/\/$/, "");
-  if (!baseUrl) {
-    return NextResponse.json({ ok: false, reason: "Aria runtime URL is not configured." });
+  //
+  // Resolved through the shared getHermesBaseUrl rather than re-reading the env
+  // here. This route and the generic proxy previously each resolved the base URL
+  // and the bearer token independently, and the bearer pair had already drifted
+  // into two different security postures (the proxy's copy skipped the provider
+  // and status checks). One resolver per concern is the fix for that class.
+  // Chat is a gateway concern, hence the "api" base.
+  const baseUrlResult = getHermesBaseUrl("api");
+  if (!baseUrlResult.ok) {
+    logUpstream("error", "Aria runtime base URL unavailable", { reason: baseUrlResult.reason });
+    return NextResponse.json({ ok: false, reason: baseUrlResult.reason });
   }
-  const urlCheck = isAllowedHermesUrl(baseUrl);
-  if (!urlCheck.ok) {
-    logUpstream("error", "Blocked Aria URL due to SSRF policy", { url: baseUrl, reason: urlCheck.reason });
-    return NextResponse.json({ ok: false, reason: `Aria runtime URL rejected: ${urlCheck.reason}` });
-  }
+  const baseUrl = baseUrlResult.baseUrl;
 
   // Resolve the bearer token server-side. Vault by id (workspace-scoped) first;
   // env fallback is allowed only when no key id was requested. A supplied id
