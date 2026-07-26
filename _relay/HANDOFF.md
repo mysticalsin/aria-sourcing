@@ -1,82 +1,89 @@
 ---
 project: MSourcing / ARIA
-shift: 54
+shift: 55
 agent: codex
-updated: 2026-07-25 23:42 America/Toronto
-status: rock-1-loop-release-verifier-fixed-local-proof-green-full-gate-blocked-by-sandbox
+updated: 2026-07-26 00:58 America/Toronto
+status: rock-3-switchboard-ignition-worker-proof-local-focused-green-full-gate-blocked-by-sandbox
 ---
 
-# Handoff - Shift 54
+# Handoff - Shift 55
 
 ## Current state
 
 - Branch: `integration/sourcing-enrichment-on-main`.
 - No git commit was created in this shift.
-- `sequences_enabled` was not changed.
-- No Fly schedule, cron, or `ARIA_LOOP_KILL_SWITCH` change was added.
-- Migrations were not touched.
 - Graphify remains unavailable in this checkout:
-  - `graphify query "MSourcing apollo cleanup release verifier process groups loop machine digest rogue group docs sourcing discovery fields" --budget 1200` failed with:
+  - `graphify query "MSourcing sourcing loop Rock 3 switchboard ignition loop jobs dispatch outbound worker"` failed with:
     `error: graph file not found: /Users/tony/Library/CloudStorage/OneDrive-MantuGroup/Documents/Chief of Staff/Apps Source/MSourcing/graphify-out/graph.json`
   - `graphify-out/wiki/index.md` is absent.
-- Pre-existing untracked file before this shift remains untouched:
-  `_relay/2026-07-25-enterprise-readiness-audit-f5f1e47.md`.
+- The Rock 3 implementation is in the working tree and is not pushed.
+- `sequences_enabled` is not enabled by any product path. The disposable database harness explicitly enables stages only inside its local test setup so existing declared-kind assertions can still exercise every kind.
+- Reviewed-schema SQL metadata changed in `docker/bootstrap/legacy-baseline-invariants.sql`; `docker/bootstrap/legacy-baseline-public-schema.sha256` was not regenerated because the local database proof path is blocked by Docker socket denial.
 
 ## Done this shift
 
-- Fixed the protected release verifier to admit Rock 1's declared `loop` process group.
-  - `scripts/verify-apollo-cleanup-release.mjs` now includes `loop` in `PROCESS_GROUPS`.
-  - The `groups` bucket now includes `loop: []`.
-  - The existing unknown-group refusal remains in place for undeclared groups.
-  - The existing duplicate-machine-id, image digest, started-web, cleanup active/standby, and framework-heartbeat active/standby checks were not relaxed.
-- Chosen loop state discipline:
-  - The verifier requires the `loop` process group to exist and relies on the existing per-machine digest check to prove it is deployed at the accepted image.
-  - It does not require cleanup/framework active/standby shape for `loop`, because `scripts/sourcing-loop-worker.mjs` fails closed unless `ARIA_LOOP_KILL_SWITCH` is exactly `"false"`, so a dark loop machine may be stopped, exited, or otherwise not active/standby paired.
-  - The receipt shape still returns `cleanupMachineId` and `frameworkHeartbeatMachineId`; no existing key was renamed or removed.
-- Added verifier proof in `tests/apollo-cleanup-worker.mts`.
-  - A correctly digested `loop` machine is accepted.
-  - A missing `loop` group is rejected with `loop process group has no machine`.
-  - A `rogue` process group is rejected with `unexpected Fly application process group`.
-- Updated `tests/deploy-contract.mts` fake Fly machine inventory to include the declared `loop` machine at the same digest.
-- Corrected `docs/SOURCING.md` discrimination-proxy wording.
-  - Discovery fields are described as protected-class screened.
-  - Name fields are described as still screened for control characters, injection, and length.
-  - The `ProviderClearance` and source-file pins remain.
-- Updated `tests/docs-truth.mts` to pin the corrected docs wording while keeping both existing negative clauses.
+- Added `supabase/migrations/0050_loop_switchboard_ignition_authority.sql`.
+  - Centralized the kind-to-stage mapping in `public.sourcing_loop_stage_enabled(uuid,text)`.
+  - Replaced `public.enqueue_aria_job(...)` so enqueue refuses missing controls, `kill_switch=true`, and false mapped stage columns before writing.
+  - Replaced `public.claim_due_aria_jobs(...)` so claim skips jobs whose workspace controls are missing, killed, or false for the mapped stage.
+  - Preserved the service-role gate and 30-day `p_run_at` bound.
+  - Added `public.read_inbound_email_for_loop(uuid,uuid)` so the worker can classify stored inbound messages without putting reply text into job payloads.
+  - New security-definer functions pin `search_path`, gate on `auth.role() = 'service_role'`, and revoke broad grants.
+- Added `src/app/api/cron/ignite-sourcing-loop/route.ts`.
+  - Uses the existing `CRON_SECRET` bearer and constant-time compare pattern.
+  - Rejects missing or malformed credentials, browser cookie sessions, browser `Origin`, and disabled or killed workspaces.
+  - Enqueues an idempotent root `email_sync` job for enabled workspaces.
+- Updated `src/lib/dispatch-outbound.ts`.
+  - `dispatchDue` now reads `sourcing_loop_controls` and reaches no transport when a workspace is killed, missing controls, unreadable, or has `sequences_enabled=false`.
+  - The hash-keyed `outreach_approvals` gate and never-auto-send path were not weakened.
+- Updated `scripts/sourcing-loop-worker.mjs`.
+  - Added a pre-handler `sourcing_loop_stage_enabled` recheck to close the in-flight disable window.
+  - A disabled in-flight job is durably failed as nonretryable `stage_disabled`; the handler is not called.
+  - Threaded `modelClient` through `runSourcingLoopForever()` and `main()`.
+  - Added an OpenAI-compatible runtime model client when `OPENAI_API_KEY` is configured; otherwise the deterministic fallback remains and is surfaced in tick results.
+  - `inbound_classify` can now classify a stored inbound message from its `inboundId` and persist the classification.
+- Added or updated proof files:
+  - `tests/sourcing-loop-ignition-route.mts`
+  - `tests/sourcing-loop-worker.mts`
+  - `tests/dispatch-outbound.mts`
+  - `tests/loop-jobs-db.sh`
+  - `tests/test-manifest.mjs`
+  - `tests/test-manifest-contract.mts`
+  - `tests/db/function-privileges.sql`
+  - `docker/bootstrap/legacy-baseline-invariants.sql`
 
 ## Verification
 
 Passed:
 
-- `npm run typecheck` -> exit 0.
+- `node --import tsx tests/dispatch-outbound.mts` -> `RESULT dispatch-outbound: 95 passed, 0 failed`.
+- `node --import tsx --test tests/sourcing-loop-worker.mts` -> 9 passed, 0 failed.
+- `node --experimental-test-module-mocks --import tsx --test tests/sourcing-loop-ignition-route.mts` -> 5 passed, 0 failed.
+- `node --import tsx tests/test-manifest-contract.mts` -> 7 passed, 0 failed, 1 skipped.
 - `./node_modules/.bin/tsc --noEmit --incremental false` -> exit 0.
+- `npm run typecheck` -> exit 0.
 - `npm run typecheck:tests` -> exit 0.
 - `npm run lint` -> exit 0 with 4 existing warnings in `src/components/floor3d/retro/objects/AgentModel.tsx`.
-- `node --import tsx --test --test-name-pattern "release acceptance binds one started cleanup process" tests/apollo-cleanup-worker.mts` -> 1 passed, 0 failed.
-- `node --import tsx tests/deploy-contract.mts` -> `RESULT deploy-contract: 136 passed, 0 failed`.
-- `node --import tsx tests/docs-truth.mts` -> `RESULT docs-truth: 46 passed, 0 failed`.
-- `node --import tsx tests/test-manifest-contract.mts` -> 7 passed, 0 failed, 1 skipped.
 - `git diff --check` -> exit 0.
 
-Mutation proof:
+Red-first proof observed before fixes:
 
-- Temporarily removed the `!PROCESS_GROUPS.includes(group)` refusal and reran:
-  `node --import tsx --test --test-name-pattern "release acceptance binds one started cleanup process" tests/apollo-cleanup-worker.mts`
-- Expected failure was observed:
-  `The input did not match the regular expression /unexpected Fly application process group/. Input: "TypeError: Cannot read properties of undefined (reading 'push')"`
-- The refusal was restored and the named verifier test passed again.
+- New dispatch switchboard tests initially failed because transport was still reached under killed or sequence-disabled controls.
+- New worker chain tests initially failed with `reply_text_required`, no `stage_disabled` refusal, and zero model-client calls through `runSourcingLoopForever`.
+- New ignition route tests initially failed with `ERR_MODULE_NOT_FOUND` because the machine surface did not exist.
+- `bash tests/loop-jobs-db.sh` could not reach the red/green database assertions because Docker socket access is denied locally.
 
 Blocked by local sandbox:
 
-- `node --import tsx tests/apollo-cleanup-worker.mts` -> failed in the existing redirect-listener test with:
+- `npm test` failed in `tests/apollo-cleanup-worker.mts` with:
   `error: 'listen EPERM: operation not permitted 127.0.0.1'`
-- `npm run test:all` -> failed in `tests/apollo-cleanup-worker.mts` with:
+- `npm run test:all` failed in `tests/apollo-cleanup-worker.mts` with:
   `error: 'listen EPERM: operation not permitted 127.0.0.1'`
-- `npm run test:database` -> failed with:
+- `npm run test:database` failed with:
   `permission denied while trying to connect to the docker API at unix:///Users/tony/.colima/default/docker.sock`
-- `npm run test:manifest` -> failed before tests with:
-  `Error: listen EPERM: operation not permitted /var/folders/5m/c_klcrrj4yj_jxhf4t6vhb080000gn/T/tsx-501/89306.pipe`
-- `npm run build` -> failed with:
+- `npm run test:manifest` failed before tests with:
+  `Error: listen EPERM: operation not permitted /var/folders/5m/c_klcrrj4yj_jxhf4t6vhb080000gn/T/tsx-501/24015.pipe`
+- `npm run build` failed with:
   `TurbopackInternalError: [project]/src/styles/globals.css [app-client] (css)`
   caused by:
   `creating new process`
@@ -85,37 +92,36 @@ Blocked by local sandbox:
 
 ## Blockers
 
-1. Full `test:all` cannot complete in this sandbox because loopback listeners are denied.
-2. Full `test:database` cannot complete in this sandbox because Docker/Colima socket access is denied.
-3. `npm run test:manifest` cannot complete through the `tsx` CLI in this sandbox because its IPC pipe listener is denied.
-4. `npm run build` cannot complete in this sandbox because Turbopack tries to bind a port while processing `src/styles/globals.css`.
+1. Full application test groups that open loopback listeners cannot complete in this sandbox.
+2. Database tests and schema hash regeneration cannot complete because Docker/Colima socket access is denied.
+3. `npm run test:manifest` cannot complete through the `tsx` CLI because its IPC pipe listener is denied, although `node --import tsx tests/test-manifest-contract.mts` passes.
+4. `npm run build` cannot complete because Turbopack attempts a denied process or port operation.
 
 ## Next steps
 
-1. Visionary should run the full gate in an environment with loopback, Docker, tsx IPC, and Turbopack process permissions:
+1. Visionary should run:
    `npm run typecheck && npm run typecheck:tests && npm run lint && npm run test:all && npm run test:database && npm run test:manifest && npm run build`.
-2. Review and commit the intended files:
-   - `scripts/verify-apollo-cleanup-release.mjs`
-   - `tests/apollo-cleanup-worker.mts`
-   - `tests/deploy-contract.mts`
-   - `docs/SOURCING.md`
-   - `tests/docs-truth.mts`
-   - `_relay/HANDOFF.md`
-   - `_relay/archive/2026-07-25-2342-codex.md`
-3. Decide separately whether and when to enable the loop worker by setting `ARIA_LOOP_KILL_SWITCH=false`. This shift intentionally kept it dark.
+2. Visionary should regenerate and review `docker/bootstrap/legacy-baseline-public-schema.sha256` after applying migration `0050`.
+3. Review the new SQL function inventory deltas:
+   - `sourcing_loop_stage_enabled(uuid,text)`
+   - `read_inbound_email_for_loop(uuid,uuid)`
+   - replaced `enqueue_aria_job(...)`
+   - replaced `claim_due_aria_jobs(integer,integer,timestamptz,text[])`
+4. Commit the intended Rock 3 files plus this handoff archive.
 
 ## Decisions made (don't relitigate)
 
-- `loop` is a declared Fly process group and must be admitted by the release verifier.
-- Unknown Fly process groups still fail with `unexpected Fly application process group`.
-- Every machine in every admitted process group must still match the expected image digest.
-- `cleanup` and `framework_heartbeat` keep the active/standby contract.
-- `loop` only needs presence plus matching digest while the worker remains fail-closed by kill switch.
-- The release receipt keeps `cleanupMachineId` and `frameworkHeartbeatMachineId` for `deploy-fly.sh`.
-- Discovery fields, not name fields, receive protected-class proxy screening in the sourcing docs.
+- The binding kind-to-column map is implemented in one SQL helper and consumed by both enqueue and claim.
+- Missing or unreadable `sourcing_loop_controls` is fail-closed.
+- `dispatchDue` fails closed at the workspace controls boundary before provider transport.
+- Ignition is a machine credential path only; browser cookies and browser origins are refused.
+- The root ignition job is `email_sync` and uses a deterministic idempotency key.
+- In-flight jobs are rechecked immediately before handler execution.
+- Model fallback remains allowed, but the runtime path now threads the model client and exposes fallback use.
 
 ## Watch out
 
-- Do not add `ARIA_LOOP_KILL_SWITCH=false`, a Fly cron, or a schedule as part of this verifier fix.
-- Do not remove the `loop` bucket while keeping `loop` in `PROCESS_GROUPS`; that turns accepted loop machines into an undefined push failure.
-- The pre-existing untracked relay audit file is not part of this shift's code changes.
+- Do not treat the local sandbox failures as proof failures in code without rerunning in a Docker and loopback-capable environment.
+- Do not enable `sequences_enabled` outside disposable database test setup.
+- Do not put inbound reply body into `aria_jobs` payloads or loop logs.
+- Do not relax the hash-keyed `outreach_approvals` gate when reviewing dispatch changes.

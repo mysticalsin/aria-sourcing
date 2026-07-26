@@ -34,6 +34,7 @@ function makeFakeDb(seed: {
   outbound: Row[];
   approvals: Row[];
   seats: Row[];
+  controls?: Row[];
   ledgers?: Row[];
   whatsappContacts?: Row[];
   whatsappTemplates?: Row[];
@@ -52,6 +53,9 @@ function makeFakeDb(seed: {
     if (name === "messages_outbound") return seed.outbound;
     if (name === "outreach_approvals") return seed.approvals;
     if (name === "agent_seats") return seed.seats;
+    if (name === "sourcing_loop_controls") {
+      return seed.controls ?? [{ workspace_id: "ws-1", kill_switch: false, sequences_enabled: true }];
+    }
     if (name === "outreach_ledger") return seed.ledgers ?? [];
     if (name === "whatsapp_contacts") return seed.whatsappContacts ?? [];
     if (name === "whatsapp_templates") return seed.whatsappTemplates ?? [];
@@ -202,11 +206,17 @@ const LIVE_WHATSAPP_CONTACT: Row = {
   expires_at: null,
 };
 
+const LOOP_SENDS_ENABLED: Row = {
+  workspace_id: "ws-1",
+  kill_switch: false,
+  sequences_enabled: true,
+};
+
 // ---------------------------------------------------------------------------
 // 1. No approval row → blocked, RPC never called
 // ---------------------------------------------------------------------------
 {
-  const db = makeFakeDb({ outbound: [baseMsg()], approvals: [], seats: [LIVE_SEAT], claim: { allowed: true } });
+  const db = makeFakeDb({ outbound: [baseMsg()], approvals: [], seats: [LIVE_SEAT], controls: [LOOP_SENDS_ENABLED], claim: { allowed: true } });
   const stats = await dispatchDue(db.client, 10);
   ok("no-approval: blocked", stats.blocked === 1 && stats.sent === 0);
   ok("no-approval: claim never ran", db.rpcCalls.length === 0);
@@ -221,6 +231,7 @@ const LIVE_WHATSAPP_CONTACT: Row = {
     outbound: [baseMsg()],
     approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash("different text") }],
     seats: [LIVE_SEAT],
+    controls: [LOOP_SENDS_ENABLED],
     claim: { allowed: true },
   });
   const stats = await dispatchDue(db.client, 10);
@@ -237,6 +248,7 @@ const LIVE_WHATSAPP_CONTACT: Row = {
     outbound: [baseMsg({ body: evil })],
     approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(evil) }],
     seats: [LIVE_SEAT],
+    controls: [LOOP_SENDS_ENABLED],
     claim: { allowed: true },
   });
   const stats = await dispatchDue(db.client, 10);
@@ -249,10 +261,51 @@ const LIVE_WHATSAPP_CONTACT: Row = {
 // interaction. Missing consent is a hard block, not a review hint.
 // ---------------------------------------------------------------------------
 {
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.WHATSAPP_TOKEN;
+  const originalPhone = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  process.env.WHATSAPP_TOKEN = "test-token";
+  process.env.WHATSAPP_PHONE_NUMBER_ID = "sender-1";
+  let transportCalls = 0;
+  globalThis.fetch = (async () => {
+    transportCalls++;
+    return jsonResponse(200, { messages: [{ id: "wamid.must-not-send" }] });
+  }) as typeof fetch;
+  try {
+    for (const [name, controls] of [
+      ["kill switch", { workspace_id: "ws-1", kill_switch: true, sequences_enabled: true }],
+      ["sequences disabled", { workspace_id: "ws-1", kill_switch: false, sequences_enabled: false }],
+    ] as const) {
+      transportCalls = 0;
+      const db = makeFakeDb({
+        outbound: [baseMsg()],
+        approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "human" }],
+        seats: [LIVE_SEAT],
+        controls: [controls],
+        whatsappContacts: [{ ...LIVE_WHATSAPP_CONTACT }],
+        ledgers: [{ id: `led-${name}`, outbound_message_id: "m-1", status: "claimed" }],
+        claim: { allowed: true, ledger_id: `led-${name}`, delivery_attempt_id: ATTEMPT_ONE },
+      });
+      const stats = await dispatchDue(db.client, 10);
+      ok(`loop controls ${name}: no transport call`, transportCalls === 0);
+      ok(`loop controls ${name}: no dispatch claim`, !db.rpcCalls.some((call) => call.fn === "claim_whatsapp_outbound"));
+      ok(`loop controls ${name}: drains no terminal state`, stats.sent === 0 && stats.blocked === 0 && stats.failed === 0);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalToken === undefined) delete process.env.WHATSAPP_TOKEN;
+    else process.env.WHATSAPP_TOKEN = originalToken;
+    if (originalPhone === undefined) delete process.env.WHATSAPP_PHONE_NUMBER_ID;
+    else process.env.WHATSAPP_PHONE_NUMBER_ID = originalPhone;
+  }
+}
+
+{
   const db = makeFakeDb({
     outbound: [baseMsg({ type: "candidate_reply" })],
     approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "human" }],
     seats: [LIVE_SEAT],
+    controls: [LOOP_SENDS_ENABLED],
     whatsappContacts: [],
     claim: { allowed: true },
   });

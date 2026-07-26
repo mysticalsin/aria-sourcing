@@ -66,6 +66,20 @@ export interface DispatchStats {
 
 type DispatchOutcomeCounter = Exclude<keyof DispatchStats, "processed">;
 
+async function loopSendControlsPermit(supabase: SupabaseClient, workspaceId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("sourcing_loop_controls")
+    .select("kill_switch, sequences_enabled")
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+  if (error) {
+    safeLog("dispatch-outbound: loop controls lookup error", { message: error.message });
+    return false;
+  }
+  const controls = record(data);
+  return controls?.kill_switch === false && controls.sequences_enabled === true;
+}
+
 /**
  * Maps a Twilio result to the durable ledger state used if SMS is enabled in a
  * future release. Only a definitive provider rejection may release the claim.
@@ -133,6 +147,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
 
   for (const msg of due ?? []) {
     stats.processed++;
+    if (!(await loopSendControlsPermit(supabase, msg.workspace_id))) continue;
     let deliveryAttemptId: string | null = null;
     const finish = async (status: "sent" | "blocked" | "failed", gateResult?: unknown, countAs?: DispatchOutcomeCounter) => {
       const reopenReview =

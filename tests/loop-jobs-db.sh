@@ -243,7 +243,102 @@ select loop_jobs_test.expect_scalar(
 );
 
 -- ---------------------------------------------------------------------------
--- 2. Enqueue: idempotent lock-and-return + payload-drift conflict.
+-- 2. Switchboard: enqueue and claim fail closed before any stage work.
+-- ---------------------------------------------------------------------------
+set role service_role;
+select loop_jobs_test.set_service_claims('c1000000-0000-4000-8000-000000000001');
+
+create temporary table enqueue_killed as
+select public.enqueue_aria_job(
+  '51111111-1111-4111-8111-111111111111', 'email_sync', 'switch:killed:0001',
+  '{}'::jsonb, now(), 100
+) result;
+reset role;
+
+insert into public.aria_jobs(
+  workspace_id, kind, idempotency_key, payload, payload_sha256, next_run_at, priority
+) values (
+  '51111111-1111-4111-8111-111111111111', 'email_sync', 'switch:killed-claim:0001',
+  '{}'::jsonb, encode(sha256(convert_to('{}'::jsonb::text, 'UTF8')), 'hex'), now(), 0
+);
+
+set role service_role;
+select loop_jobs_test.set_service_claims('c1000000-0000-4000-8000-000000000001');
+create temporary table claim_killed as
+select id from public.claim_due_aria_jobs('worker-switch-killed', 120, array['email_sync'], 10);
+reset role;
+
+update public.sourcing_loop_controls
+   set kill_switch = false,
+       intake_enabled = true,
+       sourcing_enabled = false,
+       enrichment_enabled = false,
+       sequences_enabled = false,
+       updated_by = 'c1000000-0000-4000-8000-000000000001',
+       updated_at = now()
+ where workspace_id = '51111111-1111-4111-8111-111111111111';
+
+set role service_role;
+select loop_jobs_test.set_service_claims('c1000000-0000-4000-8000-000000000001');
+create temporary table enqueue_disabled_stage as
+select public.enqueue_aria_job(
+  '51111111-1111-4111-8111-111111111111', 'sourcing_batch', 'switch:disabled:0001',
+  '{"campaignId":"camp-disabled"}'::jsonb, now(), 100
+) result;
+reset role;
+
+insert into public.aria_jobs(
+  workspace_id, kind, idempotency_key, payload, payload_sha256, next_run_at, priority
+) values (
+  '51111111-1111-4111-8111-111111111111', 'sourcing_batch', 'switch:disabled-claim:0001',
+  '{"campaignId":"camp-disabled"}'::jsonb,
+  encode(sha256(convert_to('{"campaignId":"camp-disabled"}'::jsonb::text, 'UTF8')), 'hex'),
+  now(), 0
+);
+
+set role service_role;
+select loop_jobs_test.set_service_claims('c1000000-0000-4000-8000-000000000001');
+create temporary table claim_disabled_stage as
+select id from public.claim_due_aria_jobs('worker-switch-disabled', 120, array['sourcing_batch'], 10);
+reset role;
+
+select loop_jobs_test.expect_scalar(
+  'switchboard-enqueue-kill-switch-refused',
+  $$select result->>'status' from enqueue_killed$$,
+  'control_blocked'
+);
+select loop_jobs_test.expect_scalar(
+  'switchboard-claim-kill-switch-refused',
+  $$select count(*)::text from claim_killed$$,
+  '0'
+);
+select loop_jobs_test.expect_scalar(
+  'switchboard-enqueue-disabled-stage-refused',
+  $$select result->>'status' from enqueue_disabled_stage$$,
+  'control_blocked'
+);
+select loop_jobs_test.expect_scalar(
+  'switchboard-claim-disabled-stage-refused',
+  $$select count(*)::text from claim_disabled_stage$$,
+  '0'
+);
+
+update public.aria_jobs
+   set status = 'dead', last_error = 'switchboard-test-complete', updated_at = now()
+ where idempotency_key in ('switch:killed-claim:0001', 'switch:disabled-claim:0001');
+
+update public.sourcing_loop_controls
+   set kill_switch = false,
+       intake_enabled = true,
+       sourcing_enabled = true,
+       enrichment_enabled = true,
+       sequences_enabled = true,
+       updated_by = 'c1000000-0000-4000-8000-000000000001',
+       updated_at = now()
+ where workspace_id = '51111111-1111-4111-8111-111111111111';
+
+-- ---------------------------------------------------------------------------
+-- 3. Enqueue: idempotent lock-and-return + payload-drift conflict.
 -- ---------------------------------------------------------------------------
 set role service_role;
 select loop_jobs_test.set_service_claims('c1000000-0000-4000-8000-000000000001');
@@ -367,7 +462,7 @@ select loop_jobs_test.expect_authenticated_sqlstate(
 );
 
 -- ---------------------------------------------------------------------------
--- 3. Claim: leases the job once; a leased job is never re-claimable.
+-- 4. Claim: leases the job once; a leased job is never re-claimable.
 -- ---------------------------------------------------------------------------
 set role service_role;
 select loop_jobs_test.set_service_claims('c1000000-0000-4000-8000-000000000001');
@@ -394,7 +489,7 @@ select loop_jobs_test.expect_scalar(
 );
 
 -- ---------------------------------------------------------------------------
--- 4. Heartbeat: lease-bound extension.
+-- 5. Heartbeat: lease-bound extension.
 -- ---------------------------------------------------------------------------
 set role service_role;
 select loop_jobs_test.set_service_claims('c1000000-0000-4000-8000-000000000001');
@@ -411,7 +506,7 @@ select loop_jobs_test.expect_scalar(
 );
 
 -- ---------------------------------------------------------------------------
--- 5. Complete: one-shot; events + follow-on land in the SAME transaction.
+-- 6. Complete: one-shot; events + follow-on land in the SAME transaction.
 -- ---------------------------------------------------------------------------
 set role service_role;
 select loop_jobs_test.set_service_claims('c1000000-0000-4000-8000-000000000001');
@@ -1025,6 +1120,24 @@ SQL
 concurrent_claim() {
   local kind="$1"
   local prefix="race:${kind}:"
+  # 0050 made enqueue and claim obey sourcing_loop_controls. Earlier sections in
+  # this file deliberately leave the workspace with only SOME stages enabled, so
+  # the race must enable every stage for its own kind or enqueue_aria_job returns
+  # control_blocked and the race has nothing to contend over. This enables the
+  # switchboard rather than bypassing it: the race is about SKIP LOCKED, and the
+  # controls are proved separately in the switchboard section.
+  psql_stdin -q <<'RACE_CONTROLS'
+update public.sourcing_loop_controls
+   set kill_switch = false,
+       intake_enabled = true,
+       sourcing_enabled = true,
+       enrichment_enabled = true,
+       sequences_enabled = true,
+       swarm_enabled = true,
+       updated_by = 'c1000000-0000-4000-8000-000000000001',
+       updated_at = now()
+ where workspace_id = '51111111-1111-4111-8111-111111111111';
+RACE_CONTROLS
   # Genuine SKIP LOCKED race: session 1 claims job R1 inside an OPEN
   # transaction and sleeps; session 2 claims concurrently and must get the
   # OTHER job (R2), never blocking, never double-claiming.

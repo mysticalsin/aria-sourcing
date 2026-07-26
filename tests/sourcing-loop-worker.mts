@@ -8,6 +8,7 @@ import {
   assertDeclaredSuccessors,
   buildReplyClassificationPrompt,
   handleAriaJob,
+  runSourcingLoopForever,
   runSourcingLoopTick,
 } from "../scripts/sourcing-loop-worker.mjs";
 
@@ -148,6 +149,55 @@ test("reply classify wraps candidate text in the disclosure envelope handed to t
   assert.equal((completion.args.p_patch as Array<Record<string, unknown>>)[0].intent, "QUALIFIED_INTEREST");
 });
 
+test("email_sync enqueues inbound_classify and the classifier persists the stored inbound reply", async () => {
+  const completions: Array<Record<string, unknown>> = [];
+  const patches: Array<Record<string, unknown>> = [];
+  const { client } = rpcClient((name, args) => {
+    if (name === "complete_aria_job") {
+      completions.push(args);
+      return { data: true, error: null };
+    }
+    if (name === "read_inbound_email_for_loop") {
+      return {
+        data: {
+          status: "ok",
+          inbound_id: "inbound-1",
+          candidate_id: "cand-1",
+          campaign_id: "camp-1",
+          body: "Interested, please send the details.",
+          received_at: "2026-07-25T12:30:00.000Z",
+          message_id: "provider-message-1",
+        },
+        error: null,
+      };
+    }
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: { replies: [] }, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      patches.push(args);
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await handleAriaJob(job("email_sync", { inboundIds: ["inbound-1"] }), { client });
+  assert.deepEqual(
+    completions[0].p_enqueue,
+    [{ kind: "inbound_classify", idempotency_key: "reply:inbound-1", payload: { inboundId: "inbound-1" }, priority: 80 }],
+  );
+
+  await handleAriaJob(job("inbound_classify", { inboundId: "inbound-1" }), { client });
+
+  assert.equal(patches.length, 1);
+  assert.equal(patches[0].p_patch_kind, "append_reply");
+  const reply = (patches[0].p_patch as Array<Record<string, unknown>>)[0];
+  assert.equal(reply.candidateId, "cand-1");
+  assert.equal(reply.campaignId, "camp-1");
+  assert.equal(reply.body, "Interested, please send the details.");
+  assert.equal(reply.intent, "INTERESTED");
+});
+
 test("runSourcingLoopTick claims every handler kind and completes each claimed job once", async () => {
   const claimedJobs = HANDLER_KINDS.map((kind) =>
     job(kind, {
@@ -168,6 +218,7 @@ test("runSourcingLoopTick claims every handler kind and completes each claimed j
     if (name === "reap_expired_agent_framework_leases") return { data: 0, error: null };
     if (name === "cleanup_email_ledger_delivery_receipts") return { data: 0, error: null };
     if (name === "claim_due_aria_jobs") return { data: claimedJobs, error: null };
+    if (name === "sourcing_loop_stage_enabled") return { data: true, error: null };
     if (name === "read_workspace_state_for_loop") {
       return { data: { status: "ok", state: {}, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
     }
@@ -190,6 +241,85 @@ test("runSourcingLoopTick claims every handler kind and completes each claimed j
   assert.equal(result.claimed, HANDLER_KINDS.length);
   assert.equal(result.completed, HANDLER_KINDS.length);
   assert.deepEqual(calls.find((call) => call.name === "claim_due_aria_jobs")?.args.p_kinds, [...HANDLER_KINDS]);
+});
+
+test("claimed job is refused durably when its stage is disabled before the handler runs", async () => {
+  const claimedJobs = [
+    job("email_sync", {
+      inboundIds: ["inbound-1"],
+    }),
+  ];
+  const { client, calls } = rpcClient((name) => {
+    if (name === "record_loop_worker_heartbeat") return { data: true, error: null };
+    if (name === "reap_expired_aria_job_leases") return { data: 0, error: null };
+    if (name === "reap_expired_agent_framework_leases") return { data: 0, error: null };
+    if (name === "cleanup_email_ledger_delivery_receipts") return { data: 0, error: null };
+    if (name === "claim_due_aria_jobs") return { data: claimedJobs, error: null };
+    if (name === "sourcing_loop_stage_enabled") return { data: false, error: null };
+    if (name === "fail_aria_job") return { data: "dead", error: null };
+    if (name === "complete_aria_job") throw new Error("disabled stage must not complete");
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  const result = await runSourcingLoopTick(
+    client,
+    { workerId: "loop-test", releaseSha: "a".repeat(40), dispatchUrl: null },
+    { ARIA_LOOP_KILL_SWITCH: "false" },
+    async () => new Response("{}"),
+  );
+
+  assert.equal(result.claimed, 1);
+  assert.equal(result.completed, 0);
+  assert.ok(result.failureCodes.includes("handler:email_sync:stage_disabled"));
+  const failure = calls.find((call) => call.name === "fail_aria_job");
+  assert.equal(failure?.args.p_error, "stage_disabled");
+  assert.equal(failure?.args.p_retryable, false);
+});
+
+test("runSourcingLoopForever passes the configured model client into the tick", async () => {
+  const controller = new AbortController();
+  let modelCalls = 0;
+  const claimedJobs = [
+    job("inbound_classify", {
+      inboundId: "inbound-1",
+      replyText: "Could you share more details?",
+    }),
+  ];
+  const { client } = rpcClient((name) => {
+    if (name === "record_loop_worker_heartbeat") return { data: true, error: null };
+    if (name === "reap_expired_aria_job_leases") return { data: 0, error: null };
+    if (name === "reap_expired_agent_framework_leases") return { data: 0, error: null };
+    if (name === "cleanup_email_ledger_delivery_receipts") return { data: 0, error: null };
+    if (name === "claim_due_aria_jobs") return { data: claimedJobs, error: null };
+    if (name === "sourcing_loop_stage_enabled") return { data: true, error: null };
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: { replies: [] }, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+  const modelClient = {
+    async classifyReply() {
+      modelCalls += 1;
+      return { ok: true, text: JSON.stringify({ intent: "REFERRAL", confidence: 0.8 }) };
+    },
+  };
+
+  await runSourcingLoopForever({
+    client,
+    configuration: { workerId: "loop-test", releaseSha: "a".repeat(40), dispatchUrl: null, tickMs: 5_000 },
+    environment: { ARIA_LOOP_KILL_SWITCH: "false" },
+    signal: controller.signal,
+    fetcher: async () => new Response("{}"),
+    modelClient: modelClient as any,
+    sleep: async () => {
+      controller.abort();
+    },
+  });
+
+  assert.equal(modelCalls, 1);
 });
 
 test("buildReplyClassificationPrompt strips delimiter breakout while preserving untrusted text", () => {
