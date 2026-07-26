@@ -2,8 +2,8 @@
 project: MSourcing / ARIA
 shift: 47
 agent: codex-gpt-5
-updated: 2026-07-26 00:37 EDT
-status: phase-1 candidate-list authority source-green; evidence bridge and product surface pending; production blocked
+updated: 2026-07-26 01:00 EDT
+status: phase-1 evidence bridge RED-proven; 0065 implementation and product surface pending; production blocked
 ---
 
 # Handoff - MSourcing / ARIA
@@ -12,9 +12,9 @@ status: phase-1 candidate-list authority source-green; evidence bridge and produ
 
 - Work only from /Users/tony/msourcing-heyreach-foundation-20260725. The OneDrive checkout is not the execution lane.
 - Active branch: codex/candidate-lists-phase1-20260725.
-- Local HEAD: be7278dc24b82ef4a92126db3d1eb1412d630755. This is the green 0064 candidate-list authority commit.
-- Remote branch still ended at f92f2ae when this snapshot was written. Push be7278d plus this handoff commit before handing off.
-- RED-first commits 3ee2e80 and f92f2ae are already pushed.
+- Local HEAD: 4c74b5285ec84de54f52fcf3a4c3c2288695a178. The green 0064 authority is be7278d; 4c74b52 is the intentional 0065 RED contract.
+- Remote branch ended at d82e2c0 when this milestone was written. Push 4c74b52 plus the following Relay-state commit before handing off.
+- RED-first 0064 commits 3ee2e80 and f92f2ae, implementation be7278d, and Relay closeout d82e2c0 are pushed.
 - Migration 0064 adds four private, forced-RLS tables: candidate_lists, candidate_contact_attestations, candidate_list_members, and candidate_list_operation_receipts.
 - Authenticated members and admins can create a list and add one provenance-bound member. Viewers, members, and admins can read bounded keyset pages through the RPC. Browser candidate JSON is not authority.
 - Candidate add and governed erasure share the canonical candidate identity advisory lock. Erasure deletes list membership, attestation rows, and candidate-linkable add receipts. Both transaction orders are covered.
@@ -22,6 +22,8 @@ status: phase-1 candidate-list authority source-green; evidence bridge and produ
 - Canonical legacy public-schema digest: df3e7f3ea3155d6523bf284e18c811a3cca1444b5cb329afad9357619a1f057b.
 - 0064 is a database foundation only. No route or recruiter UI uses it yet. No set operations, eligibility engine, shared quota, or export exists yet.
 - Real GitHub and Tavily evidence cannot yet authorize list membership. The current 0064 path depends on the best-effort public.candidates mirror and owner-inserted manual attestations. Migration 0065 must close this before product wiring.
+- The 0065 RED harness is registered as candidate-list-evidence-db. It intentionally exits 1 only because migration 0065 and the governed manual-provenance RPC are absent.
+- Security review requires exact canonical workspace-state presence for all new admission, erasure-compatible campaign IDs, completed provider receipt binding, append-only manual lifecycle, workspace-before-identity locks, and deletion of every candidate-linkable receipt.
 - No Fly deployment, production secret mutation, sourcing activation, LinkedIn automation, outbound contact, or candidate PII handling occurred in this shift.
 
 ## Done this shift
@@ -35,6 +37,8 @@ status: phase-1 candidate-list authority source-green; evidence bridge and produ
 - Repaired the recovery inventory defect that had silently omitted all three 0063 outreach authority tables.
 - Independent database-security and database-QA re-audits both returned PASS with no open 0064 finding.
 - Committed the source slice as be7278d.
+- Used Claude Sonnet for the bounded 0065 RED edit. Its broad first run was stopped with no edits; the narrowed run changed only the three allowed test files and Codex independently verified them.
+- Committed the 0065 RED-only contract as 4c74b52.
 
 ## Verification evidence
 
@@ -48,20 +52,26 @@ status: phase-1 candidate-list authority source-green; evidence bridge and produ
 - gitleaks dir . --redact --no-banner --exit-code 1: no leaks across 22.44 MB.
 - git diff --check: exit 0 before commit.
 - Independent reviews: database security PASS; database QA PASS.
+- bash -n tests/candidate-list-evidence-db.sh: exit 0.
+- npm run test:manifest after registration: 11 passed, 0 failed; database group is frozen at 33 entries.
+- bash tests/candidate-list-evidence-db.sh: intentional exit 1 with the exact missing-0065 and missing-RPC RED message after applying the verified 0064 foundation.
 
 ## Blockers
 
-1. Migration 0065 is not implemented. It must remove list admission dependence on public.candidates and resolve exact GitHub, unexpired Tavily, and canonical manual evidence.
-2. There is no authenticated manual provenance writer with supersession and revocation. The 0064 test fixture inserts an attestation as postgres.
-3. Phase 1 still lacks list set operations, complete eligibility reasons, recent-contact and suppression gates, shared quota, bounded export, authenticated API routes, accessible UI, browser E2E, and production-shaped performance evidence.
-4. Parent PR 5 and stacked PR 7 remain unmerged. GitHub Actions jobs were last observed with zero steps because the account Actions budget prevented execution. Recheck with gh before relying on this statement.
-5. Protected production deployment remains blocked by missing GitHub environment proof, purpose-bound secrets, two active tenant administrators, live model and Tavily bindings, Flowise image acceptance, telemetry, restore/failover, and accepted load evidence.
-6. Fly still represents an older release. A health 200 or the old app shell is not proof for this branch.
+1. Migration 0065 is not implemented. The registered database manifest therefore remains intentionally red until the reviewed implementation exists.
+2. Provider evidence may replace the best-effort public.candidates mirror only when exactly one matching canonical workspace-state candidate remains reachable by governed erasure.
+3. 0064 campaign IDs accept more text than the erasure RPC. 0065 must preflight incompatible legacy rows and align tables and RPCs with the exact erasure grammar before any new artifact.
+4. There is no authenticated manual provenance writer with append-only supersession and revocation. The 0064 fixture inserts legacy evidence as postgres.
+5. Add and manual attest must lock workspace state before candidate identity. New attest/revoke receipts must be removed by erasure regardless of operation kind.
+6. Phase 1 still lacks list set operations, complete eligibility reasons, recent-contact and suppression gates, shared quota, bounded export, authenticated API routes, accessible UI, browser E2E, and production-shaped performance evidence.
+7. Parent PR 5 and stacked PR 7 remain unmerged. Latest SHA d82e2c0 CI and CodeQL jobs had zero steps; all seven annotations say the Actions budget prevented startup.
+8. Protected production deployment remains blocked by missing GitHub environment proof, purpose-bound secrets, two active tenant administrators, live model and Tavily bindings, Flowise image acceptance, telemetry, restore/failover, and accepted load evidence.
+9. Fly still represents an older release. A health 200 or the old app shell is not proof for this branch.
 
 ## Next steps
 
-1. Commit this Relay and Codex-state snapshot, push the active branch, and verify the remote branch SHA.
-2. Start migration 0065 RED-first in a separate commit. Cover GitHub evidence without a mirror row, Tavily evidence expiry, forged mirror rejection, canonical manual evidence without a mirror, tenant and ACL boundaries, idempotency, supersession, revocation, ambiguity, concurrency, shadow-row deletion, provider/manual collisions, governed erasure, rollback, and reapply.
+1. Commit this Relay and Codex-state milestone, push the active branch, and verify the remote branch SHA.
+2. Replace the 0065 RED-only boundary with the reviewed full harness while implementing migration and rollback. Cover canonical-state reachability, campaign grammar, completed provider receipts, mirror deletion, Tavily expiry, manual lifecycle, tenant/ACL boundaries, idempotency, concurrency, erasure, rollback, and reapply.
 3. Implement 0065 with one private evidence resolver. GitHub evidence is durable authority; Tavily evidence must be unexpired at admission; existing list membership remains an immutable snapshot after later expiry or revocation.
 4. Add a narrow authenticated manual-attestation RPC for member/admin callers. Derive workspace and actor server-side, permit fixed lawful-basis codes only, bound observed time, and store no free-text PII.
 5. Remove the 0064 candidate mirror foreign keys only after the resolver and erasure tests prove equivalent tenant and deletion safety.

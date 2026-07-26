@@ -2,6 +2,18 @@
   "recent_learnings": [
     {
       "date": "2026-07-26",
+      "lesson": "Provider evidence can replace a best-effort mirror, not canonical workspace-state reachability required by governed erasure."
+    },
+    {
+      "date": "2026-07-26",
+      "lesson": "Candidate campaign identifiers must use the exact erasure grammar across tables, RPCs, evidence, and receipts."
+    },
+    {
+      "date": "2026-07-26",
+      "lesson": "Manual evidence must lock workspace before identity, and erasure must remove every candidate-linkable lifecycle receipt."
+    },
+    {
+      "date": "2026-07-26",
       "lesson": "Schema invariants and backup inventory need one static exact table set; runtime replacements can hide restore-breaking drift."
     },
     {

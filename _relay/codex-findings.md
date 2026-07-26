@@ -1329,3 +1329,27 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** The mandatory pretest failed when 0064 tables were added to the inventory because the static invariant parser saw only 118 tables. Comparison then showed that the 0063 tables had never entered the inventory. The invariant now has one static 125-table constant containing 0063 and 0064, the sorted inventory is byte-for-byte equal, and `tests/recovery-schema-allowlists.mts` passes 15/15.
 **Suggested fix:** Add every future migration table to the single static invariant constant and canonical inventory in the same atomic slice.
 **Status:** fixed (`be7278d`; static 125-table equality, recovery schema 15/15, restricted-owner bootstrap, and complete npm test lifecycle pass)
+
+## 2026-07-26 - Provider-only list admission would escape governed erasure
+**Severity:** security
+**File:** supabase/migrations/0033_candidate_erasure_authority.sql; supabase/migrations/0064_candidate_lists_authority.sql
+**Issue:** The proposed 0065 bridge initially treated durable provider evidence as sufficient candidate existence authority. The governed erasure RPC returns not_found when the exact candidate is absent from canonical workspace_state, so provider-only list data would be unreachable by the deletion workflow.
+**Repro/evidence:** request_candidate_erasure locks and searches workspace_state before creating the request. public.candidates is explicitly best-effort, but canonical workspace state is not. Security and schema reviews independently reproduced the authority mismatch.
+**Suggested fix:** Require exactly one canonical workspace-state candidate for every fresh provider or manual admission while permitting the public.candidates mirror row to be absent.
+**Status:** open; required RED contract for migration 0065
+
+## 2026-07-26 - Candidate-list campaign grammar exceeds erasure authority
+**Severity:** security
+**File:** supabase/migrations/0064_candidate_lists_authority.sql
+**Issue:** 0064 accepts campaign text up to 200 characters, while request_candidate_erasure accepts only the canonical 120-character identifier grammar. Candidate-linked members, attestations, and HMAC receipts could otherwise be created for an identity the governed erasure RPC cannot target.
+**Repro/evidence:** The 0064 table checks and add RPC use only length bounds for campaign_id; the erasure RPC requires ^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$.
+**Suggested fix:** In 0065, atomically preflight incompatible legacy rows and receipts, replace both table checks, and enforce the exact erasure grammar before any secret, HMAC, receipt, attestation, or member write.
+**Status:** open; required RED contract for migration 0065
+
+## 2026-07-26 - Manual evidence lifecycle needs one erasable append-only authority
+**Severity:** security
+**File:** supabase/migrations/0064_candidate_lists_authority.sql
+**Issue:** 0064 has no authenticated manual evidence writer. Adding attest and revoke idempotency without changing cleanup and lock order would retain candidate-linkable receipts after erasure or create workspace-to-identity deadlocks and lifecycle forks.
+**Repro/evidence:** Current cleanup filters operation_kind to add_member, current add locks identity before any canonical workspace read, and the attestation table has no predecessor, revocation, observation, or idempotency authority.
+**Suggested fix:** Use workspace-state then identity then evidence lock ordering, a tenant-and-candidate-bound append-only predecessor chain, completed provider receipt joins, immutable membership snapshots, and erasure cleanup across every candidate-subject receipt operation.
+**Status:** open; required RED contract for migration 0065
