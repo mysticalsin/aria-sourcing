@@ -2,6 +2,10 @@
   "recent_learnings": [
     {
       "date": "2026-07-26",
+      "lesson": "Terra validates only after the complete plan and four QA lanes; intermediate work stays with Codex and authenticated Sonnet."
+    },
+    {
+      "date": "2026-07-26",
       "lesson": "Provider evidence can replace a best-effort mirror, not canonical workspace-state reachability required by governed erasure."
     },
     {

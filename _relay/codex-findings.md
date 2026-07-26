@@ -1312,7 +1312,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Migration 0035 declares `public.candidates` a best-effort projection, but 0064 currently requires that row and accepts only manually inserted attestations. A real GitHub or Tavily sourcing result cannot yet become a list member, and a mirror failure can produce a false `candidate_not_found`.
 **Repro/evidence:** GitHub evidence is durable in `sourcing_candidate_evidence`; Tavily evidence is durable until expiry in `autonomous_web_candidate_evidence`; neither is resolved by `add_candidate_list_member`. No authenticated RPC creates, supersedes, or revokes a manual attestation, while the focused fixture must insert one as `postgres`.
 **Suggested fix:** Add migration 0065 with a private evidence resolver over GitHub, unexpired Tavily, and canonical workspace-state manual evidence; add a narrow attestation RPC with supersession/revocation; remove the mirror foreign keys without weakening erasure.
-**Status:** open
+**Status:** fixed (`4fd02dc`; exact completed GitHub/Tavily resolution, bounded expiry, governed manual evidence, canonical-state admission, 78/78 focused assertions, and complete npm lifecycle pass)
 
 ## 2026-07-26 - Phase 1 list operations and product surface are not implemented
 **Severity:** spec-mismatch
@@ -1336,7 +1336,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The proposed 0065 bridge initially treated durable provider evidence as sufficient candidate existence authority. The governed erasure RPC returns not_found when the exact candidate is absent from canonical workspace_state, so provider-only list data would be unreachable by the deletion workflow.
 **Repro/evidence:** request_candidate_erasure locks and searches workspace_state before creating the request. public.candidates is explicitly best-effort, but canonical workspace state is not. Security and schema reviews independently reproduced the authority mismatch.
 **Suggested fix:** Require exactly one canonical workspace-state candidate for every fresh provider or manual admission while permitting the public.candidates mirror row to be absent.
-**Status:** open; required RED contract for migration 0065
+**Status:** fixed (`4fd02dc`; fresh provider/manual admission requires exactly one canonical workspace-state candidate and the public mirror may be absent)
 
 ## 2026-07-26 - Candidate-list campaign grammar exceeds erasure authority
 **Severity:** security
@@ -1344,7 +1344,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** 0064 accepts campaign text up to 200 characters, while request_candidate_erasure accepts only the canonical 120-character identifier grammar. Candidate-linked members, attestations, and HMAC receipts could otherwise be created for an identity the governed erasure RPC cannot target.
 **Repro/evidence:** The 0064 table checks and add RPC use only length bounds for campaign_id; the erasure RPC requires ^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$.
 **Suggested fix:** In 0065, atomically preflight incompatible legacy rows and receipts, replace both table checks, and enforce the exact erasure grammar before any secret, HMAC, receipt, attestation, or member write.
-**Status:** open; required RED contract for migration 0065
+**Status:** fixed (`4fd02dc`; locked legacy preflight plus exact shared campaign grammar across tables and RPCs)
 
 ## 2026-07-26 - Manual evidence lifecycle needs one erasable append-only authority
 **Severity:** security
@@ -1352,4 +1352,12 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** 0064 has no authenticated manual evidence writer. Adding attest and revoke idempotency without changing cleanup and lock order would retain candidate-linkable receipts after erasure or create workspace-to-identity deadlocks and lifecycle forks.
 **Repro/evidence:** Current cleanup filters operation_kind to add_member, current add locks identity before any canonical workspace read, and the attestation table has no predecessor, revocation, observation, or idempotency authority.
 **Suggested fix:** Use workspace-state then identity then evidence lock ordering, a tenant-and-candidate-bound append-only predecessor chain, completed provider receipt joins, immutable membership snapshots, and erasure cleanup across every candidate-subject receipt operation.
-**Status:** open; required RED contract for migration 0065
+**Status:** fixed (`4fd02dc`; append-only verify/revoke chain, immutable membership snapshots, workspace-before-identity locks, request-bound erasure cleanup, and deterministic concurrency coverage)
+
+## 2026-07-26 - Campaign-local legal holds do not protect candidate-global erasure
+**Severity:** security
+**File:** supabase/migrations/0033_candidate_erasure_authority.sql:1475
+**Issue:** Candidate erasure tombstones and workspace-state scrubbing remove one candidate ID across the workspace, but the preflight legal-hold check covers only the request campaign. The same candidate ID in another campaign can therefore be erased despite an active hold there.
+**Repro/evidence:** `request_candidate_erasure` filters `candidate_legal_holds` by workspace, request campaign, and candidate, while `scrub_candidate_workspace_document(state, candidate_id)` removes that ID without a campaign parameter. The 0065 evidence cleanup correctly follows the existing candidate-global erasure contract, so this inherited mismatch must be repaired before production acceptance.
+**Suggested fix:** Make hold evaluation and expiry candidate-global for the workspace, prove a hold in any campaign blocks every local and provider cleanup atomically, and preserve a truthful blocked request lifecycle.
+**Status:** open; next additive Phase 1 authority migration and disposable PostgreSQL regression required
