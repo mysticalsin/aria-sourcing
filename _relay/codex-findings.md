@@ -1360,4 +1360,36 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Candidate erasure tombstones and workspace-state scrubbing remove one candidate ID across the workspace, but the preflight legal-hold check covers only the request campaign. The same candidate ID in another campaign can therefore be erased despite an active hold there.
 **Repro/evidence:** `request_candidate_erasure` filters `candidate_legal_holds` by workspace, request campaign, and candidate, while `scrub_candidate_workspace_document(state, candidate_id)` removes that ID without a campaign parameter. The 0065 evidence cleanup correctly follows the existing candidate-global erasure contract, so this inherited mismatch must be repaired before production acceptance.
 **Suggested fix:** Make hold evaluation and expiry candidate-global for the workspace, prove a hold in any campaign blocks every local and provider cleanup atomically, and preserve a truthful blocked request lifecycle.
-**Status:** open; next additive Phase 1 authority migration and disposable PostgreSQL regression required
+**Status:** fixed (`6bf97a6`; 0066 makes hold authority workspace-and-candidate-global, preserves blocked pre-scrub requests until replay, protects provider obligations and retained evidence, and passes 35/35 focused assertions plus the complete repository gate)
+
+## 2026-07-26 - Renamed legal-hold predecessors retained custom-role execution
+**Severity:** security
+**File:** supabase/migrations/0066_candidate_global_legal_hold_authority.sql:126
+**Issue:** PostgreSQL function rename preserves the full ACL. Revoking only the known runtime roles could leave a historical custom role able to invoke the campaign-local predecessor directly and bypass the candidate-global wrapper.
+**Repro/evidence:** The focused fixture grants every affected pre-0066 signature to `candidate_global_hold_legacy_worker` before migration. The final migration enumerates each predecessor ACL and revokes every non-owner EXECUTE grant, including unknown custom roles; the 35-assertion database suite confirms the legacy role has no callable path.
+**Suggested fix:** Preserve dynamic non-owner ACL removal whenever a security-definer predecessor is retained behind a new authority wrapper.
+**Status:** fixed (`6bf97a6`)
+
+## 2026-07-26 - Replacement hold placement could transiently unblock destructive cleanup
+**Severity:** correctness
+**File:** supabase/migrations/0066_candidate_global_legal_hold_authority.sql:639
+**Issue:** Reconciling an elapsed predecessor hold before the replacement hold became visible could briefly move locally scrubbed work out of `blocked_legal_hold`, firing destructive cleanup triggers even though a replacement hold was being installed in the same transaction.
+**Repro/evidence:** The focused suite places an elapsed hold over blocked locally scrubbed work, installs a replacement hold, and proves no transient state change or cleanup occurs. Placement now installs the replacement under the shared scope lock before the post-placement global reconciliation.
+**Suggested fix:** Keep replacement insertion and global reconciliation in one locked transaction, with no intermediate unblocked state.
+**Status:** fixed (`6bf97a6`)
+
+## 2026-07-26 - Hold expiry could be evaluated against a stale pre-wait timestamp
+**Severity:** correctness
+**File:** supabase/migrations/0066_candidate_global_legal_hold_authority.sql:253
+**Issue:** A hold could expire while its transaction waited for candidate authority. Transaction-stable time would then let placement report an active hold receipt after the expiry boundary had already passed.
+**Repro/evidence:** The deterministic lock-wait test queues a one-second hold behind the advisory lock and proves the placement refuses after the lock opens without persisting an active receipt. The reconciler captures `clock_timestamp()` only after workspace, advisory, hold, request, and obligation locks are held.
+**Suggested fix:** Revalidate wall-clock expiry after acquiring all authority locks and before returning or persisting active state.
+**Status:** fixed (`6bf97a6`)
+
+## 2026-07-26 - Erasure queue and retention used incompatible multi-candidate lock order
+**Severity:** correctness
+**File:** supabase/migrations/0066_candidate_global_legal_hold_authority.sql:398; supabase/migrations/0066_candidate_global_legal_hold_authority.sql:1002
+**Issue:** The erasure queue and autonomous retention could choose opposite candidate orders, creating an A-to-B versus B-to-A advisory-lock cycle across one transaction.
+**Repro/evidence:** The focused suite queues list order low-to-high while evidence expiry is high-to-low, uses a neutral holder to prove both callers wait on the same exact first advisory key, then releases it and confirms both complete without SQLSTATE 40P01 or evidence loss. Both paths now acquire their bounded candidate sets in the same total lock-key order.
+**Suggested fix:** Preserve the shared total order and bounded target snapshot for every future multi-candidate legal-hold caller.
+**Status:** fixed (`6bf97a6`)

@@ -1,7 +1,7 @@
 # 0066 Candidate-Global Legal-Hold Authority
 
-Status: independent security review complete; exact dependency mapping and RED
-harness still in progress. Production remains blocked.
+Status: accepted in source commit `6bf97a6`; independent security and
+concurrency review report no P0/P1. Production remains blocked.
 
 ## Problem and required outcome
 
@@ -218,3 +218,21 @@ the source plus Relay commits are pushed and remote-SHA verified.
 
 This slice authorizes no production deployment, secret provisioning, sourcing
 activation, email send, LinkedIn action, or candidate contact.
+
+## Completion review - 2026-07-26
+
+- Forward migration SHA-256:
+  `f1db1fcdf0c10216f34799dc40c868c859ad06929d959641f44dc833f31240e4`.
+- Refusing rollback SHA-256:
+  `ec686a4661e429093f920346404288c2ae3a20ec424610e7130452a9da13f723`.
+- Focused harness SHA-256:
+  `88706d52db009e2c76619d5363fa50e25da309651eacb4bb5be197ec6ee9a30b`.
+- `bash tests/candidate-global-legal-hold-db.sh` passed 35 assertions.
+- Candidate erasure, sourcing durability, autonomous web, candidate-list,
+  sourcing-batch, function privilege, recovery allowlist, manifest, secret
+  scan, both TypeScript checks, and the complete `npm test` lifecycle passed.
+- Independent concurrency review returned PASS with no P0/P1. The final
+  security finding on inherited custom-role ACLs is covered by dynamic
+  non-owner revocation and a custom-role regression.
+- Source commit: `6bf97a6`. This is source acceptance only. Push, protected CI,
+  merge, deployment, canary, restore, and capacity are separate gates.
