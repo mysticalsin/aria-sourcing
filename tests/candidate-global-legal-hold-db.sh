@@ -54,6 +54,144 @@ psql_stdin() {
     -X -v ON_ERROR_STOP=1 -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d postgres "$@"
 }
 
+authority_fingerprint() {
+  psql_stdin -Atq <<'SQL'
+with target_functions(signature,oid) as (
+  select signature,signature::regprocedure
+    from unnest(array[
+      'public.candidate_legal_hold_lock_key(uuid,text)',
+      'public.reconcile_candidate_erasure_legal_hold_scope(uuid,text)',
+      'public.request_candidate_erasure_pre0066(uuid,uuid,text,text,uuid)',
+      'public.place_candidate_legal_hold_pre0066(uuid,uuid,text,text,text,text,timestamptz)',
+      'public.release_candidate_legal_hold_pre0066(uuid,uuid,uuid,text)',
+      'public.refresh_candidate_erasure_legal_hold_state_pre0066(uuid)',
+      'public.read_candidate_erasure_obligation_authority_pre0066(uuid,uuid,uuid)',
+      'public.reconcile_candidate_erasure_obligation_pre0066(uuid,uuid,uuid,integer,text,text,text,text)',
+      'public.request_candidate_erasure(uuid,uuid,text,text,uuid)',
+      'public.place_candidate_legal_hold(uuid,uuid,text,text,text,text,timestamptz)',
+      'public.release_candidate_legal_hold(uuid,uuid,uuid,text)',
+      'public.refresh_candidate_erasure_legal_hold_state(uuid)',
+      'public.read_candidate_erasure_obligation_authority(uuid,uuid,uuid)',
+      'public.reconcile_candidate_erasure_obligation(uuid,uuid,uuid,integer,text,text,text,text)',
+      'public.cleanup_autonomous_web_sourcing_retention(integer)'
+    ]) signature
+), function_state as (
+  select target.signature,
+         jsonb_build_object(
+           'owner',pg_get_userbyid(routine.proowner),
+           'security_definer',routine.prosecdef,
+           'config',to_jsonb(routine.proconfig),
+           'raw_acl',to_jsonb(routine.proacl),
+           'acl',coalesce((
+             select jsonb_agg(jsonb_build_object(
+               'grantor',pg_get_userbyid(acl.grantor),
+               'grantee',case when acl.grantee=0 then 'PUBLIC'
+                              else pg_get_userbyid(acl.grantee) end,
+               'privilege',acl.privilege_type,
+               'grantable',acl.is_grantable
+             ) order by acl.grantee,acl.privilege_type,
+                        acl.is_grantable,acl.grantor)
+               from aclexplode(coalesce(
+                 routine.proacl,acldefault('f',routine.proowner)
+               )) acl
+           ),'[]'::jsonb),
+           'effective_execute',(
+             select jsonb_object_agg(
+               role.rolname,
+               has_function_privilege(role.oid,target.oid,'EXECUTE')
+               order by role.rolname
+             )
+               from pg_roles role
+              where role.rolname in (
+                'anon','authenticated','authenticator','postgres',
+                'service_role','supabase_admin','supabase_auth_admin'
+              )
+           ),
+           'definition_sha256',encode(extensions.digest(
+             convert_to(pg_get_functiondef(target.oid),'UTF8'),'sha256'
+           ),'hex')
+         ) state
+    from target_functions target
+    join pg_proc routine on routine.oid=target.oid
+), index_state as (
+  select table_namespace.nspname||'.'||table_relation.relname table_name,
+         index_relation.relname index_name,
+         jsonb_build_object(
+           'owner',pg_get_userbyid(index_relation.relowner),
+           'definition',pg_get_indexdef(index_relation.oid),
+           'predicate',pg_get_expr(index_catalog.indpred,index_catalog.indrelid),
+           'expressions',pg_get_expr(index_catalog.indexprs,index_catalog.indrelid),
+           'unique',index_catalog.indisunique,
+           'primary',index_catalog.indisprimary,
+           'exclusion',index_catalog.indisexclusion,
+           'immediate',index_catalog.indimmediate,
+           'valid',index_catalog.indisvalid,
+           'ready',index_catalog.indisready,
+           'live',index_catalog.indislive,
+           'clustered',index_catalog.indisclustered,
+           'replident',index_catalog.indisreplident,
+           'keys',index_catalog.indkey::text,
+           'opclasses',index_catalog.indclass::text,
+           'collations',index_catalog.indcollation::text,
+           'options',index_catalog.indoption::text,
+           'reloptions',to_jsonb(index_relation.reloptions),
+           'tablespace',coalesce(tablespace.spcname,'')
+         ) state
+    from pg_index index_catalog
+    join pg_class index_relation on index_relation.oid=index_catalog.indexrelid
+    join pg_class table_relation on table_relation.oid=index_catalog.indrelid
+    join pg_namespace table_namespace
+      on table_namespace.oid=table_relation.relnamespace
+    left join pg_tablespace tablespace
+      on tablespace.oid=index_relation.reltablespace
+   where index_catalog.indrelid in (
+     'public.candidate_legal_holds'::regclass,
+     'public.candidate_erasure_requests'::regclass
+   )
+)
+select jsonb_build_object(
+  'functions',(
+    select jsonb_object_agg(signature,state order by signature)
+      from function_state
+  ),
+  'indexes',(
+    select jsonb_object_agg(
+      table_name||':'||index_name,state order by table_name,index_name
+    ) from index_state
+  ),
+  'rows',jsonb_build_object(
+    'holds',(
+      select jsonb_build_object(
+        'count',count(*),
+        'sha256',encode(extensions.digest(convert_to(
+          coalesce(jsonb_agg(to_jsonb(row_value) order by id)::text,'[]'),
+          'UTF8'
+        ),'sha256'),'hex')
+      ) from public.candidate_legal_holds row_value
+    ),
+    'requests',(
+      select jsonb_build_object(
+        'count',count(*),
+        'sha256',encode(extensions.digest(convert_to(
+          coalesce(jsonb_agg(to_jsonb(row_value) order by id)::text,'[]'),
+          'UTF8'
+        ),'sha256'),'hex')
+      ) from public.candidate_erasure_requests row_value
+    ),
+    'obligations',(
+      select jsonb_build_object(
+        'count',count(*),
+        'sha256',encode(extensions.digest(convert_to(
+          coalesce(jsonb_agg(to_jsonb(row_value) order by id)::text,'[]'),
+          'UTF8'
+        ),'sha256'),'hex')
+      ) from public.candidate_erasure_obligations row_value
+    )
+  )
+)::text;
+SQL
+}
+
 wait_for_advisory() {
   local application_name="$1"
   local process_id="$2"
@@ -204,38 +342,14 @@ psql_stdin -q < "$migration"
 # 0066 closes a destructive legal bypass and is intentionally irreversible.
 # Prove refusal even before any 0066 authority row exists; a data-dependent
 # rollback guard would leave an unsafe downgrade path on an empty tenant.
-empty_rollback_before="$(psql_stdin -Atq -c "
-  select jsonb_build_object(
-    'request',md5(pg_get_functiondef(
-      'public.request_candidate_erasure(uuid,uuid,text,text,uuid)'::regprocedure
-    )),
-    'place',md5(pg_get_functiondef(
-      'public.place_candidate_legal_hold(uuid,uuid,text,text,text,text,timestamptz)'::regprocedure
-    )),
-    'lock_helper',md5(pg_get_functiondef(
-      'public.candidate_legal_hold_lock_key(uuid,text)'::regprocedure
-    ))
-  )::text
-")"
+empty_rollback_before="$(authority_fingerprint)"
 if psql_stdin --set VERBOSITY=verbose \
   < "$rollback" > "$tmp_dir/empty-rollback.log" 2>&1; then
   echo "candidate-global-legal-hold-db: empty 0066 rollback unexpectedly succeeded" >&2
   exit 1
 fi
 grep -Eq 'ERROR:[[:space:]]+55000:' "$tmp_dir/empty-rollback.log"
-empty_rollback_after="$(psql_stdin -Atq -c "
-  select jsonb_build_object(
-    'request',md5(pg_get_functiondef(
-      'public.request_candidate_erasure(uuid,uuid,text,text,uuid)'::regprocedure
-    )),
-    'place',md5(pg_get_functiondef(
-      'public.place_candidate_legal_hold(uuid,uuid,text,text,text,text,timestamptz)'::regprocedure
-    )),
-    'lock_helper',md5(pg_get_functiondef(
-      'public.candidate_legal_hold_lock_key(uuid,text)'::regprocedure
-    ))
-  )::text
-")"
+empty_rollback_after="$(authority_fingerprint)"
 if [[ "$empty_rollback_after" != "$empty_rollback_before" ]]; then
   echo "candidate-global-legal-hold-db: refused empty rollback partially mutated 0066 authority" >&2
   exit 1
@@ -765,6 +879,21 @@ select candidate_global_hold_test.expect(
        'public.cleanup_autonomous_web_sourcing_retention(integer)'::regprocedure
      )
   )
+  and (
+    select position(
+      'candidate_legal_hold_lock_key' in lower(pg_get_functiondef(routine.oid))
+    ) < position(
+      'place_candidate_legal_hold_pre0066' in lower(pg_get_functiondef(routine.oid))
+    )
+    and position(
+      'place_candidate_legal_hold_pre0066' in lower(pg_get_functiondef(routine.oid))
+    ) < position(
+      'reconcile_candidate_erasure_legal_hold_scope' in lower(pg_get_functiondef(routine.oid))
+    )
+      from pg_proc routine
+     where routine.oid =
+       'public.place_candidate_legal_hold(uuid,uuid,text,text,text,text,timestamptz)'::regprocedure
+  )
 );
 
 set role service_role;
@@ -1143,6 +1272,46 @@ select obligation.provider,obligation.id
  where request.workspace_id='66111111-1111-4111-8111-111111111111'
    and request.candidate_id='linkedin-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 grant select on candidate_global_hold_test.obligation_ids to service_role;
+
+-- Provider completion remains evidence-bound after 0066. Record exact fresh
+-- verifier receipts as the database owner; service_role cannot manufacture
+-- them. The LinkedIn blocked receipt deliberately proves that an active hold
+-- wins before otherwise-valid completion evidence can be consumed.
+with evidence as materialized (
+  select obligation.*, clock_timestamp() verified_at,
+         case obligation.provider
+           when 'email' then repeat('d',64)
+           else repeat('e',64)
+         end evidence_sha256,
+         case obligation.provider
+           when 'email' then 'case:email-completed'
+           else 'case:linkedin-blocked'
+         end case_reference,
+         case obligation.provider
+           when 'email' then 'fixture-email-verifier'
+           else 'fixture-linkedin-blocked-verifier'
+         end adapter_id
+    from public.candidate_erasure_obligations obligation
+   where obligation.id in (select id from candidate_global_hold_test.obligation_ids)
+)
+insert into public.candidate_erasure_provider_evidence_receipts(
+  workspace_id,request_id,obligation_id,provider,expected_attempt_count,
+  verification_method,adapter_id,adapter_version,provider_receipt_hmac,
+  evidence_sha256,case_reference,verified_at
+)
+select evidence.workspace_id,evidence.request_id,evidence.id,evidence.provider,
+       evidence.attempt_count,'approved_evidence_store',evidence.adapter_id,'1',
+       public.candidate_erasure_reference_hmac(
+         evidence.workspace_id,
+         public.candidate_erasure_provider_evidence_document(
+           evidence.workspace_id,evidence.request_id,evidence.id,
+           evidence.provider,evidence.attempt_count,'approved_evidence_store',
+           evidence.adapter_id,'1',evidence.evidence_sha256,
+           evidence.case_reference,evidence.verified_at
+         )
+       ),
+       evidence.evidence_sha256,evidence.case_reference,evidence.verified_at
+  from evidence;
 SQL
 
 psql_stdin -q <<'SQL'
@@ -1371,6 +1540,127 @@ select candidate_global_hold_test.expect(
      from candidate_global_hold_test.outputs where case_name='release-expired')
 );
 
+-- Placement must install its new hold before expiry reconciliation. Otherwise
+-- an elapsed predecessor hold can transiently move a locally scrubbed request
+-- out of blocked_legal_hold and fire destructive AFTER UPDATE cleanup before
+-- the replacement hold is visible.
+create table candidate_global_hold_test.request_unblock_audit(
+  request_id uuid not null,
+  old_status text not null,
+  new_status text not null
+);
+create function candidate_global_hold_test.audit_request_unblock()
+returns trigger
+language plpgsql
+as $$
+begin
+  if old.status='blocked_legal_hold' and new.status<>'blocked_legal_hold' then
+    insert into candidate_global_hold_test.request_unblock_audit(
+      request_id,old_status,new_status
+    ) values (new.id,old.status,new.status);
+  end if;
+  return null;
+end;
+$$;
+create trigger candidate_global_hold_test_unblock_audit
+after update of status on public.candidate_erasure_requests
+for each row execute function candidate_global_hold_test.audit_request_unblock();
+
+set role service_role;
+select candidate_global_hold_test.set_service_claims(
+  '66a00000-0000-4000-8000-000000000001'
+);
+insert into candidate_global_hold_test.outputs(case_name,result) values (
+  'replacement-old-hold',public.place_candidate_legal_hold(
+    '66111111-1111-4111-8111-111111111111',
+    '66a00000-0000-4000-8000-000000000001','legal-campaign-a',
+    'linkedin-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','LITIGATION',
+    'case:replacement-old',clock_timestamp() + interval '1 day'
+  )
+);
+reset role;
+update public.candidate_legal_holds
+   set placed_at=clock_timestamp() - interval '2 days',
+       expires_at=clock_timestamp() - interval '1 day'
+ where id=(select (result ->> 'hold_id')::uuid
+   from candidate_global_hold_test.outputs
+  where case_name='replacement-old-hold');
+
+set role service_role;
+select candidate_global_hold_test.set_service_claims(
+  '66a00000-0000-4000-8000-000000000001'
+);
+insert into candidate_global_hold_test.outputs(case_name,result) values (
+  'replacement-new-hold',public.place_candidate_legal_hold(
+    '66111111-1111-4111-8111-111111111111',
+    '66a00000-0000-4000-8000-000000000001',
+    '93000000-0000-4000-8000-000000000066',
+    'linkedin-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','REGULATORY',
+    'case:replacement-new',clock_timestamp() + interval '1 day'
+  )
+);
+reset role;
+
+select candidate_global_hold_test.expect(
+  'given_an_elapsed_hold_and_blocked_local_scrub_when_a_replacement_hold_is_placed_then_no_transient_unblock_can_fire_cleanup',
+  (select result ->> 'status'='active'
+     from candidate_global_hold_test.outputs
+    where case_name='replacement-new-hold')
+  and not exists (select 1
+    from candidate_global_hold_test.request_unblock_audit)
+  and exists (select 1 from public.candidate_erasure_requests
+    where workspace_id='66111111-1111-4111-8111-111111111111'
+      and candidate_id='linkedin-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+      and status='blocked_legal_hold')
+);
+
+drop trigger candidate_global_hold_test_unblock_audit
+  on public.candidate_erasure_requests;
+drop function candidate_global_hold_test.audit_request_unblock();
+drop table candidate_global_hold_test.request_unblock_audit;
+
+set role service_role;
+select candidate_global_hold_test.set_service_claims(
+  '66a00000-0000-4000-8000-000000000001'
+);
+select public.release_candidate_legal_hold(
+  '66111111-1111-4111-8111-111111111111',
+  '66a00000-0000-4000-8000-000000000001',
+  (select (result ->> 'hold_id')::uuid
+     from candidate_global_hold_test.outputs
+    where case_name='replacement-new-hold'),
+  'case:replacement-new-release'
+);
+reset role;
+
+with evidence as materialized (
+  select obligation.*, clock_timestamp() verified_at
+    from public.candidate_erasure_obligations obligation
+   where obligation.id=(
+     select id from candidate_global_hold_test.obligation_ids
+      where provider='linkedin'
+   )
+)
+insert into public.candidate_erasure_provider_evidence_receipts(
+  workspace_id,request_id,obligation_id,provider,expected_attempt_count,
+  verification_method,adapter_id,adapter_version,provider_receipt_hmac,
+  evidence_sha256,case_reference,verified_at
+)
+select evidence.workspace_id,evidence.request_id,evidence.id,evidence.provider,
+       evidence.attempt_count,'approved_evidence_store',
+       'fixture-linkedin-completed-verifier','1',
+       public.candidate_erasure_reference_hmac(
+         evidence.workspace_id,
+         public.candidate_erasure_provider_evidence_document(
+           evidence.workspace_id,evidence.request_id,evidence.id,
+           evidence.provider,evidence.attempt_count,'approved_evidence_store',
+           'fixture-linkedin-completed-verifier','1',repeat('e',64),
+           'case:linkedin-completed',evidence.verified_at
+         )
+       ),
+       repeat('e',64),'case:linkedin-completed',evidence.verified_at
+  from evidence;
+
 set role service_role;
 select candidate_global_hold_test.set_service_claims(
   '66a00000-0000-4000-8000-000000000001'
@@ -1579,22 +1869,7 @@ select candidate_global_hold_test.expect(
 );
 SQL
 
-before_rollback="$(psql_stdin -Atq -c "
-  select jsonb_build_object(
-    'request',md5(pg_get_functiondef(
-      'public.request_candidate_erasure(uuid,uuid,text,text,uuid)'::regprocedure
-    )),
-    'place',md5(pg_get_functiondef(
-      'public.place_candidate_legal_hold(uuid,uuid,text,text,text,text,timestamptz)'::regprocedure
-    )),
-    'release',md5(pg_get_functiondef(
-      'public.release_candidate_legal_hold(uuid,uuid,uuid,text)'::regprocedure
-    )),
-    'holds',(select count(*) from public.candidate_legal_holds),
-    'requests',(select count(*) from public.candidate_erasure_requests),
-    'obligations',(select count(*) from public.candidate_erasure_obligations)
-  )::text
-")"
+before_rollback="$(authority_fingerprint)"
 
 if psql_stdin --set VERBOSITY=verbose \
   < "$rollback" > "$tmp_dir/nonempty-rollback.log" 2>&1; then
@@ -1603,22 +1878,7 @@ if psql_stdin --set VERBOSITY=verbose \
 fi
 grep -Eq 'ERROR:[[:space:]]+55000:' "$tmp_dir/nonempty-rollback.log"
 
-after_rollback="$(psql_stdin -Atq -c "
-  select jsonb_build_object(
-    'request',md5(pg_get_functiondef(
-      'public.request_candidate_erasure(uuid,uuid,text,text,uuid)'::regprocedure
-    )),
-    'place',md5(pg_get_functiondef(
-      'public.place_candidate_legal_hold(uuid,uuid,text,text,text,text,timestamptz)'::regprocedure
-    )),
-    'release',md5(pg_get_functiondef(
-      'public.release_candidate_legal_hold(uuid,uuid,uuid,text)'::regprocedure
-    )),
-    'holds',(select count(*) from public.candidate_legal_holds),
-    'requests',(select count(*) from public.candidate_erasure_requests),
-    'obligations',(select count(*) from public.candidate_erasure_obligations)
-  )::text
-")"
+after_rollback="$(authority_fingerprint)"
 if [[ "$after_rollback" != "$before_rollback" ]]; then
   echo "candidate-global-legal-hold-db: refused rollback partially mutated candidate-global authority" >&2
   exit 1
