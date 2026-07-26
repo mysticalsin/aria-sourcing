@@ -1,131 +1,198 @@
 ---
 project: MSourcing / ARIA
-shift: 45
+shift: 46
 agent: codex-gpt-5
-updated: 2026-07-22 01:54 EDT
-status: source-closed - PR 5 open; protected production acceptance blocked
+updated: 2026-07-25 20:58 EDT
+status: phase-0 source-green - PR 7 open; later phases and production acceptance blocked
 ---
 
 # Handoff - MSourcing / ARIA
 
 ## Current state
 
-- Canonical clone: `/Users/tony/msourcing-enterprise-go-20260721`. Do not modify the OneDrive checkout.
-- Branch: `codex/enterprise-go-20260721`, now tracking `origin/codex/enterprise-go-20260721`.
-- Tested source commit: `33b0aed47cd4850bd27689b5e8ffcb45210bfd27`.
-- Protected-main PR: `https://github.com/mysticalsin/aria-sourcing/pull/5`. PR state is OPEN, `mergeStateStatus=BLOCKED`, `reviewDecision=REVIEW_REQUIRED`.
-- This baton and the Relay/Codex-state closeout are the only changes after the tested source commit. When this file is read from Git, they are committed in the current branch HEAD.
-- Schema now runs through migration 0062. Canonical public-schema digest: `8937fbb792900ac9f099058717f512562a644e68eebf7bf12e87fa9efa84eab4`.
-- Production Fly still runs older application build `3ff485...` with migration 0046. Latest verified readback: `/api/health` 200; `/api/ready` 503 with database, auth, queue, migration, and release identity true and only `agentFrameworks=false`. This is not evidence for PR 5.
-- No production deployment, secret mutation, sourcing activation, or candidate contact was performed from this branch.
+- Work from `/Users/tony/msourcing-heyreach-foundation-20260725`, not the
+  OneDrive checkout. Branch: `codex/heyreach-foundation-20260725`.
+- Phase 0 source commits are `30c8b63` and `4d18784`. Both are pushed to
+  `origin/codex/heyreach-foundation-20260725`.
+- Stacked pull request 7 is open against `codex/enterprise-go-20260721`:
+  https://github.com/mysticalsin/aria-sourcing/pull/7
+- Parent pull request 5 remains open against protected `main`:
+  https://github.com/mysticalsin/aria-sourcing/pull/5
+- Migration 0063 is additive and release-dark. It repairs the old 0045
+  sequence authority, but no application call site activates the new RPCs.
+- LinkedIn is assisted-manual only. ARIA can create and audit a manual task;
+  it cannot log in to LinkedIn, retain a session, automate a connection or
+  message, scrape LinkedIn, or call an undocumented LinkedIn endpoint.
+- Email and WhatsApp sequence rows require an exact approval, candidate,
+  recipient, body, scope, campaign, workspace, step, and outbound binding.
+  Claims and completion recheck suppression, erasure, release, and stop state.
+- Next resolves to 16.2.12 and PostCSS to 8.5.23. Production npm dependencies
+  have zero HIGH or CRITICAL advisories. One ESLint-only transitive advisory is
+  under an exact exception that expires on 2026-08-08.
+- Pull request 7 source-SHA CI and CodeQL runs have zero executed steps. Every
+  job annotation says: `The job was not started because an Actions budget is
+  preventing further use.`
+- Fly still serves the older build `3ff4852a98e74e5275b3927a4fb4bb0e72d0b03a`
+  with migration `0046_swarm_orchestration_authority.sql`. Last readback was
+  `/api/health` HTTP 200 and `/api/ready` HTTP 503 because
+  `agentFrameworks=false`. This branch is not deployed.
+- No production secret mutation, sourcing activation, LinkedIn automation, or
+  candidate contact occurred in this shift.
 
 ## Done this shift
 
-- Closed real need-to-candidate source authority:
-  - bounded authenticated need ingress;
-  - real approved-model requisition parsing with no synthetic fallback;
-  - deterministic campaign creation;
-  - bounded GitHub and Tavily provider execution;
-  - exact source/evidence receipts and durable candidate persistence;
-  - retry-safe result staging and acknowledgement;
-  - human-reviewed Graphify lesson selection bound before egress;
-  - zero outbound sends during sourcing.
-- Added exact DeerFlow and Flowise framework source boundaries, private adapters, release-bundle verification, provenance policy, image pinning, and fail-closed readiness. Framework source exists, but Flowise remains deployment NO-GO because its current complete runtime scan is not acceptable.
-- Added standard OpenTelemetry configuration, redacted critical-path events, operational readiness checks, activation controls, and a truthful capacity gate that refuses to claim 50,000-user readiness without accepted staging evidence.
-- Added migration 0061 active-GoTrue identity enforcement. A token issued before ban, unconfirmation, or soft deletion is rejected by the database authority.
-- Added migration 0062 and `docker/bootstrap/auth-owner-bridges.sql` so orphan-owner recovery crosses the real `supabase_auth_admin` ownership boundary through one restricted Auth-owner decision function.
-- Fixed the 0058/0059 replay interaction:
-  - 0058 rollback refuses while 0059 remains applied;
-  - 0059 rollback restores the exact 0058 receipt allowlist;
-  - 0058 rollback restores the exact pre-0058 allowlist;
-  - forward reapply restores both exact lists;
-  - a later 0058 replay preserves the byte-identical 0059 constraint.
-- Fixed the requisition parser test fixture to use the canonical endpoint profile `anthropic_messages_2023_06_01`.
-- Removed the obsolete DeerFlow fixture and archived the superseded first-draft agent-framework deployment packet under `_relay/archive/2026-07-22-agent-framework-first-draft/`.
-- Reconstructed missing shift 43 from the committed baton and archived shift 44 at `_relay/archive/2026-07-22-0144-codex.md`.
-- Committed and pushed the 294-file source slice as `33b0aed47cd4850bd27689b5e8ffcb45210bfd27`.
-- Opened PR 5 directly to protected `main`.
+- Read the existing Relay baton and wrote the repository plan at
+  `_relay/plans/05-assisted-linkedin-campaign-control.md`.
+- Used Fable for architecture, Sonnet for implementation, Codex for fixes, and
+  Terra for the final independent Phase 0 database/security decision.
+- Added `supabase/migrations/0063_outreach_sequence_authority_repair.sql` and a
+  guarded rollback that refuses to restore unsafe legacy behavior.
+- Added `tests/sequences-db.sh` with 116 passing assertions covering fresh and
+  dirty upgrades, reapply, RLS, grants, forged authority, provider binding,
+  claim/completion/stop races, suppression, erasure, recipient drift, and
+  manual LinkedIn behavior.
+- Repaired canonical LinkedIn erasure matching in `link_one_candidate` and
+  proved the chronological backfill path with 42 person-model assertions.
+- Updated the function privilege registry, bootstrap schema allowlist,
+  canonical schema digest, loop authority contract, and database manifest.
+- Updated Next, ESLint, eslint-config-next, PostCSS, NanoID, and the fixed 5.x
+  brace-expansion resolution through the lockfile.
+- Replaced the raw CI npm audit with `scripts/dependency-audit.mjs`. The gate
+  requires a clean production graph and permits only exact, current, ordered,
+  expiring, package-bound, version-bound, and node-bound review exceptions.
+- Added 10 executable dependency-policy cases. Release and security QA both
+  found the original expiry/path gaps, verified the corrections, and returned
+  PASS with no remaining P0, P1, or P2 finding.
+- Terra returned PASS for the Phase 0 database-authority scope with no P0/P1.
+  Functional/release, integration/durability, security/privacy, and Terra
+  review gates are green for this slice only.
+- Opened PR 7 after pushing the two atomic source commits.
 
 ## Verification evidence
 
-All commands ran from the canonical clone.
-
-- `npm run typecheck && npm run typecheck:tests && npm test`: exit 0.
-- `npm run test:database`: exit 0 across the canonical 30-command database manifest.
-- Pinned real-GoTrue line: `[gotrue-active-identity] PASS: pinned GoTrue, Auth-owner bridge ACL, workspace provisioning, and stale-token revocation`.
-- Focused 0058 result: `RESULT sourcing-result-durability-db: behavior=pass concurrency=pass acl=pass rollback=guarded reapply=pass rows=8`.
-- `npm run test:authority-regression`: exit 0.
-- `npm run test:recovery`: exit 0.
-- `npm run build:isolated`: exit 0; Next 16.2.10 compiled and generated all 66 static pages.
-- `npm audit --audit-level=high`: zero vulnerabilities.
+- `bash tests/sequences-db.sh`: 116 assertions, 0 failed.
+- `tests/person-model-db.sh`: 42 assertions, 0 failed.
+- `npm run test:database`: exit 0 across the complete canonical database
+  manifest after the 0063 source changes.
+- `npm run typecheck && npm run typecheck:tests && npm test`: exit 0 on the
+  final application/dependency source tree.
+- `npm run build:isolated`: exit 0; Next 16.2.12 compiled and generated all 66
+  static pages with the committed lockfile.
+- `node scripts/dependency-audit.mjs --self-test`: 10 passed, 0 failed.
+- `npm run audit:dependencies`: production clean, one reviewed development
+  advisory, expiry 2026-08-08.
+- `npx tsx tests/infra-release-contract.mts`: 147 passed, 0 failed.
 - `npm run lint`: exit 0.
-- `git diff --check HEAD`: exit 0 before source commit.
-- Staged Gitleaks scan: no leaks.
-- `gitleaks git . --redact=100 --no-banner --config .gitleaks.toml --log-opts='--all'`: 325 commits, no leaks.
-- Docker Compose and every Fly TOML parsed/validated locally.
-- Final local contract counts include deploy 141/141, infrastructure release 145/145, capacity harness 11/11, readiness 31/31, and manifest 11/11.
-- `npm run test:obscura` exited 0 but its live sidecar probe was SKIPPED because `OBSCURA_BIN_PATH` was not configured and no sidecar was reachable. Do not call this live Obscura proof.
-- Earlier exact ARIA image proof remains green at zero HIGH/CRITICAL with the pinned unsuppressed Trivy gate. No later application/Docker change invalidated that image-content result.
-- Flowise remains NO-GO: current canonical complete runtime 15 CRITICAL/116 HIGH; official 3.1.3 comparison 18 CRITICAL/167 HIGH.
-
-## GitHub evidence
-
-- PR run `29895093683` (CI) and `29895093710` (CodeQL) target exact source SHA `33b0aed47cd4850bd27689b5e8ffcb45210bfd27`.
-- Every GitHub CI and CodeQL job has `steps: []`.
-- `gh run view --log-failed` returns `log not found` because no runner step started.
-- Check-run annotations for Quality and CodeQL both say exactly: `The job was not started because an Actions budget is preventing further use.`
-- Required contexts remain failed only at the account budget gate: Quality, Dependency audit, Secret scan, Database security, Production image supply chain, Release gate, and Analyze (javascript-typescript).
-- Vercel preview is pending and is not the protected Fly production release.
-- Protected `main` still requires all required contexts, one independent approval, last-push approval, administrator enforcement, linear history, and no force push.
+- `git diff --check`: exit 0 before source commits.
+- `gitleaks dir . --redact --no-banner --exit-code 1`: no leaks found.
+- Independent Terra reran sequence 116/116, loop authority 26/26, database
+  privilege proof, and diff integrity.
 
 ## Blockers
 
-1. GitHub Actions budget prevents CI and CodeQL from executing. This is an account-owner action.
-2. PR 5 needs independent review and last-push approval. Do not self-approve or bypass protection.
-3. `Deploy Aria Mantu (Fly)` workflow ID 311052846 remains manually disabled.
-4. GitHub `Production` has no required reviewers, no environment secrets, and a stale custom branch policy for `deploy/fly-github-actions`; the workflow accepts only protected `main`.
-5. Required environments `Production-Need-Ingress-Throttle-Proof` and `Production-Sourcing-Activation` do not exist.
-6. Repository secrets expose only stale `ARIA_DEPLOY_BUNDLE`. The hardened workflow deliberately does not consume it.
-7. Purpose-bound secret names still needing authorized provisioning are defined by the workflows. Current exact set:
-   `ANTHROPIC_API_KEY`, `ARIA_DATA_KEY_RING_RETIREMENT_APPROVAL`, `ARIA_FIRST_ADMIN_EMAIL`, `ARIA_FIRST_ADMIN_PASSWORD`, `ARIA_FIRST_DEPLOY_APPROVAL`, `ARIA_GITHUB_SOURCE_TOKEN`, `ARIA_NEED_INGRESS_THROTTLE_EVIDENCE_HMAC_KEY`, `ARIA_NEED_INGRESS_THROTTLE_EVIDENCE_JSON`, `ARIA_SOURCING_CANARY_EMAIL`, `ARIA_SOURCING_CANARY_NEED_KEY`, `ARIA_SOURCING_CANARY_PASSWORD`, `ARIA_VOLUME_RECOVERY_RECEIPT_JSON`, `ARIA_VOLUME_RESTORE_CREATE_REQUEST_JSON`, `ARIA_VOLUME_RESTORE_CREATE_RESPONSE_JSON`, `FLY_AGENT_FRAMEWORK_CAPABILITY_SECRET`, `FLY_AGENT_FRAMEWORK_REGISTRY_TOKEN`, `FLY_API_TOKEN`, `FLY_AUTH_DB_PASSWORD`, `FLY_CRON_SECRET`, `FLY_DATA_ENCRYPTION_KEY`, `FLY_DATA_ENCRYPTION_PREVIOUS_KEYS`, `FLY_DEERFLOW_ADAPTER_TOKEN`, `FLY_FLOWISE_ADAPTER_TOKEN`, `FLY_JWT_SECRET`, `FLY_OTEL_EXPORTER_OTLP_ENDPOINT`, `FLY_OTEL_EXPORTER_OTLP_HEADERS`, `FLY_PG_PASSWORD`, `FLY_RECOVERY_AUDIT_TOKEN`, `FLY_RECOVERY_CLEANUP_TOKEN`, `FLY_REGISTRY_TOKEN`, `FLY_REQUISITION_PARSE_SECRET`, `FLY_REST_DB_PASSWORD`, `FLY_SOURCING_EXECUTION_SECRET`, `FLY_SUPABASE_ADMIN_CURRENT_PASSWORD`, `FLY_SUPABASE_ADMIN_TARGET_PASSWORD`, `FLY_SUPABASE_ANON_KEY`, `FLY_SUPABASE_SERVICE_KEY`, `KIMI_API_KEY`, `KIMI_BASE_URL`, and `TAVILY_API_KEY`. Never print or copy values into Relay.
-8. Flowise has no scan-acceptable complete production image and therefore cannot be promoted, signed, or activated.
-9. Production has only one proven active administrator. Runtime binding activation requires two distinct active administrators.
-10. Last recorded Kimi probe returned HTTP 402. A funded exact model binding has not been proven.
-11. No live workspace-bound Tavily binding, shared multi-Machine need-ingress throttle, external OTLP collector/alerts/on-call, restore/failover drill, second database failure domain, or accepted 50,000-user staging receipt is proven.
-12. No authenticated exact-release zero-send need-to-candidate canary has run.
-13. Fable 5 remains quota-exhausted: `You've reached your Fable 5 limit. Run /usage-credits to continue or switch models with /model.`
+1. GitHub Actions budget prevents protected CI and CodeQL from starting. Exact
+   latest PR-event runs for source SHA `4d1878404471938c7ec7e041f8383eed69c24a9e`
+   are CI `30182079319` and CodeQL `30182079312`; every job has `steps: []` and
+   the budget annotation above. Account-owner action is required.
+2. PR 5 must pass protected checks, receive independent and last-push approval,
+   and merge before PR 7 can be retargeted or rebased onto `main`. PR 7 then
+   needs the same exact-SHA checks and approvals. Do not bypass protection or
+   push directly to `main`.
+3. Phases 1 through 4 in the plan are not implemented: normalized candidate
+   lists and eligibility, campaign/version/task application APIs and UI,
+   sender capability and quota controls, campaign inbox/analytics, scoped API
+   keys, and signed webhook delivery.
+4. `Deploy Aria Mantu (Fly)` remains manually disabled. GitHub environments
+   `Production-Need-Ingress-Throttle-Proof` and `Production-Sourcing-Activation`
+   are missing, and `Production` retains a stale branch rule and no proven
+   reviewer/secret configuration.
+5. Purpose-bound deploy secrets and variables are not proven. Enumerate names
+   from `.github/workflows/deploy-aria-mantu.yml` and
+   `.github/workflows/activate-production-sourcing.yml`; provision values only
+   through the approved secret manager. Never copy values into Relay.
+6. Real sourcing activation still needs two distinct active tenant
+   administrators, a funded approved cloud-model credential, one verified
+   workspace Tavily credential, and a two-person active runtime binding.
+7. Flowise remains deployment NO-GO because its complete runtime image has not
+   met the zero HIGH/CRITICAL image policy.
+8. Production has no accepted exact-release no-contact canary, OTLP receipt and
+   alert routing, restore/failover drill, second database failure domain, or
+   production-shaped 50,000-user load/stress/soak receipt.
+9. `GHSA-mh99-v99m-4gvg` has no released compatible 1.x fix. The exact
+   development-only exception fails closed after `2026-08-08T00:00:00.000Z`.
 
 ## Next steps
 
-1. Verify PR 5 head matches the current remote branch before any rerun; if it differs, inspect the intervening diff and rerun the relevant gates.
-2. Owner restores GitHub Actions budget.
-3. Configure `Production`, `Production-Need-Ingress-Throttle-Proof`, and `Production-Sourcing-Activation` with protected-main branch policy, independent reviewers, and the exact purpose-bound secrets/variables from both deploy workflows. Do not restore the legacy bundle path.
-4. Re-enable the production workflow only after environment review.
-5. Rerun CI and CodeQL for the exact PR head. Inspect each run and annotation with `gh`; do not infer a source failure from the current zero-step budget failures.
-6. Obtain independent and last-push approval, then merge PR 5 to protected `main`. Do not push directly to `main`.
-7. Build all seven agent-framework component images from the merged SHA. Require complete runtime startup, zero HIGH/CRITICAL Trivy results, SPDX SBOM, max-provenance, keyless signature, immutable digest, and accepted release bundle. Flowise must stay dark until this passes.
-8. Dispatch the protected Fly workflow from merged `main`. Require the ledger-aware migration job through 0062, exact image/release readback, one healthy loop Machine with the canonical four-handler digest, and all readiness probes.
-9. Provision a second real administrator. Verify the exact cloud model and Tavily credentials through their approved non-billable checks, then activate one two-person runtime binding.
-10. Prove the shared need-ingress throttle on at least two application Machines.
-11. Run the protected no-contact canary with a synthetic need: ingress -> model parse -> campaign -> real provider sourcing -> persisted source-backed candidates. Verify zero outbound messages.
-12. Capture external OTLP receipt/alert routing, database restore/failover, restart, and production-shaped load/stress/soak receipts. Only then consider the 50,000-user and production-ready acceptance gates satisfied.
+1. Account owner restores GitHub Actions capacity.
+2. Run `gh pr checks 5`, then inspect every failed or pending run with
+   `gh run view <run-id> --json jobs` and `gh run view <run-id> --log-failed`.
+   Require all protected contexts on PR 5's exact current SHA.
+3. Obtain the independent and last-push approvals and merge PR 5 to protected
+   `main`. Do not self-approve or bypass the branch rule.
+4. Rebase or retarget PR 7 onto the resulting `main`, resolve only observed
+   conflicts, then rerun the database manifest, mandatory application gate,
+   isolated build, dependency audit, lint, Gitleaks, and all protected GitHub
+   contexts for the new exact SHA.
+5. Replace the brace-expansion exception when the compatible v1 fix is
+   released. If it is not released by 2026-08-08, the audit must remain red
+   until a new security review explicitly accepts a new bounded decision.
+6. Merge PR 7 only after independent and last-push approval.
+7. Implement Phase 1 from the plan on a new reviewable branch. Start with
+   failing disposable-Postgres tests for candidate lists, provenance-bound
+   membership, set operations, eligibility reasons, suppression, erasure,
+   recent-contact rules, pagination, RLS, and bounded exports.
+8. Implement Phase 2 only after Phase 1 passes: immutable campaign versions,
+   enrollments, manual recruiter tasks, timezone-safe schedules, lifecycle and
+   kill controls, and a zero-contact UI. Keep LinkedIn manual-only.
+9. Implement Phases 3 and 4 as separate reviewed slices with atomic database
+   authority, quota/concurrency tests, receipt-derived analytics, scoped API
+   credentials, replay-safe signed webhooks, and accessibility tests.
+10. Configure the three protected GitHub environments and purpose-bound
+    secrets, re-enable the deploy workflow, and deploy only the merged `main`
+    SHA. Require migration-ledger readback through 0063 and exact release/image
+    identity on Fly.
+11. Provision the second administrator and verified tenant runtime bindings,
+    then run the protected synthetic need-to-real-provider-to-persisted-
+    candidate no-contact canary. Confirm zero outbound messages.
+12. Run an approved named-recruiter assisted-manual pilot, followed by restore,
+    failover, telemetry, and production-shaped load gates. Only those accepted
+    receipts can support production and 50,000-user claims.
 
 ## Decisions made (do not relitigate)
 
-- `main` is the only production release target; direct main pushes and protection bypass are prohibited.
-- ARIA owns tenant, budget, approval, persistence, audit, and egress authority. DeerFlow and Flowise are bounded execution frameworks, not authority owners.
-- Production never invents needs, candidate identities, skills, experience, consent, or provider evidence.
-- Graphify lessons require human promotion, exact role/workspace/version/expiry binding, and immutable claim-time snapshots.
-- Human approval remains default for outreach. Disabling human-in-the-loop requires a separately reviewed production control; sourcing itself sends nothing.
-- Public ingress and autonomous sourcing activate only after exact-release proof and can be re-darkened independently.
-- The obsolete `ARIA_DEPLOY_BUNDLE` must not be unpacked or reintroduced.
-- Flowise remains disabled until a complete production runtime meets the zero-HIGH/CRITICAL policy.
-- Source-green, protected-CI-green, deployed, live-canary-green, restore-green, and capacity-green are separate proof states.
+- Build an original ARIA workflow, not copied competitor code, assets, brands,
+  private contracts, or deceptive UI.
+- LinkedIn stays assisted-manual unless written platform entitlement or an
+  approved contracted provider grants each exact automated action.
+- Never capture LinkedIn passwords, PINs, cookies, `li_at`, browser sessions,
+  fingerprints, proxies, captcha tooling, or stealth automation.
+- Phase 0 stays release-dark and has no application call site until later
+  campaign and task authority exists.
+- Human approval is the default. Manual LinkedIn completion is an operator
+  assertion, never a provider-confirmed sent or delivered receipt.
+- ARIA owns identity, tenancy, RBAC, approvals, lawful basis, suppression,
+  erasure, budgets, claims, audit, and every egress decision. Framework agents
+  can propose bounded work but cannot own authority.
+- 0063 rollback intentionally refuses after new durable evidence exists. Fixes
+  require a reviewed forward migration rather than restoring unsafe 0045 logic.
+- Source-green, protected-CI-green, merged, deployed, canary-green,
+  restore-green, and capacity-green remain separate proof states.
+- Direct production secret mutation, direct main pushes, and branch-protection
+  bypass remain prohibited.
 
 ## Watch out
 
-- Do not use the OneDrive checkout. It is not the canonical release tree.
-- Do not deploy PR 5 or mutate Fly secrets directly; the protected workflow and owner gates are intentional.
-- Do not treat Vercel preview, `/api/health` 200, the older Fly build, or a local fixture as production acceptance.
-- Do not mark the overall goal complete while any production blocker above remains.
-- Do not remove or rewrite Relay archives.
+- Do not modify the OneDrive checkout; use the isolated worktree above.
+- PR 7 is stacked on PR 5. Do not merge or deploy it as though its base were
+  already in `main`.
+- Do not interpret a zero-step GitHub failure as a code failure. Inspect the
+  annotation and require a later run that actually executes steps.
+- Do not broaden or silently extend the dependency exception.
+- Do not activate `outreach_sequence_release_controls` before Phases 1 and 2
+  provide the product and operator boundaries in the plan.
+- Do not treat `/api/health` 200, Vercel preview, local fixtures, or the older
+  Fly build as proof for this branch.
+- Do not claim the app is production-ready, enterprise-ready, live-sourcing
+  ready, or 50,000-user ready while any blocker above remains.
+- Never delete `_relay/archive/` and never place secrets or candidate PII in
+  Relay files.

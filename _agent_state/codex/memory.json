@@ -1,6 +1,14 @@
 {
   "recent_learnings": [
     {
+      "date": "2026-07-25",
+      "lesson": "Fresh advisories can invalidate a green release; use exact expiring exceptions, never incompatible global overrides, when an upstream backport is unreleased."
+    },
+    {
+      "date": "2026-07-25",
+      "lesson": "Sequence outbox guards must preserve mature dispatcher transitions while requiring owner-only provenance for claims and provider evidence."
+    },
+    {
       "date": "2026-07-21",
       "lesson": "Model activation requires nonce-bound purpose capability on the exact production endpoint; model-list membership cannot prove parse or tool-call compatibility."
     },

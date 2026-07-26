@@ -1273,3 +1273,27 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Source enforces two-person activation and exact live credential methods. Fly secret-name inventory shows legacy provider names but does not prove a tenant-bound valid Tavily row, a funded Kimi account, or an active independently approved binding. No authenticated live need-to-candidate canary exists for this branch.
 **Suggested fix:** Add a second real tenant administrator, fund or replace the approved cloud-model provider, verify the workspace Tavily credential through the non-search usage endpoint, activate one exact binding set, and run the protected zero-send canary.
 **Status:** open; real production sourcing is not yet proven usable
+
+## 2026-07-25 — Phase 0 sequence authority review
+**Severity:** security
+**File:** supabase/migrations/0063_outreach_sequence_authority_repair.sql
+**Issue:** The initial Phase 0 repair trusted stored approval hashes at activation, exposed manual-task state across workspaces, accepted a same-candidate outbound row without binding its approved content, and left ineligible work retryable.
+**Repro/evidence:** The disposable database suite reproduced candidate/body mutation, a cross-workspace manual-completion attempt, a mismatched approved outbound bind, and suppression/missing-recipient claim paths.
+**Suggested fix:** Recompute durable approval scope, scope manual completion before state checks, bind the exact approved outbound payload, and terminally cancel ineligible sequences.
+**Status:** fixed (`30c8b63`; `bash tests/sequences-db.sh` 116 assertions, full database manifest, both typechecks, complete application test lifecycle, privilege, bootstrap, concurrency, rollback-guard, and reapply proof pass)
+
+## 2026-07-25 - Legacy LinkedIn tombstones did not cover canonical person linking
+**Severity:** security
+**File:** supabase/migrations/0063_outreach_sequence_authority_repair.sql; tests/person-model-db.sh
+**Issue:** The existing person-link helper could compare a legacy LinkedIn URL form without using the canonical candidate-erasure tombstone authority, allowing an erased identity to be considered under a different equivalent URL representation.
+**Repro/evidence:** The chronological disposable-database fixture installs the legacy candidate before the 0037 backfill, applies the later migrations, and proves that `link_one_candidate` now delegates to `candidate_erasure_tombstone_exists` for canonical identity matching. `tests/person-model-db.sh` passes 42 assertions.
+**Suggested fix:** Preserve the canonical tombstone helper as the single erasure decision for every candidate-to-person link path.
+**Status:** fixed (`30c8b63`)
+
+## 2026-07-25 - Newly disclosed dependency advisories invalidated the prior audit result
+**Severity:** security
+**File:** package.json; scripts/dependency-audit.mjs; production-readiness/dependency-audit-exceptions.json; .github/workflows/ci.yml
+**Issue:** The current advisory database marks the prior Next and PostCSS versions vulnerable and reports `GHSA-mh99-v99m-4gvg` through ESLint's `brace-expansion` 1.x dependency. A forced global 5.x override is API-incompatible with the 1.x consumer and breaks lint.
+**Repro/evidence:** Next is now 16.2.12 and PostCSS is 8.5.23, so the production graph reports zero HIGH or CRITICAL findings. The remaining development-only advisory is bound to one exact package version and node path, has canonical ordered timestamps, expires 2026-08-08, and tracks the open compatible v1 backport. Ten executable policy cases reject future, reversed, expired, unused, path-drifted, version-drifted, package-mismatched, malformed, and production-vulnerable states. Independent release and security re-reviews pass.
+**Suggested fix:** Replace the exception with the compatible fixed v1 release as soon as upstream publishes it; never extend the exception without a new review.
+**Status:** fixed (`4d18784`; production audit clean, policy 10/10, infrastructure 147/147, lint, typechecks, application test lifecycle, and isolated build pass)
