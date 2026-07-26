@@ -2,8 +2,8 @@
 project: MSourcing / ARIA
 shift: 48
 agent: codex-gpt-5
-updated: 2026-07-26 09:47 EDT
-status: E1.1 committed locally at 4dfe1c3; Relay closeout and push pending; production blocked
+updated: 2026-07-26 09:48 EDT
+status: E1.1 pushed and locally green; GitHub jobs budget-blocked; production blocked
 ---
 
 # Handoff - MSourcing / ARIA
@@ -33,7 +33,8 @@ status: E1.1 committed locally at 4dfe1c3; Relay closeout and push pending; prod
 - E1.1 now implements explicit --prove-red R1/R2 parsing, complete clean-R1 source/ledger/five-index absence checks, exact canonical 0068 filename and marker refusal, no-argument verified SKIP, and the pinned R1 intentional exit. Real disposable PostgreSQL 17 runs prove no-argument exit 0 and explicit R1 exit 1 on `candidate-outreach-eligibility-db RED: online index foundation is absent after exact 0067`.
 - Final E1.1 harness SHA-256 is 2cd92ad0d9ec65265e29deb0bcef59cffba232d8250a0815e948a002bb675095. Three independent implementation reviewers returned PASS after exercising duplicate 0067 source, out-of-order later source, malformed/later ledger filenames, BOM, NUL, CRLF, missing LF, invalid CLI, premature R2, and the real PostgreSQL R1 modes.
 - The exact final command `npm run typecheck && npm run typecheck:tests && npm test` exited 0 after the final harness byte was frozen. It ran both compilers and the complete pretest, application, and posttest manifest lifecycle. Shell syntax, diff hygiene, manifest 10 pass/1 expected skip, and bootstrap 62/62 also pass.
-- Commit 4dfe1c3 records the reviewed plan, final E1.1 harness, findings, and current Relay evidence. It has not yet been pushed at this snapshot.
+- Commit 4dfe1c3 records the reviewed plan, final E1.1 harness, findings, and Relay evidence. Commit 4baff0e closes the eight resolved findings. Both are pushed; remote readback and PR 8 head matched full SHA 4baff0ecfba476cfc32d609787e1473a32ff43f3.
+- Exact-head push runs 30204759867 and 30204759888 and pull-request runs 30204761011 and 30204761003 completed with zero steps. Every CI and CodeQL check annotation says: `The job was not started because an Actions budget is preventing further use.` No workflow log exists because no step started.
 - No production secret was changed, no provider was called, no candidate was contacted, and no Fly deployment occurred.
 
 ## Done this shift
@@ -54,13 +55,14 @@ status: E1.1 committed locally at 4dfe1c3; Relay closeout and push pending; prod
 - Received PASS from all three third-review lanes on the exact frozen plan hash. Implemented and locally exercised the E1.1 two-stage harness state machine without adding production SQL.
 - Corrected four E1.1 false-green edges found during independent implementation review: later source, malformed/later ledger, duplicate 0067 source, and NUL-bearing first-line markers. All three final reviewers PASS exact harness hash 2cd92ad0.
 - Committed the accepted E1.1 slice as 4dfe1c3 and reconciled its eight plan/test findings to that exact commit.
+- Pushed E1.1 and Relay closeout through 4baff0e, verified exact remote SHA and PR 8 head, and inspected all four fresh GitHub runs, jobs, missing logs, and annotations with gh.
 - Committed the source slice as 252d304.
 - Archived the prior baton to _relay/archive/2026-07-26-0808-codex.md.
 
 ## Blockers
 
 1. Exact-head CI run 30201518880 and CodeQL run 30201518890 completed without executing any step. All seven check annotations say: The job was not started because an Actions budget is preventing further use. This is an account-capacity blocker, not a code-failure diagnosis.
-2. E1.1 is locally committed but unpushed at this snapshot. Production 0068 waits for the Relay closeout commit, remote readback, and current PR evidence.
+2. Exact-head protected CI and CodeQL are unproved because GitHub Actions budget prevented every job from starting. This is not a code-failure diagnosis; restore account capacity and rerun the exact head.
 3. Phase 1.3 eligibility, shared quota, authenticated APIs, accessible recruiter UI, browser E2E, and performance acceptance remain unimplemented.
 4. Gmail/Microsoft cannot be activated until credential DML is revoked, transactional OAuth binding and token rotation are repaired, all email goes through the durable queue, native inbound recovery exists, sender health pauses database dispatch, and authorized synthetic mailbox canaries pass.
 5. HeyReach remains blocked by written action entitlement, official API/webhook contract or sandbox, vendor security/privacy approval, and a source adapter with reconciliation and dual control.
@@ -72,14 +74,13 @@ status: E1.1 committed locally at 4dfe1c3; Relay closeout and push pending; prod
 ## Next steps
 
 1. Restore GitHub Actions budget, rerun CI and CodeQL on the current PR 8 head, inspect every job and annotation with gh, and require exact-SHA green before merge.
-2. Commit this Relay/findings closeout, push both commits, and verify remote readback plus current PR evidence.
-3. Implement and prove the 0068 session-locked concurrent-index foundation. Extend the harness with exact online catalog, crash/retry, receipt, reverse, and R2 behavior before committing 0068.
-4. Implement 0069 strict projection, backfill/readiness gate, evidence lifecycle, evaluator, erasure, and rollback with no provider or send side effect.
-5. Integrate 0063 campaign/version/task authority with eligibility checks at activation, claim, and completion. Make the durable outbox the only email send path.
-6. Repair Gmail and Microsoft OAuth/token identity, protected secret inventory, native inbound recovery, pacing, reply stop, and sender-health authority. Run fake-provider fault tests before any authorized synthetic canary.
-7. Keep HeyReach dark until the external entitlement and contract blockers are cleared. Then add a disabled adapter, exact receipt reconciliation, dual control, sandbox proof, and a separately authorized canary.
-8. Run four independent QA lanes across database/concurrency, security/privacy, API/UI/accessibility, and release/performance. Use Terra only as the final independent validator after the full roadmap is implemented.
-9. Merge and deploy only through the protected branch and environment workflow after exact-SHA CI, CodeQL, release identity, migration readback, authorized canaries, restore/failover, and capacity evidence pass.
+2. Implement and prove the 0068 session-locked concurrent-index foundation. Extend the harness with exact online catalog, crash/retry, receipt, reverse, and R2 behavior before committing 0068.
+3. Implement 0069 strict projection, backfill/readiness gate, evidence lifecycle, evaluator, erasure, and rollback with no provider or send side effect.
+4. Integrate 0063 campaign/version/task authority with eligibility checks at activation, claim, and completion. Make the durable outbox the only email send path.
+5. Repair Gmail and Microsoft OAuth/token identity, protected secret inventory, native inbound recovery, pacing, reply stop, and sender-health authority. Run fake-provider fault tests before any authorized synthetic canary.
+6. Keep HeyReach dark until the external entitlement and contract blockers are cleared. Then add a disabled adapter, exact receipt reconciliation, dual control, sandbox proof, and a separately authorized canary.
+7. Run four independent QA lanes across database/concurrency, security/privacy, API/UI/accessibility, and release/performance. Use Terra only as the final independent validator after the full roadmap is implemented.
+8. Merge and deploy only through the protected branch and environment workflow after exact-SHA CI, CodeQL, release identity, migration readback, authorized canaries, restore/failover, and capacity evidence pass.
 
 ## Decisions made (do not relitigate)
 
