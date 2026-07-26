@@ -71,6 +71,15 @@ Add an index beginning with:
 (workspace_id, list_id, campaign_id collate "C", candidate_id collate "C")
 ```
 
+The exact catalog names are:
+
+- constraint `candidate_lists_membership_revision_nonnegative`;
+- index `candidate_list_members_set_preview_idx`;
+- triggers `candidate_list_members_advance_revision_after_insert`,
+  `candidate_list_members_advance_revision_after_delete`,
+  `candidate_list_members_reject_truncate`, and
+  `candidate_lists_guard_membership_revision`.
+
 The checked-in migration builds this index transactionally because the current
 release candidate introduces 0064 through 0067 together and therefore creates
 it on an empty list-membership table. Before deployment, the migration
