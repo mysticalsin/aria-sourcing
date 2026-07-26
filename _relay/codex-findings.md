@@ -1480,7 +1480,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The first 0068 plan requires the evaluator to resolve exact and ambiguous canonical recipients from the workspace-state candidate JSON while also requiring every candidate branch to be an indexed bounded probe. No JSON-element index exists, so both claims cannot hold.
 **Repro/evidence:** `workspace_state` stores the complete candidate array in one JSON document. PostgreSQL must expand or traverse that document; the existing `public.candidates` relation is explicitly best-effort because its sync catches every exception. Independent schema and adversarial reviews both returned NO-GO before production SQL.
 **Suggested fix:** Make a relational projection transactionally fail-closed and exact before eligibility reads it, or remove the indexed claim and prove a hard document bound with production-shaped timing.
-**Status:** open
+**Status:** fixed (`4dfe1c3`; reviewed 0069 design uses a strict relational projection with freshness, backfill, and readiness authority)
 
 ## 2026-07-26 - Planned 0068 schema omits keys and bounded lookup indexes
 **Severity:** correctness
@@ -1488,7 +1488,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The proposed self-FK has no matching referenced unique key; current-leaf lookup is not supported by its stated index; candidate-global erasure cannot reach member-bound evidence directly; and all-status ledger lookup has no general candidate index.
 **Repro/evidence:** PostgreSQL 17.6 rejects the literal self-FK with `there is no unique constraint matching given keys`. Exact predecessor indexes cover only active ledger states and campaign-first member lookup. A supersedes-first attestation index cannot find an unknown leaf without history traversal.
 **Suggested fix:** Specify the exact referenced unique tuple, descending leaf index, candidate-global member/attestation lookup, all-status ledger index, and a real online-build path before implementation.
-**Status:** open
+**Status:** fixed (`4dfe1c3`; reviewed 0068/0069 design pins exact keys, leaf and candidate indexes, all-status lookup, and online release phases)
 
 ## 2026-07-26 - Planned 0068 snapshot and erasure rollback claims are false
 **Severity:** security
@@ -1496,7 +1496,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The plan composes the default-VOLATILE 0065 resolver inside a claimed one-snapshot evaluation, asks a trigger wrapper to call another trigger function, and allows rollback after erasure leaves a durable eligibility scrub receipt that the restored 0067 constraint cannot accept.
 **Repro/evidence:** The 0065 resolver has no STABLE declaration. PostgreSQL 17.6 rejects ordinary invocation of the retained cleanup trigger with `trigger functions can only be called as triggers`. Governed erasure deletes live eligibility and operation rows but intentionally preserves `candidate_erasure_receipts`.
 **Suggested fix:** Inline the provenance reads into one stable core query, use an independently ordered cleanup trigger or ordinary helper, and make rollback refuse on every durable eligibility erasure receipt before mutation.
-**Status:** open
+**Status:** fixed (`4dfe1c3`; reviewed design inlines provenance, owns an ordered cleanup trigger, and refuses every durable residue before rollback)
 
 ## 2026-07-26 - Planned 0068 lifecycle can deny new candidates and strand revocations
 **Severity:** correctness
@@ -1504,7 +1504,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Null from an absent ledger join is mapped as unknown, which can deny a never-contacted candidate; revocation requires equality to the current recipient even when it must preserve an older predecessor binding; and the append-only cascade rule can block ordinary member or list deletion.
 **Repro/evidence:** `outreach_ledger.status` is NOT NULL, so a joined null represents no row rather than a corrupt row. After recipient drift, neither the old nor new recipient satisfies both current-recipient and copied-predecessor rules. The planned child cascade invokes a delete guard that authorizes only workspace deletion or governed erasure.
 **Suggested fix:** Treat no ledger row as safe, distinguish present unsupported statuses, derive revocation from the locked predecessor, and use RESTRICT or an explicit governed member-deletion authority.
-**Status:** open
+**Status:** fixed (`4dfe1c3`; reviewed lifecycle separates absent and unknown ledger state, copies revocation binding, and pins delete behavior)
 
 ## 2026-07-26 - Planned 0068 receipt lock did not exclude concurrent ledger writes
 **Severity:** correctness
@@ -1512,7 +1512,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The receipt transaction assigned `SHARE UPDATE EXCLUSIVE` to the migration ledger while claiming it blocked writes, but ordinary inserts take `ROW EXCLUSIVE` and those two modes do not conflict.
 **Repro/evidence:** A concurrent migration-ledger insert can proceed while `SHARE UPDATE EXCLUSIVE` is held, so the exact ledger postflight and completion-receipt insert were not protected by the stated table-lock contract.
 **Suggested fix:** Lock `public.aria_schema_migrations` in `SHARE` mode, then lock only the three indexed tables in canonical order with `SHARE UPDATE EXCLUSIVE`.
-**Status:** open
+**Status:** fixed (`4dfe1c3`; exact reviewed T2 contract uses the separate write-conflicting ledger lock)
 
 ## 2026-07-26 - Planned 0069 runtime functions lacked table-reading authority
 **Severity:** security
@@ -1520,7 +1520,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The plan revoked runtime table rights but did not pin security mode, owner, or search path for the readiness bridge and two public RPCs, leaving their required table reads impossible under default invoker execution.
 **Repro/evidence:** `candidate_outreach_identity_projection_ready()`, `attest_candidate_outreach_eligibility(...)`, and `evaluate_candidate_list_outreach_eligibility(...)` all read owner-only tables while their intended caller roles have no direct table rights.
 **Suggested fix:** Make all three PostgreSQL-owned `SECURITY DEFINER` routines with exact secure search paths, volatility, ACLs, and catalog/body postflight; grant only readiness to service role and the RPCs to authenticated.
-**Status:** open
+**Status:** fixed (`4dfe1c3`; exact reviewed function contracts pin owner, definer mode, search path, volatility, ACL, and body postflight)
 
 ## 2026-07-26 - R1 harness could skip over out-of-order source and ledger authority
 **Severity:** test-gap
@@ -1528,7 +1528,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The first E1.1 implementation scanned only `0068_*.sql` and ledger rows matching `0068_%`, so an out-of-order 0069 file, a later ledger row, or a noncanonical ledger filename could still reach the clean R1 exit 0.
 **Repro/evidence:** With no 0068 source or indexes, `0069_future.sql` was outside both source globs and `0069_future.sql` or `0068-bad.sql` was outside the ledger predicate. The bootstrap stops at 0067, leaving the later state invisible to the former clean branch.
 **Suggested fix:** Reject every source sequence after 0068 and every malformed or sequence-68-plus ledger filename before the sole verified-clean R1 skip.
-**Status:** open
+**Status:** fixed (`4dfe1c3`; final harness rejects broad later source and exact malformed or sequence-68-plus ledger state)
 
 ## 2026-07-26 - R1 accepted duplicate 0067 source and NUL-bearing 0068 markers
 **Severity:** test-gap
@@ -1536,4 +1536,4 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Checking only the final applied 0067 basename allowed an extra same-sequence migration to run before the canonical file, while Bash line reading discarded NUL bytes and could accept a non-byte-exact 0068 first line.
 **Repro/evidence:** An added `0067_aaa.sql` still leaves canonical 0067 as the final sorted basename, and `EXPECTED_MARKER + NUL + LF` compares equal after Bash command processing removes the NUL.
 **Suggested fix:** Require exactly one canonical 0067 forward and rollback source, then compare the exact marker plus LF through binary-safe byte hashing.
-**Status:** open
+**Status:** fixed (`4dfe1c3`; final harness pins 0067 cardinality and hashes marker plus LF through byte-counted SHA-256)
