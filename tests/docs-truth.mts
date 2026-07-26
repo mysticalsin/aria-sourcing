@@ -315,6 +315,9 @@ ok(
   "sourcing compliance doc pins provider-egress clearance authority",
   /ProviderClearance/.test(sourcingDoc) &&
     /src\/lib\/sourcing\/provider-egress\.ts/.test(sourcingDoc) &&
+    sourcingDoc.includes("every submitted criteria field is checked for protected-class terms") &&
+    sourcingDoc.includes("bound to the approved role's own JD terms") &&
+    !/criteria are rejected for age\/gender\/race\/religion\/disability\/marital\/nationality\/university-graduation proxies/.test(sourcingDoc) &&
     !/Sourcing queries are rejected if they reference age\/gender\/race\/religion/.test(sourcingDoc),
 );
 
