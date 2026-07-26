@@ -1401,3 +1401,19 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** The RED contract executed both older rollbacks after 0066 and observed 0065 succeed. Expanded disposable probes then exercised the first 0065 foreign-key removal and the first 0066 index/function rename, verified exact SQLSTATE 55000 refusal, and compared deterministic PostgreSQL 17 schema fingerprints before and after. Final focused suites pass 36/36 and 51/51.
 **Suggested fix:** Keep the shared schema advisory lock, append-only ledger checks, earliest persistent partial-apply markers, absent-table-safe idempotence, and before-mutation refusal in every legacy rollback.
 **Status:** fixed (`a489065`; RED and partial-probe commits `c6342dd`, `7629f15`)
+
+## 2026-07-26 - Output-limited list previews could perform unbounded database work
+**Severity:** security
+**File:** _relay/plans/07-candidate-list-set-preview-authority.md
+**Issue:** The initial 0067 contract capped emitted rows but allowed sparse intersection and high-overlap difference to scan an entire list before returning at most 100 items.
+**Repro/evidence:** A disjoint intersection or identical-list difference can emit zero rows only after examining every left member when the limit is applied after result filtering.
+**Suggested fix:** Make `p_limit` the examined left-driver budget, advance the cursor to the last examined identity even on an empty page, and merge only bounded per-list prefixes for union.
+**Status:** open
+
+## 2026-07-26 - Initial 0067 RED harness failed on boolean formatting instead of the authority boundary
+**Severity:** test-gap
+**File:** tests/candidate-list-set-preview-db.sh
+**Issue:** PostgreSQL returned `f|f`, while the harness compared against `false|false`, so the first intentional RED run did not prove the named missing 0067 column and RPC.
+**Repro/evidence:** The suite exited 1 with `unexpected partial or pre-existing 0067 authority state (f|f)` after applying through 0066.
+**Suggested fix:** Normalize boolean output or compare the PostgreSQL representation, then require the exact absent-authority terminal line.
+**Status:** open

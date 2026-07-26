@@ -2,8 +2,8 @@
 project: MSourcing / ARIA
 shift: 47
 agent: codex-gpt-5
-updated: 2026-07-26 05:21 EDT
-status: legacy rollback bypass fixed and fully green locally; 0067 RED-first plan approved; production blocked
+updated: 2026-07-26 05:43 EDT
+status: legacy rollback bypass fixed; bounded 0067 RED contract in progress; production blocked
 ---
 
 # Handoff - MSourcing / ARIA
@@ -12,10 +12,10 @@ status: legacy rollback bypass fixed and fully green locally; 0067 RED-first pla
 
 - Work only from /Users/tony/msourcing-heyreach-foundation-20260725. The OneDrive checkout is not the execution lane.
 - Active branch: codex/candidate-lists-phase1-20260725.
-- Remote branch is verified at `caafcc3761a6848f0d1ba8c343b34d6806792ac8`. Local head is `a489065ac1da702323dd917977edc874ce6acd83` and is not yet pushed. The local rollback-repair chain is `c6342dd` RED, `7629f15` partial-apply probes, and `a489065` source fix.
+- Remote and local branch are verified at `39fa26f61956415a1bde6b85582672182a1312a1`. The pushed rollback-repair chain is `c6342dd` RED, `7629f15` partial-apply probes, `a489065` source fix, and `39fa26f` Relay/0067 plan.
 - The 0066 RED harness SHA is f02dc12245e9e67e31d6acae8ba7cda42d8f204105b9a1f25a6611b242e67a85; database manifest count is 34 and its contract remains 11/11 green.
 - Source commit `6bf97a667ca91a1dae9f5080fdb6c8e9e2e08427` implements and accepts 0066 and is pushed. Accepted artifact hashes are: migration `f1db1fcdf0c10216f34799dc40c868c859ad06929d959641f44dc833f31240e4`; refusing rollback `ec686a4661e429093f920346404288c2ae3a20ec424610e7130452a9da13f723`; expanded focused harness `7e2363bc658aec26e2a04ffb06a9e6a8fa483ea9041ecbf5e703ea548244427e`.
-- GitHub has no PR for this exact head. Current push runs CI 30195226817 and CodeQL 30195226798 target remote SHA `caafcc3`; all seven jobs have zero steps. The exact annotation remains `The job was not started because an Actions budget is preventing further use.` No code ran on a GitHub runner.
+- GitHub has no PR for this exact head. Current push runs CI 30196342004 and CodeQL 30196342092 target exact SHA `39fa26f`; all seven jobs have zero steps. Every check-run annotation says `The job was not started because an Actions budget is preventing further use.` No code ran on a GitHub runner.
 - GitHub still reports `vercel-demo` as the default branch. A separate `main` ref exists at bc46336, while `vercel-demo` is 14f76f1; neither is this execution head. The final protected-main topology and merge path must be reconciled explicitly, not inferred.
 - RED-first 0064 commits 3ee2e80 and f92f2ae, implementation be7278d, and Relay closeout d82e2c0 are pushed.
 - Migration 0064 adds four private, forced-RLS tables: candidate_lists, candidate_contact_attestations, candidate_list_members, and candidate_list_operation_receipts.
@@ -38,6 +38,7 @@ status: legacy rollback bypass fixed and fully green locally; 0067 RED-first pla
 - 0066 now makes legal-hold scope candidate-global inside one workspace, removes all inherited non-owner predecessor ACLs, revalidates expiry after lock waits, prevents transient unblocking during replacement, and gives erasure-list and retention paths one bounded total candidate lock order. Independent security and concurrency review report no P0/P1.
 - The 0064 and 0065 legacy rollbacks now refuse before mutation beneath ledgered or ledgerless later authority, including the first 0065 foreign-key removal and the first 0066 index/function rename. Absent-table-safe checks preserve 0064 idempotent rollback.
 - The detailed 0067 contract is `_relay/plans/07-candidate-list-set-preview-authority.md`. It adds only revision-bound, read-only union/intersection/difference/exclusion previews. Removal, materialization, eligibility, quota, export, routes, UI, and contact authority are deliberately outside this slice.
+- Independent security and QA review stopped the first 0067 RED draft before acceptance. The revised contract makes `p_limit` a consumed logical-identity window, caps left-driven reads at `p_limit + 1` and union source reads at `2 * (p_limit + 1)`, advances cursors over sparse empty pages, defines exact JSON envelopes and auth precedence, refuses member truncation/direct revision writes, and fixes rollback lock order.
 - No Fly deployment, production secret mutation, sourcing activation, LinkedIn automation, outbound contact, or candidate PII handling occurred in this shift.
 
 ## Done this shift
@@ -69,6 +70,8 @@ status: legacy rollback bypass fixed and fully green locally; 0067 RED-first pla
 - Reproduced the legacy rollback downgrade, added exact ledgerless partial-apply probes, fixed PostgreSQL 17 nondeterministic dump fingerprints, restored production-shaped Auth/extension fixtures in cloned databases, and closed the 0064 idempotence regression.
 - Committed the rollback RED/probe/source chain as `c6342dd`, `7629f15`, and `a489065`. Independent database security and QA returned PASS with no remaining finding.
 - Replanned P1.2 as read-only revision-bound previews. Contact export is deferred to P3.6 after eligibility and shared quota.
+- Pushed and remote-SHA verified the complete rollback repair and Relay plan at `39fa26f`; inspected the exact new CI and CodeQL jobs plus all seven budget annotations with `gh`.
+- Rejected the initial 0067 harness run because PostgreSQL emitted `f|f` while its branch expected `false|false`; exit 1 alone was not accepted as RED proof. Recorded the test gap and the unbounded-scan design flaw in `_relay/codex-findings.md`, then revised the executable 0067 plan before implementation.
 
 ## Verification evidence
 
@@ -118,13 +121,12 @@ status: legacy rollback bypass fixed and fully green locally; 0067 RED-first pla
 
 ## Next steps
 
-1. Commit this Relay/plan milestone, push the local rollback-repair chain, then verify the exact remote SHA and fresh GitHub run annotations with `gh`.
-2. Commit the RED-only 0067 contract, prove it fails for the exact missing revision/RPC boundary, then implement the additive read-only preview migration and guarded disposable rollback.
-3. Continue Phase 1 in order: eligibility and suppression; shared quota; authenticated API; accessible recruiter UI; browser E2E and performance proof. Keep contact export in P3.6.
-4. Complete campaigns and sender authority, then repair Gmail/Microsoft OAuth/token binding and implement native durable inbound adapters before provisioning connector secrets or authorizing a canary.
-5. Treat HeyReach as dark capability only until the official contract and entitlement gates are met; never infer endpoints, webhook trust, or delivery evidence from marketing documentation.
-6. Use four independent QA lanes across database/concurrency, security/privacy, API/UI/accessibility, and release/performance. After the whole implementation plan is complete, use Terra as the final independent validator.
-7. Merge and deploy only through protected main after exact-SHA CI, CodeQL, independent approval, environment controls, migration readback, release identity, authorized sourcing/email canaries, telemetry, restore/failover, and capacity receipts are accepted.
+1. Finish and commit the rebuilt RED-only 0067 contract, prove it fails for the exact named missing revision/RPC boundary after a transactional 0066 bootstrap, then implement the additive read-only preview migration and guarded disposable rollback.
+2. Continue Phase 1 in order: eligibility and suppression; shared quota; authenticated API; accessible recruiter UI; browser E2E and performance proof. Keep contact export in P3.6.
+3. Complete campaigns and sender authority, then repair Gmail/Microsoft OAuth/token binding and implement native durable inbound adapters before provisioning connector secrets or authorizing a canary.
+4. Treat HeyReach as dark capability only until the official contract and entitlement gates are met; never infer endpoints, webhook trust, or delivery evidence from marketing documentation.
+5. Use four independent QA lanes across database/concurrency, security/privacy, API/UI/accessibility, and release/performance. After the whole implementation plan is complete, use Terra as the final independent validator.
+6. Merge and deploy only through protected main after exact-SHA CI, CodeQL, independent approval, environment controls, migration readback, release identity, authorized sourcing/email canaries, telemetry, restore/failover, and capacity receipts are accepted.
 
 ## Decisions made (do not relitigate)
 
