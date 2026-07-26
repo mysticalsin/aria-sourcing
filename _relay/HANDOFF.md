@@ -2,8 +2,8 @@
 project: MSourcing / ARIA
 shift: 48
 agent: codex-gpt-5
-updated: 2026-07-26 08:08 EDT
-status: 0067 source pushed; PR 8 open; GitHub runners blocked by Actions budget; production blocked
+updated: 2026-07-26 08:22 EDT
+status: 0068 design locked; RED implementation next; GitHub runners blocked by Actions budget; production blocked
 ---
 
 # Handoff - MSourcing / ARIA
@@ -24,6 +24,7 @@ status: 0067 source pushed; PR 8 open; GitHub runners blocked by Actions budget;
 - Gmail and Microsoft OAuth/send primitives and a durable email outbox exist, but live activation is unsafe. Direct authenticated credential DML, incomplete provider/mailbox/tenant binding, refresh-token loss/rotation defects, the synchronous send bypass, weak inbound recovery, and missing database sender-health pause remain open.
 - HeyReach has no implementation. No endpoint, authentication, webhook, idempotency, or provider receipt is assumed.
 - The reviewed 0068 design is an admin-attested, append-only eligibility evidence lifecycle plus a read-only eligibility snapshot. It must remain unable to export contact data, mutate sequences, enqueue messages, or call providers. Later egress integration must re-evaluate eligibility at activation, claim, and completion.
+- The executable 0068 contract is now recorded in _relay/plans/08-candidate-outreach-eligibility-authority.md. It uses a revision-bound paginated evaluator, binds evidence to an immutable member generation and purpose-separated recipient HMAC, stores no recipient plaintext or ciphertext, and fails closed on unknown ledger states.
 - No production secret was changed, no provider was called, no candidate was contacted, and no Fly deployment occurred.
 
 ## Done this shift
@@ -37,6 +38,7 @@ status: 0067 source pushed; PR 8 open; GitHub runners blocked by Actions budget;
 - Added exact rollback poison coverage for reserved overloads, direct ACL drift, disabled and false-qualified triggers, function-body drift, missing artifacts, wrapper/predecessor partial states, and later/noncanonical ledgers.
 - Replaced the unbounded deployment preflight count with EXISTS plus LIMIT 1 and a test that rejects count(*) in that authority block.
 - Completed provider-auth and eligibility adversarial audits with exact implementation order and RED test requirements.
+- Reconciled independent eligibility, schema, and RED-test reviews into the locked 0068 plan, including the exact no-egress boundary, 28-reason precedence, tenant member key, sorted multi-identity erasure lock order, rollback contract, and four-lane QA matrix.
 - Committed the source slice as 252d304.
 - Archived the prior baton to _relay/archive/2026-07-26-0808-codex.md.
 
@@ -54,9 +56,9 @@ status: 0067 source pushed; PR 8 open; GitHub runners blocked by Actions budget;
 ## Next steps
 
 1. Restore GitHub Actions budget, rerun CI and CodeQL on the current PR 8 head, inspect every job and annotation with gh, and require exact-SHA green before merge.
-2. Write _relay/plans/08-candidate-outreach-eligibility-authority.md from the completed adversarial contract.
-3. Create the 0068 RED-first database harness and prove the exact missing table/RPC boundary after 0067 before implementation.
-4. Implement 0068 with no backfill and no provider or send side effect, then rerun 0067, evidence, erasure, legal-hold, sequence, privilege, recovery, and full repository gates.
+2. Create the 0068 RED-first database harness and prove the exact missing table and RPC boundary after 0067 before implementation.
+3. Commit and push the RED boundary separately, then implement 0068 with no backfill and no provider or send side effect.
+4. Rerun 0067, evidence, erasure, legal-hold, sequence, privilege, recovery, and full repository gates after 0068 is green.
 5. Integrate 0063 campaign/version/task authority with eligibility checks at activation, claim, and completion. Make the durable outbox the only email send path.
 6. Repair Gmail and Microsoft OAuth/token identity, protected secret inventory, native inbound recovery, pacing, reply stop, and sender-health authority. Run fake-provider fault tests before any authorized synthetic canary.
 7. Keep HeyReach dark until the external entitlement and contract blockers are cleared. Then add a disabled adapter, exact receipt reconciliation, dual control, sandbox proof, and a separately authorized canary.
