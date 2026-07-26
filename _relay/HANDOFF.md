@@ -2,8 +2,8 @@
 project: MSourcing / ARIA
 shift: 48
 agent: codex-gpt-5
-updated: 2026-07-26 08:30 EDT
-status: 0068 RED boundary verified; design feasibility amendment required; production blocked
+updated: 2026-07-26 09:45 EDT
+status: 0068/0069 plan and E1.1 harness accepted locally; commit/push pending; production blocked
 ---
 
 # Handoff - MSourcing / ARIA
@@ -25,8 +25,14 @@ status: 0068 RED boundary verified; design feasibility amendment required; produ
 - HeyReach has no implementation. No endpoint, authentication, webhook, idempotency, or provider receipt is assumed.
 - The reviewed 0068 design is an admin-attested, append-only eligibility evidence lifecycle plus a read-only eligibility snapshot. It must remain unable to export contact data, mutate sequences, enqueue messages, or call providers. Later egress integration must re-evaluate eligibility at activation, claim, and completion.
 - The executable 0068 contract is now recorded in _relay/plans/08-candidate-outreach-eligibility-authority.md. It uses a revision-bound paginated evaluator, binds evidence to an immutable member generation and purpose-separated recipient HMAC, stores no recipient plaintext or ciphertext, and fails closed on unknown ledger states.
-- The separately implemented 0068 RED harness reaches exact 0067, validates both pinned 0067 hashes and the accepted foundation, and exits 1 with the exact missing-attestation-and-evaluator line. The manifest contract passes 10 tests with one expected skip and zero failures.
+- The committed 0068 RED harness is historical one-stage evidence only and currently makes the canonical no-argument manifest mode red. Commit 474172e is not accepted R1 or R2 proof. The corrective harness must make no-argument mode green with a verified clean-stage skip and reserve intentional exit 1 for explicit --prove-red R1 or R2.
 - PostgreSQL feasibility review reopened the 0068 design before production SQL. Canonical candidates are currently inside one unindexed workspace-state JSON array, so the plan cannot claim indexed canonical lookup for each page item. The self-FK also needs an explicit referenced unique key, and a trigger predecessor cannot be called as an ordinary wrapper function.
+- The amended plan now reserves 0068 for five exact concurrent indexes under one session-locked Fly migration phase and moves eligibility authority to 0069. It adds a separate strict workspace-state identity projection, resumable backfill/readiness cutover, descending chain leaf, recipient-drift-safe revocation, privacy-safe evidence references, bounded unknown-ledger and suppression probes, independent erasure cleanup, and durable-receipt rollback refusal.
+- Exact-hash review c609eb1899c045a120de8ab145d0e36b289447087a3cfc01466d624fe5e10b4f received adversarial PASS, but schema and RED-plan NO-GO. The two remaining defects were a T2 ledger lock mode that did not conflict with ordinary inserts and missing security-definer authority for the readiness bridge and both public RPCs.
+- The exact replacement snapshot is 239781e8b828dfc6129f3ff8e6305a5027434f9da11d8dff12f4799a2a5003b1. It pins a separate SHARE ledger lock, PostgreSQL-owned security-definer execution modes, exact search paths, volatility, ACLs, and catalog/body postflight. Independent schema-feasibility, adversarial, and RED/release reviewers each returned PASS after reading the full exact snapshot. Production SQL remains absent.
+- E1.1 now implements explicit --prove-red R1/R2 parsing, complete clean-R1 source/ledger/five-index absence checks, exact canonical 0068 filename and marker refusal, no-argument verified SKIP, and the pinned R1 intentional exit. Real disposable PostgreSQL 17 runs prove no-argument exit 0 and explicit R1 exit 1 on `candidate-outreach-eligibility-db RED: online index foundation is absent after exact 0067`.
+- Final E1.1 harness SHA-256 is 2cd92ad0d9ec65265e29deb0bcef59cffba232d8250a0815e948a002bb675095. Three independent implementation reviewers returned PASS after exercising duplicate 0067 source, out-of-order later source, malformed/later ledger filenames, BOM, NUL, CRLF, missing LF, invalid CLI, premature R2, and the real PostgreSQL R1 modes.
+- The exact final command `npm run typecheck && npm run typecheck:tests && npm test` exited 0 after the final harness byte was frozen. It ran both compilers and the complete pretest, application, and posttest manifest lifecycle. Shell syntax, diff hygiene, manifest 10 pass/1 expected skip, and bootstrap 62/62 also pass.
 - No production secret was changed, no provider was called, no candidate was contacted, and no Fly deployment occurred.
 
 ## Done this shift
@@ -42,13 +48,17 @@ status: 0068 RED boundary verified; design feasibility amendment required; produ
 - Completed provider-auth and eligibility adversarial audits with exact implementation order and RED test requirements.
 - Reconciled independent eligibility, schema, and RED-test reviews into the locked 0068 plan, including the exact no-egress boundary, 28-reason precedence, tenant member key, sorted multi-identity erasure lock order, rollback contract, and four-lane QA matrix.
 - Added and locally verified the 0068 RED-only harness and exact manifest registration. No 0068 migration, rollback, or production SQL exists yet.
+- Reconciled three new read-only architecture reviews into the 0068/0069 plan. `public.candidates` remains best effort; the new projection is owner-only and purpose-specific. No production object was created.
+- Reconciled the second exact-hash review: corrected the migration-ledger lock conflict and pinned definer authority for readiness, attestation, and evaluation. Frozen replacement plan hash 239781e8b828dfc6129f3ff8e6305a5027434f9da11d8dff12f4799a2a5003b1 for third review.
+- Received PASS from all three third-review lanes on the exact frozen plan hash. Implemented and locally exercised the E1.1 two-stage harness state machine without adding production SQL.
+- Corrected four E1.1 false-green edges found during independent implementation review: later source, malformed/later ledger, duplicate 0067 source, and NUL-bearing first-line markers. All three final reviewers PASS exact harness hash 2cd92ad0.
 - Committed the source slice as 252d304.
 - Archived the prior baton to _relay/archive/2026-07-26-0808-codex.md.
 
 ## Blockers
 
 1. Exact-head CI run 30201518880 and CodeQL run 30201518890 completed without executing any step. All seven check annotations say: The job was not started because an Actions budget is preventing further use. This is an account-capacity blocker, not a code-failure diagnosis.
-2. The 0068 design is NO-GO for production SQL until its canonical JSON lookup, self-FK key, trigger cleanup, one-snapshot provenance, rollback residue, and missing-index findings are amended and re-reviewed.
+2. E1.1 is locally accepted but remains uncommitted and unpushed at this snapshot. Production 0068 waits for its commit, remote readback, and current PR evidence.
 3. Phase 1.3 eligibility, shared quota, authenticated APIs, accessible recruiter UI, browser E2E, and performance acceptance remain unimplemented.
 4. Gmail/Microsoft cannot be activated until credential DML is revoked, transactional OAuth binding and token rotation are repaired, all email goes through the durable queue, native inbound recovery exists, sender health pauses database dispatch, and authorized synthetic mailbox canaries pass.
 5. HeyReach remains blocked by written action entitlement, official API/webhook contract or sandbox, vendor security/privacy approval, and a source adapter with reconciliation and dual control.
@@ -60,9 +70,9 @@ status: 0068 RED boundary verified; design feasibility amendment required; produ
 ## Next steps
 
 1. Restore GitHub Actions budget, rerun CI and CodeQL on the current PR 8 head, inspect every job and annotation with gh, and require exact-SHA green before merge.
-2. Commit and push the separately verified 0068 RED boundary.
-3. Amend the 0068 plan to resolve every PostgreSQL feasibility finding, then obtain a second schema and adversarial PASS before any production SQL.
-4. Implement 0068 with no backfill and no provider or send side effect, then rerun 0067, evidence, erasure, legal-hold, sequence, privilege, recovery, and full repository gates.
+2. Commit and push the corrective E1.1 harness plus reviewed plan, verify remote readback and PR state, then mark the corresponding findings fixed with that commit.
+3. Implement and prove the 0068 session-locked concurrent-index foundation. Extend the harness with exact online catalog, crash/retry, receipt, reverse, and R2 behavior before committing 0068.
+4. Implement 0069 strict projection, backfill/readiness gate, evidence lifecycle, evaluator, erasure, and rollback with no provider or send side effect.
 5. Integrate 0063 campaign/version/task authority with eligibility checks at activation, claim, and completion. Make the durable outbox the only email send path.
 6. Repair Gmail and Microsoft OAuth/token identity, protected secret inventory, native inbound recovery, pacing, reply stop, and sender-health authority. Run fake-provider fault tests before any authorized synthetic canary.
 7. Keep HeyReach dark until the external entitlement and contract blockers are cleared. Then add a disabled adapter, exact receipt reconciliation, dual control, sandbox proof, and a separately authorized canary.
