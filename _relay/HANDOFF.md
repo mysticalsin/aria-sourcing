@@ -2,8 +2,8 @@
 project: MSourcing / ARIA
 shift: 47
 agent: codex-gpt-5
-updated: 2026-07-26 03:36 EDT
-status: phase-1 evidence bridge accepted; candidate-global legal-hold repair next; production blocked
+updated: 2026-07-26 03:57 EDT
+status: 0066 candidate-global legal-hold RED proven; implementation next; production blocked
 ---
 
 # Handoff - MSourcing / ARIA
@@ -12,7 +12,10 @@ status: phase-1 evidence bridge accepted; candidate-global legal-hold repair nex
 
 - Work only from /Users/tony/msourcing-heyreach-foundation-20260725. The OneDrive checkout is not the execution lane.
 - Active branch: codex/candidate-lists-phase1-20260725.
-- Local HEAD: 4fd02dc. The green 0064 authority is be7278d; 4c74b52 is the intentional 0065 RED contract; 4fd02dc is the accepted 0065 implementation. The latest pushed Relay state is still fc529c6 until this shift pushes the two new commits.
+- Remote branch is verified at 4ed88dc04e24be7f9448a41362c7aeb741ba46c2. The green 0064 authority is be7278d; 4c74b52 is the intentional 0065 RED contract; 4fd02dc is the accepted 0065 implementation; 4ed88dc is its Relay/audit closeout.
+- Local HEAD aa4d33c contains the separately committed 0066 RED contract and is not yet pushed. The executable harness SHA is f02dc12245e9e67e31d6acae8ba7cda42d8f204105b9a1f25a6611b242e67a85; database manifest count is 34 and its contract remains 11/11 green.
+- GitHub has no PR for this exact head. Push runs CI 30193073115 and CodeQL 30193073101 both ended with zero executed steps; `gh run view` reports the exact annotation `The job was not started because an Actions budget is preventing further use.` Failed-log lookup returns `log not found` because no runner started.
+- GitHub still reports `vercel-demo` as the default branch. A separate `main` ref exists at bc46336, while `vercel-demo` is 14f76f1; neither is this execution head. The final protected-main topology and merge path must be reconciled explicitly, not inferred.
 - RED-first 0064 commits 3ee2e80 and f92f2ae, implementation be7278d, and Relay closeout d82e2c0 are pushed.
 - Migration 0064 adds four private, forced-RLS tables: candidate_lists, candidate_contact_attestations, candidate_list_members, and candidate_list_operation_receipts.
 - Authenticated members and admins can create a list and add one provenance-bound member. Viewers, members, and admins can read bounded keyset pages through the RPC. Browser candidate JSON is not authority.
@@ -29,6 +32,8 @@ status: phase-1 evidence bridge accepted; candidate-global legal-hold repair nex
 - Fly currently exposes none of the required Google, Microsoft, email webhook/subscription, or HeyReach secret names. The protected deploy preflight rejects unmanaged secret names, so workflow inputs, the allowlist, and the exact desired set must be extended together before any connector secret can pass release.
 - HeyReach has no source implementation. Its exact public API authentication, idempotency, webhook-signature, retry, and receipt contract is not verified. Execution remains disabled until written entitlement, official contract or sandbox evidence, and vendor security/privacy approval exist.
 - The external master plan now separates first-party Gmail/Microsoft 365 activation (Phase 5A) from conditional LinkedIn/HeyReach activation (Phase 5B), with OAuth binding repair, native inbox durability, dual control, and explicitly authorized synthetic-recipient canaries.
+- The executable 0066 design is in `_relay/plans/06-candidate-global-legal-hold-authority.md`. Independent security review requires a distinct candidate-legal-hold advisory namespace: prelocking only the old candidate identity key would invert the retained erasure routine's sorted multi-identity locks. Request takes workspace_state FOR UPDATE first; other legal-hold paths take FOR SHARE before the dedicated lock.
+- 0066 is forward-only. Its checked-in rollback must refuse unconditionally with SQLSTATE 55000 because downgrade restores a known destructive bypass. The 0059 and 0060 rollback guards must also refuse before mutation when the production ledger contains 0066 or later; disposable replay tests explicitly restore 0066 afterward.
 - No Fly deployment, production secret mutation, sourcing activation, LinkedIn automation, outbound contact, or candidate PII handling occurred in this shift.
 
 ## Done this shift
@@ -53,6 +58,8 @@ status: phase-1 evidence bridge accepted; candidate-global legal-hold repair nex
 - Re-ran the final migration through the 78-case candidate-evidence suite, 51-case candidate-list suite, 78-case sourcing-batch suite, and 58-case autonomous-web suite; all are green. Recovery allowlists (15/15), manifest (11/11), privilege checks, harness syntax, and diff hygiene are also green.
 - Committed the accepted 0065 source slice as 4fd02dc after an independent exact-hash audit returned PASS with no remaining P0/P1 inside the bounded migration.
 - Audited the real email/LinkedIn connector surfaces and expanded `/Users/tony/.codex/plans/msourcing-linkedin-campaign-control-20260725.md` with separate Gmail/Microsoft and conditional HeyReach implementation and live-acceptance gates.
+- Added the detailed Relay execution plan for 0066 and completed an independent adversarial audit covering cross-campaign bypass, multiple-hold release/expiry, destructive trigger gaps, verified provider evidence, lock upgrade/inversion, ACLs, rollback, and autonomous-web evidence plus linked staged-PII retention.
+- Captured and committed the test-only 0066 contract as aa4d33c. On the accepted 0065 foundation it reproduced the real defect: campaign-B erasure returned `completed` while campaign-A's hold remained active. No production SQL was added.
 
 ## Verification evidence
 
@@ -75,6 +82,9 @@ status: phase-1 evidence bridge accepted; candidate-global legal-hold repair nex
 - npm run typecheck and npm run typecheck:tests: exit 0.
 - npm test: complete pretest, application, and posttest lifecycle exit 0 on the exact deadlock-fixed tree.
 - npm run lint, npm run audit:dependencies, npm run build:isolated, and Gitleaks: exit 0; the isolated Next.js production build compiled and generated all 66 static pages.
+- bash -n tests/candidate-global-legal-hold-db.sh: exit 0.
+- npm run test:manifest after 0066 RED registration: 11 passed, 0 failed; database group is frozen at 34 entries.
+- bash tests/candidate-global-legal-hold-db.sh before 0066 exists: intentional exit 1 with exact terminal evidence `0065 returned completed for campaign-B erasure while the campaign-A hold remained active`; this is the accepted RED proof, not a green implementation claim.
 
 ## Blockers
 
@@ -83,19 +93,19 @@ status: phase-1 evidence bridge accepted; candidate-global legal-hold repair nex
 3. Phase 1 still lacks list set operations, complete eligibility reasons, recent-contact and suppression gates, shared quota, bounded export, authenticated API routes, accessible UI, browser E2E, and production-shaped performance evidence.
 4. Gmail/Microsoft connector activation is blocked by direct authenticated credential-table DML, OAuth/token-binding defects, missing native inbound subscription/cursor authority, absent protected secret names, missing database-enforced sender auto-pause, missing two-admin sender activation, and no authorized synthetic recipient.
 5. HeyReach activation is blocked by missing written action entitlement, vendor security/privacy decision, official machine-readable API and webhook contract, sandbox proof, and any source implementation.
-6. Parent PR 5 and stacked PR 7 remain unmerged. Latest SHA d82e2c0 CI and CodeQL jobs had zero steps; all seven annotations say the Actions budget prevented startup.
-7. Protected production deployment remains blocked by missing GitHub environment proof, purpose-bound secrets, two active tenant administrators, live model and Tavily bindings, Flowise image acceptance, telemetry, restore/failover, and accepted load evidence.
-8. Fly still represents an older release. A health 200 or the old app shell is not proof for this branch.
+6. Parent PR 5 and stacked PR 7 remain unmerged. Exact-head CI run 30193073115 and CodeQL run 30193073101 had zero steps; all seven annotations say the Actions budget prevented startup.
+7. The repository default is `vercel-demo`, not `main`; the requested protected-main release topology is unresolved and neither existing base ref contains this exact execution head.
+8. Protected production deployment remains blocked by missing GitHub environment proof, purpose-bound secrets, two active tenant administrators, live model and Tavily bindings, Flowise image acceptance, telemetry, restore/failover, and accepted load evidence.
+9. Fly still represents an older release. A health 200 or the old app shell is not proof for this branch.
 
 ## Next steps
 
-1. Push source commit 4fd02dc and this Relay closeout, then verify the remote branch SHA.
-2. Add migration 0066 to make legal-hold evaluation candidate-global across a workspace, with campaign-crossing hold, replay, expiry/release, obligation, and concurrency regressions before any product wiring.
-3. Complete the remaining Phase 1 slices in order: set operations; eligibility and suppression; shared quota and export; authenticated API; accessible recruiter UI; browser E2E and performance proof.
-4. Complete campaigns and sender authority, then repair Gmail/Microsoft OAuth/token binding and implement native durable inbound adapters before provisioning connector secrets or authorizing a canary.
-5. Treat HeyReach as dark capability only until the official contract and entitlement gates are met; never infer endpoints, webhook trust, or delivery evidence from marketing documentation.
-6. Use four independent QA lanes across database/concurrency, security/privacy, API/UI/accessibility, and release/performance. After the whole implementation plan is complete, use Terra as the final independent validator.
-7. Merge and deploy only through protected main after exact-SHA CI, CodeQL, independent approval, environment controls, migration readback, release identity, authorized sourcing/email canaries, telemetry, restore/failover, and capacity receipts are accepted.
+1. Implement the reviewed forward-only 0066 migration, unconditional-refusal rollback, and older 0059/0060 production rollback guards until the committed RED contract becomes green.
+2. Complete the remaining Phase 1 slices in order: set operations; eligibility and suppression; shared quota and export; authenticated API; accessible recruiter UI; browser E2E and performance proof.
+3. Complete campaigns and sender authority, then repair Gmail/Microsoft OAuth/token binding and implement native durable inbound adapters before provisioning connector secrets or authorizing a canary.
+4. Treat HeyReach as dark capability only until the official contract and entitlement gates are met; never infer endpoints, webhook trust, or delivery evidence from marketing documentation.
+5. Use four independent QA lanes across database/concurrency, security/privacy, API/UI/accessibility, and release/performance. After the whole implementation plan is complete, use Terra as the final independent validator.
+6. Merge and deploy only through protected main after exact-SHA CI, CodeQL, independent approval, environment controls, migration readback, release identity, authorized sourcing/email canaries, telemetry, restore/failover, and capacity receipts are accepted.
 
 ## Decisions made (do not relitigate)
 
@@ -107,6 +117,7 @@ status: phase-1 evidence bridge accepted; candidate-global legal-hold repair nex
 - Existing list membership stores an immutable evidence snapshot. Later source expiry or revocation blocks new admission but does not silently rewrite history.
 - Candidate-bearing mutations must take the canonical erasure identity lock before secrets, HMACs, receipts, evidence, or durable candidate data are written.
 - Source-green, protected-CI-green, merged, deployed, canary-green, restore-green, and capacity-green are separate proof states.
+- A privacy-authority repair that closes a known destructive bypass is reversed only by a new reviewed forward migration; 0066 has no enabled downgrade path.
 - Direct production secret mutation, direct main pushes, and branch-protection bypass remain prohibited.
 - Gmail and Microsoft 365 may become first-party live email channels after their independent source, secret, dual-control, release, and canary gates. Their activation does not authorize LinkedIn automation.
 - HeyReach is a contracted-provider possibility, not presumed authority. ARIA will never collect LinkedIn credentials, PINs, cookies, sessions, or proxy settings; adding leads and activating a provider campaign must remain separate approved operations.
