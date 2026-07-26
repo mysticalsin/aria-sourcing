@@ -740,8 +740,8 @@ select candidate_global_hold_test.expect(
       ) > 0
       and position(
         'from public.workspace_state' in lower(pg_get_functiondef(routine.oid))
-      ) < position('for update' in lower(pg_get_functiondef(routine.oid)))
-      and position('for update' in lower(pg_get_functiondef(routine.oid)))
+      ) < position('for share' in lower(pg_get_functiondef(routine.oid)))
+      and position('for share' in lower(pg_get_functiondef(routine.oid)))
         < position(
           'candidate_legal_hold_lock_key' in lower(pg_get_functiondef(routine.oid))
         )
