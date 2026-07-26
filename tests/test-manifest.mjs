@@ -222,6 +222,7 @@ export const testManifest = {
     {"id":"email-outcomes-db","executable":"bash","argv":["tests/email-outcomes-db.sh"]},
     {"id":"loop-authority-contract","executable":"tsx","argv":["tests/loop-authority-contract.mts"]},
     {"id":"sourcing-loop-ignition-route","executable":"node","argv":["--experimental-test-module-mocks","--import","tsx","--test","tests/sourcing-loop-ignition-route.mts"]},
+    {"id":"shortlist-approval-route","executable":"node","argv":["--experimental-test-module-mocks","--import","tsx","--test","tests/shortlist-approval-route.mts"]},
     {"id":"sourcing-loop-worker","executable":"tsx","argv":["tests/sourcing-loop-worker.mts"]},
   ],
   groups: {
@@ -423,6 +424,7 @@ export const testManifest = {
       "email-outcomes-contract",
       "loop-authority-contract",
       "sourcing-loop-ignition-route",
+      "shortlist-approval-route",
       "sourcing-loop-worker",
       "test-manifest-contract",
     ],

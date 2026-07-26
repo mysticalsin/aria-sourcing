@@ -61,6 +61,16 @@ export const PIPELINE_STAGE_TRANSITIONS = Object.freeze({
   outcome_feedback: Object.freeze([]),
 });
 
+export const PIPELINE_STAGE_TRANSITION_PRODUCERS = Object.freeze({
+  "email_sync->inbound_classify": Object.freeze(["handleEmailSync"]),
+  "requisition_parse->campaign_create": Object.freeze(["handleRequisitionParse"]),
+  "sourcing_batch->shortlist_build": Object.freeze(["handleSourcingBatch"]),
+  "provider_poll->shortlist_build": Object.freeze(["handleProviderPoll"]),
+  "enrich_candidate->shortlist_build": Object.freeze(["handleEnrichCandidate"]),
+  "shortlist_build->draft_generate": Object.freeze(["POST /api/shortlist/approve"]),
+  "delivery_reconcile->outcome_feedback": Object.freeze(["handleDeliveryReconcile"]),
+});
+
 export const HANDLER_KINDS = Object.freeze(Object.keys(PIPELINE_STAGE_TRANSITIONS));
 
 const FINAL_INTENTS = new Set([
@@ -368,6 +378,21 @@ export function assertDeclaredSuccessors(kind, successors) {
   }
 }
 
+export function assertDeclaredTransitionProducers(
+  transitions = PIPELINE_STAGE_TRANSITIONS,
+  producers = PIPELINE_STAGE_TRANSITION_PRODUCERS,
+) {
+  for (const [from, successors] of Object.entries(transitions)) {
+    if (!Array.isArray(successors)) throw new HandlerError("transition_map_invalid");
+    for (const to of successors) {
+      const key = `${from}->${to}`;
+      if (!Array.isArray(producers[key]) || producers[key].length === 0) {
+        throw new HandlerError(`transition_producer_missing:${key}`);
+      }
+    }
+  }
+}
+
 function successorJob(kind, idempotencyKey, payload, priority = 100) {
   return { kind, idempotency_key: idempotencyKey, payload, priority };
 }
@@ -483,6 +508,26 @@ async function handleSimpleEvent(job, context, eventType, subjectKind, subjectId
   );
 }
 
+async function handleRequisitionParse(job, context) {
+  const payload = payloadOf(job);
+  const requisitionId = typeof payload.requisitionId === "string" && payload.requisitionId.trim()
+    ? payload.requisitionId.trim()
+    : job.id;
+  const campaignId = typeof payload.campaignId === "string" && payload.campaignId.trim()
+    ? payload.campaignId.trim()
+    : "";
+  const successors = campaignId
+    ? [successorJob("campaign_create", `campaign:${requisitionId}:${campaignId}`, { requisitionId, campaignId }, 80)]
+    : [];
+  return completeJob(
+    context.client,
+    job,
+    { status: "requisition.parse_requested", subjectId: requisitionId },
+    [event("requisition.parse_requested", "requisition", requisitionId, {})],
+    successors,
+  );
+}
+
 async function handleSourcingBatch(job, context) {
   const payload = payloadOf(job);
   const campaignId = boundedText(payload.campaignId, 160, "campaign_id_required");
@@ -585,12 +630,44 @@ async function handleEnrichCandidate(job, context) {
   const payload = payloadOf(job);
   const campaignId = boundedText(payload.campaignId, 160, "campaign_id_required");
   const candidateId = boundedText(payload.candidateId, 160, "candidate_id_required");
+  const enrichedCandidate = isRecord(payload.candidate)
+    ? candidateRecordsFromPayload({ candidates: [payload.candidate] }, campaignId)[0]
+    : null;
+  const successors = enrichedCandidate
+    ? [
+        successorJob("shortlist_build", `shortlist:${campaignId}:enriched:${candidateId}`, {
+          campaignId,
+          batchId: `enriched:${candidateId}`,
+          candidates: [enrichedCandidate],
+        }, 90),
+      ]
+    : [];
   return completeJob(
     context.client,
     job,
     { status: "candidate_enriched", campaignId, candidateId },
     [event("candidate.enriched", "candidate", candidateId, {})],
-    [],
+    successors,
+  );
+}
+
+async function handleDeliveryReconcile(job, context) {
+  const payload = payloadOf(job);
+  const candidateId = typeof payload.candidateId === "string" && payload.candidateId.trim()
+    ? payload.candidateId.trim()
+    : job.id;
+  const campaignId = typeof payload.campaignId === "string" && payload.campaignId.trim()
+    ? payload.campaignId.trim()
+    : "";
+  const successors = candidateId
+    ? [successorJob("outcome_feedback", `outcome:${campaignId || "unknown"}:${candidateId}`, { candidateId, campaignId }, 100)]
+    : [];
+  return completeJob(
+    context.client,
+    job,
+    { status: "delivery.reconcile_requested", subjectId: candidateId },
+    [event("delivery.reconcile_requested", "candidate", candidateId, {})],
+    successors,
   );
 }
 
@@ -707,14 +784,14 @@ async function handleInboundClassify(job, context) {
 const HANDLERS = Object.freeze({
   email_sync: handleEmailSync,
   inbound_classify: handleInboundClassify,
-  requisition_parse: (job, context) => handleSimpleEvent(job, context, "requisition.parse_requested", "requisition", "requisitionId"),
+  requisition_parse: handleRequisitionParse,
   campaign_create: (job, context) => handleSimpleEvent(job, context, "campaign.create_requested", "campaign", "campaignId"),
   sourcing_batch: handleSourcingBatch,
   provider_poll: handleProviderPoll,
   enrich_candidate: handleEnrichCandidate,
   shortlist_build: handleShortlistBuild,
   draft_generate: handleDraftGenerate,
-  delivery_reconcile: (job, context) => handleSimpleEvent(job, context, "delivery.reconcile_requested", "candidate", "candidateId"),
+  delivery_reconcile: handleDeliveryReconcile,
   outcome_feedback: (job, context) => handleSimpleEvent(job, context, "outcome.feedback_requested", "candidate", "candidateId"),
 });
 

@@ -4,8 +4,10 @@ import test from "node:test";
 import { DISCLOSURE_SYSTEM } from "../src/lib/agent-disclosure-policy";
 import {
   HANDLER_KINDS,
+  PIPELINE_STAGE_TRANSITION_PRODUCERS,
   PIPELINE_STAGE_TRANSITIONS,
   assertDeclaredSuccessors,
+  assertDeclaredTransitionProducers,
   buildReplyClassificationPrompt,
   handleAriaJob,
   runSourcingLoopForever,
@@ -60,6 +62,26 @@ test("successor validation rejects handler enqueues absent from the transition m
   );
 });
 
+test("every declared transition has a real enqueue producer", () => {
+  assert.doesNotThrow(() => assertDeclaredTransitionProducers());
+  const declaredEdges = Object.entries(PIPELINE_STAGE_TRANSITIONS).flatMap(([from, successors]) =>
+    successors.map((to) => `${from}->${to}`),
+  );
+  assert.deepEqual(Object.keys(PIPELINE_STAGE_TRANSITION_PRODUCERS).sort(), declaredEdges.sort());
+  assert.throws(
+    () => {
+      const assertGenericTransitionProducers = assertDeclaredTransitionProducers as unknown as (
+        transitions: Record<string, readonly string[]>,
+      ) => void;
+      assertGenericTransitionProducers({
+        ...PIPELINE_STAGE_TRANSITIONS,
+        draft_generate: Object.freeze(["delivery_reconcile"]),
+      } as Record<string, readonly string[]>);
+    },
+    /transition_producer_missing:draft_generate->delivery_reconcile/,
+  );
+});
+
 test("shortlist handler commits candidates through the 0042 patch wrapper without auto-approving the human gate", async () => {
   const candidates = [
     { id: "cand-a", campaignId: "camp-1", name: "Synthetic Candidate A" },
@@ -109,6 +131,74 @@ test("sourcing_batch enqueues shortlist_build with candidate records", async () 
       idempotency_key: "shortlist:camp-1:batch-1",
       payload: { campaignId: "camp-1", batchId: "batch-1", candidates: shortlistedCandidates },
       priority: 90,
+    },
+  ]);
+});
+
+test("requisition_parse enqueues campaign_create when a campaign is present", async () => {
+  const { client, calls } = rpcClient((name) => {
+    if (name === "complete_aria_job") return { data: true, error: null };
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await handleAriaJob(job("requisition_parse", { requisitionId: "req-1", campaignId: "camp-1" }), { client });
+
+  const completion = calls.find((call) => call.name === "complete_aria_job");
+  assert.deepEqual(completion?.args.p_enqueue, [
+    {
+      kind: "campaign_create",
+      idempotency_key: "campaign:req-1:camp-1",
+      payload: { requisitionId: "req-1", campaignId: "camp-1" },
+      priority: 80,
+    },
+  ]);
+});
+
+test("enrich_candidate can enqueue shortlist_build with an enriched candidate record", async () => {
+  const { client, calls } = rpcClient((name) => {
+    if (name === "complete_aria_job") return { data: true, error: null };
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await handleAriaJob(
+    job("enrich_candidate", {
+      campaignId: "camp-1",
+      candidateId: "cand-1",
+      candidate: { id: "cand-1", name: "Synthetic Enriched Candidate" },
+    }),
+    { client },
+  );
+
+  const completion = calls.find((call) => call.name === "complete_aria_job");
+  assert.deepEqual(completion?.args.p_enqueue, [
+    {
+      kind: "shortlist_build",
+      idempotency_key: "shortlist:camp-1:enriched:cand-1",
+      payload: {
+        campaignId: "camp-1",
+        batchId: "enriched:cand-1",
+        candidates: [{ id: "cand-1", name: "Synthetic Enriched Candidate", campaignId: "camp-1", stage: "Sourced" }],
+      },
+      priority: 90,
+    },
+  ]);
+});
+
+test("delivery_reconcile enqueues outcome_feedback for the reconciled candidate", async () => {
+  const { client, calls } = rpcClient((name) => {
+    if (name === "complete_aria_job") return { data: true, error: null };
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await handleAriaJob(job("delivery_reconcile", { campaignId: "camp-1", candidateId: "cand-1" }), { client });
+
+  const completion = calls.find((call) => call.name === "complete_aria_job");
+  assert.deepEqual(completion?.args.p_enqueue, [
+    {
+      kind: "outcome_feedback",
+      idempotency_key: "outcome:camp-1:cand-1",
+      payload: { candidateId: "cand-1", campaignId: "camp-1" },
+      priority: 100,
     },
   ]);
 });
