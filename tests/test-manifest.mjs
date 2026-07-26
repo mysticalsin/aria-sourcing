@@ -260,6 +260,7 @@ export const testManifest = {
     {"id":"sourcing-result-durability-db","executable":"bash","argv":["tests/sourcing-result-durability-db.sh"]},
     {"id":"autonomous-web-sourcing-db","executable":"bash","argv":["tests/autonomous-web-sourcing-db.sh"]},
     {"id":"sequences-db","executable":"bash","argv":["tests/sequences-db.sh"]},
+    {"id":"candidate-lists-db","executable":"bash","argv":["tests/candidate-lists-db.sh"]},
   ],
   groups: {
     "pretest": [
@@ -606,6 +607,7 @@ export const testManifest = {
       "sourcing-result-durability-db",
       "autonomous-web-sourcing-db",
       "sequences-db",
+      "candidate-lists-db",
     ],
     "recovery": [
       "orphan-owner-recovery-contract",

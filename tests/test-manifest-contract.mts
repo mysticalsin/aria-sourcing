@@ -207,6 +207,7 @@ test("enterprise sourcing suites are each registered in exactly one lifecycle ph
     "sourcing-result-durability-db",
     "requisition-input-retention-db",
     "autonomous-web-sourcing-db",
+    "candidate-lists-db",
   ];
   const databaseIds = resolveTestGroup(testManifest, "database").map(({ id }) => id);
   for (const id of expectedDatabaseIds) {
@@ -350,7 +351,7 @@ test("named manifest groups freeze their recursive baselines", () => {
     "framework-adapter": [2, "93c2091d26e285e65c8abbe4315913998f0528b61dc1089574755d997cc28bc2"],
     "candidate-erasure": [2, "42ee1e6bf280c482f01bcfdb41d601ea8cdaaeb8891a210777901771f56212b7"],
     "owner-recovery": [2, "2ac6a4c9232561d07292eefd046f87d301995becd14048d270972adcbc14ded3"],
-    database: [31, "2e1e1e319200cf3d0f00fb4f1c46a53c0ac4cc85dd015f44230566a18c9280a9"],
+    database: [32, "69cc922050b472d3808dc158e1c26b33fdfdd760a8ca249405286528be2ce630"],
     recovery: [2, "2ac6a4c9232561d07292eefd046f87d301995becd14048d270972adcbc14ded3"],
     obscura: [1, "c3fe29ff86819660733b568917fd0e39d09d275d94261387747da26da852f544"],
     "authority-regression": [9, "6e51deb44286815d3e0f6cf75e59a603b79da3823dfa876a0fc1c030e2b740a4"],

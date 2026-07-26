@@ -41,6 +41,7 @@ autonomous_web_sourcing_results
 autonomous_web_sourcing_staged_results
 calendar_booking_ledger
 campaign_create_receipts
+candidate_contact_attestations
 candidate_erasure_obligations
 candidate_erasure_provider_evidence_receipts
 candidate_erasure_receipts
@@ -48,6 +49,9 @@ candidate_erasure_requests
 candidate_erasure_suppression_tombstones
 candidate_identities
 candidate_legal_holds
+candidate_list_members
+candidate_list_operation_receipts
+candidate_lists
 candidate_outcome_events
 candidate_payload_provenance
 candidates
@@ -71,6 +75,9 @@ need_ingress_credentials
 outbound_content_cache
 outreach_approvals
 outreach_ledger
+outreach_sequence_manual_action_receipts
+outreach_sequence_manual_approval_consumptions
+outreach_sequence_release_controls
 outreach_sequence_steps
 outreach_sequences
 owner_recovery_receipts

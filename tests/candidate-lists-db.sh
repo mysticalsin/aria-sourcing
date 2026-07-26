@@ -29,6 +29,12 @@ tmp_dir="$(mktemp -d)"
 export DB_HOST_PORT=0
 
 cleanup() {
+  for background_pid in "${holder_pid:-}" "${race_pid_1:-}" "${race_pid_2:-}"; do
+    if [[ -n "$background_pid" ]]; then
+      kill "$background_pid" >/dev/null 2>&1 || true
+      wait "$background_pid" >/dev/null 2>&1 || true
+    fi
+  done
   docker compose -p "$project" down -v --remove-orphans >/dev/null 2>&1 || true
   rm -rf "$tmp_dir"
 }
@@ -84,11 +90,28 @@ psql_stdin --single-transaction -q < "$migration"
 
 # Empty rollback must succeed and remove the new authority cleanly.
 psql_stdin -q < "$rollback"
-empty_rollback_gone="$(psql_stdin -Atq -c "select (to_regclass('public.candidate_lists') is null)::text")"
+empty_rollback_gone="$(psql_stdin -Atq -c "
+  select (
+    to_regclass('public.candidate_lists') is null
+    and to_regclass('public.candidate_list_members') is null
+    and to_regclass('public.candidate_list_operation_receipts') is null
+    and to_regclass('public.candidate_contact_attestations') is null
+    and to_regclass('public.candidate_contact_attestations_id_seq') is null
+    and to_regclass('public.candidate_list_operation_receipts_id_seq') is null
+    and to_regprocedure('public.create_candidate_list(text,uuid)') is null
+    and to_regprocedure('public.add_candidate_list_member(uuid,text,text,uuid)') is null
+    and to_regprocedure('public.list_candidate_list_members(uuid,timestamptz,uuid,int)') is null
+    and to_regprocedure('public.reject_candidate_list_evidence_mutation()') is null
+    and to_regprocedure('public.cleanup_erased_candidate_lists()') is null
+  )::text
+")"
 if [[ "$empty_rollback_gone" != "true" ]]; then
-  echo "candidate-lists-db: empty rollback did not remove public.candidate_lists" >&2
+  echo "candidate-lists-db: empty rollback did not remove every 0064 object" >&2
   exit 1
 fi
+
+# A retry after an already-completed empty rollback must remain harmless.
+psql_stdin -q < "$rollback"
 
 # Forward reapply after an empty rollback, then a second reapply while already
 # applied, must both be safe (deploy reconciliation can retry either state).
@@ -215,18 +238,21 @@ insert into auth.users (
 ) values
   ('c1000000-0000-4000-8000-000000000001','00000000-0000-0000-0000-000000000000','authenticated','authenticated','lists-admin-a@example.test','',now(),'{}','{}',now(),now()),
   ('c2000000-0000-4000-8000-000000000002','00000000-0000-0000-0000-000000000000','authenticated','authenticated','lists-member-a@example.test','',now(),'{}','{}',now(),now()),
-  ('c3000000-0000-4000-8000-000000000003','00000000-0000-0000-0000-000000000000','authenticated','authenticated','lists-admin-b@example.test','',now(),'{}','{}',now(),now())
+  ('c3000000-0000-4000-8000-000000000003','00000000-0000-0000-0000-000000000000','authenticated','authenticated','lists-admin-b@example.test','',now(),'{}','{}',now(),now()),
+  ('c4000000-0000-4000-8000-000000000004','00000000-0000-0000-0000-000000000000','authenticated','authenticated','lists-admin-c@example.test','',now(),'{}','{}',now(),now())
 on conflict (id) do nothing;
 
 insert into public.workspaces(id, name, allowed_domain) values
   ('91111111-1111-4111-8111-111111111111','Lists Tenant A','lists-a.example.test'),
-  ('92222222-2222-4222-8222-222222222222','Lists Tenant B','lists-b.example.test')
+  ('92222222-2222-4222-8222-222222222222','Lists Tenant B','lists-b.example.test'),
+  ('95555555-5555-4555-8555-555555555555','Lists Tenant C','lists-c.example.test')
 on conflict (id) do nothing;
 
 insert into public.profiles(id, email, full_name, workspace_id, role) values
-  ('c1000000-0000-4000-8000-000000000001','lists-admin-a@example.test','Lists Member A','91111111-1111-4111-8111-111111111111','member'),
+  ('c1000000-0000-4000-8000-000000000001','lists-admin-a@example.test','Lists Admin A','91111111-1111-4111-8111-111111111111','admin'),
   ('c2000000-0000-4000-8000-000000000002','lists-member-a@example.test','Lists Viewer A','91111111-1111-4111-8111-111111111111','viewer'),
-  ('c3000000-0000-4000-8000-000000000003','lists-admin-b@example.test','Lists Admin B','92222222-2222-4222-8222-222222222222','admin')
+  ('c3000000-0000-4000-8000-000000000003','lists-admin-b@example.test','Lists Admin B','92222222-2222-4222-8222-222222222222','admin'),
+  ('c4000000-0000-4000-8000-000000000004','lists-admin-c@example.test','Lists Admin C','95555555-5555-4555-8555-555555555555','admin')
 on conflict (workspace_id, id) do nothing;
 
 insert into public.candidates(
@@ -239,7 +265,10 @@ insert into public.candidates(
   ('91111111-1111-4111-8111-111111111111','lists-campaign','cand-tie-2','tie-2@example.test','Tie Two','manual','{}'),
   ('91111111-1111-4111-8111-111111111111','lists-campaign','cand-tie-3','tie-3@example.test','Tie Three','manual','{}'),
   ('91111111-1111-4111-8111-111111111111','lists-campaign','cand-concurrent','concurrent@example.test','Concurrent','manual','{}'),
-  ('92222222-2222-4222-8222-222222222222','lists-campaign','cand-foreign','foreign@example.test','Foreign Only','manual','{}');
+  ('91111111-1111-4111-8111-111111111111','lists-campaign','cand-erase','erase@example.test','Erase Me','manual','{}'),
+  ('91111111-1111-4111-8111-111111111111','lists-campaign','cand-race-erase','race-erase@example.test','Race Erase','manual','{}'),
+  ('92222222-2222-4222-8222-222222222222','lists-campaign','cand-foreign','foreign@example.test','Foreign Only','manual','{}'),
+  ('95555555-5555-4555-8555-555555555555','lists-campaign','cand-no-secret-erasure','no-secret@example.test','No Secret Erasure','manual','{}');
 
 insert into public.candidate_contact_attestations(
   workspace_id, campaign_id, candidate_id, attestation_kind, value_code,
@@ -252,6 +281,8 @@ insert into public.candidate_contact_attestations(
   ('91111111-1111-4111-8111-111111111111','lists-campaign','cand-tie-1','manual_provenance','operator_verified',repeat('5',64),'c1000000-0000-4000-8000-000000000001','2026-07-20 09:00:00+00'),
   ('91111111-1111-4111-8111-111111111111','lists-campaign','cand-tie-2','manual_provenance','operator_verified',repeat('6',64),'c1000000-0000-4000-8000-000000000001','2026-07-20 09:00:00+00'),
   ('91111111-1111-4111-8111-111111111111','lists-campaign','cand-tie-3','manual_provenance','operator_verified',repeat('7',64),'c1000000-0000-4000-8000-000000000001','2026-07-20 09:00:00+00'),
+  ('91111111-1111-4111-8111-111111111111','lists-campaign','cand-erase','manual_provenance','operator_verified',repeat('9',64),'c1000000-0000-4000-8000-000000000001','2026-07-20 09:00:00+00'),
+  ('91111111-1111-4111-8111-111111111111','lists-campaign','cand-race-erase','manual_provenance','operator_verified',repeat('a',64),'c1000000-0000-4000-8000-000000000001','2026-07-20 09:00:00+00'),
   ('92222222-2222-4222-8222-222222222222','lists-campaign','cand-foreign','manual_provenance','operator_verified',repeat('8',64),'c3000000-0000-4000-8000-000000000003','2026-07-20 09:00:00+00');
 
 select candidate_lists_test.expect(
@@ -294,6 +325,51 @@ select candidate_lists_test.expect(
 );
 
 select candidate_lists_test.expect(
+  'given_phase_one_functions_and_identity_sequences_when_acl_matrix_is_checked_then_only_authenticated_can_execute_public_rpcs',
+  has_function_privilege('authenticated', 'public.create_candidate_list(text,uuid)', 'EXECUTE')
+  and has_function_privilege('authenticated', 'public.add_candidate_list_member(uuid,text,text,uuid)', 'EXECUTE')
+  and has_function_privilege('authenticated', 'public.list_candidate_list_members(uuid,timestamptz,uuid,integer)', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'public.reject_candidate_list_evidence_mutation()', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'public.cleanup_erased_candidate_lists()', 'EXECUTE')
+  and not exists (
+    select 1
+      from (values ('anon'),('service_role'),('authenticator')) runtime(role_name)
+      cross join (values
+        ('public.create_candidate_list(text,uuid)'),
+        ('public.add_candidate_list_member(uuid,text,text,uuid)'),
+        ('public.list_candidate_list_members(uuid,timestamptz,uuid,integer)'),
+        ('public.reject_candidate_list_evidence_mutation()'),
+        ('public.cleanup_erased_candidate_lists()')
+      ) authority(signature)
+     where has_function_privilege(runtime.role_name, authority.signature, 'EXECUTE')
+  )
+  and not exists (
+    select 1
+      from (values ('anon'),('authenticated'),('service_role'),('authenticator')) runtime(role_name)
+      cross join (values
+        ('public.candidate_contact_attestations_id_seq'),
+        ('public.candidate_list_operation_receipts_id_seq')
+      ) authority(sequence_name)
+     where has_sequence_privilege(runtime.role_name, authority.sequence_name, 'USAGE')
+        or has_sequence_privilege(runtime.role_name, authority.sequence_name, 'SELECT')
+        or has_sequence_privilege(runtime.role_name, authority.sequence_name, 'UPDATE')
+  )
+);
+
+select candidate_lists_test.expect(
+  'given_member_pagination_identity_when_schema_is_inspected_then_the_tiebreaker_is_an_opaque_uuid_with_no_global_activity_sequence',
+  exists (
+    select 1
+      from pg_catalog.pg_attribute attribute
+     where attribute.attrelid = 'public.candidate_list_members'::regclass
+       and attribute.attname = 'member_id'
+       and attribute.atttypid = 'uuid'::regtype
+       and not attribute.attisdropped
+  )
+  and to_regclass('public.candidate_list_members_member_seq_seq') is null
+);
+
+select candidate_lists_test.expect(
   'given_tenant_bearing_member_and_evidence_tables_when_foreign_keys_are_inspected_then_workspace_is_part_of_each_candidate_or_list_reference',
   exists (
     select 1 from pg_catalog.pg_constraint
@@ -308,6 +384,14 @@ select candidate_lists_test.expect(
        and contype = 'f'
        and confrelid = 'public.candidates'::regclass
        and pg_get_constraintdef(oid) like 'FOREIGN KEY (workspace_id, campaign_id, candidate_id)%'
+  )
+  and exists (
+    select 1 from pg_catalog.pg_constraint
+     where conrelid = 'public.candidate_list_members'::regclass
+       and contype = 'f'
+       and confrelid = 'public.candidate_contact_attestations'::regclass
+       and pg_get_constraintdef(oid) like
+         'FOREIGN KEY (workspace_id, campaign_id, candidate_id, evidence_attestation_id, evidence_sha256, evidence_recorded_at)%'
   )
   and exists (
     select 1 from pg_catalog.pg_constraint
@@ -343,17 +427,20 @@ select candidate_lists_test.expect(
   and to_regprocedure('public.add_candidate_list_member(uuid,text,text,uuid)') is not null
   and to_regprocedure('public.add_candidate_list_member(uuid,uuid,text,text,uuid)') is null
   and to_regprocedure('public.add_candidate_list_member(uuid,text,text,uuid,uuid)') is null
-  and to_regprocedure('public.list_candidate_list_members(uuid,timestamptz,bigint,int)') is not null
+  and to_regprocedure('public.list_candidate_list_members(uuid,timestamptz,uuid,int)') is not null
 );
 
 -- ---------------------------------------------------------------------------
 -- create_candidate_list: authenticated-only, workspace derived from caller.
 -- ---------------------------------------------------------------------------
+begin;
+set local role anon;
 select candidate_lists_test.expect_sqlstate(
   'given_anonymous_caller_when_create_list_then_denied',
   $$select public.create_candidate_list('Anon list','90000000-0000-4000-8000-000000000001')$$,
   array['42501']
 );
+commit;
 
 begin;
 set local role service_role;
@@ -521,6 +608,18 @@ select 'add-already-member', public.add_candidate_list_member(
   (select (output->>'list_id')::uuid from candidate_lists_test.outputs where case_name = 'create-a'),
   'lists-campaign', 'cand-manual', 'a0000000-0000-4000-8000-000000000008'
 );
+
+insert into candidate_lists_test.outputs(case_name, output)
+select 'add-then-erase', public.add_candidate_list_member(
+  (select (output->>'list_id')::uuid from candidate_lists_test.outputs where case_name = 'create-a'),
+  'lists-campaign', 'cand-erase', 'a0000000-0000-4000-8000-000000000009'
+);
+
+insert into candidate_lists_test.outputs(case_name, output)
+select 'add-erase-missing-list', public.add_candidate_list_member(
+  '9999999a-0000-4000-8000-000000000000',
+  'lists-campaign', 'cand-erase', 'a0000000-0000-4000-8000-000000000010'
+);
 commit;
 
 select candidate_lists_test.expect(
@@ -562,11 +661,88 @@ select candidate_lists_test.expect(
         where list_id = (select (output->>'list_id')::uuid from candidate_lists_test.outputs where case_name = 'create-a')
           and campaign_id = 'lists-campaign' and candidate_id = 'cand-manual'
           and evidence_kind = 'manual_attestation'
-          and evidence_sha256 = repeat('1',64))
+          and evidence_attestation_id = (
+            select id from public.candidate_contact_attestations
+             where workspace_id = '91111111-1111-4111-8111-111111111111'
+               and campaign_id = 'lists-campaign'
+               and candidate_id = 'cand-manual'
+               and evidence_sha256 = repeat('1',64)
+          )
+          and evidence_sha256 = repeat('1',64)
+          and evidence_recorded_at = '2026-07-20 09:00:00+00'::timestamptz)
   and (select count(*) = 1 from public.candidate_list_operation_receipts
         where idempotency_key = 'a0000000-0000-4000-8000-000000000007'
           and operation_kind = 'add_member')
 );
+select candidate_lists_test.expect_sqlstate(
+  'given_an_attestation_for_a_different_candidate_when_inserting_a_member_then_the_database_rejects_the_mismatched_evidence_identity',
+  format(
+    'insert into public.candidate_list_members(workspace_id,list_id,campaign_id,candidate_id,evidence_kind,evidence_attestation_id,evidence_sha256,evidence_recorded_at,added_by) values (%L,%L,%L,%L,%L,%s,%L,%L,%L)',
+    '91111111-1111-4111-8111-111111111111',
+    (select output->>'list_id' from candidate_lists_test.outputs where case_name = 'create-a'),
+    'lists-campaign',
+    'cand-provider',
+    'manual_attestation',
+    (select id from public.candidate_contact_attestations
+      where workspace_id = '91111111-1111-4111-8111-111111111111'
+        and campaign_id = 'lists-campaign'
+        and candidate_id = 'cand-manual'),
+    repeat('1',64),
+    '2026-07-20 09:00:00+00',
+    'c1000000-0000-4000-8000-000000000001'
+  ),
+  array['23503']
+);
+
+insert into public.candidate_lists(id, workspace_id, name, created_by)
+values (
+  '94444444-4444-4444-8444-444444444444',
+  '91111111-1111-4111-8111-111111111111',
+  'Evidence snapshot invariant fixture',
+  'c1000000-0000-4000-8000-000000000001'
+);
+
+select candidate_lists_test.expect_sqlstate(
+  'given_a_valid_attestation_identity_with_a_changed_snapshot_digest_when_inserting_a_member_then_the_database_rejects_the_mutated_snapshot',
+  format(
+    'insert into public.candidate_list_members(workspace_id,list_id,campaign_id,candidate_id,evidence_kind,evidence_attestation_id,evidence_sha256,evidence_recorded_at,added_by) values (%L,%L,%L,%L,%L,%s,%L,%L,%L)',
+    '91111111-1111-4111-8111-111111111111',
+    '94444444-4444-4444-8444-444444444444',
+    'lists-campaign',
+    'cand-manual',
+    'manual_attestation',
+    (select id from public.candidate_contact_attestations
+      where workspace_id = '91111111-1111-4111-8111-111111111111'
+        and campaign_id = 'lists-campaign'
+        and candidate_id = 'cand-manual'),
+    repeat('f',64),
+    '2026-07-20 09:00:00+00',
+    'c1000000-0000-4000-8000-000000000001'
+  ),
+  array['23503']
+);
+select candidate_lists_test.expect_sqlstate(
+  'given_a_valid_attestation_identity_with_a_changed_snapshot_timestamp_when_inserting_a_member_then_the_database_rejects_the_mutated_snapshot',
+  format(
+    'insert into public.candidate_list_members(workspace_id,list_id,campaign_id,candidate_id,evidence_kind,evidence_attestation_id,evidence_sha256,evidence_recorded_at,added_by) values (%L,%L,%L,%L,%L,%s,%L,%L,%L)',
+    '91111111-1111-4111-8111-111111111111',
+    '94444444-4444-4444-8444-444444444444',
+    'lists-campaign',
+    'cand-manual',
+    'manual_attestation',
+    (select id from public.candidate_contact_attestations
+      where workspace_id = '91111111-1111-4111-8111-111111111111'
+        and campaign_id = 'lists-campaign'
+        and candidate_id = 'cand-manual'),
+    repeat('1',64),
+    '2026-07-20 09:00:01+00',
+    'c1000000-0000-4000-8000-000000000001'
+  ),
+  array['23503']
+);
+
+delete from public.candidate_lists
+ where id = '94444444-4444-4444-8444-444444444444';
 select candidate_lists_test.expect(
   'given_the_exact_same_add_replayed_with_the_same_idempotency_key_then_exact_stored_result_is_returned',
   (select a.output = b.output
@@ -592,6 +768,193 @@ select candidate_lists_test.expect(
           and campaign_id = 'lists-campaign' and candidate_id = 'cand-manual')
 );
 
+select candidate_lists_test.expect(
+  'given_candidate_specific_add_receipts_before_erasure_when_inspected_then_the_erasable_subject_hmac_is_exact_even_when_the_list_was_missing',
+  (select count(*) = 2
+     from public.candidate_list_operation_receipts receipt
+    where receipt.idempotency_key in (
+      'a0000000-0000-4000-8000-000000000009',
+      'a0000000-0000-4000-8000-000000000010'
+    )
+      and receipt.candidate_subject_hmac = public.sourcing_authority_hmac(
+        receipt.workspace_id,
+        jsonb_build_array(
+          'candidate_list_subject_v1', 'lists-campaign', 'cand-erase'
+        )::text
+      ))
+  and (select output = '{"status":"list_not_found"}'::jsonb
+         from candidate_lists_test.outputs
+        where case_name = 'add-erase-missing-list')
+);
+
+insert into public.workspace_state(workspace_id, state)
+select
+  '91111111-1111-4111-8111-111111111111',
+  jsonb_build_object(
+    'candidates',
+    jsonb_agg(
+      candidate.payload || jsonb_build_object(
+        'id', candidate.id,
+        'campaignId', candidate.campaign_id,
+        'email', candidate.email,
+        'name', candidate.name
+      )
+      order by candidate.id
+    )
+  )
+from public.candidates candidate
+where candidate.workspace_id = '91111111-1111-4111-8111-111111111111'
+on conflict (workspace_id) do update set state = excluded.state;
+
+begin;
+set local role service_role;
+select candidate_lists_test.set_service_claims('c1000000-0000-4000-8000-000000000001');
+select public.request_candidate_erasure(
+  '91111111-1111-4111-8111-111111111111',
+  'c1000000-0000-4000-8000-000000000001',
+  'lists-campaign',
+  'cand-erase',
+  'e0000000-0000-4000-8000-000000000001'
+);
+commit;
+
+select candidate_lists_test.expect(
+  'given_a_listed_candidate_is_erased_through_the_governed_request_when_cleanup_runs_then_membership_attestation_and_every_candidate_specific_add_receipt_are_removed',
+  not exists (
+    select 1 from public.candidate_list_members
+     where workspace_id = '91111111-1111-4111-8111-111111111111'
+       and campaign_id = 'lists-campaign' and candidate_id = 'cand-erase'
+  )
+  and not exists (
+    select 1 from public.candidate_contact_attestations
+     where workspace_id = '91111111-1111-4111-8111-111111111111'
+       and campaign_id = 'lists-campaign' and candidate_id = 'cand-erase'
+  )
+  and not exists (
+    select 1 from public.candidate_list_operation_receipts
+     where idempotency_key in (
+       'a0000000-0000-4000-8000-000000000009',
+       'a0000000-0000-4000-8000-000000000010'
+     )
+  )
+  and (select count(*) = 3
+         from public.candidate_erasure_receipts receipt
+         join public.candidate_erasure_requests request on request.id = receipt.request_id
+        where request.request_key = 'e0000000-0000-4000-8000-000000000001'
+          and receipt.store_name in (
+            'candidate_list_members',
+            'candidate_contact_attestations',
+            'candidate_list_operation_receipts'
+          ))
+  and (select scrubbed_rows = 2
+         from public.candidate_erasure_receipts receipt
+         join public.candidate_erasure_requests request on request.id = receipt.request_id
+        where request.request_key = 'e0000000-0000-4000-8000-000000000001'
+          and receipt.store_name = 'candidate_list_operation_receipts')
+);
+
+begin;
+set local role authenticated;
+select candidate_lists_test.set_authenticated_claims('c1000000-0000-4000-8000-000000000001');
+insert into candidate_lists_test.outputs(case_name, output)
+select 'add-after-erasure', public.add_candidate_list_member(
+  (select (output->>'list_id')::uuid
+     from candidate_lists_test.outputs where case_name = 'create-a'),
+  'lists-campaign',
+  'cand-erase',
+  'a0000000-0000-4000-8000-000000000011'
+);
+commit;
+
+select candidate_lists_test.expect(
+  'given_a_candidate_has_been_erased_when_an_add_is_attempted_again_then_non_disclosing_not_found_is_returned_without_recreating_a_candidate_linked_receipt',
+  (select output = '{"status":"candidate_not_found"}'::jsonb
+     from candidate_lists_test.outputs
+    where case_name = 'add-after-erasure')
+  and not exists (
+    select 1
+      from public.candidate_list_operation_receipts receipt
+     where receipt.workspace_id = '91111111-1111-4111-8111-111111111111'
+       and (
+         receipt.idempotency_key = 'a0000000-0000-4000-8000-000000000011'
+         or receipt.candidate_subject_hmac = public.sourcing_authority_hmac(
+           receipt.workspace_id,
+           jsonb_build_array(
+             'candidate_list_subject_v1', 'lists-campaign', 'cand-erase'
+           )::text
+         )
+       )
+  )
+);
+
+-- A legacy/manual candidate can exist before candidate-list operations have
+-- created the workspace sourcing HMAC secret. The candidate-list erasure
+-- trigger runs as soon as the canonical request row is inserted, before the
+-- erasure RPC creates that secret, and therefore must treat receipt cleanup as
+-- an optional no-op while still allowing the governed erasure to complete.
+select candidate_lists_test.expect(
+  'given_a_workspace_with_no_candidate_list_operations_when_inspected_before_erasure_then_no_sourcing_hmac_secret_exists',
+  not exists (
+    select 1
+      from public.sourcing_learning_secrets
+     where workspace_id = '95555555-5555-4555-8555-555555555555'
+  )
+);
+
+insert into public.workspace_state(workspace_id, state)
+values (
+  '95555555-5555-4555-8555-555555555555',
+  '{"candidates":[{"id":"cand-no-secret-erasure","campaignId":"lists-campaign","email":"no-secret@example.test","name":"No Secret Erasure"}]}'::jsonb
+)
+on conflict (workspace_id) do update set state = excluded.state;
+
+begin;
+set local role service_role;
+select candidate_lists_test.set_service_claims('c4000000-0000-4000-8000-000000000004');
+insert into candidate_lists_test.outputs(case_name, output)
+select 'erase-no-secret', public.request_candidate_erasure(
+  '95555555-5555-4555-8555-555555555555',
+  'c4000000-0000-4000-8000-000000000004',
+  'lists-campaign',
+  'cand-no-secret-erasure',
+  'e0000000-0000-4000-8000-000000000002'
+);
+commit;
+
+select candidate_lists_test.expect(
+  'given_a_legacy_candidate_in_a_workspace_without_a_sourcing_secret_when_governed_erasure_runs_then_the_request_completes',
+  (select output->>'status' = 'completed'
+     from candidate_lists_test.outputs
+    where case_name = 'erase-no-secret')
+);
+select candidate_lists_test.expect(
+  'given_the_no_secret_erasure_completed_when_workspace_state_is_read_then_the_candidate_is_anonymized_and_suppressed',
+  (select candidate.value->>'name' = 'Anonymized Candidate'
+          and candidate.value->>'email' = ''
+          and candidate.value->>'stage' = 'Suppressed'
+          and candidate.value->'complianceFlags'->>'anonymized' = 'true'
+          and candidate.value->'complianceFlags'->>'doNotContact' = 'true'
+     from public.workspace_state state
+     cross join lateral jsonb_array_elements(state.state->'candidates') candidate(value)
+    where state.workspace_id = '95555555-5555-4555-8555-555555555555'
+      and candidate.value->>'id' = 'cand-no-secret-erasure'
+      and candidate.value->>'campaignId' = 'lists-campaign')
+);
+select candidate_lists_test.expect(
+  'given_the_no_secret_erasure_completed_when_candidate_list_receipts_are_read_then_all_three_zero_row_receipts_exist',
+  (select count(*) = 3
+         from public.candidate_erasure_receipts receipt
+         join public.candidate_erasure_requests request on request.id = receipt.request_id
+        where request.workspace_id = '95555555-5555-4555-8555-555555555555'
+          and request.request_key = 'e0000000-0000-4000-8000-000000000002'
+          and receipt.store_name in (
+            'candidate_list_members',
+            'candidate_contact_attestations',
+            'candidate_list_operation_receipts'
+          )
+          and receipt.scrubbed_rows = 0)
+);
+
 -- ---------------------------------------------------------------------------
 -- Concurrent add uniqueness: two distinct sessions race to add the same
 -- candidate with two different idempotency keys. Exactly one member row must
@@ -601,14 +964,166 @@ SQL
 
 concurrent_list_id="$(psql_stdin -Atq -c "select (output->>'list_id') from candidate_lists_test.outputs where case_name = 'create-a'")"
 
-concurrent_add() {
-  local key="$1"
+erasure_race_add() {
   docker run --rm -i \
     --network "$network" \
     --env PGPASSWORD="$bootstrap_password" \
     --entrypoint psql \
     "$client_image" \
     -X -v ON_ERROR_STOP=1 -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d postgres -q <<SQL
+set application_name = 'candidate-lists-erasure-race-add';
+begin;
+set local role authenticated;
+select candidate_lists_test.set_authenticated_claims('c1000000-0000-4000-8000-000000000001');
+insert into candidate_lists_test.outputs(case_name, output)
+select 'add-erasure-race', public.add_candidate_list_member(
+  '${concurrent_list_id}',
+  'lists-campaign',
+  'cand-race-erase',
+  'a0000000-0000-4000-8000-000000000012'
+);
+commit;
+SQL
+}
+
+erasure_race_request() {
+  docker run --rm -i \
+    --network "$network" \
+    --env PGPASSWORD="$bootstrap_password" \
+    --entrypoint psql \
+    "$client_image" \
+    -X -v ON_ERROR_STOP=1 -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d postgres -q <<'SQL'
+set application_name = 'candidate-lists-erasure-race-request';
+begin;
+set local role service_role;
+select candidate_lists_test.set_service_claims('c1000000-0000-4000-8000-000000000001');
+insert into candidate_lists_test.outputs(case_name, output)
+select 'erase-race', public.request_candidate_erasure(
+  '91111111-1111-4111-8111-111111111111',
+  'c1000000-0000-4000-8000-000000000001',
+  'lists-campaign',
+  'cand-race-erase',
+  'e0000000-0000-4000-8000-000000000003'
+);
+commit;
+SQL
+}
+
+# Hold the canonical candidate-erasure identity lock until both operations are
+# waiting on it. Regardless of which waiter acquires it first, the final state
+# must contain neither candidate-list data nor a candidate-linked add receipt.
+psql_stdin -q > "$tmp_dir/erasure-race-holder.log" 2>&1 <<'SQL' &
+set application_name = 'candidate-lists-erasure-race-holder';
+begin;
+select pg_advisory_xact_lock(public.candidate_erasure_identity_lock_key(
+  '91111111-1111-4111-8111-111111111111',
+  'candidate_id',
+  'cand-race-erase'
+));
+select pg_sleep(180);
+commit;
+SQL
+holder_pid=$!
+
+holder_db_pid=""
+for _ in $(seq 1 120); do
+  holder_db_pid="$(psql_stdin -Atq -c "
+    select pid
+      from pg_stat_activity
+     where application_name = 'candidate-lists-erasure-race-holder'
+       and state = 'active'
+       and query like '%pg_sleep(180)%'
+     limit 1
+  ")"
+  [[ -n "$holder_db_pid" ]] && break
+  sleep 0.25
+done
+if [[ -z "$holder_db_pid" ]]; then
+  echo "candidate-lists-db: erasure race holder never acquired the candidate identity lock" >&2
+  exit 1
+fi
+
+erasure_race_add &
+race_pid_1=$!
+erasure_race_request &
+race_pid_2=$!
+
+waiting_erasure_racers=""
+for _ in $(seq 1 120); do
+  waiting_erasure_racers="$(psql_stdin -Atq -c "
+    select count(*)
+      from pg_stat_activity
+     where application_name in (
+       'candidate-lists-erasure-race-add',
+       'candidate-lists-erasure-race-request'
+     )
+       and wait_event_type = 'Lock'
+       and wait_event = 'advisory'
+  ")"
+  [[ "$waiting_erasure_racers" == "2" ]] && break
+  sleep 0.25
+done
+if [[ "$waiting_erasure_racers" != "2" ]]; then
+  psql_stdin -Atq -c "select pg_terminate_backend(${holder_db_pid})" >/dev/null || true
+  wait "$holder_pid" || true
+  echo "candidate-lists-db: add and erasure did not both contend on the canonical candidate identity lock" >&2
+  exit 1
+fi
+
+psql_stdin -Atq -c "select pg_terminate_backend(${holder_db_pid})" >/dev/null
+wait "$holder_pid" || true
+holder_pid=""
+wait "$race_pid_1"
+wait "$race_pid_2"
+race_pid_1=""
+race_pid_2=""
+
+psql_stdin -q <<'SQL'
+select candidate_lists_test.expect(
+  'given_add_and_governed_erasure_contend_on_the_same_candidate_identity_when_both_complete_then_no_candidate_list_data_or_linkable_add_receipt_survives',
+  (select output->>'status' in ('added', 'candidate_not_found')
+     from candidate_lists_test.outputs where case_name = 'add-erasure-race')
+  and (select output->>'status' = 'completed'
+         from candidate_lists_test.outputs where case_name = 'erase-race')
+  and not exists (
+    select 1 from public.candidate_list_members
+     where workspace_id = '91111111-1111-4111-8111-111111111111'
+       and campaign_id = 'lists-campaign'
+       and candidate_id = 'cand-race-erase'
+  )
+  and not exists (
+    select 1 from public.candidate_contact_attestations
+     where workspace_id = '91111111-1111-4111-8111-111111111111'
+       and campaign_id = 'lists-campaign'
+       and candidate_id = 'cand-race-erase'
+  )
+  and not exists (
+    select 1
+      from public.candidate_list_operation_receipts receipt
+     where receipt.workspace_id = '91111111-1111-4111-8111-111111111111'
+       and (
+         receipt.idempotency_key = 'a0000000-0000-4000-8000-000000000012'
+         or receipt.candidate_subject_hmac = public.sourcing_authority_hmac(
+           receipt.workspace_id,
+           jsonb_build_array(
+             'candidate_list_subject_v1', 'lists-campaign', 'cand-race-erase'
+           )::text
+         )
+       )
+  )
+);
+SQL
+
+concurrent_add() {
+  local key="$1"
+  local label="$2"
+  docker run --rm -i \
+    --network "$network" \
+    --env PGPASSWORD="$bootstrap_password" \
+    --entrypoint psql \
+    "$client_image" \
+    -X -v ON_ERROR_STOP=1 -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d postgres -q <<SQL
+set application_name = 'candidate-lists-race-add-${label}';
 begin;
 set local role authenticated;
 select candidate_lists_test.set_authenticated_claims('c1000000-0000-4000-8000-000000000001');
@@ -620,12 +1135,70 @@ commit;
 SQL
 }
 
-concurrent_add "b0000000-0000-4000-8000-000000000001" &
+# Hold the exact member advisory lock so both callers must be active and
+# waiting together. Releasing the holder then proves the RPC serializes the
+# two distinct idempotency keys instead of merely passing sequential calls.
+psql_stdin -q > "$tmp_dir/race-holder.log" 2>&1 <<SQL &
+set application_name = 'candidate-lists-race-holder';
+begin;
+select pg_advisory_xact_lock(hashtextextended(
+  '91111111-1111-4111-8111-111111111111:candidate_list_member:${concurrent_list_id}:lists-campaign:cand-concurrent',
+  0
+));
+select pg_sleep(180);
+commit;
+SQL
+holder_pid=$!
+
+holder_db_pid=""
+for _ in $(seq 1 120); do
+  holder_db_pid="$(psql_stdin -Atq -c "
+    select pid
+      from pg_stat_activity
+     where application_name = 'candidate-lists-race-holder'
+       and state = 'active'
+       and query like '%pg_sleep(180)%'
+     limit 1
+  ")"
+  [[ -n "$holder_db_pid" ]] && break
+  sleep 0.25
+done
+if [[ -z "$holder_db_pid" ]]; then
+  echo "candidate-lists-db: concurrency holder never acquired the member lock" >&2
+  exit 1
+fi
+
+concurrent_add "b0000000-0000-4000-8000-000000000001" "one" &
 race_pid_1=$!
-concurrent_add "b0000000-0000-4000-8000-000000000002" &
+concurrent_add "b0000000-0000-4000-8000-000000000002" "two" &
 race_pid_2=$!
+
+waiting_adds=""
+for _ in $(seq 1 120); do
+  waiting_adds="$(psql_stdin -Atq -c "
+    select count(*)
+      from pg_stat_activity
+     where application_name like 'candidate-lists-race-add-%'
+       and wait_event_type = 'Lock'
+       and wait_event = 'advisory'
+  ")"
+  [[ "$waiting_adds" == "2" ]] && break
+  sleep 0.25
+done
+if [[ "$waiting_adds" != "2" ]]; then
+  psql_stdin -Atq -c "select pg_terminate_backend(${holder_db_pid})" >/dev/null || true
+  wait "$holder_pid" || true
+  echo "candidate-lists-db: both candidate adds did not contend on the same advisory lock" >&2
+  exit 1
+fi
+
+psql_stdin -Atq -c "select pg_terminate_backend(${holder_db_pid})" >/dev/null
+wait "$holder_pid" || true
+holder_pid=""
 wait "$race_pid_1"
 wait "$race_pid_2"
+race_pid_1=""
+race_pid_2=""
 
 psql_stdin -q <<'SQL'
 select candidate_lists_test.expect(
@@ -656,33 +1229,28 @@ select candidate_lists_test.expect(
 select candidate_lists_test.expect_sqlstate(
   'given_any_caller_when_updating_a_member_receipt_then_denied',
   $$update public.candidate_list_operation_receipts set result = result where true$$,
-  array['42501','55000']
+  array['55000']
 );
 select candidate_lists_test.expect_sqlstate(
   'given_any_caller_when_deleting_a_member_receipt_then_denied',
   $$delete from public.candidate_list_operation_receipts where true$$,
-  array['42501','55000']
+  array['55000']
 );
 select candidate_lists_test.expect_sqlstate(
   'given_any_caller_when_updating_a_candidate_contact_attestation_then_denied',
   $$update public.candidate_contact_attestations set value_code = value_code where true$$,
-  array['42501','55000']
+  array['55000']
 );
 select candidate_lists_test.expect_sqlstate(
   'given_any_caller_when_deleting_a_candidate_contact_attestation_then_denied',
   $$delete from public.candidate_contact_attestations where true$$,
-  array['42501','55000']
+  array['55000']
 );
 
 -- ---------------------------------------------------------------------------
 -- Viewer read path: read-only, no mutation, foreign/missing lists disclose
 -- nothing (empty result, not an error).
 -- ---------------------------------------------------------------------------
-select public.list_candidate_list_members(
-  (select (output->>'list_id')::uuid from candidate_lists_test.outputs where case_name = 'create-a'),
-  null, null, 50
-) is not null as viewer_probe \gset
-
 create temporary table pre_read_counts as
 select
   (select count(*) from public.candidate_list_members) as member_count,
@@ -740,9 +1308,6 @@ select candidate_lists_test.expect(
 -- ---------------------------------------------------------------------------
 -- Stable keyset pagination under tied added_at timestamps.
 -- ---------------------------------------------------------------------------
-set local role postgres;
-reset role;
-
 do $$
 declare
   tie_list uuid := '93333333-3333-4333-8333-333333333333';
@@ -756,11 +1321,12 @@ begin
 
   insert into public.candidate_list_members(
     list_id, workspace_id, campaign_id, candidate_id,
-    evidence_kind, evidence_sha256, evidence_recorded_at, added_by, added_at
+    evidence_kind, evidence_attestation_id, evidence_sha256,
+    evidence_recorded_at, added_by, added_at, member_id
   ) values
-    (tie_list, '91111111-1111-4111-8111-111111111111', 'lists-campaign', 'cand-tie-1', 'manual_attestation', repeat('5',64), '2026-07-20 09:00:00+00', 'c1000000-0000-4000-8000-000000000001', tie_time),
-    (tie_list, '91111111-1111-4111-8111-111111111111', 'lists-campaign', 'cand-tie-2', 'manual_attestation', repeat('6',64), '2026-07-20 09:00:00+00', 'c1000000-0000-4000-8000-000000000001', tie_time),
-    (tie_list, '91111111-1111-4111-8111-111111111111', 'lists-campaign', 'cand-tie-3', 'manual_attestation', repeat('7',64), '2026-07-20 09:00:00+00', 'c1000000-0000-4000-8000-000000000001', tie_time);
+    (tie_list, '91111111-1111-4111-8111-111111111111', 'lists-campaign', 'cand-tie-1', 'manual_attestation', (select id from public.candidate_contact_attestations where workspace_id = '91111111-1111-4111-8111-111111111111' and campaign_id = 'lists-campaign' and candidate_id = 'cand-tie-1'), repeat('5',64), '2026-07-20 09:00:00+00', 'c1000000-0000-4000-8000-000000000001', tie_time, '00000000-0000-4000-8000-000000000001'),
+    (tie_list, '91111111-1111-4111-8111-111111111111', 'lists-campaign', 'cand-tie-2', 'manual_attestation', (select id from public.candidate_contact_attestations where workspace_id = '91111111-1111-4111-8111-111111111111' and campaign_id = 'lists-campaign' and candidate_id = 'cand-tie-2'), repeat('6',64), '2026-07-20 09:00:00+00', 'c1000000-0000-4000-8000-000000000001', tie_time, '00000000-0000-4000-8000-000000000002'),
+    (tie_list, '91111111-1111-4111-8111-111111111111', 'lists-campaign', 'cand-tie-3', 'manual_attestation', (select id from public.candidate_contact_attestations where workspace_id = '91111111-1111-4111-8111-111111111111' and campaign_id = 'lists-campaign' and candidate_id = 'cand-tie-3'), repeat('7',64), '2026-07-20 09:00:00+00', 'c1000000-0000-4000-8000-000000000001', tie_time, '00000000-0000-4000-8000-000000000003');
 end;
 $$;
 
@@ -781,8 +1347,8 @@ select candidate_lists_test.set_authenticated_claims('c1000000-0000-4000-8000-00
 create temporary table tied_page_2 as
 select * from public.list_candidate_list_members(
   '93333333-3333-4333-8333-333333333333',
-  (select added_at from tied_page_1 order by member_seq desc limit 1),
-  (select member_seq from tied_page_1 order by member_seq desc limit 1),
+  (select added_at from tied_page_1 order by member_id desc limit 1),
+  (select member_id from tied_page_1 order by member_id desc limit 1),
   1
 );
 commit;
@@ -794,18 +1360,32 @@ select candidate_lists_test.set_authenticated_claims('c1000000-0000-4000-8000-00
 create temporary table tied_page_3 as
 select * from public.list_candidate_list_members(
   '93333333-3333-4333-8333-333333333333',
-  (select added_at from tied_page_2 order by member_seq desc limit 1),
-  (select member_seq from tied_page_2 order by member_seq desc limit 1),
+  (select added_at from tied_page_2 order by member_id desc limit 1),
+  (select member_id from tied_page_2 order by member_id desc limit 1),
   1
 );
 commit;
 grant select on tied_page_3 to postgres;
 
+begin;
+set local role authenticated;
+select candidate_lists_test.set_authenticated_claims('c1000000-0000-4000-8000-000000000001');
+create temporary table tied_page_4 as
+select * from public.list_candidate_list_members(
+  '93333333-3333-4333-8333-333333333333',
+  (select added_at from tied_page_3 order by member_id desc limit 1),
+  (select member_id from tied_page_3 order by member_id desc limit 1),
+  1
+);
+commit;
+grant select on tied_page_4 to postgres;
+
 select candidate_lists_test.expect(
-  'given_three_members_share_the_identical_added_at_timestamp_when_paginated_one_row_at_a_time_then_each_page_returns_exactly_one_distinct_tied_candidate_with_no_repeat_or_gap',
-  (select count(*) from tied_page_1 where candidate_id like 'cand-tie-%') = 1
-  and (select count(*) from tied_page_2 where candidate_id like 'cand-tie-%') = 1
-  and (select count(*) from tied_page_3 where candidate_id like 'cand-tie-%') = 1
+  'given_three_members_share_the_identical_added_at_timestamp_when_paginated_one_row_at_a_time_then_opaque_member_id_order_is_exact_and_the_fourth_page_is_empty',
+  (select candidate_id = 'cand-tie-3' from tied_page_1) is true
+  and (select candidate_id = 'cand-tie-2' from tied_page_2) is true
+  and (select candidate_id = 'cand-tie-1' from tied_page_3) is true
+  and (select count(*) = 0 from tied_page_4)
   and (
     select count(distinct candidate_id) from (
       select candidate_id from tied_page_1 where candidate_id like 'cand-tie-%'
@@ -847,15 +1427,35 @@ SQL
 # Non-empty rollback must refuse and preserve the durable list/member/receipt
 # authority created above -- no forward-only migration downgrades live data.
 # ---------------------------------------------------------------------------
+authority_fingerprint() {
+  psql_stdin -Atq -c "
+    select jsonb_build_object(
+      'lists', (select count(*) from public.candidate_lists),
+      'members', (select count(*) from public.candidate_list_members),
+      'receipts', (select count(*) from public.candidate_list_operation_receipts),
+      'attestations', (select count(*) from public.candidate_contact_attestations),
+      'create_rpc', to_regprocedure('public.create_candidate_list(text,uuid)') is not null,
+      'add_rpc', to_regprocedure('public.add_candidate_list_member(uuid,text,text,uuid)') is not null,
+      'list_rpc', to_regprocedure('public.list_candidate_list_members(uuid,timestamptz,uuid,int)') is not null,
+      'trigger_function', to_regprocedure('public.reject_candidate_list_evidence_mutation()') is not null,
+      'erasure_function', to_regprocedure('public.cleanup_erased_candidate_lists()') is not null,
+      'attestation_sequence', to_regclass('public.candidate_contact_attestations_id_seq') is not null,
+      'member_sequence_absent', to_regclass('public.candidate_list_members_member_seq_seq') is null,
+      'receipt_sequence', to_regclass('public.candidate_list_operation_receipts_id_seq') is not null
+    )::text
+  "
+}
+
+pre_refusal_fingerprint="$(authority_fingerprint)"
 if psql_stdin --set VERBOSITY=verbose < "$rollback" > "$tmp_dir/rollback.log" 2>&1; then
   echo "candidate-lists-db: rollback unexpectedly removed non-empty candidate list authority" >&2
   cat "$tmp_dir/rollback.log" >&2
   exit 1
 fi
 grep -Eiq '55000|contains rows|refus' "$tmp_dir/rollback.log"
-post_refusal_present="$(psql_stdin -Atq -c "select (to_regclass('public.candidate_lists') is null)::text")"
-if [[ "$post_refusal_present" != "false" ]]; then
-  echo "candidate-lists-db: refused rollback still altered the forward schema" >&2
+post_refusal_fingerprint="$(authority_fingerprint)"
+if [[ "$post_refusal_fingerprint" != "$pre_refusal_fingerprint" ]]; then
+  echo "candidate-lists-db: refused rollback altered rows or 0064 object identities" >&2
   exit 1
 fi
 

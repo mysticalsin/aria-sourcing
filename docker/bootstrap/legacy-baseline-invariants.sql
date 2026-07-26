@@ -13,12 +13,11 @@ declare
   actual_adaptive_sourcing_functions text;
   actual_authority_extension_functions text;
   actual_autonomous_web_functions text;
-  expected_tables_with_0063 text;
-  expected_functions_with_0063 text;
+  expected_functions_with_0064 text;
   actual_provisioning_functions text;
   non_rls_tables text;
   expected_tables constant text :=
-    'agent_conversations,agent_events,agent_framework_configuration_receipts,agent_framework_controls,agent_framework_instances,agent_framework_memory_egress_leases,agent_framework_run_memory_context,agent_framework_runs,agent_framework_sourcing_authorizations,agent_framework_step_receipts,agent_memories,agent_memory_events,agent_memory_legacy_quarantine,agent_run_memory_context,agent_runs,agent_seats,agent_specs,agent_workflow_versions,ai_provider_catalog,ai_runtime_binding_receipts,ai_runtime_binding_sets,ai_runtime_bindings,api_keys,apollo_enrichment_attempts,apollo_enrichment_confirmations,apollo_enrichment_erasure_events,apollo_enrichment_quota,apollo_enrichment_reconciliation_events,apollo_enrichment_targets,aria_jobs,calendar_booking_ledger,campaign_create_receipts,candidate_erasure_obligations,candidate_erasure_receipts,candidate_erasure_requests,candidate_erasure_suppression_tombstones,candidate_identities,candidate_legal_holds,candidate_outcome_events,candidates,databricks_connection_events,databricks_connections,dust_connection_events,dust_connections,email_connection_seat_mismatch_quarantine,email_connections,email_delivery_events,email_ledger_delivery_receipts,enrichment_budgets,enrichment_spend_ledger,inbound_mailbox_routes,loop_events,loop_worker_heartbeats,messages_inbound,messages_outbound,need_ingress_credential_receipts,need_ingress_credentials,outbound_content_cache,outreach_approvals,outreach_ledger,outreach_sequence_steps,outreach_sequences,owner_recovery_receipts,persons,profiles,requisition_input_cleanup_receipts,requisition_inputs,requisition_parse_execution_claims,requisition_parse_receipts,requisition_parse_reconciliation_receipts,requisitions,sourcing_batch_claims,sourcing_batch_egress_attempts,sourcing_batch_receipts,sourcing_batch_source_receipts,sourcing_campaigns,sourcing_candidate_evidence,sourcing_graphify_exports,sourcing_learning_controls,sourcing_learning_secrets,sourcing_lesson_evidence,sourcing_lesson_reviews,sourcing_lessons,sourcing_loop_controls,sourcing_provider_quota_ledger,sourcing_provider_runs,sourcing_query_feedback,sourcing_query_receipts,sourcing_run_quota,sourcing_run_results,sourcing_runs,suppression_list,swarm_agents,swarm_assignments,swarm_checkpoints,swarm_escalations,swarm_missions,whatsapp_contacts,whatsapp_conversation_windows,whatsapp_delivery_events,whatsapp_senders,whatsapp_templates,workspace_patch_receipts,workspace_state,workspaces';
+    'agent_conversations,agent_events,agent_framework_configuration_receipts,agent_framework_controls,agent_framework_instances,agent_framework_memory_egress_leases,agent_framework_run_memory_context,agent_framework_runs,agent_framework_sourcing_authorizations,agent_framework_step_receipts,agent_memories,agent_memory_events,agent_memory_legacy_quarantine,agent_run_memory_context,agent_runs,agent_seats,agent_specs,agent_workflow_versions,ai_provider_catalog,ai_runtime_binding_receipts,ai_runtime_binding_sets,ai_runtime_bindings,api_keys,apollo_enrichment_attempts,apollo_enrichment_confirmations,apollo_enrichment_erasure_events,apollo_enrichment_quota,apollo_enrichment_reconciliation_events,apollo_enrichment_targets,aria_jobs,calendar_booking_ledger,campaign_create_receipts,candidate_contact_attestations,candidate_erasure_obligations,candidate_erasure_receipts,candidate_erasure_requests,candidate_erasure_suppression_tombstones,candidate_identities,candidate_legal_holds,candidate_list_members,candidate_list_operation_receipts,candidate_lists,candidate_outcome_events,candidates,databricks_connection_events,databricks_connections,dust_connection_events,dust_connections,email_connection_seat_mismatch_quarantine,email_connections,email_delivery_events,email_ledger_delivery_receipts,enrichment_budgets,enrichment_spend_ledger,inbound_mailbox_routes,loop_events,loop_worker_heartbeats,messages_inbound,messages_outbound,need_ingress_credential_receipts,need_ingress_credentials,outbound_content_cache,outreach_approvals,outreach_ledger,outreach_sequence_manual_action_receipts,outreach_sequence_manual_approval_consumptions,outreach_sequence_release_controls,outreach_sequence_steps,outreach_sequences,owner_recovery_receipts,persons,profiles,requisition_input_cleanup_receipts,requisition_inputs,requisition_parse_execution_claims,requisition_parse_receipts,requisition_parse_reconciliation_receipts,requisitions,sourcing_batch_claims,sourcing_batch_egress_attempts,sourcing_batch_receipts,sourcing_batch_source_receipts,sourcing_campaigns,sourcing_candidate_evidence,sourcing_graphify_exports,sourcing_learning_controls,sourcing_learning_secrets,sourcing_lesson_evidence,sourcing_lesson_reviews,sourcing_lessons,sourcing_loop_controls,sourcing_provider_quota_ledger,sourcing_provider_runs,sourcing_query_feedback,sourcing_query_receipts,sourcing_run_quota,sourcing_run_results,sourcing_runs,suppression_list,swarm_agents,swarm_assignments,swarm_checkpoints,swarm_escalations,swarm_missions,whatsapp_contacts,whatsapp_conversation_windows,whatsapp_delivery_events,whatsapp_senders,whatsapp_templates,workspace_patch_receipts,workspace_state,workspaces';
   expected_extension_tables constant text :=
     'ai_runtime_model_evidence,candidate_erasure_provider_evidence_receipts,candidate_payload_provenance';
   expected_autonomous_web_tables constant text :=
@@ -61,13 +60,7 @@ begin
        'candidate_payload_provenance'
      );
 
-  expected_tables_with_0063 := replace(
-    expected_tables,
-    'outreach_ledger,outreach_sequence_steps',
-    'outreach_ledger,outreach_sequence_manual_action_receipts,outreach_sequence_manual_approval_consumptions,outreach_sequence_release_controls,outreach_sequence_steps'
-  );
-
-  if actual_tables <> expected_tables_with_0063 then
+  if actual_tables <> expected_tables then
     raise exception 'legacy public table set does not match the reviewed ARIA schema: %', actual_tables
       using errcode = '55000';
   end if;
@@ -233,69 +226,95 @@ begin
     'validate_sourcing_batch_source_receipts(jsonb,text,integer,boolean)'
   );
 
-  expected_functions_with_0063 := expected_functions;
-  expected_functions_with_0063 := replace(
-    expected_functions_with_0063,
+  expected_functions_with_0064 := expected_functions;
+  expected_functions_with_0064 := replace(
+    expected_functions_with_0064,
     'candidate_erasure_identifier_hmac(uuid,text,text)',
     'candidate_erasure_identifier_hmac(uuid,text,text),candidate_erasure_linkedin_canonical_hmac(uuid,text)'
   );
-  expected_functions_with_0063 := replace(
-    expected_functions_with_0063,
+  expected_functions_with_0064 := replace(
+    expected_functions_with_0064,
     'canonicalize_sourcing_role_basis(jsonb)',
     'canonicalize_candidate_erasure_linkedin_tombstone(),canonicalize_sourcing_role_basis(jsonb)'
   );
-  expected_functions_with_0063 := replace(
-    expected_functions_with_0063,
+  expected_functions_with_0064 := replace(
+    expected_functions_with_0064,
     'claim_email_outbound_queued(uuid)',
     'claim_email_outbound_queued_pre0063(uuid),claim_email_outbound_queued(uuid)'
   );
-  expected_functions_with_0063 := replace(
-    expected_functions_with_0063,
+  expected_functions_with_0064 := replace(
+    expected_functions_with_0064,
     'claim_whatsapp_outbound(uuid)',
     'claim_whatsapp_outbound_pre0063(uuid),claim_whatsapp_outbound(uuid)'
   );
-  expected_functions_with_0063 := replace(
-    expected_functions_with_0063,
+  expected_functions_with_0064 := replace(
+    expected_functions_with_0064,
     'complete_sequence_manual_task(uuid,uuid)',
     'complete_sequence_manual_task(uuid)'
   );
-  expected_functions_with_0063 := replace(
-    expected_functions_with_0063,
+  expected_functions_with_0064 := replace(
+    expected_functions_with_0064,
     'enforce_requisition_input_content_lifecycle(),enqueue_aria_job',
     'enforce_requisition_input_content_lifecycle(),enforce_sequence_outbound_insert_binding(),enforce_sequence_outbound_insert_origin(),enforce_sequence_outbound_update_authority(),enqueue_and_bind_sequence_step_outbound(uuid,uuid),enqueue_aria_job'
   );
-  expected_functions_with_0063 := replace(
-    expected_functions_with_0063,
+  expected_functions_with_0064 := replace(
+    expected_functions_with_0064,
     'normalize_whatsapp_e164(text)',
     'normalize_linkedin_profile_url(text),normalize_whatsapp_e164(text)'
   );
-  expected_functions_with_0063 := replace(
-    expected_functions_with_0063,
+  expected_functions_with_0064 := replace(
+    expected_functions_with_0064,
     'reject_loop_event_mutation()',
     'reject_legacy_linkedin_candidate_reimport(),reject_loop_event_mutation()'
   );
-  expected_functions_with_0063 := replace(
-    expected_functions_with_0063,
+  expected_functions_with_0064 := replace(
+    expected_functions_with_0064,
     'outreach_sequence_recipient_blocked(outreach_sequences,outreach_sequence_steps)',
     'outreach_sequence_current_scope_hash(outreach_sequences,outreach_sequence_steps),outreach_sequence_execution_enabled(uuid),outreach_sequence_recipient_blocked(outreach_sequences,outreach_sequence_steps)'
   );
-  expected_functions_with_0063 := replace(
-    expected_functions_with_0063,
+  expected_functions_with_0064 := replace(
+    expected_functions_with_0064,
     'outreach_sequence_recipient_blocked(outreach_sequences,outreach_sequence_steps)',
     'outreach_sequence_recipient_blocked(outreach_sequences,outreach_sequence_steps),outreach_sequence_stop_internal(uuid,text),outreach_sequence_tombstone_exists(uuid,text,text)'
   );
-  expected_functions_with_0063 := replace(
-    expected_functions_with_0063,
+  expected_functions_with_0064 := replace(
+    expected_functions_with_0064,
     'prepare_apollo_enrichment(uuid,uuid,text,uuid,uuid,text)',
     'prepare_apollo_enrichment(uuid,uuid,text,uuid,uuid,text),prepare_sequence_outbound_claim(uuid,text)'
   );
-  expected_functions_with_0063 := replace(
-    expected_functions_with_0063,
+  expected_functions_with_0064 := replace(
+    expected_functions_with_0064,
     'reject_requisition_parse_reconciliation_receipt_mutation(),reject_sourcing_batch_receipt_mutation()',
     'reject_requisition_parse_reconciliation_receipt_mutation(),reject_sequence_manual_action_receipt_mutation(),reject_sourcing_batch_receipt_mutation()'
   );
 
-  if actual_functions <> expected_functions_with_0063 then
+  expected_functions_with_0064 := replace(
+    expected_functions_with_0064,
+    'activate_outreach_sequence(uuid),agent_framework_run_authority_is_active(uuid)',
+    'activate_outreach_sequence(uuid),add_candidate_list_member(uuid,text,text,uuid),agent_framework_run_authority_is_active(uuid)'
+  );
+  expected_functions_with_0064 := replace(
+    expected_functions_with_0064,
+    'cleanup_email_ledger_delivery_receipts(integer),cleanup_erased_candidate_mirror()',
+    'cleanup_email_ledger_delivery_receipts(integer),cleanup_erased_candidate_lists(),cleanup_erased_candidate_mirror()'
+  );
+  expected_functions_with_0064 := replace(
+    expected_functions_with_0064,
+    'create_agent_run_with_memory_context(uuid,uuid,uuid,uuid),create_need_ingress_credential',
+    'create_agent_run_with_memory_context(uuid,uuid,uuid,uuid),create_candidate_list(text,uuid),create_need_ingress_credential'
+  );
+  expected_functions_with_0064 := replace(
+    expected_functions_with_0064,
+    'list_apollo_enrichment_reconciliation(uuid,uuid,timestamp with time zone,uuid,integer),list_loop_events',
+    'list_apollo_enrichment_reconciliation(uuid,uuid,timestamp with time zone,uuid,integer),list_candidate_list_members(uuid,timestamp with time zone,uuid,integer),list_loop_events'
+  );
+  expected_functions_with_0064 := replace(
+    expected_functions_with_0064,
+    'reject_candidate_erasure_reimport(),reject_email_connection_quarantine_mutation()',
+    'reject_candidate_erasure_reimport(),reject_candidate_list_evidence_mutation(),reject_email_connection_quarantine_mutation()'
+  );
+
+  if actual_functions <> expected_functions_with_0064 then
     raise exception 'legacy public function signatures do not match the reviewed ARIA schema: %', actual_functions
       using errcode = '55000';
   end if;
