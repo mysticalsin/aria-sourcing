@@ -1,198 +1,95 @@
 ---
 project: MSourcing / ARIA
-shift: 46
+shift: 47
 agent: codex-gpt-5
-updated: 2026-07-25 20:58 EDT
-status: phase-0 source-green - PR 7 open; later phases and production acceptance blocked
+updated: 2026-07-26 00:37 EDT
+status: phase-1 candidate-list authority source-green; evidence bridge and product surface pending; production blocked
 ---
 
 # Handoff - MSourcing / ARIA
 
 ## Current state
 
-- Work from `/Users/tony/msourcing-heyreach-foundation-20260725`, not the
-  OneDrive checkout. Branch: `codex/heyreach-foundation-20260725`.
-- Phase 0 source commits are `30c8b63` and `4d18784`. Both are pushed to
-  `origin/codex/heyreach-foundation-20260725`.
-- Stacked pull request 7 is open against `codex/enterprise-go-20260721`:
-  https://github.com/mysticalsin/aria-sourcing/pull/7
-- Parent pull request 5 remains open against protected `main`:
-  https://github.com/mysticalsin/aria-sourcing/pull/5
-- Migration 0063 is additive and release-dark. It repairs the old 0045
-  sequence authority, but no application call site activates the new RPCs.
-- LinkedIn is assisted-manual only. ARIA can create and audit a manual task;
-  it cannot log in to LinkedIn, retain a session, automate a connection or
-  message, scrape LinkedIn, or call an undocumented LinkedIn endpoint.
-- Email and WhatsApp sequence rows require an exact approval, candidate,
-  recipient, body, scope, campaign, workspace, step, and outbound binding.
-  Claims and completion recheck suppression, erasure, release, and stop state.
-- Next resolves to 16.2.12 and PostCSS to 8.5.23. Production npm dependencies
-  have zero HIGH or CRITICAL advisories. One ESLint-only transitive advisory is
-  under an exact exception that expires on 2026-08-08.
-- Pull request 7 source-SHA CI and CodeQL runs have zero executed steps. Every
-  job annotation says: `The job was not started because an Actions budget is
-  preventing further use.`
-- Fly still serves the older build `3ff4852a98e74e5275b3927a4fb4bb0e72d0b03a`
-  with migration `0046_swarm_orchestration_authority.sql`. Last readback was
-  `/api/health` HTTP 200 and `/api/ready` HTTP 503 because
-  `agentFrameworks=false`. This branch is not deployed.
-- No production secret mutation, sourcing activation, LinkedIn automation, or
-  candidate contact occurred in this shift.
+- Work only from /Users/tony/msourcing-heyreach-foundation-20260725. The OneDrive checkout is not the execution lane.
+- Active branch: codex/candidate-lists-phase1-20260725.
+- Local HEAD: be7278dc24b82ef4a92126db3d1eb1412d630755. This is the green 0064 candidate-list authority commit.
+- Remote branch still ended at f92f2ae when this snapshot was written. Push be7278d plus this handoff commit before handing off.
+- RED-first commits 3ee2e80 and f92f2ae are already pushed.
+- Migration 0064 adds four private, forced-RLS tables: candidate_lists, candidate_contact_attestations, candidate_list_members, and candidate_list_operation_receipts.
+- Authenticated members and admins can create a list and add one provenance-bound member. Viewers, members, and admins can read bounded keyset pages through the RPC. Browser candidate JSON is not authority.
+- Candidate add and governed erasure share the canonical candidate identity advisory lock. Erasure deletes list membership, attestation rows, and candidate-linkable add receipts. Both transaction orders are covered.
+- The canonical schema inventory now has one static, sorted 125-table set. It contains the three 0063 outreach tables that were previously missing plus the four 0064 tables.
+- Canonical legacy public-schema digest: df3e7f3ea3155d6523bf284e18c811a3cca1444b5cb329afad9357619a1f057b.
+- 0064 is a database foundation only. No route or recruiter UI uses it yet. No set operations, eligibility engine, shared quota, or export exists yet.
+- Real GitHub and Tavily evidence cannot yet authorize list membership. The current 0064 path depends on the best-effort public.candidates mirror and owner-inserted manual attestations. Migration 0065 must close this before product wiring.
+- No Fly deployment, production secret mutation, sourcing activation, LinkedIn automation, outbound contact, or candidate PII handling occurred in this shift.
 
 ## Done this shift
 
-- Read the existing Relay baton and wrote the repository plan at
-  `_relay/plans/05-assisted-linkedin-campaign-control.md`.
-- Used Fable for architecture, Sonnet for implementation, Codex for fixes, and
-  Terra for the final independent Phase 0 database/security decision.
-- Added `supabase/migrations/0063_outreach_sequence_authority_repair.sql` and a
-  guarded rollback that refuses to restore unsafe legacy behavior.
-- Added `tests/sequences-db.sh` with 116 passing assertions covering fresh and
-  dirty upgrades, reapply, RLS, grants, forged authority, provider binding,
-  claim/completion/stop races, suppression, erasure, recipient drift, and
-  manual LinkedIn behavior.
-- Repaired canonical LinkedIn erasure matching in `link_one_candidate` and
-  proved the chronological backfill path with 42 person-model assertions.
-- Updated the function privilege registry, bootstrap schema allowlist,
-  canonical schema digest, loop authority contract, and database manifest.
-- Updated Next, ESLint, eslint-config-next, PostCSS, NanoID, and the fixed 5.x
-  brace-expansion resolution through the lockfile.
-- Replaced the raw CI npm audit with `scripts/dependency-audit.mjs`. The gate
-  requires a clean production graph and permits only exact, current, ordered,
-  expiring, package-bound, version-bound, and node-bound review exceptions.
-- Added 10 executable dependency-policy cases. Release and security QA both
-  found the original expiry/path gaps, verified the corrections, and returned
-  PASS with no remaining P0, P1, or P2 finding.
-- Terra returned PASS for the Phase 0 database-authority scope with no P0/P1.
-  Functional/release, integration/durability, security/privacy, and Terra
-  review gates are green for this slice only.
-- Opened PR 7 after pushing the two atomic source commits.
+- Captured and pushed the RED-first candidate-list contract in commits 3ee2e80 and f92f2ae.
+- Implemented 0064 with tenant-bound foreign keys, forced RLS, least-privilege RPC grants, request idempotency, immutable evidence, opaque member cursors, and guarded rollback.
+- Fixed the no-secret erasure order so canonical erasure can create its secret after the request without breaking list cleanup.
+- Fixed retained candidate-linkable receipt evidence and the post-erasure and concurrent add-versus-erasure reintroduction races.
+- Added 51 disposable PostgreSQL 17 assertions covering identity, tenancy, ACLs, evidence, idempotency, pagination, erasure, concurrency, rollback, and reapply.
+- Registered the database suite in the canonical manifest and function-privilege inventory.
+- Repaired the recovery inventory defect that had silently omitted all three 0063 outreach authority tables.
+- Independent database-security and database-QA re-audits both returned PASS with no open 0064 finding.
+- Committed the source slice as be7278d.
 
 ## Verification evidence
 
-- `bash tests/sequences-db.sh`: 116 assertions, 0 failed.
-- `tests/person-model-db.sh`: 42 assertions, 0 failed.
-- `npm run test:database`: exit 0 across the complete canonical database
-  manifest after the 0063 source changes.
-- `npm run typecheck && npm run typecheck:tests && npm test`: exit 0 on the
-  final application/dependency source tree.
-- `npm run build:isolated`: exit 0; Next 16.2.12 compiled and generated all 66
-  static pages with the committed lockfile.
-- `node scripts/dependency-audit.mjs --self-test`: 10 passed, 0 failed.
-- `npm run audit:dependencies`: production clean, one reviewed development
-  advisory, expiry 2026-08-08.
-- `npx tsx tests/infra-release-contract.mts`: 147 passed, 0 failed.
-- `npm run lint`: exit 0.
-- `git diff --check`: exit 0 before source commits.
-- `gitleaks dir . --redact --no-banner --exit-code 1`: no leaks found.
-- Independent Terra reran sequence 116/116, loop authority 26/26, database
-  privilege proof, and diff integrity.
+- bash tests/candidate-lists-db.sh: 51 assertions, 0 failed.
+- npx tsx tests/recovery-schema-allowlists.mts: 15 passed, 0 failed.
+- scripts/test-db-privileges.sh: exit 0, including restricted migration owner, exact ledger, read-only preflights, schema capture, and no secret leakage.
+- npm run typecheck: exit 0.
+- npm run typecheck:tests: exit 0.
+- npm test: complete pretest, application, and posttest lifecycle exited 0 on the final source tree.
+- npm run test:manifest: 11 passed, 0 failed.
+- gitleaks dir . --redact --no-banner --exit-code 1: no leaks across 22.44 MB.
+- git diff --check: exit 0 before commit.
+- Independent reviews: database security PASS; database QA PASS.
 
 ## Blockers
 
-1. GitHub Actions budget prevents protected CI and CodeQL from starting. Exact
-   latest PR-event runs for source SHA `4d1878404471938c7ec7e041f8383eed69c24a9e`
-   are CI `30182079319` and CodeQL `30182079312`; every job has `steps: []` and
-   the budget annotation above. Account-owner action is required.
-2. PR 5 must pass protected checks, receive independent and last-push approval,
-   and merge before PR 7 can be retargeted or rebased onto `main`. PR 7 then
-   needs the same exact-SHA checks and approvals. Do not bypass protection or
-   push directly to `main`.
-3. Phases 1 through 4 in the plan are not implemented: normalized candidate
-   lists and eligibility, campaign/version/task application APIs and UI,
-   sender capability and quota controls, campaign inbox/analytics, scoped API
-   keys, and signed webhook delivery.
-4. `Deploy Aria Mantu (Fly)` remains manually disabled. GitHub environments
-   `Production-Need-Ingress-Throttle-Proof` and `Production-Sourcing-Activation`
-   are missing, and `Production` retains a stale branch rule and no proven
-   reviewer/secret configuration.
-5. Purpose-bound deploy secrets and variables are not proven. Enumerate names
-   from `.github/workflows/deploy-aria-mantu.yml` and
-   `.github/workflows/activate-production-sourcing.yml`; provision values only
-   through the approved secret manager. Never copy values into Relay.
-6. Real sourcing activation still needs two distinct active tenant
-   administrators, a funded approved cloud-model credential, one verified
-   workspace Tavily credential, and a two-person active runtime binding.
-7. Flowise remains deployment NO-GO because its complete runtime image has not
-   met the zero HIGH/CRITICAL image policy.
-8. Production has no accepted exact-release no-contact canary, OTLP receipt and
-   alert routing, restore/failover drill, second database failure domain, or
-   production-shaped 50,000-user load/stress/soak receipt.
-9. `GHSA-mh99-v99m-4gvg` has no released compatible 1.x fix. The exact
-   development-only exception fails closed after `2026-08-08T00:00:00.000Z`.
+1. Migration 0065 is not implemented. It must remove list admission dependence on public.candidates and resolve exact GitHub, unexpired Tavily, and canonical manual evidence.
+2. There is no authenticated manual provenance writer with supersession and revocation. The 0064 test fixture inserts an attestation as postgres.
+3. Phase 1 still lacks list set operations, complete eligibility reasons, recent-contact and suppression gates, shared quota, bounded export, authenticated API routes, accessible UI, browser E2E, and production-shaped performance evidence.
+4. Parent PR 5 and stacked PR 7 remain unmerged. GitHub Actions jobs were last observed with zero steps because the account Actions budget prevented execution. Recheck with gh before relying on this statement.
+5. Protected production deployment remains blocked by missing GitHub environment proof, purpose-bound secrets, two active tenant administrators, live model and Tavily bindings, Flowise image acceptance, telemetry, restore/failover, and accepted load evidence.
+6. Fly still represents an older release. A health 200 or the old app shell is not proof for this branch.
 
 ## Next steps
 
-1. Account owner restores GitHub Actions capacity.
-2. Run `gh pr checks 5`, then inspect every failed or pending run with
-   `gh run view <run-id> --json jobs` and `gh run view <run-id> --log-failed`.
-   Require all protected contexts on PR 5's exact current SHA.
-3. Obtain the independent and last-push approvals and merge PR 5 to protected
-   `main`. Do not self-approve or bypass the branch rule.
-4. Rebase or retarget PR 7 onto the resulting `main`, resolve only observed
-   conflicts, then rerun the database manifest, mandatory application gate,
-   isolated build, dependency audit, lint, Gitleaks, and all protected GitHub
-   contexts for the new exact SHA.
-5. Replace the brace-expansion exception when the compatible v1 fix is
-   released. If it is not released by 2026-08-08, the audit must remain red
-   until a new security review explicitly accepts a new bounded decision.
-6. Merge PR 7 only after independent and last-push approval.
-7. Implement Phase 1 from the plan on a new reviewable branch. Start with
-   failing disposable-Postgres tests for candidate lists, provenance-bound
-   membership, set operations, eligibility reasons, suppression, erasure,
-   recent-contact rules, pagination, RLS, and bounded exports.
-8. Implement Phase 2 only after Phase 1 passes: immutable campaign versions,
-   enrollments, manual recruiter tasks, timezone-safe schedules, lifecycle and
-   kill controls, and a zero-contact UI. Keep LinkedIn manual-only.
-9. Implement Phases 3 and 4 as separate reviewed slices with atomic database
-   authority, quota/concurrency tests, receipt-derived analytics, scoped API
-   credentials, replay-safe signed webhooks, and accessibility tests.
-10. Configure the three protected GitHub environments and purpose-bound
-    secrets, re-enable the deploy workflow, and deploy only the merged `main`
-    SHA. Require migration-ledger readback through 0063 and exact release/image
-    identity on Fly.
-11. Provision the second administrator and verified tenant runtime bindings,
-    then run the protected synthetic need-to-real-provider-to-persisted-
-    candidate no-contact canary. Confirm zero outbound messages.
-12. Run an approved named-recruiter assisted-manual pilot, followed by restore,
-    failover, telemetry, and production-shaped load gates. Only those accepted
-    receipts can support production and 50,000-user claims.
+1. Commit this Relay and Codex-state snapshot, push the active branch, and verify the remote branch SHA.
+2. Start migration 0065 RED-first in a separate commit. Cover GitHub evidence without a mirror row, Tavily evidence expiry, forged mirror rejection, canonical manual evidence without a mirror, tenant and ACL boundaries, idempotency, supersession, revocation, ambiguity, concurrency, shadow-row deletion, provider/manual collisions, governed erasure, rollback, and reapply.
+3. Implement 0065 with one private evidence resolver. GitHub evidence is durable authority; Tavily evidence must be unexpired at admission; existing list membership remains an immutable snapshot after later expiry or revocation.
+4. Add a narrow authenticated manual-attestation RPC for member/admin callers. Derive workspace and actor server-side, permit fixed lawful-basis codes only, bound observed time, and store no free-text PII.
+5. Remove the 0064 candidate mirror foreign keys only after the resolver and erasure tests prove equivalent tenant and deletion safety.
+6. Run both TypeScript checks, the focused database harnesses, canonical database manifest, complete npm test lifecycle, recovery schema checks, privilege checks, Gitleaks, and diff hygiene. Commit and push only on green.
+7. Complete the remaining Phase 1 slices in order: set operations; eligibility and suppression; shared quota and export; authenticated API; accessible recruiter UI; browser E2E and performance proof.
+8. Use four independent QA lanes across database/concurrency, security/privacy, API/UI/accessibility, and release/performance. After the whole implementation plan is complete, use Terra as the final independent validator.
+9. Merge and deploy only through protected main after exact-SHA CI, CodeQL, independent approval, environment controls, migration readback, release identity, live no-contact sourcing canary, telemetry, restore/failover, and capacity receipts are accepted.
 
 ## Decisions made (do not relitigate)
 
-- Build an original ARIA workflow, not copied competitor code, assets, brands,
-  private contracts, or deceptive UI.
-- LinkedIn stays assisted-manual unless written platform entitlement or an
-  approved contracted provider grants each exact automated action.
-- Never capture LinkedIn passwords, PINs, cookies, `li_at`, browser sessions,
-  fingerprints, proxies, captcha tooling, or stealth automation.
-- Phase 0 stays release-dark and has no application call site until later
-  campaign and task authority exists.
-- Human approval is the default. Manual LinkedIn completion is an operator
-  assertion, never a provider-confirmed sent or delivered receipt.
-- ARIA owns identity, tenancy, RBAC, approvals, lawful basis, suppression,
-  erasure, budgets, claims, audit, and every egress decision. Framework agents
-  can propose bounded work but cannot own authority.
-- 0063 rollback intentionally refuses after new durable evidence exists. Fixes
-  require a reviewed forward migration rather than restoring unsafe 0045 logic.
-- Source-green, protected-CI-green, merged, deployed, canary-green,
-  restore-green, and capacity-green remain separate proof states.
-- Direct production secret mutation, direct main pushes, and branch-protection
-  bypass remain prohibited.
+- Build an original ARIA workflow. Do not copy competitor code, assets, brands, private contracts, or deceptive UI.
+- LinkedIn remains assisted-manual unless written platform entitlement or an approved contracted provider grants each exact automated action.
+- Never capture LinkedIn passwords, PINs, cookies, li_at, browser sessions, fingerprints, proxies, captcha tooling, or stealth automation.
+- ARIA owns tenancy, RBAC, approvals, lawful basis, suppression, erasure, budgets, claims, audit, and every egress decision. Framework agents may propose work but cannot own authority.
+- Provider and manual evidence must be exact, tenant-bound, durable, and replay-safe. A best-effort mirror is display data, not authority.
+- Existing list membership stores an immutable evidence snapshot. Later source expiry or revocation blocks new admission but does not silently rewrite history.
+- Candidate-bearing mutations must take the canonical erasure identity lock before secrets, HMACs, receipts, evidence, or durable candidate data are written.
+- Source-green, protected-CI-green, merged, deployed, canary-green, restore-green, and capacity-green are separate proof states.
+- Direct production secret mutation, direct main pushes, and branch-protection bypass remain prohibited.
 
 ## Watch out
 
-- Do not modify the OneDrive checkout; use the isolated worktree above.
-- PR 7 is stacked on PR 5. Do not merge or deploy it as though its base were
-  already in `main`.
-- Do not interpret a zero-step GitHub failure as a code failure. Inspect the
-  annotation and require a later run that actually executes steps.
-- Do not broaden or silently extend the dependency exception.
-- Do not activate `outreach_sequence_release_controls` before Phases 1 and 2
-  provide the product and operator boundaries in the plan.
-- Do not treat `/api/health` 200, Vercel preview, local fixtures, or the older
-  Fly build as proof for this branch.
-- Do not claim the app is production-ready, enterprise-ready, live-sourcing
-  ready, or 50,000-user ready while any blocker above remains.
-- Never delete `_relay/archive/` and never place secrets or candidate PII in
-  Relay files.
+- Do not modify the OneDrive checkout.
+- Do not activate outreach release controls or production sourcing from this branch.
+- Do not use public.candidates as the final 0065 provenance authority.
+- Do not turn an expired Tavily observation into permanent admission authority; snapshot it only when currently valid.
+- Do not delete existing list history merely because provider evidence later expires or is revoked; governed candidate erasure is separate.
+- Do not report manual completion as provider-confirmed sent or delivered evidence.
+- Do not interpret a zero-step GitHub failure as a code failure. Inspect current run annotations with gh.
+- Do not claim production-ready, enterprise-ready, live-sourcing-ready, or 50,000-user-ready while any blocker above remains.
+- Never delete _relay/archive and never place secrets or candidate PII in Relay files.

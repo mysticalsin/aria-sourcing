@@ -1,6 +1,18 @@
 {
   "recent_learnings": [
     {
+      "date": "2026-07-26",
+      "lesson": "Schema invariants and backup inventory need one static exact table set; runtime replacements can hide restore-breaking drift."
+    },
+    {
+      "date": "2026-07-26",
+      "lesson": "Candidate-bearing receipts need governed deletion; keyed hashes remain linkable while the workspace key survives."
+    },
+    {
+      "date": "2026-07-26",
+      "lesson": "Every candidate mutation must share the canonical erasure identity lock before secret, HMAC, receipt, or evidence writes."
+    },
+    {
       "date": "2026-07-25",
       "lesson": "Fresh advisories can invalidate a green release; use exact expiring exceptions, never incompatible global overrides, when an upstream backport is unreleased."
     },

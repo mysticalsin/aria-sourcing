@@ -1297,3 +1297,35 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Next is now 16.2.12 and PostCSS is 8.5.23, so the production graph reports zero HIGH or CRITICAL findings. The remaining development-only advisory is bound to one exact package version and node path, has canonical ordered timestamps, expires 2026-08-08, and tracks the open compatible v1 backport. Ten executable policy cases reject future, reversed, expired, unused, path-drifted, version-drifted, package-mismatched, malformed, and production-vulnerable states. Independent release and security re-reviews pass.
 **Suggested fix:** Replace the exception with the compatible fixed v1 release as soon as upstream publishes it; never extend the exception without a new review.
 **Status:** fixed (`4d18784`; production audit clean, policy 10/10, infrastructure 147/147, lint, typechecks, application test lifecycle, and isolated build pass)
+
+## 2026-07-26 - Candidate-list receipts could outlive or race governed erasure
+**Severity:** security
+**File:** supabase/migrations/0064_candidate_lists_authority.sql; tests/candidate-lists-db.sh
+**Issue:** Early 0064 revisions retained a candidate-linkable add receipt after erasure, required a sourcing secret before the canonical erasure RPC created it, and allowed a later or concurrent add to recreate the receipt after cleanup.
+**Repro/evidence:** Adversarial review recomputed the retained subject HMAC with the workspace key, reproduced the no-secret trigger-order failure, and showed that add did not share the canonical candidate-erasure lock. The final RPC uses the subject HMAC only as a deletion index, skips receipt-HMAC cleanup when no secret exists, takes `candidate_erasure_identity_lock_key(workspace,'candidate_id',candidate)` before any add artifact, and rejects tombstoned candidates without a receipt. The PostgreSQL 17 harness passes 51 assertions, including governed no-secret erasure, post-erasure add, and deterministic add-versus-erasure contention; independent security re-audit reports no open 0064 finding.
+**Suggested fix:** Keep every future candidate-bearing mutation on the same erasure identity lock and prove both transaction orders before release.
+**Status:** fixed (`be7278d`; 51/51 focused database assertions, both TypeScript checks, complete npm test lifecycle, privilege and recovery gates, Gitleaks, and independent security/QA review pass)
+
+## 2026-07-26 - Candidate-list admission still trusts a best-effort mirror and cannot consume provider evidence
+**Severity:** spec-mismatch
+**File:** supabase/migrations/0035_candidates_corpus.sql; supabase/migrations/0064_candidate_lists_authority.sql
+**Issue:** Migration 0035 declares `public.candidates` a best-effort projection, but 0064 currently requires that row and accepts only manually inserted attestations. A real GitHub or Tavily sourcing result cannot yet become a list member, and a mirror failure can produce a false `candidate_not_found`.
+**Repro/evidence:** GitHub evidence is durable in `sourcing_candidate_evidence`; Tavily evidence is durable until expiry in `autonomous_web_candidate_evidence`; neither is resolved by `add_candidate_list_member`. No authenticated RPC creates, supersedes, or revokes a manual attestation, while the focused fixture must insert one as `postgres`.
+**Suggested fix:** Add migration 0065 with a private evidence resolver over GitHub, unexpired Tavily, and canonical workspace-state manual evidence; add a narrow attestation RPC with supersession/revocation; remove the mirror foreign keys without weakening erasure.
+**Status:** open
+
+## 2026-07-26 - Phase 1 list operations and product surface are not implemented
+**Severity:** spec-mismatch
+**File:** /Users/tony/.codex/plans/msourcing-linkedin-campaign-control-20260725.md
+**Issue:** The current slice creates list authority and one add/read path only. Set operations, bounded export, complete eligibility, shared quota, authenticated API routes, accessible UI, browser E2E, and production-shaped performance evidence remain absent.
+**Repro/evidence:** `tests/candidate-lists-db.sh` explicitly excludes those behaviors. No current route or component exposes the normalized 0064 tables to a recruiter workflow.
+**Suggested fix:** Complete the ordered Phase 1 slices and four-lane QA before enabling campaign enrollment or claiming real sourcing usability.
+**Status:** open
+
+## 2026-07-26 - Recovery inventory omitted Phase 0 outreach tables
+**Severity:** correctness
+**File:** docker/bootstrap/legacy-baseline-invariants.sql; docker/bootstrap/legacy-table-inventory.txt
+**Issue:** Migration 0063 added three outreach authority tables only through runtime replacements in the invariant SQL, while the canonical backup/restore inventory remained at the prior table set. Backup and restore exact-table checks would reject a current 0063 database.
+**Repro/evidence:** The mandatory pretest failed when 0064 tables were added to the inventory because the static invariant parser saw only 118 tables. Comparison then showed that the 0063 tables had never entered the inventory. The invariant now has one static 125-table constant containing 0063 and 0064, the sorted inventory is byte-for-byte equal, and `tests/recovery-schema-allowlists.mts` passes 15/15.
+**Suggested fix:** Add every future migration table to the single static invariant constant and canonical inventory in the same atomic slice.
+**Status:** fixed (`be7278d`; static 125-table equality, recovery schema 15/15, restricted-owner bootstrap, and complete npm test lifecycle pass)
