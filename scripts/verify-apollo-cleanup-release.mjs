@@ -2,7 +2,7 @@ import { pathToFileURL } from "node:url";
 
 const DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
 const RELEASE_SHA_RE = /^[0-9a-f]{40}$/;
-const PROCESS_GROUPS = ["web", "cleanup", "framework_heartbeat"];
+const PROCESS_GROUPS = ["web", "cleanup", "framework_heartbeat", "loop"];
 const COUNTERS = [
   "workspacesProcessed",
   "processed",
@@ -42,6 +42,12 @@ function activeWithStandby(machines, group) {
   return active[0].id;
 }
 
+function requireGroupPresent(machines, group) {
+  if (machines.length === 0) {
+    throw new Error(`${group} process group has no machine`);
+  }
+}
+
 export function verifyReleaseProcessGroups(raw, expectedDigest) {
   if (!DIGEST_RE.test(expectedDigest)) throw new Error("invalid expected image digest");
   let machines;
@@ -54,7 +60,7 @@ export function verifyReleaseProcessGroups(raw, expectedDigest) {
     throw new Error("incomplete Fly machine inventory");
   }
 
-  const groups = { web: [], cleanup: [], framework_heartbeat: [] };
+  const groups = { web: [], cleanup: [], framework_heartbeat: [], loop: [] };
   const machineIds = new Set();
   for (const machine of machines) {
     const id = typeof machine?.id === "string" ? machine.id : "";
@@ -77,6 +83,7 @@ export function verifyReleaseProcessGroups(raw, expectedDigest) {
   if (!groups.web.some((machine) => machine.state === "started")) {
     throw new Error("web process group has no started machine");
   }
+  requireGroupPresent(groups.loop, "loop");
   return {
     cleanupMachineId: activeWithStandby(groups.cleanup, "cleanup"),
     frameworkHeartbeatMachineId: activeWithStandby(groups.framework_heartbeat, "framework_heartbeat"),

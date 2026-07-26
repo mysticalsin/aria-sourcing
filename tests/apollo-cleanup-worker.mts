@@ -264,6 +264,11 @@ test("release acceptance binds one started cleanup process to a healthy cleanup 
       image_ref: `registry.fly.io/aria-mantu-app@${digest}`,
       config: { metadata: { fly_process_group: "framework_heartbeat" }, standbys: ["heartbeat-machine"] },
     },
+    {
+      id: "loop-machine",
+      state: "stopped",
+      config: { image: `registry.fly.io/aria-mantu-app@${digest}`, metadata: { fly_process_group: "loop" } },
+    },
   ]);
   assert.deepEqual(verifyReleaseProcessGroups(machines, digest), {
     cleanupMachineId: "cleanup-machine",
@@ -396,5 +401,23 @@ test("release acceptance binds one started cleanup process to a healthy cleanup 
   assert.throws(
     () => verifyReleaseProcessGroups(JSON.stringify(heartbeatDigestMismatch), digest),
     /framework_heartbeat process image digest mismatch/,
+  );
+  const loopDigestMatch = JSON.parse(machines);
+  assert.deepEqual(verifyReleaseProcessGroups(JSON.stringify(loopDigestMatch), digest), {
+    cleanupMachineId: "cleanup-machine",
+    frameworkHeartbeatMachineId: "heartbeat-machine",
+  });
+  const rogueProcessGroup = JSON.parse(machines);
+  rogueProcessGroup.find((machine: { id: string }) => machine.id === "loop-machine").config.metadata.fly_process_group = "rogue";
+  assert.throws(
+    () => verifyReleaseProcessGroups(JSON.stringify(rogueProcessGroup), digest),
+    /unexpected Fly application process group/,
+  );
+  const withoutLoop = JSON.stringify(
+    JSON.parse(machines).filter((machine: { id: string }) => machine.id !== "loop-machine"),
+  );
+  assert.throws(
+    () => verifyReleaseProcessGroups(withoutLoop, digest),
+    /loop process group has no machine/,
   );
 });
