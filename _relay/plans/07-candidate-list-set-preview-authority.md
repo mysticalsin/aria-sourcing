@@ -1,8 +1,9 @@
 # 0067 Candidate-List Set Preview Authority
 
-Status: approved for RED-first implementation. This slice is read-only and
-does not authorize export, contact eligibility, campaign enrollment, provider
-egress, or outreach.
+Status: source implementation verified locally on 2026-07-26; atomic commit,
+push, protected CI, merge, deployment, and live acceptance remain pending. This
+slice is read-only and does not authorize export, contact eligibility, campaign
+enrollment, provider egress, or outreach.
 
 ## Problem and required outcome
 
@@ -25,7 +26,8 @@ In scope:
 - one monotonic membership generation on each list;
 - exact once-per-statement revision advancement for member insert and delete;
 - revision-bound union, intersection, left difference, and exclusion preview;
-- bytewise deterministic bounded traversal capped at 100 examined driver rows;
+- bytewise deterministic bounded traversal capped at 100 consumed driver
+  identities plus one non-consumed lookahead;
 - tenant/RBAC/ACL, concurrency, rollback, retry, and bounded-plan proof.
 
 Explicitly out of scope:
@@ -128,8 +130,10 @@ caller-supplied column value or session setting is accepted as authority.
 
 - Advance every affected surviving `(workspace_id, list_id)` once per SQL
   statement, regardless of the number of member rows.
-- Lock affected list rows in ascending `(workspace_id, list_id)` order before
-  updating revisions.
+- Lock affected list rows in ascending `(workspace_id, list_id)` order with
+  `FOR NO KEY UPDATE` before updating revisions. This serializes revision
+  writers while remaining compatible with the `FOR KEY SHARE` locks already
+  held by candidate-list foreign keys and the governed add-member predecessor.
 - An insert whose every row loses `ON CONFLICT DO NOTHING` advances nothing.
 - A zero-row delete advances nothing.
 - Governed candidate-global erasure advances every surviving affected list
@@ -313,10 +317,43 @@ difference is empty; exclusion marks every member `would_exclude`.
 ## Migration and rollback discipline
 
 The forward migration and rollback acquire the shared schema-migration
-advisory lock and drain existing writers before their first schema mutation in
-the established order: operation receipts, candidate lists, then list members.
-They refuse incompatible partial state before changing data. A lock timeout or
-failed validation must leave identical schema and data fingerprints.
+advisory lock and drain existing writers before their first schema mutation.
+Their total relation order is workspace state, operation receipts, candidate
+lists, then list members. They refuse incompatible partial state before changing
+data. A lock timeout or failed validation must leave identical schema and data
+fingerprints.
+
+The 0065 `add_candidate_list_member(uuid,text,text,uuid)` implementation has a
+first-secret branch that can lock a list before its first receipt-table access.
+0067 must close that inherited lock-order inversion before keeping the
+receipts-lists-members migration order:
+
+- atomically rename the exact 0065 implementation to the owner-only
+  `public.add_candidate_list_member_pre0067(uuid,text,text,uuid)` predecessor;
+- remove every non-owner EXECUTE grant from that predecessor, including grants
+  to arbitrary custom roles;
+- install a `VOLATILE SECURITY DEFINER` wrapper under the original signature,
+  owned by `postgres`, with `search_path = pg_catalog, public, pg_temp`;
+- make the wrapper's first database action `LOCK TABLE public.workspace_state
+  IN ACCESS SHARE MODE`, its second database action `LOCK TABLE
+  public.candidate_list_operation_receipts IN ROW SHARE MODE`, then delegate all
+  arguments and return the predecessor result without semantic changes;
+- grant wrapper EXECUTE only to `authenticated`, and reject predecessor,
+  wrapper, overload, metadata, body-marker, or ACL drift on forward retry.
+
+The workspace-state relation lock is the migration's database-native quiescence
+barrier. Every old 0065 add-member invocation reads workspace state before
+either of its downstream lock branches. Taking workspace-state ACCESS EXCLUSIVE
+before any downstream migration lock therefore drains old calls and prevents a
+parsed-but-not-yet-running old body from crossing the migration boundary. A
+function rename alone is not a drain barrier and is not accepted as proof.
+
+This wrapper is lock-order authority, not a new business rule. The rollback
+must reverse it while holding workspace state, receipts, lists, then members in
+ACCESS EXCLUSIVE mode: validate and drop the wrapper, rename the exact
+predecessor back, and restore the original authenticated-only API ACL. A clean
+rollback must restore the pre-0067 function fingerprint as well as all list
+data.
 
 The checked-in 0067 rollback is for ledgerless disposable proof only. It must:
 
@@ -327,7 +364,8 @@ The checked-in 0067 rollback is for ledgerless disposable proof only. It must:
   the exact 0067 column marker before mutation and refuse a later marker;
 - remove only the 0067 RPC, SQL window helper, revision guard, transition
   helper, truncate-refusal helper, their four triggers, index, constraint, and
-  column;
+  column, then restore the exact pre-0067 add-member function from its retained
+  owner-only predecessor;
 - preserve every 0064-0066 row, evidence chain, receipt, hold, and erasure fact;
 - be idempotent on a clean already-rolled-back disposable database.
 
@@ -393,9 +431,9 @@ primary-key-ordered hashes for `candidate_lists`, `candidate_list_members`,
    proves at most 202 source rows. A recursive JSON plan walker sums
    `Actual Rows * Actual Loops`, rejects `Seq Scan` on
    `candidate_list_members`, requires right-side exact index-probe loops no
-   greater than 100, and permits `Sort` or `Hash` only beneath a bounded
-   `Limit` whose member-table descendants respect these caps. Tests run
-   `ANALYZE` first and never disable sequential scans.
+   greater than 100, and permits a blocking `Sort` or `Hash` only when every
+   member-table path feeding it passes through a bounded source `Limit` first.
+   Tests run `ANALYZE` first and never disable sequential scans.
 9. Pre-0067 non-empty lists start at revision zero. One multi-row insert
    advances once; one statement spanning multiple lists advances each once;
    two statements advance twice; mixed conflict/new advances once;
@@ -424,9 +462,15 @@ primary-key-ordered hashes for `candidate_lists`, `candidate_list_members`,
     idempotent; ledger rows for 0067 or later refuse atomically with SQLSTATE
     55000; a defined later marker also refuses. Similar-named independent
     objects survive.
-17. A paused real add concurrent with rollback proves receipts-lists-members
-    lock order, no deadlock, and no partial change on timeout; rollback succeeds
-    only after the writer commits.
+17. Paused real adds on both the existing-secret and first-ever/no-secret
+    branches prove the wrapper acquires workspace-state then receipt-table
+    authority before either branch can lock a list. Concurrent forward apply
+    and rollback prove the workspace-state drain followed by
+    receipts-lists-members ordering, no deadlock, no API response drift, and no
+    partial change on timeout; schema change succeeds only after the writer
+    commits. Forward retry and rollback/reapply also prove exact
+    wrapper/predecessor ACL and body fingerprints, with no callable predecessor
+    path for any runtime or custom role.
 18. Deployment preflight proves the target table is not live yet or its exact
     row count and measured index-build lock fit a ratified maintenance budget;
     otherwise release blocks pending a separately reviewed concurrent-index
@@ -444,3 +488,57 @@ Relay update, push, and remote-SHA verification.
 
 Protected CI, merge, Fly deployment, real sourcing, email activation, HeyReach
 activation, and any candidate contact remain separate blocked gates.
+
+## Local source review - 2026-07-26
+
+Exact reviewed artifacts:
+
+- forward migration SHA-256:
+  `ae101d72145094b21e44694c3c00b37b3b0824c9ab1bb9780f65d9608ff1d4dd`;
+- guarded rollback SHA-256:
+  `ef77b9aae9cb5252d3e09adc9ffa4937ba2ef40d8387388c1ad5f3d1bf2ccdc7`;
+- canonical post-0067 public-schema SHA-256:
+  `57d3d93569234be40259aab0a98df602a0b654510c4c358ce537ac957c881a0b`;
+- frozen revision helper definition MD5:
+  `9503b3155d4fe3331fc20a3f5892dcaa`.
+
+Verified behavior on PostgreSQL 17:
+
+- `tests/candidate-list-set-preview-db.sh`: 131 assertions, 0 failed;
+- `tests/candidate-lists-db.sh`: 51 assertions, 0 failed;
+- `tests/candidate-list-evidence-db.sh`: 78 assertions, 0 failed;
+- `tests/candidate-global-legal-hold-db.sh`: 36 assertions, 0 failed;
+- `tests/candidate-erasure-db.sh`: exit 0 with transactional erasure,
+  suppression, concurrency, provider-receipt, rollback, and idempotence proof;
+- pretest manifest: exit 0, including deploy 141/141, bootstrap 62/62,
+  infra release 147/147, readiness 31/31, function privileges 22/22, and
+  recovery allowlists 15/15;
+- `scripts/test-db-privileges.sh`: two consecutive exit-0 runs against the
+  reviewed schema digest;
+- `npm run typecheck && npm run typecheck:tests && npm test`: exit 0 for the
+  complete pretest, application, and posttest lifecycle;
+- `git diff --check` and shell syntax checks: exit 0.
+
+The final lock implementation uses sorted `FOR NO KEY UPDATE` list-row locks.
+This remains mutually exclusive between revision writers while staying
+compatible with foreign-key and governed-writer `FOR KEY SHARE` locks. The
+focused suite deterministically proves both opposite-order direct inserts and
+same-list real-RPC concurrency.
+
+The final plan oracle retains the blocking-node safety proof. It validates the
+ordinal path from each blocking node to a bounded source `Limit`, rather than
+mistakenly searching above the blocking node. The interleaved union may stop
+the right source early; the accepted plan consumed 101 left and 51 right rows,
+within the exact 202-row aggregate budget.
+
+Final review added two fail-closed corrections before commit. Rollback generic
+artifact detection now includes every overload of the retained
+`add_candidate_list_member_pre0067` name, and the harness proves an
+overload-only markerless partial is refused without mutation. The deployment
+preflight now uses a bounded one-row existence probe instead of a full-table
+count before refusing transactional index creation over any live membership
+table.
+
+Source verification does not change the release boundary. No contact data was
+exported, no provider was called, no production secret was changed, and no
+Fly deployment or live canary occurred.

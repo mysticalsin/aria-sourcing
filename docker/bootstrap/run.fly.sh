@@ -642,6 +642,101 @@ wait_for_target_postgres() {
   done
 }
 
+preflight_candidate_list_set_preview_0067() {
+  echo "[migrate] checking the 0067 candidate-list index-build boundary..."
+  PGPASSWORD="$POSTGRES_TARGET_PASSWORD" \
+    psql -X -w -h "$DB_HOST" -p "$DB_PORT" -U postgres -d "$DB_NAME" \
+      -v ON_ERROR_STOP=1 -q <<'SQL'
+\set ON_ERROR_STOP on
+begin transaction read only;
+set local lock_timeout = '5s';
+set local statement_timeout = '60s';
+set local idle_in_transaction_session_timeout = '60s';
+do $aria_candidate_list_set_preview_0067_preflight$
+declare
+  migration_0064_is_ledgered boolean := false;
+  migration_0067_is_ledgered boolean := false;
+  noncanonical_ledger_filename_exists boolean := false;
+  ledgered_0067_or_later boolean := false;
+  candidate_list_members_exist boolean := false;
+begin
+  if to_regclass('public.aria_schema_migrations') is not null then
+    execute $query$
+      select
+        exists (
+          select 1
+            from public.aria_schema_migrations migration
+           where migration.filename =
+             '0064_candidate_lists_authority.sql'
+        ),
+        exists (
+          select 1
+            from public.aria_schema_migrations migration
+           where migration.filename =
+             '0067_candidate_list_set_preview_authority.sql'
+        ),
+        exists (
+          select 1
+            from public.aria_schema_migrations migration
+           where migration.filename is null
+              or migration.filename !~
+                 '^[0-9]{4}_[a-z0-9]+(_[a-z0-9]+)*[.]sql$'
+        ),
+        exists (
+          select 1
+            from public.aria_schema_migrations migration
+           where migration.filename ~
+                 '^[0-9]{4}_[a-z0-9]+(_[a-z0-9]+)*[.]sql$'
+             and substring(migration.filename from 1 for 4)::integer >= 67
+        )
+    $query$
+      into migration_0064_is_ledgered,
+           migration_0067_is_ledgered,
+           noncanonical_ledger_filename_exists,
+           ledgered_0067_or_later;
+  end if;
+
+  if noncanonical_ledger_filename_exists then
+    raise exception
+      '0067 preflight refuses a noncanonical migration-ledger filename'
+      using errcode = '55000';
+  end if;
+
+  if ledgered_0067_or_later and not migration_0067_is_ledgered then
+    raise exception
+      '0067 preflight found a 0067-or-later ledger entry without the exact 0067 migration'
+      using errcode = '55000';
+  end if;
+
+  -- A current-release install creates 0064 through 0067 inside the serialized
+  -- migration transaction. An already-applied 0067 has no index work left.
+  if not migration_0064_is_ledgered or migration_0067_is_ledgered then
+    return;
+  end if;
+
+  if to_regclass('public.candidate_list_members') is null then
+    return;
+  end if;
+
+  select exists (
+    select 1
+      from public.candidate_list_members
+     limit 1
+  ) into candidate_list_members_exist;
+
+  if not candidate_list_members_exist then
+    return;
+  end if;
+
+  raise exception
+    '0067 would build a transactional candidate-list preview index over live rows; release requires a separately reviewed CREATE INDEX CONCURRENTLY phase or an explicitly ratified measured maintenance window'
+    using errcode = '55000';
+end
+$aria_candidate_list_set_preview_0067_preflight$;
+rollback;
+SQL
+}
+
 run_owner_phase() {
   : "${SUPABASE_ADMIN_CURRENT_PASSWORD:?SUPABASE_ADMIN_CURRENT_PASSWORD required}"
   : "${SUPABASE_ADMIN_TARGET_PASSWORD:?SUPABASE_ADMIN_TARGET_PASSWORD required}"
@@ -894,6 +989,7 @@ run_migrations_phase() {
   : "${POSTGRES_TARGET_PASSWORD:?POSTGRES_TARGET_PASSWORD required}"
 
   [ "${POSTGRES_READY:-}" = 1 ] || wait_for_target_postgres
+  preflight_candidate_list_set_preview_0067
   build_migration_plan
   echo "[migrate] applying serialized numbered migrations..."
   PGPASSWORD="$POSTGRES_TARGET_PASSWORD" \

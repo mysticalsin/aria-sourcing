@@ -22,7 +22,9 @@ export DB_HOST_PORT=0
 cleanup() {
   for background_pid in \
     "${mutation_pid:-}" "${first_writer_pid:-}" "${second_writer_pid:-}" \
-    "${rollback_pid:-}" "${add_holder_pid:-}"; do
+    "${rollback_pid:-}" "${add_holder_pid:-}" \
+    "${preflight_holder_pid:-}" "${forward_add_holder_pid:-}" \
+    "${forward_migration_pid:-}"; do
     if [[ -n "$background_pid" ]]; then
       kill "$background_pid" >/dev/null 2>&1 || true
       wait "$background_pid" >/dev/null 2>&1 || true
@@ -62,6 +64,18 @@ psql_database() {
     -d "$database" "$@"
 }
 
+canonicalize_pg_dump() {
+  sed -E '/^\\(un)?restrict[[:space:]]/d' \
+    | perl -pe '
+        if (/^CREATE POLICY / && /\sTO\s([^;]+?)(?=\s(?:USING|WITH CHECK)|;)/) {
+          $roles = $1;
+          @roles = sort split(/,\s*/, $roles);
+          $sorted = join(", ", @roles);
+          s/\Q$roles\E/$sorted/;
+        }
+      '
+}
+
 schema_fingerprint() {
   local database="${1:-postgres}"
   docker run --rm \
@@ -71,14 +85,34 @@ schema_fingerprint() {
     "$client_image" \
     -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d "$database" \
     --schema=public --schema-only --no-owner \
-    | sed -E '/^\\(un)?restrict[[:space:]]/d' \
+    | canonicalize_pg_dump \
     | shasum -a 256 | awk '{print $1}'
+}
+
+write_schema_snapshot() {
+  local output_file="$1"
+  local database="${2:-postgres}"
+  docker run --rm \
+    --network "$network" \
+    --env PGPASSWORD="$bootstrap_password" \
+    --entrypoint pg_dump \
+    "$client_image" \
+    -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d "$database" \
+    --schema=public --schema-only --no-owner \
+    | canonicalize_pg_dump > "$output_file"
 }
 
 data_fingerprint() {
   local database="${1:-postgres}"
   psql_database "$database" -Atq <<'SQL'
 select encode(extensions.digest(convert_to(jsonb_build_object(
+  'workspace_state',coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'workspace_id',workspace_record.workspace_id,
+      'state',workspace_record.state
+    ) order by workspace_record.workspace_id)
+      from public.workspace_state workspace_record
+  ),'[]'::jsonb),
   'lists',coalesce((
     select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
       'id',list_record.id,
@@ -123,6 +157,13 @@ legacy_data_fingerprint() {
   local database="${1:-postgres}"
   psql_database "$database" -Atq <<'SQL'
 select encode(extensions.digest(convert_to(jsonb_build_object(
+  'workspace_state',coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'workspace_id',workspace_record.workspace_id,
+      'state',workspace_record.state
+    ) order by workspace_record.workspace_id)
+      from public.workspace_state workspace_record
+  ),'[]'::jsonb),
   'lists',coalesce((
     select jsonb_agg(jsonb_build_object(
       'id',list_record.id,
@@ -244,6 +285,19 @@ insert into public.workspace_state(workspace_id,state) values (
   '67111111-1111-4111-8111-111111111111',
   '{"candidates":[{"campaignId":"legacy-campaign","id":"legacy-candidate","name":"PRIVATE-WORKSPACE-SENTINEL","email":"private-sentinel@example.test","phone":"+14155550167"}],"activities":[],"outreach":[],"replies":[],"bookings":[],"wins":[],"ledger":[],"suppression":[],"campaigns":[],"chats":[],"ingestedMessageIds":[],"chatboxSubmissions":[]}'
 );
+update public.workspace_state
+   set state=jsonb_set(
+     state,'{candidates}',
+     state->'candidates'||'[
+       {"campaignId":"erase-a","id":"erase-global","name":"Erase Global A","email":"erase-global@example.test"},
+       {"campaignId":"erase-b","id":"erase-global","name":"Erase Global B","email":"erase-global@example.test"},
+       {"campaignId":"hold-a","id":"hold-global","name":"Hold Global A","email":"hold-global@example.test"},
+       {"campaignId":"hold-b","id":"hold-global","name":"Hold Global B","email":"hold-global@example.test"},
+       {"campaignId":"rpc-concurrent","id":"rpc-one","name":"RPC One","email":"rpc-one@example.test","lawfulBasis":"legitimate_interest"},
+       {"campaignId":"rpc-concurrent","id":"rpc-two","name":"RPC Two","email":"rpc-two@example.test","lawfulBasis":"legitimate_interest"}
+     ]'::jsonb
+   )
+ where workspace_id='67111111-1111-4111-8111-111111111111';
 insert into public.candidate_lists(id,workspace_id,name,created_by) values (
   '67222222-2222-4222-8222-222222222220',
   '67111111-1111-4111-8111-111111111111',
@@ -317,6 +371,7 @@ fi
 
 psql_stdin --single-transaction -q < "$migration"
 post_0067_schema_fingerprint="$(schema_fingerprint)"
+write_schema_snapshot "$tmp_dir/post-0067-schema.sql"
 post_0067_data_fingerprint="$(data_fingerprint)"
 psql_stdin --single-transaction -q < "$migration"
 if [[ "$(schema_fingerprint)" != "$post_0067_schema_fingerprint" ]] \
@@ -554,18 +609,30 @@ select candidate_list_preview_test.expect(
   )
 );
 
-with expected(signature,language_name,volatility,security_definer,has_config) as (
+with expected(
+  signature,language_name,volatility,security_definer,expected_config
+) as (
   values
+    ('public.add_candidate_list_member_pre0067(uuid,text,text,uuid)',
+     'plpgsql','v',true,
+     array['search_path=pg_catalog, public, extensions, pg_temp']::text[]),
+    ('public.add_candidate_list_member(uuid,text,text,uuid)',
+     'plpgsql','v',true,
+     array['search_path=pg_catalog, public, pg_temp']::text[]),
     ('public.advance_candidate_list_membership_revisions()',
-     'plpgsql','v',true,true),
+     'plpgsql','v',true,
+     array['search_path=pg_catalog, public, pg_temp']::text[]),
     ('public.reject_candidate_list_member_truncate()',
-     'plpgsql','v',true,true),
+     'plpgsql','v',true,
+     array['search_path=pg_catalog, public, pg_temp']::text[]),
     ('public.guard_candidate_list_membership_revision()',
-     'plpgsql','v',true,true),
+     'plpgsql','v',true,
+     array['search_path=pg_catalog, public, pg_temp']::text[]),
     ('public.candidate_list_set_preview_window(uuid,uuid,uuid,text,text,text,integer)',
-     'sql','s',false,false),
+     'sql','s',false,null::text[]),
     ('public.preview_candidate_list_set(uuid,bigint,uuid,bigint,text,text,text,integer)',
-     'plpgsql','s',true,true)
+     'plpgsql','s',true,
+     array['search_path=pg_catalog, public, pg_temp']::text[])
 ), actual as (
   select expected.*,
          function_row.oid,
@@ -582,21 +649,20 @@ with expected(signature,language_name,volatility,security_definer,has_config) as
 )
 select candidate_list_preview_test.expect(
   'functions_have_exact_owner_language_volatility_security_and_config',
-  count(*)=5 and bool_and(
+  count(*)=7 and bool_and(
     oid is not null
     and owner_name='postgres'
     and lanname=language_name
     and provolatile=volatility
     and prosecdef=security_definer
-    and (
-      (has_config and proconfig=array['search_path=pg_catalog, public, pg_temp'])
-      or (not has_config and proconfig is null)
-    )
+    and proconfig is not distinct from expected_config
   )
 ) from actual;
 
 with function_contract(signature,authenticated_execute) as (
   values
+    ('public.add_candidate_list_member_pre0067(uuid,text,text,uuid)',false),
+    ('public.add_candidate_list_member(uuid,text,text,uuid)',true),
     ('public.advance_candidate_list_membership_revisions()',false),
     ('public.reject_candidate_list_member_truncate()',false),
     ('public.guard_candidate_list_membership_revision()',false),
@@ -635,7 +701,7 @@ select candidate_list_preview_test.expect(
        and function_row.proname='preview_candidate_list_set'
   )
   and (
-    select count(*)=5
+    select count(*)=7
        and bool_and(
          function_oid is not null
          and pg_catalog.pg_get_userbyid(proowner)='postgres'
@@ -668,13 +734,91 @@ select candidate_list_preview_test.expect(
       from resolved
   )
   and (
-    select count(*)=25
+    select count(*)=35
        and bool_and(
          actual_execute is not distinct from expected_execute
        )
       from effective_acl
   )
 );
+
+select candidate_list_preview_test.expect(
+  'writer_wrapper_and_predecessor_have_exact_source_markers',
+  (
+    select md5(function_row.prosrc)='3867226b6607b5a2170a9d9e7653d5d9'
+       and pg_catalog.obj_description(function_row.oid,'pg_proc')=
+           'aria:candidate-list-set-preview-authority:0067:'
+           || '3867226b6607b5a2170a9d9e7653d5d9'
+      from pg_catalog.pg_proc function_row
+     where function_row.oid=
+       'public.add_candidate_list_member(uuid,text,text,uuid)'::regprocedure
+  ) and (
+    select md5(function_row.prosrc)='d23ad55aa139891e7b7c8c441dffeddc'
+       and pg_catalog.obj_description(function_row.oid,'pg_proc')=
+           'aria:candidate-list-set-preview-authority:0067:'
+           || 'd23ad55aa139891e7b7c8c441dffeddc'
+      from pg_catalog.pg_proc function_row
+     where function_row.oid=
+       'public.add_candidate_list_member_pre0067(uuid,text,text,uuid)'::regprocedure
+  )
+);
+
+select candidate_list_preview_test.expect(
+  'writer_predecessor_denies_every_runtime_and_custom_role',
+  not has_function_privilege(
+    'anon','public.add_candidate_list_member_pre0067(uuid,text,text,uuid)','EXECUTE'
+  )
+  and not has_function_privilege(
+    'authenticated','public.add_candidate_list_member_pre0067(uuid,text,text,uuid)','EXECUTE'
+  )
+  and not has_function_privilege(
+    'service_role','public.add_candidate_list_member_pre0067(uuid,text,text,uuid)','EXECUTE'
+  )
+  and not has_function_privilege(
+    'authenticator','public.add_candidate_list_member_pre0067(uuid,text,text,uuid)','EXECUTE'
+  )
+  and not has_function_privilege(
+    'candidate_list_preview_acl_probe',
+    'public.add_candidate_list_member_pre0067(uuid,text,text,uuid)','EXECUTE'
+  )
+);
+
+do $writer_wrapper_equivalence$
+declare
+  wrapper_result jsonb;
+  predecessor_result jsonb;
+begin
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"67000000-0000-4000-8000-000000000001","role":"authenticated"}',
+    true
+  );
+  perform set_config(
+    'request.jwt.claim.sub','67000000-0000-4000-8000-000000000001',true
+  );
+  perform set_config('request.jwt.claim.role','authenticated',true);
+  execute 'set local role authenticated';
+  wrapper_result := public.add_candidate_list_member(
+    '67222222-2222-4222-8222-222222222220',
+    'legacy-campaign','legacy-candidate',
+    '67999999-9999-4999-8999-999999999902'
+  );
+  execute 'reset role';
+  predecessor_result := public.add_candidate_list_member_pre0067(
+    '67222222-2222-4222-8222-222222222220',
+    'legacy-campaign','legacy-candidate',
+    '67999999-9999-4999-8999-999999999902'
+  );
+  perform candidate_list_preview_test.expect(
+    'writer_wrapper_returns_exact_predecessor_result',
+    wrapper_result=predecessor_result,
+    format('wrapper=%s predecessor=%s',wrapper_result,predecessor_result)
+  );
+exception when others then
+  execute 'reset role';
+  raise;
+end
+$writer_wrapper_equivalence$;
 
 select candidate_list_preview_test.expect(
   'planning_helper_has_exact_closed_return_table',
@@ -689,7 +833,7 @@ select candidate_list_preview_test.expect(
          'pg_catalog.bool'::regtype::oid,
          'pg_catalog.bool'::regtype::oid
        ]
-       and function_row.proargmodes[8:13]=array['t','t','t','t','t','t']::char[]
+       and function_row.proargmodes[8:13]=array['t','t','t','t','t','t']::"char"[]
        and function_row.proargnames[8:13]=array[
          'campaign_id','candidate_id','relation','disposition','emit','is_lookahead'
        ]
@@ -821,7 +965,7 @@ select distinct
   case when fixture.candidate_id='Alpha' then repeat('f',64)
        else md5(fixture.campaign_id||':'||fixture.candidate_id)
           ||md5(fixture.campaign_id||':'||fixture.candidate_id) end,
-  list_record.created_by,'2026-07-26 10:00:00+00',
+  list_record.created_by,'2026-07-26 10:00:00+00'::timestamptz,
   case when fixture.candidate_id='Alpha' then 'governed-v1' else 'legacy-v1' end,
   case when fixture.candidate_id='Alpha' then 'legitimate_interest' else null end,
   case when fixture.candidate_id='Alpha'
@@ -1597,8 +1741,10 @@ begin
       raise exception 'nonterminal traversal returned null cursor';
     end if;
     if cursor_campaign is not null and
-       (result#>>'{next_cursor,campaign_id}',result#>>'{next_cursor,candidate_id}')
-       <= (cursor_campaign,cursor_candidate) then
+       ((result#>>'{next_cursor,campaign_id}') collate pg_catalog."C",
+        (result#>>'{next_cursor,candidate_id}') collate pg_catalog."C")
+       <= (cursor_campaign collate pg_catalog."C",
+           cursor_candidate collate pg_catalog."C") then
       raise exception 'traversal cursor did not strictly advance';
     end if;
     cursor_campaign := result#>>'{next_cursor,campaign_id}';
@@ -1722,9 +1868,16 @@ as $$
           and candidate_list_preview_test.plan_node_work(ancestor.node)
               <=case when p_operation='union' then 202 else 101 end
      )
-  ), member_expensive_nodes as (
-    select candidate.node,candidate.ancestors
+  ), member_expensive_paths as (
+    select
+      candidate.node,
+      member.ancestors,
+      expensive_ordinal.ordinal
       from nodes candidate
+      join member_roots member on true
+      cross join lateral generate_subscripts(
+        member.ancestors,1
+      ) expensive_ordinal(ordinal)
      where (
        candidate.node->>'Node Type' in ('Sort','Hash','Hash Join')
        or (
@@ -1732,12 +1885,7 @@ as $$
          and candidate.node->>'Strategy'='Hashed'
        )
      )
-       and exists (
-         select 1
-           from member_roots member
-           cross join lateral unnest(member.ancestors) ancestor(node)
-          where ancestor.node=candidate.node
-       )
+       and member.ancestors[expensive_ordinal.ordinal]=candidate.node
   )
   select
     (select count(*) from member_roots)=2
@@ -1759,14 +1907,23 @@ as $$
           or coalesce((node->>'Actual Loops')::numeric,1)>100
     )
     and not exists(
-      select 1 from member_expensive_nodes expensive
+      select 1 from member_expensive_paths expensive
        where not exists (
          select 1
-           from unnest(expensive.ancestors) ancestor(node)
-          where ancestor.node->>'Node Type'='Limit'
-            and coalesce((ancestor.node->>'Plan Rows')::numeric,0)
+           from generate_subscripts(
+             expensive.ancestors,1
+           ) limit_ordinal(ordinal)
+          where limit_ordinal.ordinal>expensive.ordinal
+            and expensive.ancestors[limit_ordinal.ordinal]
+                  ->>'Node Type'='Limit'
+            and coalesce((
+              expensive.ancestors[limit_ordinal.ordinal]
+                ->>'Plan Rows'
+            )::numeric,0)
                 <=case when p_operation='union' then 202 else 101 end
-            and candidate_list_preview_test.plan_node_work(ancestor.node)
+            and candidate_list_preview_test.plan_node_work(
+              expensive.ancestors[limit_ordinal.ordinal]
+            )
                 <=case when p_operation='union' then 202 else 101 end
        )
     )
@@ -1784,7 +1941,8 @@ as $$
         and (
           select count(*)=1 from member_roots
            where coalesce((node->>'Actual Loops')::numeric,1)=1
-             and candidate_list_preview_test.plan_node_work(node)=101
+             and candidate_list_preview_test.plan_node_work(node)
+                 between 1 and p_member_scan_row_cap
              and strpos(coalesce(node->>'Index Cond',''),p_right_list::text)>0
              and strpos(coalesce(node->>'Index Cond',''),'workspace_id')>0
              and strpos(coalesce(node->>'Index Cond',''),'list_id')>0
@@ -2383,6 +2541,145 @@ release_advisory_barrier() {
 run_concurrency_and_cascade_contract() {
   local before_revision
   local after_revision
+  local real_rpc_revision_before
+  local real_rpc_revision_after
+
+  psql_stdin --single-transaction -q <<'SQL'
+insert into public.candidate_contact_attestations(
+  workspace_id,campaign_id,candidate_id,attestation_kind,value_code,
+  evidence_sha256,recorded_by,recorded_at,authority_version,
+  lawful_basis_code,observed_at
+) values
+  (
+    '67111111-1111-4111-8111-111111111111','rpc-concurrent','rpc-one',
+    'manual_provenance','operator_verified',repeat('7',64),
+    '67000000-0000-4000-8000-000000000001',
+    '2026-07-26 11:06:00+00','governed-v1','legitimate_interest',
+    '2026-07-26 11:06:00+00'
+  ),
+  (
+    '67111111-1111-4111-8111-111111111111','rpc-concurrent','rpc-two',
+    'manual_provenance','operator_verified',repeat('8',64),
+    '67000000-0000-4000-8000-000000000001',
+    '2026-07-26 11:06:00+00','governed-v1','legitimate_interest',
+    '2026-07-26 11:06:00+00'
+  );
+
+create function candidate_list_preview_test.pause_real_add_after_insert()
+returns trigger
+language plpgsql
+set search_path = pg_catalog
+as $$
+begin
+  perform pg_catalog.pg_advisory_xact_lock_shared(6700670104);
+  return new;
+end
+$$;
+create trigger aaa_candidate_list_preview_real_add_barrier
+after insert on public.candidate_list_members
+referencing new table as real_add_rows
+for each statement execute function
+  candidate_list_preview_test.pause_real_add_after_insert();
+SQL
+
+  real_rpc_revision_before="$(psql_stdin -Atq -c "
+    select membership_revision from public.candidate_lists
+     where id='67222222-2222-4222-8222-222222222225'
+  ")"
+  start_advisory_barrier \
+    "preview-real-add-start-barrier" 6700670104 \
+    "real-add-start-barrier"
+
+  PGAPPNAME=preview-real-add-first \
+    PGOPTIONS="-c lock_timeout=5000 -c statement_timeout=15000" \
+    psql_stdin -q > "$tmp_dir/real-add-first.log" 2>&1 <<'SQL' &
+begin;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"67000000-0000-4000-8000-000000000001","role":"authenticated"}',
+  true
+);
+select set_config(
+  'request.jwt.claim.sub','67000000-0000-4000-8000-000000000001',true
+);
+select set_config('request.jwt.claim.role','authenticated',true);
+select public.add_candidate_list_member(
+  '67222222-2222-4222-8222-222222222225',
+  'rpc-concurrent','rpc-one',
+  '67999999-9999-4999-8999-999999999910'
+);
+commit;
+SQL
+  first_writer_pid=$!
+
+  PGAPPNAME=preview-real-add-second \
+    PGOPTIONS="-c lock_timeout=5000 -c statement_timeout=15000" \
+    psql_stdin -q > "$tmp_dir/real-add-second.log" 2>&1 <<'SQL' &
+begin;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"67000000-0000-4000-8000-000000000001","role":"authenticated"}',
+  true
+);
+select set_config(
+  'request.jwt.claim.sub','67000000-0000-4000-8000-000000000001',true
+);
+select set_config('request.jwt.claim.role','authenticated',true);
+select public.add_candidate_list_member(
+  '67222222-2222-4222-8222-222222222225',
+  'rpc-concurrent','rpc-two',
+  '67999999-9999-4999-8999-999999999911'
+);
+commit;
+SQL
+  second_writer_pid=$!
+
+  wait_for_activity "preview-real-add-first" "*|Lock:advisory"
+  wait_for_activity "preview-real-add-second" "*|Lock:advisory"
+  release_advisory_barrier
+  if ! wait "$first_writer_pid"; then
+    cat "$tmp_dir/real-add-first.log" >&2
+    echo "candidate-list-set-preview-db: first real concurrent add failed" >&2
+    exit 1
+  fi
+  first_writer_pid=""
+  if ! wait "$second_writer_pid"; then
+    cat "$tmp_dir/real-add-second.log" >&2
+    echo "candidate-list-set-preview-db: second real concurrent add failed" >&2
+    exit 1
+  fi
+  second_writer_pid=""
+
+  psql_stdin --single-transaction -q <<'SQL'
+drop trigger aaa_candidate_list_preview_real_add_barrier
+  on public.candidate_list_members;
+drop function candidate_list_preview_test.pause_real_add_after_insert();
+SQL
+  real_rpc_revision_after="$(psql_stdin -Atq -c "
+    select membership_revision from public.candidate_lists
+     where id='67222222-2222-4222-8222-222222222225'
+  ")"
+  if (( real_rpc_revision_after - real_rpc_revision_before != 2 )) \
+     || [[ "$(psql_stdin -Atq -c "
+       select count(*) from public.candidate_list_members
+        where list_id='67222222-2222-4222-8222-222222222225'
+          and campaign_id='rpc-concurrent'
+          and candidate_id in ('rpc-one','rpc-two')
+     ")" != "2" ]] \
+     || ! grep -Eq '"status"[[:space:]]*:[[:space:]]*"added"' \
+       "$tmp_dir/real-add-first.log" \
+     || ! grep -Eq '"status"[[:space:]]*:[[:space:]]*"added"' \
+       "$tmp_dir/real-add-second.log"; then
+    echo "candidate-list-set-preview-db: real concurrent adds did not serialize exactly" >&2
+    sed -n '1,80p' "$tmp_dir/real-add-first.log" >&2
+    sed -n '1,80p' "$tmp_dir/real-add-second.log" >&2
+    exit 1
+  fi
+  psql_stdin -q -c "select candidate_list_preview_test.expect(
+    'two_real_same_list_adds_serialize_without_deadlock',true
+  )"
 
   before_revision="$(psql_stdin -Atq -c "
     select membership_revision from public.candidate_lists
@@ -2675,20 +2972,44 @@ SQL
 }
 
 run_erasure_and_hold_contract() {
-psql_stdin -q <<'SQL'
+  local suffix="${GITHUB_RUN_ID:-$$}_${GITHUB_RUN_ATTEMPT:-0}"
+  local erasure_database="aria0067_erasure_${suffix}"
+  local erasure_result_state
+
+  # Set-operation scale fixtures deliberately bypass governed admission so
+  # they can isolate bounded traversal without creating 50,000 canonical
+  # application candidates. Run erasure semantics in a clean accepted 0067
+  # clone where
+  # every durable member has exact canonical workspace authority.
+  clone_database "$erasure_database" "aria0067accepted_${suffix}"
+  psql_database "$erasure_database" -q <<'SQL'
 \set ON_ERROR_STOP on
 
-update public.workspace_state
-   set state=jsonb_set(
-     state,'{candidates}',
-     state->'candidates'||'[
-       {"campaignId":"erase-a","id":"erase-global","name":"Erase Global A","email":"erase-global@example.test"},
-       {"campaignId":"erase-b","id":"erase-global","name":"Erase Global B","email":"erase-global@example.test"},
-       {"campaignId":"hold-a","id":"hold-global","name":"Hold Global A","email":"hold-global@example.test"},
-       {"campaignId":"hold-b","id":"hold-global","name":"Hold Global B","email":"hold-global@example.test"}
-     ]'::jsonb
-   )
- where workspace_id='67111111-1111-4111-8111-111111111111';
+create schema candidate_list_preview_test;
+create table candidate_list_preview_test.results(
+  case_name text primary key,
+  passed boolean not null,
+  detail text
+);
+create table candidate_list_preview_test.outputs(
+  case_name text primary key,
+  output jsonb not null
+);
+create function candidate_list_preview_test.expect(
+  p_case_name text,p_passed boolean,p_detail text default null
+) returns void
+language plpgsql
+set search_path = pg_catalog,candidate_list_preview_test
+as $$
+begin
+  insert into candidate_list_preview_test.results(case_name,passed,detail)
+  values(p_case_name,coalesce(p_passed,false),p_detail);
+end
+$$;
+
+insert into public.candidate_lists(id,workspace_id,name,created_by) values
+  ('67222222-2222-4222-8222-222222222226','67111111-1111-4111-8111-111111111111','Erasure list one','67000000-0000-4000-8000-000000000001'),
+  ('67222222-2222-4222-8222-222222222227','67111111-1111-4111-8111-111111111111','Erasure list two','67000000-0000-4000-8000-000000000001');
 
 insert into public.candidate_list_members(
   workspace_id,list_id,campaign_id,candidate_id,evidence_kind,
@@ -2863,13 +3184,156 @@ select candidate_list_preview_test.expect(
   )
 );
 SQL
+
+  erasure_result_state="$(psql_database "$erasure_database" -Atq -c "
+    select count(*)::text||'|'||count(*) filter(where not passed)::text
+      from candidate_list_preview_test.results
+     where case_name in (
+       'candidate_global_erasure_advances_each_surviving_list_once',
+       'blocked_legal_hold_changes_no_member_or_revision',
+       'released_hold_replay_completes_and_advances_each_list_once'
+     )
+  ")"
+  if [[ "$erasure_result_state" != "3|0" ]]; then
+    psql_database "$erasure_database" -P pager=off -c "
+      select case_name,passed,detail
+        from candidate_list_preview_test.results
+       where case_name in (
+         'candidate_global_erasure_advances_each_surviving_list_once',
+         'blocked_legal_hold_changes_no_member_or_revision',
+         'released_hold_replay_completes_and_advances_each_list_once'
+       )
+       order by case_name
+    " >&2
+    echo "candidate-list-set-preview-db: isolated erasure authority failed (${erasure_result_state})" >&2
+    exit 1
+  fi
+  psql_stdin --single-transaction -q <<'SQL'
+select candidate_list_preview_test.expect(
+  'candidate_global_erasure_advances_each_surviving_list_once',true
+);
+select candidate_list_preview_test.expect(
+  'blocked_legal_hold_changes_no_member_or_revision',true
+);
+select candidate_list_preview_test.expect(
+  'released_hold_replay_completes_and_advances_each_list_once',true
+);
+SQL
 }
 
 clone_database() {
   local destination="$1"
   local source_database="$2"
-  psql_database template1 -q \
-    -c "create database ${destination} template ${source_database}"
+  local attempt
+  local clone_log="$tmp_dir/clone-${destination}.log"
+
+  # The Supabase image keeps pg_cron and pg_net background sessions attached
+  # to postgres, so PostgreSQL cannot use that database as a physical template.
+  # Snapshot it logically; subsequent disposable databases have no such workers
+  # and can use the faster physical template path below.
+  if [[ "$source_database" == "postgres" ]]; then
+    local dump_file="$tmp_dir/snapshot.dump"
+    local public_acl_list="$tmp_dir/public-runtime-acl.list"
+    local auth_acl_list="$tmp_dir/auth-runtime-acl.list"
+    docker run --rm \
+      --network "$network" \
+      --env PGPASSWORD="$bootstrap_password" \
+      --entrypoint pg_dump \
+      "$client_image" \
+      -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d postgres \
+      --format=custom \
+      --exclude-extension=pg_cron \
+      --exclude-extension=pg_net \
+      --exclude-extension=pg_stat_statements \
+      --exclude-extension=supabase_vault \
+      > "$dump_file"
+    docker run --rm -i \
+      --entrypoint pg_restore \
+      "$client_image" -l < "$dump_file" \
+      | awk '
+          $4 == "ACL" && $5 == "public" { print; next }
+          $4 == "ACL" && $5 == "-" && $6 == "SCHEMA" && $7 == "public" { print }
+        ' > "$public_acl_list"
+    docker run --rm -i \
+      --entrypoint pg_restore \
+      "$client_image" -l < "$dump_file" \
+      | awk '
+          $4 == "ACL" && $5 == "auth" { print; next }
+          $4 == "ACL" && $5 == "-" && $6 == "SCHEMA" && $7 == "auth" { print }
+        ' > "$auth_acl_list"
+    if [[ ! -s "$public_acl_list" || ! -s "$auth_acl_list" ]]; then
+      echo "candidate-list-set-preview-db: logical snapshot contained no public or auth ACL entries" >&2
+      return 1
+    fi
+    psql_database template1 -q \
+      -c "create database ${destination} template template0"
+    docker run --rm -i \
+      --network "$network" \
+      --env PGPASSWORD="$bootstrap_password" \
+      --entrypoint pg_restore \
+      "$client_image" \
+      -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d "$destination" \
+      --exit-on-error --single-transaction --no-owner --no-privileges \
+      < "$dump_file"
+    ARIA_DB_TEST_ROLE=supabase_admin \
+      psql_database "$destination" -q < docker/db/03-auth-owner.sql
+    tar -C "$tmp_dir" -cf - \
+      snapshot.dump public-runtime-acl.list auth-runtime-acl.list \
+      | docker run --rm -i \
+          --network "$network" \
+          --env PGPASSWORD="$bootstrap_password" \
+          --env "ARIA_DESTINATION=$destination" \
+          --env "ARIA_DB_TEST_ROLE=${ARIA_DB_TEST_ROLE:-postgres}" \
+          --entrypoint sh \
+          "$client_image" -ceu '
+            mkdir -p /aria-dump
+            tar -xf - -C /aria-dump
+            exec pg_restore \
+              -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d "$ARIA_DESTINATION" \
+              --exit-on-error --single-transaction --no-owner \
+              --use-list=/aria-dump/public-runtime-acl.list \
+              /aria-dump/snapshot.dump
+          '
+    tar -C "$tmp_dir" -cf - snapshot.dump auth-runtime-acl.list \
+      | docker run --rm -i \
+          --network "$network" \
+          --env PGPASSWORD="$bootstrap_password" \
+          --env "ARIA_DESTINATION=$destination" \
+          --entrypoint sh \
+          "$client_image" -ceu '
+            mkdir -p /aria-dump
+            tar -xf - -C /aria-dump
+            exec pg_restore \
+              -h db -U supabase_admin --role=supabase_auth_admin \
+              -d "$ARIA_DESTINATION" \
+              --exit-on-error --single-transaction --no-owner \
+              --use-list=/aria-dump/auth-runtime-acl.list \
+              /aria-dump/snapshot.dump
+          '
+    return
+  fi
+
+  # CREATE DATABASE ... TEMPLATE refuses while any session is attached to the
+  # source database. Retry only that transient state and cap each attempt so a
+  # leaked test session produces deterministic diagnostics instead of a hang.
+  for attempt in $(seq 1 10); do
+    if PGOPTIONS='-c statement_timeout=3s' \
+      psql_database template1 -q --set VERBOSITY=verbose \
+      -c "create database ${destination} template ${source_database}" \
+      > "$clone_log" 2>&1; then
+      return
+    fi
+    if ! grep -Eq 'ERROR:[[:space:]]+(55006|57014):|is being accessed by other users' \
+      "$clone_log"; then
+      sed -n '1,80p' "$clone_log" >&2
+      return 1
+    fi
+    sleep 0.1
+  done
+
+  echo "candidate-list-set-preview-db: source database ${source_database} remained busy while cloning ${destination}" >&2
+  sed -n '1,80p' "$clone_log" >&2
+  return 1
 }
 
 full_public_fingerprint() {
@@ -2881,7 +3345,7 @@ full_public_fingerprint() {
     "$client_image" \
     -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d "$database" \
     --schema=public --no-owner \
-    | sed -E '/^\\(un)?restrict[[:space:]]/d' \
+    | canonicalize_pg_dump \
     | shasum -a 256 | awk '{print $1}'
 }
 
@@ -2914,9 +3378,21 @@ expect_0067_refusal_without_change() {
 run_deployment_preflight_source_contract() {
   local deploy_source="docker/bootstrap/run.fly.sh"
   local preflight_block
+  local preflight_sql="$tmp_dir/candidate-list-set-preview-0067-preflight.sql"
   local migration_phase
   local preflight_call_line
   local migration_plan_line
+  local suffix="${GITHUB_RUN_ID:-$$}_${GITHUB_RUN_ATTEMPT:-0}"
+  local empty_database="aria0067_preflight_empty_${suffix}"
+  local populated_database="aria0067_preflight_populated_${suffix}"
+  local later_database="aria0067_preflight_later_${suffix}"
+  local noncanonical_database="aria0067_preflight_noncanonical_${suffix}"
+  local timeout_database="aria0067_preflight_timeout_${suffix}"
+  local before_timeout
+  local after_timeout
+  local timeout_log
+  local timeout_status
+  local holder_ready="false"
 
   if [[ ! -f "$deploy_source" ]]; then
     echo "candidate-list-set-preview-db: deployment preflight source is absent" >&2
@@ -2940,7 +3416,13 @@ run_deployment_preflight_source_contract() {
      || "$preflight_block" != *"0064_candidate_lists_authority.sql"* \
      || "$preflight_block" != *"0067_candidate_list_set_preview_authority.sql"* \
      || "$preflight_block" != *"public.candidate_list_members"* \
-     || "$preflight_block" != *"count(*)"* \
+     || "$preflight_block" != *"select exists ("* \
+     || "$preflight_block" != *"limit 1"* \
+     || "$preflight_block" == *"count(*)"* \
+     || "$preflight_block" != *"set local lock_timeout"* \
+     || "$preflight_block" != *"set local statement_timeout"* \
+     || "$preflight_block" != *"noncanonical_ledger_filename_exists"* \
+     || "$preflight_block" != *"ledgered_0067_or_later"* \
      || ! "$preflight_block" =~ [Cc][Oo][Nn][Cc][Uu][Rr][Rr][Ee][Nn][Tt] ]]; then
     echo "candidate-list-set-preview-db: 0067 deploy preflight lacks the read-only live-table/index-build refusal contract" >&2
     exit 1
@@ -2956,6 +3438,127 @@ run_deployment_preflight_source_contract() {
     echo "candidate-list-set-preview-db: 0067 deploy preflight must run before the migration plan is built" >&2
     exit 1
   fi
+
+  printf '%s\n' "$preflight_block" | awk '
+    /<<'\''SQL'\''$/ { capture=1; next }
+    capture && /^SQL$/ { exit }
+    capture { print }
+  ' > "$preflight_sql"
+  if [[ ! -s "$preflight_sql" ]]; then
+    echo "candidate-list-set-preview-db: could not extract executable 0067 deploy preflight SQL" >&2
+    exit 1
+  fi
+
+  clone_database "$empty_database" template1
+  psql_database "$empty_database" -q <<'SQL'
+create table public.aria_schema_migrations(
+  filename text primary key,
+  sha256 text not null,
+  applied_at timestamptz not null default now()
+);
+insert into public.aria_schema_migrations(filename,sha256)
+values ('0064_candidate_lists_authority.sql',repeat('a',64));
+create table public.candidate_list_members(id bigint primary key);
+SQL
+  psql_database "$empty_database" -q < "$preflight_sql"
+
+  clone_database "$populated_database" "$empty_database"
+  psql_database "$populated_database" -q \
+    -c 'insert into public.candidate_list_members(id) values (1)'
+  expect_0067_preflight_refusal_without_change \
+    "$populated_database" "$preflight_sql" \
+    "populated-deploy-preflight" '55000'
+
+  clone_database "$later_database" "$empty_database"
+  psql_database "$later_database" -q <<'SQL'
+insert into public.aria_schema_migrations(filename,sha256)
+values ('0068_synthetic_later_authority.sql',repeat('b',64));
+SQL
+  expect_0067_preflight_refusal_without_change \
+    "$later_database" "$preflight_sql" \
+    "later-ledger-deploy-preflight" '55000'
+
+  clone_database "$noncanonical_database" "$empty_database"
+  psql_database "$noncanonical_database" -q <<'SQL'
+insert into public.aria_schema_migrations(filename,sha256)
+values ('synthetic-later-authority.sql',repeat('c',64));
+SQL
+  expect_0067_preflight_refusal_without_change \
+    "$noncanonical_database" "$preflight_sql" \
+    "noncanonical-ledger-deploy-preflight" '55000'
+
+  clone_database "$timeout_database" "$populated_database"
+  before_timeout="$(full_public_fingerprint "$timeout_database")"
+  PGAPPNAME=aria-0067-preflight-lock-holder \
+    psql_database "$timeout_database" -q \
+    > "$tmp_dir/preflight-lock-holder.log" 2>&1 <<'SQL' &
+begin;
+lock table public.candidate_list_members in access exclusive mode;
+select pg_sleep(7);
+commit;
+SQL
+  preflight_holder_pid=$!
+  for _ in $(seq 1 50); do
+    if [[ "$(psql_database "$timeout_database" -Atq -c "select exists(
+      select 1 from pg_catalog.pg_stat_activity
+       where application_name='aria-0067-preflight-lock-holder'
+         and wait_event_type='Timeout' and wait_event='PgSleep'
+    )::text")" == "true" ]]; then
+      holder_ready="true"
+      break
+    fi
+    sleep 0.1
+  done
+  if [[ "$holder_ready" != "true" ]]; then
+    echo "candidate-list-set-preview-db: deploy preflight lock holder was not ready" >&2
+    exit 1
+  fi
+
+  set +e
+  timeout_log="$(psql_database "$timeout_database" --set VERBOSITY=verbose \
+    < "$preflight_sql" 2>&1)"
+  timeout_status=$?
+  set -e
+  if [[ "$timeout_status" -eq 0 ]] \
+     || ! grep -Eq 'ERROR:[[:space:]]+55P03:|lock timeout' <<< "$timeout_log"; then
+    echo "candidate-list-set-preview-db: deploy preflight did not fail closed at its local lock timeout" >&2
+    printf '%s\n' "$timeout_log" >&2
+    exit 1
+  fi
+  wait "$preflight_holder_pid"
+  preflight_holder_pid=""
+  after_timeout="$(full_public_fingerprint "$timeout_database")"
+  if [[ "$after_timeout" != "$before_timeout" ]]; then
+    echo "candidate-list-set-preview-db: timed-out deploy preflight changed public state" >&2
+    exit 1
+  fi
+}
+
+expect_0067_preflight_refusal_without_change() {
+  local database="$1"
+  local preflight_sql="$2"
+  local case_name="$3"
+  local expected_sqlstate="$4"
+  local before
+  local after
+  local log_file="$tmp_dir/${case_name}.log"
+
+  before="$(full_public_fingerprint "$database")"
+  if psql_database "$database" --set VERBOSITY=verbose \
+    < "$preflight_sql" > "$log_file" 2>&1; then
+    echo "candidate-list-set-preview-db: ${case_name} unexpectedly succeeded" >&2
+    exit 1
+  fi
+  if ! grep -Eq "ERROR:[[:space:]]+${expected_sqlstate}:" "$log_file"; then
+    echo "candidate-list-set-preview-db: ${case_name} did not refuse with SQLSTATE ${expected_sqlstate}" >&2
+    sed -n '1,80p' "$log_file" >&2
+    exit 1
+  fi
+  after="$(full_public_fingerprint "$database")"
+  if [[ "$after" != "$before" ]]; then
+    echo "candidate-list-set-preview-db: ${case_name} changed public state before refusing" >&2
+    exit 1
+  fi
 }
 
 run_migration_resilience_contract() {
@@ -2965,6 +3568,9 @@ run_migration_resilience_contract() {
   local probe_database
   local before_legacy_data
   local after_legacy_data
+  local reapplied_schema_fingerprint
+  local reapplied_legacy_data_fingerprint
+  local reapplied_revisions_are_zero
 
   psql_stdin --single-transaction -q <<'SQL'
 create schema candidate_list_preview_independent;
@@ -3003,12 +3609,21 @@ SQL
   clone_database "$baseline_template" postgres
 
   psql_stdin --single-transaction -q < "$migration"
-  if [[ "$(schema_fingerprint)" != "$post_0067_schema_fingerprint" \
-     || "$(legacy_data_fingerprint)" != "$pre_0067_legacy_data_fingerprint" \
-     || "$(psql_stdin -Atq -c "select not exists(
-       select 1 from public.candidate_lists where membership_revision<>0
-     )::text")" != "true" ]]; then
+  reapplied_schema_fingerprint="$(schema_fingerprint)"
+  reapplied_legacy_data_fingerprint="$(legacy_data_fingerprint)"
+  reapplied_revisions_are_zero="$(psql_stdin -Atq -c "select (not exists(
+    select 1 from public.candidate_lists where membership_revision<>0
+  ))::text")"
+  if [[ "$reapplied_schema_fingerprint" != "$post_0067_schema_fingerprint" \
+     || "$reapplied_legacy_data_fingerprint" != "$pre_0067_legacy_data_fingerprint" \
+     || "$reapplied_revisions_are_zero" != "true" ]]; then
     echo "candidate-list-set-preview-db: rollback reapply did not restore exact 0067 authority" >&2
+    echo "  schema expected=$post_0067_schema_fingerprint actual=$reapplied_schema_fingerprint" >&2
+    echo "  legacy-data expected=$pre_0067_legacy_data_fingerprint actual=$reapplied_legacy_data_fingerprint" >&2
+    echo "  revisions-zero=$reapplied_revisions_are_zero" >&2
+    write_schema_snapshot "$tmp_dir/reapplied-0067-schema.sql"
+    diff -u "$tmp_dir/post-0067-schema.sql" \
+      "$tmp_dir/reapplied-0067-schema.sql" | sed -n '1,160p' >&2 || true
     exit 1
   fi
   if [[ "$(psql_stdin -Atq -c "select (
@@ -3058,6 +3673,8 @@ alter table public.candidate_lists
 SQL
   expect_0067_refusal_without_change \
     "$probe_database" "$migration" "poison-constraint"
+  expect_0067_refusal_without_change \
+    "$probe_database" "$rollback" "poison-constraint-rollback"
 
   probe_database="aria0067_poison_trigger_${suffix}"
   clone_database "$probe_database" "$baseline_template"
@@ -3093,6 +3710,8 @@ as $$ select '{"status":"poison-overload"}'::jsonb $$;
 SQL
   expect_0067_refusal_without_change \
     "$probe_database" "$migration" "poison-extra-overload"
+  expect_0067_refusal_without_change \
+    "$probe_database" "$rollback" "poison-extra-overload-rollback"
 
   probe_database="aria0067_poison_acl_${suffix}"
   clone_database "$probe_database" "$accepted_template"
@@ -3103,6 +3722,8 @@ grant execute on function public.preview_candidate_list_set(
 SQL
   expect_0067_refusal_without_change \
     "$probe_database" "$migration" "poison-custom-role-acl"
+  expect_0067_refusal_without_change \
+    "$probe_database" "$rollback" "poison-custom-role-acl-rollback"
 
   probe_database="aria0067_poison_disabled_${suffix}"
   clone_database "$probe_database" "$accepted_template"
@@ -3112,6 +3733,22 @@ alter table public.candidate_list_members disable trigger
 SQL
   expect_0067_refusal_without_change \
     "$probe_database" "$migration" "poison-disabled-trigger"
+  expect_0067_refusal_without_change \
+    "$probe_database" "$rollback" "poison-disabled-trigger-rollback"
+
+  probe_database="aria0067_poison_trigger_qual_${suffix}"
+  clone_database "$probe_database" "$accepted_template"
+  psql_database "$probe_database" -q <<'SQL'
+drop trigger candidate_list_members_advance_revision_after_insert
+  on public.candidate_list_members;
+create trigger candidate_list_members_advance_revision_after_insert
+after insert on public.candidate_list_members
+referencing new table as inserted_rows
+for each statement when (false)
+execute function public.advance_candidate_list_membership_revisions();
+SQL
+  expect_0067_refusal_without_change \
+    "$probe_database" "$rollback" "poison-trigger-qual-rollback"
 
   for ledger_sequence in 0067 0068; do
     probe_database="aria0067_ledger_${ledger_sequence}_${suffix}"
@@ -3157,9 +3794,392 @@ SQL
   expect_0067_refusal_without_change \
     "$probe_database" "$rollback" "markerless-partial-rollback"
 
+  probe_database="aria0067_reserved_overload_only_${suffix}"
+  clone_database "$probe_database" "$baseline_template"
+  psql_database "$probe_database" -q <<'SQL'
+create function public.preview_candidate_list_set(text)
+returns text language sql stable
+as $$ select $1 $$;
+SQL
+  expect_0067_refusal_without_change \
+    "$probe_database" "$rollback" "reserved-overload-only-rollback"
+
+  probe_database="aria0067_reserved_predecessor_overload_only_${suffix}"
+  clone_database "$probe_database" "$baseline_template"
+  psql_database "$probe_database" -q <<'SQL'
+create function public.add_candidate_list_member_pre0067(text)
+returns text language sql stable
+as $$ select $1 $$;
+SQL
+  expect_0067_refusal_without_change \
+    "$probe_database" "$rollback" \
+    "reserved-predecessor-overload-only-rollback"
+
+  probe_database="aria0067_noncanonical_ledger_${suffix}"
+  clone_database "$probe_database" "$accepted_template"
+  psql_database "$probe_database" -q <<'SQL'
+create table public.aria_schema_migrations(
+  filename text primary key,
+  sha256 text not null,
+  applied_at timestamptz not null default now()
+);
+insert into public.aria_schema_migrations(filename,sha256)
+values ('synthetic-later-authority.sql',repeat('d',64));
+SQL
+  expect_0067_refusal_without_change \
+    "$probe_database" "$rollback" "noncanonical-ledger-rollback"
+
+  probe_database="aria0067_poison_writer_wrapper_${suffix}"
+  clone_database "$probe_database" "$accepted_template"
+  psql_database "$probe_database" -q <<'SQL'
+create or replace function public.add_candidate_list_member(
+  p_list_id uuid,p_campaign_id text,p_candidate_id text,p_idempotency_key uuid
+) returns jsonb language plpgsql volatile security definer
+set search_path = pg_catalog, public, pg_temp
+as $$ begin return public.add_candidate_list_member_pre0067(
+  p_list_id,p_campaign_id,p_candidate_id,p_idempotency_key
+); end $$;
+do $marker$
+declare
+  routine_oid oid :=
+    'public.add_candidate_list_member(uuid,text,text,uuid)'::regprocedure::oid;
+begin
+  execute format(
+    'comment on function %s is %L',routine_oid::regprocedure,
+    'aria:candidate-list-set-preview-authority:0067:' || (
+      select md5(function_row.prosrc) from pg_proc function_row
+       where function_row.oid=routine_oid
+    )
+  );
+end
+$marker$;
+SQL
+  expect_0067_refusal_without_change \
+    "$probe_database" "$rollback" "poison-writer-wrapper-rollback"
+
+  probe_database="aria0067_poison_writer_predecessor_${suffix}"
+  clone_database "$probe_database" "$accepted_template"
+  psql_database "$probe_database" -q <<'SQL'
+create or replace function public.add_candidate_list_member_pre0067(
+  p_list_id uuid,p_campaign_id text,p_candidate_id text,p_idempotency_key uuid
+) returns jsonb language plpgsql volatile security definer
+set search_path = pg_catalog, public, extensions, pg_temp
+as $$ begin return '{"status":"poison"}'::jsonb; end $$;
+do $marker$
+declare
+  routine_oid oid :=
+    'public.add_candidate_list_member_pre0067(uuid,text,text,uuid)'::regprocedure::oid;
+begin
+  execute format(
+    'comment on function %s is %L',routine_oid::regprocedure,
+    'aria:candidate-list-set-preview-authority:0067:' || (
+      select md5(function_row.prosrc) from pg_proc function_row
+       where function_row.oid=routine_oid
+    )
+  );
+end
+$marker$;
+SQL
+  expect_0067_refusal_without_change \
+    "$probe_database" "$rollback" "poison-writer-predecessor-rollback"
+
+  probe_database="aria0067_poison_writer_default_${suffix}"
+  clone_database "$probe_database" "$accepted_template"
+  psql_database "$probe_database" -q <<'SQL'
+create or replace function public.add_candidate_list_member(
+  p_list_id uuid,
+  p_campaign_id text,
+  p_candidate_id text,
+  p_idempotency_key uuid default null
+) returns jsonb language plpgsql volatile security definer
+set search_path = pg_catalog, public, pg_temp
+as $$
+begin
+  lock table public.workspace_state in access share mode;
+  lock table public.candidate_list_operation_receipts in row share mode;
+  return public.add_candidate_list_member_pre0067(
+    p_list_id,p_campaign_id,p_candidate_id,p_idempotency_key
+  );
+end
+$$;
+SQL
+  expect_0067_refusal_without_change \
+    "$probe_database" "$migration" "poison-writer-default-forward"
+
+  probe_database="aria0067_poison_rpc_rollback_${suffix}"
+  clone_database "$probe_database" "$accepted_template"
+  psql_database "$probe_database" -q <<'SQL'
+create or replace function public.preview_candidate_list_set(
+  p_left_list_id uuid,p_left_revision bigint,
+  p_right_list_id uuid,p_right_revision bigint,
+  p_operation text,p_after_campaign_id text,p_after_candidate_id text,
+  p_limit integer
+) returns jsonb language plpgsql stable security definer
+set search_path = pg_catalog, public, pg_temp
+as $$ begin return '{"status":"poison"}'::jsonb; end $$;
+do $marker$
+declare
+  routine_oid oid :=
+    'public.preview_candidate_list_set(uuid,bigint,uuid,bigint,text,text,text,integer)'::regprocedure::oid;
+begin
+  execute format(
+    'comment on function %s is %L',routine_oid::regprocedure,
+    'aria:candidate-list-set-preview-authority:0067:' || (
+      select md5(function_row.prosrc) from pg_proc function_row
+       where function_row.oid=routine_oid
+    )
+  );
+end
+$marker$;
+SQL
+  expect_0067_refusal_without_change \
+    "$probe_database" "$rollback" "poison-rpc-body-rollback"
+
+  probe_database="aria0067_missing_trigger_rollback_${suffix}"
+  clone_database "$probe_database" "$accepted_template"
+  psql_database "$probe_database" -q <<'SQL'
+drop trigger candidate_list_members_advance_revision_after_delete
+  on public.candidate_list_members;
+SQL
+  expect_0067_refusal_without_change \
+    "$probe_database" "$rollback" "missing-trigger-rollback"
+
+  probe_database="aria0067_wrapper_only_partial_${suffix}"
+  clone_database "$probe_database" "$baseline_template"
+  psql_database "$probe_database" -q <<'SQL'
+alter function public.add_candidate_list_member(uuid,text,text,uuid)
+  rename to add_candidate_list_member_pre0067;
+revoke all on function public.add_candidate_list_member_pre0067(
+  uuid,text,text,uuid
+) from public,anon,authenticated,service_role,authenticator;
+create function public.add_candidate_list_member(
+  p_list_id uuid,p_campaign_id text,p_candidate_id text,p_idempotency_key uuid
+) returns jsonb language plpgsql volatile security definer
+set search_path = pg_catalog, public, pg_temp
+as $$
+begin
+  lock table public.workspace_state in access share mode;
+  lock table public.candidate_list_operation_receipts in row share mode;
+  return public.add_candidate_list_member_pre0067(
+    p_list_id,p_campaign_id,p_candidate_id,p_idempotency_key
+  );
+end
+$$;
+alter function public.add_candidate_list_member(uuid,text,text,uuid)
+  owner to postgres;
+revoke all on function public.add_candidate_list_member(uuid,text,text,uuid)
+  from public,anon,authenticated,service_role,authenticator;
+grant execute on function public.add_candidate_list_member(uuid,text,text,uuid)
+  to authenticated;
+SQL
+  expect_0067_refusal_without_change \
+    "$probe_database" "$rollback" "wrapper-only-partial-rollback"
+
+  probe_database="aria0067_orphan_exact_wrapper_${suffix}"
+  clone_database "$probe_database" "$baseline_template"
+  psql_database "$probe_database" -q <<'SQL'
+drop function public.add_candidate_list_member(uuid,text,text,uuid);
+create function public.add_candidate_list_member(
+  p_list_id uuid,
+  p_campaign_id text,
+  p_candidate_id text,
+  p_idempotency_key uuid
+)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = pg_catalog, public, pg_temp
+as $$
+begin
+  lock table public.workspace_state in access share mode;
+  lock table public.candidate_list_operation_receipts in row share mode;
+  return public.add_candidate_list_member_pre0067(
+    p_list_id,
+    p_campaign_id,
+    p_candidate_id,
+    p_idempotency_key
+  );
+end
+$$;
+alter function public.add_candidate_list_member(uuid,text,text,uuid)
+  owner to postgres;
+revoke all on function public.add_candidate_list_member(uuid,text,text,uuid)
+  from public,anon,authenticated,service_role,authenticator;
+grant execute on function public.add_candidate_list_member(uuid,text,text,uuid)
+  to authenticated;
+comment on function public.add_candidate_list_member(uuid,text,text,uuid) is
+  'aria:candidate-list-set-preview-authority:0067:3867226b6607b5a2170a9d9e7653d5d9';
+do $exact_wrapper$
+begin
+  if md5((select function_row.prosrc
+            from pg_catalog.pg_proc function_row
+           where function_row.oid = to_regprocedure(
+             'public.add_candidate_list_member(uuid,text,text,uuid)'
+           ))) <> '3867226b6607b5a2170a9d9e7653d5d9' then
+    raise exception 'orphan wrapper fixture is not the exact 0067 body';
+  end if;
+end
+$exact_wrapper$;
+SQL
+  expect_0067_refusal_without_change \
+    "$probe_database" "$rollback" "orphan-exact-wrapper-rollback"
+
   after_legacy_data="$(legacy_data_fingerprint)"
   if [[ "$after_legacy_data" != "$pre_0067_legacy_data_fingerprint" ]]; then
     echo "candidate-list-set-preview-db: resilience probes changed the primary database" >&2
+    exit 1
+  fi
+}
+
+run_pre0067_add_forward_lock_contract() {
+  local suffix="${GITHUB_RUN_ID:-$$}_${GITHUB_RUN_ATTEMPT:-0}"
+  local baseline_template="aria0067base_${suffix}"
+  local probe_database="aria0067_forward_writer_${suffix}"
+  local before_timeout
+  local after_timeout
+  local after_writer_legacy_data
+  local holder_ready="false"
+  local waited_relation=""
+
+  clone_database "$probe_database" "$baseline_template"
+  if [[ "$(psql_database "$probe_database" -Atq -c "select exists(
+    select 1 from public.sourcing_learning_secrets
+     where workspace_id='67111111-1111-4111-8111-111111111111'
+  )::text")" != "false" ]]; then
+    echo "candidate-list-set-preview-db: pre-0067 forward probe did not start without a workspace secret" >&2
+    exit 1
+  fi
+  PGAPPNAME=aria-0067-predecessor-add-holder \
+    psql_database "$probe_database" -q \
+    > "$tmp_dir/predecessor-add-holder.log" 2>&1 <<'SQL' &
+begin;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"67000000-0000-4000-8000-000000000001","role":"authenticated"}',
+  true
+);
+select set_config(
+  'request.jwt.claim.sub','67000000-0000-4000-8000-000000000001',true
+);
+select set_config('request.jwt.claim.role','authenticated',true);
+select public.add_candidate_list_member(
+  '67222222-2222-4222-8222-222222222220',
+  'legacy-campaign','legacy-candidate',
+  '67999999-9999-4999-8999-999999999903'
+);
+select pg_sleep(7);
+commit;
+SQL
+  forward_add_holder_pid=$!
+
+  for _ in $(seq 1 50); do
+    if [[ "$(psql_database "$probe_database" -Atq -c "select exists(
+      select 1 from pg_catalog.pg_stat_activity
+       where application_name='aria-0067-predecessor-add-holder'
+         and wait_event_type='Timeout' and wait_event='PgSleep'
+    )::text")" == "true" ]]; then
+      holder_ready="true"
+      break
+    fi
+    sleep 0.1
+  done
+  if [[ "$holder_ready" != "true" ]]; then
+    echo "candidate-list-set-preview-db: pre-0067 add did not reach its paused post-write state" >&2
+    sed -n '1,120p' "$tmp_dir/predecessor-add-holder.log" >&2
+    PGOPTIONS='-c request.jwt.claims={"sub":"67000000-0000-4000-8000-000000000001","role":"authenticated"} -c request.jwt.claim.sub=67000000-0000-4000-8000-000000000001 -c request.jwt.claim.role=authenticated' \
+      psql_database "$probe_database" -P pager=off -c "
+        select public.auth_identity_lifecycle_schema_ready() as lifecycle_ready,
+               public.current_active_identity_id() as active_identity,
+               public.current_workspace_id() as workspace_id,
+               public.current_profile_role() as profile_role,
+               exists(select 1 from public.profiles where id='67000000-0000-4000-8000-000000000001') as profile_exists,
+               exists(select 1 from auth.users where id='67000000-0000-4000-8000-000000000001') as auth_user_exists
+      " >&2 || true
+    exit 1
+  fi
+  before_timeout="$(full_public_fingerprint "$probe_database")"
+
+  (
+    PGAPPNAME=aria-0067-forward-timeout \
+      psql_database "$probe_database" --single-transaction \
+        --set VERBOSITY=verbose < "$migration"
+  ) > "$tmp_dir/forward-timeout.log" 2>&1 &
+  forward_migration_pid=$!
+
+  for _ in $(seq 1 50); do
+    waited_relation="$(psql_database "$probe_database" -Atq -c "
+      select coalesce((
+        select relation_row.relname
+          from pg_catalog.pg_locks waiting_lock
+          join pg_catalog.pg_class relation_row
+            on relation_row.oid=waiting_lock.relation
+         where waiting_lock.pid=(
+           select activity.pid from pg_catalog.pg_stat_activity activity
+            where activity.application_name='aria-0067-forward-timeout'
+            limit 1
+         )
+           and waiting_lock.locktype='relation'
+           and not waiting_lock.granted
+         order by relation_row.relname
+         limit 1
+      ),'')
+    ")"
+    if [[ -n "$waited_relation" ]]; then
+      break
+    fi
+    sleep 0.1
+  done
+  if [[ "$waited_relation" != "workspace_state" ]]; then
+    echo "candidate-list-set-preview-db: forward apply first waited on ${waited_relation:-no relation}, not workspace_state" >&2
+    exit 1
+  fi
+  if wait "$forward_migration_pid"; then
+    echo "candidate-list-set-preview-db: forward apply passed through a paused pre-0067 add" >&2
+    exit 1
+  fi
+  forward_migration_pid=""
+  if ! grep -Eq 'ERROR:[[:space:]]+55P03:|lock timeout' \
+    "$tmp_dir/forward-timeout.log"; then
+    echo "candidate-list-set-preview-db: blocked forward apply did not fail at its local lock timeout" >&2
+    exit 1
+  fi
+  after_timeout="$(full_public_fingerprint "$probe_database")"
+  if [[ "$after_timeout" != "$before_timeout" ]]; then
+    echo "candidate-list-set-preview-db: timed-out forward apply or uncommitted add leaked partial state" >&2
+    exit 1
+  fi
+
+  wait "$forward_add_holder_pid"
+  forward_add_holder_pid=""
+  if ! grep -Eq '"status"[[:space:]]*:[[:space:]]*"already_member"' \
+    "$tmp_dir/predecessor-add-holder.log"; then
+    echo "candidate-list-set-preview-db: pre-0067 no-secret add did not commit its expected result" >&2
+    exit 1
+  fi
+  if [[ "$(psql_database "$probe_database" -Atq -c "select (
+    exists(select 1 from public.sourcing_learning_secrets
+      where workspace_id='67111111-1111-4111-8111-111111111111')
+    and exists(select 1 from public.candidate_list_operation_receipts
+      where idempotency_key='67999999-9999-4999-8999-999999999903')
+  )::text")" != "true" ]]; then
+    echo "candidate-list-set-preview-db: committed pre-0067 add lacks its secret or receipt" >&2
+    exit 1
+  fi
+
+  after_writer_legacy_data="$(legacy_data_fingerprint "$probe_database")"
+  psql_database "$probe_database" --single-transaction -q < "$migration"
+  if [[ "$(legacy_data_fingerprint "$probe_database")" != "$after_writer_legacy_data" \
+     || "$(psql_database "$probe_database" -Atq -c "select (
+       md5((select prosrc from pg_proc where oid=to_regprocedure(
+         'public.add_candidate_list_member(uuid,text,text,uuid)'
+       )))='3867226b6607b5a2170a9d9e7653d5d9'
+       and md5((select prosrc from pg_proc where oid=to_regprocedure(
+         'public.add_candidate_list_member_pre0067(uuid,text,text,uuid)'
+       )))='d23ad55aa139891e7b7c8c441dffeddc'
+     )::text")" != "true" ]]; then
+    echo "candidate-list-set-preview-db: forward apply after the writer did not install the exact writer repair" >&2
     exit 1
   fi
 }
@@ -3172,6 +4192,21 @@ run_real_add_rollback_lock_contract() {
   local waited_relation=""
 
   psql_stdin --single-transaction -q <<'SQL'
+-- The preserved 0064 row is deliberately legacy-v1 and cannot authorize a
+-- fresh 0065 admission. Seed one governed leaf without creating a workspace
+-- secret so this probe exercises the real first-secret writer branch.
+insert into public.candidate_contact_attestations(
+  workspace_id,campaign_id,candidate_id,attestation_kind,value_code,
+  evidence_sha256,recorded_by,recorded_at,authority_version,
+  lawful_basis_code,observed_at
+) values (
+  '67111111-1111-4111-8111-111111111111',
+  'legacy-campaign','legacy-candidate','manual_provenance',
+  'operator_verified',repeat('b',64),
+  '67000000-0000-4000-8000-000000000001',
+  '2026-07-26 09:01:00+00','governed-v1',
+  'legitimate_interest','2026-07-26 09:01:00+00'
+);
 insert into public.candidate_lists(id,workspace_id,name,created_by) values (
   '67222222-2222-4222-8222-222222222240',
   '67111111-1111-4111-8111-111111111111',
@@ -3179,8 +4214,13 @@ insert into public.candidate_lists(id,workspace_id,name,created_by) values (
   '67000000-0000-4000-8000-000000000001'
 );
 SQL
-  before_timeout="$(full_public_fingerprint postgres)"
-
+  if [[ "$(psql_stdin -Atq -c "select exists(
+    select 1 from public.sourcing_learning_secrets
+     where workspace_id='67111111-1111-4111-8111-111111111111'
+  )::text")" != "false" ]]; then
+    echo "candidate-list-set-preview-db: rollback probe did not start without a workspace secret" >&2
+    exit 1
+  fi
   PGAPPNAME=aria-0067-real-add-holder psql_stdin -q \
     > "$tmp_dir/real-add-holder.log" 2>&1 <<'SQL' &
 begin;
@@ -3199,7 +4239,7 @@ select public.add_candidate_list_member(
   'legacy-campaign','legacy-candidate',
   '67999999-9999-4999-8999-999999999901'
 );
-select pg_sleep(12);
+select pg_sleep(7);
 commit;
 SQL
   add_holder_pid=$!
@@ -3219,6 +4259,7 @@ SQL
     echo "candidate-list-set-preview-db: real add did not reach its paused post-write state" >&2
     exit 1
   fi
+  before_timeout="$(full_public_fingerprint postgres)"
 
   (
     PGAPPNAME=aria-0067-rollback-timeout \
@@ -3251,8 +4292,8 @@ SQL
     fi
     sleep 0.1
   done
-  if [[ "$waited_relation" != "candidate_list_operation_receipts" ]]; then
-    echo "candidate-list-set-preview-db: rollback first waited on ${waited_relation:-no relation}, not operation receipts" >&2
+  if [[ "$waited_relation" != "workspace_state" ]]; then
+    echo "candidate-list-set-preview-db: rollback first waited on ${waited_relation:-no relation}, not workspace_state" >&2
     exit 1
   fi
   if wait "$rollback_pid"; then
@@ -3260,7 +4301,7 @@ SQL
     exit 1
   fi
   rollback_pid=""
-  if ! grep -Eq 'ERROR:[[:space:]]+57014:|canceling statement due to statement timeout' \
+  if ! grep -Eq 'ERROR:[[:space:]]+55P03:|lock timeout' \
     "$tmp_dir/rollback-timeout.log"; then
     echo "candidate-list-set-preview-db: blocked rollback did not end at its timeout" >&2
     exit 1
@@ -3285,6 +4326,8 @@ SQL
         and campaign_id='legacy-campaign' and candidate_id='legacy-candidate')
     and exists(select 1 from public.candidate_list_operation_receipts
       where idempotency_key='67999999-9999-4999-8999-999999999901')
+    and exists(select 1 from public.sourcing_learning_secrets
+      where workspace_id='67111111-1111-4111-8111-111111111111')
     and (select membership_revision=1 from public.candidate_lists
       where id='67222222-2222-4222-8222-222222222240')
   )::text")" != "true" ]]; then
@@ -3302,9 +4345,9 @@ SQL
   psql_stdin --single-transaction -q < "$migration"
   if [[ "$(schema_fingerprint)" != "$post_0067_schema_fingerprint" \
      || "$(legacy_data_fingerprint)" != "$after_writer_legacy_data" \
-     || "$(psql_stdin -Atq -c "select not exists(
+     || "$(psql_stdin -Atq -c "select (not exists(
        select 1 from public.candidate_lists where membership_revision<>0
-     )::text")" != "true" ]]; then
+     ))::text")" != "true" ]]; then
     echo "candidate-list-set-preview-db: post-writer reapply did not restore exact 0067 schema" >&2
     exit 1
   fi
@@ -3355,7 +4398,58 @@ select candidate_list_preview_test.expect(
   'rollback_refuses_markerless_partial_artifact_atomically',true
 );
 select candidate_list_preview_test.expect(
-  'rollback_waits_receipts_first_and_timeout_changes_nothing',true
+  'rollback_refuses_reserved_overload_only_partial',true
+);
+select candidate_list_preview_test.expect(
+  'rollback_refuses_reserved_predecessor_overload_only_partial',true
+);
+select candidate_list_preview_test.expect(
+  'rollback_refuses_noncanonical_ledger_filenames_atomically',true
+);
+select candidate_list_preview_test.expect(
+  'rollback_refuses_self_consistent_poisoned_writer_wrapper',true
+);
+select candidate_list_preview_test.expect(
+  'rollback_refuses_self_consistent_poisoned_writer_predecessor',true
+);
+select candidate_list_preview_test.expect(
+  'forward_refuses_writer_default_drift_atomically',true
+);
+select candidate_list_preview_test.expect(
+  'rollback_refuses_poisoned_constraint_catalog',true
+);
+select candidate_list_preview_test.expect(
+  'rollback_refuses_extra_function_overload',true
+);
+select candidate_list_preview_test.expect(
+  'rollback_refuses_custom_function_acl',true
+);
+select candidate_list_preview_test.expect(
+  'rollback_refuses_disabled_trigger',true
+);
+select candidate_list_preview_test.expect(
+  'rollback_refuses_constant_false_trigger_qual',true
+);
+select candidate_list_preview_test.expect(
+  'rollback_refuses_self_consistent_poisoned_rpc_body',true
+);
+select candidate_list_preview_test.expect(
+  'rollback_refuses_missing_exact_artifact',true
+);
+select candidate_list_preview_test.expect(
+  'rollback_refuses_wrapper_only_partial_apply',true
+);
+select candidate_list_preview_test.expect(
+  'rollback_refuses_orphan_exact_0067_wrapper',true
+);
+select candidate_list_preview_test.expect(
+  'forward_waits_workspace_first_for_pre0067_no_secret_add',true
+);
+select candidate_list_preview_test.expect(
+  'forward_timeout_changes_nothing_then_succeeds_after_writer',true
+);
+select candidate_list_preview_test.expect(
+  'rollback_waits_workspace_first_and_timeout_changes_nothing',true
 );
 select candidate_list_preview_test.expect(
   'rollback_succeeds_after_real_add_and_preserves_committed_state',true
@@ -3363,11 +4457,24 @@ select candidate_list_preview_test.expect(
 select candidate_list_preview_test.expect(
   'deployment_preflight_blocks_unmeasured_live_index_builds',true
 );
+select candidate_list_preview_test.expect(
+  'deployment_preflight_accepts_an_empty_0064_table',true
+);
+select candidate_list_preview_test.expect(
+  'deployment_preflight_refuses_later_ledger_without_exact_0067',true
+);
+select candidate_list_preview_test.expect(
+  'deployment_preflight_refuses_noncanonical_ledger_filenames',true
+);
+select candidate_list_preview_test.expect(
+  'deployment_preflight_lock_timeout_fails_closed_without_change',true
+);
 SQL
 }
 
 run_deployment_preflight_source_contract
 run_migration_resilience_contract
+run_pre0067_add_forward_lock_contract
 run_real_add_rollback_lock_contract
 run_catalog_and_behavior_contract
 record_migration_resilience_assertions

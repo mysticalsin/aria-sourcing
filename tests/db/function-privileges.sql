@@ -29,6 +29,12 @@ begin
       ('public.current_profile_role()',                                      'authenticated', true),
       ('public.create_candidate_list(text,uuid)',                            'authenticated', true),
       ('public.add_candidate_list_member(uuid,text,text,uuid)',              'authenticated', true),
+      ('public.add_candidate_list_member_pre0067(uuid,text,text,uuid)',      'owner_only',    true),
+      ('public.advance_candidate_list_membership_revisions()',               'owner_only',    true),
+      ('public.candidate_list_set_preview_window(uuid,uuid,uuid,text,text,text,integer)', 'owner_only', false),
+      ('public.guard_candidate_list_membership_revision()',                  'owner_only',    true),
+      ('public.preview_candidate_list_set(uuid,bigint,uuid,bigint,text,text,text,integer)', 'authenticated', true),
+      ('public.reject_candidate_list_member_truncate()',                     'owner_only',    true),
       ('public.attest_candidate_manual_provenance(text,text,text,timestamptz,bigint,uuid)', 'authenticated', true),
       ('public.list_candidate_list_members(uuid,timestamptz,uuid,integer)', 'authenticated', true),
       ('public.resolve_candidate_list_evidence(uuid,text,text,timestamptz)', 'owner_only',    false),
@@ -363,14 +369,23 @@ begin
       raise exception 'PUBLIC retains EXECUTE on %', item.signature;
     end if;
 
-    select p.prosecdef, array_to_string(p.proconfig, ',')
-      into actual, saved_path
+    select p.prosecdef, array_to_string(p.proconfig, ','), pg_get_userbyid(p.proowner)
+      into actual, saved_path, object_owner
       from pg_proc p
      where p.oid = to_regprocedure(item.signature);
+    if object_owner is distinct from 'postgres' then
+      raise exception 'Unexpected owner on %: %', item.signature, object_owner;
+    end if;
     if actual is distinct from item.security_definer then
       raise exception 'Unexpected SECURITY DEFINER state on %', item.signature;
     end if;
-    if saved_path is null or saved_path !~ 'search_path=.*pg_temp$' then
+    if item.signature =
+         'public.candidate_list_set_preview_window(uuid,uuid,uuid,text,text,text,integer)'
+       and saved_path is not null then
+      raise exception 'Invoker preview helper unexpectedly has saved configuration: %', saved_path;
+    elsif item.signature <>
+            'public.candidate_list_set_preview_window(uuid,uuid,uuid,text,text,text,integer)'
+          and (saved_path is null or saved_path !~ 'search_path=.*pg_temp$') then
       raise exception 'Unsafe saved search_path on %: %', item.signature, saved_path;
     end if;
   end loop;

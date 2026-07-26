@@ -14,6 +14,7 @@ declare
   actual_authority_extension_functions text;
   actual_autonomous_web_functions text;
   expected_functions_with_0066 text;
+  expected_functions_with_0067 text;
   actual_provisioning_functions text;
   non_rls_tables text;
   expected_tables constant text :=
@@ -370,7 +371,38 @@ begin
     'request_candidate_erasure_pre0066(uuid,uuid,text,text,uuid),request_candidate_erasure(uuid,uuid,text,text,uuid),requeue_dead_aria_job(uuid)'
   );
 
-  if actual_functions <> expected_functions_with_0066 then
+  -- 0067 retains the authenticated add-member signature behind a lock-order
+  -- wrapper and adds one owner-only predecessor plus the bounded preview
+  -- authority. Keep this delta separate from the reviewed 0066 inventory so
+  -- each migration boundary remains auditable.
+  expected_functions_with_0067 := expected_functions_with_0066;
+  expected_functions_with_0067 := replace(
+    expected_functions_with_0067,
+    'activate_outreach_sequence(uuid),add_candidate_list_member(uuid,text,text,uuid),agent_framework_run_authority_is_active(uuid)',
+    'activate_outreach_sequence(uuid),add_candidate_list_member_pre0067(uuid,text,text,uuid),add_candidate_list_member(uuid,text,text,uuid),advance_candidate_list_membership_revisions(),agent_framework_run_authority_is_active(uuid)'
+  );
+  expected_functions_with_0067 := replace(
+    expected_functions_with_0067,
+    'candidate_legal_hold_lock_key(uuid,text),canonicalize_candidate_erasure_linkedin_tombstone()',
+    'candidate_legal_hold_lock_key(uuid,text),candidate_list_set_preview_window(uuid,uuid,uuid,text,text,text,integer),canonicalize_candidate_erasure_linkedin_tombstone()'
+  );
+  expected_functions_with_0067 := replace(
+    expected_functions_with_0067,
+    'guard_candidate_list_canonical_authority(),guard_sourcing_batch_job_transition()',
+    'guard_candidate_list_canonical_authority(),guard_candidate_list_membership_revision(),guard_sourcing_batch_job_transition()'
+  );
+  expected_functions_with_0067 := replace(
+    expected_functions_with_0067,
+    'prepare_sequence_outbound_claim(uuid,text),read_candidate_erasure_obligation_authority_pre0066(uuid,uuid,uuid)',
+    'prepare_sequence_outbound_claim(uuid,text),preview_candidate_list_set(uuid,bigint,uuid,bigint,text,text,text,integer),read_candidate_erasure_obligation_authority_pre0066(uuid,uuid,uuid)'
+  );
+  expected_functions_with_0067 := replace(
+    expected_functions_with_0067,
+    'reject_candidate_list_member_evidence_mutation(),reject_email_connection_quarantine_mutation()',
+    'reject_candidate_list_member_evidence_mutation(),reject_candidate_list_member_truncate(),reject_email_connection_quarantine_mutation()'
+  );
+
+  if actual_functions <> expected_functions_with_0067 then
     raise exception 'legacy public function signatures do not match the reviewed ARIA schema: %', actual_functions
       using errcode = '55000';
   end if;
