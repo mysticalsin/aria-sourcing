@@ -8,7 +8,21 @@
 import { mock } from "node:test";
 import type { Candidate, ComplianceFlags } from "../src/lib/types.ts";
 
+const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
+
 mock.module("server-only", { namedExports: {} });
+mock.module(moduleUrl("src/lib/supabase/server.ts"), {
+  namedExports: {
+    getServiceSupabase: () => ({
+      rpc: async (name: string) => {
+        if (name === "claim_enrichment_budget") return { data: { allowed: true, ledger_id: "ledger-1" }, error: null };
+        if (name === "settle_enrichment_spend") return { data: { ok: true }, error: null };
+        if (name === "release_enrichment_claim") return { data: { ok: true }, error: null };
+        return { data: null, error: null };
+      },
+    }),
+  },
+});
 
 let pass = 0;
 let fail = 0;
@@ -19,8 +33,6 @@ function ok(name: string, condition: boolean) {
     console.log("FAIL:", name);
   }
 }
-
-const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
 
 /* ---- mutable fixtures the mocked adapter modules read at call time -------- */
 
@@ -254,7 +266,12 @@ function makeCandidate(overrides: Partial<Candidate> = {}): Candidate {
 }
 
 // Never a real session — every mocked resolveStored*Key ignores its argument.
-const fakeSession = {} as Parameters<typeof orchestrateEnrichment>[0]["session"];
+const fakeSession = {
+  rpc: async (name: string) => {
+    if (name === "current_workspace_id") return { data: "workspace-1", error: null };
+    return { data: null, error: null };
+  },
+} as unknown as Parameters<typeof orchestrateEnrichment>[0]["session"];
 
 /* ============================================================================
  * 1. Waterfall runs cheapest-first and stops early once `want` is covered

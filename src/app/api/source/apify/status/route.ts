@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getServerSupabase } from "@/lib/supabase/server";
+import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
@@ -49,6 +49,11 @@ export async function GET(req: NextRequest) {
   if (!apiKey) {
     return NextResponse.json({ ok: false, error: "Connect an Apify key in Settings first." });
   }
+  if (!session) return NextResponse.json({ ok: false, error: "Workspace authority is unavailable." }, { status: 503 });
+  const { data: workspaceId } = await session.rpc("current_workspace_id");
+  if (typeof workspaceId !== "string" || !workspaceId) {
+    return NextResponse.json({ ok: false, error: "Workspace authority is unavailable." }, { status: 503 });
+  }
 
   const clearance = clearIdentityResolution("Apify", { runId, datasetId: datasetId ?? "" });
   if (!clearance.ok) return NextResponse.json({ ok: false, error: clearance.error }, { status: 422 });
@@ -63,6 +68,13 @@ export async function GET(req: NextRequest) {
 
   const { status } = statusRes.data;
   if (TERMINAL_FAILED.has(status)) {
+    const svc = getServiceSupabase();
+    await svc?.rpc("settle_provider_run_by_external", {
+      p_workspace_id: workspaceId,
+      p_provider: "Apify",
+      p_external_run_id: runId,
+      p_succeeded: false,
+    });
     return NextResponse.json({ ok: false, status: "failed", error: `Apify run ${status.toLowerCase()}.` });
   }
   if (status !== "SUCCEEDED") {
@@ -79,6 +91,14 @@ export async function GET(req: NextRequest) {
       { status: itemsRes.status || 502 },
     );
   }
+
+  const svc = getServiceSupabase();
+  await svc?.rpc("settle_provider_run_by_external", {
+    p_workspace_id: workspaceId,
+    p_provider: "Apify",
+    p_external_run_id: runId,
+    p_succeeded: true,
+  });
 
   return NextResponse.json({ ok: true, status: "completed", profiles: itemsRes.data });
 }

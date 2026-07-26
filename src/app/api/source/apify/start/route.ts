@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
+
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { getServerSupabase } from "@/lib/supabase/server";
+import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
@@ -11,6 +13,19 @@ import { loadSourcingCampaign } from "@/lib/sourcing/campaign-context";
 import { clearDiscoveryCriteria } from "@/lib/sourcing/provider-egress";
 
 export const runtime = "nodejs";
+
+function providerRunErrorStatus(reason: string): number {
+  if (reason === "control_blocked") return 403;
+  if (reason === "sourcing_run_quota_exceeded") return 429;
+  if (reason === "service-only") return 503;
+  return 400;
+}
+
+function providerRunErrorMessage(reason: string): string {
+  if (reason === "control_blocked") return "Sourcing is disabled for this workspace.";
+  if (reason === "sourcing_run_quota_exceeded") return "Workspace daily sourcing run cap reached.";
+  return "Provider run authority refused the request.";
+}
 
 /**
  * Real candidate sourcing via Apify's harvestapi/linkedin-profile-search actor —
@@ -86,6 +101,10 @@ export async function POST(req: NextRequest) {
   }
 
   if (!session) return NextResponse.json({ ok: false, error: "Campaign authority is unavailable." }, { status: 503 });
+  const { data: workspaceId } = await session.rpc("current_workspace_id");
+  if (typeof workspaceId !== "string" || !workspaceId) {
+    return NextResponse.json({ ok: false, error: "Workspace authority is unavailable." }, { status: 503 });
+  }
   const campaign = await loadSourcingCampaign(session, campaignId);
   if (!campaign) return NextResponse.json({ ok: false, error: "Campaign not found." }, { status: 404 });
   const clearance = clearDiscoveryCriteria(
@@ -105,8 +124,28 @@ export async function POST(req: NextRequest) {
   );
   if (!clearance.ok) return NextResponse.json({ ok: false, error: clearance.error }, { status: 422 });
 
+  const svc = getServiceSupabase();
+  if (!svc) return NextResponse.json({ ok: false, error: "Provider run authority is unavailable." }, { status: 503 });
+  const pendingExternalRunId = `pending:${randomUUID()}`;
+  const providerRun = await svc.rpc("begin_provider_run", {
+    p_workspace_id: workspaceId,
+    p_provider: "Apify",
+    p_external_run_id: pendingExternalRunId,
+    p_campaign_id: campaignId,
+  });
+  const providerRunBody = providerRun.data as { ok?: boolean; run_id?: string; reason?: string } | null;
+  if (providerRun.error || providerRunBody?.ok !== true || typeof providerRunBody.run_id !== "string") {
+    const reason = providerRunBody?.reason ?? providerRun.error?.code ?? "authority_unavailable";
+    return NextResponse.json(
+      { ok: false, error: providerRunErrorMessage(reason), reason },
+      { status: providerRunErrorStatus(reason) },
+    );
+  }
+  const providerRunId = providerRunBody.run_id;
+
   const result = await startProfileSearchRun(clearance.clearance, apiKey, input);
   if (!result.ok) {
+    await svc.rpc("settle_provider_run", { p_run_id: providerRunId, p_succeeded: false });
     // A network-level failure (status 0) reports as 502, matching /api/source's
     // upstream-error convention; a real Apify status (401 bad token, 429, ...)
     // passes through so the client sees the honest cause.
@@ -115,5 +154,41 @@ export async function POST(req: NextRequest) {
       { status: result.status || 502 },
     );
   }
-  return NextResponse.json({ ok: true, runId: result.data.runId, datasetId: result.data.datasetId });
+  const attached = await svc.rpc("attach_provider_run", {
+    p_run_id: providerRunId,
+    p_external_run_id: result.data.runId,
+    p_dataset_id: result.data.datasetId,
+  });
+  const attachedBody = attached.data as { ok?: boolean; reason?: string } | null;
+  if (attached.error || attachedBody?.ok !== true) {
+    await svc.rpc("settle_provider_run", { p_run_id: providerRunId, p_succeeded: false });
+    return NextResponse.json({ ok: false, error: "Provider run could not be persisted." }, { status: 503 });
+  }
+
+  const pollJob = await svc.rpc("enqueue_aria_job", {
+    p_workspace_id: workspaceId,
+    p_kind: "provider_poll",
+    p_idempotency_key: `poll:${providerRunId}`,
+    p_payload: {
+      campaignId,
+      provider: "Apify",
+      providerRunId,
+      runId: result.data.runId,
+      datasetId: result.data.datasetId,
+      query: input.searchQuery ?? "",
+    },
+    p_run_at: new Date().toISOString(),
+    p_priority: 90,
+  });
+  const pollJobBody = pollJob.data as { status?: string } | null;
+  if (pollJob.error || pollJobBody?.status !== "enqueued") {
+    return NextResponse.json({ ok: false, error: "Provider run persisted but loop poll could not be enqueued." }, { status: 503 });
+  }
+
+  return NextResponse.json({
+    ok: true,
+    runId: result.data.runId,
+    datasetId: result.data.datasetId,
+    providerRunId,
+  });
 }

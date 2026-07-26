@@ -8,6 +8,7 @@
 // ORCH_DEADLINE_MS below), then re-scores the candidate.
 
 import type { getServerSupabase } from "@/lib/supabase/server";
+import { getServiceSupabase } from "@/lib/supabase/server";
 import type { Candidate, EnrichableField, EnrichmentAttempt, JobAnalysis, ScoringWeights, SourcePlatform } from "@/lib/types";
 import { ENRICHMENT_PROVIDERS } from "@/lib/enrichment/registry";
 import { computeCoverage, mergeEnrichment, recordEnrichmentAttempt } from "@/lib/enrichment/merge";
@@ -29,6 +30,52 @@ const ORCH_DEADLINE_MS = 45_000;
 const SLOW_POLL_PROVIDERS: ReadonlySet<SourcePlatform> = new Set(["Seamless", "Sillage"]);
 
 type Session = NonNullable<Awaited<ReturnType<typeof getServerSupabase>>>;
+
+type BudgetClaim =
+  | { ok: true; ledgerId: string }
+  | { ok: false; reason: string };
+
+async function resolveWorkspaceId(session: Session): Promise<string | null> {
+  const result = await session.rpc("current_workspace_id");
+  return typeof result.data === "string" && result.data ? result.data : null;
+}
+
+async function claimProviderBudget(
+  workspaceId: string,
+  provider: SourcePlatform,
+  candidateId: string,
+  amount: number,
+): Promise<BudgetClaim> {
+  if (amount <= 0) return { ok: true, ledgerId: "" };
+  const svc = getServiceSupabase();
+  if (!svc) return { ok: false, reason: "budget_authority_unavailable" };
+  const period = new Date().toISOString().slice(0, 7);
+  const idempotencyKey = `enrich:${candidateId}:${provider}:${new Date().toISOString()}`;
+  const claim = await svc.rpc("claim_enrichment_budget", {
+    p_workspace_id: workspaceId,
+    p_period: period,
+    p_idempotency_key: idempotencyKey,
+    p_amount_cents: amount,
+    p_provider: provider,
+  });
+  const body = claim.data as { allowed?: boolean; reason?: string; ledger_id?: string } | null;
+  if (claim.error || body?.allowed !== true || typeof body.ledger_id !== "string") {
+    return { ok: false, reason: body?.reason ?? claim.error?.code ?? "budget_refused" };
+  }
+  return { ok: true, ledgerId: body.ledger_id };
+}
+
+async function settleProviderBudget(ledgerId: string, amount: number): Promise<void> {
+  if (!ledgerId) return;
+  const svc = getServiceSupabase();
+  await svc?.rpc("settle_enrichment_spend", { p_ledger_id: ledgerId, p_actual_cents: Math.max(0, amount) });
+}
+
+async function releaseProviderBudget(ledgerId: string): Promise<void> {
+  if (!ledgerId) return;
+  const svc = getServiceSupabase();
+  await svc?.rpc("release_enrichment_claim", { p_ledger_id: ledgerId });
+}
 
 /** One server-only runner per registry provider id. A registry entry with no
  *  matching runner here is simply never invoked (defensive — every provider
@@ -109,6 +156,7 @@ export async function orchestrateEnrichment(input: OrchestrateEnrichmentInput): 
   const attempts: EnrichmentAttempt[] = [];
   let spend = 0;
   const start = Date.now();
+  const workspaceId = await resolveWorkspaceId(session);
 
   const providers = ENRICHMENT_PROVIDERS.filter(
     (provider) => want.some((field) => provider.enriches.includes(field)) && provider.keyField(candidate) != null,
@@ -156,6 +204,35 @@ export async function orchestrateEnrichment(input: OrchestrateEnrichmentInput): 
     const runner = RUNNERS[provider.id];
     if (!runner) continue;
 
+    if (!workspaceId) {
+      const attempt: EnrichmentAttempt = {
+        provider: provider.id,
+        at,
+        status: "error",
+        fieldsFilled: [],
+        costUnits: 0,
+        detail: "workspace authority unavailable",
+      };
+      candidate = recordEnrichmentAttempt(candidate, attempt);
+      attempts.push(attempt);
+      continue;
+    }
+
+    const claim = await claimProviderBudget(workspaceId, provider.id, candidate.id, provider.costUnits);
+    if (!claim.ok) {
+      const attempt: EnrichmentAttempt = {
+        provider: provider.id,
+        at,
+        status: "budget_exceeded",
+        fieldsFilled: [],
+        costUnits: 0,
+        detail: claim.reason,
+      };
+      candidate = recordEnrichmentAttempt(candidate, attempt);
+      attempts.push(attempt);
+      continue;
+    }
+
     const result = await runner(session, candidate);
 
     if (result.externalId) {
@@ -178,6 +255,8 @@ export async function orchestrateEnrichment(input: OrchestrateEnrichmentInput): 
     }
 
     attempts.push(candidate.enrichment!.attempts[candidate.enrichment!.attempts.length - 1]);
+    if (result.status === "ok" || result.status === "no_data") await settleProviderBudget(claim.ledgerId, result.costUnits);
+    else await releaseProviderBudget(claim.ledgerId);
     budgetRemaining -= result.costUnits;
     spend += result.costUnits;
   }

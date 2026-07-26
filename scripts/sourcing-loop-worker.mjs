@@ -178,6 +178,7 @@ export function loadSourcingLoopConfiguration(environment) {
   const webOrigin = environment.ARIA_WEB_INTERNAL_URL ?? "";
   const cronSecret = environment.CRON_SECRET ?? "";
   let dispatchUrl = null;
+  let providerPollUrl = null;
   if (webOrigin !== "" || cronSecret !== "") {
     let parsed;
     try {
@@ -192,6 +193,7 @@ export function loadSourcingLoopConfiguration(environment) {
       throw new Error("invalid CRON_SECRET");
     }
     dispatchUrl = parsed;
+    providerPollUrl = new URL("/api/cron/poll-provider-run", webOrigin);
   }
 
   return {
@@ -200,6 +202,7 @@ export function loadSourcingLoopConfiguration(environment) {
     releaseSha,
     workerId,
     dispatchUrl,
+    providerPollUrl,
     cronSecret,
     tickMs: boundedInteger(environment.ARIA_LOOP_TICK_MS, DEFAULT_TICK_MS, 5_000, 300_000, "ARIA_LOOP_TICK_MS"),
     timeoutMs: boundedInteger(environment.ARIA_LOOP_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, 1_000, 60_000, "ARIA_LOOP_TIMEOUT_MS"),
@@ -485,26 +488,96 @@ async function handleSourcingBatch(job, context) {
   const campaignId = boundedText(payload.campaignId, 160, "campaign_id_required");
   const batchId = typeof payload.batchId === "string" && payload.batchId.trim() ? payload.batchId.trim() : job.id;
   const candidateIds = candidateIdsFromPayload(payload);
+  const candidates = candidateRecordsFromPayload(payload, campaignId);
+  const successors = candidates.length > 0
+    ? [
+        successorJob("shortlist_build", `shortlist:${campaignId}:${batchId}`, {
+          campaignId,
+          batchId,
+          candidates,
+        }, 90),
+      ]
+    : [];
   return completeJob(
     context.client,
     job,
-    { status: "sourcing_batch_recorded", campaignId, batchId, candidateCount: candidateIds.length },
-    [event("sourcing.batch_ready", "campaign", campaignId, { candidateCount: candidateIds.length })],
-    [],
+    { status: "sourcing_batch_recorded", campaignId, batchId, candidateCount: candidates.length || candidateIds.length },
+    [event("sourcing.batch_ready", "campaign", campaignId, { candidateCount: candidates.length || candidateIds.length })],
+    successors,
   );
+}
+
+async function pollProviderRunViaRoute(job, context, payload) {
+  const providerRunId = boundedText(payload.providerRunId ?? payload.runId, 160, "provider_run_required");
+  if (!context.configuration?.providerPollUrl || !context.configuration?.cronSecret) {
+    throw new HandlerError("provider_poll_route_unconfigured", true);
+  }
+  let response;
+  try {
+    response = await context.fetcher(context.configuration.providerPollUrl, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${context.configuration.cronSecret}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ workspaceId: job.workspace_id, providerRunId }),
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+    });
+  } catch {
+    throw new HandlerError("provider_poll_unreachable", true);
+  }
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new HandlerError(`provider_poll_http_${response.status}`, response.status >= 500);
+  }
+  const body = await readBoundedJson(response, RPC_RESPONSE_BYTES);
+  if (!isRecord(body)) throw new HandlerError("provider_poll_response_invalid", true);
+  return body;
 }
 
 async function handleProviderPoll(job, context) {
   const payload = payloadOf(job);
   const campaignId = boundedText(payload.campaignId, 160, "campaign_id_required");
-  const runId = boundedText(payload.runId ?? payload.providerRunId ?? job.id, 160, "provider_run_required");
-  const candidateIds = candidateIdsFromPayload(payload);
+  const runId = boundedText(payload.providerRunId ?? payload.runId ?? job.id, 160, "provider_run_required");
+  let batchId = typeof payload.batchId === "string" && payload.batchId.trim() ? payload.batchId.trim() : runId;
+  let candidates = candidateRecordsFromPayload(payload, campaignId);
+  let status = "completed";
+  let skippedCount = 0;
+  if (candidates.length === 0) {
+    const poller = context.providerPoller?.poll
+      ? await context.providerPoller.poll({ job, payload })
+      : await pollProviderRunViaRoute(job, context, payload);
+    status = typeof poller.status === "string" ? poller.status : "invalid";
+    if (status === "processing") throw new HandlerError("provider_still_running", true);
+    if (status === "failed") {
+      return completeJob(
+        context.client,
+        job,
+        { status: "provider_poll_failed", campaignId, providerRunId: runId },
+        [event("provider.poll_failed", "provider_run", runId, { campaignId })],
+        [],
+      );
+    }
+    if (status !== "completed" || !Array.isArray(poller.candidates)) throw new HandlerError("provider_poll_response_invalid", true);
+    candidates = candidateRecordsFromPayload(poller, campaignId);
+    batchId = typeof poller.batchId === "string" && poller.batchId.trim() ? poller.batchId.trim() : batchId;
+    skippedCount = typeof poller.skippedCount === "number" && Number.isSafeInteger(poller.skippedCount) ? poller.skippedCount : 0;
+  }
+  const successors = candidates.length > 0
+    ? [
+        successorJob("shortlist_build", `shortlist:${campaignId}:${batchId}`, {
+          campaignId,
+          batchId,
+          candidates,
+        }, 90),
+      ]
+    : [];
   return completeJob(
     context.client,
     job,
-    { status: "provider_poll_recorded", campaignId, candidateCount: candidateIds.length },
-    [event("provider.poll_recorded", "provider_run", runId, { candidateCount: candidateIds.length })],
-    [],
+    { status: "provider_poll_recorded", campaignId, candidateCount: candidates.length, skippedCount },
+    [event("provider.poll_recorded", "provider_run", runId, { candidateCount: candidates.length, skippedCount })],
+    successors,
   );
 }
 
@@ -530,19 +603,13 @@ async function handleShortlistBuild(job, context) {
   const receiptKey = typeof payload.receiptKey === "string" && payload.receiptKey.trim()
     ? payload.receiptKey.trim()
     : `shortlist:${campaignId}:${batchId}`;
-  const successors = candidates.map((candidate) =>
-    successorJob("draft_generate", `draft:${campaignId}:${candidate.id}`, {
-      campaignId,
-      candidateId: candidate.id,
-    }, 100),
-  );
   return completeJobWithWorkspacePatch(
     context.client,
     job,
     { kind: "append_candidates", value: candidates, receiptKey },
     { status: "shortlist_committed", campaignId, candidateCount: candidates.length },
     [event("shortlist.committed", "campaign", campaignId, { candidateCount: candidates.length })],
-    successors,
+    [],
   );
 }
 

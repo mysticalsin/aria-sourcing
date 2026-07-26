@@ -1062,7 +1062,72 @@ select loop_jobs_test.expect_scalar(
 );
 
 -- ---------------------------------------------------------------------------
--- 15. Direct-table ACL: authenticated AND service_role are both denied.
+-- 15. Rock 4 caps: at-limit sourcing and enrichment refuse another unit.
+-- ---------------------------------------------------------------------------
+update public.sourcing_loop_controls
+   set kill_switch = false,
+       sourcing_enabled = true,
+       enrichment_enabled = true,
+       max_sourcing_runs_per_day = 1,
+       max_enrichment_units_per_day = 1,
+       updated_by = 'c1000000-0000-4000-8000-000000000001',
+       updated_at = now()
+ where workspace_id = '51111111-1111-4111-8111-111111111111';
+
+insert into public.enrichment_budgets(workspace_id, period, budget_cents)
+values ('51111111-1111-4111-8111-111111111111', to_char(now(), 'YYYY-MM'), 100)
+on conflict (workspace_id, period) do update set budget_cents = excluded.budget_cents;
+
+set role service_role;
+select loop_jobs_test.set_service_claims('c1000000-0000-4000-8000-000000000001');
+create temporary table sourcing_cap_first as
+select public.begin_provider_run(
+  '51111111-1111-4111-8111-111111111111', 'Apify', 'cap-run-1', 'camp-1'
+) result;
+create temporary table sourcing_cap_second as
+select public.begin_provider_run(
+  '51111111-1111-4111-8111-111111111111', 'Apify', 'cap-run-2', 'camp-1'
+) result;
+create temporary table enrichment_cap_first as
+select public.claim_enrichment_budget(
+  '51111111-1111-4111-8111-111111111111', to_char(now(), 'YYYY-MM'), 'cap-enrich-1', 1, 'Apify'
+) result;
+create temporary table enrichment_cap_second as
+select public.claim_enrichment_budget(
+  '51111111-1111-4111-8111-111111111111', to_char(now(), 'YYYY-MM'), 'cap-enrich-2', 1, 'Apify'
+) result;
+reset role;
+
+select loop_jobs_test.expect_scalar(
+  'provider-run-cap-at-limit-refuses',
+  $$select concat_ws(':',
+      (select result->>'ok' from sourcing_cap_first),
+      (select result->>'reason' from sourcing_cap_second))$$,
+  'true:sourcing_run_quota_exceeded'
+);
+select loop_jobs_test.expect_scalar(
+  'enrichment-unit-cap-at-limit-refuses',
+  $$select concat_ws(':',
+      (select result->>'allowed' from enrichment_cap_first),
+      (select result->>'reason' from enrichment_cap_second))$$,
+  'true:enrichment_unit_quota_exhausted'
+);
+
+-- Reset Rock 4 cap fixtures for the shell-level concurrent race proof below.
+delete from public.sourcing_provider_runs
+ where workspace_id = '51111111-1111-4111-8111-111111111111'
+   and external_run_id like 'cap-run-%';
+delete from public.enrichment_spend_ledger
+ where workspace_id = '51111111-1111-4111-8111-111111111111'
+   and idempotency_key like 'cap-enrich-%';
+update public.sourcing_run_quota
+   set used = 0
+ where workspace_id = '51111111-1111-4111-8111-111111111111'
+   and bucket_date = current_date
+   and scope_key = 'workspace';
+
+-- ---------------------------------------------------------------------------
+-- 16. Direct-table ACL: authenticated AND service_role are both denied.
 -- ---------------------------------------------------------------------------
 select loop_jobs_test.expect_authenticated_sqlstate(
   'rls-aria-jobs-denied',
@@ -1209,5 +1274,97 @@ do
   concurrent_claim "$kind"
 done
 
+concurrent_provider_run_cap() {
+  psql_stdin -q <<'PROVIDER_RACE_SETUP'
+update public.sourcing_loop_controls
+   set kill_switch = false,
+       sourcing_enabled = true,
+       enrichment_enabled = true,
+       max_sourcing_runs_per_day = 2,
+       max_enrichment_units_per_day = 2,
+       updated_by = 'c1000000-0000-4000-8000-000000000001',
+       updated_at = now()
+ where workspace_id = '51111111-1111-4111-8111-111111111111';
+delete from public.sourcing_provider_runs
+ where workspace_id = '51111111-1111-4111-8111-111111111111'
+   and external_run_id like 'race-run-%';
+insert into public.sourcing_provider_runs(workspace_id, provider, external_run_id, campaign_id)
+values ('51111111-1111-4111-8111-111111111111', 'Apify', 'race-run-seed', 'camp-1')
+on conflict do nothing;
+insert into public.sourcing_run_quota(workspace_id, bucket_date, scope_key, used)
+values ('51111111-1111-4111-8111-111111111111', current_date, 'workspace', 1)
+on conflict (workspace_id, bucket_date, scope_key) do update set used = 1;
+PROVIDER_RACE_SETUP
+
+  race_dir="$(mktemp -d)"
+  pids=()
+  for n in $(seq 1 8); do
+    psql_stdin -Atq >"${race_dir}/provider-${n}.out" <<PROVIDER_RACER &
+set role service_role;
+select set_config('request.jwt.claims', '{"sub":"c1000000-0000-4000-8000-000000000001","role":"service_role"}', false);
+select set_config('request.jwt.claim.sub', 'c1000000-0000-4000-8000-000000000001', false);
+select set_config('request.jwt.claim.role', 'service_role', false);
+select (public.begin_provider_run(
+  '51111111-1111-4111-8111-111111111111', 'Apify', 'race-run-${n}', 'camp-1'
+)->>'ok');
+PROVIDER_RACER
+    pids+=("$!")
+  done
+  for pid in "${pids[@]}"; do wait "$pid"; done
+  successes="$(grep -h '^true$' "${race_dir}"/provider-*.out | wc -l | tr -d ' ')"
+  rm -rf "$race_dir"
+  if [ "$successes" != "1" ]; then
+    echo "loop-jobs-db: provider run cap race FAILED (successes=${successes}, expected 1)" >&2
+    exit 1
+  fi
+}
+
+concurrent_enrichment_cap() {
+  psql_stdin -q <<'ENRICH_RACE_SETUP'
+update public.sourcing_loop_controls
+   set kill_switch = false,
+       sourcing_enabled = true,
+       enrichment_enabled = true,
+       max_sourcing_runs_per_day = 2,
+       max_enrichment_units_per_day = 2,
+       updated_by = 'c1000000-0000-4000-8000-000000000001',
+       updated_at = now()
+ where workspace_id = '51111111-1111-4111-8111-111111111111';
+insert into public.enrichment_budgets(workspace_id, period, budget_cents)
+values ('51111111-1111-4111-8111-111111111111', to_char(now(), 'YYYY-MM'), 100)
+on conflict (workspace_id, period) do update set budget_cents = excluded.budget_cents;
+delete from public.enrichment_spend_ledger
+ where workspace_id = '51111111-1111-4111-8111-111111111111'
+   and idempotency_key like 'race-enrich-%';
+insert into public.enrichment_spend_ledger(workspace_id, period, idempotency_key, status, amount_cents, provider)
+values ('51111111-1111-4111-8111-111111111111', to_char(now(), 'YYYY-MM'), 'race-enrich-seed', 'settled', 1, 'Apify');
+ENRICH_RACE_SETUP
+
+  race_dir="$(mktemp -d)"
+  pids=()
+  for n in $(seq 1 8); do
+    psql_stdin -Atq >"${race_dir}/enrich-${n}.out" <<ENRICH_RACER &
+set role service_role;
+select set_config('request.jwt.claims', '{"sub":"c1000000-0000-4000-8000-000000000001","role":"service_role"}', false);
+select set_config('request.jwt.claim.sub', 'c1000000-0000-4000-8000-000000000001', false);
+select set_config('request.jwt.claim.role', 'service_role', false);
+select (public.claim_enrichment_budget(
+  '51111111-1111-4111-8111-111111111111', to_char(now(), 'YYYY-MM'), 'race-enrich-${n}', 1, 'Apify'
+)->>'allowed');
+ENRICH_RACER
+    pids+=("$!")
+  done
+  for pid in "${pids[@]}"; do wait "$pid"; done
+  successes="$(grep -h '^true$' "${race_dir}"/enrich-*.out | wc -l | tr -d ' ')"
+  rm -rf "$race_dir"
+  if [ "$successes" != "1" ]; then
+    echo "loop-jobs-db: enrichment unit cap race FAILED (successes=${successes}, expected 1)" >&2
+    exit 1
+  fi
+}
+
+concurrent_provider_run_cap
+concurrent_enrichment_cap
+
 assertions="$(psql_stdin -Atc "select count(*) from loop_jobs_test.results")"
-echo "loop-jobs-db: spine, idempotency, leases, outbox, workspace patch, backoff, reapers, controls, append-only, ACL: ${assertions} assertions + SKIP LOCKED race per kind, 0 failed"
+echo "loop-jobs-db: spine, idempotency, leases, outbox, workspace patch, backoff, reapers, controls, caps, append-only, ACL: ${assertions} assertions + SKIP LOCKED race per kind + cap races, 0 failed"

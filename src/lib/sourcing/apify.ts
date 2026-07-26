@@ -477,3 +477,18 @@ export async function resolveStoredApifyKey(
   if (!row?.secret || typeof row.secret !== "string") return null;
   return decryptSecret(row.secret);
 }
+
+export async function resolveStoredApifyKeyForWorkspace(workspaceId: string): Promise<string | null> {
+  const svc = getServiceSupabase();
+  if (!svc) return null;
+  const { data: row } = await svc
+    .from("api_keys")
+    .select("secret")
+    .eq("workspace_id", workspaceId)
+    .eq("provider", "Apify")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!row?.secret || typeof row.secret !== "string") return null;
+  return decryptSecret(row.secret);
+}

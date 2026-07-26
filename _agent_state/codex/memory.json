@@ -1,6 +1,10 @@
 {
   "recent_learnings": [
     {
+      "date": "2026-07-26",
+      "lesson": "Loop workers should call machine routes for TS provider adapters; production copies .mjs scripts, not source TS modules."
+    },
+    {
       "date": "2026-07-25",
       "lesson": "Provider adapters import transport only; policy egress may mint clearance, but importing policy from adapters recreates Rock 2 cycles."
     },

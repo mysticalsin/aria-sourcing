@@ -60,7 +60,7 @@ test("successor validation rejects handler enqueues absent from the transition m
   );
 });
 
-test("shortlist handler commits candidates through the 0042 patch wrapper and fans out one draft job per candidate", async () => {
+test("shortlist handler commits candidates through the 0042 patch wrapper without auto-approving the human gate", async () => {
   const candidates = [
     { id: "cand-a", campaignId: "camp-1", name: "Synthetic Candidate A" },
     { id: "cand-b", campaignId: "camp-1", name: "Synthetic Candidate B" },
@@ -89,14 +89,53 @@ test("shortlist handler commits candidates through the 0042 patch wrapper and fa
     candidates.map((candidate) => ({ ...candidate, stage: "Sourced" })),
   );
   assert.equal(completion.args.p_receipt_key, "shortlist:camp-1:batch-1");
-  assert.deepEqual(
-    completion.args.p_enqueue,
-    [
-      { kind: "draft_generate", idempotency_key: "draft:camp-1:cand-a", payload: { campaignId: "camp-1", candidateId: "cand-a" }, priority: 100 },
-      { kind: "draft_generate", idempotency_key: "draft:camp-1:cand-b", payload: { campaignId: "camp-1", candidateId: "cand-b" }, priority: 100 },
-    ],
-  );
+  assert.deepEqual(completion.args.p_enqueue, []);
   assert.equal(JSON.stringify(completion.args.p_events).includes("Synthetic Candidate"), false);
+});
+
+test("sourcing_batch enqueues shortlist_build with candidate records", async () => {
+  const candidates = [{ id: "cand-a", campaignId: "camp-1", name: "Synthetic Candidate A" }];
+  const shortlistedCandidates = [{ ...candidates[0], stage: "Sourced" }];
+  const { client, calls } = rpcClient((name) => {
+    if (name === "complete_aria_job") return { data: true, error: null };
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await handleAriaJob(job("sourcing_batch", { campaignId: "camp-1", batchId: "batch-1", candidates }), { client });
+  const completion = calls.find((call) => call.name === "complete_aria_job");
+  assert.deepEqual(completion?.args.p_enqueue, [
+    {
+      kind: "shortlist_build",
+      idempotency_key: "shortlist:camp-1:batch-1",
+      payload: { campaignId: "camp-1", batchId: "batch-1", candidates: shortlistedCandidates },
+      priority: 90,
+    },
+  ]);
+});
+
+test("provider_poll resumes a persisted run and enqueues shortlist_build on completion", async () => {
+  const candidates = [{ id: "cand-a", campaignId: "camp-1", name: "Synthetic Candidate A" }];
+  const shortlistedCandidates = [{ ...candidates[0], stage: "Sourced" }];
+  const { client, calls } = rpcClient((name) => {
+    if (name === "complete_aria_job") return { data: true, error: null };
+    throw new Error(`unexpected rpc ${name}`);
+  });
+  const providerPoller = {
+    async poll() {
+      return { ok: true, status: "completed", campaignId: "camp-1", batchId: "run-1", candidates, skippedCount: 0 };
+    },
+  };
+
+  await handleAriaJob(job("provider_poll", { campaignId: "camp-1", providerRunId: "run-1" }), { client, providerPoller });
+  const completion = calls.find((call) => call.name === "complete_aria_job");
+  assert.deepEqual(completion?.args.p_enqueue, [
+    {
+      kind: "shortlist_build",
+      idempotency_key: "shortlist:camp-1:run-1",
+      payload: { campaignId: "camp-1", batchId: "run-1", candidates: shortlistedCandidates },
+      priority: 90,
+    },
+  ]);
 });
 
 test("reply classify wraps candidate text in the disclosure envelope handed to the model", async () => {
