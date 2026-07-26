@@ -13,7 +13,7 @@ declare
   actual_adaptive_sourcing_functions text;
   actual_authority_extension_functions text;
   actual_autonomous_web_functions text;
-  expected_functions_with_0065 text;
+  expected_functions_with_0066 text;
   actual_provisioning_functions text;
   non_rls_tables text;
   expected_tables constant text :=
@@ -226,115 +226,151 @@ begin
     'validate_sourcing_batch_source_receipts(jsonb,text,integer,boolean)'
   );
 
-  expected_functions_with_0065 := expected_functions;
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := expected_functions;
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'attach_graphify_sourcing_lesson(uuid,uuid,uuid,bigint,uuid),audit_databricks_connection_authority()',
     'attach_graphify_sourcing_lesson(uuid,uuid,uuid,bigint,uuid),attest_candidate_manual_provenance(text,text,text,timestamp with time zone,bigint,uuid),audit_databricks_connection_authority()'
   );
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'candidate_erasure_identifier_hmac(uuid,text,text)',
     'candidate_erasure_identifier_hmac(uuid,text,text),candidate_erasure_linkedin_canonical_hmac(uuid,text)'
   );
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'canonicalize_sourcing_role_basis(jsonb)',
     'canonicalize_candidate_erasure_linkedin_tombstone(),canonicalize_sourcing_role_basis(jsonb)'
   );
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'claim_email_outbound_queued(uuid)',
     'claim_email_outbound_queued_pre0063(uuid),claim_email_outbound_queued(uuid)'
   );
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'claim_whatsapp_outbound(uuid)',
     'claim_whatsapp_outbound_pre0063(uuid),claim_whatsapp_outbound(uuid)'
   );
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'complete_sequence_manual_task(uuid,uuid)',
     'complete_sequence_manual_task(uuid)'
   );
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'enforce_requisition_input_content_lifecycle(),enqueue_aria_job',
     'enforce_requisition_input_content_lifecycle(),enforce_sequence_outbound_insert_binding(),enforce_sequence_outbound_insert_origin(),enforce_sequence_outbound_update_authority(),enqueue_and_bind_sequence_step_outbound(uuid,uuid),enqueue_aria_job'
   );
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'normalize_whatsapp_e164(text)',
     'normalize_linkedin_profile_url(text),normalize_whatsapp_e164(text)'
   );
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'reject_loop_event_mutation()',
     'reject_legacy_linkedin_candidate_reimport(),reject_loop_event_mutation()'
   );
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'outreach_sequence_recipient_blocked(outreach_sequences,outreach_sequence_steps)',
     'outreach_sequence_current_scope_hash(outreach_sequences,outreach_sequence_steps),outreach_sequence_execution_enabled(uuid),outreach_sequence_recipient_blocked(outreach_sequences,outreach_sequence_steps)'
   );
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'outreach_sequence_recipient_blocked(outreach_sequences,outreach_sequence_steps)',
     'outreach_sequence_recipient_blocked(outreach_sequences,outreach_sequence_steps),outreach_sequence_stop_internal(uuid,text),outreach_sequence_tombstone_exists(uuid,text,text)'
   );
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'prepare_apollo_enrichment(uuid,uuid,text,uuid,uuid,text)',
     'prepare_apollo_enrichment(uuid,uuid,text,uuid,uuid,text),prepare_sequence_outbound_claim(uuid,text)'
   );
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'reject_requisition_parse_reconciliation_receipt_mutation(),reject_sourcing_batch_receipt_mutation()',
     'reject_requisition_parse_reconciliation_receipt_mutation(),reject_sequence_manual_action_receipt_mutation(),reject_sourcing_batch_receipt_mutation()'
   );
 
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'activate_outreach_sequence(uuid),agent_framework_run_authority_is_active(uuid)',
     'activate_outreach_sequence(uuid),add_candidate_list_member(uuid,text,text,uuid),agent_framework_run_authority_is_active(uuid)'
   );
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'cleanup_email_ledger_delivery_receipts(integer),cleanup_erased_candidate_mirror()',
     'cleanup_email_ledger_delivery_receipts(integer),cleanup_erased_candidate_lists(),cleanup_erased_candidate_mirror()'
   );
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'create_agent_run_with_memory_context(uuid,uuid,uuid,uuid),create_need_ingress_credential',
     'create_agent_run_with_memory_context(uuid,uuid,uuid,uuid),create_candidate_list(text,uuid),create_need_ingress_credential'
   );
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'get_swarm_runtime(uuid),guard_sourcing_batch_job_transition()',
     'get_swarm_runtime(uuid),guard_candidate_list_canonical_authority(),guard_sourcing_batch_job_transition()'
   );
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'list_apollo_enrichment_reconciliation(uuid,uuid,timestamp with time zone,uuid,integer),list_loop_events',
     'list_apollo_enrichment_reconciliation(uuid,uuid,timestamp with time zone,uuid,integer),list_candidate_list_members(uuid,timestamp with time zone,uuid,integer),list_loop_events'
   );
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'reject_candidate_erasure_reimport(),reject_email_connection_quarantine_mutation()',
     'reject_candidate_erasure_reimport(),reject_candidate_list_evidence_mutation(),reject_candidate_list_member_evidence_mutation(),reject_email_connection_quarantine_mutation()'
   );
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'resolve_active_ai_runtime_binding(uuid,text),resolve_inbound_mailbox_route(text)',
     'resolve_active_ai_runtime_binding(uuid,text),resolve_candidate_list_evidence(uuid,text,text,timestamp with time zone),resolve_inbound_mailbox_route(text)'
   );
-  expected_functions_with_0065 := replace(
-    expected_functions_with_0065,
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
     'validate_campaign_create_receipt_jobs(),validate_requisition_parse_reconciliation_job()',
     'validate_campaign_create_receipt_jobs(),validate_candidate_contact_attestation_lifecycle(),validate_requisition_parse_reconciliation_job()'
   );
 
-  if actual_functions <> expected_functions_with_0065 then
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
+    'candidate_erasure_tombstone_exists(uuid,text,text),canonicalize_candidate_erasure_linkedin_tombstone()',
+    'candidate_erasure_tombstone_exists(uuid,text,text),candidate_legal_hold_lock_key(uuid,text),canonicalize_candidate_erasure_linkedin_tombstone()'
+  );
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
+    'place_candidate_legal_hold(uuid,uuid,text,text,text,text,timestamp with time zone),plan_swarm_assignments(uuid,uuid,jsonb)',
+    'place_candidate_legal_hold_pre0066(uuid,uuid,text,text,text,text,timestamp with time zone),place_candidate_legal_hold(uuid,uuid,text,text,text,text,timestamp with time zone),plan_swarm_assignments(uuid,uuid,jsonb)'
+  );
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
+    'reap_expired_agent_framework_leases(integer)',
+    'read_candidate_erasure_obligation_authority_pre0066(uuid,uuid,uuid),reap_expired_agent_framework_leases(integer)'
+  );
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
+    'reconcile_calendar_booking(uuid,uuid,text,text,text),reconcile_candidate_erasure_obligation(uuid,uuid,uuid,integer,text,text,text,text),record_agent_framework_readiness',
+    'reconcile_calendar_booking(uuid,uuid,text,text,text),reconcile_candidate_erasure_legal_hold_scope(uuid,text),reconcile_candidate_erasure_obligation_pre0066(uuid,uuid,uuid,integer,text,text,text,text),reconcile_candidate_erasure_obligation(uuid,uuid,uuid,integer,text,text,text,text),record_agent_framework_readiness'
+  );
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
+    'recover_orphan_workspace_owner(uuid,uuid,text,text,text,text,text,text,uuid,text,text),register_apollo_enrichment_targets',
+    'recover_orphan_workspace_owner(uuid,uuid,text,text,text,text,text,text,uuid,text,text),refresh_candidate_erasure_legal_hold_state_pre0066(uuid),register_apollo_enrichment_targets'
+  );
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
+    'release_candidate_legal_hold(uuid,uuid,uuid,text),release_enrichment_claim(uuid)',
+    'release_candidate_legal_hold_pre0066(uuid,uuid,uuid,text),release_candidate_legal_hold(uuid,uuid,uuid,text),release_enrichment_claim(uuid)'
+  );
+  expected_functions_with_0066 := replace(
+    expected_functions_with_0066,
+    'request_candidate_erasure(uuid,uuid,text,text,uuid),requeue_dead_aria_job(uuid)',
+    'request_candidate_erasure_pre0066(uuid,uuid,text,text,uuid),request_candidate_erasure(uuid,uuid,text,text,uuid),requeue_dead_aria_job(uuid)'
+  );
+
+  if actual_functions <> expected_functions_with_0066 then
     raise exception 'legacy public function signatures do not match the reviewed ARIA schema: %', actual_functions
       using errcode = '55000';
   end if;

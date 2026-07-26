@@ -67,6 +67,7 @@ with target_functions(signature,oid) as (
       'public.refresh_candidate_erasure_legal_hold_state_pre0066(uuid)',
       'public.read_candidate_erasure_obligation_authority_pre0066(uuid,uuid,uuid)',
       'public.reconcile_candidate_erasure_obligation_pre0066(uuid,uuid,uuid,integer,text,text,text,text)',
+      'public.list_candidate_erasure_requests(uuid,uuid,integer)',
       'public.request_candidate_erasure(uuid,uuid,text,text,uuid)',
       'public.place_candidate_legal_hold(uuid,uuid,text,text,text,text,timestamptz)',
       'public.release_candidate_legal_hold(uuid,uuid,uuid,text)',
@@ -104,7 +105,8 @@ with target_functions(signature,oid) as (
                from pg_roles role
               where role.rolname in (
                 'anon','authenticated','authenticator','postgres',
-                'service_role','supabase_admin','supabase_auth_admin'
+                'service_role','supabase_admin','supabase_auth_admin',
+                'candidate_global_hold_legacy_worker'
               )
            ),
            'definition_sha256',encode(extensions.digest(
@@ -334,6 +336,26 @@ if [[ ! -f "$rollback" ]]; then
   exit 1
 fi
 
+# A legacy deployment may have granted a custom worker role. Function rename
+# preserves that ACL unless 0066 revokes every non-owner grantee dynamically.
+psql_stdin -q <<'SQL'
+create role candidate_global_hold_legacy_worker nologin;
+grant execute on function public.refresh_candidate_erasure_legal_hold_state(uuid)
+  to candidate_global_hold_legacy_worker;
+grant execute on function public.request_candidate_erasure(uuid,uuid,text,text,uuid)
+  to candidate_global_hold_legacy_worker;
+grant execute on function public.place_candidate_legal_hold(
+  uuid,uuid,text,text,text,text,timestamptz
+) to candidate_global_hold_legacy_worker;
+grant execute on function public.release_candidate_legal_hold(uuid,uuid,uuid,text)
+  to candidate_global_hold_legacy_worker;
+grant execute on function public.read_candidate_erasure_obligation_authority(uuid,uuid,uuid)
+  to candidate_global_hold_legacy_worker;
+grant execute on function public.reconcile_candidate_erasure_obligation(
+  uuid,uuid,uuid,integer,text,text,text,text
+) to candidate_global_hold_legacy_worker;
+SQL
+
 psql_stdin -q < "$migration"
 # Forward migration retry must be a no-op, not a duplicate-function or index
 # failure. This is the deploy retry path after an ambiguous runner response.
@@ -457,7 +479,11 @@ insert into public.workspace_state(workspace_id,state) values
       {"id":"linkedin-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","campaignId":"legal-campaign-a","name":"Hold First","email":"hold-first@example.test","phone":"","linkedinUrl":"https://www.linkedin.com/in/hold-first","githubUrl":"","sourceUrl":"","sourceExternalId":"","sourceAuthorityId":"","sourcePlatform":"Manual","createdAt":"2026-07-26T00:00:00Z","complianceFlags":{"anonymized":false,"gdprExportRequested":false}},
       {"id":"linkedin-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","campaignId":"93000000-0000-4000-8000-000000000066","name":"Hold First","email":"hold-first@example.test","phone":"","linkedinUrl":"https://www.linkedin.com/in/hold-first","githubUrl":"","sourceUrl":"","sourceExternalId":"","sourceAuthorityId":"","sourcePlatform":"Manual","createdAt":"2026-07-26T00:00:00Z","complianceFlags":{"anonymized":false,"gdprExportRequested":false}},
       {"id":"linkedin-cccccccccccccccccccccccccccccccc","campaignId":"legal-campaign-a","name":"Erase First","email":"erase-first@example.test","phone":"","linkedinUrl":"https://www.linkedin.com/in/erase-first","githubUrl":"","sourceUrl":"","sourceExternalId":"","sourceAuthorityId":"","sourcePlatform":"Manual","createdAt":"2026-07-26T00:00:00Z","complianceFlags":{"anonymized":false,"gdprExportRequested":false}},
-      {"id":"linkedin-cccccccccccccccccccccccccccccccc","campaignId":"93000000-0000-4000-8000-000000000066","name":"Erase First","email":"erase-first@example.test","phone":"","linkedinUrl":"https://www.linkedin.com/in/erase-first","githubUrl":"","sourceUrl":"","sourceExternalId":"","sourceAuthorityId":"","sourcePlatform":"Manual","createdAt":"2026-07-26T00:00:00Z","complianceFlags":{"anonymized":false,"gdprExportRequested":false}}
+      {"id":"linkedin-cccccccccccccccccccccccccccccccc","campaignId":"93000000-0000-4000-8000-000000000066","name":"Erase First","email":"erase-first@example.test","phone":"","linkedinUrl":"https://www.linkedin.com/in/erase-first","githubUrl":"","sourceUrl":"","sourceExternalId":"","sourceAuthorityId":"","sourcePlatform":"Manual","createdAt":"2026-07-26T00:00:00Z","complianceFlags":{"anonymized":false,"gdprExportRequested":false}},
+      {"id":"linkedin-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","campaignId":"legal-campaign-a","name":"List Retention One","email":"list-retention-one@example.test","phone":"","linkedinUrl":"https://www.linkedin.com/in/list-retention-one","githubUrl":"","sourceUrl":"","sourceExternalId":"","sourceAuthorityId":"","sourcePlatform":"Manual","createdAt":"2026-07-26T00:00:00Z","complianceFlags":{"anonymized":false,"gdprExportRequested":false}},
+      {"id":"linkedin-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","campaignId":"93000000-0000-4000-8000-000000000066","name":"List Retention One","email":"list-retention-one@example.test","phone":"","linkedinUrl":"https://www.linkedin.com/in/list-retention-one","githubUrl":"","sourceUrl":"","sourceExternalId":"","sourceAuthorityId":"","sourcePlatform":"Manual","createdAt":"2026-07-26T00:00:00Z","complianceFlags":{"anonymized":false,"gdprExportRequested":false}},
+      {"id":"linkedin-ffffffffffffffffffffffffffffffff","campaignId":"legal-campaign-a","name":"List Retention Two","email":"list-retention-two@example.test","phone":"","linkedinUrl":"https://www.linkedin.com/in/list-retention-two","githubUrl":"","sourceUrl":"","sourceExternalId":"","sourceAuthorityId":"","sourcePlatform":"Manual","createdAt":"2026-07-26T00:00:00Z","complianceFlags":{"anonymized":false,"gdprExportRequested":false}},
+      {"id":"linkedin-ffffffffffffffffffffffffffffffff","campaignId":"93000000-0000-4000-8000-000000000066","name":"List Retention Two","email":"list-retention-two@example.test","phone":"","linkedinUrl":"https://www.linkedin.com/in/list-retention-two","githubUrl":"","sourceUrl":"","sourceExternalId":"","sourceAuthorityId":"","sourcePlatform":"Manual","createdAt":"2026-07-26T00:00:00Z","complianceFlags":{"anonymized":false,"gdprExportRequested":false}}
     ],
     "activities":[],"outreach":[],"replies":[],"bookings":[],"wins":[],
     "ledger":[],"suppression":[],"campaigns":[],"chats":[],
@@ -769,7 +795,10 @@ select candidate_global_hold_test.expect(
   and has_function_privilege('service_role','public.cleanup_autonomous_web_sourcing_retention(integer)','EXECUTE')
   and not exists (
     select 1
-      from unnest(array['anon','authenticated','authenticator']) role_name,
+      from unnest(array[
+        'anon','authenticated','authenticator',
+        'candidate_global_hold_legacy_worker'
+      ]) role_name,
            unnest(array[
              'public.request_candidate_erasure(uuid,uuid,text,text,uuid)',
              'public.place_candidate_legal_hold(uuid,uuid,text,text,text,text,timestamptz)',
@@ -809,9 +838,25 @@ select candidate_global_hold_test.expect(
   and to_regprocedure('public.read_candidate_erasure_obligation_authority_pre0066(uuid,uuid,uuid)') is not null
   and to_regprocedure('public.reconcile_candidate_erasure_obligation_pre0066(uuid,uuid,uuid,integer,text,text,text,text)') is not null
   and to_regprocedure('public.reconcile_candidate_erasure_legal_hold_scope(uuid,text)') is not null
-  and not has_function_privilege('service_role','public.request_candidate_erasure_pre0066(uuid,uuid,text,text,uuid)','EXECUTE')
-  and not has_function_privilege('service_role','public.reconcile_candidate_erasure_legal_hold_scope(uuid,text)','EXECUTE')
-  and not has_function_privilege('service_role','public.refresh_candidate_erasure_legal_hold_state(uuid)','EXECUTE')
+  and not exists (
+    select 1
+      from unnest(array[
+        'anon','authenticated','authenticator','service_role',
+        'candidate_global_hold_legacy_worker'
+      ]) role_name,
+      unnest(array[
+        'public.candidate_legal_hold_lock_key(uuid,text)',
+        'public.reconcile_candidate_erasure_legal_hold_scope(uuid,text)',
+        'public.request_candidate_erasure_pre0066(uuid,uuid,text,text,uuid)',
+        'public.place_candidate_legal_hold_pre0066(uuid,uuid,text,text,text,text,timestamptz)',
+        'public.release_candidate_legal_hold_pre0066(uuid,uuid,uuid,text)',
+        'public.refresh_candidate_erasure_legal_hold_state_pre0066(uuid)',
+        'public.read_candidate_erasure_obligation_authority_pre0066(uuid,uuid,uuid)',
+        'public.reconcile_candidate_erasure_obligation_pre0066(uuid,uuid,uuid,integer,text,text,text,text)',
+        'public.refresh_candidate_erasure_legal_hold_state(uuid)'
+      ]) signature
+     where has_function_privilege(role_name,signature,'EXECUTE')
+  )
 );
 select candidate_global_hold_test.expect(
   'given_candidate_global_hold_authority_when_lock_contracts_are_inspected_then_the_two_integer_aria_namespace_is_workspace_first_and_never_prelocks_erasure_identities',
@@ -875,9 +920,48 @@ select candidate_global_hold_test.expect(
        'public.refresh_candidate_erasure_legal_hold_state(uuid)'::regprocedure,
        'public.read_candidate_erasure_obligation_authority(uuid,uuid,uuid)'::regprocedure,
        'public.reconcile_candidate_erasure_obligation(uuid,uuid,uuid,integer,text,text,text,text)'::regprocedure,
-       'public.reconcile_candidate_erasure_legal_hold_scope(uuid,text)'::regprocedure,
-       'public.cleanup_autonomous_web_sourcing_retention(integer)'::regprocedure
+       'public.reconcile_candidate_erasure_legal_hold_scope(uuid,text)'::regprocedure
      )
+  )
+  and (
+    select position(
+        'from public.workspace_state' in lower(pg_get_functiondef(routine.oid))
+      ) > 0
+      and position(
+        'from public.workspace_state' in lower(pg_get_functiondef(routine.oid))
+      ) < position('for share' in lower(pg_get_functiondef(routine.oid)))
+      and position('for share' in lower(pg_get_functiondef(routine.oid)))
+        < position('for candidate_record in' in lower(pg_get_functiondef(routine.oid)))
+      and lower(pg_get_functiondef(routine.oid)) ~
+        'order[[:space:]]+by[[:space:]]+target\.lock_key[[:space:]]*,[[:space:]]*target\.candidate_id'
+      and lower(pg_get_functiondef(routine.oid)) ~
+        'pg_advisory_xact_lock[[:space:]]*\([[:space:]]*1095911745[[:space:]]*,[[:space:]]*candidate_record\.lock_key'
+      and lower(pg_get_functiondef(routine.oid))
+        not like '%candidate_erasure_identity_lock_key%'
+      from pg_proc routine
+     where routine.oid =
+       'public.list_candidate_erasure_requests(uuid,uuid,integer)'::regprocedure
+  )
+  and (
+    select position(
+        'for workspace_record in' in lower(pg_get_functiondef(routine.oid))
+      ) > 0
+      and position(
+        'for workspace_record in' in lower(pg_get_functiondef(routine.oid))
+      ) < position('for share' in lower(pg_get_functiondef(routine.oid)))
+      and position('for share' in lower(pg_get_functiondef(routine.oid)))
+        < position('for candidate_record in' in lower(pg_get_functiondef(routine.oid)))
+      and lower(pg_get_functiondef(routine.oid)) ~
+        'order[[:space:]]+by[[:space:]]+workspace_id[[:space:]]*,[[:space:]]*lock_key[[:space:]]*,[[:space:]]*candidate_id'
+      and lower(pg_get_functiondef(routine.oid)) ~
+        'pg_advisory_xact_lock[[:space:]]*\([[:space:]]*1095911745[[:space:]]*,[[:space:]]*candidate_record\.lock_key'
+      and lower(pg_get_functiondef(routine.oid)) ~
+        'target_limit[[:space:]]*:=[[:space:]]*least[[:space:]]*\([[:space:]]*p_limit[[:space:]]*,[[:space:]]*80[[:space:]]*\)'
+      and lower(pg_get_functiondef(routine.oid))
+        not like '%candidate_erasure_identity_lock_key%'
+      from pg_proc routine
+     where routine.oid =
+       'public.cleanup_autonomous_web_sourcing_retention(integer)'::regprocedure
   )
   and (
     select position(
@@ -899,6 +983,14 @@ select candidate_global_hold_test.expect(
 set role service_role;
 select candidate_global_hold_test.set_service_claims(
   '66a00000-0000-4000-8000-000000000001'
+);
+select candidate_global_hold_test.expect_sqlstate(
+  'given_a_null_queue_limit_when_candidate_erasure_requests_are_listed_then_22023_is_raised',
+  $$select public.list_candidate_erasure_requests(
+    '66111111-1111-4111-8111-111111111111',
+    '66a00000-0000-4000-8000-000000000001',null
+  )$$,
+  array['22023']
 );
 insert into candidate_global_hold_test.outputs(case_name,result) values (
   'hold-a',public.place_candidate_legal_hold(
@@ -1695,6 +1787,291 @@ select candidate_global_hold_test.expect(
     where request.workspace_id='66111111-1111-4111-8111-111111111111'
       and request.candidate_id='linkedin-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
       and obligation.status<>'completed')
+);
+
+-- Reproduce the former list-versus-retention A/B inversion. The queue's
+-- natural order is the lower legal-hold key then the higher key, while the
+-- evidence expiry order is deliberately the reverse. Both wrappers must wait
+-- on the same first key because they normalize the complete candidate set.
+set role service_role;
+select candidate_global_hold_test.set_service_claims(
+  '66a00000-0000-4000-8000-000000000001'
+);
+select public.release_candidate_legal_hold(
+  '66111111-1111-4111-8111-111111111111',
+  '66a00000-0000-4000-8000-000000000001',
+  (select (result ->> 'hold_id')::uuid
+     from candidate_global_hold_test.outputs
+    where case_name='post-completion-hold'),
+  'case:post-completion-release'
+);
+select public.cleanup_autonomous_web_sourcing_retention(500);
+reset role;
+select candidate_global_hold_test.expect(
+  'given_the_completed_candidate_hold_is_released_when_retention_runs_then_the_prior_expired_evidence_and_stage_are_fully_closed_before_the_inversion_fixture',
+  not exists (
+    select 1 from public.autonomous_web_candidate_evidence evidence
+     where evidence.workspace_id='66111111-1111-4111-8111-111111111111'
+       and evidence.candidate_id='linkedin-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  )
+  and not exists (
+    select 1 from public.autonomous_web_sourcing_staged_results stage
+     where stage.workspace_id='66111111-1111-4111-8111-111111111111'
+  )
+);
+
+create table candidate_global_hold_test.list_retention_lock_order(
+  candidate_id text primary key,
+  lock_key integer not null unique,
+  ordinal integer not null unique check (ordinal in (1,2))
+);
+insert into candidate_global_hold_test.list_retention_lock_order(
+  candidate_id,lock_key,ordinal
+)
+select candidate_id,lock_key,
+       row_number() over (order by lock_key,candidate_id)::integer
+  from (
+    select candidate_id,
+           public.candidate_legal_hold_lock_key(
+             '66111111-1111-4111-8111-111111111111',candidate_id
+           ) lock_key
+      from (values
+        ('linkedin-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'::text),
+        ('linkedin-ffffffffffffffffffffffffffffffff'::text)
+      ) candidate(candidate_id)
+  ) keyed;
+grant select on candidate_global_hold_test.list_retention_lock_order
+  to service_role;
+
+-- Each synthetic row is the sole candidate evidence for one retained provider
+-- result after its short-lived staging payload has already expired. That is a
+-- valid evidence lifecycle and avoids mutating immutable evidence to make the
+-- concurrency fixture.
+insert into public.autonomous_web_candidate_evidence(
+  workspace_id,campaign_id,candidate_id,egress_attempt_id,provider,
+  provider_external_id,linkedin_url,canonical_query_sha256,
+  raw_response_sha256,provider_result_sha256,normalized_payload_sha256,
+  role_evidence,recorded_at,expires_at
+)
+select
+  '66111111-1111-4111-8111-111111111111',
+  '93000000-0000-4000-8000-000000000066',target.candidate_id,
+  case target.ordinal
+    when 1 then '72000000-0000-4000-8000-000000000066'::uuid
+    else '72000000-0000-4000-8000-000000000067'::uuid
+  end,
+  'tavily',
+  case target.ordinal when 1 then repeat('6',64) else repeat('7',64) end,
+  case target.ordinal
+    when 1 then 'https://www.linkedin.com/in/list-retention-one'
+    else 'https://www.linkedin.com/in/list-retention-two'
+  end,
+  repeat('9',64),
+  case target.ordinal when 1 then repeat('a',64) else repeat('1',64) end,
+  case target.ordinal when 1 then repeat('b',64) else repeat('2',64) end,
+  case target.ordinal when 1 then repeat('c',64) else repeat('3',64) end,
+  jsonb_build_object(
+    'title','list retention ' || target.ordinal,
+    'evidence','public profile'
+  ),
+  clock_timestamp() - interval '181 days',
+  clock_timestamp() - case target.ordinal
+    when 2 then interval '2 days' else interval '1 day' end
+  from candidate_global_hold_test.list_retention_lock_order target;
+
+set role service_role;
+select candidate_global_hold_test.set_service_claims(
+  '66a00000-0000-4000-8000-000000000001'
+);
+select public.place_candidate_legal_hold(
+  '66111111-1111-4111-8111-111111111111',
+  '66a00000-0000-4000-8000-000000000001','legal-campaign-a',
+  candidate_id,'LITIGATION','case:list-retention-' || ordinal,
+  clock_timestamp() + interval '1 day'
+)
+  from candidate_global_hold_test.list_retention_lock_order
+ order by ordinal;
+select public.request_candidate_erasure(
+  '66111111-1111-4111-8111-111111111111',
+  '66a00000-0000-4000-8000-000000000001',
+  '93000000-0000-4000-8000-000000000066',candidate_id,
+  case ordinal
+    when 1 then '66f00000-0000-4000-8000-000000000007'::uuid
+    else '66f00000-0000-4000-8000-000000000008'::uuid
+  end
+)
+  from candidate_global_hold_test.list_retention_lock_order
+ order by ordinal;
+reset role;
+
+update public.candidate_erasure_requests request
+   set updated_at = clock_timestamp() - case target.ordinal
+     when 1 then interval '2 minutes' else interval '1 minute' end
+  from candidate_global_hold_test.list_retention_lock_order target
+ where request.workspace_id='66111111-1111-4111-8111-111111111111'
+   and request.candidate_id=target.candidate_id;
+
+select candidate_global_hold_test.expect(
+  'given_two_blocked_requests_and_expired_evidence_when_fixture_orders_are_inspected_then_queue_and_retention_are_inverted_around_distinct_candidate_keys',
+  (select count(*)=2
+     from candidate_global_hold_test.list_retention_lock_order)
+  and (select count(distinct lock_key)=2
+         from candidate_global_hold_test.list_retention_lock_order)
+  and array(
+    select request.candidate_id
+      from public.candidate_erasure_requests request
+     where request.workspace_id='66111111-1111-4111-8111-111111111111'
+       and request.candidate_id in (
+         'linkedin-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+         'linkedin-ffffffffffffffffffffffffffffffff'
+       )
+       and request.status='blocked_legal_hold'
+     order by request.updated_at,request.id
+  ) = array(
+    select candidate_id
+      from candidate_global_hold_test.list_retention_lock_order
+     order by ordinal
+  )
+  and array(
+    select evidence.candidate_id
+      from public.autonomous_web_candidate_evidence evidence
+     where evidence.workspace_id='66111111-1111-4111-8111-111111111111'
+       and evidence.expires_at <= clock_timestamp()
+     order by evidence.expires_at,evidence.workspace_id,
+              evidence.candidate_id,evidence.campaign_id
+     limit 2
+  ) = array(
+    select candidate_id
+      from candidate_global_hold_test.list_retention_lock_order
+     order by ordinal desc
+  )
+);
+SQL
+
+list_retention_first_candidate="$(psql_stdin -Atqc "
+  select candidate_id
+    from candidate_global_hold_test.list_retention_lock_order
+   where ordinal=1
+")"
+list_retention_first_key="$(psql_stdin -Atqc "
+  select lock_key
+    from candidate_global_hold_test.list_retention_lock_order
+   where ordinal=1
+")"
+
+mkfifo "$tmp_dir/list-retention-holder.sql"
+PGAPPNAME="aria-0066-list-retention-holder" psql_stdin \
+  < "$tmp_dir/list-retention-holder.sql" \
+  > "$tmp_dir/list-retention-holder.log" 2>&1 &
+holder_pid=$!
+exec 9>"$tmp_dir/list-retention-holder.sql"
+printf '%s\n' \
+  'begin;' \
+  "select pg_advisory_xact_lock(1095911745,public.candidate_legal_hold_lock_key('66111111-1111-4111-8111-111111111111','${list_retention_first_candidate}'));" \
+  >&9
+
+deadline=$((SECONDS + 30))
+while [[ "$(psql_stdin -Atqc "select coalesce((select state from pg_stat_activity where application_name='aria-0066-list-retention-holder'),'missing')")" != "idle in transaction" ]]; do
+  if ! kill -0 "$holder_pid" >/dev/null 2>&1 || (( SECONDS >= deadline )); then
+    cat "$tmp_dir/list-retention-holder.log" >&2
+    echo "candidate-global-legal-hold-db: list-retention authority holder did not become ready" >&2
+    exit 1
+  fi
+done
+
+PGAPPNAME="aria-0066-list-action" psql_stdin -q \
+  > "$tmp_dir/list-action.log" 2>&1 <<'SQL' &
+set statement_timeout='15s';
+set role service_role;
+select set_config('request.jwt.claims','{"sub":"66a00000-0000-4000-8000-000000000001","role":"service_role"}',false);
+select set_config('request.jwt.claim.sub','66a00000-0000-4000-8000-000000000001',false);
+select set_config('request.jwt.claim.role','service_role',false);
+select public.list_candidate_erasure_requests(
+  '66111111-1111-4111-8111-111111111111',
+  '66a00000-0000-4000-8000-000000000001',100
+);
+SQL
+first_pid=$!
+wait_for_advisory "aria-0066-list-action" "$first_pid" "$tmp_dir/list-action.log"
+
+PGAPPNAME="aria-0066-retention-action" psql_stdin -q \
+  > "$tmp_dir/retention-action.log" 2>&1 <<'SQL' &
+set statement_timeout='15s';
+set role service_role;
+select set_config('request.jwt.claims','{"sub":"66a00000-0000-4000-8000-000000000001","role":"service_role"}',false);
+select set_config('request.jwt.claim.sub','66a00000-0000-4000-8000-000000000001',false);
+select set_config('request.jwt.claim.role','service_role',false);
+select public.cleanup_autonomous_web_sourcing_retention(2);
+SQL
+second_pid=$!
+wait_for_advisory \
+  "aria-0066-retention-action" "$second_pid" "$tmp_dir/retention-action.log"
+
+list_retention_waiters="$(psql_stdin -Atqc "
+  select count(*)
+    from pg_locks held_lock
+    join pg_stat_activity activity on activity.pid=held_lock.pid
+   where activity.application_name in (
+     'aria-0066-list-action','aria-0066-retention-action'
+   )
+     and held_lock.locktype='advisory'
+     and not held_lock.granted
+     and held_lock.classid=1095911745::oid
+     and held_lock.objid=(
+       ((${list_retention_first_key}::bigint + 4294967296) % 4294967296)::oid
+     )
+     and held_lock.objsubid=2
+")"
+if [[ "$list_retention_waiters" != "2" ]]; then
+  psql_stdin -x -c "
+    select activity.application_name,held_lock.*
+      from pg_locks held_lock
+      join pg_stat_activity activity on activity.pid=held_lock.pid
+     where activity.application_name like 'aria-0066-%'
+  " >&2
+  echo "candidate-global-legal-hold-db: list and retention did not queue on the same first candidate lock" >&2
+  exit 1
+fi
+
+printf '%s\n' 'commit;' '\q' >&9
+exec 9>&-
+wait "$holder_pid"
+holder_pid=""
+set +e
+wait "$first_pid"
+list_action_status=$?
+first_pid=""
+wait "$second_pid"
+retention_action_status=$?
+second_pid=""
+set -e
+if [[ "$list_action_status" -ne 0 || "$retention_action_status" -ne 0 ]] \
+   || rg -q '40P01|deadlock detected' \
+     "$tmp_dir/list-action.log" "$tmp_dir/retention-action.log"; then
+  cat "$tmp_dir/list-action.log" >&2
+  cat "$tmp_dir/retention-action.log" >&2
+  echo "candidate-global-legal-hold-db: list-versus-retention lock ordering failed" >&2
+  exit 1
+fi
+
+psql_stdin -q <<'SQL'
+select candidate_global_hold_test.expect(
+  'given_queue_order_low_to_high_and_evidence_order_high_to_low_when_list_and_retention_overlap_then_both_use_one_total_order_without_deadlock_or_evidence_loss',
+  (select count(*)=2
+     from public.candidate_erasure_requests request
+    where request.workspace_id='66111111-1111-4111-8111-111111111111'
+      and request.candidate_id in (
+        'linkedin-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+        'linkedin-ffffffffffffffffffffffffffffffff'
+      )
+      and request.status='blocked_legal_hold')
+  and (select count(*)=2
+         from public.autonomous_web_candidate_evidence evidence
+        where evidence.workspace_id='66111111-1111-4111-8111-111111111111'
+          and evidence.candidate_id in (
+            'linkedin-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+            'linkedin-ffffffffffffffffffffffffffffffff'
+          ))
 );
 SQL
 
