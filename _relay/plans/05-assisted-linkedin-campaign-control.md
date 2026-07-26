@@ -6,7 +6,8 @@ Architecture: Claude Fable 5
 Build: Claude Sonnet 4.6
 Adversarial review: Codex Terra
 Parent branch: codex/enterprise-go-20260721
-Implementation branch: codex/heyreach-foundation-20260725
+Phase 0 branch: codex/heyreach-foundation-20260725
+Phase 1 branch: codex/candidate-lists-phase1-20260725
 Starting commit: 87e7ac9b875de71b3f4f55ac5e2034341c70483e
 
 ## Outcome
@@ -129,6 +130,61 @@ Terra gate amendment:
   disposable-Postgres behavior passes.
 
 ## Phase 1: lists and eligibility
+
+Execution estimate recorded before implementation on 2026-07-25:
+
+- 80,000 to 160,000 combined Fable, Sonnet, Codex, and Terra tokens
+- 4 to 8 engineering hours for this reviewable Phase 1 slice
+- Fable CLI spend capped at US$5 and Sonnet CLI spend capped at US$12
+- exact account credits are unknown before execution; retain the CLI usage and
+  cost receipts instead of converting them to an invented credit count
+
+This estimate excludes Phases 2 through 5, protected production rollout,
+50,000-user capacity proof, and any externally approved live connector.
+
+Architecture gate recorded on 2026-07-25:
+
+- Fable was invoked twice as a read-only advisor. The first call was stopped
+  after plan-mode denied its repository listing commands. The second completed
+  inference but the repository stop hook returned an empty result. Total Fable
+  receipt: US$4.08627185, below the US$5 ceiling. No file was changed by Fable.
+- Independent database/security, API/UI, and QA/performance audits agreed on
+  the same first boundary. That consensus is the executable specification
+  until a later Fable call can return a reviewable text result.
+- Candidate JSON, the `provenance` display field, lawful-basis display helpers,
+  and browser-owned Vivier state are not trusted compliance authority.
+- List membership requires durable, server-owned provenance evidence. Later
+  suppression or contact ineligibility keeps the membership so the UI can
+  explain it. Erasure removes candidate-bearing relationships.
+- Eligibility is recalculated by one database authority on every read and
+  export. It returns all applicable stable reason codes in deterministic order.
+- Recent contact fails closed while the existing 90-day policy and permanent
+  sent-candidate uniqueness rule disagree. A later migration must reconcile
+  those authorities before time-based re-eligibility can be claimed.
+- Existing offset pagination and the process-local rate limiter are forbidden
+  for list APIs. Use revision-bound keyset cursors and an atomic shared quota.
+
+RED-first vertical slice:
+
+1. Add only `tests/candidate-lists-db.sh` and run it before any migration exists.
+2. Capture the expected failure on missing `public.candidate_lists`.
+3. The first green migration must prove normalized tenant-bound tables,
+   private ACLs, forced RLS, member create authority, provenance-bound add,
+   exact idempotency replay/conflict, stable keyset reads, and cross-tenant
+   non-disclosure.
+4. Set operations, eligibility completeness, shared quota, export, API, and UI
+   follow as separate red-green slices on the same Phase 1 branch.
+5. No Phase 1 code is deployment-authorized until every Phase 1 slice and the
+   full source, database, security, build, and accessibility gates pass.
+
+RED receipt, 2026-07-25:
+
+- `bash tests/candidate-lists-db.sh` applied migrations 0001 through 0063.
+- It exited 1 only after that history was ready.
+- Exact expected terminal error: `candidate-lists-db RED:
+  supabase/migrations/0064_*.sql is absent and public.candidate_lists does not
+  exist.`
+- No production migration or application source existed when RED was captured.
 
 Add normalized candidate_lists and candidate_list_members with:
 
