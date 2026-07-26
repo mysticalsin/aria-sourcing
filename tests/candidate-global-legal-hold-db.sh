@@ -48,11 +48,161 @@ docker compose -p "$project" up -d --wait db >/dev/null
 psql_stdin() {
   docker run --rm -i \
     --network "$network" \
-    --env PGPASSWORD="$bootstrap_password" \
+    --env PGPASSWORD="${ARIA_DB_TEST_PASSWORD:-$bootstrap_password}" \
     --env "PGAPPNAME=${PGAPPNAME:-candidate-global-legal-hold}" \
     --entrypoint psql \
     "$client_image" \
     -X -v ON_ERROR_STOP=1 -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d postgres "$@"
+}
+
+psql_database() {
+  local database="$1"
+  shift
+  docker run --rm -i \
+    --network "$network" \
+    --env PGPASSWORD="${ARIA_DB_TEST_PASSWORD:-$bootstrap_password}" \
+    --env "PGAPPNAME=${PGAPPNAME:-candidate-global-legal-hold-probe}" \
+    --entrypoint psql \
+    "$client_image" \
+    -X -v ON_ERROR_STOP=1 -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" \
+    -d "$database" "$@"
+}
+
+probe_database=""
+psql_probe() {
+  psql_database "$probe_database" "$@"
+}
+
+database_schema_fingerprint() {
+  local database="$1"
+  docker run --rm \
+    --network "$network" \
+    --env PGPASSWORD="$bootstrap_password" \
+    --entrypoint pg_dump \
+    "$client_image" \
+    -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d "$database" \
+    --schema=public --schema-only --no-owner \
+    | sed -E '/^\\(un)?restrict[[:space:]]/d' \
+    | shasum -a 256 | awk '{print $1}'
+}
+
+copy_auth_schema_to_database() {
+  local database="$1"
+  docker run --rm \
+    --network "$network" \
+    --env PGPASSWORD="$bootstrap_password" \
+    --entrypoint pg_dump \
+    "$client_image" \
+    -h db -U "${ARIA_DB_TEST_ROLE:-postgres}" -d postgres \
+    --schema=auth --schema-only --no-owner \
+    | ARIA_DB_TEST_ROLE=supabase_admin psql_database "$database" -q
+  ARIA_DB_TEST_ROLE=supabase_admin psql_database "$database" -q \
+    < docker/db/03-auth-owner.sql
+}
+
+run_partial_rollback_probes() {
+  local suffix="${GITHUB_RUN_ID:-$$}_${GITHUB_RUN_ATTEMPT:-0}"
+  local probe_0064="aria_0064_partial_${suffix}"
+  local probe_0065="aria_0065_complete_${suffix}"
+  local probe_0066_index="aria_0066_index_${suffix}"
+  local probe_0066_rename="aria_0066_rename_${suffix}"
+  local base
+  local partial_before
+  local partial_after
+
+  psql_database template1 -q -c "create database ${probe_0064}"
+  copy_auth_schema_to_database "$probe_0064"
+  probe_database="$probe_0064"
+  ARIA_DB_TEST_ROLE=supabase_admin psql_probe -q <<'SQL'
+create schema extensions;
+create extension pgcrypto with schema extensions;
+SQL
+  aria_install_gotrue_test_authority psql_probe
+  for migration_path in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
+    base="$(basename "$migration_path")"
+    if [[ "$base" > "0064_zzzzzzzz.sql" ]]; then
+      break
+    fi
+    psql_probe -q < "$migration_path"
+  done
+
+  psql_database template1 -q \
+    -c "create database ${probe_0065} template ${probe_0064}"
+  probe_database="$probe_0065"
+  psql_probe -q < supabase/migrations/0065_candidate_list_evidence_authority.sql
+  psql_database template1 -q \
+    -c "create database ${probe_0066_index} template ${probe_0065}"
+  psql_database template1 -q \
+    -c "create database ${probe_0066_rename} template ${probe_0065}"
+
+  # The first 0065 semantic change removes the 0064 mirror foreign key. Even
+  # without a ledger or later function, 0064 must detect that partial apply.
+  probe_database="$probe_0064"
+  psql_probe -q -c '
+    alter table public.candidate_contact_attestations
+      drop constraint candidate_contact_attestation_workspace_id_campaign_id_can_fkey;
+  '
+  partial_before="$(database_schema_fingerprint "$probe_database")"
+  if psql_probe --set VERBOSITY=verbose \
+    < "$rollback_0064" > "$tmp_dir/0064-partial-0065-rollback.log" 2>&1; then
+    echo "candidate-global-legal-hold-db: 0064 rollback accepted a partial 0065 apply" >&2
+    exit 1
+  fi
+  grep -Eq \
+    'ERROR:[[:space:]]+55000:.*refusing 0064 rollback while candidate-list evidence or candidate-global legal-hold authority remains applied' \
+    "$tmp_dir/0064-partial-0065-rollback.log"
+  partial_after="$(database_schema_fingerprint "$probe_database")"
+  if [[ "$partial_after" != "$partial_before" ]]; then
+    echo "candidate-global-legal-hold-db: refused 0064 partial-marker rollback changed schema" >&2
+    exit 1
+  fi
+
+  # 0066 creates its candidate-global indexes before renaming predecessors.
+  # The first index alone must close the ledgerless 0065 rollback window.
+  probe_database="$probe_0066_index"
+  psql_probe -q <<'SQL'
+    create index candidate_legal_holds_active_candidate_idx
+      on public.candidate_legal_holds(workspace_id,candidate_id,expires_at,id)
+      where status = 'active';
+SQL
+  partial_before="$(database_schema_fingerprint "$probe_database")"
+  if psql_probe --set VERBOSITY=verbose \
+    < "$rollback_0065" > "$tmp_dir/0065-partial-index-rollback.log" 2>&1; then
+    echo "candidate-global-legal-hold-db: 0065 rollback accepted the first 0066 index" >&2
+    exit 1
+  fi
+  grep -Eq \
+    'ERROR:[[:space:]]+55000:.*refusing 0065 rollback while candidate-global legal-hold authority 0066 or later remains applied' \
+    "$tmp_dir/0065-partial-index-rollback.log"
+  partial_after="$(database_schema_fingerprint "$probe_database")"
+  if [[ "$partial_after" != "$partial_before" ]]; then
+    echo "candidate-global-legal-hold-db: refused 0065 index-marker rollback changed schema" >&2
+    exit 1
+  fi
+
+  # A direct partial retry can also begin at the predecessor rename block.
+  # The first renamed function must be sufficient even without either index.
+  probe_database="$probe_0066_rename"
+  psql_probe -q -c '
+    alter function public.refresh_candidate_erasure_legal_hold_state(uuid)
+      rename to refresh_candidate_erasure_legal_hold_state_pre0066;
+  '
+  partial_before="$(database_schema_fingerprint "$probe_database")"
+  if psql_probe --set VERBOSITY=verbose \
+    < "$rollback_0065" > "$tmp_dir/0065-partial-rename-rollback.log" 2>&1; then
+    echo "candidate-global-legal-hold-db: 0065 rollback accepted the first 0066 rename" >&2
+    exit 1
+  fi
+  grep -Eq \
+    'ERROR:[[:space:]]+55000:.*refusing 0065 rollback while candidate-global legal-hold authority 0066 or later remains applied' \
+    "$tmp_dir/0065-partial-rename-rollback.log"
+  partial_after="$(database_schema_fingerprint "$probe_database")"
+  if [[ "$partial_after" != "$partial_before" ]]; then
+    echo "candidate-global-legal-hold-db: refused 0065 rename-marker rollback changed schema" >&2
+    exit 1
+  fi
+
+  probe_database=""
 }
 
 authority_fingerprint() {
@@ -463,6 +613,8 @@ if [[ "$legacy_rollback_after" != "$legacy_rollback_before" ]]; then
   echo "candidate-global-legal-hold-db: refused 0064 rollback partially mutated later authority" >&2
   exit 1
 fi
+
+run_partial_rollback_probes
 
 psql_stdin -q <<'SQL'
 create schema candidate_global_hold_test;
@@ -2405,7 +2557,7 @@ before_rollback="$(authority_fingerprint)"
 
 psql_stdin -q <<'SQL'
 select candidate_global_hold_test.expect(
-  'given_candidate_global_authority_when_legacy_list_rollbacks_are_attempted_then_both_refuse_atomically_before_downgrade',
+  'given_full_or_partial_later_authority_when_legacy_list_rollbacks_are_attempted_then_every_path_refuses_atomically_before_downgrade',
   true
 );
 SQL
