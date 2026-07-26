@@ -1408,7 +1408,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** The initial 0067 contract capped emitted rows but allowed sparse intersection and high-overlap difference to scan an entire list before returning at most 100 items.
 **Repro/evidence:** A disjoint intersection or identical-list difference can emit zero rows only after examining every left member when the limit is applied after result filtering.
 **Suggested fix:** Make `p_limit` the examined left-driver budget, advance the cursor to the last examined identity even on an empty page, and merge only bounded per-list prefixes for union.
-**Status:** open
+**Status:** fixed (`252d304`; PostgreSQL 17 plan proof caps left-driven work at 101 rows, exact right probes at 100, and union source work at 202)
 
 ## 2026-07-26 - Initial 0067 RED harness failed on boolean formatting instead of the authority boundary
 **Severity:** test-gap
@@ -1416,4 +1416,60 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** PostgreSQL returned `f|f`, while the harness compared against `false|false`, so the first intentional RED run did not prove the named missing 0067 column and RPC.
 **Repro/evidence:** The suite exited 1 with `unexpected partial or pre-existing 0067 authority state (f|f)` after applying through 0066.
 **Suggested fix:** Normalize boolean output or compare the PostgreSQL representation, then require the exact absent-authority terminal line.
-**Status:** open
+**Status:** fixed (`669652a`; exact final RED boundary, transactional bootstrap, manifest 11/11, and independent test-security/SQL audits)
+
+## 2026-07-26 - First-secret list admission inverted the rollback lock order
+**Severity:** correctness
+**File:** supabase/migrations/0065_candidate_list_evidence_authority.sql:1332
+**Issue:** The first-ever add-member branch can acquire a candidate-list row lock before its first operation-receipt table access, while the 0067 rollback drains receipts before lists. A concurrent first-secret admission and rollback can therefore form a receipts-to-list versus list-to-receipts deadlock.
+**Repro/evidence:** PostgreSQL 17.6 instrumentation confirmed that declaring a `%ROWTYPE` variable takes no relation lock. After the 0065 `FOR KEY SHARE` list read and before the first-secret receipt insert, the add transaction held `RowShareLock` on candidate lists and no receipt-table relation lock. A rollback holding receipt-table ACCESS EXCLUSIVE and waiting on lists closes the cycle when the add later inserts its receipt.
+**Suggested fix:** In 0067, use workspace-state ACCESS EXCLUSIVE as the old-writer drain barrier; retain 0065 as an owner-only predecessor and put an authenticated same-signature wrapper in front that takes workspace-state ACCESS SHARE, then receipt-table ROW SHARE, before delegation. Reverse that transformation exactly on rollback and test both secret branches deterministically.
+**Status:** fixed (`252d304`; workspace-state and receipt-table wrapper ordering is proven on both existing-secret and first-secret branches)
+
+## 2026-07-26 - 0067 rollback could ignore a reserved-name overload-only partial apply
+**Severity:** security
+**File:** supabase/rollbacks/0067_candidate_list_set_preview_authority.sql
+**Issue:** Exact-signature-only artifact detection could treat a markerless partial containing only a retyped function under a reserved 0067 name as artifact-free and return successfully without removing or refusing it.
+**Repro/evidence:** A partial `public.preview_candidate_list_set(uuid)` does not satisfy any exact `to_regprocedure(...)` probe, so the rollback's clean-database branch could run even though an incompatible 0067-named routine remains.
+**Suggested fix:** Treat any public routine with a reserved 0067 name as an artifact, then require the complete exact catalog before mutation; prove overload-only refusal returns SQLSTATE 55000 and preserves the fingerprint.
+**Status:** fixed (`252d304`; every reserved 0067 routine name, including the retained predecessor, is detected and both overload-only probes refuse with unchanged fingerprints)
+
+## 2026-07-26 - Effective inherited EXECUTE could mask a missing direct 0067 grant
+**Severity:** security
+**File:** supabase/rollbacks/0067_candidate_list_set_preview_authority.sql
+**Issue:** Effective `has_function_privilege` checks do not prove that the authenticated runtime role has the exact direct, non-grantable EXECUTE ACL required by the accepted migration contract.
+**Repro/evidence:** Removing the direct authenticated grant while granting EXECUTE to an inherited role can keep `has_function_privilege` true, allowing rollback to accept and destroy a non-exact ACL surface.
+**Suggested fix:** Mirror the forward migration's positive `aclexplode` checks for one direct non-grantable authenticated grant on the wrapper and preview RPC, in addition to rejecting every unexpected non-owner grant.
+**Status:** fixed (`252d304`; rollback requires the exact direct non-grantable authenticated grants and rejects inherited substitutes)
+
+## 2026-07-26 - Revision trigger lock upgrade deadlocked opposite-order inserts
+**Severity:** correctness
+**File:** supabase/migrations/0067_candidate_list_set_preview_authority.sql
+**Issue:** The statement trigger acquired `FOR UPDATE` on list rows after member foreign keys had already acquired `KEY SHARE`; two transactions touching the same lists in opposite input order could each retain a compatible foreign-key lock and then deadlock while upgrading.
+**Repro/evidence:** The PostgreSQL 17 harness returned SQLSTATE 40P01 with both processes waiting on the other's transaction inside `advance_candidate_list_membership_revisions()` and terminated with `second opposite-order statement failed`.
+**Suggested fix:** Use sorted `FOR NO KEY UPDATE` locks, which remain mutually exclusive for revision writers but are compatible with the preceding foreign-key and governed-writer `KEY SHARE` locks; prove direct opposite-order and real-RPC same-list concurrency.
+**Status:** fixed (`252d304`; sorted `FOR NO KEY UPDATE` locks pass direct opposite-order and barrier-synchronized real-RPC concurrency)
+
+## 2026-07-26 - Moved erasure fixtures were absent from rollback data fingerprints
+**Severity:** test-gap
+**File:** tests/candidate-list-set-preview-db.sh
+**Issue:** Moving synthetic erasure candidates into the initial pre-0067 workspace state avoided an invalid post-authority mutation, but the successful rollback/reapply fingerprints did not include `workspace_state.state` and therefore could miss candidate-document corruption.
+**Repro/evidence:** Both `data_fingerprint()` and `legacy_data_fingerprint()` hashed lists, members, attestations, receipts, holds, and erasures while omitting canonical workspace JSON.
+**Suggested fix:** Include ordered `{workspace_id,state}` records in both fingerprints before accepting rollback or reapply equality.
+**Status:** fixed (`252d304`; both rollback fingerprints include ordered canonical workspace state and the focused suite passes 131/131)
+
+## 2026-07-26 - 0067 rollback generic scan omitted retained predecessor overloads
+**Severity:** security
+**File:** supabase/rollbacks/0067_candidate_list_set_preview_authority.sql:94
+**Issue:** The rollback detected the exact retained predecessor signature but omitted its name from generic artifact detection. A markerless database containing only `add_candidate_list_member_pre0067(text)` could be mistaken for a clean pre-0067 catalog and left callable.
+**Repro/evidence:** Final QA created the overload in a 0066 baseline. Before correction, none of the exact-signature or reserved-name probes matched it. The accepted harness now requires SQLSTATE 55000 plus an unchanged full public fingerprint for that exact partial state.
+**Suggested fix:** Keep every reserved migration-owned routine name in the generic namespace scan as well as the exact catalog validation.
+**Status:** fixed (`252d304`; focused PostgreSQL suite passes 131/131, including the new predecessor-overload-only refusal)
+
+## 2026-07-26 - Fly 0067 preflight scanned every live list member before refusing
+**Severity:** security
+**File:** docker/bootstrap/run.fly.sh:721
+**Issue:** The deployment preflight used `count(*)` even though its only decision was empty versus non-empty. A large production table could spend the full statement timeout scanning before reaching the intended safe refusal.
+**Repro/evidence:** Final security review traced the unbounded count inside the read-only preflight. The accepted source uses `exists (select 1 ... limit 1)`, and the harness rejects any reintroduction of `count(*)` in that block.
+**Suggested fix:** Keep release preflight decisions bounded when cardinality is not part of the approved authority.
+**Status:** fixed (`252d304`; independent security re-review PASS and focused PostgreSQL suite 131/131)
