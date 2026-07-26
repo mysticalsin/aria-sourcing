@@ -262,6 +262,7 @@ export const testManifest = {
     {"id":"sequences-db","executable":"bash","argv":["tests/sequences-db.sh"]},
     {"id":"candidate-lists-db","executable":"bash","argv":["tests/candidate-lists-db.sh"]},
     {"id":"candidate-list-evidence-db","executable":"bash","argv":["tests/candidate-list-evidence-db.sh"]},
+    {"id":"candidate-global-legal-hold-db","executable":"bash","argv":["tests/candidate-global-legal-hold-db.sh"]},
   ],
   groups: {
     "pretest": [
@@ -610,6 +611,7 @@ export const testManifest = {
       "sequences-db",
       "candidate-lists-db",
       "candidate-list-evidence-db",
+      "candidate-global-legal-hold-db",
     ],
     "recovery": [
       "orphan-owner-recovery-contract",
