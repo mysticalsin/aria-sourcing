@@ -31,12 +31,13 @@ source tests/db/install-gotrue-test-authority.sh
 aria_install_gotrue_test_authority
 
 for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
-  case "$(basename "$migration")" in
-    0037_*) continue ;;
-  esac
+  migration_number="$(basename "$migration")"
+  migration_number="${migration_number%%_*}"
+  if (( 10#$migration_number >= 37 )); then
+    continue
+  fi
   psql_stdin -q < "$migration"
 done
-psql_stdin -q < tests/db/gotrue-lifecycle-fixture.sql
 
 psql_stdin -q <<'SQL'
 \set ON_ERROR_STOP on
@@ -99,6 +100,20 @@ insert into public.workspace_state(workspace_id, state) values (
 SQL
 
 psql_stdin -q < supabase/migrations/0037_person_identity_model.sql
+
+# Preserve the backfill fixture while applying every later migration in the
+# same order production uses. This also ensures later replacements of 0037
+# functions are exercised instead of being overwritten by an artificial
+# out-of-order migration sequence.
+for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
+  migration_number="$(basename "$migration")"
+  migration_number="${migration_number%%_*}"
+  if (( 10#$migration_number <= 37 )); then
+    continue
+  fi
+  psql_stdin -q < "$migration"
+done
+psql_stdin -q < tests/db/gotrue-lifecycle-fixture.sql
 
 psql_stdin -q <<'SQL'
 \set ON_ERROR_STOP on
