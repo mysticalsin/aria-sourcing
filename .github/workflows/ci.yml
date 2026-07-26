@@ -94,7 +94,7 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Audit high and critical advisories
-        run: npm audit --audit-level=high
+        run: npm run audit:dependencies
 
   secret-scan:
     name: Secret scan

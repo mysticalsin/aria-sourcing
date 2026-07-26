@@ -27,6 +27,22 @@ const ownerReconciliation = readFileSync("docker/bootstrap/supabase-admin-reconc
 const gitleaksConfig = readFileSync(".gitleaks.toml", "utf8");
 const gitleaksIgnore = readFileSync(".gitleaksignore", "utf8");
 const obscuraIntegration = readFileSync("tests/obscura-integration.mts", "utf8");
+const dependencyAudit = readFileSync("scripts/dependency-audit.mjs", "utf8");
+const dependencyAuditExceptions = JSON.parse(
+  readFileSync("production-readiness/dependency-audit-exceptions.json", "utf8"),
+) as {
+  schemaVersion: number;
+  exceptions: Array<{
+    advisory: string;
+    package: string;
+    scope: string;
+    reviewedAt: string;
+    expiresAt: string;
+    allowedVersions: string[];
+    allowedNodes: string[];
+    trackingUrl: string;
+  }>;
+};
 const remoteDeployBody = deploy.match(/rd\(\)\{([\s\S]*?)^\}/m)?.[1] ?? "";
 const workflowBeforeDeployStep = deployWorkflow.slice(0, deployWorkflow.indexOf("- name: Deploy exact checked release"));
 const deployJobStart = deployWorkflow.indexOf("\n  deploy:");
@@ -632,6 +648,35 @@ ok(
     /ARIA_REQUIRE_OBSCURA_TEST:\s*["']true["']/.test(obscuraIntegrationStep),
 );
 ok("CI has an independent dependency-audit job", /^\s{2}dependency-audit:\s*$/m.test(ciWorkflow));
+ok(
+  "CI dependency audit is production-clean and permits only exact expiring reviewed exceptions",
+  /run:\s*npm run audit:dependencies/.test(ciWorkflow) &&
+    /--omit=dev/.test(dependencyAudit) &&
+    /unused dependency audit exception/.test(dependencyAudit) &&
+    /dependency audit exception expired/.test(dependencyAudit) &&
+    dependencyAuditExceptions.schemaVersion === 1 &&
+    dependencyAuditExceptions.exceptions.length === 1 &&
+    dependencyAuditExceptions.exceptions[0]?.advisory === "GHSA-mh99-v99m-4gvg" &&
+    dependencyAuditExceptions.exceptions[0]?.package === "brace-expansion" &&
+    dependencyAuditExceptions.exceptions[0]?.scope === "development-only" &&
+    dependencyAuditExceptions.exceptions[0]?.reviewedAt === "2026-07-25T00:00:00.000Z" &&
+    dependencyAuditExceptions.exceptions[0]?.expiresAt === "2026-08-08T00:00:00.000Z" &&
+    dependencyAuditExceptions.exceptions[0]?.allowedVersions.join(",") === "1.1.16" &&
+    dependencyAuditExceptions.exceptions[0]?.allowedNodes.join(",") ===
+      "node_modules/minimatch/node_modules/brace-expansion" &&
+    dependencyAuditExceptions.exceptions[0]?.trackingUrl ===
+      "https://github.com/juliangruber/brace-expansion/pull/129",
+);
+const dependencyAuditPolicy = spawnSync(
+  process.execPath,
+  ["scripts/dependency-audit.mjs", "--self-test"],
+  { cwd: process.cwd(), encoding: "utf8", shell: false },
+);
+ok(
+  "dependency audit policy rejects expiry, path, package, version, report, and production drift",
+  dependencyAuditPolicy.status === 0 &&
+    dependencyAuditPolicy.stdout.includes("RESULT dependency-audit-policy: 10 passed, 0 failed"),
+);
 ok("CI has an independent secret-scan job", /^\s{2}secret-scan:\s*$/m.test(ciWorkflow));
 ok(
   "database-security installs the exact lockfile before running the canonical manifest",
