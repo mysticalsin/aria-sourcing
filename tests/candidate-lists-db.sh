@@ -724,7 +724,7 @@ grant select on viewer_own_tenant_rows, viewer_foreign_tenant_rows, viewer_missi
 
 select candidate_lists_test.expect(
   'given_same_tenant_authenticated_member_when_listing_members_then_sees_the_added_candidate',
-  (select count(*) >= 1 from viewer_own_tenant_rows where candidate_id = 'cand-provider')
+  (select count(*) >= 1 from viewer_own_tenant_rows where candidate_id = 'cand-manual')
 );
 select candidate_lists_test.expect(
   'given_a_foreign_tenant_or_missing_list_id_when_listing_members_then_both_return_zero_rows_not_an_error',
@@ -745,11 +745,14 @@ reset role;
 
 do $$
 declare
-  tie_list uuid;
+  tie_list uuid := '93333333-3333-4333-8333-333333333333';
   tie_time timestamptz := '2026-07-20 12:00:00+00';
 begin
-  select (output->>'list_id')::uuid into tie_list
-    from candidate_lists_test.outputs where case_name = 'create-a';
+  insert into public.candidate_lists(workspace_id, id, name, created_by, created_at)
+  values (
+    '91111111-1111-4111-8111-111111111111', tie_list, 'Tied pagination list',
+    'c1000000-0000-4000-8000-000000000001', '2026-07-20 10:00:00+00'
+  );
 
   insert into public.candidate_list_members(
     list_id, workspace_id, campaign_id, candidate_id,
@@ -767,8 +770,7 @@ select candidate_lists_test.set_authenticated_claims('c1000000-0000-4000-8000-00
 
 create temporary table tied_page_1 as
 select * from public.list_candidate_list_members(
-  (select (output->>'list_id')::uuid from candidate_lists_test.outputs where case_name = 'create-a'),
-  '2026-07-20 12:00:00+00'::timestamptz, null, 1
+  '93333333-3333-4333-8333-333333333333', null, null, 1
 );
 commit;
 grant select on tied_page_1 to postgres;
@@ -778,8 +780,8 @@ set local role authenticated;
 select candidate_lists_test.set_authenticated_claims('c1000000-0000-4000-8000-000000000001');
 create temporary table tied_page_2 as
 select * from public.list_candidate_list_members(
-  (select (output->>'list_id')::uuid from candidate_lists_test.outputs where case_name = 'create-a'),
-  '2026-07-20 12:00:00+00'::timestamptz,
+  '93333333-3333-4333-8333-333333333333',
+  (select added_at from tied_page_1 order by member_seq desc limit 1),
   (select member_seq from tied_page_1 order by member_seq desc limit 1),
   1
 );
@@ -791,8 +793,8 @@ set local role authenticated;
 select candidate_lists_test.set_authenticated_claims('c1000000-0000-4000-8000-000000000001');
 create temporary table tied_page_3 as
 select * from public.list_candidate_list_members(
-  (select (output->>'list_id')::uuid from candidate_lists_test.outputs where case_name = 'create-a'),
-  '2026-07-20 12:00:00+00'::timestamptz,
+  '93333333-3333-4333-8333-333333333333',
+  (select added_at from tied_page_2 order by member_seq desc limit 1),
   (select member_seq from tied_page_2 order by member_seq desc limit 1),
   1
 );
@@ -812,6 +814,19 @@ select candidate_lists_test.expect(
     ) all_pages
   ) = 3
 );
+
+begin;
+set local role authenticated;
+select candidate_lists_test.set_authenticated_claims('c1000000-0000-4000-8000-000000000001');
+select candidate_lists_test.expect_sqlstate(
+  'given_only_one_keyset_cursor_component_when_listing_members_then_half_cursor_is_rejected',
+  $$select * from public.list_candidate_list_members(
+      '93333333-3333-4333-8333-333333333333',
+      '2026-07-20 12:00:00+00'::timestamptz, null, 1
+    )$$,
+  array['22023']
+);
+commit;
 
 do $$
 declare
