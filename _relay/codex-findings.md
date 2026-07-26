@@ -1393,3 +1393,11 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** The focused suite queues list order low-to-high while evidence expiry is high-to-low, uses a neutral holder to prove both callers wait on the same exact first advisory key, then releases it and confirms both complete without SQLSTATE 40P01 or evidence loss. Both paths now acquire their bounded candidate sets in the same total lock-key order.
 **Suggested fix:** Preserve the shared total order and bounded target snapshot for every future multi-candidate legal-hold caller.
 **Status:** fixed (`6bf97a6`)
+
+## 2026-07-26 - Legacy list rollbacks could downgrade beneath later authority
+**Severity:** security
+**File:** supabase/rollbacks/0064_candidate_lists_authority.sql; supabase/rollbacks/0065_candidate_list_evidence_authority.sql
+**Issue:** The 0064 rollback had no later-migration guard, and the 0065 rollback could run beneath a ledgerless 0066 catalog. Either path could remove or downgrade candidate-list evidence while candidate-global legal-hold authority still depended on it.
+**Repro/evidence:** The RED contract executed both older rollbacks after 0066 and observed 0065 succeed. Expanded disposable probes then exercised the first 0065 foreign-key removal and the first 0066 index/function rename, verified exact SQLSTATE 55000 refusal, and compared deterministic PostgreSQL 17 schema fingerprints before and after. Final focused suites pass 36/36 and 51/51.
+**Suggested fix:** Keep the shared schema advisory lock, append-only ledger checks, earliest persistent partial-apply markers, absent-table-safe idempotence, and before-mutation refusal in every legacy rollback.
+**Status:** fixed (`a489065`; RED and partial-probe commits `c6342dd`, `7629f15`)

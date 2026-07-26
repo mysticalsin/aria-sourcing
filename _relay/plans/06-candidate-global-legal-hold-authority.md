@@ -225,14 +225,15 @@ activation, email send, LinkedIn action, or candidate contact.
   `f1db1fcdf0c10216f34799dc40c868c859ad06929d959641f44dc833f31240e4`.
 - Refusing rollback SHA-256:
   `ec686a4661e429093f920346404288c2ae3a20ec424610e7130452a9da13f723`.
-- Focused harness SHA-256:
-  `88706d52db009e2c76619d5363fa50e25da309651eacb4bb5be197ec6ee9a30b`.
-- `bash tests/candidate-global-legal-hold-db.sh` passed 35 assertions.
+- Focused harness SHA-256 after legacy partial-rollback coverage:
+  `7e2363bc658aec26e2a04ffb06a9e6a8fa483ea9041ecbf5e703ea548244427e`.
+- `bash tests/candidate-global-legal-hold-db.sh` passed 36 assertions.
 - Candidate erasure, sourcing durability, autonomous web, candidate-list,
   sourcing-batch, function privilege, recovery allowlist, manifest, secret
   scan, both TypeScript checks, and the complete `npm test` lifecycle passed.
 - Independent concurrency review returned PASS with no P0/P1. The final
   security finding on inherited custom-role ACLs is covered by dynamic
   non-owner revocation and a custom-role regression.
-- Source commit: `6bf97a6`. This is source acceptance only. Push, protected CI,
+- Source commit: `6bf97a6`. Legacy rollback hardening commits: `c6342dd`,
+  `7629f15`, and `a489065`. This is source acceptance only. Protected CI,
   merge, deployment, canary, restore, and capacity are separate gates.

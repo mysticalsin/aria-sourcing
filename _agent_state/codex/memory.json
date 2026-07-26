@@ -2,6 +2,10 @@
   "recent_learnings": [
     {
       "date": "2026-07-26",
+      "lesson": "Legacy rollbacks must detect the earliest persistent partial-apply marker, refuse before locks or mutation, and preserve already-rolled-back idempotence."
+    },
+    {
+      "date": "2026-07-26",
       "lesson": "Legal-hold locks use a two-int namespace after workspace locking; never prelock one identity before an existing sorted multi-identity lock set."
     },
     {

@@ -2,8 +2,8 @@
 project: MSourcing / ARIA
 shift: 47
 agent: codex-gpt-5
-updated: 2026-07-26 04:46 EDT
-status: 0066 candidate-global legal-hold authority accepted in source; P1.2 planning active; production blocked
+updated: 2026-07-26 05:21 EDT
+status: legacy rollback bypass fixed and fully green locally; 0067 RED-first plan approved; production blocked
 ---
 
 # Handoff - MSourcing / ARIA
@@ -12,10 +12,10 @@ status: 0066 candidate-global legal-hold authority accepted in source; P1.2 plan
 
 - Work only from /Users/tony/msourcing-heyreach-foundation-20260725. The OneDrive checkout is not the execution lane.
 - Active branch: codex/candidate-lists-phase1-20260725.
-- Remote branch is verified at cff08ac4187264f16621b1dbd443231ba4a31009. The green 0064 authority is be7278d; 4c74b52 is the intentional 0065 RED contract; 4fd02dc is the accepted 0065 implementation; 4ed88dc is its Relay/audit closeout; aa4d33c and cff08ac are the pushed 0066 RED contract and Relay plan.
+- Remote branch is verified at `caafcc3761a6848f0d1ba8c343b34d6806792ac8`. Local head is `a489065ac1da702323dd917977edc874ce6acd83` and is not yet pushed. The local rollback-repair chain is `c6342dd` RED, `7629f15` partial-apply probes, and `a489065` source fix.
 - The 0066 RED harness SHA is f02dc12245e9e67e31d6acae8ba7cda42d8f204105b9a1f25a6611b242e67a85; database manifest count is 34 and its contract remains 11/11 green.
-- Local source commit `6bf97a667ca91a1dae9f5080fdb6c8e9e2e08427` implements and accepts 0066. It is not yet pushed. Accepted artifact hashes are: migration `f1db1fcdf0c10216f34799dc40c868c859ad06929d959641f44dc833f31240e4`; refusing rollback `ec686a4661e429093f920346404288c2ae3a20ec424610e7130452a9da13f723`; focused harness `88706d52db009e2c76619d5363fa50e25da309651eacb4bb5be197ec6ee9a30b`.
-- GitHub has no PR for this exact head. Push runs CI 30193073115 and CodeQL 30193073101 both ended with zero executed steps; `gh run view` reports the exact annotation `The job was not started because an Actions budget is preventing further use.` Failed-log lookup returns `log not found` because no runner started.
+- Source commit `6bf97a667ca91a1dae9f5080fdb6c8e9e2e08427` implements and accepts 0066 and is pushed. Accepted artifact hashes are: migration `f1db1fcdf0c10216f34799dc40c868c859ad06929d959641f44dc833f31240e4`; refusing rollback `ec686a4661e429093f920346404288c2ae3a20ec424610e7130452a9da13f723`; expanded focused harness `7e2363bc658aec26e2a04ffb06a9e6a8fa483ea9041ecbf5e703ea548244427e`.
+- GitHub has no PR for this exact head. Current push runs CI 30195226817 and CodeQL 30195226798 target remote SHA `caafcc3`; all seven jobs have zero steps. The exact annotation remains `The job was not started because an Actions budget is preventing further use.` No code ran on a GitHub runner.
 - GitHub still reports `vercel-demo` as the default branch. A separate `main` ref exists at bc46336, while `vercel-demo` is 14f76f1; neither is this execution head. The final protected-main topology and merge path must be reconciled explicitly, not inferred.
 - RED-first 0064 commits 3ee2e80 and f92f2ae, implementation be7278d, and Relay closeout d82e2c0 are pushed.
 - Migration 0064 adds four private, forced-RLS tables: candidate_lists, candidate_contact_attestations, candidate_list_members, and candidate_list_operation_receipts.
@@ -36,6 +36,8 @@ status: 0066 candidate-global legal-hold authority accepted in source; P1.2 plan
 - The executable 0066 design is in `_relay/plans/06-candidate-global-legal-hold-authority.md`. Independent security review requires a distinct candidate-legal-hold advisory namespace: prelocking only the old candidate identity key would invert the retained erasure routine's sorted multi-identity locks. Request takes workspace_state FOR UPDATE first; other legal-hold paths take FOR SHARE before the dedicated lock.
 - 0066 is forward-only. Its checked-in rollback must refuse unconditionally with SQLSTATE 55000 because downgrade restores a known destructive bypass. The 0059 and 0060 rollback guards must also refuse before mutation when the production ledger contains 0066 or later; disposable replay tests explicitly restore 0066 afterward.
 - 0066 now makes legal-hold scope candidate-global inside one workspace, removes all inherited non-owner predecessor ACLs, revalidates expiry after lock waits, prevents transient unblocking during replacement, and gives erasure-list and retention paths one bounded total candidate lock order. Independent security and concurrency review report no P0/P1.
+- The 0064 and 0065 legacy rollbacks now refuse before mutation beneath ledgered or ledgerless later authority, including the first 0065 foreign-key removal and the first 0066 index/function rename. Absent-table-safe checks preserve 0064 idempotent rollback.
+- The detailed 0067 contract is `_relay/plans/07-candidate-list-set-preview-authority.md`. It adds only revision-bound, read-only union/intersection/difference/exclusion previews. Removal, materialization, eligibility, quota, export, routes, UI, and contact authority are deliberately outside this slice.
 - No Fly deployment, production secret mutation, sourcing activation, LinkedIn automation, outbound contact, or candidate PII handling occurred in this shift.
 
 ## Done this shift
@@ -64,6 +66,9 @@ status: 0066 candidate-global legal-hold authority accepted in source; P1.2 plan
 - Captured and committed the test-only 0066 contract as aa4d33c. On the accepted 0065 foundation it reproduced the real defect: campaign-B erasure returned `completed` while campaign-A's hold remained active. No production SQL was added.
 - Implemented the reviewed forward-only 0066 authority and unconditional-refusal rollback, hardened legacy 0059/0060 rollback guards, registered all eight owner-only functions, updated the exact bootstrap digest, and committed the bounded source slice as `6bf97a6`.
 - Closed four adversarial 0066 findings: inherited custom-role predecessor ACLs, replacement-hold transient unblocking, expiry during an advisory-lock wait, and list-versus-retention multi-candidate lock inversion.
+- Reproduced the legacy rollback downgrade, added exact ledgerless partial-apply probes, fixed PostgreSQL 17 nondeterministic dump fingerprints, restored production-shaped Auth/extension fixtures in cloned databases, and closed the 0064 idempotence regression.
+- Committed the rollback RED/probe/source chain as `c6342dd`, `7629f15`, and `a489065`. Independent database security and QA returned PASS with no remaining finding.
+- Replanned P1.2 as read-only revision-bound previews. Contact export is deferred to P3.6 after eligibility and shared quota.
 
 ## Verification evidence
 
@@ -95,11 +100,15 @@ status: 0066 candidate-global legal-hold authority accepted in source; P1.2 plan
 - gitleaks dir . --redact --no-banner --exit-code 1: no leaks across 22.97 MB. git diff --check: exit 0.
 - `npm run typecheck && npm run typecheck:tests && npm test`: complete repository gate exit 0 on source commit `6bf97a6`.
 - Independent final concurrency review: PASS, no P0/P1, exact focused artifact hashes matched, focused harness 35/35, and diff hygiene passed.
+- bash tests/candidate-global-legal-hold-db.sh after the rollback repair: 36 assertions, 0 failed.
+- bash tests/candidate-lists-db.sh: 51/51. bash tests/candidate-list-evidence-db.sh: 78/78. bash tests/candidate-erasure-db.sh: PASS. npm run test:manifest: 11/11.
+- `npm run typecheck && npm run typecheck:tests && npm test`: complete pretest, application, and posttest lifecycle exited 0 on local source head `a489065`.
+- Independent final rollback review: no findings; guard ordering, ledger and partial markers, deterministic fingerprints, bash syntax, diff hygiene, 36/36 and 51/51 all passed.
 
 ## Blockers
 
 1. The local Claude CLI is not authenticated, so Sonnet cannot currently provide the requested execution lane. Exact error: `Not logged in - Please run /login`. This does not block local Codex implementation or independent review, but Sonnet execution proof remains unavailable.
-2. Phase 1 still lacks list set operations, complete eligibility reasons, recent-contact and suppression gates, shared quota, bounded export, authenticated API routes, accessible UI, browser E2E, and production-shaped performance evidence.
+2. Phase 1 still lacks revision-bound list previews, complete eligibility reasons, recent-contact and suppression gates, shared quota, authenticated API routes, accessible UI, browser E2E, and production-shaped performance evidence. Contact export remains deferred to P3.6.
 3. Gmail/Microsoft connector activation is blocked by direct authenticated credential-table DML, OAuth/token-binding defects, missing native inbound subscription/cursor authority, absent protected secret names, missing database-enforced sender auto-pause, missing two-admin sender activation, and no authorized synthetic recipient.
 4. HeyReach activation is blocked by missing written action entitlement, vendor security/privacy decision, official machine-readable API and webhook contract, sandbox proof, and any source implementation.
 5. Parent PR 5 and stacked PR 7 remain unmerged. Exact-head CI run 30193073115 and CodeQL run 30193073101 had zero steps; all seven annotations say the Actions budget prevented startup.
@@ -109,12 +118,13 @@ status: 0066 candidate-global legal-hold authority accepted in source; P1.2 plan
 
 ## Next steps
 
-1. Push source commit `6bf97a6` and its separate Relay/audit closeout, then verify the remote SHA and current GitHub run annotations with `gh`.
-2. Implement the remaining Phase 1 slices in order, beginning with a RED-first 0067 set-operation and bounded-export authority: set operations; eligibility and suppression; shared quota; authenticated API; accessible recruiter UI; browser E2E and performance proof.
-3. Complete campaigns and sender authority, then repair Gmail/Microsoft OAuth/token binding and implement native durable inbound adapters before provisioning connector secrets or authorizing a canary.
-4. Treat HeyReach as dark capability only until the official contract and entitlement gates are met; never infer endpoints, webhook trust, or delivery evidence from marketing documentation.
-5. Use four independent QA lanes across database/concurrency, security/privacy, API/UI/accessibility, and release/performance. After the whole implementation plan is complete, use Terra as the final independent validator.
-6. Merge and deploy only through protected main after exact-SHA CI, CodeQL, independent approval, environment controls, migration readback, release identity, authorized sourcing/email canaries, telemetry, restore/failover, and capacity receipts are accepted.
+1. Commit this Relay/plan milestone, push the local rollback-repair chain, then verify the exact remote SHA and fresh GitHub run annotations with `gh`.
+2. Commit the RED-only 0067 contract, prove it fails for the exact missing revision/RPC boundary, then implement the additive read-only preview migration and guarded disposable rollback.
+3. Continue Phase 1 in order: eligibility and suppression; shared quota; authenticated API; accessible recruiter UI; browser E2E and performance proof. Keep contact export in P3.6.
+4. Complete campaigns and sender authority, then repair Gmail/Microsoft OAuth/token binding and implement native durable inbound adapters before provisioning connector secrets or authorizing a canary.
+5. Treat HeyReach as dark capability only until the official contract and entitlement gates are met; never infer endpoints, webhook trust, or delivery evidence from marketing documentation.
+6. Use four independent QA lanes across database/concurrency, security/privacy, API/UI/accessibility, and release/performance. After the whole implementation plan is complete, use Terra as the final independent validator.
+7. Merge and deploy only through protected main after exact-SHA CI, CodeQL, independent approval, environment controls, migration readback, release identity, authorized sourcing/email canaries, telemetry, restore/failover, and capacity receipts are accepted.
 
 ## Decisions made (do not relitigate)
 
@@ -127,6 +137,8 @@ status: 0066 candidate-global legal-hold authority accepted in source; P1.2 plan
 - Candidate-bearing mutations must take the canonical erasure identity lock before secrets, HMACs, receipts, evidence, or durable candidate data are written.
 - Source-green, protected-CI-green, merged, deployed, canary-green, restore-green, and capacity-green are separate proof states.
 - A privacy-authority repair that closes a known destructive bypass is reversed only by a new reviewed forward migration; 0066 has no enabled downgrade path.
+- P1.2 returns identity-only, read-only set previews bound to exact list revisions. It creates no list, export, eligibility, enrollment, quota, or contact authority.
+- Contact-bearing export remains P3.6 and cannot precede P1.3 eligibility plus shared quota.
 - Direct production secret mutation, direct main pushes, and branch-protection bypass remain prohibited.
 - Gmail and Microsoft 365 may become first-party live email channels after their independent source, secret, dual-control, release, and canary gates. Their activation does not authorize LinkedIn automation.
 - HeyReach is a contracted-provider possibility, not presumed authority. ARIA will never collect LinkedIn credentials, PINs, cookies, sessions, or proxy settings; adding leads and activating a provider campaign must remain separate approved operations.
@@ -143,4 +155,5 @@ status: 0066 candidate-global legal-hold authority accepted in source; P1.2 plan
 - Do not provision connector secrets until the protected workflow allowlist and readiness preflight preserve the exact purpose-bound names.
 - Do not interpret a zero-step GitHub failure as a code failure. Inspect current run annotations with gh.
 - Do not claim production-ready, enterprise-ready, live-sourcing-ready, or 50,000-user-ready while any blocker above remains.
+- Do not expose contact data, lawful-basis conclusions, evidence hashes, or provider pointers from the 0067 preview RPC.
 - Never delete _relay/archive and never place secrets or candidate PII in Relay files.
