@@ -15,7 +15,8 @@ set -Eeuo pipefail
 #     provider payloads, and candidate-list membership;
 #   * tenant isolation and owner-only row authority;
 #   * deterministic hold-first and erasure-first advisory-lock ordering; and
-#   * idempotent forward apply plus unconditional rollback refusal.
+#   * idempotent forward apply plus refusal of 0064, 0065, and 0066 rollback
+#     beneath candidate-global authority.
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
@@ -74,7 +75,17 @@ with target_functions(signature,oid) as (
       'public.refresh_candidate_erasure_legal_hold_state(uuid)',
       'public.read_candidate_erasure_obligation_authority(uuid,uuid,uuid)',
       'public.reconcile_candidate_erasure_obligation(uuid,uuid,uuid,integer,text,text,text,text)',
-      'public.cleanup_autonomous_web_sourcing_retention(integer)'
+      'public.cleanup_autonomous_web_sourcing_retention(integer)',
+      'public.create_candidate_list(text,uuid)',
+      'public.add_candidate_list_member(uuid,text,text,uuid)',
+      'public.attest_candidate_manual_provenance(text,text,text,timestamptz,bigint,uuid)',
+      'public.list_candidate_list_members(uuid,timestamptz,uuid,integer)',
+      'public.resolve_candidate_list_evidence(uuid,text,text,timestamptz)',
+      'public.guard_candidate_list_canonical_authority()',
+      'public.reject_candidate_list_evidence_mutation()',
+      'public.reject_candidate_list_member_evidence_mutation()',
+      'public.validate_candidate_contact_attestation_lifecycle()',
+      'public.cleanup_erased_candidate_lists()'
     ]) signature
 ), function_state as (
   select target.signature,
@@ -148,7 +159,11 @@ with target_functions(signature,oid) as (
       on tablespace.oid=index_relation.reltablespace
    where index_catalog.indrelid in (
      'public.candidate_legal_holds'::regclass,
-     'public.candidate_erasure_requests'::regclass
+     'public.candidate_erasure_requests'::regclass,
+     'public.candidate_lists'::regclass,
+     'public.candidate_contact_attestations'::regclass,
+     'public.candidate_list_members'::regclass,
+     'public.candidate_list_operation_receipts'::regclass
    )
 )
 select jsonb_build_object(
@@ -188,6 +203,43 @@ select jsonb_build_object(
           'UTF8'
         ),'sha256'),'hex')
       ) from public.candidate_erasure_obligations row_value
+    ),
+    'candidate_lists',(
+      select jsonb_build_object(
+        'count',count(*),
+        'sha256',encode(extensions.digest(convert_to(
+          coalesce(jsonb_agg(to_jsonb(row_value) order by id)::text,'[]'),
+          'UTF8'
+        ),'sha256'),'hex')
+      ) from public.candidate_lists row_value
+    ),
+    'candidate_contact_attestations',(
+      select jsonb_build_object(
+        'count',count(*),
+        'sha256',encode(extensions.digest(convert_to(
+          coalesce(jsonb_agg(to_jsonb(row_value) order by id)::text,'[]'),
+          'UTF8'
+        ),'sha256'),'hex')
+      ) from public.candidate_contact_attestations row_value
+    ),
+    'candidate_list_members',(
+      select jsonb_build_object(
+        'count',count(*),
+        'sha256',encode(extensions.digest(convert_to(
+          coalesce(jsonb_agg(to_jsonb(row_value) order by
+            workspace_id,list_id,campaign_id,candidate_id)::text,'[]'),
+          'UTF8'
+        ),'sha256'),'hex')
+      ) from public.candidate_list_members row_value
+    ),
+    'candidate_list_operation_receipts',(
+      select jsonb_build_object(
+        'count',count(*),
+        'sha256',encode(extensions.digest(convert_to(
+          coalesce(jsonb_agg(to_jsonb(row_value) order by id)::text,'[]'),
+          'UTF8'
+        ),'sha256'),'hex')
+      ) from public.candidate_list_operation_receipts row_value
     )
   )
 )::text;
@@ -268,6 +320,8 @@ psql_stdin -q < tests/db/gotrue-lifecycle-fixture.sql
 
 migration="supabase/migrations/0066_candidate_global_legal_hold_authority.sql"
 rollback="supabase/rollbacks/0066_candidate_global_legal_hold_authority.sql"
+rollback_0064="supabase/rollbacks/0064_candidate_lists_authority.sql"
+rollback_0065="supabase/rollbacks/0065_candidate_list_evidence_authority.sql"
 
 if [[ ! -f "$migration" ]]; then
   # Prove the inherited defect before reporting the expected RED. Under 0065,
@@ -374,6 +428,39 @@ grep -Eq 'ERROR:[[:space:]]+55000:' "$tmp_dir/empty-rollback.log"
 empty_rollback_after="$(authority_fingerprint)"
 if [[ "$empty_rollback_after" != "$empty_rollback_before" ]]; then
   echo "candidate-global-legal-hold-db: refused empty rollback partially mutated 0066 authority" >&2
+  exit 1
+fi
+
+# Older list rollbacks must also refuse on this ledgerless, row-empty 0066
+# catalog. Exact marker checks, not data presence, own this downgrade boundary.
+legacy_rollback_before="$(authority_fingerprint)"
+if psql_stdin --set VERBOSITY=verbose \
+  < "$rollback_0065" > "$tmp_dir/0065-under-0066-rollback.log" 2>&1; then
+  echo "candidate-global-legal-hold-db: 0065 rollback unexpectedly ran beneath 0066" >&2
+  exit 1
+fi
+grep -Eq \
+  'ERROR:[[:space:]]+55000:.*refusing 0065 rollback while candidate-global legal-hold authority 0066 or later remains applied' \
+  "$tmp_dir/0065-under-0066-rollback.log"
+
+legacy_rollback_after="$(authority_fingerprint)"
+if [[ "$legacy_rollback_after" != "$legacy_rollback_before" ]]; then
+  echo "candidate-global-legal-hold-db: refused 0065 rollback partially mutated later authority" >&2
+  exit 1
+fi
+
+if psql_stdin --set VERBOSITY=verbose \
+  < "$rollback_0064" > "$tmp_dir/0064-under-0066-rollback.log" 2>&1; then
+  echo "candidate-global-legal-hold-db: 0064 rollback unexpectedly ran beneath 0066" >&2
+  exit 1
+fi
+grep -Eq \
+  'ERROR:[[:space:]]+55000:.*refusing 0064 rollback while candidate-list evidence or candidate-global legal-hold authority remains applied' \
+  "$tmp_dir/0064-under-0066-rollback.log"
+
+legacy_rollback_after="$(authority_fingerprint)"
+if [[ "$legacy_rollback_after" != "$legacy_rollback_before" ]]; then
+  echo "candidate-global-legal-hold-db: refused 0064 rollback partially mutated later authority" >&2
   exit 1
 fi
 
@@ -2315,6 +2402,13 @@ select candidate_global_hold_test.expect(
 SQL
 
 before_rollback="$(authority_fingerprint)"
+
+psql_stdin -q <<'SQL'
+select candidate_global_hold_test.expect(
+  'given_candidate_global_authority_when_legacy_list_rollbacks_are_attempted_then_both_refuse_atomically_before_downgrade',
+  true
+);
+SQL
 
 if psql_stdin --set VERBOSITY=verbose \
   < "$rollback" > "$tmp_dir/nonempty-rollback.log" 2>&1; then
