@@ -8,11 +8,75 @@ begin;
 set local lock_timeout = '5s';
 set local statement_timeout = '60s';
 
+select pg_advisory_xact_lock(hashtextextended('aria-schema-migrations', 0));
+
 do $candidate_list_rollback_guard$
 declare
   table_name text;
   contains_rows boolean;
+  later_authority_exists boolean := false;
 begin
+  -- 0065 changes list evidence and 0066 depends on that exact cleanup surface.
+  -- Refuse both ledgered and disposable/ledgerless out-of-order rollback before
+  -- taking any destructive table lock. Production migration history is
+  -- append-only; there is deliberately no operator bypass.
+  if to_regclass('public.aria_schema_migrations') is not null then
+    execute 'lock table public.aria_schema_migrations in share mode';
+    execute $query$
+      select exists (
+        select 1
+          from public.aria_schema_migrations migration
+         where substring(migration.filename from '^([0-9]{4})_') >= '0065'
+      )
+    $query$ into later_authority_exists;
+  end if;
+
+  if later_authority_exists
+     or exists (
+       select 1
+         from pg_catalog.pg_attribute attribute
+        where attribute.attrelid =
+              to_regclass('public.candidate_contact_attestations')
+          and attribute.attname = 'authority_version'
+          and attribute.attnum > 0
+          and not attribute.attisdropped
+     )
+     or (
+       to_regclass('public.candidate_contact_attestations') is not null
+       and not exists (
+         select 1
+           from pg_catalog.pg_constraint constraint_row
+          where constraint_row.conrelid =
+                to_regclass('public.candidate_contact_attestations')
+            and constraint_row.conname =
+                'candidate_contact_attestation_workspace_id_campaign_id_can_fkey'
+       )
+     )
+     or (
+       to_regclass('public.candidate_list_members') is not null
+       and not exists (
+         select 1
+           from pg_catalog.pg_constraint constraint_row
+          where constraint_row.conrelid =
+                to_regclass('public.candidate_list_members')
+            and constraint_row.conname =
+                'candidate_list_members_workspace_id_campaign_id_candidate__fkey'
+       )
+     )
+     or to_regprocedure(
+       'public.resolve_candidate_list_evidence(uuid,text,text,timestamptz)'
+     ) is not null
+     or to_regprocedure(
+       'public.candidate_legal_hold_lock_key(uuid,text)'
+     ) is not null
+     or to_regprocedure(
+       'public.request_candidate_erasure_pre0066(uuid,uuid,text,text,uuid)'
+     ) is not null then
+    raise exception
+      'refusing 0064 rollback while candidate-list evidence or candidate-global legal-hold authority remains applied'
+      using errcode = '55000';
+  end if;
+
   foreach table_name in array array[
     'candidate_list_operation_receipts',
     'candidate_list_members',

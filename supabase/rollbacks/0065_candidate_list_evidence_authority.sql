@@ -15,6 +15,7 @@ select pg_advisory_xact_lock(hashtextextended('aria-schema-migrations', 0));
 do $candidate_list_evidence_rollback_guard$
 declare
   unsafe_rows boolean := false;
+  later_authority_exists boolean := false;
 begin
   if to_regclass('public.candidate_list_operation_receipts') is null
      or to_regclass('public.candidate_lists') is null
@@ -29,6 +30,37 @@ begin
 
   if to_regclass('public.aria_schema_migrations') is not null then
     execute 'lock table public.aria_schema_migrations in share row exclusive mode';
+    execute $query$
+      select exists (
+        select 1
+          from public.aria_schema_migrations migration
+         where substring(migration.filename from '^([0-9]{4})_') >= '0066'
+      )
+    $query$ into later_authority_exists;
+  end if;
+
+  -- 0066 wraps the 0065 cleanup and evidence contracts. Its exact markers
+  -- close the ledgerless disposable path before any workspace or evidence
+  -- table lock can begin a partial downgrade.
+  if later_authority_exists
+     or to_regclass(
+       'public.candidate_legal_holds_active_candidate_idx'
+     ) is not null
+     or to_regclass(
+       'public.candidate_erasure_requests_open_candidate_idx'
+     ) is not null
+     or to_regprocedure(
+       'public.refresh_candidate_erasure_legal_hold_state_pre0066(uuid)'
+     ) is not null
+     or to_regprocedure(
+       'public.candidate_legal_hold_lock_key(uuid,text)'
+     ) is not null
+     or to_regprocedure(
+       'public.request_candidate_erasure_pre0066(uuid,uuid,text,text,uuid)'
+     ) is not null then
+    raise exception
+      'refusing 0065 rollback while candidate-global legal-hold authority 0066 or later remains applied'
+      using errcode = '55000';
   end if;
 
   -- Drain governed add/attest/erasure writers at their first shared authority
