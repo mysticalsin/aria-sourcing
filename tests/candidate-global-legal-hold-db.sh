@@ -1698,6 +1698,74 @@ select candidate_global_hold_test.expect(
 );
 SQL
 
+# A hold expiry is evaluated again after lock wait. Transaction-stable now()
+# must not let a placement that expires in the queue return a false active
+# acknowledgment.
+mkfifo "$tmp_dir/expiry-holder.sql"
+PGAPPNAME="aria-0066-expiry-holder" psql_stdin \
+  < "$tmp_dir/expiry-holder.sql" > "$tmp_dir/expiry-holder.log" 2>&1 &
+holder_pid=$!
+exec 9>"$tmp_dir/expiry-holder.sql"
+printf '%s\n' \
+  'begin;' \
+  "select pg_advisory_xact_lock(1095911745,public.candidate_legal_hold_lock_key('66111111-1111-4111-8111-111111111111','linkedin-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'));" \
+  >&9
+
+deadline=$((SECONDS + 30))
+while [[ "$(psql_stdin -Atqc "select coalesce((select state from pg_stat_activity where application_name='aria-0066-expiry-holder'),'missing')")" != "idle in transaction" ]]; do
+  if ! kill -0 "$holder_pid" >/dev/null 2>&1 || (( SECONDS >= deadline )); then
+    cat "$tmp_dir/expiry-holder.log" >&2
+    echo "candidate-global-legal-hold-db: expiry authority holder did not become ready" >&2
+    exit 1
+  fi
+done
+
+PGAPPNAME="aria-0066-expiring-place" psql_stdin -q \
+  > "$tmp_dir/expiring-place.log" 2>&1 <<'SQL' &
+set role service_role;
+select set_config('request.jwt.claims','{"sub":"66a00000-0000-4000-8000-000000000001","role":"service_role"}',false);
+select set_config('request.jwt.claim.sub','66a00000-0000-4000-8000-000000000001',false);
+select set_config('request.jwt.claim.role','service_role',false);
+select public.place_candidate_legal_hold(
+  '66111111-1111-4111-8111-111111111111',
+  '66a00000-0000-4000-8000-000000000001','legal-campaign-a',
+  'linkedin-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb','LITIGATION',
+  'case:expires-during-lock-wait',clock_timestamp() + interval '1 second'
+);
+SQL
+first_pid=$!
+wait_for_advisory "aria-0066-expiring-place" "$first_pid" "$tmp_dir/expiring-place.log"
+psql_stdin -q -c "select pg_sleep(2)" >/dev/null
+
+printf '%s\n' 'commit;' '\q' >&9
+exec 9>&-
+wait "$holder_pid"
+holder_pid=""
+set +e
+wait "$first_pid"
+expiring_place_status=$?
+set -e
+first_pid=""
+if [[ "$expiring_place_status" -eq 0 ]] \
+   || ! rg -q 'invalid legal hold|legal hold expired before placement completed' \
+     "$tmp_dir/expiring-place.log"; then
+  cat "$tmp_dir/expiring-place.log" >&2
+  echo "candidate-global-legal-hold-db: expired queued placement returned a false active hold" >&2
+  exit 1
+fi
+
+psql_stdin -q <<'SQL'
+select candidate_global_hold_test.expect(
+  'given_a_hold_expires_while_waiting_for_candidate_authority_when_the_lock_opens_then_placement_refuses_without_an_active_receipt',
+  not exists (
+    select 1 from public.candidate_legal_holds
+     where workspace_id='66111111-1111-4111-8111-111111111111'
+       and candidate_id='linkedin-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+       and case_reference='case:expires-during-lock-wait'
+  )
+);
+SQL
+
 # ---------------------------------------------------------------------------
 # Deterministic concurrency: hold-first order.
 # A neutral transaction owns only the dedicated legal-hold candidate lock.
