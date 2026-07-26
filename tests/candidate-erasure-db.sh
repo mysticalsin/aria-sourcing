@@ -61,9 +61,12 @@ source tests/db/install-gotrue-test-authority.sh
 aria_install_gotrue_test_authority
 
 for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
+  base="$(basename "$migration")"
+  if (( 10#${base%%_*} > 59 )); then
+    break
+  fi
   psql_stdin -q < "$migration"
 done
-psql_stdin -q < tests/db/gotrue-lifecycle-fixture.sql
 
 if [[ "$(legacy_service_mutation_privileges)" != "f:f:f:f:f:f" ]]; then
   echo "0059 did not revoke direct service-role legacy run/event mutation" >&2
@@ -89,6 +92,22 @@ if [[ "$(legacy_service_mutation_privileges)" != "f:f:f:f:f:f" ]]; then
   exit 1
 fi
 
+# Restore successors through 0063 only after the historical 0059
+# downgrade/reapply proof has completed. Migration 0064 adds three new erasure
+# receipt stores, so it belongs after this legacy fixture's exact 19-store
+# assertion.
+for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
+  base="$(basename "$migration")"
+  if (( 10#${base%%_*} <= 59 )); then
+    continue
+  fi
+  if (( 10#${base%%_*} > 63 )); then
+    break
+  fi
+  psql_stdin -q < "$migration"
+done
+
+psql_stdin -q < tests/db/gotrue-lifecycle-fixture.sql
 psql_stdin -q < tests/db/candidate-erasure-authority.sql
 
 # Ledger retries must not duplicate guards, receipts, or public routines.
@@ -396,6 +415,36 @@ if [[ "$rollback_status" -eq 0 ]] || ! rg -q \
   printf '%s\n' "$rollback_output" >&2
   echo "0059 rollback did not preserve candidate provenance and erasure evidence" >&2
   exit 1
+fi
+
+# Historical 0059 rollback proofs must finish before 0064 extends the receipt
+# contract and before 0066 renames erasure authority. Apply every remaining
+# migration forward-only, then prove the legacy rollback refuses at 0066.
+for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
+  base="$(basename "$migration")"
+  if (( 10#${base%%_*} <= 63 )); then
+    continue
+  fi
+  psql_stdin -q < "$migration"
+done
+
+if [[ -f supabase/migrations/0066_candidate_global_legal_hold_authority.sql ]]; then
+  before_0066_refusal="$(legacy_service_mutation_privileges)"
+  set +e
+  rollback_output="$(psql_stdin -qAt 2>&1 < supabase/rollbacks/0059_candidate_payload_provenance.sql)"
+  rollback_status=$?
+  set -e
+  if [[ "$rollback_status" -eq 0 ]] || ! rg -q \
+    'refusing 0059 rollback while candidate-global legal-hold authority 0066 or later remains applied' \
+    <<<"$rollback_output"; then
+    printf '%s\n' "$rollback_output" >&2
+    echo "0059 rollback did not refuse the 0066 predecessor boundary" >&2
+    exit 1
+  fi
+  if [[ "$(legacy_service_mutation_privileges)" != "$before_0066_refusal" ]]; then
+    echo "0059 0066-boundary refusal changed legacy mutation privileges" >&2
+    exit 1
+  fi
 fi
 
 echo "RESULT candidate-erasure-db: tenant=bound legal-hold=active-expired-release idempotency=replayed local-scrub=transactional suppression=hmac-tombstone reimport=blocked concurrency=both-lock-orders provider=verified-receipt retryable=no-false-success receipts=content-free rollback=guarded idempotence=pass"

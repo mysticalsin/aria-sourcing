@@ -16,7 +16,44 @@ declare
   provider_evidence_exists boolean := false;
   linked_completion_exists boolean := false;
   erasure_receipt_exists boolean := false;
+  later_authority_exists boolean := false;
 begin
+  -- 0066 renames the erasure/hold routines below before installing
+  -- candidate-global legal-hold authority. Downgrading 0059 underneath that
+  -- contract would leave the 0066 wrappers and retention triggers attached to
+  -- a partially restored predecessor. The production ledger is append-only,
+  -- so there is deliberately no GUC or operator bypass for this boundary.
+  if to_regclass('public.aria_schema_migrations') is not null then
+    execute 'lock table public.aria_schema_migrations in share mode';
+    execute $query$
+      select exists (
+        select 1
+          from public.aria_schema_migrations migration
+         where substring(migration.filename from '^([0-9]{4})_') >= '0066'
+      )
+    $query$ into later_authority_exists;
+  end if;
+
+  if later_authority_exists or exists (
+    select 1
+      from pg_catalog.pg_proc routine
+      join pg_catalog.pg_namespace namespace
+        on namespace.oid = routine.pronamespace
+     where namespace.nspname = 'public'
+       and routine.proname in (
+         'request_candidate_erasure_pre0066',
+         'place_candidate_legal_hold_pre0066',
+         'release_candidate_legal_hold_pre0066',
+         'refresh_candidate_erasure_legal_hold_state_pre0066',
+         'read_candidate_erasure_obligation_authority_pre0066',
+         'reconcile_candidate_erasure_obligation_pre0066'
+       )
+  ) then
+    raise exception
+      'refusing 0059 rollback while candidate-global legal-hold authority 0066 or later remains applied'
+      using errcode = '55000';
+  end if;
+
   if to_regclass('public.candidate_payload_provenance') is not null then
     execute 'lock table public.candidate_payload_provenance in access exclusive mode';
     execute 'select exists (select 1 from public.candidate_payload_provenance)'

@@ -53,9 +53,40 @@ source tests/db/install-gotrue-test-authority.sh
 aria_install_gotrue_test_authority
 
 for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
+  base="$(basename "$migration")"
+  if (( 10#${base%%_*} > 59 )); then
+    break
+  fi
   psql_stdin --single-transaction -q < "$migration"
 done
-psql_stdin -q < tests/db/gotrue-lifecycle-fixture.sql
+
+# A production ledger at 0066 or later is an unconditional compatibility
+# boundary: the 0059 rollback must refuse before changing its receipt contract.
+psql_stdin -q <<'SQL'
+create table public.aria_schema_migrations(
+  filename text primary key,
+  sha256 text not null check (sha256 ~ '^[0-9a-f]{64}$'),
+  applied_at timestamptz not null default now()
+);
+insert into public.aria_schema_migrations(filename,sha256)
+values ('0066_candidate_global_legal_hold_authority.sql',repeat('6',64));
+SQL
+ledger_guard_before="$(receipt_store_allowlist)"
+set +e
+ledger_guard_output="$(psql_stdin -qAt 2>&1 < supabase/rollbacks/0059_candidate_payload_provenance.sql)"
+ledger_guard_status=$?
+set -e
+if [[ "$ledger_guard_status" -eq 0 \
+   || "$ledger_guard_output" != *"refusing 0059 rollback while candidate-global legal-hold authority 0066 or later remains applied"* ]]; then
+  echo "0059 rollback did not refuse the ledgered 0066 boundary" >&2
+  echo "$ledger_guard_output" >&2
+  exit 1
+fi
+if [[ "$(receipt_store_allowlist)" != "$ledger_guard_before" ]]; then
+  echo "0059 ledger-boundary refusal changed the receipt allowlist" >&2
+  exit 1
+fi
+psql_stdin -q -c 'drop table public.aria_schema_migrations'
 
 # A rollback may not skip the applied 0059 dependency. Prove the guard first,
 # then roll back and reapply in exact reverse/forward migration order before
@@ -91,6 +122,21 @@ if [[ "$(receipt_store_allowlist)" != "$receipt_allowlist_0059" ]]; then
   exit 1
 fi
 
+# Install successors through 0063 before behavioral proof. Migration 0064
+# expands the erasure receipt allowlist, so it follows the legacy 0058 replay
+# assertion instead of being temporarily narrowed by that replay.
+for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
+  base="$(basename "$migration")"
+  if (( 10#${base%%_*} <= 59 )); then
+    continue
+  fi
+  if (( 10#${base%%_*} > 63 )); then
+    break
+  fi
+  psql_stdin --single-transaction -q < "$migration"
+done
+
+psql_stdin -q < tests/db/gotrue-lifecycle-fixture.sql
 psql_stdin -q <<'SQL'
 \set ON_ERROR_STOP on
 
@@ -772,5 +818,15 @@ if [[ "$after_refusal" != "$after_reapply" ]]; then
   echo "0058 rollback refusal changed durable result evidence" >&2
   exit 1
 fi
+
+# Apply the remaining authority migrations only after the complete historical
+# 0058/0059 rollback and replay surface is frozen.
+for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
+  base="$(basename "$migration")"
+  if (( 10#${base%%_*} <= 63 )); then
+    continue
+  fi
+  psql_stdin --single-transaction -q < "$migration"
+done
 
 echo "RESULT sourcing-result-durability-db: behavior=pass concurrency=pass acl=pass rollback=guarded reapply=pass rows=$after_reapply"

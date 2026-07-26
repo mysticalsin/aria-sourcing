@@ -43,6 +43,71 @@ source tests/db/install-gotrue-test-authority.sh
 aria_install_gotrue_test_authority
 
 for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
+  base="$(basename "$migration")"
+  if (( 10#${base%%_*} > 60 )); then
+    break
+  fi
+  psql_stdin --single-transaction -q < "$migration"
+done
+
+# Even the legacy same-transaction evidence-export acknowledgement cannot
+# bypass a production ledger that records 0066 or a later migration.
+psql_stdin -q <<'SQL'
+create table public.aria_schema_migrations(
+  filename text primary key,
+  sha256 text not null check (sha256 ~ '^[0-9a-f]{64}$'),
+  applied_at timestamptz not null default now()
+);
+insert into public.aria_schema_migrations(filename,sha256)
+values ('0066_candidate_global_legal_hold_authority.sql',repeat('6',64));
+SQL
+ledger_guard_contract="$(psql_query "select public.expected_sourcing_loop_handler_contract_sha256()")"
+set +e
+{
+  printf '%s\n' "begin;" "set local aria.allow_0060_rollback = 'on';"
+  sed '/^set local /d' supabase/rollbacks/0060_autonomous_web_sourcing_authority.sql
+  printf '%s\n' "commit;"
+} | psql_stdin -q > "$tmp_dir/ledger-rollback-refusal.log" 2>&1
+ledger_guard_status=$?
+set -e
+if [[ "$ledger_guard_status" -eq 0 ]] \
+   || ! rg -q '0060 rollback refused: candidate-global legal-hold authority 0066 or later remains applied' \
+     "$tmp_dir/ledger-rollback-refusal.log"; then
+  cat "$tmp_dir/ledger-rollback-refusal.log" >&2
+  echo "0060 rollback did not refuse the ledgered 0066 boundary" >&2
+  exit 1
+fi
+if [[ "$(psql_query "select public.expected_sourcing_loop_handler_contract_sha256()")" != "$ledger_guard_contract" ]]; then
+  echo "0060 ledger-boundary refusal changed the worker contract" >&2
+  exit 1
+fi
+psql_stdin -q -c 'drop table public.aria_schema_migrations'
+
+# Complete the destructive historical proof while 0060 is still the schema
+# tip, then restore it before any successor migration is applied.
+{
+  printf '%s\n' "begin;" "set local aria.allow_0060_rollback = 'on';"
+  sed '/^set local /d' supabase/rollbacks/0060_autonomous_web_sourcing_authority.sql
+  printf '%s\n' "commit;"
+} | psql_stdin -q
+if [[ "$(psql_query "select to_regclass('public.autonomous_web_sourcing_claims') is null and to_regprocedure('public.authorize_sourcing_batch_0054(uuid,uuid,uuid,uuid,text,integer,text)') is null and to_regprocedure('public.authorize_sourcing_batch(uuid,uuid,uuid,uuid,text,integer,text)') is not null and public.expected_sourcing_loop_handler_contract_sha256() = '41b9fc68fdf487c768fca4b83246c9c47dbce7acb9ca783d17f088144f8a108b'")" != "t" ]]; then
+  echo "0060 guarded rollback did not restore the exact 0054 boundary" >&2
+  exit 1
+fi
+psql_stdin --single-transaction -q < supabase/migrations/0060_autonomous_web_sourcing_authority.sql
+if [[ "$(psql_query "select to_regclass('public.autonomous_web_sourcing_claims') is not null and to_regprocedure('public.authorize_autonomous_web_sourcing(uuid,uuid,uuid,uuid,text,integer)') is not null and to_regprocedure('public.authorize_sourcing_batch_0054(uuid,uuid,uuid,uuid,text,integer,text)') is not null and public.expected_sourcing_loop_handler_contract_sha256() = '88ed71725132fec6e7981c52d200513810f668d358811fdbcc213339b26cb6f3'")" != "t" ]]; then
+  echo "0060 did not reapply after the historical guarded rollback" >&2
+  exit 1
+fi
+
+for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
+  base="$(basename "$migration")"
+  if (( 10#${base%%_*} <= 60 )); then
+    continue
+  fi
+  if (( 10#${base%%_*} > 65 )); then
+    break
+  fi
   psql_stdin --single-transaction -q < "$migration"
 done
 psql_stdin -q < tests/db/gotrue-lifecycle-fixture.sql
@@ -2289,8 +2354,8 @@ if (candidate.linkedinUrl !== candidatePayload.linkedinUrl || candidate.sourceUr
 }
 NODE
 
-# Rollback refuses live evidence, succeeds only with explicit same-transaction
-# acknowledgement, and the forward migration reapplies cleanly.
+# Live evidence must still refuse without changing the restored four-handler
+# contract. The successful rollback/reapply path ran at the 0060 schema tip.
 if psql_stdin -q < supabase/rollbacks/0060_autonomous_web_sourcing_authority.sql \
     > "$tmp_dir/rollback-refusal.log" 2>&1; then
   echo "0060 rollback unexpectedly destroyed live rows" >&2
@@ -2306,67 +2371,36 @@ if [[ "$(psql_query "select public.expected_sourcing_loop_handler_contract_sha25
   exit 1
 fi
 
-{
-  printf '%s\n' "begin;" "set local aria.allow_0060_rollback = 'on';"
-  sed '/^set local /d' supabase/rollbacks/0060_autonomous_web_sourcing_authority.sql
-  printf '%s\n' "commit;"
-} | psql_stdin -q
+# Install 0066+ only after the historical 0060 rollback/reapply exercise.
+for migration in supabase/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
+  base="$(basename "$migration")"
+  if (( 10#${base%%_*} <= 65 )); then
+    continue
+  fi
+  psql_stdin --single-transaction -q < "$migration"
+done
 
-if [[ "$(psql_query "select to_regclass('public.autonomous_web_sourcing_claims') is null")" != "t" ]]; then
-  echo "0060 guarded rollback left authority tables behind" >&2
-  exit 1
+if [[ -f supabase/migrations/0066_candidate_global_legal_hold_authority.sql ]]; then
+  marker_guard_contract="$(psql_query "select public.expected_sourcing_loop_handler_contract_sha256()")"
+  set +e
+  {
+    printf '%s\n' "begin;" "set local aria.allow_0060_rollback = 'on';"
+    sed '/^set local /d' supabase/rollbacks/0060_autonomous_web_sourcing_authority.sql
+    printf '%s\n' "commit;"
+  } | psql_stdin -q > "$tmp_dir/marker-rollback-refusal.log" 2>&1
+  marker_guard_status=$?
+  set -e
+  if [[ "$marker_guard_status" -eq 0 ]] \
+     || ! rg -q '0060 rollback refused: candidate-global legal-hold authority 0066 or later remains applied' \
+       "$tmp_dir/marker-rollback-refusal.log"; then
+    cat "$tmp_dir/marker-rollback-refusal.log" >&2
+    echo "0060 rollback did not refuse the 0066 predecessor boundary" >&2
+    exit 1
+  fi
+  if [[ "$(psql_query "select public.expected_sourcing_loop_handler_contract_sha256()")" != "$marker_guard_contract" ]]; then
+    echo "0060 0066-boundary refusal changed the worker contract" >&2
+    exit 1
+  fi
 fi
-psql_stdin -q <<'SQL'
-select set_config('request.jwt.claim.role', 'service_role', false);
-do $$
-declare readiness jsonb;
-begin
-  if to_regprocedure(
-       'public.authorize_sourcing_batch_0054(uuid,uuid,uuid,uuid,text,integer,text)'
-     ) is not null
-     or to_regprocedure(
-       'public.authorize_sourcing_batch(uuid,uuid,uuid,uuid,text,integer,text)'
-     ) is null
-     or not has_function_privilege(
-       'service_role',
-       'public.authorize_sourcing_batch(uuid,uuid,uuid,uuid,text,integer,text)',
-       'EXECUTE'
-     ) then
-    raise exception '0060 rollback did not restore the 0054 authorizer boundary';
-  end if;
-  if public.expected_sourcing_loop_handler_contract_sha256()
-       <> '41b9fc68fdf487c768fca4b83246c9c47dbce7acb9ca783d17f088144f8a108b' then
-    raise exception '0060 rollback did not restore the 0054 handler contract';
-  end if;
-  readiness := public.get_sourcing_loop_readiness('invalid');
-  if (readiness ->> 'expected_handler_count')::integer <> 3
-     or readiness ->> 'heartbeat_status' <> 'release_invalid' then
-    raise exception '0060 rollback did not restore 0054 readiness: %', readiness;
-  end if;
-end;
-$$;
-SQL
-psql_stdin --single-transaction -q < supabase/migrations/0060_autonomous_web_sourcing_authority.sql
-if [[ "$(psql_query "select to_regprocedure('public.authorize_autonomous_web_sourcing(uuid,uuid,uuid,uuid,text,integer)') is not null and to_regprocedure('public.autonomous_web_sourcing_query_is_allowed(jsonb,jsonb)') is not null and to_regprocedure('public.authorize_sourcing_batch_0054(uuid,uuid,uuid,uuid,text,integer,text)') is not null and has_function_privilege('service_role', 'public.authorize_sourcing_batch(uuid,uuid,uuid,uuid,text,integer,text)', 'EXECUTE') and not has_function_privilege('service_role', 'public.authorize_sourcing_batch_0054(uuid,uuid,uuid,uuid,text,integer,text)', 'EXECUTE')")" != "t" ]]; then
-  echo "0060 did not reapply after guarded rollback" >&2
-  exit 1
-fi
-psql_stdin -q <<'SQL'
-select set_config('request.jwt.claim.role', 'service_role', false);
-do $$
-declare readiness jsonb;
-begin
-  if public.expected_sourcing_loop_handler_contract_sha256()
-       <> '88ed71725132fec6e7981c52d200513810f668d358811fdbcc213339b26cb6f3' then
-    raise exception '0060 reapply did not restore the four-handler contract';
-  end if;
-  readiness := public.get_sourcing_loop_readiness('invalid');
-  if (readiness ->> 'expected_handler_count')::integer <> 4
-     or readiness ->> 'heartbeat_status' <> 'release_invalid' then
-    raise exception '0060 reapply did not restore combined readiness: %', readiness;
-  end if;
-end;
-$$;
-SQL
 
 echo "autonomous-web-sourcing-db: authority, evidence, readiness, replay, concurrency, erasure, ACL, rollback: PASS"

@@ -11,7 +11,43 @@ declare
   row_total bigint := 0;
   table_name text;
   table_rows bigint;
+  later_authority_exists boolean := false;
 begin
+  -- Candidate-global legal holds retain 0060 evidence and depend on its
+  -- cleanup boundary. Never permit the legacy data-loss acknowledgement to
+  -- remove 0060 after 0066 (or a later migration) has been installed. The
+  -- predecessor routine names also close the disposable/ledgerless path.
+  if to_regclass('public.aria_schema_migrations') is not null then
+    execute 'lock table public.aria_schema_migrations in share mode';
+    execute $query$
+      select exists (
+        select 1
+          from public.aria_schema_migrations migration
+         where substring(migration.filename from '^([0-9]{4})_') >= '0066'
+      )
+    $query$ into later_authority_exists;
+  end if;
+
+  if later_authority_exists or exists (
+    select 1
+      from pg_catalog.pg_proc routine
+      join pg_catalog.pg_namespace namespace
+        on namespace.oid = routine.pronamespace
+     where namespace.nspname = 'public'
+       and routine.proname in (
+         'request_candidate_erasure_pre0066',
+         'place_candidate_legal_hold_pre0066',
+         'release_candidate_legal_hold_pre0066',
+         'refresh_candidate_erasure_legal_hold_state_pre0066',
+         'read_candidate_erasure_obligation_authority_pre0066',
+         'reconcile_candidate_erasure_obligation_pre0066'
+       )
+  ) then
+    raise exception
+      '0060 rollback refused: candidate-global legal-hold authority 0066 or later remains applied'
+      using errcode = '55000';
+  end if;
+
   foreach table_name in array array[
     'autonomous_web_sourcing_claims',
     'autonomous_web_sourcing_attempts',
