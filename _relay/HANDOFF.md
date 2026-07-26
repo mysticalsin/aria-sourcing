@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 48
 agent: codex-gpt-5
 updated: 2026-07-26 08:08 EDT
-status: 0067 source verified and committed at 252d304; Relay closeout and push pending; production blocked
+status: 0067 source pushed; PR 8 open; GitHub runners blocked by Actions budget; production blocked
 ---
 
 # Handoff - MSourcing / ARIA
@@ -12,7 +12,8 @@ status: 0067 source verified and committed at 252d304; Relay closeout and push p
 
 - Work only from /Users/tony/msourcing-heyreach-foundation-20260725. Do not modify the OneDrive checkout.
 - Active branch: codex/candidate-lists-phase1-20260725.
-- Local HEAD is 252d304 (feat(db): add revision-bound candidate list previews). This source commit has not yet been pushed or checked by GitHub.
+- Source commit 252d304 and Relay closeout 38a51f8 are pushed on codex/candidate-lists-phase1-20260725. Remote readback matched 38a51f8f98ef4e743925b42283a8d84635265e08 before this snapshot.
+- Stacked PR 8 is open against codex/heyreach-foundation-20260725: https://github.com/mysticalsin/aria-sourcing/pull/8. That base is the head of PR 7 and is an ancestor of this branch.
 - Migration 0067 adds revision-bound, identity-only union, intersection, difference, and exclusion previews. It does not authorize contact export, eligibility, enrollment, provider egress, or outreach.
 - Exact 0067 hashes: forward ae101d72145094b21e44694c3c00b37b3b0824c9ab1bb9780f65d9608ff1d4dd; rollback ef77b9aae9cb5252d3e09adc9ffa4937ba2ef40d8387388c1ad5f3d1bf2ccdc7; canonical public schema 57d3d93569234be40259aab0a98df602a0b654510c4c358ce537ac957c881a0b; revision helper MD5 9503b3155d4fe3331fc20a3f5892dcaa.
 - The focused PostgreSQL 17 suite passes 131 assertions. It covers exact catalog and ACL shape, tenant disclosure, bounded traversal over 50,000 canonical candidates, rollback poison states, real RPC concurrency, erasure, legal hold, and deployment preflight.
@@ -41,7 +42,7 @@ status: 0067 source verified and committed at 252d304; Relay closeout and push p
 
 ## Blockers
 
-1. Commit 252d304 is local until the Relay closeout commit is created and both commits are pushed. Remote SHA and GitHub checks are therefore unknown.
+1. Exact-head CI run 30201518880 and CodeQL run 30201518890 completed without executing any step. All seven check annotations say: The job was not started because an Actions budget is preventing further use. This is an account-capacity blocker, not a code-failure diagnosis.
 2. Phase 1.3 eligibility, shared quota, authenticated APIs, accessible recruiter UI, browser E2E, and performance acceptance remain unimplemented.
 3. Gmail/Microsoft cannot be activated until credential DML is revoked, transactional OAuth binding and token rotation are repaired, all email goes through the durable queue, native inbound recovery exists, sender health pauses database dispatch, and authorized synthetic mailbox canaries pass.
 4. HeyReach remains blocked by written action entitlement, official API/webhook contract or sandbox, vendor security/privacy approval, and a source adapter with reconciliation and dual control.
@@ -52,7 +53,7 @@ status: 0067 source verified and committed at 252d304; Relay closeout and push p
 
 ## Next steps
 
-1. Commit this Relay closeout, push codex/candidate-lists-phase1-20260725, verify the remote SHA with git ls-remote, then inspect exact GitHub CI and CodeQL runs and annotations with gh.
+1. Restore GitHub Actions budget, rerun CI and CodeQL on the current PR 8 head, inspect every job and annotation with gh, and require exact-SHA green before merge.
 2. Write _relay/plans/08-candidate-outreach-eligibility-authority.md from the completed adversarial contract.
 3. Create the 0068 RED-first database harness and prove the exact missing table/RPC boundary after 0067 before implementation.
 4. Implement 0068 with no backfill and no provider or send side effect, then rerun 0067, evidence, erasure, legal-hold, sequence, privilege, recovery, and full repository gates.
