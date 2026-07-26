@@ -73,13 +73,13 @@ test("manifest preserves parity and freezes the exact deduplicated lifecycle", (
         resolveTestGroup(testManifest, group).length,
       ]),
     ),
-    { pretest: 56, application: 165, posttest: 2, all: 223 },
+    { pretest: 57, application: 165, posttest: 2, all: 224 },
   );
   const commands = resolveTestGroup(testManifest, "all");
   const commandLines = commands.map(({ executable, argv }) => `${executable} ${argv.join(" ")}`);
   assert.equal(
     createHash("sha256").update(commandLines.join("\n")).digest("hex"),
-    "ce8fb56e73bb10efc48d2d9ac9e14b48800c4203d19901be73f06e2ff54b7800",
+    "80f73c734fb1e7ac2ca04259d3e90302523c7ab969144de53f9edcfbb9fc499c",
   );
   assert.equal(new Set(commandLines).size, commandLines.length, "canonical lifecycle must be duplicate-free");
   assert.equal(
@@ -122,10 +122,10 @@ test("manifest preserves parity and freezes the exact deduplicated lifecycle", (
       ({ executable, argv }) => `${executable} ${argv.join(" ")}`,
     ),
   ];
-  assert.equal(parityLines.length, 225);
+  assert.equal(parityLines.length, 226);
   assert.equal(
     createHash("sha256").update(parityLines.join("\n")).digest("hex"),
-    "b7bfdccd9e8b377e782ffc2282c8526676bb37259ba7441c2e00fc232180236a",
+    "9a3ee460657569190288972f7bd845e73ee553d807c811d797051c9514219020",
     "deduplication must preserve the frozen pre-expansion baseline while registering new suites additively",
   );
   assert.ok(
@@ -211,6 +211,7 @@ test("enterprise sourcing suites are each registered in exactly one lifecycle ph
     "candidate-list-evidence-db",
     "candidate-global-legal-hold-db",
     "candidate-list-set-preview-db",
+    "candidate-outreach-eligibility-db",
   ];
   const databaseIds = resolveTestGroup(testManifest, "database").map(({ id }) => id);
   for (const id of expectedDatabaseIds) {
@@ -354,7 +355,7 @@ test("named manifest groups freeze their recursive baselines", () => {
     "framework-adapter": [2, "93c2091d26e285e65c8abbe4315913998f0528b61dc1089574755d997cc28bc2"],
     "candidate-erasure": [2, "42ee1e6bf280c482f01bcfdb41d601ea8cdaaeb8891a210777901771f56212b7"],
     "owner-recovery": [2, "2ac6a4c9232561d07292eefd046f87d301995becd14048d270972adcbc14ded3"],
-    database: [35, "1a2175467cd79802dfea46df54a7291023ca382aaf177353dc68046db8f07a14"],
+    database: [36, "0c177c6e9417d7b19a7b6b2d92c5fc5566e0197c801ff3ac4aa69cf9d44ded78"],
     recovery: [2, "2ac6a4c9232561d07292eefd046f87d301995becd14048d270972adcbc14ded3"],
     obscura: [1, "c3fe29ff86819660733b568917fd0e39d09d275d94261387747da26da852f544"],
     "authority-regression": [9, "6e51deb44286815d3e0f6cf75e59a603b79da3823dfa876a0fc1c030e2b740a4"],

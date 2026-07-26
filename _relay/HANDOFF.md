@@ -2,8 +2,8 @@
 project: MSourcing / ARIA
 shift: 48
 agent: codex-gpt-5
-updated: 2026-07-26 08:22 EDT
-status: 0068 design locked; RED implementation next; GitHub runners blocked by Actions budget; production blocked
+updated: 2026-07-26 08:30 EDT
+status: 0068 RED boundary verified; design feasibility amendment required; production blocked
 ---
 
 # Handoff - MSourcing / ARIA
@@ -25,6 +25,8 @@ status: 0068 design locked; RED implementation next; GitHub runners blocked by A
 - HeyReach has no implementation. No endpoint, authentication, webhook, idempotency, or provider receipt is assumed.
 - The reviewed 0068 design is an admin-attested, append-only eligibility evidence lifecycle plus a read-only eligibility snapshot. It must remain unable to export contact data, mutate sequences, enqueue messages, or call providers. Later egress integration must re-evaluate eligibility at activation, claim, and completion.
 - The executable 0068 contract is now recorded in _relay/plans/08-candidate-outreach-eligibility-authority.md. It uses a revision-bound paginated evaluator, binds evidence to an immutable member generation and purpose-separated recipient HMAC, stores no recipient plaintext or ciphertext, and fails closed on unknown ledger states.
+- The separately implemented 0068 RED harness reaches exact 0067, validates both pinned 0067 hashes and the accepted foundation, and exits 1 with the exact missing-attestation-and-evaluator line. The manifest contract passes 10 tests with one expected skip and zero failures.
+- PostgreSQL feasibility review reopened the 0068 design before production SQL. Canonical candidates are currently inside one unindexed workspace-state JSON array, so the plan cannot claim indexed canonical lookup for each page item. The self-FK also needs an explicit referenced unique key, and a trigger predecessor cannot be called as an ordinary wrapper function.
 - No production secret was changed, no provider was called, no candidate was contacted, and no Fly deployment occurred.
 
 ## Done this shift
@@ -39,26 +41,28 @@ status: 0068 design locked; RED implementation next; GitHub runners blocked by A
 - Replaced the unbounded deployment preflight count with EXISTS plus LIMIT 1 and a test that rejects count(*) in that authority block.
 - Completed provider-auth and eligibility adversarial audits with exact implementation order and RED test requirements.
 - Reconciled independent eligibility, schema, and RED-test reviews into the locked 0068 plan, including the exact no-egress boundary, 28-reason precedence, tenant member key, sorted multi-identity erasure lock order, rollback contract, and four-lane QA matrix.
+- Added and locally verified the 0068 RED-only harness and exact manifest registration. No 0068 migration, rollback, or production SQL exists yet.
 - Committed the source slice as 252d304.
 - Archived the prior baton to _relay/archive/2026-07-26-0808-codex.md.
 
 ## Blockers
 
 1. Exact-head CI run 30201518880 and CodeQL run 30201518890 completed without executing any step. All seven check annotations say: The job was not started because an Actions budget is preventing further use. This is an account-capacity blocker, not a code-failure diagnosis.
-2. Phase 1.3 eligibility, shared quota, authenticated APIs, accessible recruiter UI, browser E2E, and performance acceptance remain unimplemented.
-3. Gmail/Microsoft cannot be activated until credential DML is revoked, transactional OAuth binding and token rotation are repaired, all email goes through the durable queue, native inbound recovery exists, sender health pauses database dispatch, and authorized synthetic mailbox canaries pass.
-4. HeyReach remains blocked by written action entitlement, official API/webhook contract or sandbox, vendor security/privacy approval, and a source adapter with reconciliation and dual control.
-5. The local Claude CLI is unauthenticated. Exact error from the prior shift: Not logged in - Please run /login. No Sonnet or Fable execution claim is permitted.
-6. GitHub previously gave zero-step CI/CodeQL jobs because Actions budget prevented startup. Recheck the new exact SHA after push; do not reuse the old conclusion as current proof.
-7. GitHub default branch was vercel-demo rather than main at the last verified read. Protected branch topology must be reconciled before merge.
-8. Fly serves an older release. The live app remains unaccepted until exact release identity, migrations, readiness, provider canaries, telemetry, restore/failover, and capacity receipts pass.
+2. The 0068 design is NO-GO for production SQL until its canonical JSON lookup, self-FK key, trigger cleanup, one-snapshot provenance, rollback residue, and missing-index findings are amended and re-reviewed.
+3. Phase 1.3 eligibility, shared quota, authenticated APIs, accessible recruiter UI, browser E2E, and performance acceptance remain unimplemented.
+4. Gmail/Microsoft cannot be activated until credential DML is revoked, transactional OAuth binding and token rotation are repaired, all email goes through the durable queue, native inbound recovery exists, sender health pauses database dispatch, and authorized synthetic mailbox canaries pass.
+5. HeyReach remains blocked by written action entitlement, official API/webhook contract or sandbox, vendor security/privacy approval, and a source adapter with reconciliation and dual control.
+6. The local Claude CLI is unauthenticated. Exact error from the prior shift: Not logged in - Please run /login. No Sonnet or Fable execution claim is permitted.
+7. Fresh exact-head GitHub runs on 46045db again contain zero steps. Every CI and CodeQL annotation says the job was not started because an Actions budget is preventing further use.
+8. GitHub default branch was vercel-demo rather than main at the last verified read. Protected branch topology must be reconciled before merge.
+9. Fly serves an older release. The live app remains unaccepted until exact release identity, migrations, readiness, provider canaries, telemetry, restore/failover, and capacity receipts pass.
 
 ## Next steps
 
 1. Restore GitHub Actions budget, rerun CI and CodeQL on the current PR 8 head, inspect every job and annotation with gh, and require exact-SHA green before merge.
-2. Create the 0068 RED-first database harness and prove the exact missing table and RPC boundary after 0067 before implementation.
-3. Commit and push the RED boundary separately, then implement 0068 with no backfill and no provider or send side effect.
-4. Rerun 0067, evidence, erasure, legal-hold, sequence, privilege, recovery, and full repository gates after 0068 is green.
+2. Commit and push the separately verified 0068 RED boundary.
+3. Amend the 0068 plan to resolve every PostgreSQL feasibility finding, then obtain a second schema and adversarial PASS before any production SQL.
+4. Implement 0068 with no backfill and no provider or send side effect, then rerun 0067, evidence, erasure, legal-hold, sequence, privilege, recovery, and full repository gates.
 5. Integrate 0063 campaign/version/task authority with eligibility checks at activation, claim, and completion. Make the durable outbox the only email send path.
 6. Repair Gmail and Microsoft OAuth/token identity, protected secret inventory, native inbound recovery, pacing, reply stop, and sender-health authority. Run fake-provider fault tests before any authorized synthetic canary.
 7. Keep HeyReach dark until the external entitlement and contract blockers are cleared. Then add a disabled adapter, exact receipt reconciliation, dual control, sandbox proof, and a separately authorized canary.

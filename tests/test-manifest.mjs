@@ -264,6 +264,7 @@ export const testManifest = {
     {"id":"candidate-list-evidence-db","executable":"bash","argv":["tests/candidate-list-evidence-db.sh"]},
     {"id":"candidate-global-legal-hold-db","executable":"bash","argv":["tests/candidate-global-legal-hold-db.sh"]},
     {"id":"candidate-list-set-preview-db","executable":"bash","argv":["tests/candidate-list-set-preview-db.sh"]},
+    {"id":"candidate-outreach-eligibility-db","executable":"bash","argv":["tests/candidate-outreach-eligibility-db.sh"]},
   ],
   groups: {
     "pretest": [
@@ -323,6 +324,7 @@ export const testManifest = {
       "agent-framework-pin-rotation",
       "sourcing-activation-gate",
       "capacity-release-gate",
+      "candidate-outreach-eligibility-db",
     ],
     "application": [
       "fleet",
@@ -614,6 +616,7 @@ export const testManifest = {
       "candidate-list-evidence-db",
       "candidate-global-legal-hold-db",
       "candidate-list-set-preview-db",
+      "candidate-outreach-eligibility-db",
     ],
     "recovery": [
       "orphan-owner-recovery-contract",
