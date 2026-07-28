@@ -367,6 +367,18 @@ select public.enqueue_aria_job(
   '{}'::jsonb, now(), 100
 ) result;
 
+create temporary table enqueue_reply_pii as
+select public.enqueue_aria_job(
+  '51111111-1111-4111-8111-111111111111', 'inbound_classify', 'reply:pii:0001',
+  '{"inboundId":"inbound-1","replyText":"candidate-authored reply text"}'::jsonb, now(), 100
+) result;
+
+create temporary table enqueue_candidate_pii as
+select public.enqueue_aria_job(
+  '51111111-1111-4111-8111-111111111111', 'shortlist_build', 'shortlist:pii:0001',
+  '{"campaignId":"camp-1","providerRunId":"81111111-1111-4111-8111-111111111111","candidates":[{"id":"cand-1","email":"candidate@example.test"}]}'::jsonb, now(), 100
+) result;
+
 reset role;
 
 select loop_jobs_test.expect_scalar(
@@ -391,10 +403,21 @@ select loop_jobs_test.expect_scalar(
   $$select result->>'status' from enqueue_bad_kind$$,
   'invalid_request'
 );
+select loop_jobs_test.expect_scalar(
+  'enqueue-rejects-reply-text-payload',
+  $$select result->>'status' from enqueue_reply_pii$$,
+  'invalid_request'
+);
+select loop_jobs_test.expect_scalar(
+  'enqueue-rejects-candidate-record-payload',
+  $$select result->>'status' from enqueue_candidate_pii$$,
+  'invalid_request'
+);
 do $$
 declare
   declared_kind text;
   enqueue_result jsonb;
+  declared_payload jsonb;
 begin
   set local role service_role;
   perform loop_jobs_test.set_service_claims('c1000000-0000-4000-8000-000000000001');
@@ -410,6 +433,20 @@ begin
     'draft_generate', 'delivery_reconcile', 'outcome_feedback'
   ]
   loop
+    declared_payload := case declared_kind
+      when 'email_sync' then '{"inboundIds":["inbound-1"]}'::jsonb
+      when 'inbound_classify' then '{"inboundId":"inbound-1"}'::jsonb
+      when 'requisition_parse' then '{"requisitionId":"req-1","campaignId":"camp-1"}'::jsonb
+      when 'campaign_create' then '{"requisitionId":"req-1","campaignId":"camp-1"}'::jsonb
+      when 'sourcing_batch' then '{"campaignId":"camp-1","batchId":"batch-1","providerRunId":"81111111-1111-4111-8111-111111111111","candidateIds":["cand-1"]}'::jsonb
+      when 'provider_poll' then '{"campaignId":"camp-1","providerRunId":"81111111-1111-4111-8111-111111111111"}'::jsonb
+      when 'enrich_candidate' then '{"campaignId":"camp-1","candidateId":"cand-1","targetId":"target-1"}'::jsonb
+      when 'shortlist_build' then '{"campaignId":"camp-1","batchId":"batch-1","providerRunId":"81111111-1111-4111-8111-111111111111"}'::jsonb
+      when 'draft_generate' then '{"campaignId":"camp-1","candidateId":"cand-1","approvedBy":"c1000000-0000-4000-8000-000000000001","approvalSource":"human"}'::jsonb
+      when 'delivery_reconcile' then '{"campaignId":"camp-1","candidateId":"cand-1"}'::jsonb
+      when 'outcome_feedback' then '{"campaignId":"camp-1","candidateId":"cand-1"}'::jsonb
+      else '{}'::jsonb
+    end;
     -- run_at is deliberately FAR IN THE FUTURE. This case proves only that
     -- enqueue_aria_job accepts every declared kind; it must never make those
     -- jobs claimable, because later sections claim by kind from this same
@@ -423,7 +460,7 @@ begin
       '51111111-1111-4111-8111-111111111111',
       declared_kind,
       'declared:' || declared_kind || ':0001',
-      jsonb_build_object('kind', declared_kind),
+      declared_payload,
       -- 29 days: inside enqueue_aria_job's `p_run_at > now() + interval '30 days'`
       -- rejection bound (0038:245), and far enough out that no later section can
       -- claim these jobs as due.
@@ -553,7 +590,7 @@ set role service_role;
 select loop_jobs_test.set_service_claims('c1000000-0000-4000-8000-000000000001');
 select public.enqueue_aria_job(
   '51111111-1111-4111-8111-111111111111', 'email_sync', 'sync:conn-1:bucket-1',
-  '{"connectionId":"conn-1"}'::jsonb, now(), 100
+  '{"inboundIds":["inbound-rollback-1"]}'::jsonb, now(), 100
 );
 create temporary table outbox_claim as
 select id, lease_id from public.claim_due_aria_jobs('worker-test-3', 120, array['email_sync'], 1);
@@ -1185,6 +1222,54 @@ SQL
 concurrent_claim() {
   local kind="$1"
   local prefix="race:${kind}:"
+  local payload_one
+  local payload_two
+  case "$kind" in
+    email_sync)
+      payload_one='{"inboundIds":["race-inbound-1"]}'
+      payload_two='{"inboundIds":["race-inbound-2"]}'
+      ;;
+    inbound_classify)
+      payload_one='{"inboundId":"race-inbound-1"}'
+      payload_two='{"inboundId":"race-inbound-2"}'
+      ;;
+    requisition_parse)
+      payload_one='{"campaignId":"race-campaign-1","requisitionId":"race-requisition-1"}'
+      payload_two='{"campaignId":"race-campaign-2","requisitionId":"race-requisition-2"}'
+      ;;
+    campaign_create)
+      payload_one='{"campaignId":"race-campaign-1","requisitionId":"race-requisition-1"}'
+      payload_two='{"campaignId":"race-campaign-2","requisitionId":"race-requisition-2"}'
+      ;;
+    sourcing_batch)
+      payload_one='{"campaignId":"race-campaign-1","batchId":"race-batch-1","providerRunId":"81111111-1111-4111-8111-111111111111","candidateIds":["race-candidate-1"]}'
+      payload_two='{"campaignId":"race-campaign-2","batchId":"race-batch-2","providerRunId":"81111111-1111-4111-8111-111111111112","candidateIds":["race-candidate-2"]}'
+      ;;
+    provider_poll)
+      payload_one='{"campaignId":"race-campaign-1","providerRunId":"81111111-1111-4111-8111-111111111111"}'
+      payload_two='{"campaignId":"race-campaign-2","providerRunId":"81111111-1111-4111-8111-111111111112"}'
+      ;;
+    enrich_candidate)
+      payload_one='{"campaignId":"race-campaign-1","candidateId":"race-candidate-1","targetId":"race-candidate-1"}'
+      payload_two='{"campaignId":"race-campaign-2","candidateId":"race-candidate-2","targetId":"race-candidate-2"}'
+      ;;
+    shortlist_build)
+      payload_one='{"campaignId":"race-campaign-1","batchId":"race-batch-1","providerRunId":"81111111-1111-4111-8111-111111111111"}'
+      payload_two='{"campaignId":"race-campaign-2","batchId":"race-batch-2","providerRunId":"81111111-1111-4111-8111-111111111112"}'
+      ;;
+    draft_generate | delivery_reconcile | outcome_feedback)
+      payload_one='{"campaignId":"race-campaign-1","candidateId":"race-candidate-1"}'
+      payload_two='{"campaignId":"race-campaign-2","candidateId":"race-candidate-2"}'
+      ;;
+    swarm_assignment)
+      payload_one='{"campaignId":"race-campaign-1","agentId":"race-agent-1","taskId":"race-task-1"}'
+      payload_two='{"campaignId":"race-campaign-2","agentId":"race-agent-2","taskId":"race-task-2"}'
+      ;;
+    *)
+      echo "loop-jobs-db: missing race payload fixture for $kind" >&2
+      exit 1
+      ;;
+  esac
   # 0050 made enqueue and claim obey sourcing_loop_controls. Earlier sections in
   # this file deliberately leave the workspace with only SOME stages enabled, so
   # the race must enable every stage for its own kind or enqueue_aria_job returns
@@ -1218,8 +1303,8 @@ set role service_role;
 select set_config('request.jwt.claims', '{"sub":"c1000000-0000-4000-8000-000000000001","role":"service_role"}', false);
 select set_config('request.jwt.claim.sub', 'c1000000-0000-4000-8000-000000000001', false);
 select set_config('request.jwt.claim.role', 'service_role', false);
-select public.enqueue_aria_job('51111111-1111-4111-8111-111111111111','$kind','${prefix}00001','{"n":1}'::jsonb, now(), 0);
-select public.enqueue_aria_job('51111111-1111-4111-8111-111111111111','$kind','${prefix}00002','{"n":2}'::jsonb, now(), 0);
+select public.enqueue_aria_job('51111111-1111-4111-8111-111111111111','$kind','${prefix}00001','$payload_one'::jsonb, now(), 0);
+select public.enqueue_aria_job('51111111-1111-4111-8111-111111111111','$kind','${prefix}00002','$payload_two'::jsonb, now(), 0);
 reset role;
 RACE_SETUP_KIND
 

@@ -463,11 +463,11 @@ function candidateIdsFromPayload(payload) {
   return raw.filter((value) => typeof value === "string" && value.trim()).map((value) => value.trim());
 }
 
-function candidateRecordsFromPayload(payload, campaignId) {
-  const raw = Array.isArray(payload.candidates)
-    ? payload.candidates
-    : Array.isArray(payload.shortlistedCandidates)
-      ? payload.shortlistedCandidates
+function candidateRecordsFromProviderResult(result, campaignId) {
+  const raw = Array.isArray(result.candidates)
+    ? result.candidates
+    : Array.isArray(result.shortlistedCandidates)
+      ? result.shortlistedCandidates
       : [];
   return raw.filter(isRecord).map((candidate) => ({
     ...candidate,
@@ -532,22 +532,26 @@ async function handleSourcingBatch(job, context) {
   const payload = payloadOf(job);
   const campaignId = boundedText(payload.campaignId, 160, "campaign_id_required");
   const batchId = typeof payload.batchId === "string" && payload.batchId.trim() ? payload.batchId.trim() : job.id;
+  const providerRunId = typeof payload.providerRunId === "string" && payload.providerRunId.trim()
+    ? payload.providerRunId.trim()
+    : typeof payload.runId === "string" && payload.runId.trim()
+      ? payload.runId.trim()
+      : "";
   const candidateIds = candidateIdsFromPayload(payload);
-  const candidates = candidateRecordsFromPayload(payload, campaignId);
-  const successors = candidates.length > 0
+  const successors = providerRunId
     ? [
         successorJob("shortlist_build", `shortlist:${campaignId}:${batchId}`, {
           campaignId,
           batchId,
-          candidates,
+          providerRunId,
         }, 90),
       ]
     : [];
   return completeJob(
     context.client,
     job,
-    { status: "sourcing_batch_recorded", campaignId, batchId, candidateCount: candidates.length || candidateIds.length },
-    [event("sourcing.batch_ready", "campaign", campaignId, { candidateCount: candidates.length || candidateIds.length })],
+    { status: "sourcing_batch_recorded", campaignId, batchId, candidateCount: candidateIds.length },
+    [event("sourcing.batch_ready", "campaign", campaignId, { candidateCount: candidateIds.length })],
     successors,
   );
 }
@@ -585,60 +589,72 @@ async function handleProviderPoll(job, context) {
   const campaignId = boundedText(payload.campaignId, 160, "campaign_id_required");
   const runId = boundedText(payload.providerRunId ?? payload.runId ?? job.id, 160, "provider_run_required");
   let batchId = typeof payload.batchId === "string" && payload.batchId.trim() ? payload.batchId.trim() : runId;
-  let candidates = candidateRecordsFromPayload(payload, campaignId);
   let status = "completed";
   let skippedCount = 0;
-  if (candidates.length === 0) {
-    const poller = context.providerPoller?.poll
-      ? await context.providerPoller.poll({ job, payload })
-      : await pollProviderRunViaRoute(job, context, payload);
-    status = typeof poller.status === "string" ? poller.status : "invalid";
-    if (status === "processing") throw new HandlerError("provider_still_running", true);
-    if (status === "failed") {
-      return completeJob(
-        context.client,
-        job,
-        { status: "provider_poll_failed", campaignId, providerRunId: runId },
-        [event("provider.poll_failed", "provider_run", runId, { campaignId })],
-        [],
-      );
-    }
-    if (status !== "completed" || !Array.isArray(poller.candidates)) throw new HandlerError("provider_poll_response_invalid", true);
-    candidates = candidateRecordsFromPayload(poller, campaignId);
-    batchId = typeof poller.batchId === "string" && poller.batchId.trim() ? poller.batchId.trim() : batchId;
-    skippedCount = typeof poller.skippedCount === "number" && Number.isSafeInteger(poller.skippedCount) ? poller.skippedCount : 0;
+  const poller = context.providerPoller?.poll
+    ? await context.providerPoller.poll({ job, payload })
+    : await pollProviderRunViaRoute(job, context, payload);
+  status = typeof poller.status === "string" ? poller.status : "invalid";
+  if (status === "processing") throw new HandlerError("provider_still_running", true);
+  if (status === "failed") {
+    return completeJob(
+      context.client,
+      job,
+      { status: "provider_poll_failed", campaignId, providerRunId: runId },
+      [event("provider.poll_failed", "provider_run", runId, { campaignId })],
+      [],
+    );
   }
-  const successors = candidates.length > 0
-    ? [
-        successorJob("shortlist_build", `shortlist:${campaignId}:${batchId}`, {
-          campaignId,
-          batchId,
-          candidates,
-        }, 90),
-      ]
-    : [];
+  if (status !== "completed") throw new HandlerError("provider_poll_response_invalid", true);
+  batchId = typeof poller.batchId === "string" && poller.batchId.trim() ? poller.batchId.trim() : batchId;
+  skippedCount = typeof poller.skippedCount === "number" && Number.isSafeInteger(poller.skippedCount) ? poller.skippedCount : 0;
+  const successors = [
+    successorJob("shortlist_build", `shortlist:${campaignId}:${batchId}`, {
+      campaignId,
+      batchId,
+      providerRunId: runId,
+    }, 90),
+  ];
   return completeJob(
     context.client,
     job,
-    { status: "provider_poll_recorded", campaignId, candidateCount: candidates.length, skippedCount },
-    [event("provider.poll_recorded", "provider_run", runId, { candidateCount: candidates.length, skippedCount })],
+    { status: "provider_poll_recorded", campaignId, providerRunId: runId, skippedCount },
+    [event("provider.poll_recorded", "provider_run", runId, { skippedCount })],
     successors,
   );
+}
+
+async function candidatesForShortlist(job, context, payload, campaignId) {
+  const providerRunId = typeof payload.providerRunId === "string" && payload.providerRunId.trim()
+    ? payload.providerRunId.trim()
+    : typeof payload.runId === "string" && payload.runId.trim()
+      ? payload.runId.trim()
+      : "";
+  if (!providerRunId) throw new HandlerError("shortlist_provider_run_required");
+  const providerPayload = { ...payload, providerRunId };
+  const providerResult = context.providerPoller?.poll
+    ? await context.providerPoller.poll({ job, payload: providerPayload })
+    : await pollProviderRunViaRoute(job, context, providerPayload);
+  const status = typeof providerResult.status === "string" ? providerResult.status : "invalid";
+  if (status === "processing") throw new HandlerError("provider_still_running", true);
+  if (status === "failed") throw new HandlerError("provider_poll_failed");
+  if (status !== "completed") throw new HandlerError("provider_poll_response_invalid", true);
+  return candidateRecordsFromProviderResult(providerResult, campaignId);
 }
 
 async function handleEnrichCandidate(job, context) {
   const payload = payloadOf(job);
   const campaignId = boundedText(payload.campaignId, 160, "campaign_id_required");
   const candidateId = boundedText(payload.candidateId, 160, "candidate_id_required");
-  const enrichedCandidate = isRecord(payload.candidate)
-    ? candidateRecordsFromPayload({ candidates: [payload.candidate] }, campaignId)[0]
-    : null;
-  const successors = enrichedCandidate
+  const providerRunId = typeof payload.providerRunId === "string" && payload.providerRunId.trim()
+    ? payload.providerRunId.trim()
+    : "";
+  const successors = providerRunId
     ? [
         successorJob("shortlist_build", `shortlist:${campaignId}:enriched:${candidateId}`, {
           campaignId,
           batchId: `enriched:${candidateId}`,
-          candidates: [enrichedCandidate],
+          providerRunId,
         }, 90),
       ]
     : [];
@@ -674,7 +690,7 @@ async function handleDeliveryReconcile(job, context) {
 async function handleShortlistBuild(job, context) {
   const payload = payloadOf(job);
   const campaignId = boundedText(payload.campaignId, 160, "campaign_id_required");
-  const candidates = candidateRecordsFromPayload(payload, campaignId);
+  const candidates = await candidatesForShortlist(job, context, payload, campaignId);
   if (candidates.length === 0) throw new HandlerError("shortlist_candidates_required");
   const batchId = typeof payload.batchId === "string" && payload.batchId.trim() ? payload.batchId.trim() : job.id;
   const receiptKey = typeof payload.receiptKey === "string" && payload.receiptKey.trim()
@@ -706,32 +722,24 @@ async function handleDraftGenerate(job, context) {
 async function handleInboundClassify(job, context) {
   const payload = payloadOf(job);
   const inboundId = typeof payload.inboundId === "string" ? payload.inboundId.trim() : job.id;
-  let storedInbound = null;
-  if (payload.replyText === undefined && payload.body === undefined && payload.text === undefined) {
-    const inbound = await context.client.rpc("read_inbound_email_for_loop", {
-      p_workspace_id: job.workspace_id,
-      p_inbound_id: inboundId,
-    });
-    if (inbound.error) throw new HandlerError(inbound.error.code, true);
-    if (!isRecord(inbound.data) || inbound.data.status !== "ok") {
-      const status = isRecord(inbound.data) && typeof inbound.data.status === "string"
-        ? inbound.data.status
-        : "inbound_unavailable";
-      throw new HandlerError(status, status !== "not_found");
-    }
-    storedInbound = inbound.data;
+  if (payload.replyText !== undefined || payload.body !== undefined || payload.text !== undefined) {
+    throw new HandlerError("payload_contract_violation");
   }
-  const campaignId = typeof payload.campaignId === "string" && payload.campaignId.trim()
-    ? payload.campaignId.trim()
-    : typeof storedInbound?.campaign_id === "string"
-      ? storedInbound.campaign_id.trim()
-      : "";
-  const candidateId = typeof payload.candidateId === "string" && payload.candidateId.trim()
-    ? payload.candidateId.trim()
-    : typeof storedInbound?.candidate_id === "string"
-      ? storedInbound.candidate_id.trim()
-      : "";
-  const replyText = boundedText(payload.replyText ?? payload.body ?? payload.text ?? storedInbound?.body, 20_000, "reply_text_required");
+  const inbound = await context.client.rpc("read_inbound_email_for_loop", {
+    p_workspace_id: job.workspace_id,
+    p_inbound_id: inboundId,
+  });
+  if (inbound.error) throw new HandlerError(inbound.error.code, true);
+  if (!isRecord(inbound.data) || inbound.data.status !== "ok") {
+    const status = isRecord(inbound.data) && typeof inbound.data.status === "string"
+      ? inbound.data.status
+      : "inbound_unavailable";
+    throw new HandlerError(status, status !== "not_found");
+  }
+  const storedInbound = inbound.data;
+  const campaignId = typeof storedInbound.campaign_id === "string" ? storedInbound.campaign_id.trim() : "";
+  const candidateId = typeof storedInbound.candidate_id === "string" ? storedInbound.candidate_id.trim() : "";
+  const replyText = boundedText(storedInbound.body, 20_000, "reply_text_required");
   const fallback = deterministicClassification(replyText);
   const prompt = buildReplyClassificationPrompt(replyText);
   let classification = fallback;

@@ -171,11 +171,7 @@ export async function POST(req: NextRequest) {
     p_idempotency_key: `poll:${providerRunId}`,
     p_payload: {
       campaignId,
-      provider: "Apify",
       providerRunId,
-      runId: result.data.runId,
-      datasetId: result.data.datasetId,
-      query: input.searchQuery ?? "",
     },
     p_run_at: new Date().toISOString(),
     p_priority: 90,

@@ -71,7 +71,6 @@ export async function POST(req: NextRequest) {
   if (run.error || runData?.status !== "ok") {
     return NextResponse.json({ ok: false, status: runData?.status ?? "run_unavailable" }, { status: 409 });
   }
-  if (runData.run_status === "succeeded") return NextResponse.json({ ok: true, status: "completed", candidates: [] });
   if (runData.run_status === "failed") return NextResponse.json({ ok: false, status: "failed" });
   if (runData.provider !== "Apify") return NextResponse.json({ ok: false, status: "unsupported_provider" }, { status: 400 });
   if (!runData.external_run_id || runData.external_run_id.startsWith("pending:")) {

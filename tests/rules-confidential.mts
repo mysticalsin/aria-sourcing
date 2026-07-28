@@ -59,6 +59,9 @@ function makeCandidate(over: Partial<Candidate> = {}): Candidate {
     outreachHistory: [],
     replyHistory: [],
     booking: null,
+    lawfulBasis: "legitimate_interest",
+    lawfulBasisSource: "operator_selection",
+    lawfulBasisRecordedAt: "2026-07-13T06:00:00.000Z",
     complianceFlags: {
       doNotContact: false,
       suppressed: false,
@@ -212,7 +215,13 @@ ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
 {
   const missing = checkOutreachApproval(
     approvalCtx({
-      candidate: makeCandidate({ provenance: "manual", sourcePlatform: "Manual" }),
+      candidate: makeCandidate({
+        provenance: "manual",
+        sourcePlatform: "Manual",
+        lawfulBasis: undefined,
+        lawfulBasisSource: undefined,
+        lawfulBasisRecordedAt: undefined,
+      } as Partial<Candidate>),
     }),
   );
   ok("manual candidate without lawful basis: not allowed", missing.allowed === false);
@@ -249,6 +258,39 @@ ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
       basis === null,
     );
   }
+}
+
+// 5c) Provider-sourced candidates require the same operator-recorded lawful basis.
+{
+  const missing = checkOutreachApproval(
+    approvalCtx({
+      candidate: makeCandidate({
+        provenance: "live",
+        sourcePlatform: "GitHub",
+        lawfulBasis: undefined,
+        lawfulBasisSource: undefined,
+        lawfulBasisRecordedAt: undefined,
+      } as Partial<Candidate>),
+    }),
+  );
+  ok("provider candidate without lawful basis: not allowed", missing.allowed === false);
+  ok(
+    "provider candidate without lawful basis: blocker tells operator to record basis",
+    missing.blockers.some((blocker) => /provider-sourced candidate requires an operator-recorded lawful basis/i.test(blocker)),
+  );
+
+  const recorded = checkOutreachApproval(
+    approvalCtx({
+      candidate: makeCandidate({
+        provenance: "live",
+        sourcePlatform: "GitHub",
+        lawfulBasis: "legitimate_interest",
+        lawfulBasisSource: "operator_selection",
+        lawfulBasisRecordedAt: "2026-07-13T06:00:00.000Z",
+      } as Partial<Candidate>),
+    }),
+  );
+  ok("provider candidate with recorded lawful basis: allowed", recorded.allowed === true);
 }
 
 // no-throw guard on the approval gate

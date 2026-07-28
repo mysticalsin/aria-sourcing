@@ -88,6 +88,78 @@ insert into public.agent_events(run_id,workspace_id,type,payload) values (
   'note',
   '{"message":"Ian confidential detail without candidate id"}'
 );
+insert into public.agent_runs(
+  id,spec_id,workspace_id,owner_id,actor_id,node,state_json,status
+) values (
+  '52000000-0000-4000-8000-000000000002',
+  '51000000-0000-4000-8000-000000000001',
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  'a1000000-0000-4000-8000-000000000001',
+  'sourcer',
+  '{"lookupEmail":"ian@example.test","sourceUrl":"https://github.test/ian"}',
+  'awaiting_gate'
+);
+insert into public.agent_runs(
+  id,spec_id,workspace_id,owner_id,actor_id,node,state_json,status
+) values (
+  '52000000-0000-4000-8000-000000000003',
+  '51000000-0000-4000-8000-000000000001',
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  'a1000000-0000-4000-8000-000000000001',
+  'sourcer',
+  '{"unrelated":"state"}',
+  'running'
+);
+insert into public.agent_events(run_id,workspace_id,type,payload) values (
+  '52000000-0000-4000-8000-000000000003',
+  '11111111-1111-4111-8111-111111111111',
+  'note',
+  '{"profile":"https://linkedin.test/in/ian","phone":"+1 (415) 555-0101"}'
+);
+set session_replication_role = replica;
+insert into public.agent_framework_runs (
+  id, workspace_id, owner_id, actor_id, spec_id, campaign_id, campaign_fingerprint,
+  workflow_version_id, deerflow_instance_id, flowise_instance_id, idempotency_key,
+  capability_sha256, configuration_sha256, workflow_sha256,
+  deerflow_source_commit, deerflow_image_digest, deerflow_readiness_sha256, deerflow_last_ready_at,
+  flowise_source_commit, flowise_image_digest, flowise_isolation_mode, flowise_readiness_sha256, flowise_last_ready_at,
+  status, lease_id, lease_expires_at, finished_at
+) values (
+  '52500000-0000-4000-8000-000000000001',
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  'a1000000-0000-4000-8000-000000000001',
+  '51000000-0000-4000-8000-000000000001',
+  'campaign-a', repeat('b', 64),
+  gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), 'framework-erasure-identity',
+  repeat('c', 64), repeat('d', 64), repeat('e', 64),
+  'fabadae4168db81f0eaaf62f209050f978e2f691',
+  'registry.example/deerflow@sha256:' || repeat('0', 64), repeat('f', 64), now(),
+  'bb773ffa710bd22639c4ba2643413a0ea2b679d3',
+  'registry.example/flowise@sha256:' || repeat('0', 64), 'instance-per-workspace', repeat('a', 64), now(),
+  'proposed', gen_random_uuid(), now() + interval '5 minutes', now()
+);
+insert into public.agent_framework_sourcing_authorizations(
+  framework_run_id, workspace_id, owner_id, actor_id, campaign_id,
+  campaign_fingerprint, sourcing_count, source_query, capability_sha256,
+  status, sourcing_run_id, result_sha256, result_payload, claimed_at, ready_at,
+  completed_at
+) values (
+  '52500000-0000-4000-8000-000000000001',
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  'a1000000-0000-4000-8000-000000000001',
+  'campaign-a', repeat('b', 64), 2, 'site:github.test engineer', repeat('9', 64),
+  'completed', gen_random_uuid(), repeat('8', 64),
+  '{"candidates":[{"id":"unrelated","email":"ian@example.test"},{"id":"also-unrelated","linkedinUrl":"https://linkedin.test/in/ian"},{"id":"keep-me","email":"keeper@example.test"}]}'::jsonb,
+  now(), now(), now()
+);
+set session_replication_role = default;
+insert into public.loop_events(workspace_id,event_type,subject_kind,subject_id,payload) values
+  ('11111111-1111-4111-8111-111111111111','candidate.enriched','candidate','33333333-3333-4333-8333-333333333333','{"email":"ian@example.test"}'::jsonb),
+  ('11111111-1111-4111-8111-111111111111','reply.classified','candidate','not-the-id','{"linkedinUrl":"https://linkedin.test/in/ian"}'::jsonb);
 
 insert into public.messages_outbound(
   id,workspace_id,candidate_id,channel,to_address,type,subject,body,status,
@@ -369,6 +441,56 @@ select candidate_erasure_test.assert_scalar(
   '{"reason": "candidate_erasure", "redacted": true}'
 );
 select candidate_erasure_test.assert_scalar(
+  'agent runs scrub by email and source url even when candidate id is absent',
+  $$select count(*)::text from public.agent_runs
+     where id in ('52000000-0000-4000-8000-000000000001','52000000-0000-4000-8000-000000000002')
+       and state_json = '{"reason": "candidate_erasure", "redacted": true}'::jsonb
+       and status = 'failed'
+       and finished_at is not null$$,
+  '2'
+);
+select candidate_erasure_test.assert_scalar(
+  'agent event payload scrub uses linkedin and phone identities without run linkage',
+  $$select count(*)::text from public.agent_events
+     where run_id in ('52000000-0000-4000-8000-000000000001','52000000-0000-4000-8000-000000000003')
+       and payload = '{"reason": "candidate_erasure", "redacted": true}'::jsonb$$,
+  '2'
+);
+select candidate_erasure_test.assert_scalar(
+  'framework sourcing results drop candidates by email and linkedin, not only candidate id',
+  $$select concat_ws(':',
+      jsonb_array_length(result_payload->'candidates')::text,
+      result_payload->'candidates'->0->>'id',
+      result_payload->'candidates'->0->>'email'
+    )
+    from public.agent_framework_sourcing_authorizations
+   where framework_run_id='52500000-0000-4000-8000-000000000001'$$,
+  '1:keep-me:keeper@example.test'
+);
+select candidate_erasure_test.assert_scalar(
+  'loop events redact subject and payload through the erasure path',
+  $$select count(*)::text from public.loop_events
+     where workspace_id='11111111-1111-4111-8111-111111111111'
+       and event_type in ('candidate.enriched','reply.classified')
+       and subject_id is null
+       and payload = '{"reason": "candidate_erasure", "redacted": true}'::jsonb$$,
+  '2'
+);
+select candidate_erasure_test.assert_sqlstate(
+  'ordinary loop event update still raises append-only 42501',
+  $$update public.loop_events set payload='{}'::jsonb
+      where workspace_id='11111111-1111-4111-8111-111111111111'
+        and event_type='candidate.enriched'$$,
+  array['42501']
+);
+select candidate_erasure_test.assert_sqlstate(
+  'ordinary loop event delete still raises append-only 42501',
+  $$delete from public.loop_events
+      where workspace_id='11111111-1111-4111-8111-111111111111'
+        and event_type='reply.classified'$$,
+  array['42501']
+);
+select candidate_erasure_test.assert_scalar(
   'plaintext suppression rows are minimized',
   $$select count(*)::text from public.suppression_list where workspace_id='11111111-1111-4111-8111-111111111111' and value in ('ian@example.test','14155550101')$$,
   '0'
@@ -386,7 +508,33 @@ select candidate_erasure_test.assert_scalar(
 select candidate_erasure_test.assert_scalar(
   'one content-free counter exists for every scrubbed store',
   $$select count(*)::text from public.candidate_erasure_receipts$$,
-  '15'
+  '16'
+);
+select candidate_erasure_test.assert_scalar(
+  'loop event erasure records its scrubbed receipt count',
+  $$select receipt.scrubbed_rows::text
+      from public.candidate_erasure_receipts receipt
+      join public.candidate_erasure_requests request on request.id = receipt.request_id
+     where request.request_key = '61000000-0000-4000-8000-000000000001'
+       and receipt.store_name = 'loop_events'$$,
+  '2'
+);
+select candidate_erasure_test.assert_scalar(
+  'present workspace blob candidate records a workspace state scrub receipt',
+  $$select receipt.scrubbed_rows::text
+      from public.candidate_erasure_receipts receipt
+      join public.candidate_erasure_requests request on request.id = receipt.request_id
+     where request.request_key = '61000000-0000-4000-8000-000000000001'
+       and receipt.store_name = 'workspace_state'$$,
+  '1'
+);
+select candidate_erasure_test.assert_sqlstate(
+  'candidate erasure receipt store name check still rejects unknown stores',
+  $$insert into public.candidate_erasure_receipts(request_id, workspace_id, store_name, scrubbed_rows)
+      select id, workspace_id, 'unknown_store', 0
+        from public.candidate_erasure_requests
+       where request_key = '61000000-0000-4000-8000-000000000001'$$,
+  array['23514']
 );
 select candidate_erasure_test.assert_scalar(
   'receipt schema has no candidate content column',
@@ -486,7 +634,7 @@ reset role;
 select candidate_erasure_test.assert_scalar(
   'cross-tenant erasure reveals no foreign candidate',
   $$select result->>'status' from foreign_result$$,
-  'not_found'
+  'completed'
 );
 
 create temporary table obligation_fixture as
@@ -746,10 +894,30 @@ select candidate_erasure_test.assert_scalar(
   $$select concat_ws(':', result->>'status', result->>'replayed') from replay_result$$,
   'completed:true'
 );
+-- Duplication is a per-REQUEST property, so assert it per request. The global count
+-- stopped measuring duplication once erasure became blob-independent (0052): a
+-- cross-tenant request for a candidate with no data in that workspace used to
+-- short-circuit on the workspace blob and write nothing, and now correctly sweeps every
+-- store and records a zero-count receipt for each. Those 16 rows belong to a DIFFERENT
+-- request_id, so they are not duplicates -- the global total is legitimately 32.
 select candidate_erasure_test.assert_scalar(
-  'replay creates no duplicate receipts or obligations',
-  $$select (select count(*) from public.candidate_erasure_receipts)::text || ':' || (select count(*) from public.candidate_erasure_obligations)::text$$,
-  '15:4'
+  'replay creates no duplicate receipts for the replayed request',
+  $$select count(*)::text
+      from public.candidate_erasure_receipts receipt
+      join public.candidate_erasure_requests request on request.id = receipt.request_id
+     where request.workspace_id = '11111111-1111-4111-8111-111111111111'
+       and request.request_key = '61000000-0000-4000-8000-000000000001'$$,
+  '16'
+);
+select candidate_erasure_test.assert_scalar(
+  'a cross-tenant sweep records zero-count receipts under its own request, never duplicates',
+  $$select (select count(*) from public.candidate_erasure_receipts)::text || ':' ||
+           (select count(*) from public.candidate_erasure_obligations)::text || ':' ||
+           (select count(distinct request_id) from public.candidate_erasure_receipts)::text || ':' ||
+           (select coalesce(sum(scrubbed_rows), 0) from public.candidate_erasure_receipts receipt
+              join public.candidate_erasure_requests request on request.id = receipt.request_id
+             where request.workspace_id = '22222222-2222-4222-8222-222222222222')::text$$,
+  '32:4:2:0'
 );
 select candidate_erasure_test.assert_scalar(
   'verified completion cryptographically erases every actionable provider reference',
@@ -904,5 +1072,98 @@ select candidate_erasure_test.assert_scalar(
   $$select (next_attempt_at > now())::text from public.candidate_erasure_obligations where id='73000000-0000-4000-8000-000000000003'$$,
   'true'
 );
+
+insert into public.candidates(
+  workspace_id,campaign_id,id,email,phone,linkedin_url,github_url,source_url,
+  source_platform,name,payload
+) values (
+  '22222222-2222-4222-8222-222222222222',
+  'absent-campaign',
+  'absent-candidate-1',
+  'absent@example.test',
+  '+14155550202',
+  'https://linkedin.test/in/absent',
+  'https://github.test/absent',
+  'https://source.test/absent',
+  'GitHub',
+  'Absent Candidate',
+  '{"id":"absent-candidate-1","campaignId":"absent-campaign","name":"Absent Candidate","email":"absent@example.test","phone":"+14155550202","linkedinUrl":"https://linkedin.test/in/absent","githubUrl":"https://github.test/absent","sourceUrl":"https://source.test/absent","sourcePlatform":"GitHub"}'::jsonb
+);
+insert into public.messages_inbound(
+  id,workspace_id,candidate_id,channel,from_address,body,provider_id
+) values (
+  '74000000-0000-4000-8000-000000000004',
+  '22222222-2222-4222-8222-222222222222',
+  'absent-candidate-1',
+  'Email',
+  'absent@example.test',
+  'PII for candidate absent from workspace blob',
+  'absent-message-1'
+);
+set role service_role;
+select candidate_erasure_test.set_service_claims('a2000000-0000-4000-8000-000000000002');
+create temporary table absent_blob_result as
+select public.request_candidate_erasure(
+  '22222222-2222-4222-8222-222222222222',
+  'a2000000-0000-4000-8000-000000000002',
+  'absent-campaign',
+  'absent-candidate-1',
+  '75000000-0000-4000-8000-000000000005'
+) result;
+reset role;
+select candidate_erasure_test.assert_scalar(
+  'candidate absent from workspace blob is erased rather than refused',
+  $$select result->>'status' from absent_blob_result$$,
+  'manual_required'
+);
+select candidate_erasure_test.assert_scalar(
+  'absent workspace blob candidate records a workspace state no-op receipt',
+  $$select receipt.scrubbed_rows::text
+      from public.candidate_erasure_receipts receipt
+      join public.candidate_erasure_requests request on request.id = receipt.request_id
+     where request.request_key = '75000000-0000-4000-8000-000000000005'
+       and receipt.store_name = 'workspace_state'$$,
+  '0'
+);
+select candidate_erasure_test.assert_scalar(
+  'absent workspace blob candidate still scrubs candidate-addressable inbound data',
+  $$select concat_ws(':', (candidate_id is null)::text, from_address, body, coalesce(provider_id,''))
+      from public.messages_inbound where id='74000000-0000-4000-8000-000000000004'$$,
+  'true::Candidate data erased:'
+);
+
+insert into public.candidates(
+  workspace_id,campaign_id,id,email,phone,linkedin_url,github_url,source_url,
+  source_platform,name,payload
+) values (
+  '22222222-2222-4222-8222-222222222222',
+  'malformed-campaign',
+  'malformed-candidate-1',
+  'malformed@example.test',
+  '',
+  '',
+  '',
+  '',
+  'Manual',
+  'Malformed Candidate',
+  '{"id":"malformed-candidate-1","campaignId":"malformed-campaign","name":"Malformed Candidate","email":"malformed@example.test","sourcePlatform":"Manual"}'::jsonb
+);
+update public.workspace_state
+   set state = '{"broken":true}'::jsonb
+ where workspace_id = '22222222-2222-4222-8222-222222222222';
+set role service_role;
+select candidate_erasure_test.set_service_claims('a2000000-0000-4000-8000-000000000002');
+select candidate_erasure_test.assert_sqlstate(
+  'malformed workspace state still raises instead of recording a no-op receipt',
+  $$select public.request_candidate_erasure(
+    '22222222-2222-4222-8222-222222222222',
+    'a2000000-0000-4000-8000-000000000002',
+    'malformed-campaign',
+    'malformed-candidate-1',
+    '76000000-0000-4000-8000-000000000006'
+  )$$,
+  array['P0001']
+);
+reset role;
 
 select 'RESULT candidate-erasure-authority-sql: pass' as result;

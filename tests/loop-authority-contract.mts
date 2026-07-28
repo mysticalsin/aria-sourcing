@@ -13,6 +13,7 @@ const req = read("supabase/migrations/0043_requisition_authority.sql");
 const src = read("supabase/migrations/0044_sourcing_enrichment_authority.sql");
 const seq = read("supabase/migrations/0045_outreach_sequence_authority.sql");
 const loopPatch = read("supabase/migrations/0049_loop_workspace_patch_completion.sql");
+const dataProtection = read("supabase/migrations/0052_data_protection_false_blockers.sql");
 const priv = read("tests/db/function-privileges.sql");
 
 let pass = 0, fail = 0;
@@ -41,6 +42,25 @@ ok(
     /public\.complete_aria_job\(/i.test(loopPatch) &&
     !/update public\.workspace_state/i.test(loopPatch) &&
     /grant execute on function public\.complete_aria_job_with_workspace_patch/i.test(loopPatch),
+);
+
+// ── 0052 payload contract ──
+ok("0052 exists, no txn control", dataProtection.length > 0 && noTxn(dataProtection));
+ok(
+  "enqueue_aria_job enforces the ids-only payload contract structurally",
+  /aria_job_payload_contract_ok\(p_kind, p_payload\)/i.test(dataProtection) &&
+    /not public\.aria_job_payload_contract_ok\(p_kind, p_payload\)/i.test(dataProtection) &&
+    /when 'inbound_classify' then allowed_keys := array\['inboundId'\]/i.test(dataProtection) &&
+    /when 'shortlist_build' then allowed_keys := array\[[^\]]*'providerRunId'[^\]]*\]/i.test(dataProtection) &&
+    !/allowed_keys := array\[[^\]]*'replyText'/i.test(dataProtection) &&
+    !/allowed_keys := array\[[^\]]*'candidates'/i.test(dataProtection),
+);
+ok(
+  "loop event erasure has a narrow trigger-recognized redaction path",
+  /redact_loop_events_for_candidate_erasure\(uuid, text, text\[\], text\[\]\)/i.test(dataProtection) &&
+    /set_config\('aria\.candidate_erasure_loop_event_redaction', 'on', true\)/i.test(dataProtection) &&
+    /new\.subject_id is null/i.test(dataProtection) &&
+    /raise exception 'loop events are append-only' using errcode = '42501'/i.test(dataProtection),
 );
 
 // ── 0043 requisitions ──
@@ -96,6 +116,7 @@ ok(
   "function-privileges registers the 4a-6 authority",
   /public\.apply_workspace_patch\(uuid,timestamptz,text,jsonb,text\)'\s*,\s*'service_role'/i.test(priv) &&
     /public\.complete_aria_job_with_workspace_patch\(uuid,uuid,timestamp with time zone,text,jsonb,text,text,jsonb,jsonb\)'\s*,\s*'service_role'/i.test(priv) &&
+    /public\.redact_loop_events_for_candidate_erasure\(uuid,text,text\[\],text\[\]\)'\s*,\s*'service_role'/i.test(priv) &&
     /public\.read_workspace_state_for_loop\(uuid\)'\s*,\s*'service_role'/i.test(priv) &&
     /public\.claim_enrichment_budget\(uuid,text,text,integer,text\)'\s*,\s*'service_role'/i.test(priv) &&
     /public\.activate_outreach_sequence\(uuid\)'\s*,\s*'service_role'/i.test(priv) &&

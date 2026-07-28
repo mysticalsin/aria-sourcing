@@ -81,19 +81,19 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
     });
   }
 
-  if (candidate.provenance === "manual") {
-    if (!recordedCandidateLawfulBasis(candidate)) {
-      const detail =
-        "A manually entered candidate requires an operator-recorded lawful basis before outreach approval.";
-      blockers.push(detail);
-      checks.push({ rule: "Lawful basis", status: "block", detail });
-    } else {
-      checks.push({
-        rule: "Lawful basis",
-        status: "pass",
-        detail: "Operator-recorded lawful basis is present for this manual candidate.",
-      });
-    }
+  if (!recordedCandidateLawfulBasis(candidate)) {
+    const detail =
+      candidate.provenance === "manual"
+        ? "A manually entered candidate requires an operator-recorded lawful basis before outreach approval. Record consent or legitimate interest in the candidate consent passport."
+        : "A provider-sourced candidate requires an operator-recorded lawful basis before outreach approval. Record consent or legitimate interest in the candidate consent passport.";
+    blockers.push(detail);
+    checks.push({ rule: "Lawful basis", status: "block", detail });
+  } else {
+    checks.push({
+      rule: "Lawful basis",
+      status: "pass",
+      detail: "Operator-recorded lawful basis is present for this candidate.",
+    });
   }
 
   // Rule 10 + compliance — respect candidate wishes
