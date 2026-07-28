@@ -32,12 +32,37 @@ const declared = new Set([
 
 const builtins = new Set(builtinModules);
 
-// Static import/export-from, side-effect import, require(), and dynamic import().
-// The lookbehinds keep flag strings like "--import" and property accesses out:
-// `-` sits on a word boundary, so a bare \bimport matches inside "--import" and
-// reads the following array element as a module spec.
-const importSpecPattern =
-  /(?:(?<![\w$.-])import|(?<![\w$.-])export)[^;'"]*?\bfrom\s*["']([^"']+)["']|(?<![\w$.-])import\s*["']([^"']+)["']|(?<![\w$.-])require\(\s*["']([^"']+)["']\s*\)|(?<![\w$.-])import\(\s*["']([^"']+)["']\s*\)/g;
+// Static import/export-from, side-effect import, require(), dynamic import(), and
+// ambient `declare module "pkg"`.
+//
+// The lookbehinds keep flag strings like "--import" and property accesses out: `-` sits
+// on a word boundary, so a bare \bimport matches inside "--import" and reads the
+// following array element as a module spec.
+//
+// `[^;'"]*?` on the from-clause deliberately allows comments and import attributes
+// between the clause and the specifier (`from /* c */ "pkg"`, `import("pkg", { with: … })`),
+// which an earlier version missed.
+const GAP = String.raw`(?:\s|/\*[\s\S]*?\*/)*`;
+const NB = String.raw`(?<![\w$.-])`;
+// Static import/export-from, side-effect import, require(), dynamic import(), and ambient
+// `declare module "pkg"`. Only whitespace and block comments may sit between a clause and
+// its specifier -- an earlier attempt allowed arbitrary text there and matched quoted
+// strings from unrelated statements many lines away.
+//
+// The NB lookbehind keeps flag strings like "--import" out: `-` sits on a word boundary,
+// so a bare \bimport matches inside "--import" and reads the next array element as a spec.
+//
+// `import("pkg", { with: … })` needs no special handling: the specifier comes first.
+const importSpecPattern = new RegExp(
+  [
+    `(?:${NB}import|${NB}export)[^;'"]*?\\bfrom${GAP}["']([^"']+)["']`,
+    `${NB}import${GAP}["']([^"']+)["']`,
+    `${NB}require\\(${GAP}["']([^"']+)["']`,
+    `${NB}import\\(${GAP}["']([^"']+)["']`,
+    `${NB}declare\\s+module${GAP}["']([^"']+)["']`,
+  ].join("|"),
+  "g",
+);
 
 function walk(dir: string): string[] {
   return readdirSync(join(root, dir)).flatMap((entry) => {
@@ -57,7 +82,7 @@ test("every external import in src/ and scripts/ resolves to a declared dependen
   for (const file of scannedRoots.flatMap((dir) => walk(dir))) {
     const source = readFileSync(join(root, file), "utf8");
     for (const match of source.matchAll(importSpecPattern)) {
-      const spec = match[1] ?? match[2] ?? match[3] ?? match[4];
+      const spec = match[1] ?? match[2] ?? match[3] ?? match[4] ?? match[5];
       if (!spec) continue;
       // Relative paths, the @/ alias, and URL-ish specs are not packages.
       if (spec.startsWith(".") || spec.startsWith("@/") || spec.startsWith("~/")) continue;
