@@ -1,98 +1,137 @@
 ---
 project: MSourcing / ARIA
-shift: 61
+shift: 62
 agent: codex
-updated: 2026-07-28 20:35 America/Toronto
-status: 0053-correlate-outcome-restored-sandbox-db-proof-blocked
+updated: 2026-07-29 13:37 America/Toronto
+status: rock-7-linkedin-adapter-source-proof-green-db-build-blocked
 ---
 
-# Handoff - Shift 61
+# Handoff - Shift 62
 
 ## Current state
 
-- Branch/worktree contains uncommitted sequence-engine authority migration `supabase/migrations/0053_sequence_engine_real_authority.sql` plus prior uncommitted Rock 5/Rock 6 support files.
-- This shift restored the reply outcome recording that `0053` had dropped from `public.correlate_inbound_email(uuid,text)`.
-- `sequences_enabled` remains false by default. No send path was added.
-- Existing committed migration files stayed byte-identical in this shift. `0053` is still untracked/uncommitted.
-- Graphify remains unavailable in this checkout:
-  - `graphify query "MSourcing 0053 correlate_inbound_email outcome_recorded reply_received sequence linkage claim_and_record"` failed with `error: graph file not found: /Users/tony/Library/CloudStorage/OneDrive-MantuGroup/Documents/Chief of Staff/Apps Source/MSourcing/graphify-out/graph.json`
+- Rock 7 LinkedIn channel source work is implemented in the working tree.
+- `sequences_enabled` remains false by default. No switchboard enablement was changed.
+- Existing Email and WhatsApp never-auto-send trigger migrations were not edited:
+  - `supabase/migrations/0013_outreach_approval_race_safety.sql`
+  - `supabase/migrations/0039_email_channel_durability.sql`
+  - `supabase/migrations/0011_outreach_approval_lifecycle.sql`
+- New migration is additive: `supabase/migrations/0054_linkedin_channel_adapter_authority.sql`.
+- No new public tables or columns were added.
+- New public functions added:
+  - `public.enforce_active_linkedin_approval()`
+  - `public.claim_linkedin_outbound_queued(uuid)`
+  - `public.record_linkedin_delivery_outcome(uuid, uuid, text, text, text)`
+- New runtime module: `src/lib/linkedin-channel.ts`.
+- `AgentSeat` provider labels now include `LinkedIn Assisted Manual` and `LinkedIn Vendor API`.
+- Graphify remained unavailable:
+  - `graphify query "MSourcing Rock 7 LinkedIn adapter approval dispatch outbound ledger cross-channel cap" --budget 1500` failed with `error: graph file not found: /Users/tony/Library/CloudStorage/OneDrive-MantuGroup/Documents/Chief of Staff/Apps Source/MSourcing/graphify-out/graph.json`
   - `graphify-out/wiki/index.md` is absent.
 
 ## Done this shift
 
-- Patched `supabase/migrations/0053_sequence_engine_real_authority.sql` in place.
-  - Added `outcome_result json`.
-  - Restored the `public.record_candidate_outcome(inbound.workspace_id, ledger.candidate_id, 'reply_received', 'reply:' || inbound.id::text, inbound.id)` call before stamping the inbound.
-  - Restored the `candidate-erased` branch so erased candidates are not stamped onto `messages_inbound`.
-  - Kept `0053` sequence linkage on the normal correlated update: `sequence_id = ledger.sequence_id`, `sequence_step_id = ledger.sequence_step_id`.
-  - Kept `0053` linkage and `campaign_id` in the returned JSON, and added `outcome_recorded`.
-- Patched `tests/email-outcomes-db.sh`.
-  - Left existing `correlate-records-reply-outcome` expectation as `true:true:1`.
-  - Added `correlate-replay-does-not-duplicate-reply-outcome`, proving the same inbound re-correlation returns `already-processed` and keeps one `reply_received`.
-- Patched `tests/sequence-engine-db.sh`.
-  - Added `unified-inbox-populates-sequence-linkage`, proving both returned JSON and `messages_inbound` carry `sequence_id` and `sequence_step_id`.
-- Compared replaced functions in `0053` against earlier authority migrations:
-  - `claim_and_record`: latest prior definition in `0024_cross_channel_claim_serialization.sql`; inherited suppression, current workspace, seat lock, warmup cap, duplicate handling, and result vocabulary preserved. `0053` adds locked release of elapsed active rows before the existing recontact check.
-  - `correlate_inbound_email`: latest prior definition in `0041_email_outcomes.sql`; inherited service gate, row lock, fail-closed no-header/no-match/ambiguous paths, already-processed early return, candidate-erased branch, and outcome recording now restored. `0053` additions retained.
-  - `create_outreach_sequence`: prior definition in `0045_outreach_sequence_authority.sql`; service gate, step count bounds, max_touches clamp, step insertion, and response shape preserved; `0053` adds DAG metadata and validation.
-  - `claim_sequence_step_for_schedule`: prior definition in `0045`; service gate, due-step lock, active-sequence check, sequence switchboard gate, live approval check, suppression refusal, scheduled transition, and returned scheduling payload preserved while `0053` adds identity suppression, exclusions, recontact release, seat controls, credits, refusal receipts, and daily caps.
-  - `bind_sequence_step_outbound`: prior definition in `0045`; service gate, scheduled-step binding, `bound`/`not-bindable` result preserved while `0053` adds outbound and ledger sequence linkage.
-  - `record_sequence_step_sent`, `promote_due_sequence_steps`, and `release_elapsed_outreach_contact_window` are new in `0053`, not replacements.
+- Added one LinkedIn adapter interface with two backends:
+  - `assisted-manual`: returns an approved draft/profile deep-link outcome for operator copy/paste/send.
+  - `vendor-api`: wired to env credentials and fails closed while `LINKEDIN_VENDOR_API_URL` / `LINKEDIN_VENDOR_API_KEY` are absent.
+- Patched `src/lib/dispatch-outbound.ts` so LinkedIn:
+  - clears existing loop controls, approval hash, human-likeness, disclosure, and injection gates before channel handling.
+  - resolves a LinkedIn adapter from the live seat provider.
+  - blocks vendor-api as `linkedin-provider-unconfigured` before claim or transport when credentials are absent.
+  - calls `claim_linkedin_outbound_queued` before any backend delivery.
+  - records accepted assisted-manual/vendor outcomes through `record_linkedin_delivery_outcome`.
+- Added `0054` LinkedIn authority:
+  - separate `enforce_active_linkedin_approval()` trigger, channel-guarded to LinkedIn only.
+  - service-only `claim_linkedin_outbound_queued(uuid)` that rechecks exact human approval, LinkedIn scope hash, suppression, 90-day contact window, active seat cap, ledger insert, and queued -> dispatching.
+  - service-only `record_linkedin_delivery_outcome(...)` that reconciles the shared ledger.
+- Extended cross-channel cap DB harness:
+  - added LinkedIn claim helper.
+  - asserts an existing Email contact blocks LinkedIn recontact.
+  - asserts an Email-consumed seat cap blocks a different LinkedIn candidate on the same seat.
+  - extends claim privilege checks to LinkedIn.
+- Added/updated source tests:
+  - `tests/linkedin-channel-contract.mts`
+  - `tests/dispatch-outbound.mts`
+  - `tests/email-durability-contract.mts`
+  - `tests/cross-channel-cap-postgres.sh`
+  - `tests/db/function-privileges.sql`
+  - `tests/test-manifest.mjs`
+  - `tests/test-manifest-contract.mts`
+  - `docker/bootstrap/legacy-baseline-invariants.sql`
+- Updated provider maps:
+  - `src/lib/types.ts`
+  - `src/lib/fleet.ts`
+  - `src/components/fleet/seat-card.tsx`
+- Added project-local learning to `_agent_state/codex/memory.json`.
 
 ## Verification
 
 Passed:
 
-- `./node_modules/.bin/tsc --noEmit --incremental false` -> exit 0.
-- `./node_modules/.bin/tsc -p tsconfig.tests.json --pretty false --incremental false` -> exit 0.
 - `npm run typecheck` -> exit 0.
 - `npm run typecheck:tests` -> exit 0.
+- `./node_modules/.bin/tsc --noEmit --incremental false` -> exit 0.
+- `./node_modules/.bin/tsc -p tsconfig.tests.json --pretty false --incremental false` -> exit 0.
 - `npm run lint` -> exit 0 with 4 existing warnings in `src/components/floor3d/retro/objects/AgentModel.tsx`.
-- `node --import tsx tests/email-outcomes-contract.mts && node --import tsx tests/loop-authority-contract.mts && node --import tsx tests/test-manifest-contract.mts` -> exit 0.
+- `node --import tsx tests/linkedin-channel-contract.mts` -> `RESULT linkedin-channel-contract: 14 passed, 0 failed`.
+- `node --import tsx tests/dispatch-outbound.mts` -> `RESULT dispatch-outbound: 106 passed, 0 failed`.
+- `node --import tsx tests/email-durability-contract.mts` -> `RESULT email-durability-contract: 33 passed, 0 failed`.
+- `node --import tsx tests/test-manifest-contract.mts` -> 8 subtests, 7 pass, 1 npm-lifecycle skip, 0 fail.
+- `node --import tsx tests/function-privileges-contract.mts` -> `RESULT function-privileges-contract: 21 passed, 0 failed`.
+- `node --import tsx tests/cross-channel-cap-contract.mts` -> `RESULT cross-channel-cap-contract: 14 passed, 0 failed`.
+- `node --import tsx tests/fleet.mts` -> `RESULT fleet: 43 passed, 0 failed`.
 - `git diff --check` -> exit 0.
-- `git diff --name-only -- supabase/migrations ':!supabase/migrations/0053_sequence_engine_real_authority.sql'` -> no output.
-- `git ls-files --error-unmatch supabase/migrations/0053_sequence_engine_real_authority.sql` confirmed `0053` is not tracked.
-- `find supabase/migrations -maxdepth 1 -name '0054*.sql' -print` -> no output.
+- `git diff --name-only -- supabase/migrations/0013_outreach_approval_race_safety.sql supabase/migrations/0039_email_channel_durability.sql supabase/migrations/0011_outreach_approval_lifecycle.sql` -> no output.
 
 Blocked by local sandbox:
 
-- `npm run test:all` failed in `tests/apollo-cleanup-worker.mts` with `listen EPERM: operation not permitted 127.0.0.1`.
-- `npm run test:database` failed with `permission denied while trying to connect to the docker API at unix:///Users/tony/.colima/default/docker.sock`.
-- `npm run test:manifest` failed with `Error: listen EPERM: operation not permitted /var/folders/5m/c_klcrrj4yj_jxhf4t6vhb080000gn/T/tsx-501/81207.pipe`.
-- `npm run build` failed with `Error [TurbopackInternalError]: [project]/src/styles/globals.css [app-client] (css)` caused by `creating new process`, `binding to a port`, `Operation not permitted (os error 1)`.
-- `bash tests/email-outcomes-db.sh` failed with `permission denied while trying to connect to the docker API at unix:///Users/tony/.colima/default/docker.sock`.
-- `bash tests/sequence-engine-db.sh` failed with `permission denied while trying to connect to the docker API at unix:///Users/tony/.colima/default/docker.sock`.
+- `npm run test:all` failed in `tests/apollo-cleanup-worker.mts` with:
+  `listen EPERM: operation not permitted 127.0.0.1`
+- `npm run test:database` failed with:
+  `permission denied while trying to connect to the docker API at unix:///Users/tony/.colima/default/docker.sock`
+- `bash tests/cross-channel-cap-postgres.sh` failed with:
+  `permission denied while trying to connect to the docker API at unix:///Users/tony/.colima/default/docker.sock`
+- `npm run test:manifest` failed with:
+  `Error: listen EPERM: operation not permitted /var/folders/5m/c_klcrrj4yj_jxhf4t6vhb080000gn/T/tsx-501/58454.pipe`
+- `./node_modules/.bin/tsx tests/linkedin-channel-contract.mts` and `./node_modules/.bin/tsx tests/dispatch-outbound.mts` failed with the same TSX IPC class:
+  `Error: listen EPERM: operation not permitted /var/folders/5m/c_klcrrj4yj_jxhf4t6vhb080000gn/T/tsx-501/<pipe>.pipe`
+- `npm run build` failed with:
+  `Error [TurbopackInternalError]: [project]/src/styles/globals.css [app-client] (css)`
+  caused by:
+  `creating new process`
+  `binding to a port`
+  `Operation not permitted (os error 1)`
 
 ## Blockers
 
-1. Docker/Colima socket access is denied, so the focused SQL proof for `true:true:1`, replay idempotency, and sequence linkage could not execute in this sandbox.
-2. Loopback listeners are denied, so the full all-group test manifest stops at the Apollo cleanup worker redirect test.
-3. `tsx` CLI IPC pipe listeners are denied, so `npm run test:manifest` cannot run here. The direct `node --import tsx` manifest contract passed.
+1. Docker/Colima socket access is denied, so the real Postgres migration proof and extended LinkedIn cross-channel cap assertions could not execute in this sandbox.
+2. Loopback listeners are denied, so `npm run test:all` stops at the Apollo cleanup redirect test before reaching later groups.
+3. TSX CLI IPC pipe listeners are denied, so `npm run test:manifest` and direct `./node_modules/.bin/tsx ...` invocations cannot run here. `node --import tsx ...` alternatives passed for focused tests.
 4. Turbopack process/port creation is denied, so `npm run build` cannot complete here.
 
 ## Next steps
 
-1. In the Docker-enabled environment, run:
+1. In a Docker-enabled environment, run:
    `npm run typecheck && npm run typecheck:tests && npm run lint && npm run test:all && npm run test:database && npm run test:manifest && npm run build`.
-2. Specifically confirm `tests/email-outcomes-db.sh` passes with:
-   - `correlate-records-reply-outcome` = `true:true:1`.
-   - `correlate-replay-does-not-duplicate-reply-outcome` = `true:already-processed:1`.
-3. Specifically confirm `tests/sequence-engine-db.sh` passes with:
-   - `unified-inbox-correlates-to-sequence-step`.
-   - `unified-inbox-populates-sequence-linkage`.
-4. Commit intended files only after Docker/live proof passes.
+2. Specifically confirm `tests/cross-channel-cap-postgres.sh` prints:
+   `RESULT cross-channel-cap-postgres: concurrent_claims=1 active_claims=1 ambiguous=blocked linkedin=blocked deadlock=none privileges=service-only`
+3. Dump-diff reviewed schema controls because new public functions were added:
+   - `public.enforce_active_linkedin_approval()`
+   - `public.claim_linkedin_outbound_queued(uuid)`
+   - `public.record_linkedin_delivery_outcome(uuid, uuid, text, text, text)`
+4. Commit intended files only after Docker/live proof passes or the Owner accepts the local sandbox blocker boundary.
 
 ## Decisions made (don't relitigate)
 
-- Fix uncommitted migration `0053` in place; do not add `0054`.
-- Do not change committed migration bytes.
-- Keep sequence linkage in `correlate_inbound_email` update and returned JSON.
-- Keep `already-processed` early return before outcome recording.
-- Keep outcome recording idempotent through `record_candidate_outcome` idempotency key `reply:<inbound_id>` plus early return on processed inbound.
-- Keep `sequences_enabled` false and add no send path.
+- Keep Email and WhatsApp trigger functions untouched; LinkedIn has its own separate channel-guarded trigger.
+- Do not add a LinkedIn account fleet, captured session, proxy, scraper, or first-party LinkedIn automation.
+- Vendor-api is wired but dark without credentials; no fallback to assisted-manual when vendor credentials are absent.
+- Assisted-manual and vendor-api share one adapter interface and the same DB claim path before delivery.
+- No new tables or columns were needed; `docker/bootstrap/legacy-table-inventory.txt` stays unchanged.
+- `sequences_enabled` stays false.
 
 ## Watch out
 
-- Do not adjust `tests/email-outcomes-db.sh` expected `true:true:1`; it is the regression guard.
-- Do not treat Docker, TSX IPC, loopback, or Turbopack sandbox errors as database/code failures without rerunning in the Docker-enabled environment.
-- Before claiming DB proof, inspect the exact SQL assertion outputs because `concat_ws` skips nulls.
+- The `tsx` binary fails in this sandbox, but `node --import tsx` focused tests pass. Do not treat the TSX IPC error as an application failure without rerunning outside the sandbox.
+- The extended cross-channel cap SQL has not executed here because Docker is denied.
+- `tests/test-manifest-contract.mts` frozen counts changed only because one application test command was added: application 148 -> 149, all 201 -> 202.
+- `src/lib/types.ts` provider additions require exhaustive maps to stay aligned.

@@ -39,7 +39,7 @@ function makeFakeDb(seed: {
   whatsappContacts?: Row[];
   whatsappTemplates?: Row[];
   cacheError?: { message: string } | null;
-  claim: { allowed?: boolean; reason?: string; ledger_id?: string; delivery_attempt_id?: string } | null;
+  claim: { allowed?: boolean; reason?: string; ledger_id?: string; delivery_attempt_id?: string; profile_url?: string } | null;
   claimError?: { message: string } | null;
   acceptance?: { allowed?: boolean; reason?: string } | null;
   acceptanceError?: { message: string } | null;
@@ -131,6 +131,30 @@ function makeFakeDb(seed: {
         ledger.reason = args.p_reason;
         return Promise.resolve({ data: { allowed: true, reason: "recorded" }, error: null });
       }
+      if (fn === "record_linkedin_delivery_outcome") {
+        const row = seed.outbound.find((item) => item.id === args.p_message_id);
+        const ledger = (seed.ledgers ?? []).find(
+          (item) => item.outbound_message_id === args.p_message_id && item.send_attempt_id === args.p_delivery_attempt_id && item.status === "claimed",
+        );
+        if (!row || row.status !== "dispatching") {
+          return Promise.resolve({ data: { allowed: false, reason: "not-dispatching" }, error: null });
+        }
+        if (row.delivery_attempt_id !== args.p_delivery_attempt_id) {
+          return Promise.resolve({ data: { allowed: false, reason: "attempt-mismatch" }, error: null });
+        }
+        if (!ledger) return Promise.resolve({ data: { allowed: false, reason: "ledger-not-claimed" }, error: null });
+        row.status = args.p_outcome === "sent" ? "sent" : "failed";
+        ledger.status = args.p_outcome;
+        ledger.reason = args.p_reason;
+        return Promise.resolve({ data: { allowed: true, reason: "recorded" }, error: null });
+      }
+      if (fn === "claim_linkedin_outbound_queued" && seed.claim?.allowed === true) {
+        const row = seed.outbound.find((item) => item.id === args.p_message_id);
+        if (row) {
+          row.status = "dispatching";
+          row.delivery_attempt_id = seed.claim.delivery_attempt_id ?? null;
+        }
+      }
       if (fn === "claim_whatsapp_outbound" && seed.atomicClaim) {
         const row = seed.outbound.find((item) => item.id === args.p_message_id);
         if (!row) return Promise.resolve({ data: { allowed: false, reason: "message-not-found" }, error: null });
@@ -150,7 +174,7 @@ function makeFakeDb(seed: {
     },
   } as unknown as SupabaseClient;
 
-  return { client, updates, rpcCalls, cacheWrites };
+  return { client, updates, rpcCalls, cacheWrites, ledgers: seed.ledgers ?? [] };
 }
 
 const bodyHash = (body: string, subject = "") => createHash("sha256").update(`${subject}\n${body}`).digest("hex");
@@ -190,6 +214,17 @@ function baseMsg(over: Row = {}): Row {
     ...over,
   };
 }
+
+function baseLinkedInMsg(over: Row = {}): Row {
+  return baseMsg({
+    channel: "LinkedIn",
+    to_address: "https://www.linkedin.com/in/marco-rossi",
+    subject: "Quick note",
+    approval_message_id: "m-1",
+    ...over,
+  });
+}
+
 const LIVE_SEAT = {
   id: "seat-1",
   workspace_id: "ws-1",
@@ -197,6 +232,17 @@ const LIVE_SEAT = {
   status: "active",
   mode: "live",
 } satisfies Pick<AgentSeat, "id" | "provider" | "status" | "mode"> & { workspace_id: string };
+const LIVE_LINKEDIN_MANUAL_SEAT = {
+  id: "seat-1",
+  workspace_id: "ws-1",
+  provider: "LinkedIn Assisted Manual",
+  status: "active",
+  mode: "live",
+};
+const LIVE_LINKEDIN_VENDOR_SEAT = {
+  ...LIVE_LINKEDIN_MANUAL_SEAT,
+  provider: "LinkedIn Vendor API",
+};
 const LIVE_WHATSAPP_CONTACT: Row = {
   workspace_id: "ws-1",
   recipient_e164: "33612345678",
@@ -605,7 +651,128 @@ const LOOP_SENDS_ENABLED: Row = {
 }
 
 // ---------------------------------------------------------------------------
-// 10. All guards pass, no WhatsApp creds in env → adapter dry-runs → unconfigured
+// 10. LinkedIn without a recorded approval refuses before claim or transport.
+// ---------------------------------------------------------------------------
+{
+  const originalFetch = globalThis.fetch;
+  const originalUrl = process.env.LINKEDIN_VENDOR_API_URL;
+  const originalKey = process.env.LINKEDIN_VENDOR_API_KEY;
+  process.env.LINKEDIN_VENDOR_API_URL = "https://vendor.example.test/linkedin/send";
+  process.env.LINKEDIN_VENDOR_API_KEY = "vendor-key";
+  let transportCalls = 0;
+  globalThis.fetch = (async () => {
+    transportCalls++;
+    return jsonResponse(200, { id: "li-must-not-send" });
+  }) as typeof fetch;
+  try {
+    const db = makeFakeDb({
+      outbound: [baseLinkedInMsg()],
+      approvals: [],
+      seats: [LIVE_LINKEDIN_VENDOR_SEAT],
+      controls: [LOOP_SENDS_ENABLED],
+      claim: {
+        allowed: true,
+        ledger_id: "li-ledger-must-not-exist",
+        delivery_attempt_id: ATTEMPT_ONE,
+        profile_url: "https://www.linkedin.com/in/marco-rossi",
+      },
+    });
+    const stats = await dispatchDue(db.client, 10);
+    ok("LinkedIn no approval: blocked", stats.blocked === 1 && stats.sent === 0 && stats.failed === 0);
+    ok("LinkedIn no approval: claim never runs", !db.rpcCalls.some((call) => call.fn === "claim_linkedin_outbound_queued"));
+    ok("LinkedIn no approval: transport mock never invoked", transportCalls === 0);
+    ok("LinkedIn no approval: no ledger row is written by the dispatcher", db.ledgers.length === 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalUrl === undefined) delete process.env.LINKEDIN_VENDOR_API_URL;
+    else process.env.LINKEDIN_VENDOR_API_URL = originalUrl;
+    if (originalKey === undefined) delete process.env.LINKEDIN_VENDOR_API_KEY;
+    else process.env.LINKEDIN_VENDOR_API_KEY = originalKey;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 11. LinkedIn assisted-manual works through the adapter and records the
+// outcome in the same durable ledger.
+// ---------------------------------------------------------------------------
+{
+  const db = makeFakeDb({
+    outbound: [baseLinkedInMsg()],
+    approvals: [
+      {
+        workspace_id: "ws-1",
+        message_id: "m-1",
+        body_hash: bodyHash(GOOD_BODY, "Quick note"),
+        approval_source: "human",
+      },
+    ],
+    seats: [LIVE_LINKEDIN_MANUAL_SEAT],
+    controls: [LOOP_SENDS_ENABLED],
+    ledgers: [{ id: "li-ledger-1", outbound_message_id: "m-1", send_attempt_id: ATTEMPT_ONE, status: "claimed" }],
+    claim: {
+      allowed: true,
+      ledger_id: "li-ledger-1",
+      delivery_attempt_id: ATTEMPT_ONE,
+      profile_url: "https://www.linkedin.com/in/marco-rossi",
+    },
+  });
+  const stats = await dispatchDue(db.client, 10);
+  ok("LinkedIn assisted-manual: sent is recorded", stats.sent === 1 && stats.failed === 0 && stats.blocked === 0);
+  ok("LinkedIn assisted-manual: claim and outcome RPCs both run", db.rpcCalls.map((call) => call.fn).join("|") === "claim_linkedin_outbound_queued|record_linkedin_delivery_outcome");
+  ok("LinkedIn assisted-manual: shared ledger reaches sent", db.ledgers[0]?.status === "sent");
+}
+
+// ---------------------------------------------------------------------------
+// 12. LinkedIn vendor API is wired but dark without credentials. It fails
+// closed before claim or transport, never falling back to assisted-manual.
+// ---------------------------------------------------------------------------
+{
+  const originalFetch = globalThis.fetch;
+  const originalUrl = process.env.LINKEDIN_VENDOR_API_URL;
+  const originalKey = process.env.LINKEDIN_VENDOR_API_KEY;
+  delete process.env.LINKEDIN_VENDOR_API_URL;
+  delete process.env.LINKEDIN_VENDOR_API_KEY;
+  let transportCalls = 0;
+  globalThis.fetch = (async () => {
+    transportCalls++;
+    return jsonResponse(200, { id: "li-must-not-send" });
+  }) as typeof fetch;
+  try {
+    const db = makeFakeDb({
+      outbound: [baseLinkedInMsg()],
+      approvals: [
+        {
+          workspace_id: "ws-1",
+          message_id: "m-1",
+          body_hash: bodyHash(GOOD_BODY, "Quick note"),
+          approval_source: "human",
+        },
+      ],
+      seats: [LIVE_LINKEDIN_VENDOR_SEAT],
+      controls: [LOOP_SENDS_ENABLED],
+      claim: {
+        allowed: true,
+        ledger_id: "li-ledger-vendor",
+        delivery_attempt_id: ATTEMPT_ONE,
+        profile_url: "https://www.linkedin.com/in/marco-rossi",
+      },
+    });
+    const stats = await dispatchDue(db.client, 10);
+    ok("LinkedIn vendor dark: counted as unconfigured failure", stats.unconfigured === 1 && stats.sent === 0);
+    ok("LinkedIn vendor dark: claim never runs", !db.rpcCalls.some((call) => call.fn === "claim_linkedin_outbound_queued"));
+    ok("LinkedIn vendor dark: transport never invoked", transportCalls === 0);
+    ok("LinkedIn vendor dark: reason proves no assisted-manual fallback", JSON.stringify(db.updates.at(-1)?.patch).includes("linkedin-provider-unconfigured"));
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalUrl === undefined) delete process.env.LINKEDIN_VENDOR_API_URL;
+    else process.env.LINKEDIN_VENDOR_API_URL = originalUrl;
+    if (originalKey === undefined) delete process.env.LINKEDIN_VENDOR_API_KEY;
+    else process.env.LINKEDIN_VENDOR_API_KEY = originalKey;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 13. All guards pass, no WhatsApp creds in env → adapter dry-runs → unconfigured
 //    (never a silent fake-sent)
 // ---------------------------------------------------------------------------
 {

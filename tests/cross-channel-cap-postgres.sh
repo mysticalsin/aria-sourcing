@@ -123,6 +123,17 @@ begin
 end;
 $$;
 
+create function aria_cap_test.claim_linkedin(message_id uuid)
+returns json
+language plpgsql
+set search_path = pg_catalog, public, pg_temp
+as $$
+begin
+  perform aria_cap_test.set_claims(null, 'service_role');
+  return public.claim_linkedin_outbound_queued(message_id);
+end;
+$$;
+
 create function aria_cap_test.pause_email_insert()
 returns trigger
 language plpgsql
@@ -218,6 +229,20 @@ insert into public.outreach_approvals (
     encode(digest('Cap race' || E'\n' || 'WhatsApp cap race body', 'sha256'), 'hex'),
     encode(digest('candidate-whatsapp-race' || E'\n' || 'WhatsApp' || E'\n' || '14155550123', 'sha256'), 'hex'),
     'ca000000-0000-4000-8000-000000000002', 'human'
+  ),
+  (
+    'ca000000-0000-4000-8000-000000000001',
+    'ca000000-0000-4000-8000-000000000006',
+    encode(digest('LinkedIn cap' || E'\n' || 'LinkedIn cap body', 'sha256'), 'hex'),
+    encode(digest('candidate-linkedin-cap' || E'\n' || 'LinkedIn' || E'\n' || 'https://www.linkedin.com/in/cap-candidate', 'sha256'), 'hex'),
+    'ca000000-0000-4000-8000-000000000002', 'human'
+  ),
+  (
+    'ca000000-0000-4000-8000-000000000001',
+    'ca000000-0000-4000-8000-000000000007',
+    encode(digest('LinkedIn recontact' || E'\n' || 'LinkedIn recontact body', 'sha256'), 'hex'),
+    encode(digest('candidate-email-race' || E'\n' || 'LinkedIn' || E'\n' || 'https://www.linkedin.com/in/recontact-candidate', 'sha256'), 'hex'),
+    'ca000000-0000-4000-8000-000000000002', 'human'
   );
 
 insert into public.messages_outbound (
@@ -233,6 +258,26 @@ insert into public.messages_outbound (
   'Cap race', 'WhatsApp cap race body', 'queued',
   'cap-race-whatsapp-dedupe', now(), '14155550123',
   'ca000000-0000-4000-8000-000000000005'
+),
+(
+  'ca000000-0000-4000-8000-000000000006',
+  'ca000000-0000-4000-8000-000000000001',
+  'candidate-linkedin-cap',
+  'ca000000-0000-4000-8000-000000000003',
+  'LinkedIn', 'https://www.linkedin.com/in/cap-candidate', 'candidate_reply',
+  'LinkedIn cap', 'LinkedIn cap body', 'queued',
+  'cap-race-linkedin-dedupe', now(), null,
+  'ca000000-0000-4000-8000-000000000006'
+),
+(
+  'ca000000-0000-4000-8000-000000000007',
+  'ca000000-0000-4000-8000-000000000001',
+  'candidate-email-race',
+  'ca000000-0000-4000-8000-000000000003',
+  'LinkedIn', 'https://www.linkedin.com/in/recontact-candidate', 'candidate_reply',
+  'LinkedIn recontact', 'LinkedIn recontact body', 'queued',
+  'cap-race-linkedin-recontact-dedupe', now(), null,
+  'ca000000-0000-4000-8000-000000000007'
 );
 SQL
 
@@ -301,14 +346,51 @@ if [ "$ambiguous_allowed" != "false" ] || [ "$ambiguous_reason" != "seat daily c
   failures=$((failures + 1))
 fi
 
+psql_external_stdin -q <<'SQL'
+delete from public.outreach_ledger;
+update public.agent_seats
+   set provider = 'LinkedIn Assisted Manual'
+ where id = 'ca000000-0000-4000-8000-000000000003';
+
+insert into public.outreach_ledger (
+  workspace_id, candidate_id, candidate_email, seat_id,
+  campaign_id, channel, status, approval_message_id
+) values (
+  'ca000000-0000-4000-8000-000000000001',
+  'candidate-email-race', 'candidate-email-race@example.test',
+  'ca000000-0000-4000-8000-000000000003',
+  'cap-test', 'Email', 'sent', 'email-race'
+);
+SQL
+
+linkedin_recontact_result="$(psql_external -qAtc \
+  "set lock_timeout = '5s'; set statement_timeout = '15s'; select aria_cap_test.claim_linkedin('ca000000-0000-4000-8000-000000000007');")"
+linkedin_recontact_allowed="$(json_field "$linkedin_recontact_result" '.allowed')"
+linkedin_recontact_reason="$(json_field "$linkedin_recontact_result" '.reason')"
+if [ "$linkedin_recontact_allowed" != "false" ] || [ "$linkedin_recontact_reason" != "recently-contacted" ]; then
+  echo "LinkedIn did not honor the email contact window: $linkedin_recontact_result" >&2
+  failures=$((failures + 1))
+fi
+
+linkedin_cap_result="$(psql_external -qAtc \
+  "set lock_timeout = '5s'; set statement_timeout = '15s'; select aria_cap_test.claim_linkedin('ca000000-0000-4000-8000-000000000006');")"
+linkedin_cap_allowed="$(json_field "$linkedin_cap_result" '.allowed')"
+linkedin_cap_reason="$(json_field "$linkedin_cap_result" '.reason')"
+if [ "$linkedin_cap_allowed" != "false" ] || [ "$linkedin_cap_reason" != "seat-daily-cap-reached" ]; then
+  echo "LinkedIn did not honor the email-consumed seat cap: $linkedin_cap_result" >&2
+  failures=$((failures + 1))
+fi
+
 privileges="$(psql_external -qAtc "
   select
     has_function_privilege('authenticated', 'public.claim_and_record(text,text,text,uuid,text,integer)', 'EXECUTE')::text || '|' ||
     has_function_privilege('service_role', 'public.claim_and_record(text,text,text,uuid,text,integer)', 'EXECUTE')::text || '|' ||
     has_function_privilege('authenticated', 'public.claim_whatsapp_outbound(uuid)', 'EXECUTE')::text || '|' ||
-    has_function_privilege('service_role', 'public.claim_whatsapp_outbound(uuid)', 'EXECUTE')::text
+    has_function_privilege('service_role', 'public.claim_whatsapp_outbound(uuid)', 'EXECUTE')::text || '|' ||
+    has_function_privilege('authenticated', 'public.claim_linkedin_outbound_queued(uuid)', 'EXECUTE')::text || '|' ||
+    has_function_privilege('service_role', 'public.claim_linkedin_outbound_queued(uuid)', 'EXECUTE')::text
 ")"
-if [ "$privileges" != "false|true|false|true" ]; then
+if [ "$privileges" != "false|true|false|true|false|true" ]; then
   echo "claim RPC privilege boundary changed: $privileges" >&2
   failures=$((failures + 1))
 fi
@@ -317,4 +399,4 @@ if [ "$failures" -ne 0 ]; then
   exit 1
 fi
 
-printf 'RESULT cross-channel-cap-postgres: concurrent_claims=1 active_claims=1 ambiguous=blocked deadlock=none privileges=service-only\n'
+printf 'RESULT cross-channel-cap-postgres: concurrent_claims=1 active_claims=1 ambiguous=blocked linkedin=blocked deadlock=none privileges=service-only\n'

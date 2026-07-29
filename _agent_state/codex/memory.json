@@ -1,6 +1,10 @@
 {
   "recent_learnings": [
     {
+      "date": "2026-07-29",
+      "lesson": "New channel provider labels must update SeatProvider and all exhaustive provider maps, not only dispatcher SQL/string checks."
+    },
+    {
       "date": "2026-07-28",
       "lesson": "When replacing authority functions, diff inherited side effects explicitly; new linkage must not erase existing outcome/event recording."
     },

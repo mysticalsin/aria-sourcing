@@ -1014,6 +1014,8 @@ export const SEAT_PROVIDERS = [
   "Resend",
   "WhatsApp Cloud",
   "Twilio SMS",
+  "LinkedIn Assisted Manual",
+  "LinkedIn Vendor API",
 ] as const;
 export type SeatProvider = (typeof SEAT_PROVIDERS)[number];
 

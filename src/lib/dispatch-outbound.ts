@@ -36,6 +36,7 @@ import { publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 import { performEmailSend } from "@/lib/email-send";
 import { createEmailUnsubscribeLink } from "@/lib/email-unsubscribe";
+import { linkedInAdapterForProvider } from "@/lib/linkedin-channel";
 
 const WHATSAPP_GATE_CACHE_VERSION = "whatsapp-outbound-gate-v1";
 const WHATSAPP_GATE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
@@ -299,6 +300,97 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           await finish("blocked", { pass: false, reasons: [disclosure.reason ?? "injection-suspected"] });
           continue;
         }
+      }
+
+      if (msg.channel === "LinkedIn") {
+        const { data: seat, error: seatErr } = await supabase
+          .from("agent_seats")
+          .select("id, provider, status, mode")
+          .eq("id", msg.seat_id ?? "")
+          .eq("workspace_id", msg.workspace_id)
+          .maybeSingle();
+        if (seatErr) {
+          safeLog("dispatch-outbound: LinkedIn seat lookup error", { message: seatErr.message });
+          await finish("blocked", { pass: false, reasons: ["linkedin-seat-store-unavailable"] });
+          continue;
+        }
+        const adapter = linkedInAdapterForProvider(seat?.provider);
+        if (!seat || seat.status !== "active" || seat.mode !== "live" || !adapter) {
+          await finish("blocked", { pass: false, reasons: ["linkedin-seat-not-live"] });
+          continue;
+        }
+        if (!adapter.configured()) {
+          await finish("blocked", { pass: false, reasons: ["linkedin-provider-unconfigured"] }, "unconfigured");
+          continue;
+        }
+
+        const { data: claim, error: claimErr } = await supabase.rpc("claim_linkedin_outbound_queued", {
+          p_message_id: msg.id,
+        });
+        if (claimErr) {
+          safeLog("dispatch-outbound: LinkedIn claim error", { message: claimErr.message });
+          await finish("failed");
+          continue;
+        }
+        const claimObj = claim as {
+          allowed?: boolean;
+          reason?: string;
+          ledger_id?: string;
+          delivery_attempt_id?: string;
+          profile_url?: string;
+        } | null;
+        if (claimObj?.allowed !== true) {
+          if (claimObj?.reason === "not-queued" || claimObj?.reason === "message-not-found") {
+            continue;
+          }
+          await finish("blocked", { pass: false, reasons: [`guardrail:${claimObj?.reason ?? "blocked"}`] });
+          continue;
+        }
+        deliveryAttemptId = claimObj.delivery_attempt_id ?? null;
+        if (!deliveryAttemptId || !UUID_PATTERN.test(deliveryAttemptId) || !claimObj.profile_url || !claimObj.ledger_id) {
+          safeLog("dispatch-outbound: LinkedIn claim returned no valid ownership token");
+          stats.failed++;
+          continue;
+        }
+
+        const outcome = await adapter.deliver({
+          workspaceId: msg.workspace_id,
+          messageId: msg.id,
+          candidateId: msg.candidate_id,
+          profileUrl: claimObj.profile_url,
+          subject: msg.subject ?? "",
+          body: msg.body,
+          attemptId: deliveryAttemptId,
+        });
+        const outcomeKind =
+          outcome.status === "sent" && outcome.deliveryState === "accepted"
+            ? "sent"
+            : outcome.deliveryState === "unknown"
+              ? "ambiguous"
+              : "skipped";
+        const { data: recorded, error: recordErr } = await supabase.rpc("record_linkedin_delivery_outcome", {
+          p_message_id: msg.id,
+          p_delivery_attempt_id: deliveryAttemptId,
+          p_outcome: outcomeKind,
+          p_reason: outcomeKind === "sent" ? null : outcome.detail.slice(0, 512),
+          p_provider_message_id: outcome.id ?? null,
+        });
+        const recordedObj = recorded as { allowed?: boolean; reason?: string } | null;
+        if (recordErr || recordedObj?.allowed !== true) {
+          safeLog("dispatch-outbound: LinkedIn outcome reconciliation failed", {
+            message: recordErr?.message ?? recordedObj?.reason ?? "unknown",
+          });
+          stats.failed++;
+          continue;
+        }
+        if (outcomeKind === "sent") {
+          stats.sent++;
+        } else if (outcome.status === "dry-run") {
+          stats.unconfigured++;
+        } else {
+          stats.failed++;
+        }
+        continue;
       }
 
       // 2c. Email joins the durable outbox (Rock 2). Approval, human-likeness, and

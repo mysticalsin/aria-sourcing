@@ -51,6 +51,8 @@ const PROVIDER_TONE: Record<SeatProvider, Tone> = {
   Resend: "violet",
   "WhatsApp Cloud": "aqua",
   "Twilio SMS": "violet",
+  "LinkedIn Assisted Manual": "tangerine",
+  "LinkedIn Vendor API": "electric",
 };
 
 const STATUS_TONE: Record<AgentSeat["status"], Tone> = {

@@ -230,7 +230,7 @@ ok(
     /public\.enforce_active_email_approval\(\)'\s*,\s*'owner_only'/i.test(priv),
 );
 
-// ── dispatchDue gate order: Email served; LinkedIn/SMS refused ─────────────
+// ── dispatchDue gate order: Email served; LinkedIn adapter served; SMS refused
 ok("dispatch-outbound.ts is present", dispatch.length > 0);
 ok(
   "the dispatcher serves Email through the durable claim + send + finalize path",
@@ -244,9 +244,10 @@ ok(
   dispatch.indexOf("sms-disabled-pending-consent-policy") >= 0,
 );
 ok(
-  "the dispatcher refuses any non-WhatsApp/SMS channel that is not Email (LinkedIn stays assisted-manual)",
-  dispatch.indexOf('msg.channel !== "WhatsApp" && msg.channel !== "SMS"') >= 0 &&
-    dispatch.indexOf("channel-not-dispatchable") >= 0,
+  "the dispatcher serves LinkedIn before the legacy non-dispatchable refusal",
+  dispatch.indexOf('msg.channel === "LinkedIn"') >= 0 &&
+    dispatch.indexOf('rpc("claim_linkedin_outbound_queued"') > dispatch.indexOf('msg.channel === "LinkedIn"') &&
+    dispatch.indexOf('msg.channel === "LinkedIn"') < dispatch.indexOf("channel-not-dispatchable"),
 );
 ok(
   "the Email branch is reached BEFORE the channel-not-dispatchable refusal (so Email is served, not blocked)",
