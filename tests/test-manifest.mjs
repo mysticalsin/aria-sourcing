@@ -221,6 +221,7 @@ export const testManifest = {
     {"id":"email-inbound-db","executable":"bash","argv":["tests/email-inbound-db.sh"]},
     {"id":"email-outcomes-contract","executable":"tsx","argv":["tests/email-outcomes-contract.mts"]},
     {"id":"email-outcomes-db","executable":"bash","argv":["tests/email-outcomes-db.sh"]},
+    {"id":"sequence-engine-db","executable":"bash","argv":["tests/sequence-engine-db.sh"]},
     {"id":"loop-authority-contract","executable":"tsx","argv":["tests/loop-authority-contract.mts"]},
     {"id":"sourcing-loop-ignition-route","executable":"node","argv":["--experimental-test-module-mocks","--import","tsx","--test","tests/sourcing-loop-ignition-route.mts"]},
     {"id":"shortlist-approval-route","executable":"node","argv":["--experimental-test-module-mocks","--import","tsx","--test","tests/shortlist-approval-route.mts"]},
@@ -513,6 +514,7 @@ export const testManifest = {
       "email-durability-db",
       "email-inbound-db",
       "email-outcomes-db",
+      "sequence-engine-db",
     ],
     "recovery": [
       "orphan-owner-recovery-contract",

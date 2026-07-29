@@ -142,12 +142,18 @@ set role service_role; select email_outcomes_test.set_service_claims('a1000000-0
 create temporary table rec_in as select public.record_inbound_email('81111111-1111-4111-8111-111111111111','in-1','cand9@target.example.test','Interested!') r;
 select set_config('emailoutcomes.inbound_id', (select (r->>'inbound_id') from rec_in), false);
 create temporary table corr as select public.correlate_inbound_email(current_setting('emailoutcomes.inbound_id')::uuid, '<reply-key@out-a.example.test>') r;
+create temporary table corr_replay as select public.correlate_inbound_email(current_setting('emailoutcomes.inbound_id')::uuid, '<reply-key@out-a.example.test>') r;
 reset role;
 select email_outcomes_test.expect_scalar('correlate-records-reply-outcome',
   $$select concat_ws(':', (select r->>'correlated' from corr), (select r->>'outcome_recorded' from corr),
       (select count(*)::text from public.candidate_outcome_events
         where workspace_id='81111111-1111-4111-8111-111111111111' and candidate_id='cand-9' and kind='reply_received'))$$,
   'true:true:1');
+select email_outcomes_test.expect_scalar('correlate-replay-does-not-duplicate-reply-outcome',
+  $$select concat_ws(':', (select r->>'correlated' from corr_replay), (select r->>'reason' from corr_replay),
+      (select count(*)::text from public.candidate_outcome_events
+        where workspace_id='81111111-1111-4111-8111-111111111111' and candidate_id='cand-9' and kind='reply_received'))$$,
+  'true:already-processed:1');
 
 do $$
 declare failed integer; details text;

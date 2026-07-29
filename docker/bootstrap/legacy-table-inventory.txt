@@ -50,7 +50,11 @@ messages_inbound
 messages_outbound
 outbound_content_cache
 outreach_approvals
+outreach_campaign_exclusions
 outreach_ledger
+outreach_sequence_credit_accounts
+outreach_sequence_credit_ledger
+outreach_sequence_refusals
 outreach_sequence_steps
 outreach_sequences
 owner_recovery_receipts

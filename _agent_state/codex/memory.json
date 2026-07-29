@@ -2,6 +2,10 @@
   "recent_learnings": [
     {
       "date": "2026-07-28",
+      "lesson": "When replacing authority functions, diff inherited side effects explicitly; new linkage must not erase existing outcome/event recording."
+    },
+    {
+      "date": "2026-07-28",
       "lesson": "Blob-independent erasure must distinguish workspace row existence from candidate-in-blob presence; malformed state still raises, absence records zero."
     },
     {

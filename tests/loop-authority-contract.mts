@@ -12,6 +12,7 @@ const commit = read("supabase/migrations/0042_workspace_commit_authority.sql");
 const req = read("supabase/migrations/0043_requisition_authority.sql");
 const src = read("supabase/migrations/0044_sourcing_enrichment_authority.sql");
 const seq = read("supabase/migrations/0045_outreach_sequence_authority.sql");
+const seqReal = read("supabase/migrations/0053_sequence_engine_real_authority.sql");
 const loopPatch = read("supabase/migrations/0049_loop_workspace_patch_completion.sql");
 const dataProtection = read("supabase/migrations/0052_data_protection_false_blockers.sql");
 const priv = read("tests/db/function-privileges.sql");
@@ -91,6 +92,7 @@ ok(
 
 // ── 0045 sequences (never-auto-send, dark) ──
 ok("0045 exists, no txn control", seq.length > 0 && noTxn(seq));
+ok("0053 exists, no txn control", seqReal.length > 0 && noTxn(seqReal));
 ok(
   "one live sequence per candidate + step ordinal/channel constraints",
   /create unique index if not exists outreach_sequences_one_live_idx[\s\S]*?status in \('drafting', 'pending_approval', 'active', 'paused_ambiguous'\)/i.test(seq) &&
@@ -110,6 +112,31 @@ ok(
   "erased candidate's sequences are deleted via a candidate_erasure_requests cleanup trigger",
   /create trigger candidate_erasure_requests_sequences_cleanup\s+after insert or update on public\.candidate_erasure_requests[\s\S]*?when \(new\.status <> 'blocked_legal_hold'\)/i.test(seq),
 );
+ok(
+  "0053 fixes sequence suppression by identity and honors expires_at",
+  /from public\.suppression_list sl[\s\S]*?sl\.expires_at is null or sl\.expires_at > now\(\)[\s\S]*?sl\.type = 'email'[\s\S]*?sl\.type = 'domain'[\s\S]*?sl\.type = 'linkedin'/i.test(seqReal) &&
+    !/sl\.candidate_id = seq\.candidate_id/i.test(seqReal),
+);
+ok(
+  "0053 sequence scheduling locks controls before counting the daily send cap",
+  /select \* into controls[\s\S]*?from public\.sourcing_loop_controls[\s\S]*?for update[\s\S]*?select count\(\*\)::int into used_workspace_today[\s\S]*?max_sequence_sends_per_day/i.test(seqReal),
+);
+ok(
+  "0053 releases elapsed re-contact slots before a new active ledger claim",
+  /create or replace function public\.release_elapsed_outreach_contact_window\(\)[\s\S]*?pg_advisory_xact_lock[\s\S]*?status = 'recontact_elapsed'[\s\S]*?interval '90 days'/i.test(seqReal) &&
+    /create trigger outreach_ledger_release_elapsed_contact_window\s+before insert on public\.outreach_ledger/i.test(seqReal),
+);
+ok(
+  "0053 requires approval and credits before scheduling a sequence step",
+  /not exists \([\s\S]*?from public\.outreach_approvals a[\s\S]*?a\.approval_source = 'human'[\s\S]*?a\.revoked_at is null/i.test(seqReal) &&
+    /from public\.outreach_sequence_credit_accounts[\s\S]*?for update[\s\S]*?credits_available < 1[\s\S]*?outreach_sequence_credit_ledger/i.test(seqReal),
+);
+ok(
+  "0053 provides the missing sent-to-next-step advancement surface",
+  /create or replace function public\.record_sequence_step_sent\(p_step_id uuid, p_outbound_id uuid default null\)/i.test(seqReal) &&
+    /create or replace function public\.promote_due_sequence_steps\(p_workspace_id uuid, p_limit integer default 50\)/i.test(seqReal) &&
+    /for update(?: of due)? skip locked/i.test(seqReal),
+);
 
 // ── privilege registry knows all the new authority ──
 ok(
@@ -120,6 +147,8 @@ ok(
     /public\.read_workspace_state_for_loop\(uuid\)'\s*,\s*'service_role'/i.test(priv) &&
     /public\.claim_enrichment_budget\(uuid,text,text,integer,text\)'\s*,\s*'service_role'/i.test(priv) &&
     /public\.activate_outreach_sequence\(uuid\)'\s*,\s*'service_role'/i.test(priv) &&
+    /public\.record_sequence_step_sent\(uuid,uuid\)'\s*,\s*'service_role'/i.test(priv) &&
+    /public\.promote_due_sequence_steps\(uuid,integer\)'\s*,\s*'service_role'/i.test(priv) &&
     /public\.list_workspace_requisitions\(integer,integer\)'\s*,\s*'authenticated'/i.test(priv),
 );
 

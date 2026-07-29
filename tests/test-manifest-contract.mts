@@ -182,7 +182,7 @@ test("named manifest groups freeze their recursive baselines", () => {
     "framework-adapter": [1, "4228d976b2e63e34f97bf910208ffcf3263da48861744f187eef8781c5cb9f48"],
     "candidate-erasure": [2, "42ee1e6bf280c482f01bcfdb41d601ea8cdaaeb8891a210777901771f56212b7"],
     "owner-recovery": [2, "2ac6a4c9232561d07292eefd046f87d301995becd14048d270972adcbc14ded3"],
-    database: [18, "ac603cb3e1f38c3dd6ede282ae26c0e1cb6a8fdb7d3015d9448358ae50bba0b6"],
+    database: [19, "248a4100e0250536203332135461d417124fde3cbe5b4d9c8e6edec81d26d4de"],
     recovery: [2, "2ac6a4c9232561d07292eefd046f87d301995becd14048d270972adcbc14ded3"],
     obscura: [1, "c3fe29ff86819660733b568917fd0e39d09d275d94261387747da26da852f544"],
     "authority-regression": [9, "6e51deb44286815d3e0f6cf75e59a603b79da3823dfa876a0fc1c030e2b740a4"],

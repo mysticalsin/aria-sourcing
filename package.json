@@ -31,6 +31,7 @@
     "test:obscura": "node scripts/run-test-manifest.mjs --group obscura",
     "test:db-privileges": "bash scripts/test-db-privileges.sh",
     "test:db-cross-channel-cap": "bash tests/cross-channel-cap-postgres.sh",
+    "test:db-sequence-engine": "bash tests/sequence-engine-db.sh",
     "test:db-agent-memory": "bash tests/agent-memory-db.sh",
     "test:db-apollo-enrichment": "bash tests/apollo-enrichment-db.sh",
     "test:db-sourcing-learning": "bash tests/sourcing-learning-db.sh",
