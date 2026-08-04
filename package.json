@@ -57,6 +57,6 @@
   },
   "overrides": {
     "express-rate-limit": "^8.5.2",
-    "ip-address": "^10.2.0"
+    "ip-address": "^10.4.0"
   }
 }
