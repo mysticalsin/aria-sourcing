@@ -1,13 +1,21 @@
 name: CodeQL
 
 on:
+  # Push analysis is limited to the long-lived integration branches; feature
+  # branches are analyzed via the pull_request event. This avoids the
+  # duplicate push + PR runs that doubled Actions minutes usage per commit.
   push:
-    branches: ["**"]
+    branches: ["vercel-demo", "main", "master"]
   pull_request:
     branches: ["**"]
   schedule:
     # Run weekly on Monday at 03:17 UTC so results don't pile up unnoticed
     - cron: "17 3 * * 1"
+
+# Cancel superseded analyses for the same ref to conserve Actions minutes.
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   analyze:
