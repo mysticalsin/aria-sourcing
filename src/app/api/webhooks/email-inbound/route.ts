@@ -4,22 +4,22 @@ import { z } from "zod";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import { readBoundedBody } from "@/lib/api/validate";
 import { safeLog } from "@/lib/log-redact";
+import { decideInboundClassifyEnqueue } from "@/lib/inbound-reply-trigger";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Inbound email webhook — the reply half of the durable loop (Rock 3/7).
+ * Inbound email webhook — event-driven reply half of the durable loop.
  *
  * A provider adapter normalizes an inbound email into the signed shape below and
  * POSTs it here. The tenant is resolved ONLY from inbound_mailbox_routes (the
  * delivered-to mailbox → workspace); the sender is never trusted for routing.
  * The reply is persisted idempotently (record_inbound_email) and threaded back to
- * the send via In-Reply-To ↔ outreach_ledger.rfc_message_id (correlate_inbound_email,
- * which fails closed to triage on no/ambiguous match). A missing service client or
- * a transient failure returns 503 so the adapter retries; the RPCs are idempotent.
+ * the send via In-Reply-To ↔ outreach_ledger.rfc_message_id (correlate_inbound_email).
  *
- * ⚠️ DEGRADED (Codex re-attack owed 2026-07-23); not exercised end-to-end here.
- * The RPCs it drives are DB-tested (tests/email-inbound-db.sh).
+ * On a *new* inbound (not a duplicate redelivery), we enqueue `inbound_classify`
+ * so the Fly loop classifies exactly once. Idle loop ticks never call the LLM —
+ * no token burn waiting for candidates who have not answered.
  */
 
 const WEBHOOK_MAX_BODY_BYTES = 2_000_000;
@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
     p_from_address: ev.from,
     p_body: ev.body,
   });
-  const rec = recData as { ok?: boolean; inbound_id?: string } | null;
+  const rec = recData as { ok?: boolean; inbound_id?: string; duplicate?: boolean } | null;
   if (recErr || rec?.ok !== true || !rec.inbound_id) {
     safeLog("email inbound webhook: record failed", { message: recErr?.message, code: recErr?.code });
     return NextResponse.json({ ok: false, reason: "Record failed." }, { status: 503 });
@@ -91,5 +91,46 @@ export async function POST(req: NextRequest) {
   });
   const corr = corrData as { correlated?: boolean; reason?: string } | null;
 
-  return NextResponse.json({ ok: true, inboundId: rec.inbound_id, correlated: corr?.correlated ?? false, reason: corr?.reason });
+  const decision = decideInboundClassifyEnqueue(rec);
+  let classifyQueued = false;
+  let classifyStatus: string | undefined;
+  if (decision.enqueue) {
+    const { data: enqData, error: enqErr } = await supabase.rpc("enqueue_aria_job", {
+      p_workspace_id: route.workspace_id,
+      p_kind: decision.kind,
+      p_idempotency_key: decision.idempotencyKey,
+      p_payload: decision.payload,
+      p_run_at: new Date().toISOString(),
+      p_priority: decision.priority,
+    });
+    const enq = enqData as { status?: string; id?: string } | null;
+    if (enqErr) {
+      // Persist succeeded — ask the adapter to retry so we eventually enqueue.
+      safeLog("email inbound webhook: classify enqueue failed", { message: enqErr.message, code: enqErr.code });
+      return NextResponse.json(
+        {
+          ok: false,
+          reason: "Classify enqueue failed.",
+          inboundId: rec.inbound_id,
+          correlated: corr?.correlated ?? false,
+        },
+        { status: 503 },
+      );
+    }
+    classifyStatus = typeof enq?.status === "string" ? enq.status : "unknown";
+    classifyQueued = classifyStatus === "enqueued" || classifyStatus === "replay";
+    // control_blocked / invalid_request: ack the webhook (mail is stored); ops flips switchboard later.
+  }
+
+  return NextResponse.json({
+    ok: true,
+    inboundId: rec.inbound_id,
+    duplicate: rec.duplicate === true,
+    correlated: corr?.correlated ?? false,
+    reason: corr?.reason,
+    classifyQueued,
+    classifyStatus:
+      classifyStatus ??
+      (decision.enqueue ? undefined : decision.reason),
+  });
 }

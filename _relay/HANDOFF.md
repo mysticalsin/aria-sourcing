@@ -1,40 +1,47 @@
 ---
 project: MSourcing / ARIA
-shift: 67
+shift: 68
 agent: cursor-cloud
 updated: 2026-08-25 UTC
-status: e2e-verified-with-video
+status: inbound-reply-webhook-autopilot-wired
 ---
 
-# Handoff - Shift 67
+# Handoff - Shift 68
 
 ## Current state
 
-- Branch `cursor/enterprise-autopilot-b91d` → PR #25 (base `integration/sourcing-enrichment-on-main`) HEAD `1c0f34e`.
-- Full browser E2E proven locally (demo mode): Get started → recruitment LLM → Pull open needs → parse → create campaign → 6 candidates → Observability activity.
-- Showcase video: `/opt/cursor/artifacts/e2e_outlook_needs_to_sourcing_showcase.mp4` (reviewed).
-- Demo open needs load when Graph/Supabase unavailable (labelled Demo — never claimed as live inbox).
+- Branch `cursor/enterprise-autopilot-b91d` → PR #25. Event-driven candidate-reply path shipped.
+- `POST /api/webhooks/email-inbound` now enqueues `inbound_classify` for **new** inbounds only (duplicates skip → no re-bill).
+- Loop `handleInboundClassify`: LLM only on claimed jobs; positive intent + entitled profile → `draft_generate` successor (sends still approval-gated).
+- Idle ticks still do **not** poll mailboxes or call the classifier.
+- Docs: `docs/INBOUND_REPLY_AUTOPILOT.md`; Settings → Observability shows Reply webhook panel.
 
 ## Done this shift
 
-- Fixed E2E blockers: demo Outlook needs, sample brief Full-time, Mantu seniority inference.
-- Manual E2E + recorded showcase; typecheck/tests green.
+- `src/lib/inbound-reply-trigger.ts` + webhook enqueue wiring.
+- Worker draft successor for INTERESTED / QUALIFIED_INTEREST.
+- Tests: inbound-reply-trigger, email-inbound-contract pins, sourcing-loop-worker entitled draft path.
+- Env examples: `EMAIL_INBOUND_WEBHOOK_SECRET`.
 
 ## Blockers
 
-- CI-BUDGET still owner-side if Actions minutes exhausted.
-- Live Graph mailbox still required for real Outlook (demo path is labelled).
+- CI-BUDGET (Tony).
+- A-1: kill-switch flip after P-1/P-2.
+- Live: set webhook secret, mailbox routes, provider → POST adapter.
 
 ## Next steps
 
-1. Tony: restore Actions budget; re-run PR checks.
-2. Live tenant: connect Graph + Anthropic key for production sourcing agent.
+1. Ops: configure `EMAIL_INBOUND_WEBHOOK_SECRET` + `inbound_mailbox_routes` + provider inbound URL.
+2. After DB proofs: `kill_switch=false`, `intake_enabled=true`, entitle operators, Fly loop live.
+3. Optional: Graph change-notification adapter that forwards into email-inbound (same HMAC shape).
 
 ## Decisions made (don't relitigate)
 
-- Demo open needs are OK when mailbox unavailable if clearly labelled Demo.
-- HITL select → parse → create campaign (no silent auto-campaign).
+- Webhook-first replies; no idle classify.
+- Positive reply → draft follow-up for entitled autopilot; not silent re-source.
+- LinkedIn inbound remains send-only until vendor webhook (L-5).
 
 ## Watch out
 
-- Duplicate-campaign modal appears if re-running same Senior Backend sample — Create anyway is expected.
+- Enqueue returns `control_blocked` when switchboard off — mail is still stored; flip controls then replay/retry.
+- WhatsApp path already webhook-driven; email is now parity for enqueue-on-answer.

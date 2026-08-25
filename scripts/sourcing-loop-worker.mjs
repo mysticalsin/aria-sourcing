@@ -49,7 +49,7 @@ const CLASSIFY_SYSTEM =
 
 export const PIPELINE_STAGE_TRANSITIONS = Object.freeze({
   email_sync: Object.freeze(["inbound_classify"]),
-  inbound_classify: Object.freeze([]),
+  inbound_classify: Object.freeze(["draft_generate"]),
   requisition_parse: Object.freeze(["campaign_create"]),
   campaign_create: Object.freeze([]),
   sourcing_batch: Object.freeze(["shortlist_build"]),
@@ -63,6 +63,9 @@ export const PIPELINE_STAGE_TRANSITIONS = Object.freeze({
 
 export const PIPELINE_STAGE_TRANSITION_PRODUCERS = Object.freeze({
   "email_sync->inbound_classify": Object.freeze(["handleEmailSync"]),
+  "inbound_classify->draft_generate": Object.freeze([
+    "handleInboundClassify (positive intent + entitled autopilot)",
+  ]),
   "requisition_parse->campaign_create": Object.freeze(["handleRequisitionParse"]),
   "sourcing_batch->shortlist_build": Object.freeze(["handleSourcingBatch"]),
   "provider_poll->shortlist_build": Object.freeze(["handleProviderPoll"]),
@@ -805,6 +808,8 @@ async function handleInboundClassify(job, context) {
   const prompt = buildReplyClassificationPrompt(replyText);
   let classification = fallback;
   let classifier = "deterministic_fallback";
+  // LLM runs ONLY when this job was claimed — webhook/email_sync enqueue is the
+  // sole trigger. Idle loop ticks never invent inbound_classify jobs.
   if (context.modelClient?.classifyReply) {
     const modelResult = await context.modelClient.classifyReply(prompt);
     if (modelResult?.ok && typeof modelResult.text === "string") {
@@ -840,13 +845,63 @@ async function handleInboundClassify(job, context) {
       ? storedInbound.message_id.trim()
       : undefined,
   };
+
+  // Positive intent → optional draft follow-up for entitled autopilot (still
+  // approval-gated before send). No re-source; sourcing continues on its own jobs.
+  const successors = [];
+  let draftQueued = false;
+  const positive =
+    classification.intent === "INTERESTED" || classification.intent === "QUALIFIED_INTEREST";
+  if (positive && campaignId && candidateId) {
+    try {
+      const entitled = await context.client
+        .from("profiles")
+        .select("id")
+        .eq("workspace_id", job.workspace_id)
+        .eq("autopilot_enabled", true)
+        .in("role", ["admin", "member"])
+        .limit(1)
+        .maybeSingle();
+      const entitledId = typeof entitled.data?.id === "string" ? entitled.data.id : "";
+      if (entitledId) {
+        successors.push(
+          successorJob(
+            "draft_generate",
+            `draft:reply:${campaignId}:${candidateId}`,
+            {
+              campaignId,
+              candidateId,
+              approvedBy: entitledId,
+              approvalSource: "autopilot_reply",
+              trigger: "inbound_classify",
+              intent: classification.intent,
+            },
+            70,
+          ),
+        );
+        draftQueued = true;
+      }
+    } catch {
+      draftQueued = false;
+    }
+  }
+
   return completeJobWithWorkspacePatch(
     context.client,
     job,
     { kind: "append_reply", value: [reply], receiptKey: `reply-classify:${inboundId}` },
-    { status: "reply_classified", intent: classification.intent, classifier },
-    [event("reply.classified", "inbound_email", inboundId, { intent: classification.intent, classifier })],
-    [],
+    {
+      status: "reply_classified",
+      intent: classification.intent,
+      classifier,
+      draftQueued,
+    },
+    [event("reply.classified", "inbound_email", inboundId, {
+      intent: classification.intent,
+      classifier,
+      draftQueued,
+    })],
+    successors,
   );
 }
 

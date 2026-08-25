@@ -140,5 +140,19 @@ ok(
     /public\.correlate_inbound_email\(uuid,text\)'\s*,\s*'service_role'/i.test(priv),
 );
 
+const webhookRoute = existsSync("src/app/api/webhooks/email-inbound/route.ts")
+  ? readFileSync("src/app/api/webhooks/email-inbound/route.ts", "utf8")
+  : "";
+ok(
+  "email-inbound webhook enqueues inbound_classify for new replies (event-driven)",
+  /decideInboundClassifyEnqueue/i.test(webhookRoute) &&
+    /enqueue_aria_job/i.test(webhookRoute) &&
+    /inbound_classify|decision\.kind/i.test(webhookRoute),
+);
+ok(
+  "email-inbound webhook skips classify enqueue on duplicate redelivery",
+  /duplicate/i.test(webhookRoute),
+);
+
 console.log(`RESULT email-inbound-contract: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

@@ -93,8 +93,13 @@ base URL + tool-manifest SHA-256. Non-production still requires
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | POST | `/api/webhooks/whatsapp` | Meta signature | Inbound + delivery receipts |
-| POST | `/api/webhooks/email-inbound` | provider | Inbound email |
+| POST | `/api/webhooks/email-inbound` | `x-aria-signature` HMAC | Inbound email → record + enqueue `inbound_classify` |
 | POST | `/api/webhooks/email-delivery` | provider | Delivery events |
+
+**Reply token policy:** classify runs only when `inbound_classify` is claimed.
+The email-inbound webhook enqueues that job for **new** messages only (duplicates
+skip). Idle loop ticks never poll mailboxes or call the classifier. See
+`docs/INBOUND_REPLY_AUTOPILOT.md`.
 
 ## Health
 

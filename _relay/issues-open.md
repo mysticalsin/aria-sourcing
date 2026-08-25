@@ -23,6 +23,7 @@ No secrets.
 | E-2 | blocker | Auth | Entra SSO still off (`NEXT_PUBLIC_ENABLE_AZURE_LOGIN=false`) | open | Tony |
 | E-7 | done (code) | MCP | Production allowlist path shipped (`0056` + `/api/admin/mcp/allowlist`); needs live allowlist rows | open (enablement) | admin |
 | E-11 | high | Security | Dependabot high alerts on default branch — triage | open | eng |
+| A-8 | done (code) | Loop | Event-driven reply: email-inbound webhook enqueues `inbound_classify`; positive intent → draft for entitled autopilot; no idle LLM | fixed | eng |
 | A-1 | blocked | Loop | Do not set `ARIA_LOOP_KILL_SWITCH=false` until P-1/P-2 green | open | Tony after eng |
 | A-7 | done (code) | Loop | `scripts/ignite-sourcing-loop-scheduler.mjs` shipped; needs cron install | open (ops) | eng |
 | L-2 | blocker | LinkedIn | Vendor URL/KEY not contracted; vendor-api stays fail-closed; assisted-manual works | open | Tony |
@@ -35,3 +36,4 @@ No secrets.
 - Shortlist: entitled auto-approve when score ≥ `auto_shortlist_min_score` (default 70).
 - MCP: production only with allowlist match; no env-only bypass.
 - LinkedIn policy boundary unchanged (no scrape/session fleets).
+- Candidate replies: webhook-first (`/api/webhooks/email-inbound` → enqueue classify). Idle loop ticks never burn classify tokens.

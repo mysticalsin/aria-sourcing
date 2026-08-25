@@ -369,6 +369,70 @@ test("email_sync enqueues inbound_classify and the classifier persists the store
   assert.equal(reply.intent, "INTERESTED");
 });
 
+test("inbound_classify enqueues draft_generate for positive intent when autopilot is entitled", async () => {
+  const patches: Array<Record<string, unknown>> = [];
+  const { client } = rpcClient((name, args) => {
+    if (name === "read_inbound_email_for_loop") {
+      return {
+        data: {
+          status: "ok",
+          inbound_id: "inbound-2",
+          candidate_id: "cand-9",
+          campaign_id: "camp-9",
+          body: "Yes I'm interested — send times.",
+          received_at: "2026-07-25T12:30:00.000Z",
+          message_id: "provider-message-2",
+        },
+        error: null,
+      };
+    }
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: { replies: [] }, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      patches.push(args);
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+  // Override from() to return an entitled profile.
+  (client as { from: () => unknown }).from = () => ({
+    select() {
+      return this;
+    },
+    eq() {
+      return this;
+    },
+    in() {
+      return this;
+    },
+    limit() {
+      return this;
+    },
+    async maybeSingle() {
+      return { data: { id: "user-autopilot-1" }, error: null };
+    },
+  });
+
+  await handleAriaJob(job("inbound_classify", { inboundId: "inbound-2" }), { client });
+  assert.equal(patches.length, 1);
+  assert.deepEqual(patches[0].p_enqueue, [
+    {
+      kind: "draft_generate",
+      idempotency_key: "draft:reply:camp-9:cand-9",
+      payload: {
+        campaignId: "camp-9",
+        candidateId: "cand-9",
+        approvedBy: "user-autopilot-1",
+        approvalSource: "autopilot_reply",
+        trigger: "inbound_classify",
+        intent: "INTERESTED",
+      },
+      priority: 70,
+    },
+  ]);
+});
+
 test("runSourcingLoopTick claims every handler kind and completes each claimed job once", async () => {
   const claimedJobs = HANDLER_KINDS.map((kind) =>
     job(kind, {
