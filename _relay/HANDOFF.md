@@ -1,45 +1,48 @@
 ---
 project: MSourcing / ARIA
-shift: 72
+shift: 73
 agent: cursor-cloud
 updated: 2026-08-25 UTC
-status: linkedin-heyreach-verified
+status: linkedin-heyreach-production-demo-live
 ---
 
-# Handoff - Shift 72
+# Handoff - Shift 73
 
 ## Current state
 
-- Branch `cursor/enterprise-autopilot-b91d` → PR #25.
-- LinkedIn HeyReach-parity **verified**: full `npm test` green; webhook route scenarios (9); worker LinkedIn channel; demo UI Connect + Simulate + Replies inbox.
-- Demo dry-run: `/api/linkedin/simulate` and connections POST no longer 503 without Supabase.
-- Live durable path still needs migrations 0058–0059 + Supabase service role.
+- **Production demo LIVE:** https://aria-sourcing-demo.vercel.app (pushed `main` + `vercel-demo` to `baa1ca6`).
+- LinkedIn webhook route live (`POST /api/webhooks/linkedin` → 401 Bad signature).
+- UI: Connect seat card + Simulate + Replies inbox verified on production.
+- Open-demo mode: `supabaseEnabled=false` on this Vercel project build — Simulate dry-runs; no durable events until Supabase Production env is set.
+- Feature branch `cursor/enterprise-autopilot-b91d` → PR #25 also updated.
 
 ## Done this shift
 
-- Added `tests/linkedin-webhook-route.mts` (S10/S15/S18/S5/legacy).
-- Worker test: classify persists `channel: LinkedIn`.
-- Fixed demo Simulate/Connect dry-run responses.
-- Manual UI proof on local Next demo (Settings simulate + Replies inbox).
+- Fast-forwarded `vercel-demo` and `main` to ship HeyReach-parity.
+- Fixed demo Connect seat wipe (`seats:[]`) and Simulate non-UUID `seatId` validation.
+- Verified production webhook + UI paths.
 
 ## Blockers
 
-- CI-BUDGET (Tony).
-- Apply **0057–0059** on live Supabase for durable E2E.
-- L-2 vendor credentials optional.
+- **Vercel Production env missing Supabase** (`NEXT_PUBLIC_SUPABASE_URL`, anon, service_role) — owner must set in totosworld/aria-sourcing-demo; this agent MCP only has hobby team.
+- Apply migrations **0058–0059** on the Supabase project once env is wired.
+- Set `LINKEDIN_INBOUND_WEBHOOK_SECRET` (or EMAIL_ inbound secret) for signed vendor webhooks.
+- CI Quality still fails on budget (pre-existing).
+- Fly `aria-mantu-app` not updated (no flyctl auth).
 
 ## Next steps
 
-1. Apply 0058+0059 on Supabase.
-2. Live: Connect → Simulate reply → confirm `inbound_classify` + inbox row.
-3. Optional vendor webhook with `route_key` + HMAC.
+1. Vercel → aria-sourcing-demo → Production env: set Supabase + DEMO_ADMIN_PASSWORD + inbound webhook secret; redeploy.
+2. `supabase db push` (or SQL) migrations 0058+0059.
+3. Live: Connect → Simulate reply → events inbox + classify job.
+4. Optional: Fly deploy with same commit when fly auth available.
 
 ## Decisions made (don't relitigate)
 
-- No LinkedIn login/scrape; webhook-first classify.
-- Demo without Supabase is dry-run (ok:true), not hard 503, for Connect/Simulate.
+- Production demo ships via `main`/`vercel-demo` FF from the feature tip.
+- Open demo without Supabase is dry-run, not a hard failure for Connect/Simulate.
 
 ## Watch out
 
-- Webhook without service_role correctly returns 503 (fail-closed).
-- Do not commit `.env.local`.
+- Do not send demo `seat_*` ids as UUID to simulate (fixed).
+- Vercel MCP re-auth to **totosworld** needed for env/promote from agents.
