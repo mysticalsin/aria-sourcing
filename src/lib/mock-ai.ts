@@ -143,7 +143,7 @@ Hi Aria,
 One of our senior backend engineers just resigned and we need to backfill this
 role critically, ideally someone in seat within 8 weeks. This is high priority.
 
-We're hiring a Senior Backend Engineer, fully remote across the EU (CET-ish
+We're hiring a full-time Senior Backend Engineer, fully remote across the EU (CET-ish
 overlap). Core stack is Go, Kubernetes, PostgreSQL and gRPC: they'll own
 distributed systems at the heart of the platform. Nice to have: Kafka,
 OpenTelemetry, Terraform. We want 5+ years of experience, ideally from a
@@ -277,6 +277,17 @@ export function parseMantuNeed(text: string): ParsedIntake {
   const minYears = text.match(/minimum[\s]{0,6}(\d{1,2})[\s+]{0,6}years/i)?.[1];
   const minYearsExperience = minYears ? parseInt(minYears, 10) : null;
 
+  let seniority: Seniority = "Unspecified";
+  if (/principal/i.test(title)) seniority = "Principal";
+  else if (/staff/i.test(title)) seniority = "Staff";
+  else if (/lead/i.test(title)) seniority = "Lead";
+  else if (/director|head of/i.test(title)) seniority = "Director";
+  else if (/junior|graduate|entry/i.test(title)) seniority = "Junior";
+  else if (/\bsenior\b/i.test(title)) seniority = "Senior";
+  else if (minYearsExperience != null && minYearsExperience >= 5) seniority = "Senior";
+  else if (minYearsExperience != null && minYearsExperience >= 3) seniority = "Mid";
+  else if (minYearsExperience != null && minYearsExperience >= 1) seniority = "Junior";
+
   const niceToHaveSkills: string[] = [];
   if (/offshore/i.test(text)) niceToHaveSkills.push("Offshore experience");
 
@@ -297,7 +308,7 @@ export function parseMantuNeed(text: string): ParsedIntake {
   const jobAnalysis: JobAnalysis = {
     title,
     department: typeRaw,
-    seniority: "Unspecified",
+    seniority,
     employmentType: /consulting|contract|contractor|freelance/i.test(typeRaw)
       ? "Contract"
       : /part[- ]time/i.test(typeRaw)

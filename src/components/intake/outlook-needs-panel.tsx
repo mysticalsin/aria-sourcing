@@ -17,6 +17,7 @@ import type { InboundMessage } from "@/lib/email-sync";
 import {
   filterOutlookNeeds,
   formatNeedAsIntakeEmail,
+  demoOutlookNeeds,
   seatHasOutlookMailbox,
   type OutlookNeedMessage,
 } from "@/lib/outlook-needs";
@@ -32,6 +33,20 @@ type SyncJson = {
   error?: string;
   detail?: string;
 };
+
+function loadDemoNeeds(
+  setNeeds: (n: OutlookNeedMessage[]) => void,
+  toast: ReturnType<typeof useToast>["toast"],
+  reason: string,
+) {
+  const demo = demoOutlookNeeds();
+  setNeeds(demo);
+  toast({
+    title: "Demo open needs loaded",
+    description: `${reason} Showing ${demo.length} labelled sample hiring emails — not a live mailbox.`,
+    variant: "info",
+  });
+}
 
 export function OutlookNeedsPanel({
   onSelectNeed,
@@ -49,6 +64,7 @@ export function OutlookNeedsPanel({
   const [needs, setNeeds] = React.useState<OutlookNeedMessage[]>([]);
   const [lastError, setLastError] = React.useState<string | null>(null);
   const [pulledOnce, setPulledOnce] = React.useState(false);
+  const [demoMode, setDemoMode] = React.useState(false);
 
   const outlookSeats = seats.filter((s) => s.provider === "Microsoft Graph");
   const connected = outlookSeats.filter(seatHasOutlookMailbox);
@@ -59,24 +75,23 @@ export function OutlookNeedsPanel({
     setLastError(null);
     try {
       if (!supabaseEnabled) {
-        setNeeds([]);
         setPulledOnce(true);
-        toast({
-          title: "Live Outlook required",
-          description:
-            "Connect a Microsoft mailbox in Agent Fleet (Supabase live mode). Demo workspaces cannot read a real inbox.",
-          variant: "warning",
-        });
+        setDemoMode(true);
+        loadDemoNeeds(
+          setNeeds,
+          toast,
+          "This workspace is in local demo mode (no live Supabase).",
+        );
         return;
       }
       if (connected.length === 0) {
-        setNeeds([]);
         setPulledOnce(true);
-        toast({
-          title: "Connect Outlook first",
-          description: "Link a Microsoft 365 mailbox, then pull open needs in one click.",
-          variant: "warning",
-        });
+        setDemoMode(true);
+        loadDemoNeeds(
+          setNeeds,
+          toast,
+          "No Microsoft mailbox is linked yet.",
+        );
         return;
       }
 
@@ -88,23 +103,25 @@ export function OutlookNeedsPanel({
       if (!res.ok || !json?.ok) {
         const err = json?.error ?? json?.detail ?? `Sync failed (${res.status})`;
         setLastError(err);
-        setNeeds([]);
-        toast({ title: "Could not read Outlook", description: err, variant: "error" });
+        setPulledOnce(true);
+        setDemoMode(true);
+        loadDemoNeeds(setNeeds, toast, `Live Outlook sync failed (${err}).`);
         return;
       }
       if (json.status === "dry-run") {
-        setNeeds([]);
         setPulledOnce(true);
-        toast({
-          title: "Public demo — inbox not read",
-          description: json.detail ?? "Mailbox side-effects are disabled on the public demo.",
-          variant: "info",
-        });
+        setDemoMode(true);
+        loadDemoNeeds(
+          setNeeds,
+          toast,
+          "Public demo cannot read a real inbox.",
+        );
         return;
       }
 
       const filtered = filterOutlookNeeds(json.messages ?? []);
       setNeeds(filtered);
+      setDemoMode(false);
       setPulledOnce(true);
       toast({
         title: filtered.length ? "Open needs from Outlook" : "No open needs found",
@@ -116,7 +133,9 @@ export function OutlookNeedsPanel({
     } catch (e) {
       const err = e instanceof Error ? e.message : "Mailbox sync timed out.";
       setLastError(err);
-      toast({ title: "Outlook pull failed", description: err, variant: "error" });
+      setPulledOnce(true);
+      setDemoMode(true);
+      loadDemoNeeds(setNeeds, toast, `Outlook pull failed (${err}).`);
     } finally {
       setPulling(false);
     }
@@ -138,10 +157,12 @@ export function OutlookNeedsPanel({
               no copy-paste from Outlook.
             </p>
           </div>
-          <Badge tone={connected.length ? "success" : "warning"} dot>
+          <Badge tone={connected.length ? "success" : demoMode ? "electric" : "warning"} dot>
             {connected.length
               ? `${connected.length} mailbox${connected.length === 1 ? "" : "es"} linked`
-              : "Outlook not connected"}
+              : demoMode
+                ? "Demo open needs"
+                : "Outlook not connected"}
           </Badge>
         </div>
 
@@ -261,6 +282,10 @@ export function OutlookNeedsPanel({
                         {selected ? (
                           <Badge tone="electric" size="sm">
                             Selected
+                          </Badge>
+                        ) : need.demo ? (
+                          <Badge tone="aqua" size="sm">
+                            Demo
                           </Badge>
                         ) : null}
                       </div>

@@ -4,6 +4,7 @@ import {
   formatNeedAsIntakeEmail,
   needPreview,
   seatHasOutlookMailbox,
+  demoOutlookNeeds,
 } from "../src/lib/outlook-needs";
 
 let pass = 0,
@@ -68,6 +69,13 @@ ok(
 ok(
   "Gmail seat is not Outlook mailbox",
   !seatHasOutlookMailbox({ provider: "Gmail API", connectedAccount: "ops@gmail.com" }),
+);
+
+ok("demoOutlookNeeds returns two labelled samples", demoOutlookNeeds().length === 2);
+ok("demoOutlookNeeds marked demo", demoOutlookNeeds().every((n) => n.demo === true));
+ok(
+  "demo backend subject looks like a need",
+  isNeedEmail(demoOutlookNeeds()[0]!.subject, demoOutlookNeeds()[0]!.body),
 );
 
 console.log(`RESULT outlook-needs: ${pass} passed, ${fail} failed`);

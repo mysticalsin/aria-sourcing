@@ -25,8 +25,8 @@ const parsed = parseEmailAndJD({ email: SAMPLE_INTAKE_EMAIL });
 
 ok("parse: department is Platform", parsed.jobAnalysis.department === "Platform");
 ok(
-  "parse: employmentType stays unspecified when the brief does not state it",
-  parsed.jobAnalysis.employmentType === "Unspecified",
+  "parse: employmentType is Full-time when the brief states it",
+  parsed.jobAnalysis.employmentType === "Full-time",
 );
 ok("parse: requiredSkills includes Go", parsed.jobAnalysis.requiredSkills.includes("Go"));
 ok(
