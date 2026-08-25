@@ -3,6 +3,7 @@ import { getServerSupabase, getServiceSupabase, requireAdmin } from "@/lib/supab
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { encryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
+import { publicOrigin } from "@/lib/public-origin";
 
 /**
  * Google OAuth callback for Gmail API seat connection.
@@ -193,14 +194,16 @@ function clearOAuthCookies(res: NextResponse): void {
 
 function redirectError(req: NextRequest, message: string) {
   const encoded = encodeURIComponent(message);
-  const res = NextResponse.redirect(new URL(`/settings?tab=fleet&oauth=error&message=${encoded}`, req.url));
+  const origin = publicOrigin(req.headers);
+  const res = NextResponse.redirect(new URL(`/settings?tab=fleet&oauth=error&message=${encoded}`, origin));
   clearOAuthCookies(res);
   return res;
 }
 
 function redirectSuccess(req: NextRequest, message: string) {
   const encoded = encodeURIComponent(message);
-  const res = NextResponse.redirect(new URL(`/settings?tab=fleet&oauth=success&message=${encoded}`, req.url));
+  const origin = publicOrigin(req.headers);
+  const res = NextResponse.redirect(new URL(`/settings?tab=fleet&oauth=success&message=${encoded}`, origin));
   clearOAuthCookies(res);
   return res;
 }
