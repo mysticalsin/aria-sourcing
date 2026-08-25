@@ -1,45 +1,47 @@
 ---
 project: MSourcing / ARIA
-shift: 65
+shift: 66
 agent: cursor-cloud
 updated: 2026-08-25 UTC
-status: ci-blocked-on-actions-budget
+status: outlook-llm-observability-ux-shipped
 ---
 
-# Handoff - Shift 65
+# Handoff - Shift 66
 
 ## Current state
 
-- PR #24 (`cursor/enterprise-autopilot-b91d` → `integration/sourcing-enrichment-on-main`) HEAD `546f1f5`.
-- All GitHub Actions jobs on the PR fail in ~2–4s with **0 steps** and annotation:
-  `The job was not started because an Actions budget is preventing further use.`
-- This is **billing/minutes exhaustion**, not a product/test regression. Local app gate was green earlier this shift series.
-- CI efficiency shipped: push triggers narrowed to long-lived refs; feature branches covered by `pull_request` only; concurrency cancel added (`.github/workflows/ci.yml`, `codeql.yml`). Latest PR run shows no duplicate push suite.
+- Branch `cursor/enterprise-autopilot-b91d` → PR #24 (base `integration/sourcing-enrichment-on-main`).
+- Plug-and-play Outlook → open needs → sourcing UX shipped on Intake.
+- Recruitment LLM picker + Get started + Observability tabs on Settings (Motion springs; Bklit-style spark bars; Kokonut-like interactive cards).
+- GH Actions still budget-blocked (CI-BUDGET); local `npx tsc --noEmit`, `typecheck:tests`, `npm test` green after this shift.
 
 ## Done this shift
 
-- Confirmed root cause of 14 red checks via `gh run view` annotations (budget).
-- Narrowed CI/CodeQL push triggers; documented in `_relay/issues-open.md` (CI-BUDGET, CI-DUP) and `_relay/lessons/2026-08-25-github-actions-budget.md`.
+- `src/lib/outlook-needs.ts` + `OutlookNeedsPanel` on `/intake` — connect Outlook, pull needs, select → parse → campaign.
+- Settings: `SetupGuidePanel`, `RecruitmentLlmPanel`, `ObservabilityPanel`; tabs `setup` / `observe`; `?tab=` deep links.
+- Need-email subject matcher expanded (`open need`, `platform need`, `requisition`).
+- Outlook integration card `setupHref` → `/intake`.
+- Tests: `outlook-needs`, `recruitment-llm`; manifest counts/digests updated.
 
 ## Blockers
 
-- **CI-BUDGET (Tony):** restore GitHub Actions minutes / spending limit, then re-run failed workflows on PR #24.
-- Prior open blockers unchanged: P-1 Docker DB proofs, P-7 delivery domain, E-2 Entra SSO, L-2 LinkedIn vendor, A-1 kill-switch.
+- CI-BUDGET (Tony): restore Actions minutes before PR checks can go green.
+- P-1 Docker DB; E-2 Entra; P-7 delivery domain; L-2 LinkedIn vendor.
 
 ## Next steps
 
-1. Tony restores Actions budget (org billing / spending limit).
-2. Re-run failed CI + CodeQL on PR #24; treat any new non-budget failures as real product issues.
-3. On Docker host: apply 0053–0056 + `test:database` (P-1).
-4. Continue Phase 1 owner inputs (SSO, domain, alerting).
+1. Tony restores Actions budget; re-run PR #24 checks.
+2. Live tenant: connect Graph mailbox + enable Anthropic (or other tool-calling) model for sourcing.
+3. Optional later: Graph webhook subscriptions for continuous need ingest (not required for HITL pull).
 
 ## Decisions made (don't relitigate)
 
-- Prior shift 63–64 decisions stand.
-- Do not debug application code for empty ~3s Actions failures with budget annotations.
-- Feature-branch CI is PR-only (no push+PR double spend).
+- Inbox pull stays HITL (human selects need → parse → create campaign); no silent auto-campaign from Outlook.
+- Intake parse continues on `chat` task; sourcing agent stays on `sourcing` (tool-calling).
+- Observability v1 uses in-app agent-events + activities (no Langfuse yet).
+- Prior shift 63–65 decisions stand.
 
 ## Watch out
 
-- After budget restore, expect fewer check runs per push (PR only) — that is intentional.
-- Vercel checks can still succeed while Actions is budget-blocked.
+- Public demo / dry-run sync returns empty messages — UI must not pretend needs were found.
+- Kimi cannot be default for sourcing; Recruitment panel excludes it.

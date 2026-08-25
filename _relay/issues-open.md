@@ -7,6 +7,9 @@ No secrets.
 |---|---|---|---|---|---|
 | CI-BUDGET | blocker | CI | All PR #24 GitHub Actions jobs fail in ~3s with annotation: "The job was not started because an Actions budget is preventing further use." Empty steps / runner_id=0. Not a code regression. | open | Tony — restore Actions minutes / billing |
 | CI-DUP | med | CI | Feature-branch push+PR was double-running CI/CodeQL; narrowed push triggers + concurrency cancel (2026-08-25) | fixed (pending budget to verify) | eng |
+| UX-OUTLOOK | done (code) | Intake | Outlook pull-open-needs panel + setup guide; needs live Graph mailbox | open (enablement) | admin |
+| UX-LLM | done (code) | Settings | Recruitment LLM picker (sourcing/intake/outreach/classification) | fixed | eng |
+| UX-OBS | done (code) | Settings | Observability tab (event spark bars + activity + Floor links) | fixed | eng |
 | P-1 | blocker | DB | Migrations `0053`–`0056` not yet proven on real Postgres in this cloud sandbox (no Docker socket) | open | eng on Docker host |
 | P-2 | blocker | CI | Full gate (`typecheck`+`lint`+`test:all`+`test:database`+`test:manifest`+`build:isolated`) not yet green at one SHA on one machine — app gate green locally; GH Actions blocked by budget | open | eng + Tony |
 | P-3 | high | CI | Bind CI + CodeQL to release SHA with zero high/critical | open | eng |
