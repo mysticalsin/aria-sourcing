@@ -228,7 +228,9 @@ export function isMantuNeedEmail(text: string): boolean {
  *  false positive here would parse a random email into a job brief. */
 export function isNeedEmail(subject: string, body: string): boolean {
   if (isMantuNeedEmail(body) || isMantuNeedEmail(subject)) return true;
-  return /\b(job description|jd attached|new (role|position|need|vacancy|opening)|hiring request|backfill|open position)\b/i.test(subject);
+  return /\b(job description|jd attached|new (role|position|need|vacancy|opening)|hiring request|backfill|open (position|need|role)|platform need|requisition)\b/i.test(
+    subject,
+  );
 }
 
 /** Structured parser for the Mantu/Amaris "need is now ACTIVE" recruitment email. */

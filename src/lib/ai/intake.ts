@@ -308,6 +308,9 @@ export async function parseIntakeLive(
 ): Promise<ParsedIntake> {
   const mock = parseEmailAndJD(input);
 
+  // Intake / JD parse uses the chat (intake) task from Settings → Recruitment brain.
+  // Operators pick that model in the plug-and-play LLM panel; sourcing stays separate
+  // because it requires tool-calling.
   const aiCfg = resolveAiProvider(settings, "chat");
   if (!aiCfg && !(settings.hermesLiveMode && hermesAvailable(settings))) {
     return {

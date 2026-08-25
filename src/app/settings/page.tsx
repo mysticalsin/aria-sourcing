@@ -27,6 +27,9 @@ import { RolesPanel } from "@/components/settings/roles-panel";
 import { GuardrailsPanel } from "@/components/settings/guardrails-panel";
 import { ProvidersPanel } from "@/components/settings/providers-panel";
 import { ModelsPanel } from "@/components/settings/models-panel";
+import { RecruitmentLlmPanel } from "@/components/settings/recruitment-llm-panel";
+import { SetupGuidePanel } from "@/components/settings/setup-guide-panel";
+import { ObservabilityPanel } from "@/components/settings/observability-panel";
 import { ToolsPanel } from "@/components/settings/tools-panel";
 import { McpServersPanel } from "@/components/settings/mcp-servers-panel";
 import { DustAgentPanel } from "@/components/settings/dust-agent-panel";
@@ -57,16 +60,32 @@ import {
   BrainCircuit,
   Wrench,
   Info,
+  Rocket,
+  Activity,
 } from "lucide-react";
 
 /* ---- tabbed navigation -------------------------------------------------- */
 
-const SettingsTabContext = React.createContext("integrations");
+const SettingsTabContext = React.createContext("setup");
+
+const VALID_TABS = new Set([
+  "setup",
+  "integrations",
+  "ai",
+  "fleet",
+  "observe",
+  "compliance",
+  "voice",
+  "access",
+  "workspace",
+]);
 
 /** Maps each numbered section to the tab it lives under. */
 const N_TO_TAB: Record<string, string> = {
+  "00": "setup",
+  "20": "observe",
   "04": "integrations",
-  "14": "ai", "15": "ai", "16": "ai", "17": "ai", "19": "ai",
+  "14": "ai", "15": "ai", "15a": "ai", "16": "ai", "17": "ai", "19": "ai",
   "03": "fleet", "06": "fleet", "09": "fleet", "18": "fleet",
   "02": "compliance", "05": "compliance", "07": "compliance",
   "08": "voice", "13": "voice",
@@ -75,9 +94,11 @@ const N_TO_TAB: Record<string, string> = {
 };
 
 const TABS: { id: string; label: string; icon: React.ReactNode }[] = [
+  { id: "setup", label: "Get started", icon: <Rocket className="h-4 w-4" /> },
   { id: "integrations", label: "Integrations", icon: <Plug2 className="h-4 w-4" /> },
   { id: "ai", label: "AI & Models", icon: <Cpu className="h-4 w-4" /> },
   { id: "fleet", label: "Fleet & Automation", icon: <Clock className="h-4 w-4" /> },
+  { id: "observe", label: "Observability", icon: <Activity className="h-4 w-4" /> },
   { id: "compliance", label: "Approval & Compliance", icon: <ShieldCheck className="h-4 w-4" /> },
   { id: "voice", label: "Brand Voice", icon: <Sparkles className="h-4 w-4" /> },
   { id: "access", label: "Access & Keys", icon: <Lock className="h-4 w-4" /> },
@@ -205,24 +226,35 @@ export default function SettingsPage() {
   const actions = useActions();
   const { toast } = useToast();
   const confirm = useConfirm();
-  const [activeTab, setActiveTab] = React.useState("integrations");
+  const [activeTab, setActiveTab] = React.useState("setup");
   const canResetSyntheticDemo = !supabaseEnabled;
+
+  const goTab = React.useCallback((id: string) => {
+    if (!VALID_TABS.has(id)) return;
+    setActiveTab(id);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", id);
+      window.history.replaceState({}, "", `${url.pathname}?${url.searchParams.toString()}`);
+    }
+  }, []);
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    if (tab && VALID_TABS.has(tab)) setActiveTab(tab);
     const oauth = params.get("oauth");
     const message = params.get("message");
     if (oauth === "success") {
       toast({ title: "Mailbox connected", description: message ?? "", variant: "success" });
-      setActiveTab("fleet");
-      window.history.replaceState({}, "", window.location.pathname);
+      goTab("setup");
+      window.history.replaceState({}, "", `${window.location.pathname}?tab=setup`);
     } else if (oauth === "error") {
       toast({ title: "Mailbox connection failed", description: message ?? "", variant: "error" });
-      setActiveTab("fleet");
-      window.history.replaceState({}, "", window.location.pathname);
+      goTab("fleet");
     }
-  }, [toast]);
+  }, [toast, goTab]);
 
   const summary = integrationHealthSummary(integrations);
 
@@ -286,7 +318,7 @@ export default function SettingsPage() {
       <PageHeader
         eyebrow="Control"
         title="Settings"
-        description="Operating identity, the human-approval gate, rate limits, integrations, and compliance. Everything Aria runs against lives here."
+        description="Plug-and-play setup, recruitment LLMs, Outlook, observability, and the guardrails Aria runs against."
         actions={
           canResetSyntheticDemo ? (
             <Button
@@ -328,7 +360,7 @@ export default function SettingsPage() {
                   id={`settings-tab-${t.id}`}
                   aria-selected={activeTab === t.id}
                   aria-controls="settings-panel"
-                  onClick={() => setActiveTab(t.id)}
+                  onClick={() => goTab(t.id)}
                   className={cn(
                     "inline-flex shrink-0 snap-start items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all duration-150 lg:w-full",
                     activeTab === t.id
@@ -351,6 +383,26 @@ export default function SettingsPage() {
               aria-labelledby={`settings-tab-${activeTab}`}
               tabIndex={0}
             >
+          {/* 00 — Plug and play */}
+          <Section
+            n="00"
+            eyebrow="Start here"
+            title="Get started"
+            description="Connect Outlook, pick the recruitment LLM, then pull open needs into sourcing."
+          >
+            <SetupGuidePanel onGoAi={() => goTab("ai")} />
+          </Section>
+
+          {/* 20 — Observability */}
+          <Section
+            n="20"
+            eyebrow="Pulse"
+            title="Observability"
+            description="See what the fleet is doing — event mix, activity log, and links to Floor / replay."
+          >
+            <ObservabilityPanel />
+          </Section>
+
           {/* 01 — System identity */}
           <Section
             n="01"
@@ -945,6 +997,16 @@ export default function SettingsPage() {
             description="Connect the language model backends the sourcing fleet runs on. Each provider links to a saved API key (secrets never leave the server). Admin only."
           >
             <ProvidersPanel />
+          </Section>
+
+          {/* 15a — Recruitment LLM picker */}
+          <Section
+            n="15a"
+            eyebrow="Recruitment"
+            title="Which LLM runs recruitment"
+            description="One dropdown per job: sourcing, intake parse, outreach, reply classification. Plug-and-play — no config files."
+          >
+            <RecruitmentLlmPanel />
           </Section>
 
           {/* 15 — Models */}

@@ -25,7 +25,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       lastSync: isoHoursBefore(0.4),
       errors: [],
       real: true,
-      setupHref: "/fleet",
+      setupHref: "/intake",
     },
     {
       id: "int_resume_matcher",
