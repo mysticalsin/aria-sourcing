@@ -59,3 +59,12 @@ npx tsc --noEmit && npm test
 
 55 suites, 0 failures as of 2026-07-09 shift 2. If either tool's change
 breaks this, fix it before committing — never commit red.
+
+## Cursor Cloud specific instructions
+
+Single Next.js app (App Router, Node 22 — see `.nvmrc` / `engines`). Dependencies are npm (`package-lock.json`); the startup update script runs `npm install`.
+
+- **Run it:** `npm run dev` (Next.js dev server on `http://localhost:3000`). The app defaults to **demo mode** — no env vars, no database, no login; state persists to `localStorage` and all integrations/outreach are mocked/dry-run. So the dev server is fully exercisable out of the box. Standard scripts (`lint`, `typecheck`, `test`, `build`) are in `package.json` / README §1 and §6.
+- **Live mode is opt-in and not needed for local dev/testing:** it requires Supabase + Microsoft (Entra) env vars (`cp .env.local.example .env.local`, see `SUPABASE_SETUP.md`). Only set these up if a task specifically targets live-mode behavior.
+- **`npm test` is noisy but that noise is not failure:** suites like `dust` and `dispatch-outbound` intentionally print error lines (e.g. `[dust] DustAPI error ... invalid_api_key_error`, `cache unavailable`, `attempt-mismatch`) while asserting error paths. Trust the `RESULT <suite>: N passed, 0 failed` lines and the final "0 failed" tally, not the interspersed error logs.
+- **Benign install warning:** `@dust-tt/client` emits an `EBADENGINE` warning under Node 22 (it wants Node 20). It does not affect install, build, tests, or the dev server.
