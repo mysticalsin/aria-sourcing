@@ -1,10 +1,22 @@
 name: CI
 
+# Push runs only on long-lived integration/release refs. Feature branches are
+# covered by pull_request so a PR push does not burn two full suites.
 on:
   push:
-    branches: ["**"]
+    branches:
+      - main
+      - vercel-demo
+      - integration/**
+      - deploy/**
+      - consolidate/**
   pull_request:
     branches: ["**"]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
