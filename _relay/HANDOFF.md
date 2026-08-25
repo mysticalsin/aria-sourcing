@@ -1,137 +1,103 @@
 ---
 project: MSourcing / ARIA
-shift: 62
-agent: codex
-updated: 2026-07-29 13:37 America/Toronto
-status: rock-7-linkedin-adapter-source-proof-green-db-build-blocked
+shift: 63
+agent: claude-code
+updated: 2026-08-25 America/Toronto
+status: build-and-readiness-map-published-branch-pushed
 ---
 
-# Handoff - Shift 62
+# Handoff - Shift 63
 
 ## Current state
 
-- Rock 7 LinkedIn channel source work is implemented in the working tree.
-- `sequences_enabled` remains false by default. No switchboard enablement was changed.
-- Existing Email and WhatsApp never-auto-send trigger migrations were not edited:
-  - `supabase/migrations/0013_outreach_approval_race_safety.sql`
-  - `supabase/migrations/0039_email_channel_durability.sql`
-  - `supabase/migrations/0011_outreach_approval_lifecycle.sql`
-- New migration is additive: `supabase/migrations/0054_linkedin_channel_adapter_authority.sql`.
-- No new public tables or columns were added.
-- New public functions added:
-  - `public.enforce_active_linkedin_approval()`
-  - `public.claim_linkedin_outbound_queued(uuid)`
-  - `public.record_linkedin_delivery_outcome(uuid, uuid, text, text, text)`
-- New runtime module: `src/lib/linkedin-channel.ts`.
-- `AgentSeat` provider labels now include `LinkedIn Assisted Manual` and `LinkedIn Vendor API`.
-- Graphify remained unavailable:
-  - `graphify query "MSourcing Rock 7 LinkedIn adapter approval dispatch outbound ledger cross-channel cap" --budget 1500` failed with `error: graph file not found: /Users/tony/Library/CloudStorage/OneDrive-MantuGroup/Documents/Chief of Staff/Apps Source/MSourcing/graphify-out/graph.json`
-  - `graphify-out/wiki/index.md` is absent.
+- Branch `integration/sourcing-enrichment-on-main` is pushed and matches `origin`.
+- Shift 62 (Rock 7 LinkedIn channel, `d46a3d2`) was committed and pushed. Its
+  DB-proof blockers are still open and are now tracked as P-1 / P-4 in the new
+  readiness register rather than only in this baton.
+- Working tree is clean. The two files that had been sitting untracked since
+  shift 62 are now committed:
+  - `.gitlab-ci.yml` — manual GitLab fallback that restores a base64 secret
+    bundle and runs `deploy-fly.sh`.
+  - `src/components/floor3d/Floor3DScene.tsx` — **orphaned**: nothing imports
+    it. Tracked so it is not lost; flagged as P-11 (wire it or delete it).
 
 ## Done this shift
 
-- Added one LinkedIn adapter interface with two backends:
-  - `assisted-manual`: returns an approved draft/profile deep-link outcome for operator copy/paste/send.
-  - `vendor-api`: wired to env credentials and fails closed while `LINKEDIN_VENDOR_API_URL` / `LINKEDIN_VENDOR_API_KEY` are absent.
-- Patched `src/lib/dispatch-outbound.ts` so LinkedIn:
-  - clears existing loop controls, approval hash, human-likeness, disclosure, and injection gates before channel handling.
-  - resolves a LinkedIn adapter from the live seat provider.
-  - blocks vendor-api as `linkedin-provider-unconfigured` before claim or transport when credentials are absent.
-  - calls `claim_linkedin_outbound_queued` before any backend delivery.
-  - records accepted assisted-manual/vendor outcomes through `record_linkedin_delivery_outcome`.
-- Added `0054` LinkedIn authority:
-  - separate `enforce_active_linkedin_approval()` trigger, channel-guarded to LinkedIn only.
-  - service-only `claim_linkedin_outbound_queued(uuid)` that rechecks exact human approval, LinkedIn scope hash, suppression, 90-day contact window, active seat cap, ledger insert, and queued -> dispatching.
-  - service-only `record_linkedin_delivery_outcome(...)` that reconciles the shared ledger.
-- Extended cross-channel cap DB harness:
-  - added LinkedIn claim helper.
-  - asserts an existing Email contact blocks LinkedIn recontact.
-  - asserts an Email-consumed seat cap blocks a different LinkedIn candidate on the same seat.
-  - extends claim privilege checks to LinkedIn.
-- Added/updated source tests:
-  - `tests/linkedin-channel-contract.mts`
-  - `tests/dispatch-outbound.mts`
-  - `tests/email-durability-contract.mts`
-  - `tests/cross-channel-cap-postgres.sh`
-  - `tests/db/function-privileges.sql`
-  - `tests/test-manifest.mjs`
-  - `tests/test-manifest-contract.mts`
-  - `docker/bootstrap/legacy-baseline-invariants.sql`
-- Updated provider maps:
-  - `src/lib/types.ts`
-  - `src/lib/fleet.ts`
-  - `src/components/fleet/seat-card.tsx`
-- Added project-local learning to `_agent_state/codex/memory.json`.
+- Added `docs/BUILD_AND_READINESS.md`: the map above the deep docs. It covers
+  how the system is built (stack, Fly topology, the SQL authority model, the
+  sourcing pipeline, the 11-stage loop DAG, the outreach gate, LinkedIn) and
+  four gap registers with evidence:
+  - P-1..P-12 production readiness
+  - E-1..E-10 enterprise readiness
+  - A-1..A-10 sourcing autopilot
+  - L-1..L-8 LinkedIn autopilot
+  Plus a sequenced Phase 0-4 path and the LinkedIn policy boundary that does
+  not move.
+- Closed L-3 in the same commit: `LINKEDIN_VENDOR_API_URL` and
+  `LINKEDIN_VENDOR_API_KEY` are now documented in `.env.local.example` and
+  `.env.production.example`, with the fail-closed / no-fallback behaviour
+  stated.
+- Linked the new document from `README.md` and `docs/README.md`. Also added
+  the missing `docs/SOURCING.md` row to the documentation map — it had never
+  been listed.
 
 ## Verification
 
 Passed:
 
 - `npm run typecheck` -> exit 0.
-- `npm run typecheck:tests` -> exit 0.
-- `./node_modules/.bin/tsc --noEmit --incremental false` -> exit 0.
-- `./node_modules/.bin/tsc -p tsconfig.tests.json --pretty false --incremental false` -> exit 0.
-- `npm run lint` -> exit 0 with 4 existing warnings in `src/components/floor3d/retro/objects/AgentModel.tsx`.
-- `node --import tsx tests/linkedin-channel-contract.mts` -> `RESULT linkedin-channel-contract: 14 passed, 0 failed`.
-- `node --import tsx tests/dispatch-outbound.mts` -> `RESULT dispatch-outbound: 106 passed, 0 failed`.
-- `node --import tsx tests/email-durability-contract.mts` -> `RESULT email-durability-contract: 33 passed, 0 failed`.
-- `node --import tsx tests/test-manifest-contract.mts` -> 8 subtests, 7 pass, 1 npm-lifecycle skip, 0 fail.
-- `node --import tsx tests/function-privileges-contract.mts` -> `RESULT function-privileges-contract: 21 passed, 0 failed`.
-- `node --import tsx tests/cross-channel-cap-contract.mts` -> `RESULT cross-channel-cap-contract: 14 passed, 0 failed`.
-- `node --import tsx tests/fleet.mts` -> `RESULT fleet: 43 passed, 0 failed`.
-- `git diff --check` -> exit 0.
-- `git diff --name-only -- supabase/migrations/0013_outreach_approval_race_safety.sql supabase/migrations/0039_email_channel_durability.sql supabase/migrations/0011_outreach_approval_lifecycle.sql` -> no output.
+- `node --import tsx tests/repository-hygiene.mts` -> 11 passed, 0 failed.
 
-Blocked by local sandbox:
+Failed (pre-existing, not caused by this shift):
 
-- `npm run test:all` failed in `tests/apollo-cleanup-worker.mts` with:
-  `listen EPERM: operation not permitted 127.0.0.1`
-- `npm run test:database` failed with:
-  `permission denied while trying to connect to the docker API at unix:///Users/tony/.colima/default/docker.sock`
-- `bash tests/cross-channel-cap-postgres.sh` failed with:
-  `permission denied while trying to connect to the docker API at unix:///Users/tony/.colima/default/docker.sock`
-- `npm run test:manifest` failed with:
-  `Error: listen EPERM: operation not permitted /var/folders/5m/c_klcrrj4yj_jxhf4t6vhb080000gn/T/tsx-501/58454.pipe`
-- `./node_modules/.bin/tsx tests/linkedin-channel-contract.mts` and `./node_modules/.bin/tsx tests/dispatch-outbound.mts` failed with the same TSX IPC class:
-  `Error: listen EPERM: operation not permitted /var/folders/5m/c_klcrrj4yj_jxhf4t6vhb080000gn/T/tsx-501/<pipe>.pipe`
-- `npm run build` failed with:
-  `Error [TurbopackInternalError]: [project]/src/styles/globals.css [app-client] (css)`
-  caused by:
-  `creating new process`
-  `binding to a port`
-  `Operation not permitted (os error 1)`
+- `node --import tsx tests/docs-truth.mts` -> 45 passed, 1 failed.
+  `FAIL: STATUS.md contains a recent, non-future ISO date`.
+  `production-readiness/STATUS.md` is dated 2026-07-14; the freshness
+  assertion has aged out. Tracked as P-12. Fix by re-reviewing STATUS.md
+  against current source and re-dating it — not by bumping the date alone.
+
+Not run in this checkout (same sandbox class as shift 62):
+
+- `npm run test:all`, `npm run test:database`, `npm run test:manifest`,
+  `npm run build` — Docker socket, loopback listeners, and Turbopack
+  subprocess/port creation are all denied here.
 
 ## Blockers
 
-1. Docker/Colima socket access is denied, so the real Postgres migration proof and extended LinkedIn cross-channel cap assertions could not execute in this sandbox.
-2. Loopback listeners are denied, so `npm run test:all` stops at the Apollo cleanup redirect test before reaching later groups.
-3. TSX CLI IPC pipe listeners are denied, so `npm run test:manifest` and direct `./node_modules/.bin/tsx ...` invocations cannot run here. `node --import tsx ...` alternatives passed for focused tests.
-4. Turbopack process/port creation is denied, so `npm run build` cannot complete here.
+1. P-1: migrations `0053` and `0054` have still never executed against a real
+   Postgres. This is the top blocker for everything else.
+2. P-2: the full gate set has never run green at one SHA on one machine.
+3. P-12: `docs-truth` is red by STATUS.md time decay.
 
 ## Next steps
 
-1. In a Docker-enabled environment, run:
+1. On a Docker-enabled machine at this SHA:
    `npm run typecheck && npm run typecheck:tests && npm run lint && npm run test:all && npm run test:database && npm run test:manifest && npm run build`.
-2. Specifically confirm `tests/cross-channel-cap-postgres.sh` prints:
-   `RESULT cross-channel-cap-postgres: concurrent_claims=1 active_claims=1 ambiguous=blocked linkedin=blocked deadlock=none privileges=service-only`
-3. Dump-diff reviewed schema controls because new public functions were added:
-   - `public.enforce_active_linkedin_approval()`
-   - `public.claim_linkedin_outbound_queued(uuid)`
-   - `public.record_linkedin_delivery_outcome(uuid, uuid, text, text, text)`
-4. Commit intended files only after Docker/live proof passes or the Owner accepts the local sandbox blocker boundary.
+2. Confirm `tests/cross-channel-cap-postgres.sh` prints
+   `RESULT cross-channel-cap-postgres: concurrent_claims=1 active_claims=1 ambiguous=blocked linkedin=blocked deadlock=none privileges=service-only`.
+3. Dump-diff review the three public functions added by `0054` (P-4).
+4. Re-review and re-date `production-readiness/STATUS.md` (P-12).
+5. Owner decisions that no amount of engineering can substitute for:
+   L-2 (pick a compliant LinkedIn messaging vendor, or accept assisted-manual
+   forever) and A-4 / A-5 / A-6 (how much authority a machine gets over a
+   message to a real person).
 
 ## Decisions made (don't relitigate)
 
-- Keep Email and WhatsApp trigger functions untouched; LinkedIn has its own separate channel-guarded trigger.
-- Do not add a LinkedIn account fleet, captured session, proxy, scraper, or first-party LinkedIn automation.
-- Vendor-api is wired but dark without credentials; no fallback to assisted-manual when vendor credentials are absent.
-- Assisted-manual and vendor-api share one adapter interface and the same DB claim path before delivery.
-- No new tables or columns were needed; `docker/bootstrap/legacy-table-inventory.txt` stays unchanged.
-- `sequences_enabled` stays false.
+- Shift 62's decisions stand: no LinkedIn account fleet, captured session,
+  proxy, scraper, or first-party automation; no vendor-api fallback to
+  assisted-manual; Email and WhatsApp triggers stay untouched;
+  `sequences_enabled` stays false.
+- `docs/BUILD_AND_READINESS.md` is a map, not an authority. Where it disagrees
+  with `docs/ARCHITECTURE.md`, `docs/SOURCING.md`, or
+  `production-readiness/DEPLOYMENT_RUNBOOK.md`, those win on their own subject.
+- The dated `production-readiness/*_REPORT.md` and `_relay/*audit*.md` sets are
+  evidence, not current state.
 
 ## Watch out
 
-- The `tsx` binary fails in this sandbox, but `node --import tsx` focused tests pass. Do not treat the TSX IPC error as an application failure without rerunning outside the sandbox.
-- The extended cross-channel cap SQL has not executed here because Docker is denied.
-- `tests/test-manifest-contract.mts` frozen counts changed only because one application test command was added: application 148 -> 149, all 201 -> 202.
-- `src/lib/types.ts` provider additions require exhaustive maps to stay aligned.
+- `Floor3DScene.tsx` is now tracked but dead. Do not assume it renders anything.
+- The gap registers cite file paths and line numbers at `d46a3d2`. Line numbers
+  drift; re-grep before trusting one.
+- Claims in the new document are marked verified / assumed / unknown. Do not
+  promote an assumed claim to verified without executing something.

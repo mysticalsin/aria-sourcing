@@ -86,6 +86,9 @@ Start there when you're looking for something and don't know which file holds it
 
 The current developer architecture is
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+[`docs/BUILD_AND_READINESS.md`](docs/BUILD_AND_READINESS.md) explains how the
+system is built and holds the current gap registers for production readiness,
+enterprise readiness, and running sourcing on autopilot with LinkedIn included.
 Change workflow and verification are documented in
 [`CONTRIBUTING.md`](CONTRIBUTING.md) and
 [`docs/TESTING.md`](docs/TESTING.md). Security reporting and invariants are in
