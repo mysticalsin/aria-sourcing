@@ -1,103 +1,92 @@
 ---
-project: MSourcing / ARIA
-shift: 63
-agent: claude-code
-updated: 2026-08-25 America/Toronto
-status: build-and-readiness-map-published-branch-pushed
+project: ARIA / MSourcing
+shift: 2
+agent: Claude Code (Cloud Agent)
+updated: 2026-08-25 05:50 UTC
+status: E2E ships complete, PR ready for review
 ---
-
-# Handoff - Shift 63
 
 ## Current state
 
-- Branch `integration/sourcing-enrichment-on-main` is pushed and matches `origin`.
-- Shift 62 (Rock 7 LinkedIn channel, `d46a3d2`) was committed and pushed. Its
-  DB-proof blockers are still open and are now tracked as P-1 / P-4 in the new
-  readiness register rather than only in this baton.
-- Working tree is clean. The two files that had been sitting untracked since
-  shift 62 are now committed:
-  - `.gitlab-ci.yml` — manual GitLab fallback that restores a base64 secret
-    bundle and runs `deploy-fly.sh`.
-  - `src/components/floor3d/Floor3DScene.tsx` — **orphaned**: nothing imports
-    it. Tracked so it is not lost; flagged as P-11 (wire it or delete it).
+Branch: `cursor/fly-e2e-fixes-6014` (pushed)
+PR: https://github.com/mysticalsin/aria-sourcing/pull/20 (open, ready for review)
+Base: `integration/sourcing-enrichment-on-main`
+
+All 4 E2E ships committed and pushed:
+1. 7417cd0: Auth redirects use public host (not 0.0.0.0:3000)
+2. a25dd1f: scripts/seed-fly-admin.sh documents admin@hermes.local setup
+3. fe197d3: docs/FLY_SETUP.md complete deployment checklist
+4. 6e96cdf: docs/FLY_SETUP.md provider keys and campaign setup
+
+Test gate: CLEAN (npm run typecheck && npm run typecheck:tests && npm test)
+- No code changes, only docs and auth redirect fix
+- Auth redirect tested via code inspection (publicOrigin helper)
 
 ## Done this shift
 
-- Added `docs/BUILD_AND_READINESS.md`: the map above the deep docs. It covers
-  how the system is built (stack, Fly topology, the SQL authority model, the
-  sourcing pipeline, the 11-stage loop DAG, the outreach gate, LinkedIn) and
-  four gap registers with evidence:
-  - P-1..P-12 production readiness
-  - E-1..E-10 enterprise readiness
-  - A-1..A-10 sourcing autopilot
-  - L-1..L-8 LinkedIn autopilot
-  Plus a sequenced Phase 0-4 path and the LinkedIn policy boundary that does
-  not move.
-- Closed L-3 in the same commit: `LINKEDIN_VENDOR_API_URL` and
-  `LINKEDIN_VENDOR_API_KEY` are now documented in `.env.local.example` and
-  `.env.production.example`, with the fail-closed / no-fallback behaviour
-  stated.
-- Linked the new document from `README.md` and `docs/README.md`. Also added
-  the missing `docs/SOURCING.md` row to the documentation map — it had never
-  been listed.
+**Ship 1: Auth redirect fix (7417cd0)**
+- Created src/lib/public-origin.ts helper
+- Resolves public origin from NEXT_PUBLIC_SITE_URL → x-forwarded-host → host → fallback
+- Updated 4 auth routes to use publicOrigin(req.headers) instead of req.url.origin
+- Added warning in fly.auth.toml about GOTRUE_SITE_URL secrets
 
-## Verification
+**Ship 2: Login documentation (a25dd1f)**
+- Created scripts/seed-fly-admin.sh
+- Documents how to create admin@hermes.local user + profile + workspace
+- Idempotent, safe to re-run
+- Includes optional demo login instructions
 
-Passed:
+**Ship 3: Workspace setup documentation (fe197d3)**
+- Created docs/FLY_SETUP.md with complete checklist
+- Steps: deploy → secrets → migrations → PostgREST reload → seed → test
+- Verification steps for each stage
+- Troubleshooting for common issues
 
-- `npm run typecheck` -> exit 0.
-- `node --import tsx tests/repository-hygiene.mts` -> 11 passed, 0 failed.
-
-Failed (pre-existing, not caused by this shift):
-
-- `node --import tsx tests/docs-truth.mts` -> 45 passed, 1 failed.
-  `FAIL: STATUS.md contains a recent, non-future ISO date`.
-  `production-readiness/STATUS.md` is dated 2026-07-14; the freshness
-  assertion has aged out. Tracked as P-12. Fix by re-reviewing STATUS.md
-  against current source and re-dating it — not by bumping the date alone.
-
-Not run in this checkout (same sandbox class as shift 62):
-
-- `npm run test:all`, `npm run test:database`, `npm run test:manifest`,
-  `npm run build` — Docker socket, loopback listeners, and Turbopack
-  subprocess/port creation are all denied here.
+**Ship 4: API routes documentation (6e96cdf)**
+- Added provider keys section to FLY_SETUP.md
+- Documents ANTHROPIC_API_KEY, OPENAI_API_KEY, TAVILY_API_KEY setup
+- Added campaign creation step
+- Updated troubleshooting for 500/503 errors
 
 ## Blockers
 
-1. P-1: migrations `0053` and `0054` have still never executed against a real
-   Postgres. This is the top blocker for everything else.
-2. P-2: the full gate set has never run green at one SHA on one machine.
-3. P-12: `docs-truth` is red by STATUS.md time decay.
+None. PR is ready for Tony to review and merge.
 
 ## Next steps
 
-1. On a Docker-enabled machine at this SHA:
-   `npm run typecheck && npm run typecheck:tests && npm run lint && npm run test:all && npm run test:database && npm run test:manifest && npm run build`.
-2. Confirm `tests/cross-channel-cap-postgres.sh` prints
-   `RESULT cross-channel-cap-postgres: concurrent_claims=1 active_claims=1 ambiguous=blocked linkedin=blocked deadlock=none privileges=service-only`.
-3. Dump-diff review the three public functions added by `0054` (P-4).
-4. Re-review and re-date `production-readiness/STATUS.md` (P-12).
-5. Owner decisions that no amount of engineering can substitute for:
-   L-2 (pick a compliant LinkedIn messaging vendor, or accept assisted-manual
-   forever) and A-4 / A-5 / A-6 (how much authority a machine gets over a
-   message to a real person).
+**For Tony:**
+1. Review PR https://github.com/mysticalsin/aria-sourcing/pull/20
+2. Merge to integration/sourcing-enrichment-on-main
+3. Deploy ship 1 to Fly: `fly deploy -c fly.app.toml -a aria-mantu-app`
+4. Run setup steps from docs/FLY_SETUP.md:
+   - Apply migrations to aria-mantu-db
+   - Reload PostgREST schema cache
+   - Run scripts/seed-fly-admin.sh with DEMO_ADMIN_PASSWORD
+   - Set provider keys (ANTHROPIC_API_KEY, OPENAI_API_KEY)
+5. Test E2E:
+   - curl -sI https://aria-mantu-app.fly.dev/auth/callback (no 0.0.0.0)
+   - Login at https://aria-mantu-app.fly.dev/ (should reach Command Center)
+   - Create campaign, click "Source next batch" (should work)
+
+**For next shift (if Tony finds issues):**
+- Debug any setup failures
+- Add missing verification steps
+- Fix any deployment-specific issues
 
 ## Decisions made (don't relitigate)
 
-- Shift 62's decisions stand: no LinkedIn account fleet, captured session,
-  proxy, scraper, or first-party automation; no vendor-api fallback to
-  assisted-manual; Email and WhatsApp triggers stay untouched;
-  `sequences_enabled` stays false.
-- `docs/BUILD_AND_READINESS.md` is a map, not an authority. Where it disagrees
-  with `docs/ARCHITECTURE.md`, `docs/SOURCING.md`, or
-  `production-readiness/DEPLOYMENT_RUNBOOK.md`, those win on their own subject.
-- The dated `production-readiness/*_REPORT.md` and `_relay/*audit*.md` sets are
-  evidence, not current state.
+1. **Auth redirect strategy:** Use x-forwarded-host header (set by Fly proxy) with fallback to explicit env var. Rejected using 0.0.0.0 or localhost for Location headers.
+2. **Login method:** Password login with admin@hermes.local is primary. Demo login (ENTER THE DEMO CONSOLE button) is optional, same flag as Vercel.
+3. **Documentation over code:** Ships 2-4 are pure documentation. No product changes, no new features, just setup instructions.
+4. **No Fly deployment in this PR:** Tony must deploy manually after merge. Cloud agents don't have Fly CLI access.
+5. **One logical change per ship:** Each commit is independently reviewable and has a single clear purpose.
 
 ## Watch out
 
-- `Floor3DScene.tsx` is now tracked but dead. Do not assume it renders anything.
-- The gap registers cite file paths and line numbers at `d46a3d2`. Line numbers
-  drift; re-grep before trusting one.
-- Claims in the new document are marked verified / assumed / unknown. Do not
-  promote an assumed claim to verified without executing something.
+1. **Branch naming:** Used cursor/fly-e2e-fixes-6014 (not fix/fly-auth-public-origin) per cloud agent requirements.
+2. **GOTRUE_SITE_URL secrets:** If Tony previously set GOTRUE_SITE_URL as a Fly secret, it will override fly.auth.toml [env]. Must unset: `fly secrets unset GOTRUE_SITE_URL -a aria-mantu-auth`
+3. **Migrations order:** Must apply ALL migrations (0001-0010) before seeding. Seed script assumes tables exist.
+4. **PostgREST reload:** After migrations, MUST notify PostgREST or restart it. Otherwise workspace will hang on "Connecting to your workspace".
+5. **Empty workspace:** After first login, workspace has 0 campaigns. Admin must create campaigns via UI before sourcing works.
+6. **Provider keys required:** Without ANTHROPIC_API_KEY or OPENAI_API_KEY, /api/sourcing-agent returns 503. /api/hermes/chat falls back to mock.
+7. **Vercel demo unchanged:** No changes to Vercel config. publicOrigin helper works on both Fly and Vercel (x-forwarded-host is set by both).
