@@ -134,22 +134,26 @@ export async function GET(req: NextRequest) {
     : null;
 
   // Upsert connection.
-  const { error: upsertError } = await svc.from("email_connections").upsert(
-    {
-      workspace_id: wid,
-      seat_id: seatId,
-      provider: "Microsoft Graph",
-      account_email: accountEmail,
-      access_token: encryptSecret(tokenJson.access_token),
-      refresh_token: tokenJson.refresh_token ? encryptSecret(tokenJson.refresh_token) : null,
-      expires_at: expiresAt,
-      scope: tokenJson.scope ?? "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/User.Read offline_access",
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "workspace_id, seat_id" },
-  );
-  if (upsertError) {
-    console.error("[microsoft/callback] email_connections upsert failed:", upsertError.message, upsertError.code);
+  const { data: upserted, error: upsertError } = await svc
+    .from("email_connections")
+    .upsert(
+      {
+        workspace_id: wid,
+        seat_id: seatId,
+        provider: "Microsoft Graph",
+        account_email: accountEmail,
+        access_token: encryptSecret(tokenJson.access_token),
+        refresh_token: tokenJson.refresh_token ? encryptSecret(tokenJson.refresh_token) : null,
+        expires_at: expiresAt,
+        scope: tokenJson.scope ?? "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/User.Read offline_access",
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "workspace_id, seat_id" },
+    )
+    .select("id")
+    .single();
+  if (upsertError || !upserted?.id) {
+    console.error("[microsoft/callback] email_connections upsert failed:", upsertError?.message, upsertError?.code);
     return redirectError(req, "Failed to save email connection.");
   }
 
@@ -158,6 +162,20 @@ export async function GET(req: NextRequest) {
   if (updateError) {
     console.error("[microsoft/callback] agent_seats update failed:", updateError.message, updateError.code);
     return redirectError(req, "Failed to update seat connection.");
+  }
+
+  // Register inbound webhook routing so replies resolve to this workspace.
+  const { data: routeResult, error: routeErr } = await svc.rpc("upsert_inbound_mailbox_route", {
+    p_mailbox: accountEmail.toLowerCase(),
+    p_connection_id: upserted.id,
+    p_purpose: "reply",
+    p_workspace_id: wid,
+  });
+  if (routeErr || !(routeResult as { ok?: boolean } | null)?.ok) {
+    console.error(
+      "[microsoft/callback] inbound route upsert failed:",
+      routeErr?.message ?? (routeResult as { reason?: string } | null)?.reason,
+    );
   }
 
   return redirectSuccess(req, `Connected ${accountEmail}`);
@@ -195,7 +213,7 @@ function clearOAuthCookies(res: NextResponse): void {
 function redirectError(req: NextRequest, message: string) {
   const encoded = encodeURIComponent(message);
   const origin = publicOrigin(req.headers);
-  const res = NextResponse.redirect(new URL(`/settings?tab=fleet&oauth=error&message=${encoded}`, origin));
+  const res = NextResponse.redirect(new URL(`/settings?tab=integrations&oauth=error&message=${encoded}`, origin));
   clearOAuthCookies(res);
   return res;
 }
@@ -203,7 +221,7 @@ function redirectError(req: NextRequest, message: string) {
 function redirectSuccess(req: NextRequest, message: string) {
   const encoded = encodeURIComponent(message);
   const origin = publicOrigin(req.headers);
-  const res = NextResponse.redirect(new URL(`/settings?tab=fleet&oauth=success&message=${encoded}`, origin));
+  const res = NextResponse.redirect(new URL(`/settings?tab=integrations&oauth=success&message=${encoded}`, origin));
   clearOAuthCookies(res);
   return res;
 }

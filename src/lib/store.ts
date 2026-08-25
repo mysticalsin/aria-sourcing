@@ -4063,6 +4063,44 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         } catch {
           result = { ok: false, latencyMs: Date.now() - t0, message: "GitHub probe failed (network)." };
         }
+      } else if (integ.id === "int_outlook" || integ.id === "int_gmail") {
+        const t0 = Date.now();
+        try {
+          const listRes = await workspaceFetch("/api/email/connections", { method: "GET" });
+          const list = (await listRes.json().catch(() => null)) as {
+            ok?: boolean;
+            connections?: { seatId: string; provider: string }[];
+            error?: string;
+          } | null;
+          const wantProvider = integ.id === "int_gmail" ? "Gmail API" : "Microsoft Graph";
+          const match = list?.connections?.find((c) => c.provider === wantProvider);
+          if (!match) {
+            result = {
+              ok: false,
+              latencyMs: Date.now() - t0,
+              message: `${integ.name}: not connected. Use Connect on Settings → Integrations.`,
+            };
+          } else {
+            const testRes = await workspaceFetch("/api/email/test", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ seatId: match.seatId }),
+            });
+            const out = (await testRes.json().catch(() => null)) as {
+              ok?: boolean;
+              message?: string;
+              error?: string;
+              latencyMs?: number;
+            } | null;
+            result = {
+              ok: Boolean(out?.ok),
+              latencyMs: out?.latencyMs ?? Date.now() - t0,
+              message: out?.message ?? out?.error ?? `${integ.name}: validation failed.`,
+            };
+          }
+        } catch {
+          result = { ok: false, latencyMs: Date.now() - t0, message: `${integ.name}: probe failed (network).` };
+        }
       } else {
         result = testConnection(integ);
       }

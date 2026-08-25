@@ -35,13 +35,16 @@ Idle loop ticks (~30s) **do not** call Graph or the classifier. Empty daily
 ## Ops checklist
 
 1. Set `EMAIL_INBOUND_WEBHOOK_SECRET` (HMAC-SHA256 hex of raw body → `x-aria-signature`).
-2. Insert `inbound_mailbox_routes` rows: mailbox → workspace (service role).
+2. Connect Gmail/Outlook in **Settings → Integrations** (OAuth callback upserts
+   `inbound_mailbox_routes` via migration 0057). Or insert routes manually / use
+   **Register inbound** on the connection card.
 3. Point provider inbound / Graph subscription adapter at  
    `https://<host>/api/webhooks/email-inbound`.
 4. Flip workspace `sourcing_loop_controls`: `kill_switch=false`, `intake_enabled=true`
    only after migrations proven (see `_relay/issues-open.md` A-1).
 5. Entitled operators: `profiles.autopilot_enabled=true` (Settings → Access & roles).
 6. Run Fly loop process with `ARIA_LOOP_KILL_SWITCH=false`.
+7. Validate: Settings → Integrations → **Validate** on the mailbox (token + profile + route).
 
 ## Payload shape
 

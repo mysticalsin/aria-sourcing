@@ -79,6 +79,20 @@ Production remote MCP requires an enabled `mcp_server_allowlist` row matching
 base URL + tool-manifest SHA-256. Non-production still requires
 `ARIA_ENABLE_REMOTE_MCP_EXECUTION=true`. No wildcards.
 
+## Email mailbox (Gmail / Outlook)
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| GET | `/api/email/connections` | member `source` or `manage_fleet` | List connections + OAuth/API readiness (no tokens) |
+| POST | `/api/email/connections` | admin | `ensure_connect` (seat + authorize URL) or `register_inbound` |
+| POST | `/api/email/test` | member `source` or `manage_fleet` | Refresh token + provider profile + inbound route checks |
+| POST | `/api/email/sync` | member `source` | Read-only inbound sync |
+| POST | `/api/email/disconnect` | `manage_fleet` | Revoke + delete connection + deactivate inbound route |
+
+OAuth start: `/auth/google?seat_id=` and `/auth/microsoft?seat_id=` (admin).
+Callbacks upsert `email_connections`, mirror `agent_seats.connected_account`, and
+call `upsert_inbound_mailbox_route` (migration 0057). UI: Settings → Integrations.
+
 ## Agents & swarm
 
 | Method | Path | Auth | Purpose |

@@ -21,6 +21,7 @@ import {
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { cn } from "@/lib/utils";
 import { IntegrationCard } from "@/components/settings/integration-card";
+import { EmailConnectionsPanel } from "@/components/settings/email-connections-panel";
 import { CompliancePanel } from "@/components/settings/compliance-panel";
 import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
 import { RolesPanel } from "@/components/settings/roles-panel";
@@ -250,11 +251,12 @@ export default function SettingsPage() {
     const message = params.get("message");
     if (oauth === "success") {
       toast({ title: "Mailbox connected", description: message ?? "", variant: "success" });
-      goTab("setup");
-      window.history.replaceState({}, "", `${window.location.pathname}?tab=setup`);
+      goTab("integrations");
+      window.history.replaceState({}, "", `${window.location.pathname}?tab=integrations`);
     } else if (oauth === "error") {
       toast({ title: "Mailbox connection failed", description: message ?? "", variant: "error" });
-      goTab("fleet");
+      goTab("integrations");
+      window.history.replaceState({}, "", `${window.location.pathname}?tab=integrations`);
     }
   }, [toast, goTab]);
 
@@ -609,8 +611,9 @@ export default function SettingsPage() {
             n="04"
             eyebrow="Connections"
             title="Integrations"
-            description="The inbox, sourcing, enrichment, calendar, and comms tools Aria orchestrates."
+            description="Connect Gmail or Outlook, then validate MCP and the rest of Aria's tool stack."
           >
+            <EmailConnectionsPanel />
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone="success" size="sm" dot>
                 {summary.connected} connected

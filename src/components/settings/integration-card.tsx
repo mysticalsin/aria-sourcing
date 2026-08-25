@@ -281,10 +281,10 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
               >
                 Configure
               </Button>
-              {/* Only GitHub has a real, live connection check (testIntegration in
-                  store.ts pings /api/source). Other real cards point to their actual
-                  setup surface instead of running the no-op mock testConnection(). */}
-              {integration.real && integration.id === "int_github" && (
+              {integration.real &&
+                (integration.id === "int_github" ||
+                  integration.id === "int_outlook" ||
+                  integration.id === "int_gmail") && (
                 <Button
                   variant="subtle"
                   size="sm"
@@ -296,7 +296,11 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                   Test connection
                 </Button>
               )}
-              {integration.real && integration.id !== "int_github" && integration.setupHref && (
+              {integration.real &&
+                integration.id !== "int_github" &&
+                integration.id !== "int_outlook" &&
+                integration.id !== "int_gmail" &&
+                integration.setupHref && (
                 <Button
                   variant="subtle"
                   size="sm"

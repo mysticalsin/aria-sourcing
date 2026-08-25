@@ -16,6 +16,11 @@ import { supabaseEnabled } from "@/lib/supabase/config";
 import { cn } from "@/lib/utils";
 import { Check, Circle, Cpu, Inbox, Rocket } from "lucide-react";
 
+function seatHasOauthMailbox(seat: { provider?: string; connectedAccount?: string }): boolean {
+  if (seatHasOutlookMailbox(seat)) return true;
+  return seat.provider === "Gmail API" && Boolean(seat.connectedAccount?.trim());
+}
+
 type Step = {
   id: string;
   title: string;
@@ -33,7 +38,7 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
   const models = useSavedModels();
   const defaults = useDefaultModels();
 
-  const outlookOk = seats.some(seatHasOutlookMailbox);
+  const outlookOk = seats.some(seatHasOauthMailbox);
   const sourcingModel = defaults.sourcing
     ? models.find((m) => m.id === defaults.sourcing)
     : undefined;
@@ -47,13 +52,13 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
   const steps: Step[] = [
     {
       id: "outlook",
-      title: "Connect Outlook",
+      title: "Connect email",
       body: supabaseEnabled
-        ? "Link a Microsoft 365 mailbox so Aria can pull open needs (read-only)."
-        : "Turn on live Supabase, then connect Microsoft Graph from Agent Fleet.",
+        ? "Link Gmail or Outlook in Settings → Integrations so Aria can pull needs and send from your mailbox."
+        : "Turn on live Supabase, then connect Gmail or Outlook under Settings → Integrations.",
       done: outlookOk,
-      ctaLabel: outlookOk ? "Manage mailboxes" : "Connect in Fleet",
-      href: "/fleet",
+      ctaLabel: outlookOk ? "Manage mailboxes" : "Connect email",
+      href: "/settings?tab=integrations",
       icon: <Inbox className="h-4 w-4" aria-hidden />,
     },
     {

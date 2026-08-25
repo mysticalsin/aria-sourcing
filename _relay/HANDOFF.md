@@ -1,47 +1,52 @@
 ---
 project: MSourcing / ARIA
-shift: 68
+shift: 69
 agent: cursor-cloud
 updated: 2026-08-25 UTC
-status: inbound-reply-webhook-autopilot-wired
+status: settings-email-oauth-hub-shipped
 ---
 
-# Handoff - Shift 68
+# Handoff - Shift 69
 
 ## Current state
 
-- Branch `cursor/enterprise-autopilot-b91d` → PR #25. Event-driven candidate-reply path shipped.
-- `POST /api/webhooks/email-inbound` now enqueues `inbound_classify` for **new** inbounds only (duplicates skip → no re-bill).
-- Loop `handleInboundClassify`: LLM only on claimed jobs; positive intent + entitled profile → `draft_generate` successor (sends still approval-gated).
-- Idle ticks still do **not** poll mailboxes or call the classifier.
-- Docs: `docs/INBOUND_REPLY_AUTOPILOT.md`; Settings → Observability shows Reply webhook panel.
+- Branch `cursor/enterprise-autopilot-b91d` → PR #25.
+- Settings → Integrations has **Connect Gmail / Connect Outlook** hub (`EmailConnectionsPanel`).
+- `GET|POST /api/email/connections` lists readiness + ensures seat/OAuth URL + registers inbound routes.
+- `POST /api/email/test` validates token refresh + provider profile + inbound route + webhook secret flag.
+- OAuth callbacks upsert `inbound_mailbox_routes` via migration **0057** and redirect to `?tab=integrations`.
+- Disconnect deactivates inbound routes before deleting `email_connections`.
+- Gate green: `npx tsc --noEmit`, `typecheck:tests`, `npm test` (incl. `email-connections`).
 
 ## Done this shift
 
-- `src/lib/inbound-reply-trigger.ts` + webhook enqueue wiring.
-- Worker draft successor for INTERESTED / QUALIFIED_INTEREST.
-- Tests: inbound-reply-trigger, email-inbound-contract pins, sourcing-loop-worker entitled draft path.
-- Env examples: `EMAIL_INBOUND_WEBHOOK_SECRET`.
+- `src/lib/email-connections.ts` + APIs + panel + migration 0057.
+- Honest Gmail/Outlook integration cards + Test wired to `/api/email/test`.
+- Docs: `docs/API.md`, `docs/runbooks/connect-gmail-outlook.md`, `docs/INBOUND_REPLY_AUTOPILOT.md`.
 
 ## Blockers
 
-- CI-BUDGET (Tony).
-- A-1: kill-switch flip after P-1/P-2.
-- Live: set webhook secret, mailbox routes, provider → POST adapter.
+- CI-BUDGET (Tony) — Actions minutes.
+- Live OAuth: set `GOOGLE_*` / `MICROSOFT_*`, `DATA_ENCRYPTION_KEY`, `EMAIL_INBOUND_WEBHOOK_SECRET`.
+- Apply migration 0057 on Supabase before relying on auto inbound-route upsert.
+- A-1 kill-switch still owner-gated.
 
 ## Next steps
 
-1. Ops: configure `EMAIL_INBOUND_WEBHOOK_SECRET` + `inbound_mailbox_routes` + provider inbound URL.
-2. After DB proofs: `kill_switch=false`, `intake_enabled=true`, entitle operators, Fly loop live.
-3. Optional: Graph change-notification adapter that forwards into email-inbound (same HMAC shape).
+1. Deploy/apply `0057_inbound_mailbox_route_upsert.sql`.
+2. Configure OAuth apps + env; connect a real mailbox from Settings → Integrations; click Validate.
+3. Point provider inbound webhook at `/api/webhooks/email-inbound`.
+4. MCP: Settings → AI & Models → MCP → Test (`POST /api/mcp/test`); prod needs allowlist.
 
 ## Decisions made (don't relitigate)
 
+- Settings is the primary connect surface; Fleet seat OAuth still works.
+- SendGrid/Resend remain API-key seats, not OAuth.
+- Inbound route upsert is best-effort on OAuth (tokens saved even if route fails); Settings can re-register.
 - Webhook-first replies; no idle classify.
-- Positive reply → draft follow-up for entitled autopilot; not silent re-source.
-- LinkedIn inbound remains send-only until vendor webhook (L-5).
 
 ## Watch out
 
-- Enqueue returns `control_blocked` when switchboard off — mail is still stored; flip controls then replay/retry.
-- WhatsApp path already webhook-driven; email is now parity for enqueue-on-answer.
+- Google restricted scopes — prefer Internal consent for own Workspace.
+- Global unique `inbound_mailbox_routes.mailbox_address` — cross-tenant claim returns `mailbox-claimed`.
+- `requireAdmin` for connect start; list/test allow `source` or `manage_fleet`.
