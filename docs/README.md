@@ -13,6 +13,7 @@ the same authority.
 | [`docs/BUILD_AND_READINESS.md`](BUILD_AND_READINESS.md) | How the system is built, plus the current gap registers for production readiness, enterprise readiness, and sourcing autopilot (LinkedIn included) | Deciding what still has to happen before this runs unattended |
 | [`docs/SOURCING.md`](SOURCING.md) | The sourcing pipeline in depth: providers, scoring, enrichment waterfall, candidate corpus, compliance | Working on sourcing, scoring, or enrichment |
 | [`docs/TESTING.md`](TESTING.md) | Focused, source, database, release, and live verification tiers | Proving a change |
+| [`docs/API.md`](API.md) | Authenticated integration surface: sourcing, outreach, entitlements, MCP allowlist, loop ignition | Wiring an external system or writing a client |
 | [`docs/API_DESIGN.md`](API_DESIGN.md) | Internal API versioning, typed errors, paid-action safety, and contract-test policy | Changing a server route |
 | [`docs/api/openapi.yaml`](api/openapi.yaml) | Machine-readable contract for covered internal routes | Implementing or consuming a contracted route |
 | [`docs/operations/APOLLO_AUTHORITY_RETENTION.md`](operations/APOLLO_AUTHORITY_RETENTION.md) | Apollo receipt retention, Fly cleanup monitoring, erasure, and evidence | Operating candidate-data retention controls |

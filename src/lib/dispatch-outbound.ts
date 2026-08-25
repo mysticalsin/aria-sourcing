@@ -256,18 +256,35 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
       const approvalMessageId = msg.approval_message_id ?? msg.id;
       const { data: approval } = await supabase
         .from("outreach_approvals")
-        .select("body_hash, approval_source, revoked_at")
+        .select("body_hash, approval_source, revoked_at, approved_by, template_id")
         .eq("workspace_id", msg.workspace_id)
         .eq("message_id", approvalMessageId)
         .maybeSingle();
-      if (!approval || approval.revoked_at || approval.body_hash !== bodyHash || approval.approval_source !== "human") {
+      const approvalSource =
+        approval && typeof approval.approval_source === "string" ? approval.approval_source : null;
+      let approvalOk = false;
+      if (approval && !approval.revoked_at && approval.body_hash === bodyHash) {
+        if (approvalSource === "human") {
+          approvalOk = true;
+        } else if (approvalSource === "template_bound") {
+          const authorized = await supabase.rpc("outbound_approval_authorizes_send", {
+            p_workspace_id: msg.workspace_id,
+            p_approval_source: approvalSource,
+            p_approved_by: approval.approved_by,
+            p_template_id: approval.template_id,
+            p_revoked_at: approval.revoked_at,
+          });
+          approvalOk = authorized.error == null && authorized.data === true;
+        }
+      }
+      if (!approvalOk) {
         const reason = !approval
           ? "no-approval"
           : approval.revoked_at
             ? "approval-revoked"
             : approval.body_hash !== bodyHash
             ? "approval-hash-mismatch"
-            : "approval-not-human";
+            : "approval-not-authorized";
         await finish("blocked", { pass: false, reasons: [reason] });
         continue;
       }

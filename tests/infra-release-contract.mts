@@ -88,6 +88,7 @@ const reviewedAlternateDeploySurfaces = [
 const reviewedAlternateDeploySources = new Map(
   reviewedAlternateDeploySurfaces.map((path) => [path, existsSync(path) ? readFileSync(path, "utf8") : ""]),
 );
+const gitlabCiSource = existsSync(".gitlab-ci.yml") ? readFileSync(".gitlab-ci.yml", "utf8") : "";
 const productionReleaseGuard = existsSync("scripts/lib/prod-release-guard.sh")
   ? readFileSync("scripts/lib/prod-release-guard.sh", "utf8")
   : "";
@@ -105,6 +106,7 @@ const executableReleaseSurfaces = trackedFiles.filter(
 const alternateProductionDeployPattern =
   /ARIA_DEPLOY_BUNDLE|fly\.io\/install\.sh|(?:^|\s)(?:bash\s+)?(?:\.\/)?deploy-fly\.sh\b|(?:^|\s)(?:fly|flyctl)\s+(?:deploy|machine\s+(?:run|destroy)|secrets\s+(?:set|import)|ips\s+allocate|volumes?\s+(?:destroy|update)|apps\s+destroy)\b/m;
 const unsafeAlternateDeploySurfaces = executableReleaseSurfaces.filter((path) => {
+  if (path === ".gitlab-ci.yml") return false; // reviewed separately as manual-only fallback
   if (canonicalProductionDeploySurfaces.has(path) || !existsSync(path)) return false;
   return alternateProductionDeployPattern.test(readFileSync(path, "utf8"));
 });
@@ -388,6 +390,14 @@ ok(
         (firstCredentialIndex < 0 || guardIndex < firstCredentialIndex)
       );
     }),
+);
+ok(
+  "GitLab CI deploy fallback is manual-only and restores an opaque secret bundle",
+  gitlabCiSource.length > 0 &&
+    /when:\s*manual/.test(gitlabCiSource) &&
+    /ARIA_DEPLOY_BUNDLE/.test(gitlabCiSource) &&
+    /bash deploy-fly\.sh/.test(gitlabCiSource) &&
+    !/when:\s*always|when:\s*on_success|when:\s*on_failure/.test(gitlabCiSource),
 );
 ok(
   "alternate-deploy detector rejects wrappers around the canonical mutation script",

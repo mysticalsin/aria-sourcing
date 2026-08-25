@@ -67,7 +67,10 @@ export const PIPELINE_STAGE_TRANSITION_PRODUCERS = Object.freeze({
   "sourcing_batch->shortlist_build": Object.freeze(["handleSourcingBatch"]),
   "provider_poll->shortlist_build": Object.freeze(["handleProviderPoll"]),
   "enrich_candidate->shortlist_build": Object.freeze(["handleEnrichCandidate"]),
-  "shortlist_build->draft_generate": Object.freeze(["POST /api/shortlist/approve"]),
+  "shortlist_build->draft_generate": Object.freeze([
+    "POST /api/shortlist/approve",
+    "handleShortlistBuild (entitled auto-approve)",
+  ]),
   "delivery_reconcile->outcome_feedback": Object.freeze(["handleDeliveryReconcile"]),
 });
 
@@ -696,13 +699,71 @@ async function handleShortlistBuild(job, context) {
   const receiptKey = typeof payload.receiptKey === "string" && payload.receiptKey.trim()
     ? payload.receiptKey.trim()
     : `shortlist:${campaignId}:${batchId}`;
+
+  // Entitled auto-approve: only when an autopilot-enabled profile exists in the
+  // workspace and the candidate match score clears the workspace threshold.
+  // Non-entitled workspaces keep the human POST /api/shortlist/approve gate.
+  let successors = [];
+  let autoApproved = 0;
+  try {
+    const controls = await context.client
+      .from("sourcing_loop_controls")
+      .select("auto_shortlist_min_score, kill_switch, sourcing_enabled")
+      .eq("workspace_id", job.workspace_id)
+      .maybeSingle();
+    const minScore = Number(controls.data?.auto_shortlist_min_score ?? 70);
+    const loopLive = controls.data?.kill_switch === false && controls.data?.sourcing_enabled === true;
+    if (loopLive && Number.isFinite(minScore)) {
+      const entitled = await context.client
+        .from("profiles")
+        .select("id")
+        .eq("workspace_id", job.workspace_id)
+        .eq("autopilot_enabled", true)
+        .in("role", ["admin", "member"])
+        .limit(1)
+        .maybeSingle();
+      const entitledId = typeof entitled.data?.id === "string" ? entitled.data.id : "";
+      if (entitledId) {
+        successors = candidates
+          .filter((candidate) => {
+            const score = Number(
+              candidate.matchScore ?? candidate.match_score ?? candidate.score ?? Number.NaN,
+            );
+            return Number.isFinite(score) && score >= minScore && typeof candidate.id === "string";
+          })
+          .slice(0, 50)
+          .map((candidate) =>
+            successorJob(
+              "draft_generate",
+              `draft:${campaignId}:${candidate.id}`,
+              {
+                campaignId,
+                candidateId: candidate.id,
+                approvedBy: entitledId,
+                approvalSource: "autopilot_shortlist",
+                matchScore: Number(candidate.matchScore ?? candidate.match_score ?? candidate.score),
+              },
+              80,
+            ),
+          );
+        autoApproved = successors.length;
+      }
+    }
+  } catch {
+    successors = [];
+    autoApproved = 0;
+  }
+
   return completeJobWithWorkspacePatch(
     context.client,
     job,
     { kind: "append_candidates", value: candidates, receiptKey },
-    { status: "shortlist_committed", campaignId, candidateCount: candidates.length },
-    [event("shortlist.committed", "campaign", campaignId, { candidateCount: candidates.length })],
-    [],
+    { status: "shortlist_committed", campaignId, candidateCount: candidates.length, autoApproved },
+    [event("shortlist.committed", "campaign", campaignId, {
+      candidateCount: candidates.length,
+      autoApproved,
+    })],
+    successors,
   );
 }
 

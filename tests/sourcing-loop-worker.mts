@@ -36,6 +36,25 @@ function rpcClient(handler: (name: string, args: Record<string, unknown>) => unk
         calls.push({ name, args });
         return handler(name, args) as { data: unknown; error: { code: string } | null };
       },
+      from() {
+        return {
+          select() {
+            return this;
+          },
+          eq() {
+            return this;
+          },
+          in() {
+            return this;
+          },
+          limit() {
+            return this;
+          },
+          async maybeSingle() {
+            return { data: null, error: null };
+          },
+        };
+      },
     },
   };
 }
@@ -107,7 +126,12 @@ test("shortlist handler reads provider candidates by run id and commits through 
     { client, providerPoller },
   );
 
-  assert.deepEqual(result, { status: "shortlist_committed", campaignId: "camp-1", candidateCount: 2 });
+  assert.deepEqual(result, {
+    status: "shortlist_committed",
+    campaignId: "camp-1",
+    candidateCount: 2,
+    autoApproved: 0,
+  });
   const completion = calls.find((call) => call.name === "complete_aria_job_with_workspace_patch");
   assert.ok(completion);
   assert.equal(completion.args.p_patch_kind, "append_candidates");

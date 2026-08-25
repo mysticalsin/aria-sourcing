@@ -1,6 +1,6 @@
 # Production Readiness Status
 
-**Date:** 2026-07-14
+**Date:** 2026-08-25
 
 This page describes source and release-gate status. It is not evidence that a
 particular production deployment is healthy.
@@ -14,13 +14,15 @@ particular production deployment is healthy.
 - Local acceptance requires typecheck, lint, the full test chain, the isolated
   production build, the exact database restart test, and the database authority
   test.
+- Migrations through `0056` are in source: LinkedIn channel (`0054`), per-user
+  autopilot entitlements + template-bound approvals (`0055`), and MCP allowlist
+  authority (`0056`). Apply and prove on a Docker-enabled host before lighting
+  the loop kill switch.
 - The Fly release builds the application, database, bootstrap, Kong, and
   one-shot Graphify lesson-worker images for `linux/amd64`; pulls Auth and REST
   at their exact config-pinned upstream digests; schema-validates CycloneDX 1.7
   SBOMs and applies HIGH/CRITICAL plus secret gates to all 7 images; attests and
   promotes the 5 local builds; and verifies all 6 deployed service digests.
-  Graphify has a pre-publication container test and immutable supply-chain
-  evidence, not a post-promotion execution receipt.
 - Database recovery mounts the durable volume at `/var/lib/postgresql`, keeps the
   image data directory at `/var/lib/postgresql/data`, and refuses legacy or
   partial layouts rather than initializing an empty replacement.
@@ -34,12 +36,14 @@ particular production deployment is healthy.
 - The 0032 application-surface fallback passes its disposable database test but
   is not production-executable. A protected apply job and append-only,
   ledger-safe forward migration are still required.
-- Inbound candidate replies are queue-only and require named human review;
-  legacy reply flags never grant provider delivery authority.
+- Inbound candidate replies are queue-only and require named human review by
+  default. Entitled users (`profiles.autopilot_enabled`) may reach
+  `auto_approve_eligible` only when guardrails, salary disclosure, and injection
+  checks all pass; claim RPCs still re-validate authority at send time.
 - Agent graph drafts stay in exact-owner run history with no delivery authority.
   They do not create a review queue or provider outbox row.
-- Email and WhatsApp claims share one serialized per-seat capacity lock, and an
-  ambiguous provider outcome continues to reserve capacity.
+- Email, WhatsApp, and LinkedIn claims share seat/capacity and recontact
+  windows; ambiguous provider outcomes continue to reserve capacity.
 - Agent memory is encrypted, owner/spec scoped, bounded, receipt-bound before
   any external key or model access, and legacy shared memory is hash-only
   quarantined rather than activated.
@@ -51,9 +55,13 @@ particular production deployment is healthy.
   promote lessons; a separate admin review with independent evidence is required.
 - Candidate erasure uses tenant-bound authority, local tombstones, non-final
   provider obligations, and transaction advisory locks for every normalized
-  contact reimport path covered by migration 0033. Two-session tests prove both
-  writer-first and erasure-first lock orders. This does not cover candidate data
-  embedded in agent-run JSON, framework results, or encrypted agent memory.
+  contact reimport path covered by migration 0033. This does not cover candidate
+  data embedded in agent-run JSON, framework results, or encrypted agent memory
+  (documented carve-out — P-10).
+- Orphaned `Floor3DScene.tsx` removed (P-11); live floor uses `Floor3D.tsx` →
+  `RetroOfficeScene`.
+- Integration API map: [`docs/API.md`](../docs/API.md). Autopilot entitlements:
+  `GET/PATCH /api/admin/members`. MCP allowlist: `/api/admin/mcp/allowlist`.
 
 ## Release acceptance still required
 
@@ -68,7 +76,8 @@ particular production deployment is healthy.
    rollback evidence bundle.
 5. Prove database, Auth, REST, Kong, `/api/ready`, migration identity, persistence,
    two restart cycles, backup restore, rollback, login, and controlled campaign
-   behavior before real tenant or candidate use.
+   behavior before real tenant or candidate use — including migrations `0053`–
+   `0056` on real Postgres (P-1) and the full gate at one SHA (P-2).
 6. Before enabling candidate erasure for production acceptance, add explicit
    candidate provenance and erasure receipts for run, framework, and memory
    payloads; an independently retained restore-replay journal; verified provider
@@ -76,6 +85,9 @@ particular production deployment is healthy.
 7. Keep the 0032 application-surface fallback disabled unless a protected apply
    job and append-only, ledger-safe forward migration are independently reviewed;
    otherwise use approved restore or a new forward migration.
+8. Owner inputs before live autopilot: Entra SSO + verified delivery domain
+   (Phase 1), approval to set `ARIA_LOOP_KILL_SWITCH=false`, and LinkedIn vendor
+   credentials when contracting messaging out (L-2).
 
 Until those release gates pass, source readiness must not be described as live
 production readiness.
