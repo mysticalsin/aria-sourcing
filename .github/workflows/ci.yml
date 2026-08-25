@@ -1,10 +1,20 @@
 name: CI
 
 on:
+  # Run on pushes to the long-lived integration branches only. Feature
+  # branches are covered by the pull_request event, so restricting push here
+  # avoids running every workflow twice per commit (push + PR) and roughly
+  # halves Actions minutes usage.
   push:
-    branches: ["**"]
+    branches: ["vercel-demo", "main", "master"]
   pull_request:
     branches: ["**"]
+
+# Cancel an in-progress run when a newer commit arrives for the same ref, so
+# superseded runs don't keep burning Actions minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
