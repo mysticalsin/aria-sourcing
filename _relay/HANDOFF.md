@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 76
 agent: cursor-cloud
 updated: 2026-08-25 UTC
-status: blocked-fly-auth-awaiting-owner-signin
+status: fly-deployed-linkedin-live
 ---
 
 # Handoff - Shift 76
