@@ -111,7 +111,9 @@ ok("worker reads LinkedIn-capable inbound", /read_inbound_message_for_loop/.test
 
 const sim = readFileSync("src/app/api/linkedin/simulate/route.ts", "utf8");
 ok("simulate route exists", /record_linkedin_channel_event/.test(sim));
-ok("simulate dry-runs without Supabase", /Demo mode: LinkedIn event simulate/.test(sim));
+ok("simulate records demo events without Supabase", /status: "recorded"/.test(sim) || /status:\s*"recorded"/.test(sim));
+ok("simulate builds demo event payload", /buildLinkedInDemoEvent/.test(sim));
+ok("simulate does not dry-run for missing Supabase", !/Demo mode: LinkedIn event simulate requires Supabase/.test(sim));
 
 const connections = readFileSync("src/app/api/linkedin/connections/route.ts", "utf8");
 ok("connections POST dry-runs without Supabase", /Demo mode: local LinkedIn seat/.test(connections));

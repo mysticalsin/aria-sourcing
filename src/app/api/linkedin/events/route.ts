@@ -20,7 +20,8 @@ export async function GET(req: NextRequest) {
       ok: true,
       demo: true,
       events: [],
-      detail: "Live LinkedIn inbox requires Supabase.",
+      detail:
+        "Demo mode: LinkedIn events are stored in the browser after Simulate (Settings).",
     });
   }
 

@@ -6,13 +6,13 @@ import { can } from "@/lib/rbac";
 import { getServerSupabase, getServiceSupabase, requireAdmin } from "@/lib/supabase/server";
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import type { Role } from "@/lib/types";
-import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { decideInboundClassifyEnqueue } from "@/lib/inbound-reply-trigger";
 import {
   shouldEnqueueClassifyFromRecord,
   type RecordLinkedInChannelEventResult,
 } from "@/lib/linkedin-events";
 import { normalizeLinkedInProfileUrl } from "@/lib/linkedin-connections";
+import { buildLinkedInDemoEvent } from "@/lib/linkedin-demo-events-store";
 import { safeLog } from "@/lib/log-redact";
 import { randomUUID } from "crypto";
 
@@ -39,6 +39,7 @@ const SimulateSchema = z.object({
 /**
  * Admin simulator for HeyReach-parity LinkedIn events (S5/S10 without a vendor).
  * Uses service_role after requireAdmin — never calls linkedin.com.
+ * Open demo (!Supabase): returns a durable event payload for browser store write.
  */
 export async function POST(req: NextRequest) {
   const prodBlock = prodFailClosed();
@@ -48,12 +49,34 @@ export async function POST(req: NextRequest) {
     // Validate shape even in demo so bad payloads fail closed locally.
     const validated = await validateBody(req, SimulateSchema, { maxBytes: 32_000 });
     if (!validated.ok) return validated.response;
+    const data = validated.data;
+    const profileUrl = normalizeLinkedInProfileUrl(data.profileUrl) ?? data.profileUrl.trim().toLowerCase();
+    const bodyText = typeof data.body === "string" ? data.body : "";
+    if (data.eventType === "reply" && !bodyText.trim()) {
+      return NextResponse.json({ ok: false, error: "body required for reply events." }, { status: 400 });
+    }
+    const event = buildLinkedInDemoEvent({
+      eventType: data.eventType,
+      profileUrl,
+      body: bodyText,
+      eventId: data.eventId,
+      seatId: data.seatId,
+    });
     return NextResponse.json({
       ok: true,
-      status: "dry-run",
-      detail: "Demo mode: LinkedIn event simulate requires Supabase for durable writes.",
-      eventType: validated.data.eventType,
+      status: "recorded",
+      demo: true,
+      detail: "Demo mode: event recorded for browser durable store (no Supabase).",
+      eventType: data.eventType,
+      eventId: event.event_id,
+      eventRowId: event.id,
+      inboundId: event.inbound_id,
+      candidateId: null,
+      correlated: false,
+      duplicate: false,
       classifyQueued: false,
+      classifyStatus: "skipped_demo",
+      event,
     });
   }
 
@@ -87,9 +110,8 @@ export async function POST(req: NextRequest) {
   if (!validated.ok) return validated.response;
   const data = validated.data;
 
-  if (publicDemoSideEffectsDisabled()) {
-    return NextResponse.json({ ok: true, status: "dry-run", detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
-  }
+  // Channel-event simulate is inbound telemetry (not outbound provider delivery).
+  // Do not apply publicDemoSideEffectsDisabled — outbound send/calendar stay dry-run.
 
   const profileUrl = normalizeLinkedInProfileUrl(data.profileUrl) ?? data.profileUrl.trim().toLowerCase();
   const bodyText = typeof data.body === "string" ? data.body : "";

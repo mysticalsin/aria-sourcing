@@ -4,6 +4,12 @@ import * as React from "react";
 import { motion } from "framer-motion";
 import { Badge, Button, Card, CardContent, Eyebrow, useToast } from "@/components/ui";
 import { linkedInEventLabel, type LinkedInEventType } from "@/lib/linkedin-events";
+import {
+  getLinkedInDemoEventsSnapshot,
+  subscribeLinkedInDemoEvents,
+  type LinkedInDemoChannelEvent,
+} from "@/lib/linkedin-demo-events-store";
+import { supabaseEnabled } from "@/lib/supabase/config";
 import { Linkedin, RefreshCw } from "lucide-react";
 
 type ChannelEvent = {
@@ -18,17 +24,43 @@ type ChannelEvent = {
   occurred_at: string;
 };
 
+function asChannelEvent(ev: LinkedInDemoChannelEvent): ChannelEvent {
+  return {
+    id: ev.id,
+    event_id: ev.event_id,
+    event_type: ev.event_type,
+    profile_url: ev.profile_url,
+    body: ev.body,
+    candidate_id: ev.candidate_id,
+    inbound_id: ev.inbound_id,
+    conversation_id: ev.conversation_id,
+    occurred_at: ev.occurred_at,
+  };
+}
+
 /**
  * LinkedIn channel inbox — HeyReach-parity event stream (replies + lifecycle).
+ * Live: Supabase linkedin_channel_events. Demo: browser-durable simulate store.
  */
 export function LinkedInInboxPanel() {
   const { toast } = useToast();
-  const [events, setEvents] = React.useState<ChannelEvent[]>([]);
+  const demoEvents = React.useSyncExternalStore(
+    subscribeLinkedInDemoEvents,
+    getLinkedInDemoEventsSnapshot,
+    () => [] as LinkedInDemoChannelEvent[],
+  );
+  const [liveEvents, setLiveEvents] = React.useState<ChannelEvent[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
 
   const load = React.useCallback(
     async (signal?: AbortSignal) => {
+      if (!supabaseEnabled) {
+        setLiveEvents([]);
+        setLoadError(null);
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       setLoadError(null);
       try {
@@ -46,7 +78,7 @@ export function LinkedInInboxPanel() {
         if (!res.ok || !json.ok) {
           throw new Error(json.error ?? "Could not load LinkedIn events.");
         }
-        setEvents(json.events ?? []);
+        setLiveEvents(json.events ?? []);
       } catch (error) {
         if (signal?.aborted) return;
         setLoadError(error instanceof Error ? error.message : "Could not load LinkedIn events.");
@@ -63,6 +95,10 @@ export function LinkedInInboxPanel() {
     return () => controller.abort();
   }, [load]);
 
+  const events: ChannelEvent[] = !supabaseEnabled
+    ? demoEvents.map(asChannelEvent)
+    : liveEvents;
+
   return (
     <Card className="overflow-hidden border-sky-500/15 bg-gradient-to-br from-surface via-surface to-sky-500/[0.05]">
       <CardContent className="space-y-4">
@@ -73,14 +109,25 @@ export function LinkedInInboxPanel() {
             <p className="mt-1 max-w-2xl text-xs text-muted">
               Vendor webhooks and admin simulates land here — replies enqueue classify; accepts,
               delivers, and failures stay as lifecycle events.
+              {!supabaseEnabled ? " Demo events persist in this browser after Simulate." : null}
             </p>
           </div>
           <Button
             size="sm"
             variant="subtle"
             leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
-            loading={loading}
-            onClick={() => void load()}
+            loading={loading && supabaseEnabled}
+            onClick={() => {
+              if (!supabaseEnabled) {
+                toast({
+                  title: "Demo inbox",
+                  description: `${demoEvents.length} event(s) in browser store.`,
+                  variant: "info",
+                });
+                return;
+              }
+              void load();
+            }}
           >
             Refresh
           </Button>
@@ -88,7 +135,7 @@ export function LinkedInInboxPanel() {
 
         {loadError ? (
           <p className="text-xs text-danger">{loadError}</p>
-        ) : loading && events.length === 0 ? (
+        ) : loading && supabaseEnabled && events.length === 0 ? (
           <p className="text-xs text-muted">Loading LinkedIn events…</p>
         ) : events.length === 0 ? (
           <p className="text-xs text-muted">

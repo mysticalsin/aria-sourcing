@@ -10,6 +10,10 @@ import { isLinkedInSeatProvider } from "@/lib/linkedin-connections";
 import { cn } from "@/lib/utils";
 import { Activity, AlertTriangle, CheckCircle2, Linkedin, ShieldCheck, Unplug, Wand2 } from "lucide-react";
 import { LINKEDIN_EVENT_TYPES, type LinkedInEventType } from "@/lib/linkedin-events";
+import {
+  appendLinkedInDemoEvent,
+  type LinkedInDemoChannelEvent,
+} from "@/lib/linkedin-demo-events-store";
 
 type ProviderReadiness = {
   assistedManual: boolean;
@@ -217,6 +221,8 @@ export function LinkedInConnectionsPanel() {
         classifyQueued?: boolean;
         duplicate?: boolean;
         eventType?: string;
+        demo?: boolean;
+        event?: LinkedInDemoChannelEvent;
       } | null;
       if (json?.status === "dry-run") {
         toast({ title: "Public demo only", description: json.detail, variant: "info" });
@@ -226,13 +232,20 @@ export function LinkedInConnectionsPanel() {
         toast({ title: "Simulate failed", description: json?.error ?? `HTTP ${res.status}`, variant: "error" });
         return;
       }
+      let duplicate = Boolean(json.duplicate);
+      if ((json.demo || !supabaseEnabled) && json.event) {
+        const written = appendLinkedInDemoEvent(json.event);
+        duplicate = written.duplicate;
+      }
       toast({
         title: `Simulated ${json.eventType ?? simType}`,
-        description: json.duplicate
+        description: duplicate
           ? "Duplicate event (idempotent)."
           : json.classifyQueued
             ? "Reply recorded — classify queued."
-            : "Event recorded.",
+            : json.demo || !supabaseEnabled
+              ? "Event written — open Replies → LinkedIn inbox."
+              : "Event recorded.",
         variant: "success",
       });
     } catch {

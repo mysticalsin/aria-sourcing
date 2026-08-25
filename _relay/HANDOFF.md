@@ -1,48 +1,43 @@
 ---
 project: MSourcing / ARIA
-shift: 73
+shift: 74
 agent: cursor-cloud
 updated: 2026-08-25 UTC
-status: linkedin-heyreach-production-demo-live
+status: linkedin-demo-events-writable
 ---
 
-# Handoff - Shift 73
+# Handoff - Shift 74
 
 ## Current state
 
-- **Production demo LIVE:** https://aria-sourcing-demo.vercel.app (pushed `main` + `vercel-demo` to `baa1ca6`).
-- LinkedIn webhook route live (`POST /api/webhooks/linkedin` → 401 Bad signature).
-- UI: Connect seat card + Simulate + Replies inbox verified on production.
-- Open-demo mode: `supabaseEnabled=false` on this Vercel project build — Simulate dry-runs; no durable events until Supabase Production env is set.
-- Feature branch `cursor/enterprise-autopilot-b91d` → PR #25 also updated.
+- Feature branch `cursor/enterprise-autopilot-b91d`: open-demo LinkedIn Simulate **writes** events (browser durable store) instead of dry-run.
+- API `POST /api/linkedin/simulate` without Supabase → `status:"recorded"` + `event` payload; client `appendLinkedInDemoEvent` → localStorage; Replies inbox reads via `useSyncExternalStore`.
+- With Supabase: simulate no longer blocked by `publicDemoSideEffectsDisabled` (inbound telemetry, not outbound delivery).
+- Production demo https://aria-sourcing-demo.vercel.app still needs redeploy of this tip for the fix to land.
 
 ## Done this shift
 
-- Fast-forwarded `vercel-demo` and `main` to ship HeyReach-parity.
-- Fixed demo Connect seat wipe (`seats:[]`) and Simulate non-UUID `seatId` validation.
-- Verified production webhook + UI paths.
+- Fixed “cannot write events” on open demo (was dry-run when `!supabaseEnabled`).
+- Tests: `linkedin-demo-events-store`, `linkedin-simulate-demo`; parity updated.
+- Local proof: demo-login → simulate → `recorded` + event payload.
 
 ## Blockers
 
-- **Vercel Production env missing Supabase** (`NEXT_PUBLIC_SUPABASE_URL`, anon, service_role) — owner must set in totosworld/aria-sourcing-demo; this agent MCP only has hobby team.
-- Apply migrations **0058–0059** on the Supabase project once env is wired.
-- Set `LINKEDIN_INBOUND_WEBHOOK_SECRET` (or EMAIL_ inbound secret) for signed vendor webhooks.
-- CI Quality still fails on budget (pre-existing).
-- Fly `aria-mantu-app` not updated (no flyctl auth).
+- Vercel Production still lacks Supabase env (totosworld) — classify enqueue / RPC path needs service_role + migrations 0058–0059.
+- Agent MCP cannot set totosworld env; Fly auth unavailable.
 
 ## Next steps
 
-1. Vercel → aria-sourcing-demo → Production env: set Supabase + DEMO_ADMIN_PASSWORD + inbound webhook secret; redeploy.
-2. `supabase db push` (or SQL) migrations 0058+0059.
-3. Live: Connect → Simulate reply → events inbox + classify job.
-4. Optional: Fly deploy with same commit when fly auth available.
+1. Ship tip to `vercel-demo`/`main` so production demo gets browser event writes.
+2. When Supabase env available: set URL/anon/service_role + webhook secret; apply 0058–0059; redeploy.
 
 ## Decisions made (don't relitigate)
 
-- Production demo ships via `main`/`vercel-demo` FF from the feature tip.
-- Open demo without Supabase is dry-run, not a hard failure for Connect/Simulate.
+- Open demo LinkedIn channel events persist in **browser localStorage** when Supabase is absent (not dry-run).
+- Simulate inbound channel events are exempt from public-demo outbound side-effect kill-switch.
+- No LinkedIn member OAuth / scrape / cookies.
 
 ## Watch out
 
-- Do not send demo `seat_*` ids as UUID to simulate (fixed).
-- Vercel MCP re-auth to **totosworld** needed for env/promote from agents.
+- GET `/api/linkedin/events` still returns `events:[]` in demo — inbox merges browser store.
+- Do not send demo `seat_*` ids as UUID to simulate.
