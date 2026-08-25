@@ -363,6 +363,7 @@ review, and a customer's IT department.
 | **E-8** | **No documented capacity or cost model per tenant.** Daily caps exist (`max_*_per_day`) but nothing maps them to spend | migration `0038` caps; `production-readiness/CAPACITY_PLAN.md` (dated) | Cost-per-workspace model tied to the provider credit meters already in `0051_metered_provider_run_authority.sql` | Engineering |
 | **E-9** | **Secrets live in two half-documented places**: Fly secrets and a base64 CI bundle (`ARIA_DEPLOY_BUNDLE`) | `.gitlab-ci.yml`; `production-readiness/.fly-secrets.env` | One documented secret authority with rotation evidence; the key-ID ring already in source is the right foundation | Engineering |
 | **E-10** | **Business continuity is written, not exercised** | `BUSINESS_CONTINUITY_PLAN.md`, `DISASTER_RECOVERY_PLAN.md` (dated) | One tabletop + one real failover drill, dated | Owner |
+| **E-11** | **31 open Dependabot alerts on the default branch** (17 high, 13 moderate, 1 low) — reported by GitHub on push, 2026-08-25 | `github.com/mysticalsin/aria-sourcing/security/dependabot` | Triaged to zero high/critical, or each one documented as not-reachable with the reasoning. This is the first thing a security questionnaire looks at | Engineering |
 
 ## 4. Gap register — sourcing on autopilot
 
