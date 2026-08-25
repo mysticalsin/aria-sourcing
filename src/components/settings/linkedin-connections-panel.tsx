@@ -8,7 +8,8 @@ import { can } from "@/lib/rbac";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { isLinkedInSeatProvider } from "@/lib/linkedin-connections";
 import { cn } from "@/lib/utils";
-import { Activity, AlertTriangle, CheckCircle2, Linkedin, ShieldCheck, Unplug } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, Linkedin, ShieldCheck, Unplug, Wand2 } from "lucide-react";
+import { LINKEDIN_EVENT_TYPES, type LinkedInEventType } from "@/lib/linkedin-events";
 
 type ProviderReadiness = {
   assistedManual: boolean;
@@ -40,6 +41,10 @@ export function LinkedInConnectionsPanel() {
   const [label, setLabel] = React.useState("");
   const [providers, setProviders] = React.useState<ProviderReadiness | null>(null);
   const [seats, setSeats] = React.useState<SeatRow[]>([]);
+  const [simProfile, setSimProfile] = React.useState("https://www.linkedin.com/in/example-candidate");
+  const [simBody, setSimBody] = React.useState("Thanks — I'm interested. When can we talk?");
+  const [simType, setSimType] = React.useState<LinkedInEventType>("reply");
+  const [simulating, setSimulating] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -141,6 +146,53 @@ export function LinkedInConnectionsPanel() {
       toast({ title: "Connect failed", description: "Network error.", variant: "error" });
     } finally {
       setConnecting(false);
+    }
+  }
+
+  async function simulateEvent(seatId?: string) {
+    setSimulating(true);
+    try {
+      const res = await fetch("/api/linkedin/simulate", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventType: simType,
+          profileUrl: simProfile,
+          body: simType === "reply" ? simBody : "",
+          seatId: seatId || undefined,
+        }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        status?: string;
+        detail?: string;
+        error?: string;
+        classifyQueued?: boolean;
+        duplicate?: boolean;
+        eventType?: string;
+      } | null;
+      if (json?.status === "dry-run") {
+        toast({ title: "Public demo only", description: json.detail, variant: "info" });
+        return;
+      }
+      if (!json?.ok) {
+        toast({ title: "Simulate failed", description: json?.error ?? `HTTP ${res.status}`, variant: "error" });
+        return;
+      }
+      toast({
+        title: `Simulated ${json.eventType ?? simType}`,
+        description: json.duplicate
+          ? "Duplicate event (idempotent)."
+          : json.classifyQueued
+            ? "Reply recorded — classify queued."
+            : "Event recorded.",
+        variant: "success",
+      });
+    } catch {
+      toast({ title: "Simulate failed", description: "Network error.", variant: "error" });
+    } finally {
+      setSimulating(false);
     }
   }
 
@@ -302,13 +354,64 @@ export function LinkedInConnectionsPanel() {
           <li>1. Connect → live assisted-manual seat</li>
           <li>2. Source candidates → draft LinkedIn outreach → approve</li>
           <li>3. Copy → open LinkedIn → paste/send → Confirm in Aria</li>
-          <li>4. Vendor inbound (optional): POST /api/webhooks/linkedin with route_key</li>
+          <li>4. Candidate answers → vendor webhook (or Simulate below) → classify</li>
         </ol>
+
+        {isAdmin && (
+          <div className="space-y-3 rounded-2xl border border-dashed border-sky-500/30 bg-sky-500/[0.04] p-4">
+            <p className="text-xs font-semibold text-ink">Simulate HeyReach event (admin)</p>
+            <p className="text-[11px] text-muted">
+              Proves reply webhook → classify without a vendor. Does not call linkedin.com.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Event type" htmlFor="li-sim-type">
+                <select
+                  id="li-sim-type"
+                  className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm"
+                  value={simType}
+                  onChange={(e) => setSimType(e.target.value as LinkedInEventType)}
+                >
+                  {LINKEDIN_EVENT_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Profile URL" htmlFor="li-sim-profile">
+                <Input
+                  id="li-sim-profile"
+                  value={simProfile}
+                  onChange={(e) => setSimProfile(e.target.value)}
+                  placeholder="https://www.linkedin.com/in/…"
+                />
+              </Field>
+            </div>
+            {simType === "reply" && (
+              <Field label="Reply body" htmlFor="li-sim-body">
+                <Input
+                  id="li-sim-body"
+                  value={simBody}
+                  onChange={(e) => setSimBody(e.target.value)}
+                />
+              </Field>
+            )}
+            <Button
+              size="sm"
+              variant="subtle"
+              leftIcon={<Wand2 className="h-3.5 w-3.5" />}
+              loading={simulating}
+              onClick={() => void simulateEvent(seats[0]?.id)}
+            >
+              Simulate event
+            </Button>
+          </div>
+        )}
 
         <p className="flex items-start gap-1.5 text-xs text-muted">
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
           Policy: no scrape, no session bots, no password storage. See{" "}
-          <code className="rounded bg-ink/[0.06] px-1 font-mono">docs/LINKEDIN_SEND_ONLY.md</code>.
+          <code className="rounded bg-ink/[0.06] px-1 font-mono">docs/LINKEDIN_HEYREACH_PARITY.md</code>.
         </p>
       </CardContent>
     </Card>

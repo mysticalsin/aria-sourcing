@@ -13,6 +13,7 @@ import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { ReplyClassifier } from "@/components/replies/reply-classifier";
 import { ReplyCard } from "@/components/replies/reply-card";
 import { WhatsAppReviewQueue } from "@/components/replies/whatsapp-review-queue";
+import { LinkedInInboxPanel } from "@/components/replies/linkedin-inbox-panel";
 import { useHydrated, useReplies, useActions, useRole } from "@/lib/store";
 import { REPLY_INTENTS, type ReplyIntent } from "@/lib/types";
 import { can } from "@/lib/rbac";
@@ -206,6 +207,7 @@ export default function RepliesPage() {
       >
         <div className="space-y-8">
           <WhatsAppReviewQueue />
+          <LinkedInInboxPanel />
 
           {/* Classifier — full width */}
           <ReplyClassifier />

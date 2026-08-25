@@ -128,8 +128,10 @@ skip). Idle loop ticks never poll mailboxes or call the classifier. See
 |---|---|---|---|
 | GET/POST | `/api/linkedin/connections` | member/admin | List readiness; ensure assisted-manual (or vendor) seat + inbound route |
 | POST | `/api/linkedin/test` | member | Validate seat (no linkedin.com call) |
+| GET | `/api/linkedin/events` | member | LinkedIn channel event inbox (HeyReach-parity) |
+| POST | `/api/linkedin/simulate` | admin | Simulate vendor events (reply / accept / …) without a vendor |
 | POST | `/api/outreach/confirm-manual` | member `outreach` | Durable confirm after human paste/send |
-| POST | `/api/webhooks/linkedin` | HMAC `x-aria-signature` | Vendor inbound reply → record + enqueue classify |
+| POST | `/api/webhooks/linkedin` | HMAC `x-aria-signature` | Multi-event inbound → record + classify on reply |
 
 - **Data in:** Apify vendor purchase via `/api/source/apify/*` (working).
 - **Messages out:** assisted-manual E2E via Settings connect + Confirm; `vendor-api`

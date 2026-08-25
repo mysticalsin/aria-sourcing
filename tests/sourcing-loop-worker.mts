@@ -264,7 +264,7 @@ test("provider_poll resumes a persisted run and enqueues shortlist_build with id
 test("reply classify wraps candidate text in the disclosure envelope handed to the model", async () => {
   const prompts: Array<{ system: string; prompt: string }> = [];
   const { client, calls } = rpcClient((name) => {
-    if (name === "read_inbound_email_for_loop") {
+    if (name === "read_inbound_message_for_loop") {
       return {
         data: {
           status: "ok",
@@ -328,7 +328,7 @@ test("email_sync enqueues inbound_classify and the classifier persists the store
       completions.push(args);
       return { data: true, error: null };
     }
-    if (name === "read_inbound_email_for_loop") {
+    if (name === "read_inbound_message_for_loop") {
       return {
         data: {
           status: "ok",
@@ -372,7 +372,7 @@ test("email_sync enqueues inbound_classify and the classifier persists the store
 test("inbound_classify enqueues draft_generate for positive intent when autopilot is entitled", async () => {
   const patches: Array<Record<string, unknown>> = [];
   const { client } = rpcClient((name, args) => {
-    if (name === "read_inbound_email_for_loop") {
+    if (name === "read_inbound_message_for_loop") {
       return {
         data: {
           status: "ok",
@@ -456,7 +456,7 @@ test("runSourcingLoopTick claims every handler kind and completes each claimed j
     if (name === "read_workspace_state_for_loop") {
       return { data: { status: "ok", state: {}, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
     }
-    if (name === "read_inbound_email_for_loop") {
+    if (name === "read_inbound_message_for_loop") {
       return {
         data: {
           status: "ok",
@@ -556,7 +556,7 @@ test("runSourcingLoopForever passes the configured model client into the tick", 
     if (name === "read_workspace_state_for_loop") {
       return { data: { status: "ok", state: { replies: [] }, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
     }
-    if (name === "read_inbound_email_for_loop") {
+    if (name === "read_inbound_message_for_loop") {
       return {
         data: {
           status: "ok",

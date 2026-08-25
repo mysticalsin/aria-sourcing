@@ -789,7 +789,8 @@ async function handleInboundClassify(job, context) {
   if (payload.replyText !== undefined || payload.body !== undefined || payload.text !== undefined) {
     throw new HandlerError("payload_contract_violation");
   }
-  const inbound = await context.client.rpc("read_inbound_email_for_loop", {
+  // Email OR LinkedIn (HeyReach-parity). Legacy Email-only RPC remains for older callers.
+  const inbound = await context.client.rpc("read_inbound_message_for_loop", {
     p_workspace_id: job.workspace_id,
     p_inbound_id: inboundId,
   });
@@ -804,6 +805,10 @@ async function handleInboundClassify(job, context) {
   const campaignId = typeof storedInbound.campaign_id === "string" ? storedInbound.campaign_id.trim() : "";
   const candidateId = typeof storedInbound.candidate_id === "string" ? storedInbound.candidate_id.trim() : "";
   const replyText = boundedText(storedInbound.body, 20_000, "reply_text_required");
+  const storedChannel =
+    typeof storedInbound.channel === "string" && storedInbound.channel.trim()
+      ? storedInbound.channel.trim()
+      : "";
   const fallback = deterministicClassification(replyText);
   const prompt = buildReplyClassificationPrompt(replyText);
   let classification = fallback;
@@ -825,7 +830,10 @@ async function handleInboundClassify(job, context) {
     id: typeof payload.replyId === "string" && payload.replyId.trim() ? payload.replyId.trim() : `rep-${inboundId}`,
     candidateId,
     campaignId,
-    channel: typeof payload.channel === "string" && payload.channel.trim() ? payload.channel.trim() : "Email",
+    channel:
+      typeof payload.channel === "string" && payload.channel.trim()
+        ? payload.channel.trim()
+        : storedChannel || "Email",
     body: replyText,
     intent: classification.intent,
     confidence: classification.confidence,

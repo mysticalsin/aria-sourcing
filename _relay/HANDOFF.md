@@ -1,51 +1,52 @@
 ---
 project: MSourcing / ARIA
-shift: 70
+shift: 71
 agent: cursor-cloud
 updated: 2026-08-25 UTC
-status: linkedin-assisted-manual-e2e-shipped
+status: linkedin-heyreach-parity-shipped
 ---
 
-# Handoff - Shift 70
+# Handoff - Shift 71
 
 ## Current state
 
 - Branch `cursor/enterprise-autopilot-b91d` → PR #25.
-- LinkedIn **assisted-manual E2E** shipped (safe connect — no LinkedIn login/scrape).
-- Settings → Integrations: **Connect my LinkedIn** + Validate.
-- APIs: `/api/linkedin/connections`, `/api/linkedin/test`, `/api/outreach/confirm-manual`, `/api/webhooks/linkedin`.
-- Migration **0058**: inbound routes + assisted confirm RPC + inbound record.
-- LinkedIn seats can go live without mailbox SPF; suppressions type `linkedin` persist; draft guardrail injected.
-- Gate green: `tsc` + `typecheck:tests` + `npm test` (incl. `linkedin-connections`).
+- LinkedIn messaging now follows **HeyReach-parity** loop (scenarios S1–S20 in `docs/LINKEDIN_HEYREACH_PARITY.md`).
+- Multi-event webhook `POST /api/webhooks/linkedin` (`2026-08-25.li-events.v1` + legacy reply).
+- Migration **0059**: `linkedin_channel_events`, `record_linkedin_channel_event`, correlate, `read_inbound_message_for_loop` (Email|LinkedIn).
+- Loop worker classifies LinkedIn inbound via `read_inbound_message_for_loop` + `channel: LinkedIn`.
+- Admin **Simulate event** in Settings; **LinkedIn messaging inbox** on `/replies`.
+- Gate: `tsc` + `typecheck:tests` + linkedin/heyreach/worker/privileges contracts green this shift.
 
 ## Done this shift
 
-- LinkedIn Settings hub + durable Confirm after human paste/send.
-- Vendor inbound webhook path (HMAC + route_key) for when L-2 credentials exist.
-- Docs: `LINKEDIN_SEND_ONLY.md`, `docs/runbooks/connect-linkedin-assisted-manual.md`, API map.
+- Scenario plan doc for invite → accept → message → reply → classify intents.
+- Durable multi-event ingest + correlate + conversation row (without violating 0028 owner_id inbound FK).
+- Fixed dead-end: LinkedIn inbound no longer blocked by Email-only `read_inbound_email_for_loop`.
+- Simulate + events APIs; Settings/Replies UI; privileges + tests.
 
 ## Blockers
 
 - CI-BUDGET (Tony).
-- Apply migrations **0057** + **0058** on live Supabase.
-- L-2: contract LinkedIn vendor for automated send + inbound (optional; assisted-manual works without it).
-- A-1 kill-switch still owner-gated; email OAuth env for full email loop.
+- Apply migrations **0057–0059** on live Supabase.
+- L-2: contract LinkedIn vendor for automated wire (assisted-manual + simulate work without it).
+- A-1 kill-switch still owner-gated.
 
 ## Next steps
 
-1. Apply 0057 + 0058.
-2. Admin: Settings → Connect my LinkedIn → Validate → run one draft → Confirm.
-3. Optional: set `LINKEDIN_VENDOR_*` + inbound secret; point vendor at `/api/webhooks/linkedin`.
-4. Email path: GOOGLE/MICROSOFT + webhook secret (shift 69).
+1. Apply 0057–0059 on Supabase.
+2. Admin: Connect LinkedIn → Validate → Simulate `reply` → confirm classify job + Replies inbox.
+3. Optional: set `LINKEDIN_VENDOR_*` + inbound secret; point vendor at webhook with `route_key`.
+4. Email OAuth env still required for full email loop (shift 69).
 
 ## Decisions made (don't relitigate)
 
-- No LinkedIn member OAuth / password / session automation in Aria.
-- Assisted-manual is the shippable LinkedIn messaging product; vendor-api fail-closed until contracted.
-- Email remains the primary automated reply channel; LinkedIn inbound is vendor-webhook only.
+- No LinkedIn member OAuth / password / cookies / scrape / session fleets.
+- Inbound tenant ONLY from `route_key` (never sender profile).
+- Webhook-first classify; no idle LLM burn.
+- Conversation attach on `messages_inbound` skipped when no owner_id (0028 constraint); event row still stores conversation_id.
 
 ## Watch out
 
-- `confirm-manual` requires a LinkedIn seat (Settings connect) in live Supabase mode.
-- Unique `outreach_ledger` active contact still applies — second LinkedIn confirm to same candidate may return duplicate.
-- RSC/InMail partnership remains a separate track from assisted-manual.
+- `read_inbound_email_for_loop` remains Email-only wrapper — new callers must use `read_inbound_message_for_loop`.
+- Privileges inventory grew for 0058/0059 RPCs in `tests/db/function-privileges.sql`.

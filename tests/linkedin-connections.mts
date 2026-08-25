@@ -79,6 +79,7 @@ ok("0058 record_linkedin_inbound", /record_linkedin_inbound/i.test(migration));
 const webhook = readFileSync("src/app/api/webhooks/linkedin/route.ts", "utf8");
 ok("linkedin webhook exists", /resolve_linkedin_inbound_route/.test(webhook));
 ok("linkedin webhook HMAC", /x-aria-signature/.test(webhook));
+ok("linkedin webhook multi-event", /record_linkedin_channel_event/.test(webhook));
 
 const connections = readFileSync("src/app/api/linkedin/connections/route.ts", "utf8");
 ok("connections ensure_connect", /ensure_connect/.test(connections));
