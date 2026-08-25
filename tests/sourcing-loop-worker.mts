@@ -369,6 +369,44 @@ test("email_sync enqueues inbound_classify and the classifier persists the store
   assert.equal(reply.intent, "INTERESTED");
 });
 
+test("inbound_classify persists LinkedIn channel from stored inbound message", async () => {
+  const patches: Array<Record<string, unknown>> = [];
+  const { client } = rpcClient((name, args) => {
+    if (name === "read_inbound_message_for_loop") {
+      return {
+        data: {
+          status: "ok",
+          inbound_id: "inbound-li-1",
+          channel: "LinkedIn",
+          candidate_id: "cand-li",
+          campaign_id: "camp-li",
+          body: "Sounds good — send me the JD.",
+          received_at: "2026-08-25T12:00:00.000Z",
+          message_id: "li-msg-1",
+          from_address: "https://www.linkedin.com/in/jane",
+        },
+        error: null,
+      };
+    }
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: { replies: [] }, updated_at: "2026-08-25T11:00:00.000Z" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      patches.push(args);
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await handleAriaJob(job("inbound_classify", { inboundId: "inbound-li-1" }), { client });
+  assert.equal(patches.length, 1);
+  const reply = (patches[0].p_patch as Array<Record<string, unknown>>)[0];
+  assert.equal(reply.channel, "LinkedIn");
+  assert.equal(reply.candidateId, "cand-li");
+  assert.equal(reply.body, "Sounds good — send me the JD.");
+  assert.equal(reply.intent, "INTERESTED");
+});
+
 test("inbound_classify enqueues draft_generate for positive intent when autopilot is entitled", async () => {
   const patches: Array<Record<string, unknown>> = [];
   const { client } = rpcClient((name, args) => {

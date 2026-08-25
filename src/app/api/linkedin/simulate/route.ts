@@ -45,7 +45,16 @@ export async function POST(req: NextRequest) {
   if (prodBlock) return prodBlock;
 
   if (!supabaseEnabled) {
-    return NextResponse.json({ ok: false, error: "Authentication backend not configured." }, { status: 503 });
+    // Validate shape even in demo so bad payloads fail closed locally.
+    const validated = await validateBody(req, SimulateSchema, { maxBytes: 32_000 });
+    if (!validated.ok) return validated.response;
+    return NextResponse.json({
+      ok: true,
+      status: "dry-run",
+      detail: "Demo mode: LinkedIn event simulate requires Supabase for durable writes.",
+      eventType: validated.data.eventType,
+      classifyQueued: false,
+    });
   }
 
   const supabase = await getServerSupabase();

@@ -128,10 +128,12 @@ export async function POST(req: NextRequest) {
   if (prodBlock) return prodBlock;
 
   if (!supabaseEnabled) {
-    return NextResponse.json(
-      { ok: false, error: "LinkedIn connections require Supabase (live mode)." },
-      { status: 503 },
-    );
+    return NextResponse.json({
+      ok: true,
+      status: "dry-run",
+      detail: "Demo mode: local LinkedIn seat only — Supabase required for durable route_key.",
+      demo: true,
+    });
   }
 
   const supabase = await getServerSupabase();
