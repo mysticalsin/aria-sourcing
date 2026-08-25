@@ -17,7 +17,7 @@ primary_region = "cdg"
   [build.args]
     NEXT_PUBLIC_SUPABASE_URL         = "https://aria-mantu-kong.fly.dev"   # browser → Supabase (public Kong)
     NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN = ""
-    NEXT_PUBLIC_ENABLE_DEMO_LOGIN    = "false"                       # real tenant: OFF → strict fail-closed
+    NEXT_PUBLIC_ENABLE_DEMO_LOGIN    = "true"                        # public demo: ON → one-click admin/admin
     NEXT_PUBLIC_ENABLE_AZURE_LOGIN   = "false"                       # enable only with complete GoTrue Azure config
     # NEXT_PUBLIC_SUPABASE_ANON_KEY passed on the CLI (see deploy cmd above)
 
@@ -34,8 +34,9 @@ primary_region = "cdg"
   # "loop" process for its minute-level outbound drain; harmless elsewhere.
   ARIA_WEB_INTERNAL_URL         = "http://web.process.aria-mantu-app.internal:3000"
   # Secrets (fly secrets set): SUPABASE_SERVICE_ROLE_KEY (=FLY_SUPABASE_SERVICE_KEY),
-  #   DATA_ENCRYPTION_KEY (=FLY_DATA_ENCRYPTION_KEY), CRON_SECRET (=FLY_CRON_SECRET).
-  # Do NOT set NEXT_PUBLIC_ENABLE_DEMO_LOGIN / DEMO_ADMIN_PASSWORD on a real tenant.
+  #   DATA_ENCRYPTION_KEY (=FLY_DATA_ENCRYPTION_KEY), CRON_SECRET (=FLY_CRON_SECRET),
+  #   DEMO_ADMIN_PASSWORD (matches admin@hermes.local password in GoTrue).
+  # Demo deployment: NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true requires DEMO_ADMIN_PASSWORD secret.
 
 [http_service]
   processes            = ["web"]
