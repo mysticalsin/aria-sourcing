@@ -174,7 +174,54 @@ If login works but workspace hangs on "Connecting to your workspace":
 - Check browser console for "workspace_state load failed" errors
 - Verify profile exists with Check 2 from PLAN.md
 
-## 7. Optional: Enable Demo Login
+## 7. Configure AI Provider Keys
+
+Live sourcing and chat require at least one AI provider key. Without keys, routes fall back to deterministic mocks or return 503 errors.
+
+```bash
+# Set provider keys (at least one required)
+fly secrets set ANTHROPIC_API_KEY=<your-anthropic-key> -a aria-mantu-app
+fly secrets set OPENAI_API_KEY=<your-openai-key> -a aria-mantu-app
+
+# Optional: Tavily for web sourcing
+fly secrets set TAVILY_API_KEY=<your-tavily-key> -a aria-mantu-app
+
+# Restart app to pick up new secrets
+fly restart -a aria-mantu-app
+```
+
+**Which keys do I need?**
+- `/api/sourcing-agent` (live candidate sourcing) uses Anthropic by default
+- `/api/hermes/chat` (AI chat) prefers OpenAI, falls back to Anthropic
+- TAVILY_API_KEY is optional but improves sourcing quality
+
+Verify keys are set:
+
+```bash
+fly secrets list -a aria-mantu-app
+```
+
+Expected: ANTHROPIC_API_KEY, OPENAI_API_KEY (and optionally TAVILY_API_KEY).
+
+## 8. Create First Campaign
+
+After login, the workspace is EMPTY (no campaigns, no candidates). Create a campaign to test sourcing:
+
+1. Open https://aria-mantu-app.fly.dev/
+2. Login with admin@hermes.local
+3. Command Center should show (empty state)
+4. Click "New Campaign" (or create via UI)
+5. Fill in job details (title, skills, sourcing strategy)
+6. Activate campaign (status: "Sourcing")
+7. Click "Source next batch"
+8. Should call `/api/sourcing-agent` and return candidates
+
+If sourcing fails, check:
+- Provider keys set (step 7)
+- Campaign status is "Sourcing" or "Outreach"
+- Browser console for error codes (CAMPAIGN_NOT_FOUND, SOURCING_AGENT_NOT_CONFIGURED, etc.)
+
+## 9. Optional: Enable Demo Login
 
 If you want the one-click "ENTER THE DEMO CONSOLE" button (like Vercel demo):
 
@@ -204,12 +251,15 @@ After this, the login page shows "ENTER THE DEMO CONSOLE" which auto-fills admin
 **401 "Sign in to use this demo API." on /api/healthz:**
 - Expected. The Next.js middleware requires auth for all /api/* routes except /api/health and /api/ready.
 
-**404 on /api/sourcing-agent:**
-- Expected until ship 4. Live sourcing requires additional env vars (ANTHROPIC_API_KEY, etc.) and campaign data.
+**500 or 503 on /api/sourcing-agent:**
+- Provider keys missing (step 7)
+- Campaign not found (step 8)
+- Migrations incomplete (step 3)
 
 ## Next Steps
 
-After login works and workspace loads:
-- Ship 4: Fix 500s on `/api/hermes/chat` and `/api/sourcing-agent`
-- Seed real campaigns (or use dry-run mode with NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true)
+After E2E works (login → workspace → sourcing):
+- Configure email seats for outbound (agent_seats table)
+- Set up cron for daily outreach dispatch (CRON_SECRET)
 - Configure external integrations (Google Drive, Microsoft 365, etc.)
+- Monitor logs: `fly logs -a aria-mantu-app`
