@@ -1,75 +1,45 @@
 ---
 project: MSourcing / ARIA
-shift: 64
+shift: 65
 agent: cursor-cloud
 updated: 2026-08-25 UTC
-status: enterprise-autopilot-implementation-pushed
+status: ci-blocked-on-actions-budget
 ---
 
-# Handoff - Shift 64
+# Handoff - Shift 65
 
 ## Current state
 
-- Branch `cursor/enterprise-autopilot-b91d` off `integration/sourcing-enrichment-on-main`.
-- Enterprise Autopilot plan implemented in source: per-user entitlements (0055),
-  MCP allowlist (0056), template-bound approvals, API map, ignite scheduler,
-  LinkedIn send-only position, STATUS.md re-dated.
-- `npm test` (application group) green at this worktree after auth-callback,
-  live-role, shortlist-handler, infra-release, and flyctl-absent fixes.
-- Docker / `test:database` still unavailable in this cloud sandbox (no Docker
-  socket) — P-1 remains open. Owner Phase 1 inputs still required.
+- PR #24 (`cursor/enterprise-autopilot-b91d` → `integration/sourcing-enrichment-on-main`) HEAD `546f1f5`.
+- All GitHub Actions jobs on the PR fail in ~2–4s with **0 steps** and annotation:
+  `The job was not started because an Actions budget is preventing further use.`
+- This is **billing/minutes exhaustion**, not a product/test regression. Local app gate was green earlier this shift series.
+- CI efficiency shipped: push triggers narrowed to long-lived refs; feature branches covered by `pull_request` only; concurrency cancel added (`.github/workflows/ci.yml`, `codeql.yml`). Latest PR run shows no duplicate push suite.
 
 ## Done this shift
 
-- Migration `0055_autopilot_entitlements_and_templates.sql`: profiles.autopilot_*,
-  outreach_templates, template_bound approvals, set_member_autopilot,
-  outbound_approval_authorizes_send wired into LinkedIn/Email/WhatsApp claims.
-- Migration `0056_mcp_allowlist_authority.sql` + `/api/admin/mcp/allowlist`.
-- Admin UI: Settings → Roles live autopilot toggles via `/api/admin/members`.
-- `decideAutopilot` entitlement branch; dispatch accepts template_bound;
-  loop worker shortlist auto-enqueue for entitled workspaces.
-- `docs/API.md`, `docs/LINKEDIN_SEND_ONLY.md`, `_relay/issues-open.md`,
-  `_relay/2026-08-25-outreach-autonomy-decision.md`.
-- P-11: deleted orphan `Floor3DScene.tsx`. P-12: STATUS.md re-reviewed 2026-08-25.
-- A-7: `scripts/ignite-sourcing-loop-scheduler.mjs`.
-- A-10 helper: `src/lib/sourcing/currency-budget.ts`.
-
-## Verification
-
-Passed:
-
-- `npm run typecheck`, `npm run typecheck:tests`
-- `npm test` (application) exit 0
-- `tests/docs-truth.mts`, `autopilot-entitlements.mts`, `mcp-runtime-policy.mts`
-
-Not run / blocked here:
-
-- `npm run test:database` (no Docker)
-- `tests/cross-channel-cap-postgres.sh`
-- Live Fly kill-switch flip, SSO, delivery domain, LinkedIn vendor credentials
+- Confirmed root cause of 14 red checks via `gh run view` annotations (budget).
+- Narrowed CI/CodeQL push triggers; documented in `_relay/issues-open.md` (CI-BUDGET, CI-DUP) and `_relay/lessons/2026-08-25-github-actions-budget.md`.
 
 ## Blockers
 
-See `_relay/issues-open.md` (P-1, P-2 full gate on Docker host, P-7, E-2, L-2, A-1).
+- **CI-BUDGET (Tony):** restore GitHub Actions minutes / spending limit, then re-run failed workflows on PR #24.
+- Prior open blockers unchanged: P-1 Docker DB proofs, P-7 delivery domain, E-2 Entra SSO, L-2 LinkedIn vendor, A-1 kill-switch.
 
 ## Next steps
 
-1. On Docker host: apply 0053–0056, run `test:database` + cross-channel-cap proof.
-2. Tony: Entra SSO + delivery domain + alerting (Phase 1).
-3. After P-1/P-2: set `ARIA_LOOP_KILL_SWITCH=false` and workspace stage flags.
-4. Install ignite scheduler cron with `ARIA_LOOP_WORKSPACE_IDS`.
-5. Contract LinkedIn vendor; set `LINKEDIN_VENDOR_*`.
+1. Tony restores Actions budget (org billing / spending limit).
+2. Re-run failed CI + CodeQL on PR #24; treat any new non-budget failures as real product issues.
+3. On Docker host: apply 0053–0056 + `test:database` (P-1).
+4. Continue Phase 1 owner inputs (SSO, domain, alerting).
 
 ## Decisions made (don't relitigate)
 
-- Prior shift 63 decisions stand (LinkedIn policy boundary, sequences dark default).
-- Admin toggles who gets autopilot; workspace switchboard remains blast radius.
-- Template + audience approval model for entitled sends.
-- Production MCP only via allowlist (no env-only bypass).
-- LinkedIn inbound = send-only until vendor webhook (docs/LINKEDIN_SEND_ONLY.md).
+- Prior shift 63–64 decisions stand.
+- Do not debug application code for empty ~3s Actions failures with budget annotations.
+- Feature-branch CI is PR-only (no push+PR double spend).
 
 ## Watch out
 
-- `claim_*` email/whatsapp/linkedin recreated in 0055 — dump-diff on apply.
-- Roles panel now mutates entitlements (not roles) via API; live-role tests updated.
-- Auth callback tests must send Host / x-forwarded-host (publicOrigin).
+- After budget restore, expect fewer check runs per push (PR only) — that is intentional.
+- Vercel checks can still succeed while Actions is budget-blocked.
