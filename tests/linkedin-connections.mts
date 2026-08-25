@@ -92,6 +92,7 @@ const panel = readFileSync("src/components/settings/linkedin-connections-panel.t
 ok("settings panel Connect my LinkedIn", /Connect my LinkedIn/.test(panel));
 ok("settings panel refuses password framing", /never logs into LinkedIn/i.test(panel));
 ok("demo seats not wiped by empty API seats array", /json\?\.demo \|\| !supabaseEnabled/.test(panel));
+ok("simulate skips non-UUID demo seat ids", /uuidSeat/.test(panel));
 
 const store = readFileSync("src/lib/store.ts", "utf8");
 ok("toggleSeatLive skips mailbox for LinkedIn", /LinkedIn Assisted Manual/.test(store) && /no mailbox SPF required/i.test(store));

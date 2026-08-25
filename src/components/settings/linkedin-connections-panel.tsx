@@ -193,6 +193,11 @@ export function LinkedInConnectionsPanel() {
   async function simulateEvent(seatId?: string) {
     setSimulating(true);
     try {
+      const uuidSeat =
+        typeof seatId === "string" &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(seatId)
+          ? seatId
+          : undefined;
       const res = await fetch("/api/linkedin/simulate", {
         method: "POST",
         credentials: "include",
@@ -201,7 +206,7 @@ export function LinkedInConnectionsPanel() {
           eventType: simType,
           profileUrl: simProfile,
           body: simType === "reply" ? simBody : "",
-          seatId: seatId || undefined,
+          seatId: uuidSeat,
         }),
       });
       const json = (await res.json().catch(() => null)) as {
