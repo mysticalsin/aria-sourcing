@@ -1,45 +1,154 @@
-# m3 Architecture Plan — ARIA sourcing agents + Flowise Studio (2026-07-09)
+# PLAN: Unblock Aria Sourcing End-to-End on Both Hosts
 
-Fable-authored. Builds ON existing code — send pipeline, humanizer, guardrails, RLS stay as-is; we extend, never rewrite.
+**Basis:** `integration/sourcing-enrichment-on-main` @ current HEAD
+**Written:** 2026-08-25
+**Scope:** DISCOVER + PLAN ONLY. No product changes. No deployment.
 
-## What exists (audit findings, inline m1)
-- `src/app/api/outreach/send/route.ts` — safe-by-construction: server approval gate (sha256 of exact message via `outreach_approvals` + `claim_and_record` RPC: suppression, re-contact window, daily caps, atomic dedupe), seat+domain verification, fail-closed prod, RBAC, rate limits. Channels: Email (Gmail/Graph), WhatsApp Cloud API + Twilio SMS (`src/lib/channels.ts`, env-gated dry-run).
-- `src/lib/humanizer.ts` — deterministic AI-tell stripper, applied to outreach/reply drafts.
-- `src/app/api/sourcing-agent/route.ts` — single-shot tool loop (Anthropic/OpenAI-style), real-platform search (`src/lib/sourcing/`: apollo, seamless, github, sillage, web-leads), anti-fabrication (only tool-returned candidateIds), never sends.
-- `supabase/migrations/0005_rls_tenant_isolation.sql` (22K) — workspace tenancy pattern. `0006_outreach_approvals.sql`.
-- `src/lib/rules.ts` — guardrails (score floor, dedupe window, approval checks, ReplyIntent). 40 tsx test suites. `store.ts` (249K) = client-side demo state.
+## Auth Model
 
-## Gaps → build
-1. No inbound replies (no webhooks). 2. No autopilot auto-answer. 3. No persistent on-demand agent runtime (state lives client-side). 4. No Flowise studio. 5. Admin metrics synthetic.
+**Vercel Demo** (aria-sourcing-demo.vercel.app):
+- Supabase Auth (GoTrue) with hosted Supabase project
+- Demo login: admin/admin resolves SERVER-SIDE to admin@hermes.local account using DEMO_ADMIN_PASSWORD
+- Middleware (src/proxy.ts) gates all routes with HMAC-signed demo cookie or Supabase session
+- Session persists via sb-auth-token httpOnly cookie
+- RLS enforces workspace tenancy in Postgres
 
-## A. Data (migration 0007_agent_runtime.sql, RLS per 0005 pattern)
-- `agent_specs`: id, workspace_id, owner_id, name, role_brief jsonb, channels text[], guardrails jsonb {autopilot bool, topics_allow[], quiet_hours, max_per_day, canary_remaining int}, flowise_chatflow_id, status.
-- `agent_runs`: id, spec_id, workspace_id, node text, state_json jsonb, step_count, status (running|awaiting_gate|done|failed).
-- `agent_events`: run_id, at, type, payload jsonb — append-only. **NO send path from this table — human-likeness by architecture.**
-- `messages_outbound`: workspace_id, candidate_id, channel, type ('candidate_reply'|'approved_template') — ONLY these two types can reach send, body, status (composed|gated|blocked|queued|sent), gate_result jsonb, dedupe_hash unique, scheduled_at.
-- `messages_inbound`: workspace_id, candidate_id, channel, body, received_at, processed.
+**Fly Production** (aria-mantu-app.fly.dev + kong):
+- Same Supabase Auth but self-hosted on Fly
+- Kong gateway at aria-mantu-kong.fly.dev proxies /auth/v1, /rest/v1 with key-auth
+- Next.js app on aria-mantu-app.fly.dev uses internal kong.internal:8000 for server-side calls
+- Kong /healthz endpoint (request-termination plugin) returns 200 "ok" without backend
+- App /api/health returns JSON health check
 
-## B. Agent runtime (deer-flow pattern, TS-native — src/lib/agents/)
-- `graph.ts`: state machine planner→sourcer→screener→outreach→reporter; nodes return `{update, nextNode}`; state persisted to `agent_runs` after EVERY node (resume = read row, re-invoke); step budget column; per-node tool injection reusing `sourcing-tools.ts`; planner = Zod Plan schema {steps[{title,description,step_type}], has_enough_context} + fence-strip/JSON-repair; reporter style enum.
-- `/api/agents/run/route.ts`: drives loop, `maxDuration = 300`; persists per node so timeout = resumable, not fatal. (deer-flow verdict: skip LangGraph.js, DB-row resume.)
+## Env Vars Required
 
-## C. Human-likeness gate + gated autopilot (src/lib/gate.ts)
-Pipeline: compose → `humanize()` (existing) → AI-tell classifier (banned meta/status patterns: "as an AI", thinking/processing/status narration, bracketed actions, leaked JSON/markdown fences) → dedupe cache (sha256 vs messages_outbound.dedupe_hash) → pacing (quiet hours, min-gap per conversation, jittered delay) → verdict pass|blocked.
-Autopilot path (per-spec opt-in): inbound reply + guardrails pass + within 24h WhatsApp window + canary spent ⇒ system records `outreach_approvals` row (scope-limited auto-approval) then existing `/api/outreach/send` — reuses the whole safe pipeline. Any fail ⇒ status blocked, queued in Replies UI for Tony. Never-auto-send stays default.
+**Vercel Minimum for E2E:**
+```
+NEXT_PUBLIC_SUPABASE_URL=<hosted supabase project URL>
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
+SUPABASE_SERVICE_ROLE_KEY=<service_role key>
+NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true
+DEMO_ADMIN_PASSWORD=<strong password matching seeded admin@hermes.local>
+DATA_ENCRYPTION_KEY=<base64 32-byte key>
+```
 
-## D. Inbound
-- `/api/webhooks/whatsapp/route.ts`: GET hub.challenge verify; POST → messages_inbound → autopilot trigger. (channels.ts already sends via graph.facebook.com — same creds.)
-- Email: extend `email-sync.ts` to write messages_inbound. (ASSUMED: Cloud API version bump v18→current safe; verify at build.)
+**Fly Minimum for E2E:**
+- Same as Vercel but NEXT_PUBLIC_SUPABASE_URL points to internal Kong
+- SUPABASE_URL overrides to http://aria-mantu-kong.internal:8000
+- FLY_SUPABASE_ANON_KEY and FLY_SUPABASE_SERVICE_KEY injected to Kong
+- NEXT_PUBLIC_ENABLE_DEMO_LOGIN typically false (production Supabase auth)
 
-## E. Flowise Agent Studio
-Sidecar (Docker: Railway/Fly, 2vCPU/4GB, own Postgres schema — NOT Vercel). `/studio` page embeds `@flowiseai/agentflow` (Apache-2.0 React canvas) via `/api/flowise/[...path]` proxy holding workspace API key server-side; ARIA DB maps spec↔chatflow_id; fallback iframe (IFRAME_ORIGINS) then new-tab. Flowise = editor; ARIA runtime = production execution.
+## Fly vs Vercel Differences
 
-## Build waves (each: code → test → refine; Sonnet-tested per Tony)
-- W1 migration + gate lib + adversarial gate tests (50+ AI-tell fixtures, 100% blocked) → `tests/gate.mts`
-- W2 agent graph + run route + synthetic-run test → `tests/agent-graph.mts`
-- W3 WhatsApp webhook + autopilot loop + tests → `tests/autopilot.mts`
-- W4 Studio page + proxy + spec CRUD
-- W5 admin metrics from real tables
-- W6 full `npm test` + typecheck + push `vercel-demo` (Vercel auto-deploy) — production per Tony 2026-07-09 instruction.
+| Aspect | Vercel | Fly |
+|--------|--------|-----|
+| Supabase | Hosted cloud project | Self-hosted (auth, rest, db, kong) |
+| /api/healthz | 401 "Sign in to use this demo API." from middleware (not in isPublicServiceApi) | 200 "ok" from Kong request-termination plugin |
+| /api/health | 200 JSON {"ok":true,"status":"healthy",...} | 200 JSON (same) |
+| Demo login | admin/admin enabled via NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true | Typically disabled (real Supabase accounts) |
+| Session cookie | sb-auth-token set by Next.js middleware | Same, shared over Fly 6PN |
+| API auth | Middleware checks demo cookie or Supabase session | Same middleware |
 
-Verify each wave: suite passes + no regression in existing 40 suites (spot: outreach-guardrails, channels, sourcing-agent, rbac-negative).
+## The Single First E2E Gap
+
+**Where:** Vercel demo path from dashboard "Source next batch" click to live candidate sourcing.
+
+**Root Cause:** The Vercel demo is configured as a LIVE workspace (supabaseEnabled=true) but sourcing requires database state that may not exist or be properly seeded.
+
+**Observed Behavior:**
+1. User lands on / → 307 to /login (both hosts work)
+2. /login → click "Enter the demo console" → POST /api/auth/demo-login
+3. Demo login succeeds if:
+   - DEMO_ADMIN_PASSWORD matches seeded admin@hermes.local password
+   - admin@hermes.local exists in Supabase Auth
+   - User has profile row with role='admin'
+   - Workspace exists and is linked to user
+4. Dashboard loads → user clicks "Source next batch"
+5. Client calls actions.sourceNextBatch(campaignId)
+6. Store logic checks: syntheticSourcingAllowed() returns !supabaseEnabled → FALSE on Vercel
+7. Because demoSourcing=false, store calls sourceReviewedCampaignBatch()
+8. That function calls POST /api/sourcing-agent with campaign ID
+9. /api/sourcing-agent endpoint:
+   - Line 214: Requires supabaseEnabled (✓ true on Vercel)
+   - Line 226-233: Requires authenticated Supabase session (✓ if login worked)
+   - Line 235-244: Requires user role='admin' with 'source' permission + workspace_id from DB
+   - Line 271: Calls readWorkspace() → queries workspace_state table for campaign
+   - Returns 404 if campaign not found in DB
+
+**First Break Point:** The workspace_state table on the Vercel demo's hosted Supabase project likely:
+- Does NOT contain the campaign created in-browser (it's in localStorage only), OR
+- Does NOT contain any workspace_state row for the demo user, OR
+- The admin@hermes.local account was not properly seeded with a workspace
+
+**Evidence:**
+- src/lib/store.ts line 911: syntheticSourcingAllowed = () => !supabaseEnabled
+- Vercel has supabaseEnabled=true (NEXT_PUBLIC_SUPABASE_URL is set)
+- Therefore browser state is LIVE mode, not demo mode
+- LIVE mode expects ALL state in Supabase Postgres
+- But the dashboard likely creates campaigns in-browser using localStorage
+- Those campaigns never sync to the database because the store's commitPersisted path requires a valid workspace
+
+**Fly Status:** Fly production has the same code path but:
+- Runs with real Supabase accounts (not demo login)
+- Has migrations applied via aria-mantu-bootstrap
+- Has workspace_state rows populated by real users
+- /api/sourcing-agent would work IF user is authenticated and workspace exists
+
+## ONE Logical Next Change to Unblock E2E
+
+**Change:** Make Vercel demo behave as a true demo (synthetic sourcing) rather than a misconfigured live workspace.
+
+**Option A (Recommended): Disable Supabase on Vercel demo**
+
+Remove NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY from Vercel env vars. This forces:
+- supabaseEnabled → false
+- syntheticSourcingAllowed → true
+- demoSourcing → true in sourceNextBatch
+- Sourcing calls /api/source with platform=GitHub
+- /api/source line 136: supabaseEnabled check is false, so it allows demo sourcing
+- Candidates stored in localStorage only
+- No database required
+
+**Option B: Properly seed Vercel demo workspace**
+
+Keep Supabase enabled but ensure:
+1. admin@hermes.local exists with correct password
+2. Profile row with role='admin' and workspace_id='<uuid>'
+3. workspace_state row with that workspace_id containing seeded campaigns
+4. Seed script: supabase/seed-admin.sql (already exists)
+5. Apply migrations: supabase db push or paste each file in order
+
+**Option C: Hybrid demo mode with Supabase**
+
+Add logic to detect "demo with Supabase" (NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true AND supabaseEnabled=true) and:
+- Force syntheticSourcingAllowed to return true
+- Skip database reads in sourceNextBatch
+- Use localStorage for all state even when Supabase is configured
+
+**Recommendation:** Option A (disable Supabase on Vercel demo) is cleanest. The Vercel demo is explicitly positioned as a public synthetic-data demo per DEPLOY_VERCEL_DEMO.md. Removing Supabase env vars makes the demo path coherent: admin/admin → localStorage → /api/source demo GitHub search → no database dependencies.
+
+**Alternative (if Supabase MUST stay):** Option B requires seeding the database with at least one workspace and one campaign in the workspace_state JSON. The seed-admin.sql script exists but does not create workspace_state rows. A new seed-workspace-state.sql would be needed.
+
+**Verification Plan (after change):**
+1. Deploy change to Vercel preview
+2. Open preview URL → should redirect to /login
+3. Click "Enter the demo console" → should reach dashboard
+4. Dashboard should show seed campaigns (from localStorage or DB depending on option)
+5. Click "Source next batch" → should return candidates without 404/503
+6. Check browser network tab: POST /api/source should return 200 with users array (Option A) or POST /api/sourcing-agent should return 200 with candidates array (Option B)
+
+## Kong /api/healthz Note
+
+The /api/healthz path is NOT a Next.js route. On Fly, Kong handles it with a request-termination plugin that returns 200 "ok". On Vercel (no Kong), the middleware (src/proxy.ts) intercepts /api/* routes. Because /api/healthz is not in the isPublicServiceApi() list, it falls through to the demo session check and returns 401 if no valid session exists. This is NOT the E2E blocker. The E2E blocker is the sourcing action database dependency.
+
+To fix the Vercel /api/healthz 401: add "/api/healthz" to isPublicServiceApi() in src/proxy.ts line 22-29. But this is a nit, not the E2E gap.
+
+## Next Steps (outside scope of this plan)
+
+1. Choose Option A, B, or C above
+2. Implement the chosen change
+3. Deploy to Vercel preview
+4. Verify E2E: login → dashboard → source → candidates appear
+5. If Option B: document seed-workspace-state.sql and update DEPLOY_VERCEL_DEMO.md
+6. If Option A: update DEPLOY_VERCEL_DEMO.md to remove Supabase env vars from step 3
+7. Test Fly E2E separately (different auth path, same sourcing logic)
