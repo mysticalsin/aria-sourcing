@@ -91,6 +91,7 @@ ok("confirm-manual uses assisted RPC", /record_linkedin_assisted_manual_send/.te
 const panel = readFileSync("src/components/settings/linkedin-connections-panel.tsx", "utf8");
 ok("settings panel Connect my LinkedIn", /Connect my LinkedIn/.test(panel));
 ok("settings panel refuses password framing", /never logs into LinkedIn/i.test(panel));
+ok("demo seats not wiped by empty API seats array", /json\?\.demo \|\| !supabaseEnabled/.test(panel));
 
 const store = readFileSync("src/lib/store.ts", "utf8");
 ok("toggleSeatLive skips mailbox for LinkedIn", /LinkedIn Assisted Manual/.test(store) && /no mailbox SPF required/i.test(store));

@@ -59,21 +59,26 @@ export function LinkedInConnectionsPanel() {
         seats?: SeatRow[];
       } | null;
       if (json?.providers) setProviders(json.providers);
-      if (json?.seats) setSeats(json.seats);
-      else if (json?.demo) {
-        setSeats(
-          localSeats
-            .filter((s) => isLinkedInSeatProvider(s.provider))
-            .map((s) => ({
-              id: s.id,
-              name: s.name,
-              provider: s.provider,
-              status: s.status,
-              mode: s.mode,
-              connectedAccount: s.connectedAccount,
-            })),
-        );
+
+      const localLinkedIn = localSeats
+        .filter((s) => isLinkedInSeatProvider(s.provider))
+        .map((s) => ({
+          id: s.id,
+          name: s.name,
+          provider: s.provider,
+          status: s.status,
+          mode: s.mode,
+          connectedAccount: s.connectedAccount,
+          operatorEmail: s.operatorEmail,
+        }));
+
+      // Demo (no Supabase): prefer client seats — API returns seats:[] and must not wipe UI.
+      if (json?.demo || !supabaseEnabled) {
+        setSeats(localLinkedIn);
+      } else if (Array.isArray(json?.seats)) {
+        setSeats(json.seats);
       }
+
       if (json?.error && !json.ok) {
         toast({ title: "LinkedIn status", description: json.error, variant: "error" });
       }
@@ -90,21 +95,57 @@ export function LinkedInConnectionsPanel() {
 
   async function connectAssisted() {
     if (!supabaseEnabled) {
-      // Demo: create local seat via store
-      const seat = await actions.addSeat({
-        name: "My LinkedIn (assisted)",
-        operatorEmail: label.includes("@") ? label : "operator@demo.local",
-        provider: "LinkedIn Assisted Manual",
-      });
-      if (seat) {
-        actions.updateSeat(seat.id, { connectedAccount: label || "Operator LinkedIn" });
-        await actions.toggleSeatLive(seat.id);
-        toast({
-          title: "LinkedIn assisted-manual ready",
-          description: "Draft → copy into LinkedIn → Confirm send in Aria.",
-          variant: "success",
+      setConnecting(true);
+      try {
+        // Demo: create local seat via store (durable route_key needs Supabase).
+        const seat = await actions.addSeat({
+          name: "My LinkedIn (assisted)",
+          operatorEmail: label.includes("@") ? label : "operator@demo.local",
+          provider: "LinkedIn Assisted Manual",
         });
-        await load();
+        if (!seat) {
+          toast({
+            title: "Connect failed",
+            description: "Could not create a local LinkedIn seat.",
+            variant: "error",
+          });
+          return;
+        }
+        actions.updateSeat(seat.id, { connectedAccount: label.trim() || "Operator LinkedIn" });
+        const live = await actions.toggleSeatLive(seat.id);
+        if (!live.ok) {
+          toast({ title: "Seat created", description: live.reason, variant: "warning" });
+        } else {
+          toast({
+            title: "LinkedIn assisted-manual ready",
+            description: "Draft → copy into LinkedIn → Confirm send in Aria.",
+            variant: "success",
+          });
+        }
+        // Refresh from local store without waiting on a wipe-prone API list.
+        setSeats((prev) => {
+          const row = {
+            id: seat.id,
+            name: seat.name,
+            provider: seat.provider,
+            status: seat.status,
+            mode: "live" as const,
+            connectedAccount: label.trim() || "Operator LinkedIn",
+            operatorEmail: seat.operatorEmail,
+          };
+          if (prev.some((s) => s.id === seat.id)) {
+            return prev.map((s) => (s.id === seat.id ? { ...s, ...row } : s));
+          }
+          return [...prev, row];
+        });
+      } catch (err) {
+        toast({
+          title: "Connect failed",
+          description: err instanceof Error ? err.message : "Unexpected error.",
+          variant: "error",
+        });
+      } finally {
+        setConnecting(false);
       }
       return;
     }
