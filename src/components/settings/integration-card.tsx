@@ -284,7 +284,8 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
               {integration.real &&
                 (integration.id === "int_github" ||
                   integration.id === "int_outlook" ||
-                  integration.id === "int_gmail") && (
+                  integration.id === "int_gmail" ||
+                  integration.id === "int_linkedin_rsc") && (
                 <Button
                   variant="subtle"
                   size="sm"
@@ -300,6 +301,7 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                 integration.id !== "int_github" &&
                 integration.id !== "int_outlook" &&
                 integration.id !== "int_gmail" &&
+                integration.id !== "int_linkedin_rsc" &&
                 integration.setupHref && (
                 <Button
                   variant="subtle"

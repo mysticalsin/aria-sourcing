@@ -22,6 +22,7 @@ import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { cn } from "@/lib/utils";
 import { IntegrationCard } from "@/components/settings/integration-card";
 import { EmailConnectionsPanel } from "@/components/settings/email-connections-panel";
+import { LinkedInConnectionsPanel } from "@/components/settings/linkedin-connections-panel";
 import { CompliancePanel } from "@/components/settings/compliance-panel";
 import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
 import { RolesPanel } from "@/components/settings/roles-panel";
@@ -614,6 +615,7 @@ export default function SettingsPage() {
             description="Connect Gmail or Outlook, then validate MCP and the rest of Aria's tool stack."
           >
             <EmailConnectionsPanel />
+            <LinkedInConnectionsPanel />
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone="success" size="sm" dot>
                 {summary.connected} connected

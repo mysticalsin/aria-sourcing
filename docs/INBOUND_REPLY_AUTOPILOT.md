@@ -76,8 +76,10 @@ Idle loop ticks (~30s) **do not** call Graph or the classifier. Empty daily
 
 ## LinkedIn
 
-Inbound LinkedIn messages stay send-only until a vendor webhook exists
-(`docs/LINKEDIN_SEND_ONLY.md`). Email + WhatsApp are the live reply channels.
+Assisted-manual E2E is live (Settings connect → Confirm). Vendor inbound uses
+`POST /api/webhooks/linkedin` (migration 0058 + `route_key`). Without a
+contracted vendor, operators still read replies in LinkedIn out of band.
+See `docs/LINKEDIN_SEND_ONLY.md`.
 
 ## Tests
 

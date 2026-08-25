@@ -1,17 +1,35 @@
-# LinkedIn channel position — send-only until vendor inbound exists
+# LinkedIn channel position — assisted-manual E2E + vendor inbound
 
 **Date:** 2026-08-25  
-**Status:** interim product position (L-5)
+**Status:** assisted-manual E2E shipped; vendor API still fail-closed without credentials (L-2)
 
-Until a contracted messaging vendor exposes a signed inbound webhook that ARIA
-can treat with the same untrusted-data envelope as WhatsApp:
+## What works end-to-end (safe)
 
-1. LinkedIn **outbound** may use `assisted-manual` (working) or `vendor-api`
-   (fail-closed without `LINKEDIN_VENDOR_*`).
-2. LinkedIn **inbound replies are out of band** — operators read and respond in
-   LinkedIn; ARIA does not correlate LinkedIn reply webhooks.
-3. No scraper, session reuse, or first-party LinkedIn automation.
+1. **Settings → Integrations → Connect my LinkedIn** creates a live
+   `LinkedIn Assisted Manual` seat (no LinkedIn password/cookies).
+2. Source → draft LinkedIn outreach → human approve → **Copy / Open LinkedIn /
+   paste-send → Confirm** (`POST /api/outreach/confirm-manual` → durable ledger).
+3. LinkedIn suppressions persist to `suppression_list` (type `linkedin`).
+4. Draft generation injects `linkedInGuardrailPrompt()` (no login/scrape language).
 
-When vendor inbound lands: add `/api/webhooks/linkedin`, reuse disclosure/
-injection sanitization from WhatsApp inbound, and reconcile via
-`record_linkedin_delivery_outcome` / delivery_reconcile jobs.
+## Vendor path
+
+- Outbound `vendor-api` requires `LINKEDIN_VENDOR_API_URL` + `LINKEDIN_VENDOR_API_KEY`
+  and fails closed when absent (no silent fallback to scrape).
+- Inbound: `POST /api/webhooks/linkedin` with HMAC `x-aria-signature` and
+  `routeKey` from `linkedin_inbound_routes` (migration **0058**). Set
+  `LINKEDIN_INBOUND_WEBHOOK_SECRET` (falls back to `EMAIL_INBOUND_WEBHOOK_SECRET`).
+
+## Explicitly refused
+
+- LinkedIn member OAuth / Recruiter login inside Aria
+- Session reuse, headless browsers, grey-market automation tools
+- Scraping linkedin.com from this app
+
+## Ops checklist
+
+1. Apply migration `0058_linkedin_assisted_and_inbound.sql`.
+2. Admin: Settings → Integrations → Connect my LinkedIn → Validate.
+3. Optional vendor: set `LINKEDIN_VENDOR_*` + inbound secret; point vendor at
+   `/api/webhooks/linkedin` with the seat `route_key`.
+4. Official InMail/RSC still needs a LinkedIn partnership (separate track).

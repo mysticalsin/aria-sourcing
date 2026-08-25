@@ -124,11 +124,18 @@ skip). Idle loop ticks never poll mailboxes or call the classifier. See
 
 ## LinkedIn messaging
 
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| GET/POST | `/api/linkedin/connections` | member/admin | List readiness; ensure assisted-manual (or vendor) seat + inbound route |
+| POST | `/api/linkedin/test` | member | Validate seat (no linkedin.com call) |
+| POST | `/api/outreach/confirm-manual` | member `outreach` | Durable confirm after human paste/send |
+| POST | `/api/webhooks/linkedin` | HMAC `x-aria-signature` | Vendor inbound reply → record + enqueue classify |
+
 - **Data in:** Apify vendor purchase via `/api/source/apify/*` (working).
-- **Messages out:** `assisted-manual` always available; `vendor-api` requires
-  `LINKEDIN_VENDOR_API_URL` + `LINKEDIN_VENDOR_API_KEY` and fails closed when
-  absent (no silent fallback). Smoke: `scripts/smoke-linkedin-live.mts`
-  (discovery) + channel contract tests.
+- **Messages out:** assisted-manual E2E via Settings connect + Confirm; `vendor-api`
+  requires `LINKEDIN_VENDOR_API_URL` + `LINKEDIN_VENDOR_API_KEY` (fail-closed).
+- **No** LinkedIn password/OAuth login in Aria. See `docs/LINKEDIN_SEND_ONLY.md`
+  and `docs/runbooks/connect-linkedin-assisted-manual.md`.
 
 ## Stability notes
 

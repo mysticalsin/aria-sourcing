@@ -204,16 +204,22 @@ export function OutreachMessageCard({
   }
 
   function handleConfirmManualSend() {
-    const res = a.confirmManualSend(message.id);
-    if (!res.ok) {
-      toast({ title: "Could not confirm", description: res.error, variant: "error" });
-      return;
-    }
-    toast({
-      title: "LinkedIn send confirmed",
-      description: "Ledger updated. The candidate is marked as contacted.",
-      variant: "success",
-    });
+    void (async () => {
+      const res = await a.confirmManualSend(message.id);
+      if (!res.ok) {
+        toast({ title: "Could not confirm", description: res.error, variant: "error" });
+        return;
+      }
+      if (res.dryRun) {
+        toast({ title: "Public demo only", description: res.error, variant: "info" });
+        return;
+      }
+      toast({
+        title: "LinkedIn send confirmed",
+        description: "Ledger updated. The candidate is marked as contacted.",
+        variant: "success",
+      });
+    })();
   }
 
   async function handleSend() {

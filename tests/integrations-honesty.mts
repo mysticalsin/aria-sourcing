@@ -49,8 +49,8 @@ ok(
     /no direct linkedin login, scraping, or session automation/i.test(apify?.description ?? ""),
 );
 ok(
-  "Official LinkedIn Recruiter System Connect remains an honest, unbuilt placeholder",
-  linkedinRsc?.real === false && linkedinRsc.status !== "connected",
+  "Official LinkedIn messaging card is real (assisted-manual path) and starts unconfigured",
+  linkedinRsc?.real === true && linkedinRsc.status === "not_configured",
 );
 
 console.log(`RESULT integrations-honesty: ${pass} passed, ${fail} failed`);

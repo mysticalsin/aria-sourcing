@@ -26,8 +26,8 @@ No secrets.
 | A-8 | done (code) | Loop | Event-driven reply: email-inbound webhook enqueues `inbound_classify`; positive intent → draft for entitled autopilot; no idle LLM | fixed | eng |
 | A-1 | blocked | Loop | Do not set `ARIA_LOOP_KILL_SWITCH=false` until P-1/P-2 green | open | Tony after eng |
 | A-7 | done (code) | Loop | `scripts/ignite-sourcing-loop-scheduler.mjs` shipped; needs cron install | open (ops) | eng |
-| L-2 | blocker | LinkedIn | Vendor URL/KEY not contracted; vendor-api stays fail-closed; assisted-manual works | open | Tony |
-| L-5 | decision | LinkedIn | Inbound webhook vs send-only — default send-only until vendor inbound exists | open | Tony |
+| L-2 | blocker | LinkedIn | Vendor URL/KEY not contracted; vendor-api stays fail-closed; assisted-manual E2E works via Settings | open | Tony |
+| L-5 | done (code) | LinkedIn | `/api/webhooks/linkedin` + route_key (0058); needs vendor + secret to go live | open (enablement) | Tony |
 
 ## Decision log (2026-08-25)
 

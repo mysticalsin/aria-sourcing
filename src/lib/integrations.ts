@@ -75,14 +75,16 @@ export function defaultIntegrations(): IntegrationStatus[] {
     },
     {
       id: "int_linkedin_rsc",
-      name: "LinkedIn Recruiter System Connect",
-      category: "Sourcing",
-      description: "Official LinkedIn ATS integration for automated profile import and InMail. Requires a LinkedIn partnership agreement.",
+      name: "LinkedIn messaging",
+      category: "Comms",
+      description:
+        "Assisted-manual LinkedIn drafts (connect in Settings). Official RSC/InMail needs a LinkedIn partnership; vendor-api stays fail-closed without LINKEDIN_VENDOR_*.",
       status: "not_configured",
       mode: "mock",
       lastSync: null,
-      errors: ["Not connected. Apply for RSC at LinkedIn Talent Solutions, then enter OAuth credentials."],
-      real: false,
+      errors: [],
+      real: true,
+      setupHref: "/settings?tab=integrations",
     },
     {
       id: "int_twenty",

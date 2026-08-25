@@ -361,7 +361,7 @@ export interface HermesActions {
    *  mock. Status is still set by the human approval gate — never auto-sent. */
   regenerateOutreach: (messageId: string, tone?: OutreachTone) => Promise<void>;
   approveOutreach: (messageId: string) => Promise<ApprovalResult>;
-  confirmManualSend: (messageId: string) => { ok: boolean; error?: string };
+  confirmManualSend: (messageId: string) => Promise<{ ok: boolean; error?: string; dryRun?: boolean }>;
   /** The deliberate gated send for a live-approved email — calls the server send route. */
   sendApprovedOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string; queued?: boolean }>;
   rejectOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string }>;

@@ -182,6 +182,7 @@ import {
   persistManualSuppression,
   type EnforcedSuppressionType,
 } from "./manual-suppression";
+import { linkedInGuardrailPrompt } from "./linkedin-policy";
 
 export { defaultSlot, interviewerIsBusy, resolveBookingSlot } from "./store/booking-slot";
 export { migrateToCurrentVersion, normalizeHermesState } from "./store/migrations";
@@ -1919,7 +1920,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         });
         // F-2: prepend ariaPrompt when set so it shapes the live generation.
         const ariaPrompt = s.settings.guardrails?.ariaPrompt;
-        const guardrails = ariaPrompt || "";
+        const liGuard = channel === "LinkedIn" ? linkedInGuardrailPrompt() : "";
+        const guardrails = [ariaPrompt, liGuard].filter(Boolean).join("\n\n");
         const prompt = guardrails ? `${guardrails}\n\n${basePrompt}` : basePrompt;
 
         // Build input: cloud path when aiCfg resolved, hermes path otherwise.
@@ -2168,7 +2170,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           language: lang,
         });
         const ariaPrompt = s.settings.guardrails?.ariaPrompt;
-        const prompt = ariaPrompt ? `${ariaPrompt}\n\n${basePrompt}` : basePrompt;
+        const liGuard = msg.channel === "LinkedIn" ? linkedInGuardrailPrompt() : "";
+        const composed = [ariaPrompt, liGuard].filter(Boolean).join("\n\n");
+        const prompt = composed ? `${composed}\n\n${basePrompt}` : basePrompt;
 
         let regenGenInput: Parameters<typeof hermesGenerate>[0];
         if (aiCfg) {
@@ -2462,7 +2466,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const confirmManualSend = useCallback(
-    (messageId: string): { ok: boolean; error?: string } => {
+    async (messageId: string): Promise<{ ok: boolean; error?: string; dryRun?: boolean }> => {
+      if (!workspaceEffectAllowed()) {
+        return { ok: false, error: "Workspace unavailable. Retry before confirming." };
+      }
       const s = current();
       const msg = s.outreach.find((m) => m.id === messageId);
       if (!msg) return { ok: false, error: "Message not found." };
@@ -2471,6 +2478,60 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const candidate = s.candidates.find((c) => c.id === msg.candidateId);
       const campaign = s.campaigns.find((c) => c.id === msg.campaignId);
       if (!candidate || !campaign) return { ok: false, error: "Linked candidate/campaign missing." };
+      const profile = (candidate.linkedinUrl ?? "").trim();
+      if (!profile) return { ok: false, error: "Candidate has no LinkedIn profile URL." };
+
+      const linkedInSeat =
+        s.seats.find(
+          (seat) =>
+            seat.status === "active" &&
+            (seat.provider === "LinkedIn Assisted Manual" || seat.provider === "LinkedIn Vendor API") &&
+            seat.mode === "live",
+        ) ??
+        s.seats.find(
+          (seat) =>
+            seat.provider === "LinkedIn Assisted Manual" || seat.provider === "LinkedIn Vendor API",
+        );
+
+      if (supabaseEnabled) {
+        if (!linkedInSeat) {
+          return {
+            ok: false,
+            error: "Connect a LinkedIn seat in Settings → Integrations before confirming sends.",
+          };
+        }
+        try {
+          const res = await workspaceFetch("/api/outreach/confirm-manual", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              messageId,
+              candidateId: candidate.id,
+              candidateProfileUrl: profile,
+              campaignId: campaign.id,
+              seatId: linkedInSeat.id,
+            }),
+          });
+          const out = (await res.json().catch(() => null)) as {
+            ok?: boolean;
+            error?: string;
+            status?: string;
+            detail?: string;
+            synced?: boolean;
+          } | null;
+          if (!out?.ok) {
+            return { ok: false, error: out?.error ?? `Confirm failed (${res.status}).` };
+          }
+          if (out.status === "dry-run") {
+            return { ok: true, dryRun: true, error: out.detail };
+          }
+        } catch (err) {
+          return {
+            ok: false,
+            error: err instanceof Error ? err.message : "Network error confirming LinkedIn send.",
+          };
+        }
+      }
 
       const now = new Date().toISOString();
       commit((prev) => {
@@ -2496,7 +2557,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           id: genId("led"),
           candidateId: candidate.id,
           candidateEmail: candidate.email,
-          seatId: "",
+          seatId: linkedInSeat?.id ?? "",
           campaignId: campaign.id,
           channel: msg.channel,
           status: "sent",
@@ -2536,7 +2597,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       return { ok: true };
     },
-    [commit, current],
+    [commit, current, workspaceEffectAllowed, workspaceFetch],
   );
 
   // The deliberate, gated SEND for a live-approved email. Calls the server send route
@@ -4101,6 +4162,41 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         } catch {
           result = { ok: false, latencyMs: Date.now() - t0, message: `${integ.name}: probe failed (network).` };
         }
+      } else if (integ.id === "int_linkedin_rsc") {
+        const t0 = Date.now();
+        try {
+          const listRes = await workspaceFetch("/api/linkedin/connections", { method: "GET" });
+          const list = (await listRes.json().catch(() => null)) as {
+            seats?: { id: string; mode: string }[];
+          } | null;
+          const live = list?.seats?.find((s) => s.mode === "live");
+          if (!live) {
+            result = {
+              ok: false,
+              latencyMs: Date.now() - t0,
+              message: "LinkedIn: not connected. Use Connect my LinkedIn on Settings → Integrations.",
+            };
+          } else {
+            const testRes = await workspaceFetch("/api/linkedin/test", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ seatId: live.id }),
+            });
+            const out = (await testRes.json().catch(() => null)) as {
+              ok?: boolean;
+              message?: string;
+              error?: string;
+              latencyMs?: number;
+            } | null;
+            result = {
+              ok: Boolean(out?.ok),
+              latencyMs: out?.latencyMs ?? Date.now() - t0,
+              message: out?.message ?? out?.error ?? "LinkedIn validation failed.",
+            };
+          }
+        } catch {
+          result = { ok: false, latencyMs: Date.now() - t0, message: "LinkedIn probe failed (network)." };
+        }
       } else {
         result = testConnection(integ);
       }
@@ -4394,8 +4490,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         commit((prev) => ({ ...prev, seats: prev.seats.map((x) => (x.id === id ? { ...x, mode: "mock" } : x)) }));
         return { ok: true, reason: "Switched to dry-run (mock)." };
       }
-      if (!seat.connectedAccount) return { ok: false, reason: "Connect a mailbox before going live." };
-      if (!seat.domainVerified) return { ok: false, reason: "Verify the sending domain (SPF/DKIM/DMARC) first." };
+      const isLinkedIn =
+        seat.provider === "LinkedIn Assisted Manual" || seat.provider === "LinkedIn Vendor API";
+      if (!isLinkedIn) {
+        if (!seat.connectedAccount) return { ok: false, reason: "Connect a mailbox before going live." };
+        if (!seat.domainVerified) return { ok: false, reason: "Verify the sending domain (SPF/DKIM/DMARC) first." };
+      } else if (seat.provider === "LinkedIn Vendor API") {
+        // Vendor seat may go live without mailbox; keys are env-side. Assisted-manual never needs SPF.
+      } else if (!seat.connectedAccount?.trim()) {
+        // Soft: allow live with empty label — Settings connect stamps connectedAccount.
+      }
       if (supabaseEnabled) {
         const attempt = runWorkspaceEffect(() =>
           patchFleetSeatOnServer(id, { mode: "live", operatorEmail: seat.operatorEmail }),
@@ -4411,7 +4515,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           makeActivity({
             type: "system",
             title: `Agent set LIVE: ${seat.name}`,
-            notes: "Seat will send via the official provider API within guardrails.",
+            notes: isLinkedIn
+              ? "LinkedIn seat live for assisted-manual or vendor messaging (no mailbox SPF required)."
+              : "Seat will send via the official provider API within guardrails.",
             outcome: "Live",
             campaignId: null,
             linkedEntityType: null,
@@ -4420,7 +4526,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           null,
         );
       });
-      return { ok: true, reason: "Seat is live. Sends still require approval + guardrails." };
+      return {
+        ok: true,
+        reason: isLinkedIn
+          ? "LinkedIn seat is live. Drafts still need approval; assisted-manual requires Confirm after you send."
+          : "Seat is live. Sends still require approval + guardrails.",
+      };
     },
     [commit, current, runWorkspaceEffect, workspaceEffectAllowed],
   );
@@ -4478,16 +4589,19 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (!workspaceEffectAllowed()) {
         return { ok: false, error: "Workspace unavailable. Retry before changing suppression." };
       }
-      if (supabaseEnabled && entry.type === "linkedin") {
-        return { ok: false, error: "LinkedIn is assisted-manual and has no server-enforced suppression channel." };
-      }
-      const normalized = entry.type === "linkedin"
-        ? entry.value.trim().toLowerCase()
-        : normalizeSuppressionValue(entry.type as EnforcedSuppressionType, entry.value);
+      const normalized = normalizeSuppressionValue(
+        entry.type as EnforcedSuppressionType,
+        entry.value,
+      );
       if (!normalized) return { ok: false, error: "Enter a valid suppression value." };
       if (supabaseEnabled) {
         const persisted = await persistManualSuppression(
-          { ...entry, type: entry.type as EnforcedSuppressionType, value: normalized },
+          {
+            type: entry.type as EnforcedSuppressionType,
+            value: normalized,
+            reason: entry.reason,
+            expiresAt: entry.expiresAt,
+          },
           "POST",
           workspaceFetch,
         );
@@ -4527,7 +4641,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
       const entry = stateRef.current?.suppression.find((item) => item.id === id);
       if (!entry) return { ok: false, error: "Suppression not found." };
-      if (supabaseEnabled && entry.type !== "linkedin") {
+      if (supabaseEnabled) {
         const persisted = await persistManualSuppression(
           {
             type: entry.type as EnforcedSuppressionType,
