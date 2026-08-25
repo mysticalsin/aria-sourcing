@@ -1,122 +1,186 @@
-# PLAN: Fix Fly Auth Redirect to Kill 0.0.0.0:3000
+# PLAN: Ship 2 - Working Login on Fly
 
-**Basis:** `integration/sourcing-enrichment-on-main` @ 58449e7 (before revert)
+**Basis:** fix/fly-auth-public-origin @ 7417cd0 (after ship 1)
 **Written:** 2026-08-25
-**Scope:** ONE change to fix OAuth callback URLs. No deployment. No Polo.
+**Scope:** Document seed process and optionally enable demo login. No Fly deploy.
 
-## API Probe Evidence (Just Now)
+## Current State
 
-**Fly** (aria-mantu-app.fly.dev):
-- POST /api/auth/demo-login → 404 "Disabled in production" (demoLoginEnabled=false)
-- Login uses supabase-js signInWithPassword against Kong https://aria-mantu-kong.fly.dev
-- GoTrue v2.189.0, disable_signup true, all OAuth false
-- **/auth/callback redirects to https://0.0.0.0:3000/** (BROKEN)
-- **/auth/signout redirects to https://0.0.0.0:3000/login** (BROKEN)
-- PostgREST OpenAPI shows same bogus 0.0.0.0:3000 host
-- GET /api/health 200. /api/healthz and /api are 404 HTML
-- Kong live routes: /auth/v1/* and /rest/v1/ behind key-auth
+Ship 1 (auth redirect fix) is committed. PR URL: https://github.com/mysticalsin/aria-sourcing/pull/new/fix/fly-auth-public-origin
 
-**Vercel** (aria-sourcing-demo.vercel.app):
-- POST /api/auth/demo-login exists (demoLoginEnabled=true)
-- Browser: ENTER THE DEMO CONSOLE works, lands on Command Center with aria_demo cookie
+After ship 1 deploys, redirects will work, but login still has no valid credentials on Fly.
 
-## Root Cause
+## Problem
 
-GoTrue (aria-mantu-auth) is redirecting OAuth callbacks and signout to https://0.0.0.0:3000/ instead of https://aria-mantu-app.fly.dev. This makes password-based login impossible because the browser cannot navigate to 0.0.0.0:3000.
+Fly has no user in GoTrue. Login page shows empty username/password fields with no way to proceed.
 
-The redirect URL comes from GoTrue's GOTRUE_SITE_URL environment variable.
+## Required Seeding Steps for Tony
 
-**In-Repo Config (fly.auth.toml lines 11-13):**
+**Step 1: Create admin@hermes.local in GoTrue**
+
+```bash
+# Set these first
+SUPABASE_URL="https://aria-mantu-kong.fly.dev"
+DEMO_ADMIN_PASSWORD="<strong-password-tony-picks>"
+
+# Get service role key from Fly secrets
+SERVICE_ROLE_KEY=$(fly secrets list -a aria-mantu-app | grep SUPABASE_SERVICE_ROLE_KEY | awk '{print $3}')
+
+# Create user via GoTrue admin API
+curl -X POST "${SUPABASE_URL}/auth/v1/admin/users" \
+  -H "Authorization: Bearer ${SERVICE_ROLE_KEY}" \
+  -H "apikey: ${SERVICE_ROLE_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@hermes.local","password":"'"${DEMO_ADMIN_PASSWORD}"'","email_confirm":true}'
+```
+
+Expected: HTTP 200 or 201 (success), or 422 if user already exists (ok).
+
+**Step 2: Create profile and workspace in Postgres**
+
+```bash
+# Get DB password from Fly secrets
+DB_PASSWORD=$(fly secrets list -a aria-mantu-db | grep POSTGRES_PASSWORD | awk '{print $3}')
+
+# Connect via fly ssh console and run seed SQL
+fly ssh console -a aria-mantu-db -C "psql -U postgres -d postgres" <<'SQL'
+insert into public.workspaces (name, allowed_domain)
+  values ('Hermes Workspace', 'hermes.local')
+  on conflict (allowed_domain) do nothing;
+
+insert into public.profiles (id, email, full_name, workspace_id, role)
+  select u.id, u.email, 'Admin', w.id, 'admin'
+  from auth.users u
+  join public.workspaces w on w.allowed_domain = 'hermes.local'
+  where u.email = 'admin@hermes.local'
+  on conflict (id) do update
+    set role = 'admin',
+        workspace_id = excluded.workspace_id,
+        email = excluded.email;
+
+notify pgrst, 'reload schema';
+SQL
+```
+
+**Step 3A: Password Login (Current)**
+
+After steps 1-2, password login works:
+- Open https://aria-mantu-app.fly.dev/
+- Enter: admin@hermes.local
+- Password: <DEMO_ADMIN_PASSWORD from step 1>
+- Should land on Command Center
+
+**Step 3B: Demo Login (Optional)**
+
+If Tony wants ENTER THE DEMO CONSOLE button like Vercel:
+
+1. Set Fly secret:
+```bash
+fly secrets set DEMO_ADMIN_PASSWORD=<same password from step 1> -a aria-mantu-app
+```
+
+2. Update fly.app.toml line 20:
 ```toml
-API_EXTERNAL_URL = "https://aria-mantu-kong.fly.dev"
-GOTRUE_SITE_URL = "https://aria-mantu-app.fly.dev"
-GOTRUE_URI_ALLOW_LIST = "https://aria-mantu-app.fly.dev/**"
+NEXT_PUBLIC_ENABLE_DEMO_LOGIN = "true"
 ```
 
-These values are CORRECT in the repo. The 0.0.0.0:3000 behavior means either:
+3. Redeploy aria-mantu-app
 
-1. **A Fly secret named `GOTRUE_SITE_URL` is overriding the [env] value** (most likely)
-2. The aria-mantu-auth app was deployed before these values were added to fly.auth.toml
-3. GoTrue is falling back to a default constructed from HOSTNAME + PORT
+Then one-click admin/admin works (resolves to admin@hermes.local with DEMO_ADMIN_PASSWORD).
 
-## The Exact Fly Secrets to Check
+## Decision: Keep Password Login for Now
 
-Tony must run:
+Demo login is identical to Vercel's flag and proven safe (commit 58449e7 shows the change, was reverted in 5dec0e1). But Tony needs to seed the user FIRST before demo login works anyway.
+
+Recommendation: Document password login steps above. Tony can enable demo login later if desired. It's one env var change, no code.
+
+## In-Repo Change for Ship 2
+
+Create scripts/seed-fly-admin.sh that documents the exact commands for Fly:
+
 ```bash
-fly secrets list -a aria-mantu-auth
+#!/usr/bin/env bash
+# Seed admin@hermes.local on Fly deployment.
+# Run from local machine with `fly` CLI authenticated to the Fly org.
+#
+# Required:
+#   DEMO_ADMIN_PASSWORD environment variable
+#
+# Usage:
+#   DEMO_ADMIN_PASSWORD=<strong-password> ./scripts/seed-fly-admin.sh
+
+set -euo pipefail
+: "${DEMO_ADMIN_PASSWORD:?set DEMO_ADMIN_PASSWORD}"
+
+ADMIN_EMAIL="admin@hermes.local"
+SUPABASE_URL="https://aria-mantu-kong.fly.dev"
+
+echo "[fly-seed] Getting service role key..."
+SERVICE_ROLE_KEY=$(fly secrets list -a aria-mantu-app -j | jq -r '.[] | select(.Name=="SUPABASE_SERVICE_ROLE_KEY") | .Value' 2>/dev/null || echo "")
+if [ -z "$SERVICE_ROLE_KEY" ]; then
+  echo "[fly-seed] ERROR: Could not read SUPABASE_SERVICE_ROLE_KEY from aria-mantu-app"
+  echo "[fly-seed] Run: fly secrets list -a aria-mantu-app"
+  exit 1
+fi
+
+echo "[fly-seed] Creating ${ADMIN_EMAIL} in GoTrue..."
+code=$(curl -s -o /tmp/fly-seed.json -w "%{http_code}" -X POST \
+  "${SUPABASE_URL}/auth/v1/admin/users" \
+  -H "Authorization: Bearer ${SERVICE_ROLE_KEY}" \
+  -H "apikey: ${SERVICE_ROLE_KEY}" \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"${ADMIN_EMAIL}\",\"password\":\"${DEMO_ADMIN_PASSWORD}\",\"email_confirm\":true}")
+
+case "$code" in
+  200|201) echo "[fly-seed]   User created (HTTP ${code})" ;;
+  422)     echo "[fly-seed]   User already exists (ok)" ;;
+  *)       echo "[fly-seed]   ERROR (HTTP ${code}):"; cat /tmp/fly-seed.json 2>/dev/null; echo; exit 1 ;;
+esac
+
+echo "[fly-seed] Creating profile and workspace in Postgres..."
+fly ssh console -a aria-mantu-db -C "psql -U postgres -d postgres" <<'SQL'
+insert into public.workspaces (name, allowed_domain)
+  values ('Hermes Workspace', 'hermes.local')
+  on conflict (allowed_domain) do nothing;
+
+insert into public.profiles (id, email, full_name, workspace_id, role)
+  select u.id, u.email, 'Admin', w.id, 'admin'
+  from auth.users u
+  join public.workspaces w on w.allowed_domain = 'hermes.local'
+  where u.email = 'admin@hermes.local'
+  on conflict (id) do update
+    set role = 'admin',
+        workspace_id = excluded.workspace_id,
+        email = excluded.email;
+
+notify pgrst, 'reload schema';
+SQL
+
+echo "[fly-seed] Done. Login credentials:"
+echo "[fly-seed]   Email: ${ADMIN_EMAIL}"
+echo "[fly-seed]   Password: <DEMO_ADMIN_PASSWORD you set>"
+echo "[fly-seed]   URL: https://aria-mantu-app.fly.dev/"
 ```
 
-**If GOTRUE_SITE_URL or API_EXTERNAL_URL appear in the secrets list:**
+Make it executable and commit.
+
+## Verification
+
+After Tony runs the seed script:
+
 ```bash
-fly secrets unset GOTRUE_SITE_URL API_EXTERNAL_URL -a aria-mantu-auth
+# 1. Test that user exists
+curl -s "${SUPABASE_URL}/auth/v1/admin/users?email=eq.admin@hermes.local" \
+  -H "Authorization: Bearer ${SERVICE_ROLE_KEY}" \
+  -H "apikey: ${SERVICE_ROLE_KEY}"
+# Should return user array with admin@hermes.local
+
+# 2. Test password login
+# Open https://aria-mantu-app.fly.dev/
+# Enter admin@hermes.local + password
+# Should redirect to Command Center (not 0.0.0.0:3000 after ship 1)
 ```
 
-Then redeploy aria-mantu-auth:
-```bash
-fly deploy -c fly.auth.toml -a aria-mantu-auth
-```
+## Next Ship After This
 
-**Expected secrets for aria-mantu-auth (from fly.auth.toml line 23-24):**
-- GOTRUE_JWT_SECRET (should equal FLY_JWT_SECRET)
-- GOTRUE_DB_DATABASE_URL (postgres connection string)
-
-GOTRUE_SITE_URL and API_EXTERNAL_URL should NOT be secrets. They are public URLs and belong in the [env] section of fly.auth.toml, which they already are.
-
-## In-Repo Change: Add Validation Comment
-
-No code change needed. The in-repo config is already correct. But add a comment to fly.auth.toml to prevent future secret override:
-
-After line 13, add:
-```toml
-# IMPORTANT: GOTRUE_SITE_URL and API_EXTERNAL_URL must NOT be Fly secrets.
-# Secrets override [env] values. If redirects go to 0.0.0.0:3000, check:
-# fly secrets list -a aria-mantu-auth
-# If either appears, unset it: fly secrets unset GOTRUE_SITE_URL -a aria-mantu-auth
-```
-
-This documents the issue for future maintainers.
-
-## PostgREST OpenAPI Fix
-
-PostgREST (aria-mantu-rest) also shows 0.0.0.0:3000 in its OpenAPI spec. PostgREST doesn't have a SITE_URL env var. The OpenAPI host comes from the incoming request's Host header or a proxy header.
-
-This is likely a secondary symptom. Once GoTrue redirects work, this becomes irrelevant because the REST API is internal-only (no external routing in fly.rest.toml). The OpenAPI endpoint is not used in production.
-
-If it needs fixing after GoTrue works, the solution is to add PGRST_OPENAPI_SERVER_PROXY_URI to fly.rest.toml [env], but that can wait.
-
-## Verification Plan
-
-After Tony unsets any secret overrides and redeploys aria-mantu-auth:
-
-1. Test signout redirect:
-   ```bash
-   curl -I https://aria-mantu-kong.fly.dev/auth/v1/logout
-   ```
-   Should redirect to https://aria-mantu-app.fly.dev/login (not 0.0.0.0:3000)
-
-2. Test password login flow:
-   - Open https://aria-mantu-app.fly.dev/
-   - Should redirect to /login
-   - Enter email + password (if demo login is still disabled)
-   - Submit
-   - GoTrue should redirect back to https://aria-mantu-app.fly.dev/ (not 0.0.0.0:3000)
-   - Browser should land on dashboard
-
-3. If step 2 fails with "no such user":
-   - Demo login is still disabled (NEXT_PUBLIC_ENABLE_DEMO_LOGIN=false in fly.app.toml line 20)
-   - User needs a real account in GoTrue or demo login must be enabled
-   - That is a SEPARATE issue from the 0.0.0.0:3000 redirect
-
-## Why Not Enable Demo Login in This Change
-
-The user explicitly said: "Do not enable demo login on Fly in this change unless the site-URL fix is impossible without it."
-
-The site-URL fix is possible and independent of demo login. The 0.0.0.0:3000 redirect breaks ALL auth flows (password, OAuth, demo). Fixing the redirect unblocks password-based login. Then demo login can be enabled separately if needed.
-
-## Implementation
-
-1. Revert commit 58449e7 (the demo login enable)
-2. Add the validation comment to fly.auth.toml after line 13
-3. Commit: "docs(fly): add GOTRUE_SITE_URL secret override warning"
-4. Tony: check and unset secrets, redeploy aria-mantu-auth
-5. Verify redirects go to aria-mantu-app.fly.dev not 0.0.0.0:3000
+Ship 3: Workspace connection. The store expects to read/write workspace_state. If the REST schema is empty, the app will hang on "Connecting to your workspace".
