@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 76
 agent: cursor-cloud
 updated: 2026-08-25 UTC
-status: blocked-fly-deploy-needs-owner
+status: blocked-fly-auth-awaiting-owner-signin
 ---
 
 # Handoff - Shift 76
@@ -17,13 +17,17 @@ status: blocked-fly-deploy-needs-owner
 - LinkedIn routes **404** on Fly — code/migrations not deployed (`0047`–`0059` missing).
 - Feature branch tip `8e42dc2` (`cursor/enterprise-autopilot-b91d`), PR #27 open.
 - Local gate green; GitHub Actions budget blocks CI on PR #27.
-- Agent has no `FLY_API_TOKEN`; protected deploy requires owner `workflow_dispatch`.
+- Fly CLI login opened in cloud-agent browser; `flyctl auth whoami` still fails (no token yet).
+- Agent cannot read GitHub Actions secrets or dispatch protected workflow (403).
+- Deploy blocked until owner completes Fly sign-in OR provides `FLY_API_TOKEN` + `.fly-secrets.env`.
 
 ## Done this shift
 
 - Confirmed Fly is the real tenant target (user pivot from Vercel demo).
 - Added `scripts/fly-golive-linkedin.sh` — read-only preflight + owner dispatch checklist.
 - Added `production-readiness/FLY_GOLIVE.md` — Fly production runbook.
+- Added `scripts/fly-deploy-now.sh` — migrations + app deploy once auth/secrets available.
+- Opened Fly CLI browser login (`flyctl auth login` in tmux `fly-auth-login`).
 
 ## Blockers (owner must supply)
 
