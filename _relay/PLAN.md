@@ -1,186 +1,157 @@
-# PLAN: Ship 2 - Working Login on Fly
+# PLAN: Ship 3 - Workspace Connection Past Loading Screen
 
-**Basis:** fix/fly-auth-public-origin @ 7417cd0 (after ship 1)
+**Basis:** fix/fly-auth-public-origin @ a25dd1f (after ship 2)
 **Written:** 2026-08-25
-**Scope:** Document seed process and optionally enable demo login. No Fly deploy.
+**Scope:** Diagnose and fix "Connecting to your workspace" hang. No Fly deploy.
 
 ## Current State
 
-Ship 1 (auth redirect fix) is committed. PR URL: https://github.com/mysticalsin/aria-sourcing/pull/new/fix/fly-auth-public-origin
+Ships 1-2 committed:
+- 7417cd0: Auth redirects use public host (not 0.0.0.0:3000)
+- a25dd1f: scripts/seed-fly-admin.sh documents how to create admin@hermes.local
 
-After ship 1 deploys, redirects will work, but login still has no valid credentials on Fly.
+After Tony runs seed-fly-admin.sh and ship 1 deploys to Fly:
+- Login works (password: admin@hermes.local)
+- Auth callback redirects to https://aria-mantu-app.fly.dev/ (not 0.0.0.0:3000)
+- App lands on "Connecting to your workspace" loading screen and hangs
 
 ## Problem
 
-Fly has no user in GoTrue. Login page shows empty username/password fields with no way to proceed.
+The app is stuck in `{phase: "loading", mode: "live"}` status. This happens when workspace hydration fails or never completes.
 
-## Required Seeding Steps for Tony
+Hydration flow (src/lib/store.ts:520-566):
+1. Call `loadRemoteState()` which queries `/rest/v1/workspace_state`
+2. If the row exists, load the state
+3. If the row does NOT exist (null), build an empty state with `buildLiveEmptyState()`
+4. Set workspace status to `{phase: "ready", mode: "live"}`
+5. First mutation (e.g. "Source next batch") triggers INSERT into workspace_state
 
-**Step 1: Create admin@hermes.local in GoTrue**
+The workspace_state table has RLS policies that require:
+- `auth.uid()` to be set (user authenticated)
+- A profile row exists linking that user to a workspace
+- SELECT policy: `workspace_id = current_workspace_id()` (via profiles.workspace_id)
+- INSERT/UPDATE policies: same + role in ('admin', 'member')
 
-```bash
-# Set these first
-SUPABASE_URL="https://aria-mantu-kong.fly.dev"
-DEMO_ADMIN_PASSWORD="<strong-password-tony-picks>"
+**Hypothesis:** One of two root causes:
+1. Migrations not applied on Fly Postgres (tables don't exist)
+2. PostgREST not reloaded after migrations (schema cache stale)
 
-# Get service role key from Fly secrets
-SERVICE_ROLE_KEY=$(fly secrets list -a aria-mantu-app | grep SUPABASE_SERVICE_ROLE_KEY | awk '{print $3}')
+## Verification Steps for Tony
 
-# Create user via GoTrue admin API
-curl -X POST "${SUPABASE_URL}/auth/v1/admin/users" \
-  -H "Authorization: Bearer ${SERVICE_ROLE_KEY}" \
-  -H "apikey: ${SERVICE_ROLE_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@hermes.local","password":"'"${DEMO_ADMIN_PASSWORD}"'","email_confirm":true}'
-```
-
-Expected: HTTP 200 or 201 (success), or 422 if user already exists (ok).
-
-**Step 2: Create profile and workspace in Postgres**
+**Check 1: Do the tables exist?**
 
 ```bash
-# Get DB password from Fly secrets
-DB_PASSWORD=$(fly secrets list -a aria-mantu-db | grep POSTGRES_PASSWORD | awk '{print $3}')
-
-# Connect via fly ssh console and run seed SQL
 fly ssh console -a aria-mantu-db -C "psql -U postgres -d postgres" <<'SQL'
-insert into public.workspaces (name, allowed_domain)
-  values ('Hermes Workspace', 'hermes.local')
-  on conflict (allowed_domain) do nothing;
-
-insert into public.profiles (id, email, full_name, workspace_id, role)
-  select u.id, u.email, 'Admin', w.id, 'admin'
-  from auth.users u
-  join public.workspaces w on w.allowed_domain = 'hermes.local'
-  where u.email = 'admin@hermes.local'
-  on conflict (id) do update
-    set role = 'admin',
-        workspace_id = excluded.workspace_id,
-        email = excluded.email;
-
-notify pgrst, 'reload schema';
+\dt public.*
 SQL
 ```
 
-**Step 3A: Password Login (Current)**
+Expected output: workspaces, profiles, workspace_state, agent_seats, campaigns, etc.
 
-After steps 1-2, password login works:
-- Open https://aria-mantu-app.fly.dev/
-- Enter: admin@hermes.local
-- Password: <DEMO_ADMIN_PASSWORD from step 1>
-- Should land on Command Center
+If NO tables: migrations were never applied. Run them (see Fix 1 below).
 
-**Step 3B: Demo Login (Optional)**
-
-If Tony wants ENTER THE DEMO CONSOLE button like Vercel:
-
-1. Set Fly secret:
-```bash
-fly secrets set DEMO_ADMIN_PASSWORD=<same password from step 1> -a aria-mantu-app
-```
-
-2. Update fly.app.toml line 20:
-```toml
-NEXT_PUBLIC_ENABLE_DEMO_LOGIN = "true"
-```
-
-3. Redeploy aria-mantu-app
-
-Then one-click admin/admin works (resolves to admin@hermes.local with DEMO_ADMIN_PASSWORD).
-
-## Decision: Keep Password Login for Now
-
-Demo login is identical to Vercel's flag and proven safe (commit 58449e7 shows the change, was reverted in 5dec0e1). But Tony needs to seed the user FIRST before demo login works anyway.
-
-Recommendation: Document password login steps above. Tony can enable demo login later if desired. It's one env var change, no code.
-
-## In-Repo Change for Ship 2
-
-Create scripts/seed-fly-admin.sh that documents the exact commands for Fly:
+**Check 2: Can the seeded admin read their profile?**
 
 ```bash
-#!/usr/bin/env bash
-# Seed admin@hermes.local on Fly deployment.
-# Run from local machine with `fly` CLI authenticated to the Fly org.
-#
-# Required:
-#   DEMO_ADMIN_PASSWORD environment variable
-#
-# Usage:
-#   DEMO_ADMIN_PASSWORD=<strong-password> ./scripts/seed-fly-admin.sh
+# Get service role key
+SERVICE_ROLE_KEY=$(fly secrets list -a aria-mantu-app -j | jq -r '.[] | select(.Name=="SUPABASE_SERVICE_ROLE_KEY") | .Value')
 
-set -euo pipefail
-: "${DEMO_ADMIN_PASSWORD:?set DEMO_ADMIN_PASSWORD}"
-
-ADMIN_EMAIL="admin@hermes.local"
-SUPABASE_URL="https://aria-mantu-kong.fly.dev"
-
-echo "[fly-seed] Getting service role key..."
-SERVICE_ROLE_KEY=$(fly secrets list -a aria-mantu-app -j | jq -r '.[] | select(.Name=="SUPABASE_SERVICE_ROLE_KEY") | .Value' 2>/dev/null || echo "")
-if [ -z "$SERVICE_ROLE_KEY" ]; then
-  echo "[fly-seed] ERROR: Could not read SUPABASE_SERVICE_ROLE_KEY from aria-mantu-app"
-  echo "[fly-seed] Run: fly secrets list -a aria-mantu-app"
-  exit 1
-fi
-
-echo "[fly-seed] Creating ${ADMIN_EMAIL} in GoTrue..."
-code=$(curl -s -o /tmp/fly-seed.json -w "%{http_code}" -X POST \
-  "${SUPABASE_URL}/auth/v1/admin/users" \
+# Get admin user ID
+ADMIN_USER_JSON=$(curl -s "https://aria-mantu-kong.fly.dev/auth/v1/admin/users?email=eq.admin@hermes.local" \
   -H "Authorization: Bearer ${SERVICE_ROLE_KEY}" \
-  -H "apikey: ${SERVICE_ROLE_KEY}" \
-  -H "Content-Type: application/json" \
-  -d "{\"email\":\"${ADMIN_EMAIL}\",\"password\":\"${DEMO_ADMIN_PASSWORD}\",\"email_confirm\":true}")
+  -H "apikey: ${SERVICE_ROLE_KEY}")
 
-case "$code" in
-  200|201) echo "[fly-seed]   User created (HTTP ${code})" ;;
-  422)     echo "[fly-seed]   User already exists (ok)" ;;
-  *)       echo "[fly-seed]   ERROR (HTTP ${code}):"; cat /tmp/fly-seed.json 2>/dev/null; echo; exit 1 ;;
-esac
+echo "$ADMIN_USER_JSON" | jq '.[0].id'  # Should print UUID
 
-echo "[fly-seed] Creating profile and workspace in Postgres..."
-fly ssh console -a aria-mantu-db -C "psql -U postgres -d postgres" <<'SQL'
-insert into public.workspaces (name, allowed_domain)
-  values ('Hermes Workspace', 'hermes.local')
-  on conflict (allowed_domain) do nothing;
+# Get admin profile via REST
+ADMIN_ID=$(echo "$ADMIN_USER_JSON" | jq -r '.[0].id')
 
-insert into public.profiles (id, email, full_name, workspace_id, role)
-  select u.id, u.email, 'Admin', w.id, 'admin'
-  from auth.users u
-  join public.workspaces w on w.allowed_domain = 'hermes.local'
-  where u.email = 'admin@hermes.local'
-  on conflict (id) do update
-    set role = 'admin',
-        workspace_id = excluded.workspace_id,
-        email = excluded.email;
-
-notify pgrst, 'reload schema';
-SQL
-
-echo "[fly-seed] Done. Login credentials:"
-echo "[fly-seed]   Email: ${ADMIN_EMAIL}"
-echo "[fly-seed]   Password: <DEMO_ADMIN_PASSWORD you set>"
-echo "[fly-seed]   URL: https://aria-mantu-app.fly.dev/"
-```
-
-Make it executable and commit.
-
-## Verification
-
-After Tony runs the seed script:
-
-```bash
-# 1. Test that user exists
-curl -s "${SUPABASE_URL}/auth/v1/admin/users?email=eq.admin@hermes.local" \
+curl -s "https://aria-mantu-kong.fly.dev/rest/v1/profiles?id=eq.${ADMIN_ID}" \
   -H "Authorization: Bearer ${SERVICE_ROLE_KEY}" \
   -H "apikey: ${SERVICE_ROLE_KEY}"
-# Should return user array with admin@hermes.local
-
-# 2. Test password login
-# Open https://aria-mantu-app.fly.dev/
-# Enter admin@hermes.local + password
-# Should redirect to Command Center (not 0.0.0.0:3000 after ship 1)
 ```
+
+Expected: Array with one profile (email: admin@hermes.local, role: admin, workspace_id: UUID).
+
+If EMPTY: seed-fly-admin.sh didn't create the profile, or RLS is blocking even service_role.
+
+**Check 3: Can PostgREST see the schema?**
+
+```bash
+curl -s "https://aria-mantu-kong.fly.dev/rest/v1/" \
+  -H "Authorization: Bearer ${SERVICE_ROLE_KEY}" \
+  -H "apikey: ${SERVICE_ROLE_KEY}"
+```
+
+Expected: OpenAPI/Swagger schema listing tables (workspaces, profiles, workspace_state, campaigns, etc).
+
+If `{"tables":[]}` or `{"message":"No schema found"}`: PostgREST cache is stale or PGRST_DB_SCHEMAS is wrong.
+
+## Fixes
+
+**Fix 1: Apply migrations (if Check 1 failed)**
+
+```bash
+# Option A: Apply via psql
+fly ssh console -a aria-mantu-db -C "cat" < supabase/migrations/0001_init.sql | \
+  fly ssh console -a aria-mantu-db -C "psql -U postgres -d postgres"
+
+# Repeat for 0002..0010 (or combine them into one file)
+
+# Option B: Use supabase CLI (if Tony has it locally)
+# First, link to Fly DB:
+#   supabase link --project-ref local --db-url postgres://postgres:<POSTGRES_PASSWORD>@aria-mantu-db.fly.dev:5432/postgres
+# Then push:
+#   supabase db push
+```
+
+After applying migrations, PostgREST must reload (see Fix 2).
+
+**Fix 2: Reload PostgREST schema cache**
+
+PostgREST caches the DB schema on startup. After migrations, notify it to reload:
+
+```bash
+fly ssh console -a aria-mantu-db -C "psql -U postgres -d postgres" <<'SQL'
+notify pgrst, 'reload schema';
+SQL
+```
+
+Or restart PostgREST:
+
+```bash
+fly restart -a aria-mantu-rest
+```
+
+**Fix 3: Verify seeded admin profile again**
+
+After Fix 1-2, re-run Check 2. The profile should be visible via REST.
+
+## In-Repo Change for Ship 3
+
+Create docs/FLY_SETUP.md that documents the complete setup order:
+
+1. Deploy all Fly apps (db, auth, rest, kong, app)
+2. Set Fly secrets (SUPABASE_SERVICE_ROLE_KEY, GOTRUE_JWT_SECRET, etc.)
+3. Apply migrations to aria-mantu-db (via psql or supabase CLI)
+4. Reload PostgREST schema cache (notify pgrst or restart)
+5. Run scripts/seed-fly-admin.sh to create admin@hermes.local
+6. Test login at https://aria-mantu-app.fly.dev/
+
+This is a prerequisite checklist, not code. Commit as documentation.
+
+## Verification After Fix
+
+After Tony applies migrations and reloads PostgREST:
+
+1. Login at https://aria-mantu-app.fly.dev/ with admin@hermes.local
+2. Should pass "Connecting to your workspace" and land on Command Center
+3. Click "Source next batch" (will fail with different error, ship 4)
+4. Browser console: no "workspace_state load failed" errors
 
 ## Next Ship After This
 
-Ship 3: Workspace connection. The store expects to read/write workspace_state. If the REST schema is empty, the app will hang on "Connecting to your workspace".
+Ship 4: Fix 500s on `/api/hermes/chat` and `/api/sourcing-agent`. These require:
+- Kong routing to the API endpoints (currently 404?)
+- Live sourcing env vars (ANTHROPIC_API_KEY, etc.)
+- Possibly seeded campaign/workspace data
