@@ -1,47 +1,40 @@
 ---
 project: MSourcing / ARIA
-shift: 66
+shift: 67
 agent: cursor-cloud
 updated: 2026-08-25 UTC
-status: outlook-llm-observability-ux-shipped
+status: e2e-verified-with-video
 ---
 
-# Handoff - Shift 66
+# Handoff - Shift 67
 
 ## Current state
 
-- Branch `cursor/enterprise-autopilot-b91d` → PR #24 (base `integration/sourcing-enrichment-on-main`).
-- Plug-and-play Outlook → open needs → sourcing UX shipped on Intake.
-- Recruitment LLM picker + Get started + Observability tabs on Settings (Motion springs; Bklit-style spark bars; Kokonut-like interactive cards).
-- GH Actions still budget-blocked (CI-BUDGET); local `npx tsc --noEmit`, `typecheck:tests`, `npm test` green after this shift.
+- Branch `cursor/enterprise-autopilot-b91d` → PR #25 (base `integration/sourcing-enrichment-on-main`) HEAD `1c0f34e`.
+- Full browser E2E proven locally (demo mode): Get started → recruitment LLM → Pull open needs → parse → create campaign → 6 candidates → Observability activity.
+- Showcase video: `/opt/cursor/artifacts/e2e_outlook_needs_to_sourcing_showcase.mp4` (reviewed).
+- Demo open needs load when Graph/Supabase unavailable (labelled Demo — never claimed as live inbox).
 
 ## Done this shift
 
-- `src/lib/outlook-needs.ts` + `OutlookNeedsPanel` on `/intake` — connect Outlook, pull needs, select → parse → campaign.
-- Settings: `SetupGuidePanel`, `RecruitmentLlmPanel`, `ObservabilityPanel`; tabs `setup` / `observe`; `?tab=` deep links.
-- Need-email subject matcher expanded (`open need`, `platform need`, `requisition`).
-- Outlook integration card `setupHref` → `/intake`.
-- Tests: `outlook-needs`, `recruitment-llm`; manifest counts/digests updated.
+- Fixed E2E blockers: demo Outlook needs, sample brief Full-time, Mantu seniority inference.
+- Manual E2E + recorded showcase; typecheck/tests green.
 
 ## Blockers
 
-- CI-BUDGET (Tony): restore Actions minutes before PR checks can go green.
-- P-1 Docker DB; E-2 Entra; P-7 delivery domain; L-2 LinkedIn vendor.
+- CI-BUDGET still owner-side if Actions minutes exhausted.
+- Live Graph mailbox still required for real Outlook (demo path is labelled).
 
 ## Next steps
 
-1. Tony restores Actions budget; re-run PR #24 checks.
-2. Live tenant: connect Graph mailbox + enable Anthropic (or other tool-calling) model for sourcing.
-3. Optional later: Graph webhook subscriptions for continuous need ingest (not required for HITL pull).
+1. Tony: restore Actions budget; re-run PR checks.
+2. Live tenant: connect Graph + Anthropic key for production sourcing agent.
 
 ## Decisions made (don't relitigate)
 
-- Inbox pull stays HITL (human selects need → parse → create campaign); no silent auto-campaign from Outlook.
-- Intake parse continues on `chat` task; sourcing agent stays on `sourcing` (tool-calling).
-- Observability v1 uses in-app agent-events + activities (no Langfuse yet).
-- Prior shift 63–65 decisions stand.
+- Demo open needs are OK when mailbox unavailable if clearly labelled Demo.
+- HITL select → parse → create campaign (no silent auto-campaign).
 
 ## Watch out
 
-- Public demo / dry-run sync returns empty messages — UI must not pretend needs were found.
-- Kimi cannot be default for sourcing; Recruitment panel excludes it.
+- Duplicate-campaign modal appears if re-running same Senior Backend sample — Create anyway is expected.
