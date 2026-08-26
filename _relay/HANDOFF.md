@@ -1,52 +1,46 @@
 ---
 project: MSourcing / ARIA
-shift: 85
+shift: 86
 agent: cursor-cloud
 updated: 2026-08-26 UTC
-status: multi-provider-sourcing-live
+status: llm-key-verify-live
 ---
 
-# Handoff - Shift 85
+# Handoff - Shift 86
 
 ## Current state
 
-- **Production:** https://aria-mantu-app.fly.dev · image **deployment-01M0Z5SFQR7AT2RRB4AHEH79TF** (version 40) · migration **0060**
+- **Production:** https://aria-mantu-app.fly.dev · version **41** · migration **0060**
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #29
-- Unified multi-provider sourcing is live: Source next batch → orchestrator fans out LinkedIn profiles (Apify under the hood when keyed), LinkedIn/web, GitHub, etc.
-- Operator-facing platform stamps are LinkedIn/GitHub/… — never Apify. Source via Apify button removed from campaigns.
-- E2E: `/api/sourcing-agent` returned 5 new LinkedIn candidates @ 84–94 (dedupe vs existing campaign inventory); zero Apify in payload. Artifact: `/opt/cursor/artifacts/sourcing-multiprovider-e2e.json`
-- UI proof: Source next batch present, no Apify CTA. Artifact: `/opt/cursor/artifacts/campaign-source-next-batch-no-apify.png`
-- Workspace has 1 Apify connector key row (LinkedIn profile search backend)
+- Settings → AI (`?tab=ai`) can **Add & verify LLM API key**: encrypt via `/api/keys`, live probe via `/api/keys/test` for Anthropic/OpenAI/Groq/xAI/Mistral/Kimi
+- Live E2E: fake Anthropic key → `valid:false` HTTP 401 authentication_error; malformed → format reject
+- UI artifact: `/opt/cursor/artifacts/ai-settings-add-verify-key.png`
+- Multi-provider sourcing (shift 85) remains live
 
 ## Done this shift
 
-- Provider registry + adapters (`src/lib/sourcing/providers/`)
-- `runMultiProviderSourcing` orchestrator (parallel fan-out, richness-prefer merge, 80% floor)
-- Wired sourcing-agent deterministic path + LinkedIn tool path + Hermes chat
-- mapApifyCandidates defaults to `sourcePlatform: "LinkedIn"`
-- Neutral Integrations / API key labels; removed SourceApifyButton from campaign page
-- Tests: `multi-provider-sourcing`, updated apify/integrations/sourcing-agent fixtures
-- Deployed to Fly + live API/UI verification
+- `src/lib/ai/key-probe.ts` live models-list probes
+- `/api/keys/test` routes LLM providers through live probe (format fallback on network fail)
+- ProvidersPanel: Add & verify form + Verify on linked keys; filtered key dropdown by provider
+- ApiKeysPanel: save auto-verifies; button renamed Verify
+- Tests: `tests/llm-key-probe.mts`
 
 ## Blockers
 
-- `/api/ready` still reports old `ARIA_RELEASE_SHA` / agentFrameworks false (expected until release-identity secrets updated)
-- Known pre-existing `infra-release-contract` fail on alternate deploy scripts
+- `/api/ready` release-identity lag / agentFrameworks false (expected)
 
 ## Next steps
 
-1. Optional: refresh workspace Integrations card copy from persisted state so Operators see "LinkedIn profile search"
-2. Optional: purge pre-floor / legacy `sourcePlatform: Apify` rows
-3. Update `ARIA_RELEASE_SHA` secret to match deployed image when doing a reviewed release
+1. Operator: Settings → AI → Add key → paste real Anthropic/OpenAI/… secret → Save, encrypt & verify → enable provider
+2. Optional: bind verified key on Kimi/Anthropic row and run a cloud sourcing agent pass
 
 ## Decisions made (don't relitigate)
 
-- Apify is an invisible LinkedIn-profile backend — never operator-facing branding on campaign sourcing
-- 80% quality floor remains hard; deepen search instead of lowering the bar
-- Minimum batch target remains 10; honest shortfall when supply/dedupe cannot fill
-- Do not commit passwords or Fly secrets into `_relay/` / git
+- Live LLM probes use GET /models (cheap auth); 401/403 = invalid; 429/402/400 after auth = valid
+- Vault still requires `status === "valid"` before `resolveVaultSecret` decrypts for egress
+- Do not commit secrets/passwords into `_relay/` / git
 
 ## Watch out
 
-- LinkedIn profile search (Apify) poll budget ~75s; orchestrator runs it in parallel with web/GitHub
-- SERP + profile dedupe prefers profile richness for the same LinkedIn URL
+- Kimi vault provider string is `Kimi (Moonshot)` while LLM kind is `Kimi` — panel maps via `vaultProviderForKind`
+- Verify button on a provider row only appears when a key is already linked
