@@ -4893,6 +4893,51 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit, current],
   );
 
+  const endorseCandidateFit = useCallback(
+    (candidateId: string): { ok: true } | { ok: false; error: string } => {
+      const s = current();
+      const cand = s.candidates.find((c) => c.id === candidateId);
+      if (!cand) return { ok: false, error: "Candidate not found." };
+      if (cand.complianceFlags.anonymized) {
+        return { ok: false, error: "Cannot endorse fit on an anonymized candidate." };
+      }
+      const floor = s.settings.minScoreToContact;
+      if (cand.matchScore >= floor) {
+        return { ok: false, error: `Match score ${cand.matchScore} already meets the ${floor} contact floor.` };
+      }
+      const now = new Date().toISOString();
+      commit((prev) => {
+        const next: HermesState = {
+          ...prev,
+          candidates: prev.candidates.map((c) =>
+            c.id === candidateId
+              ? {
+                  ...c,
+                  fitEndorsedAt: now,
+                  fitEndorsedSource: "operator_selection" as const,
+                }
+              : c,
+          ),
+        };
+        return withActivity(
+          next,
+          makeActivity({
+            type: "compliance",
+            title: `Role fit endorsed: ${cand.name}`,
+            notes: `Operator endorsed outreach despite match score ${cand.matchScore} (floor ${floor}). Score unchanged; approval shows a warning.`,
+            outcome: "Endorsed",
+            campaignId: cand.campaignId,
+            linkedEntityType: "candidate",
+            linkedEntityId: candidateId,
+          }),
+          cand.campaignId,
+        );
+      });
+      return { ok: true };
+    },
+    [commit, current],
+  );
+
   /* ---- API keys (secret stored server-side; never in client state) ------ */
 
   const saveApiKey = useCallback(
@@ -6307,6 +6352,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       updateSkillContent,
       recordPiiReveal,
       recordCandidateLawfulBasis,
+      endorseCandidateFit,
       saveApiKey,
       testApiKey,
       removeApiKey,
@@ -6368,7 +6414,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       updateIntegration, toggleIntegrationMode, testIntegration,
       addSeat, deployAgents, updateSeat, setSeatStatus, connectSeatAccount, disconnectSeatAccount, toggleSeatLive, verifySeatDomain,
       addSuppression, removeSuppression, allocateOutreach,
-      runLearning, acceptSkillLearning, updateSkillContent, recordPiiReveal, recordCandidateLawfulBasis,
+      runLearning, acceptSkillLearning, updateSkillContent, recordPiiReveal, recordCandidateLawfulBasis, endorseCandidateFit,
       saveApiKey, testApiKey, removeApiKey, setCurrentRole,
       updateAriaPrompt, addGuardrailRule, toggleGuardrailRule, removeGuardrailRule, askAria, runAriaPlan,
       addProvider, updateProvider, removeProvider, setDefaultProvider,

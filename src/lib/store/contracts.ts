@@ -495,6 +495,11 @@ export interface HermesActions {
     candidateId: string,
     basis: CandidateLawfulBasis,
   ) => { ok: true } | { ok: false; error: string };
+  /** Operator endorses role fit for a below-floor live lead so Approve can proceed
+   *  with a match-score warning (does not rewrite matchScore). */
+  endorseCandidateFit: (
+    candidateId: string,
+  ) => { ok: true } | { ok: false; error: string };
 
   // API keys + access control
   saveApiKey: (input: {

@@ -417,6 +417,10 @@ export interface Candidate {
   lawfulBasis?: CandidateLawfulBasis;
   lawfulBasisRecordedAt?: string;
   lawfulBasisSource?: "operator_selection";
+  /** Operator reviewed a below-floor live lead and endorsed role fit for outreach.
+   *  Does not change matchScore; the approval gate accepts it with a warning. */
+  fitEndorsedAt?: string;
+  fitEndorsedSource?: "operator_selection";
   /** Free-text recruiter notes, newest first. Absent/empty = none yet. */
   notes?: CandidateNote[];
   /** Why this candidate was rejected — captured alongside the "Rejected" stage.

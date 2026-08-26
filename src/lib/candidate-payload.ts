@@ -170,6 +170,8 @@ export function candidateFromPayload(raw: unknown): Candidate | null {
         : undefined,
     lawfulBasisRecordedAt: stringValue(raw.lawfulBasisRecordedAt) || undefined,
     lawfulBasisSource: raw.lawfulBasisSource === "operator_selection" ? "operator_selection" : undefined,
+    fitEndorsedAt: stringValue(raw.fitEndorsedAt) || undefined,
+    fitEndorsedSource: raw.fitEndorsedSource === "operator_selection" ? "operator_selection" : undefined,
     notes: [],
     rejectionReason: stringValue(raw.rejectionReason) || undefined,
     leadSource:

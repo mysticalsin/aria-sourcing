@@ -7,6 +7,7 @@ import { formatTimeAgo } from "@/lib/utils";
 import type { Tone } from "@/lib/utils";
 import type { Candidate, CandidateLawfulBasis } from "@/lib/types";
 import { recordedCandidateLawfulBasis } from "@/lib/candidate-lawful-basis";
+import { recordedCandidateFitEndorsement } from "@/lib/candidate-fit-endorsement";
 import { Eye, ShieldCheck, Timer } from "lucide-react";
 
 /** WORKSTREAM 4.4 — Consent Passport & Data Lineage.
@@ -133,11 +134,15 @@ function purposeFromNotes(notes: string): string {
 export function ConsentPassport({ candidate }: { candidate: Candidate }) {
   const activities = useActivities();
   const settings = useSettings();
-  const { recordCandidateLawfulBasis } = useActions();
+  const { recordCandidateLawfulBasis, endorseCandidateFit } = useActions();
   const retentionDays = settings.compliance.candidateRetentionDays;
   const recorded = recordedCandidateLawfulBasis(candidate);
+  const fitEndorsed = recordedCandidateFitEndorsement(candidate);
+  const needsFitEndorsement =
+    candidate.matchScore < settings.minScoreToContact && !fitEndorsed;
   const [pendingBasis, setPendingBasis] = React.useState<CandidateLawfulBasis | "">("");
   const [recordError, setRecordError] = React.useState<string | null>(null);
+  const [endorseError, setEndorseError] = React.useState<string | null>(null);
 
   const { sourceLabel, basisLabel, tone } = deriveConsentBasis(candidate);
   const { ageDays, remaining } = retentionInfo(candidate.createdAt, retentionDays);
@@ -173,6 +178,15 @@ export function ConsentPassport({ candidate }: { candidate: Candidate }) {
     }
     setRecordError(null);
     setPendingBasis("");
+  };
+
+  const onEndorseFit = () => {
+    const result = endorseCandidateFit(candidate.id);
+    if (!result.ok) {
+      setEndorseError(result.error);
+      return;
+    }
+    setEndorseError(null);
   };
 
   return (
@@ -219,6 +233,25 @@ export function ConsentPassport({ candidate }: { candidate: Candidate }) {
               Save lawful basis
             </Button>
           </div>
+        ) : null}
+        {needsFitEndorsement && !candidate.complianceFlags.anonymized ? (
+          <div className="mt-3 space-y-2 rounded-xl bg-ink/[0.03] p-3">
+            <p className="text-sm text-ink-soft">
+              Match score {candidate.matchScore} is below the {settings.minScoreToContact} contact
+              floor. After reviewing the profile, endorse role fit so Approve can proceed with a
+              warning (score stays unchanged).
+            </p>
+            {endorseError ? <p className="text-xs text-danger">{endorseError}</p> : null}
+            <Button type="button" size="sm" variant="outline" onClick={onEndorseFit}>
+              Endorse role fit for outreach
+            </Button>
+          </div>
+        ) : null}
+        {fitEndorsed ? (
+          <p className="mt-2 text-xs text-muted">
+            Role fit endorsed {candidate.fitEndorsedAt ? formatTimeAgo(candidate.fitEndorsedAt) : ""}.
+            Approval will warn that the score is below the contact floor.
+          </p>
         ) : null}
       </div>
 

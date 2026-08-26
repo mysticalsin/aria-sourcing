@@ -8,6 +8,7 @@ import type {
 } from "./types";
 import type { Tone } from "./utils";
 import { recordedCandidateLawfulBasis } from "./candidate-lawful-basis";
+import { recordedCandidateFitEndorsement } from "./candidate-fit-endorsement";
 
 /* ============================================================================
    Business rules — the guardrails Aria enforces before acting.
@@ -55,11 +56,17 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
   const warnings: string[] = [];
   const checks: ApprovalCheck[] = [];
 
-  // Rule 2 — score before contacting
+  // Rule 2 — score before contacting (operator fit endorsement may warn-through)
   if (candidate.matchScore < settings.minScoreToContact) {
-    const detail = `Match score ${candidate.matchScore} is below the ${settings.minScoreToContact} contact floor.`;
-    blockers.push(detail);
-    checks.push({ rule: "Match score", status: "block", detail });
+    if (recordedCandidateFitEndorsement(candidate)) {
+      const detail = `Match score ${candidate.matchScore} is below the ${settings.minScoreToContact} contact floor; operator endorsed role fit for outreach.`;
+      warnings.push(detail);
+      checks.push({ rule: "Match score", status: "warn", detail });
+    } else {
+      const detail = `Match score ${candidate.matchScore} is below the ${settings.minScoreToContact} contact floor.`;
+      blockers.push(detail);
+      checks.push({ rule: "Match score", status: "block", detail });
+    }
   } else {
     checks.push({
       rule: "Match score",

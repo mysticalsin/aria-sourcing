@@ -1114,6 +1114,8 @@ test("unknown experience never becomes a false score, prompt fact, or UI consent
   assert.match(consentPassportSource, /Lawful basis not recorded/i);
   assert.match(consentPassportSource, /recordCandidateLawfulBasis/);
   assert.match(consentPassportSource, /Save lawful basis/);
+  assert.match(consentPassportSource, /endorseCandidateFit/);
+  assert.match(consentPassportSource, /Endorse role fit for outreach/);
   assert.match(candidateDrawerSource, /yearsExperience == null/);
   assert.match(outreachPageSource, /yearsExperience == null/);
 

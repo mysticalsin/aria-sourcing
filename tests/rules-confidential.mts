@@ -126,6 +126,24 @@ ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
   ok("low score: at least one blocker", r.blockers.length >= 1);
 }
 
+// 1b) Operator fit endorsement warn-through for below-floor live leads.
+{
+  const ctx = approvalCtx({
+    candidate: makeCandidate({
+      matchScore: settings.minScoreToContact - 20,
+      fitEndorsedAt: "2026-07-13T06:00:00.000Z",
+      fitEndorsedSource: "operator_selection",
+    }),
+  });
+  const r = checkOutreachApproval(ctx);
+  ok("endorsed low score: allowed", r.allowed === true);
+  ok(
+    "endorsed low score: warning mentions endorsement",
+    r.warnings.some((w) => /endorsed|below/i.test(w)),
+  );
+  ok("endorsed low score: no score blocker", !r.blockers.some((b) => /below|floor/i.test(b)));
+}
+
 // 2) Blocks when personalizationEvidence is empty.
 {
   const ctx = approvalCtx({
