@@ -53,6 +53,29 @@ ok(
   systemDesigner.jobAnalysis.requiredSkills.some((s) => /FDA|Quality|MTTF/i.test(s)),
 );
 
+const eightYearsPlus = parseEmailAndJD({
+  email: `Hello,
+This need is now ACTIVE: Platform Architect
+Type: Consulting
+Priority: 2 - Urgent
+Location: TORONTO
+Profile description:
+8 years + of experience designing distributed platforms.
+Skills: Kubernetes,AWS,Terraform`,
+});
+ok("8 years + parses to 8", eightYearsPlus.jobAnalysis.minYearsExperience === 8);
+ok("8 years + maps to Senior", eightYearsPlus.jobAnalysis.seniority === "Senior");
+
+const atLeastSix = parseEmailAndJD({
+  email: `Role: Backend Engineer
+Location: Remote
+Employment: Full-time
+We need at least 6 years of experience with Go.
+Skills: Go, Kafka`,
+});
+ok("at least 6 years → Senior", atLeastSix.jobAnalysis.seniority === "Senior");
+ok("at least 6 years floor", atLeastSix.jobAnalysis.minYearsExperience === 6);
+
 // robustness: a minimal recruiter line must not throw
 let threw = false;
 try {

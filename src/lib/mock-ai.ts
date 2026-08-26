@@ -56,6 +56,48 @@ export {
   mapWebSearchCandidates,
 } from "./sourcing/candidate-mappers";
 
+/** Parse experience floors like "8 years +", "5+ years", "minimum 6 years". */
+export function extractMinYearsExperience(text: string): number | null {
+  const patterns = [
+    /\bminimum[\s]{0,6}(\d{1,2})[\s+]{0,6}years?\b/i,
+    /\bat\s+least\s+(\d{1,2})\s*\+?\s*years?\b/i,
+    /\b(\d{1,2})\s*\+\s*years?\b/i,
+    /\b(\d{1,2})\s*years?\s*\+/i,
+    /\b(\d{1,2})\s*-\s*\d{1,2}\s*years?\b/i,
+    /\b(\d{1,2})\+?\s*years?\s+(?:of\s+)?(?:relevant\s+)?experience\b/i,
+    /\b(\d{1,2})\s*(?:years?|yrs)\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern)?.[1];
+    if (match) {
+      const years = parseInt(match, 10);
+      if (Number.isFinite(years) && years >= 0 && years <= 50) return years;
+    }
+  }
+  return null;
+}
+
+export function seniorityFromTitle(title: string): Seniority {
+  if (/principal/i.test(title)) return "Principal";
+  if (/staff/i.test(title)) return "Staff";
+  if (/lead/i.test(title)) return "Lead";
+  if (/director|head of/i.test(title)) return "Director";
+  if (/junior|graduate|entry/i.test(title)) return "Junior";
+  if (/\bmid\b|intermediate/i.test(title)) return "Mid";
+  if (/\bsenior\b/i.test(title)) return "Senior";
+  return "Unspecified";
+}
+
+/** Map stated years-of-experience floors to seniority when the title is silent. */
+export function seniorityFromYears(minYears: number | null): Seniority {
+  if (minYears == null) return "Unspecified";
+  if (minYears >= 8) return "Senior";
+  if (minYears >= 5) return "Senior";
+  if (minYears >= 3) return "Mid";
+  if (minYears >= 1) return "Junior";
+  return "Unspecified";
+}
+
 /* ============================================================================
    MOCK AI — deterministic stand-ins for the real Aria pipeline.
    Pure functions, synthetic data only. No network, no real model calls.
@@ -274,23 +316,12 @@ export function parseMantuNeed(text: string): ParsedIntake {
   );
   const requiredSkills = Array.from(new Set([...lineSkills, ...dictSkills])).slice(0, 8);
 
-  const minYears =
-    text.match(/minimum[\s]{0,6}(\d{1,2})[\s+]{0,6}years/i)?.[1] ??
-    text.match(/\b(\d{1,2})\s*\+\s*years?\b/i)?.[1] ??
-    text.match(/\b(\d{1,2})\s*-\s*\d{1,2}\s*years?\b/i)?.[1] ??
-    text.match(/\b(\d{1,2})\+?\s*years?\s+(?:of\s+)?(?:relevant\s+)?experience\b/i)?.[1];
-  const minYearsExperience = minYears ? parseInt(minYears, 10) : null;
+  const minYearsExperience = extractMinYearsExperience(text);
 
-  let seniority: Seniority = "Unspecified";
-  if (/principal/i.test(title)) seniority = "Principal";
-  else if (/staff/i.test(title)) seniority = "Staff";
-  else if (/lead/i.test(title)) seniority = "Lead";
-  else if (/director|head of/i.test(title)) seniority = "Director";
-  else if (/junior|graduate|entry/i.test(title)) seniority = "Junior";
-  else if (/\bsenior\b/i.test(title)) seniority = "Senior";
-  else if (minYearsExperience != null && minYearsExperience >= 5) seniority = "Senior";
-  else if (minYearsExperience != null && minYearsExperience >= 3) seniority = "Mid";
-  else if (minYearsExperience != null && minYearsExperience >= 1) seniority = "Junior";
+  let seniority: Seniority = seniorityFromTitle(title);
+  if (seniority === "Unspecified") {
+    seniority = seniorityFromYears(minYearsExperience);
+  }
 
   const niceToHaveSkills: string[] = [];
   if (/offshore/i.test(text)) niceToHaveSkills.push("Offshore experience");
@@ -486,15 +517,8 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
     "";
   const title = titleMatch.trim().replace(/\s+/g, " ");
 
-  // Seniority
-  let seniority: Seniority = "Unspecified";
-  if (/principal/i.test(title)) seniority = "Principal";
-  else if (/staff/i.test(title)) seniority = "Staff";
-  else if (/lead/i.test(title)) seniority = "Lead";
-  else if (/director|head of/i.test(title)) seniority = "Director";
-  else if (/junior|graduate|entry/i.test(title)) seniority = "Junior";
-  else if (/\bmid\b|intermediate/i.test(title)) seniority = "Mid";
-  else if (/\bsenior\b/i.test(title)) seniority = "Senior";
+  // Seniority — title first, then years floors ("8 years +", "5+ years").
+  let seniority: Seniority = seniorityFromTitle(title);
 
   // Department (specific signals first; word-boundaries to avoid false hits like
   // "design and operate" or "service contracts")
@@ -538,8 +562,12 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
 
   // Years
   const yearsMatch = [...text.matchAll(/(\d{1,2})[\s+]{0,6}(?:years|yrs)/gi)].map((m) => parseInt(m[1], 10));
-  const minYearsExperience = yearsMatch.length ? Math.min(...yearsMatch) : null;
+  const minYearsExperience =
+    extractMinYearsExperience(text) ?? (yearsMatch.length ? Math.min(...yearsMatch) : null);
   const maxYearsExperience = yearsMatch.length > 1 ? Math.max(...yearsMatch) : null;
+  if (seniority === "Unspecified") {
+    seniority = seniorityFromYears(minYearsExperience);
+  }
 
   // Skills
   const requiredSkills = SKILL_DICTIONARY.filter((s) =>
