@@ -96,6 +96,25 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
     });
   }
 
+  function scrollToLinkedInStack() {
+    const el = document.getElementById("linkedin-outreach-stack");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      el.focus({ preventScroll: true });
+    }
+  }
+
+  function handleSetupGuide() {
+    const href = integration.setupHref ?? "";
+    if (href.includes("#linkedin-outreach-stack")) {
+      if (typeof window !== "undefined" && window.location.pathname === "/settings") {
+        scrollToLinkedInStack();
+        return;
+      }
+    }
+    router.push(href);
+  }
+
   function handleToggleMode() {
     const nextMode = isLive ? "mock" : "live";
     actions.toggleIntegrationMode(integration.id);
@@ -305,7 +324,8 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                 (integration.id === "int_github" ||
                   integration.id === "int_outlook" ||
                   integration.id === "int_gmail" ||
-                  integration.id === "int_linkedin_rsc") && (
+                  integration.id === "int_linkedin_rsc" ||
+                  integration.id === "int_heyreach") && (
                 <Button
                   variant="subtle"
                   size="sm"
@@ -322,15 +342,29 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                 integration.id !== "int_outlook" &&
                 integration.id !== "int_gmail" &&
                 integration.id !== "int_linkedin_rsc" &&
+                integration.id !== "int_heyreach" &&
                 integration.setupHref && (
                 <Button
                   variant="subtle"
                   size="sm"
                   className="flex-1"
                   leftIcon={<Wrench className="h-4 w-4" />}
-                  onClick={() => router.push(integration.setupHref!)}
+                  onClick={handleSetupGuide}
                 >
                   Setup guide
+                </Button>
+              )}
+              {integration.real &&
+                (integration.id === "int_linkedin_rsc" || integration.id === "int_heyreach") &&
+                integration.setupHref && (
+                <Button
+                  variant="subtle"
+                  size="sm"
+                  className="flex-1"
+                  leftIcon={<Wrench className="h-4 w-4" />}
+                  onClick={handleSetupGuide}
+                >
+                  Open stack
                 </Button>
               )}
             </div>

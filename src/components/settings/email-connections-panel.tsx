@@ -13,11 +13,14 @@ import {
 import { useActions, useRole } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import { supabaseEnabled } from "@/lib/supabase/config";
-import { cn } from "@/lib/utils";
+import {
+  ConnectionListItem,
+  SystemReadiness,
+  type ReadinessItem,
+} from "@/components/settings/integration-connection-primitives";
 import {
   Activity,
   AlertTriangle,
-  CheckCircle2,
   Link2,
   Mail,
   Plug,
@@ -56,12 +59,44 @@ type ConnectionsPayload = {
   connections?: ConnectionRow[];
 };
 
-function ReadinessChip({ ok, label }: { ok: boolean; label: string }) {
-  return (
-    <Badge tone={ok ? "success" : "warning"} size="sm" dot>
-      {label}
-    </Badge>
-  );
+function ReadinessFromProviders(providers: ProviderReadiness): ReadinessItem[] {
+  return [
+    {
+      id: "gmail",
+      label: "Gmail OAuth",
+      ok: providers.gmailOAuth,
+      hint: "Set Google OAuth client credentials in deployment env.",
+    },
+    {
+      id: "outlook",
+      label: "Outlook OAuth",
+      ok: providers.microsoftOAuth,
+      hint: "Set Microsoft Graph OAuth credentials in deployment env.",
+    },
+    {
+      id: "encryption",
+      label: "Token encryption",
+      ok: providers.encryptionReady,
+      hint: "DATA_ENCRYPTION_KEY (≥32 chars) required.",
+    },
+    {
+      id: "webhook",
+      label: "Inbound webhook secret",
+      ok: providers.inboundWebhookSecret,
+    },
+    {
+      id: "sendgrid",
+      label: "SendGrid API key",
+      ok: providers.sendgridApiKey,
+      optional: true,
+    },
+    {
+      id: "resend",
+      label: "Resend API key",
+      ok: providers.resendApiKey,
+      optional: true,
+    },
+  ];
 }
 
 export function EmailConnectionsPanel() {
@@ -206,15 +241,15 @@ export function EmailConnectionsPanel() {
   const connections = data?.connections ?? [];
 
   return (
-    <Card className="overflow-hidden border-aqua/20 bg-gradient-to-br from-surface via-surface to-aqua/[0.06]">
-      <CardContent className="space-y-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+    <Card className="overflow-hidden border-line/80 bg-surface shadow-sm">
+      <CardContent className="space-y-5 p-6 sm:p-8">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0 max-w-2xl">
             <Eyebrow>Mailbox</Eyebrow>
-            <p className="mt-1 text-sm font-semibold text-ink">Connect email to Aria</p>
-            <p className="mt-1 max-w-2xl text-xs text-muted">
-              Link Gmail or Outlook (Microsoft 365) with OAuth. Tokens stay encrypted server-side.
-              SendGrid / Resend use API keys under Access &amp; Keys — not OAuth.
+            <h2 className="mt-1.5 text-xl font-semibold tracking-tight text-ink">Connect email</h2>
+            <p className="mt-2 text-sm leading-relaxed text-muted">
+              Link Gmail or Outlook with OAuth. Tokens stay encrypted server-side.
+              SendGrid and Resend use API keys under Access &amp; Keys.
             </p>
           </div>
           <Badge tone={connections.length ? "success" : "neutral"} size="sm" dot>
@@ -222,16 +257,7 @@ export function EmailConnectionsPanel() {
           </Badge>
         </div>
 
-        {providers && (
-          <div className="flex flex-wrap gap-2">
-            <ReadinessChip ok={providers.gmailOAuth} label="Gmail OAuth" />
-            <ReadinessChip ok={providers.microsoftOAuth} label="Outlook OAuth" />
-            <ReadinessChip ok={providers.encryptionReady} label="Encryption" />
-            <ReadinessChip ok={providers.inboundWebhookSecret} label="Inbound webhook" />
-            <ReadinessChip ok={providers.sendgridApiKey} label="SendGrid key" />
-            <ReadinessChip ok={providers.resendApiKey} label="Resend key" />
-          </div>
-        )}
+        {providers ? <SystemReadiness items={ReadinessFromProviders(providers)} /> : null}
 
         {isAdmin && (
           <div className="flex flex-wrap gap-2">
@@ -278,7 +304,7 @@ export function EmailConnectionsPanel() {
             No mailbox linked yet. Connect Gmail or Outlook above — Aria creates a fleet seat if needed.
           </p>
         ) : (
-          <ul className="space-y-3">
+          <ul className="space-y-2">
             {connections.map((c, i) => {
               const routeOk = Boolean(c.inboundRoute?.active);
               const healthy = c.hasRefreshToken && routeOk;
@@ -288,64 +314,50 @@ export function EmailConnectionsPanel() {
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.04 }}
-                  className={cn(
-                    "rounded-2xl border border-line bg-surface/90 p-4",
-                    healthy ? "border-success/20" : "border-warning/25",
-                  )}
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {healthy ? (
-                          <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />
-                        ) : (
-                          <AlertTriangle className="h-4 w-4 text-warning" aria-hidden />
+                  <ConnectionListItem
+                    title={c.accountEmail}
+                    meta={`Seat ${c.seatName ?? c.seatId.slice(0, 8)} · ${c.hasRefreshToken ? "refresh token OK" : "missing refresh token"} · ${routeOk ? `inbound ${c.inboundRoute?.purpose}` : "inbound route missing"}`}
+                    healthy={healthy}
+                    badges={
+                      <Badge tone="neutral" size="sm">
+                        {c.provider}
+                      </Badge>
+                    }
+                    actions={
+                      <>
+                        <Button
+                          size="sm"
+                          variant="subtle"
+                          leftIcon={<Activity className="h-3.5 w-3.5" />}
+                          loading={testingSeat === c.seatId}
+                          onClick={() => void testSeat(c.seatId)}
+                        >
+                          Validate
+                        </Button>
+                        {isAdmin && !routeOk && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            leftIcon={<Link2 className="h-3.5 w-3.5" />}
+                            onClick={() => void registerInbound(c.seatId)}
+                          >
+                            Register inbound
+                          </Button>
                         )}
-                        <span className="truncate text-sm font-semibold text-ink">{c.accountEmail}</span>
-                        <Badge tone="neutral" size="sm">
-                          {c.provider}
-                        </Badge>
-                      </div>
-                      <p className="mt-1 text-xs text-muted">
-                        Seat {c.seatName ?? c.seatId.slice(0, 8)}
-                        {c.hasRefreshToken ? " · refresh token OK" : " · missing refresh token"}
-                        {routeOk
-                          ? ` · inbound ${c.inboundRoute?.purpose}`
-                          : " · inbound route missing"}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        size="sm"
-                        variant="subtle"
-                        leftIcon={<Activity className="h-3.5 w-3.5" />}
-                        loading={testingSeat === c.seatId}
-                        onClick={() => void testSeat(c.seatId)}
-                      >
-                        Validate
-                      </Button>
-                      {isAdmin && !routeOk && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          leftIcon={<Link2 className="h-3.5 w-3.5" />}
-                          onClick={() => void registerInbound(c.seatId)}
-                        >
-                          Register inbound
-                        </Button>
-                      )}
-                      {isAdmin && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          leftIcon={<Unplug className="h-3.5 w-3.5" />}
-                          onClick={() => void disconnect(c.seatId)}
-                        >
-                          Disconnect
-                        </Button>
-                      )}
-                    </div>
-                  </div>
+                        {isAdmin && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            leftIcon={<Unplug className="h-3.5 w-3.5" />}
+                            onClick={() => void disconnect(c.seatId)}
+                          >
+                            Disconnect
+                          </Button>
+                        )}
+                      </>
+                    }
+                  />
                 </motion.li>
               );
             })}

@@ -1,13 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { motion } from "framer-motion";
 import {
-  Badge,
   Button,
-  Card,
-  CardContent,
-  Eyebrow,
   Field,
   Input,
   Select,
@@ -25,19 +20,21 @@ import {
   validateHeyReachMcpUrl,
 } from "@/lib/heyreach-mcp";
 import type { McpAuthStyle } from "@/lib/types";
-import { fadeUp } from "@/lib/dashboard-motion";
-import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { cn } from "@/lib/utils";
+import {
+  ConnectedIdentityBanner,
+  ConnectionStep,
+  type StepState,
+} from "@/components/settings/integration-connection-primitives";
 import { CheckCircle2, ExternalLink, Megaphone, PlugZap, Unplug } from "lucide-react";
 
-export function HeyReachMcpPanel() {
+export function useHeyReachMcp() {
   const role = useRole();
   const isAdmin = can(role, "manage_tools");
   const actions = useActions();
   const apiKeys = useApiKeys();
   const mcpServers = useMcpServers();
   const { toast } = useToast();
-  const reducedMotion = usePrefersReducedMotion();
 
   const existing = React.useMemo(() => findHeyReachMcpServer(mcpServers), [mcpServers]);
   const connected = heyReachMcpConnected(existing);
@@ -155,124 +152,154 @@ export function HeyReachMcpPanel() {
     toast({ title: "HeyReach MCP disabled", variant: "info" });
   }
 
+  return {
+    isAdmin,
+    existing,
+    connected,
+    keyOptions,
+    url,
+    setUrl,
+    apiKeyId,
+    setApiKeyId,
+    authStyle,
+    setAuthStyle,
+    connecting,
+    connectHeyReach,
+    disconnectHeyReach,
+  };
+}
+
+export function HeyReachOutreachStep({
+  stepState,
+  identityComplete,
+}: {
+  stepState?: StepState;
+  identityComplete?: boolean;
+}) {
+  const {
+    isAdmin,
+    existing,
+    connected,
+    keyOptions,
+    url,
+    setUrl,
+    apiKeyId,
+    setApiKeyId,
+    authStyle,
+    setAuthStyle,
+    connecting,
+    connectHeyReach,
+    disconnectHeyReach,
+  } = useHeyReachMcp();
+
+  const state: StepState =
+    stepState ?? (connected ? "complete" : identityComplete ? "active" : "pending");
+
   return (
-    <motion.div variants={fadeUp} initial={reducedMotion ? false : "hidden"} animate="show">
-      <Card className="overflow-hidden border-violet-500/25 bg-gradient-to-br from-surface via-surface to-violet-500/[0.06]">
-        <CardContent className="space-y-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <Eyebrow>LinkedIn funnel</Eyebrow>
-              <p className="mt-1 text-base font-semibold text-ink">HeyReach MCP</p>
-              <p className="mt-1 max-w-2xl text-sm text-muted">
-                Stack on Sign in with LinkedIn above: HeyReach MCP gives agents real campaign and
-                lead tools for LinkedIn outreach (sequences, lists, sends). Identity stays OIDC;
-                execution goes through HeyReach&apos;s official MCP server — not fake skeleton wiring.
-              </p>
-            </div>
-            <Badge tone={connected ? "success" : "neutral"} size="sm" dot>
-              {connected ? "MCP connected" : "Not connected"}
-            </Badge>
-          </div>
-
-          {connected && existing ? (
-            <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-success/25 bg-success-soft/40 p-4">
-              <CheckCircle2 className="h-5 w-5 text-success" aria-hidden />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-ink">{existing.name}</p>
-                <p className="truncate text-xs text-muted" title={existing.url}>
-                  {existing.url}
-                </p>
-                <p className="mt-1 text-xs text-muted">
-                  {existing.toolCount ?? 0} tools · auth {existing.authStyle ?? "bearer"}
-                  {existing.toolNames?.length
-                    ? ` · e.g. ${existing.toolNames.slice(0, 3).join(", ")}`
-                    : ""}
-                </p>
-              </div>
-              {isAdmin && (
-                <Button variant="ghost" size="sm" leftIcon={<Unplug className="h-3.5 w-3.5" />} onClick={disconnectHeyReach}>
-                  Disable
-                </Button>
-              )}
-            </div>
-          ) : null}
-
-          {isAdmin ? (
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field
-                label="MCP connection URL"
-                htmlFor="heyreach-mcp-url"
-                hint="HeyReach → Integrations → HeyReach MCP Server → copy URL (https://mcp.heyreach.io/…)"
-              >
-                <Input
-                  id="heyreach-mcp-url"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://mcp.heyreach.io/your-workspace"
-                  autoComplete="off"
-                />
-              </Field>
-              <Field
-                label="HeyReach key"
-                htmlFor="heyreach-mcp-key"
-                hint="Save MCP key or API key under Access & Keys (provider HeyReach)."
-              >
-                <Select
-                  id="heyreach-mcp-key"
-                  value={apiKeyId}
-                  onChange={(e) => setApiKeyId(e.target.value)}
-                  options={[
-                    { value: "", label: keyOptions.length ? "Select a saved key…" : "No HeyReach keys — add one first" },
-                    ...keyOptions.map((k) => ({ value: k.id, label: `${k.name} (••••${k.last4})` })),
-                  ]}
-                />
-              </Field>
-              <Field label="Auth style" htmlFor="heyreach-mcp-auth">
-                <Select
-                  id="heyreach-mcp-auth"
-                  value={authStyle}
-                  onChange={(e) => setAuthStyle(e.target.value as McpAuthStyle)}
-                  options={[
-                    { value: "bearer", label: "Bearer (MCP key — default)" },
-                    { value: "x-api-key", label: "X-API-Key (REST API key)" },
-                  ]}
-                />
-              </Field>
-            </div>
-          ) : (
-            <p className="text-xs text-muted">Admins connect HeyReach MCP here. You can use the tools once connected.</p>
-          )}
-
-          {isAdmin && (
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                leftIcon={connected ? <PlugZap className="h-4 w-4" /> : <Megaphone className="h-4 w-4" />}
-                loading={connecting}
-                onClick={() => void connectHeyReach()}
-              >
-                {connected ? "Reconnect & test" : "Connect HeyReach MCP"}
+    <ConnectionStep
+      step={2}
+      title="Outreach — HeyReach MCP"
+      subtitle="Official MCP server for sequences, lists, and sends. Identity stays OIDC; execution goes through HeyReach."
+      state={state}
+    >
+      {connected && existing ? (
+        <ConnectedIdentityBanner
+          displayName={existing.name}
+          secondary={`${existing.toolCount ?? 0} tools · ${existing.authStyle ?? "bearer"}${existing.toolNames?.length ? ` · e.g. ${existing.toolNames.slice(0, 3).join(", ")}` : ""}`}
+          icon={<CheckCircle2 className="h-5 w-5" aria-hidden />}
+          action={
+            isAdmin ? (
+              <Button variant="ghost" size="sm" leftIcon={<Unplug className="h-3.5 w-3.5" />} onClick={disconnectHeyReach}>
+                Disable
               </Button>
-              <a
-                href={HEYREACH_HELP_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={cn(
-                  "inline-flex items-center gap-1 text-xs font-medium text-muted underline-offset-2 hover:text-ink hover:underline",
-                )}
-              >
-                HeyReach MCP setup guide
-                <ExternalLink className="h-3 w-3" aria-hidden />
-              </a>
-            </div>
-          )}
+            ) : undefined
+          }
+        />
+      ) : null}
 
-          <p className="text-[0.65rem] leading-relaxed text-muted">
-            Dev/test: set <code className="font-mono">ARIA_ENABLE_REMOTE_MCP_EXECUTION=true</code> before Test.
-            Production requires an admin MCP allowlist entry. Inbound replies can still flow via{" "}
-            <code className="font-mono">POST /api/webhooks/linkedin</code> when HeyReach posts events back.
-          </p>
-        </CardContent>
-      </Card>
-    </motion.div>
+      {isAdmin ? (
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field
+            label="MCP connection URL"
+            htmlFor="heyreach-mcp-url"
+            hint="HeyReach → Integrations → HeyReach MCP Server"
+          >
+            <Input
+              id="heyreach-mcp-url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://mcp.heyreach.io/your-workspace"
+              autoComplete="off"
+            />
+          </Field>
+          <Field
+            label="HeyReach key"
+            htmlFor="heyreach-mcp-key"
+            hint="Save under Access & Keys (provider HeyReach)."
+          >
+            <Select
+              id="heyreach-mcp-key"
+              value={apiKeyId}
+              onChange={(e) => setApiKeyId(e.target.value)}
+              options={[
+                { value: "", label: keyOptions.length ? "Select a saved key…" : "No HeyReach keys — add one first" },
+                ...keyOptions.map((k) => ({ value: k.id, label: `${k.name} (••••${k.last4})` })),
+              ]}
+            />
+          </Field>
+          <Field label="Auth style" htmlFor="heyreach-mcp-auth">
+            <Select
+              id="heyreach-mcp-auth"
+              value={authStyle}
+              onChange={(e) => setAuthStyle(e.target.value as McpAuthStyle)}
+              options={[
+                { value: "bearer", label: "Bearer (MCP key — default)" },
+                { value: "x-api-key", label: "X-API-Key (REST API key)" },
+              ]}
+            />
+          </Field>
+        </div>
+      ) : (
+        <p className="text-xs text-muted">Admins connect HeyReach MCP here. You can use the tools once connected.</p>
+      )}
+
+      {isAdmin && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            leftIcon={connected ? <PlugZap className="h-4 w-4" /> : <Megaphone className="h-4 w-4" />}
+            loading={connecting}
+            disabled={!identityComplete && !connected}
+            onClick={() => void connectHeyReach()}
+          >
+            {connected ? "Reconnect & test" : "Connect HeyReach MCP"}
+          </Button>
+          {!identityComplete && !connected ? (
+            <p className="text-xs text-muted">Complete Step 1 (Sign in with LinkedIn) first, or use assisted-manual.</p>
+          ) : null}
+          <a
+            href={HEYREACH_HELP_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              "inline-flex items-center gap-1 text-xs font-medium text-muted underline-offset-2 hover:text-ink hover:underline",
+            )}
+          >
+            HeyReach MCP setup guide
+            <ExternalLink className="h-3 w-3" aria-hidden />
+          </a>
+        </div>
+      )}
+
+      <p className="text-[0.65rem] leading-relaxed text-muted">
+        Dev: <code className="font-mono">ARIA_ENABLE_REMOTE_MCP_EXECUTION=true</code> before test.
+        Production requires MCP allowlist. Inbound replies via{" "}
+        <code className="font-mono">POST /api/webhooks/linkedin</code>.
+      </p>
+    </ConnectionStep>
   );
+}
+
+/** @deprecated Prefer LinkedInOutreachStack — kept for direct import compatibility */
+export function HeyReachMcpPanel() {
+  return <HeyReachOutreachStep identityComplete />;
 }

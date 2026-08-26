@@ -85,7 +85,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       lastSync: null,
       errors: [],
       real: true,
-      setupHref: "/settings?tab=integrations",
+      setupHref: "/settings?tab=integrations#linkedin-outreach-stack",
     },
     {
       id: "int_linkedin_rsc",
@@ -98,7 +98,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       lastSync: null,
       errors: [],
       real: true,
-      setupHref: "/settings?tab=integrations",
+      setupHref: "/settings?tab=integrations#linkedin-outreach-stack",
     },
     {
       id: "int_twenty",

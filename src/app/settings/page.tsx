@@ -22,8 +22,8 @@ import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { cn } from "@/lib/utils";
 import { IntegrationCard } from "@/components/settings/integration-card";
 import { EmailConnectionsPanel } from "@/components/settings/email-connections-panel";
-import { LinkedInConnectionsPanel } from "@/components/settings/linkedin-connections-panel";
-import { HeyReachMcpPanel } from "@/components/settings/heyreach-mcp-panel";
+import { LinkedInOutreachStack } from "@/components/settings/linkedin-outreach-stack";
+import { IntegrationsHealthStrip } from "@/components/settings/integration-connection-primitives";
 import { CompliancePanel } from "@/components/settings/compliance-panel";
 import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
 import { RolesPanel } from "@/components/settings/roles-panel";
@@ -631,34 +631,17 @@ export default function SettingsPage() {
             n="04"
             eyebrow="Connections"
             title="Integrations"
-            description="Real connections only: Sign in with LinkedIn, connect HeyReach MCP for outreach, wire Gmail/Outlook, then Apify and the rest. No fake skeletons."
+            description="Real connections only: email OAuth, LinkedIn identity + HeyReach outreach stack, then Apify and the rest. No fake skeletons."
           >
             <EmailConnectionsPanel />
-            <LinkedInConnectionsPanel />
-            <HeyReachMcpPanel />
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge tone="success" size="sm" dot>
-                {summary.connected} live connected
-              </Badge>
-              {summary.degraded > 0 && (
-                <Badge tone="warning" size="sm" dot>
-                  {summary.degraded} degraded
-                </Badge>
-              )}
-              {summary.error > 0 && (
-                <Badge tone="danger" size="sm" dot>
-                  {summary.error} error
-                </Badge>
-              )}
-              {summary.notConfigured > 0 && (
-                <Badge tone="neutral" size="sm" dot>
-                  {summary.notConfigured} not configured
-                </Badge>
-              )}
-              <span className="text-xs text-muted">
-                of {summary.total} wired adapters · roadmap cards listed separately
-              </span>
-            </div>
+            <LinkedInOutreachStack />
+            <IntegrationsHealthStrip
+              connected={summary.connected}
+              degraded={summary.degraded}
+              error={summary.error}
+              notConfigured={summary.notConfigured}
+              total={summary.total}
+            />
 
             {liveIntegrations.length === 0 ? (
               <EmptyState

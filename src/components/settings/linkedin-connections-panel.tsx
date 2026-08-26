@@ -2,18 +2,22 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { Badge, Button, Card, CardContent, Eyebrow, Input, Field, useToast } from "@/components/ui";
+import { Badge, Button, Input, Field, useToast } from "@/components/ui";
 import { useActions, useRole, useSeats } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { isLinkedInSeatProvider } from "@/lib/linkedin-connections";
-import { cn } from "@/lib/utils";
+import {
+  ConnectedIdentityBanner,
+  ConnectionListItem,
+  ConnectionStep,
+  SystemReadiness,
+  type ReadinessItem,
+  type StepState,
+} from "@/components/settings/integration-connection-primitives";
 import {
   Activity,
-  AlertTriangle,
-  CheckCircle2,
   Linkedin,
-  ShieldCheck,
   Unplug,
   Wand2,
 } from "lucide-react";
@@ -52,7 +56,24 @@ type SeatRow = {
   inboundRoute?: { routeKey: string; operatorLabel: string; active: boolean } | null;
 };
 
-export function LinkedInConnectionsPanel() {
+type LinkedInConnectionsValue = ReturnType<typeof useLinkedInConnectionsState>;
+
+const LinkedInConnectionsContext = React.createContext<LinkedInConnectionsValue | null>(null);
+
+export function LinkedInConnectionsProvider({ children }: { children: React.ReactNode }) {
+  const value = useLinkedInConnectionsState();
+  return (
+    <LinkedInConnectionsContext.Provider value={value}>{children}</LinkedInConnectionsContext.Provider>
+  );
+}
+
+export function useLinkedInConnections(): LinkedInConnectionsValue {
+  const ctx = React.useContext(LinkedInConnectionsContext);
+  if (ctx) return ctx;
+  return useLinkedInConnectionsState();
+}
+
+function useLinkedInConnectionsState() {
   const actions = useActions();
   const role = useRole();
   const localSeats = useSeats();
@@ -314,135 +335,243 @@ export function LinkedInConnectionsPanel() {
   const oauthSeat = seats.find((s) => s.oauthConnected);
   const signedIn = Boolean(oauthSeat?.oauthProfile);
 
-  return (
-    <Card className="overflow-hidden border-[#0A66C2]/25 bg-gradient-to-br from-surface via-surface to-[#0A66C2]/[0.07]">
-      <CardContent className="space-y-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <Eyebrow>LinkedIn</Eyebrow>
-            <p className="mt-1 text-base font-semibold text-ink">Sign in with LinkedIn</p>
-            <p className="mt-1 max-w-2xl text-sm text-muted">
-              Real OpenID Connect login against LinkedIn. We store encrypted tokens and your public
-              profile — never your password. Messaging drafts still go through assisted-manual or a
-              contracted vendor (LinkedIn does not grant InMail via public OAuth alone).
-            </p>
-          </div>
-          <Badge tone={signedIn ? "success" : "neutral"} size="sm" dot>
-            {signedIn ? "Signed in" : "Not signed in"}
-          </Badge>
+  const readinessItems: ReadinessItem[] = providers
+    ? [
+        {
+          id: "oauth",
+          label: "LinkedIn OAuth credentials",
+          ok: providers.oauthConfigured,
+          hint: "Set LINKEDIN_CLIENT_ID, LINKEDIN_CLIENT_SECRET, and redirect URI in your deployment.",
+        },
+        {
+          id: "encryption",
+          label: "Token encryption",
+          ok: providers.encryptionReady,
+          hint: "DATA_ENCRYPTION_KEY (≥32 chars) must be configured.",
+        },
+        {
+          id: "vendor",
+          label: "Vendor API (contracted automation)",
+          ok: providers.vendorApiConfigured,
+          optional: true,
+        },
+        {
+          id: "webhook",
+          label: "Inbound webhook secret",
+          ok: providers.inboundWebhookSecret,
+          hint: "Required for vendor reply events.",
+        },
+      ]
+    : [];
+
+  return {
+    isAdmin,
+    loading,
+    connectingOAuth,
+    connectingAssisted,
+    testingSeat,
+    label,
+    setLabel,
+    providers,
+    seats,
+    simProfile,
+    setSimProfile,
+    simBody,
+    setSimBody,
+    simType,
+    setSimType,
+    simulating,
+    oauthSeat,
+    signedIn,
+    readinessItems,
+    connectWithLinkedInOAuth,
+    connectAssisted,
+    simulateEvent,
+    testSeat,
+    actions,
+    load,
+  };
+}
+
+export function LinkedInIdentityStep({
+  stepState,
+  hideAdvanced,
+}: {
+  stepState?: StepState;
+  hideAdvanced?: boolean;
+}) {
+  const {
+    isAdmin,
+    loading,
+    connectingOAuth,
+    connectingAssisted,
+    testingSeat,
+    label,
+    setLabel,
+    providers,
+    seats,
+    simProfile,
+    setSimProfile,
+    simBody,
+    setSimBody,
+    simType,
+    setSimType,
+    simulating,
+    oauthSeat,
+    signedIn,
+    readinessItems,
+    connectWithLinkedInOAuth,
+    connectAssisted,
+    simulateEvent,
+    testSeat,
+    actions,
+    load,
+  } = useLinkedInConnections();
+
+  const state: StepState =
+    stepState ?? (signedIn ? "complete" : providers?.oauthConfigured === false && supabaseEnabled ? "blocked" : "active");
+
+  const advanced = hideAdvanced ? undefined : (
+    <div className="space-y-4">
+      <div>
+        <p className="text-xs font-medium text-ink">Assisted-manual without OAuth</p>
+        <p className="mt-1 text-xs text-muted">
+          Creates a messaging seat without LinkedIn Sign In. Prefer OAuth when credentials are configured.
+        </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+          <Field label="Operator label" htmlFor="li-operator-label">
+            <Input
+              id="li-operator-label"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="e.g. Alex Recruiter"
+            />
+          </Field>
+          <Button size="sm" variant="outline" loading={connectingAssisted} onClick={() => void connectAssisted()}>
+            Create assisted seat
+          </Button>
         </div>
-
-        {providers && (
-          <div className="flex flex-wrap gap-2">
-            <Badge tone={providers.oauthConfigured ? "success" : "danger"} size="sm" dot>
-              LinkedIn OAuth {providers.oauthConfigured ? "ready" : "missing env"}
-            </Badge>
-            <Badge tone={providers.encryptionReady ? "success" : "warning"} size="sm" dot>
-              Encryption {providers.encryptionReady ? "ready" : "needed"}
-            </Badge>
-            <Badge tone={providers.vendorApiConfigured ? "success" : "neutral"} size="sm" dot>
-              Vendor API {providers.vendorApiConfigured ? "on" : "optional"}
-            </Badge>
-            <Badge tone={providers.inboundWebhookSecret ? "success" : "warning"} size="sm" dot>
-              Inbound webhook
-            </Badge>
-          </div>
-        )}
-
-        {signedIn && oauthSeat?.oauthProfile ? (
-          <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-success/25 bg-success-soft/40 p-4">
-            {oauthSeat.oauthProfile.pictureUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={oauthSeat.oauthProfile.pictureUrl}
-                alt=""
-                className="h-12 w-12 rounded-full object-cover"
-                referrerPolicy="no-referrer"
+      </div>
+      {isAdmin && (
+        <div>
+          <p className="text-xs font-medium text-ink">Simulate inbound event</p>
+          <p className="mt-1 text-[11px] text-muted">
+            Proves webhook → classify without a vendor. Does not call linkedin.com.
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <Field label="Event type" htmlFor="li-sim-type">
+              <select
+                id="li-sim-type"
+                className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm"
+                value={simType}
+                onChange={(e) => setSimType(e.target.value as LinkedInEventType)}
+              >
+                {LINKEDIN_EVENT_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Profile URL" htmlFor="li-sim-profile">
+              <Input
+                id="li-sim-profile"
+                value={simProfile}
+                onChange={(e) => setSimProfile(e.target.value)}
+                placeholder="https://www.linkedin.com/in/…"
               />
-            ) : (
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#0A66C2] text-white">
-                <Linkedin className="h-6 w-6" aria-hidden />
-              </span>
-            )}
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-ink">{oauthSeat.oauthProfile.displayName}</p>
-              <p className="text-xs text-muted">
-                {oauthSeat.oauthProfile.email ?? "No email from LinkedIn"} · connected{" "}
-                {new Date(oauthSeat.oauthProfile.connectedAt).toLocaleString()}
-              </p>
-            </div>
-            <CheckCircle2 className="h-5 w-5 text-success" aria-hidden />
+            </Field>
           </div>
-        ) : null}
+          {simType === "reply" && (
+            <Field label="Reply body" htmlFor="li-sim-body" className="mt-3">
+              <Input id="li-sim-body" value={simBody} onChange={(e) => setSimBody(e.target.value)} />
+            </Field>
+          )}
+          <Button
+            size="sm"
+            variant="subtle"
+            className="mt-3"
+            leftIcon={<Wand2 className="h-3.5 w-3.5" />}
+            loading={simulating}
+            onClick={() => void simulateEvent(seats[0]?.id)}
+          >
+            Simulate event
+          </Button>
+        </div>
+      )}
+    </div>
+  );
 
-        {isAdmin && (
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              leftIcon={<Linkedin className="h-4 w-4" />}
-              loading={connectingOAuth}
-              disabled={!providers?.oauthConfigured && supabaseEnabled}
-              onClick={() => void connectWithLinkedInOAuth()}
-            >
-              {signedIn ? "Reconnect LinkedIn" : "Sign in with LinkedIn"}
-            </Button>
-            {!providers?.oauthConfigured && supabaseEnabled ? (
-              <p className="max-w-md text-xs text-danger">
-                Set <code className="font-mono">LINKEDIN_CLIENT_ID</code> +{" "}
-                <code className="font-mono">LINKEDIN_CLIENT_SECRET</code> (and redirect URI) from the
-                LinkedIn Developer Portal → Sign In with LinkedIn using OpenID Connect.
-              </p>
-            ) : null}
-          </div>
-        )}
+  return (
+    <ConnectionStep
+      step={1}
+      title="Identity — Sign in with LinkedIn"
+      subtitle="OpenID Connect login. We store encrypted tokens and your public profile — never your password."
+      state={state}
+      advanced={advanced}
+    >
+      {readinessItems.length > 0 ? <SystemReadiness items={readinessItems} /> : null}
 
-        {loading ? (
-          <p className="text-xs text-muted">Loading LinkedIn connection…</p>
-        ) : seats.length === 0 ? (
-          <p className="text-xs text-muted">No LinkedIn seat yet. Sign in above to create one.</p>
-        ) : (
-          <ul className="space-y-3">
-            {seats.map((s, i) => {
-              const ready = s.mode === "live" && s.status === "active";
-              return (
-                <motion.li
-                  key={s.id}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.04 }}
-                  className={cn(
-                    "rounded-2xl border border-line bg-surface/90 p-4",
-                    s.oauthConnected ? "border-[#0A66C2]/30" : ready ? "border-success/20" : "border-warning/25",
-                  )}
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {s.oauthConnected ? (
-                          <CheckCircle2 className="h-4 w-4 text-[#0A66C2]" aria-hidden />
-                        ) : ready ? (
-                          <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />
-                        ) : (
-                          <AlertTriangle className="h-4 w-4 text-warning" aria-hidden />
-                        )}
-                        <span className="truncate text-sm font-semibold text-ink">{s.name}</span>
-                        {s.oauthConnected && (
-                          <Badge tone="electric" size="sm">
-                            OIDC signed in
-                          </Badge>
-                        )}
-                        <Badge tone="neutral" size="sm">
-                          {s.provider}
+      {signedIn && oauthSeat?.oauthProfile ? (
+        <ConnectedIdentityBanner
+          displayName={oauthSeat.oauthProfile.displayName}
+          secondary={`${oauthSeat.oauthProfile.email ?? "No email from LinkedIn"} · connected ${new Date(oauthSeat.oauthProfile.connectedAt).toLocaleString()}`}
+          imageUrl={oauthSeat.oauthProfile.pictureUrl}
+          icon={<Linkedin className="h-5 w-5" aria-hidden />}
+        />
+      ) : null}
+
+      {isAdmin && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            leftIcon={<Linkedin className="h-4 w-4" />}
+            loading={connectingOAuth}
+            disabled={!providers?.oauthConfigured && supabaseEnabled}
+            onClick={() => void connectWithLinkedInOAuth()}
+          >
+            {signedIn ? "Reconnect LinkedIn" : "Sign in with LinkedIn"}
+          </Button>
+          {!providers?.oauthConfigured && supabaseEnabled ? (
+            <p className="max-w-md text-xs text-muted">
+              OAuth env vars missing — expand System readiness above for details.
+            </p>
+          ) : null}
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-xs text-muted">Loading LinkedIn connection…</p>
+      ) : seats.length === 0 ? (
+        <p className="text-xs text-muted">No LinkedIn seat yet. Sign in above to create one.</p>
+      ) : (
+        <ul className="space-y-2">
+          {seats.map((s, i) => {
+            const ready = s.mode === "live" && s.status === "active";
+            return (
+              <motion.li
+                key={s.id}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.03 }}
+              >
+                <ConnectionListItem
+                  title={s.name}
+                  meta={`${s.oauthProfile?.displayName || s.connectedAccount || s.operatorEmail || "No identity"} · ${s.inboundRoute?.active ? "inbound route OK" : "inbound route missing"}`}
+                  healthy={ready}
+                  badges={
+                    <>
+                      {s.oauthConnected && (
+                        <Badge tone="electric" size="sm">
+                          OIDC
                         </Badge>
-                        <Badge tone={s.mode === "live" ? "tangerine" : "aqua"} size="sm">
-                          {s.mode}
-                        </Badge>
-                      </div>
-                      <p className="mt-1 text-xs text-muted">
-                        {s.oauthProfile?.displayName || s.connectedAccount || s.operatorEmail || "No identity"}
-                        {s.inboundRoute?.active ? " · inbound route OK" : " · inbound route missing"}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
+                      )}
+                      <Badge tone="neutral" size="sm">
+                        {s.provider}
+                      </Badge>
+                    </>
+                  }
+                  actions={
+                    <>
                       <Button
                         size="sm"
                         variant="subtle"
@@ -462,94 +591,19 @@ export function LinkedInConnectionsPanel() {
                           Pause
                         </Button>
                       )}
-                    </div>
-                  </div>
-                </motion.li>
-              );
-            })}
-          </ul>
-        )}
-
-        {isAdmin && (
-          <details className="rounded-2xl border border-dashed border-line p-4">
-            <summary className="cursor-pointer text-sm font-semibold text-ink">
-              Advanced: assisted-manual without OAuth
-            </summary>
-            <p className="mt-2 text-xs text-muted">
-              Creates a messaging seat without LinkedIn Sign In. Prefer OAuth above when credentials
-              are configured.
-            </p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-              <Field label="Operator label" htmlFor="li-operator-label">
-                <Input
-                  id="li-operator-label"
-                  value={label}
-                  onChange={(e) => setLabel(e.target.value)}
-                  placeholder="e.g. Alex Recruiter"
+                    </>
+                  }
                 />
-              </Field>
-              <Button size="sm" variant="outline" loading={connectingAssisted} onClick={() => void connectAssisted()}>
-                Create assisted seat
-              </Button>
-            </div>
-          </details>
-        )}
-
-        {isAdmin && (
-          <details className="rounded-2xl border border-dashed border-sky-500/30 bg-sky-500/[0.04] p-4">
-            <summary className="cursor-pointer text-sm font-semibold text-ink">
-              Admin: simulate inbound event
-            </summary>
-            <p className="mt-2 text-[11px] text-muted">
-              Proves webhook → classify without a vendor. Does not call linkedin.com.
-            </p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <Field label="Event type" htmlFor="li-sim-type">
-                <select
-                  id="li-sim-type"
-                  className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm"
-                  value={simType}
-                  onChange={(e) => setSimType(e.target.value as LinkedInEventType)}
-                >
-                  {LINKEDIN_EVENT_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Profile URL" htmlFor="li-sim-profile">
-                <Input
-                  id="li-sim-profile"
-                  value={simProfile}
-                  onChange={(e) => setSimProfile(e.target.value)}
-                  placeholder="https://www.linkedin.com/in/…"
-                />
-              </Field>
-            </div>
-            {simType === "reply" && (
-              <Field label="Reply body" htmlFor="li-sim-body" className="mt-3">
-                <Input id="li-sim-body" value={simBody} onChange={(e) => setSimBody(e.target.value)} />
-              </Field>
-            )}
-            <Button
-              size="sm"
-              variant="subtle"
-              className="mt-3"
-              leftIcon={<Wand2 className="h-3.5 w-3.5" />}
-              loading={simulating}
-              onClick={() => void simulateEvent(seats[0]?.id)}
-            >
-              Simulate event
-            </Button>
-          </details>
-        )}
-
-        <p className="flex items-start gap-1.5 text-xs text-muted">
-          <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-          No scrape, no session bots, no password storage. OIDC tokens encrypted at rest.
-        </p>
-      </CardContent>
-    </Card>
+              </motion.li>
+            );
+          })}
+        </ul>
+      )}
+    </ConnectionStep>
   );
+}
+
+/** @deprecated Prefer LinkedInOutreachStack — kept for direct import compatibility */
+export function LinkedInConnectionsPanel() {
+  return <LinkedInIdentityStep />;
 }

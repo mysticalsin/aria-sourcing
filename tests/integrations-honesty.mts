@@ -17,6 +17,7 @@ const realCards = integrations.filter((integration) => integration.real === true
 const github = integrations.find((integration) => integration.id === "int_github");
 const apify = integrations.find((integration) => integration.id === "int_apify");
 const linkedinRsc = integrations.find((integration) => integration.id === "int_linkedin_rsc");
+const heyreach = integrations.find((integration) => integration.id === "int_heyreach");
 
 ok("has roadmap placeholder integrations to audit", placeholders.length > 0);
 ok(
@@ -64,6 +65,15 @@ ok(
 ok(
   "LinkedIn messaging card mentions OpenID Connect / Sign in",
   /openid|sign in with linkedin/i.test(linkedinRsc?.description ?? ""),
+);
+ok(
+  "HeyReach MCP card is real and starts unconfigured",
+  heyreach?.real === true && heyreach.status === "not_configured",
+);
+ok(
+  "HeyReach MCP card points to integrations setup",
+  heyreach?.setupHref === "/settings?tab=integrations#linkedin-outreach-stack" &&
+    /heyreach mcp/i.test(heyreach?.name ?? ""),
 );
 
 console.log(`RESULT integrations-honesty: ${pass} passed, ${fail} failed`);

@@ -56,7 +56,10 @@ const panel = readFileSync("src/components/settings/heyreach-mcp-panel.tsx", "ut
 ok("settings panel wires connect + test", /Connect HeyReach MCP/.test(panel) && /testMcpServer/.test(panel));
 
 const settings = readFileSync("src/app/settings/page.tsx", "utf8");
-ok("integrations tab mounts HeyReach panel", settings.includes("HeyReachMcpPanel"));
+ok(
+  "integrations tab mounts LinkedIn outreach stack",
+  settings.includes("LinkedInOutreachStack"),
+);
 
 console.log(`RESULT heyreach-mcp: ${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);
