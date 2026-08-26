@@ -108,14 +108,15 @@ function scoreSkills(c: Candidate, jd: JobAnalysis): { score: number; rationale:
   let score = clamp(reqRatio * 82 + niceRatio * 18, 0, 100);
   const titleOverlap = titleOverlapRatio(c.currentTitle, jd.title);
   // Public headlines often encode role fit more than a sparse tech list.
-  if (titleOverlap >= 0.6) score = Math.max(score, 78);
-  if (titleOverlap >= 0.9) score = Math.max(score, 86);
+  if (titleOverlap >= 0.5 && reqHit >= 1) score = Math.max(score, 82);
+  if (titleOverlap >= 0.6) score = Math.max(score, 86);
+  if (titleOverlap >= 0.9 && reqHit >= 1) score = Math.max(score, 92);
   return {
     score,
     rationale: `${reqHit}/${req.length || "—"} required, ${niceHit}/${
       nice.length || "—"
     } nice-to-have skills present${
-      titleOverlap >= 0.6 ? `; title aligns with ${jd.title}` : ""
+      titleOverlap >= 0.5 ? `; title aligns with ${jd.title}` : ""
     }.`,
   };
 }
@@ -125,12 +126,18 @@ function skillMentionedInText(skill: string, corpus: string): boolean {
   const needle = skill.toLowerCase().trim();
   if (!needle || !hay) return false;
   if (hay.includes(needle)) return true;
-  const stop = new Set(["and", "the", "for", "with", "from", "into", "software", "systems"]);
+  // Parenthetical acronyms (e.g. "Mean Time to Failure (MTTF)") are high-signal aliases.
+  const acronyms = [...needle.matchAll(/\(([a-z0-9+.#]{2,})\)/gi)].map((m) => m[1]!.toLowerCase());
+  if (acronyms.some((acronym) => new RegExp(`(?:^|[^a-z0-9])${acronym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:$|[^a-z0-9])`, "i").test(hay))) {
+    return true;
+  }
+  const stop = new Set(["and", "the", "for", "with", "from", "into", "software", "systems", "management", "regulations"]);
   const tokens = needle
+    .replace(/\([^)]*\)/g, " ")
     .split(/[^a-z0-9+.#]+/i)
     .map((t) => t.trim())
     .filter((t) => t.length > 2 && !stop.has(t));
-  if (tokens.length === 0) return false;
+  if (tokens.length === 0) return acronyms.length > 0 ? false : false;
   const hits = tokens.filter((token) => {
     const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, "i").test(hay);
@@ -260,7 +267,7 @@ function classifyDimensions(candidate: Candidate, jd: JobAnalysis): Record<keyof
   const skillsEvidence =
     candidate.techStack.length > 0 ||
     reqHitFromCorpus(candidate, jd) > 0 ||
-    titleOverlapRatio(candidate.currentTitle, jd.title) >= 0.6;
+    titleOverlapRatio(candidate.currentTitle, jd.title) >= 0.5;
 
   return {
     skills: {

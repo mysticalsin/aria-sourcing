@@ -103,10 +103,15 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
 
 export function normalizeHermesState(parsed: HermesState): HermesState {
   if (parsed.version !== STATE_VERSION) return migrateToCurrentVersion(parsed);
+  const settings = withoutLegacyIntegrationAuthority(parsed.settings);
   return {
     ...parsed,
     wins: parsed.wins ?? [],
-    settings: withoutLegacyIntegrationAuthority(parsed.settings),
+    settings: {
+      ...settings,
+      // Quality bar: never contact / accept below 80% unless operator raises further.
+      minScoreToContact: Math.max(80, Number(settings.minScoreToContact) || 80),
+    },
   };
 }
 

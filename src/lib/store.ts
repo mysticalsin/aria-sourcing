@@ -6538,7 +6538,7 @@ function buildLiveEmptyState(): HermesState {
       humanApprovalGate: true,
       dryRunMode: true,
       webResearch: true,
-      minScoreToContact: 70,
+      minScoreToContact: 80,
       slaMinutes: 15,
       operatorName: "Operator",
       systemIdentity: "Aria Sourcing",

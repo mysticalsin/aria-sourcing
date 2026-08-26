@@ -14,7 +14,8 @@ import { recordedCandidateFitEndorsement } from "./candidate-fit-endorsement";
    Business rules — the guardrails Aria enforces before acting.
    ========================================================================== */
 
-export const MIN_SCORE_FLOOR = 70;
+/** Contact / sourcing quality floor — only 80%+ matches proceed without endorsement. */
+export const MIN_SCORE_FLOOR = 80;
 export const DEDUPE_WINDOW_DAYS = 90;
 
 /* ---- Rule 2 + 3 + 4: outreach approval gate ------------------------------ */

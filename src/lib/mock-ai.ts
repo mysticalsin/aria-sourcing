@@ -728,6 +728,7 @@ export function buildLinkedInKeywords(jd: JobAnalysis): string {
     if (/fda/i.test(lower)) return "FDA";
     if (/quality systems/i.test(lower)) return "quality systems";
     if (/mttf|mean time to failure/i.test(lower)) return "reliability engineering";
+    if (/system design/i.test(lower)) return "system design";
     const short = skill.split(/[,;/]/)[0]?.trim() ?? skill;
     return short.split(/\s+/).slice(0, 3).join(" ");
   });
@@ -737,6 +738,44 @@ export function buildLinkedInKeywords(jd: JobAnalysis): string {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 256);
+}
+
+/**
+ * Deep LinkedIn search variants — title+location, title+skill, title+industry —
+ * so the sourcing agent can cast a wider net and keep only 80%+ fits.
+ */
+export function buildLinkedInQueryVariants(jd: JobAnalysis, max = 4): string[] {
+  const title = jd.title.trim();
+  if (!title) return [];
+  const region = jd.regions.find((r) => r.trim() && !NON_LOCATION_REGIONS.has(r))?.trim() ?? "";
+  const industry = jd.industryExperience[0]?.trim() ?? "";
+  const seniority = jd.seniority !== "Unspecified" ? jd.seniority : "";
+  const skills = jd.requiredSkills.slice(0, 4).map((skill) => {
+    const lower = skill.toLowerCase();
+    if (/medical device/i.test(lower)) return "medical device";
+    if (/fda/i.test(lower)) return "FDA";
+    if (/mttf|mean time to failure/i.test(lower)) return "MTTF";
+    if (/system design/i.test(lower)) return "system design";
+    const acronym = skill.match(/\(([A-Za-z0-9+.#]{2,})\)/)?.[1];
+    if (acronym) return acronym;
+    return (skill.split(/[,;/]/)[0]?.trim() ?? skill).split(/\s+/).slice(0, 3).join(" ");
+  });
+
+  const variants: string[] = [
+    buildLinkedInKeywords(jd),
+    [seniority, title, region].filter(Boolean).join(" "),
+    [title, skills[0], region].filter(Boolean).join(" "),
+    [title, skills[1] ?? skills[0], industry || region].filter(Boolean).join(" "),
+    [title, "OR", `"${title}"`, region || industry].filter(Boolean).join(" "),
+  ];
+
+  return Array.from(
+    new Set(
+      variants
+        .map((q) => q.replace(/\s+/g, " ").trim().slice(0, 256))
+        .filter((q) => q.length >= 3),
+    ),
+  ).slice(0, max);
 }
 
 export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {

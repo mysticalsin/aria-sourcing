@@ -112,9 +112,9 @@ function approvalCtx(over: Partial<ApprovalContext> = {}): ApprovalContext {
 /* checkOutreachApproval                                                       */
 /* ========================================================================== */
 
-// settings.minScoreToContact defaults to 70.
+// settings.minScoreToContact defaults to 80.
 const settings: SystemSettings = defaultSettings();
-ok("settings minScoreToContact is the 70 floor", settings.minScoreToContact === 70);
+ok("settings minScoreToContact is the 80 floor", settings.minScoreToContact === 80);
 ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
 
 // 1) Blocks when matchScore < minScoreToContact.

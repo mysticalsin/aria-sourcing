@@ -26,7 +26,7 @@ import {
   mapWebSearchCandidates,
   type CandidateMappingCampaign,
 } from "@/lib/sourcing/candidate-mappers";
-import { candidateMatchesRoleTitle } from "@/lib/sourcing/candidate-fit";
+import { candidateMatchesRoleTitle, meetsSourcingQualityBar, SOURCING_QUALITY_FLOOR } from "@/lib/sourcing/candidate-fit";
 
 export const SOURCING_TOOL_DEFS: McpTool[] = [
   {
@@ -143,11 +143,15 @@ export function makeSourcingToolRunner(
         return { ok: false, error: search.error ?? "Web search failed." };
       }
       const content = search.content as { results?: { title: string; url: string; snippet: string }[] } | undefined;
-      const hits = (content?.results ?? []).slice(0, count);
+      const hits = (content?.results ?? []).slice(0, Math.max(count * 3, 10));
       const leads = hits.map((h) => extractLead(h, platform));
       const result = mapWebSearchCandidates(leads, campaign, scopedQuery, platform, alreadySeen, weights);
       const roleTitle = campaign.jobAnalysis.title.trim();
-      const filtered = result.accepted.filter((c) => candidateMatchesRoleTitle(c, roleTitle));
+      const filtered = result.accepted
+        .filter((c) => candidateMatchesRoleTitle(c, roleTitle))
+        .filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR))
+        .sort((a, b) => b.matchScore - a.matchScore)
+        .slice(0, count);
       accepted = filtered;
       skippedCount = result.skipped.length + (result.accepted.length - filtered.length);
     } else {

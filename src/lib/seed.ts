@@ -143,7 +143,7 @@ export function defaultSettings(): SystemSettings {
     humanApprovalGate: true,
     dryRunMode: true,
     webResearch: true,
-    minScoreToContact: 70,
+    minScoreToContact: 80,
     starRatingThresholds: { topGun: 88, a: 80, b: 65, c: 50 },
     slaMinutes: 15,
     operatorName: "Jordan Bryce",

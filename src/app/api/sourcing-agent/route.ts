@@ -18,6 +18,11 @@ import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
 import { dedupeCandidates } from "@/lib/rules";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
+import { buildLinkedInQueryVariants } from "@/lib/mock-ai";
+import {
+  SOURCING_QUALITY_FLOOR,
+  meetsSourcingQualityBar,
+} from "@/lib/sourcing/candidate-fit";
 import {
   beginSourcingRun,
   beginAgentFrameworkSourcingRun,
@@ -593,10 +598,16 @@ async function handlePost(req: NextRequest, correlationId: string) {
         linkedInQueryRaw.length > 0 && linkedInQueryRaw.length <= 256
           ? linkedInQueryRaw
           : keywordFallback;
+      const deepLinkedInQueries = linkedInFirst
+        ? buildLinkedInQueryVariants(initial.value.campaign.jobAnalysis, 4)
+        : [];
       const queries = frameworkAuthorization
         ? [frameworkAuthorization.query]
         : linkedInFirst
-          ? [linkedInQuery || keywordFallback].filter(Boolean).slice(0, 1)
+          ? (deepLinkedInQueries.length > 0
+              ? deepLinkedInQueries
+              : [linkedInQuery || keywordFallback].filter(Boolean)
+            ).slice(0, 4)
           : [
               ...promotedLessons
                 .filter((lesson) => lesson.platform === "GitHub")
@@ -614,11 +625,11 @@ async function handlePost(req: NextRequest, correlationId: string) {
       }
       let successfulQuery = false;
       for (const query of queries) {
-        const remaining = count - runner.getFound().length;
-        if (remaining <= 0) break;
+        const remaining = Math.max(count * 2 - runner.getFound().length, count);
+        if (runner.getFound().length >= count * 2) break;
         const result = await runner.run(
           "search_candidates",
-          { platform: searchPlatform, query, count: remaining },
+          { platform: searchPlatform, query, count: Math.min(Math.max(remaining, count), 10) },
           searchSignal,
         );
         successfulQuery = successfulQuery || result.ok;
@@ -712,7 +723,9 @@ async function handlePost(req: NextRequest, correlationId: string) {
 
     const found = dedupeCandidates(runner.getFound(), latest.value.existing, {
       excludedCompanies: latest.value.campaign.sourcingStrategy.excludedCompanies,
-    }).accepted;
+    }).accepted
+      .filter((candidate) => meetsSourcingQualityBar(candidate, SOURCING_QUALITY_FLOOR))
+      .sort((a, b) => b.matchScore - a.matchScore);
     const byId = new Map(found.map((candidate) => [candidate.id, candidate]));
     const selected = deterministic
       ? found.slice(0, count).map((candidate) => ({ candidate, draft: null }))

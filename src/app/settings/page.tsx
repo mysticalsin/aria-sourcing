@@ -493,17 +493,17 @@ export default function SettingsPage() {
                   <Field
                     label="Minimum score to contact"
                     htmlFor="minScoreToContact"
-                    hint="Candidates below this match score are never contacted (0–100)."
+                    hint="Only 80%+ matches may be contacted. Raise higher for a stricter bar (80–100)."
                   >
                     <Input
                       id="minScoreToContact"
                       type="number"
-                      min={0}
+                      min={80}
                       max={100}
                       value={settings.minScoreToContact}
                       onChange={(e) =>
                         actions.updateSettings({
-                          minScoreToContact: Math.min(100, Math.max(0, Number(e.target.value) || 0)),
+                          minScoreToContact: Math.min(100, Math.max(80, Number(e.target.value) || 80)),
                         })
                       }
                       onBlur={savedToast}

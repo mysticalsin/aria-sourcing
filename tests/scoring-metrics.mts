@@ -146,8 +146,8 @@ const liveLinkedInScore = scoreCandidate(
   DEFAULT_SCORING_WEIGHTS,
 );
 ok(
-  "live LinkedIn title+location evidence clears contact floor (70)",
-  liveLinkedInScore.score >= 70,
+  "live LinkedIn title+location evidence clears contact floor (80)",
+  liveLinkedInScore.score >= 80,
 );
 const liveExp = liveLinkedInScore.breakdown.find((item) => item.key === "experience");
 ok(
@@ -176,8 +176,8 @@ const thinHighSkill = scoreCandidate(
   DEFAULT_SCORING_WEIGHTS,
 );
 ok(
-  "signal-aware scoring: skills-only-high candidate stays below MIN_SCORE_FLOOR 70",
-  thinHighSkill.score < 70,
+  "signal-aware scoring: skills-only-high candidate stays below MIN_SCORE_FLOOR 80",
+  thinHighSkill.score < 80,
 );
 
 const broadVerified = scoreCandidate(
@@ -216,7 +216,7 @@ const skillsOnly = scoreCandidate(
     timezone: "",
   },
   skillsOnlyJd,
-  DEFAULT_SCORING_WEIGHTS,
+  { ...DEFAULT_SCORING_WEIGHTS, location: 0, activity: 0 },
 );
 const skillsOnlySkillScore = skillsOnly.breakdown.find((item) => item.key === "skills")?.score;
 ok(
