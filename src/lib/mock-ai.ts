@@ -741,33 +741,60 @@ export function buildLinkedInKeywords(jd: JobAnalysis): string {
 }
 
 /**
- * Deep LinkedIn search variants — title+location, title+skill, title+industry —
- * so the sourcing agent can cast a wider net and keep only 80%+ fits.
+ * Deep LinkedIn search variants — title aliases, skills, location, industry —
+ * so the sourcing agent can cast a wide net and keep only 80%+ fits.
  */
-export function buildLinkedInQueryVariants(jd: JobAnalysis, max = 4): string[] {
+export function roleTitleSearchAliases(title: string): string[] {
+  const t = title.trim();
+  if (!t) return [];
+  const aliases = new Set<string>([t, `"${t}"`]);
+  if (/system designer/i.test(t)) {
+    for (const a of [
+      "Systems Designer",
+      "System Architect",
+      "Systems Architect",
+      "Systems Engineer",
+      "Product Development Engineer",
+      "R&D System Designer",
+    ]) {
+      aliases.add(a);
+      aliases.add(`"${a}"`);
+    }
+  }
+  if (/murex/i.test(t)) {
+    for (const a of ["Murex Consultant", "Murex Support", "Front Office Support"]) aliases.add(a);
+  }
+  return [...aliases];
+}
+
+export function buildLinkedInQueryVariants(jd: JobAnalysis, max = 8): string[] {
   const title = jd.title.trim();
   if (!title) return [];
   const region = jd.regions.find((r) => r.trim() && !NON_LOCATION_REGIONS.has(r))?.trim() ?? "";
   const industry = jd.industryExperience[0]?.trim() ?? "";
   const seniority = jd.seniority !== "Unspecified" ? jd.seniority : "";
-  const skills = jd.requiredSkills.slice(0, 4).map((skill) => {
+  const skills = jd.requiredSkills.slice(0, 5).map((skill) => {
     const lower = skill.toLowerCase();
     if (/medical device/i.test(lower)) return "medical device";
     if (/fda/i.test(lower)) return "FDA";
     if (/mttf|mean time to failure/i.test(lower)) return "MTTF";
     if (/system design/i.test(lower)) return "system design";
+    if (/quality systems/i.test(lower)) return "quality systems";
     const acronym = skill.match(/\(([A-Za-z0-9+.#]{2,})\)/)?.[1];
     if (acronym) return acronym;
     return (skill.split(/[,;/]/)[0]?.trim() ?? skill).split(/\s+/).slice(0, 3).join(" ");
   });
 
-  const variants: string[] = [
-    buildLinkedInKeywords(jd),
-    [seniority, title, region].filter(Boolean).join(" "),
-    [title, skills[0], region].filter(Boolean).join(" "),
-    [title, skills[1] ?? skills[0], industry || region].filter(Boolean).join(" "),
-    [title, "OR", `"${title}"`, region || industry].filter(Boolean).join(" "),
-  ];
+  const titleAliases = roleTitleSearchAliases(title);
+  const variants: string[] = [buildLinkedInKeywords(jd)];
+  for (const alias of titleAliases.slice(0, 4)) {
+    variants.push([seniority, alias, region].filter(Boolean).join(" "));
+    variants.push([alias, skills[0], region].filter(Boolean).join(" "));
+    variants.push([alias, industry || "medical device", region].filter(Boolean).join(" "));
+  }
+  if (skills[1]) variants.push([titleAliases[0], skills[1], region || industry].filter(Boolean).join(" "));
+  if (skills[2]) variants.push([titleAliases[0], skills[2], region].filter(Boolean).join(" "));
+  variants.push([titleAliases[0], "Montreal", "Canada", skills[0]].filter(Boolean).join(" "));
 
   return Array.from(
     new Set(

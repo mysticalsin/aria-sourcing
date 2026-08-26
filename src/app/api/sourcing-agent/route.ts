@@ -569,7 +569,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
     ];
     let drafts: ReturnType<typeof parseDrafts> = [];
     if (deterministic) {
-      const searchSignal = AbortSignal.timeout(45_000);
+      const searchSignal = AbortSignal.timeout(120_000);
       // LinkedIn-first roles (consulting, finance, design, …) must not be forced
       // through GitHub language: queries — those silently return zero people.
       const primaryPlatform = initial.value.campaign.sourcingStrategy.primaryPlatforms[0] ?? "GitHub";
@@ -599,7 +599,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
           ? linkedInQueryRaw
           : keywordFallback;
       const deepLinkedInQueries = linkedInFirst
-        ? buildLinkedInQueryVariants(initial.value.campaign.jobAnalysis, 4)
+        ? buildLinkedInQueryVariants(initial.value.campaign.jobAnalysis, 8)
         : [];
       const queries = frameworkAuthorization
         ? [frameworkAuthorization.query]
@@ -607,7 +607,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
           ? (deepLinkedInQueries.length > 0
               ? deepLinkedInQueries
               : [linkedInQuery || keywordFallback].filter(Boolean)
-            ).slice(0, 4)
+            ).slice(0, 8)
           : [
               ...promotedLessons
                 .filter((lesson) => lesson.platform === "GitHub")
@@ -624,12 +624,13 @@ async function handlePost(req: NextRequest, correlationId: string) {
         );
       }
       let successfulQuery = false;
+      const searchBudget = Math.max(count * 3, 12);
       for (const query of queries) {
-        const remaining = Math.max(count * 2 - runner.getFound().length, count);
-        if (runner.getFound().length >= count * 2) break;
+        if (runner.getFound().length >= searchBudget) break;
+        const remaining = Math.min(10, Math.max(count, searchBudget - runner.getFound().length));
         const result = await runner.run(
           "search_candidates",
-          { platform: searchPlatform, query, count: Math.min(Math.max(remaining, count), 10) },
+          { platform: searchPlatform, query, count: remaining },
           searchSignal,
         );
         successfulQuery = successfulQuery || result.ok;

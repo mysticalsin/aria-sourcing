@@ -34,6 +34,13 @@ ok(
     "System Designer",
   ),
 );
+ok(
+  "Systems Architect alias matches System Designer role",
+  candidateMatchesRoleTitle(
+    { currentTitle: "Systems Architect", recentActivity: "Medical device systems in Montreal." },
+    "System Designer",
+  ),
+);
 
 const systemDesigner = parseEmailAndJD({
   email: `This need is now ACTIVE: System Designer
@@ -46,7 +53,7 @@ Skills: Mean Time to Failure (MTTF) Software,Quality Systems Management,FDA Regu
 }).jobAnalysis;
 
 const variants = buildLinkedInQueryVariants(systemDesigner, 4);
-ok("deep LinkedIn variants >= 2", variants.length >= 2);
+ok("deep LinkedIn variants >= 4", variants.length >= 4);
 ok("every variant includes System Designer", variants.every((q) => /system designer/i.test(q)));
 
 const strongLead = {
