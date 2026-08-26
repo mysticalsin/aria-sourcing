@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { HydrationGate, PageHeader } from "@/components/app/page-header";
 import { TrendSpark } from "@/components/charts/trend-spark";
+import { HiringChoropleth } from "@/components/charts/hiring-choropleth";
+import { MetricGauge } from "@/components/charts/metric-gauge";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import {
   Badge,
@@ -40,6 +42,7 @@ import {
   type ExecDashboardModel,
   type ExecFunnelRow,
 } from "@/lib/exec-dashboard";
+import { deriveHiringGeography } from "@/lib/hiring-geography";
 import { cumulativeSeries, fadeUp, staggerContainer, staggerFast } from "@/lib/dashboard-motion";
 import { ROLE_LABEL } from "@/lib/rbac";
 import { supabaseEnabled } from "@/lib/supabase/config";
@@ -359,6 +362,8 @@ export default function ExecPage() {
     });
   }, [model.trends.contacted, model.trends.replied]);
 
+  const geography = React.useMemo(() => deriveHiringGeography(candidates), [candidates]);
+
   function exportDashboard() {
     downloadText("exec-dashboard.md", execMarkdown(model));
     toast({
@@ -463,6 +468,39 @@ export default function ExecPage() {
           </motion.div>
 
           <TrendPanel model={model} />
+
+          <motion.div variants={fadeUp} className="grid gap-6 xl:grid-cols-3">
+            <Card className="xl:col-span-2">
+              <CardContent>
+                <HiringChoropleth model={geography} height={380} />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex h-full flex-col gap-4">
+                <div>
+                  <Eyebrow>Quality gauges</Eyebrow>
+                  <CardTitle className="mt-1 text-base">Pool health</CardTitle>
+                  <p className="mt-1 text-sm text-muted">
+                    Match quality and international coverage at a glance.
+                  </p>
+                </div>
+                <div className="grid flex-1 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-1">
+                  <MetricGauge
+                    value={model.kpis.avgMatchScore}
+                    centerValue={model.kpis.avgMatchScore}
+                    label="Avg match"
+                    formatCenter={(n) => String(Math.round(n))}
+                  />
+                  <MetricGauge
+                    value={Math.min(100, geography.countriesRepresented * 8)}
+                    centerValue={geography.countriesRepresented}
+                    label="Countries"
+                    formatCenter={(n) => String(Math.round(n))}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
 
           <div className="grid gap-6 xl:grid-cols-2">
             <FunnelRows title="By platform" rows={model.platformFunnels} />
