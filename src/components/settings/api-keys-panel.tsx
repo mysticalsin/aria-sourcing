@@ -51,28 +51,35 @@ export function ApiKeysPanel() {
     }
     setBusy(true);
     const res = await actions.saveApiKey({ name: name.trim(), provider, value });
-    setBusy(false);
-    if (res.ok) {
-      setName("");
-      setValue(""); // never retain the secret in the form
-      toast({
-        title: "API key saved",
-        description: res.demo
-          ? "Stored for this session (demo). Configure Supabase to persist server-side."
-          : "Stored securely in the backend. Test it below.",
-        variant: "success",
-      });
-    } else {
+    if (!res.ok || !res.key) {
+      setBusy(false);
       toast({ title: "Could not save key", description: res.error, variant: "error" });
+      return;
     }
+    setName("");
+    setValue(""); // never retain the secret in the form
+    const tested = await actions.testApiKey(res.key.id);
+    setBusy(false);
+    toast({
+      title: tested.valid ? "Key encrypted and verified" : "Key saved but verification failed",
+      description: tested.detail,
+      variant: tested.valid ? "success" : "error",
+    });
   }
 
   async function handleTest(id: string) {
     setTesting(id);
     const r = await actions.testApiKey(id);
     setTesting(null);
+    const live = /accepted \(HTTP|authenticated \(HTTP|rejected this key/i.test(r.detail ?? "");
     toast({
-      title: r.valid ? "Format looks valid (not a live test)" : "Format check failed",
+      title: r.valid
+        ? live
+          ? "Key verified with provider"
+          : "Format looks valid"
+        : live
+          ? "Key verification failed"
+          : "Format check failed",
       description: r.detail,
       variant: r.valid ? "success" : "error",
     });
@@ -169,7 +176,7 @@ export function ApiKeysPanel() {
                       leftIcon={<Zap className="h-4 w-4" />}
                       onClick={() => handleTest(k.id)}
                     >
-                      Format check
+                      Verify
                     </Button>
                     <Button
                       variant="ghost"
@@ -186,8 +193,9 @@ export function ApiKeysPanel() {
           </ul>
         )}
         <p className="text-xs text-muted">
-          Secrets are written to the backend and withheld from the browser (only the last 4 digits are
-          returned). Validation runs server-side. Admins only.
+          Secrets are written encrypted to the backend and withheld from the browser (only the last 4
+          digits are returned). LLM and sourcing connector keys are verified with a live provider
+          probe. Admins only.
         </p>
       </CardContent>
     </Card>
