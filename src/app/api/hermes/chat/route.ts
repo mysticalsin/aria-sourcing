@@ -26,6 +26,7 @@ import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit"
 import { redactObject, redactSecrets, redactEmail } from "@/lib/log-redact";
 import { evaluateHermesWorkspaceBinding } from "@/lib/api/hermes-runtime-isolation";
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
+import { resolveStoredApifyKey } from "@/lib/sourcing/apify";
 import { DISCLOSURE_SYSTEM, sanitizeCandidateText } from "@/lib/agent-disclosure-policy";
 
 export const runtime = "nodejs";
@@ -315,10 +316,11 @@ export async function POST(req: NextRequest) {
     if (task === "chat" && slug !== "kimi" && (webResearch || usableMcpServers || sourcingCampaign)) {
       const resolvedServers: ResolvedMcpServer[] = [];
       const tavilyKey = canSourceInChat && supabase ? await resolveStoredTavilyKey(supabase) : null;
+      const linkedInProfileToken = canSourceInChat && supabase ? await resolveStoredApifyKey(supabase) : null;
       // Built-in read-only web-research tools (in-process; no vault token, SSRF-guarded).
       if (webResearch) resolvedServers.push({ url: BUILTIN_WEB_URL, token: "", tools: WEB_TOOL_DEFS, tavilyKey: tavilyKey ?? undefined });
-      // Compliant sourcing tool: real search (GitHub Search API / site:-scoped web
-      // search), real dedupe, real deterministic scoring — never a stealth browser.
+      // Compliant sourcing tool: real multi-provider search (GitHub, LinkedIn profiles
+      // when connected, site-scoped web), real dedupe, real deterministic scoring.
       if (sourcingCampaign) {
         const githubToken = process.env.GITHUB_TOKEN ?? "";
         const runner = makeSourcingToolRunner(
@@ -326,7 +328,10 @@ export async function POST(req: NextRequest) {
           (existing ?? []) as unknown as Candidate[],
           sourcingCampaign.scoringWeights as ScoringWeights,
           githubToken,
-          tavilyKey ?? undefined,
+          {
+            tavilyKey: tavilyKey ?? undefined,
+            linkedInProfileToken,
+          },
         );
         resolvedServers.push({ url: "builtin:sourcing-chat", token: "", tools: SOURCING_TOOL_DEFS, run: runner.run });
       }

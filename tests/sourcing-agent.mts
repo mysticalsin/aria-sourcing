@@ -42,11 +42,12 @@ ok("isSourcingTool rejects an unrelated name", !isSourcingTool("web_search"));
       email: "alice@corp.io",
       company: "zzz-unique-co",
       location: "London",
-      bio: "TypeScript engineer",
+      bio: "Senior Go Kubernetes PostgreSQL gRPC Distributed Systems engineer",
       html_url: "https://github.com/alice",
-      public_repos: 10,
-      followers: 50,
+      public_repos: 40,
+      followers: 200,
       created_at: "2018-01-01T00:00:00Z",
+      topLanguage: "Go",
     });
 
   const runner = makeSourcingToolRunner(campaign, [], W, "");
@@ -68,15 +69,16 @@ ok("isSourcingTool rejects an unrelated name", !isSourcingTool("web_search"));
     jsonResponse({
       items: [{ login: "bob" }],
       login: "bob",
-      name: null,
+      name: "Bob Go",
       email: null,
-      company: null,
-      location: null,
-      bio: null,
+      company: "Acme Labs",
+      location: "Berlin",
+      bio: "Go Kubernetes PostgreSQL gRPC Distributed Systems",
       html_url: "https://github.com/bob",
-      public_repos: 1,
-      followers: 1,
-      created_at: null,
+      public_repos: 25,
+      followers: 80,
+      created_at: "2019-01-01T00:00:00Z",
+      topLanguage: "Go",
     });
 
   const runner = makeSourcingToolRunner(campaign, [], W, "");

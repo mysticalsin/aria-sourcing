@@ -63,10 +63,10 @@ export function defaultIntegrations(): IntegrationStatus[] {
     },
     {
       id: "int_apify",
-      name: "Apify (LinkedIn profile search)",
+      name: "LinkedIn profile search",
       category: "Sourcing",
       description:
-        "LinkedIn public-profile data via a compliant third-party provider (Apify harvestapi); no direct LinkedIn login, scraping, or session automation.",
+        "Public LinkedIn profiles via a compliant third-party search provider; no direct LinkedIn login, scraping, or session automation. Used automatically by Source next batch when connected.",
       status: "connected",
       mode: "mock",
       lastSync: isoHoursBefore(0.6),

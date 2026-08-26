@@ -16,13 +16,18 @@ const SELECTABLE_API_KEY_PROVIDERS = experimentalPaidSourcingEnabled
   : API_KEY_PROVIDERS.filter((provider) => provider !== "Sillage" && provider !== "Seamless");
 
 // Provider-specific format hints for the API key value field. Most providers
-// rely on the generic placeholder below; Apify's token shape is distinctive
-// enough (and easy to confuse with a project/actor id) to call out explicitly.
+// rely on the generic placeholder below; the LinkedIn profile search connector
+// token shape is distinctive enough to call out explicitly.
 const KEY_VALUE_HINT: Partial<Record<ApiKeyProvider, string>> = {
-  Apify: "Personal API token from the Apify console (Settings → Integrations), format apify_api_…",
+  Apify:
+    "LinkedIn profile search connector token (from your search-provider console), format apify_api_…",
 };
 const KEY_VALUE_PLACEHOLDER: Partial<Record<ApiKeyProvider, string>> = {
   Apify: "apify_api_…  (stored server-side, never shown again)",
+};
+
+const KEY_PROVIDER_LABELS: Partial<Record<ApiKeyProvider, string>> = {
+  Apify: "LinkedIn profile search",
 };
 
 export function ApiKeysPanel() {
@@ -103,7 +108,10 @@ export function ApiKeysPanel() {
                 id="key-provider"
                 value={provider}
                 onChange={(e) => setProvider(e.target.value as ApiKeyProvider)}
-                options={SELECTABLE_API_KEY_PROVIDERS.map((p) => ({ value: p, label: p }))}
+                options={SELECTABLE_API_KEY_PROVIDERS.map((p) => ({
+                  value: p,
+                  label: KEY_PROVIDER_LABELS[p] ?? p,
+                }))}
               />
             </Field>
             <Field
@@ -145,7 +153,7 @@ export function ApiKeysPanel() {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold text-ink">{k.name}</span>
                   <span className="block text-xs text-muted">
-                    {k.provider} · ••••{k.last4}
+                    {KEY_PROVIDER_LABELS[k.provider] ?? k.provider} · ••••{k.last4}
                     {k.lastTestedAt ? ` · tested ${formatTimeAgo(k.lastTestedAt)}` : ""}
                   </span>
                 </span>

@@ -18,11 +18,12 @@ import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
 import { dedupeCandidates } from "@/lib/rules";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
-import { buildLinkedInQueryVariants } from "@/lib/mock-ai";
 import {
   SOURCING_QUALITY_FLOOR,
   meetsSourcingQualityBar,
 } from "@/lib/sourcing/candidate-fit";
+import { resolveStoredApifyKey } from "@/lib/sourcing/apify";
+import { runMultiProviderSourcing } from "@/lib/sourcing/orchestrator";
 import {
   beginSourcingRun,
   beginAgentFrameworkSourcingRun,
@@ -508,6 +509,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
     // roles can still run a real site-scoped web search when no vault row exists.
     const storedTavily = await resolveStoredTavilyKey(session);
     const tavilyKey = storedTavily || process.env.TAVILY_API_KEY || null;
+    const linkedInProfileToken = await resolveStoredApifyKey(session);
     const beforeExecution = await failIfAuthorityChanged();
     if (beforeExecution) return await beforeExecution;
 
@@ -555,9 +557,11 @@ async function handlePost(req: NextRequest, correlationId: string) {
       initial.value.existing,
       initial.value.campaign.scoringWeights,
       githubToken,
-      tavilyKey ?? undefined,
-      undefined,
-      async () => (await currentAuthority()).ok,
+      {
+        tavilyKey: tavilyKey ?? undefined,
+        linkedInProfileToken,
+        beforeExternalCall: async () => (await currentAuthority()).ok,
+      },
     );
     const servers: ResolvedMcpServer[] = [
       {
@@ -570,91 +574,42 @@ async function handlePost(req: NextRequest, correlationId: string) {
     let drafts: ReturnType<typeof parseDrafts> = [];
     if (deterministic) {
       const searchSignal = AbortSignal.timeout(120_000);
-      // LinkedIn-first roles (consulting, finance, design, …) must not be forced
-      // through GitHub language: queries — those silently return zero people.
-      const primaryPlatform = initial.value.campaign.sourcingStrategy.primaryPlatforms[0] ?? "GitHub";
-      const linkedInFirst =
-        primaryPlatform === "LinkedIn" ||
-        primaryPlatform === "Talent Pool" ||
-        primaryPlatform === "Referral" ||
-        primaryPlatform === "Dribbble" ||
-        primaryPlatform === "Behance";
-      const searchPlatform = linkedInFirst
-        ? primaryPlatform === "Dribbble" || primaryPlatform === "Behance"
-          ? primaryPlatform
-          : "LinkedIn"
-        : "GitHub";
-      const linkedInQueryRaw = initial.value.campaign.sourcingStrategy.linkedinBoolean.trim();
-      const keywordFallback = [
-        initial.value.campaign.jobAnalysis.title,
-        ...initial.value.campaign.jobAnalysis.requiredSkills.slice(0, 3),
-        ...initial.value.campaign.jobAnalysis.regions.slice(0, 1),
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .trim()
-        .slice(0, 256);
-      const linkedInQuery =
-        linkedInQueryRaw.length > 0 && linkedInQueryRaw.length <= 256
-          ? linkedInQueryRaw
-          : keywordFallback;
-      const deepLinkedInQueries = linkedInFirst
-        ? buildLinkedInQueryVariants(initial.value.campaign.jobAnalysis, 12)
-        : [];
-      const queries = frameworkAuthorization
-        ? [frameworkAuthorization.query]
-        : linkedInFirst
-          ? (deepLinkedInQueries.length > 0
-              ? deepLinkedInQueries
-              : [linkedInQuery || keywordFallback].filter(Boolean)
-            ).slice(0, 12)
-          : [
-              ...promotedLessons
-                .filter((lesson) => lesson.platform === "GitHub")
-                .map((lesson) => lesson.query),
-              ...configuredQueries,
-            ]
-              .filter((query, index, all) => all.indexOf(query) === index)
-              .slice(0, 3);
-      if (queries.length === 0) {
+      const forcedQueries = frameworkAuthorization
+        ? [{ platform: "GitHub" as const, query: frameworkAuthorization.query }]
+        : undefined;
+      const multi = await runMultiProviderSourcing({
+        campaign: initial.value.campaign,
+        existing: initial.value.existing,
+        weights: initial.value.campaign.scoringWeights,
+        count,
+        githubToken,
+        tavilyKey: tavilyKey ?? undefined,
+        linkedInProfileToken,
+        signal: searchSignal,
+        beforeExternalCall: async () => (await currentAuthority()).ok,
+        forcedQueries,
+      });
+      const afterQuery = await readWorkspace(session, workspaceId, campaignId);
+      if (
+        afterQuery.status !== "ok" ||
+        !campaignAllowsSourcing(afterQuery.value.campaign) ||
+        afterQuery.value.fingerprint !== initial.value.fingerprint ||
+        afterQuery.value.configurationFingerprint !== initial.value.configurationFingerprint
+      ) {
         return await failClaimed(
           409,
-          "CAMPAIGN_NOT_READY",
-          "Campaign has no reviewed real-sourcing query.",
+          "CAMPAIGN_CHANGED",
+          "Campaign authority changed during the operation.",
         );
       }
-      let successfulQuery = false;
-      const searchBudget = Math.max(count * 4, 20);
-      for (const query of queries) {
-        if (runner.getFound().length >= count) break;
-        const remaining = Math.min(15, Math.max(count, searchBudget - runner.getFound().length));
-        const result = await runner.run(
-          "search_candidates",
-          { platform: searchPlatform, query, count: remaining },
-          searchSignal,
-        );
-        successfulQuery = successfulQuery || result.ok;
-        const afterQuery = await readWorkspace(session, workspaceId, campaignId);
-        if (
-          afterQuery.status !== "ok" ||
-          !campaignAllowsSourcing(afterQuery.value.campaign) ||
-          afterQuery.value.fingerprint !== initial.value.fingerprint ||
-          afterQuery.value.configurationFingerprint !== initial.value.configurationFingerprint
-        ) {
-          return await failClaimed(
-            409,
-            "CAMPAIGN_CHANGED",
-            "Campaign authority changed during the operation.",
-          );
-        }
-      }
-      if (!successfulQuery) {
+      if (!multi.executions.some((execution) => execution.ok)) {
         return await failClaimed(
           502,
           "SOURCING_AGENT_UPSTREAM_FAILED",
           "Real candidate search did not complete.",
         );
       }
+      runner.seedFromOrchestrator(multi);
     } else {
       if (!cloudSlug || !toolModel || !vaultKey) {
         return await failClaimed(

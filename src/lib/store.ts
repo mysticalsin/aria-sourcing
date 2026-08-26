@@ -1387,7 +1387,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       criteria: ApifyProfileSearchInput,
     ): Promise<{ ok: true; runId: string; datasetId: string } | { ok: false; error: string }> => {
       if (!candidatePersistenceAllowed("live")) {
-        return { ok: false, error: "Apify candidate sourcing requires a live workspace." };
+        return { ok: false, error: "LinkedIn profile search requires a live workspace." };
       }
       if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before sourcing." };
       const s = current();
@@ -1402,13 +1402,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           body: JSON.stringify({ campaignId, ...criteria }),
         });
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : "Network error reaching Apify." };
+        return { ok: false, error: err instanceof Error ? err.message : "Network error reaching LinkedIn profile search." };
       }
       const out = (await res.json().catch(() => null)) as
         | { ok?: boolean; runId?: string; datasetId?: string; error?: string }
         | null;
       if (!out?.ok || !out.runId || !out.datasetId) {
-        return { ok: false, error: out?.error ?? "Apify search failed to start." };
+        return { ok: false, error: out?.error ?? "LinkedIn profile search failed to start." };
       }
       return { ok: true, runId: out.runId, datasetId: out.datasetId };
     },
@@ -1427,7 +1427,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       | { ok: false; error: string }
     > => {
       if (!candidatePersistenceAllowed("live")) {
-        return { ok: false, error: "Apify candidate sourcing requires a live workspace." };
+        return { ok: false, error: "LinkedIn profile search requires a live workspace." };
       }
       if (!workspaceEffectAllowed()) return { ok: false, error: "Workspace unavailable. Retry before sourcing." };
       const s = current();
@@ -1440,14 +1440,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           `/api/source/apify/status?runId=${encodeURIComponent(runId)}&datasetId=${encodeURIComponent(datasetId)}`,
         );
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : "Network error reaching Apify." };
+        return { ok: false, error: err instanceof Error ? err.message : "Network error reaching LinkedIn profile search." };
       }
       const out = (await res.json().catch(() => null)) as
         | { ok?: boolean; status?: string; error?: string; profiles?: ApifyProfile[] }
         | null;
-      if (!out?.ok) return { ok: false, error: out?.error ?? "Apify status check failed." };
+      if (!out?.ok) return { ok: false, error: out?.error ?? "LinkedIn profile search status check failed." };
       if (out.status === "processing") return { ok: true, status: "processing" };
-      if (out.status !== "completed") return { ok: false, error: out.error ?? "Apify run did not complete." };
+      if (out.status !== "completed") return { ok: false, error: out.error ?? "LinkedIn profile search did not complete." };
 
       const weights = effectiveWeights(campaign.scoringWeights, s.skills);
       const { accepted, skipped } = mapApifyCandidates(out.profiles ?? [], campaign, query, s.candidates, weights);
@@ -1459,8 +1459,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "sourcing",
-            title: `Sourced ${accepted.length} candidates via Apify (LinkedIn profile search): ${query}`,
-            notes: `Live Apify batch. ${skipped.length} skipped by dedupe (${skipped
+            title: `Sourced ${accepted.length} candidates via LinkedIn profile search: ${query}`,
+            notes: `Live LinkedIn profile batch. ${skipped.length} skipped by dedupe (${skipped
               .slice(0, 3)
               .map((x) => x.reason)
               .join(", ")}${skipped.length > 3 ? "…" : ""}).`,
