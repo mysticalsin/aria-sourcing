@@ -889,8 +889,8 @@ export function createSourcingActions({
     if (!isSourcePlatform(requestedPlatform)) {
       return invalidRequest("Unsupported sourcing platform.");
     }
-    const count = opts?.count ?? 6;
-    const maxCount = demoSourcing ? MAX_SOURCE_COUNT : 8;
+    const count = opts?.count ?? 10;
+    const maxCount = MAX_SOURCE_COUNT;
     if (!Number.isInteger(count) || count < 1 || count > maxCount) {
       return invalidRequest(
         `Source count must be an integer between 1 and ${maxCount}.`,

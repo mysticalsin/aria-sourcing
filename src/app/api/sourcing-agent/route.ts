@@ -273,7 +273,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
     return fail(400, "INVALID_REQUEST", "A valid idempotency key is required.");
   }
   const { campaignId } = validated.data;
-  const count = validated.data.count ?? 5;
+  const count = validated.data.count ?? 10;
   const initial = await readWorkspace(session, workspaceId, campaignId);
   if (initial.status === "campaign_not_found") {
     return fail(404, "CAMPAIGN_NOT_FOUND", "Campaign not found.");
@@ -624,9 +624,9 @@ async function handlePost(req: NextRequest, correlationId: string) {
         );
       }
       let successfulQuery = false;
-      const searchBudget = Math.max(count * 3, 12);
+      const searchBudget = Math.max(count * 4, 20);
       for (const query of queries) {
-        if (runner.getFound().length >= searchBudget) break;
+        if (runner.getFound().length >= count) break;
         const remaining = Math.min(10, Math.max(count, searchBudget - runner.getFound().length));
         const result = await runner.run(
           "search_candidates",

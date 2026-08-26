@@ -180,7 +180,7 @@ export function AgentRunStream({ campaignId, autoStart = false, onClose, classNa
     const result = await executePrimaryAgentSourcing({
       campaignId,
       campaignTitle: campaign.jobAnalysis.title,
-      count: 6,
+      count: 10,
       demoAuthorized: !supabaseEnabled && (!isProduction || demoLoginEnabled),
       idempotencyMemory: pendingRunIdempotencyKeys.current,
       retryStorage,

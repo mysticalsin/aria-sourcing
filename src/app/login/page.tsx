@@ -162,7 +162,7 @@ function LoginInner() {
         : "Enter the console";
 
   return (
-    <div className="login-hero relative flex h-screen w-screen flex-col overflow-hidden bg-[#010101] text-white">
+    <div className="login-hero relative flex h-screen w-full flex-col overflow-hidden bg-[#010101] text-white">
       {/* Background video */}
       <video
         ref={videoRef}
@@ -334,7 +334,7 @@ function LoginInner() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="h-screen w-screen bg-[#010101]" />}>
+    <Suspense fallback={<div className="h-screen w-full bg-[#010101]" />}>
       <LoginInner />
     </Suspense>
   );

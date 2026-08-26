@@ -236,7 +236,7 @@ export async function POST(req: NextRequest) {
     idempotencyKey,
     reviewedGithubQueries: governedGithubQueries,
     need: frameworkNeed.data,
-    sourcingCount: validated.data.count ?? 5,
+    sourcingCount: validated.data.count ?? 10,
     loadMemoryContext: (scope, runId) => loadAgentFrameworkMemoryContext(service, scope, runId),
     revalidateAuthority: async () => {
       const [{ data: latestRole }, { data: latestWorkspaceId }, latest, latestSpec] = await Promise.all([
@@ -272,7 +272,7 @@ export async function POST(req: NextRequest) {
     command: {
       kind: "source_reviewed_campaign",
       campaignId: campaign.id,
-      count: validated.data.count ?? 5,
+      count: validated.data.count ?? 10,
       query: result.sourceQuery,
       capabilityToken: result.sourcingCapabilityToken,
     },

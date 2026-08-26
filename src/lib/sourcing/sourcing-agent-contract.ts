@@ -134,7 +134,7 @@ const DedupeIdentitySchema = z
 export const SourcingAgentRequestSchema = z
   .object({
     campaignId: bounded(100).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/),
-    count: z.number().int().min(1).max(8).default(5),
+    count: z.number().int().min(1).max(20).default(10),
     agentFrameworkRunId: z.string().uuid().optional(),
     agentFrameworkCapabilityToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional(),
     agentFrameworkQuery: z.string().trim().min(3).max(256).optional(),
@@ -382,7 +382,7 @@ const SourcingAgentSuccessResponseSchema = z
     mode: z.enum(["cloud", "deterministic"]),
     campaignId: bounded(100),
     campaignFingerprint: bounded(100_000).min(1),
-    candidates: z.array(SourcingAgentCandidateDtoSchema).max(8),
+    candidates: z.array(SourcingAgentCandidateDtoSchema).max(20),
     totalFound: z.number().int().min(0).max(100_000),
     requestId: bounded(100).regex(/^[A-Za-z0-9._:-]{1,100}$/),
     idempotencyKey: z.string().uuid(),

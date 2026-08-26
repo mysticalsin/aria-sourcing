@@ -143,7 +143,7 @@ export function makeSourcingToolRunner(
         return { ok: false, error: search.error ?? "Web search failed." };
       }
       const content = search.content as { results?: { title: string; url: string; snippet: string }[] } | undefined;
-      const hits = (content?.results ?? []).slice(0, Math.max(count * 3, 10));
+      const hits = (content?.results ?? []).slice(0, Math.max(count * 4, 16));
       const leads = hits.map((h) => extractLead(h, platform));
       const result = mapWebSearchCandidates(leads, campaign, scopedQuery, platform, alreadySeen, weights);
       const roleTitle = campaign.jobAnalysis.title.trim();
