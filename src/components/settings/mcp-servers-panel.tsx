@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Badge, Button, Card, CardContent, Field, Input, Select, Switch, useToast } from "@/components/ui";
 import { useActions, useApiKeys, useMcpServers, useRole, useSettings } from "@/lib/store";
-import { AUTH_QUERY_PARAMS, MCP_AUTH_STYLES, type AuthQueryParam, type McpAuthStyle, type McpServerConfig, type McpServerStatus } from "@/lib/types";
+import { AUTH_QUERY_PARAMS, type AuthQueryParam, type McpAuthStyle, type McpServerConfig, type McpServerStatus } from "@/lib/types";
 import { can } from "@/lib/rbac";
 import { Globe, Plug, Plus, Trash2, Zap } from "lucide-react";
 
