@@ -1011,7 +1011,7 @@ export default function SettingsPage() {
             n="14"
             eyebrow="AI backbone"
             title="LLM providers"
-            description="Connect the language model backends the sourcing fleet runs on. Each provider links to a saved API key (secrets never leave the server). Admin only."
+            description="Connect the language model backends the sourcing fleet runs on. Add an API key here to encrypt it at rest and verify it live with the provider. Secrets never leave the server. Admin only."
           >
             <ProvidersPanel />
           </Section>

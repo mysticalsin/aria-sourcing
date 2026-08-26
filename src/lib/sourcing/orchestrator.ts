@@ -141,36 +141,81 @@ export async function runMultiProviderSourcing(
   const providersUsed: SourcingProviderId[] = [];
 
   const maxQueryRounds = 4;
-  for (const provider of selected) {
-    const queries = queriesForProvider(provider, input.campaign, input.forcedQueries).slice(
-      0,
-      maxQueryRounds,
-    );
-    if (queries.length === 0) continue;
+
+  const providerResults = await Promise.all(
+    selected.map(async (provider) => {
+      const queries = queriesForProvider(provider, input.campaign, input.forcedQueries).slice(
+        0,
+        provider.id === "linkedin_profiles" ? 1 : maxQueryRounds,
+      );
+      if (queries.length === 0) {
+        return { provider, providerHits: [] as Candidate[], providerExecutions: [] as MultiProviderExecution[] };
+      }
+      const providerHits: Candidate[] = [];
+      const providerExecutions: MultiProviderExecution[] = [];
+      for (const query of queries) {
+        if (providerHits.length >= count * 2) break;
+        const remaining = Math.min(15, Math.max(count, count * 2 - providerHits.length));
+        const result = await provider.search({
+          query,
+          count: remaining,
+          ctx: { ...ctx, existing: [...input.existing, ...providerHits] },
+        });
+        providerExecutions.push({
+          providerId: provider.id,
+          platform: provider.displayPlatform,
+          query,
+          ok: result.ok,
+          candidateCount: result.accepted.length,
+          skippedCount: result.skipped.length,
+          error: result.error,
+        });
+        if (result.ok) providerHits.push(...result.accepted);
+        // Profile search is expensive — one successful LinkedIn profile query is enough.
+        if (provider.id === "linkedin_profiles" && result.ok && result.accepted.length > 0) break;
+      }
+      return { provider, providerHits, providerExecutions };
+    }),
+  );
+
+  for (const { provider, providerHits, providerExecutions } of providerResults) {
+    if (providerExecutions.length === 0 && providerHits.length === 0) continue;
     providersUsed.push(provider.id);
-    const providerHits: Candidate[] = [];
-    for (const query of queries) {
-      if (providerHits.length >= count * 2) break;
-      const remaining = Math.min(15, Math.max(count, count * 2 - providerHits.length));
-      const result = await provider.search({
-        query,
-        count: remaining,
-        ctx: { ...ctx, existing: [...input.existing, ...providerHits] },
-      });
-      executions.push({
-        providerId: provider.id,
-        platform: provider.displayPlatform,
-        query,
-        ok: result.ok,
-        candidateCount: result.accepted.length,
-        skippedCount: result.skipped.length,
-        error: result.error,
-      });
-      if (result.ok) providerHits.push(...result.accepted);
-      // Profile search is expensive — one successful LinkedIn profile query is enough for round 1.
-      if (provider.id === "linkedin_profiles" && result.ok && result.accepted.length > 0) break;
-    }
+    executions.push(...providerExecutions);
     batches.push({ provider, candidates: providerHits });
+  }
+
+  // Deepen LinkedIn web if we still need more after the parallel fan-out.
+  const shortfall = count - mergePreferringRicher(batches).length;
+  if (shortfall > 0) {
+    const web = selected.find((p) => p.id === "linkedin_web");
+    if (web) {
+      const deepenQueries = linkedInQueriesFor(input.campaign).slice(1, maxQueryRounds);
+      const existingHits = batches.flatMap((b) => b.candidates);
+      for (const query of deepenQueries) {
+        if (existingHits.length >= count * 2) break;
+        const result = await web.search({
+          query,
+          count: Math.min(15, shortfall + 5),
+          ctx: { ...ctx, existing: [...input.existing, ...existingHits] },
+        });
+        executions.push({
+          providerId: web.id,
+          platform: web.displayPlatform,
+          query,
+          ok: result.ok,
+          candidateCount: result.accepted.length,
+          skippedCount: result.skipped.length,
+          error: result.error,
+        });
+        if (result.ok && result.accepted.length > 0) {
+          const batch = batches.find((b) => b.provider.id === web.id);
+          if (batch) batch.candidates.push(...result.accepted);
+          else batches.push({ provider: web, candidates: result.accepted });
+          existingHits.push(...result.accepted);
+        }
+      }
+    }
   }
 
   const merged = mergePreferringRicher(batches);
