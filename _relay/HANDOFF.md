@@ -1,45 +1,46 @@
 ---
 project: MSourcing / ARIA
-shift: 82
+shift: 83
 agent: cursor-cloud
 updated: 2026-08-26 UTC
-status: sourcing-quality-floor-80-await-fly-deploy
+status: fly-validated-80pct-sourcing
 ---
 
-# Handoff - Shift 82
+# Handoff - Shift 83
 
 ## Current state
 
-- **Branch:** `cursor/enterprise-autopilot-b91d` · PR **#28**
-- **Production:** https://aria-mantu-app.fly.dev — still needs Fly deploy (no token in agent env)
-- User: sourced candidates scoring ~26% — demand **80%+ only**, deep search for best fit
+- **Production:** https://aria-mantu-app.fly.dev · build **07cc292** · migration **0060**
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #28
+- Live E2E sourcing on System Designer (`camp_1787715300553_system-designer`): **6 candidates, scores 84–94**, titles System/Systems Designer, Montreal. Artifact: `/opt/cursor/artifacts/sourcing-e2e-final.json`
 
 ## Done this shift
 
-- **SOURCING_QUALITY_FLOOR = 80** — live mapper + agent + tool runner reject below-floor leads
-- **minScoreToContact default 80**; hydrate clamps existing workspaces to ≥80; Settings UI min 80
-- **Deep LinkedIn:** `buildLinkedInQueryVariants` (up to 4 queries); agent pulls more SERP hits per query
-- **Scoring:** stronger title+skill boosts; acronym skill match (MTTF); industry inferred from SERP text
-- Tests updated: candidate-fit, scoring-metrics, rules-confidential, agent-graph
+- Recheck 2026-08-26 12:24Z: live `/api/sourcing-agent` → 2 candidates scores **92, 83** (Anthony Vaucheret, Chris Samson). Artifact: `/opt/cursor/artifacts/sourcing-recheck.json`
+
+- Deepened LinkedIn to 8 query variants + title aliases + 120s budget
+- Contiguous phrase title match (blocks UX “Design Systems” false positives)
+- Deployed to Fly twice (6531e77 then 07cc292 phrase fix)
+- Validated live `/api/sourcing-agent` end-to-end after deploy
 
 ## Blockers
 
-- Fly deploy blocked (no `FLY_API_TOKEN`)
-- Pre-existing `infra-release-contract` fail
+- `/api/ready` agentFrameworks false (expected)
+- Pre-existing infra-release-contract fail on alternate deploy scripts
 
 ## Next steps
 
-1. Deploy Fly with latest SHA via `scripts/fly-deploy-now.sh`
-2. Re-source System Designer — expect only ≥80 fits (may be fewer / empty if SERP has no title-aligned profiles)
-3. If empty batch: broaden skills in brief or retry Source next batch (deep variants still run)
+1. Operator: open System Designer campaign in UI — confirm ≥80 batch visible
+2. Optional: purge pre-deploy low-score candidates from older batches
+3. Optional: dry-run OFF for LinkedIn Pending Manual Send path
 
 ## Decisions made (don't relitigate)
 
-- Quality floor is hard at accept-time (80), not only at Approve
-- Fit endorsement remains for edge cases but new sourced batch should already clear 80
-- No LangChain rewrite
+- 80% hard floor at accept-time
+- Deep multi-query LinkedIn over single boolean AND
+- Alias titles must be contiguous phrases
 
 ## Watch out
 
-- Stricter bar can return **zero** candidates — that is intentional vs shipping 26% noise
-- Existing low-score candidates already in a campaign are not auto-deleted; re-source for new quality
+- Do not commit `production-readiness/.fly-secrets.env` / `.fly-token.env` (gitignored)
+- E2E used GoTrue admin password reset for `e2e-claude@amaris.com` — rotate if needed
