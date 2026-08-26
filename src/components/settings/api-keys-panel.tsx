@@ -60,16 +60,23 @@ export function ApiKeysPanel() {
     }
     setName("");
     setValue(""); // never retain the secret in the form after encrypt/store
-    const tested = await actions.testApiKey(res.key.id);
+
+    let valid = res.valid === true;
+    let detail = res.detail ?? "";
+    if (res.valid === undefined) {
+      const tested = await actions.testApiKey(res.key.id);
+      valid = tested.valid;
+      detail = tested.detail;
+    }
     setBusy(false);
     toast({
-      title: tested.valid
+      title: valid
         ? "Encrypted and verified end-to-end"
         : "Encrypted, but live verification failed",
-      description: tested.valid
-        ? `Stored as ••••${res.key.last4}. ${tested.detail}`
-        : `${tested.detail} Delete the key below and try again with a working secret.`,
-      variant: tested.valid ? "success" : "error",
+      description: valid
+        ? `Stored as ••••${res.key.last4}. ${detail}`
+        : `${detail || "Provider rejected this key."} Delete the key below and try again with a working secret.`,
+      variant: valid ? "success" : "error",
     });
   }
 

@@ -337,20 +337,30 @@ export function ProvidersPanel() {
     setKeyValue("");
     setLastSavedLast4(saved.key.last4);
     const keyId = saved.key.id;
-    const tested = await actions.testApiKey(keyId);
+
+    // Prefer the encrypt-time probe returned by POST /api/keys; fall back to
+    // a separate /api/keys/test when the save response omitted verification.
+    let valid = saved.valid === true;
+    let detail = saved.detail ?? "";
+    if (saved.valid === undefined) {
+      const tested = await actions.testApiKey(keyId);
+      valid = tested.valid;
+      detail = tested.detail;
+    }
+
     setKeyBusy(false);
-    if (tested.valid) {
+    if (valid) {
       wireProviderToKey(keyProvider, keyId);
       toast({
         title: "Encrypted and verified end-to-end",
-        description: `Stored as ••••${saved.key.last4}. ${tested.detail}`,
+        description: `Stored as ••••${saved.key.last4}. ${detail}`,
         variant: "success",
       });
       setKeyName("");
     } else {
       toast({
         title: "Encrypted, but live verification failed",
-        description: `${tested.detail} Delete the key below and try again with a working secret.`,
+        description: `${detail || "Provider rejected this key."} Delete the key below and try again with a working secret.`,
         variant: "error",
       });
     }

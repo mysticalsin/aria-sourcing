@@ -5006,14 +5006,20 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         });
         const json = await res.json();
         if (!json.ok) return { ok: false as const, error: json.error ?? "Save failed." };
+        const status: ApiKey["status"] =
+          json.status === "valid" || json.valid === true
+            ? "valid"
+            : json.status === "invalid" || json.valid === false
+              ? "invalid"
+              : "untested";
         const key: ApiKey = {
           // D-5: use the server-assigned id so client and server agree on the key id.
           id: json.id ?? genId("key"),
           name: input.name,
           provider: input.provider,
           last4: json.last4 ?? "••••",
-          status: "untested",
-          lastTestedAt: null,
+          status,
+          lastTestedAt: status === "untested" ? null : new Date().toISOString(),
           createdBy: current().settings.operatorName,
           createdAt: new Date().toISOString(),
         };
@@ -5023,7 +5029,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             makeActivity({
               type: "system",
               title: `API key saved: ${input.name}`,
-              notes: `${input.provider} key stored (••••${key.last4})${json.demo ? " · demo session" : " · backend"}.`,
+              notes: `${input.provider} key stored (••••${key.last4})${json.demo ? " · demo session" : " · backend"}${
+                status === "valid" ? " · verified" : status === "invalid" ? " · verify failed" : ""
+              }.`,
               outcome: "Saved",
               campaignId: null,
               linkedEntityType: null,
@@ -5032,7 +5040,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             null,
           ),
         );
-        return { ok: true as const, key, demo: !!json.demo };
+        return {
+          ok: true as const,
+          key,
+          demo: !!json.demo,
+          valid: status === "valid",
+          detail: typeof json.detail === "string" ? json.detail : undefined,
+        };
       } catch (e) {
         return { ok: false as const, error: e instanceof Error ? e.message : "Network error." };
       }

@@ -506,7 +506,14 @@ export interface HermesActions {
     name: string;
     provider: ApiKeyProvider;
     value: string;
-  }) => Promise<{ ok: boolean; key?: ApiKey; demo?: boolean; error?: string }>;
+  }) => Promise<{
+    ok: boolean;
+    key?: ApiKey;
+    demo?: boolean;
+    valid?: boolean;
+    detail?: string;
+    error?: string;
+  }>;
   testApiKey: (id: string) => Promise<{ ok: boolean; valid: boolean; detail: string }>;
   removeApiKey: (id: string) => Promise<{ ok: boolean; error?: string }>;
   setCurrentRole: (role: Role) => void;

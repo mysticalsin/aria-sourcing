@@ -1,45 +1,46 @@
 ---
 project: MSourcing / ARIA
-shift: 89
+shift: 90
 agent: cursor-cloud
 updated: 2026-08-26 UTC
-status: hiring-choropleth-map
+status: settings-ai-key-ux
 ---
 
-# Handoff - Shift 89
+# Handoff - Shift 90
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #29
-- Exec Dashboard includes international **hiring choropleth** + Bklit-style notch gauges
-- Location strings parsed to ISO countries (`src/lib/geo/resolve-country.ts`); aggregated in `deriveHiringGeography`
-- Deps: `@visx/geo`, `@visx/responsive`, `@visx/event`, `topojson-client`, `world-atlas`
-- Artifact: `/opt/cursor/artifacts/hiring-choropleth-map.png`
-- Queued follow-up waiting: Settings → AI add/encrypt/verify key UX (already largely shipped shift 86 — re-verify on Fly)
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #29 · commit `d29a312`
+- Settings → **AI & Models** has a primary **Add an API key** card: paste → encrypt → clear input → show `••••last4` → live provider probe → auto-wire LLM provider on success
+- Same encrypt+verify copy on Access & Keys (`api-keys-panel.tsx`)
+- Local proof artifacts: `/opt/cursor/artifacts/settings-ai-add-key-card.png`, `settings-ai-key-after-add.png`
+- Fly redeploy for `d29a312` in progress (`fly-redeploy-ai2` / `/tmp/fly-redeploy-ai.log`); live was still on older `ba88302` before this redeploy
 
 ## Done this shift
 
-- World Mercator choropleth with hover tooltips, sequential scale, top-country list
-- MetricGauge arc notches for avg match + countries covered
-- Tests: `tests/hiring-geography.mts`; tsc + exec-dashboard green
+- Rewrote `src/components/settings/providers-panel.tsx` for simple add-key UX
+- Aligned `api-keys-panel.tsx` + section title/description on settings AI tab
+- `npx tsc --noEmit` green; `tests/llm-key-probe.mts` 11 passed
+- Manual local: fake Anthropic key encrypted, input cleared, `invalid` badge + toast
 
 ## Blockers
 
-- Fly redeploy still needed for live UI
+- Wait for Fly redeploy to finish so https://aria-mantu-app.fly.dev/settings?tab=ai matches branch
 
 ## Next steps
 
-1. Process queued AI settings follow-up (confirm Add & verify still works on live)
-2. Redeploy Fly
-3. Optional: zoom/pan on choropleth; Command Center mini-map
+1. Confirm `/api/ready` build SHA = `d29a312…` after deploy
+2. On Fly (admin): add real Anthropic/OpenAI key → verified + provider wired
+3. Optional: E2E intake→source with that key
 
 ## Decisions made (don't relitigate)
 
-- Built Bklit-inspired choropleth/gauge with visx + world-atlas (not full `@bklitui` registry install)
-- Remote/pan-EU locations counted as remote/unspecified, not forced onto a country
+- Only wire/create matching LLM provider when live verify status is `valid`
+- Google/OpenRouter remain format-check only; Anthropic/OpenAI/Groq/xAI/Mistral/Kimi live-verify
 - Do not commit secrets to `_relay/`
 
 ## Watch out
 
-- world-atlas feature ids are ISO numeric strings
-- `npm install` earlier removed many unused packages — verify lockfile in CI
+- Failed verify still stores the encrypted key as `invalid` — Delete then re-add
+- Vault use requires `status === "valid"` (`resolveVaultSecret`)
+- Probe ≠ full recruitment E2E (still need provider enabled + model picker)
