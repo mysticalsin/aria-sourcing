@@ -3,20 +3,13 @@
 import * as React from "react";
 import { motion } from "framer-motion";
 import {
-  BarChart3,
-  CalendarCheck,
   Download,
   EyeOff,
-  Mail,
-  MousePointerClick,
-  Reply,
-  Target,
-  Timer,
   Trophy,
-  Users,
 } from "lucide-react";
 import { HydrationGate, PageHeader } from "@/components/app/page-header";
 import { TrendSpark } from "@/components/charts/trend-spark";
+import { MetricCard } from "@/components/dashboard/metric-card";
 import {
   Badge,
   Button,
@@ -47,18 +40,11 @@ import {
   type ExecDashboardModel,
   type ExecFunnelRow,
 } from "@/lib/exec-dashboard";
-import {
-  fadeUp,
-  formatAnimatedMetric,
-  parseMetricNumber,
-  staggerContainer,
-  staggerFast,
-} from "@/lib/dashboard-motion";
+import { cumulativeSeries, fadeUp, staggerContainer, staggerFast } from "@/lib/dashboard-motion";
 import { ROLE_LABEL } from "@/lib/rbac";
 import { supabaseEnabled } from "@/lib/supabase/config";
-import { useCountUp } from "@/components/reveal/use-count-up";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
-import { downloadText, formatDateTime, formatNumber, formatPercent, formatTimeAgo, type Tone } from "@/lib/utils";
+import { downloadText, formatDateTime, formatNumber, formatPercent, formatTimeAgo } from "@/lib/utils";
 
 function formatHours(hours: number | null): string {
   return hours == null ? "Not tracked yet" : `${formatNumber(hours)}h`;
@@ -100,90 +86,14 @@ function execMarkdown(model: ExecDashboardModel): string {
   return `${lines.join("\n")}\n`;
 }
 
-const TONE_GLOW: Record<Tone, string> = {
-  neutral: "from-ink/[0.05] to-transparent",
-  tangerine: "from-tangerine/12 to-transparent",
-  electric: "from-electric/12 to-transparent",
-  aqua: "from-aqua/12 to-transparent",
-  violet: "from-violet/12 to-transparent",
-  success: "from-success/12 to-transparent",
-  warning: "from-warning/12 to-transparent",
-  danger: "from-danger/12 to-transparent",
-};
-
-function KpiTile({
-  icon,
-  label,
-  value,
-  hint,
-  tone,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  hint: string;
-  tone: Tone;
-}) {
-  const reducedMotion = usePrefersReducedMotion();
-  const numeric = parseMetricNumber(value);
-  const animated = useCountUp(numeric ?? 0, {
-    durationMs: 900,
-    enabled: numeric != null && !reducedMotion,
-  });
-  const display =
-    numeric != null && !reducedMotion
-      ? formatAnimatedMetric(value, animated)
-      : value;
-
-  return (
-    <motion.div variants={fadeUp} className="h-full" whileHover={reducedMotion ? undefined : { y: -3 }}>
-      <Card className="relative h-full overflow-hidden">
-        <div
-          className={`pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b ${TONE_GLOW[tone]}`}
-          aria-hidden
-        />
-        <CardContent className="relative flex h-full flex-col gap-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-ink/[0.04] text-ink-soft">
-              {icon}
-            </div>
-            <Badge tone={tone} size="sm" dot>
-              Canonical
-            </Badge>
-          </div>
-          <div>
-            <p className="text-2xl font-extrabold tabular-nums tracking-tight text-ink">{display}</p>
-            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-muted">{label}</p>
-          </div>
-          <p className="text-sm text-muted">{hint}</p>
-        </CardContent>
-      </Card>
-    </motion.div>
-  );
-}
-
 function OpenRateTile() {
-  const reducedMotion = usePrefersReducedMotion();
   return (
-    <motion.div variants={fadeUp} className="h-full" whileHover={reducedMotion ? undefined : { y: -3 }}>
-      <Card className="h-full">
-        <CardContent className="flex h-full flex-col gap-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-ink/[0.04] text-ink-soft">
-              <MousePointerClick className="h-5 w-5" aria-hidden />
-            </div>
-            <Badge tone="neutral" size="sm">
-              Gap
-            </Badge>
-          </div>
-          <div>
-            <p className="text-2xl font-extrabold text-ink">Not tracked yet</p>
-            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-muted">Open rate</p>
-          </div>
-          <p className="text-sm text-muted">No email-open events exist in the current event model.</p>
-        </CardContent>
-      </Card>
-    </motion.div>
+    <MetricCard
+      label="Open rate"
+      value="Not tracked yet"
+      secondaryLabel="No email-open events exist in the current event model."
+      tone="neutral"
+    />
   );
 }
 
@@ -417,6 +327,38 @@ export default function ExecPage() {
     [campaigns, candidates, outreach, replies, bookings, activities, settings, wins, demoMode],
   );
 
+  const scoreSeries = React.useMemo(() => {
+    const scopedIds = new Set(
+      // Prefer in-scope sourced candidates already reflected in exec KPIs.
+      candidates
+        .filter((c) => c.matchScore > 0)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .map((c) => c.id),
+    );
+    const sorted = candidates
+      .filter((c) => scopedIds.has(c.id) && c.matchScore > 0)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    if (sorted.length < 2) return [];
+    const buckets = 8;
+    const size = Math.max(1, Math.ceil(sorted.length / buckets));
+    const out: number[] = [];
+    for (let i = 0; i < sorted.length; i += size) {
+      const slice = sorted.slice(i, i + size);
+      out.push(Math.round(slice.reduce((s, c) => s + c.matchScore, 0) / slice.length));
+    }
+    return out;
+  }, [candidates]);
+
+  const replyRateSeries = React.useMemo(() => {
+    let sent = 0;
+    let answered = 0;
+    return model.trends.contacted.map((c, i) => {
+      sent += c;
+      answered += model.trends.replied[i] ?? 0;
+      return sent > 0 ? Math.round((answered / sent) * 1000) / 10 : 0;
+    });
+  }, [model.trends.contacted, model.trends.replied]);
+
   function exportDashboard() {
     downloadText("exec-dashboard.md", execMarkdown(model));
     toast({
@@ -469,54 +411,53 @@ export default function ExecPage() {
             className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
             variants={staggerContainer}
           >
-            <KpiTile
-              icon={<Users className="h-5 w-5" aria-hidden />}
+            <MetricCard
               label="Candidates sourced"
               value={formatNumber(model.kpis.candidatesSourced)}
-              hint="Live mode excludes synthetic candidate records."
+              secondaryLabel="Total"
               tone="electric"
+              series={cumulativeSeries(model.trends.sourced)}
             />
-            <KpiTile
-              icon={<Mail className="h-5 w-5" aria-hidden />}
+            <MetricCard
               label="Contacted"
               value={formatNumber(model.kpis.contacted)}
-              hint="Completed real sends only."
+              secondaryLabel="Real sends"
               tone="tangerine"
+              series={cumulativeSeries(model.trends.contacted)}
             />
-            <KpiTile
-              icon={<Reply className="h-5 w-5" aria-hidden />}
+            <MetricCard
               label="Reply rate"
               value={formatPercent(model.kpis.replyRate)}
-              hint="Replies tied to contacted candidates."
+              secondaryLabel="Of contacted"
               tone="aqua"
+              series={replyRateSeries}
             />
-            <KpiTile
-              icon={<Target className="h-5 w-5" aria-hidden />}
+            <MetricCard
               label="Positive-reply rate"
               value={formatPercent(model.facts.positiveReplyRate)}
-              hint="Interested or qualified-interest replies."
+              secondaryLabel="Interested+"
               tone="success"
+              series={cumulativeSeries(model.trends.replied)}
             />
-            <KpiTile
-              icon={<CalendarCheck className="h-5 w-5" aria-hidden />}
+            <MetricCard
               label="Meetings booked"
               value={formatNumber(model.kpis.interviewsBooked)}
-              hint="Bookings tied to real contacted candidates."
+              secondaryLabel="Total"
               tone="violet"
+              series={cumulativeSeries(model.trends.booked)}
             />
-            <KpiTile
-              icon={<Timer className="h-5 w-5" aria-hidden />}
+            <MetricCard
               label="Time to first interview"
               value={formatHours(model.kpis.timeToFirstInterviewHours)}
-              hint="Canonical campaign timing from metrics.ts."
+              secondaryLabel="Canonical TTFI"
               tone="neutral"
             />
-            <KpiTile
-              icon={<BarChart3 className="h-5 w-5" aria-hidden />}
+            <MetricCard
               label="Avg match score"
               value={formatNumber(model.kpis.avgMatchScore)}
-              hint="Average across in-scope sourced candidates."
+              secondaryLabel="Avg"
               tone="electric"
+              series={scoreSeries}
             />
             <OpenRateTile />
           </motion.div>

@@ -1,70 +1,141 @@
 "use client";
 
 import * as React from "react";
+import { useId } from "react";
+import {
+  Area,
+  AreaChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { motion } from "framer-motion";
-import { Card, Eyebrow } from "@/components/ui";
 import { useCountUp } from "@/components/reveal/use-count-up";
 import {
   fadeUp,
   formatAnimatedMetric,
   parseMetricNumber,
+  seriesPeriodTrendPercent,
 } from "@/lib/dashboard-motion";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
-import { cn, type Tone } from "@/lib/utils";
-import { ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { cn, formatNumber, type Tone } from "@/lib/utils";
+import { ArrowDown, ArrowUp } from "lucide-react";
 
-const TONE_TILE: Record<Tone, string> = {
-  neutral: "bg-ink/[0.06] text-ink-soft",
-  tangerine: "bg-tangerine-soft text-tangerine",
-  electric: "bg-electric-soft text-electric",
-  aqua: "bg-aqua-soft text-aqua",
-  violet: "bg-violet-soft text-violet",
-  success: "bg-success-soft text-success",
-  warning: "bg-warning-soft text-[hsl(32_90%_34%)]",
-  danger: "bg-danger-soft text-danger",
+const TONE_VAR: Record<Tone, string> = {
+  neutral: "--ink-soft",
+  tangerine: "--tangerine",
+  electric: "--electric",
+  aqua: "--aqua",
+  violet: "--violet",
+  success: "--success",
+  warning: "--warning",
+  danger: "--danger",
 };
 
-const TONE_GLOW: Record<Tone, string> = {
-  neutral: "from-ink/[0.04] to-transparent",
-  tangerine: "from-tangerine/10 to-transparent",
-  electric: "from-electric/10 to-transparent",
-  aqua: "from-aqua/10 to-transparent",
-  violet: "from-violet/10 to-transparent",
-  success: "from-success/10 to-transparent",
-  warning: "from-warning/10 to-transparent",
-  danger: "from-danger/10 to-transparent",
-};
+export function TrendBadge({
+  value,
+  className,
+}: {
+  /** Percent change, e.g. 12.4 or -4.8 */
+  value: number;
+  className?: string;
+}) {
+  const positive = value >= 0;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-0.5 rounded-md border px-2 py-0.5 text-xs font-medium tabular-nums",
+        positive
+          ? "border-success/20 bg-success/10 text-success"
+          : "border-danger/20 bg-danger/10 text-danger",
+        className,
+      )}
+    >
+      {positive ? (
+        <ArrowUp className="h-3 w-3" aria-hidden />
+      ) : (
+        <ArrowDown className="h-3 w-3" aria-hidden />
+      )}
+      {positive ? "+" : ""}
+      {value.toFixed(1)}%
+    </span>
+  );
+}
 
+interface HoverState {
+  value: number | null;
+  label: string | null;
+  trend: number | null;
+}
+
+/**
+ * Bklit-style compact KPI card: title + trend badge, large value with
+ * secondary label, and an edge-bleed axis-free area sparkline. Hovering the
+ * spark swaps the value/label/trend to the active point (ChartStatFlow pattern).
+ */
 export function MetricCard({
   label,
   value,
   hint,
-  icon,
-  tone = "neutral",
+  secondaryLabel,
+  icon: _icon,
+  tone = "electric",
   delta,
+  series,
+  trend,
   className,
-  delay = 0,
+  delay: _delay = 0,
 }: {
   label: string;
   value: string | number;
+  /** Kept for callers; prefer `secondaryLabel` for the Bklit sub-label. */
   hint?: string;
+  /** Shown under the value (Bklit uses "Avg", "Total", etc.). */
+  secondaryLabel?: string;
   icon?: React.ReactNode;
   tone?: Tone;
+  /** Legacy absolute delta chip; prefer numeric `trend` percent. */
   delta?: { value: string; positive?: boolean };
+  /** Axis-free sparkline series. When set, chart bleeds to card edges. */
+  series?: number[];
+  /** Period trend percent for the badge. Auto-derived from `series` when omitted. */
+  trend?: number | null;
   className?: string;
-  /** Stagger delay in seconds when not wrapped in a stagger parent. */
   delay?: number;
 }) {
   const reducedMotion = usePrefersReducedMotion();
+  const gradientId = useId();
+  const [hover, setHover] = React.useState<HoverState>({
+    value: null,
+    label: null,
+    trend: null,
+  });
+
   const numeric = parseMetricNumber(value);
   const animated = useCountUp(numeric ?? 0, {
     durationMs: 900,
-    enabled: numeric != null && !reducedMotion,
+    enabled: numeric != null && !reducedMotion && hover.value == null,
   });
+
+  const chartData = React.useMemo(
+    () => (series ?? []).map((point, index) => ({ index, value: point })),
+    [series],
+  );
+
+  const derivedTrend =
+    trend ?? (series && series.length >= 2 ? seriesPeriodTrendPercent(series) : null);
+  const displayTrend = hover.trend ?? derivedTrend;
+  const subLabel = hover.label ?? secondaryLabel ?? hint;
   const display =
-    numeric != null && !reducedMotion
-      ? formatAnimatedMetric(value, animated)
-      : String(value);
+    hover.value != null
+      ? formatNumber(hover.value)
+      : numeric != null && !reducedMotion
+        ? formatAnimatedMetric(value, animated)
+        : String(value);
+
+  const color = `hsl(var(${TONE_VAR[tone]}))`;
+  const hasChart = chartData.length >= 2;
 
   return (
     <motion.div
@@ -72,64 +143,122 @@ export function MetricCard({
       whileHover={
         reducedMotion
           ? undefined
-          : { y: -3, transition: { type: "spring", stiffness: 420, damping: 28 } }
+          : { y: -2, transition: { type: "spring", stiffness: 420, damping: 30 } }
       }
       className={cn("h-full", className)}
-      style={delay ? { transitionDelay: `${delay}s` } : undefined}
     >
-      <Card className="relative h-full overflow-hidden p-5">
-        <div
-          className={cn(
-            "pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b opacity-80",
-            TONE_GLOW[tone],
-          )}
-          aria-hidden
-        />
-        <div className="relative flex items-start justify-between gap-3">
-          <Eyebrow>{label}</Eyebrow>
-          {icon && (
-            <motion.span
+      <div
+        className={cn(
+          "flex h-full flex-col overflow-hidden rounded-xl border border-line/70 bg-surface shadow-sm",
+          "gap-0 py-0",
+        )}
+      >
+        <div className="flex items-start justify-between gap-3 px-4 py-3">
+          <p className="text-sm font-medium leading-none text-ink-soft">{label}</p>
+          {displayTrend != null ? (
+            <TrendBadge value={displayTrend} />
+          ) : delta ? (
+            <span
               className={cn(
-                "flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl [&>svg]:h-[1.125rem] [&>svg]:w-[1.125rem]",
-                TONE_TILE[tone],
-              )}
-              aria-hidden
-              whileHover={reducedMotion ? undefined : { rotate: [-2, 2, 0], scale: 1.06 }}
-              transition={{ duration: 0.35 }}
-            >
-              {icon}
-            </motion.span>
-          )}
-        </div>
-
-        <div className="relative mt-3 flex flex-wrap items-end gap-x-2 gap-y-1">
-          <span className="text-3xl font-extrabold leading-none tracking-tight tabular-nums text-ink">
-            {display}
-          </span>
-          {delta && (
-            <motion.span
-              initial={reducedMotion ? false : { opacity: 0, x: -4 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: delay + 0.25, duration: 0.35 }}
-              className={cn(
-                "mb-0.5 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs font-semibold ring-1 ring-inset",
+                "inline-flex items-center gap-0.5 rounded-md border px-2 py-0.5 text-xs font-medium",
                 delta.positive
-                  ? "bg-success-soft text-success ring-success/20"
-                  : "bg-danger-soft text-danger ring-danger/20",
+                  ? "border-success/20 bg-success/10 text-success"
+                  : "border-danger/20 bg-danger/10 text-danger",
               )}
             >
               {delta.positive ? (
-                <ArrowUpRight className="h-3 w-3" aria-hidden />
+                <ArrowUp className="h-3 w-3" aria-hidden />
               ) : (
-                <ArrowDownRight className="h-3 w-3" aria-hidden />
+                <ArrowDown className="h-3 w-3" aria-hidden />
               )}
               {delta.value}
-            </motion.span>
-          )}
+            </span>
+          ) : null}
         </div>
 
-        {hint && <p className="relative mt-1.5 text-xs leading-relaxed text-muted">{hint}</p>}
-      </Card>
+        <div className={cn("flex flex-1 flex-col gap-3 px-4", hasChart ? "pb-0 pt-1" : "pb-4 pt-1")}>
+          <div>
+            <p className="text-3xl font-semibold leading-none tracking-tight tabular-nums text-ink">
+              {display}
+            </p>
+            {subLabel ? (
+              <p className="mt-1.5 text-xs font-normal text-muted">{subLabel}</p>
+            ) : null}
+          </div>
+
+          {hasChart ? (
+            <div
+              className="relative -mx-4 -mb-0 h-[96px] overflow-hidden"
+              role="img"
+              aria-label={`${label} trend`}
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                  data={chartData}
+                  margin={{ top: 8, right: 0, bottom: 0, left: 0 }}
+                  onMouseMove={(state) => {
+                    const idx =
+                      typeof state?.activeTooltipIndex === "number"
+                        ? state.activeTooltipIndex
+                        : -1;
+                    const point = idx >= 0 ? chartData[idx] : null;
+                    if (!point) {
+                      setHover({ value: null, label: null, trend: null });
+                      return;
+                    }
+                    const prior = idx > 0 ? chartData[idx - 1]!.value : null;
+                    const pointTrend =
+                      prior != null && prior !== 0
+                        ? ((point.value - prior) / Math.abs(prior)) * 100
+                        : prior === 0 && point.value !== 0
+                          ? 100
+                          : prior === 0
+                            ? 0
+                            : null;
+                    setHover({
+                      value: point.value,
+                      label: `Period ${point.index + 1}`,
+                      trend: pointTrend,
+                    });
+                  }}
+                  onMouseLeave={() => setHover({ value: null, label: null, trend: null })}
+                >
+                  <defs>
+                    <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={color} stopOpacity={0.45} />
+                      <stop offset="100%" stopColor={color} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="index" hide />
+                  <YAxis hide domain={["dataMin - 1", "dataMax + 1"]} />
+                  <Tooltip
+                    cursor={{ stroke: color, strokeWidth: 1, strokeOpacity: 0.25 }}
+                    content={() => null}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="value"
+                    stroke={color}
+                    strokeWidth={2}
+                    fill={`url(#${gradientId})`}
+                    fillOpacity={1}
+                    dot={false}
+                    activeDot={{
+                      r: 4,
+                      strokeWidth: 2,
+                      stroke: "hsl(var(--surface))",
+                      fill: color,
+                    }}
+                    isAnimationActive={!reducedMotion}
+                    animationDuration={850}
+                    animationEasing="ease-out"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          ) : null}
+        </div>
+      </div>
     </motion.div>
   );
 }

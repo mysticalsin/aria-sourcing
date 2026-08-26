@@ -30,13 +30,20 @@ import {
   useActions,
   useActiveCampaign,
   useActivities,
+  useBookings,
   useCampaigns,
   useCandidates,
   useDashboardKpis,
   useHydrated,
+  useOutreach,
+  useReplies,
+  useSettings,
+  useWins,
 } from "@/lib/store";
-import { fadeUp, staggerContainer } from "@/lib/dashboard-motion";
+import { cumulativeSeries, fadeUp, staggerContainer } from "@/lib/dashboard-motion";
+import { deriveExecDashboard } from "@/lib/exec-dashboard";
 import { funnelForCandidates } from "@/lib/metrics";
+import { supabaseEnabled } from "@/lib/supabase/config";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { formatNumber, formatPercent, pluralize, scoreTone, type Tone } from "@/lib/utils";
 import {
@@ -69,11 +76,55 @@ export default function DashboardPage() {
   const campaigns = useCampaigns();
   const candidates = useCandidates();
   const activities = useActivities();
+  const outreach = useOutreach();
+  const replies = useReplies();
+  const bookings = useBookings();
+  const settings = useSettings();
+  const wins = useWins();
   const activeCampaign = useActiveCampaign();
   const reducedMotion = usePrefersReducedMotion();
+  const demoMode = !supabaseEnabled || settings.dryRunMode;
 
   const activeCampaigns = campaigns.filter((c) => !["Filled", "Paused"].includes(c.status));
   const funnel = React.useMemo(() => funnelForCandidates(candidates), [candidates]);
+  const trends = React.useMemo(
+    () =>
+      deriveExecDashboard(
+        { campaigns, candidates, outreach, replies, bookings, activities, settings, wins },
+        demoMode,
+      ).trends,
+    [campaigns, candidates, outreach, replies, bookings, activities, settings, wins, demoMode],
+  );
+
+  const sourcedSeries = React.useMemo(() => cumulativeSeries(trends.sourced), [trends.sourced]);
+  const bookedSeries = React.useMemo(() => cumulativeSeries(trends.booked), [trends.booked]);
+  const replyRateSeries = React.useMemo(() => {
+    let contacted = 0;
+    let replied = 0;
+    return trends.contacted.map((c, i) => {
+      contacted += c;
+      replied += trends.replied[i] ?? 0;
+      return contacted > 0 ? Math.round((replied / contacted) * 1000) / 10 : 0;
+    });
+  }, [trends.contacted, trends.replied]);
+  const scoreSeries = React.useMemo(() => {
+    const sorted = [...candidates]
+      .filter((c) => c.matchScore > 0)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    if (sorted.length === 0) return [];
+    const buckets = 8;
+    const size = Math.max(1, Math.ceil(sorted.length / buckets));
+    const out: number[] = [];
+    for (let i = 0; i < sorted.length; i += size) {
+      const slice = sorted.slice(i, i + size);
+      out.push(Math.round(slice.reduce((s, c) => s + c.matchScore, 0) / slice.length));
+    }
+    return out;
+  }, [candidates]);
+  const campaignSeries = React.useMemo(() => {
+    const sorted = [...campaigns].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return cumulativeSeries(sorted.map(() => 1));
+  }, [campaigns]);
 
   // "Watch Aria Work" panel — remounted (via runToken as its key) on every
   // "Run Aria" click so each click starts a genuinely fresh, replayable run.
@@ -96,50 +147,56 @@ export default function DashboardPage() {
   const kpiCards: {
     label: string;
     value: string | number;
-    hint: string;
+    secondaryLabel: string;
     icon: React.ReactNode;
     tone: Tone;
+    series?: number[];
   }[] = [
     {
       label: "Active campaigns",
       value: kpis.activeCampaigns,
-      hint: `${pluralize(kpis.totalCampaigns, "campaign")} created in total`,
+      secondaryLabel: `${pluralize(kpis.totalCampaigns, "campaign")} total`,
       icon: <Megaphone aria-hidden />,
       tone: "tangerine",
+      series: campaignSeries,
     },
     {
       label: "Candidates sourced",
       value: formatNumber(kpis.candidatesSourced),
-      hint: `${pluralize(kpis.contacted, "candidate")} contacted so far`,
+      secondaryLabel: "Total",
       icon: <Users aria-hidden />,
       tone: "electric",
+      series: sourcedSeries,
     },
     {
       label: "Reply rate",
       value: formatPercent(kpis.replyRate),
-      hint: `Across ${pluralize(kpis.contacted, "contact")} reached`,
+      secondaryLabel: `${pluralize(kpis.contacted, "contact")} reached`,
       icon: <Reply aria-hidden />,
       tone: "aqua",
+      series: replyRateSeries,
     },
     {
       label: "Interviews booked",
       value: kpis.interviewsBooked,
-      hint: `${pluralize(kpis.interested, "candidate")} interested in flight`,
+      secondaryLabel: `${pluralize(kpis.interested, "candidate")} interested`,
       icon: <CalendarCheck aria-hidden />,
       tone: "violet",
+      series: bookedSeries,
     },
     {
       label: "Avg match score",
       value: kpis.avgMatchScore,
-      hint: "Quality of the sourced pool",
+      secondaryLabel: "Avg",
       icon: <Target aria-hidden />,
       tone: scoreTone(kpis.avgMatchScore),
+      series: scoreSeries,
     },
     {
       label: "Time to first interview",
       value:
         kpis.timeToFirstInterviewHours != null ? `${kpis.timeToFirstInterviewHours}h` : "—",
-      hint: "Mean across active campaigns",
+      secondaryLabel: "Mean across active",
       icon: <Timer aria-hidden />,
       tone: "neutral",
     },
@@ -271,9 +328,10 @@ export default function DashboardPage() {
                 key={k.label}
                 label={k.label}
                 value={k.value}
-                hint={k.hint}
+                secondaryLabel={k.secondaryLabel}
                 icon={k.icon}
                 tone={k.tone}
+                series={k.series}
               />
             ))}
           </motion.section>

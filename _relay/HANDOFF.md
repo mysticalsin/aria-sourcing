@@ -1,58 +1,45 @@
 ---
 project: MSourcing / ARIA
-shift: 87
+shift: 88
 agent: cursor-cloud
 updated: 2026-08-26 UTC
-status: analytics-motion-dashboards
+status: bklit-stat-card-metrics
 ---
 
-# Handoff - Shift 87
+# Handoff - Shift 88
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #29 → `integration/sourcing-enrichment-on-main`
-- **Production:** https://aria-mantu-app.fly.dev (prior version **41**; analytics UI not yet redeployed this shift)
-- Analytics surfaces upgraded with bklit-style charts + kokonutui/motion.dev motion (framer-motion + recharts already in tree)
-- Outreach UX harden also in branch: preferred channel (Email→LI→WA), preflight blockers, inline lawful-basis record, clearer dry-run copy
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #29
+- Metrics rebuilt to match Bklit `stat-card-area` pattern: title + TrendBadge, large value, secondary label, edge-bleed area sparkline with hover sync
+- Command Center + Exec wired with real cumulative/score series (not synthetic KPI literals)
+- Artifacts: `/opt/cursor/artifacts/command-center-bklit-metrics.png`, `/opt/cursor/artifacts/exec-bklit-metrics.png`
 
 ## Done this shift
 
-- `src/lib/dashboard-motion.ts` — stagger/fade/spring presets + metric number parse/format
-- `MetricCard` — count-up, tone glow, hover lift, stagger-friendly variants
-- `TrendSpark` — taller charts, tooltips, summary (latest + delta) for Exec
-- `FunnelChart` — stage conversion chips + multi-tone bars
-- `MiniFunnel` — animated bars + conversion %
-- Command Center (`src/app/page.tsx`) + Exec (`src/app/exec/page.tsx`) + fleet/vivier/campaign KPI grids wired to motion stagger
-- `src/lib/outreach-channel.ts` + store/outreach card human-gate UX
-- Tests: `tests/dashboard-motion.mts` registered in manifest; `npx tsc --noEmit` green; application suite green (known `infra-release-contract` alternate-script fail remains)
+- Rewrote `MetricCard` + `TrendBadge` after Bklit compact KPI block
+- `seriesPeriodTrendPercent` / `cumulativeSeries` helpers
+- Command Center + Exec KPI grids pass `series` + `secondaryLabel`
+- Tests: dashboard-motion + exec-dashboard green; `tsc --noEmit` green
 
 ## Blockers
 
-- Fly not redeployed with analytics UI this shift — operator should redeploy or wait for CI→Fly
-- Full intake→source→approve click-path evidence still pending after UX harden
+- Fly still on prior release until redeploy
+- Full sourcing E2E click-path proof still open
 
 ## Next steps
 
-1. Redeploy Fly from this branch; confirm Command Center + `/exec` match local artifacts
-2. Walk E2E: intake → Source next batch → draft → record LI basis → Approve under dry-run → interested → booking prep; save artifacts
-3. Keep PR #29 body current with any new proof
+1. Redeploy Fly; confirm Command Center / Exec match artifacts
+2. Optional: install `@bklit/area-chart` via shadcn registry if wanting their chart engine directly
+3. Continue intake→source→approve E2E evidence
 
 ## Decisions made (don't relitigate)
 
-- Keep recharts + framer-motion; do not vendor bklit/kokonut packages — pattern-inspired only
-- Human approval + dry-run are product features, not bugs
-- Apify stays invisible; LinkedIn stamp for profile search
-- Do not commit secrets/passwords into `_relay/` / git
+- Pattern-inspired from Bklit; no vendor package required
+- Hover on spark swaps value/label/trend (ChartStatFlow behavior)
+- Do not commit secrets to `_relay/`
 
 ## Watch out
 
-- MetricCard animation relies on a parent `motion` stagger container (`initial`/`animate`) — standalone grids must wrap
-- `prefers-reduced-motion` disables count-up / bar width motion
-- Local `next dev` can stick on “Loading demo workspace” under broken HMR; use `npm run build && npm start` for UI proof
-- Known pre-existing: `infra-release-contract` fails on alternate Fly deploy scripts
-
-## Artifacts this shift
-
-- `/opt/cursor/artifacts/command-center-analytics.png`
-- `/opt/cursor/artifacts/exec-dashboard-analytics.png`
-- `/opt/cursor/artifacts/exec-trends-funnels.png`
+- exec-dashboard source contract forbids `contacted = 0` style literals — use other local names
+- MetricCard no longer uses glassmorphic `Card` chrome; plain bordered surface

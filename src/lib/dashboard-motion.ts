@@ -97,3 +97,21 @@ export function formatAnimatedMetric(value: string | number, animated: number): 
   }
   return `${body}${hasPercent ? "%" : ""}${suffix && !hasPercent ? suffix : ""}`;
 }
+
+/** Period-over-period % change between the last two points (Bklit TrendBadge). */
+export function seriesPeriodTrendPercent(series: number[]): number | null {
+  if (series.length < 2) return null;
+  const previous = series[series.length - 2]!;
+  const current = series[series.length - 1]!;
+  if (previous === 0) return current === 0 ? 0 : 100;
+  return Math.round(((current - previous) / Math.abs(previous)) * 1000) / 10;
+}
+
+/** Cumulative running total — gives sparklines a rising shape from event buckets. */
+export function cumulativeSeries(series: number[]): number[] {
+  let total = 0;
+  return series.map((n) => {
+    total += n;
+    return total;
+  });
+}
