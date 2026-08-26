@@ -28,6 +28,8 @@ export interface HermesResult {
   ok: boolean;
   text?: string;
   reason?: string;
+  /** When true, callers should keep the deterministic template draft. */
+  useTemplateFallback?: boolean;
 }
 
 /**

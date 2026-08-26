@@ -360,7 +360,12 @@ export async function POST(req: NextRequest) {
       }
       if (!upstream.ok) {
         logUpstream("error", "Cloud provider upstream error", { provider, status: upstream.status });
-        return NextResponse.json({ ok: false, reason: `Upstream error ${upstream.status}` });
+        return NextResponse.json({
+          ok: false,
+          reason: `Upstream error ${upstream.status}`,
+          // Client drafts always fall back to templates — make that explicit for UI/ops.
+          useTemplateFallback: true,
+        });
       }
       const json = await upstream.json().catch(() => null);
       const text = parseCloudResponse(slug, json);
@@ -455,7 +460,12 @@ export async function POST(req: NextRequest) {
         const err = await upstream.text().catch(() => "");
         logUpstream("error", "Aria upstream error", { status: upstream.status, err: err.slice(0, 500) });
         // Generic message to the client; the (redacted) detail is logged above.
-        return NextResponse.json({ ok: false, reason: `Upstream error ${upstream.status}` });
+        return NextResponse.json({
+          ok: false,
+          reason: `Upstream error ${upstream.status}`,
+          // Client drafts always fall back to templates — make that explicit for UI/ops.
+          useTemplateFallback: true,
+        });
       }
       return new Response(upstream.body, {
         status: 200,
@@ -491,7 +501,11 @@ export async function POST(req: NextRequest) {
       logUpstream("error", "Aria upstream error", { status: upstream.status, err: err.slice(0, 500) });
       // Generic message to the client; the (redacted) detail is logged above —
       // matches the streaming path, never leaks the raw upstream error body.
-      return NextResponse.json({ ok: false, reason: `Upstream error ${upstream.status}` });
+      return NextResponse.json({
+        ok: false,
+        reason: `Upstream error ${upstream.status}`,
+        useTemplateFallback: true,
+      });
     }
     const json = (await upstream.json().catch(() => null)) as
       | { choices?: { message?: { content?: string }; delta?: { content?: string } }[] }
