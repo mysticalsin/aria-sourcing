@@ -1,43 +1,43 @@
 ---
 project: MSourcing / ARIA
-shift: 91
+shift: 92
 agent: cursor-cloud
 updated: 2026-08-26 UTC
-status: llm-providers-deepseek-nim
+status: llm-key-e2e-strict
 ---
 
-# Handoff - Shift 91
+# Handoff - Shift 92
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #29 · commit `ad553d9`
-- Settings → AI Add-key vault now includes **DeepSeek**, **NVIDIA NIM**, and **Kimi (Moonshot)** with live verify
-- LLM provider kinds + cloud routing (`deepseek`, `nvidia` slugs) wired in `provider.ts` / `key-probe.ts`
-- Defaults: DeepSeek `deepseek-chat`; NVIDIA NIM `meta/llama-3.3-70b-instruct` (override via SavedModel / `NVIDIA_NIM_BASE_URL`)
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #29
+- Strict E2E of Settings → AI encrypt+verify completed locally
+- **Critical fix:** NVIDIA NIM hosted `GET /models` is public (200 with no/invalid auth) — probe now uses chat/completions only; default model set to `nvidia/llama-3.1-nemotron-70b-instruct` (EOL llama-3.3-70b removed)
+- `formatValid` on `POST /api/keys` now reflects format check, not probe result
+- Live tests: `tests/llm-key-probe-live.mts` registered in manifest
+- Artifacts: `settings-ai-provider-dropdown.png`, `settings-ai-e2e-saved-keys.png`
 
 ## Done this shift
 
-- Added DeepSeek + NVIDIA NIM to `API_KEY_PROVIDERS` / `LLM_PROVIDERS`
-- Live probes + format (`sk-…` / `nvapi-…`); hermes chat accepts new slugs + org/model ids
-- Tests: llm-key-probe 16 pass; admin-config 46 pass; tsc green
+- Live network probes: Anthropic/DeepSeek/Kimi 401, NVIDIA 403 for fake keys
+- UI E2E: DeepSeek, NVIDIA NIM, Kimi all encrypt → clear → ••••last4 → invalid
+- API E2E via demo cookie against local `next start`
 
 ## Blockers
 
-- Fly may still lag release identity — redeploy for live dropdown
+- No real provider keys in env — positive (valid) path not exercised live
+- Fly release identity may still lag
 
 ## Next steps
 
-1. Redeploy Fly so live Settings → AI shows DeepSeek / NVIDIA NIM / Kimi
-2. Optional: screenshot Add-key provider dropdown
+1. Redeploy Fly with this branch
+2. Optional: positive-path verify with a real NVIDIA/DeepSeek/Kimi key in a secrets-capable env
 
 ## Decisions made (don't relitigate)
 
-- NVIDIA NIM cloud base `https://integrate.api.nvidia.com/v1` (override with `NVIDIA_NIM_BASE_URL` / `NIM_BASE_URL` for self-hosted)
-- DeepSeek base `https://api.deepseek.com` (override `DEEPSEEK_BASE_URL`)
-- Kimi stays vault label `Kimi (Moonshot)` mapped from LLM kind `Kimi`
+- Never use NVIDIA public /models as an auth probe
 - Do not commit secrets to `_relay/`
 
 ## Watch out
 
-- NIM model ids use `org/model` — hermes model regex now allows `/`
-- NVIDIA format expects `nvapi-…` keys from build.nvidia.com
+- Hosted NIM model catalog churn/EOL (410) — keep default model on a live auth-gated id

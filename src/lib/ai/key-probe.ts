@@ -91,6 +91,9 @@ function authHeaders(slug: AiProviderSlug, key: string): Record<string, string> 
  * Probe an LLM provider key with a cheap authenticated GET /models (or equivalent).
  * 401/403 → invalid. 2xx → valid. Other statuses → valid if auth clearly accepted,
  * otherwise invalid with detail. Transport failures throw for the caller to fall back.
+ *
+ * NVIDIA NIM's hosted GET /models is public (returns 200 with no/invalid auth), so
+ * NVIDIA always probes via a tiny chat completion instead.
  */
 export async function probeLlmApiKey(
   provider: LiveLlmKeyProvider,
@@ -98,6 +101,12 @@ export async function probeLlmApiKey(
   fetchImpl: typeof fetch = fetch,
 ): Promise<LlmKeyProbeResult> {
   const slug = SLUG_FOR[provider];
+
+  // Hosted NIM catalog listing does not authenticate — never use it as a key probe.
+  if (slug === "nvidia") {
+    return probeLlmWithMiniCompletion(provider, slug, key, fetchImpl);
+  }
+
   const url = modelsUrl(slug);
   const res = await fetchImpl(url, {
     method: "GET",
@@ -191,6 +200,13 @@ async function probeLlmWithMiniCompletion(
   });
   if (res.status === 401 || res.status === 403) {
     return { valid: false, detail: `${provider} rejected this key (HTTP ${res.status}).` };
+  }
+  // Hosted NIM returns 410 when a catalog model is EOL — that is not an auth signal.
+  if (res.status === 410) {
+    return {
+      valid: false,
+      detail: `${provider} probe model is unavailable (HTTP 410). Pick a live model in Saved models, or check NVIDIA_NIM_BASE_URL.`,
+    };
   }
   if (res.ok || res.status === 400 || res.status === 429 || res.status === 402) {
     return { valid: true, detail: `${provider} key accepted (HTTP ${res.status}).` };

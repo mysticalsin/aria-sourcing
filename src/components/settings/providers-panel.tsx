@@ -409,8 +409,10 @@ export function ProvidersPanel() {
   }
 
   const liveHint = LIVE_VERIFY_PROVIDERS.includes(keyProvider)
-    ? "We call the provider’s API with your key (models list) to prove it works. The raw secret is never shown again."
-    : "This provider is format-checked only (no live probe yet). Prefer Anthropic or OpenAI for full end-to-end verification.";
+    ? keyProvider === "NVIDIA NIM"
+      ? "We call NVIDIA NIM chat/completions with your key (hosted catalog listing is public and is not used for auth). The raw secret is never shown again."
+      : "We call the provider’s API with your key (authenticated models list or a tiny completion) to prove it works. The raw secret is never shown again."
+    : "This provider is format-checked only (no live probe yet). Prefer Anthropic, OpenAI, DeepSeek, Kimi, or NVIDIA NIM for full end-to-end verification.";
 
   return (
     <Card>

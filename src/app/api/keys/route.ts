@@ -123,6 +123,7 @@ export async function POST(req: NextRequest) {
   const { name, provider, value } = validated.data;
 
   const last4 = last4Of(value);
+  const format = validateApiKeyFormat(provider, value);
   // Probe while we still hold plaintext (never returned to the client).
   const probe = await verifyNewKey(provider, value);
   const status = probe.valid ? "valid" : "invalid";
@@ -133,7 +134,7 @@ export async function POST(req: NextRequest) {
       demo: true,
       id: randomUUID(),
       last4,
-      formatValid: probe.valid,
+      formatValid: format.valid,
       valid: probe.valid,
       status,
       detail: probe.detail,
@@ -178,7 +179,7 @@ export async function POST(req: NextRequest) {
     ok: true,
     id: data[0].id,
     last4,
-    formatValid: probe.valid,
+    formatValid: format.valid,
     valid: probe.valid,
     status,
     detail: probe.detail,

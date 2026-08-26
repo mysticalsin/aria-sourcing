@@ -88,13 +88,32 @@ ok("Apify is not an LLM key provider", !isLiveLlmKeyProvider("Apify"));
   const seen: string[] = [];
   const fetchImpl = async (input: RequestInfo | URL) => {
     seen.push(String(input));
-    return new Response("{}", { status: 200 });
+    return new Response(JSON.stringify({ status: 403, detail: "Authorization failed" }), { status: 403 });
   };
-  await probeLlmApiKey("NVIDIA NIM", "nvapi-" + "e".repeat(30), fetchImpl as typeof fetch);
+  const r = await probeLlmApiKey("NVIDIA NIM", "nvapi-" + "e".repeat(30), fetchImpl as typeof fetch);
   ok(
-    "NVIDIA NIM probe hits integrate.api.nvidia.com/v1/models",
-    seen.some((u) => /integrate\.api\.nvidia\.com\/v1\/models/.test(u)),
+    "NVIDIA NIM skips public /models and probes chat/completions",
+    seen.length === 1 && /integrate\.api\.nvidia\.com\/v1\/chat\/completions/.test(seen[0]),
   );
+  ok("NVIDIA NIM 403 marks key invalid", !r.valid && /rejected this key \(HTTP 403\)/.test(r.detail));
+}
+
+{
+  const fetchImpl = async () =>
+    new Response(JSON.stringify({ data: [] }), { status: 200, headers: { "content-type": "application/json" } });
+  // If someone accidentally called /models, 200 would be a false positive — ensure we never
+  // accept a models-list-only path for NVIDIA by forcing chat path (covered above).
+  const r = await probeLlmApiKey(
+    "NVIDIA NIM",
+    "nvapi-" + "e".repeat(30),
+    (async (input: RequestInfo | URL) => {
+      if (String(input).includes("/models") && !String(input).includes("chat")) {
+        return new Response("{}", { status: 200 });
+      }
+      return new Response(JSON.stringify({ status: 403 }), { status: 403 });
+    }) as typeof fetch,
+  );
+  ok("NVIDIA NIM ignores public /models 200", !r.valid);
 }
 
 {

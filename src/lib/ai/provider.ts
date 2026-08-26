@@ -46,8 +46,9 @@ export const DEFAULT_MODEL: Record<AiProviderSlug, string> = {
   // default; override per-workspace with a SavedModel (e.g. kimi-k2-0711-preview).
   kimi: "moonshot-v1-8k",
   deepseek: "deepseek-chat",
-  // Hosted NIM catalog id (org/model). Override via SavedModel or NIM_BASE_URL for self-hosted.
-  nvidia: "meta/llama-3.3-70b-instruct",
+  // Hosted NIM catalog id. Prefer models that still require auth on chat
+  // (public GET /models does not). Override via SavedModel / NVIDIA_NIM_BASE_URL.
+  nvidia: "nvidia/llama-3.1-nemotron-70b-instruct",
 };
 
 export interface AiResolved {
