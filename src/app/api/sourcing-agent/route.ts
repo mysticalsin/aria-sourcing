@@ -45,6 +45,7 @@ import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import { getServerSupabase } from "@/lib/supabase/server";
 import type { Candidate, Role } from "@/lib/types";
+import { isTrustedBrowserOrigin } from "@/lib/api/same-origin-json";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -219,7 +220,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
     return fail(415, "INVALID_REQUEST", "Expected a JSON request.");
   }
   const origin = req.headers.get("origin");
-  if (!origin || origin !== req.nextUrl.origin) {
+  if (!isTrustedBrowserOrigin(origin, req.nextUrl.origin)) {
     return fail(403, "CROSS_ORIGIN_REQUEST", "Cross-origin sourcing is not allowed.");
   }
 
@@ -578,7 +579,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
           ? primaryPlatform
           : "LinkedIn"
         : "GitHub";
-      const linkedInQuery = initial.value.campaign.sourcingStrategy.linkedinBoolean.trim();
+      const linkedInQueryRaw = initial.value.campaign.sourcingStrategy.linkedinBoolean.trim();
       const keywordFallback = [
         initial.value.campaign.jobAnalysis.title,
         ...initial.value.campaign.jobAnalysis.requiredSkills.slice(0, 3),
@@ -588,6 +589,10 @@ async function handlePost(req: NextRequest, correlationId: string) {
         .join(" ")
         .trim()
         .slice(0, 256);
+      const linkedInQuery =
+        linkedInQueryRaw.length > 0 && linkedInQueryRaw.length <= 256
+          ? linkedInQueryRaw
+          : keywordFallback;
       const queries = frameworkAuthorization
         ? [frameworkAuthorization.query]
         : linkedInFirst

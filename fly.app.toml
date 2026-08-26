@@ -16,6 +16,7 @@ primary_region = "cdg"
   dockerfile = "Dockerfile.prod"
   [build.args]
     NEXT_PUBLIC_SUPABASE_URL         = "https://aria-mantu-kong.fly.dev"   # browser → Supabase (public Kong)
+    NEXT_PUBLIC_SITE_URL             = "https://aria-mantu-app.fly.dev"    # browser Origin for CSRF checks
     NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN = ""
     NEXT_PUBLIC_ENABLE_DEMO_LOGIN    = "false"                       # real tenant: OFF → strict fail-closed
     NEXT_PUBLIC_ENABLE_AZURE_LOGIN   = "false"                       # enable only with complete GoTrue Azure config
@@ -25,6 +26,7 @@ primary_region = "cdg"
   NODE_ENV                      = "production"
   PORT                          = "3000"
   HOSTNAME                      = "0.0.0.0"
+  NEXT_PUBLIC_SITE_URL          = "https://aria-mantu-app.fly.dev"
   NEXT_TELEMETRY_DISABLED       = "1"
   # Server (Node) reaches Supabase over the 6PN private net, NOT the public URL:
   SUPABASE_URL                  = "http://aria-mantu-kong.internal:8000"
