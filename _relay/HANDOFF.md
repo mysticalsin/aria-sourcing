@@ -33,9 +33,9 @@ status: analytics-motion-dashboards
 
 ## Next steps
 
-1. Redeploy Fly from this branch; screenshot Command Center + `/exec` motion/charts
+1. Redeploy Fly from this branch; confirm Command Center + `/exec` match local artifacts
 2. Walk E2E: intake → Source next batch → draft → record LI basis → Approve under dry-run → interested → booking prep; save artifacts
-3. Update PR #29 body with analytics + approval-gate proof
+3. Keep PR #29 body current with any new proof
 
 ## Decisions made (don't relitigate)
 
@@ -48,4 +48,11 @@ status: analytics-motion-dashboards
 
 - MetricCard animation relies on a parent `motion` stagger container (`initial`/`animate`) — standalone grids must wrap
 - `prefers-reduced-motion` disables count-up / bar width motion
+- Local `next dev` can stick on “Loading demo workspace” under broken HMR; use `npm run build && npm start` for UI proof
 - Known pre-existing: `infra-release-contract` fails on alternate Fly deploy scripts
+
+## Artifacts this shift
+
+- `/opt/cursor/artifacts/command-center-analytics.png`
+- `/opt/cursor/artifacts/exec-dashboard-analytics.png`
+- `/opt/cursor/artifacts/exec-trends-funnels.png`
