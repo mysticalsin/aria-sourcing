@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 94
 agent: cursor-cloud
 updated: 2026-08-26 UTC
-status: linkedin-oidc-shipped-awaiting-fly-secrets
+status: exec-map-world-fit
 ---
 
 # Handoff - Shift 94
@@ -39,9 +39,14 @@ status: linkedin-oidc-shipped-awaiting-fly-secrets
 - Fly has no `LINKEDIN_CLIENT_*` secrets — Sign In shows “missing env” until ops sets them
 - Fly production may lag this branch SHA until redeploy
 
+## Done this shift (continued)
+
+- Exec choropleth: `geoMercator().fitExtent()` so full world visible (was cropped by manual scale/translate)
+- Map height 380→420 on `/exec`
+
 ## Next steps
 
-1. Tony/ops: LinkedIn app + Fly secrets + migrate 0061 + redeploy
+1. Tony/ops: LinkedIn app + Fly secrets + migrate 0061 + redeploy (includes map fix)
 2. Smoke: Settings → Integrations → Sign in with LinkedIn (real LinkedIn consent screen)
 3. Optional: triage remaining 7 `store-sourcing-actions` failures on this branch
 
