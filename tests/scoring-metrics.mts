@@ -120,7 +120,7 @@ const liveLinkedInJd: JobAnalysis = {
   niceToHaveSkills: ["Doors"],
   minYearsExperience: 8,
   maxYearsExperience: null,
-  companyStageTarget: ["Enterprise"],
+  companyStageTarget: ["Public"],
   industryExperience: ["Consulting"],
   locationType: "On-site",
   regions: ["Montreal", "Canada"],
