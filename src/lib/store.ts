@@ -16,6 +16,7 @@ import {
   type GeneratedOutreach,
   type ReplyClassification,
 } from "./mock-ai";
+import { preferredOutreachChannel } from "./outreach-channel";
 import {
   mapSeamlessCandidates,
   type SourceResult,
@@ -1887,17 +1888,18 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const generateOutreachFor = useCallback(
-    (candidateId: string, tone?: OutreachTone, channel: OutreachChannel = "Email", seatId?: string) => {
+    (candidateId: string, tone?: OutreachTone, channel?: OutreachChannel, seatId?: string) => {
       const s = current();
       const candidate = s.candidates.find((c) => c.id === candidateId);
       const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
       if (!candidate || !campaign) return null;
+      const resolvedChannel = channel ?? preferredOutreachChannel(candidate);
       const finalTone = tone ?? effectiveTone(s.skills); // learned default tone
       const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
       // Compose in the seat's language, else the need's, else the workspace default.
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
-      const gen = generateOutreach(candidate, campaign, finalTone, channel, 1, voice, lang);
+      const gen = generateOutreach(candidate, campaign, finalTone, resolvedChannel, 1, voice, lang);
       const msg = newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1);
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
@@ -1906,7 +1908,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           makeActivity({
             type: "outreach",
             title: `Outreach drafted: ${candidate.name}`,
-            notes: `${finalTone} ${channel} message generated with ${gen.personalizationEvidence.length} personalization points.`,
+            notes: `${finalTone} ${resolvedChannel} message generated with ${gen.personalizationEvidence.length} personalization points.`,
             outcome: msg.status,
             campaignId: campaign.id,
             linkedEntityType: "candidate",
@@ -1927,19 +1929,20 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   // exact same mock used by generateOutreachFor. The committed message's status
   // is still decided by the human approval gate — never auto-sent.
   const generateOutreachLive = useCallback(
-    async (candidateId: string, tone?: OutreachTone, channel: OutreachChannel = "Email", seatId?: string) => {
+    async (candidateId: string, tone?: OutreachTone, channel?: OutreachChannel, seatId?: string) => {
       if (!workspaceEffectAllowed()) return null;
       const s = current();
       const candidate = s.candidates.find((c) => c.id === candidateId);
       const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
       if (!candidate || !campaign) return null;
+      const resolvedChannel = channel ?? preferredOutreachChannel(candidate);
       const finalTone = tone ?? effectiveTone(s.skills);
       const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
 
       // Mock is the canonical fallback (and the source of personalization evidence).
-      const mockGen = generateOutreach(candidate, campaign, finalTone, channel, 1, voice, lang);
+      const mockGen = generateOutreach(candidate, campaign, finalTone, resolvedChannel, 1, voice, lang);
 
       // Resolve cloud provider config (seat override → workspace defaults).
       const aiCfg = resolveAiProvider(s.settings, "outreach", {
@@ -1964,14 +1967,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           requiredSkills: campaign.jobAnalysis.requiredSkills,
           roleContext: candidateDisclosureContextForCampaignLike(campaign),
           tone: finalTone,
-          channel,
+          channel: resolvedChannel,
           language: lang,
           persona: voice?.persona,
           signature: voice?.signature,
         });
         // F-2: prepend ariaPrompt when set so it shapes the live generation.
         const ariaPrompt = s.settings.guardrails?.ariaPrompt;
-        const liGuard = channel === "LinkedIn" ? linkedInGuardrailPrompt() : "";
+        const liGuard = resolvedChannel === "LinkedIn" ? linkedInGuardrailPrompt() : "";
         const guardrails = [ariaPrompt, liGuard].filter(Boolean).join("\n\n");
         const prompt = guardrails ? `${guardrails}\n\n${basePrompt}` : basePrompt;
 
@@ -2006,7 +2009,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const result = await attempt.value;
         if (result.ok && result.text) {
           // Layer 3: an unparseable reply keeps the mock draft.
-          const parsed = parseHermesOutreach(result.text, channel, mockGen.subject);
+          const parsed = parseHermesOutreach(result.text, resolvedChannel, mockGen.subject);
           if (parsed) {
             gen = {
               // ALWAYS humanize live copy too — the mock path already does this
@@ -2016,7 +2019,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               body: humanizeText(parsed.body),
               // Reuse the mock's evidence — same shape, deterministic, audit-friendly.
               personalizationEvidence: mockGen.personalizationEvidence,
-              channel,
+              channel: resolvedChannel,
             };
             live = true;
           }

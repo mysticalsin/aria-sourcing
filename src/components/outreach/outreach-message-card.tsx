@@ -16,6 +16,9 @@ import {
   useToast,
 } from "@/components/ui";
 import { useActions, useCandidate, useCampaign, useSettings } from "@/lib/store";
+import { checkOutreachApproval } from "@/lib/rules";
+import { recordedCandidateLawfulBasis } from "@/lib/candidate-lawful-basis";
+import type { CandidateLawfulBasis } from "@/lib/types";
 import { OUTREACH_TONES, type OutreachMessage, type OutreachTone } from "@/lib/types";
 import {
   initialsFrom,
@@ -106,6 +109,20 @@ export function OutreachMessageCard({
   const [regenerating, setRegenerating] = React.useState(false);
   const [approving, setApproving] = React.useState(false);
   const [rejecting, setRejecting] = React.useState(false);
+  const [showBasisPrompt, setShowBasisPrompt] = React.useState(false);
+
+  const preflight = React.useMemo(() => {
+    if (!candidate || !campaign || !actionable) return null;
+    return checkOutreachApproval({
+      candidate,
+      message: { ...message, subject, body },
+      settings,
+      emailsSentToday: campaign.metrics.emailsSentToday,
+      linkedinSentToday: campaign.metrics.linkedinSentToday,
+    });
+  }, [candidate, campaign, actionable, message, subject, body, settings]);
+
+  const missingLawfulBasis = Boolean(candidate && !recordedCandidateLawfulBasis(candidate));
 
   async function handleToneChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const tone = e.target.value as OutreachTone;
@@ -134,15 +151,23 @@ export function OutreachMessageCard({
     const res = await a.approveOutreach(message.id);
     setApproving(false);
     if (!res.allowed) {
+      const lawfulBlocked = res.blockers.some((b) => /lawful basis/i.test(b));
       toast({
-        title: "Approval blocked",
+        title: "Approval held — human gate",
         description: res.blockers.join(" "),
         variant: "error",
       });
+      if (lawfulBlocked) setShowBasisPrompt(true);
       return;
     }
     if (res.dryRun) {
-      toast({ title: "Public demo only", description: res.warnings.join(" "), variant: "info" });
+      toast({
+        title: "Approved under dry-run",
+        description:
+          res.warnings.join(" ") ||
+          "Nothing was contacted. Dry-run keeps every approval as a rehearsal until you turn it off.",
+        variant: "success",
+      });
       return;
     }
     toast({
@@ -150,6 +175,21 @@ export function OutreachMessageCard({
       description: res.warnings.length
         ? res.warnings.join(" ")
         : "Goes live once the agent seat is connected and its sending domain is verified.",
+      variant: "success",
+    });
+  }
+
+  function handleRecordBasis(basis: CandidateLawfulBasis) {
+    if (!candidate) return;
+    const result = a.recordCandidateLawfulBasis(candidate.id, basis);
+    if (!result.ok) {
+      toast({ title: "Could not record lawful basis", description: result.error, variant: "error" });
+      return;
+    }
+    setShowBasisPrompt(false);
+    toast({
+      title: "Lawful basis recorded",
+      description: "You can Approve again — nothing sends without that second click.",
       variant: "success",
     });
   }
@@ -404,7 +444,7 @@ export function OutreachMessageCard({
             <div className="min-w-0 flex-1">
               <p className="font-semibold">
                 {message.dryRun
-                  ? "Approved / Queued for send"
+                  ? "Approved under dry-run — nothing contacted"
                   : approvedPendingSend
                     ? "Approved, ready to send"
                     : "Approved / Sent"}
@@ -412,7 +452,9 @@ export function OutreachMessageCard({
               <p className="mt-0.5 text-success/80">
                 {message.approvedBy ? `Approved by ${message.approvedBy}` : "Approved"}
                 {message.scheduledFor ? ` · ${formatTimeAgo(message.scheduledFor)}` : ""}
-                {message.dryRun ? " · Nothing sent live." : ""}
+                {message.dryRun
+                  ? " · Dry-run is on: this is a rehearsal queue, not a live send."
+                  : ""}
                 {approvedPendingSend ? " · Review done. Click Send to deliver." : ""}
               </p>
             </div>
@@ -433,6 +475,43 @@ export function OutreachMessageCard({
             {settings.rateLimits.followUpGapDays}d of silence
           </span>
         </div>
+
+        {/* Human approval gate — show blockers before the click so Approve never looks dead */}
+        {actionable && preflight && !preflight.allowed && (
+          <div className="space-y-2 rounded-2xl bg-warning-soft px-3.5 py-3 text-sm text-[hsl(32_90%_28%)] ring-1 ring-inset ring-warning/25">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="font-semibold">Held for human review</p>
+                <ul className="list-disc space-y-0.5 pl-4 text-[hsl(32_90%_28%)]/90">
+                  {preflight.blockers.map((b) => (
+                    <li key={b}>{b}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            {(missingLawfulBasis || showBasisPrompt) && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleRecordBasis("legitimate_interest")}
+                >
+                  Record legitimate interest
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => handleRecordBasis("consent")}
+                >
+                  Record consent
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
