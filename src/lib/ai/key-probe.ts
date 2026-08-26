@@ -19,6 +19,8 @@ export const LIVE_LLM_KEY_PROVIDERS = [
   "xAI",
   "Mistral",
   "Kimi (Moonshot)",
+  "DeepSeek",
+  "NVIDIA NIM",
 ] as const;
 
 export type LiveLlmKeyProvider = (typeof LIVE_LLM_KEY_PROVIDERS)[number];
@@ -34,10 +36,24 @@ const SLUG_FOR: Record<LiveLlmKeyProvider, AiProviderSlug> = {
   xAI: "xai",
   Mistral: "mistral",
   "Kimi (Moonshot)": "kimi",
+  DeepSeek: "deepseek",
+  "NVIDIA NIM": "nvidia",
 };
 
 function kimiBase(): string {
   return (process.env.KIMI_BASE_URL || "https://api.moonshot.ai/v1").replace(/\/+$/, "");
+}
+
+function deepseekBase(): string {
+  return (process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/+$/, "");
+}
+
+function nvidiaNimBase(): string {
+  return (
+    process.env.NVIDIA_NIM_BASE_URL ||
+    process.env.NIM_BASE_URL ||
+    "https://integrate.api.nvidia.com/v1"
+  ).replace(/\/+$/, "");
 }
 
 function modelsUrl(slug: AiProviderSlug): string {
@@ -54,6 +70,10 @@ function modelsUrl(slug: AiProviderSlug): string {
       return "https://api.mistral.ai/v1/models";
     case "kimi":
       return `${kimiBase()}/models`;
+    case "deepseek":
+      return `${deepseekBase()}/models`;
+    case "nvidia":
+      return `${nvidiaNimBase()}/models`;
   }
 }
 

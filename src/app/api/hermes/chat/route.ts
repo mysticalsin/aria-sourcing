@@ -82,12 +82,17 @@ const HermesChatSchema = z.object({
   hermesApiKeyId: z.string().uuid().optional(),
   /** Cloud provider to route through. "hermes" = existing self-hosted path. */
   provider: z
-    .enum(["hermes", "anthropic", "openai", "groq", "xai", "mistral", "kimi"])
+    .enum(["hermes", "anthropic", "openai", "groq", "xai", "mistral", "kimi", "deepseek", "nvidia"])
     .default("hermes"),
   /** ApiKey.id for the cloud provider — raw secret resolved server-side only. */
   apiKeyId: z.string().uuid().optional(),
-  // Reject path-traversal / injection in the model id; allow valid model slugs.
-  model: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/).default("hermes"),
+  // Reject path-traversal / injection in the model id; allow valid model slugs
+  // including NVIDIA NIM org/model ids (e.g. meta/llama-3.3-70b-instruct).
+  model: z
+    .string()
+    .regex(/^[a-zA-Z0-9][a-zA-Z0-9._\/-]{0,119}$/)
+    .refine((s) => !s.includes(".."), "Model id must not contain '..'")
+    .default("hermes"),
   /** Enabled MCP servers to expose to the model as tools (chat task only). The raw
    *  secret is resolved server-side from the vault, so the browser never holds it. */
   mcpServers: z

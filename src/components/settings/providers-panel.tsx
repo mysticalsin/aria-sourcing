@@ -51,6 +51,8 @@ const PROVIDER_COLOR: Record<LlmProviderKind, string> = {
   Groq: "bg-orange-100 text-orange-700",
   Mistral: "bg-rose-100 text-rose-700",
   Kimi: "bg-indigo-100 text-indigo-700",
+  DeepSeek: "bg-cyan-100 text-cyan-800",
+  "NVIDIA NIM": "bg-lime-100 text-lime-800",
   "Local/Custom": "bg-neutral-100 text-neutral-600",
 };
 
@@ -76,6 +78,13 @@ function kindFromVaultProvider(provider: ApiKeyProvider): LlmProviderKind | null
   return null;
 }
 
+/** Friendly labels in the Add-key dropdown (vault provider values stay canonical). */
+const VAULT_PROVIDER_LABEL: Partial<Record<ApiKeyProvider, string>> = {
+  "Kimi (Moonshot)": "Kimi (Moonshot)",
+  "NVIDIA NIM": "NVIDIA NIM",
+  DeepSeek: "DeepSeek",
+};
+
 /** Providers that support a live end-to-end probe (preferred in the add form). */
 const LIVE_VERIFY_PROVIDERS: ApiKeyProvider[] = [
   "Anthropic",
@@ -84,6 +93,8 @@ const LIVE_VERIFY_PROVIDERS: ApiKeyProvider[] = [
   "xAI",
   "Mistral",
   "Kimi (Moonshot)",
+  "DeepSeek",
+  "NVIDIA NIM",
 ];
 
 const LLM_VAULT_PROVIDERS: ApiKeyProvider[] = [
@@ -428,7 +439,9 @@ export function ProvidersPanel() {
                   onChange={(e) => setKeyProvider(e.target.value as ApiKeyProvider)}
                   options={LLM_VAULT_PROVIDERS.map((p) => ({
                     value: p,
-                    label: LIVE_VERIFY_PROVIDERS.includes(p) ? `${p} · live verify` : p,
+                    label: `${VAULT_PROVIDER_LABEL[p] ?? p}${
+                      LIVE_VERIFY_PROVIDERS.includes(p) ? " · live verify" : ""
+                    }`,
                   }))}
                 />
               </Field>
@@ -459,9 +472,13 @@ export function ProvidersPanel() {
                   placeholder={
                     keyProvider === "Anthropic"
                       ? "sk-ant-…"
-                      : keyProvider === "OpenAI"
-                        ? "sk-… or sk-proj-…"
-                        : "Paste secret key"
+                      : keyProvider === "OpenAI" || keyProvider === "DeepSeek"
+                        ? "sk-…"
+                        : keyProvider === "NVIDIA NIM"
+                          ? "nvapi-…"
+                          : keyProvider === "Kimi (Moonshot)"
+                            ? "sk-… (Moonshot / Kimi)"
+                            : "Paste secret key"
                   }
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !keyBusy) void handleSaveAndVerifyKey();

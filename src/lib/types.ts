@@ -1170,6 +1170,8 @@ export const API_KEY_PROVIDERS = [
   "OpenRouter",
   "Mistral",
   "Kimi (Moonshot)",
+  "DeepSeek",
+  "NVIDIA NIM",
   "Resend",
   "SendGrid",
   "Aria Agent",
@@ -1195,6 +1197,8 @@ export const LLM_PROVIDERS = [
   "Groq",
   "Mistral",
   "Kimi",
+  "DeepSeek",
+  "NVIDIA NIM",
   "Local/Custom",
 ] as const;
 export type LlmProviderKind = (typeof LLM_PROVIDERS)[number];

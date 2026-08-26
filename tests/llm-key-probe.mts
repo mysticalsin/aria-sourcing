@@ -13,6 +13,8 @@ function ok(name: string, cond: boolean) {
 ok("Anthropic is a live LLM key provider", isLiveLlmKeyProvider("Anthropic"));
 ok("OpenAI is a live LLM key provider", isLiveLlmKeyProvider("OpenAI"));
 ok("Kimi (Moonshot) is a live LLM key provider", isLiveLlmKeyProvider("Kimi (Moonshot)"));
+ok("DeepSeek is a live LLM key provider", isLiveLlmKeyProvider("DeepSeek"));
+ok("NVIDIA NIM is a live LLM key provider", isLiveLlmKeyProvider("NVIDIA NIM"));
 ok("Dust is not a live LLM key provider", !isLiveLlmKeyProvider("Dust"));
 ok("Apify is not an LLM key provider", !isLiveLlmKeyProvider("Apify"));
 
@@ -67,6 +69,37 @@ ok("Apify is not an LLM key provider", !isLiveLlmKeyProvider("Apify"));
     "Kimi probe hits Moonshot models endpoint",
     seen.some((u) => /api\.moonshot\.ai\/v1\/models/.test(u)),
   );
+}
+
+{
+  const seen: string[] = [];
+  const fetchImpl = async (input: RequestInfo | URL) => {
+    seen.push(String(input));
+    return new Response("{}", { status: 200 });
+  };
+  await probeLlmApiKey("DeepSeek", "sk-" + "d".repeat(30), fetchImpl as typeof fetch);
+  ok(
+    "DeepSeek probe hits api.deepseek.com/models",
+    seen.some((u) => /api\.deepseek\.com\/models/.test(u)),
+  );
+}
+
+{
+  const seen: string[] = [];
+  const fetchImpl = async (input: RequestInfo | URL) => {
+    seen.push(String(input));
+    return new Response("{}", { status: 200 });
+  };
+  await probeLlmApiKey("NVIDIA NIM", "nvapi-" + "e".repeat(30), fetchImpl as typeof fetch);
+  ok(
+    "NVIDIA NIM probe hits integrate.api.nvidia.com/v1/models",
+    seen.some((u) => /integrate\.api\.nvidia\.com\/v1\/models/.test(u)),
+  );
+}
+
+{
+  const r = await testLlmApiKey("NVIDIA NIM", "sk-not-nvidia");
+  ok("malformed NVIDIA NIM key rejected before network", !r.valid && /format/i.test(r.detail));
 }
 
 console.log(`RESULT llm-key-probe: ${pass} passed, ${fail} failed`);

@@ -24,10 +24,16 @@ const KEY_VALUE_HINT: Partial<Record<ApiKeyProvider, string>> = {
 };
 const KEY_VALUE_PLACEHOLDER: Partial<Record<ApiKeyProvider, string>> = {
   Apify: "apify_api_…  (stored server-side, never shown again)",
+  DeepSeek: "sk-…  (encrypted; never shown again)",
+  "NVIDIA NIM": "nvapi-…  (encrypted; never shown again)",
+  "Kimi (Moonshot)": "sk-…  (Moonshot / Kimi; encrypted)",
 };
 
 const KEY_PROVIDER_LABELS: Partial<Record<ApiKeyProvider, string>> = {
   Apify: "LinkedIn profile search",
+  "Kimi (Moonshot)": "Kimi (Moonshot)",
+  "NVIDIA NIM": "NVIDIA NIM",
+  DeepSeek: "DeepSeek",
 };
 
 export function ApiKeysPanel() {
