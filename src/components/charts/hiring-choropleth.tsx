@@ -8,6 +8,7 @@ import { feature } from "topojson-client";
 import type { Feature, FeatureCollection, Geometry } from "geojson";
 import type { Topology } from "topojson-specification";
 import { motion } from "framer-motion";
+import { geoMercator } from "d3-geo";
 import topology from "world-atlas/countries-110m.json";
 import {
   choroplethFill,
@@ -25,6 +26,27 @@ const world = feature(
   topology as unknown as Topology,
   (topology as { objects: { countries: unknown } }).objects.countries as never,
 ) as unknown as FeatureCollection<Geometry, { name: string }>;
+
+/** Fit Mercator so every country is inside the SVG viewport (with padding). */
+const MAP_PADDING = 10;
+
+function worldMercatorFit(
+  width: number,
+  height: number,
+): { scale: number; translate: [number, number] } {
+  const projection = geoMercator().fitExtent(
+    [
+      [MAP_PADDING, MAP_PADDING],
+      [Math.max(MAP_PADDING + 1, width - MAP_PADDING), Math.max(MAP_PADDING + 1, height - MAP_PADDING)],
+    ],
+    world,
+  );
+  const translate = projection.translate();
+  return {
+    scale: projection.scale() ?? width / 6,
+    translate: [translate[0] ?? width / 2, translate[1] ?? height / 2],
+  };
+}
 
 interface TooltipState {
   x: number;
@@ -55,14 +77,19 @@ function MapSvg({
 
   if (width < 10 || height < 10) return null;
 
+  const { scale, translate } = React.useMemo(
+    () => worldMercatorFit(width, height),
+    [width, height],
+  );
+
   return (
     <div className="relative h-full w-full">
       <svg width={width} height={height} role="img" aria-label="Hiring geography choropleth">
         <rect width={width} height={height} fill="hsl(var(--paper) / 0.4)" rx={12} />
         <Mercator<CountryFeature>
           data={world.features as CountryFeature[]}
-          scale={width / 6.2}
-          translate={[width / 2, height / 1.65]}
+          scale={scale}
+          translate={translate}
         >
           {(mercator) => (
             <g>

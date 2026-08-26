@@ -472,7 +472,7 @@ export default function ExecPage() {
           <motion.div variants={fadeUp} className="grid gap-6 xl:grid-cols-3">
             <Card className="xl:col-span-2">
               <CardContent>
-                <HiringChoropleth model={geography} height={380} />
+                <HiringChoropleth model={geography} height={420} />
               </CardContent>
             </Card>
             <Card>
