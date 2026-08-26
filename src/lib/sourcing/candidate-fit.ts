@@ -16,7 +16,11 @@ export function roleTitleMatchAliases(roleTitle: string): string[] {
       "System Architect",
       "Systems Architect",
       "Systems Engineer",
+      "System Design Engineer",
+      "Systems Design Engineer",
       "Product Development Engineer",
+      "Senior System Designer",
+      "Senior Systems Designer",
     );
   }
   if (/murex/i.test(t)) {

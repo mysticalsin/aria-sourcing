@@ -599,7 +599,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
           ? linkedInQueryRaw
           : keywordFallback;
       const deepLinkedInQueries = linkedInFirst
-        ? buildLinkedInQueryVariants(initial.value.campaign.jobAnalysis, 8)
+        ? buildLinkedInQueryVariants(initial.value.campaign.jobAnalysis, 12)
         : [];
       const queries = frameworkAuthorization
         ? [frameworkAuthorization.query]
@@ -607,7 +607,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
           ? (deepLinkedInQueries.length > 0
               ? deepLinkedInQueries
               : [linkedInQuery || keywordFallback].filter(Boolean)
-            ).slice(0, 8)
+            ).slice(0, 12)
           : [
               ...promotedLessons
                 .filter((lesson) => lesson.platform === "GitHub")
@@ -627,7 +627,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
       const searchBudget = Math.max(count * 4, 20);
       for (const query of queries) {
         if (runner.getFound().length >= count) break;
-        const remaining = Math.min(10, Math.max(count, searchBudget - runner.getFound().length));
+        const remaining = Math.min(15, Math.max(count, searchBudget - runner.getFound().length));
         const result = await runner.run(
           "search_candidates",
           { platform: searchPlatform, query, count: remaining },

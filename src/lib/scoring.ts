@@ -332,11 +332,18 @@ function classifyDimensions(candidate: Candidate, jd: JobAnalysis): Record<keyof
     },
     location: {
       ...location,
-      state: candidate.location.trim() || candidate.timezone.trim() ? "scored" : "unknown",
+      state:
+        candidate.location.trim() || candidate.timezone.trim()
+          ? "scored"
+          : liveSparse
+            ? "not_applicable"
+            : "unknown",
       rationale:
         candidate.location.trim() || candidate.timezone.trim()
           ? location.rationale
-          : UNKNOWN_RATIONALE,
+          : liveSparse
+            ? "Not available from this source."
+            : UNKNOWN_RATIONALE,
     },
     activity: {
       ...activity,

@@ -110,7 +110,7 @@ export function makeSourcingToolRunner(
 
     const platform = String(args.platform ?? "").trim() as SourcePlatform;
     const query = String(args.query ?? "").trim().slice(0, 256);
-    const count = Math.min(Math.max(Math.trunc(Number(args.count)) || 5, 1), 10);
+    const count = Math.min(Math.max(Math.trunc(Number(args.count)) || 5, 1), 15);
     if (!platform) return { ok: false, error: "Missing platform." };
     if (!query) return { ok: false, error: "Missing query." };
     const policy = validateSourcingQuery(platform, query, campaign);

@@ -754,8 +754,13 @@ export function roleTitleSearchAliases(title: string): string[] {
       "System Architect",
       "Systems Architect",
       "Systems Engineer",
+      "System Design Engineer",
+      "Systems Design Engineer",
       "Product Development Engineer",
       "R&D System Designer",
+      "Medical Device System Designer",
+      "Senior System Designer",
+      "Senior Systems Designer",
     ]) {
       aliases.add(a);
       aliases.add(`"${a}"`);
@@ -767,7 +772,7 @@ export function roleTitleSearchAliases(title: string): string[] {
   return [...aliases];
 }
 
-export function buildLinkedInQueryVariants(jd: JobAnalysis, max = 8): string[] {
+export function buildLinkedInQueryVariants(jd: JobAnalysis, max = 12): string[] {
   const title = jd.title.trim();
   if (!title) return [];
   const region = jd.regions.find((r) => r.trim() && !NON_LOCATION_REGIONS.has(r))?.trim() ?? "";
@@ -786,15 +791,23 @@ export function buildLinkedInQueryVariants(jd: JobAnalysis, max = 8): string[] {
   });
 
   const titleAliases = roleTitleSearchAliases(title);
+  const geos = Array.from(
+    new Set(
+      [region, region && /montreal/i.test(region) ? "Quebec" : "", region ? "Canada" : "", "Montreal"]
+        .filter(Boolean)
+        .map((g) => String(g)),
+    ),
+  );
   const variants: string[] = [buildLinkedInKeywords(jd)];
-  for (const alias of titleAliases.slice(0, 4)) {
-    variants.push([seniority, alias, region].filter(Boolean).join(" "));
-    variants.push([alias, skills[0], region].filter(Boolean).join(" "));
-    variants.push([alias, industry || "medical device", region].filter(Boolean).join(" "));
+  for (const alias of titleAliases.slice(0, 6)) {
+    for (const geo of geos.slice(0, 2)) {
+      variants.push([seniority, alias, geo].filter(Boolean).join(" "));
+      variants.push([alias, skills[0], geo].filter(Boolean).join(" "));
+    }
+    variants.push([alias, industry || "medical device", geos[0] || region].filter(Boolean).join(" "));
   }
-  if (skills[1]) variants.push([titleAliases[0], skills[1], region || industry].filter(Boolean).join(" "));
-  if (skills[2]) variants.push([titleAliases[0], skills[2], region].filter(Boolean).join(" "));
-  variants.push([titleAliases[0], "Montreal", "Canada", skills[0]].filter(Boolean).join(" "));
+  if (skills[1]) variants.push([titleAliases[0], skills[1], geos[0] || region || industry].filter(Boolean).join(" "));
+  if (skills[2]) variants.push([titleAliases[0], skills[2], geos[0] || region].filter(Boolean).join(" "));
 
   return Array.from(
     new Set(

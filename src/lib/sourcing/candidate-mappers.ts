@@ -227,7 +227,14 @@ export function mapWebSearchCandidates(
       jd.regions.find((region) => {
         const r = region.toLowerCase().trim();
         return r.length > 1 && haystack.includes(r);
-      }) ?? "";
+      }) ??
+      (/montr[eé]al/i.test(haystack)
+        ? "Montreal"
+        : /\bquebec\b|\bqu[eé]bec\b/i.test(haystack)
+          ? "Quebec"
+          : /\bcanada\b/i.test(haystack)
+            ? "Canada"
+            : "");
     const industryExperience = inferIndustryFromText(haystack, jd.industryExperience);
     return {
       id: genId("cand"),
