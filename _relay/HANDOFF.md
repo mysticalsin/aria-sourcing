@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 96
 agent: cursor-cloud
 updated: 2026-08-26 UTC
-status: fleet-replies-apple-ux
+status: e2e-verified-exec-fix
 ---
 
 # Handoff - Shift 96
@@ -18,10 +18,24 @@ status: fleet-replies-apple-ux
 - Prior: Integrations LinkedIn stack, OIDC, HeyReach MCP, exec map, STATE_VERSION 18
 - Tests green: `tsc`, `integrations-honesty`, `linkedin-heyreach-parity`, `whatsapp-review-durability`
 
-## Done this shift
+## Done this shift (continued)
 
-- Fleet + Replies Apple-grade UX pass (shared connection primitives)
-- Screenshots: `fleet-apple-ux.webp`, `replies-apple-ux.webp`
+- Full E2E verification: browser + route smoke + npm test
+- **Fixed** /exec crash (MapSvg hooks order in hiring-choropleth.tsx)
+- 7 pre-existing failures remain in `store-sourcing-actions.mts` (Apollo/GitHub sourcing harness)
+
+## E2E verification (2026-08-26)
+
+| Area | Status | Notes |
+|------|--------|-------|
+| Routes /, /fleet, /replies, /settings, /exec | ✅ 200 | curl -L |
+| Integrations UX | ✅ | Stack, readiness, health strip |
+| Fleet UX | ✅ | Roster stack, seat cards, add modal |
+| Replies UX | ✅ | Inbox shell, filters, cards |
+| Exec world map | ✅ | Fixed hooks bug; map renders |
+| npm test | ⚠️ | 7 fail in store-sourcing-actions only |
+| WhatsApp review API | ⚠️ 503 | Expected without enforcement backend |
+| Databricks config API | ⚠️ 408 | Expected without Databricks env |
 
 ## Blockers
 
