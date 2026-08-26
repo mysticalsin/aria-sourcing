@@ -1,46 +1,43 @@
 ---
 project: MSourcing / ARIA
-shift: 90
+shift: 91
 agent: cursor-cloud
 updated: 2026-08-26 UTC
-status: settings-ai-key-ux
+status: llm-providers-deepseek-nim
 ---
 
-# Handoff - Shift 90
+# Handoff - Shift 91
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #29 · commit `591a813`
-- Settings → **AI & Models**: primary **Add an API key** → encrypt → clear input → `••••last4` → live probe in same `POST /api/keys` → auto-wire provider on success
-- Local proof: fake Anthropic key → toast "Encrypted, but live verification failed" with HTTP 401 from Anthropic; input cleared; red **invalid** badge
-- Artifacts: `/opt/cursor/artifacts/settings-ai-add-key-card.png`, `settings-ai-encrypt-verify-result.png`
-- Fly deploy for `591a813` reported OK, but `/api/ready` + machine `ARIA_RELEASE_SHA` still showed older `ba88302` (release-identity lag) — re-check / force image
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #29 · commit `ad553d9`
+- Settings → AI Add-key vault now includes **DeepSeek**, **NVIDIA NIM**, and **Kimi (Moonshot)** with live verify
+- LLM provider kinds + cloud routing (`deepseek`, `nvidia` slugs) wired in `provider.ts` / `key-probe.ts`
+- Defaults: DeepSeek `deepseek-chat`; NVIDIA NIM `meta/llama-3.3-70b-instruct` (override via SavedModel / `NVIDIA_NIM_BASE_URL`)
 
 ## Done this shift
 
-- Providers panel rewrite + Access & Keys align
-- `POST /api/keys` encrypt-then-verify (LLM + sourcing probes)
-- Store/UI consume save-time `valid`/`detail`
-- tsc + llm-key-probe green; local E2E screenshot
+- Added DeepSeek + NVIDIA NIM to `API_KEY_PROVIDERS` / `LLM_PROVIDERS`
+- Live probes + format (`sk-…` / `nvapi-…`); hermes chat accepts new slugs + org/model ids
+- Tests: llm-key-probe 16 pass; admin-config 46 pass; tsc green
 
 ## Blockers
 
-- Confirm Fly actually serves `591a813` (ready SHA still lagging)
+- Fly may still lag release identity — redeploy for live dropdown
 
 ## Next steps
 
-1. Verify live https://aria-mantu-app.fly.dev/settings?tab=ai shows Add an API key card
-2. Admin: paste real Anthropic/OpenAI key → verified + provider wired
-3. Optional: fix release-identity / ARIA_RELEASE_SHA drift on Fly
+1. Redeploy Fly so live Settings → AI shows DeepSeek / NVIDIA NIM / Kimi
+2. Optional: screenshot Add-key provider dropdown
 
 ## Decisions made (don't relitigate)
 
-- Only auto-wire LLM provider when verify status is `valid`
-- Google/OpenRouter format-check only; Anthropic/OpenAI/Groq/xAI/Mistral/Kimi live-verify
+- NVIDIA NIM cloud base `https://integrate.api.nvidia.com/v1` (override with `NVIDIA_NIM_BASE_URL` / `NIM_BASE_URL` for self-hosted)
+- DeepSeek base `https://api.deepseek.com` (override `DEEPSEEK_BASE_URL`)
+- Kimi stays vault label `Kimi (Moonshot)` mapped from LLM kind `Kimi`
 - Do not commit secrets to `_relay/`
 
 ## Watch out
 
-- Failed verify still stores encrypted key as `invalid` — Delete then re-add
-- Vault use requires `status === "valid"`
-- Probe ≠ full recruitment E2E (provider enabled + model picker still needed)
+- NIM model ids use `org/model` — hermes model regex now allows `/`
+- NVIDIA format expects `nvapi-…` keys from build.nvidia.com
