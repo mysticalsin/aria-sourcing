@@ -41,6 +41,16 @@ ok(
     "System Designer",
   ),
 );
+ok(
+  "UX Design Systems title does not match System Designer",
+  !candidateMatchesRoleTitle(
+    {
+      currentTitle: "Senior UX Designer | Design Systems Specialist | Product Design Leader",
+      recentActivity: "Design systems in Montreal.",
+    },
+    "System Designer",
+  ),
+);
 
 const systemDesigner = parseEmailAndJD({
   email: `This need is now ACTIVE: System Designer

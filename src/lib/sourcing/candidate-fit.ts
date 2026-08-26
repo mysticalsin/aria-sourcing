@@ -44,20 +44,20 @@ export function candidateMatchesRoleTitle(
   roleTitle: string,
 ): boolean {
   const hay = `${candidate.currentTitle} ${candidate.recentActivity}`.toLowerCase();
-  const aliases = roleTitleMatchAliases(roleTitle);
-  for (let i = 0; i < aliases.length; i++) {
-    const alias = aliases[i]!;
+  for (const alias of roleTitleMatchAliases(roleTitle)) {
     const tokens = alias
       .toLowerCase()
       .split(/[^a-z0-9+.#]+/i)
       .map((t) => t.trim())
       .filter((t) => t.length > 2 && !TITLE_STOP.has(t));
     if (tokens.length === 0) return true;
-    const hits = titleTokenHits(hay, alias);
-    // Primary title: half the tokens. Aliases must match in full so
-    // "Quality Systems Manager" does not pass via a lone "systems" hit.
-    const needed = i === 0 ? Math.max(1, Math.ceil(tokens.length * 0.5)) : tokens.length;
-    if (hits >= needed) return true;
+    // Contiguous phrase required for multi-token titles so
+    // "Design Systems" never satisfies "System Designer" / "Systems Designer".
+    const phrase = tokens
+      .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join("\\s+");
+    if (new RegExp(`(?:^|[^a-z0-9])${phrase}(?:$|[^a-z0-9])`, "i").test(hay)) return true;
+    if (tokens.length === 1 && titleTokenHits(hay, alias) >= 1) return true;
   }
   return false;
 }
