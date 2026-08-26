@@ -144,10 +144,10 @@ const webhookRoute = existsSync("src/app/api/webhooks/email-inbound/route.ts")
   ? readFileSync("src/app/api/webhooks/email-inbound/route.ts", "utf8")
   : "";
 ok(
-  "email-inbound webhook enqueues inbound_classify for new replies (event-driven)",
-  /decideInboundClassifyEnqueue/i.test(webhookRoute) &&
+  "email-inbound webhook routes replies and hiring needs (event-driven, no polling)",
+  /routeInboundEmail/i.test(webhookRoute) &&
     /enqueue_aria_job/i.test(webhookRoute) &&
-    /inbound_classify|decision\.kind/i.test(webhookRoute),
+    /requisition_parse|inbound_classify|jobDecision\.kind/i.test(webhookRoute),
 );
 ok(
   "email-inbound webhook skips classify enqueue on duplicate redelivery",

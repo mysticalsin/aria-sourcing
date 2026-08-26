@@ -325,6 +325,20 @@ export function OutreachMessageCard({
               <ChannelIcon className="h-3 w-3" aria-hidden /> {message.channel}
             </Badge>
             <Badge tone={toneForOutreachStatus(message.status)}>{message.status}</Badge>
+            {message.qualityStatus ? (
+              <Badge
+                tone={
+                  message.qualityStatus === "ready"
+                    ? "success"
+                    : message.qualityStatus === "needs_review"
+                      ? "warning"
+                      : "danger"
+                }
+                size="sm"
+              >
+                Quality {message.qualityScore ?? "—"}/100
+              </Badge>
+            ) : null}
             {(actionable || pendingManual) && (
               <Badge tone={agingTone(message.createdAt)} size="sm">
                 <Clock className="h-3 w-3" aria-hidden /> {waitingLabel(message.createdAt)}

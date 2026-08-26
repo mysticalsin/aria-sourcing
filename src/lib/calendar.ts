@@ -112,6 +112,8 @@ export async function createGraphCalendarEvent(
       emailAddress: { address },
       type: "required",
     })),
+    isOnlineMeeting: true,
+    onlineMeetingProvider: "teamsForBusiness",
   };
   try {
     const res = await fetch("https://graph.microsoft.com/v1.0/me/events", {
@@ -128,12 +130,16 @@ export async function createGraphCalendarEvent(
         detail: `Graph calendar ${res.status}`,
       };
     }
-    const event = (await res.json().catch(() => ({}))) as { id?: string; webLink?: string };
+    const event = (await res.json().catch(() => ({}))) as {
+      id?: string;
+      webLink?: string;
+      onlineMeeting?: { joinUrl?: string };
+    };
     return {
       ok: true,
       provider: "Microsoft Graph",
       eventId: event.id,
-      link: event.webLink,
+      link: event.onlineMeeting?.joinUrl ?? event.webLink,
       deliveryState: "accepted",
       detail: "Event created.",
     };

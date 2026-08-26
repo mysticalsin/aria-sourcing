@@ -114,14 +114,14 @@ const STEP_RING: Record<StepState, string> = {
 export function ConnectionStep({
   step,
   title,
-  subtitle,
+  subtitle = "",
   state,
   children,
   advanced,
 }: {
-  step: 1 | 2 | 3;
+  step: 1 | 2 | 3 | 4;
   title: string;
-  subtitle: string;
+  subtitle?: string;
   state: StepState;
   children: React.ReactNode;
   advanced?: React.ReactNode;
@@ -144,7 +144,9 @@ export function ConnectionStep({
         <div className="min-w-0 flex-1 space-y-4">
           <div>
             <p className="text-base font-semibold tracking-tight text-ink">{title}</p>
-            <p className="mt-1 text-sm leading-relaxed text-muted">{subtitle}</p>
+            {subtitle ? (
+              <p className="mt-1 text-sm leading-relaxed text-muted">{subtitle}</p>
+            ) : null}
           </div>
           <AnimatePresence mode="wait">
             <motion.div

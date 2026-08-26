@@ -625,6 +625,11 @@ export interface OutreachMessage {
   /** Carried over from a ClassifiedReply when this draft was created as a reply
    *  (see draftReplyResponse in store.ts), so a live send can thread correctly. */
   inboxThreadId?: string;
+  /** Multi-agent quality pipeline verdict (empathy + compliance + human-likeness). */
+  qualityStatus?: "ready" | "needs_review" | "blocked";
+  qualityScore?: number;
+  /** Mantu-branded HTML wrapper for Email channel (optional). */
+  htmlBody?: string;
 }
 
 /* ---- Replies ------------------------------------------------------------- */

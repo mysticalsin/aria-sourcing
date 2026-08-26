@@ -4,7 +4,7 @@ import { z } from "zod";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import { readBoundedBody } from "@/lib/api/validate";
 import { safeLog } from "@/lib/log-redact";
-import { decideInboundClassifyEnqueue } from "@/lib/inbound-reply-trigger";
+import { routeInboundEmail } from "@/lib/inbound-email-router";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +29,7 @@ const PayloadSchema = z.object({
   mailbox: z.string().min(3).max(320),
   providerId: z.string().min(1).max(512),
   from: z.string().min(3).max(320),
+  subject: z.string().max(998).default(""),
   body: z.string().max(1_000_000).default(""),
   inReplyTo: z.string().max(998).optional(),
 });
@@ -91,35 +92,64 @@ export async function POST(req: NextRequest) {
   });
   const corr = corrData as { correlated?: boolean; reason?: string } | null;
 
-  const decision = decideInboundClassifyEnqueue(rec);
-  let classifyQueued = false;
-  let classifyStatus: string | undefined;
-  if (decision.enqueue) {
+  const routed = routeInboundEmail({
+    record: rec,
+    from: ev.from,
+    subject: ev.subject,
+    body: ev.body,
+    mailbox: ev.mailbox,
+    inReplyTo: ev.inReplyTo,
+    correlated: corr?.correlated,
+  });
+
+  if (routed.route === "none") {
+    return NextResponse.json({
+      ok: true,
+      inboundId: rec.inbound_id,
+      duplicate: rec.duplicate === true,
+      correlated: corr?.correlated ?? false,
+      reason: routed.reason,
+      jobQueued: false,
+    });
+  }
+
+  const jobDecision =
+    routed.route === "hiring_need" ? routed.decision : routed.decision;
+
+  let jobQueued = false;
+  let jobKind: string | undefined;
+  let jobStatus: string | undefined;
+
+  if (jobDecision.enqueue) {
     const { data: enqData, error: enqErr } = await supabase.rpc("enqueue_aria_job", {
       p_workspace_id: route.workspace_id,
-      p_kind: decision.kind,
-      p_idempotency_key: decision.idempotencyKey,
-      p_payload: decision.payload,
+      p_kind: jobDecision.kind,
+      p_idempotency_key: jobDecision.idempotencyKey,
+      p_payload: jobDecision.payload,
       p_run_at: new Date().toISOString(),
-      p_priority: decision.priority,
+      p_priority: jobDecision.priority,
     });
     const enq = enqData as { status?: string; id?: string } | null;
     if (enqErr) {
-      // Persist succeeded — ask the adapter to retry so we eventually enqueue.
-      safeLog("email inbound webhook: classify enqueue failed", { message: enqErr.message, code: enqErr.code });
+      safeLog("email inbound webhook: job enqueue failed", {
+        message: enqErr.message,
+        code: enqErr.code,
+        kind: jobDecision.kind,
+      });
       return NextResponse.json(
         {
           ok: false,
-          reason: "Classify enqueue failed.",
+          reason: "Job enqueue failed.",
           inboundId: rec.inbound_id,
           correlated: corr?.correlated ?? false,
+          route: routed.route,
         },
         { status: 503 },
       );
     }
-    classifyStatus = typeof enq?.status === "string" ? enq.status : "unknown";
-    classifyQueued = classifyStatus === "enqueued" || classifyStatus === "replay";
-    // control_blocked / invalid_request: ack the webhook (mail is stored); ops flips switchboard later.
+    jobKind = jobDecision.kind;
+    jobStatus = typeof enq?.status === "string" ? enq.status : "unknown";
+    jobQueued = jobStatus === "enqueued" || jobStatus === "replay";
   }
 
   return NextResponse.json({
@@ -128,9 +158,12 @@ export async function POST(req: NextRequest) {
     duplicate: rec.duplicate === true,
     correlated: corr?.correlated ?? false,
     reason: corr?.reason,
-    classifyQueued,
-    classifyStatus:
-      classifyStatus ??
-      (decision.enqueue ? undefined : decision.reason),
+    route: routed.route,
+    jobKind,
+    jobQueued,
+    jobStatus,
+    // Back-compat for reply classify consumers
+    classifyQueued: routed.route === "reply_classify" && jobQueued,
+    classifyStatus: routed.route === "reply_classify" ? jobStatus : undefined,
   });
 }

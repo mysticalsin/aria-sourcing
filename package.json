@@ -52,6 +52,8 @@
     "test:authority-regression": "node scripts/run-test-manifest.mjs --group authority-regression"
   },
   "dependencies": {
+    "@langchain/core": "^0.3.80",
+    "@langchain/langgraph": "^0.2.74",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "@supabase/ssr": "^0.5.2",

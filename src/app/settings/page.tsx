@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { IntegrationCard } from "@/components/settings/integration-card";
 import { EmailConnectionsPanel } from "@/components/settings/email-connections-panel";
 import { LinkedInOutreachStack } from "@/components/settings/linkedin-outreach-stack";
+import { Microsoft365Stack } from "@/components/settings/microsoft365-stack";
 import { IntegrationsHealthStrip } from "@/components/settings/integration-connection-primitives";
 import { CompliancePanel } from "@/components/settings/compliance-panel";
 import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
@@ -633,6 +634,7 @@ export default function SettingsPage() {
             title="Integrations"
             description="Real connections only: email OAuth, LinkedIn identity + HeyReach outreach stack, then Apify and the rest. No fake skeletons."
           >
+            <Microsoft365Stack />
             <EmailConnectionsPanel />
             <LinkedInOutreachStack />
             <IntegrationsHealthStrip

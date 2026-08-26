@@ -1,6 +1,7 @@
 import { DEFAULT_SCORING_WEIGHTS, scoreCandidate } from "./scoring";
 import { dedupeCandidates } from "./rules";
 import { humanizeText } from "./humanizer";
+import { mantuOutreachVoice, mantuEmailHtmlWrapper } from "./mantu-brand";
 import { roleProfile } from "./roles";
 import type { SourceResult } from "./sourcing/candidate-mappers";
 import { detectLanguage, outreachStrings, REPLY_LEXICON } from "./i18n";
@@ -1046,6 +1047,8 @@ export function generateOutreach(
   // Compose in the need's language (or the requested one); English is the fallback.
   const lang = language ?? jd.language ?? "en";
   const L = outreachStrings(lang);
+  const mantuVoice = mantuOutreachVoice(voice?.signature);
+  const effectiveVoice = voice?.persona?.trim() ? voice : mantuVoice;
   const greeting = topSkill
     ? L.greeting(firstName, topSkill, candidate.currentCompany)
     : L.salutation(firstName);
@@ -1065,7 +1068,7 @@ export function generateOutreach(
     sequenceStep > 1 ? L.ctaFollow : L.cta,
     // No auto-appended footer: a recruiter's own sign-off is added only when set;
     // no default "Sent by Aria" line and no opt-out boilerplate.
-    ...(voice?.signature && voice.signature.trim() ? ["", voice.signature.trim()] : []),
+    ...(effectiveVoice?.signature && effectiveVoice.signature.trim() ? ["", effectiveVoice.signature.trim()] : []),
   ].join("\n");
 
   // WhatsApp / SMS are short-form: one tight message, no long role/why blocks and no
@@ -1073,7 +1076,7 @@ export function generateOutreach(
   const phoneBody = [
     greeting,
     sequenceStep > 1 ? L.ctaFollow : L.cta,
-    ...(voice?.signature && voice.signature.trim() ? [voice.signature.trim()] : []),
+    ...(effectiveVoice?.signature && effectiveVoice.signature.trim() ? [effectiveVoice.signature.trim()] : []),
   ]
     .filter(Boolean)
     .join(" ");

@@ -177,6 +177,8 @@ import {
 } from "./skills";
 import { stageRank, withStage } from "./metrics";
 import { humanizeText } from "./humanizer";
+import { validateOutreachQuality } from "./outreach-quality-pipeline";
+import { mantuEmailHtmlWrapper, mantuOutreachVoice } from "./mantu-brand";
 import { parseCommand, campaignToAriaContext, type AriaPlan } from "./aria-command";
 import { recordOutreachApproval, revokeOutreachApproval } from "./outreach-approval";
 import { can } from "./rbac";
@@ -1939,7 +1941,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const resolvedChannel = channel ?? preferredOutreachChannel(candidate);
       const finalTone = tone ?? effectiveTone(s.skills);
       const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
-      const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
+      const mantuVoice = mantuOutreachVoice(seat?.signature);
+      const voice = seat
+        ? { persona: seat.persona || mantuVoice.persona, signature: seat.signature || mantuVoice.signature }
+        : mantuVoice;
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
 
       // Mock is the canonical fallback (and the source of personalization evidence).
@@ -2028,15 +2033,42 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!workspaceEffectAllowed()) return null;
+
+      const quality = validateOutreachQuality({
+        subject: gen.subject,
+        body: gen.body,
+        channel: resolvedChannel,
+      });
+      gen = {
+        ...gen,
+        subject: quality.text.subject,
+        body: quality.text.body,
+      };
+
       const msg = newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1);
+      if (quality.status === "blocked") {
+        msg.status = "Needs Approval";
+        msg.qualityStatus = "blocked";
+      } else {
+        msg.qualityStatus = quality.status;
+      }
+      msg.qualityScore = quality.aggregateScore;
+      if (resolvedChannel === "Email") {
+        msg.htmlBody = mantuEmailHtmlWrapper(gen.body);
+      }
+
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
+        const qualityNote =
+          quality.status === "ready"
+            ? `Quality ${quality.aggregateScore}/100.`
+            : `Quality ${quality.status} (${quality.aggregateScore}/100): ${quality.stages.flatMap((st) => st.reasons).join(", ") || "review"}.`;
         return withActivity(
           next,
           makeActivity({
             type: "outreach",
             title: `Outreach drafted: ${candidate.name}`,
-            notes: `${finalTone} ${channel} message ${live ? "drafted by Aria (live)" : "generated"} with ${gen.personalizationEvidence.length} personalization points.`,
+            notes: `${finalTone} ${resolvedChannel} message ${live ? "drafted by Aria (live)" : "generated"} with ${gen.personalizationEvidence.length} personalization points. ${qualityNote}`,
             outcome: msg.status,
             campaignId: campaign.id,
             linkedEntityType: "candidate",

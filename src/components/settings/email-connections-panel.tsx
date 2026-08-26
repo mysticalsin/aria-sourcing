@@ -99,6 +99,8 @@ function ReadinessFromProviders(providers: ProviderReadiness): ReadinessItem[] {
   ];
 }
 
+export const EMAIL_CONNECTIONS_PANEL_ID = "email-connections-panel";
+
 export function EmailConnectionsPanel() {
   const actions = useActions();
   const role = useRole();
@@ -241,7 +243,7 @@ export function EmailConnectionsPanel() {
   const connections = data?.connections ?? [];
 
   return (
-    <Card className="overflow-hidden border-line/80 bg-surface shadow-sm">
+    <Card id={EMAIL_CONNECTIONS_PANEL_ID} className="overflow-hidden border-line/80 bg-surface shadow-sm">
       <CardContent className="space-y-5 p-6 sm:p-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 max-w-2xl">
