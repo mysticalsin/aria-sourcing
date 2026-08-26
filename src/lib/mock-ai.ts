@@ -306,15 +306,16 @@ export function parseMantuNeed(text: string): ParsedIntake {
 
   const intent: IntakeIntent = urgency === "Critical" ? "Urgent Hire" : "New Role";
 
-  // Skills — the explicit "Skills:" line is authoritative; augment from bullets.
+  // Skills — explicit "Skills:" line is authoritative; augment from profile block + dictionary.
   const skillsLine = field("Skills");
   const lineSkills = skillsLine
     ? skillsLine.split(/[,;]/).map((s) => s.trim()).filter(Boolean)
     : [];
+  const profileSkills = extractProfileDescriptionSkills(text);
   const dictSkills = SKILL_DICTIONARY.filter((s) =>
     new RegExp(`(^|[^a-z])${escapeRegExp(s)}([^a-z]|$)`, "i").test(text),
   );
-  const requiredSkills = Array.from(new Set([...lineSkills, ...dictSkills])).slice(0, 8);
+  const requiredSkills = Array.from(new Set([...lineSkills, ...profileSkills, ...dictSkills])).slice(0, 8);
 
   const minYearsExperience = extractMinYearsExperience(text);
 
@@ -338,11 +339,13 @@ export function parseMantuNeed(text: string): ParsedIntake {
 
   const industryExperience = /financial markets|bonds|trading|finance|murex|pricing/i.test(text)
     ? ["Fintech"]
-    : [];
+    : /medical device|pharma|healthcare|fda|iso 13485/i.test(text)
+      ? ["Healthtech"]
+      : [];
 
   const jobAnalysis: JobAnalysis = {
     title,
-    department: typeRaw,
+    department: client.replace(/\s+Ltd\.?$/i, "").trim() || typeRaw,
     seniority,
     employmentType: /consulting|contract|contractor|freelance/i.test(typeRaw)
       ? "Contract"
@@ -692,6 +695,50 @@ Aria Sourcing`;
 // good query. Only apply the qualifier for a region that's an actual place.
 const NON_LOCATION_REGIONS = new Set(["EU", "APAC", "LATAM", "Remote", "Global"]);
 
+/** Extract role-relevant phrases from Mantu "Profile description:" blocks. */
+function extractProfileDescriptionSkills(text: string): string[] {
+  const block =
+    text.match(/profile description\s*:\s*([\s\S]*?)(?:\n\s*(?:skills|key required|rate)\s*:|\n\s*$)/i)?.[1] ??
+    "";
+  if (!block.trim()) return [];
+  const found: string[] = [];
+  const patterns: [RegExp, string][] = [
+    [/system design(?:ing)?/i, "system design"],
+    [/product development/i, "product development"],
+    [/medical device/i, "medical device"],
+    [/validation engineer/i, "validation engineering"],
+    [/requirements?(?:\s+management)?/i, "requirements management"],
+    [/\b(uml|sysml)\b/i, "UML"],
+    [/architect/i, "systems architecture"],
+  ];
+  for (const [re, label] of patterns) {
+    if (re.test(block) && !found.includes(label)) found.push(label);
+  }
+  return found;
+}
+
+/** Keyword query for site:linkedin.com web search (Tavily/DDG). */
+export function buildLinkedInKeywords(jd: JobAnalysis): string {
+  const title = jd.title.trim();
+  const region = jd.regions.find((r) => r.trim() && !NON_LOCATION_REGIONS.has(r))?.trim() ?? "";
+  const industry = jd.industryExperience[0]?.trim() ?? "";
+  const skillKeywords = jd.requiredSkills.slice(0, 3).map((skill) => {
+    const lower = skill.toLowerCase();
+    if (/medical device/i.test(lower)) return "medical device";
+    if (/fda/i.test(lower)) return "FDA";
+    if (/quality systems/i.test(lower)) return "quality systems";
+    if (/mttf|mean time to failure/i.test(lower)) return "reliability engineering";
+    const short = skill.split(/[,;/]/)[0]?.trim() ?? skill;
+    return short.split(/\s+/).slice(0, 3).join(" ");
+  });
+  return [title, jd.seniority !== "Unspecified" ? jd.seniority : "", ...skillKeywords, region, industry]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 256);
+}
+
 export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
   const topSkills = jd.requiredSkills.slice(0, 4);
   const region = jd.regions[0];
@@ -707,9 +754,7 @@ export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
     estimatedResults: 120 + i * 60,
   }));
 
-  const linkedinBoolean = `("${jd.title}" OR "${jd.seniority} ${jd.department}") AND (${topSkills
-    .map((s) => `"${s}"`)
-    .join(" OR ")}) AND (${jd.regions.map((r) => `"${r}"`).join(" OR ")}) NOT "recruiter"`;
+  const linkedinBoolean = buildLinkedInKeywords(jd);
 
   const profile = roleProfile(jd);
   return {

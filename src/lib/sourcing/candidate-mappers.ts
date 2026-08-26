@@ -1,6 +1,7 @@
 import { dedupeCandidates } from "@/lib/rules";
 import { scoreCandidate } from "@/lib/scoring";
 import type { ApolloSearchProfile } from "@/lib/sourcing/apollo";
+import { candidateMatchesRoleTitle } from "@/lib/sourcing/candidate-fit";
 import type { GithubUser } from "@/lib/sourcing/github-identity";
 import type { SeamlessContact } from "@/lib/sourcing/seamless";
 import type { WebLead, WebSearchPlatform } from "@/lib/sourcing/web-leads";
@@ -263,7 +264,20 @@ export function mapWebSearchCandidates(
     };
   });
 
-  return scoreAndDedupe(raw, campaign, existing, weights);
+  const roleTitle = jd.title.trim();
+  const titleMatched = raw.filter((candidate) => candidateMatchesRoleTitle(candidate, roleTitle));
+  const titleSkipped = raw
+    .filter((candidate) => !candidateMatchesRoleTitle(candidate, roleTitle))
+    .map((candidate) => ({
+      name: candidate.name,
+      reason: `Title "${candidate.currentTitle}" does not match role "${roleTitle}".`,
+    }));
+
+  const scored = scoreAndDedupe(titleMatched, campaign, existing, weights);
+  return {
+    accepted: scored.accepted,
+    skipped: [...titleSkipped, ...scored.skipped],
+  };
 }
 
 function scoreAndDedupe(

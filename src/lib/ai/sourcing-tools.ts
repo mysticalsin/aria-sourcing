@@ -26,6 +26,7 @@ import {
   mapWebSearchCandidates,
   type CandidateMappingCampaign,
 } from "@/lib/sourcing/candidate-mappers";
+import { candidateMatchesRoleTitle } from "@/lib/sourcing/candidate-fit";
 
 export const SOURCING_TOOL_DEFS: McpTool[] = [
   {
@@ -145,8 +146,10 @@ export function makeSourcingToolRunner(
       const hits = (content?.results ?? []).slice(0, count);
       const leads = hits.map((h) => extractLead(h, platform));
       const result = mapWebSearchCandidates(leads, campaign, scopedQuery, platform, alreadySeen, weights);
-      accepted = result.accepted;
-      skippedCount = result.skipped.length;
+      const roleTitle = campaign.jobAnalysis.title.trim();
+      const filtered = result.accepted.filter((c) => candidateMatchesRoleTitle(c, roleTitle));
+      accepted = filtered;
+      skippedCount = result.skipped.length + (result.accepted.length - filtered.length);
     } else {
       return {
         ok: false,

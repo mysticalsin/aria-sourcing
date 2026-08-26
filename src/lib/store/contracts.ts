@@ -572,6 +572,8 @@ export interface HermesActions {
   // misc
   logActivity: (a: Omit<Activity, "id" | "createdAt"> & { createdAt?: string }) => void;
   resetDemo: () => void;
+  /** Live mode: flush debounced workspace state to Supabase before server reads. */
+  flushWorkspaceSave: () => Promise<boolean>;
 
   // chat
   createChatThread: (seatId: string) => ChatThread;
@@ -601,6 +603,9 @@ export interface HermesContextValue {
   workspaceStatus: WorkspaceStatus;
   retryWorkspace: () => Promise<void>;
   retrySave: () => Promise<void>;
+  /** Immediately persist the current workspace snapshot (live mode). Call before
+   *  server-authoritative actions that read campaign state from Supabase. */
+  flushWorkspaceSave: () => Promise<boolean>;
   actions: HermesActions;
   /** Computed once per state change (not per consumer) — the TopBar bell and
    *  the dashboard AttentionPanel both read this instead of independently

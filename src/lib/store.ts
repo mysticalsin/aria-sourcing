@@ -711,6 +711,54 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   }, [markRemoteSaveFailed, persistPendingSave, setWorkspaceStatus]);
   drainRemoteSaveQueueRef.current = drainRemoteSaveQueue;
 
+  const flushWorkspaceSave = useCallback(async (): Promise<boolean> => {
+    if (!supabaseEnabled) return true;
+    if (!workspaceAllowsMutation(workspaceStatusRef.current)) return false;
+    const workspaceId = workspaceIdRef.current;
+    const snapshot = stateRef.current;
+    if (!workspaceId || !snapshot) return false;
+
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    queuedRemoteSnapshot.current = null;
+
+    for (let attempt = 0; attempt < 40 && remoteSaveInFlight.current; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (remoteSaveInFlight.current) return false;
+
+    const pending: PendingWorkspaceSave<HermesState> = {
+      workspaceId,
+      snapshot,
+      expectedUpdatedAt: remoteUpdatedAtRef.current,
+      generation: hydrationGeneration.current,
+    };
+    const operation = Symbol("workspace-save-flush");
+    remoteSaveOperation.current = operation;
+    remoteSaveInFlight.current = true;
+    try {
+      const outcome = await persistPendingSave(pending);
+      if (remoteSaveOperation.current !== operation) return false;
+      if (outcome === "saved") {
+        skipNextPersist.current = true;
+        skipPersistSnapshot.current = snapshot;
+        pendingRemoteSave.current = null;
+        queuedRemoteSnapshot.current = null;
+        return true;
+      }
+      return outcome === "conflict";
+    } catch {
+      return false;
+    } finally {
+      if (remoteSaveOperation.current === operation) {
+        remoteSaveOperation.current = null;
+        remoteSaveInFlight.current = false;
+      }
+    }
+  }, [persistPendingSave]);
+
   const retrySave = useCallback(async () => {
     const pending = pendingRemoteSave.current;
     if (!pending || remoteSaveInFlight.current) return;
@@ -973,6 +1021,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       createSourcingActions({
         commit,
         commitPersisted,
+        flushWorkspaceSave,
         currentState: () => stateRef.current,
         sourcingMutationAllowed,
         workspaceEffectAllowed,
@@ -988,6 +1037,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [
       commit,
       commitPersisted,
+      flushWorkspaceSave,
       sourcingMutationAllowed,
       syntheticSourcingAllowed,
       candidatePersistenceAllowed,
@@ -6386,6 +6436,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       assignAgentTools,
       logActivity,
       resetDemo,
+      flushWorkspaceSave,
       createChatThread,
       deleteChatThread,
       clearChatThread,
@@ -6423,7 +6474,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       addModel, updateModel, removeModel, setModelDefaultForTask,
       toggleTool,
       assignAgentProvider, assignAgentModel, assignAgentTools,
-      logActivity, resetDemo,
+      logActivity, resetDemo, flushWorkspaceSave,
       createChatThread, deleteChatThread, clearChatThread, appendChatMessage, updateChatMessage, sendChat, cancelChat,
       addSchedule, updateSchedule, removeSchedule, toggleSchedule,
       addInterviewer, updateInterviewer, removeInterviewer,
@@ -6442,10 +6493,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       workspaceStatus,
       retryWorkspace: hydrateWorkspace,
       retrySave,
+      flushWorkspaceSave,
       actions,
       recommendations,
     }),
-    [state, workspaceStatus, hydrateWorkspace, retrySave, actions, recommendations],
+    [state, workspaceStatus, hydrateWorkspace, retrySave, flushWorkspaceSave, actions, recommendations],
   );
 
   return React.createElement(HermesContext.Provider, { value }, children);

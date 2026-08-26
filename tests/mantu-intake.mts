@@ -1,4 +1,10 @@
-import { parseEmailAndJD, isMantuNeedEmail, SAMPLE_MANTU_EMAIL } from "../src/lib/mock-ai";
+import {
+  parseEmailAndJD,
+  isMantuNeedEmail,
+  SAMPLE_MANTU_EMAIL,
+  buildLinkedInKeywords,
+} from "../src/lib/mock-ai";
+import { roleFamily } from "../src/lib/roles";
 
 let pass = 0,
   fail = 0;
@@ -51,6 +57,21 @@ ok("System Designer location On-site Montreal", systemDesigner.jobAnalysis.locat
 ok(
   "System Designer has required skills",
   systemDesigner.jobAnalysis.requiredSkills.some((s) => /FDA|Quality|MTTF/i.test(s)),
+);
+ok(
+  "System Designer profile skills include system design",
+  systemDesigner.jobAnalysis.requiredSkills.some((s) => /system design|product development|medical device/i.test(s)),
+);
+ok("System Designer industry Healthtech", systemDesigner.jobAnalysis.industryExperience.includes("Healthtech"));
+ok(
+  "System Designer department is client not Type",
+  /magnit/i.test(systemDesigner.jobAnalysis.department),
+);
+
+ok("System Designer is not finance family", roleFamily(systemDesigner.jobAnalysis) !== "finance");
+ok(
+  "System Designer LinkedIn query leads with title",
+  buildLinkedInKeywords(systemDesigner.jobAnalysis).toLowerCase().startsWith("system designer"),
 );
 
 const eightYearsPlus = parseEmailAndJD({

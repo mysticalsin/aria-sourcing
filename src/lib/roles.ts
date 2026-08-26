@@ -99,15 +99,23 @@ const FINANCE_SIGNALS = /\b(murex|finance|financial|pricing|trading|front office
 
 export function roleFamily(jd: JobAnalysis): RoleFamily {
   const hay = `${jd.title} ${jd.department} ${jd.requiredSkills.join(" ")} ${jd.industryExperience.join(" ")}`;
-  const dept = jd.department.toLowerCase();
+  const dept = jd.department.toLowerCase().trim();
+  // Mantu need emails store Type: Consulting in department — that is contract
+  // classification (also mirrored on employmentType), not a finance vertical.
+  const mantuContractDept = dept === "consulting" && jd.employmentType === "Contract";
 
-  if (FINANCE_SIGNALS.test(hay) || /consulting|finance|banking/.test(dept)) return "finance";
+  if (FINANCE_SIGNALS.test(hay)) return "finance";
+  if (!mantuContractDept && /^(finance|financial|banking|capital markets)$/.test(dept)) return "finance";
   if (/design/.test(dept) || /\b(figma|ux|ui|design systems|prototyping)\b/i.test(hay)) return "design";
   if (/\bdata\b|ml|machine learning|analytics/.test(dept) || /\b(tensorflow|pytorch|spark|dbt|snowflake|airflow|llm|rag)\b/i.test(hay)) return "data";
   if (/sales|revenue/.test(dept) || /\b(account executive|quota|pipeline generation|sdr|bdr)\b/i.test(hay)) return "sales";
   if (/product/.test(dept) && !/engineer/i.test(jd.title)) return "product";
   if (/marketing|growth/.test(dept)) return "marketing";
-  if (/platform|engineering/.test(dept) || CODE_SKILLS.test(hay) || /engineer|developer|architect/i.test(jd.title)) return "software";
+  if (/platform|engineering/.test(dept) || CODE_SKILLS.test(hay) || /engineer|developer|architect|designer/i.test(jd.title)) {
+    // System/product designers are LinkedIn-first even when the title says "designer".
+    if (/\bdesigner\b/i.test(jd.title) && !/engineer|developer|architect/i.test(jd.title)) return "generic";
+    return "software";
+  }
   return "generic";
 }
 
