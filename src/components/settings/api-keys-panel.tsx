@@ -45,24 +45,30 @@ export function ApiKeysPanel() {
   const [testing, setTesting] = React.useState<string | null>(null);
 
   async function handleSave() {
-    if (!name.trim() || !value.trim()) {
-      toast({ title: "Name and key required", variant: "warning" });
+    if (!value.trim()) {
+      toast({ title: "Paste an API key first", variant: "warning" });
       return;
     }
+    const label =
+      name.trim() || `${provider} ${new Date().toISOString().slice(0, 10)}`;
     setBusy(true);
-    const res = await actions.saveApiKey({ name: name.trim(), provider, value });
+    const res = await actions.saveApiKey({ name: label, provider, value });
     if (!res.ok || !res.key) {
       setBusy(false);
       toast({ title: "Could not save key", description: res.error, variant: "error" });
       return;
     }
     setName("");
-    setValue(""); // never retain the secret in the form
+    setValue(""); // never retain the secret in the form after encrypt/store
     const tested = await actions.testApiKey(res.key.id);
     setBusy(false);
     toast({
-      title: tested.valid ? "Key encrypted and verified" : "Key saved but verification failed",
-      description: tested.detail,
+      title: tested.valid
+        ? "Encrypted and verified end-to-end"
+        : "Encrypted, but live verification failed",
+      description: tested.valid
+        ? `Stored as ••••${res.key.last4}. ${tested.detail}`
+        : `${tested.detail} Delete the key below and try again with a working secret.`,
       variant: tested.valid ? "success" : "error",
     });
   }
@@ -107,7 +113,7 @@ export function ApiKeysPanel() {
 
         {isAdmin && (
           <div className="grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-            <Field label="Label" htmlFor="key-name">
+            <Field label="Label (optional)" htmlFor="key-name" hint="Defaults to provider + date if blank.">
               <Input id="key-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Anthropic (primary)" />
             </Field>
             <Field label="Provider" htmlFor="key-provider">
@@ -124,7 +130,10 @@ export function ApiKeysPanel() {
             <Field
               label="API key"
               htmlFor="key-value"
-              hint={KEY_VALUE_HINT[provider]}
+              hint={
+                KEY_VALUE_HINT[provider] ??
+                "Paste once → we encrypt server-side → we verify live → you only see ••••last4."
+              }
               className="sm:col-span-3"
             >
               <div className="flex gap-2">
@@ -134,10 +143,19 @@ export function ApiKeysPanel() {
                   autoComplete="off"
                   value={value}
                   onChange={(e) => setValue(e.target.value)}
-                  placeholder={KEY_VALUE_PLACEHOLDER[provider] ?? "sk-…  (stored server-side, never shown again)"}
+                  placeholder={KEY_VALUE_PLACEHOLDER[provider] ?? "sk-…  (encrypted; never shown again)"}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !busy) void handleSave();
+                  }}
                 />
-                <Button variant="secondary" loading={busy} leftIcon={<Plus className="h-4 w-4" />} onClick={handleSave}>
-                  Save key
+                <Button
+                  variant="secondary"
+                  loading={busy}
+                  disabled={busy || !value.trim()}
+                  leftIcon={<Plus className="h-4 w-4" />}
+                  onClick={() => void handleSave()}
+                >
+                  {busy ? "Encrypting…" : "Add key"}
                 </Button>
               </div>
             </Field>

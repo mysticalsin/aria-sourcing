@@ -1010,8 +1010,8 @@ export default function SettingsPage() {
           <Section
             n="14"
             eyebrow="AI backbone"
-            title="LLM providers"
-            description="Connect the language model backends the sourcing fleet runs on. Add an API key here to encrypt it at rest and verify it live with the provider. Secrets never leave the server. Admin only."
+            title="LLM providers & keys"
+            description="Paste an API key once. We encrypt it at rest, verify it live with the provider, and never show the secret again — only ••••last4. Admin only."
           >
             <ProvidersPanel />
           </Section>
