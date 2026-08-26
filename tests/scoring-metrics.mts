@@ -111,6 +111,60 @@ ok(
   verifiedExperience.score > unknownExperience.score,
 );
 
+// Live LinkedIn/SERP leads: sparse structured fields must not pin the composite
+// at UNKNOWN_ANCHOR — title + location evidence should clear the contact floor.
+const liveLinkedInJd: JobAnalysis = {
+  ...jd,
+  title: "System Designer",
+  requiredSkills: ["UML", "SysML", "Architecture", "Requirements"],
+  niceToHaveSkills: ["Doors"],
+  minYearsExperience: 8,
+  maxYearsExperience: null,
+  companyStageTarget: ["Enterprise"],
+  industryExperience: ["Consulting"],
+  locationType: "On-site",
+  regions: ["Montreal", "Canada"],
+  timezone: "",
+};
+const liveLinkedInCandidate: Candidate = {
+  ...baseScoringCandidate,
+  provenance: "live",
+  sourcePlatform: "LinkedIn",
+  currentTitle: "System Designer at Acme",
+  currentCompany: "Acme",
+  techStack: ["UML", "Architecture"],
+  yearsExperience: null,
+  companyStageExperience: [],
+  industryExperience: [],
+  location: "Montreal",
+  timezone: "",
+  recentActivity: "System Designer in Montreal with UML experience.",
+};
+const liveLinkedInScore = scoreCandidate(
+  liveLinkedInCandidate,
+  liveLinkedInJd,
+  DEFAULT_SCORING_WEIGHTS,
+);
+ok(
+  "live LinkedIn title+location evidence clears contact floor (70)",
+  liveLinkedInScore.score >= 70,
+);
+const liveExp = liveLinkedInScore.breakdown.find((item) => item.key === "experience");
+ok(
+  "live LinkedIn missing years is channel N/A (not unknown-30)",
+  liveExp?.weight === 0 && /not available from this source/i.test(liveExp?.rationale ?? ""),
+);
+const manualUnknownYears = scoreCandidate(
+  { ...liveLinkedInCandidate, provenance: "manual", sourcePlatform: "Manual" },
+  liveLinkedInJd,
+  DEFAULT_SCORING_WEIGHTS,
+);
+const manualExp = manualUnknownYears.breakdown.find((item) => item.key === "experience");
+ok(
+  "manual missing years stays unknown-30 (operator could have entered it)",
+  manualExp?.score === 30 && /unknown/i.test(manualExp?.rationale ?? ""),
+);
+
 const thinHighSkill = scoreCandidate(
   {
     ...signalCandidate,

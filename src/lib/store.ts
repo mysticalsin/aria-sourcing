@@ -111,6 +111,7 @@ import type {
   ClassifiedReply,
   InterviewKind,
   InterviewRecord,
+  CandidateLawfulBasis,
   LeadSource,
   PrequalOutcome,
   PrequalRecord,
@@ -4846,6 +4847,52 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit, current],
   );
 
+  const recordCandidateLawfulBasis = useCallback(
+    (candidateId: string, basis: CandidateLawfulBasis): { ok: true } | { ok: false; error: string } => {
+      if (basis !== "consent" && basis !== "legitimate_interest") {
+        return { ok: false, error: "Select consent or legitimate interest." };
+      }
+      const s = current();
+      const cand = s.candidates.find((c) => c.id === candidateId);
+      if (!cand) return { ok: false, error: "Candidate not found." };
+      if (cand.complianceFlags.anonymized) {
+        return { ok: false, error: "Cannot record lawful basis on an anonymized candidate." };
+      }
+      const now = new Date().toISOString();
+      const basisLabel = basis === "consent" ? "Consent" : "Legitimate interest";
+      commit((prev) => {
+        const next: HermesState = {
+          ...prev,
+          candidates: prev.candidates.map((c) =>
+            c.id === candidateId
+              ? {
+                  ...c,
+                  lawfulBasis: basis,
+                  lawfulBasisRecordedAt: now,
+                  lawfulBasisSource: "operator_selection" as const,
+                }
+              : c,
+          ),
+        };
+        return withActivity(
+          next,
+          makeActivity({
+            type: "compliance",
+            title: `Lawful basis recorded: ${cand.name}`,
+            notes: `Operator selected ${basisLabel}. Illustrative compliance record only; not a legal determination.`,
+            outcome: "Recorded",
+            campaignId: cand.campaignId,
+            linkedEntityType: "candidate",
+            linkedEntityId: candidateId,
+          }),
+          cand.campaignId,
+        );
+      });
+      return { ok: true };
+    },
+    [commit, current],
+  );
+
   /* ---- API keys (secret stored server-side; never in client state) ------ */
 
   const saveApiKey = useCallback(
@@ -6259,6 +6306,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       acceptSkillLearning,
       updateSkillContent,
       recordPiiReveal,
+      recordCandidateLawfulBasis,
       saveApiKey,
       testApiKey,
       removeApiKey,
@@ -6320,7 +6368,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       updateIntegration, toggleIntegrationMode, testIntegration,
       addSeat, deployAgents, updateSeat, setSeatStatus, connectSeatAccount, disconnectSeatAccount, toggleSeatLive, verifySeatDomain,
       addSuppression, removeSuppression, allocateOutreach,
-      runLearning, acceptSkillLearning, updateSkillContent, recordPiiReveal,
+      runLearning, acceptSkillLearning, updateSkillContent, recordPiiReveal, recordCandidateLawfulBasis,
       saveApiKey, testApiKey, removeApiKey, setCurrentRole,
       updateAriaPrompt, addGuardrailRule, toggleGuardrailRule, removeGuardrailRule, askAria, runAriaPlan,
       addProvider, updateProvider, removeProvider, setDefaultProvider,

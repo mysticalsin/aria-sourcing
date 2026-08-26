@@ -1,18 +1,19 @@
 "use client";
 
-import { Badge } from "@/components/ui";
-import { useActivities, useSettings } from "@/lib/store";
+import * as React from "react";
+import { Badge, Button, Field, Select } from "@/components/ui";
+import { useActivities, useActions, useSettings } from "@/lib/store";
 import { formatTimeAgo } from "@/lib/utils";
 import type { Tone } from "@/lib/utils";
-import type { Candidate } from "@/lib/types";
+import type { Candidate, CandidateLawfulBasis } from "@/lib/types";
 import { recordedCandidateLawfulBasis } from "@/lib/candidate-lawful-basis";
 import { Eye, ShieldCheck, Timer } from "lucide-react";
 
 /** WORKSTREAM 4.4 — Consent Passport & Data Lineage.
  *
- *  Everything here is a display derivation over persisted candidate/activity
- *  fields. Approval enforcement lives in rules.ts. Labels reflect operator
- *  inputs and are not a legal determination. */
+ *  Display derivation over persisted candidate/activity fields, plus the
+ *  operator control that records lawful basis (enforced in rules.ts). Labels
+ *  reflect operator inputs and are not a legal determination. */
 
 const ILLUSTRATIVE_LABEL =
   "Illustrative compliance display only; not a legal determination.";
@@ -40,22 +41,28 @@ function deriveConsentBasis(
     | "lawfulBasisSource"
   >,
 ): ConsentBasis {
+  const recordedBasis = recordedCandidateLawfulBasis(candidate);
+  if (recordedBasis === "consent") {
+    return {
+      sourceLabel:
+        candidate.provenance === "manual"
+          ? "Manual entry"
+          : candidate.sourcePlatform || "Sourced",
+      basisLabel: "Consent (operator recorded)",
+      tone: "violet",
+    };
+  }
+  if (recordedBasis === "legitimate_interest") {
+    return {
+      sourceLabel:
+        candidate.provenance === "manual"
+          ? "Manual entry"
+          : candidate.sourcePlatform || "Sourced",
+      basisLabel: "Legitimate interest (operator recorded)",
+      tone: "aqua",
+    };
+  }
   if (candidate.provenance === "manual") {
-    const recordedBasis = recordedCandidateLawfulBasis(candidate);
-    if (recordedBasis === "consent") {
-      return {
-        sourceLabel: "Manual entry",
-        basisLabel: "Consent (operator recorded)",
-        tone: "violet",
-      };
-    }
-    if (recordedBasis === "legitimate_interest") {
-      return {
-        sourceLabel: "Manual entry",
-        basisLabel: "Legitimate interest (operator recorded)",
-        tone: "aqua",
-      };
-    }
     return {
       sourceLabel: "Manual entry",
       basisLabel: "Lawful basis not recorded",
@@ -68,17 +75,17 @@ function deriveConsentBasis(
   if (candidate.sourcePlatform === "Talent Pool") {
     return { sourceLabel: "Talent pool", basisLabel: "Consent (opted-in pool)", tone: "violet" };
   }
-  if (candidate.sourceUrl) {
+  if (candidate.sourceUrl || candidate.sourcePlatform === "LinkedIn") {
     return {
       sourceLabel: `${candidate.sourcePlatform} · public profile`,
-      basisLabel: "Legitimate interest (public data)",
-      tone: "aqua",
+      basisLabel: "Lawful basis not recorded — required before approve",
+      tone: "warning",
     };
   }
   return {
     sourceLabel: candidate.sourcePlatform,
-    basisLabel: "Legitimate interest (sourced outreach)",
-    tone: "aqua",
+    basisLabel: "Lawful basis not recorded — required before approve",
+    tone: "warning",
   };
 }
 
@@ -126,7 +133,11 @@ function purposeFromNotes(notes: string): string {
 export function ConsentPassport({ candidate }: { candidate: Candidate }) {
   const activities = useActivities();
   const settings = useSettings();
+  const { recordCandidateLawfulBasis } = useActions();
   const retentionDays = settings.compliance.candidateRetentionDays;
+  const recorded = recordedCandidateLawfulBasis(candidate);
+  const [pendingBasis, setPendingBasis] = React.useState<CandidateLawfulBasis | "">("");
+  const [recordError, setRecordError] = React.useState<string | null>(null);
 
   const { sourceLabel, basisLabel, tone } = deriveConsentBasis(candidate);
   const { ageDays, remaining } = retentionInfo(candidate.createdAt, retentionDays);
@@ -150,6 +161,20 @@ export function ConsentPassport({ candidate }: { candidate: Candidate }) {
       purpose: purposeFromNotes(a.notes),
     }));
 
+  const onRecord = () => {
+    if (!pendingBasis) {
+      setRecordError("Select consent or legitimate interest.");
+      return;
+    }
+    const result = recordCandidateLawfulBasis(candidate.id, pendingBasis);
+    if (!result.ok) {
+      setRecordError(result.error);
+      return;
+    }
+    setRecordError(null);
+    setPendingBasis("");
+  };
+
   return (
     <div className="space-y-4 rounded-2xl border border-line bg-canvas/60 p-4">
       <p className="inline-flex items-center gap-1.5 text-xs italic text-muted">
@@ -157,7 +182,7 @@ export function ConsentPassport({ candidate }: { candidate: Candidate }) {
         {ILLUSTRATIVE_LABEL}
       </p>
 
-      {/* Source + lawful basis — display chips only, not enforced logic. */}
+      {/* Source + lawful basis — display chips + operator recording. */}
       <div className="space-y-1.5">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted">Source & lawful basis</p>
         <div className="flex flex-wrap gap-1.5">
@@ -168,6 +193,33 @@ export function ConsentPassport({ candidate }: { candidate: Candidate }) {
             {basisLabel}
           </Badge>
         </div>
+        {!recorded && !candidate.complianceFlags.anonymized ? (
+          <div className="mt-3 space-y-2 rounded-xl bg-ink/[0.03] p-3">
+            <Field
+              label="Record lawful basis"
+              htmlFor={`lawful-basis-${candidate.id}`}
+              hint="Required before outreach approval. Aria records your choice; it does not make the legal determination."
+            >
+              <Select
+                id={`lawful-basis-${candidate.id}`}
+                value={pendingBasis}
+                onChange={(event) => {
+                  setPendingBasis(event.target.value as CandidateLawfulBasis | "");
+                  setRecordError(null);
+                }}
+                options={[
+                  { value: "", label: "Select a basis…" },
+                  { value: "consent", label: "Consent" },
+                  { value: "legitimate_interest", label: "Legitimate interest" },
+                ]}
+              />
+            </Field>
+            {recordError ? <p className="text-xs text-danger">{recordError}</p> : null}
+            <Button type="button" size="sm" onClick={onRecord} disabled={!pendingBasis}>
+              Save lawful basis
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       {/* Retention countdown. */}

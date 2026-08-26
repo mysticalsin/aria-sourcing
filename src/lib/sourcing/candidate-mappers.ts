@@ -207,7 +207,22 @@ export function mapWebSearchCandidates(
   const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
   const raw: Candidate[] = leads.map((lead) => {
     const haystack = `${lead.title} ${lead.snippet}`.toLowerCase();
-    const techStack = allSkills.filter((skill) => haystack.includes(skill.toLowerCase()));
+    const techStack = allSkills.filter((skill) => {
+      const needle = skill.toLowerCase().trim();
+      if (!needle) return false;
+      if (haystack.includes(needle)) return true;
+      const tokens = needle
+        .split(/[^a-z0-9+.#]+/i)
+        .filter((t) => t.length > 2 && !["and", "the", "for", "with", "software", "systems"].includes(t));
+      if (tokens.length === 0) return false;
+      const hits = tokens.filter((token) => haystack.includes(token)).length;
+      return hits >= Math.max(1, Math.ceil(tokens.length * 0.6));
+    });
+    const location =
+      jd.regions.find((region) => {
+        const r = region.toLowerCase().trim();
+        return r.length > 1 && haystack.includes(r);
+      }) ?? "";
     return {
       id: genId("cand"),
       campaignId: campaign.id,
@@ -216,7 +231,7 @@ export function mapWebSearchCandidates(
       avatarInitials: initialsFrom(lead.name),
       currentTitle: lead.title,
       currentCompany: lead.company,
-      location: "",
+      location,
       timezone: "",
       linkedinUrl: platform === "LinkedIn" ? lead.url : "",
       githubUrl: "",

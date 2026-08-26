@@ -489,6 +489,12 @@ export interface HermesActions {
 
   // confidentiality
   recordPiiReveal: (candidateId: string) => void;
+  /** Operator records consent or legitimate interest on the consent passport.
+   *  Required before outreach approval for both manual and provider-sourced leads. */
+  recordCandidateLawfulBasis: (
+    candidateId: string,
+    basis: CandidateLawfulBasis,
+  ) => { ok: true } | { ok: false; error: string };
 
   // API keys + access control
   saveApiKey: (input: {

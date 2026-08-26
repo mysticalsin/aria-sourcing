@@ -75,20 +75,67 @@ function locationMatchesRegion(location: string, region: string): boolean {
 
 /* ---- Individual dimension scorers (all return 0-100) --------------------- */
 
+function titleOverlapRatio(candidateTitle: string, roleTitle: string): number {
+  const stop = new Set(["and", "the", "for", "with", "from", "into", "software", "systems"]);
+  const tokens = (value: string) =>
+    value
+      .toLowerCase()
+      .split(/[^a-z0-9+.#]+/i)
+      .map((t) => t.trim())
+      .filter((t) => t.length > 2 && !stop.has(t));
+  const roleTokens = tokens(roleTitle);
+  if (roleTokens.length === 0) return 0;
+  const hay = candidateTitle.toLowerCase();
+  const hits = roleTokens.filter((token) => {
+    const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, "i").test(hay);
+  }).length;
+  return hits / roleTokens.length;
+}
+
 function scoreSkills(c: Candidate, jd: JobAnalysis): { score: number; rationale: string } {
   const req = jd.requiredSkills;
   const nice = jd.niceToHaveSkills;
-  const reqHit = overlapCount(req, c.techStack);
-  const niceHit = overlapCount(nice, c.techStack);
+  // LinkedIn/web leads often leave techStack sparse — also match against title,
+  // company, and activity snippet so public-profile text can authorize contact.
+  const corpus = [c.techStack.join(" "), c.currentTitle, c.currentCompany, c.recentActivity]
+    .filter(Boolean)
+    .join(" ");
+  const reqHit = req.filter((skill) => skillMentionedInText(skill, corpus)).length;
+  const niceHit = nice.filter((skill) => skillMentionedInText(skill, corpus)).length;
   const reqRatio = req.length ? reqHit / req.length : 0.7;
   const niceRatio = nice.length ? niceHit / nice.length : 0;
-  const score = clamp(reqRatio * 82 + niceRatio * 18, 0, 100);
+  let score = clamp(reqRatio * 82 + niceRatio * 18, 0, 100);
+  const titleOverlap = titleOverlapRatio(c.currentTitle, jd.title);
+  // Public headlines often encode role fit more than a sparse tech list.
+  if (titleOverlap >= 0.6) score = Math.max(score, 78);
+  if (titleOverlap >= 0.9) score = Math.max(score, 86);
   return {
     score,
     rationale: `${reqHit}/${req.length || "—"} required, ${niceHit}/${
       nice.length || "—"
-    } nice-to-have skills present.`,
+    } nice-to-have skills present${
+      titleOverlap >= 0.6 ? `; title aligns with ${jd.title}` : ""
+    }.`,
   };
+}
+
+function skillMentionedInText(skill: string, corpus: string): boolean {
+  const hay = corpus.toLowerCase();
+  const needle = skill.toLowerCase().trim();
+  if (!needle || !hay) return false;
+  if (hay.includes(needle)) return true;
+  const stop = new Set(["and", "the", "for", "with", "from", "into", "software", "systems"]);
+  const tokens = needle
+    .split(/[^a-z0-9+.#]+/i)
+    .map((t) => t.trim())
+    .filter((t) => t.length > 2 && !stop.has(t));
+  if (tokens.length === 0) return false;
+  const hits = tokens.filter((token) => {
+    const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, "i").test(hay);
+  });
+  return hits.length >= Math.max(1, Math.ceil(tokens.length * 0.6));
 }
 
 function scoreExperience(c: Candidate, jd: JobAnalysis): { score: number; rationale: string } {
@@ -206,14 +253,20 @@ function classifyDimensions(candidate: Candidate, jd: JobAnalysis): Record<keyof
   const roleRequestsExperience = jd.minYearsExperience != null || jd.maxYearsExperience != null;
   const hasActivitySignal = ACTIVITY_SIGNAL_RE.test(candidate.recentActivity.toLowerCase());
 
+  // Live SERP/vendor leads often omit years/stage/industry as structured fields.
+  // Treat those gaps as channel-unavailable (N/A) rather than unverified-unknown,
+  // so title/location/skill evidence can still clear the contact floor.
+  const liveSparse = candidate.provenance === "live";
+  const skillsEvidence =
+    candidate.techStack.length > 0 ||
+    reqHitFromCorpus(candidate, jd) > 0 ||
+    titleOverlapRatio(candidate.currentTitle, jd.title) >= 0.6;
+
   return {
     skills: {
       ...skills,
-      state: candidate.techStack.length > 0 ? "scored" : "unknown",
-      rationale:
-        candidate.techStack.length > 0
-          ? skills.rationale
-          : UNKNOWN_RATIONALE,
+      state: skillsEvidence ? "scored" : "unknown",
+      rationale: skillsEvidence ? skills.rationale : UNKNOWN_RATIONALE,
     },
     experience: {
       ...experience,
@@ -221,12 +274,16 @@ function classifyDimensions(candidate: Candidate, jd: JobAnalysis): Record<keyof
         ? "not_applicable"
         : candidate.yearsExperience != null
           ? "scored"
-          : "unknown",
+          : liveSparse
+            ? "not_applicable"
+            : "unknown",
       rationale: !roleRequestsExperience
         ? "Not requested by this role."
         : candidate.yearsExperience != null
           ? experience.rationale
-          : UNKNOWN_RATIONALE,
+          : liveSparse
+            ? "Not available from this source."
+            : UNKNOWN_RATIONALE,
     },
     companyStage: {
       ...companyStage,
@@ -235,13 +292,17 @@ function classifyDimensions(candidate: Candidate, jd: JobAnalysis): Record<keyof
           ? "not_applicable"
           : candidate.companyStageExperience.length > 0
             ? "scored"
-            : "unknown",
+            : liveSparse
+              ? "not_applicable"
+              : "unknown",
       rationale:
         jd.companyStageTarget.length === 0
           ? "Not requested by this role."
           : candidate.companyStageExperience.length > 0
             ? companyStage.rationale
-            : UNKNOWN_RATIONALE,
+            : liveSparse
+              ? "Not available from this source."
+              : UNKNOWN_RATIONALE,
     },
     industry: {
       ...industry,
@@ -250,13 +311,17 @@ function classifyDimensions(candidate: Candidate, jd: JobAnalysis): Record<keyof
           ? "not_applicable"
           : candidate.industryExperience.length > 0
             ? "scored"
-            : "unknown",
+            : liveSparse
+              ? "not_applicable"
+              : "unknown",
       rationale:
         jd.industryExperience.length === 0
           ? "Not requested by this role."
           : candidate.industryExperience.length > 0
             ? industry.rationale
-            : UNKNOWN_RATIONALE,
+            : liveSparse
+              ? "Not available from this source."
+              : UNKNOWN_RATIONALE,
     },
     location: {
       ...location,
@@ -272,6 +337,18 @@ function classifyDimensions(candidate: Candidate, jd: JobAnalysis): Record<keyof
       rationale: hasActivitySignal ? activity.rationale : "Not requested by this role.",
     },
   };
+}
+
+function reqHitFromCorpus(candidate: Candidate, jd: JobAnalysis): number {
+  const corpus = [
+    candidate.techStack.join(" "),
+    candidate.currentTitle,
+    candidate.currentCompany,
+    candidate.recentActivity,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return jd.requiredSkills.filter((skill) => skillMentionedInText(skill, corpus)).length;
 }
 
 /* ---- Composite ----------------------------------------------------------- */
