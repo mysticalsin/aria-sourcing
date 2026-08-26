@@ -1,46 +1,51 @@
 ---
 project: MSourcing / ARIA
-shift: 86
+shift: 87
 agent: cursor-cloud
 updated: 2026-08-26 UTC
-status: llm-key-verify-live
+status: analytics-motion-dashboards
 ---
 
-# Handoff - Shift 86
+# Handoff - Shift 87
 
 ## Current state
 
-- **Production:** https://aria-mantu-app.fly.dev · version **41** · migration **0060**
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #29
-- Settings → AI (`?tab=ai`) can **Add & verify LLM API key**: encrypt via `/api/keys`, live probe via `/api/keys/test` for Anthropic/OpenAI/Groq/xAI/Mistral/Kimi
-- Live E2E: fake Anthropic key → `valid:false` HTTP 401 authentication_error; malformed → format reject
-- UI artifact: `/opt/cursor/artifacts/ai-settings-add-verify-key.png`
-- Multi-provider sourcing (shift 85) remains live
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #29 → `integration/sourcing-enrichment-on-main`
+- **Production:** https://aria-mantu-app.fly.dev (prior version **41**; analytics UI not yet redeployed this shift)
+- Analytics surfaces upgraded with bklit-style charts + kokonutui/motion.dev motion (framer-motion + recharts already in tree)
+- Outreach UX harden also in branch: preferred channel (Email→LI→WA), preflight blockers, inline lawful-basis record, clearer dry-run copy
 
 ## Done this shift
 
-- `src/lib/ai/key-probe.ts` live models-list probes
-- `/api/keys/test` routes LLM providers through live probe (format fallback on network fail)
-- ProvidersPanel: Add & verify form + Verify on linked keys; filtered key dropdown by provider
-- ApiKeysPanel: save auto-verifies; button renamed Verify
-- Tests: `tests/llm-key-probe.mts`
+- `src/lib/dashboard-motion.ts` — stagger/fade/spring presets + metric number parse/format
+- `MetricCard` — count-up, tone glow, hover lift, stagger-friendly variants
+- `TrendSpark` — taller charts, tooltips, summary (latest + delta) for Exec
+- `FunnelChart` — stage conversion chips + multi-tone bars
+- `MiniFunnel` — animated bars + conversion %
+- Command Center (`src/app/page.tsx`) + Exec (`src/app/exec/page.tsx`) + fleet/vivier/campaign KPI grids wired to motion stagger
+- `src/lib/outreach-channel.ts` + store/outreach card human-gate UX
+- Tests: `tests/dashboard-motion.mts` registered in manifest; `npx tsc --noEmit` green; application suite green (known `infra-release-contract` alternate-script fail remains)
 
 ## Blockers
 
-- `/api/ready` release-identity lag / agentFrameworks false (expected)
+- Fly not redeployed with analytics UI this shift — operator should redeploy or wait for CI→Fly
+- Full intake→source→approve click-path evidence still pending after UX harden
 
 ## Next steps
 
-1. Operator: Settings → AI → Add key → paste real Anthropic/OpenAI/… secret → Save, encrypt & verify → enable provider
-2. Optional: bind verified key on Kimi/Anthropic row and run a cloud sourcing agent pass
+1. Redeploy Fly from this branch; screenshot Command Center + `/exec` motion/charts
+2. Walk E2E: intake → Source next batch → draft → record LI basis → Approve under dry-run → interested → booking prep; save artifacts
+3. Update PR #29 body with analytics + approval-gate proof
 
 ## Decisions made (don't relitigate)
 
-- Live LLM probes use GET /models (cheap auth); 401/403 = invalid; 429/402/400 after auth = valid
-- Vault still requires `status === "valid"` before `resolveVaultSecret` decrypts for egress
+- Keep recharts + framer-motion; do not vendor bklit/kokonut packages — pattern-inspired only
+- Human approval + dry-run are product features, not bugs
+- Apify stays invisible; LinkedIn stamp for profile search
 - Do not commit secrets/passwords into `_relay/` / git
 
 ## Watch out
 
-- Kimi vault provider string is `Kimi (Moonshot)` while LLM kind is `Kimi` — panel maps via `vaultProviderForKind`
-- Verify button on a provider row only appears when a key is already linked
+- MetricCard animation relies on a parent `motion` stagger container (`initial`/`animate`) — standalone grids must wrap
+- `prefers-reduced-motion` disables count-up / bar width motion
+- Known pre-existing: `infra-release-contract` fails on alternate Fly deploy scripts

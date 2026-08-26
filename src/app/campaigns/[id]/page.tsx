@@ -25,8 +25,11 @@ import {
   useToast,
   type TabItem,
 } from "@/components/ui";
+import { motion } from "framer-motion";
 import { HydrationGate } from "@/components/app/page-header";
 import { MetricCard } from "@/components/dashboard/metric-card";
+import { staggerContainer } from "@/lib/dashboard-motion";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { StagePipeline } from "@/components/shared/stage-pipeline";
 import { ActivityTimeline } from "@/components/shared/activity-timeline";
 import { ScoreDistribution } from "@/components/charts/score-distribution";
@@ -352,6 +355,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const { toast } = useToast();
   const confirm = useConfirm();
   const router = useRouter();
+  const reducedMotion = usePrefersReducedMotion();
 
   const [tab, setTab] = React.useState("overview");
   const [selected, setSelected] = React.useState<Candidate | null>(null);
@@ -1038,11 +1042,16 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         <div className="space-y-6">
           <StagePipeline metrics={m} />
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <motion.div
+            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+            variants={staggerContainer}
+            initial={reducedMotion ? false : "hidden"}
+            animate="show"
+          >
             {overviewMetrics.map((mc) => (
               <MetricCard key={mc.label} label={mc.label} value={mc.value} hint={mc.hint} icon={mc.icon} tone={mc.tone} />
             ))}
-          </div>
+          </motion.div>
 
           <div className="grid gap-6 lg:grid-cols-3">
             <Card className="lg:col-span-2">
