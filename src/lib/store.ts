@@ -65,6 +65,7 @@ import {
 import { requestReviewedSourcing } from "./sourcing/sourcing-agent-client";
 import { campaignAllowsLiveSourcing } from "./sourcing/campaign-lifecycle";
 import { validateMcpBaseUrl } from "./mcp-auth-params";
+import { findHeyReachMcpServer } from "./heyreach-mcp";
 import {
   defaultLiveIntegrations,
   testConnection,
@@ -4215,6 +4216,43 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           }
         } catch {
           result = { ok: false, latencyMs: Date.now() - t0, message: `${integ.name}: probe failed (network).` };
+        }
+      } else if (integ.id === "int_heyreach") {
+        const t0 = Date.now();
+        const server = findHeyReachMcpServer(s.settings.mcpServers);
+        if (!server) {
+          result = {
+            ok: false,
+            latencyMs: Date.now() - t0,
+            message: "HeyReach MCP: not connected. Use Connect HeyReach MCP on Settings → Integrations.",
+          };
+        } else {
+          try {
+            const testRes = await workspaceFetch("/api/mcp/test", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                url: server.url,
+                apiKeyId: server.apiKeyId,
+                authStyle: server.authStyle,
+                authQueryParam: server.authQueryParam,
+              }),
+            });
+            const out = (await testRes.json().catch(() => null)) as {
+              ok?: boolean;
+              toolCount?: number;
+              error?: string;
+            } | null;
+            result = {
+              ok: Boolean(out?.ok),
+              latencyMs: Date.now() - t0,
+              message: out?.ok
+                ? `HeyReach MCP connected (${out.toolCount ?? server.toolCount ?? 0} tools).`
+                : out?.error ?? "HeyReach MCP validation failed.",
+            };
+          } catch {
+            result = { ok: false, latencyMs: Date.now() - t0, message: "HeyReach MCP probe failed (network)." };
+          }
         }
       } else if (integ.id === "int_linkedin_rsc") {
         const t0 = Date.now();

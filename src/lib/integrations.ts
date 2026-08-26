@@ -75,6 +75,19 @@ export function defaultIntegrations(): IntegrationStatus[] {
       setupHref: "/settings?tab=access",
     },
     {
+      id: "int_heyreach",
+      name: "HeyReach MCP",
+      category: "Comms",
+      description:
+        "Official HeyReach MCP for LinkedIn outreach sequences — connect on Settings → Integrations above LinkedIn OIDC identity.",
+      status: "not_configured",
+      mode: "mock",
+      lastSync: null,
+      errors: [],
+      real: true,
+      setupHref: "/settings?tab=integrations",
+    },
+    {
       id: "int_linkedin_rsc",
       name: "LinkedIn messaging",
       category: "Comms",

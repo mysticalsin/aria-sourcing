@@ -7,8 +7,7 @@ import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
 import { getHermesBaseUrl } from "@/lib/api/hermes-proxy";
 import { can } from "@/lib/rbac";
-import { AUTH_QUERY_PARAMS } from "@/lib/types";
-import type { Campaign, Candidate, Role, ScoringWeights } from "@/lib/types";
+import { AUTH_QUERY_PARAMS, MCP_AUTH_STYLES, type Campaign, type Candidate, type McpAuthStyle, type Role, type ScoringWeights } from "@/lib/types";
 import {
   buildCloudRequest,
   parseCloudResponse,
@@ -31,7 +30,7 @@ import { DISCLOSURE_SYSTEM, sanitizeCandidateText } from "@/lib/agent-disclosure
 
 export const runtime = "nodejs";
 
-const McpAuthStyleSchema = z.enum(["bearer", "query"]);
+const McpAuthStyleSchema = z.enum(MCP_AUTH_STYLES);
 const McpAuthQueryParamSchema = z.enum(AUTH_QUERY_PARAMS);
 const McpServerPayloadSchema = z
   .object({
@@ -176,15 +175,15 @@ async function gatherMcpServers(
     }
     if (parsed.protocol !== "https:") continue;
     const secret = s.apiKeyId ? await resolveVaultSecret(s.apiKeyId) : "";
-    let auth: { url: string; token: string };
+    let auth: { url: string; token: string; authStyle: McpAuthStyle };
     try {
       auth = applyMcpAuth(s.url, secret, { authStyle: s.authStyle, authQueryParam: s.authQueryParam });
     } catch {
       continue;
     }
-    const conn = await connectAndListTools(auth.url, auth.token);
+    const conn = await connectAndListTools(auth.url, auth.token, { authStyle: auth.authStyle });
     if (conn.ok && conn.tools && conn.tools.length) {
-      resolved.push({ url: auth.url, token: auth.token, tools: conn.tools });
+      resolved.push({ url: auth.url, token: auth.token, authStyle: auth.authStyle, tools: conn.tools });
     }
   }
   return resolved;

@@ -1181,6 +1181,7 @@ export const API_KEY_PROVIDERS = [
   "Seamless",
   "Apify",
   "Tavily",
+  "HeyReach",
   "Databricks",
   "Custom",
 ] as const;
@@ -1252,6 +1253,9 @@ export interface ToolDef {
 
 export type McpServerStatus = "untested" | "connected" | "error";
 
+export const MCP_AUTH_STYLES = ["bearer", "query", "x-api-key"] as const;
+export type McpAuthStyle = (typeof MCP_AUTH_STYLES)[number];
+
 export const AUTH_QUERY_PARAMS = ["tavilyApiKey"] as const;
 export type AuthQueryParam = (typeof AUTH_QUERY_PARAMS)[number];
 
@@ -1264,7 +1268,7 @@ export interface McpServerConfig {
   /** The MCP server's HTTP(S) endpoint (streamable-HTTP / SSE transport). */
   url: string;
   /** How the resolved vault secret is sent to the MCP server. Defaults to bearer. */
-  authStyle?: "bearer" | "query";
+  authStyle?: McpAuthStyle;
   /** Closed-list query parameter for query-auth MCP servers. */
   authQueryParam?: AuthQueryParam;
   /** References an ApiKey.id; the raw secret never lives here. */
@@ -1276,6 +1280,8 @@ export interface McpServerConfig {
   toolCount?: number;
   /** Names of those tools (for display), captured on the last successful test. */
   toolNames?: string[];
+  /** Known integration preset — used for HeyReach funnel wiring in Settings. */
+  preset?: "heyreach";
 }
 
 /** Recruiting tasks that can be delegated to a locked Dust agent. A Record (not an

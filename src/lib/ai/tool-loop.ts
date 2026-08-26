@@ -15,6 +15,7 @@ import {
   remoteMcpExecutionEnabled,
   type McpTool,
 } from "@/lib/mcp-client";
+import type { McpAuthStyle } from "@/lib/types";
 import { CLOUD_ENDPOINT, type AiProviderSlug } from "@/lib/ai/provider";
 import { BUILTIN_WEB_URL, runWebTool } from "@/lib/ai/web-tools";
 // Keep the browser sentinel as a plain string here so sourcing/chat routes do
@@ -150,6 +151,7 @@ function toolResultForModel(server: ResolvedMcpServer | undefined, output: ToolE
 export interface ResolvedMcpServer {
   url: string;
   token: string;
+  authStyle?: McpAuthStyle;
   tools: McpTool[];
   /** Optional workspace-scoped Tavily key for the in-process web_search tool. */
   tavilyKey?: string;
@@ -192,7 +194,10 @@ async function execTool(
     const { runBrowserTool } = await import("@/lib/ai/browser-tools");
     return runBrowserTool(name, args);
   }
-  return callMcpTool(server.url, server.token, name, args, { signal });
+  return callMcpTool(server.url, server.token, name, args, {
+    signal,
+    authStyle: server.authStyle,
+  });
 }
 
 interface NormalizedToolDefinition {

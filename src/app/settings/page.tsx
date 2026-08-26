@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { IntegrationCard } from "@/components/settings/integration-card";
 import { EmailConnectionsPanel } from "@/components/settings/email-connections-panel";
 import { LinkedInConnectionsPanel } from "@/components/settings/linkedin-connections-panel";
+import { HeyReachMcpPanel } from "@/components/settings/heyreach-mcp-panel";
 import { CompliancePanel } from "@/components/settings/compliance-panel";
 import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
 import { RolesPanel } from "@/components/settings/roles-panel";
@@ -630,10 +631,11 @@ export default function SettingsPage() {
             n="04"
             eyebrow="Connections"
             title="Integrations"
-            description="Real connections only: Sign in with LinkedIn, connect Gmail/Outlook, then wire Apify and the rest of Aria’s stack. No fake “connected” skeletons."
+            description="Real connections only: Sign in with LinkedIn, connect HeyReach MCP for outreach, wire Gmail/Outlook, then Apify and the rest. No fake skeletons."
           >
             <EmailConnectionsPanel />
             <LinkedInConnectionsPanel />
+            <HeyReachMcpPanel />
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone="success" size="sm" dot>
                 {summary.connected} live connected
