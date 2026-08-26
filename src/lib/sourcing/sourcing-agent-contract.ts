@@ -86,6 +86,26 @@ const CampaignProjectionSchema = z.object({
   scoringWeights: ScoringWeightsSchema,
   sourcingStrategy: z.object({
     excludedCompanies: boundedArray(500, 200),
+    primaryPlatforms: z
+      .array(
+        z.enum([
+          "GitHub",
+          "LinkedIn",
+          "Stack Overflow",
+          "Dribbble",
+          "Behance",
+          "Sillage",
+          "Apollo",
+          "Seamless",
+          "Manual",
+          "Apify",
+          "Referral",
+          "Talent Pool",
+        ]),
+      )
+      .min(1)
+      .max(8),
+    linkedinBoolean: bounded(2_000),
     githubQueries: z
       .array(
         z
@@ -168,7 +188,7 @@ export type SourcingAgentCampaign = CandidateMappingCampaign &
   Pick<Campaign, "status"> & {
     sourcingStrategy: Pick<
       Campaign["sourcingStrategy"],
-      "excludedCompanies" | "githubQueries"
+      "excludedCompanies" | "githubQueries" | "primaryPlatforms" | "linkedinBoolean"
     >;
   };
 
@@ -190,6 +210,8 @@ export function sourcingAgentCampaignFingerprint(
     scoringWeights: campaign.scoringWeights,
     sourcingStrategy: {
       excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
+      primaryPlatforms: campaign.sourcingStrategy.primaryPlatforms,
+      linkedinBoolean: campaign.sourcingStrategy.linkedinBoolean,
       githubQueries: campaign.sourcingStrategy.githubQueries,
     },
   });
@@ -267,6 +289,8 @@ export function projectSourcingAgentWorkspace(
     scoringWeights: projected.scoringWeights,
     sourcingStrategy: {
       excludedCompanies: [...projected.sourcingStrategy.excludedCompanies],
+      primaryPlatforms: [...projected.sourcingStrategy.primaryPlatforms],
+      linkedinBoolean: projected.sourcingStrategy.linkedinBoolean,
       githubQueries: projected.sourcingStrategy.githubQueries.map((query) => ({ ...query })),
     },
   };

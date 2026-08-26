@@ -274,7 +274,11 @@ export function parseMantuNeed(text: string): ParsedIntake {
   );
   const requiredSkills = Array.from(new Set([...lineSkills, ...dictSkills])).slice(0, 8);
 
-  const minYears = text.match(/minimum[\s]{0,6}(\d{1,2})[\s+]{0,6}years/i)?.[1];
+  const minYears =
+    text.match(/minimum[\s]{0,6}(\d{1,2})[\s+]{0,6}years/i)?.[1] ??
+    text.match(/\b(\d{1,2})\s*\+\s*years?\b/i)?.[1] ??
+    text.match(/\b(\d{1,2})\s*-\s*\d{1,2}\s*years?\b/i)?.[1] ??
+    text.match(/\b(\d{1,2})\+?\s*years?\s+(?:of\s+)?(?:relevant\s+)?experience\b/i)?.[1];
   const minYearsExperience = minYears ? parseInt(minYears, 10) : null;
 
   let seniority: Seniority = "Unspecified";
@@ -322,7 +326,12 @@ export function parseMantuNeed(text: string): ParsedIntake {
         ? "Hybrid"
         : /on-?site|in office|in-person/i.test(text)
           ? "On-site"
-          : "Unspecified",
+          : // Mantu need emails always carry a city Location for consulting seats;
+            // treat a stated city with no remote/hybrid cue as On-site so the
+            // brief can authorize sourcing without a second confirmation step.
+            loc
+            ? "On-site"
+            : "Unspecified",
     regions,
     timezone: tz,
     salaryMin: null,

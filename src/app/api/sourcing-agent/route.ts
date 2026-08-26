@@ -287,6 +287,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
   const configuredQueries = initial.value.campaign.sourcingStrategy.githubQueries
     .map((query) => query.query.trim())
     .filter(Boolean);
+  const linkedInBoolean = initial.value.campaign.sourcingStrategy.linkedinBoolean.trim();
   const frameworkAuthorization = validated.data.agentFrameworkRunId &&
     validated.data.agentFrameworkCapabilityToken &&
     validated.data.agentFrameworkQuery
@@ -301,8 +302,17 @@ async function handlePost(req: NextRequest, correlationId: string) {
   }
   const cloudConfig = resolveAiProvider(initial.value.aiSettings, "sourcing");
   const deterministic = Boolean(frameworkAuthorization) || !cloudConfig;
-  if (deterministic && configuredQueries.length === 0) {
-    return fail(409, "CAMPAIGN_NOT_READY", "Campaign has no reviewed real-sourcing query.");
+  const primaryPlatform = initial.value.campaign.sourcingStrategy.primaryPlatforms[0] ?? "GitHub";
+  const linkedInFirst =
+    primaryPlatform === "LinkedIn" ||
+    primaryPlatform === "Talent Pool" ||
+    primaryPlatform === "Referral" ||
+    primaryPlatform === "Dribbble" ||
+    primaryPlatform === "Behance";
+  if (deterministic && !frameworkAuthorization) {
+    if (linkedInFirst ? !linkedInBoolean && configuredQueries.length === 0 : configuredQueries.length === 0) {
+      return fail(409, "CAMPAIGN_NOT_READY", "Campaign has no reviewed real-sourcing query.");
+    }
   }
   const roleBasis: SourcingRoleBasis = sourcingRoleBasisForCampaign(initial.value.campaign);
   if (roleBasis.skills.length === 0) {
@@ -487,7 +497,11 @@ async function handlePost(req: NextRequest, correlationId: string) {
         );
       }
     }
-    const tavilyKey = deterministic ? null : await resolveStoredTavilyKey(session);
+    const githubToken = process.env.GITHUB_TOKEN ?? "";
+    // Prefer a stored vault key; fall back to the deployment env so LinkedIn-first
+    // roles can still run a real site-scoped web search when no vault row exists.
+    const storedTavily = await resolveStoredTavilyKey(session);
+    const tavilyKey = storedTavily || process.env.TAVILY_API_KEY || null;
     const beforeExecution = await failIfAuthorityChanged();
     if (beforeExecution) return await beforeExecution;
 
@@ -530,7 +544,6 @@ async function handlePost(req: NextRequest, correlationId: string) {
       }
     }
 
-    const githubToken = process.env.GITHUB_TOKEN ?? "";
     const runner = makeSourcingToolRunner(
       initial.value.campaign,
       initial.value.existing,
@@ -551,23 +564,56 @@ async function handlePost(req: NextRequest, correlationId: string) {
     let drafts: ReturnType<typeof parseDrafts> = [];
     if (deterministic) {
       const searchSignal = AbortSignal.timeout(45_000);
+      // LinkedIn-first roles (consulting, finance, design, …) must not be forced
+      // through GitHub language: queries — those silently return zero people.
+      const primaryPlatform = initial.value.campaign.sourcingStrategy.primaryPlatforms[0] ?? "GitHub";
+      const linkedInFirst =
+        primaryPlatform === "LinkedIn" ||
+        primaryPlatform === "Talent Pool" ||
+        primaryPlatform === "Referral" ||
+        primaryPlatform === "Dribbble" ||
+        primaryPlatform === "Behance";
+      const searchPlatform = linkedInFirst
+        ? primaryPlatform === "Dribbble" || primaryPlatform === "Behance"
+          ? primaryPlatform
+          : "LinkedIn"
+        : "GitHub";
+      const linkedInQuery = initial.value.campaign.sourcingStrategy.linkedinBoolean.trim();
+      const keywordFallback = [
+        initial.value.campaign.jobAnalysis.title,
+        ...initial.value.campaign.jobAnalysis.requiredSkills.slice(0, 3),
+        ...initial.value.campaign.jobAnalysis.regions.slice(0, 1),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .trim()
+        .slice(0, 256);
       const queries = frameworkAuthorization
         ? [frameworkAuthorization.query]
-        : [
-            ...promotedLessons
-              .filter((lesson) => lesson.platform === "GitHub")
-              .map((lesson) => lesson.query),
-            ...configuredQueries,
-          ]
-            .filter((query, index, all) => all.indexOf(query) === index)
-            .slice(0, 3);
+        : linkedInFirst
+          ? [linkedInQuery || keywordFallback].filter(Boolean).slice(0, 1)
+          : [
+              ...promotedLessons
+                .filter((lesson) => lesson.platform === "GitHub")
+                .map((lesson) => lesson.query),
+              ...configuredQueries,
+            ]
+              .filter((query, index, all) => all.indexOf(query) === index)
+              .slice(0, 3);
+      if (queries.length === 0) {
+        return await failClaimed(
+          409,
+          "CAMPAIGN_NOT_READY",
+          "Campaign has no reviewed real-sourcing query.",
+        );
+      }
       let successfulQuery = false;
       for (const query of queries) {
         const remaining = count - runner.getFound().length;
         if (remaining <= 0) break;
         const result = await runner.run(
           "search_candidates",
-          { platform: "GitHub", query, count: remaining },
+          { platform: searchPlatform, query, count: remaining },
           searchSignal,
         );
         successfulQuery = successfulQuery || result.ok;

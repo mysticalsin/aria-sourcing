@@ -22,9 +22,36 @@ ok("hiring manager = MARGIOTTA Lisa", /margiotta/i.test(p.sender.name));
 ok("min years experience = 5", p.jobAnalysis.minYearsExperience === 5);
 ok("employmentType = Contract (Consulting)", p.jobAnalysis.employmentType === "Contract");
 ok("currency stays unknown when only Montreal is stated", p.jobAnalysis.currency === "");
-ok("location type stays unknown when no work arrangement is stated", p.jobAnalysis.locationType === "Unspecified");
+ok("location type is On-site when a city is stated without remote/hybrid", p.jobAnalysis.locationType === "On-site");
 ok("offshore captured as nice-to-have", p.jobAnalysis.niceToHaveSkills.some((s) => /offshore/i.test(s)));
 ok("salary flagged missing", p.jobAnalysis.validationWarnings.some((w) => w.field === "salary"));
+
+const systemDesigner = parseEmailAndJD({
+  email: `Hello,
+This need is now ACTIVE: System Designer
+Type: Consulting
+Category: Active
+Status: Running
+Client: Magnit Global Canada Ltd
+Manager: MAAMAR Nicolas
+Recruiter: LAMOUCHI Imène
+Priority: 1 - Urgent and critical
+Location: MONTREAL
+Start date: 8/31/2026
+Nb people: 1
+Languages: English - Good
+Profile description:
+5+ years of experience in system design and/or product development within the medical device industry.
+Skills: Mean Time to Failure (MTTF) Software,Quality Systems Management,FDA Regulations`,
+});
+ok("System Designer title parsed", systemDesigner.jobAnalysis.title === "System Designer");
+ok("System Designer seniority from 5+ years", systemDesigner.jobAnalysis.seniority === "Senior");
+ok("System Designer employment Contract", systemDesigner.jobAnalysis.employmentType === "Contract");
+ok("System Designer location On-site Montreal", systemDesigner.jobAnalysis.locationType === "On-site");
+ok(
+  "System Designer has required skills",
+  systemDesigner.jobAnalysis.requiredSkills.some((s) => /FDA|Quality|MTTF/i.test(s)),
+);
 
 // robustness: a minimal recruiter line must not throw
 let threw = false;

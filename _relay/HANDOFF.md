@@ -22,10 +22,11 @@ status: fly-deployed-linkedin-live
 - Bootstrap image build + push; migrations **0047–0059** applied on prod DB.
 - App image deployed to `aria-mantu-app` (includes LinkedIn HeyReach parity routes).
 - Release-identity Fly secrets updated to match `639b332` / `0059`.
+- Reset GoTrue password for `twalteur@amaris.com` (admin role verified; password not stored in relay).
 
 ## Next steps
 
-1. Log in at https://aria-mantu-app.fly.dev/login with real Supabase admin creds.
+1. Log in at https://aria-mantu-app.fly.dev/login with `twalteur@amaris.com`.
 2. Settings → Connect LinkedIn seat → Simulate → verify `linkedin_channel_events` row.
 3. Optional: `fly secrets set LINKEDIN_INBOUND_WEBHOOK_SECRET=… -a aria-mantu-app`
 4. Full E2E: `ADMIN_EMAIL=… ADMIN_PASSWORD=… ANON_KEY=… bash e2e-workflow-test.sh`
