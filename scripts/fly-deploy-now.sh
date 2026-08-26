@@ -2,8 +2,8 @@
 # fly-deploy-now.sh — owner/agent deploy once Fly auth is available.
 #
 # Accepts credentials from:
-#   FLY_API_TOKEN env, or production-readiness/.fly-token.env
-#   production-readiness/.fly-secrets.env (required for anon key + service role)
+#   FLY_API_TOKEN env, or the local Fly token file under the readiness dir
+#   local Fly secrets env file (required for anon key + service role)
 #
 # Applies pending migrations via bootstrap, then deploys the app image.
 #

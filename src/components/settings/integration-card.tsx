@@ -111,22 +111,42 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
 
   async function handleConnect() {
     if (!apiKey.trim()) {
-      toast({ title: "Credentials required", description: "Enter an API key or token to connect.", variant: "error" });
+      toast({ title: "Credentials required", description: "Enter an API key or token to connect.", variant: "warning" });
       return;
     }
     setSaving(true);
     try {
-      await actions.saveApiKey({ name: `${integration.name} connection`, provider: "Custom", value: apiKey.trim() });
+      const provider =
+        integration.id === "int_apify"
+          ? "Apify"
+          : integration.id === "int_sendgrid"
+            ? "SendGrid"
+            : "Custom";
+      const saved = await actions.saveApiKey({
+        name: `${integration.name} connection`,
+        provider,
+        value: apiKey.trim(),
+      });
+      if (!saved.ok) {
+        toast({ title: "Couldn't connect", description: saved.error, variant: "error" });
+        return;
+      }
       actions.updateIntegration(integration.id, {
-        status: "connected",
+        status: saved.valid === false ? "error" : "connected",
         connectedAccount: account.trim() || undefined,
         lastSync: new Date().toISOString(),
-        errors: [],
+        errors: saved.valid === false ? [saved.detail ?? "Key verification failed"] : [],
       });
       toast({
-        title: `${integration.name} connected`,
-        description: "Credentials stored server-side. Flip Live mode on the card when you're ready.",
-        variant: "success",
+        title:
+          saved.valid === false
+            ? `${integration.name}: key saved but invalid`
+            : `${integration.name} connected`,
+        description:
+          saved.valid === false
+            ? saved.detail
+            : "Credentials encrypted server-side. Flip Live mode when you're ready.",
+        variant: saved.valid === false ? "error" : "success",
       });
       setApiKey("");
       setAccount("");

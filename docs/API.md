@@ -136,7 +136,8 @@ skip). Idle loop ticks never poll mailboxes or call the classifier. See
 - **Data in:** Apify vendor purchase via `/api/source/apify/*` (working).
 - **Messages out:** assisted-manual E2E via Settings connect + Confirm; `vendor-api`
   requires `LINKEDIN_VENDOR_API_URL` + `LINKEDIN_VENDOR_API_KEY` (fail-closed).
-- **No** LinkedIn password/OAuth login in Aria. See `docs/LINKEDIN_SEND_ONLY.md`
+- **Sign In with LinkedIn (OpenID Connect)** via `/auth/linkedin` — identity only; messaging stays assisted-manual or `LINKEDIN_VENDOR_*`. See `docs/LINKEDIN_SEND_ONLY.md`.
+- **No** LinkedIn password, cookie, or session capture in Aria.
   and `docs/runbooks/connect-linkedin-assisted-manual.md`.
 
 ## Stability notes

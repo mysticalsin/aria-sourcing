@@ -42,7 +42,7 @@ import { SchedulesPanel } from "@/components/settings/schedules-panel";
 import { HermesSchedulesPanel } from "@/components/settings/hermes-schedules-panel";
 import { useHydrated, useSettings, useIntegrations, useActions } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
-import { integrationHealthSummary } from "@/lib/integrations";
+import { realIntegrationSummary } from "@/lib/integrations";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { LANGUAGES } from "@/lib/i18n";
 import {
@@ -251,17 +251,35 @@ export default function SettingsPage() {
     const oauth = params.get("oauth");
     const message = params.get("message");
     if (oauth === "success") {
-      toast({ title: "Mailbox connected", description: message ?? "", variant: "success" });
+      const linkedIn = /linkedin/i.test(message ?? "");
+      toast({
+        title: linkedIn ? "LinkedIn connected" : "Mailbox connected",
+        description: message ?? "",
+        variant: "success",
+      });
       goTab("integrations");
       window.history.replaceState({}, "", `${window.location.pathname}?tab=integrations`);
     } else if (oauth === "error") {
-      toast({ title: "Mailbox connection failed", description: message ?? "", variant: "error" });
+      const linkedIn = /linkedin/i.test(message ?? "");
+      toast({
+        title: linkedIn ? "LinkedIn connection failed" : "Mailbox connection failed",
+        description: message ?? "",
+        variant: "error",
+      });
       goTab("integrations");
       window.history.replaceState({}, "", `${window.location.pathname}?tab=integrations`);
     }
   }, [toast, goTab]);
 
-  const summary = integrationHealthSummary(integrations);
+  const summary = realIntegrationSummary(integrations);
+  const roadmapIntegrations = React.useMemo(
+    () => integrations.filter((i) => !i.real),
+    [integrations],
+  );
+  const liveIntegrations = React.useMemo(
+    () => integrations.filter((i) => i.real),
+    [integrations],
+  );
 
   function savedToast() {
     toast({ title: "Settings saved", variant: "success" });
@@ -612,13 +630,13 @@ export default function SettingsPage() {
             n="04"
             eyebrow="Connections"
             title="Integrations"
-            description="Connect Gmail or Outlook, then validate MCP and the rest of Aria's tool stack."
+            description="Real connections only: Sign in with LinkedIn, connect Gmail/Outlook, then wire Apify and the rest of Aria’s stack. No fake “connected” skeletons."
           >
             <EmailConnectionsPanel />
             <LinkedInConnectionsPanel />
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone="success" size="sm" dot>
-                {summary.connected} connected
+                {summary.connected} live connected
               </Badge>
               {summary.degraded > 0 && (
                 <Badge tone="warning" size="sm" dot>
@@ -635,24 +653,42 @@ export default function SettingsPage() {
                   {summary.notConfigured} not configured
                 </Badge>
               )}
-              <span className="text-xs text-muted">of {summary.total} total · mock is the safe default</span>
+              <span className="text-xs text-muted">
+                of {summary.total} wired adapters · roadmap cards listed separately
+              </span>
             </div>
 
-            {integrations.length === 0 ? (
+            {liveIntegrations.length === 0 ? (
               <EmptyState
                 icon={<Plug2 className="h-7 w-7" />}
-                title="No integrations configured"
-                description="Integrations appear here once Aria is provisioned with its tool connections."
+                title="No live integrations"
+                description="Connect email or LinkedIn above to get started."
               />
             ) : (
-              <>
-                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                  {integrations.map((i) => (
+              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                {liveIntegrations.map((i) => (
+                  <IntegrationCard key={i.id} integration={i} />
+                ))}
+              </div>
+            )}
+
+            <DatabricksPanel />
+
+            {roadmapIntegrations.length > 0 && (
+              <details className="rounded-2xl border border-dashed border-line p-4">
+                <summary className="cursor-pointer text-sm font-semibold text-ink">
+                  Roadmap placeholders ({roadmapIntegrations.length}) — not wired
+                </summary>
+                <p className="mt-2 text-xs text-muted">
+                  These cards are product backlog only. They cannot connect and never report a fake
+                  “connected” state.
+                </p>
+                <div className="mt-4 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                  {roadmapIntegrations.map((i) => (
                     <IntegrationCard key={i.id} integration={i} />
                   ))}
                 </div>
-                <DatabricksPanel />
-              </>
+              </details>
             )}
           </Section>
 

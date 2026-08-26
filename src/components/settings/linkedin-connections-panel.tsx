@@ -8,7 +8,15 @@ import { can } from "@/lib/rbac";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { isLinkedInSeatProvider } from "@/lib/linkedin-connections";
 import { cn } from "@/lib/utils";
-import { Activity, AlertTriangle, CheckCircle2, Linkedin, ShieldCheck, Unplug, Wand2 } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  CheckCircle2,
+  Linkedin,
+  ShieldCheck,
+  Unplug,
+  Wand2,
+} from "lucide-react";
 import { LINKEDIN_EVENT_TYPES, type LinkedInEventType } from "@/lib/linkedin-events";
 import {
   appendLinkedInDemoEvent,
@@ -16,9 +24,18 @@ import {
 } from "@/lib/linkedin-demo-events-store";
 
 type ProviderReadiness = {
+  oauthConfigured: boolean;
+  encryptionReady: boolean;
   assistedManual: boolean;
   vendorApiConfigured: boolean;
   inboundWebhookSecret: boolean;
+};
+
+type OAuthProfile = {
+  displayName: string;
+  email: string | null;
+  pictureUrl: string | null;
+  connectedAt: string;
 };
 
 type SeatRow = {
@@ -30,6 +47,8 @@ type SeatRow = {
   operatorEmail?: string;
   connectedAccount?: string | null;
   adapterConfigured?: boolean;
+  oauthConnected?: boolean;
+  oauthProfile?: OAuthProfile | null;
   inboundRoute?: { routeKey: string; operatorLabel: string; active: boolean } | null;
 };
 
@@ -40,7 +59,8 @@ export function LinkedInConnectionsPanel() {
   const { toast } = useToast();
   const isAdmin = can(role, "manage_fleet");
   const [loading, setLoading] = React.useState(true);
-  const [connecting, setConnecting] = React.useState(false);
+  const [connectingOAuth, setConnectingOAuth] = React.useState(false);
+  const [connectingAssisted, setConnectingAssisted] = React.useState(false);
   const [testingSeat, setTestingSeat] = React.useState<string | null>(null);
   const [label, setLabel] = React.useState("");
   const [providers, setProviders] = React.useState<ProviderReadiness | null>(null);
@@ -76,7 +96,6 @@ export function LinkedInConnectionsPanel() {
           operatorEmail: s.operatorEmail,
         }));
 
-      // Demo (no Supabase): prefer client seats — API returns seats:[] and must not wipe UI.
       if (json?.demo || !supabaseEnabled) {
         setSeats(localLinkedIn);
       } else if (Array.isArray(json?.seats)) {
@@ -97,63 +116,78 @@ export function LinkedInConnectionsPanel() {
     void load();
   }, [load]);
 
+  async function connectWithLinkedInOAuth() {
+    if (!supabaseEnabled) {
+      toast({
+        title: "Live mode required",
+        description: "Configure Supabase, then Sign in with LinkedIn here.",
+        variant: "error",
+      });
+      return;
+    }
+    setConnectingOAuth(true);
+    try {
+      const res = await fetch("/api/linkedin/connections", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "ensure_oauth", goLive: true }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+        detail?: string;
+        status?: string;
+        authorizeUrl?: string;
+      } | null;
+      if (json?.status === "dry-run") {
+        toast({ title: "Public demo only", description: json.detail, variant: "info" });
+        return;
+      }
+      if (!json?.ok || !json.authorizeUrl) {
+        toast({
+          title: "LinkedIn Sign In unavailable",
+          description: json?.error ?? `HTTP ${res.status}`,
+          variant: "error",
+        });
+        return;
+      }
+      window.location.href = json.authorizeUrl;
+    } catch {
+      toast({ title: "Connect failed", description: "Network error.", variant: "error" });
+      setConnectingOAuth(false);
+    }
+  }
+
   async function connectAssisted() {
     if (!supabaseEnabled) {
-      setConnecting(true);
+      setConnectingAssisted(true);
       try {
-        // Demo: create local seat via store (durable route_key needs Supabase).
         const seat = await actions.addSeat({
           name: "My LinkedIn (assisted)",
           operatorEmail: label.includes("@") ? label : "operator@demo.local",
           provider: "LinkedIn Assisted Manual",
         });
         if (!seat) {
-          toast({
-            title: "Connect failed",
-            description: "Could not create a local LinkedIn seat.",
-            variant: "error",
-          });
+          toast({ title: "Connect failed", description: "Could not create a local LinkedIn seat.", variant: "error" });
           return;
         }
         actions.updateSeat(seat.id, { connectedAccount: label.trim() || "Operator LinkedIn" });
         const live = await actions.toggleSeatLive(seat.id);
-        if (!live.ok) {
-          toast({ title: "Seat created", description: live.reason, variant: "warning" });
-        } else {
-          toast({
-            title: "LinkedIn assisted-manual ready",
-            description: "Draft → copy into LinkedIn → Confirm send in Aria.",
-            variant: "success",
-          });
-        }
-        // Refresh from local store without waiting on a wipe-prone API list.
-        setSeats((prev) => {
-          const row = {
-            id: seat.id,
-            name: seat.name,
-            provider: seat.provider,
-            status: seat.status,
-            mode: "live" as const,
-            connectedAccount: label.trim() || "Operator LinkedIn",
-            operatorEmail: seat.operatorEmail,
-          };
-          if (prev.some((s) => s.id === seat.id)) {
-            return prev.map((s) => (s.id === seat.id ? { ...s, ...row } : s));
-          }
-          return [...prev, row];
-        });
-      } catch (err) {
         toast({
-          title: "Connect failed",
-          description: err instanceof Error ? err.message : "Unexpected error.",
-          variant: "error",
+          title: live.ok ? "Assisted-manual seat ready" : "Seat created",
+          description: live.ok
+            ? "Draft → copy into LinkedIn → Confirm send in Aria. (Demo has no durable OAuth.)"
+            : live.reason,
+          variant: live.ok ? "success" : "warning",
         });
+        await load();
       } finally {
-        setConnecting(false);
+        setConnectingAssisted(false);
       }
       return;
     }
-    setConnecting(true);
+    setConnectingAssisted(true);
     try {
       const res = await fetch("/api/linkedin/connections", {
         method: "POST",
@@ -171,7 +205,6 @@ export function LinkedInConnectionsPanel() {
         error?: string;
         detail?: string;
         status?: string;
-        routeKey?: string;
       } | null;
       if (json?.status === "dry-run") {
         toast({ title: "Public demo only", description: json.detail, variant: "info" });
@@ -181,16 +214,12 @@ export function LinkedInConnectionsPanel() {
         toast({ title: "Connect failed", description: json?.error ?? `HTTP ${res.status}`, variant: "error" });
         return;
       }
-      toast({
-        title: "LinkedIn connected",
-        description: json.detail ?? "Assisted-manual seat is live.",
-        variant: "success",
-      });
+      toast({ title: "Assisted-manual seat ready", description: json.detail, variant: "success" });
       await load();
     } catch {
       toast({ title: "Connect failed", description: "Network error.", variant: "error" });
     } finally {
-      setConnecting(false);
+      setConnectingAssisted(false);
     }
   }
 
@@ -282,63 +311,94 @@ export function LinkedInConnectionsPanel() {
     }
   }
 
+  const oauthSeat = seats.find((s) => s.oauthConnected);
+  const signedIn = Boolean(oauthSeat?.oauthProfile);
+
   return (
-    <Card className="overflow-hidden border-sky-500/20 bg-gradient-to-br from-surface via-surface to-sky-500/[0.06]">
+    <Card className="overflow-hidden border-[#0A66C2]/25 bg-gradient-to-br from-surface via-surface to-[#0A66C2]/[0.07]">
       <CardContent className="space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <Eyebrow>Messaging</Eyebrow>
-            <p className="mt-1 text-sm font-semibold text-ink">Connect LinkedIn (safe)</p>
-            <p className="mt-1 max-w-2xl text-xs text-muted">
-              Aria never logs into LinkedIn or stores your password. You connect an{" "}
-              <strong className="font-semibold text-ink">assisted-manual</strong> seat: Aria drafts,
-              you paste/send in LinkedIn, then confirm here. Vendor API is optional when contracted.
+            <Eyebrow>LinkedIn</Eyebrow>
+            <p className="mt-1 text-base font-semibold text-ink">Sign in with LinkedIn</p>
+            <p className="mt-1 max-w-2xl text-sm text-muted">
+              Real OpenID Connect login against LinkedIn. We store encrypted tokens and your public
+              profile — never your password. Messaging drafts still go through assisted-manual or a
+              contracted vendor (LinkedIn does not grant InMail via public OAuth alone).
             </p>
           </div>
-          <Badge tone={seats.some((s) => s.mode === "live") ? "success" : "neutral"} size="sm" dot>
-            {seats.some((s) => s.mode === "live") ? "Ready" : "Not connected"}
+          <Badge tone={signedIn ? "success" : "neutral"} size="sm" dot>
+            {signedIn ? "Signed in" : "Not signed in"}
           </Badge>
         </div>
 
         {providers && (
           <div className="flex flex-wrap gap-2">
-            <Badge tone="success" size="sm" dot>
-              Assisted-manual
+            <Badge tone={providers.oauthConfigured ? "success" : "danger"} size="sm" dot>
+              LinkedIn OAuth {providers.oauthConfigured ? "ready" : "missing env"}
             </Badge>
-            <Badge tone={providers.vendorApiConfigured ? "success" : "warning"} size="sm" dot>
-              Vendor API {providers.vendorApiConfigured ? "configured" : "dark"}
+            <Badge tone={providers.encryptionReady ? "success" : "warning"} size="sm" dot>
+              Encryption {providers.encryptionReady ? "ready" : "needed"}
+            </Badge>
+            <Badge tone={providers.vendorApiConfigured ? "success" : "neutral"} size="sm" dot>
+              Vendor API {providers.vendorApiConfigured ? "on" : "optional"}
             </Badge>
             <Badge tone={providers.inboundWebhookSecret ? "success" : "warning"} size="sm" dot>
-              Inbound webhook secret
+              Inbound webhook
             </Badge>
           </div>
         )}
 
-        {isAdmin && (
-          <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-            <Field label="Operator label" htmlFor="li-operator-label" hint="Your name or LinkedIn handle — not a password.">
-              <Input
-                id="li-operator-label"
-                value={label}
-                onChange={(e) => setLabel(e.target.value)}
-                placeholder="e.g. Alex Recruiter"
+        {signedIn && oauthSeat?.oauthProfile ? (
+          <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-success/25 bg-success-soft/40 p-4">
+            {oauthSeat.oauthProfile.pictureUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={oauthSeat.oauthProfile.pictureUrl}
+                alt=""
+                className="h-12 w-12 rounded-full object-cover"
+                referrerPolicy="no-referrer"
               />
-            </Field>
+            ) : (
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#0A66C2] text-white">
+                <Linkedin className="h-6 w-6" aria-hidden />
+              </span>
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-ink">{oauthSeat.oauthProfile.displayName}</p>
+              <p className="text-xs text-muted">
+                {oauthSeat.oauthProfile.email ?? "No email from LinkedIn"} · connected{" "}
+                {new Date(oauthSeat.oauthProfile.connectedAt).toLocaleString()}
+              </p>
+            </div>
+            <CheckCircle2 className="h-5 w-5 text-success" aria-hidden />
+          </div>
+        ) : null}
+
+        {isAdmin && (
+          <div className="flex flex-wrap items-center gap-3">
             <Button
-              size="sm"
               leftIcon={<Linkedin className="h-4 w-4" />}
-              loading={connecting}
-              onClick={() => void connectAssisted()}
+              loading={connectingOAuth}
+              disabled={!providers?.oauthConfigured && supabaseEnabled}
+              onClick={() => void connectWithLinkedInOAuth()}
             >
-              Connect my LinkedIn
+              {signedIn ? "Reconnect LinkedIn" : "Sign in with LinkedIn"}
             </Button>
+            {!providers?.oauthConfigured && supabaseEnabled ? (
+              <p className="max-w-md text-xs text-danger">
+                Set <code className="font-mono">LINKEDIN_CLIENT_ID</code> +{" "}
+                <code className="font-mono">LINKEDIN_CLIENT_SECRET</code> (and redirect URI) from the
+                LinkedIn Developer Portal → Sign In with LinkedIn using OpenID Connect.
+              </p>
+            ) : null}
           </div>
         )}
 
         {loading ? (
-          <p className="text-xs text-muted">Loading LinkedIn seats…</p>
+          <p className="text-xs text-muted">Loading LinkedIn connection…</p>
         ) : seats.length === 0 ? (
-          <p className="text-xs text-muted">No LinkedIn seat yet. Connect above to enable messaging.</p>
+          <p className="text-xs text-muted">No LinkedIn seat yet. Sign in above to create one.</p>
         ) : (
           <ul className="space-y-3">
             {seats.map((s, i) => {
@@ -351,18 +411,25 @@ export function LinkedInConnectionsPanel() {
                   transition={{ delay: i * 0.04 }}
                   className={cn(
                     "rounded-2xl border border-line bg-surface/90 p-4",
-                    ready ? "border-success/20" : "border-warning/25",
+                    s.oauthConnected ? "border-[#0A66C2]/30" : ready ? "border-success/20" : "border-warning/25",
                   )}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        {ready ? (
+                        {s.oauthConnected ? (
+                          <CheckCircle2 className="h-4 w-4 text-[#0A66C2]" aria-hidden />
+                        ) : ready ? (
                           <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />
                         ) : (
                           <AlertTriangle className="h-4 w-4 text-warning" aria-hidden />
                         )}
                         <span className="truncate text-sm font-semibold text-ink">{s.name}</span>
+                        {s.oauthConnected && (
+                          <Badge tone="electric" size="sm">
+                            OIDC signed in
+                          </Badge>
+                        )}
                         <Badge tone="neutral" size="sm">
                           {s.provider}
                         </Badge>
@@ -371,15 +438,9 @@ export function LinkedInConnectionsPanel() {
                         </Badge>
                       </div>
                       <p className="mt-1 text-xs text-muted">
-                        {s.connectedAccount || s.operatorEmail || "No operator label"}
+                        {s.oauthProfile?.displayName || s.connectedAccount || s.operatorEmail || "No identity"}
                         {s.inboundRoute?.active ? " · inbound route OK" : " · inbound route missing"}
-                        {s.adapterConfigured === false ? " · adapter not configured" : ""}
                       </p>
-                      {s.inboundRoute?.routeKey && (
-                        <p className="mt-1 truncate font-mono text-[10px] text-muted" title={s.inboundRoute.routeKey}>
-                          route_key: {s.inboundRoute.routeKey.slice(0, 12)}…
-                        </p>
-                      )}
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Button
@@ -409,20 +470,40 @@ export function LinkedInConnectionsPanel() {
           </ul>
         )}
 
-        <ol className="space-y-1.5 text-xs text-muted">
-          <li>1. Connect → live assisted-manual seat</li>
-          <li>2. Source candidates → draft LinkedIn outreach → approve</li>
-          <li>3. Copy → open LinkedIn → paste/send → Confirm in Aria</li>
-          <li>4. Candidate answers → vendor webhook (or Simulate below) → classify</li>
-        </ol>
+        {isAdmin && (
+          <details className="rounded-2xl border border-dashed border-line p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-ink">
+              Advanced: assisted-manual without OAuth
+            </summary>
+            <p className="mt-2 text-xs text-muted">
+              Creates a messaging seat without LinkedIn Sign In. Prefer OAuth above when credentials
+              are configured.
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+              <Field label="Operator label" htmlFor="li-operator-label">
+                <Input
+                  id="li-operator-label"
+                  value={label}
+                  onChange={(e) => setLabel(e.target.value)}
+                  placeholder="e.g. Alex Recruiter"
+                />
+              </Field>
+              <Button size="sm" variant="outline" loading={connectingAssisted} onClick={() => void connectAssisted()}>
+                Create assisted seat
+              </Button>
+            </div>
+          </details>
+        )}
 
         {isAdmin && (
-          <div className="space-y-3 rounded-2xl border border-dashed border-sky-500/30 bg-sky-500/[0.04] p-4">
-            <p className="text-xs font-semibold text-ink">Simulate HeyReach event (admin)</p>
-            <p className="text-[11px] text-muted">
-              Proves reply webhook → classify without a vendor. Does not call linkedin.com.
+          <details className="rounded-2xl border border-dashed border-sky-500/30 bg-sky-500/[0.04] p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-ink">
+              Admin: simulate inbound event
+            </summary>
+            <p className="mt-2 text-[11px] text-muted">
+              Proves webhook → classify without a vendor. Does not call linkedin.com.
             </p>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <Field label="Event type" htmlFor="li-sim-type">
                 <select
                   id="li-sim-type"
@@ -447,30 +528,26 @@ export function LinkedInConnectionsPanel() {
               </Field>
             </div>
             {simType === "reply" && (
-              <Field label="Reply body" htmlFor="li-sim-body">
-                <Input
-                  id="li-sim-body"
-                  value={simBody}
-                  onChange={(e) => setSimBody(e.target.value)}
-                />
+              <Field label="Reply body" htmlFor="li-sim-body" className="mt-3">
+                <Input id="li-sim-body" value={simBody} onChange={(e) => setSimBody(e.target.value)} />
               </Field>
             )}
             <Button
               size="sm"
               variant="subtle"
+              className="mt-3"
               leftIcon={<Wand2 className="h-3.5 w-3.5" />}
               loading={simulating}
               onClick={() => void simulateEvent(seats[0]?.id)}
             >
               Simulate event
             </Button>
-          </div>
+          </details>
         )}
 
         <p className="flex items-start gap-1.5 text-xs text-muted">
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-          Policy: no scrape, no session bots, no password storage. See{" "}
-          <code className="rounded bg-ink/[0.06] px-1 font-mono">docs/LINKEDIN_HEYREACH_PARITY.md</code>.
+          No scrape, no session bots, no password storage. OIDC tokens encrypted at rest.
         </p>
       </CardContent>
     </Card>

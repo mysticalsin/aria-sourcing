@@ -89,8 +89,9 @@ const confirm = readFileSync("src/app/api/outreach/confirm-manual/route.ts", "ut
 ok("confirm-manual uses assisted RPC", /record_linkedin_assisted_manual_send/.test(confirm));
 
 const panel = readFileSync("src/components/settings/linkedin-connections-panel.tsx", "utf8");
-ok("settings panel Connect my LinkedIn", /Connect my LinkedIn/.test(panel));
-ok("settings panel refuses password framing", /never logs into LinkedIn/i.test(panel));
+ok("settings panel Sign in with LinkedIn", /Sign in with LinkedIn/.test(panel));
+ok("settings panel refuses password storage", /never your password/i.test(panel));
+ok("settings panel OIDC ensure_oauth", /ensure_oauth/.test(panel));
 ok("demo seats not wiped by empty API seats array", /json\?\.demo \|\| !supabaseEnabled/.test(panel));
 ok("simulate skips non-UUID demo seat ids", /uuidSeat/.test(panel));
 
@@ -100,7 +101,20 @@ ok("confirmManualSend calls confirm-manual API", /\/api\/outreach\/confirm-manua
 ok("draft injects linkedInGuardrailPrompt", /linkedInGuardrailPrompt\(\)/.test(store));
 
 const sendOnly = readFileSync("docs/LINKEDIN_SEND_ONLY.md", "utf8");
-ok("docs mention webhook path", /\/api\/webhooks\/linkedin/.test(sendOnly));
+ok("docs mention OIDC", /openid connect/i.test(sendOnly));
+ok("docs refuse password\/cookie capture", /password|cookie|session/i.test(sendOnly));
+
+const oauthMigration = existsSync("supabase/migrations/0061_linkedin_oauth_connections.sql")
+  ? readFileSync("supabase/migrations/0061_linkedin_oauth_connections.sql", "utf8")
+  : "";
+ok("migration 0061 exists", oauthMigration.length > 0);
+ok("0061 linkedin_oauth_connections table", /linkedin_oauth_connections/.test(oauthMigration));
+
+const oauthRoute = readFileSync("src/app/auth/linkedin/route.ts", "utf8");
+ok("auth linkedin start route", /LINKEDIN_AUTHORIZE_URL|oauth\/v2\/authorization/.test(oauthRoute));
+const oauthCb = readFileSync("src/app/auth/linkedin/callback/route.ts", "utf8");
+ok("auth linkedin callback userinfo", /LINKEDIN_USERINFO_URL|userinfo/.test(oauthCb));
+ok("auth linkedin encrypts tokens", /encryptSecret/.test(oauthCb));
 
 console.log(`RESULT linkedin-connections: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

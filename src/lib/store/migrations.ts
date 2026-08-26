@@ -20,7 +20,11 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
   // Blobs older than 12 have their model layer reset below so returning visitors
   // leave the previous Anthropic default (which would fall back to the mock).
   const preKimi = (parsed.version ?? 0) < 12;
+  // STATE_VERSION 18 — wipe fake "connected" seeds on real cards (GitHub/Apify/Graph/SendGrid)
+  // that never had a real credential attached.
+  const preHonestIntegrations = (parsed.version ?? 0) < 18;
   const starT = parsed.settings?.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
+  const FAKE_CONNECTED_IDS = new Set(["int_github", "int_apify", "int_graph_teams", "int_sendgrid"]);
   return {
     ...parsed,
     version: STATE_VERSION,
@@ -43,12 +47,26 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
     // STATE_VERSION 16 — re-sync each stored integration's `real` flag against
     // the current seed. Roadmap placeholders (`real: false`) also lose any older
     // fabricated connected/lastSync state; real cards keep their usage history.
+    // STATE_VERSION 18 — also reset known fake-connected real cards.
     integrations:
       parsed.integrations && parsed.integrations.length > 0
         ? parsed.integrations.map((i) => {
             const seed = defaultIntegrations().find((d) => d.id === i.id);
             if (!seed) return i;
-            return seed.real ? { ...i, real: true } : { ...i, real: false, status: "not_configured", lastSync: null };
+            if (!seed.real) {
+              return { ...i, real: false, status: "not_configured" as const, lastSync: null };
+            }
+            if (preHonestIntegrations && FAKE_CONNECTED_IDS.has(i.id) && i.mode === "mock") {
+              return {
+                ...i,
+                real: true,
+                status: seed.status,
+                mode: seed.mode,
+                lastSync: seed.lastSync,
+                errors: seed.errors,
+              };
+            }
+            return { ...i, real: true };
           })
         : defaultIntegrations(),
     activities: parsed.activities ?? [],

@@ -165,6 +165,7 @@ function createHarness(options: {
       state = update(state);
       return true;
     },
+    flushWorkspaceSave: async () => true,
     currentState: () => state,
     sourcingMutationAllowed: () => mutationAllowed,
     workspaceEffectAllowed: () => workspaceAllowed,

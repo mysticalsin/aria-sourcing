@@ -28,7 +28,12 @@ const EnsureSchema = z.object({
   goLive: z.boolean().optional().default(true),
 });
 
-const BodySchema = EnsureSchema;
+const EnsureOAuthSchema = z.object({
+  action: z.literal("ensure_oauth"),
+  goLive: z.boolean().optional().default(true),
+});
+
+const BodySchema = z.discriminatedUnion("action", [EnsureSchema, EnsureOAuthSchema]);
 
 /**
  * List LinkedIn messaging seats + readiness. POST ensure_connect creates/picks
@@ -100,12 +105,47 @@ export async function GET(req: NextRequest) {
     ),
   );
 
+  const { data: oauthRows } = await supabase
+    .from("linkedin_oauth_connections")
+    .select("id, seat_id, linkedin_sub, display_name, email, picture_url, scope, connected_at, updated_at, expires_at")
+    .eq("workspace_id", wid);
+
+  const oauthBySeat = new Map(
+    (
+      (oauthRows ?? []) as {
+        id: string;
+        seat_id: string;
+        linkedin_sub: string;
+        display_name: string;
+        email: string | null;
+        picture_url: string | null;
+        scope: string;
+        connected_at: string;
+        updated_at: string;
+        expires_at: string | null;
+      }[]
+    ).map((o) => [o.seat_id, o]),
+  );
+
   return NextResponse.json({
     ok: true,
     providers: linkedInProviderReadiness(),
+    oauthConnections: Array.from(oauthBySeat.values()).map((o) => ({
+      id: o.id,
+      seatId: o.seat_id,
+      linkedinSub: o.linkedin_sub,
+      displayName: o.display_name,
+      email: o.email,
+      pictureUrl: o.picture_url,
+      scope: o.scope,
+      connectedAt: o.connected_at,
+      updatedAt: o.updated_at,
+      expiresAt: o.expires_at,
+    })),
     seats: seats.map((s) => {
       const route = routeBySeat.get(s.id);
       const adapter = linkedInAdapterForProvider(s.provider);
+      const oauth = oauthBySeat.get(s.id);
       return {
         id: s.id,
         name: s.name,
@@ -115,6 +155,15 @@ export async function GET(req: NextRequest) {
         operatorEmail: s.operator_email,
         connectedAccount: s.connected_account || null,
         adapterConfigured: adapter?.configured() ?? false,
+        oauthConnected: Boolean(oauth),
+        oauthProfile: oauth
+          ? {
+              displayName: oauth.display_name,
+              email: oauth.email,
+              pictureUrl: oauth.picture_url,
+              connectedAt: oauth.connected_at,
+            }
+          : null,
         inboundRoute: route
           ? { routeKey: route.route_key, operatorLabel: route.operator_label, active: route.active }
           : null,
@@ -168,6 +217,43 @@ export async function POST(req: NextRequest) {
 
   if (publicDemoSideEffectsDisabled()) {
     return NextResponse.json({ ok: true, status: "dry-run", detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
+  }
+
+  if (body.action === "ensure_oauth") {
+    const readiness = linkedInProviderReadiness();
+    if (!readiness.oauthConfigured) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "LinkedIn OAuth is not configured. Set LINKEDIN_CLIENT_ID + LINKEDIN_CLIENT_SECRET from the LinkedIn Developer Portal (Sign In with LinkedIn using OpenID Connect).",
+        },
+        { status: 503 },
+      );
+    }
+    if (!readiness.encryptionReady) {
+      return NextResponse.json(
+        { ok: false, error: "DATA_ENCRYPTION_KEY is required before storing LinkedIn tokens." },
+        { status: 503 },
+      );
+    }
+    const ensured = await ensureConnect(
+      supabase,
+      wid as string,
+      "LinkedIn Assisted Manual",
+      user.email || "operator@aria.local",
+      body.goLive !== false,
+    );
+    const payload = await ensured.json().catch(() => null);
+    if (!ensured.ok || !payload?.ok || !payload.seatId) {
+      return ensured;
+    }
+    return NextResponse.json({
+      ok: true,
+      seatId: payload.seatId,
+      authorizeUrl: `/auth/linkedin?seat_id=${encodeURIComponent(payload.seatId)}`,
+      detail: "Redirecting to LinkedIn Sign In…",
+    });
   }
 
   return ensureConnect(

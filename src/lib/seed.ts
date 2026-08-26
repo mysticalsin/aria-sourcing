@@ -61,7 +61,7 @@ import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
 // connected/lastSync state after the default seed became honest.
 // STATE_VERSION 17 - Databricks execution authority moved out of the shared
 // workspace JSON and into an admin-owned normalized database record.
-export const STATE_VERSION = 17;
+export const STATE_VERSION = 18;
 
 /* ---- LLM config defaults ------------------------------------------------- */
 

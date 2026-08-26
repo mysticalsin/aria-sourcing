@@ -1,6 +1,7 @@
 import { defaultIntegrations, testConnection } from "../src/lib/integrations";
 
-let pass = 0, fail = 0;
+let pass = 0,
+  fail = 0;
 function ok(name: string, cond: boolean) {
   if (cond) {
     pass++;
@@ -26,13 +27,19 @@ ok(
   "every real:false integration has null lastSync",
   placeholders.every((integration) => integration.lastSync === null),
 );
+ok("real:true cards still exist", realCards.length > 0);
 ok(
-  "real:true cards still exist",
-  realCards.length > 0,
+  "GitHub real card starts honestly unconfigured (no fake connected)",
+  github?.real === true && github.status === "not_configured" && github.lastSync === null,
 );
 ok(
-  "GitHub real card remains connected",
-  github?.real === true && github.status === "connected" && typeof github.lastSync === "string",
+  "no real card seeds a fake connected+mock lastSync",
+  realCards.every(
+    (i) =>
+      i.status !== "connected" ||
+      i.id === "int_supabase" /* runtime-derived */ ||
+      false,
+  ),
 );
 ok(
   "real:false connection tests fail closed",
@@ -40,21 +47,23 @@ ok(
 );
 ok(
   "LinkedIn profile search is a truthfully real card, not a roadmap placeholder",
-  apify?.real === true && apify.status === "connected" && typeof apify.lastSync === "string",
+  apify?.real === true && apify.status === "not_configured",
 );
 ok(
   "LinkedIn profile search card uses neutral operator-facing name",
   apify?.name === "LinkedIn profile search",
 );
 ok(
-  "LinkedIn profile search description names third-party provider and disclaims first-party LinkedIn automation",
-  /third-party/i.test(apify?.description ?? "") &&
-    /no direct linkedin login, scraping, or session automation/i.test(apify?.description ?? "") &&
-    /source next batch/i.test(apify?.description ?? ""),
+  "LinkedIn profile search points operators at Apify vault / Access & Keys",
+  /apify/i.test(apify?.description ?? "") && apify?.setupHref === "/settings?tab=access",
 );
 ok(
-  "Official LinkedIn messaging card is real (assisted-manual path) and starts unconfigured",
+  "Official LinkedIn messaging card is real and starts unconfigured",
   linkedinRsc?.real === true && linkedinRsc.status === "not_configured",
+);
+ok(
+  "LinkedIn messaging card mentions OpenID Connect / Sign in",
+  /openid|sign in with linkedin/i.test(linkedinRsc?.description ?? ""),
 );
 
 console.log(`RESULT integrations-honesty: ${pass} passed, ${fail} failed`);

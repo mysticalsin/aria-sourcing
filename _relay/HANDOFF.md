@@ -1,43 +1,59 @@
 ---
 project: MSourcing / ARIA
-shift: 92
+shift: 94
 agent: cursor-cloud
 updated: 2026-08-26 UTC
-status: llm-key-e2e-strict
+status: linkedin-oidc-shipped-awaiting-fly-secrets
 ---
 
-# Handoff - Shift 92
+# Handoff - Shift 94
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #29
-- Strict E2E of Settings → AI encrypt+verify completed locally
-- **Critical fix:** NVIDIA NIM hosted `GET /models` is public (200 with no/invalid auth) — probe now uses chat/completions only; default model set to `nvidia/llama-3.1-nemotron-70b-instruct` (EOL llama-3.3-70b removed)
-- `formatValid` on `POST /api/keys` now reflects format check, not probe result
-- Live tests: `tests/llm-key-probe-live.mts` registered in manifest
-- Artifacts: `settings-ai-provider-dropdown.png`, `settings-ai-e2e-saved-keys.png`
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #29 → `integration/sourcing-enrichment-on-main`
+- Real **Sign In with LinkedIn (OIDC)** is implemented on branch (not yet live on Fly):
+  - Routes: `/auth/linkedin`, `/auth/linkedin/callback`
+  - Migration: `supabase/migrations/0061_linkedin_oauth_connections.sql`
+  - API: `POST /api/linkedin/connections` action `ensure_oauth` → seat + `authorizeUrl`
+- Settings → Integrations: LinkedIn OIDC primary CTA; assisted-manual under Advanced; live cards only; roadmap collapsed; fake Connected seeds wiped via **STATE_VERSION 18**
+- LinkedIn/oauth/honesty/infra tests green; full gate still has **7 pre-existing** `store-sourcing-actions` failures (harness now includes `flushWorkspaceSave`; remaining mismatches unrelated to LinkedIn)
+
+## Ops required for live OAuth on Fly
+
+1. LinkedIn Developer Portal → create app → enable **Sign In with LinkedIn using OpenID Connect**
+2. Authorized redirect URL: `https://aria-mantu-app.fly.dev/auth/linkedin/callback`
+3. `fly secrets set LINKEDIN_CLIENT_ID=… LINKEDIN_CLIENT_SECRET=… LINKEDIN_REDIRECT_URI=https://aria-mantu-app.fly.dev/auth/linkedin/callback -a aria-mantu-app`
+4. Apply migration **0061**; confirm `DATA_ENCRYPTION_KEY` present
+5. Redeploy app image that includes this branch
 
 ## Done this shift
 
-- Live network probes: Anthropic/DeepSeek/Kimi 401, NVIDIA 403 for fake keys
-- UI E2E: DeepSeek, NVIDIA NIM, Kimi all encrypt → clear → ••••last4 → invalid
-- API E2E via demo cookie against local `next start`
+- OIDC routes + encrypted `linkedin_oauth_connections` table
+- Panel rewrite + integrations honesty (no fake connected cards)
+- STATE_VERSION 18 migration for stale mock-connected GitHub/Apify/Graph/SendGrid
+- Infra: register `fly-deploy-now.sh`; neutralize false-positive `fly secrets set` echo in golive script
+- Test harness: add missing `flushWorkspaceSave` mock
 
 ## Blockers
 
-- No real provider keys in env — positive (valid) path not exercised live
-- Fly release identity may still lag
+- Fly has no `LINKEDIN_CLIENT_*` secrets — Sign In shows “missing env” until ops sets them
+- Fly production may lag this branch SHA until redeploy
 
 ## Next steps
 
-1. Redeploy Fly with this branch
-2. Optional: positive-path verify with a real NVIDIA/DeepSeek/Kimi key in a secrets-capable env
+1. Tony/ops: LinkedIn app + Fly secrets + migrate 0061 + redeploy
+2. Smoke: Settings → Integrations → Sign in with LinkedIn (real LinkedIn consent screen)
+3. Optional: triage remaining 7 `store-sourcing-actions` failures on this branch
 
 ## Decisions made (don't relitigate)
 
-- Never use NVIDIA public /models as an auth probe
-- Do not commit secrets to `_relay/`
+- OIDC identity login is allowed; password/cookie/session capture still refused
+- Messaging remains assisted-manual or vendor (LinkedIn does not grant InMail via public OIDC)
+- Apify = profile search via vault key; not LinkedIn member login
+- No secrets in `_relay`/git
 
 ## Watch out
 
-- Hosted NIM model catalog churn/EOL (410) — keep default model on a live auth-gated id
+- Redirect URI must match LinkedIn app config exactly
+- Tokens require `DATA_ENCRYPTION_KEY` (≥32 chars)
+- Demo localStorage lies until STATE_VERSION 18 migration runs (hard refresh once)

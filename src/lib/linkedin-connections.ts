@@ -1,11 +1,14 @@
 /**
- * Pure helpers for Settings → LinkedIn messaging (assisted-manual + vendor).
- * No LinkedIn login, scrape, or session automation — ever.
+ * Pure helpers for Settings → LinkedIn messaging (OIDC login + assisted-manual + vendor).
+ * No LinkedIn passwords, session cookies, or scrape — ever.
  */
 
 export type LinkedInSeatProvider = "LinkedIn Assisted Manual" | "LinkedIn Vendor API";
 
 export type LinkedInProviderReadiness = {
+  /** Sign In with LinkedIn (OpenID Connect) client configured. */
+  oauthConfigured: boolean;
+  encryptionReady: boolean;
   assistedManual: true;
   vendorApiConfigured: boolean;
   inboundWebhookSecret: boolean;
@@ -14,7 +17,10 @@ export type LinkedInProviderReadiness = {
 export function linkedInProviderReadiness(
   env: Record<string, string | undefined> = process.env,
 ): LinkedInProviderReadiness {
+  const encryptionKey = env.DATA_ENCRYPTION_KEY?.trim() ?? "";
   return {
+    oauthConfigured: Boolean(env.LINKEDIN_CLIENT_ID?.trim() && env.LINKEDIN_CLIENT_SECRET?.trim()),
+    encryptionReady: encryptionKey.length >= 32,
     assistedManual: true,
     vendorApiConfigured: Boolean(
       env.LINKEDIN_VENDOR_API_URL?.trim() && env.LINKEDIN_VENDOR_API_KEY?.trim(),
