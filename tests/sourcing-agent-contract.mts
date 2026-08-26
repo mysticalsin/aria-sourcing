@@ -93,6 +93,43 @@ test("campaign fingerprint changes when the persisted need or search strategy ch
   assert.notEqual(initial, changedQuery);
 });
 
+test("campaign fingerprint is stable across key order and matches CampaignProjectionSchema output", () => {
+  const shuffled = {
+    scoringWeights: campaign.scoringWeights,
+    sourcingStrategy: campaign.sourcingStrategy,
+    status: campaign.status,
+    jobAnalysis: {
+      validationWarnings: campaign.jobAnalysis.validationWarnings,
+      requiredSkills: campaign.jobAnalysis.requiredSkills,
+      title: campaign.jobAnalysis.title,
+      department: campaign.jobAnalysis.department,
+      seniority: campaign.jobAnalysis.seniority,
+      employmentType: campaign.jobAnalysis.employmentType,
+      locationType: campaign.jobAnalysis.locationType,
+      regions: campaign.jobAnalysis.regions,
+      timezone: campaign.jobAnalysis.timezone,
+      salaryMin: campaign.jobAnalysis.salaryMin,
+      salaryMax: campaign.jobAnalysis.salaryMax,
+      currency: campaign.jobAnalysis.currency,
+      equity: campaign.jobAnalysis.equity,
+      niceToHaveSkills: campaign.jobAnalysis.niceToHaveSkills,
+      minYearsExperience: campaign.jobAnalysis.minYearsExperience,
+      maxYearsExperience: campaign.jobAnalysis.maxYearsExperience,
+      education: campaign.jobAnalysis.education,
+      industryExperience: campaign.jobAnalysis.industryExperience,
+      companyStageTarget: campaign.jobAnalysis.companyStageTarget,
+      teamSize: campaign.jobAnalysis.teamSize,
+      reportingTo: campaign.jobAnalysis.reportingTo,
+      urgency: campaign.jobAnalysis.urgency,
+    },
+    id: campaign.id,
+  };
+  assert.equal(
+    sourcingAgentCampaignFingerprint(campaign),
+    sourcingAgentCampaignFingerprint(shuffled),
+  );
+});
+
 test("strict candidate DTO rejects foreign, duplicate, unsafe, or authority-bearing payloads", () => {
   assert.equal(parseSourcingAgentCandidates([dto()], campaignId, 2)?.length, 1);
   assert.equal(parseSourcingAgentCandidates([dto({ campaignId: "foreign" })], campaignId, 2), null);

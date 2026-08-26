@@ -200,19 +200,38 @@ export type SourcingAgentWorkspace = {
   fingerprint: string;
 };
 
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((item) => stableJson(item)).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  );
+  return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(",")}}`;
+}
+
+/**
+ * Authority fingerprint shared by the sourcing-agent route and the browser
+ * commit path. Always canonicalizes through CampaignProjectionSchema and a
+ * key-sorted JSON encoding so client-held Campaign objects (key order / stray
+ * undefineds) match the server projection of workspace_state.
+ */
 export function sourcingAgentCampaignFingerprint(
-  campaign: SourcingAgentCampaign,
+  campaign: SourcingAgentCampaign | Record<string, unknown>,
 ): string {
-  return JSON.stringify({
-    id: campaign.id,
-    status: campaign.status,
-    jobAnalysis: campaign.jobAnalysis,
-    scoringWeights: campaign.scoringWeights,
+  const projected = CampaignProjectionSchema.safeParse(campaign);
+  const value = projected.success
+    ? projected.data
+    : (campaign as SourcingAgentCampaign);
+  return stableJson({
+    id: value.id,
+    status: value.status,
+    jobAnalysis: value.jobAnalysis,
+    scoringWeights: value.scoringWeights,
     sourcingStrategy: {
-      excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
-      primaryPlatforms: campaign.sourcingStrategy.primaryPlatforms,
-      linkedinBoolean: campaign.sourcingStrategy.linkedinBoolean,
-      githubQueries: campaign.sourcingStrategy.githubQueries,
+      excludedCompanies: value.sourcingStrategy.excludedCompanies,
+      primaryPlatforms: value.sourcingStrategy.primaryPlatforms,
+      linkedinBoolean: value.sourcingStrategy.linkedinBoolean,
+      githubQueries: value.sourcingStrategy.githubQueries,
     },
   });
 }
