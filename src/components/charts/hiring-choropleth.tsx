@@ -75,12 +75,12 @@ function MapSvg({
     return map;
   }, [model.byCountry]);
 
-  if (width < 10 || height < 10) return null;
-
   const { scale, translate } = React.useMemo(
     () => worldMercatorFit(width, height),
     [width, height],
   );
+
+  if (width < 10 || height < 10) return null;
 
   return (
     <div className="relative h-full w-full">
