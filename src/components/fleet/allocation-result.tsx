@@ -63,7 +63,13 @@ function SkipList({
   );
 }
 
-export function AllocationResultView({ result }: { result: AllocationResult | null }) {
+export function AllocationResultView({
+  result,
+  embedded,
+}: {
+  result: AllocationResult | null;
+  embedded?: boolean;
+}) {
   if (!result) {
     return (
       <EmptyState
@@ -77,9 +83,8 @@ export function AllocationResultView({ result }: { result: AllocationResult | nu
   const groups = groupBySeat(result.assignments);
   const total = result.assignments.length;
 
-  return (
-    <Card className="animate-fade-in">
-      <CardContent className="space-y-5">
+  const body = (
+    <>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <Eyebrow>Allocation plan</Eyebrow>
@@ -139,7 +144,16 @@ export function AllocationResultView({ result }: { result: AllocationResult | nu
             />
           </div>
         )}
-      </CardContent>
+    </>
+  );
+
+  if (embedded) {
+    return <div className="animate-fade-in space-y-5 border-t border-line/60 pt-5">{body}</div>;
+  }
+
+  return (
+    <Card className="animate-fade-in">
+      <CardContent className="space-y-5">{body}</CardContent>
     </Card>
   );
 }

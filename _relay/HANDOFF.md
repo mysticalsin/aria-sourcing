@@ -1,56 +1,47 @@
 ---
 project: MSourcing / ARIA
-shift: 95
+shift: 96
 agent: cursor-cloud
 updated: 2026-08-26 UTC
-status: integrations-apple-ux
+status: fleet-replies-apple-ux
 ---
 
-# Handoff - Shift 95
+# Handoff - Shift 96
 
 ## Current state
 
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #29 → `integration/sourcing-enrichment-on-main`
-- Settings → Integrations **Apple UX pass** landed (`49a21f1`):
-  - Unified **Identity & outreach** stack (`linkedin-outreach-stack.tsx`) — Step 1 OIDC, Step 2 HeyReach MCP, progress bar
-  - Shared primitives: `integration-connection-primitives.tsx` (step rail, System readiness collapse, health strip)
-  - Email panel uses System readiness (no badge spam)
-  - Integration cards: **Open stack** scrolls to `#linkedin-outreach-stack`; `int_heyreach` test connection wired
-- Prior shift work still on branch: LinkedIn OIDC, exec world map, HeyReach MCP, STATE_VERSION 18 honesty
-- Focused tests green: `integrations-honesty`, `heyreach-mcp`, `linkedin-oauth`, `tsc`
-
-## Ops required for live OAuth on Fly
-
-1. LinkedIn Developer Portal → Sign In with LinkedIn using OpenID Connect
-2. Redirect: `https://aria-mantu-app.fly.dev/auth/linkedin/callback`
-3. `fly secrets set LINKEDIN_CLIENT_ID=… LINKEDIN_CLIENT_SECRET=… LINKEDIN_REDIRECT_URI=… -a aria-mantu-app`
-4. Apply migration **0061**; redeploy branch SHA
+- Apple UX extended to **Fleet** and **Replies** (swarm-agent exploration + implementation):
+  - Fleet: `FleetRosterStack`, `FleetHealthStrip`, collapsed guardrails, seat cards use `StatusPill` + `SystemReadiness` + `ConnectedIdentityBanner`
+  - Replies: `RepliesInboxShell` with triage health strip, status/channel filter chips, embedded LinkedIn channel + WhatsApp + classifier
+  - Shared: generic `HealthStrip`, `src/lib/reply-intents.ts`
+- Prior: Integrations LinkedIn stack, OIDC, HeyReach MCP, exec map, STATE_VERSION 18
+- Tests green: `tsc`, `integrations-honesty`, `linkedin-heyreach-parity`, `whatsapp-review-durability`
 
 ## Done this shift
 
-- Apple-grade Integrations UX (unified LinkedIn stack, readiness collapse, health strip)
-- Screenshot artifact: `/opt/cursor/artifacts/screenshots/integrations-apple-ux-stack.webp`
+- Fleet + Replies Apple-grade UX pass (shared connection primitives)
+- Screenshots: `fleet-apple-ux.webp`, `replies-apple-ux.webp`
 
 ## Blockers
 
-- Fly missing LinkedIn OAuth secrets until ops
-- Full `npm test` may still have pre-existing `store-sourcing-actions` failures (unrelated)
+- Fly LinkedIn OAuth secrets still pending ops
+- Full `npm test` may have pre-existing sourcing failures
 
 ## Next steps
 
-1. Tony/ops: LinkedIn app + Fly secrets + migrate 0061 + redeploy
-2. Smoke live: Settings → Integrations → Sign in with LinkedIn + HeyReach MCP connect
-3. Optional: triage remaining sourcing test harness failures
+1. Ops: LinkedIn secrets + migration 0061 + redeploy
+2. Optional: master-detail reply drawer, Fleet compact list mode for 100+ seats
+3. Optional: triage remaining sourcing test failures
 
 ## Decisions made (don't relitigate)
 
-- OIDC identity login allowed; no password/session scrape
-- HeyReach MCP = agent outreach tools; identity stays OIDC
-- System readiness collapsed by default (expand when blocked)
-- No fake connected integration seeds (STATE_VERSION 18)
+- Reuse Integrations primitives (`ConnectionStackShell`, `HealthStrip`, etc.) across Fleet/Replies
+- Guardrails on Fleet collapsed by default; edit thresholds in Settings
+- Sync inbox demoted to "Sync fallback" in Replies shell footer area
+- LinkedIn inbox defaults to replies-only filter toggle
 
 ## Watch out
 
-- `LinkedInConnectionsProvider` required for stack — single fetch for both steps
-- Redirect URI must match LinkedIn app exactly
-- HeyReach MCP dev needs `ARIA_ENABLE_REMOTE_MCP_EXECUTION=true`
+- `FleetRosterStack` wraps roster section — scroll anchor `#fleet-roster-stack`
+- Replies default filter is `needs_action` not `all`

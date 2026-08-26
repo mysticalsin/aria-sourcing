@@ -7,7 +7,6 @@ import {
   CardContent,
   CardTitle,
   Eyebrow,
-  SectionNumeral,
   Button,
   Field,
   Select,
@@ -20,6 +19,7 @@ import {
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { SeatCard } from "@/components/fleet/seat-card";
 import { FleetSummary } from "@/components/fleet/fleet-summary";
+import { FleetRosterStack } from "@/components/fleet/fleet-roster-stack";
 import { SuppressionPanel } from "@/components/fleet/suppression-panel";
 import { AllocationResultView } from "@/components/fleet/allocation-result";
 import {
@@ -318,9 +318,9 @@ export default function FleetPage() {
           {/* 1 — Fleet summary */}
           <FleetSummary />
 
-          {/* 2 — Guardrail strip */}
-          <Card>
-            <CardContent>
+          {/* 2 — Guardrail strip (collapsed) */}
+          <details className="rounded-2xl border border-line/80 bg-surface shadow-sm">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-6 py-5 sm:px-8 [&::-webkit-details-marker]:hidden">
               <div className="flex items-start gap-3">
                 <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-success-soft text-success">
                   <ShieldCheck className="h-5 w-5" aria-hidden />
@@ -329,13 +329,14 @@ export default function FleetPage() {
                   <Eyebrow>Live guardrails</Eyebrow>
                   <CardTitle>Speed without the footguns</CardTitle>
                   <p className="mt-1 text-sm text-muted">
-                    Every agent runs under the same enforced rules. These are not suggestions: the
-                    fleet physically cannot step outside them.
+                    Every agent runs under enforced rules — not suggestions.
                   </p>
                 </div>
               </div>
-
-              <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <span className="text-xs font-medium text-muted">Expand</span>
+            </summary>
+            <div className="border-t border-line/60 px-6 pb-6 pt-4 sm:px-8">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {GUARDRAILS.map((g) => {
                   const Icon = g.icon;
                   return (
@@ -354,8 +355,15 @@ export default function FleetPage() {
                   );
                 })}
               </div>
-            </CardContent>
-          </Card>
+              <p className="mt-4 text-xs text-muted">
+                Edit thresholds in{" "}
+                <Link href="/settings" className="font-medium text-ink underline-offset-2 hover:underline">
+                  Settings → Fleet guardrails
+                </Link>
+                .
+              </p>
+            </div>
+          </details>
 
           {/* 3 — Action bar + allocation result */}
           <Card>
@@ -404,23 +412,20 @@ export default function FleetPage() {
                 {" "}and rechecks the shared suppression ledger before delivery.
               </p>
 
-              <AllocationResultView result={allocation} />
+              <AllocationResultView result={allocation} embedded />
             </CardContent>
           </Card>
 
           {/* 4 — Seats grid */}
+          <FleetRosterStack>
           <section>
             <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-              <div className="flex items-start gap-3">
-                <SectionNumeral n="04" />
-                <div>
+              <div>
                   <Eyebrow>The roster</Eyebrow>
                   <CardTitle>Agents · {seats.length}/{maxAgents}</CardTitle>
                   <p className="mt-1 text-sm text-muted">
-                    {seats.length} of up to {maxAgents} agents · each tied to one official mailbox,
-                    warmed and rate-limited independently. Scale wide; the guardrails scale with you.
+                    Each agent is one official mailbox, warmed and rate-limited independently.
                   </p>
-                </div>
               </div>
               {canManage && <div className="flex flex-wrap items-center gap-2">
                 {!supabaseEnabled && <div className="flex items-center gap-1.5 rounded-full border border-ink/12 bg-surface p-1 pl-3">
@@ -562,6 +567,7 @@ export default function FleetPage() {
               </>
             )}
           </section>
+          </FleetRosterStack>
 
           {/* 5 — Suppression */}
           <SuppressionPanel />

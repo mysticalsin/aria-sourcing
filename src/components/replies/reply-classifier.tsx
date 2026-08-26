@@ -27,15 +27,7 @@ import {
   Send,
 } from "lucide-react";
 
-const INTENT_LABELS: Record<ReplyIntent, string> = {
-  INTERESTED: "Interested",
-  QUALIFIED_INTEREST: "Qualified interest",
-  NOT_INTERESTED: "Not interested",
-  REFERRAL: "Referral",
-  OOO: "Out of office",
-  UNCLEAR: "Unclear",
-  NEGATIVE: "Negative",
-};
+import { REPLY_INTENT_LABELS } from "@/lib/reply-intents";
 
 const SAMPLE_REPLIES: { label: string; text: string }[] = [
   {
@@ -100,7 +92,7 @@ export function ReplyClassifier({
       setResult(reply);
       toast({
         title: "Reply classified",
-        description: `${INTENT_LABELS[reply.intent]} · ${formatPercent(reply.confidence)} confidence`,
+        description: `${REPLY_INTENT_LABELS[reply.intent]} · ${formatPercent(reply.confidence)} confidence`,
         variant: "info",
       });
     } catch {
@@ -227,7 +219,7 @@ export function ReplyClassifier({
           <div className="space-y-4 rounded-2xl border border-line bg-canvas p-5 animate-fade-in">
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone={toneForIntent(result.intent)} dot>
-                {INTENT_LABELS[result.intent]}
+                {REPLY_INTENT_LABELS[result.intent]}
               </Badge>
               <Badge tone="neutral" size="sm">
                 {formatPercent(result.confidence)} confidence

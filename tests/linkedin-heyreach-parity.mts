@@ -122,7 +122,7 @@ const panel = readFileSync("src/components/settings/linkedin-connections-panel.t
 ok("settings simulate UI", /Simulate event/.test(panel));
 
 const inbox = readFileSync("src/components/replies/linkedin-inbox-panel.tsx", "utf8");
-ok("replies LinkedIn inbox", /Messaging inbox/.test(inbox));
+ok("replies LinkedIn inbox", /LinkedIn channel/.test(inbox));
 
 const plan = readFileSync("docs/LINKEDIN_HEYREACH_PARITY.md", "utf8");
 ok("scenario plan documents reply webhook", /S10/.test(plan) && /reply webhook/i.test(plan));

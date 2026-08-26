@@ -350,32 +350,66 @@ export function IntegrationsHealthStrip({
   notConfigured: number;
   total: number;
 }) {
-  const live = connected + degraded + error;
-  const pct = total ? (live / total) * 100 : 0;
+  return (
+    <HealthStrip
+      title="Integration health"
+      primary={`${connected} connected`}
+      secondary={[
+        degraded > 0 ? `${degraded} degraded` : "",
+        error > 0 ? `${error} need attention` : "",
+        notConfigured > 0 ? `${notConfigured} not configured` : "",
+      ]
+        .filter(Boolean)
+        .join(" · ")}
+      numerator={connected}
+      denominator={total}
+      tone={error > 0 ? "danger" : degraded > 0 ? "warning" : connected > 0 ? "success" : "neutral"}
+      progressPct={total ? ((connected + degraded + error) / total) * 100 : 0}
+      ariaLabel={`${connected} of ${total} integrations connected`}
+    />
+  );
+}
 
+export function HealthStrip({
+  title,
+  primary,
+  secondary,
+  numerator,
+  denominator,
+  progressPct,
+  tone = "neutral",
+  ariaLabel,
+}: {
+  title: string;
+  primary: string;
+  secondary?: string;
+  numerator: number;
+  denominator: number;
+  progressPct: number;
+  tone?: Tone;
+  ariaLabel: string;
+}) {
   return (
     <div className="rounded-2xl border border-line/70 bg-canvas/40 px-5 py-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-ink">Integration health</p>
+          <p className="text-sm font-semibold text-ink">{title}</p>
           <p className="mt-0.5 text-xs text-muted">
-            {connected} connected
-            {degraded > 0 ? ` · ${degraded} degraded` : ""}
-            {error > 0 ? ` · ${error} need attention` : ""}
-            {notConfigured > 0 ? ` · ${notConfigured} not configured` : ""}
+            {primary}
+            {secondary ? ` · ${secondary}` : ""}
           </p>
         </div>
         <p className="text-2xl font-semibold tabular-nums tracking-tight text-ink">
-          {connected}
-          <span className="text-base font-normal text-muted">/{total}</span>
+          {numerator}
+          <span className="text-base font-normal text-muted">/{denominator}</span>
         </p>
       </div>
       <Progress
-        value={pct}
-        tone={error > 0 ? "danger" : degraded > 0 ? "warning" : connected > 0 ? "success" : "neutral"}
+        value={progressPct}
+        tone={tone}
         className="mt-3"
         trackClassName="h-1"
-        aria-label={`${connected} of ${total} integrations connected`}
+        aria-label={ariaLabel}
       />
     </div>
   );

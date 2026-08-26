@@ -24,8 +24,14 @@ import {
   seatHealthStatus,
   PROVIDER_LIMIT_NOTE,
 } from "@/lib/fleet";
-import type { AgentSeat, SeatProvider, ToolId } from "@/lib/types";
+import type { AgentSeat, ToolId } from "@/lib/types";
 import { ROBOT_PALETTE } from "@/lib/floor3d";
+import {
+  ConnectedIdentityBanner,
+  StatusPill,
+  SystemReadiness,
+  type ReadinessItem,
+} from "@/components/settings/integration-connection-primitives";
 import { cn, type Tone } from "@/lib/utils";
 import { AgentPromptEditor } from "./agent-prompt-editor";
 import {
@@ -37,23 +43,10 @@ import {
   FlaskConical,
   Pencil,
   ChevronDown,
-  Clock,
-  Flame,
   ShieldCheck,
   BrainCircuit,
   Palette,
 } from "lucide-react";
-
-const PROVIDER_TONE: Record<SeatProvider, Tone> = {
-  "Microsoft Graph": "electric",
-  "Gmail API": "tangerine",
-  SendGrid: "aqua",
-  Resend: "violet",
-  "WhatsApp Cloud": "aqua",
-  "Twilio SMS": "violet",
-  "LinkedIn Assisted Manual": "tangerine",
-  "LinkedIn Vendor API": "electric",
-};
 
 const STATUS_TONE: Record<AgentSeat["status"], Tone> = {
   active: "success",
@@ -213,6 +206,39 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
     }
   }
 
+  const readinessItems: ReadinessItem[] = [
+    {
+      id: "mailbox",
+      label: "Mailbox connected",
+      ok: Boolean(seat.connectedAccount),
+      hint: "Connect via OAuth or link in Settings → Integrations.",
+    },
+    {
+      id: "domain",
+      label: "Domain verified (SPF/DKIM/DMARC)",
+      ok: Boolean(seat.connectedAccount && seat.domainVerified),
+      hint: "Run verify after DNS records propagate.",
+    },
+    {
+      id: "live",
+      label: "Live mode enabled",
+      ok: isLive,
+      optional: !seat.domainVerified,
+    },
+  ];
+
+  const headerStatus =
+    isLive && seat.domainVerified
+      ? "Live · sending"
+      : isLive
+        ? "Live · domain pending"
+        : seat.connectedAccount
+          ? "Dry-run · connected"
+          : "Dry-run · needs mailbox";
+
+  const headerTone: Tone =
+    health.shouldPause ? "danger" : isLive && seat.domainVerified ? "success" : seat.connectedAccount ? "electric" : "neutral";
+
   return (
     <>
       <Card className="flex h-full flex-col animate-fade-in">
@@ -221,77 +247,61 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <Eyebrow>{seat.provider}</Eyebrow>
-              <h3 className="truncate text-base font-bold text-ink">{seat.name}</h3>
+              <h3 className="truncate text-base font-bold tracking-tight text-ink">{seat.name}</h3>
             </div>
-            <div className="flex shrink-0 flex-col items-end gap-1.5">
-              <Badge tone={isLive ? "tangerine" : "aqua"} size="sm" dot>
-                {isLive ? "Live" : "Dry-run"}
-              </Badge>
-              <Badge tone={STATUS_TONE[seat.status]} size="sm">
-                {seat.status === "active" ? "Active" : seat.status === "paused" ? "Paused" : "Disabled"}
-              </Badge>
-            </div>
+            <StatusPill label={headerStatus} tone={headerTone} pulse={health.shouldPause} />
           </div>
 
-          {/* Connected mailbox */}
-          <div className="rounded-2xl bg-canvas px-3 py-2.5">
-            <div className="flex items-center gap-2">
-              {seat.connectedAccount ? (
-                <MailCheck className="h-4 w-4 shrink-0 text-success" aria-hidden />
-              ) : (
-                <Mail className="h-4 w-4 shrink-0 text-muted" aria-hidden />
-              )}
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-ink">
-                  {seat.connectedAccount || "Not connected"}
-                </p>
-                <p className="truncate text-xs text-muted">
-                  {seat.connectedAccount
-                    ? seat.domainVerified
-                      ? "Domain verified (SPF/DKIM/DMARC)"
-                      : "Domain not verified yet"
-                    : "Connect an authorized mailbox to send"}
-                </p>
-              </div>
-              <Badge tone={PROVIDER_TONE[seat.provider]} size="sm" className="ml-auto">
-                {seat.provider}
-              </Badge>
-            </div>
-            {seat.connectedAccount && !seat.domainVerified && canManageLlm && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-2 w-full"
-                leftIcon={<ShieldCheck className="h-4 w-4" />}
-                loading={verifyingDomain}
-                onClick={handleVerifyDomain}
-              >
-                Verify domain
-              </Button>
-            )}
-          </div>
+          <SystemReadiness items={readinessItems} />
 
-          {/* Quota */}
+          {seat.connectedAccount ? (
+            <ConnectedIdentityBanner
+              displayName={seat.connectedAccount}
+              secondary={
+                seat.domainVerified
+                  ? "Domain verified · ready for live sends"
+                  : "Domain not verified — verify before going live"
+              }
+              icon={<MailCheck className="h-5 w-5" aria-hidden />}
+              action={
+                !seat.domainVerified && canManageLlm ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<ShieldCheck className="h-4 w-4" />}
+                    loading={verifyingDomain}
+                    onClick={handleVerifyDomain}
+                  >
+                    Verify
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <div className="rounded-2xl border border-dashed border-line/80 bg-canvas/50 px-4 py-3">
+              <p className="text-sm font-medium text-ink">No mailbox linked</p>
+              <p className="mt-1 text-xs text-muted">Connect Gmail, Outlook, or another provider to send.</p>
+            </div>
+          )}
+
+          {/* Quota + schedule */}
           <Meter label="Sent today" used={seat.sentToday} limit={cap} />
           <p className="-mt-2 text-xs text-muted">
-            {remaining} of today&apos;s {cap} remaining{" "}
-            {isPaused || isDisabled ? "· paused, not sending" : ""}
+            {remaining} remaining · {stage.full ? "Fully warmed" : `Warm-up day ${stage.day}`} ·{" "}
+            {formatDays(seat.sendWindow.days)} {formatHour(seat.sendWindow.startHour)}–
+            {formatHour(seat.sendWindow.endHour)}
+            {isPaused || isDisabled ? " · paused" : ""}
           </p>
 
-          {/* Status chips */}
           <div className="flex flex-wrap items-center gap-2">
-            <Badge tone={health.tone} dot title={health.detail}>
-              {health.shouldPause ? "Auto-paused" : health.label}
+            <Badge tone={STATUS_TONE[seat.status]} size="sm">
+              {seat.status === "active" ? "Active" : seat.status === "paused" ? "Paused" : "Disabled"}
             </Badge>
-            <span className="inline-flex items-center gap-1 rounded-full bg-ink/[0.05] px-2.5 py-1 text-xs font-medium text-ink-soft">
-              <Flame className="h-3.5 w-3.5 text-tangerine" aria-hidden />
-              {stage.full ? "Fully warmed" : `Warm-up · day ${stage.day} · cap ${stage.cap}`}
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-ink/[0.05] px-2.5 py-1 text-xs font-medium text-ink-soft">
-              <Clock className="h-3.5 w-3.5 text-electric" aria-hidden />
-              {formatDays(seat.sendWindow.days)} {formatHour(seat.sendWindow.startHour)}–
-              {formatHour(seat.sendWindow.endHour)} {seat.sendWindow.timezone}
-            </span>
+            {health.shouldPause ? (
+              <Badge tone={health.tone} dot size="sm">
+                {health.label}
+              </Badge>
+            ) : null}
           </div>
 
           {health.shouldPause && (
@@ -368,7 +378,7 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
               aria-expanded={llmOpen}
               onClick={() => setLlmOpen((v) => !v)}
             >
-              LLM config
+              Advanced · LLM & tools
             </Button>
           </div>
 
