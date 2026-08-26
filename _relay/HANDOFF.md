@@ -1,50 +1,45 @@
 ---
 project: MSourcing / ARIA
-shift: 81
+shift: 82
 agent: cursor-cloud
 updated: 2026-08-26 UTC
-status: campaign-persist-race-fixed-await-fly-deploy
+status: sourcing-quality-floor-80-await-fly-deploy
 ---
 
-# Handoff - Shift 81
+# Handoff - Shift 82
 
 ## Current state
 
-- **Branch:** `cursor/enterprise-autopilot-b91d` · commit **1bc1ba0** · PR **#28**
-- **Production:** https://aria-mantu-app.fly.dev — still on prior build until Fly deploy (no `FLY_API_TOKEN` in agent env)
-- User-reported **"Campaign not found. Retry with Source next batch"** after intake → fixed in code, not yet live
+- **Branch:** `cursor/enterprise-autopilot-b91d` · PR **#28**
+- **Production:** https://aria-mantu-app.fly.dev — still needs Fly deploy (no token in agent env)
+- User: sourced candidates scoring ~26% — demand **80%+ only**, deep search for best fit
 
 ## Done this shift
 
-- **Persist-before-source:** intake + launch call `flushWorkspaceSave()` before first `sourceNextBatch`
-- **Sourcing retry:** up to 4× backoff retries when agent returns `CAMPAIGN_NOT_FOUND`
-- **Title-fit filter:** `candidateMatchesRoleTitle` on LinkedIn/web leads (agent + mappers)
-- **Mantu parsing:** profile-description skills, Healthtech industry, client-as-department
-- **Role classification:** `Type: Consulting` no longer routes System Designer → finance
-- **LinkedIn keywords:** title-first query via `buildLinkedInKeywords`
-- **Context:** `flushWorkspaceSave` on `HermesContextValue`; store action count **129**
-- Tests: `candidate-fit`, expanded `mantu-intake`/`roles-i18n`, `store-contracts` updated
+- **SOURCING_QUALITY_FLOOR = 80** — live mapper + agent + tool runner reject below-floor leads
+- **minScoreToContact default 80**; hydrate clamps existing workspaces to ≥80; Settings UI min 80
+- **Deep LinkedIn:** `buildLinkedInQueryVariants` (up to 4 queries); agent pulls more SERP hits per query
+- **Scoring:** stronger title+skill boosts; acronym skill match (MTTF); industry inferred from SERP text
+- Tests updated: candidate-fit, scoring-metrics, rules-confidential, agent-graph
 
 ## Blockers
 
-- Fly deploy blocked: no `FLY_API_TOKEN` / `.fly-token.env` in cloud agent VM
-- Pre-existing `infra-release-contract` fail (alternate deploy scripts)
+- Fly deploy blocked (no `FLY_API_TOKEN`)
+- Pre-existing `infra-release-contract` fail
 
 ## Next steps
 
-1. Deploy to Fly with `ARIA_RELEASE_SHA=1bc1ba0` via `scripts/fly-deploy-now.sh`
-2. E2E verify: intake System Designer email → campaign created → auto-source succeeds (no toast error)
-3. Re-source System Designer → LinkedIn profiles titled "System Designer" / systems architect (not quality-only)
-4. Confirm dry-run OFF for Pending Manual Send path if testing outreach
+1. Deploy Fly with latest SHA via `scripts/fly-deploy-now.sh`
+2. Re-source System Designer — expect only ≥80 fits (may be fewer / empty if SERP has no title-aligned profiles)
+3. If empty batch: broaden skills in brief or retry Source next batch (deep variants still run)
 
 ## Decisions made (don't relitigate)
 
-- No LangChain rewrite; template drafts OK
-- LinkedIn assisted-manual only; Confirm writes ledger
-- Below-floor live leads: operator fit endorsement warn-through
-- Experience floors → Senior for readiness
+- Quality floor is hard at accept-time (80), not only at Approve
+- Fit endorsement remains for edge cases but new sourced batch should already clear 80
+- No LangChain rewrite
 
 ## Watch out
 
-- Until deploy lands, production still has the debounced-save race
-- Title-fit may return zero candidates if SERP has no title-aligned profiles — operator can broaden brief or retry
+- Stricter bar can return **zero** candidates — that is intentional vs shipping 26% noise
+- Existing low-score candidates already in a campaign are not auto-deleted; re-source for new quality
