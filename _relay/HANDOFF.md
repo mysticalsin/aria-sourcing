@@ -1,42 +1,54 @@
 ---
 project: MSourcing / ARIA
-shift: 77
+shift: 78
 agent: cursor-cloud
-updated: 2026-08-25 UTC
-status: fly-deployed-linkedin-live
+updated: 2026-08-26 UTC
+status: fly-sourcing-e2e-green
 ---
 
-# Handoff - Shift 77
+# Handoff - Shift 78
 
 ## Current state
 
-- **Production:** https://aria-mantu-app.fly.dev/login?redirect=%2F
-- Deployed build `639b332`, migration `0059_linkedin_heyreach_parity.sql`.
-- LinkedIn routes live: `/api/linkedin/connections` → **401** (auth required).
-- Demo login disabled (`POST /api/auth/demo-login` → 404).
-- `/api/ready`: migration + releaseIdentity **true**; `agentFrameworks` false (Flowise/Deerflow not shipped — expected).
+- **Production:** https://aria-mantu-app.fly.dev
+- Build `9ee01ce` live; migration `0059_linkedin_heyreach_parity.sql`.
+- `/api/ready`: db/auth/queue/migration/releaseIdentity/hermesRuntime true; agentFrameworks false (expected).
+- **Autosource E2E proven on Fly** for System Designer (Magnit / Montreal):
+  - `POST /api/intake` → mantu-need, Senior/Contract/On-site, ready (no critical warnings)
+  - `POST /api/sourcing-agent` → HTTP 200, mode=deterministic, 3 LinkedIn candidates with profile URLs
+  - `POST /api/outreach/approve` → 200; `POST /api/outreach/send` LinkedIn → **409 manual-required** (assisted-manual by design)
 
 ## Done this shift
 
-- Fly auth as `tony.walteur@gmail.com`.
-- Bootstrap image build + push; migrations **0047–0059** applied on prod DB.
-- App image deployed to `aria-mantu-app` (includes LinkedIn HeyReach parity routes).
-- Release-identity Fly secrets updated to match `639b332` / `0059`.
-- Reset GoTrue password for `twalteur@amaris.com` (admin role verified; password not stored in relay).
+- Root cause of "invalid response" + blocked autosource:
+  1. Earlier: static `playwright-core` import crashed standalone image (fixed in `dce0d4c`).
+  2. Blocking after that: Fly `req.nextUrl.origin` is `http://0.0.0.0:3000`, so browser Origin always got `CROSS_ORIGIN_REQUEST` (`42a44f8`).
+- Intake: years floors (`8 years +`, `5+ years`, `at least 6 years`) → Senior (`9ee01ce`).
+- LinkedIn-first deterministic search + Tavily env fallback already deployed.
+
+## Blockers
+
+- `KIMI_API_KEY` returns upstream 401 → Hermes chat drafts fail; **sourcing does not depend on Kimi** (deterministic path).
+- `/api/ready` `ok:false` until agent frameworks (Flowise/Deerflow) ship — unrelated to sourcing.
+- Pre-existing red: `tests/infra-release-contract.mts` flags `scripts/fly-deploy-now.sh` + `fly-golive-linkedin.sh` as unsafe alternate deploy surfaces (not introduced this shift).
 
 ## Next steps
 
-1. Log in at https://aria-mantu-app.fly.dev/login with `twalteur@amaris.com`.
-2. Settings → Connect LinkedIn seat → Simulate → verify `linkedin_channel_events` row.
-3. Optional: `fly secrets set LINKEDIN_INBOUND_WEBHOOK_SECRET=… -a aria-mantu-app`
-4. Full E2E: `ADMIN_EMAIL=… ADMIN_PASSWORD=… ANON_KEY=… bash e2e-workflow-test.sh`
+1. Optional: rotate/fix `KIMI_API_KEY` or set workspace default sourcing/outreach to Anthropic/OpenAI vault keys for LLM drafts.
+2. Do **not** rewrite Hermes with LangChain for this tenant — deterministic search + assisted-manual LinkedIn already completes the recruiting loop. LangChain would be a parallel experiment, not a blocker.
+3. Connect a real LinkedIn seat (HeyReach) when ready for operator-assisted send UX.
+4. Keep owner-run `flyctl deploy --config fly.app.toml --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=…` until protected GH release path is the only mutate surface.
 
 ## Decisions made (don't relitigate)
 
-- Fly is production; Vercel demo stays open-demo.
-- Owner-run deploy via `flyctl` (not protected GH workflow) for this push.
+- Fly is production; Vercel stays open-demo.
+- Browser CSRF trusts canonical `https://aria-mantu-app.fly.dev` (+ `NEXT_PUBLIC_SITE_URL`), never `0.0.0.0` bind origin or client `x-forwarded-host`.
+- LinkedIn delivery stays assisted-manual (409) — no session bots / password scrape.
+- Kimi is blocked for the sourcing task provider; deterministic LinkedIn/Tavily/GitHub is the authority path when no tool-calling cloud key is configured.
+- Experience floors ≥5 years (incl. `N years +`) authorize Senior for readiness.
 
 ## Watch out
 
-- `/api/ready` `ok:false` until agent frameworks deploy — unrelated to LinkedIn.
-- Do not commit `.fly-secrets.env` / tokens; agent read creds via Fly SSH for deploy only.
+- Do not commit passwords/tokens into `_relay/` or git.
+- Sourcing-agent body is `{campaignId,count}` + Idempotency-Key only — campaign must already be in `workspace_state` and pass readiness.
+- Boolean LinkedIn queries >256 chars fall back to keyword slice in deterministic mode.
