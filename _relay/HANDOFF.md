@@ -1,64 +1,56 @@
 ---
 project: MSourcing / ARIA
-shift: 94
+shift: 95
 agent: cursor-cloud
 updated: 2026-08-26 UTC
-status: exec-map-world-fit
+status: integrations-apple-ux
 ---
 
-# Handoff - Shift 94
+# Handoff - Shift 95
 
 ## Current state
 
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #29 → `integration/sourcing-enrichment-on-main`
-- Real **Sign In with LinkedIn (OIDC)** is implemented on branch (not yet live on Fly):
-  - Routes: `/auth/linkedin`, `/auth/linkedin/callback`
-  - Migration: `supabase/migrations/0061_linkedin_oauth_connections.sql`
-  - API: `POST /api/linkedin/connections` action `ensure_oauth` → seat + `authorizeUrl`
-- Settings → Integrations: LinkedIn OIDC primary CTA; assisted-manual under Advanced; live cards only; roadmap collapsed; fake Connected seeds wiped via **STATE_VERSION 18**
-- LinkedIn/oauth/honesty/infra tests green; full gate still has **7 pre-existing** `store-sourcing-actions` failures (harness now includes `flushWorkspaceSave`; remaining mismatches unrelated to LinkedIn)
+- Settings → Integrations **Apple UX pass** landed (`49a21f1`):
+  - Unified **Identity & outreach** stack (`linkedin-outreach-stack.tsx`) — Step 1 OIDC, Step 2 HeyReach MCP, progress bar
+  - Shared primitives: `integration-connection-primitives.tsx` (step rail, System readiness collapse, health strip)
+  - Email panel uses System readiness (no badge spam)
+  - Integration cards: **Open stack** scrolls to `#linkedin-outreach-stack`; `int_heyreach` test connection wired
+- Prior shift work still on branch: LinkedIn OIDC, exec world map, HeyReach MCP, STATE_VERSION 18 honesty
+- Focused tests green: `integrations-honesty`, `heyreach-mcp`, `linkedin-oauth`, `tsc`
 
 ## Ops required for live OAuth on Fly
 
-1. LinkedIn Developer Portal → create app → enable **Sign In with LinkedIn using OpenID Connect**
-2. Authorized redirect URL: `https://aria-mantu-app.fly.dev/auth/linkedin/callback`
-3. `fly secrets set LINKEDIN_CLIENT_ID=… LINKEDIN_CLIENT_SECRET=… LINKEDIN_REDIRECT_URI=https://aria-mantu-app.fly.dev/auth/linkedin/callback -a aria-mantu-app`
-4. Apply migration **0061**; confirm `DATA_ENCRYPTION_KEY` present
-5. Redeploy app image that includes this branch
+1. LinkedIn Developer Portal → Sign In with LinkedIn using OpenID Connect
+2. Redirect: `https://aria-mantu-app.fly.dev/auth/linkedin/callback`
+3. `fly secrets set LINKEDIN_CLIENT_ID=… LINKEDIN_CLIENT_SECRET=… LINKEDIN_REDIRECT_URI=… -a aria-mantu-app`
+4. Apply migration **0061**; redeploy branch SHA
 
 ## Done this shift
 
-- OIDC routes + encrypted `linkedin_oauth_connections` table
-- Panel rewrite + integrations honesty (no fake connected cards)
-- STATE_VERSION 18 migration for stale mock-connected GitHub/Apify/Graph/SendGrid
-- Infra: register `fly-deploy-now.sh`; neutralize false-positive `fly secrets set` echo in golive script
-- Test harness: add missing `flushWorkspaceSave` mock
+- Apple-grade Integrations UX (unified LinkedIn stack, readiness collapse, health strip)
+- Screenshot artifact: `/opt/cursor/artifacts/screenshots/integrations-apple-ux-stack.webp`
 
 ## Blockers
 
-- Fly has no `LINKEDIN_CLIENT_*` secrets — Sign In shows “missing env” until ops sets them
-- Fly production may lag this branch SHA until redeploy
-
-## Done this shift (continued)
-
-- Exec choropleth: `geoMercator().fitExtent()` so full world visible (was cropped by manual scale/translate)
-- Map height 380→420 on `/exec`
+- Fly missing LinkedIn OAuth secrets until ops
+- Full `npm test` may still have pre-existing `store-sourcing-actions` failures (unrelated)
 
 ## Next steps
 
-1. Tony/ops: LinkedIn app + Fly secrets + migrate 0061 + redeploy (includes map fix)
-2. Smoke: Settings → Integrations → Sign in with LinkedIn (real LinkedIn consent screen)
-3. Optional: triage remaining 7 `store-sourcing-actions` failures on this branch
+1. Tony/ops: LinkedIn app + Fly secrets + migrate 0061 + redeploy
+2. Smoke live: Settings → Integrations → Sign in with LinkedIn + HeyReach MCP connect
+3. Optional: triage remaining sourcing test harness failures
 
 ## Decisions made (don't relitigate)
 
-- OIDC identity login is allowed; password/cookie/session capture still refused
-- Messaging remains assisted-manual or vendor (LinkedIn does not grant InMail via public OIDC)
-- Apify = profile search via vault key; not LinkedIn member login
-- No secrets in `_relay`/git
+- OIDC identity login allowed; no password/session scrape
+- HeyReach MCP = agent outreach tools; identity stays OIDC
+- System readiness collapsed by default (expand when blocked)
+- No fake connected integration seeds (STATE_VERSION 18)
 
 ## Watch out
 
-- Redirect URI must match LinkedIn app config exactly
-- Tokens require `DATA_ENCRYPTION_KEY` (≥32 chars)
-- Demo localStorage lies until STATE_VERSION 18 migration runs (hard refresh once)
+- `LinkedInConnectionsProvider` required for stack — single fetch for both steps
+- Redirect URI must match LinkedIn app exactly
+- HeyReach MCP dev needs `ARIA_ENABLE_REMOTE_MCP_EXECUTION=true`
