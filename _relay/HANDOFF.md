@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 78
 agent: cursor-cloud
 updated: 2026-08-26 UTC
-status: fly-sourcing-e2e-green
+status: fly-sourcing-ui-e2e-green
 ---
 
 # Handoff - Shift 78
@@ -11,7 +11,7 @@ status: fly-sourcing-e2e-green
 ## Current state
 
 - **Production:** https://aria-mantu-app.fly.dev
-- Build `9ee01ce` live; migration `0059_linkedin_heyreach_parity.sql`.
+- Build `874e229` live; migration `0059_linkedin_heyreach_parity.sql`.
 - `/api/ready`: db/auth/queue/migration/releaseIdentity/hermesRuntime true; agentFrameworks false (expected).
 - **Autosource E2E proven on Fly** for System Designer (Magnit / Montreal):
   - `POST /api/intake` → mantu-need, Senior/Contract/On-site, ready (no critical warnings)
@@ -25,6 +25,8 @@ status: fly-sourcing-e2e-green
   2. Blocking after that: Fly `req.nextUrl.origin` is `http://0.0.0.0:3000`, so browser Origin always got `CROSS_ORIGIN_REQUEST` (`42a44f8`).
 - Intake: years floors (`8 years +`, `5+ years`, `at least 6 years`) → Senior (`9ee01ce`).
 - LinkedIn-first deterministic search + Tavily env fallback already deployed.
+- Canonical campaign fingerprints so UI can persist agent results (`874e229`).
+- **UI E2E:** Source next batch → 6 LinkedIn candidates saved on System Designer.
 
 ## Blockers
 
