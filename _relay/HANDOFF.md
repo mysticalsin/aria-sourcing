@@ -1,61 +1,62 @@
 ---
 project: MSourcing / ARIA
-shift: 96
+shift: 97
 agent: cursor-cloud
 updated: 2026-08-26 UTC
-status: e2e-verified-exec-fix
+status: mantu-e2e-langchain-microsoft365
 ---
 
-# Handoff - Shift 96
+# Handoff - Shift 97
 
 ## Current state
 
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #29 → `integration/sourcing-enrichment-on-main`
-- Apple UX extended to **Fleet** and **Replies** (swarm-agent exploration + implementation):
-  - Fleet: `FleetRosterStack`, `FleetHealthStrip`, collapsed guardrails, seat cards use `StatusPill` + `SystemReadiness` + `ConnectedIdentityBanner`
-  - Replies: `RepliesInboxShell` with triage health strip, status/channel filter chips, embedded LinkedIn channel + WhatsApp + classifier
-  - Shared: generic `HealthStrip`, `src/lib/reply-intents.ts`
-- Prior: Integrations LinkedIn stack, OIDC, HeyReach MCP, exec map, STATE_VERSION 18
-- Tests green: `tsc`, `integrations-honesty`, `linkedin-heyreach-parity`, `whatsapp-review-durability`
+- **LangChain recruiting graph:** [`src/lib/langchain/recruiting-graph.ts`](src/lib/langchain/recruiting-graph.ts) — LangGraph orchestrates webhook → parse → source → top 10 → quality → approve → interview
+- **Webhook routing (no polling):** [`src/lib/inbound-email-router.ts`](src/lib/inbound-email-router.ts) — hiring needs → `requisition_parse`; replies → `inbound_classify`
+- **Multi-agent outreach quality:** [`src/lib/outreach-quality-pipeline.ts`](src/lib/outreach-quality-pipeline.ts) — empathy + compliance + human-likeness before approval
+- **Mantu brand outreach:** [`src/lib/mantu-brand.ts`](src/lib/mantu-brand.ts) — voice + HTML email wrapper (mantu-pptx palette)
+- **Microsoft 365 stack UI:** [`microsoft365-stack.tsx`](src/components/settings/microsoft365-stack.tsx) — Entra SSO, Outlook, Teams, webhook intake
+- **Teams calendar:** `createGraphCalendarEvent` uses `isOnlineMeeting` + `teamsForBusiness`; join URL preferred
+- **Deps:** `@langchain/core`, `@langchain/langgraph` added
 
-## Done this shift (continued)
+## Done this shift
 
-- Full E2E verification: browser + route smoke + npm test
-- **Fixed** /exec crash (MapSvg hooks order in hiring-choropleth.tsx)
-- 7 pre-existing failures remain in `store-sourcing-actions.mts` (Apollo/GitHub sourcing harness)
+- Email webhook accepts `subject`; routes Mantu need emails to sourcing pipeline (not classify)
+- `generateOutreachLive` runs quality pipeline + Mantu HTML for Email channel
+- Outreach cards show Quality score badge
+- Tests: `mantu-e2e-loop`, `inbound-email-router`; email-inbound-contract updated
 
-## E2E verification (2026-08-26)
+## E2E loop (target state)
 
-| Area | Status | Notes |
-|------|--------|-------|
-| Routes /, /fleet, /replies, /settings, /exec | ✅ 200 | curl -L |
-| Integrations UX | ✅ | Stack, readiness, health strip |
-| Fleet UX | ✅ | Roster stack, seat cards, add modal |
-| Replies UX | ✅ | Inbox shell, filters, cards |
-| Exec world map | ✅ | Fixed hooks bug; map renders |
-| npm test | ⚠️ | 7 fail in store-sourcing-actions only |
-| WhatsApp review API | ⚠️ 503 | Expected without enforcement backend |
-| Databricks config API | ⚠️ 408 | Expected without Databricks env |
+```
+Webhook (Outlook adapter) → requisition_parse → campaign → source → top 10
+  → draft (Mantu brand + quality critics) → human approve → send
+  → reply webhook → classify → draft → book (Teams) → prep
+```
 
-## Blockers
+## Blockers (ops)
 
-- Fly LinkedIn OAuth secrets still pending ops
-- Full `npm test` may have pre-existing sourcing failures
+- Entra SSO: `NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true` + GoTrue Azure on Fly
+- Outlook OAuth: `MICROSOFT_CLIENT_*` + connect in Settings
+- Webhook: `EMAIL_INBOUND_WEBHOOK_SECRET` + Graph/n8n adapter
+- 7 pre-existing failures in `store-sourcing-actions.mts` (unchanged)
 
 ## Next steps
 
-1. Ops: LinkedIn secrets + migration 0061 + redeploy
-2. Optional: master-detail reply drawer, Fleet compact list mode for 100+ seats
-3. Optional: triage remaining sourcing test failures
+1. Ops: Microsoft 365 enterprise setup on Fly (SSO + Graph + webhook)
+2. Wire loop worker `handleRequisitionParse` to call intake parse + auto campaign create
+3. Triage `store-sourcing-actions` failures
+4. Extend `e2e-workflow-test.sh` with need-webhook + quality gate steps
 
 ## Decisions made (don't relitigate)
 
-- Reuse Integrations primitives (`ConnectionStackShell`, `HealthStrip`, etc.) across Fleet/Replies
-- Guardrails on Fleet collapsed by default; edit thresholds in Settings
-- Sync inbox demoted to "Sync fallback" in Replies shell footer area
-- LinkedIn inbox defaults to replies-only filter toggle
+- LangChain LangGraph added for E2E orchestration (user request overrides prior "no LangChain rewrite" note for orchestration layer only; Postgres authority unchanged)
+- LinkedIn still assisted-manual (409); no inbox polling — webhook-only activation
+- Top shortlist = 10 (`TOP_CANDIDATE_SHORTLIST_SIZE`)
+- Microsoft Teams confirmed as calendar/meeting pillar (user clarified "Alcoa" → Teams)
 
 ## Watch out
 
-- `FleetRosterStack` wraps roster section — scroll anchor `#fleet-roster-stack`
-- Replies default filter is `needs_action` not `all`
+- Quality pipeline blocks salary disclosure and generic openers — may increase `needs_review` rate initially
+- `Microsoft365Stack` step 2 links to `#email-connections-panel` for Connect Outlook
+- LangGraph graph skips interview scheduling when any draft is `blocked`
