@@ -138,6 +138,37 @@ void (async () => {
     draftOnly.stage === "queued_for_approval" || draftOnly.stage === "approval_blocked",
   );
 
+  const parseOnly = await runRecruitingGraph({
+    intent: "parse_only",
+    workspaceId: "ws-1",
+    inboundId: "inb-1",
+    campaignId: "camp-1",
+  });
+  ok("parse_only checkpoint lands on requisition_parsed", parseOnly.stage === "requisition_parsed");
+
+  const rankOnly = await runRecruitingGraph({
+    intent: "rank_only",
+    workspaceId: "ws-1",
+    scoredCandidates: [
+      { id: "c1", matchScore: 90 },
+      { id: "c2", matchScore: 80 },
+      { id: "c3", matchScore: 70 },
+    ],
+  });
+  ok(
+    "rank_only checkpoint lands on shortlist_ranked",
+    rankOnly.stage === "shortlist_ranked" && rankOnly.shortlistIds[0] === "c1",
+  );
+
+  const bookWithoutId = await runRecruitingGraph({
+    intent: "book_only",
+    workspaceId: "ws-1",
+  });
+  ok(
+    "book_only without bookingId never claims interview_scheduled",
+    bookWithoutId.stage === "queued_for_approval",
+  );
+
   console.log(`RESULT mantu-e2e-loop: ${pass} passed, ${fail} failed`);
   if (fail > 0) process.exit(1);
 })();

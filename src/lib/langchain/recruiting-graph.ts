@@ -12,6 +12,7 @@
  * Intents:
  *   - `full` (default): intake → shortlist → draft → quality → approval → book
  *   - `draft_quality`: start at draftOutreach (cron draft hook; no fake booking)
+ *   - `parse_only` / `rank_only` / `book_only`: worker checkpoints after real handlers
  *
  * Fail-stops:
  *   - parse failure → END at `parse_requisition_failed`
@@ -30,10 +31,11 @@ export const RecruitingGraphState = Annotation.Root({
   /** Workspace tenant id. */
   workspaceId: Annotation<string>(),
   /**
-   * Run intent: full webhook→book loop, or draft/quality-only (cron hook).
-   * Draft-quality skips intake and never claims interview_scheduled without bookingId.
+   * Run intent: full webhook→book loop, draft/quality-only (cron hook),
+   * or focused checkpoints the loop worker asserts after real handlers.
+   * Checkpoints never invent side effects — they only validate stage authority.
    */
-  intent: Annotation<"full" | "draft_quality">(),
+  intent: Annotation<"full" | "draft_quality" | "parse_only" | "rank_only" | "book_only">(),
   /** Inbound email id from record_inbound_email. */
   inboundId: Annotation<string | undefined>(),
   /** Parsed campaign id once created. */
@@ -171,14 +173,23 @@ function buildRecruitingGraph() {
     .addNode("queueApproval", queueApproval)
     .addNode("scheduleInterview", scheduleInterview)
     .addConditionalEdges(START, (state) => {
-      return state.intent === "draft_quality" ? "draftOutreach" : "receiveEmail";
+      if (state.intent === "draft_quality") return "draftOutreach";
+      if (state.intent === "parse_only") return "receiveEmail";
+      if (state.intent === "rank_only") return "sourceCandidates";
+      if (state.intent === "book_only") return "scheduleInterview";
+      return "receiveEmail";
     })
     .addEdge("receiveEmail", "parseRequisition")
     .addConditionalEdges("parseRequisition", (state) => {
-      return state.stage === "parse_requisition_failed" ? END : "sourceCandidates";
+      if (state.stage === "parse_requisition_failed") return END;
+      if (state.intent === "parse_only") return END;
+      return "sourceCandidates";
     })
     .addEdge("sourceCandidates", "rankTop10")
-    .addEdge("rankTop10", "draftOutreach")
+    .addConditionalEdges("rankTop10", (state) => {
+      if (state.intent === "rank_only") return END;
+      return "draftOutreach";
+    })
     .addEdge("draftOutreach", "validateQuality")
     .addEdge("validateQuality", "queueApproval")
     .addConditionalEdges("queueApproval", (state) => {
@@ -202,7 +213,7 @@ export function getRecruitingGraph() {
 }
 
 export type RunRecruitingGraphInput = Partial<RecruitingGraphStateType> & {
-  intent?: "full" | "draft_quality";
+  intent?: "full" | "draft_quality" | "parse_only" | "rank_only" | "book_only";
 };
 
 /** Run the graph from an initial partial state (for tests and API routes). */
@@ -225,6 +236,35 @@ export async function runRecruitingGraph(
     errors: input.errors ?? [],
   });
   return result;
+}
+
+/**
+ * Assert the graph lands on an allowed stage and return the successor job kind.
+ * Used by the loop worker cron checkpoint so side-effect handlers stay honest.
+ */
+export async function assertRecruitingGraphStage(
+  input: RunRecruitingGraphInput,
+  allowedStages: readonly string[],
+): Promise<
+  | { ok: true; stage: string; nextJobKind: string | null; errors: string[] }
+  | { ok: false; stage: string; reason: string; errors: string[] }
+> {
+  const result = await runRecruitingGraph(input);
+  const stage = result.stage;
+  if (!allowedStages.includes(stage)) {
+    return {
+      ok: false,
+      stage,
+      reason: "stage_mismatch",
+      errors: result.errors ?? [],
+    };
+  }
+  return {
+    ok: true,
+    stage,
+    nextJobKind: nextJobKindAfterGraphStage(stage),
+    errors: result.errors ?? [],
+  };
 }
 
 /**

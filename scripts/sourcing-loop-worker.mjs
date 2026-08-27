@@ -74,6 +74,53 @@ export function nextJobKindAfterGraphStage(stage) {
   return typeof kind === "string" && kind ? kind : null;
 }
 
+/**
+ * Call the compiled LangGraph checkpoint cron after a real handler so successor
+ * enqueue stays bound to graph stage authority. Skips when web origin is unset
+ * (unit tests without ARIA_WEB_INTERNAL_URL).
+ */
+export async function assertRecruitingGraphCheckpoint(context, body, allowedStages) {
+  if (!context.configuration?.recruitingGraphUrl || !context.configuration?.cronSecret) {
+    return { skipped: true, stage: null, nextJobKind: null };
+  }
+  let response;
+  try {
+    response = await context.fetcher(context.configuration.recruitingGraphUrl, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${context.configuration.cronSecret}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        ...body,
+        allowedStages,
+      }),
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+    });
+  } catch {
+    throw new HandlerError("recruiting_graph_unreachable", true);
+  }
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new HandlerError(
+      `recruiting_graph_http_${response.status}`,
+      response.status >= 500,
+    );
+  }
+  const payload = await readBoundedJson(response, RPC_RESPONSE_BYTES);
+  if (!isRecord(payload) || payload.ok !== true || typeof payload.stage !== "string") {
+    throw new HandlerError("recruiting_graph_response_invalid", true);
+  }
+  if (!allowedStages.includes(payload.stage)) {
+    throw new HandlerError("recruiting_graph_stage_mismatch", false);
+  }
+  return {
+    skipped: false,
+    stage: payload.stage,
+    nextJobKind: typeof payload.nextJobKind === "string" ? payload.nextJobKind : null,
+  };
+}
+
 export const PIPELINE_STAGE_TRANSITION_PRODUCERS = Object.freeze({
   "email_sync->inbound_classify": Object.freeze(["handleEmailSync"]),
   "inbound_classify->draft_generate": Object.freeze([
@@ -217,6 +264,7 @@ export function loadSourcingLoopConfiguration(environment) {
   let outreachDraftUrl = null;
   let renewGraphUrl = null;
   let calendarProposeUrl = null;
+  let recruitingGraphUrl = null;
   if (webOrigin !== "" || cronSecret !== "") {
     let parsed;
     try {
@@ -237,6 +285,7 @@ export function loadSourcingLoopConfiguration(environment) {
     outreachDraftUrl = new URL("/api/cron/generate-outreach-draft", webOrigin);
     renewGraphUrl = new URL("/api/cron/renew-graph-subscriptions", webOrigin);
     calendarProposeUrl = new URL("/api/cron/propose-calendar-book", webOrigin);
+    recruitingGraphUrl = new URL("/api/cron/recruiting-graph-stage", webOrigin);
   }
 
   return {
@@ -251,6 +300,7 @@ export function loadSourcingLoopConfiguration(environment) {
     outreachDraftUrl,
     renewGraphUrl,
     calendarProposeUrl,
+    recruitingGraphUrl,
     cronSecret,
     tickMs: boundedInteger(environment.ARIA_LOOP_TICK_MS, DEFAULT_TICK_MS, 5_000, 300_000, "ARIA_LOOP_TICK_MS"),
     timeoutMs: boundedInteger(environment.ARIA_LOOP_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, 1_000, 60_000, "ARIA_LOOP_TIMEOUT_MS"),
@@ -685,13 +735,32 @@ async function handleRequisitionParse(job, context) {
     );
   }
 
+  // LangGraph parse_only checkpoint — refuse successor if stage is not requisition_parsed.
+  const graphCheck = await assertRecruitingGraphCheckpoint(
+    context,
+    {
+      workspaceId: job.workspace_id,
+      intent: "parse_only",
+      inboundId,
+      campaignId,
+    },
+    ["requisition_parsed"],
+  );
+  const nextKind =
+    graphCheck.nextJobKind
+    || nextJobKindAfterGraphStage("requisition_parsed")
+    || "campaign_create";
+  if (nextKind !== "campaign_create") {
+    throw new HandlerError("graph_stage_successor_mismatch", false);
+  }
+
   return completeJob(
     context.client,
     job,
-    { status: "requisition_parsed", requisitionId, campaignId, inboundId },
+    { status: "requisition_parsed", requisitionId, campaignId, inboundId, graphStage: "requisition_parsed" },
     [event("requisition.parsed", "requisition", requisitionId, { campaignId, inboundId })],
     [successorJob(
-      nextJobKindAfterGraphStage("requisition_parsed") || "campaign_create",
+      nextKind,
       `campaign:${requisitionId}:${campaignId}`,
       { requisitionId, campaignId, graphStage: "requisition_parsed" },
       80,
@@ -1029,11 +1098,36 @@ async function handleShortlistBuild(job, context) {
     autoApproved = 0;
   }
 
+  // LangGraph rank_only checkpoint — top-10 shortlist authority before draft enqueue.
+  const scored = candidates.map((candidate) => ({
+    id: candidate.id,
+    matchScore: Number(candidate.matchScore ?? candidate.match_score ?? candidate.score ?? 0),
+  }));
+  const rankCheck = await assertRecruitingGraphCheckpoint(
+    context,
+    {
+      workspaceId: job.workspace_id,
+      intent: "rank_only",
+      campaignId,
+      candidateIds: candidates.map((c) => c.id),
+      scoredCandidates: scored,
+    },
+    ["shortlist_ranked"],
+  );
+  if (
+    autoApproved > 0
+    && rankCheck.nextJobKind
+    && rankCheck.nextJobKind !== "draft_generate"
+  ) {
+    throw new HandlerError("graph_stage_successor_mismatch", false);
+  }
+
   const result = {
     status: "shortlist_committed",
     campaignId,
     candidateCount: candidates.length,
     autoApproved,
+    graphStage: "shortlist_ranked",
   };
   const events = [event("shortlist.committed", "campaign", campaignId, {
     candidateCount: candidates.length,
@@ -1267,6 +1361,18 @@ async function handleCalendarBook(job, context) {
   if (proposalStatus !== "applied" && proposalStatus !== "already_applied") {
     throw new HandlerError(`proposal_${proposalStatus}`, proposalStatus === "stale_token");
   }
+
+  // Propose path has no durable bookingId — LangGraph must NOT claim interview_scheduled.
+  await assertRecruitingGraphCheckpoint(
+    context,
+    {
+      workspaceId: job.workspace_id,
+      intent: "book_only",
+      campaignId,
+      // omit bookingId on purpose (human confirmLive creates the real booking)
+    },
+    ["queued_for_approval"],
+  );
 
   return completeJobWithWorkspacePatch(
     context.client,
