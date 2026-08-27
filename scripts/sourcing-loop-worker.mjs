@@ -516,7 +516,13 @@ export function assertDeclaredTransitionProducers(
 }
 
 function successorJob(kind, idempotencyKey, payload, priority = 100) {
-  return { kind, idempotency_key: idempotencyKey, payload, priority };
+  // aria_job_payload_contract_ok rejects unknown keys (PG → complete_aria_job 22023).
+  // graphStage belongs on job *results* / LangGraph checkpoints, never enqueue payloads.
+  const cleaned =
+    payload && typeof payload === "object" && !Array.isArray(payload)
+      ? Object.fromEntries(Object.entries(payload).filter(([key]) => key !== "graphStage"))
+      : payload;
+  return { kind, idempotency_key: idempotencyKey, payload: cleaned, priority };
 }
 
 function event(eventType, subjectKind, subjectId, payload = {}) {
@@ -697,6 +703,51 @@ async function handleRequisitionParse(job, context) {
     throw new HandlerError("requisition_ingest_failed", true);
   }
   const requisitionId = ingest.data.requisition_id;
+  const priorStatus = typeof ingest.data.status === "string" ? ingest.data.status : "";
+
+  // Resume after partial success: parse+patch(+seal) committed, but complete_aria_job
+  // failed (e.g. graphStage in enqueue → 22023). Do not re-call record_requisition_parse.
+  if (priorStatus === "campaign_created") {
+    const campaignId = typeof payload.campaignId === "string" && payload.campaignId.trim()
+      ? payload.campaignId.trim()
+      : deterministicCampaignId(requisitionId);
+    const graphCheck = await assertRecruitingGraphCheckpoint(
+      context,
+      {
+        workspaceId: job.workspace_id,
+        intent: "parse_only",
+        inboundId,
+        campaignId,
+      },
+      ["requisition_parsed"],
+    );
+    const nextKind =
+      graphCheck.nextJobKind
+      || nextJobKindAfterGraphStage("requisition_parsed")
+      || "campaign_create";
+    if (nextKind !== "campaign_create") {
+      throw new HandlerError("graph_stage_successor_mismatch", false);
+    }
+    return completeJob(
+      context.client,
+      job,
+      {
+        status: "requisition_parsed",
+        requisitionId,
+        campaignId,
+        inboundId,
+        graphStage: "requisition_parsed",
+        resumed: true,
+      },
+      [event("requisition.parsed", "requisition", requisitionId, { campaignId, inboundId, resumed: true })],
+      [successorJob(
+        nextKind,
+        `campaign:${requisitionId}:${campaignId}`,
+        { requisitionId, campaignId },
+        80,
+      )],
+    );
+  }
 
   const fromAddress = typeof inbound.data.from_address === "string" ? inbound.data.from_address : "";
   const bodyText = boundedText(inbound.data.body, 1_000_000, "inbound_body_required");
@@ -712,22 +763,26 @@ async function handleRequisitionParse(job, context) {
   const confidence = Number(parseResult.confidence ?? 0.5);
   const jobAnalysis = isRecord(parseResult.jobAnalysis) ? parseResult.jobAnalysis : {};
 
-  const recorded = await context.client.rpc("record_requisition_parse", {
-    p_requisition_id: requisitionId,
-    p_job_analysis: jobAnalysis,
-    p_warnings: warnings,
-    p_confidence: Number.isFinite(confidence) ? confidence : 0.5,
-    p_ready: ready,
-  });
-  if (recorded.error) throw new HandlerError(recorded.error.code, true);
-  if (!isRecord(recorded.data) || recorded.data.ok !== true) {
-    throw new HandlerError(
-      typeof recorded.data?.reason === "string" ? recorded.data.reason : "requisition_parse_record_failed",
-      false,
-    );
+  // Status 'ready' means parse already sealed but campaign seal/complete may not have.
+  // Skip one-shot record_requisition_parse (would return not-parseable-state).
+  if (priorStatus !== "ready") {
+    const recorded = await context.client.rpc("record_requisition_parse", {
+      p_requisition_id: requisitionId,
+      p_job_analysis: jobAnalysis,
+      p_warnings: warnings,
+      p_confidence: Number.isFinite(confidence) ? confidence : 0.5,
+      p_ready: ready,
+    });
+    if (recorded.error) throw new HandlerError(recorded.error.code, true);
+    if (!isRecord(recorded.data) || recorded.data.ok !== true) {
+      throw new HandlerError(
+        typeof recorded.data?.reason === "string" ? recorded.data.reason : "requisition_parse_record_failed",
+        false,
+      );
+    }
   }
 
-  if (!ready) {
+  if (!ready && priorStatus !== "ready") {
     return completeJob(
       context.client,
       job,
@@ -769,10 +824,11 @@ async function handleRequisitionParse(job, context) {
   });
   if (sealed.error) throw new HandlerError(sealed.error.code, true);
   if (!isRecord(sealed.data) || sealed.data.ok !== true) {
-    throw new HandlerError(
-      typeof sealed.data?.reason === "string" ? sealed.data.reason : "requisition_campaign_record_failed",
-      false,
-    );
+    const sealReason = typeof sealed.data?.reason === "string" ? sealed.data.reason : "";
+    // Resume: parse already at ready and seal lost a race (or already sealed elsewhere).
+    if (!(priorStatus === "ready" && sealReason === "not-ready")) {
+      throw new HandlerError(sealReason || "requisition_campaign_record_failed", false);
+    }
   }
 
   // LangGraph parse_only checkpoint — refuse successor if stage is not requisition_parsed.
@@ -802,7 +858,7 @@ async function handleRequisitionParse(job, context) {
     [successorJob(
       nextKind,
       `campaign:${requisitionId}:${campaignId}`,
-      { requisitionId, campaignId, graphStage: "requisition_parsed" },
+      { requisitionId, campaignId },
       80,
     )],
   );

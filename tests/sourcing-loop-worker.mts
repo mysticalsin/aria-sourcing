@@ -211,11 +211,49 @@ test("sourcing_batch enqueues shortlist_build with provider run id only", async 
         campaignId: "camp-1",
         batchId: "batch-1",
         providerRunId: "81111111-1111-4111-8111-111111111111",
-        graphStage: "sourcing_complete",
       },
       priority: 90,
     },
   ]);
+});
+
+test("requisition_parse resumes campaign_created without re-recording parse", async () => {
+  const INBOUND_ID = "81111111-1111-4111-8111-111111111112";
+  const REQUISITION_ID = "91111111-1111-4111-8111-111111111112";
+  const { client, calls } = rpcClient((name) => {
+    if (name === "read_inbound_message_for_loop") {
+      return {
+        data: {
+          status: "ok",
+          body: "Role: Senior Engineer\nSkills: TypeScript",
+          from_address: "hiring@example.com",
+        },
+        error: null,
+      };
+    }
+    if (name === "ingest_requisition") {
+      return {
+        data: {
+          ok: true,
+          requisition_id: REQUISITION_ID,
+          status: "campaign_created",
+          duplicate: true,
+        },
+        error: null,
+      };
+    }
+    if (name === "complete_aria_job") return { data: true, error: null };
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await handleAriaJob(job("requisition_parse", { inboundId: INBOUND_ID }), { client });
+
+  assert.ok(!calls.some((call) => call.name === "record_requisition_parse"));
+  assert.ok(!calls.some((call) => call.name === "apply_workspace_patch"));
+  const completion = calls.find((call) => call.name === "complete_aria_job");
+  assert.equal(completion?.args.p_enqueue?.[0]?.kind, "campaign_create");
+  assert.equal(completion?.args.p_enqueue?.[0]?.payload?.graphStage, undefined);
+  assert.ok(typeof completion?.args.p_result_sha256 === "string" && completion.args.p_result_sha256.length > 0);
 });
 
 test("requisition_parse ingests, parses, patches campaign, enqueues campaign_create", async () => {
@@ -284,10 +322,16 @@ test("requisition_parse ingests, parses, patches campaign, enqueues campaign_cre
     {
       kind: "campaign_create",
       idempotency_key: `campaign:${REQUISITION_ID}:camp-1`,
-      payload: { requisitionId: REQUISITION_ID, campaignId: "camp-1", graphStage: "requisition_parsed" },
+      // graphStage must NOT appear — DB payload contract only allows requisitionId+campaignId
+      payload: { requisitionId: REQUISITION_ID, campaignId: "camp-1" },
       priority: 80,
     },
   ]);
+  assert.equal(
+    completion?.args.p_enqueue?.[0]?.payload?.graphStage,
+    undefined,
+    "campaign_create enqueue must omit graphStage (else complete_aria_job 22023)",
+  );
 });
 
 test("enrich_candidate can enqueue shortlist_build with provider run id only", async () => {
@@ -791,7 +835,6 @@ test("draft_generate enqueues calendar_book after positive reply trigger", async
         candidateId: "cand-9",
         trigger: "draft_generate",
         intent: "INTERESTED",
-        graphStage: "queued_for_approval",
         approvedBy: "user-autopilot-1",
       },
       priority: 60,
