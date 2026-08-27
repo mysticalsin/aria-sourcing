@@ -33,11 +33,38 @@ ok(
   emailProviderReadiness({ NODE_ENV: "test", GOOGLE_CLIENT_ID: "id" }).gmailOAuth === false,
 );
 ok(
-  "microsoft oauth readiness",
+  "microsoft oauth readiness requires redirect uri",
   emailProviderReadiness({
     NODE_ENV: "test",
     MICROSOFT_CLIENT_ID: "id",
     MICROSOFT_CLIENT_SECRET: "sec",
+    MICROSOFT_REDIRECT_URI: "http://localhost:3000/auth/microsoft/callback",
+  }).microsoftOAuth === true,
+);
+ok(
+  "microsoft oauth incomplete without redirect uri",
+  emailProviderReadiness({
+    NODE_ENV: "test",
+    MICROSOFT_CLIENT_ID: "id",
+    MICROSOFT_CLIENT_SECRET: "sec",
+  }).microsoftOAuth === false,
+);
+ok(
+  "production microsoft oauth rejects localhost redirect",
+  emailProviderReadiness({
+    NODE_ENV: "production",
+    MICROSOFT_CLIENT_ID: "id",
+    MICROSOFT_CLIENT_SECRET: "sec",
+    MICROSOFT_REDIRECT_URI: "http://localhost:3000/auth/microsoft/callback",
+  }).microsoftOAuth === false,
+);
+ok(
+  "production microsoft oauth accepts public https redirect",
+  emailProviderReadiness({
+    NODE_ENV: "production",
+    MICROSOFT_CLIENT_ID: "id",
+    MICROSOFT_CLIENT_SECRET: "sec",
+    MICROSOFT_REDIRECT_URI: "https://aria-mantu-app.fly.dev/auth/microsoft/callback",
   }).microsoftOAuth === true,
 );
 ok(

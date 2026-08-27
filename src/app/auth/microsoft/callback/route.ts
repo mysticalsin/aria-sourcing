@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { resolveMicrosoftRedirectUri } from "@/lib/email-connections";
 import { getServerSupabase, getServiceSupabase, requireAdmin } from "@/lib/supabase/server";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { encryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
@@ -75,7 +76,13 @@ export async function GET(req: NextRequest) {
     return redirectError(req, PUBLIC_DEMO_DRY_RUN_DETAIL);
   }
 
-  const redirectUri = process.env.MICROSOFT_REDIRECT_URI ?? "http://localhost:3000/auth/microsoft/callback";
+  const redirectUri = resolveMicrosoftRedirectUri();
+  if (!redirectUri) {
+    return redirectError(
+      req,
+      "MICROSOFT_REDIRECT_URI must be set to the public https callback (e.g. https://aria-mantu-app.fly.dev/auth/microsoft/callback).",
+    );
+  }
 
   // Exchange code for tokens (PKCE verifier proves possession; 10s timeout).
   let tokenRes: Response;

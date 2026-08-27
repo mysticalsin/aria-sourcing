@@ -179,8 +179,9 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       return (
         /\/api\/email\/connections/.test(src)
         && /connectedOutlook/.test(src)
-        && /Teams joinUrl \(proven on live book\)/.test(src)
-        && /ok: false/.test(src)
+        && /confirmLive/.test(src)
+        && /[Jj]oinUrl is proven only on live/.test(src)
+        && !/id:\s*"teams-links"/.test(src)
       );
     },
   },

@@ -187,8 +187,8 @@ function Microsoft365StackInner() {
               hint: loading
                 ? "Checking deployment env…"
                 : oauthReady
-                  ? "MICROSOFT_CLIENT_ID + secret configured"
-                  : "Set MICROSOFT_CLIENT_* and DATA_ENCRYPTION_KEY.",
+                  ? "MICROSOFT_CLIENT_ID + secret + REDIRECT_URI configured"
+                  : "Set MICROSOFT_CLIENT_*, MICROSOFT_REDIRECT_URI, and DATA_ENCRYPTION_KEY.",
             },
             {
               id: "connect-outlook",
@@ -205,7 +205,7 @@ function Microsoft365StackInner() {
       <ConnectionStep
         step={3}
         title="Calendar & Teams interviews"
-        subtitle="First conversations booked on Outlook with Teams join links."
+        subtitle="First conversations booked on Outlook with Teams join links. JoinUrl is proven only on live /api/calendar/event with confirmLive — never from OAuth scope alone."
         state={calendarReady ? "complete" : mailboxConnected ? "active" : "pending"}
       >
         <SystemReadiness
@@ -215,18 +215,10 @@ function Microsoft365StackInner() {
               label: "Calendars.ReadWrite (Teams for Business)",
               ok: calendarScoped,
               hint: calendarScoped
-                ? "Granted on connected Outlook mailbox — live books request isOnlineMeeting via calendar create."
+                ? "Granted on connected Outlook mailbox — live books request isOnlineMeeting via calendar create. Teams joinUrl appears after a successful confirmLive book."
                 : mailboxConnected
                   ? "Reconnect Outlook if Calendars.ReadWrite is missing from the token."
                   : "Connect Outlook — Calendars.ReadWrite is requested at authorize time.",
-            },
-            {
-              id: "teams-links",
-              label: "Teams joinUrl (proven on live book)",
-              ok: false,
-              hint: calendarScoped
-                ? "Scope is ready — joinUrl is only proven when /api/calendar/event returns a Teams URL with confirmLive."
-                : "Connect Outlook with calendar scope, then book a live interview to prove Teams links.",
             },
           ]}
         />

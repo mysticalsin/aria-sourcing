@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { resolveMicrosoftRedirectUri } from "@/lib/email-connections";
 import { getServerSupabase, requireAdmin } from "@/lib/supabase/server";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 
@@ -16,7 +17,7 @@ export const dynamic = "force-dynamic";
  *
  * Required env:
  *   MICROSOFT_CLIENT_ID
- *   MICROSOFT_REDIRECT_URI (defaults to http://localhost:3000/auth/microsoft/callback)
+ *   MICROSOFT_REDIRECT_URI (required in production; localhost default only for local NODE_ENV≠production)
  */
 export async function GET(req: NextRequest) {
   // Only an authenticated admin may initiate an OAuth seat connection.
@@ -38,7 +39,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, status: "dry-run", error: PUBLIC_DEMO_DRY_RUN_DETAIL }, { status: 403 });
   }
 
-  const redirectUri = process.env.MICROSOFT_REDIRECT_URI ?? "http://localhost:3000/auth/microsoft/callback";
+  const redirectUri = resolveMicrosoftRedirectUri();
+  if (!redirectUri) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "MICROSOFT_REDIRECT_URI must be set to the public https callback (e.g. https://aria-mantu-app.fly.dev/auth/microsoft/callback).",
+      },
+      { status: 500 },
+    );
+  }
 
   // CSRF: random nonce echoed in `state` and bound to an HttpOnly cookie, verified
   // in the callback. PKCE (S256): a high-entropy verifier kept server-side (cookie)

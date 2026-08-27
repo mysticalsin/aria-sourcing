@@ -14,6 +14,42 @@ export type EmailProviderReadiness = {
   inboundWebhookSecret: boolean;
 };
 
+/**
+ * Microsoft OAuth redirect must be explicitly configured. In production it must be
+ * a public https URL (never localhost) — otherwise Connect Outlook looks "ready"
+ * while authorize falls back to http://localhost:3000/... and breaks live Fly.
+ */
+export function microsoftRedirectUriReady(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  const uri = (env.MICROSOFT_REDIRECT_URI ?? "").trim();
+  if (!uri) return false;
+  try {
+    const parsed = new URL(uri);
+    if (env.NODE_ENV === "production") {
+      if (parsed.protocol !== "https:") return false;
+      if (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Resolve authorize/callback redirect; null means fail closed (do not use localhost in prod). */
+export function resolveMicrosoftRedirectUri(
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  const configured = (env.MICROSOFT_REDIRECT_URI ?? "").trim();
+  if (configured) {
+    return microsoftRedirectUriReady({ ...env, MICROSOFT_REDIRECT_URI: configured })
+      ? configured
+      : null;
+  }
+  if (env.NODE_ENV === "production") return null;
+  return "http://localhost:3000/auth/microsoft/callback";
+}
+
 /** Env readiness for mailbox OAuth and transactional senders (booleans only). */
 export function emailProviderReadiness(
   env: Record<string, string | undefined> = process.env,
@@ -22,7 +58,11 @@ export function emailProviderReadiness(
   const production = env.NODE_ENV === "production";
   return {
     gmailOAuth: Boolean(env.GOOGLE_CLIENT_ID?.trim() && env.GOOGLE_CLIENT_SECRET?.trim()),
-    microsoftOAuth: Boolean(env.MICROSOFT_CLIENT_ID?.trim() && env.MICROSOFT_CLIENT_SECRET?.trim()),
+    microsoftOAuth: Boolean(
+      env.MICROSOFT_CLIENT_ID?.trim()
+        && env.MICROSOFT_CLIENT_SECRET?.trim()
+        && microsoftRedirectUriReady(env),
+    ),
     sendgridApiKey: Boolean(env.SENDGRID_API_KEY?.trim()),
     resendApiKey: Boolean(env.RESEND_API_KEY?.trim()),
     // Matches encryptionRequiredButMissing(): production requires a key; elsewhere a key is optional.

@@ -265,7 +265,7 @@ async function ensureConnect(
         error:
           provider === "Gmail API"
             ? "Google OAuth is not configured (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)."
-            : "Microsoft OAuth is not configured (MICROSOFT_CLIENT_ID / MICROSOFT_CLIENT_SECRET).",
+            : "Microsoft OAuth is not configured (MICROSOFT_CLIENT_ID / MICROSOFT_CLIENT_SECRET / MICROSOFT_REDIRECT_URI).",
       },
       { status: 503 },
     );
