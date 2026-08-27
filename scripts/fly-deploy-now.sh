@@ -37,7 +37,7 @@ source "$repo/scripts/lib/prod-release-guard.sh"
 aria_require_reviewed_production_release fly-deploy-now aria-mantu-bootstrap aria-mantu-app
 
 if [ -z "${FLY_API_TOKEN:-}" ] && [ -r "$repo/production-readiness/.fly-token.env" ]; then
-  export FLY_API_TOKEN="$(tr -d '\n' < "$repo/production-readiness/.fly-token.env")"
+  export FLY_API_TOKEN="$(tr -d '\n\r ' < "$repo/production-readiness/.fly-token.env")"
 fi
 [ -n "${FLY_API_TOKEN:-}" ] || { echo "FLY_API_TOKEN required (flyctl auth login or .fly-token.env)" >&2; exit 1; }
 [ -r "$repo/production-readiness/.fly-secrets.env" ] || {
