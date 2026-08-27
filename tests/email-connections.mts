@@ -227,8 +227,8 @@ ok(
   "microsoft callback promotes seat to live only after Graph webhook succeeds",
   /Promote seat to live only after inbound route/.test(msCb)
     && /mode:\s*"live"/.test(msCb)
-    && /createGraphMailSubscription/.test(msCb)
-    && msCb.indexOf("createGraphMailSubscription") < msCb.indexOf('mode: "live"'),
+    && /ensureGraphMailSubscription/.test(msCb)
+    && msCb.indexOf("ensureGraphMailSubscription") < msCb.indexOf('mode: "live"'),
 );
 ok(
   "microsoft callback fails closed when inbound route upsert fails",
@@ -237,7 +237,7 @@ ok(
 ok(
   "microsoft callback fails closed when Graph webhook subscription fails",
   /Graph webhook failed|Graph webhook setup failed/.test(msCb)
-    && /createGraphMailSubscription/.test(msCb)
+    && /ensureGraphMailSubscription/.test(msCb)
     && /redirectError/.test(msCb)
     && !/Graph webhook not enabled/.test(msCb),
 );
@@ -248,6 +248,10 @@ ok("settings panel Connect Gmail", /Connect Gmail/.test(panel));
 ok("settings panel Connect Outlook", /Connect Outlook/.test(panel));
 ok("settings panel Enable webhook", /Enable webhook/.test(panel));
 ok("settings panel ensure_graph_webhook", /ensure_graph_webhook/.test(panel));
+ok(
+  "settings panel Enable webhook when sub active but seat not live",
+  /seatMode !== "live"/.test(panel) && /Repair live seat/.test(panel),
+);
 
 const sendMode = readFileSync("src/lib/outreach-send-mode.ts", "utf8");
 ok("effectiveDryRunMode helper", /export function effectiveDryRunMode/.test(sendMode));

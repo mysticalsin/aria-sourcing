@@ -162,6 +162,7 @@ export async function GET(req: NextRequest) {
       id: c.id,
       seatId: c.seat_id,
       seatName: seat?.name ?? null,
+      seatMode: seat?.mode ?? null,
       provider: c.provider,
       accountEmail: c.account_email,
       expiresAt: c.expires_at,

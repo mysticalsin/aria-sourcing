@@ -41,6 +41,8 @@ type ConnectionRow = {
   id: string;
   seatId: string;
   seatName: string | null;
+  /** Fleet seat mode — confirmLive Teams books require "live". */
+  seatMode?: string | null;
   provider: string;
   accountEmail: string;
   expiresAt: string | null;
@@ -386,7 +388,9 @@ export function EmailConnectionsPanel() {
                         >
                           Validate
                         </Button>
-                        {isAdmin && c.provider === "Microsoft Graph" && !c.graphSubscription?.active && (
+                        {isAdmin
+                          && c.provider === "Microsoft Graph"
+                          && (!c.graphSubscription?.active || c.seatMode !== "live") && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -394,7 +398,9 @@ export function EmailConnectionsPanel() {
                             loading={ensuringWebhook === c.id}
                             onClick={() => void ensureGraphWebhook(c.id)}
                           >
-                            Enable webhook
+                            {c.graphSubscription?.active && c.seatMode !== "live"
+                              ? "Repair live seat"
+                              : "Enable webhook"}
                           </Button>
                         )}
                         {isAdmin && !routeOk && (

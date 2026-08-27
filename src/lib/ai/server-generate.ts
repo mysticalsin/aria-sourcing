@@ -3,6 +3,11 @@ import "server-only";
 /**
  * Server-side cloud LLM completion for autonomous loop cron routes.
  * Uses deployment env credentials (Fly secrets). Never called from the browser.
+ *
+ * Provider selection: prefer first configured key in PREFERRED order. On auth
+ * failures (401/403) try the next configured provider so a single expired key
+ * (e.g. Kimi) cannot block intake when OpenAI/Anthropic is also set.
+ * Fail closed only when every configured provider fails.
  */
 
 import {
@@ -17,30 +22,31 @@ const PREFERRED: AiProviderSlug[] = ["kimi", "anthropic", "openai", "groq", "mis
 
 export type ServerGenerateResult = { ok: true; text: string; provider: AiProviderSlug } | { ok: false; reason: string };
 
-function firstConfiguredProvider(): { slug: AiProviderSlug; key: string } | null {
+function configuredProviders(): Array<{ slug: AiProviderSlug; key: string }> {
+  const out: Array<{ slug: AiProviderSlug; key: string }> = [];
   for (const slug of PREFERRED) {
     const key = process.env[PROVIDER_ENV[slug]] ?? "";
-    if (key.trim()) return { slug, key: key.trim() };
+    if (key.trim()) out.push({ slug, key: key.trim() });
   }
-  return null;
+  return out;
 }
 
-export async function serverGenerateText(input: {
-  system: string;
-  prompt: string;
-  maxTokens?: number;
-}): Promise<ServerGenerateResult> {
-  const configured = firstConfiguredProvider();
-  if (!configured) {
-    return { ok: false, reason: "No cloud LLM API key configured on the server." };
-  }
-  const model = DEFAULT_MODEL[configured.slug];
+function isAuthFailure(status: number): boolean {
+  return status === 401 || status === 403;
+}
+
+async function tryOneProvider(
+  slug: AiProviderSlug,
+  key: string,
+  input: { system: string; prompt: string; maxTokens?: number },
+): Promise<ServerGenerateResult | { ok: false; reason: string; authFailure: true }> {
+  const model = DEFAULT_MODEL[slug];
   const { url, headers, body } = buildCloudRequest(
-    configured.slug,
+    slug,
     model,
     input.system,
     input.prompt,
-    configured.key,
+    key,
     input.maxTokens ?? 2048,
   );
   try {
@@ -51,13 +57,40 @@ export async function serverGenerateText(input: {
       signal: AbortSignal.timeout(60_000),
     });
     if (!res.ok) {
-      return { ok: false, reason: `Upstream ${configured.slug} HTTP ${res.status}` };
+      const reason = `Upstream ${slug} HTTP ${res.status}`;
+      if (isAuthFailure(res.status)) return { ok: false, reason, authFailure: true };
+      return { ok: false, reason };
     }
     const json = await res.json().catch(() => null);
-    const text = parseCloudResponse(configured.slug, json);
+    const text = parseCloudResponse(slug, json);
     if (!text?.trim()) return { ok: false, reason: "Empty model response." };
-    return { ok: true, text: text.trim(), provider: configured.slug };
+    return { ok: true, text: text.trim(), provider: slug };
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : "Model unreachable." };
   }
+}
+
+export async function serverGenerateText(input: {
+  system: string;
+  prompt: string;
+  maxTokens?: number;
+}): Promise<ServerGenerateResult> {
+  const providers = configuredProviders();
+  if (providers.length === 0) {
+    return { ok: false, reason: "No cloud LLM API key configured on the server." };
+  }
+
+  const failures: string[] = [];
+  for (const { slug, key } of providers) {
+    const result = await tryOneProvider(slug, key, input);
+    if (result.ok) return result;
+    failures.push(result.reason);
+    if ("authFailure" in result && result.authFailure) {
+      continue; // try next configured provider
+    }
+    // Non-auth upstream errors fail closed on that attempt (do not cascade to a
+    // weaker/cheaper model mid-parse) — only auth miss skips to the next key.
+    return { ok: false, reason: result.reason };
+  }
+  return { ok: false, reason: failures.join("; ") || "All configured LLM providers failed." };
 }

@@ -1065,3 +1065,27 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** `flyctl logs -a aria-mantu-app --no-tail` returned `Cannot find module '/app/node_modules/playwright-core/browsers.json'` from the running web machine on 2026-07-19. Health remains 200, so shallow liveness does not detect this browser-tool failure.
 **Suggested fix:** Correct standalone image tracing/runtime packaging, add a browser-tool readiness probe, and verify the signed production image contains the exact required Playwright assets without enabling broader browser privileges.
 **Status:** open; browser-agent capability remains NO-GO
+
+## 2026-08-27 — Enable webhook hidden when sub active + seat mock
+**Severity:** correctness
+**File:** src/components/settings/email-connections-panel.tsx:389
+**Issue:** Enable webhook only renders when `!c.graphSubscription?.active`. If Graph subscription is active but `seat.mode` is still mock (partial OAuth / promote failure / demote), the repair path that calls `ensure_graph_webhook` → `promoteMicrosoftGraphSeatLive` is unreachable; E2E step 6b then fails closed on exactly this state.
+**Repro/evidence:** Panel condition `!c.graphSubscription?.active`; ensureGraphWebhook at connections/route.ts:441-480 still promotes when sub is unchanged+ready; e2e-workflow-test.sh:1070 fails "webhook active but seat.mode is not live".
+**Suggested fix:** Show Enable webhook when Graph connection lacks active sub OR matching seat.mode !== "live".
+**Status:** fixed (pending commit — panel shows Repair live seat when seatMode !== live)
+
+## 2026-08-27 — Outlook OAuth callback creates subscription instead of ensure
+**Severity:** correctness
+**File:** src/app/auth/microsoft/callback/route.ts:203-204
+**Issue:** Callback always `createGraphMailSubscription` (POST). Reconnect / repair when Graph already has an Inbox subscription for the app fails closed before `mode=live` promote; Enable-webhook path correctly uses `ensureGraphMailSubscription`.
+**Repro/evidence:** callback imports create; connections ensureGraphWebhook uses ensure; Graph rejects duplicate resource subscriptions without delete-first.
+**Suggested fix:** Replace create with `ensureGraphMailSubscription` before promote (same as Enable webhook).
+**Status:** fixed (pending commit — callback uses ensureGraphMailSubscription)
+
+## 2026-08-27 — e2e_uuid lacks openssl fallback (uuidgen gap mostly fixed)
+**Severity:** test-gap
+**File:** e2e-workflow-test.sh:143-151
+**Issue:** Tip dfa70ec E2E used bare `uuidgen` (log: command not found → Idempotency-Key empty → sourcing-agent 400). HEAD `31a5d21` adds `e2e_uuid` with python3 fallback, but preflight only requires curl/jq/openssl — if both uuidgen and python3 are missing, key is still empty.
+**Repro/evidence:** `/tmp/e2e-tip-dfa70ec.log:52` uuidgen missing; HEAD has e2e_uuid; openssl already required at line 141.
+**Suggested fix:** Fall back to `printf '%s' "$(openssl rand -hex 16)" | sed 's/^\(........\)\(....\)\(....\)\(....\)\(............\)$/\1-\2-\3-\4-\5/'`.
+**Status:** fixed (pending commit — e2e_uuid openssl rand -hex 16 fallback)

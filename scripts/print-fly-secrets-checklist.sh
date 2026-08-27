@@ -32,7 +32,12 @@ flyctl secrets set -a aria-mantu-app \
 flyctl secrets set -a aria-mantu-app ARIA_LOOP_KILL_SWITCH='false'
 
 # At least one cloud LLM key (parse / draft / critics fail-closed without it).
-# Prefer KIMI (already preferred by serverGenerateText); Anthropic/OpenAI also work:
+# Prefer the apply helper (reads /tmp/owner-llm.env; refuses PLACEHOLDER):
+#   cp production-readiness/.owner-llm.env.example /tmp/owner-llm.env
+#   # edit real KIMI_API_KEY (and optional KIMI_BASE_URL) or OPENAI/ANTHROPIC
+#   bash scripts/fly-apply-owner-llm-secrets.sh
+# Prefer KIMI (preferred by serverGenerateText; auth 401/403 falls through to next key);
+# Anthropic/OpenAI also work:
 # flyctl secrets set -a aria-mantu-app KIMI_API_KEY='PLACEHOLDER_KIMI_KEY'
 # or: ANTHROPIC_API_KEY='PLACEHOLDER_ANTHROPIC_KEY'
 # or: OPENAI_API_KEY='PLACEHOLDER_OPENAI_KEY'

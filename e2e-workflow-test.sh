@@ -145,10 +145,17 @@ e2e_uuid() {
     uuidgen | tr 'A-Z' 'a-z'
     return 0
   fi
-  python3 - <<'PY'
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - <<'PY'
 import uuid
 print(str(uuid.uuid4()))
 PY
+    return 0
+  fi
+  # openssl is required in preflight — format 32 hex chars as UUID v4-shaped.
+  local hex
+  hex="$(openssl rand -hex 16)"
+  printf '%s-%s-%s-%s-%s\n' "${hex:0:8}" "${hex:8:4}" "${hex:12:4}" "${hex:16:4}" "${hex:20:12}"
 }
 [ -n "$ADMIN_EMAIL" ]    || die "ADMIN_EMAIL is required."
 [ -n "$ADMIN_PASSWORD" ] || die "ADMIN_PASSWORD is required."

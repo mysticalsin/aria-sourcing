@@ -112,6 +112,7 @@ const documentationOnlyReleaseSurfaces = new Set([
 /** Owner-exported credential appliers — mutate Fly secrets only, never invent values, never deploy. */
 const ownerCredentialApplySurfaces = new Set([
   "scripts/fly-apply-owner-microsoft-secrets.sh",
+  "scripts/fly-apply-owner-llm-secrets.sh",
 ]);
 const executableReleaseSurfaces = trackedFiles.filter(
   (path) => path === ".gitlab-ci.yml" || path.endsWith(".sh") || path.startsWith(".github/workflows/"),

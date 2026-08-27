@@ -196,12 +196,12 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // Create Graph change-notification subscription (webhook push, no inbox polling).
-  // Fail closed: a connected mailbox without an active Graph subscription cannot
-  // receive hiring-need pushes — operator must not see a false "Connected" success.
+  // Ensure Graph change-notification subscription (webhook push, no inbox polling).
+  // Use ensure (not create-only): reconnect when Graph already has an Inbox sub must
+  // not fail closed before mode=live promote — same path as Settings → Enable webhook.
   try {
-    const { createGraphMailSubscription } = await import("@/lib/email-graph-subscriptions");
-    const sub = await createGraphMailSubscription({ workspaceId: wid, connectionId: upserted.id });
+    const { ensureGraphMailSubscription } = await import("@/lib/email-graph-subscriptions");
+    const sub = await ensureGraphMailSubscription({ workspaceId: wid, connectionId: upserted.id });
     if (!sub.ok) {
       console.error("[microsoft/callback] graph subscription:", sub.reason);
       return redirectError(
