@@ -815,7 +815,10 @@ require_live_draft_or_canned() {
     return 1
   fi
   DRAFT_SUBJECT="Your open-source TypeScript work"
-  DRAFT_BODY="Hi, I came across your recent TypeScript and React work and was genuinely impressed by how you structure things. We are hiring a senior engineer for a platform team in London and I thought of you. No pressure at all, but if you are even a little curious I would love to share more. Either way, keep up the great work."
+  DRAFT_BODY="Hi, I came across your recent TypeScript and React work and was genuinely impressed by how you structure things. Mantu Group is hiring a senior engineer for a platform team in London and I thought of you. No pressure at all, but if you are even a little curious I would love to share more. Either way, keep up the great work.
+
+Best,
+Recruiting · Mantu Group"
   warn "${channel} draft generation degraded (no tool-calling/provider key): $(jq -rc '.reason // empty' "$RESP") — using a canned draft so the approval + no-send assertions still run."
   return 0
 }

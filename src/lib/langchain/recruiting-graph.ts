@@ -10,6 +10,8 @@
  * an in-graph tool-calling agent runtime): real parse/source/draft/book work
  * runs in the loop worker + cron routes; this graph maps completed stages onto
  * the next job kind and fail-stops (parse failure, quality blocked, missing booking).
+ * When `preferLiveCritics` is set (draft cron), validateQuality runs the three
+ * live LLM peer critics via dynamic import.
  *
  * Intents:
  *   - `full` (default): intake → shortlist → draft → quality → approval → book
@@ -69,6 +71,8 @@ export const RecruitingGraphState = Annotation.Root({
   }),
   /** Booking id when first interview scheduled. */
   bookingId: Annotation<string | undefined>(),
+  /** Prefer live multi-agent LLM critics in validateQuality (server/cron paths). */
+  preferLiveCritics: Annotation<boolean | undefined>(),
   /** Human-readable stage for observability. */
   stage: Annotation<string>(),
   /** Non-fatal errors accumulated across nodes. */
@@ -134,12 +138,31 @@ async function draftOutreach(state: RecruitingGraphStateType): Promise<Partial<R
 /** Node: validate outreach quality for each draft (multi-agent critics). */
 async function validateQuality(state: RecruitingGraphStateType): Promise<Partial<RecruitingGraphStateType>> {
   const quality: Record<string, OutreachQualityVerdict> = {};
+  const preferLive = state.preferLiveCritics === true;
+  type QualityFn = (input: {
+    subject: string;
+    body: string;
+    channel?: string;
+  }) => OutreachQualityVerdict | Promise<OutreachQualityVerdict>;
+  let liveValidate: QualityFn | null = null;
+  if (preferLive) {
+    try {
+      // Dynamic import keeps unit tests free of server-only LLM modules.
+      const live = await import("@/lib/outreach-quality-pipeline-live");
+      liveValidate = live.validateOutreachQualityLive;
+    } catch {
+      liveValidate = null;
+    }
+  }
   for (const [candidateId, draft] of Object.entries(state.drafts ?? {})) {
-    quality[candidateId] = validateOutreachQuality({
+    const input = {
       subject: draft.subject,
       body: draft.body,
       channel: draft.channel,
-    });
+    };
+    quality[candidateId] = liveValidate
+      ? await liveValidate(input)
+      : validateOutreachQuality(input);
   }
   return { stage: "quality_validated", quality };
 }
@@ -238,6 +261,7 @@ export async function runRecruitingGraph(
     drafts: input.drafts ?? {},
     quality: input.quality ?? {},
     bookingId: input.bookingId,
+    preferLiveCritics: input.preferLiveCritics,
     stage: input.stage ?? "init",
     errors: input.errors ?? [],
   });

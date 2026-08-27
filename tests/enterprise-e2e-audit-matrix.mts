@@ -312,8 +312,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /critics_required/.test(send)
         && /demoLoginEnabled/.test(approve)
         && /demoLoginEnabled/.test(send)
+        && /Human approval resolves needs_review|needs_review is resolved/.test(approve + send)
         && !/fail open to deterministic/.test(approve)
         && !/fail open to deterministic/.test(send)
+        && !/status === "blocked" \|\| liveVerdict\.status === "needs_review"/.test(approve)
+        && !/status === "blocked" \|\| liveVerdict\.status === "needs_review"/.test(send)
       );
     },
   },
@@ -478,6 +481,10 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /inbound mailbox route failed/.test(
           readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8"),
         )
+        && /Graph webhook failed|Graph webhook setup failed/.test(
+          readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8"),
+        )
+        && /redirectError/.test(readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8"))
       );
     },
   },
@@ -617,6 +624,10 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     requirement: "Multi-agent quality critics run as separate LLM calls",
     evidence: () => {
       const qualityLive = readFileSync("src/lib/outreach-quality-pipeline-live.ts", "utf8");
+      const graph = readFileSync("src/lib/langchain/recruiting-graph.ts", "utf8");
+      const draft = readFileSync("src/app/api/cron/generate-outreach-draft/route.ts", "utf8");
+      const hermes = readFileSync("src/app/api/hermes/chat/route.ts", "utf8");
+      const e2e = readFileSync("e2e-workflow-test.sh", "utf8");
       return (
         /CRITICS/.test(qualityLive)
         && /runOneCritic/.test(qualityLive)
@@ -624,6 +635,14 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /llm_empathy/.test(qualityLive)
         && /llm_compliance/.test(qualityLive)
         && /llm_human_likeness/.test(qualityLive)
+        && /attempt < 2/.test(qualityLive)
+        && /missing Mantu Group brand/.test(qualityLive)
+        && /preferLiveCritics/.test(graph)
+        && /outreach-quality-pipeline-live/.test(graph)
+        && /preferLiveCritics:\s*true/.test(draft)
+        && /Mantu Group/.test(hermes)
+        && /mantuOutreachVoice/.test(hermes)
+        && /Mantu Group is hiring/.test(e2e)
       );
     },
   },

@@ -200,7 +200,13 @@ ok(
   "microsoft callback fails closed when inbound route upsert fails",
   /inbound mailbox route failed/.test(msCb) && /redirectError/.test(msCb),
 );
-ok("microsoft callback surfaces graph webhook failure", /Graph webhook not enabled/.test(msCb));
+ok(
+  "microsoft callback fails closed when Graph webhook subscription fails",
+  /Graph webhook failed|Graph webhook setup failed/.test(msCb)
+    && /createGraphMailSubscription/.test(msCb)
+    && /redirectError/.test(msCb)
+    && !/Graph webhook not enabled/.test(msCb),
+);
 ok("microsoft callback redirects to integrations", /tab=integrations/.test(msCb));
 
 const panel = readFileSync("src/components/settings/email-connections-panel.tsx", "utf8");

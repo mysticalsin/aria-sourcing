@@ -60,7 +60,8 @@ const CRITICS: CriticSpec[] = [
     system:
       "You are the compliance critic for recruiting outreach. Reply with JSON only: " +
       '{"pass":bool,"score":0-100,"reasons":string[]}. ' +
-      "Flag salary disclosure, AI self-disclosure, discriminatory language, and invented credentials. No prose outside JSON.",
+      "Flag salary disclosure, AI self-disclosure, discriminatory language, invented credentials, " +
+      "and missing Mantu Group brand (body must name Mantu). No prose outside JSON.",
   },
   {
     key: "human_likeness",
@@ -93,20 +94,23 @@ async function runOneCritic(
     "Body:",
     input.body.slice(0, 4_000),
   ].join("\n");
-  const live = await serverGenerateText({ system: critic.system, prompt, maxTokens: 256 });
-  if (!live.ok) return null;
-  const row = parseCriticJson(live.text);
-  if (!row) return null;
-  const score = Math.max(0, Math.min(100, Number(row.score) || 0));
-  const reasons = Array.isArray(row.reasons)
-    ? row.reasons.map(String).filter(Boolean).slice(0, 8)
-    : [];
-  return {
-    stage: critic.stage,
-    pass: row.pass === true && score >= 60,
-    score,
-    reasons,
-  };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const live = await serverGenerateText({ system: critic.system, prompt, maxTokens: 256 });
+    if (!live.ok) continue;
+    const row = parseCriticJson(live.text);
+    if (!row) continue;
+    const score = Math.max(0, Math.min(100, Number(row.score) || 0));
+    const reasons = Array.isArray(row.reasons)
+      ? row.reasons.map(String).filter(Boolean).slice(0, 8)
+      : [];
+    return {
+      stage: critic.stage,
+      pass: row.pass === true && score >= 60,
+      score,
+      reasons,
+    };
+  }
+  return null;
 }
 
 /**

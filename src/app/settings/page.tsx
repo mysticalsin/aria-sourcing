@@ -256,7 +256,7 @@ export default function SettingsPage() {
     const message = params.get("message");
     if (oauth === "success") {
       const linkedIn = /linkedin/i.test(message ?? "");
-      const graphWebhookWarning = /Graph webhook not enabled|Graph webhook setup failed/i.test(message ?? "");
+      const graphWebhookWarning = /Graph webhook not enabled|Graph webhook setup failed|Graph webhook failed/i.test(message ?? "");
       toast({
         title: linkedIn ? "LinkedIn connected" : "Mailbox connected",
         description: message ?? "",

@@ -27,6 +27,7 @@ import { evaluateHermesWorkspaceBinding } from "@/lib/api/hermes-runtime-isolati
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import { resolveStoredApifyKey } from "@/lib/sourcing/apify";
 import { DISCLOSURE_SYSTEM, sanitizeCandidateText } from "@/lib/agent-disclosure-policy";
+import { mantuOutreachVoice } from "@/lib/mantu-brand";
 
 export const runtime = "nodejs";
 
@@ -111,9 +112,10 @@ const HermesChatSchema = z.object({
 
 const TASK_SYSTEM: Record<"outreach" | "classify" | "sourcing" | "chat", string> = {
   outreach:
-    "You are a senior technical recruiter writing first-touch candidate outreach. " +
-    "Lead with the candidate's specific recent work, give one genuine reason for reaching out, " +
+    "You are a senior technical recruiter writing first-touch candidate outreach for Mantu Group. " +
+    "Name Mantu Group explicitly in the body. Lead with the candidate's specific recent work, give one genuine reason for reaching out, " +
     "and end with a soft, low-pressure ask. Keep it under 120 words. No AI slop, no corporate filler, no em-dashes. " +
+    `Sign off as: ${mantuOutreachVoice().signature}. ` +
     "Reply with exactly: a line 'Subject: <subject>' then a blank line then the message body. No preamble. " +
     DISCLOSURE_SYSTEM,
   classify:

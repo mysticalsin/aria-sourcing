@@ -195,6 +195,7 @@ export async function POST(req: NextRequest) {
   // Live critics: production / non-demo tenants require all three LLM peers
   // (same fail-closed posture as generate-outreach-draft). Demo may fall back
   // to the deterministic gate already applied above.
+  // After a valid human approval, needs_review is resolved — only block blocked.
   const liveVerdict = await validateOutreachQualityLive({ subject, body, channel });
   if (!liveVerdict.llmCriticsUsed) {
     if (!demoLoginEnabled) {
@@ -213,7 +214,7 @@ export async function POST(req: NextRequest) {
         ?? "Outreach blocked by quality critics.";
       return NextResponse.json({ status: "error", detail: reason }, { status: 422 });
     }
-  } else if (liveVerdict.status === "blocked" || liveVerdict.status === "needs_review") {
+  } else if (liveVerdict.status === "blocked") {
     const reason =
       liveVerdict.stages.find((s) => !s.pass)?.reasons[0]
       ?? "Outreach blocked by live quality critics.";

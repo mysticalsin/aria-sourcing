@@ -195,23 +195,30 @@ export async function GET(req: NextRequest) {
   }
 
   // Create Graph change-notification subscription (webhook push, no inbox polling).
-  let successMessage = `Connected ${accountEmail}`;
+  // Fail closed: a connected mailbox without an active Graph subscription cannot
+  // receive hiring-need pushes — operator must not see a false "Connected" success.
   try {
     const { createGraphMailSubscription } = await import("@/lib/email-graph-subscriptions");
     const sub = await createGraphMailSubscription({ workspaceId: wid, connectionId: upserted.id });
     if (!sub.ok) {
       console.error("[microsoft/callback] graph subscription:", sub.reason);
-      successMessage = `Connected ${accountEmail}. Graph webhook not enabled: ${sub.reason}. Use Enable webhook in Settings.`;
+      return redirectError(
+        req,
+        `Connected ${accountEmail} but Graph webhook failed (${sub.reason}). Reconnect Outlook or use Enable webhook in Settings.`,
+      );
     }
   } catch (err) {
     console.error(
       "[microsoft/callback] graph subscription error:",
       err instanceof Error ? err.message : "unknown",
     );
-    successMessage = `Connected ${accountEmail}. Graph webhook setup failed — use Enable webhook in Settings.`;
+    return redirectError(
+      req,
+      `Connected ${accountEmail} but Graph webhook setup failed. Reconnect Outlook or use Enable webhook in Settings.`,
+    );
   }
 
-  return redirectSuccess(req, successMessage);
+  return redirectSuccess(req, `Connected ${accountEmail}`);
 }
 
 /** Cookie names binding the OAuth `state` nonce and PKCE verifier to this browser. */

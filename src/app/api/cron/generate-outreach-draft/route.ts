@@ -125,6 +125,7 @@ export async function POST(req: NextRequest) {
     campaignId: campaign.id,
     candidateIds: [candidate.id],
     shortlistIds: [candidate.id],
+    preferLiveCritics: true,
     drafts: {
       [candidate.id]: {
         subject: generated.subject,
