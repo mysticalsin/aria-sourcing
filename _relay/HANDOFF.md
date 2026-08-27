@@ -2,8 +2,8 @@
 project: MSourcing / ARIA
 shift: 191
 agent: cursor-cloud
-updated: 2026-08-27T20:40Z
-status: vault-llm-live-loop-partial-blocked-microsoft
+updated: 2026-08-27T20:45Z
+status: tip-635eb4e-live-blocked-microsoft
 ---
 
 # Handoff — Shift 191
@@ -11,7 +11,7 @@ status: vault-llm-live-loop-partial-blocked-microsoft
 ## Current state
 
 - Confirm unlock: `bash scripts/print-fly-deploy-confirm.sh` → `ARIA_PROD_DEPLOY_CONFIRM`
-- **PR #32** tips: `3f74623` (vault LLM) → `9100109` (loop JSON in image) → `04cd00d` (HOSTNAME=`::`, redeploying)
+- **PR #32** tips: `3f74623` (vault LLM) → `9100109` (loop JSON in image) → `04cd00d` (HOSTNAME=`::`) → **`635eb4e` LIVE**
 - Live proven: ready+Graph **200**; vault parse **modelUsed** after Kimi env 401; intake E2E step PASS
 - Loop: JSON ENOENT fixed; 6PN ECONNREFUSED fixed via temporary secret `ARIA_WEB_INTERNAL_URL=https://aria-mantu-app.fly.dev` + HOSTNAME=`::` tip; ticks reach `status=ok` (dispatch/graphRenew ok)
 - E2E still **FAIL** (32/10): campaign not materialized (`requisition_parse` → `rpc_http_404` on some jobs) + **microsoftOAuth=false** + no live Graph seat for Teams book
