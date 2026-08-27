@@ -1,50 +1,46 @@
 ---
 project: MSourcing / ARIA
-shift: 158
+shift: 159
 agent: cursor-cloud
 updated: 2026-08-27 UTC
 status: awaiting-microsoft-entra-and-deploy-confirm
 ---
 
-# Handoff — Shift 158
+# Handoff — Shift 159
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open (supersedes closed #29, #30)
-- **Tip:** `053fb0f11f39fe209d99c5569beb70dd2b11e300` (CRON/Graph E2E fail-closed + ADMIN /tmp auto-load)
-- **Local gate:** green; audit **45/45**
-- **PR:** re-open after #31 closed — new draft on same branch
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#32** open (supersedes #29–#31)
+- **Tip:** local tip includes `0067_mcp_allowlist_select_grants.sql` + prior E2E fail-closed
+- **HeyReach (live):** MCP+API vault keys saved; allowlist enabled for `https://mcp.heyreach.io/mcp`; `/api/mcp/test` → **200 / 16 tools**; workspace_state `int_heyreach` connected (no secrets in git)
+- **DB hotfix applied live:** GRANT SELECT on `mcp_server_allowlist` to authenticated+service_role (same as 0067); durable via new migration file
+- **Admin login verified:** `Twalteur@amaris.com` (password in `/tmp` only)
 - **Fly missing (6):** MICROSOFT_CLIENT_ID/SECRET + GOTRUE_EXTERNAL_AZURE_*
-- **Stale deploy:** `ba88302` / mig **0060** / Graph validationToken **404**; `ARIA_PROD_DEPLOY_CONFIRM` unset in shell
-- **Agent-owned ready in /tmp:** webhook + cron secrets; ADMIN `Twalteur@amaris.com` password reset+verified via GoTrue (admin role); HeyReach MCP/API keys (mode 600; never commit)
-- **Drop-zone:** `/tmp/owner-microsoft.env` and `production-readiness/.owner-microsoft.env` still absent
+- **Stale app image:** `ba88302` / mig ledger still reports **0060** / Graph **404**; deploy confirm unset
 
 ## Done this shift
 
-- E2E fail-closed: Fly requires `CRON_SECRET` (or `/tmp/aria-e2e-cron-secret`) unless `ARIA_ALLOW_SKIP_CRON_E2E=1`
-- E2E fail-closed: if Outlook connected, require `graphSubscription.active`
-- Live seat pick prefers subscription-active connections; partial fallback only with `ARIA_ALLOW_PARTIAL_M365_E2E=1`
-- `print-fly-e2e-env --export` emits CRON + ADMIN from `/tmp` when present
-- Stored owner-provided ADMIN + HeyReach material under `/tmp/aria-e2e-*` only
+- Staged + wired owner HeyReach MCP URL/key + API key into Fly tenant
+- Fixed allowlist SELECT privilege gap (live GRANT + migration 0067)
+- Confirmed Spremo.McpServer tool discovery (16 tools)
 
 ## Next steps
 
-1. Owner: fill `/tmp/owner-microsoft.env` (from `production-readiness/.owner-microsoft.env.example`) or export Azure/Entra → `bash scripts/fly-apply-owner-microsoft-secrets.sh`
-2. `bash scripts/print-fly-deploy-confirm.sh` → export confirm → `bash scripts/fly-deploy-now.sh`
-3. Connect Outlook + Enable webhook; HeyReach via Settings if LinkedIn path needed
-4. Agent: `eval "$(bash scripts/print-fly-e2e-env.sh --export)"` → `bash e2e-workflow-test.sh`
-5. Success: ready ok + mig `0066_*` + Graph 200 + E2E PASS → goal complete
+1. Owner: `/tmp/owner-microsoft.env` → `bash scripts/fly-apply-owner-microsoft-secrets.sh`
+2. `print-fly-deploy-confirm.sh` → `fly-deploy-now.sh` (applies migrations through 0067)
+3. Connect Outlook + Enable webhook
+4. `eval "$(bash scripts/print-fly-e2e-env.sh --export)" && bash e2e-workflow-test.sh`
+5. Goal complete only on ready+0066/0067 tip + Graph200 + E2E PASS
 
 ## Decisions made (don't relitigate)
 
-- PR #31 supersedes closed #29 and #30
+- PR #32 supersedes closed #29–#31
 - No Fly deploy without `ARIA_PROD_DEPLOY_CONFIRM`
-- Never invent Azure client id/secret; apply refuses PLACEHOLDER
-- Drop-zone / `/tmp/aria-e2e-*` must never be committed
-- LinkedIn send stays 409 assisted-manual; calendar live book only via confirmLive
+- Never invent Azure secrets; never commit `/tmp` secrets
+- LinkedIn send stays 409 assisted-manual; HeyReach is the LinkedIn outreach MCP path
+- Production MCP discovery requires allowlist row + SELECT grants
 
 ## Watch out
 
-- Rotate webhook/cron if `/tmp` lost after reboot
-- Do not invent or export deploy confirm to bypass gate
-- Queued follow-ups may deliver ADMIN/HeyReach again — already staged in `/tmp`
+- Live GRANT already applied; 0067 must still ship so rebuilds/new envs stay correct
+- Rotate webhook/cron if `/tmp` lost

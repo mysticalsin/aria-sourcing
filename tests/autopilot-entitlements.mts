@@ -72,6 +72,14 @@ const allowlist = readFileSync("supabase/migrations/0056_mcp_allowlist_authority
 ok("0056 creates mcp_server_allowlist", /create table if not exists public\.mcp_server_allowlist/i.test(allowlist));
 ok("0056 has mcp_allowlist_permits", /mcp_allowlist_permits/.test(allowlist));
 
+ok("migration 0067 present", existsSync("supabase/migrations/0067_mcp_allowlist_select_grants.sql"));
+const allowlistGrants = readFileSync("supabase/migrations/0067_mcp_allowlist_select_grants.sql", "utf8");
+ok(
+  "0067 grants SELECT on mcp_server_allowlist to authenticated + service_role",
+  /grant select on public\.mcp_server_allowlist to authenticated/i.test(allowlistGrants) &&
+    /grant select on public\.mcp_server_allowlist to service_role/i.test(allowlistGrants),
+);
+
 const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
 ok(
   "loop worker can auto-enqueue drafts for entitled shortlists",
