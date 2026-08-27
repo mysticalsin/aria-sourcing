@@ -1,26 +1,35 @@
 ---
 project: MSourcing / ARIA
-shift: 144
+shift: 145
 agent: cursor-cloud
 updated: 2026-08-27 UTC
 status: code-complete-awaiting-owner-deploy
 ---
 
-# Handoff — Shift 144
+# Handoff — Shift 145
 
 ## Current state
 
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open (supersedes closed #29, #30)
-- **Tip:** `acbf015` — Fly E2E requires live Outlook/Teams book (confirmLive + Teams joinUrl)
-- **Local gate:** green; audit **45/45**
-- **Fly live:** stale `ba88302` / mig **0060** / Graph **404**; `ARIA_PROD_DEPLOY_CONFIRM` unset
+- **Tip:** `8881481` — Fly E2E requires live Outlook/Teams book (confirmLive + Teams joinUrl)
+- **Local gate:** `npx tsc --noEmit` green; audit matrix **45/45**; `mantu-recruiting-e2e-full` **33/33**
+- **Requirement audit (shift 145):** no fixable-in-repo GAPs; only owner Fly deploy+secrets+E2E remain
+- **LangGraph nuance:** worker runs real handlers then **checkpoints** (`parse_only`/`source_only`/`rank_only`/`book_only`/`draft_quality`); graph nodes have no side effects; never invokes `intent: full` in worker — by design
+- **Fly live:** stale (prior tip) / Graph **404** until tip deploy; `ARIA_PROD_DEPLOY_CONFIRM` unset
 - **Flyctl:** unauthorized for apps/secrets from this agent — owner must deploy
-- **Owner blockers:** secrets + `bash scripts/print-fly-deploy-confirm.sh` + deploy + E2E
 
 ## Done this shift
 
-- E2E step 6b: live Graph seat → confirmLive:true → created + Teams joinUrl (Fly fail-closed)
-- Prior: Intw1 honesty, Teams joinUrl UI honesty, switchboard, Graph ingest, ignition
+- Requirement-by-requirement audit of Enterprise E2E Mantu loop vs tip + matrix
+- Confirmed LangGraph = stage authority after worker/cron side effects (not side-effectful E2E invoke)
+- Confirmed multi-agent live critics, Mantu brand, fake-UX guards, webhook-first intake in code
+- Re-ran audit matrix 45/45 + mantu-recruiting-e2e-full 33/33 + tsc
+
+## Blockers
+
+- Owner Fly secrets + deploy confirm + tip deploy + live Outlook seat + `e2e-workflow-test.sh` PASS
+- Agent cannot flyctl deploy/secrets (unauthorized)
+- GH Actions CI jobs failing with empty steps (likely Actions budget — not local gate)
 
 ## Next steps
 
@@ -40,8 +49,10 @@ status: code-complete-awaiting-owner-deploy
 - Entra SSO flag ≠ M365-ready
 - Booked stage only via live calendar book path
 - Fly E2E requires live Teams joinUrl unless ARIA_ALLOW_SKIP_LIVE_CALENDAR=1
+- LangGraph holds stage machine + successor job kinds; Supabase job RPCs / worker handlers own side effects
 
 ## Watch out
 
 - Agent cannot flyctl deploy/secrets (unauthorized)
 - Graph 404 until tip deploy
+- Checkpoint soft-skips only when `ARIA_WEB_INTERNAL_URL`/cron unset (unit-test path); Fly must set both
