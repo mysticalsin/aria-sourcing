@@ -15,9 +15,13 @@ import {
   Eyebrow,
   useToast,
 } from "@/components/ui";
-import { useActions, useCandidate, useCampaign, useSettings } from "@/lib/store";
+import { useActions, useCandidate, useCampaign, useSettings, useSeats, useIntegrations } from "@/lib/store";
 import { checkOutreachApproval } from "@/lib/rules";
 import { recordedCandidateLawfulBasis } from "@/lib/candidate-lawful-basis";
+import {
+  effectiveDryRunMode,
+  listConnectedOutboundProviders,
+} from "@/lib/outreach-send-mode";
 import type { CandidateLawfulBasis } from "@/lib/types";
 import { OUTREACH_TONES, type OutreachMessage, type OutreachTone } from "@/lib/types";
 import {
@@ -77,6 +81,8 @@ export function OutreachMessageCard({
   const candidate = useCandidate(message.candidateId);
   const campaign = useCampaign(message.campaignId);
   const settings = useSettings();
+  const seats = useSeats();
+  const integrations = useIntegrations();
   const a = useActions();
   const { toast } = useToast();
 
@@ -110,6 +116,12 @@ export function OutreachMessageCard({
   const [approving, setApproving] = React.useState(false);
   const [rejecting, setRejecting] = React.useState(false);
   const [showBasisPrompt, setShowBasisPrompt] = React.useState(false);
+
+  const connectedProviders = React.useMemo(
+    () => listConnectedOutboundProviders(seats, integrations),
+    [seats, integrations],
+  );
+  const previewOnly = effectiveDryRunMode(settings.dryRunMode, seats, integrations);
 
   const preflight = React.useMemo(() => {
     if (!candidate || !campaign || !actionable) return null;
@@ -325,6 +337,9 @@ export function OutreachMessageCard({
               <ChannelIcon className="h-3 w-3" aria-hidden /> {message.channel}
             </Badge>
             <Badge tone={toneForOutreachStatus(message.status)}>{message.status}</Badge>
+            <Badge tone={previewOnly ? "electric" : "danger"} size="sm" dot>
+              {previewOnly ? "Dry-run / preview" : "Live send mode"}
+            </Badge>
             {message.qualityStatus ? (
               <Badge
                 tone={
@@ -497,6 +512,12 @@ export function OutreachMessageCard({
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
               <div className="min-w-0 flex-1 space-y-1">
                 <p className="font-semibold">Held for human review</p>
+                {(missingLawfulBasis || showBasisPrompt) && (
+                  <p className="text-[hsl(32_90%_28%)]/90">
+                    GDPR hold: record a lawful basis for this candidate, then click Approve again.
+                    Nothing auto-sends — approval is a separate second click.
+                  </p>
+                )}
                 <ul className="list-disc space-y-0.5 pl-4 text-[hsl(32_90%_28%)]/90">
                   {preflight.blockers.map((b) => (
                     <li key={b}>{b}</li>
@@ -524,6 +545,29 @@ export function OutreachMessageCard({
                 </Button>
               </div>
             )}
+          </div>
+        )}
+
+        {actionable && (
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-ink/[0.03] px-3.5 py-2.5 text-xs text-muted ring-1 ring-inset ring-ink/5">
+            <ShieldCheck className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span>
+              Send mode:{" "}
+              <span className="font-semibold text-ink">
+                {previewOnly ? "Dry-run / preview" : "Live"}
+              </span>
+              {" · "}
+              {connectedProviders.length === 0 ? (
+                <>
+                  No mailbox connected —{" "}
+                  <Link href="/settings?tab=integrations" className="font-semibold text-ink underline-offset-2 hover:underline">
+                    connect in Integrations
+                  </Link>
+                </>
+              ) : (
+                <>Providers: {connectedProviders.map((p) => `${p.label} (${p.detail})`).join(", ")}</>
+              )}
+            </span>
           </div>
         )}
 

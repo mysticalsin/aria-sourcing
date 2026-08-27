@@ -249,5 +249,27 @@ ok("settings panel Connect Outlook", /Connect Outlook/.test(panel));
 ok("settings panel Enable webhook", /Enable webhook/.test(panel));
 ok("settings panel ensure_graph_webhook", /ensure_graph_webhook/.test(panel));
 
+const sendMode = readFileSync("src/lib/outreach-send-mode.ts", "utf8");
+ok("effectiveDryRunMode helper", /export function effectiveDryRunMode/.test(sendMode));
+ok("listConnectedOutboundProviders helper", /export function listConnectedOutboundProviders/.test(sendMode));
+
+const bootstrapCache = readFileSync("src/lib/workspace-bootstrap-cache.ts", "utf8");
+ok("workspace bootstrap session cache", /readWorkspaceBootstrapCache/.test(bootstrapCache));
+
+const sidebar = readFileSync("src/components/app/sidebar.tsx", "utf8");
+ok(
+  "sidebar Integrations chip links to settings integrations",
+  /href="\/settings\?tab=integrations"/.test(sidebar),
+);
+
+const outreachCard = readFileSync("src/components/outreach/outreach-message-card.tsx", "utf8");
+ok(
+  "approval card surfaces send mode + legitimate interest CTA",
+  /Dry-run \/ preview/.test(outreachCard) && /Record legitimate interest/.test(outreachCard),
+);
+
+const storeSrc = readFileSync("src/lib/store.ts", "utf8");
+ok("campaign bulk lawful basis action", /recordCampaignLawfulBasis/.test(storeSrc));
+
 console.log(`RESULT email-connections: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

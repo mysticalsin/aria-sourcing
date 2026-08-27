@@ -212,7 +212,8 @@ export function groundLiveIntakeFields(
       ? fields.seniority
       : undefined;
   const employmentType = fields.employmentType &&
-    ((fields.employmentType === "Contract" && /\bcontract|contractor|freelance|day rate\b/i.test(source)) ||
+    ((fields.employmentType === "Contract" &&
+      /\bcontract|contractor|freelance|consulting|day rate\b/i.test(source)) ||
       (fields.employmentType === "Part-time" && /\bpart[- ]time\b/i.test(source)) ||
       (fields.employmentType === "Full-time" && /\bfull[- ]time\b|\bpermanent\b/i.test(source)))
       ? fields.employmentType

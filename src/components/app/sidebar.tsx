@@ -66,7 +66,11 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-violet/10 p-4 space-y-3">
-        <div className="flex items-center justify-between rounded-2xl bg-violet/[0.06] border border-violet/[0.08] px-3 py-2.5">
+        <Link
+          href="/settings?tab=integrations"
+          className="flex items-center justify-between rounded-2xl bg-violet/[0.06] border border-violet/[0.08] px-3 py-2.5 transition hover:bg-violet/[0.1] focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric"
+          aria-label={`Integrations ${health.connected} of ${health.total} connected — open Settings`}
+        >
           <span className="flex items-center gap-2 text-xs font-semibold text-ink-soft">
             <Activity className="h-4 w-4 text-success" />
             Integrations
@@ -74,7 +78,7 @@ export function Sidebar() {
           <span className="text-xs font-bold text-ink">
             {health.connected}/{health.total}
           </span>
-        </div>
+        </Link>
         {settings.dryRunMode && (
           <div className="flex items-center gap-2 rounded-2xl bg-tangerine-soft px-3 py-2.5 text-xs font-semibold text-tangerine">
             <ShieldCheck className="h-4 w-4" />

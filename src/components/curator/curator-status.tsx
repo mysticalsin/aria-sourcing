@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { Card, CardContent, Eyebrow, Badge, SkeletonCard } from "@/components/ui";
 import { useSettings, useMemory } from "@/lib/store";
 import { hermesRuntimeAvailable } from "@/lib/ai/hermes-runtime";
@@ -91,7 +92,11 @@ export function CuratorStatus() {
           </div>
           <CuratorFields state={demoState} />
           <p className="text-xs text-muted">
-            Preview only. Enable Aria live mode in Settings to inspect the runtime&apos;s real curator state.
+            Preview only.{" "}
+            <Link href="/settings?tab=ai" className="font-semibold text-ink underline-offset-2 hover:underline">
+              Enable Aria live mode in Settings → AI &amp; Models
+            </Link>{" "}
+            to inspect the runtime&apos;s real curator state.
           </p>
         </CardContent>
       </Card>

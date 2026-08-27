@@ -495,6 +495,12 @@ export interface HermesActions {
     candidateId: string,
     basis: CandidateLawfulBasis,
   ) => { ok: true } | { ok: false; error: string };
+  /** Record legitimate interest (or consent) for every non-anonymized candidate
+   *  in a campaign that still lacks a recorded lawful basis. Never auto-sends. */
+  recordCampaignLawfulBasis: (
+    campaignId: string,
+    basis: CandidateLawfulBasis,
+  ) => { ok: true; recorded: number; skipped: number } | { ok: false; error: string };
   /** Operator endorses role fit for a below-floor live lead so Approve can proceed
    *  with a match-score warning (does not rewrite matchScore). */
   endorseCandidateFit: (

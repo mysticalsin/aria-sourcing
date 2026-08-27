@@ -5,7 +5,7 @@ import { Badge, SkeletonCard } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { RoiCalculator } from "@/components/trust/roi-calculator";
 import { CompliancePosture } from "@/components/trust/compliance-posture";
-import { useHydrated } from "@/lib/store";
+import { useHydrated, useWorkspaceStatus } from "@/lib/store";
 
 /* ============================================================================
    4.3 Trust & ROI Proof Center — the page a buyer signs on.
@@ -20,6 +20,8 @@ import { useHydrated } from "@/lib/store";
 
 export default function TrustPage() {
   const hydrated = useHydrated();
+  const status = useWorkspaceStatus();
+  const liveMode = status.mode === "live";
 
   return (
     <div className="animate-fade-in">
@@ -28,8 +30,10 @@ export default function TrustPage() {
         title="Trust & ROI Proof Center"
         description="A falsifiable ROI case and a real compliance posture: every number below is either an auditable count from this workspace or an assumption you can edit yourself."
         actions={
-          <Badge tone="warning" size="md" dot>
-            Illustrative, computed on synthetic demo data
+          <Badge tone={liveMode ? "success" : "warning"} size="md" dot>
+            {liveMode
+              ? "Computed from workspace activity"
+              : "Illustrative — replace with live campaign activity"}
           </Badge>
         }
       />

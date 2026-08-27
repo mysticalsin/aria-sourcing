@@ -106,5 +106,20 @@ try {
 }
 ok("no throw on minimal/odd need text", !threw);
 
+const javaBrief = parseEmailAndJD({
+  email: `Role title: Java Consultant
+Location: Paris
+Duration: 4 weeks
+Headcount: 3
+Rate: 650 EUR/day
+Employment: Contract/consulting
+Skills: Java, Spring, Microservices
+We need 5+ years of experience.`,
+});
+ok("freeform Java Consultant title", /java consultant/i.test(javaBrief.jobAnalysis.title));
+ok("freeform Contract/consulting → Contract", javaBrief.jobAnalysis.employmentType === "Contract");
+ok("freeform headcount 3", /3/.test(javaBrief.jobAnalysis.teamSize));
+ok("freeform day rate 650 EUR", javaBrief.jobAnalysis.salaryMin === 650 && javaBrief.jobAnalysis.currency === "EUR");
+
 console.log(`RESULT mantu-intake: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

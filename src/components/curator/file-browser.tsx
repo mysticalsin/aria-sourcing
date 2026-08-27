@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { Card, CardContent, Eyebrow, Badge, Button, SkeletonCard } from "@/components/ui";
 import { useSettings, useSeats } from "@/lib/store";
 import { hermesRuntimeAvailable } from "@/lib/ai/hermes-runtime";
@@ -160,7 +161,11 @@ export function FileBrowser() {
           )}
           <FileEntries listing={demoListing} onNavigate={setPath} />
           <p className="text-xs text-muted">
-            Preview only. Enable Aria live mode in Settings to browse the real runtime file tree.
+            Preview only.{" "}
+            <Link href="/settings?tab=ai" className="font-semibold text-ink underline-offset-2 hover:underline">
+              Enable Aria live mode in Settings → AI &amp; Models
+            </Link>{" "}
+            to browse the real runtime file tree.
           </p>
         </CardContent>
       </Card>

@@ -294,6 +294,8 @@ export function parseMantuNeed(text: string): ParsedIntake {
   const locationRaw = field("Location");
   const startRaw = field("Start date");
   const typeRaw = field("Type");
+  const rateRaw = field("Rate") || field("Day rate") || field("TJM") || field("Fees");
+  const nbPeople = field("Nb people") || field("Headcount") || field("Openings");
 
   const emailMatch = text.match(/[A-Za-z0-9._+-]{1,128}@[A-Za-z0-9-]{1,128}\.[A-Za-z0-9.-]{1,64}/);
   const senderName = manager || recruiter;
@@ -344,11 +346,30 @@ export function parseMantuNeed(text: string): ParsedIntake {
       ? ["Healthtech"]
       : [];
 
+  const dayRateFromField = (() => {
+    const m = rateRaw.match(/(\d{2,4})/);
+    return m ? parseInt(m[1], 10) : null;
+  })();
+  const dayRateFromBody =
+    text.match(/\b(\d{2,4})\s*(?:€|EUR|USD|GBP)\s*(?:\/|\s+per\s+)?(?:day|d|jour)\b/i)?.[1] ??
+    text.match(/[€$£]\s*(\d{2,4})\s*(?:\/|\s+per\s+)\s*(?:day|d|jour)\b/i)?.[1];
+  const dayRate = dayRateFromField ?? (dayRateFromBody ? parseInt(dayRateFromBody, 10) : null);
+  const currencyFromNeed = /\bCAD\b|C\$/i.test(text)
+    ? "CAD"
+    : /£|\bGBP\b/i.test(text) || /£/.test(rateRaw)
+      ? "GBP"
+      : /\$|\bUSD\b/i.test(text)
+        ? "USD"
+        : /€|\bEUR\b/i.test(text) || /€/.test(rateRaw) || dayRate != null
+          ? "EUR"
+          : "";
+
   const jobAnalysis: JobAnalysis = {
     title,
     department: client.replace(/\s+Ltd\.?$/i, "").trim() || typeRaw,
     seniority,
-    employmentType: /consulting|contract|contractor|freelance/i.test(typeRaw)
+    employmentType: /consulting|contract|contractor|freelance/i.test(typeRaw) ||
+      /consulting|contract|contractor|freelance|day rate/i.test(text)
       ? "Contract"
       : /part[- ]time/i.test(typeRaw)
         ? "Part-time"
@@ -369,9 +390,9 @@ export function parseMantuNeed(text: string): ParsedIntake {
             : "Unspecified",
     regions,
     timezone: tz,
-    salaryMin: null,
-    salaryMax: null,
-    currency: /\bCAD\b|C\$/i.test(text) ? "CAD" : /\bUSD\b|\$/i.test(text) ? "USD" : "",
+    salaryMin: dayRate,
+    salaryMax: dayRate,
+    currency: currencyFromNeed,
     equity: /equity|options|esop/i.test(text),
     requiredSkills,
     niceToHaveSkills,
@@ -384,7 +405,9 @@ export function parseMantuNeed(text: string): ParsedIntake {
       : /\benterprise\b/i.test(text)
         ? ["Enterprise"]
         : [],
-    teamSize: "",
+    teamSize: nbPeople
+      ? `${nbPeople} opening${nbPeople === "1" ? "" : "s"}`
+      : "",
     reportingTo: "",
     urgency,
     language: detectLanguage(text),
@@ -394,8 +417,14 @@ export function parseMantuNeed(text: string): ParsedIntake {
 
   const validationWarnings: ValidationWarning[] = [
     ...evaluateNeedReadiness(jobAnalysis).issues,
-    { field: "salary", severity: "warning", message: "No salary/rate in the need email. Confirm the band." },
   ];
+  if (dayRate == null) {
+    validationWarnings.push({
+      field: "salary",
+      severity: "warning",
+      message: "No salary/rate in the need email. Confirm the band.",
+    });
+  }
   if (!locationRaw) {
     validationWarnings.push({ field: "location", severity: "warning", message: "No location specified." });
   }
@@ -514,12 +543,13 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   else if (/urgent|high priority|priority/i.test(text)) urgency = "Urgent";
   else if (/this week|by friday|next few days/i.test(text)) urgency = "This Week";
 
-  // Title
+  // Title — include Consultant / specialist labels common in Mantu briefs
   const titleMatch =
-    text.match(/(?:hiring|looking for|need|seeking|backfill)\s+(?:an?\s+)?([A-Z][\w/ +.-]{3,48}?(?:Engineer|Developer|Designer|Manager|Lead|Architect|Scientist|Analyst))/i)?.[1] ??
-    text.match(/(?:role|position|title):\s*(.+)/i)?.[1] ??
+    text.match(/(?:hiring|looking for|need|seeking|backfill)\s+(?:an?\s+)?([A-Z][\w/ +.-]{3,48}?(?:Engineer|Developer|Designer|Manager|Lead|Architect|Scientist|Analyst|Consultant|Specialist|Recruiter))/i)?.[1] ??
+    text.match(/(?:role\s*title|role|position|title)\s*[:\-]\s*(.+)/i)?.[1] ??
+    text.match(/^([A-Z][\w/ +.-]{2,60}?(?:Engineer|Developer|Designer|Manager|Lead|Architect|Scientist|Analyst|Consultant|Specialist))\s*[|/]/m)?.[1] ??
     "";
-  const title = titleMatch.trim().replace(/\s+/g, " ");
+  const title = titleMatch.trim().replace(/\s+/g, " ").replace(/\s*[|/].*$/, "").trim();
 
   // Seniority — title first, then years floors ("8 years +", "5+ years").
   let seniority: Seniority = seniorityFromTitle(title);
@@ -550,19 +580,29 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
 
   const location = extractLocation(text);
 
-  // Salary
+  // Salary / day rate (e.g. 650 EUR/day, €650/day, Rate: 650 EUR)
   const salaryNums = [...text.matchAll(/[€$£]?\s?(\d{2,3})\s?k\b/gi)].map((m) => parseInt(m[1], 10) * 1000);
-  const salaryMin = salaryNums.length ? Math.min(...salaryNums) : null;
-  const salaryMax = salaryNums.length ? Math.max(...salaryNums) : null;
-  const currency = salaryNums.length > 0
-    ? /£/.test(text)
-      ? "GBP"
-      : /\$/.test(text)
-        ? "USD"
-        : /€/.test(text)
-          ? "EUR"
-          : ""
-    : "";
+  const dayRateMatch =
+    text.match(
+      /(?:rate|day\s*rate|tjm|fees?)\s*[:\-]?\s*[€$£]?\s*(\d{2,4})\s*(?:€|EUR|USD|GBP|\$|£)?(?:\s*\/?\s*(?:day|d|jour))?/i,
+    ) ??
+    text.match(/[€$£]\s*(\d{2,4})\s*(?:\/|\s+per\s+)\s*(?:day|d|jour)\b/i) ??
+    text.match(/\b(\d{2,4})\s*(?:€|EUR|USD|GBP)\s*(?:\/|\s+per\s+)?(?:day|d|jour)\b/i);
+  const dayRate = dayRateMatch ? parseInt(dayRateMatch[1], 10) : null;
+  const salaryMin = salaryNums.length ? Math.min(...salaryNums) : dayRate;
+  const salaryMax = salaryNums.length ? Math.max(...salaryNums) : dayRate;
+  const currency =
+    salaryNums.length > 0 || dayRate != null
+      ? /£|\bGBP\b/i.test(text)
+        ? "GBP"
+        : /\$|\bUSD\b/i.test(text)
+          ? "USD"
+          : /€|\bEUR\b/i.test(text)
+            ? "EUR"
+            : dayRate != null
+              ? "EUR"
+              : ""
+      : "";
 
   // Years
   const yearsMatch = [...text.matchAll(/(\d{1,2})[\s+]{0,6}(?:years|yrs)/gi)].map((m) => parseInt(m[1], 10));
@@ -598,7 +638,9 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
     title,
     department,
     seniority,
-    employmentType: /\b(contractor|freelance|contract role|contract position|fixed[- ]term|day rate)\b/i.test(text)
+    employmentType: /\b(contractor|freelance|consulting|contract(?:or)?(?:\s*\/\s*consulting)?|contract role|contract position|fixed[- ]term|day rate)\b/i.test(
+      text,
+    )
       ? "Contract"
       : /\bpart[- ]time\b/i.test(text)
         ? "Part-time"
@@ -622,7 +664,14 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
       : "",
     industryExperience,
     companyStageTarget,
-    teamSize: text.match(/team of (\d+)/i)?.[0] ?? "",
+    teamSize:
+      text.match(/team of (\d+)/i)?.[0] ??
+      (() => {
+        const hc =
+          text.match(/\b(?:headcount|openings?|positions?|nb\s*people|number of people)\s*[:\-]?\s*(\d{1,3})\b/i)?.[1] ??
+          text.match(/\bneed(?:s|ed)?\s+(\d{1,3})\s+(?:people|consultants?|engineers?|hires?)\b/i)?.[1];
+        return hc ? `${hc} opening${hc === "1" ? "" : "s"}` : "";
+      })(),
     reportingTo: text.match(/report(?:s|ing) to (?:the )?([A-Za-z ]+?)[.,\n]/i)?.[1]?.trim() ?? "",
     urgency,
     language: detectLanguage(text),
@@ -632,6 +681,12 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   const validationWarnings: ValidationWarning[] = [...evaluateNeedReadiness(jobAnalysis).issues];
   if (salaryMin == null) {
     validationWarnings.push({ field: "salary", severity: "warning", message: "No salary range provided." });
+  } else if (dayRate != null && salaryNums.length === 0) {
+    validationWarnings.push({
+      field: "salary",
+      severity: "info",
+      message: `Day rate ${dayRate} ${currency || "EUR"}/day captured from the brief.`,
+    });
   }
   if (requiredSkills.length > 0 && requiredSkills.length < 3) {
     validationWarnings.push({

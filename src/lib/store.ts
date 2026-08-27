@@ -76,6 +76,12 @@ import { createCampaignActions } from "./store/campaign-actions";
 import { createSourcingActions } from "./store/sourcing-actions";
 import { resolveInboundEmailIdentity } from "./store/inbound-identity";
 import { loadState, normalizeHermesState } from "./store/migrations";
+import {
+  clearWorkspaceBootstrapCache,
+  readWorkspaceBootstrapCache,
+  writeWorkspaceBootstrapCache,
+} from "./workspace-bootstrap-cache";
+import { effectiveDryRunMode } from "./outreach-send-mode";
 import { demoStateAllowsCandidatePersistence } from "./store/demo-persistence";
 import { mapApifyCandidates, mapSillageCandidates, parseSillageIdentifier } from "./store/sourcing-helpers";
 import { computeCoverage } from "./enrichment/merge";
@@ -526,9 +532,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     authoritativeCommitInFlight.current = false;
     skipNextPersist.current = false;
     skipPersistSnapshot.current = null;
-    setWorkspaceStatus({ phase: "loading", mode: supabaseEnabled ? "live" : "demo" });
 
     if (!supabaseEnabled) {
+      setWorkspaceStatus({ phase: "loading", mode: "demo" });
       const demoState = loadState();
       if (generation !== hydrationGeneration.current) return;
       stateRef.current = demoState;
@@ -537,34 +543,56 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    workspaceIdRef.current = "";
-    remoteUpdatedAtRef.current = null;
-    liveRoleRef.current = "viewer";
-    stateRef.current = null;
-    setState(null);
+    // Paint from session cache immediately so hard reloads are not a 10s blank gate.
+    const cached = readWorkspaceBootstrapCache();
+    let paintedFromCache = false;
+    if (cached) {
+      const cachedState = applyAuthoritativeRole(normalizeHermesState(cached.state), cached.role);
+      workspaceIdRef.current = cached.workspaceId;
+      remoteUpdatedAtRef.current = cached.updatedAt;
+      liveRoleRef.current = cached.role;
+      stateRef.current = cachedState;
+      setState(cachedState);
+      setWorkspaceStatus({ phase: "ready", mode: "live" });
+      paintedFromCache = true;
+    } else {
+      workspaceIdRef.current = "";
+      remoteUpdatedAtRef.current = null;
+      liveRoleRef.current = "viewer";
+      stateRef.current = null;
+      setState(null);
+      setWorkspaceStatus({ phase: "loading", mode: "live" });
+    }
 
     try {
       const remote = await loadRemoteState();
       if (generation !== hydrationGeneration.current) return;
       if (remote.status === "signed_out") {
+        clearWorkspaceBootstrapCache();
+        stateRef.current = null;
+        setState(null);
         setWorkspaceStatus({ phase: "signed_out", mode: "live" });
         return;
       }
       if (remote.status === "unavailable") {
-        setWorkspaceStatus(unavailableWorkspaceStatus(remote.dependency));
+        if (!paintedFromCache) {
+          setWorkspaceStatus(unavailableWorkspaceStatus(remote.dependency));
+        }
+        return;
+      }
+
+      const serverSeats = await loadRemoteAgentSeats();
+      if (generation !== hydrationGeneration.current) return;
+      if (serverSeats.status === "unavailable") {
+        if (!paintedFromCache) {
+          setWorkspaceStatus(unavailableWorkspaceStatus("agent_seats"));
+        }
         return;
       }
 
       workspaceIdRef.current = remote.workspaceId;
       remoteUpdatedAtRef.current = remote.updatedAt;
       liveRoleRef.current = remote.role;
-
-      const serverSeats = await loadRemoteAgentSeats();
-      if (generation !== hydrationGeneration.current) return;
-      if (serverSeats.status === "unavailable") {
-        setWorkspaceStatus(unavailableWorkspaceStatus("agent_seats"));
-        return;
-      }
 
       const base = remote.state ? normalizeHermesState(remote.state) : buildLiveEmptyState();
       const liveState = {
@@ -579,9 +607,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       stateRef.current = next;
       setState(next);
       setWorkspaceStatus({ phase: "ready", mode: "live" });
+      writeWorkspaceBootstrapCache({
+        workspaceId: remote.workspaceId,
+        updatedAt: remote.updatedAt,
+        role: remote.role,
+        state: next,
+      });
     } catch (error) {
       console.warn("workspace hydration failed:", error);
       if (generation !== hydrationGeneration.current) return;
+      if (paintedFromCache) return;
       stateRef.current = null;
       setState(null);
       setWorkspaceStatus(unavailableWorkspaceStatus("state"));
@@ -2453,6 +2488,22 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       if (!result.allowed) return result;
 
+      // Never Approve as Live when no mailbox/LinkedIn provider is connected —
+      // force dry-run preview so operators cannot think a real send will fire.
+      const forceDryRun = effectiveDryRunMode(s.settings.dryRunMode, s.seats, s.integrations);
+      if (forceDryRun && !s.settings.dryRunMode) {
+        result = {
+          ...result,
+          dryRun: true,
+          warnings: [
+            ...result.warnings,
+            "No connected mailbox or LinkedIn provider — approval stays in dry-run / preview until you connect one in Settings → Integrations.",
+          ],
+        };
+      } else if (forceDryRun) {
+        result = { ...result, dryRun: true };
+      }
+
       const approvalSnapshot = {
         candidateId: candidate.id,
         channel: msg.channel,
@@ -2532,7 +2583,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // LinkedIn is assisted-manual: the system drafts the message but a human must
       // copy/paste it on the candidate's profile. Keep it out of the sent counter
       // and ledger until the operator confirms the manual send.
-      const isLive = !s.settings.dryRunMode;
+      const isLive = !forceDryRun;
       const isLinkedInManual = msg.channel === "LinkedIn" && isLive;
       // Email, WhatsApp, and SMS all have a real live provider wired up in
       // sendApprovedOutreach() (domain-verified mailbox, WhatsApp Cloud, Twilio SMS).
@@ -2563,7 +2614,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 approvedBy: prev.settings.operatorName,
                 scheduledFor: isPendingSend ? null : now,
                 sentAt: isPendingSend ? null : now,
-                dryRun: prev.settings.dryRunMode,
+                dryRun: forceDryRun,
               }
             : m,
         );
@@ -5186,6 +5237,64 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit, current],
   );
 
+  const recordCampaignLawfulBasis = useCallback(
+    (
+      campaignId: string,
+      basis: CandidateLawfulBasis,
+    ): { ok: true; recorded: number; skipped: number } | { ok: false; error: string } => {
+      if (basis !== "consent" && basis !== "legitimate_interest") {
+        return { ok: false, error: "Select consent or legitimate interest." };
+      }
+      const s = current();
+      if (!s.campaigns.some((c) => c.id === campaignId)) {
+        return { ok: false, error: "Campaign not found." };
+      }
+      const now = new Date().toISOString();
+      const basisLabel = basis === "consent" ? "Consent" : "Legitimate interest";
+      const inCampaign = s.candidates.filter((c) => c.campaignId === campaignId);
+      const toRecord = inCampaign.filter(
+        (c) =>
+          !c.complianceFlags.anonymized &&
+          !(
+            (c.lawfulBasis === "consent" || c.lawfulBasis === "legitimate_interest") &&
+            c.lawfulBasisSource === "operator_selection" &&
+            Boolean(c.lawfulBasisRecordedAt)
+          ),
+      );
+      const recorded = toRecord.length;
+      const skipped = inCampaign.length - recorded;
+      const ids = new Set(toRecord.map((c) => c.id));
+      if (recorded === 0) return { ok: true, recorded: 0, skipped };
+      commit((prev) => {
+        const candidates = prev.candidates.map((c) =>
+          ids.has(c.id)
+            ? {
+                ...c,
+                lawfulBasis: basis,
+                lawfulBasisRecordedAt: now,
+                lawfulBasisSource: "operator_selection" as const,
+              }
+            : c,
+        );
+        return withActivity(
+          { ...prev, candidates },
+          makeActivity({
+            type: "compliance",
+            title: `Lawful basis recorded for ${recorded} candidate${recorded === 1 ? "" : "s"}`,
+            notes: `Campaign bulk: operator selected ${basisLabel}. Approve remains a separate human click — nothing auto-sends.`,
+            outcome: "Recorded",
+            campaignId,
+            linkedEntityType: "campaign",
+            linkedEntityId: campaignId,
+          }),
+          campaignId,
+        );
+      });
+      return { ok: true, recorded, skipped };
+    },
+    [commit, current],
+  );
+
   const endorseCandidateFit = useCallback(
     (candidateId: string): { ok: true } | { ok: false; error: string } => {
       const s = current();
@@ -6659,6 +6768,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       updateSkillContent,
       recordPiiReveal,
       recordCandidateLawfulBasis,
+      recordCampaignLawfulBasis,
       endorseCandidateFit,
       saveApiKey,
       testApiKey,
@@ -6722,7 +6832,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       updateIntegration, toggleIntegrationMode, testIntegration,
       addSeat, deployAgents, updateSeat, setSeatStatus, connectSeatAccount, disconnectSeatAccount, toggleSeatLive, verifySeatDomain,
       addSuppression, removeSuppression, allocateOutreach,
-      runLearning, acceptSkillLearning, updateSkillContent, recordPiiReveal, recordCandidateLawfulBasis, endorseCandidateFit,
+      runLearning, acceptSkillLearning, updateSkillContent, recordPiiReveal, recordCandidateLawfulBasis, recordCampaignLawfulBasis, endorseCandidateFit,
       saveApiKey, testApiKey, removeApiKey, setCurrentRole,
       updateAriaPrompt, addGuardrailRule, toggleGuardrailRule, removeGuardrailRule, askAria, runAriaPlan,
       addProvider, updateProvider, removeProvider, setDefaultProvider,
@@ -6772,6 +6882,10 @@ export function useHermes(): HermesContextValue {
 
 export function useHydrated(): boolean {
   return useHermes().hydrated;
+}
+
+export function useWorkspaceStatus(): WorkspaceStatus {
+  return useHermes().workspaceStatus;
 }
 
 export function useActions(): HermesActions {

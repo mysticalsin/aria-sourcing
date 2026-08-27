@@ -43,9 +43,10 @@ import { DatabricksPanel } from "@/components/settings/databricks-panel";
 import { HermesRuntimePanel } from "@/components/settings/hermes-runtime-panel";
 import { SchedulesPanel } from "@/components/settings/schedules-panel";
 import { HermesSchedulesPanel } from "@/components/settings/hermes-schedules-panel";
-import { useHydrated, useSettings, useIntegrations, useActions } from "@/lib/store";
+import { useHydrated, useSettings, useIntegrations, useSeats, useActions } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
 import { realIntegrationSummary, mailboxIntegrationPatchesFromConnections } from "@/lib/integrations";
+import { hasConnectedOutboundProvider } from "@/lib/outreach-send-mode";
 import { demoLoginEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import { LANGUAGES } from "@/lib/i18n";
 import {
@@ -232,6 +233,7 @@ export default function SettingsPage() {
     [storedIntegrations],
   );
   const actions = useActions();
+  const seats = useSeats();
   const { toast } = useToast();
   const confirm = useConfirm();
   const [activeTab, setActiveTab] = React.useState("setup");
@@ -324,6 +326,14 @@ export default function SettingsPage() {
   }
 
   function setToggle(patch: Partial<SystemSettings>, label: string, on: boolean) {
+    if (patch.dryRunMode === false && !hasConnectedOutboundProvider(seats, integrations)) {
+      toast({
+        title: "Connect a mailbox first",
+        description: "Live send mode needs a connected Outlook/Gmail/LinkedIn provider. Staying in dry-run / preview.",
+        variant: "warning",
+      });
+      return;
+    }
     actions.updateSettings(patch);
     toast({
       title: `${label} ${on ? "enabled" : "disabled"}`,
@@ -549,8 +559,8 @@ export default function SettingsPage() {
                     id="dryRunMode"
                     icon={<Lock className="h-4 w-4" />}
                     label="Dry-run mode"
-                    description="Simulate sends only: nothing leaves the system. The safe default for this build."
-                    checked={settings.dryRunMode}
+                    description="Simulate sends only: nothing leaves the system. Forced on when no mailbox or LinkedIn provider is connected."
+                    checked={settings.dryRunMode || !hasConnectedOutboundProvider(seats, integrations)}
                     onCheckedChange={(v) => setToggle({ dryRunMode: v }, "Dry-run mode", v)}
                   />
                 </div>
