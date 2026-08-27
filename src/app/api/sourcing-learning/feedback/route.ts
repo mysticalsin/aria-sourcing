@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { tryStageWikiLessonFromFeedback } from "@/lib/agent-wiki";
 import { validateBody } from "@/lib/api/validate";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
@@ -167,6 +168,11 @@ export async function POST(req: NextRequest) {
       requestId: idempotencyKey,
     });
     if (result.status === "recorded") {
+      // Self-improving wiki: stage a proposed lesson under var/ (never auto-canonical).
+      tryStageWikiLessonFromFeedback({
+        receiptId: validated.data.receiptId,
+        verdict: validated.data.verdict,
+      });
       return noStore(
         {
           ok: true,

@@ -279,6 +279,26 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       );
     },
   },
+  {
+    requirement: "LLM wiki / second brain documents agent behavior with durable identity",
+    evidence: () => {
+      const readme = readFileSync("docs/agent-wiki/README.md", "utf8");
+      const identity = readFileSync("src/lib/agent-wiki/identity.ts", "utf8");
+      const feedback = readFileSync("src/lib/agent-wiki/feedback.ts", "utf8");
+      const route = readFileSync("src/app/api/sourcing-learning/feedback/route.ts", "utf8");
+      return (
+        existsSync("docs/agent-wiki/INDEX.md")
+        && existsSync("docs/agent-wiki/lessons/0001-current-baseline.md")
+        && /aggregate-only/.test(readme)
+        && /fingerprintCandidateIdentity/.test(identity)
+        && /samePerson/.test(identity)
+        && /strength === "none"/.test(identity)
+        && /tryStageWikiLessonFromFeedback/.test(feedback)
+        && /tryStageWikiLessonFromFeedback/.test(route)
+        && /PROPOSED_WIKI_ROOT|var\/agent-wiki\/proposed/.test(feedback)
+      );
+    },
+  },
 ];
 
 for (const row of MATRIX) {
