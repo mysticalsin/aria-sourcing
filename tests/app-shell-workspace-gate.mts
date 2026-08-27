@@ -62,7 +62,10 @@ workspaceStatus = { phase: "loading", mode: "live" };
 html = renderToStaticMarkup(React.createElement(AppShell, null, child));
 ok("loading workspace hides protected product children", !html.includes("product-child"));
 ok("loading workspace announces progress without exposing actions", html.includes('role="status"'));
-
+ok(
+  "loading workspace paints shell chrome (no full-page Connecting gate)",
+  html.includes("sidebar") && html.includes("topbar") && html.includes("Refreshing workspace"),
+);
 workspaceStatus = { phase: "unsaved", mode: "live", message: "Changes are not saved." };
 html = renderToStaticMarkup(React.createElement(AppShell, null, child));
 ok("unsaved workspace hides protected product children", !html.includes("product-child"));

@@ -26,6 +26,39 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 function ProtectedAppShell({ children, pathname }: { children: React.ReactNode; pathname: string }) {
   const { workspaceStatus, retryWorkspace, retrySave } = useHermes();
 
+  // Loading: paint recruiter chrome immediately (brand + nav). Do not replace the
+  // viewport with a full-page "Connecting" / "Loading demo" gate — that was Tony's
+  // hard-reload blocker. Mutations stay blocked via workspaceAllowsMutation.
+  if (workspaceStatus.phase === "loading") {
+    return (
+      <ConfirmProvider>
+        <div className="flex min-h-screen max-w-full overflow-x-hidden">
+          <a href="#main-content" className="skip-link">
+            Skip to content
+          </a>
+          <Sidebar />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <TopBar />
+            <main id="main-content" className="flex-1 px-4 pb-24 pt-6 sm:px-6 lg:px-8 lg:pb-10">
+              <div
+                className="mx-auto flex w-full max-w-[1400px] min-h-[40vh] items-center justify-center"
+                role="status"
+                aria-live="polite"
+                aria-busy="true"
+              >
+                <p className="text-sm font-medium text-muted">
+                  {workspaceStatus.mode === "demo"
+                    ? "Refreshing demo workspace…"
+                    : "Refreshing workspace…"}
+                </p>
+              </div>
+            </main>
+          </div>
+        </div>
+      </ConfirmProvider>
+    );
+  }
+
   if (workspaceBlocksProduct(workspaceStatus)) {
     return (
       <WorkspaceStatusPanel

@@ -5,6 +5,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -534,7 +535,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     skipPersistSnapshot.current = null;
 
     if (!supabaseEnabled) {
-      setWorkspaceStatus({ phase: "loading", mode: "demo" });
+      // Demo state is local/synchronous — never flash the full-page loading gate.
       const demoState = loadState();
       if (generation !== hydrationGeneration.current) return;
       stateRef.current = demoState;
@@ -543,7 +544,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Paint from session cache immediately so hard reloads are not a 10s blank gate.
+    // Paint from session cache immediately so hard reloads are not a blank gate.
+    // (Called from useLayoutEffect on mount so this runs before the browser paints.)
     const cached = readWorkspaceBootstrapCache();
     let paintedFromCache = false;
     if (cached) {
@@ -623,9 +625,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     }
   }, [setWorkspaceStatus]);
 
-  // Hydrate once on mount. Retry uses the same authoritative path, so recovery
-  // cannot accidentally switch to local/demo state.
-  useEffect(() => {
+  // Hydrate once on mount (layout effect so sync cache/demo paint beats first paint).
+  // Retry uses the same authoritative path, so recovery cannot switch to local/demo state.
+  useLayoutEffect(() => {
     void hydrateWorkspace();
     return () => {
       hydrationGeneration.current += 1;

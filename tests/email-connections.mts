@@ -270,6 +270,18 @@ ok(
 
 const storeSrc = readFileSync("src/lib/store.ts", "utf8");
 ok("campaign bulk lawful basis action", /recordCampaignLawfulBasis/.test(storeSrc));
+ok(
+  "demo hydrate skips loading gate",
+  /Demo state is local\/synchronous/.test(storeSrc) && /useLayoutEffect/.test(storeSrc),
+);
+
+const appShell = readFileSync("src/components/app/app-shell.tsx", "utf8");
+ok(
+  "loading phase paints shell chrome not full-page gate",
+  /workspaceStatus\.phase === "loading"/.test(appShell)
+    && /Refreshing workspace/.test(appShell)
+    && /<Sidebar \/>/.test(appShell),
+);
 
 console.log(`RESULT email-connections: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
