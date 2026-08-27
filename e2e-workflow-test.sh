@@ -39,23 +39,33 @@ ADMIN_EMAIL="${ADMIN_EMAIL:-}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 ANON_KEY="${ANON_KEY:-}"
 
-# Enterprise E2E is Fly-only. Refuse Vercel / non-Fly hosts unless explicitly overridden.
-case "$APP_URL" in
-  https://aria-mantu-app.fly.dev|https://aria-mantu-app.fly.dev/*) ;;
-  *)
-    if [ "${ARIA_ALLOW_NON_FLY_E2E:-}" != "1" ]; then
-      echo "ERROR: e2e-workflow-test.sh targets Fly production only (got APP_URL=$APP_URL)." >&2
-      echo "       Set ARIA_ALLOW_NON_FLY_E2E=1 only for intentional non-prod probes." >&2
-      exit 1
-    fi
-    ;;
-esac
-case "$APP_URL" in
-  *vercel.app*|*vercel.com*)
-    echo "ERROR: refusing Vercel host — Mantu enterprise ships on Fly only." >&2
+# Enterprise E2E is Fly-only. Refuse Vercel / lookalike / non-Fly hosts.
+validate_fly_e2e_url() {
+  local label="$1"
+  local url="$2"
+  local host=""
+  if [[ "$url" =~ ^https://([^/:]+)(/.*)?$ ]]; then
+    host="${BASH_REMATCH[1]}"
+  else
+    echo "ERROR: $label must be an https URL (got $url)." >&2
     exit 1
-    ;;
-esac
+  fi
+  case "$host" in
+    aria-mantu-app.fly.dev|aria-mantu-kong.fly.dev) ;;
+    *)
+      if [ "${ARIA_ALLOW_NON_FLY_E2E:-}" != "1" ]; then
+        echo "ERROR: $label must target Fly production (aria-mantu-app.fly.dev or aria-mantu-kong.fly.dev; got host=$host)." >&2
+        exit 1
+      fi
+      ;;
+  esac
+  if [[ "$host" == *vercel.app* || "$host" == *vercel.com* ]]; then
+    echo "ERROR: refusing Vercel host for $label." >&2
+    exit 1
+  fi
+}
+validate_fly_e2e_url "APP_URL" "$APP_URL"
+validate_fly_e2e_url "KONG_URL" "$KONG_URL"
 AGENT_PROVIDER="${AGENT_PROVIDER:-anthropic}"      # tool-calling provider for /api/sourcing-agent (kimi/hermes are rejected)
 AGENT_MODEL="${AGENT_MODEL:-}"                      # optional model override; blank => provider default
 GITHUB_QUERY="${GITHUB_QUERY:-language:typescript location:london followers:>50}"

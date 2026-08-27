@@ -202,8 +202,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /Fly \(aria-mantu-app\) only/.test(vercel)
         && /Fly ONLY/.test(golive)
         && /FLY ONLY/.test(deployNow)
-        && /aria-mantu-app\.fly\.dev/.test(golive)
-        && !/vercel --prod/.test(deployNow)
+        && /validate_fly_e2e_url/.test(golive)
+        && !/aria-mantu-app\.fly\.dev\*/.test(script)
       );
     },
   },
