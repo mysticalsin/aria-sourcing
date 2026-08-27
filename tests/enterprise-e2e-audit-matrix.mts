@@ -612,6 +612,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /graph-stage-jobs\.json/.test(worker)
         && /pipeline-transitions\.json/.test(readFileSync("Dockerfile.prod", "utf8"))
         && /graph-stage-jobs\.json/.test(readFileSync("Dockerfile.prod", "utf8"))
+        && /HOSTNAME\s*=\s*"::"/.test(readFileSync("fly.app.toml", "utf8"))
         && /email_sync_requires_inbound_ids/.test(readFileSync("scripts/sourcing-loop-worker.mjs", "utf8"))
         && /stage checkpoint machine/.test(readFileSync("src/lib/langchain/recruiting-graph.ts", "utf8"))
       );

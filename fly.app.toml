@@ -25,7 +25,9 @@ primary_region = "cdg"
 [env]
   NODE_ENV                      = "production"
   PORT                          = "3000"
-  HOSTNAME                      = "0.0.0.0"
+  # Fly 6PN is IPv6. Bind :: so process-group DNS (web.process.*.internal) works
+  # for the loop worker; 0.0.0.0 is IPv4-only and yields ECONNREFUSED over 6PN.
+  HOSTNAME                      = "::"
   NEXT_PUBLIC_SITE_URL          = "https://aria-mantu-app.fly.dev"
   NEXT_TELEMETRY_DISABLED       = "1"
   # DeerFlow/Flowise sidecars are not deployed on Fly for the Mantu recruiting
