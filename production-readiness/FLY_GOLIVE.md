@@ -1,7 +1,7 @@
 # Fly golive — Mantu enterprise tenant (aria-mantu-app)
 
 **Production URL:** https://aria-mantu-app.fly.dev  
-**PR deliverable:** https://github.com/mysticalsin/aria-sourcing/pull/31 (supersedes closed #29 / #30)
+**PR deliverable:** https://github.com/mysticalsin/aria-sourcing/pull/32 (supersedes closed #29–#31)
 
 Demo login is disabled (`NEXT_PUBLIC_ENABLE_DEMO_LOGIN=false`). Password auth
 goes through GoTrue on `https://aria-mantu-kong.fly.dev`. Entra SSO turns on
@@ -13,7 +13,7 @@ when GoTrue Azure secrets exist and tip deploy sets
 | Check | Target |
 |---|---|
 | App build | tip SHA of `cursor/enterprise-autopilot-b91d` |
-| DB migration | `0066_calendar_meeting_url.sql` |
+| DB migration | `>= 0066_calendar_meeting_url.sql` (tip may be `0067_*`) |
 | `/api/ready` | `ok: true` (Fly sets `AGENT_FRAMEWORKS_REQUIRED=false`) |
 | Graph webhook | `validationToken` → HTTP 200 plain text |
 | Inbound need | signed `POST /api/webhooks/email-inbound` → `requisition_parse` |
@@ -50,8 +50,8 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
   "https://aria-mantu-app.fly.dev/api/webhooks/microsoft-graph?validationToken=t"
 ```
 
-Success: ready `ok=true`, migration `0066_*`, build matches tip, Graph HTTP 200,
-`e2e-workflow-test.sh` PASS.
+Success: ready `ok=true`, migration `>= 0066_*` (tip may be `0067_*`), build matches tip,
+Graph HTTP 200, `e2e-workflow-test.sh` PASS.
 
 ## Notes
 

@@ -18,7 +18,15 @@ cd "$repo"
 APP_URL="${APP_URL:-https://aria-mantu-app.fly.dev}"
 KONG_URL="${KONG_URL:-https://aria-mantu-kong.fly.dev}"
 RELEASE_SHA="${1:-$(git rev-parse HEAD)}"
-TARGET_MIGRATION="0066_calendar_meeting_url.sql"
+# Floor: Teams meeting_url (0066). Tip may be newer (e.g. 0067 allowlist grants).
+MIN_MIGRATION_PREFIX="0066_"
+
+migration_meets_floor() {
+  case "${1:-}" in
+    0066_*|006[7-9]_*|00[7-9][0-9]_*|0[1-9][0-9][0-9]_*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 die(){ echo "ERROR: $*" >&2; exit 1; }
 need_cmd(){ command -v "$1" >/dev/null 2>&1 || die "$1 is required"; }
@@ -31,7 +39,7 @@ need_cmd jq
 echo "=== Fly Mantu enterprise E2E preflight ==="
 echo "  production URL : ${APP_URL}"
 echo "  release SHA    : $RELEASE_SHA"
-echo "  target migr.   : $TARGET_MIGRATION"
+echo "  min migration  : ${MIN_MIGRATION_PREFIX}* (tip may be newer)"
 echo
 
 probe_code(){ curl -sS -m 25 -o /dev/null -w '%{http_code}' "$@"; }
@@ -93,9 +101,9 @@ if [ "$login_code" != "200" ] || [ "$health_code" != "200" ]; then
 fi
 
 current_migration="$(node -e 'const j=JSON.parse(process.argv[1]||"{}"); process.stdout.write(String(j.migration||""))' "$ready_json")"
-if [ "$current_migration" != "$TARGET_MIGRATION" ]; then
-  echo "BLOCKER: live migration is '$current_migration' (need $TARGET_MIGRATION)."
-  echo "         Apply migrations through 0066 via bootstrap, then redeploy $RELEASE_SHA."
+if ! migration_meets_floor "$current_migration"; then
+  echo "BLOCKER: live migration is '$current_migration' (need >= ${MIN_MIGRATION_PREFIX}*)."
+  echo "         Apply migrations through tip via bootstrap, then redeploy $RELEASE_SHA."
   echo
 fi
 if [ "$webhook_code" = "404" ]; then
@@ -140,7 +148,7 @@ else
 fi
 
 echo "=== Owner activation path (Fly ONLY — never Vercel) ==="
-echo "Branch: cursor/enterprise-autopilot-b91d · PR #31 (supersedes closed #29, #30)"
+echo "Branch: cursor/enterprise-autopilot-b91d · PR #32 (supersedes closed #29–#31)"
 echo "0. Read-only checklist: bash scripts/fly-enterprise-activate.sh $RELEASE_SHA"
 echo "1. Restore GitHub Actions (billing/spending limit) so CI + CodeQL can run on $RELEASE_SHA."
 echo "2. Fill production-readiness/.fly-secrets.env from .fly-secrets.example (PG + service role)."

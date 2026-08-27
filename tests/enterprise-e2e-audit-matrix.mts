@@ -269,7 +269,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
-    requirement: "Fly E2E fails closed without webhook secret or migration 0066",
+    requirement: "Fly E2E fails closed without webhook secret or migration >= 0066",
     evidence: () => {
       const script = readFileSync("e2e-workflow-test.sh", "utf8");
       return (
@@ -277,7 +277,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /CRON_SECRET is required for Fly enterprise E2E/.test(script)
         && /\/tmp\/aria-e2e-cron-secret/.test(script)
         && /graphSubscription\.active/.test(script)
-        && /migration must be 0066_/.test(script)
+        && /migration must be >= 0066_/.test(script)
+        && /0066_\*|006\[7-9\]_\*/.test(script)
         && /unknown_subscription/.test(script)
         && /microsoft-graph/.test(script)
         && /Polling workspace_state for campaign title/.test(script)

@@ -185,10 +185,11 @@ READY_OK=$(jq -r '.ok // false' "$WORK/ready.json" 2>/dev/null || true)
 READY_BUILD=$(jq -r '.build // empty' "$WORK/ready.json" 2>/dev/null || true)
 info "Ready probe HTTP $READY_CODE ok=$READY_OK migration=${READY_MIG:-?} build=${READY_BUILD:0:12}"
 if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_STALE_FLY_E2E:-}" != "1" ]; then
+  # Floor: Teams meeting_url column (0066). Tip may be newer (e.g. 0067 allowlist grants).
   case "$READY_MIG" in
-    0066_*) ;;
+    0066_*|006[7-9]_*|00[7-9][0-9]_*|0[1-9][0-9][0-9]_*) ;;
     *)
-      die "Fly /api/ready migration must be 0066_* for enterprise E2E (got '${READY_MIG:-none}'). Deploy tip via scripts/fly-enterprise-activate.sh or set ARIA_ALLOW_STALE_FLY_E2E=1."
+      die "Fly /api/ready migration must be >= 0066_* for enterprise E2E (got '${READY_MIG:-none}'). Deploy tip via scripts/fly-enterprise-activate.sh or set ARIA_ALLOW_STALE_FLY_E2E=1."
       ;;
   esac
 fi

@@ -1,46 +1,41 @@
 ---
 project: MSourcing / ARIA
-shift: 159
+shift: 160
 agent: cursor-cloud
 updated: 2026-08-27 UTC
 status: awaiting-microsoft-entra-and-deploy-confirm
 ---
 
-# Handoff — Shift 159
+# Handoff — Shift 160
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#32** open (supersedes #29–#31)
-- **Tip:** local tip includes `0067_mcp_allowlist_select_grants.sql` + prior E2E fail-closed
-- **HeyReach (live):** MCP+API vault keys saved; allowlist enabled for `https://mcp.heyreach.io/mcp`; `/api/mcp/test` → **200 / 16 tools**; workspace_state `int_heyreach` connected (no secrets in git)
-- **DB hotfix applied live:** GRANT SELECT on `mcp_server_allowlist` to authenticated+service_role (same as 0067); durable via new migration file
-- **Admin login verified:** `Twalteur@amaris.com` (password in `/tmp` only)
-- **Fly missing (6):** MICROSOFT_CLIENT_ID/SECRET + GOTRUE_EXTERNAL_AZURE_*
-- **Stale app image:** `ba88302` / mig ledger still reports **0060** / Graph **404**; deploy confirm unset
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#32**
+- **Tip (pre-push):** migration floor `>= 0066` across E2E/activate/golive (0067 tip OK)
+- **HeyReach live:** connected, 16 tools; allowlist SELECT grants applied
+- **Admin:** Twalteur@amaris.com verified (/tmp only)
+- **Fly missing (6):** MICROSOFT_CLIENT_* + GOTRUE_EXTERNAL_AZURE_*
+- **Stale:** build `ba88302` / mig `0060` / Graph **404**; confirm unset; no owner drop-zone
 
 ## Done this shift
 
-- Staged + wired owner HeyReach MCP URL/key + API key into Fly tenant
-- Fixed allowlist SELECT privilege gap (live GRANT + migration 0067)
-- Confirmed Spremo.McpServer tool discovery (16 tools)
+- Unblocked post-0067 tip: E2E + activate + golive no longer require exact `0066_*`
+- Audit matrix + FLY_GOLIVE.md updated to floor semantics / PR #32
 
 ## Next steps
 
-1. Owner: `/tmp/owner-microsoft.env` → `bash scripts/fly-apply-owner-microsoft-secrets.sh`
-2. `print-fly-deploy-confirm.sh` → `fly-deploy-now.sh` (applies migrations through 0067)
-3. Connect Outlook + Enable webhook
-4. `eval "$(bash scripts/print-fly-e2e-env.sh --export)" && bash e2e-workflow-test.sh`
-5. Goal complete only on ready+0066/0067 tip + Graph200 + E2E PASS
+1. Owner Microsoft drop-zone → apply → deploy confirm → `fly-deploy-now.sh`
+2. Outlook Connect + Enable webhook
+3. `eval "$(bash scripts/print-fly-e2e-env.sh --export)" && bash e2e-workflow-test.sh`
+4. Goal complete only on ready ok + mig>=0066 + tip build + Graph200 + E2E PASS
 
 ## Decisions made (don't relitigate)
 
-- PR #32 supersedes closed #29–#31
-- No Fly deploy without `ARIA_PROD_DEPLOY_CONFIRM`
-- Never invent Azure secrets; never commit `/tmp` secrets
-- LinkedIn send stays 409 assisted-manual; HeyReach is the LinkedIn outreach MCP path
-- Production MCP discovery requires allowlist row + SELECT grants
+- PR #32 supersedes #29–#31
+- Migration gate is floor `>= 0066` (matches `fly-deploy-now.sh`)
+- No invent Azure secrets / deploy confirm
+- LinkedIn send 409 assisted-manual; HeyReach is LinkedIn MCP path
 
 ## Watch out
 
-- Live GRANT already applied; 0067 must still ship so rebuilds/new envs stay correct
-- Rotate webhook/cron if `/tmp` lost
+- Live GRANT already on DB; 0067 still required for rebuilds

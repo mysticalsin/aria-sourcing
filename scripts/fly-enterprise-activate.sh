@@ -11,9 +11,17 @@ set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo"
 RELEASE_SHA="${1:-$(git rev-parse HEAD)}"
-TARGET_MIGRATION="0066_calendar_meeting_url.sql"
+# Floor migration for Teams joinUrl column; tip may be newer (e.g. 0067).
+MIN_MIGRATION_PREFIX="0066_"
 APP_URL="${APP_URL:-https://aria-mantu-app.fly.dev}"
 blockers=0
+
+migration_meets_floor() {
+  case "${1:-}" in
+    0066_*|006[7-9]_*|00[7-9][0-9]_*|0[1-9][0-9][0-9]_*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 note_blocker() {
   echo "BLOCKER: $*"
@@ -30,7 +38,7 @@ ready_json="$(curl -sS -m 25 "${APP_URL}/api/ready" 2>/dev/null || echo '{}')"
 current_migration="$(node -e 'const j=JSON.parse(process.argv[1]||"{}"); process.stdout.write(String(j.migration||""));' "$ready_json")"
 live_build="$(node -e 'const j=JSON.parse(process.argv[1]||"{}"); process.stdout.write(String(j.build||""));' "$ready_json")"
 
-if [ "$current_migration" != "$TARGET_MIGRATION" ]; then
+if ! migration_meets_floor "$current_migration"; then
   blockers=$((blockers + 1))
 fi
 if [ -n "$live_build" ] && [[ "$live_build" != "$RELEASE_SHA"* ]]; then
