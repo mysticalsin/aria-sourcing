@@ -60,7 +60,7 @@ node -e '
   const build = j.build ?? "unknown";
   const migration = j.migration ?? "unknown";
   console.log(`  GET  /api/ready build=${build}`);
-  console.log(`       migration=${migration} (target: 0059_linkedin_heyreach_parity.sql)`);
+  console.log(`       migration=${migration} (target: 0062_requisition_parse_inbound_id.sql)`);
 ' "$ready_json"
 
 echo

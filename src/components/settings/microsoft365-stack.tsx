@@ -1,12 +1,12 @@
 "use client";
 
-import { ShieldCheck, Building2 } from "lucide-react";
+import * as React from "react";
+import { ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import {
   azureLoginEnabled,
   supabaseEnabled,
 } from "@/lib/supabase/config";
-import { emailProviderReadiness } from "@/lib/email-connections";
 import { EMAIL_CONNECTIONS_PANEL_ID } from "@/components/settings/email-connections-panel";
 import {
   ConnectionStackShell,
@@ -16,29 +16,89 @@ import {
 
 export const MICROSOFT365_STACK_ID = "microsoft365-stack";
 
+type ProviderReadiness = {
+  microsoftOAuth: boolean;
+  encryptionReady: boolean;
+  inboundWebhookSecret: boolean;
+};
+
+type ConnectionRow = {
+  provider: string;
+  accountEmail: string;
+  hasRefreshToken: boolean;
+  scope: string;
+  inboundRoute: { mailbox: string; purpose: string; active: boolean } | null;
+};
+
+type ConnectionsPayload = {
+  ok?: boolean;
+  providers?: ProviderReadiness;
+  connections?: ConnectionRow[];
+  error?: string;
+};
+
+function hasCalendarScope(scope: string): boolean {
+  return /calendars\.readwrite/i.test(scope) || /onlineMeetings\.readwrite/i.test(scope);
+}
+
 function Microsoft365StackInner() {
-  const readiness = emailProviderReadiness();
+  const [loading, setLoading] = React.useState(true);
+  const [payload, setPayload] = React.useState<ConnectionsPayload | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/email/connections", {
+          method: "GET",
+          credentials: "include",
+        });
+        const json = (await res.json().catch(() => null)) as ConnectionsPayload | null;
+        if (!cancelled) setPayload(json);
+      } catch {
+        if (!cancelled) setPayload({ ok: false, error: "Network error loading Microsoft 365 status." });
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const providers = payload?.providers;
+  const outlookConnections = (payload?.connections ?? []).filter(
+    (c) => c.provider === "Microsoft Graph" && c.accountEmail.trim(),
+  );
+  const connectedOutlook = outlookConnections.find((c) => c.hasRefreshToken) ?? null;
+  const inboundActive = Boolean(connectedOutlook?.inboundRoute?.active);
+  const calendarScoped = Boolean(connectedOutlook && hasCalendarScope(connectedOutlook.scope));
+
   const ssoReady = azureLoginEnabled;
-  const oauthReady = readiness.microsoftOAuth && readiness.encryptionReady;
-  const inboundReady = readiness.inboundWebhookSecret;
-  const calendarReady = oauthReady;
+  const oauthReady = Boolean(providers?.microsoftOAuth && providers.encryptionReady);
+  const mailboxConnected = Boolean(connectedOutlook);
+  const inboundReady = Boolean(providers?.inboundWebhookSecret);
+  const calendarReady = mailboxConnected && (calendarScoped || oauthReady);
 
   const stepsComplete =
     (ssoReady ? 1 : 0) +
-    (oauthReady ? 1 : 0) +
-    (inboundReady ? 1 : 0) +
-    (calendarReady ? 1 : 0);
+    (oauthReady && mailboxConnected ? 1 : 0) +
+    (calendarReady ? 1 : 0) +
+    (inboundReady && inboundActive ? 1 : 0);
   const progressPct = (stepsComplete / 4) * 100;
 
-  let statusLabel = "Not started";
+  let statusLabel = loading ? "Checking Microsoft 365…" : "Not started";
   let statusTone: "neutral" | "success" | "electric" = "neutral";
-  if (stepsComplete === 4) {
+  if (!loading && stepsComplete === 4) {
     statusLabel = "Microsoft 365 ready";
     statusTone = "success";
-  } else if (oauthReady) {
-    statusLabel = "Outlook configured — finish SSO & webhook";
+  } else if (!loading && mailboxConnected) {
+    statusLabel = `Outlook connected (${connectedOutlook?.accountEmail})`;
     statusTone = "electric";
-  } else if (ssoReady) {
+  } else if (!loading && oauthReady) {
+    statusLabel = "Outlook OAuth configured — connect a mailbox";
+    statusTone = "electric";
+  } else if (!loading && ssoReady) {
     statusLabel = "SSO enabled — connect Outlook";
     statusTone = "electric";
   }
@@ -52,7 +112,7 @@ function Microsoft365StackInner() {
       statusLabel={statusLabel}
       statusTone={statusTone}
       progressPct={progressPct}
-      progressLabel={`${stepsComplete} of 4 steps ready`}
+      progressLabel={loading ? "Loading live status…" : `${stepsComplete} of 4 steps ready`}
       footer={
         <p className="flex items-start gap-2 text-xs leading-relaxed text-muted">
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -95,7 +155,7 @@ function Microsoft365StackInner() {
         step={2}
         title="Outlook mailbox (send + read)"
         subtitle="OAuth connect — Mail.Send, Mail.Read, encrypted tokens."
-        state={oauthReady ? "complete" : ssoReady || supabaseEnabled ? "active" : "pending"}
+        state={mailboxConnected ? "complete" : oauthReady || supabaseEnabled ? "active" : "pending"}
       >
         <SystemReadiness
           items={[
@@ -103,15 +163,19 @@ function Microsoft365StackInner() {
               id: "graph-oauth",
               label: "Microsoft Graph OAuth env",
               ok: oauthReady,
-              hint: oauthReady
-                ? "MICROSOFT_CLIENT_ID + secret configured"
-                : "Set MICROSOFT_CLIENT_* and DATA_ENCRYPTION_KEY.",
+              hint: loading
+                ? "Checking deployment env…"
+                : oauthReady
+                  ? "MICROSOFT_CLIENT_ID + secret configured"
+                  : "Set MICROSOFT_CLIENT_* and DATA_ENCRYPTION_KEY.",
             },
             {
               id: "connect-outlook",
               label: "Connect Outlook mailbox",
-              ok: false,
-              hint: `Use Connect Outlook in #${EMAIL_CONNECTIONS_PANEL_ID} below.`,
+              ok: mailboxConnected,
+              hint: mailboxConnected
+                ? `Connected as ${connectedOutlook?.accountEmail}`
+                : `Use Connect Outlook in #${EMAIL_CONNECTIONS_PANEL_ID} below.`,
             },
           ]}
         />
@@ -121,22 +185,24 @@ function Microsoft365StackInner() {
         step={3}
         title="Calendar & Teams interviews"
         subtitle="First conversations booked on Outlook with Teams join links."
-        state={calendarReady ? "complete" : oauthReady ? "active" : "pending"}
+        state={calendarReady ? "complete" : mailboxConnected ? "active" : "pending"}
       >
         <SystemReadiness
           items={[
             {
               id: "calendar-scope",
               label: "Calendars.ReadWrite scope",
-              ok: oauthReady,
-              hint: oauthReady
-                ? "Granted on Outlook OAuth connect"
-                : "Connect Outlook — calendar scope is requested at authorize time.",
+              ok: calendarScoped || (mailboxConnected && oauthReady),
+              hint: calendarScoped
+                ? "Granted on connected Outlook mailbox"
+                : mailboxConnected
+                  ? "Reconnect Outlook if calendar scope is missing from the token."
+                  : "Connect Outlook — calendar scope is requested at authorize time.",
             },
             {
               id: "teams-links",
               label: "Teams meeting links",
-              ok: oauthReady,
+              ok: calendarReady,
               hint: "Graph events created with isOnlineMeeting when booking interviews.",
             },
           ]}
@@ -147,7 +213,7 @@ function Microsoft365StackInner() {
         step={4}
         title="Webhook intake (no polling)"
         subtitle="Graph adapter or n8n forwards mail — agents never idle-scan inboxes."
-        state={inboundReady ? "complete" : oauthReady ? "active" : "pending"}
+        state={inboundReady && inboundActive ? "complete" : inboundReady || mailboxConnected ? "active" : "pending"}
       >
         <SystemReadiness
           items={[
@@ -155,15 +221,19 @@ function Microsoft365StackInner() {
               id: "webhook-secret",
               label: "EMAIL_INBOUND_WEBHOOK_SECRET",
               ok: inboundReady,
-              hint: inboundReady
-                ? "HMAC secret configured"
-                : "Set secret; POST /api/webhooks/email-inbound with x-aria-signature",
+              hint: loading
+                ? "Checking deployment env…"
+                : inboundReady
+                  ? "HMAC secret configured"
+                  : "Set secret; POST /api/webhooks/email-inbound with x-aria-signature",
             },
             {
               id: "need-routing",
               label: "Hiring-need routing",
-              ok: inboundReady,
-              hint: "Need emails → requisition_parse; replies → inbound_classify.",
+              ok: mailboxConnected ? inboundActive : inboundReady,
+              hint: inboundActive
+                ? `Inbound route active for ${connectedOutlook?.inboundRoute?.mailbox}`
+                : "Need emails → requisition_parse; replies → inbound_classify.",
             },
           ]}
         />

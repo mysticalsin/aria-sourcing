@@ -159,6 +159,17 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       existsSync("src/components/settings/microsoft365-stack.tsx")
       && /requisition_parse/.test(readFileSync("src/components/settings/microsoft365-stack.tsx", "utf8")),
   },
+  {
+    requirement: "Microsoft 365 stack reads live mailbox connection status",
+    evidence: () => {
+      const src = readFileSync("src/components/settings/microsoft365-stack.tsx", "utf8");
+      return (
+        /\/api\/email\/connections/.test(src)
+        && !/ok:\s*false,\s*\n\s*hint: `Use Connect Outlook/.test(src)
+        && /connectedOutlook/.test(src)
+      );
+    },
+  },
 ];
 
 for (const row of MATRIX) {
