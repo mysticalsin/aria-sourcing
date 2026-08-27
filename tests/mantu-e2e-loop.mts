@@ -146,6 +146,14 @@ void (async () => {
   });
   ok("parse_only checkpoint lands on requisition_parsed", parseOnly.stage === "requisition_parsed");
 
+  const sourceOnly = await runRecruitingGraph({
+    intent: "source_only",
+    workspaceId: "ws-1",
+    campaignId: "camp-1",
+    candidateIds: ["c1", "c2"],
+  });
+  ok("source_only checkpoint lands on sourcing_complete", sourceOnly.stage === "sourcing_complete");
+
   const rankOnly = await runRecruitingGraph({
     intent: "rank_only",
     workspaceId: "ws-1",

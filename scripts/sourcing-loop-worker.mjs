@@ -839,16 +839,34 @@ async function handleSourcingBatch(job, context) {
       : "";
 
   if (providerRunId) {
+    const candidateIds = candidateIdsFromPayload(payload);
+    await assertRecruitingGraphCheckpoint(
+      context,
+      {
+        workspaceId: job.workspace_id,
+        intent: "source_only",
+        campaignId,
+        candidateIds,
+      },
+      ["sourcing_complete"],
+    );
     return completeJob(
       context.client,
       job,
-      { status: "sourcing_batch_recorded", campaignId, batchId, candidateCount: candidateIdsFromPayload(payload).length },
-      [event("sourcing.batch_ready", "campaign", campaignId, { candidateCount: candidateIdsFromPayload(payload).length })],
+      {
+        status: "sourcing_batch_recorded",
+        campaignId,
+        batchId,
+        candidateCount: candidateIds.length,
+        graphStage: "sourcing_complete",
+      },
+      [event("sourcing.batch_ready", "campaign", campaignId, { candidateCount: candidateIds.length })],
       [
         successorJob("shortlist_build", `shortlist:${campaignId}:${batchId}`, {
           campaignId,
           batchId,
           providerRunId,
+          graphStage: "sourcing_complete",
         }, 90),
       ],
     );
@@ -856,17 +874,34 @@ async function handleSourcingBatch(job, context) {
 
   const sourced = await runSourcingBatchViaRoute(job, context, campaignId, batchId);
   const candidateIds = sourced.candidates.map((c) => c.id);
+  await assertRecruitingGraphCheckpoint(
+    context,
+    {
+      workspaceId: job.workspace_id,
+      intent: "source_only",
+      campaignId,
+      candidateIds,
+    },
+    ["sourcing_complete"],
+  );
   return completeJobWithWorkspacePatch(
     context.client,
     job,
     { kind: "append_candidates", value: sourced.candidates, receiptKey: `source:${campaignId}:${sourced.batchId}` },
-    { status: "sourcing_batch_recorded", campaignId, batchId: sourced.batchId, candidateCount: candidateIds.length },
+    {
+      status: "sourcing_batch_recorded",
+      campaignId,
+      batchId: sourced.batchId,
+      candidateCount: candidateIds.length,
+      graphStage: "sourcing_complete",
+    },
     [event("sourcing.batch_ready", "campaign", campaignId, { candidateCount: candidateIds.length })],
     [
       successorJob("shortlist_build", `shortlist:${campaignId}:${sourced.batchId}`, {
         campaignId,
         batchId: sourced.batchId,
         candidateIds,
+        graphStage: "sourcing_complete",
       }, 90),
     ],
   );

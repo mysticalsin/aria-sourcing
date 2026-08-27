@@ -12,7 +12,7 @@
  * Intents:
  *   - `full` (default): intake → shortlist → draft → quality → approval → book
  *   - `draft_quality`: start at draftOutreach (cron draft hook; no fake booking)
- *   - `parse_only` / `rank_only` / `book_only`: worker checkpoints after real handlers
+ *   - `parse_only` / `source_only` / `rank_only` / `book_only`: worker checkpoints after real handlers
  *
  * Fail-stops:
  *   - parse failure → END at `parse_requisition_failed`
@@ -35,7 +35,7 @@ export const RecruitingGraphState = Annotation.Root({
    * or focused checkpoints the loop worker asserts after real handlers.
    * Checkpoints never invent side effects — they only validate stage authority.
    */
-  intent: Annotation<"full" | "draft_quality" | "parse_only" | "rank_only" | "book_only">(),
+  intent: Annotation<"full" | "draft_quality" | "parse_only" | "source_only" | "rank_only" | "book_only">(),
   /** Inbound email id from record_inbound_email. */
   inboundId: Annotation<string | undefined>(),
   /** Parsed campaign id once created. */
@@ -175,6 +175,7 @@ function buildRecruitingGraph() {
     .addConditionalEdges(START, (state) => {
       if (state.intent === "draft_quality") return "draftOutreach";
       if (state.intent === "parse_only") return "receiveEmail";
+      if (state.intent === "source_only") return "sourceCandidates";
       if (state.intent === "rank_only") return "sourceCandidates";
       if (state.intent === "book_only") return "scheduleInterview";
       return "receiveEmail";
@@ -185,7 +186,10 @@ function buildRecruitingGraph() {
       if (state.intent === "parse_only") return END;
       return "sourceCandidates";
     })
-    .addEdge("sourceCandidates", "rankTop10")
+    .addConditionalEdges("sourceCandidates", (state) => {
+      if (state.intent === "source_only") return END;
+      return "rankTop10";
+    })
     .addConditionalEdges("rankTop10", (state) => {
       if (state.intent === "rank_only") return END;
       return "draftOutreach";
@@ -213,7 +217,7 @@ export function getRecruitingGraph() {
 }
 
 export type RunRecruitingGraphInput = Partial<RecruitingGraphStateType> & {
-  intent?: "full" | "draft_quality" | "parse_only" | "rank_only" | "book_only";
+  intent?: "full" | "draft_quality" | "parse_only" | "source_only" | "rank_only" | "book_only";
 };
 
 /** Run the graph from an initial partial state (for tests and API routes). */

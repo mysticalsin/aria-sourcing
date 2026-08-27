@@ -166,7 +166,12 @@ test("sourcing_batch enqueues shortlist_build with provider run id only", async 
     {
       kind: "shortlist_build",
       idempotency_key: "shortlist:camp-1:batch-1",
-      payload: { campaignId: "camp-1", batchId: "batch-1", providerRunId: "81111111-1111-4111-8111-111111111111" },
+      payload: {
+        campaignId: "camp-1",
+        batchId: "batch-1",
+        providerRunId: "81111111-1111-4111-8111-111111111111",
+        graphStage: "sourcing_complete",
+      },
       priority: 90,
     },
   ]);
