@@ -1,47 +1,65 @@
 ---
 project: MSourcing / ARIA
-shift: 116
+shift: 117
 agent: cursor-cloud
 updated: 2026-08-27 UTC
-status: intake-fail-closed-shipped-awaiting-fly-confirm
+status: code-complete-awaiting-owner-deploy
 ---
 
-# Handoff — Shift 116
+# Handoff — Shift 117
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30** · tip `d37e041`
-- **Local gate:** `npx tsc --noEmit && npm test` green (audit 29/29, mantu 28/28)
-- **CI Actions:** empty runners — skip
-- **Fly live:** still `ba88302` / migration **0060** / `agentFrameworks:false`
-- **Owner blockers:** `ARIA_PROD_DEPLOY_CONFIRM` unset; Entra/Graph/LLM secrets absent
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30** (supersedes closed **#29**) · tip `3bc702d`
+- **Local gate:** `npx tsc --noEmit && npm test` green; audit **29/29**; mantu E2E **28/28**
+- **Fly live:** build `ba88302`, migration **0060**, `agentFrameworks:false`, `/api/ready` not_ready
+- **Source target:** migration **0065**; golive preflight prints exact deploy command for `3bc702d`
+- **Owner blockers:** `ARIA_PROD_DEPLOY_CONFIRM` unset; Entra/Graph/LLM secrets absent in agent env
+
+## Completion audit (objective vs evidence)
+
+| Requirement | Code/tests | Live Fly |
+|-------------|------------|----------|
+| Webhook Outlook intake (no polling) | Graph webhook + ensure/repair UI; audit ✓ | Deploy 0064–0065 + Graph secrets |
+| LangChain pipeline parse→source→top10→outreach→book | recruiting-graph + worker chain; audit ✓ | Deploy + LLM keys |
+| Mantu outreach + multi-agent quality | quality pipeline + critics_required; audit ✓ | LLM keys on Fly |
+| Teams/Outlook interview (propose + confirmLive) | calendar_book + calendar UI; audit ✓ | Deploy 0065 + Graph |
+| M365 stack (Entra, Outlook, calendar) | Settings wired; Entra flag off until secrets | Owner secrets |
+| No fake/skeleton prod UX | demo off on fly.app.toml; settings gates; audit ✓ | Deploy tip SHA |
+| Green test gate | npm test green locally | — |
+| E2E script + audit matrix | e2e-workflow-test.sh + 29/29 matrix | Needs deployed E2E |
+| PR deliverable | **#30** open (draft cleared shift 117) | Owner merge/deploy |
 
 ## Done this shift
 
-- `/api/intake` production path uses `parseInboundNeedLive`; returns `503 llm_required` without server LLM (matches cron contract)
-- Demo mode (no Supabase) keeps heuristic for `e2e-workflow-test.sh`
-- New `tests/intake-route.mts`; audit matrix extended
-- `fly-deploy-now.sh` messaging updated to migration **0065**; e2e grep for llm_required/critics_required
+- Ran golive preflight: live **0060** vs source **0065** blocker documented with exact `ARIA_PROD_DEPLOY_CONFIRM` one-liner
+- Confirmed **#29 closed**; **#30** is the enterprise E2E PR
+- Marked PR #30 ready for human review (code complete; deploy blocked on owner)
 
 ## Blockers (owner)
 
-1. `ARIA_PROD_DEPLOY_CONFIRM` → deploy through **0065**
-2. Entra + live M365 Graph + LLM keys
-3. Prove webhook push + confirmLive on Fly
+```bash
+ARIA_RELEASE_SHA=3bc702d5c08b39f2715c85296e77df6ff94b0a0b \
+ARIA_PROD_DEPLOY_CONFIRM=aria-production-release-v1:fly-deploy-now:3bc702d5c08b39f2715c85296e77df6ff94b0a0b:aria-mantu-bootstrap,aria-mantu-app \
+  bash scripts/fly-deploy-now.sh
+```
+
+Then: Entra secrets, M365 OAuth, LLM keys, `bash e2e-workflow-test.sh` against Fly.
 
 ## Next steps
 
-1. Owner deploy confirm
-2. Enable Entra when secrets exist
-3. Live E2E on Fly
+1. Owner runs deploy command above
+2. Set Fly secrets (Graph, webhook, Entra, LLM)
+3. Prove live webhook + confirmLive calendar; close goal
 
 ## Decisions made (don't relitigate)
 
+- **#30 supersedes #29** (different scope; #29 closed)
 - Skip Actions billing; Fly-only; LinkedIn 409 assisted-manual
 - Calendar live book only via `/api/calendar/event` + confirmLive
-- Demo heuristic intake OK only when Supabase disabled (open demo)
+- Human intake UI may show providerWarning heuristic; autonomous cron fail-closed
 
 ## Watch out
 
-- Do not Fly-mutate without confirm
-- Intake page uses client `parseIntakeLive` — separate from `/api/intake` webhook
+- Do not Fly-mutate without `ARIA_PROD_DEPLOY_CONFIRM`
+- agentFrameworks=false does not block recruiting loop (Track C)
