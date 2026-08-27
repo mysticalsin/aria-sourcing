@@ -26,10 +26,11 @@ status: code-complete-awaiting-owner-deploy
 ```bash
 bash scripts/print-fly-deploy-confirm.sh && bash scripts/fly-deploy-now.sh  # after exporting emitted vars
 bash scripts/fly-golive-mantu-e2e.sh $(git rev-parse HEAD)                 # re-check secrets + migration
-ADMIN_EMAIL=… ADMIN_PASSWORD=… ANON_KEY=… EMAIL_INBOUND_WEBHOOK_SECRET=… bash e2e-workflow-test.sh
+bash scripts/print-fly-e2e-env.sh                                            # ANON_KEY from .fly-secrets.env
+ADMIN_EMAIL=… ADMIN_PASSWORD=… bash e2e-workflow-test.sh
 ```
 
 ## Decisions made (don't relitigate)
 
-- **#30 supersedes #29**; no Fly deploy without `ARIA_PROD_DEPLOY_CONFIRM`
+- **#30 supersedes closed #29**; no Fly deploy without `ARIA_PROD_DEPLOY_CONFIRM`
 - `production-readiness/.fly-secrets.env` populated locally; deploy guard still needs owner confirm

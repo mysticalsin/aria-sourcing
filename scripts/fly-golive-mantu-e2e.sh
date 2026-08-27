@@ -155,6 +155,7 @@ echo "     curl -fsS ${APP_URL}/api/health"
 echo "     curl -fsS ${APP_URL}/api/ready | jq .migration,.build,.ok"
 echo "     ADMIN_EMAIL=… ADMIN_PASSWORD=… ANON_KEY=… EMAIL_INBOUND_WEBHOOK_SECRET=… \\"
 echo "       bash e2e-workflow-test.sh"
+echo "     # or: bash scripts/print-fly-e2e-env.sh  (loads ANON_KEY from .fly-secrets.env)"
 echo
 echo "Note: agentFrameworks=false on /api/ready is Track C (Flowise) and does not block the"
 echo "      recruiting loop; readiness cannot opt out of it in production by design."

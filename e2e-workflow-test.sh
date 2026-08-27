@@ -29,9 +29,29 @@
 # Required env:  ADMIN_EMAIL  ADMIN_PASSWORD  ANON_KEY
 # Optional env:  APP_URL  KONG_URL  AGENT_PROVIDER  AGENT_MODEL
 #                GITHUB_QUERY  LINKEDIN_QUERY  EMAIL_INBOUND_WEBHOOK_SECRET
+# ANON_KEY may be loaded from production-readiness/.fly-secrets.env via
+#   eval "$(bash scripts/print-fly-e2e-env.sh --export)"
 # ---------------------------------------------------------------------------
 
 set -uo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -z "${ANON_KEY:-}" ] && [ -r "$repo_root/production-readiness/.fly-secrets.env" ]; then
+  ANON_KEY="$(node - "$repo_root/production-readiness/.fly-secrets.env" <<'NODE'
+const fs = require("node:fs");
+const path = process.argv[2];
+for (const line of fs.readFileSync(path, "utf8").split("\n")) {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith("#")) continue;
+  const eq = trimmed.indexOf("=");
+  if (eq <= 0) continue;
+  if (trimmed.slice(0, eq) !== "FLY_SUPABASE_ANON_KEY") continue;
+  process.stdout.write(trimmed.slice(eq + 1));
+  process.exit(0);
+}
+NODE
+)"
+fi
 
 APP_URL="${APP_URL:-https://aria-mantu-app.fly.dev}"
 KONG_URL="${KONG_URL:-https://aria-mantu-kong.fly.dev}"
