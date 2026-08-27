@@ -139,6 +139,17 @@ die()  { printf "\n${C_R}ABORT${C_0} %s\n" "$1" >&2; exit 2; }
 
 # ---- preflight -------------------------------------------------------------
 for bin in curl jq openssl; do command -v "$bin" >/dev/null 2>&1 || die "'$bin' is required but not installed."; done
+# Portable UUID for Idempotency-Key (uuidgen is often missing on slim CI/agent images).
+e2e_uuid() {
+  if command -v uuidgen >/dev/null 2>&1; then
+    uuidgen | tr 'A-Z' 'a-z'
+    return 0
+  fi
+  python3 - <<'PY'
+import uuid
+print(str(uuid.uuid4()))
+PY
+}
 [ -n "$ADMIN_EMAIL" ]    || die "ADMIN_EMAIL is required."
 [ -n "$ADMIN_PASSWORD" ] || die "ADMIN_PASSWORD is required."
 [ -n "$ANON_KEY" ]       || die "ANON_KEY is required (Supabase anon key)."
@@ -732,7 +743,7 @@ AGENT_CAMPAIGN_ID="${E2E_CAMPAIGN_ID:-camp-e2e}"
 jq -n --arg id "$AGENT_CAMPAIGN_ID" '{campaignId:$id, count:3}' > "$WORK/agent_req.json"
 HTTP=$(curl -sS -m "${API_TIMEOUT:-180}" -o "$RESP" -w '%{http_code}' -X POST "$APP_URL/api/sourcing-agent" \
   -H 'Content-Type: application/json' -H "Origin: $APP_URL" -H "Cookie: $COOKIE_HDR" \
-  -H "Idempotency-Key: $(uuidgen | tr 'A-Z' 'a-z')" --data-binary @"$WORK/agent_req.json")
+  -H "Idempotency-Key: $(e2e_uuid)" --data-binary @"$WORK/agent_req.json")
 AG_CODE=$(jq -r '.code // empty' "$RESP")
 AG_OK=""
 if [ "$HTTP" = "404" ] || [ "$AG_CODE" = "CAMPAIGN_NOT_READY" ]; then

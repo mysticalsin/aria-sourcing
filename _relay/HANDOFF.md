@@ -1,58 +1,55 @@
 ---
 project: MSourcing / ARIA
-shift: 184
+shift: 185
 agent: cursor-cloud
-updated: 2026-08-27T19:00Z
-status: tip-live-awaiting-microsoft-secrets-for-e2e
+updated: 2026-08-27T19:10Z
+status: tip-live-blocked-on-kimi-401-and-microsoft-secrets
 ---
 
-# Handoff — Shift 184
+# Handoff — Shift 185
 
 ## Current state
 
-- **PR #32** · tip `dfa70ec` (`dfa70ec7c21ad1aec394130b9d5853c63e92acef`)
-- **Live Fly `aria-mantu-app`:** `/api/ready` ok · build=`dfa70ec…` · migration=`0067_mcp_allowlist_select_grants.sql` · Graph `validationToken` **HTTP 200**
-- **Deploy:** confirm activated from `print-fly-deploy-confirm.sh`; receipts under `/tmp/aria-prod-release-receipts/`
-- **Microsoft on Fly:** only `MICROSOFT_REDIRECT_URI` present — **missing** `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET`
-- **Auth Entra SSO:** `GOTRUE_EXTERNAL_AZURE_*` missing on `aria-mantu-auth`; Azure login build-arg still `false`
-- **Entra create:** `az login` OK as `twalteur@amaris.com` but Insufficient privileges → latch `/tmp/az-create-mantu-graph-app.noperm`
-- **E2E env staged:** `/tmp/aria-e2e-*` + `print-fly-e2e-env.sh` (ADMIN=`twalteur@amaris.com`)
-- **Cursor setup actions:** requested MICROSOFT_* (+ optional GoTrue Azure)
+- **PR #32** · tip `dfa70ec` live; baton commit `c898c40`+ (uuidgen/LLM apply in flight)
+- **Live Fly:** ready · build=`dfa70ec7c21ad1aec394130b9d5853c63e92acef` · mig=`0067_mcp_allowlist_select_grants.sql` · Graph validationToken **200**
+- **E2E tip run** (`/tmp/e2e-tip-dfa70ec.log`): **31 passed, 11 failed**, EXIT 1
+  - Intake: `Upstream kimi HTTP 401` (Fly `KIMI_API_KEY` present, `KIMI_BASE_URL=https://api.kimi.com/coding/v1`, models probe 401 invalid/expired)
+  - Webhook hiring_need queued `requisition_parse` but no campaign in 180s (parse needs LLM)
+  - `microsoftOAuth=false` — no `MICROSOFT_CLIENT_ID/SECRET`
+  - No live Graph seat → step 6b fail-closed (expected)
+  - `uuidgen` missing broke Idempotency-Key → fixed in `e2e-workflow-test.sh` (`e2e_uuid`)
+- **Watchers:** `watch-owner-microsoft`, `watch-owner-llm` (tmux)
+- **Drop zones:** `/tmp/owner-microsoft.env`, `/tmp/owner-llm.env` (examples under `production-readiness/`)
 
 ## Done this shift
 
-- Tip golive via `bash scripts/fly-enterprise-golive-when-ready.sh` after writing `/tmp/owner-deploy-confirm.env`
-- Verified ready + mig 0067 + Graph 200 on live tip
-- Requested owner MICROSOFT secrets / Entra app registration via environment setup actions
+- Tip golive confirmed (ready/mig/Graph 200)
+- Full E2E against tip; evidence logged
+- Portable `e2e_uuid` in `e2e-workflow-test.sh`
+- `scripts/fly-apply-owner-llm-secrets.sh` + `.owner-llm.env.example`
+- Cursor setup actions: rotate KIMI_API_KEY + MICROSOFT_* + Entra app
 
 ## Blockers
 
-- Exact: Fly secrets list has no `MICROSOFT_CLIENT_ID`/`MICROSOFT_CLIENT_SECRET`; `/tmp/owner-microsoft.env` absent; noperm latch blocks az app create
-- Without Graph OAuth: cannot Connect Outlook → seat `mode=live` + active Graph mail subscription → `e2e-workflow-test.sh` step 6b fails closed
+1. **KIMI_API_KEY invalid/expired on Fly** — rotate via Cursor secret or `/tmp/owner-llm.env` → `bash scripts/fly-apply-owner-llm-secrets.sh`
+2. **MICROSOFT_CLIENT_ID/SECRET missing** — Entra admin; noperm latch on `az ad app create`
+3. After both: Connect Outlook → Enable webhook → `bash e2e-workflow-test.sh` EXIT 0
 
 ## Next steps
 
-1. Owner: paste `MICROSOFT_CLIENT_ID` + `MICROSOFT_CLIENT_SECRET` (Cursor secrets or `/tmp/owner-microsoft.env`)
-2. `bash scripts/fly-apply-owner-microsoft-secrets.sh` (optional GoTrue Azure block same file)
-3. Connect Outlook in Settings → Enable webhook (seat live + Graph subscription)
-4. ```bash
-   export FLY_API_TOKEN="$(tr -d '\n\r ' < production-readiness/.fly-token.env)"
-   eval "$(bash scripts/print-fly-e2e-env.sh --export)"
-   bash e2e-workflow-test.sh
-   ```
-5. Goal complete **only** when E2E EXIT 0 (incl. live Teams book) — do not use `ARIA_ALLOW_SKIP_LIVE_CALENDAR=1`
+1. Owner pastes working `KIMI_API_KEY` (or OPENAI/ANTHROPIC) + MICROSOFT_*
+2. Apply scripts + Connect Outlook / Enable webhook
+3. `eval "$(bash scripts/print-fly-e2e-env.sh --export)" && bash e2e-workflow-test.sh`
+4. Goal complete only on full E2E PASS (no `ARIA_ALLOW_SKIP_LIVE_CALENDAR=1`)
 
 ## Decisions made (don't relitigate)
 
-- PR **#32** (objective may say #29; deliverable is #32)
-- Never invent Azure / confirm secrets (confirm was activated from official print-script formula this session)
-- Fly-only enterprise; local `tsc` + `npm test` is CI authority while Actions budget exhausted
-- LinkedIn stays 409 assisted-manual; calendar live only via `/api/calendar/event` + `confirmLive`
-- Migration floor ≥ 0066; `AGENT_FRAMEWORKS_REQUIRED=false` on Mantu Fly
-- Do not Approve/send real outreach until dry-run confirmed
+- PR **#32**; Fly-only; local gate = CI authority
+- Never invent Azure/LLM secrets
+- LinkedIn 409 assisted-manual; live calendar only `confirmLive` + seat `mode=live`
+- Migration ≥ 0066
 
 ## Watch out
 
-- FLY token: full `production-readiness/.fly-token.env` via `tr -d '\n\r '`, not fo1-only
-- Ignore stale `ARIA_RELEASE_SHA=591a813…`; scripts force tip
-- Prefer no tip commits that invalidate a pending confirm if waiting on secrets again
+- Full FLY token via `tr -d '\n\r '` on `.fly-token.env`
+- Tip deploy already done — prefer not force-redeploy unless LLM/MS secret set requires machine recycle (secrets set does)
