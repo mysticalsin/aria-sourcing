@@ -10,7 +10,7 @@ status: code-complete-awaiting-owner-deploy
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30** · tip pending commit
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30** · tip `7b63a49`
 - **Local gate:** green; audit **30/30**; mantu E2E **28/28**
 - **Fly live:** build `ba88302`, migration **0060**, `/api/ready` not_ready
 - **Fly secrets (live):** missing M365 + webhook + Entra; `CRON_SECRET` + `SUPABASE_SERVICE_ROLE_KEY` deployed
