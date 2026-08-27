@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import {
   parseEmailAndJD,
   isMantuNeedEmail,
@@ -126,6 +127,31 @@ ok("freeform Java Consultant title", /java consultant/i.test(javaBrief.jobAnalys
 ok("freeform Contract/consulting → Contract", javaBrief.jobAnalysis.employmentType === "Contract");
 ok("freeform headcount 3", /3/.test(javaBrief.jobAnalysis.teamSize));
 ok("freeform day rate 650 EUR", javaBrief.jobAnalysis.salaryMin === 650 && javaBrief.jobAnalysis.currency === "EUR");
+
+/** Exact Tony live-demo brief (freeform one-liner — no Role title: label). */
+const DEMO_JAVA_BRIEF =
+  "Need 3 Java consultants in Paris La Défense in 4 weeks. Contract, 650 EUR/day. Java 17, Spring Boot, Kubernetes. Hybrid.";
+const demoJava = parseEmailAndJD({ email: DEMO_JAVA_BRIEF });
+ok("demo brief title → Java Consultant", /java\s+consultant/i.test(demoJava.jobAnalysis.title));
+ok("demo brief headcount → 3 openings", demoJava.jobAnalysis.teamSize === "3 openings");
+ok("demo brief employment → Contract", demoJava.jobAnalysis.employmentType === "Contract");
+ok(
+  "demo brief day rate 650 EUR",
+  demoJava.jobAnalysis.salaryMin === 650 &&
+    demoJava.jobAnalysis.salaryMax === 650 &&
+    demoJava.jobAnalysis.currency === "EUR",
+);
+ok("demo brief Hybrid", demoJava.jobAnalysis.locationType === "Hybrid");
+
+{
+  const intakePage = readFileSync("src/app/intake/page.tsx", "utf8");
+  ok(
+    "intake form binds openings/headcount field to teamSize",
+    /job-openings/.test(intakePage) &&
+      /Openings \/ headcount/.test(intakePage) &&
+      /teamSize/.test(intakePage),
+  );
+}
 
 /* ---- VSS Recruitment Need: Calypso Application Support (Tony fixture) ---- */
 ok("detects VSS Calypso App Support", isVssRecruitmentNeed(SAMPLE_VSS_CALYPSO_APP_SUPPORT));

@@ -267,7 +267,18 @@ export function groundLiveIntakeFields(
     education: supported(fields.education),
     industryExperience: supportedList(fields.industryExperience),
     companyStageTarget,
-    teamSize: supported(fields.teamSize),
+    teamSize: (() => {
+      if (!fields.teamSize) return undefined;
+      if (claimAppearsInSource(fields.teamSize, source)) return fields.teamSize;
+      // "3 openings" when the brief only says "Need 3 Java consultants"
+      const n = fields.teamSize.match(/\b(\d{1,3})\b/)?.[1];
+      if (!n || !numberAppearsInSource(Number(n), source)) return undefined;
+      const headcountContext = new RegExp(
+        `\\b(?:headcount|openings?|positions?|nb\\s*people|number of people)\\b|\\b${n}\\s+(?:[\\w.+#/-]+\\s+){0,3}?(?:people|consultants?|engineers?|developers?|hires?|positions?|openings?)\\b`,
+        "i",
+      );
+      return headcountContext.test(source) ? fields.teamSize : undefined;
+    })(),
     reportingTo: supported(fields.reportingTo),
     language: supported(fields.language),
     missionDescription: (() => {

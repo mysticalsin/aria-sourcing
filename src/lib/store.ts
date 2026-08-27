@@ -544,7 +544,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Paint from session cache immediately so hard reloads are not a blank gate.
+    // Paint from session/local cache immediately so hard reloads are not a blank gate.
     // (Called from useLayoutEffect on mount so this runs before the browser paints.)
     const cached = readWorkspaceBootstrapCache();
     let paintedFromCache = false;
@@ -583,25 +583,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const serverSeats = await loadRemoteAgentSeats();
-      if (generation !== hydrationGeneration.current) return;
-      if (serverSeats.status === "unavailable") {
-        if (!paintedFromCache) {
-          setWorkspaceStatus(unavailableWorkspaceStatus("agent_seats"));
-        }
-        return;
-      }
-
       workspaceIdRef.current = remote.workspaceId;
       remoteUpdatedAtRef.current = remote.updatedAt;
       liveRoleRef.current = remote.role;
 
       const base = remote.state ? normalizeHermesState(remote.state) : buildLiveEmptyState();
-      const liveState = {
-        ...base,
-        seats: mergeAgentSeatRows(base.seats, serverSeats.seats),
-      };
-      const next = applyAuthoritativeRole(liveState, remote.role);
+      // First paint ASAP — do not block ready on agent_seats round-trip.
+      // Seats merge in immediately after; shell/pages are already usable.
+      let next = applyAuthoritativeRole(base, remote.role);
       if (remote.state) {
         skipNextPersist.current = true;
         skipPersistSnapshot.current = next;
@@ -609,6 +598,32 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       stateRef.current = next;
       setState(next);
       setWorkspaceStatus({ phase: "ready", mode: "live" });
+      writeWorkspaceBootstrapCache({
+        workspaceId: remote.workspaceId,
+        updatedAt: remote.updatedAt,
+        role: remote.role,
+        state: next,
+      });
+
+      const serverSeats = await loadRemoteAgentSeats();
+      if (generation !== hydrationGeneration.current) return;
+      if (serverSeats.status === "unavailable") {
+        // Soft: keep ready workspace; seats stay as persisted in state document.
+        console.warn("agent_seats unavailable after workspace ready; using state seats only");
+        return;
+      }
+
+      const liveState = {
+        ...next,
+        seats: mergeAgentSeatRows(next.seats, serverSeats.seats),
+      };
+      next = applyAuthoritativeRole(liveState, remote.role);
+      if (remote.state) {
+        skipNextPersist.current = true;
+        skipPersistSnapshot.current = next;
+      }
+      stateRef.current = next;
+      setState(next);
       writeWorkspaceBootstrapCache({
         workspaceId: remote.workspaceId,
         updatedAt: remote.updatedAt,

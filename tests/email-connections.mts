@@ -256,9 +256,18 @@ ok(
 const sendMode = readFileSync("src/lib/outreach-send-mode.ts", "utf8");
 ok("effectiveDryRunMode helper", /export function effectiveDryRunMode/.test(sendMode));
 ok("listConnectedOutboundProviders helper", /export function listConnectedOutboundProviders/.test(sendMode));
+ok(
+  "integrations fallback requires connectedAccount (no status-only Live)",
+  /integ\.connectedAccount\?\.trim\(\)/.test(sendMode) &&
+    /Status-only/.test(sendMode),
+);
 
 const bootstrapCache = readFileSync("src/lib/workspace-bootstrap-cache.ts", "utf8");
 ok("workspace bootstrap session cache", /readWorkspaceBootstrapCache/.test(bootstrapCache));
+ok(
+  "workspace bootstrap also writes localStorage (survives hard reload)",
+  /localStorage/.test(bootstrapCache) && /sessionStorage/.test(bootstrapCache),
+);
 
 const sidebar = readFileSync("src/components/app/sidebar.tsx", "utf8");
 ok(
@@ -285,6 +294,16 @@ ok(
   /workspaceStatus\.phase === "loading"/.test(appShell)
     && /Refreshing workspace/.test(appShell)
     && /<Sidebar \/>/.test(appShell),
+);
+ok(
+  "loading phase still renders page children (HydrationGate skeletons)",
+  /phase === "loading"[\s\S]{0,1200}\{children\}/.test(appShell),
+);
+
+const storeSrc2 = readFileSync("src/lib/store.ts", "utf8");
+ok(
+  "hydrate paints ready before awaiting agent_seats",
+  /setWorkspaceStatus\(\{ phase: "ready", mode: "live" \}\)[\s\S]{0,400}loadRemoteAgentSeats\(/.test(storeSrc2),
 );
 
 console.log(`RESULT email-connections: ${pass} passed, ${fail} failed`);

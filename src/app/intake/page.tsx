@@ -600,8 +600,8 @@ export default function IntakePage() {
                     </Field>
                   </div>
 
-                  {/* Role + department */}
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {/* Role + department + openings */}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                     <Field label="Role title" htmlFor="job-title">
                       <Input
                         id="job-title"
@@ -614,6 +614,35 @@ export default function IntakePage() {
                         id="job-dept"
                         value={job.department}
                         onChange={(e) => patchJob({ department: e.target.value })}
+                      />
+                    </Field>
+                    <Field
+                      label="Openings / headcount"
+                      htmlFor="job-openings"
+                      hint="How many people to hire for this need."
+                    >
+                      <Input
+                        id="job-openings"
+                        type="number"
+                        inputMode="numeric"
+                        min={1}
+                        value={(() => {
+                          const m = job.teamSize.match(/\b(\d{1,3})\b/);
+                          return m ? m[1] : "";
+                        })()}
+                        onChange={(e) => {
+                          const raw = e.target.value.trim();
+                          if (!raw) {
+                            patchJob({ teamSize: "" });
+                            return;
+                          }
+                          const n = Number(raw);
+                          if (!Number.isFinite(n) || n < 1) return;
+                          const hc = Math.min(999, Math.floor(n));
+                          patchJob({
+                            teamSize: `${hc} opening${hc === 1 ? "" : "s"}`,
+                          });
+                        }}
                       />
                     </Field>
                   </div>

@@ -571,13 +571,25 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   else if (/urgent|high priority|priority/i.test(text)) urgency = "Urgent";
   else if (/this week|by friday|next few days/i.test(text)) urgency = "This Week";
 
-  // Title — include Consultant / specialist labels common in Mantu briefs
+  // Title — include Consultant / specialist labels common in Mantu briefs.
+  // Freeform: "Need 3 Java consultants…" (count + optional skill before the noun).
+  const ROLE_NOUN =
+    "Engineer|Developer|Designer|Manager|Lead|Architect|Scientist|Analyst|Consultant|Specialist|Recruiter";
   const titleMatch =
-    text.match(/(?:hiring|looking for|need|seeking|backfill)\s+(?:an?\s+)?([A-Z][\w/ +.-]{3,48}?(?:Engineer|Developer|Designer|Manager|Lead|Architect|Scientist|Analyst|Consultant|Specialist|Recruiter))/i)?.[1] ??
+    text.match(
+      new RegExp(
+        `(?:hiring|looking for|need(?:s|ed)?|seeking|backfill)\\s+(?:an?\\s+)?(?:\\d{1,3}\\s+)?((?:[\\w.+#/-]+\\s+){0,3}?(?:${ROLE_NOUN}))s?\\b`,
+        "i",
+      ),
+    )?.[1] ??
     text.match(/(?:role\s*title|role|position|title)\s*[:\-]\s*(.+)/i)?.[1] ??
-    text.match(/^([A-Z][\w/ +.-]{2,60}?(?:Engineer|Developer|Designer|Manager|Lead|Architect|Scientist|Analyst|Consultant|Specialist))\s*[|/]/m)?.[1] ??
+    text.match(
+      new RegExp(`^([A-Z][\\w/ +.-]{2,60}?(?:${ROLE_NOUN}))\\s*[|/]`, "im"),
+    )?.[1] ??
     "";
-  const title = titleMatch.trim().replace(/\s+/g, " ").replace(/\s*[|/].*$/, "").trim();
+  const title = titleCase(
+    titleMatch.trim().replace(/\s+/g, " ").replace(/\s*[|/].*$/, "").trim(),
+  );
 
   // Seniority — title first, then years floors ("8 years +", "5+ years").
   let seniority: Seniority = seniorityFromTitle(title);
@@ -697,7 +709,11 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
       (() => {
         const hc =
           text.match(/\b(?:headcount|openings?|positions?|nb\s*people|number of people)\s*[:\-]?\s*(\d{1,3})\b/i)?.[1] ??
-          text.match(/\bneed(?:s|ed)?\s+(\d{1,3})\s+(?:people|consultants?|engineers?|hires?)\b/i)?.[1];
+          // "Need 3 Java consultants" / "need 2 senior engineers"
+          text.match(
+            /\bneed(?:s|ed)?\s+(\d{1,3})\s+(?:[\w.+#/-]+\s+){0,3}?(?:people|consultants?|engineers?|developers?|hires?|positions?|openings?)\b/i,
+          )?.[1] ??
+          text.match(/\b(\d{1,3})\s+(?:openings?|positions?|headcount)\b/i)?.[1];
         return hc ? `${hc} opening${hc === "1" ? "" : "s"}` : "";
       })(),
     reportingTo: text.match(/report(?:s|ing) to (?:the )?([A-Za-z ]+?)[.,\n]/i)?.[1]?.trim() ?? "",

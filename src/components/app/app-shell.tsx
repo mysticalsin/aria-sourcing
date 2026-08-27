@@ -26,9 +26,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 function ProtectedAppShell({ children, pathname }: { children: React.ReactNode; pathname: string }) {
   const { workspaceStatus, retryWorkspace, retrySave } = useHermes();
 
-  // Loading: paint recruiter chrome immediately (brand + nav). Do not replace the
-  // viewport with a full-page "Connecting" / "Loading demo" gate — that was Tony's
-  // hard-reload blocker. Mutations stay blocked via workspaceAllowsMutation.
+  // Loading: paint recruiter chrome + page children immediately. Pages use
+  // HydrationGate skeletons — do NOT replace the main column with a blocking
+  // "Refreshing workspace…" wait (that was the ~7s hard-reload dead zone).
+  // Mutations stay blocked via workspaceAllowsMutation until phase === ready.
   if (workspaceStatus.phase === "loading") {
     return (
       <ConfirmProvider>
@@ -39,19 +40,18 @@ function ProtectedAppShell({ children, pathname }: { children: React.ReactNode; 
           <Sidebar />
           <div className="flex min-w-0 flex-1 flex-col">
             <TopBar />
+            <div
+              className="border-b border-line/60 bg-paper/80 px-4 py-1.5 text-center text-xs text-muted sm:px-6 lg:px-8"
+              role="status"
+              aria-live="polite"
+              aria-busy="true"
+            >
+              {workspaceStatus.mode === "demo"
+                ? "Refreshing demo workspace…"
+                : "Refreshing workspace…"}
+            </div>
             <main id="main-content" className="flex-1 px-4 pb-24 pt-6 sm:px-6 lg:px-8 lg:pb-10">
-              <div
-                className="mx-auto flex w-full max-w-[1400px] min-h-[40vh] items-center justify-center"
-                role="status"
-                aria-live="polite"
-                aria-busy="true"
-              >
-                <p className="text-sm font-medium text-muted">
-                  {workspaceStatus.mode === "demo"
-                    ? "Refreshing demo workspace…"
-                    : "Refreshing workspace…"}
-                </p>
-              </div>
+              <div className="mx-auto w-full max-w-[1400px]">{children}</div>
             </main>
           </div>
         </div>

@@ -60,7 +60,7 @@ ok("unavailable workspace exposes Sign out", html.includes("/auth/signout"));
 
 workspaceStatus = { phase: "loading", mode: "live" };
 html = renderToStaticMarkup(React.createElement(AppShell, null, child));
-ok("loading workspace hides protected product children", !html.includes("product-child"));
+ok("loading workspace still renders page children (shell-first)", html.includes("product-child"));
 ok("loading workspace announces progress without exposing actions", html.includes('role="status"'));
 ok(
   "loading workspace paints shell chrome (no full-page Connecting gate)",

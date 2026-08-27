@@ -22,11 +22,12 @@ export function listConnectedOutboundProviders(
     const isLinkedIn =
       seat.provider === "LinkedIn Assisted Manual" || seat.provider === "LinkedIn Vendor API";
     if (isLinkedIn) {
-      if (seat.mode === "live" || Boolean(seat.connectedAccount?.trim())) {
+      // LinkedIn requires a connected account label — mode=live alone is not enough.
+      if (Boolean(seat.connectedAccount?.trim())) {
         out.push({
           kind: "linkedin",
           label: seat.provider,
-          detail: seat.connectedAccount?.trim() || seat.name,
+          detail: seat.connectedAccount.trim(),
         });
       }
       continue;
@@ -45,9 +46,15 @@ export function listConnectedOutboundProviders(
       });
     }
   }
+  // Integrations cards are NOT authority for Live send. Only count them when they
+  // carry a real connectedAccount (mailbox email / LI identity). Status-only
+  // "connected"/"degraded" without an account was falsely flipping Queue Summary
+  // to Live when Outlook was not actually connected.
   if (out.length === 0 && integrations) {
     for (const integ of integrations) {
       if (!integ.real) continue;
+      const account = integ.connectedAccount?.trim();
+      if (!account) continue;
       if (integ.status !== "connected" && integ.status !== "degraded") continue;
       if (
         integ.id === "int_outlook" ||
@@ -59,7 +66,7 @@ export function listConnectedOutboundProviders(
         out.push({
           kind: integ.id === "int_heyreach" ? "linkedin" : "mailbox",
           label: integ.name,
-          detail: integ.status,
+          detail: account,
         });
       }
     }
