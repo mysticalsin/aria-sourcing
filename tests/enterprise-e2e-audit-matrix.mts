@@ -608,6 +608,10 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && existsSync("production-readiness/.owner-deploy-confirm.env.example")
         && /owner-deploy-confirm\.env/.test(readFileSync("scripts/fly-enterprise-golive-when-ready.sh", "utf8"))
         && /az-create-mantu-graph-app/.test(readFileSync("scripts/fly-enterprise-golive-when-ready.sh", "utf8"))
+        && /pipeline-transitions\.json/.test(worker)
+        && /graph-stage-jobs\.json/.test(worker)
+        && /pipeline-transitions\.json/.test(readFileSync("Dockerfile.prod", "utf8"))
+        && /graph-stage-jobs\.json/.test(readFileSync("Dockerfile.prod", "utf8"))
         && /email_sync_requires_inbound_ids/.test(readFileSync("scripts/sourcing-loop-worker.mjs", "utf8"))
         && /stage checkpoint machine/.test(readFileSync("src/lib/langchain/recruiting-graph.ts", "utf8"))
       );

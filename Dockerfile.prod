@@ -47,6 +47,9 @@ COPY --from=builder --chown=node:node /app/scripts/apollo-authority-cleanup-work
 COPY --from=builder --chown=node:node /app/scripts/agent-framework-heartbeat-worker.mjs ./scripts/agent-framework-heartbeat-worker.mjs
 COPY --from=builder --chown=node:node /app/scripts/sourcing-loop-worker.mjs ./scripts/sourcing-loop-worker.mjs
 COPY --from=builder --chown=node:node /app/src/lib/agents/framework/configuration-core.mjs ./src/lib/agents/framework/configuration-core.mjs
+# Loop worker reads these shared JSON tables at boot (not bundled by Next standalone).
+COPY --from=builder --chown=node:node /app/src/lib/langchain/pipeline-transitions.json ./src/lib/langchain/pipeline-transitions.json
+COPY --from=builder --chown=node:node /app/src/lib/langchain/graph-stage-jobs.json ./src/lib/langchain/graph-stage-jobs.json
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \
