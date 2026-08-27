@@ -68,17 +68,18 @@ cat <<'EOF'
 # Fly enterprise E2E — run after:
 #   bash scripts/fly-golive-mantu-e2e.sh $(git rev-parse HEAD)
 # Owner must supply admin credentials (never commit).
+# Human mode redacts secret values — use --export to emit real exports for eval.
 EOF
 
 if [ -n "$anon_key" ]; then
-  printf "export ANON_KEY=%q\n" "$anon_key"
+  echo "export ANON_KEY='…(set, len=${#anon_key}; use --export)'"
 else
   echo "# ANON_KEY unset — populate FLY_SUPABASE_ANON_KEY in production-readiness/.fly-secrets.env"
 fi
 
 if [ -n "$admin_email" ] && [ -n "$admin_password" ]; then
   printf "export ADMIN_EMAIL=%q\n" "$admin_email"
-  printf "export ADMIN_PASSWORD=%q\n" "$admin_password"
+  echo "export ADMIN_PASSWORD='…(loaded from $admin_password_tmp; use --export)'"
   echo "# loaded from $admin_email_tmp + $admin_password_tmp"
 else
   cat <<'EOF'
@@ -89,7 +90,7 @@ EOF
 fi
 
 if [ -n "$webhook_key" ]; then
-  printf "export EMAIL_INBOUND_WEBHOOK_SECRET=%q\n" "$webhook_key"
+  echo "export EMAIL_INBOUND_WEBHOOK_SECRET='…(set, len=${#webhook_key}; use --export)'"
   echo "# loaded from $webhook_tmp (agent-owned Fly webhook secret)"
 else
   cat <<'EOF'
@@ -100,7 +101,7 @@ EOF
 fi
 
 if [ -n "$cron_key" ]; then
-  printf "export CRON_SECRET=%q\n" "$cron_key"
+  echo "export CRON_SECRET='…(set, len=${#cron_key}; use --export)'"
   echo "# loaded from $cron_tmp (agent-owned Fly cron secret)"
 else
   cat <<'EOF'

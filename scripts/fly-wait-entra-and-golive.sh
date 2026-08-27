@@ -22,6 +22,9 @@ cd "$repo"
 MAX_MIN="${ARIA_WAIT_MAX_MINUTES:-240}"
 SLEEP_SEC="${ARIA_WAIT_POLL_SECONDS:-30}"
 LOG="${ARIA_WAIT_LOG:-/tmp/fly-wait-entra.log}"
+# When owner skips Entra device MFA, set ARIA_SKIP_AZ_DEVICE_REFRESH=1 to only
+# watch drop-zones / existing az session (no new device codes).
+SKIP_DEVICE_REFRESH="${ARIA_SKIP_AZ_DEVICE_REFRESH:-0}"
 
 if [ -z "${FLY_API_TOKEN:-}" ] && [ -r "$repo/production-readiness/.fly-token.env" ]; then
   export FLY_API_TOKEN="$(tr -d '\n\r ' < "$repo/production-readiness/.fly-token.env")"
@@ -40,6 +43,7 @@ has_microsoft_drop() {
 }
 
 refresh_device_code_if_needed() {
+  [ "$SKIP_DEVICE_REFRESH" = "1" ] && return 0
   command -v az >/dev/null 2>&1 || return 0
   az account show >/dev/null 2>&1 && return 0
   local age=99999
