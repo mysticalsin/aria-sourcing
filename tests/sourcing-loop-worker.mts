@@ -524,6 +524,64 @@ test("inbound_classify enqueues draft_generate for positive intent when autopilo
   ]);
 });
 
+test("calendar_book calls propose cron then records interview_proposed activity", async () => {
+  const patches: Array<Record<string, unknown>> = [];
+  const proposeCalls: Array<{ url: string; body: Record<string, unknown> }> = [];
+  const { client } = rpcClient((name, args) => {
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: {}, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      patches.push(args);
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await handleAriaJob(
+    job("calendar_book", {
+      campaignId: "camp-cal-1",
+      candidateId: "cand-cal-1",
+      intent: "INTERESTED",
+    }),
+    {
+      client,
+      configuration: {
+        calendarProposeUrl: new URL("https://worker.example.test/api/cron/propose-calendar-book"),
+        cronSecret: "s".repeat(32),
+      },
+      fetcher: async (url, init) => {
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        proposeCalls.push({ url: String(url), body });
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            status: "proposed_dry_run",
+            startTime: "2026-08-28T10:00:00.000Z",
+            endTime: "2026-08-28T10:30:00.000Z",
+            claimId: "claim-cal-1",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    },
+  );
+
+  assert.equal(proposeCalls.length, 1);
+  assert.match(proposeCalls[0]!.url, /propose-calendar-book/);
+  assert.equal(proposeCalls[0]!.body.confirmLive, false);
+  assert.equal(patches.length, 1);
+  assert.equal(patches[0]!.p_patch_kind, "append_activities");
+  const activities = patches[0]!.p_patch as Array<Record<string, unknown>>;
+  assert.equal(activities[0]?.type, "interview_proposed");
+  assert.equal(activities[0]?.claimId, "claim-cal-1");
+  const events = patches[0]!.p_events as Array<Record<string, unknown>>;
+  assert.equal(
+    (events[0]?.payload as { proposeStatus?: string } | undefined)?.proposeStatus,
+    "proposed_dry_run",
+  );
+});
+
 test("draft_generate enqueues calendar_book after positive reply trigger", async () => {
   const patches: Array<Record<string, unknown>> = [];
   const { client } = rpcClient((name, args) => {
@@ -664,6 +722,7 @@ test("runSourcingLoopTick claims every handler kind and completes each claimed j
       sourcingBatchUrl: new URL("https://worker.example.test/api/cron/run-sourcing-batch"),
       outreachDraftUrl: new URL("https://worker.example.test/api/cron/generate-outreach-draft"),
       renewGraphUrl: null,
+      calendarProposeUrl: null,
       cronSecret: "s".repeat(32),
     },
     { ARIA_LOOP_KILL_SWITCH: "false" },

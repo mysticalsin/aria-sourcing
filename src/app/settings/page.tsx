@@ -45,7 +45,7 @@ import { HermesSchedulesPanel } from "@/components/settings/hermes-schedules-pan
 import { useHydrated, useSettings, useIntegrations, useActions } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
 import { realIntegrationSummary } from "@/lib/integrations";
-import { supabaseEnabled } from "@/lib/supabase/config";
+import { demoLoginEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import { LANGUAGES } from "@/lib/i18n";
 import {
   ShieldCheck,
@@ -661,7 +661,7 @@ export default function SettingsPage() {
 
             <DatabricksPanel />
 
-            {roadmapIntegrations.length > 0 && (
+            {demoLoginEnabled && roadmapIntegrations.length > 0 && (
               <details className="rounded-2xl border border-dashed border-line p-4">
                 <summary className="cursor-pointer text-sm font-semibold text-ink">
                   Roadmap placeholders ({roadmapIntegrations.length}) — not wired

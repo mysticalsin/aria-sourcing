@@ -1,0 +1,156 @@
+import { timingSafeEqual, randomUUID } from "node:crypto";
+
+import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
+
+import { claimCalendarBooking, reconcileCalendarBooking } from "@/lib/calendar-authority";
+import { mantuFirstInterviewAgenda } from "@/lib/mantu-brand";
+import { getServiceSupabase } from "@/lib/supabase/server";
+import type { Candidate, Campaign } from "@/lib/types";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+const BodySchema = z.object({
+  workspaceId: z.string().uuid(),
+  campaignId: z.string().min(1).max(100),
+  candidateId: z.string().min(1).max(100),
+  /** Default false — claim + release dry-run; never calls Graph. */
+  confirmLive: z.boolean().optional().default(false),
+  startTime: z.string().min(1).max(40).optional(),
+  endTime: z.string().min(1).max(40).optional(),
+  seatId: z.string().uuid().optional(),
+});
+
+function authorized(req: NextRequest): boolean {
+  const secret = process.env.CRON_SECRET ?? "";
+  const presented = req.headers.get("authorization") ?? "";
+  const expected = `Bearer ${secret}`;
+  const presentedBuf = Buffer.from(presented);
+  const expectedBuf = Buffer.from(expected);
+  return (
+    secret !== "" &&
+    presentedBuf.length === expectedBuf.length &&
+    timingSafeEqual(presentedBuf, expectedBuf)
+  );
+}
+
+/** Next weekday 10:00–10:30 UTC as a default interview proposal slot. */
+function defaultInterviewWindow(now = new Date()): { startTime: string; endTime: string } {
+  const start = new Date(now);
+  start.setUTCHours(10, 0, 0, 0);
+  start.setUTCDate(start.getUTCDate() + 1);
+  while (start.getUTCDay() === 0 || start.getUTCDay() === 6) {
+    start.setUTCDate(start.getUTCDate() + 1);
+  }
+  const end = new Date(start.getTime() + 30 * 60 * 1000);
+  return { startTime: start.toISOString(), endTime: end.toISOString() };
+}
+
+/**
+ * Loop-side interview propose: claim calendar authority, then either dry-run
+ * release (default) or leave claim for human confirmLive Graph booking.
+ * Never creates Graph events unless confirmLive=true and Graph is configured.
+ */
+export async function POST(req: NextRequest) {
+  if (req.headers.get("cookie") || req.headers.get("origin")) {
+    return NextResponse.json({ ok: false }, { status: 401 });
+  }
+  if (!authorized(req)) {
+    return NextResponse.json({ ok: false }, { status: 401 });
+  }
+
+  const parsed = BodySchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json({ ok: false, status: "invalid_request" }, { status: 400 });
+  }
+
+  const svc = getServiceSupabase();
+  if (!svc) {
+    return NextResponse.json({ ok: false, status: "service_unavailable" }, { status: 503 });
+  }
+
+  const snapshot = await svc.rpc("read_workspace_state_for_loop", {
+    p_workspace_id: parsed.data.workspaceId,
+  });
+  const body = snapshot.data as {
+    status?: string;
+    state?: { campaigns?: Campaign[]; candidates?: Candidate[] };
+  } | null;
+  if (snapshot.error || body?.status !== "ok" || !body.state) {
+    return NextResponse.json({ ok: false, status: "workspace_unavailable" }, { status: 503 });
+  }
+
+  const campaign = (body.state.campaigns ?? []).find((c) => c.id === parsed.data.campaignId);
+  const candidate = (body.state.candidates ?? []).find((c) => c.id === parsed.data.candidateId);
+  if (!campaign || !candidate) {
+    return NextResponse.json({ ok: false, status: "not_found" }, { status: 404 });
+  }
+
+  const window =
+    parsed.data.startTime && parsed.data.endTime
+      ? { startTime: parsed.data.startTime, endTime: parsed.data.endTime }
+      : defaultInterviewWindow();
+
+  const requestId = `loop-propose:${parsed.data.campaignId}:${parsed.data.candidateId}:${window.startTime}`;
+  const claim = await claimCalendarBooking(svc, {
+    workspaceId: parsed.data.workspaceId,
+    candidateId: candidate.id,
+    startTime: window.startTime,
+    requestId: requestId.slice(0, 100),
+    provider: "Microsoft Graph",
+  });
+
+  if (claim.status !== "claimed") {
+    return NextResponse.json(
+      { ok: false, status: claim.status, detail: "Calendar propose claim refused." },
+      { status: claim.status === "dependency_unavailable" ? 503 : 409 },
+    );
+  }
+
+  const roleTitle =
+    campaign.jobAnalysis?.title?.trim() ||
+    (typeof campaign.title === "string" ? campaign.title.trim() : "") ||
+    "Interview";
+  const agenda = mantuFirstInterviewAgenda(roleTitle);
+
+  // Default autonomous path: dry-run — release claim so humans can confirmLive later.
+  if (!parsed.data.confirmLive) {
+    await reconcileCalendarBooking(svc, {
+      workspaceId: parsed.data.workspaceId,
+      id: claim.id,
+      status: "released",
+      detail: "dry-run_loop_propose",
+    });
+    return NextResponse.json({
+      ok: true,
+      status: "proposed_dry_run",
+      bookingMode: "human_confirm_live",
+      campaignId: campaign.id,
+      candidateId: candidate.id,
+      candidateName: candidate.name,
+      startTime: window.startTime,
+      endTime: window.endTime,
+      agenda,
+      claimId: claim.id,
+      replay: claim.replay,
+      requestId,
+    });
+  }
+
+  // Live path reserved for operator-enabled confirmLive + Graph secrets.
+  // Without attempting Graph here, leave claim held and mark needs_human.
+  return NextResponse.json({
+    ok: true,
+    status: "claimed_awaiting_graph",
+    bookingMode: "confirm_live_required",
+    campaignId: campaign.id,
+    candidateId: candidate.id,
+    startTime: window.startTime,
+    endTime: window.endTime,
+    agenda,
+    claimId: claim.id,
+    seatId: parsed.data.seatId ?? null,
+    requestId: requestId.slice(0, 100) || randomUUID(),
+  });
+}

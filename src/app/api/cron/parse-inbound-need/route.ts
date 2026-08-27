@@ -59,6 +59,21 @@ export async function POST(req: NextRequest) {
   }
 
   const result = await parseInboundNeedLive(emailText);
+
+  // Autonomous loop parse must not silently accept mock/heuristic stand-ins.
+  if (!result.modelUsed) {
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "llm_required",
+        detail: "Live LLM parse required for autonomous requisition intake.",
+        modelUsed: false,
+        modelReason: "modelReason" in result ? result.modelReason : undefined,
+      },
+      { status: 503 },
+    );
+  }
+
   const campaignId =
     parsed.data.campaignId?.trim()
     || (parsed.data.requisitionId ? deterministicCampaignId(parsed.data.requisitionId) : "");

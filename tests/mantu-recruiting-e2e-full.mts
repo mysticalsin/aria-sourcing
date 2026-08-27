@@ -120,6 +120,17 @@ async function main() {
   ok("first interview agenda mentions Mantu", agenda.some((line) => /mantu/i.test(line)));
   ok("first interview agenda mentions role", agenda.some((line) => /TypeScript/i.test(line)));
 
+  // ── 7. calendar_book propose path is wired (claim dry-run, human confirmLive) ──
+  const { readFileSync, existsSync } = await import("node:fs");
+  ok(
+    "propose-calendar-book cron exists",
+    existsSync("src/app/api/cron/propose-calendar-book/route.ts"),
+  );
+  const proposeSrc = readFileSync("src/app/api/cron/propose-calendar-book/route.ts", "utf8");
+  const workerSrc = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
+  ok("propose cron claims then dry-runs by default", /proposed_dry_run/.test(proposeSrc) && /confirmLive/.test(proposeSrc));
+  ok("worker calendar_book calls propose cron", /calendarProposeUrl/.test(workerSrc) && /handleCalendarBook/.test(workerSrc));
+
   console.log(`RESULT mantu-recruiting-e2e-full: ${pass} passed, ${fail} failed`);
   if (fail > 0) process.exit(1);
 }

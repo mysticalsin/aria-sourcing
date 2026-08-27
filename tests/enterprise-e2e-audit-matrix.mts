@@ -258,9 +258,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       const qualityLive = readFileSync("src/lib/outreach-quality-pipeline-live.ts", "utf8");
       return (
         /parseInboundNeedLive/.test(parseRoute)
+        && /llm_required/.test(parseRoute)
         && /serverGenerateText/.test(draftRoute)
         && /llm_required/.test(draftRoute)
         && /runRecruitingGraph/.test(draftRoute)
+        && /graphStage/.test(draftRoute)
         && /validateOutreachQualityLive/.test(draftRoute)
         && /llmCriticsUsed/.test(quality)
         && /validateOutreachQualityLive/.test(qualityLive)
@@ -289,15 +291,32 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
+    requirement: "Production settings hide roadmap placeholders and fake Configure CTAs",
+    evidence: () => {
+      const settings = readFileSync("src/app/settings/page.tsx", "utf8");
+      const card = readFileSync("src/components/settings/integration-card.tsx", "utf8");
+      return (
+        /demoLoginEnabled && roadmapIntegrations\.length/.test(settings)
+        && /integration\.real \? \(/.test(card)
+        && /Not available/.test(card)
+      );
+    },
+  },
+  {
     requirement: "Loop proposes Teams/Outlook interview after positive interest (calendar_book)",
     evidence: () => {
       const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
+      const propose = readFileSync("src/app/api/cron/propose-calendar-book/route.ts", "utf8");
       const migration = readFileSync("supabase/migrations/0065_calendar_book_and_graph_renew.sql", "utf8");
       return (
         /calendar_book/.test(worker)
         && /handleCalendarBook/.test(worker)
+        && /calendarProposeUrl/.test(worker)
         && /interview_proposed/.test(worker)
         && /human_confirm_live/.test(worker)
+        && /claimCalendarBooking/.test(propose)
+        && /confirmLive/.test(propose)
+        && /proposed_dry_run/.test(propose)
         && /'calendar_book'/.test(migration)
       );
     },

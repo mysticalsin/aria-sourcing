@@ -311,15 +311,21 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
             )}
 
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex-1"
-                leftIcon={<Plug className="h-4 w-4" />}
-                onClick={() => setConfigureOpen(true)}
-              >
-                Configure
-              </Button>
+              {integration.real ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  leftIcon={<Plug className="h-4 w-4" />}
+                  onClick={() => setConfigureOpen(true)}
+                >
+                  Configure
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" className="flex-1" disabled>
+                  Not available
+                </Button>
+              )}
               {integration.real &&
                 (integration.id === "int_github" ||
                   integration.id === "int_outlook" ||

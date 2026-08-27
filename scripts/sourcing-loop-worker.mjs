@@ -204,6 +204,7 @@ export function loadSourcingLoopConfiguration(environment) {
   let sourcingBatchUrl = null;
   let outreachDraftUrl = null;
   let renewGraphUrl = null;
+  let calendarProposeUrl = null;
   if (webOrigin !== "" || cronSecret !== "") {
     let parsed;
     try {
@@ -223,6 +224,7 @@ export function loadSourcingLoopConfiguration(environment) {
     sourcingBatchUrl = new URL("/api/cron/run-sourcing-batch", webOrigin);
     outreachDraftUrl = new URL("/api/cron/generate-outreach-draft", webOrigin);
     renewGraphUrl = new URL("/api/cron/renew-graph-subscriptions", webOrigin);
+    calendarProposeUrl = new URL("/api/cron/propose-calendar-book", webOrigin);
   }
 
   return {
@@ -236,6 +238,7 @@ export function loadSourcingLoopConfiguration(environment) {
     sourcingBatchUrl,
     outreachDraftUrl,
     renewGraphUrl,
+    calendarProposeUrl,
     cronSecret,
     tickMs: boundedInteger(environment.ARIA_LOOP_TICK_MS, DEFAULT_TICK_MS, 5_000, 300_000, "ARIA_LOOP_TICK_MS"),
     timeoutMs: boundedInteger(environment.ARIA_LOOP_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, 1_000, 60_000, "ARIA_LOOP_TIMEOUT_MS"),
@@ -1129,13 +1132,45 @@ async function handleDraftGenerate(job, context) {
 
 /**
  * Propose a first interview (Teams/Outlook) after positive interest.
- * Does not auto-create Graph events — records a durable activity for human confirmLive booking.
+ * Calls claim→reconcile dry-run cron by default; humans confirmLive in UI for Graph.
  */
 async function handleCalendarBook(job, context) {
   const payload = payloadOf(job);
   const campaignId = boundedText(payload.campaignId, 160, "campaign_id_required");
   const candidateId = boundedText(payload.candidateId, 160, "candidate_id_required");
   const intent = typeof payload.intent === "string" ? payload.intent : "";
+
+  let propose = null;
+  if (context.configuration?.calendarProposeUrl && context.configuration?.cronSecret) {
+    let response;
+    try {
+      response = await context.fetcher(context.configuration.calendarProposeUrl, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${context.configuration.cronSecret}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          workspaceId: job.workspace_id,
+          campaignId,
+          candidateId,
+          confirmLive: false,
+        }),
+        signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+      });
+    } catch {
+      throw new HandlerError("calendar_propose_unreachable", true);
+    }
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new HandlerError(`calendar_propose_http_${response.status}`, response.status >= 500);
+    }
+    propose = await readBoundedJson(response, RPC_RESPONSE_BYTES);
+    if (!isRecord(propose) || propose.ok !== true) {
+      throw new HandlerError("calendar_propose_response_invalid", true);
+    }
+  }
+
   const activity = {
     id: `act-interview-${campaignId}-${candidateId}`,
     type: "interview_proposed",
@@ -1145,7 +1180,12 @@ async function handleCalendarBook(job, context) {
     channel: "Microsoft Teams / Outlook",
     status: "needs_human_confirm",
     detail:
-      "Positive candidate interest — open Calendar to book with confirmLive (Teams online meeting).",
+      typeof propose?.status === "string"
+        ? `Calendar authority ${propose.status} — open Calendar to confirmLive (Teams online meeting).`
+        : "Positive candidate interest — open Calendar to book with confirmLive (Teams online meeting).",
+    startTime: typeof propose?.startTime === "string" ? propose.startTime : null,
+    endTime: typeof propose?.endTime === "string" ? propose.endTime : null,
+    claimId: typeof propose?.claimId === "string" ? propose.claimId : null,
     createdAt: new Date().toISOString(),
   };
 
@@ -1162,11 +1202,13 @@ async function handleCalendarBook(job, context) {
       campaignId,
       candidateId,
       bookingMode: "human_confirm_live",
+      proposeStatus: typeof propose?.status === "string" ? propose.status : "activity_only",
     },
     [event("interview.proposed", "candidate", candidateId, {
       campaignId,
       intent,
       bookingMode: "human_confirm_live",
+      proposeStatus: typeof propose?.status === "string" ? propose.status : "activity_only",
     })],
     [],
   );

@@ -273,6 +273,30 @@ else
 fi
 
 # ===========================================================================
+step "2d) M365 connections + Entra reporting surface"
+# ===========================================================================
+api GET "$APP_URL/api/email/connections"
+CONN_OK=$(jq -r '.ok // false' "$RESP")
+if [ "$HTTP" = "200" ] && [ "$CONN_OK" = "true" ]; then
+  pass "GET /api/email/connections ok (providers=$(jq -c '.providers // {}' "$RESP"))."
+else
+  fail "GET /api/email/connections failed (HTTP $HTTP): $(head -c 200 "$RESP")"
+fi
+if grep -q 'azureLoginEnabled' src/components/settings/microsoft365-stack.tsx \
+  && grep -q 'Entra SSO' src/components/settings/microsoft365-stack.tsx \
+  && grep -q 'graphSubscription' src/app/api/email/connections/route.ts; then
+  pass "Entra SSO + graphSubscription reporting wired in Settings/connections."
+else
+  fail "Entra/graphSubscription reporting surface missing from source."
+fi
+if grep -q 'propose-calendar-book' scripts/sourcing-loop-worker.mjs \
+  && grep -q 'claimCalendarBooking' src/app/api/cron/propose-calendar-book/route.ts; then
+  pass "calendar_book → propose-calendar-book claim/dry-run path present."
+else
+  fail "calendar propose path missing from worker or cron route."
+fi
+
+# ===========================================================================
 step "3) Sourcing — REAL candidates (GitHub raw, LinkedIn/Tavily, provenance=live)"
 # ===========================================================================
 

@@ -117,14 +117,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Autonomous loop drafts must not silently ship mock-ai copy as success.
-  if (!modelUsed) {
-    return NextResponse.json(
-      { ok: false, status: "llm_required", detail: "Live LLM draft required for autonomous outreach." },
-      { status: 503 },
-    );
-  }
-
+  // Always run LangGraph for stage observability, even when LLM draft fails.
   const graphResult = await runRecruitingGraph({
     workspaceId: parsed.data.workspaceId,
     campaignId: campaign.id,
@@ -138,6 +131,20 @@ export async function POST(req: NextRequest) {
       },
     },
   });
+
+  // Autonomous loop drafts must not silently ship mock-ai copy as success.
+  if (!modelUsed) {
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "llm_required",
+        detail: "Live LLM draft required for autonomous outreach.",
+        graphStage: graphResult.stage,
+      },
+      { status: 503 },
+    );
+  }
+
   const deterministic =
     graphResult.quality[candidate.id]
     ?? validateOutreachQuality({

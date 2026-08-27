@@ -8,7 +8,8 @@ const CRON_SECRET = "cron-secret-material-with-enough-length-0001";
 
 process.env.CRON_SECRET = CRON_SECRET;
 
-test("parse-inbound-need requires cron auth and rejects Origin", async () => {
+test("parse-inbound-need auth, live success, and llm_required fail-closed", async () => {
+  let modelUsed = true;
   mock.module(moduleUrl("src/lib/requisition-intake.ts"), {
     namedExports: {
       buildInboundEmailText: ({ body }: { body: string }) => body,
@@ -30,11 +31,12 @@ test("parse-inbound-need requires cron auth and rejects Origin", async () => {
       parseInboundNeedLive: async () => ({
         ready: true,
         confidence: 0.9,
-        warnings: [],
+        warnings: modelUsed ? [] : ["heuristic_only"],
         jobAnalysis: { title: "Engineer", requiredSkills: ["TypeScript"] },
         sender: { name: "Pat", email: "pat@example.com" },
         parsed: {},
-        modelUsed: true,
+        modelUsed,
+        modelReason: modelUsed ? undefined : "no_provider",
       }),
     },
   });
@@ -63,6 +65,7 @@ test("parse-inbound-need requires cron auth and rejects Origin", async () => {
   );
   assert.equal(withOrigin.status, 401);
 
+  modelUsed = true;
   const ok = await POST(
     new NextRequest("http://localhost/api/cron/parse-inbound-need", {
       method: "POST",
@@ -81,4 +84,21 @@ test("parse-inbound-need requires cron auth and rejects Origin", async () => {
   assert.equal(body.ok, true);
   assert.equal(body.ready, true);
   assert.equal(body.campaign?.id, "camp-req-deadbeef");
+
+  modelUsed = false;
+  const refused = await POST(
+    new NextRequest("http://localhost/api/cron/parse-inbound-need", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${CRON_SECRET}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ body: "Role: Engineer\nSkills: TypeScript" }),
+    }),
+  );
+  assert.equal(refused.status, 503);
+  const refusedBody = (await refused.json()) as { ok?: boolean; status?: string; modelUsed?: boolean };
+  assert.equal(refusedBody.ok, false);
+  assert.equal(refusedBody.status, "llm_required");
+  assert.equal(refusedBody.modelUsed, false);
 });
