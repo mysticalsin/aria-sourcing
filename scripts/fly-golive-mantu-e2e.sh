@@ -18,7 +18,7 @@ cd "$repo"
 APP_URL="${APP_URL:-https://aria-mantu-app.fly.dev}"
 KONG_URL="${KONG_URL:-https://aria-mantu-kong.fly.dev}"
 RELEASE_SHA="${1:-$(git rev-parse HEAD)}"
-TARGET_MIGRATION="0062_requisition_parse_inbound_id.sql"
+TARGET_MIGRATION="0063_loop_append_outreach.sql"
 
 die(){ echo "ERROR: $*" >&2; exit 1; }
 need_cmd(){ command -v "$1" >/dev/null 2>&1 || die "$1 is required"; }
@@ -93,7 +93,7 @@ fi
 current_migration="$(node -e 'const j=JSON.parse(process.argv[1]||"{}"); process.stdout.write(String(j.migration||""))' "$ready_json")"
 if [ "$current_migration" != "$TARGET_MIGRATION" ]; then
   echo "BLOCKER: live migration is '$current_migration' (need $TARGET_MIGRATION)."
-  echo "         Apply 0061–0062 via bootstrap, then redeploy $RELEASE_SHA."
+  echo "         Apply 0061–0063 via bootstrap, then redeploy $RELEASE_SHA."
   echo
 fi
 if [ "$webhook_code" = "404" ]; then
