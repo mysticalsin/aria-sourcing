@@ -551,6 +551,20 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       );
     },
   },
+  {
+    requirement: "Fly deploy refreshes ARIA_EXPECTED_* migration identity for /api/ready",
+    evidence: () => {
+      const deploy = readFileSync("scripts/fly-deploy-now.sh", "utf8");
+      return (
+        /ARIA_EXPECTED_MIGRATION/.test(deploy)
+        && /ARIA_EXPECTED_MIGRATION_SHA/.test(deploy)
+        && /ARIA_EXPECTED_MIGRATION_COUNT/.test(deploy)
+        && /ARIA_EXPECTED_LEDGER_SHA/.test(deploy)
+        && /secrets set -a aria-mantu-app --stage/.test(deploy)
+        && /EXPECTED_LEDGER_SHA/.test(deploy)
+      );
+    },
+  },
 ];
 
 for (const row of MATRIX) {

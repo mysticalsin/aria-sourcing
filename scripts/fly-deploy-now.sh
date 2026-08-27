@@ -75,7 +75,36 @@ elif [ "${ARIA_FORCE_AZURE_LOGIN:-}" = "0" ]; then
   AZURE_LOGIN_ARG="false"
 fi
 
-echo "=== 1/3 bootstrap image (migrations through 0066) ==="
+# Release identity for /api/ready — must match the source migration ledger at tip.
+IFS=$'\t' read -r EXPECTED_MIGRATION_FILE EXPECTED_MIGRATION_SHA EXPECTED_MIGRATION_COUNT EXPECTED_LEDGER_SHA < <(node -e '
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const crypto = require("node:crypto");
+  const dir = "supabase/migrations";
+  const files = fs.readdirSync(dir).filter((name) => /^0[0-9]{3}_.+\.sql$/.test(name)).sort();
+  if (files.length === 0) process.exit(2);
+  const entries = files.map((filename) => ({
+    filename,
+    sha256: crypto.createHash("sha256").update(fs.readFileSync(path.join(dir, filename))).digest("hex"),
+  }));
+  const latest = entries.at(-1);
+  const ledgerSha = crypto.createHash("sha256")
+    .update(entries.map((entry) => `${entry.filename}:${entry.sha256}\n`).join(""))
+    .digest("hex");
+  process.stdout.write(`${[latest.filename, latest.sha256, String(entries.length), ledgerSha].join("\t")}\n`);
+')
+[ -n "${EXPECTED_LEDGER_SHA:-}" ] || { echo "ERROR: could not compute migration ledger identity" >&2; exit 1; }
+# Floor: tip must include 0066_calendar_meeting_url.sql (Teams meeting_url column).
+case "$EXPECTED_MIGRATION_FILE" in
+  0066_*|006[7-9]_*|00[7-9][0-9]_*|0[1-9][0-9][0-9]_*) ;;
+  *)
+    echo "ERROR: expected migration must be >= 0066_calendar_meeting_url.sql (got $EXPECTED_MIGRATION_FILE)" >&2
+    exit 1
+    ;;
+esac
+echo "Release identity: migration=$EXPECTED_MIGRATION_FILE count=$EXPECTED_MIGRATION_COUNT"
+
+echo "=== 1/3 bootstrap image (migrations through $EXPECTED_MIGRATION_FILE) ==="
 flyctl deploy --config fly.bootstrap.toml --build-only --push --image-label latest --remote-only
 
 echo "=== 2/3 apply migrations on prod DB ==="
@@ -84,18 +113,32 @@ flyctl machine run "registry.fly.io/aria-mantu-bootstrap:latest" \
   --env ARIA_BOOTSTRAP_PHASE=migrations \
   --env DB_HOST=aria-mantu-db.internal
 
-echo "=== 3/3 deploy app (enterprise loop + build $ARIA_RELEASE_SHA) ==="
+echo "=== 3/3 stage release-identity secrets + deploy app ==="
+# Stage secrets without an immediate restart; the following deploy boots machines
+# with tip image + matching expected migration/ledger identity for /api/ready.
+flyctl secrets set -a aria-mantu-app --stage \
+  "ARIA_RELEASE_SHA=${ARIA_RELEASE_SHA}" \
+  "ARIA_EXPECTED_MIGRATION=${EXPECTED_MIGRATION_FILE}" \
+  "ARIA_EXPECTED_MIGRATION_SHA=${EXPECTED_MIGRATION_SHA}" \
+  "ARIA_EXPECTED_MIGRATION_COUNT=${EXPECTED_MIGRATION_COUNT}" \
+  "ARIA_EXPECTED_LEDGER_SHA=${EXPECTED_LEDGER_SHA}"
+
 flyctl deploy --config fly.app.toml --remote-only \
   --build-arg NEXT_PUBLIC_SUPABASE_URL=https://aria-mantu-kong.fly.dev \
   --build-arg NEXT_PUBLIC_SITE_URL=https://aria-mantu-app.fly.dev \
   --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$FLY_SUPABASE_ANON_KEY" \
   --build-arg NEXT_PUBLIC_ENABLE_DEMO_LOGIN=false \
   --build-arg NEXT_PUBLIC_ENABLE_AZURE_LOGIN="$AZURE_LOGIN_ARG" \
-  --env ARIA_RELEASE_SHA="$ARIA_RELEASE_SHA"
+  --env "ARIA_RELEASE_SHA=${ARIA_RELEASE_SHA}" \
+  --env "ARIA_EXPECTED_MIGRATION=${EXPECTED_MIGRATION_FILE}" \
+  --env "ARIA_EXPECTED_MIGRATION_SHA=${EXPECTED_MIGRATION_SHA}" \
+  --env "ARIA_EXPECTED_MIGRATION_COUNT=${EXPECTED_MIGRATION_COUNT}" \
+  --env "ARIA_EXPECTED_LEDGER_SHA=${EXPECTED_LEDGER_SHA}"
 
 echo
 echo "Verify:"
 echo "  curl -fsS https://aria-mantu-app.fly.dev/api/health"
-echo "  curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq .build,.migration"
+echo "  curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,status,build,migration}'"
 echo "  curl -sS -o /dev/null -w '%{http_code}\\n' \"https://aria-mantu-app.fly.dev/api/webhooks/microsoft-graph?validationToken=t\""
 echo "  Azure login build-arg was: $AZURE_LOGIN_ARG"
+echo "  Expected migration: $EXPECTED_MIGRATION_FILE ($EXPECTED_MIGRATION_COUNT files)"

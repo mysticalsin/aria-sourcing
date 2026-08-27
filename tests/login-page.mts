@@ -36,7 +36,8 @@ ok(
 ok(
   "Fly production defaults to email login until Azure secrets are explicitly wired",
   /NEXT_PUBLIC_ENABLE_AZURE_LOGIN\s*=\s*"false"/.test(flyApp) &&
-    /NEXT_PUBLIC_ENABLE_AZURE_LOGIN=false/.test(deployWorkflow),
+    /AZURE_LOGIN_ARG=false/.test(deployWorkflow) &&
+    /NEXT_PUBLIC_ENABLE_AZURE_LOGIN="\$AZURE_LOGIN_ARG"/.test(deployWorkflow),
 );
 ok(
   "the production image treats the Azure login flag as an explicit build input",
