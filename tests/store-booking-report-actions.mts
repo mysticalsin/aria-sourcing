@@ -506,6 +506,62 @@ test("runtime live calendar success reaches the stored booking and both email pr
   assert.match(result.confirmationEmail, /https:\/\/calendar\.example\.test\/event/);
 });
 
+test("live calendar refuses Booked without a Graph/Gmail seat", async () => {
+  const state = bookingFixture();
+  state.seats = state.seats.map((seat) => ({ ...seat, status: "paused", mode: "dry-run" }));
+  const harness = createHarness({ state, liveCalendarEnabled: true });
+  const { candidate } = fixtureIds(harness.state);
+  const result = await harness.actions.createBookingFor(candidate.id);
+  assert.equal(result.ok, false);
+  assert.match(result.ok ? "" : result.error, /Connect a live Gmail or Microsoft Graph calendar seat/i);
+  assert.equal(harness.commitCalls, 0);
+});
+
+test("Graph booking requires a Teams join URL before committing Booked", async () => {
+  const missing = createHarness({
+    state: liveCalendarState("Microsoft Graph"),
+    liveCalendarEnabled: true,
+    fetchBody: { status: "created", eventId: "evt-graph-1", link: null },
+  });
+  const missingIds = fixtureIds(missing.state);
+  const missingResult = await missing.actions.createBookingFor(missingIds.candidate.id);
+  assert.equal(missingResult.ok, false);
+  assert.match(missingResult.ok ? "" : missingResult.error, /Teams join URL/i);
+  assert.equal(missing.commitCalls, 0);
+
+  const webLink = createHarness({
+    state: liveCalendarState("Microsoft Graph"),
+    liveCalendarEnabled: true,
+    fetchBody: {
+      status: "created",
+      eventId: "evt-graph-2",
+      link: "https://outlook.office.com/calendar/item/abc",
+    },
+  });
+  const webIds = fixtureIds(webLink.state);
+  const webResult = await webLink.actions.createBookingFor(webIds.candidate.id);
+  assert.equal(webResult.ok, false);
+  assert.match(webResult.ok ? "" : webResult.error, /Teams join URL/i);
+
+  const okHarness = createHarness({
+    state: liveCalendarState("Microsoft Graph"),
+    liveCalendarEnabled: true,
+    fetchBody: {
+      status: "created",
+      eventId: "evt-graph-3",
+      link: "https://teams.microsoft.com/l/meetup-join/19%3ameeting_ok",
+    },
+  });
+  const okIds = fixtureIds(okHarness.state);
+  const okResult = await okHarness.actions.createBookingFor(okIds.candidate.id);
+  assert.equal(okResult.ok, true);
+  if (!okResult.ok) return;
+  assert.equal(
+    okResult.booking.teamsLink,
+    "https://teams.microsoft.com/l/meetup-join/19%3ameeting_ok",
+  );
+});
+
 test("runtime calendar creation retains provider authority when no link is returned", async () => {
   const harness = createHarness({
     state: liveCalendarState(),

@@ -5,6 +5,7 @@ import {
   interviewerPrepEmail,
 } from "../mock-ai";
 import { mantuFirstInterviewAgenda } from "../mantu-brand";
+import { isTeamsMeetingJoinUrl } from "../calendar";
 import { bookingCalendarSummary } from "../booking-status";
 import { withStage } from "../metrics";
 import {
@@ -276,7 +277,13 @@ export function createBookingReportActions({
         (item.provider === "Gmail API" || item.provider === "Microsoft Graph"),
     );
     let providerEventCreated = false;
-    if (liveCalendarEnabled && seat) {
+    if (liveCalendarEnabled) {
+      if (!seat) {
+        return {
+          ok: false,
+          error: "Connect a live Gmail or Microsoft Graph calendar seat before confirming a booking.",
+        };
+      }
       try {
         const response = await workspaceFetch("/api/calendar/event", {
           method: "POST",
@@ -355,7 +362,16 @@ export function createBookingReportActions({
               "Calendar event may exist, but no provider receipt was returned. Reconciliation is required; do not retry.",
           };
         }
-        if (body.link != null) {
+        if (seat.provider === "Microsoft Graph") {
+          if (typeof body.link !== "string" || !isTeamsMeetingJoinUrl(body.link)) {
+            return {
+              ok: false,
+              error:
+                "Teams join URL missing after Graph create. Reconciliation is required; do not retry.",
+            };
+          }
+          booking.teamsLink = body.link;
+        } else if (body.link != null) {
           if (typeof body.link !== "string") {
             return {
               ok: false,
@@ -366,11 +382,7 @@ export function createBookingReportActions({
           try {
             const link = new URL(body.link);
             if (link.protocol !== "https:") throw new Error("Calendar links must use HTTPS.");
-            if (seat.provider === "Microsoft Graph") {
-              booking.teamsLink = body.link;
-            } else {
-              booking.calLink = body.link;
-            }
+            booking.calLink = body.link;
           } catch {
             return {
               ok: false,

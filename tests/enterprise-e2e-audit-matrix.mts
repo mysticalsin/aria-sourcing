@@ -590,6 +590,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /llmStages\.length === CRITICS\.length/.test(readFileSync("src/lib/outreach-quality-pipeline-live.ts", "utf8"))
         && /refuseMockOutreachOnLiveTenant/.test(readFileSync("src/lib/store.ts", "utf8"))
         && /Live drafting required/.test(readFileSync("src/components/settings/hermes-runtime-panel.tsx", "utf8"))
+        && /isTeamsMeetingJoinUrl/.test(readFileSync("src/lib/store/booking-report-actions.ts", "utf8"))
+        && /Connect a live Gmail or Microsoft Graph calendar seat/.test(
+          readFileSync("src/lib/store/booking-report-actions.ts", "utf8"),
+        )
+        && /mock fleet allocate disabled/.test(readFileSync("src/lib/store.ts", "utf8"))
       );
     },
   },

@@ -1,45 +1,42 @@
 ---
 project: MSourcing / ARIA
-shift: 130
+shift: 131
 agent: cursor-cloud
 updated: 2026-08-27 UTC
 status: code-complete-awaiting-owner-deploy
 ---
 
-# Handoff — Shift 130
+# Handoff — Shift 131
 
 ## Current state
 
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open (supersedes closed #29, #30)
-- **Local tip:** three-critic fail-closed; Teams joinUrl-only bookings; no mock outreach on live tenants
-- **Local gate:** must stay green (audit includes PR #31 + print-fly-deploy-confirm)
-- **Fly live:** `ba88302` / mig **0060** / Graph **404** — owner deploy required
-- **Blockers:** `ARIA_PROD_DEPLOY_CONFIRM`; `MICROSOFT_*`; webhook; Entra Azure; admin E2E creds
+- **Local tip:** live tenants refuse mock allocate/generateOutreachFor; Booked requires live calendar seat; Graph requires Teams joinUrl
+- **Local gate:** green; audit **42/42**
+- **Fly live:** `ba88302` / mig **0060** / Graph **404**
+- **Blockers:** `ARIA_PROD_DEPLOY_CONFIRM`; `MICROSOFT_*`; webhook; Entra; admin E2E — no secret material in agent env/ClickUp
 
 ## Done this shift
 
-- `outreach-quality-pipeline-live.ts`: `llmCriticsUsed` only when all 3 critics succeed
-- `calendar.ts`: reject Outlook `webLink` as Teams URL; require `onlineMeeting.joinUrl`
-- `calendar/event` route: do not confirm Graph bookings without Teams link
-- `store.ts`: `refuseMockOutreachOnLiveTenant` on generate/regenerate/follow-up/recontact
-- `hermes-runtime-panel.tsx`: live-tenant copy (no mock drafting language)
+- `generateOutreachFor` + fleet `allocateOutreach` refuse mock on live tenants
+- `booking-report-actions`: require live Graph/Gmail seat; Graph requires `isTeamsMeetingJoinUrl`
+- Calendar route uses `isTeamsMeetingJoinUrl` (not substring `teams.`)
 
 ## Next steps
 
 1. Owner: `bash scripts/fly-enterprise-activate.sh $(git rev-parse HEAD)`
-2. Owner: set secrets, then `bash scripts/print-fly-deploy-confirm.sh` → export → `bash scripts/fly-deploy-now.sh`
-3. Owner: `bash scripts/print-fly-e2e-env.sh` + admin/webhook → `bash e2e-workflow-test.sh`
-4. Agent timer: ready mig `0066_*` + Graph 200 + E2E PASS
+2. Owner: secrets + `bash scripts/print-fly-deploy-confirm.sh` → `fly-deploy-now.sh`
+3. Owner: `bash scripts/print-fly-e2e-env.sh` + E2E
+4. Agent timer: ready `0066_*` + Graph 200 + E2E PASS
 
 ## Decisions made (don't relitigate)
 
 - PR #31 supersedes closed #29 and #30
 - No Fly deploy without `ARIA_PROD_DEPLOY_CONFIRM`
 - Use `bash scripts/print-fly-deploy-confirm.sh` for exact deploy one-liner
-- Skip Actions billing failures; local gate is authority
+- Skip Actions billing; local gate authority
 - Target migration **0066**
-- Draft path never claims booking without `bookingId`
 
 ## Watch out
 
-- E2E fails on Fly until `MICROSOFT_CLIENT_*` + `EMAIL_INBOUND_WEBHOOK_SECRET` are set (intentional)
+- No MICROSOFT/Entra secrets available to the agent — owner must supply

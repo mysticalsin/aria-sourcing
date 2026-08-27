@@ -1900,6 +1900,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const candidate = s.candidates.find((c) => c.id === candidateId);
       const campaign = candidate && s.campaigns.find((c) => c.id === candidate.campaignId);
       if (!candidate || !campaign) return null;
+      // Live/enterprise tenants must use generateOutreachLive — never commit mock here.
+      if (refuseMockOutreachOnLiveTenant(false)) return null;
       const resolvedChannel = channel ?? preferredOutreachChannel(candidate);
       const finalTone = tone ?? effectiveTone(s.skills); // learned default tone
       const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
@@ -4831,6 +4833,22 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const byCampaign = new Map(s.campaigns.map((c) => [c.id, c]));
       const bySeat = new Map(s.seats.map((x) => [x.id, x]));
       const finalTone = effectiveTone(s.skills);
+
+      // Live tenants must draft via generateOutreachLive — never fleet-commit mock copy.
+      if (refuseMockOutreachOnLiveTenant(false)) {
+        return {
+          ...result,
+          assignments: [],
+          skipped: [
+            ...result.skipped,
+            ...result.assignments.map((a) => ({
+              candidateId: a.candidateId,
+              candidateName: byCand.get(a.candidateId)?.name ?? a.candidateId,
+              reason: "Live tenant requires LLM outreach; mock fleet allocate disabled",
+            })),
+          ],
+        };
+      }
 
       const drafted: OutreachMessage[] = [];
       for (const a of result.assignments) {

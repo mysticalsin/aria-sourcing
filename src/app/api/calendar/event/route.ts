@@ -7,7 +7,7 @@ import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { EmailConnection, Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
-import { createGoogleCalendarEvent, createGraphCalendarEvent, type CalendarEventInput } from "@/lib/calendar";
+import { createGoogleCalendarEvent, createGraphCalendarEvent, isTeamsMeetingJoinUrl, type CalendarEventInput } from "@/lib/calendar";
 import { claimCalendarBooking, reconcileCalendarBooking } from "@/lib/calendar-authority";
 import { safeLog } from "@/lib/log-redact";
 import { decryptSecret, encryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
@@ -202,7 +202,7 @@ export async function POST(req: NextRequest) {
       // Graph must return a Teams join URL before we confirm the booking ledger.
       if (
         provider === "Microsoft Graph"
-        && (!outcome.link || !outcome.link.toLowerCase().includes("teams."))
+        && (!outcome.link || !isTeamsMeetingJoinUrl(outcome.link))
       ) {
         return NextResponse.json(
           {
