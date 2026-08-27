@@ -101,14 +101,50 @@ if [ "$webhook_code" = "404" ]; then
   echo
 fi
 
+# Read-only Fly secrets inventory when flyctl + token are available.
+if [ -z "${FLY_API_TOKEN:-}" ] && [ -r "$repo/production-readiness/.fly-token.env" ]; then
+  export FLY_API_TOKEN="$(tr -d '\n' < "$repo/production-readiness/.fly-token.env")"
+fi
+
+audit_fly_secret() {
+  local app="$1" name="$2" listed="$3"
+  if printf '%s\n' "$listed" | grep -qx "$name"; then
+    echo "  [$app] $name: deployed"
+  else
+    echo "  [$app] $name: MISSING"
+  fi
+}
+
+if command -v flyctl >/dev/null 2>&1 && [ -n "${FLY_API_TOKEN:-}" ]; then
+  echo "Fly secrets inventory (read-only):"
+  app_secrets="$(flyctl secrets list -a aria-mantu-app 2>/dev/null | awk 'NR>1 && $1 != "" && $1 != "NAME" {print $1}' || true)"
+  auth_secrets="$(flyctl secrets list -a aria-mantu-auth 2>/dev/null | awk 'NR>1 && $1 != "" && $1 != "NAME" {print $1}' || true)"
+  for name in EMAIL_INBOUND_WEBHOOK_SECRET MICROSOFT_CLIENT_ID MICROSOFT_CLIENT_SECRET MICROSOFT_REDIRECT_URI CRON_SECRET SUPABASE_SERVICE_ROLE_KEY; do
+    audit_fly_secret aria-mantu-app "$name" "$app_secrets"
+  done
+  for name in GOTRUE_EXTERNAL_AZURE_ENABLED GOTRUE_EXTERNAL_AZURE_CLIENT_ID GOTRUE_EXTERNAL_AZURE_SECRET GOTRUE_EXTERNAL_AZURE_URL; do
+    audit_fly_secret aria-mantu-auth "$name" "$auth_secrets"
+  done
+  azure_login="$(flyctl config env -a aria-mantu-app 2>/dev/null | awk -F'│' '/NEXT_PUBLIC_ENABLE_AZURE_LOGIN/ {gsub(/^[ \t]+|[ \t]+$/, "", $3); print $3; exit}' || true)"
+  if [ "$azure_login" = "true" ]; then
+    echo "  [aria-mantu-app] NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true"
+  else
+    echo "  [aria-mantu-app] NEXT_PUBLIC_ENABLE_AZURE_LOGIN: ${azure_login:-false/missing} (need true for Entra SSO)"
+  fi
+  echo
+else
+  echo "Fly secrets inventory: skipped (flyctl or FLY_API_TOKEN unavailable)"
+  echo
+fi
+
 echo "=== Owner activation path (Fly ONLY — never Vercel) ==="
 echo "Branch: cursor/enterprise-autopilot-b91d · PR #30 (supersedes closed #29)"
 echo "1. Restore GitHub Actions (billing/spending limit) so CI + CodeQL can run on $RELEASE_SHA."
 echo "2. Fill production-readiness/.fly-secrets.env from .fly-secrets.example (PG + service role)."
 echo "3. Deploy + migrate on Fly only (do NOT run vercel --prod / do NOT merge to vercel-demo for this):"
-echo "     ARIA_RELEASE_SHA=$RELEASE_SHA \\"
-echo "     ARIA_PROD_DEPLOY_CONFIRM=aria-production-release-v1:fly-deploy-now:$RELEASE_SHA:aria-mantu-bootstrap,aria-mantu-app \\"
-echo "       bash scripts/fly-deploy-now.sh"
+echo "     bash scripts/print-fly-deploy-confirm.sh   # emits exact SHA + ARIA_PROD_DEPLOY_CONFIRM"
+echo "     # run the printed export lines, then:"
+echo "     bash scripts/fly-deploy-now.sh"
 echo "4. Set Fly app secrets (reviewed path):"
 echo "     EMAIL_INBOUND_WEBHOOK_SECRET=<32+ chars>"
 echo "     MICROSOFT_CLIENT_ID / MICROSOFT_CLIENT_SECRET / MICROSOFT_REDIRECT_URI"
