@@ -11,7 +11,7 @@ status: awaiting-microsoft-entra-and-deploy-confirm
 ## Current state
 
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open (supersedes closed #29, #30)
-- **Tip:**  (owner-microsoft.env drop-zone)
+- **Tip:** `05d72ce79bd0e223d2354daa83d20c3ab797099e` (owner-microsoft.env drop-zone)
 - **Local gate:** green; audit **45/45**
 - **Fly missing (6):** MICROSOFT_CLIENT_ID/SECRET + GOTRUE_EXTERNAL_AZURE_*
 - **Stale:** `ba88302` / mig **0060** / Graph **404**; confirm unset
