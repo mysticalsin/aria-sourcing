@@ -20,15 +20,13 @@ import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
 import { useActions, useActiveCampaign, useCandidates, useHydrated } from "@/lib/store";
-import { corpusServerReadEnabled } from "@/lib/supabase/config";
+import { corpusServerReadEnabled, demoLoginEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import { CANDIDATE_STAGES, SOURCE_PLATFORMS, type Candidate, type CandidateStage } from "@/lib/types";
 import { pluralize } from "@/lib/utils";
 import { Bookmark, Radar, Search, Sparkles } from "lucide-react";
 
-/** Small batches so a bulk draft over dozens of candidates never blocks the
- *  main thread — each batch commits synchronously (generateOutreachFor is
- *  synchronous), then we yield one tick before the next so the Progress meter
- *  actually paints and the rest of the UI stays responsive. */
+/** Small batches so a bulk draft over dozens of candidates never freezes the UI.
+ *  Live tenants await generateOutreachLive; demo may use sync generateOutreachFor. */
 const DRAFT_BATCH_SIZE = 5;
 
 function nextTick(): Promise<void> {
@@ -340,13 +338,8 @@ function CandidatesView() {
     clearSelection();
   }
 
-  /** Bulk personalized outreach — drafts one message per selected candidate via
-   *  the SAME generateOutreachFor the drawer's "Generate outreach" button and
-   *  QuickDraft already use, so every draft gets its own distinct
-   *  personalizationEvidence from mock-ai.ts (never a shared/spam template) and
-   *  lands in the approval queue exactly like a single draft — never sends.
-   *  Runs in small batches, yielding between them so a big selection (dozens+)
-   *  never freezes the store while the Progress meter below reports done/total. */
+  /** Bulk personalized outreach — live tenants use generateOutreachLive; demo
+   *  may fall back to generateOutreachFor. Never sends. */
   async function handleBulkDraftOutreach() {
     if (draftingOutreach) return;
     const ids = Array.from(visibleSelectedIds);
@@ -355,10 +348,18 @@ function CandidatesView() {
     setDraftingOutreach(true);
     setDraftProgress({ done: 0, total: ids.length });
     let drafted = 0;
+    let liveFailed = 0;
+    const liveTenant = supabaseEnabled && !demoLoginEnabled;
     for (let i = 0; i < ids.length; i += DRAFT_BATCH_SIZE) {
       const batch = ids.slice(i, i + DRAFT_BATCH_SIZE);
       for (const id of batch) {
-        if (actions.generateOutreachFor(id)) drafted += 1;
+        if (liveTenant) {
+          const msg = await actions.generateOutreachLive(id);
+          if (msg) drafted += 1;
+          else liveFailed += 1;
+        } else if (actions.generateOutreachFor(id)) {
+          drafted += 1;
+        }
       }
       setDraftProgress({ done: Math.min(i + DRAFT_BATCH_SIZE, ids.length), total: ids.length });
       await nextTick();
@@ -370,7 +371,9 @@ function CandidatesView() {
       title: `Drafted ${pluralize(drafted, "outreach message")}`,
       description:
         skipped > 0
-          ? `${pluralize(skipped, "candidate")} skipped (no matching campaign). Each draft carries its own personalization evidence, review it in the outreach queue.`
+          ? liveTenant
+            ? `${pluralize(liveFailed || skipped, "candidate")} failed live draft (configure Aria/provider). Review successful drafts in the outreach queue.`
+            : `${pluralize(skipped, "candidate")} skipped (no matching campaign). Each draft carries its own personalization evidence, review it in the outreach queue.`
           : "Each draft carries its own personalization evidence. Review and approve it in the outreach queue; nothing was sent.",
       variant: drafted > 0 ? "success" : "warning",
     });

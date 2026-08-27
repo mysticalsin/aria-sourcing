@@ -32,7 +32,7 @@ import {
   useRole,
 } from "@/lib/store";
 import { can } from "@/lib/rbac";
-import { supabaseEnabled } from "@/lib/supabase/config";
+import { demoLoginEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import { SEAT_PROVIDERS, SEAT_STATUSES, type SeatProvider, type SeatStatus, type AllocationResult } from "@/lib/types";
 import {
   Bot,
@@ -223,12 +223,22 @@ export default function FleetPage() {
     }
   }
 
-  function handleAllocate() {
+  async function handleAllocate() {
     setAllocating(true);
     const result = actions.allocateOutreach({ campaignId });
     setAllocation(result);
     setAllocating(false);
     const assigned = result.assignments.length;
+    const liveRefuse = result.skipped.some((s) => /Live tenant requires LLM/.test(s.reason));
+    if (assigned === 0 && liveRefuse && supabaseEnabled && !demoLoginEnabled) {
+      toast({
+        title: "Live LLM drafting required",
+        description:
+          "Fleet mock allocate is disabled on live tenants. Draft from Candidates (bulk live draft) or Quick Draft with Aria configured.",
+        variant: "warning",
+      });
+      return;
+    }
     toast({
       title:
         assigned > 0

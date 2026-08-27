@@ -19,7 +19,7 @@ import { ConsentPassport } from "@/components/candidates/consent-passport";
 import { bookingCalendarSummary } from "@/lib/booking-status";
 import { useActions, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
 import type { CandidateErasureObligation, CandidateErasureStatus } from "@/lib/store/contracts";
-import { experimentalPaidSourcingEnabled, supabaseEnabled } from "@/lib/supabase/config";
+import { experimentalPaidSourcingEnabled, demoLoginEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import {
   downloadText,
   formatTimeAgo,
@@ -765,14 +765,20 @@ export function CandidateDrawer({
       return;
     }
     setGenerating(true);
-    let msg: ReturnType<typeof actions.generateOutreachFor> = null;
+    let msg: Awaited<ReturnType<typeof actions.generateOutreachLive>> = null;
     try {
       msg = await actions.generateOutreachLive(c.id);
     } catch {
-      // A live-runtime hiccup (network error, thrown rejection) should never block
-      // drafting — fall back to the template path so the human still gets a draft.
-      msg = actions.generateOutreachFor(c.id);
-      toast({ title: "Aria is unavailable, used the template draft instead.", variant: "info" });
+      if (supabaseEnabled && !demoLoginEnabled) {
+        toast({
+          title: "Live draft failed",
+          description: "Enterprise tenants require a live Aria draft. Check runtime/provider settings and retry.",
+          variant: "error",
+        });
+      } else {
+        msg = actions.generateOutreachFor(c.id);
+        toast({ title: "Aria is unavailable, used the template draft instead.", variant: "info" });
+      }
     }
     setGenerating(false);
     if (msg) {
@@ -781,8 +787,14 @@ export function CandidateDrawer({
         description: `${c.name}: review in the outreach queue.`,
         variant: "success",
       });
-    } else {
+    } else if (!(supabaseEnabled && !demoLoginEnabled)) {
       toast({ title: "Could not generate outreach", variant: "error" });
+    } else {
+      toast({
+        title: "Live draft required",
+        description: "No mock template draft on live tenants.",
+        variant: "error",
+      });
     }
   };
 

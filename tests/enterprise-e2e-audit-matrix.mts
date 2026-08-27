@@ -595,6 +595,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
           readFileSync("src/lib/store/booking-report-actions.ts", "utf8"),
         )
         && /mock fleet allocate disabled/.test(readFileSync("src/lib/store.ts", "utf8"))
+        && /Live LLM drafting required/.test(readFileSync("src/app/fleet/page.tsx", "utf8"))
+        && /generateOutreachLive\(candidate\.id\)/.test(readFileSync("src/components/run/agent-run-stream.tsx", "utf8"))
       );
     },
   },
