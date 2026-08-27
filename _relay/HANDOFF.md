@@ -1,53 +1,44 @@
 ---
 project: MSourcing / ARIA
-shift: 153
+shift: 154
 agent: cursor-cloud
 updated: 2026-08-27 UTC
 status: awaiting-microsoft-entra-and-deploy-confirm
 ---
 
-# Handoff — Shift 153
+# Handoff — Shift 154
 
 ## Current state
 
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open (supersedes closed #29, #30)
-- **Tip:** `f2058a5` (top-10 approve cap + Mantu brand gate)
+- **Tip:** pending (follow-up/recontact/regen Mantu voice + E2E webhook /tmp load)
 - **Local gate:** `npx tsc --noEmit && npm test` green; audit **45/45**
-- **Fly auth:** `.fly-token.env`
-- **Live present:** `ARIA_LOOP_KILL_SWITCH=false`, `KIMI_API_KEY`, `CRON_SECRET`, `EMAIL_INBOUND_WEBHOOK_SECRET`, `MICROSOFT_REDIRECT_URI`
-- **Live missing (6):** MICROSOFT_CLIENT_ID/SECRET + GOTRUE_EXTERNAL_AZURE_*
-- **Stale image:** `ba88302` / mig **0060** / Graph **404** / ready not_ready
-- **Confirm:** unset — `bash scripts/print-fly-deploy-confirm.sh`
+- **Fly:** missing CLIENT_ID/SECRET + 4× Entra; REDIRECT_URI present; stale `ba88302` / mig **0060** / Graph **404**
+- **Confirm:** unset; ADMIN_* unset; `/tmp/aria-e2e-webhook-secret` present
 
 ## Done this shift
 
-- Cap `/api/shortlist/approve` at `TOP_CANDIDATE_SHORTLIST_SIZE` (10)
-- Compliance critic rejects drafts missing `\bMantu\b` (`missing-mantu-brand`)
-- `generateOutreachLive` always uses `mantuOutreachVoice()` persona (seat signature only)
-- Audit matrix pins both gates; outreach-quality tests cover unbranded fail
+- `enterpriseMantuVoice` for live + follow-up + recontact + regenerate (+ quality gate)
+- `mock-ai` always uses Mantu persona (signature-only override)
+- E2E auto-loads webhook secret from `/tmp/aria-e2e-webhook-secret` when env unset
+- No Azure credentials on sibling Fly apps (hermes/bootstrap/kong)
 
 ## Next steps
 
-1. Owner: MICROSOFT_CLIENT_ID/SECRET + GOTRUE_EXTERNAL_AZURE_* 
+1. Owner: MICROSOFT_CLIENT_ID/SECRET + GOTRUE_EXTERNAL_AZURE_*
 2. Owner: `print-fly-deploy-confirm.sh` → `fly-deploy-now.sh`
 3. Connect Outlook + Enable webhook; provide ADMIN_*
-4. Agent: E2E kimi → ready+0066+Graph200+PASS → goal complete
+4. Agent: E2E (webhook auto from /tmp) → ready+0066+Graph200+PASS → goal complete
 
 ## Decisions made (don't relitigate)
 
-- PR #31 supersedes closed #29 and #30
-- No Fly deploy without `ARIA_PROD_DEPLOY_CONFIRM`
-- Target mig **0066**; `.fly-token.env` for flyctl
-- Agent may set public REDIRECT_URI / webhook / kill-switch; never invent Azure client id/secret
-- Never commit secret values to git / `_relay`
-- Fly E2E hermes drafts default to **kimi**
-- Human shortlist approve capped at top **10**
-- Outreach quality fails closed without **Mantu** brand token
-- Calendar OAuth `Calendars.ReadWrite`; Teams joinUrl via `confirmLive` only
-- LinkedIn send stays 409 assisted-manual
+- PR #31 supersedes closed #29/#30; no deploy without confirm; mig **0066**
+- Never invent Azure client id/secret; public REDIRECT_URI OK for agent
+- Top-10 approve cap; missing-mantu-brand compliance; kimi Fly E2E default
+- LinkedIn 409; Teams joinUrl via confirmLive only
 
 ## Watch out
 
-- Full E2E needs Outlook connected after secrets+tip deploy
-- Skip Actions billing CI; local gate is authority
+- Full E2E needs Outlook seat after tip deploy
+- Rotate webhook if `/tmp` lost (Fly cannot re-read values)
 - Timer `enterprise-e2e-deploy-recheck` ~10m
