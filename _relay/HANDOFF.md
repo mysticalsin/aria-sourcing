@@ -13,7 +13,8 @@ status: awaiting-microsoft-entra-and-deploy-confirm
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32**
 - **Fly live:** `ba88302` / mig `0060` / Graph **404** / not_ready
 - **Missing (6):** MICROSOFT_CLIENT_* + GOTRUE_EXTERNAL_AZURE_*
-- **Azure device code:** https://login.microsoft.com/device → **AP33BLAFJ** (Twalteur@amaris.com + Authenticator MFA)
+- **Azure device code:** https://login.microsoft.com/device → **BVD8K23XG** (Twalteur@amaris.com + Authenticator MFA)
+- **MFA:** browser reached Authenticator number matching for Twalteur@amaris.com; owner phone approval still required
 - **Background:** tmux `fly-wait-entra` runs `scripts/fly-wait-entra-and-golive.sh` (auto mint/apply/golive when az login or drop-zone appears; never invents confirm)
 - **Preflight OK:** admin login + webhook HMAC; tip needs deploy for `jobQueued`/`requisition_parse`
 
@@ -24,7 +25,7 @@ status: awaiting-microsoft-entra-and-deploy-confirm
 
 ## Next steps
 
-1. Owner: MFA approve device code **AP33BLAFJ** OR fill `/tmp/owner-microsoft.env`
+1. Owner: MFA approve device code **BVD8K23XG** OR fill `/tmp/owner-microsoft.env`
 2. `bash scripts/print-fly-deploy-confirm.sh` → `/tmp/owner-deploy-confirm.env` (never invent `ARIA_PROD_DEPLOY_CONFIRM`)
 3. Waiter/golive deploys tip → Connect Outlook (live) + webhook
 4. `eval "$(bash scripts/print-fly-e2e-env.sh --export)" && bash e2e-workflow-test.sh`
