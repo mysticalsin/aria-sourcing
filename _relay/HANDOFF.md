@@ -10,8 +10,8 @@ status: code-complete-pr30-closed-not-merged-awaiting-owner
 
 ## Current state
 
-- **Branch:** `cursor/enterprise-autopilot-b91d` · tip `c535a55` (branch intact on origin)
-- **PR #30:** **CLOSED without merge** by `mysticalsin` @ 2026-08-27T04:57:44Z (same pattern as closed #29)
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** (supersedes closed #29, #30) · tip pending commit
+- **PR #30:** closed without merge @ 2026-08-27; reopened as **#31**
 - **Base branch:** `integration/sourcing-enrichment-on-main` does **not** contain enterprise commits
 - **Local gate:** green; audit **30/30**; mantu E2E **28/28**
 - **Fly live:** build `ba88302`, migration **0060**, `/api/ready` not_ready
@@ -19,12 +19,12 @@ status: code-complete-pr30-closed-not-merged-awaiting-owner
 
 ## Done this shift
 
-- Detected PR #30 close event; verified **not merged** into base
+- Opened **PR #31** after owner closed #30 without merge
+- Restored audit handoff strings (`print-fly-deploy-confirm`, supersedes closed #29)
 
 ## Blockers (owner)
 
-1. **Intent:** reopen #30, open a new PR, or merge another way?
-2. **Deploy** (from this branch — PR state does not block deploy):
+1. **Deploy** (from this branch):
    ```bash
    bash scripts/print-fly-deploy-confirm.sh
    bash scripts/fly-deploy-now.sh   # after exporting emitted vars
@@ -35,9 +35,9 @@ status: code-complete-pr30-closed-not-merged-awaiting-owner
 
 ## Decisions made (don't relitigate)
 
-- Enterprise code lives on `cursor/enterprise-autopilot-b91d` regardless of PR state
+- **Open PR supersedes closed #29 and #30**; enterprise code on `cursor/enterprise-autopilot-b91d`
 - No Fly deploy without `ARIA_PROD_DEPLOY_CONFIRM`
-- Fly-only for enterprise E2E
+- Fly-only for enterprise E2E; use `bash scripts/print-fly-deploy-confirm.sh` for deploy one-liner
 
 ## Watch out
 

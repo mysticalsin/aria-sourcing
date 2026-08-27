@@ -377,15 +377,15 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
-    requirement: "Enterprise E2E deliverable tracked on open PR #30 (supersedes closed #29)",
+    requirement: "Enterprise E2E deliverable tracked on open PR (supersedes closed #29, #30)",
     evidence: () => {
       const golive = readFileSync("scripts/fly-golive-mantu-e2e.sh", "utf8");
       const handoff = readFileSync("_relay/HANDOFF.md", "utf8");
       const printConfirm = readFileSync("scripts/print-fly-deploy-confirm.sh", "utf8");
       const printE2e = readFileSync("scripts/print-fly-e2e-env.sh", "utf8");
       return (
-        /PR #30/.test(golive)
-        && /supersedes closed \*\*#29\*\*/.test(handoff)
+        /PR #31/.test(golive)
+        && /supersedes closed #29/.test(handoff)
         && /print-fly-deploy-confirm/.test(handoff)
         && /ARIA_PROD_DEPLOY_CONFIRM/.test(printConfirm)
         && /print-fly-e2e-env/.test(golive)
