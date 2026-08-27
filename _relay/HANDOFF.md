@@ -1,50 +1,52 @@
 ---
 project: MSourcing / ARIA
-shift: 113
+shift: 114
 agent: cursor-cloud
 updated: 2026-08-27 UTC
-status: calendar-activity-shape-fixed-awaiting-fly-confirm
+status: propose-book-path-wired-awaiting-fly-confirm
 ---
 
-# Handoff — Shift 113
+# Handoff — Shift 114
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30**
-- **Local gate:** `npx tsc --noEmit && npm test` green on tip after activity-shape fix; audit **29/29**
-- **CI Actions:** empty runners (`runner_name:""`, `steps:0`, ~3s) — **not code failures**; skip billing wait; tip `87f48cb` same pattern
-- **Fly live:** still build `ba88302` / migration **0060** / `agentFrameworks:false`; tip needs deploy confirm
-- **Entra SSO:** still off
-- **Vercel:** demo project may build previews — enterprise host remains Fly only
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30** · tip `444cde5`
+- **Local gate:** `tsc` + targeted worker/audit/mantu green; full `npm test` after push
+- **CI Actions:** empty runners — skip (CI sub unsubscribed)
+- **Fly live:** still `ba88302` / migration **0060** / `agentFrameworks:false`
+- **Entra / LLM / Graph secrets:** still absent in agent env; `ARIA_PROD_DEPLOY_CONFIRM` unset
 
 ## Done this shift
 
-- Confirmed CI failures on `5221542`/`0a3aaa2`/`87f48cb` are empty-runner (no logs)
-- Fixed `calendar_book` activity to durable `Activity` shape (`type:"booking"`, notes/outcome/linkedEntity*)
-- Calendar UX: removed “goes live” / “on live send” skeleton copy; Graph confirmLive language
-- Prior shift 112: propose-calendar-book cron + worker wiring + parse llm_required + settings UX
+- Positive `inbound_classify` → `merge_candidate_patch` stage **Interested**
+- `calendar_book` persists structured `candidate.interviewProposal` + Interested
+- Calendar **Confirm slot** passes `interviewProposal.startTime` into `createBookingFor`
+- Propose cron rejects `confirmLive:true` (`use_calendar_event_route`)
+- Autonomous drafts require `llmCriticsUsed` (`critics_required`)
+- Setup guide + Hermes settings copy: webhook-first / no mock on prod tenants
 
 ## Blockers (owner)
 
 1. `ARIA_PROD_DEPLOY_CONFIRM` → `bash scripts/fly-deploy-now.sh` through **0065**
 2. Entra Azure secrets + `NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true`
-3. Live M365/Graph/LLM + deployed E2E
+3. Live M365 Graph + LLM keys + deployed E2E
 4. Actions billing (deferred)
 
 ## Next steps
 
 1. Owner deploy confirm against tip SHA
-2. Enable Entra when secrets exist
-3. Prove Graph webhook + calendar confirmLive on Fly
-4. Ignore empty-runner CI until billing fixed
+2. Graph subscription repair UI (still open code gap if time)
+3. Enable Entra when secrets exist
+4. Prove live Graph webhook + confirmLive on Fly
 
 ## Decisions made (don't relitigate)
 
-- Skip Actions billing; local gate authority
-- Calendar auto-book human-gated; loop proposes only
-- Fly-only enterprise host
+- Skip Actions billing; Fly-only; LinkedIn 409 assisted-manual
+- Calendar live book only via `/api/calendar/event` + confirmLive
+- Demo/roadmap off unless demo login on
 
 ## Watch out
 
 - Do not Fly-mutate without confirm
-- Activities must match `Activity` interface (not free-form worker blobs)
+- Activities must match `Activity` interface
+- `interviewProposal` cleared when booking saved
