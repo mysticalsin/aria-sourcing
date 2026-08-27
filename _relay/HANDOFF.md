@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 164
 agent: cursor-cloud
-updated: 2026-08-27 UTC
+updated: 2026-08-27T14:10Z
 status: awaiting-microsoft-entra-and-deploy-confirm
 ---
 
@@ -15,7 +15,7 @@ status: awaiting-microsoft-entra-and-deploy-confirm
 - **Fly live:** build `ba88302` (stale), mig `0060` (need >=0066), `/api/ready` not_ready, Graph validationToken **404**
 - **Missing secrets (6):** `MICROSOFT_CLIENT_ID/SECRET` + `GOTRUE_EXTERNAL_AZURE_*` (4)
 - **Drop-zone:** `/tmp/owner-microsoft.env` absent; `ARIA_PROD_DEPLOY_CONFIRM` unset
-- **Azure CLI:** device-code waiting — https://login.microsoft.com/device code **ALGV977HE** (refresh if expired); ROPC Twalteur → AADSTS50126
+- **Azure CLI:** device-code waiting — https://login.microsoft.com/device code **FBBTWEZRE** (refresh if expired); ROPC Twalteur → AADSTS50126
 
 ## Done this shift
 
@@ -26,7 +26,7 @@ status: awaiting-microsoft-entra-and-deploy-confirm
 
 ## Next steps
 
-1. Owner: device login with ALGV977HE **or** fill `/tmp/owner-microsoft.env` from `production-readiness/.owner-microsoft.env.example`
+1. Owner: device login with FBBTWEZRE **or** fill `/tmp/owner-microsoft.env` from `production-readiness/.owner-microsoft.env.example`
 2. If az logged in → create Graph app (redirect `https://aria-mantu-app.fly.dev/auth/microsoft/callback`) → write drop-zone → `fly-apply-owner-microsoft-secrets.sh`
 3. Export confirm from `bash scripts/print-fly-deploy-confirm.sh` → `bash scripts/fly-enterprise-golive-when-ready.sh`
 4. After tip deploy: Connect Outlook (mode=live) + webhook → `eval "$(bash scripts/print-fly-e2e-env.sh --export)" && bash e2e-workflow-test.sh`
