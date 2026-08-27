@@ -1,46 +1,46 @@
 ---
 project: MSourcing / ARIA
-shift: 164
+shift: 165
 agent: cursor-cloud
-updated: 2026-08-27T14:10Z
+updated: 2026-08-27T14:15Z
 status: awaiting-microsoft-entra-and-deploy-confirm
 ---
 
-# Handoff — Shift 164
+# Handoff — Shift 165
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#32** · tip `bfc42cb`
-- **Local gate:** `npx tsc --noEmit` OK; `npm test` EXIT 0; audit matrix **45/45**
-- **Fly live:** build `ba88302` (stale), mig `0060` (need >=0066), `/api/ready` not_ready, Graph validationToken **404**
-- **Missing secrets (6):** `MICROSOFT_CLIENT_ID/SECRET` + `GOTRUE_EXTERNAL_AZURE_*` (4)
-- **Drop-zone:** `/tmp/owner-microsoft.env` absent; `ARIA_PROD_DEPLOY_CONFIRM` unset
-- **Azure CLI:** device-code waiting — https://login.microsoft.com/device code **FBBTWEZRE** (refresh if expired); ROPC Twalteur → AADSTS50126
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#32**
+- **Fly live:** build `ba88302`, mig `0060`, Graph **404**, `/api/ready` not_ready
+- **Missing (6):** MICROSOFT_CLIENT_* + GOTRUE_EXTERNAL_AZURE_*
+- **Drop-zone / confirm:** absent / unset
+- **Azure CLI:** device-code waiting — https://login.microsoft.com/device code **F7UVAKKSK**
+- **Browser try:** Twalteur@amaris.com reached password/MFA; GoTrue `/tmp/aria-e2e-admin-password` ≠ Entra password (BLOCKED_BAD_PASSWORD). Authenticator MFA still required for Entra.
 
 ## Done this shift
 
-- Rechecked golive blockers; refreshed Azure device-code login
-- Recorded owner setup actions (Azure secrets + device login/drop-zone + deploy confirm)
-- Confirmed local tsc + npm test + audit 45/45 still green
-- Timer `enterprise-e2e-deploy-recheck` still active (10 min)
+- Added `scripts/az-create-mantu-graph-app.sh` — after `az login`, mints Entra app (Mail/Calendar + GoTrue redirects), writes `/tmp/owner-microsoft.env`, optional `--apply`
+- `fly-enterprise-golive-when-ready.sh` auto-runs create when az is logged in
+- Background watcher `owner-ms-watch` applies drop-zone / az-create when ready
+- Local gate previously green (tsc/npm/audit 45/45)
 
 ## Next steps
 
-1. Owner: device login with FBBTWEZRE **or** fill `/tmp/owner-microsoft.env` from `production-readiness/.owner-microsoft.env.example`
-2. If az logged in → create Graph app (redirect `https://aria-mantu-app.fly.dev/auth/microsoft/callback`) → write drop-zone → `fly-apply-owner-microsoft-secrets.sh`
+1. Owner: https://login.microsoft.com/device → **F7UVAKKSK** (Entra account with app-registration rights + MFA) **or** fill `/tmp/owner-microsoft.env`
+2. On az success: `bash scripts/az-create-mantu-graph-app.sh --apply` (or re-run golive)
 3. Export confirm from `bash scripts/print-fly-deploy-confirm.sh` → `bash scripts/fly-enterprise-golive-when-ready.sh`
-4. After tip deploy: Connect Outlook (mode=live) + webhook → `eval "$(bash scripts/print-fly-e2e-env.sh --export)" && bash e2e-workflow-test.sh`
+4. Tip deploy → Connect Outlook (live) + webhook → E2E PASS
 5. Goal complete only: ready ok + mig>=0066 + tip build + Graph200 + E2E PASS
 
 ## Decisions made (don't relitigate)
 
 - PR #32 supersedes #29–#31
 - Never invent Azure secrets or deploy confirm
-- Seat must be mode=live for Teams book (not subscription alone)
-- Migration floor >=0066; tip latest migration 0067
+- Seat must be mode=live for Teams book
+- Migration floor >=0066; tip has 0067
 
 ## Watch out
 
-- Reconnect Outlook after tip deploy so existing mock seats become live
-- Device codes expire ~15 min — restart `az login --use-device-code` if stale
-- Do not commit `/tmp/owner-microsoft.env` or secret values into `_relay/`
+- App admin password ≠ Entra password; do not reuse GoTrue reset for device login
+- Device codes expire ~15 min
+- Never commit `/tmp/owner-microsoft.env`

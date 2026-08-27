@@ -4,10 +4,11 @@
 # Safe to run on a timer. Does NOT invent Azure credentials or deploy confirm.
 #
 # Steps:
-#   1) If owner-microsoft drop-zone/env present → fly-apply-owner-microsoft-secrets.sh
-#   2) If ARIA_PROD_DEPLOY_CONFIRM already exported → fly-deploy-now.sh
-#   3) Else print missing inventory + deploy confirm template + stop
-#   4) After tip deploy (caller re-runs): probe ready + Graph; print E2E one-liner
+#   1) If az logged in and no drop-zone → az-create-mantu-graph-app.sh (mint + write drop-zone)
+#   2) If owner-microsoft drop-zone/env present → fly-apply-owner-microsoft-secrets.sh
+#   3) If ARIA_PROD_DEPLOY_CONFIRM already exported → fly-deploy-now.sh
+#   4) Else print missing inventory + deploy confirm template + stop
+#   5) After tip deploy (caller re-runs): probe ready + Graph; print E2E one-liner
 #
 # Usage:
 #   bash scripts/fly-enterprise-golive-when-ready.sh
@@ -25,18 +26,31 @@ fi
 
 has_drop=0
 for f in /tmp/owner-microsoft.env "$repo/production-readiness/.owner-microsoft.env"; do
-  if [ -r "$f" ]; then
+  if [ -r "$f" ] && ! grep -q 'PLACEHOLDER' "$f" 2>/dev/null; then
     has_drop=1
     break
   fi
 done
+
+# If Azure CLI is authenticated and drop-zone is absent, mint the Entra app
+# (requires owner device-login; never invents client secrets locally).
+if [ "$has_drop" = "0" ] && command -v az >/dev/null 2>&1 && az account show >/dev/null 2>&1; then
+  echo "=== az logged in — creating/reusing Mantu Graph Entra app → drop-zone ==="
+  bash "$repo/scripts/az-create-mantu-graph-app.sh" || {
+    echo "WARN: az-create-mantu-graph-app.sh failed (need app-registration rights)." >&2
+  }
+  if [ -r /tmp/owner-microsoft.env ] && ! grep -q 'PLACEHOLDER' /tmp/owner-microsoft.env 2>/dev/null; then
+    has_drop=1
+  fi
+fi
 
 if [ "$has_drop" = "1" ] || { [ -n "${MICROSOFT_CLIENT_ID:-}" ] && [ -n "${MICROSOFT_CLIENT_SECRET:-}" ]; }; then
   echo "=== Applying owner Microsoft / Entra secrets ==="
   bash "$repo/scripts/fly-apply-owner-microsoft-secrets.sh"
 else
   echo "=== No owner Microsoft drop-zone / env yet ==="
-  echo "    Fill /tmp/owner-microsoft.env from production-readiness/.owner-microsoft.env.example"
+  echo "    Option A: az login --use-device-code  then re-run this script"
+  echo "    Option B: fill /tmp/owner-microsoft.env from production-readiness/.owner-microsoft.env.example"
 fi
 
 echo
