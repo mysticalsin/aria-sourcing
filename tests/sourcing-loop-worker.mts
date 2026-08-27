@@ -573,8 +573,12 @@ test("calendar_book calls propose cron then records interview_proposed activity"
   assert.equal(patches.length, 1);
   assert.equal(patches[0]!.p_patch_kind, "append_activities");
   const activities = patches[0]!.p_patch as Array<Record<string, unknown>>;
-  assert.equal(activities[0]?.type, "interview_proposed");
-  assert.equal(activities[0]?.claimId, "claim-cal-1");
+  assert.equal(activities[0]?.type, "booking");
+  assert.equal(activities[0]?.outcome, "needs_human_confirm");
+  assert.equal(activities[0]?.linkedEntityType, "candidate");
+  assert.equal(activities[0]?.linkedEntityId, "cand-cal-1");
+  assert.match(String(activities[0]?.notes ?? ""), /claim-cal-1/);
+  assert.match(String(activities[0]?.notes ?? ""), /proposed_dry_run/);
   const events = patches[0]!.p_events as Array<Record<string, unknown>>;
   assert.equal(
     (events[0]?.payload as { proposeStatus?: string } | undefined)?.proposeStatus,

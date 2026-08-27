@@ -111,7 +111,9 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
     setPreview(res);
     toast({
       title: `Interview booked: ${candidate.name}`,
-      description: "Added to the schedule. The meeting link is issued when the calendar integration goes live.",
+      description: res.booking.calendarSync
+        ? "Teams/Outlook event created and added to the schedule."
+        : "Added to the schedule. Connect Microsoft Graph and use confirmLive to issue a Teams link.",
       variant: "success",
     });
   }

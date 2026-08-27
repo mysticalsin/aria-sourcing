@@ -1171,21 +1171,30 @@ async function handleCalendarBook(job, context) {
     }
   }
 
+  const proposeStatus = typeof propose?.status === "string" ? propose.status : "activity_only";
+  const startTime = typeof propose?.startTime === "string" ? propose.startTime : null;
+  const endTime = typeof propose?.endTime === "string" ? propose.endTime : null;
+  const claimId = typeof propose?.claimId === "string" ? propose.claimId : null;
+  const slotNote =
+    startTime && endTime ? `Proposed slot ${startTime} – ${endTime}.` : "Slot to be chosen in Calendar.";
+  const claimNote = claimId ? `Claim ${claimId}.` : "No calendar claim (propose cron unavailable).";
   const activity = {
     id: `act-interview-${campaignId}-${candidateId}`,
-    type: "interview_proposed",
+    type: "booking",
+    title: "First interview proposed (Teams/Outlook)",
+    notes: [
+      `Candidate ${candidateId}.`,
+      intent ? `Intent ${intent}.` : null,
+      slotNote,
+      claimNote,
+      `Propose ${proposeStatus}. Open Calendar and book with confirmLive for a Teams meeting.`,
+    ]
+      .filter(Boolean)
+      .join(" "),
+    outcome: "needs_human_confirm",
     campaignId,
-    candidateId,
-    intent,
-    channel: "Microsoft Teams / Outlook",
-    status: "needs_human_confirm",
-    detail:
-      typeof propose?.status === "string"
-        ? `Calendar authority ${propose.status} — open Calendar to confirmLive (Teams online meeting).`
-        : "Positive candidate interest — open Calendar to book with confirmLive (Teams online meeting).",
-    startTime: typeof propose?.startTime === "string" ? propose.startTime : null,
-    endTime: typeof propose?.endTime === "string" ? propose.endTime : null,
-    claimId: typeof propose?.claimId === "string" ? propose.claimId : null,
+    linkedEntityType: "candidate",
+    linkedEntityId: candidateId,
     createdAt: new Date().toISOString(),
   };
 
@@ -1202,13 +1211,13 @@ async function handleCalendarBook(job, context) {
       campaignId,
       candidateId,
       bookingMode: "human_confirm_live",
-      proposeStatus: typeof propose?.status === "string" ? propose.status : "activity_only",
+      proposeStatus,
     },
     [event("interview.proposed", "candidate", candidateId, {
       campaignId,
       intent,
       bookingMode: "human_confirm_live",
-      proposeStatus: typeof propose?.status === "string" ? propose.status : "activity_only",
+      proposeStatus,
     })],
     [],
   );
