@@ -9,6 +9,8 @@ import {
   assertDeclaredSuccessors,
   assertDeclaredTransitionProducers,
   buildReplyClassificationPrompt,
+  classifyRpcHttpFailure,
+  createLoopRpcClient,
   handleAriaJob,
   runSourcingLoopForever,
   runSourcingLoopTick,
@@ -58,6 +60,45 @@ function rpcClient(handler: (name: string, args: Record<string, unknown>) => unk
     },
   };
 }
+
+test("classifyRpcHttpFailure surfaces digest/PGRST codes instead of opaque rpc_http_404", () => {
+  assert.equal(
+    classifyRpcHttpFailure(404, {
+      code: "42883",
+      message: "function digest(text, unknown) does not exist",
+    }),
+    "rpc_http_404:digest_unresolved",
+  );
+  assert.equal(
+    classifyRpcHttpFailure(404, {
+      code: "PGRST202",
+      message: "Could not find the function in the schema cache",
+    }),
+    "rpc_http_404:missing_overload",
+  );
+  assert.equal(classifyRpcHttpFailure(503, { code: "PGRST002" }), "rpc_http_503:pgrst002");
+  assert.equal(classifyRpcHttpFailure(500, null), "rpc_http_500");
+});
+
+test("createLoopRpcClient classifies PostgREST digest failure bodies", async () => {
+  const client = createLoopRpcClient(
+    {
+      supabaseUrl: "https://example.test",
+      serviceRoleKey: "service-role",
+      timeoutMs: 5_000,
+    },
+    async () =>
+      new Response(
+        JSON.stringify({
+          code: "42883",
+          message: "function digest(text, unknown) does not exist",
+        }),
+        { status: 404, headers: { "content-type": "application/json" } },
+      ),
+  );
+  const result = await client.rpc("apply_workspace_patch", {});
+  assert.equal(result.error?.code, "rpc_http_404:digest_unresolved");
+});
 
 test("handler kinds are exactly the declarative stage-transition map keys", () => {
   assert.deepEqual([...HANDLER_KINDS].sort(), Object.keys(PIPELINE_STAGE_TRANSITIONS).sort());
