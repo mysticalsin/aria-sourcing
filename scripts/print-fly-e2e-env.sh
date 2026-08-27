@@ -61,6 +61,8 @@ export EMAIL_INBOUND_WEBHOOK_SECRET='your-32-char-webhook-secret'
 # export CRON_SECRET='same-as-fly-aria-mantu-app-CRON_SECRET'
 # optional: override webhook mailbox (defaults to connected Outlook or talent@mantu.com)
 # export E2E_INBOUND_MAILBOX='connected-outlook@yourdomain.com'
+# optional: skip live Teams book if Outlook seat not connected yet
+# export ARIA_ALLOW_SKIP_LIVE_CALENDAR=1
 # Loop worker must be armed for webhook→campaign materialization poll:
 #   fly secrets: ARIA_LOOP_KILL_SWITCH='false'
 #   workspace switchboard: E2E calls set_sourcing_loop_controls after admin login

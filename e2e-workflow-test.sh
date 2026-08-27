@@ -31,6 +31,8 @@
 # Optional env:  APP_URL  KONG_URL  AGENT_PROVIDER  AGENT_MODEL
 #                GITHUB_QUERY  LINKEDIN_QUERY
 #                ARIA_ALLOW_SKIP_WEBHOOK_E2E=1  ARIA_ALLOW_STALE_FLY_E2E=1
+#                ARIA_ALLOW_SKIP_LIVE_CALENDAR=1  ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E=1
+#                E2E_INBOUND_MAILBOX  E2E_CAMPAIGN_ID
 # ANON_KEY may be loaded from production-readiness/.fly-secrets.env via
 #   eval "$(bash scripts/print-fly-e2e-env.sh --export)"
 # ---------------------------------------------------------------------------
@@ -861,6 +863,83 @@ if grep -q 'mantuEmailHtmlWrapper' src/lib/email-send.ts \
   pass "Live send path brands Mantu HTML; Confirm-slot preserves Mantu interview agenda."
 else
   fail "Mantu MIME branding or Confirm-slot agenda wiring missing."
+fi
+
+# ===========================================================================
+step "6b) Live Outlook/Teams book (confirmLive:true) when a Graph seat is connected"
+# ===========================================================================
+# Dry-run alone cannot prove Teams joinUrl. On Fly, require a live Microsoft Graph
+# seat and assert status=created + Teams join URL (unless explicitly skipped).
+api GET "$APP_URL/api/email/connections" || true
+LIVE_SEAT_ID=$(jq -r '
+  (.seats // [])
+  | map(select(
+      (.provider // "") == "Microsoft Graph"
+      and (.mode // "") == "live"
+      and (.status // "") == "active"
+      and ((.connectedAccount // "") | length) > 3
+    ))
+  | .[0].id // empty
+' "$RESP" 2>/dev/null || true)
+if [ -z "$LIVE_SEAT_ID" ]; then
+  LIVE_SEAT_ID=$(jq -r '
+    (.connections // [])
+    | map(select(
+        (.provider // "") == "Microsoft Graph"
+        and (.hasRefreshToken == true)
+        and ((.seatId // "") | length) > 0
+      ))
+    | .[0].seatId // empty
+  ' "$RESP" 2>/dev/null || true)
+fi
+
+if [ -n "$LIVE_SEAT_ID" ]; then
+  info "Live Microsoft Graph seat for confirmLive book: $LIVE_SEAT_ID"
+  jq -n \
+    --arg seat "$LIVE_SEAT_ID" \
+    --arg cand "$CAND_ID" \
+    --arg name "E2E Candidate" \
+    --arg email "$CAND_EMAIL" \
+    --arg role "Senior TypeScript Engineer" \
+    --arg start "$START_ISO" \
+    --arg end "$END_ISO" \
+    --arg req "cal-e2e-live-$$" \
+    '{
+      seatId:$seat,
+      candidateId:$cand,
+      candidateName:$name,
+      candidateEmail:$email,
+      role:$role,
+      startTime:$start,
+      endTime:$end,
+      timezone:"UTC",
+      agenda:[
+        "Introduce Mantu Group and our consulting model",
+        "Walk through the Senior TypeScript Engineer role — scope, team, and expectations",
+        "Understand the candidate'\''s background, motivations, and timing",
+        "Answer questions and agree next steps if there is mutual interest"
+      ],
+      requestId:$req,
+      confirmLive:true
+    }' > "$WORK/calendar_live_req.json"
+  api POST "$APP_URL/api/calendar/event" "$WORK/calendar_live_req.json"
+  LIVE_CAL_STATUS=$(jq -r '.status // empty' "$RESP")
+  LIVE_CAL_LINK=$(jq -r '.link // empty' "$RESP")
+  LIVE_TEAMS=0
+  if [ -n "$LIVE_CAL_LINK" ]; then
+    case "$(printf '%s' "$LIVE_CAL_LINK" | tr 'A-Z' 'a-z')" in
+      *://teams.microsoft.com/*|*://*.teams.microsoft.com/*|*://teams.live.com/*|*://*.teams.live.com/*) LIVE_TEAMS=1 ;;
+    esac
+  fi
+  if [ "$HTTP" = "200" ] && [ "$LIVE_CAL_STATUS" = "created" ] && [ "$LIVE_TEAMS" = "1" ]; then
+    pass "Live Outlook/Teams book (confirmLive:true) → created with Teams joinUrl."
+  else
+    fail "Live calendar/Teams book failed (HTTP $HTTP status='$LIVE_CAL_STATUS' teams=$LIVE_TEAMS): $(head -c 240 "$RESP")"
+  fi
+elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_SKIP_LIVE_CALENDAR:-}" != "1" ]; then
+  fail "No live Microsoft Graph seat for Teams book — connect Outlook in Settings or set ARIA_ALLOW_SKIP_LIVE_CALENDAR=1 for a partial run."
+else
+  warn "No live Microsoft Graph seat — skipping confirmLive Teams book proof."
 fi
 
 # ===========================================================================

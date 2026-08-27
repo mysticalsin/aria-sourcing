@@ -230,6 +230,9 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       return (
         /\/api\/calendar\/event/.test(script)
         && /confirmLive:false/.test(script)
+        && /confirmLive:true/.test(script)
+        && /Live Outlook\/Teams book/.test(script)
+        && /ARIA_ALLOW_SKIP_LIVE_CALENDAR/.test(script)
         && /isOnlineMeeting/.test(script)
         && /teamsForBusiness/.test(script)
         && /Introduce Mantu Group/.test(script)
