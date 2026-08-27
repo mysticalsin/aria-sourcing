@@ -246,17 +246,25 @@ export async function assertRecruitingGraphStage(
   input: RunRecruitingGraphInput,
   allowedStages: readonly string[],
 ): Promise<
-  | { ok: true; stage: string; nextJobKind: string | null; errors: string[] }
-  | { ok: false; stage: string; reason: string; errors: string[] }
+  | {
+      ok: true;
+      stage: string;
+      nextJobKind: string | null;
+      errors: string[];
+      shortlistIds: string[];
+    }
+  | { ok: false; stage: string; reason: string; errors: string[]; shortlistIds: string[] }
 > {
   const result = await runRecruitingGraph(input);
   const stage = result.stage;
+  const shortlistIds = Array.isArray(result.shortlistIds) ? result.shortlistIds : [];
   if (!allowedStages.includes(stage)) {
     return {
       ok: false,
       stage,
       reason: "stage_mismatch",
       errors: result.errors ?? [],
+      shortlistIds,
     };
   }
   return {
@@ -264,6 +272,7 @@ export async function assertRecruitingGraphStage(
     stage,
     nextJobKind: nextJobKindAfterGraphStage(stage),
     errors: result.errors ?? [],
+    shortlistIds,
   };
 }
 

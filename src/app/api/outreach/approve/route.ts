@@ -108,13 +108,22 @@ export async function POST(req: NextRequest) {
       { status: 422 },
     );
   }
-  // Soft live critics: prefer LLM peers when keys work; fail open to deterministic
-  // blockers already applied (human is present, unlike autonomous draft cron).
+  // Live critics: when all three LLM peers run, honor blocked + needs_review.
+  // If critics are unavailable, fail open to deterministic gate already applied.
   const liveVerdict = await validateOutreachQualityLive({ subject, body, channel });
-  if (liveVerdict.status === "blocked") {
+  if (
+    liveVerdict.llmCriticsUsed
+    && (liveVerdict.status === "blocked" || liveVerdict.status === "needs_review")
+  ) {
     const reason =
       liveVerdict.stages.find((s) => !s.pass)?.reasons[0]
       ?? "Outreach blocked by live quality critics.";
+    return NextResponse.json({ ok: false, error: reason }, { status: 422 });
+  }
+  if (!liveVerdict.llmCriticsUsed && liveVerdict.status === "blocked") {
+    const reason =
+      liveVerdict.stages.find((s) => !s.pass)?.reasons[0]
+      ?? "Outreach blocked by quality critics.";
     return NextResponse.json({ ok: false, error: reason }, { status: 422 });
   }
 

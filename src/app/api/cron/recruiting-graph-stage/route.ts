@@ -91,6 +91,7 @@ export async function POST(req: NextRequest) {
         status: check.reason,
         stage: check.stage,
         errors: check.errors,
+        shortlistIds: check.shortlistIds,
         nextJobKind: nextJobKindAfterGraphStage(check.stage),
       },
       { status: 422 },
@@ -101,6 +102,7 @@ export async function POST(req: NextRequest) {
     ok: true,
     stage: check.stage,
     nextJobKind: check.nextJobKind,
+    shortlistIds: check.shortlistIds,
     errors: check.errors,
   });
 }

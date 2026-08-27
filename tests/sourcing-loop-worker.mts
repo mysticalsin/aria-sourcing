@@ -132,6 +132,7 @@ test("shortlist handler reads provider candidates by run id and commits through 
     candidateCount: 2,
     autoApproved: 0,
     graphStage: "shortlist_ranked",
+    graphShortlistCount: 0,
   });
   const completion = calls.find((call) => call.name === "complete_aria_job_with_workspace_patch");
   assert.ok(completion);
@@ -527,6 +528,17 @@ test("inbound_classify enqueues draft_generate for positive intent when autopilo
   await handleAriaJob(job("inbound_classify", { inboundId: "inbound-2" }), { client });
   assert.equal(patches.length, 1);
   assert.deepEqual(patches[0].p_enqueue, [
+    {
+      kind: "calendar_book",
+      idempotency_key: "calendar:reply:camp-9:cand-9",
+      payload: {
+        campaignId: "camp-9",
+        candidateId: "cand-9",
+        trigger: "inbound_classify",
+        intent: "INTERESTED",
+      },
+      priority: 65,
+    },
     {
       kind: "draft_generate",
       idempotency_key: "draft:reply:camp-9:cand-9",

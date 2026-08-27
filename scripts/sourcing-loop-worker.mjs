@@ -81,7 +81,7 @@ export function nextJobKindAfterGraphStage(stage) {
  */
 export async function assertRecruitingGraphCheckpoint(context, body, allowedStages) {
   if (!context.configuration?.recruitingGraphUrl || !context.configuration?.cronSecret) {
-    return { skipped: true, stage: null, nextJobKind: null };
+    return { skipped: true, stage: null, nextJobKind: null, shortlistIds: [] };
   }
   let response;
   try {
@@ -114,10 +114,14 @@ export async function assertRecruitingGraphCheckpoint(context, body, allowedStag
   if (!allowedStages.includes(payload.stage)) {
     throw new HandlerError("recruiting_graph_stage_mismatch", false);
   }
+  const shortlistIds = Array.isArray(payload.shortlistIds)
+    ? payload.shortlistIds.filter((id) => typeof id === "string" && id.trim())
+    : [];
   return {
     skipped: false,
     stage: payload.stage,
     nextJobKind: typeof payload.nextJobKind === "string" ? payload.nextJobKind : null,
+    shortlistIds,
   };
 }
 
@@ -125,6 +129,9 @@ export const PIPELINE_STAGE_TRANSITION_PRODUCERS = Object.freeze({
   "email_sync->inbound_classify": Object.freeze(["handleEmailSync"]),
   "inbound_classify->draft_generate": Object.freeze([
     "handleInboundClassify (positive intent + entitled autopilot)",
+  ]),
+  "inbound_classify->calendar_book": Object.freeze([
+    "handleInboundClassify (positive interest → Teams/Outlook propose)",
   ]),
   "requisition_parse->campaign_create": Object.freeze(["handleRequisitionParse"]),
   "campaign_create->sourcing_batch": Object.freeze(["handleCampaignCreate"]),
@@ -1121,6 +1128,15 @@ async function handleShortlistBuild(job, context) {
   ) {
     throw new HandlerError("graph_stage_successor_mismatch", false);
   }
+  // Bind draft successors to LangGraph shortlist when the checkpoint returned ids.
+  if (!rankCheck.skipped && rankCheck.shortlistIds.length > 0 && successors.length > 0) {
+    const allowed = new Set(rankCheck.shortlistIds);
+    successors = successors.filter((jobRow) => {
+      const cid = isRecord(jobRow?.payload) ? jobRow.payload.candidateId : null;
+      return typeof cid === "string" && allowed.has(cid);
+    });
+    autoApproved = successors.length;
+  }
 
   const result = {
     status: "shortlist_committed",
@@ -1128,6 +1144,7 @@ async function handleShortlistBuild(job, context) {
     candidateCount: candidates.length,
     autoApproved,
     graphStage: "shortlist_ranked",
+    graphShortlistCount: rankCheck.shortlistIds?.length ?? 0,
   };
   const events = [event("shortlist.committed", "campaign", campaignId, {
     candidateCount: candidates.length,
@@ -1509,6 +1526,22 @@ async function handleInboundClassify(job, context) {
     }
 
     try {
+      // Always enqueue Teams/Outlook first-interview propose on positive interest
+      // (human confirmLive in UI). Autopilot may additionally draft a reply.
+      successors.push(
+        successorJob(
+          "calendar_book",
+          `calendar:reply:${campaignId}:${candidateId}`,
+          {
+            campaignId,
+            candidateId,
+            trigger: "inbound_classify",
+            intent: classification.intent,
+          },
+          65,
+        ),
+      );
+
       const entitled = await context.client
         .from("profiles")
         .select("id")
