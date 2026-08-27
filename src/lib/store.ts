@@ -1947,10 +1947,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const resolvedChannel = channel ?? preferredOutreachChannel(candidate);
       const finalTone = tone ?? effectiveTone(s.skills);
       const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
+      // Enterprise Mantu loop: always brand with Mantu voice; seat may only refine signature.
       const mantuVoice = mantuOutreachVoice(seat?.signature);
-      const voice = seat
-        ? { persona: seat.persona || mantuVoice.persona, signature: seat.signature || mantuVoice.signature }
-        : mantuVoice;
+      const voice = {
+        persona: mantuVoice.persona,
+        signature: seat?.signature?.trim() ? seat.signature : mantuVoice.signature,
+      };
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
 
       // Mock is the canonical fallback (and the source of personalization evidence).

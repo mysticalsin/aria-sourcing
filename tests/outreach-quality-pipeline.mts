@@ -27,10 +27,23 @@ test("deterministic quality scores personalized empathetic outreach as ready-ish
     subject: "Your TypeScript work",
     body:
       "Hi Alex — I noticed your recent TypeScript contributions on the payments service. " +
-      "We are hiring a Senior Engineer in London and your background stood out. " +
+      "Mantu Group is hiring a Senior Engineer in London and your background stood out. " +
       "Would you be open to a short intro chat next week?",
     channel: "Email",
   });
   assert.notEqual(verdict.status, "blocked");
   assert.ok(verdict.aggregateScore >= 60);
+});
+
+test("deterministic quality fails compliance without Mantu brand", () => {
+  const verdict = validateOutreachQuality({
+    subject: "Your TypeScript work",
+    body:
+      "Hi Alex — I noticed your recent TypeScript contributions on the payments service. " +
+      "We are hiring a Senior Engineer in London and your background stood out. " +
+      "Would you be open to a short intro chat next week?",
+    channel: "Email",
+  });
+  assert.ok(verdict.stages.some((s) => s.stage === "compliance" && s.reasons.includes("missing-mantu-brand")));
+  assert.notEqual(verdict.status, "ready");
 });

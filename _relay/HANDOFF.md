@@ -1,58 +1,53 @@
 ---
 project: MSourcing / ARIA
-shift: 152
+shift: 153
 agent: cursor-cloud
 updated: 2026-08-27 UTC
 status: awaiting-microsoft-entra-and-deploy-confirm
 ---
 
-# Handoff — Shift 152
+# Handoff — Shift 153
 
 ## Current state
 
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open (supersedes closed #29, #30)
-- **Tip:** `93b2e4b` (relay pin) / code tip `c5f41cb` (redirect-URI readiness + M365 honesty)
-- **Local gate:** prior shift green; audit matrix **45/45** (unchanged this shift)
+- **Tip:** pending (top-10 approve cap + Mantu brand gate)
+- **Local gate:** `npx tsc --noEmit && npm test` green; audit **45/45**
 - **Fly auth:** `.fly-token.env`
-- **Live present:** `ARIA_LOOP_KILL_SWITCH=false`, `KIMI_API_KEY`, `CRON_SECRET`, `EMAIL_INBOUND_WEBHOOK_SECRET`, **`MICROSOFT_REDIRECT_URI`**
+- **Live present:** `ARIA_LOOP_KILL_SWITCH=false`, `KIMI_API_KEY`, `CRON_SECRET`, `EMAIL_INBOUND_WEBHOOK_SECRET`, `MICROSOFT_REDIRECT_URI`
 - **Live missing (6):** MICROSOFT_CLIENT_ID/SECRET + GOTRUE_EXTERNAL_AZURE_*
-- **Stale image:** `ba88302` / mig **0060** / Graph **404** / ready not_ready (`agentFrameworks`)
+- **Stale image:** `ba88302` / mig **0060** / Graph **404** / ready not_ready
 - **Confirm:** unset — `bash scripts/print-fly-deploy-confirm.sh`
-- **Code-gap audit (vs E2E objective, excl. Entra secrets):** 2 actionable mismatches; items 2/4/5/6 PASS for webhook loop
 
 ## Done this shift
 
-- Audited tip vs enterprise E2E objective (top-10, critics, Mantu brand, webhook-only, Entra SSO surface, fake UX)
-- Findings: human shortlist approve allows 50 (bypasses top-10); branding is prompt/HTML only (no quality-gate reject if body omits Mantu; UI seat persona can override)
-
-## Blockers
-
-- Owner Microsoft Graph + GoTrue Azure secrets; deploy confirm; Outlook connect (unchanged)
+- Cap `/api/shortlist/approve` at `TOP_CANDIDATE_SHORTLIST_SIZE` (10)
+- Compliance critic rejects drafts missing `\bMantu\b` (`missing-mantu-brand`)
+- `generateOutreachLive` always uses `mantuOutreachVoice()` persona (seat signature only)
+- Audit matrix pins both gates; outreach-quality tests cover unbranded fail
 
 ## Next steps
 
-1. Owner: set MICROSOFT_CLIENT_ID/SECRET on app + GOTRUE_EXTERNAL_AZURE_* on auth
-2. Owner: `print-fly-deploy-confirm.sh` → export → `fly-deploy-now.sh` (tip image + mig 0066 + AGENT_FRAMEWORKS_REQUIRED=false)
-3. Optional code: cap `src/app/api/shortlist/approve/route.ts` at `TOP_CANDIDATE_SHORTLIST_SIZE`; add `/\bMantu\b/i` fail in `outreach-quality-pipeline.ts` complianceCritic; force `mantuOutreachVoice()` in `generateOutreachLive`
-4. Connect Outlook + Enable webhook; provide ADMIN_* (+ webhook secret if rotated)
-5. Agent: E2E with AGENT_PROVIDER=kimi → ready+0066+Graph200+PASS → goal complete
+1. Owner: MICROSOFT_CLIENT_ID/SECRET + GOTRUE_EXTERNAL_AZURE_* 
+2. Owner: `print-fly-deploy-confirm.sh` → `fly-deploy-now.sh`
+3. Connect Outlook + Enable webhook; provide ADMIN_*
+4. Agent: E2E kimi → ready+0066+Graph200+PASS → goal complete
 
 ## Decisions made (don't relitigate)
 
 - PR #31 supersedes closed #29 and #30
 - No Fly deploy without `ARIA_PROD_DEPLOY_CONFIRM`
 - Target mig **0066**; `.fly-token.env` for flyctl
-- Agent may set non-Azure operational config it owns (HMAC webhook, kill-switch, **public REDIRECT_URI**); never invent Azure client id/secret
+- Agent may set public REDIRECT_URI / webhook / kill-switch; never invent Azure client id/secret
 - Never commit secret values to git / `_relay`
 - Fly E2E hermes drafts default to **kimi**
-- Calendar OAuth scope is `Calendars.ReadWrite`; Teams joinUrl proven via live `confirmLive` only
-- `microsoftOAuth` readiness requires `MICROSOFT_REDIRECT_URI` (prod https, not localhost)
+- Human shortlist approve capped at top **10**
+- Outreach quality fails closed without **Mantu** brand token
+- Calendar OAuth `Calendars.ReadWrite`; Teams joinUrl via `confirmLive` only
 - LinkedIn send stays 409 assisted-manual
-- Soft live critics on human approve/send fail open when LLM unavailable (autonomous draft cron stays fail-closed)
 
 ## Watch out
 
-- Fly cannot re-read secret values — rotate webhook if `/tmp` lost
+- Full E2E needs Outlook connected after secrets+tip deploy
 - Skip Actions billing CI; local gate is authority
-- Full E2E cannot PASS until Outlook is connected (mailbox route + Graph seat), even after secrets+tip deploy
-- Autopilot shortlist already enforces top-10 + min score; only human `/api/shortlist/approve` can exceed 10
+- Timer `enterprise-e2e-deploy-recheck` ~10m

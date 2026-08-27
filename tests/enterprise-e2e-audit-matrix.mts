@@ -121,7 +121,15 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
   },
   {
     requirement: "Top shortlist capped at 10",
-    evidence: () => TOP_CANDIDATE_SHORTLIST_SIZE === 10 && /TOP_CANDIDATE_SHORTLIST_SIZE/.test(e2eTest),
+    evidence: () => {
+      const approve = readFileSync("src/app/api/shortlist/approve/route.ts", "utf8");
+      return (
+        TOP_CANDIDATE_SHORTLIST_SIZE === 10
+        && /TOP_CANDIDATE_SHORTLIST_SIZE/.test(e2eTest)
+        && /TOP_CANDIDATE_SHORTLIST_SIZE/.test(approve)
+        && /\.max\(TOP_CANDIDATE_SHORTLIST_SIZE\)/.test(approve)
+      );
+    },
   },
   {
     requirement: "Mantu-branded outreach quality validation",
@@ -132,7 +140,18 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         body: `Hi Alex,\n\nI noticed your recent TypeScript work — it stood out. Mantu Group is hiring in London.\n\nWould you be open to a brief first conversation?\n\nBest,\n${voice.signature}`,
         channel: "Email",
       });
-      return quality.status === "ready" && voice.signature.includes("Mantu");
+      const unbranded = validateOutreachQuality({
+        subject: "Your TypeScript platform work",
+        body: "Hi Alex,\n\nI noticed your recent TypeScript work — it stood out. We are hiring in London.\n\nWould you be open to a brief first conversation?",
+        channel: "Email",
+      });
+      const pipeline = readFileSync("src/lib/outreach-quality-pipeline.ts", "utf8");
+      return (
+        quality.status === "ready"
+        && voice.signature.includes("Mantu")
+        && unbranded.status !== "ready"
+        && /missing-mantu-brand/.test(pipeline)
+      );
     },
   },
   {

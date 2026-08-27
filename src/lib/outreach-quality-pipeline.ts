@@ -132,6 +132,12 @@ function complianceCritic(subject: string, body: string, channel: string): Stage
     score -= 50;
   }
 
+  // Enterprise Mantu loop: outbound copy must name the employer brand.
+  if (!/\bMantu\b/i.test(combined)) {
+    reasons.push("missing-mantu-brand");
+    score -= 40;
+  }
+
   if (channel === "LinkedIn" && body.length > 600) {
     reasons.push("linkedin-too-long");
     score -= 15;

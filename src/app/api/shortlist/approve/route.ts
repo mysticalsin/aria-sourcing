@@ -4,6 +4,7 @@ import { z } from "zod";
 import { swarmRequestBoundary } from "@/lib/api/swarm-request-boundary";
 import { validateBody } from "@/lib/api/validate";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
+import { TOP_CANDIDATE_SHORTLIST_SIZE } from "@/lib/recruiting-loop/constants";
 import { getServerSupabase, getServiceSupabase, requireAdmin } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +19,8 @@ const CandidateIdSchema = z
 
 const ApprovalSchema = z
   .object({
-    candidateIds: z.array(CandidateIdSchema).min(1).max(50),
+    // Enterprise loop shortlist is top-10; human approve must not enqueue beyond that.
+    candidateIds: z.array(CandidateIdSchema).min(1).max(TOP_CANDIDATE_SHORTLIST_SIZE),
   })
   .strict()
   .superRefine((value, context) => {
