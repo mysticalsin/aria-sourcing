@@ -31,10 +31,10 @@ current_migration="$(node -e 'const j=JSON.parse(process.argv[1]||"{}"); process
 live_build="$(node -e 'const j=JSON.parse(process.argv[1]||"{}"); process.stdout.write(String(j.build||""));' "$ready_json")"
 
 if [ "$current_migration" != "$TARGET_MIGRATION" ]; then
-  note_blocker "live migration is '${current_migration:-unknown}' (need $TARGET_MIGRATION)"
+  blockers=$((blockers + 1))
 fi
 if [ -n "$live_build" ] && [[ "$live_build" != "$RELEASE_SHA"* ]]; then
-  note_blocker "live build $live_build does not match release SHA $RELEASE_SHA"
+  blockers=$((blockers + 1))
 fi
 
 if [ -z "${FLY_API_TOKEN:-}" ] && [ -r "$repo/production-readiness/.fly-token.env" ]; then
