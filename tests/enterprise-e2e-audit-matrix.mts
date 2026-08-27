@@ -281,6 +281,9 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /confirmLive:true/.test(script)
         && /Live Outlook\/Teams book/.test(script)
         && /ARIA_ALLOW_SKIP_LIVE_CALENDAR/.test(script)
+        && /ARIA_ALLOW_PARTIAL_M365_E2E/.test(script)
+        && /RESULT: PARTIAL/.test(script)
+        && /never pretends full enterprise PASS|never pretends full PASS/.test(script)
         && /isOnlineMeeting/.test(script)
         && /teamsForBusiness/.test(script)
         && /Introduce Mantu Group/.test(script)
@@ -863,6 +866,37 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /mode: "direct"/.test(runner)
         && /No approved agent framework workflow/.test(runner)
         && /AGENT_FRAMEWORKS_REQUIRED=false/.test(runner)
+      );
+    },
+  },
+  {
+    requirement: "Loop enqueue payloads omit graphStage (DB contract; avoids complete_aria_job 22023)",
+    evidence: () => {
+      const workerSrc = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
+      const mig = readFileSync("supabase/migrations/0065_calendar_book_and_graph_renew.sql", "utf8");
+      const tests = readFileSync("tests/sourcing-loop-worker.mts", "utf8");
+      return (
+        /key !== "graphStage"/.test(workerSrc)
+        && /never enqueue payloads/.test(workerSrc)
+        && /priorStatus === "campaign_created"/.test(workerSrc)
+        && /resumes campaign_created without re-recording parse/.test(tests)
+        && /when 'campaign_create' then allowed_keys := array\['requisitionId', 'campaignId'\]/.test(mig)
+        && /campaign_create enqueue must omit graphStage/.test(tests)
+        && !/payload: \{ requisitionId: REQUISITION_ID, campaignId: "camp-1", graphStage:/.test(tests)
+      );
+    },
+  },
+  {
+    requirement: "0068 digest path + mailbox Dry-run honesty remain pinned",
+    evidence: () => {
+      const mig68 = readFileSync("supabase/migrations/0068_apply_workspace_patch_digest_path.sql", "utf8");
+      const sendMode = readFileSync("tests/outreach-send-mode.mts", "utf8");
+      const workerSrc = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
+      return (
+        /extensions\.digest/.test(mig68)
+        && /digest_unresolved/.test(workerSrc)
+        && /HeyReach live \+ no mailbox → still Dry-run/.test(sendMode)
+        && /Record legitimate interest/.test(sendMode)
       );
     },
   },

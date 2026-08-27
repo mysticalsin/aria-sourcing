@@ -1096,4 +1096,12 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** 0063 rewrote apply_workspace_patch with search_path omitting `extensions`. Live pgcrypto digest lives in extensions (public install is a no-op when already present elsewhere), so digest(text, unknown) raises 42883; PostgREST maps that to HTTP 404; loop worker records handler:requisition_parse:rpc_http_404 and never append_campaign.
 **Repro/evidence:** curl apply_workspace_patch with valid append_campaign → HTTP 404 code=42883 "function digest(text, unknown) does not exist"; invalid patch_kind returns 200 invalid_request (digest not reached). E2E webhook queues requisition_parse but campaign never materializes.
 **Suggested fix:** Migration 0068 restores extensions on search_path + schema-qualified digest with sha256::text cast + md5 fallback; worker classifyRpcHttpFailure surfaces digest_unresolved.
-**Status:** fixed (9da085d + bba23f6 merged onto cursor/enterprise-autopilot-b91d; live DB still needs 0068 apply)
+**Status:** fixed (9da085d + bba23f6 on enterprise-autopilot; live Fly mig **0068** applied on `e469126` — service-role `append_campaign` returns `not_found` not 42883; synthetic webhook→campaign `camp-req-620deff9` materialized 2026-08-27)
+
+## 2026-08-27 — requisition_parse complete_aria_job 22023 from graphStage enqueue
+**Severity:** correctness
+**File:** scripts/sourcing-loop-worker.mjs:successorJob / handleRequisitionParse
+**Issue:** After 0068 restored digest, `requisition_parse` still failed closed with `handler:requisition_parse:rpc_http_400:22023`. Campaign blob was written via `apply_workspace_patch` (separate RPC) but `complete_aria_job` rolled back job success because `campaign_create` enqueue payload included `graphStage`, which `aria_job_payload_contract_ok` rejects (allowed keys: requisitionId, campaignId only). Same bug on shortlist_build / calendar_book successors.
+**Repro/evidence:** Live tick 2026-08-27T22:47:21Z claimed=1 completed=0 failureCodes=`handler:requisition_parse:rpc_http_400:22023`; campaign `camp-req-620deff9` present with 0 candidates (no campaign_create→sourcing_batch chain).
+**Suggested fix:** Strip `graphStage` in `successorJob` (keep on result objects only); resume when ingest status is `campaign_created` so retries enqueue `campaign_create` without `record_requisition_parse`.
+**Status:** fixed (this shift; requires Fly redeploy of tip beyond `e469126`)

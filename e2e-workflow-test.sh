@@ -31,7 +31,8 @@
 # Optional env:  APP_URL  KONG_URL  AGENT_PROVIDER  AGENT_MODEL
 #                GITHUB_QUERY  LINKEDIN_QUERY
 #                ARIA_ALLOW_SKIP_WEBHOOK_E2E=1  ARIA_ALLOW_STALE_FLY_E2E=1
-#                ARIA_ALLOW_SKIP_LIVE_CALENDAR=1  ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E=1
+#                ARIA_ALLOW_PARTIAL_M365_E2E=1  ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E=1
+#                ARIA_ALLOW_SKIP_LIVE_CALENDAR=1  (PARTIAL only — never pretends full PASS)
 #                E2E_INBOUND_MAILBOX  E2E_CAMPAIGN_ID
 # ANON_KEY may be loaded from production-readiness/.fly-secrets.env via
 #   eval "$(bash scripts/print-fly-e2e-env.sh --export)"
@@ -1055,6 +1056,8 @@ if [ -z "$LIVE_SEAT_ID" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ]; then
   ' "$RESP" 2>/dev/null || true)
 fi
 # On full Fly E2E, if Outlook webhook is active but seat is still mock, fail closed.
+# Owner-ordered Microsoft skip uses ARIA_ALLOW_PARTIAL_M365_E2E=1 (honest PARTIAL, not PASS).
+# Do NOT use ARIA_ALLOW_SKIP_LIVE_CALENDAR=1 to pretend full enterprise success.
 if [ -z "$LIVE_SEAT_ID" ] && [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" != "1" ] && [ "${ARIA_ALLOW_SKIP_LIVE_CALENDAR:-}" != "1" ]; then
   MOCK_WITH_SUB=$(jq -r '
     (.connections // []) as $conns
@@ -1078,6 +1081,7 @@ if [ -z "$LIVE_SEAT_ID" ] && [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] &
   fi
 fi
 
+MS_LIVE_GAP=0
 if [ -n "$LIVE_SEAT_ID" ]; then
   info "Live Microsoft Graph seat for confirmLive book: $LIVE_SEAT_ID"
   jq -n \
@@ -1121,8 +1125,15 @@ if [ -n "$LIVE_SEAT_ID" ]; then
   else
     fail "Live calendar/Teams book failed (HTTP $HTTP status='$LIVE_CAL_STATUS' teams=$LIVE_TEAMS): $(head -c 240 "$RESP")"
   fi
-elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_SKIP_LIVE_CALENDAR:-}" != "1" ]; then
-  fail "No live Microsoft Graph seat for Teams book — connect Outlook in Settings or set ARIA_ALLOW_SKIP_LIVE_CALENDAR=1 for a partial run."
+elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ]; then
+  MS_LIVE_GAP=1
+  warn "PARTIAL M365: no live Graph seat — skipping confirmLive Teams book (owner-ordered Microsoft skip; not a full PASS)."
+elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_SKIP_LIVE_CALENDAR:-}" = "1" ]; then
+  MS_LIVE_GAP=1
+  # Honesty: this flag never upgrades to RESULT: PASS — only PARTIAL with an explicit MS gap.
+  warn "ARIA_ALLOW_SKIP_LIVE_CALENDAR=1 set — live Teams book skipped; run will be PARTIAL (never pretends full enterprise PASS)."
+elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ]; then
+  fail "No live Microsoft Graph seat for Teams book — connect Outlook in Settings, or set ARIA_ALLOW_PARTIAL_M365_E2E=1 for an honest non-MS PARTIAL (do not use ARIA_ALLOW_SKIP_LIVE_CALENDAR=1 to pretend PASS)."
 else
   warn "No live Microsoft Graph seat — skipping confirmLive Teams book proof."
 fi
@@ -1133,6 +1144,10 @@ step "Summary"
 printf "  ${C_G}%d passed${C_0}, ${C_R}%d failed${C_0}, ${C_Y}%d warnings${C_0}\n" "$PASSES" "$FAILS" "$WARNS"
 if [ "$FAILS" -gt 0 ]; then
   printf "  ${C_R}RESULT: FAIL${C_0}\n"; exit 1
+elif [ "${MS_LIVE_GAP:-0}" = "1" ] || [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ]; then
+  printf "  ${C_Y}RESULT: PARTIAL${C_0} — non-MS loop checks green; Microsoft Graph/Outlook/Teams live seat still outstanding.\n"
+  printf "  MS gaps: microsoftOAuth live seat, Outlook connect, Graph webhook push ingest, confirmLive Teams book.\n"
+  exit 0
 else
   printf "  ${C_G}RESULT: PASS${C_0}\n"; exit 0
 fi
