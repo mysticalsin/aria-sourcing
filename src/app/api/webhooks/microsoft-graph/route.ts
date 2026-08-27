@@ -121,15 +121,19 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    const message = await fetchGraphMessageForIngest({
+    const fetched = await fetchGraphMessageForIngest({
       workspaceId: sub.workspace_id,
       connectionId: sub.connection_id,
       messageId,
     });
-    if (!message) {
-      results.push({ subscriptionId: note.subscriptionId, status: "message_fetch_failed" });
+    if (!fetched.ok) {
+      // Fail closed — never invent a hiring-need enqueue. Only transient Graph
+      // HTTP/network failures are retryable; missing connection/token must not
+      // spin Graph redelivery forever when Microsoft is absent.
+      results.push({ subscriptionId: note.subscriptionId, status: fetched.reason });
       continue;
     }
+    const message = fetched.message;
 
     const ingested = await ingestNormalizedInboundEmail({
       mailbox: message.mailbox,
@@ -159,7 +163,8 @@ export async function POST(req: NextRequest) {
   }
 
   // Retryable failures: ask Graph to redeliver (503). Keep 202 for success and
-  // non-retryable client/subscription errors so Graph does not spin forever.
+  // non-retryable gaps (unknown sub, client_state, connection_missing,
+  // token_unavailable, message_incomplete) so Graph does not spin when MS is absent.
   const retryable = results.some(
     (r) =>
       r.status === "message_fetch_failed"

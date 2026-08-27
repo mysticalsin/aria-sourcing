@@ -16,7 +16,7 @@ import { ScoreGauge } from "@/components/charts/score-gauge";
 import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
-import { bookingCalendarSummary } from "@/lib/booking-status";
+import { bookingCalendarSummary, bookingInterviewTitle } from "@/lib/booking-status";
 import { useActions, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
 import type { CandidateErasureObligation, CandidateErasureStatus } from "@/lib/store/contracts";
 import { experimentalPaidSourcingEnabled, demoLoginEnabled, supabaseEnabled } from "@/lib/supabase/config";
@@ -316,8 +316,8 @@ function TaniaPanel({ c }: { c: Candidate }) {
       if (res.ok) {
         const synced = Boolean(res.booking.calendarSync);
         toast({
-          title: synced ? "Intw1 booked on Outlook/Teams" : "Intw1 saved — needs calendar",
-          description: `With ${res.booking.interviewer || "an interviewer to be confirmed"}. ${bookingCalendarSummary(res.booking)}`,
+          title: bookingInterviewTitle(res.booking, c.name),
+          description: `Intw1 with ${res.booking.interviewer || "an interviewer to be confirmed"}. ${bookingCalendarSummary(res.booking)}`,
           variant: synced ? "success" : "warning",
         });
       } else {
@@ -892,7 +892,7 @@ export function CandidateDrawer({
     if (res.ok) {
       const synced = Boolean(res.booking.calendarSync);
       toast({
-        title: synced ? "Interview booked" : "Interview saved — needs calendar",
+        title: bookingInterviewTitle(res.booking, c.name),
         description: `With ${res.booking.interviewer || "an interviewer to be confirmed"}. ${bookingCalendarSummary(res.booking)}`,
         variant: synced ? "success" : "warning",
       });

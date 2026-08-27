@@ -389,39 +389,60 @@ export async function listGraphSubscriptionsForWorkspace(
   }));
 }
 
+/**
+ * Fetch a Graph inbox message for hiring-need / reply ingest.
+ * Fail-closed when Graph is absent: never invents a message. Distinguishes
+ * non-retryable credential/connection gaps from transient Graph fetch errors.
+ */
+export type GraphMessageFetchResult =
+  | { ok: true; message: NormalizedGraphMessage }
+  | {
+      ok: false;
+      reason:
+        | "connection_missing"
+        | "token_unavailable"
+        | "message_fetch_failed"
+        | "message_incomplete";
+    };
+
 export async function fetchGraphMessageForIngest(input: {
   workspaceId: string;
   connectionId: string;
   messageId: string;
-}): Promise<NormalizedGraphMessage | null> {
+}): Promise<GraphMessageFetchResult> {
   const connection = await loadConnection(input.connectionId, input.workspaceId);
-  if (!connection) return null;
+  if (!connection) return { ok: false, reason: "connection_missing" };
   const token = await getAccessTokenForReading(connection);
-  if (!token) return null;
+  if (!token) return { ok: false, reason: "token_unavailable" };
   await persistRefreshedTokens(connection);
 
   const select =
     "id,internetMessageId,subject,body,from,receivedDateTime,internetMessageHeaders";
   // Prefer plain text so Mantu "Recruiter:" / "Skills:" lines survive for hiring-need routing.
-  const res = await fetch(
-    `${GRAPH}/me/messages/${encodeURIComponent(input.messageId)}?$select=${select}`,
-    {
-      headers: {
-        authorization: `Bearer ${token}`,
-        Prefer: 'outlook.body-content-type="text"',
+  let res: Response;
+  try {
+    res = await fetch(
+      `${GRAPH}/me/messages/${encodeURIComponent(input.messageId)}?$select=${select}`,
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+          Prefer: 'outlook.body-content-type="text"',
+        },
+        signal: AbortSignal.timeout(20_000),
       },
-      signal: AbortSignal.timeout(20_000),
-    },
-  );
-  if (!res.ok) return null;
+    );
+  } catch {
+    return { ok: false, reason: "message_fetch_failed" };
+  }
+  if (!res.ok) return { ok: false, reason: "message_fetch_failed" };
   const msg = (await res.json().catch(() => null)) as GraphMessageJson | null;
-  if (!msg?.id) return null;
+  if (!msg?.id) return { ok: false, reason: "message_incomplete" };
 
   const fromAddr =
     msg.from?.emailAddress?.address?.trim() ||
     msg.from?.emailAddress?.name?.trim() ||
     "";
-  if (!fromAddr) return null;
+  if (!fromAddr) return { ok: false, reason: "message_incomplete" };
 
   const bodyText = normalizeGraphMessageBody(msg.body);
 
@@ -430,12 +451,15 @@ export async function fetchGraphMessageForIngest(input: {
     headers.find((h) => h.name?.toLowerCase() === "in-reply-to")?.value?.trim() || undefined;
 
   return {
-    providerId: msg.internetMessageId?.trim() || msg.id,
-    from: fromAddr,
-    subject: msg.subject ?? "",
-    body: bodyText,
-    inReplyTo,
-    mailbox: connection.accountEmail,
+    ok: true,
+    message: {
+      providerId: msg.internetMessageId?.trim() || msg.id,
+      from: fromAddr,
+      subject: msg.subject ?? "",
+      body: bodyText,
+      inReplyTo,
+      mailbox: connection.accountEmail,
+    },
   };
 }
 
