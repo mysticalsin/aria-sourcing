@@ -99,32 +99,47 @@ async function receiveEmail(state: RecruitingGraphStateType): Promise<Partial<Re
   return { stage: "receive_email", inboundId: state.inboundId };
 }
 
-/** Node: requisition parsed — campaign id should be set by caller/worker. */
+/** Node: requisition parsed — campaign id must be set by caller/worker. */
 async function parseRequisition(state: RecruitingGraphStateType): Promise<Partial<RecruitingGraphStateType>> {
   if (!state.inboundId) {
     return { stage: "parse_requisition_failed", errors: ["missing_inbound_id"] };
+  }
+  if (!state.campaignId?.trim()) {
+    return { stage: "parse_requisition_failed", errors: ["missing_campaign_id"] };
   }
   return { stage: "requisition_parsed" };
 }
 
 /** Node: sourcing complete — candidate ids supplied by worker hook. */
 async function sourceCandidates(state: RecruitingGraphStateType): Promise<Partial<RecruitingGraphStateType>> {
-  return { stage: "sourcing_complete", candidateIds: state.candidateIds ?? [] };
+  const ids = (state.candidateIds ?? []).filter((id) => typeof id === "string" && id.trim());
+  const scored = state.scoredCandidates ?? [];
+  if (ids.length === 0 && scored.length === 0) {
+    return { stage: "sourcing_failed", errors: ["missing_candidate_ids"], candidateIds: [] };
+  }
+  const candidateIds = ids.length > 0 ? ids : scored.map((c) => c.id);
+  return { stage: "sourcing_complete", candidateIds };
 }
 
-/** Node: rank to top 10 by score when scored candidates are supplied on state. */
+/** Node: rank to top 10 — requires scored candidates (no blind slice inventing rank). */
 async function rankTop10(state: RecruitingGraphStateType): Promise<Partial<RecruitingGraphStateType>> {
   const scored = state.scoredCandidates ?? [];
-  if (scored.length > 0) {
-    const shortlist = rankTopCandidates(scored, TOP_CANDIDATE_SHORTLIST_SIZE).map((c) => c.id);
-    return { stage: "shortlist_ranked", shortlistIds: shortlist };
+  if (scored.length === 0) {
+    return {
+      stage: "shortlist_rank_failed",
+      errors: ["missing_scored_candidates"],
+      shortlistIds: [],
+    };
   }
-  const ids = state.candidateIds ?? [];
-  const shortlist = ids.slice(0, TOP_CANDIDATE_SHORTLIST_SIZE);
-  return {
-    stage: "shortlist_ranked",
-    shortlistIds: shortlist,
-  };
+  const shortlist = rankTopCandidates(scored, TOP_CANDIDATE_SHORTLIST_SIZE).map((c) => c.id);
+  if (shortlist.length === 0) {
+    return {
+      stage: "shortlist_rank_failed",
+      errors: ["empty_shortlist"],
+      shortlistIds: [],
+    };
+  }
+  return { stage: "shortlist_ranked", shortlistIds: shortlist };
 }
 
 /** Node: Mantu-branded outreach drafts prepared for quality validation. */
@@ -212,10 +227,12 @@ function buildRecruitingGraph() {
       return "sourceCandidates";
     })
     .addConditionalEdges("sourceCandidates", (state) => {
+      if (state.stage === "sourcing_failed") return END;
       if (state.intent === "source_only") return END;
       return "rankTop10";
     })
     .addConditionalEdges("rankTop10", (state) => {
+      if (state.stage === "shortlist_rank_failed") return END;
       if (state.intent === "rank_only") return END;
       return "draftOutreach";
     })

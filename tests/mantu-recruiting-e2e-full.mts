@@ -107,6 +107,7 @@ async function main() {
     inboundId: "inb-need-1",
     campaignId: e2eCampaign.id,
     candidateIds: top10.map((c) => c.id),
+    scoredCandidates: top10.map((c, i) => ({ id: c.id, matchScore: 100 - i })),
     drafts,
   });
   ok(
@@ -119,6 +120,7 @@ async function main() {
     inboundId: "inb-need-1",
     campaignId: e2eCampaign.id,
     candidateIds: top10.map((c) => c.id),
+    scoredCandidates: top10.map((c, i) => ({ id: c.id, matchScore: 100 - i })),
     drafts,
     bookingId: "book-e2e-1",
   });

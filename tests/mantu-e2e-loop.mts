@@ -79,10 +79,17 @@ ok(
 );
 
 void (async () => {
+  const scored = [
+    { id: "a", matchScore: 90 },
+    { id: "b", matchScore: 80 },
+    { id: "c", matchScore: 70 },
+  ];
   const state = await runRecruitingGraph({
     workspaceId: "ws-1",
     inboundId: "inb-1",
+    campaignId: "camp-1",
     candidateIds: ["a", "b", "c"],
+    scoredCandidates: scored,
     drafts: {
       a: {
         subject: "Your work",
@@ -100,7 +107,9 @@ void (async () => {
   const booked = await runRecruitingGraph({
     workspaceId: "ws-1",
     inboundId: "inb-1",
+    campaignId: "camp-1",
     candidateIds: ["a"],
+    scoredCandidates: [{ id: "a", matchScore: 95 }],
     bookingId: "book-1",
     drafts: {
       a: {
@@ -120,6 +129,27 @@ void (async () => {
     candidateIds: ["a"],
   });
   ok("langgraph fail-stops on missing inboundId", failed.stage === "parse_requisition_failed");
+
+  const failedCampaign = await runRecruitingGraph({
+    workspaceId: "ws-1",
+    inboundId: "inb-1",
+  });
+  ok("langgraph fail-stops on missing campaignId", failedCampaign.stage === "parse_requisition_failed");
+
+  const emptySource = await runRecruitingGraph({
+    intent: "source_only",
+    workspaceId: "ws-1",
+    campaignId: "camp-1",
+    candidateIds: [],
+  });
+  ok("langgraph fail-stops source_only without candidates", emptySource.stage === "sourcing_failed");
+
+  const unscoredRank = await runRecruitingGraph({
+    intent: "rank_only",
+    workspaceId: "ws-1",
+    candidateIds: ["c1", "c2"],
+  });
+  ok("langgraph fail-stops rank_only without scores", unscoredRank.stage === "shortlist_rank_failed");
 
   const draftOnly = await runRecruitingGraph({
     intent: "draft_quality",
@@ -157,6 +187,7 @@ void (async () => {
   const rankOnly = await runRecruitingGraph({
     intent: "rank_only",
     workspaceId: "ws-1",
+    candidateIds: ["c1", "c2", "c3"],
     scoredCandidates: [
       { id: "c1", matchScore: 90 },
       { id: "c2", matchScore: 80 },

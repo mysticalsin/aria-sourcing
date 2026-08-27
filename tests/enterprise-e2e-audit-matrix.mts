@@ -117,7 +117,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       && existsSync("src/lib/langchain/pipeline-transitions.json")
       && existsSync("src/lib/langchain/graph-stage-jobs.json")
       && /graph-stage-jobs\.json/.test(worker)
-      && /nextJobKindAfterGraphStage/.test(worker),
+      && /nextJobKindAfterGraphStage/.test(worker)
+      && /sourcing_failed/.test(graphRoute)
+      && /shortlist_rank_failed/.test(graphRoute)
+      && /missing_scored_candidates/.test(graphRoute)
+      && /missing_campaign_id/.test(graphRoute),
   },
   {
     requirement: "Top shortlist capped at 10",
