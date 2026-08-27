@@ -288,6 +288,9 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /WEBHOOK_CAMPAIGN_ID/.test(script)
         && /ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E/.test(script)
         && /persisted:false on Fly/.test(script)
+        && /HeyReach MCP allowlisted/.test(script)
+        && /api\/admin\/mcp\/allowlist/.test(script)
+        && /int_heyreach/.test(script)
       );
     },
   },

@@ -526,6 +526,59 @@ if grep -q 'Always enqueue Teams/Outlook first-interview propose' scripts/sourci
 else
   fail "interest→calendar_book always-enqueue wiring missing from loop worker."
 fi
+
+# ===========================================================================
+step "2e) HeyReach MCP LinkedIn outreach stack (production allowlist)"
+# ===========================================================================
+if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ]; then
+  api GET "$APP_URL/api/admin/mcp/allowlist"
+  HR_N=$(jq -r '
+    [(.entries // [])[]
+      | select(
+          ((.base_url // "") | test("mcp\\.heyreach\\.io"; "i"))
+          and ((.enabled // false) == true)
+          and ((.tool_manifest_sha256 // "") | test("^[0-9a-f]{64}$"))
+        )
+    ] | length
+  ' "$RESP" 2>/dev/null || echo 0)
+  if [ "$HTTP" = "200" ] && [ "${HR_N:-0}" -gt 0 ]; then
+    pass "HeyReach MCP allowlisted for workspace (enabled + manifest hash)."
+  else
+    fail "HeyReach MCP allowlist missing/disabled on Fly (HTTP $HTTP entries=$HR_N). Connect via Settings → Integrations."
+  fi
+  curl -sS -m 20 -o "$WORK/ws_heyreach.json" \
+    "$KONG_URL/rest/v1/workspace_state?select=state&limit=1" \
+    -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ACCESS_TOKEN" \
+    -H 'Accept: application/json' >/dev/null 2>&1 || true
+  HR_MCP=$(jq -r '
+    (.[0].state.settings.mcpServers // [])
+    | map(select(
+        ((.preset // "") == "heyreach" or ((.url // "") | test("mcp\\.heyreach\\.io"; "i")))
+        and ((.enabled // false) == true)
+        and ((.status // "") == "connected")
+      ))
+    | length
+  ' "$WORK/ws_heyreach.json" 2>/dev/null || echo 0)
+  HR_INTEG=$(jq -r '
+    (.[0].state.integrations // [])
+    | map(select((.id // "") == "int_heyreach" and ((.status // "") == "connected")))
+    | length
+  ' "$WORK/ws_heyreach.json" 2>/dev/null || echo 0)
+  if [ "${HR_MCP:-0}" -gt 0 ] && [ "${HR_INTEG:-0}" -gt 0 ]; then
+    pass "Workspace HeyReach MCP server connected (agents can list LinkedIn outreach tools)."
+  else
+    fail "Workspace HeyReach MCP not connected (mcp=$HR_MCP integ=$HR_INTEG)."
+  fi
+else
+  info "Non-Fly host — HeyReach allowlist/live connect check skipped."
+fi
+if grep -q 'HEYREACH_MCP_HOST' src/lib/heyreach-mcp.ts \
+  && grep -q 'Connect HeyReach MCP' src/components/settings/heyreach-mcp-panel.tsx; then
+  pass "HeyReach MCP settings panel + host guard present in source."
+else
+  fail "HeyReach MCP settings wiring missing."
+fi
+
 if grep -q 'outlook.body-content-type' src/lib/email-graph-subscriptions.ts \
   && grep -q 'normalizeGraphMessageBody' src/lib/email-graph-subscriptions.ts \
   && grep -q 'Job enqueue rejected' src/lib/inbound-email-ingest.ts; then
