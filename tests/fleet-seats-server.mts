@@ -19,10 +19,14 @@ function ok(name: string, cond: boolean) {
 
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
 
+mock.module("server-only", { namedExports: {} });
+
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const serverSeatId = "22222222-2222-4222-8222-222222222222";
 let role: "admin" | "member" = "admin";
 let insertedRows: Record<string, unknown>[] = [];
+let serviceReady = false;
+let serviceSeatProvider = "Microsoft Graph";
 
 function seatRow(input: Record<string, unknown>): AgentSeatRow {
   return {
@@ -58,18 +62,40 @@ function makeFakeSupabase() {
     from: (table: string) => {
       assert.equal(table, "agent_seats");
       let pendingInsert: Record<string, unknown> | null = null;
+      let updating = false;
       const query: any = {
         insert: (row: Record<string, unknown>) => {
           pendingInsert = row;
           insertedRows.push(row);
           return query;
         },
-        update: () => query,
+        update: (row: Record<string, unknown>) => {
+          updating = true;
+          pendingInsert = {
+            provider: serviceSeatProvider,
+            mode: row.mode ?? "mock",
+            operator_email: row.operator_email ?? "agent@example.test",
+            workspace_id: workspaceId,
+            name: "Agent One",
+          };
+          return query;
+        },
         delete: () => query,
         eq: () => query,
         select: () => query,
         single: async () => ({ data: pendingInsert ? seatRow(pendingInsert) : null, error: null }),
-        maybeSingle: async () => ({ data: pendingInsert ? seatRow(pendingInsert) : null, error: null }),
+        maybeSingle: async () => {
+          if (pendingInsert) return { data: seatRow(pendingInsert), error: null };
+          // PATCH live-gate reads the existing seat before update.
+          return {
+            data: seatRow({
+              provider: serviceSeatProvider,
+              mode: updating ? "live" : "mock",
+              workspace_id: workspaceId,
+            }),
+            error: null,
+          };
+        },
       };
       return query;
     },
@@ -83,10 +109,74 @@ mock.module(moduleUrl("src/lib/supabase/config.ts"), {
   },
 });
 
+function makeServiceSupabase() {
+  return {
+    from: (table: string) => {
+      const state: Record<string, string> = {};
+      const query: any = {
+        select: () => query,
+        eq: (col: string, val: string) => {
+          state[col] = val;
+          return query;
+        },
+        update: () => query,
+        maybeSingle: async () => {
+          if (table === "agent_seats") {
+            return {
+              data: {
+                id: serverSeatId,
+                provider: serviceSeatProvider,
+                workspace_id: workspaceId,
+              },
+              error: null,
+            };
+          }
+          if (table === "email_connections") {
+            if (!serviceReady) return { data: null, error: null };
+            return {
+              data: {
+                id: "33333333-3333-4333-8333-333333333333",
+                account_email: "recruiter@mantu.com",
+                refresh_token: "enc",
+              },
+              error: null,
+            };
+          }
+          if (table === "graph_mail_subscriptions") {
+            if (!serviceReady) return { data: null, error: null };
+            return { data: { id: "sub-1", status: "active" }, error: null };
+          }
+          return { data: null, error: null };
+        },
+        then: (resolve: (v: unknown) => void) => {
+          if (table === "inbound_mailbox_routes") {
+            resolve({
+              data: serviceReady
+                ? [
+                    {
+                      id: "route-1",
+                      connection_id: "33333333-3333-4333-8333-333333333333",
+                      mailbox_address: "recruiter@mantu.com",
+                      active: true,
+                    },
+                  ]
+                : [],
+              error: null,
+            });
+            return;
+          }
+          resolve({ data: null, error: null });
+        },
+      };
+      return query;
+    },
+  };
+}
+
 mock.module(moduleUrl("src/lib/supabase/server.ts"), {
   namedExports: {
     getServerSupabase: async () => makeFakeSupabase(),
-    getServiceSupabase: () => null,
+    getServiceSupabase: () => makeServiceSupabase(),
     requireAdmin: async () => ({ ok: true, role: "admin" }),
   },
 });
@@ -94,9 +184,9 @@ mock.module(moduleUrl("src/lib/supabase/server.ts"), {
 const { NextRequest } = await import("next/server");
 const route = await import("../src/app/api/fleet/seats/route.ts");
 
-function req(body: unknown) {
+function req(body: unknown, method = "POST") {
   return new NextRequest("http://localhost/api/fleet/seats", {
-    method: "POST",
+    method,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -126,6 +216,48 @@ function req(body: unknown) {
     provider: "Gmail API",
   }));
   ok("non-admin without manage_fleet gets 403", res.status === 403 && insertedRows.length === 0);
+}
+
+{
+  role = "admin";
+  insertedRows = [];
+  const res = await route.POST(req({
+    name: "Live Graph Agent",
+    operatorEmail: "live@example.test",
+    provider: "Microsoft Graph",
+    mode: "live",
+  }));
+  const json = await res.json();
+  ok(
+    "POST refuses Microsoft Graph seat created already-live",
+    res.status === 409 && json.ok === false && insertedRows.length === 0,
+  );
+}
+
+{
+  role = "admin";
+  serviceReady = false;
+  serviceSeatProvider = "Microsoft Graph";
+  // Fake update path: makeFakeSupabase update/maybeSingle returns pendingInsert seat (null) —
+  // extend fake so PATCH can load existing seat then update.
+  const res = await route.PATCH(req({ id: serverSeatId, mode: "live" }, "PATCH"));
+  const json = await res.json();
+  ok(
+    "PATCH mode=live without Graph webhook returns 409",
+    res.status === 409 && json.ok === false && /webhook|Connect Outlook|inbound/i.test(String(json.error ?? "")),
+  );
+}
+
+{
+  role = "admin";
+  serviceReady = true;
+  serviceSeatProvider = "Microsoft Graph";
+  const res = await route.PATCH(req({ id: serverSeatId, mode: "live" }, "PATCH"));
+  const json = await res.json();
+  ok(
+    "PATCH mode=live allowed when inbound route + Graph sub active",
+    res.status === 200 && json.ok === true,
+  );
 }
 
 {

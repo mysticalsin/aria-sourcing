@@ -177,12 +177,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Failed to remove email connection." }, { status: 500 });
   }
 
-  // ── 12. Clear the seat's connected_account mirror ─────────────────────────
-  // Service-role write — mirrors the exact inverse of what the OAuth callback
-  // does when it sets connected_account = accountEmail.
+  // ── 12. Clear the seat's connected_account mirror + demote from live ───────
+  // Service-role write — inverse of OAuth callback. Without a mailbox / Graph
+  // webhook, mode=live would let confirmLive Teams books lie about readiness.
   const { error: seatErr } = await svc
     .from("agent_seats")
-    .update({ connected_account: null })
+    .update({ connected_account: null, mode: "mock" })
     .eq("id", seatId);
   if (seatErr) {
     // Non-fatal: the email_connections row is already gone; log and continue.

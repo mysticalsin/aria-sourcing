@@ -174,6 +174,33 @@ ok("connections ensure_connect", /ensure_connect/.test(connectionsRoute));
 ok("connections register_inbound", /register_inbound/.test(connectionsRoute));
 ok("connections ensure_graph_webhook", /ensure_graph_webhook/.test(connectionsRoute));
 ok("connections ensureGraphMailSubscription", /ensureGraphMailSubscription/.test(connectionsRoute));
+ok(
+  "ensure_graph_webhook promotes seat to live after inbound + Graph sub",
+  /promoteMicrosoftGraphSeatLive/.test(connectionsRoute)
+    && /assertMicrosoftGraphSeatLiveReady/.test(connectionsRoute)
+    && /seatMode/.test(connectionsRoute)
+    && /upsert_inbound_mailbox_route/.test(connectionsRoute),
+);
+
+const seatLive = readFileSync("src/lib/microsoft-seat-live.ts", "utf8");
+ok("microsoft-seat-live assert helper", /export async function assertMicrosoftGraphSeatLiveReady/.test(seatLive));
+ok("microsoft-seat-live promote helper", /export async function promoteMicrosoftGraphSeatLive/.test(seatLive));
+
+const fleetSeats = readFileSync("src/app/api/fleet/seats/route.ts", "utf8");
+ok(
+  "fleet seats PATCH gates Microsoft Graph mode=live on webhook readiness",
+  /assertMicrosoftGraphSeatLiveReady/.test(fleetSeats) && /mode === "live"/.test(fleetSeats),
+);
+ok(
+  "fleet seats POST refuses already-live Microsoft Graph create",
+  /Microsoft Graph seats start in mock/.test(fleetSeats),
+);
+
+const disconnectRoute = readFileSync("src/app/api/email/disconnect/route.ts", "utf8");
+ok(
+  "email disconnect demotes seat mode to mock",
+  /connected_account:\s*null,\s*mode:\s*"mock"/.test(disconnectRoute),
+);
 
 const graphSubs = readFileSync("src/lib/email-graph-subscriptions.ts", "utf8");
 ok("ensureGraphMailSubscription helper", /export async function ensureGraphMailSubscription/.test(graphSubs));

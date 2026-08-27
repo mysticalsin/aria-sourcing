@@ -12,6 +12,10 @@ import {
 } from "@/lib/email-connections";
 import { listGraphSubscriptionsForWorkspace, ensureGraphMailSubscription } from "@/lib/email-graph-subscriptions";
 import { AGENT_SEAT_SELECT, type AgentSeatRow } from "@/lib/fleet-seats";
+import {
+  assertMicrosoftGraphSeatLiveReady,
+  promoteMicrosoftGraphSeatLive,
+} from "@/lib/microsoft-seat-live";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
 import { getServerSupabase, getServiceSupabase, requireAdmin } from "@/lib/supabase/server";
@@ -393,7 +397,7 @@ async function ensureGraphWebhook(workspaceId: string, connectionId: string) {
 
   const { data: conn, error: connErr } = await svc
     .from("email_connections")
-    .select("id, provider, workspace_id")
+    .select("id, provider, workspace_id, seat_id, account_email")
     .eq("id", connectionId)
     .maybeSingle();
   if (connErr) {
@@ -409,22 +413,85 @@ async function ensureGraphWebhook(workspaceId: string, connectionId: string) {
     );
   }
 
+  // Repair inbound route first so a partial OAuth (token saved, route failed) can
+  // still become webhook-ready without a full reconnect.
+  const mailbox = normalizeMailboxAddress(String(conn.account_email ?? ""));
+  if (!mailbox || !conn.seat_id) {
+    return NextResponse.json(
+      { ok: false, error: "Outlook connection is missing mailbox or seat — reconnect Outlook." },
+      { status: 409 },
+    );
+  }
+  const { data: rpcResult, error: rpcErr } = await svc.rpc("upsert_inbound_mailbox_route", {
+    p_mailbox: mailbox,
+    p_connection_id: conn.id,
+    p_purpose: "reply",
+    p_workspace_id: workspaceId,
+  });
+  if (rpcErr || !(rpcResult as { ok?: boolean } | null)?.ok) {
+    const reason =
+      rpcErr?.message ?? (rpcResult as { reason?: string } | null)?.reason ?? "unknown";
+    safeLog("ensure_graph_webhook inbound route error", { message: reason });
+    return NextResponse.json(
+      { ok: false, error: `Inbound mailbox route failed (${reason}). Reconnect Outlook.` },
+      { status: 503 },
+    );
+  }
+
   const result = await ensureGraphMailSubscription({ workspaceId, connectionId });
   if (!result.ok) {
     return NextResponse.json({ ok: false, error: result.reason }, { status: 503 });
   }
 
+  const ready = await assertMicrosoftGraphSeatLiveReady(svc, {
+    workspaceId,
+    seatId: conn.seat_id,
+    provider: "Microsoft Graph",
+  });
+  if (!ready.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: ready.reason,
+        mode: result.mode,
+        expiresAt: result.expiresAt,
+      },
+      { status: 503 },
+    );
+  }
+
+  let seatMode: "live" | "mock" = "mock";
+  if (!ready.skipped) {
+    const promoted = await promoteMicrosoftGraphSeatLive(svc, {
+      seatId: conn.seat_id,
+      accountEmail: conn.account_email,
+    });
+    if (!promoted.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Graph webhook ready but failed to promote seat to live (${promoted.reason}).`,
+          mode: result.mode,
+          expiresAt: result.expiresAt,
+        },
+        { status: 503 },
+      );
+    }
+    seatMode = "live";
+  }
+
   return NextResponse.json({
     ok: true,
     mode: result.mode,
+    seatMode,
     expiresAt: result.expiresAt,
     detail:
       result.mode === "unchanged"
-        ? "Graph webhook subscription is already active."
+        ? "Graph webhook subscription is already active; seat promoted to live."
         : result.mode === "created"
-          ? "Graph webhook subscription created."
+          ? "Graph webhook subscription created; seat promoted to live."
           : result.mode === "recreated"
-            ? "Graph webhook subscription recreated."
-            : "Graph webhook subscription renewed.",
+            ? "Graph webhook subscription recreated; seat promoted to live."
+            : "Graph webhook subscription renewed; seat promoted to live.",
   });
 }
