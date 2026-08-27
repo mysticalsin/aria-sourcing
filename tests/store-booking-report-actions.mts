@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { buildSeedState } from "../src/lib/seed";
+import { buildHistoricalDemoSeedState } from "../src/lib/seed";
 import {
   createBookingReportActions,
   type BookingReportActionDependencies,
@@ -80,7 +80,7 @@ test("a learning decision is one validated commit and every caller handles rejec
 type ActivityDraft = Parameters<BookingReportActionDependencies["makeActivity"]>[0];
 
 function bookingFixture(): HermesState {
-  const state = structuredClone(buildSeedState());
+  const state = structuredClone(buildHistoricalDemoSeedState());
   const campaign = state.campaigns[0];
   assert.ok(campaign, "seed campaign is required");
   const candidate = state.candidates.find((item) => item.campaignId === campaign.id);

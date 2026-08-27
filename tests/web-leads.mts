@@ -24,19 +24,19 @@ function ok(name: string, cond: boolean) {
   }
 }
 
-const linkedInQuery = buildWebQuery("LinkedIn", "Senior React Engineer Paris");
+const linkedInQuery = buildWebQuery("LinkedIn", "Senior TypeScript Engineer");
 ok("buildWebQuery scopes LinkedIn to public profile search", linkedInQuery.startsWith("site:linkedin.com/in "));
-ok("buildWebQuery keeps the base query text", linkedInQuery === "site:linkedin.com/in Senior React Engineer Paris");
+ok("buildWebQuery keeps the base query text", linkedInQuery === "site:linkedin.com/in Senior TypeScript Engineer");
 ok("ensureWebQueryScope does not double-prefix an already scoped query", ensureWebQueryScope("LinkedIn", linkedInQuery) === linkedInQuery);
 
 const hit: SearchHit = {
-  title: "Ari Candidate - Senior React Engineer - Example Labs | LinkedIn",
+  title: "Ari Candidate - Senior TypeScript Engineer - Example Labs | LinkedIn",
   url: "https://www.linkedin.com/in/ari-candidate",
-  snippet: "Senior React Engineer working with TypeScript, Next.js, accessibility, and design systems.",
+  snippet: "Senior TypeScript React Node.js GraphQL PostgreSQL engineer — shipped this week.",
 };
 const lead = extractLead(hit, "LinkedIn") as ReturnType<typeof extractLead> & Record<string, unknown>;
 ok("extractLead keeps the public LinkedIn profile url as the handle", lead.url === "https://www.linkedin.com/in/ari-candidate");
-ok("extractLead populates title from SERP title text", lead.title === "Senior React Engineer");
+ok("extractLead populates title from SERP title text", lead.title === "Senior TypeScript Engineer");
 ok("extractLead populates name from SERP title text", lead.name === "Ari Candidate");
 ok("extractLead does not fabricate email", !("email" in lead));
 ok("extractLead does not fabricate location", !("location" in lead));

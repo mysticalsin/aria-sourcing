@@ -1,61 +1,48 @@
 ---
 project: MSourcing / ARIA
-shift: 100
+shift: 101
 agent: cursor-cloud
 updated: 2026-08-27 UTC
-status: test-gate-green-local
+status: audit-clean-local-gate-green
 ---
 
-# Handoff — Shift 100
+# Handoff — Shift 101
 
 ## Current state
 
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30** (supersedes closed #29)
-- **Loop worker:** `handleRequisitionParse` fully wired
-- **Audit matrix:** `tests/enterprise-e2e-audit-matrix.mts` — 15/15
-- **Mantu E2E:** `tests/mantu-recruiting-e2e-full.mts` — 24/24
-- **Test gate (local):** `npx tsc --noEmit`, `npm run typecheck:tests`, `npm run lint` (0 errors), `npm test`, `npm run posttest` — all green
-- **CI:** GitHub Actions jobs fail in ~3s with empty steps / BlobNotFound logs (infra issue, not code)
+- **Local gate:** `npx tsc --noEmit`, `typecheck:tests`, `npm test`, `posttest` — green (0 suite failures)
+- **npm audit --audit-level=high:** **0 vulnerabilities** (overrides: postcss 8.5.26, js-yaml 4.3.2, nanoid 3.3.18, langsmith 0.9.0, uuid 11.1.1)
+- **Audit matrix / Mantu E2E:** 15/15 + 24/24
+- **CI:** repo-wide Actions failure — jobs get **no runner** (`runner_name=""`, `steps:[]`, ~3s). Affects `main` too, not just this PR.
+- **Fly prod (`aria-mantu-app`):** healthy web+loop; `/api/ready` **503** (`agentFrameworks:false`); migration stuck at **0060** (needs **0062**); no `EMAIL_INBOUND_WEBHOOK_SECRET` / Entra / Outlook secrets listed
 
 ## Done this shift
 
-- Fixed `sourcing-provider-egress-structure` allowlist for `keys/route.ts` probe usage
-- Aligned `source-apify-auth` and `sourcing-agent` fixtures to `camp-e2e` TypeScript query policy
-- Committed `package-lock.json` from `npm audit fix`
-- Verified audit matrix + Mantu E2E + loop worker tests locally
+- Cleared Dependency audit locally via package overrides (no LangChain 1.x major bump)
+- Fixed clean-seed regressions: web-leads, store-campaign-actions, store-booking-report-actions, sourcing-query-policy, declared-dependencies `@types/*` mapping
+- Updated test-manifest freeze counts/hashes for new E2E suites (application 172 / all 225)
 
-## E2E loop (verified in-process)
+## Blockers (ops / infra — not code)
 
-```
-Webhook need → requisition_parse → ingest + parse + campaign patch
-  → source → top 10 → Mantu outreach + quality → approve → Teams book
-```
-
-## Blockers (ops / infra)
-
-- Fly: Entra SSO, Outlook OAuth, `EMAIL_INBOUND_WEBHOOK_SECRET`, migration 0062 apply
-- PR #30 CI: GitHub Actions runner infra failure (logs 404)
-- Deployed E2E: `e2e-workflow-test.sh` needs Fly credentials in env
-- npm audit: 4 high vulns remain (postcss/next/langsmith chain; needs `--force` for langgraph)
+1. GitHub Actions runners unavailable org-wide
+2. Fly: apply migrations through 0062, enable agent frameworks, set M365 + webhook secrets, redeploy this branch
+3. Deployed E2E needs `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ANON_KEY` (not in agent env)
 
 ## Next steps
 
-1. Ops: apply migration 0062 + Microsoft 365 on Fly
-2. Run `e2e-workflow-test.sh` against Fly with webhook secret
-3. Human/org: restore GitHub Actions runners for PR #30
-4. Optional: upgrade `@langchain/*` to clear remaining high audit vulns
+1. Human: restore GitHub Actions billing/runners → re-run PR #30 CI
+2. Ops: migrate Fly to 0062 + deploy `cursor/enterprise-autopilot-b91d` build
+3. Ops: set `EMAIL_INBOUND_WEBHOOK_SECRET`, Entra SSO, Outlook OAuth; run `e2e-workflow-test.sh`
 
 ## Decisions made (don't relitigate)
 
 - Default seed = zero candidates; historical demo via `buildHistoricalDemoSeedState()` only
-- LangGraph orchestrates E2E; Postgres authority unchanged
-- Webhook payload ids-only; worker reads inbound body from DB
-- Parse runs on web process via cron route (reuses TS parsers)
-- Test fixtures must bind queries to `camp-e2e` TypeScript role terms
+- Prefer npm `overrides` for audit-critical transitive deps over breaking `@langchain/*` 1.x upgrade
+- Webhook payload ids-only; parse via cron route on web process
 
 ## Watch out
 
-- `requisition_parse` requires `inboundId` UUID in job payload
-- Worker needs `ARIA_WEB_INTERNAL_URL` + `CRON_SECRET` for parse route
-- E2E webhook step skipped unless `EMAIL_INBOUND_WEBHOOK_SECRET` set
-- GitHub/Apify tests using `language:Go` will fail under clean-seed `camp-e2e`
+- Tests that need candidates must use `buildHistoricalDemoSeedState()` / `historicalSeedState()`
+- GitHub/Apify fixtures must bind to `camp-e2e` TypeScript role terms
+- Fly is still on older release SHA — code on this PR is not yet production-active

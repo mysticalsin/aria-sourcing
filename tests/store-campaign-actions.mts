@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { buildSeedState } from "../src/lib/seed";
+import { buildHistoricalDemoSeedState, buildSeedState } from "../src/lib/seed";
 import {
   createCampaignActions,
   type CampaignActionDependencies,
@@ -389,7 +389,7 @@ test("updateCampaign merges a supported status patch without re-scoring", () => 
 });
 
 test("updateCampaign re-scores only matching candidates after a scoring edit", () => {
-  const harness = createHarness();
+  const harness = createHarness(buildHistoricalDemoSeedState());
   const campaignId = harness.state.campaigns[0].id;
   const affectedCount = harness.state.candidates.filter(
     (candidate) => candidate.campaignId === campaignId,
@@ -615,7 +615,7 @@ test("campaign mutations fail closed for a viewer while selection remains availa
 });
 
 test("updateCampaign scores against the merged job analysis", () => {
-  const harness = createHarness();
+  const harness = createHarness(buildHistoricalDemoSeedState());
   const campaign = harness.state.campaigns[0];
   const updatedAnalysis: JobAnalysis = {
     ...campaign.jobAnalysis,
@@ -632,7 +632,7 @@ test("updateCampaign scores against the merged job analysis", () => {
 });
 
 test("updateCampaign records a singular re-score activity for one candidate", () => {
-  const initialState = buildSeedState();
+  const initialState = buildHistoricalDemoSeedState();
   const campaignId = initialState.campaigns[0].id;
   const matching = initialState.candidates.find(
     (candidate) => candidate.campaignId === campaignId,
