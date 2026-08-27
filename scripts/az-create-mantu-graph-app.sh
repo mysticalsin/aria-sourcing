@@ -63,15 +63,30 @@ if [ -n "${EXISTING_APP_ID:-}" ] && [ "$EXISTING_APP_ID" != "null" ]; then
     --enable-id-token-issuance true \
     >/dev/null
 else
-  CREATE_JSON="$(az ad app create \
+  set +e
+  CREATE_ERR="$(az ad app create \
     --display-name "$DISPLAY_NAME" \
     --sign-in-audience AzureADMyOrg \
     --web-redirect-uris "$APP_REDIRECT" "$GOTRUE_REDIRECT" \
     --enable-id-token-issuance true \
-    -o json)"
-  APP_ID="$(printf '%s' "$CREATE_JSON" | jq -r .appId)"
-  OBJECT_ID="$(printf '%s' "$CREATE_JSON" | jq -r .id)"
+    -o json 2>&1)"
+  CREATE_RC=$?
+  set -e
+  if [ "$CREATE_RC" -ne 0 ]; then
+    printf '%s\n' "$CREATE_ERR" >&2
+    if printf '%s' "$CREATE_ERR" | grep -qiE 'Insufficient privileges|Authorization_RequestDenied|Directory permission is needed'; then
+      echo "ERROR: this Entra account cannot create app registrations." >&2
+      echo "       Paste MICROSOFT_CLIENT_ID/SECRET (or /tmp/owner-microsoft.env), or grant" >&2
+      echo "       Application.ReadWrite.All / cloud-app-admin and re-run." >&2
+      touch /tmp/az-create-mantu-graph-app.noperm
+      exit 3
+    fi
+    exit 1
+  fi
+  APP_ID="$(printf '%s' "$CREATE_ERR" | jq -r .appId)"
+  OBJECT_ID="$(printf '%s' "$CREATE_ERR" | jq -r .id)"
   echo "Created appId=$APP_ID objectId=$OBJECT_ID"
+  rm -f /tmp/az-create-mantu-graph-app.noperm
 fi
 
 # Microsoft Graph application id

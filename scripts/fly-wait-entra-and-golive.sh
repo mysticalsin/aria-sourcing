@@ -97,15 +97,10 @@ refresh_device_code_if_needed
 print_device_code
 
 while [ "$(date +%s)" -lt "$deadline" ]; do
-  if az account show >/dev/null 2>&1; then
-    log "az login OK — minting Graph app + applying Fly secrets"
-    bash "$repo/scripts/az-create-mantu-graph-app.sh" --apply || log "WARN: az-create failed"
-    if run_golive; then
-      exit 0
-    fi
-    log "Golive incomplete after az mint — need /tmp/owner-deploy-confirm.env?"
-  elif has_microsoft_drop; then
-    log "owner-microsoft drop-zone present — applying + golive"
+  # Owner-supplied Microsoft drop-zone / env always wins (and clears noperm latch).
+  if has_microsoft_drop; then
+    rm -f /tmp/az-create-mantu-graph-app.noperm
+    log "owner-microsoft drop-zone/env present — applying + golive"
     if run_golive; then
       exit 0
     fi
@@ -116,6 +111,23 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       exit 0
     fi
     log "Golive incomplete with confirm present; will retry."
+  elif az account show >/dev/null 2>&1; then
+    if [ -f /tmp/az-create-mantu-graph-app.noperm ]; then
+      if [ $(( $(date +%s) % 300 )) -lt "$SLEEP_SEC" ]; then
+        log "az OK but cannot create apps (noperm) — need MICROSOFT_* drop-zone + ARIA_PROD_DEPLOY_CONFIRM"
+        bash "$repo/scripts/print-fly-missing-secrets.sh" 2>/dev/null | grep -E 'MISSING|missing' | tee -a "$LOG" || true
+        bash "$repo/scripts/print-fly-deploy-confirm.sh" 2>/dev/null | head -6 | tee -a "$LOG" || true
+      fi
+    else
+      log "az login OK — minting Graph app + applying Fly secrets"
+      if ! bash "$repo/scripts/az-create-mantu-graph-app.sh" --apply; then
+        log "WARN: az-create failed (see /tmp/az-create-mantu-graph-app.noperm if privileges)"
+      fi
+      if run_golive; then
+        exit 0
+      fi
+      log "Golive incomplete after az mint — need /tmp/owner-deploy-confirm.env?"
+    fi
   else
     refresh_device_code_if_needed
     if [ $(( $(date +%s) % 300 )) -lt "$SLEEP_SEC" ]; then
