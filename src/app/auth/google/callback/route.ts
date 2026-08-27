@@ -157,8 +157,11 @@ export async function GET(req: NextRequest) {
     return redirectError(req, "Failed to save email connection.");
   }
 
-  // Mirror connected account on the seat.
-  const { error: updateError } = await svc.from("agent_seats").update({ connected_account: accountEmail }).eq("id", seatId);
+  // Mirror connected account on the seat and promote to live for calendar books.
+  const { error: updateError } = await svc
+    .from("agent_seats")
+    .update({ connected_account: accountEmail, mode: "live", status: "active" })
+    .eq("id", seatId);
   if (updateError) {
     console.error("[google/callback] agent_seats update failed:", updateError.message, updateError.code);
     return redirectError(req, "Failed to update seat connection.");

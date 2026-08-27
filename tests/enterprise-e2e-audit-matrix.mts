@@ -277,6 +277,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /CRON_SECRET is required for Fly enterprise E2E/.test(script)
         && /\/tmp\/aria-e2e-cron-secret/.test(script)
         && /graphSubscription\.active/.test(script)
+        && /mode == "live"/.test(script)
+        && /seat\.mode is not live/.test(script)
         && /migration must be >= 0066_/.test(script)
         && /0066_\*|006\[7-9\]_\*/.test(script)
         && /unknown_subscription/.test(script)

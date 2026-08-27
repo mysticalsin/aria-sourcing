@@ -164,8 +164,12 @@ export async function GET(req: NextRequest) {
     return redirectError(req, "Failed to save email connection.");
   }
 
-  // Mirror connected account on the seat.
-  const { error: updateError } = await svc.from("agent_seats").update({ connected_account: accountEmail }).eq("id", seatId);
+  // Mirror connected account on the seat and promote to live so calendar/Teams
+  // confirmLive can book (seat.mode !== "live" forces dry-run on /api/calendar/event).
+  const { error: updateError } = await svc
+    .from("agent_seats")
+    .update({ connected_account: accountEmail, mode: "live", status: "active" })
+    .eq("id", seatId);
   if (updateError) {
     console.error("[microsoft/callback] agent_seats update failed:", updateError.message, updateError.code);
     return redirectError(req, "Failed to update seat connection.");

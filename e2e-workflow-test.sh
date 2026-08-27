@@ -982,16 +982,32 @@ step "6b) Live Outlook/Teams book (confirmLive:true) when a Graph seat is connec
 # Dry-run alone cannot prove Teams joinUrl. On Fly, require a live Microsoft Graph
 # seat and assert status=created + Teams join URL (unless explicitly skipped).
 api GET "$APP_URL/api/email/connections" || true
-# Prefer a seat whose Graph mail subscription is active (push intake, no polling).
+# Prefer a seat that is mode=live AND has an active Graph mail subscription
+# (confirmLive books require seat.mode === "live" on /api/calendar/event).
 LIVE_SEAT_ID=$(jq -r '
-  (.connections // [])
-  | map(select(
-      (.provider // "") == "Microsoft Graph"
-      and (.hasRefreshToken == true)
-      and ((.graphSubscription.active // false) == true)
-      and ((.seatId // "") | length) > 0
-    ))
-  | .[0].seatId // empty
+  (.connections // []) as $conns
+  | (.seats // []) as $seats
+  | [
+      $conns[]
+      | select(
+          (.provider // "") == "Microsoft Graph"
+          and (.hasRefreshToken == true)
+          and ((.graphSubscription.active // false) == true)
+          and ((.seatId // "") | length) > 0
+        )
+      | .seatId as $sid
+      | select(
+          ($seats
+            | map(select(
+                (.id // "") == $sid
+                and (.mode // "") == "live"
+                and ((.status // "active") == "active")
+              ))
+            | length) > 0
+        )
+      | $sid
+    ]
+  | .[0] // empty
 ' "$RESP" 2>/dev/null || true)
 # Fall back to any live Graph seat only for partial M365 runs (subscription not required).
 if [ -z "$LIVE_SEAT_ID" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ]; then
@@ -1000,7 +1016,7 @@ if [ -z "$LIVE_SEAT_ID" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ]; then
     | map(select(
         (.provider // "") == "Microsoft Graph"
         and (.mode // "") == "live"
-        and (.status // "") == "active"
+        and ((.status // "active") == "active")
         and ((.connectedAccount // "") | length) > 3
       ))
     | .[0].id // empty
@@ -1016,6 +1032,29 @@ if [ -z "$LIVE_SEAT_ID" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ]; then
       ))
     | .[0].seatId // empty
   ' "$RESP" 2>/dev/null || true)
+fi
+# On full Fly E2E, if Outlook webhook is active but seat is still mock, fail closed.
+if [ -z "$LIVE_SEAT_ID" ] && [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" != "1" ] && [ "${ARIA_ALLOW_SKIP_LIVE_CALENDAR:-}" != "1" ]; then
+  MOCK_WITH_SUB=$(jq -r '
+    (.connections // []) as $conns
+    | (.seats // []) as $seats
+    | [
+        $conns[]
+        | select(
+            (.provider // "") == "Microsoft Graph"
+            and (.hasRefreshToken == true)
+            and ((.graphSubscription.active // false) == true)
+            and ((.seatId // "") | length) > 0
+          )
+        | .seatId as $sid
+        | select(($seats | map(select(.id == $sid and (.mode // "") != "live")) | length) > 0)
+        | $sid
+      ]
+    | length
+  ' "$RESP" 2>/dev/null || echo 0)
+  if [ "${MOCK_WITH_SUB:-0}" -gt 0 ]; then
+    fail "Outlook Graph webhook is active but seat.mode is not live — reconnect Outlook (callback must set mode=live) before confirmLive Teams book."
+  fi
 fi
 
 if [ -n "$LIVE_SEAT_ID" ]; then

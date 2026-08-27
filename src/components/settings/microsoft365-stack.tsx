@@ -36,10 +36,20 @@ type ConnectionRow = {
   } | null;
 };
 
+type SeatRow = {
+  id: string;
+  name?: string;
+  provider: string;
+  connectedAccount?: string | null;
+  mode?: string;
+  status?: string;
+};
+
 type ConnectionsPayload = {
   ok?: boolean;
   providers?: ProviderReadiness;
   connections?: ConnectionRow[];
+  seats?: SeatRow[];
   error?: string;
 };
 
@@ -86,7 +96,15 @@ function Microsoft365StackInner() {
   const oauthReady = Boolean(providers?.microsoftOAuth && providers.encryptionReady);
   const mailboxConnected = Boolean(connectedOutlook);
   const inboundReady = Boolean(providers?.inboundWebhookSecret);
-  const calendarReady = mailboxConnected && calendarScoped;
+  const liveGraphSeat = (payload?.seats ?? []).some(
+    (s) =>
+      s.provider === "Microsoft Graph" &&
+      s.mode === "live" &&
+      (s.status === "active" || !s.status) &&
+      Boolean(s.connectedAccount?.trim()),
+  );
+  // Calendar bookability requires a live seat (confirmLive dry-runs when mode !== live).
+  const calendarReady = mailboxConnected && calendarScoped && liveGraphSeat;
   // Step 4 is webhook push readiness: durable mailbox route AND live Graph subscription.
   const webhookIntakeReady = inboundActive && graphSubscriptionActive;
 

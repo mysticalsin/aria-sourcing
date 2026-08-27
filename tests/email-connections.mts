@@ -193,6 +193,10 @@ ok(
 const msCb = readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8");
 ok("microsoft callback registers inbound route", /upsert_inbound_mailbox_route/.test(msCb));
 ok(
+  "microsoft callback promotes seat to live mode for Teams book",
+  /mode:\s*"live"/.test(msCb) && /connected_account:\s*accountEmail/.test(msCb),
+);
+ok(
   "microsoft callback fails closed when inbound route upsert fails",
   /inbound mailbox route failed/.test(msCb) && /redirectError/.test(msCb),
 );
