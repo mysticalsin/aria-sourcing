@@ -54,8 +54,8 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
       id: "outlook",
       title: "Connect email",
       body: supabaseEnabled
-        ? "Link Gmail or Outlook in Settings → Integrations so Aria can pull needs and send from your mailbox."
-        : "Turn on live Supabase, then connect Gmail or Outlook under Settings → Integrations.",
+        ? "Link Outlook (or Gmail) in Settings → Integrations. Hiring needs arrive via Microsoft Graph webhook push — no inbox polling."
+        : "Turn on live Supabase, then connect Outlook under Settings → Integrations for Graph webhook intake.",
       done: outlookOk,
       ctaLabel: outlookOk ? "Manage mailboxes" : "Connect email",
       href: "/settings?tab=integrations",
@@ -72,8 +72,8 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
     },
     {
       id: "source",
-      title: "Pull needs & source",
-      body: "On Intake, pull open needs from Outlook, parse the brief, create the campaign.",
+      title: "Webhook needs & source",
+      body: "On Intake, wait for Graph-delivered needs (or paste a brief). Emergency sync is break-glass only. Then create the campaign and source.",
       done: false,
       ctaLabel: "Go to Intake",
       href: "/intake",

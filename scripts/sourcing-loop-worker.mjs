@@ -1175,6 +1175,9 @@ async function handleCalendarBook(job, context) {
   const startTime = typeof propose?.startTime === "string" ? propose.startTime : null;
   const endTime = typeof propose?.endTime === "string" ? propose.endTime : null;
   const claimId = typeof propose?.claimId === "string" ? propose.claimId : null;
+  const agenda = Array.isArray(propose?.agenda)
+    ? propose.agenda.filter((line) => typeof line === "string" && line.trim()).map((line) => line.trim())
+    : [];
   const slotNote =
     startTime && endTime ? `Proposed slot ${startTime} – ${endTime}.` : "Slot to be chosen in Calendar.";
   const claimNote = claimId ? `Claim ${claimId}.` : "No calendar claim (propose cron unavailable).";
@@ -1198,6 +1201,40 @@ async function handleCalendarBook(job, context) {
     createdAt: new Date().toISOString(),
   };
 
+  // Persist structured proposal + Interested stage so Calendar Ready-to-book can
+  // pin confirmLive to the proposed window (activity notes alone are not enough).
+  const snapshot = await readWorkspaceSnapshot(context.client, job.workspace_id);
+  const proposalPatch = await context.client.rpc("apply_workspace_patch", {
+    p_workspace_id: job.workspace_id,
+    p_expected_updated_at: snapshot.updated_at,
+    p_patch_kind: "merge_candidate_patch",
+    p_patch: {
+      id: candidateId,
+      campaignId,
+      patch: {
+        stage: "Interested",
+        interviewProposal: {
+          startTime: startTime ?? "",
+          endTime: endTime ?? "",
+          agenda,
+          claimId,
+          proposeStatus,
+          channel: "Microsoft Teams / Outlook",
+          proposedAt: new Date().toISOString(),
+        },
+      },
+    },
+    p_receipt_key: `interview-proposal:${campaignId}:${candidateId}`,
+  });
+  if (proposalPatch.error) throw new HandlerError(proposalPatch.error.code, true);
+  const proposalStatus =
+    isRecord(proposalPatch.data) && typeof proposalPatch.data.status === "string"
+      ? proposalPatch.data.status
+      : "patch_failed";
+  if (proposalStatus !== "applied" && proposalStatus !== "already_applied") {
+    throw new HandlerError(`proposal_${proposalStatus}`, proposalStatus === "stale_token");
+  }
+
   return completeJobWithWorkspacePatch(
     context.client,
     job,
@@ -1218,6 +1255,9 @@ async function handleCalendarBook(job, context) {
       intent,
       bookingMode: "human_confirm_live",
       proposeStatus,
+      startTime,
+      endTime,
+      claimId,
     })],
     [],
   );
@@ -1294,13 +1334,41 @@ async function handleInboundClassify(job, context) {
       : undefined,
   };
 
-  // Positive intent → optional draft follow-up for entitled autopilot (still
-  // approval-gated before send). No re-source; sourcing continues on its own jobs.
+  // Positive intent → stage Interested so Calendar "Ready to book" surfaces them,
+  // then optional draft follow-up for entitled autopilot (still approval-gated).
   const successors = [];
   let draftQueued = false;
+  let stageUpdated = false;
   const positive =
     classification.intent === "INTERESTED" || classification.intent === "QUALIFIED_INTEREST";
   if (positive && campaignId && candidateId) {
+    try {
+      const snapshot = await readWorkspaceSnapshot(context.client, job.workspace_id);
+      const stagePatch = await context.client.rpc("apply_workspace_patch", {
+        p_workspace_id: job.workspace_id,
+        p_expected_updated_at: snapshot.updated_at,
+        p_patch_kind: "merge_candidate_patch",
+        p_patch: {
+          id: candidateId,
+          campaignId,
+          patch: { stage: "Interested" },
+        },
+        p_receipt_key: `stage-interested:${inboundId}`,
+      });
+      if (stagePatch.error) throw new HandlerError(stagePatch.error.code, true);
+      const stageStatus =
+        isRecord(stagePatch.data) && typeof stagePatch.data.status === "string"
+          ? stagePatch.data.status
+          : "patch_failed";
+      if (stageStatus !== "applied" && stageStatus !== "already_applied") {
+        throw new HandlerError(`stage_${stageStatus}`, stageStatus === "stale_token");
+      }
+      stageUpdated = true;
+    } catch (err) {
+      if (err instanceof HandlerError) throw err;
+      stageUpdated = false;
+    }
+
     try {
       const entitled = await context.client
         .from("profiles")
@@ -1343,11 +1411,13 @@ async function handleInboundClassify(job, context) {
       intent: classification.intent,
       classifier,
       draftQueued,
+      stageUpdated,
     },
     [event("reply.classified", "inbound_email", inboundId, {
       intent: classification.intent,
       classifier,
       draftQueued,
+      stageUpdated,
     })],
     successors,
   );

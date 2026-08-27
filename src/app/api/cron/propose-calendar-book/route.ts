@@ -1,4 +1,4 @@
-import { timingSafeEqual, randomUUID } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
@@ -19,7 +19,6 @@ const BodySchema = z.object({
   confirmLive: z.boolean().optional().default(false),
   startTime: z.string().min(1).max(40).optional(),
   endTime: z.string().min(1).max(40).optional(),
-  seatId: z.string().uuid().optional(),
 });
 
 function authorized(req: NextRequest): boolean {
@@ -63,6 +62,19 @@ export async function POST(req: NextRequest) {
   const parsed = BodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ ok: false, status: "invalid_request" }, { status: 400 });
+  }
+
+  // Live Graph booking belongs on POST /api/calendar/event with confirmLive.
+  // This cron only proposes (claim → dry-run release) for the human confirm path.
+  if (parsed.data.confirmLive === true) {
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "use_calendar_event_route",
+        detail: "Live Teams/Outlook booking uses POST /api/calendar/event with confirmLive.",
+      },
+      { status: 400 },
+    );
   }
 
   const svc = getServiceSupabase();
@@ -115,42 +127,24 @@ export async function POST(req: NextRequest) {
   const agenda = mantuFirstInterviewAgenda(roleTitle);
 
   // Default autonomous path: dry-run — release claim so humans can confirmLive later.
-  if (!parsed.data.confirmLive) {
-    await reconcileCalendarBooking(svc, {
-      workspaceId: parsed.data.workspaceId,
-      id: claim.id,
-      status: "released",
-      detail: "dry-run_loop_propose",
-    });
-    return NextResponse.json({
-      ok: true,
-      status: "proposed_dry_run",
-      bookingMode: "human_confirm_live",
-      campaignId: campaign.id,
-      candidateId: candidate.id,
-      candidateName: candidate.name,
-      startTime: window.startTime,
-      endTime: window.endTime,
-      agenda,
-      claimId: claim.id,
-      replay: claim.replay,
-      requestId,
-    });
-  }
-
-  // Live path reserved for operator-enabled confirmLive + Graph secrets.
-  // Without attempting Graph here, leave claim held and mark needs_human.
+  await reconcileCalendarBooking(svc, {
+    workspaceId: parsed.data.workspaceId,
+    id: claim.id,
+    status: "released",
+    detail: "dry-run_loop_propose",
+  });
   return NextResponse.json({
     ok: true,
-    status: "claimed_awaiting_graph",
-    bookingMode: "confirm_live_required",
+    status: "proposed_dry_run",
+    bookingMode: "human_confirm_live",
     campaignId: campaign.id,
     candidateId: candidate.id,
+    candidateName: candidate.name,
     startTime: window.startTime,
     endTime: window.endTime,
     agenda,
     claimId: claim.id,
-    seatId: parsed.data.seatId ?? null,
-    requestId: requestId.slice(0, 100) || randomUUID(),
+    replay: claim.replay,
+    requestId,
   });
 }

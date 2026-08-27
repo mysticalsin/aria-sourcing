@@ -98,7 +98,9 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
 
   async function handleBook(candidate: Candidate) {
     setBooking(candidate.id);
-    const res = await a.createBookingFor(candidate.id);
+    const res = await a.createBookingFor(candidate.id, {
+      startTime: candidate.interviewProposal?.startTime || undefined,
+    });
     setBooking(null);
     if (!res.ok) {
       toast({
@@ -171,10 +173,19 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
                     <p className="truncate text-xs text-muted">
                       {c.currentTitle} @ {c.currentCompany}
                     </p>
-                    <p className="mt-0.5 flex items-center gap-1 text-[0.6875rem] text-muted">
-                      <MapPin className="h-3 w-3" aria-hidden />
-                      {c.location} · {c.timezone}
-                    </p>
+                    {c.interviewProposal?.startTime ? (
+                      <p className="mt-0.5 text-[0.6875rem] font-medium text-tangerine">
+                        Proposed {formatDateTime(c.interviewProposal.startTime)}
+                        {c.interviewProposal.proposeStatus
+                          ? ` · ${c.interviewProposal.proposeStatus}`
+                          : ""}
+                      </p>
+                    ) : (
+                      <p className="mt-0.5 flex items-center gap-1 text-[0.6875rem] text-muted">
+                        <MapPin className="h-3 w-3" aria-hidden />
+                        {c.location} · {c.timezone}
+                      </p>
+                    )}
                   </div>
                   <Button
                     variant="secondary"
@@ -184,7 +195,7 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
                     onClick={() => handleBook(c)}
                     className="shrink-0"
                   >
-                    Book
+                    {c.interviewProposal?.startTime ? "Confirm slot" : "Book"}
                   </Button>
                 </li>
               ))}
@@ -302,7 +313,7 @@ export default function CalendarPage() {
       <PageHeader
         eyebrow="Scheduling"
         title="Interview calendar"
-        description="Confirmed and proposed interviews as an agenda, plus interested candidates ready to book. Teams / calendar links are attached once a live calendar integration is connected."
+        description="Confirmed interviews and loop-proposed slots for interested candidates. Confirm with Graph to create a Teams online meeting."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="violet" dot>

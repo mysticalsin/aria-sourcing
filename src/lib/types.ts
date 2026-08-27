@@ -391,6 +391,20 @@ export interface Candidate {
   industryExperience: string[];
   recentActivity: string;
   stage: CandidateStage;
+  /**
+   * Loop-proposed first interview (Teams/Outlook). Set by calendar_book after
+   * propose-calendar-book dry-run. Cleared when a Booking is created. Absent =
+   * no autonomous proposal yet.
+   */
+  interviewProposal?: {
+    startTime: string;
+    endTime: string;
+    agenda: string[];
+    claimId: string | null;
+    proposeStatus: string;
+    channel: string;
+    proposedAt: string;
+  } | null;
   /** Historical high-water-mark funnel rank (see STAGE_RANK in metrics.ts) —
    *  the furthest the candidate ever progressed, even if `stage` later moved
    *  to a terminal/negative state (Rejected, Suppressed). Absent = derive

@@ -290,10 +290,12 @@ else
   fail "Entra/graphSubscription reporting surface missing from source."
 fi
 if grep -q 'propose-calendar-book' scripts/sourcing-loop-worker.mjs \
-  && grep -q 'claimCalendarBooking' src/app/api/cron/propose-calendar-book/route.ts; then
-  pass "calendar_book → propose-calendar-book claim/dry-run path present."
+  && grep -q 'claimCalendarBooking' src/app/api/cron/propose-calendar-book/route.ts \
+  && grep -q 'interviewProposal' scripts/sourcing-loop-worker.mjs \
+  && grep -q 'use_calendar_event_route' src/app/api/cron/propose-calendar-book/route.ts; then
+  pass "calendar_book → propose dry-run + structured interviewProposal + UI-only live book."
 else
-  fail "calendar propose path missing from worker or cron route."
+  fail "calendar propose path missing interviewProposal or use_calendar_event_route guard."
 fi
 
 # ===========================================================================

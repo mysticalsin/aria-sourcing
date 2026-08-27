@@ -1082,7 +1082,11 @@ export default function SettingsPage() {
             n="17"
             eyebrow="Runtime"
             title="Aria agent runtime"
-            description="Connect the live NousResearch Aria agent for real LLM-backed outreach drafting. Text generation only. The approval gate still applies. Falls back to the built-in mock when off or misconfigured. Admin only."
+            description={
+              demoLoginEnabled
+                ? "Connect the live NousResearch Aria agent for real LLM-backed outreach drafting. Text generation only. The approval gate still applies. Demo mode may fall back to built-in mock. Admin only."
+                : "Connect the live NousResearch Aria agent for real LLM-backed outreach drafting. Text generation only. The approval gate still applies. Live LLM is required — no mock fallback on production tenants. Admin only."
+            }
           >
             <HermesRuntimePanel />
           </Section>

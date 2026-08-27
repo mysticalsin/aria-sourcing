@@ -261,6 +261,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /llm_required/.test(parseRoute)
         && /serverGenerateText/.test(draftRoute)
         && /llm_required/.test(draftRoute)
+        && /critics_required/.test(draftRoute)
         && /runRecruitingGraph/.test(draftRoute)
         && /graphStage/.test(draftRoute)
         && /validateOutreachQualityLive/.test(draftRoute)
@@ -280,6 +281,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       const panel = readFileSync("src/components/intake/outlook-needs-panel.tsx", "utf8");
       const flyApp = readFileSync("fly.app.toml", "utf8");
       const flyAuth = readFileSync("fly.auth.toml", "utf8");
+      const setup = readFileSync("src/components/settings/setup-guide-panel.tsx", "utf8");
       return (
         /demoLoginEnabled/.test(intake)
         && /Sample substitution is disabled/.test(intake)
@@ -287,6 +289,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /Demo hiring emails are disabled/.test(panel)
         && /NEXT_PUBLIC_ENABLE_DEMO_LOGIN\s*=\s*"false"/.test(flyApp)
         && /GOTRUE_EXTERNAL_AZURE/.test(flyAuth)
+        && /webhook push/.test(setup)
+        && /Emergency sync is break-glass/.test(setup)
       );
     },
   },
@@ -297,6 +301,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       const card = readFileSync("src/components/settings/integration-card.tsx", "utf8");
       return (
         /demoLoginEnabled && roadmapIntegrations\.length/.test(settings)
+        && /no mock fallback on production tenants/.test(settings)
         && /integration\.real \? \(/.test(card)
         && /Not available/.test(card)
       );
@@ -307,17 +312,24 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     evidence: () => {
       const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
       const propose = readFileSync("src/app/api/cron/propose-calendar-book/route.ts", "utf8");
+      const calendar = readFileSync("src/app/calendar/page.tsx", "utf8");
+      const types = readFileSync("src/lib/types.ts", "utf8");
       const migration = readFileSync("supabase/migrations/0065_calendar_book_and_graph_renew.sql", "utf8");
       return (
         /calendar_book/.test(worker)
         && /handleCalendarBook/.test(worker)
         && /calendarProposeUrl/.test(worker)
+        && /interviewProposal/.test(worker)
+        && /stage: "Interested"/.test(worker)
         && /type: "booking"/.test(worker)
         && /needs_human_confirm/.test(worker)
         && /human_confirm_live/.test(worker)
         && /claimCalendarBooking/.test(propose)
-        && /confirmLive/.test(propose)
+        && /use_calendar_event_route/.test(propose)
         && /proposed_dry_run/.test(propose)
+        && /interviewProposal\?\.startTime/.test(calendar)
+        && /Confirm slot/.test(calendar)
+        && /interviewProposal\?:/.test(types)
         && /'calendar_book'/.test(migration)
       );
     },

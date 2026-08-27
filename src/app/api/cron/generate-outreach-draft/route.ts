@@ -177,6 +177,20 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Autonomous drafts require live multi-agent critics — deterministic-only is not enough.
+  if (effective.llmCriticsUsed !== true) {
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "critics_required",
+        detail: "Live multi-agent LLM quality critics required for autonomous outreach.",
+        quality: effective,
+        graphStage: graphResult.stage,
+      },
+      { status: 503 },
+    );
+  }
+
   const settings: Pick<SystemSettings, "dryRunMode"> = { dryRunMode: true };
   const outreach = newOutreachMessage(
     candidate,

@@ -412,7 +412,7 @@ export function createBookingReportActions({
       applied = true;
       const candidates = current.candidates.map((item) =>
         item.id === candidateId
-          ? { ...item, ...withStage(item, "Booked"), booking }
+          ? { ...item, ...withStage(item, "Booked"), booking, interviewProposal: null }
           : item,
       );
       const bookedCandidate = candidates.find((item) => item.id === candidateId) ?? liveCandidate;
