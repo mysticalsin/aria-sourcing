@@ -25,16 +25,15 @@ pull_env() {
   local name="$1" out="$2"
   local raw val
   raw="$($FLYBIN ssh console -a aria-mantu-app -C "printenv $name" 2>/dev/null || true)"
-  # Prefer JWT lines (service role), else longest secret-looking token.
-  val="$(printf '%s\n' "$raw" | tr -d '\r' | awk '
-    /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/ { print; found=1 }
-    END { if (!found) exit 1 }
-  ' 2>/dev/null || true)"
+  # Prefer JWT (service role). Do not use awk // regex with / inside the class.
+  val="$(printf '%s\n' "$raw" | tr -d '\r' | grep -E '^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$' | tail -1 || true)"
   if [ -z "$val" ]; then
-    val="$(printf '%s\n' "$raw" | tr -d '\r' | awk '
-      /^[A-Za-z0-9+/=_-]{16,}$/ { if (length($0) > bestlen) { best=$0; bestlen=length($0) } }
-      END { if (bestlen >= 16) print best }
-    ')"
+    # Hex webhook/cron secrets (and similar).
+    val="$(printf '%s\n' "$raw" | tr -d '\r' | grep -E '^[0-9a-fA-F]{32,}$' | tail -1 || true)"
+  fi
+  if [ -z "$val" ]; then
+    # Last long token-like line (skip flyctl banners with spaces).
+    val="$(printf '%s\n' "$raw" | tr -d '\r' | grep -E '^[A-Za-z0-9+/=_-]{32,}$' | tail -1 || true)"
   fi
   if [ -z "$val" ]; then
     echo "WARN: could not read $name from aria-mantu-app" >&2
