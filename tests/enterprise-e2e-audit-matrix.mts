@@ -562,7 +562,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
-    requirement: "Enterprise E2E deliverable tracked on open PR (supersedes closed #29–#31)",
+    requirement: "Enterprise E2E deliverable tip-tracked (PR #32 closed; supersedes #29–#31)",
     evidence: () => {
       const golive = readFileSync("scripts/fly-golive-mantu-e2e.sh", "utf8");
       const handoff = readFileSync("_relay/HANDOFF.md", "utf8");
