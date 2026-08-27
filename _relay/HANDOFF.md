@@ -1,43 +1,41 @@
 ---
 project: MSourcing / ARIA
-shift: 156
+shift: 157
 agent: cursor-cloud
 updated: 2026-08-27 UTC
 status: awaiting-microsoft-entra-and-deploy-confirm
 ---
 
-# Handoff — Shift 156
+# Handoff — Shift 157
 
 ## Current state
 
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open (supersedes closed #29, #30)
-- **Tip:** `beb0a65c9ec841f9c82ee9a293f290dc74b77770` (fly-apply-owner-microsoft-secrets)
+- **Tip:** pending (owner-microsoft.env drop-zone)
 - **Local gate:** green; audit **45/45**
 - **Fly missing (6):** MICROSOFT_CLIENT_ID/SECRET + GOTRUE_EXTERNAL_AZURE_*
-- **Stale:** `ba88302` / mig **0060** / Graph **404**; confirm unset; ADMIN_* unset
-- **REDIRECT_URI:** present on Fly
+- **Stale:** `ba88302` / mig **0060** / Graph **404**; confirm unset
 
 ## Done this shift
 
-- Added `scripts/fly-apply-owner-microsoft-secrets.sh` — applies owner-exported Azure/Entra env to Fly; refuses PLACEHOLDER/empty (no invent)
-- Wired into activate + secrets checklist
+- Apply script loads `/tmp/owner-microsoft.env` or `production-readiness/.owner-microsoft.env` (gitignored)
+- Example: `production-readiness/.owner-microsoft.env.example`
+- Timer recheck looks for drop-zone before status-only
 
 ## Next steps
 
-1. Owner: export real MICROSOFT_CLIENT_ID/SECRET (+ Entra GOTRUE_*) then `bash scripts/fly-apply-owner-microsoft-secrets.sh`
-2. Owner: `print-fly-deploy-confirm.sh` → export → `fly-deploy-now.sh`
+1. Owner: fill `/tmp/owner-microsoft.env` (from example) or export env → `bash scripts/fly-apply-owner-microsoft-secrets.sh`
+2. `print-fly-deploy-confirm.sh` → `fly-deploy-now.sh`
 3. Connect Outlook; provide ADMIN_*
 4. Agent: E2E → ready+0066+Graph200+PASS → goal complete
 
 ## Decisions made (don't relitigate)
 
 - PR #31 supersedes closed #29 and #30
-- No Fly deploy without `ARIA_PROD_DEPLOY_CONFIRM` — use `bash scripts/print-fly-deploy-confirm.sh`
-- Target mig **0066**; `.fly-token.env` for flyctl
-- Never invent Azure client id/secret; apply script only uses owner-exported env
-- Top-10 approve; missing-mantu-brand; kimi E2E default; LinkedIn 409; confirmLive Teams
+- No Fly deploy without `ARIA_PROD_DEPLOY_CONFIRM`
+- Never invent Azure client id/secret; apply refuses PLACEHOLDER
+- Drop-zone files must never be committed
 
 ## Watch out
 
-- Outlook seat required after tip deploy; rotate webhook if `/tmp` lost
-- Timer `enterprise-e2e-deploy-recheck` ~10m
+- Rotate webhook if `/tmp` lost; Outlook seat required after tip deploy

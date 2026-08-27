@@ -11,11 +11,14 @@ set -euo pipefail
 
 cat <<'EOF'
 # === aria-mantu-app (Outlook / Graph / webhook) ===
-# Prefer the apply helper (reads owner-exported env; refuses PLACEHOLDER):
+# Prefer the apply helper (reads owner-exported env or drop-zone; refuses PLACEHOLDER):
 #   export MICROSOFT_CLIENT_ID=... MICROSOFT_CLIENT_SECRET=...
 #   export GOTRUE_EXTERNAL_AZURE_CLIENT_ID=... GOTRUE_EXTERNAL_AZURE_SECRET=...
 #   export GOTRUE_EXTERNAL_AZURE_URL='https://login.microsoftonline.com/<tenant>/v2.0'
 #   bash scripts/fly-apply-owner-microsoft-secrets.sh
+# Or drop KEY=value file (never commit):
+#   cp production-readiness/.owner-microsoft.env.example /tmp/owner-microsoft.env
+#   # edit real values, then run apply script
 #
 # Or set manually:
 

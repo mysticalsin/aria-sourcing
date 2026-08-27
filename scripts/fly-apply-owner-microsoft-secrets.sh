@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # fly-apply-owner-microsoft-secrets.sh — apply owner-supplied Azure secrets to Fly.
 #
-# Does NOT invent credentials. Reads values from the calling shell and refuses
-# empty / PLACEHOLDER_* values. Safe for agent to run once the owner has
-# exported real Azure app + Entra values into the environment.
+# Does NOT invent credentials. Reads values from (in order):
+#   1) /tmp/owner-microsoft.env          (agent VM drop-zone; never commit)
+#   2) production-readiness/.owner-microsoft.env  (gitignored local file)
+#   3) already-exported shell environment
+# Refuses empty / PLACEHOLDER_* values.
 #
 # Required for Graph/Outlook on aria-mantu-app:
 #   MICROSOFT_CLIENT_ID
@@ -19,14 +21,35 @@
 #   GOTRUE_EXTERNAL_AZURE_ENABLED  (default: true when applying Entra block)
 #
 # Usage:
+#   # Option A — export in shell
 #   export MICROSOFT_CLIENT_ID=... MICROSOFT_CLIENT_SECRET=...
 #   export GOTRUE_EXTERNAL_AZURE_CLIENT_ID=... GOTRUE_EXTERNAL_AZURE_SECRET=...
 #   export GOTRUE_EXTERNAL_AZURE_URL='https://login.microsoftonline.com/<tenant>/v2.0'
+#   bash scripts/fly-apply-owner-microsoft-secrets.sh
+#
+#   # Option B — drop a KEY=value file (never commit):
+#   cp production-readiness/.owner-microsoft.env.example /tmp/owner-microsoft.env
+#   # edit real values into /tmp/owner-microsoft.env
 #   bash scripts/fly-apply-owner-microsoft-secrets.sh
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo"
+
+load_owner_env_file() {
+  local path="$1"
+  [ -r "$path" ] || return 0
+  echo "Loading owner secrets from $path (values not printed)"
+  set -a
+  # shellcheck disable=SC1090
+  source "$path"
+  set +a
+}
+
+# Drop-zone first, then gitignored local file. Shell exports already present win
+# only if drop files do not override — source after so file wins for intentional drops.
+load_owner_env_file "/tmp/owner-microsoft.env"
+load_owner_env_file "$repo/production-readiness/.owner-microsoft.env"
 
 if [ -z "${FLY_API_TOKEN:-}" ] && [ -r "$repo/production-readiness/.fly-token.env" ]; then
   export FLY_API_TOKEN="$(tr -d '\n\r ' < "$repo/production-readiness/.fly-token.env")"
