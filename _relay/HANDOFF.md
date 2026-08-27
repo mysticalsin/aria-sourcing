@@ -11,7 +11,7 @@ status: awaiting-microsoft-entra-and-deploy-confirm
 ## Current state
 
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open (supersedes closed #29, #30)
-- **Tip:** pending (`fly-apply-owner-microsoft-secrets.sh`)
+- **Tip:** `beb0a65c9ec841f9c82ee9a293f290dc74b77770` (fly-apply-owner-microsoft-secrets)
 - **Local gate:** green; audit **45/45**
 - **Fly missing (6):** MICROSOFT_CLIENT_ID/SECRET + GOTRUE_EXTERNAL_AZURE_*
 - **Stale:** `ba88302` / mig **0060** / Graph **404**; confirm unset; ADMIN_* unset
