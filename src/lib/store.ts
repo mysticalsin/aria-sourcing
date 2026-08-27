@@ -1774,6 +1774,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const dtoById = new Map(candidates.map((item) => [item.candidate.id, item.dto]));
         const messages = unique.map((candidate) => {
           const dto = dtoById.get(candidate.id)!;
+          const voice = enterpriseMantuVoice();
           const generated = dto.draftSubject && dto.draftBody
             ? {
                 subject: dto.draftSubject,
@@ -1787,16 +1788,35 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 finalTone,
                 "Email",
                 1,
-                undefined,
+                voice,
                 latestCampaign.jobAnalysis.language ?? prev.settings.defaultLanguage,
               );
-          return newOutreachMessage(
+          const quality = validateOutreachQuality({
+            subject: generated.subject,
+            body: generated.body,
+            channel: "Email",
+          });
+          const gated = {
+            ...generated,
+            subject: quality.text.subject,
+            body: quality.text.body,
+          };
+          const msg = newOutreachMessage(
             candidate,
             latestCampaign,
-            generated,
+            gated,
             finalTone,
             prev.settings,
           );
+          if (quality.status === "blocked") {
+            msg.status = "Needs Approval";
+            msg.qualityStatus = "blocked";
+          } else {
+            msg.qualityStatus = quality.status;
+          }
+          msg.qualityScore = quality.aggregateScore;
+          msg.htmlBody = mantuEmailHtmlWrapper(gated.body);
+          return msg;
         });
         added = unique.length;
         drafted = messages.length;
@@ -3449,13 +3469,33 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         personalizationEvidence: [`Replying to their message: "${excerpt}"`],
         channel: reply.channel,
       };
+      const quality = validateOutreachQuality({
+        subject: gen.subject,
+        body: gen.body,
+        channel: reply.channel,
+      });
+      const gated = {
+        ...gen,
+        subject: quality.text.subject,
+        body: quality.text.body,
+      };
       const priorMaxStep = s.outreach
         .filter((m) => m.candidateId === candidate.id)
         .reduce((max, m) => Math.max(max, m.sequenceStep), 0);
       const msg: OutreachMessage = {
-        ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, priorMaxStep + 1),
+        ...newOutreachMessage(candidate, campaign, gated, finalTone, s.settings, priorMaxStep + 1),
         ...(reply.inboxThreadId ? { inboxThreadId: reply.inboxThreadId } : {}),
       };
+      if (quality.status === "blocked") {
+        msg.status = "Needs Approval";
+        msg.qualityStatus = "blocked";
+      } else {
+        msg.qualityStatus = quality.status;
+      }
+      msg.qualityScore = quality.aggregateScore;
+      if (reply.channel === "Email") {
+        msg.htmlBody = mantuEmailHtmlWrapper(gated.body);
+      }
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
         return withActivity(
@@ -3463,7 +3503,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           makeActivity({
             type: "outreach",
             title: `Reply drafted: ${candidate.name}`,
-            notes: `${msg.channel} response drafted from the classified reply. Awaiting approval before anything sends.`,
+            notes: `${msg.channel} response drafted from the classified reply. Quality ${quality.status} (${quality.aggregateScore}/100). Awaiting approval before anything sends.`,
             outcome: msg.status,
             campaignId: campaign.id,
             linkedEntityType: "candidate",

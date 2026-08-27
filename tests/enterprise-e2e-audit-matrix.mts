@@ -156,6 +156,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /function enterpriseMantuVoice/.test(store)
         && /persona: mantuVoice\.persona/.test(mockAi)
         && /\/tmp\/aria-e2e-webhook-secret/.test(e2eScript)
+        && /validateOutreachQuality/.test(store)
+        && /draftReplyResponse/.test(store)
       );
     },
   },

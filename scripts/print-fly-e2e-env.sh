@@ -7,12 +7,13 @@
 #
 # Usage:
 #   bash scripts/print-fly-e2e-env.sh           # human checklist + export lines
-#   eval "$(bash scripts/print-fly-e2e-env.sh --export)"  # ANON_KEY only
+#   eval "$(bash scripts/print-fly-e2e-env.sh --export)"  # ANON_KEY (+ webhook from /tmp)
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 secrets="$repo/production-readiness/.fly-secrets.env"
 mode="${1:-}"
+webhook_tmp="/tmp/aria-e2e-webhook-secret"
 
 read_fly_secret() {
   node - "$1" "$secrets" <<'NODE'
@@ -34,9 +35,14 @@ NODE
 }
 
 anon_key="$(read_fly_secret FLY_SUPABASE_ANON_KEY || true)"
+webhook_key=""
+if [ -r "$webhook_tmp" ]; then
+  webhook_key="$(tr -d '\n\r' < "$webhook_tmp")"
+fi
 
 if [ "$mode" = "--export" ]; then
   [ -n "$anon_key" ] && printf 'export ANON_KEY=%q\n' "$anon_key"
+  [ -n "$webhook_key" ] && printf 'export EMAIL_INBOUND_WEBHOOK_SECRET=%q\n' "$webhook_key"
   exit 0
 fi
 
@@ -55,10 +61,20 @@ fi
 cat <<'EOF'
 export ADMIN_EMAIL='your-admin@example.com'
 export ADMIN_PASSWORD='your-admin-password'
+EOF
+
+if [ -n "$webhook_key" ]; then
+  printf "export EMAIL_INBOUND_WEBHOOK_SECRET=%q\n" "$webhook_key"
+  echo "# loaded from $webhook_tmp (agent-owned Fly webhook secret)"
+else
+  cat <<'EOF'
 # required for Fly enterprise E2E (webhook → requisition_parse):
 export EMAIL_INBOUND_WEBHOOK_SECRET='your-32-char-webhook-secret'
-# If this agent VM still has /tmp/aria-e2e-webhook-secret, e2e-workflow-test.sh
-# loads it automatically when EMAIL_INBOUND_WEBHOOK_SECRET is unset.
+# e2e-workflow-test.sh also auto-loads /tmp/aria-e2e-webhook-secret when unset
+EOF
+fi
+
+cat <<'EOF'
 # Fly currently ships KIMI_API_KEY — hermes outreach drafts must match:
 export AGENT_PROVIDER=kimi
 export AGENT_MODEL=moonshot-v1-8k
