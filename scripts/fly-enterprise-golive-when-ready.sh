@@ -24,6 +24,20 @@ if [ -z "${FLY_API_TOKEN:-}" ] && [ -r "$repo/production-readiness/.fly-token.en
   export FLY_API_TOKEN="$(tr -d '\n\r ' < "$repo/production-readiness/.fly-token.env")"
 fi
 
+# Optional owner drop-zone for deploy confirm (never invent; never commit).
+# File may contain ARIA_PROD_DEPLOY_CONFIRM=... and optional ARIA_RELEASE_SHA=...
+load_deploy_confirm_drop() {
+  local path="$1"
+  [ -r "$path" ] || return 0
+  echo "Loading deploy confirm from $path (value not printed)"
+  set -a
+  # shellcheck disable=SC1090
+  source "$path"
+  set +a
+}
+load_deploy_confirm_drop "/tmp/owner-deploy-confirm.env"
+load_deploy_confirm_drop "$repo/production-readiness/.owner-deploy-confirm.env"
+
 has_drop=0
 for f in /tmp/owner-microsoft.env "$repo/production-readiness/.owner-microsoft.env"; do
   if [ -r "$f" ] && ! grep -q 'PLACEHOLDER' "$f" 2>/dev/null; then
@@ -58,11 +72,20 @@ bash "$repo/scripts/print-fly-missing-secrets.sh" || true
 echo
 
 if [ -n "${ARIA_PROD_DEPLOY_CONFIRM:-}" ]; then
-  echo "=== ARIA_PROD_DEPLOY_CONFIRM present — deploying tip $TIP ==="
-  export ARIA_RELEASE_SHA="${ARIA_RELEASE_SHA:-$TIP}"
-  bash "$repo/scripts/fly-deploy-now.sh"
+  case "${ARIA_PROD_DEPLOY_CONFIRM}" in
+    ""|PLACEHOLDER*|placeholder*)
+      echo "=== Deploy confirm is PLACEHOLDER — refusing (will not invent) ==="
+      bash "$repo/scripts/print-fly-deploy-confirm.sh"
+      ;;
+    *)
+      echo "=== ARIA_PROD_DEPLOY_CONFIRM present — deploying tip $TIP ==="
+      export ARIA_RELEASE_SHA="${ARIA_RELEASE_SHA:-$TIP}"
+      bash "$repo/scripts/fly-deploy-now.sh"
+      ;;
+  esac
 else
   echo "=== Deploy confirm unset — not deploying (will not invent confirm) ==="
+  echo "    Option: write /tmp/owner-deploy-confirm.env from print-fly-deploy-confirm.sh output"
   bash "$repo/scripts/print-fly-deploy-confirm.sh"
 fi
 

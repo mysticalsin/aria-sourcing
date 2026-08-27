@@ -75,7 +75,10 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
 
   const isLive = integration.mode === "live";
   const connected = integration.status === "connected";
-  const isMailbox = integration.category === "Inbox" || integration.category === "Comms";
+  const isGraphOAuthCard =
+    integration.id === "int_outlook" || integration.id === "int_graph_teams" || integration.id === "int_gmail";
+  const isMailbox =
+    !isGraphOAuthCard && (integration.category === "Inbox" || integration.category === "Comms");
 
   function handleCloseModal() {
     setConfigureOpen(false);
@@ -83,6 +86,28 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
     setSmtpEmail("");
     setSmtpPassword("");
     setSmtpHost("");
+  }
+
+  function scrollToEmailConnections() {
+    const el =
+      document.getElementById("microsoft365-stack") ||
+      document.getElementById("email-connections-panel");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      el.focus({ preventScroll: true });
+    }
+  }
+
+  function handleConfigureClick() {
+    if (isGraphOAuthCard) {
+      if (typeof window !== "undefined" && window.location.pathname === "/settings") {
+        scrollToEmailConnections();
+        return;
+      }
+      router.push("/settings?tab=integrations#microsoft365-stack");
+      return;
+    }
+    setConfigureOpen(true);
   }
 
   async function handleTest() {
@@ -317,9 +342,9 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                   size="sm"
                   className="flex-1"
                   leftIcon={<Plug className="h-4 w-4" />}
-                  onClick={() => setConfigureOpen(true)}
+                  onClick={handleConfigureClick}
                 >
-                  Configure
+                  {isGraphOAuthCard ? "Connect Outlook" : "Configure"}
                 </Button>
               ) : (
                 <Button variant="outline" size="sm" className="flex-1" disabled>
@@ -329,6 +354,7 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
               {integration.real &&
                 (integration.id === "int_github" ||
                   integration.id === "int_outlook" ||
+                  integration.id === "int_graph_teams" ||
                   integration.id === "int_gmail" ||
                   integration.id === "int_linkedin_rsc" ||
                   integration.id === "int_heyreach") && (
@@ -346,6 +372,7 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
               {integration.real &&
                 integration.id !== "int_github" &&
                 integration.id !== "int_outlook" &&
+                integration.id !== "int_graph_teams" &&
                 integration.id !== "int_gmail" &&
                 integration.id !== "int_linkedin_rsc" &&
                 integration.id !== "int_heyreach" &&
@@ -548,9 +575,8 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
           <div className="flex items-start gap-2.5 rounded-2xl bg-aqua-soft px-3.5 py-3 text-aqua">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             <p className="text-xs">
-              After connecting, flip <strong>Live mode</strong> on the card and hit{" "}
-              <strong>Test connection</strong>. This build stays dry-run. Nothing real (outreach,
-              money, candidate data) leaves until you go live.
+              Credentials are encrypted server-side. Flip <strong>Live mode</strong> only when the
+              provider is ready for real traffic — mock stays the safe default until then.
             </p>
           </div>
         </div>

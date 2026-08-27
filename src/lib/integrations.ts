@@ -25,7 +25,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       lastSync: null,
       errors: [],
       real: true,
-      setupHref: "/settings?tab=integrations",
+      setupHref: "/settings?tab=integrations#microsoft365-stack",
     },
     {
       id: "int_gmail",
@@ -37,7 +37,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       lastSync: null,
       errors: [],
       real: true,
-      setupHref: "/settings?tab=integrations",
+      setupHref: "/settings?tab=integrations#email-connections-panel",
     },
     {
       id: "int_resume_matcher",
@@ -201,7 +201,7 @@ export function defaultIntegrations(): IntegrationStatus[] {
       lastSync: null,
       errors: [],
       real: true,
-      setupHref: "/settings?tab=integrations",
+      setupHref: "/settings?tab=integrations#microsoft365-stack",
     },
     {
       id: "int_enrichment",

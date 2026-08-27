@@ -4329,13 +4329,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         } catch {
           result = { ok: false, latencyMs: Date.now() - t0, message: "GitHub probe failed (network)." };
         }
-      } else if (integ.id === "int_outlook" || integ.id === "int_gmail") {
+      } else if (integ.id === "int_outlook" || integ.id === "int_gmail" || integ.id === "int_graph_teams") {
         const t0 = Date.now();
         try {
           const listRes = await workspaceFetch("/api/email/connections", { method: "GET" });
           const list = (await listRes.json().catch(() => null)) as {
             ok?: boolean;
             connections?: { seatId: string; provider: string }[];
+            seats?: { provider: string; mode?: string; status?: string; connectedAccount?: string | null }[];
             error?: string;
           } | null;
           const wantProvider = integ.id === "int_gmail" ? "Gmail API" : "Microsoft Graph";
@@ -4344,8 +4345,43 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             result = {
               ok: false,
               latencyMs: Date.now() - t0,
-              message: `${integ.name}: not connected. Use Connect on Settings → Integrations.`,
+              message: `${integ.name}: not connected. Use Connect Outlook on Settings → Integrations.`,
             };
+          } else if (integ.id === "int_graph_teams") {
+            const liveSeat = (list?.seats ?? []).some(
+              (s) =>
+                s.provider === "Microsoft Graph" &&
+                s.mode === "live" &&
+                (s.status === "active" || !s.status) &&
+                Boolean(s.connectedAccount?.trim()),
+            );
+            if (!liveSeat) {
+              result = {
+                ok: false,
+                latencyMs: Date.now() - t0,
+                message:
+                  "Microsoft Graph / Teams: mailbox connected but seat is not live. Reconnect Outlook so OAuth promotes mode=live.",
+              };
+            } else {
+              const testRes = await workspaceFetch("/api/email/test", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ seatId: match.seatId }),
+              });
+              const out = (await testRes.json().catch(() => null)) as {
+                ok?: boolean;
+                message?: string;
+                error?: string;
+                latencyMs?: number;
+              } | null;
+              result = {
+                ok: Boolean(out?.ok),
+                latencyMs: out?.latencyMs ?? Date.now() - t0,
+                message: out?.ok
+                  ? `${out.message ?? "Graph OK"} · live seat ready for Teams confirmLive books.`
+                  : out?.message ?? out?.error ?? `${integ.name}: validation failed.`,
+              };
+            }
           } else {
             const testRes = await workspaceFetch("/api/email/test", {
               method: "POST",

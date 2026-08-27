@@ -59,6 +59,7 @@ var/
 production-readiness/.fly-secrets.env
 production-readiness/.fly-token.env
 production-readiness/.owner-microsoft.env
+production-readiness/.owner-deploy-confirm.env
 aria-mark.png
 
 # operational one-off admin setup helper (reads gitignored secrets)

@@ -54,7 +54,8 @@ type ConnectionsPayload = {
 };
 
 function hasCalendarScope(scope: string): boolean {
-  return /calendars\.readwrite/i.test(scope) || /onlineMeetings\.readwrite/i.test(scope);
+  // OAuth requests Calendars.ReadWrite only — do not green-check on OnlineMeetings.*.
+  return /calendars\.readwrite/i.test(scope);
 }
 
 function Microsoft365StackInner() {
@@ -237,6 +238,16 @@ function Microsoft365StackInner() {
                 : mailboxConnected
                   ? "Reconnect Outlook if Calendars.ReadWrite is missing from the token."
                   : "Connect Outlook — Calendars.ReadWrite is requested at authorize time.",
+            },
+            {
+              id: "live-graph-seat",
+              label: "Live Graph seat (mode=live)",
+              ok: liveGraphSeat,
+              hint: liveGraphSeat
+                ? "Outlook seat is live — confirmLive can create real Teams meetings."
+                : mailboxConnected
+                  ? "Mailbox connected but seat is still mock — reconnect Outlook after tip deploy so OAuth callback promotes mode=live."
+                  : "Connect Outlook — OAuth callback sets seat mode=live.",
             },
           ]}
         />

@@ -368,8 +368,8 @@ export default function CalendarPage() {
             <InterviewerPanel />
             <p className="flex items-start gap-1.5 px-1 text-xs text-muted">
               <Sparkles className={cn("mt-0.5 h-3.5 w-3.5 shrink-0 text-tangerine")} aria-hidden />
-              Booking a slot moves the candidate to Booked and drafts both emails. Everything stays a
-              dry-run until you send.
+              Booking a slot with confirmLive creates a real Outlook/Teams event when a live Graph
+              seat is connected. Outreach emails still need your approve/send.
             </p>
           </div>
         </div>

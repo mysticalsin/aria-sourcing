@@ -10,4 +10,11 @@ cat <<EOF
 ARIA_RELEASE_SHA=${SHA} \\
 ARIA_PROD_DEPLOY_CONFIRM=${CONFIRM} \\
   bash scripts/fly-deploy-now.sh
+
+# Or drop-zone (never commit):
+# cat > /tmp/owner-deploy-confirm.env <<'DROP'
+# ARIA_RELEASE_SHA=${SHA}
+# ARIA_PROD_DEPLOY_CONFIRM=${CONFIRM}
+# DROP
+# bash scripts/fly-enterprise-golive-when-ready.sh
 EOF
