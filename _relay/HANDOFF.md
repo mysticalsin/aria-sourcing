@@ -11,7 +11,7 @@ status: awaiting-microsoft-entra-and-deploy-confirm
 ## Current state
 
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open
-- **Tip:** pending (sourcing-agent + reply brand gates; print-fly-e2e-env exports /tmp webhook)
+- **Tip:** `b9decd22054caed9d33f2cee9d79c5172dad402a` (sourcing-agent + reply brand gates)
 - **Local gate:** green; audit **45/45**
 - **Fly missing (6):** MICROSOFT_CLIENT_ID/SECRET + GOTRUE_EXTERNAL_AZURE_*
 - **Stale:** `ba88302` / mig **0060** / Graph **404**; confirm unset; ADMIN_* unset
