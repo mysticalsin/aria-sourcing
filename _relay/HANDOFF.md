@@ -1,48 +1,47 @@
 ---
 project: MSourcing / ARIA
-shift: 101
+shift: 102
 agent: cursor-cloud
 updated: 2026-08-27 UTC
-status: audit-clean-local-gate-green
+status: m365-live-status-ci-infra-blocked
 ---
 
-# Handoff — Shift 101
+# Handoff — Shift 102
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30** (supersedes closed #29)
-- **Local gate:** `npx tsc --noEmit`, `typecheck:tests`, `npm test`, `posttest` — green (0 suite failures)
-- **npm audit --audit-level=high:** **0 vulnerabilities** (overrides: postcss 8.5.26, js-yaml 4.3.2, nanoid 3.3.18, langsmith 0.9.0, uuid 11.1.1)
-- **Audit matrix / Mantu E2E:** 15/15 + 24/24
-- **CI:** repo-wide Actions failure — jobs get **no runner** (`runner_name=""`, `steps:[]`, ~3s). Affects `main` too, not just this PR.
-- **Fly prod (`aria-mantu-app`):** healthy web+loop; `/api/ready` **503** (`agentFrameworks:false`); migration stuck at **0060** (needs **0062**); no `EMAIL_INBOUND_WEBHOOK_SECRET` / Entra / Outlook secrets listed
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30**
+- **Local:** typecheck green; audit matrix **16/16**; npm audit high **0**
+- **CI:** still no runners (`steps:[]`, ~3s) on `aa10f95` and later — org-wide
+- **Fly live:** health 200; demo-login 404; LinkedIn routes 401 (present); migration **0060**; ready 503 (`agentFrameworks:false` — Track C, cannot opt out per readiness test)
+- **M365 UI:** Settings stack now loads live `/api/email/connections` (no hardcoded false)
 
 ## Done this shift
 
-- Cleared Dependency audit locally via package overrides (no LangChain 1.x major bump)
-- Fixed clean-seed regressions: web-leads, store-campaign-actions, store-booking-report-actions, sourcing-query-policy, declared-dependencies `@types/*` mapping
-- Updated test-manifest freeze counts/hashes for new E2E suites (application 172 / all 225)
+- Microsoft365Stack: live OAuth/mailbox/calendar/inbound status from connections API
+- Audit matrix +1 requirement for live connection status
+- fly-golive-linkedin preflight target → 0062
 
-## Blockers (ops / infra — not code)
+## Blockers (ops — cannot finish from agent alone)
 
-1. GitHub Actions runners unavailable org-wide
-2. Fly: apply migrations through 0062, enable agent frameworks, set M365 + webhook secrets, redeploy this branch
-3. Deployed E2E needs `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ANON_KEY` (not in agent env)
+1. GitHub Actions runners / billing
+2. Protected Fly deploy (`ARIA_PROD_DEPLOY_CONFIRM` + full `.fly-secrets.env` with PG passwords)
+3. Entra + `MICROSOFT_CLIENT_*` + `EMAIL_INBOUND_WEBHOOK_SECRET` + `ADMIN_*` for e2e-workflow-test.sh
+4. Apply migrations **0061–0062** via bootstrap (DB still at 0060)
 
 ## Next steps
 
-1. Human: restore GitHub Actions billing/runners → re-run PR #30 CI
-2. Ops: migrate Fly to 0062 + deploy `cursor/enterprise-autopilot-b91d` build
-3. Ops: set `EMAIL_INBOUND_WEBHOOK_SECRET`, Entra SSO, Outlook OAuth; run `e2e-workflow-test.sh`
+1. Restore Actions → green CI on tip SHA
+2. Owner: `scripts/fly-golive-linkedin.sh` / Deploy Aria Mantu workflow with confirm token
+3. Set M365 + webhook secrets; run `e2e-workflow-test.sh`
 
 ## Decisions made (don't relitigate)
 
-- Default seed = zero candidates; historical demo via `buildHistoricalDemoSeedState()` only
-- Prefer npm `overrides` for audit-critical transitive deps over breaking `@langchain/*` 1.x upgrade
-- Webhook payload ids-only; parse via cron route on web process
+- `/api/ready` cannot opt out of agentFrameworks in production (readiness test locks this)
+- agentFrameworks=false is Track C (Flowise), not recruiting-loop critical path
+- Default seed zero candidates; historical demo separate
 
 ## Watch out
 
-- Tests that need candidates must use `buildHistoricalDemoSeedState()` / `historicalSeedState()`
-- GitHub/Apify fixtures must bind to `camp-e2e` TypeScript role terms
-- Fly is still on older release SHA — code on this PR is not yet production-active
+- `.fly-secrets.env` currently has only `FLY_SUPABASE_ANON_KEY` — deploy/migrate needs full example set
+- Production deploy requires reviewed `ARIA_PROD_DEPLOY_CONFIRM` — do not bypass
