@@ -146,7 +146,7 @@ export function summarizeEmailValidation(checks: EmailValidationCheck[]): {
 } {
   const failed = checks.filter((c) => !c.ok);
   if (failed.length === 0) {
-    return { ok: true, message: "Mailbox ready: token, profile, and inbound route validated.", checks };
+    return { ok: true, message: "Mailbox ready: token, profile, inbound route, and webhook validated.", checks };
   }
   return {
     ok: false,

@@ -164,15 +164,17 @@ export async function GET(req: NextRequest) {
     return redirectError(req, "Failed to save email connection.");
   }
 
-  // Mirror connected account on the seat and promote to live so calendar/Teams
-  // confirmLive can book (seat.mode !== "live" forces dry-run on /api/calendar/event).
-  const { error: updateError } = await svc
-    .from("agent_seats")
-    .update({ connected_account: accountEmail, mode: "live", status: "active" })
-    .eq("id", seatId);
-  if (updateError) {
-    console.error("[microsoft/callback] agent_seats update failed:", updateError.message, updateError.code);
-    return redirectError(req, "Failed to update seat connection.");
+  // Mirror connected account on the seat first, but keep mode non-live until
+  // inbound route + Graph webhook subscription succeed (avoids Connected/live lie).
+  {
+    const { error: accountErr } = await svc
+      .from("agent_seats")
+      .update({ connected_account: accountEmail, status: "active" })
+      .eq("id", seatId);
+    if (accountErr) {
+      console.error("[microsoft/callback] agent_seats account update failed:", accountErr.message, accountErr.code);
+      return redirectError(req, "Failed to update seat connection.");
+    }
   }
 
   // Register inbound webhook routing so Graph/HMAC ingest can resolve this mailbox.
@@ -216,6 +218,19 @@ export async function GET(req: NextRequest) {
       req,
       `Connected ${accountEmail} but Graph webhook setup failed. Reconnect Outlook or use Enable webhook in Settings.`,
     );
+  }
+
+  // Promote seat to live only after inbound route + Graph webhook are durable —
+  // confirmLive Teams books require mode=live and operators must not see Connected without webhook.
+  {
+    const { error: liveErr } = await svc
+      .from("agent_seats")
+      .update({ mode: "live", status: "active", connected_account: accountEmail })
+      .eq("id", seatId);
+    if (liveErr) {
+      console.error("[microsoft/callback] agent_seats live promote failed:", liveErr.message, liveErr.code);
+      return redirectError(req, "Graph webhook ready but failed to promote seat to live. Reconnect Outlook.");
+    }
   }
 
   return redirectSuccess(req, `Connected ${accountEmail}`);

@@ -186,6 +186,23 @@ export async function POST(req: NextRequest) {
       : "No active inbound_mailbox_routes row — register from Settings or reconnect.",
   });
 
+  if (connection.provider === "Microsoft Graph") {
+    const { data: graphSub } = await supabase
+      .from("graph_mail_subscriptions")
+      .select("status, expires_at")
+      .eq("workspace_id", wid)
+      .eq("connection_id", row.id)
+      .maybeSingle();
+    const subActive = graphSub?.status === "active";
+    checks.push({
+      id: "graph_subscription",
+      ok: subActive,
+      detail: subActive
+        ? `Graph webhook subscription active (expires ${graphSub?.expires_at ?? "unknown"}).`
+        : "Graph webhook subscription not active — Enable webhook or reconnect Outlook (no inbox polling).",
+    });
+  }
+
   checks.push({
     id: "inbound_webhook_secret",
     ok: readiness.inboundWebhookSecret,

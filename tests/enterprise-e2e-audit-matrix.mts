@@ -485,6 +485,16 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
           readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8"),
         )
         && /redirectError/.test(readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8"))
+        && /graphSubscription\?\.active/.test(readFileSync("src/lib/integrations.ts", "utf8"))
+        && /graph_subscription/.test(readFileSync("src/app/api/email/test/route.ts", "utf8"))
+        && /Promote seat to live only after inbound route/.test(
+          readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8"),
+        )
+        && /assisted-manual/.test(readFileSync("src/components/settings/linkedin-outreach-stack.tsx", "utf8"))
+        && !/Ready for outreach/.test(readFileSync("src/components/settings/linkedin-outreach-stack.tsx", "utf8"))
+        && !/unless HeyReach MCP is connected/.test(
+          readFileSync("src/components/settings/linkedin-outreach-stack.tsx", "utf8"),
+        )
       );
     },
   },

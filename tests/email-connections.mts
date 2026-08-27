@@ -180,6 +180,10 @@ ok("ensureGraphMailSubscription helper", /export async function ensureGraphMailS
 
 const testRoute = readFileSync("src/app/api/email/test/route.ts", "utf8");
 ok("email test route probes profile", /users\/me\/profile|graph\.microsoft\.com\/v1\.0\/me/.test(testRoute));
+ok(
+  "email test route fail-closes without active Graph webhook subscription",
+  /graph_subscription/.test(testRoute) && /graph_mail_subscriptions/.test(testRoute),
+);
 
 const googleCb = readFileSync("src/app/auth/google/callback/route.ts", "utf8");
 ok(
@@ -193,8 +197,11 @@ ok(
 const msCb = readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8");
 ok("microsoft callback registers inbound route", /upsert_inbound_mailbox_route/.test(msCb));
 ok(
-  "microsoft callback promotes seat to live mode for Teams book",
-  /mode:\s*"live"/.test(msCb) && /connected_account:\s*accountEmail/.test(msCb),
+  "microsoft callback promotes seat to live only after Graph webhook succeeds",
+  /Promote seat to live only after inbound route/.test(msCb)
+    && /mode:\s*"live"/.test(msCb)
+    && /createGraphMailSubscription/.test(msCb)
+    && msCb.indexOf("createGraphMailSubscription") < msCb.indexOf('mode: "live"'),
 );
 ok(
   "microsoft callback fails closed when inbound route upsert fails",

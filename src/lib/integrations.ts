@@ -259,6 +259,8 @@ export type EmailConnectionsHydratePayload = {
     provider: string;
     accountEmail: string;
     hasRefreshToken?: boolean;
+    inboundRoute?: { active?: boolean } | null;
+    graphSubscription?: { active?: boolean; status?: string } | null;
   }>;
   seats?: Array<{
     provider: string;
@@ -298,6 +300,20 @@ export function mailboxIntegrationPatchesFromConnections(
           connectedAccount: undefined,
           lastSync: null,
           errors: [],
+        },
+      };
+    }
+    if (provider === "Microsoft Graph" && conn.graphSubscription?.active !== true) {
+      return {
+        id,
+        patch: {
+          status: "degraded",
+          mode: "mock",
+          connectedAccount: conn.accountEmail,
+          lastSync: new Date().toISOString(),
+          errors: [
+            "Mailbox token present but Graph webhook subscription is not active — Enable webhook or reconnect Outlook.",
+          ],
         },
       };
     }

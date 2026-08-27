@@ -4378,7 +4378,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 ok: Boolean(out?.ok),
                 latencyMs: out?.latencyMs ?? Date.now() - t0,
                 message: out?.ok
-                  ? `${out.message ?? "Graph OK"} · live seat ready for Teams confirmLive books.`
+                  ? `${out.message ?? "Graph OK"} · live seat + webhook ready for Teams confirmLive books.`
                   : out?.message ?? out?.error ?? `${integ.name}: validation failed.`,
               };
             }

@@ -19,6 +19,7 @@ describe("mailboxIntegrationPatchesFromConnections", () => {
           provider: "Microsoft Graph",
           accountEmail: "talent@mantu.com",
           hasRefreshToken: true,
+          graphSubscription: { active: true },
         },
       ],
       seats: [
@@ -38,6 +39,32 @@ describe("mailboxIntegrationPatchesFromConnections", () => {
     assert.equal(teams?.patch.mode, "mock");
   });
 
+  it("marks Outlook/Teams degraded when Graph webhook subscription is inactive", () => {
+    const patches = mailboxIntegrationPatchesFromConnections({
+      connections: [
+        {
+          provider: "Microsoft Graph",
+          accountEmail: "talent@mantu.com",
+          hasRefreshToken: true,
+          graphSubscription: { active: false },
+        },
+      ],
+      seats: [
+        {
+          provider: "Microsoft Graph",
+          mode: "live",
+          status: "active",
+          connectedAccount: "talent@mantu.com",
+        },
+      ],
+    });
+    const outlook = patches.find((p) => p.id === "int_outlook");
+    const teams = patches.find((p) => p.id === "int_graph_teams");
+    assert.equal(outlook?.patch.status, "degraded");
+    assert.equal(teams?.patch.status, "degraded");
+    assert.match(String(outlook?.patch.errors?.[0] ?? ""), /webhook subscription/i);
+  });
+
   it("marks Teams connected only with a live Graph seat", () => {
     const patches = mailboxIntegrationPatchesFromConnections({
       connections: [
@@ -45,6 +72,7 @@ describe("mailboxIntegrationPatchesFromConnections", () => {
           provider: "Microsoft Graph",
           accountEmail: "talent@mantu.com",
           hasRefreshToken: true,
+          graphSubscription: { active: true },
         },
       ],
       seats: [
