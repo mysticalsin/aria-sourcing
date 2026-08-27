@@ -24,10 +24,11 @@ status: awaiting-microsoft-entra-and-deploy-confirm
 
 ## Next steps
 
-1. Owner Microsoft drop-zone → apply → deploy confirm → `fly-deploy-now.sh`
-2. Outlook Connect + Enable webhook
-3. `eval "$(bash scripts/print-fly-e2e-env.sh --export)" && bash e2e-workflow-test.sh`
-4. Goal complete only on ready ok + mig>=0066 + tip build + Graph200 + E2E PASS
+1. Owner Microsoft drop-zone → `fly-apply-owner-microsoft-secrets.sh`
+2. `bash scripts/print-fly-deploy-confirm.sh` → export confirm → `fly-deploy-now.sh`
+3. Outlook Connect + Enable webhook
+4. `eval "$(bash scripts/print-fly-e2e-env.sh --export)" && bash e2e-workflow-test.sh`
+5. Goal complete only on ready ok + mig>=0066 + tip build + Graph200 + E2E PASS
 
 ## Decisions made (don't relitigate)
 
