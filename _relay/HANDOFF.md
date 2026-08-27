@@ -1,62 +1,55 @@
 ---
 project: MSourcing / ARIA
-shift: 97
+shift: 98
 agent: cursor-cloud
-updated: 2026-08-26 UTC
-status: mantu-e2e-langchain-microsoft365
+updated: 2026-08-27 UTC
+status: clean-seed-e2e-verified
 ---
 
-# Handoff - Shift 97
+# Handoff — Shift 98
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #29 → `integration/sourcing-enrichment-on-main`
-- **LangChain recruiting graph:** [`src/lib/langchain/recruiting-graph.ts`](src/lib/langchain/recruiting-graph.ts) — LangGraph orchestrates webhook → parse → source → top 10 → quality → approve → interview
-- **Webhook routing (no polling):** [`src/lib/inbound-email-router.ts`](src/lib/inbound-email-router.ts) — hiring needs → `requisition_parse`; replies → `inbound_classify`
-- **Multi-agent outreach quality:** [`src/lib/outreach-quality-pipeline.ts`](src/lib/outreach-quality-pipeline.ts) — empathy + compliance + human-likeness before approval
-- **Mantu brand outreach:** [`src/lib/mantu-brand.ts`](src/lib/mantu-brand.ts) — voice + HTML email wrapper (mantu-pptx palette)
-- **Microsoft 365 stack UI:** [`microsoft365-stack.tsx`](src/components/settings/microsoft365-stack.tsx) — Entra SSO, Outlook, Teams, webhook intake
-- **Teams calendar:** `createGraphCalendarEvent` uses `isOnlineMeeting` + `teamsForBusiness`; join URL preferred
-- **Deps:** `@langchain/core`, `@langchain/langgraph` added
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #30 → `integration/sourcing-enrichment-on-main`
+- **STATE_VERSION 19:** `buildSeedState()` = clean slate (0 candidates); `buildHistoricalDemoSeedState()` retains 52 demo candidates for tests
+- **Migration v19:** purges candidates, outreach, replies, bookings, ledger on upgrade
+- **E2E in-process:** `tests/mantu-recruiting-e2e-full.mts` — 24/24 (webhook → parse → source → top10 → quality → LangGraph → agenda)
+- **Test gate:** `npx tsc --noEmit` green; `npm test` application group green
+- **Browser verified:** localhost:3002 — 0 candidates, 3 campaigns Sourcing @ 0 sourced
 
 ## Done this shift
 
-- Email webhook accepts `subject`; routes Mantu need emails to sourcing pipeline (not classify)
-- `generateOutreachLive` runs quality pipeline + Mantu HTML for Email channel
-- Outreach cards show Quality score badge
-- Tests: `mantu-e2e-loop`, `inbound-email-router`; email-inbound-contract updated
+- Purged historical candidates from default seed; migration v19 wipes legacy localStorage worlds
+- Added `tests/seed-fixtures.mts` + updated 20+ tests to use historical fixtures where needed
+- Fixed test manifest (inbound-email-router, mantu-e2e-loop entries)
+- Fixed store-sourcing-actions GitHub/Apollo fixtures for 80% quality floor under camp-e2e
+- Fixed sourcing-agent-route-authority mocks (server-only, getServiceSupabase, apify, orchestrator)
 
-## E2E loop (target state)
+## E2E loop (verified in-process)
 
 ```
-Webhook (Outlook adapter) → requisition_parse → campaign → source → top 10
-  → draft (Mantu brand + quality critics) → human approve → send
-  → reply webhook → classify → draft → book (Teams) → prep
+Webhook need → requisition_parse → intake parse → source → top 10
+  → Mantu outreach + quality critics → human approve → send → reply → Teams book
 ```
 
 ## Blockers (ops)
 
-- Entra SSO: `NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true` + GoTrue Azure on Fly
-- Outlook OAuth: `MICROSOFT_CLIENT_*` + connect in Settings
-- Webhook: `EMAIL_INBOUND_WEBHOOK_SECRET` + Graph/n8n adapter
-- 7 pre-existing failures in `store-sourcing-actions.mts` (unchanged)
+- Entra SSO + Outlook OAuth + EMAIL_INBOUND_WEBHOOK_SECRET on Fly
+- `source-demo-auth.mts` 2 failures when run via node test mocks (pre-existing; not in critical path)
 
 ## Next steps
 
-1. Ops: Microsoft 365 enterprise setup on Fly (SSO + Graph + webhook)
-2. Wire loop worker `handleRequisitionParse` to call intake parse + auto campaign create
-3. Triage `store-sourcing-actions` failures
-4. Extend `e2e-workflow-test.sh` with need-webhook + quality gate steps
+1. Ops: Microsoft 365 enterprise setup on Fly
+2. Wire loop worker `handleRequisitionParse` to intake parse + auto campaign
+3. Extend `e2e-workflow-test.sh` with need-webhook + quality gate steps
 
 ## Decisions made (don't relitigate)
 
-- LangChain LangGraph added for E2E orchestration (user request overrides prior "no LangChain rewrite" note for orchestration layer only; Postgres authority unchanged)
-- LinkedIn still assisted-manual (409); no inbox polling — webhook-only activation
-- Top shortlist = 10 (`TOP_CANDIDATE_SHORTLIST_SIZE`)
-- Microsoft Teams confirmed as calendar/meeting pillar (user clarified "Alcoa" → Teams)
+- Default seed = zero candidates; historical demo via `buildHistoricalDemoSeedState()` only
+- LangGraph orchestrates E2E; Postgres authority unchanged
+- Top shortlist = 10; LinkedIn manual (409); webhook-only email activation
 
 ## Watch out
 
-- Quality pipeline blocks salary disclosure and generic openers — may increase `needs_review` rate initially
-- `Microsoft365Stack` step 2 links to `#email-connections-panel` for Connect Outlook
-- LangGraph graph skips interview scheduling when any draft is `blocked`
+- Tests needing candidate fixtures must import `historicalSeedState()` / `historicalCandidate()` from `tests/seed-fixtures.mts`
+- Clean seed first campaign is `camp-e2e` (TypeScript) — sourcing test fixtures must match 80% floor

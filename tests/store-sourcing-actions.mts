@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { buildSeedState } from "../src/lib/seed";
+import { historicalCandidate, historicalSeedState } from "./seed-fixtures.mts";
 import {
   createSourcingActions,
   type SourcingActionDependencies,
@@ -92,15 +93,15 @@ test("sourcing action boundary is React-free and wired through one stable factor
 const githubUser = {
   login: "live-user",
   name: "Live User",
-  email: null,
-  company: "Example",
-  location: "Toronto",
-  bio: "TypeScript engineer",
+  email: "live@example.test",
+  company: "Acme Platform",
+  location: "London, UK",
+  bio: "Senior TypeScript, React, and Node.js engineer building GraphQL APIs on PostgreSQL.",
   blog: null,
   htmlUrl: "https://github.com/live-user",
-  publicRepos: 12,
-  followers: 34,
-  createdAt: "2020-01-01T00:00:00.000Z",
+  publicRepos: 84,
+  followers: 210,
+  createdAt: "2014-06-01T00:00:00.000Z",
   topLanguage: "TypeScript",
 };
 
@@ -108,14 +109,14 @@ const apolloProfile = {
   targetId: "11111111-1111-4111-8111-111111111111",
   candidateId: "99999999-9999-4999-8999-999999999999",
   name: "Apollo Candidate",
-  title: "Staff Platform Engineer",
-  company: "Example",
+  title: "Senior TypeScript Engineer",
+  company: "Acme Platform",
   linkedinUrl: "https://www.linkedin.com/in/apollo-candidate",
-  city: "Toronto",
-  state: "Ontario",
-  country: "Canada",
-  headline: "Staff Platform Engineer",
-  seniority: "staff",
+  city: "London",
+  state: "",
+  country: "UK",
+  headline: "Senior TypeScript Engineer · React · Node.js · GraphQL · PostgreSQL",
+  seniority: "senior",
   departments: ["Engineering"],
 };
 
@@ -735,7 +736,7 @@ test("specific GitHub intake revalidates authority and latest dedupe state after
   concurrent = createHarness({
     afterFetch: () => {
       const duplicate: Candidate = {
-        ...concurrent.state.candidates[0],
+        ...historicalCandidate(),
         id: "candidate_concurrent_github",
         campaignId: concurrent.state.campaigns[0].id,
         githubUrl: githubUser.htmlUrl,
@@ -772,7 +773,7 @@ test("specific GitHub intake revalidates authority and latest dedupe state after
   assert.equal(concurrent.events.length, 0);
 
   const excludedState = buildSeedState();
-  excludedState.campaigns[0].sourcingStrategy.excludedCompanies = ["Example"];
+  excludedState.campaigns[0].sourcingStrategy.excludedCompanies = ["Acme Platform"];
   const excluded = createHarness({ state: excludedState });
   const excludedResult = await excluded.actions.addCandidateFromGithub(
     excluded.state.campaigns[0].id,
@@ -782,7 +783,7 @@ test("specific GitHub intake revalidates authority and latest dedupe state after
     ok: true,
     added: 0,
     skipped: 1,
-    skipReason: "Excluded company (Example)",
+    skipReason: "Excluded company (Acme Platform)",
   });
   assert.equal(excluded.activityDrafts[0]?.title, "@live-user was not added");
   assert.match(excluded.activityDrafts[0]?.notes ?? "", /Excluded company/);
@@ -1069,10 +1070,10 @@ test("manual intake projects only the documented fields and cannot override auth
 });
 
 test("unknown experience never becomes a false score, prompt fact, or UI consent claim", () => {
-  const state = buildSeedState();
+  const state = historicalSeedState();
   const campaign = state.campaigns[0];
   const candidate: Candidate = {
-    ...state.candidates[0],
+    ...historicalCandidate(),
     yearsExperience: null,
     provenance: "manual",
     sourcePlatform: "Manual",
@@ -1172,10 +1173,10 @@ test("manual intake requires an operator-selected lawful basis and generic draft
 });
 
 test("manual duplicate and persisted commit rejection never emit candidate success", async () => {
-  const duplicateState = buildSeedState();
+  const duplicateState = historicalSeedState();
   duplicateState.candidates = [
     {
-      ...duplicateState.candidates[0],
+      ...historicalCandidate(),
       id: "candidate_existing_manual",
       campaignId: duplicateState.campaigns[0].id,
       sourceUrl: "https://example.test/profiles/manual-person",
@@ -1379,10 +1380,10 @@ test("web sourcing scopes the query and never falls back to synthetic profiles",
       leads: [
         {
           name: "Web Person",
-          title: "Product Designer",
-          company: "Example",
+          title: "Senior TypeScript Engineer",
+          company: "Acme Platform",
           url: "https://dribbble.com/web-person",
-          snippet: "Figma designer",
+          snippet: "TypeScript, React, Node.js, GraphQL, and PostgreSQL engineer in London.",
         },
       ],
     },
@@ -1657,7 +1658,7 @@ test("sourcing revalidates authority and current dedupe state after live I/O", a
     afterFetch: () => {
       const campaign = dedupeHarness.state.campaigns[0];
       const duplicate: Candidate = {
-        ...dedupeHarness.state.candidates[0],
+        ...historicalCandidate(),
         id: "candidate_concurrent",
         campaignId: campaign.id,
         githubUrl: githubUser.htmlUrl,
@@ -1855,10 +1856,10 @@ test("Apollo search revalidates workspace, role, and campaign after provider I/O
 });
 
 test("Apollo search dedupes against commit-time state and emits only after an applied write", async () => {
-  const state = buildSeedState();
+  const state = historicalSeedState();
   const campaignId = state.campaigns[0].id;
   const concurrentCandidate: Candidate = {
-    ...state.candidates[0],
+    ...historicalCandidate(),
     id: "candidate_concurrent_apollo",
     campaignId,
     email: "",
@@ -1967,10 +1968,10 @@ test("Apollo search preserves not-configured truth without state work", async ()
 });
 
 test("Apollo paid enrichment prepares before confirmation and commits one bound target", async () => {
-  const state = buildSeedState();
+  const state = historicalSeedState();
   const campaign = state.campaigns[0];
   const candidate: Candidate = {
-    ...state.candidates[0],
+    ...historicalCandidate(),
     id: apolloProfile.candidateId,
     campaignId: campaign.id,
     email: "",
@@ -2057,10 +2058,10 @@ test("Apollo paid enrichment prepares before confirmation and commits one bound 
 });
 
 test("Apollo no-contact completion does not invent an unverified credit outcome", async () => {
-  const state = buildSeedState();
+  const state = historicalSeedState();
   const campaign = state.campaigns[0];
   const candidate: Candidate = {
-    ...state.candidates[0],
+    ...historicalCandidate(),
     id: apolloProfile.candidateId,
     campaignId: campaign.id,
     email: "",
@@ -2097,10 +2098,10 @@ test("Apollo no-contact completion does not invent an unverified credit outcome"
 });
 
 test("Apollo client preserves bounded server error codes for UI recovery", async () => {
-  const state = buildSeedState();
+  const state = historicalSeedState();
   const campaign = state.campaigns[0];
   const candidate: Candidate = {
-    ...state.candidates[0],
+    ...historicalCandidate(),
     id: apolloProfile.candidateId,
     campaignId: campaign.id,
     email: "",
@@ -2134,10 +2135,10 @@ test("Apollo client preserves bounded server error codes for UI recovery", async
 });
 
 test("Apollo enrichment rejects unbound, unauthorized, malformed, and unapplied results", async () => {
-  const state = buildSeedState();
+  const state = historicalSeedState();
   const campaign = state.campaigns[0];
   const candidate: Candidate = {
-    ...state.candidates[0],
+    ...historicalCandidate(),
     id: apolloProfile.candidateId,
     campaignId: campaign.id,
     email: "",

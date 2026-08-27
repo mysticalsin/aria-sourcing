@@ -4,7 +4,7 @@
  * and that fully-clear state produces an empty queue.
  */
 import { deriveRecommendations } from "../src/lib/recommendations";
-import { buildSeedState } from "../src/lib/seed";
+import { historicalSeedState } from "./seed-fixtures.mts";
 import type { Candidate, Campaign, ClassifiedReply, OutreachMessage, HermesState } from "../src/lib/types";
 
 let pass = 0,
@@ -19,7 +19,7 @@ function ok(name: string, cond: boolean, extra?: unknown) {
 }
 
 const NOW = new Date("2026-07-01T12:00:00Z").getTime();
-const seed = buildSeedState();
+const seed = historicalSeedState();
 const candidateTemplate: Candidate = seed.candidates[0];
 const replyTemplate: ClassifiedReply = seed.replies[0] ?? {
   id: "r0",

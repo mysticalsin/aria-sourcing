@@ -4,18 +4,24 @@ import { mock, test } from "node:test";
 import { NextRequest } from "next/server";
 
 import { buildSeedState } from "../src/lib/seed";
+import { historicalCandidate, historicalSeedState } from "./seed-fixtures.mts";
 import { sourcingAgentCampaignFingerprint } from "../src/lib/sourcing/sourcing-agent-contract";
 import type { Campaign } from "../src/lib/types";
 
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
+
+mock.module("server-only", { namedExports: {} });
+
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const userId = "22222222-2222-4222-8222-222222222222";
 const campaignId = "campaign-1";
 const apiKeyId = "33333333-3333-4333-8333-333333333333";
 
 const seed = buildSeedState();
+const seedCandidate = historicalCandidate();
+const historicalCampaign = historicalSeedState().campaigns[0];
 const baseCampaign = {
-  ...seed.campaigns[0],
+  ...historicalCampaign,
   id: campaignId,
   status: "Sourcing" as const,
 };
@@ -101,9 +107,7 @@ Object.assign(query, {
         state: {
           campaigns: campaign ? [campaign] : [],
           settings: cloudConfigured ? liveSettings : deterministicSettings,
-          candidates: seed.candidates
-            .slice(0, 1)
-            .map((candidate) => ({ ...candidate, campaignId })),
+          candidates: [{ ...seedCandidate, campaignId }],
         },
         updated_at: `2026-07-13T14:00:0${stateReads}.000Z`,
       },
@@ -135,7 +139,10 @@ mock.module(moduleUrl("src/lib/supabase/config.ts"), {
   },
 });
 mock.module(moduleUrl("src/lib/supabase/server.ts"), {
-  namedExports: { getServerSupabase: async () => session },
+  namedExports: {
+    getServerSupabase: async () => session,
+    getServiceSupabase: () => session,
+  },
 });
 mock.module(moduleUrl("src/lib/ai/vault-secret.ts"), {
   namedExports: {
@@ -151,6 +158,9 @@ mock.module(moduleUrl("src/lib/ai/vault-secret.ts"), {
 });
 mock.module(moduleUrl("src/lib/sourcing/tavily.ts"), {
   namedExports: { resolveStoredTavilyKey: async () => null },
+});
+mock.module(moduleUrl("src/lib/sourcing/apify.ts"), {
+  namedExports: { resolveStoredApifyKey: async () => null },
 });
 mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
   namedExports: {
@@ -253,6 +263,36 @@ mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
     },
   },
 });
+mock.module(moduleUrl("src/lib/sourcing/orchestrator.ts"), {
+  namedExports: {
+    runMultiProviderSourcing: async (input?: {
+      forcedQueries?: Array<{ platform: string; query: string }>;
+    }) => {
+      runnerCalls += 1;
+      eventOrder.push("runner");
+      mutateDuringRunner?.();
+      const lessonQuery = promotedLessons[0]?.query;
+      const forcedQuery = input?.forcedQueries?.[0]?.query;
+      const query =
+        forcedQuery ??
+        lessonQuery ??
+        baseCampaign.sourcingStrategy.githubQueries[0]?.query ??
+        "language:TypeScript";
+      runnerQueries.push({ platform: "GitHub", query });
+      return {
+        accepted: runnerCandidatesAfterRun,
+        skipped: [],
+        executions: [{
+          platform: "GitHub",
+          query,
+          ok: true,
+          candidateCount: runnerCandidatesAfterRun.length,
+          skippedCount: 0,
+        }],
+      };
+    },
+  },
+});
 mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
   namedExports: {
     SOURCING_TOOL_DEFS: [],
@@ -278,6 +318,14 @@ mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
         candidateCount: foundCandidates.length,
         skippedCount: 0,
       })),
+      seedFromOrchestrator: (result: {
+        accepted?: unknown[];
+        executions?: Array<{ platform: string; query: string; ok: boolean; candidateCount: number; skippedCount: number }>;
+      }) => {
+        if (Array.isArray(result.accepted) && result.accepted.length > 0) {
+          foundCandidates = result.accepted;
+        }
+      },
     }),
   },
 });
@@ -553,7 +601,7 @@ test("typed errors are bounded, correlated, and non-cacheable", async () => {
 test("response exposes only exact bounded candidate evidence and validates subject disclosure", async () => {
   reset();
   const candidate = {
-    ...seed.candidates[0],
+    ...seedCandidate,
     id: "agent-candidate-1",
     campaignId,
     email: "private@example.test",
@@ -607,7 +655,7 @@ test("response exposes only exact bounded candidate evidence and validates subje
 
 test("invalid or failed model output never becomes a partial success", async () => {
   reset();
-  foundCandidates = [{ ...seed.candidates[0], campaignId }];
+  foundCandidates = [{ ...seedCandidate, campaignId }];
   modelOk = false;
   const failed = await post(request());
   const failedBody = await failed.json();
@@ -627,7 +675,7 @@ test("deterministic mode runs real GitHub search without a cloud model or provid
   role = "member";
   cloudConfigured = false;
   const candidate = {
-    ...seed.candidates[0],
+    ...seedCandidate,
     id: "deterministic-github-candidate",
     campaignId,
     email: "",
@@ -749,7 +797,7 @@ test("candidate data is withheld when the sourcing receipt cannot be completed",
   reset();
   completionStatus = "dependency_unavailable";
   foundCandidates = [{
-    ...seed.candidates[0],
+    ...seedCandidate,
     id: "receipt-withheld-candidate",
     campaignId,
     sourcePlatform: "GitHub",
@@ -804,7 +852,7 @@ test("framework sourcing executes only its exact reviewed query and stages a dur
   const frameworkRunId = "77777777-7777-4777-8777-777777777777";
   const reviewedQuery = baseCampaign.sourcingStrategy.githubQueries[0]?.query ?? "language:TypeScript";
   const candidate = {
-    ...seed.candidates[0],
+    ...seedCandidate,
     id: "framework-github-candidate",
     campaignId,
     email: "",

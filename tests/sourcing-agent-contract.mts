@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { buildSeedState } from "../src/lib/seed";
+import { historicalSeedState } from "./seed-fixtures.mts";
 import {
   candidateFromSourcingAgentDto,
   parseSourcingAgentCandidates,
@@ -11,7 +11,7 @@ import {
 } from "../src/lib/sourcing/sourcing-agent-contract";
 
 const campaignId = "campaign-1";
-const seed = buildSeedState();
+const seed = historicalSeedState();
 const campaign = { ...seed.campaigns[0], id: campaignId, status: "Sourcing" as const };
 
 function dto(overrides: Record<string, unknown> = {}) {

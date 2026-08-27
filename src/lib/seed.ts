@@ -61,7 +61,9 @@ import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
 // connected/lastSync state after the default seed became honest.
 // STATE_VERSION 17 - Databricks execution authority moved out of the shared
 // workspace JSON and into an admin-owned normalized database record.
-export const STATE_VERSION = 18;
+// STATE_VERSION 19 — purge historical demo candidates/outreach/replies/bookings;
+// fresh workspaces start Ready-to-source with zero candidates (E2E clean slate).
+export const STATE_VERSION = 19;
 
 /* ---- LLM config defaults ------------------------------------------------- */
 
@@ -721,7 +723,7 @@ function buildChatboxSubmissions(campaigns: Campaign[]): ChatboxSubmission[] {
   });
 }
 
-export function buildSeedState(): HermesState {
+export function buildHistoricalDemoSeedState(): HermesState {
   const settings = defaultSettings();
   const now = Date.now();
 
@@ -974,3 +976,152 @@ function computeMetrics(cands: Candidate[]): CampaignMetrics {
 
 /* Re-export for any consumer that wants to regenerate emails on demand. */
 export { interviewerPrepEmail, candidateConfirmationEmail };
+
+function emptyMetrics(): CampaignMetrics {
+  return {
+    sourced: 0,
+    contacted: 0,
+    replied: 0,
+    interested: 0,
+    booked: 0,
+    interviewed: 0,
+    offer: 0,
+    hired: 0,
+    notInterested: 0,
+    replyRate: 0,
+    avgMatchScore: 0,
+    timeToFirstInterviewHours: null,
+    emailsSentToday: 0,
+    linkedinSentToday: 0,
+  };
+}
+
+/** E2E-ready job analysis (matches e2e-workflow-test.sh intake). */
+export function e2eReadyJob(): JobAnalysis {
+  return {
+    title: "Senior TypeScript Engineer",
+    department: "Engineering",
+    seniority: "Senior",
+    employmentType: "Full-time",
+    locationType: "Hybrid",
+    regions: ["London", "UK"],
+    timezone: "Europe/London",
+    salaryMin: 90000,
+    salaryMax: 120000,
+    currency: "GBP",
+    equity: false,
+    requiredSkills: ["TypeScript", "React", "Node.js", "GraphQL", "PostgreSQL"],
+    niceToHaveSkills: ["Next.js", "AWS"],
+    minYearsExperience: 5,
+    maxYearsExperience: 12,
+    education: "No formal requirement",
+    industryExperience: ["SaaS", "Consulting"],
+    companyStageTarget: ["Series B"],
+    teamSize: "Platform team of 10",
+    reportingTo: "Engineering Manager",
+    urgency: "Urgent",
+    validationWarnings: [],
+    language: "en",
+  };
+}
+
+function buildReadyCampaign(
+  id: string,
+  job: JobAnalysis,
+  hiringManager: string,
+  hiringManagerEmail: string,
+): Campaign {
+  return {
+    id,
+    title: job.title,
+    department: job.department,
+    urgency: job.urgency,
+    status: "Sourcing",
+    hiringManager,
+    hiringManagerEmail,
+    createdAt: isoDaysBefore(1),
+    targetStartDate: new Date(SEED_NOW.getTime() + 40 * 86_400_000).toISOString(),
+    jobAnalysis: job,
+    sourcingStrategy: buildSourcingStrategy(job),
+    scoringWeights: { ...DEFAULT_SCORING_WEIGHTS },
+    metrics: emptyMetrics(),
+    skillUpdates: [],
+    activities: [
+      act(
+        "campaign",
+        "Campaign ready for sourcing",
+        `${job.title} — brief reviewed, awaiting first batch.`,
+        "Ready",
+        id,
+        { type: "campaign", id },
+        isoHoursBefore(2),
+      ),
+    ],
+  };
+}
+
+/**
+ * Default seed — clean slate with zero historical candidates.
+ * Campaigns are in Sourcing (brief reviewed); webhook + agent fill the pipeline.
+ */
+export function buildSeedState(): HermesState {
+  const settings = defaultSettings();
+  const campaigns = [
+    buildReadyCampaign(
+      "camp-e2e",
+      e2eReadyJob(),
+      "Priya Nair",
+      "priya.nair@acme.io",
+    ),
+    buildReadyCampaign(
+      "camp_seed_backend",
+      backendJob(),
+      "Daniela Brandt",
+      "daniela.brandt@northwind.example",
+    ),
+    buildReadyCampaign(
+      "camp_seed_frontend",
+      frontendJob(),
+      "Marcus Lindqvist",
+      "marcus.lindqvist@brightloop.example",
+    ),
+  ];
+
+  return {
+    version: STATE_VERSION,
+    campaigns,
+    candidates: [],
+    outreach: [],
+    replies: [],
+    bookings: [],
+    wins: [],
+    interviewers: seedInterviewers(),
+    reports: [],
+    integrations: defaultIntegrations(),
+    activities: campaigns.flatMap((c) => c.activities),
+    settings,
+    seats: seedSeats(),
+    suppression: seedSuppression(),
+    ledger: [],
+    chatboxSubmissions: [],
+    skills: defaultSkills(),
+    apiKeys: [
+      {
+        id: genId("key"),
+        name: "Anthropic (primary)",
+        provider: "Anthropic",
+        last4: "a1b2",
+        status: "valid",
+        lastTestedAt: isoHoursBefore(5),
+        createdBy: "Jordan Bryce",
+        createdAt: isoDaysBefore(12),
+      },
+    ],
+    currentRole: "admin",
+    chats: [],
+    memory: [],
+    schedules: [],
+    activeCampaignId: campaigns[0]?.id ?? null,
+    ingestedMessageIds: [],
+  };
+}

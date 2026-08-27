@@ -8,6 +8,7 @@ import {
   resolveStudioCampaign,
   settleStudioRunIdempotencyKey,
 } from "../src/lib/agents/studio-runner";
+import { historicalCandidate } from "./seed-fixtures.mts";
 import { buildSeedState } from "../src/lib/seed";
 import type { Candidate } from "../src/lib/types";
 
@@ -67,8 +68,7 @@ const input = {
 };
 
 function candidateFixture(id: string): Candidate {
-  const candidate = buildSeedState().candidates[0];
-  if (!candidate) throw new Error("The seed state must include a candidate fixture.");
+  const candidate = historicalCandidate();
   return { ...candidate, id, campaignId: input.campaignId };
 }
 

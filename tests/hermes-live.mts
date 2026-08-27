@@ -10,6 +10,7 @@
  *  - browser settings never bypass named human review for a generated message
  */
 import { buildSeedState, defaultSettings, STATE_VERSION } from "../src/lib/seed.js";
+import { historicalSeedState } from "./seed-fixtures.mts";
 import { hermesAvailable, parseHermesOutreach, buildOutreachPrompt } from "../src/lib/ai/hermes.js";
 import { newOutreachMessage } from "../src/lib/mock-ai.js";
 import { API_KEY_PROVIDERS } from "../src/lib/types.js";
@@ -30,7 +31,7 @@ function ok(name: string, cond: boolean) {
 
 /* ---- 1. Settings shape + defaults --------------------------------------- */
 
-const seed = buildSeedState();
+const seed = historicalSeedState();
 ok("seed version is current", seed.version === STATE_VERSION);
 ok("hermesLiveMode defaults false", seed.settings.hermesLiveMode === false);
 ok("hermesApiUrl defaults empty string", seed.settings.hermesApiUrl === "");

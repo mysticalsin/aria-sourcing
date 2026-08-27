@@ -26,7 +26,7 @@
 
 import { checkOutreachApproval, type ApprovalContext } from "../src/lib/rules";
 import { deriveFollowUpsDue } from "../src/lib/recommendations";
-import { buildSeedState } from "../src/lib/seed";
+import { historicalSeedState } from "./seed-fixtures.mts";
 import type {
   Candidate,
   CandidateStage,
@@ -46,7 +46,7 @@ function ok(name: string, cond: boolean) {
   }
 }
 
-const seed = buildSeedState();
+const seed = historicalSeedState();
 const settings = seed.settings;
 const templateCandidate = seed.candidates[0];
 ok("seed has a template candidate to clone", !!templateCandidate);

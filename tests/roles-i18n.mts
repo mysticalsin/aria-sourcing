@@ -9,6 +9,7 @@ import {
 } from "../src/lib/mock-ai";
 import { detectLanguage } from "../src/lib/i18n";
 import { buildSeedState } from "../src/lib/seed";
+import { historicalSeedState } from "./seed-fixtures.mts";
 
 let pass = 0,
   fail = 0;
@@ -49,7 +50,7 @@ ok("System Designer Mantu need is not finance", roleFamily(systemDesignerJd) !==
 ok("System Designer sources on LinkedIn first", roleProfile(systemDesignerJd).platforms[0] === "LinkedIn");
 
 /* ---- multilingual outreach ---- */
-const seed = buildSeedState();
+const seed = historicalSeedState();
 const cand = seed.candidates[0];
 const camp = seed.campaigns.find((c) => c.id === cand.campaignId)!;
 

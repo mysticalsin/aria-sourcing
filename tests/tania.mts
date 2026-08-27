@@ -19,6 +19,7 @@ import {
   TANIA_STAGE_META,
 } from "../src/lib/tania";
 import { buildSeedState, STATE_VERSION } from "../src/lib/seed";
+import { historicalSeedState } from "./seed-fixtures.mts";
 import type { Candidate, StarRating } from "../src/lib/types";
 import { STAR_RATINGS, LEAD_SOURCES, TANIA_STAGES } from "../src/lib/types";
 
@@ -100,7 +101,7 @@ ok("C handoff reject", chatboxHandoff("C").action === "reject");
 ok("D handoff reject", chatboxHandoff("D").action === "reject");
 
 /* ---- seed layer ---------------------------------------------------------- */
-const state = buildSeedState();
+const state = historicalSeedState();
 ok("seed state version matches STATE_VERSION", state.version === STATE_VERSION);
 ok("every candidate has a leadSource", state.candidates.every((c) => !!c.leadSource));
 ok("every candidate has a starRating", state.candidates.every((c) => !!c.starRating));

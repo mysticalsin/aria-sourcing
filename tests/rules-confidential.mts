@@ -17,6 +17,7 @@ import {
 } from "../src/lib/confidential";
 import { recordedCandidateLawfulBasis } from "../src/lib/candidate-lawful-basis";
 import { buildSeedState, defaultSettings } from "../src/lib/seed";
+import { historicalSeedState } from "./seed-fixtures.mts";
 import type { Candidate, OutreachMessage, SystemSettings } from "../src/lib/types";
 
 let pass = 0,
@@ -414,7 +415,7 @@ try {
 
 // Same behavior on a real seed candidate.
 {
-  const state = buildSeedState();
+  const state = historicalSeedState();
   const seedCand = state.candidates[0];
   ok("seed: there is at least one candidate", !!seedCand);
   if (seedCand) {

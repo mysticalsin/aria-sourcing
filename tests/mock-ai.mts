@@ -4,7 +4,7 @@ import {
   classifyReply,
   SAMPLE_INTAKE_EMAIL,
 } from "../src/lib/mock-ai";
-import { buildSeedState } from "../src/lib/seed";
+import { buildHistoricalDemoSeedState } from "../src/lib/seed";
 
 let pass = 0,
   fail = 0;
@@ -50,7 +50,7 @@ try {
 /* ------------------------------------------------------------------ */
 /* 2. generateOutreach(candidate, campaign, 'Casual Professional')     */
 /* ------------------------------------------------------------------ */
-const state = buildSeedState();
+const state = buildHistoricalDemoSeedState();
 const campaign = state.campaigns[0];
 const candidate =
   state.candidates.find((c) => c.campaignId === campaign.id) ?? state.candidates[0];

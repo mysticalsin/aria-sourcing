@@ -23,27 +23,31 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
   // STATE_VERSION 18 — wipe fake "connected" seeds on real cards (GitHub/Apify/Graph/SendGrid)
   // that never had a real credential attached.
   const preHonestIntegrations = (parsed.version ?? 0) < 18;
+  const preCleanSlate = (parsed.version ?? 0) < 19;
   const starT = parsed.settings?.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
   const FAKE_CONNECTED_IDS = new Set(["int_github", "int_apify", "int_graph_teams", "int_sendgrid"]);
+  const clean = preCleanSlate ? buildSeedState() : null;
   return {
-    ...parsed,
+    ...(clean ?? parsed),
     version: STATE_VERSION,
-    // D-2: fill every required root field that may be absent in older blobs.
-    campaigns: parsed.campaigns ?? [],
-    // STATE_VERSION 13 — backfill the TAnIA layer (lead source + star rating) on
-    // any candidate that predates it, without clobbering explicit values.
-    candidates: (parsed.candidates ?? []).map((c) => ({
-      ...c,
-      leadSource: c.leadSource ?? deriveLeadSource(c),
-      starRating: c.starRating ?? deriveStarRating(c.matchScore, starT),
-    })),
-    // STATE_VERSION 13 — inbound chatbox queue.
-    chatboxSubmissions: parsed.chatboxSubmissions ?? [],
-    outreach: parsed.outreach ?? [],
-    replies: parsed.replies ?? [],
-    bookings: parsed.bookings ?? [],
-    wins: parsed.wins ?? [],
-    reports: parsed.reports ?? [],
+    campaigns: preCleanSlate ? clean!.campaigns : (parsed.campaigns ?? []),
+    candidates: preCleanSlate
+      ? []
+      : (parsed.candidates ?? []).map((c) => ({
+          ...c,
+          leadSource: c.leadSource ?? deriveLeadSource(c),
+          starRating: c.starRating ?? deriveStarRating(c.matchScore, starT),
+        })),
+    chatboxSubmissions: preCleanSlate ? [] : (parsed.chatboxSubmissions ?? []),
+    outreach: preCleanSlate ? [] : (parsed.outreach ?? []),
+    replies: preCleanSlate ? [] : (parsed.replies ?? []),
+    bookings: preCleanSlate ? [] : (parsed.bookings ?? []),
+    wins: preCleanSlate ? [] : (parsed.wins ?? []),
+    reports: preCleanSlate ? [] : (parsed.reports ?? []),
+    activities: preCleanSlate ? clean!.activities : (parsed.activities ?? []),
+    ledger: preCleanSlate ? [] : (parsed.ledger ?? []),
+    ingestedMessageIds: preCleanSlate ? [] : (parsed.ingestedMessageIds ?? []),
+    activeCampaignId: preCleanSlate ? clean!.activeCampaignId : (parsed.activeCampaignId ?? null),
     // STATE_VERSION 16 — re-sync each stored integration's `real` flag against
     // the current seed. Roadmap placeholders (`real: false`) also lose any older
     // fabricated connected/lastSync state; real cards keep their usage history.
@@ -69,16 +73,12 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
             return { ...i, real: true };
           })
         : defaultIntegrations(),
-    activities: parsed.activities ?? [],
-    activeCampaignId: parsed.activeCampaignId ?? null,
     apiKeys: parsed.apiKeys ?? [],
     currentRole: parsed.currentRole ?? "admin",
     skills: parsed.skills ?? [],
     suppression: parsed.suppression ?? [],
-    ledger: parsed.ledger ?? [],
     // Inbound-email dedup ledger — initialise on upgrade so re-sync after an
     // upgrade can't double-create replies for already-ingested messages.
-    ingestedMessageIds: parsed.ingestedMessageIds ?? [],
     // STATE_VERSION 9 — per-agent chat threads.
     chats: parsed.chats ?? [],
     // STATE_VERSION 10 — per-agent memory.

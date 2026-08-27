@@ -19,7 +19,7 @@ import {
 } from "../src/lib/metrics";
 import { FUNNEL_STAGES } from "../src/lib/types";
 import type { Candidate, JobAnalysis, ScoringWeights } from "../src/lib/types";
-import { buildSeedState } from "../src/lib/seed";
+import { historicalSeedState } from "./seed-fixtures.mts";
 
 let pass = 0,
   fail = 0;
@@ -32,7 +32,7 @@ function ok(name: string, cond: boolean) {
   }
 }
 
-const state = buildSeedState();
+const state = historicalSeedState();
 
 /* ---- scoreCandidate ------------------------------------------------------ */
 const campaign = state.campaigns[0];

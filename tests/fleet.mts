@@ -13,7 +13,7 @@ import {
   recentlyContacted,
   defaultFleetSettings,
 } from "../src/lib/fleet";
-import { buildSeedState } from "../src/lib/seed";
+import { historicalSeedState } from "./seed-fixtures.mts";
 import { SEED_NOW } from "../src/lib/utils";
 import type { AgentSeat, Candidate, SuppressionEntry } from "../src/lib/types";
 
@@ -28,7 +28,7 @@ function ok(name: string, cond: boolean) {
   }
 }
 
-const state = buildSeedState();
+const state = historicalSeedState();
 const NOW = SEED_NOW.getTime(); // deterministic clock that matches the seed's relative dates
 const fs = defaultFleetSettings();
 
