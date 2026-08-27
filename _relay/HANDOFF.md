@@ -10,7 +10,7 @@ status: awaiting-tip-deploy-confirm
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32** · tip advancing (bootstrap gate fix)
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32** · tip **`5fb91cb`** (`5fb91cb6716611904a56e37cdabe8fccd7ddebc8`)
 - **Live Fly `aria-mantu-app`:** build `ba88302` · mig `0060` · `/api/ready` `not_ready` · Graph `validationToken` **HTTP 404**
 - **Missing Fly secrets:** `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` (+ GoTrue Azure on `aria-mantu-auth`)
 - **Deploy confirm:** unset — after tip push, re-run `bash scripts/print-fly-deploy-confirm.sh` (SHA must match HEAD)
