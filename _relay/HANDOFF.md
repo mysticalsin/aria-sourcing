@@ -10,7 +10,7 @@ status: intake-fail-closed-shipped-awaiting-fly-confirm
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30** · tip `42863c0`
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30** · tip `d37e041`
 - **Local gate:** `npx tsc --noEmit && npm test` green (audit 29/29, mantu 28/28)
 - **CI Actions:** empty runners — skip
 - **Fly live:** still `ba88302` / migration **0060** / `agentFrameworks:false`
