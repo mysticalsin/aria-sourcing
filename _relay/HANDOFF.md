@@ -25,7 +25,7 @@ status: awaiting-microsoft-entra-and-deploy-confirm
 ## Next steps
 
 1. Owner: `/tmp/owner-microsoft.env` → `bash scripts/fly-enterprise-golive-when-ready.sh`
-2. Export confirm from printed one-liner → re-run golive script / `fly-deploy-now.sh`
+2. `bash scripts/print-fly-deploy-confirm.sh` → export confirm → re-run golive / `fly-deploy-now.sh`
 3. Connect Outlook (auto live mode + webhook) → E2E PASS
 4. Goal complete: ready ok + mig>=0066 + tip build + Graph200 + E2E PASS
 
