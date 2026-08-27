@@ -1,34 +1,36 @@
 ---
 project: MSourcing / ARIA
-shift: 103
+shift: 104
 agent: cursor-cloud
 updated: 2026-08-27 UTC
-status: awaiting-owner-actions-ci-fly
+status: loop-chain-wired-awaiting-ops
 ---
 
-# Handoff — Shift 103
+# Handoff — Shift 104
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30** tip `5cad823`+
-- **Code/local:** green (audit matrix 16/16, npm audit 0 high)
-- **CI:** still no runners on tip (empty steps); PR comment posted explaining infra
-- **Fly probes (`fly-golive-mantu-e2e.sh`):** health/login OK; webhook **401** (route present); email connections **401**; migration **0060** (need **0062**); ready 503 agentFrameworks=false
-- **Owner actions requested:** restore Actions billing; provide ADMIN/M365/Fly secrets; sanctioned deploy
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30** tip `85d2351`
+- **Loop chain wired:** campaign_create → sourcing_batch (cron) → shortlist top 10 → draft_generate (Mantu+quality, append_outreach)
+- **Migrations:** 0062 inboundId + **0063 append_outreach**
+- **Local:** tsc + npm test green; audit matrix **17/17**
+- **CI:** still no runners
+- **Fly:** still migration 0060; needs 0062–0063 + secrets
 
 ## Done this shift
 
-- `scripts/fly-golive-mantu-e2e.sh` enterprise activation preflight
-- Environment setup actions recorded for secrets + CI + Fly deploy
-- PR #30 comment documenting CI infra failure
+- Autonomous worker successors + cron `/api/cron/run-sourcing-batch` + `/api/cron/generate-outreach-draft`
+- LangGraph `draftOutreach` node
+- Audit matrix + loop-authority coverage for 0063
 
 ## Next steps (owner)
 
-1. Restore GitHub Actions → re-run PR #30
-2. Complete `.fly-secrets.env`; deploy through 0062
-3. Set M365 + webhook secrets; run `e2e-workflow-test.sh`
+1. Restore GitHub Actions
+2. Deploy through 0063; set M365 + webhook secrets
+3. `e2e-workflow-test.sh` with admin creds
 
 ## Decisions made (don't relitigate)
 
-- agentFrameworks production requirement cannot be env-opted-out
-- No production deploy without `ARIA_PROD_DEPLOY_CONFIRM`
+- LinkedIn send remains assisted-manual (409)
+- agentFrameworks cannot be env-opted-out in production
+- No production deploy without confirm token
