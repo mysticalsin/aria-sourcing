@@ -11,10 +11,10 @@ status: llm-critics-prod-ux-awaiting-fly-confirm
 ## Current state
 
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30**
-- **Local gate:** run full `npm test` after this land; audit **28/28**
+- **Local gate:** `tsc` + `npm test` green on tip `67965cb`; audit **28/28**
 - **CI Actions:** deferred (empty runners)
 - **Fly live:** migration **0060**; source through **0065**; needs `ARIA_PROD_DEPLOY_CONFIRM`
-- **Entra SSO:** still off; `fly.auth.toml` now documents GOTRUE_EXTERNAL_AZURE_* enablement
+- **Entra SSO:** still off; `fly.auth.toml` documents GOTRUE_EXTERNAL_AZURE_* enablement
 
 ## Done this shift
 
