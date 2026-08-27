@@ -11,7 +11,7 @@ status: awaiting-microsoft-entra-and-deploy-confirm
 ## Current state
 
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open (supersedes closed #29, #30)
-- **Tip:** pending (top-10 approve cap + Mantu brand gate)
+- **Tip:** `f2058a5` (top-10 approve cap + Mantu brand gate)
 - **Local gate:** `npx tsc --noEmit && npm test` green; audit **45/45**
 - **Fly auth:** `.fly-token.env`
 - **Live present:** `ARIA_LOOP_KILL_SWITCH=false`, `KIMI_API_KEY`, `CRON_SECRET`, `EMAIL_INBOUND_WEBHOOK_SECRET`, `MICROSOFT_REDIRECT_URI`
