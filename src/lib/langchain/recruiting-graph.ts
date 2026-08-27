@@ -14,6 +14,7 @@ import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import { TOP_CANDIDATE_SHORTLIST_SIZE } from "@/lib/recruiting-loop/constants";
 import { validateOutreachQuality, type OutreachQualityVerdict } from "@/lib/outreach-quality-pipeline";
 import pipelineTransitions from "@/lib/langchain/pipeline-transitions.json";
+import graphStageJobs from "@/lib/langchain/graph-stage-jobs.json";
 
 /** Graph state carried between nodes. */
 export const RecruitingGraphState = Annotation.Root({
@@ -206,15 +207,9 @@ export const PIPELINE_STAGE_TRANSITIONS: Readonly<Record<string, readonly string
   );
 
 /** Job kinds the graph expects the loop worker to enqueue after each stage. */
-export const GRAPH_STAGE_TO_JOB_KIND: Record<string, string> = {
-  requisition_parsed: "campaign_create",
-  sourcing_complete: "shortlist_build",
-  shortlist_ranked: "draft_generate",
-  outreach_drafted: "draft_generate",
-  quality_validated: "draft_generate",
-  queued_for_approval: "calendar_book",
-  interview_scheduled: "calendar_book",
-};
+export const GRAPH_STAGE_TO_JOB_KIND: Record<string, string> = Object.freeze({
+  ...graphStageJobs,
+});
 
 /** Resolve the first allowed successor job kind for a completed pipeline stage. */
 export function nextJobKindAfterPipelineStage(completedKind: string): string | null {

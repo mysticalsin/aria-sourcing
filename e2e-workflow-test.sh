@@ -154,9 +154,9 @@ READY_BUILD=$(jq -r '.build // empty' "$WORK/ready.json" 2>/dev/null || true)
 info "Ready probe HTTP $READY_CODE ok=$READY_OK migration=${READY_MIG:-?} build=${READY_BUILD:0:12}"
 if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_STALE_FLY_E2E:-}" != "1" ]; then
   case "$READY_MIG" in
-    0065_*) ;;
+    0066_*) ;;
     *)
-      die "Fly /api/ready migration must be 0065_* for enterprise E2E (got '${READY_MIG:-none}'). Deploy tip via scripts/fly-enterprise-activate.sh or set ARIA_ALLOW_STALE_FLY_E2E=1."
+      die "Fly /api/ready migration must be 0066_* for enterprise E2E (got '${READY_MIG:-none}'). Deploy tip via scripts/fly-enterprise-activate.sh or set ARIA_ALLOW_STALE_FLY_E2E=1."
       ;;
   esac
 fi

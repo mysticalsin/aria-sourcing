@@ -11,7 +11,7 @@ set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo"
 RELEASE_SHA="${1:-$(git rev-parse HEAD)}"
-TARGET_MIGRATION="0065_calendar_book_and_graph_renew.sql"
+TARGET_MIGRATION="0066_calendar_meeting_url.sql"
 APP_URL="${APP_URL:-https://aria-mantu-app.fly.dev}"
 blockers=0
 
@@ -40,7 +40,7 @@ fi
 if [ -z "${FLY_API_TOKEN:-}" ] && [ -r "$repo/production-readiness/.fly-token.env" ]; then
   export FLY_API_TOKEN="$(tr -d '\n' < "$repo/production-readiness/.fly-token.env")"
 fi
-if command -v flyctl >/dev/null 2>&1 && [ -n "${FLY_API_TOKEN:-}" ]; then
+  if command -v flyctl >/dev/null 2>&1 && [ -n "${FLY_API_TOKEN:-}" ]; then
   app_secrets="$(flyctl secrets list -a aria-mantu-app 2>/dev/null | awk 'NR>1 && $1 != "" && $1 != "NAME" {print $1}' || true)"
   for name in EMAIL_INBOUND_WEBHOOK_SECRET MICROSOFT_CLIENT_ID MICROSOFT_CLIENT_SECRET MICROSOFT_REDIRECT_URI; do
     if ! printf '%s\n' "$app_secrets" | grep -qx "$name"; then
@@ -53,6 +53,11 @@ if command -v flyctl >/dev/null 2>&1 && [ -n "${FLY_API_TOKEN:-}" ]; then
       note_blocker "Fly secret aria-mantu-auth/$name not deployed"
     fi
   done
+fi
+
+graph_valid_code="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' "${APP_URL}/api/webhooks/microsoft-graph?validationToken=activate-graph-check" || echo 000)"
+if [ "$graph_valid_code" != "200" ]; then
+  note_blocker "Graph webhook /api/webhooks/microsoft-graph validationToken returned HTTP $graph_valid_code (need tip deploy with Graph route)"
 fi
 
 echo "=== Deploy one-liner ==="

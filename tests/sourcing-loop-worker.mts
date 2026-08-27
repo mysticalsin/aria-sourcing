@@ -236,7 +236,7 @@ test("requisition_parse ingests, parses, patches campaign, enqueues campaign_cre
     {
       kind: "campaign_create",
       idempotency_key: `campaign:${REQUISITION_ID}:camp-1`,
-      payload: { requisitionId: REQUISITION_ID, campaignId: "camp-1" },
+      payload: { requisitionId: REQUISITION_ID, campaignId: "camp-1", graphStage: "requisition_parsed" },
       priority: 80,
     },
   ]);
@@ -677,6 +677,7 @@ test("draft_generate enqueues calendar_book after positive reply trigger", async
         candidateId: "cand-9",
         trigger: "draft_generate",
         intent: "INTERESTED",
+        graphStage: "queued_for_approval",
         approvedBy: "user-autopilot-1",
       },
       priority: 60,

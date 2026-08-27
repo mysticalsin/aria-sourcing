@@ -18,7 +18,7 @@ cd "$repo"
 APP_URL="${APP_URL:-https://aria-mantu-app.fly.dev}"
 KONG_URL="${KONG_URL:-https://aria-mantu-kong.fly.dev}"
 RELEASE_SHA="${1:-$(git rev-parse HEAD)}"
-TARGET_MIGRATION="0065_calendar_book_and_graph_renew.sql"
+TARGET_MIGRATION="0066_calendar_meeting_url.sql"
 
 die(){ echo "ERROR: $*" >&2; exit 1; }
 need_cmd(){ command -v "$1" >/dev/null 2>&1 || die "$1 is required"; }
@@ -40,6 +40,7 @@ login_code="$(probe_code "${APP_URL}/login?redirect=%2F")"
 health_code="$(probe_code "${APP_URL}/api/health")"
 demo_code="$(probe_code -X POST "${APP_URL}/api/auth/demo-login" -H 'content-type: application/json' -d '{"username":"admin","password":"admin"}')"
 webhook_code="$(probe_code -X POST "${APP_URL}/api/webhooks/email-inbound" -H 'content-type: application/json' -d '{}')"
+graph_code="$(probe_code "${APP_URL}/api/webhooks/microsoft-graph?validationToken=golive-graph-check")"
 email_conn_code="$(probe_code "${APP_URL}/api/email/connections")"
 ready_json="$(curl -sS -m 25 "${APP_URL}/api/ready" 2>/dev/null || echo '{}')"
 
@@ -48,6 +49,7 @@ echo "  GET  /login                  -> $login_code (expect 200)"
 echo "  GET  /api/health             -> $health_code (expect 200)"
 echo "  POST /api/auth/demo-login    -> $demo_code (expect 404/403 — demo OFF)"
 echo "  POST /api/webhooks/email-inbound -> $webhook_code (expect 401 without signature; 404 = old build)"
+echo "  GET  /api/webhooks/microsoft-graph?validationToken=… -> $graph_code (expect 200; 404 = old build)"
 echo "  GET  /api/email/connections  -> $email_conn_code (expect 401 without session)"
 
 node -e '
@@ -93,7 +95,7 @@ fi
 current_migration="$(node -e 'const j=JSON.parse(process.argv[1]||"{}"); process.stdout.write(String(j.migration||""))' "$ready_json")"
 if [ "$current_migration" != "$TARGET_MIGRATION" ]; then
   echo "BLOCKER: live migration is '$current_migration' (need $TARGET_MIGRATION)."
-  echo "         Apply 0061–0065 via bootstrap, then redeploy $RELEASE_SHA."
+  echo "         Apply migrations through 0066 via bootstrap, then redeploy $RELEASE_SHA."
   echo
 fi
 if [ "$webhook_code" = "404" ]; then

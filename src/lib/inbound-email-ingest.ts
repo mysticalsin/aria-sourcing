@@ -7,6 +7,7 @@ import "server-only";
 
 import { getServiceSupabase } from "@/lib/supabase/server";
 import { routeInboundEmail } from "@/lib/inbound-email-router";
+import { buildInboundEmailText } from "@/lib/requisition-intake";
 import { safeLog } from "@/lib/log-redact";
 
 export type NormalizedInboundEmail = {
@@ -48,11 +49,19 @@ export async function ingestNormalizedInboundEmail(
     return { ok: false, status: 404, reason: "No route for mailbox." };
   }
 
+  // Persist From/Subject into the durable body so requisition_parse keeps
+  // Graph/webhook subject lines (record_inbound_email stores body only).
+  const durableBody = buildInboundEmailText({
+    from: ev.from,
+    subject: ev.subject,
+    body: ev.body ?? "",
+  });
+
   const { data: recData, error: recErr } = await supabase.rpc("record_inbound_email", {
     p_workspace_id: route.workspace_id,
     p_provider_id: ev.providerId,
     p_from_address: ev.from,
-    p_body: ev.body ?? "",
+    p_body: durableBody,
   });
   const rec = recData as { ok?: boolean; inbound_id?: string; duplicate?: boolean } | null;
   if (recErr || rec?.ok !== true || !rec.inbound_id) {

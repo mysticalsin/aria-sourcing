@@ -24,7 +24,7 @@ import {
   summarizeCampaignLaunch,
   type LaunchRoleResult,
 } from "@/lib/store/campaign-launch";
-import { supabaseEnabled } from "@/lib/supabase/config";
+import { demoLoginEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import { Radio, Rocket, ShieldCheck, Sparkles } from "lucide-react";
 
 /* ============================================================================
@@ -243,16 +243,18 @@ export default function LaunchPage() {
                 aria-label="Multi-role brief, roles separated by a line of ---"
               />
               <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  leftIcon={<Sparkles aria-hidden />}
-                  onClick={loadSample}
-                  disabled={launching}
-                >
-                  Load sample brief (6 roles)
-                </Button>
+                {demoLoginEnabled ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<Sparkles aria-hidden />}
+                    onClick={loadSample}
+                    disabled={launching}
+                  >
+                    Load sample brief (6 roles)
+                  </Button>
+                ) : null}
                 <span className="text-xs text-muted">
                   {blocks.length} role block{blocks.length === 1 ? "" : "s"} detected
                 </span>

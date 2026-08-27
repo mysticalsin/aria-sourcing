@@ -53,6 +53,9 @@ const __workerDir = dirname(fileURLToPath(import.meta.url));
 const sharedTransitions = JSON.parse(
   readFileSync(join(__workerDir, "../src/lib/langchain/pipeline-transitions.json"), "utf8"),
 );
+const graphStageJobs = JSON.parse(
+  readFileSync(join(__workerDir, "../src/lib/langchain/graph-stage-jobs.json"), "utf8"),
+);
 
 function freezeTransitions(raw) {
   return Object.freeze(
@@ -63,6 +66,13 @@ function freezeTransitions(raw) {
 }
 
 export const PIPELINE_STAGE_TRANSITIONS = freezeTransitions(sharedTransitions);
+export const GRAPH_STAGE_TO_JOB_KIND = Object.freeze({ ...graphStageJobs });
+
+/** LangGraph stage → next job kind (shared with recruiting-graph.ts). */
+export function nextJobKindAfterGraphStage(stage) {
+  const kind = GRAPH_STAGE_TO_JOB_KIND[stage];
+  return typeof kind === "string" && kind ? kind : null;
+}
 
 export const PIPELINE_STAGE_TRANSITION_PRODUCERS = Object.freeze({
   "email_sync->inbound_classify": Object.freeze(["handleEmailSync"]),
@@ -680,7 +690,12 @@ async function handleRequisitionParse(job, context) {
     job,
     { status: "requisition_parsed", requisitionId, campaignId, inboundId },
     [event("requisition.parsed", "requisition", requisitionId, { campaignId, inboundId })],
-    [successorJob("campaign_create", `campaign:${requisitionId}:${campaignId}`, { requisitionId, campaignId }, 80)],
+    [successorJob(
+      nextJobKindAfterGraphStage("requisition_parsed") || "campaign_create",
+      `campaign:${requisitionId}:${campaignId}`,
+      { requisitionId, campaignId, graphStage: "requisition_parsed" },
+      80,
+    )],
   );
 }
 
@@ -1089,15 +1104,20 @@ async function handleDraftGenerate(job, context) {
     trigger === "inbound_classify"
     && (intent === "INTERESTED" || intent === "QUALIFIED_INTEREST");
   if (positiveReply) {
+    const expectedKind = nextJobKindAfterGraphStage("queued_for_approval");
+    if (expectedKind && expectedKind !== "calendar_book") {
+      throw new HandlerError("graph_stage_successor_mismatch", false);
+    }
     successors.push(
       successorJob(
-        "calendar_book",
+        expectedKind || "calendar_book",
         `calendar:reply:${campaignId}:${candidateId}`,
         {
           campaignId,
           candidateId,
           trigger: "draft_generate",
           intent,
+          graphStage: "queued_for_approval",
           ...(typeof payload.approvedBy === "string" && payload.approvedBy
             ? { approvedBy: payload.approvedBy }
             : {}),

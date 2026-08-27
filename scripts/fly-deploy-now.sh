@@ -48,7 +48,7 @@ fi
 export FLY_NO_METRICS=1 DO_NOT_TRACK=1
 set -a; source "$repo/production-readiness/.fly-secrets.env"; set +a
 
-echo "=== 1/3 bootstrap image (migrations through 0065) ==="
+echo "=== 1/3 bootstrap image (migrations through 0066) ==="
 flyctl deploy --config fly.bootstrap.toml --build-only --push --image-label latest --remote-only
 
 echo "=== 2/3 apply migrations on prod DB ==="

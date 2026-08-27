@@ -1,0 +1,9 @@
+{
+  "requisition_parsed": "campaign_create",
+  "sourcing_complete": "shortlist_build",
+  "shortlist_ranked": "draft_generate",
+  "outreach_drafted": "draft_generate",
+  "quality_validated": "draft_generate",
+  "queued_for_approval": "calendar_book",
+  "interview_scheduled": "calendar_book"
+}

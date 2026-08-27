@@ -135,11 +135,33 @@ export async function createGraphCalendarEvent(
       webLink?: string;
       onlineMeeting?: { joinUrl?: string };
     };
+    let joinUrl = event.onlineMeeting?.joinUrl ?? event.webLink ?? null;
+    // Graph sometimes omits onlineMeeting on create; re-fetch once for Teams joinUrl.
+    if (!event.onlineMeeting?.joinUrl && event.id) {
+      try {
+        const fetched = await fetch(
+          `https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(event.id)}?$select=id,webLink,onlineMeeting`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(10_000),
+          },
+        );
+        if (fetched.ok) {
+          const full = (await fetched.json().catch(() => ({}))) as {
+            webLink?: string;
+            onlineMeeting?: { joinUrl?: string };
+          };
+          joinUrl = full.onlineMeeting?.joinUrl ?? full.webLink ?? joinUrl;
+        }
+      } catch {
+        // Keep create-response link; never fail the booking on joinUrl refresh.
+      }
+    }
     return {
       ok: true,
       provider: "Microsoft Graph",
       eventId: event.id,
-      link: event.onlineMeeting?.joinUrl ?? event.webLink,
+      link: joinUrl ?? undefined,
       deliveryState: "accepted",
       detail: "Event created.",
     };

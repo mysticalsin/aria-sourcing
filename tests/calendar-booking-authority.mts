@@ -228,7 +228,7 @@ try {
   };
 
   nextResponse = {
-    data: { status: "claimed", id: "booking-1", booking_status: "claimed", external_event_id: null, replay: false },
+    data: { status: "claimed", id: "booking-1", booking_status: "claimed", external_event_id: null, meeting_url: null, replay: false },
     error: null,
   };
   const freshClaim = await claimCalendarBooking(fakeService, {
@@ -291,6 +291,7 @@ try {
     id: "booking-1",
     status: "confirmed",
     externalEventId: "evt-1",
+    meetingUrl: "https://teams.example/join/1",
     detail: "Event created.",
   });
   const reconcileRpc = lastRpc as { name: string; args: Record<string, unknown> } | null;
@@ -305,6 +306,7 @@ try {
           p_status: "confirmed",
           p_external_event_id: "evt-1",
           p_detail: "Event created.",
+          p_meeting_url: "https://teams.example/join/1",
         }),
   );
   ok(
@@ -346,6 +348,7 @@ try {
     provider: string;
     status: "claimed" | "confirmed" | "failed" | "released";
     externalEventId: string | null;
+    meetingUrl: string | null;
     detail: string | null;
   };
 
@@ -383,6 +386,7 @@ try {
                 id: existing.id,
                 booking_status: existing.status,
                 external_event_id: existing.externalEventId,
+                meeting_url: existing.meetingUrl,
                 replay: true,
               },
               error: null,
@@ -402,9 +406,20 @@ try {
             provider,
             status: "claimed",
             externalEventId: null,
+            meetingUrl: null,
             detail: null,
           });
-          return { data: { status: "claimed", id, booking_status: "claimed", external_event_id: null, replay: false }, error: null };
+          return {
+            data: {
+              status: "claimed",
+              id,
+              booking_status: "claimed",
+              external_event_id: null,
+              meeting_url: null,
+              replay: false,
+            },
+            error: null,
+          };
         }
         if (name === "reconcile_calendar_booking") {
           const id = String(args.p_id);
@@ -412,9 +427,18 @@ try {
           if (!row || row.status !== "claimed") return { data: { status: "not_found" }, error: null };
           row.status = args.p_status as BookingRow["status"];
           if (typeof args.p_external_event_id === "string") row.externalEventId = args.p_external_event_id;
+          if (typeof args.p_meeting_url === "string") row.meetingUrl = args.p_meeting_url;
           row.detail = typeof args.p_detail === "string" ? args.p_detail : null;
           events.push(`reconcile:${row.status}`);
-          return { data: { status: "reconciled", id: row.id, booking_status: row.status }, error: null };
+          return {
+            data: {
+              status: "reconciled",
+              id: row.id,
+              booking_status: row.status,
+              meeting_url: row.meetingUrl,
+            },
+            error: null,
+          };
         }
         return { data: null, error: null };
       },

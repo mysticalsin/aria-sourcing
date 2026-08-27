@@ -113,8 +113,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       && /GRAPH_STAGE_TO_JOB_KIND/.test(graphRoute)
       && /nextJobKindAfterGraphStage/.test(graphRoute)
       && /pipeline-transitions\.json/.test(graphRoute)
+      && /graph-stage-jobs\.json/.test(graphRoute)
       && existsSync("src/lib/langchain/pipeline-transitions.json")
-      && /pipeline-transitions\.json/.test(worker),
+      && existsSync("src/lib/langchain/graph-stage-jobs.json")
+      && /graph-stage-jobs\.json/.test(worker)
+      && /nextJobKindAfterGraphStage/.test(worker),
   },
   {
     requirement: "Top shortlist capped at 10",
@@ -212,7 +215,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       const script = readFileSync("e2e-workflow-test.sh", "utf8");
       return (
         /EMAIL_INBOUND_WEBHOOK_SECRET is required for Fly enterprise E2E/.test(script)
-        && /migration must be 0065_/.test(script)
+        && /migration must be 0066_/.test(script)
         && /unknown_subscription/.test(script)
         && /microsoft-graph/.test(script)
       );
@@ -392,7 +395,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /FLY ONLY/.test(deployNow)
         && /aria-mantu-app\.fly\.dev/.test(golive)
         && !/vercel --prod/.test(deployNow)
-        && /0065/.test(deployNow)
+        && /0066/.test(deployNow)
         && /validate_fly_e2e_url/.test(script)
         && !/aria-mantu-app\.fly\.dev\*/.test(script)
       );
@@ -495,6 +498,42 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       return (
         /intake:\s*"webhook"/.test(ignite)
         && !/p_kind:\s*"email_sync"/.test(ignite)
+      );
+    },
+  },
+  {
+    requirement: "Inbound ingest preserves subject for requisition_parse",
+    evidence: () => {
+      const ingest = readFileSync("src/lib/inbound-email-ingest.ts", "utf8");
+      return /buildInboundEmailText/.test(ingest) && /subject: ev\.subject/.test(ingest);
+    },
+  },
+  {
+    requirement: "Calendar confirm persists and replays Teams meeting_url",
+    evidence: () => {
+      const mig = readFileSync("supabase/migrations/0066_calendar_meeting_url.sql", "utf8");
+      const authority = readFileSync("src/lib/calendar-authority.ts", "utf8");
+      const route = readFileSync("src/app/api/calendar/event/route.ts", "utf8");
+      const calendar = readFileSync("src/lib/calendar.ts", "utf8");
+      return (
+        /meeting_url/.test(mig)
+        && /meetingUrl/.test(authority)
+        && /claim\.meetingUrl/.test(route)
+        && /p_meeting_url/.test(authority)
+        && /onlineMeeting\/joinUrl|onlineMeeting\?\.joinUrl/.test(calendar)
+      );
+    },
+  },
+  {
+    requirement: "Production UX hides sample launch/reply chips when demo login is off",
+    evidence: () => {
+      const launch = readFileSync("src/app/launch/page.tsx", "utf8");
+      const replies = readFileSync("src/components/replies/reply-classifier.tsx", "utf8");
+      return (
+        /demoLoginEnabled \? \(/.test(launch)
+        && /Load sample brief/.test(launch)
+        && /demoLoginEnabled \? \(/.test(replies)
+        && /SAMPLE_REPLIES/.test(replies)
       );
     },
   },

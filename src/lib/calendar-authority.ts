@@ -37,6 +37,8 @@ export type CalendarBookingClaimResult =
       id: string;
       bookingStatus: CalendarBookingStatus;
       externalEventId: string | null;
+      /** Teams/Outlook join URL when previously reconciled (replay path). */
+      meetingUrl: string | null;
       /** True when this call returned a PRE-EXISTING row for this exact
        *  request_id (a retry) rather than creating a new one. */
       replay: boolean;
@@ -49,6 +51,7 @@ type ReconcileInput = {
   status: Extract<CalendarBookingStatus, "confirmed" | "failed" | "released">;
   externalEventId?: string | null;
   detail?: string | null;
+  meetingUrl?: string | null;
 };
 
 export type CalendarBookingReconcileResult =
@@ -105,6 +108,7 @@ export async function claimCalendarBooking(
       id,
       bookingStatus,
       externalEventId: nullableString(result.external_event_id, 512),
+      meetingUrl: nullableString(result.meeting_url, 2000),
       replay: result.replay === true,
     };
   }
@@ -136,6 +140,7 @@ export async function reconcileCalendarBooking(
     p_status: input.status,
     p_external_event_id: input.externalEventId ?? null,
     p_detail: input.detail ?? null,
+    p_meeting_url: input.meetingUrl ?? null,
   });
   if (error) return { status: "dependency_unavailable" };
   const result = record(data);

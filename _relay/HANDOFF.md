@@ -1,26 +1,29 @@
 ---
 project: MSourcing / ARIA
-shift: 125
+shift: 126
 agent: cursor-cloud
 updated: 2026-08-27 UTC
 status: code-complete-awaiting-owner-deploy
 ---
 
-# Handoff — Shift 125
+# Handoff — Shift 126
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open · tip after this commit
-- **Local gate:** green; audit **36/36**; mantu E2E **30/30**
-- **Fly live:** build `ba88302`, migration **0060** — Graph webhook route **404** (old build); needs tip + **0065**
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open (supersedes closed #29, #30)
+- **Local gate:** green after tip push; audit includes meeting_url + subject + graph-stage wiring
+- **Fly live:** build `ba88302`, migration **0060** — Graph webhook **404**; needs tip + **0066**
 - **Owner blockers:** `ARIA_PROD_DEPLOY_CONFIRM` unset; M365/webhook/Entra secrets; admin E2E creds
+- **Note:** `FLY_API_TOKEN` is available in agent env for read-only probes; deploy still requires confirm
 
 ## Done this shift
 
-- `e2e-workflow-test.sh` fail-closed on Fly without `EMAIL_INBOUND_WEBHOOK_SECRET` or migration `0065_*`
-- Graph notification envelope probe (`unknown_subscription` → 202)
-- Calendar dry-run uses Mantu first-interview agenda; asserts MIME branding wiring
-- In-process E2E asserts `nextJobKindAfterGraphStage` + shared pipeline transitions
+- Inbound ingest persists Subject via `buildInboundEmailText` for requisition_parse
+- Migration **0066** `meeting_url` on calendar ledger; confirmLive replay returns Teams join URL
+- Graph create re-fetches event when joinUrl omitted on create response
+- Worker uses `nextJobKindAfterGraphStage` from shared `graph-stage-jobs.json`
+- Sample launch/reply UX gated on `demoLoginEnabled`
+- Activate/golive probe Graph validationToken; E2E requires migration `0066_*`
 
 ## Owner activation
 
@@ -28,24 +31,20 @@ status: code-complete-awaiting-owner-deploy
 bash scripts/fly-enterprise-activate.sh $(git rev-parse HEAD)
 bash scripts/print-fly-deploy-confirm.sh
 # export + bash scripts/fly-deploy-now.sh
-# set Fly secrets including EMAIL_INBOUND_WEBHOOK_SECRET
+# set EMAIL_INBOUND_WEBHOOK_SECRET + MICROSOFT_* + GOTRUE_EXTERNAL_AZURE_*
 bash scripts/print-fly-e2e-env.sh
 export ADMIN_EMAIL='…' ADMIN_PASSWORD='…' EMAIL_INBOUND_WEBHOOK_SECRET='…'
 bash e2e-workflow-test.sh
 ```
 
-## Completion audit
-
-Code/tests/PR #31: stronger live-proof harness. Live Fly E2E: still blocked on owner deploy.
-
 ## Decisions made (don't relitigate)
 
-- PR #31 supersedes #29/#30
+- PR #31 supersedes closed #29 and #30
 - No Fly deploy without `ARIA_PROD_DEPLOY_CONFIRM`
+- Use `bash scripts/print-fly-deploy-confirm.sh` for exact deploy one-liner
 - Skip Actions billing failures; local gate is authority
-- `ARIA_ALLOW_SKIP_WEBHOOK_E2E=1` / `ARIA_ALLOW_STALE_FLY_E2E=1` only for partial harnesses
 
 ## Watch out
 
-- Live Graph `/api/webhooks/microsoft-graph` is 404 until tip deploy
-- Closing PRs does not deploy
+- Target migration is now **0066** (not 0065)
+- Live Graph route is 404 until tip deploy

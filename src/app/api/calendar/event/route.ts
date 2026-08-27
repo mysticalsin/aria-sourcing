@@ -164,7 +164,11 @@ export async function POST(req: NextRequest) {
     // A retry with the same requestId. Never call the provider again — return
     // the previously recorded outcome instead.
     if (claim.bookingStatus === "confirmed") {
-      return NextResponse.json({ status: "created", link: null, eventId: claim.externalEventId });
+      return NextResponse.json({
+        status: "created",
+        link: claim.meetingUrl,
+        eventId: claim.externalEventId,
+      });
     }
     if (claim.bookingStatus === "claimed") {
       // The prior attempt under this exact requestId is still unreconciled
@@ -200,6 +204,7 @@ export async function POST(req: NextRequest) {
         id: claim.id,
         status: "confirmed",
         externalEventId: outcome.eventId ?? null,
+        meetingUrl: outcome.link ?? null,
         detail: outcome.detail,
       });
       if (reconciled.status !== "reconciled" || reconciled.bookingStatus !== "confirmed") {
