@@ -38,21 +38,27 @@ if [ -n "$live_build" ] && [[ "$live_build" != "$RELEASE_SHA"* ]]; then
 fi
 
 if [ -z "${FLY_API_TOKEN:-}" ] && [ -r "$repo/production-readiness/.fly-token.env" ]; then
-  export FLY_API_TOKEN="$(tr -d '\n' < "$repo/production-readiness/.fly-token.env")"
+  export FLY_API_TOKEN="$(tr -d '\n\r ' < "$repo/production-readiness/.fly-token.env")"
 fi
-  if command -v flyctl >/dev/null 2>&1 && [ -n "${FLY_API_TOKEN:-}" ]; then
+if command -v flyctl >/dev/null 2>&1 && [ -n "${FLY_API_TOKEN:-}" ]; then
   app_secrets="$(flyctl secrets list -a aria-mantu-app 2>/dev/null | awk 'NR>1 && $1 != "" && $1 != "NAME" {print $1}' || true)"
-  for name in EMAIL_INBOUND_WEBHOOK_SECRET MICROSOFT_CLIENT_ID MICROSOFT_CLIENT_SECRET MICROSOFT_REDIRECT_URI; do
+  for name in EMAIL_INBOUND_WEBHOOK_SECRET MICROSOFT_CLIENT_ID MICROSOFT_CLIENT_SECRET MICROSOFT_REDIRECT_URI ARIA_LOOP_KILL_SWITCH; do
     if ! printf '%s\n' "$app_secrets" | grep -qx "$name"; then
       note_blocker "Fly secret aria-mantu-app/$name not deployed"
     fi
   done
+  if ! printf '%s\n' "$app_secrets" | grep -qx "ANTHROPIC_API_KEY" \
+    && ! printf '%s\n' "$app_secrets" | grep -qx "OPENAI_API_KEY"; then
+    note_blocker "Fly secret aria-mantu-app needs ANTHROPIC_API_KEY or OPENAI_API_KEY (parse/draft/critics)"
+  fi
   auth_secrets="$(flyctl secrets list -a aria-mantu-auth 2>/dev/null | awk 'NR>1 && $1 != "" && $1 != "NAME" {print $1}' || true)"
   for name in GOTRUE_EXTERNAL_AZURE_ENABLED GOTRUE_EXTERNAL_AZURE_CLIENT_ID GOTRUE_EXTERNAL_AZURE_SECRET GOTRUE_EXTERNAL_AZURE_URL; do
     if ! printf '%s\n' "$auth_secrets" | grep -qx "$name"; then
       note_blocker "Fly secret aria-mantu-auth/$name not deployed"
     fi
   done
+else
+  note_blocker "flyctl + FLY_API_TOKEN (or production-readiness/.fly-token.env) required to inventory secrets"
 fi
 
 graph_valid_code="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' "${APP_URL}/api/webhooks/microsoft-graph?validationToken=activate-graph-check" || echo 000)"
