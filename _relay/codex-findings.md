@@ -1089,3 +1089,11 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** `/tmp/e2e-tip-dfa70ec.log:52` uuidgen missing; HEAD has e2e_uuid; openssl already required at line 141.
 **Suggested fix:** Fall back to `printf '%s' "$(openssl rand -hex 16)" | sed 's/^\(........\)\(....\)\(....\)\(....\)\(............\)$/\1-\2-\3-\4-\5/'`.
 **Status:** fixed (6dacd05c6c6ac50a249b8a481bda39248eca4ad0)
+
+## 2026-08-27 — requisition_parse rpc_http_404 is apply_workspace_patch digest search_path
+**Severity:** correctness
+**File:** supabase/migrations/0063_loop_append_outreach.sql:14
+**Issue:** 0063 rewrote apply_workspace_patch with search_path omitting `extensions`. Live pgcrypto digest lives in extensions (public install is a no-op when already present elsewhere), so digest(text, unknown) raises 42883; PostgREST maps that to HTTP 404; loop worker records handler:requisition_parse:rpc_http_404 and never append_campaign.
+**Repro/evidence:** curl apply_workspace_patch with valid append_campaign → HTTP 404 code=42883 "function digest(text, unknown) does not exist"; invalid patch_kind returns 200 invalid_request (digest not reached). E2E webhook queues requisition_parse but campaign never materializes.
+**Suggested fix:** Migration 0068 restores extensions on search_path + schema-qualified digest with sha256::text cast + md5 fallback; worker classifyRpcHttpFailure surfaces digest_unresolved.
+**Status:** fixed (pending commit on cursor/fix-requisition-parse-404-cadd)

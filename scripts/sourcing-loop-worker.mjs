@@ -338,6 +338,27 @@ async function readBoundedJson(response, maximumBytes) {
   }
 }
 
+/** Map PostgREST error bodies into a short, durable fail code (no secrets). */
+export function classifyRpcHttpFailure(status, body) {
+  const base = `rpc_http_${status}`;
+  if (!isRecord(body)) return base;
+  const pgCode = typeof body.code === "string" ? body.code.trim() : "";
+  const message = typeof body.message === "string" ? body.message.toLowerCase() : "";
+  if (pgCode === "42883" && /digest\(/.test(message)) {
+    return `${base}:digest_unresolved`;
+  }
+  if (pgCode === "PGRST202" || /schema cache/.test(message)) {
+    return `${base}:missing_overload`;
+  }
+  if (pgCode && /^[A-Z0-9]{5}$/.test(pgCode)) {
+    return `${base}:${pgCode.toLowerCase()}`;
+  }
+  if (pgCode && /^PGRST\d+$/i.test(pgCode)) {
+    return `${base}:${pgCode.toLowerCase()}`;
+  }
+  return base;
+}
+
 export function createLoopRpcClient(configuration, fetcher = fetch) {
   async function rpc(name, args) {
     const target = new URL(`/rest/v1/rpc/${name}`, configuration.supabaseUrl);
@@ -357,7 +378,13 @@ export function createLoopRpcClient(configuration, fetcher = fetch) {
       return { data: null, error: { code: "rpc_unavailable" } };
     }
     if (!response.ok) {
-      return { data: null, error: { code: `rpc_http_${response.status}` } };
+      let body = null;
+      try {
+        body = await readBoundedJson(response, RPC_RESPONSE_BYTES);
+      } catch {
+        body = null;
+      }
+      return { data: null, error: { code: classifyRpcHttpFailure(response.status, body) } };
     }
     try {
       return { data: await readBoundedJson(response, RPC_RESPONSE_BYTES), error: null };

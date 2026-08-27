@@ -9,6 +9,7 @@
 #
 # Accepts any one of:
 #   KIMI_API_KEY (+ optional KIMI_BASE_URL)
+#   DEEPSEEK_API_KEY (+ optional DEEPSEEK_BASE_URL)
 #   OPENAI_API_KEY
 #   ANTHROPIC_API_KEY
 #
@@ -55,6 +56,12 @@ if ! is_placeholder "${KIMI_API_KEY:-}"; then
     APP_ARGS+=("KIMI_BASE_URL=${KIMI_BASE_URL}")
   fi
 fi
+if ! is_placeholder "${DEEPSEEK_API_KEY:-}"; then
+  APP_ARGS+=("DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}")
+  if ! is_placeholder "${DEEPSEEK_BASE_URL:-}"; then
+    APP_ARGS+=("DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL}")
+  fi
+fi
 if ! is_placeholder "${OPENAI_API_KEY:-}"; then
   APP_ARGS+=("OPENAI_API_KEY=${OPENAI_API_KEY}")
 fi
@@ -63,7 +70,7 @@ if ! is_placeholder "${ANTHROPIC_API_KEY:-}"; then
 fi
 
 if [ "${#APP_ARGS[@]}" -eq 0 ]; then
-  echo "ERROR: need a real KIMI_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY (drop /tmp/owner-llm.env)." >&2
+  echo "ERROR: need a real KIMI_API_KEY, DEEPSEEK_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY (drop /tmp/owner-llm.env)." >&2
   exit 1
 fi
 

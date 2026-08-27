@@ -34,15 +34,18 @@ flyctl secrets set -a aria-mantu-app ARIA_LOOP_KILL_SWITCH='false'
 # At least one cloud LLM key (parse / draft / critics fail-closed without it).
 # Prefer the apply helper (reads /tmp/owner-llm.env; refuses PLACEHOLDER):
 #   cp production-readiness/.owner-llm.env.example /tmp/owner-llm.env
-#   # edit real KIMI_API_KEY (and optional KIMI_BASE_URL) or OPENAI/ANTHROPIC
+#   # edit real KIMI_API_KEY (and optional KIMI_BASE_URL) and/or DEEPSEEK_API_KEY
+#   # or OPENAI/ANTHROPIC
 #   bash scripts/fly-apply-owner-llm-secrets.sh
 # Prefer KIMI (preferred by serverGenerateText; auth 401/403 falls through to next key);
-# Anthropic/OpenAI also work:
+# DeepSeek is also on the preference list (env + vault); Anthropic/OpenAI work too:
 # flyctl secrets set -a aria-mantu-app KIMI_API_KEY='PLACEHOLDER_KIMI_KEY'
+# or: DEEPSEEK_API_KEY='PLACEHOLDER_DEEPSEEK_KEY'
 # or: ANTHROPIC_API_KEY='PLACEHOLDER_ANTHROPIC_KEY'
 # or: OPENAI_API_KEY='PLACEHOLDER_OPENAI_KEY'
 # After deploy, E2E hermes drafts must match the key you set:
 #   Kimi → export AGENT_PROVIDER=kimi AGENT_MODEL=moonshot-v1-8k
+#   DeepSeek → export AGENT_PROVIDER=deepseek AGENT_MODEL=deepseek-chat
 #   Anthropic → export AGENT_PROVIDER=anthropic
 
 # Optional but recommended for authenticated draft-cron / graph-stage E2E probes:

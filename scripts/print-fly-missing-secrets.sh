@@ -30,10 +30,10 @@ echo "=== aria-mantu-app ==="
 for name in EMAIL_INBOUND_WEBHOOK_SECRET MICROSOFT_CLIENT_ID MICROSOFT_CLIENT_SECRET MICROSOFT_REDIRECT_URI ARIA_LOOP_KILL_SWITCH; do
   check aria-mantu-app "$name" "$app"
 done
-if printf '%s\n' "$app" | grep -Eqx 'KIMI_API_KEY|ANTHROPIC_API_KEY|OPENAI_API_KEY'; then
-  echo "present  aria-mantu-app/(KIMI|ANTHROPIC|OPENAI)_API_KEY"
+if printf '%s\n' "$app" | grep -Eqx 'KIMI_API_KEY|DEEPSEEK_API_KEY|ANTHROPIC_API_KEY|OPENAI_API_KEY'; then
+  echo "present  aria-mantu-app/(KIMI|DEEPSEEK|ANTHROPIC|OPENAI)_API_KEY"
 else
-  echo "MISSING  aria-mantu-app/(KIMI|ANTHROPIC|OPENAI)_API_KEY"
+  echo "MISSING  aria-mantu-app/(KIMI|DEEPSEEK|ANTHROPIC|OPENAI)_API_KEY"
   missing=$((missing + 1))
 fi
 

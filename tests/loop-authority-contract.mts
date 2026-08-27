@@ -74,6 +74,21 @@ ok(
   })(),
 );
 ok(
+  "0068 restores digest resolution for apply_workspace_patch (0063 search_path regression)",
+  (() => {
+    const mig68 = read("supabase/migrations/0068_apply_workspace_patch_digest_path.sql");
+    return (
+      mig68.length > 0 &&
+      noTxn(mig68) &&
+      /set search_path = pg_catalog, public, extensions, pg_temp/i.test(mig68) &&
+      /public\.digest\(convert_to\(payload, 'UTF8'\), 'sha256'::text\)/i.test(mig68) &&
+      /extensions\.digest\(convert_to\(payload, 'UTF8'\), 'sha256'::text\)/i.test(mig68) &&
+      /append_outreach/.test(mig68) &&
+      /md5\(payload\) \|\| md5\(reverse\(payload\)\)/i.test(mig68)
+    );
+  })(),
+);
+ok(
   "loop event erasure has a narrow trigger-recognized redaction path",
   /redact_loop_events_for_candidate_erasure\(uuid, text, text\[\], text\[\]\)/i.test(dataProtection) &&
     /set_config\('aria\.candidate_erasure_loop_event_redaction', 'on', true\)/i.test(dataProtection) &&

@@ -57,8 +57,9 @@ if command -v flyctl >/dev/null 2>&1 && [ -n "${FLY_API_TOKEN:-}" ]; then
   done
   if ! printf '%s\n' "$app_secrets" | grep -qx "ANTHROPIC_API_KEY" \
     && ! printf '%s\n' "$app_secrets" | grep -qx "OPENAI_API_KEY" \
+    && ! printf '%s\n' "$app_secrets" | grep -qx "DEEPSEEK_API_KEY" \
     && ! printf '%s\n' "$app_secrets" | grep -qx "KIMI_API_KEY"; then
-    note_blocker "Fly secret aria-mantu-app needs KIMI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY (parse/draft/critics)"
+    note_blocker "Fly secret aria-mantu-app needs KIMI_API_KEY, DEEPSEEK_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY (parse/draft/critics)"
   fi
   auth_secrets="$(flyctl secrets list -a aria-mantu-auth 2>/dev/null | awk 'NR>1 && $1 != "" && $1 != "NAME" {print $1}' || true)"
   for name in GOTRUE_EXTERNAL_AZURE_ENABLED GOTRUE_EXTERNAL_AZURE_CLIENT_ID GOTRUE_EXTERNAL_AZURE_SECRET GOTRUE_EXTERNAL_AZURE_URL; do
