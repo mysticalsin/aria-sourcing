@@ -1,33 +1,34 @@
 ---
 project: MSourcing / ARIA
-shift: 133
+shift: 134
 agent: cursor-cloud
 updated: 2026-08-27 UTC
 status: code-complete-awaiting-owner-deploy
 ---
 
-# Handoff — Shift 133
+# Handoff — Shift 134
 
 ## Current state
 
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open (supersedes closed #29, #30)
-- **Code:** complete for enterprise loop (audit **42/42**, gate green)
-- **Fly live:** `ba88302` / mig **0060** / Graph **404** — owner secrets + confirm required
-- **Owner path:** `bash scripts/print-fly-secrets-checklist.sh` then activate → `print-fly-deploy-confirm.sh` → deploy → E2E
+- **Tip:** Fly Mantu opts out of DeerFlow/Flowise ready gate (`AGENT_FRAMEWORKS_REQUIRED=false`) so `/api/ready` can go green after tip migrate
+- **Local gate:** green; audit **42/42**
+- **Fly live:** still stale `ba88302` / mig **0060** / Graph **404**; confirm unset
+- **Owner blockers:** secrets (checklist) + `ARIA_PROD_DEPLOY_CONFIRM` + deploy + E2E
 
 ## Done this shift
 
-- Added `scripts/print-fly-secrets-checklist.sh` (Fly app + auth Entra templates)
-- Wired into `fly-enterprise-activate.sh` + `print-fly-e2e-env.sh`
-- Requirement audit: remaining items are owner/deploy only (PR #29 → #31)
+- `/api/ready` honors explicit `AGENT_FRAMEWORKS_REQUIRED=false`
+- `fly.app.toml` + `fly-deploy-now.sh` set the opt-out for Mantu (sidecars not on Fly)
+- Owner setup actions requested via Cursor environment (Graph/webhook/Entra + deploy confirm)
+- Prior: secrets checklist, live UI drafting, Teams joinUrl honesty
 
 ## Next steps
 
 1. Owner: `bash scripts/print-fly-secrets-checklist.sh` → set real values
-2. Owner: `bash scripts/fly-enterprise-activate.sh $(git rev-parse HEAD)`
-3. Owner: `bash scripts/print-fly-deploy-confirm.sh` → `fly-deploy-now.sh`
-4. Owner: `bash scripts/print-fly-e2e-env.sh` → `e2e-workflow-test.sh`
-5. Agent timer: ready `0066_*` + Graph 200 + E2E PASS
+2. Owner: activate → `print-fly-deploy-confirm.sh` → `fly-deploy-now.sh`
+3. Owner: E2E via `print-fly-e2e-env.sh`
+4. Agent: ready ok + mig `0066_*` + Graph 200 + E2E PASS
 
 ## Decisions made (don't relitigate)
 
@@ -36,7 +37,8 @@ status: code-complete-awaiting-owner-deploy
 - Use `bash scripts/print-fly-deploy-confirm.sh` for exact deploy one-liner
 - Skip Actions billing; local gate authority
 - Target migration **0066**
+- Mantu Fly does not require DeerFlow/Flowise for `/api/ready` (explicit false opt-out)
 
 ## Watch out
 
-- Agent has no Microsoft/Entra secret material — checklist is placeholders only
+- Full `deploy-fly.sh` / Actions path may still set `AGENT_FRAMEWORKS_REQUIRED=true` — Mantu `fly-deploy-now.sh` is the enterprise path

@@ -101,6 +101,14 @@ const canonicalProductionDeploySurfaces = new Set([
   ".github/workflows/deploy-aria-mantu.yml",
   ...reviewedAlternateDeploySurfaces,
 ]);
+/** Print-only helpers that mention flyctl secrets/deploy in templates but never mutate. */
+const documentationOnlyReleaseSurfaces = new Set([
+  "scripts/print-fly-secrets-checklist.sh",
+  "scripts/print-fly-deploy-confirm.sh",
+  "scripts/print-fly-e2e-env.sh",
+  "scripts/fly-enterprise-activate.sh",
+  "scripts/fly-golive-mantu-e2e.sh",
+]);
 const executableReleaseSurfaces = trackedFiles.filter(
   (path) => path === ".gitlab-ci.yml" || path.endsWith(".sh") || path.startsWith(".github/workflows/"),
 );
@@ -108,7 +116,9 @@ const alternateProductionDeployPattern =
   /ARIA_DEPLOY_BUNDLE|fly\.io\/install\.sh|(?:^|\s)(?:bash\s+)?(?:\.\/)?deploy-fly\.sh\b|(?:^|\s)(?:fly|flyctl)\s+(?:deploy|machine\s+(?:run|destroy)|secrets\s+(?:set|import)|ips\s+allocate|volumes?\s+(?:destroy|update)|apps\s+destroy)\b/m;
 const unsafeAlternateDeploySurfaces = executableReleaseSurfaces.filter((path) => {
   if (path === ".gitlab-ci.yml") return false; // reviewed separately as manual-only fallback
-  if (canonicalProductionDeploySurfaces.has(path) || !existsSync(path)) return false;
+  if (canonicalProductionDeploySurfaces.has(path) || documentationOnlyReleaseSurfaces.has(path) || !existsSync(path)) {
+    return false;
+  }
   return alternateProductionDeployPattern.test(readFileSync(path, "utf8"));
 });
 const dockerIgnorePatterns = new Set(

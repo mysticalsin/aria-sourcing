@@ -28,6 +28,9 @@ primary_region = "cdg"
   HOSTNAME                      = "0.0.0.0"
   NEXT_PUBLIC_SITE_URL          = "https://aria-mantu-app.fly.dev"
   NEXT_TELEMETRY_DISABLED       = "1"
+  # DeerFlow/Flowise sidecars are not deployed on Fly for the Mantu recruiting
+  # loop. Opt out so /api/ready can go green after tip migrate + identity refresh.
+  AGENT_FRAMEWORKS_REQUIRED     = "false"
   # Server (Node) reaches Supabase over the 6PN private net, NOT the public URL:
   SUPABASE_URL                  = "http://aria-mantu-kong.internal:8000"
   # Inert until a seat goes live (also needs a provider key + verified domain); safe to set now:

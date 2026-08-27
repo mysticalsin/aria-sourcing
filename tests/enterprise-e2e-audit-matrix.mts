@@ -568,6 +568,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /ARIA_EXPECTED_LEDGER_SHA/.test(deploy)
         && /secrets set -a aria-mantu-app --stage/.test(deploy)
         && /EXPECTED_LEDGER_SHA/.test(deploy)
+        && /AGENT_FRAMEWORKS_REQUIRED=false/.test(deploy)
       );
     },
   },
