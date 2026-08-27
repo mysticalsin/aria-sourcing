@@ -514,6 +514,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /ANTHROPIC_API_KEY or OPENAI_API_KEY|KIMI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY/.test(readFileSync("scripts/fly-enterprise-activate.sh", "utf8"))
         && existsSync("scripts/print-fly-secrets-checklist.sh")
         && existsSync("scripts/print-fly-missing-secrets.sh")
+        && existsSync("scripts/fly-enterprise-golive-when-ready.sh")
+        && /will not invent confirm/.test(readFileSync("scripts/fly-enterprise-golive-when-ready.sh", "utf8"))
         && existsSync("scripts/fly-apply-owner-microsoft-secrets.sh")
         && existsSync("production-readiness/.owner-microsoft.env.example")
         && /\/tmp\/owner-microsoft\.env/.test(readFileSync("scripts/fly-apply-owner-microsoft-secrets.sh", "utf8"))
