@@ -11,7 +11,7 @@ status: calendar-book-graph-renew-awaiting-fly-confirm
 ## Current state
 
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30**
-- **Local gate:** targeted suites green (audit **27/27**, mantu E2E **24/24**, loop worker, wiki, agent-graph); run full `npm test` after commit
+- **Local gate:** `tsc` + `npm test` green on tip `8a1dbdd`; audit **27/27**; mantu E2E **24/24**
 - **CI Actions:** deferred (empty runners) — do not block
 - **Fly live:** still migration **0060**; source now through **0065**; deploy needs `ARIA_PROD_DEPLOY_CONFIRM`
 - **Entra SSO:** still off in `fly.app.toml` (owner GoTrue Azure config required)
