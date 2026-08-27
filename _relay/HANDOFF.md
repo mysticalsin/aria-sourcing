@@ -1,30 +1,32 @@
 ---
 project: MSourcing / ARIA
-shift: 167
+shift: 168
 agent: cursor-cloud
-updated: 2026-08-27T14:45Z
+updated: 2026-08-27T15:00Z
 status: awaiting-microsoft-entra-and-deploy-confirm
 ---
 
-# Handoff — Shift 167
+# Handoff — Shift 168
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32**
-- **Local gate:** tsc + npm test + audit (must stay 45/45)
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32** · tip includes hydrate + sync helper
 - **Fly live:** `ba88302` / mig `0060` / Graph **404** / not_ready
 - **Missing (6):** MICROSOFT_CLIENT_* + GOTRUE_EXTERNAL_AZURE_*
-- **Azure CLI:** device-code — https://login.microsoft.com/device code **EUHDZE3FN** (refresh if expired)
+- **Azure CLI:** device-code — https://login.microsoft.com/device code **B2HR7KTSP** (MFA Authenticator required for Twalteur@amaris.com)
+- **Preflight OK (non-Azure):** GoTrue admin login + role=admin; webhook HMAC 200 (stale image returns `classifyQueued`, tip expects `jobQueued`/`requisition_parse`); CRON/webhook synced via `scripts/sync-fly-e2e-tmp-secrets.sh`
 
 ## Done this shift
 
-- Hydrate Outlook/Teams/Gmail integration cards from `/api/email/connections` (no dual-truth mock cards)
-- Prior: M365 UX honesty, az-create-mantu-graph-app, owner-microsoft + owner-deploy-confirm drop-zones
+- Restored admin password path; verified `current_profile_role=admin`
+- Confirmed webhook HMAC with `x-aria-signature` (hex, no `sha256=` prefix)
+- Added `scripts/sync-fly-e2e-tmp-secrets.sh` for webhook/cron/service-role /tmp refresh
+- Browser device login blocked on Authenticator number matching (owner phone)
 
 ## Next steps
 
-1. Owner: device login **EUHDZE3FN** or fill `/tmp/owner-microsoft.env`
-2. Export confirm via `bash scripts/print-fly-deploy-confirm.sh` (or `/tmp/owner-deploy-confirm.env`) — never invent `ARIA_PROD_DEPLOY_CONFIRM`
+1. Owner: approve MFA for device code **B2HR7KTSP** (or fill `/tmp/owner-microsoft.env`)
+2. `bash scripts/print-fly-deploy-confirm.sh` → `/tmp/owner-deploy-confirm.env` (never invent `ARIA_PROD_DEPLOY_CONFIRM`)
 3. `bash scripts/fly-enterprise-golive-when-ready.sh` (az login auto-runs `az-create-mantu-graph-app.sh`)
 4. Connect Outlook (live) + webhook → `eval "$(bash scripts/print-fly-e2e-env.sh --export)" && bash e2e-workflow-test.sh`
 5. Goal complete: ready ok + mig>=0066 + tip build + Graph200 + E2E PASS
@@ -34,9 +36,9 @@ status: awaiting-microsoft-entra-and-deploy-confirm
 - PR #32 supersedes #29–#31
 - Never invent Azure secrets or deploy confirm
 - Seat mode=live required for Teams book
-- Migration floor >=0066
+- GoTrue admin password ≠ Entra password
 
 ## Watch out
 
-- Never commit owner-*.env drop-zones
-- Device codes expire ~15 min
+- Stale Fly returns `classifyQueued` until tip deploy
+- Device codes expire ~15 min; MFA number matching needs phone
