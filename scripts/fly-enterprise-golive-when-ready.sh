@@ -10,6 +10,7 @@
 #   4) Else print missing inventory + deploy confirm template + stop
 #   5) After tip deploy (caller re-runs): probe ready + Graph; print E2E one-liner
 #
+# Also: bash scripts/fly-wait-entra-and-golive.sh  # long-poll Entra then golive
 # Usage:
 #   bash scripts/fly-enterprise-golive-when-ready.sh
 set -euo pipefail

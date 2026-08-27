@@ -1,34 +1,33 @@
 ---
 project: MSourcing / ARIA
-shift: 168
+shift: 169
 agent: cursor-cloud
-updated: 2026-08-27T15:00Z
+updated: 2026-08-27T15:10Z
 status: awaiting-microsoft-entra-and-deploy-confirm
 ---
 
-# Handoff — Shift 168
+# Handoff — Shift 169
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32** · tip includes hydrate + sync helper
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32**
 - **Fly live:** `ba88302` / mig `0060` / Graph **404** / not_ready
 - **Missing (6):** MICROSOFT_CLIENT_* + GOTRUE_EXTERNAL_AZURE_*
-- **Azure CLI:** device-code — https://login.microsoft.com/device code **B2HR7KTSP** (MFA Authenticator required for Twalteur@amaris.com)
-- **Preflight OK (non-Azure):** GoTrue admin login + role=admin; webhook HMAC 200 (stale image returns `classifyQueued`, tip expects `jobQueued`/`requisition_parse`); CRON/webhook synced via `scripts/sync-fly-e2e-tmp-secrets.sh`
+- **Azure device code:** https://login.microsoft.com/device → **AP33BLAFJ** (Twalteur@amaris.com + Authenticator MFA)
+- **Background:** tmux `fly-wait-entra` runs `scripts/fly-wait-entra-and-golive.sh` (auto mint/apply/golive when az login or drop-zone appears; never invents confirm)
+- **Preflight OK:** admin login + webhook HMAC; tip needs deploy for `jobQueued`/`requisition_parse`
 
 ## Done this shift
 
-- Restored admin password path; verified `current_profile_role=admin`
-- Confirmed webhook HMAC with `x-aria-signature` (hex, no `sha256=` prefix)
-- Added `scripts/sync-fly-e2e-tmp-secrets.sh` for webhook/cron/service-role /tmp refresh
-- Browser device login blocked on Authenticator number matching (owner phone)
+- `scripts/fly-wait-entra-and-golive.sh` long-poll Entra unlock → az-create --apply → golive-when-ready
+- Prior hydrate UX, sync-fly-e2e-tmp-secrets, az-create, deploy-confirm drop-zone
 
 ## Next steps
 
-1. Owner: approve MFA for device code **B2HR7KTSP** (or fill `/tmp/owner-microsoft.env`)
+1. Owner: MFA approve device code **AP33BLAFJ** OR fill `/tmp/owner-microsoft.env`
 2. `bash scripts/print-fly-deploy-confirm.sh` → `/tmp/owner-deploy-confirm.env` (never invent `ARIA_PROD_DEPLOY_CONFIRM`)
-3. `bash scripts/fly-enterprise-golive-when-ready.sh` (az login auto-runs `az-create-mantu-graph-app.sh`)
-4. Connect Outlook (live) + webhook → `eval "$(bash scripts/print-fly-e2e-env.sh --export)" && bash e2e-workflow-test.sh`
+3. Waiter/golive deploys tip → Connect Outlook (live) + webhook
+4. `eval "$(bash scripts/print-fly-e2e-env.sh --export)" && bash e2e-workflow-test.sh`
 5. Goal complete: ready ok + mig>=0066 + tip build + Graph200 + E2E PASS
 
 ## Decisions made (don't relitigate)
@@ -40,5 +39,5 @@ status: awaiting-microsoft-entra-and-deploy-confirm
 
 ## Watch out
 
-- Stale Fly returns `classifyQueued` until tip deploy
-- Device codes expire ~15 min; MFA number matching needs phone
+- Device codes expire ~15 min (waiter refreshes)
+- Never commit owner-*.env
