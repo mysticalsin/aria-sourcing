@@ -14,7 +14,7 @@ import {
 import { seatHasOutlookMailbox } from "@/lib/outlook-needs";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { cn } from "@/lib/utils";
-import { Check, Circle, Cpu, Inbox, Rocket } from "lucide-react";
+import { Check, Circle, Cpu, Inbox, Power, Rocket } from "lucide-react";
 
 function seatHasOauthMailbox(seat: { provider?: string; connectedAccount?: string }): boolean {
   if (seatHasOutlookMailbox(seat)) return true;
@@ -71,6 +71,15 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
       icon: <Cpu className="h-4 w-4" aria-hidden />,
     },
     {
+      id: "loop",
+      title: "Arm the sourcing loop",
+      body: "Settings → Observability → Arm enterprise loop (workspace switchboard). Fly also needs ARIA_LOOP_KILL_SWITCH=false on the loop process.",
+      done: false,
+      ctaLabel: "Open switchboard",
+      href: "/settings?tab=observe",
+      icon: <Power className="h-4 w-4" aria-hidden />,
+    },
+    {
       id: "source",
       title: "Webhook needs & source",
       body: "On Intake, wait for Graph-delivered needs (or paste a brief). Emergency sync is break-glass only. Then create the campaign and source.",
@@ -88,7 +97,7 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
       <CardContent className="space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold text-ink">Plug and play — three steps</p>
+            <p className="text-sm font-semibold text-ink">Plug and play — four steps</p>
             <p className="mt-1 text-xs text-muted">
               Stupid-simple path from empty workspace to live sourcing. Dry-run stays{" "}
               {settings.dryRunMode ? "on" : "off"} until you flip it under Approval & Compliance.

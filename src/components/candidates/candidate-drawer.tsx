@@ -309,9 +309,31 @@ function TaniaPanel({ c }: { c: Candidate }) {
       variant: outcome === "reject" ? "warning" : "success",
     });
   };
-  const schedule = (kind: InterviewKind) => {
+  const schedule = async (kind: InterviewKind) => {
+    // First interview must go through Outlook/Teams booking — never invent Booked + fake reminders.
+    if (kind === "Intw1") {
+      const res = await actions.createBookingFor(c.id);
+      if (res.ok) {
+        toast({
+          title: "Intw1 booked on Outlook/Teams",
+          description: `With ${res.booking.interviewer || "an interviewer to be confirmed"}. ${bookingCalendarSummary(res.booking)}`,
+          variant: "success",
+        });
+      } else {
+        toast({
+          title: "Could not book Intw1",
+          description: res.error,
+          variant: "error",
+        });
+      }
+      return;
+    }
     actions.addInterview(c.id, kind, "Hiring Manager", null);
-    toast({ title: `${kind} scheduled`, description: "Reminder cadence T-24h / T-1h queued.", variant: "success" });
+    toast({
+      title: `${kind} noted`,
+      description: "Round recorded locally. Book the calendar slot from Calendar / Book interview when ready.",
+      variant: "info",
+    });
   };
   const setOutcome = (interviewId: string, kind: InterviewKind, outcome: InterviewOutcome) => {
     actions.updateInterview(c.id, interviewId, { outcome });

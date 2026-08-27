@@ -176,7 +176,36 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     requirement: "Microsoft 365 stack reads live mailbox connection status",
     evidence: () => {
       const src = readFileSync("src/components/settings/microsoft365-stack.tsx", "utf8");
-      return /\/api\/email\/connections/.test(src) && /connectedOutlook/.test(src);
+      return (
+        /\/api\/email\/connections/.test(src)
+        && /connectedOutlook/.test(src)
+        && /Teams joinUrl \(proven on live book\)/.test(src)
+        && /ok: false/.test(src)
+      );
+    },
+  },
+  {
+    requirement: "Setup guide includes loop switchboard arming",
+    evidence: () => {
+      const guide = readFileSync("src/components/settings/setup-guide-panel.tsx", "utf8");
+      return (
+        /Arm the sourcing loop/.test(guide)
+        && /ARIA_LOOP_KILL_SWITCH=false/.test(guide)
+        && /settings\?tab=observe/.test(guide)
+      );
+    },
+  },
+  {
+    requirement: "TAnIA Intw1 books via Outlook/Teams; addInterview does not invent Booked",
+    evidence: () => {
+      const drawer = readFileSync("src/components/candidates/candidate-drawer.tsx", "utf8");
+      const store = readFileSync("src/lib/store.ts", "utf8");
+      return (
+        /createBookingFor\(c\.id\)/.test(drawer)
+        && /Intw1 booked on Outlook\/Teams/.test(drawer)
+        && !/Reminder cadence T-24h/.test(drawer)
+        && /Do NOT invent Booked here/.test(store)
+      );
     },
   },
   {
@@ -223,6 +252,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /set_sourcing_loop_controls/.test(script)
         && /Type: Permanent/.test(script)
         && /WEBHOOK_CAMPAIGN_ID/.test(script)
+        && /ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E/.test(script)
+        && /persisted:false on Fly/.test(script)
       );
     },
   },

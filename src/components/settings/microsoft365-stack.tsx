@@ -212,19 +212,21 @@ function Microsoft365StackInner() {
           items={[
             {
               id: "calendar-scope",
-              label: "Calendars.ReadWrite scope",
+              label: "Calendars.ReadWrite + OnlineMeetings scope",
               ok: calendarScoped,
               hint: calendarScoped
-                ? "Granted on connected Outlook mailbox"
+                ? "Granted on connected Outlook mailbox (required to request Teams meetings)."
                 : mailboxConnected
                   ? "Reconnect Outlook if calendar scope is missing from the token."
                   : "Connect Outlook — calendar scope is requested at authorize time.",
             },
             {
               id: "teams-links",
-              label: "Teams meeting links",
-              ok: calendarReady,
-              hint: "Graph events created with isOnlineMeeting when booking interviews.",
+              label: "Teams joinUrl (proven on live book)",
+              ok: false,
+              hint: calendarScoped
+                ? "Scope is ready — joinUrl is only proven when /api/calendar/event returns a Teams URL with confirmLive."
+                : "Connect Outlook with calendar scope, then book a live interview to prove Teams links.",
             },
           ]}
         />

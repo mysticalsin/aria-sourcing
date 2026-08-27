@@ -627,6 +627,10 @@ if [ "$HTTP" = "404" ] || [ "$AG_CODE" = "CAMPAIGN_NOT_READY" ]; then
     fail "sourcing-agent: webhook campaign '$AGENT_CAMPAIGN_ID' is absent or unreviewed ($AG_CODE) — Type: Permanent need should clear readiness."
     echo 'null' > "$WORK/cand0.json"
     AG_OK="failed"
+  elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_SKIP_SOURCING_E2E:-}" != "1" ]; then
+    fail "sourcing-agent: campaign '$AGENT_CAMPAIGN_ID' absent/unreviewed on Fly ($AG_CODE). Webhook materialization or E2E_CAMPAIGN_ID required."
+    echo 'null' > "$WORK/cand0.json"
+    AG_OK="failed"
   else
     info "sourcing-agent SKIPPED: campaign '$AGENT_CAMPAIGN_ID' is absent or its brief is unreviewed ($AG_CODE)."
     info "      Seed a campaign with status Sourcing whose jobAnalysis passes evaluateNeedReadiness"
@@ -651,12 +655,20 @@ else
   echo 'null' > "$WORK/cand0.json"
 fi
 
-# Reuse a real candidate for outreach when available; else a synthetic id (approve doesn't require pre-existing state).
+# Reuse a real candidate for outreach when available.
 CAND_ID=$(jq -r 'if type=="object" and .id then .id else empty end' "$WORK/cand0.json")
-[ -n "$CAND_ID" ] || CAND_ID="cand-e2e-$$"
 CAND_LI=$(jq -r '(.linkedinUrl // .githubUrl // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null)
-[ -n "$CAND_LI" ] || CAND_LI="https://www.linkedin.com/in/e2e-candidate"
 CAND_EMAIL=$(jq -r '(.email // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null)
+if [ -z "$CAND_ID" ]; then
+  if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E:-}" != "1" ]; then
+    fail "Fly enterprise E2E requires a live sourced candidate (no synthetic cand-e2e). Set ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E=1 only for partial runs."
+    CAND_ID="cand-e2e-$$"
+  else
+    CAND_ID="cand-e2e-$$"
+    warn "No live candidate — using synthetic id for approve/no-send assertions only."
+  fi
+fi
+[ -n "$CAND_LI" ] || CAND_LI="https://www.linkedin.com/in/e2e-candidate"
 [ -n "$CAND_EMAIL" ] || CAND_EMAIL="e2e.candidate@example.com"
 
 # ---- draft generator: /api/hermes/chat task=outreach; Fly fail-closed (no canned) ----
@@ -718,7 +730,11 @@ AP_PERSISTED=$(jq -r 'if has("persisted") then .persisted else true end' "$RESP"
 if [ "$HTTP" = "200" ] && [ "$AP_OK" = "true" ] && [ "$AP_PERSISTED" = "true" ]; then
   pass "Human approval RECORDED server-side (this is the state the client renders as 'Pending Manual Send')."
 elif [ "$HTTP" = "200" ] && [ "$AP_OK" = "true" ]; then
-  warn "Approve returned dry-run/persisted:false → this instance runs in public-demo mode (NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true); approval is not durable."
+  if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ]; then
+    fail "Approve returned persisted:false on Fly — public-demo mode must be off for enterprise E2E."
+  else
+    warn "Approve returned dry-run/persisted:false → this instance runs in public-demo mode (NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true); approval is not durable."
+  fi
 elif [ "$HTTP" = "403" ]; then
   fail "Approve 403 — session lacks the 'outreach' permission."
 else

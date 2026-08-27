@@ -3689,8 +3689,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           hmFeedbackDueAt: null,
           createdAt: new Date().toISOString(),
         };
-        // Booking the first interview moves an Interested lead into the interview flow.
-        const nextStage: CandidateStage = cand.stage === "Interested" ? "Booked" : cand.stage;
+        // Do NOT invent Booked here — stage advances only via createBookingFor
+        // (live Outlook/Teams event + joinUrl). addInterview only records a round.
+        const nextStage: CandidateStage = cand.stage;
         let next: HermesState = {
           ...s,
           candidates: s.candidates.map((c) =>
@@ -3704,8 +3705,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "booking",
-            title: `${kind} scheduled: ${cand.name}`,
-            notes: `Interviewer: ${interviewer}.`,
+            title: `${kind} round noted: ${cand.name}`,
+            notes: `Interviewer: ${interviewer}. Calendar/Teams booking is separate.`,
             outcome: "Scheduled",
             campaignId: cand.campaignId,
             linkedEntityType: "candidate",

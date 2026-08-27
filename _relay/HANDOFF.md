@@ -10,7 +10,7 @@ status: code-complete-awaiting-owner-deploy
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open (supersedes closed #29, #30)
 - **Tip:** `cb3824b` — E2E ignition + Settings loop switchboard
 - **Local gate:** green; audit **43/43**
 - **Fly live:** stale `ba88302` / mig **0060** / Graph **404**; `ARIA_PROD_DEPLOY_CONFIRM` unset
@@ -26,14 +26,14 @@ status: code-complete-awaiting-owner-deploy
 ## Next steps
 
 1. Owner: `bash scripts/print-fly-secrets-checklist.sh`
-2. Owner: activate → confirm → `fly-deploy-now.sh`
+2. Owner: activate → `bash scripts/print-fly-deploy-confirm.sh` → export confirm → `fly-deploy-now.sh`
 3. Owner: `print-fly-e2e-env.sh` → `e2e-workflow-test.sh`
 4. Agent: ready ok + `0066_*` + Graph 200 + E2E PASS → mark goal complete
 
 ## Decisions made (don't relitigate)
 
 - PR #31 supersedes closed #29 and #30
-- No Fly deploy without `ARIA_PROD_DEPLOY_CONFIRM`
+- No Fly deploy without `ARIA_PROD_DEPLOY_CONFIRM` — use `bash scripts/print-fly-deploy-confirm.sh`
 - Target migration **0066**
 - Mantu Fly: `AGENT_FRAMEWORKS_REQUIRED=false`
 - Graph webhook: `/api/webhooks/microsoft-graph`
