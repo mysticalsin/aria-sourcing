@@ -55,3 +55,7 @@ ADMIN_EMAIL=… ADMIN_PASSWORD=… ANON_KEY=… bash e2e-workflow-test.sh
 
 `https://aria-sourcing-demo.vercel.app` remains an open demo for sales. The Fly
 URL above is where real auth, Supabase, and durable LinkedIn events belong.
+
+**Mantu enterprise releases must deploy to Fly (`aria-mantu-app`) only.** Do not
+run `vercel --prod` for this tenant. `vercel.json` `ignoreCommand` skips Vercel
+builds on every branch except `vercel-demo`.

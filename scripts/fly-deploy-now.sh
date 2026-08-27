@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # fly-deploy-now.sh — owner/agent deploy once Fly auth is available.
 #
+# FLY ONLY. Never invokes Vercel, never mutates vercel-demo / main demo hosts.
+# Targets: aria-mantu-bootstrap (migrations) + aria-mantu-app (image).
+#
 # Accepts credentials from:
 #   FLY_API_TOKEN env, or the local Fly token file under the readiness dir
 #   local Fly secrets env file (required for anon key + service role)
@@ -9,13 +12,26 @@
 #
 # Usage:
 #   export FLY_API_TOKEN=...   # or flyctl auth login first
-#   ARIA_RELEASE_SHA=8e42dc227a038c008030c439f033aedaa267506d \
-#   ARIA_PROD_DEPLOY_CONFIRM=aria-production-release-v1:fly-deploy-now:aria-mantu-bootstrap:aria-mantu-app:8e42dc227a038c008030c439f033aedaa267506d \
+#   SHA=$(git rev-parse HEAD)
+#   ARIA_RELEASE_SHA=$SHA \
+#   ARIA_PROD_DEPLOY_CONFIRM=aria-production-release-v1:fly-deploy-now:$SHA:aria-mantu-bootstrap,aria-mantu-app \
 #     bash scripts/fly-deploy-now.sh
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo"
+
+# Refuse accidental Vercel / wrong-host pushes from this script.
+if command -v vercel >/dev/null 2>&1 && [ "${ARIA_ALLOW_VERCEL_SIDE_EFFECT:-}" != "1" ]; then
+  export VERCEL_ORG_ID= VERCEL_PROJECT_ID=
+fi
+case "${ARIA_DEPLOY_TARGET:-fly}" in
+  fly|FLY|aria-mantu-app) ;;
+  *)
+    echo "ERROR: this script deploys to Fly only (got ARIA_DEPLOY_TARGET=${ARIA_DEPLOY_TARGET:-})." >&2
+    exit 1
+    ;;
+esac
 
 source "$repo/scripts/lib/prod-release-guard.sh"
 aria_require_reviewed_production_release fly-deploy-now aria-mantu-bootstrap aria-mantu-app
@@ -32,7 +48,7 @@ fi
 export FLY_NO_METRICS=1 DO_NOT_TRACK=1
 set -a; source "$repo/production-readiness/.fly-secrets.env"; set +a
 
-echo "=== 1/3 bootstrap image (migrations 0047–0059) ==="
+echo "=== 1/3 bootstrap image (migrations through 0063) ==="
 flyctl deploy --config fly.bootstrap.toml --build-only --push --image-label latest --remote-only
 
 echo "=== 2/3 apply migrations on prod DB ==="

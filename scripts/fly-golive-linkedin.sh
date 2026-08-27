@@ -119,7 +119,7 @@ echo "     ADMIN_EMAIL=... ADMIN_PASSWORD=... ANON_KEY=... bash e2e-workflow-tes
 echo
 echo "=== Faster app-only path (migrations already at 0059) ==="
 echo "If the DB ledger is current but the app image is stale, owner may run:"
-echo "  ARIA_RELEASE_SHA=$RELEASE_SHA ARIA_PROD_DEPLOY_CONFIRM=aria-production-release-v1:prod-deploy-app:aria-mantu-app:$RELEASE_SHA \\"
+echo "  ARIA_RELEASE_SHA=$RELEASE_SHA ARIA_PROD_DEPLOY_CONFIRM=aria-production-release-v1:prod-deploy-app:$RELEASE_SHA:aria-mantu-app \\"
 echo "    bash scripts/prod-deploy-app.sh"
 echo "(Still requires .fly-token.env + .fly-secrets.env; does NOT apply migrations.)"
 echo

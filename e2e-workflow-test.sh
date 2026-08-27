@@ -38,6 +38,24 @@ KONG_URL="${KONG_URL:-https://aria-mantu-kong.fly.dev}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 ANON_KEY="${ANON_KEY:-}"
+
+# Enterprise E2E is Fly-only. Refuse Vercel / non-Fly hosts unless explicitly overridden.
+case "$APP_URL" in
+  https://aria-mantu-app.fly.dev|https://aria-mantu-app.fly.dev/*) ;;
+  *)
+    if [ "${ARIA_ALLOW_NON_FLY_E2E:-}" != "1" ]; then
+      echo "ERROR: e2e-workflow-test.sh targets Fly production only (got APP_URL=$APP_URL)." >&2
+      echo "       Set ARIA_ALLOW_NON_FLY_E2E=1 only for intentional non-prod probes." >&2
+      exit 1
+    fi
+    ;;
+esac
+case "$APP_URL" in
+  *vercel.app*|*vercel.com*)
+    echo "ERROR: refusing Vercel host — Mantu enterprise ships on Fly only." >&2
+    exit 1
+    ;;
+esac
 AGENT_PROVIDER="${AGENT_PROVIDER:-anthropic}"      # tool-calling provider for /api/sourcing-agent (kimi/hermes are rejected)
 AGENT_MODEL="${AGENT_MODEL:-}"                      # optional model override; blank => provider default
 GITHUB_QUERY="${GITHUB_QUERY:-language:typescript location:london followers:>50}"

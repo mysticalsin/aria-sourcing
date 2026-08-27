@@ -191,6 +191,22 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       );
     },
   },
+  {
+    requirement: "Mantu enterprise production ships on Fly only (Vercel skipped)",
+    evidence: () => {
+      const vercel = readFileSync("vercel.json", "utf8");
+      const golive = readFileSync("scripts/fly-golive-mantu-e2e.sh", "utf8");
+      const deployNow = readFileSync("scripts/fly-deploy-now.sh", "utf8");
+      return (
+        /ignoreCommand/.test(vercel)
+        && /Fly \(aria-mantu-app\) only/.test(vercel)
+        && /Fly ONLY/.test(golive)
+        && /FLY ONLY/.test(deployNow)
+        && /aria-mantu-app\.fly\.dev/.test(golive)
+        && !/vercel --prod/.test(deployNow)
+      );
+    },
+  },
 ];
 
 for (const row of MATRIX) {

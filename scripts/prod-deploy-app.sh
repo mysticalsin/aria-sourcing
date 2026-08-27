@@ -3,6 +3,8 @@
 # from a LOCAL mirror so the Fly build context upload never stalls reading the
 # OneDrive working tree (which hung the combined script's rsync).
 #
+# FLY ONLY (aria-mantu-app). Never Vercel. Never other Fly apps.
+#
 # The DB migrations are already applied + verified live; this ships the app-code
 # fixes (synchronous send + rfc_message_id stamp, cron constant-time compare,
 # email-delivery replay horizon, worker receipt-GC, swarm worker/executor/routes).
@@ -12,9 +14,19 @@
 # then deploys from it. Idempotent.
 #
 # Usage (repo root, YOUR terminal). The app build is multi-minute; let it finish:
-#   bash scripts/prod-deploy-app.sh
+#   SHA=$(git rev-parse HEAD)
+#   ARIA_RELEASE_SHA=$SHA \
+#   ARIA_PROD_DEPLOY_CONFIRM=aria-production-release-v1:prod-deploy-app:$SHA:aria-mantu-app \
+#     bash scripts/prod-deploy-app.sh
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+case "${ARIA_DEPLOY_TARGET:-fly}" in
+  fly|FLY|aria-mantu-app) ;;
+  *)
+    echo "ERROR: prod-deploy-app.sh mutates Fly aria-mantu-app only." >&2
+    exit 1
+    ;;
+esac
 source "$repo/scripts/lib/prod-release-guard.sh"
 aria_require_reviewed_production_release prod-deploy-app aria-mantu-app
 export FLY_API_TOKEN="$(cat "$repo/production-readiness/.fly-token.env")"

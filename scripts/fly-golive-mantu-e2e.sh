@@ -101,12 +101,12 @@ if [ "$webhook_code" = "404" ]; then
   echo
 fi
 
-echo "=== Owner activation path ==="
+echo "=== Owner activation path (Fly ONLY — never Vercel) ==="
 echo "1. Restore GitHub Actions (billing/spending limit) so CI + CodeQL can run on $RELEASE_SHA."
 echo "2. Fill production-readiness/.fly-secrets.env from .fly-secrets.example (PG + service role)."
-echo "3. Deploy + migrate via protected workflow or:"
+echo "3. Deploy + migrate on Fly only (do NOT run vercel --prod / do NOT merge to vercel-demo for this):"
 echo "     ARIA_RELEASE_SHA=$RELEASE_SHA \\"
-echo "     ARIA_PROD_DEPLOY_CONFIRM=aria-production-release-v1:fly-deploy-now:aria-mantu-bootstrap:aria-mantu-app:$RELEASE_SHA \\"
+echo "     ARIA_PROD_DEPLOY_CONFIRM=aria-production-release-v1:fly-deploy-now:$RELEASE_SHA:aria-mantu-bootstrap,aria-mantu-app \\"
 echo "       bash scripts/fly-deploy-now.sh"
 echo "4. Set Fly app secrets (reviewed path):"
 echo "     EMAIL_INBOUND_WEBHOOK_SECRET=<32+ chars>"
