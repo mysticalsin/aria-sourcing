@@ -11,7 +11,7 @@ status: awaiting-microsoft-entra-and-deploy-confirm
 ## Current state
 
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open (supersedes closed #29, #30)
-- **Tip (pre-commit):** working tree has Kimi-first E2E defaults + M365 calendar-scope honesty
+- **Tip:** `d2764bb` (Kimi-first E2E defaults + M365 calendar-scope honesty)
 - **Local gate:** `npx tsc --noEmit && npm test` green; audit matrix **45/45**
 - **Fly auth:** `.fly-token.env`
 - **Live present:** `ARIA_LOOP_KILL_SWITCH=false`, `KIMI_API_KEY`, `CRON_SECRET`, `EMAIL_INBOUND_WEBHOOK_SECRET` (value only in agent VM `/tmp/aria-e2e-webhook-secret`)
