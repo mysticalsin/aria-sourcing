@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# fly-wait-entra-and-golive.sh — poll for Entra unlock, then apply + golive.
+# fly-wait-entra-and-golive.sh — poll for unlock signals, then apply + golive.
 #
 # Safe to run in tmux for hours. Never invents Azure secrets or deploy confirm.
 #
 # Unblock triggers (any one):
 #   - az account show succeeds (owner completed device-code MFA)
-#   - /tmp/owner-microsoft.env or production-readiness/.owner-microsoft.env exists
+#   - /tmp/owner-microsoft.env (or production-readiness/.owner-microsoft.env)
 #     without PLACEHOLDER values
-#
-# After Microsoft secrets are applied, deploys only if ARIA_PROD_DEPLOY_CONFIRM
-# is already exported or present in /tmp/owner-deploy-confirm.env.
+#   - /tmp/owner-deploy-confirm.env (or production-readiness/.owner-deploy-confirm.env)
+#     with a real ARIA_PROD_DEPLOY_CONFIRM (tip deploy for Graph/ready even if
+#     Microsoft secrets are still pending — E2E still fail-closes on OAuth)
 #
 # Usage:
 #   bash scripts/fly-wait-entra-and-golive.sh
-#   ARIA_WAIT_MAX_MINUTES=180 bash scripts/fly-wait-entra-and-golive.sh
+#   ARIA_SKIP_AZ_DEVICE_REFRESH=1 ARIA_WAIT_MAX_MINUTES=360 bash scripts/fly-wait-entra-and-golive.sh
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -22,8 +22,6 @@ cd "$repo"
 MAX_MIN="${ARIA_WAIT_MAX_MINUTES:-240}"
 SLEEP_SEC="${ARIA_WAIT_POLL_SECONDS:-30}"
 LOG="${ARIA_WAIT_LOG:-/tmp/fly-wait-entra.log}"
-# When owner skips Entra device MFA, set ARIA_SKIP_AZ_DEVICE_REFRESH=1 to only
-# watch drop-zones / existing az session (no new device codes).
 SKIP_DEVICE_REFRESH="${ARIA_SKIP_AZ_DEVICE_REFRESH:-0}"
 
 if [ -z "${FLY_API_TOKEN:-}" ] && [ -r "$repo/production-readiness/.fly-token.env" ]; then
@@ -42,6 +40,17 @@ has_microsoft_drop() {
   return 1
 }
 
+has_deploy_confirm_drop() {
+  local f
+  for f in /tmp/owner-deploy-confirm.env "$repo/production-readiness/.owner-deploy-confirm.env"; do
+    if [ -r "$f" ] && grep -q 'ARIA_PROD_DEPLOY_CONFIRM=' "$f" 2>/dev/null \
+      && ! grep -q 'PLACEHOLDER' "$f" 2>/dev/null; then
+      return 0
+    fi
+  done
+  [ -n "${ARIA_PROD_DEPLOY_CONFIRM:-}" ] && [[ "${ARIA_PROD_DEPLOY_CONFIRM}" != PLACEHOLDER* ]]
+}
+
 refresh_device_code_if_needed() {
   [ "$SKIP_DEVICE_REFRESH" = "1" ] && return 0
   command -v az >/dev/null 2>&1 || return 0
@@ -50,12 +59,10 @@ refresh_device_code_if_needed() {
   if [ -f /tmp/az-device.log ]; then
     age=$(( $(date +%s) - $(stat -c %Y /tmp/az-device.log 2>/dev/null || echo 0) ))
   fi
-  # Refresh ~every 12 minutes so owner always has a usable code.
   if [ "$age" -lt 720 ] && grep -q 'enter the code' /tmp/az-device.log 2>/dev/null; then
     return 0
   fi
   log "Refreshing Azure device-code login…"
-  # Best-effort: if tmux session exists, drive it; else start foreground backgrounded login.
   if tmux -f /exec-daemon/tmux.portal.conf has-session -t "=az-device-login" 2>/dev/null \
     || tmux has-session -t az-device-login 2>/dev/null; then
     tmux -f /exec-daemon/tmux.portal.conf send-keys -t az-device-login C-c 2>/dev/null || true
@@ -68,36 +75,52 @@ refresh_device_code_if_needed() {
 }
 
 print_device_code() {
+  [ "$SKIP_DEVICE_REFRESH" = "1" ] && return 0
   if [ -f /tmp/az-device.log ] && grep -q 'enter the code' /tmp/az-device.log 2>/dev/null; then
     log "Device login: $(grep -oE 'https://login.microsoft.com/device|code [A-Z0-9]+' /tmp/az-device.log | tr '\n' ' ')"
   fi
 }
 
+run_golive() {
+  bash "$repo/scripts/fly-enterprise-golive-when-ready.sh"
+}
+
 deadline=$(( $(date +%s) + MAX_MIN * 60 ))
-log "Waiting up to ${MAX_MIN}m for Entra unlock (az login or owner-microsoft.env)…"
+log "Waiting up to ${MAX_MIN}m for Entra drop-zone and/or deploy-confirm drop-zone…"
 refresh_device_code_if_needed
 print_device_code
 
 while [ "$(date +%s)" -lt "$deadline" ]; do
   if az account show >/dev/null 2>&1; then
     log "az login OK — minting Graph app + applying Fly secrets"
-    bash "$repo/scripts/az-create-mantu-graph-app.sh" --apply
-    bash "$repo/scripts/fly-enterprise-golive-when-ready.sh" && exit 0
-    log "Golive incomplete (likely deploy confirm still unset). Waiting for /tmp/owner-deploy-confirm.env…"
+    bash "$repo/scripts/az-create-mantu-graph-app.sh" --apply || log "WARN: az-create failed"
+    if run_golive; then
+      exit 0
+    fi
+    log "Golive incomplete after az mint — need /tmp/owner-deploy-confirm.env?"
   elif has_microsoft_drop; then
     log "owner-microsoft drop-zone present — applying + golive"
-    bash "$repo/scripts/fly-enterprise-golive-when-ready.sh" && exit 0
-    log "Golive incomplete after drop-zone apply; will retry."
+    if run_golive; then
+      exit 0
+    fi
+    log "Golive incomplete after microsoft apply; will retry."
+  elif has_deploy_confirm_drop; then
+    log "deploy-confirm present — tip golive (Microsoft secrets may still be missing)"
+    if run_golive; then
+      exit 0
+    fi
+    log "Golive incomplete with confirm present; will retry."
   else
     refresh_device_code_if_needed
     if [ $(( $(date +%s) % 300 )) -lt "$SLEEP_SEC" ]; then
       print_device_code
       bash "$repo/scripts/print-fly-missing-secrets.sh" 2>/dev/null | grep -E 'MISSING|missing' | tee -a "$LOG" || true
+      log "Waiting for /tmp/owner-deploy-confirm.env and/or /tmp/owner-microsoft.env"
     fi
   fi
   sleep "$SLEEP_SEC"
 done
 
-log "Timed out after ${MAX_MIN}m still blocked on Entra / deploy confirm."
-bash "$repo/scripts/fly-enterprise-golive-when-ready.sh" || true
+log "Timed out after ${MAX_MIN}m still blocked."
+run_golive || true
 exit 1

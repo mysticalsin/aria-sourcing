@@ -308,6 +308,12 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /outreachQualityGate/.test(send)
         && /validateOutreachQualityLive/.test(approve)
         && /validateOutreachQualityLive/.test(send)
+        && /critics_required/.test(approve)
+        && /critics_required/.test(send)
+        && /demoLoginEnabled/.test(approve)
+        && /demoLoginEnabled/.test(send)
+        && !/fail open to deterministic/.test(approve)
+        && !/fail open to deterministic/.test(send)
       );
     },
   },
@@ -420,6 +426,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /no mock fallback on production tenants/.test(settings)
         && /integration\.real \? \(/.test(card)
         && /Not available/.test(card)
+        && /Graph webhook/.test(settings)
+        && /no inbox polling/.test(settings)
       );
     },
   },
@@ -531,6 +539,21 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /print-fly-secrets-checklist/.test(readFileSync("scripts/fly-enterprise-activate.sh", "utf8"))
         && /fly-apply-owner-microsoft-secrets/.test(readFileSync("scripts/fly-enterprise-activate.sh", "utf8"))
         && /print-fly-missing-secrets/.test(readFileSync("scripts/fly-enterprise-activate.sh", "utf8"))
+        && existsSync("scripts/az-create-mantu-graph-app.sh")
+        && /owner-microsoft\.env/.test(readFileSync("scripts/az-create-mantu-graph-app.sh", "utf8"))
+        && /Mail\.Send|Calendars\.ReadWrite/.test(readFileSync("scripts/az-create-mantu-graph-app.sh", "utf8"))
+        && existsSync("scripts/fly-wait-entra-and-golive.sh")
+        && /az-create-mantu-graph-app/.test(readFileSync("scripts/fly-wait-entra-and-golive.sh", "utf8"))
+        && /will not invent|Never invents/.test(readFileSync("scripts/fly-wait-entra-and-golive.sh", "utf8"))
+        && /has_deploy_confirm_drop/.test(readFileSync("scripts/fly-wait-entra-and-golive.sh", "utf8"))
+        && /ARIA_SKIP_AZ_DEVICE_REFRESH/.test(readFileSync("scripts/fly-wait-entra-and-golive.sh", "utf8"))
+        && existsSync("scripts/sync-fly-e2e-tmp-secrets.sh")
+        && /EMAIL_INBOUND_WEBHOOK_SECRET/.test(readFileSync("scripts/sync-fly-e2e-tmp-secrets.sh", "utf8"))
+        && existsSync("production-readiness/.owner-deploy-confirm.env.example")
+        && /owner-deploy-confirm\.env/.test(readFileSync("scripts/fly-enterprise-golive-when-ready.sh", "utf8"))
+        && /az-create-mantu-graph-app/.test(readFileSync("scripts/fly-enterprise-golive-when-ready.sh", "utf8"))
+        && /email_sync_requires_inbound_ids/.test(readFileSync("scripts/sourcing-loop-worker.mjs", "utf8"))
+        && /stage checkpoint machine/.test(readFileSync("src/lib/langchain/recruiting-graph.ts", "utf8"))
       );
     },
   },

@@ -386,6 +386,19 @@ test("reply classify wraps candidate text in the disclosure envelope handed to t
   assert.equal((completion.args.p_patch as Array<Record<string, unknown>>)[0].intent, "QUALIFIED_INTEREST");
 });
 
+test("email_sync refuses empty inboundIds (no polling stand-in)", async () => {
+  const { client, calls } = rpcClient((name) => {
+    if (name === "fail_aria_job") return { data: "dead", error: null };
+    if (name === "complete_aria_job") throw new Error("empty email_sync must not complete");
+    throw new Error(`unexpected rpc ${name}`);
+  });
+  await assert.rejects(
+    () => handleAriaJob(job("email_sync", { inboundIds: [] }), { client }),
+    /email_sync_requires_inbound_ids/,
+  );
+  assert.equal(calls.filter((c) => c.name === "complete_aria_job").length, 0);
+});
+
 test("email_sync enqueues inbound_classify and the classifier persists the stored inbound reply", async () => {
   const completions: Array<Record<string, unknown>> = [];
   const patches: Array<Record<string, unknown>> = [];

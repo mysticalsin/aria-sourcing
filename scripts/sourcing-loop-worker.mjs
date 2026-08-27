@@ -575,10 +575,15 @@ function candidateRecordsFromProviderResult(result, campaignId) {
 }
 
 async function handleEmailSync(job, context) {
+  // Bridge only: fan-out already-recorded inbound ids. Empty payloads are refused
+  // so this kind cannot stand in for mailbox polling (Graph webhook is intake).
   const payload = payloadOf(job);
   const inboundIds = Array.isArray(payload.inboundIds)
     ? payload.inboundIds.filter((value) => typeof value === "string" && value.trim()).map((value) => value.trim())
     : [];
+  if (inboundIds.length === 0) {
+    throw new HandlerError("email_sync_requires_inbound_ids", false);
+  }
   const successors = inboundIds.map((inboundId) =>
     successorJob("inbound_classify", `reply:${inboundId}`, { inboundId }, 80),
   );

@@ -449,7 +449,7 @@ export default function SettingsPage() {
             n="00"
             eyebrow="Start here"
             title="Get started"
-            description="Connect Outlook, pick the recruitment LLM, then pull open needs into sourcing."
+            description="Connect Outlook (Graph webhook), pick the recruitment LLM, then let inbound needs land in sourcing — no inbox polling."
           >
             <SetupGuidePanel onGoAi={() => goTab("ai")} />
           </Section>

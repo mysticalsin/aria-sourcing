@@ -6,8 +6,10 @@
  *   → draftOutreach → validateQuality → queueApproval → scheduleInterview
  *
  * Authority remains in Supabase job RPCs (`PIPELINE_STAGE_TRANSITIONS` /
- * `pipeline-transitions.json`). LangGraph holds the stage machine and maps
- * completed graph stages onto the next job kind the loop worker may enqueue.
+ * `pipeline-transitions.json`). LangGraph is the stage checkpoint machine (not
+ * an in-graph tool-calling agent runtime): real parse/source/draft/book work
+ * runs in the loop worker + cron routes; this graph maps completed stages onto
+ * the next job kind and fail-stops (parse failure, quality blocked, missing booking).
  *
  * Intents:
  *   - `full` (default): intake → shortlist → draft → quality → approval → book

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getServerSupabase } from "@/lib/supabase/server";
-import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
+import { supabaseEnabled, prodFailClosed, demoLoginEnabled } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
@@ -108,22 +108,31 @@ export async function POST(req: NextRequest) {
       { status: 422 },
     );
   }
-  // Live critics: when all three LLM peers run, honor blocked + needs_review.
-  // If critics are unavailable, fail open to deterministic gate already applied.
+  // Live critics: production / non-demo tenants require all three LLM peers
+  // (same fail-closed posture as generate-outreach-draft). Demo may fall back
+  // to the deterministic gate already applied above.
   const liveVerdict = await validateOutreachQualityLive({ subject, body, channel });
-  if (
-    liveVerdict.llmCriticsUsed
-    && (liveVerdict.status === "blocked" || liveVerdict.status === "needs_review")
-  ) {
+  if (!liveVerdict.llmCriticsUsed) {
+    if (!demoLoginEnabled) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Live multi-agent LLM quality critics required for outreach approval.",
+          status: "critics_required",
+        },
+        { status: 503 },
+      );
+    }
+    if (liveVerdict.status === "blocked") {
+      const reason =
+        liveVerdict.stages.find((s) => !s.pass)?.reasons[0]
+        ?? "Outreach blocked by quality critics.";
+      return NextResponse.json({ ok: false, error: reason }, { status: 422 });
+    }
+  } else if (liveVerdict.status === "blocked" || liveVerdict.status === "needs_review") {
     const reason =
       liveVerdict.stages.find((s) => !s.pass)?.reasons[0]
       ?? "Outreach blocked by live quality critics.";
-    return NextResponse.json({ ok: false, error: reason }, { status: 422 });
-  }
-  if (!liveVerdict.llmCriticsUsed && liveVerdict.status === "blocked") {
-    const reason =
-      liveVerdict.stages.find((s) => !s.pass)?.reasons[0]
-      ?? "Outreach blocked by quality critics.";
     return NextResponse.json({ ok: false, error: reason }, { status: 422 });
   }
 
