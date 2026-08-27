@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 200
 agent: cursor-cloud
-updated: 2026-08-27T21:47Z
+updated: 2026-08-27T21:48Z
 status: demo-ux-plus-0068-integrated-awaiting-owner-redeploy
 ---
 
@@ -10,10 +10,11 @@ status: demo-ux-plus-0068-integrated-awaiting-owner-redeploy
 
 ## Current state
 
-- **Branch tip:** `cursor/enterprise-autopilot-b91d` @ **`4577822`** (`45778224b3c30feb1afef306eff98ffc32eccb2d`)
-  - Merge commit: **`88b89b5`** (parents `a679c18` demo UX + `bba23f6` 0068/DeepSeek)
-  - Includes: `4ff518b`/`393a4be`/`a679c18` + `9da085d`/`bba23f6` + relay pin
-- Gate: **`npx tsc --noEmit && npm test` GREEN** on merge tip `88b89b5` (relay-only follow-up)
+- **Branch:** `cursor/enterprise-autopilot-b91d` — deploy **HEAD** (includes merge + relay)
+  - Merge commit: **`88b89b5`** (`88b89b5425705aa00fc307636a654d58d14d1148`) — parents `a679c18` (demo UX) + `bba23f6` (0068/DeepSeek)
+  - Lineage: `4ff518b`/`393a4be`/`a679c18` + `9da085d`/`bba23f6`
+- Method: **git merge** `cursor/fix-requisition-parse-404-cadd` → enterprise-autopilot (only conflict: `_relay/HANDOFF.md`)
+- Gate: **`npx tsc --noEmit && npm test` GREEN** on merge tip `88b89b5`
 - **PR #32** remains **CLOSED** — do not reopen; tip push is enough for owner redeploy
 - **Live Fly** still **`635eb4e`** — awaiting owner redeploy confirm matching HEAD (do not invent confirm / redeploy)
 - Live `apply_workspace_patch` still HTTP 404 / PG `42883` until **0068** applied on DB
@@ -25,17 +26,17 @@ status: demo-ux-plus-0068-integrated-awaiting-owner-redeploy
 1. Merged parse-404 into enterprise-autopilot; conflicts only in `_relay/HANDOFF.md` (resolved combined)
 2. Demo UX preserved: intake title/headcount; dry-run without mailbox; shell-first reload
 3. 0068 + worker `digest_unresolved` + DeepSeek secrets wiring on same tip
-4. Pushed merge `88b89b5` + relay `4577822`; gate green; no redeploy
+4. Pushed merge + relay; gate green; no redeploy
 
 ## Blockers
 
-- Owner must drop confirm → migrate through **0068** + deploy tip **`4577822`** matching HEAD
+- Owner must drop confirm → migrate through **0068** + deploy branch **HEAD** matching confirm
 - Live campaign materialization blocked until 0068 on DB
 - MS Graph / live Outlook E2E still skipped
 
 ## Next steps
 
-1. Owner: redeploy Fly from `cursor/enterprise-autopilot-b91d` @ **`4577822`** with matching confirm + apply migrations through 0068
+1. Owner: redeploy Fly from `cursor/enterprise-autopilot-b91d` **HEAD** with matching confirm + apply migrations through 0068
 2. Re-verify live: Java brief title+openings=3; Outreach Dry-run; hard reload `/`; `apply_workspace_patch` no digest 42883; webhook campaign materialization
 3. Optional: `/tmp/owner-llm.env` with real Kimi/DeepSeek → `bash scripts/fly-apply-owner-llm-secrets.sh`
 4. Do not Approve/send; do not invent secrets/confirm; do not resume Microsoft
