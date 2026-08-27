@@ -79,9 +79,17 @@ if [ -n "${ARIA_PROD_DEPLOY_CONFIRM:-}" ]; then
       bash "$repo/scripts/print-fly-deploy-confirm.sh"
       ;;
     *)
-      echo "=== ARIA_PROD_DEPLOY_CONFIRM present — deploying tip $TIP ==="
-      export ARIA_RELEASE_SHA="${ARIA_RELEASE_SHA:-$TIP}"
-      bash "$repo/scripts/fly-deploy-now.sh"
+      # Always deploy the checked-out tip. A stale ARIA_RELEASE_SHA from the
+      # shell/Cursor secrets (e.g. an unrelated prior commit) must not pin deploy.
+      export ARIA_RELEASE_SHA="$TIP"
+      if [[ "${ARIA_PROD_DEPLOY_CONFIRM}" != *":${TIP}:"* ]]; then
+        echo "=== Deploy confirm does not encode tip $TIP — refusing ==="
+        echo "    Re-print with: bash scripts/print-fly-deploy-confirm.sh"
+        bash "$repo/scripts/print-fly-deploy-confirm.sh"
+      else
+        echo "=== ARIA_PROD_DEPLOY_CONFIRM present — deploying tip $TIP ==="
+        bash "$repo/scripts/fly-deploy-now.sh"
+      fi
       ;;
   esac
 else
