@@ -1096,4 +1096,4 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** 0063 rewrote apply_workspace_patch with search_path omitting `extensions`. Live pgcrypto digest lives in extensions (public install is a no-op when already present elsewhere), so digest(text, unknown) raises 42883; PostgREST maps that to HTTP 404; loop worker records handler:requisition_parse:rpc_http_404 and never append_campaign.
 **Repro/evidence:** curl apply_workspace_patch with valid append_campaign → HTTP 404 code=42883 "function digest(text, unknown) does not exist"; invalid patch_kind returns 200 invalid_request (digest not reached). E2E webhook queues requisition_parse but campaign never materializes.
 **Suggested fix:** Migration 0068 restores extensions on search_path + schema-qualified digest with sha256::text cast + md5 fallback; worker classifyRpcHttpFailure surfaces digest_unresolved.
-**Status:** fixed (pending commit on cursor/fix-requisition-parse-404-cadd)
+**Status:** fixed (b39d81e on cursor/fix-requisition-parse-404-cadd; live DB still needs 0068 apply)
