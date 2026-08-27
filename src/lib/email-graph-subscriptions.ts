@@ -389,56 +389,6 @@ export async function listGraphSubscriptionsForWorkspace(
   }));
 }
 
-export async function fetchGraphMessageForIngest(input: {
-  workspaceId: string;
-  connectionId: string;
-  messageId: string;
-}): Promise<NormalizedGraphMessage | null> {
-  const connection = await loadConnection(input.connectionId, input.workspaceId);
-  if (!connection) return null;
-  const token = await getAccessTokenForReading(connection);
-  if (!token) return null;
-  await persistRefreshedTokens(connection);
-
-  const select =
-    "id,internetMessageId,subject,body,from,receivedDateTime,internetMessageHeaders";
-  // Prefer plain text so Mantu "Recruiter:" / "Skills:" lines survive for hiring-need routing.
-  const res = await fetch(
-    `${GRAPH}/me/messages/${encodeURIComponent(input.messageId)}?$select=${select}`,
-    {
-      headers: {
-        authorization: `Bearer ${token}`,
-        Prefer: 'outlook.body-content-type="text"',
-      },
-      signal: AbortSignal.timeout(20_000),
-    },
-  );
-  if (!res.ok) return null;
-  const msg = (await res.json().catch(() => null)) as GraphMessageJson | null;
-  if (!msg?.id) return null;
-
-  const fromAddr =
-    msg.from?.emailAddress?.address?.trim() ||
-    msg.from?.emailAddress?.name?.trim() ||
-    "";
-  if (!fromAddr) return null;
-
-  const bodyText = normalizeGraphMessageBody(msg.body);
-
-  const headers = Array.isArray(msg.internetMessageHeaders) ? msg.internetMessageHeaders : [];
-  const inReplyTo =
-    headers.find((h) => h.name?.toLowerCase() === "in-reply-to")?.value?.trim() || undefined;
-
-  return {
-    providerId: msg.internetMessageId?.trim() || msg.id,
-    from: fromAddr,
-    subject: msg.subject ?? "",
-    body: bodyText,
-    inReplyTo,
-    mailbox: connection.accountEmail,
-  };
-}
-
 type GraphMessageJson = {
   id?: string;
   internetMessageId?: string;
@@ -447,6 +397,89 @@ type GraphMessageJson = {
   from?: { emailAddress?: { address?: string; name?: string } };
   internetMessageHeaders?: Array<{ name?: string; value?: string }>;
 };
+
+export type NormalizedGraphMessage = {
+  providerId: string;
+  from: string;
+  subject: string;
+  body: string;
+  inReplyTo?: string;
+  mailbox: string;
+};
+
+/**
+ * Fetch a Graph inbox message for hiring-need / reply ingest.
+ * Fail-closed when Graph is absent: never invents a message. Distinguishes
+ * non-retryable credential/connection gaps from transient Graph fetch errors.
+ */
+export type GraphMessageFetchResult =
+  | { ok: true; message: NormalizedGraphMessage }
+  | {
+      ok: false;
+      reason:
+        | "connection_missing"
+        | "token_unavailable"
+        | "message_fetch_failed"
+        | "message_incomplete";
+    };
+
+export async function fetchGraphMessageForIngest(input: {
+  workspaceId: string;
+  connectionId: string;
+  messageId: string;
+}): Promise<GraphMessageFetchResult> {
+  const connection = await loadConnection(input.connectionId, input.workspaceId);
+  if (!connection) return { ok: false, reason: "connection_missing" };
+  const token = await getAccessTokenForReading(connection);
+  if (!token) return { ok: false, reason: "token_unavailable" };
+  await persistRefreshedTokens(connection);
+
+  const select =
+    "id,internetMessageId,subject,body,from,receivedDateTime,internetMessageHeaders";
+  // Prefer plain text so Mantu "Recruiter:" / "Skills:" lines survive for hiring-need routing.
+  let res: Response;
+  try {
+    res = await fetch(
+      `${GRAPH}/me/messages/${encodeURIComponent(input.messageId)}?$select=${select}`,
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+          Prefer: 'outlook.body-content-type="text"',
+        },
+        signal: AbortSignal.timeout(20_000),
+      },
+    );
+  } catch {
+    return { ok: false, reason: "message_fetch_failed" };
+  }
+  if (!res.ok) return { ok: false, reason: "message_fetch_failed" };
+  const msg = (await res.json().catch(() => null)) as GraphMessageJson | null;
+  if (!msg?.id) return { ok: false, reason: "message_incomplete" };
+
+  const fromAddr =
+    msg.from?.emailAddress?.address?.trim() ||
+    msg.from?.emailAddress?.name?.trim() ||
+    "";
+  if (!fromAddr) return { ok: false, reason: "message_incomplete" };
+
+  const bodyText = normalizeGraphMessageBody(msg.body);
+
+  const headers = Array.isArray(msg.internetMessageHeaders) ? msg.internetMessageHeaders : [];
+  const inReplyTo =
+    headers.find((h) => h.name?.toLowerCase() === "in-reply-to")?.value?.trim() || undefined;
+
+  return {
+    ok: true,
+    message: {
+      providerId: msg.internetMessageId?.trim() || msg.id,
+      from: fromAddr,
+      subject: msg.subject ?? "",
+      body: bodyText,
+      inReplyTo,
+      mailbox: connection.accountEmail,
+    },
+  };
+}
 
 /** Decode common HTML entities left after tag strip (Graph often returns HTML bodies). */
 function decodeBasicHtmlEntities(text: string): string {
@@ -488,12 +521,3 @@ export function normalizeGraphMessageBody(
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
-
-export type NormalizedGraphMessage = {
-  providerId: string;
-  from: string;
-  subject: string;
-  body: string;
-  inReplyTo?: string;
-  mailbox: string;
-};

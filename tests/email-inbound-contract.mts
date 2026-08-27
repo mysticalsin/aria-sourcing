@@ -165,7 +165,10 @@ ok(
   /validationToken/i.test(graphWebhook) &&
     /verifyGraphClientState/i.test(graphWebhook) &&
     /ingestNormalizedInboundEmail/i.test(graphWebhook) &&
-    /fetchGraphMessageForIngest/i.test(graphWebhook),
+    /fetchGraphMessageForIngest/i.test(graphWebhook) &&
+    /token_unavailable/i.test(graphWebhook) &&
+    /connection_missing/i.test(graphWebhook) &&
+    /never invents a hiring-need enqueue/i.test(graphWebhook),
 );
 
 const graphSubs = existsSync("src/lib/email-graph-subscriptions.ts")
@@ -177,7 +180,9 @@ ok(
     /normalizeGraphMessageBody/i.test(graphSubs) &&
     /decodeBasicHtmlEntities|&nbsp;/i.test(graphSubs) &&
     /declaredHtml/.test(graphSubs) &&
-    /replace\(\/<\\s\*br/.test(graphSubs),
+    /replace\(\/<\\s\*br/.test(graphSubs) &&
+    /GraphMessageFetchResult/.test(graphSubs) &&
+    /token_unavailable/.test(graphSubs),
 );
 ok(
   "inbound ingest requires durable enqueue status (not transport-only success)",

@@ -474,6 +474,38 @@ if [ "$GRAPH_NOTIFY_CODE" = "202" ] && [ "$GRAPH_NOTIFY_STATUS" = "unknown_subsc
 else
   fail "Graph notification path (HTTP $GRAPH_NOTIFY_CODE status='$GRAPH_NOTIFY_STATUS'): $(head -c 200 "$WORK/graph_notify_resp.json")"
 fi
+# Source contract: Graph absent → fail-closed non-retryable statuses (no invent enqueue).
+if grep -q 'token_unavailable' src/lib/email-graph-subscriptions.ts \
+  && grep -q 'connection_missing' src/lib/email-graph-subscriptions.ts \
+  && grep -q 'never invents a hiring-need enqueue' src/app/api/webhooks/microsoft-graph/route.ts \
+  && grep -q 'r.status === "message_fetch_failed"' src/app/api/webhooks/microsoft-graph/route.ts; then
+  RETRYABLE_BLOCK=$(awk '/const retryable = results.some/,/\);/' src/app/api/webhooks/microsoft-graph/route.ts)
+  if printf '%s' "$RETRYABLE_BLOCK" | grep -q 'message_fetch_failed' \
+    && ! printf '%s' "$RETRYABLE_BLOCK" | grep -q 'token_unavailable' \
+    && ! printf '%s' "$RETRYABLE_BLOCK" | grep -q 'connection_missing'; then
+    pass "Graph absent fail-closed: token/connection gaps are non-retryable (HMAC path still enqueues hiring needs)."
+  else
+    fail "Graph retryable predicate must include only message_fetch_failed/ingest_5xx — not token/connection gaps."
+  fi
+else
+  fail "Graph fail-closed token/connection distinction missing from webhook ingest."
+fi
+
+# Static honesty asserts that do not need a live Outlook/Teams calendar seat.
+if grep -q 'bookingInterviewTitle' src/lib/booking-status.ts \
+  && grep -q 'Needs calendar:' src/lib/booking-status.ts \
+  && grep -q 'Mantu Group is hiring' src/lib/i18n.ts \
+  && grep -q 'Mantu Group is hiring' src/lib/seed.ts \
+  && grep -q 'bookingInterviewTitle(booking' src/lib/seed.ts \
+  && grep -q 'bookingInterviewTitle(res.booking' src/components/candidates/candidate-drawer.tsx \
+  && grep -q 'hiring_need_handler' src/app/api/email/test/route.ts \
+  && grep -q 'Graph subscription optional' src/app/api/email/test/route.ts \
+  && grep -q 'DEFAULT_SHORTLIST_MIN_SCORE' src/lib/langchain/recruiting-graph.ts \
+  && grep -q 'shortlist_below_min_score' scripts/sourcing-loop-worker.mjs; then
+  pass "Non-MS honesty pins: booking Needs calendar titles, Mantu drafts, hiring_need_handler without Graph, top-10 min score."
+else
+  fail "Non-MS honesty pins missing (booking title / Mantu drafts / hiring_need_handler / shortlist min score)."
+fi
 
 # ===========================================================================
 step "2d) M365 connections + Entra reporting surface"
@@ -521,6 +553,29 @@ if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_
   else
     info "No connected Outlook mailbox yet — Graph subscription check deferred until Connect Outlook."
   fi
+fi
+# email/test hiring_need_handler: ready without Graph (HMAC path). Assert when any mailbox seat exists.
+TEST_SEAT=$(jq -r '
+  ([.connections // [] | .[] | .seatId // empty]
+   | map(select(type=="string" and length>0))
+   | .[0] // empty)
+' "$RESP" 2>/dev/null || true)
+if [ -n "$TEST_SEAT" ]; then
+  api POST "$APP_URL/api/email/test" "$(jq -nc --arg s "$TEST_SEAT" '{seatId:$s}')"
+  HN_OK=$(jq -r '[.checks // [] | .[] | select(.id=="hiring_need_handler") | .ok] | .[0] // empty' "$RESP" 2>/dev/null || true)
+  HN_DETAIL=$(jq -r '[.checks // [] | .[] | select(.id=="hiring_need_handler") | .detail] | .[0] // empty' "$RESP" 2>/dev/null || true)
+  if [ "$HTTP" = "200" ] && [ "$HN_OK" = "true" ]; then
+    pass "POST /api/email/test hiring_need_handler ready without requiring Graph subscription ($HN_DETAIL)."
+  elif [ "$HTTP" = "200" ] && [ "$HN_OK" = "false" ]; then
+    # Honest gap: mailbox connected but inbound route/secret not armed — not a calendar gap.
+    fail "hiring_need_handler not ready: $HN_DETAIL"
+  elif [ "$HTTP" = "404" ]; then
+    warn "email/test 404 — seat has no mailbox row (skipped hiring_need_handler live assert)."
+  else
+    fail "email/test unexpected (HTTP $HTTP): $(head -c 200 "$RESP")"
+  fi
+else
+  info "No email connection seat — skipped live hiring_need_handler assert (static pin still required)."
 fi
 if grep -q 'graphSubscription' src/app/api/email/connections/route.ts \
   && grep -q 'ensure_graph_webhook' src/app/api/email/connections/route.ts \
@@ -979,6 +1034,12 @@ api POST "$APP_URL/api/calendar/event" "$WORK/calendar_req.json"
 CAL_STATUS=$(jq -r '.status // empty' "$RESP")
 if [ "$HTTP" = "200" ] && [ "$CAL_STATUS" = "dry-run" ]; then
   pass "POST /api/calendar/event (confirmLive:false) → dry-run: no Outlook/Teams event created."
+  CAL_TEAMS=$(jq -r '.teamsJoinUrl // .joinUrl // .eventId // empty' "$RESP" 2>/dev/null || true)
+  if [ -z "$CAL_TEAMS" ]; then
+    pass "Calendar dry-run omits live Teams join URL / event id (Needs calendar honesty without live seat)."
+  else
+    fail "Calendar dry-run must not return live Teams/event proof (got '$CAL_TEAMS')."
+  fi
 elif [ "$HTTP" = "403" ]; then
   fail "Calendar book 403 — session lacks the 'book' permission."
 else

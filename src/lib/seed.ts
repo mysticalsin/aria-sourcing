@@ -8,6 +8,7 @@ import {
   sourceCandidates,
   buildSourcingStrategy,
 } from "./mock-ai";
+import { bookingInterviewTitle } from "./booking-status";
 import { DEFAULT_SCORING_WEIGHTS } from "./scoring";
 import { firstInterviewElapsedHours } from "./metrics";
 import { slaDueFor } from "./rules";
@@ -650,8 +651,8 @@ function seedTania(candidates: Candidate[], campaigns: Campaign[]): ChatboxSubmi
     camp.jobAd = {
       content:
         `# ${camp.title}\n\n${camp.department} · ${camp.jobAnalysis.locationType} · ${camp.jobAnalysis.regions.join(", ")}\n\n` +
-        `We're hiring a ${camp.title.toLowerCase()} to join ${camp.hiringManager}'s team. ` +
-        `You'll work on high-impact problems with a senior, supportive group.\n\n` +
+        `Mantu Group is hiring a ${camp.title.toLowerCase()} to join ${camp.hiringManager}'s team. ` +
+        `You'll work on high-impact client problems with a senior, supportive consulting group.\n\n` +
         `**Must have:** ${camp.jobAnalysis.requiredSkills.slice(0, 4).join(", ")}.\n` +
         `**Nice to have:** ${camp.jobAnalysis.niceToHaveSkills.slice(0, 3).join(", ")}.`,
       screeningQuestions: screeningQuestionsFor(camp.jobAnalysis),
@@ -845,7 +846,19 @@ export function buildHistoricalDemoSeedState(): HermesState {
         bookings.push(booking);
         cand.booking = booking;
         campaignActivities.push(
-          act("booking", `Interview booked: ${cand.name}`, `${interviewer.name} (${interviewer.role}). Teams link generated.`, booking.status, campaign.id, { type: "booking", id: booking.id }, booking.createdAt),
+          act(
+            "booking",
+            bookingInterviewTitle(booking, cand.name),
+            `${interviewer.name} (${interviewer.role}). ${
+              booking.teamsLink || booking.calLink || booking.calendarSync
+                ? "Teams link generated."
+                : "Local slot only — needs calendar / confirmLive for Teams."
+            }`,
+            booking.status,
+            campaign.id,
+            { type: "booking", id: booking.id },
+            booking.createdAt,
+          ),
         );
       }
 

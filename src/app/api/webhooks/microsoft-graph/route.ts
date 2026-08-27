@@ -121,15 +121,27 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    const message = await fetchGraphMessageForIngest({
+    const fetched = await fetchGraphMessageForIngest({
       workspaceId: sub.workspace_id,
       connectionId: sub.connection_id,
       messageId,
     });
-    if (!message) {
-      results.push({ subscriptionId: note.subscriptionId, status: "message_fetch_failed" });
+    if (!fetched.ok) {
+      // Fail closed — never invents a hiring-need enqueue. Map reasons explicitly
+      // so audits can pin non-retryable Graph-absent statuses:
+      // connection_missing | token_unavailable | message_incomplete | message_fetch_failed
+      const status =
+        fetched.reason === "connection_missing"
+          ? "connection_missing"
+          : fetched.reason === "token_unavailable"
+            ? "token_unavailable"
+            : fetched.reason === "message_incomplete"
+              ? "message_incomplete"
+              : "message_fetch_failed";
+      results.push({ subscriptionId: note.subscriptionId, status });
       continue;
     }
+    const message = fetched.message;
 
     const ingested = await ingestNormalizedInboundEmail({
       mailbox: message.mailbox,
@@ -159,7 +171,8 @@ export async function POST(req: NextRequest) {
   }
 
   // Retryable failures: ask Graph to redeliver (503). Keep 202 for success and
-  // non-retryable client/subscription errors so Graph does not spin forever.
+  // non-retryable gaps (unknown sub, client_state, connection_missing,
+  // token_unavailable, message_incomplete) so Graph does not spin when MS is absent.
   const retryable = results.some(
     (r) =>
       r.status === "message_fetch_failed"
