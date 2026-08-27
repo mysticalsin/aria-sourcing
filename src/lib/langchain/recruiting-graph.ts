@@ -158,6 +158,7 @@ async function validateQuality(state: RecruitingGraphStateType): Promise<Partial
     subject: string;
     body: string;
     channel?: string;
+    workspaceId?: string;
   }) => OutreachQualityVerdict | Promise<OutreachQualityVerdict>;
   let liveValidate: QualityFn | null = null;
   if (preferLive) {
@@ -174,6 +175,7 @@ async function validateQuality(state: RecruitingGraphStateType): Promise<Partial
       subject: draft.subject,
       body: draft.body,
       channel: draft.channel,
+      workspaceId: state.workspaceId,
     };
     quality[candidateId] = liveValidate
       ? await liveValidate(input)

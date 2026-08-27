@@ -3,9 +3,10 @@ import { z } from "zod";
 import { parseEmailAndJD, isMantuNeedEmail } from "@/lib/mock-ai";
 import { parseInboundNeedLive } from "@/lib/requisition-intake-live";
 import { getServerSupabase } from "@/lib/supabase/server";
-import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
+import { supabaseEnabled, prodFailClosed, demoLoginEnabled } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
+import { publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 
 const IntakeSchema = z.object({
   email: z.string().max(20_000).optional(),
@@ -80,7 +81,16 @@ export async function POST(req: NextRequest) {
   // Production tenants must not silently accept heuristic stand-ins — same contract
   // as /api/cron/parse-inbound-need. Demo mode (no Supabase) keeps the open heuristic.
   if (supabaseEnabled) {
-    const result = await parseInboundNeedLive(intakeText);
+    const supabase = await getServerSupabase();
+    // Public demo must not touch service-role vault; skip workspaceId so
+    // serverGenerateText stays env-only on demo paths.
+    const skipVault = demoLoginEnabled || publicDemoSideEffectsDisabled();
+    const { data: wid } = skipVault
+      ? { data: null }
+      : ((await supabase?.rpc("current_workspace_id")) ?? { data: null });
+    const result = await parseInboundNeedLive(intakeText, {
+      workspaceId: typeof wid === "string" ? wid : undefined,
+    });
     if (!result.modelUsed) {
       return NextResponse.json(
         {

@@ -677,6 +677,7 @@ async function handleRequisitionParse(job, context) {
     from: fromAddress,
     body: bodyText,
     requisitionId,
+    workspaceId: job.workspace_id,
   });
 
   const ready = parseResult.ready === true;

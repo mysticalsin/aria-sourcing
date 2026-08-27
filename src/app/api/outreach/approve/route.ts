@@ -112,7 +112,18 @@ export async function POST(req: NextRequest) {
   // (same fail-closed posture as generate-outreach-draft). Demo may fall back
   // to the deterministic gate already applied above.
   // Human approval resolves needs_review — only hard-block blocked drafts here.
-  const liveVerdict = await validateOutreachQualityLive({ subject, body, channel });
+  const liveVerdict = await validateOutreachQualityLive({
+    subject,
+    body,
+    channel,
+    // Public demo must not touch service-role vault; production uses workspace keys.
+    workspaceId:
+      demoLoginEnabled || publicDemoSideEffectsDisabled()
+        ? undefined
+        : typeof wid === "string"
+          ? wid
+          : undefined,
+  });
   if (!liveVerdict.llmCriticsUsed) {
     if (!demoLoginEnabled) {
       return NextResponse.json(

@@ -104,6 +104,7 @@ export async function POST(req: NextRequest) {
       "You write empathetic, Mantu-branded recruiting outreach. Never invent credentials. Never disclose salary. No AI self-disclosure. Reply with Subject: line then body.",
     prompt,
     maxTokens: 1024,
+    workspaceId: parsed.data.workspaceId,
   });
   if (live.ok) {
     const parsedLive = parseHermesOutreach(live.text, channel, mockGenerated.subject);
@@ -171,6 +172,7 @@ export async function POST(req: NextRequest) {
     subject: generated.subject,
     body: generated.body,
     channel,
+    workspaceId: parsed.data.workspaceId,
   });
   // Prefer the stricter of graph-deterministic vs live merge for blocking.
   const effective =

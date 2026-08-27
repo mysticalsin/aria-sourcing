@@ -87,6 +87,7 @@ function parseCriticJson(text: string): { pass?: boolean; score?: number; reason
 async function runOneCritic(
   critic: CriticSpec,
   input: { subject: string; body: string; channel: string },
+  workspaceId?: string,
 ): Promise<StageResult | null> {
   const prompt = [
     `Channel: ${input.channel}`,
@@ -95,7 +96,12 @@ async function runOneCritic(
     input.body.slice(0, 4_000),
   ].join("\n");
   for (let attempt = 0; attempt < 2; attempt++) {
-    const live = await serverGenerateText({ system: critic.system, prompt, maxTokens: 256 });
+    const live = await serverGenerateText({
+      system: critic.system,
+      prompt,
+      maxTokens: 256,
+      workspaceId,
+    });
     if (!live.ok) continue;
     const row = parseCriticJson(live.text);
     if (!row) continue;
@@ -121,6 +127,7 @@ export async function validateOutreachQualityLive(input: {
   subject: string;
   body: string;
   channel?: string;
+  workspaceId?: string;
 }): Promise<OutreachQualityVerdict> {
   const base = validateOutreachQuality(input);
   if (process.env.ARIA_QUALITY_LLM_CRITICS === "0") return base;
@@ -128,7 +135,9 @@ export async function validateOutreachQualityLive(input: {
   try {
     const channel = input.channel ?? "Email";
     const payload = { subject: input.subject, body: input.body, channel };
-    const results = await Promise.all(CRITICS.map((critic) => runOneCritic(critic, payload)));
+    const results = await Promise.all(
+      CRITICS.map((critic) => runOneCritic(critic, payload, input.workspaceId)),
+    );
     const llmStages = results.filter((s): s is StageResult => Boolean(s));
     // Fail closed for partial critic runs — autonomous drafts require all three.
     if (llmStages.length !== CRITICS.length) return base;

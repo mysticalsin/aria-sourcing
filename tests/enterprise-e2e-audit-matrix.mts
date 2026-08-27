@@ -392,6 +392,21 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /llm_required/.test(intakeRoute)
         && /serverGenerateText/.test(draftRoute)
         && /llm_required/.test(draftRoute)
+        && /workspaceId/.test(readFileSync("src/lib/ai/server-generate.ts", "utf8"))
+        && /resolveStoredLlmKeyForWorkspace/.test(readFileSync("src/lib/ai/vault-secret.ts", "utf8"))
+        && /workspaceId: job\.workspace_id/.test(readFileSync("scripts/sourcing-loop-worker.mjs", "utf8"))
+        && /parseInboundNeedViaRoute[\s\S]*?workspaceId: job\.workspace_id/.test(
+          readFileSync("scripts/sourcing-loop-worker.mjs", "utf8"),
+        )
+        && /demoLoginEnabled \|\| publicDemoSideEffectsDisabled\(\)/.test(
+          readFileSync("src/app/api/intake/route.ts", "utf8"),
+        )
+        && /demoLoginEnabled \|\| publicDemoSideEffectsDisabled\(\)/.test(
+          readFileSync("src/app/api/outreach/approve/route.ts", "utf8"),
+        )
+        && /demoLoginEnabled \|\| publicDemoSideEffectsDisabled\(\)/.test(
+          readFileSync("src/app/api/outreach/send/route.ts", "utf8"),
+        )
         && /critics_required/.test(draftRoute)
         && /runRecruitingGraph/.test(draftRoute)
         && /graphStage/.test(draftRoute)

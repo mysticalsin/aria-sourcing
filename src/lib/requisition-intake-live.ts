@@ -12,7 +12,10 @@ import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import type { JobAnalysis } from "@/lib/types";
 
 /** Autonomous loop parse: prefer configured server LLM, fall back to heuristic. */
-export async function parseInboundNeedLive(emailText: string) {
+export async function parseInboundNeedLive(
+  emailText: string,
+  opts?: { workspaceId?: string },
+) {
   const fallback = parseInboundNeed(emailText);
   const prompt = buildIntakeParsePrompt(emailText);
   const live = await serverGenerateText({
@@ -20,6 +23,7 @@ export async function parseInboundNeedLive(emailText: string) {
       "You extract structured hiring needs from email. Reply with JSON only matching the requested schema. Never invent salaries, companies, or skills absent from the brief.",
     prompt,
     maxTokens: 2048,
+    workspaceId: opts?.workspaceId,
   });
   if (!live.ok) return { ...fallback, modelUsed: false, modelReason: live.reason };
 

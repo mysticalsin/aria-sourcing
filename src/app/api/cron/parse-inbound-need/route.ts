@@ -19,6 +19,7 @@ const ParseBodySchema = z.object({
   email: z.string().max(1_000_000).optional(),
   requisitionId: z.string().uuid().optional(),
   campaignId: z.string().min(1).max(200).optional(),
+  workspaceId: z.string().uuid().optional(),
 });
 
 function authorized(req: NextRequest): boolean {
@@ -58,7 +59,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, status: "empty_input" }, { status: 400 });
   }
 
-  const result = await parseInboundNeedLive(emailText);
+  const result = await parseInboundNeedLive(emailText, {
+    workspaceId: parsed.data.workspaceId,
+  });
 
   // Autonomous loop parse must not silently accept mock/heuristic stand-ins.
   if (!result.modelUsed) {

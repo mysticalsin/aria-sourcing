@@ -196,7 +196,17 @@ export async function POST(req: NextRequest) {
   // (same fail-closed posture as generate-outreach-draft). Demo may fall back
   // to the deterministic gate already applied above.
   // After a valid human approval, needs_review is resolved — only block blocked.
-  const liveVerdict = await validateOutreachQualityLive({ subject, body, channel });
+  const liveVerdict = await validateOutreachQualityLive({
+    subject,
+    body,
+    channel,
+    workspaceId:
+      demoLoginEnabled || publicDemoSideEffectsDisabled()
+        ? undefined
+        : typeof approvalWid === "string"
+          ? approvalWid
+          : undefined,
+  });
   if (!liveVerdict.llmCriticsUsed) {
     if (!demoLoginEnabled) {
       return NextResponse.json(
