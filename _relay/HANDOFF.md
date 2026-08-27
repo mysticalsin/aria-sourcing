@@ -16,7 +16,7 @@ status: awaiting-microsoft-entra-and-deploy-confirm
 - **PR:** re-open after #31 closed — new draft on same branch
 - **Fly missing (6):** MICROSOFT_CLIENT_ID/SECRET + GOTRUE_EXTERNAL_AZURE_*
 - **Stale deploy:** `ba88302` / mig **0060** / Graph validationToken **404**; `ARIA_PROD_DEPLOY_CONFIRM` unset in shell
-- **Agent-owned ready in /tmp:** webhook + cron secrets; ADMIN email/password; HeyReach MCP/API keys (mode 600; never commit)
+- **Agent-owned ready in /tmp:** webhook + cron secrets; ADMIN `Twalteur@amaris.com` password reset+verified via GoTrue (admin role); HeyReach MCP/API keys (mode 600; never commit)
 - **Drop-zone:** `/tmp/owner-microsoft.env` and `production-readiness/.owner-microsoft.env` still absent
 
 ## Done this shift
