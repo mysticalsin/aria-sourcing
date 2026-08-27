@@ -10,7 +10,7 @@ status: code-complete-awaiting-owner-deploy
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30** (supersedes closed **#29**) · tip `8c736fa`
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30** (supersedes closed **#29**) · tip `9a1f182`
 - **Local gate:** `npx tsc --noEmit && npm test` green; audit **30/30**; mantu E2E **28/28**
 - **Fly live:** build `ba88302`, migration **0060**, `agentFrameworks:false`, `/api/ready` not_ready
 - **Source target:** migration **0065**; golive preflight prints deploy command for tip SHA
@@ -39,8 +39,8 @@ status: code-complete-awaiting-owner-deploy
 ## Blockers (owner)
 
 ```bash
-ARIA_RELEASE_SHA=8c736fa0880c6c66c132ad2e0641b7f1c7fc2080 \
-ARIA_PROD_DEPLOY_CONFIRM=aria-production-release-v1:fly-deploy-now:8c736fa0880c6c66c132ad2e0641b7f1c7fc2080:aria-mantu-bootstrap,aria-mantu-app \
+ARIA_RELEASE_SHA=9a1f182079fee98b2e5c18e585f277f60e81d385 \
+ARIA_PROD_DEPLOY_CONFIRM=aria-production-release-v1:fly-deploy-now:9a1f182079fee98b2e5c18e585f277f60e81d385:aria-mantu-bootstrap,aria-mantu-app \
   bash scripts/fly-deploy-now.sh
 ```
 
