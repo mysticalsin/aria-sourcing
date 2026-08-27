@@ -56,6 +56,12 @@ const sharedTransitions = JSON.parse(
 const graphStageJobs = JSON.parse(
   readFileSync(join(__workerDir, "../src/lib/langchain/graph-stage-jobs.json"), "utf8"),
 );
+const loopLimits = JSON.parse(
+  readFileSync(join(__workerDir, "../src/lib/recruiting-loop/loop-limits.json"), "utf8"),
+);
+const TOP_CANDIDATE_SHORTLIST_SIZE = Number(loopLimits.topCandidateShortlistSize) || 10;
+const DEFAULT_SOURCING_BATCH_SIZE = Number(loopLimits.defaultSourcingBatchSize) || 15;
+const DEFAULT_SHORTLIST_MIN_SCORE = Number(loopLimits.defaultShortlistMinScore) || 70;
 
 function freezeTransitions(raw) {
   return Object.freeze(
@@ -867,11 +873,24 @@ async function handleRequisitionParse(job, context) {
 async function handleCampaignCreate(job, context) {
   const payload = payloadOf(job);
   const campaignId = boundedText(payload.campaignId, 160, "campaign_id_required");
+  // Fail closed until the requisition_parse campaign blob is visible — otherwise
+  // sourcing_batch hits campaign_not_found and burns retries without progress.
+  const snapshot = await readWorkspaceSnapshot(context.client, job.workspace_id);
+  const state = isRecord(snapshot.state) ? snapshot.state : {};
+  const campaigns = Array.isArray(state.campaigns) ? state.campaigns.filter(isRecord) : [];
+  const campaign = campaigns.find((row) => row.id === campaignId);
+  if (!campaign) {
+    throw new HandlerError("campaign_missing", true);
+  }
   const batchId = `batch:${campaignId}:${job.id}`;
   return completeJob(
     context.client,
     job,
-    { status: "campaign.create_requested", campaignId },
+    {
+      status: "campaign.create_requested",
+      campaignId,
+      graphStage: "requisition_parsed",
+    },
     [event("campaign.create_requested", "campaign", campaignId, {})],
     [
       successorJob(
@@ -899,7 +918,7 @@ async function runSourcingBatchViaRoute(job, context, campaignId, batchId) {
       body: JSON.stringify({
         workspaceId: job.workspace_id,
         campaignId,
-        count: 15,
+        count: DEFAULT_SOURCING_BATCH_SIZE,
       }),
       signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
     });
@@ -955,7 +974,8 @@ async function handleSourcingBatch(job, context) {
           campaignId,
           batchId,
           providerRunId,
-          graphStage: "sourcing_complete",
+          // Forward known ids so shortlist can rank from workspace without re-poll.
+          ...(candidateIds.length > 0 ? { candidateIds } : {}),
         }, 90),
       ],
     );
@@ -990,7 +1010,6 @@ async function handleSourcingBatch(job, context) {
         campaignId,
         batchId: sourced.batchId,
         candidateIds,
-        graphStage: "sourcing_complete",
       }, 90),
     ],
   );
@@ -1083,7 +1102,7 @@ async function candidatesForShortlist(job, context, payload, campaignId) {
           stage: typeof candidate.stage === "string" && candidate.stage.trim() ? candidate.stage : "Sourced",
         }))
         .sort((a, b) => Number(b.matchScore ?? b.match_score ?? 0) - Number(a.matchScore ?? a.match_score ?? 0))
-        .slice(0, 10);
+        .slice(0, TOP_CANDIDATE_SHORTLIST_SIZE);
     }
   }
 
@@ -1106,7 +1125,7 @@ async function candidatesForShortlist(job, context, payload, campaignId) {
   if (status !== "completed") throw new HandlerError("provider_poll_response_invalid", true);
   return candidateRecordsFromProviderResult(providerResult, campaignId)
     .sort((a, b) => Number(b.matchScore ?? b.match_score ?? 0) - Number(a.matchScore ?? a.match_score ?? 0))
-    .slice(0, 10);
+    .slice(0, TOP_CANDIDATE_SHORTLIST_SIZE);
 }
 
 async function handleEnrichCandidate(job, context) {
@@ -1187,7 +1206,7 @@ async function handleShortlistBuild(job, context) {
       .select("auto_shortlist_min_score, kill_switch, sourcing_enabled")
       .eq("workspace_id", job.workspace_id)
       .maybeSingle();
-    const minScore = Number(controls.data?.auto_shortlist_min_score ?? 70);
+    const minScore = Number(controls.data?.auto_shortlist_min_score ?? DEFAULT_SHORTLIST_MIN_SCORE);
     const loopLive = controls.data?.kill_switch === false && controls.data?.sourcing_enabled === true;
     if (loopLive && Number.isFinite(minScore)) {
       const entitled = await context.client
@@ -1207,7 +1226,7 @@ async function handleShortlistBuild(job, context) {
             );
             return Number.isFinite(score) && score >= minScore && typeof candidate.id === "string";
           })
-          .slice(0, 10)
+          .slice(0, TOP_CANDIDATE_SHORTLIST_SIZE)
           .map((candidate) =>
             successorJob(
               "draft_generate",
@@ -1378,7 +1397,12 @@ async function handleDraftGenerate(job, context) {
     job,
     {
       kind: "append_outreach",
-      value: [body.outreach],
+      // Autonomous drafts stay Needs Approval + dryRun until a human Approve/send.
+      value: [{
+        ...body.outreach,
+        status: "Needs Approval",
+        dryRun: true,
+      }],
       receiptKey: `draft:${campaignId}:${candidateId}`,
     },
     {
@@ -1388,11 +1412,14 @@ async function handleDraftGenerate(job, context) {
       quality: qualityStatus,
       channel: typeof body.channel === "string" ? body.channel : "",
       calendarQueued: successors.length > 0,
+      graphStage: graphStage || "queued_for_approval",
+      dryRun: true,
     },
     [event("draft.ready", "candidate", candidateId, {
       campaignId,
       quality: qualityStatus,
       calendarQueued: successors.length > 0,
+      dryRun: true,
     })],
     successors,
   );

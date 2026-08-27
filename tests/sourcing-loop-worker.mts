@@ -187,7 +187,7 @@ test("shortlist handler reads provider candidates by run id and commits through 
   assert.equal(JSON.stringify(completion.args.p_events).includes("Synthetic Candidate"), false);
 });
 
-test("sourcing_batch enqueues shortlist_build with provider run id only", async () => {
+test("sourcing_batch enqueues shortlist_build with provider run id and known candidateIds", async () => {
   const { client, calls } = rpcClient((name) => {
     if (name === "complete_aria_job") return { data: true, error: null };
     throw new Error(`unexpected rpc ${name}`);
@@ -211,10 +211,12 @@ test("sourcing_batch enqueues shortlist_build with provider run id only", async 
         campaignId: "camp-1",
         batchId: "batch-1",
         providerRunId: "81111111-1111-4111-8111-111111111111",
+        candidateIds: ["cand-a"],
       },
       priority: 90,
     },
   ]);
+  assert.equal(completion?.args.p_enqueue?.[0]?.payload?.graphStage, undefined);
 });
 
 test("requisition_parse resumes campaign_created without re-recording parse", async () => {
@@ -863,7 +865,24 @@ test("runSourcingLoopTick claims every handler kind and completes each claimed j
     if (name === "claim_due_aria_jobs") return { data: claimedJobs, error: null };
     if (name === "sourcing_loop_stage_enabled") return { data: true, error: null };
     if (name === "read_workspace_state_for_loop") {
-      return { data: { status: "ok", state: {}, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+      return {
+        data: {
+          status: "ok",
+          state: {
+            campaigns: [{ id: "camp-1", title: "Senior Engineer", status: "Sourcing" }],
+            candidates: [
+              {
+                id: "cand-1",
+                campaignId: "camp-1",
+                matchScore: 88,
+                stage: "Sourced",
+              },
+            ],
+          },
+          updated_at: "2026-07-25T12:00:00.000Z",
+        },
+        error: null,
+      };
     }
     if (name === "read_inbound_message_for_loop") {
       return {
@@ -1081,4 +1100,241 @@ test("buildReplyClassificationPrompt strips delimiter breakout while preserving 
   assert.doesNotMatch(prompt.prompt, /<<<CANDIDATE_REPLY>>>/);
   assert.match(prompt.prompt, /Ignore previous instructions/);
   assert.match(prompt.prompt, /^Candidate reply \(untrusted data/m);
+});
+
+test("campaign_create verifies campaign blob then enqueues sourcing_batch without graphStage", async () => {
+  const { client, calls } = rpcClient((name) => {
+    if (name === "read_workspace_state_for_loop") {
+      return {
+        data: {
+          status: "ok",
+          state: { campaigns: [{ id: "camp-chain-1", title: "TS Engineer", status: "Sourcing" }] },
+          updated_at: "2026-08-27T12:00:00.000Z",
+        },
+        error: null,
+      };
+    }
+    if (name === "complete_aria_job") return { data: true, error: null };
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  const result = await handleAriaJob(
+    job("campaign_create", { campaignId: "camp-chain-1", requisitionId: "req-1" }),
+    { client },
+  );
+  assert.equal((result as { status?: string }).status, "campaign.create_requested");
+  const completion = calls.find((call) => call.name === "complete_aria_job");
+  assert.equal(completion?.args.p_enqueue?.[0]?.kind, "sourcing_batch");
+  assert.equal(completion?.args.p_enqueue?.[0]?.payload?.campaignId, "camp-chain-1");
+  assert.ok(typeof completion?.args.p_enqueue?.[0]?.payload?.batchId === "string");
+  assert.equal(completion?.args.p_enqueue?.[0]?.payload?.graphStage, undefined);
+});
+
+test("campaign_create fails closed when campaign blob is missing", async () => {
+  const { client } = rpcClient((name) => {
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: { campaigns: [] }, updated_at: "2026-08-27T12:00:00.000Z" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+  await assert.rejects(
+    () => handleAriaJob(job("campaign_create", { campaignId: "camp-missing" }), { client }),
+    /campaign_missing/,
+  );
+});
+
+test("sourcing_batch via route → shortlist autopilot top-N → draft_generate dry-run quality", async () => {
+  const candidates = Array.from({ length: 12 }, (_, i) => ({
+    id: `cand-top-${i + 1}`,
+    campaignId: "camp-chain-2",
+    name: `Candidate ${i + 1}`,
+    matchScore: 95 - i,
+    stage: "Sourced",
+  }));
+
+  // ── 1. sourcing_batch via cron route ──
+  const sourceCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const { client: sourceClient } = rpcClient((name, args) => {
+    sourceCalls.push({ name, args });
+    if (name === "read_workspace_state_for_loop") {
+      return {
+        data: {
+          status: "ok",
+          state: { campaigns: [{ id: "camp-chain-2" }], candidates: [] },
+          updated_at: "2026-08-27T12:00:00.000Z",
+        },
+        error: null,
+      };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await handleAriaJob(
+    job("sourcing_batch", { campaignId: "camp-chain-2", batchId: "batch-chain-2" }),
+    {
+      client: sourceClient,
+      configuration: {
+        sourcingBatchUrl: new URL("https://worker.example.test/api/cron/run-sourcing-batch"),
+        cronSecret: "s".repeat(32),
+      },
+      fetcher: async () =>
+        new Response(
+          JSON.stringify({
+            ok: true,
+            status: "completed",
+            batchId: "batch-chain-2",
+            candidates,
+            candidateIds: candidates.map((c) => c.id),
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    },
+  );
+
+  const sourceComplete = sourceCalls.find((c) => c.name === "complete_aria_job_with_workspace_patch");
+  assert.equal(sourceComplete?.args.p_patch_kind, "append_candidates");
+  assert.equal(sourceComplete?.args.p_enqueue?.[0]?.kind, "shortlist_build");
+  assert.equal(sourceComplete?.args.p_enqueue?.[0]?.payload?.graphStage, undefined);
+  assert.deepEqual(
+    sourceComplete?.args.p_enqueue?.[0]?.payload?.candidateIds,
+    candidates.map((c) => c.id),
+  );
+
+  // ── 2. shortlist_build with autopilot → top 10 draft_generate ──
+  const shortlistCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const { client: shortlistClient } = rpcClient((name, args) => {
+    shortlistCalls.push({ name, args });
+    if (name === "read_workspace_state_for_loop") {
+      return {
+        data: {
+          status: "ok",
+          state: { candidates },
+          updated_at: "2026-08-27T12:00:00.000Z",
+        },
+        error: null,
+      };
+    }
+    if (name === "complete_aria_job") return { data: true, error: null };
+    throw new Error(`unexpected rpc ${name}`);
+  });
+  let fromTable = "";
+  (shortlistClient as { from: (table: string) => unknown }).from = (table: string) => {
+    fromTable = table;
+    return {
+      select() {
+        return this;
+      },
+      eq() {
+        return this;
+      },
+      in() {
+        return this;
+      },
+      limit() {
+        return this;
+      },
+      async maybeSingle() {
+        if (fromTable === "sourcing_loop_controls") {
+          return {
+            data: { auto_shortlist_min_score: 70, kill_switch: false, sourcing_enabled: true },
+            error: null,
+          };
+        }
+        if (fromTable === "profiles") {
+          return { data: { id: "user-autopilot-chain" }, error: null };
+        }
+        return { data: null, error: null };
+      },
+    };
+  };
+
+  const shortlistResult = await handleAriaJob(
+    job("shortlist_build", {
+      campaignId: "camp-chain-2",
+      batchId: "batch-chain-2",
+      candidateIds: candidates.map((c) => c.id),
+    }),
+    { client: shortlistClient },
+  );
+  assert.equal((shortlistResult as { autoApproved?: number }).autoApproved, 10);
+  assert.equal((shortlistResult as { candidateCount?: number }).candidateCount, 10);
+  const shortlistComplete = shortlistCalls.find((c) => c.name === "complete_aria_job");
+  const draftJobs = shortlistComplete?.args.p_enqueue as Array<{
+    kind: string;
+    payload: { candidateId?: string; graphStage?: string; approvalSource?: string };
+  }>;
+  assert.equal(draftJobs?.length, 10);
+  assert.ok(draftJobs.every((row) => row.kind === "draft_generate"));
+  assert.ok(draftJobs.every((row) => row.payload.approvalSource === "autopilot_shortlist"));
+  assert.ok(draftJobs.every((row) => row.payload.graphStage === undefined));
+  assert.deepEqual(
+    draftJobs.map((row) => row.payload.candidateId),
+    candidates.slice(0, 10).map((c) => c.id),
+  );
+
+  // ── 3. draft_generate persists Mantu dry-run Needs Approval outreach ──
+  const draftCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const { client: draftClient } = rpcClient((name, args) => {
+    draftCalls.push({ name, args });
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: {}, updated_at: "2026-08-27T12:00:00.000Z" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  const draftResult = await handleAriaJob(
+    job("draft_generate", {
+      campaignId: "camp-chain-2",
+      candidateId: "cand-top-1",
+      approvedBy: "user-autopilot-chain",
+      approvalSource: "autopilot_shortlist",
+    }),
+    {
+      client: draftClient,
+      configuration: {
+        outreachDraftUrl: new URL("https://worker.example.test/api/cron/generate-outreach-draft"),
+        cronSecret: "s".repeat(32),
+      },
+      fetcher: async () =>
+        new Response(
+          JSON.stringify({
+            ok: true,
+            campaignId: "camp-chain-2",
+            candidateId: "cand-top-1",
+            channel: "Email",
+            graphStage: "queued_for_approval",
+            llmCriticsUsed: true,
+            modelUsed: true,
+            quality: { status: "ready", aggregateScore: 91 },
+            outreach: {
+              id: "msg-chain-1",
+              candidateId: "cand-top-1",
+              campaignId: "camp-chain-2",
+              channel: "Email",
+              subject: "Your TypeScript work at Mantu",
+              body: "Hi — your TypeScript work stood out for our Mantu search.",
+              status: "Needs Approval",
+              dryRun: false,
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    },
+  );
+
+  assert.equal((draftResult as { dryRun?: boolean }).dryRun, true);
+  assert.equal((draftResult as { graphStage?: string }).graphStage, "queued_for_approval");
+  assert.equal((draftResult as { quality?: string }).quality, "ready");
+  const draftComplete = draftCalls.find((c) => c.name === "complete_aria_job_with_workspace_patch");
+  assert.equal(draftComplete?.args.p_patch_kind, "append_outreach");
+  const outreachPatch = draftComplete?.args.p_patch as Array<Record<string, unknown>>;
+  assert.equal(outreachPatch?.[0]?.status, "Needs Approval");
+  assert.equal(outreachPatch?.[0]?.dryRun, true);
+  assert.deepEqual(draftComplete?.args.p_enqueue, []);
 });

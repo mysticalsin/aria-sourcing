@@ -261,13 +261,22 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     evidence: () => {
       const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
       const transitions = readFileSync("src/lib/langchain/pipeline-transitions.json", "utf8");
+      const limits = readFileSync("src/lib/recruiting-loop/loop-limits.json", "utf8");
+      const tests = readFileSync("tests/sourcing-loop-worker.mts", "utf8");
       return (
         /"campaign_create"\s*:\s*\[\s*"sourcing_batch"\s*\]/.test(transitions)
         && /pipeline-transitions\.json/.test(worker)
         && /handleCampaignCreate/.test(worker)
+        && /campaign_missing/.test(worker)
+        && /loop-limits\.json/.test(worker)
+        && /topCandidateShortlistSize/.test(limits)
         && /run-sourcing-batch/.test(worker)
         && /generate-outreach-draft/.test(worker)
         && /append_outreach/.test(worker)
+        && /dryRun: true/.test(worker)
+        && /Needs Approval/.test(worker)
+        && /campaign_create verifies campaign blob then enqueues sourcing_batch/.test(tests)
+        && /sourcing_batch via route → shortlist autopilot top-N → draft_generate dry-run quality/.test(tests)
       );
     },
   },

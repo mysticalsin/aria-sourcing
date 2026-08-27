@@ -148,6 +148,18 @@ async function main() {
     "shared pipeline transitions include requisition_parse → campaign_create",
     (PIPELINE_STAGE_TRANSITIONS.requisition_parse ?? []).includes("campaign_create"),
   );
+  ok(
+    "pipeline chains campaign_create → sourcing_batch → shortlist → draft",
+    (PIPELINE_STAGE_TRANSITIONS.campaign_create ?? []).includes("sourcing_batch")
+      && (PIPELINE_STAGE_TRANSITIONS.sourcing_batch ?? []).includes("shortlist_build")
+      && (PIPELINE_STAGE_TRANSITIONS.shortlist_build ?? []).includes("draft_generate"),
+  );
+  ok(
+    "graph stages map source→shortlist and shortlist→draft",
+    nextJobKindAfterGraphStage("sourcing_complete") === "shortlist_build"
+      && nextJobKindAfterGraphStage("shortlist_ranked") === "draft_generate"
+      && nextJobKindAfterGraphStage("quality_validated") === "draft_generate",
+  );
 
   // ── 6. First interview agenda (Mantu + role) ──
   const agenda = mantuFirstInterviewAgenda(e2eCampaign.title);
