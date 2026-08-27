@@ -1,43 +1,42 @@
 ---
 project: MSourcing / ARIA
-shift: 190
+shift: 191
 agent: cursor-cloud
-updated: 2026-08-27T20:25Z
-status: tip-live-vault-llm-ok-blocked-on-microsoft-and-loop-json
+updated: 2026-08-27T20:40Z
+status: vault-llm-live-loop-partial-blocked-microsoft
 ---
 
-# Handoff — Shift 190
+# Handoff — Shift 191
 
 ## Current state
 
 - Confirm unlock: `bash scripts/print-fly-deploy-confirm.sh` → `ARIA_PROD_DEPLOY_CONFIRM`
-- **PR #32** · tip **`3f74623`** was live (vault LLM); **follow-up tip pending** for `Dockerfile.prod` loop JSON COPY
-- Vault LLM **proven live:** parse without `workspaceId` → kimi 401/`llm_required`; with workspaceId → **HTTP 200 modelUsed** (Anthropic vault)
-- Intake E2E step **PASS** on Fly after vault tip
-- **Loop worker crash-loop:** `ENOENT .../pipeline-transitions.json` — Dockerfile.prod copied worker.mjs but not the shared JSON. Fix staged in working tree (COPY both JSON files)
-- E2E `3f74623`: **32 pass / 10 fail** — no campaign materialization (loop dead) + `microsoftOAuth=false` + no live Graph seat
-- Microsoft secrets still missing on Fly
+- **PR #32** tips: `3f74623` (vault LLM) → `9100109` (loop JSON in image) → `04cd00d` (HOSTNAME=`::`, redeploying)
+- Live proven: ready+Graph **200**; vault parse **modelUsed** after Kimi env 401; intake E2E step PASS
+- Loop: JSON ENOENT fixed; 6PN ECONNREFUSED fixed via temporary secret `ARIA_WEB_INTERNAL_URL=https://aria-mantu-app.fly.dev` + HOSTNAME=`::` tip; ticks reach `status=ok` (dispatch/graphRenew ok)
+- E2E still **FAIL** (32/10): campaign not materialized (`requisition_parse` → `rpc_http_404` on some jobs) + **microsoftOAuth=false** + no live Graph seat for Teams book
+- Owner Microsoft secrets still missing (setup actions requested)
 
 ## Done this shift
 
-- Shipped vault LLM fallback (`3f74623`): `resolveStoredLlmKeyForWorkspace` + lazy `serverGenerateText({ workspaceId })`
-- Demo paths skip vault via `demoLoginEnabled || publicDemoSideEffectsDisabled()`
-- Redeployed tip; ready+Graph 200; vault parse probe green
-- Started loop machine; found ENOENT root cause; fixed Dockerfile.prod + audit assert
-- Requested owner setup actions for MICROSOFT_CLIENT_ID/SECRET
-- ManagePullRequest / `gh pr edit` unavailable (read-only integration)
+- Vault LLM fallback shipped + live-proven
+- Dockerfile.prod ships `pipeline-transitions.json` + `graph-stage-jobs.json`
+- Loop 6PN diagnosis; public URL secret override; HOSTNAME=`::` committed
+- Requested MICROSOFT_CLIENT_ID/SECRET setup actions
+- ManagePullRequest/`gh pr edit` unavailable (integration read-only); tip commits update PR #32
 
 ## Blockers
 
-- Owner: `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` (and auth Azure GoTrue flags)
-- Redeploy tip with Dockerfile.prod JSON COPY so loop can claim jobs
-- Then: Connect Outlook → Enable webhook → `e2e-workflow-test.sh` (never skip live calendar)
+- Owner: `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` (+ auth Azure GoTrue flags)
+- Investigate `handler:requisition_parse:rpc_http_404` (PostgREST PGRST202 / missing overload) so webhook→campaign materializes
+- Hermes drafts still fail on env Kimi 401 (vault path is workspaceId/`serverGenerateText` only)
 
 ## Next steps
 
-1. Commit+push Dockerfile.prod JSON COPY; print-confirm → golive tip
-2. Verify loop machine stays up (no ENOENT); webhook need → campaign materializes
-3. Owner Microsoft secrets → Connect Outlook → full E2E PASS
+1. Finish redeploy `04cd00d`; confirm web listens on `::`; optionally unset public `ARIA_WEB_INTERNAL_URL` secret once 6PN works
+2. Debug `requisition_parse` rpc_http_404 with real job payload (compare RPC arg names vs live DB)
+3. Owner Microsoft secrets → Connect Outlook → `e2e-workflow-test.sh` (never skip live calendar)
+4. Goal complete ONLY on full E2E PASS including live Teams book
 
 ## Decisions made (don't relitigate)
 
@@ -48,5 +47,6 @@ status: tip-live-vault-llm-ok-blocked-on-microsoft-and-loop-json
 
 ## Watch out
 
-- Loop `auto_stop`/suspend leaves only web started after deploy — start loop machine after tip if needed
-- Hermes chat still hits env Kimi 401 for drafts (vault path is for `serverGenerateText` workspaceId callers; hermes may need separate wiring or env Anthropic)
+- After deploy, start loop machine if suspended (`flyctl machine start <loop-id>`)
+- Do not set `ARIA_ALLOW_SKIP_LIVE_CALENDAR=1`
+- Secret `ARIA_WEB_INTERNAL_URL` overrides `[env]` — remove after `::` bind verified on 6PN
