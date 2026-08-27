@@ -10,7 +10,7 @@ status: live-fly-e469126-mailbox-dry-run-deployed
 
 ## Current state
 
-- **Branch tip (git):** `cursor/enterprise-autopilot-b91d` **`a25dfd0`** (`a25dfd0336eb06538c5ae5a877b7b266257ee87c`); code fix = **`0e5da13`** (ancestor)
+- **Branch tip (git):** `cursor/enterprise-autopilot-b91d` **`98f704f`** (`98f704f29be99ace44266e410baf3f7550dfaeaf`); code fix = **`0e5da13`** (ancestor)
 - **Live Fly `aria-mantu-app`:** **`e46912691e9d2ad400dbb5a37f3e68047649727e`** / mig **0068** — contains `0e5da13` (≠ `2ffc428` / `635eb4e`); tip advanced with post-deploy relay only
 - `/api/ready` → `ok:true`, `status:ready`, build=`e469126…`, migration=`0068_apply_workspace_patch_digest_path.sql`
 - Login page HTTP 200; password grant `twalteur@amaris.com` OK via Kong (tokens not logged)
