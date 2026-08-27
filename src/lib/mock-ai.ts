@@ -1265,7 +1265,7 @@ export function createBooking(
     interviewerEmail: interviewer?.email ?? "",
     // Real meeting URLs are issued by the calendar provider (Microsoft Graph / Cal.com) at
     // live-send time. Until that integration is connected, leave these empty rather than
-    // fabricate links that 404 — the calendar UI renders an "on live send" state.
+    // fabricate links that 404 — the calendar UI renders a “needs Graph” state.
     teamsLink: "",
     calLink: "",
     status: "Confirmed",
