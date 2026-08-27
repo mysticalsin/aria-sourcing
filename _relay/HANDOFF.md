@@ -10,7 +10,7 @@ status: code-complete-pr30-closed-not-merged-awaiting-owner
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** (supersedes closed #29, #30) · tip pending commit
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** (supersedes closed #29, #30) · tip `24b33b7`
 - **PR #30:** closed without merge @ 2026-08-27; reopened as **#31**
 - **Base branch:** `integration/sourcing-enrichment-on-main` does **not** contain enterprise commits
 - **Local gate:** green; audit **30/30**; mantu E2E **28/28**
