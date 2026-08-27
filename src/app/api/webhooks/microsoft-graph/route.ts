@@ -42,11 +42,29 @@ const NotificationSchema = z.object({
     .max(50),
 });
 
-function extractMessageId(resource: string | undefined, resourceDataId: string | undefined): string {
-  if (resourceDataId?.trim()) return resourceDataId.trim();
+function extractMessageId(
+  resource: string | undefined,
+  resourceData: { id?: string; "@odata.id"?: string } | undefined,
+): string {
+  const direct = resourceData?.id?.trim();
+  if (direct) return direct;
+
+  const odataId = resourceData?.["@odata.id"]?.trim();
+  const fromOdata =
+    (odataId && (/\/Messages\('([^']+)'\)/i.exec(odataId) || /\/messages\/(.+?)(?:\?|$)/i.exec(odataId))) ||
+    null;
+  if (fromOdata?.[1]) return decodeURIComponent(fromOdata[1]);
+
   if (!resource) return "";
-  const match = /\/Messages\('([^']+)'\)/i.exec(resource) || /\/messages\/([^/?]+)/i.exec(resource);
-  return match?.[1] ? decodeURIComponent(match[1]) : "";
+  const quoted = /\/Messages\('([^']+)'\)/i.exec(resource);
+  if (quoted?.[1]) return decodeURIComponent(quoted[1]);
+  // Path form: take everything after the last /messages/ (IDs may contain '/').
+  const pathIdx = resource.toLowerCase().lastIndexOf("/messages/");
+  if (pathIdx >= 0) {
+    const rest = resource.slice(pathIdx + "/messages/".length).split(/[?#]/)[0];
+    if (rest) return decodeURIComponent(rest);
+  }
+  return "";
 }
 
 export async function GET(req: NextRequest) {
@@ -97,7 +115,7 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    const messageId = extractMessageId(note.resource, note.resourceData?.id);
+    const messageId = extractMessageId(note.resource, note.resourceData);
     if (!messageId) {
       results.push({ subscriptionId: note.subscriptionId, status: "missing_message_id" });
       continue;
@@ -140,6 +158,16 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Graph expects 202 quickly; we already processed synchronously (bounded batch).
+  // Retryable failures: ask Graph to redeliver (503). Keep 202 for success and
+  // non-retryable client/subscription errors so Graph does not spin forever.
+  const retryable = results.some(
+    (r) =>
+      r.status === "message_fetch_failed"
+      || r.status === "ingest_503"
+      || r.status.startsWith("ingest_5"),
+  );
+  if (retryable) {
+    return NextResponse.json({ ok: false, results }, { status: 503 });
+  }
   return NextResponse.json({ ok: true, results }, { status: 202 });
 }

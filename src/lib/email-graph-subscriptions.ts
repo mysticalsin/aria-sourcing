@@ -463,17 +463,30 @@ function decodeBasicHtmlEntities(text: string): string {
 
 /**
  * Normalize Graph message body for hiring-need / reply classification.
- * Prefer text content; if Graph still returns HTML, strip tags and decode entities
- * so Mantu field lines (`Recruiter:`, `Skills:`) remain matchable.
+ * Prefer text content; if Graph returns HTML, preserve line breaks so Mantu
+ * field lines (`Recruiter:`, `Skills:`, `Type:`, `Location:`) stay matchable.
  */
 export function normalizeGraphMessageBody(
   body: { contentType?: string; content?: string } | undefined,
 ): string {
   const raw = body?.content?.trim() ?? "";
   if (!raw) return "";
-  const isHtml = (body?.contentType ?? "").toLowerCase() === "html" || /<\/?[a-z][\s\S]*>/i.test(raw);
-  if (!isHtml) return raw;
-  return decodeBasicHtmlEntities(raw.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")).trim();
+  const declaredHtml = (body?.contentType ?? "").toLowerCase() === "html";
+  // Only treat as HTML when Graph declared it — plain "Name <email@host>" must stay text.
+  if (!declaredHtml) return raw;
+  const withBreaks = raw
+    .replace(/<\s*br\s*\/?\s*>/gi, "\n")
+    .replace(/<\/\s*p\s*>/gi, "\n")
+    .replace(/<\/\s*div\s*>/gi, "\n")
+    .replace(/<\/\s*tr\s*>/gi, "\n")
+    .replace(/<\/\s*li\s*>/gi, "\n");
+  const stripped = decodeBasicHtmlEntities(withBreaks.replace(/<[^>]+>/g, " "));
+  return stripped
+    .split(/\r?\n/)
+    .map((line) => line.replace(/[ \t\f\v]+/g, " ").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 export type NormalizedGraphMessage = {

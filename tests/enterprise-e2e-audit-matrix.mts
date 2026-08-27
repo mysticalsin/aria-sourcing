@@ -266,13 +266,20 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       const subs = readFileSync("src/lib/email-graph-subscriptions.ts", "utf8");
       const migration = readFileSync("supabase/migrations/0064_graph_mail_subscriptions.sql", "utf8");
       const panel = readFileSync("src/components/intake/outlook-needs-panel.tsx", "utf8");
+      const checklist = readFileSync("scripts/print-fly-secrets-checklist.sh", "utf8");
       return (
         /validationToken/.test(route)
+        && /status: 503/.test(route)
+        && /message_fetch_failed/.test(route)
+        && /lastIndexOf\("\/messages\/"\)/.test(route)
         && /createGraphMailSubscription/.test(subs)
+        && /declaredHtml/.test(subs)
+        && /replace\(\/<\\s\*br/.test(subs)
         && /renewExpiringGraphMailSubscriptions|renewGraphMailSubscription/.test(subs)
         && /graph_mail_subscriptions/.test(migration)
         && /Emergency sync/.test(panel)
         && /Webhook open needs/.test(panel)
+        && /ARIA_LOOP_KILL_SWITCH='false'/.test(checklist)
         && existsSync("src/app/api/cron/renew-graph-subscriptions/route.ts")
       );
     },

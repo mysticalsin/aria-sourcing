@@ -175,7 +175,9 @@ ok(
   "Graph message ingest prefers text body and normalizes HTML for hiring-need fields",
   /outlook\.body-content-type="text"/i.test(graphSubs) &&
     /normalizeGraphMessageBody/i.test(graphSubs) &&
-    /decodeBasicHtmlEntities|&nbsp;/i.test(graphSubs),
+    /decodeBasicHtmlEntities|&nbsp;/i.test(graphSubs) &&
+    /declaredHtml/.test(graphSubs) &&
+    /replace\(\/<\\s\*br/.test(graphSubs),
 );
 ok(
   "inbound ingest requires durable enqueue status (not transport-only success)",

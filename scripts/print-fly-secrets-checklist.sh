@@ -19,7 +19,10 @@ flyctl secrets set -a aria-mantu-app \
   MICROSOFT_CLIENT_SECRET='PLACEHOLDER_AZURE_APP_CLIENT_SECRET' \
   MICROSOFT_REDIRECT_URI='https://aria-mantu-app.fly.dev/auth/microsoft/callback'
 
-# Optional but recommended for authenticated draft-cron E2E probe:
+# Arm the loop worker (required for webhook → campaign E2E materialization):
+flyctl secrets set -a aria-mantu-app ARIA_LOOP_KILL_SWITCH='false'
+
+# Optional but recommended for authenticated draft-cron / graph-stage E2E probes:
 # flyctl secrets set -a aria-mantu-app CRON_SECRET='PLACEHOLDER_SAME_AS_FLY_CRON_SECRET'
 
 # === aria-mantu-auth (Entra SSO / GoTrue Azure) ===
