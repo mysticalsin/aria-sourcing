@@ -10,7 +10,7 @@ status: code-complete-awaiting-owner-deploy
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open · tip `bf6e50a`
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open · tip `cd795fd`
 - **Local gate:** green (`tsc` + `npm test`); audit **35/35**; mantu E2E **28/28**
 - **Fly live:** build `ba88302`, migration **0060** — needs tip deploy through **0065**
 - **Owner blockers:** `ARIA_PROD_DEPLOY_CONFIRM` unset; M365/webhook/Entra Fly secrets missing; admin E2E creds absent
@@ -37,12 +37,11 @@ export ADMIN_EMAIL='…' ADMIN_PASSWORD='…'
 bash e2e-workflow-test.sh
 ```
 
-Exact deploy one-liner for tip `bf6e50a`:
+Exact deploy one-liner (regenerate if tip moves):
 
 ```bash
-ARIA_RELEASE_SHA=bf6e50a9252f35197d6d31bba5eab9d1e5d62875 \
-ARIA_PROD_DEPLOY_CONFIRM=aria-production-release-v1:fly-deploy-now:bf6e50a9252f35197d6d31bba5eab9d1e5d62875:aria-mantu-bootstrap,aria-mantu-app \
-  bash scripts/fly-deploy-now.sh
+bash scripts/print-fly-deploy-confirm.sh
+# then export ARIA_RELEASE_SHA + ARIA_PROD_DEPLOY_CONFIRM and run fly-deploy-now.sh
 ```
 
 ## Completion audit
