@@ -1,40 +1,46 @@
 ---
 project: MSourcing / ARIA
-shift: 163
+shift: 164
 agent: cursor-cloud
 updated: 2026-08-27 UTC
 status: awaiting-microsoft-entra-and-deploy-confirm
 ---
 
-# Handoff — Shift 163
+# Handoff — Shift 164
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#32**
-- **Tip:** Outlook OAuth callback promotes seat `mode=live` (Teams confirmLive unblock)
-- **Azure CLI try:** Twalteur@amaris.com ROPC → AADSTS50126 (not Azure AD admin / MFA) — cannot self-mint app registration
-- **Still blocked:** 6 Azure/Entra secrets + deploy confirm; ready `ba88302`/mig `0060`/Graph **404**
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#32** · tip `bfc42cb`
+- **Local gate:** `npx tsc --noEmit` OK; `npm test` EXIT 0; audit matrix **45/45**
+- **Fly live:** build `ba88302` (stale), mig `0060` (need >=0066), `/api/ready` not_ready, Graph validationToken **404**
+- **Missing secrets (6):** `MICROSOFT_CLIENT_ID/SECRET` + `GOTRUE_EXTERNAL_AZURE_*` (4)
+- **Drop-zone:** `/tmp/owner-microsoft.env` absent; `ARIA_PROD_DEPLOY_CONFIRM` unset
+- **Azure CLI:** device-code waiting — https://login.microsoft.com/device code **ALGV977HE** (refresh if expired); ROPC Twalteur → AADSTS50126
 
 ## Done this shift
 
-- Microsoft (+ Google) OAuth callback sets `mode: "live"` + `status: "active"` on connect
-- E2E requires live seat + active Graph subscription for confirmLive; fails closed if webhook-active but mock seat
-- M365 stack UI gates calendarReady on live Graph seat
-- `fly-enterprise-golive-when-ready.sh` one-shot remains
+- Rechecked golive blockers; refreshed Azure device-code login
+- Recorded owner setup actions (Azure secrets + device login/drop-zone + deploy confirm)
+- Confirmed local tsc + npm test + audit 45/45 still green
+- Timer `enterprise-e2e-deploy-recheck` still active (10 min)
 
 ## Next steps
 
-1. Owner: `/tmp/owner-microsoft.env` → `bash scripts/fly-enterprise-golive-when-ready.sh`
-2. `bash scripts/print-fly-deploy-confirm.sh` → export confirm → re-run golive / `fly-deploy-now.sh`
-3. Connect Outlook (auto live mode + webhook) → E2E PASS
-4. Goal complete: ready ok + mig>=0066 + tip build + Graph200 + E2E PASS
+1. Owner: device login with ALGV977HE **or** fill `/tmp/owner-microsoft.env` from `production-readiness/.owner-microsoft.env.example`
+2. If az logged in → create Graph app (redirect `https://aria-mantu-app.fly.dev/auth/microsoft/callback`) → write drop-zone → `fly-apply-owner-microsoft-secrets.sh`
+3. Export confirm from `bash scripts/print-fly-deploy-confirm.sh` → `bash scripts/fly-enterprise-golive-when-ready.sh`
+4. After tip deploy: Connect Outlook (mode=live) + webhook → `eval "$(bash scripts/print-fly-e2e-env.sh --export)" && bash e2e-workflow-test.sh`
+5. Goal complete only: ready ok + mig>=0066 + tip build + Graph200 + E2E PASS
 
 ## Decisions made (don't relitigate)
 
 - PR #32 supersedes #29–#31
 - Never invent Azure secrets or deploy confirm
 - Seat must be mode=live for Teams book (not subscription alone)
+- Migration floor >=0066; tip latest migration 0067
 
 ## Watch out
 
 - Reconnect Outlook after tip deploy so existing mock seats become live
+- Device codes expire ~15 min — restart `az login --use-device-code` if stale
+- Do not commit `/tmp/owner-microsoft.env` or secret values into `_relay/`
