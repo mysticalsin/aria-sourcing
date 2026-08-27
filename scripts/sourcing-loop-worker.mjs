@@ -1090,6 +1090,17 @@ async function handleDraftGenerate(job, context) {
   if (!isRecord(body) || body.ok !== true || !isRecord(body.outreach)) {
     throw new HandlerError("outreach_draft_response_invalid", true);
   }
+  // LangGraph draft_quality contract: never accept a fake booking stage from the cron.
+  const graphStage = typeof body.graphStage === "string" ? body.graphStage : "";
+  if (graphStage === "interview_scheduled") {
+    throw new HandlerError("outreach_draft_graph_stage_invalid", false);
+  }
+  if (graphStage && graphStage !== "queued_for_approval" && graphStage !== "approval_blocked") {
+    throw new HandlerError("outreach_draft_graph_stage_unexpected", true);
+  }
+  if (body.llmCriticsUsed !== true) {
+    throw new HandlerError("outreach_draft_critics_required", true);
+  }
   const qualityStatus = isRecord(body.quality) && typeof body.quality.status === "string"
     ? body.quality.status
     : "unknown";

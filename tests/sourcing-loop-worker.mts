@@ -616,6 +616,45 @@ test("calendar_book calls propose cron then records interview_proposed activity"
   );
 });
 
+test("draft_generate rejects fake interview_scheduled graphStage from cron", async () => {
+  const { client } = rpcClient((name) => {
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: {}, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "fail_aria_job") return { data: true, error: null };
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await assert.rejects(
+    () =>
+      handleAriaJob(
+        job("draft_generate", {
+          campaignId: "camp-bad-stage",
+          candidateId: "cand-bad-stage",
+        }),
+        {
+          client,
+          configuration: {
+            outreachDraftUrl: new URL("https://worker.example.test/api/cron/generate-outreach-draft"),
+            cronSecret: "s".repeat(32),
+          },
+          fetcher: async () =>
+            new Response(
+              JSON.stringify({
+                ok: true,
+                graphStage: "interview_scheduled",
+                llmCriticsUsed: true,
+                quality: { status: "ready" },
+                outreach: { id: "msg-x", status: "Needs Approval" },
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            ),
+        },
+      ),
+    /outreach_draft_graph_stage_invalid/,
+  );
+});
+
 test("draft_generate enqueues calendar_book after positive reply trigger", async () => {
   const patches: Array<Record<string, unknown>> = [];
   const { client } = rpcClient((name, args) => {
@@ -651,6 +690,9 @@ test("draft_generate enqueues calendar_book after positive reply trigger", async
             campaignId: "camp-9",
             candidateId: "cand-9",
             channel: "Email",
+            graphStage: "queued_for_approval",
+            llmCriticsUsed: true,
+            modelUsed: true,
             quality: { status: "ready", aggregateScore: 90 },
             outreach: {
               id: "msg-1",
@@ -783,6 +825,9 @@ test("runSourcingLoopTick claims every handler kind and completes each claimed j
             campaignId: "camp-1",
             candidateId: "cand-1",
             channel: "Email",
+            graphStage: "queued_for_approval",
+            llmCriticsUsed: true,
+            modelUsed: true,
             quality: { status: "ready", aggregateScore: 88 },
             outreach: {
               id: "msg-loop-1",

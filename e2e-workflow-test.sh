@@ -347,10 +347,24 @@ step "2d) M365 connections + Entra reporting surface"
 # ===========================================================================
 api GET "$APP_URL/api/email/connections"
 CONN_OK=$(jq -r '.ok // false' "$RESP")
+MS_OAUTH=$(jq -r '.providers.microsoftOAuth // false' "$RESP")
+INBOUND_READY=$(jq -r '.providers.inboundWebhookSecret // false' "$RESP")
 if [ "$HTTP" = "200" ] && [ "$CONN_OK" = "true" ]; then
   pass "GET /api/email/connections ok (providers=$(jq -c '.providers // {}' "$RESP"))."
 else
   fail "GET /api/email/connections failed (HTTP $HTTP): $(head -c 200 "$RESP")"
+fi
+if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" != "1" ]; then
+  if [ "$MS_OAUTH" = "true" ]; then
+    pass "Fly microsoftOAuth provider ready (MICROSOFT_CLIENT_* configured)."
+  else
+    fail "Fly enterprise requires microsoftOAuth=true on /api/email/connections (set MICROSOFT_CLIENT_ID/SECRET)."
+  fi
+  if [ "$INBOUND_READY" = "true" ]; then
+    pass "Fly inboundWebhookSecret provider ready."
+  else
+    fail "Fly enterprise requires inboundWebhookSecret=true (set EMAIL_INBOUND_WEBHOOK_SECRET)."
+  fi
 fi
 if grep -q 'graphSubscription' src/app/api/email/connections/route.ts \
   && grep -q 'ensure_graph_webhook' src/app/api/email/connections/route.ts \
@@ -375,6 +389,34 @@ if grep -q 'llm_required' src/app/api/cron/parse-inbound-need/route.ts \
   pass "Autonomous parse/draft/intake fail closed (llm_required + critics_required + draft_quality stage honesty)."
 else
   fail "LLM fail-closed guards missing from parse, intake, or draft routes."
+fi
+
+# Live cron auth probe (route present + fail-closed without Bearer).
+CRON_PROBE_CODE=$(curl -sS -m 20 -o "$WORK/cron_draft_unauth.json" -w '%{http_code}' \
+  -X POST "$APP_URL/api/cron/generate-outreach-draft" \
+  -H 'Content-Type: application/json' \
+  --data '{"workspaceId":"00000000-0000-4000-8000-000000000000","campaignId":"camp-e2e","candidateId":"cand-e2e"}')
+if [ "$CRON_PROBE_CODE" = "401" ]; then
+  pass "POST /api/cron/generate-outreach-draft rejects unauthenticated cron (401)."
+else
+  fail "Expected 401 from generate-outreach-draft without CRON_SECRET; got HTTP $CRON_PROBE_CODE."
+fi
+if [ -n "${CRON_SECRET:-}" ]; then
+  CRON_AUTH_CODE=$(curl -sS -m 30 -o "$WORK/cron_draft_auth.json" -w '%{http_code}' \
+    -X POST "$APP_URL/api/cron/generate-outreach-draft" \
+    -H 'Content-Type: application/json' \
+    -H "Authorization: Bearer $CRON_SECRET" \
+    --data '{"workspaceId":"00000000-0000-4000-8000-000000000000","campaignId":"camp-missing","candidateId":"cand-missing"}')
+  CRON_AUTH_STATUS=$(jq -r '.status // empty' "$WORK/cron_draft_auth.json" 2>/dev/null || true)
+  if [ "$CRON_AUTH_CODE" = "404" ] || [ "$CRON_AUTH_CODE" = "503" ]; then
+    pass "Authenticated draft cron fail-closed on missing workspace/candidate (HTTP $CRON_AUTH_CODE status=$CRON_AUTH_STATUS)."
+  elif [ "$CRON_AUTH_CODE" = "401" ]; then
+    fail "CRON_SECRET rejected by generate-outreach-draft (HTTP 401) — secret mismatch with Fly."
+  else
+    fail "Unexpected authenticated draft cron response HTTP $CRON_AUTH_CODE: $(head -c 200 "$WORK/cron_draft_auth.json")"
+  fi
+else
+  warn "CRON_SECRET unset — skipped authenticated draft-cron fail-closed probe."
 fi
 
 # Entra SSO surface: login page exposes Azure only when the public flag is compiled in.

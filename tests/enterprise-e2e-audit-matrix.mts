@@ -571,6 +571,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       const graph = readFileSync("src/lib/langchain/recruiting-graph.ts", "utf8");
       const draft = readFileSync("src/app/api/cron/generate-outreach-draft/route.ts", "utf8");
       const e2e = readFileSync("e2e-workflow-test.sh", "utf8");
+      const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
       return (
         /intent === "draft_quality"/.test(graph)
         && /parse_requisition_failed/.test(graph)
@@ -580,6 +581,10 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /graph_stage_invalid/.test(draft)
         && /ARIA_ALLOW_CANNED_DRAFT_E2E/.test(e2e)
         && /Fly enterprise E2E requires live Hermes/.test(e2e)
+        && /outreach_draft_graph_stage_invalid/.test(worker)
+        && /outreach_draft_critics_required/.test(worker)
+        && /microsoftOAuth=true/.test(e2e)
+        && /generate-outreach-draft rejects unauthenticated/.test(e2e)
       );
     },
   },

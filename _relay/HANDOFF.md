@@ -1,50 +1,40 @@
 ---
 project: MSourcing / ARIA
-shift: 128
+shift: 129
 agent: cursor-cloud
 updated: 2026-08-27 UTC
 status: code-complete-awaiting-owner-deploy
 ---
 
-# Handoff — Shift 128
+# Handoff — Shift 129
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open
-- **Tip work:** LangGraph fail-stops + draft_quality intent; Fly E2E refuses canned drafts
-- **Local gate:** green; audit **42/42**; mantu-recruiting-e2e-full **33/33**; mantu-e2e-loop **12/12**
-- **Fly live:** build `ba88302`, migration **0060**, Graph **404** — still needs owner tip deploy + **0066**
-- **Owner blockers:** `ARIA_PROD_DEPLOY_CONFIRM`; `MICROSOFT_*`; `EMAIL_INBOUND_WEBHOOK_SECRET`; `GOTRUE_EXTERNAL_AZURE_*`; admin E2E creds
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31**
+- **Local tip:** worker enforces draft LangGraph stage + `llmCriticsUsed`; E2E probes cron 401 + Fly M365 provider readiness
+- **Local gate:** green; audit **42/42**
+- **Fly live:** still `ba88302` / mig **0060** / Graph **404** — owner deploy required
+- **Blockers:** `ARIA_PROD_DEPLOY_CONFIRM`; `MICROSOFT_*`; webhook secret; Entra Azure; admin + optional `CRON_SECRET` for E2E
 
 ## Done this shift
 
-- `recruiting-graph.ts`: `intent` full|draft_quality; parse fail → END; `interview_scheduled` only with `bookingId`
-- `generate-outreach-draft`: `intent: "draft_quality"` + rejects fake `interview_scheduled`
-- `e2e-workflow-test.sh`: Fly fail-closed on canned Hermes drafts (`ARIA_ALLOW_CANNED_DRAFT_E2E`); Entra surface check
-- Prior: `fly-deploy-now.sh` stages tip `ARIA_EXPECTED_*` ledger identity (0066 floor)
-
-## Blockers
-
-- Live Fly cannot advance without owner confirm + secrets
+- `sourcing-loop-worker.mjs` rejects `interview_scheduled` draft responses and requires `llmCriticsUsed`
+- `e2e-workflow-test.sh`: unauth draft-cron 401 probe; optional auth fail-closed; Fly requires `microsoftOAuth` + `inboundWebhookSecret`
+- Prior: LangGraph `draft_quality` + fail-stops; deploy `ARIA_EXPECTED_*` refresh
 
 ## Next steps
 
-1. Owner: `bash scripts/fly-enterprise-activate.sh $(git rev-parse HEAD)`
-2. Owner: set `GOTRUE_EXTERNAL_AZURE_*` + `MICROSOFT_*` + `EMAIL_INBOUND_WEBHOOK_SECRET` before deploy
-3. Owner: `bash scripts/print-fly-deploy-confirm.sh` → `bash scripts/fly-deploy-now.sh`
-4. Owner: `bash scripts/print-fly-e2e-env.sh` + admin creds → `bash e2e-workflow-test.sh`
-5. Agent timer: recheck `/api/ready` for build=tip + migration `0066_*`; run E2E if creds present
+1. Owner activate + secrets + confirm + `fly-deploy-now.sh`
+2. Owner E2E with admin + webhook (+ `CRON_SECRET` recommended)
+3. Agent timer: verify ready mig `0066_*` + Graph 200 + E2E PASS
 
 ## Decisions made (don't relitigate)
 
-- PR #31 supersedes closed #29 and #30
 - No Fly deploy without `ARIA_PROD_DEPLOY_CONFIRM`
-- Skip Actions billing failures; local gate is authority
+- Skip Actions billing; local gate authority
 - Target migration **0066**
-- Deploy refreshes `ARIA_EXPECTED_*` to tip ledger
-- Draft cron uses `draft_quality` intent — never claims booking without `bookingId`
+- Draft path never claims booking without `bookingId`
 
 ## Watch out
 
-- Worker still advances jobs via shared JSON transitions (not `runRecruitingGraph` between handlers); graph is stage authority for draft cron + observability
-- Live Graph route 404 until tip deploy
+- E2E will fail on Fly until MICROSOFT_CLIENT_* and EMAIL_INBOUND_WEBHOOK_SECRET are set (intentional)

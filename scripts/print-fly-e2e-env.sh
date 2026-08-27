@@ -57,5 +57,7 @@ export ADMIN_EMAIL='your-admin@example.com'
 export ADMIN_PASSWORD='your-admin-password'
 # required for Fly enterprise E2E (webhook → requisition_parse):
 export EMAIL_INBOUND_WEBHOOK_SECRET='your-32-char-webhook-secret'
+# optional but recommended: authenticates draft-cron fail-closed probe
+# export CRON_SECRET='same-as-fly-aria-mantu-app-CRON_SECRET'
 bash e2e-workflow-test.sh
 EOF
