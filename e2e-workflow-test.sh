@@ -14,6 +14,8 @@
 #                        (assisted-manual / "Pending Manual Send") + POST /api/outreach/send
 #                        proving the server refuses to auto-send LinkedIn (409 manual-required)
 #   5. Email dry-run   — POST /api/outreach/send (channel=Email) → status:"dry-run"
+#   6. Teams/Outlook   — POST /api/calendar/event (confirmLive:false) → status:"dry-run"
+#                        (live Graph+Teams when confirmLive + connected Outlook seat)
 #
 # Auth model (verified in src/lib/supabase/*, src/app/api/**): app routes read the
 # session from a COOKIE named "sb-auth-token" (NOT a Bearer header). The cookie value
@@ -444,6 +446,52 @@ if [ "$NO_SEND_LEDGER_CODE" = "200" ] && [ "$NO_SEND_OUTBOX_CODE" = "200" ] \
   pass "No-send proof: outreach_ledger=0 and messages_outbound=0 for both canary message ids."
 else
   fail "No-send database proof failed (ledger HTTP $NO_SEND_LEDGER_CODE count=$NO_SEND_LEDGER_COUNT; outbox HTTP $NO_SEND_OUTBOX_CODE count=$NO_SEND_OUTBOX_COUNT)."
+fi
+
+# ===========================================================================
+step "6) First interview — calendar/Teams dry-run (Outlook Graph when live)"
+# ===========================================================================
+# confirmLive:false must never create a Graph event. Live Teams join links require
+# a connected Microsoft Graph seat + confirmLive:true (same route).
+START_ISO=$(date -u -d '+2 days 15:00' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v+2d +%Y-%m-%dT15:00:00Z)
+END_ISO=$(date -u -d '+2 days 15:45' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v+2d +%Y-%m-%dT15:45:00Z)
+SEAT_UUID="81111111-1111-4111-8111-111111111111"
+jq -n \
+  --arg seat "$SEAT_UUID" \
+  --arg cand "$CAND_ID" \
+  --arg name "E2E Candidate" \
+  --arg email "$CAND_EMAIL" \
+  --arg role "Senior TypeScript Engineer" \
+  --arg start "$START_ISO" \
+  --arg end "$END_ISO" \
+  --arg req "cal-e2e-$$" \
+  '{
+    seatId:$seat,
+    candidateId:$cand,
+    candidateName:$name,
+    candidateEmail:$email,
+    role:$role,
+    startTime:$start,
+    endTime:$end,
+    timezone:"UTC",
+    agenda:["Intro","Role fit","Next steps"],
+    requestId:$req,
+    confirmLive:false
+  }' > "$WORK/calendar_req.json"
+api POST "$APP_URL/api/calendar/event" "$WORK/calendar_req.json"
+CAL_STATUS=$(jq -r '.status // empty' "$RESP")
+if [ "$HTTP" = "200" ] && [ "$CAL_STATUS" = "dry-run" ]; then
+  pass "POST /api/calendar/event (confirmLive:false) → dry-run: no Outlook/Teams event created."
+elif [ "$HTTP" = "403" ]; then
+  fail "Calendar book 403 — session lacks the 'book' permission."
+else
+  fail "Expected 200 dry-run for calendar; got HTTP $HTTP status='$CAL_STATUS': $(head -c 200 "$RESP")"
+fi
+# Prove the route source creates Teams meetings when Graph succeeds live.
+if grep -q 'isOnlineMeeting: true' src/lib/calendar.ts && grep -q 'teamsForBusiness' src/lib/calendar.ts; then
+  pass "Calendar Graph adapter requests Teams online meetings (isOnlineMeeting + teamsForBusiness)."
+else
+  fail "src/lib/calendar.ts missing Teams online-meeting flags."
 fi
 
 # ===========================================================================

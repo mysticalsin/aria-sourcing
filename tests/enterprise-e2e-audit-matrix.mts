@@ -179,6 +179,18 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       );
     },
   },
+  {
+    requirement: "Deployed E2E script covers calendar/Teams dry-run booking",
+    evidence: () => {
+      const script = readFileSync("e2e-workflow-test.sh", "utf8");
+      return (
+        /\/api\/calendar\/event/.test(script)
+        && /confirmLive:false/.test(script)
+        && /isOnlineMeeting/.test(script)
+        && /teamsForBusiness/.test(script)
+      );
+    },
+  },
 ];
 
 for (const row of MATRIX) {
