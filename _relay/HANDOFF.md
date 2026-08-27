@@ -3,29 +3,23 @@ project: MSourcing / ARIA
 shift: 99
 agent: cursor-cloud
 updated: 2026-08-27 UTC
-status: requisition-parse-wired-audit-matrix
+status: ci-quality-fixes-pushed
 ---
 
 # Handoff — Shift 99
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #30 → `integration/sourcing-enrichment-on-main`
-- **Loop worker:** `handleRequisitionParse` fully wired (ingest → parse → patch campaign → record → campaign_create)
-- **Cron route:** `/api/cron/parse-inbound-need` (CRON_SECRET; worker calls via `ARIA_WEB_INTERNAL_URL`)
-- **Migration 0062:** `requisition_parse` payload contract adds `inboundId` (UUID)
-- **Webhook payload:** ids-only `{ inboundId }` (matches DB contract)
-- **Audit matrix:** `tests/enterprise-e2e-audit-matrix.mts` — 15/15 requirements verified
-- **E2E script:** `e2e-workflow-test.sh` adds optional webhook need step + salary-disclosure quality gate
-- **Test gate:** `npx tsc --noEmit` green; `npm test` application green
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30** (supersedes closed #29 on same branch)
+- **Loop worker:** `handleRequisitionParse` fully wired
+- **Audit matrix:** `tests/enterprise-e2e-audit-matrix.mts` — 15/15
+- **Test gate (local):** `npx tsc --noEmit`, `npm run typecheck:tests`, `npm run lint` (0 errors), `npm test` application — all green
+- **CI:** Quality fixes pushed (6223735); awaiting GitHub re-run
 
 ## Done this shift
 
-- Implemented full requisition parse pipeline in loop worker
-- Added `src/lib/requisition-intake.ts` + cron parse route
-- Created enterprise E2E audit matrix test
-- Extended deployed E2E script with webhook + quality gate steps
-- Updated sourcing-loop-worker tests for new RPC flow
+- Wired full requisition parse pipeline + audit matrix + E2E script extensions
+- Fixed CI Quality blockers: typecheck:tests, lint error, source-demo-auth, security-audit rel, sourcing/apify fixtures for 80% floor
 
 ## E2E loop (verified)
 
