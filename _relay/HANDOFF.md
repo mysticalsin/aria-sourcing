@@ -1,48 +1,51 @@
 ---
 project: MSourcing / ARIA
-shift: 171
+shift: 172
 agent: cursor-cloud
-updated: 2026-08-27T15:35Z
+updated: 2026-08-27T15:47Z
 status: tip-code-hardened-awaiting-deploy-confirm
 ---
 
-# Handoff — Shift 171
+# Handoff — Shift 172
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32** · tip `b277ea5`
-- **Live Fly:** still build `ba88302` · mig `0060` · `/api/ready` not_ready (agentFrameworks) · Graph validationToken **404**
-- **Login:** twalteur@amaris.com admin OK (credentials in `/tmp/aria-e2e-admin-*`, mode 600)
-- **Secrets:** 6 Microsoft/Entra still MISSING; `AGENT_FRAMEWORKS_REQUIRED=false` set on app (ignored by stale image)
-- **Drop-zones:** `/tmp/owner-deploy-confirm.env` absent · `/tmp/owner-microsoft.env` absent · `ARIA_PROD_DEPLOY_CONFIRM` unset (will not invent)
-- **Waiter:** `fly-wait-entra` restarted with `ARIA_SKIP_AZ_DEVICE_REFRESH=1`; triggers on az login, microsoft drop-zone, **or deploy-confirm alone**
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32** · tip `6eca772` (relay pin of `b277ea5`)
+- **Live Fly:** still build `ba88302` · mig `0060` · `/api/ready` not_ready · Graph validationToken **404** (ops: owner deploy-confirm)
+- **Drop-zones:** `/tmp/owner-deploy-confirm.env` / `/tmp/owner-microsoft.env` absent; `ARIA_PROD_DEPLOY_CONFIRM` unset (will not invent)
+- **Code-gap audit (post tip+secrets, excl. ops):** 5 actionable mismatches ranked below — #1 will break live E2E approve after tip
 
 ## Done this shift
 
-- Waiter: deploy-confirm-only golive path + skip device refresh
-- Approve/send: fail-closed `critics_required` when live LLM critics unavailable (non-demo)
-- Settings Get started copy: webhook-first / no inbox polling
-- `email_sync` refuses empty `inboundIds` (no polling stand-in)
-- LangGraph header: honest stage-checkpoint (real work in worker/cron)
+- Fresh code-gap audit vs enterprise E2E + LangChain/no-fake-UX objective (skip deploy/secrets)
+- Confirmed prior gaps fixed: top-10 approve, Mantu brand gate, enterpriseMantuVoice, approve/send critics_required fail-closed, empty email_sync refuse
+
+## Blockers
+
+- Owner deploy-confirm + Microsoft secrets (unchanged; do not invent)
+- Code: human approve/send rejects `needs_review` after requiring live critics → stuck loop + E2E LinkedIn approve FAIL
 
 ## Next steps
 
-1. Owner: `bash scripts/print-fly-deploy-confirm.sh` → write `/tmp/owner-deploy-confirm.env` (or export) → tip deploy via golive / `fly-deploy-now.sh`
-2. Owner (when ready): `/tmp/owner-microsoft.env` or az login → Graph OAuth (skipped Entra MFA earlier — do not re-spam)
-3. After tip: Connect Outlook (seat mode=live) + webhook → `eval "$(bash scripts/print-fly-e2e-env.sh --export)" && bash e2e-workflow-test.sh`
-4. Goal complete only when: ready ok + mig>=0066 + tip build + Graph200 + E2E PASS
+1. **Code (highest impact):** In `src/app/api/outreach/approve/route.ts` + `send/route.ts`, fail-closed only on `!llmCriticsUsed` (non-demo) and `status === "blocked"` — do **not** 422 on `needs_review` (human approval resolves review)
+2. **Code:** Force Mantu in `src/app/api/hermes/chat/route.ts` TASK_SYSTEM.outreach + `e2e-workflow-test.sh` draft/canned bodies
+3. **Code:** Align LangGraph `validateQuality` with live multi-agent critics (or pass live verdict into graph state from draft cron)
+4. **Code:** Fail-closed or auto-retry Graph subscription on OAuth callback (E2E needs `graphSubscription.active`)
+5. **Code:** Harden `outreach-quality-pipeline-live.ts` critic JSON parse/retry (partial → silent `llmCriticsUsed:false` → 503)
+6. Owner: deploy-confirm → tip deploy → Connect Outlook + webhook → HeyReach connect → `e2e-workflow-test.sh`
 
 ## Decisions made (don't relitigate)
 
 - PR #32 supersedes #29–#31
-- Never invent Azure secrets or `ARIA_PROD_DEPLOY_CONFIRM` — use `print-fly-deploy-confirm.sh`
-- Seat mode=live for Teams book; calendar live only via `/api/calendar/event` + `confirmLive`
+- Never invent Azure secrets or `ARIA_PROD_DEPLOY_CONFIRM`
+- Seat mode=live for Teams book; LinkedIn send stays 409 assisted-manual
 - Mantu Fly: `AGENT_FRAMEWORKS_REQUIRED=false` on tip
-- LinkedIn send stays 409 assisted-manual; HeyReach = LinkedIn MCP path
-- Owner skipped Entra MFA — watch drop-zones only (`ARIA_SKIP_AZ_DEVICE_REFRESH=1`)
+- LangGraph = stage checkpoint after worker/cron side effects (not in-graph tool runtime)
+- Owner skipped Entra MFA — watch drop-zones only
 
 ## Watch out
 
-- ba88302 cannot opt out of agentFrameworks — tip deploy mandatory for ready green
-- Confirm drop-zone SHA must match clean tree HEAD at deploy time
-- Do not commit `/tmp` secrets or drop-zones
+- b277ea5 fail-closed critics + rejecting `needs_review` on human approve is the tip-side E2E landmine
+- Hermes outreach system prompt never mentions Mantu → deterministic `needs_review` (missing-mantu-brand)
+- Draft cron allows `needs_review` through; approve then hard-rejects it — loop cannot complete
+- ba88302 cannot opt out of agentFrameworks — tip deploy still mandatory for ready green
