@@ -70,7 +70,16 @@ export function OutlookNeedsPanel({
   const connected = outlookSeats.filter(seatHasOutlookMailbox);
   const connectSeat = outlookSeats.find((s) => !seatHasOutlookMailbox(s)) ?? outlookSeats[0];
 
-  async function pullNeeds() {
+  React.useEffect(() => {
+    // Webhook path is primary — do not auto-poll Graph on mount.
+    if (supabaseEnabled && connected.length > 0) {
+      setPulledOnce(true);
+      setDemoMode(false);
+    }
+  }, [supabaseEnabled, connected.length]);
+
+  /** Break-glass only: Graph webhook is the production intake path. */
+  async function emergencySyncNeeds() {
     setPulling(true);
     setLastError(null);
     try {
@@ -104,8 +113,11 @@ export function OutlookNeedsPanel({
         const err = json?.error ?? json?.detail ?? `Sync failed (${res.status})`;
         setLastError(err);
         setPulledOnce(true);
-        setDemoMode(true);
-        loadDemoNeeds(setNeeds, toast, `Live Outlook sync failed (${err}).`);
+        toast({
+          title: "Emergency sync failed",
+          description: err,
+          variant: "error",
+        });
         return;
       }
       if (json.status === "dry-run") {
@@ -124,18 +136,17 @@ export function OutlookNeedsPanel({
       setDemoMode(false);
       setPulledOnce(true);
       toast({
-        title: filtered.length ? "Open needs from Outlook" : "No open needs found",
+        title: filtered.length ? "Emergency sync results" : "No open needs in emergency sync",
         description: filtered.length
-          ? `${filtered.length} hiring-need email${filtered.length === 1 ? "" : "s"} ready to source.`
-          : "Inbox synced, but nothing matched a hiring-need pattern. Try paste-to-parse below.",
+          ? `${filtered.length} hiring-need email${filtered.length === 1 ? "" : "s"} (break-glass poll — prefer Graph webhook).`
+          : "Prefer webhook intake. Paste a brief below if the need is not yet delivered.",
         variant: filtered.length ? "success" : "info",
       });
     } catch (e) {
       const err = e instanceof Error ? e.message : "Mailbox sync timed out.";
       setLastError(err);
       setPulledOnce(true);
-      setDemoMode(true);
-      loadDemoNeeds(setNeeds, toast, `Outlook pull failed (${err}).`);
+      toast({ title: "Emergency sync failed", description: err, variant: "error" });
     } finally {
       setPulling(false);
     }
@@ -151,10 +162,10 @@ export function OutlookNeedsPanel({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <Eyebrow>Outlook → sourcing</Eyebrow>
-            <CardTitle className="mt-1">Pull open needs</CardTitle>
+            <CardTitle className="mt-1">Webhook open needs</CardTitle>
             <p className="mt-1.5 max-w-xl text-sm text-muted">
-              Connect Microsoft 365 once, pull hiring emails, pick a need, parse, then start sourcing —
-              no copy-paste from Outlook.
+              Hiring emails arrive via Microsoft Graph push (no inbox polling). Connect Outlook once —
+              Aria registers a Graph subscription and routes needs into the recruiting loop.
             </p>
           </div>
           <Badge tone={connected.length ? "success" : demoMode ? "electric" : "warning"} dot>
@@ -192,13 +203,13 @@ export function OutlookNeedsPanel({
           <Button
             type="button"
             size="sm"
-            variant={connected.length ? "primary" : "subtle"}
+            variant="subtle"
             leftIcon={<RefreshCw className={cn("h-3.5 w-3.5", pulling && "animate-spin")} aria-hidden />}
-            onClick={() => void pullNeeds()}
+            onClick={() => void emergencySyncNeeds()}
             loading={pulling}
             disabled={pulling || busy}
           >
-            {pulling ? "Pulling…" : "Pull open needs"}
+            {pulling ? "Syncing…" : "Emergency sync"}
           </Button>
           <Link
             href="/settings?tab=setup"
@@ -223,10 +234,10 @@ export function OutlookNeedsPanel({
             >
               <Inbox className="mt-0.5 h-5 w-5 shrink-0 text-electric" aria-hidden />
               <div>
-                <p className="text-sm font-semibold text-ink">One click from mailbox to campaign</p>
+                <p className="text-sm font-semibold text-ink">Graph webhook → campaign</p>
                 <p className="mt-1 text-xs text-muted">
-                  We only read the inbox (never send or delete). Matching subjects look like “new role”,
-                  “JD”, “backfill”, or Mantu “need is now ACTIVE” mail.
+                  Connect Outlook to register a change-notification subscription. New hiring emails
+                  enqueue requisition_parse automatically. Emergency sync is break-glass only.
                 </p>
               </div>
             </motion.div>
@@ -237,7 +248,7 @@ export function OutlookNeedsPanel({
               animate={{ opacity: 1 }}
               className="text-sm text-muted"
             >
-              No hiring-need emails in the latest sync. Paste a brief below, or check another mailbox in Fleet.
+              Waiting for webhook-delivered needs. Paste a brief below, or use Emergency sync only if Graph push is unavailable.
             </motion.p>
           ) : (
             <motion.ul

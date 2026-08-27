@@ -125,6 +125,15 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  if (conn.provider === "Microsoft Graph") {
+    try {
+      const { deleteGraphMailSubscription } = await import("@/lib/email-graph-subscriptions");
+      await deleteGraphMailSubscription({ workspaceId: wid, connectionId: conn.id });
+    } catch {
+      console.warn("[email-disconnect] graph subscription delete failed", { connectionId: conn.id });
+    }
+  }
+
   if (conn.provider === "Gmail API" && conn.refresh_token) {
     try {
       const body = new URLSearchParams({ token: decryptSecret(conn.refresh_token) });

@@ -19,9 +19,23 @@ test("parse-inbound-need requires cron auth and rejects Origin", async () => {
         jobAnalysis: { title: "Engineer", requiredSkills: ["TypeScript"] },
         sender: { name: "Pat", email: "pat@example.com" },
         parsed: {},
+        modelUsed: false,
       }),
       deterministicCampaignId: () => "camp-req-deadbeef",
       buildCampaignFromNeed: () => ({ id: "camp-req-deadbeef", title: "Engineer", status: "Sourcing" }),
+    },
+  });
+  mock.module(moduleUrl("src/lib/requisition-intake-live.ts"), {
+    namedExports: {
+      parseInboundNeedLive: async () => ({
+        ready: true,
+        confidence: 0.9,
+        warnings: [],
+        jobAnalysis: { title: "Engineer", requiredSkills: ["TypeScript"] },
+        sender: { name: "Pat", email: "pat@example.com" },
+        parsed: {},
+        modelUsed: true,
+      }),
     },
   });
 

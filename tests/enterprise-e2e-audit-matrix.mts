@@ -48,16 +48,21 @@ function ok(name: string, cond: boolean) {
 const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
   {
     requirement: "Webhook routes hiring needs to requisition_parse (no polling)",
-    evidence: () =>
-      routeInboundEmail({
-        record: { ok: true, inbound_id: "81111111-1111-4111-8111-111111111111", duplicate: false },
-        from: "noreply@mantu.example",
-        subject: "This need is now ACTIVE: Senior Engineer",
-        body: "Role: Senior Engineer\nLocation: London\nKey required skills\n- TypeScript",
-        mailbox: "talent@mantu.com",
-      }).route === "hiring_need"
-      && /routeInboundEmail/.test(webhookRoute)
-      && !/poll.*mailbox|inbox.*poll/i.test(webhookRoute),
+    evidence: () => {
+      const ingest = readFileSync("src/lib/inbound-email-ingest.ts", "utf8");
+      return (
+        routeInboundEmail({
+          record: { ok: true, inbound_id: "81111111-1111-4111-8111-111111111111", duplicate: false },
+          from: "noreply@mantu.example",
+          subject: "This need is now ACTIVE: Senior Engineer",
+          body: "Role: Senior Engineer\nLocation: London\nKey required skills\n- TypeScript",
+          mailbox: "talent@mantu.com",
+        }).route === "hiring_need"
+        && /ingestNormalizedInboundEmail/.test(webhookRoute)
+        && /routeInboundEmail/.test(ingest)
+        && !/poll.*mailbox|inbox.*poll/i.test(webhookRoute)
+      );
+    },
   },
   {
     requirement: "requisition_parse job payload is ids-only (inboundId)",
@@ -222,6 +227,36 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       return (
         /reconciled\.status !== "reconciled"/.test(route)
         && /reconciliation-required/.test(route)
+      );
+    },
+  },
+  {
+    requirement: "Microsoft Graph mail webhook pushes Inbox creates (no polling)",
+    evidence: () => {
+      const route = readFileSync("src/app/api/webhooks/microsoft-graph/route.ts", "utf8");
+      const subs = readFileSync("src/lib/email-graph-subscriptions.ts", "utf8");
+      const migration = readFileSync("supabase/migrations/0064_graph_mail_subscriptions.sql", "utf8");
+      const panel = readFileSync("src/components/intake/outlook-needs-panel.tsx", "utf8");
+      return (
+        /validationToken/.test(route)
+        && /createGraphMailSubscription/.test(subs)
+        && /graph_mail_subscriptions/.test(migration)
+        && /Emergency sync/.test(panel)
+        && /Webhook open needs/.test(panel)
+      );
+    },
+  },
+  {
+    requirement: "Autonomous parse/draft prefer server LLM over mock stand-ins",
+    evidence: () => {
+      const parseRoute = readFileSync("src/app/api/cron/parse-inbound-need/route.ts", "utf8");
+      const draftRoute = readFileSync("src/app/api/cron/generate-outreach-draft/route.ts", "utf8");
+      const live = readFileSync("src/lib/requisition-intake-live.ts", "utf8");
+      return (
+        /parseInboundNeedLive/.test(parseRoute)
+        && /serverGenerateText/.test(draftRoute)
+        && /parseInboundNeedLive/.test(live)
+        && /serverGenerateText/.test(live)
       );
     },
   },

@@ -143,15 +143,29 @@ ok(
 const webhookRoute = existsSync("src/app/api/webhooks/email-inbound/route.ts")
   ? readFileSync("src/app/api/webhooks/email-inbound/route.ts", "utf8")
   : "";
+const inboundIngest = existsSync("src/lib/inbound-email-ingest.ts")
+  ? readFileSync("src/lib/inbound-email-ingest.ts", "utf8")
+  : "";
+const graphWebhook = existsSync("src/app/api/webhooks/microsoft-graph/route.ts")
+  ? readFileSync("src/app/api/webhooks/microsoft-graph/route.ts", "utf8")
+  : "";
 ok(
   "email-inbound webhook routes replies and hiring needs (event-driven, no polling)",
-  /routeInboundEmail/i.test(webhookRoute) &&
-    /enqueue_aria_job/i.test(webhookRoute) &&
-    /requisition_parse|inbound_classify|jobDecision\.kind/i.test(webhookRoute),
+  /ingestNormalizedInboundEmail/i.test(webhookRoute) &&
+    /routeInboundEmail/i.test(inboundIngest) &&
+    /enqueue_aria_job/i.test(inboundIngest) &&
+    /requisition_parse|inbound_classify|jobDecision\.kind/i.test(inboundIngest),
 );
 ok(
   "email-inbound webhook skips classify enqueue on duplicate redelivery",
-  /duplicate/i.test(webhookRoute),
+  /duplicate/i.test(webhookRoute) && /duplicate/i.test(inboundIngest),
+);
+ok(
+  "Microsoft Graph mail webhook validates clientState and ingests without polling",
+  /validationToken/i.test(graphWebhook) &&
+    /verifyGraphClientState/i.test(graphWebhook) &&
+    /ingestNormalizedInboundEmail/i.test(graphWebhook) &&
+    /fetchGraphMessageForIngest/i.test(graphWebhook),
 );
 
 console.log(`RESULT email-inbound-contract: ${pass} passed, ${fail} failed`);

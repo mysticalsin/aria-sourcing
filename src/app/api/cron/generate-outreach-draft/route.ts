@@ -3,11 +3,15 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { buildOutreachPrompt, parseHermesOutreach } from "@/lib/ai/hermes";
+import { serverGenerateText } from "@/lib/ai/server-generate";
 import { mantuOutreachVoice, mantuEmailHtmlWrapper } from "@/lib/mantu-brand";
 import { generateOutreach, newOutreachMessage } from "@/lib/mock-ai";
+import { humanizeText } from "@/lib/humanizer";
 import { validateOutreachQuality } from "@/lib/outreach-quality-pipeline";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import type { Candidate, Campaign, OutreachChannel, SystemSettings } from "@/lib/types";
+import { candidateDisclosureContextForCampaignLike } from "@/lib/agent-disclosure-policy";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -71,7 +75,46 @@ export async function POST(req: NextRequest) {
     parsed.data.channel ??
     (candidate.linkedinUrl ? "LinkedIn" : "Email");
   const voice = mantuOutreachVoice();
-  const generated = generateOutreach(candidate, campaign, "Casual Professional", channel, 1, voice);
+  const mockGenerated = generateOutreach(candidate, campaign, "Casual Professional", channel, 1, voice);
+
+  let generated = mockGenerated;
+  let modelUsed = false;
+  const prompt = buildOutreachPrompt({
+    candidateName: candidate.name,
+    candidateTitle: candidate.currentTitle,
+    candidateCompany: candidate.currentCompany,
+    techStack: candidate.techStack,
+    recentActivity: candidate.recentActivity,
+    yearsExperience: candidate.yearsExperience,
+    roleTitle: campaign.jobAnalysis.title,
+    locationType: campaign.jobAnalysis.locationType,
+    regions: campaign.jobAnalysis.regions,
+    requiredSkills: campaign.jobAnalysis.requiredSkills,
+    roleContext: candidateDisclosureContextForCampaignLike(campaign),
+    tone: "Casual Professional",
+    channel,
+    language: campaign.jobAnalysis.language ?? "en",
+    persona: voice.persona,
+    signature: voice.signature,
+  });
+  const live = await serverGenerateText({
+    system:
+      "You write empathetic, Mantu-branded recruiting outreach. Never invent credentials. Never disclose salary. No AI self-disclosure. Reply with Subject: line then body.",
+    prompt,
+    maxTokens: 1024,
+  });
+  if (live.ok) {
+    const parsedLive = parseHermesOutreach(live.text, channel, mockGenerated.subject);
+    if (parsedLive) {
+      generated = {
+        ...mockGenerated,
+        subject: humanizeText(parsedLive.subject),
+        body: humanizeText(parsedLive.body),
+      };
+      modelUsed = true;
+    }
+  }
+
   const quality = validateOutreachQuality({
     subject: generated.subject,
     body: generated.body,
@@ -104,5 +147,6 @@ export async function POST(req: NextRequest) {
     channel,
     quality,
     outreach,
+    modelUsed,
   });
 }

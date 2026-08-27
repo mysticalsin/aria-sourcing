@@ -178,6 +178,20 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  // Create Graph change-notification subscription (webhook push, no inbox polling).
+  try {
+    const { createGraphMailSubscription } = await import("@/lib/email-graph-subscriptions");
+    const sub = await createGraphMailSubscription({ workspaceId: wid, connectionId: upserted.id });
+    if (!sub.ok) {
+      console.error("[microsoft/callback] graph subscription:", sub.reason);
+    }
+  } catch (err) {
+    console.error(
+      "[microsoft/callback] graph subscription error:",
+      err instanceof Error ? err.message : "unknown",
+    );
+  }
+
   return redirectSuccess(req, `Connected ${accountEmail}`);
 }
 

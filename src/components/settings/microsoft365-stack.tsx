@@ -84,7 +84,7 @@ function Microsoft365StackInner() {
     (ssoReady ? 1 : 0) +
     (oauthReady && mailboxConnected ? 1 : 0) +
     (calendarReady ? 1 : 0) +
-    (inboundReady && inboundActive ? 1 : 0);
+    (inboundActive ? 1 : 0);
   const progressPct = (stepsComplete / 4) * 100;
 
   let statusLabel = loading ? "Checking Microsoft 365…" : "Not started";
@@ -192,7 +192,7 @@ function Microsoft365StackInner() {
             {
               id: "calendar-scope",
               label: "Calendars.ReadWrite scope",
-              ok: calendarScoped || (mailboxConnected && oauthReady),
+              ok: calendarScoped,
               hint: calendarScoped
                 ? "Granted on connected Outlook mailbox"
                 : mailboxConnected
@@ -212,20 +212,28 @@ function Microsoft365StackInner() {
       <ConnectionStep
         step={4}
         title="Webhook intake (no polling)"
-        subtitle="Graph adapter or n8n forwards mail — agents never idle-scan inboxes."
-        state={inboundReady && inboundActive ? "complete" : inboundReady || mailboxConnected ? "active" : "pending"}
+        subtitle="Microsoft Graph pushes Inbox creates to Aria — agents never idle-scan mailboxes."
+        state={inboundActive ? "complete" : mailboxConnected || inboundReady ? "active" : "pending"}
       >
         <SystemReadiness
           items={[
             {
+              id: "graph-webhook",
+              label: "Graph mail subscription",
+              ok: mailboxConnected && inboundActive,
+              hint: mailboxConnected
+                ? "Created on Outlook connect via /api/webhooks/microsoft-graph"
+                : "Connect Outlook to register a Graph change-notification subscription.",
+            },
+            {
               id: "webhook-secret",
-              label: "EMAIL_INBOUND_WEBHOOK_SECRET",
+              label: "HMAC adapter secret (optional)",
               ok: inboundReady,
               hint: loading
                 ? "Checking deployment env…"
                 : inboundReady
-                  ? "HMAC secret configured"
-                  : "Set secret; POST /api/webhooks/email-inbound with x-aria-signature",
+                  ? "Also accepts signed POST /api/webhooks/email-inbound"
+                  : "Optional for n8n/adapters; Graph path uses clientState.",
             },
             {
               id: "need-routing",

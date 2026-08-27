@@ -7,8 +7,8 @@ import {
   buildCampaignFromNeed,
   buildInboundEmailText,
   deterministicCampaignId,
-  parseInboundNeed,
 } from "@/lib/requisition-intake";
+import { parseInboundNeedLive } from "@/lib/requisition-intake-live";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, status: "empty_input" }, { status: 400 });
   }
 
-  const result = parseInboundNeed(emailText);
+  const result = await parseInboundNeedLive(emailText);
   const campaignId =
     parsed.data.campaignId?.trim()
     || (parsed.data.requisitionId ? deterministicCampaignId(parsed.data.requisitionId) : "");
@@ -81,5 +81,6 @@ export async function POST(req: NextRequest) {
     sender: result.sender,
     campaignId: campaign?.id ?? (campaignId || null),
     campaign,
+    modelUsed: result.modelUsed,
   });
 }

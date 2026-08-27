@@ -166,10 +166,8 @@ export default function IntakePage() {
     });
   }
 
-  /** Scans the connected mailbox for hiring-need emails and loads the newest
-   * one into the form. A bundled sample is available only in explicit demo
-   * mode; a live tenant never substitutes sample data for an empty inbox. */
-  async function scanInbox() {
+  /** Break-glass mailbox poll. Production intake is Graph webhook push. */
+  async function emergencySyncInbox() {
     const seq = ++liveParseSeqRef.current;
     setParsing(true);
 
@@ -205,7 +203,8 @@ export default function IntakePage() {
       setParsing(false);
       toast({
         title: "No hiring need found",
-        description: "The connected mailbox returned no hiring-need email. Nothing was created or substituted.",
+        description:
+          "Emergency sync found no hiring-need email. Prefer Graph webhook intake; nothing was created or substituted.",
         variant: "warning",
       });
       return;
@@ -503,11 +502,11 @@ export default function IntakePage() {
                     variant="subtle"
                     size="sm"
                     leftIcon={<Inbox aria-hidden />}
-                    onClick={scanInbox}
+                    onClick={emergencySyncInbox}
                     loading={parsing}
                     disabled={parsing}
                   >
-                    Scan inbox
+                    Emergency sync
                   </Button>
                   <Button
                     type="button"
@@ -521,11 +520,11 @@ export default function IntakePage() {
                   </Button>
                 </div>
                 <p className="text-xs text-muted">
-                  Inbound emails can also POST to{" "}
+                  Production intake is Microsoft Graph webhook push to{" "}
                   <code className="rounded bg-ink/[0.06] px-1 py-0.5 font-mono text-[0.6875rem] text-ink-soft">
-                    /api/intake
+                    /api/webhooks/microsoft-graph
                   </code>
-                  {". "}A Microsoft Graph / n8n webhook scans the JD email and returns a structured brief.
+                  {". "}Emergency sync polls only as break-glass.
                 </p>
               </div>
             </CardBody>
