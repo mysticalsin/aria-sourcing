@@ -78,22 +78,66 @@ ok(
   ).length === 10,
 );
 
-void runRecruitingGraph({
-  workspaceId: "ws-1",
-  inboundId: "inb-1",
-  candidateIds: ["a", "b", "c"],
-  drafts: {
-    a: {
-      subject: "Your work",
-      body: "Hi Sam, I noticed your recent React work and wondered if you would be open to a brief chat about a senior role at Mantu.",
-      channel: "Email",
+void (async () => {
+  const state = await runRecruitingGraph({
+    workspaceId: "ws-1",
+    inboundId: "inb-1",
+    candidateIds: ["a", "b", "c"],
+    drafts: {
+      a: {
+        subject: "Your work",
+        body: "Hi Sam, I noticed your recent React work and wondered if you would be open to a brief chat about a senior role at Mantu.",
+        channel: "Email",
+      },
     },
-  },
-}).then((state) => {
+  });
   ok(
-    "langgraph recruiting pipeline completes",
-    ["queued_for_approval", "approval_blocked", "interview_scheduled"].includes(state.stage),
+    "langgraph recruiting pipeline ends at approval without bookingId",
+    state.stage === "queued_for_approval" || state.stage === "approval_blocked",
   );
+  ok("langgraph does not fake interview_scheduled without bookingId", state.stage !== "interview_scheduled");
+
+  const booked = await runRecruitingGraph({
+    workspaceId: "ws-1",
+    inboundId: "inb-1",
+    candidateIds: ["a"],
+    bookingId: "book-1",
+    drafts: {
+      a: {
+        subject: "Your work",
+        body: "Hi Sam, I noticed your recent React work and wondered if you would be open to a brief chat about a senior role at Mantu.",
+        channel: "Email",
+      },
+    },
+  });
+  ok(
+    "langgraph reports interview_scheduled only with bookingId",
+    booked.stage === "interview_scheduled" || booked.stage === "approval_blocked",
+  );
+
+  const failed = await runRecruitingGraph({
+    workspaceId: "ws-1",
+    candidateIds: ["a"],
+  });
+  ok("langgraph fail-stops on missing inboundId", failed.stage === "parse_requisition_failed");
+
+  const draftOnly = await runRecruitingGraph({
+    intent: "draft_quality",
+    workspaceId: "ws-1",
+    candidateIds: ["a"],
+    drafts: {
+      a: {
+        subject: "Your work",
+        body: "Hi Sam, I noticed your recent React work and wondered if you would be open to a brief chat about a senior role at Mantu.",
+        channel: "Email",
+      },
+    },
+  });
+  ok(
+    "draft_quality intent never claims interview_scheduled",
+    draftOnly.stage === "queued_for_approval" || draftOnly.stage === "approval_blocked",
+  );
+
   console.log(`RESULT mantu-e2e-loop: ${pass} passed, ${fail} failed`);
   if (fail > 0) process.exit(1);
-});
+})();

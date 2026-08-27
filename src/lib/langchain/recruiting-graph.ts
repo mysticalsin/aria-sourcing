@@ -8,6 +8,15 @@
  * Authority remains in Supabase job RPCs (`PIPELINE_STAGE_TRANSITIONS` /
  * `pipeline-transitions.json`). LangGraph holds the stage machine and maps
  * completed graph stages onto the next job kind the loop worker may enqueue.
+ *
+ * Intents:
+ *   - `full` (default): intake → shortlist → draft → quality → approval → book
+ *   - `draft_quality`: start at draftOutreach (cron draft hook; no fake booking)
+ *
+ * Fail-stops:
+ *   - parse failure → END at `parse_requisition_failed`
+ *   - quality blocked → END at `approval_blocked`
+ *   - no bookingId → END at `queued_for_approval` (never claim `interview_scheduled`)
  */
 
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
@@ -20,6 +29,11 @@ import graphStageJobs from "@/lib/langchain/graph-stage-jobs.json";
 export const RecruitingGraphState = Annotation.Root({
   /** Workspace tenant id. */
   workspaceId: Annotation<string>(),
+  /**
+   * Run intent: full webhook→book loop, or draft/quality-only (cron hook).
+   * Draft-quality skips intake and never claims interview_scheduled without bookingId.
+   */
+  intent: Annotation<"full" | "draft_quality">(),
   /** Inbound email id from record_inbound_email. */
   inboundId: Annotation<string | undefined>(),
   /** Parsed campaign id once created. */
@@ -135,8 +149,14 @@ async function queueApproval(state: RecruitingGraphStateType): Promise<Partial<R
   };
 }
 
-/** Node: first interview scheduled (Teams / Outlook calendar). */
+/** Node: first interview scheduled (Teams / Outlook calendar) — bookingId required. */
 async function scheduleInterview(state: RecruitingGraphStateType): Promise<Partial<RecruitingGraphStateType>> {
+  if (!state.bookingId) {
+    return {
+      stage: "queued_for_approval",
+      errors: ["missing_booking_id"],
+    };
+  }
   return { stage: "interview_scheduled", bookingId: state.bookingId };
 }
 
@@ -150,16 +170,23 @@ function buildRecruitingGraph() {
     .addNode("validateQuality", validateQuality)
     .addNode("queueApproval", queueApproval)
     .addNode("scheduleInterview", scheduleInterview)
-    .addEdge(START, "receiveEmail")
+    .addConditionalEdges(START, (state) => {
+      return state.intent === "draft_quality" ? "draftOutreach" : "receiveEmail";
+    })
     .addEdge("receiveEmail", "parseRequisition")
-    .addEdge("parseRequisition", "sourceCandidates")
+    .addConditionalEdges("parseRequisition", (state) => {
+      return state.stage === "parse_requisition_failed" ? END : "sourceCandidates";
+    })
     .addEdge("sourceCandidates", "rankTop10")
     .addEdge("rankTop10", "draftOutreach")
     .addEdge("draftOutreach", "validateQuality")
     .addEdge("validateQuality", "queueApproval")
     .addConditionalEdges("queueApproval", (state) => {
       const blocked = Object.values(state.quality ?? {}).some((v) => v.status === "blocked");
-      return blocked ? END : "scheduleInterview";
+      if (blocked) return END;
+      // Only claim interview booking when a real booking id is present.
+      if (state.bookingId) return "scheduleInterview";
+      return END;
     })
     .addEdge("scheduleInterview", END);
 
@@ -174,13 +201,18 @@ export function getRecruitingGraph() {
   return compiledGraph;
 }
 
+export type RunRecruitingGraphInput = Partial<RecruitingGraphStateType> & {
+  intent?: "full" | "draft_quality";
+};
+
 /** Run the graph from an initial partial state (for tests and API routes). */
 export async function runRecruitingGraph(
-  input: Partial<RecruitingGraphStateType>,
+  input: RunRecruitingGraphInput,
 ): Promise<RecruitingGraphStateType> {
   const graph = getRecruitingGraph();
   const result = await graph.invoke({
     workspaceId: input.workspaceId ?? "",
+    intent: input.intent ?? "full",
     inboundId: input.inboundId,
     campaignId: input.campaignId,
     candidateIds: input.candidateIds ?? [],

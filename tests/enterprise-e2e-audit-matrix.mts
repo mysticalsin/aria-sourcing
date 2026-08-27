@@ -565,6 +565,24 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       );
     },
   },
+  {
+    requirement: "LangGraph fail-stops parse failure and never fakes interview_scheduled",
+    evidence: () => {
+      const graph = readFileSync("src/lib/langchain/recruiting-graph.ts", "utf8");
+      const draft = readFileSync("src/app/api/cron/generate-outreach-draft/route.ts", "utf8");
+      const e2e = readFileSync("e2e-workflow-test.sh", "utf8");
+      return (
+        /intent === "draft_quality"/.test(graph)
+        && /parse_requisition_failed/.test(graph)
+        && /missing_booking_id/.test(graph)
+        && /if \(state\.bookingId\) return "scheduleInterview"/.test(graph)
+        && /intent: "draft_quality"/.test(draft)
+        && /graph_stage_invalid/.test(draft)
+        && /ARIA_ALLOW_CANNED_DRAFT_E2E/.test(e2e)
+        && /Fly enterprise E2E requires live Hermes/.test(e2e)
+      );
+    },
+  },
 ];
 
 for (const row of MATRIX) {

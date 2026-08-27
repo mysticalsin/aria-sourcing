@@ -117,8 +117,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Always run LangGraph for stage observability, even when LLM draft fails.
+  // Draft cron runs the draft→quality→approval subgraph only. Never claim
+  // interview_scheduled here — booking requires calendar confirmLive + bookingId.
   const graphResult = await runRecruitingGraph({
+    intent: "draft_quality",
     workspaceId: parsed.data.workspaceId,
     campaignId: campaign.id,
     candidateIds: [candidate.id],
@@ -131,6 +133,17 @@ export async function POST(req: NextRequest) {
       },
     },
   });
+  if (graphResult.stage === "interview_scheduled") {
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "graph_stage_invalid",
+        detail: "Draft cron must not report interview_scheduled without a booking id.",
+        graphStage: graphResult.stage,
+      },
+      { status: 500 },
+    );
+  }
 
   // Autonomous loop drafts must not silently ship mock-ai copy as success.
   if (!modelUsed) {

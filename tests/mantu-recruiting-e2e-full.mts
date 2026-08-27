@@ -110,8 +110,32 @@ async function main() {
     drafts,
   });
   ok(
-    "LangGraph completes pipeline",
-    ["queued_for_approval", "approval_blocked", "interview_scheduled"].includes(graphState.stage),
+    "LangGraph completes to approval without faking a booking",
+    graphState.stage === "queued_for_approval" || graphState.stage === "approval_blocked",
+  );
+  ok("LangGraph does not claim interview_scheduled without bookingId", graphState.stage !== "interview_scheduled");
+  const bookedState = await runRecruitingGraph({
+    workspaceId: "ws-e2e",
+    inboundId: "inb-need-1",
+    campaignId: e2eCampaign.id,
+    candidateIds: top10.map((c) => c.id),
+    drafts,
+    bookingId: "book-e2e-1",
+  });
+  ok(
+    "LangGraph interview_scheduled only when bookingId present",
+    bookedState.stage === "interview_scheduled" || bookedState.stage === "approval_blocked",
+  );
+  const draftHook = await runRecruitingGraph({
+    intent: "draft_quality",
+    workspaceId: "ws-e2e",
+    campaignId: e2eCampaign.id,
+    candidateIds: [top10[0]!.id],
+    drafts: { [top10[0]!.id]: drafts[top10[0]!.id]! },
+  });
+  ok(
+    "draft_quality cron path ends at approval stage",
+    draftHook.stage === "queued_for_approval" || draftHook.stage === "approval_blocked",
   );
   ok("LangGraph shortlist size", (graphState.shortlistIds?.length ?? 0) <= TOP_CANDIDATE_SHORTLIST_SIZE);
   ok(

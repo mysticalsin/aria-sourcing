@@ -1,51 +1,50 @@
 ---
 project: MSourcing / ARIA
-shift: 127
+shift: 128
 agent: cursor-cloud
 updated: 2026-08-27 UTC
 status: code-complete-awaiting-owner-deploy
 ---
 
-# Handoff — Shift 127
+# Handoff — Shift 128
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open (supersedes closed #29, #30)
-- **Local tip:** deploy path now stages `ARIA_EXPECTED_*` + `ARIA_RELEASE_SHA` from tip ledger (floor **0066_calendar_meeting_url.sql**, count 65)
-- **Local gate:** tsc + audit **41/41**; login-page aligned with `AZURE_LOGIN_ARG=false` default
-- **Fly live:** build `ba88302`, migration **0060** — Graph webhook **404**; `/api/ready` not_ready — needs tip + **0066**
-- **Owner blockers:** `ARIA_PROD_DEPLOY_CONFIRM` unset; prefer M365/webhook/Entra secrets **before** deploy so Azure login build-arg turns on; admin E2E creds
-- **Note:** `FLY_API_TOKEN` available for read-only probes; deploy still requires confirm
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open
+- **Tip work:** LangGraph fail-stops + draft_quality intent; Fly E2E refuses canned drafts
+- **Local gate:** green; audit **42/42**; mantu-recruiting-e2e-full **33/33**; mantu-e2e-loop **12/12**
+- **Fly live:** build `ba88302`, migration **0060**, Graph **404** — still needs owner tip deploy + **0066**
+- **Owner blockers:** `ARIA_PROD_DEPLOY_CONFIRM`; `MICROSOFT_*`; `EMAIL_INBOUND_WEBHOOK_SECRET`; `GOTRUE_EXTERNAL_AZURE_*`; admin E2E creds
 
 ## Done this shift
 
-- `scripts/fly-deploy-now.sh` computes migration ledger identity and `flyctl secrets set --stage` for `ARIA_EXPECTED_MIGRATION{,_SHA,_COUNT}` + `ARIA_EXPECTED_LEDGER_SHA` (+ `--env` on deploy)
-- Floor check requires tip ≥ `0066_calendar_meeting_url.sql`
-- Audit matrix row: Fly deploy refreshes `ARIA_EXPECTED_*` for `/api/ready`
-- `tests/login-page.mts` expects workflow default `AZURE_LOGIN_ARG=false` (not stale literal `NEXT_PUBLIC_ENABLE_AZURE_LOGIN=false`)
+- `recruiting-graph.ts`: `intent` full|draft_quality; parse fail → END; `interview_scheduled` only with `bookingId`
+- `generate-outreach-draft`: `intent: "draft_quality"` + rejects fake `interview_scheduled`
+- `e2e-workflow-test.sh`: Fly fail-closed on canned Hermes drafts (`ARIA_ALLOW_CANNED_DRAFT_E2E`); Entra surface check
+- Prior: `fly-deploy-now.sh` stages tip `ARIA_EXPECTED_*` ledger identity (0066 floor)
 
 ## Blockers
 
-- Live Fly cannot advance without owner: `ARIA_PROD_DEPLOY_CONFIRM` + secrets + `e2e-workflow-test.sh` credentials
+- Live Fly cannot advance without owner confirm + secrets
 
 ## Next steps
 
 1. Owner: `bash scripts/fly-enterprise-activate.sh $(git rev-parse HEAD)`
-2. Owner: set `GOTRUE_EXTERNAL_AZURE_*` + `MICROSOFT_*` + `EMAIL_INBOUND_WEBHOOK_SECRET` on Fly (before deploy preferred)
-3. Owner: `bash scripts/print-fly-deploy-confirm.sh` → export confirm → `bash scripts/fly-deploy-now.sh`
+2. Owner: set `GOTRUE_EXTERNAL_AZURE_*` + `MICROSOFT_*` + `EMAIL_INBOUND_WEBHOOK_SECRET` before deploy
+3. Owner: `bash scripts/print-fly-deploy-confirm.sh` → `bash scripts/fly-deploy-now.sh`
 4. Owner: `bash scripts/print-fly-e2e-env.sh` + admin creds → `bash e2e-workflow-test.sh`
-5. Agent: on timer, recheck `/api/ready` for build=tip and migration `0066_*`; run E2E if secrets present
+5. Agent timer: recheck `/api/ready` for build=tip + migration `0066_*`; run E2E if creds present
 
 ## Decisions made (don't relitigate)
 
 - PR #31 supersedes closed #29 and #30
 - No Fly deploy without `ARIA_PROD_DEPLOY_CONFIRM`
-- Use `bash scripts/print-fly-deploy-confirm.sh` for exact deploy one-liner
 - Skip Actions billing failures; local gate is authority
-- Target migration is **0066** (not 0065)
-- Deploy must refresh `ARIA_EXPECTED_*` secrets to tip ledger (stale 0060 identity left `/api/ready` stuck)
+- Target migration **0066**
+- Deploy refreshes `ARIA_EXPECTED_*` to tip ledger
+- Draft cron uses `draft_quality` intent — never claims booking without `bookingId`
 
 ## Watch out
 
-- Audit "Fly only" row requires literal `/0066/` in `fly-deploy-now.sh` (floor check satisfies this)
-- Live Graph route is 404 until tip deploy
+- Worker still advances jobs via shared JSON transitions (not `runRecruitingGraph` between handlers); graph is stage authority for draft cron + observability
+- Live Graph route 404 until tip deploy

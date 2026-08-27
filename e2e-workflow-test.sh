@@ -369,10 +369,22 @@ else
 fi
 if grep -q 'llm_required' src/app/api/cron/parse-inbound-need/route.ts \
   && grep -q 'llm_required' src/app/api/intake/route.ts \
-  && grep -q 'critics_required' src/app/api/cron/generate-outreach-draft/route.ts; then
-  pass "Autonomous parse/draft/intake fail closed without live LLM (llm_required + critics_required)."
+  && grep -q 'critics_required' src/app/api/cron/generate-outreach-draft/route.ts \
+  && grep -q 'intent: "draft_quality"' src/app/api/cron/generate-outreach-draft/route.ts \
+  && grep -q 'graph_stage_invalid' src/app/api/cron/generate-outreach-draft/route.ts; then
+  pass "Autonomous parse/draft/intake fail closed (llm_required + critics_required + draft_quality stage honesty)."
 else
   fail "LLM fail-closed guards missing from parse, intake, or draft routes."
+fi
+
+# Entra SSO surface: login page exposes Azure only when the public flag is compiled in.
+# After tip deploy with GoTrue Azure secrets, fly-deploy-now sets NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true.
+if grep -q 'azureLoginEnabled' src/app/login/page.tsx \
+  && grep -q 'provider: "azure"' src/app/login/page.tsx \
+  && grep -q 'NEXT_PUBLIC_ENABLE_AZURE_LOGIN' fly.app.toml; then
+  pass "Entra SSO login surface is flag-gated (azure provider + NEXT_PUBLIC_ENABLE_AZURE_LOGIN)."
+else
+  fail "Entra SSO login surface missing or not flag-gated."
 fi
 
 # ===========================================================================
@@ -470,7 +482,7 @@ CAND_LI=$(jq -r '(.linkedinUrl // .githubUrl // "") | select(.!="")' "$WORK/cand
 CAND_EMAIL=$(jq -r '(.email // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null)
 [ -n "$CAND_EMAIL" ] || CAND_EMAIL="e2e.candidate@example.com"
 
-# ---- draft generator: /api/hermes/chat task=outreach; falls back to a canned draft ----
+# ---- draft generator: /api/hermes/chat task=outreach; Fly fail-closed (no canned) ----
 DRAFT_SUBJECT=""; DRAFT_BODY=""
 gen_draft() {  # $1 = channel label used only in the prompt
   local channel="$1" prompt gen ok text
@@ -489,15 +501,28 @@ gen_draft() {  # $1 = channel label used only in the prompt
   return 1
 }
 
+require_live_draft_or_canned() {
+  # $1 = channel label for messages
+  local channel="$1"
+  if gen_draft "$channel"; then
+    pass "Generated a ${channel} draft via /api/hermes/chat (subject: \"$(printf '%.60s' "$DRAFT_SUBJECT")\")."
+    return 0
+  fi
+  if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_CANNED_DRAFT_E2E:-}" != "1" ]; then
+    fail "Fly enterprise E2E requires live Hermes ${channel} draft (canned fallback disabled). Set ARIA_ALLOW_CANNED_DRAFT_E2E=1 only for partial runs."
+    return 1
+  fi
+  DRAFT_SUBJECT="Your open-source TypeScript work"
+  DRAFT_BODY="Hi, I came across your recent TypeScript and React work and was genuinely impressed by how you structure things. We are hiring a senior engineer for a platform team in London and I thought of you. No pressure at all, but if you are even a little curious I would love to share more. Either way, keep up the great work."
+  warn "${channel} draft generation degraded (no tool-calling/provider key): $(jq -rc '.reason // empty' "$RESP") — using a canned draft so the approval + no-send assertions still run."
+  return 0
+}
+
 # ===========================================================================
 step "4) LinkedIn outreach — draft → approve (assisted-manual) → NO send fired"
 # ===========================================================================
-if gen_draft "LinkedIn"; then
-  pass "Generated a LinkedIn draft via /api/hermes/chat (subject: \"$(printf '%.60s' "$DRAFT_SUBJECT")\")."
-else
-  DRAFT_SUBJECT="Your open-source TypeScript work"
-  DRAFT_BODY="Hi, I came across your recent TypeScript and React work and was genuinely impressed by how you structure things. We are hiring a senior engineer for a platform team in London and I thought of you. No pressure at all, but if you are even a little curious I would love to share more. Either way, keep up the great work."
-  warn "Draft generation degraded (no tool-calling/provider key): $(jq -rc '.reason // empty' "$RESP") — using a canned draft so the approval + no-send assertions still run."
+if require_live_draft_or_canned "LinkedIn"; then
+  :
 fi
 
 # Quality gate: drafts must not disclose salary/budget (multi-agent compliance floor).
@@ -539,12 +564,8 @@ fi
 # ===========================================================================
 step "5) Email outreach — draft → send returns dry-run (nothing delivered)"
 # ===========================================================================
-if gen_draft "email"; then
-  pass "Generated an email draft via /api/hermes/chat (subject: \"$(printf '%.60s' "$DRAFT_SUBJECT")\")."
-else
-  DRAFT_SUBJECT="A role I think fits your TypeScript work"
-  DRAFT_BODY="Hi, your recent TypeScript and Node work caught my eye. We are hiring a senior engineer for a London platform team and I thought it might be up your street. Happy to share detail if useful, and no worries if the timing is off."
-  warn "Email draft generation degraded ($(jq -rc '.reason // empty' "$RESP")); using a canned draft."
+if require_live_draft_or_canned "email"; then
+  :
 fi
 
 if printf '%s\n%s' "$DRAFT_SUBJECT" "$DRAFT_BODY" | grep -Eiq '\b(salary|compensation|budget|£[0-9]|€[0-9]|\$[0-9]|120k|90000)\b'; then
