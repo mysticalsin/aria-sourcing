@@ -1,43 +1,45 @@
 ---
 project: MSourcing / ARIA
-shift: 178
+shift: 179
 agent: cursor-cloud
-updated: 2026-08-27T16:45Z
-status: tip-code-hardened-awaiting-deploy-confirm
+updated: 2026-08-27T17:15Z
+status: demo-ux-fixes-awaiting-tip-deploy
 ---
 
-# Handoff — Shift 178
+# Handoff — Shift 179
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32** · tip `43639f0`
-- **Live Fly:** still `ba88302` / mig `0060` / Graph **404**
-- **Unlock:** `ARIA_PROD_DEPLOY_CONFIRM` unset; drop-zones absent. Env has stale `ARIA_RELEASE_SHA=591a813` (ignore)
-- **Owner:** paste confirm from `bash scripts/print-fly-deploy-confirm.sh` (must match tip HEAD `43639f0`)
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32** · tip advancing (demo UX fixes)
+- **Live Fly:** still `ba88302` / mig `0060` / Graph **404** — tip deploy still blocked on confirm
+- **Unlock:** paste `ARIA_PROD_DEPLOY_CONFIRM` from `bash scripts/print-fly-deploy-confirm.sh` (must match HEAD)
 
 ## Done this shift
 
-- Gate Microsoft Graph `mode=live`: fleet PATCH + create refuse without inbound route + active Graph sub (`src/lib/microsoft-seat-live.ts`)
-- `ensure_graph_webhook` repairs inbound route and promotes seat to live
-- Disconnect demotes seat to `mode=mock`
-- Local gate green; audit matrix 45/45
+- Demo UX blockers from Tony walkthrough:
+  1. Consent: clearer GDPR hold copy + campaign bulk Record legitimate interest
+  2. Force dry-run when no mailbox; surface mode on approval card
+  3. Session-cache workspace bootstrap (hard reload paints from cache)
+  4. Integrations chip → `/settings?tab=integrations`
+  5. Intake: Role title / headcount / day rate / Contract|consulting
+  6. Trust ROI: live facts preferred; no synthetic loss hero
+  7. Chat/Files Demo → link Settings → AI & Models
+- Gate green (`tsc` + `npm test`)
 
 ## Next steps
 
-1. Owner: `ARIA_PROD_DEPLOY_CONFIRM` for tip `43639f0` via Cursor secret or `/tmp/owner-deploy-confirm.env`
-2. Owner: Microsoft client id/secret when ready
-3. Tip deploy → Connect Outlook → `e2e-workflow-test.sh`
-4. Goal complete: ready ok + mig>=0066 + tip build + Graph200 + E2E PASS
+1. Owner: deploy confirm for tip HEAD
+2. Tip deploy → Connect Outlook → record LI → Approve dry-run path
+3. Goal complete only after live tip + Graph200 + e2e PASS
 
 ## Decisions made (don't relitigate)
 
 - PR #32 supersedes #29–#31
-- Never invent Azure secrets or `ARIA_PROD_DEPLOY_CONFIRM`
-- Graph seat live only after inbound route + Graph subscription (OAuth, Enable webhook, fleet PATCH)
-- Owner skipped Entra MFA — secrets via portal/Cursor OK
+- Never invent `ARIA_PROD_DEPLOY_CONFIRM` or Azure secrets
+- GDPR hold stays; Approve is always a second click
+- Force dry-run with 0 connected outbound providers
 
 ## Watch out
 
-- Stale `ARIA_RELEASE_SHA` in env without confirm must not trigger deploy
-- Confirm SHA must equal clean tree HEAD (`43639f0`)
-- Actions budget exhausted; local gate is authority
+- Confirm SHA must equal clean tree HEAD after any tip commit
+- Do not click Approve/send in live demo unless dry-run confirmed
