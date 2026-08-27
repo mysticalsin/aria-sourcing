@@ -381,7 +381,13 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     evidence: () => {
       const golive = readFileSync("scripts/fly-golive-mantu-e2e.sh", "utf8");
       const handoff = readFileSync("_relay/HANDOFF.md", "utf8");
-      return /PR #30/.test(golive) && /supersedes closed \*\*#29\*\*/.test(handoff);
+      const printConfirm = readFileSync("scripts/print-fly-deploy-confirm.sh", "utf8");
+      return (
+        /PR #30/.test(golive)
+        && /supersedes closed \*\*#29\*\*/.test(handoff)
+        && /print-fly-deploy-confirm/.test(handoff)
+        && /ARIA_PROD_DEPLOY_CONFIRM/.test(printConfirm)
+      );
     },
   },
   {
