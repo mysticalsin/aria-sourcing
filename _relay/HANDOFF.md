@@ -1,44 +1,43 @@
 ---
 project: MSourcing / ARIA
-shift: 169
+shift: 170
 agent: cursor-cloud
-updated: 2026-08-27T15:10Z
-status: awaiting-microsoft-entra-and-deploy-confirm
+updated: 2026-08-27T15:20Z
+status: login-fixed-awaiting-tip-deploy-and-entra
 ---
 
-# Handoff — Shift 169
+# Handoff — Shift 170
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32**
-- **Fly live:** `ba88302` / mig `0060` / Graph **404** / not_ready
-- **Missing (6):** MICROSOFT_CLIENT_* + GOTRUE_EXTERNAL_AZURE_*
-- **Azure device code:** https://login.microsoft.com/device → **BVD8K23XG** (Twalteur@amaris.com + Authenticator MFA)
-- **MFA:** browser reached Authenticator number matching for Twalteur@amaris.com; owner phone approval still required
-- **Background:** tmux `fly-wait-entra` runs `scripts/fly-wait-entra-and-golive.sh` (auto mint/apply/golive when az login or drop-zone appears; never invents confirm)
-- **Preflight OK:** admin login + webhook HMAC; tip needs deploy for `jobQueued`/`requisition_parse`
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32** · tip `fa663ed`+
+- **Live login:** twalteur@amaris.com GoTrue password reset verified (password grant OK, role=admin). Demo login remains disabled.
+- **Fly `/api/ready`:** still `not_ready` on build `ba88302` — live image **ignores** `AGENT_FRAMEWORKS_REQUIRED=false` (old formula: production always requires frameworks). Tip has opt-out (`bbadf23`). Secret `AGENT_FRAMEWORKS_REQUIRED=false` is now set on aria-mantu-app for tip.
+- **Graph:** still **404** until tip deploy
+- **Entra / Microsoft:** owner **skipped** env setup actions — still MISSING 6 secrets; no drop-zone; no az login
+- **Deploy confirm:** unset (will not invent)
 
 ## Done this shift
 
-- `scripts/fly-wait-entra-and-golive.sh` long-poll Entra unlock → az-create --apply → golive-when-ready
-- Prior hydrate UX, sync-fly-e2e-tmp-secrets, az-create, deploy-confirm drop-zone
+- Reset + verified Twalteur GoTrue password (admin role intact)
+- Set Fly secret `AGENT_FRAMEWORKS_REQUIRED=false` (needed by tip; insufficient alone on ba88302)
+- Owner skipped Entra MFA / secrets external actions — do not re-block on those
 
 ## Next steps
 
-1. Owner: MFA approve device code **BVD8K23XG** OR fill `/tmp/owner-microsoft.env`
-2. `bash scripts/print-fly-deploy-confirm.sh` → `/tmp/owner-deploy-confirm.env` (never invent `ARIA_PROD_DEPLOY_CONFIRM`)
-3. Waiter/golive deploys tip → Connect Outlook (live) + webhook
-4. `eval "$(bash scripts/print-fly-e2e-env.sh --export)" && bash e2e-workflow-test.sh`
-5. Goal complete: ready ok + mig>=0066 + tip build + Graph200 + E2E PASS
+1. Owner: export confirm from `bash scripts/print-fly-deploy-confirm.sh` → `/tmp/owner-deploy-confirm.env` (or shell export) then `bash scripts/fly-deploy-now.sh` / golive — **required** for ready ok + Graph 200
+2. Owner: provide Microsoft secrets (`/tmp/owner-microsoft.env`) when ready for Outlook E2E (skipped for now)
+3. After tip: Connect Outlook (live) + webhook → `e2e-workflow-test.sh`
+4. Goal complete: ready ok + mig>=0066 + tip build + Graph200 + E2E PASS
 
 ## Decisions made (don't relitigate)
 
 - PR #32 supersedes #29–#31
 - Never invent Azure secrets or deploy confirm
-- Seat mode=live required for Teams book
-- GoTrue admin password ≠ Entra password
+- Seat mode=live for Teams book
+- Mantu Fly: AGENT_FRAMEWORKS_REQUIRED=false on tip
 
 ## Watch out
 
-- Device codes expire ~15 min (waiter refreshes)
-- Never commit owner-*.env
+- ba88302 ready code cannot opt out of agentFrameworks — tip deploy mandatory for ready green
+- Do not re-request skipped Entra MFA unless owner asks
