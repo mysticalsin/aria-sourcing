@@ -252,6 +252,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     requirement: "Autonomous parse/draft prefer server LLM over mock stand-ins",
     evidence: () => {
       const parseRoute = readFileSync("src/app/api/cron/parse-inbound-need/route.ts", "utf8");
+      const intakeRoute = readFileSync("src/app/api/intake/route.ts", "utf8");
       const draftRoute = readFileSync("src/app/api/cron/generate-outreach-draft/route.ts", "utf8");
       const live = readFileSync("src/lib/requisition-intake-live.ts", "utf8");
       const quality = readFileSync("src/lib/outreach-quality-pipeline.ts", "utf8");
@@ -259,6 +260,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       return (
         /parseInboundNeedLive/.test(parseRoute)
         && /llm_required/.test(parseRoute)
+        && /parseInboundNeedLive/.test(intakeRoute)
+        && /llm_required/.test(intakeRoute)
         && /serverGenerateText/.test(draftRoute)
         && /llm_required/.test(draftRoute)
         && /critics_required/.test(draftRoute)

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { parseEmailAndJD, isMantuNeedEmail } from "@/lib/mock-ai";
+import { parseInboundNeedLive } from "@/lib/requisition-intake-live";
 import { getServerSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
 import { validateBody } from "@/lib/api/validate";
@@ -26,8 +27,9 @@ const IntakeSchema = z.object({
  *   { "email": "<raw email text>", "jd": "<optional JD text>" }
  *   { "from": "...", "subject": "...", "body": "<email body>" }
  *
- * Auth: required when Supabase is configured; open in demo mode (it only parses
- * text the caller supplies — no data access).
+ * Auth: required when Supabase is configured; open in demo mode (heuristic parse
+ * only — no data access). Production tenants fail closed with 503 llm_required
+ * when no live LLM is configured, matching the autonomous parse cron contract.
  */
 export async function GET() {
   return NextResponse.json({
@@ -71,6 +73,38 @@ export async function POST(req: NextRequest) {
 
   if (!email.trim()) {
     return NextResponse.json({ ok: false, error: "Provide `email` (or `from`/`subject`/`body`)." }, { status: 400 });
+  }
+
+  const intakeText = jd?.trim() ? `${email}\n\n---\n\n${jd.trim()}` : email;
+
+  // Production tenants must not silently accept heuristic stand-ins — same contract
+  // as /api/cron/parse-inbound-need. Demo mode (no Supabase) keeps the open heuristic.
+  if (supabaseEnabled) {
+    const result = await parseInboundNeedLive(intakeText);
+    if (!result.modelUsed) {
+      return NextResponse.json(
+        {
+          ok: false,
+          status: "llm_required",
+          detail: "Live LLM parse required for production intake.",
+          modelUsed: false,
+          modelReason: "modelReason" in result ? result.modelReason : undefined,
+        },
+        { status: 503 },
+      );
+    }
+    const parsed = result.parsed;
+    return NextResponse.json({
+      ok: true,
+      format: isMantuNeedEmail(intakeText) ? "mantu-need" : "generic",
+      parsed,
+      modelUsed: true,
+      modelProvider: "modelProvider" in result ? result.modelProvider : undefined,
+      suggestedMeta: {
+        hiringManager: parsed.sender.name,
+        hiringManagerEmail: parsed.sender.email,
+      },
+    });
   }
 
   const parsed = parseEmailAndJD({ email, jd });
