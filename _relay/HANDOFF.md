@@ -11,7 +11,7 @@ status: llm-wiki-v1-landed-awaiting-fly-confirm
 ## Current state
 
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30**
-- **Local gate:** run `npx tsc --noEmit && npm test` after this shift lands
+- **Local gate:** `tsc` + `npm test` green after wiki land (`d65a61c`); audit matrix **25/25**
 - **CI Actions:** deferred per owner (billing) — do not block on empty runners
 - **Fly live:** still migration **0060**; source through **0064**; deploy needs `ARIA_PROD_DEPLOY_CONFIRM`
 - **LLM wiki v1:** `docs/agent-wiki/` + `src/lib/agent-wiki/` + `tests/agent-wiki.mts` (registered)
