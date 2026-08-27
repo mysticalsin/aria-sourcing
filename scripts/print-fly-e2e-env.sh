@@ -57,6 +57,9 @@ export ADMIN_EMAIL='your-admin@example.com'
 export ADMIN_PASSWORD='your-admin-password'
 # required for Fly enterprise E2E (webhook → requisition_parse):
 export EMAIL_INBOUND_WEBHOOK_SECRET='your-32-char-webhook-secret'
+# Fly currently ships KIMI_API_KEY — hermes outreach drafts must match:
+export AGENT_PROVIDER=kimi
+export AGENT_MODEL=moonshot-v1-8k
 # optional but recommended: authenticates draft-cron fail-closed probe
 # export CRON_SECRET='same-as-fly-aria-mantu-app-CRON_SECRET'
 # optional: override webhook mailbox (defaults to connected Outlook or talent@mantu.com)
@@ -67,7 +70,7 @@ export EMAIL_INBOUND_WEBHOOK_SECRET='your-32-char-webhook-secret'
 #   fly secrets: ARIA_LOOP_KILL_SWITCH='false'
 #   workspace switchboard: E2E calls set_sourcing_loop_controls after admin login
 #   (or Settings → Arm enterprise loop)
-# LLM: ANTHROPIC_API_KEY or OPENAI_API_KEY on aria-mantu-app for parse/draft/critics
+# LLM on aria-mantu-app: KIMI_API_KEY (preferred) and/or ANTHROPIC_API_KEY / OPENAI_API_KEY
 # If Fly secrets are still missing, print templates first:
 #   bash scripts/print-fly-secrets-checklist.sh
 bash e2e-workflow-test.sh

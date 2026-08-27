@@ -242,7 +242,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
-    requirement: "Fly E2E fails closed without webhook secret or migration 0065",
+    requirement: "Fly E2E fails closed without webhook secret or migration 0066",
     evidence: () => {
       const script = readFileSync("e2e-workflow-test.sh", "utf8");
       return (
@@ -471,6 +471,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /ARIA_PROD_DEPLOY_CONFIRM/.test(printConfirm)
         && /print-fly-e2e-env/.test(golive)
         && /FLY_SUPABASE_ANON_KEY/.test(printE2e)
+        && /AGENT_PROVIDER=kimi/.test(printE2e)
         && /Fly secrets inventory/.test(golive)
         && existsSync("scripts/fly-enterprise-activate.sh")
         && /print-fly-deploy-confirm/.test(readFileSync("scripts/fly-enterprise-activate.sh", "utf8"))

@@ -90,7 +90,17 @@ validate_fly_e2e_url() {
 }
 validate_fly_e2e_url "APP_URL" "$APP_URL"
 validate_fly_e2e_url "KONG_URL" "$KONG_URL"
-AGENT_PROVIDER="${AGENT_PROVIDER:-anthropic}"      # tool-calling provider for /api/sourcing-agent (kimi/hermes are rejected)
+# Hermes outreach drafts use AGENT_PROVIDER. Fly ships KIMI_API_KEY first — default
+# to kimi on production Fly so drafts do not fail closed looking for Anthropic.
+# /api/sourcing-agent resolves its own workspace/cloud provider (kimi is not a
+# sourcing tool-calling provider); this env is for hermes chat only.
+if [ -z "${AGENT_PROVIDER:-}" ]; then
+  if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ]; then
+    AGENT_PROVIDER=kimi
+  else
+    AGENT_PROVIDER=anthropic
+  fi
+fi
 AGENT_MODEL="${AGENT_MODEL:-}"                      # optional model override; blank => provider default
 GITHUB_QUERY="${GITHUB_QUERY:-language:typescript location:london followers:>50}"
 LINKEDIN_QUERY="${LINKEDIN_QUERY:-senior typescript engineer london}"

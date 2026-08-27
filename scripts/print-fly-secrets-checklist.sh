@@ -27,6 +27,9 @@ flyctl secrets set -a aria-mantu-app ARIA_LOOP_KILL_SWITCH='false'
 # flyctl secrets set -a aria-mantu-app KIMI_API_KEY='PLACEHOLDER_KIMI_KEY'
 # or: ANTHROPIC_API_KEY='PLACEHOLDER_ANTHROPIC_KEY'
 # or: OPENAI_API_KEY='PLACEHOLDER_OPENAI_KEY'
+# After deploy, E2E hermes drafts must match the key you set:
+#   Kimi → export AGENT_PROVIDER=kimi AGENT_MODEL=moonshot-v1-8k
+#   Anthropic → export AGENT_PROVIDER=anthropic
 
 # Optional but recommended for authenticated draft-cron / graph-stage E2E probes:
 # flyctl secrets set -a aria-mantu-app CRON_SECRET='PLACEHOLDER_SAME_AS_FLY_CRON_SECRET'

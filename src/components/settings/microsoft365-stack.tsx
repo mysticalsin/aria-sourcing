@@ -212,13 +212,13 @@ function Microsoft365StackInner() {
           items={[
             {
               id: "calendar-scope",
-              label: "Calendars.ReadWrite + OnlineMeetings scope",
+              label: "Calendars.ReadWrite (Teams for Business)",
               ok: calendarScoped,
               hint: calendarScoped
-                ? "Granted on connected Outlook mailbox (required to request Teams meetings)."
+                ? "Granted on connected Outlook mailbox — live books request isOnlineMeeting via calendar create."
                 : mailboxConnected
-                  ? "Reconnect Outlook if calendar scope is missing from the token."
-                  : "Connect Outlook — calendar scope is requested at authorize time.",
+                  ? "Reconnect Outlook if Calendars.ReadWrite is missing from the token."
+                  : "Connect Outlook — Calendars.ReadWrite is requested at authorize time.",
             },
             {
               id: "teams-links",
