@@ -127,10 +127,18 @@ export async function POST(req: NextRequest) {
       messageId,
     });
     if (!fetched.ok) {
-      // Fail closed — never invent a hiring-need enqueue. Only transient Graph
-      // HTTP/network failures are retryable; missing connection/token must not
-      // spin Graph redelivery forever when Microsoft is absent.
-      results.push({ subscriptionId: note.subscriptionId, status: fetched.reason });
+      // Fail closed — never invents a hiring-need enqueue. Map reasons explicitly
+      // so audits can pin non-retryable Graph-absent statuses:
+      // connection_missing | token_unavailable | message_incomplete | message_fetch_failed
+      const status =
+        fetched.reason === "connection_missing"
+          ? "connection_missing"
+          : fetched.reason === "token_unavailable"
+            ? "token_unavailable"
+            : fetched.reason === "message_incomplete"
+              ? "message_incomplete"
+              : "message_fetch_failed";
+      results.push({ subscriptionId: note.subscriptionId, status });
       continue;
     }
     const message = fetched.message;
