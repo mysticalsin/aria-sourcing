@@ -146,11 +146,16 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         channel: "Email",
       });
       const pipeline = readFileSync("src/lib/outreach-quality-pipeline.ts", "utf8");
+      const store = readFileSync("src/lib/store.ts", "utf8");
+      const mockAi = readFileSync("src/lib/mock-ai.ts", "utf8");
       return (
         quality.status === "ready"
         && voice.signature.includes("Mantu")
         && unbranded.status !== "ready"
         && /missing-mantu-brand/.test(pipeline)
+        && /function enterpriseMantuVoice/.test(store)
+        && /persona: mantuVoice\.persona/.test(mockAi)
+        && /\/tmp\/aria-e2e-webhook-secret/.test(e2eScript)
       );
     },
   },

@@ -57,6 +57,8 @@ export ADMIN_EMAIL='your-admin@example.com'
 export ADMIN_PASSWORD='your-admin-password'
 # required for Fly enterprise E2E (webhook → requisition_parse):
 export EMAIL_INBOUND_WEBHOOK_SECRET='your-32-char-webhook-secret'
+# If this agent VM still has /tmp/aria-e2e-webhook-secret, e2e-workflow-test.sh
+# loads it automatically when EMAIL_INBOUND_WEBHOOK_SECRET is unset.
 # Fly currently ships KIMI_API_KEY — hermes outreach drafts must match:
 export AGENT_PROVIDER=kimi
 export AGENT_MODEL=moonshot-v1-8k

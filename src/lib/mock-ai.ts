@@ -1048,7 +1048,11 @@ export function generateOutreach(
   const lang = language ?? jd.language ?? "en";
   const L = outreachStrings(lang);
   const mantuVoice = mantuOutreachVoice(voice?.signature);
-  const effectiveVoice = voice?.persona?.trim() ? voice : mantuVoice;
+  // Enterprise Mantu loop: persona is always Mantu voice; callers may only refine signature.
+  const effectiveVoice = {
+    persona: mantuVoice.persona,
+    signature: voice?.signature?.trim() ? voice.signature : mantuVoice.signature,
+  };
   const greeting = topSkill
     ? L.greeting(firstName, topSkill, candidate.currentCompany)
     : L.salutation(firstName);

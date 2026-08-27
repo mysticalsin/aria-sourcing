@@ -141,7 +141,12 @@ case "$ADMIN_EMAIL:$ADMIN_PASSWORD" in
 esac
 
 # Fly production enterprise E2E requires the signed webhook secret (hiring-need
-# ignition). Skip only when ARIA_ALLOW_SKIP_WEBHOOK_E2E=1 (local harnesses).
+# ignition). Prefer an explicit env; otherwise reuse the agent-owned secret file
+# written when EMAIL_INBOUND_WEBHOOK_SECRET was set on Fly.
+if [ -z "${EMAIL_INBOUND_WEBHOOK_SECRET:-}" ] && [ -r /tmp/aria-e2e-webhook-secret ]; then
+  EMAIL_INBOUND_WEBHOOK_SECRET="$(tr -d '\n\r' </tmp/aria-e2e-webhook-secret)"
+  export EMAIL_INBOUND_WEBHOOK_SECRET
+fi
 if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ -z "${EMAIL_INBOUND_WEBHOOK_SECRET:-}" ]; then
   if [ "${ARIA_ALLOW_SKIP_WEBHOOK_E2E:-}" != "1" ]; then
     die "EMAIL_INBOUND_WEBHOOK_SECRET is required for Fly enterprise E2E (webhook → requisition_parse). Set it or ARIA_ALLOW_SKIP_WEBHOOK_E2E=1 for a partial run."

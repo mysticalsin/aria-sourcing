@@ -337,6 +337,18 @@ function refuseMockOutreachOnLiveTenant(live: boolean): boolean {
   return !live && supabaseEnabled && !demoLoginEnabled;
 }
 
+/** Enterprise Mantu loop: persona is always Mantu voice; seat may only refine signature. */
+function enterpriseMantuVoice(seat?: Pick<AgentSeat, "signature"> | null): {
+  persona: string;
+  signature: string;
+} {
+  const mantuVoice = mantuOutreachVoice(seat?.signature);
+  return {
+    persona: mantuVoice.persona,
+    signature: seat?.signature?.trim() ? seat.signature : mantuVoice.signature,
+  };
+}
+
 /**
  * Shared live-generation attempt for follow-up / re-contact drafts — the same
  * three-layer path generateOutreachLive/regenerateOutreach use (a cloud
@@ -1947,12 +1959,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const resolvedChannel = channel ?? preferredOutreachChannel(candidate);
       const finalTone = tone ?? effectiveTone(s.skills);
       const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
-      // Enterprise Mantu loop: always brand with Mantu voice; seat may only refine signature.
-      const mantuVoice = mantuOutreachVoice(seat?.signature);
-      const voice = {
-        persona: mantuVoice.persona,
-        signature: seat?.signature?.trim() ? seat.signature : mantuVoice.signature,
-      };
+      const voice = enterpriseMantuVoice(seat);
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
 
       // Mock is the canonical fallback (and the source of personalization evidence).
@@ -2114,7 +2121,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (!candidate || !campaign) return null;
       const finalTone = tone ?? effectiveTone(s.skills);
       const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
-      const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
+      const voice = enterpriseMantuVoice(seat);
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
       // Keep following up on whichever channel the candidate was originally reached on.
       const channel: OutreachChannel = candidate.outreachHistory[0]?.channel ?? "Email";
@@ -2122,7 +2129,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const mockGen = generateOutreach(candidate, campaign, finalTone, channel, due.nextSequenceStep, voice, lang);
       // Live attempt — same three-layer fallback as generateOutreachLive, so a
       // follow-up touch isn't silently downgraded to canned copy at scale.
-      const { gen, live } = await attemptLiveFollowUpGen({
+      const { gen: liveGen, live } = await attemptLiveFollowUpGen({
         settings: s.settings,
         candidate,
         campaign,
@@ -2137,10 +2144,30 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       if (refuseMockOutreachOnLiveTenant(live)) return null;
       if (!workspaceEffectAllowed()) return null;
+      const quality = validateOutreachQuality({
+        subject: liveGen.subject,
+        body: liveGen.body,
+        channel,
+      });
+      const gen = {
+        ...liveGen,
+        subject: quality.text.subject,
+        body: quality.text.body,
+      };
       const msg = {
         ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, due.nextSequenceStep),
         createdAt: draftedAt,
       };
+      if (quality.status === "blocked") {
+        msg.status = "Needs Approval";
+        msg.qualityStatus = "blocked";
+      } else {
+        msg.qualityStatus = quality.status;
+      }
+      msg.qualityScore = quality.aggregateScore;
+      if (channel === "Email") {
+        msg.htmlBody = mantuEmailHtmlWrapper(gen.body);
+      }
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
         return withActivity(
@@ -2148,7 +2175,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           makeActivity({
             type: "outreach",
             title: `Follow-up drafted: ${candidate.name}`,
-            notes: `Sequence step ${due.nextSequenceStep} · ${Math.floor(due.daysSinceContact)}d of silence since last contact${live ? " (Aria live)" : ""}.`,
+            notes: `Sequence step ${due.nextSequenceStep} · ${Math.floor(due.daysSinceContact)}d of silence since last contact${live ? " (Aria live)" : ""}. Quality ${quality.status} (${quality.aggregateScore}/100).`,
             outcome: msg.status,
             campaignId: campaign.id,
             linkedEntityType: "candidate",
@@ -2177,14 +2204,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (!candidate || !campaign) return null;
       const finalTone = tone ?? effectiveTone(s.skills);
       const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
-      const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
+      const voice = enterpriseMantuVoice(seat);
       const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
       const channel: OutreachChannel = candidate.outreachHistory[0]?.channel ?? "Email";
       // Mock is the canonical fallback (and the source of personalization evidence).
       const mockGen = generateOutreach(candidate, campaign, finalTone, channel, 1, voice, lang);
       // Live attempt — same three-layer fallback as generateOutreachLive, so a
       // #Vivier re-contact isn't silently downgraded to canned copy either.
-      const { gen, live } = await attemptLiveFollowUpGen({
+      const { gen: liveGen, live } = await attemptLiveFollowUpGen({
         settings: s.settings,
         candidate,
         campaign,
@@ -2199,7 +2226,27 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       });
       if (refuseMockOutreachOnLiveTenant(live)) return null;
       if (!workspaceEffectAllowed()) return null;
+      const quality = validateOutreachQuality({
+        subject: liveGen.subject,
+        body: liveGen.body,
+        channel,
+      });
+      const gen = {
+        ...liveGen,
+        subject: quality.text.subject,
+        body: quality.text.body,
+      };
       const msg = { ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1), createdAt: draftedAt };
+      if (quality.status === "blocked") {
+        msg.status = "Needs Approval";
+        msg.qualityStatus = "blocked";
+      } else {
+        msg.qualityStatus = quality.status;
+      }
+      msg.qualityScore = quality.aggregateScore;
+      if (channel === "Email") {
+        msg.htmlBody = mantuEmailHtmlWrapper(gen.body);
+      }
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
         return withActivity(
@@ -2207,7 +2254,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           makeActivity({
             type: "outreach",
             title: `Re-contact drafted: ${candidate.name}`,
-            notes: `#Vivier re-engagement${candidate.silverMedalist ? " (Silver Medalist)" : ""}. Awaiting approval${live ? " (Aria live)" : ""}.`,
+            notes: `#Vivier re-engagement${candidate.silverMedalist ? " (Silver Medalist)" : ""}. Quality ${quality.status} (${quality.aggregateScore}/100). Awaiting approval${live ? " (Aria live)" : ""}.`,
             outcome: msg.status,
             campaignId: campaign.id,
             linkedEntityType: "candidate",
@@ -2239,10 +2286,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const campaign = msg && s.campaigns.find((c) => c.id === msg.campaignId);
       if (!msg || !candidate || !campaign) return;
       const nextTone = tone ?? msg.tone;
+      const voice = enterpriseMantuVoice();
 
       // Mock is the canonical fallback (and the source of personalization evidence) —
       // same shape as before this went live.
-      const mockGen = generateOutreach(candidate, campaign, nextTone, msg.channel, msg.sequenceStep);
+      const mockGen = generateOutreach(candidate, campaign, nextTone, msg.channel, msg.sequenceStep, voice);
 
       // Live attempt — the exact same three-layer fallback as generateOutreachLive:
       // Layer 1 only fires when a cloud provider or hermes live mode is configured;
@@ -2268,6 +2316,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           tone: nextTone,
           channel: msg.channel,
           language: lang,
+          persona: voice.persona,
         });
         const ariaPrompt = s.settings.guardrails?.ariaPrompt;
         const liGuard = msg.channel === "LinkedIn" ? linkedInGuardrailPrompt() : "";
@@ -2317,6 +2366,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
       if (refuseMockOutreachOnLiveTenant(live)) return;
       if (!workspaceEffectAllowed()) return;
+      const quality = validateOutreachQuality({
+        subject: gen.subject,
+        body: gen.body,
+        channel: msg.channel,
+      });
+      gen = {
+        ...gen,
+        subject: quality.text.subject,
+        body: quality.text.body,
+      };
       commit((prev) => ({
         ...prev,
         outreach: prev.outreach.map((m) =>
@@ -2328,6 +2387,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 body: gen.body,
                 personalizationEvidence: gen.personalizationEvidence,
                 status: prev.settings.humanApprovalGate ? "Needs Approval" : m.status,
+                qualityStatus: quality.status === "blocked" ? "blocked" : quality.status,
+                qualityScore: quality.aggregateScore,
+                ...(msg.channel === "Email" ? { htmlBody: mantuEmailHtmlWrapper(gen.body) } : {}),
               }
             : m,
         ),
