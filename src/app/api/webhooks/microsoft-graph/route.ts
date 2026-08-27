@@ -49,6 +49,17 @@ function extractMessageId(resource: string | undefined, resourceDataId: string |
   return match?.[1] ? decodeURIComponent(match[1]) : "";
 }
 
+export async function GET(req: NextRequest) {
+  const validationToken = req.nextUrl.searchParams.get("validationToken");
+  if (validationToken) {
+    return new NextResponse(validationToken, {
+      status: 200,
+      headers: { "content-type": "text/plain; charset=utf-8" },
+    });
+  }
+  return NextResponse.json({ ok: false, reason: "Expected validationToken." }, { status: 400 });
+}
+
 export async function POST(req: NextRequest) {
   // Graph subscription validation: echo validationToken as plain text.
   const validationToken = req.nextUrl.searchParams.get("validationToken");

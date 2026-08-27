@@ -10,6 +10,7 @@ import {
   pickSeatForConnect,
   type MailboxOAuthProvider,
 } from "@/lib/email-connections";
+import { listGraphSubscriptionsForWorkspace } from "@/lib/email-graph-subscriptions";
 import { AGENT_SEAT_SELECT, type AgentSeatRow } from "@/lib/fleet-seats";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
@@ -134,12 +135,15 @@ export async function GET(req: NextRequest) {
 
   const routes = (routeRows ?? []) as RouteRow[];
   const seatsById = new Map(seats.map((s) => [s.id, s]));
+  const graphSubs = await listGraphSubscriptionsForWorkspace(wid);
+  const graphByConnection = new Map(graphSubs.map((s) => [s.connectionId, s]));
 
   const connections = ((connRows ?? []) as ConnRow[]).map((c) => {
     const seat = seatsById.get(c.seat_id);
     const route =
       routes.find((r) => r.connection_id === c.id) ??
       routes.find((r) => r.mailbox_address === normalizeMailboxAddress(c.account_email));
+    const graphSubscription = graphByConnection.get(c.id) ?? null;
     return {
       id: c.id,
       seatId: c.seat_id,
@@ -152,6 +156,14 @@ export async function GET(req: NextRequest) {
       updatedAt: c.updated_at,
       inboundRoute: route
         ? { mailbox: route.mailbox_address, purpose: route.purpose, active: route.active }
+        : null,
+      graphSubscription: graphSubscription
+        ? {
+            status: graphSubscription.status,
+            expiresAt: graphSubscription.expiresAt,
+            lastNotificationAt: graphSubscription.lastNotificationAt,
+            active: graphSubscription.status === "active",
+          }
         : null,
     };
   });

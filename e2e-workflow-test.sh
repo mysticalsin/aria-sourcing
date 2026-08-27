@@ -261,6 +261,18 @@ else
 fi
 
 # ===========================================================================
+step "2c) Graph webhook validation handshake — GET/POST validationToken"
+# ===========================================================================
+GRAPH_VALID_CODE=$(curl -sS -m 20 -o "$WORK/graph_validation.txt" -w '%{http_code}' \
+  "$APP_URL/api/webhooks/microsoft-graph?validationToken=e2e-graph-validation-token")
+GRAPH_VALID_BODY=$(tr -d '\r\n' < "$WORK/graph_validation.txt")
+if [ "$GRAPH_VALID_CODE" = "200" ] && [ "$GRAPH_VALID_BODY" = "e2e-graph-validation-token" ]; then
+  pass "Graph webhook validationToken echo (HTTP 200 plain text)."
+else
+  fail "Graph validationToken handshake (HTTP $GRAPH_VALID_CODE body=$(head -c 120 "$WORK/graph_validation.txt"))."
+fi
+
+# ===========================================================================
 step "3) Sourcing — REAL candidates (GitHub raw, LinkedIn/Tavily, provenance=live)"
 # ===========================================================================
 

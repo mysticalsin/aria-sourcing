@@ -28,6 +28,12 @@ type ConnectionRow = {
   hasRefreshToken: boolean;
   scope: string;
   inboundRoute: { mailbox: string; purpose: string; active: boolean } | null;
+  graphSubscription?: {
+    status: string;
+    expiresAt: string;
+    lastNotificationAt: string | null;
+    active: boolean;
+  } | null;
 };
 
 type ConnectionsPayload = {
@@ -72,6 +78,7 @@ function Microsoft365StackInner() {
   );
   const connectedOutlook = outlookConnections.find((c) => c.hasRefreshToken) ?? null;
   const inboundActive = Boolean(connectedOutlook?.inboundRoute?.active);
+  const graphSubscriptionActive = Boolean(connectedOutlook?.graphSubscription?.active);
   const calendarScoped = Boolean(connectedOutlook && hasCalendarScope(connectedOutlook.scope));
 
   const ssoReady = azureLoginEnabled;
@@ -213,17 +220,19 @@ function Microsoft365StackInner() {
         step={4}
         title="Webhook intake (no polling)"
         subtitle="Microsoft Graph pushes Inbox creates to Aria — agents never idle-scan mailboxes."
-        state={inboundActive ? "complete" : mailboxConnected || inboundReady ? "active" : "pending"}
+        state={graphSubscriptionActive ? "complete" : mailboxConnected || inboundReady ? "active" : "pending"}
       >
         <SystemReadiness
           items={[
             {
               id: "graph-webhook",
               label: "Graph mail subscription",
-              ok: mailboxConnected && inboundActive,
-              hint: mailboxConnected
-                ? "Created on Outlook connect via /api/webhooks/microsoft-graph"
-                : "Connect Outlook to register a Graph change-notification subscription.",
+              ok: graphSubscriptionActive,
+              hint: graphSubscriptionActive
+                ? `Active until ${connectedOutlook?.graphSubscription?.expiresAt ?? "unknown"} (auto-renewed by loop worker)`
+                : mailboxConnected
+                  ? "Outlook connected but no active Graph subscription row — reconnect Outlook or wait for renew cron."
+                  : "Connect Outlook to register a Graph change-notification subscription.",
             },
             {
               id: "webhook-secret",
@@ -242,6 +251,14 @@ function Microsoft365StackInner() {
               hint: inboundActive
                 ? `Inbound route active for ${connectedOutlook?.inboundRoute?.mailbox}`
                 : "Need emails → requisition_parse; replies → inbound_classify.",
+            },
+            {
+              id: "entra-sso",
+              label: "Entra SSO (Azure login)",
+              ok: ssoReady,
+              hint: ssoReady
+                ? "NEXT_PUBLIC_ENABLE_AZURE_LOGIN is on."
+                : "Off until GoTrue Azure env is configured (fly.app.toml keeps this false by default).",
             },
           ]}
         />

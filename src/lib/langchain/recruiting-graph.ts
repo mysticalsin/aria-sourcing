@@ -190,4 +190,5 @@ export const GRAPH_STAGE_TO_JOB_KIND: Record<string, string> = {
   shortlist_ranked: "draft_generate",
   quality_validated: "draft_generate",
   queued_for_approval: "delivery_reconcile",
+  interview_scheduled: "calendar_book",
 };

@@ -524,6 +524,74 @@ test("inbound_classify enqueues draft_generate for positive intent when autopilo
   ]);
 });
 
+test("draft_generate enqueues calendar_book after positive reply trigger", async () => {
+  const patches: Array<Record<string, unknown>> = [];
+  const { client } = rpcClient((name, args) => {
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: {}, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      patches.push(args);
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await handleAriaJob(
+    job("draft_generate", {
+      campaignId: "camp-9",
+      candidateId: "cand-9",
+      trigger: "inbound_classify",
+      intent: "INTERESTED",
+      approvedBy: "user-autopilot-1",
+      approvalSource: "autopilot_reply",
+    }),
+    {
+      client,
+      configuration: {
+        outreachDraftUrl: new URL("https://worker.example.test/api/cron/generate-outreach-draft"),
+        cronSecret: "s".repeat(32),
+      },
+      fetcher: async () =>
+        new Response(
+          JSON.stringify({
+            ok: true,
+            campaignId: "camp-9",
+            candidateId: "cand-9",
+            channel: "Email",
+            quality: { status: "ready", aggregateScore: 90 },
+            outreach: {
+              id: "msg-1",
+              candidateId: "cand-9",
+              campaignId: "camp-9",
+              channel: "Email",
+              subject: "Next step",
+              body: "Thanks for your interest — shall we book a Teams intro?",
+              status: "Needs Approval",
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    },
+  );
+
+  assert.equal(patches.length, 1);
+  assert.deepEqual(patches[0].p_enqueue, [
+    {
+      kind: "calendar_book",
+      idempotency_key: "calendar:reply:camp-9:cand-9",
+      payload: {
+        campaignId: "camp-9",
+        candidateId: "cand-9",
+        trigger: "draft_generate",
+        intent: "INTERESTED",
+        approvedBy: "user-autopilot-1",
+      },
+      priority: 60,
+    },
+  ]);
+});
+
 test("runSourcingLoopTick claims every handler kind and completes each claimed job once", async () => {
   const claimedJobs = HANDLER_KINDS.map((kind) =>
     job(kind, {
@@ -595,6 +663,7 @@ test("runSourcingLoopTick claims every handler kind and completes each claimed j
       intakeParseUrl: new URL("https://worker.example.test/api/cron/parse-inbound-need"),
       sourcingBatchUrl: new URL("https://worker.example.test/api/cron/run-sourcing-batch"),
       outreachDraftUrl: new URL("https://worker.example.test/api/cron/generate-outreach-draft"),
+      renewGraphUrl: null,
       cronSecret: "s".repeat(32),
     },
     { ARIA_LOOP_KILL_SWITCH: "false" },

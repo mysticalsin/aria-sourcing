@@ -206,6 +206,156 @@ export async function lookupGraphSubscription(graphSubscriptionId: string): Prom
   return (data as GraphSubscriptionRow | null) ?? null;
 }
 
+/** True when an active subscription should be renewed before Graph expires it. */
+export function subscriptionNeedsRenewal(
+  expiresAt: string,
+  now = Date.now(),
+  withinMs = 12 * 60 * 60 * 1000,
+): boolean {
+  const expires = Date.parse(expiresAt);
+  if (!Number.isFinite(expires)) return true;
+  return expires - now <= withinMs;
+}
+
+/**
+ * Renew one Graph mail subscription via PATCH. Recreates when Graph returns 404.
+ */
+export async function renewGraphMailSubscription(input: {
+  workspaceId: string;
+  connectionId: string;
+  graphSubscriptionId: string;
+}): Promise<{ ok: true; expiresAt: string; mode: "renewed" | "recreated" } | { ok: false; reason: string }> {
+  const connection = await loadConnection(input.connectionId, input.workspaceId);
+  if (!connection) return { ok: false, reason: "Microsoft Graph connection not found." };
+
+  const token = await getAccessTokenForReading(connection);
+  if (!token) return { ok: false, reason: "Could not refresh Microsoft Graph token." };
+  await persistRefreshedTokens(connection);
+
+  const expiresAt = new Date(Date.now() + SUBSCRIPTION_TTL_MS).toISOString();
+  let res: Response;
+  try {
+    res = await fetch(`${GRAPH}/subscriptions/${encodeURIComponent(input.graphSubscriptionId)}`, {
+      method: "PATCH",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ expirationDateTime: expiresAt }),
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch {
+    return { ok: false, reason: "Graph subscription renew unreachable." };
+  }
+
+  if (res.status === 404) {
+    const created = await createGraphMailSubscription({
+      workspaceId: input.workspaceId,
+      connectionId: input.connectionId,
+    });
+    if (!created.ok) return created;
+    return { ok: true, expiresAt: created.expiresAt, mode: "recreated" };
+  }
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    const svc = getServiceSupabase();
+    if (svc) {
+      await svc
+        .from("graph_mail_subscriptions")
+        .update({
+          status: "error",
+          last_error: `renew_http_${res.status}:${detail.slice(0, 180)}`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("connection_id", input.connectionId);
+    }
+    return { ok: false, reason: `Graph subscription renew failed (${res.status}): ${detail.slice(0, 200)}` };
+  }
+
+  const body = (await res.json().catch(() => null)) as { expirationDateTime?: string } | null;
+  const nextExpiry = body?.expirationDateTime ?? expiresAt;
+  const svc = getServiceSupabase();
+  if (!svc) return { ok: false, reason: "Service client unavailable." };
+  await svc
+    .from("graph_mail_subscriptions")
+    .update({
+      expires_at: nextExpiry,
+      status: "active",
+      last_error: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("connection_id", input.connectionId);
+
+  return { ok: true, expiresAt: nextExpiry, mode: "renewed" };
+}
+
+/** Renew all active subscriptions nearing expiry (default: within 12 hours). */
+export async function renewExpiringGraphMailSubscriptions(input?: {
+  withinHours?: number;
+  limit?: number;
+}): Promise<{ scanned: number; renewed: number; recreated: number; failed: number }> {
+  const svc = getServiceSupabase();
+  if (!svc) return { scanned: 0, renewed: 0, recreated: 0, failed: 0 };
+
+  const withinHours = Math.min(48, Math.max(1, input?.withinHours ?? 12));
+  const limit = Math.min(100, Math.max(1, input?.limit ?? 25));
+  const horizon = new Date(Date.now() + withinHours * 60 * 60 * 1000).toISOString();
+
+  const { data: rows } = await svc
+    .from("graph_mail_subscriptions")
+    .select("workspace_id, connection_id, graph_subscription_id, expires_at")
+    .eq("status", "active")
+    .lte("expires_at", horizon)
+    .order("expires_at", { ascending: true })
+    .limit(limit);
+
+  let renewed = 0;
+  let recreated = 0;
+  let failed = 0;
+  for (const row of rows ?? []) {
+    const result = await renewGraphMailSubscription({
+      workspaceId: row.workspace_id,
+      connectionId: row.connection_id,
+      graphSubscriptionId: row.graph_subscription_id,
+    });
+    if (!result.ok) {
+      failed += 1;
+      continue;
+    }
+    if (result.mode === "recreated") recreated += 1;
+    else renewed += 1;
+  }
+
+  return { scanned: rows?.length ?? 0, renewed, recreated, failed };
+}
+
+export async function listGraphSubscriptionsForWorkspace(
+  workspaceId: string,
+): Promise<
+  Array<{
+    connectionId: string;
+    graphSubscriptionId: string;
+    expiresAt: string;
+    status: string;
+    lastNotificationAt: string | null;
+  }>
+> {
+  const svc = getServiceSupabase();
+  if (!svc) return [];
+  const { data } = await svc
+    .from("graph_mail_subscriptions")
+    .select("connection_id, graph_subscription_id, expires_at, status, last_notification_at")
+    .eq("workspace_id", workspaceId);
+  return (data ?? []).map((row) => ({
+    connectionId: row.connection_id,
+    graphSubscriptionId: row.graph_subscription_id,
+    expiresAt: row.expires_at,
+    status: row.status,
+    lastNotificationAt: row.last_notification_at ?? null,
+  }));
+}
+
 export async function fetchGraphMessageForIngest(input: {
   workspaceId: string;
   connectionId: string;

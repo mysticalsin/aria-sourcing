@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { buildOutreachPrompt, parseHermesOutreach } from "@/lib/ai/hermes";
 import { serverGenerateText } from "@/lib/ai/server-generate";
+import { runRecruitingGraph } from "@/lib/langchain/recruiting-graph";
 import { mantuOutreachVoice, mantuEmailHtmlWrapper } from "@/lib/mantu-brand";
 import { generateOutreach, newOutreachMessage } from "@/lib/mock-ai";
 import { humanizeText } from "@/lib/humanizer";
@@ -115,11 +116,46 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const quality = validateOutreachQuality({
-    subject: generated.subject,
-    body: generated.body,
-    channel,
+  // Autonomous loop drafts must not silently ship mock-ai copy as success.
+  if (!modelUsed) {
+    return NextResponse.json(
+      { ok: false, status: "llm_required", detail: "Live LLM draft required for autonomous outreach." },
+      { status: 503 },
+    );
+  }
+
+  const graphResult = await runRecruitingGraph({
+    workspaceId: parsed.data.workspaceId,
+    campaignId: campaign.id,
+    candidateIds: [candidate.id],
+    shortlistIds: [candidate.id],
+    drafts: {
+      [candidate.id]: {
+        subject: generated.subject,
+        body: generated.body,
+        channel,
+      },
+    },
   });
+  const quality =
+    graphResult.quality[candidate.id]
+    ?? validateOutreachQuality({
+      subject: generated.subject,
+      body: generated.body,
+      channel,
+    });
+  if (graphResult.stage === "approval_blocked" || quality.status === "blocked") {
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "quality_blocked",
+        quality,
+        stage: graphResult.stage,
+      },
+      { status: 422 },
+    );
+  }
+
   const settings: Pick<SystemSettings, "dryRunMode"> = { dryRunMode: true };
   const outreach = newOutreachMessage(
     candidate,
@@ -148,5 +184,6 @@ export async function POST(req: NextRequest) {
     quality,
     outreach,
     modelUsed,
+    graphStage: graphResult.stage,
   });
 }

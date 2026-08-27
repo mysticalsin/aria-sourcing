@@ -1,50 +1,52 @@
 ---
 project: MSourcing / ARIA
-shift: 109
+shift: 110
 agent: cursor-cloud
 updated: 2026-08-27 UTC
-status: llm-wiki-v1-landed-awaiting-fly-confirm
+status: calendar-book-graph-renew-awaiting-fly-confirm
 ---
 
-# Handoff — Shift 109
+# Handoff — Shift 110
 
 ## Current state
 
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30**
-- **Local gate:** `tsc` + `npm test` green after wiki land (`d65a61c`); audit matrix **25/25**
-- **CI Actions:** deferred per owner (billing) — do not block on empty runners
-- **Fly live:** still migration **0060**; source through **0064**; deploy needs `ARIA_PROD_DEPLOY_CONFIRM`
-- **LLM wiki v1:** `docs/agent-wiki/` + `src/lib/agent-wiki/` + `tests/agent-wiki.mts` (registered)
+- **Local gate:** targeted suites green (audit **27/27**, mantu E2E **24/24**, loop worker, wiki, agent-graph); run full `npm test` after commit
+- **CI Actions:** deferred (empty runners) — do not block
+- **Fly live:** still migration **0060**; source now through **0065**; deploy needs `ARIA_PROD_DEPLOY_CONFIRM`
+- **Entra SSO:** still off in `fly.app.toml` (owner GoTrue Azure config required)
 
 ## Done this shift
 
-- Filesystem LLM wiki / second brain under `docs/agent-wiki/` (agent, sourcing, identity, feedback, safety, schemas, lessons, ops)
-- Runtime: identity fingerprints (never name-only), note IO, compaction, feedback→proposed lessons
-- Sourcing feedback route stages proposed lessons to `var/agent-wiki/proposed/` (best-effort; `ARIA_AGENT_WIKI_AUTO_PROPOSE=0` disables)
-- Audit matrix **25/25** includes wiki requirement; test manifest freezes updated
+- Graph subscription **renew** (`renewGraphMailSubscription` / cron `/api/cron/renew-graph-subscriptions` + loop tick)
+- Connections API + M365 UI report **real** `graphSubscription` (not inbound route)
+- Autonomous drafts **fail closed** without live LLM; quality via `runRecruitingGraph`
+- Loop stage **`calendar_book`** (migration 0065): proposes Teams/Outlook interview after INTERESTED (human confirmLive)
+- E2E Graph `validationToken` handshake; audit matrix expanded
+- Golive target migration **0065**
 
-## Blockers (owner — not Actions)
+## Blockers (owner)
 
-1. `ARIA_PROD_DEPLOY_CONFIRM` for Fly-only `fly-deploy-now.sh`
-2. M365/webhook secrets on Fly if not set
-3. Deployed E2E with admin creds
+1. `ARIA_PROD_DEPLOY_CONFIRM` for Fly-only deploy through **0065**
+2. M365 / webhook / LLM secrets on Fly
+3. Entra SSO: set GoTrue Azure + `NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true`
+4. Actions billing (deferred)
 
 ## Next steps
 
-1. Keep local gate green; ignore Actions billing
-2. Owner provides deploy confirm → Fly push through 0064 only
-3. Promote staged wiki lessons from `var/agent-wiki/proposed/` into `docs/agent-wiki/lessons/` when reviewed
-4. Prove Graph webhook + E2E on aria-mantu-app.fly.dev when Fly is live
+1. Full `npx tsc --noEmit && npm test` green on tip
+2. Owner deploy confirm → `bash scripts/fly-deploy-now.sh`
+3. Prove Graph webhook + renew + calendar dry-run on aria-mantu-app.fly.dev
+4. Enable Entra when Azure GoTrue secrets exist
 
 ## Decisions made (don't relitigate)
 
-- Skip waiting on GitHub Actions billing; continue product/Fly path
-- Fly-only enterprise production
-- LinkedIn send assisted-manual (409)
-- Tracked wiki is aggregate/PII-free; candidate identity never name-only; feedback proposes, humans promote
+- Skip Actions billing wait; Fly-only enterprise; LinkedIn assisted-manual 409
+- Tracked wiki PII-free; feedback proposes / humans promote
+- Calendar auto-book stays human-gated (`confirmLive`); loop only **proposes**
 
 ## Watch out
 
-- Do not write candidate PII into `docs/agent-wiki/`
-- Do not auto-canonical proposed lessons
-- Do not deploy to Vercel for enterprise
+- Do not treat inbound route as Graph subscription proof
+- Do not ship mock-ai autonomous drafts as ok:true
+- Do not deploy enterprise to Vercel

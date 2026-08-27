@@ -56,7 +56,8 @@ export const PIPELINE_STAGE_TRANSITIONS = Object.freeze({
   provider_poll: Object.freeze(["shortlist_build"]),
   enrich_candidate: Object.freeze(["shortlist_build"]),
   shortlist_build: Object.freeze(["draft_generate"]),
-  draft_generate: Object.freeze([]),
+  draft_generate: Object.freeze(["calendar_book"]),
+  calendar_book: Object.freeze([]),
   delivery_reconcile: Object.freeze(["outcome_feedback"]),
   outcome_feedback: Object.freeze([]),
 });
@@ -74,6 +75,9 @@ export const PIPELINE_STAGE_TRANSITION_PRODUCERS = Object.freeze({
   "shortlist_build->draft_generate": Object.freeze([
     "POST /api/shortlist/approve",
     "handleShortlistBuild (entitled auto-approve)",
+  ]),
+  "draft_generate->calendar_book": Object.freeze([
+    "handleDraftGenerate (positive reply trigger)",
   ]),
   "delivery_reconcile->outcome_feedback": Object.freeze(["handleDeliveryReconcile"]),
 });
@@ -199,6 +203,7 @@ export function loadSourcingLoopConfiguration(environment) {
   let intakeParseUrl = null;
   let sourcingBatchUrl = null;
   let outreachDraftUrl = null;
+  let renewGraphUrl = null;
   if (webOrigin !== "" || cronSecret !== "") {
     let parsed;
     try {
@@ -217,6 +222,7 @@ export function loadSourcingLoopConfiguration(environment) {
     intakeParseUrl = new URL("/api/cron/parse-inbound-need", webOrigin);
     sourcingBatchUrl = new URL("/api/cron/run-sourcing-batch", webOrigin);
     outreachDraftUrl = new URL("/api/cron/generate-outreach-draft", webOrigin);
+    renewGraphUrl = new URL("/api/cron/renew-graph-subscriptions", webOrigin);
   }
 
   return {
@@ -229,6 +235,7 @@ export function loadSourcingLoopConfiguration(environment) {
     intakeParseUrl,
     sourcingBatchUrl,
     outreachDraftUrl,
+    renewGraphUrl,
     cronSecret,
     tickMs: boundedInteger(environment.ARIA_LOOP_TICK_MS, DEFAULT_TICK_MS, 5_000, 300_000, "ARIA_LOOP_TICK_MS"),
     timeoutMs: boundedInteger(environment.ARIA_LOOP_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, 1_000, 60_000, "ARIA_LOOP_TIMEOUT_MS"),
@@ -1070,6 +1077,31 @@ async function handleDraftGenerate(job, context) {
     throw new HandlerError("outreach_draft_quality_blocked", false);
   }
 
+  const successors = [];
+  const trigger = typeof payload.trigger === "string" ? payload.trigger : "";
+  const intent = typeof payload.intent === "string" ? payload.intent : "";
+  const positiveReply =
+    trigger === "inbound_classify"
+    && (intent === "INTERESTED" || intent === "QUALIFIED_INTEREST");
+  if (positiveReply) {
+    successors.push(
+      successorJob(
+        "calendar_book",
+        `calendar:reply:${campaignId}:${candidateId}`,
+        {
+          campaignId,
+          candidateId,
+          trigger: "draft_generate",
+          intent,
+          ...(typeof payload.approvedBy === "string" && payload.approvedBy
+            ? { approvedBy: payload.approvedBy }
+            : {}),
+        },
+        60,
+      ),
+    );
+  }
+
   return completeJobWithWorkspacePatch(
     context.client,
     job,
@@ -1084,10 +1116,57 @@ async function handleDraftGenerate(job, context) {
       candidateId,
       quality: qualityStatus,
       channel: typeof body.channel === "string" ? body.channel : "",
+      calendarQueued: successors.length > 0,
     },
     [event("draft.ready", "candidate", candidateId, {
       campaignId,
       quality: qualityStatus,
+      calendarQueued: successors.length > 0,
+    })],
+    successors,
+  );
+}
+
+/**
+ * Propose a first interview (Teams/Outlook) after positive interest.
+ * Does not auto-create Graph events — records a durable activity for human confirmLive booking.
+ */
+async function handleCalendarBook(job, context) {
+  const payload = payloadOf(job);
+  const campaignId = boundedText(payload.campaignId, 160, "campaign_id_required");
+  const candidateId = boundedText(payload.candidateId, 160, "candidate_id_required");
+  const intent = typeof payload.intent === "string" ? payload.intent : "";
+  const activity = {
+    id: `act-interview-${campaignId}-${candidateId}`,
+    type: "interview_proposed",
+    campaignId,
+    candidateId,
+    intent,
+    channel: "Microsoft Teams / Outlook",
+    status: "needs_human_confirm",
+    detail:
+      "Positive candidate interest — open Calendar to book with confirmLive (Teams online meeting).",
+    createdAt: new Date().toISOString(),
+  };
+
+  return completeJobWithWorkspacePatch(
+    context.client,
+    job,
+    {
+      kind: "append_activities",
+      value: [activity],
+      receiptKey: `interview-propose:${campaignId}:${candidateId}`,
+    },
+    {
+      status: "interview_proposed",
+      campaignId,
+      candidateId,
+      bookingMode: "human_confirm_live",
+    },
+    [event("interview.proposed", "candidate", candidateId, {
+      campaignId,
+      intent,
+      bookingMode: "human_confirm_live",
     })],
     [],
   );
@@ -1233,6 +1312,7 @@ const HANDLERS = Object.freeze({
   enrich_candidate: handleEnrichCandidate,
   shortlist_build: handleShortlistBuild,
   draft_generate: handleDraftGenerate,
+  calendar_book: handleCalendarBook,
   delivery_reconcile: handleDeliveryReconcile,
   outcome_feedback: (job, context) => handleSimpleEvent(job, context, "outcome.feedback_requested", "candidate", "candidateId"),
 });
@@ -1270,12 +1350,30 @@ async function drainOutbound(configuration, fetcher) {
     await response.body?.cancel().catch(() => undefined);
     return { status: `http_${response.status}` };
   }
-  try {
-    const body = await readBoundedJson(response, RPC_RESPONSE_BYTES);
-    return { status: "ok", ...(body && typeof body === "object" ? body : {}) };
-  } catch {
-    return { status: "response_invalid" };
+  await response.body?.cancel().catch(() => undefined);
+  return { status: "ok" };
+}
+
+async function renewGraphSubscriptions(configuration, fetcher) {
+  if (!configuration.renewGraphUrl || !configuration.cronSecret) {
+    return { status: "unconfigured" };
   }
+  let response;
+  try {
+    response = await fetcher(configuration.renewGraphUrl, {
+      method: "POST",
+      headers: { authorization: `Bearer ${configuration.cronSecret}` },
+      signal: AbortSignal.timeout(DISPATCH_TIMEOUT_MS),
+    });
+  } catch {
+    return { status: "unreachable" };
+  }
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    return { status: `http_${response.status}` };
+  }
+  await response.body?.cancel().catch(() => undefined);
+  return { status: "ok" };
 }
 
 export async function runSourcingLoopTick(client, configuration, environment, fetcher = fetch, modelClient) {
@@ -1302,6 +1400,11 @@ export async function runSourcingLoopTick(client, configuration, environment, fe
   // floored at 90 in-DB). Keeps the table from growing without limit.
   const receiptGc = await client.rpc("cleanup_email_ledger_delivery_receipts", { p_retention_days: 180 });
   if (receiptGc.error) failureCodes.push(`receipt_gc:${receiptGc.error.code}`);
+
+  const renew = await renewGraphSubscriptions(configuration, fetcher);
+  if (renew.status !== "ok" && renew.status !== "unconfigured") {
+    failureCodes.push(`graph_renew:${renew.status}`);
+  }
 
   const dispatch = await drainOutbound(configuration, fetcher);
   if (dispatch.status !== "ok" && dispatch.status !== "unconfigured") {
@@ -1358,6 +1461,7 @@ export async function runSourcingLoopTick(client, configuration, environment, fe
     jobLeasesReaped: typeof jobReap.data === "number" ? jobReap.data : 0,
     frameworkLeasesReaped: typeof frameworkReap.data === "number" ? frameworkReap.data : 0,
     dispatch: dispatch.status,
+    graphRenew: renew.status,
     claimed,
     completed,
     replyClassifier,

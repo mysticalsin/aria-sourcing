@@ -240,9 +240,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       return (
         /validationToken/.test(route)
         && /createGraphMailSubscription/.test(subs)
+        && /renewExpiringGraphMailSubscriptions|renewGraphMailSubscription/.test(subs)
         && /graph_mail_subscriptions/.test(migration)
         && /Emergency sync/.test(panel)
         && /Webhook open needs/.test(panel)
+        && existsSync("src/app/api/cron/renew-graph-subscriptions/route.ts")
       );
     },
   },
@@ -255,8 +257,37 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       return (
         /parseInboundNeedLive/.test(parseRoute)
         && /serverGenerateText/.test(draftRoute)
+        && /llm_required/.test(draftRoute)
+        && /runRecruitingGraph/.test(draftRoute)
         && /parseInboundNeedLive/.test(live)
         && /serverGenerateText/.test(live)
+      );
+    },
+  },
+  {
+    requirement: "Loop proposes Teams/Outlook interview after positive interest (calendar_book)",
+    evidence: () => {
+      const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
+      const migration = readFileSync("supabase/migrations/0065_calendar_book_and_graph_renew.sql", "utf8");
+      return (
+        /calendar_book/.test(worker)
+        && /handleCalendarBook/.test(worker)
+        && /interview_proposed/.test(worker)
+        && /human_confirm_live/.test(worker)
+        && /'calendar_book'/.test(migration)
+      );
+    },
+  },
+  {
+    requirement: "Graph subscription health is distinct from inbound mailbox route",
+    evidence: () => {
+      const connections = readFileSync("src/app/api/email/connections/route.ts", "utf8");
+      const stack = readFileSync("src/components/settings/microsoft365-stack.tsx", "utf8");
+      return (
+        /listGraphSubscriptionsForWorkspace/.test(connections)
+        && /graphSubscription/.test(connections)
+        && /graphSubscriptionActive/.test(stack)
+        && /Entra SSO/.test(stack)
       );
     },
   },
