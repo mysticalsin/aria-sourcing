@@ -107,13 +107,15 @@ call `upsert_inbound_mailbox_route` (migration 0057). UI: Settings → Integrati
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | POST | `/api/webhooks/whatsapp` | Meta signature | Inbound + delivery receipts |
-| POST | `/api/webhooks/email-inbound` | `x-aria-signature` HMAC | Inbound email → record + enqueue `inbound_classify` |
+| GET/POST | `/api/webhooks/microsoft-graph` | Graph `validationToken` / `clientState` | Outlook Inbox push notifications → ingest (hiring need → `requisition_parse`; reply → `inbound_classify`). Primary M365 intake — no inbox polling. |
+| POST | `/api/webhooks/email-inbound` | `x-aria-signature` HMAC | Normalized adapter path (n8n/etc.) → same ingest as Graph |
 | POST | `/api/webhooks/email-delivery` | provider | Delivery events |
 
-**Reply token policy:** classify runs only when `inbound_classify` is claimed.
-The email-inbound webhook enqueues that job for **new** messages only (duplicates
-skip). Idle loop ticks never poll mailboxes or call the classifier. See
-`docs/INBOUND_REPLY_AUTOPILOT.md`.
+**Intake policy:** Microsoft Graph change notifications hit `/api/webhooks/microsoft-graph`
+(subscription URL from `email-graph-subscriptions`). Signed `email-inbound` is an optional
+HMAC adapter to the same ingest. Hiring-need subjects enqueue `requisition_parse`; replies
+enqueue `inbound_classify` for **new** messages only (duplicates skip). Idle loop ticks never
+poll mailboxes or call the classifier. See `docs/INBOUND_REPLY_AUTOPILOT.md`.
 
 ## Health
 

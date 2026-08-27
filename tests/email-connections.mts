@@ -165,6 +165,10 @@ ok(
 );
 const msCb = readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8");
 ok("microsoft callback registers inbound route", /upsert_inbound_mailbox_route/.test(msCb));
+ok(
+  "microsoft callback fails closed when inbound route upsert fails",
+  /inbound mailbox route failed/.test(msCb) && /redirectError/.test(msCb),
+);
 ok("microsoft callback surfaces graph webhook failure", /Graph webhook not enabled/.test(msCb));
 ok("microsoft callback redirects to integrations", /tab=integrations/.test(msCb));
 

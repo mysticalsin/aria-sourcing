@@ -164,7 +164,9 @@ export async function GET(req: NextRequest) {
     return redirectError(req, "Failed to update seat connection.");
   }
 
-  // Register inbound webhook routing so replies resolve to this workspace.
+  // Register inbound webhook routing so Graph/HMAC ingest can resolve this mailbox.
+  // Fail closed: a connected token without a durable route yields 404 "No route for mailbox"
+  // on every notification — never claim webhook-ready without the route.
   const { data: routeResult, error: routeErr } = await svc.rpc("upsert_inbound_mailbox_route", {
     p_mailbox: accountEmail.toLowerCase(),
     p_connection_id: upserted.id,
@@ -172,9 +174,12 @@ export async function GET(req: NextRequest) {
     p_workspace_id: wid,
   });
   if (routeErr || !(routeResult as { ok?: boolean } | null)?.ok) {
-    console.error(
-      "[microsoft/callback] inbound route upsert failed:",
-      routeErr?.message ?? (routeResult as { reason?: string } | null)?.reason,
+    const reason =
+      routeErr?.message ?? (routeResult as { reason?: string } | null)?.reason ?? "unknown";
+    console.error("[microsoft/callback] inbound route upsert failed:", reason);
+    return redirectError(
+      req,
+      `Connected ${accountEmail} but inbound mailbox route failed (${reason}). Reconnect or use Enable webhook / register_inbound in Settings.`,
     );
   }
 
@@ -185,7 +190,7 @@ export async function GET(req: NextRequest) {
     const sub = await createGraphMailSubscription({ workspaceId: wid, connectionId: upserted.id });
     if (!sub.ok) {
       console.error("[microsoft/callback] graph subscription:", sub.reason);
-      successMessage = `Connected ${accountEmail}. Graph webhook not enabled: ${sub.reason}`;
+      successMessage = `Connected ${accountEmail}. Graph webhook not enabled: ${sub.reason}. Use Enable webhook in Settings.`;
     }
   } catch (err) {
     console.error(

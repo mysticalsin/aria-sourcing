@@ -1,61 +1,60 @@
-# Fly golive — real tenant at aria-mantu-app.fly.dev
+# Fly golive — Mantu enterprise tenant (aria-mantu-app)
 
-**Production URL:** https://aria-mantu-app.fly.dev/login?redirect=%2F
+**Production URL:** https://aria-mantu-app.fly.dev  
+**PR deliverable:** https://github.com/mysticalsin/aria-sourcing/pull/31 (supersedes closed #29 / #30)
 
-This is the real Mantu tenant. Demo login is intentionally disabled
-(`NEXT_PUBLIC_ENABLE_DEMO_LOGIN=false` in `fly.app.toml`). Password auth goes
-through GoTrue on `https://aria-mantu-kong.fly.dev`.
+Demo login is disabled (`NEXT_PUBLIC_ENABLE_DEMO_LOGIN=false`). Password auth
+goes through GoTrue on `https://aria-mantu-kong.fly.dev`. Entra SSO turns on
+when GoTrue Azure secrets exist and tip deploy sets
+`NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true`.
 
-## Current gap (as of 2026-08-25)
+## Target (feature branch tip)
 
-| Check | Live Fly | Target (feature branch) |
-|---|---|---|
-| Login page | 200 | 200 |
-| Demo login | Disabled (404) | Stay disabled |
-| App build | `3ff4852…` | `8e42dc2` or newer |
-| DB migration | `0046_swarm_orchestration_authority.sql` | `0059_linkedin_heyreach_parity.sql` |
-| `/api/linkedin/*` | 404 (routes not shipped) | 401 without session |
-| GoTrue redirects | `aria-mantu-app.fly.dev` | same |
+| Check | Target |
+|---|---|
+| App build | tip SHA of `cursor/enterprise-autopilot-b91d` |
+| DB migration | `0066_calendar_meeting_url.sql` |
+| `/api/ready` | `ok: true` (Fly sets `AGENT_FRAMEWORKS_REQUIRED=false`) |
+| Graph webhook | `validationToken` → HTTP 200 plain text |
+| Inbound need | signed `POST /api/webhooks/email-inbound` → `requisition_parse` |
 
-LinkedIn HeyReach parity (assisted-manual connect, simulate, webhook, classify)
-requires **migrations 0047–0059** and a **new app image** on Fly.
-
-## Owner deploy (sanctioned)
-
-Use `.github/workflows/deploy-aria-mantu.yml` only:
-
-1. Merge LinkedIn work to `deploy/fly-github-actions` (or fast-forward that branch).
-2. Ensure CI + CodeQL are green on the exact release SHA (Actions budget must allow runs).
-3. `workflow_dispatch` with:
-   - `release_sha` — 40-char SHA on the protected branch
-   - `recovery_receipt_sha256` — digest of the reviewed volume recovery receipt
-4. Optional after deploy: `fly secrets set LINKEDIN_INBOUND_WEBHOOK_SECRET=… -a aria-mantu-app`
-
-Do **not** enable demo login on Fly.
-
-## Preflight script
+## Owner activation (sanctioned)
 
 ```bash
-bash scripts/fly-golive-linkedin.sh <release_sha>
+# 1) Set secrets (templates only — fill real values)
+bash scripts/print-fly-secrets-checklist.sh
+
+# 2) Preflight (read-only)
+bash scripts/fly-enterprise-activate.sh $(git rev-parse HEAD)
+
+# 3) Deploy tip (requires confirm)
+bash scripts/print-fly-deploy-confirm.sh
+# export ARIA_RELEASE_SHA + ARIA_PROD_DEPLOY_CONFIRM from that output
+bash scripts/fly-deploy-now.sh
+
+# 4) E2E
+bash scripts/print-fly-e2e-env.sh
+export ADMIN_EMAIL='…' ADMIN_PASSWORD='…' EMAIL_INBOUND_WEBHOOK_SECRET='…'
+# optional: export CRON_SECRET='…'
+bash e2e-workflow-test.sh
 ```
 
-Read-only probes + prints dispatch instructions. No Fly mutation.
+Do **not** enable demo login on Fly. Do **not** `vercel --prod` for this tenant.
 
 ## Post-deploy proof
 
 ```bash
 curl -fsS https://aria-mantu-app.fly.dev/api/health
-curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq .build,.migration
-# LinkedIn routes exist (401 without cookie — not 404):
-curl -sS -o /dev/null -w '%{http_code}\n' https://aria-mantu-app.fly.dev/api/linkedin/connections
-ADMIN_EMAIL=… ADMIN_PASSWORD=… ANON_KEY=… bash e2e-workflow-test.sh
+curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,status,build,migration}'
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  "https://aria-mantu-app.fly.dev/api/webhooks/microsoft-graph?validationToken=t"
 ```
 
-## Vercel demo is not production
+Success: ready `ok=true`, migration `0066_*`, build matches tip, Graph HTTP 200,
+`e2e-workflow-test.sh` PASS.
 
-`https://aria-sourcing-demo.vercel.app` remains an open demo for sales. The Fly
-URL above is where real auth, Supabase, and durable LinkedIn events belong.
+## Notes
 
-**Mantu enterprise releases must deploy to Fly (`aria-mantu-app`) only.** Do not
-run `vercel --prod` for this tenant. `vercel.json` `ignoreCommand` skips Vercel
-builds on every branch except `vercel-demo`.
+- LinkedIn send stays assisted-manual (`409 manual-required`).
+- Live calendar book only via `/api/calendar/event` + `confirmLive` with a Teams joinUrl.
+- Loop intake is webhook-first (no empty `email_sync` polling).

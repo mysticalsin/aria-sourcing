@@ -375,9 +375,13 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /ensureGraphMailSubscription/.test(connections)
         && /graphSubscription/.test(connections)
         && /graphSubscriptionActive/.test(stack)
+        && /webhookIntakeReady/.test(stack)
         && /Enable webhook/.test(panel)
         && /ensureGraphMailSubscription/.test(graphLib)
         && /Entra SSO/.test(stack)
+        && /inbound mailbox route failed/.test(
+          readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8"),
+        )
       );
     },
   },

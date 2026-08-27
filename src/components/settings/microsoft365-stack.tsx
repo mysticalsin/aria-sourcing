@@ -86,12 +86,14 @@ function Microsoft365StackInner() {
   const mailboxConnected = Boolean(connectedOutlook);
   const inboundReady = Boolean(providers?.inboundWebhookSecret);
   const calendarReady = mailboxConnected && calendarScoped;
+  // Step 4 is webhook push readiness: durable mailbox route AND live Graph subscription.
+  const webhookIntakeReady = inboundActive && graphSubscriptionActive;
 
   const stepsComplete =
     (ssoReady ? 1 : 0) +
     (oauthReady && mailboxConnected ? 1 : 0) +
     (calendarReady ? 1 : 0) +
-    (inboundActive ? 1 : 0);
+    (webhookIntakeReady ? 1 : 0);
   const progressPct = (stepsComplete / 4) * 100;
 
   let statusLabel = loading ? "Checking Microsoft 365…" : "Not started";
@@ -99,6 +101,11 @@ function Microsoft365StackInner() {
   if (!loading && stepsComplete === 4) {
     statusLabel = "Microsoft 365 ready";
     statusTone = "success";
+  } else if (!loading && mailboxConnected && !webhookIntakeReady) {
+    statusLabel = graphSubscriptionActive
+      ? `Outlook connected — inbound route incomplete`
+      : `Outlook connected — Graph webhook inactive`;
+    statusTone = "electric";
   } else if (!loading && mailboxConnected) {
     statusLabel = `Outlook connected (${connectedOutlook?.accountEmail})`;
     statusTone = "electric";
