@@ -37,6 +37,12 @@ has_microsoft_drop() {
       return 0
     fi
   done
+  # Cursor / shell-exported secrets (never invent PLACEHOLDER)
+  if [ -n "${MICROSOFT_CLIENT_ID:-}" ] && [ -n "${MICROSOFT_CLIENT_SECRET:-}" ] \
+    && [[ "${MICROSOFT_CLIENT_ID}" != PLACEHOLDER* ]] \
+    && [[ "${MICROSOFT_CLIENT_SECRET}" != PLACEHOLDER* ]]; then
+    return 0
+  fi
   return 1
 }
 

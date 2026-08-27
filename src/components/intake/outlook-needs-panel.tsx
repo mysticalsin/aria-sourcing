@@ -79,6 +79,7 @@ export function OutlookNeedsPanel({
   const [lastError, setLastError] = React.useState<string | null>(null);
   const [pulledOnce, setPulledOnce] = React.useState(false);
   const [demoMode, setDemoMode] = React.useState(false);
+  const [graphWebhookActive, setGraphWebhookActive] = React.useState(false);
 
   const outlookSeats = seats.filter((s) => s.provider === "Microsoft Graph");
   const connected = outlookSeats.filter(seatHasOutlookMailbox);
@@ -90,6 +91,35 @@ export function OutlookNeedsPanel({
       setPulledOnce(true);
       setDemoMode(false);
     }
+  }, [supabaseEnabled, connected.length]);
+
+  React.useEffect(() => {
+    if (!supabaseEnabled || connected.length === 0) {
+      setGraphWebhookActive(false);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/email/connections", { credentials: "same-origin" });
+        const json = (await res.json().catch(() => null)) as {
+          connections?: Array<{
+            provider?: string;
+            graphSubscription?: { active?: boolean } | null;
+          }>;
+        } | null;
+        if (cancelled) return;
+        const active = (json?.connections ?? []).some(
+          (c) => c.provider === "Microsoft Graph" && c.graphSubscription?.active === true,
+        );
+        setGraphWebhookActive(active);
+      } catch {
+        if (!cancelled) setGraphWebhookActive(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [supabaseEnabled, connected.length]);
 
   /** Break-glass only: Graph webhook is the production intake path. */
@@ -224,17 +254,19 @@ export function OutlookNeedsPanel({
               </Link>
             )
           ) : null}
-          <Button
-            type="button"
-            size="sm"
-            variant="subtle"
-            leftIcon={<RefreshCw className={cn("h-3.5 w-3.5", pulling && "animate-spin")} aria-hidden />}
-            onClick={() => void emergencySyncNeeds()}
-            loading={pulling}
-            disabled={pulling || busy}
-          >
-            {pulling ? "Syncing…" : "Emergency sync"}
-          </Button>
+          {!graphWebhookActive ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="subtle"
+              leftIcon={<RefreshCw className={cn("h-3.5 w-3.5", pulling && "animate-spin")} aria-hidden />}
+              onClick={() => void emergencySyncNeeds()}
+              loading={pulling}
+              disabled={pulling || busy}
+            >
+              {pulling ? "Syncing…" : "Emergency sync"}
+            </Button>
+          ) : null}
           <Link
             href="/settings?tab=setup"
             className="inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 text-sm font-semibold text-ink hover:bg-ink/5"
@@ -261,7 +293,8 @@ export function OutlookNeedsPanel({
                 <p className="text-sm font-semibold text-ink">Graph webhook → campaign</p>
                 <p className="mt-1 text-xs text-muted">
                   Connect Outlook to register a change-notification subscription. New hiring emails
-                  enqueue requisition_parse automatically. Emergency sync is break-glass only.
+                  enqueue requisition_parse automatically. Emergency sync is break-glass only
+                  (hidden once the Graph webhook subscription is active).
                 </p>
               </div>
             </motion.div>
@@ -272,7 +305,10 @@ export function OutlookNeedsPanel({
               animate={{ opacity: 1 }}
               className="text-sm text-muted"
             >
-              Waiting for webhook-delivered needs. Paste a brief below, or use Emergency sync only if Graph push is unavailable.
+              Waiting for webhook-delivered needs. Paste a brief below
+              {graphWebhookActive
+                ? "."
+                : ", or use Emergency sync only if Graph push is unavailable."}
             </motion.p>
           ) : (
             <motion.ul

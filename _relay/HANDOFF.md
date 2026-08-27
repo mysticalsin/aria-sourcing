@@ -1,45 +1,41 @@
 ---
 project: MSourcing / ARIA
-shift: 175
+shift: 176
 agent: cursor-cloud
-updated: 2026-08-27T16:15Z
+updated: 2026-08-27T16:20Z
 status: tip-code-hardened-awaiting-deploy-confirm
 ---
 
-# Handoff — Shift 175
+# Handoff — Shift 176
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32** · tip advancing (honesty UX in flight)
-- **Live Fly:** still build `ba88302` · mig `0060` · `/api/ready` not_ready · Graph validationToken **404**
-- **Drop-zones:** `/tmp/owner-deploy-confirm.env` / `/tmp/owner-microsoft.env` absent; `ARIA_PROD_DEPLOY_CONFIRM` unset (will not invent — use `bash scripts/print-fly-deploy-confirm.sh`)
-- **Waiter:** `fly-wait-entra` with `ARIA_SKIP_AZ_DEVICE_REFRESH=1`
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32** · tip advancing
+- **Live Fly:** still build `ba88302` · mig `0060` · `/api/ready` not_ready · Graph **404**
+- **Drop-zones:** absent; `ARIA_PROD_DEPLOY_CONFIRM` unset (will not invent — use `bash scripts/print-fly-deploy-confirm.sh` or Cursor secret)
+- **Owner asks:** Cursor secrets for `ARIA_PROD_DEPLOY_CONFIRM` (+ optional MS client id/secret) OR `/tmp/owner-deploy-confirm.env`
 
 ## Done this shift
 
-- Outlook/Teams hydrate: **degraded** unless `graphSubscription.active`
-- `/api/email/test`: fail-closed without active Graph webhook subscription
-- Teams Test copy requires webhook + live seat for confirmLive claim
-- LinkedIn stack: no "Ready for outreach"; assisted-manual / 409 honesty
-- OAuth: promote `mode=live` **only after** inbound route + Graph subscription succeed
+- Requested deploy-confirm + Microsoft credentials via Cursor secrets UI (and drop-zone external action)
+- Waiter treats exported `MICROSOFT_CLIENT_ID`+`SECRET` as microsoft unlock (no PLACEHOLDER)
+- Intake: hide Emergency sync when Graph webhook subscription is active
 
 ## Next steps
 
-1. Owner: `bash scripts/print-fly-deploy-confirm.sh` → `/tmp/owner-deploy-confirm.env` → tip deploy
-2. Owner: Microsoft secrets when ready for Outlook OAuth
-3. After tip: Connect Outlook + webhook → `eval "$(bash scripts/print-fly-e2e-env.sh --export)" && bash e2e-workflow-test.sh`
-4. Goal complete only when: ready ok + mig>=0066 + tip build + Graph200 + E2E PASS
+1. Owner: paste `ARIA_PROD_DEPLOY_CONFIRM` from `print-fly-deploy-confirm.sh` into Cursor secrets or `/tmp/owner-deploy-confirm.env`
+2. Owner: Microsoft client id/secret when ready for Outlook OAuth
+3. After tip: Connect Outlook → `e2e-workflow-test.sh`
+4. Goal complete: ready ok + mig>=0066 + tip build + Graph200 + E2E PASS
 
 ## Decisions made (don't relitigate)
 
 - PR #32 supersedes #29–#31
 - Never invent Azure secrets or `ARIA_PROD_DEPLOY_CONFIRM` — use `print-fly-deploy-confirm.sh`
-- Seat mode=live for Teams book; calendar live only via `/api/calendar/event` + `confirmLive`
-- LinkedIn send stays 409 assisted-manual; HeyReach = LinkedIn MCP path
-- Owner skipped Entra MFA — watch drop-zones only
+- Seat mode=live only after Graph webhook; LinkedIn 409 assisted-manual
+- Owner skipped Entra MFA — secrets via portal/drop-zone OK; no device-code spam
 
 ## Watch out
 
-- ba88302 cannot opt out of agentFrameworks — tip deploy mandatory
-- Confirm drop-zone SHA must match clean tree HEAD
+- Tip SHA must match confirm string at deploy time
 - GitHub Actions budget exhausted; local gate is authority
