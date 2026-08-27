@@ -10,10 +10,10 @@ status: code-complete-awaiting-owner-deploy
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30** (supersedes closed **#29**) · tip `fae8b69`
-- **Local gate:** `npx tsc --noEmit && npm test` green; audit **29/29**; mantu E2E **28/28**
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30** (supersedes closed **#29**) · tip `d8af6ac`
+- **Local gate:** `npx tsc --noEmit && npm test` green; audit **30/30**; mantu E2E **28/28**
 - **Fly live:** build `ba88302`, migration **0060**, `agentFrameworks:false`, `/api/ready` not_ready
-- **Source target:** migration **0065**; golive preflight prints exact deploy command for `3bc702d`
+- **Source target:** migration **0065**; golive preflight prints deploy command for tip SHA
 - **Owner blockers:** `ARIA_PROD_DEPLOY_CONFIRM` unset; Entra/Graph/LLM secrets absent in agent env
 
 ## Completion audit (objective vs evidence)
@@ -39,8 +39,8 @@ status: code-complete-awaiting-owner-deploy
 ## Blockers (owner)
 
 ```bash
-ARIA_RELEASE_SHA=fae8b69d9e9472b8d62c46081100793276a817a3 \
-ARIA_PROD_DEPLOY_CONFIRM=aria-production-release-v1:fly-deploy-now:fae8b69d9e9472b8d62c46081100793276a817a3:aria-mantu-bootstrap,aria-mantu-app \
+ARIA_RELEASE_SHA=d8af6ac0880c6c66c132ad2e0641b7f1c7fc2080 \
+ARIA_PROD_DEPLOY_CONFIRM=aria-production-release-v1:fly-deploy-now:d8af6ac0880c6c66c132ad2e0641b7f1c7fc2080:aria-mantu-bootstrap,aria-mantu-app \
   bash scripts/fly-deploy-now.sh
 ```
 

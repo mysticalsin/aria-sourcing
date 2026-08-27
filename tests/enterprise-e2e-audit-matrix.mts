@@ -377,6 +377,14 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
+    requirement: "Enterprise E2E deliverable tracked on open PR #30 (supersedes closed #29)",
+    evidence: () => {
+      const golive = readFileSync("scripts/fly-golive-mantu-e2e.sh", "utf8");
+      const handoff = readFileSync("_relay/HANDOFF.md", "utf8");
+      return /PR #30/.test(golive) && /supersedes closed \*\*#29\*\*/.test(handoff);
+    },
+  },
+  {
     requirement: "LLM wiki / second brain documents agent behavior with durable identity",
     evidence: () => {
       const readme = readFileSync("docs/agent-wiki/README.md", "utf8");
