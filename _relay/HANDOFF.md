@@ -1,55 +1,58 @@
 ---
 project: MSourcing / ARIA
-shift: 203
+shift: 204
 agent: cursor-cloud
-updated: 2026-08-27T22:37Z
-status: live-fly-e469126-mailbox-dry-run-deployed
+updated: 2026-08-27T23:02Z
+status: tip-ahead-of-live-graphstage-enqueue-fix
 ---
 
-# Handoff — Shift 203
+# Handoff — Shift 204
 
 ## Current state
 
-- **Branch tip (git):** `cursor/enterprise-autopilot-b91d` **`98f704f`** (`98f704f29be99ace44266e410baf3f7550dfaeaf`); code fix = **`0e5da13`** (ancestor)
-- **Live Fly `aria-mantu-app`:** **`e46912691e9d2ad400dbb5a37f3e68047649727e`** / mig **0068** — contains `0e5da13` (≠ `2ffc428` / `635eb4e`); tip advanced with post-deploy relay only
-- `/api/ready` → `ok:true`, `status:ready`, build=`e469126…`, migration=`0068_apply_workspace_patch_digest_path.sql`
-- Login page HTTP 200; password grant `twalteur@amaris.com` OK via Kong (tokens not logged)
-- Loop machine **started** (`2863e10bd41e28`); web started + health passing
-- **PR #32** CLOSED — no reopen; tip push without PR
-- Microsoft **SKIPPED** (owner)
-- Goal `goal-2026-07-08-aria-enterprise-ready` **IN_PROGRESS**
+- **Branch tip (git):** `cursor/enterprise-autopilot-b91d` **`5351cef`** (`5351cef57cf83f458987b6849179afc468f37f53`)
+- **Live Fly `aria-mantu-app`:** **`e46912691e9d2ad400dbb5a37f3e68047649727e`** / mig **0068** — does **not** yet include graphStage enqueue fix (`03ddf0d`)
+- `/api/ready` → `ok:true`, build=`e469126…`, migration=`0068_apply_workspace_patch_digest_path.sql`
+- Microsoft **SKIPPED** (owner) — no secret polling, no Outlook connect, no live Teams E2E
+- Goal `goal-2026-07-08-aria-enterprise-ready` **IN_PROGRESS** (do not complete)
+- **PR #32** CLOSED — tip push without reopen
 
 ## Done this shift
 
-1. Minted confirm via `bash scripts/print-fly-deploy-confirm.sh` for HEAD `e469126` (drop-zone `/tmp/owner-deploy-confirm.env`)
-2. Deployed with `FLY_API_TOKEN` + `scripts/fly-deploy-now.sh` → bootstrap + app; `DEPLOY_EXIT=0`
-3. Proof: `/api/ready` ok with live SHA `e469126…`; login 200; password grant OK
-4. Did **not** Approve/send outreach; did **not** invent Microsoft secrets
+1. **Live proved 0068 digest path:** service-role `apply_workspace_patch` `append_campaign` → HTTP 200 `not_found` (not 42883/404)
+2. **Live synthetic webhook → campaign:** HMAC `/api/webhooks/email-inbound` queued `requisition_parse`; campaign `camp-req-620deff9` ("E2E Autopilot TS Engineer 224646") appeared in workspace_state ~25s later
+3. **Root-caused remaining fail:** tick `2026-08-27T22:47:21Z` `handler:requisition_parse:rpc_http_400:22023` — `graphStage` in `campaign_create` enqueue rejected by `aria_job_payload_contract_ok`; campaign blob written but job not completed → no `campaign_create`→sourcing chain; retries → `not-parseable-state`
+4. **Code fix (needs redeploy):** `03ddf0d` strips `graphStage` from successor payloads + resumes when ingest status is `campaign_created`; tests green
+5. **E2E honesty:** `5351cef` — `ARIA_ALLOW_SKIP_LIVE_CALENDAR=1` / partial M365 → `RESULT: PARTIAL` never pretends full PASS; audit matrix pins contract
+6. Local gate: `npx tsc --noEmit && npm test` green; did **not** Approve/send outreach; did **not** invent MS secrets or deploy confirm
 
 ## Blockers
 
-- Microsoft still skipped — Outlook live E2E out of scope
-- Operator UI smoke still pending: Outreach Queue Summary should show **Dry-run / preview** with HeyReach live and no mailbox
+- Tip `5351cef` **ahead of live** `e469126` — owner Tony-style deploy confirm required to ship graphStage/resume fix (mint via `bash scripts/print-fly-deploy-confirm.sh`)
+- Microsoft still skipped — Outlook/Teams live E2E out of scope
+- Stuck live job for the proved inbound may still need tip redeploy (or natural retry after deploy) to enqueue `campaign_create`
 
 ## Next steps
 
-1. Operator smoke (no Approve/send): Outreach Queue Summary **Dry-run / preview** with HeyReach live and Outlook disconnected; **Record legitimate interest** visible on draft cards
-2. Keep Microsoft skipped unless owner reverses
-3. Do not complete goal; do not reopen #32
+1. Owner: mint deploy confirm for tip `5351cef` / `5351cef57cf83f458987b6849179afc468f37f53` and redeploy Fly (app + loop); keep loop machine started
+2. After redeploy: re-prove webhook → `requisition_parse` → `campaign_create` → `sourcing_batch` (no `22023` / `not-parseable-state`)
+3. Continue parse→source→top10→Mantu draft→quality dry-run (no Approve/send); LinkedIn stays 409 assisted-manual
+4. Operator smoke: Outreach Queue **Dry-run / preview** without mailbox; **Record legitimate interest** on draft cards
+5. Keep Microsoft skipped unless owner reverses; do not complete goal; do not reopen #32
 
 ## Decisions made (don't relitigate)
 
 - Owner closed #32 — accept; tip push without reopen
 - Owner skip Microsoft — still in force
-- Owner approved Fly deploys for demo fixes — redeploy executed for tip containing `0e5da13`
-- Force Dry-run when no real mailbox account — **regardless of HeyReach/LinkedIn live toggles**
-- Demo UX + 0068 co-located on `enterprise-autopilot-b91d`
+- Force Dry-run when no real mailbox — regardless of HeyReach/LinkedIn live toggles
+- Never `ARIA_ALLOW_SKIP_LIVE_CALENDAR=1` pretending full PASS — PARTIAL only
+- `graphStage` belongs on job results / LangGraph checkpoints, never enqueue payloads
 - Local gate = CI authority; never invent deploy confirm
-- VSS plain text/HTML production baseline; PDF OCR deferred
-- `e2e-workflow-test.sh` Approves outreach — skip while “no Approve/send” stands
+- `e2e-workflow-test.sh` Approves outreach — skip while "no Approve/send" stands
 
 ## Watch out
 
 - Stale confirm for older SHAs will refuse a new tip — mint via `print-fly-deploy-confirm.sh`
-- Do not set `ARIA_ALLOW_SKIP_LIVE_CALENDAR=1`
+- Do not set `ARIA_ALLOW_SKIP_LIVE_CALENDAR=1` as success theatre
 - Keep loop machine started after future deploys
+- Partial parse success leaves campaign in workspace without sourcing until tip redeploy resumes
