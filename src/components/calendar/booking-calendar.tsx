@@ -67,17 +67,17 @@ function LinkButton({
   children: React.ReactNode;
   tone: "teams" | "cal";
 }) {
-  // No real meeting URL until a live calendar integration is connected — show a
-  // clear disabled state instead of a fabricated link that 404s.
+  // No Teams/Outlook URL until Graph confirmLive succeeds — show a clear
+  // disabled state instead of a fabricated link that 404s.
   if (!href) {
     return (
       <span
         aria-disabled="true"
-        title="Meeting link is generated once the calendar integration goes live"
+        title="Connect Microsoft Graph and book with confirmLive to create a Teams meeting"
         className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-full bg-ink/[0.04] px-3 text-xs font-semibold text-muted ring-1 ring-inset ring-line"
       >
         {icon}
-        {children} · on live send
+        {children} · needs Graph
       </span>
     );
   }
@@ -215,11 +215,11 @@ function BookingRow({ booking }: { booking: Booking }) {
           {!booking.teamsLink && !booking.calLink ? (
             <span
               aria-disabled="true"
-              title="Meeting link is generated once the calendar integration goes live"
+              title="Connect Microsoft Graph and book with confirmLive to create a Teams meeting"
               className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-full bg-ink/[0.04] px-3 text-xs font-semibold text-muted ring-1 ring-inset ring-line"
             >
               <Video className="h-3.5 w-3.5" aria-hidden />
-              Teams · on live send
+              Teams · needs Graph
             </span>
           ) : null}
         </div>

@@ -256,7 +256,8 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
                   </p>
                 ) : (
                   <p className="text-xs text-muted">
-                    Meeting links are issued when the calendar integration goes live.
+                    No Teams link yet — connect Microsoft Graph and book with confirmLive to create
+                    an online meeting.
                   </p>
                 )}
               </div>
