@@ -60,8 +60,11 @@ test("booking and report actions are React-free and wired through one stable fac
   assert.equal((storeSource.match(/const setSkillUpdateStatus = useCallback/g) ?? []).length, 0);
   assert.doesNotMatch(candidateDrawerSource, /Teams \+ Cal\.com links generated/);
   assert.doesNotMatch(campaignPageSource, /Teams \+ Cal\.com links generated/);
-  assert.match(calendarPageSource, /preview\?\.booking\.calendarSync/);
+  assert.match(calendarPageSource, /bookingNeedsCalendar\(preview\.booking\)/);
+  assert.match(calendarPageSource, /bookingInterviewTitle/);
   assert.match(calendarPageSource, /bookingCalendarSummary\(preview\.booking\)/);
+  assert.match(campaignPageSource, /bookingInterviewTitle/);
+  assert.match(bookingReportActionsSource, /bookingInterviewTitle\(booking,/);
 });
 
 test("booking and report callers handle rejected mutations before success", () => {

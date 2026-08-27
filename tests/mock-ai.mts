@@ -99,13 +99,13 @@ const noEvidenceCandidate = {
   recentActivity: "",
 };
 const genericSubjects: Record<string, string> = {
-  en: `${campaign.jobAnalysis.title} opportunity`,
-  fr: `Opportunité de ${campaign.jobAnalysis.title}`,
-  es: `Oportunidad de ${campaign.jobAnalysis.title}`,
-  de: `Position als ${campaign.jobAnalysis.title}`,
-  pt: `Oportunidade para ${campaign.jobAnalysis.title}`,
-  it: `Opportunità come ${campaign.jobAnalysis.title}`,
-  nl: `Vacature voor ${campaign.jobAnalysis.title}`,
+  en: `${campaign.jobAnalysis.title} opportunity at Mantu`,
+  fr: `Opportunité de ${campaign.jobAnalysis.title} chez Mantu`,
+  es: `Oportunidad de ${campaign.jobAnalysis.title} en Mantu`,
+  de: `Position als ${campaign.jobAnalysis.title} bei Mantu`,
+  pt: `Oportunidade para ${campaign.jobAnalysis.title} na Mantu`,
+  it: `Opportunità come ${campaign.jobAnalysis.title} in Mantu`,
+  nl: `Vacature voor ${campaign.jobAnalysis.title} bij Mantu`,
 };
 
 for (const [language, expectedSubject] of Object.entries(genericSubjects)) {

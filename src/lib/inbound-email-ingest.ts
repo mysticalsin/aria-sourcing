@@ -131,10 +131,13 @@ export async function ingestNormalizedInboundEmail(
         kind: jobDecision.kind,
         status: enqStatus || "missing",
       });
+      const controlBlocked = enqStatus === "control_blocked";
       return {
         ok: false,
         status: 503,
-        reason: "Job enqueue rejected.",
+        reason: controlBlocked
+          ? "Loop intake disabled — arm Intake on the sourcing-loop switchboard (synthetic HMAC and Graph paths both require it)."
+          : "Job enqueue rejected.",
         inboundId: rec.inbound_id,
       };
     }

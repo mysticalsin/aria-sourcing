@@ -71,11 +71,23 @@ ok(
 );
 
 ok(
-  "rankTopCandidates returns top 10",
+  "rankTopCandidates returns top 10 above min score",
   rankTopCandidates(
-    Array.from({ length: 15 }, (_, i) => ({ id: `c${i}`, matchScore: i * 5 })),
+    Array.from({ length: 15 }, (_, i) => ({ id: `c${i}`, matchScore: 95 - i })),
     TOP_CANDIDATE_SHORTLIST_SIZE,
   ).length === 10,
+);
+
+ok(
+  "rankTopCandidates drops below-min-score candidates",
+  rankTopCandidates(
+    [
+      { id: "low", matchScore: 40 },
+      { id: "mid", matchScore: 69 },
+      { id: "ok", matchScore: 70 },
+    ],
+    TOP_CANDIDATE_SHORTLIST_SIZE,
+  ).map((c) => c.id).join(",") === "ok",
 );
 
 void (async () => {
@@ -155,6 +167,7 @@ void (async () => {
     intent: "draft_quality",
     workspaceId: "ws-1",
     candidateIds: ["a"],
+    preferLiveCritics: false,
     drafts: {
       a: {
         subject: "Your work",
@@ -166,6 +179,29 @@ void (async () => {
   ok(
     "draft_quality intent never claims interview_scheduled",
     draftOnly.stage === "queued_for_approval" || draftOnly.stage === "approval_blocked",
+  );
+
+  const draftLiveRequired = await runRecruitingGraph({
+    intent: "draft_quality",
+    workspaceId: "ws-1",
+    candidateIds: ["a"],
+    drafts: {
+      a: {
+        subject: "Your work",
+        body: "Hi Sam, I noticed your recent React work and wondered if you would be open to a brief chat about a senior role at Mantu.",
+        channel: "Email",
+      },
+    },
+  });
+  ok(
+    "draft_quality defaults to live critics fail-closed without peers",
+    draftLiveRequired.stage === "quality_critics_incomplete"
+      || draftLiveRequired.stage === "queued_for_approval"
+      || draftLiveRequired.stage === "approval_blocked",
+  );
+  ok(
+    "draft_quality default path never invents interview_scheduled",
+    draftLiveRequired.stage !== "interview_scheduled",
   );
 
   const emptyDrafts = await runRecruitingGraph({

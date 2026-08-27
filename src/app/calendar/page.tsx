@@ -18,7 +18,7 @@ import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { BookingCalendar } from "@/components/calendar/booking-calendar";
 import { InterviewerPanel } from "@/components/calendar/interviewer-panel";
 import { useHydrated, useBookings, useCandidates, useActions } from "@/lib/store";
-import { bookingCalendarSummary } from "@/lib/booking-status";
+import { bookingCalendarSummary, bookingInterviewTitle, bookingNeedsCalendar } from "@/lib/booking-status";
 import type { Booking, Candidate } from "@/lib/types";
 import {
   cn,
@@ -112,13 +112,11 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
     }
     setPreview(res);
     toast({
-      title: res.booking.calendarSync
-        ? `Interview booked: ${candidate.name}`
-        : `Needs calendar: ${candidate.name}`,
+      title: bookingInterviewTitle(res.booking, candidate.name),
       description: res.booking.calendarSync
         ? "Teams/Outlook event created and added to the schedule."
         : "Slot saved locally. Connect Microsoft Graph and use confirmLive to issue a Teams link — not a live booked interview.",
-      variant: res.booking.calendarSync ? "success" : "warning",
+      variant: bookingNeedsCalendar(res.booking) ? "warning" : "success",
     });
   }
 
@@ -209,9 +207,13 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
       <Modal
         open={preview !== null}
         onClose={() => setPreview(null)}
-        title={preview ? `Interview booked: ${preview.booking.candidateName}` : "Interview booked"}
+        title={
+          preview
+            ? bookingInterviewTitle(preview.booking, preview.booking.candidateName)
+            : "Interview booking"
+        }
         description={
-          preview?.booking.calendarSync
+          preview && !bookingNeedsCalendar(preview.booking)
             ? "Live calendar event created. Prep and confirmation emails are drafted below; review before sending."
             : "Needs calendar — slot saved without Teams. Prep and confirmation emails are drafted below. Nothing is sent automatically."
         }

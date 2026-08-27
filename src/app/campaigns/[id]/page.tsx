@@ -49,7 +49,7 @@ import { BookingCalendar } from "@/components/calendar/booking-calendar";
 import { InterviewerPanel } from "@/components/calendar/interviewer-panel";
 import { WeeklyReportCard } from "@/components/reports/weekly-report-card";
 import { SkillUpdateCard } from "@/components/reports/skill-update-card";
-import { bookingCalendarSummary } from "@/lib/booking-status";
+import { bookingCalendarSummary, bookingInterviewTitle, bookingNeedsCalendar } from "@/lib/booking-status";
 import {
   useActions,
   useBookings,
@@ -748,10 +748,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     const res = await actions.createBookingFor(cand.id);
     setBookingCandidateId(null);
     if (res.ok) {
+      const needsCalendar = bookingNeedsCalendar(res.booking);
       toast({
-        title: `Interview booked: ${cand.name}`,
+        title: bookingInterviewTitle(res.booking, cand.name),
         description: `With ${res.booking.interviewer || "an interviewer to be confirmed"}. ${bookingCalendarSummary(res.booking)}`,
-        variant: "success",
+        variant: needsCalendar ? "warning" : "success",
       });
     } else {
       toast({ title: "Could not book interview", description: res.error, variant: "error" });

@@ -130,15 +130,30 @@ async function main() {
   );
   const draftHook = await runRecruitingGraph({
     intent: "draft_quality",
+    preferLiveCritics: false,
     workspaceId: "ws-e2e",
     campaignId: e2eCampaign.id,
     candidateIds: [top10[0]!.id],
     drafts: { [top10[0]!.id]: drafts[top10[0]!.id]! },
   });
   ok(
-    "draft_quality cron path ends at approval stage",
+    "draft_quality deterministic path ends at approval stage",
     draftHook.stage === "queued_for_approval" || draftHook.stage === "approval_blocked",
   );
+  const draftLiveDefault = await runRecruitingGraph({
+    intent: "draft_quality",
+    workspaceId: "ws-e2e",
+    campaignId: e2eCampaign.id,
+    candidateIds: [top10[0]!.id],
+    drafts: { [top10[0]!.id]: drafts[top10[0]!.id]! },
+  });
+  ok(
+    "draft_quality defaults to live-critics fail-closed without peers",
+    draftLiveDefault.stage === "quality_critics_incomplete"
+      || draftLiveDefault.stage === "queued_for_approval"
+      || draftLiveDefault.stage === "approval_blocked",
+  );
+  ok("draft_quality never invents interview_scheduled", draftLiveDefault.stage !== "interview_scheduled");
   ok("LangGraph shortlist size", (graphState.shortlistIds?.length ?? 0) <= TOP_CANDIDATE_SHORTLIST_SIZE);
   ok(
     "graph stage maps to calendar_book after approval",

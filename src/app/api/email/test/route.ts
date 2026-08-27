@@ -208,7 +208,18 @@ export async function POST(req: NextRequest) {
     ok: readiness.inboundWebhookSecret,
     detail: readiness.inboundWebhookSecret
       ? "EMAIL_INBOUND_WEBHOOK_SECRET is set."
-      : "EMAIL_INBOUND_WEBHOOK_SECRET not set — webhook will reject inbound replies.",
+      : "EMAIL_INBOUND_WEBHOOK_SECRET not set — webhook will reject hiring needs and replies.",
+  });
+
+  // Synthetic HMAC path (/api/webhooks/email-inbound) is ready without Graph;
+  // Graph subscription is additive when Outlook connects later.
+  const needHandlerReady = readiness.inboundWebhookSecret && routeActive;
+  checks.push({
+    id: "hiring_need_handler",
+    ok: needHandlerReady,
+    detail: needHandlerReady
+      ? "Hiring-need handler ready: mailbox route + webhook secret (Graph subscription optional until Outlook connects)."
+      : "Hiring-need handler not ready — register inbound mailbox route and set EMAIL_INBOUND_WEBHOOK_SECRET.",
   });
 
   const summary = summarizeEmailValidation(checks);

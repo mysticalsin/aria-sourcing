@@ -248,13 +248,23 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     evidence: () => {
       const drawer = readFileSync("src/components/candidates/candidate-drawer.tsx", "utf8");
       const store = readFileSync("src/lib/store.ts", "utf8");
+      const bookingStatus = readFileSync("src/lib/booking-status.ts", "utf8");
+      const calendar = readFileSync("src/app/calendar/page.tsx", "utf8");
+      const campaigns = readFileSync("src/app/campaigns/[id]/page.tsx", "utf8");
+      const bookingActions = readFileSync("src/lib/store/booking-report-actions.ts", "utf8");
       return (
         /createBookingFor\(c\.id\)/.test(drawer)
         && /Intw1 booked on Outlook\/Teams/.test(drawer)
         && /Intw1 saved — needs calendar/.test(drawer)
-        && /Needs calendar/.test(readFileSync("src/app/calendar/page.tsx", "utf8"))
+        && /Needs calendar/.test(calendar)
         && /bookingNeedsCalendar/.test(readFileSync("src/components/calendar/booking-calendar.tsx", "utf8"))
-        && /Needs calendar — connect Microsoft Graph/.test(readFileSync("src/lib/booking-status.ts", "utf8"))
+        && /Needs calendar — connect Microsoft Graph/.test(bookingStatus)
+        && /bookingInterviewTitle/.test(bookingStatus)
+        && /bookingInterviewTitle/.test(calendar)
+        && /bookingInterviewTitle/.test(campaigns)
+        && /bookingInterviewTitle/.test(bookingActions)
+        && /Interview booking/.test(calendar)
+        && !/title=\{preview \? `Interview booked:/.test(calendar)
         && !/Reminder cadence T-24h/.test(drawer)
         && /Do NOT invent Booked here/.test(store)
       );
@@ -860,6 +870,13 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /llmStages\.length === CRITICS\.length/.test(readFileSync("src/lib/outreach-quality-pipeline-live.ts", "utf8"))
         && /quality_critics_incomplete/.test(graph)
         && /draft_failed/.test(graph)
+        && /intent === "draft_quality" && state\.preferLiveCritics !== false/.test(graph)
+        && /empty_shortlist_or_below_min_score/.test(graph)
+        && /DEFAULT_SHORTLIST_MIN_SCORE/.test(graph)
+        && /shortlist_below_min_score/.test(worker)
+        && /hiring_need_handler/.test(readFileSync("src/app/api/email/test/route.ts", "utf8"))
+        && /Loop intake disabled/.test(readFileSync("src/lib/inbound-email-ingest.ts", "utf8"))
+        && /Mantu Group is hiring/.test(readFileSync("src/lib/i18n.ts", "utf8"))
         && /refuseMockOutreachOnLiveTenant/.test(readFileSync("src/lib/store.ts", "utf8"))
         && /Live drafting required/.test(readFileSync("src/components/settings/hermes-runtime-panel.tsx", "utf8"))
         && /isTeamsMeetingJoinUrl/.test(readFileSync("src/lib/store/booking-report-actions.ts", "utf8"))
