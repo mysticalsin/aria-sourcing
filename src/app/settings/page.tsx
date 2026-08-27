@@ -45,7 +45,7 @@ import { SchedulesPanel } from "@/components/settings/schedules-panel";
 import { HermesSchedulesPanel } from "@/components/settings/hermes-schedules-panel";
 import { useHydrated, useSettings, useIntegrations, useActions } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
-import { realIntegrationSummary } from "@/lib/integrations";
+import { realIntegrationSummary, mailboxIntegrationPatchesFromConnections } from "@/lib/integrations";
 import { demoLoginEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import { LANGUAGES } from "@/lib/i18n";
 import {
@@ -275,6 +275,39 @@ export default function SettingsPage() {
       window.history.replaceState({}, "", `${window.location.pathname}?tab=integrations`);
     }
   }, [toast, goTab]);
+
+  // Keep Outlook / Teams / Gmail cards honest with live OAuth connections (no dual-truth mock cards).
+  React.useEffect(() => {
+    if (!supabaseEnabled) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/email/connections", {
+          method: "GET",
+          credentials: "include",
+        });
+        const json = (await res.json().catch(() => null)) as {
+          ok?: boolean;
+          connections?: Array<{ provider: string; accountEmail: string; hasRefreshToken?: boolean }>;
+          seats?: Array<{
+            provider: string;
+            mode?: string;
+            status?: string;
+            connectedAccount?: string | null;
+          }>;
+        } | null;
+        if (cancelled || !json || json.ok === false) return;
+        for (const { id, patch } of mailboxIntegrationPatchesFromConnections(json)) {
+          actions.updateIntegration(id, patch);
+        }
+      } catch {
+        // Non-fatal — cards stay on last stored status.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [actions, activeTab]);
 
   const summary = realIntegrationSummary(integrations);
   const roadmapIntegrations = React.useMemo(

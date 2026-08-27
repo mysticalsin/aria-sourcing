@@ -253,6 +253,85 @@ export function defaultLiveIntegrations(): IntegrationStatus[] {
   }));
 }
 
+/** Live mailbox/calendar card patches from GET /api/email/connections. */
+export type EmailConnectionsHydratePayload = {
+  connections?: Array<{
+    provider: string;
+    accountEmail: string;
+    hasRefreshToken?: boolean;
+  }>;
+  seats?: Array<{
+    provider: string;
+    mode?: string;
+    status?: string;
+    connectedAccount?: string | null;
+  }>;
+};
+
+export function mailboxIntegrationPatchesFromConnections(
+  payload: EmailConnectionsHydratePayload,
+): Array<{ id: string; patch: Partial<IntegrationStatus> }> {
+  const connections = payload.connections ?? [];
+  const seats = payload.seats ?? [];
+
+  const patchFor = (
+    id: string,
+    provider: string,
+    requireLiveSeat: boolean,
+  ): { id: string; patch: Partial<IntegrationStatus> } => {
+    const conn = connections.find(
+      (c) => c.provider === provider && Boolean(c.accountEmail?.trim()) && c.hasRefreshToken !== false,
+    );
+    const liveSeat = seats.some(
+      (s) =>
+        s.provider === provider &&
+        s.mode === "live" &&
+        (s.status === "active" || !s.status) &&
+        Boolean(s.connectedAccount?.trim()),
+    );
+    if (!conn) {
+      return {
+        id,
+        patch: {
+          status: "not_configured",
+          mode: "mock",
+          connectedAccount: undefined,
+          lastSync: null,
+          errors: [],
+        },
+      };
+    }
+    if (requireLiveSeat && !liveSeat) {
+      return {
+        id,
+        patch: {
+          status: "degraded",
+          mode: "mock",
+          connectedAccount: conn.accountEmail,
+          lastSync: new Date().toISOString(),
+          errors: ["Mailbox connected but seat is not live — reconnect Outlook after tip deploy."],
+        },
+      };
+    }
+    return {
+      id,
+      patch: {
+        status: "connected",
+        mode: liveSeat || provider === "Gmail API" ? "live" : "mock",
+        connectedAccount: conn.accountEmail,
+        lastSync: new Date().toISOString(),
+        errors: [],
+      },
+    };
+  };
+
+  return [
+    patchFor("int_outlook", "Microsoft Graph", false),
+    patchFor("int_graph_teams", "Microsoft Graph", true),
+    patchFor("int_gmail", "Gmail API", false),
+  ];
+}
+
 export interface ConnectionTestResult {
   ok: boolean;
   latencyMs: number;
