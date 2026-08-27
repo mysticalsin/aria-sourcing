@@ -4,6 +4,9 @@ import "server-only";
  * Server-only live LLM peer critics for outreach quality.
  * Kept separate from the deterministic pipeline so client bundles never import
  * serverGenerateText / server-only modules.
+ *
+ * Three critic agents run as separate LLM calls (empathy, compliance,
+ * human-likeness) — fail-closed when any required critic cannot run.
  */
 
 import { serverGenerateText } from "@/lib/ai/server-generate";
@@ -35,8 +38,78 @@ function mergeVerdict(
   };
 }
 
+type CriticSpec = {
+  key: string;
+  stage: QualityStage;
+  system: string;
+};
+
+const CRITICS: CriticSpec[] = [
+  {
+    key: "empathy",
+    stage: "llm_empathy",
+    system:
+      "You are the empathy critic for recruiting outreach. Reply with JSON only: " +
+      '{"pass":bool,"score":0-100,"reasons":string[]}. ' +
+      "Flag generic openers, cold pitch tone, pressure language, and missing candidate-specific detail. No prose outside JSON.",
+  },
+  {
+    key: "compliance",
+    stage: "llm_compliance",
+    system:
+      "You are the compliance critic for recruiting outreach. Reply with JSON only: " +
+      '{"pass":bool,"score":0-100,"reasons":string[]}. ' +
+      "Flag salary disclosure, AI self-disclosure, discriminatory language, and invented credentials. No prose outside JSON.",
+  },
+  {
+    key: "human_likeness",
+    stage: "llm_human_likeness",
+    system:
+      "You are the human-likeness critic for recruiting outreach. Reply with JSON only: " +
+      '{"pass":bool,"score":0-100,"reasons":string[]}. ' +
+      "Flag robotic tone, template tells, status narration, and tool/JSON leakage. No prose outside JSON.",
+  },
+];
+
+function parseCriticJson(text: string): { pass?: boolean; score?: number; reasons?: string[] } | null {
+  const jsonMatch = /\{[\s\S]*\}/.exec(text);
+  if (!jsonMatch) return null;
+  try {
+    const parsed = JSON.parse(jsonMatch[0]) as { pass?: boolean; score?: number; reasons?: string[] };
+    return typeof parsed === "object" && parsed !== null ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function runOneCritic(
+  critic: CriticSpec,
+  input: { subject: string; body: string; channel: string },
+): Promise<StageResult | null> {
+  const prompt = [
+    `Channel: ${input.channel}`,
+    `Subject: ${input.subject}`,
+    "Body:",
+    input.body.slice(0, 4_000),
+  ].join("\n");
+  const live = await serverGenerateText({ system: critic.system, prompt, maxTokens: 256 });
+  if (!live.ok) return null;
+  const row = parseCriticJson(live.text);
+  if (!row) return null;
+  const score = Math.max(0, Math.min(100, Number(row.score) || 0));
+  const reasons = Array.isArray(row.reasons)
+    ? row.reasons.map(String).filter(Boolean).slice(0, 8)
+    : [];
+  return {
+    stage: critic.stage,
+    pass: row.pass === true && score >= 60,
+    score,
+    reasons,
+  };
+}
+
 /**
- * Deterministic pipeline + optional live LLM peer critics (three agents).
+ * Deterministic pipeline + optional live LLM peer critics (three separate agents).
  * When no LLM key is configured, returns the deterministic verdict unchanged.
  */
 export async function validateOutreachQualityLive(input: {
@@ -49,47 +122,9 @@ export async function validateOutreachQualityLive(input: {
 
   try {
     const channel = input.channel ?? "Email";
-    const system =
-      "You are three recruiting outreach quality critics. Reply with JSON only: " +
-      '{"empathy":{"pass":bool,"score":0-100,"reasons":string[]},' +
-      '"compliance":{"pass":bool,"score":0-100,"reasons":string[]},' +
-      '"human_likeness":{"pass":bool,"score":0-100,"reasons":string[]}}. ' +
-      "Flag salary disclosure, AI self-disclosure, generic openers, pressure language, and robotic tone. " +
-      "No prose outside JSON.";
-    const prompt = [
-      `Channel: ${channel}`,
-      `Subject: ${input.subject}`,
-      "Body:",
-      input.body.slice(0, 4_000),
-    ].join("\n");
-    const live = await serverGenerateText({ system, prompt, maxTokens: 512 });
-    if (!live.ok) return base;
-
-    const jsonMatch = /\{[\s\S]*\}/.exec(live.text);
-    if (!jsonMatch) return base;
-    const parsed = JSON.parse(jsonMatch[0]) as Record<
-      string,
-      { pass?: boolean; score?: number; reasons?: string[] }
-    >;
-    const toStage = (key: string, stage: QualityStage): StageResult | null => {
-      const row = parsed[key];
-      if (!row || typeof row !== "object") return null;
-      const score = Math.max(0, Math.min(100, Number(row.score) || 0));
-      const reasons = Array.isArray(row.reasons)
-        ? row.reasons.map(String).filter(Boolean).slice(0, 8)
-        : [];
-      return {
-        stage,
-        pass: row.pass === true && score >= 60,
-        score,
-        reasons,
-      };
-    };
-    const llmStages = [
-      toStage("empathy", "llm_empathy"),
-      toStage("compliance", "llm_compliance"),
-      toStage("human_likeness", "llm_human_likeness"),
-    ].filter((s): s is StageResult => Boolean(s));
+    const payload = { subject: input.subject, body: input.body, channel };
+    const results = await Promise.all(CRITICS.map((critic) => runOneCritic(critic, payload)));
+    const llmStages = results.filter((s): s is StageResult => Boolean(s));
     if (llmStages.length === 0) return base;
     return mergeVerdict(base, llmStages);
   } catch {

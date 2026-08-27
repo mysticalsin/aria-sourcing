@@ -1,0 +1,14 @@
+{
+  "email_sync": ["inbound_classify"],
+  "inbound_classify": ["draft_generate"],
+  "requisition_parse": ["campaign_create"],
+  "campaign_create": ["sourcing_batch"],
+  "sourcing_batch": ["shortlist_build"],
+  "provider_poll": ["shortlist_build"],
+  "enrich_candidate": ["shortlist_build"],
+  "shortlist_build": ["draft_generate"],
+  "draft_generate": ["calendar_book"],
+  "calendar_book": [],
+  "delivery_reconcile": ["outcome_feedback"],
+  "outcome_feedback": []
+}

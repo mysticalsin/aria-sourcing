@@ -109,7 +109,12 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     evidence: () =>
       /receiveEmail|parseRequisition|sourceCandidates|rankTop10|validateQuality|queueApproval|scheduleInterview/.test(
         graphRoute,
-      ),
+      )
+      && /GRAPH_STAGE_TO_JOB_KIND/.test(graphRoute)
+      && /nextJobKindAfterGraphStage/.test(graphRoute)
+      && /pipeline-transitions\.json/.test(graphRoute)
+      && existsSync("src/lib/langchain/pipeline-transitions.json")
+      && /pipeline-transitions\.json/.test(worker),
   },
   {
     requirement: "Top shortlist capped at 10",
@@ -175,8 +180,10 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     requirement: "Loop worker chains campaign_create into sourcing_batch",
     evidence: () => {
       const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
+      const transitions = readFileSync("src/lib/langchain/pipeline-transitions.json", "utf8");
       return (
-        /campaign_create:\s*Object\.freeze\(\["sourcing_batch"\]\)/.test(worker)
+        /"campaign_create"\s*:\s*\[\s*"sourcing_batch"\s*\]/.test(transitions)
+        && /pipeline-transitions\.json/.test(worker)
         && /handleCampaignCreate/.test(worker)
         && /run-sourcing-batch/.test(worker)
         && /generate-outreach-draft/.test(worker)
@@ -413,6 +420,66 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /tryStageWikiLessonFromFeedback/.test(feedback)
         && /tryStageWikiLessonFromFeedback/.test(route)
         && /PROPOSED_WIKI_ROOT|var\/agent-wiki\/proposed/.test(feedback)
+      );
+    },
+  },
+  {
+    requirement: "Live email MIME uses Mantu-branded HTML (not generic plainToHtml alone)",
+    evidence: () => {
+      const send = readFileSync("src/lib/email-send.ts", "utf8");
+      const unsub = readFileSync("src/lib/email-unsubscribe.ts", "utf8");
+      return (
+        /mantuEmailHtmlWrapper/.test(send)
+        && /htmlBody/.test(send)
+        && /opts\?\.htmlBody|htmlBody\?:/.test(unsub)
+        && /<\/body>/i.test(unsub)
+      );
+    },
+  },
+  {
+    requirement: "Confirm-slot booking preserves Mantu first-interview agenda",
+    evidence: () => {
+      const actions = readFileSync("src/lib/store/booking-report-actions.ts", "utf8");
+      const mock = readFileSync("src/lib/mock-ai.ts", "utf8");
+      return (
+        /mantuFirstInterviewAgenda/.test(actions)
+        && /interviewProposal\?\.agenda/.test(actions)
+        && /opts\?: \{ agenda\?: string\[\] \}/.test(mock)
+      );
+    },
+  },
+  {
+    requirement: "Microsoft OAuth scope fallback includes Calendars.ReadWrite",
+    evidence: () => {
+      const callback = readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8");
+      const authorize = readFileSync("src/app/auth/microsoft/route.ts", "utf8");
+      return (
+        /Calendars\.ReadWrite/.test(callback)
+        && /Calendars\.ReadWrite/.test(authorize)
+      );
+    },
+  },
+  {
+    requirement: "Multi-agent quality critics run as separate LLM calls",
+    evidence: () => {
+      const qualityLive = readFileSync("src/lib/outreach-quality-pipeline-live.ts", "utf8");
+      return (
+        /CRITICS/.test(qualityLive)
+        && /runOneCritic/.test(qualityLive)
+        && /Promise\.all/.test(qualityLive)
+        && /llm_empathy/.test(qualityLive)
+        && /llm_compliance/.test(qualityLive)
+        && /llm_human_likeness/.test(qualityLive)
+      );
+    },
+  },
+  {
+    requirement: "Loop ignite is webhook-first (no empty email_sync root)",
+    evidence: () => {
+      const ignite = readFileSync("src/app/api/cron/ignite-sourcing-loop/route.ts", "utf8");
+      return (
+        /intake:\s*"webhook"/.test(ignite)
+        && !/p_kind:\s*"email_sync"/.test(ignite)
       );
     },
   },

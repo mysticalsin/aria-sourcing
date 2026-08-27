@@ -34,6 +34,13 @@ try {
     ok("email HTML footer escapes message content", rendered.html.includes("Hello &lt;candidate&gt;"));
     ok("email carries a standard List-Unsubscribe header", rendered.headers["List-Unsubscribe"] === `<${link.url}>`);
     ok("email carries RFC 8058 one-click semantics", rendered.headers["List-Unsubscribe-Post"] === "List-Unsubscribe=One-Click");
+
+    const branded = renderEmailWithUnsubscribe("Hello", link.url, {
+      htmlBody: "<html><body><p>Mantu Group branded</p></body></html>",
+    });
+    ok("branded HTML preserves Mantu body", branded.html.includes("Mantu Group branded"));
+    ok("branded HTML still appends unsubscribe footer", branded.html.includes("unsubscribe"));
+    ok("branded HTML keeps closing body tag", /<\/body>/i.test(branded.html));
   }
 
   process.env.OUTREACH_UNSUBSCRIBE_BASE_URL = "http://aria.example.test";

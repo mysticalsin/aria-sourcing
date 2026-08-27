@@ -60,6 +60,8 @@ export interface SendRequest {
   to: string;
   subject: string;
   body: string;
+  /** Optional branded HTML (e.g. Mantu wrapper). Plain `body` remains the text part. */
+  htmlBody?: string;
   /** Server-generated opaque recipient link; required for any live delivery. */
   unsubscribeUrl?: string;
   /** Immutable per-attempt identity stamped on the ledger claim before the
@@ -93,7 +95,9 @@ export async function sendViaProvider(req: SendRequest): Promise<SendOutcome> {
       detail: "No compliant unsubscribe link is configured for this email.",
     };
   }
-  const rendered = renderEmailWithUnsubscribe(req.body, req.unsubscribeUrl);
+  const rendered = renderEmailWithUnsubscribe(req.body, req.unsubscribeUrl, {
+    htmlBody: req.htmlBody,
+  });
   const headers: Record<string, string> = {
     ...rendered.headers,
     ...(req.attemptId ? { "X-Aria-Send-Attempt": req.attemptId } : {}),

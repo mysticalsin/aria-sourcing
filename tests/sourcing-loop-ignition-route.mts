@@ -79,17 +79,22 @@ function request(headers: Record<string, string> = {}) {
   });
 }
 
-test("valid machine credential ignites one idempotent email_sync root job", async () => {
+test("valid machine credential arms webhook-first loop without empty email_sync", async () => {
   reset();
 
-  await post(request({ authorization: `Bearer ${CRON_SECRET}` }));
-  await post(request({ authorization: `Bearer ${CRON_SECRET}` }));
+  const first = await post(request({ authorization: `Bearer ${CRON_SECRET}` }));
+  const second = await post(request({ authorization: `Bearer ${CRON_SECRET}` }));
+  const firstBody = await first.json() as { ok?: boolean; armed?: boolean; intake?: string };
+  const secondBody = await second.json() as { ok?: boolean; armed?: boolean; intake?: string };
 
-  assert.equal(ariaJobs.length, 1);
-  assert.equal(ariaJobs[0].workspace_id, WORKSPACE_ID);
-  assert.equal(ariaJobs[0].kind, "email_sync");
-  assert.match(String(ariaJobs[0].idempotency_key), /^ignite:email_sync:/);
-  assert.deepEqual(ariaJobs[0].payload, {});
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  assert.equal(firstBody.ok, true);
+  assert.equal(firstBody.armed, true);
+  assert.equal(firstBody.intake, "webhook");
+  assert.equal(secondBody.ok, true);
+  // No empty email_sync root — hiring needs arrive via Graph webhook.
+  assert.equal(ariaJobs.length, 0);
 });
 
 test("machine ignition refuses missing credential without writing a job", async () => {

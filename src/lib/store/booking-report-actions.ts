@@ -4,6 +4,7 @@ import {
   generateWeeklyReport,
   interviewerPrepEmail,
 } from "../mock-ai";
+import { mantuFirstInterviewAgenda } from "../mantu-brand";
 import { bookingCalendarSummary } from "../booking-status";
 import { withStage } from "../metrics";
 import {
@@ -251,7 +252,16 @@ export function createBookingReportActions({
       opts,
     );
     if ("error" in slot) return { ok: false, error: slot.error };
-    const booking = createBooking(candidate, campaign, slot.interviewer, slot.start);
+    const proposalAgenda = candidate.interviewProposal?.agenda?.filter(
+      (item) => typeof item === "string" && item.trim().length > 0,
+    );
+    const agenda =
+      proposalAgenda && proposalAgenda.length > 0
+        ? proposalAgenda
+        : mantuFirstInterviewAgenda(campaign.title);
+    const booking = createBooking(candidate, campaign, slot.interviewer, slot.start, {
+      agenda,
+    });
     const fingerprint = bookingCommandFingerprint(
       candidate,
       campaign,

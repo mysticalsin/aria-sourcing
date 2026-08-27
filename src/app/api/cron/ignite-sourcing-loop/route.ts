@@ -53,18 +53,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false }, { status: 403 });
   }
 
-  const result = await supabase.rpc("enqueue_aria_job", {
-    p_workspace_id: workspaceId,
-    p_kind: "email_sync",
-    p_idempotency_key: `ignite:email_sync:${workspaceId}:${todayKey()}`,
-    p_payload: {},
-    p_run_at: new Date().toISOString(),
-    p_priority: 50,
+  // Hiring-need intake is webhook → requisition_parse (no empty email_sync).
+  // Ignite only verifies the loop is armed for this workspace.
+  return NextResponse.json({
+    ok: true,
+    armed: true,
+    intake: "webhook",
+    detail: "Sourcing loop armed. Hiring needs arrive via Outlook Graph webhook → requisition_parse.",
+    day: todayKey(),
   });
-  const body = result.data as { status?: string; id?: string; replay?: boolean } | null;
-  if (result.error || body?.status !== "enqueued") {
-    return NextResponse.json({ ok: false }, { status: 503 });
-  }
-
-  return NextResponse.json({ ok: true, id: body.id, replay: body.replay === true });
 }

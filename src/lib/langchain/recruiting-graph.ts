@@ -5,13 +5,15 @@
  *   receiveEmail → parseRequisition → sourceCandidates → rankTop10
  *   → draftOutreach → validateQuality → queueApproval → scheduleInterview
  *
- * Each node maps to existing Postgres job kinds and API surfaces; LangGraph
- * holds the state machine — authority remains in Supabase RPCs.
+ * Authority remains in Supabase job RPCs (`PIPELINE_STAGE_TRANSITIONS` /
+ * `pipeline-transitions.json`). LangGraph holds the stage machine and maps
+ * completed graph stages onto the next job kind the loop worker may enqueue.
  */
 
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import { TOP_CANDIDATE_SHORTLIST_SIZE } from "@/lib/recruiting-loop/constants";
 import { validateOutreachQuality, type OutreachQualityVerdict } from "@/lib/outreach-quality-pipeline";
+import pipelineTransitions from "@/lib/langchain/pipeline-transitions.json";
 
 /** Graph state carried between nodes. */
 export const RecruitingGraphState = Annotation.Root({
@@ -23,6 +25,11 @@ export const RecruitingGraphState = Annotation.Root({
   campaignId: Annotation<string | undefined>(),
   /** Candidate ids after sourcing. */
   candidateIds: Annotation<string[]>({
+    reducer: (_prev, next) => next ?? [],
+    default: () => [],
+  }),
+  /** Optional scored candidates for ranking (id + matchScore). */
+  scoredCandidates: Annotation<Array<{ id: string; matchScore?: number | null }>>({
     reducer: (_prev, next) => next ?? [],
     default: () => [],
   }),
@@ -84,9 +91,12 @@ async function sourceCandidates(state: RecruitingGraphStateType): Promise<Partia
 
 /** Node: rank to top 10 by score when scored candidates are supplied on state. */
 async function rankTop10(state: RecruitingGraphStateType): Promise<Partial<RecruitingGraphStateType>> {
+  const scored = state.scoredCandidates ?? [];
+  if (scored.length > 0) {
+    const shortlist = rankTopCandidates(scored, TOP_CANDIDATE_SHORTLIST_SIZE).map((c) => c.id);
+    return { stage: "shortlist_ranked", shortlistIds: shortlist };
+  }
   const ids = state.candidateIds ?? [];
-  // Prefer caller-supplied order when ids alone are present; scored ranking
-  // happens in the loop worker shortlist handler via matchScore.
   const shortlist = ids.slice(0, TOP_CANDIDATE_SHORTLIST_SIZE);
   return {
     stage: "shortlist_ranked",
@@ -173,6 +183,7 @@ export async function runRecruitingGraph(
     inboundId: input.inboundId,
     campaignId: input.campaignId,
     candidateIds: input.candidateIds ?? [],
+    scoredCandidates: input.scoredCandidates ?? [],
     shortlistIds: input.shortlistIds ?? [],
     drafts: input.drafts ?? {},
     quality: input.quality ?? {},
@@ -183,12 +194,35 @@ export async function runRecruitingGraph(
   return result;
 }
 
+/**
+ * Shared job-spine transitions (same contract as `scripts/sourcing-loop-worker.mjs`).
+ * LangGraph stages resolve into these successors when the worker advances the loop.
+ */
+export const PIPELINE_STAGE_TRANSITIONS: Readonly<Record<string, readonly string[]>> =
+  Object.freeze(
+    Object.fromEntries(
+      Object.entries(pipelineTransitions).map(([kind, next]) => [kind, Object.freeze([...(next as string[])])]),
+    ),
+  );
+
 /** Job kinds the graph expects the loop worker to enqueue after each stage. */
 export const GRAPH_STAGE_TO_JOB_KIND: Record<string, string> = {
   requisition_parsed: "campaign_create",
   sourcing_complete: "shortlist_build",
   shortlist_ranked: "draft_generate",
+  outreach_drafted: "draft_generate",
   quality_validated: "draft_generate",
-  queued_for_approval: "delivery_reconcile",
+  queued_for_approval: "calendar_book",
   interview_scheduled: "calendar_book",
 };
+
+/** Resolve the first allowed successor job kind for a completed pipeline stage. */
+export function nextJobKindAfterPipelineStage(completedKind: string): string | null {
+  const next = PIPELINE_STAGE_TRANSITIONS[completedKind];
+  return next && next.length > 0 ? next[0] : null;
+}
+
+/** Resolve the job kind the worker should enqueue after a LangGraph stage. */
+export function nextJobKindAfterGraphStage(stage: string): string | null {
+  return GRAPH_STAGE_TO_JOB_KIND[stage] ?? null;
+}

@@ -21,6 +21,7 @@ import { sendViaProvider, type SendRequest } from "@/lib/providers";
 import { sendViaGmailApi, sendViaMicrosoftGraph } from "@/lib/email-oauth";
 import { encryptSecret, decryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
 import { safeLog } from "@/lib/log-redact";
+import { mantuEmailHtmlWrapper } from "@/lib/mantu-brand";
 import type { EmailConnection } from "@/lib/types";
 
 export interface PerformEmailSendParams {
@@ -34,6 +35,8 @@ export interface PerformEmailSendParams {
   to: string;
   subject: string;
   body: string;
+  /** Optional prebuilt HTML; when omitted, Mantu brand wrapper is applied server-side. */
+  htmlBody?: string;
   unsubscribeUrl: string;
   attemptId: string;
   /** "<uuid@domain>" minted by claim_email_outbound_queued, stamped as Message-ID. */
@@ -52,6 +55,9 @@ export async function performEmailSend(
   params: PerformEmailSendParams,
 ): Promise<EmailSendOutcome> {
   const { workspaceId, seatId, provider, operatorEmail, to, subject, body, unsubscribeUrl, attemptId, rfcMessageId } = params;
+  // Always brand candidate-facing HTML on the server from the approved plain body —
+  // never trust client-supplied HTML for MIME.
+  const htmlBody = params.htmlBody?.trim() || mantuEmailHtmlWrapper(body);
 
   if (provider === "Gmail API" || provider === "Microsoft Graph") {
     // Defence-in-depth workspace check: the service role bypasses RLS, so verify
@@ -81,7 +87,16 @@ export async function performEmailSend(
       updatedAt: "",
     };
 
-    const req = { from: operatorEmail, to, subject, body, unsubscribeUrl, attemptId, messageId: rfcMessageId };
+    const req = {
+      from: operatorEmail,
+      to,
+      subject,
+      body,
+      htmlBody,
+      unsubscribeUrl,
+      attemptId,
+      messageId: rfcMessageId,
+    };
     const outcome =
       provider === "Gmail API"
         ? await sendViaGmailApi(req, connection)
@@ -113,6 +128,7 @@ export async function performEmailSend(
     to,
     subject,
     body,
+    htmlBody,
     unsubscribeUrl,
     attemptId,
     messageId: rfcMessageId,

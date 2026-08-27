@@ -1250,8 +1250,18 @@ export function createBooking(
   // store.ts) — an honest gap rather than a fabricated name.
   interviewer: Interviewer | null,
   startTime: Date,
+  opts?: { agenda?: string[] },
 ): Booking {
   const end = new Date(startTime.getTime() + 30 * 60000);
+  const agenda =
+    opts?.agenda && opts.agenda.length > 0
+      ? opts.agenda
+      : [
+          "Intro & role context (5 min)",
+          "Background & recent work (10 min)",
+          "Technical deep-dive (10 min)",
+          "Candidate questions (5 min)",
+        ];
   return {
     id: genId("bk"),
     candidateId: candidate.id,
@@ -1269,12 +1279,7 @@ export function createBooking(
     teamsLink: "",
     calLink: "",
     status: "Confirmed",
-    agenda: [
-      "Intro & role context (5 min)",
-      "Background & recent work (10 min)",
-      "Technical deep-dive (10 min)",
-      "Candidate questions (5 min)",
-    ],
+    agenda,
     createdAt: new Date().toISOString(),
   };
 }

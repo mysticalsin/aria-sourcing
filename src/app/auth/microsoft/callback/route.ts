@@ -145,7 +145,7 @@ export async function GET(req: NextRequest) {
         access_token: encryptSecret(tokenJson.access_token),
         refresh_token: tokenJson.refresh_token ? encryptSecret(tokenJson.refresh_token) : null,
         expires_at: expiresAt,
-        scope: tokenJson.scope ?? "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/User.Read offline_access",
+        scope: tokenJson.scope ?? "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Calendars.ReadWrite https://graph.microsoft.com/User.Read offline_access",
         updated_at: new Date().toISOString(),
       },
       { onConflict: "workspace_id, seat_id" },
