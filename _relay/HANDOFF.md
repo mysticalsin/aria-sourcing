@@ -10,7 +10,7 @@ status: tip-code-hardened-awaiting-deploy-confirm
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32** · tip advancing past `eb62c44`
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32** · tip `b277ea5`
 - **Live Fly:** still build `ba88302` · mig `0060` · `/api/ready` not_ready (agentFrameworks) · Graph validationToken **404**
 - **Login:** twalteur@amaris.com admin OK (credentials in `/tmp/aria-e2e-admin-*`, mode 600)
 - **Secrets:** 6 Microsoft/Entra still MISSING; `AGENT_FRAMEWORKS_REQUIRED=false` set on app (ignored by stale image)
