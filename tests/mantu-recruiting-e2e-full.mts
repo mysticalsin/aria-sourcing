@@ -17,7 +17,7 @@ import { evaluateNeedReadiness } from "../src/lib/needs/readiness";
 import { routeInboundEmail } from "../src/lib/inbound-email-router";
 import { validateOutreachQuality } from "../src/lib/outreach-quality-pipeline";
 import { mantuEmailHtmlWrapper, mantuFirstInterviewAgenda, mantuOutreachVoice } from "../src/lib/mantu-brand";
-import { runRecruitingGraph, rankTopCandidates } from "../src/lib/langchain/recruiting-graph";
+import { runRecruitingGraph, rankTopCandidates, nextJobKindAfterGraphStage, PIPELINE_STAGE_TRANSITIONS } from "../src/lib/langchain/recruiting-graph";
 import { TOP_CANDIDATE_SHORTLIST_SIZE } from "../src/lib/recruiting-loop/constants";
 import { buildSeedState, defaultSettings, e2eReadyJob, buildHistoricalDemoSeedState } from "../src/lib/seed";
 import { migrateToCurrentVersion } from "../src/lib/store/migrations";
@@ -114,6 +114,14 @@ async function main() {
     ["queued_for_approval", "approval_blocked", "interview_scheduled"].includes(graphState.stage),
   );
   ok("LangGraph shortlist size", (graphState.shortlistIds?.length ?? 0) <= TOP_CANDIDATE_SHORTLIST_SIZE);
+  ok(
+    "graph stage maps to calendar_book after approval",
+    nextJobKindAfterGraphStage("queued_for_approval") === "calendar_book",
+  );
+  ok(
+    "shared pipeline transitions include requisition_parse → campaign_create",
+    (PIPELINE_STAGE_TRANSITIONS.requisition_parse ?? []).includes("campaign_create"),
+  );
 
   // ── 6. First interview agenda (Mantu + role) ──
   const agenda = mantuFirstInterviewAgenda(e2eCampaign.title);

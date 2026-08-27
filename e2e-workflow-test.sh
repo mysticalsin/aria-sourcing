@@ -27,8 +27,10 @@
 #
 # ---------------------------------------------------------------------------
 # Required env:  ADMIN_EMAIL  ADMIN_PASSWORD  ANON_KEY
+#                EMAIL_INBOUND_WEBHOOK_SECRET (required for Fly production E2E)
 # Optional env:  APP_URL  KONG_URL  AGENT_PROVIDER  AGENT_MODEL
-#                GITHUB_QUERY  LINKEDIN_QUERY  EMAIL_INBOUND_WEBHOOK_SECRET
+#                GITHUB_QUERY  LINKEDIN_QUERY
+#                ARIA_ALLOW_SKIP_WEBHOOK_E2E=1  ARIA_ALLOW_STALE_FLY_E2E=1
 # ANON_KEY may be loaded from production-readiness/.fly-secrets.env via
 #   eval "$(bash scripts/print-fly-e2e-env.sh --export)"
 # ---------------------------------------------------------------------------
@@ -126,6 +128,14 @@ case "$ADMIN_EMAIL:$ADMIN_PASSWORD" in
   *$'\n'*|*$'\r'*) die "Admin credentials must not contain line breaks." ;;
 esac
 
+# Fly production enterprise E2E requires the signed webhook secret (hiring-need
+# ignition). Skip only when ARIA_ALLOW_SKIP_WEBHOOK_E2E=1 (local harnesses).
+if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ -z "${EMAIL_INBOUND_WEBHOOK_SECRET:-}" ]; then
+  if [ "${ARIA_ALLOW_SKIP_WEBHOOK_E2E:-}" != "1" ]; then
+    die "EMAIL_INBOUND_WEBHOOK_SECRET is required for Fly enterprise E2E (webhook → requisition_parse). Set it or ARIA_ALLOW_SKIP_WEBHOOK_E2E=1 for a partial run."
+  fi
+fi
+
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/aria-e2e.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 RESP="$WORK/resp.json"                 # scratch body for the current app call
@@ -135,6 +145,21 @@ printf "${C_B}Aria Mantu — E2E workflow test${C_0}\n"
 info "App:  $APP_URL"
 info "Kong: $KONG_URL"
 info "Admin credential supplied. Agent provider: $AGENT_PROVIDER   Model: ${OUTREACH_MODEL:-<default>}"
+
+# Fail closed when the live Fly tenant has not reached the enterprise migration.
+READY_CODE=$(curl -sS -m 20 -o "$WORK/ready.json" -w '%{http_code}' "$APP_URL/api/ready" || echo "000")
+READY_MIG=$(jq -r '.migration // empty' "$WORK/ready.json" 2>/dev/null || true)
+READY_OK=$(jq -r '.ok // false' "$WORK/ready.json" 2>/dev/null || true)
+READY_BUILD=$(jq -r '.build // empty' "$WORK/ready.json" 2>/dev/null || true)
+info "Ready probe HTTP $READY_CODE ok=$READY_OK migration=${READY_MIG:-?} build=${READY_BUILD:0:12}"
+if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_STALE_FLY_E2E:-}" != "1" ]; then
+  case "$READY_MIG" in
+    0065_*) ;;
+    *)
+      die "Fly /api/ready migration must be 0065_* for enterprise E2E (got '${READY_MIG:-none}'). Deploy tip via scripts/fly-enterprise-activate.sh or set ARIA_ALLOW_STALE_FLY_E2E=1."
+      ;;
+  esac
+fi
 
 # api METHOD URL [datafile] -> writes body to $RESP, echoes HTTP status into $HTTP
 #
@@ -257,7 +282,7 @@ else
 fi
 
 # ===========================================================================
-step "2b) Webhook need email — POST /api/webhooks/email-inbound (optional)"
+step "2b) Webhook need email — POST /api/webhooks/email-inbound"
 # ===========================================================================
 WEBHOOK_SECRET="${EMAIL_INBOUND_WEBHOOK_SECRET:-}"
 if [ -n "$WEBHOOK_SECRET" ]; then
@@ -277,7 +302,11 @@ if [ -n "$WEBHOOK_SECRET" ]; then
     fail "Webhook need email (HTTP $WEBHOOK_CODE route=$WEBHOOK_ROUTE kind=$WEBHOOK_KIND queued=$WEBHOOK_QUEUED): $(head -c 300 "$WORK/webhook_need.json")"
   fi
 else
-  warn "EMAIL_INBOUND_WEBHOOK_SECRET unset — skipping webhook need-email step."
+  if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ]; then
+    fail "EMAIL_INBOUND_WEBHOOK_SECRET unset on Fly E2E — hiring-need webhook step required."
+  else
+    warn "EMAIL_INBOUND_WEBHOOK_SECRET unset — skipping webhook need-email step."
+  fi
 fi
 
 # ===========================================================================
@@ -290,6 +319,27 @@ if [ "$GRAPH_VALID_CODE" = "200" ] && [ "$GRAPH_VALID_BODY" = "e2e-graph-validat
   pass "Graph webhook validationToken echo (HTTP 200 plain text)."
 else
   fail "Graph validationToken handshake (HTTP $GRAPH_VALID_CODE body=$(head -c 120 "$WORK/graph_validation.txt"))."
+fi
+
+# Graph-shaped notification with unknown subscriptionId must 202 without inventing ingest.
+jq -n '{
+  value:[{
+    subscriptionId:"e2e-unknown-subscription",
+    clientState:"e2e-forged",
+    changeType:"created",
+    resource:"Users/u/Messages('\''AAMkAGE2e2e'\'')",
+    resourceData:{id:"AAMkAGE2e2e"}
+  }]
+}' > "$WORK/graph_notify.json"
+GRAPH_NOTIFY_CODE=$(curl -sS -m 20 -o "$WORK/graph_notify_resp.json" -w '%{http_code}' \
+  -X POST "$APP_URL/api/webhooks/microsoft-graph" \
+  -H 'Content-Type: application/json' \
+  --data-binary @"$WORK/graph_notify.json")
+GRAPH_NOTIFY_STATUS=$(jq -r '.results[0].status // empty' "$WORK/graph_notify_resp.json" 2>/dev/null || true)
+if [ "$GRAPH_NOTIFY_CODE" = "202" ] && [ "$GRAPH_NOTIFY_STATUS" = "unknown_subscription" ]; then
+  pass "Graph notification envelope accepted (202) and unknown subscription rejected without ingest."
+else
+  fail "Graph notification path (HTTP $GRAPH_NOTIFY_CODE status='$GRAPH_NOTIFY_STATUS'): $(head -c 200 "$WORK/graph_notify_resp.json")"
 fi
 
 # ===========================================================================
@@ -567,7 +617,12 @@ jq -n \
     startTime:$start,
     endTime:$end,
     timezone:"UTC",
-    agenda:["Intro","Role fit","Next steps"],
+    agenda:[
+      "Introduce Mantu Group and our consulting model",
+      "Walk through the Senior TypeScript Engineer role — scope, team, and expectations",
+      "Understand the candidate'\''s background, motivations, and timing",
+      "Answer questions and agree next steps if there is mutual interest"
+    ],
     requestId:$req,
     confirmLive:false
   }' > "$WORK/calendar_req.json"
@@ -585,6 +640,13 @@ if grep -q 'isOnlineMeeting: true' src/lib/calendar.ts && grep -q 'teamsForBusin
   pass "Calendar Graph adapter requests Teams online meetings (isOnlineMeeting + teamsForBusiness)."
 else
   fail "src/lib/calendar.ts missing Teams online-meeting flags."
+fi
+if grep -q 'mantuEmailHtmlWrapper' src/lib/email-send.ts \
+  && grep -q 'htmlBody' src/lib/email-send.ts \
+  && grep -q 'mantuFirstInterviewAgenda' src/lib/store/booking-report-actions.ts; then
+  pass "Live send path brands Mantu HTML; Confirm-slot preserves Mantu interview agenda."
+else
+  fail "Mantu MIME branding or Confirm-slot agenda wiring missing."
 fi
 
 # ===========================================================================

@@ -1,63 +1,51 @@
 ---
 project: MSourcing / ARIA
-shift: 124
+shift: 125
 agent: cursor-cloud
 updated: 2026-08-27 UTC
 status: code-complete-awaiting-owner-deploy
 ---
 
-# Handoff — Shift 124
+# Handoff — Shift 125
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open · tip `cd795fd`
-- **Local gate:** green (`tsc` + `npm test`); audit **35/35**; mantu E2E **28/28**
-- **Fly live:** build `ba88302`, migration **0060** — needs tip deploy through **0065**
-- **Owner blockers:** `ARIA_PROD_DEPLOY_CONFIRM` unset; M365/webhook/Entra Fly secrets missing; admin E2E creds absent
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open · tip after this commit
+- **Local gate:** green; audit **36/36**; mantu E2E **30/30**
+- **Fly live:** build `ba88302`, migration **0060** — Graph webhook route **404** (old build); needs tip + **0065**
+- **Owner blockers:** `ARIA_PROD_DEPLOY_CONFIRM` unset; M365/webhook/Entra secrets; admin E2E creds
 
 ## Done this shift
 
-- Live email MIME now applies `mantuEmailHtmlWrapper` server-side (`email-send` + unsubscribe HTML footer merge)
-- Confirm-slot booking uses `interviewProposal.agenda` or `mantuFirstInterviewAgenda`
-- Multi-agent quality = three separate LLM critic calls
-- Shared `pipeline-transitions.json` for LangGraph + loop worker; `GRAPH_STAGE_TO_JOB_KIND` wired
-- Ignite is webhook-first (no empty `email_sync`)
-- Microsoft OAuth callback scope fallback includes `Calendars.ReadWrite`
-- Audit matrix expanded to 35/35; manifest contract freeze updated
+- `e2e-workflow-test.sh` fail-closed on Fly without `EMAIL_INBOUND_WEBHOOK_SECRET` or migration `0065_*`
+- Graph notification envelope probe (`unknown_subscription` → 202)
+- Calendar dry-run uses Mantu first-interview agenda; asserts MIME branding wiring
+- In-process E2E asserts `nextJobKindAfterGraphStage` + shared pipeline transitions
 
-## Owner activation (single entry)
+## Owner activation
 
 ```bash
 bash scripts/fly-enterprise-activate.sh $(git rev-parse HEAD)
-# export deploy vars from output, then:
-bash scripts/fly-deploy-now.sh
-# set Fly M365/webhook/Entra secrets, then:
-bash scripts/print-fly-e2e-env.sh
-export ADMIN_EMAIL='…' ADMIN_PASSWORD='…'
-bash e2e-workflow-test.sh
-```
-
-Exact deploy one-liner (regenerate if tip moves):
-
-```bash
 bash scripts/print-fly-deploy-confirm.sh
-# then export ARIA_RELEASE_SHA + ARIA_PROD_DEPLOY_CONFIRM and run fly-deploy-now.sh
+# export + bash scripts/fly-deploy-now.sh
+# set Fly secrets including EMAIL_INBOUND_WEBHOOK_SECRET
+bash scripts/print-fly-e2e-env.sh
+export ADMIN_EMAIL='…' ADMIN_PASSWORD='…' EMAIL_INBOUND_WEBHOOK_SECRET='…'
+bash e2e-workflow-test.sh
 ```
 
 ## Completion audit
 
-Code/tests/PR **#31**: stronger (P0 MIME/agenda/critics/spine closed). Live Fly E2E: still blocked on owner deploy + secrets.
+Code/tests/PR #31: stronger live-proof harness. Live Fly E2E: still blocked on owner deploy.
 
 ## Decisions made (don't relitigate)
 
-- **PR #31 supersedes closed #29 and #30**
+- PR #31 supersedes #29/#30
 - No Fly deploy without `ARIA_PROD_DEPLOY_CONFIRM`
-- Use `bash scripts/print-fly-deploy-confirm.sh` for exact deploy one-liner
-- LinkedIn send stays 409 assisted-manual
-- Calendar live book only via `/api/calendar/event` + `confirmLive`
 - Skip Actions billing failures; local gate is authority
+- `ARIA_ALLOW_SKIP_WEBHOOK_E2E=1` / `ARIA_ALLOW_STALE_FLY_E2E=1` only for partial harnesses
 
 ## Watch out
 
-- Closing PRs does not deploy or merge; code lives on feature branch until Fly tip + 0065
-- `email_sync` remains a valid job kind for reply batches with `inboundIds`; ignite no longer seeds empty ones
+- Live Graph `/api/webhooks/microsoft-graph` is 404 until tip deploy
+- Closing PRs does not deploy

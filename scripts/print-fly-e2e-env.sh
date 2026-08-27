@@ -55,7 +55,7 @@ fi
 cat <<'EOF'
 export ADMIN_EMAIL='your-admin@example.com'
 export ADMIN_PASSWORD='your-admin-password'
-# optional — enables signed webhook need-email step in e2e:
+# required for Fly enterprise E2E (webhook → requisition_parse):
 export EMAIL_INBOUND_WEBHOOK_SECRET='your-32-char-webhook-secret'
 bash e2e-workflow-test.sh
 EOF

@@ -200,6 +200,21 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /confirmLive:false/.test(script)
         && /isOnlineMeeting/.test(script)
         && /teamsForBusiness/.test(script)
+        && /Introduce Mantu Group/.test(script)
+        && /mantuEmailHtmlWrapper/.test(script)
+        && /mantuFirstInterviewAgenda/.test(script)
+      );
+    },
+  },
+  {
+    requirement: "Fly E2E fails closed without webhook secret or migration 0065",
+    evidence: () => {
+      const script = readFileSync("e2e-workflow-test.sh", "utf8");
+      return (
+        /EMAIL_INBOUND_WEBHOOK_SECRET is required for Fly enterprise E2E/.test(script)
+        && /migration must be 0065_/.test(script)
+        && /unknown_subscription/.test(script)
+        && /microsoft-graph/.test(script)
       );
     },
   },
