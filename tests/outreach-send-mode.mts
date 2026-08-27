@@ -5,7 +5,9 @@
 import { readFileSync } from "node:fs";
 import {
   effectiveDryRunMode,
+  hasConnectedMailbox,
   hasConnectedOutboundProvider,
+  listConnectedMailboxes,
   listConnectedOutboundProviders,
 } from "../src/lib/outreach-send-mode";
 import { generateOutreach } from "../src/lib/mock-ai";
@@ -31,12 +33,20 @@ ok(
   effectiveDryRunMode(false, emptySeats, bareIntegrations) === true,
 );
 ok(
+  "no mailbox → hasConnectedMailbox false",
+  hasConnectedMailbox(emptySeats, bareIntegrations) === false,
+);
+ok(
   "no mailbox → hasConnectedOutboundProvider false",
   hasConnectedOutboundProvider(emptySeats, bareIntegrations) === false,
 );
 ok(
   "Queue Summary must label Dry-run (no providers)",
   listConnectedOutboundProviders(emptySeats, bareIntegrations).length === 0,
+);
+ok(
+  "Queue Summary mailboxes empty without Outlook",
+  listConnectedMailboxes(emptySeats, bareIntegrations).length === 0,
 );
 
 {
@@ -65,6 +75,62 @@ ok(
   ok(
     "Outlook with connectedAccount → may leave Dry-run when setting is Live",
     effectiveDryRunMode(false, emptySeats, withAccount) === false,
+  );
+  ok(
+    "Outlook with connectedAccount → hasConnectedMailbox true",
+    hasConnectedMailbox(emptySeats, withAccount) === true,
+  );
+}
+
+{
+  // Live smoke regression: HeyReach MCP Live + connectedAccount, Outlook disconnected
+  // must still force Dry-run in Queue Summary (no red Live pill).
+  const heyReachLive: IntegrationStatus[] = bareIntegrations.map((i) => {
+    if (i.id === "int_heyreach") {
+      return {
+        ...i,
+        status: "connected",
+        mode: "live",
+        connectedAccount: "HeyReach MCP",
+      };
+    }
+    if (i.id === "int_outlook") {
+      return { ...i, status: "not_configured", mode: "mock", connectedAccount: undefined };
+    }
+    return i;
+  });
+  ok(
+    "HeyReach live + no mailbox → still Dry-run",
+    effectiveDryRunMode(false, emptySeats, heyReachLive) === true,
+  );
+  ok(
+    "HeyReach live + no mailbox → hasConnectedMailbox false",
+    hasConnectedMailbox(emptySeats, heyReachLive) === false,
+  );
+  ok(
+    "HeyReach live alone is listed as linkedin tooling, not mailbox",
+    listConnectedOutboundProviders(emptySeats, heyReachLive).every((p) => p.kind === "linkedin") &&
+      listConnectedMailboxes(emptySeats, heyReachLive).length === 0,
+  );
+}
+
+{
+  // LinkedIn assisted-manual seat live without mailbox must not unlock Live.
+  const liSeat: AgentSeat = {
+    ...buildSeedState().seats[0]!,
+    provider: "LinkedIn Assisted Manual",
+    connectedAccount: "operator@linkedin",
+    mode: "live",
+    status: "active",
+  };
+  ok(
+    "LinkedIn live seat + no mailbox → still Dry-run",
+    effectiveDryRunMode(false, [liSeat], bareIntegrations) === true,
+  );
+  ok(
+    "LinkedIn live seat → hasConnectedOutboundProvider true but no mailbox",
+    hasConnectedOutboundProvider([liSeat], bareIntegrations) === true &&
+      hasConnectedMailbox([liSeat], bareIntegrations) === false,
   );
 }
 
@@ -105,12 +171,21 @@ ok(
       /previewOnly \? "Dry-run \/ preview" : "Live"/.test(outreachPage),
   );
   ok(
+    "Queue Summary mailbox gate uses listConnectedMailboxes",
+    /listConnectedMailboxes\(seats,\s*integrations\)/.test(outreachPage) &&
+      /No mailbox connected/.test(outreachPage),
+  );
+  ok(
     "approval card shows Record legitimate interest when draft needs basis",
     /Record legitimate interest/.test(card) && /Record legitimate interest/.test(outreachPage),
   );
   ok(
     "draft + missing basis path is gated on Pending Approval actionable card",
     /missingLawfulBasis|showBasisPrompt/.test(card) && /Record legitimate interest/.test(card),
+  );
+  ok(
+    "approval card mailbox copy visible when draft actionable",
+    /No mailbox connected/.test(card) && /listConnectedMailboxes/.test(card),
   );
 }
 

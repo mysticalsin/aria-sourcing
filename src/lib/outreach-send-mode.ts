@@ -1,6 +1,6 @@
 /**
- * Effective outreach send mode: never claim Live when no outbound provider
- * (mailbox / LinkedIn seat) is actually connected.
+ * Effective outreach send mode: never claim Live when no mailbox is connected.
+ * HeyReach / LinkedIn assisted-manual "live" toggles do not unlock Queue Summary Live.
  */
 
 import type { AgentSeat, IntegrationStatus } from "@/lib/types";
@@ -11,67 +11,111 @@ export type ConnectedOutboundProvider = {
   detail: string;
 };
 
+const MAILBOX_INTEGRATION_IDS = new Set([
+  "int_outlook",
+  "int_gmail",
+  "int_sendgrid",
+  "int_resend",
+]);
+
+function isMailboxSeatProvider(provider: AgentSeat["provider"]): boolean {
+  return (
+    provider === "Microsoft Graph" ||
+    provider === "Gmail API" ||
+    provider === "SendGrid" ||
+    provider === "Resend"
+  );
+}
+
+function isLinkedInSeatProvider(provider: AgentSeat["provider"]): boolean {
+  return provider === "LinkedIn Assisted Manual" || provider === "LinkedIn Vendor API";
+}
+
+function integrationAccountReady(integ: IntegrationStatus): string | null {
+  if (!integ.real) return null;
+  const account = integ.connectedAccount?.trim();
+  if (!account) return null;
+  if (integ.status !== "connected" && integ.status !== "degraded") return null;
+  return account;
+}
+
+/** Mailboxes only — Outlook / Gmail / SendGrid / Resend with a real account. */
+export function listConnectedMailboxes(
+  seats: AgentSeat[],
+  integrations?: IntegrationStatus[],
+): ConnectedOutboundProvider[] {
+  const out: ConnectedOutboundProvider[] = [];
+  const seen = new Set<string>();
+
+  for (const seat of seats) {
+    if (seat.status !== "active") continue;
+    if (!isMailboxSeatProvider(seat.provider)) continue;
+    const account = seat.connectedAccount?.trim();
+    if (!account) continue;
+    const key = `${seat.provider}:${account.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ kind: "mailbox", label: seat.provider, detail: account });
+  }
+
+  // Integrations cards are NOT authority for Live send unless they carry a real
+  // connectedAccount (mailbox email). Status-only "connected"/"degraded" without
+  // an account must not flip Queue Summary to Live.
+  if (integrations) {
+    for (const integ of integrations) {
+      if (!MAILBOX_INTEGRATION_IDS.has(integ.id)) continue;
+      const account = integrationAccountReady(integ);
+      if (!account) continue;
+      const key = `${integ.id}:${account.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ kind: "mailbox", label: integ.name, detail: account });
+    }
+  }
+
+  return out;
+}
+
+/** LinkedIn / HeyReach tooling — informational only; never unlocks Send mode Live alone. */
+export function listConnectedLinkedInProviders(
+  seats: AgentSeat[],
+  integrations?: IntegrationStatus[],
+): ConnectedOutboundProvider[] {
+  const out: ConnectedOutboundProvider[] = [];
+  const seen = new Set<string>();
+
+  for (const seat of seats) {
+    if (seat.status !== "active") continue;
+    if (!isLinkedInSeatProvider(seat.provider)) continue;
+    const account = seat.connectedAccount?.trim();
+    if (!account) continue;
+    const key = `${seat.provider}:${account.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ kind: "linkedin", label: seat.provider, detail: account });
+  }
+
+  if (out.length === 0 && integrations) {
+    for (const integ of integrations) {
+      if (integ.id !== "int_heyreach" && integ.id !== "int_linkedin_rsc") continue;
+      const account = integrationAccountReady(integ);
+      if (!account) continue;
+      out.push({ kind: "linkedin", label: integ.name, detail: account });
+    }
+  }
+
+  return out;
+}
+
 /** Live mailbox (Email) or LinkedIn seat ready for assisted-manual outreach. */
 export function listConnectedOutboundProviders(
   seats: AgentSeat[],
   integrations?: IntegrationStatus[],
 ): ConnectedOutboundProvider[] {
-  const out: ConnectedOutboundProvider[] = [];
-  for (const seat of seats) {
-    if (seat.status !== "active") continue;
-    const isLinkedIn =
-      seat.provider === "LinkedIn Assisted Manual" || seat.provider === "LinkedIn Vendor API";
-    if (isLinkedIn) {
-      // LinkedIn requires a connected account label — mode=live alone is not enough.
-      if (Boolean(seat.connectedAccount?.trim())) {
-        out.push({
-          kind: "linkedin",
-          label: seat.provider,
-          detail: seat.connectedAccount.trim(),
-        });
-      }
-      continue;
-    }
-    const mailboxReady =
-      Boolean(seat.connectedAccount?.trim()) &&
-      (seat.provider === "Microsoft Graph" ||
-        seat.provider === "Gmail API" ||
-        seat.provider === "SendGrid" ||
-        seat.provider === "Resend");
-    if (mailboxReady) {
-      out.push({
-        kind: "mailbox",
-        label: seat.provider,
-        detail: seat.connectedAccount.trim(),
-      });
-    }
-  }
-  // Integrations cards are NOT authority for Live send. Only count them when they
-  // carry a real connectedAccount (mailbox email / LI identity). Status-only
-  // "connected"/"degraded" without an account was falsely flipping Queue Summary
-  // to Live when Outlook was not actually connected.
-  if (out.length === 0 && integrations) {
-    for (const integ of integrations) {
-      if (!integ.real) continue;
-      const account = integ.connectedAccount?.trim();
-      if (!account) continue;
-      if (integ.status !== "connected" && integ.status !== "degraded") continue;
-      if (
-        integ.id === "int_outlook" ||
-        integ.id === "int_gmail" ||
-        integ.id === "int_sendgrid" ||
-        integ.id === "int_resend" ||
-        integ.id === "int_heyreach"
-      ) {
-        out.push({
-          kind: integ.id === "int_heyreach" ? "linkedin" : "mailbox",
-          label: integ.name,
-          detail: account,
-        });
-      }
-    }
-  }
-  return out;
+  return [
+    ...listConnectedMailboxes(seats, integrations),
+    ...listConnectedLinkedInProviders(seats, integrations),
+  ];
 }
 
 export function hasConnectedOutboundProvider(
@@ -81,12 +125,22 @@ export function hasConnectedOutboundProvider(
   return listConnectedOutboundProviders(seats, integrations).length > 0;
 }
 
-/** True when settings ask for dry-run OR no provider is connected (force preview). */
+export function hasConnectedMailbox(
+  seats: AgentSeat[],
+  integrations?: IntegrationStatus[],
+): boolean {
+  return listConnectedMailboxes(seats, integrations).length > 0;
+}
+
+/**
+ * True when settings ask for dry-run OR no mailbox is connected (force preview).
+ * LinkedIn / HeyReach live alone must not claim Live in Queue Summary.
+ */
 export function effectiveDryRunMode(
   dryRunSetting: boolean,
   seats: AgentSeat[],
   integrations?: IntegrationStatus[],
 ): boolean {
   if (dryRunSetting) return true;
-  return !hasConnectedOutboundProvider(seats, integrations);
+  return !hasConnectedMailbox(seats, integrations);
 }

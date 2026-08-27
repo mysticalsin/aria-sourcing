@@ -20,7 +20,7 @@ import { checkOutreachApproval } from "@/lib/rules";
 import { recordedCandidateLawfulBasis } from "@/lib/candidate-lawful-basis";
 import {
   effectiveDryRunMode,
-  listConnectedOutboundProviders,
+  listConnectedMailboxes,
 } from "@/lib/outreach-send-mode";
 import type { CandidateLawfulBasis } from "@/lib/types";
 import { OUTREACH_TONES, type OutreachMessage, type OutreachTone } from "@/lib/types";
@@ -117,8 +117,8 @@ export function OutreachMessageCard({
   const [rejecting, setRejecting] = React.useState(false);
   const [showBasisPrompt, setShowBasisPrompt] = React.useState(false);
 
-  const connectedProviders = React.useMemo(
-    () => listConnectedOutboundProviders(seats, integrations),
+  const connectedMailboxes = React.useMemo(
+    () => listConnectedMailboxes(seats, integrations),
     [seats, integrations],
   );
   const previewOnly = effectiveDryRunMode(settings.dryRunMode, seats, integrations);
@@ -557,7 +557,7 @@ export function OutreachMessageCard({
                 {previewOnly ? "Dry-run / preview" : "Live"}
               </span>
               {" · "}
-              {connectedProviders.length === 0 ? (
+              {connectedMailboxes.length === 0 ? (
                 <>
                   No mailbox connected —{" "}
                   <Link href="/settings?tab=integrations" className="font-semibold text-ink underline-offset-2 hover:underline">
@@ -565,7 +565,7 @@ export function OutreachMessageCard({
                   </Link>
                 </>
               ) : (
-                <>Providers: {connectedProviders.map((p) => `${p.label} (${p.detail})`).join(", ")}</>
+                <>Mailbox: {connectedMailboxes.map((p) => `${p.label} (${p.detail})`).join(", ")}</>
               )}
             </span>
           </div>

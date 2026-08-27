@@ -46,7 +46,7 @@ import { HermesSchedulesPanel } from "@/components/settings/hermes-schedules-pan
 import { useHydrated, useSettings, useIntegrations, useSeats, useActions } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
 import { realIntegrationSummary, mailboxIntegrationPatchesFromConnections } from "@/lib/integrations";
-import { hasConnectedOutboundProvider } from "@/lib/outreach-send-mode";
+import { hasConnectedMailbox } from "@/lib/outreach-send-mode";
 import { demoLoginEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import { LANGUAGES } from "@/lib/i18n";
 import {
@@ -326,10 +326,10 @@ export default function SettingsPage() {
   }
 
   function setToggle(patch: Partial<SystemSettings>, label: string, on: boolean) {
-    if (patch.dryRunMode === false && !hasConnectedOutboundProvider(seats, integrations)) {
+    if (patch.dryRunMode === false && !hasConnectedMailbox(seats, integrations)) {
       toast({
         title: "Connect a mailbox first",
-        description: "Live send mode needs a connected Outlook/Gmail/LinkedIn provider. Staying in dry-run / preview.",
+        description: "Live send mode needs a connected Outlook/Gmail mailbox. HeyReach/LinkedIn alone stay dry-run. Staying in dry-run / preview.",
         variant: "warning",
       });
       return;
@@ -560,7 +560,7 @@ export default function SettingsPage() {
                     icon={<Lock className="h-4 w-4" />}
                     label="Dry-run mode"
                     description="Simulate sends only: nothing leaves the system. Forced on when no mailbox or LinkedIn provider is connected."
-                    checked={settings.dryRunMode || !hasConnectedOutboundProvider(seats, integrations)}
+                    checked={settings.dryRunMode || !hasConnectedMailbox(seats, integrations)}
                     onCheckedChange={(v) => setToggle({ dryRunMode: v }, "Dry-run mode", v)}
                   />
                 </div>

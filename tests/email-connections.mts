@@ -256,10 +256,18 @@ ok(
 const sendMode = readFileSync("src/lib/outreach-send-mode.ts", "utf8");
 ok("effectiveDryRunMode helper", /export function effectiveDryRunMode/.test(sendMode));
 ok("listConnectedOutboundProviders helper", /export function listConnectedOutboundProviders/.test(sendMode));
+ok("listConnectedMailboxes helper", /export function listConnectedMailboxes/.test(sendMode));
+ok("hasConnectedMailbox helper", /export function hasConnectedMailbox/.test(sendMode));
 ok(
   "integrations fallback requires connectedAccount (no status-only Live)",
   /integ\.connectedAccount\?\.trim\(\)/.test(sendMode) &&
     /Status-only/.test(sendMode),
+);
+ok(
+  "Live send mode requires mailbox — HeyReach alone must not unlock Live",
+  /hasConnectedMailbox/.test(sendMode) &&
+    /HeyReach/.test(sendMode) &&
+    /return !hasConnectedMailbox/.test(sendMode),
 );
 
 const bootstrapCache = readFileSync("src/lib/workspace-bootstrap-cache.ts", "utf8");

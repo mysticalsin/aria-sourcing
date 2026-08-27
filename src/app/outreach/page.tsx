@@ -39,7 +39,7 @@ import {
 import type { FollowUpDueItem } from "@/lib/recommendations";
 import type { Candidate, OutreachMessage } from "@/lib/types";
 import { recordedCandidateLawfulBasis } from "@/lib/candidate-lawful-basis";
-import { effectiveDryRunMode, listConnectedOutboundProviders } from "@/lib/outreach-send-mode";
+import { effectiveDryRunMode, listConnectedMailboxes } from "@/lib/outreach-send-mode";
 import { cn, pluralize } from "@/lib/utils";
 import {
   Inbox,
@@ -206,7 +206,7 @@ function OutreachView() {
   const [glassBoxId, setGlassBoxId] = React.useState<string | null>(null);
 
   const previewOnly = effectiveDryRunMode(settings.dryRunMode, seats, integrations);
-  const connectedProviders = listConnectedOutboundProviders(seats, integrations);
+  const connectedMailboxes = listConnectedMailboxes(seats, integrations);
 
   function toggleGlassBox(messageId: string) {
     setGlassBoxId((prev) => (prev === messageId ? null : messageId));
@@ -706,7 +706,7 @@ function OutreachView() {
                     </Badge>
                   </div>
                   <div className="text-xs text-muted">
-                    {connectedProviders.length === 0 ? (
+                    {connectedMailboxes.length === 0 ? (
                       <>
                         No mailbox connected —{" "}
                         <Link href="/settings?tab=integrations" className="font-semibold text-ink underline-offset-2 hover:underline">
@@ -714,7 +714,7 @@ function OutreachView() {
                         </Link>
                       </>
                     ) : (
-                      <>Connected: {connectedProviders.map((p) => p.label).join(", ")}</>
+                      <>Connected: {connectedMailboxes.map((p) => p.label).join(", ")}</>
                     )}
                   </div>
                   <div className="flex items-center justify-between text-sm">
