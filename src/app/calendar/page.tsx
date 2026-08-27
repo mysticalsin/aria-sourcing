@@ -244,7 +244,7 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
                         className="inline-flex h-8 items-center gap-1.5 rounded-full bg-violet-soft px-3 text-xs font-semibold text-violet ring-1 ring-inset ring-violet/20 transition hover:bg-violet/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
                       >
                         <CalendarPlus className="h-3.5 w-3.5" aria-hidden />
-                        Cal.com
+                        Open calendar
                       </a>
                     )}
                   </>

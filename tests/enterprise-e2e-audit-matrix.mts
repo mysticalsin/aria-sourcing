@@ -192,6 +192,40 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
+    requirement: "Outreach approve/send enforce multi-agent quality validation",
+    evidence: () => {
+      const rules = readFileSync("src/lib/rules.ts", "utf8");
+      const approve = readFileSync("src/app/api/outreach/approve/route.ts", "utf8");
+      const send = readFileSync("src/app/api/outreach/send/route.ts", "utf8");
+      return (
+        /outreachQualityGate/.test(rules)
+        && /outreachQualityGate/.test(approve)
+        && /outreachQualityGate/.test(send)
+      );
+    },
+  },
+  {
+    requirement: "Autonomous sourcing cron resolves workspace Apify/Tavily keys",
+    evidence: () => {
+      const route = readFileSync("src/app/api/cron/run-sourcing-batch/route.ts", "utf8");
+      return (
+        /resolveStoredApifyKeyForWorkspace/.test(route)
+        && /resolveStoredTavilyKeyForWorkspace/.test(route)
+        && /linkedInProfileToken/.test(route)
+      );
+    },
+  },
+  {
+    requirement: "Calendar live booking requires durable reconciliation before success",
+    evidence: () => {
+      const route = readFileSync("src/app/api/calendar/event/route.ts", "utf8");
+      return (
+        /reconciled\.status !== "reconciled"/.test(route)
+        && /reconciliation-required/.test(route)
+      );
+    },
+  },
+  {
     requirement: "Mantu enterprise production ships on Fly only (Vercel skipped)",
     evidence: () => {
       const vercel = readFileSync("vercel.json", "utf8");

@@ -78,7 +78,7 @@ function Microsoft365StackInner() {
   const oauthReady = Boolean(providers?.microsoftOAuth && providers.encryptionReady);
   const mailboxConnected = Boolean(connectedOutlook);
   const inboundReady = Boolean(providers?.inboundWebhookSecret);
-  const calendarReady = mailboxConnected && (calendarScoped || oauthReady);
+  const calendarReady = mailboxConnected && calendarScoped;
 
   const stepsComplete =
     (ssoReady ? 1 : 0) +

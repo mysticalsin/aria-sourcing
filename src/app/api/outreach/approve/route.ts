@@ -7,6 +7,7 @@ import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
+import { outreachQualityGate } from "@/lib/outreach-quality-pipeline";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 
@@ -95,6 +96,14 @@ export async function POST(req: NextRequest) {
   if (!disclosure.safe || injection.flagged) {
     return NextResponse.json(
       { ok: false, error: disclosure.reason ?? "injection-suspected" },
+      { status: 422 },
+    );
+  }
+
+  const qualityGate = outreachQualityGate({ subject, body, channel });
+  if (qualityGate.blockers.length > 0) {
+    return NextResponse.json(
+      { ok: false, error: qualityGate.blockers[0] },
       { status: 422 },
     );
   }

@@ -1034,13 +1034,7 @@ async function handleDraftGenerate(job, context) {
   const candidateId = boundedText(payload.candidateId, 160, "candidate_id_required");
 
   if (!context.configuration?.outreachDraftUrl || !context.configuration?.cronSecret) {
-    return completeJob(
-      context.client,
-      job,
-      { status: "draft_ready", campaignId, candidateId, quality: "pending_route" },
-      [event("draft.ready", "candidate", candidateId, { campaignId })],
-      [],
-    );
+    throw new HandlerError("outreach_draft_unconfigured", true);
   }
 
   let response;
@@ -1072,6 +1066,9 @@ async function handleDraftGenerate(job, context) {
   const qualityStatus = isRecord(body.quality) && typeof body.quality.status === "string"
     ? body.quality.status
     : "unknown";
+  if (qualityStatus === "blocked") {
+    throw new HandlerError("outreach_draft_quality_blocked", false);
+  }
 
   return completeJobWithWorkspacePatch(
     context.client,

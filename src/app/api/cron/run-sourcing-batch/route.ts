@@ -4,7 +4,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { DEFAULT_SOURCING_BATCH_SIZE, TOP_CANDIDATE_SHORTLIST_SIZE } from "@/lib/recruiting-loop/constants";
+import { resolveStoredApifyKeyForWorkspace } from "@/lib/sourcing/apify";
 import { runMultiProviderSourcing } from "@/lib/sourcing/orchestrator";
+import { resolveStoredTavilyKeyForWorkspace } from "@/lib/sourcing/tavily";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import type { Candidate, Campaign, ScoringWeights } from "@/lib/types";
 
@@ -70,13 +72,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, status: "scoring_weights_missing" }, { status: 503 });
   }
 
+  const [linkedInProfileToken, workspaceTavilyKey] = await Promise.all([
+    resolveStoredApifyKeyForWorkspace(parsed.data.workspaceId),
+    resolveStoredTavilyKeyForWorkspace(parsed.data.workspaceId),
+  ]);
+
   const result = await runMultiProviderSourcing({
     campaign,
     existing: body.state.candidates ?? [],
     weights,
     count,
     githubToken: process.env.GITHUB_TOKEN ?? "",
-    tavilyKey: process.env.TAVILY_API_KEY,
+    tavilyKey: workspaceTavilyKey ?? process.env.TAVILY_API_KEY,
+    linkedInProfileToken,
   });
 
   const accepted = [...result.accepted]

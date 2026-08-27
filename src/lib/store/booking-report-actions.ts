@@ -356,7 +356,11 @@ export function createBookingReportActions({
           try {
             const link = new URL(body.link);
             if (link.protocol !== "https:") throw new Error("Calendar links must use HTTPS.");
-            booking.calLink = body.link;
+            if (seat.provider === "Microsoft Graph") {
+              booking.teamsLink = body.link;
+            } else {
+              booking.calLink = body.link;
+            }
           } catch {
             return {
               ok: false,

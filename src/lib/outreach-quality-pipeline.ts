@@ -188,3 +188,31 @@ export function validateOutreachQuality(input: {
     aggregateScore,
   };
 }
+
+export type OutreachQualityGateResult = {
+  verdict: OutreachQualityVerdict;
+  blockers: string[];
+  warnings: string[];
+};
+
+/** Re-run the quality pipeline for server-side approve/send enforcement. */
+export function outreachQualityGate(input: {
+  subject: string;
+  body: string;
+  channel?: string;
+}): OutreachQualityGateResult {
+  const verdict = validateOutreachQuality(input);
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+  if (verdict.status === "blocked") {
+    const reasons = verdict.stages.flatMap((stage) => stage.reasons).filter(Boolean);
+    blockers.push(
+      reasons.length > 0
+        ? `Quality pipeline blocked (${reasons.join(", ")}).`
+        : "Quality pipeline blocked this draft.",
+    );
+  } else if (verdict.status === "needs_review") {
+    warnings.push(`Quality needs review (${verdict.aggregateScore}/100).`);
+  }
+  return { verdict, blockers, warnings };
+}

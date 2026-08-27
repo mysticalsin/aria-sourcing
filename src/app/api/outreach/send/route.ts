@@ -12,6 +12,7 @@ import { can } from "@/lib/rbac";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { safeLog } from "@/lib/log-redact";
 import { gateOutbound } from "@/lib/gate";
+import { outreachQualityGate } from "@/lib/outreach-quality-pipeline";
 import { getOutboundChannelPolicy } from "@/lib/linkedin-policy";
 import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
 import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
@@ -183,6 +184,13 @@ export async function POST(req: NextRequest) {
   // status narration, AI self-disclosure, leaked tool/JSON markup, unfilled
   // placeholders — never reaches a candidate, approved or not. Block-only:
   // the approved text is never mutated here, so the approval hash stays valid.
+  const qualityGate = outreachQualityGate({ subject, body, channel });
+  if (qualityGate.blockers.length > 0) {
+    return NextResponse.json(
+      { status: "error", detail: qualityGate.blockers[0] },
+      { status: 422 },
+    );
+  }
   const gate = gateOutbound(body);
   if (!gate.pass) {
     return NextResponse.json(

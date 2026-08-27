@@ -9,6 +9,7 @@ import type {
 import type { Tone } from "./utils";
 import { recordedCandidateLawfulBasis } from "./candidate-lawful-basis";
 import { recordedCandidateFitEndorsement } from "./candidate-fit-endorsement";
+import { outreachQualityGate } from "./outreach-quality-pipeline";
 
 /* ============================================================================
    Business rules — the guardrails Aria enforces before acting.
@@ -216,6 +217,32 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
       rule: "Re-contact window",
       status: "pass",
       detail: message.sequenceStep > 1 ? "Follow-up in an existing sequence." : "No prior contact on record.",
+    });
+  }
+
+  // Multi-agent quality validation — blocked drafts never reach approval.
+  const qualityGate = outreachQualityGate({
+    subject: message.subject,
+    body: message.body,
+    channel: message.channel,
+  });
+  if (message.qualityStatus === "blocked") {
+    const detail = "Draft is quality-blocked and cannot be approved.";
+    blockers.push(detail);
+    checks.push({ rule: "Quality validation", status: "block", detail });
+  } else if (qualityGate.blockers.length > 0) {
+    const detail = qualityGate.blockers[0]!;
+    blockers.push(detail);
+    checks.push({ rule: "Quality validation", status: "block", detail });
+  } else if (qualityGate.warnings.length > 0) {
+    const detail = qualityGate.warnings[0]!;
+    warnings.push(detail);
+    checks.push({ rule: "Quality validation", status: "warn", detail });
+  } else {
+    checks.push({
+      rule: "Quality validation",
+      status: "pass",
+      detail: `Quality ready (${qualityGate.verdict.aggregateScore}/100).`,
     });
   }
 

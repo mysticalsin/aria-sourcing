@@ -202,12 +202,26 @@ function BookingRow({ booking }: { booking: Booking }) {
         </div>
 
         <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:items-end">
-          <LinkButton href={booking.teamsLink} tone="teams" icon={<Video className="h-3.5 w-3.5" aria-hidden />}>
-            Teams
-          </LinkButton>
-          <LinkButton href={booking.calLink} tone="cal" icon={<CalendarPlus className="h-3.5 w-3.5" aria-hidden />}>
-            Cal.com
-          </LinkButton>
+          {booking.teamsLink ? (
+            <LinkButton href={booking.teamsLink} tone="teams" icon={<Video className="h-3.5 w-3.5" aria-hidden />}>
+              Teams
+            </LinkButton>
+          ) : null}
+          {booking.calLink ? (
+            <LinkButton href={booking.calLink} tone="cal" icon={<CalendarPlus className="h-3.5 w-3.5" aria-hidden />}>
+              Calendar
+            </LinkButton>
+          ) : null}
+          {!booking.teamsLink && !booking.calLink ? (
+            <span
+              aria-disabled="true"
+              title="Meeting link is generated once the calendar integration goes live"
+              className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-full bg-ink/[0.04] px-3 text-xs font-semibold text-muted ring-1 ring-inset ring-line"
+            >
+              <Video className="h-3.5 w-3.5" aria-hidden />
+              Teams · on live send
+            </span>
+          ) : null}
         </div>
       </div>
 

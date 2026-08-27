@@ -593,6 +593,8 @@ test("runSourcingLoopTick claims every handler kind and completes each claimed j
       dispatchUrl: null,
       providerPollUrl: new URL("https://worker.example.test/api/cron/poll-provider-run"),
       intakeParseUrl: new URL("https://worker.example.test/api/cron/parse-inbound-need"),
+      sourcingBatchUrl: new URL("https://worker.example.test/api/cron/run-sourcing-batch"),
+      outreachDraftUrl: new URL("https://worker.example.test/api/cron/generate-outreach-draft"),
       cronSecret: "s".repeat(32),
     },
     { ARIA_LOOP_KILL_SWITCH: "false" },
@@ -607,6 +609,37 @@ test("runSourcingLoopTick claims every handler kind and completes each claimed j
             jobAnalysis: { title: "Senior Engineer", requiredSkills: ["TypeScript"] },
             campaignId: "camp-1",
             campaign: { id: "camp-1", title: "Senior Engineer", status: "Sourcing" },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (String(url).includes("generate-outreach-draft")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            campaignId: "camp-1",
+            candidateId: "cand-1",
+            channel: "Email",
+            quality: { status: "ready", aggregateScore: 88 },
+            outreach: {
+              id: "msg-loop-1",
+              candidateId: "cand-1",
+              campaignId: "camp-1",
+              channel: "Email",
+              subject: "Your TypeScript work",
+              body: "Hi — your recent TypeScript project stood out for our Senior Engineer search.",
+              tone: "Casual Professional",
+              personalizationEvidence: ["Recent TypeScript project"],
+              status: "Needs Approval",
+              sequenceStep: 1,
+              scheduledFor: null,
+              sentAt: null,
+              approvedBy: null,
+              dryRun: true,
+              createdAt: "2026-07-25T12:00:00.000Z",
+              qualityStatus: "ready",
+              qualityScore: 88,
+            },
           }),
           { status: 200, headers: { "content-type": "application/json" } },
         );

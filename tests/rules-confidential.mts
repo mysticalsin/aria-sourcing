@@ -312,6 +312,23 @@ ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
   ok("provider candidate with recorded lawful basis: allowed", recorded.allowed === true);
 }
 
+{
+  const blocked = checkOutreachApproval(
+    approvalCtx({
+      message: {
+        ...approvalCtx().message,
+        subject: "Compensation",
+        body: "We offer a salary of £120k for this role. I hope this finds you well.",
+      },
+    }),
+  );
+  ok("quality-blocked outreach cannot be approved", blocked.allowed === false);
+  ok(
+    "quality-blocked outreach reports a quality blocker",
+    blocked.blockers.some((detail) => detail.includes("Quality pipeline blocked")),
+  );
+}
+
 // no-throw guard on the approval gate
 try {
   checkOutreachApproval(approvalCtx());

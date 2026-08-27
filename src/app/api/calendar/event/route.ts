@@ -195,13 +195,24 @@ export async function POST(req: NextRequest) {
         : await createGraphCalendarEvent(ev, connection);
 
     if (outcome.ok) {
-      await reconcileCalendarBooking(svc, {
+      const reconciled = await reconcileCalendarBooking(svc, {
         workspaceId: wid,
         id: claim.id,
         status: "confirmed",
         externalEventId: outcome.eventId ?? null,
         detail: outcome.detail,
       });
+      if (reconciled.status !== "reconciled" || reconciled.bookingStatus !== "confirmed") {
+        return NextResponse.json(
+          {
+            status: "reconciliation-required",
+            delivery: "calendar-reconciliation-required",
+            bookingId: claim.id,
+            detail: "Calendar event may exist, but durable booking reconciliation failed. Do not retry.",
+          },
+          { status: 502 },
+        );
+      }
       // Persist a refreshed token if it changed. Fail closed: never write a refreshed
       // token in cleartext when production requires encryption at rest but no key is
       // configured — skip the persist (the event itself was already created and

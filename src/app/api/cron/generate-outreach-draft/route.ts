@@ -3,7 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
-import { mantuOutreachVoice } from "@/lib/mantu-brand";
+import { mantuOutreachVoice, mantuEmailHtmlWrapper } from "@/lib/mantu-brand";
 import { generateOutreach, newOutreachMessage } from "@/lib/mock-ai";
 import { validateOutreachQuality } from "@/lib/outreach-quality-pipeline";
 import { getServiceSupabase } from "@/lib/supabase/server";
@@ -81,12 +81,21 @@ export async function POST(req: NextRequest) {
   const outreach = newOutreachMessage(
     candidate,
     campaign,
-    generated,
+    {
+      ...generated,
+      subject: quality.text.subject,
+      body: quality.text.body,
+    },
     "Casual Professional",
     settings as SystemSettings,
     1,
   );
   outreach.status = "Needs Approval";
+  outreach.qualityStatus = quality.status;
+  outreach.qualityScore = quality.aggregateScore;
+  if (channel === "Email") {
+    outreach.htmlBody = mantuEmailHtmlWrapper(quality.text.body);
+  }
 
   return NextResponse.json({
     ok: true,
