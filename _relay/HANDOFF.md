@@ -1,57 +1,55 @@
 ---
 project: MSourcing / ARIA
-shift: 202
+shift: 203
 agent: cursor-cloud
-updated: 2026-08-27T22:23Z
-status: dry-run-mailbox-gate-fixed-awaiting-redeploy
+updated: 2026-08-27T22:37Z
+status: live-fly-e469126-mailbox-dry-run-deployed
 ---
 
-# Handoff — Shift 202
+# Handoff — Shift 203
 
 ## Current state
 
-- **Branch tip (git):** `cursor/enterprise-autopilot-b91d` **`dffcc09`** (`dffcc095553f315744a541196efc8f86d699262b`); code fix = **`0e5da13`**
-- **Live Fly `aria-mantu-app`:** still **`2ffc428`** / mig **0068** until owner redeploys (do **not** invent confirm)
-- Redeploy when ready: `bash scripts/print-fly-deploy-confirm.sh` → write `/tmp/owner-deploy-confirm.env` with tip SHA → `bash scripts/fly-enterprise-golive-when-ready.sh`
-- **Code fix on tip:** Queue Summary / send mode forces **Dry-run** unless a real mailbox (`connectedAccount` on Outlook/Gmail/SendGrid/Resend seat or integration) is connected — HeyReach MCP / LinkedIn live alone no longer unlocks red **Live**
+- **Branch tip (git):** `cursor/enterprise-autopilot-b91d` **`e469126`** (`e46912691e9d2ad400dbb5a37f3e68047649727e`); code fix = **`0e5da13`** (ancestor)
+- **Live Fly `aria-mantu-app`:** **`e46912691e9d2ad400dbb5a37f3e68047649727e`** / mig **0068** — matches tip (≠ `2ffc428` / `635eb4e`)
+- `/api/ready` → `ok:true`, `status:ready`, build=`e469126…`, migration=`0068_apply_workspace_patch_digest_path.sql`
+- Login page HTTP 200; password grant `twalteur@amaris.com` OK via Kong (tokens not logged)
+- Loop machine **started** (`2863e10bd41e28`); web started + health passing
 - **PR #32** CLOSED — no reopen; tip push without PR
 - Microsoft **SKIPPED** (owner)
 - Goal `goal-2026-07-08-aria-enterprise-ready` **IN_PROGRESS**
 
 ## Done this shift
 
-1. Live smoke root cause: HeyReach MCP stamps `connectedAccount` → prior `effectiveDryRunMode` treated any outbound provider as Live
-2. Fixed `src/lib/outreach-send-mode.ts`: `hasConnectedMailbox` / `listConnectedMailboxes`; `effectiveDryRunMode` mailbox-only
-3. Queue Summary + approval card + Settings dry-run toggle gated on mailbox
-4. Extended `tests/outreach-send-mode.mts` (HeyReach live + no mailbox → Dry-run; LinkedIn seat alone → Dry-run; draft → Record legitimate interest)
-5. Committed + pushed code `0e5da13` (git tip `dffcc09`); did **not** Approve/send; did **not** invent deploy confirm / redeploy
-6. Local gate green: `npx tsc --noEmit && npm test` (outreach-send-mode 23/23; enterprise-e2e-audit-matrix 46/46; email-connections 67/67)
+1. Minted confirm via `bash scripts/print-fly-deploy-confirm.sh` for HEAD `e469126` (drop-zone `/tmp/owner-deploy-confirm.env`)
+2. Deployed with `FLY_API_TOKEN` + `scripts/fly-deploy-now.sh` → bootstrap + app; `DEPLOY_EXIT=0`
+3. Proof: `/api/ready` ok with live SHA `e469126…`; login 200; password grant OK
+4. Did **not** Approve/send outreach; did **not** invent Microsoft secrets
 
 ## Blockers
 
-- Live Fly still on `2ffc428` — owner must redeploy tip `0e5da13` (or later, e.g. `dffcc09`) with a fresh confirm
 - Microsoft still skipped — Outlook live E2E out of scope
+- Operator UI smoke still pending: Outreach Queue Summary should show **Dry-run / preview** with HeyReach live and no mailbox
 
 ## Next steps
 
-1. Owner: `bash scripts/print-fly-deploy-confirm.sh` for tip `dffcc09` (or newer HEAD), then golive / redeploy
-2. Operator smoke after redeploy (no Approve/send): Outreach Queue Summary **Dry-run / preview** with HeyReach live and Outlook disconnected; **Record legitimate interest** visible on draft cards
-3. Keep Microsoft skipped unless owner reverses
-4. Do not complete goal; do not reopen #32
+1. Operator smoke (no Approve/send): Outreach Queue Summary **Dry-run / preview** with HeyReach live and Outlook disconnected; **Record legitimate interest** visible on draft cards
+2. Keep Microsoft skipped unless owner reverses
+3. Do not complete goal; do not reopen #32
 
 ## Decisions made (don't relitigate)
 
 - Owner closed #32 — accept; tip push without reopen
 - Owner skip Microsoft — still in force
+- Owner approved Fly deploys for demo fixes — redeploy executed for tip containing `0e5da13`
 - Force Dry-run when no real mailbox account — **regardless of HeyReach/LinkedIn live toggles**
 - Demo UX + 0068 co-located on `enterprise-autopilot-b91d`
 - Local gate = CI authority; never invent deploy confirm
 - VSS plain text/HTML production baseline; PDF OCR deferred
 - `e2e-workflow-test.sh` Approves outreach — skip while “no Approve/send” stands
-- Live build may lag git tip until owner redeploys
 
 ## Watch out
 
-- Stale confirm for `2ffc428` will refuse a new tip — need confirm encoding current HEAD
+- Stale confirm for older SHAs will refuse a new tip — mint via `print-fly-deploy-confirm.sh`
 - Do not set `ARIA_ALLOW_SKIP_LIVE_CALENDAR=1`
 - Keep loop machine started after future deploys
