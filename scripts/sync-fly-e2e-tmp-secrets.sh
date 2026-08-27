@@ -23,14 +23,18 @@ FLYBIN="$(command -v flyctl || command -v fly)"
 
 pull_env() {
   local name="$1" out="$2"
-  local raw
+  local raw val
   raw="$($FLYBIN ssh console -a aria-mantu-app -C "printenv $name" 2>/dev/null || true)"
-  local val
-  # JWT service-role keys contain dots; webhook/cron are usually hex/base64.
-  val="$(printf '%s\n' "$raw" | tr -d '\r' | grep -E '^[A-Za-z0-9+/=_\.\-]{16,}$' | tail -1 || true)"
+  # Prefer JWT lines (service role), else longest secret-looking token.
+  val="$(printf '%s\n' "$raw" | tr -d '\r' | awk '
+    /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/ { print; found=1 }
+    END { if (!found) exit 1 }
+  ' 2>/dev/null || true)"
   if [ -z "$val" ]; then
-    # Prefer eyJ… JWT lines when present (service role).
-    val="$(printf '%s\n' "$raw" | tr -d '\r' | grep -E '^eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+$' | tail -1 || true)"
+    val="$(printf '%s\n' "$raw" | tr -d '\r' | awk '
+      /^[A-Za-z0-9+/=_-]{16,}$/ { if (length($0) > bestlen) { best=$0; bestlen=length($0) } }
+      END { if (bestlen >= 16) print best }
+    ')"
   fi
   if [ -z "$val" ]; then
     echo "WARN: could not read $name from aria-mantu-app" >&2
