@@ -328,6 +328,6 @@
   ],
   "metrics_at_completion": null,
   "retro_id": null,
-  "last_shift_note": "2026-08-27: enterprise full E2E with live Teams/Outlook book CANCELLED/DEFERRED (owner: skip Microsoft) — no more MICROSOFT_CLIENT_* polling, Graph Outlook connect, or live-calendar E2E gate on cursor/enterprise-autopilot-b91d. Broader enterprise-ready milestones unchanged. See _relay/HANDOFF.md shift 194.",
-  "updated_at": "2026-08-27T21:03:00+00:00"
+  "last_shift_note": "2026-08-27T22:00Z shift 201: owner confirm matched tip 2ffc428 → Fly golive OK. Live /api/ready build=2ffc428 migration=0068_apply_workspace_patch_digest_path.sql. Demo UX+0068+DeepSeek on tip. Microsoft still SKIPPED (no CLIENT secret invent). Goal stays IN_PROGRESS — cannot complete without MS / full objective. See _relay/HANDOFF.md.",
+  "updated_at": "2026-08-27T22:00:00+00:00"
 }
