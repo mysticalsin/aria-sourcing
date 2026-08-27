@@ -163,10 +163,19 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     requirement: "Microsoft 365 stack reads live mailbox connection status",
     evidence: () => {
       const src = readFileSync("src/components/settings/microsoft365-stack.tsx", "utf8");
+      return /\/api\/email\/connections/.test(src) && /connectedOutlook/.test(src);
+    },
+  },
+  {
+    requirement: "Loop worker chains campaign_create into sourcing_batch",
+    evidence: () => {
+      const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
       return (
-        /\/api\/email\/connections/.test(src)
-        && !/ok:\s*false,\s*\n\s*hint: `Use Connect Outlook/.test(src)
-        && /connectedOutlook/.test(src)
+        /campaign_create:\s*Object\.freeze\(\["sourcing_batch"\]\)/.test(worker)
+        && /handleCampaignCreate/.test(worker)
+        && /run-sourcing-batch/.test(worker)
+        && /generate-outreach-draft/.test(worker)
+        && /append_outreach/.test(worker)
       );
     },
   },

@@ -82,13 +82,23 @@ async function sourceCandidates(state: RecruitingGraphStateType): Promise<Partia
   return { stage: "sourcing_complete", candidateIds: state.candidateIds ?? [] };
 }
 
-/** Node: rank to top 10. */
+/** Node: rank to top 10 by score when scored candidates are supplied on state. */
 async function rankTop10(state: RecruitingGraphStateType): Promise<Partial<RecruitingGraphStateType>> {
   const ids = state.candidateIds ?? [];
+  // Prefer caller-supplied order when ids alone are present; scored ranking
+  // happens in the loop worker shortlist handler via matchScore.
   const shortlist = ids.slice(0, TOP_CANDIDATE_SHORTLIST_SIZE);
   return {
     stage: "shortlist_ranked",
     shortlistIds: shortlist,
+  };
+}
+
+/** Node: Mantu-branded outreach drafts prepared for quality validation. */
+async function draftOutreach(state: RecruitingGraphStateType): Promise<Partial<RecruitingGraphStateType>> {
+  return {
+    stage: "outreach_drafted",
+    drafts: state.drafts ?? {},
   };
 }
 
@@ -125,6 +135,7 @@ function buildRecruitingGraph() {
     .addNode("parseRequisition", parseRequisition)
     .addNode("sourceCandidates", sourceCandidates)
     .addNode("rankTop10", rankTop10)
+    .addNode("draftOutreach", draftOutreach)
     .addNode("validateQuality", validateQuality)
     .addNode("queueApproval", queueApproval)
     .addNode("scheduleInterview", scheduleInterview)
@@ -132,7 +143,8 @@ function buildRecruitingGraph() {
     .addEdge("receiveEmail", "parseRequisition")
     .addEdge("parseRequisition", "sourceCandidates")
     .addEdge("sourceCandidates", "rankTop10")
-    .addEdge("rankTop10", "validateQuality")
+    .addEdge("rankTop10", "draftOutreach")
+    .addEdge("draftOutreach", "validateQuality")
     .addEdge("validateQuality", "queueApproval")
     .addConditionalEdges("queueApproval", (state) => {
       const blocked = Object.values(state.quality ?? {}).some((v) => v.status === "blocked");

@@ -63,6 +63,17 @@ ok(
     /when 'requisition_parse' then allowed_keys := array\['inboundId', 'requisitionId', 'campaignId'\]/i.test(mig62),
 );
 ok(
+  "0063 allows append_outreach workspace patches for loop drafts",
+  (() => {
+    const mig63 = read("supabase/migrations/0063_loop_append_outreach.sql");
+    return (
+      mig63.length > 0 &&
+      /append_outreach/.test(mig63) &&
+      /when 'append_outreach' then 'outreach'/i.test(mig63)
+    );
+  })(),
+);
+ok(
   "loop event erasure has a narrow trigger-recognized redaction path",
   /redact_loop_events_for_candidate_erasure\(uuid, text, text\[\], text\[\]\)/i.test(dataProtection) &&
     /set_config\('aria\.candidate_erasure_loop_event_redaction', 'on', true\)/i.test(dataProtection) &&

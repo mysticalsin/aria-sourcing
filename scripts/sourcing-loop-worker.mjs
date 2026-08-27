@@ -51,7 +51,7 @@ export const PIPELINE_STAGE_TRANSITIONS = Object.freeze({
   email_sync: Object.freeze(["inbound_classify"]),
   inbound_classify: Object.freeze(["draft_generate"]),
   requisition_parse: Object.freeze(["campaign_create"]),
-  campaign_create: Object.freeze([]),
+  campaign_create: Object.freeze(["sourcing_batch"]),
   sourcing_batch: Object.freeze(["shortlist_build"]),
   provider_poll: Object.freeze(["shortlist_build"]),
   enrich_candidate: Object.freeze(["shortlist_build"]),
@@ -67,6 +67,7 @@ export const PIPELINE_STAGE_TRANSITION_PRODUCERS = Object.freeze({
     "handleInboundClassify (positive intent + entitled autopilot)",
   ]),
   "requisition_parse->campaign_create": Object.freeze(["handleRequisitionParse"]),
+  "campaign_create->sourcing_batch": Object.freeze(["handleCampaignCreate"]),
   "sourcing_batch->shortlist_build": Object.freeze(["handleSourcingBatch"]),
   "provider_poll->shortlist_build": Object.freeze(["handleProviderPoll"]),
   "enrich_candidate->shortlist_build": Object.freeze(["handleEnrichCandidate"]),
@@ -196,6 +197,8 @@ export function loadSourcingLoopConfiguration(environment) {
   let dispatchUrl = null;
   let providerPollUrl = null;
   let intakeParseUrl = null;
+  let sourcingBatchUrl = null;
+  let outreachDraftUrl = null;
   if (webOrigin !== "" || cronSecret !== "") {
     let parsed;
     try {
@@ -212,6 +215,8 @@ export function loadSourcingLoopConfiguration(environment) {
     dispatchUrl = parsed;
     providerPollUrl = new URL("/api/cron/poll-provider-run", webOrigin);
     intakeParseUrl = new URL("/api/cron/parse-inbound-need", webOrigin);
+    sourcingBatchUrl = new URL("/api/cron/run-sourcing-batch", webOrigin);
+    outreachDraftUrl = new URL("/api/cron/generate-outreach-draft", webOrigin);
   }
 
   return {
@@ -222,6 +227,8 @@ export function loadSourcingLoopConfiguration(environment) {
     dispatchUrl,
     providerPollUrl,
     intakeParseUrl,
+    sourcingBatchUrl,
+    outreachDraftUrl,
     cronSecret,
     tickMs: boundedInteger(environment.ARIA_LOOP_TICK_MS, DEFAULT_TICK_MS, 5_000, 300_000, "ARIA_LOOP_TICK_MS"),
     timeoutMs: boundedInteger(environment.ARIA_LOOP_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, 1_000, 60_000, "ARIA_LOOP_TIMEOUT_MS"),
@@ -665,6 +672,59 @@ async function handleRequisitionParse(job, context) {
   );
 }
 
+async function handleCampaignCreate(job, context) {
+  const payload = payloadOf(job);
+  const campaignId = boundedText(payload.campaignId, 160, "campaign_id_required");
+  const batchId = `batch:${campaignId}:${job.id}`;
+  return completeJob(
+    context.client,
+    job,
+    { status: "campaign.create_requested", campaignId },
+    [event("campaign.create_requested", "campaign", campaignId, {})],
+    [
+      successorJob(
+        "sourcing_batch",
+        `source:${campaignId}:${batchId}`,
+        { campaignId, batchId },
+        85,
+      ),
+    ],
+  );
+}
+
+async function runSourcingBatchViaRoute(job, context, campaignId, batchId) {
+  if (!context.configuration?.sourcingBatchUrl || !context.configuration?.cronSecret) {
+    throw new HandlerError("sourcing_batch_route_unconfigured", true);
+  }
+  let response;
+  try {
+    response = await context.fetcher(context.configuration.sourcingBatchUrl, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${context.configuration.cronSecret}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        workspaceId: job.workspace_id,
+        campaignId,
+        count: 15,
+      }),
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+    });
+  } catch {
+    throw new HandlerError("sourcing_batch_unreachable", true);
+  }
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new HandlerError(`sourcing_batch_http_${response.status}`, response.status >= 500);
+  }
+  const body = await readBoundedJson(response, RPC_RESPONSE_BYTES);
+  if (!isRecord(body) || body.ok !== true) throw new HandlerError("sourcing_batch_response_invalid", true);
+  const candidates = candidateRecordsFromProviderResult(body, campaignId);
+  if (candidates.length === 0) throw new HandlerError("sourcing_batch_empty", true);
+  return { candidates, batchId: typeof body.batchId === "string" && body.batchId.trim() ? body.batchId.trim() : batchId };
+}
+
 async function handleSourcingBatch(job, context) {
   const payload = payloadOf(job);
   const campaignId = boundedText(payload.campaignId, 160, "campaign_id_required");
@@ -674,22 +734,38 @@ async function handleSourcingBatch(job, context) {
     : typeof payload.runId === "string" && payload.runId.trim()
       ? payload.runId.trim()
       : "";
-  const candidateIds = candidateIdsFromPayload(payload);
-  const successors = providerRunId
-    ? [
+
+  if (providerRunId) {
+    return completeJob(
+      context.client,
+      job,
+      { status: "sourcing_batch_recorded", campaignId, batchId, candidateCount: candidateIdsFromPayload(payload).length },
+      [event("sourcing.batch_ready", "campaign", campaignId, { candidateCount: candidateIdsFromPayload(payload).length })],
+      [
         successorJob("shortlist_build", `shortlist:${campaignId}:${batchId}`, {
           campaignId,
           batchId,
           providerRunId,
         }, 90),
-      ]
-    : [];
-  return completeJob(
+      ],
+    );
+  }
+
+  const sourced = await runSourcingBatchViaRoute(job, context, campaignId, batchId);
+  const candidateIds = sourced.candidates.map((c) => c.id);
+  return completeJobWithWorkspacePatch(
     context.client,
     job,
-    { status: "sourcing_batch_recorded", campaignId, batchId, candidateCount: candidateIds.length },
+    { kind: "append_candidates", value: sourced.candidates, receiptKey: `source:${campaignId}:${sourced.batchId}` },
+    { status: "sourcing_batch_recorded", campaignId, batchId: sourced.batchId, candidateCount: candidateIds.length },
     [event("sourcing.batch_ready", "campaign", campaignId, { candidateCount: candidateIds.length })],
-    successors,
+    [
+      successorJob("shortlist_build", `shortlist:${campaignId}:${sourced.batchId}`, {
+        campaignId,
+        batchId: sourced.batchId,
+        candidateIds,
+      }, 90),
+    ],
   );
 }
 
@@ -762,12 +838,37 @@ async function handleProviderPoll(job, context) {
 }
 
 async function candidatesForShortlist(job, context, payload, campaignId) {
+  const ids = candidateIdsFromPayload(payload);
+  if (ids.length > 0) {
+    const snapshot = await readWorkspaceSnapshot(context.client, job.workspace_id);
+    const state = isRecord(snapshot.state) ? snapshot.state : {};
+    const all = Array.isArray(state.candidates) ? state.candidates.filter(isRecord) : [];
+    const byId = new Map(all.map((c) => [c.id, c]));
+    const matched = ids.map((id) => byId.get(id)).filter(Boolean);
+    if (matched.length > 0) {
+      return matched
+        .map((candidate) => ({
+          ...candidate,
+          id: requireString(candidate.id, "candidate_id_required"),
+          campaignId: typeof candidate.campaignId === "string" && candidate.campaignId.trim()
+            ? candidate.campaignId.trim()
+            : campaignId,
+          stage: typeof candidate.stage === "string" && candidate.stage.trim() ? candidate.stage : "Sourced",
+        }))
+        .sort((a, b) => Number(b.matchScore ?? b.match_score ?? 0) - Number(a.matchScore ?? a.match_score ?? 0))
+        .slice(0, 10);
+    }
+  }
+
   const providerRunId = typeof payload.providerRunId === "string" && payload.providerRunId.trim()
     ? payload.providerRunId.trim()
     : typeof payload.runId === "string" && payload.runId.trim()
       ? payload.runId.trim()
       : "";
-  if (!providerRunId) throw new HandlerError("shortlist_provider_run_required");
+  if (!providerRunId) {
+    if (ids.length > 0) throw new HandlerError("shortlist_candidates_required");
+    throw new HandlerError("shortlist_provider_run_required");
+  }
   const providerPayload = { ...payload, providerRunId };
   const providerResult = context.providerPoller?.poll
     ? await context.providerPoller.poll({ job, payload: providerPayload })
@@ -776,7 +877,9 @@ async function candidatesForShortlist(job, context, payload, campaignId) {
   if (status === "processing") throw new HandlerError("provider_still_running", true);
   if (status === "failed") throw new HandlerError("provider_poll_failed");
   if (status !== "completed") throw new HandlerError("provider_poll_response_invalid", true);
-  return candidateRecordsFromProviderResult(providerResult, campaignId);
+  return candidateRecordsFromProviderResult(providerResult, campaignId)
+    .sort((a, b) => Number(b.matchScore ?? b.match_score ?? 0) - Number(a.matchScore ?? a.match_score ?? 0))
+    .slice(0, 10);
 }
 
 async function handleEnrichCandidate(job, context) {
@@ -827,12 +930,24 @@ async function handleDeliveryReconcile(job, context) {
 async function handleShortlistBuild(job, context) {
   const payload = payloadOf(job);
   const campaignId = boundedText(payload.campaignId, 160, "campaign_id_required");
+  const fromWorkspaceIds = candidateIdsFromPayload(payload).length > 0;
   const candidates = await candidatesForShortlist(job, context, payload, campaignId);
   if (candidates.length === 0) throw new HandlerError("shortlist_candidates_required");
   const batchId = typeof payload.batchId === "string" && payload.batchId.trim() ? payload.batchId.trim() : job.id;
   const receiptKey = typeof payload.receiptKey === "string" && payload.receiptKey.trim()
     ? payload.receiptKey.trim()
     : `shortlist:${campaignId}:${batchId}`;
+
+  // candidateIds already in workspace only when sourcing_batch persisted them and
+  // shortlist resolved from workspace (not provider fallback).
+  const snapshot = await readWorkspaceSnapshot(context.client, job.workspace_id);
+  const state = isRecord(snapshot.state) ? snapshot.state : {};
+  const existingIds = new Set(
+    (Array.isArray(state.candidates) ? state.candidates : [])
+      .filter(isRecord)
+      .map((c) => c.id),
+  );
+  const fromIds = fromWorkspaceIds && candidates.every((c) => existingIds.has(c.id));
 
   // Entitled auto-approve: only when an autopilot-enabled profile exists in the
   // workspace and the candidate match score clears the workspace threshold.
@@ -865,7 +980,7 @@ async function handleShortlistBuild(job, context) {
             );
             return Number.isFinite(score) && score >= minScore && typeof candidate.id === "string";
           })
-          .slice(0, 50)
+          .slice(0, 10)
           .map((candidate) =>
             successorJob(
               "draft_generate",
@@ -875,7 +990,6 @@ async function handleShortlistBuild(job, context) {
                 candidateId: candidate.id,
                 approvedBy: entitledId,
                 approvalSource: "autopilot_shortlist",
-                matchScore: Number(candidate.matchScore ?? candidate.match_score ?? candidate.score),
               },
               80,
             ),
@@ -888,15 +1002,28 @@ async function handleShortlistBuild(job, context) {
     autoApproved = 0;
   }
 
+  const result = {
+    status: "shortlist_committed",
+    campaignId,
+    candidateCount: candidates.length,
+    autoApproved,
+  };
+  const events = [event("shortlist.committed", "campaign", campaignId, {
+    candidateCount: candidates.length,
+    autoApproved,
+  })];
+
+  // candidateIds path already persisted candidates during sourcing_batch.
+  if (fromIds) {
+    return completeJob(context.client, job, result, events, successors);
+  }
+
   return completeJobWithWorkspacePatch(
     context.client,
     job,
     { kind: "append_candidates", value: candidates, receiptKey },
-    { status: "shortlist_committed", campaignId, candidateCount: candidates.length, autoApproved },
-    [event("shortlist.committed", "campaign", campaignId, {
-      candidateCount: candidates.length,
-      autoApproved,
-    })],
+    result,
+    events,
     successors,
   );
 }
@@ -905,11 +1032,66 @@ async function handleDraftGenerate(job, context) {
   const payload = payloadOf(job);
   const campaignId = boundedText(payload.campaignId, 160, "campaign_id_required");
   const candidateId = boundedText(payload.candidateId, 160, "candidate_id_required");
-  return completeJob(
+
+  if (!context.configuration?.outreachDraftUrl || !context.configuration?.cronSecret) {
+    return completeJob(
+      context.client,
+      job,
+      { status: "draft_ready", campaignId, candidateId, quality: "pending_route" },
+      [event("draft.ready", "candidate", candidateId, { campaignId })],
+      [],
+    );
+  }
+
+  let response;
+  try {
+    response = await context.fetcher(context.configuration.outreachDraftUrl, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${context.configuration.cronSecret}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        workspaceId: job.workspace_id,
+        campaignId,
+        candidateId,
+      }),
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+    });
+  } catch {
+    throw new HandlerError("outreach_draft_unreachable", true);
+  }
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new HandlerError(`outreach_draft_http_${response.status}`, response.status >= 500);
+  }
+  const body = await readBoundedJson(response, RPC_RESPONSE_BYTES);
+  if (!isRecord(body) || body.ok !== true || !isRecord(body.outreach)) {
+    throw new HandlerError("outreach_draft_response_invalid", true);
+  }
+  const qualityStatus = isRecord(body.quality) && typeof body.quality.status === "string"
+    ? body.quality.status
+    : "unknown";
+
+  return completeJobWithWorkspacePatch(
     context.client,
     job,
-    { status: "draft_ready", campaignId, candidateId },
-    [event("draft.ready", "candidate", candidateId, { campaignId })],
+    {
+      kind: "append_outreach",
+      value: [body.outreach],
+      receiptKey: `draft:${campaignId}:${candidateId}`,
+    },
+    {
+      status: "draft_ready",
+      campaignId,
+      candidateId,
+      quality: qualityStatus,
+      channel: typeof body.channel === "string" ? body.channel : "",
+    },
+    [event("draft.ready", "candidate", candidateId, {
+      campaignId,
+      quality: qualityStatus,
+    })],
     [],
   );
 }
@@ -1048,7 +1230,7 @@ const HANDLERS = Object.freeze({
   email_sync: handleEmailSync,
   inbound_classify: handleInboundClassify,
   requisition_parse: handleRequisitionParse,
-  campaign_create: (job, context) => handleSimpleEvent(job, context, "campaign.create_requested", "campaign", "campaignId"),
+  campaign_create: handleCampaignCreate,
   sourcing_batch: handleSourcingBatch,
   provider_poll: handleProviderPoll,
   enrich_candidate: handleEnrichCandidate,
