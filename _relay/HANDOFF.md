@@ -1,32 +1,33 @@
 ---
 project: MSourcing / ARIA
-shift: 132
+shift: 133
 agent: cursor-cloud
 updated: 2026-08-27 UTC
 status: code-complete-awaiting-owner-deploy
 ---
 
-# Handoff — Shift 132
+# Handoff — Shift 133
 
 ## Current state
 
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#31** open (supersedes closed #29, #30)
-- **Local tip:** live UI paths use generateOutreachLive (no silent mock fallback)
-- **Local gate:** green; audit **42/42**
-- **Fly live:** `ba88302` / mig **0060** / Graph **404**
-- **Blockers:** owner confirm + MICROSOFT_* + webhook + Entra + admin E2E
+- **Code:** complete for enterprise loop (audit **42/42**, gate green)
+- **Fly live:** `ba88302` / mig **0060** / Graph **404** — owner secrets + confirm required
+- **Owner path:** `bash scripts/print-fly-secrets-checklist.sh` then activate → `print-fly-deploy-confirm.sh` → deploy → E2E
 
 ## Done this shift
 
-- QuickDraft / candidate-drawer / candidates bulk / agent-run-stream / fleet allocate UX refuse mock on live
-- Prior: Booked requires Teams joinUrl + live seat; all-3 critics; LangGraph honesty
+- Added `scripts/print-fly-secrets-checklist.sh` (Fly app + auth Entra templates)
+- Wired into `fly-enterprise-activate.sh` + `print-fly-e2e-env.sh`
+- Requirement audit: remaining items are owner/deploy only (PR #29 → #31)
 
 ## Next steps
 
-1. Owner: `bash scripts/fly-enterprise-activate.sh $(git rev-parse HEAD)`
-2. Owner: secrets + `bash scripts/print-fly-deploy-confirm.sh` → `fly-deploy-now.sh`
-3. Owner E2E via `print-fly-e2e-env.sh`
-4. Agent timer: ready `0066_*` + Graph 200 + E2E PASS
+1. Owner: `bash scripts/print-fly-secrets-checklist.sh` → set real values
+2. Owner: `bash scripts/fly-enterprise-activate.sh $(git rev-parse HEAD)`
+3. Owner: `bash scripts/print-fly-deploy-confirm.sh` → `fly-deploy-now.sh`
+4. Owner: `bash scripts/print-fly-e2e-env.sh` → `e2e-workflow-test.sh`
+5. Agent timer: ready `0066_*` + Graph 200 + E2E PASS
 
 ## Decisions made (don't relitigate)
 
@@ -38,4 +39,4 @@ status: code-complete-awaiting-owner-deploy
 
 ## Watch out
 
-- Agent has no Microsoft/Entra secret material — owner must supply
+- Agent has no Microsoft/Entra secret material — checklist is placeholders only

@@ -59,5 +59,7 @@ export ADMIN_PASSWORD='your-admin-password'
 export EMAIL_INBOUND_WEBHOOK_SECRET='your-32-char-webhook-secret'
 # optional but recommended: authenticates draft-cron fail-closed probe
 # export CRON_SECRET='same-as-fly-aria-mantu-app-CRON_SECRET'
+# If Fly secrets are still missing, print templates first:
+#   bash scripts/print-fly-secrets-checklist.sh
 bash e2e-workflow-test.sh
 EOF

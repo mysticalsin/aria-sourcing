@@ -418,6 +418,10 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /Fly secrets inventory/.test(golive)
         && existsSync("scripts/fly-enterprise-activate.sh")
         && /print-fly-deploy-confirm/.test(readFileSync("scripts/fly-enterprise-activate.sh", "utf8"))
+        && existsSync("scripts/print-fly-secrets-checklist.sh")
+        && /EMAIL_INBOUND_WEBHOOK_SECRET/.test(readFileSync("scripts/print-fly-secrets-checklist.sh", "utf8"))
+        && /GOTRUE_EXTERNAL_AZURE_ENABLED/.test(readFileSync("scripts/print-fly-secrets-checklist.sh", "utf8"))
+        && /print-fly-secrets-checklist/.test(readFileSync("scripts/fly-enterprise-activate.sh", "utf8"))
       );
     },
   },
