@@ -319,10 +319,15 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.FLY_SUPABASE_ANON_KEY }}
           NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN: ${{ vars.ARIA_ALLOWED_EMAIL_DOMAIN }}
+          NEXT_PUBLIC_ENABLE_AZURE_LOGIN: ${{ vars.ARIA_ENABLE_AZURE_LOGIN }}
         run: |
           set -euo pipefail
           test -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY"
           node scripts/validate-email-domain.mjs "$NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN"
+          AZURE_LOGIN_ARG=false
+          if [ "${NEXT_PUBLIC_ENABLE_AZURE_LOGIN:-}" = "true" ]; then
+            AZURE_LOGIN_ARG=true
+          fi
           docker build \
             --pull \
             --platform linux/amd64 \
@@ -334,7 +339,7 @@ jobs:
             --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
             --build-arg NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN="$NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN" \
             --build-arg NEXT_PUBLIC_ENABLE_DEMO_LOGIN=false \
-            --build-arg NEXT_PUBLIC_ENABLE_AZURE_LOGIN=false \
+            --build-arg NEXT_PUBLIC_ENABLE_AZURE_LOGIN="$AZURE_LOGIN_ARG" \
             .
           docker build --pull --platform linux/amd64 \
             --file docker/db/Dockerfile.fly \

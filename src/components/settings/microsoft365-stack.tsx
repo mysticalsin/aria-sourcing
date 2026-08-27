@@ -258,7 +258,7 @@ function Microsoft365StackInner() {
               ok: ssoReady,
               hint: ssoReady
                 ? "NEXT_PUBLIC_ENABLE_AZURE_LOGIN is on."
-                : "Off until GoTrue Azure env is configured (fly.app.toml keeps this false by default).",
+                : "Off until GoTrue Azure env is configured; fly-deploy-now.sh enables NEXT_PUBLIC_ENABLE_AZURE_LOGIN when secrets are complete.",
             },
           ]}
         />

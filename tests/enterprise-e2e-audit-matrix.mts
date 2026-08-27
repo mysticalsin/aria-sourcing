@@ -537,6 +537,20 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       );
     },
   },
+  {
+    requirement: "Fly deploy enables Entra Azure login build-arg when GoTrue secrets exist",
+    evidence: () => {
+      const deploy = readFileSync("scripts/fly-deploy-now.sh", "utf8");
+      const workflow = readFileSync(".github/workflows/deploy-aria-mantu.yml", "utf8");
+      return (
+        /GOTRUE_EXTERNAL_AZURE_ENABLED/.test(deploy)
+        && /NEXT_PUBLIC_ENABLE_AZURE_LOGIN="\$AZURE_LOGIN_ARG"/.test(deploy)
+        && /ARIA_FORCE_AZURE_LOGIN/.test(deploy)
+        && /ARIA_ENABLE_AZURE_LOGIN/.test(workflow)
+        && /AZURE_LOGIN_ARG/.test(workflow)
+      );
+    },
+  },
 ];
 
 for (const row of MATRIX) {

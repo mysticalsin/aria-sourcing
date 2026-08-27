@@ -19,7 +19,7 @@ primary_region = "cdg"
     NEXT_PUBLIC_SITE_URL             = "https://aria-mantu-app.fly.dev"    # browser Origin for CSRF checks
     NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN = ""
     NEXT_PUBLIC_ENABLE_DEMO_LOGIN    = "false"                       # real tenant: OFF → strict fail-closed
-    NEXT_PUBLIC_ENABLE_AZURE_LOGIN   = "false"                       # enable only with complete GoTrue Azure config
+    NEXT_PUBLIC_ENABLE_AZURE_LOGIN   = "false"                       # fly-deploy-now.sh flips to true when GoTrue Azure secrets are complete
     # NEXT_PUBLIC_SUPABASE_ANON_KEY passed on the CLI (see deploy cmd above)
 
 [env]
