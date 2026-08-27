@@ -274,6 +274,9 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       const script = readFileSync("e2e-workflow-test.sh", "utf8");
       return (
         /EMAIL_INBOUND_WEBHOOK_SECRET is required for Fly enterprise E2E/.test(script)
+        && /CRON_SECRET is required for Fly enterprise E2E/.test(script)
+        && /\/tmp\/aria-e2e-cron-secret/.test(script)
+        && /graphSubscription\.active/.test(script)
         && /migration must be 0066_/.test(script)
         && /unknown_subscription/.test(script)
         && /microsoft-graph/.test(script)

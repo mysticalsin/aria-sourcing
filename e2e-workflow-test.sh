@@ -62,6 +62,12 @@ KONG_URL="${KONG_URL:-https://aria-mantu-kong.fly.dev}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 ANON_KEY="${ANON_KEY:-}"
+if [ -z "$ADMIN_EMAIL" ] && [ -r /tmp/aria-e2e-admin-email ]; then
+  ADMIN_EMAIL="$(tr -d '\n\r' </tmp/aria-e2e-admin-email)"
+fi
+if [ -z "$ADMIN_PASSWORD" ] && [ -r /tmp/aria-e2e-admin-password ]; then
+  ADMIN_PASSWORD="$(tr -d '\n\r' </tmp/aria-e2e-admin-password)"
+fi
 
 # Enterprise E2E is Fly-only. Refuse Vercel / lookalike / non-Fly hosts.
 validate_fly_e2e_url() {
@@ -147,9 +153,18 @@ if [ -z "${EMAIL_INBOUND_WEBHOOK_SECRET:-}" ] && [ -r /tmp/aria-e2e-webhook-secr
   EMAIL_INBOUND_WEBHOOK_SECRET="$(tr -d '\n\r' </tmp/aria-e2e-webhook-secret)"
   export EMAIL_INBOUND_WEBHOOK_SECRET
 fi
+if [ -z "${CRON_SECRET:-}" ] && [ -r /tmp/aria-e2e-cron-secret ]; then
+  CRON_SECRET="$(tr -d '\n\r' </tmp/aria-e2e-cron-secret)"
+  export CRON_SECRET
+fi
 if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ -z "${EMAIL_INBOUND_WEBHOOK_SECRET:-}" ]; then
   if [ "${ARIA_ALLOW_SKIP_WEBHOOK_E2E:-}" != "1" ]; then
     die "EMAIL_INBOUND_WEBHOOK_SECRET is required for Fly enterprise E2E (webhook → requisition_parse). Set it or ARIA_ALLOW_SKIP_WEBHOOK_E2E=1 for a partial run."
+  fi
+fi
+if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ -z "${CRON_SECRET:-}" ]; then
+  if [ "${ARIA_ALLOW_SKIP_CRON_E2E:-}" != "1" ]; then
+    die "CRON_SECRET is required for Fly enterprise E2E (draft + graph-stage cron probes). Set it, keep /tmp/aria-e2e-cron-secret, or ARIA_ALLOW_SKIP_CRON_E2E=1 for a partial run."
   fi
 fi
 
@@ -463,6 +478,29 @@ if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_
   else
     fail "Fly enterprise requires inboundWebhookSecret=true (set EMAIL_INBOUND_WEBHOOK_SECRET)."
   fi
+  GRAPH_ACTIVE_N=$(jq -r '
+    [(.connections // [])[]
+      | select(
+          (.provider // "") == "Microsoft Graph"
+          and (.hasRefreshToken == true)
+          and ((.graphSubscription.active // false) == true)
+        )
+    ] | length
+  ' "$RESP" 2>/dev/null || echo 0)
+  GRAPH_CONNECTED_N=$(jq -r '
+    [(.connections // [])[]
+      | select((.provider // "") == "Microsoft Graph" and (.hasRefreshToken == true))
+    ] | length
+  ' "$RESP" 2>/dev/null || echo 0)
+  if [ "${GRAPH_CONNECTED_N:-0}" -gt 0 ]; then
+    if [ "${GRAPH_ACTIVE_N:-0}" -gt 0 ]; then
+      pass "Fly Graph mail subscription active on a connected Outlook mailbox (push intake, no polling)."
+    else
+      fail "Fly Outlook is connected but graphSubscription.active is false — Enable webhook under Connect email before E2E PASS."
+    fi
+  else
+    info "No connected Outlook mailbox yet — Graph subscription check deferred until Connect Outlook."
+  fi
 fi
 if grep -q 'graphSubscription' src/app/api/email/connections/route.ts \
   && grep -q 'ensure_graph_webhook' src/app/api/email/connections/route.ts \
@@ -561,7 +599,11 @@ if [ -n "${CRON_SECRET:-}" ]; then
     fail "Unexpected recruiting-graph-stage response HTTP $GRAPH_STAGE_AUTH_CODE: $(head -c 200 "$WORK/cron_graph_stage_auth.json")"
   fi
 else
-  warn "CRON_SECRET unset — skipped authenticated draft/graph-stage cron fail-closed probes."
+  if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_SKIP_CRON_E2E:-}" != "1" ]; then
+    fail "CRON_SECRET unset on Fly — authenticated draft/graph-stage cron probes are required (set ARIA_ALLOW_SKIP_CRON_E2E=1 only for partial runs)."
+  else
+    warn "CRON_SECRET unset — skipped authenticated draft/graph-stage cron fail-closed probes."
+  fi
 fi
 
 # Entra SSO surface: login page exposes Azure only when the public flag is compiled in.
@@ -886,17 +928,31 @@ step "6b) Live Outlook/Teams book (confirmLive:true) when a Graph seat is connec
 # Dry-run alone cannot prove Teams joinUrl. On Fly, require a live Microsoft Graph
 # seat and assert status=created + Teams join URL (unless explicitly skipped).
 api GET "$APP_URL/api/email/connections" || true
+# Prefer a seat whose Graph mail subscription is active (push intake, no polling).
 LIVE_SEAT_ID=$(jq -r '
-  (.seats // [])
+  (.connections // [])
   | map(select(
       (.provider // "") == "Microsoft Graph"
-      and (.mode // "") == "live"
-      and (.status // "") == "active"
-      and ((.connectedAccount // "") | length) > 3
+      and (.hasRefreshToken == true)
+      and ((.graphSubscription.active // false) == true)
+      and ((.seatId // "") | length) > 0
     ))
-  | .[0].id // empty
+  | .[0].seatId // empty
 ' "$RESP" 2>/dev/null || true)
-if [ -z "$LIVE_SEAT_ID" ]; then
+# Fall back to any live Graph seat only for partial M365 runs (subscription not required).
+if [ -z "$LIVE_SEAT_ID" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ]; then
+  LIVE_SEAT_ID=$(jq -r '
+    (.seats // [])
+    | map(select(
+        (.provider // "") == "Microsoft Graph"
+        and (.mode // "") == "live"
+        and (.status // "") == "active"
+        and ((.connectedAccount // "") | length) > 3
+      ))
+    | .[0].id // empty
+  ' "$RESP" 2>/dev/null || true)
+fi
+if [ -z "$LIVE_SEAT_ID" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ]; then
   LIVE_SEAT_ID=$(jq -r '
     (.connections // [])
     | map(select(

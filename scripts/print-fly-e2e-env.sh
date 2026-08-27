@@ -39,10 +39,28 @@ webhook_key=""
 if [ -r "$webhook_tmp" ]; then
   webhook_key="$(tr -d '\n\r' < "$webhook_tmp")"
 fi
+cron_tmp="/tmp/aria-e2e-cron-secret"
+cron_key=""
+if [ -r "$cron_tmp" ]; then
+  cron_key="$(tr -d '\n\r' < "$cron_tmp")"
+fi
+admin_email_tmp="/tmp/aria-e2e-admin-email"
+admin_password_tmp="/tmp/aria-e2e-admin-password"
+admin_email=""
+admin_password=""
+if [ -r "$admin_email_tmp" ]; then
+  admin_email="$(tr -d '\n\r' < "$admin_email_tmp")"
+fi
+if [ -r "$admin_password_tmp" ]; then
+  admin_password="$(tr -d '\n\r' < "$admin_password_tmp")"
+fi
 
 if [ "$mode" = "--export" ]; then
   [ -n "$anon_key" ] && printf 'export ANON_KEY=%q\n' "$anon_key"
   [ -n "$webhook_key" ] && printf 'export EMAIL_INBOUND_WEBHOOK_SECRET=%q\n' "$webhook_key"
+  [ -n "$cron_key" ] && printf 'export CRON_SECRET=%q\n' "$cron_key"
+  [ -n "$admin_email" ] && printf 'export ADMIN_EMAIL=%q\n' "$admin_email"
+  [ -n "$admin_password" ] && printf 'export ADMIN_PASSWORD=%q\n' "$admin_password"
   exit 0
 fi
 
@@ -58,10 +76,17 @@ else
   echo "# ANON_KEY unset — populate FLY_SUPABASE_ANON_KEY in production-readiness/.fly-secrets.env"
 fi
 
-cat <<'EOF'
+if [ -n "$admin_email" ] && [ -n "$admin_password" ]; then
+  printf "export ADMIN_EMAIL=%q\n" "$admin_email"
+  printf "export ADMIN_PASSWORD=%q\n" "$admin_password"
+  echo "# loaded from $admin_email_tmp + $admin_password_tmp"
+else
+  cat <<'EOF'
 export ADMIN_EMAIL='your-admin@example.com'
 export ADMIN_PASSWORD='your-admin-password'
+# e2e-workflow-test.sh also auto-loads /tmp/aria-e2e-admin-email|password when unset
 EOF
+fi
 
 if [ -n "$webhook_key" ]; then
   printf "export EMAIL_INBOUND_WEBHOOK_SECRET=%q\n" "$webhook_key"
@@ -74,12 +99,21 @@ export EMAIL_INBOUND_WEBHOOK_SECRET='your-32-char-webhook-secret'
 EOF
 fi
 
+if [ -n "$cron_key" ]; then
+  printf "export CRON_SECRET=%q\n" "$cron_key"
+  echo "# loaded from $cron_tmp (agent-owned Fly cron secret)"
+else
+  cat <<'EOF'
+# required on Fly for authenticated draft/graph-stage cron probes:
+# export CRON_SECRET='same-as-fly-aria-mantu-app-CRON_SECRET'
+# e2e-workflow-test.sh also auto-loads /tmp/aria-e2e-cron-secret when unset
+EOF
+fi
+
 cat <<'EOF'
 # Fly currently ships KIMI_API_KEY — hermes outreach drafts must match:
 export AGENT_PROVIDER=kimi
 export AGENT_MODEL=moonshot-v1-8k
-# optional but recommended: authenticates draft-cron fail-closed probe
-# export CRON_SECRET='same-as-fly-aria-mantu-app-CRON_SECRET'
 # optional: override webhook mailbox (defaults to connected Outlook or talent@mantu.com)
 # export E2E_INBOUND_MAILBOX='connected-outlook@yourdomain.com'
 # optional: skip live Teams book if Outlook seat not connected yet
