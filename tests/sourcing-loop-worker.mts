@@ -170,20 +170,73 @@ test("sourcing_batch enqueues shortlist_build with provider run id only", async 
   ]);
 });
 
-test("requisition_parse enqueues campaign_create when a campaign is present", async () => {
+test("requisition_parse ingests, parses, patches campaign, enqueues campaign_create", async () => {
+  const INBOUND_ID = "81111111-1111-4111-8111-111111111111";
+  const REQUISITION_ID = "91111111-1111-4111-8111-111111111111";
+  const intakeParseUrl = new URL("http://loop.test/api/cron/parse-inbound-need");
+  const fetcher = async (url: string | URL) => {
+    assert.equal(String(url), intakeParseUrl.toString());
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        ready: true,
+        confidence: 0.9,
+        warnings: [],
+        jobAnalysis: { title: "Senior Engineer", requiredSkills: ["TypeScript"] },
+        campaignId: "camp-1",
+        campaign: { id: "camp-1", title: "Senior Engineer", status: "Sourcing" },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+
   const { client, calls } = rpcClient((name) => {
+    if (name === "read_inbound_message_for_loop") {
+      return {
+        data: {
+          status: "ok",
+          body: "Role: Senior Engineer\nSkills: TypeScript\nLocation: London",
+          from_address: "hiring@example.com",
+        },
+        error: null,
+      };
+    }
+    if (name === "ingest_requisition") {
+      return { data: { ok: true, requisition_id: REQUISITION_ID, duplicate: false }, error: null };
+    }
+    if (name === "record_requisition_parse") {
+      return { data: { ok: true, status: "ready" }, error: null };
+    }
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", updated_at: "2026-01-01T00:00:00.000Z" }, error: null };
+    }
+    if (name === "apply_workspace_patch") {
+      return { data: { status: "applied" }, error: null };
+    }
+    if (name === "record_requisition_campaign") {
+      return { data: { ok: true, status: "campaign_created" }, error: null };
+    }
     if (name === "complete_aria_job") return { data: true, error: null };
     throw new Error(`unexpected rpc ${name}`);
   });
 
-  await handleAriaJob(job("requisition_parse", { requisitionId: "req-1", campaignId: "camp-1" }), { client });
+  await handleAriaJob(job("requisition_parse", { inboundId: INBOUND_ID, campaignId: "camp-1" }), {
+    client,
+    configuration: { intakeParseUrl, cronSecret: "cron-secret-material-with-enough-length-0001" },
+    fetcher,
+  });
+
+  assert.ok(calls.some((call) => call.name === "ingest_requisition"));
+  assert.ok(calls.some((call) => call.name === "record_requisition_parse"));
+  assert.ok(calls.some((call) => call.name === "apply_workspace_patch"));
+  assert.ok(calls.some((call) => call.name === "record_requisition_campaign"));
 
   const completion = calls.find((call) => call.name === "complete_aria_job");
   assert.deepEqual(completion?.args.p_enqueue, [
     {
       kind: "campaign_create",
-      idempotency_key: "campaign:req-1:camp-1",
-      payload: { requisitionId: "req-1", campaignId: "camp-1" },
+      idempotency_key: `campaign:${REQUISITION_ID}:camp-1`,
+      payload: { requisitionId: REQUISITION_ID, campaignId: "camp-1" },
       priority: 80,
     },
   ]);
@@ -474,9 +527,9 @@ test("inbound_classify enqueues draft_generate for positive intent when autopilo
 test("runSourcingLoopTick claims every handler kind and completes each claimed job once", async () => {
   const claimedJobs = HANDLER_KINDS.map((kind) =>
     job(kind, {
-      inboundIds: ["inbound-1"],
-      inboundId: "inbound-1",
-      requisitionId: "req-1",
+      inboundIds: ["81111111-1111-4111-8111-111111111111"],
+      inboundId: "81111111-1111-4111-8111-111111111111",
+      requisitionId: "91111111-1111-4111-8111-111111111111",
       campaignId: "camp-1",
       batchId: "batch-1",
       providerRunId: "81111111-1111-4111-8111-111111111111",
@@ -498,15 +551,31 @@ test("runSourcingLoopTick claims every handler kind and completes each claimed j
       return {
         data: {
           status: "ok",
-          inbound_id: "inbound-1",
+          inbound_id: "81111111-1111-4111-8111-111111111111",
           candidate_id: "cand-1",
           campaign_id: "camp-1",
-          body: "Interested, please send details.",
+          body: "Role: Senior Engineer\nSkills: TypeScript\nLocation: London",
+          from_address: "hiring@example.com",
           received_at: "2026-07-25T12:30:00.000Z",
           message_id: "provider-message-1",
         },
         error: null,
       };
+    }
+    if (name === "ingest_requisition") {
+      return {
+        data: { ok: true, requisition_id: "91111111-1111-4111-8111-111111111111", duplicate: false },
+        error: null,
+      };
+    }
+    if (name === "record_requisition_parse") {
+      return { data: { ok: true, status: "ready" }, error: null };
+    }
+    if (name === "apply_workspace_patch") {
+      return { data: { status: "applied" }, error: null };
+    }
+    if (name === "record_requisition_campaign") {
+      return { data: { ok: true, status: "campaign_created" }, error: null };
     }
     if (name === "complete_aria_job" || name === "complete_aria_job_with_workspace_patch") {
       return name === "complete_aria_job"
@@ -523,18 +592,34 @@ test("runSourcingLoopTick claims every handler kind and completes each claimed j
       releaseSha: "a".repeat(40),
       dispatchUrl: null,
       providerPollUrl: new URL("https://worker.example.test/api/cron/poll-provider-run"),
+      intakeParseUrl: new URL("https://worker.example.test/api/cron/parse-inbound-need"),
       cronSecret: "s".repeat(32),
     },
     { ARIA_LOOP_KILL_SWITCH: "false" },
-    async () =>
-      new Response(JSON.stringify({
+    async (url) => {
+      if (String(url).includes("parse-inbound-need")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            ready: true,
+            confidence: 0.9,
+            warnings: [],
+            jobAnalysis: { title: "Senior Engineer", requiredSkills: ["TypeScript"] },
+            campaignId: "camp-1",
+            campaign: { id: "camp-1", title: "Senior Engineer", status: "Sourcing" },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({
         ok: true,
         status: "completed",
         campaignId: "camp-1",
         batchId: "batch-1",
         candidates: [{ id: "cand-1", campaignId: "camp-1", name: "Synthetic Candidate" }],
         skippedCount: 0,
-      })),
+      }));
+    },
   );
 
   assert.equal(result.status, "ok");

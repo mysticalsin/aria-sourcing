@@ -26,7 +26,7 @@
 # ---------------------------------------------------------------------------
 # Required env:  ADMIN_EMAIL  ADMIN_PASSWORD  ANON_KEY
 # Optional env:  APP_URL  KONG_URL  AGENT_PROVIDER  AGENT_MODEL
-#                GITHUB_QUERY  LINKEDIN_QUERY
+#                GITHUB_QUERY  LINKEDIN_QUERY  EMAIL_INBOUND_WEBHOOK_SECRET
 # ---------------------------------------------------------------------------
 
 set -uo pipefail
@@ -207,6 +207,30 @@ else
 fi
 
 # ===========================================================================
+step "2b) Webhook need email — POST /api/webhooks/email-inbound (optional)"
+# ===========================================================================
+WEBHOOK_SECRET="${EMAIL_INBOUND_WEBHOOK_SECRET:-}"
+if [ -n "$WEBHOOK_SECRET" ]; then
+  NEED_BODY='{"mailbox":"talent@mantu.com","providerId":"e2e-need-'"$$"'","from":"noreply@mantu.example","subject":"This need is now ACTIVE: Senior TypeScript Engineer","body":"Role: Senior TypeScript Engineer\nLocation: London, UK\nKey required skills\n- TypeScript\n- React\n- Node.js\nExperience: 5+ years"}'
+  NEED_SIG=$(printf '%s' "$NEED_BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | awk '{print $NF}')
+  WEBHOOK_CODE=$(curl -sS -m 30 -o "$WORK/webhook_need.json" -w '%{http_code}' \
+    -X POST "$APP_URL/api/webhooks/email-inbound" \
+    -H 'Content-Type: application/json' \
+    -H "x-aria-signature: $NEED_SIG" \
+    --data-binary "$NEED_BODY")
+  WEBHOOK_ROUTE=$(jq -r '.route // empty' "$WORK/webhook_need.json")
+  WEBHOOK_QUEUED=$(jq -r '.jobQueued // false' "$WORK/webhook_need.json")
+  WEBHOOK_KIND=$(jq -r '.jobKind // empty' "$WORK/webhook_need.json")
+  if [ "$WEBHOOK_CODE" = "200" ] && [ "$WEBHOOK_ROUTE" = "hiring_need" ] && [ "$WEBHOOK_KIND" = "requisition_parse" ] && [ "$WEBHOOK_QUEUED" = "true" ]; then
+    pass "Webhook need email queued requisition_parse (route=$WEBHOOK_ROUTE, jobKind=$WEBHOOK_KIND)."
+  else
+    fail "Webhook need email (HTTP $WEBHOOK_CODE route=$WEBHOOK_ROUTE kind=$WEBHOOK_KIND queued=$WEBHOOK_QUEUED): $(head -c 300 "$WORK/webhook_need.json")"
+  fi
+else
+  warn "EMAIL_INBOUND_WEBHOOK_SECRET unset — skipping webhook need-email step."
+fi
+
+# ===========================================================================
 step "3) Sourcing — REAL candidates (GitHub raw, LinkedIn/Tavily, provenance=live)"
 # ===========================================================================
 
@@ -331,6 +355,13 @@ else
   warn "Draft generation degraded (no tool-calling/provider key): $(jq -rc '.reason // empty' "$RESP") — using a canned draft so the approval + no-send assertions still run."
 fi
 
+# Quality gate: drafts must not disclose salary/budget (multi-agent compliance floor).
+if printf '%s\n%s' "$DRAFT_SUBJECT" "$DRAFT_BODY" | grep -Eiq '\b(salary|compensation|budget|£[0-9]|€[0-9]|\$[0-9]|120k|90000)\b'; then
+  fail "LinkedIn draft failed outreach quality gate (salary/compensation disclosure detected)."
+else
+  pass "LinkedIn draft passes salary-disclosure quality gate."
+fi
+
 MSG_LI="msg-e2e-li-$$"
 jq -n --arg m "$MSG_LI" --arg c "$CAND_ID" --arg r "$CAND_LI" --arg s "$DRAFT_SUBJECT" --arg b "$DRAFT_BODY" \
   '{messageId:$m, candidateId:$c, channel:"LinkedIn", recipient:$r, subject:$s, body:$b}' > "$WORK/approve_req.json"
@@ -369,6 +400,12 @@ else
   DRAFT_SUBJECT="A role I think fits your TypeScript work"
   DRAFT_BODY="Hi, your recent TypeScript and Node work caught my eye. We are hiring a senior engineer for a London platform team and I thought it might be up your street. Happy to share detail if useful, and no worries if the timing is off."
   warn "Email draft generation degraded ($(jq -rc '.reason // empty' "$RESP")); using a canned draft."
+fi
+
+if printf '%s\n%s' "$DRAFT_SUBJECT" "$DRAFT_BODY" | grep -Eiq '\b(salary|compensation|budget|£[0-9]|€[0-9]|\$[0-9]|120k|90000)\b'; then
+  fail "Email draft failed outreach quality gate (salary/compensation disclosure detected)."
+else
+  pass "Email draft passes salary-disclosure quality gate."
 fi
 
 MSG_EM="msg-e2e-em-$$"

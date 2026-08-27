@@ -26,10 +26,6 @@ export type NeedEnqueueDecision =
       idempotencyKey: string;
       payload: {
         inboundId: string;
-        from: string;
-        subject: string;
-        body: string;
-        mailbox: string;
       };
       priority: number;
     };
@@ -88,13 +84,7 @@ export function routeInboundEmail(input: InboundRouteInput): InboundRouteDecisio
         inboundId,
         kind: "requisition_parse",
         idempotencyKey: `need:${inboundId}`,
-        payload: {
-          inboundId,
-          from: input.from,
-          subject: input.subject,
-          body: input.body,
-          mailbox: input.mailbox,
-        },
+        payload: { inboundId },
         priority: 90,
       },
     };

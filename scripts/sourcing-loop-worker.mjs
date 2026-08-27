@@ -195,6 +195,7 @@ export function loadSourcingLoopConfiguration(environment) {
   const cronSecret = environment.CRON_SECRET ?? "";
   let dispatchUrl = null;
   let providerPollUrl = null;
+  let intakeParseUrl = null;
   if (webOrigin !== "" || cronSecret !== "") {
     let parsed;
     try {
@@ -210,6 +211,7 @@ export function loadSourcingLoopConfiguration(environment) {
     }
     dispatchUrl = parsed;
     providerPollUrl = new URL("/api/cron/poll-provider-run", webOrigin);
+    intakeParseUrl = new URL("/api/cron/parse-inbound-need", webOrigin);
   }
 
   return {
@@ -219,6 +221,7 @@ export function loadSourcingLoopConfiguration(environment) {
     workerId,
     dispatchUrl,
     providerPollUrl,
+    intakeParseUrl,
     cronSecret,
     tickMs: boundedInteger(environment.ARIA_LOOP_TICK_MS, DEFAULT_TICK_MS, 5_000, 300_000, "ARIA_LOOP_TICK_MS"),
     timeoutMs: boundedInteger(environment.ARIA_LOOP_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, 1_000, 60_000, "ARIA_LOOP_TIMEOUT_MS"),
@@ -514,23 +517,151 @@ async function handleSimpleEvent(job, context, eventType, subjectKind, subjectId
   );
 }
 
+function deterministicCampaignId(requisitionId) {
+  return `camp-req-${createHash("sha256").update(requisitionId).digest("hex").slice(0, 8)}`;
+}
+
+async function parseInboundNeedViaRoute(context, input) {
+  if (!context.configuration?.intakeParseUrl || !context.configuration?.cronSecret) {
+    throw new HandlerError("intake_parse_route_unconfigured", true);
+  }
+  let response;
+  try {
+    response = await context.fetcher(context.configuration.intakeParseUrl, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${context.configuration.cronSecret}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(input),
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+    });
+  } catch {
+    throw new HandlerError("intake_parse_unreachable", true);
+  }
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new HandlerError(`intake_parse_http_${response.status}`, response.status >= 500);
+  }
+  const body = await readBoundedJson(response, MODEL_RESPONSE_BYTES);
+  if (!isRecord(body) || body.ok !== true) throw new HandlerError("intake_parse_response_invalid", true);
+  return body;
+}
+
 async function handleRequisitionParse(job, context) {
   const payload = payloadOf(job);
-  const requisitionId = typeof payload.requisitionId === "string" && payload.requisitionId.trim()
-    ? payload.requisitionId.trim()
-    : job.id;
+  const inboundId = typeof payload.inboundId === "string" && payload.inboundId.trim()
+    ? payload.inboundId.trim()
+    : typeof payload.requisitionId === "string" && payload.requisitionId.trim()
+      ? payload.requisitionId.trim()
+      : "";
+  if (!inboundId) throw new HandlerError("inbound_id_required");
+
+  const inbound = await context.client.rpc("read_inbound_message_for_loop", {
+    p_workspace_id: job.workspace_id,
+    p_inbound_id: inboundId,
+  });
+  if (inbound.error) throw new HandlerError(inbound.error.code, true);
+  if (!isRecord(inbound.data) || inbound.data.status !== "ok") {
+    const status = isRecord(inbound.data) && typeof inbound.data.status === "string"
+      ? inbound.data.status
+      : "inbound_unavailable";
+    throw new HandlerError(status, status !== "not_found");
+  }
+
+  const ingest = await context.client.rpc("ingest_requisition", {
+    p_workspace_id: job.workspace_id,
+    p_source_kind: "inbound_email",
+    p_source_ref: inboundId,
+  });
+  if (ingest.error) throw new HandlerError(ingest.error.code, true);
+  if (!isRecord(ingest.data) || ingest.data.ok !== true || typeof ingest.data.requisition_id !== "string") {
+    throw new HandlerError("requisition_ingest_failed", true);
+  }
+  const requisitionId = ingest.data.requisition_id;
+
+  const fromAddress = typeof inbound.data.from_address === "string" ? inbound.data.from_address : "";
+  const bodyText = boundedText(inbound.data.body, 1_000_000, "inbound_body_required");
+  const parseResult = await parseInboundNeedViaRoute(context, {
+    from: fromAddress,
+    body: bodyText,
+    requisitionId,
+  });
+
+  const ready = parseResult.ready === true;
+  const warnings = Array.isArray(parseResult.warnings) ? parseResult.warnings : [];
+  const confidence = Number(parseResult.confidence ?? 0.5);
+  const jobAnalysis = isRecord(parseResult.jobAnalysis) ? parseResult.jobAnalysis : {};
+
+  const recorded = await context.client.rpc("record_requisition_parse", {
+    p_requisition_id: requisitionId,
+    p_job_analysis: jobAnalysis,
+    p_warnings: warnings,
+    p_confidence: Number.isFinite(confidence) ? confidence : 0.5,
+    p_ready: ready,
+  });
+  if (recorded.error) throw new HandlerError(recorded.error.code, true);
+  if (!isRecord(recorded.data) || recorded.data.ok !== true) {
+    throw new HandlerError(
+      typeof recorded.data?.reason === "string" ? recorded.data.reason : "requisition_parse_record_failed",
+      false,
+    );
+  }
+
+  if (!ready) {
+    return completeJob(
+      context.client,
+      job,
+      { status: "needs_clarification", requisitionId, inboundId },
+      [event("requisition.needs_clarification", "requisition", requisitionId, { inboundId })],
+      [],
+    );
+  }
+
   const campaignId = typeof payload.campaignId === "string" && payload.campaignId.trim()
     ? payload.campaignId.trim()
-    : "";
-  const successors = campaignId
-    ? [successorJob("campaign_create", `campaign:${requisitionId}:${campaignId}`, { requisitionId, campaignId }, 80)]
-    : [];
+    : typeof parseResult.campaignId === "string" && parseResult.campaignId.trim()
+      ? parseResult.campaignId.trim()
+      : deterministicCampaignId(requisitionId);
+  const campaign = isRecord(parseResult.campaign) ? parseResult.campaign : null;
+  if (!campaign || typeof campaign.id !== "string") {
+    throw new HandlerError("campaign_build_failed", true);
+  }
+
+  const snapshot = await readWorkspaceSnapshot(context.client, job.workspace_id);
+  const patchResult = await context.client.rpc("apply_workspace_patch", {
+    p_workspace_id: job.workspace_id,
+    p_expected_updated_at: snapshot.updated_at,
+    p_patch_kind: "append_campaign",
+    p_patch: [campaign],
+    p_receipt_key: requisitionId,
+  });
+  if (patchResult.error) throw new HandlerError(patchResult.error.code, true);
+  const patchStatus = isRecord(patchResult.data) && typeof patchResult.data.status === "string"
+    ? patchResult.data.status
+    : "patch_failed";
+  if (patchStatus !== "applied" && patchStatus !== "already_applied") {
+    throw new HandlerError(`patch_${patchStatus}`, patchStatus === "stale_token");
+  }
+
+  const sealed = await context.client.rpc("record_requisition_campaign", {
+    p_requisition_id: requisitionId,
+    p_campaign_id: campaignId,
+  });
+  if (sealed.error) throw new HandlerError(sealed.error.code, true);
+  if (!isRecord(sealed.data) || sealed.data.ok !== true) {
+    throw new HandlerError(
+      typeof sealed.data?.reason === "string" ? sealed.data.reason : "requisition_campaign_record_failed",
+      false,
+    );
+  }
+
   return completeJob(
     context.client,
     job,
-    { status: "requisition.parse_requested", subjectId: requisitionId },
-    [event("requisition.parse_requested", "requisition", requisitionId, {})],
-    successors,
+    { status: "requisition_parsed", requisitionId, campaignId, inboundId },
+    [event("requisition.parsed", "requisition", requisitionId, { campaignId, inboundId })],
+    [successorJob("campaign_create", `campaign:${requisitionId}:${campaignId}`, { requisitionId, campaignId }, 80)],
   );
 }
 
