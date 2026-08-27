@@ -6,7 +6,7 @@ import {
 } from "../mock-ai";
 import { mantuFirstInterviewAgenda } from "../mantu-brand";
 import { isTeamsMeetingJoinUrl } from "../calendar";
-import { bookingCalendarSummary } from "../booking-status";
+import { bookingCalendarSummary, bookingInterviewTitle } from "../booking-status";
 import { withStage } from "../metrics";
 import {
   applyLearning,
@@ -449,7 +449,7 @@ export function createBookingReportActions({
         next,
         makeActivity({
           type: "booking",
-          title: `Interview booked: ${liveCandidate.name}`,
+          title: bookingInterviewTitle(booking, liveCandidate.name),
           notes: `${booking.interviewer || "No interviewer assigned yet"}. ${bookingCalendarSummary(booking)} Stage → Booked.`,
           outcome: "Confirmed",
           campaignId: liveCampaign.id,

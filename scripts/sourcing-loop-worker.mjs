@@ -1200,6 +1200,7 @@ async function handleShortlistBuild(job, context) {
   // Non-entitled workspaces keep the human POST /api/shortlist/approve gate.
   let successors = [];
   let autoApproved = 0;
+  let autopilotAttempted = false;
   try {
     const controls = await context.client
       .from("sourcing_loop_controls")
@@ -1219,6 +1220,7 @@ async function handleShortlistBuild(job, context) {
         .maybeSingle();
       const entitledId = typeof entitled.data?.id === "string" ? entitled.data.id : "";
       if (entitledId) {
+        autopilotAttempted = true;
         successors = candidates
           .filter((candidate) => {
             const score = Number(
@@ -1246,6 +1248,7 @@ async function handleShortlistBuild(job, context) {
   } catch {
     successors = [];
     autoApproved = 0;
+    autopilotAttempted = false;
   }
 
   // LangGraph rank_only checkpoint — top-10 shortlist authority before draft enqueue.
@@ -1279,6 +1282,12 @@ async function handleShortlistBuild(job, context) {
       return typeof cid === "string" && allowed.has(cid);
     });
     autoApproved = successors.length;
+  }
+
+  // Entitled autopilot with zero candidates clearing the min-score / graph bar
+  // must fail closed — never silently "commit" an empty draft chain.
+  if (autopilotAttempted && candidates.length > 0 && autoApproved === 0) {
+    throw new HandlerError("shortlist_below_min_score", false);
   }
 
   const result = {

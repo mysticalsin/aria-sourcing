@@ -60,111 +60,127 @@ export interface OutreachStrings {
 
 const en: OutreachStrings = {
   subjectNew: (t, s) => `${t} role that fits your ${s} work`,
-  subjectGeneric: (t) => `${t} opportunity`,
+  subjectGeneric: (t) => `${t} opportunity at Mantu`,
   subjectFollow: (t, f) => `Re: ${t} (follow-up), ${f}`,
   salutation: (f) => `Hi ${f},`,
   greeting: (f, s, c) =>
-    c ? `Hi ${f}, your work with ${s} at ${c} stood out.` : `Hi ${f}, your work with ${s} stood out.`,
-  roleLine: (t, l, r) => `We're hiring a ${t} (${l}, ${r}).`,
+    c
+      ? `Hi ${f}, your work with ${s} at ${c} stood out - I wanted to reach out personally.`
+      : `Hi ${f}, your work with ${s} stood out - I wanted to reach out personally.`,
+  roleLine: (t, l, r) =>
+    `Mantu Group is hiring a ${t} (${l}, ${r}). We are a global consulting group that helps clients transform through technology and talent.`,
   equity: "Meaningful equity is on the table.",
-  whyYou: (a, b) => `Why you, specifically: ${a}${b ? `. And ${b.toLowerCase()}` : ""}.`,
-  cta: "Worth a 15-minute, no-strings call to see if it's interesting?",
-  ctaFollow: "Circling back once in case this slipped, no pressure either way.",
+  whyYou: (a, b) =>
+    `What stood out for me: ${a}${b ? `. Also ${b.toLowerCase()}` : ""}.`,
+  cta: "Would you be open to a short, no-pressure conversation to see if there is mutual fit?",
+  ctaFollow: "Circling back once in case this slipped - no pressure either way.",
 };
 
 const fr: OutreachStrings = {
   subjectNew: (t, s) => `Poste de ${t} en lien avec votre expérience ${s}`,
-  subjectGeneric: (t) => `Opportunité de ${t}`,
+  subjectGeneric: (t) => `Opportunité de ${t} chez Mantu`,
   subjectFollow: (t, f) => `Re : ${t}, petite relance, ${f}`,
   salutation: (f) => `Bonjour ${f},`,
   greeting: (f, s, c) =>
     c
-      ? `Bonjour ${f}, votre travail sur ${s} chez ${c} a retenu mon attention.`
-      : `Bonjour ${f}, votre travail sur ${s} a retenu mon attention.`,
-  roleLine: (t, l, r) => `Nous recrutons un(e) ${t} (${l}, ${r}).`,
+      ? `Bonjour ${f}, votre travail sur ${s} chez ${c} a retenu mon attention - je souhaitais vous écrire personnellement.`
+      : `Bonjour ${f}, votre travail sur ${s} a retenu mon attention - je souhaitais vous écrire personnellement.`,
+  roleLine: (t, l, r) =>
+    `Mantu Group recrute un(e) ${t} (${l}, ${r}). Nous sommes un groupe de conseil international qui aide ses clients à se transformer grâce à la technologie et aux talents.`,
   equity: "Un intéressement au capital est prévu.",
-  whyYou: (a, b) => `Pourquoi vous : ${a}${b ? `. Et ${b.toLowerCase()}` : ""}.`,
-  cta: "Un échange de 15 minutes, sans engagement, vous conviendrait-il ?",
+  whyYou: (a, b) =>
+    `Ce qui m'a marqué : ${a}${b ? `. Et aussi ${b.toLowerCase()}` : ""}.`,
+  cta: "Seriez-vous ouvert(e) à un échange court, sans engagement, pour voir s'il y a un intérêt mutuel ?",
   ctaFollow: "Je reviens vers vous au cas où, sans aucune pression.",
 };
 
 const es: OutreachStrings = {
   subjectNew: (t, s) => `Puesto de ${t} acorde con tu experiencia en ${s}`,
-  subjectGeneric: (t) => `Oportunidad de ${t}`,
+  subjectGeneric: (t) => `Oportunidad de ${t} en Mantu`,
   subjectFollow: (t, f) => `Re: ${t}, un seguimiento, ${f}`,
   salutation: (f) => `Hola ${f},`,
   greeting: (f, s, c) =>
     c
-      ? `Hola ${f}, tu trabajo con ${s} en ${c} me llamó la atención.`
-      : `Hola ${f}, tu trabajo con ${s} me llamó la atención.`,
-  roleLine: (t, l, r) => `Buscamos un/a ${t} (${l}, ${r}).`,
+      ? `Hola ${f}, tu trabajo con ${s} en ${c} me llamó la atención - quería escribirte en persona.`
+      : `Hola ${f}, tu trabajo con ${s} me llamó la atención - quería escribirte en persona.`,
+  roleLine: (t, l, r) =>
+    `Mantu Group busca un/a ${t} (${l}, ${r}). Somos un grupo de consultoría global que ayuda a clientes a transformarse con tecnología y talento.`,
   equity: "Hay participación accionarial sobre la mesa.",
-  whyYou: (a, b) => `Por qué tú: ${a}${b ? `. Y ${b.toLowerCase()}` : ""}.`,
-  cta: "¿Te vendría bien una llamada de 15 minutos, sin compromiso?",
+  whyYou: (a, b) =>
+    `Lo que destacó para mí: ${a}${b ? `. También ${b.toLowerCase()}` : ""}.`,
+  cta: "¿Te vendría bien una conversación breve, sin compromiso, para ver si hay encaje mutuo?",
   ctaFollow: "Vuelvo a escribirte por si se traspapeló, sin ninguna presión.",
 };
 
 const de: OutreachStrings = {
   subjectNew: (t, s) => `${t}-Stelle, die zu deiner ${s}-Erfahrung passt`,
-  subjectGeneric: (t) => `Position als ${t}`,
+  subjectGeneric: (t) => `Position als ${t} bei Mantu`,
   subjectFollow: (t, f) => `Re: ${t}, kurze Nachfrage, ${f}`,
   salutation: (f) => `Hallo ${f},`,
   greeting: (f, s, c) =>
     c
-      ? `Hallo ${f}, deine Arbeit mit ${s} bei ${c} ist mir aufgefallen.`
-      : `Hallo ${f}, deine Arbeit mit ${s} ist mir aufgefallen.`,
-  roleLine: (t, l, r) => `Wir suchen eine/n ${t} (${l}, ${r}).`,
+      ? `Hallo ${f}, deine Arbeit mit ${s} bei ${c} ist mir aufgefallen - ich wollte dich persönlich erreichen.`
+      : `Hallo ${f}, deine Arbeit mit ${s} ist mir aufgefallen - ich wollte dich persönlich erreichen.`,
+  roleLine: (t, l, r) =>
+    `Mantu Group sucht eine/n ${t} (${l}, ${r}). Wir sind eine globale Beratungsgruppe, die Kunden mit Technologie und Talent bei der Transformation unterstützt.`,
   equity: "Eine sinnvolle Beteiligung ist möglich.",
-  whyYou: (a, b) => `Warum du: ${a}${b ? `. Und ${b.toLowerCase()}` : ""}.`,
-  cta: "Hättest du Lust auf ein 15-minütiges, unverbindliches Gespräch?",
+  whyYou: (a, b) =>
+    `Was mir aufgefallen ist: ${a}${b ? `. Außerdem ${b.toLowerCase()}` : ""}.`,
+  cta: "Hättest du Lust auf ein kurzes, unverbindliches Gespräch, um zu sehen, ob es passt?",
   ctaFollow: "Ich melde mich nochmal, falls es untergegangen ist, ganz ohne Druck.",
 };
 
 const pt: OutreachStrings = {
   subjectNew: (t, s) => `Vaga de ${t} alinhada à sua experiência em ${s}`,
-  subjectGeneric: (t) => `Oportunidade para ${t}`,
+  subjectGeneric: (t) => `Oportunidade para ${t} na Mantu`,
   subjectFollow: (t, f) => `Re: ${t}, um retorno, ${f}`,
   salutation: (f) => `Olá ${f},`,
   greeting: (f, s, c) =>
     c
-      ? `Olá ${f}, o seu trabalho com ${s} na ${c} chamou a atenção.`
-      : `Olá ${f}, o seu trabalho com ${s} chamou a atenção.`,
-  roleLine: (t, l, r) => `Estamos a contratar um(a) ${t} (${l}, ${r}).`,
+      ? `Olá ${f}, o seu trabalho com ${s} na ${c} chamou a atenção - quis escrever-lhe pessoalmente.`
+      : `Olá ${f}, o seu trabalho com ${s} chamou a atenção - quis escrever-lhe pessoalmente.`,
+  roleLine: (t, l, r) =>
+    `Mantu Group está a contratar um(a) ${t} (${l}, ${r}). Somos um grupo de consultoria global que ajuda clientes a transformar-se com tecnologia e talento.`,
   equity: "Há participação societária em jogo.",
-  whyYou: (a, b) => `Por que você: ${a}${b ? `. E ${b.toLowerCase()}` : ""}.`,
-  cta: "Que tal uma conversa de 15 minutos, sem compromisso?",
+  whyYou: (a, b) =>
+    `O que me chamou a atenção: ${a}${b ? `. Também ${b.toLowerCase()}` : ""}.`,
+  cta: "Estaria aberto(a) a uma conversa breve, sem compromisso, para ver se há encaixe mútuo?",
   ctaFollow: "Retomo o contato caso tenha passado, sem qualquer pressão.",
 };
 
 const it: OutreachStrings = {
   subjectNew: (t, s) => `Posizione ${t} in linea con la tua esperienza in ${s}`,
-  subjectGeneric: (t) => `Opportunità come ${t}`,
+  subjectGeneric: (t) => `Opportunità come ${t} in Mantu`,
   subjectFollow: (t, f) => `Re: ${t}, un promemoria, ${f}`,
   salutation: (f) => `Ciao ${f},`,
   greeting: (f, s, c) =>
     c
-      ? `Ciao ${f}, il tuo lavoro con ${s} in ${c} ha colpito.`
-      : `Ciao ${f}, il tuo lavoro con ${s} ha colpito.`,
-  roleLine: (t, l, r) => `Cerchiamo un/una ${t} (${l}, ${r}).`,
+      ? `Ciao ${f}, il tuo lavoro con ${s} in ${c} ha colpito - volevo scriverti di persona.`
+      : `Ciao ${f}, il tuo lavoro con ${s} ha colpito - volevo scriverti di persona.`,
+  roleLine: (t, l, r) =>
+    `Mantu Group cerca un/una ${t} (${l}, ${r}). Siamo un gruppo di consulenza globale che aiuta i clienti a trasformarsi con tecnologia e talento.`,
   equity: "È prevista una partecipazione azionaria.",
-  whyYou: (a, b) => `Perché tu: ${a}${b ? `. E ${b.toLowerCase()}` : ""}.`,
-  cta: "Ti andrebbe una call di 15 minuti, senza impegno?",
+  whyYou: (a, b) =>
+    `Cosa mi ha colpito: ${a}${b ? `. Anche ${b.toLowerCase()}` : ""}.`,
+  cta: "Ti andrebbe una breve conversazione, senza impegno, per capire se c'è interesse reciproco?",
   ctaFollow: "Ti riscrivo nel caso fosse sfuggito, senza alcuna pressione.",
 };
 
 const nl: OutreachStrings = {
   subjectNew: (t, s) => `${t}-functie die past bij je ${s}-werk`,
-  subjectGeneric: (t) => `Vacature voor ${t}`,
+  subjectGeneric: (t) => `Vacature voor ${t} bij Mantu`,
   subjectFollow: (t, f) => `Re: ${t}, een follow-up, ${f}`,
   salutation: (f) => `Hallo ${f},`,
   greeting: (f, s, c) =>
     c
-      ? `Hallo ${f}, je werk met ${s} bij ${c} viel op.`
-      : `Hallo ${f}, je werk met ${s} viel op.`,
-  roleLine: (t, l, r) => `We zoeken een ${t} (${l}, ${r}).`,
+      ? `Hallo ${f}, je werk met ${s} bij ${c} viel op - ik wilde je persoonlijk bereiken.`
+      : `Hallo ${f}, je werk met ${s} viel op - ik wilde je persoonlijk bereiken.`,
+  roleLine: (t, l, r) =>
+    `Mantu Group zoekt een ${t} (${l}, ${r}). Wij zijn een wereldwijde consultancygroep die klanten helpt transformeren met technologie en talent.`,
   equity: "Er is een serieus aandelenbelang mogelijk.",
-  whyYou: (a, b) => `Waarom jij: ${a}${b ? `. En ${b.toLowerCase()}` : ""}.`,
-  cta: "Heb je zin in een vrijblijvend gesprek van 15 minuten?",
+  whyYou: (a, b) =>
+    `Wat mij opviel: ${a}${b ? `. Ook ${b.toLowerCase()}` : ""}.`,
+  cta: "Heb je zin in een kort, vrijblijvend gesprek om te zien of er wederzijdse interesse is?",
   ctaFollow: "Ik kom er nog even op terug voor het geval het is ondergesneeuwd, geen druk.",
 };
 

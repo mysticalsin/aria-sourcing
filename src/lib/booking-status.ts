@@ -21,3 +21,13 @@ export function bookingCalendarSummary(booking: BookingCalendarState): string {
     ? "Calendar link recorded — provider sync still required."
     : "Needs calendar — connect Microsoft Graph and book with confirmLive for a Teams meeting.";
 }
+
+/** Activity / toast title — never claim a live booked interview without calendar proof. */
+export function bookingInterviewTitle(
+  booking: BookingCalendarState,
+  candidateName: string,
+): string {
+  return bookingNeedsCalendar(booking)
+    ? `Needs calendar: ${candidateName}`
+    : `Interview booked: ${candidateName}`;
+}

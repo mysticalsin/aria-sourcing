@@ -25,7 +25,10 @@
  */
 
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
-import { TOP_CANDIDATE_SHORTLIST_SIZE } from "@/lib/recruiting-loop/constants";
+import {
+  DEFAULT_SHORTLIST_MIN_SCORE,
+  TOP_CANDIDATE_SHORTLIST_SIZE,
+} from "@/lib/recruiting-loop/constants";
 import { validateOutreachQuality, type OutreachQualityVerdict } from "@/lib/outreach-quality-pipeline";
 import pipelineTransitions from "@/lib/langchain/pipeline-transitions.json";
 import graphStageJobs from "@/lib/langchain/graph-stage-jobs.json";
@@ -84,12 +87,14 @@ export const RecruitingGraphState = Annotation.Root({
 
 export type RecruitingGraphStateType = typeof RecruitingGraphState.State;
 
-/** Pure ranking: take top N by score descending. */
+/** Pure ranking: top N by score, only candidates clearing the min-score bar. */
 export function rankTopCandidates<T extends { id: string; matchScore?: number | null }>(
   candidates: T[],
   limit = TOP_CANDIDATE_SHORTLIST_SIZE,
+  minScore = DEFAULT_SHORTLIST_MIN_SCORE,
 ): T[] {
   return [...candidates]
+    .filter((c) => (c.matchScore ?? 0) >= minScore)
     .sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0))
     .slice(0, limit);
 }
@@ -135,7 +140,7 @@ async function rankTop10(state: RecruitingGraphStateType): Promise<Partial<Recru
   if (shortlist.length === 0) {
     return {
       stage: "shortlist_rank_failed",
-      errors: ["empty_shortlist"],
+      errors: ["empty_shortlist_or_below_min_score"],
       shortlistIds: [],
     };
   }
@@ -178,7 +183,11 @@ async function validateQuality(state: RecruitingGraphStateType): Promise<Partial
     };
   }
   const quality: Record<string, OutreachQualityVerdict> = {};
-  const preferLive = state.preferLiveCritics === true;
+  // draft_quality defaults to live multi-agent peers (cron may omit the flag).
+  // Explicit preferLiveCritics:false keeps deterministic unit-test paths.
+  const preferLive =
+    state.preferLiveCritics === true ||
+    (state.intent === "draft_quality" && state.preferLiveCritics !== false);
   type QualityFn = (input: {
     subject: string;
     body: string;
