@@ -10,7 +10,7 @@ status: intake-fail-closed-shipped-awaiting-fly-confirm
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30** · tip pending push commit
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **#30** · tip `42863c0`
 - **Local gate:** `npx tsc --noEmit && npm test` green (audit 29/29, mantu 28/28)
 - **CI Actions:** empty runners — skip
 - **Fly live:** still `ba88302` / migration **0060** / `agentFrameworks:false`
@@ -21,6 +21,7 @@ status: intake-fail-closed-shipped-awaiting-fly-confirm
 - `/api/intake` production path uses `parseInboundNeedLive`; returns `503 llm_required` without server LLM (matches cron contract)
 - Demo mode (no Supabase) keeps heuristic for `e2e-workflow-test.sh`
 - New `tests/intake-route.mts`; audit matrix extended
+- `fly-deploy-now.sh` messaging updated to migration **0065**; e2e grep for llm_required/critics_required
 
 ## Blockers (owner)
 

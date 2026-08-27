@@ -297,6 +297,13 @@ if grep -q 'propose-calendar-book' scripts/sourcing-loop-worker.mjs \
 else
   fail "calendar propose path missing interviewProposal or use_calendar_event_route guard."
 fi
+if grep -q 'llm_required' src/app/api/cron/parse-inbound-need/route.ts \
+  && grep -q 'llm_required' src/app/api/intake/route.ts \
+  && grep -q 'critics_required' src/app/api/cron/generate-outreach-draft/route.ts; then
+  pass "Autonomous parse/draft/intake fail closed without live LLM (llm_required + critics_required)."
+else
+  fail "LLM fail-closed guards missing from parse, intake, or draft routes."
+fi
 
 # ===========================================================================
 step "3) Sourcing — REAL candidates (GitHub raw, LinkedIn/Tavily, provenance=live)"

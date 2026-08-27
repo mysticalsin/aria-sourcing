@@ -370,6 +370,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /FLY ONLY/.test(deployNow)
         && /aria-mantu-app\.fly\.dev/.test(golive)
         && !/vercel --prod/.test(deployNow)
+        && /0065/.test(deployNow)
         && /validate_fly_e2e_url/.test(script)
         && !/aria-mantu-app\.fly\.dev\*/.test(script)
       );
