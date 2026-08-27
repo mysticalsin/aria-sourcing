@@ -145,6 +145,11 @@ const connectionsRoute = readFileSync("src/app/api/email/connections/route.ts", 
 ok("connections GET exists", /export async function GET/.test(connectionsRoute));
 ok("connections ensure_connect", /ensure_connect/.test(connectionsRoute));
 ok("connections register_inbound", /register_inbound/.test(connectionsRoute));
+ok("connections ensure_graph_webhook", /ensure_graph_webhook/.test(connectionsRoute));
+ok("connections ensureGraphMailSubscription", /ensureGraphMailSubscription/.test(connectionsRoute));
+
+const graphSubs = readFileSync("src/lib/email-graph-subscriptions.ts", "utf8");
+ok("ensureGraphMailSubscription helper", /export async function ensureGraphMailSubscription/.test(graphSubs));
 
 const testRoute = readFileSync("src/app/api/email/test/route.ts", "utf8");
 ok("email test route probes profile", /users\/me\/profile|graph\.microsoft\.com\/v1\.0\/me/.test(testRoute));
@@ -160,11 +165,14 @@ ok(
 );
 const msCb = readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8");
 ok("microsoft callback registers inbound route", /upsert_inbound_mailbox_route/.test(msCb));
+ok("microsoft callback surfaces graph webhook failure", /Graph webhook not enabled/.test(msCb));
 ok("microsoft callback redirects to integrations", /tab=integrations/.test(msCb));
 
 const panel = readFileSync("src/components/settings/email-connections-panel.tsx", "utf8");
 ok("settings panel Connect Gmail", /Connect Gmail/.test(panel));
 ok("settings panel Connect Outlook", /Connect Outlook/.test(panel));
+ok("settings panel Enable webhook", /Enable webhook/.test(panel));
+ok("settings panel ensure_graph_webhook", /ensure_graph_webhook/.test(panel));
 
 console.log(`RESULT email-connections: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

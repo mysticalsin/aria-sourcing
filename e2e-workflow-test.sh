@@ -282,12 +282,12 @@ if [ "$HTTP" = "200" ] && [ "$CONN_OK" = "true" ]; then
 else
   fail "GET /api/email/connections failed (HTTP $HTTP): $(head -c 200 "$RESP")"
 fi
-if grep -q 'azureLoginEnabled' src/components/settings/microsoft365-stack.tsx \
-  && grep -q 'Entra SSO' src/components/settings/microsoft365-stack.tsx \
-  && grep -q 'graphSubscription' src/app/api/email/connections/route.ts; then
-  pass "Entra SSO + graphSubscription reporting wired in Settings/connections."
+if grep -q 'graphSubscription' src/app/api/email/connections/route.ts \
+  && grep -q 'ensure_graph_webhook' src/app/api/email/connections/route.ts \
+  && grep -q 'Enable webhook' src/components/settings/email-connections-panel.tsx; then
+  pass "Graph webhook ensure/repair wired in connections API + settings UI."
 else
-  fail "Entra/graphSubscription reporting surface missing from source."
+  fail "Graph webhook ensure/repair surface missing."
 fi
 if grep -q 'propose-calendar-book' scripts/sourcing-loop-worker.mjs \
   && grep -q 'claimCalendarBooking' src/app/api/cron/propose-calendar-book/route.ts \

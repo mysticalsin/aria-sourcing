@@ -231,7 +231,7 @@ function Microsoft365StackInner() {
               hint: graphSubscriptionActive
                 ? `Active until ${connectedOutlook?.graphSubscription?.expiresAt ?? "unknown"} (auto-renewed by loop worker)`
                 : mailboxConnected
-                  ? "Outlook connected but no active Graph subscription row — reconnect Outlook or wait for renew cron."
+                  ? "Outlook connected but no active Graph subscription — use Enable webhook under Connect email."
                   : "Connect Outlook to register a Graph change-notification subscription.",
             },
             {

@@ -179,20 +179,23 @@ export async function GET(req: NextRequest) {
   }
 
   // Create Graph change-notification subscription (webhook push, no inbox polling).
+  let successMessage = `Connected ${accountEmail}`;
   try {
     const { createGraphMailSubscription } = await import("@/lib/email-graph-subscriptions");
     const sub = await createGraphMailSubscription({ workspaceId: wid, connectionId: upserted.id });
     if (!sub.ok) {
       console.error("[microsoft/callback] graph subscription:", sub.reason);
+      successMessage = `Connected ${accountEmail}. Graph webhook not enabled: ${sub.reason}`;
     }
   } catch (err) {
     console.error(
       "[microsoft/callback] graph subscription error:",
       err instanceof Error ? err.message : "unknown",
     );
+    successMessage = `Connected ${accountEmail}. Graph webhook setup failed — use Enable webhook in Settings.`;
   }
 
-  return redirectSuccess(req, `Connected ${accountEmail}`);
+  return redirectSuccess(req, successMessage);
 }
 
 /** Cookie names binding the OAuth `state` nonce and PKCE verifier to this browser. */

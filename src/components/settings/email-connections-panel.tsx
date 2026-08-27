@@ -48,6 +48,12 @@ type ConnectionRow = {
   scope: string;
   updatedAt: string | null;
   inboundRoute: { mailbox: string; purpose: string; active: boolean } | null;
+  graphSubscription?: {
+    status: string;
+    expiresAt: string;
+    lastNotificationAt: string | null;
+    active: boolean;
+  } | null;
 };
 
 type ConnectionsPayload = {
@@ -109,6 +115,7 @@ export function EmailConnectionsPanel() {
   const [loading, setLoading] = React.useState(true);
   const [connecting, setConnecting] = React.useState<"Gmail API" | "Microsoft Graph" | null>(null);
   const [testingSeat, setTestingSeat] = React.useState<string | null>(null);
+  const [ensuringWebhook, setEnsuringWebhook] = React.useState<string | null>(null);
   const [data, setData] = React.useState<ConnectionsPayload | null>(null);
 
   const load = React.useCallback(async () => {
@@ -225,6 +232,34 @@ export function EmailConnectionsPanel() {
     }
   }
 
+  async function ensureGraphWebhook(connectionId: string) {
+    setEnsuringWebhook(connectionId);
+    try {
+      const res = await fetch("/api/email/connections", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "ensure_graph_webhook", connectionId }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+        detail?: string;
+        mode?: string;
+      } | null;
+      toast({
+        title: json?.ok ? "Graph webhook enabled" : "Graph webhook failed",
+        description: json?.detail ?? json?.error ?? `HTTP ${res.status}`,
+        variant: json?.ok ? "success" : "error",
+      });
+      await load();
+    } catch {
+      toast({ title: "Graph webhook failed", description: "Network error.", variant: "error" });
+    } finally {
+      setEnsuringWebhook(null);
+    }
+  }
+
   async function disconnect(seatId: string) {
     const res = await actions.disconnectSeatAccount(seatId);
     if (!res.ok) {
@@ -250,8 +285,8 @@ export function EmailConnectionsPanel() {
             <Eyebrow>Mailbox</Eyebrow>
             <h2 className="mt-1.5 text-xl font-semibold tracking-tight text-ink">Connect email</h2>
             <p className="mt-2 text-sm leading-relaxed text-muted">
-              Link Gmail or Outlook with OAuth. Tokens stay encrypted server-side.
-              SendGrid and Resend use API keys under Access &amp; Keys.
+              Link Gmail or Outlook with OAuth. Outlook hiring needs arrive via Microsoft Graph webhook
+              push — no inbox polling. Use Enable webhook after connect if push was not created automatically.
             </p>
           </div>
           <Badge tone={connections.length ? "success" : "neutral"} size="sm" dot>
@@ -309,7 +344,14 @@ export function EmailConnectionsPanel() {
           <ul className="space-y-2">
             {connections.map((c, i) => {
               const routeOk = Boolean(c.inboundRoute?.active);
-              const healthy = c.hasRefreshToken && routeOk;
+              const graphOk = c.provider !== "Microsoft Graph" || Boolean(c.graphSubscription?.active);
+              const healthy = c.hasRefreshToken && routeOk && graphOk;
+              const graphMeta =
+                c.provider === "Microsoft Graph"
+                  ? c.graphSubscription?.active
+                    ? ` · webhook until ${new Date(c.graphSubscription.expiresAt).toLocaleDateString()}`
+                    : " · Graph webhook missing"
+                  : "";
               return (
                 <motion.li
                   key={c.id}
@@ -319,12 +361,19 @@ export function EmailConnectionsPanel() {
                 >
                   <ConnectionListItem
                     title={c.accountEmail}
-                    meta={`Seat ${c.seatName ?? c.seatId.slice(0, 8)} · ${c.hasRefreshToken ? "refresh token OK" : "missing refresh token"} · ${routeOk ? `inbound ${c.inboundRoute?.purpose}` : "inbound route missing"}`}
+                    meta={`Seat ${c.seatName ?? c.seatId.slice(0, 8)} · ${c.hasRefreshToken ? "refresh token OK" : "missing refresh token"} · ${routeOk ? `inbound ${c.inboundRoute?.purpose}` : "inbound route missing"}${graphMeta}`}
                     healthy={healthy}
                     badges={
-                      <Badge tone="neutral" size="sm">
-                        {c.provider}
-                      </Badge>
+                      <>
+                        <Badge tone="neutral" size="sm">
+                          {c.provider}
+                        </Badge>
+                        {c.provider === "Microsoft Graph" && (
+                          <Badge tone={c.graphSubscription?.active ? "success" : "warning"} size="sm">
+                            {c.graphSubscription?.active ? "Webhook active" : "Webhook off"}
+                          </Badge>
+                        )}
+                      </>
                     }
                     actions={
                       <>
@@ -337,6 +386,17 @@ export function EmailConnectionsPanel() {
                         >
                           Validate
                         </Button>
+                        {isAdmin && c.provider === "Microsoft Graph" && !c.graphSubscription?.active && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            leftIcon={<Link2 className="h-3.5 w-3.5" />}
+                            loading={ensuringWebhook === c.id}
+                            onClick={() => void ensureGraphWebhook(c.id)}
+                          >
+                            Enable webhook
+                          </Button>
+                        )}
                         {isAdmin && !routeOk && (
                           <Button
                             size="sm"
@@ -368,8 +428,8 @@ export function EmailConnectionsPanel() {
 
         <p className="flex items-start gap-1.5 text-xs text-muted">
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-          After connect: run Validate (token + provider profile + inbound route). MCP servers are
-          tested under AI &amp; Models → MCP. See{" "}
+          After connect: run Validate, then Enable webhook for Outlook (Graph push). Emergency inbox sync on
+          Intake is break-glass only. MCP servers are tested under AI &amp; Models → MCP. See{" "}
           <code className="rounded bg-ink/[0.06] px-1 font-mono">docs/runbooks/connect-gmail-outlook.md</code>.
         </p>
       </CardContent>

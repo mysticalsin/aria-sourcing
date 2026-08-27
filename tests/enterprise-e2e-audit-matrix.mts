@@ -339,10 +339,16 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     evidence: () => {
       const connections = readFileSync("src/app/api/email/connections/route.ts", "utf8");
       const stack = readFileSync("src/components/settings/microsoft365-stack.tsx", "utf8");
+      const panel = readFileSync("src/components/settings/email-connections-panel.tsx", "utf8");
+      const graphLib = readFileSync("src/lib/email-graph-subscriptions.ts", "utf8");
       return (
         /listGraphSubscriptionsForWorkspace/.test(connections)
+        && /ensure_graph_webhook/.test(connections)
+        && /ensureGraphMailSubscription/.test(connections)
         && /graphSubscription/.test(connections)
         && /graphSubscriptionActive/.test(stack)
+        && /Enable webhook/.test(panel)
+        && /ensureGraphMailSubscription/.test(graphLib)
         && /Entra SSO/.test(stack)
       );
     },

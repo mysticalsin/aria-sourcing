@@ -10,7 +10,7 @@ import {
   pickSeatForConnect,
   type MailboxOAuthProvider,
 } from "@/lib/email-connections";
-import { listGraphSubscriptionsForWorkspace } from "@/lib/email-graph-subscriptions";
+import { listGraphSubscriptionsForWorkspace, ensureGraphMailSubscription } from "@/lib/email-graph-subscriptions";
 import { AGENT_SEAT_SELECT, type AgentSeatRow } from "@/lib/fleet-seats";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
@@ -33,7 +33,16 @@ const RegisterInboundSchema = z.object({
   purpose: z.enum(["reply", "intake"]).default("reply"),
 });
 
-const BodySchema = z.discriminatedUnion("action", [EnsureConnectSchema, RegisterInboundSchema]);
+const EnsureGraphWebhookSchema = z.object({
+  action: z.literal("ensure_graph_webhook"),
+  connectionId: z.string().uuid(),
+});
+
+const BodySchema = z.discriminatedUnion("action", [
+  EnsureConnectSchema,
+  RegisterInboundSchema,
+  EnsureGraphWebhookSchema,
+]);
 
 type ConnRow = {
   id: string;
@@ -57,6 +66,7 @@ type RouteRow = {
  * List mailbox connections + provider readiness (no tokens).
  * POST ensure_connect creates/picks a seat and returns the OAuth authorize URL.
  * POST register_inbound upserts inbound_mailbox_routes for a connected seat.
+ * POST ensure_graph_webhook creates or renews a Microsoft Graph mail push subscription.
  */
 export async function GET(req: NextRequest) {
   const prodBlock = prodFailClosed();
@@ -235,6 +245,9 @@ export async function POST(req: NextRequest) {
   if (body.action === "ensure_connect") {
     return ensureConnect(supabase, wid as string, body.provider, user.email ?? "operator@aria.local");
   }
+  if (body.action === "ensure_graph_webhook") {
+    return ensureGraphWebhook(wid as string, body.connectionId);
+  }
   return registerInbound(supabase, wid as string, body.seatId, body.purpose ?? "reply");
 }
 
@@ -370,4 +383,48 @@ async function registerInbound(
     );
   }
   return NextResponse.json({ ok: true, routeId: result.route_id, purpose });
+}
+
+async function ensureGraphWebhook(workspaceId: string, connectionId: string) {
+  const svc = getServiceSupabase();
+  if (!svc) {
+    return NextResponse.json({ ok: false, error: "Service client unavailable." }, { status: 500 });
+  }
+
+  const { data: conn, error: connErr } = await svc
+    .from("email_connections")
+    .select("id, provider, workspace_id")
+    .eq("id", connectionId)
+    .maybeSingle();
+  if (connErr) {
+    return NextResponse.json({ ok: false, error: "Failed to look up email connection." }, { status: 500 });
+  }
+  if (!conn || conn.workspace_id !== workspaceId) {
+    return NextResponse.json({ ok: false, error: "Connection not found in this workspace." }, { status: 404 });
+  }
+  if (conn.provider !== "Microsoft Graph") {
+    return NextResponse.json(
+      { ok: false, error: "Graph webhook push applies to Microsoft Graph (Outlook) mailboxes only." },
+      { status: 400 },
+    );
+  }
+
+  const result = await ensureGraphMailSubscription({ workspaceId, connectionId });
+  if (!result.ok) {
+    return NextResponse.json({ ok: false, error: result.reason }, { status: 503 });
+  }
+
+  return NextResponse.json({
+    ok: true,
+    mode: result.mode,
+    expiresAt: result.expiresAt,
+    detail:
+      result.mode === "unchanged"
+        ? "Graph webhook subscription is already active."
+        : result.mode === "created"
+          ? "Graph webhook subscription created."
+          : result.mode === "recreated"
+            ? "Graph webhook subscription recreated."
+            : "Graph webhook subscription renewed.",
+  });
 }

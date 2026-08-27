@@ -330,6 +330,39 @@ export async function renewExpiringGraphMailSubscriptions(input?: {
   return { scanned: rows?.length ?? 0, renewed, recreated, failed };
 }
 
+export async function ensureGraphMailSubscription(input: {
+  workspaceId: string;
+  connectionId: string;
+}): Promise<
+  | { ok: true; expiresAt: string; mode: "created" | "renewed" | "recreated" | "unchanged" }
+  | { ok: false; reason: string }
+> {
+  const subs = await listGraphSubscriptionsForWorkspace(input.workspaceId);
+  const existing = subs.find((s) => s.connectionId === input.connectionId);
+
+  if (existing?.status === "active" && !subscriptionNeedsRenewal(existing.expiresAt)) {
+    return { ok: true, expiresAt: existing.expiresAt, mode: "unchanged" };
+  }
+
+  if (existing?.status === "active" && subscriptionNeedsRenewal(existing.expiresAt)) {
+    const renewed = await renewGraphMailSubscription({
+      workspaceId: input.workspaceId,
+      connectionId: input.connectionId,
+      graphSubscriptionId: existing.graphSubscriptionId,
+    });
+    if (!renewed.ok) return renewed;
+    return {
+      ok: true,
+      expiresAt: renewed.expiresAt,
+      mode: renewed.mode === "recreated" ? "recreated" : "renewed",
+    };
+  }
+
+  const created = await createGraphMailSubscription(input);
+  if (!created.ok) return created;
+  return { ok: true, expiresAt: created.expiresAt, mode: "created" };
+}
+
 export async function listGraphSubscriptionsForWorkspace(
   workspaceId: string,
 ): Promise<
