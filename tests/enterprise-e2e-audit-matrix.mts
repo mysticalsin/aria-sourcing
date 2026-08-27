@@ -255,14 +255,17 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       const draftRoute = readFileSync("src/app/api/cron/generate-outreach-draft/route.ts", "utf8");
       const live = readFileSync("src/lib/requisition-intake-live.ts", "utf8");
       const quality = readFileSync("src/lib/outreach-quality-pipeline.ts", "utf8");
+      const qualityLive = readFileSync("src/lib/outreach-quality-pipeline-live.ts", "utf8");
       return (
         /parseInboundNeedLive/.test(parseRoute)
         && /serverGenerateText/.test(draftRoute)
         && /llm_required/.test(draftRoute)
         && /runRecruitingGraph/.test(draftRoute)
         && /validateOutreachQualityLive/.test(draftRoute)
-        && /validateOutreachQualityLive/.test(quality)
-        && /llm_empathy/.test(quality)
+        && /llmCriticsUsed/.test(quality)
+        && /validateOutreachQualityLive/.test(qualityLive)
+        && /llm_empathy/.test(qualityLive)
+        && /server-only/.test(qualityLive)
         && /parseInboundNeedLive/.test(live)
         && /serverGenerateText/.test(live)
       );
