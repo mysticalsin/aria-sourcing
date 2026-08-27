@@ -69,8 +69,8 @@ export function LinkedInConnectionsProvider({ children }: { children: React.Reac
 
 export function useLinkedInConnections(): LinkedInConnectionsValue {
   const ctx = React.useContext(LinkedInConnectionsContext);
-  if (ctx) return ctx;
-  return useLinkedInConnectionsState();
+  const fallback = useLinkedInConnectionsState();
+  return ctx ?? fallback;
 }
 
 function useLinkedInConnectionsState() {

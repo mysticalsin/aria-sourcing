@@ -271,7 +271,7 @@ mock.module(moduleUrl("src/lib/sourcing/orchestrator.ts"), {
       runnerCalls += 1;
       eventOrder.push("runner");
       mutateDuringRunner?.();
-      const lessonQuery = promotedLessons[0]?.query;
+      const lessonQuery = (promotedLessons[0] as { query?: string } | undefined)?.query;
       const forcedQuery = input?.forcedQueries?.[0]?.query;
       const query =
         forcedQuery ??

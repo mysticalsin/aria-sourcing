@@ -328,16 +328,16 @@ try {
     linkedinUrl: "https://www.linkedin.com/in/test-candidate-dev",
     firstName: "Test",
     lastName: "Candidate",
-    headline: "Senior Go Engineer at Acme Corp",
-    about: "Distributed systems engineer working on Kubernetes and gRPC platforms.",
-    location: { text: "Paris, France", countryCode: "FR" },
+    headline: "Senior TypeScript Engineer at Acme Corp",
+    about: "TypeScript React Node.js GraphQL PostgreSQL platforms — active this week in London.",
+    location: { text: "London, UK", countryCode: "GB" },
     connectionsCount: 500,
     followerCount: 1200,
-    currentPosition: [{ title: "Senior Go Engineer", companyName: "Acme Corp", dateRange: "Jan 2025 - Present" }],
-    experience: [{ title: "Senior Go Engineer", companyName: "Acme Corp", dateRange: "Jan 2025 - Present" }],
+    currentPosition: [{ title: "Senior TypeScript Engineer", companyName: "Acme Corp", dateRange: "Jan 2025 - Present" }],
+    experience: [{ title: "Senior TypeScript Engineer", companyName: "Acme Corp", dateRange: "Jan 2025 - Present" }],
     education: [{ schoolName: "EPITA", degree: "MSc Computer Science", dateRange: "2012 - 2017" }],
-    topSkills: ["Go", "Kubernetes"],
-    skills: ["Go", "Kubernetes", "gRPC", "Distributed Systems"],
+    topSkills: ["TypeScript", "React"],
+    skills: ["TypeScript", "React", "Node.js", "GraphQL", "PostgreSQL"],
     languages: ["English", "French"],
     openToWork: false,
     hiring: false,
@@ -345,17 +345,17 @@ try {
     email: "test@example.com",
   };
 
-  const result = mapApifyCandidates([profile], campaign, "Senior Go Engineer", [], W);
+  const result = mapApifyCandidates([profile], campaign, "Senior TypeScript Engineer", [], W);
   const c = result.accepted[0];
   ok("mapApifyCandidates accepts the profile", result.accepted.length === 1);
   ok("name built from first+last", c?.name === "Test Candidate");
   ok("linkedinUrl carried through", c?.linkedinUrl === "https://www.linkedin.com/in/test-candidate-dev");
   ok("sourcePlatform is LinkedIn (operator-facing; vendor stays internal)", c?.sourcePlatform === "LinkedIn");
-  ok("sourceQuery is the search criteria", c?.sourceQuery === "Senior Go Engineer");
+  ok("sourceQuery is the search criteria", c?.sourceQuery === "Senior TypeScript Engineer");
   ok("currentCompany from currentPosition[0]", c?.currentCompany === "Acme Corp");
-  ok("currentTitle from headline", c?.currentTitle === "Senior Go Engineer at Acme Corp");
-  ok("location from nested location.text", c?.location === "Paris, France");
-  ok("techStack picked up from job skills present in the profile's skills/topSkills", !!c?.techStack.includes("Go") && !!c?.techStack.includes("Kubernetes"));
+  ok("currentTitle from headline", c?.currentTitle === "Senior TypeScript Engineer at Acme Corp");
+  ok("location from nested location.text", c?.location === "London, UK");
+  ok("techStack picked up from job skills present in the profile's skills/topSkills", !!c?.techStack.includes("TypeScript") && !!c?.techStack.includes("React"));
   ok("candidate is scored", typeof c?.matchScore === "number" && c.matchScore >= 0);
   ok("stage is Sourced", c?.stage === "Sourced");
   ok("email carried through from the normalized profile (emails[] resolved upstream)", c?.email === "test@example.com");

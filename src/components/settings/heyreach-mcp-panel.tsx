@@ -279,7 +279,7 @@ export function HeyReachOutreachStep({
           <a
             href={HEYREACH_HELP_URL}
             target="_blank"
-            rel="noopener noreferrer"
+            rel="noreferrer"
             className={cn(
               "inline-flex items-center gap-1 text-xs font-medium text-muted underline-offset-2 hover:text-ink hover:underline",
             )}

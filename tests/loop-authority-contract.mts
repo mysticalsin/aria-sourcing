@@ -56,6 +56,12 @@ ok(
     !/allowed_keys := array\[[^\]]*'replyText'/i.test(dataProtection) &&
     !/allowed_keys := array\[[^\]]*'candidates'/i.test(dataProtection),
 );
+const mig62 = read("supabase/migrations/0062_requisition_parse_inbound_id.sql");
+ok(
+  "0062 allows inboundId on requisition_parse payloads",
+  mig62.length > 0 &&
+    /when 'requisition_parse' then allowed_keys := array\['inboundId', 'requisitionId', 'campaignId'\]/i.test(mig62),
+);
 ok(
   "loop event erasure has a narrow trigger-recognized redaction path",
   /redact_loop_events_for_candidate_erasure\(uuid, text, text\[\], text\[\]\)/i.test(dataProtection) &&

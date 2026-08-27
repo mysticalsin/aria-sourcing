@@ -53,7 +53,7 @@ const get = ((routeModule as any).GET ?? (routeModule as any).default?.GET) as (
 const postRequest = (cookie?: string) => new NextRequest("http://localhost/api/source", {
   method: "POST",
   headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
-  body: JSON.stringify({ query: "language:Go", count: 1, platform: "GitHub" }),
+  body: JSON.stringify({ query: "language:typescript", count: 1, platform: "GitHub" }),
 });
 
 signedDemoSession = false;

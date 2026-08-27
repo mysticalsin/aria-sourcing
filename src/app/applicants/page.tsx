@@ -19,6 +19,7 @@ export default function ApplicantsPage() {
           <Link
             href="/careers"
             target="_blank"
+            rel="noreferrer"
             className="inline-flex h-11 items-center gap-2 rounded-full border border-ink/15 bg-surface px-5 text-sm font-semibold text-ink transition hover:bg-canvas focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
           >
             <ExternalLink className="h-4 w-4" aria-hidden /> Open public chatbox
