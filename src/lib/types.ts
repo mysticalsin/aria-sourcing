@@ -209,6 +209,11 @@ export interface JobAnalysis {
    *  Null when the brief doesn't state one — createCampaign then falls back to a
    *  default target. Absent covers analyses predating this field. */
   expectedStartDate?: string | null;
+  /** Mission Description / Profile Synthesis body from a VSS Recruitment Need.
+   *  Preserved for sourcing substance; optional for analyses predating this field. */
+  missionDescription?: string;
+  /** LinkedIn boolean / X-ray string when the brief supplies one (VSS Candidate Search Support). */
+  linkedinBoolean?: string;
   validationWarnings: ValidationWarning[];
 }
 

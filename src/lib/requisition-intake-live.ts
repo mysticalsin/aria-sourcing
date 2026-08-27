@@ -51,6 +51,14 @@ export async function parseInboundNeedLive(
     maxYearsExperience:
       fields.maxYearsExperience !== undefined ? fields.maxYearsExperience : job.maxYearsExperience,
     education: fields.education ?? job.education,
+    industryExperience: fields.industryExperience ?? job.industryExperience,
+    companyStageTarget: fields.companyStageTarget?.length
+      ? fields.companyStageTarget
+      : job.companyStageTarget,
+    teamSize: fields.teamSize ?? job.teamSize,
+    reportingTo: fields.reportingTo ?? job.reportingTo,
+    missionDescription: fields.missionDescription ?? job.missionDescription,
+    linkedinBoolean: fields.linkedinBoolean ?? job.linkedinBoolean,
   };
   const readiness = evaluateNeedReadiness(merged);
   return {

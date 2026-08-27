@@ -27,6 +27,7 @@ export function parseInboundNeed(emailText: string) {
     confidence: readiness.ready ? 0.85 : 0.55,
     jobAnalysis: parsed.jobAnalysis,
     sender: parsed.sender,
+    mantuNeed: parsed.mantuNeed,
     modelUsed: false as boolean,
   };
 }

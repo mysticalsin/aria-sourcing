@@ -6,6 +6,18 @@ import { roleProfile } from "./roles";
 import type { SourceResult } from "./sourcing/candidate-mappers";
 import { detectLanguage, outreachStrings, REPLY_LEXICON } from "./i18n";
 import { evaluateNeedReadiness } from "./needs/readiness";
+import {
+  employmentFromMantuType,
+  industryFromSector,
+  isVssRecruitmentNeed,
+  locationTypeFromRemote,
+  normalizeIntakePlainText,
+  parseStartDateIso,
+  parseVssRecruitmentNeed,
+  seniorityFromLevel,
+  urgencyFromMantuPriority,
+  type MantuNeedMeta,
+} from "./mantu-need-parse";
 import type {
   Booking,
   Campaign,
@@ -48,6 +60,15 @@ import {
   slugify,
   titleCase,
 } from "./utils";
+
+export type { MantuNeedMeta } from "./mantu-need-parse";
+export {
+  isVssRecruitmentNeed,
+  normalizeIntakePlainText,
+  parseVssRecruitmentNeed,
+  SAMPLE_VSS_CALYPSO_APP_SUPPORT,
+  SAMPLE_VSS_CALYPSO_BA,
+} from "./mantu-need-parse";
 
 export type { SourceResult } from "./sourcing/candidate-mappers";
 export {
@@ -252,6 +273,8 @@ export interface ParsedIntake {
   confidence: Record<string, number>;
   extractionMode: "evidence" | "cloud";
   providerWarning?: string;
+  /** Structured VSS / ACTIVE-email need fields (managers, client, boolean, …). */
+  mantuNeed?: MantuNeedMeta;
   /** Optional enrichment from a locked Dust agent (task "jdAnalysis"). A sibling
    *  display field, never merged into jobAnalysis's typed fields — free text from
    *  an external agent shouldn't be able to corrupt the scoring/sourcing pipeline.
@@ -261,7 +284,14 @@ export interface ParsedIntake {
 }
 
 export function isMantuNeedEmail(text: string): boolean {
-  return /this need is now|key required skills/i.test(text) || /^\s*recruiter\s*:/im.test(text);
+  const t = text ?? "";
+  if (isVssRecruitmentNeed(t)) return true;
+  return (
+    /this need is now|key required skills/i.test(t) ||
+    /^\s*recruiter\s*:/im.test(t) ||
+    /^\s*main\s+manager\s*:/im.test(t) ||
+    /^\s*skill\s*\(\s*must\s*\)\s*:/im.test(t)
+  );
 }
 
 /** Does an inbound mailbox message look like a hiring need / JD email (vs a
@@ -271,147 +301,140 @@ export function isMantuNeedEmail(text: string): boolean {
  *  false positive here would parse a random email into a job brief. */
 export function isNeedEmail(subject: string, body: string): boolean {
   if (isMantuNeedEmail(body) || isMantuNeedEmail(subject)) return true;
-  return /\b(job description|jd attached|new (role|position|need|vacancy|opening)|hiring request|backfill|open (position|need|role)|platform need|requisition)\b/i.test(
+  return /\b(job description|jd attached|new (role|position|need|vacancy|opening)|hiring request|backfill|open (position|need|role)|platform need|requisition|recruitment need)\b/i.test(
     subject,
   );
 }
 
-/** Structured parser for the Mantu/Amaris "need is now ACTIVE" recruitment email. */
+/** Structured parser for Mantu ACTIVE emails and VSS Recruitment Need pages. */
 export function parseMantuNeed(text: string): ParsedIntake {
+  const normalized = normalizeIntakePlainText(text);
+  const meta = parseVssRecruitmentNeed(normalized);
+
+  // Legacy ACTIVE-email field aliases when VSS labels are absent
   const field = (label: string): string =>
-    text.match(new RegExp(`^\\s*${label}\\s*:\\s*(.+)$`, "im"))?.[1]?.trim() ?? "";
+    normalized.match(new RegExp(`^\\s*${label}\\s*:\\s*(.+)$`, "im"))?.[1]?.trim() ?? "";
 
-  const title =
-    text.match(/this need is now active\s*:?\s*(.+)/i)?.[1]?.trim() ||
-    field("Subject") ||
-    field("Need") ||
-    "";
+  if (!meta.title) {
+    meta.title =
+      normalized.match(/this need is now active\s*:?\s*(.+)/i)?.[1]?.trim() ||
+      field("Subject") ||
+      field("Need") ||
+      "";
+  }
+  if (!meta.mainManager) meta.mainManager = field("Manager");
+  if (!meta.mainRecruiter) meta.mainRecruiter = field("Recruiter");
+  if (!meta.client) meta.client = field("Client");
+  if (!meta.priority) meta.priority = field("Priority");
+  if (!meta.city) meta.city = field("Location");
+  if (!meta.startDate) meta.startDate = field("Start date");
+  if (!meta.type) meta.type = field("Type");
+  if (!meta.numberOfPeople) meta.numberOfPeople = field("Nb people") || field("Headcount") || field("Openings");
 
-  const manager = field("Manager");
-  const recruiter = field("Recruiter");
-  const client = field("Client");
-  const priority = field("Priority");
-  const locationRaw = field("Location");
-  const startRaw = field("Start date");
-  const typeRaw = field("Type");
   const rateRaw = field("Rate") || field("Day rate") || field("TJM") || field("Fees");
-  const nbPeople = field("Nb people") || field("Headcount") || field("Openings");
-
-  const emailMatch = text.match(/[A-Za-z0-9._+-]{1,128}@[A-Za-z0-9-]{1,128}\.[A-Za-z0-9.-]{1,64}/);
-  const senderName = manager || recruiter;
+  const emailMatch = normalized.match(
+    /[A-Za-z0-9._+-]{1,128}@[A-Za-z0-9-]{1,128}\.[A-Za-z0-9.-]{1,64}/,
+  );
+  const senderName = meta.mainManager || meta.mainRecruiter;
   const senderEmail = emailMatch?.[0] ?? "";
 
-  // Priority / importance → urgency
-  let urgency: Urgency = "Standard";
-  if (/critical/i.test(priority) || /\b1\b/.test(priority) || /high importance|importance:\s*high/i.test(text))
-    urgency = "Critical";
-  else if (/urgent/i.test(priority) || /\b2\b/.test(priority)) urgency = "Urgent";
-
+  const urgency = urgencyFromMantuPriority(meta.priority, normalized);
   const intent: IntakeIntent = urgency === "Critical" ? "Urgent Hire" : "New Role";
 
-  // Skills — explicit "Skills:" line is authoritative; augment from profile block + dictionary.
-  const skillsLine = field("Skills");
-  const lineSkills = skillsLine
-    ? skillsLine.split(/[,;]/).map((s) => s.trim()).filter(Boolean)
-    : [];
-  const profileSkills = extractProfileDescriptionSkills(text);
+  const profileSkills = extractProfileDescriptionSkills(normalized);
   const dictSkills = SKILL_DICTIONARY.filter((s) =>
-    new RegExp(`(^|[^a-z])${escapeRegExp(s)}([^a-z]|$)`, "i").test(text),
+    new RegExp(`(^|[^a-z])${escapeRegExp(s)}([^a-z]|$)`, "i").test(normalized),
   );
-  const requiredSkills = Array.from(new Set([...lineSkills, ...profileSkills, ...dictSkills])).slice(0, 8);
+  const requiredSkills = Array.from(
+    new Set([...meta.skillsMust, ...profileSkills, ...dictSkills]),
+  ).slice(0, 12);
 
-  const minYearsExperience = extractMinYearsExperience(text);
+  const niceToHaveSkills = Array.from(
+    new Set([
+      ...meta.skillsNice,
+      ...(/offshore/i.test(normalized) ? ["Offshore experience"] : []),
+    ]),
+  ).slice(0, 10);
 
-  let seniority: Seniority = seniorityFromTitle(title);
+  const experienceHay = `${meta.levelOfExperience}\n${meta.missionDescription}\n${normalized}`;
+  const minYearsExperience = extractMinYearsExperience(experienceHay);
+
+  let seniority: Seniority = seniorityFromLevel(meta.levelOfExperience, meta.title, minYearsExperience);
   if (seniority === "Unspecified") {
     seniority = seniorityFromYears(minYearsExperience);
   }
 
-  const niceToHaveSkills: string[] = [];
-  if (/offshore/i.test(text)) niceToHaveSkills.push("Offshore experience");
-
-  // Location → region + timezone (best-effort)
-  const loc = titleCase(locationRaw || "");
-  const tz = text.match(/\b(CET|CEST|GMT|UTC|EST|PST|IST|SGT|BRT)\b/i)?.[1]?.toUpperCase() ?? "";
+  const loc = titleCase(meta.city || "");
   const regions = loc ? [loc] : [];
+  const tz = normalized.match(/\b(CET|CEST|GMT|UTC|EST|PST|IST|SGT|BRT)\b/i)?.[1]?.toUpperCase() ?? "";
+  const targetStartDate = parseStartDateIso(meta.startDate);
 
-  // Start date m/d/yyyy → ISO. Null when the need email doesn't state one —
-  // createCampaign applies its own default rather than baking a guess in here.
-  const d = startRaw ? new Date(startRaw) : null;
-  const targetStartDate: string | null = d && !isNaN(d.getTime()) ? d.toISOString() : null;
-
-  const industryExperience = /financial markets|bonds|trading|finance|murex|pricing/i.test(text)
-    ? ["Fintech"]
-    : /medical device|pharma|healthcare|fda|iso 13485/i.test(text)
-      ? ["Healthtech"]
-      : [];
+  const industryExperience = industryFromSector(meta.clientSector, normalized);
 
   const dayRateFromField = (() => {
     const m = rateRaw.match(/(\d{2,4})/);
     return m ? parseInt(m[1], 10) : null;
   })();
   const dayRateFromBody =
-    text.match(/\b(\d{2,4})\s*(?:€|EUR|USD|GBP)\s*(?:\/|\s+per\s+)?(?:day|d|jour)\b/i)?.[1] ??
-    text.match(/[€$£]\s*(\d{2,4})\s*(?:\/|\s+per\s+)\s*(?:day|d|jour)\b/i)?.[1];
+    normalized.match(/\b(\d{2,4})\s*(?:€|EUR|USD|GBP)\s*(?:\/|\s+per\s+)?(?:day|d|jour)\b/i)?.[1] ??
+    normalized.match(/[€$£]\s*(\d{2,4})\s*(?:\/|\s+per\s+)\s*(?:day|d|jour)\b/i)?.[1];
   const dayRate = dayRateFromField ?? (dayRateFromBody ? parseInt(dayRateFromBody, 10) : null);
-  const currencyFromNeed = /\bCAD\b|C\$/i.test(text)
+  const currencyFromNeed = /\bCAD\b|C\$/i.test(normalized)
     ? "CAD"
-    : /£|\bGBP\b/i.test(text) || /£/.test(rateRaw)
+    : /£|\bGBP\b/i.test(normalized) || /£/.test(rateRaw)
       ? "GBP"
-      : /\$|\bUSD\b/i.test(text)
+      : /\$|\bUSD\b/i.test(normalized)
         ? "USD"
-        : /€|\bEUR\b/i.test(text) || /€/.test(rateRaw) || dayRate != null
+        : /€|\bEUR\b/i.test(normalized) || /€/.test(rateRaw) || dayRate != null
           ? "EUR"
           : "";
 
+  const department =
+    meta.client.replace(/\s+Ltd\.?$/i, "").trim() ||
+    meta.companyEmployedBy.trim() ||
+    meta.type.trim() ||
+    meta.contractType.trim();
+
+  const primaryLang = meta.languagesMust[0] ?? "";
+  const languageCode = /french|français/i.test(primaryLang)
+    ? "fr"
+    : /english|anglais/i.test(primaryLang)
+      ? "en"
+      : detectLanguage(normalized);
+
   const jobAnalysis: JobAnalysis = {
-    title,
-    department: client.replace(/\s+Ltd\.?$/i, "").trim() || typeRaw,
+    title: meta.title,
+    department,
     seniority,
-    employmentType: /consulting|contract|contractor|freelance/i.test(typeRaw) ||
-      /consulting|contract|contractor|freelance|day rate/i.test(text)
-      ? "Contract"
-      : /part[- ]time/i.test(typeRaw)
-        ? "Part-time"
-        : /full[- ]time|permanent/i.test(typeRaw)
-          ? "Full-time"
-          : "Unspecified",
-    locationType: /remote/i.test(text)
-      ? "Remote"
-      : /hybrid/i.test(text)
-        ? "Hybrid"
-        : /on-?site|in office|in-person/i.test(text)
-          ? "On-site"
-          : // Mantu need emails always carry a city Location for consulting seats;
-            // treat a stated city with no remote/hybrid cue as On-site so the
-            // brief can authorize sourcing without a second confirmation step.
-            loc
-            ? "On-site"
-            : "Unspecified",
+    employmentType: employmentFromMantuType(meta.type, meta.contractType, normalized),
+    locationType: locationTypeFromRemote(meta.remote, normalized, Boolean(loc)),
+    location: loc || undefined,
     regions,
     timezone: tz,
     salaryMin: dayRate,
     salaryMax: dayRate,
     currency: currencyFromNeed,
-    equity: /equity|options|esop/i.test(text),
+    equity: /equity|options|esop/i.test(normalized),
     requiredSkills,
     niceToHaveSkills,
     minYearsExperience,
     maxYearsExperience: null,
-    education: "",
+    education: meta.targetSchool,
     industryExperience,
-    companyStageTarget: /\bpublic\b/i.test(text)
+    companyStageTarget: /\bpublic\b/i.test(normalized)
       ? ["Public"]
-      : /\benterprise\b/i.test(text)
+      : /\benterprise\b/i.test(normalized)
         ? ["Enterprise"]
         : [],
-    teamSize: nbPeople
-      ? `${nbPeople} opening${nbPeople === "1" ? "" : "s"}`
+    teamSize: meta.numberOfPeople
+      ? `${meta.numberOfPeople} opening${meta.numberOfPeople === "1" ? "" : "s"}`
       : "",
-    reportingTo: "",
+    reportingTo: meta.mainManager,
     urgency,
-    language: detectLanguage(text),
+    language: languageCode,
     expectedStartDate: targetStartDate,
+    missionDescription: meta.missionDescription || undefined,
+    linkedinBoolean: meta.booleanSearch || undefined,
     validationWarnings: [],
   };
 
@@ -425,7 +448,7 @@ export function parseMantuNeed(text: string): ParsedIntake {
       message: "No salary/rate in the need email. Confirm the band.",
     });
   }
-  if (!locationRaw) {
+  if (!meta.city) {
     validationWarnings.push({ field: "location", severity: "warning", message: "No location specified." });
   }
   if (requiredSkills.length > 0 && requiredSkills.length < 3) {
@@ -444,21 +467,26 @@ export function parseMantuNeed(text: string): ParsedIntake {
     urgency,
     jobAnalysis,
     validationWarnings,
-    clarificationDraft: hasCritical ? buildClarificationEmail(senderName, jobAnalysis, validationWarnings) : null,
+    clarificationDraft: hasCritical
+      ? buildClarificationEmail(senderName, jobAnalysis, validationWarnings)
+      : null,
     confidence: {
-      title: 0.95,
+      title: meta.title ? 0.95 : 0.4,
       salary: 0.3,
-      skills: skillsLine ? 0.95 : 0.7,
-      location: locationRaw ? 0.92 : 0.5,
+      skills: requiredSkills.length ? 0.95 : 0.5,
+      location: meta.city ? 0.92 : 0.5,
       seniority: 0.8,
+      manager: meta.mainManager ? 0.95 : 0.4,
+      recruiter: meta.mainRecruiter ? 0.95 : 0.4,
+      client: meta.client ? 0.95 : 0.4,
     },
     extractionMode: "evidence",
+    mantuNeed: meta,
   };
 }
 
-/** Hard cap on parser input — a JD email is never this long; prevents any
- *  pathological-input CPU blowup regardless of caller. */
-const MAX_PARSE_CHARS = 20000;
+/** Hard cap on parser input — VSS needs with full Profile Synthesis can be long. */
+const MAX_PARSE_CHARS = 80_000;
 
 const NON_LOCATION_VALUES = new Set([
   "remote",
@@ -515,10 +543,10 @@ function extractLocation(text: string): string {
 }
 
 export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIntake {
-  const text = `${input.email}\n${input.jd ?? ""}`.slice(0, MAX_PARSE_CHARS);
+  const text = normalizeIntakePlainText(`${input.email}\n${input.jd ?? ""}`).slice(0, MAX_PARSE_CHARS);
   const lower = text.toLowerCase();
 
-  // Structured Mantu/Amaris "need is now ACTIVE" email → dedicated parser.
+  // Structured Mantu/Amaris ACTIVE email or VSS Recruitment Need → dedicated parser.
   if (isMantuNeedEmail(text)) return parseMantuNeed(text);
 
   // Sender extraction
@@ -751,11 +779,12 @@ Aria Sourcing`;
 // good query. Only apply the qualifier for a region that's an actual place.
 const NON_LOCATION_REGIONS = new Set(["EU", "APAC", "LATAM", "Remote", "Global"]);
 
-/** Extract role-relevant phrases from Mantu "Profile description:" blocks. */
+/** Extract role-relevant phrases from Mantu "Profile description:" / VSS mission blocks. */
 function extractProfileDescriptionSkills(text: string): string[] {
   const block =
-    text.match(/profile description\s*:\s*([\s\S]*?)(?:\n\s*(?:skills|key required|rate)\s*:|\n\s*$)/i)?.[1] ??
-    "";
+    text.match(
+      /(?:profile description|profile synthesis|mission description)\s*:?\s*([\s\S]*?)(?:\n\s*(?:skills|skill\s*\(|key required|rate|boolean|candidate search)\s*:|\n\s*$)/i,
+    )?.[1] ?? "";
   if (!block.trim()) return [];
   const found: string[] = [];
   const patterns: [RegExp, string][] = [
@@ -766,6 +795,12 @@ function extractProfileDescriptionSkills(text: string): string[] {
     [/requirements?(?:\s+management)?/i, "requirements management"],
     [/\b(uml|sysml)\b/i, "UML"],
     [/architect/i, "systems architecture"],
+    [/\bcalypso\b/i, "Calypso"],
+    [/application support/i, "Application Support"],
+    [/business analys/i, "Business Analysis"],
+    [/trade lifecycle/i, "Trade Lifecycle"],
+    [/\bderivatives\b/i, "Derivatives"],
+    [/\bfront office\b/i, "Front Office"],
   ];
   for (const [re, label] of patterns) {
     if (re.test(block) && !found.includes(label)) found.push(label);
@@ -824,6 +859,18 @@ export function roleTitleSearchAliases(title: string): string[] {
   }
   if (/murex/i.test(t)) {
     for (const a of ["Murex Consultant", "Murex Support", "Front Office Support"]) aliases.add(a);
+  }
+  if (/calypso/i.test(t)) {
+    for (const a of [
+      "Calypso Consultant",
+      "Calypso Support",
+      "Calypso BA",
+      "Calypso Business Analyst",
+      "Calypso Application Support",
+    ]) {
+      aliases.add(a);
+      aliases.add(`"${a}"`);
+    }
   }
   return [...aliases];
 }
@@ -889,7 +936,7 @@ export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
     estimatedResults: 120 + i * 60,
   }));
 
-  const linkedinBoolean = buildLinkedInKeywords(jd);
+  const linkedinBoolean = (jd.linkedinBoolean?.trim() || buildLinkedInKeywords(jd)).slice(0, 2000);
 
   const profile = roleProfile(jd);
   return {

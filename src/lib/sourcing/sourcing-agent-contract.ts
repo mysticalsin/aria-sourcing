@@ -63,6 +63,8 @@ const JobAnalysisSchema = z
     urgency: z.enum(URGENCY_LEVELS),
     language: bounded(20).optional(),
     expectedStartDate: bounded(100).nullable().optional(),
+    missionDescription: bounded(12_000).optional(),
+    linkedinBoolean: bounded(2_000).optional(),
     validationWarnings: z.array(ValidationWarningSchema).max(100),
   })
   .strict();

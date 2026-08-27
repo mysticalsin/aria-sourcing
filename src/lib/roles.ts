@@ -67,6 +67,8 @@ const PROFILES: Record<RoleFamily, Omit<RoleProfile, "family">> = {
     label: "Finance & consulting",
     titles: [
       "Murex Consultant",
+      "Calypso Application Support",
+      "Calypso Business Analyst",
       "Front Office Support Analyst",
       "Trading Systems Specialist",
       "Quant Risk Analyst",
@@ -95,7 +97,7 @@ const PROFILES: Record<RoleFamily, Omit<RoleProfile, "family">> = {
 };
 
 const CODE_SKILLS = /\b(go|golang|python|typescript|javascript|java|kotlin|scala|rust|c\+\+|kubernetes|react|node|graphql|grpc|terraform|aws|gcp)\b/i;
-const FINANCE_SIGNALS = /\b(murex|finance|financial|pricing|trading|front office|risk|valuation|capital markets|bonds|derivatives|quant|mx\.iii|treasury|bank)\b/i;
+const FINANCE_SIGNALS = /\b(murex|calypso|finance|financial|pricing|trading|front office|risk|valuation|capital markets|bonds|derivatives|quant|mx\.iii|treasury|bank)\b/i;
 
 export function roleFamily(jd: JobAnalysis): RoleFamily {
   const hay = `${jd.title} ${jd.department} ${jd.requiredSkills.join(" ")} ${jd.industryExperience.join(" ")}`;

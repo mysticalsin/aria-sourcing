@@ -9,11 +9,11 @@ import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit"
 import { publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 
 const IntakeSchema = z.object({
-  email: z.string().max(20_000).optional(),
-  jd: z.string().max(20_000).optional(),
+  email: z.string().max(80_000).optional(),
+  jd: z.string().max(80_000).optional(),
   from: z.string().max(500).optional(),
   subject: z.string().max(500).optional(),
-  body: z.string().max(20_000).optional(),
+  body: z.string().max(80_000).optional(),
 });
 
 /**
@@ -104,27 +104,65 @@ export async function POST(req: NextRequest) {
       );
     }
     const parsed = result.parsed;
+    const need = parsed.mantuNeed;
     return NextResponse.json({
       ok: true,
-      format: isMantuNeedEmail(intakeText) ? "mantu-need" : "generic",
+      format: isMantuNeedEmail(intakeText)
+        ? need?.format === "vss"
+          ? "mantu-vss"
+          : "mantu-need"
+        : "generic",
       parsed,
       modelUsed: true,
       modelProvider: "modelProvider" in result ? result.modelProvider : undefined,
       suggestedMeta: {
-        hiringManager: parsed.sender.name,
+        hiringManager: need?.mainManager || parsed.sender.name,
         hiringManagerEmail: parsed.sender.email,
+        mainRecruiter: need?.mainRecruiter || "",
+        secondaryManagers: need?.secondaryManagers ?? [],
+        secondaryRecruiters: need?.secondaryRecruiters ?? [],
+        client: need?.client || "",
+        companyEmployedBy: need?.companyEmployedBy || "",
+        companyBillingTo: need?.companyBillingTo || "",
+        priority: need?.priority || "",
+        contractType: need?.contractType || "",
+        startDate: need?.startDate || "",
+        headcount: need?.numberOfPeople || "",
+        remote: need?.remote || "",
+        status: need?.status || "",
+        category: need?.category || "",
+        reason: need?.reason || "",
       },
     });
   }
 
   const parsed = parseEmailAndJD({ email, jd });
+  const need = parsed.mantuNeed;
   return NextResponse.json({
     ok: true,
-    format: isMantuNeedEmail(email) ? "mantu-need" : "generic",
+    format: isMantuNeedEmail(email)
+      ? need?.format === "vss"
+        ? "mantu-vss"
+        : "mantu-need"
+      : "generic",
     parsed,
     suggestedMeta: {
-      hiringManager: parsed.sender.name,
+      hiringManager: need?.mainManager || parsed.sender.name,
       hiringManagerEmail: parsed.sender.email,
+      mainRecruiter: need?.mainRecruiter || "",
+      secondaryManagers: need?.secondaryManagers ?? [],
+      secondaryRecruiters: need?.secondaryRecruiters ?? [],
+      client: need?.client || "",
+      companyEmployedBy: need?.companyEmployedBy || "",
+      companyBillingTo: need?.companyBillingTo || "",
+      priority: need?.priority || "",
+      contractType: need?.contractType || "",
+      startDate: need?.startDate || "",
+      headcount: need?.numberOfPeople || "",
+      remote: need?.remote || "",
+      status: need?.status || "",
+      category: need?.category || "",
+      reason: need?.reason || "",
     },
   });
 }

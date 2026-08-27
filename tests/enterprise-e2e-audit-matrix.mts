@@ -9,7 +9,7 @@ import { routeInboundEmail } from "../src/lib/inbound-email-router";
 import { validateOutreachQuality } from "../src/lib/outreach-quality-pipeline";
 import { mantuOutreachVoice } from "../src/lib/mantu-brand";
 import { TOP_CANDIDATE_SHORTLIST_SIZE } from "../src/lib/recruiting-loop/constants";
-import { SAMPLE_MANTU_EMAIL } from "../src/lib/mock-ai";
+import { SAMPLE_MANTU_EMAIL, SAMPLE_VSS_CALYPSO_APP_SUPPORT } from "../src/lib/mock-ai";
 import {
   buildInboundEmailText,
   deterministicCampaignId,
@@ -189,6 +189,23 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     evidence: () => {
       const parsed = parseInboundNeed(buildInboundEmailText({ body: SAMPLE_MANTU_EMAIL }));
       return parsed.jobAnalysis.title.length > 2 && parsed.jobAnalysis.requiredSkills.length > 0;
+    },
+  },
+  {
+    requirement: "VSS Recruitment Need extracts Calypso structured fields",
+    evidence: () => {
+      const parsed = parseInboundNeed(buildInboundEmailText({ body: SAMPLE_VSS_CALYPSO_APP_SUPPORT }));
+      const need = parsed.mantuNeed;
+      return (
+        /calypso application support/i.test(parsed.jobAnalysis.title)
+        && Boolean(need?.mainManager)
+        && Boolean(need?.mainRecruiter)
+        && Boolean(need?.client)
+        && need.skillsMust.some((s) => /calypso/i.test(s))
+        && Boolean(need.missionDescription)
+        && Boolean(need.booleanSearch)
+        && parsed.jobAnalysis.locationType === "Hybrid"
+      );
     },
   },
   {
