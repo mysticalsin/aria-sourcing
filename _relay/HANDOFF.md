@@ -10,7 +10,7 @@ status: dry-run-mailbox-gate-fixed-awaiting-redeploy
 
 ## Current state
 
-- **Branch tip (git):** `cursor/enterprise-autopilot-b91d` **`0e5da13`** (`0e5da133906a8233640820986ddbfdd6b2a5c1e8`)
+- **Branch tip (git):** `cursor/enterprise-autopilot-b91d` **`945ecf5`** (`945ecf5523ea9302a60d13e92c3a22107dabe89c`)
 - **Live Fly `aria-mantu-app`:** still **`2ffc428`** / mig **0068** until owner redeploys (do **not** invent confirm)
 - Redeploy when ready: `bash scripts/print-fly-deploy-confirm.sh` → write `/tmp/owner-deploy-confirm.env` with tip SHA → `bash scripts/fly-enterprise-golive-when-ready.sh`
 - **Code fix on tip:** Queue Summary / send mode forces **Dry-run** unless a real mailbox (`connectedAccount` on Outlook/Gmail/SendGrid/Resend seat or integration) is connected — HeyReach MCP / LinkedIn live alone no longer unlocks red **Live**
@@ -24,7 +24,7 @@ status: dry-run-mailbox-gate-fixed-awaiting-redeploy
 2. Fixed `src/lib/outreach-send-mode.ts`: `hasConnectedMailbox` / `listConnectedMailboxes`; `effectiveDryRunMode` mailbox-only
 3. Queue Summary + approval card + Settings dry-run toggle gated on mailbox
 4. Extended `tests/outreach-send-mode.mts` (HeyReach live + no mailbox → Dry-run; LinkedIn seat alone → Dry-run; draft → Record legitimate interest)
-5. Committed + pushed `0e5da13`; did **not** Approve/send; did **not** invent deploy confirm / redeploy
+5. Committed + pushed code `0e5da13` (tip `945ecf5`); did **not** Approve/send; did **not** invent deploy confirm / redeploy
 
 ## Blockers
 
@@ -33,7 +33,7 @@ status: dry-run-mailbox-gate-fixed-awaiting-redeploy
 
 ## Next steps
 
-1. Owner: `bash scripts/print-fly-deploy-confirm.sh` for tip `0e5da13` (or newer HEAD), then golive / redeploy
+1. Owner: `bash scripts/print-fly-deploy-confirm.sh` for tip `945ecf5` (or newer HEAD), then golive / redeploy
 2. Operator smoke after redeploy (no Approve/send): Outreach Queue Summary **Dry-run / preview** with HeyReach live and Outlook disconnected; **Record legitimate interest** visible on draft cards
 3. Keep Microsoft skipped unless owner reverses
 4. Do not complete goal; do not reopen #32
