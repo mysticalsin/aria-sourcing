@@ -19,8 +19,13 @@ flyctl secrets set -a aria-mantu-app \
   MICROSOFT_CLIENT_SECRET='PLACEHOLDER_AZURE_APP_CLIENT_SECRET' \
   MICROSOFT_REDIRECT_URI='https://aria-mantu-app.fly.dev/auth/microsoft/callback'
 
-# Arm the loop worker (required for webhook → campaign E2E materialization):
+# Arm the loop worker process (required for webhook → campaign E2E materialization):
 flyctl secrets set -a aria-mantu-app ARIA_LOOP_KILL_SWITCH='false'
+
+# At least one cloud LLM key (parse / draft / critics fail-closed without it):
+flyctl secrets set -a aria-mantu-app \
+  ANTHROPIC_API_KEY='PLACEHOLDER_ANTHROPIC_KEY'
+# or: OPENAI_API_KEY='PLACEHOLDER_OPENAI_KEY'
 
 # Optional but recommended for authenticated draft-cron / graph-stage E2E probes:
 # flyctl secrets set -a aria-mantu-app CRON_SECRET='PLACEHOLDER_SAME_AS_FLY_CRON_SECRET'
@@ -34,6 +39,11 @@ flyctl secrets set -a aria-mantu-auth \
   GOTRUE_EXTERNAL_AZURE_SECRET='PLACEHOLDER_AZURE_APP_CLIENT_SECRET' \
   GOTRUE_EXTERNAL_AZURE_URL='https://login.microsoftonline.com/PLACEHOLDER_TENANT_ID/v2.0'
 
+# === workspace switchboard (after first admin login) ===
+# E2E arms this via set_sourcing_loop_controls automatically.
+# Operators can also use Settings → Observability → Sourcing loop switchboard
+# ("Arm enterprise loop"), or call the RPC manually.
+
 # === then deploy tip ===
 bash scripts/fly-enterprise-activate.sh $(git rev-parse HEAD)
 bash scripts/print-fly-deploy-confirm.sh
@@ -41,5 +51,6 @@ bash scripts/print-fly-deploy-confirm.sh
 bash scripts/fly-deploy-now.sh
 bash scripts/print-fly-e2e-env.sh
 # export ADMIN_EMAIL ADMIN_PASSWORD EMAIL_INBOUND_WEBHOOK_SECRET (+ CRON_SECRET)
+# Optional: export E2E_INBOUND_MAILBOX='connected-outlook@yourdomain.com'
 bash e2e-workflow-test.sh
 EOF

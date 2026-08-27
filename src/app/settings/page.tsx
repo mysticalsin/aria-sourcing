@@ -35,6 +35,7 @@ import { RecruitmentLlmPanel } from "@/components/settings/recruitment-llm-panel
 import { SetupGuidePanel } from "@/components/settings/setup-guide-panel";
 import { ObservabilityPanel } from "@/components/settings/observability-panel";
 import { ReplyAutopilotPanel } from "@/components/settings/reply-autopilot-panel";
+import { LoopSwitchboardPanel } from "@/components/settings/loop-switchboard-panel";
 import { ToolsPanel } from "@/components/settings/tools-panel";
 import { McpServersPanel } from "@/components/settings/mcp-servers-panel";
 import { DustAgentPanel } from "@/components/settings/dust-agent-panel";
@@ -90,6 +91,7 @@ const N_TO_TAB: Record<string, string> = {
   "00": "setup",
   "20": "observe",
   "21": "observe",
+  "21a": "observe",
   "04": "integrations",
   "14": "ai", "15": "ai", "15a": "ai", "16": "ai", "17": "ai", "19": "ai",
   "03": "fleet", "06": "fleet", "09": "fleet", "18": "fleet",
@@ -437,6 +439,16 @@ export default function SettingsPage() {
             description="Event-driven classify: no idle inbox polling, no token burn waiting for silence."
           >
             <ReplyAutopilotPanel />
+          </Section>
+
+          {/* 21a — Loop switchboard */}
+          <Section
+            n="21a"
+            eyebrow="Loop"
+            title="Sourcing loop switchboard"
+            description="Arm intake, sourcing, and sequences for this workspace. Fail-closed until an admin turns the board on."
+          >
+            <LoopSwitchboardPanel />
           </Section>
 
           {/* 01 — System identity */}

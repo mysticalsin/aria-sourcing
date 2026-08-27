@@ -220,6 +220,9 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /microsoft-graph/.test(script)
         && /Polling workspace_state for campaign title/.test(script)
         && /Loop worker materialized campaign/.test(script)
+        && /set_sourcing_loop_controls/.test(script)
+        && /Type: Permanent/.test(script)
+        && /WEBHOOK_CAMPAIGN_ID/.test(script)
       );
     },
   },
@@ -280,7 +283,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /Emergency sync/.test(panel)
         && /Webhook open needs/.test(panel)
         && /ARIA_LOOP_KILL_SWITCH='false'/.test(checklist)
+        && /ANTHROPIC_API_KEY/.test(checklist)
         && existsSync("src/app/api/cron/renew-graph-subscriptions/route.ts")
+        && existsSync("src/app/api/sourcing-loop/controls/route.ts")
+        && existsSync("src/components/settings/loop-switchboard-panel.tsx")
+        && /LoopSwitchboardPanel/.test(readFileSync("src/app/settings/page.tsx", "utf8"))
       );
     },
   },

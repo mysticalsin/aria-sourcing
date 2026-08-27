@@ -214,6 +214,31 @@ else
   die "Authenticated profile is not an admin; stop before campaign acceptance."
 fi
 
+# Arm the workspace switchboard so webhook hire-need enqueue + worker claim are allowed.
+# Env ARIA_LOOP_KILL_SWITCH=false is still required on the Fly loop process.
+jq -n '{
+  p_kill_switch: false,
+  p_intake_enabled: true,
+  p_sourcing_enabled: true,
+  p_enrichment_enabled: true,
+  p_sequences_enabled: true,
+  p_swarm_enabled: false,
+  p_max_sourcing_runs_per_day: 50,
+  p_max_sequence_sends_per_day: 200,
+  p_max_enrichment_units_per_day: 1000
+}' > "$WORK/arm_loop.json"
+ARM_CODE=$(curl -sS -m 20 -o "$WORK/arm_loop_resp.json" -w '%{http_code}' \
+  -X POST "$KONG_URL/rest/v1/rpc/set_sourcing_loop_controls" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H 'Content-Type: application/json' --data-binary @"$WORK/arm_loop.json")
+ARM_STATUS=$(jq -r '.status // empty' "$WORK/arm_loop_resp.json" 2>/dev/null || true)
+if [ "$ARM_CODE" = "200" ] && [ "$ARM_STATUS" = "updated" ]; then
+  pass "Workspace loop switchboard armed (kill_switch=false, intake/sourcing/sequences on)."
+else
+  fail "set_sourcing_loop_controls (HTTP $ARM_CODE status='$ARM_STATUS'): $(head -c 200 "$WORK/arm_loop_resp.json")"
+  die "Cannot arm workspace loop controls — webhook enqueue would control_block."
+fi
+
 # Build the sb-auth-token cookie: 'base64-' + base64url(compact session JSON),
 # chunked at 3180 chars (base64url has no %-escapes so encodeURIComponent length == length).
 jq -cj '.' "$SESS_RAW" > "$WORK/session.json"
@@ -286,7 +311,27 @@ step "2b) Webhook need email — POST /api/webhooks/email-inbound"
 # ===========================================================================
 WEBHOOK_SECRET="${EMAIL_INBOUND_WEBHOOK_SECRET:-}"
 if [ -n "$WEBHOOK_SECRET" ]; then
-  NEED_BODY='{"mailbox":"talent@mantu.com","providerId":"e2e-need-'"$$"'","from":"noreply@mantu.example","subject":"This need is now ACTIVE: Senior TypeScript Engineer","body":"Role: Senior TypeScript Engineer\nLocation: London, UK\nKey required skills\n- TypeScript\n- React\n- Node.js\nExperience: 5+ years"}'
+  # Prefer a live inbound mailbox from Settings connections; fall back to env / talent@mantu.com.
+  E2E_MAILBOX="${E2E_INBOUND_MAILBOX:-}"
+  if [ -z "$E2E_MAILBOX" ]; then
+    api GET "$APP_URL/api/email/connections" >/dev/null 2>&1 || true
+    # api() writes HTTP into $HTTP and body into $RESP
+    E2E_MAILBOX=$(jq -r '
+      ([.connections // [] | .[] | select((.provider // "") | test("Microsoft|Graph"; "i")) | .inboundRoute.mailbox // empty]
+       + [.connections // [] | .[] | .inboundRoute.mailbox // empty]
+       + [.connections // [] | .[] | .accountEmail // .account_email // empty])
+      | map(select(type=="string" and length>3))
+      | .[0] // empty
+    ' "$RESP" 2>/dev/null || true)
+  fi
+  [ -n "$E2E_MAILBOX" ] || E2E_MAILBOX="talent@mantu.com"
+  info "Webhook need mailbox: $E2E_MAILBOX"
+  # Include Type: Permanent so heuristic readiness clears without relying on LLM invention.
+  NEED_BODY=$(jq -nc \
+    --arg mb "$E2E_MAILBOX" \
+    --arg pid "e2e-need-$$" \
+    --arg body $'Recruiter: E2E Autopilot\nRole: Senior TypeScript Engineer\nLocation: London, UK\nType: Permanent\nSkills: TypeScript, React, Node.js\nExperience: 5+ years' \
+    '{mailbox:$mb,providerId:$pid,from:"noreply@mantu.example",subject:"This need is now ACTIVE: Senior TypeScript Engineer",body:$body}')
   NEED_SIG=$(printf '%s' "$NEED_BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | awk '{print $NF}')
   WEBHOOK_CODE=$(curl -sS -m 30 -o "$WORK/webhook_need.json" -w '%{http_code}' \
     -X POST "$APP_URL/api/webhooks/email-inbound" \
@@ -296,6 +341,7 @@ if [ -n "$WEBHOOK_SECRET" ]; then
   WEBHOOK_ROUTE=$(jq -r '.route // empty' "$WORK/webhook_need.json")
   WEBHOOK_QUEUED=$(jq -r '.jobQueued // false' "$WORK/webhook_need.json")
   WEBHOOK_KIND=$(jq -r '.jobKind // empty' "$WORK/webhook_need.json")
+  WEBHOOK_CAMPAIGN_ID=""
   if [ "$WEBHOOK_CODE" = "200" ] && [ "$WEBHOOK_ROUTE" = "hiring_need" ] && [ "$WEBHOOK_KIND" = "requisition_parse" ] && [ "$WEBHOOK_QUEUED" = "true" ]; then
     pass "Webhook need email queued requisition_parse (route=$WEBHOOK_ROUTE, jobKind=$WEBHOOK_KIND)."
     # Wait for the loop worker to materialize a campaign from requisition_parse
@@ -310,18 +356,26 @@ if [ -n "$WEBHOOK_SECRET" ]; then
         -H 'Accept: application/json' >/dev/null 2>&1 || true
       FOUND=$(jq -r --arg t "$NEED_TITLE" '
         (.[0].state.campaigns // [])
-        | map(.jobAnalysis.title // .title // "")
-        | map(select(test($t; "i")))
+        | map(select((.jobAnalysis.title // .title // "") | test($t; "i")))
         | length
       ' "$WORK/ws_state.json" 2>/dev/null || echo 0)
       if [ "${FOUND:-0}" -gt 0 ] 2>/dev/null; then
+        WEBHOOK_CAMPAIGN_ID=$(jq -r --arg t "$NEED_TITLE" '
+          (.[0].state.campaigns // [])
+          | map(select((.jobAnalysis.title // .title // "") | test($t; "i")))
+          | .[0].id // empty
+        ' "$WORK/ws_state.json" 2>/dev/null || true)
         WORKER_OK=1
         break
       fi
       sleep 5
     done
     if [ "$WORKER_OK" = "1" ]; then
-      pass "Loop worker materialized campaign for webhook need (title match '${NEED_TITLE}')."
+      pass "Loop worker materialized campaign for webhook need (title match '${NEED_TITLE}' id='${WEBHOOK_CAMPAIGN_ID:-?}')."
+      if [ -n "$WEBHOOK_CAMPAIGN_ID" ] && [ -z "${E2E_CAMPAIGN_ID:-}" ]; then
+        E2E_CAMPAIGN_ID="$WEBHOOK_CAMPAIGN_ID"
+        info "Using webhook-materialized campaign for sourcing-agent: $E2E_CAMPAIGN_ID"
+      fi
     else
       fail "Webhook queued requisition_parse but no matching campaign appeared in workspace_state within ~180s (arm loop worker / kill_switch / ARIA_LOOP_KILL_SWITCH)."
     fi
@@ -567,19 +621,26 @@ HTTP=$(curl -sS -m "${API_TIMEOUT:-180}" -o "$RESP" -w '%{http_code}' -X POST "$
   -H 'Content-Type: application/json' -H "Origin: $APP_URL" -H "Cookie: $COOKIE_HDR" \
   -H "Idempotency-Key: $(uuidgen | tr 'A-Z' 'a-z')" --data-binary @"$WORK/agent_req.json")
 AG_CODE=$(jq -r '.code // empty' "$RESP")
+AG_OK=""
 if [ "$HTTP" = "404" ] || [ "$AG_CODE" = "CAMPAIGN_NOT_READY" ]; then
-  info "sourcing-agent SKIPPED: campaign '$AGENT_CAMPAIGN_ID' is absent or its brief is unreviewed ($AG_CODE)."
-  info "      Seed a campaign with status Sourcing whose jobAnalysis passes evaluateNeedReadiness"
-  info "      (title, seniority and employmentType must not be Unspecified), then set E2E_CAMPAIGN_ID."
-  echo 'null' > "$WORK/cand0.json"
-  AG_OK="skipped"
+  if [ -n "${WEBHOOK_CAMPAIGN_ID:-}" ] && [ "$AGENT_CAMPAIGN_ID" = "$WEBHOOK_CAMPAIGN_ID" ]; then
+    fail "sourcing-agent: webhook campaign '$AGENT_CAMPAIGN_ID' is absent or unreviewed ($AG_CODE) — Type: Permanent need should clear readiness."
+    echo 'null' > "$WORK/cand0.json"
+    AG_OK="failed"
+  else
+    info "sourcing-agent SKIPPED: campaign '$AGENT_CAMPAIGN_ID' is absent or its brief is unreviewed ($AG_CODE)."
+    info "      Seed a campaign with status Sourcing whose jobAnalysis passes evaluateNeedReadiness"
+    info "      (title, seniority and employmentType must not be Unspecified), then set E2E_CAMPAIGN_ID."
+    echo 'null' > "$WORK/cand0.json"
+    AG_OK="skipped"
+  fi
 fi
-[ "${AG_OK:-}" = "skipped" ] || AG_OK=$(jq -r '.ok // false' "$RESP")
+[ "${AG_OK:-}" = "skipped" ] || [ "${AG_OK:-}" = "failed" ] || AG_OK=$(jq -r '.ok // false' "$RESP")
 AG_N=$(jq -r '(.candidates // []) | length' "$RESP")
 AG_LIVE=$(jq -r '[(.candidates // [])[] | select(.provenance=="live")] | length' "$RESP")
 AG_URLED=$(jq -r '[(.candidates // [])[] | select((.githubUrl // .linkedinUrl // .sourceUrl // "") != "")] | length' "$RESP")
-if [ "$AG_OK" = "skipped" ]; then
-  : # already reported above; a missing or unreviewed campaign is a setup gap, not a failure
+if [ "$AG_OK" = "skipped" ] || [ "$AG_OK" = "failed" ]; then
+  : # already reported above
 elif [ "$HTTP" = "200" ] && [ "$AG_OK" = "true" ] && [ "$AG_N" -gt 0 ] && [ "$AG_LIVE" = "$AG_N" ] && [ "$AG_URLED" -gt 0 ]; then
   pass "Agent returned $AG_N candidates, ALL provenance=\"live\", $AG_URLED with real profile URLs (totalFound=$(jq -r '.totalFound' "$RESP"))."
   jq '.candidates[0]' "$RESP" > "$WORK/cand0.json"
