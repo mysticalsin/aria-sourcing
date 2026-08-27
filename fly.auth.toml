@@ -24,6 +24,15 @@ primary_region = "cdg"
   GOTRUE_JWT_EXP                = "3600"
   GOTRUE_EXTERNAL_EMAIL_ENABLED = "true"
   GOTRUE_MAILER_AUTOCONFIRM     = "true"                        # ok for single-admin; flip false + SMTP for multi-user
+  # --- Entra / Azure SSO (optional; enable with secrets + app flag) ---
+  # Set via `fly secrets set` on aria-mantu-auth (never commit secrets):
+  #   GOTRUE_EXTERNAL_AZURE_ENABLED=true
+  #   GOTRUE_EXTERNAL_AZURE_CLIENT_ID=<entra-app-client-id>
+  #   GOTRUE_EXTERNAL_AZURE_SECRET=<entra-app-client-secret>
+  #   GOTRUE_EXTERNAL_AZURE_URL=https://login.microsoftonline.com/<tenant-id>/v2.0
+  # Then on aria-mantu-app: NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true (build arg + secret).
+  # Redirect URI in Entra must be Kong GoTrue callback:
+  #   https://aria-mantu-kong.fly.dev/auth/v1/callback
   # Secrets (fly secrets set): GOTRUE_JWT_SECRET (=FLY_JWT_SECRET),
   #   GOTRUE_DB_DATABASE_URL = postgres://supabase_auth_admin:<FLY_AUTH_DB_PASSWORD>@aria-mantu-db.internal:5432/postgres
 

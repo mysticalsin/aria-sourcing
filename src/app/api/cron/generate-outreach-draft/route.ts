@@ -9,7 +9,7 @@ import { runRecruitingGraph } from "@/lib/langchain/recruiting-graph";
 import { mantuOutreachVoice, mantuEmailHtmlWrapper } from "@/lib/mantu-brand";
 import { generateOutreach, newOutreachMessage } from "@/lib/mock-ai";
 import { humanizeText } from "@/lib/humanizer";
-import { validateOutreachQuality } from "@/lib/outreach-quality-pipeline";
+import { validateOutreachQuality, validateOutreachQualityLive } from "@/lib/outreach-quality-pipeline";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import type { Candidate, Campaign, OutreachChannel, SystemSettings } from "@/lib/types";
 import { candidateDisclosureContextForCampaignLike } from "@/lib/agent-disclosure-policy";
@@ -137,20 +137,33 @@ export async function POST(req: NextRequest) {
       },
     },
   });
-  const quality =
+  const deterministic =
     graphResult.quality[candidate.id]
     ?? validateOutreachQuality({
       subject: generated.subject,
       body: generated.body,
       channel,
     });
-  if (graphResult.stage === "approval_blocked" || quality.status === "blocked") {
+  // Live multi-agent LLM critics (empathy / compliance / human-likeness) when keys exist.
+  const quality = await validateOutreachQualityLive({
+    subject: generated.subject,
+    body: generated.body,
+    channel,
+  });
+  // Prefer the stricter of graph-deterministic vs live merge for blocking.
+  const effective =
+    deterministic.status === "blocked" && quality.status !== "blocked"
+      ? { ...quality, status: "blocked" as const, stages: [...quality.stages, ...deterministic.stages] }
+      : quality;
+
+  if (graphResult.stage === "approval_blocked" || effective.status === "blocked") {
     return NextResponse.json(
       {
         ok: false,
         status: "quality_blocked",
-        quality,
+        quality: effective,
         stage: graphResult.stage,
+        llmCriticsUsed: effective.llmCriticsUsed === true,
       },
       { status: 422 },
     );
@@ -162,18 +175,18 @@ export async function POST(req: NextRequest) {
     campaign,
     {
       ...generated,
-      subject: quality.text.subject,
-      body: quality.text.body,
+      subject: effective.text.subject,
+      body: effective.text.body,
     },
     "Casual Professional",
     settings as SystemSettings,
     1,
   );
   outreach.status = "Needs Approval";
-  outreach.qualityStatus = quality.status;
-  outreach.qualityScore = quality.aggregateScore;
+  outreach.qualityStatus = effective.status;
+  outreach.qualityScore = effective.aggregateScore;
   if (channel === "Email") {
-    outreach.htmlBody = mantuEmailHtmlWrapper(quality.text.body);
+    outreach.htmlBody = mantuEmailHtmlWrapper(effective.text.body);
   }
 
   return NextResponse.json({
@@ -181,9 +194,10 @@ export async function POST(req: NextRequest) {
     campaignId: campaign.id,
     candidateId: candidate.id,
     channel,
-    quality,
+    quality: effective,
     outreach,
     modelUsed,
     graphStage: graphResult.stage,
+    llmCriticsUsed: effective.llmCriticsUsed === true,
   });
 }

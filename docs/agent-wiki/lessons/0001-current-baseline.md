@@ -24,6 +24,8 @@ identityFingerprint: null
 7. Feedback stages proposed wiki lessons under `var/agent-wiki/proposed/`; humans promote into `docs/agent-wiki/lessons/`.
 8. Graph Inbox subscriptions must be renewed (loop worker cron) — they expire in ~2 days.
 9. After INTERESTED replies, enqueue `calendar_book` to propose Teams/Outlook interview (human confirmLive).
+10. Autonomous quality uses deterministic critics plus live LLM peer critics when keys exist.
+11. Production tenants do not substitute demo hiring emails unless demo login is explicitly enabled.
 
 ## Counterexamples
 
@@ -33,3 +35,4 @@ identityFingerprint: null
 - Do not auto-mark proposed wiki lessons as canonical.
 - Do not treat inbound mailbox route as proof of an active Graph subscription.
 - Do not ship autonomous drafts when the live LLM was unavailable (fail closed / retry).
+- Do not load labelled demo Outlook samples on a real Mantu tenant.

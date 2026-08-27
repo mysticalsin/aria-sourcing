@@ -32,7 +32,7 @@ import { parseIntakeLive, deriveValidationWarnings } from "@/lib/ai/intake";
 import { OutlookNeedsPanel } from "@/components/intake/outlook-needs-panel";
 import type { OutlookNeedMessage } from "@/lib/outlook-needs";
 import { useActions, useCampaigns, useHydrated, useSettings } from "@/lib/store";
-import { supabaseEnabled } from "@/lib/supabase/config";
+import { supabaseEnabled, demoLoginEnabled } from "@/lib/supabase/config";
 import {
   copyToClipboard,
   formatPercent,
@@ -209,7 +209,18 @@ export default function IntakePage() {
       });
       return;
     }
-    if (!incoming) incoming = SAMPLE_MANTU_EMAIL;
+    if (!incoming) {
+      if (!demoLoginEnabled) {
+        setParsing(false);
+        toast({
+          title: "No hiring need found",
+          description: "Sample substitution is disabled on this tenant. Paste a brief or wait for Graph webhook intake.",
+          variant: "warning",
+        });
+        return;
+      }
+      incoming = SAMPLE_MANTU_EMAIL;
+    }
 
     setEmail(incoming);
     setJd("");
@@ -477,26 +488,30 @@ export default function IntakePage() {
 
               <div className="space-y-3 border-t border-line pt-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    leftIcon={<Sparkles aria-hidden />}
-                    onClick={loadSample}
-                    disabled={parsing}
-                  >
-                    Sample backend role
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    leftIcon={<FileText aria-hidden />}
-                    onClick={loadMantu}
-                    disabled={parsing}
-                  >
-                    Load Mantu need
-                  </Button>
+                  {demoLoginEnabled ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        leftIcon={<Sparkles aria-hidden />}
+                        onClick={loadSample}
+                        disabled={parsing}
+                      >
+                        Sample backend role
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        leftIcon={<FileText aria-hidden />}
+                        onClick={loadMantu}
+                        disabled={parsing}
+                      >
+                        Load Mantu need
+                      </Button>
+                    </>
+                  ) : null}
                   <Button
                     type="button"
                     variant="subtle"

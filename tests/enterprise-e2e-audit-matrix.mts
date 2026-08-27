@@ -254,13 +254,34 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       const parseRoute = readFileSync("src/app/api/cron/parse-inbound-need/route.ts", "utf8");
       const draftRoute = readFileSync("src/app/api/cron/generate-outreach-draft/route.ts", "utf8");
       const live = readFileSync("src/lib/requisition-intake-live.ts", "utf8");
+      const quality = readFileSync("src/lib/outreach-quality-pipeline.ts", "utf8");
       return (
         /parseInboundNeedLive/.test(parseRoute)
         && /serverGenerateText/.test(draftRoute)
         && /llm_required/.test(draftRoute)
         && /runRecruitingGraph/.test(draftRoute)
+        && /validateOutreachQualityLive/.test(draftRoute)
+        && /validateOutreachQualityLive/.test(quality)
+        && /llm_empathy/.test(quality)
         && /parseInboundNeedLive/.test(live)
         && /serverGenerateText/.test(live)
+      );
+    },
+  },
+  {
+    requirement: "Production intake hides demo sample substitution when demo login is off",
+    evidence: () => {
+      const intake = readFileSync("src/app/intake/page.tsx", "utf8");
+      const panel = readFileSync("src/components/intake/outlook-needs-panel.tsx", "utf8");
+      const flyApp = readFileSync("fly.app.toml", "utf8");
+      const flyAuth = readFileSync("fly.auth.toml", "utf8");
+      return (
+        /demoLoginEnabled/.test(intake)
+        && /Sample substitution is disabled/.test(intake)
+        && /allowDemoNeeds/.test(panel)
+        && /Demo hiring emails are disabled/.test(panel)
+        && /NEXT_PUBLIC_ENABLE_DEMO_LOGIN\s*=\s*"false"/.test(flyApp)
+        && /GOTRUE_EXTERNAL_AZURE/.test(flyAuth)
       );
     },
   },

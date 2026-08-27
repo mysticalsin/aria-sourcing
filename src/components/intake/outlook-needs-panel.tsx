@@ -22,7 +22,7 @@ import {
   type OutlookNeedMessage,
 } from "@/lib/outlook-needs";
 import { useSeats } from "@/lib/store";
-import { supabaseEnabled } from "@/lib/supabase/config";
+import { supabaseEnabled, demoLoginEnabled } from "@/lib/supabase/config";
 import { cn, formatTimeAgo } from "@/lib/utils";
 import { Inbox, Link2, Mail, RefreshCw, Sparkles } from "lucide-react";
 
@@ -34,11 +34,25 @@ type SyncJson = {
   detail?: string;
 };
 
+function allowDemoNeeds(): boolean {
+  // Production Fly tenants keep demo samples off unless demo login is explicitly enabled.
+  return demoLoginEnabled || !supabaseEnabled;
+}
+
 function loadDemoNeeds(
   setNeeds: (n: OutlookNeedMessage[]) => void,
   toast: ReturnType<typeof useToast>["toast"],
   reason: string,
 ) {
+  if (!allowDemoNeeds()) {
+    setNeeds([]);
+    toast({
+      title: "Live mailbox required",
+      description: `${reason} Demo hiring emails are disabled on this tenant.`,
+      variant: "warning",
+    });
+    return;
+  }
   const demo = demoOutlookNeeds();
   setNeeds(demo);
   toast({
@@ -122,12 +136,22 @@ export function OutlookNeedsPanel({
       }
       if (json.status === "dry-run") {
         setPulledOnce(true);
-        setDemoMode(true);
-        loadDemoNeeds(
-          setNeeds,
-          toast,
-          "Public demo cannot read a real inbox.",
-        );
+        if (allowDemoNeeds()) {
+          setDemoMode(true);
+          loadDemoNeeds(
+            setNeeds,
+            toast,
+            "Public demo cannot read a real inbox.",
+          );
+        } else {
+          setDemoMode(false);
+          setNeeds([]);
+          toast({
+            title: "Emergency sync unavailable",
+            description: "Dry-run / demo sync is disabled on this production tenant. Prefer Graph webhook intake.",
+            variant: "warning",
+          });
+        }
         return;
       }
 
