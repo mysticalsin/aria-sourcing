@@ -389,6 +389,24 @@ export async function listGraphSubscriptionsForWorkspace(
   }));
 }
 
+type GraphMessageJson = {
+  id?: string;
+  internetMessageId?: string;
+  subject?: string;
+  body?: { contentType?: string; content?: string };
+  from?: { emailAddress?: { address?: string; name?: string } };
+  internetMessageHeaders?: Array<{ name?: string; value?: string }>;
+};
+
+export type NormalizedGraphMessage = {
+  providerId: string;
+  from: string;
+  subject: string;
+  body: string;
+  inReplyTo?: string;
+  mailbox: string;
+};
+
 /**
  * Fetch a Graph inbox message for hiring-need / reply ingest.
  * Fail-closed when Graph is absent: never invents a message. Distinguishes
@@ -463,15 +481,6 @@ export async function fetchGraphMessageForIngest(input: {
   };
 }
 
-type GraphMessageJson = {
-  id?: string;
-  internetMessageId?: string;
-  subject?: string;
-  body?: { contentType?: string; content?: string };
-  from?: { emailAddress?: { address?: string; name?: string } };
-  internetMessageHeaders?: Array<{ name?: string; value?: string }>;
-};
-
 /** Decode common HTML entities left after tag strip (Graph often returns HTML bodies). */
 function decodeBasicHtmlEntities(text: string): string {
   return text
@@ -512,12 +521,3 @@ export function normalizeGraphMessageBody(
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
-
-export type NormalizedGraphMessage = {
-  providerId: string;
-  from: string;
-  subject: string;
-  body: string;
-  inReplyTo?: string;
-  mailbox: string;
-};
