@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# fly-apply-owner-microsoft-secrets.sh — apply owner-supplied Azure secrets to Fly.
+#
+# Does NOT invent credentials. Reads values from the calling shell and refuses
+# empty / PLACEHOLDER_* values. Safe for agent to run once the owner has
+# exported real Azure app + Entra values into the environment.
+#
+# Required for Graph/Outlook on aria-mantu-app:
+#   MICROSOFT_CLIENT_ID
+#   MICROSOFT_CLIENT_SECRET
+# Optional (defaults to public Fly callback):
+#   MICROSOFT_REDIRECT_URI
+#
+# Required together for Entra SSO on aria-mantu-auth (all or none):
+#   GOTRUE_EXTERNAL_AZURE_CLIENT_ID
+#   GOTRUE_EXTERNAL_AZURE_SECRET
+#   GOTRUE_EXTERNAL_AZURE_URL
+# Optional:
+#   GOTRUE_EXTERNAL_AZURE_ENABLED  (default: true when applying Entra block)
+#
+# Usage:
+#   export MICROSOFT_CLIENT_ID=... MICROSOFT_CLIENT_SECRET=...
+#   export GOTRUE_EXTERNAL_AZURE_CLIENT_ID=... GOTRUE_EXTERNAL_AZURE_SECRET=...
+#   export GOTRUE_EXTERNAL_AZURE_URL='https://login.microsoftonline.com/<tenant>/v2.0'
+#   bash scripts/fly-apply-owner-microsoft-secrets.sh
+set -euo pipefail
+
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo"
+
+if [ -z "${FLY_API_TOKEN:-}" ] && [ -r "$repo/production-readiness/.fly-token.env" ]; then
+  export FLY_API_TOKEN="$(tr -d '\n\r ' < "$repo/production-readiness/.fly-token.env")"
+fi
+[ -n "${FLY_API_TOKEN:-}" ] || { echo "FLY_API_TOKEN or .fly-token.env required" >&2; exit 1; }
+command -v flyctl >/dev/null 2>&1 || { echo "flyctl required" >&2; exit 1; }
+
+is_placeholder() {
+  local v="$1"
+  case "$v" in
+    ""|PLACEHOLDER*|placeholder*|your-*|YOUR-*|changeme|CHANGEME) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+require_real() {
+  local name="$1" value="${2:-}"
+  if is_placeholder "$value"; then
+    echo "ERROR: $name is missing or still a PLACEHOLDER — export a real Azure value first." >&2
+    exit 1
+  fi
+}
+
+MS_ID="${MICROSOFT_CLIENT_ID:-}"
+MS_SECRET="${MICROSOFT_CLIENT_SECRET:-}"
+MS_REDIRECT="${MICROSOFT_REDIRECT_URI:-https://aria-mantu-app.fly.dev/auth/microsoft/callback}"
+
+require_real MICROSOFT_CLIENT_ID "$MS_ID"
+require_real MICROSOFT_CLIENT_SECRET "$MS_SECRET"
+require_real MICROSOFT_REDIRECT_URI "$MS_REDIRECT"
+
+case "$MS_REDIRECT" in
+  https://aria-mantu-app.fly.dev/auth/microsoft/callback) ;;
+  https://*) ;;
+  *)
+    echo "ERROR: MICROSOFT_REDIRECT_URI must be an https public callback URL." >&2
+    exit 1
+    ;;
+esac
+
+echo "=== Applying Microsoft Graph secrets to aria-mantu-app ==="
+# Values passed via env to flyctl; not echoed.
+flyctl secrets set -a aria-mantu-app \
+  "MICROSOFT_CLIENT_ID=${MS_ID}" \
+  "MICROSOFT_CLIENT_SECRET=${MS_SECRET}" \
+  "MICROSOFT_REDIRECT_URI=${MS_REDIRECT}"
+
+ENTRA_ID="${GOTRUE_EXTERNAL_AZURE_CLIENT_ID:-}"
+ENTRA_SECRET="${GOTRUE_EXTERNAL_AZURE_SECRET:-}"
+ENTRA_URL="${GOTRUE_EXTERNAL_AZURE_URL:-}"
+ENTRA_ENABLED="${GOTRUE_EXTERNAL_AZURE_ENABLED:-true}"
+
+entra_any=0
+entra_all=1
+for v in "$ENTRA_ID" "$ENTRA_SECRET" "$ENTRA_URL"; do
+  if [ -n "$v" ]; then entra_any=1; fi
+done
+for name_val in \
+  "GOTRUE_EXTERNAL_AZURE_CLIENT_ID:$ENTRA_ID" \
+  "GOTRUE_EXTERNAL_AZURE_SECRET:$ENTRA_SECRET" \
+  "GOTRUE_EXTERNAL_AZURE_URL:$ENTRA_URL"; do
+  n="${name_val%%:*}"
+  v="${name_val#*:}"
+  if is_placeholder "$v"; then
+    entra_all=0
+    if [ "$entra_any" = "1" ]; then
+      echo "ERROR: partial Entra env — set all of CLIENT_ID, SECRET, and URL (got empty/placeholder $n)." >&2
+      exit 1
+    fi
+  fi
+done
+
+if [ "$entra_all" = "1" ]; then
+  echo "=== Applying Entra / GoTrue Azure secrets to aria-mantu-auth ==="
+  require_real GOTRUE_EXTERNAL_AZURE_ENABLED "$ENTRA_ENABLED"
+  flyctl secrets set -a aria-mantu-auth \
+    "GOTRUE_EXTERNAL_AZURE_ENABLED=${ENTRA_ENABLED}" \
+    "GOTRUE_EXTERNAL_AZURE_CLIENT_ID=${ENTRA_ID}" \
+    "GOTRUE_EXTERNAL_AZURE_SECRET=${ENTRA_SECRET}" \
+    "GOTRUE_EXTERNAL_AZURE_URL=${ENTRA_URL}"
+else
+  echo "=== Skipping Entra (GOTRUE_EXTERNAL_AZURE_* not fully exported) ==="
+  echo "    Tip deploy will keep NEXT_PUBLIC_ENABLE_AZURE_LOGIN=false until Entra is set."
+fi
+
+echo
+echo "=== Live inventory ==="
+bash "$repo/scripts/print-fly-missing-secrets.sh" || true
+echo
+echo "=== Next: tip deploy ==="
+bash "$repo/scripts/print-fly-deploy-confirm.sh"
+echo
+echo "# Then: export ARIA_RELEASE_SHA + ARIA_PROD_DEPLOY_CONFIRM from above, and run:"
+echo "bash scripts/fly-deploy-now.sh"

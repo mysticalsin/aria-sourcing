@@ -109,6 +109,10 @@ const documentationOnlyReleaseSurfaces = new Set([
   "scripts/fly-enterprise-activate.sh",
   "scripts/fly-golive-mantu-e2e.sh",
 ]);
+/** Owner-exported credential appliers — mutate Fly secrets only, never invent values, never deploy. */
+const ownerCredentialApplySurfaces = new Set([
+  "scripts/fly-apply-owner-microsoft-secrets.sh",
+]);
 const executableReleaseSurfaces = trackedFiles.filter(
   (path) => path === ".gitlab-ci.yml" || path.endsWith(".sh") || path.startsWith(".github/workflows/"),
 );
@@ -116,7 +120,12 @@ const alternateProductionDeployPattern =
   /ARIA_DEPLOY_BUNDLE|fly\.io\/install\.sh|(?:^|\s)(?:bash\s+)?(?:\.\/)?deploy-fly\.sh\b|(?:^|\s)(?:fly|flyctl)\s+(?:deploy|machine\s+(?:run|destroy)|secrets\s+(?:set|import)|ips\s+allocate|volumes?\s+(?:destroy|update)|apps\s+destroy)\b/m;
 const unsafeAlternateDeploySurfaces = executableReleaseSurfaces.filter((path) => {
   if (path === ".gitlab-ci.yml") return false; // reviewed separately as manual-only fallback
-  if (canonicalProductionDeploySurfaces.has(path) || documentationOnlyReleaseSurfaces.has(path) || !existsSync(path)) {
+  if (
+    canonicalProductionDeploySurfaces.has(path)
+    || documentationOnlyReleaseSurfaces.has(path)
+    || ownerCredentialApplySurfaces.has(path)
+    || !existsSync(path)
+  ) {
     return false;
   }
   return alternateProductionDeployPattern.test(readFileSync(path, "utf8"));

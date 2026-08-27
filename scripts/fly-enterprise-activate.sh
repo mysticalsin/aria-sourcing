@@ -67,6 +67,10 @@ if [ "$graph_valid_code" != "200" ]; then
   note_blocker "Graph webhook /api/webhooks/microsoft-graph validationToken returned HTTP $graph_valid_code (need tip deploy with Graph route)"
 fi
 
+echo "=== Apply owner Microsoft/Entra secrets (from exported env; no invent) ==="
+echo "bash scripts/fly-apply-owner-microsoft-secrets.sh"
+echo
+
 echo "=== Live missing secrets ==="
 bash "$repo/scripts/print-fly-missing-secrets.sh" || true
 echo

@@ -11,7 +11,13 @@ set -euo pipefail
 
 cat <<'EOF'
 # === aria-mantu-app (Outlook / Graph / webhook) ===
-# Replace PLACEHOLDER values, then run each block once.
+# Prefer the apply helper (reads owner-exported env; refuses PLACEHOLDER):
+#   export MICROSOFT_CLIENT_ID=... MICROSOFT_CLIENT_SECRET=...
+#   export GOTRUE_EXTERNAL_AZURE_CLIENT_ID=... GOTRUE_EXTERNAL_AZURE_SECRET=...
+#   export GOTRUE_EXTERNAL_AZURE_URL='https://login.microsoftonline.com/<tenant>/v2.0'
+#   bash scripts/fly-apply-owner-microsoft-secrets.sh
+#
+# Or set manually:
 
 flyctl secrets set -a aria-mantu-app \
   EMAIL_INBOUND_WEBHOOK_SECRET='PLACEHOLDER_32+_CHAR_WEBHOOK_SECRET' \
