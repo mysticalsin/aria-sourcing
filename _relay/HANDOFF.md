@@ -1,49 +1,47 @@
 ---
 project: MSourcing / ARIA
-shift: 173
+shift: 174
 agent: cursor-cloud
-updated: 2026-08-27T15:55Z
+updated: 2026-08-27T16:06Z
 status: tip-code-hardened-awaiting-deploy-confirm
 ---
 
-# Handoff — Shift 173
+# Handoff — Shift 174
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32** · tip advancing (local uncommitted E2E harden)
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32** · tip `fbbdf91`
 - **Live Fly:** still build `ba88302` · mig `0060` · `/api/ready` not_ready · Graph validationToken **404**
-- **Drop-zones:** `/tmp/owner-deploy-confirm.env` / `/tmp/owner-microsoft.env` absent; `ARIA_PROD_DEPLOY_CONFIRM` unset (will not invent — use `bash scripts/print-fly-deploy-confirm.sh`)
-- **Waiter:** `fly-wait-entra` with `ARIA_SKIP_AZ_DEVICE_REFRESH=1`; triggers on az / microsoft drop-zone / **deploy-confirm alone**
+- **Drop-zones:** `/tmp/owner-deploy-confirm.env` / `/tmp/owner-microsoft.env` absent; `ARIA_PROD_DEPLOY_CONFIRM` unset (will not invent)
+- **Post-fbbdf91 code-gap audit (skip ops):** 3 remaining FAKE/SKELETON honesty gaps ranked below
 
 ## Done this shift
 
-- Approve/send: fail-closed `critics_required` when live critics missing; **human approval resolves `needs_review`** (only hard-block `blocked`)
-- Hermes outreach + E2E canned drafts require **Mantu Group** + signature
-- LangGraph `validateQuality` uses live LLM critics when `preferLiveCritics` (draft cron sets true)
-- Live critics: one retry on parse/HTTP miss; compliance critic requires Mantu brand
-- Microsoft OAuth callback **fail-closed** if Graph subscription create fails
-- Settings toast regex covers new Graph webhook error wording
+- Audited tip `fbbdf91` vs M365/Outlook/Teams/calendar/outreach loop after known fixes (needs_review, Hermes Mantu, preferLiveCritics, OAuth fail-closed toast, empty email_sync, webhook-first copy)
+- Ranked top-3 remaining misleading UX / E2E landmines (file-level)
+
+## Blockers
+
+- Owner deploy-confirm + Microsoft secrets (unchanged; do not invent)
 
 ## Next steps
 
-1. Owner: `bash scripts/print-fly-deploy-confirm.sh` → `/tmp/owner-deploy-confirm.env` → tip deploy (golive / `fly-deploy-now.sh`)
-2. Owner: `/tmp/owner-microsoft.env` or az login when ready for Outlook OAuth (skipped Entra MFA — do not re-spam)
-3. After tip: Connect Outlook (seat mode=live) + webhook → `eval "$(bash scripts/print-fly-e2e-env.sh --export)" && bash e2e-workflow-test.sh`
-4. Goal complete only when: ready ok + mig>=0066 + tip build + Graph200 + E2E PASS
+1. **Code #1 (webhook honesty):** `src/lib/integrations.ts` `mailboxIntegrationPatchesFromConnections` — mark Outlook/Teams `degraded` when Microsoft Graph connection lacks `graphSubscription.active`; `src/app/api/email/test/route.ts` fail closed without active Graph sub; `src/lib/store.ts` Teams Test must not claim confirmLive-ready without webhook. Extend `tests/mailbox-integration-hydrate.mts` + `tests/email-connections.mts`.
+2. **Code #2 (LinkedIn honesty):** `src/components/settings/linkedin-outreach-stack.tsx` — replace "Ready for outreach" + footer "unless HeyReach MCP is connected" (implies auto-send). Keep assisted-manual/409 as settled; HeyReach = MCP tools only. Grep-assert in `tests/enterprise-e2e-audit-matrix.mts`.
+3. **Code #3 (OAuth durable dual-state):** `src/app/auth/microsoft/callback/route.ts` — do not promote `agent_seats.mode=live` (or roll back connection) until inbound route + Graph subscription succeed; today fail-closed toast coexists with Connected hydration. Cover in `tests/email-connections.mts`.
+4. Owner: deploy-confirm → tip deploy → Connect Outlook + webhook → `e2e-workflow-test.sh`
 
 ## Decisions made (don't relitigate)
 
 - PR #32 supersedes #29–#31
-- Never invent Azure secrets or `ARIA_PROD_DEPLOY_CONFIRM` — use `print-fly-deploy-confirm.sh`
+- Never invent Azure secrets or `ARIA_PROD_DEPLOY_CONFIRM`
 - Seat mode=live for Teams book; calendar live only via `/api/calendar/event` + `confirmLive`
-- Mantu Fly: `AGENT_FRAMEWORKS_REQUIRED=false` on tip
 - LinkedIn send stays 409 assisted-manual; HeyReach = LinkedIn MCP path
 - LangGraph = stage checkpoint; live critics via `preferLiveCritics` on draft path
 - Owner skipped Entra MFA — watch drop-zones only (`ARIA_SKIP_AZ_DEVICE_REFRESH=1`)
 
 ## Watch out
 
+- Tip OAuth fail-closed only changes redirect; connection+live seat already written → hydration lies without #1/#3
 - ba88302 cannot opt out of agentFrameworks — tip deploy mandatory for ready green
-- Confirm drop-zone SHA must match clean tree HEAD at deploy time
 - Do not commit `/tmp` secrets or drop-zones
-- GitHub Actions budget exhausted (CI jobs never start); local gate is authority
