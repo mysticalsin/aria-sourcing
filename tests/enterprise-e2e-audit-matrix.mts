@@ -391,6 +391,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /print-fly-e2e-env/.test(golive)
         && /FLY_SUPABASE_ANON_KEY/.test(printE2e)
         && /Fly secrets inventory/.test(golive)
+        && existsSync("scripts/fly-enterprise-activate.sh")
+        && /print-fly-deploy-confirm/.test(readFileSync("scripts/fly-enterprise-activate.sh", "utf8"))
       );
     },
   },

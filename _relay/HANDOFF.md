@@ -19,11 +19,9 @@ status: code-complete-awaiting-owner-deploy
 ## Blockers (owner)
 
 ```bash
-bash scripts/print-fly-deploy-confirm.sh
-bash scripts/fly-deploy-now.sh   # after exporting emitted vars
-bash scripts/fly-golive-mantu-e2e.sh $(git rev-parse HEAD)
-bash scripts/print-fly-e2e-env.sh
-ADMIN_EMAIL=… ADMIN_PASSWORD=… bash e2e-workflow-test.sh
+bash scripts/fly-enterprise-activate.sh $(git rev-parse HEAD)  # read-only: preflight + one-liners
+bash scripts/fly-deploy-now.sh   # after exporting print-fly-deploy-confirm vars
+ADMIN_EMAIL=… ADMIN_PASSWORD=… bash e2e-workflow-test.sh       # ANON_KEY auto from .fly-secrets.env
 ```
 
 ## Completion audit
