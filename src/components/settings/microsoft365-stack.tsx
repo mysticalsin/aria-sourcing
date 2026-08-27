@@ -81,7 +81,8 @@ function Microsoft365StackInner() {
   const graphSubscriptionActive = Boolean(connectedOutlook?.graphSubscription?.active);
   const calendarScoped = Boolean(connectedOutlook && hasCalendarScope(connectedOutlook.scope));
 
-  const ssoReady = azureLoginEnabled;
+  // Public flag only — not live Entra proof. Never mark SSO "complete" from the flag alone.
+  const ssoFlagOn = azureLoginEnabled;
   const oauthReady = Boolean(providers?.microsoftOAuth && providers.encryptionReady);
   const mailboxConnected = Boolean(connectedOutlook);
   const inboundReady = Boolean(providers?.inboundWebhookSecret);
@@ -89,16 +90,17 @@ function Microsoft365StackInner() {
   // Step 4 is webhook push readiness: durable mailbox route AND live Graph subscription.
   const webhookIntakeReady = inboundActive && graphSubscriptionActive;
 
+  // Ready gate = live mailbox loop surfaces only (Outlook + calendar + Graph webhook).
+  // Entra SSO flag is informational — GoTrue Azure is not probed here.
   const stepsComplete =
-    (ssoReady ? 1 : 0) +
     (oauthReady && mailboxConnected ? 1 : 0) +
     (calendarReady ? 1 : 0) +
     (webhookIntakeReady ? 1 : 0);
-  const progressPct = (stepsComplete / 4) * 100;
+  const progressPct = (stepsComplete / 3) * 100;
 
   let statusLabel = loading ? "Checking Microsoft 365…" : "Not started";
   let statusTone: "neutral" | "success" | "electric" = "neutral";
-  if (!loading && stepsComplete === 4) {
+  if (!loading && stepsComplete === 3) {
     statusLabel = "Microsoft 365 ready";
     statusTone = "success";
   } else if (!loading && mailboxConnected && !webhookIntakeReady) {
@@ -112,8 +114,8 @@ function Microsoft365StackInner() {
   } else if (!loading && oauthReady) {
     statusLabel = "Outlook OAuth configured — connect a mailbox";
     statusTone = "electric";
-  } else if (!loading && ssoReady) {
-    statusLabel = "SSO enabled — connect Outlook";
+  } else if (!loading && ssoFlagOn) {
+    statusLabel = "SSO flag on — connect Outlook (verify Entra on /login)";
     statusTone = "electric";
   }
 
@@ -126,7 +128,12 @@ function Microsoft365StackInner() {
       statusLabel={statusLabel}
       statusTone={statusTone}
       progressPct={progressPct}
-      progressLabel={loading ? "Loading live status…" : `${stepsComplete} of 4 steps ready`}
+      progressLabel={
+        loading
+          ? "Loading live status…"
+          : `${stepsComplete} of 3 live mailbox steps ready` +
+            (ssoFlagOn ? " · SSO flag on (verify on /login)" : "")
+      }
       footer={
         <p className="flex items-start gap-2 text-xs leading-relaxed text-muted">
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -142,17 +149,17 @@ function Microsoft365StackInner() {
       <ConnectionStep
         step={1}
         title="Entra SSO (sign-in)"
-        subtitle="Workspace login via Microsoft — required for enterprise tenants."
-        state={ssoReady ? "complete" : supabaseEnabled ? "active" : "pending"}
+        subtitle="Build-time login flag only — confirm Sign in with Microsoft works on /login (GoTrue Azure)."
+        state={ssoFlagOn ? "active" : supabaseEnabled ? "active" : "pending"}
       >
         <SystemReadiness
           items={[
             {
               id: "azure-flag",
-              label: "Azure login flag",
-              ok: ssoReady,
-              hint: ssoReady
-                ? "NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true"
+              label: "Azure login flag (not live-verified)",
+              ok: ssoFlagOn,
+              hint: ssoFlagOn
+                ? "NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true — flag is not Entra proof; try /login."
                 : "Set NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true and configure GoTrue Azure provider on Fly.",
             },
             {
@@ -261,10 +268,10 @@ function Microsoft365StackInner() {
             },
             {
               id: "entra-sso",
-              label: "Entra SSO (Azure login)",
-              ok: ssoReady,
-              hint: ssoReady
-                ? "NEXT_PUBLIC_ENABLE_AZURE_LOGIN is on."
+              label: "Entra SSO flag (verify on /login)",
+              ok: ssoFlagOn,
+              hint: ssoFlagOn
+                ? "Flag on — not counted as M365-ready; confirm Microsoft sign-in on /login."
                 : "Off until GoTrue Azure env is configured; fly-deploy-now.sh enables NEXT_PUBLIC_ENABLE_AZURE_LOGIN when secrets are complete.",
             },
           ]}

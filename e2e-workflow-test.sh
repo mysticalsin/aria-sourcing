@@ -408,6 +408,27 @@ if grep -q 'propose-calendar-book' scripts/sourcing-loop-worker.mjs \
 else
   fail "calendar propose path missing interviewProposal or use_calendar_event_route guard."
 fi
+# Positive interest must always enqueue calendar_book (not only autopilot draft path).
+if grep -q 'Always enqueue Teams/Outlook first-interview propose' scripts/sourcing-loop-worker.mjs \
+  && grep -q 'inbound_classify->calendar_book' scripts/sourcing-loop-worker.mjs \
+  && grep -q 'trigger: "inbound_classify"' scripts/sourcing-loop-worker.mjs; then
+  pass "inbound_classify positive interest → calendar_book propose always enqueued."
+else
+  fail "interest→calendar_book always-enqueue wiring missing from loop worker."
+fi
+if grep -q 'outlook.body-content-type' src/lib/email-graph-subscriptions.ts \
+  && grep -q 'normalizeGraphMessageBody' src/lib/email-graph-subscriptions.ts \
+  && grep -q 'Job enqueue rejected' src/lib/inbound-email-ingest.ts; then
+  pass "Graph hiring-need ingest prefers text body + durable enqueue status honesty."
+else
+  fail "Graph ingest text Prefer or enqueue-status honesty missing."
+fi
+if grep -q 'not live-verified' src/components/settings/microsoft365-stack.tsx \
+  && grep -q 'of 3 live mailbox steps' src/components/settings/microsoft365-stack.tsx; then
+  pass "Entra SSO settings surface does not treat login flag as M365-ready."
+else
+  fail "Entra SSO settings honesty (flag ≠ ready) missing."
+fi
 if grep -q 'llm_required' src/app/api/cron/parse-inbound-need/route.ts \
   && grep -q 'llm_required' src/app/api/intake/route.ts \
   && grep -q 'critics_required' src/app/api/cron/generate-outreach-draft/route.ts \
@@ -428,6 +449,16 @@ if [ "$CRON_PROBE_CODE" = "401" ]; then
 else
   fail "Expected 401 from generate-outreach-draft without CRON_SECRET; got HTTP $CRON_PROBE_CODE."
 fi
+# LangGraph stage checkpoint must be live on the app (worker calls this after parse/rank/book).
+GRAPH_STAGE_PROBE_CODE=$(curl -sS -m 20 -o "$WORK/cron_graph_stage_unauth.json" -w '%{http_code}' \
+  -X POST "$APP_URL/api/cron/recruiting-graph-stage" \
+  -H 'Content-Type: application/json' \
+  --data '{"workspaceId":"00000000-0000-4000-8000-000000000000","intent":"book_only","allowedStages":["queued_for_approval"]}')
+if [ "$GRAPH_STAGE_PROBE_CODE" = "401" ]; then
+  pass "POST /api/cron/recruiting-graph-stage rejects unauthenticated cron (401)."
+else
+  fail "Expected 401 from recruiting-graph-stage without CRON_SECRET; got HTTP $GRAPH_STAGE_PROBE_CODE (route missing on deploy?)."
+fi
 if [ -n "${CRON_SECRET:-}" ]; then
   CRON_AUTH_CODE=$(curl -sS -m 30 -o "$WORK/cron_draft_auth.json" -w '%{http_code}' \
     -X POST "$APP_URL/api/cron/generate-outreach-draft" \
@@ -442,8 +473,24 @@ if [ -n "${CRON_SECRET:-}" ]; then
   else
     fail "Unexpected authenticated draft cron response HTTP $CRON_AUTH_CODE: $(head -c 200 "$WORK/cron_draft_auth.json")"
   fi
+  GRAPH_STAGE_AUTH_CODE=$(curl -sS -m 30 -o "$WORK/cron_graph_stage_auth.json" -w '%{http_code}' \
+    -X POST "$APP_URL/api/cron/recruiting-graph-stage" \
+    -H 'Content-Type: application/json' \
+    -H "Authorization: Bearer $CRON_SECRET" \
+    --data '{"workspaceId":"00000000-0000-4000-8000-000000000000","intent":"book_only","allowedStages":["queued_for_approval"]}')
+  GRAPH_STAGE_OK=$(jq -r '.ok // empty' "$WORK/cron_graph_stage_auth.json" 2>/dev/null || true)
+  GRAPH_STAGE_NAME=$(jq -r '.stage // empty' "$WORK/cron_graph_stage_auth.json" 2>/dev/null || true)
+  if [ "$GRAPH_STAGE_AUTH_CODE" = "200" ] && [ "$GRAPH_STAGE_OK" = "true" ] && [ -n "$GRAPH_STAGE_NAME" ]; then
+    pass "Authenticated recruiting-graph-stage book_only → stage=$GRAPH_STAGE_NAME."
+  elif [ "$GRAPH_STAGE_AUTH_CODE" = "401" ]; then
+    fail "CRON_SECRET rejected by recruiting-graph-stage (HTTP 401) — secret mismatch with Fly."
+  elif [ "$GRAPH_STAGE_AUTH_CODE" = "400" ] || [ "$GRAPH_STAGE_AUTH_CODE" = "503" ]; then
+    pass "Authenticated recruiting-graph-stage fail-closed (HTTP $GRAPH_STAGE_AUTH_CODE) — route live."
+  else
+    fail "Unexpected recruiting-graph-stage response HTTP $GRAPH_STAGE_AUTH_CODE: $(head -c 200 "$WORK/cron_graph_stage_auth.json")"
+  fi
 else
-  warn "CRON_SECRET unset — skipped authenticated draft-cron fail-closed probe."
+  warn "CRON_SECRET unset — skipped authenticated draft/graph-stage cron fail-closed probes."
 fi
 
 # Entra SSO surface: login page exposes Azure only when the public flag is compiled in.

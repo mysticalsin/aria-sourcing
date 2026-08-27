@@ -402,10 +402,14 @@ export async function fetchGraphMessageForIngest(input: {
 
   const select =
     "id,internetMessageId,subject,body,from,receivedDateTime,internetMessageHeaders";
+  // Prefer plain text so Mantu "Recruiter:" / "Skills:" lines survive for hiring-need routing.
   const res = await fetch(
     `${GRAPH}/me/messages/${encodeURIComponent(input.messageId)}?$select=${select}`,
     {
-      headers: { authorization: `Bearer ${token}` },
+      headers: {
+        authorization: `Bearer ${token}`,
+        Prefer: 'outlook.body-content-type="text"',
+      },
       signal: AbortSignal.timeout(20_000),
     },
   );
@@ -419,13 +423,7 @@ export async function fetchGraphMessageForIngest(input: {
     "";
   if (!fromAddr) return null;
 
-  let bodyText = "";
-  if (msg.body?.content) {
-    bodyText =
-      msg.body.contentType === "html"
-        ? msg.body.content.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
-        : msg.body.content.trim();
-  }
+  const bodyText = normalizeGraphMessageBody(msg.body);
 
   const headers = Array.isArray(msg.internetMessageHeaders) ? msg.internetMessageHeaders : [];
   const inReplyTo =
@@ -449,6 +447,34 @@ type GraphMessageJson = {
   from?: { emailAddress?: { address?: string; name?: string } };
   internetMessageHeaders?: Array<{ name?: string; value?: string }>;
 };
+
+/** Decode common HTML entities left after tag strip (Graph often returns HTML bodies). */
+function decodeBasicHtmlEntities(text: string): string {
+  return text
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&#160;/g, " ")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0*39;/g, "'")
+    .replace(/&apos;/gi, "'")
+    .replace(/&amp;/gi, "&");
+}
+
+/**
+ * Normalize Graph message body for hiring-need / reply classification.
+ * Prefer text content; if Graph still returns HTML, strip tags and decode entities
+ * so Mantu field lines (`Recruiter:`, `Skills:`) remain matchable.
+ */
+export function normalizeGraphMessageBody(
+  body: { contentType?: string; content?: string } | undefined,
+): string {
+  const raw = body?.content?.trim() ?? "";
+  if (!raw) return "";
+  const isHtml = (body?.contentType ?? "").toLowerCase() === "html" || /<\/?[a-z][\s\S]*>/i.test(raw);
+  if (!isHtml) return raw;
+  return decodeBasicHtmlEntities(raw.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")).trim();
+}
 
 export type NormalizedGraphMessage = {
   providerId: string;

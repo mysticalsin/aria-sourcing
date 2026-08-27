@@ -614,6 +614,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && existsSync("src/app/api/cron/recruiting-graph-stage/route.ts")
         && /microsoftOAuth=true/.test(e2e)
         && /generate-outreach-draft rejects unauthenticated/.test(e2e)
+        && /recruiting-graph-stage rejects unauthenticated/.test(e2e)
+        && /inbound_classify positive interest/.test(e2e)
         && /llmStages\.length === CRITICS\.length/.test(readFileSync("src/lib/outreach-quality-pipeline-live.ts", "utf8"))
         && /refuseMockOutreachOnLiveTenant/.test(readFileSync("src/lib/store.ts", "utf8"))
         && /Live drafting required/.test(readFileSync("src/components/settings/hermes-runtime-panel.tsx", "utf8"))

@@ -123,9 +123,23 @@ export async function ingestNormalizedInboundEmail(
         inboundId: rec.inbound_id,
       };
     }
+    // Match LinkedIn webhook honesty: transport OK is not enough — require durable enqueue status.
+    const enq = enqData as { status?: string } | null;
+    const enqStatus = typeof enq?.status === "string" ? enq.status : "";
+    if (enqStatus !== "enqueued" && enqStatus !== "already_enqueued") {
+      safeLog("inbound ingest: job enqueue rejected", {
+        kind: jobDecision.kind,
+        status: enqStatus || "missing",
+      });
+      return {
+        ok: false,
+        status: 503,
+        reason: "Job enqueue rejected.",
+        inboundId: rec.inbound_id,
+      };
+    }
     jobQueued = true;
     jobKind = jobDecision.kind;
-    void enqData;
   }
 
   return {

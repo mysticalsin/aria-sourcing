@@ -168,5 +168,19 @@ ok(
     /fetchGraphMessageForIngest/i.test(graphWebhook),
 );
 
+const graphSubs = existsSync("src/lib/email-graph-subscriptions.ts")
+  ? readFileSync("src/lib/email-graph-subscriptions.ts", "utf8")
+  : "";
+ok(
+  "Graph message ingest prefers text body and normalizes HTML for hiring-need fields",
+  /outlook\.body-content-type="text"/i.test(graphSubs) &&
+    /normalizeGraphMessageBody/i.test(graphSubs) &&
+    /decodeBasicHtmlEntities|&nbsp;/i.test(graphSubs),
+);
+ok(
+  "inbound ingest requires durable enqueue status (not transport-only success)",
+  /already_enqueued/i.test(inboundIngest) && /Job enqueue rejected/i.test(inboundIngest),
+);
+
 console.log(`RESULT email-inbound-contract: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
