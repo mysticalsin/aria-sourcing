@@ -314,10 +314,11 @@ function TaniaPanel({ c }: { c: Candidate }) {
     if (kind === "Intw1") {
       const res = await actions.createBookingFor(c.id);
       if (res.ok) {
+        const synced = Boolean(res.booking.calendarSync);
         toast({
-          title: "Intw1 booked on Outlook/Teams",
+          title: synced ? "Intw1 booked on Outlook/Teams" : "Intw1 saved — needs calendar",
           description: `With ${res.booking.interviewer || "an interviewer to be confirmed"}. ${bookingCalendarSummary(res.booking)}`,
-          variant: "success",
+          variant: synced ? "success" : "warning",
         });
       } else {
         toast({
@@ -889,10 +890,11 @@ export function CandidateDrawer({
   const handleBook = async () => {
     const res = await actions.createBookingFor(c.id);
     if (res.ok) {
+      const synced = Boolean(res.booking.calendarSync);
       toast({
-        title: "Interview booked",
+        title: synced ? "Interview booked" : "Interview saved — needs calendar",
         description: `With ${res.booking.interviewer || "an interviewer to be confirmed"}. ${bookingCalendarSummary(res.booking)}`,
-        variant: "success",
+        variant: synced ? "success" : "warning",
       });
     } else {
       toast({ title: "Could not book interview", description: res.error, variant: "error" });

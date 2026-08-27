@@ -144,14 +144,39 @@ async function rankTop10(state: RecruitingGraphStateType): Promise<Partial<Recru
 
 /** Node: Mantu-branded outreach drafts prepared for quality validation. */
 async function draftOutreach(state: RecruitingGraphStateType): Promise<Partial<RecruitingGraphStateType>> {
+  const drafts = state.drafts ?? {};
+  const entries = Object.entries(drafts).filter(
+    ([id, draft]) =>
+      typeof id === "string" &&
+      id.trim() &&
+      draft &&
+      typeof draft.subject === "string" &&
+      typeof draft.body === "string" &&
+      draft.body.trim().length > 0,
+  );
+  if (entries.length === 0) {
+    return {
+      stage: "draft_failed",
+      errors: ["missing_drafts"],
+      drafts: {},
+    };
+  }
   return {
     stage: "outreach_drafted",
-    drafts: state.drafts ?? {},
+    drafts: Object.fromEntries(entries),
   };
 }
 
 /** Node: validate outreach quality for each draft (multi-agent critics). */
 async function validateQuality(state: RecruitingGraphStateType): Promise<Partial<RecruitingGraphStateType>> {
+  const draftEntries = Object.entries(state.drafts ?? {});
+  if (draftEntries.length === 0) {
+    return {
+      stage: "draft_failed",
+      errors: ["missing_drafts"],
+      quality: {},
+    };
+  }
   const quality: Record<string, OutreachQualityVerdict> = {};
   const preferLive = state.preferLiveCritics === true;
   type QualityFn = (input: {
@@ -170,7 +195,7 @@ async function validateQuality(state: RecruitingGraphStateType): Promise<Partial
       liveValidate = null;
     }
   }
-  for (const [candidateId, draft] of Object.entries(state.drafts ?? {})) {
+  for (const [candidateId, draft] of draftEntries) {
     const input = {
       subject: draft.subject,
       body: draft.body,
@@ -180,6 +205,26 @@ async function validateQuality(state: RecruitingGraphStateType): Promise<Partial
     quality[candidateId] = liveValidate
       ? await liveValidate(input)
       : validateOutreachQuality(input);
+  }
+  // Prefer-live path without usable LLM peers must not claim quality_validated ready.
+  // Stay on a fail-closed stage; the draft cron re-runs live critics and maps a
+  // successful re-validation to queued_for_approval before the worker sees it.
+  if (preferLive && liveValidate) {
+    const missingCritics = Object.values(quality).some((v) => v.llmCriticsUsed !== true);
+    if (missingCritics) {
+      const anyBlocked = Object.values(quality).some((v) => v.status === "blocked");
+      return {
+        stage: anyBlocked ? "approval_blocked" : "quality_critics_incomplete",
+        quality,
+        errors: ["llm_critics_required"],
+      };
+    }
+  } else if (preferLive && !liveValidate) {
+    return {
+      stage: "quality_critics_incomplete",
+      quality,
+      errors: ["llm_critics_unavailable"],
+    };
   }
   return { stage: "quality_validated", quality };
 }
@@ -238,8 +283,16 @@ function buildRecruitingGraph() {
       if (state.intent === "rank_only") return END;
       return "draftOutreach";
     })
-    .addEdge("draftOutreach", "validateQuality")
-    .addEdge("validateQuality", "queueApproval")
+    .addConditionalEdges("draftOutreach", (state) => {
+      if (state.stage === "draft_failed") return END;
+      return "validateQuality";
+    })
+    .addConditionalEdges("validateQuality", (state) => {
+      if (state.stage === "draft_failed") return END;
+      if (state.stage === "quality_critics_incomplete") return END;
+      if (state.stage === "approval_blocked") return END;
+      return "queueApproval";
+    })
     .addConditionalEdges("queueApproval", (state) => {
       const blocked = Object.values(state.quality ?? {}).some((v) => v.status === "blocked");
       if (blocked) return END;

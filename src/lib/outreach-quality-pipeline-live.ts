@@ -139,10 +139,24 @@ export async function validateOutreachQualityLive(input: {
       CRITICS.map((critic) => runOneCritic(critic, payload, input.workspaceId)),
     );
     const llmStages = results.filter((s): s is StageResult => Boolean(s));
-    // Fail closed for partial critic runs — autonomous drafts require all three.
-    if (llmStages.length !== CRITICS.length) return base;
+    // Fail closed: all three critic agents required for llmCriticsUsed / autonomous ready.
+    // Partial or empty critic runs must not keep a deterministic "ready" while discarding
+    // any negative peer signal (or silently implying full multi-agent validation).
+    if (llmStages.length !== CRITICS.length) {
+      const merged = mergeVerdict(base, llmStages);
+      return {
+        ...merged,
+        status: merged.status === "blocked" ? "blocked" : "needs_review",
+        llmCriticsUsed: false,
+      };
+    }
     return mergeVerdict(base, llmStages);
   } catch {
-    return base;
+    // Critic infrastructure failed — never report ready as if peers ran.
+    return {
+      ...base,
+      status: base.status === "blocked" ? "blocked" : "needs_review",
+      llmCriticsUsed: false,
+    };
   }
 }

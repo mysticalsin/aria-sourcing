@@ -261,7 +261,7 @@ test("runtime booking creation emits only after an accepted state transition", a
   assert.doesNotMatch(accepted.activityDrafts.at(-1)?.notes ?? "", /links generated/i);
   assert.match(
     accepted.activityDrafts.at(-1)?.notes ?? "",
-    /Meeting link pending calendar provider confirmation\./,
+    /Needs calendar — connect Microsoft Graph and book with confirmLive for a Teams meeting\./,
   );
 
   const duplicate = await accepted.actions.createBookingFor(acceptedIds.candidate.id);

@@ -5,6 +5,11 @@ type BookingCalendarState = Pick<
   "calendarSync" | "calLink" | "teamsLink"
 >;
 
+/** True when no provider calendar event / Teams join URL is confirmed. */
+export function bookingNeedsCalendar(booking: BookingCalendarState): boolean {
+  return !booking.calendarSync && !booking.calLink && !booking.teamsLink;
+}
+
 export function bookingCalendarSummary(booking: BookingCalendarState): string {
   const hasLink = Boolean(booking.calLink || booking.teamsLink);
   if (booking.calendarSync) {
@@ -13,6 +18,6 @@ export function bookingCalendarSummary(booking: BookingCalendarState): string {
       : "Calendar event confirmed; meeting link unavailable.";
   }
   return hasLink
-    ? "Calendar link recorded."
-    : "Meeting link pending calendar provider confirmation.";
+    ? "Calendar link recorded — provider sync still required."
+    : "Needs calendar — connect Microsoft Graph and book with confirmLive for a Teams meeting.";
 }

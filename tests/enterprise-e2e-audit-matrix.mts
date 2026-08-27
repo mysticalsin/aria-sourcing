@@ -251,6 +251,10 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       return (
         /createBookingFor\(c\.id\)/.test(drawer)
         && /Intw1 booked on Outlook\/Teams/.test(drawer)
+        && /Intw1 saved — needs calendar/.test(drawer)
+        && /Needs calendar/.test(readFileSync("src/app/calendar/page.tsx", "utf8"))
+        && /bookingNeedsCalendar/.test(readFileSync("src/components/calendar/booking-calendar.tsx", "utf8"))
+        && /Needs calendar — connect Microsoft Graph/.test(readFileSync("src/lib/booking-status.ts", "utf8"))
         && !/Reminder cadence T-24h/.test(drawer)
         && /Do NOT invent Booked here/.test(store)
       );
@@ -854,6 +858,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /recruiting-graph-stage rejects unauthenticated/.test(e2e)
         && /inbound_classify positive interest/.test(e2e)
         && /llmStages\.length === CRITICS\.length/.test(readFileSync("src/lib/outreach-quality-pipeline-live.ts", "utf8"))
+        && /quality_critics_incomplete/.test(graph)
+        && /draft_failed/.test(graph)
         && /refuseMockOutreachOnLiveTenant/.test(readFileSync("src/lib/store.ts", "utf8"))
         && /Live drafting required/.test(readFileSync("src/components/settings/hermes-runtime-panel.tsx", "utf8"))
         && /isTeamsMeetingJoinUrl/.test(readFileSync("src/lib/store/booking-report-actions.ts", "utf8"))

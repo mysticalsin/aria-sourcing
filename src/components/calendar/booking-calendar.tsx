@@ -15,6 +15,7 @@ import {
   ListChecks,
 } from "lucide-react";
 import { Badge, Button, EmptyState, Field, Input, useToast } from "@/components/ui";
+import { bookingNeedsCalendar } from "@/lib/booking-status";
 import { useActions } from "@/lib/store";
 import type { Booking, BookingStatus } from "@/lib/types";
 import { cn, formatTime, formatDate, formatDateTime, ianaForAbbrev, toneForBookingStatus } from "@/lib/utils";
@@ -73,11 +74,11 @@ function LinkButton({
     return (
       <span
         aria-disabled="true"
-        title="Connect Microsoft Graph and book with confirmLive to create a Teams meeting"
+        title="Needs calendar — connect Microsoft Graph and book with confirmLive for a Teams meeting"
         className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-full bg-ink/[0.04] px-3 text-xs font-semibold text-muted ring-1 ring-inset ring-line"
       >
         {icon}
-        {children} · needs Graph
+        {children} · needs calendar
       </span>
     );
   }
@@ -176,6 +177,11 @@ function BookingRow({ booking }: { booking: Booking }) {
             <Badge tone={toneForBookingStatus(booking.status)} size="sm" dot>
               {booking.status}
             </Badge>
+            {bookingNeedsCalendar(booking) ? (
+              <Badge tone="warning" size="sm" dot>
+                Needs calendar
+              </Badge>
+            ) : null}
           </div>
           <p className="mt-0.5 truncate text-sm text-ink-soft">{booking.role}</p>
           <p className="mt-1 flex items-center gap-1.5 text-xs text-muted">
@@ -215,11 +221,11 @@ function BookingRow({ booking }: { booking: Booking }) {
           {!booking.teamsLink && !booking.calLink ? (
             <span
               aria-disabled="true"
-              title="Connect Microsoft Graph and book with confirmLive to create a Teams meeting"
+              title="Needs calendar — connect Microsoft Graph and book with confirmLive for a Teams meeting"
               className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-full bg-ink/[0.04] px-3 text-xs font-semibold text-muted ring-1 ring-inset ring-line"
             >
               <Video className="h-3.5 w-3.5" aria-hidden />
-              Teams · needs Graph
+              Teams · needs calendar
             </span>
           ) : null}
         </div>

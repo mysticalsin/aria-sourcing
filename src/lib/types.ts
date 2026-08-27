@@ -647,6 +647,10 @@ export interface OutreachMessage {
   /** Multi-agent quality pipeline verdict (empathy + compliance + human-likeness). */
   qualityStatus?: "ready" | "needs_review" | "blocked";
   qualityScore?: number;
+  /** True when live LLM peer critics contributed (autonomous dry-run path). */
+  qualityCriticsUsed?: boolean;
+  /** Flattened critic reasons for operator review on dry-run drafts. */
+  qualityReasons?: string[];
   /** Mantu-branded HTML wrapper for Email channel (optional). */
   htmlBody?: string;
 }

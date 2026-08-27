@@ -20,6 +20,20 @@ test("live LLM critics module stays server-only and exports validateOutreachQual
   assert.match(src, /export async function validateOutreachQualityLive/);
   assert.match(src, /llm_empathy/);
   assert.match(src, /serverGenerateText/);
+  assert.match(src, /llmStages\.length !== CRITICS\.length/);
+  assert.match(src, /status: merged\.status === "blocked" \? "blocked" : "needs_review"/);
+});
+
+test("LangGraph draft_quality fail-stops empty drafts and incomplete live critics", () => {
+  const graph = readFileSync("src/lib/langchain/recruiting-graph.ts", "utf8");
+  assert.match(graph, /stage: "draft_failed"/);
+  assert.match(graph, /missing_drafts/);
+  assert.match(graph, /quality_critics_incomplete/);
+  assert.match(graph, /llm_critics_required/);
+  const draft = readFileSync("src/app/api/cron/generate-outreach-draft/route.ts", "utf8");
+  assert.match(draft, /qualityCriticsUsed/);
+  assert.match(draft, /quality_critics_incomplete/);
+  assert.match(draft, /queued_for_approval/);
 });
 
 test("deterministic quality scores personalized empathetic outreach as ready-ish", () => {

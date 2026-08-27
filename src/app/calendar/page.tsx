@@ -112,11 +112,13 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
     }
     setPreview(res);
     toast({
-      title: `Interview booked: ${candidate.name}`,
+      title: res.booking.calendarSync
+        ? `Interview booked: ${candidate.name}`
+        : `Needs calendar: ${candidate.name}`,
       description: res.booking.calendarSync
         ? "Teams/Outlook event created and added to the schedule."
-        : "Added to the schedule. Connect Microsoft Graph and use confirmLive to issue a Teams link.",
-      variant: "success",
+        : "Slot saved locally. Connect Microsoft Graph and use confirmLive to issue a Teams link — not a live booked interview.",
+      variant: res.booking.calendarSync ? "success" : "warning",
     });
   }
 
@@ -211,7 +213,7 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
         description={
           preview?.booking.calendarSync
             ? "Live calendar event created. Prep and confirmation emails are drafted below; review before sending."
-            : "Dry-run scheduled. Prep and confirmation emails are drafted below. Nothing is sent automatically."
+            : "Needs calendar — slot saved without Teams. Prep and confirmation emails are drafted below. Nothing is sent automatically."
         }
         footer={
           <Button variant="primary" size="sm" onClick={() => setPreview(null)}>
@@ -267,8 +269,8 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
                   </p>
                 ) : (
                   <p className="text-xs text-muted">
-                    No Teams link yet — connect Microsoft Graph and book with confirmLive to create
-                    an online meeting.
+                    Needs calendar — connect Microsoft Graph and book with confirmLive to create
+                    an online meeting. This is not a live Teams interview yet.
                   </p>
                 )}
               </div>
@@ -313,7 +315,7 @@ export default function CalendarPage() {
       <PageHeader
         eyebrow="Scheduling"
         title="Interview calendar"
-        description="Confirmed interviews and loop-proposed slots for interested candidates. Confirm with Graph to create a Teams online meeting."
+        description="Confirmed interviews and loop-proposed slots for interested candidates. Without a live Graph seat, rows stay Needs calendar — never treat local slots as booked Teams interviews."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="violet" dot>
@@ -322,6 +324,11 @@ export default function CalendarPage() {
             <Badge tone="tangerine" dot>
               {ready.length} ready
             </Badge>
+            {bookings.some((b) => !b.calendarSync && !b.teamsLink && !b.calLink) ? (
+              <Badge tone="warning" dot>
+                Needs calendar
+              </Badge>
+            ) : null}
           </div>
         }
       />
@@ -368,8 +375,9 @@ export default function CalendarPage() {
             <InterviewerPanel />
             <p className="flex items-start gap-1.5 px-1 text-xs text-muted">
               <Sparkles className={cn("mt-0.5 h-3.5 w-3.5 shrink-0 text-tangerine")} aria-hidden />
-              Booking a slot with confirmLive creates a real Outlook/Teams event when a live Graph
-              seat is connected. Outreach emails still need your approve/send.
+              Booking with confirmLive creates a real Outlook/Teams event only when a live Graph
+              seat is connected. Local slots without sync show Needs calendar. Outreach still needs
+              approve/send.
             </p>
           </div>
         </div>

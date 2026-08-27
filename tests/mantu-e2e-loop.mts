@@ -168,6 +168,14 @@ void (async () => {
     draftOnly.stage === "queued_for_approval" || draftOnly.stage === "approval_blocked",
   );
 
+  const emptyDrafts = await runRecruitingGraph({
+    intent: "draft_quality",
+    workspaceId: "ws-1",
+    candidateIds: ["a"],
+    drafts: {},
+  });
+  ok("draft_quality fail-stops on empty drafts", emptyDrafts.stage === "draft_failed");
+
   const parseOnly = await runRecruitingGraph({
     intent: "parse_only",
     workspaceId: "ws-1",

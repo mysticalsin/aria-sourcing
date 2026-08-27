@@ -147,6 +147,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  if (graphResult.stage === "draft_failed") {
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "draft_failed",
+        detail: "LangGraph draft_quality requires non-empty outreach drafts.",
+        graphStage: graphResult.stage,
+      },
+      { status: 422 },
+    );
+  }
+
   // Autonomous loop drafts must not silently ship mock-ai copy as success.
   if (!modelUsed) {
     return NextResponse.json(
@@ -201,11 +213,22 @@ export async function POST(req: NextRequest) {
         status: "critics_required",
         detail: "Live multi-agent LLM quality critics required for autonomous outreach.",
         quality: effective,
-        graphStage: graphResult.stage,
+        graphStage:
+          graphResult.stage === "quality_critics_incomplete"
+            ? "quality_critics_incomplete"
+            : graphResult.stage,
       },
       { status: 503 },
     );
   }
+
+  // Successful live re-validation may follow a graph quality_critics_incomplete
+  // checkpoint (first peer pass missed). Worker only accepts approval stages.
+  const graphStage =
+    graphResult.stage === "quality_critics_incomplete" ||
+    graphResult.stage === "quality_validated"
+      ? "queued_for_approval"
+      : graphResult.stage;
 
   const settings: Pick<SystemSettings, "dryRunMode"> = { dryRunMode: true };
   const outreach = newOutreachMessage(
@@ -223,6 +246,11 @@ export async function POST(req: NextRequest) {
   outreach.status = "Needs Approval";
   outreach.qualityStatus = effective.status;
   outreach.qualityScore = effective.aggregateScore;
+  outreach.qualityCriticsUsed = effective.llmCriticsUsed === true;
+  outreach.qualityReasons = effective.stages
+    .flatMap((s) => s.reasons)
+    .filter(Boolean)
+    .slice(0, 12);
   if (channel === "Email") {
     outreach.htmlBody = mantuEmailHtmlWrapper(effective.text.body);
   }
@@ -235,7 +263,7 @@ export async function POST(req: NextRequest) {
     quality: effective,
     outreach,
     modelUsed,
-    graphStage: graphResult.stage,
+    graphStage,
     llmCriticsUsed: effective.llmCriticsUsed === true,
   });
 }

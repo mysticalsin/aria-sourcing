@@ -352,6 +352,7 @@ export function OutreachMessageCard({
                 size="sm"
               >
                 Quality {message.qualityScore ?? "—"}/100
+                {message.qualityCriticsUsed ? " · multi-agent" : ""}
               </Badge>
             ) : null}
             {(actionable || pendingManual) && (
@@ -384,6 +385,11 @@ export function OutreachMessageCard({
               No personalization attached. Approval will be blocked until evidence is present. Regenerate to fix.
             </div>
           )}
+          {message.qualityReasons && message.qualityReasons.length > 0 ? (
+            <p className="text-xs text-muted">
+              Quality notes: {message.qualityReasons.slice(0, 4).join(" · ")}
+            </p>
+          ) : null}
         </div>
 
         {/* Tone control */}
