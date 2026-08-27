@@ -218,6 +218,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /migration must be 0066_/.test(script)
         && /unknown_subscription/.test(script)
         && /microsoft-graph/.test(script)
+        && /Polling workspace_state for campaign title/.test(script)
+        && /Loop worker materialized campaign/.test(script)
       );
     },
   },
@@ -231,6 +233,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         /outreachQualityGate/.test(rules)
         && /outreachQualityGate/.test(approve)
         && /outreachQualityGate/.test(send)
+        && /validateOutreachQualityLive/.test(approve)
+        && /validateOutreachQualityLive/.test(send)
       );
     },
   },
@@ -606,6 +610,18 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /mock fleet allocate disabled/.test(readFileSync("src/lib/store.ts", "utf8"))
         && /Live LLM drafting required/.test(readFileSync("src/app/fleet/page.tsx", "utf8"))
         && /generateOutreachLive\(candidate\.id\)/.test(readFileSync("src/components/run/agent-run-stream.tsx", "utf8"))
+      );
+    },
+  },
+  {
+    requirement: "Run Aria falls through to live reviewed sourcing without frameworks",
+    evidence: () => {
+      const runner = readFileSync("src/lib/agents/studio-runner.ts", "utf8");
+      return (
+        /mode: "framework" \| "direct" \| "demo"/.test(runner)
+        && /mode: "direct"/.test(runner)
+        && /No approved agent framework workflow/.test(runner)
+        && /AGENT_FRAMEWORKS_REQUIRED=false/.test(runner)
       );
     },
   },

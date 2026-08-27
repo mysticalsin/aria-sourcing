@@ -155,7 +155,7 @@ export const testManifest = {
     {"id":"whatsapp-late-event-safety","executable":"tsx","argv":["tests/whatsapp-late-event-safety.mts"]},
     {"id":"agent-graph","executable":"tsx","argv":["tests/agent-graph.mts"]},
     {"id":"fleet-seats-server","executable":"node","argv":["--experimental-test-module-mocks","--import","tsx","tests/fleet-seats-server.mts"]},
-    {"id":"dispatch-outbound","executable":"tsx","argv":["tests/dispatch-outbound.mts"]},
+    {"id":"dispatch-outbound","executable":"node","argv":["--experimental-test-module-mocks","--import","tsx","tests/dispatch-outbound.mts"]},
     {"id":"integrations-honesty","executable":"tsx","argv":["tests/integrations-honesty.mts"]},
     {"id":"dispatch-concurrency","executable":"tsx","argv":["tests/dispatch-concurrency.mts"]},
     {"id":"whatsapp-template-queue-policy","executable":"tsx","argv":["tests/whatsapp-template-queue-policy.mts"]},

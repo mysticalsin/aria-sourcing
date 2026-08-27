@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { readFileSync } from "node:fs";
+import { mock } from "node:test";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest } from "next/server";
 import * as dispatchModule from "../src/lib/dispatch-outbound";
@@ -8,6 +9,9 @@ import {
   APPROVED_WHATSAPP_TEMPLATE_AUDIT_SUBJECT,
   buildApprovedWhatsAppTemplateAudit,
 } from "../src/lib/whatsapp-template-queue";
+
+// send route now imports live LLM critics (server-only).
+mock.module("server-only", { namedExports: {} });
 
 const { dispatchDue } = dispatchModule;
 
@@ -1196,6 +1200,21 @@ ok(
     throw new Error("SMS API guard must return before provider access");
   }) as typeof fetch;
   try {
+    mock.module(
+      new URL("../src/lib/outreach-quality-pipeline-live.ts", import.meta.url).href,
+      {
+        namedExports: {
+          validateOutreachQualityLive: async (input: {
+            subject: string;
+            body: string;
+            channel?: string;
+          }) => {
+            const { validateOutreachQuality } = await import("../src/lib/outreach-quality-pipeline");
+            return validateOutreachQuality(input);
+          },
+        },
+      },
+    );
     const sendModule = await import("../src/app/api/outreach/send/route");
     const sendPost = ((sendModule as any).POST ?? (sendModule as any).default?.POST) as (req: NextRequest) => Promise<Response>;
     const response = await sendPost(new NextRequest("http://localhost/api/outreach/send", {

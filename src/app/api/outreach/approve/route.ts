@@ -8,6 +8,7 @@ import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
 import { outreachQualityGate } from "@/lib/outreach-quality-pipeline";
+import { validateOutreachQualityLive } from "@/lib/outreach-quality-pipeline-live";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 
@@ -106,6 +107,15 @@ export async function POST(req: NextRequest) {
       { ok: false, error: qualityGate.blockers[0] },
       { status: 422 },
     );
+  }
+  // Soft live critics: prefer LLM peers when keys work; fail open to deterministic
+  // blockers already applied (human is present, unlike autonomous draft cron).
+  const liveVerdict = await validateOutreachQualityLive({ subject, body, channel });
+  if (liveVerdict.status === "blocked") {
+    const reason =
+      liveVerdict.stages.find((s) => !s.pass)?.reasons[0]
+      ?? "Outreach blocked by live quality critics.";
+    return NextResponse.json({ ok: false, error: reason }, { status: 422 });
   }
 
   if (publicDemoSideEffectsDisabled()) {

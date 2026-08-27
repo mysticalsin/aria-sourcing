@@ -298,6 +298,33 @@ if [ -n "$WEBHOOK_SECRET" ]; then
   WEBHOOK_KIND=$(jq -r '.jobKind // empty' "$WORK/webhook_need.json")
   if [ "$WEBHOOK_CODE" = "200" ] && [ "$WEBHOOK_ROUTE" = "hiring_need" ] && [ "$WEBHOOK_KIND" = "requisition_parse" ] && [ "$WEBHOOK_QUEUED" = "true" ]; then
     pass "Webhook need email queued requisition_parse (route=$WEBHOOK_ROUTE, jobKind=$WEBHOOK_KIND)."
+    # Wait for the loop worker to materialize a campaign from requisition_parse
+    # (workspace_state is member-readable; aria_jobs is service-only).
+    NEED_TITLE="Senior TypeScript Engineer"
+    WORKER_OK=0
+    info "Polling workspace_state for campaign title matching '${NEED_TITLE}' (loop worker)…"
+    for _poll in $(seq 1 36); do
+      curl -sS -m 20 -o "$WORK/ws_state.json" \
+        "$KONG_URL/rest/v1/workspace_state?select=state&limit=1" \
+        -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ACCESS_TOKEN" \
+        -H 'Accept: application/json' >/dev/null 2>&1 || true
+      FOUND=$(jq -r --arg t "$NEED_TITLE" '
+        (.[0].state.campaigns // [])
+        | map(.jobAnalysis.title // .title // "")
+        | map(select(test($t; "i")))
+        | length
+      ' "$WORK/ws_state.json" 2>/dev/null || echo 0)
+      if [ "${FOUND:-0}" -gt 0 ] 2>/dev/null; then
+        WORKER_OK=1
+        break
+      fi
+      sleep 5
+    done
+    if [ "$WORKER_OK" = "1" ]; then
+      pass "Loop worker materialized campaign for webhook need (title match '${NEED_TITLE}')."
+    else
+      fail "Webhook queued requisition_parse but no matching campaign appeared in workspace_state within ~180s (arm loop worker / kill_switch / ARIA_LOOP_KILL_SWITCH)."
+    fi
   else
     fail "Webhook need email (HTTP $WEBHOOK_CODE route=$WEBHOOK_ROUTE kind=$WEBHOOK_KIND queued=$WEBHOOK_QUEUED): $(head -c 300 "$WORK/webhook_need.json")"
   fi

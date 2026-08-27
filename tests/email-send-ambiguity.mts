@@ -388,6 +388,15 @@ try {
   mock.module(moduleUrl("src/lib/domain-verification.ts"), {
     namedExports: { domainVerified: async () => true },
   });
+  mock.module("server-only", { namedExports: {} });
+  mock.module(moduleUrl("src/lib/outreach-quality-pipeline-live.ts"), {
+    namedExports: {
+      validateOutreachQualityLive: async (input: { subject: string; body: string; channel?: string }) => {
+        const { validateOutreachQuality } = await import("../src/lib/outreach-quality-pipeline");
+        return validateOutreachQuality(input);
+      },
+    },
+  });
 
   const sendModule = await import("../src/app/api/outreach/send/route");
   const sendPost = ((sendModule as { POST?: unknown }).POST) as (req: NextRequest) => Promise<Response>;

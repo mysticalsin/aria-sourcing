@@ -13,6 +13,7 @@ import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit"
 import { safeLog } from "@/lib/log-redact";
 import { gateOutbound } from "@/lib/gate";
 import { outreachQualityGate } from "@/lib/outreach-quality-pipeline";
+import { validateOutreachQualityLive } from "@/lib/outreach-quality-pipeline-live";
 import { getOutboundChannelPolicy } from "@/lib/linkedin-policy";
 import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
 import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
@@ -190,6 +191,14 @@ export async function POST(req: NextRequest) {
       { status: "error", detail: qualityGate.blockers[0] },
       { status: 422 },
     );
+  }
+  // Soft live critics on the human send path (fail open to deterministic when LLM unavailable).
+  const liveVerdict = await validateOutreachQualityLive({ subject, body, channel });
+  if (liveVerdict.status === "blocked") {
+    const reason =
+      liveVerdict.stages.find((s) => !s.pass)?.reasons[0]
+      ?? "Outreach blocked by live quality critics.";
+    return NextResponse.json({ status: "error", detail: reason }, { status: 422 });
   }
   const gate = gateOutbound(body);
   if (!gate.pass) {
