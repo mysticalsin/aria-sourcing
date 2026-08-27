@@ -475,10 +475,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && existsSync("scripts/fly-enterprise-activate.sh")
         && /print-fly-deploy-confirm/.test(readFileSync("scripts/fly-enterprise-activate.sh", "utf8"))
         && /ARIA_LOOP_KILL_SWITCH/.test(readFileSync("scripts/fly-enterprise-activate.sh", "utf8"))
-        && /ANTHROPIC_API_KEY or OPENAI_API_KEY/.test(readFileSync("scripts/fly-enterprise-activate.sh", "utf8"))
+        && /ANTHROPIC_API_KEY or OPENAI_API_KEY|KIMI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY/.test(readFileSync("scripts/fly-enterprise-activate.sh", "utf8"))
         && existsSync("scripts/print-fly-secrets-checklist.sh")
         && /EMAIL_INBOUND_WEBHOOK_SECRET/.test(readFileSync("scripts/print-fly-secrets-checklist.sh", "utf8"))
         && /GOTRUE_EXTERNAL_AZURE_ENABLED/.test(readFileSync("scripts/print-fly-secrets-checklist.sh", "utf8"))
+        && /KIMI_API_KEY|ANTHROPIC_API_KEY/.test(readFileSync("scripts/print-fly-secrets-checklist.sh", "utf8"))
         && /print-fly-secrets-checklist/.test(readFileSync("scripts/fly-enterprise-activate.sh", "utf8"))
       );
     },

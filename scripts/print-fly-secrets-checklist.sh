@@ -22,9 +22,10 @@ flyctl secrets set -a aria-mantu-app \
 # Arm the loop worker process (required for webhook → campaign E2E materialization):
 flyctl secrets set -a aria-mantu-app ARIA_LOOP_KILL_SWITCH='false'
 
-# At least one cloud LLM key (parse / draft / critics fail-closed without it):
-flyctl secrets set -a aria-mantu-app \
-  ANTHROPIC_API_KEY='PLACEHOLDER_ANTHROPIC_KEY'
+# At least one cloud LLM key (parse / draft / critics fail-closed without it).
+# Prefer KIMI (already preferred by serverGenerateText); Anthropic/OpenAI also work:
+# flyctl secrets set -a aria-mantu-app KIMI_API_KEY='PLACEHOLDER_KIMI_KEY'
+# or: ANTHROPIC_API_KEY='PLACEHOLDER_ANTHROPIC_KEY'
 # or: OPENAI_API_KEY='PLACEHOLDER_OPENAI_KEY'
 
 # Optional but recommended for authenticated draft-cron / graph-stage E2E probes:
