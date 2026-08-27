@@ -38,6 +38,21 @@ function attendeeEmails(ev: CalendarEventInput): string[] {
   return out;
 }
 
+/** Accept only real Teams join URLs — never Outlook calendar webLink. */
+export function isTeamsMeetingJoinUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return (
+      host === "teams.microsoft.com"
+      || host.endsWith(".teams.microsoft.com")
+      || host === "teams.live.com"
+      || host.endsWith(".teams.live.com")
+    );
+  } catch {
+    return false;
+  }
+}
+
 function agendaText(ev: CalendarEventInput): string {
   return ev.agenda.length ? `Agenda:\n- ${ev.agenda.join("\n- ")}` : "Interview";
 }
@@ -135,9 +150,9 @@ export async function createGraphCalendarEvent(
       webLink?: string;
       onlineMeeting?: { joinUrl?: string };
     };
-    let joinUrl = event.onlineMeeting?.joinUrl ?? event.webLink ?? null;
+    let joinUrl = event.onlineMeeting?.joinUrl ?? null;
     // Graph sometimes omits onlineMeeting on create; re-fetch once for Teams joinUrl.
-    if (!event.onlineMeeting?.joinUrl && event.id) {
+    if (!joinUrl && event.id) {
       try {
         const fetched = await fetch(
           `https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(event.id)}?$select=id,webLink,onlineMeeting`,
@@ -148,20 +163,29 @@ export async function createGraphCalendarEvent(
         );
         if (fetched.ok) {
           const full = (await fetched.json().catch(() => ({}))) as {
-            webLink?: string;
             onlineMeeting?: { joinUrl?: string };
           };
-          joinUrl = full.onlineMeeting?.joinUrl ?? full.webLink ?? joinUrl;
+          joinUrl = full.onlineMeeting?.joinUrl ?? null;
         }
       } catch {
-        // Keep create-response link; never fail the booking on joinUrl refresh.
+        // Fall through to missing-joinUrl handling below.
       }
+    }
+    // Never promote Outlook webLink as a Teams meeting URL.
+    if (!joinUrl || !isTeamsMeetingJoinUrl(joinUrl)) {
+      return {
+        ok: false,
+        provider: "Microsoft Graph",
+        eventId: event.id,
+        deliveryState: "unknown",
+        detail: "Teams join URL missing after Graph create; reconcile manually before retry.",
+      };
     }
     return {
       ok: true,
       provider: "Microsoft Graph",
       eventId: event.id,
-      link: joinUrl ?? undefined,
+      link: joinUrl,
       deliveryState: "accepted",
       detail: "Event created.",
     };

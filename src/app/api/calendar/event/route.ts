@@ -199,6 +199,22 @@ export async function POST(req: NextRequest) {
         : await createGraphCalendarEvent(ev, connection);
 
     if (outcome.ok) {
+      // Graph must return a Teams join URL before we confirm the booking ledger.
+      if (
+        provider === "Microsoft Graph"
+        && (!outcome.link || !outcome.link.toLowerCase().includes("teams."))
+      ) {
+        return NextResponse.json(
+          {
+            status: "reconciliation-required",
+            delivery: "calendar-reconciliation-required",
+            bookingId: claim.id,
+            eventId: outcome.eventId ?? null,
+            detail: "Graph event may exist but Teams join URL is missing. Do not retry until reconciled.",
+          },
+          { status: 502 },
+        );
+      }
       const reconciled = await reconcileCalendarBooking(svc, {
         workspaceId: wid,
         id: claim.id,

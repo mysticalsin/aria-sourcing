@@ -34,7 +34,8 @@ function mergeVerdict(
     stages,
     aggregateScore,
     status,
-    llmCriticsUsed: llmStages.length > 0,
+    // All three critic agents must succeed for autonomous llmCriticsUsed.
+    llmCriticsUsed: llmStages.length === CRITICS.length,
   };
 }
 
@@ -125,7 +126,8 @@ export async function validateOutreachQualityLive(input: {
     const payload = { subject: input.subject, body: input.body, channel };
     const results = await Promise.all(CRITICS.map((critic) => runOneCritic(critic, payload)));
     const llmStages = results.filter((s): s is StageResult => Boolean(s));
-    if (llmStages.length === 0) return base;
+    // Fail closed for partial critic runs — autonomous drafts require all three.
+    if (llmStages.length !== CRITICS.length) return base;
     return mergeVerdict(base, llmStages);
   } catch {
     return base;

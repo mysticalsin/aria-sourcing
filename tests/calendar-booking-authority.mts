@@ -204,11 +204,24 @@ try {
   const graphServerErr = await createGraphCalendarEvent(ev, connection({ provider: "Microsoft Graph" }));
   ok("Graph: upstream 502 is an unknown/ambiguous outcome", graphServerErr.ok === false && graphServerErr.deliveryState === "unknown");
 
-  globalThis.fetch = fetchWith(200, { id: "evt-2", webLink: "https://calendar.example.test/evt-2" });
+  globalThis.fetch = fetchWith(200, { id: "evt-2", webLink: "https://outlook.office.com/calendar/item/evt-2" });
+  const graphWebLinkOnly = await createGraphCalendarEvent(ev, connection({ provider: "Microsoft Graph" }));
+  ok(
+    "Graph: webLink-only create is not accepted as a Teams booking",
+    graphWebLinkOnly.ok === false && graphWebLinkOnly.deliveryState === "unknown" && graphWebLinkOnly.eventId === "evt-2",
+  );
+
+  globalThis.fetch = fetchWith(200, {
+    id: "evt-2",
+    onlineMeeting: { joinUrl: "https://teams.microsoft.com/l/meetup-join/19%3ameeting_e2e" },
+  });
   const graphCreated = await createGraphCalendarEvent(ev, connection({ provider: "Microsoft Graph" }));
   ok(
-    "Graph: acceptance is 'accepted' with the provider's event id and link",
-    graphCreated.ok === true && graphCreated.deliveryState === "accepted" && graphCreated.eventId === "evt-2",
+    "Graph: acceptance requires Teams joinUrl",
+    graphCreated.ok === true &&
+      graphCreated.deliveryState === "accepted" &&
+      graphCreated.eventId === "evt-2" &&
+      graphCreated.link === "https://teams.microsoft.com/l/meetup-join/19%3ameeting_e2e",
   );
 
   /* =========================================================================

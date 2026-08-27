@@ -521,6 +521,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /claim\.meetingUrl/.test(route)
         && /p_meeting_url/.test(authority)
         && /onlineMeeting\/joinUrl|onlineMeeting\?\.joinUrl/.test(calendar)
+        && /isTeamsMeetingJoinUrl/.test(calendar)
+        && /webLink-only create is not accepted/.test(readFileSync("tests/calendar-booking-authority.mts", "utf8"))
       );
     },
   },
@@ -585,6 +587,9 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /outreach_draft_critics_required/.test(worker)
         && /microsoftOAuth=true/.test(e2e)
         && /generate-outreach-draft rejects unauthenticated/.test(e2e)
+        && /llmStages\.length === CRITICS\.length/.test(readFileSync("src/lib/outreach-quality-pipeline-live.ts", "utf8"))
+        && /refuseMockOutreachOnLiveTenant/.test(readFileSync("src/lib/store.ts", "utf8"))
+        && /Live drafting required/.test(readFileSync("src/components/settings/hermes-runtime-panel.tsx", "utf8"))
       );
     },
   },

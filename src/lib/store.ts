@@ -145,7 +145,7 @@ import type {
 } from "./types";
 import { genId, isoDaysBefore } from "./utils";
 import { createCampaign as buildCampaign } from "./mock-ai";
-import { supabaseEnabled } from "./supabase/config";
+import { demoLoginEnabled, supabaseEnabled } from "./supabase/config";
 import {
   loadRemoteAgentSeats,
   loadRemoteState,
@@ -332,14 +332,18 @@ function recomputeMetrics(state: HermesState, campaignId: string): HermesState {
    Provider
    ========================================================================== */
 
+/** Live/enterprise tenants must never commit mock outreach as a successful draft. */
+function refuseMockOutreachOnLiveTenant(live: boolean): boolean {
+  return !live && supabaseEnabled && !demoLoginEnabled;
+}
+
 /**
  * Shared live-generation attempt for follow-up / re-contact drafts — the same
- * three-layer fallback generateOutreachLive/regenerateOutreach already use (a
- * cloud provider or hermes live mode configured -> hermesGenerate -> parse ->
- * humanize). Without this, draftFollowUpFor/draftRecontactFor always fell
- * straight to the mock template, so every follow-up touch for a candidate was
- * byte-identical copy. Returns the mock unchanged (live: false) on any
- * failure at any layer — a follow-up draft always lands regardless.
+ * three-layer path generateOutreachLive/regenerateOutreach use (a cloud
+ * provider or hermes live mode configured -> hermesGenerate -> parse ->
+ * humanize). Returns the mock unchanged (live: false) on any failure at any
+ * layer; live tenants must refuse committing that mock (see
+ * refuseMockOutreachOnLiveTenant).
  */
 async function attemptLiveFollowUpGen(opts: {
   settings: SystemSettings;
@@ -2032,6 +2036,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      if (refuseMockOutreachOnLiveTenant(live)) return null;
+
       if (!workspaceEffectAllowed()) return null;
 
       const quality = validateOutreachQuality({
@@ -2125,6 +2131,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         touchNote: `This is follow-up touch #${due.nextSequenceStep} after ${Math.floor(due.daysSinceContact)}d of silence since the last message — vary the angle/urgency from a first touch, keep it short, no guilt-tripping.`,
         runEffect: runWorkspaceEffect,
       });
+      if (refuseMockOutreachOnLiveTenant(live)) return null;
       if (!workspaceEffectAllowed()) return null;
       const msg = {
         ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, due.nextSequenceStep),
@@ -2186,6 +2193,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         touchNote: `This is a #Vivier re-engagement of a previously ${candidate.stage} candidate${candidate.silverMedalist ? " (Silver Medalist)" : ""} — acknowledge the gap briefly, lead with what's different now, no guilt-tripping.`,
         runEffect: runWorkspaceEffect,
       });
+      if (refuseMockOutreachOnLiveTenant(live)) return null;
       if (!workspaceEffectAllowed()) return null;
       const msg = { ...newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1), createdAt: draftedAt };
       commit((prev) => {
@@ -2237,6 +2245,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // Layer 2 keeps the mock on a non-ok result; Layer 3 keeps the mock on an
       // unparseable reply. A failed/unconfigured live call always keeps the mock draft.
       let gen: GeneratedOutreach = mockGen;
+      let live = false;
       const aiCfg = resolveAiProvider(s.settings, "outreach");
       if (aiCfg || (s.settings.hermesLiveMode && hermesAvailable(s.settings))) {
         const lang = campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
@@ -2297,10 +2306,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               personalizationEvidence: mockGen.personalizationEvidence,
               channel: msg.channel,
             };
+            live = true;
           }
         }
       }
 
+      if (refuseMockOutreachOnLiveTenant(live)) return;
       if (!workspaceEffectAllowed()) return;
       commit((prev) => ({
         ...prev,
