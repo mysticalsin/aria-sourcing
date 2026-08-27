@@ -1,57 +1,45 @@
 ---
 project: MSourcing / ARIA
-shift: 181
+shift: 182
 agent: cursor-cloud
-updated: 2026-08-27T18:00Z
+updated: 2026-08-27T18:37Z
 status: awaiting-tip-deploy-confirm
 ---
 
-# Handoff — Shift 181
+# Handoff — Shift 182
 
 ## Current state
 
-- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32** · tip **`5fb91cb`** (`5fb91cb6716611904a56e37cdabe8fccd7ddebc8`)
-- **Live Fly `aria-mantu-app`:** build `ba88302` · mig `0060` · `/api/ready` `not_ready` · Graph `validationToken` **HTTP 404**
-- **Missing Fly secrets:** `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` (+ GoTrue Azure on `aria-mantu-auth`)
-- **Deploy confirm:** unset — after tip push, re-run `bash scripts/print-fly-deploy-confirm.sh` (SHA must match HEAD)
-- **Waiter:** tmux `fly-wait-entra` polling drop-zones
-- **Local gate:** `npx tsc --noEmit && npm test` green; audit **45/45**
+- **Branch/PR:** `cursor/enterprise-autopilot-b91d` · **PR #32** · tip = clean HEAD (run `git rev-parse HEAD` / `bash scripts/print-fly-deploy-confirm.sh`)
+- **Live Fly:** `ba88302` / mig `0060` / Graph **404** / ready not_ok
+- **Code complete on tip;** local Graph validationToken HTTP **200**
+- **Unlock:** `ARIA_PROD_DEPLOY_CONFIRM` unset — never invent. Use `bash scripts/print-fly-deploy-confirm.sh`
+- **Local gate:** green; audit **45/45**
 
 ## Done this shift
 
-- Hard-reload gate fix: loading phase paints Sidebar+TopBar (no full-page "Loading demo workspace" card); demo hydrate skips loading; mount uses `useLayoutEffect`
-- Local verify: hard reload shows shell first (`/opt/cursor/artifacts/hard-reload-shell-first-paint-fix.mp4`)
-- Prior demo UX 5/5 + screenshots still valid
+- Hardened `scripts/lib/prod-release-guard.sh` against broken `/dev/tty` (clear must-equal error)
+- Waiter `fly-wait-entra` running; E2E tmp secrets synced
 
 ## Blockers
 
-- Owner must supply `ARIA_PROD_DEPLOY_CONFIRM` encoding **new tip HEAD** after this push (never invent)
-- Microsoft Graph secrets still missing for Outlook connect / full E2E
+1. Owner: `ARIA_PROD_DEPLOY_CONFIRM` for current HEAD
+2. Microsoft Graph + GoTrue Azure secrets
 
 ## Next steps
 
-1. Owner: `bash scripts/print-fly-deploy-confirm.sh` → set `ARIA_PROD_DEPLOY_CONFIRM` (Cursor secret or `/tmp/owner-deploy-confirm.env`)
-2. On confirm: `export FLY_API_TOKEN="$(tr -d '\n\r ' < production-readiness/.fly-token.env)" && bash scripts/fly-enterprise-golive-when-ready.sh`
-3. Probe: ready `ok` + `build==tip` + mig `>=0066` + Graph validationToken **200**
-4. Apply Microsoft secrets → Connect Outlook → `eval "$(bash scripts/print-fly-e2e-env.sh --export)" && bash e2e-workflow-test.sh`
-5. Goal complete **only** when tip live + Graph200 + e2e PASS
+1. `bash scripts/print-fly-deploy-confirm.sh` → Cursor secret or `/tmp/owner-deploy-confirm.env`
+2. `export FLY_API_TOKEN="$(tr -d '\n\r ' < production-readiness/.fly-token.env)" && bash scripts/fly-enterprise-golive-when-ready.sh`
+3. Probe tip + mig>=0066 + Graph 200 → Outlook → `e2e-workflow-test.sh`
+4. Goal complete only when tip live + Graph200 + e2e PASS
 
 ## Decisions made (don't relitigate)
 
-- PR **#32** is the deliverable (supersedes closed #29–#31)
-- Fly-only for enterprise; Vercel CI red/rate-limit ignore
+- PR **#32** (supersedes closed #29–#31)
 - Never invent `ARIA_PROD_DEPLOY_CONFIRM` or Azure secrets
-- LinkedIn send stays 409 assisted-manual; calendar live book only via `/api/calendar/event` + `confirmLive`
-- Graph seat `mode=live` only after inbound route + active Graph subscription
-- Migration floor `>= 0066`; Mantu Fly `AGENT_FRAMEWORKS_REQUIRED=false`
-- GDPR hold stays; Approve is always a separate second click
-- Force dry-run with 0 connected outbound providers
-- Loading phase may show shell chrome; product children stay blocked until ready
-- Local `tsc` + `npm test` is CI authority while Actions budget exhausted
+- Fly-only; local tsc+npm test is CI authority while Actions budget exhausted
 
 ## Watch out
 
-- Confirm SHA must equal clean-tree HEAD after tip commit
-- Ignore stale env `ARIA_RELEASE_SHA=591a813…`; scripts force tip
-- Do not click Approve/send real outreach on live Fly until dry-run confirmed
-- FLY token: full `production-readiness/.fly-token.env` via `tr -d '\n\r '`, not fo1-only fragment
+- Confirm SHA must equal clean-tree HEAD; prefer no tip commits while waiting
+- Ignore stale `ARIA_RELEASE_SHA=591a813…`

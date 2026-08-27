@@ -38,10 +38,13 @@ aria_require_reviewed_production_release() {
 
   expected_confirmation="aria-production-release-v1:${operation}:${ARIA_RELEASE_SHA}:${target_apps}"
   supplied_confirmation="${ARIA_PROD_DEPLOY_CONFIRM:-}"
-  if [ -z "$supplied_confirmation" ] && [ -r /dev/tty ] && [ -w /dev/tty ]; then
-    printf 'Type %s to mutate Fly production app(s) %s at %s: ' \
-      "$expected_confirmation" "$target_apps" "$ARIA_RELEASE_SHA" > /dev/tty
-    IFS= read -r supplied_confirmation < /dev/tty
+  # Interactive prompt only when a real TTY is usable. Never let a broken
+  # /dev/tty short-circuit into a cryptic I/O error instead of the confirm hint.
+  if [ -z "$supplied_confirmation" ] && [ -t 0 ] && [ -r /dev/tty ] && [ -w /dev/tty ]; then
+    if printf 'Type %s to mutate Fly production app(s) %s at %s: ' \
+      "$expected_confirmation" "$target_apps" "$ARIA_RELEASE_SHA" > /dev/tty 2>/dev/null; then
+      IFS= read -r supplied_confirmation < /dev/tty || supplied_confirmation=""
+    fi
   fi
   [ "$supplied_confirmation" = "$expected_confirmation" ] \
     || aria_prod_guard_die "ARIA_PROD_DEPLOY_CONFIRM must equal: $expected_confirmation"

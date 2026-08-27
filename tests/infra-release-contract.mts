@@ -389,6 +389,12 @@ if (unsafeAlternateDeploySurfaces.length > 0) {
   console.error("Unsafe alternate production deploy surfaces:", unsafeAlternateDeploySurfaces.join(", "));
 }
 ok(
+  "production release guard fails closed without a usable TTY confirm prompt",
+  productionReleaseGuard.includes("[ -t 0 ]") &&
+    productionReleaseGuard.includes("> /dev/tty 2>/dev/null") &&
+    productionReleaseGuard.includes("ARIA_PROD_DEPLOY_CONFIRM must equal"),
+);
+ok(
   "only reviewed release-authorized surfaces can mutate Fly production",
   unsafeAlternateDeploySurfaces.length === 0 &&
     reviewedAlternateDeploySurfaces.every((path) => canonicalProductionDeploySurfaces.has(path)) &&
