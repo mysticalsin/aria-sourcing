@@ -251,46 +251,77 @@ export function createReplyClassificationModelClient(environment, fetcher = fetc
     };
   }
 
-  const apiKey = environment.OPENAI_API_KEY ?? "";
-  if (!validServiceToken(apiKey)) return null;
-  const model = optionalModelName(environment.ARIA_REPLY_CLASSIFIER_MODEL);
+  // Prefer the same cloud stack as serverGenerateText (Kimi → DeepSeek → OpenAI).
+  // A present-but-401 Kimi key fails closed here; callers must not invent INTERESTED successors.
+  const openAiCompatible = [
+    {
+      name: "kimi",
+      key: environment.KIMI_API_KEY ?? "",
+      url: `${String(environment.KIMI_BASE_URL || "https://api.moonshot.ai/v1").replace(/\/+$/, "")}/chat/completions`,
+      model: optionalModelName(environment.ARIA_REPLY_CLASSIFIER_MODEL || environment.AGENT_MODEL || "moonshot-v1-8k"),
+    },
+    {
+      name: "deepseek",
+      key: environment.DEEPSEEK_API_KEY ?? "",
+      url: `${String(environment.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/+$/, "")}/chat/completions`,
+      model: optionalModelName(environment.ARIA_REPLY_CLASSIFIER_MODEL || "deepseek-chat"),
+    },
+    {
+      name: "openai",
+      key: environment.OPENAI_API_KEY ?? "",
+      url: "https://api.openai.com/v1/chat/completions",
+      model: optionalModelName(environment.ARIA_REPLY_CLASSIFIER_MODEL),
+    },
+  ].filter((p) => validServiceToken(p.key));
+
+  if (openAiCompatible.length === 0) return null;
+
   return {
     async classifyReply({ system, prompt }) {
-      let response;
-      try {
-        response = await fetcher("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${apiKey}`,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            model,
-            temperature: 0,
-            response_format: { type: "json_object" },
-            messages: [
-              { role: "system", content: system },
-              { role: "user", content: prompt },
-            ],
-          }),
-          signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
-        });
-      } catch {
-        return { ok: false, reason: "model_unreachable" };
+      let lastReason = "model_unreachable";
+      for (const provider of openAiCompatible) {
+        let response;
+        try {
+          response = await fetcher(provider.url, {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${provider.key}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              model: provider.model,
+              temperature: 0,
+              response_format: { type: "json_object" },
+              messages: [
+                { role: "system", content: system },
+                { role: "user", content: prompt },
+              ],
+            }),
+            signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+          });
+        } catch {
+          lastReason = `${provider.name}_unreachable`;
+          continue;
+        }
+        if (!response.ok) {
+          await response.body?.cancel().catch(() => undefined);
+          lastReason = `${provider.name}_http_${response.status}`;
+          // Auth-dead / rate-limit: try next provider.
+          if (response.status === 401 || response.status === 403 || response.status === 429 || response.status >= 500) {
+            continue;
+          }
+          return { ok: false, reason: lastReason };
+        }
+        try {
+          const body = await readBoundedJson(response, MODEL_RESPONSE_BYTES);
+          const text = body?.choices?.[0]?.message?.content;
+          if (typeof text === "string" && text.trim()) return { ok: true, text };
+          lastReason = `${provider.name}_response_empty`;
+        } catch (cause) {
+          lastReason = cause instanceof Error ? cause.message : `${provider.name}_response_invalid`;
+        }
       }
-      if (!response.ok) {
-        await response.body?.cancel().catch(() => undefined);
-        return { ok: false, reason: `model_http_${response.status}` };
-      }
-      try {
-        const body = await readBoundedJson(response, MODEL_RESPONSE_BYTES);
-        const text = body?.choices?.[0]?.message?.content;
-        return typeof text === "string" && text.trim()
-          ? { ok: true, text }
-          : { ok: false, reason: "model_response_empty" };
-      } catch (cause) {
-        return { ok: false, reason: cause instanceof Error ? cause.message : "model_response_invalid" };
-      }
+      return { ok: false, reason: lastReason };
     },
   };
 }
@@ -1852,47 +1883,53 @@ async function handleInboundClassify(job, context) {
     }
 
     try {
-      // Positive interest → pre-call propose first, then first interview (dry-run).
-      successors.push(
-        successorJob(
-          "pre_call_propose",
-          `precall:reply:${campaignId}:${candidateId}`,
-          {
-            campaignId,
-            candidateId,
-            trigger: "inbound_classify",
-            intent: classification.intent,
-          },
-          65,
-        ),
-      );
-
-      const entitled = await context.client
-        .from("profiles")
-        .select("id")
-        .eq("workspace_id", job.workspace_id)
-        .eq("autopilot_enabled", true)
-        .in("role", ["admin", "member"])
-        .limit(1)
-        .maybeSingle();
-      const entitledId = typeof entitled.data?.id === "string" ? entitled.data.id : "";
-      if (entitledId) {
+      // Autopilot successors require a live model classification — keyword
+      // deterministic_fallback must not invent pre_call/draft jobs on Fly when
+      // Kimi/OpenAI are absent or auth-dead. Stage Interested above still runs
+      // so humans can book manually.
+      if (classifier === "model") {
+        // Positive interest → pre-call propose first, then first interview (dry-run).
         successors.push(
           successorJob(
-            "draft_generate",
-            `draft:reply:${campaignId}:${candidateId}`,
+            "pre_call_propose",
+            `precall:reply:${campaignId}:${candidateId}`,
             {
               campaignId,
               candidateId,
-              approvedBy: entitledId,
-              approvalSource: "autopilot_reply",
               trigger: "inbound_classify",
               intent: classification.intent,
             },
-            70,
+            65,
           ),
         );
-        draftQueued = true;
+
+        const entitled = await context.client
+          .from("profiles")
+          .select("id")
+          .eq("workspace_id", job.workspace_id)
+          .eq("autopilot_enabled", true)
+          .in("role", ["admin", "member"])
+          .limit(1)
+          .maybeSingle();
+        const entitledId = typeof entitled.data?.id === "string" ? entitled.data.id : "";
+        if (entitledId) {
+          successors.push(
+            successorJob(
+              "draft_generate",
+              `draft:reply:${campaignId}:${candidateId}`,
+              {
+                campaignId,
+                candidateId,
+                approvedBy: entitledId,
+                approvalSource: "autopilot_reply",
+                trigger: "inbound_classify",
+                intent: classification.intent,
+              },
+              70,
+            ),
+          );
+          draftQueued = true;
+        }
       }
     } catch {
       draftQueued = false;

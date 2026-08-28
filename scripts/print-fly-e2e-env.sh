@@ -112,9 +112,12 @@ EOF
 fi
 
 cat <<'EOF'
-# Fly currently ships KIMI_API_KEY — hermes outreach drafts must match:
-export AGENT_PROVIDER=kimi
-export AGENT_MODEL=moonshot-v1-8k
+# Hermes outreach: set AGENT_PROVIDER to a *live* provider on Fly (probe first).
+# Do NOT hard-pin kimi when KIMI_API_KEY is auth-dead (HTTP 401).
+#   bash scripts/probe-fly-llm-auth.sh   # expect RESULT: llm_auth_ok
+# Then export one of: kimi | deepseek | openai | anthropic matching the live key.
+# export AGENT_PROVIDER=kimi
+# export AGENT_MODEL=moonshot-v1-8k
 # optional: override webhook mailbox (defaults to connected Outlook or talent@mantu.com)
 # export E2E_INBOUND_MAILBOX='connected-outlook@yourdomain.com'
 # optional: skip live Teams book if Outlook seat not connected yet

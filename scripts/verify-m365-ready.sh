@@ -194,7 +194,14 @@ else
 fi
 
 echo
+echo "=== 3c) Live LLM auth (presence ≠ usable — reject auth-dead keys) ==="
+if ! bash "$repo/scripts/probe-fly-llm-auth.sh"; then
+  echo "ERROR: Fly LLM auth dead or absent — rotate Kimi/OpenAI/Anthropic/DeepSeek before strict E2E." >&2
+  exit 7
+fi
+
+echo
 echo "=== 4) Strict enterprise E2E (no partial flags) ==="
-unset ARIA_ALLOW_PARTIAL_M365_E2E ARIA_ALLOW_SKIP_APPROVE_E2E ARIA_ALLOW_STALE_FLY_E2E ARIA_ALLOW_SKIP_LIVE_CALENDAR || true
+unset ARIA_ALLOW_PARTIAL_M365_E2E ARIA_ALLOW_PARTIAL_LLM_E2E ARIA_ALLOW_SKIP_APPROVE_E2E ARIA_ALLOW_STALE_FLY_E2E ARIA_ALLOW_SKIP_LIVE_CALENDAR || true
 export APP_URL KONG_URL
 bash "$repo/e2e-workflow-test.sh"

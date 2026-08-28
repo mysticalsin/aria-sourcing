@@ -1247,7 +1247,8 @@ function sharedRequiredSkills(candidate: Candidate, jd: JobAnalysis): string[] {
   return candidate.techStack.filter((skill) => required.has(skill.trim().toLowerCase()));
 }
 
-function personalizationEvidence(candidate: Candidate, jd: JobAnalysis): string[] {
+/** Candidate-field personalization points (shared by mock + live draft paths). */
+export function personalizationEvidence(candidate: Candidate, jd: JobAnalysis): string[] {
   const ev: string[] = [];
   const shared = sharedRequiredSkills(candidate, jd);
   if (shared.length) ev.push(`You work across ${shared.slice(0, 3).join(", ")}, exactly our core stack`);

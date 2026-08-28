@@ -25,6 +25,14 @@ echo
 eval "$(bash "$repo/scripts/print-fly-e2e-env.sh" --export)"
 
 flags=(ARIA_ALLOW_PARTIAL_M365_E2E=1 ARIA_ALLOW_SKIP_APPROVE_E2E=1)
+# Split LLM soft-fails from M365: only soften critics_required when auth is dead.
+if ! bash "$repo/scripts/probe-fly-llm-auth.sh" >/tmp/fly-llm-auth-partial.log 2>&1; then
+  flags+=(ARIA_ALLOW_PARTIAL_LLM_E2E=1)
+  echo "NOTE: Fly LLM auth dead/absent — ARIA_ALLOW_PARTIAL_LLM_E2E=1 (critics soft-fail only)"
+  tail -n 8 /tmp/fly-llm-auth-partial.log || true
+else
+  echo "NOTE: Fly LLM auth ok — critics path stays strict under PARTIAL M365"
+fi
 case "$deploy_status" in
   tip_live) ;;
   confirm_ready_run_golive)

@@ -33,6 +33,7 @@
 #                GITHUB_QUERY  LINKEDIN_QUERY
 #                ARIA_ALLOW_SKIP_WEBHOOK_E2E=1  ARIA_ALLOW_STALE_FLY_E2E=1
 #                ARIA_ALLOW_PARTIAL_M365_E2E=1  ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E=1
+#                ARIA_ALLOW_PARTIAL_LLM_E2E=1  (critics_required / approve LLM soft-fail only)
 #                ARIA_ALLOW_SKIP_LIVE_CALENDAR=1  (PARTIAL only — never pretends full PASS)
 #                ARIA_ALLOW_SKIP_APPROVE_E2E=1  (skip steps 4–5 approve/send — owner policy)
 #                E2E_INBOUND_MAILBOX  E2E_CAMPAIGN_ID  E2E_OUTREACH_LANGUAGE
@@ -1290,14 +1291,14 @@ elif [ "$HTTP" = "200" ] && [ "$AP_OK" = "true" ]; then
   fi
 elif [ "$HTTP" = "403" ]; then
   fail "Approve 403 — session lacks the 'outreach' permission."
-elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ] \
+elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_LLM_E2E:-}" = "1" ] \
   && { [ "$HTTP" = "503" ] || [ "$HTTP" = "000" ]; } \
   && [ "$(jq -r '.status // empty' "$APPROVE_RESP" 2>/dev/null)" = "critics_required" ]; then
   warn "Approve critics_required on Fly after retries — PARTIAL continuation (live LLM critics unavailable)."
-elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ] \
+elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_LLM_E2E:-}" = "1" ] \
   && [ "$HTTP" = "000" ]; then
   warn "Approve timed out on Fly after retries — PARTIAL continuation (live LLM critics/transport unavailable)."
-elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ] \
+elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_LLM_E2E:-}" = "1" ] \
   && [ "$HTTP" = "422" ]; then
   warn "Approve quality block (422) on Fly after retries — PARTIAL continuation (non-deterministic LLM critics)."
 else

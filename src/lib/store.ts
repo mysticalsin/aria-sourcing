@@ -14,6 +14,7 @@ import {
   classifyReply,
   generateOutreach,
   newOutreachMessage,
+  personalizationEvidence as buildPersonalizationEvidence,
   type GeneratedOutreach,
   type ReplyClassification,
 } from "./mock-ai";
@@ -437,7 +438,8 @@ async function attemptLiveFollowUpGen(opts: {
         gen: {
           subject: humanizeText(parsed.subject),
           body: humanizeText(parsed.body),
-          personalizationEvidence: mockGen.personalizationEvidence,
+          // Derive from candidate fields — never claim mock draft evidence for live copy.
+          personalizationEvidence: buildPersonalizationEvidence(candidate, campaign.jobAnalysis),
           channel,
         },
         live: true,
@@ -2127,8 +2129,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               // regardless of which provider produced the draft.
               subject: humanizeText(parsed.subject),
               body: humanizeText(parsed.body),
-              // Reuse the mock's evidence — same shape, deterministic, audit-friendly.
-              personalizationEvidence: mockGen.personalizationEvidence,
+              // Derive from candidate fields — never claim mock draft evidence for live copy.
+              personalizationEvidence: buildPersonalizationEvidence(candidate, campaign.jobAnalysis),
               channel: resolvedChannel,
             };
             live = true;
@@ -2492,7 +2494,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               // ALWAYS humanize live copy too — see generateOutreachLive.
               subject: humanizeText(parsed.subject),
               body: humanizeText(parsed.body),
-              personalizationEvidence: mockGen.personalizationEvidence,
+              // Derive from candidate fields — never claim mock draft evidence for live copy.
+              personalizationEvidence: buildPersonalizationEvidence(candidate, campaign.jobAnalysis),
               channel: msg.channel,
             };
             live = true;

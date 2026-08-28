@@ -11,6 +11,7 @@ import {
   buildReplyClassificationPrompt,
   classifyRpcHttpFailure,
   createLoopRpcClient,
+  createReplyClassificationModelClient,
   handleAriaJob,
   runSourcingLoopForever,
   runSourcingLoopTick,
@@ -630,7 +631,22 @@ test("inbound_classify enqueues draft_generate for positive intent when autopilo
     },
   });
 
-  await handleAriaJob(job("inbound_classify", { inboundId: "inbound-2" }), { client });
+  await handleAriaJob(job("inbound_classify", { inboundId: "inbound-2" }), {
+    client,
+    // Model classification required — keyword INTERESTED must not invent successors.
+    modelClient: {
+      async classifyReply() {
+        return {
+          ok: true,
+          text: JSON.stringify({
+            intent: "INTERESTED",
+            confidence: 0.92,
+            summary: "Candidate wants next steps",
+          }),
+        };
+      },
+    },
+  });
   assert.equal(patches.length, 1);
   assert.deepEqual(patches[0].p_enqueue, [
     {
@@ -658,6 +674,85 @@ test("inbound_classify enqueues draft_generate for positive intent when autopilo
       priority: 70,
     },
   ]);
+});
+
+test("inbound_classify keyword INTERESTED does not invent autopilot successors", async () => {
+  const patches: Array<Record<string, unknown>> = [];
+  const { client } = rpcClient((name, args) => {
+    if (name === "read_inbound_message_for_loop") {
+      return {
+        data: {
+          status: "ok",
+          inbound_id: "inbound-kw",
+          candidate_id: "cand-kw",
+          campaign_id: "camp-kw",
+          body: "Yes I'm interested — send times.",
+          received_at: "2026-07-25T12:30:00.000Z",
+          message_id: "provider-message-kw",
+        },
+        error: null,
+      };
+    }
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: { replies: [] }, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "apply_workspace_patch") {
+      return { data: { status: "applied" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      patches.push(args);
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+  (client as { from: () => unknown }).from = () => ({
+    select() {
+      return this;
+    },
+    eq() {
+      return this;
+    },
+    in() {
+      return this;
+    },
+    limit() {
+      return this;
+    },
+    async maybeSingle() {
+      return { data: { id: "user-autopilot-1" }, error: null };
+    },
+  });
+
+  // No modelClient → deterministic_fallback classifier; entitled profile alone must not invent jobs.
+  await handleAriaJob(job("inbound_classify", { inboundId: "inbound-kw" }), { client });
+  assert.equal(patches.length, 1);
+  assert.deepEqual(patches[0].p_enqueue, []);
+});
+
+test("createReplyClassificationModelClient fails over past auth-dead Kimi to OpenAI", async () => {
+  const urls: string[] = [];
+  const client = createReplyClassificationModelClient(
+    {
+      KIMI_API_KEY: "k".repeat(32),
+      KIMI_BASE_URL: "https://api.kimi.example/v1",
+      OPENAI_API_KEY: "o".repeat(32),
+    },
+    async (url) => {
+      urls.push(String(url));
+      if (String(url).includes("kimi")) {
+        return new Response("unauthorized", { status: 401 });
+      }
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: '{"intent":"INTERESTED"}' } }] }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    },
+  );
+  assert.ok(client);
+  const result = await client!.classifyReply({ system: "s", prompt: "p" });
+  assert.equal(result.ok, true);
+  assert.ok(urls.some((u) => u.includes("kimi")));
+  assert.ok(urls.some((u) => u.includes("openai")));
 });
 
 test("calendar_book calls propose cron then records interview_proposed activity", async () => {
