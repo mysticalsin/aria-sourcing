@@ -12,7 +12,11 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo"
 
 echo "=== Golive status ==="
-deploy_status="$(bash "$repo/scripts/print-fly-golive-status.sh" | awk -F= '/^deploy_status=/{print $2}')"
+golive_out="$(bash "$repo/scripts/print-fly-golive-status.sh")"
+echo "$golive_out"
+deploy_status="$(echo "$golive_out" | awk -F= '/^deploy_status=/{print $2}')"
+live_mig="$(echo "$golive_out" | awk -F= '/^live_migration=/{print $2}')"
+tip_mig="$(echo "$golive_out" | awk -F= '/^tip_migration=/{print $2}')"
 echo
 
 eval "$(bash "$repo/scripts/print-fly-e2e-env.sh" --export)"
@@ -24,15 +28,29 @@ case "$deploy_status" in
     flags+=(ARIA_ALLOW_STALE_FLY_E2E=1)
     echo "NOTE: deploy confirm matches tip but Fly is not live yet — run:"
     echo "      bash scripts/fly-enterprise-golive-when-ready.sh"
-    echo "      (including ARIA_ALLOW_STALE_FLY_E2E=1 until /api/ready build = tip)"
+    if [ -n "$live_mig" ] && [ -n "$tip_mig" ] && [ "$live_mig" != "$tip_mig" ]; then
+      echo "      migration pending: live ${live_mig} → tip ${tip_mig}"
+    fi
+    echo "      (keep ARIA_ALLOW_STALE_FLY_E2E=1 until /api/ready build = tip)"
     ;;
   *)
     flags+=(ARIA_ALLOW_STALE_FLY_E2E=1)
     echo "NOTE: live Fly lags tip — owner remint required:"
     echo "      bash scripts/print-fly-deploy-confirm.sh → /tmp/owner-deploy-confirm.env"
+    if [ -n "$live_mig" ] && [ -n "$tip_mig" ] && [ "$live_mig" != "$tip_mig" ]; then
+      echo "      migration pending: live ${live_mig} → tip ${tip_mig}"
+    fi
+    echo "      bash scripts/fly-enterprise-golive-when-ready.sh"
     ;;
 esac
 
 echo "Running: ${flags[*]} bash e2e-workflow-test.sh"
 echo
-exec env "${flags[@]}" bash "$repo/e2e-workflow-test.sh"
+env "${flags[@]}" bash "$repo/e2e-workflow-test.sh"
+rc=$?
+
+if [ "$deploy_status" != "tip_live" ]; then
+  echo
+  echo "After owner golive (deploy_status=tip_live): rerun this script — drop stale flag; step 3c should PASS with provenance=live."
+fi
+exit "$rc"
