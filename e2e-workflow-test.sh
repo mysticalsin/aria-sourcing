@@ -1034,7 +1034,7 @@ jq -n --arg id "$AGENT_CAMPAIGN_ID" '{campaignId:$id, count:10}' > "$WORK/agent_
 SOURCING_ATTEMPT=0
 if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" != "1" ]; then
   # Strict Fly runs: transient sourcing quota and LLM critic saturation need headroom without partial escapes.
-  SOURCING_MAX="${E2E_SOURCING_MAX:-4}"
+  SOURCING_MAX="${E2E_SOURCING_MAX:-6}"
 else
   SOURCING_MAX="${E2E_SOURCING_MAX:-2}"
 fi
@@ -1044,12 +1044,17 @@ while [ "$SOURCING_ATTEMPT" -lt "$SOURCING_MAX" ]; do
     -H 'Content-Type: application/json' -H "Origin: $APP_URL" -H "Cookie: $COOKIE_HDR" \
     -H "Idempotency-Key: $(e2e_uuid)" --data-binary @"$WORK/agent_req.json")
   AG_N=$(jq -r '(.candidates // []) | length' "$RESP")
+  AG_CODE=$(jq -r '.code // empty' "$RESP")
   if [ "$HTTP" = "200" ] && [ "$(jq -r '.ok // false' "$RESP")" = "true" ] && [ "$AG_N" -gt 0 ]; then
     break
   fi
   if [ "$SOURCING_ATTEMPT" -lt "$SOURCING_MAX" ]; then
-    warn "sourcing-agent returned n=$AG_N (HTTP $HTTP) — retry $SOURCING_ATTEMPT/$SOURCING_MAX after brief backoff."
-    sleep $((2 * SOURCING_ATTEMPT))
+    BACKOFF=$((5 * SOURCING_ATTEMPT))
+    if [ "$HTTP" = "429" ] || [ "$AG_CODE" = "SOURCING_AGENT_RATE_LIMITED" ]; then
+      BACKOFF=$((30 * SOURCING_ATTEMPT))
+    fi
+    warn "sourcing-agent returned n=$AG_N (HTTP $HTTP code=${AG_CODE:-none}) — retry $SOURCING_ATTEMPT/$SOURCING_MAX after ${BACKOFF}s."
+    sleep "$BACKOFF"
   fi
 done
 AG_CODE=$(jq -r '.code // empty' "$RESP")
@@ -1254,11 +1259,12 @@ while [ "$APPROVE_TRY" -lt "$APPROVE_MAX" ]; do
   # LLM drafts are non-deterministic — retry on critic infra (503), quality block (422), or curl timeout (000).
   if [ "$HTTP" = "503" ] && [ "$(jq -r '.status // empty' "$APPROVE_RESP")" = "critics_required" ]; then
     APPROVE_TRY=$((APPROVE_TRY + 1))
-    sleep $((5 * APPROVE_TRY))
+    sleep $((10 * APPROVE_TRY))
     continue
   fi
   if [ "$HTTP" = "422" ] || [ "$HTTP" = "000" ]; then
     APPROVE_TRY=$((APPROVE_TRY + 1))
+    sleep $((5 * APPROVE_TRY))
     continue
   fi
   break
