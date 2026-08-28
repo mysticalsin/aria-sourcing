@@ -2,7 +2,7 @@
 
 **Blocker ID:** M365-FLY-6  
 **Production:** https://aria-mantu-app.fly.dev only  
-**Updated:** 2026-08-28T10:52Z
+**Updated:** 2026-08-28T11:05Z
 
 ## Missing Fly secrets (7)
 
@@ -35,10 +35,10 @@ Marker: `/tmp/az-create-mantu-graph-app.noperm`
 
 ```bash
 ARIA_ALLOW_PARTIAL_M365_E2E=1 bash e2e-workflow-test.sh
-# → 48 pass, 0 fail, 1 warn (PARTIAL) on tip 02b077b
+# → 49 pass, 0 fail, 2 warn (PARTIAL) on live 344fcaf / tip da5df66 (2026-08-28)
 ```
 
-Only remaining skip: step **6b** confirmLive Teams (no Graph seat).
+Warnings: LinkedIn approve retry (LLM 503, recovered); step **6b** confirmLive Teams skipped (no Graph seat).
 
 ## Owner action
 
