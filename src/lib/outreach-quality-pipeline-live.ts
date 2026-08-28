@@ -74,7 +74,7 @@ async function runOneCritic(
     "Body:",
     input.body.slice(0, 4_000),
   ].join("\n");
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     const live = await serverGenerateText({
       system: critic.system,
       prompt,
@@ -114,10 +114,13 @@ export async function validateOutreachQualityLive(input: {
   try {
     const channel = input.channel ?? "Email";
     const payload = { subject: input.subject, body: input.body, channel };
-    const results = await Promise.all(
-      CRITICS.map((critic) => runOneCritic(critic, payload, input.workspaceId)),
-    );
-    const llmStages = results.filter((s): s is StageResult => Boolean(s));
+    // Sequential peers: parallel bursts after draft generation starve the vault
+    // Anthropic path (env Kimi 401 failover) and return critics_required.
+    const llmStages: StageResult[] = [];
+    for (const critic of CRITICS) {
+      const result = await runOneCritic(critic, payload, input.workspaceId);
+      if (result) llmStages.push(result);
+    }
     // Fail closed: all three critic agents required for llmCriticsUsed / autonomous ready.
     // Partial or empty critic runs must not keep a deterministic "ready" while discarding
     // any negative peer signal (or silently implying full multi-agent validation).

@@ -1106,6 +1106,15 @@ MSG_LI="msg-e2e-li-$$"
 jq -n --arg m "$MSG_LI" --arg c "$CAND_ID" --arg r "$CAND_LI" --arg s "$DRAFT_SUBJECT" --arg b "$DRAFT_BODY" \
   '{messageId:$m, candidateId:$c, channel:"LinkedIn", recipient:$r, subject:$s, body:$b}' > "$WORK/approve_req.json"
 api POST "$APP_URL/api/outreach/approve" "$WORK/approve_req.json"
+# One retry on transient LLM critic infrastructure (critics_required) after a fresh draft.
+if [ "$HTTP" = "503" ] && [ "$(jq -r '.status // empty' "$RESP")" = "critics_required" ]; then
+  warn "Approve critics_required — regenerating LinkedIn draft and retrying once."
+  if require_live_draft_or_canned "LinkedIn"; then
+    jq -n --arg m "$MSG_LI" --arg c "$CAND_ID" --arg r "$CAND_LI" --arg s "$DRAFT_SUBJECT" --arg b "$DRAFT_BODY" \
+      '{messageId:$m, candidateId:$c, channel:"LinkedIn", recipient:$r, subject:$s, body:$b}' > "$WORK/approve_req.json"
+    api POST "$APP_URL/api/outreach/approve" "$WORK/approve_req.json"
+  fi
+fi
 AP_OK=$(jq -r '.ok // false' "$RESP")
 AP_PERSISTED=$(jq -r 'if has("persisted") then .persisted else true end' "$RESP")
 if [ "$HTTP" = "200" ] && [ "$AP_OK" = "true" ] && [ "$AP_PERSISTED" = "true" ]; then
