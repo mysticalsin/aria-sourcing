@@ -1096,6 +1096,9 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /RESULT: owner-blocked/.test(probe)
         && /probe-m365-unblock/.test(unblock)
         && /owner-microsoft-credentials/.test(watch)
+        && /ARIA_WAIT_LIVE_SEAT_SECONDS/.test(watch)
+        && /owner-microsoft-strict-pass\.ok/.test(watch)
+        && /verify-m365-ready|post-m365-secrets-golive/.test(watch)
       );
     },
   },

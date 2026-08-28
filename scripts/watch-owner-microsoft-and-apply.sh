@@ -42,7 +42,27 @@ apply_and_exit() {
     exit 1
   }
   touch /tmp/owner-microsoft-applied.ok
-  exit 0
+  log "Secrets on Fly. Waiting for Settings → Connect Outlook (live) + Graph webhook, then strict verify…"
+
+  # Remaining watch budget (at least 30m) for the interactive Connect Outlook step.
+  local now remain_sec wait_seat
+  now="$(date +%s)"
+  remain_sec=$(( deadline - now ))
+  if [ "$remain_sec" -lt 1800 ]; then
+    remain_sec=1800
+  fi
+  wait_seat="${ARIA_WAIT_LIVE_SEAT_SECONDS:-$remain_sec}"
+  log "ARIA_WAIT_LIVE_SEAT_SECONDS=${wait_seat} (poll until live Graph seat, then verify-m365-ready + strict E2E)"
+  if ARIA_WAIT_LIVE_SEAT_SECONDS="$wait_seat" bash "$repo/scripts/post-m365-secrets-golive.sh"; then
+    touch /tmp/owner-microsoft-strict-pass.ok
+    log "RESULT: strict M365 golive PASS (verify + E2E)"
+    exit 0
+  fi
+  rc=$?
+  log "post-m365-secrets-golive after seat-wait exit $rc — Connect Outlook may still be pending"
+  echo "  Open https://aria-mantu-app.fly.dev/settings → Connect Outlook → Enable webhook" | tee -a "$LOG"
+  echo "  Then: bash scripts/verify-m365-ready.sh" | tee -a "$LOG"
+  exit "$rc"
 }
 
 deadline=$(( $(date +%s) + MAX_MIN * 60 ))
