@@ -99,6 +99,10 @@ export function OutreachMessageCard({
   const ChannelIcon = message.channel === "Email" ? Mail : Linkedin;
   const hasEvidence = message.personalizationEvidence.length > 0;
   const actionable = message.status === "Needs Approval" || message.status === "Draft";
+  const qualityReadyAwaitingApprove =
+    message.status === "Needs Approval"
+    && message.qualityStatus === "ready"
+    && message.qualityCriticsUsed === true;
   const pendingManual = message.status === "Pending Manual Send";
   const settled = message.status === "Scheduled" || message.status === "Approved";
   const rejected = message.status === "Rejected";
@@ -343,21 +347,25 @@ export function OutreachMessageCard({
             {message.qualityStatus ? (
               <Badge
                 tone={
-                  message.qualityStatus === "ready" && message.qualityCriticsUsed === true
-                    ? "success"
-                    : message.qualityStatus === "blocked"
-                      ? "danger"
-                      : "warning"
+                  qualityReadyAwaitingApprove
+                    ? "warning"
+                    : message.qualityStatus === "ready" && message.qualityCriticsUsed === true
+                      ? "success"
+                      : message.qualityStatus === "blocked"
+                        ? "danger"
+                        : "warning"
                 }
                 size="sm"
               >
-                {message.qualityStatus === "ready" && message.qualityCriticsUsed === true
-                  ? `Quality ${message.qualityScore ?? "—"}/100 · multi-agent`
-                  : message.qualityStatus === "blocked"
-                    ? `Quality blocked ${message.qualityScore ?? "—"}/100`
-                    : `Quality needs review ${message.qualityScore ?? "—"}/100${
-                        message.qualityCriticsUsed ? " · multi-agent" : " · deterministic"
-                      }`}
+                {qualityReadyAwaitingApprove
+                  ? `Quality ${message.qualityScore ?? "—"}/100 · multi-agent · awaiting approve`
+                  : message.qualityStatus === "ready" && message.qualityCriticsUsed === true
+                    ? `Quality ${message.qualityScore ?? "—"}/100 · multi-agent`
+                    : message.qualityStatus === "blocked"
+                      ? `Quality blocked ${message.qualityScore ?? "—"}/100`
+                      : `Quality needs review ${message.qualityScore ?? "—"}/100${
+                          message.qualityCriticsUsed ? " · multi-agent" : " · deterministic"
+                        }`}
               </Badge>
             ) : null}
             {(actionable || pendingManual) && (

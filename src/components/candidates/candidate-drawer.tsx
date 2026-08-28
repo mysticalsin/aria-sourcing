@@ -1379,9 +1379,18 @@ export function CandidateDrawer({
             <Badge
               tone="success"
               size="sm"
-              title="Returned by live provider/API (sourcing-agent, GitHub, Apollo, …)"
+              title="Returned by live provider/API (sourcing-agent, Apollo, …)"
             >
               Live
+            </Badge>
+          )}
+          {supabaseEnabled && !demoLoginEnabled && !c.provenance && (
+            <Badge
+              tone="warning"
+              size="sm"
+              title="Live tenant record with no provenance stamp — verify source before outreach"
+            >
+              Unknown provenance
             </Badge>
           )}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted">

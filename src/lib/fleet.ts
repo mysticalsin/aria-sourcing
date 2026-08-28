@@ -285,6 +285,20 @@ export interface FleetSummary {
   avgComplaintRate: number;
 }
 
+/** Live mailbox ready: Graph OAuth seats skip vanity-domain DNS; API-key seats need domainVerified. */
+export function seatMailboxLiveReady(seat: AgentSeat): boolean {
+  if (seat.mode !== "live" || !seat.connectedAccount) return false;
+  if (seat.provider === "Microsoft Graph") return true;
+  return Boolean(seat.domainVerified);
+}
+
+/** Vanity-domain verify applies to API-key senders, not live Graph OAuth mailboxes. */
+export function seatNeedsDomainVerify(seat: AgentSeat): boolean {
+  if (!seat.connectedAccount) return false;
+  if (seat.provider === "Microsoft Graph" && seat.mode === "live") return false;
+  return !seat.domainVerified;
+}
+
 export function fleetSummary(seats: AgentSeat[], settings: FleetSettings, now = Date.now()): FleetSummary {
   const active = seats.filter((s) => s.status === "active");
   const capacity = active.reduce((a, s) => a + effectiveDailyCap(s, now), 0);
@@ -297,7 +311,7 @@ export function fleetSummary(seats: AgentSeat[], settings: FleetSettings, now = 
   return {
     seats: seats.length,
     activeSeats: active.length,
-    liveSeats: seats.filter((s) => s.mode === "live" && s.domainVerified).length,
+    liveSeats: seats.filter((s) => seatMailboxLiveReady(s)).length,
     sentToday: sent,
     capacityToday: capacity,
     remainingToday: remaining,

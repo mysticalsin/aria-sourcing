@@ -24,6 +24,7 @@ import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
 import { deriveLeadSource, deriveStarRating, DEFAULT_STAR_THRESHOLDS } from "@/lib/tania";
 import { SourceBadge, StarBadge } from "@/components/tania/badges";
 import { ProvenanceChip } from "@/components/candidates/consent-passport";
+import { demoLoginEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import type { Candidate, ComplianceFlags } from "@/lib/types";
 import { Ban, Bookmark, Download, EyeOff, Lock, MailX, UserX, Users } from "lucide-react";
 
@@ -225,6 +226,15 @@ export function CandidateTable({
                       title="Returned by live provider/API (sourcing-agent, GitHub, Apollo, …)"
                     >
                       Live
+                    </Badge>
+                  )}
+                  {supabaseEnabled && !demoLoginEnabled && !c.provenance && (
+                    <Badge
+                      tone="warning"
+                      size="sm"
+                      title="Live tenant record with no provenance stamp — verify source before outreach"
+                    >
+                      Unknown provenance
                     </Badge>
                   )}
                 </div>

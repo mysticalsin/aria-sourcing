@@ -243,7 +243,9 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
           preview && preview.prepQueued
             ? "Prep and confirmation drafts are queued in Outreach — approve before send. Copy is preview-only."
             : preview && !bookingNeedsCalendar(preview.booking)
-              ? "Live calendar event created. Prep and confirmation emails are drafted below; review before sending."
+              ? preview.prepQueued === false
+                ? "Live calendar event created, but prep drafts failed to queue — review emails below and draft manually in Outreach. Copy is preview-only."
+                : "Live calendar event created. Prep and confirmation go through Outreach — copy is preview-only."
               : "Needs calendar — no Teams/Outlook event was created. Connect a live Graph seat and use Confirm slot / confirmLive. Prep emails below are preview-only; this is not a booked interview."
         }
         footer={
@@ -320,6 +322,14 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
                   Interview prep drafts were enqueued for human approval — do not copy/paste send from here.
                 </p>
               </div>
+            ) : !bookingNeedsCalendar(preview.booking) ? (
+              <div className="rounded-2xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-ink-soft">
+                <p className="font-semibold text-ink">Prep not queued</p>
+                <p className="mt-1 text-xs">
+                  Live calendar event exists but Outreach prep drafts did not enqueue — draft and approve in
+                  Outreach; do not copy/paste send from here.
+                </p>
+              </div>
             ) : null}
 
             <EmailBlock
@@ -327,7 +337,7 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
               title="Interviewer prep"
               subtitle={`To ${preview.booking.interviewer}`}
               body={preview.prepEmail}
-              previewOnly={preview.prepQueued}
+              previewOnly={preview.prepQueued || !bookingNeedsCalendar(preview.booking)}
               onCopy={() => copy(preview.prepEmail, "Prep email")}
             />
             <EmailBlock
@@ -335,7 +345,7 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
               title="Candidate confirmation"
               subtitle={`To ${preview.booking.candidateName}`}
               body={preview.confirmationEmail}
-              previewOnly={preview.prepQueued}
+              previewOnly={preview.prepQueued || !bookingNeedsCalendar(preview.booking)}
               onCopy={() => copy(preview.confirmationEmail, "Confirmation email")}
             />
           </div>

@@ -72,5 +72,5 @@ test("seatCanSendLive still requires SPF for non-Graph API providers", () => {
     seat({ provider: "SendGrid", domainVerified: false, connectedAccount: "ops@example.com" }),
   );
   assert.equal(blocked.ok, false);
-  assert.match(blocked.reason, /Domain not verified/);
+  assert.match(blocked.reason, /Sender domain not verified/);
 });
