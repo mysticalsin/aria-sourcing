@@ -1123,8 +1123,17 @@ if [ "$HTTP" = "503" ] && [ "$(jq -r '.status // empty' "$RESP")" = "critics_req
 fi
 AP_OK=$(jq -r '.ok // false' "$RESP")
 AP_PERSISTED=$(jq -r 'if has("persisted") then .persisted else true end' "$RESP")
+AP_CRITICS=$(jq -r '.qualityCriticsUsed // false' "$RESP")
+AP_CRITIC_N=$(jq -r '.criticStageCount // 0' "$RESP")
 if [ "$HTTP" = "200" ] && [ "$AP_OK" = "true" ] && [ "$AP_PERSISTED" = "true" ]; then
   pass "Human approval RECORDED server-side (this is the state the client renders as 'Pending Manual Send')."
+  if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ]; then
+    if [ "$AP_CRITICS" = "true" ] && [ "$AP_CRITIC_N" -ge 3 ]; then
+      pass "Multi-agent quality validation: live LLM critics used (stages=$AP_CRITIC_N)."
+    else
+      fail "Fly approve missing live multi-agent critics proof (qualityCriticsUsed=$AP_CRITICS criticStageCount=$AP_CRITIC_N)."
+    fi
+  fi
 elif [ "$HTTP" = "200" ] && [ "$AP_OK" = "true" ]; then
   if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ]; then
     fail "Approve returned persisted:false on Fly — public-demo mode must be off for enterprise E2E."

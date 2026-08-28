@@ -385,6 +385,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /demoLoginEnabled/.test(approve)
         && /demoLoginEnabled/.test(send)
         && /Human approval resolves needs_review|needs_review is resolved/.test(approve + send)
+        && /qualityCriticsUsed/.test(approve)
+        && /criticStageCount/.test(approve)
+        && /Multi-agent quality validation: live LLM critics used/.test(
+          readFileSync("e2e-workflow-test.sh", "utf8"),
+        )
         && !/fail open to deterministic/.test(approve)
         && !/fail open to deterministic/.test(send)
         && !/status === "blocked" \|\| liveVerdict\.status === "needs_review"/.test(approve)

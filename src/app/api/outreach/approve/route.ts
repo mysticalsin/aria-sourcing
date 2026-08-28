@@ -164,5 +164,10 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ ok: false, error: "Failed to record approval." }, { status: 500 });
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    qualityCriticsUsed: liveVerdict.llmCriticsUsed === true,
+    criticStageCount: liveVerdict.stages.length,
+    qualityStatus: liveVerdict.status,
+  });
 }
