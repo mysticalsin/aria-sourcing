@@ -91,7 +91,7 @@ Format: `| Section | Check | Status | Evidence | Fix owner |`
 | Security | MCP production allowlist | pass | mig 0056, admin API | admin rows |
 | Enterprise | Entra SSO | ops-blocker | `NEXT_PUBLIC_ENABLE_AZURE_LOGIN=false` | Tony (E-2) |
 | Enterprise | Verified email domain (P-7) | ops-blocker | Resend/SendGrid not wired on Fly | Tony |
-| Enterprise | M365 Graph secrets (6 missing) | ops-blocker | `scripts/az-configure-existing-graph-app.sh` | Tony |
+| Enterprise | M365 secrets (6) | ops-blocker | [`M365-OWNER-UNBLOCK.md`](M365-OWNER-UNBLOCK.md) + `print-m365-owner-portal-checklist.sh` | Tony |
 | Enterprise | `/api/ready` agentFrameworks | warn | non-blocker per vision; documented | — |
 | Enterprise | Dependabot high alerts | open | E-11 triage | eng |
 

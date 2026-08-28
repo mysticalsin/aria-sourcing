@@ -1013,6 +1013,22 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
+    requirement: "M365 owner unblock runbook when az cannot create Entra apps",
+    evidence: () => {
+      const doc = readFileSync("_relay/M365-OWNER-UNBLOCK.md", "utf8");
+      const script = readFileSync("scripts/print-m365-owner-portal-checklist.sh", "utf8");
+      const configure = readFileSync("scripts/az-configure-existing-graph-app.sh", "utf8");
+      return (
+        /M365-FLY-6|M365 secrets \(6\)/.test(doc)
+        && /az-configure-existing-graph-app/.test(doc)
+        && /Insufficient privileges/.test(doc)
+        && /ARIA_AZURE_APP_ID/.test(script)
+        && /aria-mantu-app\.fly\.dev/.test(script)
+        && /ARIA_AZURE_APP_ID/.test(configure)
+      );
+    },
+  },
+  {
     requirement: "Golive status probe documents tip vs live vs confirm without secrets",
     evidence: () => {
       const status = readFileSync("scripts/print-fly-golive-status.sh", "utf8");

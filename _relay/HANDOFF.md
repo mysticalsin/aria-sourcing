@@ -15,7 +15,7 @@ status: tip-live-0071-fly-e2e-partial-m365-blocked
 - **Test gate / audit:** green; **58/58**
 - **Fly E2E (PARTIAL):** **38 pass, 0 fail, 4 warn** — M365 + sourcing quota skips only
 - **PR:** [#35](https://github.com/mysticalsin/aria-sourcing/pull/35) (supersedes #29–#33)
-- **Production:** `https://aria-mantu-app.fly.dev` only
+- **Deploy confirm:** `bash scripts/print-fly-deploy-confirm.sh` when tip code changes
 
 ## Done this shift
 
@@ -25,11 +25,13 @@ status: tip-live-0071-fly-e2e-partial-m365-blocked
 
 ## Blockers (owner — full objective)
 
-1. **M365 secrets (6 missing)** — no live Graph seat, Entra SSO off, no confirmLive Teams book
+1. **M365 secrets (6 missing)** — see [`M365-OWNER-UNBLOCK.md`](M365-OWNER-UNBLOCK.md)
+   - `bash scripts/print-m365-owner-portal-checklist.sh` (tenant-specific portal URLs)
    - `export ARIA_AZURE_APP_ID=... && bash scripts/az-configure-existing-graph-app.sh --apply`
-   - Or `/tmp/owner-microsoft.env` → `bash scripts/fly-apply-owner-microsoft-secrets.sh`
-2. **Full Fly E2E PASS** — requires M365 + remove `ARIA_ALLOW_PARTIAL_M365_E2E=1`
-3. **Step 3c** `provenance=live` — blocked by shared sourcing quota today (warn, not fail)
+2. **Full Fly E2E PASS** — strict run today: **42 pass, 9 fail** (no partial flags)
+   - Failures: sourcing quota (3c), Hermes drafts (4–5), M365 Teams book (6b)
+   - Honest partial: **38 pass, 0 fail, 4 warn** via `run-enterprise-e2e-partial.sh`
+3. **Sourcing quota** — shared Fly tenant daily limit; retry tomorrow or reset quota; **expect step 3c PASS** with `provenance=live` when quota allows
 
 ## Next steps
 
