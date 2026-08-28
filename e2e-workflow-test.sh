@@ -670,6 +670,15 @@ if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_
   else
     info "No connected Outlook mailbox yet — Graph subscription check deferred until Connect Outlook."
   fi
+elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ]; then
+  # Honest PARTIAL: surface M365 gaps as WARN + skip flag (never silent PASS).
+  if [ "$MS_OAUTH" != "true" ]; then
+    warn "PARTIAL: microsoftOAuth=false — MICROSOFT_CLIENT_* not ready; calendar/Teams steps will skip."
+    E2E_SKIP_M365=1
+  fi
+  if [ "$INBOUND_READY" != "true" ]; then
+    warn "PARTIAL: inboundWebhookSecret=false — EMAIL_INBOUND_WEBHOOK_SECRET not ready."
+  fi
 fi
 # email/test hiring_need_handler: ready without Graph (HMAC path). Assert when any mailbox seat exists.
 TEST_SEAT=$(jq -r '

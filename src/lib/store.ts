@@ -2704,19 +2704,20 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         (msg.channel === "Email" || msg.channel === "WhatsApp" || msg.channel === "SMS") && isLive;
       // HYBRID send model: in LIVE mode an approval records approval and holds the
       // de-dupe slot (ledger 'claimed') but NEVER sends — an explicit sendApprovedOutreach()
-      // actually delivers and only then flips to 'sent'. In dry-run/demo we simulate the
-      // send so the showcase stays alive. This is the never-auto-send guarantee.
+      // actually delivers and only then flips to 'sent'. Dry-run approves without simulating
+      // a delivery (no Scheduled/sentAt/Contacted/ledger sent) so rehearsal cannot look live.
       const isPendingSend = isLinkedInManual || isLiveSendChannel;
       const finalStatus: OutreachStatus = isLinkedInManual
         ? "Pending Manual Send"
-        : isLiveSendChannel
+        : isLiveSendChannel || forceDryRun
           ? "Approved"
           : "Scheduled";
       const finalLedgerStatus: LedgerStatus = isLinkedInManual
         ? "pending_manual"
-        : isLiveSendChannel
+        : isLiveSendChannel || forceDryRun
           ? "claimed"
           : "sent";
+      const stampSimulatedSend = !forceDryRun && !isPendingSend;
       commit((prev) => {
         const outreach = prev.outreach.map((m) =>
           m.id === messageId
@@ -2724,8 +2725,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 ...m,
                 status: finalStatus,
                 approvedBy: prev.settings.operatorName,
-                scheduledFor: isPendingSend ? null : now,
-                sentAt: isPendingSend ? null : now,
+                scheduledFor: stampSimulatedSend ? now : null,
+                sentAt: stampSimulatedSend ? now : null,
                 dryRun: forceDryRun,
               }
             : m,
@@ -2734,12 +2735,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           c.id === candidate.id
             ? {
                 ...c,
-                stage: isPendingSend
-                  ? c.stage
-                  : (["Sourced"].includes(c.stage) ? "Contacted" : c.stage) as CandidateStage,
-                // Always stamp the contact time — a LinkedIn manual contact still
-                // claims the candidate, so the de-dupe re-contact window (fleet.ts,
-                // rules.ts) must see it to block a second touch.
+                stage: stampSimulatedSend
+                  ? ((["Sourced"].includes(c.stage) ? "Contacted" : c.stage) as CandidateStage)
+                  : c.stage,
+                // Stamp contact time for de-dupe when approving (including dry-run /
+                // pending send) so a second touch is blocked — stage stays honest above.
                 lastContactedAt: now,
                 outreachHistory: [
                   { messageId, channel: msg.channel, subject: msg.subject, status: finalStatus, at: now },
@@ -2777,10 +2777,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                     ...c.metrics,
                     emailsSentToday:
                       c.metrics.emailsSentToday
-                      + (msg.channel === "Email" && !isPendingSend && !forceDryRun ? 1 : 0),
+                      + (msg.channel === "Email" && stampSimulatedSend ? 1 : 0),
                     linkedinSentToday:
                       c.metrics.linkedinSentToday
-                      + (msg.channel === "LinkedIn" && !forceDryRun && !isLinkedInManual ? 1 : 0),
+                      + (msg.channel === "LinkedIn" && stampSimulatedSend ? 1 : 0),
                   },
                 }
               : c,

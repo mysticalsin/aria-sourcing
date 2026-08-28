@@ -330,6 +330,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /reconciliation-required/.test(readFileSync("src/components/outreach/whatsapp-template-picker.tsx", "utf8"))
         && /Proposed interview prep/.test(readFileSync("src/lib/mock-ai.ts", "utf8"))
         && /ARIA_LOOP_KILL_SWITCH=false/.test(readFileSync("src/components/settings/loop-switchboard-panel.tsx", "utf8"))
+        && /stampSimulatedSend/.test(readFileSync("src/lib/store.ts", "utf8"))
+        && /integrations\.filter\(\(i\) => i\.real\)/.test(readFileSync("src/components/dashboard/integration-strip.tsx", "utf8"))
+        && /PARTIAL: microsoftOAuth=false/.test(readFileSync("e2e-workflow-test.sh", "utf8"))
+        && /llm_auth=/.test(readFileSync("scripts/print-fly-golive-status.sh", "utf8"))
+        && /DATA_ENCRYPTION_KEY/.test(readFileSync("scripts/print-fly-missing-secrets.sh", "utf8"))
       );
     },
   },

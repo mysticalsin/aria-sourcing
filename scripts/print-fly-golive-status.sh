@@ -43,6 +43,16 @@ if [ -n "${FLY_API_TOKEN:-}" ] || [ -r "$repo/production-readiness/.fly-token.en
   M365_MISSING="$(bash "$repo/scripts/print-fly-missing-secrets.sh" 2>/dev/null | grep -c '^MISSING' || true)"
 fi
 
+LLM_AUTH="unknown"
+LLM_OUT="$(bash "$repo/scripts/probe-fly-llm-auth.sh" 2>/dev/null || true)"
+if echo "$LLM_OUT" | grep -q 'RESULT: llm_auth_ok'; then
+  LLM_AUTH="ok"
+elif echo "$LLM_OUT" | grep -q 'RESULT: llm_auth_dead'; then
+  LLM_AUTH="dead"
+elif echo "$LLM_OUT" | grep -qE 'RESULT: llm_(auth_absent|keys_absent)'; then
+  LLM_AUTH="absent"
+fi
+
 echo "tip_sha=${TIP}"
 echo "tip_migration=${TIP_MIG:-unknown}"
 echo "live_sha=${LIVE:-unknown}"
@@ -53,6 +63,7 @@ echo "confirm_file_present=${CONFIRM_FILE_PRESENT}"
 echo "confirm_matches_tip=${CONFIRM_MATCH}"
 echo "confirm_stale_for_tip=${CONFIRM_STALE}"
 echo "m365_secrets_missing=${M365_MISSING}"
+echo "llm_auth=${LLM_AUTH}"
 if [ -n "$LIVE" ] && [[ "$LIVE" == "$TIP"* ]]; then
   echo "deploy_status=tip_live"
 elif [ "$CONFIRM_MATCH" = "yes" ]; then

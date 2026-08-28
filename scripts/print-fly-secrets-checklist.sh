@@ -29,7 +29,12 @@ flyctl secrets set -a aria-mantu-app \
   EMAIL_INBOUND_WEBHOOK_SECRET='PLACEHOLDER_32+_CHAR_WEBHOOK_SECRET' \
   MICROSOFT_CLIENT_ID='PLACEHOLDER_AZURE_APP_CLIENT_ID' \
   MICROSOFT_CLIENT_SECRET='PLACEHOLDER_AZURE_APP_CLIENT_SECRET' \
-  MICROSOFT_REDIRECT_URI='https://aria-mantu-app.fly.dev/auth/microsoft/callback'
+  MICROSOFT_REDIRECT_URI='https://aria-mantu-app.fly.dev/auth/microsoft/callback' \
+  MICROSOFT_TENANT_ID='PLACEHOLDER_AZURE_TENANT_ID'
+
+# Vault/mailbox token encryption (required by verify-m365-ready.sh):
+# flyctl secrets set -a aria-mantu-app DATA_ENCRYPTION_KEY='PLACEHOLDER_32+_CHAR_ENCRYPTION_KEY'
+# (usually already present on aria-mantu-app — confirm via print-fly-missing-secrets.sh)
 
 # Arm the loop worker process (required for webhook → campaign E2E materialization):
 flyctl secrets set -a aria-mantu-app ARIA_LOOP_KILL_SWITCH='false'
