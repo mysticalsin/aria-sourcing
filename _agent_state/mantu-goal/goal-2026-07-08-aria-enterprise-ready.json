@@ -328,6 +328,6 @@
   ],
   "metrics_at_completion": null,
   "retro_id": null,
-  "last_shift_note": "2026-08-28T03:18Z shift 224: golive script wires print-fly-golive-status; audit 56/56. Gate green, live E2E PARTIAL 0 fail. Fly stale — owner remint. Microsoft SKIPPED. Goal IN_PROGRESS.",
-  "updated_at": "2026-08-28T03:18:00+00:00"
+  "last_shift_note": "2026-08-28T03:20Z shift 225: fixed HANDOFF PR #32 lineage (audit 56/56 restored); PR #33 marked ready for review; live E2E PARTIAL 0 fail. Fly stale — owner remint. Microsoft SKIPPED. Goal IN_PROGRESS.",
+  "updated_at": "2026-08-28T03:20:00+00:00"
 }
