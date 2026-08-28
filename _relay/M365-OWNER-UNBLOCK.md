@@ -44,6 +44,8 @@ Strict E2E (no partial flag) correctly **FAIL**s on: `microsoftOAuth=false` + st
 
 ```bash
 bash scripts/print-m365-owner-portal-checklist.sh
+bash scripts/probe-m365-unblock.sh              # status
+bash scripts/probe-m365-unblock.sh --apply      # when drop-zone or env exports ready
 # Option A — existing app:
 export ARIA_AZURE_APP_ID='<client-id>'
 bash scripts/az-configure-existing-graph-app.sh --apply
