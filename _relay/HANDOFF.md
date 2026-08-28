@@ -3,14 +3,14 @@ project: MSourcing / ARIA
 shift: 252
 agent: cursor-cloud
 updated: 2026-08-28T08:50Z
-status: tip-live-04356c9-e2e-partial-m365-only
+status: tip-live-3bbc163-e2e-partial-m365-only
 ---
 
 # Handoff — Shift 252
 
 ## Current state
 
-- **Branch / Live Fly tip:** `04356c9` (deploy pending if ready still on dd4f187) · migration **0071**
+- **Branch / Live Fly tip:** `3bbc163` · migration **0071** · `deploy_status=tip_live`
 - **Test gate / audit:** green; **59/59**
 - **Fly E2E (PARTIAL):** step 3c PASS (count:10 → live); **only** M365 Graph seat skip (6b)
 - **PR:** [#35](https://github.com/mysticalsin/aria-sourcing/pull/35)
