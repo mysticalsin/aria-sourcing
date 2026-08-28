@@ -977,6 +977,21 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
+    requirement: "Golive status probe documents tip vs live vs confirm without secrets",
+    evidence: () => {
+      const status = readFileSync("scripts/print-fly-golive-status.sh", "utf8");
+      const golive = readFileSync("scripts/fly-enterprise-golive-when-ready.sh", "utf8");
+      const handoff = readFileSync("_relay/HANDOFF.md", "utf8");
+      return (
+        /deploy_status=/.test(status)
+        && /confirm_matches_tip=/.test(status)
+        && /stale_owner_remint_required/.test(status)
+        && /print-fly-golive-status\.sh/.test(golive)
+        && /print-fly-golive-status/.test(handoff)
+      );
+    },
+  },
+  {
     requirement: "Post-deploy PARTIAL E2E: step 3c provenance gate + cascade fail-closed + MS-gap PARTIAL only when FAILS=0",
     evidence: () => {
       const script = readFileSync("e2e-workflow-test.sh", "utf8");

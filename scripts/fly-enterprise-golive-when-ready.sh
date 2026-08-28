@@ -21,6 +21,10 @@ cd "$repo"
 APP_URL="${APP_URL:-https://aria-mantu-app.fly.dev}"
 TIP="$(git rev-parse HEAD)"
 
+echo "=== Golive status (tip vs live vs confirm) ==="
+bash "$repo/scripts/print-fly-golive-status.sh"
+echo
+
 if [ -z "${FLY_API_TOKEN:-}" ] && [ -r "$repo/production-readiness/.fly-token.env" ]; then
   export FLY_API_TOKEN="$(tr -d '\n\r ' < "$repo/production-readiness/.fly-token.env")"
 fi
@@ -124,4 +128,5 @@ fi
 
 echo
 echo "Still blocked for live E2E PASS (need secrets + confirm + Outlook webhook after tip)."
+bash "$repo/scripts/print-fly-golive-status.sh"
 exit 1
