@@ -960,6 +960,29 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
+    requirement: "Post-deploy PARTIAL E2E: step 3c provenance gate + cascade fail-closed + MS-gap PARTIAL only when FAILS=0",
+    evidence: () => {
+      const script = readFileSync("e2e-workflow-test.sh", "utf8");
+      const route = readFileSync("src/app/api/sourcing-agent/route.ts", "utf8");
+      const handoff = readFileSync("_relay/HANDOFF.md", "utf8");
+      return (
+        /select\(\.provenance=="live"\)/.test(script)
+        && /live=\$AG_LIVE/.test(script)
+        && /Fly enterprise E2E requires a live sourced candidate/.test(script)
+        && /ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E/.test(script)
+        && /ARIA_ALLOW_SKIP_APPROVE_E2E/.test(script)
+        && /ARIA_ALLOW_PARTIAL_M365_E2E/.test(script)
+        && /RESULT: PARTIAL/.test(script)
+        && /RESULT: FAIL/.test(script)
+        && /MS_LIVE_GAP/.test(script)
+        && /provenance:\s*"live"/.test(route)
+        && (/step 3c|3c FAIL|live=0/.test(handoff) || /provenance fix/.test(handoff))
+        && /expect step 3c PASS|step 3c should show live=n/.test(handoff)
+        && /never pretends full PASS|never pretends full enterprise PASS/.test(script)
+      );
+    },
+  },
+  {
     requirement: "parse→campaign→sourcing→draft→quality chain pinned (E2E + worker + draft recover)",
     evidence: () => {
       const script = readFileSync("e2e-workflow-test.sh", "utf8");
