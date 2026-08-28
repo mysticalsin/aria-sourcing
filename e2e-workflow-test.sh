@@ -1027,6 +1027,7 @@ fi
 CAND_ID=$(jq -r 'if type=="object" and .id then .id else empty end' "$WORK/cand0.json")
 CAND_LI=$(jq -r '(.linkedinUrl // .githubUrl // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null)
 CAND_EMAIL=$(jq -r '(.email // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null)
+CAND_NAME=$(jq -r '(.name // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null)
 if [ -z "$CAND_ID" ]; then
   if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E:-}" != "1" ] && [ "${E2E_SKIP_SOURCING:-0}" != "1" ]; then
     fail "Fly enterprise E2E requires a live sourced candidate (no synthetic cand-e2e). Set ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E=1 only for partial runs."
@@ -1042,12 +1043,13 @@ if [ -z "$CAND_ID" ]; then
 fi
 [ -n "$CAND_LI" ] || CAND_LI="https://www.linkedin.com/in/e2e-candidate"
 [ -n "$CAND_EMAIL" ] || CAND_EMAIL="e2e.candidate@example.com"
+[ -n "$CAND_NAME" ] || CAND_NAME="${E2E_CANDIDATE_NAME:-Alex Chen}"
 
 # ---- draft generator: /api/hermes/chat task=outreach; Fly fail-closed (no canned) ----
 DRAFT_SUBJECT=""; DRAFT_BODY=""
 gen_draft() {  # $1 = channel label used only in the prompt
   local channel="$1" prompt gen ok text
-  prompt="Write a short first-touch ${channel} outreach message to a senior TypeScript engineer named ${CAND_ID%%-*} about a Senior TypeScript Engineer role in London. Lead with their work, one genuine reason, soft ask."
+  prompt="Write a short first-touch ${channel} outreach message to a senior TypeScript engineer named ${CAND_NAME} about a Senior TypeScript Engineer role in London with Mantu Group. Mention Mantu Group by name, lead with their work, one genuine reason, soft ask. Format: Subject: ... then body."
   jq -n --arg p "$prompt" --arg prov "$AGENT_PROVIDER" --arg model "$OUTREACH_MODEL" \
     '{task:"outreach", prompt:$p, provider:$prov, model:$model}' > "$WORK/draft_req.json"
   api POST "$APP_URL/api/hermes/chat" "$WORK/draft_req.json"
