@@ -11,7 +11,7 @@ status: post-m365-loop-hardening
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft (HOLD — do not open another)
-- **Live Fly tip (prior):** `fca5ef6` / **0071** — this shift ships loop-hardening; redeploy after push
+- **Live Fly:** `a71af3d` / **0071** · ready ok · **`deploy_status=tip_live`**
 - **Audit:** **64/64** (was 62; +inbound subject+body idle route, +OAuth Live toggle honesty, +calendar empty-scope/orphan-delete pins)
 - **M365:** still `fly_m365_missing=7` · watcher armed · `/tmp/owner-microsoft.env` absent
 - **Goal:** strict E2E PASS still blocked on M365 secrets + Connect Outlook + Graph webhook

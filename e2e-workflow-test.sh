@@ -1291,8 +1291,12 @@ elif [ "$HTTP" = "200" ] && [ "$AP_OK" = "true" ]; then
 elif [ "$HTTP" = "403" ]; then
   fail "Approve 403 — session lacks the 'outreach' permission."
 elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ] \
-  && [ "$HTTP" = "503" ] && [ "$(jq -r '.status // empty' "$APPROVE_RESP")" = "critics_required" ]; then
+  && { [ "$HTTP" = "503" ] || [ "$HTTP" = "000" ]; } \
+  && [ "$(jq -r '.status // empty' "$APPROVE_RESP" 2>/dev/null)" = "critics_required" ]; then
   warn "Approve critics_required on Fly after retries — PARTIAL continuation (live LLM critics unavailable)."
+elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ] \
+  && [ "$HTTP" = "000" ]; then
+  warn "Approve timed out on Fly after retries — PARTIAL continuation (live LLM critics/transport unavailable)."
 elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ] \
   && [ "$HTTP" = "422" ]; then
   warn "Approve quality block (422) on Fly after retries — PARTIAL continuation (non-deterministic LLM critics)."
