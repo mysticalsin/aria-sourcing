@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 280
 agent: cursor-cloud
-updated: 2026-08-28T11:15Z
+updated: 2026-08-28T11:13Z
 status: partial-e2e-green-m365-owner-blocked
 ---
 
@@ -21,9 +21,9 @@ status: partial-e2e-green-m365-owner-blocked
 
 ## Done this shift
 
-1. Entra reprobe — still zero aria-mantu redirect apps
-2. Re-ran `run-enterprise-e2e-partial.sh` — PARTIAL green (0 fail)
-3. Re-requested owner setup action
+1. Timer `m365-secrets-reprobe` fired — still 7 missing secrets, no owner env
+2. Entra rescan — zero aria-mantu redirect apps
+3. Re-requested owner setup action · rescheduled 30m timer
 
 ## Blockers
 
