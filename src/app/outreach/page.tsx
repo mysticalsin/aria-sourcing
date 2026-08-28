@@ -12,7 +12,6 @@ import {
   Select,
   EmptyState,
   Progress,
-  SkeletonCard,
   useToast,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
@@ -408,15 +407,10 @@ function OutreachView() {
       <HydrationGate
         hydrated={hydrated}
         fallback={
-          <div className="grid gap-6 lg:grid-cols-3">
-            <div className="space-y-6 lg:col-span-2">
-              <SkeletonCard />
-              <SkeletonCard />
-            </div>
-            <div className="space-y-6">
-              <SkeletonCard />
-            </div>
-          </div>
+          <EmptyState
+            title="Loading outreach…"
+            description="Approval queue and drafts appear after workspace hydrate — no placeholder message cards."
+          />
         }
       >
         <div className="space-y-6">
@@ -745,15 +739,10 @@ export default function OutreachPage() {
   return (
     <React.Suspense
       fallback={
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="space-y-6 lg:col-span-2">
-            <SkeletonCard />
-            <SkeletonCard />
-          </div>
-          <div className="space-y-6">
-            <SkeletonCard />
-          </div>
-        </div>
+        <EmptyState
+          title="Loading outreach…"
+          description="Approval queue and drafts appear after workspace hydrate — no placeholder message cards."
+        />
       }
     >
       <OutreachView />

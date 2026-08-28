@@ -205,7 +205,8 @@ async function main() {
     "confirm cron replays claimed outcomes without re-calling Graph",
     /claim\.replay/.test(confirmSrc)
       && /bookingStatus === "claimed"/.test(confirmSrc)
-      && /deliveryState === "not-sent"/.test(confirmSrc),
+      && /deliveryState === "not-sent"/.test(confirmSrc)
+      && /isTeamsMeetingJoinUrl\(claim\.meetingUrl\)/.test(confirmSrc),
   );
   ok("worker pre_call / first_interview call propose cron", /calendarProposeUrl/.test(workerSrc) && /handlePreCallPropose/.test(workerSrc));
   ok("worker first_interview tries live confirm before dry-run propose", /calendarConfirmUrl/.test(workerSrc) && /loop_confirm_live/.test(workerSrc));

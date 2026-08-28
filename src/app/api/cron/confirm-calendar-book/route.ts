@@ -161,6 +161,21 @@ export async function POST(req: NextRequest) {
   if (claim.replay) {
     // Same requestId retry — never call Graph again; return the prior outcome.
     if (claim.bookingStatus === "confirmed") {
+      // Confirmed without a Teams join URL is ledger corruption / orphan Graph —
+      // never advertise created to the worker (it would treat a bare webLink as live).
+      if (!claim.meetingUrl || !isTeamsMeetingJoinUrl(claim.meetingUrl)) {
+        return NextResponse.json(
+          {
+            ok: false,
+            status: "reconciliation_required",
+            detail:
+              "Prior confirmed claim is missing a Teams join URL. Do not retry until reconciled.",
+            claimId: claim.id,
+            eventId: claim.externalEventId ?? null,
+          },
+          { status: 502 },
+        );
+      }
       return NextResponse.json({
         ok: true,
         status: "created",

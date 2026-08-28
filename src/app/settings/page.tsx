@@ -14,7 +14,6 @@ import {
   Button,
   Badge,
   EmptyState,
-  SkeletonCard,
   useToast,
   useConfirm,
 } from "@/components/ui";
@@ -469,11 +468,10 @@ export default function SettingsPage() {
       <HydrationGate
         hydrated={hydrated}
         fallback={
-          <div className="space-y-6">
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-          </div>
+          <EmptyState
+            title="Loading settings…"
+            description="Workspace integrations and seats load here once hydrated — no placeholder connection cards."
+          />
         }
       >
         <div className="grid gap-8 lg:grid-cols-[220px_1fr]">

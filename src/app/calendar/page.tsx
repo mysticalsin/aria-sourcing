@@ -12,7 +12,6 @@ import {
   EmptyState,
   Modal,
   useToast,
-  SkeletonCard,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { BookingCalendar } from "@/components/calendar/booking-calendar";
@@ -367,6 +366,8 @@ export default function CalendarPage() {
       !c.complianceFlags.suppressed &&
       !c.complianceFlags.doNotContact,
   );
+  const bookedInterviews = bookings.filter((b) => !bookingNeedsCalendar(b));
+  const needsCalendarCount = bookings.filter((b) => bookingNeedsCalendar(b)).length;
 
   return (
     <>
@@ -377,14 +378,14 @@ export default function CalendarPage() {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="violet" dot>
-              {pluralize(bookings.length, "interview")}
+              {pluralize(bookedInterviews.length, "interview")}
             </Badge>
             <Badge tone="tangerine" dot>
               {ready.length} ready
             </Badge>
-            {bookings.some((b) => bookingNeedsCalendar(b)) ? (
+            {needsCalendarCount > 0 ? (
               <Badge tone="warning" dot>
-                Needs calendar
+                {needsCalendarCount} needs calendar
               </Badge>
             ) : null}
           </div>
@@ -394,15 +395,10 @@ export default function CalendarPage() {
       <HydrationGate
         hydrated={hydrated}
         fallback={
-          <div className="grid gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <SkeletonCard />
-            </div>
-            <div className="space-y-6">
-              <SkeletonCard />
-              <SkeletonCard />
-            </div>
-          </div>
+          <EmptyState
+            title="Loading calendar…"
+            description="Workspace state is still hydrating. Confirmed Teams interviews appear here once ready — no placeholder agenda."
+          />
         }
       >
         <div className="grid gap-6 lg:grid-cols-3">

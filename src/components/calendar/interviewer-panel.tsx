@@ -4,6 +4,7 @@ import * as React from "react";
 import { Users, Sparkles, CalendarCheck, Plus, Trash2 } from "lucide-react";
 import { Card, CardHeader, CardBody, CardTitle, Eyebrow, Badge, Progress, EmptyState, Field, Input, Button, Switch } from "@/components/ui";
 import { useActions, useBookings, useInterviewers, useRole } from "@/lib/store";
+import { bookingNeedsCalendar } from "@/lib/booking-status";
 import { can } from "@/lib/rbac";
 import { cn, initialsFrom, pluralize } from "@/lib/utils";
 
@@ -24,7 +25,8 @@ export function InterviewerPanel() {
     const counts = new Map<string, number>();
     let active = 0;
     for (const b of bookings) {
-      if (!ACTIVE_STATUSES.has(b.status) || !b.interviewerEmail) continue;
+      // Local Proposed slots without teamsLink/calLink are not real load.
+      if (!ACTIVE_STATUSES.has(b.status) || !b.interviewerEmail || bookingNeedsCalendar(b)) continue;
       active += 1;
       counts.set(b.interviewerEmail, (counts.get(b.interviewerEmail) ?? 0) + 1);
     }
