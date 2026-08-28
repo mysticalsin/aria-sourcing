@@ -9,6 +9,7 @@ import "server-only";
  * human-likeness) — fail-closed when any required critic cannot run.
  */
 
+import { HERMES_QUALITY_CRITICS } from "@/lib/agents/hermes-agent-registry";
 import { serverGenerateText } from "@/lib/ai/server-generate";
 import {
   validateOutreachQuality,
@@ -45,33 +46,11 @@ type CriticSpec = {
   system: string;
 };
 
-const CRITICS: CriticSpec[] = [
-  {
-    key: "empathy",
-    stage: "llm_empathy",
-    system:
-      "You are the empathy critic for recruiting outreach. Reply with JSON only: " +
-      '{"pass":bool,"score":0-100,"reasons":string[]}. ' +
-      "Flag generic openers, cold pitch tone, pressure language, and missing candidate-specific detail. No prose outside JSON.",
-  },
-  {
-    key: "compliance",
-    stage: "llm_compliance",
-    system:
-      "You are the compliance critic for recruiting outreach. Reply with JSON only: " +
-      '{"pass":bool,"score":0-100,"reasons":string[]}. ' +
-      "Flag salary disclosure, AI self-disclosure, discriminatory language, invented credentials, " +
-      "and missing Mantu Group brand (body must name Mantu). No prose outside JSON.",
-  },
-  {
-    key: "human_likeness",
-    stage: "llm_human_likeness",
-    system:
-      "You are the human-likeness critic for recruiting outreach. Reply with JSON only: " +
-      '{"pass":bool,"score":0-100,"reasons":string[]}. ' +
-      "Flag robotic tone, template tells, status narration, and tool/JSON leakage. No prose outside JSON.",
-  },
-];
+const CRITICS: CriticSpec[] = HERMES_QUALITY_CRITICS.map((critic) => ({
+  key: critic.id.replace(/^critic-/, ""),
+  stage: critic.stage,
+  system: critic.system,
+}));
 
 function parseCriticJson(text: string): { pass?: boolean; score?: number; reasons?: string[] } | null {
   const jsonMatch = /\{[\s\S]*\}/.exec(text);

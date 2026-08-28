@@ -8,22 +8,12 @@ import {
   HERMES_PROXY_TIMEOUT_MS,
   resolveHermesProfilePrefix,
 } from "@/lib/api/hermes-proxy";
-import {
-  hermesClassifySystemPrompt,
-  hermesOutreachSystemPrompt,
-  hermesSourcingSystemPrompt,
-} from "@/lib/ai/hermes-recruiter-voice";
+import { HERMES_TASK_SYSTEM, type HermesLoopTask } from "@/lib/agents/hermes-agent-registry";
 import { serverGenerateText } from "@/lib/ai/server-generate";
 
 export type LoopLlmResult = { ok: true; text: string } | { ok: false; reason: string };
 
-export type LoopLlmTask = "outreach" | "classify" | "sourcing";
-
-const TASK_SYSTEM: Record<LoopLlmTask, string> = {
-  outreach: hermesOutreachSystemPrompt(),
-  classify: hermesClassifySystemPrompt(),
-  sourcing: hermesSourcingSystemPrompt(),
-};
+export type LoopLlmTask = Exclude<HermesLoopTask, "chat">;
 
 function hermesLoopEnabled(): boolean {
   const key = (process.env.HERMES_API_KEY ?? "").trim();
@@ -102,7 +92,7 @@ export async function resolveLoopLlm(input: {
   candidateId?: string;
   maxTokens?: number;
 }): Promise<LoopLlmResult> {
-  const system = input.system ?? TASK_SYSTEM[input.task];
+  const system = input.system ?? HERMES_TASK_SYSTEM[input.task];
 
   if (hermesLoopEnabled()) {
     const hermes = await callHermesLoop({

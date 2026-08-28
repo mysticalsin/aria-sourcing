@@ -23,12 +23,19 @@ status: tip-live-8c3945-fly-e2e-46-pass-partial-m365-quota
 - Live `/api/ready`: `ok=true`, build=`8c3945c`, migration=`0071_interview_prep_send_loop_kind.sql`
 - Fly E2E steps **4–5** PASS: live Hermes drafts + approve + dry-run send (no partial approve skip)
 - E2E harness: synthetic candidate uses `Alex Chen` + Mantu-branded draft prompt (critics/approve green)
+- **Hermes agent registry:** per-agent memory scope + personality + shared `MANTU_SOURCING_MISSION` (`src/lib/agents/hermes-agent-registry.ts`)
 
 ## Blockers (owner — full objective)
 
 1. **M365 secrets (6 missing)** — see [`M365-OWNER-UNBLOCK.md`](M365-OWNER-UNBLOCK.md)
-2. **Strict Fly E2E PASS** (no partial flags) — blocked by sourcing quota (3c) + M365 Teams book (6b)
+2. **Strict Fly E2E PASS** (no partial flags) — blocked by sourcing quota (3c) + M365 Teams book (6b); expect step 3c PASS with `provenance=live` when quota allows
 3. **Rotate `KIMI_API_KEY`** on Fly optional — vault Anthropic failover covers drafts/critics today
+
+## Deploy confirm
+
+```bash
+bash scripts/print-fly-deploy-confirm.sh
+```
 
 ## Next steps
 

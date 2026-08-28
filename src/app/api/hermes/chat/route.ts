@@ -31,12 +31,7 @@ import {
   hermesUpstreamHeaders,
   resolveHermesProfilePrefix,
 } from "@/lib/api/hermes-proxy";
-import {
-  hermesChatSystemPrompt,
-  hermesClassifySystemPrompt,
-  hermesOutreachSystemPrompt,
-  hermesSourcingSystemPrompt,
-} from "@/lib/ai/hermes-recruiter-voice";
+import { HERMES_TASK_SYSTEM } from "@/lib/agents/hermes-agent-registry";
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import { resolveStoredApifyKey } from "@/lib/sourcing/apify";
 import { sanitizeCandidateText } from "@/lib/agent-disclosure-policy";
@@ -125,13 +120,6 @@ const HermesChatSchema = z.object({
   campaign: z.record(z.string(), z.unknown()).optional(),
   existing: z.array(z.record(z.string(), z.unknown())).max(500).optional(),
 });
-
-const TASK_SYSTEM: Record<"outreach" | "classify" | "sourcing" | "chat", string> = {
-  outreach: hermesOutreachSystemPrompt(),
-  classify: hermesClassifySystemPrompt(),
-  sourcing: hermesSourcingSystemPrompt(),
-  chat: hermesChatSystemPrompt(),
-};
 
 const UPSTREAM_TIMEOUT_MS = 30_000;
 const LOOP_LLM_TASKS = new Set(["outreach", "classify", "sourcing"]);
@@ -290,7 +278,7 @@ export async function POST(req: NextRequest) {
   const canUseMcpToolsInChat = !supabaseEnabled || can(callerRole as Role, "manage_tools");
 
   // S-3: Server-defined system prompt only — never accept body.system (prompt injection risk).
-  const system = TASK_SYSTEM[task as keyof typeof TASK_SYSTEM] ?? TASK_SYSTEM.chat;
+  const system = HERMES_TASK_SYSTEM[task as keyof typeof HERMES_TASK_SYSTEM] ?? HERMES_TASK_SYSTEM.chat;
 
   /* ---- Cloud provider branch (Anthropic / OpenAI-compatible) -------------- */
   if (provider !== "hermes") {

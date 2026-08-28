@@ -18,7 +18,7 @@ test("live LLM critics module stays server-only and exports validateOutreachQual
   const src = readFileSync("src/lib/outreach-quality-pipeline-live.ts", "utf8");
   assert.match(src, /import "server-only"/);
   assert.match(src, /export async function validateOutreachQualityLive/);
-  assert.match(src, /llm_empathy/);
+  assert.match(src, /HERMES_QUALITY_CRITICS/);
   assert.match(src, /serverGenerateText/);
   assert.match(src, /llmStages\.length !== CRITICS\.length/);
   assert.match(src, /status: merged\.status === "blocked" \? "blocked" : "needs_review"/);
