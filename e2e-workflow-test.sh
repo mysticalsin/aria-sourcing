@@ -1129,18 +1129,34 @@ else
 fi
 
 MSG_LI="msg-e2e-li-$$"
-jq -n --arg m "$MSG_LI" --arg c "$CAND_ID" --arg r "$CAND_LI" --arg s "$DRAFT_SUBJECT" --arg b "$DRAFT_BODY" \
-  '{messageId:$m, candidateId:$c, channel:"LinkedIn", recipient:$r, subject:$s, body:$b}' > "$WORK/approve_req.json"
-api POST "$APP_URL/api/outreach/approve" "$WORK/approve_req.json"
-# One retry on transient LLM critic infrastructure (critics_required) after a fresh draft.
-if [ "$HTTP" = "503" ] && [ "$(jq -r '.status // empty' "$RESP")" = "critics_required" ]; then
-  warn "Approve critics_required — regenerating LinkedIn draft and retrying once."
-  if require_live_draft_or_canned "LinkedIn"; then
-    jq -n --arg m "$MSG_LI" --arg c "$CAND_ID" --arg r "$CAND_LI" --arg s "$DRAFT_SUBJECT" --arg b "$DRAFT_BODY" \
-      '{messageId:$m, candidateId:$c, channel:"LinkedIn", recipient:$r, subject:$s, body:$b}' > "$WORK/approve_req.json"
-    api POST "$APP_URL/api/outreach/approve" "$WORK/approve_req.json"
+APPROVE_TRY=0
+APPROVE_MAX=3
+while [ "$APPROVE_TRY" -lt "$APPROVE_MAX" ]; do
+  if [ "$APPROVE_TRY" -gt 0 ]; then
+    warn "Approve retry $APPROVE_TRY/$APPROVE_MAX — regenerating LinkedIn draft after HTTP $HTTP."
+    require_live_draft_or_canned "LinkedIn" || break
+    if printf '%s\n%s' "$DRAFT_SUBJECT" "$DRAFT_BODY" | grep -Eiq '\b(salary|compensation|budget|£[0-9]|€[0-9]|\$[0-9]|120k|90000)\b'; then
+      fail "LinkedIn draft failed outreach quality gate on approve retry (salary/compensation disclosure)."
+      break
+    fi
   fi
-fi
+  jq -n --arg m "$MSG_LI" --arg c "$CAND_ID" --arg r "$CAND_LI" --arg s "$DRAFT_SUBJECT" --arg b "$DRAFT_BODY" \
+    '{messageId:$m, candidateId:$c, channel:"LinkedIn", recipient:$r, subject:$s, body:$b}' > "$WORK/approve_req.json"
+  api POST "$APP_URL/api/outreach/approve" "$WORK/approve_req.json"
+  if [ "$HTTP" = "200" ] && [ "$(jq -r '.ok // false' "$RESP")" = "true" ]; then
+    break
+  fi
+  # LLM drafts are non-deterministic — retry on critic infra (503) or quality block (422).
+  if [ "$HTTP" = "503" ] && [ "$(jq -r '.status // empty' "$RESP")" = "critics_required" ]; then
+    APPROVE_TRY=$((APPROVE_TRY + 1))
+    continue
+  fi
+  if [ "$HTTP" = "422" ]; then
+    APPROVE_TRY=$((APPROVE_TRY + 1))
+    continue
+  fi
+  break
+done
 AP_OK=$(jq -r '.ok // false' "$RESP")
 AP_PERSISTED=$(jq -r 'if has("persisted") then .persisted else true end' "$RESP")
 AP_CRITICS=$(jq -r '.qualityCriticsUsed // false' "$RESP")
