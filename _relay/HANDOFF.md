@@ -11,7 +11,7 @@ status: owner-wait-m365-strict-pass
 ## Current state
 
 - **Live Fly:** `1b19a44` / **0071** · ready ok · **`deploy_status=tip_live`**
-- **Branch tip:** pending (strict E2E retry headroom + relay)
+- **Branch tip:** `02ed4c8` (E2E strict retries; live code @ `1b19a44`)
 - **PR #35** (supersedes closed #29–#33)
 - **Gate:** audit **62/62**
 - **PARTIAL E2E (live, 2026-08-28T13:27Z):** **55 pass / 0 fail / 7 warn** → `RESULT: PARTIAL`
