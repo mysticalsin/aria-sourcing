@@ -179,7 +179,13 @@ export function FileBrowser() {
           <Eyebrow className="flex items-center gap-1.5">
             <Server className="h-3 w-3" aria-hidden /> Aria files
           </Eyebrow>
-          <Badge tone="success" size="sm" dot>Live</Badge>
+          <Badge
+            tone={loading ? "electric" : error ? "warning" : "success"}
+            size="sm"
+            dot={!loading && !error}
+          >
+            {loading ? "Connecting" : error ? "Unavailable" : "Live"}
+          </Badge>
         </div>
         {listing?.parent && (
           <Button size="sm" variant="outline" leftIcon={<ArrowUp className="h-3.5 w-3.5" />} onClick={() => setPath(listing.parent ?? undefined)}>

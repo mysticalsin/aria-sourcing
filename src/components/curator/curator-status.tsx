@@ -110,7 +110,13 @@ export function CuratorStatus() {
           <Eyebrow className="flex items-center gap-1.5">
             <Server className="h-3 w-3" aria-hidden /> Curator
           </Eyebrow>
-          <Badge tone="success" size="sm" dot>Live</Badge>
+          <Badge
+            tone={loading ? "electric" : error || !state ? "warning" : "success"}
+            size="sm"
+            dot={!loading && !error && Boolean(state)}
+          >
+            {loading ? "Connecting" : error || !state ? "Unavailable" : "Live"}
+          </Badge>
         </div>
         {loading ? (
           <SkeletonCard />

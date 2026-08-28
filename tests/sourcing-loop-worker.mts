@@ -540,6 +540,7 @@ test("email_sync enqueues inbound_classify and the classifier persists the store
   assert.equal(reply.campaignId, "camp-1");
   assert.equal(reply.body, "Interested, please send the details.");
   assert.equal(reply.intent, "INTERESTED");
+  assert.equal(reply.draftResponse, "");
 });
 
 test("inbound_classify persists LinkedIn channel from stored inbound message", async () => {
@@ -581,6 +582,7 @@ test("inbound_classify persists LinkedIn channel from stored inbound message", a
   assert.equal(reply.candidateId, "cand-li");
   assert.equal(reply.body, "Sounds good — send me the JD.");
   assert.equal(reply.intent, "INTERESTED");
+  assert.equal(reply.draftResponse, "");
 });
 
 test("inbound_classify enqueues draft_generate for positive intent when autopilot is entitled", async () => {

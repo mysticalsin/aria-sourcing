@@ -17,8 +17,14 @@ import {
 } from "@/lib/types";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import { buildClarificationEmail, parseEmailAndJD, type ParsedIntake } from "@/lib/mock-ai";
+import { demoLoginEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import { resolveAiProvider } from "./provider";
 import { hermesAvailable, hermesGenerate } from "./hermes";
+
+/** Live/enterprise tenants must not treat heuristic regex parse as a successful cloud intake. */
+function refuseHeuristicIntakeOnLiveTenant(): boolean {
+  return supabaseEnabled && !demoLoginEnabled;
+}
 
 /* ============================================================================
    Live intake / JD parsing — client helper.
@@ -348,6 +354,9 @@ export async function parseIntakeLive(
   // because it requires tool-calling.
   const aiCfg = resolveAiProvider(settings, "chat");
   if (!aiCfg && !(settings.hermesLiveMode && hermesAvailable(settings))) {
+    if (refuseHeuristicIntakeOnLiveTenant()) {
+      throw new Error("live_intake_llm_required");
+    }
     return {
       ...mock,
       providerWarning: "No cloud parser is configured. Only facts present in the submitted brief were extracted.",
@@ -372,12 +381,18 @@ export async function parseIntakeLive(
   try {
     result = await hermesGenerate(genInput);
   } catch {
+    if (refuseHeuristicIntakeOnLiveTenant()) {
+      throw new Error("live_intake_llm_unreachable");
+    }
     return {
       ...mock,
       providerWarning: "The cloud parser could not be reached. Only facts present in the submitted brief were extracted.",
     };
   }
   if (!result.ok || !result.text) {
+    if (refuseHeuristicIntakeOnLiveTenant()) {
+      throw new Error("live_intake_llm_incomplete");
+    }
     return {
       ...mock,
       providerWarning: "The cloud parser did not complete. Only facts present in the submitted brief were extracted.",
@@ -386,6 +401,9 @@ export async function parseIntakeLive(
 
   const parsedFields = parseHermesIntakeJson(result.text);
   if (!parsedFields) {
+    if (refuseHeuristicIntakeOnLiveTenant()) {
+      throw new Error("live_intake_llm_invalid");
+    }
     return {
       ...mock,
       providerWarning: "The cloud parser returned an invalid result. Only facts present in the submitted brief were extracted.",

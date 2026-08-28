@@ -1872,14 +1872,19 @@ async function handleInboundClassify(job, context) {
   const prompt = buildReplyClassificationPrompt(replyText);
   let classification = fallback;
   let classifier = "deterministic_fallback";
+  let modelDraftResponse = "";
   // LLM runs ONLY when this job was claimed — webhook/email_sync enqueue is the
   // sole trigger. Idle loop ticks never invent inbound_classify jobs.
   if (context.modelClient?.classifyReply) {
     const modelResult = await context.modelClient.classifyReply(prompt);
     if (modelResult?.ok && typeof modelResult.text === "string") {
       try {
-        classification = parseClassification(JSON.parse(modelResult.text), fallback);
+        const parsed = JSON.parse(modelResult.text);
+        classification = parseClassification(parsed, fallback);
         classifier = "model";
+        if (isRecord(parsed) && typeof parsed.draftResponse === "string" && parsed.draftResponse.trim()) {
+          modelDraftResponse = parsed.draftResponse.trim().slice(0, 1_000);
+        }
       } catch {
         classification = fallback;
       }
@@ -1898,7 +1903,8 @@ async function handleInboundClassify(job, context) {
     confidence: classification.confidence,
     reasoning: classification.reasoning,
     suggestedAction: classification.suggestedAction,
-    draftResponse: classification.draftResponse,
+    // Keyword deterministic_fallback must not invent reply outreach copy.
+    draftResponse: classifier === "model" ? modelDraftResponse : "",
     handled: false,
     slaDueAt: null,
     receivedAt: typeof payload.receivedAt === "string" && payload.receivedAt.trim()

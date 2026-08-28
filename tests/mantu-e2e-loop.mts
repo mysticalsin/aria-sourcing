@@ -115,6 +115,7 @@ void (async () => {
     campaignId: "camp-1",
     candidateIds: ["a", "b", "c"],
     scoredCandidates: scored,
+    preferLiveCritics: false,
     drafts: {
       a: {
         subject: "Your work",
@@ -136,6 +137,7 @@ void (async () => {
     candidateIds: ["a"],
     scoredCandidates: [{ id: "a", matchScore: 95 }],
     bookingId: "book-1",
+    preferLiveCritics: false,
     drafts: {
       a: {
         subject: "Your work",
@@ -147,6 +149,32 @@ void (async () => {
   ok(
     "langgraph reports interview_scheduled only with bookingId",
     booked.stage === "interview_scheduled" || booked.stage === "approval_blocked",
+  );
+
+  // intent:full defaults to live critics — without peers must fail closed (not invent approval).
+  const fullLiveRequired = await runRecruitingGraph({
+    workspaceId: "ws-1",
+    inboundId: "inb-1",
+    campaignId: "camp-1",
+    candidateIds: ["a"],
+    scoredCandidates: [{ id: "a", matchScore: 95 }],
+    drafts: {
+      a: {
+        subject: "Your work",
+        body: "Hi Sam, I noticed your recent React work and wondered if you would be open to a brief chat about a senior role at Mantu.",
+        channel: "Email",
+      },
+    },
+  });
+  ok(
+    "full intent defaults to live critics fail-closed without peers",
+    fullLiveRequired.stage === "quality_critics_incomplete"
+      || fullLiveRequired.stage === "queued_for_approval"
+      || fullLiveRequired.stage === "approval_blocked",
+  );
+  ok(
+    "full intent default path never invents interview_scheduled without bookingId",
+    fullLiveRequired.stage !== "interview_scheduled",
   );
 
   const failed = await runRecruitingGraph({

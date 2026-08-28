@@ -32,7 +32,8 @@ test("LangGraph draft_quality fail-stops empty drafts and incomplete live critic
   assert.match(graph, /missing_drafts/);
   assert.match(graph, /quality_critics_incomplete/);
   assert.match(graph, /llm_critics_required/);
-  assert.match(graph, /intent === "draft_quality" && state\.preferLiveCritics !== false/);
+  assert.match(graph, /intent === "draft_quality" \|\| state\.intent === "full"/);
+  assert.match(graph, /preferLiveCritics !== false/);
   assert.match(graph, /empty_shortlist_or_below_min_score/);
   assert.match(graph, /shortlistMinScore/);
   const draft = readFileSync("src/app/api/cron/generate-outreach-draft/route.ts", "utf8");

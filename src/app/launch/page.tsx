@@ -152,15 +152,31 @@ export default function LaunchPage() {
     setLanes([]);
 
     const parsedRoles = await Promise.all(
-      roleBlocks.map((block) => parseIntakeLive(settings, { email: block })),
+      roleBlocks.map(async (block) => {
+        try {
+          return await parseIntakeLive(settings, { email: block });
+        } catch {
+          return null;
+        }
+      }),
     );
     if (launchSeqRef.current !== seq) return;
+    if (parsedRoles.some((p) => p == null)) {
+      setLaunching(false);
+      toast({
+        title: "Live parse required",
+        description:
+          "Live JD parse requires a working cloud LLM. Configure a live provider in Settings → AI, then retry.",
+        variant: "warning",
+      });
+      return;
+    }
     const incomplete = parsedRoles.flatMap((parsed, index) => {
-      const readiness = evaluateNeedReadiness(parsed.jobAnalysis);
+      const readiness = evaluateNeedReadiness(parsed!.jobAnalysis);
       return readiness.ready
         ? []
         : [{
-            label: parsed.jobAnalysis.title || `Role ${index + 1}`,
+            label: parsed!.jobAnalysis.title || `Role ${index + 1}`,
             issues: readiness.issues.map((issue) => issue.message),
           }];
     });
@@ -177,7 +193,7 @@ export default function LaunchPage() {
       return;
     }
 
-    const results = await Promise.all(parsedRoles.map((parsed) => launchRole(seq, parsed)));
+    const results = await Promise.all(parsedRoles.map((parsed) => launchRole(seq, parsed!)));
 
     if (launchSeqRef.current === seq) {
       setLaunching(false);

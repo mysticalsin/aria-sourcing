@@ -203,11 +203,12 @@ async function validateQuality(state: RecruitingGraphStateType): Promise<Partial
     };
   }
   const quality: Record<string, OutreachQualityVerdict> = {};
-  // draft_quality defaults to live multi-agent peers (cron may omit the flag).
+  // draft_quality and full loop default to live multi-agent peers (cron may omit the flag).
   // Explicit preferLiveCritics:false keeps deterministic unit-test paths.
   const preferLive =
     state.preferLiveCritics === true ||
-    (state.intent === "draft_quality" && state.preferLiveCritics !== false);
+    ((state.intent === "draft_quality" || state.intent === "full") &&
+      state.preferLiveCritics !== false);
   type QualityFn = (input: {
     subject: string;
     body: string;

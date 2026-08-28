@@ -86,6 +86,25 @@ const SEVERITY_ICON: Record<ValidationWarning["severity"], React.ReactNode> = {
   info: <Info className="h-4 w-4" aria-hidden />,
 };
 
+/** Live tenants refuse heuristic parse — surface a clear operator toast. */
+async function runParseIntakeLive(
+  settings: Parameters<typeof parseIntakeLive>[0],
+  input: Parameters<typeof parseIntakeLive>[1],
+  onError: (message: string) => void,
+): Promise<Awaited<ReturnType<typeof parseIntakeLive>> | null> {
+  try {
+    return await parseIntakeLive(settings, input);
+  } catch (err) {
+    const code = err instanceof Error ? err.message : "live_intake_failed";
+    onError(
+      code.startsWith("live_intake_")
+        ? "Live JD parse requires a working cloud LLM. Configure a live provider in Settings → AI, then retry."
+        : "Live JD parse failed. Configure a live LLM provider and retry.",
+    );
+    return null;
+  }
+}
+
 export default function IntakePage() {
   const hydrated = useHydrated();
   const router = useRouter();
@@ -255,7 +274,11 @@ export default function IntakePage() {
 
     setEmail(incoming);
     setJd("");
-    const result = await parseIntakeLive(settings, { email: incoming });
+    const result = await runParseIntakeLive(settings, { email: incoming }, (description) => {
+      setParsing(false);
+      toast({ title: "Live parse required", description, variant: "warning" });
+    });
+    if (!result) return;
     if (liveParseSeqRef.current !== seq) return; // superseded by a newer parse
     setParsing(false);
     setParsed(result);
@@ -287,7 +310,11 @@ export default function IntakePage() {
     setEmail(intakeEmail);
     setJd("");
     setParsing(true);
-    const result = await parseIntakeLive(settings, { email: intakeEmail });
+    const result = await runParseIntakeLive(settings, { email: intakeEmail }, (description) => {
+      setParsing(false);
+      toast({ title: "Live parse required", description, variant: "warning" });
+    });
+    if (!result) return;
     if (liveParseSeqRef.current !== seq) return;
     setParsing(false);
     setParsed(result);
@@ -317,7 +344,15 @@ export default function IntakePage() {
     }
     const seq = ++liveParseSeqRef.current;
     setParsing(true);
-    const result = await parseIntakeLive(settings, { email, jd: jd.trim() ? jd : undefined });
+    const result = await runParseIntakeLive(
+      settings,
+      { email, jd: jd.trim() ? jd : undefined },
+      (description) => {
+        setParsing(false);
+        toast({ title: "Live parse required", description, variant: "warning" });
+      },
+    );
+    if (!result) return;
     if (liveParseSeqRef.current !== seq) return; // superseded by a newer parse
     setParsing(false);
     setParsed(result);

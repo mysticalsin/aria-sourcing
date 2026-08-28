@@ -99,7 +99,14 @@ export async function validateOutreachQualityLive(input: {
   workspaceId?: string;
 }): Promise<OutreachQualityVerdict> {
   const base = validateOutreachQuality(input);
-  if (process.env.ARIA_QUALITY_LLM_CRITICS === "0") return base;
+  // Ops kill-switch must not pretend multi-agent ready — fail closed to needs_review.
+  if (process.env.ARIA_QUALITY_LLM_CRITICS === "0") {
+    return {
+      ...base,
+      status: base.status === "blocked" ? "blocked" : "needs_review",
+      llmCriticsUsed: false,
+    };
+  }
 
   try {
     const channel = input.channel ?? "Email";

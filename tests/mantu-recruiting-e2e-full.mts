@@ -108,6 +108,7 @@ async function main() {
     campaignId: e2eCampaign.id,
     candidateIds: top10.map((c) => c.id),
     scoredCandidates: top10.map((c, i) => ({ id: c.id, matchScore: 100 - i })),
+    preferLiveCritics: false,
     drafts,
   });
   ok(
@@ -123,6 +124,7 @@ async function main() {
     scoredCandidates: top10.map((c, i) => ({ id: c.id, matchScore: 100 - i })),
     drafts,
     bookingId: "book-e2e-1",
+    preferLiveCritics: false,
   });
   ok(
     "LangGraph interview_scheduled only when bookingId present",
