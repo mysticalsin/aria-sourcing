@@ -355,19 +355,19 @@ step "2) Intake — POST /api/intake (raw JD email → JobAnalysis)"
 # ===========================================================================
 if [ "$E2E_OUTREACH_LANGUAGE" = "fr" ]; then
   JD_EMAIL="From: Marie Dupont <marie.dupont@bnpp.fr>
-Subject: Urgent - Consultant TypeScript Senior (Paris)
+Subject: Urgent - Senior TypeScript Consultant (Paris)
 
 Bonjour,
 
 Nous recrutons un Consultant TypeScript Senior pour rejoindre notre équipe plateforme à Paris (hybride). Besoin assez urgent.
 
-Rôle: Consultant TypeScript Senior
-Ville: Paris, France
+Role: Senior TypeScript Consultant
+Location: Paris, France
 Language (must): French
 Language (nice): English
-Compétences: TypeScript, React, Node.js, GraphQL, PostgreSQL
+Skills: TypeScript, React, Node.js, GraphQL, PostgreSQL
 Nice to have: Next.js, AWS
-Expérience: 5+ ans
+Experience: 5+ years
 
 Merci,
 Marie"
