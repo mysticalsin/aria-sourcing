@@ -7,7 +7,7 @@
 # Unblock triggers (any one):
 #   - /tmp/owner-microsoft.env or production-readiness/.owner-microsoft.env
 #     without PLACEHOLDER values
-#   - exported MICROSOFT_CLIENT_ID + MICROSOFT_CLIENT_SECRET (non-PLACEHOLDER)
+#   - exported MICROSOFT_* + GOTRUE_EXTERNAL_AZURE_* (non-PLACEHOLDER; tenant or URL)
 #   - ARIA_AZURE_APP_ID set → az-configure-existing-graph-app.sh --apply
 #
 # Usage:
@@ -28,19 +28,11 @@ fi
 
 log() { printf '%s %s\n' "$(date -u +%H:%M:%SZ)" "$*" | tee -a "$LOG"; }
 
+# shellcheck source=scripts/lib/owner-microsoft-credentials.sh
+source "$repo/scripts/lib/owner-microsoft-credentials.sh"
+
 has_microsoft_drop() {
-  local f
-  for f in /tmp/owner-microsoft.env "$repo/production-readiness/.owner-microsoft.env"; do
-    if [ -r "$f" ] && ! grep -q 'PLACEHOLDER' "$f" 2>/dev/null; then
-      return 0
-    fi
-  done
-  if [ -n "${MICROSOFT_CLIENT_ID:-}" ] && [ -n "${MICROSOFT_CLIENT_SECRET:-}" ] \
-    && [[ "${MICROSOFT_CLIENT_ID}" != PLACEHOLDER* ]] \
-    && [[ "${MICROSOFT_CLIENT_SECRET}" != PLACEHOLDER* ]]; then
-    return 0
-  fi
-  return 1
+  owner_ms_has_credentials
 }
 
 apply_and_exit() {
