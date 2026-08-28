@@ -1,32 +1,35 @@
 ---
 project: MSourcing / ARIA
-shift: 313
+shift: 314
 agent: cursor-cloud
-updated: 2026-08-28T23:45Z
-status: honesty-calendar-hydrate-confirm-replay
+updated: 2026-08-28T23:55Z
+status: confirm-calendar-book-behavioral-tests
 ---
 
-# Handoff — Shift 313
+# Handoff — Shift 314
 
 ## Current state
 
-- **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft
-- **Tip:** `cf6b0cc` · Live Fly `fc8b54a` / **0071** (tip **0072**)
-- **Audit:** **64/64** · **Gate:** green · audit **64/64**
-- **M365:** `fly_m365_missing=7` · watcher alive · 30m reprobe armed
-- **LLM:** `llm_auth=dead`
-- **Goal:** strict E2E PASS blocked on owner secrets
+- **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft (supersedes #29)
+- **Tip:** pending this commit · Live Fly `fc8b54a` / **0071** (tip **0072**)
+- **Audit:** **64/64** · **Gate:** pending
+- **M365:** `fly_m365_missing=7` · az login OK but **Insufficient privileges** to create Entra app · watcher + 30m reprobe
+- **LLM:** `llm_auth=dead` (only dead Kimi on Fly)
+- **Goal:** strict E2E PASS blocked on owner portal app + LLM remint
 
 ## Done this shift
 
-1. Calendar badge counts only booked interviews (`!bookingNeedsCalendar`); Needs calendar count separate
-2. InterviewerPanel load ignores Needs-calendar slots
-3. Settings/Calendar/Outreach HydrationGate: EmptyState loading (no SkeletonCard collage)
-4. confirm-calendar-book confirmed replay requires `isTeamsMeetingJoinUrl(meetingUrl)`
+1. Confirmed az cannot create Graph app (Directory permission / Insufficient privileges)
+2. Added `tests/confirm-calendar-book.mts` (6 behavioral cases) + manifest registration
+3. Prior honesty: calendar counts, EmptyState hydrate, Teams replay URL
 
 ## Blockers
 
-Owner: 7 M365 + live LLM remint + deploy confirm → Connect Outlook (Teams meetings) → Graph webhook → strict E2E
+Owner must either:
+- Create Entra app in portal → `export ARIA_AZURE_APP_ID=…` → `bash scripts/az-configure-existing-graph-app.sh --apply`
+- Or paste `/tmp/owner-microsoft.env` + `/tmp/owner-llm.env` + remint deploy confirm
+
+Then Connect Outlook (Teams meetings) → Graph webhook → strict E2E.
 
 ## Next steps
 
@@ -56,9 +59,9 @@ ARIA_ALLOW_PARTIAL_M365_E2E=1 ARIA_ALLOW_PARTIAL_LLM_E2E=1 bash e2e-workflow-tes
 - Production = Fly only; ignore Vercel/GHA empty-steps
 - PR #36 only (supersedes #29); goal until strict Fly PASS
 - Loop live book via confirm-calendar-book; propose cron stays dry-run
-- Calendar Agenda needs state.bookings via append_booking (not only candidate.booking)
 
 ## Watch out
 
 - HANDOFF must keep “expect step 3c PASS” / “step 3c should show”
-- Deploy tip needs migration **0072** applied on Fly before loop append_booking works live
+- Deploy tip needs migration **0072** on Fly
+- az signed in as twalteur@amaris.com but cannot create app registrations

@@ -1024,6 +1024,10 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /isTeamsMeetingJoinUrl\(claim\.meetingUrl\)/.test(loopConfirm)
         && /append_booking/.test(mig72)
         && /'bookings'/.test(mig72)
+        && existsSync("tests/confirm-calendar-book.mts")
+        && /claimed replay returns 502 without calling Graph/.test(
+          readFileSync("tests/confirm-calendar-book.mts", "utf8"),
+        )
       );
     },
   },
