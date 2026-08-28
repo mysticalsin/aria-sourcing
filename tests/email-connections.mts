@@ -342,8 +342,7 @@ ok(
 );
 ok(
   "Mailbox integrations require mode=live (SMTP/API paste alone does not unlock Live)",
-  /isOauthMailboxProvider/.test(sendMode) &&
-    /seat\.mode !== "live"/.test(sendMode) &&
+  /seat\.mode !== "live"/.test(sendMode) &&
     /MAILBOX_INTEGRATION_IDS\.has\(integ\.id\) && integ\.mode !== "live"/.test(sendMode),
 );
 

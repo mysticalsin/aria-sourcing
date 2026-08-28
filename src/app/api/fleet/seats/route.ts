@@ -164,6 +164,27 @@ export async function PATCH(req: NextRequest) {
       if (!ready.ok) {
         return NextResponse.json({ ok: false, error: ready.reason }, { status: 409 });
       }
+    } else if (existing.provider === "Gmail API") {
+      const svc = getServiceSupabase();
+      if (!svc) {
+        return NextResponse.json({ ok: false, error: "Service client unavailable." }, { status: 500 });
+      }
+      const { data: conn, error: connErr } = await svc
+        .from("email_connections")
+        .select("id, refresh_token")
+        .eq("seat_id", id)
+        .eq("workspace_id", actor.workspaceId)
+        .eq("provider", "Gmail API")
+        .maybeSingle();
+      if (connErr) {
+        return NextResponse.json({ ok: false, error: "Failed to look up Gmail connection." }, { status: 500 });
+      }
+      if (!conn?.id || !conn.refresh_token) {
+        return NextResponse.json(
+          { ok: false, error: "Connect Gmail (OAuth) before setting this seat live." },
+          { status: 409 },
+        );
+      }
     }
   }
 

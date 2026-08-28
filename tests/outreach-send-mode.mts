@@ -243,6 +243,17 @@ ok(
     effectiveDryRunMode(false, [seat], bareIntegrations) === true &&
       hasConnectedMailbox([seat], bareIntegrations) === false,
   );
+  const sgSeat: AgentSeat = {
+    ...seat,
+    provider: "SendGrid",
+    connectedAccount: "sg@example.test",
+    mode: "mock",
+  };
+  ok(
+    "SendGrid seat mode=mock + account → still Dry-run",
+    effectiveDryRunMode(false, [sgSeat], bareIntegrations) === true &&
+      hasConnectedMailbox([sgSeat], bareIntegrations) === false,
+  );
 }
 
 {

@@ -37,11 +37,6 @@ function isLinkedInSeatProvider(provider: AgentSeat["provider"]): boolean {
   return provider === "LinkedIn Assisted Manual" || provider === "LinkedIn Vendor API";
 }
 
-/** OAuth mailbox providers — operator-typed labels alone must not unlock Live. */
-function isOauthMailboxProvider(provider: AgentSeat["provider"]): boolean {
-  return provider === "Microsoft Graph" || provider === "Gmail API";
-}
-
 function integrationAccountReady(integ: IntegrationStatus): string | null {
   if (!integ.real) return null;
   const account = integ.connectedAccount?.trim();
@@ -66,8 +61,8 @@ export function listConnectedMailboxes(
     if (!isMailboxSeatProvider(seat.provider)) continue;
     const account = seat.connectedAccount?.trim();
     if (!account) continue;
-    // Manual fleet "connect" only stores operatorEmail — Graph/Gmail need OAuth mode=live.
-    if (isOauthMailboxProvider(seat.provider) && seat.mode !== "live") continue;
+    // Every mailbox seat needs mode=live — pasted SendGrid/Resend labels must not unlock Live.
+    if (seat.mode !== "live") continue;
     const key = `${seat.provider}:${account.toLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);

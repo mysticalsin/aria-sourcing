@@ -404,9 +404,17 @@ ok(
 );
 
 ok(
+  "firstInterviewElapsedHours: Needs-calendar shell (no teams/cal link) -> null",
+  firstInterviewElapsedHours(
+    [{ startTime: "2026-01-01T10:00:00.000Z", teamsLink: "", calLink: "" }],
+    campaignCreatedAt,
+  ) === null,
+);
+
+ok(
   "firstInterviewElapsedHours: single booking 10h after createdAt -> 10",
   firstInterviewElapsedHours(
-    [{ startTime: "2026-01-01T10:00:00.000Z" }],
+    [{ startTime: "2026-01-01T10:00:00.000Z", teamsLink: "https://teams.microsoft.com/l/meetup-join/x", calLink: "" }],
     campaignCreatedAt,
   ) === 10,
 );
@@ -415,9 +423,9 @@ ok(
   "firstInterviewElapsedHours: picks the earliest startTime among multiple bookings",
   firstInterviewElapsedHours(
     [
-      { startTime: "2026-01-03T00:00:00.000Z" },
-      { startTime: "2026-01-01T05:00:00.000Z" },
-      { startTime: "2026-01-02T00:00:00.000Z" },
+      { startTime: "2026-01-03T00:00:00.000Z", teamsLink: "https://teams.microsoft.com/l/meetup-join/a", calLink: "" },
+      { startTime: "2026-01-01T05:00:00.000Z", teamsLink: "", calLink: "https://outlook.office.com/calendar/b" },
+      { startTime: "2026-01-02T00:00:00.000Z", teamsLink: "https://teams.microsoft.com/l/meetup-join/c", calLink: "" },
     ],
     campaignCreatedAt,
   ) === 5,
@@ -426,7 +434,7 @@ ok(
 ok(
   "firstInterviewElapsedHours: startTime before createdAt clamps to 0, never negative",
   firstInterviewElapsedHours(
-    [{ startTime: "2025-12-31T00:00:00.000Z" }],
+    [{ startTime: "2025-12-31T00:00:00.000Z", teamsLink: "https://teams.microsoft.com/l/meetup-join/x", calLink: "" }],
     campaignCreatedAt,
   ) === 0,
 );

@@ -118,6 +118,13 @@ ok("API-key live seat not live-ready until domain verified", seatMailboxLiveRead
 apiKeyLive.domainVerified = true;
 ok("API-key live seat live-ready after domain verify", seatMailboxLiveReady(apiKeyLive) === true);
 
+const linkedInLive = cloneSeat(seat("seat_maya"));
+linkedInLive.provider = "LinkedIn Assisted Manual";
+linkedInLive.mode = "live";
+linkedInLive.connectedAccount = "li-op";
+linkedInLive.domainVerified = true;
+ok("LinkedIn live seat is NOT mailbox live-ready", seatMailboxLiveReady(linkedInLive) === false);
+
 /* ---- suppressionMatch: email + domain + expiry --------------------------- */
 const supp = state.suppression;
 ok(

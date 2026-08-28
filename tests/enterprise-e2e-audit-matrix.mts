@@ -356,6 +356,10 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
           readFileSync("src/lib/outreach-send-mode.ts", "utf8"),
         )
         && /isRealSendFact\(m\)/.test(readFileSync("src/lib/hiring-geography.ts", "utf8"))
+        && /!bookingNeedsCalendar\(b\)/.test(readFileSync("src/lib/metrics.ts", "utf8"))
+        && /Connect Gmail \(OAuth\)/.test(readFileSync("src/app/api/fleet/seats/route.ts", "utf8"))
+        && /isMailboxSeatProvider\(seat\.provider\)/.test(readFileSync("src/lib/fleet.ts", "utf8"))
+        && /mode: liveSeat \? "live" : "mock"/.test(readFileSync("src/lib/integrations.ts", "utf8"))
       );
     },
   },

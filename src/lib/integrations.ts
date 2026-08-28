@@ -336,7 +336,7 @@ export function mailboxIntegrationPatchesFromConnections(
       id,
       patch: {
         status: "connected",
-        mode: liveSeat || provider === "Gmail API" ? "live" : "mock",
+        mode: liveSeat ? "live" : "mock",
         connectedAccount: conn.accountEmail,
         lastSync: null,
         errors: [],

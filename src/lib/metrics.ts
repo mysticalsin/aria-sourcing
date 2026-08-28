@@ -56,17 +56,16 @@ export function withStage(
   };
 }
 
-/* Elapsed hours from `createdAt` to the earliest `startTime` among the given
-   bookings — each booking's *scheduled* interview time, not the moment the
-   booking record itself was created. This is the single, canonical
-   time-to-first-interview computation shared by store.ts (live campaigns)
-   and seed.ts (seeded demo campaigns) so both report the same KPI meaning.
-   Returns null when there are no bookings yet. */
+/* Elapsed hours from `createdAt` to the earliest *calendar-proven* interview
+   `startTime` (needs teamsLink or calLink). Local Proposed slots without a
+   meeting URL must not move Time-to-first-interview. Returns null when there
+   are no calendar-complete bookings yet. */
 export function firstInterviewElapsedHours(
-  bookings: Pick<Booking, "startTime">[],
+  bookings: Pick<Booking, "startTime" | "teamsLink" | "calLink">[],
   createdAt: string,
 ): number | null {
-  const firstStartTime = bookings.reduce<string | null>(
+  const proven = bookings.filter((b) => !bookingNeedsCalendar(b));
+  const firstStartTime = proven.reduce<string | null>(
     (min, b) => (min === null || b.startTime < min ? b.startTime : min),
     null,
   );

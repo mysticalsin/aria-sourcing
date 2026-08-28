@@ -89,7 +89,11 @@ function deriveTrends(state: ExecDashboardState, live: boolean): ExecTrends {
     (message) => contactedCandidateIds.has(message.candidateId) && isRealSendFact(message),
   );
   const replies = state.replies.filter((reply) => contactedCandidateIds.has(reply.candidateId));
-  const bookings = state.bookings.filter((booking) => contactedCandidateIds.has(booking.candidateId));
+  const bookings = state.bookings.filter(
+    (booking) =>
+      contactedCandidateIds.has(booking.candidateId)
+      && Boolean(booking.teamsLink || booking.calLink),
+  );
   const allDates = [
     ...candidates.map((candidate) => candidate.createdAt),
     ...realOutreach.map((message) => message.sentAt).filter((sentAt): sentAt is string => sentAt != null),

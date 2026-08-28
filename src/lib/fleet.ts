@@ -11,6 +11,7 @@ import type {
 import { normalizeSuppressionValue } from "./manual-suppression";
 import type { Tone } from "./utils";
 import { clamp } from "./utils";
+import { isMailboxSeatProvider } from "./outreach-send-mode";
 
 /* ============================================================================
    FLEET GUARDRAIL ENGINE
@@ -285,8 +286,9 @@ export interface FleetSummary {
   avgComplaintRate: number;
 }
 
-/** Live mailbox ready: Graph OAuth seats skip vanity-domain DNS; API-key seats need domainVerified. */
+/** Live mailbox ready: only mailbox providers; Graph OAuth skips vanity DNS; API-key needs domainVerified. */
 export function seatMailboxLiveReady(seat: AgentSeat): boolean {
+  if (!isMailboxSeatProvider(seat.provider)) return false;
   if (seat.mode !== "live" || !seat.connectedAccount) return false;
   if (seat.provider === "Microsoft Graph") return true;
   return Boolean(seat.domainVerified);
