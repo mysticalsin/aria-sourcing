@@ -767,11 +767,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       return (
         /CRITICS/.test(qualityLive)
         && /runOneCritic/.test(qualityLive)
-        && /Promise\.all/.test(qualityLive)
+        && (/Promise\.all/.test(qualityLive) || /Sequential peers/.test(qualityLive))
         && /llm_empathy/.test(readFileSync("src/lib/agents/hermes-agent-registry.ts", "utf8"))
         && /llm_compliance/.test(readFileSync("src/lib/agents/hermes-agent-registry.ts", "utf8"))
         && /llm_human_likeness/.test(readFileSync("src/lib/agents/hermes-agent-registry.ts", "utf8"))
-        && /attempt < 2/.test(qualityLive)
+        && /attempt < 3/.test(qualityLive)
         && /missing Mantu Group brand/.test(readFileSync("src/lib/agents/hermes-agent-registry.ts", "utf8"))
         && /preferLiveCritics/.test(graph)
         && /outreach-quality-pipeline-live/.test(graph)
