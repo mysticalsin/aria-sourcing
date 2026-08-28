@@ -2,7 +2,7 @@
 
 **Blocker ID:** M365-FLY-6  
 **Production:** https://aria-mantu-app.fly.dev only  
-**Updated:** 2026-08-28T09:45Z
+**Updated:** 2026-08-28T10:52Z
 
 ## Missing Fly secrets (7)
 
@@ -50,9 +50,8 @@ bash scripts/az-configure-existing-graph-app.sh --apply
 # Option B — paste drop-zone:
 cp production-readiness/.owner-microsoft.env.example /tmp/owner-microsoft.env
 # edit real values (incl MICROSOFT_TENANT_ID)
-bash scripts/fly-apply-owner-microsoft-secrets.sh
-# durable watcher auto-runs post-m365-secrets-golive; or:
-bash scripts/post-m365-secrets-golive.sh
+bash scripts/fly-apply-owner-microsoft-secrets.sh   # auto-runs post-m365-secrets-golive
 ```
 
-Then Settings → Connect Outlook → Enable webhook → `bash scripts/verify-m365-ready.sh` → RESULT: PASS
+Then Settings → Connect Outlook (mode=live) → Enable Graph webhook → `bash scripts/verify-m365-ready.sh`  
+Verifier checks: 7 secrets · microsoftOAuth · live Graph seat + webhook · Entra `/login` · strict E2E (incl. **6b** Teams)

@@ -1058,6 +1058,23 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
+    requirement: "verify-m365-ready strict gate: secrets inventory, live Graph seat, Entra /login, strict E2E",
+    evidence: () => {
+      const verify = readFileSync("scripts/verify-m365-ready.sh", "utf8");
+      const apply = readFileSync("scripts/fly-apply-owner-microsoft-secrets.sh", "utf8");
+      return (
+        existsSync("scripts/verify-m365-ready.sh")
+        && /MICROSOFT_TENANT_ID/.test(verify)
+        && /GOTRUE_EXTERNAL_AZURE_URL/.test(verify)
+        && /Sign in with Microsoft/.test(verify)
+        && /unset ARIA_ALLOW_PARTIAL_M365_E2E/.test(verify)
+        && /live Graph seat/.test(verify)
+        && /e2e-workflow-test\.sh/.test(verify)
+        && /post-m365-secrets-golive/.test(apply)
+      );
+    },
+  },
+  {
     requirement: "Golive status probe documents tip vs live vs confirm without secrets",
     evidence: () => {
       const status = readFileSync("scripts/print-fly-golive-status.sh", "utf8");
