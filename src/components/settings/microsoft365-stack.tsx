@@ -179,7 +179,7 @@ function Microsoft365StackInner() {
         step={1}
         title="Entra SSO (sign-in)"
         subtitle="Build-time login flag only — confirm Sign in with Microsoft works on /login (GoTrue Azure)."
-        state={ssoFlagOn ? "active" : supabaseEnabled ? "active" : "pending"}
+        state={ssoFlagOn ? "active" : "pending"}
       >
         <SystemReadiness
           items={[
@@ -322,10 +322,11 @@ function Microsoft365StackInner() {
             },
             {
               id: "entra-sso",
-              label: "Entra SSO flag (verify on /login)",
-              ok: ssoFlagOn,
+              label: "Entra SSO (GoTrue Azure — verify /login)",
+              // Public NEXT_PUBLIC flag alone is never live Entra proof.
+              ok: false,
               hint: ssoFlagOn
-                ? "Flag on — not counted as M365-ready; confirm Microsoft sign-in on /login."
+                ? "NEXT_PUBLIC_ENABLE_AZURE_LOGIN is on — still not live-verified here; confirm Sign in with Microsoft on /login after GoTrue Azure secrets."
                 : "Off until GoTrue Azure env is configured; fly-deploy-now.sh enables NEXT_PUBLIC_ENABLE_AZURE_LOGIN when secrets are complete.",
             },
           ]}

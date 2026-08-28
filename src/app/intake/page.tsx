@@ -506,7 +506,7 @@ export default function IntakePage() {
       <PageHeader
         eyebrow="Intake"
         title="Open needs → sourcing"
-        description="Pull hiring needs from Outlook, or paste a brief. Aria parses it into an editable role and starts a real sourcing campaign."
+        description="Hiring needs arrive via Outlook Graph webhook (no inbox polling), or paste a brief. Aria parses it into an editable role and starts a real sourcing campaign."
         actions={
           <Badge tone="aqua" dot>
             <ShieldCheck className="h-3.5 w-3.5" aria-hidden />

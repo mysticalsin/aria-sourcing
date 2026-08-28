@@ -19,7 +19,8 @@ export function defaultIntegrations(): IntegrationStatus[] {
       id: "int_outlook",
       name: "Email Inbox / Outlook",
       category: "Inbox",
-      description: "Connect Microsoft 365 via OAuth. Pull open needs and route candidate replies.",
+      description:
+        "Connect Microsoft 365 via OAuth. Hiring needs arrive via Graph webhook push (no inbox polling); replies route to classify.",
       status: "not_configured",
       mode: "mock",
       lastSync: null,
@@ -241,13 +242,14 @@ export function defaultIntegrations(): IntegrationStatus[] {
 }
 
 /** Configuration catalogue for a new live tenant. Seed connection timestamps
- * are demo fixtures, so every adapter starts explicitly unconfigured. Real
- * adapters remain labelled live to expose their actual setup surfaces. */
+ * are demo fixtures, so every adapter starts explicitly unconfigured and mock.
+ * Hydrate / Connect Outlook (or a validated key) is what flips mode to live —
+ * never badge Live from `real: true` alone. */
 export function defaultLiveIntegrations(): IntegrationStatus[] {
   return defaultIntegrations().map((integration) => ({
     ...integration,
     status: "not_configured",
-    mode: integration.real ? "live" : "mock",
+    mode: "mock",
     lastSync: null,
     connectedAccount: undefined,
   }));

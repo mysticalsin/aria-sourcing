@@ -619,7 +619,7 @@ export default function SettingsPage() {
                     id="dryRunMode"
                     icon={<Lock className="h-4 w-4" />}
                     label="Dry-run mode"
-                    description="Simulate sends only: nothing leaves the system. Forced on when no mailbox or LinkedIn provider is connected."
+                    description="Simulate sends only: nothing leaves the system. Forced on until an Outlook/Gmail (or SendGrid/Resend) mailbox is connected — LinkedIn alone stays dry-run."
                     checked={settings.dryRunMode || !hasConnectedMailbox(seats, integrations)}
                     onCheckedChange={(v) => setToggle({ dryRunMode: v }, "Dry-run mode", v)}
                   />

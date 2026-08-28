@@ -251,6 +251,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /"blocked"/.test(src)
         && /Hiring-need mailbox route \(Graph\)/.test(src)
         && /inboundActive/.test(src)
+        && /ssoFlagOn \? "active" : "pending"/.test(src)
+        && /id: "entra-sso"[\s\S]{0,200}ok: false/.test(src)
         && !/ok: mailboxConnected \? inboundActive : inboundReady/.test(src)
       );
     },
@@ -1226,6 +1228,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E/.test(script)
         && /ARIA_ALLOW_SKIP_APPROVE_E2E/.test(script)
         && /ARIA_ALLOW_PARTIAL_M365_E2E/.test(script)
+        && /E2E_STALE_FLY/.test(script)
+        && /ARIA_ALLOW_STALE_FLY_E2E/.test(script)
         && /RESULT: PARTIAL/.test(script)
         && /RESULT: FAIL/.test(script)
         && /MS_LIVE_GAP/.test(script)

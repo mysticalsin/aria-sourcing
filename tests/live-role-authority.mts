@@ -70,6 +70,8 @@ ok(
     /skills: defaultSkills\(\)/.test(storeSource) &&
     /export function defaultLiveIntegrations/.test(integrationsSource) &&
     /status: "not_configured"/.test(integrationsSource) &&
+    /mode: "mock"/.test(integrationsSource) &&
+    !/mode: integration\.real \? "live"/.test(integrationsSource) &&
     /lastSync: null/.test(integrationsSource),
 );
 ok(

@@ -147,7 +147,11 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
       title: `${integration.name} → ${nextMode === "live" ? "Live" : "Mock"} mode`,
       description:
         nextMode === "live"
-          ? "Live mode active: outreach routes through these credentials once the sending domain is verified."
+          ? isGraphOAuthCard
+            ? "Label only until Connect Outlook/Gmail proves mode=live — this toggle does not send mail or create Teams meetings."
+            : connected
+              ? "Live label set — outbound still requires a verified mailbox path and Approve → Send; this card alone is not send-ready."
+              : "Live label only — connect and verify credentials before treating this adapter as production-ready."
           : "Mock mode is the safe default. No real calls are made.",
       variant: nextMode === "live" ? "warning" : "info",
     });
