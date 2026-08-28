@@ -256,24 +256,76 @@ export default function SettingsPage() {
     if (tab && VALID_TABS.has(tab)) setActiveTab(tab);
     const oauth = params.get("oauth");
     const message = params.get("message");
-    // Fail-closed: craftable ?oauth=success without a real callback message must not toast success.
-    // OAuth callbacks always set `Connected <email>` or `LinkedIn connected as …`.
-    const oauthSuccessMessageOk =
-      Boolean(message?.trim()) &&
-      (/^Connected\s+\S+/i.test(message!) || /linkedin\s+connected/i.test(message!));
-    if (oauth === "success" && oauthSuccessMessageOk) {
-      const linkedIn = /linkedin/i.test(message ?? "");
-      const graphWebhookWarning = /Graph webhook not enabled|Graph webhook setup failed|Graph webhook failed/i.test(message ?? "");
-      toast({
-        title: linkedIn ? "LinkedIn connected" : "Mailbox connected",
-        description: message ?? "",
-        variant: graphWebhookWarning ? "error" : "success",
-      });
+    // Fail-closed: never toast success from URL alone — confirm a live connection row exists.
+    if (oauth === "success") {
+      const linkedInHint = /linkedin/i.test(message ?? "");
       goTab("integrations");
       window.history.replaceState({}, "", `${window.location.pathname}?tab=integrations`);
-    } else if (oauth === "success" && !oauthSuccessMessageOk) {
-      goTab("integrations");
-      window.history.replaceState({}, "", `${window.location.pathname}?tab=integrations`);
+      void (async () => {
+        try {
+          if (linkedInHint) {
+            const res = await fetch("/api/linkedin/connections", { credentials: "include" });
+            const json = (await res.json().catch(() => null)) as {
+              oauthConnections?: Array<{ displayName?: string | null; email?: string | null }>;
+              seats?: Array<{ mode?: string; connectedAccount?: string | null }>;
+            } | null;
+            const oauth = json?.oauthConnections?.find(
+              (c) => Boolean(c.displayName?.trim() || c.email?.trim()),
+            );
+            const liveSeat = json?.seats?.find(
+              (s) => s.mode === "live" && Boolean(s.connectedAccount?.trim()),
+            );
+            if (oauth || liveSeat) {
+              toast({
+                title: "LinkedIn connected",
+                description:
+                  message?.trim() ||
+                  (oauth
+                    ? `LinkedIn connected as ${oauth.displayName || oauth.email}`
+                    : `LinkedIn seat live: ${liveSeat?.connectedAccount}`),
+                variant: "success",
+              });
+              return;
+            }
+          } else {
+            const res = await fetch("/api/email/connections", { credentials: "include" });
+            const json = (await res.json().catch(() => null)) as {
+              connections?: Array<{
+                accountEmail?: string;
+                seatMode?: string | null;
+                provider?: string;
+              }>;
+            } | null;
+            const live = (json?.connections ?? []).find(
+              (c) =>
+                Boolean(c.accountEmail?.trim()) &&
+                (c.seatMode === "live" ||
+                  c.provider === "SendGrid" ||
+                  c.provider === "Resend"),
+            );
+            if (live) {
+              toast({
+                title: "Mailbox connected",
+                description: message?.trim() || `Connected ${live.accountEmail}`,
+                variant: "success",
+              });
+              return;
+            }
+          }
+          toast({
+            title: linkedInHint ? "LinkedIn not confirmed" : "Mailbox not confirmed",
+            description:
+              "OAuth callback finished but no live connection is visible yet. Refresh Integrations or reconnect.",
+            variant: "warning",
+          });
+        } catch {
+          toast({
+            title: "Could not confirm OAuth",
+            description: "Refresh Settings → Integrations to verify the connection.",
+            variant: "warning",
+          });
+        }
+      })();
     } else if (oauth === "error") {
       const linkedIn = /linkedin/i.test(message ?? "");
       toast({

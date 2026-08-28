@@ -1135,7 +1135,7 @@ export interface AgentSeat {
   color?: string;
   /** Language this agent writes outreach in (ISO code). */
   language?: string;
-  /** Connected email account label (official API). Empty = not connected. */
+  /** Mailbox account label. For Graph/Gmail, Live send requires mode=live (OAuth); a pasted label alone is not a live mailbox. */
   connectedAccount: string;
   createdAt: string;
   /** LlmProvider.id assigned to this agent (overrides workspace default). */

@@ -261,17 +261,30 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
     },
   ];
 
+  const oauthLive = isOAuthProvider && seat.mode === "live" && Boolean(seat.connectedAccount);
+  const operatorLabelOnly = isOAuthProvider && Boolean(seat.connectedAccount) && seat.mode !== "live";
+  const apiKeyMailbox = !isOAuthProvider && Boolean(seat.connectedAccount);
+
   const headerStatus =
     isLive && seat.domainVerified
       ? "Live · sending"
       : isLive
         ? "Live · domain pending"
-        : seat.connectedAccount
+        : oauthLive || apiKeyMailbox
           ? "Dry-run · connected"
-          : "Dry-run · needs mailbox";
+          : operatorLabelOnly
+            ? "Dry-run · label only"
+            : "Dry-run · needs mailbox";
 
-  const headerTone: Tone =
-    health.shouldPause ? "danger" : isLive && seat.domainVerified ? "success" : seat.connectedAccount ? "electric" : "neutral";
+  const headerTone: Tone = health.shouldPause
+    ? "danger"
+    : isLive && seat.domainVerified
+      ? "success"
+      : oauthLive || apiKeyMailbox
+        ? "electric"
+        : operatorLabelOnly
+          ? "warning"
+          : "neutral";
 
   return (
     <>
@@ -288,7 +301,7 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
 
           <SystemReadiness items={readinessItems} />
 
-          {seat.connectedAccount ? (
+          {oauthLive || apiKeyMailbox ? (
             <ConnectedIdentityBanner
               displayName={seat.connectedAccount}
               secondary={
@@ -311,6 +324,14 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
                 ) : undefined
               }
             />
+          ) : operatorLabelOnly ? (
+            <div className="rounded-2xl bg-warning-soft px-3.5 py-3 text-warning ring-1 ring-inset ring-warning/25">
+              <p className="text-xs font-semibold">Operator mailbox label (not OAuth)</p>
+              <p className="text-sm font-medium">{seat.connectedAccount}</p>
+              <p className="mt-1 text-xs opacity-90">
+                Connect Microsoft/Google OAuth before claiming a live mailbox or Live send.
+              </p>
+            </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-line/80 bg-canvas/50 px-4 py-3">
               <p className="text-sm font-medium text-ink">No mailbox linked</p>

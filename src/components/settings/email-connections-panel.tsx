@@ -195,20 +195,30 @@ export function EmailConnectionsPanel() {
       });
       const json = (await res.json().catch(() => null)) as {
         ok?: boolean;
+        status?: string;
         message?: string;
+        detail?: string;
         error?: string;
         latencyMs?: number;
         checks?: { id: string; ok: boolean; detail: string }[];
       } | null;
       const failed = json?.checks?.filter((c) => !c.ok) ?? [];
-      toast({
-        title: json?.ok ? "Mailbox validated" : "Mailbox needs attention",
-        description:
-          json?.message ??
-          json?.error ??
-          (failed.length ? failed.map((c) => c.detail).join(" · ") : `HTTP ${res.status}`),
-        variant: json?.ok ? "success" : "error",
-      });
+      if (json?.status === "dry-run") {
+        toast({
+          title: "Public demo only",
+          description: json.detail ?? json.message ?? "Mailbox validate is dry-run — nothing checked live.",
+          variant: "info",
+        });
+      } else {
+        toast({
+          title: json?.ok ? "Mailbox validated" : "Mailbox needs attention",
+          description:
+            json?.message ??
+            json?.error ??
+            (failed.length ? failed.map((c) => c.detail).join(" · ") : `HTTP ${res.status}`),
+          variant: json?.ok ? "success" : "error",
+        });
+      }
       await load();
     } catch {
       toast({ title: "Test failed", description: "Network error.", variant: "error" });

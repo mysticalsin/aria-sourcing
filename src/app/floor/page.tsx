@@ -495,7 +495,17 @@ function AgentDetailDrawer({
         </div>
 
         <dl className="grid grid-cols-2 gap-3 text-sm">
-          <Meta icon={<Mail className="h-4 w-4" />} label="Mailbox" value={seat.connectedAccount || seat.operatorEmail} />
+          <Meta
+            icon={<Mail className="h-4 w-4" />}
+            label="Mailbox"
+            value={
+              seat.provider === "Microsoft Graph" || seat.provider === "Gmail API"
+                ? seat.mode === "live" && seat.connectedAccount
+                  ? seat.connectedAccount
+                  : "Not connected"
+                : seat.connectedAccount || seat.operatorEmail || "Not connected"
+            }
+          />
           <Meta icon={<Building2 className="h-4 w-4" />} label="Provider" value={seat.provider} />
           <Meta icon={<Languages className="h-4 w-4" />} label="Language" value={languageLabel(seat.language ?? "en")} />
           <Meta icon={<Clock className="h-4 w-4" />} label="Send window" value={`${seat.sendWindow.startHour}:00–${seat.sendWindow.endHour}:00 ${seat.sendWindow.timezone}`} />

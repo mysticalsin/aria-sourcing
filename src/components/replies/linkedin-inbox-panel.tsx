@@ -24,6 +24,7 @@ type ChannelEvent = {
   inbound_id: string | null;
   conversation_id: string | null;
   occurred_at: string;
+  payload?: { source?: string } | null;
 };
 
 function asChannelEvent(ev: LinkedInDemoChannelEvent): ChannelEvent {
@@ -37,6 +38,7 @@ function asChannelEvent(ev: LinkedInDemoChannelEvent): ChannelEvent {
     inbound_id: ev.inbound_id,
     conversation_id: ev.conversation_id,
     occurred_at: ev.occurred_at,
+    payload: { source: "admin_simulate" },
   };
 }
 
@@ -166,6 +168,7 @@ export function LinkedInInboxPanel({
         const label = linkedInEventLabel((ev.event_type as LinkedInEventType) || "reply");
         const isReply = ev.event_type === "reply";
         const healthy = Boolean(ev.candidate_id);
+        const simulated = ev.payload?.source === "admin_simulate";
         return (
           <motion.li
             key={ev.id}
@@ -180,6 +183,11 @@ export function LinkedInInboxPanel({
               badges={
                 <>
                   <Linkedin className="h-3.5 w-3.5 text-[#0A66C2]" aria-hidden />
+                  {simulated ? (
+                    <Badge tone="warning" size="sm">
+                      Simulated
+                    </Badge>
+                  ) : null}
                   {isReply && !ev.candidate_id ? (
                     <Badge tone="warning" size="sm">
                       triage

@@ -364,6 +364,10 @@ ok(
   "fleet manual save does not toast Mailbox connected",
   /Operator mailbox label saved/.test(seatCard) && !/title: "Mailbox connected"/.test(seatCard),
 );
+ok(
+  "fleet OAuth seats show label-only when mode is not live",
+  /Dry-run · label only/.test(seatCard) && /Operator mailbox label \(not OAuth\)/.test(seatCard),
+);
 
 const intakePanel = readFileSync("src/components/intake/outlook-needs-panel.tsx", "utf8");
 ok(
@@ -374,9 +378,10 @@ ok(
 
 const settingsPage = readFileSync("src/app/settings/page.tsx", "utf8");
 ok(
-  "settings oauth=success toast requires Connected/LinkedIn callback message",
-  /oauthSuccessMessageOk/.test(settingsPage) &&
-    /\^Connected\\s\+\\S\+/.test(settingsPage),
+  "settings oauth=success confirms live connection before success toast",
+  /oauth === "success"/.test(settingsPage) &&
+    /\/api\/email\/connections/.test(settingsPage) &&
+    /Mailbox not confirmed|no live connection/.test(settingsPage),
 );
 
 const bootstrapCache = readFileSync("src/lib/workspace-bootstrap-cache.ts", "utf8");

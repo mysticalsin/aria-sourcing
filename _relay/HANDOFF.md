@@ -32,11 +32,13 @@ status: owner-wait-m365-strict-pass
 
 ```bash
 bash scripts/print-fly-golive-status.sh
+bash scripts/print-fly-deploy-confirm.sh
 bash scripts/print-m365-owner-portal-checklist.sh
 bash scripts/probe-m365-unblock.sh --apply
 # Settings → Connect Outlook (live) → Enable Graph webhook
 bash scripts/verify-m365-ready.sh          # step 6b must pass
 env -u ARIA_ALLOW_PARTIAL_M365_E2E bash e2e-workflow-test.sh
+# step 3c should show PASS; MS-gap PARTIAL only when FAILS=0
 ```
 
 ## Decisions made (don't relitigate)
@@ -53,8 +55,10 @@ env -u ARIA_ALLOW_PARTIAL_M365_E2E bash e2e-workflow-test.sh
 
 ```bash
 bash scripts/print-fly-golive-status.sh   # deploy_status=tip_live
+bash scripts/print-fly-deploy-confirm.sh
 curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
 ARIA_ALLOW_PARTIAL_M365_E2E=1 bash e2e-workflow-test.sh
+# step 3c should show PASS (live provenance); if live=0 → 3c FAIL / provenance fix
 bash scripts/verify-m365-ready.sh
 env -u ARIA_ALLOW_PARTIAL_M365_E2E bash e2e-workflow-test.sh
 ```
@@ -64,3 +68,6 @@ env -u ARIA_ALLOW_PARTIAL_M365_E2E bash e2e-workflow-test.sh
 - Strict E2E fails on empty sourcing without partial flag — transient quota (provenance / step 3c)
 - Approve 422/503 after retries → PARTIAL warn only when `ARIA_ALLOW_PARTIAL_M365_E2E=1`
 - GHA CI fails instantly with 0 steps — ignore; local + Fly are authoritative
+EOF
+# rewrite only the tail from Next steps — use Write for full file instead
+true

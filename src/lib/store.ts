@@ -4539,17 +4539,27 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               });
               const out = (await testRes.json().catch(() => null)) as {
                 ok?: boolean;
+                status?: string;
                 message?: string;
+                detail?: string;
                 error?: string;
                 latencyMs?: number;
               } | null;
-              result = {
-                ok: Boolean(out?.ok),
-                latencyMs: out?.latencyMs ?? Date.now() - t0,
-                message: out?.ok
-                  ? `${out.message ?? "Graph OK"} · live seat + webhook ready for Teams confirmLive books.`
-                  : out?.message ?? out?.error ?? `${integ.name}: validation failed.`,
-              };
+              if (out?.status === "dry-run") {
+                result = {
+                  ok: false,
+                  latencyMs: out?.latencyMs ?? Date.now() - t0,
+                  message: out.detail ?? out.message ?? "Public demo dry-run — Graph/Teams not validated.",
+                };
+              } else {
+                result = {
+                  ok: Boolean(out?.ok),
+                  latencyMs: out?.latencyMs ?? Date.now() - t0,
+                  message: out?.ok
+                    ? `${out.message ?? "Graph OK"} · live seat + webhook ready for Teams confirmLive books.`
+                    : out?.message ?? out?.error ?? `${integ.name}: validation failed.`,
+                };
+              }
             }
           } else {
             const testRes = await workspaceFetch("/api/email/test", {
