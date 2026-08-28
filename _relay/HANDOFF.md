@@ -11,7 +11,7 @@ status: post-m365-loop-hardening
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft (HOLD — do not open another)
-- **Live Fly:** `fc8b54a` / **0071** · ready ok · tip `9f0ce1f+` pending remint (`deploy_status=stale_owner_remint_required`)
+- **Live Fly:** `fc8b54a` / **0071** · ready ok · tip `135db57` pending remint (`deploy_status=stale_owner_remint_required`)
 - **Audit:** **64/64** (target after this commit)
 - **Gate:** `npx tsc --noEmit && npm test` green
 - **M365:** `fly_m365_missing=7` · watcher armed · `/tmp/owner-microsoft.env` absent
@@ -28,6 +28,8 @@ status: post-m365-loop-hardening
 6. Split `ARIA_ALLOW_PARTIAL_LLM_E2E` / `E2E_LLM_GAP` from M365 partial — critics soft-fail forces PARTIAL (never PASS)
 7. Live tenants refuse keyword `draftReplyResponse` + sourcing-agent mock drafts; Quality badge success only when `qualityCriticsUsed`
 8. Tests: keyword no-successors + model/Anthropic failover; audit pins updated
+9. LangGraph `intent:full` defaults to live critics; `ARIA_QUALITY_LLM_CRITICS=0` → needs_review
+10. Live `parseIntakeLive` refuses heuristic; curator badges Unavailable on proxy fail; empty keyword draftResponse
 
 ## Blockers
 
