@@ -10,7 +10,7 @@ status: gate-green-audit-56-56-awaiting-owner-fly-golive
 
 ## Current state
 
-- **Branch tip:** `cursor/enterprise-autopilot-b91d` **`2e18b12`** (pending push after golive wiring)
+- **Branch tip:** `cursor/enterprise-autopilot-b91d` **`247c7f5`**
 - **Live Fly:** **`e469126`** (migration **0068**)
 - **Deploy confirm:** stale — `confirm_matches_tip=no`
 - **Status:** `bash scripts/print-fly-golive-status.sh` or `bash scripts/fly-enterprise-golive-when-ready.sh` (prints status at start/end)
@@ -18,7 +18,7 @@ status: gate-green-audit-56-56-awaiting-owner-fly-golive
 - **Audit matrix:** **56/56**
 - **Live E2E:** PARTIAL 0 fail (PARTIAL+stale flags)
 - **Microsoft SKIPPED** — goal **IN_PROGRESS**
-- **PR:** [#33](https://github.com/mysticalsin/aria-sourcing/pull/33)
+- **PR:** [#33](https://github.com/mysticalsin/aria-sourcing/pull/33) open; **PR #32 closed** (supersedes #29–#31)
 
 ## Done this shift
 
