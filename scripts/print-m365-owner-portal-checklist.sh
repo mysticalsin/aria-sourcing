@@ -81,9 +81,10 @@ bash scripts/fly-deploy-now.sh
 ## Verify on Fly
 
 curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
-bash scripts/print-fly-missing-secrets.sh   # expect 0 MISSING
-# Settings → Connect Outlook → Enable webhook
-APP_URL=https://aria-mantu-app.fly.dev bash e2e-workflow-test.sh
+bash scripts/print-fly-missing-secrets.sh   # expect 0 MISSING for MICROSOFT_* + GOTRUE_EXTERNAL_AZURE_*
+# Settings → Connect Outlook (mode=live) → Enable Graph webhook
+bash scripts/verify-m365-ready.sh
+# → RESULT: PASS (no ARIA_ALLOW_PARTIAL_*); proves confirmLive Teams joinUrl
 
 Existing apps portal: ${PORTAL_APPS}
 

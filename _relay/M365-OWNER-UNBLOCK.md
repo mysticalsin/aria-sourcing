@@ -2,7 +2,7 @@
 
 **Blocker ID:** M365-FLY-6  
 **Production:** https://aria-mantu-app.fly.dev only  
-**Updated:** 2026-08-28T10:00Z
+**Updated:** 2026-08-28T09:15Z
 
 ## Missing Fly secrets (6)
 
@@ -10,6 +10,14 @@
 |---|---|
 | aria-mantu-app | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` (`MICROSOFT_REDIRECT_URI` + `DATA_ENCRYPTION_KEY` already set) |
 | aria-mantu-auth | `GOTRUE_EXTERNAL_AZURE_ENABLED`, `GOTRUE_EXTERNAL_AZURE_CLIENT_ID`, `GOTRUE_EXTERNAL_AZURE_SECRET`, `GOTRUE_EXTERNAL_AZURE_URL` |
+
+## Correct redirect URIs (do not invent)
+
+| Purpose | URI |
+|---|---|
+| Graph OAuth (app) | `https://aria-mantu-app.fly.dev/auth/microsoft/callback` |
+| GoTrue Entra (Kong) | `https://aria-mantu-kong.fly.dev/auth/v1/callback` |
+| Azure URL | `https://login.microsoftonline.com/<tenant-id>/v2.0` |
 
 ## Why agent cannot self-serve
 
@@ -24,13 +32,12 @@ Marker: `/tmp/az-create-mantu-graph-app.noperm`
 
 ```bash
 ARIA_ALLOW_PARTIAL_M365_E2E=1 bash e2e-workflow-test.sh
-# → 47 pass, 0 fail, 1 warn (PARTIAL) — approve path ON
+# → 48 pass, 0 fail, 1 warn (PARTIAL)
 ```
 
-- Webhook need → **top-10 live** → Hermes Mantu drafts → approve → LinkedIn 409 + email dry-run → calendar dry-run
+- Webhook need → **top-10 live** → Hermes Mantu drafts → approve with **live multi-agent LLM critics (stages=6)** → LinkedIn 409 + email dry-run → calendar dry-run
 - **Only remaining skip:** step **6b** confirmLive Teams book (no Graph seat — secrets missing)
-- Live tip: `81a2445` · migration **0071**
-
+- Live tip: `244132b` · migration **0071**
 
 ## Owner action (pick one)
 
@@ -41,7 +48,7 @@ bash scripts/print-m365-owner-portal-checklist.sh   # tenant-specific URLs
 # After portal: copy Application (client) ID + client secret
 export ARIA_AZURE_APP_ID='<client-id>'
 bash scripts/az-configure-existing-graph-app.sh --apply
-bash scripts/fly-apply-owner-microsoft-secrets.sh --yes
+bash scripts/fly-apply-owner-microsoft-secrets.sh
 # remint confirm, then:
 bash scripts/fly-deploy-now.sh
 ```
@@ -50,8 +57,8 @@ bash scripts/fly-deploy-now.sh
 
 ```bash
 cp production-readiness/.owner-microsoft.env.example /tmp/owner-microsoft.env
-# edit real values
-bash scripts/fly-apply-owner-microsoft-secrets.sh --yes
+# edit real values (redirect URIs above)
+bash scripts/fly-apply-owner-microsoft-secrets.sh
 bash scripts/fly-deploy-now.sh
 ```
 
@@ -59,18 +66,15 @@ bash scripts/fly-deploy-now.sh
 
 Then agent can run `az ad app create` via `scripts/az-create-mantu-graph-app.sh`.
 
-## Full E2E gate (no partial flags)
+## Post-secrets UI + strict gate
 
-After M365 secrets + Connect Outlook (mode=live) + Graph webhook:
+1. Settings → Connect Outlook (`mode=live`)
+2. Enable Graph webhook subscription (push intake — no polling)
+3. Confirm Entra SSO on `/login` after GoTrue Azure secrets + tip deploy (`NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true`)
+4. Optional P-7: verified delivery domain for live email send
 
 ```bash
-APP_URL=https://aria-mantu-app.fly.dev bash e2e-workflow-test.sh
-# → RESULT: PASS (no ARIA_ALLOW_PARTIAL_* flags)
+bash scripts/verify-m365-ready.sh
+# fails closed if secrets / microsoftOAuth / live seat+webhook missing
+# then runs e2e-workflow-test.sh with NO ARIA_ALLOW_PARTIAL_* → RESULT: PASS
 ```
-
-## Post-M365 UI steps
-
-1. Settings → Connect Outlook (live seat, mode=live)
-2. Enable Graph webhook subscription
-3. Connect verified delivery domain (P-7) for live email send
-4. Confirm Entra SSO on `/login` after GoTrue Azure secrets + `NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true`
