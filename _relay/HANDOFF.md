@@ -1,17 +1,17 @@
 ---
 project: MSourcing / ARIA
-shift: 281
+shift: 282
 agent: cursor-cloud
-updated: 2026-08-28T11:16Z
+updated: 2026-08-28T11:21Z
 status: partial-e2e-green-m365-owner-blocked
 ---
 
-# Handoff — Shift 280
+# Handoff — Shift 282
 
 ## Current state
 
 - **Live Fly:** `344fcaf` / **0071** · ready ok
-- **Branch tip:** `03831fb`
+- **Branch tip:** `bce51e1`
 - **PR #35** (supersedes closed #29–#33)
 - **Gate:** audit **60/60** · `npx tsc --noEmit && npm test` green (2026-08-28)
 - **PARTIAL E2E (live):** 48 pass / 0 fail / 1 warn (6b only; 2026-08-28)
