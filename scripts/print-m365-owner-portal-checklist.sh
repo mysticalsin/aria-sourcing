@@ -50,15 +50,16 @@ Owner must create OR designate an existing app, then run configure + apply scrip
    - ${GOTRUE_REDIRECT}
 5. Register → copy **Application (client) ID**
 6. Certificates & secrets → New client secret → copy value once
-7. API permissions → Add Microsoft Graph **Application** permissions (admin consent):
-   - Mail.Read (or Mail.ReadWrite if using shared mailbox)
+7. API permissions → Microsoft Graph **Delegated** (required for Connect Outlook /me path):
+   - Mail.Read
    - Mail.Send
    - Calendars.ReadWrite
-   - OnlineMeetings.ReadWrite
-   - User.Read.All (if resolving mailboxes)
-   Plus **Delegated** if users sign in via OAuth connect flow:
-   - Mail.Read, Mail.Send, Calendars.ReadWrite, offline_access, openid, profile
-8. Grant admin consent for the tenant
+   - OnlineMeetings.ReadWrite (Teams joinUrl on calendar create)
+   - User.Read
+   - offline_access
+   Grant admin consent for the tenant.
+   (Application permissions are NOT used by the mailbox OAuth /me flow — skip unless you have a separate daemon path.)
+8. Copy Application (client) ID + tenant ID + client secret value
 
 ## Agent/owner commands (after portal)
 

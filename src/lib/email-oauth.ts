@@ -1,3 +1,4 @@
+import { resolveMicrosoftOAuthAuthority } from "@/lib/email-connections";
 import { redactEmail, redactSecrets } from "@/lib/log-redact";
 import { renderEmailWithUnsubscribe, type RenderedUnsubscribeEmail } from "@/lib/email-unsubscribe";
 import { classifyFailedHttpDeliveryState } from "@/lib/delivery-outcome";
@@ -210,10 +211,13 @@ async function refreshMicrosoftToken(connection: EmailConnection): Promise<strin
   const clientSecret = process.env.MICROSOFT_CLIENT_SECRET;
   if (!clientId || !clientSecret || !connection.refreshToken) return null;
 
+  const authority = resolveMicrosoftOAuthAuthority();
+  if (!authority) return null;
+
   let res: Response;
   try {
     res = await postFormWithRetry(
-      "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+      `${authority}/token`,
       new URLSearchParams({
         client_id: clientId,
         client_secret: clientSecret,

@@ -8,7 +8,7 @@
 
 | App | Secret |
 |---|---|
-| aria-mantu-app | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` (`MICROSOFT_REDIRECT_URI` + `DATA_ENCRYPTION_KEY` already set) |
+| aria-mantu-app | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID` (`MICROSOFT_REDIRECT_URI` + `DATA_ENCRYPTION_KEY` already set; tenant may be derived from `GOTRUE_EXTERNAL_AZURE_URL`) |
 | aria-mantu-auth | `GOTRUE_EXTERNAL_AZURE_ENABLED`, `GOTRUE_EXTERNAL_AZURE_CLIENT_ID`, `GOTRUE_EXTERNAL_AZURE_SECRET`, `GOTRUE_EXTERNAL_AZURE_URL` |
 
 ## Correct redirect URIs (do not invent)
@@ -18,6 +18,8 @@
 | Graph OAuth (app) | `https://aria-mantu-app.fly.dev/auth/microsoft/callback` |
 | GoTrue Entra (Kong) | `https://aria-mantu-kong.fly.dev/auth/v1/callback` |
 | Azure URL | `https://login.microsoftonline.com/<tenant-id>/v2.0` |
+
+**Graph OAuth authority:** authorize/token use `https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/*` — never `/common/` (single-tenant apps return AADSTS50194).
 
 ## Why agent cannot self-serve
 

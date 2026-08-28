@@ -6,6 +6,8 @@ import {
   oauthAuthorizePath,
   oauthConfiguredFor,
   pickSeatForConnect,
+  resolveMicrosoftOAuthAuthority,
+  resolveMicrosoftTenantId,
   summarizeEmailValidation,
 } from "../src/lib/email-connections";
 import { existsSync, readFileSync } from "node:fs";
@@ -66,6 +68,45 @@ ok(
     MICROSOFT_CLIENT_SECRET: "sec",
     MICROSOFT_REDIRECT_URI: "https://aria-mantu-app.fly.dev/auth/microsoft/callback",
   }).microsoftOAuth === true,
+);
+ok(
+  "resolveMicrosoftTenantId prefers MICROSOFT_TENANT_ID",
+  resolveMicrosoftTenantId({
+    MICROSOFT_TENANT_ID: "864aa37f-ea3f-4c0f-998f-457b1a268762",
+    GOTRUE_EXTERNAL_AZURE_URL: "https://login.microsoftonline.com/11111111-1111-4111-8111-111111111111/v2.0",
+  }) === "864aa37f-ea3f-4c0f-998f-457b1a268762",
+);
+ok(
+  "resolveMicrosoftTenantId parses GOTRUE_EXTERNAL_AZURE_URL",
+  resolveMicrosoftTenantId({
+    GOTRUE_EXTERNAL_AZURE_URL: "https://login.microsoftonline.com/ce57ebe3-a63d-4708-b5cf-c274b48bd26c/v2.0",
+  }) === "ce57ebe3-a63d-4708-b5cf-c274b48bd26c",
+);
+ok(
+  "production resolveMicrosoftOAuthAuthority fail-closed without tenant",
+  resolveMicrosoftOAuthAuthority({ NODE_ENV: "production" }) === null,
+);
+ok(
+  "production resolveMicrosoftOAuthAuthority uses tenant path (not /common/)",
+  resolveMicrosoftOAuthAuthority({
+    NODE_ENV: "production",
+    MICROSOFT_TENANT_ID: "864aa37f-ea3f-4c0f-998f-457b1a268762",
+  }) === "https://login.microsoftonline.com/864aa37f-ea3f-4c0f-998f-457b1a268762/oauth2/v2.0",
+);
+ok(
+  "non-prod resolveMicrosoftOAuthAuthority falls back to organizations (not common)",
+  resolveMicrosoftOAuthAuthority({ NODE_ENV: "test" }) ===
+    "https://login.microsoftonline.com/organizations/oauth2/v2.0",
+);
+ok(
+  "Microsoft authorize route uses tenant authority helper (no hardcoded /common/)",
+  !readFileSync("src/app/auth/microsoft/route.ts", "utf8").includes("/common/oauth2")
+    && readFileSync("src/app/auth/microsoft/route.ts", "utf8").includes("resolveMicrosoftOAuthAuthority"),
+);
+ok(
+  "Microsoft callback + refresh use tenant authority helper (no hardcoded /common/)",
+  !readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8").includes("/common/oauth2")
+    && !readFileSync("src/lib/email-oauth.ts", "utf8").includes("/common/oauth2"),
 );
 ok(
   "production encryption requires key",

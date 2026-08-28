@@ -341,6 +341,36 @@ export async function ensureGraphMailSubscription(input: {
   const existing = subs.find((s) => s.connectionId === input.connectionId);
 
   if (existing?.status === "active" && !subscriptionNeedsRenewal(existing.expiresAt)) {
+    // Do not trust DB alone — Graph may have deleted/expired the subscription.
+    const connection = await loadConnection(input.connectionId, input.workspaceId);
+    if (!connection) return { ok: false, reason: "Microsoft Graph connection not found." };
+    const token = await getAccessTokenForReading(connection);
+    if (!token) return { ok: false, reason: "Could not refresh Microsoft Graph token." };
+    await persistRefreshedTokens(connection);
+    let probe: Response;
+    try {
+      probe = await fetch(
+        `${GRAPH}/subscriptions/${encodeURIComponent(existing.graphSubscriptionId)}`,
+        {
+          headers: { authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(15_000),
+        },
+      );
+    } catch {
+      return { ok: false, reason: "Graph subscription probe unreachable." };
+    }
+    if (probe.status === 404) {
+      const created = await createGraphMailSubscription(input);
+      if (!created.ok) return created;
+      return { ok: true, expiresAt: created.expiresAt, mode: "recreated" };
+    }
+    if (!probe.ok) {
+      const detail = await probe.text().catch(() => "");
+      return {
+        ok: false,
+        reason: `Graph subscription probe failed (${probe.status}): ${detail.slice(0, 200)}`,
+      };
+    }
     return { ok: true, expiresAt: existing.expiresAt, mode: "unchanged" };
   }
 

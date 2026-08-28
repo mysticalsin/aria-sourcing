@@ -10,6 +10,7 @@
 # Required for Graph/Outlook on aria-mantu-app:
 #   MICROSOFT_CLIENT_ID
 #   MICROSOFT_CLIENT_SECRET
+#   MICROSOFT_TENANT_ID  (or derivable from GOTRUE_EXTERNAL_AZURE_URL)
 # Optional (defaults to public Fly callback):
 #   MICROSOFT_REDIRECT_URI
 #
@@ -76,10 +77,35 @@ require_real() {
 MS_ID="${MICROSOFT_CLIENT_ID:-}"
 MS_SECRET="${MICROSOFT_CLIENT_SECRET:-}"
 MS_REDIRECT="${MICROSOFT_REDIRECT_URI:-https://aria-mantu-app.fly.dev/auth/microsoft/callback}"
+MS_TENANT="${MICROSOFT_TENANT_ID:-}"
 
 require_real MICROSOFT_CLIENT_ID "$MS_ID"
 require_real MICROSOFT_CLIENT_SECRET "$MS_SECRET"
 require_real MICROSOFT_REDIRECT_URI "$MS_REDIRECT"
+
+# Derive tenant from GoTrue Azure URL when not explicit (required for single-tenant Graph OAuth).
+if is_placeholder "$MS_TENANT"; then
+  ENTRA_URL_FOR_TENANT="${GOTRUE_EXTERNAL_AZURE_URL:-}"
+  if ! is_placeholder "$ENTRA_URL_FOR_TENANT"; then
+    MS_TENANT="$(
+      node -e '
+        const u = process.argv[1] || "";
+        try {
+          const path = new URL(u).pathname.replace(/^\/+|\/+$/g, "");
+          const t = (path.split("/")[0] || "").toLowerCase();
+          if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(t)) {
+            process.stdout.write(t);
+          }
+        } catch {}
+      ' "$ENTRA_URL_FOR_TENANT"
+    )"
+  fi
+fi
+if is_placeholder "$MS_TENANT"; then
+  echo "ERROR: MICROSOFT_TENANT_ID missing — set it or GOTRUE_EXTERNAL_AZURE_URL with tenant GUID." >&2
+  echo "       Single-tenant apps break with /common/ OAuth (AADSTS50194)." >&2
+  exit 1
+fi
 
 case "$MS_REDIRECT" in
   https://aria-mantu-app.fly.dev/auth/microsoft/callback) ;;
@@ -95,7 +121,8 @@ echo "=== Applying Microsoft Graph secrets to aria-mantu-app ==="
 flyctl secrets set -a aria-mantu-app \
   "MICROSOFT_CLIENT_ID=${MS_ID}" \
   "MICROSOFT_CLIENT_SECRET=${MS_SECRET}" \
-  "MICROSOFT_REDIRECT_URI=${MS_REDIRECT}"
+  "MICROSOFT_REDIRECT_URI=${MS_REDIRECT}" \
+  "MICROSOFT_TENANT_ID=${MS_TENANT}"
 
 ENTRA_ID="${GOTRUE_EXTERNAL_AZURE_CLIENT_ID:-}"
 ENTRA_SECRET="${GOTRUE_EXTERNAL_AZURE_SECRET:-}"

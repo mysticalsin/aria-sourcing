@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { resolveMicrosoftRedirectUri } from "@/lib/email-connections";
+import { resolveMicrosoftOAuthAuthority, resolveMicrosoftRedirectUri } from "@/lib/email-connections";
 import { getServerSupabase, requireAdmin } from "@/lib/supabase/server";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 
@@ -51,6 +51,18 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  const authority = resolveMicrosoftOAuthAuthority();
+  if (!authority) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "MICROSOFT_TENANT_ID (or GOTRUE_EXTERNAL_AZURE_URL with tenant GUID) is required for single-tenant Graph OAuth — /common/ breaks AzureADMyOrg apps (AADSTS50194).",
+      },
+      { status: 500 },
+    );
+  }
+
   // CSRF: random nonce echoed in `state` and bound to an HttpOnly cookie, verified
   // in the callback. PKCE (S256): a high-entropy verifier kept server-side (cookie)
   // with only its SHA-256 challenge sent to Microsoft, so a stolen code is useless.
@@ -59,7 +71,7 @@ export async function GET(req: NextRequest) {
   const codeChallenge = await pkceChallenge(codeVerifier);
   const state = Buffer.from(JSON.stringify({ seatId, provider: "Microsoft Graph", nonce })).toString("base64url");
 
-  const authUrl = new URL("https://login.microsoftonline.com/common/oauth2/v2.0/authorize");
+  const authUrl = new URL(`${authority}/authorize`);
   authUrl.searchParams.set("client_id", clientId);
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set("response_type", "code");

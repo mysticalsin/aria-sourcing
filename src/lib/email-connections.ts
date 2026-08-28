@@ -50,6 +50,50 @@ export function resolveMicrosoftRedirectUri(
   return "http://localhost:3000/auth/microsoft/callback";
 }
 
+const TENANT_GUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Resolve Entra tenant for Graph mailbox OAuth.
+ * Prefer MICROSOFT_TENANT_ID; else parse GOTRUE_EXTERNAL_AZURE_URL
+ * (`https://login.microsoftonline.com/<tenant>/v2.0`).
+ * Single-tenant apps fail with AADSTS50194 if authorize/token hit `/common/`.
+ */
+export function resolveMicrosoftTenantId(
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  const explicit = (env.MICROSOFT_TENANT_ID ?? "").trim();
+  if (explicit && TENANT_GUID_RE.test(explicit)) return explicit.toLowerCase();
+
+  const azureUrl = (env.GOTRUE_EXTERNAL_AZURE_URL ?? "").trim();
+  if (azureUrl) {
+    try {
+      const path = new URL(azureUrl).pathname.replace(/^\/+|\/+$/g, "");
+      const tenant = path.split("/")[0] ?? "";
+      if (TENANT_GUID_RE.test(tenant)) return tenant.toLowerCase();
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
+}
+
+/**
+ * OAuth v2 authority base (…/oauth2/v2.0) for authorize + token.
+ * Production: require a resolved tenant (single-tenant Fly path).
+ * Non-production without tenant: `organizations` (never `/common/` for work apps).
+ */
+export function resolveMicrosoftOAuthAuthority(
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  const tenant = resolveMicrosoftTenantId(env);
+  if (tenant) {
+    return `https://login.microsoftonline.com/${tenant}/oauth2/v2.0`;
+  }
+  if (env.NODE_ENV === "production") return null;
+  return "https://login.microsoftonline.com/organizations/oauth2/v2.0";
+}
+
 /** Env readiness for mailbox OAuth and transactional senders (booleans only). */
 export function emailProviderReadiness(
   env: Record<string, string | undefined> = process.env,

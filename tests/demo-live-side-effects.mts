@@ -85,7 +85,7 @@ ok(
 );
 ok(
   "Microsoft mailbox connect validates seat_id after admin auth and before provider redirect",
-  guardBetween("src/app/auth/microsoft/route.ts", "if (!seatId)", "login.microsoftonline.com/common/oauth2"),
+  guardBetween("src/app/auth/microsoft/route.ts", "if (!seatId)", "resolveMicrosoftOAuthAuthority"),
 );
 
 const storeSource = source("src/lib/store.ts");

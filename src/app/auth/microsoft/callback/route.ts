@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { resolveMicrosoftRedirectUri } from "@/lib/email-connections";
+import { resolveMicrosoftOAuthAuthority, resolveMicrosoftRedirectUri } from "@/lib/email-connections";
 import { getServerSupabase, getServiceSupabase, requireAdmin } from "@/lib/supabase/server";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { encryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
@@ -84,10 +84,18 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  const authority = resolveMicrosoftOAuthAuthority();
+  if (!authority) {
+    return redirectError(
+      req,
+      "MICROSOFT_TENANT_ID (or GOTRUE_EXTERNAL_AZURE_URL with tenant GUID) is required for Graph token exchange.",
+    );
+  }
+
   // Exchange code for tokens (PKCE verifier proves possession; 10s timeout).
   let tokenRes: Response;
   try {
-    tokenRes = await fetchWithTimeout("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+    tokenRes = await fetchWithTimeout(`${authority}/token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
