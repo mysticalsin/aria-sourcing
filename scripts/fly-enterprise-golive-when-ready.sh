@@ -53,11 +53,22 @@ done
 
 # If Azure CLI is authenticated and drop-zone is absent, mint the Entra app
 # (requires owner device-login; never invents client secrets locally).
+# Respect noperm latch — do not spam az ad app create when privileges were denied.
 if [ "$has_drop" = "0" ] && command -v az >/dev/null 2>&1 && az account show >/dev/null 2>&1; then
-  echo "=== az logged in — creating/reusing Mantu Graph Entra app → drop-zone ==="
-  bash "$repo/scripts/az-create-mantu-graph-app.sh" || {
-    echo "WARN: az-create-mantu-graph-app.sh failed (need app-registration rights)." >&2
-  }
+  if [ -n "${ARIA_AZURE_APP_ID:-}" ] && [[ "${ARIA_AZURE_APP_ID}" != PLACEHOLDER* ]]; then
+    echo "=== ARIA_AZURE_APP_ID set — configuring existing Entra app → drop-zone ==="
+    bash "$repo/scripts/az-configure-existing-graph-app.sh" --apply || {
+      echo "WARN: az-configure-existing-graph-app.sh failed." >&2
+    }
+  elif [ -f /tmp/az-create-mantu-graph-app.noperm ]; then
+    echo "=== Skipping az-create (noperm latch) — need portal app + /tmp/owner-microsoft.env or ARIA_AZURE_APP_ID ==="
+    bash "$repo/scripts/print-m365-owner-portal-checklist.sh" 2>/dev/null | head -40 || true
+  else
+    echo "=== az logged in — creating/reusing Mantu Graph Entra app → drop-zone ==="
+    bash "$repo/scripts/az-create-mantu-graph-app.sh" || {
+      echo "WARN: az-create-mantu-graph-app.sh failed (need app-registration rights)." >&2
+    }
+  fi
   if [ -r /tmp/owner-microsoft.env ] && ! grep -q 'PLACEHOLDER' /tmp/owner-microsoft.env 2>/dev/null; then
     has_drop=1
   fi
