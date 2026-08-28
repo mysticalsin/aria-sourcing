@@ -627,16 +627,16 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
-    requirement: "Enterprise E2E deliverable tip-tracked (PR #35; supersedes closed #29–#33)",
+    requirement: "Enterprise E2E deliverable tip-tracked (PR #36; supersedes closed #29–#35)",
     evidence: () => {
       const golive = readFileSync("scripts/fly-golive-mantu-e2e.sh", "utf8");
       const handoff = readFileSync("_relay/HANDOFF.md", "utf8");
       const printConfirm = readFileSync("scripts/print-fly-deploy-confirm.sh", "utf8");
       const printE2e = readFileSync("scripts/print-fly-e2e-env.sh", "utf8");
       return (
-        (/PR #35/.test(golive) || /PR #33/.test(golive))
+        (/PR #35/.test(golive) || /PR #33/.test(golive) || /PR #36/.test(golive))
         && /supersedes closed #29/.test(golive)
-        && (/PR #33/.test(handoff) || /#33/.test(handoff) || /PR #35/.test(handoff) || /#35/.test(handoff))
+        && (/PR #33/.test(handoff) || /#33/.test(handoff) || /PR #35/.test(handoff) || /#35/.test(handoff) || /PR #36/.test(handoff) || /#36/.test(handoff))
         && /print-fly-deploy-confirm/.test(handoff)
         && /ARIA_PROD_DEPLOY_CONFIRM/.test(printConfirm)
         && /print-fly-e2e-env/.test(golive)
