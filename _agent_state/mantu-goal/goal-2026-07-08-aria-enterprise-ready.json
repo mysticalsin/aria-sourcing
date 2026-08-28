@@ -328,6 +328,6 @@
   ],
   "metrics_at_completion": null,
   "retro_id": null,
-  "last_shift_note": "2026-08-28T03:05Z shift 221: pinned 0069 loop payload contract in loop-authority-contract (31 tests). Gate green, audit 54/54. Fly still e469126/0068 — golive blocked on owner deploy confirm remint. Microsoft SKIPPED. Goal IN_PROGRESS.",
-  "updated_at": "2026-08-28T03:05:00+00:00"
+  "last_shift_note": "2026-08-28T03:10Z shift 222: enterprise audit 55/55 (+0069 golive pin). Gate green, live E2E PARTIAL 0 fail. Fly e469126/0068 — owner deploy confirm remint required. Microsoft SKIPPED. Goal IN_PROGRESS.",
+  "updated_at": "2026-08-28T03:10:00+00:00"
 }
