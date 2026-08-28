@@ -382,11 +382,19 @@ export async function POST(req: NextRequest) {
 
   // Domain verification happens before the irreversible claim. A dry-run
   // decision must never leave a claimed ledger row that blocks later outreach.
+  // Microsoft Graph OAuth seats send as the connected mailbox (me/sendMail) —
+  // DNS SPF on the operator label is not required once mode=live after Connect Outlook.
   if (!seat.domain_verified) {
-    const verified = await domainVerified(seat.operator_email.split("@")[1] ?? "");
-    if (verified) {
+    const isGraph = String(seat.provider ?? "") === "Microsoft Graph";
+    if (isGraph && seat.mode === "live") {
       await supabase.from("agent_seats").update({ domain_verified: true }).eq("id", seatId);
       seat.domain_verified = true;
+    } else {
+      const verified = await domainVerified(seat.operator_email.split("@")[1] ?? "");
+      if (verified) {
+        await supabase.from("agent_seats").update({ domain_verified: true }).eq("id", seatId);
+        seat.domain_verified = true;
+      }
     }
   }
   if (!seat.domain_verified) {

@@ -458,8 +458,10 @@ export function EmailConnectionsPanel() {
 
         <p className="flex items-start gap-1.5 text-xs text-muted">
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-          After connect: run Validate, then Enable webhook for Outlook (Graph push). Emergency inbox sync on
-          Intake is break-glass only. MCP servers are tested under AI &amp; Models → MCP. See{" "}
+          After Connect Outlook + Enable webhook: Aria sources candidates, drafts stay Needs Approval
+          (nothing auto-sends). Approve → Send uses your Outlook mailbox for Email. LinkedIn stays
+          copy/paste + confirm (assisted-manual — never auto-sent). Emergency inbox sync on Intake is
+          break-glass only. See{" "}
           <code className="rounded bg-ink/[0.06] px-1 font-mono">docs/runbooks/connect-gmail-outlook.md</code>.
         </p>
       </CardContent>

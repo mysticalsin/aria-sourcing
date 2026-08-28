@@ -114,7 +114,12 @@ export async function promoteMicrosoftGraphSeatLive(
   svc: ServiceClient,
   input: { seatId: string; accountEmail?: string | null },
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const patch: Record<string, string> = { mode: "live", status: "active" };
+  const patch: Record<string, string | boolean> = {
+    mode: "live",
+    status: "active",
+    // Graph me/sendMail — mailbox is OAuth-proven; SPF vanity gate does not apply.
+    domain_verified: true,
+  };
   const email = input.accountEmail?.trim();
   if (email) patch.connected_account = email;
 

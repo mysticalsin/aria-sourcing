@@ -264,9 +264,12 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
   const oauthLive = isOAuthProvider && seat.mode === "live" && Boolean(seat.connectedAccount);
   const operatorLabelOnly = isOAuthProvider && Boolean(seat.connectedAccount) && seat.mode !== "live";
   const apiKeyMailbox = !isOAuthProvider && Boolean(seat.connectedAccount);
+  const graphMailboxReady =
+    seat.provider === "Microsoft Graph" && seat.mode === "live" && Boolean(seat.connectedAccount);
+  const mailboxVerified = graphMailboxReady || seat.domainVerified;
 
   const headerStatus =
-    isLive && seat.domainVerified
+    isLive && mailboxVerified
       ? "Live · mailbox"
       : isLive
         ? "Live · domain pending"
@@ -278,7 +281,7 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
 
   const headerTone: Tone = health.shouldPause
     ? "danger"
-    : isLive && seat.domainVerified
+    : isLive && mailboxVerified
       ? "success"
       : oauthLive || apiKeyMailbox
         ? "electric"
@@ -305,13 +308,15 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
             <ConnectedIdentityBanner
               displayName={seat.connectedAccount}
               secondary={
-                seat.domainVerified
-                  ? "Domain verified · ready for live sends"
+                graphMailboxReady || seat.domainVerified
+                  ? seat.provider === "Microsoft Graph"
+                    ? "Outlook connected · Approve then Send uses this mailbox (nothing auto-sends)"
+                    : "Domain verified · ready for live sends"
                   : "Domain not verified — verify before going live"
               }
               icon={<MailCheck className="h-5 w-5" aria-hidden />}
               action={
-                !seat.domainVerified && canManageLlm ? (
+                !graphMailboxReady && !seat.domainVerified && canManageLlm ? (
                   <Button
                     variant="outline"
                     size="sm"

@@ -1510,7 +1510,21 @@ async function handleDraftGenerate(job, context) {
     throw new HandlerError("outreach_draft_unreachable", true);
   }
   if (!response.ok) {
-    await response.body?.cancel().catch(() => undefined);
+    let failBody = null;
+    try {
+      failBody = await readBoundedJson(response, RPC_RESPONSE_BYTES);
+    } catch {
+      failBody = null;
+    }
+    // Unreachable contact channel is durable — enrich or pick another candidate.
+    if (
+      response.status === 422
+      && isRecord(failBody)
+      && failBody.status === "contact_channel_unavailable"
+    ) {
+      throw new HandlerError("outreach_draft_contact_channel_unavailable", false);
+    }
+    await response.body?.cancel?.().catch(() => undefined);
     throw new HandlerError(`outreach_draft_http_${response.status}`, response.status >= 500);
   }
   const body = await readBoundedJson(response, RPC_RESPONSE_BYTES);

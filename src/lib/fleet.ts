@@ -114,9 +114,15 @@ export function seatHealthStatus(seat: AgentSeat, settings: FleetSettings): Seat
   return { tone: "success", label: "Healthy", shouldPause: false, detail: "Deliverability within safe limits." };
 }
 
-/** Live sending requires verified domain + explicit live mode (else dry-run). */
+/** Live sending requires verified domain + explicit live mode (else dry-run).
+ *  Microsoft Graph seats that completed Connect Outlook (mode=live + connected
+ *  account) are mailbox-ready — Graph sendMail does not use vanity-domain SPF. */
 export function seatCanSendLive(seat: AgentSeat): { ok: boolean; reason: string } {
   if (seat.mode !== "live") return { ok: false, reason: "Seat in dry-run (mock) mode" };
+  const isGraph = seat.provider === "Microsoft Graph";
+  if (isGraph && seat.connectedAccount) {
+    return { ok: true, reason: "" };
+  }
   if (!seat.domainVerified) return { ok: false, reason: "Domain not verified (SPF/DKIM/DMARC)" };
   return { ok: true, reason: "" };
 }

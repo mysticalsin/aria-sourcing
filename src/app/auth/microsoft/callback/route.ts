@@ -233,7 +233,15 @@ export async function GET(req: NextRequest) {
   {
     const { error: liveErr } = await svc
       .from("agent_seats")
-      .update({ mode: "live", status: "active", connected_account: accountEmail })
+      .update({
+        mode: "live",
+        status: "active",
+        connected_account: accountEmail,
+        // Graph me/sendMail authenticates as this mailbox — SPF on a vanity
+        // domain is the wrong gate. Mark verified so Approve → Send can use
+        // Outlook once the operator confirms (dry-run / Needs Approval still apply).
+        domain_verified: true,
+      })
       .eq("id", seatId);
     if (liveErr) {
       console.error("[microsoft/callback] agent_seats live promote failed:", liveErr.message, liveErr.code);

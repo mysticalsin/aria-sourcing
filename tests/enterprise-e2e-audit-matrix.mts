@@ -493,6 +493,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
           readFileSync("src/app/api/outreach/send/route.ts", "utf8"),
         )
         && /critics_required/.test(draftRoute)
+        && /preferredOutreachChannel/.test(draftRoute)
+        && /contact_channel_unavailable/.test(draftRoute)
         && /runRecruitingGraph/.test(draftRoute)
         && /graphStage/.test(draftRoute)
         && /validateOutreachQualityLive/.test(draftRoute)
@@ -709,6 +711,9 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         )
         && /DEEPSEEK_API_KEY/.test(readFileSync("production-readiness/.owner-llm.env.example", "utf8"))
         && /ensureGraphMailSubscription/.test(readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8"))
+        && /domain_verified:\s*true/.test(readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8"))
+        && /Microsoft Graph/.test(readFileSync("src/app/api/outreach/send/route.ts", "utf8"))
+        && /seat\.provider === "Microsoft Graph"/.test(readFileSync("src/lib/fleet.ts", "utf8"))
         && /seatMode !== "live"/.test(readFileSync("src/components/settings/email-connections-panel.tsx", "utf8"))
         && /EMAIL_INBOUND_WEBHOOK_SECRET/.test(readFileSync("scripts/print-fly-secrets-checklist.sh", "utf8"))
         && /fly-apply-owner-microsoft-secrets/.test(readFileSync("scripts/print-fly-secrets-checklist.sh", "utf8"))

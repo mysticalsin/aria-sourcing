@@ -13,9 +13,11 @@ export function FleetRosterStack({ children }: { children: React.ReactNode }) {
   const seats = useSeats();
 
   const withMailbox = seats.filter((s) => s.connectedAccount).length;
-  const liveReady = seats.filter(
-    (s) => s.mode === "live" && s.connectedAccount && s.domainVerified,
-  ).length;
+  const liveReady = seats.filter((s) => {
+    if (s.mode !== "live" || !s.connectedAccount) return false;
+    if (s.provider === "Microsoft Graph") return true;
+    return Boolean(s.domainVerified);
+  }).length;
 
   const stepsComplete =
     (seats.length > 0 ? 1 : 0) + (withMailbox > 0 ? 1 : 0) + (liveReady > 0 ? 1 : 0);

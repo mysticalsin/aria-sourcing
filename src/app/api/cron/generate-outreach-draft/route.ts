@@ -15,6 +15,7 @@ import { getServiceSupabase } from "@/lib/supabase/server";
 import type { Candidate, Campaign, OutreachChannel, SystemSettings } from "@/lib/types";
 import { candidateDisclosureContextForCampaignLike } from "@/lib/agent-disclosure-policy";
 import { resolveOutreachLanguage } from "@/lib/outreach-language";
+import { preferredOutreachChannel } from "@/lib/outreach-channel";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -23,7 +24,7 @@ const BodySchema = z.object({
   workspaceId: z.string().uuid(),
   campaignId: z.string().min(1).max(100),
   candidateId: z.string().min(1).max(100),
-  channel: z.enum(["Email", "LinkedIn"]).optional(),
+  channel: z.enum(["Email", "LinkedIn", "WhatsApp", "SMS"]).optional(),
 });
 
 function authorized(req: NextRequest): boolean {
@@ -75,8 +76,32 @@ export async function POST(req: NextRequest) {
   }
 
   const channel: OutreachChannel =
-    parsed.data.channel ??
-    (candidate.linkedinUrl ? "LinkedIn" : "Email");
+    parsed.data.channel ?? preferredOutreachChannel(candidate);
+  // Prefer a reachable channel — never invent Email drafts for LinkedIn-only profiles
+  // (Approve would dead-end on "no email"). LinkedIn drafts stay Needs Approval +
+  // assisted-manual (409 on send); Email drafts use connected Outlook after human Send.
+  if (channel === "Email" && !candidate.email.trim()) {
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "contact_channel_unavailable",
+        detail: "No email on file — enrich the candidate or draft LinkedIn when a profile URL exists.",
+        channel,
+      },
+      { status: 422 },
+    );
+  }
+  if (channel === "LinkedIn" && !candidate.linkedinUrl.trim()) {
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "contact_channel_unavailable",
+        detail: "No LinkedIn profile URL on file — enrich or use Email when an address exists.",
+        channel,
+      },
+      { status: 422 },
+    );
+  }
   const voice = mantuOutreachVoice();
   const mockGenerated = generateOutreach(candidate, campaign, "Casual Professional", channel, 1, voice);
 
