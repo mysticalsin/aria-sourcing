@@ -85,7 +85,7 @@ import {
   readWorkspaceBootstrapCache,
   writeWorkspaceBootstrapCache,
 } from "./workspace-bootstrap-cache";
-import { effectiveDryRunMode } from "./outreach-send-mode";
+import { effectiveDryRunMode, planOutreachApprovalDelivery } from "./outreach-send-mode";
 import { demoStateAllowsCandidatePersistence } from "./store/demo-persistence";
 import { mapApifyCandidates, mapSillageCandidates, parseSillageIdentifier } from "./store/sourcing-helpers";
 import { computeCoverage } from "./enrichment/merge";
@@ -2695,29 +2695,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // LinkedIn is assisted-manual: the system drafts the message but a human must
       // copy/paste it on the candidate's profile. Keep it out of the sent counter
       // and ledger until the operator confirms the manual send.
-      const isLive = !forceDryRun;
-      const isLinkedInManual = msg.channel === "LinkedIn" && isLive;
-      // Email, WhatsApp, and SMS all have a real live provider wired up in
-      // sendApprovedOutreach() (domain-verified mailbox, WhatsApp Cloud, Twilio SMS).
-      // None of them may be delivered on approval alone.
-      const isLiveSendChannel =
-        (msg.channel === "Email" || msg.channel === "WhatsApp" || msg.channel === "SMS") && isLive;
-      // HYBRID send model: in LIVE mode an approval records approval and holds the
-      // de-dupe slot (ledger 'claimed') but NEVER sends — an explicit sendApprovedOutreach()
-      // actually delivers and only then flips to 'sent'. Dry-run approves without simulating
-      // a delivery (no Scheduled/sentAt/Contacted/ledger sent) so rehearsal cannot look live.
-      const isPendingSend = isLinkedInManual || isLiveSendChannel;
-      const finalStatus: OutreachStatus = isLinkedInManual
-        ? "Pending Manual Send"
-        : isLiveSendChannel || forceDryRun
-          ? "Approved"
-          : "Scheduled";
-      const finalLedgerStatus: LedgerStatus = isLinkedInManual
-        ? "pending_manual"
-        : isLiveSendChannel || forceDryRun
-          ? "claimed"
-          : "sent";
-      const stampSimulatedSend = !forceDryRun && !isPendingSend;
+      // HYBRID send model: live Email/WA/SMS stay Approved until explicit send;
+      // dry-run approves without simulating delivery (see planOutreachApprovalDelivery).
+      const {
+        isLinkedInManual,
+        isLiveSendChannel,
+        finalStatus,
+        finalLedgerStatus,
+        stampSimulatedSend,
+      } = planOutreachApprovalDelivery({ channel: msg.channel, forceDryRun });
       commit((prev) => {
         const outreach = prev.outreach.map((m) =>
           m.id === messageId
@@ -2801,7 +2787,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               ? "Pending Manual Send"
               : isLiveSendChannel
                 ? "Approved, pending send"
-                : "Approved / Dry-run scheduled",
+                : forceDryRun
+                  ? "Approved (dry-run, nothing sent)"
+                  : "Approved, pending send",
             campaignId: campaign.id,
             linkedEntityType: "candidate",
             linkedEntityId: candidate.id,

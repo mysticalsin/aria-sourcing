@@ -222,7 +222,7 @@ function OutreachView() {
     .filter((m) => m.status === "Pending Manual Send")
     .filter((m) => matches(m.campaignId));
   const scheduledFiltered = allOutreach
-    .filter((m) => m.status === "Scheduled")
+    .filter((m) => m.status === "Scheduled" || m.status === "Approved")
     .filter((m) => matches(m.campaignId));
   const followUpsDueFiltered = followUpsDue.filter((f) => matches(f.campaignId));
 
@@ -613,9 +613,9 @@ function OutreachView() {
                     <Send className="h-4 w-4" />
                   </span>
                   <span>
-                    <span className="block text-sm font-bold text-ink">Scheduled</span>
+                    <span className="block text-sm font-bold text-ink">Approved / queued</span>
                     <span className="block text-xs text-muted">
-                      Approved &amp; queued for send
+                      Approved &amp; awaiting send (or scheduled)
                     </span>
                   </span>
                 </span>
@@ -636,7 +636,7 @@ function OutreachView() {
               {sentOpen &&
                 (scheduledFiltered.length === 0 ? (
                   <p className="px-1 text-sm text-muted">
-                    Nothing scheduled yet. Approved messages will appear here.
+                    Nothing approved yet. Approved messages awaiting send will appear here.
                   </p>
                 ) : (
                   <div className="space-y-5 animate-fade-in">

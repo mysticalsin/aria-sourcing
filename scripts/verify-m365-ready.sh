@@ -15,7 +15,7 @@ KONG_URL="${KONG_URL:-https://aria-mantu-kong.fly.dev}"
 
 echo "=== 1) Fly secret inventory (names only) ==="
 missing=0
-for name in MICROSOFT_CLIENT_ID MICROSOFT_CLIENT_SECRET MICROSOFT_REDIRECT_URI MICROSOFT_TENANT_ID DATA_ENCRYPTION_KEY; do
+for name in MICROSOFT_CLIENT_ID MICROSOFT_CLIENT_SECRET MICROSOFT_REDIRECT_URI MICROSOFT_TENANT_ID DATA_ENCRYPTION_KEY EMAIL_INBOUND_WEBHOOK_SECRET; do
   if flyctl secrets list -a aria-mantu-app 2>/dev/null | awk 'NR>1{print $1}' | grep -qx "$name"; then
     echo "  OK  aria-mantu-app $name"
   else

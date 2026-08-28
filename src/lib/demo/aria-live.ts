@@ -287,7 +287,7 @@ async function runSequence(actions: HermesActions, campaign: Campaign, seats: Ag
     return;
   }
   kpis.approved = 1;
-  setChapter("approving", "Outreach approved, scheduled (dry-run, nothing sent).", candidate.name);
+  setChapter("approving", "Outreach approved (dry-run, nothing sent).", candidate.name);
   await sleep(1400);
   if (restoring) return;
 

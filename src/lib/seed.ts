@@ -797,20 +797,20 @@ export function buildHistoricalDemoSeedState(): HermesState {
         };
         outreach.push(msg);
       } else {
-        // Sent (dry-run) history
+        // Dry-run history — Approved without simulated send (aligns with stampSimulatedSend).
         const tone = i % 3 === 0 ? "Technical" : i % 3 === 1 ? "Executive" : "Casual Professional";
         const channel = i % 4 === 0 ? "LinkedIn" : "Email";
         const gen = generateOutreach(cand, campaign, tone, channel, 1);
-        const sentAt = isoDaysBefore(10 - specIndex * 2 - (i % 4));
+        const approvedAt = isoDaysBefore(10 - specIndex * 2 - (i % 4));
         const msg: OutreachMessage = {
           id: genId("msg"), candidateId: cand.id, campaignId: campaign.id, channel,
           subject: gen.subject, body: gen.body, tone, personalizationEvidence: gen.personalizationEvidence,
-          status: "Scheduled", sequenceStep: 1, scheduledFor: sentAt, sentAt,
+          status: "Approved", sequenceStep: 1, scheduledFor: null, sentAt: null,
           approvedBy: settings.operatorName, dryRun: true, createdAt: isoDaysBefore(11 - specIndex * 2 - (i % 4)),
         };
         outreach.push(msg);
-        cand.lastContactedAt = sentAt;
-        cand.outreachHistory.push({ messageId: msg.id, channel, subject: gen.subject, status: "Scheduled", at: sentAt });
+        cand.lastContactedAt = approvedAt;
+        cand.outreachHistory.push({ messageId: msg.id, channel, subject: gen.subject, status: "Approved", at: approvedAt });
       }
 
       // Replies

@@ -3,7 +3,7 @@
  * HeyReach / LinkedIn assisted-manual "live" toggles do not unlock Queue Summary Live.
  */
 
-import type { AgentSeat, IntegrationStatus } from "@/lib/types";
+import type { AgentSeat, IntegrationStatus, LedgerStatus, OutreachChannel, OutreachStatus } from "@/lib/types";
 
 export type ConnectedOutboundProvider = {
   kind: "mailbox" | "linkedin";
@@ -156,4 +156,37 @@ export function effectiveDryRunMode(
 ): boolean {
   if (dryRunSetting) return true;
   return !hasConnectedMailbox(seats, integrations);
+}
+
+/**
+ * Pure approve→delivery plan. Dry-run never stamps a simulated send
+ * (no Scheduled/sentAt/ledger sent). Live Email/WA/SMS stay Approved until
+ * explicit send; LinkedIn stays Pending Manual Send.
+ */
+export function planOutreachApprovalDelivery(input: {
+  channel: OutreachChannel;
+  forceDryRun: boolean;
+}): {
+  isLinkedInManual: boolean;
+  isLiveSendChannel: boolean;
+  finalStatus: OutreachStatus;
+  finalLedgerStatus: LedgerStatus;
+  stampSimulatedSend: boolean;
+} {
+  const isLive = !input.forceDryRun;
+  const isLinkedInManual = input.channel === "LinkedIn" && isLive;
+  const isLiveSendChannel =
+    (input.channel === "Email" || input.channel === "WhatsApp" || input.channel === "SMS") && isLive;
+  const finalStatus: OutreachStatus = isLinkedInManual
+    ? "Pending Manual Send"
+    : isLiveSendChannel || input.forceDryRun
+      ? "Approved"
+      : "Scheduled";
+  const finalLedgerStatus: LedgerStatus = isLinkedInManual
+    ? "pending_manual"
+    : isLiveSendChannel || input.forceDryRun
+      ? "claimed"
+      : "sent";
+  const stampSimulatedSend = !input.forceDryRun && !isLinkedInManual && !isLiveSendChannel;
+  return { isLinkedInManual, isLiveSendChannel, finalStatus, finalLedgerStatus, stampSimulatedSend };
 }

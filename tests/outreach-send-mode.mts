@@ -9,6 +9,7 @@ import {
   hasConnectedOutboundProvider,
   listConnectedMailboxes,
   listConnectedOutboundProviders,
+  planOutreachApprovalDelivery,
 } from "../src/lib/outreach-send-mode";
 import { generateOutreach } from "../src/lib/mock-ai";
 import { buildHistoricalDemoSeedState, buildSeedState } from "../src/lib/seed";
@@ -48,6 +49,22 @@ ok(
   "Queue Summary mailboxes empty without Outlook",
   listConnectedMailboxes(emptySeats, bareIntegrations).length === 0,
 );
+
+{
+  const dryEmail = planOutreachApprovalDelivery({ channel: "Email", forceDryRun: true });
+  ok("dry-run Email → Approved", dryEmail.finalStatus === "Approved");
+  ok("dry-run Email → ledger claimed (not sent)", dryEmail.finalLedgerStatus === "claimed");
+  ok("dry-run Email → no simulated send stamp", dryEmail.stampSimulatedSend === false);
+
+  const liveEmail = planOutreachApprovalDelivery({ channel: "Email", forceDryRun: false });
+  ok("live Email → Approved pending send", liveEmail.finalStatus === "Approved");
+  ok("live Email → ledger claimed", liveEmail.finalLedgerStatus === "claimed");
+  ok("live Email → no approve-time send stamp", liveEmail.stampSimulatedSend === false);
+
+  const liveLi = planOutreachApprovalDelivery({ channel: "LinkedIn", forceDryRun: false });
+  ok("live LinkedIn → Pending Manual Send", liveLi.finalStatus === "Pending Manual Send");
+  ok("live LinkedIn → pending_manual ledger", liveLi.finalLedgerStatus === "pending_manual");
+}
 
 {
   // Status-only Outlook "connected" without connectedAccount must NOT claim Live.

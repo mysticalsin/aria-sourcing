@@ -326,7 +326,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /enabled \(intent only\)/.test(readFileSync("src/components/settings/schedules-panel.tsx", "utf8"))
         && /store counts/.test(readFileSync("src/components/floor/mission-control-hud.tsx", "utf8"))
         && /isRealSendFact\(step\.message\)/.test(readFileSync("src/components/sessions/audit-pack.tsx", "utf8"))
-        && /!forceDryRun/.test(readFileSync("src/lib/store.ts", "utf8"))
+        && /forceDryRun/.test(readFileSync("src/lib/store.ts", "utf8"))
+        && /planOutreachApprovalDelivery\(\{ channel: msg\.channel, forceDryRun \}\)/.test(readFileSync("src/lib/store.ts", "utf8"))
         && /reconciliation-required/.test(readFileSync("src/components/outreach/whatsapp-template-picker.tsx", "utf8"))
         && /Proposed interview prep/.test(readFileSync("src/lib/mock-ai.ts", "utf8"))
         && /ARIA_LOOP_KILL_SWITCH=false/.test(readFileSync("src/components/settings/loop-switchboard-panel.tsx", "utf8"))
@@ -335,6 +336,10 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /PARTIAL: microsoftOAuth=false/.test(readFileSync("e2e-workflow-test.sh", "utf8"))
         && /llm_auth=/.test(readFileSync("scripts/print-fly-golive-status.sh", "utf8"))
         && /DATA_ENCRYPTION_KEY/.test(readFileSync("scripts/print-fly-missing-secrets.sh", "utf8"))
+        && /planOutreachApprovalDelivery/.test(readFileSync("src/lib/outreach-send-mode.ts", "utf8"))
+        && /status === "Scheduled" \|\| m\.status === "Approved"/.test(readFileSync("src/app/outreach/page.tsx", "utf8"))
+        && /EMAIL_INBOUND_WEBHOOK_SECRET/.test(readFileSync("scripts/verify-m365-ready.sh", "utf8"))
+        && /Approved \(dry-run, nothing sent\)/.test(readFileSync("src/lib/store.ts", "utf8"))
       );
     },
   },
