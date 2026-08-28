@@ -153,7 +153,25 @@ function cand(partial: {
   );
   ok(
     "orchestrator expands GitHub query variants for top-10 supply",
-    /followers:>20 repos:>3/.test(orchSrc) && /configured\.slice\(0, 6\)/.test(orchSrc),
+    /followers:>20 repos:>3/.test(orchSrc)
+      && /githubLanguageForSkill/.test(orchSrc)
+      && /configured\.slice\(0, 6\)/.test(orchSrc),
+  );
+  const mapperSrc = await import("node:fs").then((fs) =>
+    fs.readFileSync(new URL("../src/lib/sourcing/candidate-mappers.ts", import.meta.url), "utf8"),
+  );
+  ok(
+    "GitHub mapper scores bio via recentActivity without fabricating currentTitle",
+    /bio \|\| null/.test(mapperSrc)
+      && /currentTitle: ""/.test(mapperSrc)
+      && /queryLanguages/.test(mapperSrc),
+  );
+  const fitSrc = await import("node:fs").then((fs) =>
+    fs.readFileSync(new URL("../src/lib/sourcing/candidate-fit.ts", import.meta.url), "utf8"),
+  );
+  ok(
+    "TypeScript Engineer aliases include Software Engineer for LinkedIn headlines",
+    /Software Engineer/.test(fitSrc) && /Frontend Engineer/.test(fitSrc) && /javascript\|react/.test(fitSrc),
   );
   const routeSrc = await import("node:fs").then((fs) =>
     fs.readFileSync(new URL("../src/app/api/sourcing-agent/route.ts", import.meta.url), "utf8"),

@@ -51,6 +51,20 @@ ok(
     "System Designer",
   ),
 );
+ok(
+  "Software Engineer alias matches TypeScript Engineer role",
+  candidateMatchesRoleTitle(
+    { currentTitle: "Software Engineer", recentActivity: "TypeScript React in London." },
+    "Senior TypeScript Engineer",
+  ),
+);
+ok(
+  "Product Manager does not match TypeScript Engineer via alias",
+  !candidateMatchesRoleTitle(
+    { currentTitle: "Product Manager", recentActivity: "Roadmaps in London." },
+    "Senior TypeScript Engineer",
+  ),
+);
 
 const systemDesigner = parseEmailAndJD({
   email: `This need is now ACTIVE: System Designer

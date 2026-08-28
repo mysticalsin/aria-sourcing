@@ -57,17 +57,35 @@ export interface MultiProviderSourcingResult {
   providersUsed: SourcingProviderId[];
 }
 
+function githubLanguageForSkill(skill: string): string | null {
+  const s = skill.toLowerCase().trim();
+  if (!s) return null;
+  if (/type\s*script|\bts\b|tsx/.test(s)) return "TypeScript";
+  if (/java\s*script|\bjs\b|react|node\.?js|next\.?js|vue|angular|express/.test(s)) return "JavaScript";
+  if (/python|django|flask|fastapi/.test(s)) return "Python";
+  if (/golang|\bgo\b/.test(s)) return "Go";
+  if (/\brust\b/.test(s)) return "Rust";
+  if (/\bjava\b|spring/.test(s)) return "Java";
+  if (/kotlin/.test(s)) return "Kotlin";
+  if (/c\+\+|cpp/.test(s)) return "C++";
+  if (/\bc#|dotnet|\.net/.test(s)) return "C#";
+  if (/swift|ios/.test(s)) return "Swift";
+  if (/^[A-Za-z][A-Za-z0-9+#.]{1,24}$/.test(skill.trim())) return skill.trim();
+  return null;
+}
+
 function githubQueriesFor(campaign: MultiProviderSourcingInput["campaign"]): string[] {
   const configured = (campaign.sourcingStrategy.githubQueries ?? [])
     .map((q) => q.query.trim())
     .filter(Boolean);
   if (configured.length > 0) return configured.slice(0, 6);
-  const skills = campaign.jobAnalysis.requiredSkills.slice(0, 3);
-  if (skills.length === 0) return [];
+  const skills = campaign.jobAnalysis.requiredSkills.slice(0, 4);
+  const languages = Array.from(
+    new Set(skills.map(githubLanguageForSkill).filter((lang): lang is string => Boolean(lang))),
+  );
+  if (languages.length === 0) return [];
   const queries: string[] = [];
-  for (const skill of skills) {
-    const lang = skill.replace(/\s+/g, "");
-    if (!lang) continue;
+  for (const lang of languages) {
     queries.push(`language:${lang} followers:>40 repos:>5`);
     queries.push(`language:${lang} followers:>20 repos:>3`);
   }
@@ -75,12 +93,15 @@ function githubQueriesFor(campaign: MultiProviderSourcingInput["campaign"]): str
     .replace(/[^\w\s]/g, " ")
     .trim()
     .split(/\s+/)
-    .find((part) => part.length > 2);
-  if (titleToken && skills[0]) {
-    const lang = skills[0].replace(/\s+/g, "");
-    queries.push(`${titleToken} language:${lang} followers:>10`);
+    .find((part) => part.length > 2 && !/^(senior|lead|staff|principal|junior)$/i.test(part));
+  if (titleToken && languages[0]) {
+    queries.push(`${titleToken} language:${languages[0]} followers:>10`);
   }
-  return Array.from(new Set(queries)).slice(0, 6);
+  const region = campaign.jobAnalysis.regions[0]?.trim();
+  if (region && languages[0] && !/^global$/i.test(region)) {
+    queries.push(`language:${languages[0]} location:${region.split(",")[0]!.trim()} followers:>10`);
+  }
+  return Array.from(new Set(queries)).slice(0, 8);
 }
 
 function linkedInQueriesFor(campaign: MultiProviderSourcingInput["campaign"]): string[] {
@@ -172,7 +193,7 @@ export async function runMultiProviderSourcing(
     selected.map(async (provider) => {
       const queries = queriesForProvider(provider, input.campaign, input.forcedQueries).slice(
         0,
-        provider.id === "linkedin_profiles" ? 1 : maxQueryRounds,
+        provider.id === "linkedin_profiles" ? 1 : provider.id === "github" ? 6 : maxQueryRounds,
       );
       if (queries.length === 0) {
         return { provider, providerHits: [] as Candidate[], providerExecutions: [] as MultiProviderExecution[] };

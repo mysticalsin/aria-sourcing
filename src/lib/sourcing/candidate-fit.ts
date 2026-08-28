@@ -26,6 +26,24 @@ export function roleTitleMatchAliases(roleTitle: string): string[] {
   if (/murex/i.test(t)) {
     aliases.push("Murex Consultant", "Murex Support", "Front Office Support");
   }
+  // Language/framework + Engineer titles: public LinkedIn headlines rarely say
+  // "TypeScript Engineer" verbatim — they say Software/Frontend/Full Stack Engineer.
+  if (/\bengineer\b/i.test(t) && /(type\s*script|javascript|react|node\.?js|python|golang|java|kotlin|rust|c\+\+|swift)\b/i.test(t)) {
+    aliases.push(
+      "Software Engineer",
+      "Senior Software Engineer",
+      "Full Stack Engineer",
+      "Full-Stack Engineer",
+      "Frontend Engineer",
+      "Front End Engineer",
+      "Front-End Engineer",
+      "Backend Engineer",
+      "Back End Engineer",
+      "Back-End Engineer",
+      "Platform Engineer",
+      "Application Engineer",
+    );
+  }
   return aliases;
 }
 

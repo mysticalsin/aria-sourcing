@@ -34,18 +34,35 @@ export function mapGithubCandidates(
 ): SourceResult {
   const jd = campaign.jobAnalysis;
   const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
+  const queryLanguages = Array.from(
+    query.matchAll(/\blanguage:([^\s]+)/gi),
+    (match) => match[1]!.replace(/["']/g, "").trim(),
+  ).filter(Boolean);
   const raw: Candidate[] = users.map((user) => {
     const name = (user.name && user.name.trim()) || user.login;
     const bio = (user.bio ?? "").trim();
     const bioLower = bio.toLowerCase();
     const matched = allSkills.filter((skill) => bioLower.includes(skill.toLowerCase()));
-    const techStack = Array.from(new Set([...(user.topLanguage ? [user.topLanguage] : []), ...matched]));
+    const techStack = Array.from(
+      new Set(
+        [
+          ...(user.topLanguage ? [user.topLanguage] : []),
+          ...queryLanguages,
+          ...matched,
+        ].filter(Boolean),
+      ),
+    );
+    const activityParts = [
+      bio || null,
+      `${user.publicRepos} public repos, ${user.followers} followers`,
+    ].filter(Boolean);
     return {
       id: genId("cand"),
       campaignId: campaign.id,
       name,
       email: user.email ?? "",
       avatarInitials: initialsFrom(name),
+      // Never promote GitHub bio into currentTitle — operators must not see a fabricated job title.
       currentTitle: "",
       currentCompany: (user.company ?? "").replace(/^@/, "").trim(),
       location: user.location ?? "",
@@ -60,7 +77,8 @@ export function mapGithubCandidates(
       yearsExperience: null,
       companyStageExperience: [],
       industryExperience: [],
-      recentActivity: `${user.publicRepos} public repos, ${user.followers} followers`,
+      // Bio belongs in recentActivity so skills/activity scoring can clear the 80% floor.
+      recentActivity: activityParts.join(" · "),
       stage: "Sourced",
       lastContactedAt: null,
       outreachHistory: [],

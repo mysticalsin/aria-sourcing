@@ -65,12 +65,19 @@ function overlapCount(a: string[], b: string[]): number {
 
 function locationMatchesRegion(location: string, region: string): boolean {
   if (region.trim().toLowerCase() === "global") return true;
-  const escaped = region
-    .trim()
-    .toLowerCase()
+  const loc = location.trim().toLowerCase();
+  const reg = region.trim().toLowerCase();
+  if (!loc || !reg) return false;
+  const escaped = reg
     .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
     .replace(/\s+/g, "\\s+");
-  return Boolean(escaped) && new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, "i").test(location);
+  if (escaped && new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, "i").test(loc)) {
+    return true;
+  }
+  // City-level: "London" ↔ "London, UK" (GitHub profiles often omit country).
+  const locCity = loc.split(",")[0]!.trim();
+  const regCity = reg.split(",")[0]!.trim();
+  return locCity.length > 2 && regCity.length > 2 && locCity === regCity;
 }
 
 /* ---- Individual dimension scorers (all return 0-100) --------------------- */
