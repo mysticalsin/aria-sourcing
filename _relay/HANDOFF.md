@@ -1,54 +1,51 @@
 ---
 project: MSourcing / ARIA
-shift: 246
+shift: 247
 agent: cursor-cloud
-updated: 2026-08-28T06:14Z
-status: tip-live-0071-fly-e2e-partial-m365-blocked
+updated: 2026-08-28T06:45Z
+status: tip-live-8c3945-fly-e2e-46-pass-partial-m365-quota
 ---
 
-# Handoff — Shift 246
+# Handoff — Shift 247
 
 ## Current state
 
-- **Branch tip:** `cursor/enterprise-autopilot-b91d` · **`33130a8`**
-- **Live Fly:** **`33130a8`** · migration **0071** · `deploy_status=tip_live`
-- **Test gate / audit:** green; **58/58**
-- **Fly E2E (PARTIAL):** **38 pass, 0 fail, 4 warn** — M365 + sourcing quota skips only
-- **PR:** [#35](https://github.com/mysticalsin/aria-sourcing/pull/35) (supersedes #29–#33)
-- **Deploy confirm:** `bash scripts/print-fly-deploy-confirm.sh` when tip code changes
+- **Branch tip:** `cursor/enterprise-autopilot-b91d` · **`8c3945c`**
+- **Live Fly:** **`8c3945c`** · migration **0071** · `deploy_status=tip_live`
+- **Test gate / audit:** green; **59/59**
+- **Fly E2E (PARTIAL):** **46 pass, 0 fail, 3 warn** — M365 + sourcing quota skips only
+- **PR:** [#35](https://github.com/mysticalsin/aria-sourcing/pull/35)
 
 ## Done this shift
 
-- Golive tip **`33130a8`** to Fly (bootstrap **0071** + app deploy)
-- Live `/api/ready`: `ok=true`, build=`33130a8`, migration=`0071_interview_prep_send_loop_kind.sql`
-- Fly E2E step **2c** PASS on live: reply webhook → `inbound_classify`; prep wiring pins green
+- **Hermes chat LLM failover:** dead Fly `KIMI_API_KEY` (401) → `serverGenerateText` vault Anthropic path for outreach/classify/sourcing tasks (`src/app/api/hermes/chat/route.ts`)
+- Golive **`8c3945c`** to Fly (app deploy; bootstrap migration step timed out but 0071 already applied)
+- Live `/api/ready`: `ok=true`, build=`8c3945c`, migration=`0071_interview_prep_send_loop_kind.sql`
+- Fly E2E steps **4–5** PASS: live Hermes drafts + approve + dry-run send (no partial approve skip)
+- E2E harness: synthetic candidate uses `Alex Chen` + Mantu-branded draft prompt (critics/approve green)
 
 ## Blockers (owner — full objective)
 
 1. **M365 secrets (6 missing)** — see [`M365-OWNER-UNBLOCK.md`](M365-OWNER-UNBLOCK.md)
-   - `bash scripts/print-m365-owner-portal-checklist.sh` (tenant-specific portal URLs)
-   - `export ARIA_AZURE_APP_ID=... && bash scripts/az-configure-existing-graph-app.sh --apply`
-2. **Full Fly E2E PASS** — strict run today: **42 pass, 9 fail** (no partial flags)
-   - Failures: sourcing quota (3c), Hermes drafts (4–5), M365 Teams book (6b)
-   - Honest partial: **38 pass, 0 fail, 4 warn** via `run-enterprise-e2e-partial.sh`
-3. **Sourcing quota** — shared Fly tenant daily limit; retry tomorrow or reset quota; **expect step 3c PASS** with `provenance=live` when quota allows
+2. **Strict Fly E2E PASS** (no partial flags) — blocked by sourcing quota (3c) + M365 Teams book (6b)
+3. **Rotate `KIMI_API_KEY`** on Fly optional — vault Anthropic failover covers drafts/critics today
 
 ## Next steps
 
-1. Owner: apply M365 Fly secrets → redeploy if build-time Azure flag needed
-2. `APP_URL=https://aria-mantu-app.fly.dev bash e2e-workflow-test.sh` (full, no partial flags)
-3. Browser walkthrough audit matrix M365 items → pass
-4. Loop kill switch (A-1) only after P-1 Docker + full E2E PASS
+1. Owner: apply M365 Fly secrets → redeploy if Azure login build-arg needed
+2. `APP_URL=https://aria-mantu-app.fly.dev bash e2e-workflow-test.sh` (full, no partial flags) after M365 + quota reset
+3. Loop kill switch (A-1) only after P-1 Docker + full E2E PASS
 
 ## Decisions made (don't relitigate)
 
 - **Production = Fly only** — ignore Vercel/GitHub Actions CI
 - LinkedIn 409 manual-required; interview prep approval-gated
+- Hermes chat auth-failure failover mirrors cron `serverGenerateText` path
 
 ## Production gate (Fly)
 
 ```bash
 bash scripts/print-fly-golive-status.sh
 curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
-ARIA_ALLOW_PARTIAL_M365_E2E=1 bash scripts/run-enterprise-e2e-partial.sh
+ARIA_ALLOW_PARTIAL_M365_E2E=1 bash e2e-workflow-test.sh
 ```
