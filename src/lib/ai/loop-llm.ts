@@ -8,8 +8,9 @@ import {
   HERMES_PROXY_TIMEOUT_MS,
   resolveHermesProfilePrefix,
 } from "@/lib/api/hermes-proxy";
-import { HERMES_TASK_SYSTEM, type HermesLoopTask } from "@/lib/agents/hermes-agent-registry";
+import { buildHermesHarnessSystemPrompt, HERMES_TASK_SYSTEM, type HermesLoopTask } from "@/lib/agents/hermes-agent-harness";
 import { serverGenerateText } from "@/lib/ai/server-generate";
+import type { AgentSkill } from "@/lib/types";
 
 export type LoopLlmResult = { ok: true; text: string } | { ok: false; reason: string };
 
@@ -91,8 +92,14 @@ export async function resolveLoopLlm(input: {
   campaignId?: string;
   candidateId?: string;
   maxTokens?: number;
+  /** Workspace skill playbooks — when set, harness rebuilds the system prompt. */
+  skills?: AgentSkill[] | null;
 }): Promise<LoopLlmResult> {
-  const system = input.system ?? HERMES_TASK_SYSTEM[input.task];
+  const system =
+    input.system
+    ?? (input.skills
+      ? buildHermesHarnessSystemPrompt(input.task, input.skills)
+      : HERMES_TASK_SYSTEM[input.task]);
 
   if (hermesLoopEnabled()) {
     const hermes = await callHermesLoop({

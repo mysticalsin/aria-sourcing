@@ -69,6 +69,18 @@ ok(
   "outreach default tone is valid",
   TONES.includes(getSkill(skills, "outreach_skill")?.params.preferredTone ?? ""),
 );
+ok(
+  "outreach default content requires Mantu Group",
+  /Mantu Group/.test(getSkill(skills, "outreach_skill")?.content ?? ""),
+);
+ok(
+  "outreach default content bans generic openers",
+  /I hope this finds you well/.test(getSkill(skills, "outreach_skill")?.content ?? ""),
+);
+ok(
+  "sourcing default content forbids invented profiles",
+  /never invent/i.test(getSkill(skills, "sourcing_skill")?.content ?? ""),
+);
 
 /* ---- proposeSkillUpdates(buildSeedState()) ------------------------------- */
 const state = buildSeedState();

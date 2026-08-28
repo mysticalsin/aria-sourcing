@@ -129,7 +129,7 @@ export function buildOutreachPrompt(opts: {
         `- Core skills: ${opts.requiredSkills.join(", ") || "n/a"}`,
       ].join("\n"),
     "",
-    "Rules: lead with the candidate's specific recent work; one genuine reason you're reaching out; a soft, low-pressure ask. Under 120 words. No AI slop, no corporate filler.",
+    "Rules: lead with the candidate's specific recent work; one genuine reason you're reaching out; a soft, low-pressure ask. Name Mantu Group in the body. Under 120 words (LinkedIn under 80). No AI slop, no corporate filler, no salary disclosure.",
     opts.signature ? `Sign off with: ${opts.signature}` : "",
     "",
     "Reply with exactly: a line 'Subject: <subject>' then a blank line then the message body. No preamble, no commentary.",

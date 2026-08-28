@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
   });
   const body = snapshot.data as {
     status?: string;
-    state?: { campaigns?: Campaign[]; candidates?: Candidate[] };
+    state?: { campaigns?: Campaign[]; candidates?: Candidate[]; skills?: import("@/lib/types").AgentSkill[] };
   } | null;
   if (snapshot.error || body?.status !== "ok" || !body.state) {
     return NextResponse.json({ ok: false, status: "workspace_unavailable" }, { status: 503 });
@@ -111,6 +111,7 @@ export async function POST(req: NextRequest) {
     campaignId: parsed.data.campaignId,
     candidateId: parsed.data.candidateId,
     maxTokens: 1024,
+    skills: body.state.skills ?? null,
   });
   if (live.ok) {
     const parsedLive = parseHermesOutreach(live.text, channel, mockGenerated.subject);

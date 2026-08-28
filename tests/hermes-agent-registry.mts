@@ -4,6 +4,7 @@ import {
   MANTU_SOURCING_MISSION,
   resolveHermesAgentForTask,
 } from "../src/lib/agents/hermes-agent-registry";
+import { HERMES_TASK_SYSTEM } from "../src/lib/agents/hermes-agent-harness";
 
 let pass = 0;
 let fail = 0;
@@ -23,6 +24,8 @@ for (const task of ["outreach", "classify", "sourcing", "chat"] as const) {
   const agent = resolveHermesAgentForTask(task);
   ok(`task ${task} resolves to an agent`, Boolean(agent?.id));
   ok(`task ${task} agent shares mission`, agent?.mission === MANTU_SOURCING_MISSION);
+  ok(`task ${task} harness prompt is non-empty`, HERMES_TASK_SYSTEM[task].length > 80);
+  ok(`task ${task} harness embeds skill playbook`, /Skill playbook/.test(HERMES_TASK_SYSTEM[task]));
 }
 
 ok(

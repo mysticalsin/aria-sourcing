@@ -31,7 +31,7 @@ import {
   hermesUpstreamHeaders,
   resolveHermesProfilePrefix,
 } from "@/lib/api/hermes-proxy";
-import { HERMES_TASK_SYSTEM } from "@/lib/agents/hermes-agent-registry";
+import { HERMES_TASK_SYSTEM } from "@/lib/agents/hermes-agent-harness";
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import { resolveStoredApifyKey } from "@/lib/sourcing/apify";
 import { sanitizeCandidateText } from "@/lib/agent-disclosure-policy";

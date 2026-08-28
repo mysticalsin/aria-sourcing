@@ -456,7 +456,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /resolveLoopLlm/.test(draftRoute)
         && /llm_required/.test(draftRoute)
         && /resolveLoopLlm|serverGenerateText/.test(readFileSync("src/lib/ai/loop-llm.ts", "utf8"))
-        && /HERMES_TASK_SYSTEM/.test(readFileSync("src/lib/ai/loop-llm.ts", "utf8"))
+        && /HERMES_TASK_SYSTEM|buildHermesHarnessSystemPrompt/.test(readFileSync("src/lib/ai/loop-llm.ts", "utf8"))
         && /resolveStoredLlmKeyForWorkspace/.test(readFileSync("src/lib/ai/vault-secret.ts", "utf8"))
         && /workspaceId: job\.workspace_id/.test(readFileSync("scripts/sourcing-loop-worker.mjs", "utf8"))
         && /parseInboundNeedViaRoute[\s\S]*?workspaceId: job\.workspace_id/.test(
@@ -776,10 +776,13 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /preferLiveCritics/.test(graph)
         && /outreach-quality-pipeline-live/.test(graph)
         && /preferLiveCritics:\s*true/.test(draft)
-        && (/Mantu Group/.test(hermes) || /Mantu Group/.test(hermesVoice))
-        && (/mantuOutreachVoice/.test(hermes) || /mantuOutreachVoice/.test(hermesVoice))
+        && (/Mantu Group/.test(hermes) || /Mantu Group/.test(hermesVoice) || /Mantu Group/.test(readFileSync("src/lib/agents/hermes-agent-harness.ts", "utf8")) || /Mantu Group/.test(readFileSync("src/lib/skills.ts", "utf8")))
+        && (/mantuOutreachVoice/.test(hermes) || /mantuOutreachVoice/.test(hermesVoice) || /mantuOutreachVoice/.test(readFileSync("src/lib/agents/hermes-agent-harness.ts", "utf8")))
         && /HERMES_QUALITY_CRITICS/.test(readFileSync("src/lib/agents/hermes-agent-registry.ts", "utf8"))
         && /MANTU_SOURCING_MISSION/.test(readFileSync("src/lib/agents/hermes-agent-registry.ts", "utf8"))
+        && /buildHermesHarnessSystemPrompt/.test(readFileSync("src/lib/agents/hermes-agent-harness.ts", "utf8"))
+        && /Skill playbook/.test(readFileSync("src/lib/agents/hermes-agent-harness.ts", "utf8"))
+        && /Name Mantu Group in the body/.test(readFileSync("src/lib/ai/hermes.ts", "utf8"))
         && /Mantu Group is hiring/.test(e2e)
       );
     },
