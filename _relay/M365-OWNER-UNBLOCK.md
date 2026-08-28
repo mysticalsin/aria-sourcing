@@ -2,7 +2,7 @@
 
 **Blocker ID:** M365-FLY-6  
 **Production:** https://aria-mantu-app.fly.dev only  
-**Updated:** 2026-08-28T08:15Z
+**Updated:** 2026-08-28T09:45Z
 
 ## Missing Fly secrets (6)
 
@@ -24,12 +24,12 @@ Marker: `/tmp/az-create-mantu-graph-app.noperm`
 
 ```bash
 ARIA_ALLOW_PARTIAL_M365_E2E=1 bash e2e-workflow-test.sh
-# → 47 pass, 0 fail, 1 warn (PARTIAL)
+# → core green; step 3c PASS top-10 shortlist (10 live, totalFound=10)
 ```
 
-- Steps 2–5 PASS (webhook need, live sourcing, Hermes drafts, approve, LinkedIn 409, email dry-run)
+- Webhook need + **top-10 live sourcing** + calendar dry-run PASS
 - **Only remaining skip:** step **6b** confirmLive Teams book (no Graph seat — secrets missing)
-- Live tip: `008878e` · migration **0071** (UX honesty commit may tip-ahead until next app deploy)
+- Live tip: `81a2445` · migration **0071**
 
 ## Owner action (pick one)
 
