@@ -1867,6 +1867,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             msg.qualityStatus = quality.status;
           }
           msg.qualityScore = quality.aggregateScore;
+          // Deterministic-only path — never leave qualityCriticsUsed undefined
+          // (approval preflight would claim bare "Quality ready").
+          msg.qualityCriticsUsed = false;
           msg.htmlBody = mantuEmailHtmlWrapper(gated.body);
           return msg;
         });
@@ -2142,6 +2145,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         msg.qualityStatus = quality.status;
       }
       msg.qualityScore = quality.aggregateScore;
+      msg.qualityCriticsUsed = false;
       if (resolvedChannel === "Email") {
         msg.htmlBody = mantuEmailHtmlWrapper(gen.body);
       }
@@ -2150,7 +2154,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
         const qualityNote =
           quality.status === "ready"
-            ? `Quality ${quality.aggregateScore}/100.`
+            ? `Quality ${quality.aggregateScore}/100 (deterministic critics).`
             : `Quality ${quality.status} (${quality.aggregateScore}/100): ${quality.stages.flatMap((st) => st.reasons).join(", ") || "review"}.`;
         return withActivity(
           next,
@@ -2237,6 +2241,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         msg.qualityStatus = quality.status;
       }
       msg.qualityScore = quality.aggregateScore;
+      msg.qualityCriticsUsed = false;
       if (channel === "Email") {
         msg.htmlBody = mantuEmailHtmlWrapper(gen.body);
       }
@@ -2316,6 +2321,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         msg.qualityStatus = quality.status;
       }
       msg.qualityScore = quality.aggregateScore;
+      msg.qualityCriticsUsed = false;
       if (channel === "Email") {
         msg.htmlBody = mantuEmailHtmlWrapper(gen.body);
       }
@@ -2551,7 +2557,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           dryRun: true,
           warnings: [
             ...result.warnings,
-            "No connected mailbox or LinkedIn provider — approval stays in dry-run / preview until you connect one in Settings → Integrations.",
+            // Mailbox-only gate (LinkedIn/HeyReach never unlock Live send mode).
+            "No connected mailbox — approval stays in dry-run / preview until you connect Outlook, Gmail, SendGrid, or Resend in Settings → Integrations.",
           ],
         };
       } else if (forceDryRun) {
@@ -3598,6 +3605,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         msg.qualityStatus = quality.status;
       }
       msg.qualityScore = quality.aggregateScore;
+      msg.qualityCriticsUsed = false;
       if (reply.channel === "Email") {
         msg.htmlBody = mantuEmailHtmlWrapper(gated.body);
       }

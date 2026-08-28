@@ -172,61 +172,67 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const deterministic =
-    graphResult.quality[candidate.id]
-    ?? validateOutreachQuality({
-      subject: generated.subject,
-      body: generated.body,
-      channel,
-    });
-  // Live multi-agent LLM critics (empathy / compliance / human-likeness) when keys exist.
-  const quality = await validateOutreachQualityLive({
+  // Dedicated live re-validation is authoritative for peer outcomes. The graph
+  // already ran critics once; a stale graph "blocked" / approval_blocked must not
+  // override a cleared second pass (LLM peers are nondeterministic / flaky).
+  // validateOutreachQualityLive embeds the deterministic pipeline as its base.
+  const effective = await validateOutreachQualityLive({
     subject: generated.subject,
     body: generated.body,
     channel,
     workspaceId: parsed.data.workspaceId,
   });
-  // Prefer the stricter of graph-deterministic vs live merge for blocking.
-  const effective =
-    deterministic.status === "blocked" && quality.status !== "blocked"
-      ? { ...quality, status: "blocked" as const, stages: [...quality.stages, ...deterministic.stages] }
-      : quality;
+  // Keep a local deterministic verdict only as a fail-closed floor if live somehow
+  // omitted the base (should not happen — live always runs validateOutreachQuality).
+  const deterministicFloor = validateOutreachQuality({
+    subject: generated.subject,
+    body: generated.body,
+    channel,
+  });
+  const floorBlocked =
+    deterministicFloor.status === "blocked" && effective.status !== "blocked"
+      ? {
+          ...effective,
+          status: "blocked" as const,
+          stages: [...effective.stages, ...deterministicFloor.stages],
+        }
+      : effective;
+  const verdict = floorBlocked;
 
-  if (graphResult.stage === "approval_blocked" || effective.status === "blocked") {
+  if (verdict.status === "blocked") {
     return NextResponse.json(
       {
         ok: false,
         status: "quality_blocked",
-        quality: effective,
+        quality: verdict,
         stage: graphResult.stage,
-        llmCriticsUsed: effective.llmCriticsUsed === true,
+        llmCriticsUsed: verdict.llmCriticsUsed === true,
       },
       { status: 422 },
     );
   }
 
   // Autonomous drafts require live multi-agent critics — deterministic-only is not enough.
-  if (effective.llmCriticsUsed !== true) {
+  if (verdict.llmCriticsUsed !== true) {
     return NextResponse.json(
       {
         ok: false,
         status: "critics_required",
         detail: "Live multi-agent LLM quality critics required for autonomous outreach.",
-        quality: effective,
-        graphStage:
-          graphResult.stage === "quality_critics_incomplete"
-            ? "quality_critics_incomplete"
-            : graphResult.stage,
+        quality: verdict,
+        graphStage: graphResult.stage,
       },
       { status: 503 },
     );
   }
 
-  // Successful live re-validation may follow a graph quality_critics_incomplete
-  // checkpoint (first peer pass missed). Worker only accepts approval stages.
+  // Successful live re-validation may follow quality_critics_incomplete or a
+  // stale graph approval_blocked (first peer pass harsh/flaky). Worker only
+  // accepts approval stages.
   const graphStage =
     graphResult.stage === "quality_critics_incomplete" ||
-    graphResult.stage === "quality_validated"
+    graphResult.stage === "quality_validated" ||
+    graphResult.stage === "approval_blocked"
       ? "queued_for_approval"
       : graphResult.stage;
 
@@ -236,23 +242,23 @@ export async function POST(req: NextRequest) {
     campaign,
     {
       ...generated,
-      subject: effective.text.subject,
-      body: effective.text.body,
+      subject: verdict.text.subject,
+      body: verdict.text.body,
     },
     "Casual Professional",
     settings as SystemSettings,
     1,
   );
   outreach.status = "Needs Approval";
-  outreach.qualityStatus = effective.status;
-  outreach.qualityScore = effective.aggregateScore;
-  outreach.qualityCriticsUsed = effective.llmCriticsUsed === true;
-  outreach.qualityReasons = effective.stages
+  outreach.qualityStatus = verdict.status;
+  outreach.qualityScore = verdict.aggregateScore;
+  outreach.qualityCriticsUsed = verdict.llmCriticsUsed === true;
+  outreach.qualityReasons = verdict.stages
     .flatMap((s) => s.reasons)
     .filter(Boolean)
     .slice(0, 12);
   if (channel === "Email") {
-    outreach.htmlBody = mantuEmailHtmlWrapper(effective.text.body);
+    outreach.htmlBody = mantuEmailHtmlWrapper(verdict.text.body);
   }
 
   return NextResponse.json({
@@ -260,10 +266,10 @@ export async function POST(req: NextRequest) {
     campaignId: campaign.id,
     candidateId: candidate.id,
     channel,
-    quality: effective,
+    quality: verdict,
     outreach,
     modelUsed,
     graphStage,
-    llmCriticsUsed: effective.llmCriticsUsed === true,
+    llmCriticsUsed: verdict.llmCriticsUsed === true,
   });
 }

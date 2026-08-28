@@ -37,10 +37,18 @@ test("LangGraph draft_quality fail-stops empty drafts and incomplete live critic
   assert.match(draft, /qualityCriticsUsed/);
   assert.match(draft, /quality_critics_incomplete/);
   assert.match(draft, /queued_for_approval/);
+  // Live re-validation is authoritative — stale graph approval_blocked must not
+  // hard-fail when the second peer pass clears the block.
+  assert.match(draft, /stale graph "blocked" \/ approval_blocked must not/);
+  assert.match(draft, /graphResult\.stage === "approval_blocked"/);
+  assert.doesNotMatch(draft, /if \(graphResult\.stage === "approval_blocked" \|\| effective\.status === "blocked"\)/);
   const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
   assert.match(worker, /shortlistMinScore: minScore/);
   const store = readFileSync("src/lib/store.ts", "utf8");
   assert.match(store, /qualityCriticsUsed: false/);
+  assert.match(store, /msg\.qualityCriticsUsed = false/);
+  assert.match(store, /No connected mailbox — approval stays in dry-run/);
+  assert.doesNotMatch(store, /No connected mailbox or LinkedIn provider/);
   const rules = readFileSync("src/lib/rules.ts", "utf8");
   assert.match(rules, /Quality needs review — multi-agent or pipeline flagged/);
 });
