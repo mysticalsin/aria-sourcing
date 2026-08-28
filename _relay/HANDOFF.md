@@ -1,43 +1,47 @@
 ---
 project: MSourcing / ARIA
-shift: 217
+shift: 218
 agent: cursor-cloud
-updated: 2026-08-28T01:55Z
-status: hermes-e2e-plan-shipped-awaiting-owner-deploy-remint
+updated: 2026-08-28T02:30Z
+status: gate-green-live-e2e-deploy-lag-awaiting-owner-remint
 ---
 
-# Handoff — Shift 217
+# Handoff — Shift 218
 
 ## Current state
 
-- **Branch tip:** `cursor/enterprise-autopilot-b91d` **`c4e592e`** (Hermes E2E plan complete; push pending)
-- **Live Fly:** still **`e469126`** — deploy confirm stale for **`8950b21`** (not invented; not deployed)
-- **Test gate:** `npx tsc --noEmit && npm test` green locally; audit matrix **54/54** after HANDOFF step-3c notes below
+- **Branch tip:** `cursor/enterprise-autopilot-b91d` **`c64f89a`** (manifest baseline + E2E pre_call_propose grep fix)
+- **Live Fly:** still **`e469126`** (migration **0068**) — **~50+ commits behind tip**
+- **Deploy confirm:** `/tmp/owner-deploy-confirm.env` pins **`e469126`** — **NO MATCH** for `c64f89a`; do not invent
+- **Test gate:** `npx tsc --noEmit && npm test` green on tip (manifest contract fixed: 180 app / 233 all)
+- **Audit matrix:** **54/54** local
+- **Live E2E:** `ARIA_ALLOW_PARTIAL_M365_E2E=1 ARIA_ALLOW_SKIP_APPROVE_E2E=1 bash e2e-workflow-test.sh` → **34 pass, 2 fail, 2 warn** (deploy lag only)
 - **Microsoft SKIPPED** — goal stays **IN_PROGRESS**
-- **PR #32** closed — integration cannot open new PRs
+- **PR:** [#33](https://github.com/mysticalsin/aria-sourcing/pull/33) open (draft); PR #29 superseded by #31→#33 lineage
 
 ## Done this shift
 
-1. **Fix: "Campaign authority changed during sourcing"** — fingerprint now excludes `validationWarnings` drift; `localeContext` in projection schema; fingerprint recomputed after `flushWorkspaceSave` before live sourcing
-2. **Hermes recruiter voice** — shared `hermes-recruiter-voice.ts`: empathetic, human, memory-aware; wired into loop-llm + hermes/chat (never reveal AI/agent)
-3. Prior shift: H6 isolation, pre-call pipeline, 60-lang locale, audit 54/54; live **`e469126`** still lacks step **3c** provenance fix (expect step 3c PASS after golive when `live=n` and `n>0`)
+1. **Manifest contract baseline** — bumped frozen counts/digests for +2 application suites (`sourcing-agent-contract` et al.)
+2. **E2E static probe** — interest chain grep updated to `pre_call_propose→first_interview_book` (was stale `calendar_book` strings)
+3. Verified local gate green; live E2E re-run: only sourcing step **3** fails on old Fly (`live=0`, authority fix not deployed)
 
 ## Blockers
 
-- Owner deploy confirm for **`8950b21`** (or newer tip after push) before Fly redeploy
-- H4/H5 upstream Hermes pin still needs owner sign-off (dedicated MSourcing install documented in code comments)
-- Microsoft skipped — full Teams E2E cannot complete
+- Owner deploy confirm for **`c64f89a`** (or newer) before Fly golive
+- Live sourcing step **3** fails until tip deploy (authority fingerprint fix + localeContext on live)
+- Microsoft skipped — full Teams/Outlook live book cannot complete
+- H4/H5 dedicated Hermes runtime + upstream pin needs owner sign-off
 
 ## Next steps
 
-1. Owner: `bash scripts/print-fly-deploy-confirm.sh` → `/tmp/owner-deploy-confirm.env` → golive
-2. After deploy: `/api/ready` SHA = tip; live E2E with `ARIA_ALLOW_PARTIAL_M365_E2E=1 ARIA_ALLOW_SKIP_APPROVE_E2E=1` → expect **PARTIAL** (MS gap only)
-3. Owner H4 sign-off for dedicated Hermes runtime + H5 pin when ready for production memory
+1. Owner: `bash scripts/print-fly-deploy-confirm.sh` → `/tmp/owner-deploy-confirm.env` → `bash scripts/fly-enterprise-golive-when-ready.sh`
+2. After deploy: `/api/ready` build = tip; re-run live E2E → expect **PARTIAL** (MS gap only, `FAILS=0` on non-MS steps)
+3. Retry sourcing on live after deploy — "Campaign authority changed" fix should hold
+4. Owner H4 sign-off for dedicated Hermes runtime when ready
 
 ## Decisions made (don't relitigate)
 
 - **Fly = production.** No Vercel deploys, debugging, or CI authority for live behavior
-
 - Skip Microsoft; no Approve/send in autonomous E2E
 - Never invent deploy confirm
 - Positive interest chain: **pre_call_propose → first_interview_book** (dry-run calendar); `calendar_book` retained as legacy alias
@@ -48,4 +52,5 @@ status: hermes-e2e-plan-shipped-awaiting-owner-deploy-remint
 
 - `graphStage` never on enqueue payloads
 - Hermes session keys cap at 256 chars; profile prefix `ws-{workspaceUuid}`
-- Live E2E provenance fix still deploy-lag until golive — step 3c FAIL on live `e469126` when `live=0`; step 3c should show `live=n` after tip deploy
+- Live E2E step **3** FAIL on `e469126` (`live=0`); expect `live=n` after tip deploy
+- E2E grep for interest chain must reference `pre_call_propose`, not legacy `calendar_book` enqueue strings

@@ -328,6 +328,6 @@
   ],
   "metrics_at_completion": null,
   "retro_id": null,
-  "last_shift_note": "2026-08-27T22:00Z shift 201: owner confirm matched tip 2ffc428 → Fly golive OK. Live /api/ready build=2ffc428 migration=0068_apply_workspace_patch_digest_path.sql. Demo UX+0068+DeepSeek on tip. Microsoft still SKIPPED (no CLIENT secret invent). Goal stays IN_PROGRESS — cannot complete without MS / full objective. See _relay/HANDOFF.md.",
-  "updated_at": "2026-08-27T22:00:00+00:00"
+  "last_shift_note": "2026-08-28T02:30Z shift 218: tip c64f89a — manifest baseline + E2E pre_call_propose grep; local gate green, audit 54/54. Live Fly still e469126 (~50 commits behind); live E2E 34 pass / 2 fail (sourcing live=0 deploy lag). Microsoft SKIPPED. Goal IN_PROGRESS — owner remint deploy confirm required.",
+  "updated_at": "2026-08-28T02:30:00+00:00"
 }
