@@ -597,13 +597,13 @@ if grep -q 'propose-calendar-book' scripts/sourcing-loop-worker.mjs \
 else
   fail "calendar propose path missing interviewProposal or use_calendar_event_route guard."
 fi
-# Positive interest must always enqueue calendar_book (not only autopilot draft path).
-if grep -q 'Always enqueue Teams/Outlook first-interview propose' scripts/sourcing-loop-worker.mjs \
-  && grep -q 'inbound_classify->calendar_book' scripts/sourcing-loop-worker.mjs \
+# Positive interest must always enqueue pre_call_propose (not only autopilot draft path).
+if grep -q 'Positive interest → pre-call propose first' scripts/sourcing-loop-worker.mjs \
+  && grep -q 'inbound_classify->pre_call_propose' scripts/sourcing-loop-worker.mjs \
   && grep -q 'trigger: "inbound_classify"' scripts/sourcing-loop-worker.mjs; then
-  pass "inbound_classify positive interest → calendar_book propose always enqueued."
+  pass "inbound_classify positive interest → pre_call_propose always enqueued."
 else
-  fail "interest→calendar_book always-enqueue wiring missing from loop worker."
+  fail "interest→pre_call_propose always-enqueue wiring missing from loop worker."
 fi
 
 # ===========================================================================
