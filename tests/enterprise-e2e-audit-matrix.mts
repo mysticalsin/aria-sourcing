@@ -325,6 +325,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /isRealSendFact\(m\)/.test(readFileSync("src/components/launch/war-room-board.tsx", "utf8"))
         && /enabled \(intent only\)/.test(readFileSync("src/components/settings/schedules-panel.tsx", "utf8"))
         && /store counts/.test(readFileSync("src/components/floor/mission-control-hud.tsx", "utf8"))
+        && /isRealSendFact\(step\.message\)/.test(readFileSync("src/components/sessions/audit-pack.tsx", "utf8"))
+        && /!forceDryRun/.test(readFileSync("src/lib/store.ts", "utf8"))
+        && /reconciliation-required/.test(readFileSync("src/components/outreach/whatsapp-template-picker.tsx", "utf8"))
+        && /Proposed interview prep/.test(readFileSync("src/lib/mock-ai.ts", "utf8"))
+        && /ARIA_LOOP_KILL_SWITCH=false/.test(readFileSync("src/components/settings/loop-switchboard-panel.tsx", "utf8"))
       );
     },
   },

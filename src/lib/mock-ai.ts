@@ -1440,6 +1440,23 @@ export function interviewerPrepEmail(b: Booking, candidate: Candidate): string {
   // No interviewer assigned yet (empty roster) — greet generically rather
   // than produce "Hi ,".
   const firstName = b.interviewer ? b.interviewer.split(" ")[0] : "there";
+  const meetingUrl = b.teamsLink || b.calLink;
+  if (!meetingUrl) {
+    return `Subject: Proposed interview prep: ${b.candidateName} for ${b.role} at Mantu
+
+Hi ${firstName},
+
+A conversation is proposed with ${b.candidateName} (${candidate.currentTitle} @ ${candidate.currentCompany}) for ${b.role} at Mantu Group — not confirmed until a Teams/calendar link exists.
+Match score: ${candidate.matchScore}. Stack: ${candidate.techStack.slice(0, 5).join(", ")}.
+
+Focus areas: ${candidate.matchBreakdown.slice(0, 2).map((x) => x.label).join(", ")}.
+Teams / calendar: To be confirmed (Connect Outlook and book with confirmLive)
+
+Proposed agenda:
+${b.agenda.map((a) => `- ${a}`).join("\n")}
+
+— Mantu Talent Team`;
+  }
   return `Subject: Interview prep: ${b.candidateName} for ${b.role} at Mantu
 
 Hi ${firstName},
@@ -1448,7 +1465,7 @@ You're interviewing ${b.candidateName} (${candidate.currentTitle} @ ${candidate.
 Match score: ${candidate.matchScore}. Stack: ${candidate.techStack.slice(0, 5).join(", ")}.
 
 Focus areas: ${candidate.matchBreakdown.slice(0, 2).map((x) => x.label).join(", ")}.
-Teams / calendar: ${b.teamsLink || b.calLink || "To be confirmed (Connect Outlook for live Teams)"}
+Teams / calendar: ${meetingUrl}
 
 Agenda:
 ${b.agenda.map((a) => `- ${a}`).join("\n")}

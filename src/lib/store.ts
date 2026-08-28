@@ -2775,8 +2775,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                   ...c,
                   metrics: {
                     ...c.metrics,
-                    emailsSentToday: c.metrics.emailsSentToday + (msg.channel === "Email" && !isPendingSend ? 1 : 0),
-                    linkedinSentToday: c.metrics.linkedinSentToday + (isLinkedInManual ? 0 : msg.channel === "LinkedIn" ? 1 : 0),
+                    emailsSentToday:
+                      c.metrics.emailsSentToday
+                      + (msg.channel === "Email" && !isPendingSend && !forceDryRun ? 1 : 0),
+                    linkedinSentToday:
+                      c.metrics.linkedinSentToday
+                      + (msg.channel === "LinkedIn" && !forceDryRun && !isLinkedInManual ? 1 : 0),
                   },
                 }
               : c,

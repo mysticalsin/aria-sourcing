@@ -129,7 +129,7 @@ export function LoopSwitchboardPanel() {
       toast({
         title: json.controls.armed ? "Loop armed" : "Loop updated",
         description: json.controls.armed
-          ? "Intake, sourcing, and sequences are live for this workspace."
+          ? "Workspace controls armed — Fly loop process also needs ARIA_LOOP_KILL_SWITCH=false to run."
           : "Workspace controls saved (still fail-closed until armed).",
         variant: "success",
       });

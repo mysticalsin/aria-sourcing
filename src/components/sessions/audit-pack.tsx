@@ -1,5 +1,6 @@
 import type { Candidate, Campaign } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
+import { isRealSendFact } from "@/lib/metrics";
 import type { ReplayStep, ReplayStepKind } from "@/components/sessions/replay-model";
 
 /* ============================================================================
@@ -75,7 +76,11 @@ function StepEvidence({ step, candidate }: { step: ReplayStep; candidate: Candid
         <p className="mt-2 text-xs text-black/70">
           Status: {step.message.status} · Channel: {step.message.channel}
           {step.message.approvedBy ? ` · Approved by ${step.message.approvedBy}` : ""}
-          {step.message.sentAt ? ` · Sent ${formatDateTime(step.message.sentAt)}` : ""}
+          {isRealSendFact(step.message)
+            ? ` · Sent ${formatDateTime(step.message.sentAt!)}`
+            : step.message.sentAt && step.message.dryRun === true
+              ? ` · Dry-run stamp ${formatDateTime(step.message.sentAt)} — nothing contacted`
+              : ""}
         </p>
       ) : null;
 
@@ -147,7 +152,12 @@ export function AuditPack({
           <li key={step.key} className="audit-step border border-black/20 p-4">
             <div className="flex items-baseline justify-between gap-3">
               <p className="text-sm font-bold uppercase tracking-wide">
-                {i + 1}. {KIND_LABEL[step.kind]}
+                {i + 1}.{" "}
+                {step.kind === "sent" && step.message && !isRealSendFact(step.message)
+                  ? step.message.dryRun
+                    ? "Approved (dry-run)"
+                    : "Queued"
+                  : KIND_LABEL[step.kind]}
                 {step.synthesized && <span className="ml-2 font-normal italic text-black/50">(synthesized)</span>}
               </p>
               <p className="shrink-0 text-xs text-black/60">{formatDateTime(step.at)}</p>
