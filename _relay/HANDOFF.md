@@ -1,29 +1,30 @@
 ---
 project: MSourcing / ARIA
-shift: 305
+shift: 306
 agent: cursor-cloud
-updated: 2026-08-28T21:40Z
-status: post-approved-queue-plan-delivery
+updated: 2026-08-28T21:55Z
+status: post-send-mailbox-dryrun-clear
 ---
 
-# Handoff — Shift 305
+# Handoff — Shift 306
 
 ## Current state
 
-- **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft
-- **Live Fly:** `fc8b54a` / **0071** · tip pending remint
+- **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft (reopened)
+- **Live Fly:** `fc8b54a` / **0071** · tip **`8d44351`** pending remint
 - **Audit:** **64/64** · **Gate:** green
-- **M365:** `fly_m365_missing=7` · watcher armed
+- **M365:** `fly_m365_missing=7` · watcher armed · reprobe timer armed
 - **LLM:** `llm_auth=dead`
 - **Goal:** strict E2E PASS blocked on owner secrets
 
 ## Done this shift
 
-1. **Critical:** Outreach queue includes `Approved` (live Email send was unreachable after approve)
-2. `planOutreachApprovalDelivery` pure helper + unit tests
-3. Activity / Aria Live: dry-run no longer says “scheduled”
-4. Seed dry-run history: Approved, no sentAt
-5. `verify-m365-ready.sh` requires `EMAIL_INBOUND_WEBHOOK_SECRET`
+1. Email send picks `isLiveMailboxSeat` only (not LinkedIn/WA seats)
+2. Real send clears `dryRun: false`; refuse Send while dryRun
+3. Seed: zero fabricated daily send counters; ledger `claimed` for dry-run Approved
+4. Skills tone conversion uses `isRealSendFact` only
+5. Recommendations: `send_outreach` for live Approved awaiting Send
+6. Reopened PR #36 (was closed)
 
 ## Blockers
 
@@ -55,7 +56,7 @@ ARIA_ALLOW_PARTIAL_M365_E2E=1 ARIA_ALLOW_PARTIAL_LLM_E2E=1 bash e2e-workflow-tes
 ## Decisions made (don't relitigate)
 
 - Production = Fly only; ignore Vercel/GHA
-- PR #36 only (supersedes #29); goal until strict Fly PASS
+- PR #36 only; goal until strict Fly PASS
 
 ## Watch out
 
