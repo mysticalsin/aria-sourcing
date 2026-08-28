@@ -19,9 +19,12 @@
 | GoTrue Entra (Kong) | `https://aria-mantu-kong.fly.dev/auth/v1/callback` |
 | Azure URL | `https://login.microsoftonline.com/<tenant-id>/v2.0` |
 
-**Graph OAuth authority:** `https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/*` — never `/common/` (AADSTS50194).
+**Canonical Entra tenant (Mantu Group Sandbox):** `ce57ebe3-a63d-4708-b5cf-c274b48bd26c`  
+Do **not** use BAW SAS (`864aa37f-…`) for Fly Mantu Graph/SSO.
 
-**Delegated scopes:** Mail.Read, Mail.Send, Calendars.ReadWrite, OnlineMeetings.ReadWrite, User.Read, offline_access
+Agent scanned 1339 apps in Mantu Sandbox — **zero** with `aria-mantu-*.fly.dev` redirects. Owner must create the app (agent can read apps but cannot create/update).
+
+`GOTRUE_EXTERNAL_AZURE_URL=https://login.microsoftonline.com/ce57ebe3-a63d-4708-b5cf-c274b48bd26c/v2.0`
 
 ## Why agent cannot self-serve
 
