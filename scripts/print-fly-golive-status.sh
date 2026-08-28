@@ -25,8 +25,17 @@ load_confirm "$repo/production-readiness/.owner-deploy-confirm.env"
 
 CONFIRM_SHA="${ARIA_RELEASE_SHA:-}"
 CONFIRM_MATCH="no"
+CONFIRM_STALE="no"
 if [ -n "${ARIA_PROD_DEPLOY_CONFIRM:-}" ] && [[ "${ARIA_PROD_DEPLOY_CONFIRM}" == *":${TIP}:"* ]]; then
   CONFIRM_MATCH="yes"
+fi
+if [ -n "$CONFIRM_SHA" ] && [ "$CONFIRM_SHA" != "$TIP" ]; then
+  CONFIRM_STALE="yes"
+fi
+
+M365_MISSING="unknown"
+if [ -n "${FLY_API_TOKEN:-}" ] || [ -r "$repo/production-readiness/.fly-token.env" ]; then
+  M365_MISSING="$(bash "$repo/scripts/print-fly-missing-secrets.sh" 2>/dev/null | grep -c '^MISSING' || true)"
 fi
 
 echo "tip_sha=${TIP}"
@@ -36,6 +45,8 @@ echo "live_migration=${LIVE_MIG:-unknown}"
 echo "live_ready_ok=${READY_OK}"
 echo "confirm_sha=${CONFIRM_SHA:-unset}"
 echo "confirm_matches_tip=${CONFIRM_MATCH}"
+echo "confirm_stale_for_tip=${CONFIRM_STALE}"
+echo "m365_secrets_missing=${M365_MISSING}"
 if [ -n "$LIVE" ] && [[ "$LIVE" == "$TIP"* ]]; then
   echo "deploy_status=tip_live"
 elif [ "$CONFIRM_MATCH" = "yes" ]; then
