@@ -197,5 +197,19 @@ ok(
     /public\.list_workspace_requisitions\(integer,integer\)'\s*,\s*'authenticated'/i.test(priv),
 );
 
+// ── recruiting-graph-stage HTTP contract (interest → pre-call → interview) ──
+ok(
+  "recruiting-graph-stage route accepts pre_call_only + interview_only checkpoint intents",
+  (() => {
+    const route = read("src/app/api/cron/recruiting-graph-stage/route.ts");
+    return (
+      route.length > 0 &&
+      /"pre_call_only"/.test(route) &&
+      /"interview_only"/.test(route) &&
+      /intent: z\.enum\(\[[\s\S]*"pre_call_only"[\s\S]*"interview_only"/.test(route)
+    );
+  })(),
+);
+
 console.log(`RESULT loop-authority-contract: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

@@ -18,7 +18,16 @@ export const runtime = "nodejs";
  */
 const BodySchema = z.object({
   workspaceId: z.string().uuid(),
-  intent: z.enum(["parse_only", "source_only", "rank_only", "book_only", "draft_quality", "full"]),
+  intent: z.enum([
+    "parse_only",
+    "source_only",
+    "rank_only",
+    "book_only",
+    "draft_quality",
+    "pre_call_only",
+    "interview_only",
+    "full",
+  ]),
   allowedStages: z.array(z.string().min(1).max(80)).min(1).max(12),
   inboundId: z.string().min(1).max(160).optional(),
   campaignId: z.string().min(1).max(160).optional(),

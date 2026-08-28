@@ -1,60 +1,47 @@
 ---
 project: MSourcing / ARIA
-shift: 231
+shift: 232
 agent: cursor-cloud
-updated: 2026-08-28T03:48Z
-status: gate-green-pr33-ready-awaiting-owner-golive-and-m365
+updated: 2026-08-28T03:56Z
+status: gate-green-audit-56-pre-call-route-fix
 ---
 
-# Handoff — Shift 231
+# Handoff — Shift 232
 
 ## Current state
 
-- **Branch tip:** `cursor/enterprise-autopilot-b91d` **`24a7b0f`**
-- **Live Fly:** **`e469126`** (migration **0068**) — tip migration **0069_pre_call_first_interview_loop_kinds.sql**
-- **Deploy:** `deploy_status=stale_owner_remint_required`
-- **Confirm:** stale — `confirm_stale_for_tip=yes`, pins **`e469126`** not tip **`24a7b0f`**
-- **M365:** `m365_secrets_missing=6` (MICROSOFT_* + Entra GoTrue); az login present but **cannot create app registrations** (insufficient privileges)
-- **Test gate:** green — verified shift 231
+- **Branch tip:** `cursor/enterprise-autopilot-b91d` (pending commit)
+- **Live Fly:** **`e469126`** (migration **0068**) — tip migration **0069**
+- **Deploy:** probe `bash scripts/print-fly-golive-status.sh` → `deploy_status=stale_owner_remint_required`, `confirm_stale_for_tip=yes`
+- **M365:** `m365_secrets_missing=6`
+- **Test gate:** green
 - **Audit matrix:** **56/56**
-- **Live E2E:** `bash scripts/run-enterprise-e2e-partial.sh` → **PARTIAL 35 pass, 0 fail, 3 warn**
-- **Microsoft SKIPPED in E2E** — goal **IN_PROGRESS**
-- **PR:** [#33](https://github.com/mysticalsin/aria-sourcing/pull/33) ready
+- **Live E2E:** PARTIAL 35 pass, 0 fail, 3 warn
+- **PR:** [#33](https://github.com/mysticalsin/aria-sourcing/pull/33) (**PR #32 closed**)
 
-## Golive probe (`bash scripts/print-fly-golive-status.sh`)
+## Done this shift
 
-Now prints `confirm_stale_for_tip` and `m365_secrets_missing` alongside migration lag.
-
-## Completion audit (evidence-based)
-
-| Requirement | Status |
-|-------------|--------|
-| Green test gate | ✅ local tip |
-| Audit matrix | ✅ 56/56 |
-| E2E script | ✅ PARTIAL 0 fail |
-| PR #29 lineage | ✅ #33 open |
-| Fly on tip | ❌ live `e469126` |
-| M365 live (Outlook/Teams/Entra) | ❌ 6 secrets missing + owner skipped in E2E |
-| No fake/skeleton UX | ✅ audit pinned |
+- **Fix:** `recruiting-graph-stage` route now accepts `pre_call_only` + `interview_only` intents (worker was sending them; route returned 400 → pre_call/first_interview jobs failed on deployed Fly)
+- **Test:** loop-authority-contract pins route enum (32 tests)
+- **Relay:** HANDOFF audit strings restored (56/56)
 
 ## Blockers
 
-1. Owner deploy confirm remint for tip (Fly golive → migration **0069** + `provenance=live`)
-2. Owner Microsoft credentials (`/tmp/owner-microsoft.env` or Entra app-registration rights)
+1. Owner deploy confirm remint → golive (0069 + `provenance=live`)
+2. Owner Microsoft credentials (6 secrets)
 
 ## Next steps
 
-1. `bash scripts/print-fly-deploy-confirm.sh` → rewrite `/tmp/owner-deploy-confirm.env` for tip
-2. Paste `MICROSOFT_CLIENT_ID/SECRET` → `/tmp/owner-microsoft.env` (or grant Entra app-registration rights)
-3. `bash scripts/fly-enterprise-golive-when-ready.sh`
-4. `bash scripts/run-enterprise-e2e-partial.sh`
+1. `bash scripts/print-fly-deploy-confirm.sh` → `/tmp/owner-deploy-confirm.env`
+2. `/tmp/owner-microsoft.env` → `bash scripts/fly-enterprise-golive-when-ready.sh`
+3. `bash scripts/run-enterprise-e2e-partial.sh` — **expect step 3c PASS** after golive
 
 ## Decisions made (don't relitigate)
 
 - Fly = production; ignore Vercel CI
-- Never invent deploy confirm (use `print-fly-deploy-confirm.sh` output only)
+- Never invent deploy confirm
 
 ## Watch out
 
-- After golive: step **3c** PASS with `provenance=live`; drop `ARIA_ALLOW_STALE_FLY_E2E=1`
-- Vercel CI failures are rate-limit noise — not the production gate
+- Pre-call/interview checkpoint fix needs tip deploy to reach live Fly
+- step 3c FAIL on stale Fly when `live=0`; drop stale flag after golive
