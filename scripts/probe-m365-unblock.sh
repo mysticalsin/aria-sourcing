@@ -43,6 +43,10 @@ fi
 
 if owner_ms_has_credentials; then
   if [ "$APPLY" = "1" ]; then
+    if owner_ms_has_env_exports && ! owner_ms_has_drop_file; then
+      echo "Syncing env exports to /tmp/owner-microsoft.env (values not printed)…"
+      owner_ms_sync_env_to_dropzone
+    fi
     echo "Applying owner Microsoft secrets to Fly…"
     bash "$repo/scripts/fly-apply-owner-microsoft-secrets.sh"
     missing_after="$(bash "$repo/scripts/print-fly-missing-secrets.sh" 2>/dev/null | grep -c '^MISSING' || true)"
