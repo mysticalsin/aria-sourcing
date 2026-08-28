@@ -219,7 +219,11 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
         return;
       }
       if (result.verified) {
-        toast({ title: "Domain verified", description: "SPF/DMARC/DKIM checks passed", variant: "success" });
+        toast({
+          title: "Domain verified",
+          description: "At least one sender-policy record found (SPF, DMARC, or DKIM).",
+          variant: "success",
+        });
       } else {
         toast({
           title: "Domain not verified",
@@ -231,6 +235,9 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
       setVerifyingDomain(false);
     }
   }
+
+  const graphMailboxReady =
+    seat.provider === "Microsoft Graph" && seat.mode === "live" && Boolean(seat.connectedAccount);
 
   const readinessItems: ReadinessItem[] = [
     {
@@ -249,9 +256,15 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
     },
     {
       id: "domain",
-      label: "Domain verified (SPF/DKIM/DMARC)",
-      ok: Boolean(seat.connectedAccount && seat.domainVerified),
-      hint: "Run verify after DNS records propagate.",
+      label: graphMailboxReady
+        ? "Mailbox OAuth (Graph send-as)"
+        : "Sender domain (SPF, DMARC, or DKIM)",
+      ok: graphMailboxReady
+        ? true
+        : Boolean(seat.connectedAccount && seat.domainVerified),
+      hint: graphMailboxReady
+        ? "Graph sends as the connected mailbox — no vanity-domain DNS check."
+        : "Verify finds at least one of SPF, DMARC, or default-selector DKIM.",
     },
     {
       id: "live",
@@ -264,8 +277,6 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
   const oauthLive = isOAuthProvider && seat.mode === "live" && Boolean(seat.connectedAccount);
   const operatorLabelOnly = isOAuthProvider && Boolean(seat.connectedAccount) && seat.mode !== "live";
   const apiKeyMailbox = !isOAuthProvider && Boolean(seat.connectedAccount);
-  const graphMailboxReady =
-    seat.provider === "Microsoft Graph" && seat.mode === "live" && Boolean(seat.connectedAccount);
   const mailboxVerified = graphMailboxReady || seat.domainVerified;
 
   const headerStatus =

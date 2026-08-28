@@ -4976,7 +4976,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         // Graph OAuth seats send as the connected mailbox — SPF vanity-domain gate is for API keys.
         const isGraph = seat.provider === "Microsoft Graph";
         if (!isGraph && !seat.domainVerified) {
-          return { ok: false, reason: "Verify the sending domain (SPF/DKIM/DMARC) first." };
+          return { ok: false, reason: "Verify sender domain (SPF, DMARC, or DKIM) first." };
         }
       } else if (seat.provider === "LinkedIn Vendor API") {
         // Vendor seat may go live without mailbox; keys are env-side. Assisted-manual never needs SPF.
@@ -5047,7 +5047,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               makeActivity({
                 type: "system",
                 title: `Domain verified: ${seat.name}`,
-                notes: `${domain} has valid SPF/DKIM/DMARC records.`,
+                notes: `${domain}: at least one sender-policy record found (SPF, DMARC, or DKIM).`,
                 outcome: "Verified",
                 campaignId: null,
                 linkedEntityType: null,

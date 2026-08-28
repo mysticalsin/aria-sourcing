@@ -547,9 +547,15 @@ if [ -n "$WEBHOOK_SECRET" ]; then
   fi
 else
   if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ]; then
-    fail "EMAIL_INBOUND_WEBHOOK_SECRET unset on Fly E2E — hiring-need webhook step required."
+    if [ "${ARIA_ALLOW_SKIP_WEBHOOK_E2E:-}" = "1" ]; then
+      warn "EMAIL_INBOUND_WEBHOOK_SECRET unset — skipping webhook need-email step (ARIA_ALLOW_SKIP_WEBHOOK_E2E=1)."
+      E2E_SKIP_WEBHOOK=1
+    else
+      fail "EMAIL_INBOUND_WEBHOOK_SECRET unset on Fly E2E — hiring-need webhook step required."
+    fi
   else
     warn "EMAIL_INBOUND_WEBHOOK_SECRET unset — skipping webhook need-email step."
+    E2E_SKIP_WEBHOOK=1
   fi
 fi
 

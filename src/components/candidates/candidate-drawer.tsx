@@ -1375,6 +1375,15 @@ export function CandidateDrawer({
               Manual
             </Badge>
           )}
+          {c.provenance === "live" && (
+            <Badge
+              tone="success"
+              size="sm"
+              title="Returned by live provider/API (sourcing-agent, GitHub, Apollo, …)"
+            >
+              Live
+            </Badge>
+          )}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted">
             <span className="inline-flex items-center gap-1.5">
               <MapPin className="h-4 w-4" aria-hidden />

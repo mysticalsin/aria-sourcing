@@ -44,6 +44,7 @@ type BookingPreview = {
   booking: Booking;
   prepEmail: string;
   confirmationEmail: string;
+  prepQueued?: boolean;
 };
 
 function EmailBlock({
@@ -52,12 +53,14 @@ function EmailBlock({
   subtitle,
   body,
   onCopy,
+  previewOnly = false,
 }: {
   icon: React.ReactNode;
   title: string;
   subtitle: string;
   body: string;
   onCopy: () => void;
+  previewOnly?: boolean;
 }) {
   return (
     <div className="space-y-2">
@@ -74,14 +77,20 @@ function EmailBlock({
             <p className="text-xs text-muted">{subtitle}</p>
           </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          leftIcon={<Copy className="h-3.5 w-3.5" aria-hidden />}
-          onClick={onCopy}
-        >
-          Copy
-        </Button>
+        {previewOnly ? (
+          <Badge tone="warning" size="sm">
+            Preview only
+          </Badge>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={<Copy className="h-3.5 w-3.5" aria-hidden />}
+            onClick={onCopy}
+          >
+            Copy
+          </Button>
+        )}
       </div>
       <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-2xl border border-line bg-canvas p-4 font-sans text-sm leading-relaxed text-ink-soft">
         {body}
@@ -113,14 +122,22 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
       });
       return;
     }
-    setPreview(res);
+    setPreview({
+      booking: res.booking,
+      prepEmail: res.prepEmail,
+      confirmationEmail: res.confirmationEmail,
+      prepQueued: res.prepQueued,
+    });
+    const prepQueued = res.ok && res.prepQueued === true;
     toast({
       title: bookingInterviewTitle(res.booking, candidate.name),
-      description: !bookingNeedsCalendar(res.booking)
-        ? "Teams/Outlook event created and added to the schedule."
-        : res.booking.calendarSync
-          ? "Calendar event saved without a meeting link. Re-book with confirmLive after OnlineMeetings scope."
-          : "Slot saved locally. Connect Microsoft Graph and use confirmLive to issue a Teams link — not a live booked interview.",
+      description: prepQueued
+        ? "Interview prep drafts queued in Outreach — approve before anything sends."
+        : !bookingNeedsCalendar(res.booking)
+          ? "Teams/Outlook event created and added to the schedule."
+          : res.booking.calendarSync
+            ? "Calendar event saved without a meeting link. Re-book with confirmLive after OnlineMeetings scope."
+            : "Slot saved locally. Connect Microsoft Graph and use confirmLive to issue a Teams link — not a live booked interview.",
       variant: bookingNeedsCalendar(res.booking) ? "warning" : "success",
     });
   }
@@ -223,9 +240,11 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
             : "Interview booking"
         }
         description={
-          preview && !bookingNeedsCalendar(preview.booking)
-            ? "Live calendar event created. Prep and confirmation emails are drafted below; review before sending."
-            : "Needs calendar — no Teams/Outlook event was created. Connect a live Graph seat and use Confirm slot / confirmLive. Prep emails below still need approve/send; this is not a booked interview."
+          preview && preview.prepQueued
+            ? "Prep and confirmation drafts are queued in Outreach — approve before send. Copy is preview-only."
+            : preview && !bookingNeedsCalendar(preview.booking)
+              ? "Live calendar event created. Prep and confirmation emails are drafted below; review before sending."
+              : "Needs calendar — no Teams/Outlook event was created. Connect a live Graph seat and use Confirm slot / confirmLive. Prep emails below are preview-only; this is not a booked interview."
         }
         footer={
           <Button variant="primary" size="sm" onClick={() => setPreview(null)}>
@@ -294,11 +313,21 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
               </div>
             </div>
 
+            {preview.prepQueued ? (
+              <div className="rounded-2xl border border-tangerine/30 bg-tangerine-soft px-4 py-3 text-sm text-ink-soft">
+                <p className="font-semibold text-ink">Queued in Outreach</p>
+                <p className="mt-1 text-xs">
+                  Interview prep drafts were enqueued for human approval — do not copy/paste send from here.
+                </p>
+              </div>
+            ) : null}
+
             <EmailBlock
               icon={<UserRound className="h-3.5 w-3.5" aria-hidden />}
               title="Interviewer prep"
               subtitle={`To ${preview.booking.interviewer}`}
               body={preview.prepEmail}
+              previewOnly={preview.prepQueued}
               onCopy={() => copy(preview.prepEmail, "Prep email")}
             />
             <EmailBlock
@@ -306,6 +335,7 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
               title="Candidate confirmation"
               subtitle={`To ${preview.booking.candidateName}`}
               body={preview.confirmationEmail}
+              previewOnly={preview.prepQueued}
               onCopy={() => copy(preview.confirmationEmail, "Confirmation email")}
             />
           </div>

@@ -305,6 +305,12 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /mock adapter — sample data only/.test(readFileSync("src/lib/integrations.ts", "utf8"))
         && /Stage stays Interested — Needs calendar before Booked/.test(bookingActions)
         && /calendarConfirmed \? withStage\(item, "Booked"\)/.test(bookingActions)
+        && /At least one sender-policy record found/.test(readFileSync("src/components/fleet/seat-card.tsx", "utf8"))
+        && /Mailbox OAuth \(Graph send-as\)/.test(readFileSync("src/components/fleet/seat-card.tsx", "utf8"))
+        && /provenance === "live"/.test(readFileSync("src/components/candidates/candidate-table.tsx", "utf8"))
+        && /previewOnly/.test(readFileSync("src/app/calendar/page.tsx", "utf8"))
+        && /ARIA_ALLOW_SKIP_WEBHOOK_E2E=1/.test(readFileSync("e2e-workflow-test.sh", "utf8"))
+        && /E2E_SKIP_WEBHOOK=1/.test(readFileSync("e2e-workflow-test.sh", "utf8"))
       );
     },
   },

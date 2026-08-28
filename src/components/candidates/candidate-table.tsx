@@ -218,6 +218,15 @@ export function CandidateTable({
                       Manual
                     </Badge>
                   )}
+                  {c.provenance === "live" && (
+                    <Badge
+                      tone="success"
+                      size="sm"
+                      title="Returned by live provider/API (sourcing-agent, GitHub, Apollo, …)"
+                    >
+                      Live
+                    </Badge>
+                  )}
                 </div>
               </TD>
               <TD>
