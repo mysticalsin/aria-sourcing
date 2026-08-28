@@ -126,5 +126,6 @@ export AGENT_MODEL=moonshot-v1-8k
 # LLM on aria-mantu-app: KIMI_API_KEY (preferred) and/or ANTHROPIC_API_KEY / OPENAI_API_KEY
 # If Fly secrets are still missing, print templates first:
 #   bash scripts/print-fly-secrets-checklist.sh
-bash e2e-workflow-test.sh
+bash scripts/run-enterprise-e2e-partial.sh
+# (auto PARTIAL flags + stale Fly while live lags tip; raw: bash e2e-workflow-test.sh)
 EOF
