@@ -81,6 +81,7 @@ export function OutlookNeedsPanel({
   const [demoMode, setDemoMode] = React.useState(false);
   const [graphWebhookActive, setGraphWebhookActive] = React.useState(false);
   const [inboxPollAllowed, setInboxPollAllowed] = React.useState(false);
+  const [microsoftOAuthReady, setMicrosoftOAuthReady] = React.useState<boolean | null>(null);
 
   const outlookSeats = seats.filter((s) => s.provider === "Microsoft Graph");
   const connected = outlookSeats.filter(seatHasOutlookMailbox);
@@ -95,8 +96,9 @@ export function OutlookNeedsPanel({
   }, [supabaseEnabled, connected.length]);
 
   React.useEffect(() => {
-    if (!supabaseEnabled || connected.length === 0) {
+    if (!supabaseEnabled) {
       setGraphWebhookActive(false);
+      setMicrosoftOAuthReady(false);
       return;
     }
     let cancelled = false;
@@ -104,7 +106,11 @@ export function OutlookNeedsPanel({
       try {
         const res = await fetch("/api/email/connections", { credentials: "same-origin" });
         const json = (await res.json().catch(() => null)) as {
-          providers?: { inboxPollAllowed?: boolean };
+          providers?: {
+            inboxPollAllowed?: boolean;
+            microsoftOAuth?: boolean;
+            encryptionReady?: boolean;
+          };
           connections?: Array<{
             provider?: string;
             graphSubscription?: { active?: boolean } | null;
@@ -112,12 +118,18 @@ export function OutlookNeedsPanel({
         } | null;
         if (cancelled) return;
         setInboxPollAllowed(json?.providers?.inboxPollAllowed === true);
+        setMicrosoftOAuthReady(
+          json?.providers?.microsoftOAuth === true && json?.providers?.encryptionReady === true,
+        );
         const active = (json?.connections ?? []).some(
           (c) => c.provider === "Microsoft Graph" && c.graphSubscription?.active === true,
         );
         setGraphWebhookActive(active);
       } catch {
-        if (!cancelled) setGraphWebhookActive(false);
+        if (!cancelled) {
+          setGraphWebhookActive(false);
+          setMicrosoftOAuthReady(false);
+        }
       }
     })();
     return () => {
@@ -247,16 +259,33 @@ export function OutlookNeedsPanel({
         <div className="flex flex-wrap items-center gap-2">
           {connected.length === 0 ? (
             connectSeat && supabaseEnabled ? (
-              <Button
-                type="button"
-                size="sm"
-                leftIcon={<Link2 className="h-3.5 w-3.5" aria-hidden />}
-                onClick={() => {
-                  window.location.href = `/auth/microsoft?seat_id=${encodeURIComponent(connectSeat.id)}`;
-                }}
-              >
-                Connect Outlook
-              </Button>
+              microsoftOAuthReady ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  leftIcon={<Link2 className="h-3.5 w-3.5" aria-hidden />}
+                  onClick={() => {
+                    window.location.href = `/auth/microsoft?seat_id=${encodeURIComponent(connectSeat.id)}`;
+                  }}
+                >
+                  Connect Outlook
+                </Button>
+              ) : (
+                <Link
+                  href="/settings?tab=integrations"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-full border border-ink/15 bg-surface px-3.5 text-sm font-semibold text-ink hover:bg-canvas"
+                  title={
+                    microsoftOAuthReady === false
+                      ? "Microsoft Graph OAuth env missing — Connect Outlook stays disabled until secrets land."
+                      : "Checking OAuth readiness…"
+                  }
+                >
+                  <Link2 className="h-3.5 w-3.5" aria-hidden />
+                  {microsoftOAuthReady === false
+                    ? "Open Settings (Outlook OAuth not configured)"
+                    : "Checking Outlook readiness…"}
+                </Link>
+              )
             ) : (
               <Link
                 href="/fleet"

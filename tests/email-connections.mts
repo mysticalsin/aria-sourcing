@@ -340,6 +340,44 @@ ok(
     /HeyReach/.test(sendMode) &&
     /return !hasConnectedMailbox/.test(sendMode),
 );
+ok(
+  "Graph/Gmail mailboxes require mode=live (manual labels do not unlock Live)",
+  /isOauthMailboxProvider/.test(sendMode) &&
+    /seat\.mode !== "live"/.test(sendMode) &&
+    /isOauthMailboxIntegration/.test(sendMode),
+);
+
+const storeSrc = readFileSync("src/lib/store.ts", "utf8");
+ok(
+  "manual connectSeatAccount does not claim official API mailbox connect",
+  /Operator mailbox label saved/.test(storeSrc) &&
+    /not Graph\/Gmail OAuth/.test(storeSrc) &&
+    !/`Mailbox connected: \$\{seat/.test(storeSrc),
+);
+
+const seatCard = readFileSync("src/components/fleet/seat-card.tsx", "utf8");
+ok(
+  "fleet OAuth start checks microsoftOAuth/gmailOAuth readiness",
+  /microsoftOAuth/.test(seatCard) && /Outlook OAuth not configured|Gmail OAuth not configured/.test(seatCard),
+);
+ok(
+  "fleet manual save does not toast Mailbox connected",
+  /Operator mailbox label saved/.test(seatCard) && !/title: "Mailbox connected"/.test(seatCard),
+);
+
+const intakePanel = readFileSync("src/components/intake/outlook-needs-panel.tsx", "utf8");
+ok(
+  "intake Connect Outlook gated on microsoftOAuthReady",
+  /microsoftOAuthReady/.test(intakePanel) &&
+    /Outlook OAuth not configured/.test(intakePanel),
+);
+
+const settingsPage = readFileSync("src/app/settings/page.tsx", "utf8");
+ok(
+  "settings oauth=success toast requires Connected/LinkedIn callback message",
+  /oauthSuccessMessageOk/.test(settingsPage) &&
+    /\^Connected\\s\+\\S\+/.test(settingsPage),
+);
 
 const bootstrapCache = readFileSync("src/lib/workspace-bootstrap-cache.ts", "utf8");
 ok("workspace bootstrap session cache", /readWorkspaceBootstrapCache/.test(bootstrapCache));
@@ -360,7 +398,6 @@ ok(
   /Dry-run \/ preview/.test(outreachCard) && /Record legitimate interest/.test(outreachCard),
 );
 
-const storeSrc = readFileSync("src/lib/store.ts", "utf8");
 ok("campaign bulk lawful basis action", /recordCampaignLawfulBasis/.test(storeSrc));
 ok(
   "demo hydrate skips loading gate",

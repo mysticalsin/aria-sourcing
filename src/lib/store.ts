@@ -4845,9 +4845,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           next,
           makeActivity({
             type: "system",
-            title: `Mailbox connected: ${seat?.name ?? id}`,
-            notes: `${account} connected via official API. Verify domain before live sends.`,
-            outcome: "Connected",
+            title: `Operator mailbox label saved: ${seat?.name ?? id}`,
+            notes: `${account} recorded as an operator label only — not Graph/Gmail OAuth. Use Connect Outlook (or Gmail) for live sends.`,
+            outcome: "Label saved",
             campaignId: null,
             linkedEntityType: null,
             linkedEntityId: null,

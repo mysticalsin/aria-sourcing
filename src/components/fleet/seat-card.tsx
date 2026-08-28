@@ -138,18 +138,18 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
     }
     const result = await actions.connectSeatAccount(seat.id, email);
     if (!result.ok) {
-      toast({ title: "Mailbox not connected", description: result.error, variant: "error" });
+      toast({ title: "Mailbox label not saved", description: result.error, variant: "error" });
       return;
     }
     setConnectOpen(false);
     toast({
-      title: "Mailbox connected",
-      description: `${email} linked. Verify the domain before going live.`,
-      variant: "success",
+      title: "Operator mailbox label saved",
+      description: `${email} recorded for display/dry-run only — not OAuth. Use Connect Microsoft/Google for live sends.`,
+      variant: "info",
     });
   }
 
-  function startOAuth() {
+  async function startOAuth() {
     if (!supabaseEnabled) {
       toast({
         title: "OAuth requires live mode",
@@ -158,7 +158,33 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
       });
       return;
     }
-    const path = seat.provider === "Gmail API" ? "/auth/google" : "/auth/microsoft";
+    const isGmail = seat.provider === "Gmail API";
+    try {
+      const res = await fetch("/api/email/connections", { credentials: "same-origin" });
+      const json = (await res.json().catch(() => null)) as {
+        providers?: { gmailOAuth?: boolean; microsoftOAuth?: boolean; encryptionReady?: boolean };
+      } | null;
+      const providers = json?.providers;
+      const oauthOk = isGmail ? providers?.gmailOAuth === true : providers?.microsoftOAuth === true;
+      if (!providers?.encryptionReady || !oauthOk) {
+        toast({
+          title: isGmail ? "Gmail OAuth not configured" : "Outlook OAuth not configured",
+          description: !providers?.encryptionReady
+            ? "Token encryption missing (DATA_ENCRYPTION_KEY). Connect stays disabled until secrets land."
+            : "Microsoft/Google OAuth env missing on this deployment. Open Settings → Integrations after secrets land.",
+          variant: "error",
+        });
+        return;
+      }
+    } catch {
+      toast({
+        title: "Could not verify OAuth readiness",
+        description: "Retry from Settings → Integrations.",
+        variant: "error",
+      });
+      return;
+    }
+    const path = isGmail ? "/auth/google" : "/auth/microsoft";
     window.location.href = `${path}?seat_id=${encodeURIComponent(seat.id)}`;
   }
 
@@ -209,9 +235,17 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
   const readinessItems: ReadinessItem[] = [
     {
       id: "mailbox",
-      label: "Mailbox connected",
-      ok: Boolean(seat.connectedAccount),
-      hint: "Connect via OAuth or link in Settings → Integrations.",
+      label: isOAuthProvider
+        ? seat.mode === "live" && seat.connectedAccount
+          ? "Mailbox connected (OAuth live)"
+          : "Mailbox OAuth (mode=live)"
+        : "Operator mailbox label",
+      ok: isOAuthProvider
+        ? seat.mode === "live" && Boolean(seat.connectedAccount)
+        : Boolean(seat.connectedAccount),
+      hint: isOAuthProvider
+        ? "Connect via OAuth in Settings → Integrations (manual labels do not unlock Live)."
+        : "API-key providers may record a sending address; verify domain before live.",
     },
     {
       id: "domain",
@@ -556,8 +590,18 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
       >
         <div className="space-y-4">
           {seat.connectedAccount && (
-            <div className="rounded-2xl bg-success-soft px-3.5 py-3 text-success">
-              <p className="text-xs font-semibold">Connected account</p>
+            <div
+              className={
+                isOAuthProvider && seat.mode !== "live"
+                  ? "rounded-2xl bg-warning-soft px-3.5 py-3 text-warning"
+                  : "rounded-2xl bg-success-soft px-3.5 py-3 text-success"
+              }
+            >
+              <p className="text-xs font-semibold">
+                {isOAuthProvider && seat.mode !== "live"
+                  ? "Operator mailbox label (not OAuth live)"
+                  : "Connected account"}
+              </p>
               <p className="text-sm font-medium">{seat.connectedAccount}</p>
             </div>
           )}
@@ -578,7 +622,7 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
               <Field
                 label="Mailbox address (demo/manual)"
                 htmlFor={accountEmailId}
-                hint="Used for display and dry-run. Real sends use the OAuth-connected account."
+                hint="Operator label for display/dry-run only — does not complete Graph/Gmail OAuth or unlock Live send."
               >
                 <Input
                   id={accountEmailId}

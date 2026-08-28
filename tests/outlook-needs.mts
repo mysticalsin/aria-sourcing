@@ -59,16 +59,32 @@ ok("format includes From/Subject", /^From: /.test(formatted) && /Subject: /.test
 ok("format includes body", /Senior Platform Engineer/.test(formatted));
 
 ok(
-  "Graph seat with account is connected",
-  seatHasOutlookMailbox({ provider: "Microsoft Graph", connectedAccount: "ops@acme.example" }),
+  "Graph seat with account + mode=live is connected",
+  seatHasOutlookMailbox({
+    provider: "Microsoft Graph",
+    connectedAccount: "ops@acme.example",
+    mode: "live",
+  }),
+);
+ok(
+  "Graph seat with account but mode=mock is not connected",
+  !seatHasOutlookMailbox({
+    provider: "Microsoft Graph",
+    connectedAccount: "ops@acme.example",
+    mode: "mock",
+  }),
 );
 ok(
   "Graph seat without account is not connected",
-  !seatHasOutlookMailbox({ provider: "Microsoft Graph", connectedAccount: "" }),
+  !seatHasOutlookMailbox({ provider: "Microsoft Graph", connectedAccount: "", mode: "live" }),
 );
 ok(
   "Gmail seat is not Outlook mailbox",
-  !seatHasOutlookMailbox({ provider: "Gmail API", connectedAccount: "ops@gmail.com" }),
+  !seatHasOutlookMailbox({
+    provider: "Gmail API",
+    connectedAccount: "ops@gmail.com",
+    mode: "live",
+  }),
 );
 
 ok("demoOutlookNeeds returns two labelled samples", demoOutlookNeeds().length === 2);

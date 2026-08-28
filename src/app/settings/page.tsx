@@ -256,7 +256,12 @@ export default function SettingsPage() {
     if (tab && VALID_TABS.has(tab)) setActiveTab(tab);
     const oauth = params.get("oauth");
     const message = params.get("message");
-    if (oauth === "success") {
+    // Fail-closed: craftable ?oauth=success without a real callback message must not toast success.
+    // OAuth callbacks always set `Connected <email>` or `LinkedIn connected as …`.
+    const oauthSuccessMessageOk =
+      Boolean(message?.trim()) &&
+      (/^Connected\s+\S+/i.test(message!) || /linkedin\s+connected/i.test(message!));
+    if (oauth === "success" && oauthSuccessMessageOk) {
       const linkedIn = /linkedin/i.test(message ?? "");
       const graphWebhookWarning = /Graph webhook not enabled|Graph webhook setup failed|Graph webhook failed/i.test(message ?? "");
       toast({
@@ -264,6 +269,9 @@ export default function SettingsPage() {
         description: message ?? "",
         variant: graphWebhookWarning ? "error" : "success",
       });
+      goTab("integrations");
+      window.history.replaceState({}, "", `${window.location.pathname}?tab=integrations`);
+    } else if (oauth === "success" && !oauthSuccessMessageOk) {
       goTab("integrations");
       window.history.replaceState({}, "", `${window.location.pathname}?tab=integrations`);
     } else if (oauth === "error") {

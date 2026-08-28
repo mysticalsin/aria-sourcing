@@ -16,9 +16,17 @@ import { supabaseEnabled } from "@/lib/supabase/config";
 import { cn } from "@/lib/utils";
 import { Check, Circle, Cpu, Inbox, Power, Rocket } from "lucide-react";
 
-function seatHasOauthMailbox(seat: { provider?: string; connectedAccount?: string }): boolean {
+function seatHasOauthMailbox(seat: {
+  provider?: string;
+  connectedAccount?: string;
+  mode?: string;
+}): boolean {
   if (seatHasOutlookMailbox(seat)) return true;
-  return seat.provider === "Gmail API" && Boolean(seat.connectedAccount?.trim());
+  return (
+    seat.provider === "Gmail API" &&
+    seat.mode === "live" &&
+    Boolean(seat.connectedAccount?.trim())
+  );
 }
 
 type Step = {

@@ -67,6 +67,23 @@ ok(
 }
 
 {
+  // Operator-typed Outlook account without mode=live must not unlock Live.
+  const mockModeAccount: IntegrationStatus[] = bareIntegrations.map((i) =>
+    i.id === "int_outlook"
+      ? { ...i, status: "connected", mode: "mock", connectedAccount: "twalteur@amaris.com" }
+      : i,
+  );
+  ok(
+    "Outlook connectedAccount + mode=mock → still Dry-run",
+    effectiveDryRunMode(false, emptySeats, mockModeAccount) === true,
+  );
+  ok(
+    "Outlook connectedAccount + mode=mock → hasConnectedMailbox false",
+    hasConnectedMailbox(emptySeats, mockModeAccount) === false,
+  );
+}
+
+{
   const withAccount: IntegrationStatus[] = bareIntegrations.map((i) =>
     i.id === "int_outlook"
       ? { ...i, status: "connected", mode: "live", connectedAccount: "twalteur@amaris.com" }
@@ -150,6 +167,12 @@ ok(
   ok(
     "mailbox seat with connectedAccount → Live allowed when setting off",
     effectiveDryRunMode(false, [seat], bareIntegrations) === false,
+  );
+  seat.mode = "mock";
+  ok(
+    "Graph seat with label but mode=mock → Dry-run (manual connect is not OAuth)",
+    effectiveDryRunMode(false, [seat], bareIntegrations) === true &&
+      hasConnectedMailbox([seat], bareIntegrations) === false,
   );
 }
 

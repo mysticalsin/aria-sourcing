@@ -97,13 +97,15 @@ export function formatNeedAsIntakeEmail(need: OutlookNeedMessage): string {
 }
 
 /**
- * Whether a seat looks like a live Outlook/Graph mailbox connection.
- * Demo seats with empty `connectedAccount` are not connected.
+ * Whether a seat is a live Outlook/Graph mailbox (OAuth callback promoted mode=live).
+ * Operator-typed labels alone (`connectedAccount` without mode=live) are not Outlook.
  */
 export function seatHasOutlookMailbox(seat: {
   provider?: string;
   connectedAccount?: string;
+  mode?: string;
 }): boolean {
   if (seat.provider !== "Microsoft Graph") return false;
+  if (seat.mode !== "live") return false;
   return Boolean(seat.connectedAccount?.trim());
 }
