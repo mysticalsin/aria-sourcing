@@ -18,7 +18,8 @@ const MAILBOX_INTEGRATION_IDS = new Set([
   "int_resend",
 ]);
 
-function isMailboxSeatProvider(provider: AgentSeat["provider"]): boolean {
+/** True when seat provider can send Email via Graph/Gmail/API mail (not LinkedIn/WA). */
+export function isMailboxSeatProvider(provider: string | null | undefined): boolean {
   return (
     provider === "Microsoft Graph" ||
     provider === "Gmail API" ||

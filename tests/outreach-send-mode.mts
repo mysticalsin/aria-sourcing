@@ -83,6 +83,15 @@ ok(
 }
 
 {
+  const sendRoute = readFileSync("src/app/api/outreach/send/route.ts", "utf8");
+  ok(
+    "Email send route rejects non-mailbox seats via isMailboxSeatProvider",
+    /isMailboxSeatProvider/.test(sendRoute)
+      && /Selected seat cannot send Email/.test(sendRoute),
+  );
+}
+
+{
   // Status-only Outlook "connected" without connectedAccount must NOT claim Live.
   const fakeConnected: IntegrationStatus[] = bareIntegrations.map((i) =>
     i.id === "int_outlook"

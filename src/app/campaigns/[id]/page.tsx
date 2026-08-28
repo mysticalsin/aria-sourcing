@@ -442,7 +442,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const scores = candidates.map((cand) => cand.matchScore);
   const campaignReplies = allReplies.filter((r) => r.campaignId === c.id);
   const campaignBookings = allBookings.filter((b) => b.campaignId === c.id);
-  const interestedAwaiting = candidates.filter((cand) => cand.stage === "Interested" && !cand.booking);
+  const interestedAwaiting = candidates.filter(
+    (cand) =>
+      cand.stage === "Interested"
+      && (!cand.booking || bookingNeedsCalendar(cand.booking)),
+  );
 
   const needsApproval = outreach
     .filter((mm) => mm.status === "Needs Approval")
@@ -450,8 +454,16 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const pendingManual = outreach
     .filter((mm) => mm.status === "Pending Manual Send")
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const pendingSend = outreach
+    .filter((mm) => mm.status === "Approved")
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const otherOutreach = outreach
-    .filter((mm) => mm.status !== "Needs Approval" && mm.status !== "Pending Manual Send")
+    .filter(
+      (mm) =>
+        mm.status !== "Needs Approval"
+        && mm.status !== "Pending Manual Send"
+        && mm.status !== "Approved",
+    )
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const sortedReplies = [...campaignReplies].sort((a, b) => {
@@ -1478,6 +1490,20 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                       </Badge>
                     </div>
                     {pendingManual.map((msg) => (
+                      <OutreachMessageCard key={msg.id} message={msg} />
+                    ))}
+                  </section>
+                )}
+                {pendingSend.length > 0 && (
+                  <section className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Send className="h-4 w-4 text-tangerine" aria-hidden />
+                      <Eyebrow>Approved — awaiting send</Eyebrow>
+                      <Badge tone="tangerine" size="sm">
+                        {pendingSend.length}
+                      </Badge>
+                    </div>
+                    {pendingSend.map((msg) => (
                       <OutreachMessageCard key={msg.id} message={msg} />
                     ))}
                   </section>

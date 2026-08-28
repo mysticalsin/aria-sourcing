@@ -2627,6 +2627,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       // Persist the exact human approval before any local status/ledger change.
       // A double-click, failed request, stale edit, or concurrent rejection leaves
       // the draft pending rather than presenting an approval the server cannot use.
+      let approvalQuality: {
+        qualityCriticsUsed?: boolean;
+        qualityStatus?: "ready" | "needs_review" | "blocked";
+      } = {};
       if (supabaseEnabled) {
         if (pendingOutreachApprovals.current.has(messageId)) {
           return approvalBlocked("Approval is already being recorded.");
@@ -2644,6 +2648,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 persisted.detail ?? "Public demo: approval was simulated and the draft remains pending.",
               ],
             };
+          }
+          if (typeof persisted.qualityCriticsUsed === "boolean") {
+            approvalQuality.qualityCriticsUsed = persisted.qualityCriticsUsed;
+          }
+          if (persisted.qualityStatus) {
+            approvalQuality.qualityStatus = persisted.qualityStatus;
           }
           const revokeStaleApproval = async (blocker: string): Promise<ApprovalResult> => {
             // The approval POST already succeeded. Its idempotent rollback must
@@ -2714,6 +2724,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 scheduledFor: stampSimulatedSend ? now : null,
                 sentAt: stampSimulatedSend ? now : null,
                 dryRun: forceDryRun,
+                ...(approvalQuality.qualityCriticsUsed !== undefined
+                  ? { qualityCriticsUsed: approvalQuality.qualityCriticsUsed }
+                  : {}),
+                ...(approvalQuality.qualityStatus
+                  ? { qualityStatus: approvalQuality.qualityStatus }
+                  : {}),
               }
             : m,
         );

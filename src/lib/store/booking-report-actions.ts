@@ -345,7 +345,9 @@ export function createBookingReportActions({
           return {
             ok: false,
             error:
-              "Calendar request outcome is unknown. Reconciliation is required; do not retry.",
+              typeof body.detail === "string" && body.detail.trim()
+                ? body.detail
+                : "Calendar booking was skipped. Fix the connection or scope, then retry.",
           };
         }
         if (body?.status === "dry-run") {

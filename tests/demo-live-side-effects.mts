@@ -227,7 +227,7 @@ currentSupabase = {
     if (table === "agent_seats") {
       return queryResult({
         id: seatId,
-        provider: "SMTP",
+        provider: "SendGrid",
         operator_email: "recruiter@example.test",
         mode: "live",
         domain_verified: false,

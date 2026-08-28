@@ -344,6 +344,12 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /dryRun: false/.test(readFileSync("src/lib/store.ts", "utf8"))
         && /send_outreach/.test(readFileSync("src/lib/recommendations.ts", "utf8"))
         && /isRealSendFact\(msg\)/.test(readFileSync("src/lib/skills.ts", "utf8"))
+        && /isMailboxSeatProvider/.test(readFileSync("src/app/api/outreach/send/route.ts", "utf8"))
+        && /Approved — awaiting send/.test(readFileSync("src/app/campaigns/[id]/page.tsx", "utf8"))
+        && /bookingNeedsCalendar\(c\.booking\)/.test(readFileSync("src/lib/recommendations.ts", "utf8"))
+        && /bookingNeedsCalendar\(c\.booking\)/.test(readFileSync("src/lib/metrics.ts", "utf8"))
+        && /critics_required/.test(readFileSync("src/lib/outreach-approval.ts", "utf8"))
+        && /Calendar booking was skipped/.test(readFileSync("src/lib/store/booking-report-actions.ts", "utf8"))
       );
     },
   },

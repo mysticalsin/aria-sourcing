@@ -20,6 +20,7 @@ import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
 import { dispatchDue } from "@/lib/dispatch-outbound";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
+import { isMailboxSeatProvider } from "@/lib/outreach-send-mode";
 
 const OutreachSendSchema = z.object({
   seatId: z.string().uuid().optional(),
@@ -374,6 +375,13 @@ export async function POST(req: NextRequest) {
   }
   if (seat.mode !== "live") {
     return NextResponse.json({ status: "dry-run", detail: "Seat not live, nothing sent." });
+  }
+  // Email path only — LinkedIn/WhatsApp/SMS seats must never claim Graph mail send.
+  if (!isMailboxSeatProvider(String(seat.provider ?? ""))) {
+    return NextResponse.json({
+      status: "skipped",
+      detail: "Selected seat cannot send Email. Use a live Outlook, Gmail, SendGrid, or Resend mailbox.",
+    });
   }
 
   if (publicDemoSideEffectsDisabled()) {

@@ -17,6 +17,7 @@
 import type { HermesState, OutreachMessage } from "./types";
 import type { Tone } from "./utils";
 import { daysSince } from "./rules";
+import { bookingNeedsCalendar } from "./booking-status";
 
 export type RecommendationKind =
   | "hot_reply"
@@ -252,7 +253,9 @@ export function deriveRecommendations(state: HermesState, now: number = Date.now
   }
 
   for (const c of state.candidates) {
-    if (c.stage !== "Interested" || c.booking) continue;
+    if (c.stage !== "Interested") continue;
+    // Incomplete bookings (event without teamsLink/calLink) still need book_interview.
+    if (c.booking && !bookingNeedsCalendar(c.booking)) continue;
     items.push({
       kind: "book_interview",
       entityId: c.id,

@@ -617,7 +617,7 @@ test("runtime calendar response failures never commit or emit a booking", async 
     {
       name: "skipped",
       options: { fetchBody: { status: "skipped", detail: "Calendar scope missing." } },
-      error: /outcome is unknown.*reconciliation.*do not retry/i,
+      error: /Calendar scope missing/i,
     },
     {
       name: "dry-run",

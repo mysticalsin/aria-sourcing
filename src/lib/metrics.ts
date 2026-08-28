@@ -10,6 +10,7 @@ import type {
 } from "./types";
 import { FUNNEL_STAGES } from "./types";
 import { round } from "./utils";
+import { bookingNeedsCalendar } from "./booking-status";
 
 /* Effective funnel rank for any candidate stage. Terminal/negative stages map
    to the furthest pipeline point they actually reached. */
@@ -301,7 +302,9 @@ export function globalKpis(
   const interested = cands.filter(
     (c) => effectiveStageRank(c) >= 3 && c.stage !== "Not Interested",
   ).length;
-  const awaitingBooking = cands.filter((c) => c.stage === "Interested" && !c.booking).length;
+  const awaitingBooking = cands.filter(
+    (c) => c.stage === "Interested" && (!c.booking || bookingNeedsCalendar(c.booking)),
+  ).length;
   const scores = cands.map((c) => c.matchScore).filter(Boolean);
   const avg = scores.length ? round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
   // Mean time-to-first-interview across ACTIVE campaigns only.

@@ -56,6 +56,34 @@ function response(okValue: boolean, status = 200, body: unknown = { ok: okValue 
   ok("approval persistence preserves the public-demo explanation", simulated.ok && simulated.detail === "Public demo: approval is simulated.");
 }
 
+{
+  const withCritics = await recordOutreachApproval(request, async () =>
+    response(true, 200, {
+      ok: true,
+      qualityCriticsUsed: true,
+      qualityStatus: "ready",
+      criticStageCount: 3,
+    }),
+  );
+  ok(
+    "approval persistence returns qualityCriticsUsed from approve API",
+    withCritics.ok && withCritics.qualityCriticsUsed === true && withCritics.qualityStatus === "ready",
+  );
+
+  const criticsRequired = await recordOutreachApproval(request, async () =>
+    response(false, 503, {
+      ok: false,
+      status: "critics_required",
+      error: "Live multi-agent LLM quality critics required for outreach approval.",
+    }),
+  );
+  ok(
+    "approval persistence surfaces critics_required instead of a generic toast",
+    !criticsRequired.ok
+      && /multi-agent LLM quality critics required/i.test(criticsRequired.error),
+  );
+}
+
 for (const failedResponse of [
   response(false, 200, { ok: false, error: "not recorded" }),
   response(false, 401, { ok: false }),
