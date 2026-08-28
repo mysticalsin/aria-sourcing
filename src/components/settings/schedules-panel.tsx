@@ -48,10 +48,10 @@ export function SchedulesPanel() {
       <CardContent className="space-y-5">
         <div className="flex items-center gap-2">
           <Badge tone="electric" size="sm" dot>
-            {schedules.filter((s) => s.enabled).length} active
+            {schedules.filter((s) => s.enabled).length} enabled (intent only)
           </Badge>
           <span className="text-xs text-muted">
-            of {schedules.length} jobs · recurring fleet runs, approval-gated when they act
+            of {schedules.length} saved jobs — not executed here; production loop is the Fly worker
           </span>
         </div>
 

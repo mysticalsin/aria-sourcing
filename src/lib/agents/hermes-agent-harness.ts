@@ -48,6 +48,7 @@ const TASK_OUTPUT_CONTRACT: Record<HermesLoopTask, string> = {
   ].join(" "),
   chat: [
     "Be warm, concise, and practical. When search_candidates is available, use it for real scored candidates instead of inventing profiles.",
+    "Text and advice only — never claim candidates were added, messages were sent, interviews were booked, or other pipeline side effects unless a tool result explicitly confirms them.",
   ].join(" "),
 };
 

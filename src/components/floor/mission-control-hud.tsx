@@ -150,7 +150,7 @@ export function MissionControlHud() {
     <div className="pointer-events-none absolute inset-0 z-10 select-none">
       <div
         role="group"
-        aria-label="Mission control scoreboard, live counts"
+        aria-label="Mission control scoreboard, store counts"
         className="pointer-events-none absolute left-3 right-3 top-3 flex flex-wrap gap-2 sm:right-auto"
       >
         {TILE_ORDER.map((key) => (
@@ -201,7 +201,7 @@ function HudTile({
         backgroundColor: flashing ? tint : "rgba(8,10,18,0.42)",
         boxShadow: flashing ? `0 0 0 1px ${solid}, 0 0 16px -2px ${solid}` : "none",
       }}
-      title={`${meta.label}: ${Math.round(display)} (live)`}
+      title={`${meta.label}: ${Math.round(display)} (store)`}
       aria-label={`${meta.label}: ${Math.round(display)}`}
     >
       <span className="flex items-center gap-1 text-[0.6rem] font-semibold uppercase tracking-[0.13em] text-white/55">

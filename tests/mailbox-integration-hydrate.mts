@@ -35,8 +35,10 @@ describe("mailboxIntegrationPatchesFromConnections", () => {
     const teams = patches.find((p) => p.id === "int_graph_teams");
     assert.equal(outlook?.patch.status, "connected");
     assert.equal(outlook?.patch.connectedAccount, "talent@mantu.com");
+    assert.equal(outlook?.patch.lastSync, null);
     assert.equal(teams?.patch.status, "degraded");
     assert.equal(teams?.patch.mode, "mock");
+    assert.equal(teams?.patch.lastSync, null);
   });
 
   it("marks Outlook/Teams degraded when Graph webhook subscription is inactive", () => {
@@ -87,5 +89,6 @@ describe("mailboxIntegrationPatchesFromConnections", () => {
     const teams = patches.find((p) => p.id === "int_graph_teams");
     assert.equal(teams?.patch.status, "connected");
     assert.equal(teams?.patch.mode, "live");
+    assert.equal(teams?.patch.lastSync, null);
   });
 });

@@ -312,7 +312,8 @@ export function mailboxIntegrationPatchesFromConnections(
           status: "degraded",
           mode: "mock",
           connectedAccount: conn.accountEmail,
-          lastSync: new Date().toISOString(),
+          // Hydrate is status refresh only — never stamp lastSync as a real sync.
+          lastSync: null,
           errors: [
             "Mailbox token present but Graph webhook subscription is not active — Enable webhook or reconnect Outlook.",
           ],
@@ -326,7 +327,7 @@ export function mailboxIntegrationPatchesFromConnections(
           status: "degraded",
           mode: "mock",
           connectedAccount: conn.accountEmail,
-          lastSync: new Date().toISOString(),
+          lastSync: null,
           errors: ["Mailbox connected but seat is not live — reconnect Outlook after tip deploy."],
         },
       };
@@ -337,7 +338,7 @@ export function mailboxIntegrationPatchesFromConnections(
         status: "connected",
         mode: liveSeat || provider === "Gmail API" ? "live" : "mock",
         connectedAccount: conn.accountEmail,
-        lastSync: new Date().toISOString(),
+        lastSync: null,
         errors: [],
       },
     };

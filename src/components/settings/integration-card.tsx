@@ -300,8 +300,8 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
             </Badge>
             <span className="text-xs text-muted">
               {integration.lastSync
-                ? `Synced ${formatTimeAgo(integration.lastSync)}`
-                : "Never synced"}
+                ? `Validated ${formatTimeAgo(integration.lastSync)}`
+                : "Never validated"}
             </span>
           </div>
 
@@ -458,7 +458,7 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                   <p className="truncate text-sm font-semibold">{integration.connectedAccount}</p>
                 )}
                 <p className="text-sm">
-                  Connected{integration.lastSync ? ` · last synced ${formatTimeAgo(integration.lastSync)}` : ""}.
+                  Connected{integration.lastSync ? ` · last validated ${formatTimeAgo(integration.lastSync)}` : " · status from OAuth hydrate (not a mailbox sync)"}.
                   {" "}Update the credential below, or disconnect.
                 </p>
               </div>

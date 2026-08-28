@@ -320,6 +320,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /No email was sent/.test(readFileSync("src/components/careers/chatbox.tsx", "utf8"))
         && /Queued \/ awaiting delivery/.test(readFileSync("src/components/outreach/outreach-message-card.tsx", "utf8"))
         && /tag="ACTIVE"/.test(readFileSync("src/components/floor3d/retro/RetroOfficeScene.tsx", "utf8"))
+        && /lastSync: null/.test(readFileSync("src/lib/integrations.ts", "utf8"))
+        && /never claim candidates were added/.test(readFileSync("src/lib/agents/hermes-agent-harness.ts", "utf8"))
+        && /isRealSendFact\(m\)/.test(readFileSync("src/components/launch/war-room-board.tsx", "utf8"))
+        && /enabled \(intent only\)/.test(readFileSync("src/components/settings/schedules-panel.tsx", "utf8"))
+        && /store counts/.test(readFileSync("src/components/floor/mission-control-hud.tsx", "utf8"))
       );
     },
   },

@@ -244,7 +244,7 @@ function Microsoft365StackInner() {
       <ConnectionStep
         step={3}
         title="Calendar & Teams interviews"
-        subtitle="First conversations booked on Outlook with Teams join links. JoinUrl is proven only on live /api/calendar/event with confirmLive — never from OAuth scope alone."
+        subtitle="First conversations proposed on Outlook with Teams join links after confirmLive. JoinUrl is proven only on live /api/calendar/event with confirmLive — never from OAuth scope alone."
         state={calendarReady ? "complete" : mailboxConnected ? "active" : "pending"}
       >
         <SystemReadiness
