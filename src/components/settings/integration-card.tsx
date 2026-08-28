@@ -180,20 +180,21 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
         return;
       }
       actions.updateIntegration(integration.id, {
-        status: saved.valid === false ? "error" : "connected",
+        status: saved.valid === false ? "error" : "degraded",
+        mode: "mock",
         connectedAccount: account.trim() || undefined,
-        lastSync: new Date().toISOString(),
+        lastSync: null,
         errors: saved.valid === false ? [saved.detail ?? "Key verification failed"] : [],
       });
       toast({
         title:
           saved.valid === false
             ? `${integration.name}: key saved but invalid`
-            : `${integration.name} connected`,
+            : `${integration.name}: key saved`,
         description:
           saved.valid === false
             ? saved.detail
-            : "Credentials encrypted server-side. Flip Live mode when you're ready.",
+            : "Credentials encrypted server-side. Live send stays off until you flip Live after a real seat is ready.",
         variant: saved.valid === false ? "error" : "success",
       });
       setApiKey("");
@@ -219,15 +220,18 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
         value: `smtp:${JSON.stringify({ host: smtpHost.trim(), email: smtpEmail.trim(), password: smtpPassword.trim() })}`,
       });
       actions.updateIntegration(integration.id, {
-        status: "connected",
+        status: "degraded",
+        mode: "mock",
         connectedAccount: smtpEmail.trim(),
-        lastSync: new Date().toISOString(),
-        errors: [],
+        lastSync: null,
+        errors: [
+          "SMTP credentials stored. Verify delivery (or use Outlook/Gmail OAuth) before flipping Live.",
+        ],
       });
       toast({
-        title: `${integration.name} connected`,
-        description: `Linked ${smtpEmail.trim()} via SMTP / IMAP. Flip Live mode when ready.`,
-        variant: "success",
+        title: `${integration.name}: credentials stored`,
+        description: `Saved ${smtpEmail.trim()} for SMTP. Live send stays off until you verify and flip Live mode.`,
+        variant: "info",
       });
       handleCloseModal();
     } catch {

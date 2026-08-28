@@ -363,7 +363,7 @@ export default function CalendarPage() {
   const ready = candidates.filter(
     (c) =>
       c.stage === "Interested" &&
-      !c.booking &&
+      (!c.booking || bookingNeedsCalendar(c.booking)) &&
       !c.complianceFlags.suppressed &&
       !c.complianceFlags.doNotContact,
   );

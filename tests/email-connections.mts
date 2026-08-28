@@ -341,10 +341,10 @@ ok(
     /return !hasConnectedMailbox/.test(sendMode),
 );
 ok(
-  "Graph/Gmail mailboxes require mode=live (manual labels do not unlock Live)",
+  "Mailbox integrations require mode=live (SMTP/API paste alone does not unlock Live)",
   /isOauthMailboxProvider/.test(sendMode) &&
     /seat\.mode !== "live"/.test(sendMode) &&
-    /isOauthMailboxIntegration/.test(sendMode),
+    /MAILBOX_INTEGRATION_IDS\.has\(integ\.id\) && integ\.mode !== "live"/.test(sendMode),
 );
 
 const storeSrc = readFileSync("src/lib/store.ts", "utf8");

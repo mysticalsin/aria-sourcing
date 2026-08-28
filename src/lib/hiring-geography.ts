@@ -1,6 +1,6 @@
-import type { Candidate } from "@/lib/types";
+import type { Candidate, OutreachMessage } from "@/lib/types";
 import { bookingNeedsCalendar } from "@/lib/booking-status";
-import { effectiveStageRank } from "@/lib/metrics";
+import { isRealSendFact } from "@/lib/metrics";
 import {
   isRemoteOrUnspecifiedLocation,
   resolveCountryFromLocation,
@@ -28,17 +28,22 @@ export interface HiringGeographyModel {
   maxCount: number;
 }
 
-/** Contacted = funnel rank ≥ Contacted (1). Sourced/New alone are not contacted. */
-function stageIsContacted(candidate: Candidate): boolean {
-  return effectiveStageRank(candidate) >= 1;
-}
-
 /** Booked KPI requires a real meeting/calendar URL — stage or booking shell is not enough. */
 function candidateIsBooked(candidate: Candidate): boolean {
   return Boolean(candidate.booking && !bookingNeedsCalendar(candidate.booking));
 }
 
-export function deriveHiringGeography(candidates: Candidate[]): HiringGeographyModel {
+/**
+ * Aggregate hiring geography. Contacted counts require a real send fact
+ * (`dryRun:false` + `sentAt`), not stage alone.
+ */
+export function deriveHiringGeography(
+  candidates: Candidate[],
+  outreach: Pick<OutreachMessage, "candidateId" | "dryRun" | "sentAt">[] = [],
+): HiringGeographyModel {
+  const contactedIds = new Set(
+    outreach.filter((m) => isRealSendFact(m)).map((m) => m.candidateId),
+  );
   const buckets = new Map<
     string,
     ResolvedCountry & { scores: number[]; sourced: number; contacted: number; booked: number }
@@ -64,7 +69,7 @@ export function deriveHiringGeography(candidates: Candidate[]): HiringGeographyM
     };
     existing.sourced += 1;
     if (candidate.matchScore > 0) existing.scores.push(candidate.matchScore);
-    if (stageIsContacted(candidate)) existing.contacted += 1;
+    if (contactedIds.has(candidate.id)) existing.contacted += 1;
     if (candidateIsBooked(candidate)) existing.booked += 1;
     buckets.set(resolved.iso2, existing);
   }

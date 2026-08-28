@@ -42,17 +42,14 @@ function isOauthMailboxProvider(provider: AgentSeat["provider"]): boolean {
   return provider === "Microsoft Graph" || provider === "Gmail API";
 }
 
-function isOauthMailboxIntegration(id: string): boolean {
-  return id === "int_outlook" || id === "int_gmail";
-}
-
 function integrationAccountReady(integ: IntegrationStatus): string | null {
   if (!integ.real) return null;
   const account = integ.connectedAccount?.trim();
   if (!account) return null;
   if (integ.status !== "connected" && integ.status !== "degraded") return null;
-  // Graph/Gmail cards require mode=live (set by OAuth callback), not a pasted label.
-  if (isOauthMailboxIntegration(integ.id) && integ.mode !== "live") return null;
+  // Graph/Gmail OAuth and API-key mailboxes require mode=live before Live send.
+  // Pasted SMTP/API credentials alone must not unlock Queue Summary Live.
+  if (MAILBOX_INTEGRATION_IDS.has(integ.id) && integ.mode !== "live") return null;
   return account;
 }
 

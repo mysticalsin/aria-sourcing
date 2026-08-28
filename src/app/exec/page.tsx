@@ -362,7 +362,10 @@ export default function ExecPage() {
     });
   }, [model.trends.contacted, model.trends.replied]);
 
-  const geography = React.useMemo(() => deriveHiringGeography(candidates), [candidates]);
+  const geography = React.useMemo(
+    () => deriveHiringGeography(candidates, outreach),
+    [candidates, outreach],
+  );
 
   function exportDashboard() {
     downloadText("exec-dashboard.md", execMarkdown(model));

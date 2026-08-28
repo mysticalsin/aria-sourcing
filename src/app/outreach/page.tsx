@@ -728,7 +728,7 @@ function OutreachView() {
                 <p className="flex items-start gap-1.5 border-t border-line pt-4 text-xs text-muted">
                   <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
                   {previewOnly
-                    ? "Approve stays in dry-run / preview until a mailbox or LinkedIn provider is connected. GDPR holds still require a recorded lawful basis — then Approve again."
+                    ? "Approve stays in dry-run / preview until a mailbox is connected (Outlook, Gmail, SendGrid, or Resend). LinkedIn alone never unlocks Live. GDPR holds still require a recorded lawful basis — then Approve again."
                     : "Approving queues the message for send. It goes live only when the seat is connected and its domain verified. Personalization and lawful basis are required before approval."}
                 </p>
               </CardContent>

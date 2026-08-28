@@ -71,11 +71,16 @@ export function agentActivity(seat: AgentSeat, state: HermesState, now = Date.no
   const campaignIds = new Set(campaigns.map((c) => c.id));
   const h = hash(seat.id);
 
-  // Real pending outreach awaiting human approval (not fabricated busy work).
+  // Real pending outreach awaiting human approval or explicit send.
   const pendingOutreach = state.outreach.filter(
     (m) =>
       campaignIds.has(m.campaignId)
-      && (m.status === "Needs Approval" || m.status === "Draft" || m.status === "Pending Manual Send"),
+      && (
+        m.status === "Needs Approval"
+        || m.status === "Draft"
+        || m.status === "Pending Manual Send"
+        || (m.status === "Approved" && m.dryRun !== true)
+      ),
   );
   if (pendingOutreach.length > 0) {
     const msg = pendingOutreach[h % pendingOutreach.length]!;
@@ -83,7 +88,11 @@ export function agentActivity(seat: AgentSeat, state: HermesState, now = Date.no
     const focus = state.candidates.find((c) => c.id === msg.candidateId);
     return make(
       "outreach",
-      msg.status === "Pending Manual Send" ? "Awaiting manual send" : "Outreach awaiting approval",
+      msg.status === "Pending Manual Send"
+        ? "Awaiting manual send"
+        : msg.status === "Approved"
+          ? "Awaiting send"
+          : "Outreach awaiting approval",
       campaign.title,
       focus ? maskName(focus.name, focus.stage) : null,
       true,

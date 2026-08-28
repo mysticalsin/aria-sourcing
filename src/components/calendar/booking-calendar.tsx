@@ -238,6 +238,12 @@ function BookingRow({ booking }: { booking: Booking }) {
             variant="outline"
             size="sm"
             leftIcon={<CheckCircle2 className="h-3.5 w-3.5" aria-hidden />}
+            disabled={bookingNeedsCalendar(booking)}
+            title={
+              bookingNeedsCalendar(booking)
+                ? "Needs calendar — connect Microsoft Graph and book with confirmLive before marking Completed"
+                : undefined
+            }
             onClick={() => setOutcome("Completed")}
           >
             Completed

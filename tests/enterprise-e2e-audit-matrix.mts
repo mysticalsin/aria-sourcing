@@ -350,6 +350,12 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /bookingNeedsCalendar\(c\.booking\)/.test(readFileSync("src/lib/metrics.ts", "utf8"))
         && /critics_required/.test(readFileSync("src/lib/outreach-approval.ts", "utf8"))
         && /Calendar booking was skipped/.test(readFileSync("src/lib/store/booking-report-actions.ts", "utf8"))
+        && /Awaiting send/.test(readFileSync("src/lib/floor.ts", "utf8"))
+        && /LinkedIn alone never unlocks Live/.test(readFileSync("src/app/outreach/page.tsx", "utf8"))
+        && /MAILBOX_INTEGRATION_IDS\.has\(integ\.id\) && integ\.mode !== "live"/.test(
+          readFileSync("src/lib/outreach-send-mode.ts", "utf8"),
+        )
+        && /isRealSendFact\(m\)/.test(readFileSync("src/lib/hiring-geography.ts", "utf8"))
       );
     },
   },

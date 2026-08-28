@@ -109,6 +109,33 @@ ok(
 }
 
 {
+  // SendGrid/Resend paste (status connected, mode=mock) must not unlock Live.
+  const sendgridMock: IntegrationStatus[] = bareIntegrations.map((i) =>
+    i.id === "int_sendgrid"
+      ? { ...i, status: "connected", mode: "mock", connectedAccount: "sg@example.test" }
+      : i,
+  );
+  ok(
+    "SendGrid connectedAccount + mode=mock → still Dry-run",
+    effectiveDryRunMode(false, emptySeats, sendgridMock) === true,
+  );
+  ok(
+    "SendGrid connectedAccount + mode=mock → hasConnectedMailbox false",
+    hasConnectedMailbox(emptySeats, sendgridMock) === false,
+  );
+  const sendgridLive: IntegrationStatus[] = bareIntegrations.map((i) =>
+    i.id === "int_sendgrid"
+      ? { ...i, status: "connected", mode: "live", connectedAccount: "sg@example.test" }
+      : i,
+  );
+  ok(
+    "SendGrid mode=live + account → Live allowed",
+    effectiveDryRunMode(false, emptySeats, sendgridLive) === false
+      && hasConnectedMailbox(emptySeats, sendgridLive) === true,
+  );
+}
+
+{
   // Operator-typed Outlook account without mode=live must not unlock Live.
   const mockModeAccount: IntegrationStatus[] = bareIntegrations.map((i) =>
     i.id === "int_outlook"

@@ -702,16 +702,43 @@ test("runtime booking updates validate the patch and synchronize embedded bookin
     endTime: new Date(pastStart.getTime() + 30 * 60_000).toISOString(),
   });
   assert.equal(past.ok, false);
-  const completed = created.actions.updateBooking(result.booking.id, { status: "Completed" });
-  assert.equal(completed.ok, true);
-  const storedCandidate = created.state.candidates.find((item) => item.id === candidate.id);
-  assert.equal(storedCandidate?.booking?.status, "Completed");
-  assert.equal(storedCandidate?.stage, "Interviewed");
-  assert.equal(created.activityDrafts.at(-1)?.linkedEntityId, result.booking.id);
-  assert.match(created.activityDrafts.at(-1)?.title ?? "", /Interview marked Completed/);
-  assert.equal(created.recomputeCalls, 2);
+
+  // Incomplete calendar (no teams/cal link) must not promote to Interviewed.
+  const completedShell = created.actions.updateBooking(result.booking.id, { status: "Completed" });
+  assert.equal(completedShell.ok, true);
+  assert.equal(
+    created.state.candidates.find((item) => item.id === candidate.id)?.stage,
+    "Interested",
+  );
   assert.equal(
     created.actions.updateBooking(result.booking.id, { status: "Confirmed" }).ok,
+    false,
+  );
+
+  // Calendar-complete booking may promote → Interviewed on Completed.
+  const withLinks = createHarness({
+    state: liveCalendarState("Microsoft Graph"),
+    liveCalendarEnabled: true,
+    fetchBody: {
+      status: "created",
+      eventId: "evt-completed-proof",
+      link: "https://teams.microsoft.com/l/meetup-join/19%3ameeting_completed",
+    },
+  });
+  const linkedIds = fixtureIds(withLinks.state);
+  const linked = await withLinks.actions.createBookingFor(linkedIds.candidate.id);
+  assert.equal(linked.ok, true);
+  if (!linked.ok) return;
+  assert.ok(linked.booking.teamsLink);
+  const completed = withLinks.actions.updateBooking(linked.booking.id, { status: "Completed" });
+  assert.equal(completed.ok, true);
+  const storedCandidate = withLinks.state.candidates.find((item) => item.id === linkedIds.candidate.id);
+  assert.equal(storedCandidate?.booking?.status, "Completed");
+  assert.equal(storedCandidate?.stage, "Interviewed");
+  assert.equal(withLinks.activityDrafts.at(-1)?.linkedEntityId, linked.booking.id);
+  assert.match(withLinks.activityDrafts.at(-1)?.title ?? "", /Interview marked Completed/);
+  assert.equal(
+    withLinks.actions.updateBooking(linked.booking.id, { status: "Confirmed" }).ok,
     false,
   );
 });

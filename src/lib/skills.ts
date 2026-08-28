@@ -204,7 +204,7 @@ export function analyzeOutcomes(state: HermesState): OutcomeAnalysis {
     topDimension,
     unclearRate,
     converted: converters.length,
-    contacted: state.candidates.filter((c) => stageRank(c.stage) >= 1).length,
+    contacted: new Set(state.outreach.filter(isRealSendFact).map((m) => m.candidateId)).size,
   };
 }
 

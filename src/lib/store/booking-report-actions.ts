@@ -592,8 +592,13 @@ export function createBookingReportActions({
       };
       if (safePatch.status === "Completed") {
         const candidate = next.candidates.find((item) => item.id === liveBooking.candidateId);
+        const liveAfter = next.bookings.find((item) => item.id === id) ?? {
+          ...liveBooking,
+          ...safePatch,
+        };
         const mayInterview =
           candidate &&
+          !bookingNeedsCalendar(liveAfter) &&
           (candidate.stage === "Booked" ||
             (candidate.stage === "Interested" && candidate.booking?.id === liveBooking.id));
         if (mayInterview) {

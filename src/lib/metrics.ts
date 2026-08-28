@@ -326,7 +326,9 @@ export function globalKpis(
     pendingApprovals: state.outreach.filter(
       (m) =>
         candidateIds.has(m.candidateId) &&
-        (m.status === "Needs Approval" || m.status === "Pending Manual Send"),
+        (m.status === "Needs Approval"
+          || m.status === "Pending Manual Send"
+          || (m.status === "Approved" && m.dryRun !== true)),
     ).length,
     hotReplies: state.replies.filter(
       (r) =>
