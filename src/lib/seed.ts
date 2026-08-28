@@ -171,7 +171,7 @@ export function defaultSettings(): SystemSettings {
     defaultLanguage: "en",
     soundEnabled: false,
     guardrails: defaultGuardrails(),
-    notifications: { slack: true, telegram: false, email: true },
+    notifications: { slack: false, telegram: false, email: true },
     llmProviders: defaultLlmProviders(),
     savedModels: defaultSavedModels(),
     tools: defaultTools(),

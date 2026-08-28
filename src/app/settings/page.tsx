@@ -407,11 +407,13 @@ export default function SettingsPage() {
 
   function patchNotify(key: keyof SystemSettings["notifications"], value: boolean) {
     actions.updateSettings({ notifications: { ...settings.notifications, [key]: value } });
+    const channel =
+      key === "slack" ? "Slack" : key === "telegram" ? "Telegram" : "Email";
     toast({
-      title: `${key === "slack" ? "Slack" : key === "telegram" ? "Telegram" : "Email"} alerts ${
-        value ? "enabled" : "disabled"
-      }`,
-      variant: value ? "success" : "info",
+      title: value
+        ? `${channel} preference saved — delivery needs a webhook/channel config`
+        : `${channel} alerts disabled`,
+      variant: "info",
     });
   }
 
@@ -819,7 +821,7 @@ export default function SettingsPage() {
                     id="notify-slack"
                     icon={<Slack className="h-4 w-4" />}
                     label="Slack"
-                    description="Post approvals and hot replies to your Slack workspace."
+                    description="Preference only — post approvals and hot replies when a Slack webhook is configured (not wired yet)."
                     checked={settings.notifications.slack}
                     onCheckedChange={(v) => patchNotify("slack", v)}
                   />
@@ -827,7 +829,7 @@ export default function SettingsPage() {
                     id="notify-telegram"
                     icon={<Send className="h-4 w-4" />}
                     label="Telegram"
-                    description="Send urgent escalations to your Telegram channel."
+                    description="Preference only — urgent escalations when a Telegram channel is configured (not wired yet)."
                     checked={settings.notifications.telegram}
                     onCheckedChange={(v) => patchNotify("telegram", v)}
                   />
@@ -835,7 +837,7 @@ export default function SettingsPage() {
                     id="notify-email"
                     icon={<Mail className="h-4 w-4" />}
                     label="Email"
-                    description="Daily digest and immediate alerts to the operator inbox."
+                    description="Daily digest and immediate alerts to the operator inbox (uses connected mailbox when live)."
                     checked={settings.notifications.email}
                     onCheckedChange={(v) => patchNotify("email", v)}
                   />

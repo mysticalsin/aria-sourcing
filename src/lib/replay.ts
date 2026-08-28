@@ -1,5 +1,6 @@
 import type { HermesState, OutreachLedgerEntry } from "./types";
 import { colorForAgent, type OfficeAgent } from "./floor3d";
+import { bookingInterviewTitle } from "./booking-status";
 
 /* ============================================================================
    Autopilot Replay (DVR) — a purely derived read model. Nothing here is
@@ -175,7 +176,7 @@ export function buildEventStream(state: ReplaySourceState): ReplayEvent[] {
       kind: "book",
       candidateId: b.candidateId,
       seatId: candidateSeat.get(b.candidateId),
-      label: `Interview booked: ${b.candidateName} with ${b.interviewer}`,
+      label: `${bookingInterviewTitle(b, b.candidateName)}${b.interviewer ? ` with ${b.interviewer}` : ""}`,
     });
   }
 

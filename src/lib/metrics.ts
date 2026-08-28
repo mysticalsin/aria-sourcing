@@ -172,7 +172,9 @@ export function realFunnelFacts(
   const bookings = state.bookings.filter(
     (booking) =>
       inCampaign(booking.campaignId) &&
-      contactedCandidateIds.has(booking.candidateId),
+      contactedCandidateIds.has(booking.candidateId) &&
+      // KPI "booked" requires a real meeting/calendar URL — local slots are not interviews.
+      Boolean(booking.teamsLink || booking.calLink),
   );
 
   const contacted = contactedCandidateIds.size;

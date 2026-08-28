@@ -298,6 +298,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /forceDryRun \? "Dry-run, nothing sent\."/.test(store)
         && /Subject: Proposed: your/.test(readFileSync("src/lib/mock-ai.ts", "utf8"))
         && /graphCheckpointSkipped/.test(readFileSync("scripts/sourcing-loop-worker.mjs", "utf8"))
+        && /Interview slot/.test(readFileSync("src/lib/floor3d.ts", "utf8"))
+        && /bookingInterviewTitle\(b,/.test(readFileSync("src/lib/replay.ts", "utf8"))
+        && /Boolean\(booking\.teamsLink \|\| booking\.calLink\)/.test(readFileSync("src/lib/metrics.ts", "utf8"))
+        && /provenance: "manual"[\s\S]{0,80}leadSource: "Applicant"/.test(store)
+        && /mock adapter — sample data only/.test(readFileSync("src/lib/integrations.ts", "utf8"))
       );
     },
   },

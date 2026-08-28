@@ -47,6 +47,13 @@ ok(
   placeholders.every((integration) => testConnection(integration).ok === false),
 );
 ok(
+  "mock-mode real cards fail closed on Test (never ready/lastSync)",
+  realCards.every((integration) => {
+    const result = testConnection({ ...integration, status: "connected", mode: "mock" });
+    return result.ok === false && /mock adapter/i.test(result.message);
+  }),
+);
+ok(
   "LinkedIn profile search is a truthfully real card, not a roadmap placeholder",
   apify?.real === true && apify.status === "not_configured",
 );

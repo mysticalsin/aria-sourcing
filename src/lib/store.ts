@@ -4074,7 +4074,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             suppressedUntil: null,
           },
           createdAt: new Date().toISOString(),
-          provenance: "live",
+          provenance: "manual",
           leadSource: "Applicant",
           starRating: sub.starRating,
           dna: sub.detected.skills ?? [],

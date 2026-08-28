@@ -380,9 +380,9 @@ export function testConnection(integration: IntegrationStatus): ConnectionTestRe
   }
   if (integration.mode === "mock") {
     return {
-      ok: true,
+      ok: false,
       latencyMs: 0,
-      message: `${integration.name}: mock adapter. Sample data only, no live call. Switch to Live to validate real credentials.`,
+      message: `${integration.name}: mock adapter — sample data only, no live call. Switch to Live and connect credentials before treating this as ready.`,
     };
   }
   return {
