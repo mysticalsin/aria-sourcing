@@ -2,8 +2,8 @@
 project: MSourcing / ARIA
 shift: 286
 agent: cursor-cloud
-updated: 2026-08-28T12:45Z
-status: owner-wait-m365-agent-work-complete
+updated: 2026-08-28T12:24Z
+status: owner-wait-m365-reprobe-2026-08-28T1206Z
 ---
 
 # Handoff — Shift 286
@@ -11,12 +11,12 @@ status: owner-wait-m365-agent-work-complete
 ## Current state
 
 - **Live Fly:** `344fcaf` / **0071** · ready ok
-- **Branch tip:** `0897cd1`
+- **Branch tip:** `ffebd35`
 - **PR #35** (supersedes closed #29–#33)
 - **Gate:** audit **62/62** · `npx tsc --noEmit && npm test` green
-- **PARTIAL E2E (live):** multilingual LinkedIn/Email/WhatsApp FR drafts **PASS**; intermittent sourcing empty + approve `critics_required` (503) — env not code regression
-- **Strict E2E:** still blocked on M365 (microsoftOAuth + 6b)
-- **M365:** `probe-m365-unblock.sh` → **owner-blocked** (7 Fly secrets)
+- **PARTIAL E2E (live):** multilingual LinkedIn/Email/WhatsApp FR drafts PASS
+- **Strict E2E:** blocked on M365 (microsoftOAuth + 6b)
+- **M365 reprobe 2026-08-28T12:06Z:** `probe-m365-unblock.sh` → **owner-blocked** (7 Fly secrets; `/tmp/owner-microsoft.env` absent)
 
 ## Done this shift
 
@@ -58,3 +58,8 @@ bash scripts/verify-m365-ready.sh
 bash scripts/print-fly-deploy-confirm.sh
 ```
 
+## Watch out
+
+- Live approve may 503 `critics_required` when LLM critics unavailable — retry/regenerate already in E2E; not a language regression
+- French JD must keep English `Role:`/`Skills:` labels so generic intake parse yields a title
+- GHA/Vercel CI failures are noise (budget/rate-limit) — production gate is Fly only
