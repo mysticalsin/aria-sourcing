@@ -17,6 +17,7 @@ status: tip-live-02b077b-tenant-oauth-m365-owner-blocked
   - aria-mantu-app: `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID`
   - aria-mantu-auth: all 4 `GOTRUE_EXTERNAL_AZURE_*`
 - **Prior PARTIAL E2E (on 244132b):** 48 pass / 0 fail / 1 warn — expect step **3c PASS**; only skip **6b**
+- **Fresh PARTIAL E2E on tip `02b077b`:** **48 pass, 0 fail, 1 warn** — top-10 live + critics stages=6; only skip **6b**
 - Post-secrets: Connect Outlook → `bash scripts/verify-m365-ready.sh`
 
 ## Done this shift
