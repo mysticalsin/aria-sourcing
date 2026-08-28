@@ -79,6 +79,11 @@ const proxy = readFileSync("src/proxy.ts", "utf8");
 ok("proxy public /hub", /path\.startsWith\("\/hub"\)/.test(proxy));
 ok("proxy public /api/hub", /path\.startsWith\("\/api\/hub"\)/.test(proxy));
 ok("proxy public /product /pricing /docs", /\/product/.test(proxy) && /\/pricing/.test(proxy) && /\/docs/.test(proxy));
+ok(
+  "AppShell full-bleed for hub/product/pricing/docs",
+  /pathname\.startsWith\("\/hub"\)/.test(readFileSync("src/components/app/app-shell.tsx", "utf8")) &&
+    /pathname\.startsWith\("\/pricing"\)/.test(readFileSync("src/components/app/app-shell.tsx", "utf8")),
+);
 
 ok("hub catalog route exists", readFileSync("src/app/api/hub/catalog/route.ts", "utf8").includes("listHubRoles"));
 ok(
