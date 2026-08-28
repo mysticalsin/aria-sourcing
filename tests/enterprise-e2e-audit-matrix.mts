@@ -1188,13 +1188,30 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       const types = readFileSync("src/lib/types.ts", "utf8");
       const mock = readFileSync("src/lib/mock-ai.ts", "utf8");
       const draft = readFileSync("src/app/api/cron/generate-outreach-draft/route.ts", "utf8");
+      const lang = readFileSync("src/lib/outreach-language.ts", "utf8");
       return (
         /BUSINESS_LANGUAGE_CATALOG/.test(i18n)
         && /detectLanguageWithHint/.test(i18n)
         && /LocaleContext/.test(types)
         && /localeContext/.test(mock)
         && /localeContext/.test(draft)
+        && /resolveOutreachLanguage/.test(draft)
+        && /resolveOutreachLanguage/.test(lang)
         && /resolveLoopLlm/.test(draft)
+      );
+    },
+  },
+  {
+    requirement: "E2E drafts LinkedIn, Email, WhatsApp in candidate main language",
+    evidence: () => {
+      const script = readFileSync("e2e-workflow-test.sh", "utf8");
+      return (
+        /E2E_OUTREACH_LANGUAGE/.test(script)
+        && /assert-outreach-language/.test(script)
+        && /assert_outreach_language/.test(script)
+        && /5b\) WhatsApp outreach/.test(script)
+        && /Language \(must\): French/.test(script)
+        && existsSync("scripts/assert-outreach-language.mts")
       );
     },
   },

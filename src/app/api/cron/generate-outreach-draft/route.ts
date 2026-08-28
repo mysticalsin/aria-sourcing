@@ -14,6 +14,7 @@ import { validateOutreachQualityLive } from "@/lib/outreach-quality-pipeline-liv
 import { getServiceSupabase } from "@/lib/supabase/server";
 import type { Candidate, Campaign, OutreachChannel, SystemSettings } from "@/lib/types";
 import { candidateDisclosureContextForCampaignLike } from "@/lib/agent-disclosure-policy";
+import { resolveOutreachLanguage } from "@/lib/outreach-language";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -81,7 +82,7 @@ export async function POST(req: NextRequest) {
 
   let generated = mockGenerated;
   let modelUsed = false;
-  const lang = campaign.jobAnalysis.localeContext?.primaryLanguage ?? campaign.jobAnalysis.language ?? "en";
+  const lang = resolveOutreachLanguage({ candidate, campaign });
   const localeHint = campaign.jobAnalysis.localeContext
     ? `\nLocale context: market=${campaign.jobAnalysis.localeContext.marketCountry ?? "n/a"}, city=${campaign.jobAnalysis.localeContext.workCity ?? "n/a"}, formality=${campaign.jobAnalysis.localeContext.formality ?? "consulting"}.`
     : "";

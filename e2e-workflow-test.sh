@@ -14,6 +14,7 @@
 #                        (assisted-manual / "Pending Manual Send") + POST /api/outreach/send
 #                        proving the server refuses to auto-send LinkedIn (409 manual-required)
 #   5. Email dry-run   — POST /api/outreach/send (channel=Email) → status:"dry-run"
+#   5b. WhatsApp       — draft in candidate main language → POST /api/outreach/send dry-run
 #   6. Teams/Outlook   — POST /api/calendar/event (confirmLive:false) → status:"dry-run"
 #                        (live Graph+Teams when confirmLive + connected Outlook seat)
 #
@@ -34,7 +35,7 @@
 #                ARIA_ALLOW_PARTIAL_M365_E2E=1  ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E=1
 #                ARIA_ALLOW_SKIP_LIVE_CALENDAR=1  (PARTIAL only — never pretends full PASS)
 #                ARIA_ALLOW_SKIP_APPROVE_E2E=1  (skip steps 4–5 approve/send — owner policy)
-#                E2E_INBOUND_MAILBOX  E2E_CAMPAIGN_ID
+#                E2E_INBOUND_MAILBOX  E2E_CAMPAIGN_ID  E2E_OUTREACH_LANGUAGE
 # ANON_KEY may be loaded from production-readiness/.fly-secrets.env via
 #   eval "$(bash scripts/print-fly-e2e-env.sh --export)"
 # ---------------------------------------------------------------------------
@@ -127,6 +128,23 @@ default_model() {
   esac
 }
 OUTREACH_MODEL="${AGENT_MODEL:-$(default_model "$AGENT_PROVIDER")}"
+
+# Candidate main language for outreach drafts (ISO 639-1). Fly enterprise defaults
+# to French — Mantu EU needs often require French copy even when the JD is English.
+if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ]; then
+  E2E_OUTREACH_LANGUAGE="${E2E_OUTREACH_LANGUAGE:-fr}"
+else
+  E2E_OUTREACH_LANGUAGE="${E2E_OUTREACH_LANGUAGE:-en}"
+fi
+case "$E2E_OUTREACH_LANGUAGE" in
+  fr) E2E_LANG_LABEL="French" ;;
+  de) E2E_LANG_LABEL="German" ;;
+  es) E2E_LANG_LABEL="Spanish" ;;
+  it) E2E_LANG_LABEL="Italian" ;;
+  pt) E2E_LANG_LABEL="Portuguese" ;;
+  nl) E2E_LANG_LABEL="Dutch" ;;
+  *)  E2E_LANG_LABEL="English" ;;
+esac
 
 # ---- output helpers --------------------------------------------------------
 if [ -t 1 ]; then C_G="\033[32m"; C_R="\033[31m"; C_Y="\033[33m"; C_C="\033[36m"; C_B="\033[1m"; C_0="\033[0m"
@@ -335,7 +353,26 @@ fi
 # ===========================================================================
 step "2) Intake — POST /api/intake (raw JD email → JobAnalysis)"
 # ===========================================================================
-JD_EMAIL="From: Priya Nair <priya.nair@acme.io>
+if [ "$E2E_OUTREACH_LANGUAGE" = "fr" ]; then
+  JD_EMAIL="From: Marie Dupont <marie.dupont@bnpp.fr>
+Subject: Urgent - Consultant TypeScript Senior (Paris)
+
+Bonjour,
+
+Nous recrutons un Consultant TypeScript Senior pour rejoindre notre équipe plateforme à Paris (hybride). Besoin assez urgent.
+
+Rôle: Consultant TypeScript Senior
+Ville: Paris, France
+Language (must): French
+Language (nice): English
+Compétences: TypeScript, React, Node.js, GraphQL, PostgreSQL
+Nice to have: Next.js, AWS
+Expérience: 5+ ans
+
+Merci,
+Marie"
+else
+  JD_EMAIL="From: Priya Nair <priya.nair@acme.io>
 Subject: Urgent - hiring a Senior TypeScript Engineer (London)
 
 Hi team,
@@ -351,6 +388,7 @@ Salary: 90000-120000 GBP
 
 Thanks,
 Priya"
+fi
 jq -n --arg email "$JD_EMAIL" '{email:$email}' > "$WORK/intake_req.json"
 api POST "$APP_URL/api/intake" "$WORK/intake_req.json"
 # The route nests the analysis under .parsed.jobAnalysis alongside .parsed.sender,
@@ -1069,13 +1107,32 @@ if [ -z "$CAND_ID" ]; then
 fi
 [ -n "$CAND_LI" ] || CAND_LI="https://www.linkedin.com/in/e2e-candidate"
 [ -n "$CAND_EMAIL" ] || CAND_EMAIL="e2e.candidate@example.com"
-[ -n "$CAND_NAME" ] || CAND_NAME="${E2E_CANDIDATE_NAME:-Alex Chen}"
+[ -n "$CAND_NAME" ] || CAND_NAME="${E2E_CANDIDATE_NAME:-$([ "$E2E_OUTREACH_LANGUAGE" = "fr" ] && echo "Marie Dubois" || echo "Alex Chen")}"
 
 # ---- draft generator: /api/hermes/chat task=outreach; Fly fail-closed (no canned) ----
 DRAFT_SUBJECT=""; DRAFT_BODY=""
+assert_outreach_language() {
+  local channel="$1"
+  printf '%s\n%s' "$DRAFT_SUBJECT" "$DRAFT_BODY" > "$WORK/draft_text.txt"
+  if npx tsx scripts/assert-outreach-language.mts "$E2E_OUTREACH_LANGUAGE" "$WORK/draft_text.txt" >/dev/null 2>&1; then
+    pass "${channel} draft is in candidate main language ($E2E_OUTREACH_LANGUAGE / $E2E_LANG_LABEL)."
+    return 0
+  fi
+  if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_CANNED_DRAFT_E2E:-}" != "1" ]; then
+    fail "${channel} draft not in candidate main language ($E2E_OUTREACH_LANGUAGE)."
+    return 1
+  fi
+  warn "${channel} draft language check failed ($E2E_OUTREACH_LANGUAGE) — continuing with canned fallback only."
+  return 0
+}
 gen_draft() {  # $1 = channel label used only in the prompt
-  local channel="$1" prompt gen ok text
-  prompt="Write a short first-touch ${channel} outreach message to a senior TypeScript engineer named ${CAND_NAME} about a Senior TypeScript Engineer role in London with Mantu Group. Mention Mantu Group by name, lead with their work, one genuine reason, soft ask. Format: Subject: ... then body."
+  local channel="$1" prompt gen ok text fmt_hint
+  if [ "$channel" = "WhatsApp" ]; then
+    fmt_hint="Write ONE short WhatsApp message (no Subject line, under 400 characters)."
+  else
+    fmt_hint="Format: Subject: ... then body."
+  fi
+  prompt="Draft a first-touch ${channel} recruiting message in language ISO code ${E2E_OUTREACH_LANGUAGE}. The candidate's main language is ${E2E_LANG_LABEL}. Write the entire message in ${E2E_LANG_LABEL} only (proper nouns like Mantu Group excepted). ${fmt_hint} Reach out to ${CAND_NAME} about a senior engineering role with Mantu Group. Mention Mantu Group by name, lead with their work, one genuine reason, soft ask."
   jq -n --arg p "$prompt" --arg prov "$AGENT_PROVIDER" --arg model "$OUTREACH_MODEL" \
     '{task:"outreach", prompt:$p, provider:$prov, model:$model}' > "$WORK/draft_req.json"
   api POST "$APP_URL/api/hermes/chat" "$WORK/draft_req.json"
@@ -1092,21 +1149,38 @@ gen_draft() {  # $1 = channel label used only in the prompt
 
 require_live_draft_or_canned() {
   # $1 = channel label for messages
-  local channel="$1"
-  if gen_draft "$channel"; then
-    pass "Generated a ${channel} draft via /api/hermes/chat (subject: \"$(printf '%.60s' "$DRAFT_SUBJECT")\")."
-    return 0
-  fi
+  local channel="$1" attempt=0
+  while [ "$attempt" -lt 3 ]; do
+    if gen_draft "$channel"; then
+      if assert_outreach_language "$channel"; then
+        pass "Generated a ${channel} draft via /api/hermes/chat (subject: \"$(printf '%.60s' "$DRAFT_SUBJECT")\")."
+        return 0
+      fi
+      attempt=$((attempt + 1))
+      [ "$attempt" -lt 3 ] && warn "Regenerating ${channel} draft — language mismatch (attempt $attempt/3)."
+      continue
+    fi
+    break
+  done
   if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_CANNED_DRAFT_E2E:-}" != "1" ]; then
-    fail "Fly enterprise E2E requires live Hermes ${channel} draft (canned fallback disabled). Set ARIA_ALLOW_CANNED_DRAFT_E2E=1 only for partial runs."
+    fail "Fly enterprise E2E requires live Hermes ${channel} draft in ${E2E_OUTREACH_LANGUAGE} (canned fallback disabled). Set ARIA_ALLOW_CANNED_DRAFT_E2E=1 only for partial runs."
     return 1
   fi
-  DRAFT_SUBJECT="Your open-source TypeScript work"
-  DRAFT_BODY="Hi, I came across your recent TypeScript and React work and was genuinely impressed by how you structure things. Mantu Group is hiring a senior engineer for a platform team in London and I thought of you. No pressure at all, but if you are even a little curious I would love to share more. Either way, keep up the great work.
+  if [ "$E2E_OUTREACH_LANGUAGE" = "fr" ]; then
+    DRAFT_SUBJECT="Votre travail open-source TypeScript"
+    DRAFT_BODY="Bonjour, j'ai découvert votre travail récent sur TypeScript et React et j'ai été sincèrement impressionné par la clarté de votre code. Mantu Group recrute un ingénieur senior pour une équipe plateforme et j'ai pensé à vous. Aucune pression — si vous êtes même un peu curieuse, j'aimerais en dire plus. Dans tous les cas, continuez votre excellent travail.
+
+Bien cordialement,
+Recrutement · Mantu Group"
+  else
+    DRAFT_SUBJECT="Your open-source TypeScript work"
+    DRAFT_BODY="Hi, I came across your recent TypeScript and React work and was genuinely impressed by how you structure things. Mantu Group is hiring a senior engineer for a platform team in London and I thought of you. No pressure at all, but if you are even a little curious I would love to share more. Either way, keep up the great work.
 
 Best,
 Recruiting · Mantu Group"
-  warn "${channel} draft generation degraded (no tool-calling/provider key): $(jq -rc '.reason // empty' "$RESP") — using a canned draft so the approval + no-send assertions still run."
+  fi
+  warn "${channel} draft generation degraded (no tool-calling/provider key): $(jq -rc '.reason // empty' "$RESP") — using a canned ${E2E_OUTREACH_LANGUAGE} draft so the approval + no-send assertions still run."
+  assert_outreach_language "$channel" || true
   return 0
 }
 
@@ -1219,12 +1293,37 @@ else
   fail "Expected 200 dry-run for Email; got HTTP $HTTP status='$EM_STATUS': $(head -c 200 "$RESP")"
 fi
 
+# ===========================================================================
+step "5b) WhatsApp outreach — draft in candidate language → send dry-run"
+# ===========================================================================
+if require_live_draft_or_canned "WhatsApp"; then
+  :
+fi
+
+if printf '%s\n%s' "$DRAFT_SUBJECT" "$DRAFT_BODY" | grep -Eiq '\b(salary|compensation|budget|£[0-9]|€[0-9]|\$[0-9]|120k|90000)\b'; then
+  fail "WhatsApp draft failed outreach quality gate (salary/compensation disclosure detected)."
+else
+  pass "WhatsApp draft passes salary-disclosure quality gate."
+fi
+
+MSG_WA="msg-e2e-wa-$$"
+CAND_PHONE="${CAND_PHONE:-+33601020304}"
+jq -n --arg m "$MSG_WA" --arg c "$CAND_ID" --arg p "$CAND_PHONE" --arg s "$DRAFT_SUBJECT" --arg b "$DRAFT_BODY" \
+  '{messageId:$m, candidateId:$c, campaignId:"camp-e2e", channel:"WhatsApp", phone:$p, subject:$s, body:$b, confirmLive:false}' > "$WORK/send_wa.json"
+api POST "$APP_URL/api/outreach/send" "$WORK/send_wa.json"
+WA_STATUS=$(jq -r '.status // empty' "$RESP")
+if [ "$HTTP" = "200" ] && [ "$WA_STATUS" = "dry-run" ]; then
+  pass "POST /api/outreach/send (WhatsApp) → dry-run: $(jq -rc '.detail' "$RESP") — nothing delivered."
+else
+  fail "Expected 200 dry-run for WhatsApp; got HTTP $HTTP status='$WA_STATUS': $(head -c 200 "$RESP")"
+fi
+
 # Query both durable outbound stores with the same authenticated identity. The
 # manual LinkedIn refusal and confirmLive=false email dry run must create no
 # ledger claim and no outbox row for either approval message id.
 NO_SEND_LEDGER="$WORK/no-send-ledger.json"
 NO_SEND_OUTBOX="$WORK/no-send-outbox.json"
-NO_SEND_FILTER="in.($MSG_LI,$MSG_EM)"
+NO_SEND_FILTER="in.($MSG_LI,$MSG_EM,$MSG_WA)"
 NO_SEND_LEDGER_CODE=$(curl -sS -m 20 -o "$NO_SEND_LEDGER" -w '%{http_code}' --get \
   "$KONG_URL/rest/v1/outreach_ledger" \
   -H "apikey: $ANON_KEY" \

@@ -18,6 +18,7 @@ import {
   type ReplyClassification,
 } from "./mock-ai";
 import { preferredOutreachChannel } from "./outreach-channel";
+import { resolveOutreachLanguage } from "./outreach-language";
 import {
   mapSeamlessCandidates,
   type SourceResult,
@@ -1997,7 +1998,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
       const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
       // Compose in the seat's language, else the need's, else the workspace default.
-      const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
+      const lang = resolveOutreachLanguage({
+        candidate,
+        campaign,
+        seatLanguage: seat?.language,
+        defaultLanguage: s.settings.defaultLanguage,
+      });
       const gen = generateOutreach(candidate, campaign, finalTone, resolvedChannel, 1, voice, lang);
       const msg = newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1);
       commit((prev) => {
@@ -2038,7 +2044,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const finalTone = tone ?? effectiveTone(s.skills);
       const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
       const voice = enterpriseMantuVoice(seat);
-      const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
+      const lang = resolveOutreachLanguage({
+        candidate,
+        campaign,
+        seatLanguage: seat?.language,
+        defaultLanguage: s.settings.defaultLanguage,
+      });
 
       // Mock is the canonical fallback (and the source of personalization evidence).
       const mockGen = generateOutreach(candidate, campaign, finalTone, resolvedChannel, 1, voice, lang);
@@ -2201,7 +2212,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const finalTone = tone ?? effectiveTone(s.skills);
       const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
       const voice = enterpriseMantuVoice(seat);
-      const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
+      const lang = resolveOutreachLanguage({
+        candidate,
+        campaign,
+        seatLanguage: seat?.language,
+        defaultLanguage: s.settings.defaultLanguage,
+      });
       // Keep following up on whichever channel the candidate was originally reached on.
       const channel: OutreachChannel = candidate.outreachHistory[0]?.channel ?? "Email";
       // Mock is the canonical fallback (and the source of personalization evidence).
@@ -2285,7 +2301,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const finalTone = tone ?? effectiveTone(s.skills);
       const seat = seatId ? s.seats.find((x) => x.id === seatId) : undefined;
       const voice = enterpriseMantuVoice(seat);
-      const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
+      const lang = resolveOutreachLanguage({
+        candidate,
+        campaign,
+        seatLanguage: seat?.language,
+        defaultLanguage: s.settings.defaultLanguage,
+      });
       const channel: OutreachChannel = candidate.outreachHistory[0]?.channel ?? "Email";
       // Mock is the canonical fallback (and the source of personalization evidence).
       const mockGen = generateOutreach(candidate, campaign, finalTone, channel, 1, voice, lang);
@@ -2411,7 +2432,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       let live = false;
       const aiCfg = resolveAiProvider(s.settings, "outreach");
       if (aiCfg || (s.settings.hermesLiveMode && hermesAvailable(s.settings))) {
-        const lang = campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
+        const lang = resolveOutreachLanguage({
+          candidate,
+          campaign,
+          defaultLanguage: s.settings.defaultLanguage,
+        });
         const basePrompt = buildOutreachPrompt({
           candidateName: candidate.name,
           candidateTitle: candidate.currentTitle,
@@ -5142,7 +5167,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         if (!candidate || !campaign) continue;
         const seat = bySeat.get(a.seatId);
         const voice = seat ? { persona: seat.persona, signature: seat.signature } : undefined;
-        const lang = seat?.language ?? campaign.jobAnalysis.language ?? s.settings.defaultLanguage;
+        const lang = resolveOutreachLanguage({
+        candidate,
+        campaign,
+        seatLanguage: seat?.language,
+        defaultLanguage: s.settings.defaultLanguage,
+      });
         const gen = generateOutreach(candidate, campaign, finalTone, "Email", 1, voice, lang);
         drafted.push(newOutreachMessage(candidate, campaign, gen, finalTone, s.settings, 1));
       }

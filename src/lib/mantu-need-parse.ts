@@ -454,7 +454,7 @@ export function industryFromSector(sector: string, text: string): string[] {
 }
 
 /** Map VSS language labels ("French - Fluent") to ISO 639-1 codes. */
-function languageLabelToCode(label: string): string | null {
+export function languageLabelToCode(label: string): string | null {
   const l = label.trim().toLowerCase();
   if (/french|français/.test(l)) return "fr";
   if (/english|anglais/.test(l)) return "en";
