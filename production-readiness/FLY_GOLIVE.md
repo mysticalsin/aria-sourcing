@@ -1,7 +1,7 @@
 # Fly golive — Mantu enterprise tenant (aria-mantu-app)
 
 **Production URL:** https://aria-mantu-app.fly.dev  
-**PR deliverable:** https://github.com/mysticalsin/aria-sourcing/pull/32 (supersedes closed #29–#31)
+**PR deliverable:** https://github.com/mysticalsin/aria-sourcing/pull/35 (supersedes closed #29–#33)
 
 Demo login is disabled (`NEXT_PUBLIC_ENABLE_DEMO_LOGIN=false`). Password auth
 goes through GoTrue on `https://aria-mantu-kong.fly.dev`. Entra SSO turns on

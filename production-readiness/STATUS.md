@@ -91,7 +91,7 @@ particular production deployment is healthy.
 
 ## Live deployment note (2026-08-28)
 
-- **Production = Fly only** (`aria-mantu-app.fly.dev`). Vercel is demo-only and is not a release gate.
-- Fly production code at migration **0070**; tip branch adds **0071** interview prep dispatch — golive required.
-- PR [#35](https://github.com/mysticalsin/aria-sourcing/pull/35) tracks enterprise autopilot lineage (#29–#33 superseded).
-- Owner golive: remint deploy confirm for tip SHA → `bash scripts/fly-deploy-now.sh` (see `production-readiness/FLY_GOLIVE.md`).
+- **Production = Fly only** (`aria-mantu-app.fly.dev`).
+- **Live Fly:** `33130a8` · migration **0071** · `deploy_status=tip_live`.
+- PR [#35](https://github.com/mysticalsin/aria-sourcing/pull/35) tracks enterprise autopilot lineage.
+- **Remaining for full objective:** M365 secrets (6), full Fly E2E without PARTIAL flags, Entra SSO enablement.

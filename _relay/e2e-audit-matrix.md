@@ -5,8 +5,8 @@
 **PR:** [#35](https://github.com/mysticalsin/aria-sourcing/pull/35)  
 **Production host:** `https://aria-mantu-app.fly.dev` (Fly only)  
 **Automated pin:** `tests/enterprise-e2e-audit-matrix.mts` — **58/58 pass**  
-**Live Fly:** migration **0070** applied; tip **0071** pending golive  
-**Fly E2E gate:** `APP_URL=https://aria-mantu-app.fly.dev bash e2e-workflow-test.sh` (PARTIAL until M365 secrets)
+**Live Fly:** **`33130a8`** · migration **0071** · `deploy_status=tip_live`  
+**Fly E2E:** **38 pass, 0 fail, 4 warn** (PARTIAL — M365 secrets + sourcing quota)
 
 Format: `| Section | Check | Status | Evidence | Fix owner |`
 
