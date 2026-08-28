@@ -41,7 +41,12 @@ Only remaining skip: step **6b** confirmLive Teams (no Graph seat).
 
 ```bash
 bash scripts/print-m365-owner-portal-checklist.sh
-# portal app → paste /tmp/owner-microsoft.env (incl MICROSOFT_TENANT_ID)
+# Option A — existing app:
+export ARIA_AZURE_APP_ID='<client-id>'
+bash scripts/az-configure-existing-graph-app.sh --apply
+# Option B — paste drop-zone:
+cp production-readiness/.owner-microsoft.env.example /tmp/owner-microsoft.env
+# edit real values (incl MICROSOFT_TENANT_ID)
 bash scripts/fly-apply-owner-microsoft-secrets.sh
 # durable watcher auto-runs post-m365-secrets-golive; or:
 bash scripts/post-m365-secrets-golive.sh
