@@ -551,7 +551,11 @@ export default function IntakePage() {
               className="lg:min-h-[420px]"
               icon={<ScanText className="h-6 w-6" aria-hidden />}
               title="Awaiting a brief"
-              description="Parse an email (or load the sample) and the structured, editable analysis (confidence scores, validation, and a clarification draft) appears here."
+              description={
+                demoLoginEnabled
+                  ? "Parse an email (or load the sample) and the structured, editable analysis (confidence scores, validation, and a clarification draft) appears here."
+                  : "Paste a hiring need email, use Emergency sync as break-glass, or open an Outlook need from the panel. Structured analysis appears here after parsing."
+              }
             />
           ) : (
             <div className="space-y-6 animate-fade-in">

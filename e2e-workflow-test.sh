@@ -33,6 +33,7 @@
 #                ARIA_ALLOW_SKIP_WEBHOOK_E2E=1  ARIA_ALLOW_STALE_FLY_E2E=1
 #                ARIA_ALLOW_PARTIAL_M365_E2E=1  ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E=1
 #                ARIA_ALLOW_SKIP_LIVE_CALENDAR=1  (PARTIAL only — never pretends full PASS)
+#                ARIA_ALLOW_SKIP_APPROVE_E2E=1  (skip steps 4–5 approve/send — owner policy)
 #                E2E_INBOUND_MAILBOX  E2E_CAMPAIGN_ID
 # ANON_KEY may be loaded from production-readiness/.fly-secrets.env via
 #   eval "$(bash scripts/print-fly-e2e-env.sh --export)"
@@ -745,6 +746,59 @@ else
 fi
 
 # ===========================================================================
+step "2f) parse→campaign→sourcing→draft→quality chain (contracts + webhook progress)"
+# ===========================================================================
+if grep -q 'priorStatus === "campaign_created"' scripts/sourcing-loop-worker.mjs \
+  && grep -q 'key !== "graphStage"' scripts/sourcing-loop-worker.mjs \
+  && grep -q 'handleCampaignCreate' scripts/sourcing-loop-worker.mjs \
+  && grep -q 'run-sourcing-batch' scripts/sourcing-loop-worker.mjs \
+  && grep -q 'generate-outreach-draft' scripts/sourcing-loop-worker.mjs \
+  && grep -q 'dryRun: true' scripts/sourcing-loop-worker.mjs \
+  && grep -q 'Needs Approval' scripts/sourcing-loop-worker.mjs \
+  && grep -q 'shortlistMinScore: minScore' scripts/sourcing-loop-worker.mjs \
+  && grep -q 'graphResult.stage === "approval_blocked"' src/app/api/cron/generate-outreach-draft/route.ts \
+  && grep -q 'quality_critics_incomplete' src/app/api/cron/generate-outreach-draft/route.ts \
+  && grep -q 'stale graph "blocked"' src/app/api/cron/generate-outreach-draft/route.ts \
+  && grep -q 'validateOutreachQualityLive' src/app/api/cron/generate-outreach-draft/route.ts; then
+  pass "Loop chain pins: graphStage strip, campaign→sourcing→draft dry-run, live re-validation recovers stale approval_blocked."
+else
+  fail "parse→campaign→sourcing→draft→quality chain contract pins missing from worker/draft routes."
+fi
+if [ -n "${WEBHOOK_CAMPAIGN_ID:-}" ]; then
+  curl -sS -m 20 -o "$WORK/ws_chain.json" \
+    "$KONG_URL/rest/v1/workspace_state?select=state&limit=1" \
+    -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ACCESS_TOKEN" \
+    -H 'Accept: application/json' >/dev/null 2>&1 || true
+  CHAIN_CAMP_STATUS=$(jq -r --arg id "$WEBHOOK_CAMPAIGN_ID" '
+    (.[0].state.campaigns // [])
+    | map(select(.id == $id))
+    | .[0].status // empty
+  ' "$WORK/ws_chain.json" 2>/dev/null || true)
+  CHAIN_CAND_N=$(jq -r --arg id "$WEBHOOK_CAMPAIGN_ID" '
+    (.[0].state.candidates // [])
+    | map(select(.campaignId == $id))
+    | length
+  ' "$WORK/ws_chain.json" 2>/dev/null || echo 0)
+  CHAIN_DRAFT_N=$(jq -r --arg id "$WEBHOOK_CAMPAIGN_ID" '
+    (.[0].state.outreach // [])
+    | map(select(.campaignId == $id and (.status // "") == "Needs Approval"))
+    | length
+  ' "$WORK/ws_chain.json" 2>/dev/null || echo 0)
+  info "Webhook campaign chain snapshot: status='${CHAIN_CAMP_STATUS:-?}' candidates=${CHAIN_CAND_N:-0} needs_approval_drafts=${CHAIN_DRAFT_N:-0} (live build ${READY_BUILD:0:12})."
+  if [ "${CHAIN_CAND_N:-0}" -gt 0 ] 2>/dev/null || [ "${CHAIN_DRAFT_N:-0}" -gt 0 ] 2>/dev/null; then
+    pass "Webhook campaign chain progressed past parse (candidates=${CHAIN_CAND_N:-0} drafts=${CHAIN_DRAFT_N:-0})."
+  elif [ "$CHAIN_CAMP_STATUS" = "Sourcing" ] || [ "$CHAIN_CAMP_STATUS" = "Active" ]; then
+    pass "Webhook campaign status=${CHAIN_CAMP_STATUS} — sourcing stage reached."
+  elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_STALE_FLY_E2E:-}" != "1" ]; then
+    fail "Webhook campaign stalled at status='${CHAIN_CAMP_STATUS:-none}' with 0 candidates — tip deploy required (graphStage strip + campaign_create resume on build ${READY_BUILD:0:12})."
+  else
+    warn "Webhook campaign stalled (status='${CHAIN_CAMP_STATUS:-none}' candidates=0) — expected on stale live until tip deploy."
+  fi
+else
+  info "No webhook-materialized campaign — skipped live chain progress probe."
+fi
+
+# ===========================================================================
 step "3) Sourcing — REAL candidates (GitHub raw, LinkedIn/Tavily, provenance=live)"
 # ===========================================================================
 
@@ -898,6 +952,9 @@ Recruiting · Mantu Group"
 }
 
 # ===========================================================================
+if [ "${ARIA_ALLOW_SKIP_APPROVE_E2E:-}" = "1" ]; then
+  warn "ARIA_ALLOW_SKIP_APPROVE_E2E=1 — skipping approve/send outreach steps (owner no Approve/send policy)."
+else
 step "4) LinkedIn outreach — draft → approve (assisted-manual) → NO send fired"
 # ===========================================================================
 if require_live_draft_or_canned "LinkedIn"; then
@@ -993,6 +1050,7 @@ if [ "$NO_SEND_LEDGER_CODE" = "200" ] && [ "$NO_SEND_OUTBOX_CODE" = "200" ] \
   pass "No-send proof: outreach_ledger=0 and messages_outbound=0 for both canary message ids."
 else
   fail "No-send database proof failed (ledger HTTP $NO_SEND_LEDGER_CODE count=$NO_SEND_LEDGER_COUNT; outbox HTTP $NO_SEND_OUTBOX_CODE count=$NO_SEND_OUTBOX_COUNT)."
+fi
 fi
 
 # ===========================================================================

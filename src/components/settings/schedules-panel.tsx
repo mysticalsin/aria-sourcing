@@ -61,9 +61,9 @@ export function SchedulesPanel() {
         <div className="flex items-start gap-2 rounded-xl border border-mantu-yellow/30 bg-mantu-yellow/[0.07] px-3.5 py-2.5 text-xs text-ink-soft">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-mantu-yellow" aria-hidden />
           <span>
-            Jobs are saved here, but automatic execution needs a connected backend runner
-            (Supabase + a cron worker). Until that&rsquo;s wired, schedules stay configured.
-            Run sourcing, outreach, or reports manually from the fleet meanwhile.
+            Jobs saved here are fleet intent only — they do not drive production autopilot.
+            The Fly sourcing loop worker (Settings → Observe → Loop switchboard) runs
+            webhook→parse→campaign→sourcing→draft. Run one-off jobs from Fleet meanwhile.
           </span>
         </div>
 

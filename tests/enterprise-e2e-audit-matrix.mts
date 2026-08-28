@@ -478,6 +478,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       return (
         /demoLoginEnabled/.test(intake)
         && /Sample substitution is disabled/.test(intake)
+        && /Paste a hiring need email/.test(intake)
         && /allowDemoNeeds/.test(panel)
         && /Demo hiring emails are disabled/.test(panel)
         && /NEXT_PUBLIC_ENABLE_DEMO_LOGIN\s*=\s*"false"/.test(flyApp)
@@ -942,6 +943,31 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /digest_unresolved/.test(workerSrc)
         && /HeyReach live \+ no mailbox → still Dry-run/.test(sendMode)
         && /Record legitimate interest/.test(sendMode)
+      );
+    },
+  },
+  {
+    requirement: "parse→campaign→sourcing→draft→quality chain pinned (E2E + worker + draft recover)",
+    evidence: () => {
+      const script = readFileSync("e2e-workflow-test.sh", "utf8");
+      const workerSrc = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
+      const draft = readFileSync("src/app/api/cron/generate-outreach-draft/route.ts", "utf8");
+      const intake = readFileSync("src/app/intake/page.tsx", "utf8");
+      const schedules = readFileSync("src/components/settings/schedules-panel.tsx", "utf8");
+      return (
+        /parse→campaign→sourcing→draft→quality chain/.test(script)
+        && /Loop chain pins: graphStage strip/.test(script)
+        && /Webhook campaign chain snapshot/.test(script)
+        && /ARIA_ALLOW_SKIP_APPROVE_E2E/.test(script)
+        && /key !== "graphStage"/.test(workerSrc)
+        && /priorStatus === "campaign_created"/.test(workerSrc)
+        && /generate-outreach-draft/.test(workerSrc)
+        && /stale graph "blocked"/.test(draft)
+        && /graphResult\.stage === "approval_blocked"/.test(draft)
+        && /quality_critics_incomplete/.test(draft)
+        && /demoLoginEnabled[\s\S]*Paste a hiring need email/.test(intake)
+        && /sourcing loop worker/.test(schedules)
+        && /Loop switchboard/.test(schedules)
       );
     },
   },

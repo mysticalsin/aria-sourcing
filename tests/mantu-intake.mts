@@ -151,6 +151,10 @@ ok("demo brief Hybrid", demoJava.jobAnalysis.locationType === "Hybrid");
       /Openings \/ headcount/.test(intakePage) &&
       /teamSize/.test(intakePage),
   );
+  ok(
+    "intake empty state hides sample copy when demo login is off",
+    /demoLoginEnabled[\s\S]*Paste a hiring need email/.test(intakePage),
+  );
 }
 
 /* ---- VSS Recruitment Need: Calypso Application Support (Tony fixture) ---- */
