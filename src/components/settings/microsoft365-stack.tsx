@@ -292,21 +292,25 @@ function Microsoft365StackInner() {
             },
             {
               id: "webhook-secret",
-              label: "HMAC adapter secret (optional)",
+              label: "HMAC adapter secret (signed inbound)",
               ok: inboundReady,
               hint: loading
                 ? "Checking deployment env…"
                 : inboundReady
-                  ? "Also accepts signed POST /api/webhooks/email-inbound"
-                  : "Optional for n8n/adapters; Graph path uses clientState.",
+                  ? "Signed POST /api/webhooks/email-inbound can enqueue hiring needs (non-Graph path)."
+                  : "Optional for n8n/adapters; Graph push uses clientState after Outlook connect.",
             },
             {
               id: "need-routing",
-              label: "Hiring-need routing",
-              ok: mailboxConnected ? inboundActive : inboundReady,
+              label: "Hiring-need mailbox route (Graph)",
+              ok: inboundActive,
               hint: inboundActive
                 ? `Inbound route active for ${connectedOutlook?.inboundRoute?.mailbox}`
-                : "Need emails → requisition_parse; replies → inbound_classify.",
+                : mailboxConnected
+                  ? "Mailbox connected but inbound route inactive — reconnect Outlook."
+                  : oauthReady
+                    ? "Connect Outlook to register Graph routing (need emails → requisition_parse; replies → inbound_classify)."
+                    : "Graph mailbox route stays red until Outlook is connected; HMAC path above still enqueues requisition_parse.",
             },
             {
               id: "entra-sso",

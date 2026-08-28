@@ -247,6 +247,9 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /Outlook OAuth not configured/.test(src)
         && /Connect Outlook stays disabled until Graph OAuth/.test(src)
         && /"blocked"/.test(src)
+        && /Hiring-need mailbox route \(Graph\)/.test(src)
+        && /inboundActive/.test(src)
+        && !/ok: mailboxConnected \? inboundActive : inboundReady/.test(src)
       );
     },
   },
