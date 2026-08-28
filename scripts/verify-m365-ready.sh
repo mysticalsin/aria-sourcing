@@ -183,13 +183,24 @@ fi
 echo "  OK live Graph seat $LIVE_SEAT (webhook + mode=live)"
 
 echo
-echo "=== 3b) Entra SSO login surface (after GoTrue Azure + app remint) ==="
+echo "=== 3b) Entra SSO login surface (GoTrue Azure + baked /login) ==="
+SETTINGS_CODE="$(
+  curl -sS -o "$WORK/settings.json" -w '%{http_code}' \
+    -H "apikey: $ANON_KEY" \
+    "$KONG_URL/auth/v1/settings"
+)"
+AZURE_PROVIDER="$(jq -r '.external.azure // false' "$WORK/settings.json" 2>/dev/null || echo false)"
 LOGIN_HTML="$(curl -fsS "$APP_URL/login" 2>/dev/null || true)"
-if printf '%s' "$LOGIN_HTML" | grep -q 'Sign in with Microsoft'; then
-  echo "  OK  /login exposes Sign in with Microsoft (NEXT_PUBLIC_ENABLE_AZURE_LOGIN baked)"
+if [ "$SETTINGS_CODE" = "200" ] && [ "$AZURE_PROVIDER" = "true" ] \
+  && printf '%s' "$LOGIN_HTML" | grep -q 'Sign in with Microsoft'; then
+  echo "  OK  GoTrue external.azure=true and /login exposes Sign in with Microsoft"
+elif [ "$SETTINGS_CODE" = "200" ] && [ "$AZURE_PROVIDER" != "true" ]; then
+  echo "ERROR: GoTrue Azure provider not enabled (external.azure=$AZURE_PROVIDER) despite auth secrets." >&2
+  echo "  Check GOTRUE_EXTERNAL_AZURE_* on aria-mantu-auth and restart auth app." >&2
+  exit 6
 else
-  echo "ERROR: GoTrue Azure secrets present but /login missing Sign in with Microsoft." >&2
-  echo "  Remint app tip so NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true (bash scripts/fly-remint-app-only.sh after confirm refresh)." >&2
+  echo "ERROR: Entra SSO not live-verified (settings HTTP $SETTINGS_CODE, external.azure=$AZURE_PROVIDER)." >&2
+  echo "  Remint app tip so NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true after GoTrue Azure secrets land." >&2
   exit 6
 fi
 

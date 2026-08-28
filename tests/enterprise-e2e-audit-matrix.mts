@@ -1177,6 +1177,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /MICROSOFT_TENANT_ID/.test(verify)
         && /GOTRUE_EXTERNAL_AZURE_URL/.test(verify)
         && /Sign in with Microsoft/.test(verify)
+        && /auth\/v1\/settings/.test(verify)
+        && /external\.azure/.test(verify)
         && /unset ARIA_ALLOW_PARTIAL_M365_E2E/.test(verify)
         && /unset ARIA_ALLOW_PARTIAL_LLM_E2E|ARIA_ALLOW_PARTIAL_LLM_E2E/.test(verify)
         && /probe-fly-llm-auth/.test(verify)

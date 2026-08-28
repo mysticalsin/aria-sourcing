@@ -42,7 +42,7 @@ export const PROVIDER_LIMIT_NOTE: Record<SeatProvider, string> = {
   "Microsoft Graph": "Microsoft 365 caps ~10k recipients/day; keep cold sends ≤ 40/day/mailbox warmed.",
   "Gmail API": "Workspace ~2k sends/day; keep cold sends ≤ 40/day/mailbox warmed.",
   SendGrid: "Respect plan limits; warm dedicated IPs gradually.",
-  Resend: "Respect plan limits; verify domain (SPF/DKIM/DMARC) before sending.",
+  Resend: "Respect plan limits; verify sender domain (SPF, DMARC, or DKIM) before sending.",
   "WhatsApp Cloud": "Cold WhatsApp needs a pre-approved Meta template; keep volume low and honor opt-out.",
   "Twilio SMS": "Honor SMS regulations (opt-in/TCPA); keep cold sends low and include opt-out.",
   "LinkedIn Assisted Manual": "Assisted-manual only: draft, profile deep-link, human copy/paste/send, then record outcome.",
@@ -123,7 +123,9 @@ export function seatCanSendLive(seat: AgentSeat): { ok: boolean; reason: string 
   if (isGraph && seat.connectedAccount) {
     return { ok: true, reason: "" };
   }
-  if (!seat.domainVerified) return { ok: false, reason: "Domain not verified (SPF/DKIM/DMARC)" };
+  if (!seat.domainVerified) {
+    return { ok: false, reason: "Sender domain not verified (need SPF, DMARC, or DKIM)" };
+  }
   return { ok: true, reason: "" };
 }
 

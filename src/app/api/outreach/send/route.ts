@@ -398,7 +398,10 @@ export async function POST(req: NextRequest) {
     }
   }
   if (!seat.domain_verified) {
-    return NextResponse.json({ status: "dry-run", detail: "Domain not verified (SPF/DKIM/DMARC), dry-run." });
+    return NextResponse.json({
+      status: "dry-run",
+      detail: "Sender domain not verified (need SPF, DMARC, or DKIM), dry-run.",
+    });
   }
 
   // 4. Synchronous, policy-checked send — the interactive "Send" button delivers
