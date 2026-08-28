@@ -96,8 +96,20 @@ ok(
       mig69.length > 0 &&
       noTxn(mig69) &&
       /when 'pre_call_propose' then allowed_keys := array\['campaignId', 'candidateId', 'intent', 'trigger', 'approvedBy'\]/i.test(mig69) &&
-      /when 'first_interview_book' then allowed_keys := array\['campaignId', 'candidateId', 'intent', 'trigger', 'approvedBy'\]/i.test(mig69) &&
-      /when 'calendar_book', 'pre_call_propose', 'first_interview_book' then return controls\.sequences_enabled/i.test(mig69)
+      /when 'first_interview_book' then allowed_keys := array\['campaignId', 'candidateId', 'intent', 'trigger', 'approvedBy'\]/i.test(mig69)
+    );
+  })(),
+);
+ok(
+  "0070 fixes sourcing_loop_stage_enabled (real intake_enabled columns; enqueue kinds)",
+  (() => {
+    const mig70 = read("supabase/migrations/0070_fix_sourcing_loop_stage_enabled.sql");
+    return (
+      mig70.length > 0 &&
+      noTxn(mig70) &&
+      /controls\.intake_enabled/i.test(mig70) &&
+      !/controls\.requisition_parse_enabled/i.test(mig70) &&
+      /'pre_call_propose', 'first_interview_book'/i.test(mig70)
     );
   })(),
 );

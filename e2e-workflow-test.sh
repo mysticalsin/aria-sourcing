@@ -783,14 +783,15 @@ if [ -n "${CRON_SECRET:-}" ]; then
     -H 'Content-Type: application/json' \
     -H "Authorization: Bearer $CRON_SECRET" \
     --data '{"workspaceId":"00000000-0000-4000-8000-000000000000","intent":"book_only","allowedStages":["queued_for_approval"]}')
-  GRAPH_STAGE_OK=$(jq -r '.ok // empty' "$WORK/cron_graph_stage_auth.json" 2>/dev/null || true)
-  GRAPH_STAGE_NAME=$(jq -r '.stage // empty' "$WORK/cron_graph_stage_auth.json" 2>/dev/null || true)
+  GRAPH_STAGE_REASON=$(jq -r '.status // empty' "$WORK/cron_graph_stage_auth.json" 2>/dev/null || true)
   if [ "$GRAPH_STAGE_AUTH_CODE" = "200" ] && [ "$GRAPH_STAGE_OK" = "true" ] && [ -n "$GRAPH_STAGE_NAME" ]; then
     pass "Authenticated recruiting-graph-stage book_only → stage=$GRAPH_STAGE_NAME."
   elif [ "$GRAPH_STAGE_AUTH_CODE" = "401" ]; then
     fail "CRON_SECRET rejected by recruiting-graph-stage (HTTP 401) — secret mismatch with Fly."
   elif [ "$GRAPH_STAGE_AUTH_CODE" = "400" ] || [ "$GRAPH_STAGE_AUTH_CODE" = "503" ]; then
     pass "Authenticated recruiting-graph-stage fail-closed (HTTP $GRAPH_STAGE_AUTH_CODE) — route live."
+  elif [ "$GRAPH_STAGE_AUTH_CODE" = "422" ] && [ "$GRAPH_STAGE_REASON" = "stage_mismatch" ]; then
+    pass "Authenticated recruiting-graph-stage book_only fail-closed (422 stage_mismatch without booking context)."
   else
     fail "Unexpected recruiting-graph-stage response HTTP $GRAPH_STAGE_AUTH_CODE: $(head -c 200 "$WORK/cron_graph_stage_auth.json")"
   fi

@@ -430,7 +430,8 @@ begin
   foreach declared_kind in array array[
     'email_sync', 'inbound_classify', 'requisition_parse', 'campaign_create',
     'sourcing_batch', 'provider_poll', 'enrich_candidate', 'shortlist_build',
-    'draft_generate', 'calendar_book', 'delivery_reconcile', 'outcome_feedback'
+    'draft_generate', 'calendar_book', 'pre_call_propose', 'first_interview_book',
+    'delivery_reconcile', 'outcome_feedback'
   ]
   loop
     declared_payload := case declared_kind
@@ -444,6 +445,8 @@ begin
       when 'shortlist_build' then '{"campaignId":"camp-1","batchId":"batch-1","providerRunId":"81111111-1111-4111-8111-111111111111"}'::jsonb
       when 'draft_generate' then '{"campaignId":"camp-1","candidateId":"cand-1","approvedBy":"c1000000-0000-4000-8000-000000000001","approvalSource":"human"}'::jsonb
       when 'calendar_book' then '{"campaignId":"camp-1","candidateId":"cand-1","intent":"INTERESTED","trigger":"draft_generate"}'::jsonb
+      when 'pre_call_propose' then '{"campaignId":"camp-1","candidateId":"cand-1","intent":"INTERESTED","trigger":"inbound_classify"}'::jsonb
+      when 'first_interview_book' then '{"campaignId":"camp-1","candidateId":"cand-1","intent":"INTERESTED","trigger":"pre_call_propose"}'::jsonb
       when 'delivery_reconcile' then '{"campaignId":"camp-1","candidateId":"cand-1"}'::jsonb
       when 'outcome_feedback' then '{"campaignId":"camp-1","candidateId":"cand-1"}'::jsonb
       else '{}'::jsonb

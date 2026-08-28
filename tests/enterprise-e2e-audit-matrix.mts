@@ -977,6 +977,19 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
+    requirement: "0070 fixes enqueue after 0069 bogus switchboard columns",
+    evidence: () => {
+      const mig70 = readFileSync("supabase/migrations/0070_fix_sourcing_loop_stage_enabled.sql", "utf8");
+      const loopAuth = readFileSync("tests/loop-authority-contract.mts", "utf8");
+      return (
+        /controls\.intake_enabled/i.test(mig70)
+        && !/controls\.requisition_parse_enabled/.test(mig70)
+        && /0070 fixes sourcing_loop_stage_enabled/.test(loopAuth)
+        && /'pre_call_propose', 'first_interview_book'/i.test(mig70)
+      );
+    },
+  },
+  {
     requirement: "Golive status probe documents tip vs live vs confirm without secrets",
     evidence: () => {
       const status = readFileSync("scripts/print-fly-golive-status.sh", "utf8");
