@@ -11,8 +11,8 @@ status: honesty-calendar-hydrate-confirm-replay
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft
-- **Tip:** pending this commit · Live Fly `fc8b54a` / **0071** (tip **0072**)
-- **Audit:** **64/64** · **Gate:** pending
+- **Tip:** `cf6b0cc` · Live Fly `fc8b54a` / **0071** (tip **0072**)
+- **Audit:** **64/64** · **Gate:** green · audit **64/64**
 - **M365:** `fly_m365_missing=7` · watcher alive · 30m reprobe armed
 - **LLM:** `llm_auth=dead`
 - **Goal:** strict E2E PASS blocked on owner secrets
