@@ -988,6 +988,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /stale_owner_remint_required/.test(status)
         && /print-fly-golive-status\.sh/.test(golive)
         && /print-fly-golive-status/.test(handoff)
+        && existsSync("scripts/run-enterprise-e2e-partial.sh")
+        && /ARIA_ALLOW_STALE_FLY_E2E=1/.test(readFileSync("scripts/run-enterprise-e2e-partial.sh", "utf8"))
       );
     },
   },
