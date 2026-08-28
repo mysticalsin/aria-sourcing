@@ -113,8 +113,14 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     log "Golive incomplete with confirm present; will retry."
   elif az account show >/dev/null 2>&1; then
     if [ -f /tmp/az-create-mantu-graph-app.noperm ]; then
+      if [ -n "${ARIA_AZURE_APP_ID:-}" ]; then
+        log "noperm but ARIA_AZURE_APP_ID set — configuring existing Entra app"
+        if bash "$repo/scripts/az-configure-existing-graph-app.sh" --apply; then
+          if run_golive; then exit 0; fi
+        fi
+      fi
       if [ $(( $(date +%s) % 300 )) -lt "$SLEEP_SEC" ]; then
-        log "az OK but cannot create apps (noperm) — need MICROSOFT_* drop-zone + ARIA_PROD_DEPLOY_CONFIRM"
+        log "az OK but cannot create apps (noperm) — need ARIA_AZURE_APP_ID or /tmp/owner-microsoft.env"
         bash "$repo/scripts/print-fly-missing-secrets.sh" 2>/dev/null | grep -E 'MISSING|missing' | tee -a "$LOG" || true
         bash "$repo/scripts/print-fly-deploy-confirm.sh" 2>/dev/null | head -6 | tee -a "$LOG" || true
       fi
