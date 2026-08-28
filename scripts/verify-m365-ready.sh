@@ -34,6 +34,7 @@ done
 if [ "$missing" = "1" ]; then
   echo "ERROR: apply secrets first — see _relay/M365-OWNER-UNBLOCK.md" >&2
   echo "  bash scripts/print-m365-owner-portal-checklist.sh" >&2
+  echo "  bash scripts/probe-m365-unblock.sh --apply  # when drop-zone or env exports ready" >&2
   exit 2
 fi
 
