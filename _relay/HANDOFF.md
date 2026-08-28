@@ -10,7 +10,7 @@ status: gate-green-intake-sourcing-pr33-awaiting-golive
 
 ## Current state
 
-- **Branch tip:** `cursor/enterprise-autopilot-b91d` (pending: sourceNextBatch flush gate)
+- **Branch tip:** `cursor/enterprise-autopilot-b91d` **`35fd964`**
 - **Live Fly:** `e469126` (migration **0068**) — tip **0069**; probe `bash scripts/print-fly-golive-status.sh` → `stale_owner_remint_required`, `confirm_file_present=yes`
 - **Test gate:** green
 - **Audit matrix:** **56/56** (after HANDOFF audit strings restored)
