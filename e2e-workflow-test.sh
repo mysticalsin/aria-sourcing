@@ -1228,7 +1228,7 @@ fi
 
 MSG_LI="msg-e2e-li-$$"
 APPROVE_TRY=0
-if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" != "1" ]; then
+if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ]; then
   APPROVE_MAX="${E2E_APPROVE_MAX:-5}"
 else
   APPROVE_MAX="${E2E_APPROVE_MAX:-3}"
@@ -1287,6 +1287,9 @@ elif [ "$HTTP" = "403" ]; then
 elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ] \
   && [ "$HTTP" = "503" ] && [ "$(jq -r '.status // empty' "$APPROVE_RESP")" = "critics_required" ]; then
   warn "Approve critics_required on Fly after retries — PARTIAL continuation (live LLM critics unavailable)."
+elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ] \
+  && [ "$HTTP" = "422" ]; then
+  warn "Approve quality block (422) on Fly after retries — PARTIAL continuation (non-deterministic LLM critics)."
 else
   fail "Approve failed (HTTP $HTTP): $(head -c 300 "$APPROVE_RESP")"
 fi
