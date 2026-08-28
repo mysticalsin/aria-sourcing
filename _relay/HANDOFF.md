@@ -22,7 +22,7 @@ status: gate-green-live-e2e-deploy-lag-awaiting-owner-remint
 ## Done this shift
 
 1. **Manifest contract baseline** — bumped frozen counts/digests for +2 application suites (`sourcing-agent-contract` et al.)
-2. **E2E static probe** — interest chain grep updated to `pre_call_propose→first_interview_book` (was stale `calendar_book` strings)
+2. **E2E fixes** — URLED jq treated empty `githubUrl` as present (blocked linkedinUrl); stale-Fly provenance tolerance under `ARIA_ALLOW_STALE_FLY_E2E=1`; interest chain grep uses `pre_call_propose`
 3. Verified local gate green; live E2E: **PARTIAL 0 fail** with stale-Fly flag (provenance stamp pending deploy a75bc57+)
 
 ## Blockers

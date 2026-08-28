@@ -328,6 +328,6 @@
   ],
   "metrics_at_completion": null,
   "retro_id": null,
-  "last_shift_note": "2026-08-28T02:30Z shift 218: tip c64f89a — manifest baseline + E2E pre_call_propose grep; local gate green, audit 54/54. Live Fly still e469126 (~50 commits behind); live E2E 34 pass / 2 fail (sourcing live=0 deploy lag). Microsoft SKIPPED. Goal IN_PROGRESS — owner remint deploy confirm required.",
-  "updated_at": "2026-08-28T02:30:00+00:00"
+  "last_shift_note": "2026-08-28T02:50Z shift 219: E2E URLED jq fix + stale-Fly provenance tolerance; live E2E PARTIAL 35/0/3 with ARIA_ALLOW_STALE_FLY_E2E=1. Local gate green, audit 54/54. Fly still e469126 — owner remint for tip golive. Microsoft SKIPPED. Goal IN_PROGRESS.",
+  "updated_at": "2026-08-28T02:50:00+00:00"
 }
