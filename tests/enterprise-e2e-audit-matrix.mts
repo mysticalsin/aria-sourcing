@@ -637,6 +637,10 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /calendarConfirmUrl/.test(worker)
         && /confirm-calendar-book/.test(worker)
         && /loop_confirm_live/.test(worker)
+        && /append_booking/.test(worker)
+        && /first-interview-booking:/.test(worker)
+        && /first-interview-candidate:/.test(worker)
+        && /first-interview-activity:/.test(worker)
         && /preCallProposal/.test(worker)
         && /interviewProposal/.test(worker)
         && /type: "booking"/.test(worker)
@@ -735,6 +739,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /FLY_SUPABASE_ANON_KEY/.test(printE2e)
         && /probe-fly-llm-auth/.test(printE2e)
         && /AGENT_PROVIDER/.test(printE2e)
+        && /aria-e2e-agent-provider|FIRST_LIVE_PROVIDER/.test(printE2e)
+        && /FIRST_LIVE_PROVIDER/.test(readFileSync("scripts/probe-fly-llm-auth.sh", "utf8"))
         && !/^export AGENT_PROVIDER=kimi$/m.test(printE2e)
         && /Fly secrets inventory/.test(golive)
         && existsSync("scripts/fly-enterprise-activate.sh")
@@ -782,6 +788,10 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         )
         && /serverGenerateText/.test(readFileSync("src/app/api/hermes/chat/route.ts", "utf8"))
         && /tryLoopTaskCloudFailover/.test(readFileSync("src/app/api/hermes/chat/route.ts", "utf8"))
+        && /isRetryableProviderStatus/.test(readFileSync("src/app/api/hermes/chat/route.ts", "utf8"))
+        && !/if \(!input\.workspaceId \|\| !LOOP_LLM_TASKS/.test(
+          readFileSync("src/app/api/hermes/chat/route.ts", "utf8"),
+        )
         && /"deepseek"/.test(readFileSync("src/lib/ai/server-generate.ts", "utf8"))
         && /reuseGraphCritics|graphQuality\?\.llmCriticsUsed/.test(
           readFileSync("src/app/api/cron/generate-outreach-draft/route.ts", "utf8"),
@@ -987,7 +997,9 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       const mig = readFileSync("supabase/migrations/0066_calendar_meeting_url.sql", "utf8");
       const authority = readFileSync("src/lib/calendar-authority.ts", "utf8");
       const route = readFileSync("src/app/api/calendar/event/route.ts", "utf8");
+      const loopConfirm = readFileSync("src/app/api/cron/confirm-calendar-book/route.ts", "utf8");
       const calendar = readFileSync("src/lib/calendar.ts", "utf8");
+      const mig72 = readFileSync("supabase/migrations/0072_loop_append_booking.sql", "utf8");
       return (
         /meeting_url/.test(mig)
         && /meetingUrl/.test(authority)
@@ -1000,6 +1012,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /empty\/missing scope is a proven pre-transport not-sent/.test(
           readFileSync("tests/calendar-booking-authority.mts", "utf8"),
         )
+        && /claim\.replay/.test(loopConfirm)
+        && /bookingStatus === "claimed"/.test(loopConfirm)
+        && /deliveryState === "not-sent"/.test(loopConfirm)
+        && /append_booking/.test(mig72)
+        && /'bookings'/.test(mig72)
       );
     },
   },

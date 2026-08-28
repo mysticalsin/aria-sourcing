@@ -201,8 +201,18 @@ async function main() {
     "confirm cron creates Graph Teams meetings with OnlineMeetings gate",
     /createGraphCalendarEvent/.test(confirmSrc) && /OnlineMeetings\.ReadWrite/.test(confirmSrc),
   );
+  ok(
+    "confirm cron replays claimed outcomes without re-calling Graph",
+    /claim\.replay/.test(confirmSrc)
+      && /bookingStatus === "claimed"/.test(confirmSrc)
+      && /deliveryState === "not-sent"/.test(confirmSrc),
+  );
   ok("worker pre_call / first_interview call propose cron", /calendarProposeUrl/.test(workerSrc) && /handlePreCallPropose/.test(workerSrc));
   ok("worker first_interview tries live confirm before dry-run propose", /calendarConfirmUrl/.test(workerSrc) && /loop_confirm_live/.test(workerSrc));
+  ok(
+    "worker appends bookings for Calendar Agenda after live confirm",
+    /append_booking/.test(workerSrc) && /first-interview-booking:/.test(workerSrc),
+  );
   ok("worker sets preCallProposal + interviewProposal", /preCallProposal/.test(workerSrc) && /interviewProposal/.test(workerSrc));
 
   console.log(`RESULT mantu-recruiting-e2e-full: ${pass} passed, ${fail} failed`);

@@ -54,6 +54,11 @@ fi
 if [ -r "$admin_password_tmp" ]; then
   admin_password="$(tr -d '\n\r' < "$admin_password_tmp")"
 fi
+agent_provider_tmp="/tmp/aria-e2e-agent-provider"
+agent_provider=""
+if [ -r "$agent_provider_tmp" ]; then
+  agent_provider="$(tr -d '\n\r' < "$agent_provider_tmp")"
+fi
 
 if [ "$mode" = "--export" ]; then
   [ -n "$anon_key" ] && printf 'export ANON_KEY=%q\n' "$anon_key"
@@ -61,6 +66,10 @@ if [ "$mode" = "--export" ]; then
   [ -n "$cron_key" ] && printf 'export CRON_SECRET=%q\n' "$cron_key"
   [ -n "$admin_email" ] && printf 'export ADMIN_EMAIL=%q\n' "$admin_email"
   [ -n "$admin_password" ] && printf 'export ADMIN_PASSWORD=%q\n' "$admin_password"
+  # Live provider from probe-fly-llm-auth.sh cache — never hard-pin kimi.
+  if [ -n "$agent_provider" ]; then
+    printf 'export AGENT_PROVIDER=%q\n' "$agent_provider"
+  fi
   exit 0
 fi
 
@@ -114,8 +123,9 @@ fi
 cat <<'EOF'
 # Hermes outreach: set AGENT_PROVIDER to a *live* provider on Fly (probe first).
 # Do NOT hard-pin kimi when KIMI_API_KEY is auth-dead (HTTP 401).
-#   bash scripts/probe-fly-llm-auth.sh   # expect RESULT: llm_auth_ok
-# Then export one of: kimi | deepseek | openai | anthropic matching the live key.
+#   bash scripts/probe-fly-llm-auth.sh   # expect RESULT: llm_auth_ok (+ FIRST_LIVE_PROVIDER=…)
+#   eval "$(bash scripts/print-fly-e2e-env.sh --export)"  # exports AGENT_PROVIDER from /tmp cache
+# Or export one of: kimi | deepseek | openai | anthropic matching the live key.
 # export AGENT_PROVIDER=kimi
 # export AGENT_MODEL=moonshot-v1-8k
 # optional: override webhook mailbox (defaults to connected Outlook or talent@mantu.com)

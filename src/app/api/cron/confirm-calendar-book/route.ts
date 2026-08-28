@@ -158,23 +158,49 @@ export async function POST(req: NextRequest) {
       { status: claim.status === "dependency_unavailable" ? 503 : 409 },
     );
   }
-  if (claim.replay && claim.bookingStatus === "confirmed") {
-    return NextResponse.json({
-      ok: true,
-      status: "created",
-      bookingMode: "loop_confirm_live",
-      campaignId: campaign.id,
-      candidateId: candidate.id,
-      candidateName: candidate.name,
-      startTime: window.startTime,
-      endTime: window.endTime,
-      agenda,
-      claimId: claim.id,
-      teamsLink: claim.meetingUrl,
-      eventId: claim.externalEventId,
-      seatId: seat.id,
-      replay: true,
-    });
+  if (claim.replay) {
+    // Same requestId retry — never call Graph again; return the prior outcome.
+    if (claim.bookingStatus === "confirmed") {
+      return NextResponse.json({
+        ok: true,
+        status: "created",
+        bookingMode: "loop_confirm_live",
+        campaignId: campaign.id,
+        candidateId: candidate.id,
+        candidateName: candidate.name,
+        startTime: window.startTime,
+        endTime: window.endTime,
+        agenda,
+        claimId: claim.id,
+        teamsLink: claim.meetingUrl,
+        eventId: claim.externalEventId,
+        seatId: seat.id,
+        replay: true,
+      });
+    }
+    if (claim.bookingStatus === "claimed") {
+      // Prior attempt still unreconciled (in flight or unknown). Do not retry Graph.
+      return NextResponse.json(
+        {
+          ok: false,
+          status: "reconciliation_required",
+          detail:
+            "This booking request is already being processed or its outcome is unknown. Do not retry.",
+          claimId: claim.id,
+        },
+        { status: 502 },
+      );
+    }
+    // failed / released — retry needs a new requestId (new slot), not a replay.
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "skipped",
+        detail: "This booking request already failed. Retry with a new slot.",
+        claimId: claim.id,
+      },
+      { status: 409 },
+    );
   }
 
   const origAccessToken = decryptSecret(conn.access_token);
@@ -229,7 +255,61 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (!outcome.ok || outcome.deliveryState === "not-sent") {
+    if (outcome.ok) {
+      if (!outcome.link || !isTeamsMeetingJoinUrl(outcome.link)) {
+        return NextResponse.json(
+          {
+            ok: false,
+            status: "reconciliation_required",
+            detail: "Graph event may exist but Teams join URL is missing.",
+            claimId: claim.id,
+            eventId: outcome.eventId ?? null,
+          },
+          { status: 502 },
+        );
+      }
+
+      const reconciled = await reconcileCalendarBooking(svc, {
+        workspaceId: parsed.data.workspaceId,
+        id: claim.id,
+        status: "confirmed",
+        externalEventId: outcome.eventId ?? null,
+        meetingUrl: outcome.link,
+        detail: outcome.detail,
+      });
+      if (reconciled.status !== "reconciled" || reconciled.bookingStatus !== "confirmed") {
+        return NextResponse.json(
+          {
+            ok: false,
+            status: "reconciliation_required",
+            detail: "Calendar ledger could not confirm the Teams meeting.",
+            claimId: claim.id,
+          },
+          { status: 502 },
+        );
+      }
+
+      return NextResponse.json({
+        ok: true,
+        status: "created",
+        bookingMode: "loop_confirm_live",
+        campaignId: campaign.id,
+        candidateId: candidate.id,
+        candidateName: candidate.name,
+        startTime: window.startTime,
+        endTime: window.endTime,
+        agenda,
+        claimId: claim.id,
+        teamsLink: outcome.link,
+        eventId: outcome.eventId ?? null,
+        seatId: seat.id,
+        replay: false,
+      });
+    }
+
+    // Only proven pre-transport failures free the slot. deliveryState "unknown"
+    // (or absent) leaves the claim in 'claimed' — never retry Graph.
+    if (outcome.deliveryState === "not-sent") {
       await reconcileCalendarBooking(svc, {
         workspaceId: parsed.data.workspaceId,
         id: claim.id,
@@ -244,55 +324,15 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    if (!outcome.link || !isTeamsMeetingJoinUrl(outcome.link)) {
-      return NextResponse.json(
-        {
-          ok: false,
-          status: "reconciliation_required",
-          detail: "Graph event may exist but Teams join URL is missing.",
-          claimId: claim.id,
-          eventId: outcome.eventId ?? null,
-        },
-        { status: 502 },
-      );
-    }
-
-    const reconciled = await reconcileCalendarBooking(svc, {
-      workspaceId: parsed.data.workspaceId,
-      id: claim.id,
-      status: "confirmed",
-      externalEventId: outcome.eventId ?? null,
-      meetingUrl: outcome.link,
-      detail: outcome.detail,
-    });
-    if (reconciled.status !== "reconciled" || reconciled.bookingStatus !== "confirmed") {
-      return NextResponse.json(
-        {
-          ok: false,
-          status: "reconciliation_required",
-          detail: "Calendar ledger could not confirm the Teams meeting.",
-          claimId: claim.id,
-        },
-        { status: 502 },
-      );
-    }
-
-    return NextResponse.json({
-      ok: true,
-      status: "created",
-      bookingMode: "loop_confirm_live",
-      campaignId: campaign.id,
-      candidateId: candidate.id,
-      candidateName: candidate.name,
-      startTime: window.startTime,
-      endTime: window.endTime,
-      agenda,
-      claimId: claim.id,
-      teamsLink: outcome.link,
-      eventId: outcome.eventId ?? null,
-      seatId: seat.id,
-      replay: false,
-    });
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "reconciliation_required",
+        detail: "Calendar provider acceptance is not yet reconciled. Do not retry.",
+        claimId: claim.id,
+      },
+      { status: 502 },
+    );
   } catch (err) {
     safeLog("loop confirm calendar error", {
       message: err instanceof Error ? err.message : "unknown",

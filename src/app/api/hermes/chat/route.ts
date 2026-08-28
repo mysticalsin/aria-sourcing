@@ -128,18 +128,24 @@ function isProviderAuthFailure(status: number): boolean {
   return status === 401 || status === 403;
 }
 
+/** Transient upstream failures — try env/vault failover instead of failing the draft. */
+function isRetryableProviderStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
 async function tryLoopTaskCloudFailover(input: {
   task: string;
   system: string;
   prompt: string;
+  /** Optional — env keys work without it; vault keys need a workspace. */
   workspaceId: string | null;
 }): Promise<string | null> {
-  if (!input.workspaceId || !LOOP_LLM_TASKS.has(input.task)) return null;
+  if (!LOOP_LLM_TASKS.has(input.task)) return null;
   const fallback = await serverGenerateText({
     system: input.system,
     prompt: input.prompt,
     maxTokens: 2048,
-    workspaceId: input.workspaceId,
+    ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
   });
   return fallback.ok ? fallback.text : null;
 }
@@ -386,8 +392,13 @@ export async function POST(req: NextRequest) {
       }
       if (!upstream.ok) {
         logUpstream("error", "Cloud provider upstream error", { provider, status: upstream.status });
-        if (isProviderAuthFailure(upstream.status)) {
-          const failoverText = await tryLoopTaskCloudFailover({ task: task as string, system, prompt, workspaceId: runtimeWorkspaceId });
+        if (isProviderAuthFailure(upstream.status) || isRetryableProviderStatus(upstream.status)) {
+          const failoverText = await tryLoopTaskCloudFailover({
+            task: task as string,
+            system,
+            prompt,
+            workspaceId: runtimeWorkspaceId,
+          });
           if (failoverText) return NextResponse.json({ ok: true, text: failoverText });
         }
         return NextResponse.json({
@@ -406,6 +417,13 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Network error.";
       logUpstream("error", "Cloud provider network error", { provider, error: msg });
+      const failoverText = await tryLoopTaskCloudFailover({
+        task: task as string,
+        system,
+        prompt,
+        workspaceId: runtimeWorkspaceId,
+      });
+      if (failoverText) return NextResponse.json({ ok: true, text: failoverText });
       return NextResponse.json({ ok: false, reason: redactSecrets(redactEmail(msg)) });
     }
   }

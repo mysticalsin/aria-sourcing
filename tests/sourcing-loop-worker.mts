@@ -937,10 +937,19 @@ test("first_interview_book confirms live Teams when confirm cron returns created
     "https://teams.microsoft.com/l/meetup-join/19%3ameeting_live",
   );
   assert.equal(merged.patch?.booking?.status, "Confirmed");
+  const bookingAppend = patches.find((p) => p.p_patch_kind === "append_booking");
+  assert.ok(bookingAppend);
+  const bookings = bookingAppend!.p_patch as Array<Record<string, unknown>>;
+  assert.equal(bookings[0]?.teamsLink, "https://teams.microsoft.com/l/meetup-join/19%3ameeting_live");
+  assert.equal(bookings[0]?.status, "Confirmed");
   const activityPatch = patches.find((p) => p.p_patch_kind === "append_activities");
   assert.ok(activityPatch);
   const activities = activityPatch!.p_patch as Array<Record<string, unknown>>;
   assert.equal(activities[0]?.outcome, "confirmed_live");
+  // Distinct receipt keys — same key for merge + complete would idempotency-conflict.
+  assert.notEqual(stageMerge!.p_receipt_key, bookingAppend!.p_receipt_key);
+  assert.notEqual(stageMerge!.p_receipt_key, activityPatch!.p_receipt_key);
+  assert.notEqual(bookingAppend!.p_receipt_key, activityPatch!.p_receipt_key);
 });
 
 test("draft_generate rejects fake interview_scheduled graphStage from cron", async () => {

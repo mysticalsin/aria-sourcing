@@ -424,6 +424,8 @@ export interface Candidate {
     channel: string;
     meetingKind?: "pre_call" | "first_interview";
     proposedAt: string;
+    /** Present after loop confirm-calendar-book creates a live Teams meeting. */
+    teamsLink?: string;
   } | null;
   /**
    * Loop-proposed pre-call screen (15–20 min). Same shape as interviewProposal;
@@ -438,6 +440,7 @@ export interface Candidate {
     channel: string;
     meetingKind?: "pre_call" | "first_interview";
     proposedAt: string;
+    teamsLink?: string;
   } | null;
   /** Historical high-water-mark funnel rank (see STAGE_RANK in metrics.ts) —
    *  the furthest the candidate ever progressed, even if `stage` later moved

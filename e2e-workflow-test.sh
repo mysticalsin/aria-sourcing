@@ -100,14 +100,40 @@ validate_fly_e2e_url() {
 }
 validate_fly_e2e_url "APP_URL" "$APP_URL"
 validate_fly_e2e_url "KONG_URL" "$KONG_URL"
+
+# ---- output helpers (needed before AGENT_PROVIDER probe messages) -----------
+if [ -t 1 ]; then C_G="\033[32m"; C_R="\033[31m"; C_Y="\033[33m"; C_C="\033[36m"; C_B="\033[1m"; C_0="\033[0m"
+else C_G=""; C_R=""; C_Y=""; C_C=""; C_B=""; C_0=""; fi
+PASSES=0; FAILS=0; WARNS=0
+E2E_SKIP_M365=0
+E2E_SKIP_APPROVE=0
+E2E_SKIP_CRON=0
+E2E_SKIP_WEBHOOK=0
+step() { printf "\n${C_B}== %s ==${C_0}\n" "$1"; }
+pass() { printf "  ${C_G}PASS${C_0}  %s\n" "$1"; PASSES=$((PASSES+1)); }
+fail() { printf "  ${C_R}FAIL${C_0}  %s\n" "$1"; FAILS=$((FAILS+1)); }
+warn() { printf "  ${C_Y}WARN${C_0}  %s\n" "$1"; WARNS=$((WARNS+1)); }
+info() { printf "  ${C_C}·${C_0}     %s\n" "$1"; }
+die()  { printf "\n${C_R}ABORT${C_0} %s\n" "$1" >&2; exit 2; }
+
 # Hermes outreach drafts use AGENT_PROVIDER. Do NOT hard-pin kimi on Fly —
 # a present-but-401 KIMI_API_KEY yields critics_required. Prefer an explicit
 # live provider from print-fly-e2e-env / probe-fly-llm-auth.
 # /api/sourcing-agent resolves its own workspace/cloud provider; this env is
 # for hermes chat only.
 if [ -z "${AGENT_PROVIDER:-}" ]; then
-  if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ]; then
-    warn "AGENT_PROVIDER unset on Fly — hermes drafts need a live provider (probe-fly-llm-auth.sh)."
+  if [ -r /tmp/aria-e2e-agent-provider ]; then
+    AGENT_PROVIDER="$(tr -d '\n\r' < /tmp/aria-e2e-agent-provider)"
+    info "AGENT_PROVIDER from probe cache: $AGENT_PROVIDER"
+  elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ]; then
+    # One probe attempt — caches FIRST_LIVE_PROVIDER for subsequent runs.
+    if bash scripts/probe-fly-llm-auth.sh >/tmp/e2e-llm-probe.log 2>&1 \
+      && [ -r /tmp/aria-e2e-agent-provider ]; then
+      AGENT_PROVIDER="$(tr -d '\n\r' < /tmp/aria-e2e-agent-provider)"
+      info "AGENT_PROVIDER from live probe: $AGENT_PROVIDER"
+    else
+      warn "AGENT_PROVIDER unset on Fly — hermes drafts need a live provider (probe-fly-llm-auth.sh)."
+    fi
   else
     AGENT_PROVIDER=anthropic
   fi
@@ -148,21 +174,6 @@ case "$E2E_OUTREACH_LANGUAGE" in
   nl) E2E_LANG_LABEL="Dutch" ;;
   *)  E2E_LANG_LABEL="English" ;;
 esac
-
-# ---- output helpers --------------------------------------------------------
-if [ -t 1 ]; then C_G="\033[32m"; C_R="\033[31m"; C_Y="\033[33m"; C_C="\033[36m"; C_B="\033[1m"; C_0="\033[0m"
-else C_G=""; C_R=""; C_Y=""; C_C=""; C_B=""; C_0=""; fi
-PASSES=0; FAILS=0; WARNS=0
-E2E_SKIP_M365=0
-E2E_SKIP_APPROVE=0
-E2E_SKIP_CRON=0
-E2E_SKIP_WEBHOOK=0
-step() { printf "\n${C_B}== %s ==${C_0}\n" "$1"; }
-pass() { printf "  ${C_G}PASS${C_0}  %s\n" "$1"; PASSES=$((PASSES+1)); }
-fail() { printf "  ${C_R}FAIL${C_0}  %s\n" "$1"; FAILS=$((FAILS+1)); }
-warn() { printf "  ${C_Y}WARN${C_0}  %s\n" "$1"; WARNS=$((WARNS+1)); }
-info() { printf "  ${C_C}·${C_0}     %s\n" "$1"; }
-die()  { printf "\n${C_R}ABORT${C_0} %s\n" "$1" >&2; exit 2; }
 
 # ---- preflight -------------------------------------------------------------
 for bin in curl jq openssl; do command -v "$bin" >/dev/null 2>&1 || die "'$bin' is required but not installed."; done

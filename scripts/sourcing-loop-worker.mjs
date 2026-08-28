@@ -1985,7 +1985,7 @@ async function handleFirstInterviewBook(job, context) {
               },
             },
           },
-          p_receipt_key: `first-interview-booked:${campaignId}:${candidateId}`,
+          p_receipt_key: `first-interview-candidate:${campaignId}:${candidateId}`,
         });
         if (bookedPatch.error) throw new HandlerError(bookedPatch.error.code, true);
         const bookedStatus =
@@ -1994,6 +1994,27 @@ async function handleFirstInterviewBook(job, context) {
             : "patch_failed";
         if (bookedStatus !== "applied" && bookedStatus !== "already_applied") {
           throw new HandlerError(`booked_${bookedStatus}`, bookedStatus === "stale_token");
+        }
+
+        // Mirror createBookingFor: Calendar Agenda reads state.bookings (useBookings).
+        const bookingSnapshot = await readWorkspaceSnapshot(context.client, job.workspace_id);
+        const bookingAppend = await context.client.rpc("apply_workspace_patch", {
+          p_workspace_id: job.workspace_id,
+          p_expected_updated_at: bookingSnapshot.updated_at,
+          p_patch_kind: "append_booking",
+          p_patch: [booking],
+          p_receipt_key: `first-interview-booking:${campaignId}:${candidateId}`,
+        });
+        if (bookingAppend.error) throw new HandlerError(bookingAppend.error.code, true);
+        const bookingAppendStatus =
+          isRecord(bookingAppend.data) && typeof bookingAppend.data.status === "string"
+            ? bookingAppend.data.status
+            : "patch_failed";
+        if (bookingAppendStatus !== "applied" && bookingAppendStatus !== "already_applied") {
+          throw new HandlerError(
+            `booking_append_${bookingAppendStatus}`,
+            bookingAppendStatus === "stale_token",
+          );
         }
 
         await assertRecruitingGraphCheckpoint(
@@ -2013,7 +2034,7 @@ async function handleFirstInterviewBook(job, context) {
           {
             kind: "append_activities",
             value: [activity],
-            receiptKey: `first-interview-booked:${campaignId}:${candidateId}`,
+            receiptKey: `first-interview-activity:${campaignId}:${candidateId}`,
           },
           {
             status: "interview_scheduled",

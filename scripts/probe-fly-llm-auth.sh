@@ -33,7 +33,7 @@ OUT="$(flyctl ssh console -a "$APP" -C 'node -e "
       const authOk = status === 200 || status === 404;
       const label = status === 401 || status === 403 ? \"auth_dead\" : (authOk ? \"ok\" : \"http_\" + status);
       console.log(\"  \" + name + \"=\" + label + \" (HTTP \" + status + \")\");
-      return label === \"ok\";
+      return label === \"ok\" ? name : (label === \"auth_dead\" || label.startsWith(\"http_\") || label === \"error\" ? false : false);
     } catch (e) {
       console.log(\"  \" + name + \"=error (\" + (e && e.message ? e.message : \"fail\") + \")\");
       return false;
@@ -43,6 +43,7 @@ OUT="$(flyctl ssh console -a "$APP" -C 'node -e "
   const deepseekBase = (process.env.DEEPSEEK_BASE_URL || \"https://api.deepseek.com\").replace(/\\/+$/,\"\");
   let ok = 0;
   let attempted = 0;
+  let firstLive = null;
   const results = [];
   results.push(await probe(\"kimi\", process.env.KIMI_API_KEY, kimiBase + \"/models\"));
   results.push(await probe(\"anthropic\", process.env.ANTHROPIC_API_KEY, \"https://api.anthropic.com/v1/models\", { \"x-api-key\": process.env.ANTHROPIC_API_KEY || \"\", \"anthropic-version\": \"2023-06-01\" }));
@@ -51,17 +52,27 @@ OUT="$(flyctl ssh console -a "$APP" -C 'node -e "
   for (const r of results) {
     if (r === null) continue;
     attempted += 1;
-    if (r === true) ok += 1;
+    if (typeof r === \"string\") {
+      ok += 1;
+      if (!firstLive) firstLive = r;
+    }
   }
+  if (firstLive) console.log(\"FIRST_LIVE_PROVIDER=\" + firstLive);
   console.log(\"RESULT: \" + (ok > 0 ? \"llm_auth_ok\" : (attempted === 0 ? \"llm_keys_absent\" : \"llm_auth_dead\")));
   process.exit(ok > 0 ? 0 : 1);
 })().catch((e) => { console.error(e); process.exit(1); });
 "' 2>&1)" || true
 
 # Strip flyctl connection noise; keep probe lines.
-printf '%s\n' "$OUT" | grep -E '^[[:space:]]*(kimi|anthropic|openai|deepseek)=|^RESULT:|^===|^Connecting' || printf '%s\n' "$OUT"
+printf '%s\n' "$OUT" | grep -E '^[[:space:]]*(kimi|anthropic|openai|deepseek)=|^FIRST_LIVE_PROVIDER=|^RESULT:|^===|^Connecting' || printf '%s\n' "$OUT"
 
+provider_cache="/tmp/aria-e2e-agent-provider"
 if printf '%s\n' "$OUT" | grep -q 'RESULT: llm_auth_ok'; then
+  first="$(printf '%s\n' "$OUT" | sed -n 's/^FIRST_LIVE_PROVIDER=//p' | head -1 | tr -d '\r')"
+  if [ -n "$first" ]; then
+    printf '%s\n' "$first" > "$provider_cache"
+  fi
   exit 0
 fi
+rm -f "$provider_cache"
 exit 1

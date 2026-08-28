@@ -126,6 +126,18 @@ ok(
   })(),
 );
 ok(
+  "0072 allows append_booking so Calendar Agenda sees loop Teams books",
+  (() => {
+    const mig72 = read("supabase/migrations/0072_loop_append_booking.sql");
+    return (
+      mig72.length > 0 &&
+      noTxn(mig72) &&
+      /append_booking/.test(mig72) &&
+      /when 'append_booking' then 'bookings'/.test(mig72)
+    );
+  })(),
+);
+ok(
   "loop event erasure has a narrow trigger-recognized redaction path",
   /redact_loop_events_for_candidate_erasure\(uuid, text, text\[\], text\[\]\)/i.test(dataProtection) &&
     /set_config\('aria\.candidate_erasure_loop_event_redaction', 'on', true\)/i.test(dataProtection) &&
