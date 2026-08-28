@@ -11,8 +11,8 @@ status: post-m365-loop-hardening
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft (HOLD — do not open another)
-- **Live Fly:** `fc8b54a` / **0071** · ready ok · **`deploy_status=tip_live`** (pre-this-shift tip; new worker/LLM honesty commits pending deploy)
-- **Audit:** **64/64**
+- **Live Fly:** `fc8b54a` / **0071** · ready ok · tip `9f0ce1f+` pending remint (`deploy_status=stale_owner_remint_required`)
+- **Audit:** **64/64** (target after this commit)
 - **Gate:** `npx tsc --noEmit && npm test` green
 - **M365:** `fly_m365_missing=7` · watcher armed · `/tmp/owner-microsoft.env` absent
 - **LLM:** `kimi=auth_dead` (HTTP 401); anthropic/openai/deepseek absent · `/tmp/owner-llm.env` absent
@@ -20,13 +20,14 @@ status: post-m365-loop-hardening
 
 ## Done this shift
 
-1. Reply classify model client: Kimi → DeepSeek → OpenAI failover (auth-dead continues)
+1. Reply classify model client: Kimi → Anthropic → DeepSeek → OpenAI failover (auth-dead continues)
 2. Autopilot `pre_call_propose` / `draft_generate` successors only when `classifier === "model"` (keyword INTERESTED no longer invents jobs)
 3. Live outreach personalizationEvidence derived from candidate fields (not mockGen copy)
 4. `probe-fly-llm-auth.sh` wired into `verify-m365-ready.sh` (step 3c) + `fly-enterprise-activate.sh`
-5. Soften hard-pin `AGENT_PROVIDER=kimi` in `print-fly-e2e-env.sh`
-6. Split `ARIA_ALLOW_PARTIAL_LLM_E2E` from M365 partial for critics soft-fail; partial runner sets it when auth dead
-7. Tests: keyword no-successors + model failover; audit pins updated
+5. Soften hard-pin `AGENT_PROVIDER=kimi` in `print-fly-e2e-env.sh` + e2e-workflow-test.sh
+6. Split `ARIA_ALLOW_PARTIAL_LLM_E2E` / `E2E_LLM_GAP` from M365 partial — critics soft-fail forces PARTIAL (never PASS)
+7. Live tenants refuse keyword `draftReplyResponse` + sourcing-agent mock drafts; Quality badge success only when `qualityCriticsUsed`
+8. Tests: keyword no-successors + model/Anthropic failover; audit pins updated
 
 ## Blockers
 
@@ -37,6 +38,7 @@ status: post-m365-loop-hardening
 ## Next steps
 
 ```bash
+bash scripts/print-fly-golive-status.sh   # deploy_status=tip_live after remint
 bash scripts/print-fly-deploy-confirm.sh   # remint if needed, then fly-deploy-now / golive
 bash scripts/probe-m365-unblock.sh
 # when secrets land:
@@ -46,8 +48,18 @@ bash scripts/probe-fly-llm-auth.sh          # expect llm_auth_ok
 # Settings → Connect Outlook → Enable Graph webhook
 bash scripts/verify-m365-ready.sh
 env -u ARIA_ALLOW_PARTIAL_M365_E2E -u ARIA_ALLOW_PARTIAL_LLM_E2E bash e2e-workflow-test.sh
+# expect step 3c PASS with provenance=live when quota allows; strict RESULT: PASS
 ```
 
+## Production gate (Fly)
+
+```bash
+bash scripts/print-fly-golive-status.sh   # deploy_status=tip_live
+bash scripts/print-fly-deploy-confirm.sh
+curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
+# step 3c should show PASS when running PARTIAL E2E; provenance / live=0 is quota
+ARIA_ALLOW_PARTIAL_M365_E2E=1 ARIA_ALLOW_PARTIAL_LLM_E2E=1 bash e2e-workflow-test.sh
+```
 ## Decisions made (don't relitigate)
 
 - Production = Fly only; ignore Vercel/GHA

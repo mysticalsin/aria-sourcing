@@ -24,7 +24,7 @@ export function FleetRosterStack({ children }: { children: React.ReactNode }) {
   let statusLabel = "No agents";
   let statusTone: "neutral" | "success" | "electric" | "warning" = "neutral";
   if (liveReady > 0) {
-    statusLabel = `${liveReady} ready to send`;
+    statusLabel = `${liveReady} live mailbox ready`;
     statusTone = "success";
   } else if (withMailbox > 0) {
     statusLabel = "Mailboxes linked";

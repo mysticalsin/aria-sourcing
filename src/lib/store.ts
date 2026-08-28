@@ -347,6 +347,15 @@ function refuseMockOutreachOnLiveTenant(live: boolean): boolean {
   return !live && supabaseEnabled && !demoLoginEnabled;
 }
 
+/** Client deterministic critics never claim "ready" — live approve still requires LLM critics. */
+function clientDraftQualityStatus(
+  status: "ready" | "needs_review" | "blocked",
+  criticsUsed: boolean,
+): "ready" | "needs_review" | "blocked" {
+  if (status === "ready" && !criticsUsed) return "needs_review";
+  return status;
+}
+
 /** Enterprise Mantu loop: persona is always Mantu voice; seat may only refine signature. */
 function enterpriseMantuVoice(seat?: Pick<AgentSeat, "signature"> | null): {
   persona: string;
@@ -1830,13 +1839,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         ).accepted;
         if (unique.length === 0) return prev;
         const dtoById = new Map(candidates.map((item) => [item.candidate.id, item.dto]));
-        const messages = unique.map((candidate) => {
+        const messages = unique.flatMap((candidate) => {
           const dto = dtoById.get(candidate.id)!;
           const voice = enterpriseMantuVoice();
-          const generated = dto.draftSubject && dto.draftBody
+          const hasAgentDraft = Boolean(dto.draftSubject && dto.draftBody);
+          // Live tenants: never invent mock outreach when the sourcing DTO omitted a draft.
+          if (!hasAgentDraft && refuseMockOutreachOnLiveTenant(false)) return [];
+          const generated = hasAgentDraft
             ? {
-                subject: dto.draftSubject,
-                body: dto.draftBody,
+                subject: dto.draftSubject!,
+                body: dto.draftBody!,
                 personalizationEvidence: candidate.recentActivity ? [candidate.recentActivity] : [],
                 channel: "Email" as const,
               }
@@ -1870,14 +1882,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             msg.status = "Needs Approval";
             msg.qualityStatus = "blocked";
           } else {
-            msg.qualityStatus = quality.status;
+            msg.qualityStatus = clientDraftQualityStatus(quality.status, false);
           }
           msg.qualityScore = quality.aggregateScore;
           // Deterministic-only path — never leave qualityCriticsUsed undefined
           // (approval preflight would claim bare "Quality ready").
           msg.qualityCriticsUsed = false;
           msg.htmlBody = mantuEmailHtmlWrapper(gated.body);
-          return msg;
+          return [msg];
         });
         added = unique.length;
         drafted = messages.length;
@@ -2158,7 +2170,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         msg.status = "Needs Approval";
         msg.qualityStatus = "blocked";
       } else {
-        msg.qualityStatus = quality.status;
+        msg.qualityStatus = clientDraftQualityStatus(quality.status, false);
       }
       msg.qualityScore = quality.aggregateScore;
       msg.qualityCriticsUsed = false;
@@ -2169,9 +2181,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       commit((prev) => {
         const next = { ...prev, outreach: [msg, ...prev.outreach] };
         const qualityNote =
-          quality.status === "ready"
-            ? `Quality ${quality.aggregateScore}/100 (deterministic critics).`
-            : `Quality ${quality.status} (${quality.aggregateScore}/100): ${quality.stages.flatMap((st) => st.reasons).join(", ") || "review"}.`;
+          msg.qualityStatus === "needs_review" && quality.status === "ready"
+            ? `Quality needs review (${quality.aggregateScore}/100) — deterministic critics only; multi-agent required for approve.`
+            : quality.status === "ready"
+              ? `Quality ${quality.aggregateScore}/100 (deterministic critics).`
+              : `Quality ${quality.status} (${quality.aggregateScore}/100): ${quality.stages.flatMap((st) => st.reasons).join(", ") || "review"}.`;
         return withActivity(
           next,
           makeActivity({
@@ -2259,7 +2273,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         msg.status = "Needs Approval";
         msg.qualityStatus = "blocked";
       } else {
-        msg.qualityStatus = quality.status;
+        msg.qualityStatus = clientDraftQualityStatus(quality.status, false);
       }
       msg.qualityScore = quality.aggregateScore;
       msg.qualityCriticsUsed = false;
@@ -2273,7 +2287,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           makeActivity({
             type: "outreach",
             title: `Follow-up drafted: ${candidate.name}`,
-            notes: `Sequence step ${due.nextSequenceStep} · ${Math.floor(due.daysSinceContact)}d of silence since last contact${live ? " (Aria live)" : ""}. Quality ${quality.status} (${quality.aggregateScore}/100).`,
+            notes: `Sequence step ${due.nextSequenceStep} · ${Math.floor(due.daysSinceContact)}d of silence since last contact${live ? " (Aria live)" : ""}. Quality ${msg.qualityStatus} (${quality.aggregateScore}/100).`,
             outcome: msg.status,
             campaignId: campaign.id,
             linkedEntityType: "candidate",
@@ -2344,7 +2358,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         msg.status = "Needs Approval";
         msg.qualityStatus = "blocked";
       } else {
-        msg.qualityStatus = quality.status;
+        msg.qualityStatus = clientDraftQualityStatus(quality.status, false);
       }
       msg.qualityScore = quality.aggregateScore;
       msg.qualityCriticsUsed = false;
@@ -2358,7 +2372,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           makeActivity({
             type: "outreach",
             title: `Re-contact drafted: ${candidate.name}`,
-            notes: `#Vivier re-engagement${candidate.silverMedalist ? " (Silver Medalist)" : ""}. Quality ${quality.status} (${quality.aggregateScore}/100). Awaiting approval${live ? " (Aria live)" : ""}.`,
+            notes: `#Vivier re-engagement${candidate.silverMedalist ? " (Silver Medalist)" : ""}. Quality ${msg.qualityStatus} (${quality.aggregateScore}/100). Awaiting approval${live ? " (Aria live)" : ""}.`,
             outcome: msg.status,
             campaignId: campaign.id,
             linkedEntityType: "candidate",
@@ -2526,7 +2540,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 body: gen.body,
                 personalizationEvidence: gen.personalizationEvidence,
                 status: prev.settings.humanApprovalGate ? "Needs Approval" : m.status,
-                qualityStatus: quality.status === "blocked" ? "blocked" : quality.status,
+                qualityStatus:
+                  quality.status === "blocked"
+                    ? "blocked"
+                    : clientDraftQualityStatus(quality.status, false),
                 qualityScore: quality.aggregateScore,
                 // Deterministic regenerate must not keep a stale multi-agent receipt
                 // from the autonomous draft cron (badge would lie).
@@ -3598,6 +3615,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   // gate; this function only ever adds to state.outreach, it never sends.
   const draftReplyResponse = useCallback(
     (replyId: string): OutreachMessage | null => {
+      // Keyword/deterministic draftResponse is not live LLM copy — refuse on live tenants.
+      if (refuseMockOutreachOnLiveTenant(false)) return null;
       const s = current();
       const reply = s.replies.find((r) => r.id === replyId);
       if (!reply || !reply.candidateId || !reply.draftResponse.trim()) return null;
@@ -3636,7 +3655,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         msg.status = "Needs Approval";
         msg.qualityStatus = "blocked";
       } else {
-        msg.qualityStatus = quality.status;
+        msg.qualityStatus = clientDraftQualityStatus(quality.status, false);
       }
       msg.qualityScore = quality.aggregateScore;
       msg.qualityCriticsUsed = false;
@@ -3650,7 +3669,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           makeActivity({
             type: "outreach",
             title: `Reply drafted: ${candidate.name}`,
-            notes: `${msg.channel} response drafted from the classified reply. Quality ${quality.status} (${quality.aggregateScore}/100). Awaiting approval before anything sends.`,
+            notes: `${msg.channel} response drafted from the classified reply. Quality ${msg.qualityStatus} (${quality.aggregateScore}/100). Awaiting approval before anything sends.`,
             outcome: msg.status,
             campaignId: campaign.id,
             linkedEntityType: "candidate",

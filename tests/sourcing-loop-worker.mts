@@ -755,6 +755,34 @@ test("createReplyClassificationModelClient fails over past auth-dead Kimi to Ope
   assert.ok(urls.some((u) => u.includes("openai")));
 });
 
+test("createReplyClassificationModelClient fails over to Anthropic Messages API", async () => {
+  const urls: string[] = [];
+  const client = createReplyClassificationModelClient(
+    {
+      KIMI_API_KEY: "k".repeat(32),
+      KIMI_BASE_URL: "https://api.kimi.example/v1",
+      ANTHROPIC_API_KEY: "a".repeat(32),
+    },
+    async (url) => {
+      urls.push(String(url));
+      if (String(url).includes("kimi")) {
+        return new Response("unauthorized", { status: 401 });
+      }
+      if (String(url).includes("anthropic")) {
+        return new Response(
+          JSON.stringify({ content: [{ type: "text", text: '{"intent":"INTERESTED"}' }] }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("unexpected", { status: 500 });
+    },
+  );
+  assert.ok(client);
+  const result = await client!.classifyReply({ system: "s", prompt: "p" });
+  assert.equal(result.ok, true);
+  assert.ok(urls.some((u) => u.includes("anthropic.com")));
+});
+
 test("calendar_book calls propose cron then records interview_proposed activity", async () => {
   const patches: Array<Record<string, unknown>> = [];
   const proposeCalls: Array<{ url: string; body: Record<string, unknown> }> = [];

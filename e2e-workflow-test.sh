@@ -100,13 +100,14 @@ validate_fly_e2e_url() {
 }
 validate_fly_e2e_url "APP_URL" "$APP_URL"
 validate_fly_e2e_url "KONG_URL" "$KONG_URL"
-# Hermes outreach drafts use AGENT_PROVIDER. Fly ships KIMI_API_KEY first — default
-# to kimi on production Fly so drafts do not fail closed looking for Anthropic.
-# /api/sourcing-agent resolves its own workspace/cloud provider (kimi is not a
-# sourcing tool-calling provider); this env is for hermes chat only.
+# Hermes outreach drafts use AGENT_PROVIDER. Do NOT hard-pin kimi on Fly —
+# a present-but-401 KIMI_API_KEY yields critics_required. Prefer an explicit
+# live provider from print-fly-e2e-env / probe-fly-llm-auth.
+# /api/sourcing-agent resolves its own workspace/cloud provider; this env is
+# for hermes chat only.
 if [ -z "${AGENT_PROVIDER:-}" ]; then
   if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ]; then
-    AGENT_PROVIDER=kimi
+    warn "AGENT_PROVIDER unset on Fly — hermes drafts need a live provider (probe-fly-llm-auth.sh)."
   else
     AGENT_PROVIDER=anthropic
   fi
@@ -125,10 +126,11 @@ default_model() {
     xai)       echo "grok-2-latest" ;;
     mistral)   echo "mistral-large-latest" ;;
     kimi)      echo "moonshot-v1-8k" ;;
+    deepseek)  echo "deepseek-chat" ;;
     *)         echo "" ;;
   esac
 }
-OUTREACH_MODEL="${AGENT_MODEL:-$(default_model "$AGENT_PROVIDER")}"
+OUTREACH_MODEL="${AGENT_MODEL:-$(default_model "${AGENT_PROVIDER:-}")}"
 
 # Candidate main language for outreach drafts (ISO 639-1). Fly enterprise defaults
 # to French — Mantu EU needs often require French copy even when the JD is English.
@@ -701,13 +703,14 @@ if grep -q 'propose-calendar-book' scripts/sourcing-loop-worker.mjs \
 else
   fail "calendar propose path missing interviewProposal or use_calendar_event_route guard."
 fi
-# Positive interest must always enqueue pre_call_propose (not only autopilot draft path).
-if grep -q 'Positive interest → pre-call propose first' scripts/sourcing-loop-worker.mjs \
+# Positive interest → pre_call_propose only after live model classification
+# (keyword deterministic_fallback must not invent successors).
+if grep -q 'classifier === "model"' scripts/sourcing-loop-worker.mjs \
   && grep -q 'inbound_classify->pre_call_propose' scripts/sourcing-loop-worker.mjs \
   && grep -q 'trigger: "inbound_classify"' scripts/sourcing-loop-worker.mjs; then
-  pass "inbound_classify positive interest → pre_call_propose always enqueued."
+  pass "inbound_classify positive interest → pre_call_propose only when classifier=model."
 else
-  fail "interest→pre_call_propose always-enqueue wiring missing from loop worker."
+  fail "interest→pre_call_propose model-only wiring missing from loop worker."
 fi
 
 # ===========================================================================
@@ -1294,12 +1297,15 @@ elif [ "$HTTP" = "403" ]; then
 elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_LLM_E2E:-}" = "1" ] \
   && { [ "$HTTP" = "503" ] || [ "$HTTP" = "000" ]; } \
   && [ "$(jq -r '.status // empty' "$APPROVE_RESP" 2>/dev/null)" = "critics_required" ]; then
+  E2E_LLM_GAP=1
   warn "Approve critics_required on Fly after retries — PARTIAL continuation (live LLM critics unavailable)."
 elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_LLM_E2E:-}" = "1" ] \
   && [ "$HTTP" = "000" ]; then
+  E2E_LLM_GAP=1
   warn "Approve timed out on Fly after retries — PARTIAL continuation (live LLM critics/transport unavailable)."
 elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_LLM_E2E:-}" = "1" ] \
   && [ "$HTTP" = "422" ]; then
+  E2E_LLM_GAP=1
   warn "Approve quality block (422) on Fly after retries — PARTIAL continuation (non-deterministic LLM critics)."
 else
   fail "Approve failed (HTTP $HTTP): $(head -c 300 "$APPROVE_RESP")"
@@ -1618,7 +1624,9 @@ printf "  ${C_G}%d passed${C_0}, ${C_R}%d failed${C_0}, ${C_Y}%d warnings${C_0}\
 if [ "$FAILS" -gt 0 ]; then
   printf "  ${C_R}RESULT: FAIL${C_0}\n"; exit 1
 elif [ "${MS_LIVE_GAP:-0}" = "1" ] \
+  || [ "${E2E_LLM_GAP:-0}" = "1" ] \
   || [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ] \
+  || [ "${ARIA_ALLOW_PARTIAL_LLM_E2E:-}" = "1" ] \
   || [ "${E2E_SKIP_APPROVE:-0}" = "1" ] \
   || [ "${E2E_SKIP_CRON:-0}" = "1" ] \
   || [ "${E2E_SKIP_SOURCING:-0}" = "1" ] \
@@ -1628,6 +1636,9 @@ elif [ "${MS_LIVE_GAP:-0}" = "1" ] \
     printf "  Skipped (Microsoft / calendar): confirmLive Teams book — no live Graph seat or owner ARIA_ALLOW_PARTIAL_M365_E2E=1.\n"
     printf "  MS still needed: Outlook connect, Graph webhook push ingest, live confirmLive book.\n"
   fi
+  if [ "${E2E_LLM_GAP:-0}" = "1" ] || [ "${ARIA_ALLOW_PARTIAL_LLM_E2E:-}" = "1" ]; then
+    printf "  Skipped (LLM): multi-agent critics / approve path — rotate live LLM key (ARIA_ALLOW_PARTIAL_LLM_E2E=1).\n"
+  fi
   if [ "${E2E_SKIP_APPROVE:-0}" = "1" ]; then
     printf "  Skipped (owner policy): approve/send outreach (ARIA_ALLOW_SKIP_APPROVE_E2E=1).\n"
   fi
@@ -1635,7 +1646,7 @@ elif [ "${MS_LIVE_GAP:-0}" = "1" ] \
     printf "  Skipped (env): authenticated draft/graph-stage cron probes (CRON_SECRET unset).\n"
   fi
   if [ "${E2E_STALE_FLY:-0}" = "1" ]; then
-    printf "  Stale Fly deploy: provenance=live stamp pending tip golive (a75bc57+); profile-URL candidates accepted.\n"
+    printf "  Stale Fly deploy: provenance=live stamp pending tip golive; profile-URL candidates accepted.\n"
   fi
   if [ "${E2E_SKIP_SOURCING:-0}" = "1" ]; then
     printf "  Skipped (quota): live sourcing-agent proof — daily limit on shared Fly tenant.\n"
@@ -1643,7 +1654,7 @@ elif [ "${MS_LIVE_GAP:-0}" = "1" ] \
   if [ "${E2E_SKIP_WEBHOOK:-0}" = "1" ]; then
     printf "  Skipped (owner policy): webhook hiring-need intake (ARIA_ALLOW_SKIP_WEBHOOK_E2E=1).\n"
   fi
-  if [ "${E2E_SKIP_M365:-0}" != "1" ] && [ "${E2E_SKIP_APPROVE:-0}" != "1" ] && [ "${E2E_SKIP_CRON:-0}" != "1" ]; then
+  if [ "${E2E_SKIP_M365:-0}" != "1" ] && [ "${E2E_SKIP_APPROVE:-0}" != "1" ] && [ "${E2E_SKIP_CRON:-0}" != "1" ] && [ "${E2E_LLM_GAP:-0}" != "1" ]; then
     printf "  MS gaps: microsoftOAuth live seat, Outlook connect, Graph webhook push ingest, confirmLive Teams book.\n"
   fi
   exit 0

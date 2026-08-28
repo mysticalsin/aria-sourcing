@@ -251,7 +251,7 @@ export function createReplyClassificationModelClient(environment, fetcher = fetc
     };
   }
 
-  // Prefer the same cloud stack as serverGenerateText (Kimi → DeepSeek → OpenAI).
+  // Prefer the same cloud stack as serverGenerateText (Kimi → Anthropic → DeepSeek → OpenAI).
   // A present-but-401 Kimi key fails closed here; callers must not invent INTERESTED successors.
   const openAiCompatible = [
     {
@@ -274,12 +274,22 @@ export function createReplyClassificationModelClient(environment, fetcher = fetc
     },
   ].filter((p) => validServiceToken(p.key));
 
-  if (openAiCompatible.length === 0) return null;
+  const anthropicKey = environment.ANTHROPIC_API_KEY ?? "";
+  // Don't pass a Moonshot/OpenAI model id into Anthropic when AGENT_PROVIDER isn't anthropic.
+  const anthropicModelRaw =
+    environment.AGENT_PROVIDER === "anthropic"
+      ? (environment.ARIA_REPLY_CLASSIFIER_MODEL || environment.AGENT_MODEL || "claude-sonnet-4-6")
+      : "claude-sonnet-4-6";
+  const anthropicModel = optionalModelName(anthropicModelRaw);
+  const hasAnthropic = validServiceToken(anthropicKey);
+
+  if (openAiCompatible.length === 0 && !hasAnthropic) return null;
 
   return {
     async classifyReply({ system, prompt }) {
       let lastReason = "model_unreachable";
-      for (const provider of openAiCompatible) {
+
+      async function tryOpenAiCompat(provider) {
         let response;
         try {
           response = await fetcher(provider.url, {
@@ -301,14 +311,13 @@ export function createReplyClassificationModelClient(environment, fetcher = fetc
           });
         } catch {
           lastReason = `${provider.name}_unreachable`;
-          continue;
+          return null;
         }
         if (!response.ok) {
           await response.body?.cancel().catch(() => undefined);
           lastReason = `${provider.name}_http_${response.status}`;
-          // Auth-dead / rate-limit: try next provider.
           if (response.status === 401 || response.status === 403 || response.status === 429 || response.status >= 500) {
-            continue;
+            return null;
           }
           return { ok: false, reason: lastReason };
         }
@@ -320,6 +329,63 @@ export function createReplyClassificationModelClient(environment, fetcher = fetc
         } catch (cause) {
           lastReason = cause instanceof Error ? cause.message : `${provider.name}_response_invalid`;
         }
+        return null;
+      }
+
+      // Order: Kimi → Anthropic → DeepSeek → OpenAI (match serverGenerateText preference).
+      const kimi = openAiCompatible.find((p) => p.name === "kimi");
+      if (kimi) {
+        const hit = await tryOpenAiCompat(kimi);
+        if (hit) return hit;
+      }
+
+      if (hasAnthropic) {
+        let response;
+        try {
+          response = await fetcher("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "x-api-key": anthropicKey,
+              "anthropic-version": "2023-06-01",
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              model: anthropicModel,
+              max_tokens: 1024,
+              temperature: 0,
+              system,
+              messages: [{ role: "user", content: prompt }],
+            }),
+            signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+          });
+        } catch {
+          lastReason = "anthropic_unreachable";
+          response = null;
+        }
+        if (response) {
+          if (!response.ok) {
+            await response.body?.cancel().catch(() => undefined);
+            lastReason = `anthropic_http_${response.status}`;
+            if (!(response.status === 401 || response.status === 403 || response.status === 429 || response.status >= 500)) {
+              return { ok: false, reason: lastReason };
+            }
+          } else {
+            try {
+              const body = await readBoundedJson(response, MODEL_RESPONSE_BYTES);
+              const block = Array.isArray(body?.content) ? body.content.find((c) => c?.type === "text") : null;
+              const text = typeof block?.text === "string" ? block.text : "";
+              if (text.trim()) return { ok: true, text };
+              lastReason = "anthropic_response_empty";
+            } catch (cause) {
+              lastReason = cause instanceof Error ? cause.message : "anthropic_response_invalid";
+            }
+          }
+        }
+      }
+
+      for (const provider of openAiCompatible.filter((p) => p.name !== "kimi")) {
+        const hit = await tryOpenAiCompat(provider);
+        if (hit) return hit;
       }
       return { ok: false, reason: lastReason };
     },

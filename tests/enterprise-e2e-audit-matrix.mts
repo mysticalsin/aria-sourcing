@@ -691,8 +691,16 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /ARIA_ALLOW_PARTIAL_LLM_E2E/.test(readFileSync("e2e-workflow-test.sh", "utf8"))
         && /ARIA_ALLOW_PARTIAL_LLM_E2E/.test(readFileSync("scripts/run-enterprise-e2e-partial.sh", "utf8"))
         && /classifier !== "model"|classifier === "model"/.test(worker)
+        && /ANTHROPIC_API_KEY|anthropic\.com\/v1\/messages/.test(worker)
         && /KIMI_API_KEY/.test(worker)
         && /createReplyClassificationModelClient/.test(worker)
+        && /E2E_LLM_GAP|ARIA_ALLOW_PARTIAL_LLM_E2E/.test(readFileSync("e2e-workflow-test.sh", "utf8"))
+        && /clientDraftQualityStatus|refuseMockOutreachOnLiveTenant\(false\)/.test(
+          readFileSync("src/lib/store.ts", "utf8"),
+        )
+        && /qualityCriticsUsed === true/.test(
+          readFileSync("src/components/outreach/outreach-message-card.tsx", "utf8"),
+        )
         && /serverGenerateText/.test(readFileSync("src/app/api/hermes/chat/route.ts", "utf8"))
         && /tryLoopTaskCloudFailover/.test(readFileSync("src/app/api/hermes/chat/route.ts", "utf8"))
         && /"deepseek"/.test(readFileSync("src/lib/ai/server-generate.ts", "utf8"))

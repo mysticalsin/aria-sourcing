@@ -343,16 +343,21 @@ export function OutreachMessageCard({
             {message.qualityStatus ? (
               <Badge
                 tone={
-                  message.qualityStatus === "ready"
+                  message.qualityStatus === "ready" && message.qualityCriticsUsed === true
                     ? "success"
-                    : message.qualityStatus === "needs_review"
-                      ? "warning"
-                      : "danger"
+                    : message.qualityStatus === "blocked"
+                      ? "danger"
+                      : "warning"
                 }
                 size="sm"
               >
-                Quality {message.qualityScore ?? "—"}/100
-                {message.qualityCriticsUsed ? " · multi-agent" : ""}
+                {message.qualityStatus === "ready" && message.qualityCriticsUsed === true
+                  ? `Quality ${message.qualityScore ?? "—"}/100 · multi-agent`
+                  : message.qualityStatus === "blocked"
+                    ? `Quality blocked ${message.qualityScore ?? "—"}/100`
+                    : `Quality needs review ${message.qualityScore ?? "—"}/100${
+                        message.qualityCriticsUsed ? " · multi-agent" : " · deterministic"
+                      }`}
               </Badge>
             ) : null}
             {(actionable || pendingManual) && (

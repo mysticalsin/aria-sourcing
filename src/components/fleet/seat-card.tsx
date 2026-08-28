@@ -267,7 +267,7 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
 
   const headerStatus =
     isLive && seat.domainVerified
-      ? "Live · sending"
+      ? "Live · mailbox"
       : isLive
         ? "Live · domain pending"
         : oauthLive || apiKeyMailbox
