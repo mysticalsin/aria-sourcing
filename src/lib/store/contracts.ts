@@ -568,6 +568,18 @@ export interface HermesActions {
   disconnectDust: () => Promise<{ ok: boolean; error?: string }>;
   runDustTask: (task: DustTask, message: string) => Promise<{ ok: boolean; text?: string; agentId?: string; error?: string }>;
 
+  // Cloudflare Workers AI (agent LLM)
+  testCloudflareConnection: (
+    accountId: string,
+    apiToken: string,
+  ) => Promise<{ ok: boolean; models?: string[]; error?: string }>;
+  connectCloudflare: (
+    accountId: string,
+    apiToken: string,
+    defaultModel: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  disconnectCloudflare: () => Promise<{ ok: boolean; error?: string }>;
+
   // Saved models
   addModel: (m: Omit<SavedModel, "id">) => SavedModel;
   updateModel: (id: string, patch: Partial<SavedModel>) => void;

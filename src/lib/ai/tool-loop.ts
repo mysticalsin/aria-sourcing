@@ -440,6 +440,8 @@ export async function runOpenAiWithTools(args: {
   maxRounds?: number;
   timeoutMs?: number;
   beforeExternalCall?: () => Promise<boolean>;
+  /** Override chat/completions URL (Cloudflare Workers AI account-scoped endpoint). */
+  baseUrl?: string;
 }): Promise<{ ok: boolean; text?: string; reason?: string; toolCalls: ToolCallRecord[] }> {
   const { provider, model, system, prompt, key, servers } = args;
   const maxRounds = boundedPositiveInteger(args.maxRounds, 4, MAX_TOOL_ROUNDS);
@@ -449,7 +451,7 @@ export async function runOpenAiWithTools(args: {
     MAX_TOOL_LOOP_TIMEOUT_MS,
   );
   const deadlineAt = Date.now() + timeoutMs;
-  const url = CLOUD_ENDPOINT[provider];
+  const url = args.baseUrl?.trim() || CLOUD_ENDPOINT[provider];
   const toolCallLog: ToolCallRecord[] = [];
   let toolCallAttempts = 0;
 
