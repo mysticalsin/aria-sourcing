@@ -1,70 +1,53 @@
 ---
 project: MSourcing / ARIA
-shift: 216
+shift: 217
 agent: cursor-cloud
-updated: 2026-08-28T01:20Z
-status: both-e2e-fails-deploy-lag-awaiting-owner-remint-tip-8f20610
+updated: 2026-08-28T01:55Z
+status: hermes-e2e-plan-shipped-awaiting-owner-deploy-remint
 ---
 
-# Handoff — Shift 216
+# Handoff — Shift 217
 
 ## Current state
 
-- **Branch tip (git):** `cursor/enterprise-autopilot-b91d` **`8f20610`** (`8f20610a3552a18011e0fa9566e2944033570e56`)
-- **Live Fly `aria-mantu-app`:** **`e46912691e9d2ad400dbb5a37f3e68047649727e`** / mig **0068** — **43 commits behind tip**
-- **Deploy confirm:** `/tmp/owner-deploy-confirm.env` is for **`e469126`** — **NO MATCH** vs tip HEAD **`8f20610`** (did **not** invent; did **not** deploy)
-- **Timer:** `enterprise-deploy-confirm-recheck` re-armed one-shot **900s** (`sub_787af4b4`)
-- Microsoft **SKIPPED** — E2E stays **PARTIAL** when MS skipped (only when FAILS=0)
-- Goal `goal-2026-07-08-aria-enterprise-ready` **IN_PROGRESS** (do not complete)
-- **PR #32** CLOSED — draft PR create blocked (`Resource not accessible by integration`)
+- **Branch tip:** `cursor/enterprise-autopilot-b91d` (Hermes E2E plan implementation pending push)
+- **Live Fly:** still **`e469126`** — deploy confirm stale for **`8950b21`** (not invented; not deployed)
+- **Test gate:** `npx tsc --noEmit && npm test` green locally; audit matrix **54/54**
+- **Microsoft SKIPPED** — goal stays **IN_PROGRESS**
+- **PR #32** closed — integration cannot open new PRs
 
 ## Done this shift
 
-1. Confirmed HANDOFF stale — tip advanced `d7d7598` → **`8f20610`**; live still **`e469126`**
-2. Subscriptions empty → re-armed one-shot timer `enterprise-deploy-confirm-recheck` (900s)
-3. Requested owner setup action `mint-fly-deploy-confirm-8f20610` — remint for current HEAD
-4. No code changes — both live E2E fails remain deploy-lag (provenance `a75bc57` not on live)
-5. Draft PR create via `gh` failed — same integration permission block as ManagePullRequest
-
-## Live E2E failure analysis (build `e469126`, 34 pass / 2 fail / 2 warn)
-
-| # | Step | Message | Root cause | Fix/defer |
-|---|------|---------|------------|-----------|
-| 1 | **3c** | `sourcing-agent (HTTP 200, ok=true, n=2, live=0)` | Live build omits `provenance=live` on HTTP DTOs | **Defer deploy-lag** — fixed at tip `a75bc57`, not on `e469126` |
-| 2 | **3 cascade** | `Fly enterprise E2E requires a live sourced candidate` | Step 3c fail → `cand0.json` null → fail-closed | **Defer cascade** — resolves when #1 deploys |
-
-**Post-deploy expectation:** after owner remint + golive to tip, re-run with `ARIA_ALLOW_PARTIAL_M365_E2E=1 ARIA_ALLOW_SKIP_APPROVE_E2E=1` → step 3c should show `live=n` when `n>0`; with MS skipped only → **RESULT: PARTIAL**.
+1. **H6 profile multiplexing:** `resolveHermesProfilePrefix`, `buildHermesSessionKey`, `buildHermesUpstreamPath`, `hermesUpstreamHeaders` in `hermes-proxy.ts`; wired in `hermes/chat` + `hermes/proxy`
+2. **Loop Hermes router:** `src/lib/ai/loop-llm.ts` (`resolveLoopLlm`) — draft cron + `classify-inbound-reply` cron prefer Hermes when `HERMES_API_URL`+key; worker `createReplyClassificationModelClient` Hermes path
+3. **Pipeline pre-call → first interview:** `pre_call_propose` + `first_interview_book` in `pipeline-transitions.json`, worker handlers, graph intents `pre_call_only`/`interview_only`; mig **0069** adds loop kinds
+4. **60 languages:** `BUSINESS_LANGUAGE_CATALOG` (~60 ISO), `LocaleContext` on `JobAnalysis`, `extractLocaleContext`, locale in `buildOutreachPrompt` + draft cron
+5. **Schedules panel:** read-only mirror via `GET /api/cron/jobs`
+6. **Tests:** `hermes-profile-multiplexing`, `locale-propagation`; audit matrix extended for Hermes + locale chain
+7. **Phase 0:** documented deploy blocker — owner must remint confirm for current HEAD before golive
 
 ## Blockers
 
-- Owner must mint deploy confirm for current tip HEAD **`8f20610`** before Fly redeploy
-- Live still on `e469126` — provenance fix not deployed until remint + golive
-- Microsoft still skipped — no Outlook/Teams confirmLive PASS
-- Draft PR create blocked by GitHub integration permissions
+- Owner deploy confirm for **`8950b21`** (or newer tip after push) before Fly redeploy
+- H4/H5 upstream Hermes pin still needs owner sign-off (dedicated MSourcing install documented in code comments)
+- Microsoft skipped — full Teams E2E cannot complete
 
 ## Next steps
 
-1. Owner: mint confirm for tip HEAD (`print-fly-deploy-confirm.sh`); keep loop machine started
-2. Timer fires ~15m — recheck confirm vs HEAD; deploy only if match
-3. After redeploy: `/api/ready` SHA = tip; re-run live E2E — expect 3c PASS when n>0; RESULT: PARTIAL (MS gap only)
-4. Continue live dry-run: source → top10 → Mantu draft → multi-agent quality (no Approve/send)
+1. Owner: `bash scripts/print-fly-deploy-confirm.sh` → `/tmp/owner-deploy-confirm.env` → golive
+2. After deploy: `/api/ready` SHA = tip; live E2E with `ARIA_ALLOW_PARTIAL_M365_E2E=1 ARIA_ALLOW_SKIP_APPROVE_E2E=1` → expect **PARTIAL** (MS gap only)
+3. Owner H4 sign-off for dedicated Hermes runtime + H5 pin when ready for production memory
 
 ## Decisions made (don't relitigate)
 
-- Owner closed #32 — accept; tip push without reopen
-- Owner skip Microsoft — still in force
-- No Approve/send outreach in autonomous E2E — use `ARIA_ALLOW_SKIP_APPROVE_E2E=1`
-- Force Dry-run when no real mailbox — regardless of HeyReach/LinkedIn live toggles
-- Never `ARIA_ALLOW_SKIP_LIVE_CALENDAR=1` pretending full PASS — PARTIAL only
-- `graphStage` belongs on job results / LangGraph checkpoints, never enqueue payloads
-- Local gate = CI authority; never invent deploy confirm
-- Autonomous loop drafts always land Needs Approval + dryRun until human Approve/send
-- sourcing-agent HTTP DTOs must expose `provenance=live` for every real candidate
-- Second E2E FAIL on live `e469126` is cascade from 3c — not a separate code defect
+- Skip Microsoft; no Approve/send in autonomous E2E
+- Never invent deploy confirm
+- Positive interest chain: **pre_call_propose → first_interview_book** (dry-run calendar); `calendar_book` retained as legacy alias
+- Dedicated Hermes install recommended over shared Mina fork until H4 complete
+- Autonomous drafts: Needs Approval + dryRun always
 
 ## Watch out
 
-- Stale confirm for `e469126` will refuse tip HEAD — remint via `print-fly-deploy-confirm.sh`
-- Timer dedupes by name — list subscriptions before re-arming
-- Provenance fix is wire-format only — zero candidates from unavailable providers still fail closed
-- RESULT: PARTIAL requires FAILS=0 — sourcing failures yield RESULT: FAIL even with MS skip
+- `graphStage` never on enqueue payloads
+- Hermes session keys cap at 256 chars; profile prefix `ws-{workspaceUuid}`
+- Live E2E provenance fix still deploy-lag until golive
