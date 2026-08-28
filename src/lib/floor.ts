@@ -2,12 +2,14 @@ import type { AgentSeat, HermesState } from "./types";
 import type { Tone } from "./utils";
 import { roleProfile } from "./roles";
 import { applyConfidentiality, hasOutreachPurpose } from "./confidential";
+import { bookingNeedsCalendar } from "./booking-status";
 import { seatHealthStatus, warmupStage } from "./fleet";
 
 /* ============================================================================
-   Operations-floor model — derives, deterministically, what each agent is
-   "working on" right now from real workspace state (campaigns, ledger, health).
+   Operations-floor model — derives what each agent is working on from real
+   workspace state (pending drafts, interested candidates, sourced pool).
    Stable across renders (no time-based flicker); liveliness comes from CSS.
+   Never invent busy work via seat-id hash.
    ========================================================================== */
 
 export type AgentActivityState = "sourcing" | "outreach" | "booking" | "warming" | "idle" | "paused";
@@ -61,45 +63,70 @@ export function agentActivity(seat: AgentSeat, state: HermesState, now = Date.no
   const campaigns = state.campaigns.filter((c) => !["Filled", "Paused"].includes(c.status));
   if (campaigns.length === 0) return make("idle", "Standing by", "No active campaigns");
 
-  const h = hash(seat.id);
-  const campaign = campaigns[h % campaigns.length];
-  const cands = state.candidates.filter((c) => c.campaignId === campaign.id);
-  const mode = h % 3;
-
   const maskName = (name: string, stage: string): string =>
     state.settings.confidentialityMode && !hasOutreachPurpose(stage as never)
       ? applyConfidentiality({ name } as never, { confidentialityMode: true, reveal: false }).name
       : name;
 
-  if (mode === 0) {
+  const campaignIds = new Set(campaigns.map((c) => c.id));
+  const h = hash(seat.id);
+
+  // Real pending outreach awaiting human approval (not fabricated busy work).
+  const pendingOutreach = state.outreach.filter(
+    (m) =>
+      campaignIds.has(m.campaignId)
+      && (m.status === "Needs Approval" || m.status === "Draft" || m.status === "Pending Manual Send"),
+  );
+  if (pendingOutreach.length > 0) {
+    const msg = pendingOutreach[h % pendingOutreach.length]!;
+    const campaign = campaigns.find((c) => c.id === msg.campaignId) ?? campaigns[0]!;
+    const focus = state.candidates.find((c) => c.id === msg.candidateId);
+    return make(
+      "outreach",
+      msg.status === "Pending Manual Send" ? "Awaiting manual send" : "Outreach awaiting approval",
+      campaign.title,
+      focus ? maskName(focus.name, focus.stage) : null,
+      true,
+    );
+  }
+
+  // Interested candidates that still need a Teams/calendar URL (needs calendar).
+  const needsBook = state.candidates.filter(
+    (c) =>
+      campaignIds.has(c.campaignId)
+      && c.stage === "Interested"
+      && (!c.booking || bookingNeedsCalendar(c.booking)),
+  );
+  if (needsBook.length > 0) {
+    const focus = needsBook[h % needsBook.length]!;
+    const campaign = campaigns.find((c) => c.id === focus.campaignId) ?? campaigns[0]!;
+    return make(
+      "booking",
+      "Needs calendar — confirmLive",
+      campaign.title,
+      maskName(focus.name, focus.stage),
+      true,
+    );
+  }
+
+  // Sourced pool awaiting contact for an active campaign.
+  const sourced = state.candidates.filter(
+    (c) => campaignIds.has(c.campaignId) && c.stage === "Sourced",
+  );
+  if (sourced.length > 0) {
+    const focus = sourced[h % sourced.length]!;
+    const campaign = campaigns.find((c) => c.id === focus.campaignId) ?? campaigns[0]!;
     const role = roleProfile(campaign.jobAnalysis).label.toLowerCase();
-    const focus = cands.find((c) => c.stage === "Sourced") ?? cands[h % Math.max(1, cands.length)];
     return make(
       "sourcing",
       `Sourcing ${role}`,
       campaign.title,
-      focus ? maskName(focus.name, focus.stage) : null,
+      maskName(focus.name, focus.stage),
       true,
     );
   }
-  if (mode === 1) {
-    const focus = cands.find((c) => c.stage === "Contacted") ?? cands[h % Math.max(1, cands.length)];
-    return make(
-      "outreach",
-      "Drafting personalized outreach",
-      campaign.title,
-      focus ? maskName(focus.name, focus.stage) : null,
-      true,
-    );
-  }
-  const focus = cands.find((c) => c.stage === "Interested" || c.stage === "Booked") ?? cands[0];
-  return make(
-    "booking",
-    "Coordinating interviews",
-    campaign.title,
-    focus ? maskName(focus.name, focus.stage) : null,
-    true,
-  );
+
+  return make("idle", "Standing by", "No pending drafts, bookings, or sourced leads");
 }
 
 export interface FloorRollup {

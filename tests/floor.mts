@@ -1,6 +1,7 @@
 import { agentActivity, floorRollup } from "../src/lib/floor";
 import { buildSeedState } from "../src/lib/seed";
 import { SEED_NOW } from "../src/lib/utils";
+import type { Candidate, OutreachMessage } from "../src/lib/types";
 
 let pass = 0,
   fail = 0;
@@ -19,9 +20,9 @@ const seat = (id: string) => s.seats.find((x) => x.id === id)!;
 const NOW = SEED_NOW.getTime();
 
 const maya = agentActivity(seat("seat_maya"), s, NOW);
-ok("warmed active agent is working", ["sourcing", "outreach", "booking"].includes(maya.state));
-ok("working agent has a label", maya.label.length > 0);
-ok("working agent is busy (animates)", maya.busy === true);
+ok("warmed agent stands by when seed has no pending work", maya.state === "idle");
+ok("standing-by label is honest", /Standing by/i.test(maya.label));
+ok("idle agent is not busy", maya.busy === false);
 ok("contacted count is a number", typeof maya.contacted === "number" && maya.contacted >= 0);
 
 const aisha = agentActivity(seat("seat_aisha"), s, NOW); // warmup day ~5
@@ -33,6 +34,33 @@ ok("high-bounce agent is paused", lucas.state === "paused");
 // determinism: same inputs → same activity
 const maya2 = agentActivity(seat("seat_maya"), s, NOW);
 ok("activity is deterministic", maya.label === maya2.label && maya.detail === maya2.detail);
+
+// Real pending outreach → busy outreach (never hash-fabricated busy work)
+const campaign = s.campaigns.find((c) => c.status === "Sourcing")!;
+const stubCand = {
+  id: "cand_floor_test",
+  campaignId: campaign.id,
+  name: "Floor Test",
+  stage: "Sourced",
+} as Candidate;
+const stubMsg = {
+  id: "msg_floor_test",
+  campaignId: campaign.id,
+  candidateId: stubCand.id,
+  status: "Needs Approval",
+  channel: "Email",
+  subject: "Hello",
+  body: "Hi",
+} as OutreachMessage;
+const withWork = {
+  ...s,
+  candidates: [...s.candidates, stubCand],
+  outreach: [...s.outreach, stubMsg],
+};
+const mayaBusy = agentActivity(seat("seat_maya"), withWork, NOW);
+ok("pending approval drives outreach activity", mayaBusy.state === "outreach");
+ok("pending approval is busy", mayaBusy.busy === true);
+ok("outreach label mentions approval", /awaiting approval/i.test(mayaBusy.label));
 
 const roll = floorRollup(s.seats, s);
 ok("rollup total = seat count", roll.total === s.seats.length);

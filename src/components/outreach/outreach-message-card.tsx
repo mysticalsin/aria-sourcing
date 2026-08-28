@@ -18,6 +18,7 @@ import {
 import { useActions, useCandidate, useCampaign, useSettings, useSeats, useIntegrations } from "@/lib/store";
 import { checkOutreachApproval } from "@/lib/rules";
 import { recordedCandidateLawfulBasis } from "@/lib/candidate-lawful-basis";
+import { isRealSendFact } from "@/lib/metrics";
 import {
   effectiveDryRunMode,
   listConnectedMailboxes,
@@ -495,7 +496,9 @@ export function OutreachMessageCard({
                   ? "Approved under dry-run — nothing contacted"
                   : approvedPendingSend
                     ? "Approved, ready to send"
-                    : "Approved / Sent"}
+                    : isRealSendFact(message)
+                      ? "Approved / Sent"
+                      : "Queued / awaiting delivery"}
               </p>
               <p className="mt-0.5 text-success/80">
                 {message.approvedBy ? `Approved by ${message.approvedBy}` : "Approved"}
@@ -504,6 +507,9 @@ export function OutreachMessageCard({
                   ? " · Dry-run is on: this is a rehearsal queue, not a live send."
                   : ""}
                 {approvedPendingSend ? " · Review done. Click Send to deliver." : ""}
+                {!message.dryRun && !approvedPendingSend && !isRealSendFact(message)
+                  ? " · Scheduled in queue — not a completed live delivery yet."
+                  : ""}
               </p>
             </div>
             {approvedPendingSend && (

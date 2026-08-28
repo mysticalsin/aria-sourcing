@@ -1,6 +1,7 @@
 /**
  * Interview prep dispatch — enqueue after a live calendar booking is confirmed.
- * Prep/confirmation emails enter the approval queue; nothing sends without review.
+ * Job kind remains `interview_prep_send` (0071 DB contract) but the handler only
+ * drafts Needs Approval / dryRun outreach — nothing sends without human review.
  */
 
 export type InterviewPrepEnqueueDecision =

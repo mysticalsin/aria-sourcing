@@ -305,7 +305,9 @@ export function EmailConnectionsPanel() {
             </p>
           </div>
           <Badge tone={connections.length ? "success" : "neutral"} size="sm" dot>
-            {connections.length ? `${connections.length} connected` : "Not connected"}
+            {connections.length
+              ? `${connections.length} mailbox token${connections.length === 1 ? "" : "s"}`
+              : "Not connected"}
           </Badge>
         </div>
 

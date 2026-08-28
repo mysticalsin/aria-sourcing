@@ -959,7 +959,14 @@ export function Chatbox() {
       case "done":
         return (
           <div className="flex flex-wrap gap-2">
-            <Chip onClick={() => doneOption("Email me a copy", "Sent. Keep an eye on your inbox shortly.")}>
+            <Chip
+              onClick={() =>
+                doneOption(
+                  "Email me a copy",
+                  "No email was sent — inbox delivery isn't wired from this chat yet. Your application is saved; a recruiter can follow up from Outreach.",
+                )
+              }
+            >
               Email me a copy
             </Chip>
             <Chip onClick={() => doneOption("Show similar roles", "I'll line up a few similar openings for you.")}>

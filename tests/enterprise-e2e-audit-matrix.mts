@@ -316,6 +316,10 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /no live probe/.test(readFileSync("src/lib/integrations.ts", "utf8"))
         && /candidateIsBooked|bookingNeedsCalendar/.test(readFileSync("src/lib/hiring-geography.ts", "utf8"))
         && /isRealSendFact\(m\)/.test(readFileSync("src/components/trust/roi-calculator.tsx", "utf8"))
+        && /Standing by/.test(readFileSync("src/lib/floor.ts", "utf8"))
+        && /No email was sent/.test(readFileSync("src/components/careers/chatbox.tsx", "utf8"))
+        && /Queued \/ awaiting delivery/.test(readFileSync("src/components/outreach/outreach-message-card.tsx", "utf8"))
+        && /tag="ACTIVE"/.test(readFileSync("src/components/floor3d/retro/RetroOfficeScene.tsx", "utf8"))
       );
     },
   },
