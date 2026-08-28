@@ -901,6 +901,12 @@ elif [ "$HTTP" = "200" ] && [ "$AG_OK" = "true" ] && [ "$AG_N" -gt 0 ] && [ "$AG
   pass "Agent returned $AG_N candidates with real profile URLs on stale Fly (provenance stamp pending tip deploy)."
   E2E_STALE_FLY=1
   jq '.candidates[0]' "$RESP" > "$WORK/cand0.json"
+elif [ "$HTTP" = "429" ] && [ "$AG_CODE" = "SOURCING_AGENT_RATE_LIMITED" ] \
+  && [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ]; then
+  warn "sourcing-agent daily live limit reached on Fly — skipping live candidate proof (shared quota, not a code regression)."
+  E2E_SKIP_SOURCING=1
+  echo 'null' > "$WORK/cand0.json"
+  AG_OK="skipped"
 else
   # Report the server's OWN code and error. The old message asserted a missing
   # provider key regardless of cause, which mis-diagnosed a schema rejection.
@@ -913,12 +919,16 @@ CAND_ID=$(jq -r 'if type=="object" and .id then .id else empty end' "$WORK/cand0
 CAND_LI=$(jq -r '(.linkedinUrl // .githubUrl // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null)
 CAND_EMAIL=$(jq -r '(.email // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null)
 if [ -z "$CAND_ID" ]; then
-  if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E:-}" != "1" ]; then
+  if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E:-}" != "1" ] && [ "${E2E_SKIP_SOURCING:-0}" != "1" ]; then
     fail "Fly enterprise E2E requires a live sourced candidate (no synthetic cand-e2e). Set ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E=1 only for partial runs."
     CAND_ID="cand-e2e-$$"
   else
     CAND_ID="cand-e2e-$$"
-    warn "No live candidate — using synthetic id for approve/no-send assertions only."
+    if [ "${E2E_SKIP_SOURCING:-0}" = "1" ]; then
+      warn "No live candidate — sourcing skipped (quota); synthetic id for downstream dry-run only."
+    else
+      warn "No live candidate — using synthetic id for approve/no-send assertions only."
+    fi
   fi
 fi
 [ -n "$CAND_LI" ] || CAND_LI="https://www.linkedin.com/in/e2e-candidate"
@@ -1292,6 +1302,9 @@ elif [ "${MS_LIVE_GAP:-0}" = "1" ] || [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1"
   fi
   if [ "${E2E_STALE_FLY:-0}" = "1" ]; then
     printf "  Stale Fly deploy: provenance=live stamp pending tip golive (a75bc57+); profile-URL candidates accepted.\n"
+  fi
+  if [ "${E2E_SKIP_SOURCING:-0}" = "1" ]; then
+    printf "  Skipped (quota): live sourcing-agent proof — daily limit on shared Fly tenant.\n"
   fi
   if [ "${E2E_SKIP_M365:-0}" != "1" ] && [ "${E2E_SKIP_APPROVE:-0}" != "1" ] && [ "${E2E_SKIP_CRON:-0}" != "1" ]; then
     printf "  MS gaps: microsoftOAuth live seat, Outlook connect, Graph webhook push ingest, confirmLive Teams book.\n"

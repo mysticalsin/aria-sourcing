@@ -1,29 +1,27 @@
 ---
 project: MSourcing / ARIA
-shift: 232
+shift: 233
 agent: cursor-cloud
-updated: 2026-08-28T03:56Z
-status: gate-green-audit-56-pre-call-route-fix
+updated: 2026-08-28T04:15Z
+status: gate-green-pr33-partial-e2e-quota-honesty
 ---
 
-# Handoff — Shift 232
+# Handoff — Shift 233
 
 ## Current state
 
-- **Branch tip:** `cursor/enterprise-autopilot-b91d` (pending commit)
+- **Branch tip:** `cursor/enterprise-autopilot-b91d` **`d8ba7fd`** (+ pending e2e quota fix)
 - **Live Fly:** **`e469126`** (migration **0068**) — tip migration **0069**
-- **Deploy:** probe `bash scripts/print-fly-golive-status.sh` → `deploy_status=stale_owner_remint_required`, `confirm_stale_for_tip=yes`
-- **M365:** `m365_secrets_missing=6`
-- **Test gate:** green
+- **Deploy:** probe `bash scripts/print-fly-golive-status.sh` → `stale_owner_remint_required`, `confirm_stale_for_tip=yes`, `m365_secrets_missing=6`
+- **Test gate:** green (`npx tsc --noEmit && npm test`)
 - **Audit matrix:** **56/56**
-- **Live E2E:** PARTIAL 35 pass, 0 fail, 3 warn
-- **PR:** [#33](https://github.com/mysticalsin/aria-sourcing/pull/33) (**PR #32 closed**)
+- **Live E2E:** `bash scripts/run-enterprise-e2e-partial.sh` → **PARTIAL 34 pass, 0 fail, 4 warn**
+- **PR:** [#33](https://github.com/mysticalsin/aria-sourcing/pull/33) enterprise autopilot (**PR #32 closed**, supersedes #29–#31)
+- **Separate:** [#34](https://github.com/mysticalsin/aria-sourcing/pull/34) Cloudflare Workers AI (not on this branch)
 
 ## Done this shift
 
-- **Fix:** `recruiting-graph-stage` route now accepts `pre_call_only` + `interview_only` intents (worker was sending them; route returned 400 → pre_call/first_interview jobs failed on deployed Fly)
-- **Test:** loop-authority-contract pins route enum (32 tests)
-- **Relay:** HANDOFF audit strings restored (56/56)
+- E2E: `SOURCING_AGENT_RATE_LIMITED` (HTTP 429) → honest PARTIAL skip when `ARIA_ALLOW_PARTIAL_M365_E2E=1` (shared Fly quota, not code regression)
 
 ## Blockers
 
@@ -33,15 +31,16 @@ status: gate-green-audit-56-pre-call-route-fix
 ## Next steps
 
 1. `bash scripts/print-fly-deploy-confirm.sh` → `/tmp/owner-deploy-confirm.env`
-2. `/tmp/owner-microsoft.env` → `bash scripts/fly-enterprise-golive-when-ready.sh`
-3. `bash scripts/run-enterprise-e2e-partial.sh` — **expect step 3c PASS** after golive
+2. `bash scripts/fly-enterprise-golive-when-ready.sh`
+3. `bash scripts/run-enterprise-e2e-partial.sh` — **expect step 3c PASS** after golive; drop `ARIA_ALLOW_STALE_FLY_E2E=1`
 
 ## Decisions made (don't relitigate)
 
 - Fly = production; ignore Vercel CI
 - Never invent deploy confirm
+- PARTIAL E2E: quota skip is explicit, never pretends full PASS
 
 ## Watch out
 
-- Pre-call/interview checkpoint fix needs tip deploy to reach live Fly
-- step 3c FAIL on stale Fly when `live=0`; drop stale flag after golive
+- Repeated E2E on live Fly may hit daily sourcing quota → PARTIAL with quota skip (expected)
+- Cloudflare integration is on PR #34, not merged into enterprise branch yet

@@ -328,6 +328,6 @@
   ],
   "metrics_at_completion": null,
   "retro_id": null,
-  "last_shift_note": "2026-08-28T03:56Z shift 232: fix recruiting-graph-stage pre_call_only/interview_only enum (was HTTP 400 on deployed Fly). Audit 56/56, gate green. Golive + M365 still owner-gated.",
-  "updated_at": "2026-08-28T03:56:00+00:00"
+  "last_shift_note": "2026-08-28T04:15Z shift 233: E2E PARTIAL honors sourcing daily quota (429) on shared Fly. Gate green, audit 56/56. Golive + M365 still owner-gated.",
+  "updated_at": "2026-08-28T04:15:00+00:00"
 }
