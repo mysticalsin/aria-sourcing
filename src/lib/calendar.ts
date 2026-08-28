@@ -113,6 +113,24 @@ export async function createGraphCalendarEvent(
   ev: CalendarEventInput,
   connection: EmailConnection,
 ): Promise<CalendarEventOutcome> {
+  const scope = (connection.scope ?? "").toLowerCase();
+  if (scope && !/calendars\.readwrite/.test(scope)) {
+    return {
+      ok: false,
+      provider: "Microsoft Graph",
+      deliveryState: "not-sent",
+      detail: "Microsoft Graph connection lacks Calendars.ReadWrite — reconnect Outlook with calendar scope.",
+    };
+  }
+  if (scope && !/onlinemeetings\.readwrite/.test(scope)) {
+    return {
+      ok: false,
+      provider: "Microsoft Graph",
+      deliveryState: "not-sent",
+      detail: "Microsoft Graph connection lacks OnlineMeetings.ReadWrite — reconnect Outlook for Teams joinUrl.",
+    };
+  }
+
   const token = await getAccessTokenForReading(connection);
   // A missing/unrefreshable token is proven pre-transport: no request ever
   // reached Graph, so this is always safe to retry.

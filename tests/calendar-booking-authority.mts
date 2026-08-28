@@ -139,18 +139,26 @@ try {
   const { createGoogleCalendarEvent, createGraphCalendarEvent } = await import("../src/lib/calendar");
 
   function connection(over: Partial<EmailConnection> = {}): EmailConnection {
+    const provider = over.provider ?? "Gmail API";
+    const defaultScope =
+      provider === "Microsoft Graph"
+        ? "https://graph.microsoft.com/Calendars.ReadWrite https://graph.microsoft.com/OnlineMeetings.ReadWrite offline_access"
+        : "calendar.events";
     return {
       id: "conn-1",
       seatId: "seat-1",
-      provider: "Gmail API",
+      provider,
       accountEmail: "recruiter@example.test",
       accessToken: "access-token",
       refreshToken: null,
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
-      scope: "calendar.events",
+      scope: defaultScope,
       connectedAt: "",
       updatedAt: "",
       ...over,
+      // Keep provider/scope coherent when callers override only provider.
+      provider,
+      scope: over.scope ?? defaultScope,
     };
   }
   const ev = {
@@ -195,6 +203,31 @@ try {
 
   const graphNoToken = await createGraphCalendarEvent(ev, connection({ provider: "Microsoft Graph", accessToken: "", expiresAt: null, refreshToken: null }));
   ok("Graph: missing access token is a proven pre-transport not-sent", graphNoToken.ok === false && graphNoToken.deliveryState === "not-sent");
+
+  const graphNoCalScope = await createGraphCalendarEvent(
+    ev,
+    connection({ provider: "Microsoft Graph", scope: "https://graph.microsoft.com/Mail.Send offline_access" }),
+  );
+  ok(
+    "Graph: missing Calendars.ReadWrite is a proven pre-transport not-sent",
+    graphNoCalScope.ok === false &&
+      graphNoCalScope.deliveryState === "not-sent" &&
+      /Calendars\.ReadWrite/.test(graphNoCalScope.detail ?? ""),
+  );
+
+  const graphNoTeamsScope = await createGraphCalendarEvent(
+    ev,
+    connection({
+      provider: "Microsoft Graph",
+      scope: "https://graph.microsoft.com/Calendars.ReadWrite offline_access",
+    }),
+  );
+  ok(
+    "Graph: missing OnlineMeetings.ReadWrite is a proven pre-transport not-sent",
+    graphNoTeamsScope.ok === false &&
+      graphNoTeamsScope.deliveryState === "not-sent" &&
+      /OnlineMeetings\.ReadWrite/.test(graphNoTeamsScope.detail ?? ""),
+  );
 
   globalThis.fetch = throwingFetch;
   const graphThrew = await createGraphCalendarEvent(ev, connection({ provider: "Microsoft Graph" }));

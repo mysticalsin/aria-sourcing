@@ -282,7 +282,7 @@ function Microsoft365StackInner() {
         step={4}
         title="Webhook intake (no polling)"
         subtitle="Microsoft Graph pushes Inbox creates to Aria — agents never idle-scan mailboxes."
-        state={graphSubscriptionActive ? "complete" : mailboxConnected || inboundReady ? "active" : "pending"}
+        state={webhookIntakeReady ? "complete" : mailboxConnected || inboundReady ? "active" : "pending"}
       >
         <SystemReadiness
           items={[

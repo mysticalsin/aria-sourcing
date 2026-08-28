@@ -90,7 +90,10 @@ function LoginInner() {
       provider: "azure",
       options: { scopes: "openid email profile offline_access", redirectTo },
     });
-    if (err) setLoading(false);
+    if (err) {
+      setAuthError(err.message || "Microsoft sign-in failed.");
+      setLoading(false);
+    }
   };
 
   // One-click demo sign-in: admin/admin is resolved SERVER-SIDE. This path is

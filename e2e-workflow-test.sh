@@ -858,6 +858,26 @@ if grep -q 'azureLoginEnabled' src/app/login/page.tsx \
 else
   fail "Entra SSO login surface missing or not flag-gated."
 fi
+# Live proof: when GoTrue Azure secrets are on Fly, the reminted tip must show the CTA.
+if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ]; then
+  ENTRA_SECRETS_OK=1
+  for name in GOTRUE_EXTERNAL_AZURE_ENABLED GOTRUE_EXTERNAL_AZURE_CLIENT_ID GOTRUE_EXTERNAL_AZURE_SECRET GOTRUE_EXTERNAL_AZURE_URL; do
+    if ! flyctl secrets list -a aria-mantu-auth 2>/dev/null | awk 'NR>1{print $1}' | grep -qx "$name"; then
+      ENTRA_SECRETS_OK=0
+      break
+    fi
+  done
+  if [ "$ENTRA_SECRETS_OK" = "1" ]; then
+    LOGIN_HTML="$(curl -fsS "$APP_URL/login" 2>/dev/null || true)"
+    if printf '%s' "$LOGIN_HTML" | grep -q 'Sign in with Microsoft'; then
+      pass "Live /login exposes Sign in with Microsoft (Entra SSO remint baked NEXT_PUBLIC_ENABLE_AZURE_LOGIN)."
+    else
+      fail "GoTrue Azure secrets present but /login missing Sign in with Microsoft — remint tip with NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true."
+    fi
+  else
+    info "GoTrue Azure secrets incomplete — skipped live /login Entra CTA assert."
+  fi
+fi
 
 # ===========================================================================
 step "2f) parse→campaign→sourcing→draft→quality chain (contracts + webhook progress)"
@@ -1361,6 +1381,16 @@ fi
 MS_LIVE_GAP=0
 if [ -n "$LIVE_SEAT_ID" ]; then
   info "Live Microsoft Graph seat for confirmLive book: $LIVE_SEAT_ID"
+  LIVE_SCOPE=$(jq -r --arg sid "$LIVE_SEAT_ID" '
+    (.connections // [])
+    | map(select((.seatId // "") == $sid))
+    | .[0].scope // ""
+  ' "$RESP" 2>/dev/null || true)
+  if ! printf '%s' "$LIVE_SCOPE" | grep -Eiq 'OnlineMeetings\.ReadWrite|onlinemeetings\.readwrite'; then
+    fail "Live Graph seat $LIVE_SEAT_ID missing OnlineMeetings.ReadWrite in token scope — reconnect Outlook after tip with OnlineMeetings authorize scope."
+  else
+    pass "Live Graph seat token includes OnlineMeetings.ReadWrite for Teams joinUrl."
+  fi
   jq -n \
     --arg seat "$LIVE_SEAT_ID" \
     --arg cand "$CAND_ID" \
@@ -1423,7 +1453,12 @@ step "Summary"
 printf "  ${C_G}%d passed${C_0}, ${C_R}%d failed${C_0}, ${C_Y}%d warnings${C_0}\n" "$PASSES" "$FAILS" "$WARNS"
 if [ "$FAILS" -gt 0 ]; then
   printf "  ${C_R}RESULT: FAIL${C_0}\n"; exit 1
-elif [ "${MS_LIVE_GAP:-0}" = "1" ] || [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ]; then
+elif [ "${MS_LIVE_GAP:-0}" = "1" ] \
+  || [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ] \
+  || [ "${E2E_SKIP_APPROVE:-0}" = "1" ] \
+  || [ "${E2E_SKIP_CRON:-0}" = "1" ] \
+  || [ "${E2E_SKIP_SOURCING:-0}" = "1" ] \
+  || [ "${E2E_SKIP_WEBHOOK:-0}" = "1" ]; then
   printf "  ${C_Y}RESULT: PARTIAL${C_0} — core recruiting loop green (${PASSES} pass, 0 fail); outstanding gaps below are explicit skips only.\n"
   if [ "${E2E_SKIP_M365:-0}" = "1" ]; then
     printf "  Skipped (Microsoft / calendar): confirmLive Teams book — no live Graph seat or owner ARIA_ALLOW_PARTIAL_M365_E2E=1.\n"
@@ -1440,6 +1475,9 @@ elif [ "${MS_LIVE_GAP:-0}" = "1" ] || [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1"
   fi
   if [ "${E2E_SKIP_SOURCING:-0}" = "1" ]; then
     printf "  Skipped (quota): live sourcing-agent proof — daily limit on shared Fly tenant.\n"
+  fi
+  if [ "${E2E_SKIP_WEBHOOK:-0}" = "1" ]; then
+    printf "  Skipped (owner policy): webhook hiring-need intake (ARIA_ALLOW_SKIP_WEBHOOK_E2E=1).\n"
   fi
   if [ "${E2E_SKIP_M365:-0}" != "1" ] && [ "${E2E_SKIP_APPROVE:-0}" != "1" ] && [ "${E2E_SKIP_CRON:-0}" != "1" ]; then
     printf "  MS gaps: microsoftOAuth live seat, Outlook connect, Graph webhook push ingest, confirmLive Teams book.\n"

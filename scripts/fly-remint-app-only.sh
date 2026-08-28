@@ -12,6 +12,9 @@ if [ -r /tmp/owner-deploy-confirm.env ]; then
   set +a
 fi
 
+source "$repo/scripts/lib/prod-release-guard.sh"
+aria_require_reviewed_production_release fly-deploy-now aria-mantu-bootstrap aria-mantu-app
+
 if [ -z "${FLY_API_TOKEN:-}" ] && [ -r "$repo/production-readiness/.fly-token.env" ]; then
   export FLY_API_TOKEN="$(tr -d '\n\r ' < "$repo/production-readiness/.fly-token.env")"
 fi
@@ -20,9 +23,6 @@ set -a
 # shellcheck disable=SC1091
 source "$repo/production-readiness/.fly-secrets.env"
 set +a
-
-source "$repo/scripts/lib/prod-release-guard.sh"
-aria_require_reviewed_production_release fly-deploy-now aria-mantu-bootstrap aria-mantu-app
 
 echo "=== App-only remint (bootstrap skipped — migration already tip-aligned) ==="
 IFS=$'\t' read -r EXPECTED_MIGRATION_FILE EXPECTED_MIGRATION_SHA EXPECTED_MIGRATION_COUNT EXPECTED_LEDGER_SHA < <(node -e '

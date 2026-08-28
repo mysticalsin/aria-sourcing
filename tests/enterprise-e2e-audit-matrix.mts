@@ -760,13 +760,18 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
-    requirement: "Microsoft OAuth scope fallback includes Calendars.ReadWrite",
+    requirement: "Microsoft OAuth authorize requests Calendars.ReadWrite and OnlineMeetings.ReadWrite; callback does not invent scopes",
     evidence: () => {
       const callback = readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8");
       const authorize = readFileSync("src/app/auth/microsoft/route.ts", "utf8");
+      const calendar = readFileSync("src/lib/calendar.ts", "utf8");
       return (
-        /Calendars\.ReadWrite/.test(callback)
-        && /Calendars\.ReadWrite/.test(authorize)
+        /Calendars\.ReadWrite/.test(authorize)
+        && /OnlineMeetings\.ReadWrite/.test(authorize)
+        && /scope:\s*\(tokenJson\.scope \?\? ""\)\.trim\(\)/.test(callback)
+        && !/tokenJson\.scope \?\? "[^"]*Calendars\.ReadWrite/.test(callback)
+        && /lacks Calendars\.ReadWrite/.test(calendar)
+        && /lacks OnlineMeetings\.ReadWrite/.test(calendar)
       );
     },
   },

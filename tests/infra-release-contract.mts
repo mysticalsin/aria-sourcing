@@ -82,6 +82,7 @@ const appDeployLine = deploy.split("\n").find((line) => /fly deploy --config fly
 const reviewedAlternateDeploySurfaces = [
   "deploy-fly-2.sh",
   "scripts/fly-deploy-now.sh",
+  "scripts/fly-remint-app-only.sh",
   "scripts/prod-apply-swarm-fixes.sh",
   "scripts/prod-deploy-app.sh",
   "scripts/prod-swarm-rollout.sh",
