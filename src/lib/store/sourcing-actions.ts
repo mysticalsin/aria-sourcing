@@ -915,7 +915,13 @@ export function createSourcingActions({
     }
 
     if (!demoSourcing) {
-      await flushWorkspaceSave();
+      if (!(await flushWorkspaceSave())) {
+        return {
+          ok: false,
+          error: "Workspace could not sync before sourcing. Retry save, then source again.",
+          source: "unavailable",
+        };
+      }
       const savedState = currentState();
       const savedCampaign = savedState?.campaigns.find((item) => item.id === campaignId);
       if (!savedCampaign || !evaluateNeedReadiness(savedCampaign.jobAnalysis).ready) {
