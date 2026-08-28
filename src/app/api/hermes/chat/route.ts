@@ -33,6 +33,7 @@ import {
 import { HERMES_TASK_SYSTEM } from "@/lib/agents/hermes-agent-harness";
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import { resolveStoredApifyKey } from "@/lib/sourcing/apify";
+import { resolveCloudflareAuthority } from "@/lib/integrations/cloudflare-authority";
 import { sanitizeCandidateText } from "@/lib/agent-disclosure-policy";
 import { tryLoopTaskCloudFailover } from "@/lib/ai/hermes-loop-failover";
 
@@ -93,7 +94,7 @@ const HermesChatSchema = z.object({
   sessionKey: z.string().min(1).max(256).optional(),
   /** Cloud provider to route through. "hermes" = existing self-hosted path. */
   provider: z
-    .enum(["hermes", "anthropic", "openai", "groq", "xai", "mistral", "kimi", "deepseek", "nvidia"])
+    .enum(["hermes", "anthropic", "openai", "groq", "xai", "mistral", "kimi", "deepseek", "nvidia", "cloudflare"])
     .default("hermes"),
   /** ApiKey.id for the cloud provider — raw secret resolved server-side only. */
   apiKeyId: z.string().uuid().optional(),
@@ -101,7 +102,7 @@ const HermesChatSchema = z.object({
   // including NVIDIA NIM org/model ids (e.g. meta/llama-3.3-70b-instruct).
   model: z
     .string()
-    .regex(/^[a-zA-Z0-9][a-zA-Z0-9._\/-]{0,119}$/)
+    .regex(/^[a-zA-Z0-9@][a-zA-Z0-9._\/@-]{0,119}$/)
     .refine((s) => !s.includes(".."), "Model id must not contain '..'")
     .default("hermes"),
   /** Enabled MCP servers to expose to the model as tools (chat task only). The raw
@@ -305,6 +306,24 @@ export async function POST(req: NextRequest) {
       if (failoverText) return NextResponse.json({ ok: true, text: failoverText });
       return NextResponse.json({ ok: false, reason: `No API key configured for ${provider}.` });
     }
+
+    let cloudBaseUrl: string | undefined;
+    let resolvedModel = model && model !== "hermes" ? model : DEFAULT_MODEL[slug];
+    if (slug === "cloudflare") {
+      if (!supabase) {
+        return NextResponse.json({ ok: false, reason: "Cloudflare Workers AI requires a live workspace." }, { status: 503 });
+      }
+      const cf = await resolveCloudflareAuthority(supabase);
+      if (!cf.ok) {
+        return NextResponse.json({
+          ok: false,
+          reason: "Connect Cloudflare Workers AI in Settings → AI & Models before using this provider.",
+        }, { status: 503 });
+      }
+      cloudBaseUrl = cf.authority.chatEndpoint;
+      if (!model || model === "hermes") resolvedModel = cf.authority.defaultModel;
+    }
+
     // A well-formed campaign context enables the search_candidates tool, gated by the
     // same "source" permission as /api/sourcing-agent (never for a viewer/no-permission
     // caller, even if they can reach chat).
@@ -346,11 +365,19 @@ export async function POST(req: NextRequest) {
       }
       if (usableMcpServers) resolvedServers.push(...(await gatherMcpServers(usableMcpServers)));
       if (resolvedServers.length) {
-        const toolModel = model && model !== "hermes" ? model : DEFAULT_MODEL[slug];
+        const toolModel = resolvedModel;
         const result =
           slug === "anthropic"
             ? await runAnthropicWithTools({ model: toolModel, system, prompt, key, servers: resolvedServers })
-            : await runOpenAiWithTools({ provider: slug, model: toolModel, system, prompt, key, servers: resolvedServers });
+            : await runOpenAiWithTools({
+                provider: slug,
+                model: toolModel,
+                system,
+                prompt,
+                key,
+                servers: resolvedServers,
+                baseUrl: cloudBaseUrl,
+              });
         if (result.ok && result.text) return NextResponse.json({ ok: true, text: result.text });
         // Tool loop failed or returned empty (e.g. a provider that rejects the tools
         // param) → fall through to a normal single-shot completion so chat still answers
@@ -358,7 +385,15 @@ export async function POST(req: NextRequest) {
         if (!result.ok) logUpstream("info", "Tool loop unavailable; using plain completion", { provider, reason: result.reason });
       }
     }
-    const { url, headers, body } = buildCloudRequest(slug, model ?? "hermes", system, prompt, key);
+    const { url, headers, body } = buildCloudRequest(
+      slug,
+      resolvedModel,
+      system,
+      prompt,
+      key,
+      2048,
+      { baseUrl: cloudBaseUrl },
+    );
     try {
       const upstream = await fetch(url, {
         method: "POST",
