@@ -2,6 +2,7 @@ import {
   connectionHealth,
   defaultSeatNameFor,
   emailProviderReadiness,
+  isInboxPollAllowed,
   normalizeMailboxAddress,
   oauthAuthorizePath,
   oauthConfiguredFor,
@@ -124,6 +125,16 @@ ok(
   emailProviderReadiness({ NODE_ENV: "test", EMAIL_INBOUND_WEBHOOK_SECRET: "x" })
     .inboundWebhookSecret === true,
 );
+ok(
+  "inbox poll off by default",
+  isInboxPollAllowed({}) === false
+    && emailProviderReadiness({ NODE_ENV: "test" }).inboxPollAllowed === false,
+);
+ok(
+  "inbox poll only when ARIA_ALLOW_INBOX_SYNC=1",
+  isInboxPollAllowed({ ARIA_ALLOW_INBOX_SYNC: "1" }) === true
+    && isInboxPollAllowed({ ARIA_ALLOW_INBOX_SYNC: "true" }) === false,
+);
 
 ok("gmail authorize path", oauthAuthorizePath("Gmail API") === "/auth/google");
 ok("outlook authorize path", oauthAuthorizePath("Microsoft Graph") === "/auth/microsoft");
@@ -136,6 +147,7 @@ ok(
     resendApiKey: false,
     encryptionReady: true,
     inboundWebhookSecret: false,
+    inboxPollAllowed: false,
   }),
 );
 
@@ -251,6 +263,20 @@ ok("email test route probes profile", /users\/me\/profile|graph\.microsoft\.com\
 ok(
   "email test route fail-closes without active Graph webhook subscription",
   /graph_subscription/.test(testRoute) && /graph_mail_subscriptions/.test(testRoute),
+);
+ok(
+  "email test HMAC secret is optional for Graph Outlook intake",
+  /hmacOptional/.test(testRoute)
+    && /Graph webhook uses clientState/.test(testRoute)
+    && /graphNeedReady/.test(testRoute),
+);
+
+const syncRoute = readFileSync("src/app/api/email/sync/route.ts", "utf8");
+ok(
+  "email sync refuses inbox list-poll unless ARIA_ALLOW_INBOX_SYNC=1",
+  /isInboxPollAllowed/.test(syncRoute)
+    && /inbox_poll_disabled/.test(syncRoute)
+    && syncRoute.indexOf("inbox_poll_disabled") < syncRoute.indexOf("listInboundGraph(token"),
 );
 
 const googleCb = readFileSync("src/app/auth/google/callback/route.ts", "utf8");

@@ -224,6 +224,12 @@ function LoginInner() {
           {ctaText}
         </motion.button>
 
+        {supabaseEnabled && !azureLoginEnabled && !demoLoginEnabled ? (
+          <p className="mt-4 max-w-sm text-xs font-light text-white/45">
+            Microsoft sign-in is not configured on this deployment. Use email, or complete GoTrue Azure env to enable Entra SSO.
+          </p>
+        ) : null}
+
         {(supabaseEnabled || demoLoginEnabled) && (
           <div className="mt-5 w-full max-w-xs">
             <button

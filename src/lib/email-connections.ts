@@ -12,6 +12,8 @@ export type EmailProviderReadiness = {
   resendApiKey: boolean;
   encryptionReady: boolean;
   inboundWebhookSecret: boolean;
+  /** Break-glass Graph/Gmail inbox list. Production webhook intake stays off unless explicitly enabled. */
+  inboxPollAllowed: boolean;
 };
 
 /**
@@ -112,7 +114,15 @@ export function emailProviderReadiness(
     // Matches encryptionRequiredButMissing(): production requires a key; elsewhere a key is optional.
     encryptionReady: production ? encryptionKey.length > 0 : true,
     inboundWebhookSecret: Boolean(env.EMAIL_INBOUND_WEBHOOK_SECRET?.trim()),
+    inboxPollAllowed: isInboxPollAllowed(env),
   };
+}
+
+/** Inbox list-poll (`/api/email/sync`) is off unless an operator sets ARIA_ALLOW_INBOX_SYNC=1. */
+export function isInboxPollAllowed(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return env.ARIA_ALLOW_INBOX_SYNC === "1";
 }
 
 export function oauthAuthorizePath(provider: MailboxOAuthProvider): "/auth/google" | "/auth/microsoft" {

@@ -35,6 +35,7 @@ type ProviderReadiness = {
   resendApiKey: boolean;
   encryptionReady: boolean;
   inboundWebhookSecret: boolean;
+  inboxPollAllowed?: boolean;
 };
 
 type ConnectionRow = {
@@ -89,8 +90,10 @@ function ReadinessFromProviders(providers: ProviderReadiness): ReadinessItem[] {
     },
     {
       id: "webhook",
-      label: "Inbound webhook secret",
+      label: "HMAC inbound secret",
       ok: providers.inboundWebhookSecret,
+      optional: true,
+      hint: "Optional signed POST /api/webhooks/email-inbound. Graph Outlook intake uses clientState after Connect Outlook.",
     },
     {
       id: "sendgrid",

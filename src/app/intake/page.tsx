@@ -105,12 +105,31 @@ export default function IntakePage() {
   const [dustPending, setDustPending] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [selectedNeedId, setSelectedNeedId] = useState<string | null>(null);
+  const [inboxPollAllowed, setInboxPollAllowed] = useState(false);
   // Guards against a slow Dust reply from an earlier parse landing on top of a
   // newer one if the user re-parses before the first call resolves.
   const parseSeqRef = React.useRef(0);
   // Same guard, for the live LLM parse itself — a slower earlier parse can't
   // clobber a faster, more recent one if the user re-parses quickly.
   const liveParseSeqRef = React.useRef(0);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/email/connections", { credentials: "include" });
+        const json = (await res.json().catch(() => null)) as {
+          providers?: { inboxPollAllowed?: boolean };
+        } | null;
+        if (!cancelled) setInboxPollAllowed(json?.providers?.inboxPollAllowed === true);
+      } catch {
+        if (!cancelled) setInboxPollAllowed(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function patchJob(patch: Partial<JobAnalysis>) {
     setJob((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -181,8 +200,20 @@ export default function IntakePage() {
       });
       const json = (await res.json().catch(() => null)) as {
         ok?: boolean;
+        status?: string;
+        error?: string;
         messages?: (InboundMessage & { seatId: string })[];
       } | null;
+      if (res.status === 403 && json?.status === "inbox_poll_disabled") {
+        if (liveParseSeqRef.current !== seq) return;
+        setParsing(false);
+        toast({
+          title: "Inbox polling disabled",
+          description: json.error ?? "Hiring needs arrive via Graph webhook. Inbox list-sync is off.",
+          variant: "warning",
+        });
+        return;
+      }
       if (res.ok && json?.ok) {
         const needs = (json.messages ?? [])
           .filter((m) => isNeedEmail(m.subject ?? "", m.body ?? ""))
@@ -522,17 +553,19 @@ export default function IntakePage() {
                       </Button>
                     </>
                   ) : null}
-                  <Button
-                    type="button"
-                    variant="subtle"
-                    size="sm"
-                    leftIcon={<Inbox aria-hidden />}
-                    onClick={emergencySyncInbox}
-                    loading={parsing}
-                    disabled={parsing}
-                  >
-                    Emergency sync
-                  </Button>
+                  {inboxPollAllowed ? (
+                    <Button
+                      type="button"
+                      variant="subtle"
+                      size="sm"
+                      leftIcon={<Inbox aria-hidden />}
+                      onClick={emergencySyncInbox}
+                      loading={parsing}
+                      disabled={parsing}
+                    >
+                      Emergency sync
+                    </Button>
+                  ) : null}
                   <Button
                     type="button"
                     leftIcon={<ScanText aria-hidden />}
@@ -549,7 +582,10 @@ export default function IntakePage() {
                   <code className="rounded bg-ink/[0.06] px-1 py-0.5 font-mono text-[0.6875rem] text-ink-soft">
                     /api/webhooks/microsoft-graph
                   </code>
-                  {". "}Emergency sync polls only as break-glass.
+                  {". "}
+                  {inboxPollAllowed
+                    ? "Emergency sync polls only as break-glass."
+                    : "Inbox polling is disabled (ARIA_ALLOW_INBOX_SYNC)."}
                 </p>
               </div>
             </CardBody>
@@ -564,7 +600,7 @@ export default function IntakePage() {
               description={
                 demoLoginEnabled
                   ? "Parse an email (or load the sample) and the structured, editable analysis (confidence scores, validation, and a clarification draft) appears here."
-                  : "Paste a hiring need email, use Emergency sync as break-glass, or open an Outlook need from the panel. Structured analysis appears here after parsing."
+                  : "Paste a hiring need email or open an Outlook need from the panel. Structured analysis appears here after parsing."
               }
             />
           ) : (

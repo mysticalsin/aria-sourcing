@@ -186,6 +186,7 @@ export async function POST(req: NextRequest) {
       : "No active inbound_mailbox_routes row — register from Settings or reconnect.",
   });
 
+  let graphSubscriptionActive = false;
   if (connection.provider === "Microsoft Graph") {
     const { data: graphSub } = await supabase
       .from("graph_mail_subscriptions")
@@ -193,33 +194,41 @@ export async function POST(req: NextRequest) {
       .eq("workspace_id", wid)
       .eq("connection_id", row.id)
       .maybeSingle();
-    const subActive = graphSub?.status === "active";
+    graphSubscriptionActive = graphSub?.status === "active";
     checks.push({
       id: "graph_subscription",
-      ok: subActive,
-      detail: subActive
+      ok: graphSubscriptionActive,
+      detail: graphSubscriptionActive
         ? `Graph webhook subscription active (expires ${graphSub?.expires_at ?? "unknown"}).`
         : "Graph webhook subscription not active — Enable webhook or reconnect Outlook (no inbox polling).",
     });
   }
 
+  // HMAC adapter is optional when Graph push is the intake path.
+  const hmacOptional = connection.provider === "Microsoft Graph";
   checks.push({
     id: "inbound_webhook_secret",
-    ok: readiness.inboundWebhookSecret,
+    ok: hmacOptional ? true : readiness.inboundWebhookSecret,
     detail: readiness.inboundWebhookSecret
-      ? "EMAIL_INBOUND_WEBHOOK_SECRET is set."
-      : "EMAIL_INBOUND_WEBHOOK_SECRET not set — webhook will reject hiring needs and replies.",
+      ? "HMAC adapter secret set (signed POST /api/webhooks/email-inbound)."
+      : hmacOptional
+        ? "HMAC adapter secret unset — Graph webhook uses clientState; this secret is optional for Outlook intake."
+        : "EMAIL_INBOUND_WEBHOOK_SECRET not set — HMAC inbound webhook will reject hiring needs and replies.",
   });
 
-  // Synthetic HMAC path (/api/webhooks/email-inbound) is ready without Graph;
-  // Graph subscription is additive when Outlook connects later.
-  const needHandlerReady = readiness.inboundWebhookSecret && routeActive;
+  const graphNeedReady = connection.provider === "Microsoft Graph" && routeActive && graphSubscriptionActive;
+  const hmacNeedReady = readiness.inboundWebhookSecret && routeActive;
+  const needHandlerReady = graphNeedReady || hmacNeedReady;
   checks.push({
     id: "hiring_need_handler",
     ok: needHandlerReady,
-    detail: needHandlerReady
-      ? "Hiring-need handler ready: mailbox route + webhook secret (Graph subscription optional until Outlook connects)."
-      : "Hiring-need handler not ready — register inbound mailbox route and set EMAIL_INBOUND_WEBHOOK_SECRET.",
+    detail: graphNeedReady
+      ? "Hiring-need handler ready: Graph webhook subscription + mailbox route (HMAC adapter optional)."
+      : hmacNeedReady
+        ? "Hiring-need handler ready: mailbox route + HMAC webhook secret (Graph subscription optional until Outlook connects)."
+        : connection.provider === "Microsoft Graph"
+          ? "Hiring-need handler not ready — register inbound mailbox route and Enable Graph webhook."
+          : "Hiring-need handler not ready — register inbound mailbox route and set EMAIL_INBOUND_WEBHOOK_SECRET.",
   });
 
   const summary = summarizeEmailValidation(checks);

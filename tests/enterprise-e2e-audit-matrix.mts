@@ -518,6 +518,9 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /GOTRUE_EXTERNAL_AZURE/.test(flyAuth)
         && /webhook push/.test(setup)
         && /Emergency sync is break-glass/.test(setup)
+        && /ARIA_ALLOW_INBOX_SYNC/.test(readFileSync("src/lib/email-connections.ts", "utf8"))
+        && /inbox_poll_disabled/.test(readFileSync("src/app/api/email/sync/route.ts", "utf8"))
+        && /inboxPollAllowed/.test(intake)
       );
     },
   },

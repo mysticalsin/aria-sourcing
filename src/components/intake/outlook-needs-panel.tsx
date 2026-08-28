@@ -80,6 +80,7 @@ export function OutlookNeedsPanel({
   const [pulledOnce, setPulledOnce] = React.useState(false);
   const [demoMode, setDemoMode] = React.useState(false);
   const [graphWebhookActive, setGraphWebhookActive] = React.useState(false);
+  const [inboxPollAllowed, setInboxPollAllowed] = React.useState(false);
 
   const outlookSeats = seats.filter((s) => s.provider === "Microsoft Graph");
   const connected = outlookSeats.filter(seatHasOutlookMailbox);
@@ -103,12 +104,14 @@ export function OutlookNeedsPanel({
       try {
         const res = await fetch("/api/email/connections", { credentials: "same-origin" });
         const json = (await res.json().catch(() => null)) as {
+          providers?: { inboxPollAllowed?: boolean };
           connections?: Array<{
             provider?: string;
             graphSubscription?: { active?: boolean } | null;
           }>;
         } | null;
         if (cancelled) return;
+        setInboxPollAllowed(json?.providers?.inboxPollAllowed === true);
         const active = (json?.connections ?? []).some(
           (c) => c.provider === "Microsoft Graph" && c.graphSubscription?.active === true,
         );
@@ -153,6 +156,16 @@ export function OutlookNeedsPanel({
         signal: AbortSignal.timeout(60_000),
       });
       const json = (await res.json().catch(() => null)) as SyncJson | null;
+      if (res.status === 403 && json?.status === "inbox_poll_disabled") {
+        setLastError(json.error ?? "Inbox polling is disabled.");
+        setPulledOnce(true);
+        toast({
+          title: "Inbox polling disabled",
+          description: json.error ?? "Hiring needs arrive via Graph webhook.",
+          variant: "warning",
+        });
+        return;
+      }
       if (!res.ok || !json?.ok) {
         const err = json?.error ?? json?.detail ?? `Sync failed (${res.status})`;
         setLastError(err);
@@ -254,7 +267,7 @@ export function OutlookNeedsPanel({
               </Link>
             )
           ) : null}
-          {!graphWebhookActive ? (
+          {inboxPollAllowed && !graphWebhookActive ? (
             <Button
               type="button"
               size="sm"
@@ -294,7 +307,7 @@ export function OutlookNeedsPanel({
                 <p className="mt-1 text-xs text-muted">
                   Connect Outlook to register a change-notification subscription. New hiring emails
                   enqueue requisition_parse automatically. Emergency sync is break-glass only
-                  (hidden once the Graph webhook subscription is active).
+                  (hidden unless ARIA_ALLOW_INBOX_SYNC=1, and hidden once the Graph webhook is active).
                 </p>
               </div>
             </motion.div>
@@ -306,9 +319,9 @@ export function OutlookNeedsPanel({
               className="text-sm text-muted"
             >
               Waiting for webhook-delivered needs. Paste a brief below
-              {graphWebhookActive
-                ? "."
-                : ", or use Emergency sync only if Graph push is unavailable."}
+              {inboxPollAllowed && !graphWebhookActive
+                ? ", or use Emergency sync only if Graph push is unavailable."
+                : "."}
             </motion.p>
           ) : (
             <motion.ul

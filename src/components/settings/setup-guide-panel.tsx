@@ -82,7 +82,7 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
     {
       id: "source",
       title: "Webhook needs & source",
-      body: "On Intake, wait for Graph-delivered needs (or paste a brief). Emergency sync is break-glass only. Then create the campaign and source.",
+      body: "On Intake, wait for Graph-delivered needs (or paste a brief). Emergency sync is break-glass only when ARIA_ALLOW_INBOX_SYNC=1. Then create the campaign and source.",
       done: false,
       ctaLabel: "Go to Intake",
       href: "/intake",

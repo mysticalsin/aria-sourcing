@@ -29,8 +29,9 @@ import type { InboundMessage } from "@/lib/email-sync";
 
 type SyncApiResponse = {
   ok: boolean;
-  status?: "dry-run";
+  status?: "dry-run" | "inbox_poll_disabled" | string;
   detail?: string;
+  error?: string;
   messages?: (InboundMessage & { seatId: string })[];
   errors?: string[];
 };
@@ -40,8 +41,27 @@ function SyncInboxButton() {
   const { toast } = useToast();
   const role = useRole();
   const [syncing, setSyncing] = React.useState(false);
+  const [inboxPollAllowed, setInboxPollAllowed] = React.useState(false);
 
-  if (!can(role, "source")) return null;
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/email/connections", { credentials: "include" });
+        const json = (await res.json().catch(() => null)) as {
+          providers?: { inboxPollAllowed?: boolean };
+        } | null;
+        if (!cancelled) setInboxPollAllowed(json?.providers?.inboxPollAllowed === true);
+      } catch {
+        if (!cancelled) setInboxPollAllowed(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!can(role, "source") || !inboxPollAllowed) return null;
 
   async function handleSync() {
     setSyncing(true);
@@ -51,6 +71,15 @@ function SyncInboxButton() {
         signal: AbortSignal.timeout(60_000),
       });
       const json = (await res.json().catch(() => ({ ok: false }))) as SyncApiResponse;
+
+      if (res.status === 403 && json.status === "inbox_poll_disabled") {
+        toast({
+          title: "Inbox polling disabled",
+          description: json.error ?? "Hiring needs and replies arrive via Graph webhook.",
+          variant: "warning",
+        });
+        return;
+      }
 
       if (!res.ok || !json.ok) {
         toast({
@@ -117,7 +146,7 @@ function SyncInboxButton() {
       leftIcon={<RefreshCw className="h-3.5 w-3.5" aria-hidden />}
       onClick={handleSync}
     >
-      {syncing ? "Syncing…" : "Sync fallback"}
+      {syncing ? "Syncing…" : "Emergency sync"}
     </Button>
   );
 }
