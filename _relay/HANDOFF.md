@@ -1,24 +1,25 @@
 ---
 project: MSourcing / ARIA
-shift: 274
+shift: 275
 agent: cursor-cloud
-updated: 2026-08-28T10:52Z
-status: verify-entra-sso-check-m365-blocked
+updated: 2026-08-28T10:54Z
+status: audit-60-60-m365-blocked
 ---
 
-# Handoff — Shift 274
+# Handoff — Shift 275
 
 ## Current state
 
 - **Live Fly:** `344fcaf` / **0071** · ready ok
-- **Branch tip:** post verify-m365 Entra SSO /login check
+- **Branch tip:** post audit verify-m365 requirement
 - **PR #35** (supersedes closed #29–#33)
-- **Gate:** audit **59/59**
+- **Gate:** audit **60/60** · tsc green
 - **M365:** 7 secrets missing · watcher active
 
 ## Done this shift
 
-1. `verify-m365-ready.sh` now asserts `/login` shows **Sign in with Microsoft** after GoTrue + remint (step 3b)
+1. Audit matrix +60: verify-m365 strict gate (secrets, Graph seat, Entra /login, strict E2E)
+2. Updated `_relay/M365-OWNER-UNBLOCK.md` owner runbook
 
 ## Blockers
 
@@ -27,7 +28,7 @@ status: verify-entra-sso-check-m365-blocked
 ## Next steps
 
 1. `bash scripts/print-m365-owner-portal-checklist.sh` → apply → Connect Outlook → webhook
-2. `bash scripts/verify-m365-ready.sh` → strict PASS (Entra + Graph + E2E 6b)
+2. `bash scripts/verify-m365-ready.sh` → strict PASS incl. **6b**
 
 ## Decisions made (don't relitigate)
 
