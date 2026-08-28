@@ -1032,7 +1032,12 @@ jq -n \
 AGENT_CAMPAIGN_ID="${E2E_CAMPAIGN_ID:-camp-e2e}"
 jq -n --arg id "$AGENT_CAMPAIGN_ID" '{campaignId:$id, count:10}' > "$WORK/agent_req.json"
 SOURCING_ATTEMPT=0
-SOURCING_MAX=2
+if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" != "1" ]; then
+  # Strict Fly runs: transient sourcing quota and LLM critic saturation need headroom without partial escapes.
+  SOURCING_MAX="${E2E_SOURCING_MAX:-4}"
+else
+  SOURCING_MAX="${E2E_SOURCING_MAX:-2}"
+fi
 while [ "$SOURCING_ATTEMPT" -lt "$SOURCING_MAX" ]; do
   SOURCING_ATTEMPT=$((SOURCING_ATTEMPT + 1))
   HTTP=$(curl -sS -m "${API_TIMEOUT:-180}" -o "$RESP" -w '%{http_code}' -X POST "$APP_URL/api/sourcing-agent" \
@@ -1044,7 +1049,7 @@ while [ "$SOURCING_ATTEMPT" -lt "$SOURCING_MAX" ]; do
   fi
   if [ "$SOURCING_ATTEMPT" -lt "$SOURCING_MAX" ]; then
     warn "sourcing-agent returned n=$AG_N (HTTP $HTTP) — retry $SOURCING_ATTEMPT/$SOURCING_MAX after brief backoff."
-    sleep 3
+    sleep $((2 * SOURCING_ATTEMPT))
   fi
 done
 AG_CODE=$(jq -r '.code // empty' "$RESP")
@@ -1223,7 +1228,11 @@ fi
 
 MSG_LI="msg-e2e-li-$$"
 APPROVE_TRY=0
-APPROVE_MAX=3
+if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" != "1" ]; then
+  APPROVE_MAX="${E2E_APPROVE_MAX:-5}"
+else
+  APPROVE_MAX="${E2E_APPROVE_MAX:-3}"
+fi
 while [ "$APPROVE_TRY" -lt "$APPROVE_MAX" ]; do
   if [ "$APPROVE_TRY" -gt 0 ]; then
     warn "Approve retry $APPROVE_TRY/$APPROVE_MAX — regenerating LinkedIn draft after HTTP $HTTP."
@@ -1245,6 +1254,7 @@ while [ "$APPROVE_TRY" -lt "$APPROVE_MAX" ]; do
   # LLM drafts are non-deterministic — retry on critic infra (503), quality block (422), or curl timeout (000).
   if [ "$HTTP" = "503" ] && [ "$(jq -r '.status // empty' "$APPROVE_RESP")" = "critics_required" ]; then
     APPROVE_TRY=$((APPROVE_TRY + 1))
+    sleep $((5 * APPROVE_TRY))
     continue
   fi
   if [ "$HTTP" = "422" ] || [ "$HTTP" = "000" ]; then

@@ -1135,6 +1135,9 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && (/step 3c|3c FAIL|live=0/.test(handoff) || /provenance fix/.test(handoff))
         && (/expect step 3c PASS/.test(handoff) || /step 3c should show/.test(handoff))
         && /never pretends full PASS|never pretends full enterprise PASS/.test(script)
+        && /E2E_SOURCING_MAX/.test(script)
+        && /E2E_APPROVE_MAX/.test(script)
+        && /Strict Fly runs: transient sourcing quota/.test(script)
       );
     },
   },

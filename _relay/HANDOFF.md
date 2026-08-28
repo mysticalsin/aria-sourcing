@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 288
 agent: cursor-cloud
-updated: 2026-08-28T13:27Z
+updated: 2026-08-28T13:35Z
 status: owner-wait-m365-strict-pass
 ---
 
@@ -11,18 +11,19 @@ status: owner-wait-m365-strict-pass
 ## Current state
 
 - **Live Fly:** `1b19a44` / **0071** · ready ok · **`deploy_status=tip_live`**
-- **Branch tip:** `807da82` (relay-only since deploy; live code @ `1b19a44`)
+- **Branch tip:** pending (strict E2E retry headroom + relay)
 - **PR #35** (supersedes closed #29–#33)
-- **Gate (2026-08-28T13:27Z):** `npx tsc --noEmit && npm test` green · audit **62/62**
+- **Gate:** audit **62/62**
 - **PARTIAL E2E (live, 2026-08-28T13:27Z):** **55 pass / 0 fail / 7 warn** → `RESULT: PARTIAL`
-- **Strict E2E:** blocked — M365 (7 secrets) + step 6b
-- **M365 reprobe 2026-08-28T13:27Z:** owner-blocked — `fly_m365_missing=7`, `/tmp/owner-microsoft.env` absent; `verify-m365-ready.sh` fails step 1
+- **Strict E2E:** blocked — M365 (7 secrets) + step 6b; script now uses Fly strict retries (sourcing×4, approve×5)
+- **M365 reprobe 2026-08-28T13:32Z:** owner-blocked — `fly_m365_missing=7`, zero Entra apps with `*.fly.dev` redirect URIs
 
 ## Done this shift
 
 1. **Deployed tip to Fly** — `fly-deploy-now.sh` @ `1b19a44`; live build matches code tip
 2. Re-verified gate + PARTIAL E2E on live (multilingual FR outreach PASS; 55/0/7)
-3. Re-probed M365 + re-requested setup actions; watcher active
+3. Hardened strict Fly E2E retries (sourcing×4, approve×5) for post-M365 transient quota/critic saturation
+4. Re-probed M365; watcher active; setup actions re-requested
 
 ## Blockers (owner only)
 
