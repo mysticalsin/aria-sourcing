@@ -148,7 +148,7 @@ else
 fi
 
 echo "=== Owner activation path (Fly ONLY — never Vercel) ==="
-echo "Branch: cursor/enterprise-autopilot-b91d · PR #32 (supersedes closed #29–#31)"
+echo "Branch: cursor/enterprise-autopilot-b91d · PR #33 open · PR #32 closed (supersedes closed #29–#31)"
 echo "0. Read-only checklist: bash scripts/fly-enterprise-activate.sh $RELEASE_SHA"
 echo "1. Restore GitHub Actions (billing/spending limit) so CI + CodeQL can run on $RELEASE_SHA."
 echo "2. Fill production-readiness/.fly-secrets.env from .fly-secrets.example (PG + service role)."

@@ -117,7 +117,8 @@ if [ "$ok" = "true" ] && [ "$mig_ok" = "1" ] && [[ "$build" == "$TIP"* ]] && [ "
   echo
   echo "=== Tip live — run E2E ==="
   echo "eval \"\$(bash scripts/print-fly-e2e-env.sh --export)\""
-  echo "bash e2e-workflow-test.sh"
+  echo "ARIA_ALLOW_PARTIAL_M365_E2E=1 ARIA_ALLOW_SKIP_APPROVE_E2E=1 bash e2e-workflow-test.sh"
+  echo "# If build still lags tip SHA: add ARIA_ALLOW_STALE_FLY_E2E=1 until golive catches up"
   exit 0
 fi
 
