@@ -229,8 +229,15 @@ export async function GET(req: NextRequest) {
   }
 
   // Promote seat to live only after inbound route + Graph webhook are durable —
-  // confirmLive Teams books require mode=live and operators must not see Connected without webhook.
+  // and OnlineMeetings.ReadWrite is present (confirmLive Teams joinUrl).
   {
+    const grantedScope = (tokenJson.scope ?? "").trim();
+    if (!/OnlineMeetings\.ReadWrite/i.test(grantedScope)) {
+      return redirectError(
+        req,
+        `Connected ${accountEmail} with webhook, but OnlineMeetings.ReadWrite is missing. Reconnect Outlook and grant Teams meeting permissions before going live.`,
+      );
+    }
     const { error: liveErr } = await svc
       .from("agent_seats")
       .update({

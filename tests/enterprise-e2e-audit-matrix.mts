@@ -360,6 +360,12 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /Connect Gmail \(OAuth\)/.test(readFileSync("src/app/api/fleet/seats/route.ts", "utf8"))
         && /isMailboxSeatProvider\(seat\.provider\)/.test(readFileSync("src/lib/fleet.ts", "utf8"))
         && /mode: liveSeat \? "live" : "mock"/.test(readFileSync("src/lib/integrations.ts", "utf8"))
+        && /Prefer Microsoft Graph for Mantu Teams/.test(
+          readFileSync("src/lib/store/booking-report-actions.ts", "utf8"),
+        )
+        && /preCallClaim/.test(readFileSync("scripts/sourcing-loop-worker.mjs", "utf8"))
+        && /OnlineMeetings\.ReadWrite/.test(readFileSync("scripts/verify-m365-ready.sh", "utf8"))
+        && /connection\.scope = json\.scope/.test(readFileSync("src/lib/email-oauth.ts", "utf8"))
       );
     },
   },

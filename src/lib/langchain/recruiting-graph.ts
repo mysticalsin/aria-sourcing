@@ -271,7 +271,7 @@ async function queueApproval(state: RecruitingGraphStateType): Promise<Partial<R
 
 /**
  * Node: pre-call screen proposed (15–20 min recruiter screen).
- * Requires a proposal claim id (worker passes claimId/activity id as bookingId) —
+ * Requires a real proposal claim id (worker passes claimId only — never activity.id) —
  * never advance to `pre_call_proposed` (maps → first_interview_book) from a bare stub.
  */
 async function proposePreCall(state: RecruitingGraphStateType): Promise<Partial<RecruitingGraphStateType>> {

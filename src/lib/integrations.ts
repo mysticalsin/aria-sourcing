@@ -261,6 +261,7 @@ export type EmailConnectionsHydratePayload = {
     provider: string;
     accountEmail: string;
     hasRefreshToken?: boolean;
+    scope?: string;
     inboundRoute?: { active?: boolean } | null;
     graphSubscription?: { active?: boolean; status?: string } | null;
   }>;
@@ -278,10 +279,14 @@ export function mailboxIntegrationPatchesFromConnections(
   const connections = payload.connections ?? [];
   const seats = payload.seats ?? [];
 
+  const hasOnlineMeetings = (scope: string | undefined) =>
+    /OnlineMeetings\.ReadWrite/i.test(scope ?? "");
+
   const patchFor = (
     id: string,
     provider: string,
     requireLiveSeat: boolean,
+    requireOnlineMeetings = false,
   ): { id: string; patch: Partial<IntegrationStatus> } => {
     const conn = connections.find(
       (c) => c.provider === provider && Boolean(c.accountEmail?.trim()) && c.hasRefreshToken !== false,
@@ -320,6 +325,20 @@ export function mailboxIntegrationPatchesFromConnections(
         },
       };
     }
+    if (requireOnlineMeetings && !hasOnlineMeetings(conn.scope)) {
+      return {
+        id,
+        patch: {
+          status: "degraded",
+          mode: "mock",
+          connectedAccount: conn.accountEmail,
+          lastSync: null,
+          errors: [
+            "OnlineMeetings.ReadWrite missing — reconnect Outlook and grant Teams meeting permissions.",
+          ],
+        },
+      };
+    }
     if (requireLiveSeat && !liveSeat) {
       return {
         id,
@@ -345,8 +364,9 @@ export function mailboxIntegrationPatchesFromConnections(
   };
 
   return [
-    patchFor("int_outlook", "Microsoft Graph", false),
-    patchFor("int_graph_teams", "Microsoft Graph", true),
+    // Outlook + Teams cards require a live seat; Teams also needs OnlineMeetings.
+    patchFor("int_outlook", "Microsoft Graph", true),
+    patchFor("int_graph_teams", "Microsoft Graph", true, true),
     patchFor("int_gmail", "Gmail API", false),
   ];
 }

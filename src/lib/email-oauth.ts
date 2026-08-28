@@ -233,6 +233,7 @@ async function refreshMicrosoftToken(connection: EmailConnection): Promise<strin
     access_token?: string;
     expires_in?: number;
     refresh_token?: string;
+    scope?: string;
     error?: string;
     error_description?: string;
   };
@@ -244,6 +245,10 @@ async function refreshMicrosoftToken(connection: EmailConnection): Promise<strin
     ? new Date(Date.now() + json.expires_in * 1000).toISOString()
     : null;
   if (json.refresh_token) connection.refreshToken = json.refresh_token;
+  // Persist granted scope so OnlineMeetings / Calendar readiness stays honest after refresh.
+  if (typeof json.scope === "string" && json.scope.trim()) {
+    connection.scope = json.scope.trim();
+  }
   return json.access_token;
 }
 

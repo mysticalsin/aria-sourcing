@@ -239,7 +239,9 @@ export async function POST(req: NextRequest) {
       // configured — skip the persist (the event itself was already created and
       // reconciled above) rather than silently degrade the stored credential.
       if (
-        (origAccessToken !== connection.accessToken || conn.expires_at !== connection.expiresAt) &&
+        (origAccessToken !== connection.accessToken
+          || conn.expires_at !== connection.expiresAt
+          || (connection.scope ?? "") !== (conn.scope ?? "")) &&
         !encryptionRequiredButMissing()
       ) {
         try {
@@ -248,6 +250,7 @@ export async function POST(req: NextRequest) {
             .update({
               access_token: encryptSecret(connection.accessToken),
               expires_at: connection.expiresAt,
+              scope: connection.scope ?? conn.scope,
               updated_at: new Date().toISOString(),
             })
             .eq("id", connection.id);

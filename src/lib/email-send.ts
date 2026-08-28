@@ -106,13 +106,20 @@ export async function performEmailSend(
     // outcome is known. Fail closed: never write a refreshed token in cleartext
     // when production requires encryption at rest but no key is configured.
     if (
-      (origAccessToken !== connection.accessToken || conn.expires_at !== connection.expiresAt) &&
+      (origAccessToken !== connection.accessToken
+        || conn.expires_at !== connection.expiresAt
+        || (connection.scope ?? "") !== (conn.scope ?? "")) &&
       !encryptionRequiredButMissing()
     ) {
       try {
         await service
           .from("email_connections")
-          .update({ access_token: encryptSecret(connection.accessToken), expires_at: connection.expiresAt, updated_at: new Date().toISOString() })
+          .update({
+            access_token: encryptSecret(connection.accessToken),
+            expires_at: connection.expiresAt,
+            scope: connection.scope ?? conn.scope,
+            updated_at: new Date().toISOString(),
+          })
           .eq("id", connection.id);
       } catch (persistErr) {
         safeLog("performEmailSend refreshed token persist error", { message: persistErr instanceof Error ? persistErr.message : "unknown" });

@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { mailboxIntegrationPatchesFromConnections } from "../src/lib/integrations.ts";
 
+const MEETINGS_SCOPE =
+  "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Calendars.ReadWrite https://graph.microsoft.com/OnlineMeetings.ReadWrite offline_access";
+
 describe("mailboxIntegrationPatchesFromConnections", () => {
   it("marks Outlook/Teams not_configured when no Graph mailbox is connected", () => {
     const patches = mailboxIntegrationPatchesFromConnections({ connections: [], seats: [] });
@@ -12,13 +15,14 @@ describe("mailboxIntegrationPatchesFromConnections", () => {
     assert.equal(teams?.patch.mode, "mock");
   });
 
-  it("connects Outlook when Graph mailbox exists; Teams stays degraded without live seat", () => {
+  it("keeps Outlook/Teams degraded when Graph mailbox exists but seat is not live", () => {
     const patches = mailboxIntegrationPatchesFromConnections({
       connections: [
         {
           provider: "Microsoft Graph",
           accountEmail: "talent@mantu.com",
           hasRefreshToken: true,
+          scope: MEETINGS_SCOPE,
           graphSubscription: { active: true },
         },
       ],
@@ -33,7 +37,7 @@ describe("mailboxIntegrationPatchesFromConnections", () => {
     });
     const outlook = patches.find((p) => p.id === "int_outlook");
     const teams = patches.find((p) => p.id === "int_graph_teams");
-    assert.equal(outlook?.patch.status, "connected");
+    assert.equal(outlook?.patch.status, "degraded");
     assert.equal(outlook?.patch.connectedAccount, "talent@mantu.com");
     assert.equal(outlook?.patch.lastSync, null);
     assert.equal(teams?.patch.status, "degraded");
@@ -48,6 +52,7 @@ describe("mailboxIntegrationPatchesFromConnections", () => {
           provider: "Microsoft Graph",
           accountEmail: "talent@mantu.com",
           hasRefreshToken: true,
+          scope: MEETINGS_SCOPE,
           graphSubscription: { active: false },
         },
       ],
@@ -67,13 +72,14 @@ describe("mailboxIntegrationPatchesFromConnections", () => {
     assert.match(String(outlook?.patch.errors?.[0] ?? ""), /webhook subscription/i);
   });
 
-  it("marks Teams connected only with a live Graph seat", () => {
+  it("marks Teams degraded when OnlineMeetings.ReadWrite is missing", () => {
     const patches = mailboxIntegrationPatchesFromConnections({
       connections: [
         {
           provider: "Microsoft Graph",
           accountEmail: "talent@mantu.com",
           hasRefreshToken: true,
+          scope: "https://graph.microsoft.com/Mail.Send offline_access",
           graphSubscription: { active: true },
         },
       ],
@@ -87,6 +93,35 @@ describe("mailboxIntegrationPatchesFromConnections", () => {
       ],
     });
     const teams = patches.find((p) => p.id === "int_graph_teams");
+    assert.equal(teams?.patch.status, "degraded");
+    assert.equal(teams?.patch.mode, "mock");
+    assert.match(String(teams?.patch.errors?.[0] ?? ""), /OnlineMeetings/i);
+  });
+
+  it("marks Outlook/Teams connected only with live Graph seat + OnlineMeetings", () => {
+    const patches = mailboxIntegrationPatchesFromConnections({
+      connections: [
+        {
+          provider: "Microsoft Graph",
+          accountEmail: "talent@mantu.com",
+          hasRefreshToken: true,
+          scope: MEETINGS_SCOPE,
+          graphSubscription: { active: true },
+        },
+      ],
+      seats: [
+        {
+          provider: "Microsoft Graph",
+          mode: "live",
+          status: "active",
+          connectedAccount: "talent@mantu.com",
+        },
+      ],
+    });
+    const outlook = patches.find((p) => p.id === "int_outlook");
+    const teams = patches.find((p) => p.id === "int_graph_teams");
+    assert.equal(outlook?.patch.status, "connected");
+    assert.equal(outlook?.patch.mode, "live");
     assert.equal(teams?.patch.status, "connected");
     assert.equal(teams?.patch.mode, "live");
     assert.equal(teams?.patch.lastSync, null);

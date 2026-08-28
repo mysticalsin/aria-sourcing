@@ -1794,22 +1794,24 @@ async function proposeMeetingForCandidate(job, context, meetingKind) {
   // LangGraph checkpoint intents wired here: intent: "pre_call_only" | intent: "interview_only"
   const graphIntent = isPreCall ? "pre_call_only" : "interview_only";
   const allowedStages = isPreCall ? ["pre_call_proposed", "queued_for_approval"] : ["interview_proposed", "queued_for_approval"];
-  // Pre-call claim = Graph claimId or activity receipt — never stamp pre_call_proposed without it
-  // (maps to first_interview_book). Interview_only must NOT pass bookingId or scheduleInterview
-  // would claim interview_scheduled before confirmLive.
+  // Pre-call requires a real calendar claimId — never fall back to activity.id
+  // (that would advance to first_interview_book without a held slot).
+  const preCallClaim = isPreCall && typeof claimId === "string" && claimId.trim().length > 0
+    ? claimId.trim()
+    : null;
   await assertRecruitingGraphCheckpoint(
     context,
     {
       workspaceId: job.workspace_id,
       intent: graphIntent,
       campaignId,
-      ...(isPreCall ? { bookingId: claimId || activity.id } : {}),
+      ...(preCallClaim ? { bookingId: preCallClaim } : {}),
     },
     allowedStages,
   );
 
   const successors = [];
-  if (isPreCall) {
+  if (preCallClaim) {
     successors.push(
       successorJob(
         "first_interview_book",
@@ -1829,14 +1831,17 @@ async function proposeMeetingForCandidate(job, context, meetingKind) {
       receiptKey: `${meetingKind}-propose:${campaignId}:${candidateId}`,
     },
     {
-      status: isPreCall ? "pre_call_proposed" : "interview_proposed",
+      status: isPreCall
+        ? (preCallClaim ? "pre_call_proposed" : "queued_for_approval")
+        : "interview_proposed",
       campaignId,
       candidateId,
       bookingMode: "human_confirm_live",
       proposeStatus,
       meetingKind,
+      ...(preCallClaim ? { claimId: preCallClaim } : {}),
     },
-    [event(isPreCall ? "precall.proposed" : "interview.proposed", "candidate", candidateId, {
+    [event(isPreCall ? (preCallClaim ? "precall.proposed" : "precall.queued") : "interview.proposed", "candidate", candidateId, {
       campaignId,
       intent,
       bookingMode: "human_confirm_live",
@@ -1844,7 +1849,7 @@ async function proposeMeetingForCandidate(job, context, meetingKind) {
       meetingKind,
       startTime,
       endTime,
-      claimId,
+      claimId: preCallClaim,
     })],
     successors,
   );

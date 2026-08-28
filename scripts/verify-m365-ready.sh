@@ -135,6 +135,7 @@ LIVE_SEAT="$(
             and (.hasRefreshToken == true)
             and ((.graphSubscription.active // false) == true)
             and ((.seatId // "") | length) > 0
+            and ((.scope // "") | test("OnlineMeetings[.]ReadWrite|onlinemeetings[.]readwrite"; "i"))
           )
         | .seatId as $sid
         | select(
@@ -168,19 +169,31 @@ SUB_N="$(
     ] | length
   ' "$WORK/conn.json"
 )"
-echo "  connectedGraph=$CONNECTED_N activeWebhook=$SUB_N liveSeat=${LIVE_SEAT:-'(none)'}"
+MEETINGS_N="$(
+  jq -r '
+    [(.connections // [])[]
+      | select(
+          (.provider // "") == "Microsoft Graph"
+          and ((.scope // "") | test("OnlineMeetings[.]ReadWrite|onlinemeetings[.]readwrite"; "i"))
+        )
+    ] | length
+  ' "$WORK/conn.json"
+)"
+echo "  connectedGraph=$CONNECTED_N activeWebhook=$SUB_N onlineMeetings=$MEETINGS_N liveSeat=${LIVE_SEAT:-'(none)'}"
 
 if [ -z "$LIVE_SEAT" ]; then
-  echo "ERROR: no mode=live Graph seat with active webhook." >&2
-  echo "  Settings → Connect Outlook (mode=live) → Enable Graph webhook, then re-run." >&2
+  echo "ERROR: no mode=live Graph seat with active webhook + OnlineMeetings.ReadWrite." >&2
+  echo "  Settings → Connect Outlook (grant Teams meetings) → Enable Graph webhook, then re-run." >&2
   if [ "${CONNECTED_N:-0}" -gt 0 ] && [ "${SUB_N:-0}" -eq 0 ]; then
     echo "  Hint: mailbox connected but graphSubscription.active=false — Enable webhook." >&2
+  elif [ "${CONNECTED_N:-0}" -gt 0 ] && [ "${MEETINGS_N:-0}" -eq 0 ]; then
+    echo "  Hint: reconnect Outlook and grant OnlineMeetings.ReadWrite (Teams joinUrl)." >&2
   elif [ "${CONNECTED_N:-0}" -eq 0 ]; then
     echo "  Hint: no Outlook mailbox connected yet." >&2
   fi
   exit 5
 fi
-echo "  OK live Graph seat $LIVE_SEAT (webhook + mode=live)"
+echo "  OK live Graph seat $LIVE_SEAT (webhook + OnlineMeetings + mode=live)"
 
 echo
 echo "=== 3b) Entra SSO login surface (GoTrue Azure + baked /login) ==="

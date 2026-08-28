@@ -286,12 +286,20 @@ export function createBookingReportActions({
       booking,
     );
 
-    const seat = state.seats.find(
-      (item) =>
-        item.status === "active" &&
-        item.mode === "live" &&
-        (item.provider === "Gmail API" || item.provider === "Microsoft Graph"),
-    );
+    // Prefer Microsoft Graph for Mantu Teams meetings; fall back to Gmail calendar only.
+    const seat =
+      state.seats.find(
+        (item) =>
+          item.status === "active" &&
+          item.mode === "live" &&
+          item.provider === "Microsoft Graph",
+      ) ??
+      state.seats.find(
+        (item) =>
+          item.status === "active" &&
+          item.mode === "live" &&
+          item.provider === "Gmail API",
+      );
     let providerEventCreated = false;
     if (liveCalendarEnabled) {
       if (!seat) {
