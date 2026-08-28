@@ -631,6 +631,7 @@ test("response exposes only exact bounded candidate evidence and validates subje
   assert.equal(response.status, 200);
   assert.equal(body.candidates.length, 1, JSON.stringify(body));
   assert.equal(body.candidates[0].campaignId, campaignId);
+  assert.equal(body.candidates[0].provenance, "live");
   assert.equal("email" in body.candidates[0], false);
   assert.equal("phone" in body.candidates[0], false);
   assert.equal("sourceAuthorityId" in body.candidates[0], false);
@@ -701,6 +702,7 @@ test("deterministic mode runs real GitHub search without a cloud model or provid
   assert.equal(body.candidates.length, 1);
   assert.equal(body.candidates[0].sourcePlatform, "GitHub");
   assert.equal(body.candidates[0].githubUrl, candidate.githubUrl);
+  assert.equal(body.candidates[0].provenance, "live");
   assert.equal("draftSubject" in body.candidates[0], false);
   assert.equal("draftBody" in body.candidates[0], false);
   assert.ok(runnerCalls >= 1);

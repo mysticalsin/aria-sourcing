@@ -185,6 +185,19 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       && /\/api\/outreach\/approve/.test(e2eScript),
   },
   {
+    requirement: "sourcing-agent HTTP response stamps provenance=live on every candidate",
+    evidence: () => {
+      const contract = readFileSync("src/lib/sourcing/sourcing-agent-contract.ts", "utf8");
+      const route = readFileSync("src/app/api/sourcing-agent/route.ts", "utf8");
+      return (
+        /provenance:\s*z\.literal\("live"\)/.test(contract)
+        && /provenance:\s*"live"/.test(route)
+        && /select\(\.provenance=="live"\)/.test(e2eScript)
+        && /AG_LIVE.*AG_N/.test(e2eScript)
+      );
+    },
+  },
+  {
     requirement: "Intake parse from inbound email text",
     evidence: () => {
       const parsed = parseInboundNeed(buildInboundEmailText({ body: SAMPLE_MANTU_EMAIL }));

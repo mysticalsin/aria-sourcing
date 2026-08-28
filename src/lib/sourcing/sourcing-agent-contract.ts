@@ -342,6 +342,8 @@ export const SourcingAgentCandidateDtoSchema = z
   .object({
     id: bounded(100),
     campaignId: bounded(100),
+    /** Every candidate returned by live search is stamped live — never synthetic. */
+    provenance: z.literal("live"),
     name: bounded(200).min(1),
     currentTitle: bounded(200),
     currentCompany: bounded(200),

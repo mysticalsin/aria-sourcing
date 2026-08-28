@@ -714,6 +714,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
         return {
           id: candidate.id,
           campaignId,
+          provenance: "live" as const,
           name: candidate.name,
           currentTitle: candidate.currentTitle,
           currentCompany: candidate.currentCompany,

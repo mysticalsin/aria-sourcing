@@ -18,6 +18,7 @@ function dto(overrides: Record<string, unknown> = {}) {
   return {
     id: "agent-candidate-1",
     campaignId,
+    provenance: "live",
     name: "Ada Example",
     currentTitle: "Staff Engineer",
     currentCompany: "Example Labs",
@@ -132,6 +133,7 @@ test("campaign fingerprint is stable across key order and matches CampaignProjec
 
 test("strict candidate DTO rejects foreign, duplicate, unsafe, or authority-bearing payloads", () => {
   assert.equal(parseSourcingAgentCandidates([dto()], campaignId, 2)?.length, 1);
+  assert.equal(parseSourcingAgentCandidates([dto({ provenance: "synthetic" })], campaignId, 2), null);
   assert.equal(parseSourcingAgentCandidates([dto({ campaignId: "foreign" })], campaignId, 2), null);
   assert.equal(parseSourcingAgentCandidates([dto(), dto()], campaignId, 2), null);
   assert.equal(
