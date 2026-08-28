@@ -10,7 +10,7 @@ status: gate-green-pr33-ready-awaiting-owner-golive
 
 ## Current state
 
-- **Branch tip:** `cursor/enterprise-autopilot-b91d` **`5fed108`**
+- **Branch tip:** `cursor/enterprise-autopilot-b91d` **`af60437`**
 - **Live Fly:** **`e469126`** (migration **0068**) — tip includes **0069**
 - **Deploy:** `deploy_status=stale_owner_remint_required` — probe: `bash scripts/print-fly-golive-status.sh`
 - **Test gate:** green (`npx tsc --noEmit && npm test`)
