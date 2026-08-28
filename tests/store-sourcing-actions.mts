@@ -287,6 +287,7 @@ test("live batch sourcing uses reviewed campaign authority and returns durable f
         {
           id: "reviewed-candidate-1",
           campaignId: campaign.id,
+          provenance: "live",
           name: "Reviewed Candidate",
           currentTitle: "Staff Platform Engineer",
           currentCompany: "Example",
@@ -340,6 +341,7 @@ test("a lost framework acknowledgement is typed for reconciliation and the stage
   const candidate = {
     id: "reviewed-framework-candidate",
     campaignId: campaign.id,
+    provenance: "live" as const,
     name: "Reviewed Framework Candidate",
     currentTitle: "Staff Platform Engineer",
     currentCompany: "Example",
