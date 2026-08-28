@@ -1,50 +1,40 @@
 ---
 project: MSourcing / ARIA
-shift: 248
+shift: 249
 agent: cursor-cloud
-updated: 2026-08-28T07:35Z
-status: tip-harness-skills-m365-blocked
+updated: 2026-08-28T08:00Z
+status: tip-live-008878e-e2e-47-pass-partial-m365-only
 ---
 
-# Handoff — Shift 248
+# Handoff — Shift 249
 
 ## Current state
 
-- **Branch tip:** `cursor/enterprise-autopilot-b91d` (harness + skills)
-- **Live Fly:** may lag tip until app redeploy — check `/api/ready`
+- **Branch tip / Live Fly:** `008878e` · migration **0071** · `deploy_status=tip_live`
 - **Test gate / audit:** green; **59/59**
-- **Fly E2E (PARTIAL):** **46 pass, 0 fail** on prior tip — M365 + quota skips only
+- **Fly E2E (PARTIAL):** **47 pass, 0 fail, 1 warn** — **only** M365 Graph seat skip
 - **PR:** [#35](https://github.com/mysticalsin/aria-sourcing/pull/35)
 
 ## Done this shift
 
-- **Hermes agent harness:** `src/lib/agents/hermes-agent-harness.ts` composes mission + personality + skill playbook into every loop system prompt
-- **Skills upgraded:** default outreach/sourcing/scoring/reply playbooks enforce Mantu brand, ban generic openers/salary/invention, match quality critics
-- **Wiring:** Hermes chat, `resolveLoopLlm`, generate-outreach-draft (workspace skills when present), `buildOutreachPrompt` requires Mantu Group in body
-- Tests: `hermes-agent-harness.mts`, registry + skills coverage
+- Raised Fly sourcing learning caps (`configure_sourcing_learning` → workspace 500/day) — **step 3c PASS** with `provenance=live`
+- Sequential LLM quality critics (3 attempts) + E2E approve retry — approve no longer flakes under load
+- Live proof: sourcing 2 live candidates → Mantu drafts → approve → LinkedIn 409 + email dry-run
 
 ## Blockers (owner — full objective)
 
-1. **M365 secrets (6 missing)** — see [`M365-OWNER-UNBLOCK.md`](M365-OWNER-UNBLOCK.md)
-2. **Strict Fly E2E PASS** — sourcing quota (3c) + M365 Teams book (6b); expect step 3c PASS with provenance=live when quota allows
-
-## Deploy confirm
-
-```bash
-bash scripts/print-fly-deploy-confirm.sh
-```
+1. **M365 secrets (6 missing)** — only remaining E2E gap (step 6b Teams book + Entra SSO)
+   - `bash scripts/print-m365-owner-portal-checklist.sh`
 
 ## Next steps
 
-1. Redeploy tip to Fly so live drafts use harness/skills
-2. Owner: M365 secrets → full E2E without partial flags
-3. Loop kill switch (A-1) only after P-1 Docker + full E2E PASS
+1. Owner: apply M365 Fly secrets → Settings → Connect Outlook → full E2E without `ARIA_ALLOW_PARTIAL_M365_E2E`
+2. Loop kill switch (A-1) only after P-1 Docker + full E2E PASS
 
 ## Decisions made (don't relitigate)
 
 - **Production = Fly only** — ignore Vercel/GitHub Actions CI
-- Hermes = per-agent shell (memory + personality + skills); shared sourcing mission
-- Skills are the editable playbooks; harness binds them into agent runtime prompts
+- Hermes harness + skills bind agent runtime; sequential critics for reliability
 
 ## Production gate (Fly)
 
@@ -52,4 +42,5 @@ bash scripts/print-fly-deploy-confirm.sh
 bash scripts/print-fly-golive-status.sh
 curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
 ARIA_ALLOW_PARTIAL_M365_E2E=1 bash e2e-workflow-test.sh
+# → expect 47 pass, 0 fail, 1 warn (M365 only)
 ```
