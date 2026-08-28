@@ -10,7 +10,7 @@ status: omogen-compete-hub-ship
 
 ## Current state
 
-- **Live Fly:** reminting after Candidate Hub ship (was `42a005f` / **0071**)
+- **Live Fly:** **Live Fly:** `4b3b5ea8644b3adc813730e43b59ab9fa672fef7` / **0071** · ready ok · `deploy_status=tip_live`
 - **PR #36** (draft; supersedes closed-without-merge #29–#35)
 - **Scope change (Tony):** skip M365/Entra + Vercel — compete with Omogen **except calling**
 - **New public surfaces:** `/hub`, `/hub/developpeur-java`, `/hub/report/[token]`, `/product`, `/pricing`, `/docs`, `/docs/api` + `/api/hub/*`
