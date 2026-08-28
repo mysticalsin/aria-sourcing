@@ -22,7 +22,7 @@
 **Canonical Entra tenant (Mantu Group Sandbox):** `ce57ebe3-a63d-4708-b5cf-c274b48bd26c`  
 Do **not** use BAW SAS (`864aa37f-…`) for Fly Mantu Graph/SSO.
 
-Agent scanned 1339 apps in Mantu Sandbox — **zero** with `aria-mantu-*.fly.dev` redirects. Owner must create the app (agent can read apps but cannot create/update).
+Entra reprobe 2026-08-28: **zero** apps with `aria-mantu` or `*.fly.dev` redirect URIs. Owner must create the app (agent can read apps but cannot create/update).
 
 `GOTRUE_EXTERNAL_AZURE_URL=https://login.microsoftonline.com/ce57ebe3-a63d-4708-b5cf-c274b48bd26c/v2.0`
 
@@ -35,7 +35,7 @@ Marker: `/tmp/az-create-mantu-graph-app.noperm`
 
 ```bash
 ARIA_ALLOW_PARTIAL_M365_E2E=1 bash e2e-workflow-test.sh
-# → 49 pass, 0 fail, 2 warn (PARTIAL) on live 344fcaf / tip da5df66 (2026-08-28)
+# → 49 pass, 0 fail, 2 warn (PARTIAL) on live 344fcaf / tip 8701a56 (2026-08-28)
 ```
 
 Strict E2E (no partial flag) correctly **FAIL**s on: `microsoftOAuth=false` + step 6b (no Graph seat).

@@ -1,8 +1,8 @@
 ---
 project: MSourcing / ARIA
-shift: 280
+shift: 281
 agent: cursor-cloud
-updated: 2026-08-28T11:13Z
+updated: 2026-08-28T11:16Z
 status: partial-e2e-green-m365-owner-blocked
 ---
 
@@ -11,7 +11,7 @@ status: partial-e2e-green-m365-owner-blocked
 ## Current state
 
 - **Live Fly:** `344fcaf` / **0071** · ready ok
-- **Branch tip:** `051432b`
+- **Branch tip:** `8701a56`
 - **PR #35** (supersedes closed #29–#33)
 - **Gate:** audit **60/60** · tsc green
 - **PARTIAL E2E (direct):** 49 pass / 0 fail / 2 warn (`ARIA_ALLOW_PARTIAL_M365_E2E=1`)
@@ -21,9 +21,9 @@ status: partial-e2e-green-m365-owner-blocked
 
 ## Done this shift
 
-1. Timer `m365-secrets-reprobe` fired — still 7 missing secrets, no owner env
-2. Entra rescan — zero aria-mantu redirect apps
-3. Re-requested owner setup action · rescheduled 30m timer
+1. Goal continuation reprobe — still 7 missing secrets, no owner env
+2. Entra scan (incl. all fly.dev redirects) — zero matches
+3. Gate: tsc + audit **60/60** green
 
 ## Blockers
 
