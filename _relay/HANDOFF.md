@@ -11,8 +11,8 @@ status: confirm-calendar-book-behavioral-tests
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft (supersedes #29)
-- **Tip:** pending this commit · Live Fly `fc8b54a` / **0071** (tip **0072**)
-- **Audit:** **64/64** · **Gate:** pending
+- **Tip:** `3cc1cb1` · Live Fly `fc8b54a` / **0071** (tip **0072**)
+- **Audit:** **64/64** · **Gate:** green · audit **64/64**
 - **M365:** `fly_m365_missing=7` · az login OK but **Insufficient privileges** to create Entra app · watcher + 30m reprobe
 - **LLM:** `llm_auth=dead` (only dead Kimi on Fly)
 - **Goal:** strict E2E PASS blocked on owner portal app + LLM remint
