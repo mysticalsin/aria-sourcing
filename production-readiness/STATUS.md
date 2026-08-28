@@ -91,7 +91,7 @@ particular production deployment is healthy.
 
 ## Live deployment note (2026-08-28)
 
-- Fly production code at migration **0070**; tip branch adds **0071** interview
-  prep dispatch and E2E reply webhook step — golive required for live prep enqueue.
-- PR [#35](https://github.com/mysticalsin/aria-sourcing/pull/35) tracks enterprise
-  autopilot lineage (#29–#33 superseded).
+- **Production = Fly only** (`aria-mantu-app.fly.dev`). Vercel is demo-only and is not a release gate.
+- Fly production code at migration **0070**; tip branch adds **0071** interview prep dispatch — golive required.
+- PR [#35](https://github.com/mysticalsin/aria-sourcing/pull/35) tracks enterprise autopilot lineage (#29–#33 superseded).
+- Owner golive: remint deploy confirm for tip SHA → `bash scripts/fly-deploy-now.sh` (see `production-readiness/FLY_GOLIVE.md`).

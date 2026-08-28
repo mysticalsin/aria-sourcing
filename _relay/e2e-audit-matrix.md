@@ -3,10 +3,10 @@
 **Date:** 2026-08-28  
 **Branch:** `cursor/enterprise-autopilot-b91d`  
 **PR:** [#35](https://github.com/mysticalsin/aria-sourcing/pull/35)  
+**Production host:** `https://aria-mantu-app.fly.dev` (Fly only)  
 **Automated pin:** `tests/enterprise-e2e-audit-matrix.mts` — **58/58 pass**  
-**Live Fly:** migration **0070** applied; tip includes **0071** (interview prep) pending golive  
-**Test gate:** `npx tsc --noEmit && npm test` green  
-**Live E2E:** `bash scripts/run-enterprise-e2e-partial.sh` — 35+ pass (PARTIAL M365 until owner secrets)
+**Live Fly:** migration **0070** applied; tip **0071** pending golive  
+**Fly E2E gate:** `APP_URL=https://aria-mantu-app.fly.dev bash e2e-workflow-test.sh` (PARTIAL until M365 secrets)
 
 Format: `| Section | Check | Status | Evidence | Fix owner |`
 
