@@ -261,7 +261,16 @@ test("runtime booking creation emits only after an accepted state transition", a
     result.ok ? result.booking.id : null,
   );
   assert.equal(accepted.events.length, 1);
+  assert.equal(
+    accepted.state.candidates.find((item) => item.id === acceptedIds.candidate.id)?.stage,
+    "Interested",
+    "local slot without meeting URL must not promote stage to Booked",
+  );
   assert.doesNotMatch(accepted.activityDrafts.at(-1)?.notes ?? "", /links generated/i);
+  assert.match(
+    accepted.activityDrafts.at(-1)?.notes ?? "",
+    /Stage stays Interested — Needs calendar before Booked\./,
+  );
   assert.match(
     accepted.activityDrafts.at(-1)?.notes ?? "",
     /Needs calendar — connect Microsoft Graph and book with confirmLive for a Teams meeting\./,
@@ -562,6 +571,10 @@ test("Graph booking requires a Teams join URL before committing Booked", async (
   assert.equal(
     okResult.booking.teamsLink,
     "https://teams.microsoft.com/l/meetup-join/19%3ameeting_ok",
+  );
+  assert.equal(
+    okHarness.state.candidates.find((item) => item.id === okIds.candidate.id)?.stage,
+    "Booked",
   );
 });
 

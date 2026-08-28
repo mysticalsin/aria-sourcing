@@ -820,7 +820,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     { label: "Contacted", value: formatNumber(m.contacted), hint: "Outreach delivered", icon: <Send />, tone: "tangerine" },
     { label: "Reply rate", value: formatPercent(m.replyRate), hint: "Replies per contact", icon: <MessageSquare />, tone: "aqua" },
     { label: "Interested", value: formatNumber(m.interested), hint: "Positive intent", icon: <Sparkles />, tone: "tangerine" },
-    { label: "Booked", value: formatNumber(m.booked), hint: "Interviews scheduled", icon: <CalendarCheck />, tone: "violet" },
+    { label: "Booked", value: formatNumber(m.booked), hint: "With Teams/calendar link", icon: <CalendarCheck />, tone: "violet" },
     { label: "Avg match", value: m.avgMatchScore, hint: "Mean fit score", icon: <Target />, tone: scoreTone(m.avgMatchScore) },
   ];
 

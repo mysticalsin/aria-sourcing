@@ -452,9 +452,15 @@ export function createBookingReportActions({
       const liveCampaign = liveCandidate && current.campaigns.find((item) => item.id === liveCandidate.campaignId);
       if (!liveCandidate || !liveCampaign) return current;
       applied = true;
+      const calendarConfirmed = !bookingNeedsCalendar(booking);
       const candidates = current.candidates.map((item) =>
         item.id === candidateId
-          ? { ...item, ...withStage(item, "Booked"), booking, interviewProposal: null }
+          ? {
+              ...item,
+              ...(calendarConfirmed ? withStage(item, "Booked") : {}),
+              booking,
+              interviewProposal: null,
+            }
           : item,
       );
       const bookedCandidate = candidates.find((item) => item.id === candidateId) ?? liveCandidate;
@@ -463,14 +469,20 @@ export function createBookingReportActions({
         bookings: [booking, ...current.bookings],
         candidates,
       };
-      next = appendWinRecord(next, bookedCandidate, liveCampaign, booking);
+      if (calendarConfirmed) {
+        next = appendWinRecord(next, bookedCandidate, liveCampaign, booking);
+      }
       next = recomputeMetrics(next, liveCampaign.id);
       return withActivity(
         next,
         makeActivity({
           type: "booking",
           title: bookingInterviewTitle(booking, liveCandidate.name),
-          notes: `${booking.interviewer || "No interviewer assigned yet"}. ${bookingCalendarSummary(booking)} Stage → Booked.`,
+          notes: `${booking.interviewer || "No interviewer assigned yet"}. ${bookingCalendarSummary(booking)} ${
+            calendarConfirmed
+              ? "Stage → Booked."
+              : "Stage stays Interested — Needs calendar before Booked."
+          }`,
           outcome: bookingNeedsCalendar(booking) ? "Needs calendar" : "Confirmed",
           campaignId: liveCampaign.id,
           linkedEntityType: "booking",
@@ -578,7 +590,11 @@ export function createBookingReportActions({
       };
       if (safePatch.status === "Completed") {
         const candidate = next.candidates.find((item) => item.id === liveBooking.candidateId);
-        if (candidate?.stage === "Booked") {
+        const mayInterview =
+          candidate &&
+          (candidate.stage === "Booked" ||
+            (candidate.stage === "Interested" && candidate.booking?.id === liveBooking.id));
+        if (mayInterview) {
           next = {
             ...next,
             candidates: next.candidates.map((item) =>

@@ -303,6 +303,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /Boolean\(booking\.teamsLink \|\| booking\.calLink\)/.test(readFileSync("src/lib/metrics.ts", "utf8"))
         && /provenance: "manual"[\s\S]{0,80}leadSource: "Applicant"/.test(store)
         && /mock adapter — sample data only/.test(readFileSync("src/lib/integrations.ts", "utf8"))
+        && /Stage stays Interested — Needs calendar before Booked/.test(bookingActions)
+        && /calendarConfirmed \? withStage\(item, "Booked"\)/.test(bookingActions)
       );
     },
   },
