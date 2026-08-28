@@ -10,10 +10,10 @@ status: tip-ahead-shortlist-minscore-awaiting-confirm
 
 ## Current state
 
-- **Branch tip (git):** `cursor/enterprise-autopilot-b91d` **`2d70f5f`** (`2d70f5ff8a986cee65a87a54aea8b9dd5660464e`); code `846015c`; feature `cursor/quality-critics-stale-53d3` **`846015c`**
+- **Branch tip (git):** `cursor/enterprise-autopilot-b91d` **`6556fdd`** (`6556fdd8c5a31e0b2e68b179c504a12843cca46a`); code `846015c`; feature `cursor/quality-critics-stale-53d3` **`846015c`**
 - **Live Fly `aria-mantu-app`:** **`e46912691e9d2ad400dbb5a37f3e68047649727e`** / mig **0068** — still behind tip (graphStage through shortlistMinScore)
-- **Deploy confirm:** `/tmp/owner-deploy-confirm.env` is for **`e469126`** — **NO MATCH** vs HEAD `2d70f5f` (did **not** invent; did **not** deploy)
-- **Setup action requested:** owner mint confirm for tip `2d70f5f` via `bash scripts/print-fly-deploy-confirm.sh` + fly-deploy-now (cursor-cloud `request-environment-setup-actions` id `fly-deploy-confirm-tip-2d70f5f`)
+- **Deploy confirm:** `/tmp/owner-deploy-confirm.env` is for **`e469126`** — **NO MATCH** vs HEAD (did **not** invent; did **not** deploy). Owner must mint for `git rev-parse HEAD` at mint time (`bash scripts/print-fly-deploy-confirm.sh`)
+- **Setup action requested:** owner mint confirm for current tip via `bash scripts/print-fly-deploy-confirm.sh` + fly-deploy-now (cursor-cloud id `fly-deploy-confirm-tip-current`)
 - **Timer:** `enterprise-deploy-confirm-recheck` once ~18m — confirm vs HEAD only; deploy only if matched; skip Microsoft; no invent confirm
 - Microsoft **SKIPPED** (owner) — Outlook/Teams live E2E out of scope; E2E stays **PARTIAL** when MS skipped
 - Goal `goal-2026-07-08-aria-enterprise-ready` **IN_PROGRESS** (do not complete)
@@ -22,7 +22,7 @@ status: tip-ahead-shortlist-minscore-awaiting-confirm
 ## Done this shift
 
 1. Confirm vs HEAD: stale confirm for live `e469126` ≠ tip `e7ed691`/`846015c` → no Fly deploy
-2. Requested owner deploy-confirm setup action for tip `2d70f5f` (code `846015c`); subscribed one-shot timer `enterprise-deploy-confirm-recheck` (~18m)
+2. Requested owner deploy-confirm setup action for tip HEAD (code `846015c`); subscribed one-shot timer `enterprise-deploy-confirm-recheck` (~18m)
 3. Fail-closed shortlist floor + quality honesty (`846015c` on `cursor/quality-critics-stale-53d3`, tip `2d70f5f`):
    - LangGraph `rankTop10` honors workspace `shortlistMinScore` (via checkpoint body); worker passes `auto_shortlist_min_score` so a lowered floor no longer fails entitled shortlists against hardcoded 70
    - `regenerateOutreach` / body `updateOutreach` clear stale `qualityCriticsUsed` (no lying · multi-agent badge after edit)
@@ -31,15 +31,15 @@ status: tip-ahead-shortlist-minscore-awaiting-confirm
 
 ## Blockers
 
-- Owner must mint deploy confirm for tip `2d70f5f` / `2d70f5ff8a986cee65a87a54aea8b9dd5660464e` via `bash scripts/print-fly-deploy-confirm.sh` before Fly redeploy
+- Owner must mint deploy confirm for current tip HEAD (print-fly-deploy-confirm.sh; includes code `846015c`) via `bash scripts/print-fly-deploy-confirm.sh` before Fly redeploy
 - Live still stalls parse→campaign_create until tip (incl. `03ddf0d` + `d381ff2` + `fc7299f` + `ac5b7a5` + `b314ade` / `846015c` / `2d70f5f`) is deployed
 - Microsoft still skipped
 - Fresh tip PR create blocked by GitHub integration permissions
 
 ## Next steps
 
-1. Owner: mint confirm for `2d70f5f` and redeploy Fly (app + loop); keep loop machine started
-2. After redeploy: prove `/api/ready` SHA=`2d70f5f…`; re-prove synthetic need → `requisition_parse` → `campaign_create` → `sourcing_batch` past `complete_aria_job` (no `22023`)
+1. Owner: mint confirm for current tip HEAD and redeploy Fly (app + loop); keep loop machine started
+2. After redeploy: prove `/api/ready` SHA matches deployed tip; re-prove synthetic need → `requisition_parse` → `campaign_create` → `sourcing_batch` past `complete_aria_job` (no `22023`)
 3. Continue live dry-run: source → top10 (workspace min score) → Mantu draft → multi-agent quality (no Approve/send); LinkedIn 409
 4. Operator smoke: email test **hiring_need_handler** without Graph; Outreach Queue Dry-run + Quality; regenerate clears multi-agent badge; Calendar **Needs calendar** titles
 5. Keep Microsoft skipped; do not complete goal; do not reopen #32
@@ -62,7 +62,7 @@ status: tip-ahead-shortlist-minscore-awaiting-confirm
 
 ## Watch out
 
-- Stale confirm for `e469126` will refuse tip `2d70f5f` — remint via `print-fly-deploy-confirm.sh`
+- Stale confirm for `e469126` will refuse tip HEAD — remint via `print-fly-deploy-confirm.sh`
 - Do not set `ARIA_ALLOW_SKIP_LIVE_CALENDAR=1` as success theatre
 - Keep loop machine started after future deploys
 - `campaign_create` now requires campaign blob visible; if workspace lag, retries with `campaign_missing`
