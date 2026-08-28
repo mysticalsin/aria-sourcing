@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { claimCalendarBooking, reconcileCalendarBooking } from "@/lib/calendar-authority";
-import { mantuFirstInterviewAgenda } from "@/lib/mantu-brand";
+import { mantuFirstInterviewAgenda, mantuPreCallAgenda } from "@/lib/mantu-brand";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import type { Candidate, Campaign } from "@/lib/types";
 
@@ -19,6 +19,8 @@ const BodySchema = z.object({
   confirmLive: z.boolean().optional().default(false),
   startTime: z.string().min(1).max(40).optional(),
   endTime: z.string().min(1).max(40).optional(),
+  /** pre_call = 15–20 min screen; first_interview = 30–60 min Mantu interview (default). */
+  meetingKind: z.enum(["pre_call", "first_interview"]).optional().default("first_interview"),
 });
 
 function authorized(req: NextRequest): boolean {
@@ -34,15 +36,19 @@ function authorized(req: NextRequest): boolean {
   );
 }
 
-/** Next weekday 10:00–10:30 UTC as a default interview proposal slot. */
-function defaultInterviewWindow(now = new Date()): { startTime: string; endTime: string } {
+/** Next weekday default slot; pre-call is 20 min, first interview 30 min. */
+function defaultMeetingWindow(
+  meetingKind: "pre_call" | "first_interview",
+  now = new Date(),
+): { startTime: string; endTime: string } {
   const start = new Date(now);
   start.setUTCHours(10, 0, 0, 0);
   start.setUTCDate(start.getUTCDate() + 1);
   while (start.getUTCDay() === 0 || start.getUTCDay() === 6) {
     start.setUTCDate(start.getUTCDate() + 1);
   }
-  const end = new Date(start.getTime() + 30 * 60 * 1000);
+  const durationMs = meetingKind === "pre_call" ? 20 * 60 * 1000 : 30 * 60 * 1000;
+  const end = new Date(start.getTime() + durationMs);
   return { startTime: start.toISOString(), endTime: end.toISOString() };
 }
 
@@ -99,10 +105,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, status: "not_found" }, { status: 404 });
   }
 
+  const meetingKind = parsed.data.meetingKind ?? "first_interview";
   const window =
     parsed.data.startTime && parsed.data.endTime
       ? { startTime: parsed.data.startTime, endTime: parsed.data.endTime }
-      : defaultInterviewWindow();
+      : defaultMeetingWindow(meetingKind);
 
   const requestId = `loop-propose:${parsed.data.campaignId}:${parsed.data.candidateId}:${window.startTime}`;
   const claim = await claimCalendarBooking(svc, {
@@ -124,7 +131,10 @@ export async function POST(req: NextRequest) {
     campaign.jobAnalysis?.title?.trim() ||
     (typeof campaign.title === "string" ? campaign.title.trim() : "") ||
     "Interview";
-  const agenda = mantuFirstInterviewAgenda(roleTitle);
+  const agenda =
+    meetingKind === "pre_call"
+      ? mantuPreCallAgenda(roleTitle)
+      : mantuFirstInterviewAgenda(roleTitle);
 
   // Default autonomous path: dry-run — release claim so humans can confirmLive later.
   await reconcileCalendarBooking(svc, {
@@ -137,6 +147,7 @@ export async function POST(req: NextRequest) {
     ok: true,
     status: "proposed_dry_run",
     bookingMode: "human_confirm_live",
+    meetingKind,
     campaignId: campaign.id,
     candidateId: candidate.id,
     candidateName: candidate.name,

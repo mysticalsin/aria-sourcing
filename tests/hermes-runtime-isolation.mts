@@ -4,6 +4,11 @@ import {
   evaluateHermesProxyOperation,
   evaluateHermesWorkspaceBinding,
 } from "../src/lib/api/hermes-runtime-isolation";
+import {
+  buildHermesSessionKey,
+  buildHermesUpstreamPath,
+  resolveHermesProfilePrefix,
+} from "../src/lib/api/hermes-proxy";
 import { createProcessEnvScope } from "./helpers/process-env.mts";
 
 mock.module("server-only", { namedExports: {} });
@@ -20,6 +25,29 @@ function ok(name: string, condition: boolean) {
 
 const workspaceA = "11111111-1111-4111-8111-111111111111";
 const workspaceB = "22222222-2222-4222-8222-222222222222";
+
+ok(
+  "profile prefix is stable per workspace uuid",
+  resolveHermesProfilePrefix(workspaceA) === `ws-${workspaceA}`,
+);
+ok(
+  "cross-workspace profile prefixes differ",
+  resolveHermesProfilePrefix(workspaceA) !== resolveHermesProfilePrefix(workspaceB),
+);
+ok(
+  "session key scopes workspace:campaign:candidate",
+  buildHermesSessionKey({ workspaceId: workspaceA, campaignId: "camp-1", candidateId: "cand-1" })
+    === `${workspaceA}:camp-1:cand-1`,
+);
+ok(
+  "upstream path adds profile prefix for multiplexing",
+  buildHermesUpstreamPath("/v1/chat/completions", `ws-${workspaceA}`)
+    === `/p/ws-${workspaceA}/v1/chat/completions`,
+);
+ok(
+  "session key omitted without full candidate scope",
+  buildHermesSessionKey({ workspaceId: workspaceA, campaignId: "camp-1" }) === undefined,
+);
 
 ok(
   "production runtime fails closed without a workspace binding",

@@ -4,7 +4,7 @@ import { humanizeText } from "./humanizer";
 import { mantuOutreachVoice, mantuEmailHtmlWrapper } from "./mantu-brand";
 import { roleProfile } from "./roles";
 import type { SourceResult } from "./sourcing/candidate-mappers";
-import { detectLanguage, outreachStrings, REPLY_LEXICON } from "./i18n";
+import { detectLanguage, detectLanguageWithHint, isKnownBusinessLanguage, outreachStrings, REPLY_LEXICON } from "./i18n";
 import { evaluateNeedReadiness } from "./needs/readiness";
 import {
   employmentFromMantuType,
@@ -400,7 +400,22 @@ export function parseMantuNeed(text: string): ParsedIntake {
     ? "fr"
     : /english|anglais/i.test(primaryLang)
       ? "en"
-      : detectLanguage(normalized);
+      : /german|deutsch/i.test(primaryLang)
+        ? "de"
+        : /spanish|español/i.test(primaryLang)
+          ? "es"
+          : detectLanguageWithHint(normalized, detectLanguage(normalized));
+  const secondaryLanguages = [...meta.languagesMust.slice(1), ...meta.languagesNice]
+    .map((label) => {
+      if (/french|français/i.test(label)) return "fr";
+      if (/english|anglais/i.test(label)) return "en";
+      if (/german|deutsch/i.test(label)) return "de";
+      if (/arabic|arabe/i.test(label)) return "ar";
+      if (/japanese/i.test(label)) return "ja";
+      const iso = label.match(/\b([a-z]{2})\b/i)?.[1]?.toLowerCase();
+      return iso && isKnownBusinessLanguage(iso) ? iso : "";
+    })
+    .filter((code, idx, arr) => code && code !== languageCode && arr.indexOf(code) === idx);
 
   const jobAnalysis: JobAnalysis = {
     title: meta.title,
@@ -432,6 +447,16 @@ export function parseMantuNeed(text: string): ParsedIntake {
     reportingTo: meta.mainManager,
     urgency,
     language: languageCode,
+    localeContext: {
+      primaryLanguage: languageCode,
+      secondaryLanguages: secondaryLanguages.length ? secondaryLanguages : undefined,
+      marketCountry: regions[0] || undefined,
+      workCity: loc || meta.city || undefined,
+      clientSector: meta.clientSector || undefined,
+      formality: /consulting|consultant/i.test(`${meta.type} ${meta.contractType}`)
+        ? "consulting"
+        : "formal",
+    },
     expectedStartDate: targetStartDate,
     missionDescription: meta.missionDescription || undefined,
     linkedinBoolean: meta.booleanSearch || undefined,

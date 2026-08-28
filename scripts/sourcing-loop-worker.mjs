@@ -136,8 +136,8 @@ export const PIPELINE_STAGE_TRANSITION_PRODUCERS = Object.freeze({
   "inbound_classify->draft_generate": Object.freeze([
     "handleInboundClassify (positive intent + entitled autopilot)",
   ]),
-  "inbound_classify->calendar_book": Object.freeze([
-    "handleInboundClassify (positive interest → Teams/Outlook propose)",
+  "inbound_classify->pre_call_propose": Object.freeze([
+    "handleInboundClassify (positive interest → pre-call propose)",
   ]),
   "requisition_parse->campaign_create": Object.freeze(["handleRequisitionParse"]),
   "campaign_create->sourcing_batch": Object.freeze(["handleCampaignCreate"]),
@@ -148,8 +148,11 @@ export const PIPELINE_STAGE_TRANSITION_PRODUCERS = Object.freeze({
     "POST /api/shortlist/approve",
     "handleShortlistBuild (entitled auto-approve)",
   ]),
-  "draft_generate->calendar_book": Object.freeze([
+  "draft_generate->pre_call_propose": Object.freeze([
     "handleDraftGenerate (positive reply trigger)",
+  ]),
+  "pre_call_propose->first_interview_book": Object.freeze([
+    "handlePreCallPropose",
   ]),
   "delivery_reconcile->outcome_feedback": Object.freeze(["handleDeliveryReconcile"]),
 });
@@ -195,6 +198,59 @@ function optionalModelName(value) {
 }
 
 export function createReplyClassificationModelClient(environment, fetcher = fetch) {
+  const hermesUrl = (environment.HERMES_API_URL ?? "").replace(/\/$/, "");
+  const hermesKey = environment.HERMES_API_KEY ?? "";
+  const hermesLive =
+    hermesUrl
+    && validServiceToken(hermesKey)
+    && environment.HERMES_LIVE_MODE !== "0";
+
+  if (hermesLive) {
+    const model = optionalModelName(environment.HERMES_LOOP_MODEL ?? environment.ARIA_REPLY_CLASSIFIER_MODEL);
+    return {
+      async classifyReply({ system, prompt }) {
+        const profilePrefix = environment.HERMES_RUNTIME_WORKSPACE_ID
+          ? `ws-${environment.HERMES_RUNTIME_WORKSPACE_ID}`
+          : "default";
+        const upstreamUrl = `${hermesUrl}/p/${profilePrefix}/v1/chat/completions`;
+        let response;
+        try {
+          response = await fetcher(upstreamUrl, {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${hermesKey}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              model,
+              temperature: 0,
+              messages: [
+                { role: "system", content: system },
+                { role: "user", content: prompt },
+              ],
+            }),
+            signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+          });
+        } catch {
+          return { ok: false, reason: "hermes_unreachable" };
+        }
+        if (!response.ok) {
+          await response.body?.cancel().catch(() => undefined);
+          return { ok: false, reason: `hermes_http_${response.status}` };
+        }
+        try {
+          const body = await readBoundedJson(response, MODEL_RESPONSE_BYTES);
+          const text = body?.choices?.[0]?.message?.content;
+          return typeof text === "string" && text.trim()
+            ? { ok: true, text }
+            : { ok: false, reason: "hermes_response_empty" };
+        } catch (cause) {
+          return { ok: false, reason: cause instanceof Error ? cause.message : "hermes_response_invalid" };
+        }
+      },
+    };
+  }
+
   const apiKey = environment.OPENAI_API_KEY ?? "";
   if (!validServiceToken(apiKey)) return null;
   const model = optionalModelName(environment.ARIA_REPLY_CLASSIFIER_MODEL);
@@ -1387,13 +1443,13 @@ async function handleDraftGenerate(job, context) {
     && (intent === "INTERESTED" || intent === "QUALIFIED_INTEREST");
   if (positiveReply) {
     const expectedKind = nextJobKindAfterGraphStage("queued_for_approval");
-    if (expectedKind && expectedKind !== "calendar_book") {
+    if (expectedKind && expectedKind !== "pre_call_propose") {
       throw new HandlerError("graph_stage_successor_mismatch", false);
     }
     successors.push(
       successorJob(
-        expectedKind || "calendar_book",
-        `calendar:reply:${campaignId}:${candidateId}`,
+        expectedKind || "pre_call_propose",
+        `precall:reply:${campaignId}:${candidateId}`,
         {
           campaignId,
           candidateId,
@@ -1443,10 +1499,9 @@ async function handleDraftGenerate(job, context) {
 }
 
 /**
- * Propose a first interview (Teams/Outlook) after positive interest.
- * Calls claim→reconcile dry-run cron by default; humans confirmLive in UI for Graph.
+ * Shared calendar propose helper for pre-call and first-interview stages.
  */
-async function handleCalendarBook(job, context) {
+async function proposeMeetingForCandidate(job, context, meetingKind) {
   const payload = payloadOf(job);
   const campaignId = boundedText(payload.campaignId, 160, "campaign_id_required");
   const candidateId = boundedText(payload.candidateId, 160, "candidate_id_required");
@@ -1467,6 +1522,7 @@ async function handleCalendarBook(job, context) {
           campaignId,
           candidateId,
           confirmLive: false,
+          meetingKind,
         }),
         signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
       });
@@ -1490,19 +1546,22 @@ async function handleCalendarBook(job, context) {
   const agenda = Array.isArray(propose?.agenda)
     ? propose.agenda.filter((line) => typeof line === "string" && line.trim()).map((line) => line.trim())
     : [];
+  const isPreCall = meetingKind === "pre_call";
   const slotNote =
     startTime && endTime ? `Proposed slot ${startTime} – ${endTime}.` : "Slot to be chosen in Calendar.";
   const claimNote = claimId ? `Claim ${claimId}.` : "No calendar claim (propose cron unavailable).";
   const activity = {
-    id: `act-interview-${campaignId}-${candidateId}`,
+    id: `act-${meetingKind}-${campaignId}-${candidateId}`,
     type: "booking",
-    title: "First interview proposed (Teams/Outlook)",
+    title: isPreCall
+      ? "Pre-call screen proposed (15–20 min)"
+      : "First interview proposed (Teams/Outlook)",
     notes: [
       `Candidate ${candidateId}.`,
       intent ? `Intent ${intent}.` : null,
       slotNote,
       claimNote,
-      `Propose ${proposeStatus}. Open Calendar and book with confirmLive for a Teams meeting.`,
+      `Propose ${proposeStatus}. Open Calendar and book with confirmLive when connected.`,
     ]
       .filter(Boolean)
       .join(" "),
@@ -1513,9 +1572,8 @@ async function handleCalendarBook(job, context) {
     createdAt: new Date().toISOString(),
   };
 
-  // Persist structured proposal + Interested stage so Calendar Ready-to-book can
-  // pin confirmLive to the proposed window (activity notes alone are not enough).
   const snapshot = await readWorkspaceSnapshot(context.client, job.workspace_id);
+  const patchField = isPreCall ? "preCallProposal" : "interviewProposal";
   const proposalPatch = await context.client.rpc("apply_workspace_patch", {
     p_workspace_id: job.workspace_id,
     p_expected_updated_at: snapshot.updated_at,
@@ -1524,19 +1582,20 @@ async function handleCalendarBook(job, context) {
       id: candidateId,
       campaignId,
       patch: {
-        stage: "Interested",
-        interviewProposal: {
+        stage: isPreCall ? "Pre-call proposed" : "Interested",
+        [patchField]: {
           startTime: startTime ?? "",
           endTime: endTime ?? "",
           agenda,
           claimId,
           proposeStatus,
           channel: "Microsoft Teams / Outlook",
+          meetingKind,
           proposedAt: new Date().toISOString(),
         },
       },
     },
-    p_receipt_key: `interview-proposal:${campaignId}:${candidateId}`,
+    p_receipt_key: `${meetingKind}-proposal:${campaignId}:${candidateId}`,
   });
   if (proposalPatch.error) throw new HandlerError(proposalPatch.error.code, true);
   const proposalStatus =
@@ -1547,17 +1606,30 @@ async function handleCalendarBook(job, context) {
     throw new HandlerError(`proposal_${proposalStatus}`, proposalStatus === "stale_token");
   }
 
-  // Propose path has no durable bookingId — LangGraph must NOT claim interview_scheduled.
+  // LangGraph checkpoint intents wired here: intent: "pre_call_only" | intent: "interview_only"
+  const graphIntent = isPreCall ? "pre_call_only" : "interview_only";
+  const allowedStages = isPreCall ? ["pre_call_proposed", "queued_for_approval"] : ["interview_proposed", "queued_for_approval"];
   await assertRecruitingGraphCheckpoint(
     context,
     {
       workspaceId: job.workspace_id,
-      intent: "book_only",
+      intent: graphIntent,
       campaignId,
-      // omit bookingId on purpose (human confirmLive creates the real booking)
     },
-    ["queued_for_approval"],
+    allowedStages,
   );
+
+  const successors = [];
+  if (isPreCall) {
+    successors.push(
+      successorJob(
+        "first_interview_book",
+        `interview:${campaignId}:${candidateId}`,
+        { campaignId, candidateId, trigger: "pre_call_propose", intent },
+        75,
+      ),
+    );
+  }
 
   return completeJobWithWorkspacePatch(
     context.client,
@@ -1565,26 +1637,43 @@ async function handleCalendarBook(job, context) {
     {
       kind: "append_activities",
       value: [activity],
-      receiptKey: `interview-propose:${campaignId}:${candidateId}`,
+      receiptKey: `${meetingKind}-propose:${campaignId}:${candidateId}`,
     },
     {
-      status: "interview_proposed",
+      status: isPreCall ? "pre_call_proposed" : "interview_proposed",
       campaignId,
       candidateId,
       bookingMode: "human_confirm_live",
       proposeStatus,
+      meetingKind,
     },
-    [event("interview.proposed", "candidate", candidateId, {
+    [event(isPreCall ? "precall.proposed" : "interview.proposed", "candidate", candidateId, {
       campaignId,
       intent,
       bookingMode: "human_confirm_live",
       proposeStatus,
+      meetingKind,
       startTime,
       endTime,
       claimId,
     })],
-    [],
+    successors,
   );
+}
+
+async function handlePreCallPropose(job, context) {
+  return proposeMeetingForCandidate(job, context, "pre_call");
+}
+
+async function handleFirstInterviewBook(job, context) {
+  return proposeMeetingForCandidate(job, context, "first_interview");
+}
+
+/**
+ * Legacy calendar_book handler — retained for in-flight jobs; new path uses pre_call → first_interview.
+ */
+async function handleCalendarBook(job, context) {
+  return handleFirstInterviewBook(job, context);
 }
 
 async function handleInboundClassify(job, context) {
@@ -1694,12 +1783,11 @@ async function handleInboundClassify(job, context) {
     }
 
     try {
-      // Always enqueue Teams/Outlook first-interview propose on positive interest
-      // (human confirmLive in UI). Autopilot may additionally draft a reply.
+      // Positive interest → pre-call propose first, then first interview (dry-run).
       successors.push(
         successorJob(
-          "calendar_book",
-          `calendar:reply:${campaignId}:${candidateId}`,
+          "pre_call_propose",
+          `precall:reply:${campaignId}:${candidateId}`,
           {
             campaignId,
             candidateId,
@@ -1773,6 +1861,8 @@ const HANDLERS = Object.freeze({
   enrich_candidate: handleEnrichCandidate,
   shortlist_build: handleShortlistBuild,
   draft_generate: handleDraftGenerate,
+  pre_call_propose: handlePreCallPropose,
+  first_interview_book: handleFirstInterviewBook,
   calendar_book: handleCalendarBook,
   delivery_reconcile: handleDeliveryReconcile,
   outcome_feedback: (job, context) => handleSimpleEvent(job, context, "outcome.feedback_requested", "candidate", "candidateId"),

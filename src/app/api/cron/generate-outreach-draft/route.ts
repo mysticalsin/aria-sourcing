@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { buildOutreachPrompt, parseHermesOutreach } from "@/lib/ai/hermes";
-import { serverGenerateText } from "@/lib/ai/server-generate";
+import { resolveLoopLlm } from "@/lib/ai/loop-llm";
 import { runRecruitingGraph } from "@/lib/langchain/recruiting-graph";
 import { mantuOutreachVoice, mantuEmailHtmlWrapper } from "@/lib/mantu-brand";
 import { generateOutreach, newOutreachMessage } from "@/lib/mock-ai";
@@ -81,6 +81,10 @@ export async function POST(req: NextRequest) {
 
   let generated = mockGenerated;
   let modelUsed = false;
+  const lang = campaign.jobAnalysis.localeContext?.primaryLanguage ?? campaign.jobAnalysis.language ?? "en";
+  const localeHint = campaign.jobAnalysis.localeContext
+    ? `\nLocale context: market=${campaign.jobAnalysis.localeContext.marketCountry ?? "n/a"}, city=${campaign.jobAnalysis.localeContext.workCity ?? "n/a"}, formality=${campaign.jobAnalysis.localeContext.formality ?? "consulting"}.`
+    : "";
   const prompt = buildOutreachPrompt({
     candidateName: candidate.name,
     candidateTitle: candidate.currentTitle,
@@ -92,19 +96,21 @@ export async function POST(req: NextRequest) {
     locationType: campaign.jobAnalysis.locationType,
     regions: campaign.jobAnalysis.regions,
     requiredSkills: campaign.jobAnalysis.requiredSkills,
-    roleContext: candidateDisclosureContextForCampaignLike(campaign),
+    roleContext: candidateDisclosureContextForCampaignLike(campaign) + localeHint,
     tone: "Casual Professional",
     channel,
-    language: campaign.jobAnalysis.language ?? "en",
+    language: lang,
+    localeContext: campaign.jobAnalysis.localeContext,
     persona: voice.persona,
     signature: voice.signature,
   });
-  const live = await serverGenerateText({
-    system:
-      "You write empathetic, Mantu-branded recruiting outreach. Never invent credentials. Never disclose salary. No AI self-disclosure. Reply with Subject: line then body.",
+  const live = await resolveLoopLlm({
+    task: "outreach",
     prompt,
-    maxTokens: 1024,
     workspaceId: parsed.data.workspaceId,
+    campaignId: parsed.data.campaignId,
+    candidateId: parsed.data.candidateId,
+    maxTokens: 1024,
   });
   if (live.ok) {
     const parsedLive = parseHermesOutreach(live.text, channel, mockGenerated.subject);

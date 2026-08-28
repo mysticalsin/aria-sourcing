@@ -24,6 +24,12 @@ import { SOURCING_TOOL_DEFS, makeSourcingToolRunner } from "@/lib/ai/sourcing-to
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { redactObject, redactSecrets, redactEmail } from "@/lib/log-redact";
 import { evaluateHermesWorkspaceBinding } from "@/lib/api/hermes-runtime-isolation";
+import {
+  buildHermesSessionKey,
+  buildHermesUpstreamPath,
+  hermesUpstreamHeaders,
+  resolveHermesProfilePrefix,
+} from "@/lib/api/hermes-proxy";
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import { resolveStoredApifyKey } from "@/lib/sourcing/apify";
 import { DISCLOSURE_SYSTEM, sanitizeCandidateText } from "@/lib/agent-disclosure-policy";
@@ -80,6 +86,10 @@ const HermesChatSchema = z.object({
   prompt: z.string().min(1).max(20_000),
   stream: z.boolean().default(false),
   hermesApiKeyId: z.string().uuid().optional(),
+  /** Candidate thread scope for H6 session memory isolation. */
+  campaignId: z.string().min(1).max(100).optional(),
+  candidateId: z.string().min(1).max(100).optional(),
+  sessionKey: z.string().min(1).max(256).optional(),
   /** Cloud provider to route through. "hermes" = existing self-hosted path. */
   provider: z
     .enum(["hermes", "anthropic", "openai", "groq", "xai", "mistral", "kimi", "deepseek", "nvidia"])
@@ -226,7 +236,7 @@ export async function POST(req: NextRequest) {
   // as /api/sourcing-agent, so allow a matching request body.
   const validated = await validateBody(req, HermesChatSchema, { maxBytes: 200_000 });
   if (!validated.ok) return validated.response;
-  const { task, prompt: rawPrompt, stream, hermesApiKeyId, model, provider, apiKeyId, mcpServers, webResearch, campaign, existing } =
+  const { task, prompt: rawPrompt, stream, hermesApiKeyId, model, provider, apiKeyId, mcpServers, webResearch, campaign, existing, campaignId, candidateId, sessionKey: bodySessionKey } =
     validated.data;
   // The classify task feeds candidate-authored reply text straight to the model.
   // Sanitize it and wrap it in the same untrusted-data envelope the autopilot
@@ -437,8 +447,18 @@ export async function POST(req: NextRequest) {
     bearerToken = vaultSecret;
   }
 
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (bearerToken) headers["Authorization"] = `Bearer ${bearerToken}`;
+  const headers: Record<string, string> = hermesUpstreamHeaders({ bearerToken: bearerToken || undefined });
+  const profilePrefix = runtimeWorkspaceId ? resolveHermesProfilePrefix(runtimeWorkspaceId) : "default";
+  const sessionKey =
+    bodySessionKey?.trim()
+    || (runtimeWorkspaceId
+      ? buildHermesSessionKey({
+          workspaceId: runtimeWorkspaceId,
+          campaignId,
+          candidateId,
+        })
+      : undefined);
+  if (sessionKey) headers["X-Hermes-Session-Key"] = sessionKey;
 
   const upstreamBody = JSON.stringify({
     model,
@@ -449,7 +469,8 @@ export async function POST(req: NextRequest) {
     stream,
   });
 
-  const upstreamUrl = `${baseUrl}/v1/chat/completions`;
+  const upstreamPath = buildHermesUpstreamPath("/v1/chat/completions", profilePrefix);
+  const upstreamUrl = `${baseUrl}${upstreamPath}`;
   logUpstream("info", "Proxying Aria request", { task, stream, model });
 
   /* ---- Streaming: pipe the SSE through unchanged --------------------------- */

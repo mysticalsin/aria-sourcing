@@ -290,7 +290,7 @@ void (async () => {
   });
   ok(
     "book_only without bookingId never claims interview_scheduled",
-    bookWithoutId.stage === "queued_for_approval",
+    bookWithoutId.stage === "interview_proposed" && bookWithoutId.stage !== "interview_scheduled",
   );
 
   console.log(`RESULT mantu-e2e-loop: ${pass} passed, ${fail} failed`);

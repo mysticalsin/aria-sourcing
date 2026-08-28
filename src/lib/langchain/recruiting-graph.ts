@@ -42,7 +42,16 @@ export const RecruitingGraphState = Annotation.Root({
    * or focused checkpoints the loop worker asserts after real handlers.
    * Checkpoints never invent side effects — they only validate stage authority.
    */
-  intent: Annotation<"full" | "draft_quality" | "parse_only" | "source_only" | "rank_only" | "book_only">(),
+  intent: Annotation<
+    | "full"
+    | "draft_quality"
+    | "parse_only"
+    | "source_only"
+    | "rank_only"
+    | "book_only"
+    | "pre_call_only"
+    | "interview_only"
+  >(),
   /** Inbound email id from record_inbound_email. */
   inboundId: Annotation<string | undefined>(),
   /** Parsed campaign id once created. */
@@ -258,9 +267,17 @@ async function queueApproval(state: RecruitingGraphStateType): Promise<Partial<R
   };
 }
 
-/** Node: first interview scheduled (Teams / Outlook calendar) — bookingId required. */
+/** Node: pre-call screen proposed (15–20 min recruiter screen, dry-run until calendar connected). */
+async function proposePreCall(state: RecruitingGraphStateType): Promise<Partial<RecruitingGraphStateType>> {
+  return { stage: "pre_call_proposed" };
+}
+
+/** Node: first interview scheduled (Teams / Outlook calendar) — bookingId required for live claim. */
 async function scheduleInterview(state: RecruitingGraphStateType): Promise<Partial<RecruitingGraphStateType>> {
   if (!state.bookingId) {
+    if (state.intent === "interview_only" || state.intent === "book_only") {
+      return { stage: "interview_proposed", errors: ["missing_booking_id"] };
+    }
     return {
       stage: "queued_for_approval",
       errors: ["missing_booking_id"],
@@ -278,13 +295,15 @@ function buildRecruitingGraph() {
     .addNode("draftOutreach", draftOutreach)
     .addNode("validateQuality", validateQuality)
     .addNode("queueApproval", queueApproval)
+    .addNode("proposePreCall", proposePreCall)
     .addNode("scheduleInterview", scheduleInterview)
     .addConditionalEdges(START, (state) => {
       if (state.intent === "draft_quality") return "draftOutreach";
       if (state.intent === "parse_only") return "receiveEmail";
       if (state.intent === "source_only") return "sourceCandidates";
       if (state.intent === "rank_only") return "sourceCandidates";
-      if (state.intent === "book_only") return "scheduleInterview";
+      if (state.intent === "pre_call_only") return "queueApproval";
+      if (state.intent === "interview_only" || state.intent === "book_only") return "scheduleInterview";
       return "receiveEmail";
     })
     .addEdge("receiveEmail", "parseRequisition")
@@ -316,10 +335,12 @@ function buildRecruitingGraph() {
     .addConditionalEdges("queueApproval", (state) => {
       const blocked = Object.values(state.quality ?? {}).some((v) => v.status === "blocked");
       if (blocked) return END;
+      if (state.intent === "pre_call_only") return "proposePreCall";
       // Only claim interview booking when a real booking id is present.
       if (state.bookingId) return "scheduleInterview";
       return END;
     })
+    .addEdge("proposePreCall", END)
     .addEdge("scheduleInterview", END);
 
   return graph.compile();
@@ -334,7 +355,15 @@ export function getRecruitingGraph() {
 }
 
 export type RunRecruitingGraphInput = Partial<RecruitingGraphStateType> & {
-  intent?: "full" | "draft_quality" | "parse_only" | "source_only" | "rank_only" | "book_only";
+  intent?:
+    | "full"
+    | "draft_quality"
+    | "parse_only"
+    | "source_only"
+    | "rank_only"
+    | "book_only"
+    | "pre_call_only"
+    | "interview_only";
 };
 
 /** Run the graph from an initial partial state (for tests and API routes). */

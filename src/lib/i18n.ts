@@ -21,6 +21,69 @@ export const LANGUAGES: Language[] = [
   { code: "nl", label: "Dutch", native: "Nederlands" },
 ];
 
+/** ~60 ISO 639-1 business languages for Mantu markets (EU, MENA, APAC, Americas). */
+export const BUSINESS_LANGUAGE_CATALOG: Language[] = [
+  ...LANGUAGES,
+  { code: "ar", label: "Arabic", native: "العربية" },
+  { code: "zh", label: "Chinese", native: "中文" },
+  { code: "ja", label: "Japanese", native: "日本語" },
+  { code: "ko", label: "Korean", native: "한국어" },
+  { code: "hi", label: "Hindi", native: "हिन्दी" },
+  { code: "ru", label: "Russian", native: "Русский" },
+  { code: "pl", label: "Polish", native: "Polski" },
+  { code: "tr", label: "Turkish", native: "Türkçe" },
+  { code: "sv", label: "Swedish", native: "Svenska" },
+  { code: "da", label: "Danish", native: "Dansk" },
+  { code: "no", label: "Norwegian", native: "Norsk" },
+  { code: "fi", label: "Finnish", native: "Suomi" },
+  { code: "cs", label: "Czech", native: "Čeština" },
+  { code: "sk", label: "Slovak", native: "Slovenčina" },
+  { code: "hu", label: "Hungarian", native: "Magyar" },
+  { code: "ro", label: "Romanian", native: "Română" },
+  { code: "bg", label: "Bulgarian", native: "Български" },
+  { code: "el", label: "Greek", native: "Ελληνικά" },
+  { code: "he", label: "Hebrew", native: "עברית" },
+  { code: "id", label: "Indonesian", native: "Bahasa Indonesia" },
+  { code: "ms", label: "Malay", native: "Bahasa Melayu" },
+  { code: "th", label: "Thai", native: "ไทย" },
+  { code: "vi", label: "Vietnamese", native: "Tiếng Việt" },
+  { code: "uk", label: "Ukrainian", native: "Українська" },
+  { code: "hr", label: "Croatian", native: "Hrvatski" },
+  { code: "sr", label: "Serbian", native: "Српски" },
+  { code: "sl", label: "Slovenian", native: "Slovenščina" },
+  { code: "lt", label: "Lithuanian", native: "Lietuvių" },
+  { code: "lv", label: "Latvian", native: "Latviešu" },
+  { code: "et", label: "Estonian", native: "Eesti" },
+  { code: "ca", label: "Catalan", native: "Català" },
+  { code: "eu", label: "Basque", native: "Euskara" },
+  { code: "gl", label: "Galician", native: "Galego" },
+  { code: "fa", label: "Persian", native: "فارسی" },
+  { code: "ur", label: "Urdu", native: "اردو" },
+  { code: "bn", label: "Bengali", native: "বাংলা" },
+  { code: "ta", label: "Tamil", native: "தமிழ்" },
+  { code: "te", label: "Telugu", native: "తెలుగు" },
+  { code: "mr", label: "Marathi", native: "मराठी" },
+  { code: "gu", label: "Gujarati", native: "ગુજરાતી" },
+  { code: "kn", label: "Kannada", native: "ಕನ್ನಡ" },
+  { code: "ml", label: "Malayalam", native: "മലയാളം" },
+  { code: "pa", label: "Punjabi", native: "ਪੰਜਾਬੀ" },
+  { code: "sw", label: "Swahili", native: "Kiswahili" },
+  { code: "af", label: "Afrikaans", native: "Afrikaans" },
+  { code: "sq", label: "Albanian", native: "Shqip" },
+  { code: "mk", label: "Macedonian", native: "Македонски" },
+  { code: "is", label: "Icelandic", native: "Íslenska" },
+  { code: "ga", label: "Irish", native: "Gaeilge" },
+  { code: "cy", label: "Welsh", native: "Cymraeg" },
+  { code: "mt", label: "Maltese", native: "Malti" },
+  { code: "lb", label: "Luxembourgish", native: "Lëtzebuergesch" },
+  { code: "be", label: "Belarusian", native: "Беларуская" },
+  { code: "ka", label: "Georgian", native: "ქართული" },
+  { code: "hy", label: "Armenian", native: "Հայերեն" },
+  { code: "az", label: "Azerbaijani", native: "Azərbaycan" },
+  { code: "kk", label: "Kazakh", native: "Қазақ" },
+  { code: "uz", label: "Uzbek", native: "Oʻzbek" },
+];
+
 export const DEFAULT_LANGUAGE = "en";
 
 export function languageLabel(code: string): string {
@@ -36,7 +99,45 @@ const DETECT: { code: string; re: RegExp }[] = [
   { code: "pt", re: /\b(olá|obrigado|atenciosamente|empresa|vaga|nós|você|onde)\b/i },
   { code: "it", re: /\b(ciao|grazie|cordiali saluti|azienda|posizione|noi|sei|dove)\b/i },
   { code: "nl", re: /\b(hallo|bedankt|groeten|bedrijf|functie|wij|jij|waar)\b/i },
+  { code: "ar", re: /[\u0600-\u06ff]/ },
+  { code: "ja", re: /[\u3040-\u30ff\u4e00-\u9faf]/ },
+  { code: "zh", re: /[\u4e00-\u9fff]/ },
+  { code: "ko", re: /[\uac00-\ud7af]/ },
+  { code: "ru", re: /\b(привет|спасибо|да|нет|компания|работа)\b/i },
+  { code: "pl", re: /\b(cześć|dziękuję|firma|stanowisko|tak|nie)\b/i },
+  { code: "tr", re: /\b(merhaba|teşekkür|evet|hayır|şirket|pozisyon)\b/i },
+  { code: "sv", re: /\b(hej|tack|företag|tjänst|ja|nej)\b/i },
+  { code: "hi", re: /[\u0900-\u097f]/ },
 ];
+
+export function isKnownBusinessLanguage(code: string): boolean {
+  return BUSINESS_LANGUAGE_CATALOG.some((l) => l.code === code);
+}
+
+/** Fast lexicon detection; Hermes classify task handles the long tail when configured. */
+export function detectLanguageWithHint(text: string, preferred?: string): string {
+  const pref = preferred?.trim();
+  if (pref && isKnownBusinessLanguage(pref)) return pref;
+  return detectLanguage(text);
+}
+
+/** Heuristic detection with a hint when Hermes should refine ambiguous non-Latin text. */
+export function detectLanguageWithHermes(
+  text: string,
+  preferred?: string,
+): { code: string; hermesHint: boolean } {
+  const pref = preferred?.trim();
+  if (pref && isKnownBusinessLanguage(pref)) {
+    return { code: pref.slice(0, 2), hermesHint: false };
+  }
+  const code = detectLanguage(text);
+  const trimmed = text.trim();
+  const hermesHint =
+    code === "en"
+    && trimmed.length > 24
+    && /[^\x00-\x7f]/.test(trimmed);
+  return { code, hermesHint };
+}
 
 export function detectLanguage(text: string): string {
   for (const d of DETECT) if (d.re.test(text)) return d.code;

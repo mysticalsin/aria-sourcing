@@ -79,7 +79,17 @@ export const MANTU_RECRUITER_PERSONA = [
 /** Signature block appended when no custom voice signature is set. */
 export const MANTU_DEFAULT_SIGNATURE = "Best regards,\nMantu Talent Team";
 
-/** First-interview booking CTA copy (Teams / calendar). */
+/** Pre-call recruiter screen (15–20 min dry-run via calendar-authority). */
+export function mantuPreCallAgenda(roleTitle: string): string[] {
+  return [
+    "Brief Mantu Group introduction and how we partner with clients",
+    `High-level ${roleTitle} context — team, location model, and timeline`,
+    "Recruiter screen: background, motivations, and salary expectations (ranges only if asked)",
+    "Confirm mutual interest before scheduling a longer first interview",
+  ];
+}
+
+/** First-interview booking CTA copy (Teams / calendar, 30–60 min). */
 export function mantuFirstInterviewAgenda(roleTitle: string): string[] {
   return [
     "Introduce Mantu Group and our consulting model",

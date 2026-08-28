@@ -634,8 +634,8 @@ test("inbound_classify enqueues draft_generate for positive intent when autopilo
   assert.equal(patches.length, 1);
   assert.deepEqual(patches[0].p_enqueue, [
     {
-      kind: "calendar_book",
-      idempotency_key: "calendar:reply:camp-9:cand-9",
+      kind: "pre_call_propose",
+      idempotency_key: "precall:reply:camp-9:cand-9",
       payload: {
         campaignId: "camp-9",
         candidateId: "cand-9",
@@ -773,7 +773,7 @@ test("draft_generate rejects fake interview_scheduled graphStage from cron", asy
   );
 });
 
-test("draft_generate enqueues calendar_book after positive reply trigger", async () => {
+test("draft_generate enqueues pre_call_propose after positive reply trigger", async () => {
   const patches: Array<Record<string, unknown>> = [];
   const { client } = rpcClient((name, args) => {
     if (name === "read_workspace_state_for_loop") {
@@ -830,8 +830,8 @@ test("draft_generate enqueues calendar_book after positive reply trigger", async
   assert.equal(patches.length, 1);
   assert.deepEqual(patches[0].p_enqueue, [
     {
-      kind: "calendar_book",
-      idempotency_key: "calendar:reply:camp-9:cand-9",
+      kind: "pre_call_propose",
+      idempotency_key: "precall:reply:camp-9:cand-9",
       payload: {
         campaignId: "camp-9",
         candidateId: "cand-9",

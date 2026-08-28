@@ -156,8 +156,8 @@ async function main() {
   ok("draft_quality never invents interview_scheduled", draftLiveDefault.stage !== "interview_scheduled");
   ok("LangGraph shortlist size", (graphState.shortlistIds?.length ?? 0) <= TOP_CANDIDATE_SHORTLIST_SIZE);
   ok(
-    "graph stage maps to calendar_book after approval",
-    nextJobKindAfterGraphStage("queued_for_approval") === "calendar_book",
+    "graph stage maps to pre_call_propose after approval",
+    nextJobKindAfterGraphStage("queued_for_approval") === "pre_call_propose",
   );
   ok(
     "shared pipeline transitions include requisition_parse → campaign_create",
@@ -190,8 +190,8 @@ async function main() {
   const proposeSrc = readFileSync("src/app/api/cron/propose-calendar-book/route.ts", "utf8");
   const workerSrc = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
   ok("propose cron claims then dry-runs by default", /proposed_dry_run/.test(proposeSrc) && /use_calendar_event_route/.test(proposeSrc));
-  ok("worker calendar_book calls propose cron", /calendarProposeUrl/.test(workerSrc) && /handleCalendarBook/.test(workerSrc));
-  ok("worker sets Interested + interviewProposal", /interviewProposal/.test(workerSrc) && /stage: "Interested"/.test(workerSrc));
+  ok("worker pre_call / first_interview call propose cron", /calendarProposeUrl/.test(workerSrc) && /handlePreCallPropose/.test(workerSrc));
+  ok("worker sets preCallProposal + interviewProposal", /preCallProposal/.test(workerSrc) && /interviewProposal/.test(workerSrc));
 
   console.log(`RESULT mantu-recruiting-e2e-full: ${pass} passed, ${fail} failed`);
   if (fail > 0) process.exit(1);

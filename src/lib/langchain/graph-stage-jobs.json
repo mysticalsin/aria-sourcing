@@ -4,6 +4,7 @@
   "shortlist_ranked": "draft_generate",
   "outreach_drafted": "draft_generate",
   "quality_validated": "draft_generate",
-  "queued_for_approval": "calendar_book",
-  "interview_scheduled": "calendar_book"
+  "queued_for_approval": "pre_call_propose",
+  "pre_call_proposed": "first_interview_book",
+  "interview_scheduled": "first_interview_book"
 }

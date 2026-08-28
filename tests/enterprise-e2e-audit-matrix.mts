@@ -453,9 +453,9 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /llm_required/.test(parseRoute)
         && /parseInboundNeedLive/.test(intakeRoute)
         && /llm_required/.test(intakeRoute)
-        && /serverGenerateText/.test(draftRoute)
+        && /resolveLoopLlm/.test(draftRoute)
         && /llm_required/.test(draftRoute)
-        && /workspaceId/.test(readFileSync("src/lib/ai/server-generate.ts", "utf8"))
+        && /resolveLoopLlm|serverGenerateText/.test(readFileSync("src/lib/ai/loop-llm.ts", "utf8"))
         && /resolveStoredLlmKeyForWorkspace/.test(readFileSync("src/lib/ai/vault-secret.ts", "utf8"))
         && /workspaceId: job\.workspace_id/.test(readFileSync("scripts/sourcing-loop-worker.mjs", "utf8"))
         && /parseInboundNeedViaRoute[\s\S]*?workspaceId: job\.workspace_id/.test(
@@ -520,29 +520,30 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
-    requirement: "Loop proposes Teams/Outlook interview after positive interest (calendar_book)",
+    requirement: "Loop proposes pre-call then first interview after positive interest",
     evidence: () => {
       const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
       const propose = readFileSync("src/app/api/cron/propose-calendar-book/route.ts", "utf8");
       const calendar = readFileSync("src/app/calendar/page.tsx", "utf8");
       const types = readFileSync("src/lib/types.ts", "utf8");
-      const migration = readFileSync("supabase/migrations/0065_calendar_book_and_graph_renew.sql", "utf8");
+      const pipeline = readFileSync("src/lib/langchain/pipeline-transitions.json", "utf8");
       return (
-        /calendar_book/.test(worker)
-        && /handleCalendarBook/.test(worker)
+        /pre_call_propose/.test(worker)
+        && /first_interview_book/.test(worker)
+        && /handlePreCallPropose/.test(worker)
         && /calendarProposeUrl/.test(worker)
+        && /preCallProposal/.test(worker)
         && /interviewProposal/.test(worker)
-        && /stage: "Interested"/.test(worker)
         && /type: "booking"/.test(worker)
         && /needs_human_confirm/.test(worker)
         && /human_confirm_live/.test(worker)
+        && /meetingKind/.test(propose)
         && /claimCalendarBooking/.test(propose)
-        && /use_calendar_event_route/.test(propose)
         && /proposed_dry_run/.test(propose)
         && /interviewProposal\?\.startTime/.test(calendar)
-        && /Confirm slot/.test(calendar)
         && /interviewProposal\?:/.test(types)
-        && /'calendar_book'/.test(migration)
+        && /pre_call_propose/.test(pipeline)
+        && /first_interview_book/.test(pipeline)
       );
     },
   },
@@ -873,15 +874,12 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /intent: "parse_only"/.test(worker)
         && /intent: "source_only"/.test(worker)
         && /intent: "rank_only"/.test(worker)
-        && /intent: "book_only"/.test(worker)
-        && /calendar_book/.test(worker)
-        && /Always enqueue Teams\/Outlook first-interview propose/.test(worker)
-        && /graphShortlistCount/.test(worker)
-        && /shortlistIds/.test(worker)
-        && /parse_only/.test(graph)
-        && /source_only/.test(graph)
-        && /rank_only/.test(graph)
-        && /book_only/.test(graph)
+        && /intent: "interview_only"/.test(worker)
+        && /intent: "pre_call_only"/.test(worker)
+        && /first_interview_book/.test(worker)
+        && /Positive interest → pre-call propose/.test(worker)
+        && /pre_call_only/.test(graph)
+        && /interview_only/.test(graph)
         && /assertRecruitingGraphStage/.test(graph)
         && existsSync("src/app/api/cron/recruiting-graph-stage/route.ts")
         && /microsoftOAuth=true/.test(e2e)
@@ -1010,6 +1008,49 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /sourcing loop worker/.test(schedules)
         && /Loop switchboard/.test(schedules)
       );
+    },
+  },
+  {
+    requirement: "Hermes H6 profile prefix + session key on loop and chat paths",
+    evidence: () => {
+      const proxy = readFileSync("src/lib/api/hermes-proxy.ts", "utf8");
+      const chat = readFileSync("src/app/api/hermes/chat/route.ts", "utf8");
+      const loopLlm = readFileSync("src/lib/ai/loop-llm.ts", "utf8");
+      const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
+      return (
+        /resolveHermesProfilePrefix/.test(proxy)
+        && /buildHermesSessionKey/.test(proxy)
+        && /X-Hermes-Session-Key/.test(proxy)
+        && /buildHermesUpstreamPath/.test(proxy)
+        && /X-Hermes-Session-Key/.test(chat)
+        && /resolveLoopLlm/.test(loopLlm)
+        && /HERMES_API_URL/.test(worker)
+      );
+    },
+  },
+  {
+    requirement: "LocaleContext + 60-language catalog flows parse → draft",
+    evidence: () => {
+      const i18n = readFileSync("src/lib/i18n.ts", "utf8");
+      const types = readFileSync("src/lib/types.ts", "utf8");
+      const mock = readFileSync("src/lib/mock-ai.ts", "utf8");
+      const draft = readFileSync("src/app/api/cron/generate-outreach-draft/route.ts", "utf8");
+      return (
+        /BUSINESS_LANGUAGE_CATALOG/.test(i18n)
+        && /detectLanguageWithHint/.test(i18n)
+        && /LocaleContext/.test(types)
+        && /localeContext/.test(mock)
+        && /localeContext/.test(draft)
+        && /resolveLoopLlm/.test(draft)
+      );
+    },
+  },
+  {
+    requirement: "Hermes schedules panel mirrors MSourcing loop cron jobs",
+    evidence: () => {
+      const panel = readFileSync("src/components/settings/hermes-schedules-panel.tsx", "utf8");
+      const jobs = readFileSync("src/app/api/cron/jobs/route.ts", "utf8");
+      return /\/api\/cron\/jobs/.test(panel) && /generate-outreach-draft/.test(jobs);
     },
   },
 ];

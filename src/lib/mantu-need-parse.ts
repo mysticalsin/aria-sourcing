@@ -8,7 +8,8 @@
  * in the module footer — not stubbed here.
  */
 
-import type { JobAnalysis, Seniority, Urgency } from "@/lib/types";
+import type { JobAnalysis, Seniority, Urgency, LocaleContext } from "@/lib/types";
+import { detectLanguageWithHermes, isKnownBusinessLanguage } from "@/lib/i18n";
 
 /** Full structured capture of a VSS Recruitment Need — nothing important discarded. */
 export interface MantuNeedMeta {
@@ -406,6 +407,53 @@ export function industryFromSector(sector: string, text: string): string[] {
   if (/insur/i.test(hay)) return ["Fintech"];
   if (sector.trim()) return [sector.trim()];
   return [];
+}
+
+/** Map VSS language labels ("French - Fluent") to ISO 639-1 codes. */
+function languageLabelToCode(label: string): string | null {
+  const l = label.trim().toLowerCase();
+  if (/french|français/.test(l)) return "fr";
+  if (/english|anglais/.test(l)) return "en";
+  if (/german|deutsch/.test(l)) return "de";
+  if (/spanish|español/.test(l)) return "es";
+  if (/arabic|arabe/.test(l)) return "ar";
+  if (/japanese/.test(l)) return "ja";
+  const iso = l.match(/\b([a-z]{2})\b/)?.[1];
+  return iso && isKnownBusinessLanguage(iso) ? iso : null;
+}
+
+/** Build LocaleContext from a parsed VSS need for outreach + classify prompts. */
+export function extractLocaleContext(
+  meta: Partial<MantuNeedMeta>,
+  fullText: string,
+): LocaleContext {
+  const langMust = (meta.languagesMust ?? []).map((l) => l.trim()).filter(Boolean);
+  const langNice = (meta.languagesNice ?? []).map((l) => l.trim()).filter(Boolean);
+  const detected = detectLanguageWithHermes(fullText);
+  const primary =
+    langMust.map(languageLabelToCode).find((c): c is string => Boolean(c))
+    ?? detected.code;
+  const secondary = [...langMust, ...langNice]
+    .map(languageLabelToCode)
+    .filter((c): c is string => Boolean(c && c !== primary));
+  const sector = meta.clientSector?.trim() || "";
+  const formality =
+    /consulting|contract|freelance/i.test(`${meta.type ?? ""} ${meta.contractType ?? ""}`)
+      ? "consulting"
+      : /bank|finance|insurance|legal/i.test(sector)
+        ? "formal"
+        : "consulting";
+  return {
+    primaryLanguage: primary,
+    secondaryLanguages: [...new Set(secondary)],
+    marketCountry: meta.companyBillingTo?.trim() || meta.client?.trim() || undefined,
+    workCity: meta.city?.trim() || undefined,
+    clientSector: sector || undefined,
+    formality,
+    compensationNorms: /freelance|contractor|daily rate|tjm|day rate/i.test(fullText)
+      ? "Contract/day-rate norms — discuss ranges only in live conversation."
+      : undefined,
+  };
 }
 
 /**

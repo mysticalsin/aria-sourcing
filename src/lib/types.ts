@@ -179,6 +179,18 @@ export type IntegrationHealth = (typeof INTEGRATION_HEALTH)[number];
 
 /* ---- Job analysis -------------------------------------------------------- */
 
+/** Structured locale + market context for LLM outreach (60-language path). */
+export interface LocaleContext {
+  primaryLanguage: string;
+  secondaryLanguages?: string[];
+  marketCountry?: string;
+  workCity?: string;
+  clientSector?: string;
+  formality?: "formal" | "consulting" | "casual";
+  /** Disclosure-safe compensation hints for prompts only — never sent to candidates verbatim. */
+  compensationNorms?: string;
+}
+
 export interface JobAnalysis {
   title: string;
   department: string;
@@ -205,6 +217,8 @@ export interface JobAnalysis {
   urgency: Urgency;
   /** Detected language of the need (ISO code, e.g. "en", "fr"). */
   language?: string;
+  /** Locale + market context for multilingual outreach and reply drafts. */
+  localeContext?: LocaleContext;
   /** ISO date explicitly stated in the inbound brief (e.g. "Start date: 7/13/2026").
    *  Null when the brief doesn't state one — createCampaign then falls back to a
    *  default target. Absent covers analyses predating this field. */

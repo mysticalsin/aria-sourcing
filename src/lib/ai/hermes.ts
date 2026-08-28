@@ -1,4 +1,4 @@
-import type { OutreachChannel, SystemSettings } from "@/lib/types";
+import type { OutreachChannel, SystemSettings, LocaleContext } from "@/lib/types";
 
 /* ============================================================================
    Aria live runtime — client helper.
@@ -83,13 +83,28 @@ export function buildOutreachPrompt(opts: {
   tone: string;
   channel: string;
   language: string;
+  localeContext?: LocaleContext;
   persona?: string;
   signature?: string;
 }): string {
+  const localeLines = opts.localeContext
+    ? [
+        `Primary language: ${opts.localeContext.primaryLanguage}.`,
+        opts.localeContext.secondaryLanguages?.length
+          ? `Also acceptable: ${opts.localeContext.secondaryLanguages.join(", ")}.`
+          : "",
+        opts.localeContext.marketCountry ? `Market country: ${opts.localeContext.marketCountry}.` : "",
+        opts.localeContext.workCity ? `Work city: ${opts.localeContext.workCity}.` : "",
+        opts.localeContext.clientSector ? `Client sector: ${opts.localeContext.clientSector}.` : "",
+        opts.localeContext.formality ? `Formality: ${opts.localeContext.formality}.` : "",
+        opts.localeContext.compensationNorms ? `Compensation norms: ${opts.localeContext.compensationNorms}.` : "",
+      ].filter(Boolean)
+    : [];
   const lines = [
     `Draft a first-touch ${opts.channel} recruiting message in this language (ISO code): ${opts.language}.`,
     `Tone: ${opts.tone}.`,
     opts.persona ? `Voice / persona: ${opts.persona}` : "",
+    ...localeLines,
     "",
     "Candidate:",
     `- Name: ${opts.candidateName}`,
