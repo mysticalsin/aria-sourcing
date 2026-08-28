@@ -182,6 +182,17 @@ fi
 echo "  OK live Graph seat $LIVE_SEAT (webhook + mode=live)"
 
 echo
+echo "=== 3b) Entra SSO login surface (after GoTrue Azure + app remint) ==="
+LOGIN_HTML="$(curl -fsS "$APP_URL/login" 2>/dev/null || true)"
+if printf '%s' "$LOGIN_HTML" | grep -q 'Sign in with Microsoft'; then
+  echo "  OK  /login exposes Sign in with Microsoft (NEXT_PUBLIC_ENABLE_AZURE_LOGIN baked)"
+else
+  echo "ERROR: GoTrue Azure secrets present but /login missing Sign in with Microsoft." >&2
+  echo "  Remint app tip so NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true (bash scripts/fly-remint-app-only.sh after confirm refresh)." >&2
+  exit 6
+fi
+
+echo
 echo "=== 4) Strict enterprise E2E (no partial flags) ==="
 unset ARIA_ALLOW_PARTIAL_M365_E2E ARIA_ALLOW_SKIP_APPROVE_E2E ARIA_ALLOW_STALE_FLY_E2E ARIA_ALLOW_SKIP_LIVE_CALENDAR || true
 export APP_URL KONG_URL
