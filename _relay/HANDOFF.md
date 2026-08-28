@@ -10,10 +10,10 @@ status: owner-wait-m365-strict-pass
 
 ## Current state
 
-- **Live Fly:** `2d25f5f` / **0071** · ready ok · **`deploy_status=tip_live`** (product tip; branch may include relay HANDOFF-only commits)
+- **Live Fly:** `1c27267` / **0071** · ready ok · **`deploy_status=tip_live`**
 - **PR #36** (draft; supersedes closed-without-merge #29–#35)
 - **Gate:** `npx tsc --noEmit` green · audit **62/62** · npm test green
-- **PARTIAL E2E (live, 2026-08-28T15:38Z):** **59 pass / 0 fail / 9 warn** → `RESULT: PARTIAL`
+- **PARTIAL E2E (live, 2026-08-28T15:38Z on prior tip):** **59 pass / 0 fail / 9 warn** → `RESULT: PARTIAL`
 - **Strict E2E:** blocked — M365 (7 secrets) + step 6b
 - **M365:** owner-blocked — `fly_m365_missing=7`, `/tmp/owner-microsoft.env` absent, noperm latch set
 - **Watcher:** after secrets apply, waits Connect Outlook then runs `verify-m365-ready` (strict E2E)
@@ -25,6 +25,7 @@ status: owner-wait-m365-strict-pass
 3. **Webhook-only intake:** `/api/email/sync` 403 unless `ARIA_ALLOW_INBOX_SYNC=1`; hide Emergency sync CTAs; Graph HMAC Validate honesty; Entra login honesty
 4. **Deployed tip to Fly** — `fly-deploy-now.sh` @ `2d25f5f`; PARTIAL E2E 59/0/9 on live
 5. Watcher hardened: seat-wait → strict verify after secrets land
+6. **Mantu interview brand + pre-call honesty** — prep/confirm templates; WhatsApp role line; Interested stage for pre-call; propose claimId null after dry-run; tip_live `1c27267`
 
 ## Blockers (owner only)
 
