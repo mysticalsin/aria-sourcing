@@ -10,7 +10,7 @@ status: tip-ahead-draft-quality-recover-awaiting-confirm
 
 ## Current state
 
-- **Branch tip (git):** `cursor/enterprise-autopilot-b91d` **`3753adb`** (`3753adb48768e91ae78ff5ca8a79ea3fb1b17b7d`); feature `cursor/draft-quality-recover-blocked-5ae7` **`3753adb`**; prior code tip `846015c` still in history
+- **Branch tip (git):** `cursor/enterprise-autopilot-b91d` **`0be2666`** (`0be2666b2639ffb196cd8ec394e1d2b4f014fe81`); code **`3753adb`**; feature `cursor/draft-quality-recover-blocked-5ae7` **`3753adb`**
 - **Live Fly `aria-mantu-app`:** **`e46912691e9d2ad400dbb5a37f3e68047649727e`** / mig **0068** — behind tip
 - **Deploy confirm:** `/tmp/owner-deploy-confirm.env` is for **`e469126`** — **NO MATCH** vs HEAD (did **not** invent; did **not** deploy). Owner must mint for `git rev-parse HEAD` (`bash scripts/print-fly-deploy-confirm.sh`)
 - **Setup action requested:** owner mint confirm for tip (cursor-cloud id `fly-deploy-confirm-tip-current`)
