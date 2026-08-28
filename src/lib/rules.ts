@@ -245,18 +245,21 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
     const detail = qualityGate.warnings[0]!;
     warnings.push(detail);
     checks.push({ rule: "Quality validation", status: "warn", detail });
-  } else {
-    const criticsNote =
-      message.qualityCriticsUsed === true
-        ? " multi-agent critics recorded."
-        : message.qualityCriticsUsed === false
-          ? " deterministic critics only (no live multi-agent receipt)."
-          : "";
+  } else if (message.qualityCriticsUsed === true) {
     checks.push({
       rule: "Quality validation",
       status: "pass",
-      detail: `Quality ready (${qualityGate.verdict.aggregateScore}/100).${criticsNote}`,
+      detail: `Quality ready (${qualityGate.verdict.aggregateScore}/100). multi-agent critics recorded.`,
     });
+  } else {
+    // Never claim "Quality ready" for deterministic-only drafts — live approve
+    // still requires critics_required / multi-agent receipt on the server.
+    const detail =
+      message.qualityCriticsUsed === false
+        ? `Deterministic quality score ${qualityGate.verdict.aggregateScore}/100 — multi-agent critics not recorded yet.`
+        : `Quality score ${qualityGate.verdict.aggregateScore}/100 — multi-agent critics receipt missing.`;
+    warnings.push(detail);
+    checks.push({ rule: "Quality validation", status: "warn", detail });
   }
 
   return { allowed: blockers.length === 0, blockers, warnings, checks };

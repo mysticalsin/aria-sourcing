@@ -35,5 +35,39 @@ ok(
     }).route === "hiring_need",
 );
 
+ok(
+  "body-only hiring request routes to hiring_need",
+  routeInboundEmail({
+    record: { ok: true, inbound_id: "need-body", duplicate: false },
+    from: "hm@acme.example",
+    subject: "FW: please review",
+    body: "Please open a hiring request for a Backend Engineer in Lyon.",
+    mailbox: "talent@mantu.com",
+  }).route === "hiring_need",
+);
+
+ok(
+  "ambiguous non-reply non-need stays idle (route none)",
+  routeInboundEmail({
+    record: { ok: true, inbound_id: "noise-1", duplicate: false },
+    from: "news@vendor.example",
+    subject: "Weekly product digest",
+    body: "Here is your newsletter for the week.",
+    mailbox: "talent@mantu.com",
+  }).route === "none",
+);
+
+ok(
+  "In-Reply-To without need keywords routes to reply_classify",
+  routeInboundEmail({
+    record: { ok: true, inbound_id: "reply-1", duplicate: false },
+    from: "candidate@example.com",
+    subject: "Thanks for reaching out",
+    body: "Happy to chat next week.",
+    mailbox: "talent@mantu.com",
+    inReplyTo: "<msg-1@aria>",
+  }).route === "reply_classify",
+);
+
 console.log(`RESULT inbound-email-router: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

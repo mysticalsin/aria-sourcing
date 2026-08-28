@@ -90,10 +90,7 @@ export function routeInboundEmail(input: InboundRouteInput): InboundRouteDecisio
     };
   }
 
-  // Ambiguous: default to reply classify when In-Reply-To present, else need if JD keywords
-  if (input.inReplyTo?.trim()) {
-    return { route: "reply_classify", decision: classifyDecision };
-  }
-
-  return { route: "reply_classify", decision: classifyDecision };
+  // Ambiguous non-need without reply markers: do not invent a reply_classify job.
+  // In-Reply-To / Re: / correlated already handled above; anything else stays idle.
+  return { route: "none", reason: "ambiguous_non_need" };
 }

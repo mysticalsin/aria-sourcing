@@ -785,6 +785,43 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && !/tokenJson\.scope \?\? "[^"]*Calendars\.ReadWrite/.test(callback)
         && /lacks Calendars\.ReadWrite/.test(calendar)
         && /lacks OnlineMeetings\.ReadWrite/.test(calendar)
+        && calendar.includes("!scope || !/calendars")
+      );
+    },
+  },
+  {
+    requirement: "Inbound need detection uses subject+body; ambiguous non-replies stay idle",
+    evidence: () => {
+      const mockAi = readFileSync("src/lib/mock-ai.ts", "utf8");
+      const router = readFileSync("src/lib/inbound-email-router.ts", "utf8");
+      return (
+        mockAi.includes("const haystack = `${subject}\\n${body}`")
+        && /ambiguous_non_need/.test(router)
+        && routeInboundEmail({
+          record: { ok: true, inbound_id: "noise-audit", duplicate: false },
+          from: "news@vendor.example",
+          subject: "Weekly digest",
+          body: "Product updates for the week.",
+          mailbox: "talent@mantu.com",
+        }).route === "none"
+        && routeInboundEmail({
+          record: { ok: true, inbound_id: "body-need", duplicate: false },
+          from: "hm@acme.example",
+          subject: "FW: please review",
+          body: "Please open a hiring request for a Backend Engineer.",
+          mailbox: "talent@mantu.com",
+        }).route === "hiring_need"
+      );
+    },
+  },
+  {
+    requirement: "Outlook/Teams/Gmail cards hide fake Live toggle; mode follows OAuth",
+    evidence: () => {
+      const card = readFileSync("src/components/settings/integration-card.tsx", "utf8");
+      return (
+        /isGraphOAuthCard/.test(card)
+        && /!isGraphOAuthCard/.test(card)
+        && /Connect Outlook \/ Gmail with OAuth to go live/.test(card)
       );
     },
   },
@@ -851,7 +888,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /p_meeting_url/.test(authority)
         && /onlineMeeting\/joinUrl|onlineMeeting\?\.joinUrl/.test(calendar)
         && /isTeamsMeetingJoinUrl/.test(calendar)
+        && /orphan event deleted|deleteGraphCalendarEvent/.test(calendar)
         && /webLink-only create is not accepted/.test(readFileSync("tests/calendar-booking-authority.mts", "utf8"))
+        && /empty\/missing scope is a proven pre-transport not-sent/.test(
+          readFileSync("tests/calendar-booking-authority.mts", "utf8"),
+        )
       );
     },
   },
@@ -943,6 +984,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /shortlistMinScore/.test(readFileSync("src/app/api/cron/recruiting-graph-stage/route.ts", "utf8"))
         && /qualityCriticsUsed: false/.test(readFileSync("src/lib/store.ts", "utf8"))
         && /Quality needs review — multi-agent or pipeline flagged/.test(readFileSync("src/lib/rules.ts", "utf8"))
+        && /multi-agent critics not recorded yet/.test(readFileSync("src/lib/rules.ts", "utf8"))
+        && /qualityCriticsUsed === true/.test(readFileSync("src/lib/rules.ts", "utf8"))
         && /shortlist_below_min_score/.test(worker)
         && /hiring_need_handler/.test(readFileSync("src/app/api/email/test/route.ts", "utf8"))
         && /Loop intake disabled/.test(readFileSync("src/lib/inbound-email-ingest.ts", "utf8"))

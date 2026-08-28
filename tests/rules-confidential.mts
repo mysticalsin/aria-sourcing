@@ -352,6 +352,52 @@ ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
   );
 }
 
+{
+  const deterministicOnly = checkOutreachApproval(
+    approvalCtx({
+      message: {
+        ...approvalCtx().message,
+        qualityStatus: "passed",
+        qualityCriticsUsed: false,
+        subject: "Your TypeScript work",
+        body:
+          "Hi Alex — I noticed your recent TypeScript contributions on the payments service. " +
+          "Mantu Group is hiring a Senior Engineer in London and your background stood out. " +
+          "Would you be open to a short intro chat next week?",
+      },
+    }),
+  );
+  ok(
+    "deterministic-only quality warns instead of claiming Quality ready",
+    deterministicOnly.allowed === true
+      && deterministicOnly.warnings.some((detail) => /multi-agent critics not recorded/i.test(detail))
+      && !deterministicOnly.checks?.some(
+        (c) => c.rule === "Quality validation" && c.status === "pass" && /Quality ready/i.test(c.detail),
+      ),
+  );
+
+  const multiAgentReady = checkOutreachApproval(
+    approvalCtx({
+      message: {
+        ...approvalCtx().message,
+        qualityStatus: "passed",
+        qualityCriticsUsed: true,
+        subject: "Your TypeScript work",
+        body:
+          "Hi Alex — I noticed your recent TypeScript contributions on the payments service. " +
+          "Mantu Group is hiring a Senior Engineer in London and your background stood out. " +
+          "Would you be open to a short intro chat next week?",
+      },
+    }),
+  );
+  ok(
+    "multi-agent critics recorded claims Quality ready",
+    multiAgentReady.checks?.some(
+      (c) => c.rule === "Quality validation" && c.status === "pass" && /Quality ready/i.test(c.detail),
+    ) === true,
+  );
+}
+
 // no-throw guard on the approval gate
 try {
   checkOutreachApproval(approvalCtx());

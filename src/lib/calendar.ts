@@ -108,13 +108,33 @@ export async function createGoogleCalendarEvent(
   }
 }
 
+/** Best-effort delete of a Graph calendar event created without a Teams joinUrl. */
+async function deleteGraphCalendarEvent(eventId: string, token: string): Promise<boolean> {
+  try {
+    const res = await fetch(
+      `https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(eventId)}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    // 204 No Content is success; 404 means already gone — both free the slot.
+    return res.ok || res.status === 404;
+  } catch {
+    return false;
+  }
+}
+
 /** Create the event on the connection owner's Microsoft 365 calendar. */
 export async function createGraphCalendarEvent(
   ev: CalendarEventInput,
   connection: EmailConnection,
 ): Promise<CalendarEventOutcome> {
-  const scope = (connection.scope ?? "").toLowerCase();
-  if (scope && !/calendars\.readwrite/.test(scope)) {
+  const scope = (connection.scope ?? "").trim().toLowerCase();
+  // Empty/missing scope is fail-closed: never assume Calendars/OnlineMeetings
+  // were granted (blank previously skipped both checks and reached Graph).
+  if (!scope || !/calendars\.readwrite/.test(scope)) {
     return {
       ok: false,
       provider: "Microsoft Graph",
@@ -122,7 +142,7 @@ export async function createGraphCalendarEvent(
       detail: "Microsoft Graph connection lacks Calendars.ReadWrite — reconnect Outlook with calendar scope.",
     };
   }
-  if (scope && !/onlinemeetings\.readwrite/.test(scope)) {
+  if (!/onlinemeetings\.readwrite/.test(scope)) {
     return {
       ok: false,
       provider: "Microsoft Graph",
@@ -191,6 +211,17 @@ export async function createGraphCalendarEvent(
     }
     // Never promote Outlook webLink as a Teams meeting URL.
     if (!joinUrl || !isTeamsMeetingJoinUrl(joinUrl)) {
+      if (event.id) {
+        const rolledBack = await deleteGraphCalendarEvent(event.id, token);
+        if (rolledBack) {
+          return {
+            ok: false,
+            provider: "Microsoft Graph",
+            deliveryState: "not-sent",
+            detail: "Teams join URL missing after Graph create; orphan event deleted — safe to retry.",
+          };
+        }
+      }
       return {
         ok: false,
         provider: "Microsoft Graph",

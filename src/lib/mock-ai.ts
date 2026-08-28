@@ -295,14 +295,16 @@ export function isMantuNeedEmail(text: string): boolean {
 }
 
 /** Does an inbound mailbox message look like a hiring need / JD email (vs a
- *  candidate reply, newsletter, …)? Used by the intake "Scan inbox" flow to
- *  pick need emails out of a synced mailbox. Mantu "need is now ACTIVE" mails
- *  match on the body; otherwise only a conservative subject-line check — a
- *  false positive here would parse a random email into a job brief. */
+ *  candidate reply, newsletter, …)? Used by the intake "Scan inbox" flow and
+ *  webhook router to pick need emails. Mantu "need is now ACTIVE" mails match
+ *  on subject or body; other JD keywords match on subject+body so a body-only
+ *  hiring request is not misrouted to reply classify. Keep the keyword set
+ *  conservative — a false positive would parse a random email into a brief. */
 export function isNeedEmail(subject: string, body: string): boolean {
   if (isMantuNeedEmail(body) || isMantuNeedEmail(subject)) return true;
+  const haystack = `${subject}\n${body}`;
   return /\b(job description|jd attached|new (role|position|need|vacancy|opening)|hiring request|backfill|open (position|need|role)|platform need|requisition|recruitment need)\b/i.test(
-    subject,
+    haystack,
   );
 }
 

@@ -237,11 +237,38 @@ try {
   const graphServerErr = await createGraphCalendarEvent(ev, connection({ provider: "Microsoft Graph" }));
   ok("Graph: upstream 502 is an unknown/ambiguous outcome", graphServerErr.ok === false && graphServerErr.deliveryState === "unknown");
 
+  const graphEmptyScope = await createGraphCalendarEvent(
+    ev,
+    connection({ provider: "Microsoft Graph", scope: "" }),
+  );
+  ok(
+    "Graph: empty/missing scope is a proven pre-transport not-sent",
+    graphEmptyScope.ok === false &&
+      graphEmptyScope.deliveryState === "not-sent" &&
+      /Calendars\.ReadWrite/.test(graphEmptyScope.detail ?? ""),
+  );
+
   globalThis.fetch = fetchWith(200, { id: "evt-2", webLink: "https://outlook.office.com/calendar/item/evt-2" });
   const graphWebLinkOnly = await createGraphCalendarEvent(ev, connection({ provider: "Microsoft Graph" }));
   ok(
     "Graph: webLink-only create is not accepted as a Teams booking",
-    graphWebLinkOnly.ok === false && graphWebLinkOnly.deliveryState === "unknown" && graphWebLinkOnly.eventId === "evt-2",
+    graphWebLinkOnly.ok === false &&
+      graphWebLinkOnly.deliveryState === "not-sent" &&
+      /orphan event deleted|safe to retry/i.test(graphWebLinkOnly.detail ?? ""),
+  );
+
+  // DELETE of the orphan fails → stay unknown (do not free the ledger slot).
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (method === "DELETE") return jsonResponse(500, { error: "delete-failed" });
+    return jsonResponse(200, { id: "evt-orphan", webLink: "https://outlook.office.com/calendar/item/evt-orphan" });
+  }) as typeof fetch;
+  const graphWebLinkDeleteFail = await createGraphCalendarEvent(ev, connection({ provider: "Microsoft Graph" }));
+  ok(
+    "Graph: webLink-only with failed orphan delete stays unknown",
+    graphWebLinkDeleteFail.ok === false &&
+      graphWebLinkDeleteFail.deliveryState === "unknown" &&
+      graphWebLinkDeleteFail.eventId === "evt-orphan",
   );
 
   globalThis.fetch = fetchWith(200, {

@@ -316,7 +316,9 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
           )}
 
           <div className="mt-auto space-y-3 pt-1">
-            {integration.real && (
+            {/* Outlook / Teams / Gmail live mode is driven by OAuth connection
+                hydrate — not a flip switch that can fake Live without Graph. */}
+            {integration.real && !isGraphOAuthCard && (
               <div className="flex items-center justify-between rounded-2xl bg-canvas px-3 py-2.5">
                 <div>
                   <label htmlFor={`mode-${integration.id}`} className="text-sm font-semibold text-ink">
@@ -333,6 +335,13 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                   label={`Toggle ${integration.name} live mode`}
                 />
               </div>
+            )}
+            {integration.real && isGraphOAuthCard && (
+              <p className="rounded-2xl bg-canvas px-3 py-2.5 text-xs text-muted">
+                {isLive
+                  ? "Live via connected mailbox OAuth — disconnect to return to mock."
+                  : "Connect Outlook / Gmail with OAuth to go live. Mode is not toggled here."}
+              </p>
             )}
 
             <div className="flex gap-2">

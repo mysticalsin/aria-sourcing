@@ -47,6 +47,14 @@ const mantu = {
 
 ok("isNeedEmail catches new role subject", isNeedEmail(hiring.subject, hiring.body));
 ok("isNeedEmail rejects newsletter", !isNeedEmail(noise.subject, noise.body));
+ok(
+  "isNeedEmail catches body-only hiring request",
+  isNeedEmail("FW: please review", "Please open a hiring request for a Senior Platform Engineer."),
+);
+ok(
+  "isNeedEmail rejects body without JD keywords",
+  !isNeedEmail("Quick sync?", "Can we chat tomorrow about the roadmap?"),
+);
 
 const filtered = filterOutlookNeeds([noise, hiring, mantu]);
 ok("filters to hiring needs only", filtered.length === 2);
