@@ -74,6 +74,40 @@ test("workspace projection owns campaign and dedupe context while stripping unre
   assert.equal(JSON.stringify(projected.value).includes("private"), false);
 });
 
+test("campaign fingerprint ignores validationWarnings drift and keeps localeContext", () => {
+  const withWarnings = sourcingAgentCampaignFingerprint({
+    ...campaign,
+    jobAnalysis: {
+      ...campaign.jobAnalysis,
+      validationWarnings: [
+        { field: "title", severity: "info", message: "Parsed from email." },
+      ],
+      localeContext: {
+        primaryLanguage: "fr",
+        workCity: "Paris",
+        formality: "consulting",
+      },
+    },
+  });
+  const differentWarnings = sourcingAgentCampaignFingerprint({
+    ...campaign,
+    jobAnalysis: {
+      ...campaign.jobAnalysis,
+      validationWarnings: [
+        { field: "salary", severity: "warning", message: "No rate in brief." },
+      ],
+      localeContext: {
+        primaryLanguage: "fr",
+        workCity: "Paris",
+        formality: "consulting",
+      },
+    },
+  });
+  const noLocale = sourcingAgentCampaignFingerprint(campaign);
+  assert.equal(withWarnings, differentWarnings);
+  assert.notEqual(withWarnings, noLocale);
+});
+
 test("campaign fingerprint changes when the persisted need or search strategy changes", () => {
   const initial = sourcingAgentCampaignFingerprint(campaign);
   const changedRole = sourcingAgentCampaignFingerprint({

@@ -179,6 +179,43 @@ function sanitizeJobAnalysis(value: unknown): JobAnalysis | null {
   if (value.expectedStartDate !== undefined) {
     sanitized.expectedStartDate = value.expectedStartDate;
   }
+  if (value.missionDescription !== undefined && typeof value.missionDescription === "string") {
+    sanitized.missionDescription = value.missionDescription;
+  }
+  if (value.linkedinBoolean !== undefined && typeof value.linkedinBoolean === "string") {
+    sanitized.linkedinBoolean = value.linkedinBoolean;
+  }
+  if (isRecord(value.localeContext)) {
+    const lc = value.localeContext;
+    const primaryLanguage = typeof lc.primaryLanguage === "string" ? lc.primaryLanguage.trim() : "";
+    if (primaryLanguage) {
+      sanitized.localeContext = {
+        primaryLanguage,
+        ...(Array.isArray(lc.secondaryLanguages)
+          ? {
+              secondaryLanguages: lc.secondaryLanguages.filter(
+                (item): item is string => typeof item === "string" && item.trim().length > 0,
+              ),
+            }
+          : {}),
+        ...(typeof lc.marketCountry === "string" && lc.marketCountry.trim()
+          ? { marketCountry: lc.marketCountry.trim() }
+          : {}),
+        ...(typeof lc.workCity === "string" && lc.workCity.trim()
+          ? { workCity: lc.workCity.trim() }
+          : {}),
+        ...(typeof lc.clientSector === "string" && lc.clientSector.trim()
+          ? { clientSector: lc.clientSector.trim() }
+          : {}),
+        ...(lc.formality === "formal" || lc.formality === "consulting" || lc.formality === "casual"
+          ? { formality: lc.formality }
+          : {}),
+        ...(typeof lc.compensationNorms === "string" && lc.compensationNorms.trim()
+          ? { compensationNorms: lc.compensationNorms.trim() }
+          : {}),
+      };
+    }
+  }
   return evaluateNeedReadiness(sanitized).ready ? sanitized : null;
 }
 

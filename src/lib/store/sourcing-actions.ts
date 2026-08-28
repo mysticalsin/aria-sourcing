@@ -878,7 +878,6 @@ export function createSourcingActions({
     if (!evaluateNeedReadiness(initialCampaign.jobAnalysis).ready) {
       return invalidRequest("Complete and review the campaign brief before sourcing.");
     }
-    const initialFingerprint = sourcingAgentCampaignFingerprint(initialCampaign);
 
     const demoSourcing = syntheticSourcingAllowed();
     const requestedPlatform = opts?.platform ?? (
@@ -917,13 +916,21 @@ export function createSourcingActions({
 
     if (!demoSourcing) {
       await flushWorkspaceSave();
+      const savedState = currentState();
+      const savedCampaign = savedState?.campaigns.find((item) => item.id === campaignId);
+      if (!savedCampaign || !evaluateNeedReadiness(savedCampaign.jobAnalysis).ready) {
+        return invalidRequest("Complete and review the campaign brief before sourcing.");
+      }
+      const authorityFingerprint = sourcingAgentCampaignFingerprint(savedCampaign);
       return await sourceReviewedCampaignBatch(
         campaignId,
         count,
-        initialFingerprint,
+        authorityFingerprint,
         opts?.agentFramework,
       );
     }
+
+    const initialFingerprint = sourcingAgentCampaignFingerprint(initialCampaign);
 
     let source: "github" | "web" | "mock" = "mock";
     let rawGithubUsers: GithubUser[] | null = null;

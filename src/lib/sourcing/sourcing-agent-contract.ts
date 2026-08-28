@@ -37,6 +37,18 @@ const ValidationWarningSchema = z
   })
   .strict();
 
+const LocaleContextSchema = z
+  .object({
+    primaryLanguage: bounded(20),
+    secondaryLanguages: boundedArray(20, 20).optional(),
+    marketCountry: bounded(200).optional(),
+    workCity: bounded(200).optional(),
+    clientSector: bounded(200).optional(),
+    formality: z.enum(["formal", "consulting", "casual"]).optional(),
+    compensationNorms: bounded(500).optional(),
+  })
+  .strict();
+
 const JobAnalysisSchema = z
   .object({
     title: bounded(200),
@@ -62,6 +74,7 @@ const JobAnalysisSchema = z
     reportingTo: bounded(200),
     urgency: z.enum(URGENCY_LEVELS),
     language: bounded(20).optional(),
+    localeContext: LocaleContextSchema.optional(),
     expectedStartDate: bounded(100).nullable().optional(),
     missionDescription: bounded(12_000).optional(),
     linkedinBoolean: bounded(2_000).optional(),
@@ -212,6 +225,18 @@ function stableJson(value: unknown): string {
 }
 
 /**
+ * Sourcing authority slice of job analysis — excludes validationWarnings because
+ * those are derived metadata that can drift between client parse and server save
+ * without changing the brief the operator approved for search.
+ */
+function jobAnalysisForAuthority(
+  jobAnalysis: z.infer<typeof JobAnalysisSchema>,
+): Omit<z.infer<typeof JobAnalysisSchema>, "validationWarnings"> {
+  const { validationWarnings: _ignored, ...authority } = jobAnalysis;
+  return authority;
+}
+
+/**
  * Authority fingerprint shared by the sourcing-agent route and the browser
  * commit path. Always canonicalizes through CampaignProjectionSchema and a
  * key-sorted JSON encoding so client-held Campaign objects (key order / stray
@@ -227,7 +252,7 @@ export function sourcingAgentCampaignFingerprint(
   return stableJson({
     id: value.id,
     status: value.status,
-    jobAnalysis: value.jobAnalysis,
+    jobAnalysis: jobAnalysisForAuthority(value.jobAnalysis as z.infer<typeof JobAnalysisSchema>),
     scoringWeights: value.scoringWeights,
     sourcingStrategy: {
       excludedCompanies: value.sourcingStrategy.excludedCompanies,
