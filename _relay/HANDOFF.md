@@ -11,19 +11,18 @@ status: partial-e2e-green-m365-owner-blocked
 ## Current state
 
 - **Live Fly:** `344fcaf` / **0071** · ready ok
-- **Branch tip:** `8701a56`
+- **Branch tip:** `03831fb`
 - **PR #35** (supersedes closed #29–#33)
-- **Gate:** audit **60/60** · tsc green
-- **PARTIAL E2E (direct):** 49 pass / 0 fail / 2 warn (`ARIA_ALLOW_PARTIAL_M365_E2E=1`)
-- **PARTIAL E2E (wrapper):** 39 pass / 0 fail / 2 warn (`run-enterprise-e2e-partial.sh`; skips approve via `ARIA_ALLOW_SKIP_APPROVE_E2E=1`)
+- **Gate:** audit **60/60** · `npx tsc --noEmit && npm test` green (2026-08-28)
+- **PARTIAL E2E (live):** 48 pass / 0 fail / 1 warn (6b only; 2026-08-28)
 - **Strict E2E:** 49 pass / **2 fail** (microsoftOAuth + 6b)
 - **M365:** 7 secrets missing · Entra zero aria-mantu apps · watcher active
 
 ## Done this shift
 
-1. Goal continuation reprobe — still 7 missing secrets, no owner env
-2. Entra scan (incl. all fly.dev redirects) — zero matches
-3. Gate: tsc + audit **60/60** green
+1. Re-ran full test gate — green
+2. Re-ran PARTIAL E2E on live — 48/0/1 (6b skipped only)
+3. M365 reprobe — still 7 missing secrets
 
 ## Blockers
 
