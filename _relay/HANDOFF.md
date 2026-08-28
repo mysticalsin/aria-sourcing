@@ -2,8 +2,8 @@
 project: MSourcing / ARIA
 shift: 288
 agent: cursor-cloud
-updated: 2026-08-28T12:52Z
-status: owner-wait-m365-strict-pass
+updated: 2026-08-28T12:54Z
+status: owner-wait-m365-reprobe-2026-08-28T1242Z
 ---
 
 # Handoff — Shift 288
@@ -16,7 +16,7 @@ status: owner-wait-m365-strict-pass
 - **Gate:** audit **62/62**
 - **PARTIAL E2E (live tip, 2026-08-28T12:50Z):** **55 pass / 0 fail / 7 warn** → `RESULT: PARTIAL`
 - **Strict E2E (no partial flag):** **FAIL** — `microsoftOAuth=false`, sourcing n=0, approve `critics_required`, step 6b no Graph seat
-- **M365:** `probe-m365-unblock.sh` → **owner-blocked** (7 Fly secrets)
+- **M365 reprobe 2026-08-28T12:42Z:** `probe-m365-unblock.sh` → **owner-blocked** (7 secrets; `/tmp/owner-microsoft.env` absent)
 
 ## Done this shift
 
