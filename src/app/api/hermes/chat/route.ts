@@ -24,6 +24,7 @@ import { SOURCING_TOOL_DEFS, makeSourcingToolRunner } from "@/lib/ai/sourcing-to
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { redactObject, redactSecrets, redactEmail } from "@/lib/log-redact";
 import { evaluateHermesWorkspaceBinding } from "@/lib/api/hermes-runtime-isolation";
+import { serverGenerateText } from "@/lib/ai/server-generate";
 import {
   buildHermesSessionKey,
   buildHermesUpstreamPath,
@@ -133,6 +134,27 @@ const TASK_SYSTEM: Record<"outreach" | "classify" | "sourcing" | "chat", string>
 };
 
 const UPSTREAM_TIMEOUT_MS = 30_000;
+const LOOP_LLM_TASKS = new Set(["outreach", "classify", "sourcing"]);
+
+function isProviderAuthFailure(status: number): boolean {
+  return status === 401 || status === 403;
+}
+
+async function tryLoopTaskCloudFailover(input: {
+  task: string;
+  system: string;
+  prompt: string;
+  workspaceId: string | null;
+}): Promise<string | null> {
+  if (!input.workspaceId || !LOOP_LLM_TASKS.has(input.task)) return null;
+  const fallback = await serverGenerateText({
+    system: input.system,
+    prompt: input.prompt,
+    maxTokens: 2048,
+    workspaceId: input.workspaceId,
+  });
+  return fallback.ok ? fallback.text : null;
+}
 
 function logUpstream(level: "info" | "error", message: string, meta?: Record<string, unknown>) {
   // Structured log line for production observability. In Vercel this becomes
@@ -254,6 +276,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, reason: "Insufficient permissions for this task." }, { status: 403 });
     }
   }
+  let runtimeWorkspaceId: string | null = null;
+  if (supabaseEnabled && supabase) {
+    const { data: resolvedWorkspaceId } = await supabase.rpc("current_workspace_id");
+    runtimeWorkspaceId = typeof resolvedWorkspaceId === "string" ? resolvedWorkspaceId : null;
+  }
   const canSourceInChat = !supabaseEnabled || can(callerRole as Role, "source");
   // Attaching third-party MCP servers is an admin-level capability (same permission
   // /api/mcp/test enforces before it will even test-connect an admin-entered URL) —
@@ -298,6 +325,8 @@ export async function POST(req: NextRequest) {
     }
     const key = vaultKey || process.env[PROVIDER_ENV[slug]] || "";
     if (!key) {
+      const failoverText = await tryLoopTaskCloudFailover({ task: task as string, system, prompt, workspaceId: runtimeWorkspaceId });
+      if (failoverText) return NextResponse.json({ ok: true, text: failoverText });
       return NextResponse.json({ ok: false, reason: `No API key configured for ${provider}.` });
     }
     // A well-formed campaign context enables the search_candidates tool, gated by the
@@ -369,6 +398,10 @@ export async function POST(req: NextRequest) {
       }
       if (!upstream.ok) {
         logUpstream("error", "Cloud provider upstream error", { provider, status: upstream.status });
+        if (isProviderAuthFailure(upstream.status)) {
+          const failoverText = await tryLoopTaskCloudFailover({ task: task as string, system, prompt, workspaceId: runtimeWorkspaceId });
+          if (failoverText) return NextResponse.json({ ok: true, text: failoverText });
+        }
         return NextResponse.json({
           ok: false,
           reason: `Upstream error ${upstream.status}`,
@@ -390,13 +423,8 @@ export async function POST(req: NextRequest) {
   }
 
   const production = process.env.NODE_ENV === "production";
-  let runtimeWorkspaceId: string | null = null;
-  if (production && supabaseEnabled && supabase) {
-    const { data: resolvedWorkspaceId, error: workspaceError } = await supabase.rpc("current_workspace_id");
-    runtimeWorkspaceId = typeof resolvedWorkspaceId === "string" ? resolvedWorkspaceId : null;
-    if (workspaceError || !runtimeWorkspaceId) {
-      return NextResponse.json({ ok: false, reason: "Workspace not available." }, { status: 403 });
-    }
+  if (production && supabaseEnabled && supabase && !runtimeWorkspaceId) {
+    return NextResponse.json({ ok: false, reason: "Workspace not available." }, { status: 403 });
   }
   const binding = evaluateHermesWorkspaceBinding({
     production,
