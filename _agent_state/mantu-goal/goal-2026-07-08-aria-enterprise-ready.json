@@ -328,6 +328,6 @@
   ],
   "metrics_at_completion": null,
   "retro_id": null,
-  "last_shift_note": "2026-08-28T03:28Z shift 227: golive docs → run-enterprise-e2e-partial.sh; gate green, audit 56/56, E2E PARTIAL 0 fail. Fly stale. PR #33 ready. Microsoft SKIPPED. Goal IN_PROGRESS.",
-  "updated_at": "2026-08-28T03:28:00+00:00"
+  "last_shift_note": "2026-08-28T03:35Z shift 229: run-enterprise-e2e-partial hints for remint vs confirm-ready golive. Gate green, audit 56/56. Fly stale — owner remint. Microsoft SKIPPED. Goal IN_PROGRESS.",
+  "updated_at": "2026-08-28T03:35:00+00:00"
 }
