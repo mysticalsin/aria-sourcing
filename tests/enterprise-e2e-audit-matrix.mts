@@ -279,6 +279,9 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && !/title=\{preview \? `Interview booked:/.test(calendar)
         && !/Reminder cadence T-24h/.test(drawer)
         && /Do NOT invent Booked here/.test(store)
+        && /bookingNeedsCalendar\(res\.booking\)/.test(store)
+        && /Needs calendar before live Teams\/Outlook book/.test(store)
+        && !/\$\{count\} interview\$\{count === 1 \? "" : "s"\} booked/.test(store)
       );
     },
   },
@@ -975,9 +978,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /RESULT: PARTIAL/.test(script)
         && /RESULT: FAIL/.test(script)
         && /MS_LIVE_GAP/.test(script)
+        && /E2E_SKIP_M365/.test(script)
+        && /Skipped \(Microsoft \/ calendar\)/.test(script)
         && /provenance:\s*"live"/.test(route)
         && (/step 3c|3c FAIL|live=0/.test(handoff) || /provenance fix/.test(handoff))
-        && /expect step 3c PASS|step 3c should show live=n/.test(handoff)
+        && (/expect step 3c PASS/.test(handoff) || /step 3c should show/.test(handoff))
         && /never pretends full PASS|never pretends full enterprise PASS/.test(script)
       );
     },

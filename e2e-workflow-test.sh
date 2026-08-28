@@ -132,6 +132,10 @@ OUTREACH_MODEL="${AGENT_MODEL:-$(default_model "$AGENT_PROVIDER")}"
 if [ -t 1 ]; then C_G="\033[32m"; C_R="\033[31m"; C_Y="\033[33m"; C_C="\033[36m"; C_B="\033[1m"; C_0="\033[0m"
 else C_G=""; C_R=""; C_Y=""; C_C=""; C_B=""; C_0=""; fi
 PASSES=0; FAILS=0; WARNS=0
+E2E_SKIP_M365=0
+E2E_SKIP_APPROVE=0
+E2E_SKIP_CRON=0
+E2E_SKIP_WEBHOOK=0
 step() { printf "\n${C_B}== %s ==${C_0}\n" "$1"; }
 pass() { printf "  ${C_G}PASS${C_0}  %s\n" "$1"; PASSES=$((PASSES+1)); }
 fail() { printf "  ${C_R}FAIL${C_0}  %s\n" "$1"; FAILS=$((FAILS+1)); }
@@ -731,6 +735,7 @@ else
   if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_SKIP_CRON_E2E:-}" != "1" ]; then
     fail "CRON_SECRET unset on Fly — authenticated draft/graph-stage cron probes are required (set ARIA_ALLOW_SKIP_CRON_E2E=1 only for partial runs)."
   else
+    E2E_SKIP_CRON=1
     warn "CRON_SECRET unset — skipped authenticated draft/graph-stage cron fail-closed probes."
   fi
 fi
@@ -953,6 +958,7 @@ Recruiting · Mantu Group"
 
 # ===========================================================================
 if [ "${ARIA_ALLOW_SKIP_APPROVE_E2E:-}" = "1" ]; then
+  E2E_SKIP_APPROVE=1
   warn "ARIA_ALLOW_SKIP_APPROVE_E2E=1 — skipping approve/send outreach steps (owner no Approve/send policy)."
 else
 step "4) LinkedIn outreach — draft → approve (assisted-manual) → NO send fired"
@@ -1246,9 +1252,11 @@ if [ -n "$LIVE_SEAT_ID" ]; then
   fi
 elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ]; then
   MS_LIVE_GAP=1
+  E2E_SKIP_M365=1
   warn "PARTIAL M365: no live Graph seat — skipping confirmLive Teams book (owner-ordered Microsoft skip; not a full PASS)."
 elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_SKIP_LIVE_CALENDAR:-}" = "1" ]; then
   MS_LIVE_GAP=1
+  E2E_SKIP_M365=1
   # Honesty: this flag never upgrades to RESULT: PASS — only PARTIAL with an explicit MS gap.
   warn "ARIA_ALLOW_SKIP_LIVE_CALENDAR=1 set — live Teams book skipped; run will be PARTIAL (never pretends full enterprise PASS)."
 elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ]; then
@@ -1264,8 +1272,20 @@ printf "  ${C_G}%d passed${C_0}, ${C_R}%d failed${C_0}, ${C_Y}%d warnings${C_0}\
 if [ "$FAILS" -gt 0 ]; then
   printf "  ${C_R}RESULT: FAIL${C_0}\n"; exit 1
 elif [ "${MS_LIVE_GAP:-0}" = "1" ] || [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ]; then
-  printf "  ${C_Y}RESULT: PARTIAL${C_0} — non-MS loop checks green; Microsoft Graph/Outlook/Teams live seat still outstanding.\n"
-  printf "  MS gaps: microsoftOAuth live seat, Outlook connect, Graph webhook push ingest, confirmLive Teams book.\n"
+  printf "  ${C_Y}RESULT: PARTIAL${C_0} — core recruiting loop green (${PASSES} pass, 0 fail); outstanding gaps below are explicit skips only.\n"
+  if [ "${E2E_SKIP_M365:-0}" = "1" ]; then
+    printf "  Skipped (Microsoft / calendar): confirmLive Teams book — no live Graph seat or owner ARIA_ALLOW_PARTIAL_M365_E2E=1.\n"
+    printf "  MS still needed: Outlook connect, Graph webhook push ingest, live confirmLive book.\n"
+  fi
+  if [ "${E2E_SKIP_APPROVE:-0}" = "1" ]; then
+    printf "  Skipped (owner policy): approve/send outreach (ARIA_ALLOW_SKIP_APPROVE_E2E=1).\n"
+  fi
+  if [ "${E2E_SKIP_CRON:-0}" = "1" ]; then
+    printf "  Skipped (env): authenticated draft/graph-stage cron probes (CRON_SECRET unset).\n"
+  fi
+  if [ "${E2E_SKIP_M365:-0}" != "1" ] && [ "${E2E_SKIP_APPROVE:-0}" != "1" ] && [ "${E2E_SKIP_CRON:-0}" != "1" ]; then
+    printf "  MS gaps: microsoftOAuth live seat, Outlook connect, Graph webhook push ingest, confirmLive Teams book.\n"
+  fi
   exit 0
 else
   printf "  ${C_G}RESULT: PASS${C_0}\n"; exit 0

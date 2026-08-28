@@ -44,6 +44,7 @@ import {
 } from "./agent-disclosure-policy";
 import { emit } from "./agent-events";
 import { buildSeedState, defaultGuardrails, defaultLlmProviders, defaultSavedModels, defaultTools, STATE_VERSION } from "./seed";
+import { bookingNeedsCalendar } from "./booking-status";
 import {
   computeCampaignMetrics,
   firstInterviewElapsedHours,
@@ -5710,11 +5711,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               )
               .slice(0, ARIA_STEP_CANDIDATE_CAP);
             let count = 0;
+            let calendarConfirmed = 0;
+            let needsCalendar = 0;
             let lastError: string | undefined;
             for (const cand of targets) {
               const res = await createBookingFor(cand.id);
-              if (res.ok) count += 1;
-              else lastError = res.error;
+              if (res.ok) {
+                count += 1;
+                if (bookingNeedsCalendar(res.booking)) needsCalendar += 1;
+                else calendarConfirmed += 1;
+              } else lastError = res.error;
             }
             if (count > 0 || targets.length === 0) {
               onStep?.(i, "done", {
@@ -5722,7 +5728,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 detail:
                   targets.length === 0
                     ? "No TopGun candidates at Interested stage to book."
-                    : `${count} interview${count === 1 ? "" : "s"} booked`,
+                    : needsCalendar > 0 && calendarConfirmed === 0
+                      ? `${count} slot${count === 1 ? "" : "s"} saved — Needs calendar before live Teams/Outlook book.`
+                      : calendarConfirmed > 0
+                        ? `${calendarConfirmed} interview${calendarConfirmed === 1 ? "" : "s"} confirmed on calendar${needsCalendar > 0 ? ` (${needsCalendar} still need calendar)` : ""}.`
+                        : `${count} booking${count === 1 ? "" : "s"} recorded.`,
               });
             } else {
               onStep?.(i, "failed", { detail: lastError ?? "Booking failed." });
