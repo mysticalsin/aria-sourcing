@@ -422,6 +422,21 @@ export interface Candidate {
     claimId: string | null;
     proposeStatus: string;
     channel: string;
+    meetingKind?: "pre_call" | "first_interview";
+    proposedAt: string;
+  } | null;
+  /**
+   * Loop-proposed pre-call screen (15–20 min). Same shape as interviewProposal;
+   * kept separate so first-interview proposals are not overwritten.
+   */
+  preCallProposal?: {
+    startTime: string;
+    endTime: string;
+    agenda: string[];
+    claimId: string | null;
+    proposeStatus: string;
+    channel: string;
+    meetingKind?: "pre_call" | "first_interview";
     proposedAt: string;
   } | null;
   /** Historical high-water-mark funnel rank (see STAGE_RANK in metrics.ts) —

@@ -699,7 +699,8 @@ test("calendar_book calls propose cron then records interview_proposed activity"
             status: "proposed_dry_run",
             startTime: "2026-08-28T10:00:00.000Z",
             endTime: "2026-08-28T10:30:00.000Z",
-            claimId: "claim-cal-1",
+            claimId: null,
+            releasedClaimId: "claim-cal-1",
           }),
           { status: 200, headers: { "content-type": "application/json" } },
         );
@@ -721,12 +722,12 @@ test("calendar_book calls propose cron then records interview_proposed activity"
   };
   assert.equal(merged.id, "cand-cal-1");
   assert.equal(merged.patch?.stage, "Interested");
-  assert.equal(merged.patch?.interviewProposal?.claimId, "claim-cal-1");
+  assert.equal(merged.patch?.interviewProposal?.claimId ?? null, null);
   assert.equal(merged.patch?.interviewProposal?.proposeStatus, "proposed_dry_run");
   const activities = activityPatch!.p_patch as Array<Record<string, unknown>>;
   assert.equal(activities[0]?.type, "booking");
   assert.equal(activities[0]?.outcome, "needs_human_confirm");
-  assert.match(String(activities[0]?.notes ?? ""), /claim-cal-1/);
+  assert.match(String(activities[0]?.notes ?? ""), /No held claim/);
   const events = activityPatch!.p_events as Array<Record<string, unknown>>;
   assert.equal(
     (events[0]?.payload as { proposeStatus?: string } | undefined)?.proposeStatus,

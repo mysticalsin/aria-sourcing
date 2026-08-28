@@ -137,6 +137,7 @@ export async function POST(req: NextRequest) {
       : mantuFirstInterviewAgenda(roleTitle);
 
   // Default autonomous path: dry-run — release claim so humans can confirmLive later.
+  // Do not return a released claimId as if it were still held for confirmLive.
   await reconcileCalendarBooking(svc, {
     workspaceId: parsed.data.workspaceId,
     id: claim.id,
@@ -154,7 +155,8 @@ export async function POST(req: NextRequest) {
     startTime: window.startTime,
     endTime: window.endTime,
     agenda,
-    claimId: claim.id,
+    claimId: null,
+    releasedClaimId: claim.id,
     replay: claim.replay,
     requestId,
   });

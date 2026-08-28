@@ -1218,10 +1218,11 @@ export function generateOutreach(
     ...(effectiveVoice?.signature && effectiveVoice.signature.trim() ? ["", effectiveVoice.signature.trim()] : []),
   ].join("\n");
 
-  // WhatsApp / SMS are short-form: one tight message, no long role/why blocks and no
-  // subject line in the body (the channel adapters deliver the body only).
+  // WhatsApp / SMS are short-form but still carry Mantu + role context (brand test).
+  const phoneRole = L.roleLine(jd.title, jd.locationType, jd.regions.join("/"));
   const phoneBody = [
     greeting,
+    phoneRole,
     sequenceStep > 1 ? L.ctaFollow : L.cta,
     ...(effectiveVoice?.signature && effectiveVoice.signature.trim() ? [effectiveVoice.signature.trim()] : []),
   ]
@@ -1435,20 +1436,20 @@ export function interviewerPrepEmail(b: Booking, candidate: Candidate): string {
   // No interviewer assigned yet (empty roster) — greet generically rather
   // than produce "Hi ,".
   const firstName = b.interviewer ? b.interviewer.split(" ")[0] : "there";
-  return `Subject: Interview prep: ${b.candidateName} for ${b.role}
+  return `Subject: Interview prep: ${b.candidateName} for ${b.role} at Mantu
 
 Hi ${firstName},
 
-You're interviewing ${b.candidateName} (${candidate.currentTitle} @ ${candidate.currentCompany}) for ${b.role}.
+You're interviewing ${b.candidateName} (${candidate.currentTitle} @ ${candidate.currentCompany}) for ${b.role} at Mantu Group.
 Match score: ${candidate.matchScore}. Stack: ${candidate.techStack.slice(0, 5).join(", ")}.
 
 Focus areas: ${candidate.matchBreakdown.slice(0, 2).map((x) => x.label).join(", ")}.
-Calendar link: ${b.teamsLink || b.calLink || "To be confirmed"}
+Teams / calendar: ${b.teamsLink || b.calLink || "To be confirmed (Connect Outlook for live Teams)"}
 
 Agenda:
 ${b.agenda.map((a) => `- ${a}`).join("\n")}
 
-Aria`;
+— Mantu Talent Team`;
 }
 
 export function candidateConfirmationEmail(b: Booking): string {
@@ -1461,18 +1462,20 @@ export function candidateConfirmationEmail(b: Booking): string {
     minute: "2-digit",
     timeZoneName: "short",
   });
-  return `Subject: Confirmed: your ${b.role} conversation
+  return `Subject: Confirmed: your ${b.role} conversation with Mantu
 
 Hi ${b.candidateName.split(" ")[0]},
 
-You're booked in. Details:
+You're booked for a conversation with Mantu Group about ${b.role}. Details:
 • When: ${when}
 • With: ${b.interviewer || "Interviewer to be confirmed"}
 • Where: ${b.teamsLink || b.calLink || "To be confirmed"}
 
-No prep needed, just bring your questions. Reply here if you need to move it.
+No heavy prep needed — bring your questions about the role and Mantu. Reply here if you need to move it.
 
-Looking forward to it.`;
+Looking forward to speaking with you.
+
+— Mantu Talent Team`;
 }
 
 /* ============================================================================

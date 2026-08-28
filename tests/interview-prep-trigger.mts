@@ -53,6 +53,19 @@ const outreach = buildInterviewPrepOutreach({ booking, candidate, campaign });
 ok("builds two prep drafts", outreach.length === 2);
 ok("both need approval", outreach.every((m) => m.status === "Needs Approval"));
 ok("both dry-run", outreach.every((m) => m.dryRun === true));
+ok(
+  "prep drafts honest about critics (needs_review, not fake ready/100)",
+  outreach.every(
+    (m) =>
+      m.qualityStatus === "needs_review"
+      && m.qualityCriticsUsed === false
+      && (m.qualityScore ?? 0) < 100,
+  ),
+);
+ok(
+  "prep drafts name Mantu in plain body",
+  outreach.every((m) => /Mantu/.test(m.body) && /Mantu Talent Team/.test(m.body)),
+);
 ok("interviewer override when email present", Boolean(outreach[0].recipientOverride || !booking.interviewerEmail));
 ok("candidate confirmation purpose", outreach[1].prepPurpose === "candidate_confirmation");
 

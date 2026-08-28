@@ -99,7 +99,10 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
   async function handleBook(candidate: Candidate) {
     setBooking(candidate.id);
     const res = await a.createBookingFor(candidate.id, {
-      startTime: candidate.interviewProposal?.startTime || undefined,
+      startTime:
+        candidate.interviewProposal?.startTime
+        || candidate.preCallProposal?.startTime
+        || undefined,
     });
     setBooking(null);
     if (!res.ok) {
@@ -173,11 +176,16 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
                     <p className="truncate text-xs text-muted">
                       {c.currentTitle} @ {c.currentCompany}
                     </p>
-                    {c.interviewProposal?.startTime ? (
+                    {c.interviewProposal?.startTime || c.preCallProposal?.startTime ? (
                       <p className="mt-0.5 text-[0.6875rem] font-medium text-tangerine">
-                        Proposed {formatDateTime(c.interviewProposal.startTime)}
-                        {c.interviewProposal.proposeStatus
-                          ? ` · ${c.interviewProposal.proposeStatus}`
+                        {c.preCallProposal?.startTime && !c.interviewProposal?.startTime
+                          ? "Pre-call proposed "
+                          : "Proposed "}
+                        {formatDateTime(
+                          (c.interviewProposal?.startTime || c.preCallProposal?.startTime) as string,
+                        )}
+                        {(c.interviewProposal?.proposeStatus || c.preCallProposal?.proposeStatus)
+                          ? ` · ${c.interviewProposal?.proposeStatus || c.preCallProposal?.proposeStatus}`
                           : ""}
                       </p>
                     ) : (
@@ -195,7 +203,7 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
                     onClick={() => handleBook(c)}
                     className="shrink-0"
                   >
-                    {c.interviewProposal?.startTime ? "Confirm slot" : "Book"}
+                    {c.interviewProposal?.startTime || c.preCallProposal?.startTime ? "Confirm slot" : "Book"}
                   </Button>
                 </li>
               ))}
@@ -215,7 +223,7 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
         description={
           preview && !bookingNeedsCalendar(preview.booking)
             ? "Live calendar event created. Prep and confirmation emails are drafted below; review before sending."
-            : "Needs calendar — slot saved without Teams. Prep and confirmation emails are drafted below. Nothing is sent automatically."
+            : "Needs calendar — no Teams/Outlook event was created. Connect a live Graph seat and use Confirm slot / confirmLive. Prep emails below still need approve/send; this is not a booked interview."
         }
         footer={
           <Button variant="primary" size="sm" onClick={() => setPreview(null)}>
@@ -378,8 +386,8 @@ export default function CalendarPage() {
             <p className="flex items-start gap-1.5 px-1 text-xs text-muted">
               <Sparkles className={cn("mt-0.5 h-3.5 w-3.5 shrink-0 text-tangerine")} aria-hidden />
               Booking with confirmLive creates a real Outlook/Teams event only when a live Graph
-              seat is connected. Local slots without sync show Needs calendar. Outreach still needs
-              approve/send.
+              seat is connected. Local slots without sync show Needs calendar — never treat them as
+              booked interviews. Outreach still needs approve/send.
             </p>
           </div>
         </div>

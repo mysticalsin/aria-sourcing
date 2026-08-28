@@ -40,10 +40,12 @@ export function buildInterviewPrepOutreach(input: {
     htmlBody: mantuEmailHtmlWrapper(prepParsed.body),
     recipientOverride: interviewerEmail,
     prepPurpose: "interviewer",
-    qualityStatus: "ready",
-    qualityScore: 100,
+    qualityStatus: "needs_review",
+    qualityScore: 70,
     qualityCriticsUsed: false,
-    qualityReasons: ["template-bound interview prep"],
+    qualityReasons: [
+      "template-bound interview prep — awaiting human approval and live quality critics before send",
+    ],
   };
 
   const candidateConfirm: OutreachMessage = {
@@ -64,10 +66,12 @@ export function buildInterviewPrepOutreach(input: {
     createdAt: now,
     htmlBody: mantuEmailHtmlWrapper(confirmParsed.body),
     prepPurpose: "candidate_confirmation",
-    qualityStatus: "ready",
-    qualityScore: 100,
+    qualityStatus: "needs_review",
+    qualityScore: 70,
     qualityCriticsUsed: false,
-    qualityReasons: ["template-bound interview confirmation"],
+    qualityReasons: [
+      "template-bound interview confirmation — awaiting human approval and live quality critics before send",
+    ],
   };
 
   return [interviewerPrep, candidateConfirm];

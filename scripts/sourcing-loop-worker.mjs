@@ -1616,7 +1616,9 @@ async function proposeMeetingForCandidate(job, context, meetingKind) {
   const isPreCall = meetingKind === "pre_call";
   const slotNote =
     startTime && endTime ? `Proposed slot ${startTime} – ${endTime}.` : "Slot to be chosen in Calendar.";
-  const claimNote = claimId ? `Claim ${claimId}.` : "No calendar claim (propose cron unavailable).";
+  const claimNote = claimId
+    ? `Held claim ${claimId} for confirmLive.`
+    : "No held claim — Calendar confirmLive opens a fresh Graph claim after dry-run propose.";
   const activity = {
     id: `act-${meetingKind}-${campaignId}-${candidateId}`,
     type: "booking",
@@ -1649,7 +1651,7 @@ async function proposeMeetingForCandidate(job, context, meetingKind) {
       id: candidateId,
       campaignId,
       patch: {
-        stage: isPreCall ? "Pre-call proposed" : "Interested",
+        stage: "Interested",
         [patchField]: {
           startTime: startTime ?? "",
           endTime: endTime ?? "",
