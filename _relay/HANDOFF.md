@@ -11,8 +11,8 @@ status: e2e-confirm-pin-hermes-failover-fleet-exec-honesty
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft (supersedes #29)
-- **Tip:** pending this commit · Live Fly `fc8b54a` / **0071** (tip **0072**)
-- **Audit:** **64/64** · **Gate:** pending
+- **Tip:** `64f6496` · Live Fly `fc8b54a` / **0071** (tip **0072**)
+- **Audit:** **64/64** · **Gate:** green · audit **64/64**
 - **M365:** `fly_m365_missing=7` · az cannot create Entra apps · watcher + 30m reprobe
 - **LLM:** `llm_auth=dead`
 - **Goal:** strict E2E PASS blocked on owner portal/secrets
