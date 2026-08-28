@@ -16,7 +16,7 @@ status: owner-wait-m365-strict-pass
 - **Gate:** audit **62/62**
 - **PARTIAL E2E (live, 2026-08-28T13:27Z):** **55 pass / 0 fail / 7 warn** → `RESULT: PARTIAL`
 - **Strict E2E:** blocked — M365 (7 secrets) + step 6b; script now uses Fly strict retries (sourcing×4, approve×5)
-- **M365 reprobe 2026-08-28T13:32Z:** owner-blocked — `fly_m365_missing=7`, zero Entra apps with `*.fly.dev` redirect URIs
+- **M365 reprobe 2026-08-28T13:35Z (timer):** owner-blocked — `fly_m365_missing=7`, `/tmp/owner-microsoft.env` absent; setup actions re-requested
 
 ## Done this shift
 
