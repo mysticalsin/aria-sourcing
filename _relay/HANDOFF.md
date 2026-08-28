@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 288
 agent: cursor-cloud
-updated: 2026-08-28T13:06Z
+updated: 2026-08-28T13:18Z
 status: owner-wait-m365-strict-pass
 ---
 
@@ -11,12 +11,12 @@ status: owner-wait-m365-strict-pass
 ## Current state
 
 - **Live Fly:** `1b19a44` / **0071** · ready ok · **`deploy_status=tip_live`**
-- **Branch tip:** `a800b4b` (relay; live code @ `1b19a44`)
+- **Branch tip:** `e5ec0e2` (relay; live code @ `1b19a44`)
 - **PR #35** (supersedes closed #29–#33)
 - **Gate:** audit **62/62**
-- **PARTIAL E2E (live tip, 2026-08-28T12:50Z):** **55 pass / 0 fail / 7 warn** → `RESULT: PARTIAL`
-- **Strict E2E (no partial flag):** **FAIL** — `microsoftOAuth=false`, sourcing n=0, approve `critics_required`, step 6b no Graph seat
-- **M365 reprobe 2026-08-28T12:59Z:** owner-blocked (7 secrets); az create still **Insufficient privileges** (`noperm` latch)
+- **PARTIAL E2E (live, 2026-08-28T13:06Z):** **57 pass / 0 fail / 6 warn** → `RESULT: PARTIAL`
+- **Strict E2E:** blocked — M365 (7 secrets) + step 6b
+- **M365 reprobe 2026-08-28T13:18Z:** owner-blocked — `fly_m365_missing=7`, `/tmp/owner-microsoft.env` absent; az **Insufficient privileges** (`noperm`); setup actions re-requested
 
 ## Done this shift
 
