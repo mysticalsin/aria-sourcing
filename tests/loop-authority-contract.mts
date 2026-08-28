@@ -89,6 +89,19 @@ ok(
   })(),
 );
 ok(
+  "0069 allows pre_call_propose + first_interview_book loop payloads (Mantu interview pipeline)",
+  (() => {
+    const mig69 = read("supabase/migrations/0069_pre_call_first_interview_loop_kinds.sql");
+    return (
+      mig69.length > 0 &&
+      noTxn(mig69) &&
+      /when 'pre_call_propose' then allowed_keys := array\['campaignId', 'candidateId', 'intent', 'trigger', 'approvedBy'\]/i.test(mig69) &&
+      /when 'first_interview_book' then allowed_keys := array\['campaignId', 'candidateId', 'intent', 'trigger', 'approvedBy'\]/i.test(mig69) &&
+      /when 'calendar_book', 'pre_call_propose', 'first_interview_book' then return controls\.sequences_enabled/i.test(mig69)
+    );
+  })(),
+);
+ok(
   "loop event erasure has a narrow trigger-recognized redaction path",
   /redact_loop_events_for_candidate_erasure\(uuid, text, text\[\], text\[\]\)/i.test(dataProtection) &&
     /set_config\('aria\.candidate_erasure_loop_event_redaction', 'on', true\)/i.test(dataProtection) &&
