@@ -22,6 +22,7 @@
  *   - parse failure → END at `parse_requisition_failed`
  *   - quality blocked → END at `approval_blocked`
  *   - no bookingId → END at `queued_for_approval` (never claim `interview_scheduled`)
+ *   - no pre-call claim → END at `queued_for_approval` (never claim `pre_call_proposed`)
  */
 
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
@@ -268,9 +269,16 @@ async function queueApproval(state: RecruitingGraphStateType): Promise<Partial<R
   };
 }
 
-/** Node: pre-call screen proposed (15–20 min recruiter screen, dry-run until calendar connected). */
+/**
+ * Node: pre-call screen proposed (15–20 min recruiter screen).
+ * Requires a proposal claim id (worker passes claimId/activity id as bookingId) —
+ * never advance to `pre_call_proposed` (maps → first_interview_book) from a bare stub.
+ */
 async function proposePreCall(state: RecruitingGraphStateType): Promise<Partial<RecruitingGraphStateType>> {
-  return { stage: "pre_call_proposed" };
+  if (!state.bookingId?.trim()) {
+    return { stage: "queued_for_approval", errors: ["missing_pre_call_claim"] };
+  }
+  return { stage: "pre_call_proposed", bookingId: state.bookingId };
 }
 
 /** Node: first interview scheduled (Teams / Outlook calendar) — bookingId required for live claim. */

@@ -311,6 +311,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /previewOnly/.test(readFileSync("src/app/calendar/page.tsx", "utf8"))
         && /ARIA_ALLOW_SKIP_WEBHOOK_E2E=1/.test(readFileSync("e2e-workflow-test.sh", "utf8"))
         && /E2E_SKIP_WEBHOOK=1/.test(readFileSync("e2e-workflow-test.sh", "utf8"))
+        && /isRealSendFact\(m\)/.test(readFileSync("src/lib/replay.ts", "utf8"))
+        && /missing_pre_call_claim/.test(readFileSync("src/lib/langchain/recruiting-graph.ts", "utf8"))
+        && /no live probe/.test(readFileSync("src/lib/integrations.ts", "utf8"))
+        && /candidateIsBooked|bookingNeedsCalendar/.test(readFileSync("src/lib/hiring-geography.ts", "utf8"))
+        && /isRealSendFact\(m\)/.test(readFileSync("src/components/trust/roi-calculator.tsx", "utf8"))
       );
     },
   },

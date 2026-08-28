@@ -55,16 +55,63 @@ function stub(partial: Partial<Candidate> & Pick<Candidate, "id" | "location">):
 
 const geo = deriveHiringGeography([
   stub({ id: "1", location: "Milan, IT", matchScore: 90 }),
-  stub({ id: "2", location: "Rome, IT", matchScore: 80 }),
-  stub({ id: "3", location: "Paris, FR", matchScore: 85 }),
+  stub({ id: "2", location: "Rome, IT", matchScore: 80, stage: "Sourced" }),
+  stub({ id: "3", location: "Paris, FR", matchScore: 85, stage: "Contacted" }),
   stub({ id: "4", location: "Remote / EU", matchScore: 70 }),
-  stub({ id: "5", location: "Austin, US", matchScore: 60, stage: "Booked" }),
+  stub({
+    id: "5",
+    location: "Austin, US",
+    matchScore: 60,
+    stage: "Booked",
+    booking: {
+      id: "b1",
+      candidateId: "5",
+      candidateName: "Test",
+      campaignId: "c1",
+      role: "Eng",
+      interviewer: "I",
+      interviewerEmail: "i@example.com",
+      startTime: new Date().toISOString(),
+      endTime: new Date().toISOString(),
+      timezone: "America/Chicago",
+      status: "Confirmed",
+      calLink: "https://outlook.office.com/calendar/item/x",
+      teamsLink: "https://teams.microsoft.com/l/meetup-join/x",
+      agenda: [],
+      createdAt: new Date().toISOString(),
+    },
+  }),
+  stub({
+    id: "6",
+    location: "Seattle, US",
+    matchScore: 55,
+    stage: "Booked",
+    booking: {
+      id: "b2",
+      candidateId: "6",
+      candidateName: "NoLink",
+      campaignId: "c1",
+      role: "Eng",
+      interviewer: "I",
+      interviewerEmail: "i@example.com",
+      startTime: new Date().toISOString(),
+      endTime: new Date().toISOString(),
+      timezone: "America/Los_Angeles",
+      status: "Proposed",
+      calLink: "",
+      teamsLink: "",
+      agenda: [],
+      createdAt: new Date().toISOString(),
+    },
+  }),
 ]);
 
 assert.equal(geo.countriesRepresented, 3);
 assert.equal(geo.remoteOrUnspecified, 1);
 assert.equal(geo.countByNumericId["380"], 2); // Italy
 assert.equal(geo.byCountry[0]?.iso2, "IT");
-assert.equal(geo.byCountry.find((r) => r.iso2 === "US")?.booked, 1);
+assert.equal(geo.byCountry.find((r) => r.iso2 === "FR")?.contacted, 1);
+assert.equal(geo.byCountry.find((r) => r.iso2 === "IT")?.contacted, 0); // Sourced ≠ contacted
+assert.equal(geo.byCountry.find((r) => r.iso2 === "US")?.booked, 1); // URL required
 
 console.log("hiring-geography: ok");

@@ -386,9 +386,9 @@ export function testConnection(integration: IntegrationStatus): ConnectionTestRe
     };
   }
   return {
-    ok: true,
+    ok: false,
     latencyMs: 0,
-    message: `${integration.name}: live credentials stored, and will be validated on the next sync.`,
+    message: `${integration.name}: credentials may be stored, but this card has no live probe — use Connect / sync to validate before treating as ready.`,
   };
 }
 

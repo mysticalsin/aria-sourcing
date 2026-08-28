@@ -54,6 +54,13 @@ ok(
   }),
 );
 ok(
+  "live-mode cards without a dedicated probe fail closed (stored ≠ validated)",
+  realCards.every((integration) => {
+    const result = testConnection({ ...integration, status: "connected", mode: "live" });
+    return result.ok === false && /no live probe/i.test(result.message);
+  }),
+);
+ok(
   "LinkedIn profile search is a truthfully real card, not a roadmap placeholder",
   apify?.real === true && apify.status === "not_configured",
 );

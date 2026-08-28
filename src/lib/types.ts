@@ -1116,7 +1116,8 @@ export interface AgentSeat {
   provider: SeatProvider;
   status: SeatStatus;
   mode: IntegrationMode; // mock (default) | live
-  domainVerified: boolean; // SPF/DKIM/DMARC — required before live sends
+  /** SPF/DMARC/DKIM for API-key senders. Live Microsoft Graph OAuth seats skip vanity DNS. */
+  domainVerified: boolean;
   dailyLimit: number; // conservative cap at/below the provider's official limit
   warmup: boolean;
   warmupStartCap: number;

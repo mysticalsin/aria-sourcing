@@ -1,4 +1,6 @@
 import type { Candidate } from "@/lib/types";
+import { bookingNeedsCalendar } from "@/lib/booking-status";
+import { effectiveStageRank } from "@/lib/metrics";
 import {
   isRemoteOrUnspecifiedLocation,
   resolveCountryFromLocation,
@@ -26,12 +28,14 @@ export interface HiringGeographyModel {
   maxCount: number;
 }
 
-function stageIsContacted(stage: Candidate["stage"]): boolean {
-  return !["New", "Shortlisted"].includes(stage);
+/** Contacted = funnel rank ≥ Contacted (1). Sourced/New alone are not contacted. */
+function stageIsContacted(candidate: Candidate): boolean {
+  return effectiveStageRank(candidate) >= 1;
 }
 
-function stageIsBooked(stage: Candidate["stage"]): boolean {
-  return ["Booked", "Interviewed", "Offer", "Hired"].includes(stage);
+/** Booked KPI requires a real meeting/calendar URL — stage or booking shell is not enough. */
+function candidateIsBooked(candidate: Candidate): boolean {
+  return Boolean(candidate.booking && !bookingNeedsCalendar(candidate.booking));
 }
 
 export function deriveHiringGeography(candidates: Candidate[]): HiringGeographyModel {
@@ -60,8 +64,8 @@ export function deriveHiringGeography(candidates: Candidate[]): HiringGeographyM
     };
     existing.sourced += 1;
     if (candidate.matchScore > 0) existing.scores.push(candidate.matchScore);
-    if (stageIsContacted(candidate.stage)) existing.contacted += 1;
-    if (stageIsBooked(candidate.stage) || candidate.booking) existing.booked += 1;
+    if (stageIsContacted(candidate)) existing.contacted += 1;
+    if (candidateIsBooked(candidate)) existing.booked += 1;
     buckets.set(resolved.iso2, existing);
   }
 

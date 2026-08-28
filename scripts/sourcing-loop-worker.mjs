@@ -1794,12 +1794,16 @@ async function proposeMeetingForCandidate(job, context, meetingKind) {
   // LangGraph checkpoint intents wired here: intent: "pre_call_only" | intent: "interview_only"
   const graphIntent = isPreCall ? "pre_call_only" : "interview_only";
   const allowedStages = isPreCall ? ["pre_call_proposed", "queued_for_approval"] : ["interview_proposed", "queued_for_approval"];
+  // Pre-call claim = Graph claimId or activity receipt — never stamp pre_call_proposed without it
+  // (maps to first_interview_book). Interview_only must NOT pass bookingId or scheduleInterview
+  // would claim interview_scheduled before confirmLive.
   await assertRecruitingGraphCheckpoint(
     context,
     {
       workspaceId: job.workspace_id,
       intent: graphIntent,
       campaignId,
+      ...(isPreCall ? { bookingId: claimId || activity.id } : {}),
     },
     allowedStages,
   );

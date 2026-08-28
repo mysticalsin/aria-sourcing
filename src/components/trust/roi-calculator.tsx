@@ -27,6 +27,8 @@ import {
 import { Calculator, Sparkles, Info } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle, Eyebrow, Drawer, EmptyState, Button } from "@/components/ui";
 import { useCandidates, useOutreach, useBookings, useWorkspaceStatus } from "@/lib/store";
+import { bookingNeedsCalendar } from "@/lib/booking-status";
+import { isRealSendFact } from "@/lib/metrics";
 import { formatCurrency, formatNumber, round } from "@/lib/utils";
 
 interface Assumption {
@@ -107,8 +109,14 @@ export function RoiCalculator() {
   // ---- Real, auditable counts ---------------------------------------------
   const sourcedCount = candidates.length;
   const draftedCount = outreach.length;
-  const sentCount = React.useMemo(() => outreach.filter((m) => m.status === "Scheduled").length, [outreach]);
-  const bookedCount = bookings.length;
+  const sentCount = React.useMemo(
+    () => outreach.filter((m) => isRealSendFact(m)).length,
+    [outreach],
+  );
+  const bookedCount = React.useMemo(
+    () => bookings.filter((b) => !bookingNeedsCalendar(b)).length,
+    [bookings],
+  );
 
   const spanDays = React.useMemo(
     () =>
