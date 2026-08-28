@@ -1075,6 +1075,26 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
+    requirement: "probe-m365-unblock reprobe + --apply when owner credentials present",
+    evidence: () => {
+      const probe = readFileSync("scripts/probe-m365-unblock.sh", "utf8");
+      const lib = readFileSync("scripts/lib/owner-microsoft-credentials.sh", "utf8");
+      const unblock = readFileSync("_relay/M365-OWNER-UNBLOCK.md", "utf8");
+      const watch = readFileSync("scripts/watch-owner-microsoft-and-apply.sh", "utf8");
+      return (
+        existsSync("scripts/probe-m365-unblock.sh")
+        && existsSync("scripts/lib/owner-microsoft-credentials.sh")
+        && /owner_ms_has_credentials/.test(lib)
+        && /GOTRUE_EXTERNAL_AZURE_URL/.test(lib)
+        && /--apply/.test(probe)
+        && /fly-apply-owner-microsoft-secrets/.test(probe)
+        && /RESULT: owner-blocked/.test(probe)
+        && /probe-m365-unblock/.test(unblock)
+        && /owner-microsoft-credentials/.test(watch)
+      );
+    },
+  },
+  {
     requirement: "Golive status probe documents tip vs live vs confirm without secrets",
     evidence: () => {
       const status = readFileSync("scripts/print-fly-golive-status.sh", "utf8");

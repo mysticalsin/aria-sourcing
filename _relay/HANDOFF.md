@@ -6,7 +6,7 @@ updated: 2026-08-28T11:21Z
 status: partial-e2e-green-m365-owner-blocked
 ---
 
-# Handoff — Shift 282
+# Handoff — Shift 283
 
 ## Current state
 
