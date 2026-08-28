@@ -165,9 +165,19 @@ fi
 echo
 echo "=== Live inventory ==="
 bash "$repo/scripts/print-fly-missing-secrets.sh" || true
+
 echo
-echo "=== Next: tip deploy ==="
-bash "$repo/scripts/print-fly-deploy-confirm.sh"
-echo
-echo "# Then: export ARIA_RELEASE_SHA + ARIA_PROD_DEPLOY_CONFIRM from above, and run:"
-echo "bash scripts/fly-deploy-now.sh"
+echo "=== Post-apply golive (OAuth probe + optional remint) ==="
+TIP="$(git rev-parse HEAD)"
+CONFIRM="aria-production-release-v1:fly-deploy-now:${TIP}:aria-mantu-bootstrap,aria-mantu-app"
+umask 077
+cat > /tmp/owner-deploy-confirm.env <<EOF
+ARIA_RELEASE_SHA=${TIP}
+ARIA_PROD_DEPLOY_CONFIRM=${CONFIRM}
+EOF
+chmod 600 /tmp/owner-deploy-confirm.env
+bash "$repo/scripts/post-m365-secrets-golive.sh" || {
+  rc=$?
+  echo "NOTE: post-m365-secrets-golive exit $rc — secrets are on Fly; Connect Outlook (mode=live) + Enable webhook may still be required." >&2
+  echo "  Then: bash scripts/verify-m365-ready.sh" >&2
+}
