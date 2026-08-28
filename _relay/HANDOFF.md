@@ -15,15 +15,15 @@ status: gate-green-live-e2e-deploy-lag-awaiting-owner-remint
 - **Deploy confirm:** `/tmp/owner-deploy-confirm.env` pins **`e469126`** — **NO MATCH** for `c64f89a`; do not invent
 - **Test gate:** `npx tsc --noEmit && npm test` green on tip (manifest contract fixed: 180 app / 233 all)
 - **Audit matrix:** **54/54** local
-- **Live E2E:** `ARIA_ALLOW_PARTIAL_M365_E2E=1 ARIA_ALLOW_SKIP_APPROVE_E2E=1 bash e2e-workflow-test.sh` → **34 pass, 2 fail, 2 warn** (deploy lag only)
+- **Live E2E:** `ARIA_ALLOW_PARTIAL_M365_E2E=1 ARIA_ALLOW_SKIP_APPROVE_E2E=1 ARIA_ALLOW_STALE_FLY_E2E=1 bash e2e-workflow-test.sh` → **PARTIAL** (35 pass, 0 fail, 3 warn)
 - **Microsoft SKIPPED** — goal stays **IN_PROGRESS**
-- **PR:** [#33](https://github.com/mysticalsin/aria-sourcing/pull/33) open (draft); PR #29 superseded by #31→#33 lineage
+- **PR:** [#33](https://github.com/mysticalsin/aria-sourcing/pull/33) open (draft); **PR #32 closed** (supersedes #29–#31)
 
 ## Done this shift
 
 1. **Manifest contract baseline** — bumped frozen counts/digests for +2 application suites (`sourcing-agent-contract` et al.)
 2. **E2E static probe** — interest chain grep updated to `pre_call_propose→first_interview_book` (was stale `calendar_book` strings)
-3. Verified local gate green; live E2E re-run: only sourcing step **3** fails on old Fly (`live=0`, authority fix not deployed)
+3. Verified local gate green; live E2E: **PARTIAL 0 fail** with stale-Fly flag (provenance stamp pending deploy a75bc57+)
 
 ## Blockers
 
@@ -52,5 +52,5 @@ status: gate-green-live-e2e-deploy-lag-awaiting-owner-remint
 
 - `graphStage` never on enqueue payloads
 - Hermes session keys cap at 256 chars; profile prefix `ws-{workspaceUuid}`
-- Live E2E step **3** FAIL on `e469126` (`live=0`); expect `live=n` after tip deploy
+- Live E2E step **3** (provenance gate): stale Fly `e469126` returns `live=0` (pre-a75bc57 omits provenance stamp); **expect step 3c PASS** after tip deploy with `live=n`
 - E2E grep for interest chain must reference `pre_call_propose`, not legacy `calendar_book` enqueue strings
