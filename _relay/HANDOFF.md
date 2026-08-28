@@ -16,6 +16,7 @@ status: gate-green-audit-matrix-0071-prep-dispatch
 - **Audit matrix:** [`_relay/e2e-audit-matrix.md`](e2e-audit-matrix.md) — routes, loop, compliance, ops blockers
 - **Live E2E:** PARTIAL M365 (owner secrets); extended script adds reply webhook + prep pins (step 2c)
 - **PR:** [#35](https://github.com/mysticalsin/aria-sourcing/pull/35)
+- **Deploy confirm:** `bash scripts/print-fly-deploy-confirm.sh` when tip code changes
 
 ## Done this shift
 
@@ -28,7 +29,7 @@ status: gate-green-audit-matrix-0071-prep-dispatch
 
 1. **M365 secrets** (6) — `bash scripts/az-configure-existing-graph-app.sh --apply` or `/tmp/owner-microsoft.env`
 2. **Golive 0071** — `bash scripts/fly-golive-mantu-e2e.sh` after push
-3. Full E2E without `ARIA_ALLOW_PARTIAL_M365_E2E=1`
+3. Full Fly E2E without `ARIA_ALLOW_PARTIAL_M365_E2E=1`; **expect step 3c PASS** with `provenance=live` when quota allows
 
 ## Next steps
 
