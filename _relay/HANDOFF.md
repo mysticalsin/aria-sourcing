@@ -10,7 +10,7 @@ status: gate-green-intake-sourcing-fix-pr33
 
 ## Current state
 
-- **Branch tip:** `cursor/enterprise-autopilot-b91d` (pending commit: intake→source fixes)
+- **Branch tip:** `cursor/enterprise-autopilot-b91d` **`67f7dc0`**
 - **Live Fly:** `e469126` (migration **0068**) — tip **0069**; owner remint still required
 - **Test gate:** green
 - **Audit matrix:** **56/56**
