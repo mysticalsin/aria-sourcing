@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 208
 agent: cursor-cloud
-updated: 2026-08-27T23:59Z
+updated: 2026-08-28T00:00Z
 status: tip-ahead-graph-failclosed-awaiting-confirm
 ---
 
@@ -10,10 +10,10 @@ status: tip-ahead-graph-failclosed-awaiting-confirm
 
 ## Current state
 
-- **Branch tip (git):** `cursor/enterprise-autopilot-b91d` **`b314ade`** (`b314ade798d66223e14cee6b589e4b8b9254eef5`); feature `cursor/graph-failclosed-e2e-050f` **`d812bf0`**
+- **Branch tip (git):** `cursor/enterprise-autopilot-b91d` **`92beb4f`** (`92beb4ff0c6fdaf2264e0e28cd89663a4909354e`); code merge `b314ade`; feature `cursor/graph-failclosed-e2e-050f` **`d812bf0`**
 - **Live Fly `aria-mantu-app`:** **`e46912691e9d2ad400dbb5a37f3e68047649727e`** / mig **0068** — still behind tip (missing graphStage fix through this shift's graph fail-closed)
-- **Deploy confirm:** `/tmp/owner-deploy-confirm.env` is for **`e469126`** — **NO MATCH** vs HEAD `b314ade` (did **not** invent; did **not** deploy)
-- **Setup action requested:** owner mint confirm for tip `b314ade` via `bash scripts/print-fly-deploy-confirm.sh` + fly-deploy-now (cursor-cloud `request-environment-setup-actions` id `fly-deploy-confirm-tip-b314ade`)
+- **Deploy confirm:** `/tmp/owner-deploy-confirm.env` is for **`e469126`** — **NO MATCH** vs HEAD `92beb4f` (did **not** invent; did **not** deploy)
+- **Setup action requested:** owner mint confirm for tip `92beb4f` via `bash scripts/print-fly-deploy-confirm.sh` + fly-deploy-now (cursor-cloud `request-environment-setup-actions` id `fly-deploy-confirm-tip-92beb4f`)
 - Microsoft **SKIPPED** (owner) — Outlook/Teams live E2E out of scope; E2E stays **PARTIAL** when MS skipped
 - Goal `goal-2026-07-08-aria-enterprise-ready` **IN_PROGRESS** (do not complete)
 - **PR #32** CLOSED — tip push without reopen; fresh draft PR create blocked (`Resource not accessible by integration`); compare: `cursor/enterprise-autopilot-b91d` → `integration/sourcing-enrichment-on-main`
@@ -32,15 +32,15 @@ status: tip-ahead-graph-failclosed-awaiting-confirm
 
 ## Blockers
 
-- Owner must mint deploy confirm for tip `b314ade` / `b314ade798d66223e14cee6b589e4b8b9254eef5` via `bash scripts/print-fly-deploy-confirm.sh` before Fly redeploy
-- Live still stalls parse→campaign_create until tip (incl. `03ddf0d` + `d381ff2` + `fc7299f` + `ac5b7a5` + `b314ade`) is deployed
+- Owner must mint deploy confirm for tip `92beb4f` / `92beb4ff0c6fdaf2264e0e28cd89663a4909354e` via `bash scripts/print-fly-deploy-confirm.sh` before Fly redeploy
+- Live still stalls parse→campaign_create until tip (incl. `03ddf0d` + `d381ff2` + `fc7299f` + `ac5b7a5` + `b314ade` / `92beb4f`) is deployed
 - Microsoft still skipped
 - Fresh tip PR create blocked by GitHub integration permissions
 
 ## Next steps
 
-1. Owner: mint confirm for `b314ade` and redeploy Fly (app + loop); keep loop machine started
-2. After redeploy: prove `/api/ready` SHA=`b314ade…`; re-prove synthetic need → `requisition_parse` → `campaign_create` → `sourcing_batch` past `complete_aria_job` (no `22023`)
+1. Owner: mint confirm for `92beb4f` and redeploy Fly (app + loop); keep loop machine started
+2. After redeploy: prove `/api/ready` SHA=`92beb4f…`; re-prove synthetic need → `requisition_parse` → `campaign_create` → `sourcing_batch` past `complete_aria_job` (no `22023`)
 3. Continue live dry-run: source → top10 (min score) → Mantu draft → multi-agent quality (no Approve/send); LinkedIn 409
 4. Operator smoke: email test **hiring_need_handler** without Graph; Outreach Queue Dry-run + Quality; Calendar **Needs calendar** titles
 5. Keep Microsoft skipped; do not complete goal; do not reopen #32
@@ -62,7 +62,7 @@ status: tip-ahead-graph-failclosed-awaiting-confirm
 
 ## Watch out
 
-- Stale confirm for `e469126` will refuse tip `b314ade` — remint via `print-fly-deploy-confirm.sh`
+- Stale confirm for `e469126` will refuse tip `92beb4f` — remint via `print-fly-deploy-confirm.sh`
 - Do not set `ARIA_ALLOW_SKIP_LIVE_CALENDAR=1` as success theatre
 - Keep loop machine started after future deploys
 - `campaign_create` now requires campaign blob visible; if workspace lag, retries with `campaign_missing`
