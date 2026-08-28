@@ -163,6 +163,10 @@ PY
   hex="$(openssl rand -hex 16)"
   printf '%s-%s-%s-%s-%s\n' "${hex:0:8}" "${hex:8:4}" "${hex:12:4}" "${hex:16:4}" "${hex:20:12}"
 }
+# PostgREST decodes '+' as space in query values — encode timestamptz offsets for filters.
+encode_postgrest_ts() {
+  printf '%s' "$1" | sed 's/+/%2B/g'
+}
 [ -n "$ADMIN_EMAIL" ]    || die "ADMIN_EMAIL is required."
 [ -n "$ADMIN_PASSWORD" ] || die "ADMIN_PASSWORD is required."
 [ -n "$ANON_KEY" ]       || die "ANON_KEY is required (Supabase anon key)."
@@ -364,6 +368,57 @@ else
 fi
 
 # ===========================================================================
+step "2a) Intake UI parity — materialize parsed brief into workspace_state"
+# ===========================================================================
+# Mirrors /intake → Parse JD → Create campaign → flushWorkspaceSave before sourcing.
+# Without this, step 3c only works when the webhook loop materializes a campaign.
+if [ -n "${E2E_CAMPAIGN_ID:-}" ]; then
+  info "E2E_CAMPAIGN_ID already set ($E2E_CAMPAIGN_ID) — skipping intake UI materialization."
+elif [ -z "$INTAKE_TITLE" ]; then
+  warn "Intake parse did not yield a title — skipping UI materialization."
+else
+  E2E_WORKSPACE_ID=$(curl -sS -m 20 -X POST "$KONG_URL/rest/v1/rpc/ensure_workspace" \
+    -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ACCESS_TOKEN" \
+    -H 'Content-Type: application/json' --data-binary '{}' | jq -r '. // empty')
+  if [ -z "$E2E_WORKSPACE_ID" ]; then
+    fail "ensure_workspace returned no id — cannot materialize intake campaign."
+  else
+    curl -sS -m 20 -o "$WORK/ws_row.json" \
+      "$KONG_URL/rest/v1/workspace_state?workspace_id=eq.$E2E_WORKSPACE_ID&select=state,updated_at" \
+      -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ACCESS_TOKEN" \
+      -H 'Accept: application/json' >/dev/null 2>&1 || true
+    export WORK E2E_WORKSPACE_ID
+    if ! npx tsx scripts/materialize-intake-campaign.mts; then
+      fail "Intake UI materialization script failed (createCampaign / workspace merge)."
+    else
+      INTAKE_UI_ID=$(tr -d '\n\r' < "$WORK/intake_ui_campaign_id.txt")
+      WS_UPD=$(jq -r '.[0].updated_at // empty' "$WORK/ws_row.json" 2>/dev/null || true)
+      if [ -z "$WS_UPD" ] || [ "$WS_UPD" = "null" ]; then
+        MAT_CODE=$(curl -sS --http1.1 -m 60 -o "$WORK/mat_save.json" -w '%{http_code}' \
+          -X POST "$KONG_URL/rest/v1/workspace_state" \
+          -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ACCESS_TOKEN" \
+          -H 'Content-Type: application/json' -H 'Prefer: return=minimal' \
+          --data-binary "$(jq -nc --arg id "$E2E_WORKSPACE_ID" --slurpfile s "$WORK/new_state.json" '{workspace_id:$id,state:$s[0]}')")
+      else
+        WS_UPD_ENC=$(encode_postgrest_ts "$WS_UPD")
+        MAT_CODE=$(curl -sS --http1.1 -m 60 -o "$WORK/mat_save.json" -w '%{http_code}' \
+          -X PATCH "$KONG_URL/rest/v1/workspace_state?workspace_id=eq.$E2E_WORKSPACE_ID&updated_at=eq.$WS_UPD_ENC" \
+          -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ACCESS_TOKEN" \
+          -H 'Content-Type: application/json' -H 'Prefer: return=representation' \
+          --data-binary "$(jq -nc --slurpfile s "$WORK/new_state.json" '{state:$s[0]}')")
+      fi
+      if [ "$MAT_CODE" = "200" ] || [ "$MAT_CODE" = "201" ] || [ "$MAT_CODE" = "204" ]; then
+        pass "Intake UI parity: campaign '$INTAKE_UI_ID' materialized in workspace_state (HTTP $MAT_CODE)."
+        E2E_CAMPAIGN_ID="$INTAKE_UI_ID"
+        info "Using intake-materialized campaign for sourcing-agent: $E2E_CAMPAIGN_ID"
+      else
+        fail "Intake UI workspace save failed (HTTP $MAT_CODE): $(head -c 200 "$WORK/mat_save.json")"
+      fi
+    fi
+  fi
+fi
+
+# ===========================================================================
 step "2b) Webhook need email — POST /api/webhooks/email-inbound"
 # ===========================================================================
 WEBHOOK_SECRET="${EMAIL_INBOUND_WEBHOOK_SECRET:-}"
@@ -420,8 +475,16 @@ if [ -n "$WEBHOOK_SECRET" ]; then
         WEBHOOK_CAMPAIGN_ID=$(jq -r --arg t "$NEED_TITLE" '
           (.[0].state.campaigns // [])
           | map(select((.jobAnalysis.title // .title // "") | test($t; "i")))
+          | map(select(.id != "camp-e2e" and (.id | test("^camp_[0-9]+_") | not)))
           | .[0].id // empty
         ' "$WORK/ws_state.json" 2>/dev/null || true)
+        if [ -z "$WEBHOOK_CAMPAIGN_ID" ]; then
+          WEBHOOK_CAMPAIGN_ID=$(jq -r --arg t "$NEED_TITLE" '
+            (.[0].state.campaigns // [])
+            | map(select((.jobAnalysis.title // .title // "") | test($t; "i")))
+            | .[0].id // empty
+          ' "$WORK/ws_state.json" 2>/dev/null || true)
+        fi
         WORKER_OK=1
         break
       fi
