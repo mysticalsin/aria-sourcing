@@ -119,11 +119,12 @@ esac
 
 if [ "$ok" = "true" ] && [ "$mig_ok" = "1" ] && [[ "$build" == "$TIP"* ]] && [ "$graph_code" = "200" ]; then
   echo
-  echo "=== Tip live — run E2E ==="
-  echo "eval \"\$(bash scripts/print-fly-e2e-env.sh --export)\""
-  echo "ARIA_ALLOW_PARTIAL_M365_E2E=1 ARIA_ALLOW_SKIP_APPROVE_E2E=1 bash e2e-workflow-test.sh"
-  echo "# Or: bash scripts/run-enterprise-e2e-partial.sh  (auto stale flag while live lags tip)"
-  echo "# If build still lags tip SHA: add ARIA_ALLOW_STALE_FLY_E2E=1 until golive catches up"
+  echo "=== Tip live — next ==="
+  echo "# 1) Settings → Connect Outlook (mode=live) → Enable Graph webhook"
+  echo "# 2) Strict full PASS (secrets + live seat + webhook preflight, no partial flags):"
+  echo "bash scripts/verify-m365-ready.sh"
+  echo "# Honest PARTIAL only while Outlook seat still missing:"
+  echo "bash scripts/run-enterprise-e2e-partial.sh"
   exit 0
 fi
 
