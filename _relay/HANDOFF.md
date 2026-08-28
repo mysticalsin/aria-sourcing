@@ -20,8 +20,8 @@ status: partial-e2e-green-m365-owner-blocked
 
 ## Done this shift
 
-1. Audit matrix **61/61** — pinned probe-m365-unblock owner reprobe path
-2. M365 reprobe — still owner-blocked (7 Fly secrets missing)
+1. Timer `m365-secrets-reprobe` (11:41Z) — still 7 missing; strict E2E not run
+2. Re-requested setup actions; rescheduled 30m timer
 
 ## Blockers
 
