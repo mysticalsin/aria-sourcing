@@ -1,52 +1,50 @@
 ---
 project: MSourcing / ARIA
-shift: 282
+shift: 286
 agent: cursor-cloud
-updated: 2026-08-28T11:21Z
-status: partial-e2e-green-m365-owner-blocked
+updated: 2026-08-28T12:45Z
+status: owner-wait-m365-agent-work-complete
 ---
 
-# Handoff — Shift 283
+# Handoff — Shift 286
 
 ## Current state
 
 - **Live Fly:** `344fcaf` / **0071** · ready ok
-- **Branch tip:** `ea0f0b4`
+- **Branch tip:** `c44dc7d`
 - **PR #35** (supersedes closed #29–#33)
-- **Gate:** audit **61/61** · `npx tsc --noEmit && npm test` green (2026-08-28)
-- **PARTIAL E2E (live):** 48 pass / 0 fail / 1 warn (6b only; 2026-08-28)
-- **Strict E2E:** 49 pass / **2 fail** (microsoftOAuth + 6b)
-- **M365:** 7 secrets missing · Entra zero aria-mantu apps · watcher active
+- **Gate:** audit **62/62** · `npx tsc --noEmit && npm test` green
+- **PARTIAL E2E (live):** multilingual LinkedIn/Email/WhatsApp FR drafts **PASS**; intermittent sourcing empty + approve `critics_required` (503) — env not code regression
+- **Strict E2E:** still blocked on M365 (microsoftOAuth + 6b)
+- **M365:** `probe-m365-unblock.sh` → **owner-blocked** (7 Fly secrets)
 
 ## Done this shift
 
-1. Timer `m365-secrets-reprobe` (11:41Z) — still 7 missing; strict E2E not run
-2. Re-requested setup actions; rescheduled 30m timer
+1. **`resolveOutreachLanguage`** — candidate `languages[]` beats need `localeContext` / seat / default; wired into cron draft + store outreach paths
+2. **E2E multilingual outreach** — Fly defaults `E2E_OUTREACH_LANGUAGE=fr`; asserts language on LinkedIn, Email, WhatsApp; step **5b** WhatsApp dry-run; French intake JD (English Role/Skills labels for parse)
+3. **`scripts/assert-outreach-language.mts`** + `tests/outreach-language.mts`; audit **62/62**
 
-## Blockers
+## Blockers (owner only)
 
-Owner Entra app + 7 Fly secrets — `_relay/M365-OWNER-UNBLOCK.md`
+Entra app + 7 Fly secrets — `_relay/M365-OWNER-UNBLOCK.md`.
 
-## Next steps
+## Next steps (owner)
 
-1. Owner: `/tmp/owner-microsoft.env` → `fly-apply-owner-microsoft-secrets.sh`
-2. Connect Outlook → Enable webhook
-3. `verify-m365-ready.sh` PASS incl 6b
-4. `env -u ARIA_ALLOW_PARTIAL_M365_E2E bash e2e-workflow-test.sh` → PASS
+```bash
+bash scripts/print-m365-owner-portal-checklist.sh
+bash scripts/probe-m365-unblock.sh --apply
+bash scripts/verify-m365-ready.sh
+env -u ARIA_ALLOW_PARTIAL_M365_E2E bash e2e-workflow-test.sh
+```
 
 ## Decisions made (don't relitigate)
 
 - Production = Fly only; ignore Vercel/GHA CI
-- Never pretends full enterprise PASS while 6b skipped or partial flag set
-- Tenant: `ce57ebe3-a63d-4708-b5cf-c274b48bd26c`
-- `bash scripts/print-fly-golive-status.sh` · `bash scripts/print-fly-deploy-confirm.sh`
+- Never claim full enterprise PASS while 6b skipped or partial flag set
+- Outreach language priority: **candidate languages → need locale → need language → seat → default**
+- E2E Fly default outreach language = **fr** (Mantu EU); override with `E2E_OUTREACH_LANGUAGE`
 
-## Production gate (Fly)
+## Watch out
 
-```bash
-bash scripts/print-fly-golive-status.sh
-curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
-ARIA_ALLOW_PARTIAL_M365_E2E=1 bash e2e-workflow-test.sh
-# step 3c should show PASS; MS-gap PARTIAL only when FAILS=0
-bash scripts/verify-m365-ready.sh
-```
+- Live approve may 503 `critics_required` when LLM critics unavailable — retry/regenerate already in E2E; not a language regression
+- French JD must keep English `Role:`/`Skills:` labels so generic intake parse yields a title
