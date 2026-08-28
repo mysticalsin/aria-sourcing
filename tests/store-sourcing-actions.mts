@@ -68,6 +68,10 @@ test("sourcing action boundary is React-free and wired through one stable factor
   assert.match(storeSource, /createSourcingActions\([\s\S]*?commitPersisted,/);
   assert.match(sourcingActionsSource, /await commitPersisted\(/);
   assert.match(
+    sourcingActionsSource,
+    /if \(!\(await flushWorkspaceSave\(\)\)\)[\s\S]*?Workspace could not sync before sourcing/,
+  );
+  assert.match(
     launchSource,
     /platform: supabaseEnabled \? undefined : "Talent Pool"/,
   );
@@ -135,6 +139,7 @@ function createHarness(options: {
   afterFetch?: () => void;
   beforeCommit?: (state: HermesState) => HermesState;
   beforePersist?: (state: HermesState) => HermesState;
+  flushWorkspaceSave?: () => Promise<boolean>;
   state?: HermesState;
 } = {}) {
   let state = structuredClone(options.state ?? buildSeedState());
@@ -166,7 +171,7 @@ function createHarness(options: {
       state = update(state);
       return true;
     },
-    flushWorkspaceSave: async () => true,
+    flushWorkspaceSave: options.flushWorkspaceSave ?? (async () => true),
     currentState: () => state,
     sourcingMutationAllowed: () => mutationAllowed,
     workspaceEffectAllowed: () => workspaceAllowed,
@@ -330,6 +335,26 @@ test("live batch sourcing uses reviewed campaign authority and returns durable f
   ]);
   assert.equal(harness.persistedCalls, 1);
   assert.equal(harness.events.length, 1);
+});
+
+test("live batch sourcing fails closed when workspace sync does not complete", async () => {
+  const seed = buildSeedState();
+  const campaign = { ...seed.campaigns[0], status: "Sourcing" as const };
+  const harness = createHarness({
+    state: { ...seed, campaigns: [campaign] },
+    syntheticSourcingAllowed: false,
+    flushWorkspaceSave: async () => false,
+  });
+
+  const result = await harness.actions.sourceNextBatch(campaign.id, { count: 1 });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.source, "unavailable");
+    assert.match(result.error, /sync/i);
+  }
+  assert.equal(harness.fetchCalls, 0);
+  assert.equal(harness.persistedCalls, 0);
 });
 
 test("a lost framework acknowledgement is typed for reconciliation and the staged replay does not duplicate candidates", async () => {
