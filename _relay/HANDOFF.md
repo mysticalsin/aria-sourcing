@@ -10,7 +10,7 @@ status: hermes-e2e-plan-shipped-awaiting-owner-deploy-remint
 
 ## Current state
 
-- **Branch tip:** `cursor/enterprise-autopilot-b91d` (Hermes E2E plan implementation pending push)
+- **Branch tip:** `cursor/enterprise-autopilot-b91d` **`c4e592e`** (Hermes E2E plan complete; push pending)
 - **Live Fly:** still **`e469126`** — deploy confirm stale for **`8950b21`** (not invented; not deployed)
 - **Test gate:** `npx tsc --noEmit && npm test` green locally; audit matrix **54/54** after HANDOFF step-3c notes below
 - **Microsoft SKIPPED** — goal stays **IN_PROGRESS**
