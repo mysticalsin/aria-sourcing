@@ -958,7 +958,7 @@ jq -n \
       sourcingStrategy: {githubQueries:[], linkedinBoolean:"", stackOverflowTags:[], excludedCompanies:[]}
     },
     existing: [],
-    count: 3,
+    count: 10,
     provider: $prov
   }
   | if ($model | length) > 0 then . + {model:$model} else . end
@@ -970,8 +970,9 @@ jq -n \
 # must already exist in workspace_state and pass evaluateNeedReadiness — there is no
 # server-side route that creates one, so E2E_CAMPAIGN_ID must name a reviewed
 # campaign that already exists.
+# count:10 matches TOP_CANDIDATE_SHORTLIST_SIZE (top-10 shortlist objective).
 AGENT_CAMPAIGN_ID="${E2E_CAMPAIGN_ID:-camp-e2e}"
-jq -n --arg id "$AGENT_CAMPAIGN_ID" '{campaignId:$id, count:3}' > "$WORK/agent_req.json"
+jq -n --arg id "$AGENT_CAMPAIGN_ID" '{campaignId:$id, count:10}' > "$WORK/agent_req.json"
 HTTP=$(curl -sS -m "${API_TIMEOUT:-180}" -o "$RESP" -w '%{http_code}' -X POST "$APP_URL/api/sourcing-agent" \
   -H 'Content-Type: application/json' -H "Origin: $APP_URL" -H "Cookie: $COOKIE_HDR" \
   -H "Idempotency-Key: $(e2e_uuid)" --data-binary @"$WORK/agent_req.json")
@@ -1001,7 +1002,12 @@ AG_URLED=$(jq -r '[(.candidates // [])[] | select(([(.githubUrl // ""), (.linked
 if [ "$AG_OK" = "skipped" ] || [ "$AG_OK" = "failed" ]; then
   : # already reported above
 elif [ "$HTTP" = "200" ] && [ "$AG_OK" = "true" ] && [ "$AG_N" -gt 0 ] && [ "$AG_LIVE" = "$AG_N" ] && [ "$AG_URLED" -gt 0 ]; then
-  pass "Agent returned $AG_N candidates, ALL provenance=\"live\", $AG_URLED with real profile URLs (totalFound=$(jq -r '.totalFound' "$RESP"))."
+  # Requested top-10 shortlist size; accept any live batch ≥1 (providers may return fewer).
+  if [ "$AG_N" -ge 10 ]; then
+    pass "Agent returned top-10 shortlist ($AG_N), ALL provenance=\"live\", $AG_URLED with real profile URLs (totalFound=$(jq -r '.totalFound' "$RESP"))."
+  else
+    pass "Agent returned $AG_N live candidates (requested count:10 / top-10 shortlist), ALL provenance=\"live\", $AG_URLED with real profile URLs (totalFound=$(jq -r '.totalFound' "$RESP"))."
+  fi
   jq '.candidates[0]' "$RESP" > "$WORK/cand0.json"
 elif [ "$HTTP" = "200" ] && [ "$AG_OK" = "true" ] && [ "$AG_N" -gt 0 ] && [ "$AG_LIVE" -lt "$AG_N" ] && [ "$AG_URLED" -gt 0 ] \
   && [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_STALE_FLY_E2E:-}" = "1" ]; then

@@ -299,29 +299,38 @@ export function EmailConnectionsPanel() {
         {providers ? <SystemReadiness items={ReadinessFromProviders(providers)} /> : null}
 
         {isAdmin && (
-          <div className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              leftIcon={<Mail className="h-4 w-4" />}
-              loading={connecting === "Gmail API"}
-              disabled={!providers?.gmailOAuth || !providers.encryptionReady}
-              onClick={() => void connect("Gmail API")}
-            >
-              Connect Gmail
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              leftIcon={<Plug className="h-4 w-4" />}
-              loading={connecting === "Microsoft Graph"}
-              disabled={!providers?.microsoftOAuth || !providers.encryptionReady}
-              onClick={() => void connect("Microsoft Graph")}
-            >
-              Connect Outlook
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => void load()} disabled={loading}>
-              Refresh status
-            </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                leftIcon={<Mail className="h-4 w-4" />}
+                loading={connecting === "Gmail API"}
+                disabled={!providers?.gmailOAuth || !providers.encryptionReady}
+                onClick={() => void connect("Gmail API")}
+              >
+                Connect Gmail
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<Plug className="h-4 w-4" />}
+                loading={connecting === "Microsoft Graph"}
+                disabled={!providers?.microsoftOAuth || !providers.encryptionReady}
+                onClick={() => void connect("Microsoft Graph")}
+              >
+                Connect Outlook
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => void load()} disabled={loading}>
+                Refresh status
+              </Button>
+            </div>
+            {providers && (!providers.microsoftOAuth || !providers.encryptionReady) ? (
+              <p className="max-w-md text-xs text-muted">
+                {!providers.encryptionReady
+                  ? "Token encryption missing (DATA_ENCRYPTION_KEY) — Connect Outlook stays disabled."
+                  : "Microsoft Graph OAuth env missing (MICROSOFT_CLIENT_ID / SECRET / REDIRECT_URI) — Connect Outlook stays disabled."}
+              </p>
+            ) : null}
           </div>
         )}
 
@@ -340,7 +349,9 @@ export function EmailConnectionsPanel() {
           </div>
         ) : connections.length === 0 ? (
           <p className="text-xs text-muted">
-            No mailbox linked yet. Connect Gmail or Outlook above — Aria creates a fleet seat if needed.
+            {providers && !providers.microsoftOAuth && !providers.gmailOAuth
+              ? "No mailbox linked — OAuth credentials are not configured on this deployment, so connect buttons stay disabled."
+              : "No mailbox linked yet. Connect Gmail or Outlook above — Aria creates a fleet seat if needed."}
           </p>
         ) : (
           <ul className="space-y-2">

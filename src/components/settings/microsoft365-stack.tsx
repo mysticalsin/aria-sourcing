@@ -133,9 +133,12 @@ function Microsoft365StackInner() {
   } else if (!loading && oauthReady) {
     statusLabel = "Outlook OAuth configured — connect a mailbox";
     statusTone = "electric";
-  } else if (!loading && ssoFlagOn) {
-    statusLabel = "SSO flag on — connect Outlook (verify Entra on /login)";
-    statusTone = "electric";
+  } else if (!loading) {
+    // Fail closed: never imply Connect Outlook works without Graph client secrets.
+    statusLabel = ssoFlagOn
+      ? "Outlook OAuth not configured (SSO flag on — verify /login separately)"
+      : "Outlook OAuth not configured — set MICROSOFT_CLIENT_ID + SECRET";
+    statusTone = "neutral";
   }
 
   return (
@@ -195,7 +198,15 @@ function Microsoft365StackInner() {
         step={2}
         title="Outlook mailbox (send + read)"
         subtitle="OAuth connect — Mail.Send, Mail.Read, encrypted tokens."
-        state={mailboxConnected ? "complete" : oauthReady || supabaseEnabled ? "active" : "pending"}
+        state={
+          mailboxConnected
+            ? "complete"
+            : !oauthReady && supabaseEnabled
+              ? "blocked"
+              : oauthReady
+                ? "active"
+                : "pending"
+        }
       >
         <SystemReadiness
           items={[
@@ -207,7 +218,7 @@ function Microsoft365StackInner() {
                 ? "Checking deployment env…"
                 : oauthReady
                   ? "MICROSOFT_CLIENT_ID + secret + REDIRECT_URI configured"
-                  : "Set MICROSOFT_CLIENT_*, MICROSOFT_REDIRECT_URI, and DATA_ENCRYPTION_KEY.",
+                  : "Set MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_REDIRECT_URI, and DATA_ENCRYPTION_KEY on Fly.",
             },
             {
               id: "connect-outlook",
@@ -215,7 +226,9 @@ function Microsoft365StackInner() {
               ok: mailboxConnected,
               hint: mailboxConnected
                 ? `Connected as ${connectedOutlook?.accountEmail}`
-                : `Use Connect Outlook in #${EMAIL_CONNECTIONS_PANEL_ID} below.`,
+                : oauthReady
+                  ? `Use Connect Outlook in #${EMAIL_CONNECTIONS_PANEL_ID} below.`
+                  : "Connect Outlook stays disabled until Graph OAuth env is complete.",
             },
           ]}
         />
@@ -237,7 +250,9 @@ function Microsoft365StackInner() {
                 ? "Granted on connected Outlook mailbox — live books request isOnlineMeeting via calendar create. Teams joinUrl appears after a successful confirmLive book."
                 : mailboxConnected
                   ? "Reconnect Outlook if Calendars.ReadWrite is missing from the token."
-                  : "Connect Outlook — Calendars.ReadWrite is requested at authorize time.",
+                  : oauthReady
+                    ? "Connect Outlook — Calendars.ReadWrite is requested at authorize time."
+                    : "Requires Graph OAuth env, then Connect Outlook.",
             },
             {
               id: "live-graph-seat",
@@ -247,7 +262,9 @@ function Microsoft365StackInner() {
                 ? "Outlook seat is live — confirmLive can create real Teams meetings."
                 : mailboxConnected
                   ? "Mailbox connected but seat is still mock — reconnect Outlook after tip deploy so OAuth callback promotes mode=live."
-                  : "Connect Outlook — OAuth callback sets seat mode=live.",
+                  : oauthReady
+                    ? "Connect Outlook — OAuth callback sets seat mode=live."
+                    : "Requires Graph OAuth env, then Connect Outlook.",
             },
           ]}
         />
@@ -269,7 +286,9 @@ function Microsoft365StackInner() {
                 ? `Active until ${connectedOutlook?.graphSubscription?.expiresAt ?? "unknown"} (auto-renewed by loop worker)`
                 : mailboxConnected
                   ? "Outlook connected but no active Graph subscription — use Enable webhook under Connect email."
-                  : "Connect Outlook to register a Graph change-notification subscription.",
+                  : oauthReady
+                    ? "Connect Outlook to register a Graph change-notification subscription."
+                    : "Requires Graph OAuth env before webhook subscription can be created.",
             },
             {
               id: "webhook-secret",

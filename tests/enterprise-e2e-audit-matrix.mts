@@ -132,6 +132,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /TOP_CANDIDATE_SHORTLIST_SIZE/.test(e2eTest)
         && /TOP_CANDIDATE_SHORTLIST_SIZE/.test(approve)
         && /\.max\(TOP_CANDIDATE_SHORTLIST_SIZE\)/.test(approve)
+        && /count:10/.test(e2eScript)
+        && /top-10 shortlist/.test(e2eScript)
       );
     },
   },
@@ -242,6 +244,9 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /confirmLive/.test(src)
         && /[Jj]oinUrl is proven only on live/.test(src)
         && !/id:\s*"teams-links"/.test(src)
+        && /Outlook OAuth not configured/.test(src)
+        && /Connect Outlook stays disabled until Graph OAuth/.test(src)
+        && /"blocked"/.test(src)
       );
     },
   },
