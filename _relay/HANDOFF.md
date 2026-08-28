@@ -18,13 +18,9 @@ status: hermes-e2e-plan-shipped-awaiting-owner-deploy-remint
 
 ## Done this shift
 
-1. **H6 profile multiplexing:** `resolveHermesProfilePrefix`, `buildHermesSessionKey`, `buildHermesUpstreamPath`, `hermesUpstreamHeaders` in `hermes-proxy.ts`; wired in `hermes/chat` + `hermes/proxy`
-2. **Loop Hermes router:** `src/lib/ai/loop-llm.ts` (`resolveLoopLlm`) — draft cron + `classify-inbound-reply` cron prefer Hermes when `HERMES_API_URL`+key; worker `createReplyClassificationModelClient` Hermes path
-3. **Pipeline pre-call → first interview:** `pre_call_propose` + `first_interview_book` in `pipeline-transitions.json`, worker handlers, graph intents `pre_call_only`/`interview_only`; mig **0069** adds loop kinds
-4. **60 languages:** `BUSINESS_LANGUAGE_CATALOG` (~60 ISO), `LocaleContext` on `JobAnalysis`, `extractLocaleContext`, locale in `buildOutreachPrompt` + draft cron
-5. **Schedules panel:** read-only mirror via `GET /api/cron/jobs`
-6. **Tests:** `hermes-profile-multiplexing`, `locale-propagation`; audit matrix extended for Hermes + locale chain
-7. **Phase 0:** documented deploy blocker — owner must remint confirm for current HEAD before golive; live **`e469126`** still lacks step **3c** provenance fix (expect step 3c PASS after golive when `live=n` and `n>0`)
+1. **Fix: "Campaign authority changed during sourcing"** — fingerprint now excludes `validationWarnings` drift; `localeContext` in projection schema; fingerprint recomputed after `flushWorkspaceSave` before live sourcing
+2. **Hermes recruiter voice** — shared `hermes-recruiter-voice.ts`: empathetic, human, memory-aware; wired into loop-llm + hermes/chat (never reveal AI/agent)
+3. Prior shift: H6 isolation, pre-call pipeline, 60-lang locale, audit 54/54; live **`e469126`** still lacks step **3c** provenance fix (expect step 3c PASS after golive when `live=n` and `n>0`)
 
 ## Blockers
 
@@ -39,6 +35,8 @@ status: hermes-e2e-plan-shipped-awaiting-owner-deploy-remint
 3. Owner H4 sign-off for dedicated Hermes runtime + H5 pin when ready for production memory
 
 ## Decisions made (don't relitigate)
+
+- **Fly = production.** No Vercel deploys, debugging, or CI authority for live behavior
 
 - Skip Microsoft; no Approve/send in autonomous E2E
 - Never invent deploy confirm
