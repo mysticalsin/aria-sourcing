@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set(
     "scope",
-    "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Calendars.ReadWrite https://graph.microsoft.com/User.Read offline_access",
+    "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Calendars.ReadWrite https://graph.microsoft.com/OnlineMeetings.ReadWrite https://graph.microsoft.com/User.Read offline_access",
   );
   authUrl.searchParams.set("response_mode", "query");
   authUrl.searchParams.set("state", state);

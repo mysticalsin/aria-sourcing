@@ -54,8 +54,12 @@ type ConnectionsPayload = {
 };
 
 function hasCalendarScope(scope: string): boolean {
-  // OAuth requests Calendars.ReadWrite only — do not green-check on OnlineMeetings.*.
+  // Authorize requests Calendars.ReadWrite (+ OnlineMeetings.ReadWrite for Teams joinUrl).
   return /calendars\.readwrite/i.test(scope);
+}
+
+function hasOnlineMeetingsScope(scope: string): boolean {
+  return /onlinemeetings\.readwrite/i.test(scope);
 }
 
 function Microsoft365StackInner() {
@@ -91,6 +95,9 @@ function Microsoft365StackInner() {
   const inboundActive = Boolean(connectedOutlook?.inboundRoute?.active);
   const graphSubscriptionActive = Boolean(connectedOutlook?.graphSubscription?.active);
   const calendarScoped = Boolean(connectedOutlook && hasCalendarScope(connectedOutlook.scope));
+  const onlineMeetingsScoped = Boolean(
+    connectedOutlook && hasOnlineMeetingsScope(connectedOutlook.scope),
+  );
 
   // Public flag only — not live Entra proof. Never mark SSO "complete" from the flag alone.
   const ssoFlagOn = azureLoginEnabled;
@@ -105,7 +112,7 @@ function Microsoft365StackInner() {
       Boolean(s.connectedAccount?.trim()),
   );
   // Calendar bookability requires a live seat (confirmLive dry-runs when mode !== live).
-  const calendarReady = mailboxConnected && calendarScoped && liveGraphSeat;
+  const calendarReady = mailboxConnected && calendarScoped && onlineMeetingsScoped && liveGraphSeat;
   // Step 4 is webhook push readiness: durable mailbox route AND live Graph subscription.
   const webhookIntakeReady = inboundActive && graphSubscriptionActive;
 
@@ -244,15 +251,16 @@ function Microsoft365StackInner() {
           items={[
             {
               id: "calendar-scope",
-              label: "Calendars.ReadWrite (Teams for Business)",
-              ok: calendarScoped,
-              hint: calendarScoped
-                ? "Granted on connected Outlook mailbox — live books request isOnlineMeeting via calendar create. Teams joinUrl appears after a successful confirmLive book."
-                : mailboxConnected
-                  ? "Reconnect Outlook if Calendars.ReadWrite is missing from the token."
-                  : oauthReady
-                    ? "Connect Outlook — Calendars.ReadWrite is requested at authorize time."
-                    : "Requires Graph OAuth env, then Connect Outlook.",
+              label: "Calendars.ReadWrite + OnlineMeetings.ReadWrite",
+              ok: calendarScoped && onlineMeetingsScoped,
+              hint:
+                calendarScoped && onlineMeetingsScoped
+                  ? "Granted on connected Outlook mailbox — confirmLive books request isOnlineMeeting + Teams joinUrl."
+                  : mailboxConnected
+                    ? "Reconnect Outlook so authorize requests Calendars.ReadWrite and OnlineMeetings.ReadWrite."
+                    : oauthReady
+                      ? "Connect Outlook — both calendar and OnlineMeetings scopes are requested at authorize time."
+                      : "Requires Graph OAuth env, then Connect Outlook.",
             },
             {
               id: "live-graph-seat",

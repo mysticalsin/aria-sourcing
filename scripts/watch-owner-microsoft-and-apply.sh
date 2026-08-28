@@ -47,9 +47,19 @@ apply_and_exit() {
   log "Applying owner Microsoft / Entra secrets to Fly…"
   bash "$repo/scripts/fly-apply-owner-microsoft-secrets.sh"
   touch /tmp/owner-microsoft-applied.ok
-  log "Applied. Next: tip remint (Entra SSO build flag) then Connect Outlook → bash scripts/verify-m365-ready.sh"
-  bash "$repo/scripts/print-fly-deploy-confirm.sh" | tee -a "$LOG" || true
-  bash "$repo/scripts/print-fly-missing-secrets.sh" | tee -a "$LOG" || true
+  log "Applied. Running post-m365-secrets-golive (oauth wait + optional remint + verify if seat live)…"
+  # Refresh tip confirm so Entra SSO remint can proceed when Entra secrets were applied.
+  TIP="$(git -C "$repo" rev-parse HEAD)"
+  CONFIRM="aria-production-release-v1:fly-deploy-now:${TIP}:aria-mantu-bootstrap,aria-mantu-app"
+  umask 077
+  cat > /tmp/owner-deploy-confirm.env <<EOF
+ARIA_RELEASE_SHA=${TIP}
+ARIA_PROD_DEPLOY_CONFIRM=${CONFIRM}
+EOF
+  chmod 600 /tmp/owner-deploy-confirm.env
+  bash "$repo/scripts/post-m365-secrets-golive.sh" || {
+    log "post-m365-secrets-golive exit $? — Connect Outlook may still be required"
+  }
   exit 0
 }
 

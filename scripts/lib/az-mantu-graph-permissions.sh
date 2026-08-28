@@ -13,6 +13,7 @@ apply_mantu_graph_delegated_permissions() {
     "570282fd-fa5c-430d-a7fd-fc8dc98a9dca=Scope"
     "e383f46e-2787-4529-855e-0e479a3ffac0=Scope"
     "1ec239c2-d7c9-4623-a91a-a9775856bb36=Scope"
+    "a65f2972-a4f8-4f5e-afd7-69ccb046d5dc=Scope"
   )
   echo "Ensuring Graph delegated permissions on appId=$app_id…"
   az ad app permission add --id "$app_id" --api "$graph_api" \

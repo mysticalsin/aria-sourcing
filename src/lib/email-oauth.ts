@@ -223,7 +223,7 @@ async function refreshMicrosoftToken(connection: EmailConnection): Promise<strin
         client_secret: clientSecret,
         refresh_token: connection.refreshToken,
         grant_type: "refresh_token",
-        scope: "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Calendars.ReadWrite offline_access",
+        scope: "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Calendars.ReadWrite https://graph.microsoft.com/OnlineMeetings.ReadWrite offline_access",
       }),
     );
   } catch {
