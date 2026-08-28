@@ -13,14 +13,14 @@ status: partial-e2e-green-m365-owner-blocked
 - **Live Fly:** `344fcaf` / **0071** · ready ok
 - **Branch tip:** `ea0f0b4`
 - **PR #35** (supersedes closed #29–#33)
-- **Gate:** audit **60/60** · `npx tsc --noEmit && npm test` green (2026-08-28)
+- **Gate:** audit **61/61** · `npx tsc --noEmit && npm test` green (2026-08-28)
 - **PARTIAL E2E (live):** 48 pass / 0 fail / 1 warn (6b only; 2026-08-28)
 - **Strict E2E:** 49 pass / **2 fail** (microsoftOAuth + 6b)
 - **M365:** 7 secrets missing · Entra zero aria-mantu apps · watcher active
 
 ## Done this shift
 
-1. Added `probe-m365-unblock.sh` + shared credential helper; watcher requires full 7-var set
+1. Audit matrix **61/61** — pinned probe-m365-unblock owner reprobe path
 2. M365 reprobe — still owner-blocked (7 Fly secrets missing)
 
 ## Blockers
