@@ -1,55 +1,50 @@
 ---
 project: MSourcing / ARIA
-shift: 290
+shift: 291
 agent: cursor-cloud
-updated: 2026-08-28T16:30Z
-status: owner-wait-m365-strict-pass
+updated: 2026-08-28T17:20Z
+status: omogen-compete-hub-ship
 ---
 
-# Handoff — Shift 290
+# Handoff — Shift 291
 
 ## Current state
 
-- **Live Fly:** `c12b615` / **0071** · ready ok · **`deploy_status=tip_live`**
+- **Live Fly:** reminting after Candidate Hub ship (was `42a005f` / **0071**)
 - **PR #36** (draft; supersedes closed-without-merge #29–#35)
-- **Gate:** `npx tsc --noEmit` green · audit **62/62** · npm test green
-- **Strict E2E:** blocked — M365 (7 secrets) + step 6b
-- **M365:** owner-blocked — `fly_m365_missing=7`, `/tmp/owner-microsoft.env` absent, noperm latch set
-- **Watcher:** after secrets apply, waits Connect Outlook then runs `verify-m365-ready` (strict E2E)
+- **Scope change (Tony):** skip M365/Entra + Vercel — compete with Omogen **except calling**
+- **New public surfaces:** `/hub`, `/hub/developpeur-java`, `/hub/report/[token]`, `/product`, `/pricing`, `/docs`, `/docs/api` + `/api/hub/*`
+- **M365:** still owner-blocked (ignored this shift per instruction)
 
 ## Done this shift
 
-1. **Mailbox/OAuth honesty** — Graph/Gmail Live requires `mode=live`; manual labels do not unlock Live or count as Outlook connected
-2. Gate Intake + Fleet Connect Outlook on `microsoftOAuth` + encryption readiness
-3. Harden Settings `oauth=success` toast (require `Connected …` / LinkedIn callback message)
-4. Deploy tip `c12b615` → Fly `tip_live`
+1. Reverse-engineered Omogen gaps (hub, diagnostic, API docs, pricing) — no voice calling
+2. Built Candidate Hub (FR/EN/ES) with AI compatibility scorecard + self-serve next step
+3. Featured hub: **Développeur Java** (`/hub/developpeur-java`) with LinkedIn search hint
+4. Public product ADN + Starter/Optimize/Scale pricing + API docs pages
+5. Tests: `tests/candidate-hub.mts` registered in application manifest
 
-## Blockers (owner only)
+## Blockers
 
-7 M365 Fly secrets + Entra app — `_relay/M365-OWNER-UNBLOCK.md`. Then Connect Outlook → Graph webhook → strict E2E.
+None for hub ship. M365 remains optional/out-of-scope for this compete track.
 
-## Next steps (owner)
+## Next steps
 
 ```bash
 bash scripts/print-fly-golive-status.sh
 bash scripts/print-fly-deploy-confirm.sh
-bash scripts/print-m365-owner-portal-checklist.sh
-bash scripts/probe-m365-unblock.sh --apply
-# Settings → Connect Outlook (live) → Enable Graph webhook
-bash scripts/verify-m365-ready.sh          # step 6b must pass
-env -u ARIA_ALLOW_PARTIAL_M365_E2E bash e2e-workflow-test.sh
-# step 3c should show PASS; MS-gap PARTIAL only when FAILS=0
+curl -fsS https://aria-mantu-app.fly.dev/api/hub/catalog?locale=fr | jq
+curl -fsS https://aria-mantu-app.fly.dev/hub/developpeur-java -o /dev/null -w '%{http_code}\n'
+# optional later: CAREERS_WORKSPACE_ID to re-enable /careers chatbox
 ```
 
 ## Decisions made (don't relitigate)
 
-- Production = Fly only; ignore Vercel/GHA CI (jobs die with 0 steps)
-- Never claim full enterprise PASS while 6b skipped or partial flag set
-- Agent may deploy tip when release guard passes (confirm encodes exact SHA)
-- Inbox list-poll is off unless `ARIA_ALLOW_INBOX_SYNC=1` (webhook-only production)
-- Tony HOLD: do not open another PR; keep #36; no parallel ship
-- Watcher after secrets: waits Connect Outlook then runs verify-m365-ready (strict E2E)
-- Manual fleet mailbox labels ≠ Graph OAuth; Live send needs mode=live
+- Production = Fly only; ignore Vercel/GHA CI
+- Skip M365/Entra until owner resumes; compete track does not wait on Graph
+- No candidate phone calling (Omogen Mio parity deliberately excluded)
+- Tony HOLD: do not open another PR; keep #36
+- Manual mailbox labels ≠ Graph OAuth; Live send needs mode=live
 
 ## Production gate (Fly)
 
@@ -57,17 +52,13 @@ env -u ARIA_ALLOW_PARTIAL_M365_E2E bash e2e-workflow-test.sh
 bash scripts/print-fly-golive-status.sh   # deploy_status=tip_live
 bash scripts/print-fly-deploy-confirm.sh
 curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
+curl -fsS 'https://aria-mantu-app.fly.dev/api/hub/catalog?locale=fr' | jq '.hubs[0].slug'
+# step 3c should show PASS when running PARTIAL E2E; provenance / live=0 is quota
 ARIA_ALLOW_PARTIAL_M365_E2E=1 bash e2e-workflow-test.sh
-# step 3c should show PASS (live provenance); if live=0 → 3c FAIL / provenance fix
-bash scripts/verify-m365-ready.sh
-env -u ARIA_ALLOW_PARTIAL_M365_E2E bash e2e-workflow-test.sh
 ```
 
 ## Watch out
 
-- Strict E2E fails on empty sourcing without partial flag — transient quota (provenance / step 3c)
-- Approve 422/503 after retries → PARTIAL warn only when `ARIA_ALLOW_PARTIAL_M365_E2E=1`
-- GHA CI fails instantly with 0 steps — ignore; local + Fly are authoritative
-EOF
-# rewrite only the tail from Next steps — use Write for full file instead
-true
+- Hub apply requires `DATA_ENCRYPTION_KEY` or `CANDIDATE_HUB_SECRET` (≥16 chars) — already on Fly
+- `/careers` still 503 without `CAREERS_WORKSPACE_ID` — hub catalog is independent
+- GHA CI fails instantly with 0 steps — ignore
