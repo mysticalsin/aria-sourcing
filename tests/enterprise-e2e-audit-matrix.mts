@@ -962,6 +962,21 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
+    requirement: "0069 pre_call/first_interview loop kinds pinned before golive",
+    evidence: () => {
+      const mig69 = readFileSync("supabase/migrations/0069_pre_call_first_interview_loop_kinds.sql", "utf8");
+      const loopAuth = readFileSync("tests/loop-authority-contract.mts", "utf8");
+      const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
+      return (
+        /when 'pre_call_propose' then allowed_keys/i.test(mig69)
+        && /when 'first_interview_book' then allowed_keys/i.test(mig69)
+        && /0069 allows pre_call_propose \+ first_interview_book loop payloads/i.test(loopAuth)
+        && /pre_call_propose: handlePreCallPropose/.test(worker)
+        && /first_interview_book: handleFirstInterviewBook/.test(worker)
+      );
+    },
+  },
+  {
     requirement: "Post-deploy PARTIAL E2E: step 3c provenance gate + cascade fail-closed + MS-gap PARTIAL only when FAILS=0",
     evidence: () => {
       const script = readFileSync("e2e-workflow-test.sh", "utf8");
