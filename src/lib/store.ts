@@ -1760,7 +1760,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (!campaignAllowsLiveSourcing(campaign.status)) {
         return { ok: false, added: 0, error: "Campaign is not active for sourcing." };
       }
-      const requestedCount = Math.min(Math.max(Math.trunc(count) || 5, 1), 8);
+      const requestedCount = Math.min(Math.max(Math.trunc(count) || 5, 1), 10);
       const reviewed = await requestReviewedSourcing(
         workspaceFetch,
         campaignId,

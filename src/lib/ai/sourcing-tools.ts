@@ -57,7 +57,7 @@ export const SOURCING_TOOL_DEFS: McpTool[] = [
             "GitHub: a GitHub search-qualifier string (e.g. 'language:Go followers:>40'). " +
             "Others: plain keywords (title + a skill) — this gets scoped with a site: filter automatically.",
         },
-        count: { type: "number", description: "Max candidates to return this call (1-10). Default 5." },
+        count: { type: "number", description: "Max candidates to return this call (1-15). Prefer the campaign shortlist size (up to 10)." },
       },
       required: ["platform", "query"],
     },

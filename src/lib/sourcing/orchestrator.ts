@@ -61,12 +61,26 @@ function githubQueriesFor(campaign: MultiProviderSourcingInput["campaign"]): str
   const configured = (campaign.sourcingStrategy.githubQueries ?? [])
     .map((q) => q.query.trim())
     .filter(Boolean);
-  if (configured.length > 0) return configured.slice(0, 3);
-  const skills = campaign.jobAnalysis.requiredSkills.slice(0, 2);
+  if (configured.length > 0) return configured.slice(0, 6);
+  const skills = campaign.jobAnalysis.requiredSkills.slice(0, 3);
   if (skills.length === 0) return [];
-  return skills.map(
-    (skill) => `language:${skill.replace(/\s+/g, "")} followers:>40 repos:>5`,
-  );
+  const queries: string[] = [];
+  for (const skill of skills) {
+    const lang = skill.replace(/\s+/g, "");
+    if (!lang) continue;
+    queries.push(`language:${lang} followers:>40 repos:>5`);
+    queries.push(`language:${lang} followers:>20 repos:>3`);
+  }
+  const titleToken = campaign.jobAnalysis.title
+    .replace(/[^\w\s]/g, " ")
+    .trim()
+    .split(/\s+/)
+    .find((part) => part.length > 2);
+  if (titleToken && skills[0]) {
+    const lang = skills[0].replace(/\s+/g, "");
+    queries.push(`${titleToken} language:${lang} followers:>10`);
+  }
+  return Array.from(new Set(queries)).slice(0, 6);
 }
 
 function linkedInQueriesFor(campaign: MultiProviderSourcingInput["campaign"]): string[] {
@@ -84,6 +98,18 @@ function linkedInQueriesFor(campaign: MultiProviderSourcingInput["campaign"]): s
     .trim()
     .slice(0, 256);
   return fallback ? [fallback] : [];
+}
+
+function qualityPassingCount(
+  batches: { provider: SourcingProvider; candidates: Candidate[] }[],
+  existing: CandidateDedupeIdentity[],
+  campaign: MultiProviderSourcingInput["campaign"],
+): number {
+  const merged = mergePreferringRicher(batches);
+  const deduped = dedupeCandidates(merged, existing, {
+    excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
+  });
+  return deduped.accepted.filter((c) => meetsSourcingQualityBar(c, SOURCING_QUALITY_FLOOR)).length;
 }
 
 function queriesForProvider(
@@ -185,15 +211,54 @@ export async function runMultiProviderSourcing(
     batches.push({ provider, candidates: providerHits });
   }
 
-  // Deepen LinkedIn web if we still need more after the parallel fan-out.
-  const shortfall = count - mergePreferringRicher(batches).length;
+  // Deepen GitHub + LinkedIn web when quality-passing unique hits are still short of `count`.
+  // Recompute shortfall from the 80% floor — never invent candidates.
+  let shortfall = count - qualityPassingCount(batches, input.existing, input.campaign);
   if (shortfall > 0) {
-    const web = selected.find((p) => p.id === "linkedin_web");
-    if (web) {
-      const deepenQueries = linkedInQueriesFor(input.campaign).slice(1, maxQueryRounds);
-      const existingHits = batches.flatMap((b) => b.candidates);
+    const existingHits = batches.flatMap((b) => b.candidates);
+    const usedQueries = new Set(
+      executions.map((execution) => `${execution.providerId}::${execution.query}`),
+    );
+
+    const github = selected.find((p) => p.id === "github");
+    if (github) {
+      const deepenQueries = githubQueriesFor(input.campaign)
+        .filter((query) => !usedQueries.has(`github::${query}`))
+        .slice(0, maxQueryRounds);
       for (const query of deepenQueries) {
-        if (existingHits.length >= count * 2) break;
+        if (qualityPassingCount(batches, input.existing, input.campaign) >= count) break;
+        const result = await github.search({
+          query,
+          count: Math.min(15, shortfall + 5),
+          ctx: { ...ctx, existing: [...input.existing, ...existingHits] },
+        });
+        executions.push({
+          providerId: github.id,
+          platform: github.displayPlatform,
+          query,
+          ok: result.ok,
+          candidateCount: result.accepted.length,
+          skippedCount: result.skipped.length,
+          error: result.error,
+        });
+        usedQueries.add(`github::${query}`);
+        if (result.ok && result.accepted.length > 0) {
+          const batch = batches.find((b) => b.provider.id === github.id);
+          if (batch) batch.candidates.push(...result.accepted);
+          else batches.push({ provider: github, candidates: result.accepted });
+          existingHits.push(...result.accepted);
+        }
+      }
+    }
+
+    shortfall = count - qualityPassingCount(batches, input.existing, input.campaign);
+    const web = selected.find((p) => p.id === "linkedin_web");
+    if (web && shortfall > 0) {
+      const deepenQueries = linkedInQueriesFor(input.campaign)
+        .filter((query) => !usedQueries.has(`linkedin_web::${query}`))
+        .slice(0, maxQueryRounds);
+      for (const query of deepenQueries) {
+        if (qualityPassingCount(batches, input.existing, input.campaign) >= count) break;
         const result = await web.search({
           query,
           count: Math.min(15, shortfall + 5),
@@ -208,6 +273,7 @@ export async function runMultiProviderSourcing(
           skippedCount: result.skipped.length,
           error: result.error,
         });
+        usedQueries.add(`linkedin_web::${query}`);
         if (result.ok && result.accepted.length > 0) {
           const batch = batches.find((b) => b.provider.id === web.id);
           if (batch) batch.candidates.push(...result.accepted);

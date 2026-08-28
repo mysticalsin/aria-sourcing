@@ -682,13 +682,15 @@ async function handlePost(req: NextRequest, correlationId: string) {
     }).accepted
       .filter((candidate) => meetsSourcingQualityBar(candidate, SOURCING_QUALITY_FLOOR))
       .sort((a, b) => b.matchScore - a.matchScore);
-    const byId = new Map(found.map((candidate) => [candidate.id, candidate]));
-    const selected = deterministic
-      ? found.slice(0, count).map((candidate) => ({ candidate, draft: null }))
-      : (drafts ?? []).map((draft) => ({
-          candidate: byId.get(draft.candidateId) ?? null,
-          draft,
-        }));
+    // Always select from quality-sorted live hits up to `count`. Attach LLM drafts when
+    // present — never shrink the shortlist to draft count alone (cloud mode used to).
+    const draftByCandidateId = new Map(
+      (drafts ?? []).map((draft) => [draft.candidateId, draft] as const),
+    );
+    const selected = found.slice(0, count).map((candidate) => ({
+      candidate,
+      draft: draftByCandidateId.get(candidate.id) ?? null,
+    }));
     const candidates = selected
       .map(({ candidate, draft }) => {
         if (!candidate) return null;

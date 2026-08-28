@@ -140,5 +140,31 @@ function cand(partial: {
   );
 }
 
+{
+  // Pin deepen + expanded GitHub query generation (top-10 shortlist supply).
+  const orchSrc = await import("node:fs").then((fs) =>
+    fs.readFileSync(new URL("../src/lib/sourcing/orchestrator.ts", import.meta.url), "utf8"),
+  );
+  ok(
+    "orchestrator deepens GitHub on quality shortfall",
+    /Deepen GitHub \+ LinkedIn web/.test(orchSrc)
+      && /qualityPassingCount/.test(orchSrc)
+      && /p\.id === "github"/.test(orchSrc),
+  );
+  ok(
+    "orchestrator expands GitHub query variants for top-10 supply",
+    /followers:>20 repos:>3/.test(orchSrc) && /configured\.slice\(0, 6\)/.test(orchSrc),
+  );
+  const routeSrc = await import("node:fs").then((fs) =>
+    fs.readFileSync(new URL("../src/app/api/sourcing-agent/route.ts", import.meta.url), "utf8"),
+  );
+  ok(
+    "sourcing-agent selects from found hits not draft count alone",
+    /draftByCandidateId/.test(routeSrc)
+      && /found\.slice\(0, count\)/.test(routeSrc)
+      && !/: \(drafts \?\? \[\]\)\.map\(\(draft\) => \(\{/.test(routeSrc),
+  );
+}
+
 console.log(`RESULT multi-provider-sourcing: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

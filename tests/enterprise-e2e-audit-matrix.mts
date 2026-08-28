@@ -134,6 +134,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /\.max\(TOP_CANDIDATE_SHORTLIST_SIZE\)/.test(approve)
         && /count:10/.test(e2eScript)
         && /top-10 shortlist/.test(e2eScript)
+        && /draftByCandidateId/.test(readFileSync("src/app/api/sourcing-agent/route.ts", "utf8"))
+        && /Deepen GitHub \+ LinkedIn web/.test(readFileSync("src/lib/sourcing/orchestrator.ts", "utf8"))
       );
     },
   },
