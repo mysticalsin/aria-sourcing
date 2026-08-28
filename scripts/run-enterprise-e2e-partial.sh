@@ -17,6 +17,9 @@ echo "$golive_out"
 deploy_status="$(echo "$golive_out" | awk -F= '/^deploy_status=/{print $2}')"
 live_mig="$(echo "$golive_out" | awk -F= '/^live_migration=/{print $2}')"
 tip_mig="$(echo "$golive_out" | awk -F= '/^tip_migration=/{print $2}')"
+confirm_present="$(echo "$golive_out" | awk -F= '/^confirm_file_present=/{print $2}')"
+confirm_sha="$(echo "$golive_out" | awk -F= '/^confirm_sha=/{print $2}')"
+tip_sha="$(echo "$golive_out" | awk -F= '/^tip_sha=/{print $2}')"
 echo
 
 eval "$(bash "$repo/scripts/print-fly-e2e-env.sh" --export)"
@@ -35,7 +38,11 @@ case "$deploy_status" in
     ;;
   *)
     flags+=(ARIA_ALLOW_STALE_FLY_E2E=1)
-    echo "NOTE: live Fly lags tip — owner remint required:"
+    if [ "$confirm_present" = "yes" ] && [ -n "$confirm_sha" ] && [ "$confirm_sha" != "$tip_sha" ]; then
+      echo "NOTE: /tmp/owner-deploy-confirm.env pins ${confirm_sha:0:12} — remint for tip ${tip_sha:0:12}:"
+    else
+      echo "NOTE: live Fly lags tip — owner deploy confirm required:"
+    fi
     echo "      bash scripts/print-fly-deploy-confirm.sh → /tmp/owner-deploy-confirm.env"
     if [ -n "$live_mig" ] && [ -n "$tip_mig" ] && [ "$live_mig" != "$tip_mig" ]; then
       echo "      migration pending: live ${live_mig} → tip ${tip_mig}"

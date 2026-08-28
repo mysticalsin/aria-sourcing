@@ -23,6 +23,11 @@ load_confirm() {
 load_confirm "/tmp/owner-deploy-confirm.env"
 load_confirm "$repo/production-readiness/.owner-deploy-confirm.env"
 
+CONFIRM_FILE_PRESENT="no"
+if [ -r "/tmp/owner-deploy-confirm.env" ] || [ -r "$repo/production-readiness/.owner-deploy-confirm.env" ]; then
+  CONFIRM_FILE_PRESENT="yes"
+fi
+
 CONFIRM_SHA="${ARIA_RELEASE_SHA:-}"
 CONFIRM_MATCH="no"
 CONFIRM_STALE="no"
@@ -44,6 +49,7 @@ echo "live_sha=${LIVE:-unknown}"
 echo "live_migration=${LIVE_MIG:-unknown}"
 echo "live_ready_ok=${READY_OK}"
 echo "confirm_sha=${CONFIRM_SHA:-unset}"
+echo "confirm_file_present=${CONFIRM_FILE_PRESENT}"
 echo "confirm_matches_tip=${CONFIRM_MATCH}"
 echo "confirm_stale_for_tip=${CONFIRM_STALE}"
 echo "m365_secrets_missing=${M365_MISSING}"
