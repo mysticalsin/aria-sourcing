@@ -328,6 +328,6 @@
   ],
   "metrics_at_completion": null,
   "retro_id": null,
-  "last_shift_note": "2026-08-28T03:35Z shift 229: run-enterprise-e2e-partial hints for remint vs confirm-ready golive. Gate green, audit 56/56. Fly stale — owner remint. Microsoft SKIPPED. Goal IN_PROGRESS.",
-  "updated_at": "2026-08-28T03:35:00+00:00"
+  "last_shift_note": "2026-08-28T03:42Z shift 230: golive probe prints tip_migration (0069 pending). Gate green, audit 56/56, E2E PARTIAL 0 fail. Confirm stale (e469126 vs tip 03bb294). Microsoft SKIPPED. Goal IN_PROGRESS.",
+  "updated_at": "2026-08-28T03:42:00+00:00"
 }

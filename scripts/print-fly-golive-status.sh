@@ -5,6 +5,7 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo"
 
 TIP="$(git rev-parse HEAD)"
+TIP_MIG="$(ls -1 "$repo/supabase/migrations/"*.sql 2>/dev/null | sort | tail -1 | xargs -I{} basename {} || true)"
 APP_URL="${APP_URL:-https://aria-mantu-app.fly.dev}"
 ready="$(curl -sS -m 20 "$APP_URL/api/ready" 2>/dev/null || echo '{}')"
 LIVE="$(echo "$ready" | jq -r '.build // empty' 2>/dev/null || true)"
@@ -29,6 +30,7 @@ if [ -n "${ARIA_PROD_DEPLOY_CONFIRM:-}" ] && [[ "${ARIA_PROD_DEPLOY_CONFIRM}" ==
 fi
 
 echo "tip_sha=${TIP}"
+echo "tip_migration=${TIP_MIG:-unknown}"
 echo "live_sha=${LIVE:-unknown}"
 echo "live_migration=${LIVE_MIG:-unknown}"
 echo "live_ready_ok=${READY_OK}"
