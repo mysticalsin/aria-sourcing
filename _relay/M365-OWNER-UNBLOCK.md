@@ -2,7 +2,7 @@
 
 **Blocker ID:** M365-FLY-6  
 **Production:** https://aria-mantu-app.fly.dev only  
-**Updated:** 2026-08-28T11:05Z
+**Updated:** 2026-08-28T11:10Z
 
 ## Missing Fly secrets (7)
 
@@ -38,7 +38,7 @@ ARIA_ALLOW_PARTIAL_M365_E2E=1 bash e2e-workflow-test.sh
 # → 49 pass, 0 fail, 2 warn (PARTIAL) on live 344fcaf / tip da5df66 (2026-08-28)
 ```
 
-Warnings: LinkedIn approve retry (LLM 503, recovered); step **6b** confirmLive Teams skipped (no Graph seat).
+Strict E2E (no partial flag) correctly **FAIL**s on: `microsoftOAuth=false` + step 6b (no Graph seat).
 
 ## Owner action
 
