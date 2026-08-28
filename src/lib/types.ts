@@ -667,6 +667,10 @@ export interface OutreachMessage {
   qualityReasons?: string[];
   /** Mantu-branded HTML wrapper for Email channel (optional). */
   htmlBody?: string;
+  /** Override default candidate recipient (interviewer prep emails). */
+  recipientOverride?: string;
+  /** Marks template-bound interview correspondence drafts. */
+  prepPurpose?: "interviewer" | "candidate_confirmation";
 }
 
 /* ---- Replies ------------------------------------------------------------- */

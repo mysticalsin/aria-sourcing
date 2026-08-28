@@ -114,6 +114,18 @@ ok(
   })(),
 );
 ok(
+  "0071 allows interview_prep_send loop payloads (post-booking prep drafts)",
+  (() => {
+    const mig71 = read("supabase/migrations/0071_interview_prep_send_loop_kind.sql");
+    return (
+      mig71.length > 0 &&
+      noTxn(mig71) &&
+      /when 'interview_prep_send' then allowed_keys := array\['campaignId', 'candidateId', 'bookingId', 'trigger'\]/i.test(mig71) &&
+      /'interview_prep_send'/i.test(mig71)
+    );
+  })(),
+);
+ok(
   "loop event erasure has a narrow trigger-recognized redaction path",
   /redact_loop_events_for_candidate_erasure\(uuid, text, text\[\], text\[\]\)/i.test(dataProtection) &&
     /set_config\('aria\.candidate_erasure_loop_event_redaction', 'on', true\)/i.test(dataProtection) &&

@@ -59,6 +59,12 @@ export interface BookingReportActionDependencies {
     candidateName: string;
     campaignId: string;
   }) => void;
+  enqueueInterviewPrep?: (input: {
+    bookingId: string;
+    candidateId: string;
+    campaignId: string;
+    providerEventCreated: boolean;
+  }) => Promise<{ queued: boolean }>;
 }
 
 function learningSummary(
@@ -229,6 +235,7 @@ export function createBookingReportActions({
   withActivity,
   recomputeMetrics,
   emitBooking,
+  enqueueInterviewPrep,
 }: BookingReportActionDependencies): BookingReportActions {
   const createBookingFor: BookingReportActions["createBookingFor"] = async (
     candidateId,
@@ -471,7 +478,21 @@ export function createBookingReportActions({
     const prepEmail = interviewerPrepEmail(booking, candidate);
     const confirmationEmail = candidateConfirmationEmail(booking);
     emitBooking({ kind: "book", candidateName: candidate.name, campaignId: campaign.id });
-    return { ok: true, booking, prepEmail, confirmationEmail };
+    let prepQueued = false;
+    if (providerEventCreated && enqueueInterviewPrep) {
+      try {
+        const enq = await enqueueInterviewPrep({
+          bookingId: booking.id,
+          candidateId: candidate.id,
+          campaignId: campaign.id,
+          providerEventCreated: true,
+        });
+        prepQueued = enq.queued;
+      } catch {
+        prepQueued = false;
+      }
+    }
+    return { ok: true, booking, prepEmail, confirmationEmail, prepQueued };
   };
 
   const updateBooking: BookingReportActions["updateBooking"] = (id, patch) => {

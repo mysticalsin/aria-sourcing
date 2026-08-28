@@ -2523,12 +2523,15 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         blockers: [blocker],
         warnings: [],
       });
-      const recipientFor = (message: OutreachMessage, candidate: Candidate) =>
-        message.channel === "WhatsApp" || message.channel === "SMS"
+      const recipientFor = (message: OutreachMessage, candidate: Candidate) => {
+        const override = message.recipientOverride?.trim();
+        if (override) return override;
+        return message.channel === "WhatsApp" || message.channel === "SMS"
           ? candidate.phone ?? ""
           : message.channel === "LinkedIn"
             ? candidate.linkedinUrl ?? ""
             : candidate.email;
+      };
       const isActionable = (message: OutreachMessage) =>
         message.status === "Needs Approval" || message.status === "Draft";
 
@@ -3633,6 +3636,29 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit, current],
   );
 
+  const enqueueInterviewPrep = useCallback(
+    async (input: {
+      bookingId: string;
+      candidateId: string;
+      campaignId: string;
+      providerEventCreated: boolean;
+    }): Promise<{ queued: boolean }> => {
+      if (!supabaseEnabled || !input.providerEventCreated) return { queued: false };
+      try {
+        const response = await workspaceFetch("/api/booking/interview-prep", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        });
+        const body = (await response.json().catch(() => null)) as { queued?: boolean } | null;
+        return { queued: response.ok && body?.queued === true };
+      } catch {
+        return { queued: false };
+      }
+    },
+    [workspaceFetch],
+  );
+
   const {
     createBookingFor,
     updateBooking,
@@ -3652,6 +3678,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         withActivity,
         recomputeMetrics,
         emitBooking: emit,
+        enqueueInterviewPrep,
       }),
     [
       commit,
@@ -3659,6 +3686,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       learningMutationAllowed,
       workspaceEffectAllowed,
       workspaceFetch,
+      enqueueInterviewPrep,
     ],
   );
 

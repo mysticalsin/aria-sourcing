@@ -993,6 +993,26 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
+    requirement: "0071 interview_prep_send queues post-booking prep through approval spine",
+    evidence: () => {
+      const mig71 = readFileSync("supabase/migrations/0071_interview_prep_send_loop_kind.sql", "utf8");
+      const loopAuth = readFileSync("tests/loop-authority-contract.mts", "utf8");
+      const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
+      const bookingActions = readFileSync("src/lib/store/booking-report-actions.ts", "utf8");
+      const e2e = readFileSync("e2e-workflow-test.sh", "utf8");
+      return (
+        /when 'interview_prep_send' then allowed_keys/i.test(mig71)
+        && /0071 allows interview_prep_send loop payloads/i.test(loopAuth)
+        && /interview_prep_send: handleInterviewPrepSend/.test(worker)
+        && /handleInterviewPrepSend/.test(worker)
+        && /enqueueInterviewPrep/.test(bookingActions)
+        && /interview_prep_send enqueue \+ approval-gated prep dispatch wired/.test(e2e)
+        && existsSync("src/app/api/cron/interview-prep-dispatch/route.ts")
+        && existsSync("src/app/api/booking/interview-prep/route.ts")
+      );
+    },
+  },
+  {
     requirement: "Golive status probe documents tip vs live vs confirm without secrets",
     evidence: () => {
       const status = readFileSync("scripts/print-fly-golive-status.sh", "utf8");

@@ -672,6 +672,49 @@ else
 fi
 
 # ===========================================================================
+step "2c) Reply webhook — POST /api/webhooks/email-inbound (inbound_classify)"
+# ===========================================================================
+if [ -n "$WEBHOOK_SECRET" ]; then
+  REPLY_BODY=$(jq -nc \
+    --arg mb "${E2E_MAILBOX:-talent@mantu.com}" \
+    --arg pid "e2e-reply-$$" \
+    '{mailbox:$mb,providerId:$pid,from:"candidate@example.com",subject:"Re: Senior TypeScript Engineer opportunity",body:"Yes, I am interested in learning more about the role. When can we speak?",inReplyTo:"<outbound-msg-e2e@mantu.example>"}')
+  REPLY_SIG=$(printf '%s' "$REPLY_BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | awk '{print $NF}')
+  REPLY_CODE=$(curl -sS -m 30 -o "$WORK/webhook_reply.json" -w '%{http_code}' \
+    -X POST "$APP_URL/api/webhooks/email-inbound" \
+    -H 'Content-Type: application/json' \
+    -H "x-aria-signature: $REPLY_SIG" \
+    --data-binary "$REPLY_BODY")
+  REPLY_ROUTE=$(jq -r '.route // empty' "$WORK/webhook_reply.json")
+  REPLY_QUEUED=$(jq -r '.jobQueued // false' "$WORK/webhook_reply.json")
+  REPLY_KIND=$(jq -r '.jobKind // empty' "$WORK/webhook_reply.json")
+  if [ "$REPLY_CODE" = "200" ] && [ "$REPLY_ROUTE" = "reply_classify" ] && [ "$REPLY_KIND" = "inbound_classify" ] && [ "$REPLY_QUEUED" = "true" ]; then
+    pass "Webhook candidate reply queued inbound_classify (route=$REPLY_ROUTE, jobKind=$REPLY_KIND)."
+  elif [ "$REPLY_CODE" = "200" ] && [ "$REPLY_ROUTE" = "none" ]; then
+    warn "Reply webhook returned route=none ($(jq -r '.reason // empty' "$WORK/webhook_reply.json")) — classify enqueue proxy covered by tests/inbound-reply-trigger.mts."
+  else
+    fail "Reply webhook expected inbound_classify enqueue; got HTTP $REPLY_CODE route='$REPLY_ROUTE' kind='$REPLY_KIND': $(head -c 200 "$WORK/webhook_reply.json")"
+  fi
+else
+  info "EMAIL_INBOUND_WEBHOOK_SECRET unset — reply webhook live assert skipped (static pins still required)."
+fi
+if grep -q 'decideInterviewPrepEnqueue' src/lib/interview-prep-trigger.ts \
+  && grep -q 'interview_prep_send' scripts/sourcing-loop-worker.mjs \
+  && grep -q 'handleInterviewPrepSend' scripts/sourcing-loop-worker.mjs \
+  && grep -q 'interview-prep-dispatch' src/app/api/cron/interview-prep-dispatch/route.ts \
+  && grep -q '/api/booking/interview-prep' src/lib/store.ts; then
+  pass "Live booking → interview_prep_send enqueue + approval-gated prep dispatch wired."
+else
+  fail "Interview prep dispatch wiring missing (trigger, worker handler, cron route, or store enqueue)."
+fi
+if [ -f supabase/migrations/0071_interview_prep_send_loop_kind.sql ] \
+  && grep -q "interview_prep_send" supabase/migrations/0071_interview_prep_send_loop_kind.sql; then
+  pass "Migration 0071 adds interview_prep_send loop kind."
+else
+  fail "Migration 0071 interview_prep_send missing."
+fi
+
+# ===========================================================================
 step "2e) HeyReach MCP LinkedIn outreach stack (production allowlist)"
 # ===========================================================================
 if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ]; then

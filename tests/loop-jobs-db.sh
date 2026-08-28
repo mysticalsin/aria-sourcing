@@ -430,7 +430,7 @@ begin
   foreach declared_kind in array array[
     'email_sync', 'inbound_classify', 'requisition_parse', 'campaign_create',
     'sourcing_batch', 'provider_poll', 'enrich_candidate', 'shortlist_build',
-    'draft_generate', 'calendar_book', 'pre_call_propose', 'first_interview_book',
+    'draft_generate', 'calendar_book', 'pre_call_propose', 'first_interview_book', 'interview_prep_send',
     'delivery_reconcile', 'outcome_feedback'
   ]
   loop
@@ -447,6 +447,7 @@ begin
       when 'calendar_book' then '{"campaignId":"camp-1","candidateId":"cand-1","intent":"INTERESTED","trigger":"draft_generate"}'::jsonb
       when 'pre_call_propose' then '{"campaignId":"camp-1","candidateId":"cand-1","intent":"INTERESTED","trigger":"inbound_classify"}'::jsonb
       when 'first_interview_book' then '{"campaignId":"camp-1","candidateId":"cand-1","intent":"INTERESTED","trigger":"pre_call_propose"}'::jsonb
+      when 'interview_prep_send' then '{"campaignId":"camp-1","candidateId":"cand-1","bookingId":"book-1","trigger":"create_booking"}'::jsonb
       when 'delivery_reconcile' then '{"campaignId":"camp-1","candidateId":"cand-1"}'::jsonb
       when 'outcome_feedback' then '{"campaignId":"camp-1","candidateId":"cand-1"}'::jsonb
       else '{}'::jsonb

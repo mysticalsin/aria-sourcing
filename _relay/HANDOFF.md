@@ -1,36 +1,49 @@
 ---
 project: MSourcing / ARIA
-shift: 244
+shift: 245
 agent: cursor-cloud
-updated: 2026-08-28T05:44Z
-status: gate-green-live-0070-m365-owner-path-documented
+updated: 2026-08-28T06:15Z
+status: gate-green-audit-matrix-0071-prep-dispatch
 ---
 
-# Handoff — Shift 244
+# Handoff — Shift 245
 
 ## Current state
 
-- **Branch tip:** `cursor/enterprise-autopilot-b91d`
-- **Live Fly:** **`6ed278e`** (migration **0070**)
-- **Deploy:** `bash scripts/print-fly-golive-status.sh` — code live; relay-only tip may be ahead
-- **Test gate / audit:** green; **57/57**
-- **Live E2E:** **35 pass, 0 fail** (PARTIAL M365)
-- **PR:** [#35](https://github.com/mysticalsin/aria-sourcing/pull/35) ([#33](https://github.com/mysticalsin/aria-sourcing/pull/33) closed); supersedes #29–#32
-- **Deploy confirm:** `bash scripts/print-fly-deploy-confirm.sh` when tip code changes
+- **Branch tip:** `cursor/enterprise-autopilot-b91d` (ahead — interview prep + audit matrix)
+- **Live Fly:** **`6ed278e`** (migration **0070**); tip adds **0071** + prep dispatch — golive pending
+- **Test gate / audit:** green; **58/58** (`tests/enterprise-e2e-audit-matrix.mts`)
+- **Audit matrix:** [`_relay/e2e-audit-matrix.md`](e2e-audit-matrix.md) — routes, loop, compliance, ops blockers
+- **Live E2E:** PARTIAL M365 (owner secrets); extended script adds reply webhook + prep pins (step 2c)
+- **PR:** [#35](https://github.com/mysticalsin/aria-sourcing/pull/35)
 
 ## Done this shift
 
-- **`az-configure-existing-graph-app.sh`** — owner path when Entra account cannot *create* apps (portal app + `ARIA_AZURE_APP_ID`)
-- Shared Graph permission helper; `fly-wait-entra` tries configure when `ARIA_AZURE_APP_ID` set
+- **`interview_prep_send`** loop kind (mig **0071**): live book → enqueue → worker → approval-gated prep drafts
+- **`/api/booking/interview-prep`** + **`/api/cron/interview-prep-dispatch`** + `handleInterviewPrepSend`
+- E2E step **2c**: reply webhook classify + prep wiring pins
+- **`_relay/e2e-audit-matrix.md`** + **`production-readiness/STATUS.md`** updated (0071, 58/58)
 
 ## Blockers (owner)
 
-1. **M365 secrets** (6 missing) — `twalteur@amaris.com` cannot create Entra registrations
-2. **Owner picks one:**
-   - Portal: create app → `export ARIA_AZURE_APP_ID=...` → `bash scripts/az-configure-existing-graph-app.sh --apply`
-   - Or paste `/tmp/owner-microsoft.env` → `bash scripts/fly-apply-owner-microsoft-secrets.sh`
-3. Full E2E without `ARIA_ALLOW_PARTIAL_M365_E2E=1`; **expect step 3c PASS** with `provenance=live`
+1. **M365 secrets** (6) — `bash scripts/az-configure-existing-graph-app.sh --apply` or `/tmp/owner-microsoft.env`
+2. **Golive 0071** — `bash scripts/fly-golive-mantu-e2e.sh` after push
+3. Full E2E without `ARIA_ALLOW_PARTIAL_M365_E2E=1`
+
+## Next steps
+
+1. Owner: Entra app + Fly M365 secrets
+2. Golive tip (0071) to Fly
+3. Full Fly E2E + browser walkthrough of audit matrix fail→pass items
+4. Set `ARIA_LOOP_KILL_SWITCH=false` only after P-1/P-2 on Docker host (A-1)
 
 ## Decisions made (don't relitigate)
 
 - Fly = production; ignore Vercel CI rate limit
+- Interview prep via approval queue — no auto-send
+- LinkedIn policy unchanged (409 manual-required)
+
+## Watch out
+
+- `interview_prep_send` is enqueued from UI book path, not `pipeline-transitions.json`
+- Prep enqueue requires provider calendar receipt (`providerEventCreated`)

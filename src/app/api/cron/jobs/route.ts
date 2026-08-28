@@ -22,6 +22,7 @@ const LOOP_CRON_JOBS = [
   { id: "generate-outreach-draft", path: "/api/cron/generate-outreach-draft", schedule: "loop worker", description: "Hermes/cloud outreach draft generation" },
   { id: "classify-inbound-reply", path: "/api/cron/classify-inbound-reply", schedule: "loop worker", description: "Hermes/cloud inbound reply classify" },
   { id: "propose-calendar-book", path: "/api/cron/propose-calendar-book", schedule: "loop worker", description: "Pre-call and first-interview dry-run propose" },
+  { id: "interview-prep-dispatch", path: "/api/cron/interview-prep-dispatch", schedule: "loop worker", description: "Post-booking interviewer prep + candidate confirmation drafts" },
   { id: "parse-inbound-need", path: "/api/cron/parse-inbound-need", schedule: "loop worker", description: "Requisition parse from inbound email" },
   { id: "run-sourcing-batch", path: "/api/cron/run-sourcing-batch", schedule: "loop worker", description: "Multi-provider sourcing batch" },
   { id: "recruiting-graph-stage", path: "/api/cron/recruiting-graph-stage", schedule: "loop worker", description: "LangGraph stage checkpoint validation" },

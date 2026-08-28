@@ -1,6 +1,6 @@
 # Production Readiness Status
 
-**Date:** 2026-08-25
+**Date:** 2026-08-28
 
 This page describes source and release-gate status. It is not evidence that a
 particular production deployment is healthy.
@@ -14,10 +14,14 @@ particular production deployment is healthy.
 - Local acceptance requires typecheck, lint, the full test chain, the isolated
   production build, the exact database restart test, and the database authority
   test.
-- Migrations through `0056` are in source: LinkedIn channel (`0054`), per-user
-  autopilot entitlements + template-bound approvals (`0055`), and MCP allowlist
-  authority (`0056`). Apply and prove on a Docker-enabled host before lighting
-  the loop kill switch.
+- Migrations through **0071** are in source: LinkedIn channel (`0054`), per-user
+  autopilot entitlements + template-bound approvals (`0055`), MCP allowlist
+  authority (`0056`), pre-call/first-interview loop kinds (`0069`), enqueue
+  switchboard fix (`0070`), and post-booking interview prep dispatch
+  (`0071_interview_prep_send_loop_kind.sql`). Apply and prove on a Docker-enabled
+  host before lighting the loop kill switch.
+- Enterprise E2E audit matrix: [`_relay/e2e-audit-matrix.md`](../_relay/e2e-audit-matrix.md)
+  (58/58 automated pins in `tests/enterprise-e2e-audit-matrix.mts`).
 - The Fly release builds the application, database, bootstrap, Kong, and
   one-shot Graphify lesson-worker images for `linux/amd64`; pulls Auth and REST
   at their exact config-pinned upstream digests; schema-validates CycloneDX 1.7
@@ -40,6 +44,9 @@ particular production deployment is healthy.
   default. Entitled users (`profiles.autopilot_enabled`) may reach
   `auto_approve_eligible` only when guardrails, salary disclosure, and injection
   checks all pass; claim RPCs still re-validate authority at send time.
+- After a live calendar booking (`confirmLive` + provider receipt),
+  `interview_prep_send` enqueues interviewer prep and candidate confirmation
+  drafts into the approval queue — nothing sends without review.
 - Agent graph drafts stay in exact-owner run history with no delivery authority.
   They do not create a review queue or provider outbox row.
 - Email, WhatsApp, and LinkedIn claims share seat/capacity and recontact
@@ -77,17 +84,14 @@ particular production deployment is healthy.
 5. Prove database, Auth, REST, Kong, `/api/ready`, migration identity, persistence,
    two restart cycles, backup restore, rollback, login, and controlled campaign
    behavior before real tenant or candidate use — including migrations `0053`–
-   `0056` on real Postgres (P-1) and the full gate at one SHA (P-2).
-6. Before enabling candidate erasure for production acceptance, add explicit
-   candidate provenance and erasure receipts for run, framework, and memory
-   payloads; an independently retained restore-replay journal; verified provider
-   deletion evidence; and a supported path above 100 provider obligations.
-7. Keep the 0032 application-surface fallback disabled unless a protected apply
-   job and append-only, ledger-safe forward migration are independently reviewed;
-   otherwise use approved restore or a new forward migration.
-8. Owner inputs before live autopilot: Entra SSO + verified delivery domain
-   (Phase 1), approval to set `ARIA_LOOP_KILL_SWITCH=false`, and LinkedIn vendor
-   credentials when contracting messaging out (L-2).
+   `0071` on real Postgres (P-1) and the full gate at one SHA (P-2).
+6. Owner: M365 Graph secrets + Entra SSO (E-2) + verified delivery domain (P-7).
+7. Run extended Fly E2E (`e2e-workflow-test.sh`) without PARTIAL flags when M365
+   live.
 
-Until those release gates pass, source readiness must not be described as live
-production readiness.
+## Live deployment note (2026-08-28)
+
+- Fly production code at migration **0070**; tip branch adds **0071** interview
+  prep dispatch and E2E reply webhook step — golive required for live prep enqueue.
+- PR [#35](https://github.com/mysticalsin/aria-sourcing/pull/35) tracks enterprise
+  autopilot lineage (#29–#33 superseded).

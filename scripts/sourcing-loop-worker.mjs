@@ -333,6 +333,7 @@ export function loadSourcingLoopConfiguration(environment) {
   let outreachDraftUrl = null;
   let renewGraphUrl = null;
   let calendarProposeUrl = null;
+  let interviewPrepDispatchUrl = null;
   let recruitingGraphUrl = null;
   if (webOrigin !== "" || cronSecret !== "") {
     let parsed;
@@ -354,6 +355,7 @@ export function loadSourcingLoopConfiguration(environment) {
     outreachDraftUrl = new URL("/api/cron/generate-outreach-draft", webOrigin);
     renewGraphUrl = new URL("/api/cron/renew-graph-subscriptions", webOrigin);
     calendarProposeUrl = new URL("/api/cron/propose-calendar-book", webOrigin);
+    interviewPrepDispatchUrl = new URL("/api/cron/interview-prep-dispatch", webOrigin);
     recruitingGraphUrl = new URL("/api/cron/recruiting-graph-stage", webOrigin);
   }
 
@@ -369,6 +371,7 @@ export function loadSourcingLoopConfiguration(environment) {
     outreachDraftUrl,
     renewGraphUrl,
     calendarProposeUrl,
+    interviewPrepDispatchUrl,
     recruitingGraphUrl,
     cronSecret,
     tickMs: boundedInteger(environment.ARIA_LOOP_TICK_MS, DEFAULT_TICK_MS, 5_000, 300_000, "ARIA_LOOP_TICK_MS"),
@@ -1498,6 +1501,70 @@ async function handleDraftGenerate(job, context) {
   );
 }
 
+async function handleInterviewPrepSend(job, context) {
+  const payload = payloadOf(job);
+  const campaignId = boundedText(payload.campaignId, 160, "campaign_id_required");
+  const candidateId = boundedText(payload.candidateId, 160, "candidate_id_required");
+  const bookingId = boundedText(payload.bookingId, 160, "booking_id_required");
+
+  if (!context.configuration?.interviewPrepDispatchUrl || !context.configuration?.cronSecret) {
+    throw new HandlerError("interview_prep_unconfigured", true);
+  }
+
+  let response;
+  try {
+    response = await context.fetcher(context.configuration.interviewPrepDispatchUrl, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${context.configuration.cronSecret}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        workspaceId: job.workspace_id,
+        campaignId,
+        candidateId,
+        bookingId,
+      }),
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+    });
+  } catch {
+    throw new HandlerError("interview_prep_unreachable", true);
+  }
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new HandlerError(`interview_prep_http_${response.status}`, response.status >= 500);
+  }
+  const body = await readBoundedJson(response, RPC_RESPONSE_BYTES);
+  if (!isRecord(body) || body.ok !== true || !Array.isArray(body.outreach) || body.outreach.length < 1) {
+    throw new HandlerError("interview_prep_response_invalid", true);
+  }
+
+  return completeJobWithWorkspacePatch(
+    context.client,
+    job,
+    {
+      kind: "append_outreach",
+      value: body.outreach,
+      receiptKey: `prep:${bookingId}`,
+    },
+    {
+      status: "prep_drafted",
+      campaignId,
+      candidateId,
+      bookingId,
+      draftCount: body.outreach.length,
+      dryRun: true,
+    },
+    [event("booking.prep_drafted", "booking", bookingId, {
+      campaignId,
+      candidateId,
+      draftCount: body.outreach.length,
+      dryRun: true,
+    })],
+    [],
+  );
+}
+
 /**
  * Shared calendar propose helper for pre-call and first-interview stages.
  */
@@ -1863,6 +1930,7 @@ const HANDLERS = Object.freeze({
   draft_generate: handleDraftGenerate,
   pre_call_propose: handlePreCallPropose,
   first_interview_book: handleFirstInterviewBook,
+  interview_prep_send: handleInterviewPrepSend,
   calendar_book: handleCalendarBook,
   delivery_reconcile: handleDeliveryReconcile,
   outcome_feedback: (job, context) => handleSimpleEvent(job, context, "outcome.feedback_requested", "candidate", "candidateId"),

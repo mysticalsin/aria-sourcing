@@ -398,7 +398,7 @@ export interface HermesActions {
     candidateId: string,
     opts?: { startTime?: string; interviewerName?: string },
   ) => Promise<
-    | { ok: true; booking: Booking; prepEmail: string; confirmationEmail: string }
+    | { ok: true; booking: Booking; prepEmail: string; confirmationEmail: string; prepQueued?: boolean }
     | { ok: false; error: string }
   >;
   updateBooking: (
