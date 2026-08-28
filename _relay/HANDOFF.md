@@ -11,8 +11,8 @@ status: confirm-safety-append-booking-failover
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft
-- **Tip:** pending this commit · Live Fly `fc8b54a` / **0071** (tip adds **0072**)
-- **Audit:** expect **64/64** after gate · **Gate:** pending this commit
+- **Tip:** `b8c167d` · Live Fly `fc8b54a` / **0071** (tip adds **0072**)
+- **Audit:** expect **64/64** after gate · **Gate:** green · audit **64/64**
 - **M365:** `fly_m365_missing=7` · watcher + reprobe timer
 - **LLM:** `llm_auth=dead` · `/tmp/owner-llm.env` absent
 - **Goal:** strict E2E PASS blocked on owner secrets
