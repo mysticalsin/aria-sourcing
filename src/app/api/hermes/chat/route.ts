@@ -24,7 +24,6 @@ import { SOURCING_TOOL_DEFS, makeSourcingToolRunner } from "@/lib/ai/sourcing-to
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { redactObject, redactSecrets, redactEmail } from "@/lib/log-redact";
 import { evaluateHermesWorkspaceBinding } from "@/lib/api/hermes-runtime-isolation";
-import { serverGenerateText } from "@/lib/ai/server-generate";
 import {
   buildHermesSessionKey,
   buildHermesUpstreamPath,
@@ -35,6 +34,7 @@ import { HERMES_TASK_SYSTEM } from "@/lib/agents/hermes-agent-harness";
 import { resolveStoredTavilyKey } from "@/lib/sourcing/tavily";
 import { resolveStoredApifyKey } from "@/lib/sourcing/apify";
 import { sanitizeCandidateText } from "@/lib/agent-disclosure-policy";
+import { tryLoopTaskCloudFailover } from "@/lib/ai/hermes-loop-failover";
 
 export const runtime = "nodejs";
 
@@ -122,7 +122,6 @@ const HermesChatSchema = z.object({
 });
 
 const UPSTREAM_TIMEOUT_MS = 30_000;
-const LOOP_LLM_TASKS = new Set(["outreach", "classify", "sourcing"]);
 
 function isProviderAuthFailure(status: number): boolean {
   return status === 401 || status === 403;
@@ -131,23 +130,6 @@ function isProviderAuthFailure(status: number): boolean {
 /** Transient upstream failures — try env/vault failover instead of failing the draft. */
 function isRetryableProviderStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
-}
-
-async function tryLoopTaskCloudFailover(input: {
-  task: string;
-  system: string;
-  prompt: string;
-  /** Optional — env keys work without it; vault keys need a workspace. */
-  workspaceId: string | null;
-}): Promise<string | null> {
-  if (!LOOP_LLM_TASKS.has(input.task)) return null;
-  const fallback = await serverGenerateText({
-    system: input.system,
-    prompt: input.prompt,
-    maxTokens: 2048,
-    ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
-  });
-  return fallback.ok ? fallback.text : null;
 }
 
 function logUpstream(level: "info" | "error", message: string, meta?: Record<string, unknown>) {

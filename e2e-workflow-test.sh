@@ -722,12 +722,15 @@ else
   fail "Graph webhook ensure/repair surface missing."
 fi
 if grep -q 'propose-calendar-book' scripts/sourcing-loop-worker.mjs \
+  && grep -q 'confirm-calendar-book' scripts/sourcing-loop-worker.mjs \
+  && grep -q 'calendarConfirmUrl' scripts/sourcing-loop-worker.mjs \
   && grep -q 'claimCalendarBooking' src/app/api/cron/propose-calendar-book/route.ts \
   && grep -q 'interviewProposal' scripts/sourcing-loop-worker.mjs \
-  && grep -q 'use_calendar_event_route' src/app/api/cron/propose-calendar-book/route.ts; then
-  pass "calendar_book → propose dry-run + structured interviewProposal + UI-only live book."
+  && grep -q 'use_calendar_event_route' src/app/api/cron/propose-calendar-book/route.ts \
+  && grep -q 'loop_confirm_live' scripts/sourcing-loop-worker.mjs; then
+  pass "calendar_book → propose dry-run + confirm-calendar-book live Teams (fallback propose) + interviewProposal."
 else
-  fail "calendar propose path missing interviewProposal or use_calendar_event_route guard."
+  fail "calendar propose/confirm path missing interviewProposal, confirm-calendar-book, or use_calendar_event_route guard."
 fi
 # Positive interest → pre_call_propose only after live model classification
 # (keyword deterministic_fallback must not invent successors).

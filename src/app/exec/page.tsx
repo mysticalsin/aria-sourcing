@@ -20,7 +20,6 @@ import {
   CardTitle,
   EmptyState,
   Eyebrow,
-  SkeletonCard,
   useToast,
 } from "@/components/ui";
 import {
@@ -399,7 +398,15 @@ export default function ExecPage() {
         }
       />
 
-      <HydrationGate hydrated={hydrated} fallback={<SkeletonCard className="h-96" />}>
+      <HydrationGate
+        hydrated={hydrated}
+        fallback={
+          <EmptyState
+            title="Loading exec dashboard…"
+            description="KPIs and funnel metrics appear after workspace hydrate — no placeholder charts."
+          />
+        }
+      >
         <motion.div
           className="space-y-6"
           variants={staggerContainer}

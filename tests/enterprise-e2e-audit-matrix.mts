@@ -314,7 +314,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /Loading calendar/.test(readFileSync("src/app/calendar/page.tsx", "utf8"))
         && /Loading settings/.test(readFileSync("src/app/settings/page.tsx", "utf8"))
         && /Loading outreach/.test(readFileSync("src/app/outreach/page.tsx", "utf8"))
+        && /Loading fleet/.test(readFileSync("src/app/fleet/page.tsx", "utf8"))
+        && /Loading exec dashboard/.test(readFileSync("src/app/exec/page.tsx", "utf8"))
         && /bookingNeedsCalendar\(b\)/.test(readFileSync("src/components/calendar/interviewer-panel.tsx", "utf8"))
+        && /confirm-calendar-book/.test(readFileSync("e2e-workflow-test.sh", "utf8"))
+        && /calendarConfirmUrl/.test(readFileSync("e2e-workflow-test.sh", "utf8"))
         && /ARIA_ALLOW_SKIP_WEBHOOK_E2E=1/.test(readFileSync("e2e-workflow-test.sh", "utf8"))
         && /E2E_SKIP_WEBHOOK=1/.test(readFileSync("e2e-workflow-test.sh", "utf8"))
         && /isRealSendFact\(m\)/.test(readFileSync("src/lib/replay.ts", "utf8"))
@@ -792,12 +796,14 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /qualityCriticsUsed === true/.test(
           readFileSync("src/components/outreach/outreach-message-card.tsx", "utf8"),
         )
-        && /serverGenerateText/.test(readFileSync("src/app/api/hermes/chat/route.ts", "utf8"))
+        && /serverGenerateText/.test(readFileSync("src/lib/ai/hermes-loop-failover.ts", "utf8"))
         && /tryLoopTaskCloudFailover/.test(readFileSync("src/app/api/hermes/chat/route.ts", "utf8"))
+        && /tryLoopTaskCloudFailover/.test(readFileSync("src/lib/ai/hermes-loop-failover.ts", "utf8"))
         && /isRetryableProviderStatus/.test(readFileSync("src/app/api/hermes/chat/route.ts", "utf8"))
         && !/if \(!input\.workspaceId \|\| !LOOP_LLM_TASKS/.test(
-          readFileSync("src/app/api/hermes/chat/route.ts", "utf8"),
+          readFileSync("src/lib/ai/hermes-loop-failover.ts", "utf8"),
         )
+        && existsSync("tests/hermes-loop-task-failover.mts")
         && /"deepseek"/.test(readFileSync("src/lib/ai/server-generate.ts", "utf8"))
         && /reuseGraphCritics|graphQuality\?\.llmCriticsUsed/.test(
           readFileSync("src/app/api/cron/generate-outreach-draft/route.ts", "utf8"),

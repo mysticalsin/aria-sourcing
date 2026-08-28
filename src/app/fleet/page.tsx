@@ -12,7 +12,6 @@ import {
   Select,
   Input,
   EmptyState,
-  SkeletonCard,
   Modal,
   useToast,
 } from "@/components/ui";
@@ -318,10 +317,10 @@ export default function FleetPage() {
       <HydrationGate
         hydrated={hydrated}
         fallback={
-          <div className="space-y-6">
-            <SkeletonCard />
-            <SkeletonCard />
-          </div>
+          <EmptyState
+            title="Loading fleet…"
+            description="Agent seats and mailbox status appear after workspace hydrate — no placeholder connection cards."
+          />
         }
       >
         <div className="space-y-8">
