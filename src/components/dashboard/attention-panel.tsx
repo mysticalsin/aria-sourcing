@@ -15,6 +15,7 @@ import {
   Repeat,
   Hourglass,
   UserSearch,
+  Send,
 } from "lucide-react";
 
 const TONE_TILE: Record<Tone, string> = {
@@ -30,6 +31,7 @@ const TONE_TILE: Record<Tone, string> = {
 
 const KIND_ICON: Record<RecommendationKind, React.ReactNode> = {
   approve_outreach: <ShieldCheck className="h-4 w-4" aria-hidden />,
+  send_outreach: <Send className="h-4 w-4" aria-hidden />,
   hot_reply: <Flame className="h-4 w-4" aria-hidden />,
   book_interview: <CalendarClock className="h-4 w-4" aria-hidden />,
   follow_up_due: <Repeat className="h-4 w-4" aria-hidden />,

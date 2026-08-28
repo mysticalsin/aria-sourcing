@@ -878,10 +878,11 @@ export function buildHistoricalDemoSeedState(): HermesState {
       allCandidates.push(cand);
     });
 
-    // Compute metrics from final stages
+    // Compute metrics from final stages — do not fabricate daily send counters
+    // (dry-run Approved history is not a real send).
     campaign.metrics = computeMetrics(accepted);
-    campaign.metrics.emailsSentToday = specIndex === 0 ? 6 : specIndex === 1 ? 3 : 1;
-    campaign.metrics.linkedinSentToday = specIndex === 0 ? 2 : 1;
+    campaign.metrics.emailsSentToday = 0;
+    campaign.metrics.linkedinSentToday = 0;
     // Real elapsed time from campaign creation to the first scheduled interview
     // (never fabricated — shares firstInterviewElapsedHours with the live
     // computation in store.ts, see metrics.ts).
@@ -905,12 +906,17 @@ export function buildHistoricalDemoSeedState(): HermesState {
 
   activities.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
 
-  // Authoritative outreach ledger: every already-contacted candidate is recorded
-  // against a seat (round-robin), so the fleet de-dupe reflects real history.
+  // Authoritative outreach ledger: already-contacted candidates. Dry-run
+  // Approved-only rows use claimed (not sent) so fleet de-dupe does not look like delivery.
   for (const cand of allCandidates) {
     if (!cand.lastContactedAt) continue;
     const seat = seats[ledgerSeatRR % seats.length];
     ledgerSeatRR += 1;
+    const lastOutreach = outreach.find((m) => m.candidateId === cand.id && m.approvedBy);
+    const ledgerStatus =
+      lastOutreach && lastOutreach.dryRun === true && !lastOutreach.sentAt
+        ? ("claimed" as const)
+        : ("sent" as const);
     ledger.push({
       id: genId("led"),
       candidateId: cand.id,
@@ -918,8 +924,8 @@ export function buildHistoricalDemoSeedState(): HermesState {
       seatId: seat.id,
       campaignId: cand.campaignId,
       channel: cand.outreachHistory[0]?.channel ?? "Email",
-      status: cand.stage === "Not Interested" ? "sent" : "sent",
-      reason: null,
+      status: ledgerStatus,
+      reason: ledgerStatus === "claimed" ? "Dry-run approval — nothing sent." : null,
       at: cand.lastContactedAt,
     });
   }

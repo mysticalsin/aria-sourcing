@@ -27,6 +27,11 @@ function isMailboxSeatProvider(provider: AgentSeat["provider"]): boolean {
   );
 }
 
+/** Live mailbox seats eligible for Email send (not LinkedIn/WA/SMS seats). */
+export function isLiveMailboxSeat(seat: AgentSeat): boolean {
+  return seat.status === "active" && seat.mode === "live" && isMailboxSeatProvider(seat.provider);
+}
+
 function isLinkedInSeatProvider(provider: AgentSeat["provider"]): boolean {
   return provider === "LinkedIn Assisted Manual" || provider === "LinkedIn Vendor API";
 }

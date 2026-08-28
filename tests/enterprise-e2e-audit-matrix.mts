@@ -340,6 +340,10 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /status === "Scheduled" \|\| m\.status === "Approved"/.test(readFileSync("src/app/outreach/page.tsx", "utf8"))
         && /EMAIL_INBOUND_WEBHOOK_SECRET/.test(readFileSync("scripts/verify-m365-ready.sh", "utf8"))
         && /Approved \(dry-run, nothing sent\)/.test(readFileSync("src/lib/store.ts", "utf8"))
+        && /isLiveMailboxSeat/.test(readFileSync("src/lib/store.ts", "utf8"))
+        && /dryRun: false/.test(readFileSync("src/lib/store.ts", "utf8"))
+        && /send_outreach/.test(readFileSync("src/lib/recommendations.ts", "utf8"))
+        && /isRealSendFact\(msg\)/.test(readFileSync("src/lib/skills.ts", "utf8"))
       );
     },
   },

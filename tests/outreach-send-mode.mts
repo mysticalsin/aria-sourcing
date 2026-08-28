@@ -10,6 +10,7 @@ import {
   listConnectedMailboxes,
   listConnectedOutboundProviders,
   planOutreachApprovalDelivery,
+  isLiveMailboxSeat,
 } from "../src/lib/outreach-send-mode";
 import { generateOutreach } from "../src/lib/mock-ai";
 import { buildHistoricalDemoSeedState, buildSeedState } from "../src/lib/seed";
@@ -64,6 +65,21 @@ ok(
   const liveLi = planOutreachApprovalDelivery({ channel: "LinkedIn", forceDryRun: false });
   ok("live LinkedIn → Pending Manual Send", liveLi.finalStatus === "Pending Manual Send");
   ok("live LinkedIn → pending_manual ledger", liveLi.finalLedgerStatus === "pending_manual");
+}
+
+{
+  const graphLive: AgentSeat = {
+    ...buildSeedState().seats[0]!,
+    provider: "Microsoft Graph",
+    mode: "live",
+    status: "active",
+  };
+  const linkedInLive: AgentSeat = {
+    ...graphLive,
+    provider: "LinkedIn Assisted Manual",
+  };
+  ok("Graph live seat is mailbox-send eligible", isLiveMailboxSeat(graphLive) === true);
+  ok("LinkedIn live seat is NOT mailbox-send eligible", isLiveMailboxSeat(linkedInLive) === false);
 }
 
 {

@@ -85,7 +85,7 @@ import {
   readWorkspaceBootstrapCache,
   writeWorkspaceBootstrapCache,
 } from "./workspace-bootstrap-cache";
-import { effectiveDryRunMode, planOutreachApprovalDelivery } from "./outreach-send-mode";
+import { effectiveDryRunMode, planOutreachApprovalDelivery, isLiveMailboxSeat } from "./outreach-send-mode";
 import { demoStateAllowsCandidatePersistence } from "./store/demo-persistence";
 import { mapApifyCandidates, mapSillageCandidates, parseSillageIdentifier } from "./store/sourcing-helpers";
 import { computeCoverage } from "./enrichment/merge";
@@ -2952,6 +2952,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const msg = s.outreach.find((m) => m.id === messageId);
       if (!msg) return { ok: false, error: "Message not found." };
       if (msg.status !== "Approved") return { ok: false, error: "Only an approved message can be sent." };
+      if (msg.dryRun === true) {
+        return { ok: false, error: "Dry-run approval cannot be sent live. Regenerate or re-approve with a live mailbox." };
+      }
       const candidate = s.candidates.find((c) => c.id === msg.candidateId);
       if (!candidate) return { ok: false, error: "Linked candidate missing." };
       // Resolve a live seat for the message's channel: a live mailbox for Email
@@ -2964,7 +2967,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "WhatsApp Cloud")
           : channel === "SMS"
             ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "Twilio SMS")
-            : s.seats.find((x) => x.status === "active" && x.mode === "live");
+            : s.seats.find((x) => isLiveMailboxSeat(x));
       if (!supabaseEnabled || !seat) {
         const need =
           channel === "WhatsApp"
@@ -3034,7 +3037,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       const now = new Date().toISOString();
       commit((prev) => {
         const outreach = prev.outreach.map((m) =>
-          m.id === messageId ? { ...m, status: "Scheduled" as OutreachStatus, sentAt: now } : m,
+          m.id === messageId
+            ? { ...m, status: "Scheduled" as OutreachStatus, sentAt: now, dryRun: false }
+            : m,
         );
         const ledger = prev.ledger.map((l) =>
           l.candidateId === candidate.id && l.status === "claimed"

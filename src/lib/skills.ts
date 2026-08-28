@@ -11,7 +11,7 @@ import type {
 } from "./types";
 import { OUTREACH_TONES } from "./types";
 import { genId, round } from "./utils";
-import { stageRank } from "./metrics";
+import { isRealSendFact, stageRank } from "./metrics";
 
 /* ============================================================================
    ARIA SKILLS — the agent's editable, versioned playbooks. The agent learns
@@ -160,7 +160,7 @@ export function analyzeOutcomes(state: HermesState): OutcomeAnalysis {
   const toneAgg = new Map<OutreachTone, { sent: number; positive: number }>();
   for (const t of OUTREACH_TONES) toneAgg.set(t, { sent: 0, positive: 0 });
   for (const msg of state.outreach) {
-    if (msg.status !== "Scheduled" && msg.status !== "Approved") continue;
+    if (!isRealSendFact(msg)) continue;
     const agg = toneAgg.get(msg.tone);
     if (!agg) continue;
     agg.sent += 1;
