@@ -290,7 +290,7 @@ export function isMantuNeedEmail(text: string): boolean {
     /this need is now|key required skills/i.test(t) ||
     /^\s*recruiter\s*:/im.test(t) ||
     /^\s*main\s+manager\s*:/im.test(t) ||
-    /^\s*skill\s*\(\s*must\s*\)\s*:/im.test(t)
+    /skill\s*\(\s*must\s*\)\s*:/i.test(t)
   );
 }
 

@@ -821,7 +821,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         queuedRemoteSnapshot.current = null;
         return true;
       }
-      return outcome === "conflict";
+      // Conflict reloads authoritative workspace JSON — local edits (e.g. a new
+      // campaign) are not on the server. Callers must not treat this as success.
+      return false;
     } catch {
       return false;
     } finally {

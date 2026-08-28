@@ -143,6 +143,16 @@ ok(
 );
 ok("demo brief Hybrid", demoJava.jobAnalysis.locationType === "Hybrid");
 
+/** One-line paste (no newlines between Mantu labels) — common when copying from Outlook preview. */
+const inlineNeed =
+  "From: j@amaris.com Subject: ACTIVE Senior Java Skill (Must): Java, Spring Boot City: Paris Remote: Hybrid Type: Permanent";
+const inlineParsed = parseEmailAndJD({ email: inlineNeed });
+ok("inline Mantu Skill (Must) detected", isMantuNeedEmail(inlineNeed));
+ok("inline title from Subject ACTIVE", /senior java/i.test(inlineParsed.jobAnalysis.title));
+ok("inline skills include Java", inlineParsed.jobAnalysis.requiredSkills.some((s) => /java/i.test(s)));
+ok("inline Hybrid location", inlineParsed.jobAnalysis.locationType === "Hybrid");
+ok("inline ready for sourcing", inlineParsed.jobAnalysis.seniority !== "Unspecified");
+
 {
   const intakePage = readFileSync("src/app/intake/page.tsx", "utf8");
   ok(

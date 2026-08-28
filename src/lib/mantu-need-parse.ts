@@ -133,6 +133,50 @@ export function normalizeIntakePlainText(raw: string): string {
       .replace(/&#39;|&apos;/gi, "'")
       .replace(/&quot;/gi, '"');
   }
+  // One-line pastes (e.g. "Subject: ACTIVE Java Skill (Must): Java City: Paris") must
+  // become line-oriented before Mantu label extractors run. Skip when the text is
+  // already multi-line (VSS pages) — short generic labels like "Type:" would break
+  // "Project Type:" and other compound fields.
+  if (text.split("\n").length <= 2) {
+    const inlineLabels = [
+      "From",
+      "To",
+      "Cc",
+      "Subject",
+      "Skill \\(Must\\)",
+      "Skill \\(Nice to have\\)",
+      "Skill Nice to have",
+      "City",
+      "Remote",
+      "(?<!Project )Type",
+      "Category",
+      "Status",
+      "Client",
+      "Manager",
+      "Recruiter",
+      "Priority",
+      "Location",
+      "Start date",
+      "Nb people",
+      "Languages",
+      "Profile description",
+      "Mission Description",
+      "Main Manager",
+      "Main Recruiter",
+      "Company Employed by",
+      "Company Billing to",
+      "Contract Type",
+      "Level of experience",
+      "Boolean",
+    ];
+    for (const label of inlineLabels) {
+      text = text.replace(
+        new RegExp(`([^\n])(\\s*${label}\\s*[:：])`, "gi"),
+        "$1\n$2",
+      );
+    }
+  }
+
   return text
     .replace(/\r\n?/g, "\n")
     .replace(/[ \t]+\n/g, "\n")

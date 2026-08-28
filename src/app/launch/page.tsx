@@ -110,7 +110,11 @@ export default function LaunchPage() {
     setLanes((prev) => [...prev, { campaignId: campaign.id, sourcing: true }]);
 
     if (supabaseEnabled) {
-      await actions.flushWorkspaceSave();
+      const synced = await actions.flushWorkspaceSave();
+      if (!synced) {
+        setLaneSourcing(campaign.id, false);
+        return { created: true, sourcingComplete: false };
+      }
     }
 
     let sourcedCount = 0;

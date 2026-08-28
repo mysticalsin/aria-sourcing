@@ -390,7 +390,17 @@ export default function IntakePage() {
     });
 
     if (supabaseEnabled) {
-      await actions.flushWorkspaceSave();
+      const synced = await actions.flushWorkspaceSave();
+      if (!synced) {
+        toast({
+          title: "Workspace sync failed",
+          description:
+            "The campaign was created locally but could not sync to your team workspace before sourcing. Use “Retry save” in the banner, then “Source next batch” on the campaign page.",
+          variant: "error",
+        });
+        router.push(`/campaigns/${campaign.id}`);
+        return;
+      }
     }
     const res = await actions.sourceNextBatch(campaign.id);
     if (res.ok) {
