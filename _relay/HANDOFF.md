@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 288
 agent: cursor-cloud
-updated: 2026-08-28T13:35Z
+updated: 2026-08-28T13:39Z
 status: owner-wait-m365-strict-pass
 ---
 
@@ -11,12 +11,12 @@ status: owner-wait-m365-strict-pass
 ## Current state
 
 - **Live Fly:** `1b19a44` / **0071** · ready ok · **`deploy_status=tip_live`**
-- **Branch tip:** `02ed4c8` (E2E strict retries; live code @ `1b19a44`)
+- **Branch tip:** `971a9ca` (PR #36 relay; live code @ `1b19a44`)
 - **PR #36** (draft; supersedes closed-without-merge #35)
 - **Gate:** audit **62/62**
 - **PARTIAL E2E (live, 2026-08-28T13:27Z):** **55 pass / 0 fail / 7 warn** → `RESULT: PARTIAL`
 - **Strict E2E:** blocked — M365 (7 secrets) + step 6b; script now uses Fly strict retries (sourcing×4, approve×5)
-- **M365 reprobe 2026-08-28T13:35Z (timer):** owner-blocked — `fly_m365_missing=7`; **PR #35 closed without merge** (2026-08-28T13:36Z); branch re-pushed; **draft PR #36** opened
+- **M365 reprobe 2026-08-28T13:39Z:** owner-blocked — `fly_m365_missing=7`, `/tmp/owner-microsoft.env` absent
 
 ## Done this shift
 
