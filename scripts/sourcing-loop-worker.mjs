@@ -1198,16 +1198,22 @@ async function handleShortlistBuild(job, context) {
   // Entitled auto-approve: only when an autopilot-enabled profile exists in the
   // workspace and the candidate match score clears the workspace threshold.
   // Non-entitled workspaces keep the human POST /api/shortlist/approve gate.
+  // LangGraph rank_only must use the SAME workspace floor — a hardcoded default
+  // higher than auto_shortlist_min_score would fail-closed entitled shortlists.
   let successors = [];
   let autoApproved = 0;
   let autopilotAttempted = false;
+  let minScore = DEFAULT_SHORTLIST_MIN_SCORE;
   try {
     const controls = await context.client
       .from("sourcing_loop_controls")
       .select("auto_shortlist_min_score, kill_switch, sourcing_enabled")
       .eq("workspace_id", job.workspace_id)
       .maybeSingle();
-    const minScore = Number(controls.data?.auto_shortlist_min_score ?? DEFAULT_SHORTLIST_MIN_SCORE);
+    const configured = Number(controls.data?.auto_shortlist_min_score ?? DEFAULT_SHORTLIST_MIN_SCORE);
+    if (Number.isFinite(configured)) {
+      minScore = Math.max(0, Math.min(100, configured));
+    }
     const loopLive = controls.data?.kill_switch === false && controls.data?.sourcing_enabled === true;
     if (loopLive && Number.isFinite(minScore)) {
       const entitled = await context.client
@@ -1249,6 +1255,7 @@ async function handleShortlistBuild(job, context) {
     successors = [];
     autoApproved = 0;
     autopilotAttempted = false;
+    minScore = DEFAULT_SHORTLIST_MIN_SCORE;
   }
 
   // LangGraph rank_only checkpoint — top-10 shortlist authority before draft enqueue.
@@ -1264,6 +1271,7 @@ async function handleShortlistBuild(job, context) {
       campaignId,
       candidateIds: candidates.map((c) => c.id),
       scoredCandidates: scored,
+      shortlistMinScore: minScore,
     },
     ["shortlist_ranked"],
   );

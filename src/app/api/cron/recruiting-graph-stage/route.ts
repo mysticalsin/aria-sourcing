@@ -42,6 +42,8 @@ const BodySchema = z.object({
     )
     .optional(),
   bookingId: z.string().min(1).max(160).optional(),
+  /** Workspace auto_shortlist_min_score — must align with loop worker autopilot bar. */
+  shortlistMinScore: z.number().min(0).max(100).optional(),
 });
 
 function authorized(req: NextRequest): boolean {
@@ -80,6 +82,7 @@ export async function POST(req: NextRequest) {
       scoredCandidates: parsed.data.scoredCandidates,
       drafts: parsed.data.drafts,
       bookingId: parsed.data.bookingId,
+      shortlistMinScore: parsed.data.shortlistMinScore,
     },
     parsed.data.allowedStages,
   );

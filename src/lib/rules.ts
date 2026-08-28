@@ -221,6 +221,8 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
   }
 
   // Multi-agent quality validation — blocked drafts never reach approval.
+  // Stored needs_review is a warning (human may still approve); never claim
+  // "Quality ready" while ignoring a prior needs_review receipt.
   const qualityGate = outreachQualityGate({
     subject: message.subject,
     body: message.body,
@@ -234,15 +236,26 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
     const detail = qualityGate.blockers[0]!;
     blockers.push(detail);
     checks.push({ rule: "Quality validation", status: "block", detail });
+  } else if (message.qualityStatus === "needs_review") {
+    const detail =
+      "Quality needs review — multi-agent or pipeline flagged this draft before approval.";
+    warnings.push(detail);
+    checks.push({ rule: "Quality validation", status: "warn", detail });
   } else if (qualityGate.warnings.length > 0) {
     const detail = qualityGate.warnings[0]!;
     warnings.push(detail);
     checks.push({ rule: "Quality validation", status: "warn", detail });
   } else {
+    const criticsNote =
+      message.qualityCriticsUsed === true
+        ? " multi-agent critics recorded."
+        : message.qualityCriticsUsed === false
+          ? " deterministic critics only (no live multi-agent receipt)."
+          : "";
     checks.push({
       rule: "Quality validation",
       status: "pass",
-      detail: `Quality ready (${qualityGate.verdict.aggregateScore}/100).`,
+      detail: `Quality ready (${qualityGate.verdict.aggregateScore}/100).${criticsNote}`,
     });
   }
 

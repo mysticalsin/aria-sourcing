@@ -2344,7 +2344,37 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     (messageId: string, patch: Partial<OutreachMessage>) =>
       commit((s) => ({
         ...s,
-        outreach: s.outreach.map((m) => (m.id === messageId ? { ...m, ...patch } : m)),
+        outreach: s.outreach.map((m) => {
+          if (m.id !== messageId) return m;
+          const next: OutreachMessage = { ...m, ...patch };
+          const bodyChanged =
+            (patch.subject !== undefined && patch.subject !== m.subject) ||
+            (patch.body !== undefined && patch.body !== m.body);
+          if (!bodyChanged) return next;
+          // Manual edits invalidate autonomous multi-agent receipts — re-run
+          // deterministic critics only and never keep a stale · multi-agent badge.
+          const quality = validateOutreachQuality({
+            subject: next.subject,
+            body: next.body,
+            channel: next.channel,
+          });
+          next.subject = quality.text.subject;
+          next.body = quality.text.body;
+          next.qualityStatus = quality.status === "blocked" ? "blocked" : quality.status;
+          next.qualityScore = quality.aggregateScore;
+          next.qualityCriticsUsed = false;
+          next.qualityReasons = quality.stages
+            .flatMap((stage) => stage.reasons)
+            .filter(Boolean)
+            .slice(0, 12);
+          if (quality.status === "blocked" && (next.status === "Draft" || next.status === "Needs Approval")) {
+            next.status = "Needs Approval";
+          }
+          if (next.channel === "Email") {
+            next.htmlBody = mantuEmailHtmlWrapper(quality.text.body);
+          }
+          return next;
+        }),
       })),
     [commit],
   );
@@ -2461,6 +2491,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 status: prev.settings.humanApprovalGate ? "Needs Approval" : m.status,
                 qualityStatus: quality.status === "blocked" ? "blocked" : quality.status,
                 qualityScore: quality.aggregateScore,
+                // Deterministic regenerate must not keep a stale multi-agent receipt
+                // from the autonomous draft cron (badge would lie).
+                qualityCriticsUsed: false,
+                qualityReasons: quality.stages
+                  .flatMap((stage) => stage.reasons)
+                  .filter(Boolean)
+                  .slice(0, 12),
                 ...(msg.channel === "Email" ? { htmlBody: mantuEmailHtmlWrapper(gen.body) } : {}),
               }
             : m,

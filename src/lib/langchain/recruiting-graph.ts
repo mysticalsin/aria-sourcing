@@ -76,6 +76,12 @@ export const RecruitingGraphState = Annotation.Root({
   bookingId: Annotation<string | undefined>(),
   /** Prefer live multi-agent LLM critics in validateQuality (server/cron paths). */
   preferLiveCritics: Annotation<boolean | undefined>(),
+  /**
+   * Workspace autopilot shortlist floor (`sourcing_loop_controls.auto_shortlist_min_score`).
+   * Must match the loop worker bar — never hardcode a higher default that fails
+   * entitled shortlists the operator explicitly allowed.
+   */
+  shortlistMinScore: Annotation<number | undefined>(),
   /** Human-readable stage for observability. */
   stage: Annotation<string>(),
   /** Non-fatal errors accumulated across nodes. */
@@ -136,7 +142,12 @@ async function rankTop10(state: RecruitingGraphStateType): Promise<Partial<Recru
       shortlistIds: [],
     };
   }
-  const shortlist = rankTopCandidates(scored, TOP_CANDIDATE_SHORTLIST_SIZE).map((c) => c.id);
+  const configured = state.shortlistMinScore;
+  const minScore =
+    typeof configured === "number" && Number.isFinite(configured)
+      ? Math.max(0, Math.min(100, configured))
+      : DEFAULT_SHORTLIST_MIN_SCORE;
+  const shortlist = rankTopCandidates(scored, TOP_CANDIDATE_SHORTLIST_SIZE, minScore).map((c) => c.id);
   if (shortlist.length === 0) {
     return {
       stage: "shortlist_rank_failed",
@@ -343,6 +354,7 @@ export async function runRecruitingGraph(
     quality: input.quality ?? {},
     bookingId: input.bookingId,
     preferLiveCritics: input.preferLiveCritics,
+    shortlistMinScore: input.shortlistMinScore,
     stage: input.stage ?? "init",
     errors: input.errors ?? [],
   });

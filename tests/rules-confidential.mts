@@ -329,6 +329,29 @@ ok("settings emailsPerDay is positive", settings.rateLimits.emailsPerDay > 0);
   );
 }
 
+{
+  const needsReview = checkOutreachApproval(
+    approvalCtx({
+      message: {
+        ...approvalCtx().message,
+        qualityStatus: "needs_review",
+        qualityCriticsUsed: true,
+        subject: "Your TypeScript work",
+        body:
+          "Hi Alex — I noticed your recent TypeScript contributions on the payments service. " +
+          "Mantu Group is hiring a Senior Engineer in London and your background stood out. " +
+          "Would you be open to a short intro chat next week?",
+      },
+    }),
+  );
+  ok("needs_review outreach remains approvable by a human", needsReview.allowed === true);
+  ok(
+    "needs_review outreach warns instead of claiming Quality ready",
+    needsReview.warnings.some((detail) => /Quality needs review/i.test(detail))
+      && !needsReview.checks.some((c) => c.rule === "Quality validation" && c.status === "pass"),
+  );
+}
+
 // no-throw guard on the approval gate
 try {
   checkOutreachApproval(approvalCtx());

@@ -90,6 +90,19 @@ ok(
   ).map((c) => c.id).join(",") === "ok",
 );
 
+ok(
+  "rankTopCandidates honors workspace minScore below default",
+  rankTopCandidates(
+    [
+      { id: "low", matchScore: 40 },
+      { id: "mid", matchScore: 65 },
+      { id: "ok", matchScore: 70 },
+    ],
+    TOP_CANDIDATE_SHORTLIST_SIZE,
+    60,
+  ).map((c) => c.id).join(",") === "ok,mid",
+);
+
 void (async () => {
   const scored = [
     { id: "a", matchScore: 90 },
@@ -241,6 +254,34 @@ void (async () => {
   ok(
     "rank_only checkpoint lands on shortlist_ranked",
     rankOnly.stage === "shortlist_ranked" && rankOnly.shortlistIds[0] === "c1",
+  );
+
+  const rankWorkspaceFloor = await runRecruitingGraph({
+    intent: "rank_only",
+    workspaceId: "ws-1",
+    candidateIds: ["low", "mid"],
+    scoredCandidates: [
+      { id: "low", matchScore: 55 },
+      { id: "mid", matchScore: 65 },
+    ],
+    shortlistMinScore: 60,
+  });
+  ok(
+    "rank_only uses workspace shortlistMinScore (not hardcoded 70)",
+    rankWorkspaceFloor.stage === "shortlist_ranked"
+      && rankWorkspaceFloor.shortlistIds.join(",") === "mid",
+  );
+
+  const rankWorkspaceFloorEmpty = await runRecruitingGraph({
+    intent: "rank_only",
+    workspaceId: "ws-1",
+    candidateIds: ["low"],
+    scoredCandidates: [{ id: "low", matchScore: 55 }],
+    shortlistMinScore: 60,
+  });
+  ok(
+    "rank_only fail-stops when workspace floor clears nobody",
+    rankWorkspaceFloorEmpty.stage === "shortlist_rank_failed",
   );
 
   const bookWithoutId = await runRecruitingGraph({

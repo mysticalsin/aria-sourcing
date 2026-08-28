@@ -32,10 +32,17 @@ test("LangGraph draft_quality fail-stops empty drafts and incomplete live critic
   assert.match(graph, /llm_critics_required/);
   assert.match(graph, /intent === "draft_quality" && state\.preferLiveCritics !== false/);
   assert.match(graph, /empty_shortlist_or_below_min_score/);
+  assert.match(graph, /shortlistMinScore/);
   const draft = readFileSync("src/app/api/cron/generate-outreach-draft/route.ts", "utf8");
   assert.match(draft, /qualityCriticsUsed/);
   assert.match(draft, /quality_critics_incomplete/);
   assert.match(draft, /queued_for_approval/);
+  const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
+  assert.match(worker, /shortlistMinScore: minScore/);
+  const store = readFileSync("src/lib/store.ts", "utf8");
+  assert.match(store, /qualityCriticsUsed: false/);
+  const rules = readFileSync("src/lib/rules.ts", "utf8");
+  assert.match(rules, /Quality needs review — multi-agent or pipeline flagged/);
 });
 
 test("deterministic quality scores personalized empathetic outreach as ready-ish", () => {
