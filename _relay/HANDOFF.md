@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 288
 agent: cursor-cloud
-updated: 2026-08-28T12:59Z
+updated: 2026-08-28T13:06Z
 status: owner-wait-m365-strict-pass
 ---
 
