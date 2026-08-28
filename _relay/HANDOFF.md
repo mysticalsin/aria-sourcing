@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 244
 agent: cursor-cloud
-updated: 2026-08-28T05:42Z
+updated: 2026-08-28T05:44Z
 status: gate-green-live-0070-m365-owner-path-documented
 ---
 
