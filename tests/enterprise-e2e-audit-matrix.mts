@@ -380,8 +380,14 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /outreachQualityGate/.test(send)
         && /validateOutreachQualityLive/.test(approve)
         && /validateOutreachQualityLive/.test(send)
+        && /validateOutreachQualityLive/.test(
+          readFileSync("src/app/api/outreach/whatsapp-template/route.ts", "utf8"),
+        )
         && /critics_required/.test(approve)
         && /critics_required/.test(send)
+        && /critics_required/.test(
+          readFileSync("src/app/api/outreach/whatsapp-template/route.ts", "utf8"),
+        )
         && /demoLoginEnabled/.test(approve)
         && /demoLoginEnabled/.test(send)
         && /Human approval resolves needs_review|needs_review is resolved/.test(approve + send)

@@ -8,7 +8,7 @@ import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
 import { can } from "@/lib/rbac";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
-import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
+import { prodFailClosed, supabaseEnabled, demoLoginEnabled } from "@/lib/supabase/config";
 import type { Role } from "@/lib/types";
 import {
   APPROVED_WHATSAPP_TEMPLATE_AUDIT_SUBJECT,
@@ -20,6 +20,8 @@ import {
 import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { isTrustedBrowserOrigin } from "@/lib/api/same-origin-json";
+import { outreachQualityGate } from "@/lib/outreach-quality-pipeline";
+import { validateOutreachQualityLive } from "@/lib/outreach-quality-pipeline-live";
 
 export const dynamic = "force-dynamic";
 
@@ -265,6 +267,51 @@ export async function POST(req: NextRequest) {
   });
   if (!audit) {
     return NextResponse.json({ ok: false, error: "Template parameters do not match the approved template bounds." }, { status: 400 });
+  }
+
+  // Same multi-agent posture as /api/outreach/approve: deterministic gate + live LLM peers.
+  // HumanApproval already selected the Meta template; needs_review may proceed, blocked may not.
+  const qualityGate = outreachQualityGate({
+    subject: APPROVED_WHATSAPP_TEMPLATE_AUDIT_SUBJECT,
+    body: audit.body,
+    channel: "WhatsApp",
+  });
+  if (qualityGate.blockers.length > 0) {
+    return NextResponse.json({ ok: false, error: qualityGate.blockers[0] }, { status: 422 });
+  }
+  const liveVerdict = await validateOutreachQualityLive({
+    subject: APPROVED_WHATSAPP_TEMPLATE_AUDIT_SUBJECT,
+    body: audit.body,
+    channel: "WhatsApp",
+    workspaceId:
+      demoLoginEnabled || publicDemoSideEffectsDisabled()
+        ? undefined
+        : typeof workspaceId === "string"
+          ? workspaceId
+          : undefined,
+  });
+  if (!liveVerdict.llmCriticsUsed) {
+    if (!demoLoginEnabled) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Live multi-agent LLM quality critics required for WhatsApp template approval.",
+          status: "critics_required",
+        },
+        { status: 503 },
+      );
+    }
+    if (liveVerdict.status === "blocked") {
+      const reason =
+        liveVerdict.stages.find((s) => !s.pass)?.reasons[0]
+        ?? "WhatsApp template blocked by quality critics.";
+      return NextResponse.json({ ok: false, error: reason }, { status: 422 });
+    }
+  } else if (liveVerdict.status === "blocked") {
+    const reason =
+      liveVerdict.stages.find((s) => !s.pass)?.reasons[0]
+      ?? "WhatsApp template blocked by live quality critics.";
+    return NextResponse.json({ ok: false, error: reason }, { status: 422 });
   }
 
   const approvalMessageId = randomUUID();
