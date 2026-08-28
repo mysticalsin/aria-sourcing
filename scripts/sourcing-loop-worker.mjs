@@ -1459,8 +1459,13 @@ async function handleShortlistBuild(job, context) {
     campaignId,
     candidateCount: candidates.length,
     autoApproved,
-    graphStage: "shortlist_ranked",
-    graphShortlistCount: rankCheck.shortlistIds?.length ?? 0,
+    // When LangGraph is skipped (no recruitingGraphUrl), do not invent shortlist_ranked.
+    ...(rankCheck.skipped
+      ? { graphCheckpointSkipped: true, graphShortlistCount: 0 }
+      : {
+          graphStage: rankCheck.stage,
+          graphShortlistCount: rankCheck.shortlistIds.length,
+        }),
   };
   const events = [event("shortlist.committed", "campaign", campaignId, {
     candidateCount: candidates.length,

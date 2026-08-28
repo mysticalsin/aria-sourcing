@@ -842,7 +842,8 @@ export function buildHistoricalDemoSeedState(): HermesState {
         const isPast = stage === "Interviewed";
         const start = new Date(now + (isPast ? -1 : 1 + (i % 3)) * 86_400_000 + 14 * 3_600_000);
         const booking = createBooking(cand, campaign, interviewer, start);
-        booking.status = isPast ? "Completed" : "Confirmed";
+        // Demo seed has no live Graph seat — never stamp Confirmed without a meeting URL.
+        booking.status = isPast ? "Completed" : "Proposed";
         bookings.push(booking);
         cand.booking = booking;
         campaignActivities.push(
@@ -850,8 +851,8 @@ export function buildHistoricalDemoSeedState(): HermesState {
             "booking",
             bookingInterviewTitle(booking, cand.name),
             `${interviewer.name} (${interviewer.role}). ${
-              booking.teamsLink || booking.calLink || booking.calendarSync
-                ? "Teams link generated."
+              booking.teamsLink || booking.calLink
+                ? "Teams/calendar link present."
                 : "Local slot only — needs calendar / confirmLive for Teams."
             }`,
             booking.status,

@@ -1427,9 +1427,10 @@ export function createBooking(
     // Real meeting URLs are issued by Microsoft Graph when confirmLive succeeds.
     // Until Graph is connected, leave these empty rather than
     // fabricate links that 404 — the calendar UI renders a “needs Graph” state.
+    // Local slots stay Proposed until a Teams/calendar URL exists.
     teamsLink: "",
     calLink: "",
-    status: "Confirmed",
+    status: "Proposed",
     agenda,
     createdAt: new Date().toISOString(),
   };
@@ -1465,14 +1466,30 @@ export function candidateConfirmationEmail(b: Booking): string {
     minute: "2-digit",
     timeZoneName: "short",
   });
+  const meetingUrl = b.teamsLink || b.calLink;
+  const firstName = b.candidateName.split(" ")[0];
+  if (!meetingUrl) {
+    return `Subject: Proposed: your ${b.role} conversation with Mantu
+
+Hi ${firstName},
+
+We've proposed a conversation with Mantu Group about ${b.role}. Details:
+• When: ${when}
+• With: ${b.interviewer || "Interviewer to be confirmed"}
+• Where: To be confirmed — we'll send a Teams link once Outlook calendar is connected
+
+This is not a confirmed booking yet. Reply here if you need to move the proposed time.
+
+— Mantu Talent Team`;
+  }
   return `Subject: Confirmed: your ${b.role} conversation with Mantu
 
-Hi ${b.candidateName.split(" ")[0]},
+Hi ${firstName},
 
 You're booked for a conversation with Mantu Group about ${b.role}. Details:
 • When: ${when}
 • With: ${b.interviewer || "Interviewer to be confirmed"}
-• Where: ${b.teamsLink || b.calLink || "To be confirmed"}
+• Where: ${meetingUrl}
 
 No heavy prep needed — bring your questions about the role and Mantu. Reply here if you need to move it.
 

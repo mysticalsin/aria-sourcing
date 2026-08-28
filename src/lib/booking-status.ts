@@ -5,21 +5,27 @@ type BookingCalendarState = Pick<
   "calendarSync" | "calLink" | "teamsLink"
 >;
 
-/** True when no provider calendar event / Teams join URL is confirmed. */
+/**
+ * True until a real meeting/calendar URL exists.
+ * Provider sync alone (eventId without join/calendar link) is incomplete —
+ * never claim “Interview booked” without teamsLink or calLink.
+ */
 export function bookingNeedsCalendar(booking: BookingCalendarState): boolean {
-  return !booking.calendarSync && !booking.calLink && !booking.teamsLink;
+  return !booking.calLink && !booking.teamsLink;
 }
 
 export function bookingCalendarSummary(booking: BookingCalendarState): string {
   const hasLink = Boolean(booking.calLink || booking.teamsLink);
-  if (booking.calendarSync) {
-    return hasLink
-      ? "Calendar event and link confirmed by the connected provider."
-      : "Calendar event confirmed; meeting link unavailable.";
+  if (hasLink && booking.calendarSync) {
+    return "Calendar event and link confirmed by the connected provider.";
   }
-  return hasLink
-    ? "Calendar link recorded — provider sync still required."
-    : "Needs calendar — connect Microsoft Graph and book with confirmLive for a Teams meeting.";
+  if (hasLink) {
+    return "Calendar link recorded — provider sync still required.";
+  }
+  if (booking.calendarSync) {
+    return "Calendar event confirmed; meeting link unavailable — re-book with confirmLive after OnlineMeetings scope.";
+  }
+  return "Needs calendar — connect Microsoft Graph and book with confirmLive for a Teams meeting.";
 }
 
 /** Activity / toast title — never claim a live booked interview without calendar proof. */

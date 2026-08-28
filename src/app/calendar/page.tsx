@@ -116,9 +116,11 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
     setPreview(res);
     toast({
       title: bookingInterviewTitle(res.booking, candidate.name),
-      description: res.booking.calendarSync
+      description: !bookingNeedsCalendar(res.booking)
         ? "Teams/Outlook event created and added to the schedule."
-        : "Slot saved locally. Connect Microsoft Graph and use confirmLive to issue a Teams link — not a live booked interview.",
+        : res.booking.calendarSync
+          ? "Calendar event saved without a meeting link. Re-book with confirmLive after OnlineMeetings scope."
+          : "Slot saved locally. Connect Microsoft Graph and use confirmLive to issue a Teams link — not a live booked interview.",
       variant: bookingNeedsCalendar(res.booking) ? "warning" : "success",
     });
   }
@@ -239,8 +241,14 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
                   <UserRound className="h-4 w-4 text-ink-soft" aria-hidden />
                   {preview.booking.interviewer}
                 </p>
-                <Badge tone="success" size="sm" dot>
-                  {preview.booking.status}
+                <Badge
+                  tone={bookingNeedsCalendar(preview.booking) ? "warning" : "success"}
+                  size="sm"
+                  dot
+                >
+                  {bookingNeedsCalendar(preview.booking)
+                    ? "Needs calendar"
+                    : preview.booking.status}
                 </Badge>
               </div>
               <p className="mt-1 text-sm text-ink-soft">{preview.booking.role}</p>
@@ -334,7 +342,7 @@ export default function CalendarPage() {
             <Badge tone="tangerine" dot>
               {ready.length} ready
             </Badge>
-            {bookings.some((b) => !b.calendarSync && !b.teamsLink && !b.calLink) ? (
+            {bookings.some((b) => bookingNeedsCalendar(b)) ? (
               <Badge tone="warning" dot>
                 Needs calendar
               </Badge>

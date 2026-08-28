@@ -583,7 +583,7 @@ test("runtime calendar creation retains provider authority when no link is retur
   });
   assert.match(
     harness.activityDrafts.at(-1)?.notes ?? "",
-    /Calendar event confirmed; meeting link unavailable\./,
+    /Calendar event confirmed; meeting link unavailable/,
   );
   const next = futureBookingRange(31);
   const moved = harness.actions.updateBooking(result.booking.id, next);

@@ -280,6 +280,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /bookingInterviewTitle\(res\.booking/.test(drawer)
         && /Needs calendar/.test(calendar)
         && /bookingNeedsCalendar/.test(readFileSync("src/components/calendar/booking-calendar.tsx", "utf8"))
+        && /!booking\.calLink && !booking\.teamsLink/.test(bookingStatus)
         && /Needs calendar — connect Microsoft Graph/.test(bookingStatus)
         && /bookingInterviewTitle/.test(bookingStatus)
         && /bookingInterviewTitle/.test(calendar)
@@ -292,6 +293,9 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /bookingNeedsCalendar\(res\.booking\)/.test(store)
         && /Needs calendar before live Teams\/Outlook book/.test(store)
         && !/\$\{count\} interview\$\{count === 1 \? "" : "s"\} booked/.test(store)
+        && /forceDryRun \? "Dry-run, nothing sent\."/.test(store)
+        && /Subject: Proposed: your/.test(readFileSync("src/lib/mock-ai.ts", "utf8"))
+        && /graphCheckpointSkipped/.test(readFileSync("scripts/sourcing-loop-worker.mjs", "utf8"))
       );
     },
   },

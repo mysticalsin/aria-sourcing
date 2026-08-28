@@ -173,7 +173,7 @@ test("shortlist handler reads provider candidates by run id and commits through 
     campaignId: "camp-1",
     candidateCount: 2,
     autoApproved: 0,
-    graphStage: "shortlist_ranked",
+    graphCheckpointSkipped: true,
     graphShortlistCount: 0,
   });
   const completion = calls.find((call) => call.name === "complete_aria_job_with_workspace_patch");

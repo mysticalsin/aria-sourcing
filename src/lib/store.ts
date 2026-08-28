@@ -2792,7 +2792,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               ? "LinkedIn message approved, pending manual copy/paste by operator."
               : isLiveSendChannel
                 ? `${msg.channel} approved, awaiting an explicit send.`
-                : `${msg.channel} message approved. ${prev.settings.dryRunMode ? "Dry-run, nothing sent." : "Live send."}`,
+                : `${msg.channel} message approved. ${forceDryRun ? "Dry-run, nothing sent." : "Approved — explicit send still required for delivery."}`,
             outcome: isLinkedInManual
               ? "Pending Manual Send"
               : isLiveSendChannel

@@ -6,7 +6,7 @@ import {
 } from "../mock-ai";
 import { mantuFirstInterviewAgenda } from "../mantu-brand";
 import { isTeamsMeetingJoinUrl } from "../calendar";
-import { bookingCalendarSummary, bookingInterviewTitle } from "../booking-status";
+import { bookingCalendarSummary, bookingInterviewTitle, bookingNeedsCalendar } from "../booking-status";
 import { withStage } from "../metrics";
 import {
   applyLearning,
@@ -115,7 +115,16 @@ function bookingStatusTransitionAllowed(
   from: Booking["status"],
   to: Booking["status"],
 ): boolean {
-  if (from === "Proposed") return to === "Confirmed" || to === "Cancelled";
+  // Local Proposed slots (no Teams URL yet) may still complete/no-show offline,
+  // or promote to Confirmed once a calendar link exists.
+  if (from === "Proposed") {
+    return (
+      to === "Confirmed" ||
+      to === "Cancelled" ||
+      to === "Completed" ||
+      to === "No Show"
+    );
+  }
   if (from === "Confirmed") {
     return to === "Completed" || to === "Cancelled" || to === "No Show";
   }
@@ -404,6 +413,10 @@ export function createBookingReportActions({
           provider: seat.provider === "Gmail API" ? "Gmail API" : "Microsoft Graph",
           eventId,
         };
+        // Only Confirmed when a join/calendar URL exists — sync alone stays Proposed.
+        if (booking.teamsLink || booking.calLink) {
+          booking.status = "Confirmed";
+        }
       } catch {
         return {
           ok: false,
@@ -458,7 +471,7 @@ export function createBookingReportActions({
           type: "booking",
           title: bookingInterviewTitle(booking, liveCandidate.name),
           notes: `${booking.interviewer || "No interviewer assigned yet"}. ${bookingCalendarSummary(booking)} Stage → Booked.`,
-          outcome: "Confirmed",
+          outcome: bookingNeedsCalendar(booking) ? "Needs calendar" : "Confirmed",
           campaignId: liveCampaign.id,
           linkedEntityType: "booking",
           linkedEntityId: booking.id,
