@@ -394,18 +394,20 @@ else
       INTAKE_UI_ID=$(tr -d '\n\r' < "$WORK/intake_ui_campaign_id.txt")
       WS_UPD=$(jq -r '.[0].updated_at // empty' "$WORK/ws_row.json" 2>/dev/null || true)
       if [ -z "$WS_UPD" ] || [ "$WS_UPD" = "null" ]; then
+        jq -nc --arg id "$E2E_WORKSPACE_ID" --slurpfile s "$WORK/new_state.json" '{workspace_id:$id,state:$s[0]}' > "$WORK/mat_post.json"
         MAT_CODE=$(curl -sS --http1.1 -m 60 -o "$WORK/mat_save.json" -w '%{http_code}' \
           -X POST "$KONG_URL/rest/v1/workspace_state" \
           -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ACCESS_TOKEN" \
           -H 'Content-Type: application/json' -H 'Prefer: return=minimal' \
-          --data-binary "$(jq -nc --arg id "$E2E_WORKSPACE_ID" --slurpfile s "$WORK/new_state.json" '{workspace_id:$id,state:$s[0]}')")
+          --data-binary "@$WORK/mat_post.json")
       else
         WS_UPD_ENC=$(encode_postgrest_ts "$WS_UPD")
+        jq -nc --slurpfile s "$WORK/new_state.json" '{state:$s[0]}' > "$WORK/mat_patch.json"
         MAT_CODE=$(curl -sS --http1.1 -m 60 -o "$WORK/mat_save.json" -w '%{http_code}' \
           -X PATCH "$KONG_URL/rest/v1/workspace_state?workspace_id=eq.$E2E_WORKSPACE_ID&updated_at=eq.$WS_UPD_ENC" \
           -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ACCESS_TOKEN" \
           -H 'Content-Type: application/json' -H 'Prefer: return=representation' \
-          --data-binary "$(jq -nc --slurpfile s "$WORK/new_state.json" '{state:$s[0]}')")
+          --data-binary "@$WORK/mat_patch.json")
       fi
       if [ "$MAT_CODE" = "200" ] || [ "$MAT_CODE" = "201" ] || [ "$MAT_CODE" = "204" ]; then
         pass "Intake UI parity: campaign '$INTAKE_UI_ID' materialized in workspace_state (HTTP $MAT_CODE)."
