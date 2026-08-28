@@ -111,19 +111,24 @@ Format: `| Section | Check | Status | Evidence | Fix owner |`
 
 ---
 
-## Ops enablement commands (owner)
+## Ops enablement commands (owner — Fly production only)
 
 ```bash
+# Status: tip vs live Fly
+bash scripts/print-fly-golive-status.sh
+
 # M365 — portal app + configure (when account cannot create registrations)
 export ARIA_AZURE_APP_ID=<entra-app-id>
 bash scripts/az-configure-existing-graph-app.sh --apply
 bash scripts/fly-apply-owner-microsoft-secrets.sh   # if /tmp/owner-microsoft.env provided
 
-# Golive after tip merge (includes 0071)
-bash scripts/fly-golive-mantu-e2e.sh
+# Golive tip to Fly (includes migration 0071)
+# Owner must remint deploy confirm for tip SHA first — see production-readiness/FLY_GOLIVE.md
+bash scripts/fly-golive-mantu-e2e.sh $(git rev-parse HEAD)
+bash scripts/fly-deploy-now.sh                       # after confirm
 
-# Full E2E (requires secrets + live Graph seat)
-bash e2e-workflow-test.sh
+# Full Fly E2E (requires secrets + live Graph seat)
+APP_URL=https://aria-mantu-app.fly.dev bash e2e-workflow-test.sh
 
 # Partial honest run (core loop, skip live Teams)
 ARIA_ALLOW_PARTIAL_M365_E2E=1 bash scripts/run-enterprise-e2e-partial.sh

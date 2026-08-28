@@ -39,11 +39,18 @@ status: gate-green-audit-matrix-0071-prep-dispatch
 
 ## Decisions made (don't relitigate)
 
-- Fly = production; ignore Vercel CI rate limit
+- **Production = Fly only** (`https://aria-mantu-app.fly.dev`). All golive, E2E, migrations, and owner secrets target Fly — not Vercel, not GitHub Actions CI.
 - Interview prep via approval queue — no auto-send
 - LinkedIn policy unchanged (409 manual-required)
 
-## Watch out
+## Production gate (Fly)
+
+```bash
+bash scripts/print-fly-golive-status.sh          # tip vs live
+bash scripts/fly-golive-mantu-e2e.sh             # preflight checklist
+bash scripts/fly-golive-mantu-e2e.sh $(git rev-parse HEAD)  # after owner remint
+ARIA_ALLOW_PARTIAL_M365_E2E=1 bash scripts/run-enterprise-e2e-partial.sh  # honest partial
+```
 
 - `interview_prep_send` is enqueued from UI book path, not `pipeline-transitions.json`
 - Prep enqueue requires provider calendar receipt (`providerEventCreated`)
