@@ -11,7 +11,7 @@ status: partial-e2e-green-m365-owner-blocked
 ## Current state
 
 - **Live Fly:** `344fcaf` / **0071** · ready ok
-- **Branch tip:** `bce51e1`
+- **Branch tip:** `ea0f0b4`
 - **PR #35** (supersedes closed #29–#33)
 - **Gate:** audit **60/60** · `npx tsc --noEmit && npm test` green (2026-08-28)
 - **PARTIAL E2E (live):** 48 pass / 0 fail / 1 warn (6b only; 2026-08-28)
@@ -20,9 +20,8 @@ status: partial-e2e-green-m365-owner-blocked
 
 ## Done this shift
 
-1. Re-ran full test gate — green
-2. Re-ran PARTIAL E2E on live — 48/0/1 (6b skipped only)
-3. M365 reprobe — still 7 missing secrets
+1. Added `probe-m365-unblock.sh` + shared credential helper; watcher requires full 7-var set
+2. M365 reprobe — still owner-blocked (7 Fly secrets missing)
 
 ## Blockers
 
