@@ -116,6 +116,7 @@ export async function validateOutreachQualityLive(input: {
     const payload = { subject: input.subject, body: input.body, channel };
     // Sequential peers: parallel bursts after draft generation starve the vault
     // Anthropic path (env Kimi 401 failover) and return critics_required.
+    // serverGenerateText skips recently auth-dead env providers across peers.
     const llmStages: StageResult[] = [];
     for (const critic of CRITICS) {
       const result = await runOneCritic(critic, payload, input.workspaceId);

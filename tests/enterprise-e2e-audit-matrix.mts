@@ -679,9 +679,14 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /DEEPSEEK_API_KEY/.test(readFileSync("scripts/fly-apply-owner-llm-secrets.sh", "utf8"))
         && /is_placeholder/.test(readFileSync("scripts/fly-apply-owner-llm-secrets.sh", "utf8"))
         && /authFailure|401|403/.test(readFileSync("src/lib/ai/server-generate.ts", "utf8"))
+        && /isRetryableUpstream|retryable/.test(readFileSync("src/lib/ai/server-generate.ts", "utf8"))
+        && /envAuthDeadUntil|markEnvAuthDead/.test(readFileSync("src/lib/ai/server-generate.ts", "utf8"))
         && /serverGenerateText/.test(readFileSync("src/app/api/hermes/chat/route.ts", "utf8"))
         && /tryLoopTaskCloudFailover/.test(readFileSync("src/app/api/hermes/chat/route.ts", "utf8"))
         && /"deepseek"/.test(readFileSync("src/lib/ai/server-generate.ts", "utf8"))
+        && /reuseGraphCritics|graphQuality\?\.llmCriticsUsed/.test(
+          readFileSync("src/app/api/cron/generate-outreach-draft/route.ts", "utf8"),
+        )
         && /DEEPSEEK_API_KEY/.test(readFileSync("production-readiness/.owner-llm.env.example", "utf8"))
         && /ensureGraphMailSubscription/.test(readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8"))
         && /seatMode !== "live"/.test(readFileSync("src/components/settings/email-connections-panel.tsx", "utf8"))

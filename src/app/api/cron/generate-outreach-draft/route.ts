@@ -180,16 +180,21 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Dedicated live re-validation is authoritative for peer outcomes. The graph
-  // already ran critics once; a stale graph "blocked" / approval_blocked must not
-  // override a cleared second pass (LLM peers are nondeterministic / flaky).
-  // validateOutreachQualityLive embeds the deterministic pipeline as its base.
-  const effective = await validateOutreachQualityLive({
-    subject: generated.subject,
-    body: generated.body,
-    channel,
-    workspaceId: parsed.data.workspaceId,
-  });
+  // Prefer graph live critics when they already succeeded — avoids a second
+  // full three-peer burst that starves Anthropic after Kimi 401. Re-run live
+  // only when peers were incomplete; a stale graph "blocked" / approval_blocked must not
+  // override a cleared second pass (LLM peers are nondeterministic).
+  const graphQuality = graphResult.quality?.[candidate.id];
+  const reuseGraphCritics =
+    graphQuality?.llmCriticsUsed === true && graphQuality.status !== "blocked";
+  const effective = reuseGraphCritics
+    ? graphQuality
+    : await validateOutreachQualityLive({
+        subject: generated.subject,
+        body: generated.body,
+        channel,
+        workspaceId: parsed.data.workspaceId,
+      });
   // Keep a local deterministic verdict only as a fail-closed floor if live somehow
   // omitted the base (should not happen — live always runs validateOutreachQuality).
   const deterministicFloor = validateOutreachQuality({
