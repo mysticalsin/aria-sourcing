@@ -20,8 +20,10 @@ test("live LLM critics module stays server-only and exports validateOutreachQual
   assert.match(src, /export async function validateOutreachQualityLive/);
   assert.match(src, /HERMES_QUALITY_CRITICS/);
   assert.match(src, /serverGenerateText/);
+  assert.match(src, /parseCriticJson/);
   assert.match(src, /llmStages\.length !== CRITICS\.length/);
   assert.match(src, /status: merged\.status === "blocked" \? "blocked" : "needs_review"/);
+  assert.match(readFileSync("src/lib/outreach-critic-json.ts", "utf8"), /export function parseCriticJson/);
 });
 
 test("LangGraph draft_quality fail-stops empty drafts and incomplete live critics", () => {

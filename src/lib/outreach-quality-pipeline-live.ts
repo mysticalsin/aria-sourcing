@@ -11,6 +11,7 @@ import "server-only";
 
 import { HERMES_QUALITY_CRITICS } from "@/lib/agents/hermes-agent-registry";
 import { serverGenerateText } from "@/lib/ai/server-generate";
+import { parseCriticJson } from "@/lib/outreach-critic-json";
 import {
   validateOutreachQuality,
   type OutreachQualityVerdict,
@@ -51,17 +52,6 @@ const CRITICS: CriticSpec[] = HERMES_QUALITY_CRITICS.map((critic) => ({
   stage: critic.stage,
   system: critic.system,
 }));
-
-function parseCriticJson(text: string): { pass?: boolean; score?: number; reasons?: string[] } | null {
-  const jsonMatch = /\{[\s\S]*\}/.exec(text);
-  if (!jsonMatch) return null;
-  try {
-    const parsed = JSON.parse(jsonMatch[0]) as { pass?: boolean; score?: number; reasons?: string[] };
-    return typeof parsed === "object" && parsed !== null ? parsed : null;
-  } catch {
-    return null;
-  }
-}
 
 async function runOneCritic(
   critic: CriticSpec,
