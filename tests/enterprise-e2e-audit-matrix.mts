@@ -755,6 +755,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       const graph = readFileSync("src/lib/langchain/recruiting-graph.ts", "utf8");
       const draft = readFileSync("src/app/api/cron/generate-outreach-draft/route.ts", "utf8");
       const hermes = readFileSync("src/app/api/hermes/chat/route.ts", "utf8");
+      const hermesVoice = readFileSync("src/lib/ai/hermes-recruiter-voice.ts", "utf8");
       const e2e = readFileSync("e2e-workflow-test.sh", "utf8");
       return (
         /CRITICS/.test(qualityLive)
@@ -768,8 +769,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /preferLiveCritics/.test(graph)
         && /outreach-quality-pipeline-live/.test(graph)
         && /preferLiveCritics:\s*true/.test(draft)
-        && /Mantu Group/.test(hermes)
-        && /mantuOutreachVoice/.test(hermes)
+        && (/Mantu Group/.test(hermes) || /Mantu Group/.test(hermesVoice))
+        && (/mantuOutreachVoice/.test(hermes) || /mantuOutreachVoice/.test(hermesVoice))
         && /Mantu Group is hiring/.test(e2e)
       );
     },

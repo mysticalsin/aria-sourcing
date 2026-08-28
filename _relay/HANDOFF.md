@@ -12,7 +12,7 @@ status: hermes-e2e-plan-shipped-awaiting-owner-deploy-remint
 
 - **Branch tip:** `cursor/enterprise-autopilot-b91d` (Hermes E2E plan implementation pending push)
 - **Live Fly:** still **`e469126`** — deploy confirm stale for **`8950b21`** (not invented; not deployed)
-- **Test gate:** `npx tsc --noEmit && npm test` green locally; audit matrix **54/54**
+- **Test gate:** `npx tsc --noEmit && npm test` green locally; audit matrix **54/54** after HANDOFF step-3c notes below
 - **Microsoft SKIPPED** — goal stays **IN_PROGRESS**
 - **PR #32** closed — integration cannot open new PRs
 
@@ -24,7 +24,7 @@ status: hermes-e2e-plan-shipped-awaiting-owner-deploy-remint
 4. **60 languages:** `BUSINESS_LANGUAGE_CATALOG` (~60 ISO), `LocaleContext` on `JobAnalysis`, `extractLocaleContext`, locale in `buildOutreachPrompt` + draft cron
 5. **Schedules panel:** read-only mirror via `GET /api/cron/jobs`
 6. **Tests:** `hermes-profile-multiplexing`, `locale-propagation`; audit matrix extended for Hermes + locale chain
-7. **Phase 0:** documented deploy blocker — owner must remint confirm for current HEAD before golive
+7. **Phase 0:** documented deploy blocker — owner must remint confirm for current HEAD before golive; live **`e469126`** still lacks step **3c** provenance fix (expect step 3c PASS after golive when `live=n` and `n>0`)
 
 ## Blockers
 
@@ -50,4 +50,4 @@ status: hermes-e2e-plan-shipped-awaiting-owner-deploy-remint
 
 - `graphStage` never on enqueue payloads
 - Hermes session keys cap at 256 chars; profile prefix `ws-{workspaceUuid}`
-- Live E2E provenance fix still deploy-lag until golive
+- Live E2E provenance fix still deploy-lag until golive — step 3c FAIL on live `e469126` when `live=0`; step 3c should show `live=n` after tip deploy
