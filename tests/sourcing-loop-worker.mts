@@ -860,6 +860,89 @@ test("calendar_book calls propose cron then records interview_proposed activity"
   );
 });
 
+test("first_interview_book confirms live Teams when confirm cron returns created", async () => {
+  const patches: Array<Record<string, unknown>> = [];
+  const confirmCalls: Array<{ url: string; body: Record<string, unknown> }> = [];
+  const { client } = rpcClient((name, args) => {
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: {}, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "apply_workspace_patch") {
+      patches.push(args);
+      return { data: { status: "applied" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      patches.push(args);
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await handleAriaJob(
+    job("first_interview_book", {
+      campaignId: "camp-live-1",
+      candidateId: "cand-live-1",
+      intent: "INTERESTED",
+    }),
+    {
+      client,
+      configuration: {
+        calendarConfirmUrl: new URL("https://worker.example.test/api/cron/confirm-calendar-book"),
+        calendarProposeUrl: new URL("https://worker.example.test/api/cron/propose-calendar-book"),
+        recruitingGraphUrl: new URL("https://worker.example.test/api/cron/recruiting-graph-stage"),
+        cronSecret: "s".repeat(32),
+      },
+      fetcher: async (url, init) => {
+        const href = String(url);
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        if (href.includes("confirm-calendar-book")) {
+          confirmCalls.push({ url: href, body });
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              status: "created",
+              teamsLink: "https://teams.microsoft.com/l/meetup-join/19%3ameeting_live",
+              claimId: "claim-live-1",
+              eventId: "evt-live-1",
+              seatId: "11111111-1111-4111-8111-111111111111",
+              candidateName: "Ada Lovelace",
+              startTime: "2026-08-28T10:00:00.000Z",
+              endTime: "2026-08-28T10:30:00.000Z",
+              agenda: ["Intro"],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (href.includes("recruiting-graph-stage")) {
+          return new Response(
+            JSON.stringify({ ok: true, stage: "interview_scheduled", shortlistIds: [] }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        throw new Error(`unexpected fetch ${href}`);
+      },
+    },
+  );
+
+  assert.equal(confirmCalls.length, 1);
+  assert.equal(confirmCalls[0]!.body.campaignId, "camp-live-1");
+  const stageMerge = patches.find((p) => p.p_patch_kind === "merge_candidate_patch");
+  assert.ok(stageMerge);
+  const merged = stageMerge!.p_patch as {
+    patch?: { stage?: string; booking?: { teamsLink?: string; status?: string } };
+  };
+  assert.equal(merged.patch?.stage, "Booked");
+  assert.equal(
+    merged.patch?.booking?.teamsLink,
+    "https://teams.microsoft.com/l/meetup-join/19%3ameeting_live",
+  );
+  assert.equal(merged.patch?.booking?.status, "Confirmed");
+  const activityPatch = patches.find((p) => p.p_patch_kind === "append_activities");
+  assert.ok(activityPatch);
+  const activities = activityPatch!.p_patch as Array<Record<string, unknown>>;
+  assert.equal(activities[0]?.outcome, "confirmed_live");
+});
+
 test("draft_generate rejects fake interview_scheduled graphStage from cron", async () => {
   const { client } = rpcClient((name) => {
     if (name === "read_workspace_state_for_loop") {

@@ -430,6 +430,7 @@ export function loadSourcingLoopConfiguration(environment) {
   let outreachDraftUrl = null;
   let renewGraphUrl = null;
   let calendarProposeUrl = null;
+  let calendarConfirmUrl = null;
   let interviewPrepDispatchUrl = null;
   let recruitingGraphUrl = null;
   if (webOrigin !== "" || cronSecret !== "") {
@@ -452,6 +453,7 @@ export function loadSourcingLoopConfiguration(environment) {
     outreachDraftUrl = new URL("/api/cron/generate-outreach-draft", webOrigin);
     renewGraphUrl = new URL("/api/cron/renew-graph-subscriptions", webOrigin);
     calendarProposeUrl = new URL("/api/cron/propose-calendar-book", webOrigin);
+    calendarConfirmUrl = new URL("/api/cron/confirm-calendar-book", webOrigin);
     interviewPrepDispatchUrl = new URL("/api/cron/interview-prep-dispatch", webOrigin);
     recruitingGraphUrl = new URL("/api/cron/recruiting-graph-stage", webOrigin);
   }
@@ -468,6 +470,7 @@ export function loadSourcingLoopConfiguration(environment) {
     outreachDraftUrl,
     renewGraphUrl,
     calendarProposeUrl,
+    calendarConfirmUrl,
     interviewPrepDispatchUrl,
     recruitingGraphUrl,
     cronSecret,
@@ -1859,7 +1862,194 @@ async function handlePreCallPropose(job, context) {
   return proposeMeetingForCandidate(job, context, "pre_call");
 }
 
+/**
+ * First interview: try live Graph Teams book via confirm-calendar-book.
+ * If no live Graph seat / OnlineMeetings, fall back to dry-run propose
+ * (human confirmLive in Calendar UI).
+ */
 async function handleFirstInterviewBook(job, context) {
+  const payload = payloadOf(job);
+  const campaignId = boundedText(payload.campaignId, 160, "campaign_id_required");
+  const candidateId = boundedText(payload.candidateId, 160, "candidate_id_required");
+  const intent = typeof payload.intent === "string" ? payload.intent : "";
+
+  if (context.configuration?.calendarConfirmUrl && context.configuration?.cronSecret) {
+    let response;
+    try {
+      response = await context.fetcher(context.configuration.calendarConfirmUrl, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${context.configuration.cronSecret}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          workspaceId: job.workspace_id,
+          campaignId,
+          candidateId,
+        }),
+        signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+      });
+    } catch {
+      // Unreachable confirm cron — fall through to dry-run propose.
+      response = null;
+    }
+    if (response) {
+      if (response.status >= 500) {
+        await response.body?.cancel().catch(() => undefined);
+        throw new HandlerError(`calendar_confirm_http_${response.status}`, true);
+      }
+      const confirm = await readBoundedJson(response, RPC_RESPONSE_BYTES);
+      if (
+        isRecord(confirm)
+        && confirm.ok === true
+        && confirm.status === "created"
+        && typeof confirm.teamsLink === "string"
+        && confirm.teamsLink.trim()
+        && typeof confirm.claimId === "string"
+        && confirm.claimId.trim()
+      ) {
+        const startTime = typeof confirm.startTime === "string" ? confirm.startTime : "";
+        const endTime = typeof confirm.endTime === "string" ? confirm.endTime : "";
+        const agenda = Array.isArray(confirm.agenda)
+          ? confirm.agenda.filter((line) => typeof line === "string" && line.trim()).map((line) => line.trim())
+          : [];
+        const teamsLink = confirm.teamsLink.trim();
+        const claimId = confirm.claimId.trim();
+        const eventId = typeof confirm.eventId === "string" ? confirm.eventId : null;
+        const nowIso = new Date().toISOString();
+        const booking = {
+          id: claimId,
+          candidateId,
+          candidateName: typeof confirm.candidateName === "string" ? confirm.candidateName : candidateId,
+          campaignId,
+          role: "Interview",
+          startTime,
+          endTime,
+          timezone: "UTC",
+          interviewer: "",
+          interviewerEmail: "",
+          teamsLink,
+          calLink: "",
+          calendarSync: eventId
+            ? {
+                status: "created",
+                seatId: typeof confirm.seatId === "string" ? confirm.seatId : "",
+                provider: "Microsoft Graph",
+                eventId,
+              }
+            : undefined,
+          status: "Confirmed",
+          agenda,
+          createdAt: nowIso,
+        };
+        const activity = {
+          id: `act-interview-booked-${campaignId}-${candidateId}`,
+          type: "booking",
+          title: "First interview booked (Teams)",
+          notes: [
+            `Candidate ${candidateId}.`,
+            intent ? `Intent ${intent}.` : null,
+            startTime && endTime ? `Slot ${startTime} – ${endTime}.` : null,
+            `Teams link recorded. Claim ${claimId}.`,
+          ]
+            .filter(Boolean)
+            .join(" "),
+          outcome: "confirmed_live",
+          campaignId,
+          linkedEntityType: "candidate",
+          linkedEntityId: candidateId,
+          createdAt: nowIso,
+        };
+
+        const snapshot = await readWorkspaceSnapshot(context.client, job.workspace_id);
+        const bookedPatch = await context.client.rpc("apply_workspace_patch", {
+          p_workspace_id: job.workspace_id,
+          p_expected_updated_at: snapshot.updated_at,
+          p_patch_kind: "merge_candidate_patch",
+          p_patch: {
+            id: candidateId,
+            campaignId,
+            patch: {
+              stage: "Booked",
+              booking,
+              interviewProposal: {
+                startTime,
+                endTime,
+                agenda,
+                claimId,
+                proposeStatus: "created",
+                channel: "Microsoft Teams / Outlook",
+                meetingKind: "first_interview",
+                proposedAt: nowIso,
+                teamsLink,
+              },
+            },
+          },
+          p_receipt_key: `first-interview-booked:${campaignId}:${candidateId}`,
+        });
+        if (bookedPatch.error) throw new HandlerError(bookedPatch.error.code, true);
+        const bookedStatus =
+          isRecord(bookedPatch.data) && typeof bookedPatch.data.status === "string"
+            ? bookedPatch.data.status
+            : "patch_failed";
+        if (bookedStatus !== "applied" && bookedStatus !== "already_applied") {
+          throw new HandlerError(`booked_${bookedStatus}`, bookedStatus === "stale_token");
+        }
+
+        await assertRecruitingGraphCheckpoint(
+          context,
+          {
+            workspaceId: job.workspace_id,
+            intent: "interview_only",
+            campaignId,
+            bookingId: claimId,
+          },
+          ["interview_scheduled", "interview_proposed", "queued_for_approval"],
+        );
+
+        return completeJobWithWorkspacePatch(
+          context.client,
+          job,
+          {
+            kind: "append_activities",
+            value: [activity],
+            receiptKey: `first-interview-booked:${campaignId}:${candidateId}`,
+          },
+          {
+            status: "interview_scheduled",
+            campaignId,
+            candidateId,
+            bookingMode: "loop_confirm_live",
+            claimId,
+            teamsLink,
+          },
+          [event("interview.booked", "candidate", candidateId, {
+            campaignId,
+            intent,
+            bookingMode: "loop_confirm_live",
+            claimId,
+            teamsLink,
+            startTime,
+            endTime,
+          })],
+          [],
+        );
+      }
+      // Soft gaps (no live seat / insufficient scope) → dry-run propose fallback.
+      if (
+        isRecord(confirm)
+        && (confirm.status === "no_live_graph_seat"
+          || confirm.status === "scope_insufficient"
+          || confirm.status === "graph_connection_missing"
+          || confirm.status === "skipped")
+      ) {
+        // fall through
+      } else if (isRecord(confirm) && confirm.status === "reconciliation_required") {
+        throw new HandlerError("calendar_confirm_reconciliation_required", false);
+      }
+    }
+  }
+
   return proposeMeetingForCandidate(job, context, "first_interview");
 }
 
