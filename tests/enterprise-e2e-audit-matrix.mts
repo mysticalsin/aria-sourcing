@@ -1410,9 +1410,14 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /Graph-minimum/.test(example)
         && /OPTIONAL for Graph|PLACEHOLDER_TENANT_ID/.test(example)
         && /Skipping Entra|Graph-only OK for E2E PASS/.test(readFileSync("scripts/fly-apply-owner-microsoft-secrets.sh", "utf8"))
+        && /entra_id_real|CLIENT_ID\/SECRET PLACEHOLDER/.test(readFileSync("scripts/fly-apply-owner-microsoft-secrets.sh", "utf8"))
+        && /load_owner_env_file "\/tmp\/owner-microsoft\.env"/.test(readFileSync("scripts/fly-apply-owner-microsoft-secrets.sh", "utf8"))
         && /\*PLACEHOLDER\*/.test(readFileSync("scripts/fly-apply-owner-microsoft-secrets.sh", "utf8"))
         && /owner_ms_has_drop_file/.test(readFileSync("scripts/fly-enterprise-golive-when-ready.sh", "utf8"))
         && /Calendars\[\.\]ReadWrite\|calendars\[\.\]readwrite/.test(readFileSync("scripts/post-m365-secrets-golive.sh", "utf8"))
+        && /MICROSOFT_TENANT_ID/.test(readFileSync("scripts/fly-enterprise-activate.sh", "utf8"))
+        && /Entra SSO optional for Graph E2E PASS/.test(readFileSync("scripts/fly-enterprise-activate.sh", "utf8"))
+        && /Hermes\/vault may already green/.test(readFileSync("scripts/fly-enterprise-activate.sh", "utf8"))
       );
     },
   },

@@ -1113,3 +1113,27 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Fly can have REDIRECT present + partial CLIENT_* without TENANT; `resolveMicrosoftOAuthAuthority({NODE_ENV:production})===null` but old readiness still true.
 **Suggested fix:** Gate microsoftOAuth on `resolveMicrosoftOAuthAuthority(env)` as well.
 **Status:** fixed (this shift — cursor/m365-oauth-tenant-readiness-570c)
+
+## 2026-08-29 — Graph-min tenant-from-URL hard-errored as partial Entra
+**Severity:** correctness
+**File:** scripts/fly-apply-owner-microsoft-secrets.sh:136-162
+**Issue:** A real `GOTRUE_EXTERNAL_AZURE_URL` used only to derive `MICROSOFT_TENANT_ID` (with PLACEHOLDER Entra CLIENT_ID/SECRET) set `entra_any=1` + `entra_all=0` and exited ERROR — blocking Graph-only reopen that docs allow via “tenant or Azure URL”.
+**Repro/evidence:** Drop-zone with real Graph CLIENT/SECRET, `MICROSOFT_TENANT_ID=PLACEHOLDER_*`, real tenant URL, PLACEHOLDER Entra ID/SECRET → `owner_ms_has_drop_file` PASS then apply ERROR partial Entra.
+**Suggested fix:** Skip Entra when CLIENT_ID+SECRET are both PLACEHOLDER/empty; URL alone may still derive tenant.
+**Status:** fixed (this shift — cursor/graph-minimum-reopen-fixes-bca0)
+
+## 2026-08-29 — fly-apply preferred stale production-readiness over /tmp drop-zone
+**Severity:** correctness
+**File:** scripts/fly-apply-owner-microsoft-secrets.sh:50-53
+**Issue:** Apply sourced `/tmp/owner-microsoft.env` then `production-readiness/.owner-microsoft.env`, so a stale gitignored copy overwrote the VM drop-zone the watcher/probe treat as primary.
+**Repro/evidence:** Valid Graph-min `/tmp` + PLACEHOLDER `production-readiness/.owner-microsoft.env` → detect credentials present, apply fails on PLACEHOLDER Graph fields.
+**Suggested fix:** Load production-readiness first, `/tmp` last (drop-zone wins).
+**Status:** fixed (this shift — cursor/graph-minimum-reopen-fixes-bca0)
+
+## 2026-08-29 — fly-enterprise-activate treated Entra/LLM as Graph PASS blockers
+**Severity:** spec-mismatch
+**File:** scripts/fly-enterprise-activate.sh:53-74
+**Issue:** Checklist `note_blocker` on missing `GOTRUE_EXTERNAL_AZURE_*` and Fly-env LLM keys (and auth-dead LLM), so Graph-minimum reopen + Hermes/vault still exited activation incomplete. Also omitted `MICROSOFT_TENANT_ID` from required Graph list.
+**Repro/evidence:** Decisions: Entra/LLM WARN-only for Graph E2E PASS; `print-fly-secrets-checklist` ends with `fly-enterprise-activate.sh`.
+**Suggested fix:** Entra/LLM → WARN; require `MICROSOFT_TENANT_ID` with other Graph secrets.
+**Status:** fixed (this shift — cursor/graph-minimum-reopen-fixes-bca0)

@@ -14,12 +14,14 @@
 # Optional (defaults to public Fly callback):
 #   MICROSOFT_REDIRECT_URI
 #
-# Required together for Entra SSO on aria-mantu-auth (all or none):
+# Required together for Entra SSO on aria-mantu-auth (CLIENT_ID+SECRET+URL all real):
 #   GOTRUE_EXTERNAL_AZURE_CLIENT_ID
 #   GOTRUE_EXTERNAL_AZURE_SECRET
 #   GOTRUE_EXTERNAL_AZURE_URL
 # Optional:
 #   GOTRUE_EXTERNAL_AZURE_ENABLED  (default: true when applying Entra block)
+# Graph-minimum: leave CLIENT_ID+SECRET as PLACEHOLDER to skip SSO. A real
+# GOTRUE_EXTERNAL_AZURE_URL alone may still derive MICROSOFT_TENANT_ID.
 #
 # Usage:
 #   # Option A — export in shell
@@ -47,10 +49,11 @@ load_owner_env_file() {
   set +a
 }
 
-# Drop-zone first, then gitignored local file. Shell exports already present win
-# only if drop files do not override — source after so file wins for intentional drops.
-load_owner_env_file "/tmp/owner-microsoft.env"
+# Gitignored local file first, then VM drop-zone. /tmp wins so watcher/probe
+# primary path cannot be clobbered by a stale production-readiness copy.
+# Shell exports already present are overridden by whichever files exist.
 load_owner_env_file "$repo/production-readiness/.owner-microsoft.env"
+load_owner_env_file "/tmp/owner-microsoft.env"
 
 if [ -z "${FLY_API_TOKEN:-}" ] && [ -r "$repo/production-readiness/.fly-token.env" ]; then
   export FLY_API_TOKEN="$(tr -d '\n\r ' < "$repo/production-readiness/.fly-token.env")"
@@ -133,22 +136,23 @@ ENTRA_SECRET="${GOTRUE_EXTERNAL_AZURE_SECRET:-}"
 ENTRA_URL="${GOTRUE_EXTERNAL_AZURE_URL:-}"
 ENTRA_ENABLED="${GOTRUE_EXTERNAL_AZURE_ENABLED:-true}"
 
-entra_any=0
-entra_all=1
-for v in "$ENTRA_ID" "$ENTRA_SECRET" "$ENTRA_URL"; do
-  # PLACEHOLDER / empty = absent (Graph-minimum dropzone may keep Entra lines as PLACEHOLDER).
-  if ! is_placeholder "$v"; then
-    entra_any=1
-  else
-    entra_all=0
-  fi
-done
-if [ "$entra_any" = "1" ] && [ "$entra_all" = "0" ]; then
-  echo "ERROR: partial Entra env — set all of CLIENT_ID, SECRET, and URL to real values, or leave all PLACEHOLDER/empty to skip SSO." >&2
-  exit 1
-fi
+# Entra SSO is all-or-nothing on CLIENT_ID + SECRET + URL.
+# A real Azure URL alone is OK for MICROSOFT_TENANT_ID derivation above — it must
+# NOT count as "partial Entra" when CLIENT_ID/SECRET stay PLACEHOLDER (Graph-minimum).
+entra_id_real=0
+entra_secret_real=0
+entra_url_real=0
+is_placeholder "$ENTRA_ID" || entra_id_real=1
+is_placeholder "$ENTRA_SECRET" || entra_secret_real=1
+is_placeholder "$ENTRA_URL" || entra_url_real=1
 
-if [ "$entra_all" = "1" ] && [ "$entra_any" = "1" ]; then
+if [ "$entra_id_real" = "0" ] && [ "$entra_secret_real" = "0" ]; then
+  echo "=== Skipping Entra (GOTRUE CLIENT_ID/SECRET PLACEHOLDER/empty — Graph-only OK for E2E PASS) ==="
+  if [ "$entra_url_real" = "1" ]; then
+    echo "    Note: GOTRUE_EXTERNAL_AZURE_URL was used only to derive MICROSOFT_TENANT_ID; SSO not applied."
+  fi
+  echo "    Tip deploy will keep NEXT_PUBLIC_ENABLE_AZURE_LOGIN=false until Entra is set."
+elif [ "$entra_id_real" = "1" ] && [ "$entra_secret_real" = "1" ] && [ "$entra_url_real" = "1" ]; then
   echo "=== Applying Entra / GoTrue Azure secrets to aria-mantu-auth ==="
   require_real GOTRUE_EXTERNAL_AZURE_ENABLED "$ENTRA_ENABLED"
   flyctl secrets set -a aria-mantu-auth \
@@ -157,8 +161,8 @@ if [ "$entra_all" = "1" ] && [ "$entra_any" = "1" ]; then
     "GOTRUE_EXTERNAL_AZURE_SECRET=${ENTRA_SECRET}" \
     "GOTRUE_EXTERNAL_AZURE_URL=${ENTRA_URL}"
 else
-  echo "=== Skipping Entra (GOTRUE_EXTERNAL_AZURE_* PLACEHOLDER/empty — Graph-only OK for E2E PASS) ==="
-  echo "    Tip deploy will keep NEXT_PUBLIC_ENABLE_AZURE_LOGIN=false until Entra is set."
+  echo "ERROR: partial Entra env — set all of CLIENT_ID, SECRET, and URL to real values, or leave CLIENT_ID+SECRET PLACEHOLDER/empty to skip SSO (URL alone may still derive tenant)." >&2
+  exit 1
 fi
 
 echo

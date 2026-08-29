@@ -50,7 +50,8 @@ if [ -z "${FLY_API_TOKEN:-}" ] && [ -r "$repo/production-readiness/.fly-token.en
 fi
 if command -v flyctl >/dev/null 2>&1 && [ -n "${FLY_API_TOKEN:-}" ]; then
   app_secrets="$(flyctl secrets list -a aria-mantu-app 2>/dev/null | awk 'NR>1 && $1 != "" && $1 != "NAME" {print $1}' || true)"
-  for name in EMAIL_INBOUND_WEBHOOK_SECRET MICROSOFT_CLIENT_ID MICROSOFT_CLIENT_SECRET MICROSOFT_REDIRECT_URI ARIA_LOOP_KILL_SWITCH; do
+  # Graph-minimum required for E2E PASS (match print-fly-missing-secrets graph bucket).
+  for name in EMAIL_INBOUND_WEBHOOK_SECRET MICROSOFT_CLIENT_ID MICROSOFT_CLIENT_SECRET MICROSOFT_REDIRECT_URI MICROSOFT_TENANT_ID ARIA_LOOP_KILL_SWITCH; do
     if ! printf '%s\n' "$app_secrets" | grep -qx "$name"; then
       note_blocker "Fly secret aria-mantu-app/$name not deployed"
     fi
@@ -59,17 +60,18 @@ if command -v flyctl >/dev/null 2>&1 && [ -n "${FLY_API_TOKEN:-}" ]; then
     && ! printf '%s\n' "$app_secrets" | grep -qx "OPENAI_API_KEY" \
     && ! printf '%s\n' "$app_secrets" | grep -qx "DEEPSEEK_API_KEY" \
     && ! printf '%s\n' "$app_secrets" | grep -qx "KIMI_API_KEY"; then
-    note_blocker "Fly secret aria-mantu-app needs KIMI_API_KEY, DEEPSEEK_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY (parse/draft/critics)"
+    echo "WARN: Fly secret aria-mantu-app needs KIMI_API_KEY, DEEPSEEK_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY (optional — Hermes/vault may already green drafts/critics)"
   else
     echo "=== Live LLM auth probe (presence ≠ auth) ==="
     if ! bash "$repo/scripts/probe-fly-llm-auth.sh"; then
-      note_blocker "Fly LLM key present but auth-dead — rotate via scripts/fly-apply-owner-llm-secrets.sh + probe-fly-llm-auth.sh"
+      echo "WARN: Fly LLM key present but auth-dead — rotate via scripts/fly-apply-owner-llm-secrets.sh + probe-fly-llm-auth.sh (Hermes/vault may still green E2E)"
     fi
   fi
+  # Entra SSO optional for Graph E2E PASS (WARN only — match verify-m365-ready).
   auth_secrets="$(flyctl secrets list -a aria-mantu-auth 2>/dev/null | awk 'NR>1 && $1 != "" && $1 != "NAME" {print $1}' || true)"
   for name in GOTRUE_EXTERNAL_AZURE_ENABLED GOTRUE_EXTERNAL_AZURE_CLIENT_ID GOTRUE_EXTERNAL_AZURE_SECRET GOTRUE_EXTERNAL_AZURE_URL; do
     if ! printf '%s\n' "$auth_secrets" | grep -qx "$name"; then
-      note_blocker "Fly secret aria-mantu-auth/$name not deployed"
+      echo "WARN: Fly secret aria-mantu-auth/$name not deployed (Entra SSO optional for Graph E2E PASS)"
     fi
   done
 else

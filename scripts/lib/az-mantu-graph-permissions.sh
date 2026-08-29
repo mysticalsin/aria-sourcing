@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Shared Graph delegated permissions for Mantu Fly (Outlook mail/calendar + SSO).
-# Includes Mail.Read, Mail.Send, Calendars.ReadWrite (delegated scopes).
+# Shared Graph delegated permissions for Mantu Fly (Outlook mail/calendar/Teams + SSO).
+# Includes Mail.Read, Mail.Send, Calendars.ReadWrite, OnlineMeetings.ReadWrite (delegated).
 apply_mantu_graph_delegated_permissions() {
   local app_id="$1"
   local graph_api="00000003-0000-0000-c000-000000000000"

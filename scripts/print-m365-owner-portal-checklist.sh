@@ -82,9 +82,10 @@ bash scripts/az-configure-existing-graph-app.sh --apply
 
 cp production-readiness/.owner-microsoft.env.example /tmp/owner-microsoft.env
 # fill MICROSOFT_CLIENT_ID/SECRET/TENANT_ID=${TENANT_ID} (Graph-minimum)
-# GOTRUE_EXTERNAL_AZURE_* optional — leave PLACEHOLDER to skip Entra SSO apply
+# GOTRUE_EXTERNAL_AZURE_* optional — leave CLIENT_ID+SECRET PLACEHOLDER to skip Entra SSO
+# (Azure URL alone may derive TENANT; apply will not hard-error as partial Entra)
 bash scripts/fly-apply-owner-microsoft-secrets.sh
-bash scripts/post-m365-secrets-golive.sh
+# (apply already runs post-m365-secrets-golive; re-run only if seat wait needed)
 
 ## Verify on Fly
 
