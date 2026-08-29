@@ -27,6 +27,7 @@ let role: "admin" | "member" = "admin";
 let insertedRows: Record<string, unknown>[] = [];
 let serviceReady = false;
 let serviceSeatProvider = "Microsoft Graph";
+let serviceHasTeamsScope = true;
 
 function seatRow(input: Record<string, unknown>): AgentSeatRow {
   return {
@@ -138,6 +139,9 @@ function makeServiceSupabase() {
                 id: "33333333-3333-4333-8333-333333333333",
                 account_email: "recruiter@mantu.com",
                 refresh_token: "enc",
+                scope: serviceHasTeamsScope
+                  ? "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Calendars.ReadWrite https://graph.microsoft.com/OnlineMeetings.ReadWrite offline_access"
+                  : "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read offline_access",
               },
               error: null,
             };
@@ -251,6 +255,20 @@ function req(body: unknown, method = "POST") {
 {
   role = "admin";
   serviceReady = true;
+  serviceHasTeamsScope = false;
+  serviceSeatProvider = "Microsoft Graph";
+  const res = await route.PATCH(req({ id: serverSeatId, mode: "live" }, "PATCH"));
+  const json = await res.json();
+  ok(
+    "PATCH mode=live without OnlineMeetings/Calendars scope returns 409",
+    res.status === 409 && json.ok === false && /OnlineMeetings|Calendars\.ReadWrite/i.test(String(json.error ?? "")),
+  );
+}
+
+{
+  role = "admin";
+  serviceReady = true;
+  serviceHasTeamsScope = true;
   serviceSeatProvider = "Microsoft Graph";
   const res = await route.PATCH(req({ id: serverSeatId, mode: "live" }, "PATCH"));
   const json = await res.json();
