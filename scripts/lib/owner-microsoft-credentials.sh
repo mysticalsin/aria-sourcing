@@ -224,6 +224,10 @@ owner_ms_acquire_singleton_lock() {
   fi
   # shellcheck disable=SC2329
   exec 9>"$lockfile"
+  # Close-on-exec so sleep/flyctl children cannot strand the flock after parent exit.
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import fcntl, os, sys; fcntl.fcntl(9, fcntl.F_SETFD, fcntl.FD_CLOEXEC)' 2>/dev/null || true
+  fi
   if ! flock -n 9; then
     printf 'Another %s already running (%s) — exiting\n' "$name" "$lockfile" >&2
     exit "$busy_exit"
