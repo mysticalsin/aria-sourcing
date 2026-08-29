@@ -2,8 +2,8 @@
 project: MSourcing / ARIA
 shift: 354
 agent: cursor-cloud
-updated: 2026-08-29T10:10Z
-status: tip-ahead-app-github-activity-sanitize-awaiting-deploy
+updated: 2026-08-29T10:16Z
+status: e2e-partial-tip-live-m365-deferred
 ---
 
 # Handoff — Shift 354
@@ -11,40 +11,40 @@ status: tip-ahead-app-github-activity-sanitize-awaiting-deploy
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft OPEN
-- **Live Fly:** `e5c37c1` / **0074** · tip will be **tip_ahead_app** after this commit (src outreach sanitize)
+- **Live Fly:** `c545c07` / **0074** · `deploy_status=tip_live`
 - **Gate/audit:** green · audit **65/65**
-- **E2E prior:** PARTIAL **60/0/3** — critic WARN was GitHub-activity boilerplate
+- **E2E verified now:** `bash scripts/run-enterprise-e2e-partial.sh`
+  - **RESULT: PARTIAL · 58 pass / 0 fail / 2 warn** (Microsoft only — no critic retry WARN)
+  - **classifier=model PASS**; top-10 live; first-try Human approval + live critics
 - **Microsoft:** **DEFERRED** · `graph_secrets_missing=3` · no `/tmp/owner-microsoft.env`
-- **LLM:** `llm_auth=dead` · Hermes/vault OK
+- **LLM:** `llm_auth=dead` · Hermes/vault OK · no `/tmp/owner-llm.env`
 
 ## Done this shift
 
-1. Fixed draft activity signal that fed `"Active GitHub profile…"` → live critics reject `"Votre activité GitHub récente"` (approve retry WARN)
-2. `sanitizeOutreachActivitySignal` strips FR/EN GitHub-activity boilerplate
-3. Hermes outreach rules + skills ban the same boilerplate
-4. `candidate-mappers` prefers stack language / `"recent open-source work"`
+1. Fixed GitHub-activity boilerplate feeding drafts (`Active GitHub profile` → critic `"Votre activité GitHub récente"`)
+2. Deployed tip_ahead_app → tip_live `c545c07`
+3. Re-ran PARTIAL E2E: **58/0/2** — MS WARNs only; first-try approve (critic retry eliminated)
 
 ## Blockers
 
-- Owner Microsoft for RESULT: PASS
-- Remint + `fly-deploy-now` so tip_ahead_app lands on Fly, then re-run PARTIAL E2E (expect fewer critic retries)
+- Owner reopen Microsoft for RESULT: PASS
 
 ## Next steps
 
 ```bash
-# After commit on tip:
-bash scripts/print-fly-deploy-confirm.sh
-# write KEY=value only to /tmp/owner-deploy-confirm.env (two lines — never redirect print output)
-bash scripts/fly-deploy-now.sh
-# confirm loop primary started
 unset AGENT_PROVIDER AGENT_MODEL
+bash scripts/print-fly-golive-status.sh   # tip_live c545c07 / 0074
 bash scripts/run-enterprise-e2e-partial.sh
 # expect Running: ARIA_ALLOW_PARTIAL_M365_E2E=1 only
 # expect step 3c PASS with provenance=live top-10
 # expect Generated a LinkedIn draft via /api/hermes/chat (fr)
-# expect Human approval RECORDED + live LLM critics (prefer first-try, no GitHub-activity critic WARN)
-# expect classifier=model PASS
+# expect Human approval RECORDED + live LLM critics used (first-try preferred)
+# expect classifier=model PASS on reply webhook poll
 # expect RESULT: PARTIAL until Microsoft reopened
+# When owner drops /tmp/owner-microsoft.env (Graph real; Entra CLIENT+SECRET PLACEHOLDER OK):
+#   bash scripts/probe-m365-unblock.sh --apply
+#   Settings → Connect Outlook (Calendars.ReadWrite + OnlineMeetings.ReadWrite)
+#   bash scripts/verify-m365-ready.sh
 ```
 
 ## Production gate (Fly)
@@ -62,10 +62,10 @@ bash scripts/run-enterprise-e2e-partial.sh
 - Production = Fly only; ignore Vercel/GHA empty-steps
 - PR #36 only
 - **2026-08-29: Owner — don’t do the Microsoft part**
-- Deploy confirm remint is agent-owned (KEY=value only)
+- Deploy confirm remint is agent-owned (KEY=value only — never redirect print-fly-deploy-confirm output into dropzone)
 - Never pin auth-dead cloud AGENT_PROVIDER on Fly E2E
 - Graph-minimum dropzone; Entra/LLM WARN-only
-- Ban GitHub-activity boilerplate in activity signals + Hermes rules (scraping-disclosure critic tell)
+- Ban GitHub-activity boilerplate in activity signals + Hermes rules
 
 ## Watch out
 
