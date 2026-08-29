@@ -19,6 +19,7 @@ import {
   type ReplyClassification,
 } from "./mock-ai";
 import { preferredOutreachChannel } from "./outreach-channel";
+import { outreachDispatchRecipient } from "./outreach-recipient";
 import { resolveOutreachLanguage } from "./outreach-language";
 import {
   mapSeamlessCandidates,
@@ -2568,15 +2569,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         blockers: [blocker],
         warnings: [],
       });
-      const recipientFor = (message: OutreachMessage, candidate: Candidate) => {
-        const override = message.recipientOverride?.trim();
-        if (override) return override;
-        return message.channel === "WhatsApp" || message.channel === "SMS"
-          ? candidate.phone ?? ""
-          : message.channel === "LinkedIn"
-            ? candidate.linkedinUrl ?? ""
-            : candidate.email;
-      };
+      const recipientFor = (message: OutreachMessage, candidate: Candidate) =>
+        outreachDispatchRecipient(message, candidate);
       const isActionable = (message: OutreachMessage) =>
         message.status === "Needs Approval" || message.status === "Draft";
 

@@ -1882,8 +1882,8 @@ async function handleInterviewPrepSend(job, context) {
       const explicit = typeof draft.recipient === "string" ? draft.recipient.trim() : "";
       let recipient = override || explicit;
       if (!recipient && typeof body.recipient === "string") recipient = body.recipient.trim();
-      // When no recipient, leave Needs Approval — sweep may still pick up later
-      // once workspace state has the candidate email.
+      // When no recipient, leave Needs Approval — interviewer prep must keep
+      // recipientOverride (never fall back to candidate); sweep uses the same rule.
       if (subject && draftBody && recipient) {
         try {
           const autoRes = await context.fetcher(context.configuration.autopilotSendUrl, {

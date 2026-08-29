@@ -37,6 +37,30 @@ export type AutopilotDispatchResult =
 
 type ServiceClient = SupabaseClient;
 
+type SeatRow = {
+  id: string;
+  provider?: string | null;
+  status?: string | null;
+  mode?: string | null;
+  domain_verified?: boolean | null;
+  operator_email?: string | null;
+  connected_account?: string | null;
+};
+
+/**
+ * Align Autopilot mailbox pick with Approve→Send / seatMailboxLiveReady:
+ * Graph live + connected mailbox skips vanity DNS; API-key senders need domain_verified.
+ */
+export function mailboxSeatReadyForAutopilot(seat: SeatRow): boolean {
+  if (!isMailboxSeatProvider(String(seat.provider ?? ""))) return false;
+  if (seat.mode !== "live") return false;
+  const connected =
+    String(seat.connected_account ?? "").trim() || String(seat.operator_email ?? "").trim();
+  if (!connected.includes("@")) return false;
+  if (String(seat.provider) === "Microsoft Graph") return true;
+  return seat.domain_verified === true;
+}
+
 async function loadAutopilotContext(svc: ServiceClient, workspaceId: string) {
   const controls = await svc
     .from("sourcing_loop_controls")
@@ -58,17 +82,27 @@ async function loadAutopilotContext(svc: ServiceClient, workspaceId: string) {
 
   const seats = await svc
     .from("agent_seats")
-    .select("id, provider, status, mode, domain_verified, operator_email")
+    .select("id, provider, status, mode, domain_verified, operator_email, connected_account")
     .eq("workspace_id", workspaceId)
     .eq("status", "active");
 
-  const rows = seats.data ?? [];
-  const liveMailbox = rows.find(
-    (s) =>
-      s.mode === "live" &&
-      isMailboxSeatProvider(String(s.provider ?? "")) &&
-      s.domain_verified === true,
-  );
+  const rows = (seats.data ?? []) as SeatRow[];
+  const liveMailbox = rows.find((s) => mailboxSeatReadyForAutopilot(s));
+  // Mirror Approve→Send: heal Graph domain_verified so claim_* accepts the seat.
+  if (
+    liveMailbox
+    && String(liveMailbox.provider) === "Microsoft Graph"
+    && liveMailbox.domain_verified !== true
+  ) {
+    try {
+      await svc.from("agent_seats").update({ domain_verified: true }).eq("id", liveMailbox.id);
+      liveMailbox.domain_verified = true;
+    } catch (err) {
+      safeLog("autopilot Graph domain_verified heal failed", {
+        message: err instanceof Error ? err.message : "unknown",
+      });
+    }
+  }
   const liveWhatsApp = rows.find(
     (s) => s.mode === "live" && String(s.provider) === "WhatsApp Cloud",
   );

@@ -69,6 +69,15 @@ function makeSvc(opts: {
       };
       chain.in = () => self();
       chain.limit = () => self();
+      chain.update = () => {
+        const upd: Record<string, unknown> = {};
+        upd.eq = () => ({
+          then(resolve: (v: unknown) => void) {
+            resolve({ data: null, error: null });
+          },
+        });
+        return upd;
+      };
       chain.maybeSingle = async () => {
         if (table === "sourcing_loop_controls") return { data: controls, error: null };
         if (table === "profiles") {
@@ -347,21 +356,43 @@ const baseInput = {
 }
 
 {
-  const { svc } = makeSvc({
+  const { svc, rpcs } = makeSvc({
     seats: [
       {
-        id: "seat-mail-unverified",
+        id: "seat-mail-graph-heal",
         provider: "Microsoft Graph",
         status: "active",
         mode: "live",
         domain_verified: false,
         operator_email: "recruiter@example.com",
+        connected_account: "recruiter@example.com",
       },
     ],
   });
   const r = await runAutopilotOutreachDispatch(svc, baseInput);
   ok(
-    "email live but domain_verified false → no_live_mailbox",
+    "Graph live mailbox heals domain_verified and queues (Approve→Send parity)",
+    r.status === "queued" && rpcs.some((c) => c.name === "enqueue_email_outbound_service"),
+  );
+}
+
+{
+  const { svc } = makeSvc({
+    seats: [
+      {
+        id: "seat-sendgrid-unverified",
+        provider: "SendGrid",
+        status: "active",
+        mode: "live",
+        domain_verified: false,
+        operator_email: "ops@example.com",
+        connected_account: "ops@example.com",
+      },
+    ],
+  });
+  const r = await runAutopilotOutreachDispatch(svc, baseInput);
+  ok(
+    "API-key mailbox without domain_verified → no_live_mailbox",
     r.status === "skipped" && "reason" in r && r.reason === "no_live_mailbox",
   );
 }

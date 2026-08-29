@@ -93,7 +93,10 @@ ok(
 const cron = readFileSync("src/app/api/cron/autopilot-send-outreach/route.ts", "utf8");
 ok("cron requires criticsPassed === true", /criticsPassed: parsed\.data\.criticsPassed === true/.test(cron));
 ok("sweep filters ready+critics", /qualityStatus === "ready"/.test(cron) && /qualityCriticsUsed === true/.test(cron));
-ok("sweep honors recipientOverride", /recipientOverride/.test(cron));
+ok(
+  "sweep uses shared recipient helper (override + interviewer fail-closed)",
+  /outreachDispatchRecipient/.test(cron) && /if \(!recipient\) return null/.test(cron),
+);
 
 const prepCron = readFileSync("src/app/api/cron/interview-prep-dispatch/route.ts", "utf8");
 ok("prep dispatch runs live critics", /validateOutreachQualityLive/.test(prepCron));

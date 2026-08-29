@@ -72,13 +72,13 @@ test("manifest preserves parity and freezes the exact deduplicated lifecycle", (
         resolveTestGroup(testManifest, group).length,
       ]),
     ),
-    { pretest: 51, application: 202, posttest: 2, all: 255 },
+    { pretest: 51, application: 203, posttest: 2, all: 256 },
   );
   const commands = resolveTestGroup(testManifest, "all");
   const commandLines = commands.map(({ executable, argv }) => `${executable} ${argv.join(" ")}`);
   assert.equal(
     createHash("sha256").update(commandLines.join("\n")).digest("hex"),
-    "1368af873379cdb7ed8c928ef5d8451b4a534062ba7200390b0a90d1f235081d",
+    "6d418ccece1ec3c3b4b97424e1b3c8e3b3f1bdc2b14244e615932f7387fd0db1",
   );
   assert.equal(new Set(commandLines).size, commandLines.length, "canonical lifecycle must be duplicate-free");
   assert.equal(
@@ -121,10 +121,10 @@ test("manifest preserves parity and freezes the exact deduplicated lifecycle", (
       ({ executable, argv }) => `${executable} ${argv.join(" ")}`,
     ),
   ];
-  assert.equal(parityLines.length, 257);
+  assert.equal(parityLines.length, 258);
   assert.equal(
     createHash("sha256").update(parityLines.join("\n")).digest("hex"),
-    "e26d63a64213a17cd8eb2c1d7fcb8f5d65f3da3094e3662edb737a9917d65a44",
+    "386cf8512a1028111d7eb92f02694c6fe3f9314e5f27520e3f523f2a7ad1810e",
     "deduplication must preserve the frozen pre-expansion baseline while registering new suites additively",
   );
   assert.ok(

@@ -7,7 +7,8 @@ import { getServiceSupabase } from "@/lib/supabase/server";
 import { runAutopilotOutreachDispatch } from "@/lib/rei-autopilot-dispatch";
 import type { ReiOutboundChannel } from "@/lib/rei-autopilot-send";
 import { preferredOutreachChannel } from "@/lib/outreach-channel";
-import type { Candidate, OutreachMessage } from "@/lib/types";
+import { outreachDispatchRecipient } from "@/lib/outreach-recipient";
+import type { OutreachMessage } from "@/lib/types";
 import {
   loadCandidateForLoop,
   loadCandidateOutreachForLoop,
@@ -48,12 +49,6 @@ function authorized(req: NextRequest): boolean {
   );
 }
 
-function recipientFor(channel: ReiOutboundChannel, candidate: Candidate): string {
-  if (channel === "WhatsApp" || channel === "SMS") return candidate.phone ?? "";
-  if (channel === "LinkedIn") return candidate.linkedinUrl ?? "";
-  return candidate.email ?? "";
-}
-
 type DispatchTarget = {
   messageId: string;
   campaignId: string;
@@ -77,7 +72,9 @@ async function targetFromMessage(
   const candidate = await loadCandidateForLoop(svc, workspaceId, msg.candidateId);
   if (!candidate) return null;
   const channel = (msg.channel ?? preferredOutreachChannel(candidate)) as ReiOutboundChannel;
-  const override = msg.recipientOverride?.trim() ?? "";
+  const recipient = outreachDispatchRecipient(msg, candidate).trim();
+  // Interviewer prep without override → skip (do not Autopilot to candidate).
+  if (!recipient) return null;
   return {
     messageId: msg.id,
     campaignId: msg.campaignId,
@@ -85,7 +82,7 @@ async function targetFromMessage(
     channel,
     subject: msg.subject,
     body: msg.body,
-    recipient: override || recipientFor(channel, candidate),
+    recipient,
     qualityStatus: msg.qualityStatus ?? "unknown",
     criticsPassed: msg.qualityStatus === "ready" && msg.qualityCriticsUsed === true,
     persistScheduled,
