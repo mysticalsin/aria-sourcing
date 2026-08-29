@@ -108,10 +108,26 @@ echo "=== 1/3 bootstrap image (migrations through $EXPECTED_MIGRATION_FILE) ==="
 flyctl deploy --config fly.bootstrap.toml --build-only --push --image-label latest --remote-only
 
 echo "=== 2/3 apply migrations on prod DB ==="
-flyctl machine run "registry.fly.io/aria-mantu-bootstrap:latest" \
-  --app aria-mantu-bootstrap --region cdg --rm \
-  --env ARIA_BOOTSTRAP_PHASE=migrations \
-  --env DB_HOST=aria-mantu-db.internal
+# fly machine run can time out waiting for "started" even after the ephemeral
+# migrate container has already printed [migrate] complete and exited 0.
+# Treat that as success; otherwise retry once before failing the deploy.
+run_bootstrap_migrations() {
+  flyctl machine run "registry.fly.io/aria-mantu-bootstrap:latest" \
+    --app aria-mantu-bootstrap --region cdg --rm \
+    --env ARIA_BOOTSTRAP_PHASE=migrations \
+    --env DB_HOST=aria-mantu-db.internal
+}
+
+if ! run_bootstrap_migrations; then
+  echo "WARN: bootstrap machine run failed or timed out — checking logs for [migrate] complete" >&2
+  sleep 5
+  if flyctl logs -a aria-mantu-bootstrap --no-tail 2>/dev/null | grep -q '\[migrate\] complete'; then
+    echo "migrate completed despite CLI wait failure — continuing deploy"
+  else
+    echo "retrying bootstrap migrations once…"
+    run_bootstrap_migrations
+  fi
+fi
 
 echo "=== 3/3 stage release-identity secrets + deploy app ==="
 # Stage secrets without an immediate restart; the following deploy boots machines
