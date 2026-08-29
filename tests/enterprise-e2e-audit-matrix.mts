@@ -1449,6 +1449,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /owner_ms_acquire_singleton_lock/.test(lib)
         && /owner_ms_discover_owned_aria_app_id/.test(lib)
         && /owner_ms_maybe_materialize_owned_app_id/.test(lib)
+        && /mkdir "\$lockdir"|mkdir \$lockdir|lockdir="\$\{lockfile\}\.d"/.test(lib)
+        && /ARIA_M365_LOCK_DIR/.test(lib)
         && /ARIA_NOPERM_LATCH_TTL_SECONDS/.test(lib)
         && /GOTRUE_EXTERNAL_AZURE_URL/.test(lib)
         && /Graph\/Outlook secrets are enough/.test(lib)
