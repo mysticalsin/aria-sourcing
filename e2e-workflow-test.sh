@@ -695,7 +695,8 @@ elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIA
   fi
   # After tip 0073: register an HMAC-only intake mailbox without OAuth.
   HMAC_MAIL="e2e-hmac-$(date -u +%Y%m%d%H%M%S)@aria-e2e.test"
-  api POST "$APP_URL/api/email/connections" "$(jq -nc --arg m "$HMAC_MAIL" '{action:"register_hmac_mailbox",mailbox:$m,purpose:"intake"}')"
+  jq -nc --arg m "$HMAC_MAIL" '{action:"register_hmac_mailbox",mailbox:$m,purpose:"intake"}' > "$WORK/hmac_register.json"
+  api POST "$APP_URL/api/email/connections" "$WORK/hmac_register.json"
   HMAC_HTTP="$HTTP"
   HMAC_RESP="$(cat "$RESP")"
   HMAC_OK=$(jq -r '.ok // false' <<<"$HMAC_RESP")
@@ -725,7 +726,8 @@ TEST_SEAT=$(jq -r '
    | .[0] // empty)
 ' "$RESP" 2>/dev/null || true)
 if [ -n "$TEST_SEAT" ]; then
-  api POST "$APP_URL/api/email/test" "$(jq -nc --arg s "$TEST_SEAT" '{seatId:$s}')"
+  jq -nc --arg s "$TEST_SEAT" '{seatId:$s}' > "$WORK/email_test_req.json"
+  api POST "$APP_URL/api/email/test" "$WORK/email_test_req.json"
   HN_OK=$(jq -r '[.checks // [] | .[] | select(.id=="hiring_need_handler") | .ok] | .[0] // empty' "$RESP" 2>/dev/null || true)
   HN_DETAIL=$(jq -r '[.checks // [] | .[] | select(.id=="hiring_need_handler") | .detail] | .[0] // empty' "$RESP" 2>/dev/null || true)
   if [ "$HTTP" = "200" ] && [ "$HN_OK" = "true" ]; then
