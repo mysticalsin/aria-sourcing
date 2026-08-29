@@ -1,27 +1,26 @@
 ---
 project: MSourcing / ARIA
-shift: 409
+shift: 410
 agent: cursor-cloud
-updated: 2026-08-29T22:05Z
-status: prep-recipient-mailbox-parity
+updated: 2026-08-29T22:15Z
+status: send-recipient-heal-closed
 ---
 
-# Handoff — Shift 409
+# Handoff — Shift 410
 
 ## Current state
 
 - **Branch / PR:** `cursor/rei-autopilot-send-b91d` → **PR #39** (related **PR #36**)
-- **CODE:** Autopilot + interviewerEmail + 0079 + soft-gap + **interviewer prep never → candidate** + **Graph mailbox Approve→Send parity**
+- **CODE:** Autopilot path hardened through Approve→Send recipient + Graph heal fail-closed
 - **Live Fly:** `1665b39` / **0074** — tip + **0076–0079** not applied
 - **Dropzones:** absent → Graph = **HOLD**
 - **Deploy:** no `ARIA_PROD_DEPLOY_CONFIRM`
 
 ## Done this shift
 
-1. `outreachDispatchRecipient` — interviewer prep without override fails closed
-2. Autopilot sweep / store Approve path use shared helper
-3. `mailboxSeatReadyForAutopilot` + Graph `domain_verified` heal (Approve→Send parity)
-4. Suite `tests/outreach-recipient.mts` + manifest freeze refresh
+1. `sendApprovedOutreach` uses `outreachDispatchRecipient` (interviewer prep OFF path)
+2. Graph `domain_verified` heal checks Supabase `{ error }` — fail closed, no orphan queue
+3. Ops honesty: `INBOUND_REPLY_AUTOPILOT.md` + `LINKEDIN_HEYREACH_PARITY.md` (Sequences, loop IDs, HeyReach Save)
 
 ## Blockers (ops only)
 
@@ -42,8 +41,8 @@ curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
 - Never reintroduce full `state` on `read_workspace_state_for_loop`
 - Autopilot fail-closed: ready + live critics + Sequences + entitlement
 - HOLD when Microsoft dropzones empty
-- Interviewer prep must never Autopilot to candidate email
-- Graph live mailbox skips vanity DNS (heal domain_verified); API-key mailboxes still need DNS verify
+- Interviewer prep must never send/Autopilot to candidate email (Approve + Autopilot)
+- Graph heal must observe Supabase error (not only thrown exceptions)
 - Service enqueue binds approval body_hash + scope (0079)
 
 ## Watch out
