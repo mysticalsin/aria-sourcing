@@ -10,7 +10,7 @@ status: ops-blocked-stale-deploy-confirm
 
 ## Current state
 
-- **Branch / PR:** `cursor/rei-autopilot-send-b91d` → **PR #40** tip **`acf016a`**
+- **Branch / PR:** `cursor/rei-autopilot-send-b91d` → **PR #40** (tip = `git rev-parse HEAD`)
 - **CODE:** Autopilot path complete in source (ops only) — skeptical re-audit found no material code gap
 - **Live Fly:** `1665b39` / **0074** — tip + **0076–0079** not applied
 - **Dropzones:** Microsoft/LLM absent → Graph = **HOLD**
@@ -25,7 +25,7 @@ status: ops-blocked-stale-deploy-confirm
 
 ## Blockers (ops only)
 
-1. Owner: drop tip-bound confirm then `bash scripts/fly-deploy-now.sh` (applies **0076–0079**)
+1. Owner: remint tip-bound confirm then `bash scripts/fly-deploy-now.sh` (applies **0076–0079**)
 2. Settings HeyReach; entitle; Sequences; `ARIA_LOOP_WORKSPACE_IDS`
 3. Graph dropzones for live Teams
 4. WA Meta template / HeyReach `{message}`
