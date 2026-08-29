@@ -1,12 +1,12 @@
 # Enterprise E2E Audit Matrix
 
-**Date:** 2026-08-28  
+**Date:** 2026-08-29  
 **Branch:** `cursor/enterprise-autopilot-b91d`  
-**PR:** [#35](https://github.com/mysticalsin/aria-sourcing/pull/35)  
+**PR:** [#36](https://github.com/mysticalsin/aria-sourcing/pull/36)  
 **Production host:** `https://aria-mantu-app.fly.dev` (Fly only)  
-**Automated pin:** `tests/enterprise-e2e-audit-matrix.mts` — **58/58 pass**  
-**Live Fly:** **`33130a8`** · migration **0071** · `deploy_status=tip_live`  
-**Fly E2E:** **38 pass, 0 fail, 4 warn** (PARTIAL — M365 secrets + sourcing quota)
+**Automated pin:** `tests/enterprise-e2e-audit-matrix.mts`  
+**Live Fly:** **`ff27e74`** · migration **0073** · `deploy_status=tip_ahead_docs` (app tip live; docs/scripts ahead)  
+**Fly E2E:** **57 pass, 0 fail** via `bash scripts/run-enterprise-e2e-partial.sh` (PARTIAL — Microsoft deferred only; live drafts + critics via Hermes/vault; no PARTIAL_LLM)
 
 Format: `| Section | Check | Status | Evidence | Fix owner |`
 
@@ -65,7 +65,7 @@ Format: `| Section | Check | Status | Evidence | Fix owner |`
 | Loop | Live book → `interview_prep_send` | pass | mig 0071, `/api/booking/interview-prep`, worker handler | — |
 | Loop | Prep drafts → approval → dispatch-outbound | pass | `interview-prep-dispatch` cron, dispatch spine | — |
 | Loop | Autopilot kill switch default inert | pass | `ARIA_LOOP_KILL_SWITCH` !== false | Tony (A-1) |
-| Loop | DB migrations 0053–0071 on Fly Postgres | partial | 0070 live; 0071 on tip pending golive | eng golive |
+| Loop | DB migrations 0053–0073 on Fly Postgres | pass | live migration **0073_hmac_inbound_mailbox_route.sql** | — |
 
 ---
 

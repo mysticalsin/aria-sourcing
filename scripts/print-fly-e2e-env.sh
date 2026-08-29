@@ -121,13 +121,12 @@ EOF
 fi
 
 cat <<'EOF'
-# Hermes outreach: set AGENT_PROVIDER to a *live* provider on Fly (probe first).
-# Do NOT hard-pin kimi when KIMI_API_KEY is auth-dead (HTTP 401).
+# Hermes outreach: prefer a *live* Fly env provider when probe-fly-llm-auth is ok.
+# When llm_auth=dead, e2e-workflow-test.sh pins AGENT_PROVIDER=hermes (vault/gateway
+# failover) — do NOT hard-pin kimi / other auth-dead cloud keys.
 #   bash scripts/probe-fly-llm-auth.sh   # expect RESULT: llm_auth_ok (+ FIRST_LIVE_PROVIDER=…)
 #   eval "$(bash scripts/print-fly-e2e-env.sh --export)"  # exports AGENT_PROVIDER from /tmp cache
-# Or export one of: kimi | deepseek | openai | anthropic matching the live key.
-# export AGENT_PROVIDER=kimi
-# export AGENT_MODEL=moonshot-v1-8k
+# Or leave AGENT_PROVIDER unset on Fly — script falls back to hermes when env keys are dead.
 # optional: override webhook mailbox (defaults to connected Outlook or talent@mantu.com)
 # export E2E_INBOUND_MAILBOX='connected-outlook@yourdomain.com'
 # optional: skip live Teams book if Outlook seat not connected yet
