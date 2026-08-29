@@ -9,8 +9,11 @@ owner_ms_is_placeholder() {
   local v="$1"
   case "$v" in
     ""|PLACEHOLDER*|placeholder*|your-*|YOUR-*|changeme|CHANGEME) return 0 ;;
-    *) return 1 ;;
   esac
+  case "$v" in
+    *PLACEHOLDER*|*placeholder*) return 0 ;;
+  esac
+  return 1
 }
 
 owner_ms_has_drop_file() {

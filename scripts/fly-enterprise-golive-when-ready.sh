@@ -52,13 +52,13 @@ load_deploy_confirm_drop() {
 load_deploy_confirm_drop "/tmp/owner-deploy-confirm.env"
 load_deploy_confirm_drop "$repo/production-readiness/.owner-deploy-confirm.env"
 
+# shellcheck source=scripts/lib/owner-microsoft-credentials.sh
+source "$repo/scripts/lib/owner-microsoft-credentials.sh"
+
 has_drop=0
-for f in /tmp/owner-microsoft.env "$repo/production-readiness/.owner-microsoft.env"; do
-  if [ -r "$f" ] && ! grep -q 'PLACEHOLDER' "$f" 2>/dev/null; then
-    has_drop=1
-    break
-  fi
-done
+if owner_ms_has_drop_file; then
+  has_drop=1
+fi
 
 # If Azure CLI is authenticated and drop-zone is absent, mint the Entra app
 # (requires owner device-login; never invents client secrets locally).
@@ -78,12 +78,12 @@ if [ "$has_drop" = "0" ] && command -v az >/dev/null 2>&1 && az account show >/d
       echo "WARN: az-create-mantu-graph-app.sh failed (need app-registration rights)." >&2
     }
   fi
-  if [ -r /tmp/owner-microsoft.env ] && ! grep -q 'PLACEHOLDER' /tmp/owner-microsoft.env 2>/dev/null; then
+  if owner_ms_has_drop_file; then
     has_drop=1
   fi
 fi
 
-if [ "$has_drop" = "1" ] || { [ -n "${MICROSOFT_CLIENT_ID:-}" ] && [ -n "${MICROSOFT_CLIENT_SECRET:-}" ]; }; then
+if [ "$has_drop" = "1" ] || owner_ms_has_env_exports; then
   echo "=== Applying owner Microsoft / Entra secrets ==="
   bash "$repo/scripts/fly-apply-owner-microsoft-secrets.sh"
 else

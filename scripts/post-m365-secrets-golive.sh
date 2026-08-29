@@ -153,6 +153,8 @@ LIVE_SEAT="$(
             and (.hasRefreshToken == true)
             and ((.graphSubscription.active // false) == true)
             and ((.seatId // "") | length) > 0
+            and ((.scope // "") | test("Calendars[.]ReadWrite|calendars[.]readwrite"; "i"))
+            and ((.scope // "") | test("OnlineMeetings[.]ReadWrite|onlinemeetings[.]readwrite"; "i"))
           )
         | .seatId as $sid
         | select(
@@ -165,7 +167,7 @@ LIVE_SEAT="$(
 )"
 
 if [ -n "$LIVE_SEAT" ]; then
-  echo "Live Graph seat ready: $LIVE_SEAT"
+  echo "Live Graph seat ready: $LIVE_SEAT (webhook + Calendars + OnlineMeetings + mode=live)"
   echo
   echo "=== 4) Strict verify-m365-ready ==="
   bash "$repo/scripts/verify-m365-ready.sh"
@@ -173,7 +175,7 @@ if [ -n "$LIVE_SEAT" ]; then
 fi
 
 if [ "${WAIT_SEAT_SEC}" -gt 0 ]; then
-  echo "Waiting up to ${WAIT_SEAT_SEC}s for Connect Outlook + webhook…"
+  echo "Waiting up to ${WAIT_SEAT_SEC}s for Connect Outlook + webhook + Calendars/OnlineMeetings scopes…"
   seat_deadline=$(( $(date +%s) + WAIT_SEAT_SEC ))
   while [ "$(date +%s)" -lt "$seat_deadline" ]; do
     login_cookie || true
@@ -188,6 +190,9 @@ if [ "${WAIT_SEAT_SEC}" -gt 0 ]; then
                 (.provider // "") == "Microsoft Graph"
                 and (.hasRefreshToken == true)
                 and ((.graphSubscription.active // false) == true)
+                and ((.seatId // "") | length) > 0
+                and ((.scope // "") | test("Calendars[.]ReadWrite|calendars[.]readwrite"; "i"))
+                and ((.scope // "") | test("OnlineMeetings[.]ReadWrite|onlinemeetings[.]readwrite"; "i"))
               )
             | .seatId as $sid
             | select(($seats | map(select(.id == $sid and .mode == "live")) | length) > 0)
@@ -197,7 +202,7 @@ if [ "${WAIT_SEAT_SEC}" -gt 0 ]; then
       ' "$WORK/conn.json" 2>/dev/null || true
     )"
     if [ -n "$LIVE_SEAT" ]; then
-      echo "Live seat appeared: $LIVE_SEAT"
+      echo "Live seat appeared: $LIVE_SEAT (webhook + Calendars + OnlineMeetings + mode=live)"
       bash "$repo/scripts/verify-m365-ready.sh"
       exit $?
     fi

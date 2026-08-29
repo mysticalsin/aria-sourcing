@@ -5,8 +5,7 @@
 #
 # Unblock triggers (any one):
 #   - az account show succeeds (owner completed device-code MFA)
-#   - /tmp/owner-microsoft.env (or production-readiness/.owner-microsoft.env)
-#     without PLACEHOLDER values
+#   - /tmp/owner-microsoft.env Graph-minimum (Entra PLACEHOLDER OK)
 #   - /tmp/owner-deploy-confirm.env (or production-readiness/.owner-deploy-confirm.env)
 #     with a real ARIA_PROD_DEPLOY_CONFIRM (tip deploy for Graph/ready even if
 #     Microsoft secrets are still pending — E2E still fail-closes on OAuth)
@@ -30,20 +29,13 @@ fi
 
 log() { printf '%s %s\n' "$(date -u +%H:%M:%SZ)" "$*" | tee -a "$LOG"; }
 
+# shellcheck source=scripts/lib/owner-microsoft-credentials.sh
+source "$repo/scripts/lib/owner-microsoft-credentials.sh"
+
 has_microsoft_drop() {
-  local f
-  for f in /tmp/owner-microsoft.env "$repo/production-readiness/.owner-microsoft.env"; do
-    if [ -r "$f" ] && ! grep -q 'PLACEHOLDER' "$f" 2>/dev/null; then
-      return 0
-    fi
-  done
-  # Cursor / shell-exported secrets (never invent PLACEHOLDER)
-  if [ -n "${MICROSOFT_CLIENT_ID:-}" ] && [ -n "${MICROSOFT_CLIENT_SECRET:-}" ] \
-    && [[ "${MICROSOFT_CLIENT_ID}" != PLACEHOLDER* ]] \
-    && [[ "${MICROSOFT_CLIENT_SECRET}" != PLACEHOLDER* ]]; then
-    return 0
-  fi
-  return 1
+  # Graph-minimum: MICROSOFT_CLIENT_ID/SECRET (+ TENANT) via drop-zone or exports.
+  # Entra PLACEHOLDER lines are OK (owner_ms_has_credentials / Graph-only PASS).
+  owner_ms_has_credentials
 }
 
 has_deploy_confirm_drop() {

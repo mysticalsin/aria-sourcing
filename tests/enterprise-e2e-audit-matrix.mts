@@ -1408,7 +1408,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /entra_secrets_missing=/.test(status)
         && /m365_secrets_missing=\$\{GRAPH_MISSING\}|m365_secrets_missing=\$\{GRAPH/.test(status)
         && /Graph-minimum/.test(example)
-        && /OPTIONAL for Graph/.test(example)
+        && /OPTIONAL for Graph|PLACEHOLDER_TENANT_ID/.test(example)
+        && /Skipping Entra|Graph-only OK for E2E PASS/.test(readFileSync("scripts/fly-apply-owner-microsoft-secrets.sh", "utf8"))
+        && /\*PLACEHOLDER\*/.test(readFileSync("scripts/fly-apply-owner-microsoft-secrets.sh", "utf8"))
+        && /owner_ms_has_drop_file/.test(readFileSync("scripts/fly-enterprise-golive-when-ready.sh", "utf8"))
+        && /Calendars\[\.\]ReadWrite\|calendars\[\.\]readwrite/.test(readFileSync("scripts/post-m365-secrets-golive.sh", "utf8"))
       );
     },
   },

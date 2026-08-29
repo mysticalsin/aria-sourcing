@@ -62,8 +62,12 @@ is_placeholder() {
   local v="$1"
   case "$v" in
     ""|PLACEHOLDER*|placeholder*|your-*|YOUR-*|changeme|CHANGEME) return 0 ;;
-    *) return 1 ;;
   esac
+  # Embed tokens (e.g. Azure URL with PLACEHOLDER_TENANT_ID) also count as unset.
+  case "$v" in
+    *PLACEHOLDER*|*placeholder*) return 0 ;;
+  esac
+  return 1
 }
 
 require_real() {
@@ -132,24 +136,19 @@ ENTRA_ENABLED="${GOTRUE_EXTERNAL_AZURE_ENABLED:-true}"
 entra_any=0
 entra_all=1
 for v in "$ENTRA_ID" "$ENTRA_SECRET" "$ENTRA_URL"; do
-  if [ -n "$v" ]; then entra_any=1; fi
-done
-for name_val in \
-  "GOTRUE_EXTERNAL_AZURE_CLIENT_ID:$ENTRA_ID" \
-  "GOTRUE_EXTERNAL_AZURE_SECRET:$ENTRA_SECRET" \
-  "GOTRUE_EXTERNAL_AZURE_URL:$ENTRA_URL"; do
-  n="${name_val%%:*}"
-  v="${name_val#*:}"
-  if is_placeholder "$v"; then
+  # PLACEHOLDER / empty = absent (Graph-minimum dropzone may keep Entra lines as PLACEHOLDER).
+  if ! is_placeholder "$v"; then
+    entra_any=1
+  else
     entra_all=0
-    if [ "$entra_any" = "1" ]; then
-      echo "ERROR: partial Entra env — set all of CLIENT_ID, SECRET, and URL (got empty/placeholder $n)." >&2
-      exit 1
-    fi
   fi
 done
+if [ "$entra_any" = "1" ] && [ "$entra_all" = "0" ]; then
+  echo "ERROR: partial Entra env — set all of CLIENT_ID, SECRET, and URL to real values, or leave all PLACEHOLDER/empty to skip SSO." >&2
+  exit 1
+fi
 
-if [ "$entra_all" = "1" ]; then
+if [ "$entra_all" = "1" ] && [ "$entra_any" = "1" ]; then
   echo "=== Applying Entra / GoTrue Azure secrets to aria-mantu-auth ==="
   require_real GOTRUE_EXTERNAL_AZURE_ENABLED "$ENTRA_ENABLED"
   flyctl secrets set -a aria-mantu-auth \
@@ -158,7 +157,7 @@ if [ "$entra_all" = "1" ]; then
     "GOTRUE_EXTERNAL_AZURE_SECRET=${ENTRA_SECRET}" \
     "GOTRUE_EXTERNAL_AZURE_URL=${ENTRA_URL}"
 else
-  echo "=== Skipping Entra (GOTRUE_EXTERNAL_AZURE_* not fully exported) ==="
+  echo "=== Skipping Entra (GOTRUE_EXTERNAL_AZURE_* PLACEHOLDER/empty — Graph-only OK for E2E PASS) ==="
   echo "    Tip deploy will keep NEXT_PUBLIC_ENABLE_AZURE_LOGIN=false until Entra is set."
 fi
 
