@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 344
 agent: cursor-cloud
-updated: 2026-08-29T07:15Z
+updated: 2026-08-29T07:23Z
 status: e2e-softskip-partial-honesty-m365-deferred
 ---
 
@@ -15,6 +15,7 @@ status: e2e-softskip-partial-honesty-m365-deferred
 - **Gate/audit:** audit **64/64** · classify vault on live `8b836d8`
 - **E2E verified:** `bash scripts/run-enterprise-e2e-partial.sh`
   - **RESULT: PARTIAL · 57 pass / 0 fail / 2 warn** (Microsoft only)
+  - first-try approve + live critics (stages=6); top-10 live
   - soft-skips (canned/synthetic/skip-reply-classify) now force PARTIAL — never PASS
 - **Microsoft:** **DEFERRED** · `m365_secrets_missing=7`
 - **LLM:** `llm_auth=dead` — Hermes/vault for drafts/critics/classify
@@ -23,7 +24,7 @@ status: e2e-softskip-partial-honesty-m365-deferred
 
 1. Classify vault failover tip_live `8b836d8` (prior)
 2. E2E: canned draft / synthetic candidate / skip-reply-classify force RESULT: PARTIAL
-3. Audit matrix pins soft-skip PARTIAL honesty
+3. Audit matrix pins soft-skip PARTIAL honesty; reconfirmed E2E 57/0/2
 
 ## Blockers
 
