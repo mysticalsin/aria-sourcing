@@ -10,7 +10,7 @@ status: send-route-heal-closed
 
 ## Current state
 
-- **Branch / PR:** `cursor/rei-autopilot-send-b91d` → **PR #39** (related **PR #36**)
+- **Branch / PR:** `cursor/rei-autopilot-send-b91d` → **PR #40** (supersedes closed #39; related **PR #36**)
 - **CODE:** Autopilot + Approve→Send recipient + Graph heal fail-closed on Autopilot **and** send route
 - **Live Fly:** `1665b39` / **0074** — tip + **0076–0079** not applied
 - **Dropzones:** absent → Graph = **HOLD**
@@ -21,6 +21,7 @@ status: send-route-heal-closed
 
 1. `outreach/send` Graph + DNS `domain_verified` heal checks Supabase `{ error }` before in-memory true
 2. Pin in `tests/outreach-recipient.mts`
+3. Re-opened deliverable as **PR #40** after #39 was closed
 
 ## Blockers (ops only)
 
