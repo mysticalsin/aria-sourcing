@@ -138,6 +138,19 @@ ok(
   })(),
 );
 ok(
+  "0073 registers HMAC inbound mailbox routes without OAuth connection",
+  (() => {
+    const mig73 = read("supabase/migrations/0073_hmac_inbound_mailbox_route.sql");
+    return (
+      mig73.length > 0 &&
+      noTxn(mig73) &&
+      /upsert_hmac_inbound_mailbox_route/.test(mig73) &&
+      /connection_id, purpose, active/.test(mig73) &&
+      /null, purpose, true/.test(mig73)
+    );
+  })(),
+);
+ok(
   "loop event erasure has a narrow trigger-recognized redaction path",
   /redact_loop_events_for_candidate_erasure\(uuid, text, text\[\], text\[\]\)/i.test(dataProtection) &&
     /set_config\('aria\.candidate_erasure_loop_event_redaction', 'on', true\)/i.test(dataProtection) &&

@@ -405,6 +405,13 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /append_booking is pre-0072 unknown-patch-kind/.test(
           readFileSync("tests/sourcing-loop-worker.mts", "utf8"),
         )
+        && /register_hmac_mailbox/.test(readFileSync("src/app/api/email/connections/route.ts", "utf8"))
+        && /upsert_hmac_inbound_mailbox_route/.test(
+          readFileSync("supabase/migrations/0073_hmac_inbound_mailbox_route.sql", "utf8"),
+        )
+        && /Register HMAC mailbox/.test(
+          readFileSync("src/components/settings/email-connections-panel.tsx", "utf8"),
+        )
       );
     },
   },

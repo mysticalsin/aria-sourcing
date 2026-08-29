@@ -8,6 +8,9 @@ import {
   Card,
   CardContent,
   Eyebrow,
+  Field,
+  Input,
+  Select,
   useToast,
 } from "@/components/ui";
 import { useActions, useRole } from "@/lib/store";
@@ -66,6 +69,7 @@ type ConnectionsPayload = {
   error?: string;
   providers?: ProviderReadiness;
   connections?: ConnectionRow[];
+  hmacRoutes?: Array<{ mailbox: string; purpose: string; active: boolean; hmacOnly?: boolean }>;
 };
 
 function ReadinessFromProviders(providers: ProviderReadiness): ReadinessItem[] {
@@ -122,6 +126,9 @@ export function EmailConnectionsPanel() {
   const [testingSeat, setTestingSeat] = React.useState<string | null>(null);
   const [ensuringWebhook, setEnsuringWebhook] = React.useState<string | null>(null);
   const [data, setData] = React.useState<ConnectionsPayload | null>(null);
+  const [hmacMailbox, setHmacMailbox] = React.useState("");
+  const [hmacPurpose, setHmacPurpose] = React.useState<"intake" | "reply">("intake");
+  const [registeringHmac, setRegisteringHmac] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -247,6 +254,45 @@ export function EmailConnectionsPanel() {
     }
   }
 
+  async function registerHmacMailbox() {
+    const mailbox = hmacMailbox.trim();
+    if (!mailbox) {
+      toast({ title: "Mailbox required", description: "Enter the address adapters will POST to.", variant: "warning" });
+      return;
+    }
+    setRegisteringHmac(true);
+    try {
+      const res = await fetch("/api/email/connections", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "register_hmac_mailbox",
+          mailbox,
+          purpose: hmacPurpose,
+        }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+        mailbox?: string;
+      } | null;
+      toast({
+        title: json?.ok ? "HMAC mailbox registered" : "HMAC registration failed",
+        description: json?.ok
+          ? `${json.mailbox ?? mailbox} routes signed /api/webhooks/email-inbound to this workspace (no OAuth required).`
+          : json?.error,
+        variant: json?.ok ? "success" : "error",
+      });
+      if (json?.ok) setHmacMailbox("");
+      await load();
+    } catch {
+      toast({ title: "HMAC registration failed", description: "Network error.", variant: "error" });
+    } finally {
+      setRegisteringHmac(false);
+    }
+  }
+
   async function ensureGraphWebhook(connectionId: string) {
     setEnsuringWebhook(connectionId);
     try {
@@ -300,18 +346,80 @@ export function EmailConnectionsPanel() {
             <Eyebrow>Mailbox</Eyebrow>
             <h2 className="mt-1.5 text-xl font-semibold tracking-tight text-ink">Connect email</h2>
             <p className="mt-2 text-sm leading-relaxed text-muted">
-              Link Gmail or Outlook with OAuth. Outlook hiring needs arrive via Microsoft Graph webhook
-              push — no inbox polling. Use Enable webhook after connect if push was not created automatically.
+              Register a signed inbound webhook mailbox for hiring-need intake without OAuth, or link
+              Gmail/Outlook when ready. Graph push is optional — no inbox polling either way.
             </p>
           </div>
-          <Badge tone={connections.length ? "success" : "neutral"} size="sm" dot>
+          <Badge tone={connections.length || (data?.hmacRoutes?.length ?? 0) ? "success" : "neutral"} size="sm" dot>
             {connections.length
               ? `${connections.length} mailbox token${connections.length === 1 ? "" : "s"}`
-              : "Not connected"}
+              : data?.hmacRoutes?.length
+                ? `${data.hmacRoutes.length} HMAC route${data.hmacRoutes.length === 1 ? "" : "s"}`
+                : "Not connected"}
           </Badge>
         </div>
 
         {providers ? <SystemReadiness items={ReadinessFromProviders(providers)} /> : null}
+
+        {isAdmin && (
+          <div className="space-y-3 rounded-2xl border border-line/80 bg-canvas/40 p-4">
+            <div>
+              <h3 className="text-sm font-semibold text-ink">HMAC inbound mailbox</h3>
+              <p className="mt-1 text-xs text-muted">
+                Maps an address to this workspace for{" "}
+                <code className="rounded bg-ink/[0.06] px-1 font-mono text-[0.6875rem]">/api/webhooks/email-inbound</code>
+                {" "}(requires EMAIL_INBOUND_WEBHOOK_SECRET). No Connect Outlook needed.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-end gap-3">
+              <Field label="Mailbox" className="min-w-[16rem] flex-1">
+                <Input
+                  value={hmacMailbox}
+                  onChange={(e) => setHmacMailbox(e.target.value)}
+                  placeholder="talent@company.com"
+                  autoComplete="off"
+                />
+              </Field>
+              <Field label="Purpose" className="w-36">
+                <Select
+                  value={hmacPurpose}
+                  onChange={(e) => setHmacPurpose(e.target.value === "reply" ? "reply" : "intake")}
+                  options={[
+                    { value: "intake", label: "Intake" },
+                    { value: "reply", label: "Reply" },
+                  ]}
+                />
+              </Field>
+              <Button
+                size="sm"
+                leftIcon={<ShieldCheck className="h-4 w-4" />}
+                loading={registeringHmac}
+                disabled={!providers?.inboundWebhookSecret}
+                onClick={() => void registerHmacMailbox()}
+              >
+                Register HMAC mailbox
+              </Button>
+            </div>
+            {!providers?.inboundWebhookSecret ? (
+              <p className="text-xs text-muted">
+                EMAIL_INBOUND_WEBHOOK_SECRET is not set on this deployment — HMAC registration stays disabled.
+              </p>
+            ) : null}
+            {(data?.hmacRoutes?.length ?? 0) > 0 ? (
+              <ul className="space-y-1 text-xs text-ink-soft">
+                {data!.hmacRoutes!.map((r) => (
+                  <li key={`${r.mailbox}:${r.purpose}`}>
+                    <span className="font-medium text-ink">{r.mailbox}</span>
+                    {" · "}
+                    {r.purpose}
+                    {r.active ? " · active" : " · inactive"}
+                    {r.hmacOnly ? " · HMAC-only" : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        )}
 
         {isAdmin && (
           <div className="flex flex-wrap items-center gap-3">
@@ -343,7 +451,7 @@ export function EmailConnectionsPanel() {
               <p className="max-w-md text-xs text-muted">
                 {!providers.encryptionReady
                   ? "Token encryption missing (DATA_ENCRYPTION_KEY) — Connect Outlook stays disabled."
-                  : "Microsoft Graph OAuth env missing (MICROSOFT_CLIENT_ID / SECRET / REDIRECT_URI) — Connect Outlook stays disabled."}
+                  : "Microsoft Graph OAuth env missing (MICROSOFT_CLIENT_ID / SECRET / REDIRECT_URI) — Connect Outlook stays disabled. Use HMAC mailbox above for intake."}
               </p>
             ) : null}
           </div>
@@ -365,8 +473,8 @@ export function EmailConnectionsPanel() {
         ) : connections.length === 0 ? (
           <p className="text-xs text-muted">
             {providers && !providers.microsoftOAuth && !providers.gmailOAuth
-              ? "No mailbox linked — OAuth credentials are not configured on this deployment, so connect buttons stay disabled."
-              : "No mailbox linked yet. Connect Gmail or Outlook above — Aria creates a fleet seat if needed."}
+              ? "No OAuth mailbox linked — register an HMAC inbound mailbox above for hiring-need intake, or configure OAuth when ready."
+              : "No OAuth mailbox linked yet. Register HMAC intake above, or Connect Gmail/Outlook — Aria creates a fleet seat if needed."}
           </p>
         ) : (
           <ul className="space-y-2">

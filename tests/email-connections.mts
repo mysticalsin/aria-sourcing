@@ -225,6 +225,13 @@ const connectionsRoute = readFileSync("src/app/api/email/connections/route.ts", 
 ok("connections GET exists", /export async function GET/.test(connectionsRoute));
 ok("connections ensure_connect", /ensure_connect/.test(connectionsRoute));
 ok("connections register_inbound", /register_inbound/.test(connectionsRoute));
+ok("connections register_hmac_mailbox", /register_hmac_mailbox/.test(connectionsRoute));
+ok(
+  "connections HMAC route uses upsert_hmac_inbound_mailbox_route",
+  /upsert_hmac_inbound_mailbox_route/.test(connectionsRoute)
+    && /hmacRoutes/.test(connectionsRoute)
+    && /hmacOnly/.test(connectionsRoute),
+);
 ok("connections ensure_graph_webhook", /ensure_graph_webhook/.test(connectionsRoute));
 ok("connections ensureGraphMailSubscription", /ensureGraphMailSubscription/.test(connectionsRoute));
 ok(
@@ -319,6 +326,13 @@ ok(
 );
 ok("settings panel Enable webhook", /Enable webhook/.test(panel));
 ok("settings panel ensure_graph_webhook", /ensure_graph_webhook/.test(panel));
+ok(
+  "settings panel HMAC mailbox registration without OAuth",
+  /register_hmac_mailbox/.test(panel)
+    && /Register HMAC mailbox/.test(panel)
+    && /HMAC inbound mailbox/.test(panel)
+    && /No Connect Outlook needed/.test(panel),
+);
 ok(
   "settings panel Enable webhook when sub active but seat not live",
   /seatMode !== "live"/.test(panel) && /Repair live seat/.test(panel),

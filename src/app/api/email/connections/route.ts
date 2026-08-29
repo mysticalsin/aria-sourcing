@@ -37,6 +37,12 @@ const RegisterInboundSchema = z.object({
   purpose: z.enum(["reply", "intake"]).default("reply"),
 });
 
+const RegisterHmacMailboxSchema = z.object({
+  action: z.literal("register_hmac_mailbox"),
+  mailbox: z.string().min(3).max(320),
+  purpose: z.enum(["reply", "intake"]).default("intake"),
+});
+
 const EnsureGraphWebhookSchema = z.object({
   action: z.literal("ensure_graph_webhook"),
   connectionId: z.string().uuid(),
@@ -45,6 +51,7 @@ const EnsureGraphWebhookSchema = z.object({
 const BodySchema = z.discriminatedUnion("action", [
   EnsureConnectSchema,
   RegisterInboundSchema,
+  RegisterHmacMailboxSchema,
   EnsureGraphWebhookSchema,
 ]);
 
@@ -70,6 +77,7 @@ type RouteRow = {
  * List mailbox connections + provider readiness (no tokens).
  * POST ensure_connect creates/picks a seat and returns the OAuth authorize URL.
  * POST register_inbound upserts inbound_mailbox_routes for a connected seat.
+ * POST register_hmac_mailbox registers HMAC intake/reply routing without OAuth.
  * POST ensure_graph_webhook creates or renews a Microsoft Graph mail push subscription.
  */
 export async function GET(req: NextRequest) {
@@ -183,10 +191,22 @@ export async function GET(req: NextRequest) {
     };
   });
 
+  const oauthConnectionIds = new Set(((connRows ?? []) as ConnRow[]).map((c) => c.id));
+  const hmacRoutes = routes
+    .filter((r) => r.active && (!r.connection_id || !oauthConnectionIds.has(r.connection_id)))
+    .filter((r) => !connections.some((c) => c.inboundRoute?.mailbox === r.mailbox_address))
+    .map((r) => ({
+      mailbox: r.mailbox_address,
+      purpose: r.purpose,
+      active: r.active,
+      hmacOnly: !r.connection_id,
+    }));
+
   return NextResponse.json({
     ok: true,
     providers: emailProviderReadiness(),
     connections,
+    hmacRoutes,
     seats: seats.map((s) => ({
       id: s.id,
       name: s.name,
@@ -252,6 +272,9 @@ export async function POST(req: NextRequest) {
   }
   if (body.action === "ensure_graph_webhook") {
     return ensureGraphWebhook(wid as string, body.connectionId);
+  }
+  if (body.action === "register_hmac_mailbox") {
+    return registerHmacMailbox(supabase, wid as string, body.mailbox, body.purpose ?? "intake");
   }
   return registerInbound(supabase, wid as string, body.seatId, body.purpose ?? "reply");
 }
@@ -388,6 +411,57 @@ async function registerInbound(
     );
   }
   return NextResponse.json({ ok: true, routeId: result.route_id, purpose });
+}
+
+async function registerHmacMailbox(
+  supabase: NonNullable<Awaited<ReturnType<typeof getServerSupabase>>>,
+  workspaceId: string,
+  mailboxRaw: string,
+  purpose: "reply" | "intake",
+) {
+  const mailbox = normalizeMailboxAddress(mailboxRaw);
+  if (!mailbox || !mailbox.includes("@") || mailbox.length < 3) {
+    return NextResponse.json({ ok: false, error: "Enter a valid mailbox address." }, { status: 400 });
+  }
+
+  const { data: rpcResult, error: rpcErr } = await supabase.rpc("upsert_hmac_inbound_mailbox_route", {
+    p_mailbox: mailbox,
+    p_purpose: purpose,
+    p_workspace_id: null,
+  });
+  if (rpcErr) {
+    safeLog("upsert_hmac_inbound_mailbox_route error", {
+      message: rpcErr.message,
+      code: rpcErr.code,
+      workspaceId,
+    });
+    const missingFn =
+      /upsert_hmac_inbound_mailbox_route|function .* does not exist|42883/i.test(rpcErr.message ?? "")
+      || rpcErr.code === "42883";
+    return NextResponse.json(
+      {
+        ok: false,
+        error: missingFn
+          ? "HMAC mailbox registration requires migration 0073 on this database."
+          : "Failed to register HMAC inbound route.",
+      },
+      { status: missingFn ? 503 : 500 },
+    );
+  }
+  const result = rpcResult as { ok?: boolean; reason?: string; route_id?: string } | null;
+  if (!result?.ok) {
+    return NextResponse.json(
+      { ok: false, error: result?.reason ?? "Failed to register HMAC inbound route." },
+      { status: 409 },
+    );
+  }
+  return NextResponse.json({
+    ok: true,
+    routeId: result.route_id,
+    purpose,
+    mailbox,
+    hmacOnly: true,
+  });
 }
 
 async function ensureGraphWebhook(workspaceId: string, connectionId: string) {
