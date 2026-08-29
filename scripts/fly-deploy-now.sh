@@ -150,11 +150,12 @@ if [ -n "$machines_json" ]; then
       const group = machines.filter((m) => m?.config?.metadata?.fly_process_group === g);
       const started = group.find((m) => m.state === "started");
       if (started) { process.stdout.write(started.id); process.exit(0); }
-      const standbyIds = new Set(
-        group.flatMap((m) => Array.isArray(m?.config?.standbys) ? m.config.standbys : []),
-      );
-      const primary = group.find((m) => m.state !== "started" && !standbyIds.has(m.id))
-        || group.find((m) => m.state !== "started");
+      // Fly standby machines list the primary id in config.standbys — prefer a
+      // non-standby (empty/absent standbys) as the active worker.
+      const primary = group.find((m) => {
+        const standbys = m?.config?.standbys;
+        return (!Array.isArray(standbys) || standbys.length === 0);
+      }) || group[0];
       if (primary?.id) process.stdout.write(primary.id);
     ' "$group")"
     if [ -n "$mid" ]; then
