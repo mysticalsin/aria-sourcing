@@ -4643,12 +4643,21 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         }
       } else if (integ.id === "int_heyreach") {
         const t0 = Date.now();
+        const hey = s.settings.heyreach;
+        const apiReady = Boolean(hey?.apiKeyId?.trim() && hey?.campaignId?.trim());
         const server = findHeyReachMcpServer(s.settings.mcpServers);
-        if (!server) {
+        if (!server && !apiReady) {
           result = {
             ok: false,
             latencyMs: Date.now() - t0,
-            message: "HeyReach MCP: not connected. Use Connect HeyReach MCP on Settings → Integrations.",
+            message:
+              "HeyReach: add API key + campaign id (or Connect MCP) on Settings → LinkedIn stack.",
+          };
+        } else if (!server && apiReady) {
+          result = {
+            ok: true,
+            latencyMs: Date.now() - t0,
+            message: `HeyReach API configured (campaign ${hey?.campaignId}). MCP optional for agent tools.`,
           };
         } else {
           try {
@@ -4656,10 +4665,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                url: server.url,
-                apiKeyId: server.apiKeyId,
-                authStyle: server.authStyle,
-                authQueryParam: server.authQueryParam,
+                url: server!.url,
+                apiKeyId: server!.apiKeyId,
+                authStyle: server!.authStyle,
+                authQueryParam: server!.authQueryParam,
               }),
             });
             const out = (await testRes.json().catch(() => null)) as {
@@ -4671,7 +4680,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
               ok: Boolean(out?.ok),
               latencyMs: Date.now() - t0,
               message: out?.ok
-                ? `HeyReach MCP connected (${out.toolCount ?? server.toolCount ?? 0} tools).`
+                ? `HeyReach MCP connected (${out.toolCount ?? server!.toolCount ?? 0} tools).${
+                    apiReady ? ` API campaign ${hey?.campaignId}.` : " Add campaign id for LinkedIn send."
+                  }`
                 : out?.error ?? "HeyReach MCP validation failed.",
             };
           } catch {
@@ -5018,7 +5029,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           return { ok: false, reason: "Verify sender domain (SPF, DMARC, or DKIM) first." };
         }
       } else if (seat.provider === "LinkedIn Vendor API" || seat.provider === "HeyReach") {
-        // Vendor / HeyReach seats may go live without mailbox; keys are env-side.
+        // Vendor / HeyReach seats may go live without mailbox; keys live in
+        // Settings vault (heyreach) and/or optional Fly HEYREACH_* env.
       } else if (!seat.connectedAccount?.trim()) {
         // Soft: allow live with empty label — Settings connect stamps connectedAccount.
       }
@@ -5038,7 +5050,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             type: "system",
             title: `Agent set LIVE: ${seat.name}`,
             notes: isLinkedIn
-              ? "LinkedIn seat live for assisted-manual or vendor messaging (no mailbox SPF required)."
+              ? seat.provider === "HeyReach"
+                ? "HeyReach seat live — LinkedIn delivery uses Settings API key + campaign id (or Fly HEYREACH_*)."
+                : "LinkedIn seat live for assisted-manual or vendor messaging (no mailbox SPF required)."
               : "Seat will send via the official provider API within guardrails.",
             outcome: "Live",
             campaignId: null,

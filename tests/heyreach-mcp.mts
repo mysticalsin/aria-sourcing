@@ -63,5 +63,9 @@ ok(
   settings.includes("LinkedInOutreachStack"),
 );
 
+const guide = readFileSync("src/components/settings/setup-guide-panel.tsx", "utf8");
+ok("setup guide includes HeyReach step", /Add HeyReach \(LinkedIn\)/.test(guide) && /heyreach-settingsReady|heyReachSettingsReady/.test(guide));
+ok("setup guide links LinkedIn stack anchor", /linkedin-outreach-stack/.test(guide));
+
 console.log(`RESULT heyreach-mcp: ${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);

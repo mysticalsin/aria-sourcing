@@ -109,6 +109,7 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
       starRatingThresholds: parsed.settings.starRatingThresholds ?? defs.starRatingThresholds,
       // STATE_VERSION 11 — Aria management API URL.
       hermesWebUrl: parsed.settings.hermesWebUrl ?? defs.hermesWebUrl ?? "",
+      heyreach: parsed.settings.heyreach ?? defs.heyreach,
     },
     seats: (parsed.seats ?? []).map((seat) => ({
       ...seat,

@@ -65,12 +65,14 @@ flyctl secrets set -a aria-mantu-app ARIA_LOOP_KILL_SWITCH='false'
 # flyctl secrets set -a aria-mantu-app CRON_SECRET='PLACEHOLDER_SAME_AS_FLY_CRON_SECRET'
 
 # === LinkedIn via HeyReach (REI autopilot LinkedIn send) ===
-# Required for autopilot / Approve→Send to queue LinkedIn through HeyReach REST
-# (migration 0076 + live HeyReach fleet seat). MCP alone does not deliver.
+# Preferred: Settings → Integrations → LinkedIn stack → paste API key + campaign id
+# (encrypted vault; no Fly CLI). Optional: Connect HeyReach MCP on the same panel.
+# Fly secrets remain an optional override for shared deploy-level keys:
 # flyctl secrets set -a aria-mantu-app \
 #   HEYREACH_API_KEY='PLACEHOLDER_HEYREACH_PUBLIC_API_KEY' \
 #   HEYREACH_CAMPAIGN_ID='PLACEHOLDER_ACTIVE_CAMPAIGN_ID'
 # Optional: HEYREACH_ACCOUNT_ID='PLACEHOLDER_LINKEDIN_ACCOUNT_ID'
+# Also needs migration 0076 + live HeyReach fleet seat (auto-created on Save/Connect).
 
 # === aria-mantu-auth (Entra SSO / GoTrue Azure) — OPTIONAL for Graph E2E PASS ===
 # Only needed for /login "Sign in with Microsoft". Graph Connect Outlook works

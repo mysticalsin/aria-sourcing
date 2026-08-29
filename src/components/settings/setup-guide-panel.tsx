@@ -7,6 +7,7 @@ import { Badge, Card, CardContent, Button } from "@/components/ui";
 import {
   useDefaultModels,
   useLlmProviders,
+  useMcpServers,
   useSavedModels,
   useSeats,
   useSettings,
@@ -14,7 +15,9 @@ import {
 import { seatHasOutlookMailbox } from "@/lib/outlook-needs";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { cn } from "@/lib/utils";
-import { Check, Circle, Cpu, Inbox, Power, Rocket } from "lucide-react";
+import { heyReachSettingsReady } from "@/lib/heyreach-config";
+import { findHeyReachMcpServer, heyReachMcpConnected } from "@/lib/heyreach-mcp";
+import { Check, Circle, Cpu, Inbox, Link2, Power, Rocket } from "lucide-react";
 
 function seatHasOauthMailbox(seat: {
   provider?: string;
@@ -42,11 +45,15 @@ type Step = {
 export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
   const seats = useSeats();
   const settings = useSettings();
+  const mcpServers = useMcpServers();
   const providers = useLlmProviders();
   const models = useSavedModels();
   const defaults = useDefaultModels();
 
   const outlookOk = seats.some(seatHasOauthMailbox);
+  const heyReachOk =
+    heyReachSettingsReady(settings.heyreach) ||
+    heyReachMcpConnected(findHeyReachMcpServer(mcpServers));
   const sourcingModel = defaults.sourcing
     ? models.find((m) => m.id === defaults.sourcing)
     : undefined;
@@ -68,6 +75,15 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
       ctaLabel: outlookOk ? "Manage mailboxes" : "Connect email",
       href: "/settings?tab=integrations",
       icon: <Inbox className="h-4 w-4" aria-hidden />,
+    },
+    {
+      id: "heyreach",
+      title: "Add HeyReach (LinkedIn)",
+      body: "Paste your HeyReach API key + campaign id on the LinkedIn stack (optional: Connect MCP for agent tools). No Fly CLI required.",
+      done: heyReachOk,
+      ctaLabel: heyReachOk ? "Manage HeyReach" : "Add HeyReach",
+      href: "/settings?tab=integrations#linkedin-outreach-stack",
+      icon: <Link2 className="h-4 w-4" aria-hidden />,
     },
     {
       id: "llm",
@@ -98,21 +114,21 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
     },
   ];
 
-  const doneCount = steps.filter((s) => s.done).length;
+  const foundationsReady = (outlookOk ? 1 : 0) + (heyReachOk ? 1 : 0) + (llmOk ? 1 : 0);
 
   return (
     <Card className="overflow-hidden border-tangerine/20 bg-gradient-to-br from-surface via-surface to-tangerine/[0.06]">
       <CardContent className="space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold text-ink">Plug and play — four steps</p>
+            <p className="text-sm font-semibold text-ink">Plug and play — five steps</p>
             <p className="mt-1 text-xs text-muted">
               Stupid-simple path from empty workspace to live sourcing. Dry-run stays{" "}
               {settings.dryRunMode ? "on" : "off"} until you flip it under Approval & Compliance.
             </p>
           </div>
-          <Badge tone={doneCount >= 2 ? "success" : "electric"} size="sm">
-            {doneCount}/2 foundations ready
+          <Badge tone={foundationsReady >= 2 ? "success" : "electric"} size="sm">
+            {foundationsReady}/3 foundations ready
           </Badge>
         </div>
 
