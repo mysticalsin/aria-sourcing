@@ -34,7 +34,21 @@ else
   echo "NOTE: Fly LLM auth ok — critics path stays strict under PARTIAL M365"
 fi
 case "$deploy_status" in
-  tip_live) ;;
+  tip_live|tip_ahead_docs)
+    # tip_ahead_docs: app SHA on Fly matches last app commit; only _relay/docs tip-ahead — not stale.
+    if [ "$deploy_status" = "tip_ahead_docs" ]; then
+      echo "NOTE: tip_ahead_docs — Fly app matches live app tip; docs/_relay tip-ahead does not need redeploy"
+    fi
+    ;;
+  tip_ahead_app)
+    flags+=(ARIA_ALLOW_STALE_FLY_E2E=1)
+    echo "NOTE: tip_ahead_app — live Fly lags tip on app/migration changes; remint + deploy:"
+    echo "      bash scripts/print-fly-deploy-confirm.sh → /tmp/owner-deploy-confirm.env"
+    if [ -n "$live_mig" ] && [ -n "$tip_mig" ] && [ "$live_mig" != "$tip_mig" ]; then
+      echo "      migration pending: live ${live_mig} → tip ${tip_mig}"
+    fi
+    echo "      bash scripts/fly-enterprise-golive-when-ready.sh"
+    ;;
   confirm_ready_run_golive)
     flags+=(ARIA_ALLOW_STALE_FLY_E2E=1)
     echo "NOTE: deploy confirm matches tip but Fly is not live yet — run:"
@@ -64,7 +78,7 @@ echo
 env "${flags[@]}" bash "$repo/e2e-workflow-test.sh"
 rc=$?
 
-if [ "$deploy_status" != "tip_live" ]; then
+if [ "$deploy_status" != "tip_live" ] && [ "$deploy_status" != "tip_ahead_docs" ]; then
   echo
   echo "After owner golive (deploy_status=tip_live): rerun this script — drop stale flag; step 3c should PASS with provenance=live."
 fi

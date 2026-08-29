@@ -64,10 +64,27 @@ echo "confirm_matches_tip=${CONFIRM_MATCH}"
 echo "confirm_stale_for_tip=${CONFIRM_STALE}"
 echo "m365_secrets_missing=${M365_MISSING}"
 echo "llm_auth=${LLM_AUTH}"
-if [ -n "$LIVE" ] && [[ "$LIVE" == "$TIP"* ]]; then
-  echo "deploy_status=tip_live"
+
+# Classify tip vs live without secrets.
+# - tip_live: SHAs match
+# - tip_ahead_docs: live is ancestor of tip AND tip..live has no Fly-image-affecting paths
+#   (relay/docs/tests/ops scripts only — no src/, migrations, workers, package, fly.toml)
+# - tip_ahead_app: live is ancestor but tip has app/image changes (deploy required)
+# - confirm_ready_run_golive: owner confirm matches tip; run golive
+# - stale_owner_remint_required: otherwise
+deploy_status="stale_owner_remint_required"
+if [ -n "$LIVE" ] && [[ "$LIVE" == "$TIP"* || "$TIP" == "$LIVE"* ]]; then
+  deploy_status="tip_live"
+elif [ -n "$LIVE" ] && git cat-file -e "${LIVE}^{commit}" 2>/dev/null \
+  && git merge-base --is-ancestor "$LIVE" "$TIP" 2>/dev/null; then
+  changed="$(git diff --name-only "$LIVE" "$TIP" 2>/dev/null || true)"
+  # Paths that land in the Fly app image / runtime workers / E2E against live build.
+  if printf '%s\n' "$changed" | grep -qE '^(src/|supabase/migrations/|public/|package(-lock)?\.json$|fly\.|Dockerfile|next\.config|e2e-workflow-test\.sh$|scripts/sourcing-loop-worker|scripts/.*worker\.|scripts/fly-deploy|scripts/fly-enterprise)'; then
+    deploy_status="tip_ahead_app"
+  else
+    deploy_status="tip_ahead_docs"
+  fi
 elif [ "$CONFIRM_MATCH" = "yes" ]; then
-  echo "deploy_status=confirm_ready_run_golive"
-else
-  echo "deploy_status=stale_owner_remint_required"
+  deploy_status="confirm_ready_run_golive"
 fi
+echo "deploy_status=${deploy_status}"
