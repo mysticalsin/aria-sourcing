@@ -5,6 +5,7 @@
 #
 # Unblock triggers (any one):
 #   - az account show succeeds (owner completed device-code MFA)
+#   - /tmp/owner-azure-app-id or ARIA_AZURE_APP_ID (agent configures + mints secret)
 #   - /tmp/owner-microsoft.env Graph-minimum (Entra PLACEHOLDER OK)
 #   - /tmp/owner-deploy-confirm.env (or production-readiness/.owner-deploy-confirm.env)
 #     with a real ARIA_PROD_DEPLOY_CONFIRM (tip deploy for Graph/ready even if
@@ -36,6 +37,10 @@ has_microsoft_drop() {
   # Graph-minimum: MICROSOFT_CLIENT_ID/SECRET (+ TENANT) via drop-zone or exports.
   # Entra PLACEHOLDER lines are OK (owner_ms_has_credentials / Graph-only PASS).
   owner_ms_has_credentials
+}
+
+has_azure_app_id_drop() {
+  owner_ms_has_azure_app_id
 }
 
 has_deploy_confirm_drop() {
@@ -97,6 +102,17 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       exit 0
     fi
     log "Golive incomplete after microsoft apply; will retry."
+  elif has_azure_app_id_drop; then
+    rm -f /tmp/az-create-mantu-graph-app.noperm
+    log "owner-azure-app-id present — configure + mint + apply via probe --apply"
+    if bash "$repo/scripts/probe-m365-unblock.sh" --apply; then
+      if run_golive; then
+        exit 0
+      fi
+      log "Graph secrets applied from app id; golive incomplete — Connect Outlook may still be needed."
+    else
+      log "WARN: probe --apply from azure-app-id failed; will retry."
+    fi
   elif has_deploy_confirm_drop; then
     log "deploy-confirm present — tip golive (Microsoft secrets may still be missing)"
     if run_golive; then
@@ -105,14 +121,19 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     log "Golive incomplete with confirm present; will retry."
   elif az account show >/dev/null 2>&1; then
     if [ -f /tmp/az-create-mantu-graph-app.noperm ]; then
-      if [ -n "${ARIA_AZURE_APP_ID:-}" ]; then
+      if owner_ms_has_azure_app_id; then
+        log "noperm but azure app id set — configuring existing Entra app"
+        if bash "$repo/scripts/fly-m365-from-azure-app-id.sh"; then
+          if run_golive; then exit 0; fi
+        fi
+      elif [ -n "${ARIA_AZURE_APP_ID:-}" ]; then
         log "noperm but ARIA_AZURE_APP_ID set — configuring existing Entra app"
         if bash "$repo/scripts/az-configure-existing-graph-app.sh" --apply; then
           if run_golive; then exit 0; fi
         fi
       fi
       if [ $(( $(date +%s) % 300 )) -lt "$SLEEP_SEC" ]; then
-        log "az OK but cannot create apps (noperm) — need ARIA_AZURE_APP_ID or /tmp/owner-microsoft.env"
+        log "az OK but cannot create apps (noperm) — need /tmp/owner-azure-app-id or /tmp/owner-microsoft.env"
         bash "$repo/scripts/print-fly-missing-secrets.sh" 2>/dev/null | grep -E 'MISSING|missing' | tee -a "$LOG" || true
         bash "$repo/scripts/print-fly-deploy-confirm.sh" 2>/dev/null | head -6 | tee -a "$LOG" || true
       fi
@@ -131,7 +152,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     if [ $(( $(date +%s) % 300 )) -lt "$SLEEP_SEC" ]; then
       print_device_code
       bash "$repo/scripts/print-fly-missing-secrets.sh" 2>/dev/null | grep -E 'MISSING|missing' | tee -a "$LOG" || true
-      log "Waiting for /tmp/owner-deploy-confirm.env and/or /tmp/owner-microsoft.env"
+      log "Waiting for /tmp/owner-azure-app-id and/or /tmp/owner-microsoft.env and/or deploy-confirm"
     fi
   fi
   sleep "$SLEEP_SEC"

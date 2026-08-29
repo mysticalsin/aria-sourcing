@@ -913,6 +913,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /ARIA_AZURE_APP_ID/.test(readFileSync("scripts/az-configure-existing-graph-app.sh", "utf8"))
         && existsSync("scripts/fly-wait-entra-and-golive.sh")
         && /az-create-mantu-graph-app|az-configure-existing-graph-app/.test(readFileSync("scripts/fly-wait-entra-and-golive.sh", "utf8"))
+        && /owner-azure-app-id|has_azure_app_id_drop/.test(readFileSync("scripts/fly-wait-entra-and-golive.sh", "utf8"))
         && /will not invent|Never invents/.test(readFileSync("scripts/fly-wait-entra-and-golive.sh", "utf8"))
         && /has_deploy_confirm_drop/.test(readFileSync("scripts/fly-wait-entra-and-golive.sh", "utf8"))
         && /ARIA_SKIP_AZ_DEVICE_REFRESH/.test(readFileSync("scripts/fly-wait-entra-and-golive.sh", "utf8"))

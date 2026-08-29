@@ -2,7 +2,7 @@
 
 **Blocker ID:** M365-FLY-6  
 **Production:** https://aria-mantu-app.fly.dev only  
-**Updated:** 2026-08-29T09:20Z
+**Updated:** 2026-08-29T12:00Z
 
 ## Graph secrets required for E2E PASS (Graph-minimum)
 
@@ -25,7 +25,7 @@ Inventory: `bash scripts/print-fly-missing-secrets.sh` → `graph_secrets_missin
 **Canonical Entra tenant (Mantu Group Sandbox):** `ce57ebe3-a63d-4708-b5cf-c274b48bd26c`  
 Do **not** use BAW SAS (`864aa37f-…`) for Fly Mantu Graph/SSO.
 
-Entra reprobe 2026-08-28: **zero** apps with `aria-mantu` or `*.fly.dev` redirect URIs. Owner must create the app (agent can read apps but cannot create/update).
+Entra scan: **zero** apps with `aria-mantu` or `*.fly.dev` redirect URIs. Owner must create the app (agent can read apps but cannot create). Reject PLACEHOLDER_* and monotonous demo UUIDs (`11111111-…`).
 
 `GOTRUE_EXTERNAL_AZURE_URL=https://login.microsoftonline.com/ce57ebe3-a63d-4708-b5cf-c274b48bd26c/v2.0`
 
@@ -38,26 +38,36 @@ Marker: `/tmp/az-create-mantu-graph-app.noperm`
 
 ```bash
 bash scripts/run-enterprise-e2e-partial.sh
-# → PARTIAL · 58 pass / 0 fail / 2 warn (Microsoft only) on live e5c37c1 / 0074
-# classifier=model PASS; Hermes/vault LLM OK despite llm_auth=dead
+# → PARTIAL · 58 pass / 0 fail / 2 warn (Microsoft only) on live f532707 / 0074
+# classifier=model PASS; clean approve (no disclosure-comp retries); Hermes/vault OK
 ```
 
 Strict E2E (no partial flag) correctly **FAIL**s on: `microsoftOAuth=false` + step 6b (no Graph seat).
 
-## Owner action
+## Owner action (minimal — recommended)
 
 ```bash
 bash scripts/print-m365-owner-portal-checklist.sh
-bash scripts/probe-m365-unblock.sh              # status (Graph bucket)
-bash scripts/probe-m365-unblock.sh --apply      # when drop-zone or env exports ready
-# Option A — existing app:
-export ARIA_AZURE_APP_ID='<client-id>'
-bash scripts/az-configure-existing-graph-app.sh --apply
-# Option B — paste drop-zone (Graph-minimum; Entra lines optional):
-cp production-readiness/.owner-microsoft.env.example /tmp/owner-microsoft.env
-# edit real MICROSOFT_CLIENT_ID/SECRET/TENANT_ID (Entra PLACEHOLDER OK for Graph PASS)
-bash scripts/fly-apply-owner-microsoft-secrets.sh   # auto-runs post-m365-secrets-golive
+# 1) Azure Portal → New registration: ARIA Mantu Graph (Fly), single-tenant
+# 2) Copy Application (client) ID only:
+echo '<application-client-id>' > /tmp/owner-azure-app-id
+# 3) Agent finishes redirects + Graph perms + secret mint + Fly apply:
+bash scripts/probe-m365-unblock.sh --apply
+# expect RESULT: applied-ok-from-azure-app-id + microsoftOAuth=true
+# 4) Settings → Connect Outlook → Enable webhook (Calendars + OnlineMeetings)
+bash scripts/verify-m365-ready.sh   # RESULT: PASS
 ```
 
-Then Settings → Connect Outlook (grant **Calendars.ReadWrite** + **OnlineMeetings.ReadWrite**, mode=live) → Enable Graph webhook → `bash scripts/verify-m365-ready.sh`  
-Verifier: Graph secrets · microsoftOAuth · live seat (webhook + Calendars + OnlineMeetings) · Entra/LLM WARN-only · strict E2E (incl. **6b** Teams)
+### Alternatives
+
+```bash
+# Full secrets drop-zone:
+cp production-readiness/.owner-microsoft.env.example /tmp/owner-microsoft.env
+# edit real MICROSOFT_CLIENT_ID/SECRET/TENANT_ID
+bash scripts/probe-m365-unblock.sh --apply
+
+# Or export ARIA_AZURE_APP_ID and:
+bash scripts/fly-m365-from-azure-app-id.sh
+```
+
+Waiter (tmux-safe): `bash scripts/fly-wait-entra-and-golive.sh` also watches `/tmp/owner-azure-app-id`.
