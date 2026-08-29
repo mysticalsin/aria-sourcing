@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
-import { SkeletonCard } from "@/components/ui";
+import { EmptyState } from "@/components/ui";
 import { ApplicantInbox } from "@/components/tania/applicant-inbox";
 import { useHydrated } from "@/lib/store";
 import { ExternalLink } from "lucide-react";
@@ -29,11 +29,10 @@ export default function ApplicantsPage() {
       <HydrationGate
         hydrated={hydrated}
         fallback={
-          <div className="space-y-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <SkeletonCard key={i} />
-            ))}
-          </div>
+          <EmptyState
+            title="Loading applicants…"
+            description="Applicant inbox appears after workspace hydrate — no placeholder rows."
+          />
         }
       >
         <ApplicantInbox />

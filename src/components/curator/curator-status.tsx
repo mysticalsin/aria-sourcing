@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Card, CardContent, Eyebrow, Badge, SkeletonCard } from "@/components/ui";
+import { Card, CardContent, Eyebrow, Badge, EmptyState } from "@/components/ui";
 import { useSettings, useMemory } from "@/lib/store";
 import { hermesRuntimeAvailable } from "@/lib/ai/hermes-runtime";
 import { Server } from "lucide-react";
@@ -119,7 +119,10 @@ export function CuratorStatus() {
           </Badge>
         </div>
         {loading ? (
-          <SkeletonCard />
+          <EmptyState
+            title="Loading curator…"
+            description="Curator state loads from the Aria runtime — no placeholder status."
+          />
         ) : error || !state ? (
           <p className="text-xs text-muted">Could not reach the Aria runtime.</p>
         ) : (

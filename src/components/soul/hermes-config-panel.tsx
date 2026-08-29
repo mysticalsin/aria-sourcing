@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Card, CardContent, Eyebrow, Badge, SkeletonCard } from "@/components/ui";
+import { Card, CardContent, Eyebrow, Badge, EmptyState } from "@/components/ui";
 import { useSettings, useSeats, useGuardrails } from "@/lib/store";
 import { getHermesConfig, hermesRuntimeAvailable } from "@/lib/ai/hermes-runtime";
 import { Server } from "lucide-react";
@@ -81,7 +81,10 @@ export function HermesConfigPanel() {
           <Badge tone="success" size="sm" dot>Live</Badge>
         </div>
         {loading ? (
-          <SkeletonCard />
+          <EmptyState
+            title="Loading config…"
+            description="Aria runtime config loads live — no placeholder JSON."
+          />
         ) : !config ? (
           <p className="text-xs text-muted">Could not load config from hermes-agent.</p>
         ) : (

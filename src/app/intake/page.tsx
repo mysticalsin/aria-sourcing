@@ -1090,20 +1090,9 @@ export default function IntakePage() {
 
 function IntakeFallback() {
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2" aria-hidden>
-      <div className="card-surface space-y-4 p-6">
-        <div className="skeleton h-4 w-1/3 rounded-xl" />
-        <div className="skeleton h-48 w-full rounded-2xl" />
-        <div className="skeleton h-36 w-full rounded-2xl" />
-        <div className="skeleton h-11 w-1/2 rounded-full" />
-      </div>
-      <div className="card-surface space-y-4 p-6">
-        <div className="skeleton h-4 w-1/3 rounded-xl" />
-        <div className="skeleton h-11 w-full rounded-2xl" />
-        <div className="skeleton h-11 w-full rounded-2xl" />
-        <div className="skeleton h-11 w-full rounded-2xl" />
-        <div className="skeleton h-40 w-full rounded-2xl" />
-      </div>
-    </div>
+    <EmptyState
+      title="Loading intake…"
+      description="Hiring-need parser appears after workspace hydrate — no placeholder panels."
+    />
   );
 }

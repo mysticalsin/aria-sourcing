@@ -6,7 +6,7 @@ import { useHydrated, useSeats, useChats, useActions, useSettings } from "@/lib/
 import { ChatList } from "@/components/chat/chat-list";
 import { ChatThreadView } from "@/components/chat/chat-thread-view";
 import { HydrationGate, PageHeader } from "@/components/app/page-header";
-import { SkeletonCard, Card, CardContent, Eyebrow, Badge, Button } from "@/components/ui";
+import { EmptyState, Card, CardContent, Eyebrow, Badge, Button } from "@/components/ui";
 import { getHermesSessions, hermesRuntimeAvailable } from "@/lib/ai/hermes-runtime";
 import { MessageSquare, Server } from "lucide-react";
 
@@ -73,10 +73,10 @@ export default function ChatPage() {
   }
 
   const fallback = (
-    <div className="space-y-4">
-      <SkeletonCard />
-      <SkeletonCard />
-    </div>
+    <EmptyState
+      title="Loading chat…"
+      description="Agent threads appear after workspace hydrate — no placeholder panes."
+    />
   );
 
   return (

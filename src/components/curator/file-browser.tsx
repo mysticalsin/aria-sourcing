@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Card, CardContent, Eyebrow, Badge, Button, SkeletonCard } from "@/components/ui";
+import { Card, CardContent, Eyebrow, Badge, Button, EmptyState } from "@/components/ui";
 import { useSettings, useSeats } from "@/lib/store";
 import { hermesRuntimeAvailable } from "@/lib/ai/hermes-runtime";
 import type { AgentSeat } from "@/lib/types";
@@ -193,7 +193,10 @@ export function FileBrowser() {
           </Button>
         )}
         {loading ? (
-          <SkeletonCard />
+          <EmptyState
+            title="Loading files…"
+            description="Aria file listing loads from the runtime — no placeholder browser."
+          />
         ) : error ? (
           <p className="text-xs text-muted">Could not reach the Aria runtime.</p>
         ) : !listing ? (

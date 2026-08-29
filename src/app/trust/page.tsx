@@ -1,7 +1,7 @@
 "use client";
 
 import { ShieldCheck } from "lucide-react";
-import { Badge, SkeletonCard } from "@/components/ui";
+import { Badge, EmptyState } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { RoiCalculator } from "@/components/trust/roi-calculator";
 import { CompliancePosture } from "@/components/trust/compliance-posture";
@@ -40,15 +40,10 @@ export default function TrustPage() {
       <HydrationGate
         hydrated={hydrated}
         fallback={
-          <div className="space-y-6">
-            <SkeletonCard className="h-[420px]" />
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <SkeletonCard className="h-44" />
-              <SkeletonCard className="h-44" />
-              <SkeletonCard className="h-44" />
-              <SkeletonCard className="h-44" />
-            </div>
-          </div>
+          <EmptyState
+            title="Loading trust…"
+            description="ROI and compliance panels appear after workspace hydrate — no placeholder cards."
+          />
         }
       >
         <div className="flex flex-col gap-8">

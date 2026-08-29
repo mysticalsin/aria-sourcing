@@ -1,34 +1,33 @@
 ---
 project: MSourcing / ARIA
-shift: 317
+shift: 318
 agent: cursor-cloud
-updated: 2026-08-29T00:13Z
-status: microsoft-deferred-non-ms-honesty
+updated: 2026-08-29T00:22Z
+status: microsoft-deferred-empty-state-sweep
 ---
 
-# Handoff — Shift 317
+# Handoff — Shift 318
 
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft (supersedes #29)
-- **Tip:** ee0818b · Live Fly `fc8b54a` / **0071** (tip **0072**)
-- **Audit:** **64/64** · **Gate:** green (`npx tsc --noEmit && npm test`)
-- **Microsoft / M365:** **DEFERRED by owner** — no Entra/Graph secrets, no Outlook connect, no `verify-m365-ready` / strict M365 E2E
-- **LLM:** `llm_auth=dead` (only pursue if owner asks)
-- Non-MS honesty: LinkedIn always manual; PARTIAL requires inbound webhook; EmptyState hydrate on campaigns/candidates/replies/funnel
+- **Tip:** pending-commit · Live Fly `fc8b54a` / **0071** (tip **0072**)
+- **Audit:** **64/64** · **Gate:** green
+- **Microsoft / M365:** **DEFERRED by owner**
+- **CI:** GHA jobs fail with `steps: []` / 0ms billable — **ignore** (Fly only)
+- **LLM:** `llm_auth=dead`
+- App hydrate fallbacks: EmptyState across recruiting + system surfaces (no SkeletonCard collage)
 
 ## Done this shift
 
-1. LinkedIn dry-run → always `Pending Manual Send` (`planOutreachApprovalDelivery`); UI `approvedPendingSend` excludes LinkedIn
-2. PARTIAL E2E fails closed without `inboundWebhookSecret` (HMAC ≠ Graph)
-3. EmptyState hydrate: campaigns, campaigns/[id], candidates (+ Suspense), replies, funnel
-4. Audit pins for LinkedIn / PARTIAL webhook / Loading * EmptyStates; restored `print-fly-deploy-confirm` + step 3c PASS phrases → **64/64**
-5. Gate green
+1. Confirmed CI failure on `72df09e` is empty-steps noise (all 7 jobs `steps: []`)
+2. EmptyState hydrate sweep: intake, launch, dashboard, applicants, winlog, skills, trust, chat, floor, sessions, replay, reports, vivier, memory, curator, soul + runtime load panels
+3. Audit pins for Loading * strings; gate green **64/64**
 
 ## Blockers
 
-- Full objective strict PASS still needs owner-reopened Microsoft/M365 + live LLM (deferred)
-- Live Fly behind tip migration **0072**; deploy-confirm remint only if owner asks
+- Strict enterprise PASS still needs owner-reopened Microsoft/M365 + live LLM
+- Deploy tip **0072** needs owner deploy-confirm remint
 
 ## Next steps
 
@@ -56,12 +55,11 @@ ARIA_ALLOW_PARTIAL_M365_E2E=1 ARIA_ALLOW_PARTIAL_LLM_E2E=1 bash e2e-workflow-tes
 
 - Production = Fly only; ignore Vercel/GHA empty-steps
 - PR #36 only (supersedes #29)
-- **2026-08-29: Owner — don’t do the Microsoft part** (no Entra/Graph secrets apply, no Outlook connect chase, no strict M365 gate until re-opened)
-- LinkedIn is always assisted-manual (`Pending Manual Send`) in dry-run and live — never Approved + Send now
-- PARTIAL E2E still requires `inboundWebhookSecret` (HMAC intake ≠ Graph)
-- Loop live book path is `confirm-calendar-book`; propose cron stays dry-run
+- **2026-08-29: Owner — don’t do the Microsoft part**
+- LinkedIn always assisted-manual; PARTIAL still requires inboundWebhookSecret
+- Loop live book = `confirm-calendar-book`; propose cron dry-run
 
 ## Watch out
 
 - HANDOFF must keep “expect step 3c PASS” / “step 3c should show”
-- Do not re-arm `m365-secrets-reprobe` or restart Microsoft watcher unless owner asks
+- Do not re-arm `m365-secrets-reprobe` unless owner asks

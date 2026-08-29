@@ -13,8 +13,6 @@ import {
   CardTitle,
   Eyebrow,
   EmptyState,
-  SkeletonCard,
-  Skeleton,
   useToast,
 } from "@/components/ui";
 import { HydrationGate } from "@/components/app/page-header";
@@ -63,7 +61,15 @@ import {
 
 const FunnelChart = dynamic(
   () => import("@/components/charts/funnel-chart").then((mod) => mod.FunnelChart),
-  { ssr: false, loading: () => <Skeleton className="h-[300px] w-full rounded-2xl" /> },
+  {
+    ssr: false,
+    loading: () => (
+      <EmptyState
+        title="Loading funnel chart…"
+        description="Chart renders after client bundle load — no shimmer placeholder."
+      />
+    ),
+  },
 );
 
 export default function DashboardPage() {
@@ -423,27 +429,9 @@ export default function DashboardPage() {
 
 function DashboardFallback() {
   return (
-    <div className="space-y-8" aria-hidden>
-      <Skeleton className="h-20 w-full rounded-3xl" />
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <SkeletonCard key={i} />
-        ))}
-      </div>
-      <Skeleton className="h-24 w-full rounded-3xl" />
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
-          <SkeletonCard />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <SkeletonCard />
-            <SkeletonCard />
-          </div>
-        </div>
-        <div className="space-y-6">
-          <SkeletonCard />
-          <SkeletonCard />
-        </div>
-      </div>
-    </div>
+    <EmptyState
+      title="Loading dashboard…"
+      description="KPIs and campaign activity appear after workspace hydrate — no placeholder charts."
+    />
   );
 }

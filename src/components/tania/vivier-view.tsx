@@ -10,7 +10,6 @@ import {
   CardTitle,
   EmptyState,
   Eyebrow,
-  SkeletonCard,
   useConfirm,
   useToast,
 } from "@/components/ui";
@@ -563,24 +562,10 @@ function WarmRow({
 
 function VivierFallback() {
   return (
-    <div className="space-y-8" aria-hidden>
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <SkeletonCard key={i} />
-        ))}
-      </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <SkeletonCard key={i} />
-        ))}
-      </div>
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <SkeletonCard />
-        </div>
-        <SkeletonCard />
-      </div>
-    </div>
+    <EmptyState
+      title="Loading vivier…"
+      description="Talent pool metrics appear after workspace hydrate — no placeholder cards."
+    />
   );
 }
 

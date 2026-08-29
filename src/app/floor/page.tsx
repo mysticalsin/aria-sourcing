@@ -12,7 +12,6 @@ import {
   Eyebrow,
   EmptyState,
   Meter,
-  SkeletonCard,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { AgentDesk } from "@/components/floor/agent-desk";
@@ -560,10 +559,9 @@ function Meta({ icon, label, value }: { icon: React.ReactNode; label: string; va
 
 function FloorFallback() {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-hidden>
-      {Array.from({ length: 8 }).map((_, i) => (
-        <SkeletonCard key={i} />
-      ))}
-    </div>
+    <EmptyState
+      title="Loading floor…"
+      description="Agent desks appear after workspace hydrate — no placeholder seats."
+    />
   );
 }

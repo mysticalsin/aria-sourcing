@@ -314,21 +314,9 @@ export default function LaunchPage() {
 
 function LaunchFallback() {
   return (
-    <div className="space-y-6" aria-hidden>
-      <div className="card-surface space-y-4 p-6">
-        <div className="skeleton h-4 w-1/3 rounded-xl" />
-        <div className="skeleton h-64 w-full rounded-2xl" />
-        <div className="skeleton h-11 w-1/3 rounded-full" />
-      </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="card-surface space-y-3 p-6">
-            <div className="skeleton h-4 w-1/2 rounded-xl" />
-            <div className="skeleton h-10 w-1/3 rounded-xl" />
-            <div className="skeleton h-3 w-2/3 rounded-lg" />
-          </div>
-        ))}
-      </div>
-    </div>
+    <EmptyState
+      title="Loading launch…"
+      description="War room lanes appear after workspace hydrate — no placeholder cards."
+    />
   );
 }

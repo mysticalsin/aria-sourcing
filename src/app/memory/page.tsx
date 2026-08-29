@@ -4,20 +4,21 @@ import * as React from "react";
 import { useHydrated } from "@/lib/store";
 import { MemoryPanel } from "@/components/memory/memory-panel";
 import { HydrationGate, PageHeader } from "@/components/app/page-header";
-import { SkeletonCard } from "@/components/ui";
+import { EmptyState } from "@/components/ui";
 
 export default function MemoryPage() {
   const hydrated = useHydrated();
 
-  const fallback = (
-    <div className="space-y-4">
-      <SkeletonCard />
-      <SkeletonCard />
-    </div>
-  );
-
   return (
-    <HydrationGate hydrated={hydrated} fallback={fallback}>
+    <HydrationGate
+      hydrated={hydrated}
+      fallback={
+        <EmptyState
+          title="Loading memory…"
+          description="Agent memory appears after workspace hydrate — no placeholder panels."
+        />
+      }
+    >
       <PageHeader
         eyebrow="System"
         title="Memory"
