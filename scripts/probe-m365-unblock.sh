@@ -29,6 +29,9 @@ if owner_ms_has_drop_file; then
   echo "  credentials=drop-file"
 elif owner_ms_has_env_exports; then
   echo "  credentials=env-exports"
+elif owner_ms_has_azure_app_id; then
+  echo "  credentials=azure-app-id"
+  echo "  aria_azure_app_id=$(owner_ms_read_azure_app_id)"
 else
   echo "  credentials=none"
 fi
@@ -159,6 +162,35 @@ if owner_ms_has_credentials; then
   exit 2
 fi
 
+# Owner created an Entra app but hasn't minted secrets yet — configure + apply.
+if owner_ms_has_azure_app_id; then
+  if [ "$APPLY" = "1" ]; then
+    echo "Configuring Entra app + minting secret via az-configure-existing-graph-app…"
+    export ARIA_AZURE_APP_ID
+    ARIA_AZURE_APP_ID="$(owner_ms_read_azure_app_id)"
+    bash "$repo/scripts/fly-m365-from-azure-app-id.sh"
+    inv_after="$(bash "$repo/scripts/print-fly-missing-secrets.sh" 2>/dev/null || true)"
+    missing_after="$(printf '%s\n' "$inv_after" | sed -n 's/^graph_secrets_missing=//p' | tail -1)"
+    missing_after="${missing_after:-unknown}"
+    ms_oauth="$(probe_microsoft_oauth)"
+    echo "  microsoftOAuth=${ms_oauth}"
+    if [ "$missing_after" = "0" ] && [ "$ms_oauth" = "true" ]; then
+      echo "RESULT: applied-ok-from-azure-app-id"
+      exit 0
+    fi
+    if [ "$ms_oauth" = "false" ]; then
+      echo "RESULT: applied-but-oauth-false" >&2
+      exit 4
+    fi
+    echo "RESULT: apply-ran-still-missing=${missing_after}" >&2
+    exit 3
+  fi
+  echo "RESULT: azure-app-id-present-not-applied (run with --apply)"
+  echo "  bash scripts/fly-m365-from-azure-app-id.sh"
+  exit 2
+fi
+
 echo "RESULT: owner-blocked"
 echo "  bash scripts/print-m365-owner-portal-checklist.sh"
+echo "  Minimal: create Entra app → echo '<client-id>' > /tmp/owner-azure-app-id → bash scripts/probe-m365-unblock.sh --apply"
 exit 1

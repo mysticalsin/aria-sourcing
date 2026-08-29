@@ -58,6 +58,30 @@ owner_ms_has_credentials() {
   owner_ms_has_drop_file || owner_ms_has_env_exports
 }
 
+# Owner may only drop an Entra Application (client) ID; agent configures + mints secret.
+owner_ms_read_azure_app_id() {
+  local raw=""
+  if [ -n "${ARIA_AZURE_APP_ID:-}" ]; then
+    raw="${ARIA_AZURE_APP_ID}"
+  elif [ -r /tmp/owner-azure-app-id ]; then
+    raw="$(tr -d ' \t\r\n' </tmp/owner-azure-app-id | head -c 80)"
+  fi
+  raw="${raw#\{}"
+  raw="${raw%\}}"
+  if printf '%s' "$raw" | grep -Eqi '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'; then
+    if owner_ms_is_placeholder "$raw"; then
+      return 1
+    fi
+    printf '%s' "$raw"
+    return 0
+  fi
+  return 1
+}
+
+owner_ms_has_azure_app_id() {
+  owner_ms_read_azure_app_id >/dev/null 2>&1
+}
+
 # Persist env exports to drop-zone (mode 600) so watcher/remint survive shell restarts.
 owner_ms_sync_env_to_dropzone() {
   local out="${OWNER_MICROSOFT_ENV:-/tmp/owner-microsoft.env}"

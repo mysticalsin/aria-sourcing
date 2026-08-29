@@ -1346,6 +1346,13 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /ARIA_AZURE_APP_ID/.test(script)
         && /aria-mantu-app\.fly\.dev/.test(script)
         && /ARIA_AZURE_APP_ID/.test(configure)
+        && /owner-azure-app-id|fly-m365-from-azure-app-id/.test(
+          readFileSync("scripts/probe-m365-unblock.sh", "utf8"),
+        )
+        && existsSync("scripts/fly-m365-from-azure-app-id.sh")
+        && /owner_ms_has_azure_app_id/.test(
+          readFileSync("scripts/lib/owner-microsoft-credentials.sh", "utf8"),
+        )
       );
     },
   },

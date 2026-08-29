@@ -61,26 +61,41 @@ After REAL secrets + Connect Outlook (webhook + Calendars.ReadWrite + OnlineMeet
 GOTRUE_EXTERNAL_AZURE_URL (only if enabling SSO):
   https://login.microsoftonline.com/${TENANT_ID}/v2.0
 
-## Portal steps (Option A — create app)
+## Portal steps (Option A — create app; agent finishes the rest)
 
+Minimal owner path (recommended):
 1. Open (tenant-scoped): ${PORTAL_NEW_TENANT}
-   Fallback: ${PORTAL_NEW}
-2. Name: ARIA Mantu Graph (Fly)
-3. Supported account types: Single tenant
-4. Redirect URI (Web):
+2. Name: ARIA Mantu Graph (Fly) · Single tenant · Register (redirects optional — agent adds them)
+3. Copy Application (client) ID only, then:
+   echo '<application-client-id>' > /tmp/owner-azure-app-id
+   bash scripts/probe-m365-unblock.sh --apply
+   # or: bash scripts/fly-m365-from-azure-app-id.sh
+4. Agent configures redirects + Graph delegated perms, mints secret, applies Fly Graph secrets.
+5. You: Settings → Connect Outlook → Enable webhook (Calendars.ReadWrite + OnlineMeetings.ReadWrite)
+6. bash scripts/verify-m365-ready.sh
+
+Full manual portal path (if preferred):
+1. Open: ${PORTAL_NEW_TENANT}
+2. Name: ARIA Mantu Graph (Fly) · Single tenant
+3. Redirect URI (Web):
    - ${APP_REDIRECT}
    - ${GOTRUE_REDIRECT}
-5. Register → copy **Application (client) ID**
-6. Certificates & secrets → New client secret → copy value once
-7. API permissions → Microsoft Graph **Delegated**:
+4. Register → copy Application (client) ID
+5. Certificates & secrets → New client secret → copy value once
+6. API permissions → Microsoft Graph Delegated:
    - Mail.Read, Mail.Send, Calendars.ReadWrite, OnlineMeetings.ReadWrite, User.Read, offline_access
    Grant admin consent.
-8. Copy Application (client) ID + tenant ID (${TENANT_ID}) + client secret
+7. Copy Application (client) ID + tenant ID (${TENANT_ID}) + client secret
 
 ## Agent/owner commands (after portal)
 
+# Minimal (app id only):
+echo '<paste-client-id>' > /tmp/owner-azure-app-id
+bash scripts/probe-m365-unblock.sh --apply
+
+# Or export:
 export ARIA_AZURE_APP_ID='<paste-client-id>'
-bash scripts/az-configure-existing-graph-app.sh --apply
+bash scripts/fly-m365-from-azure-app-id.sh
 # writes /tmp/owner-microsoft.env and applies Fly secrets → post-m365-secrets-golive
 
 ## Option B — paste env file
