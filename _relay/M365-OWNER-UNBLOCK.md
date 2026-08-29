@@ -40,9 +40,10 @@ Marker: `/tmp/az-create-mantu-graph-app.noperm` (waiters expire it every ~5m and
 
 ### Owner unblock options (any one)
 
-1. **Minimal (recommended):** An **Entra admin** (Global Admin / Application Administrator / Application Developer) registers `ARIA Mantu Graph (Fly)` in Portal →  
+1. **Minimal (recommended):** An **Entra admin** (Global Admin / Application Administrator / Application Developer) registers `ARIA Mantu Graph (Fly)` in Portal → **adds `twalteur@amaris.com` as app Owner** →  
    `echo '<client-id>' > /tmp/owner-azure-app-id` (agent configures + mints + applies).  
-   Agent **fail-closes** if required Graph scopes are missing or admin-consent cannot be granted (Portal → API permissions → Grant admin consent, then re-run).
+   Without Owner, `az-configure-existing-graph-app.sh` fail-closes (Application.ReadWrite.OwnedBy).  
+   Agent **fail-closes** if required Graph scopes are missing or admin-consent cannot be granted (Portal → API permissions → Grant admin consent, then `touch /tmp/az-graph-admin-consent.portal-granted` or wait ~60s for waiter SKIP retry).
 2. Assign **Application Developer** (or Application Administrator) to `twalteur@amaris.com`, then waiters auto-retry  
    `bash scripts/az-create-mantu-graph-app.sh --apply` (noperm latch TTL clears every ~5m)
 3. Temporarily enable user app registration (`allowedToCreateApps=true`), then option 2, then revert policy
@@ -64,12 +65,16 @@ Strict E2E (no partial flag) correctly **FAIL**s on: `microsoftOAuth=false` + st
 bash scripts/print-m365-owner-portal-checklist.sh
 # 1) Entra admin → New registration: ARIA Mantu Graph (Fly), single-tenant
 #    (twalteur@amaris.com cannot portal-create while allowedToCreateApps=false)
-# 2) Copy Application (client) ID only onto the agent VM:
+# 2) Entra admin → Owners → Add → twalteur@amaris.com  (REQUIRED)
+# 3) Copy Application (client) ID only onto the agent VM:
 echo '<application-client-id>' > /tmp/owner-azure-app-id
-# 3) Agent finishes redirects + Graph perms + secret mint + Fly apply:
+# 4) Agent finishes redirects + Graph perms + secret mint + Fly apply:
 bash scripts/probe-m365-unblock.sh --apply
 # expect RESULT: applied-ok-from-azure-app-id + microsoftOAuth=true
-# 4) Settings → Connect Outlook → Enable webhook (Calendars + OnlineMeetings)
+# If admin-consent CLI fails: Grant in Portal, then:
+#   touch /tmp/az-graph-admin-consent.portal-granted
+#   (waiters retry with SKIP within ~60s)
+# 5) Settings → Connect Outlook → Enable webhook (Calendars + OnlineMeetings)
 bash scripts/verify-m365-ready.sh   # RESULT: PASS
 ```
 

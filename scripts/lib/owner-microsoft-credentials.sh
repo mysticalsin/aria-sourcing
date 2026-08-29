@@ -108,19 +108,73 @@ owner_ms_maybe_clear_stale_noperm() {
   return 1
 }
 
+# Shared flock for Entra configure (redirects/perms/secret mint) + Fly Graph secret apply.
+# Waiters, az-configure, and fly-apply must serialize on this path so two tmux
+# sessions cannot mint competing client secrets or race peer secret appliers.
+owner_ms_configure_apply_lock_path() {
+  printf '%s' "${ARIA_M365_CONFIGURE_APPLY_LOCK:-/tmp/aria-m365-configure-apply.lock}"
+}
+
 # Exclusive flock so duplicate tmux/agent restarts cannot double-apply Fly secrets.
-# Holds FD 9 for the remainder of the process.
+# Holds FD 9 for the remainder of the process (or until owner_ms_release_singleton_lock).
 # Optional 3rd arg: exit code when lock busy (default 0 = idempotent no-op for waiters).
+# Nested acquire of the same path is a no-op when ARIA_M365_LOCK_HELD=1 (az-configure --apply → fly-apply).
 owner_ms_acquire_singleton_lock() {
   local lockfile="${1:?lockfile required}"
   local name="${2:-process}"
   local busy_exit="${3:-0}"
+  if [ "${ARIA_M365_LOCK_HELD:-0}" = "1" ] && [ "${ARIA_M365_LOCK_PATH:-}" = "$lockfile" ]; then
+    return 0
+  fi
   # shellcheck disable=SC2329
   exec 9>"$lockfile"
   if ! flock -n 9; then
     printf 'Another %s already running (%s) — exiting\n' "$name" "$lockfile" >&2
     exit "$busy_exit"
   fi
+  export ARIA_M365_LOCK_HELD=1
+  export ARIA_M365_LOCK_PATH="$lockfile"
+}
+
+# Release FD 9 flock so long seat-waits do not block peer configure/apply.
+owner_ms_release_singleton_lock() {
+  exec 9>&- 2>/dev/null || true
+  unset ARIA_M365_LOCK_HELD ARIA_M365_LOCK_PATH 2>/dev/null || true
+}
+
+# True when admin-consent CLI failed and Portal Grant is still required (or SKIP path pending).
+owner_ms_admin_consent_needed() {
+  [ -f "${ARIA_GRAPH_ADMIN_CONSENT_NEEDED:-/tmp/az-graph-admin-consent.needed}" ]
+}
+
+owner_ms_admin_consent_portal_granted() {
+  [ -f "${ARIA_GRAPH_ADMIN_CONSENT_PORTAL_GRANTED:-/tmp/az-graph-admin-consent.portal-granted}" ]
+}
+
+# After Portal Grant admin consent, non-GA accounts cannot re-run az admin-consent.
+# Export SKIP so configure can mint + apply once scopes are on the app.
+# Requires portal-granted marker OR aged needed latch (default 60s) so we do not
+# mint on the same tick as the first CLI consent failure.
+# Callers should log when this returns 0.
+owner_ms_export_skip_admin_consent_if_needed() {
+  local needed ttl age now
+  needed="${ARIA_GRAPH_ADMIN_CONSENT_NEEDED:-/tmp/az-graph-admin-consent.needed}"
+  owner_ms_admin_consent_needed || return 1
+  if owner_ms_admin_consent_portal_granted; then
+    export ARIA_GRAPH_SKIP_ADMIN_CONSENT=1
+    return 0
+  fi
+  ttl="${ARIA_GRAPH_CONSENT_SKIP_TTL_SECONDS:-60}"
+  case "$ttl" in
+    ''|*[!0-9]*) ttl=60 ;;
+  esac
+  now="$(date +%s)"
+  age=$(( now - $(stat -c %Y "$needed" 2>/dev/null || echo "$now") ))
+  if [ "$age" -ge "$ttl" ]; then
+    export ARIA_GRAPH_SKIP_ADMIN_CONSENT=1
+    return 0
+  fi
+  return 1
 }
 
 # Persist env exports to drop-zone (mode 600) so watcher/remint survive shell restarts.

@@ -72,15 +72,18 @@ Who can register: Global Admin / Application Administrator / Application Develop
 Minimal path (recommended):
 1. Entra admin opens (tenant-scoped): ${PORTAL_NEW_TENANT}
 2. Name: ARIA Mantu Graph (Fly) · Single tenant · Register (redirects optional — agent adds them)
-3. Copy Application (client) ID only into the agent VM:
+3. **Owners → Add** → ${ACCOUNT:-twalteur@amaris.com} (required — agent needs Application.ReadWrite.OwnedBy)
+4. Copy Application (client) ID only into the agent VM:
    echo '<application-client-id>' > /tmp/owner-azure-app-id
    bash scripts/probe-m365-unblock.sh --apply
    # or: bash scripts/fly-m365-from-azure-app-id.sh
-4. Agent configures redirects + Graph delegated perms, **admin-consent** (or Portal Grant), mints secret, applies Fly Graph secrets.
-   If admin-consent CLI fails: Grant admin consent in Portal → API permissions, then re-run probe --apply
-   (or ARIA_GRAPH_SKIP_ADMIN_CONSENT=1 after Portal grant).
-5. Recruiter: Settings → Connect Outlook (callback auto-wires webhook when scopes present)
-6. bash scripts/verify-m365-ready.sh
+5. Agent configures redirects + Graph delegated perms, **admin-consent** (or Portal Grant), mints secret, applies Fly Graph secrets.
+   If admin-consent CLI fails: Grant admin consent in Portal → API permissions, then:
+     touch /tmp/az-graph-admin-consent.portal-granted
+     # waiters retry with ARIA_GRAPH_SKIP_ADMIN_CONSENT=1 within ~60s, or:
+     ARIA_GRAPH_SKIP_ADMIN_CONSENT=1 bash scripts/probe-m365-unblock.sh --apply
+6. Recruiter: Settings → Connect Outlook (callback auto-wires webhook when scopes present)
+7. bash scripts/verify-m365-ready.sh
 
 Full manual portal path (if preferred):
 1. Entra admin opens: ${PORTAL_NEW_TENANT}
@@ -89,11 +92,12 @@ Full manual portal path (if preferred):
    - ${APP_REDIRECT}
    - ${GOTRUE_REDIRECT}
 4. Register → copy Application (client) ID
-5. Certificates & secrets → New client secret → copy value once
-6. API permissions → Microsoft Graph Delegated:
+5. **Owners → Add** → ${ACCOUNT:-twalteur@amaris.com}
+6. Certificates & secrets → New client secret → copy value once
+7. API permissions → Microsoft Graph Delegated:
    - Mail.Read, Mail.Send, Calendars.ReadWrite, OnlineMeetings.ReadWrite, User.Read, offline_access
    Grant admin consent.
-7. Copy Application (client) ID + tenant ID (${TENANT_ID}) + client secret
+8. Copy Application (client) ID + tenant ID (${TENANT_ID}) + client secret
 
 ## Agent/owner commands (after portal)
 
@@ -129,11 +133,13 @@ Existing apps portal: ${PORTAL_APPS}
 Please register a single-tenant Entra app for ARIA Fly Graph (tenant ${TENANT_ID}):
 1. ${PORTAL_NEW_TENANT}
 2. Name: ARIA Mantu Graph (Fly) · Accounts in this organizational directory only
-3. Reply with the Application (client) ID only — agent configures redirects + Graph
+3. Owners → Add → ${ACCOUNT:-twalteur@amaris.com} (required so the agent can configure redirects + mint a secret)
+4. Reply with the Application (client) ID only — agent configures redirects + Graph
    delegated perms (Mail.Read/Send, Calendars.ReadWrite, OnlineMeetings.ReadWrite,
    User.Read, offline_access), grants admin consent when possible, mints a secret,
    and applies Fly. If you are Global Admin, also click Grant admin consent on the app.
-4. Alternative: assign Application Developer to ${ACCOUNT:-twalteur@amaris.com}
+   After Grant (if agent is not GA): touch /tmp/az-graph-admin-consent.portal-granted on the agent VM.
+5. Alternative: assign Application Developer to ${ACCOUNT:-twalteur@amaris.com}
    (agent waiters re-probe create every ~5 minutes).
 
 EOF

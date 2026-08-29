@@ -31,11 +31,21 @@ log() { printf '%s %s\n' "$(date -u +%H:%M:%SZ)" "$*" | tee -a "$LOG"; }
 
 # shellcheck source=scripts/lib/owner-microsoft-credentials.sh
 source "$repo/scripts/lib/owner-microsoft-credentials.sh"
+# Process lock (idempotent waiter) + shared configure+apply serialization via
+# owner_ms_configure_apply_lock_path inside az-configure / fly-apply.
 owner_ms_acquire_singleton_lock "${ARIA_WATCH_MICROSOFT_LOCK:-/tmp/aria-watch-owner-microsoft.lock}" \
   "watch-owner-microsoft-and-apply"
 
 has_microsoft_drop() {
   owner_ms_has_credentials
+}
+
+# When Portal Grant was done after CLI consent failed, export SKIP and retry configure.
+# Needs portal-granted marker or aged consent.needed latch (see owner_ms_export_skip_admin_consent_if_needed).
+maybe_skip_consent_for_retry() {
+  if owner_ms_export_skip_admin_consent_if_needed; then
+    log "admin-consent Portal Grant path — ARIA_GRAPH_SKIP_ADMIN_CONSENT=1"
+  fi
 }
 
 apply_and_exit() {
@@ -81,6 +91,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     log "owner-azure-app-id / ARIA_AZURE_APP_ID present — configure + mint + apply"
     export ARIA_AZURE_APP_ID
     ARIA_AZURE_APP_ID="$(owner_ms_read_azure_app_id)"
+    maybe_skip_consent_for_retry
     if bash "$repo/scripts/fly-m365-from-azure-app-id.sh"; then
       if has_microsoft_drop; then
         apply_and_exit
@@ -103,17 +114,42 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       exit "$rc"
     else
       log "WARN: fly-m365-from-azure-app-id failed — will retry"
+      if owner_ms_admin_consent_needed; then
+        log "  (admin-consent.needed set — Grant admin consent in Portal, waiter will retry with SKIP)"
+      fi
     fi
   fi
 
   if [ -n "${ARIA_AZURE_APP_ID:-}" ] && [[ "${ARIA_AZURE_APP_ID}" != PLACEHOLDER* ]]; then
     log "ARIA_AZURE_APP_ID set — configuring existing Entra app"
+    maybe_skip_consent_for_retry
     if bash "$repo/scripts/az-configure-existing-graph-app.sh" --apply; then
       if has_microsoft_drop; then
         apply_and_exit
       fi
     else
       log "WARN: az-configure-existing-graph-app.sh failed — will retry"
+      if owner_ms_admin_consent_needed; then
+        log "  (admin-consent.needed set — Grant admin consent in Portal, waiter will retry with SKIP)"
+      fi
+    fi
+  fi
+
+  # Retry configure when consent latch is aged / portal-granted (Portal Grant mid-poll).
+  if owner_ms_admin_consent_needed && owner_ms_has_azure_app_id; then
+    if owner_ms_export_skip_admin_consent_if_needed; then
+      log "admin-consent.needed ready for SKIP — retry configure + mint + apply"
+      export ARIA_AZURE_APP_ID
+      ARIA_AZURE_APP_ID="$(owner_ms_read_azure_app_id)"
+      if bash "$repo/scripts/fly-m365-from-azure-app-id.sh"; then
+        if has_microsoft_drop; then
+          apply_and_exit
+        fi
+      else
+        log "WARN: consent-skip retry failed — will retry"
+      fi
+    elif [ $(( $(date +%s) % 300 )) -lt "$SLEEP_SEC" ]; then
+      log "admin-consent.needed — Grant admin consent in Portal, then: touch /tmp/az-graph-admin-consent.portal-granted"
     fi
   fi
 

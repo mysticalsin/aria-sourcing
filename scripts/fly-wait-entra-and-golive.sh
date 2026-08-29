@@ -45,6 +45,12 @@ has_azure_app_id_drop() {
   owner_ms_has_azure_app_id
 }
 
+maybe_skip_consent_for_retry() {
+  if owner_ms_export_skip_admin_consent_if_needed; then
+    log "admin-consent Portal Grant path — ARIA_GRAPH_SKIP_ADMIN_CONSENT=1"
+  fi
+}
+
 has_deploy_confirm_drop() {
   local f
   for f in /tmp/owner-deploy-confirm.env "$repo/production-readiness/.owner-deploy-confirm.env"; do
@@ -107,6 +113,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   elif has_azure_app_id_drop; then
     rm -f /tmp/az-create-mantu-graph-app.noperm
     log "owner-azure-app-id present — configure + mint + apply via probe --apply"
+    maybe_skip_consent_for_retry
     if bash "$repo/scripts/probe-m365-unblock.sh" --apply; then
       if run_golive; then
         exit 0
@@ -114,6 +121,9 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       log "Graph secrets applied from app id; golive incomplete — Connect Outlook may still be needed."
     else
       log "WARN: probe --apply from azure-app-id failed; will retry."
+      if owner_ms_admin_consent_needed; then
+        log "  (admin-consent.needed — Grant in Portal, then touch /tmp/az-graph-admin-consent.portal-granted)"
+      fi
     fi
   elif has_deploy_confirm_drop; then
     # Deploy-confirm alone does not unblock Graph. Only remint-deploy when tip_ahead_app.
@@ -135,14 +145,19 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     if [ -f /tmp/az-create-mantu-graph-app.noperm ]; then
       if owner_ms_has_azure_app_id; then
         log "noperm but azure app id set — configuring existing Entra app"
+        maybe_skip_consent_for_retry
         if bash "$repo/scripts/fly-m365-from-azure-app-id.sh"; then
           if run_golive; then exit 0; fi
         fi
       elif [ -n "${ARIA_AZURE_APP_ID:-}" ]; then
         log "noperm but ARIA_AZURE_APP_ID set — configuring existing Entra app"
+        maybe_skip_consent_for_retry
         if bash "$repo/scripts/az-configure-existing-graph-app.sh" --apply; then
           if run_golive; then exit 0; fi
         fi
+      fi
+      if owner_ms_admin_consent_needed && [ $(( $(date +%s) % 300 )) -lt "$SLEEP_SEC" ]; then
+        log "admin-consent.needed — Grant admin consent in Portal, then: touch /tmp/az-graph-admin-consent.portal-granted"
       fi
       if [ $(( $(date +%s) % 300 )) -lt "$SLEEP_SEC" ]; then
         log "az OK but cannot create apps (noperm) — Entra admin must register (or grant Application Developer) → /tmp/owner-azure-app-id or /tmp/owner-microsoft.env"

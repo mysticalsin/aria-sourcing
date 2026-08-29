@@ -94,6 +94,8 @@ apply_mantu_graph_delegated_permissions() {
   if [ "${ARIA_GRAPH_SKIP_ADMIN_CONSENT:-0}" = "1" ]; then
     echo "ARIA_GRAPH_SKIP_ADMIN_CONSENT=1 — skipping admin-consent CLI (ensure Portal Grant admin consent done)."
     echo "  $portal_perms"
+    # Clear waiter latches so configure+mint can proceed after Portal Grant.
+    rm -f /tmp/az-graph-admin-consent.needed /tmp/az-graph-admin-consent.portal-granted
     return 0
   fi
 
@@ -103,7 +105,7 @@ apply_mantu_graph_delegated_permissions() {
   set -e
   if [ "$consent_rc" -eq 0 ]; then
     echo "Admin consent granted."
-    rm -f /tmp/az-graph-admin-consent.needed
+    rm -f /tmp/az-graph-admin-consent.needed /tmp/az-graph-admin-consent.portal-granted
     return 0
   fi
 

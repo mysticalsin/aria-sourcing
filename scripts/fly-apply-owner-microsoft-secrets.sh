@@ -41,8 +41,9 @@ cd "$repo"
 
 # shellcheck source=scripts/lib/owner-microsoft-credentials.sh
 source "$repo/scripts/lib/owner-microsoft-credentials.sh"
-# Busy exit 4 so concurrent waiters/probe do not race secret set + golive.
-owner_ms_acquire_singleton_lock "${ARIA_APPLY_MICROSOFT_LOCK:-/tmp/aria-fly-apply-owner-microsoft.lock}" \
+# Shared configure+apply flock (same path as az-configure). Busy exit 4 so concurrent
+# waiters/probe do not race secret set. Nested call from az-configure --apply skips re-acquire.
+owner_ms_acquire_singleton_lock "$(owner_ms_configure_apply_lock_path)" \
   "fly-apply-owner-microsoft-secrets" 4
 
 load_owner_env_file() {
@@ -179,6 +180,10 @@ fi
 echo
 echo "=== Live inventory ==="
 bash "$repo/scripts/print-fly-missing-secrets.sh" || true
+
+# Release configure+apply flock BEFORE long Connect Outlook seat wait so peer
+# waiters can mint/apply if this path stalls on the interactive seat.
+owner_ms_release_singleton_lock
 
 echo
 echo "=== Post-apply golive (OAuth probe + optional remint) ==="

@@ -1396,6 +1396,13 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     requirement: "az Graph permission apply fail-closes on missing scopes / admin-consent (no silent || true)",
     evidence: () => {
       const perms = readFileSync("scripts/lib/az-mantu-graph-permissions.sh", "utf8");
+      const configure = readFileSync("scripts/az-configure-existing-graph-app.sh", "utf8");
+      const lib = readFileSync("scripts/lib/owner-microsoft-credentials.sh", "utf8");
+      const watch = readFileSync("scripts/watch-owner-microsoft-and-apply.sh", "utf8");
+      const wait = readFileSync("scripts/fly-wait-entra-and-golive.sh", "utf8");
+      const checklist = readFileSync("scripts/print-m365-owner-portal-checklist.sh", "utf8");
+      const unblock = readFileSync("_relay/M365-OWNER-UNBLOCK.md", "utf8");
+      const apply = readFileSync("scripts/fly-apply-owner-microsoft-secrets.sh", "utf8");
       return (
         existsSync("scripts/lib/az-mantu-graph-permissions.sh")
         && /aria_graph_verify_required_scopes/.test(perms)
@@ -1408,9 +1415,20 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /ARIA_GRAPH_SKIP_ADMIN_CONSENT/.test(perms)
         && /az-graph-admin-consent\.needed/.test(perms)
         && !/permission add[\s\S]{0,120}\|\| true/.test(perms)
-        && /apply_mantu_graph_delegated_permissions/.test(
-          readFileSync("scripts/az-configure-existing-graph-app.sh", "utf8"),
-        )
+        && /apply_mantu_graph_delegated_permissions/.test(configure)
+        && /az ad app owner list/.test(configure)
+        && /Owner preflight/.test(configure)
+        && /Owners → Add/.test(checklist)
+        && /app Owner/.test(unblock)
+        && /owner_ms_export_skip_admin_consent_if_needed/.test(lib)
+        && /az-graph-admin-consent\.portal-granted/.test(lib)
+        && /owner_ms_configure_apply_lock_path/.test(lib)
+        && /owner_ms_release_singleton_lock/.test(lib)
+        && /owner_ms_export_skip_admin_consent_if_needed|maybe_skip_consent_for_retry/.test(watch)
+        && /az-graph-admin-consent\.portal-granted/.test(watch)
+        && /maybe_skip_consent_for_retry/.test(wait)
+        && /owner_ms_configure_apply_lock_path|owner_ms_release_singleton_lock/.test(apply)
+        && /owner_ms_release_singleton_lock/.test(apply)
       );
     },
   },

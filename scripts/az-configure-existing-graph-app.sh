@@ -40,6 +40,8 @@ command -v az >/dev/null 2>&1 || { echo "az CLI required" >&2; exit 1; }
 command -v jq >/dev/null 2>&1 || { echo "jq required" >&2; exit 1; }
 # shellcheck source=scripts/lib/az-mantu-graph-permissions.sh
 source "$repo/scripts/lib/az-mantu-graph-permissions.sh"
+# shellcheck source=scripts/lib/owner-microsoft-credentials.sh
+source "$repo/scripts/lib/owner-microsoft-credentials.sh"
 
 if ! az account show >/dev/null 2>&1; then
   echo "ERROR: az is not logged in. Run: az login --use-device-code" >&2
@@ -51,6 +53,10 @@ if [ -z "$APP_ID" ]; then
   echo "       Create one in Azure Portal → App registrations, then re-run." >&2
   exit 1
 fi
+
+# Serialize configure+mint (+ nested fly-apply) against peer waiters.
+owner_ms_acquire_singleton_lock "$(owner_ms_configure_apply_lock_path)" \
+  "az-configure-existing-graph-app" 4
 
 TENANT_ID="$(az account show --query tenantId -o tsv)"
 ACCOUNT_UPN="$(az account show --query user.name -o tsv 2>/dev/null || echo unknown)"
@@ -65,12 +71,44 @@ echo "Configuring existing app: $DISPLAY_NAME ($APP_ID)"
 echo "  Web redirects: $APP_REDIRECT"
 echo "                 $GOTRUE_REDIRECT"
 
+# Preflight: signed-in user must be an app Owner (Application.ReadWrite.OwnedBy).
+# Entra admin who only Registers without adding Tony as Owner will fail here.
+set +e
+OWNERS_JSON="$(az ad app owner list --id "$APP_ID" -o json 2>&1)"
+OWNERS_RC=$?
+set -e
+if [ "$OWNERS_RC" -ne 0 ]; then
+  printf '%s\n' "$OWNERS_JSON" >&2
+  echo "ERROR: cannot list owners for $APP_ID — Entra admin must add $ACCOUNT_UPN as app Owner." >&2
+  exit 3
+fi
+OWNER_MATCH="$(
+  printf '%s' "$OWNERS_JSON" | jq -r --arg upn "$ACCOUNT_UPN" '
+    [.[] | (.userPrincipalName // .mail // empty) | ascii_downcase]
+    | map(select(. == ($upn | ascii_downcase)))
+    | length
+  ' 2>/dev/null || echo 0
+)"
+if [ "${OWNER_MATCH:-0}" = "0" ]; then
+  echo "ERROR: $ACCOUNT_UPN is not an Owner of app $APP_ID ($DISPLAY_NAME)." >&2
+  echo "       Entra admin: Portal → App registrations → $DISPLAY_NAME → Owners → Add → $ACCOUNT_UPN" >&2
+  echo "       Then re-drop client id / re-run: bash scripts/probe-m365-unblock.sh --apply" >&2
+  exit 3
+fi
+echo "Owner preflight OK: $ACCOUNT_UPN owns $APP_ID"
+
 if ! az ad app update --id "$APP_ID" \
   --web-redirect-uris "$APP_REDIRECT" "$GOTRUE_REDIRECT" \
   --enable-id-token-issuance true \
   >/dev/null 2>&1; then
   echo "ERROR: cannot update app $APP_ID (need Application.ReadWrite.OwnedBy or admin on this app)." >&2
+  echo "       Entra admin must add $ACCOUNT_UPN as Owner on this app registration." >&2
   exit 3
+fi
+
+# After Portal Grant, waiters set ARIA_GRAPH_SKIP_ADMIN_CONSENT via consent.needed latch.
+if owner_ms_export_skip_admin_consent_if_needed; then
+  echo "az-graph-admin-consent.needed present — ARIA_GRAPH_SKIP_ADMIN_CONSENT=1 (Portal Grant path)"
 fi
 
 apply_mantu_graph_delegated_permissions "$APP_ID"
@@ -99,6 +137,7 @@ echo "  GOTRUE_EXTERNAL_AZURE_URL=https://login.microsoftonline.com/${TENANT_ID}
 
 if [ "$APPLY" = "1" ]; then
   echo "Applying to Fly…"
+  # Nested fly-apply reuses this flock (ARIA_M365_LOCK_HELD); releases before seat wait.
   bash "$repo/scripts/fly-apply-owner-microsoft-secrets.sh"
 fi
 

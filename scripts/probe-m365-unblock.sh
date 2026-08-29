@@ -168,6 +168,9 @@ if owner_ms_has_azure_app_id; then
     echo "Configuring Entra app + minting secret via az-configure-existing-graph-app…"
     export ARIA_AZURE_APP_ID
     ARIA_AZURE_APP_ID="$(owner_ms_read_azure_app_id)"
+    if owner_ms_export_skip_admin_consent_if_needed; then
+      echo "  admin-consent Portal Grant path — ARIA_GRAPH_SKIP_ADMIN_CONSENT=1"
+    fi
     bash "$repo/scripts/fly-m365-from-azure-app-id.sh"
     inv_after="$(bash "$repo/scripts/print-fly-missing-secrets.sh" 2>/dev/null || true)"
     missing_after="$(printf '%s\n' "$inv_after" | sed -n 's/^graph_secrets_missing=//p' | tail -1)"
@@ -192,7 +195,7 @@ fi
 
 echo "RESULT: owner-blocked"
 echo "  bash scripts/print-m365-owner-portal-checklist.sh"
-echo "  Minimal: Entra admin registers ARIA Mantu Graph (Fly) →"
+echo "  Minimal: Entra admin registers ARIA Mantu Graph (Fly) → Owners Add twalteur@amaris.com →"
 echo "    echo '<client-id>' > /tmp/owner-azure-app-id && bash scripts/probe-m365-unblock.sh --apply"
 echo "  Or grant Application Developer to the az account (waiters re-probe create every ~5m)."
 exit 1
