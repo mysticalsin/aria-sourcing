@@ -796,6 +796,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /aria-e2e-agent-provider|FIRST_LIVE_PROVIDER/.test(printE2e)
         && /FIRST_LIVE_PROVIDER/.test(readFileSync("scripts/probe-fly-llm-auth.sh", "utf8"))
         && !/^export AGENT_PROVIDER=kimi$/m.test(printE2e)
+        && /do not pin auth-dead cloud keys/.test(readFileSync("e2e-workflow-test.sh", "utf8"))
+        && /AGENT_PROVIDER=hermes/.test(readFileSync("e2e-workflow-test.sh", "utf8"))
         && /Fly secrets inventory/.test(golive)
         && existsSync("scripts/fly-enterprise-activate.sh")
         && /print-fly-deploy-confirm/.test(readFileSync("scripts/fly-enterprise-activate.sh", "utf8"))

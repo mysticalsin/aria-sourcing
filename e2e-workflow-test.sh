@@ -117,8 +117,8 @@ info() { printf "  ${C_C}·${C_0}     %s\n" "$1"; }
 die()  { printf "\n${C_R}ABORT${C_0} %s\n" "$1" >&2; exit 2; }
 
 # Hermes outreach drafts use AGENT_PROVIDER. Do NOT hard-pin kimi on Fly —
-# a present-but-401 KIMI_API_KEY yields critics_required. Prefer an explicit
-# live provider from print-fly-e2e-env / probe-fly-llm-auth.
+# a present-but-401 KIMI_API_KEY yields critics_required / draft cloud 401s.
+# Prefer an explicit live provider from print-fly-e2e-env / probe-fly-llm-auth.
 # /api/sourcing-agent resolves its own workspace/cloud provider; this env is
 # for hermes chat only.
 if [ -z "${AGENT_PROVIDER:-}" ]; then
@@ -138,6 +138,27 @@ if [ -z "${AGENT_PROVIDER:-}" ]; then
     AGENT_PROVIDER=anthropic
   fi
 fi
+
+# Fly: never keep a stale shell AGENT_PROVIDER (e.g. kimi) when that key is auth-dead.
+# Re-probe and either switch to FIRST_LIVE_PROVIDER or fall back to provider=hermes.
+if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ]; then
+  if bash scripts/probe-fly-llm-auth.sh >/tmp/e2e-llm-probe.log 2>&1 \
+    && [ -r /tmp/aria-e2e-agent-provider ]; then
+    LIVE_PROV="$(tr -d '\n\r' < /tmp/aria-e2e-agent-provider)"
+    if [ -n "$LIVE_PROV" ] && [ "${AGENT_PROVIDER:-}" != "$LIVE_PROV" ]; then
+      [ -n "${AGENT_PROVIDER:-}" ] \
+        && warn "AGENT_PROVIDER was ${AGENT_PROVIDER}; switching to live ${LIVE_PROV} from probe."
+      AGENT_PROVIDER="$LIVE_PROV"
+    fi
+  else
+    if [ -n "${AGENT_PROVIDER:-}" ] && [ "${AGENT_PROVIDER}" != "hermes" ]; then
+      warn "Clearing AGENT_PROVIDER=${AGENT_PROVIDER} — Fly llm_auth dead/absent (do not pin auth-dead cloud keys)."
+    fi
+    AGENT_PROVIDER=hermes
+    info "AGENT_PROVIDER=hermes (cloud llm_auth dead — drafts use Hermes gateway, not dead Kimi env)."
+  fi
+fi
+
 AGENT_MODEL="${AGENT_MODEL:-}"                      # optional model override; blank => provider default
 GITHUB_QUERY="${GITHUB_QUERY:-language:typescript location:london followers:>50}"
 LINKEDIN_QUERY="${LINKEDIN_QUERY:-senior typescript engineer london}"
@@ -153,6 +174,7 @@ default_model() {
     mistral)   echo "mistral-large-latest" ;;
     kimi)      echo "moonshot-v1-8k" ;;
     deepseek)  echo "deepseek-chat" ;;
+    hermes)    echo "" ;;
     *)         echo "" ;;
   esac
 }
