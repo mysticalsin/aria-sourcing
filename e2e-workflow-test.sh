@@ -693,6 +693,30 @@ elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIA
   else
     fail "PARTIAL still requires inboundWebhookSecret=true (EMAIL_INBOUND_WEBHOOK_SECRET) for hiring-need intake."
   fi
+  # After tip 0073: register an HMAC-only intake mailbox without OAuth.
+  HMAC_MAIL="e2e-hmac-$(date -u +%Y%m%d%H%M%S)@aria-e2e.test"
+  api POST "$APP_URL/api/email/connections" "$(jq -nc --arg m "$HMAC_MAIL" '{action:"register_hmac_mailbox",mailbox:$m,purpose:"intake"}')"
+  HMAC_HTTP="$HTTP"
+  HMAC_RESP="$(cat "$RESP")"
+  HMAC_OK=$(jq -r '.ok // false' <<<"$HMAC_RESP")
+  HMAC_ONLY=$(jq -r '.hmacOnly // false' <<<"$HMAC_RESP")
+  HMAC_ROUTE=$(jq -r '.routeId // empty' <<<"$HMAC_RESP")
+  if [ "$HMAC_HTTP" = "200" ] && [ "$HMAC_OK" = "true" ] && { [ "$HMAC_ONLY" = "true" ] || [ -n "$HMAC_ROUTE" ]; }; then
+    pass "POST register_hmac_mailbox ok (mailbox=$HMAC_MAIL, no OAuth)."
+    api GET "$APP_URL/api/email/connections"
+    HMAC_LISTED=$(jq -r --arg m "$(printf '%s' "$HMAC_MAIL" | tr '[:upper:]' '[:lower:]')" '
+      [(.hmacRoutes // [])[] | select((.mailbox // "") == $m and (.active == true))] | length
+    ' "$RESP" 2>/dev/null || echo 0)
+    if [ "${HMAC_LISTED:-0}" -gt 0 ]; then
+      pass "GET connections lists HMAC route for $HMAC_MAIL."
+    else
+      fail "HMAC mailbox registered but missing from hmacRoutes on GET connections."
+    fi
+  elif [ "$HMAC_HTTP" = "503" ] && jq -r '.error // empty' <<<"$HMAC_RESP" | grep -qi '0073'; then
+    fail "register_hmac_mailbox 503 — migration 0073 missing on live Fly (deploy tip)."
+  else
+    fail "register_hmac_mailbox failed (HTTP ${HMAC_HTTP:-empty}): $(head -c 240 <<<"$HMAC_RESP")"
+  fi
 fi
 # email/test hiring_need_handler: ready without Graph (HMAC path). Assert when any mailbox seat exists.
 TEST_SEAT=$(jq -r '

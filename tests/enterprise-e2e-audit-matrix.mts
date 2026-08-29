@@ -339,6 +339,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /channel === "LinkedIn"/.test(readFileSync("src/lib/outreach-send-mode.ts", "utf8"))
         && !/channel === "LinkedIn" && isLive/.test(readFileSync("src/lib/outreach-send-mode.ts", "utf8"))
         && /PARTIAL still requires inboundWebhookSecret/.test(readFileSync("e2e-workflow-test.sh", "utf8"))
+        && /register_hmac_mailbox/.test(readFileSync("e2e-workflow-test.sh", "utf8"))
+        && /hmacRoutes/.test(readFileSync("e2e-workflow-test.sh", "utf8"))
         && /ARIA_ALLOW_SKIP_WEBHOOK_E2E=1/.test(readFileSync("e2e-workflow-test.sh", "utf8"))
         && /E2E_SKIP_WEBHOOK=1/.test(readFileSync("e2e-workflow-test.sh", "utf8"))
         && /isRealSendFact\(m\)/.test(readFileSync("src/lib/replay.ts", "utf8"))
