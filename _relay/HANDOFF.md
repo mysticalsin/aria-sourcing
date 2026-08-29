@@ -11,7 +11,7 @@ status: microsoft-deferred-deploying-tip
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft
-- **Tip:** pending-commit · Live Fly `fc8b54a` / **0071** (tip **0073**)
+- **Tip:** 2281fae · Live Fly `fc8b54a` / **0071** (tip **0073**)
 - **Audit:** **64/64** · **Gate:** green
 - **Microsoft / M365:** **DEFERRED by owner**
 - **Deploy:** reminting confirm + fly-deploy-now for tip (0072+0073 + honesty)
