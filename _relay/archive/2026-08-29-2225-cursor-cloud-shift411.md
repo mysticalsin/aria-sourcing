@@ -1,41 +1,41 @@
 ---
 project: MSourcing / ARIA
-shift: 412
+shift: 411
 agent: cursor-cloud
-updated: 2026-08-29T22:25Z
-status: audit-ops-only
+updated: 2026-08-29T22:20Z
+status: send-route-heal-closed
 ---
 
-# Handoff — Shift 412
+# Handoff — Shift 411
 
 ## Current state
 
-- **Branch / PR:** `cursor/rei-autopilot-send-b91d` → **PR #40** (tip `3ece0b3`; supersedes closed #39)
-- **CODE audit (medium):** no material Autopilot gaps fixable without Graph dropzones / `ARIA_PROD_DEPLOY_CONFIRM` — **ops only**
+- **Branch / PR:** `cursor/rei-autopilot-send-b91d` → **PR #40** (supersedes closed #39; related **PR #36**)
+- **CODE:** Autopilot + Approve→Send recipient + Graph heal fail-closed on Autopilot **and** send route
 - **Live Fly:** `1665b39` / **0074** — tip + **0076–0079** not applied
 - **Dropzones:** absent → Graph = **HOLD**
 - **Deploy:** no `ARIA_PROD_DEPLOY_CONFIRM`
-- **Docs:** `production-readiness/STATUS.md` now cites PR **#40** (was stale #39)
+- **CI:** Actions jobs fail-fast (budget / rate-limit) — not a tip code signal
 
 ## Done this shift
 
-1. Skeptical Autopilot audit of tip `3ece0b3` / PR #40 (send, dispatch, critics, prep recipient, Graph heal, soft-gap, WA inbound)
-2. Corrected STATUS.md PR #39 → #40
+1. `outreach/send` Graph + DNS `domain_verified` heal checks Supabase `{ error }` before in-memory true
+2. Pin in `tests/outreach-recipient.mts`
+3. Re-opened deliverable as **PR #40** after #39 was closed
 
 ## Blockers (ops only)
 
-1. Deploy tip + **0076–0079** (`ARIA_PROD_DEPLOY_CONFIRM` + `fly-deploy-now`)
-2. Settings HeyReach; Autopilot entitle; Sequences; `ARIA_LOOP_WORKSPACE_IDS`
-3. Graph dropzones for live Teams (`/tmp/owner-microsoft.env` etc.)
-4. WA Meta template / HeyReach `{message}` for cold LI/WA
-5. CI budget / Vercel rate-limit if Actions evidence needed
+1. Deploy tip + **0076–0079**
+2. Settings HeyReach; entitle; Sequences; `ARIA_LOOP_WORKSPACE_IDS`
+3. Graph dropzones for live Teams
+4. WA Meta template / HeyReach `{message}`
+5. Restore GitHub Actions budget / Vercel deploy rate limit if CI evidence needed
 
 ## Next steps
 
 ```bash
 bash scripts/print-fly-deploy-confirm.sh && bash scripts/fly-deploy-now.sh
 curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
-# expect build=3ece0b3… and migration ≥ 0079
 ```
 
 ## Decisions made (don't relitigate)
@@ -46,7 +46,6 @@ curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
 - Interviewer prep must never send/Autopilot to candidate email
 - Graph/DNS heal must observe Supabase error on Autopilot **and** interactive Send
 - Service enqueue binds approval body_hash + scope (0079)
-- Tip Autopilot CODE is complete pending ops; do not invent further code gaps without evidence
 
 ## Watch out
 

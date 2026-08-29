@@ -99,5 +99,5 @@ particular production deployment is healthy.
 
 - **Production = Fly only** (`aria-mantu-app.fly.dev`).
 - **Live Fly:** `1665b39` · migration **0074** · tip Autopilot (0076–0079) **not applied**.
-- PR [#39](https://github.com/mysticalsin/aria-sourcing/pull/39) tracks REI Autopilot send + prep path.
+- PR [#40](https://github.com/mysticalsin/aria-sourcing/pull/40) tracks REI Autopilot send + prep path (supersedes closed #39).
 - **Remaining for full objective:** deploy tip + **0076–0079**, Settings HeyReach + Autopilot entitle + Sequences + `ARIA_LOOP_WORKSPACE_IDS`, M365 dropzones for live Teams book, full Fly E2E without PARTIAL flags.
