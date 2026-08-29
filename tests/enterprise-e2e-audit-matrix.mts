@@ -1010,6 +1010,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       return (
         /CRITICS/.test(qualityLive)
         && /runOneCritic/.test(qualityLive)
+        && /resolveLoopLlm/.test(qualityLive)
         && (/Promise\.all/.test(qualityLive) || /Sequential peers/.test(qualityLive))
         && /llm_empathy/.test(readFileSync("src/lib/agents/hermes-agent-registry.ts", "utf8"))
         && /llm_compliance/.test(readFileSync("src/lib/agents/hermes-agent-registry.ts", "utf8"))

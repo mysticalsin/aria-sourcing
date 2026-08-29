@@ -3,13 +3,18 @@ import "server-only";
 /**
  * Server-only live LLM peer critics for outreach quality.
  * Kept separate from the deterministic pipeline so client bundles never import
- * serverGenerateText / server-only modules.
+ * resolveLoopLlm / serverGenerateText / server-only modules.
  *
  * Three critic agents run as separate LLM calls (empathy, compliance,
  * human-likeness) — fail-closed when any required critic cannot run.
+ *
+ * Workspace path uses resolveLoopLlm (Hermes-first → cloud auth-dead skip +
+ * vault), matching autonomous draft cron. Demo / no-workspace stays
+ * serverGenerateText env-only.
  */
 
 import { HERMES_QUALITY_CRITICS } from "@/lib/agents/hermes-agent-registry";
+import { resolveLoopLlm } from "@/lib/ai/loop-llm";
 import { serverGenerateText } from "@/lib/ai/server-generate";
 import { parseCriticJson } from "@/lib/outreach-critic-json";
 import {
@@ -53,6 +58,30 @@ const CRITICS: CriticSpec[] = HERMES_QUALITY_CRITICS.map((critic) => ({
   system: critic.system,
 }));
 
+async function generateCriticText(input: {
+  system: string;
+  prompt: string;
+  workspaceId?: string;
+}): Promise<{ ok: true; text: string } | { ok: false }> {
+  if (input.workspaceId) {
+    // Same Hermes → cloud stack as cron draft / loop tasks.
+    const live = await resolveLoopLlm({
+      task: "outreach",
+      system: input.system,
+      prompt: input.prompt,
+      workspaceId: input.workspaceId,
+      maxTokens: 256,
+    });
+    return live.ok ? { ok: true, text: live.text } : { ok: false };
+  }
+  const live = await serverGenerateText({
+    system: input.system,
+    prompt: input.prompt,
+    maxTokens: 256,
+  });
+  return live.ok ? { ok: true, text: live.text } : { ok: false };
+}
+
 async function runOneCritic(
   critic: CriticSpec,
   input: { subject: string; body: string; channel: string },
@@ -65,10 +94,9 @@ async function runOneCritic(
     input.body.slice(0, 4_000),
   ].join("\n");
   for (let attempt = 0; attempt < 3; attempt++) {
-    const live = await serverGenerateText({
+    const live = await generateCriticText({
       system: critic.system,
       prompt,
-      maxTokens: 256,
       workspaceId,
     });
     if (!live.ok) continue;
@@ -90,7 +118,8 @@ async function runOneCritic(
 
 /**
  * Deterministic pipeline + optional live LLM peer critics (three separate agents).
- * When no LLM key is configured, returns the deterministic verdict unchanged.
+ * When no LLM path is available, returns the deterministic verdict with
+ * llmCriticsUsed=false (approve/send fail closed on critics_required).
  */
 export async function validateOutreachQualityLive(input: {
   subject: string;
@@ -111,9 +140,9 @@ export async function validateOutreachQualityLive(input: {
   try {
     const channel = input.channel ?? "Email";
     const payload = { subject: input.subject, body: input.body, channel };
-    // Sequential peers: parallel bursts after draft generation starve the vault
-    // Anthropic path (env Kimi 401 failover) and return critics_required.
-    // serverGenerateText skips recently auth-dead env providers across peers.
+    // Sequential peers: parallel bursts after draft generation starve failover.
+    // Workspace critics use resolveLoopLlm (Hermes-first); demo uses env-only
+    // serverGenerateText which skips recently auth-dead providers across peers.
     const llmStages: StageResult[] = [];
     for (const critic of CRITICS) {
       const result = await runOneCritic(critic, payload, input.workspaceId);

@@ -1,44 +1,45 @@
 ---
 project: MSourcing / ARIA
-shift: 329
+shift: 330
 agent: cursor-cloud
-updated: 2026-08-29T02:15Z
-status: tip-ahead-docs-golive-honest
+updated: 2026-08-29T02:30Z
+status: tip-ahead-app-critics-hermes
 ---
 
-# Handoff — Shift 329
+# Handoff — Shift 330
 
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft
-- **Live Fly (app):** `9d35948` / migration **0073** (llm-env-status live)
-- **Tip:** docs/ops ahead of app — `deploy_status=tip_ahead_docs` (not stale)
-- **PARTIAL E2E:** **62 pass / 0 fail**
-- **Gate / audit:** green · **64/64** (re-check after tip_ahead_docs pin)
-- **Microsoft / M365:** **DEFERRED by owner**
-- **CI:** GHA empty-steps + Vercel rate-limit — **ignore**
-- **LLM:** `llm_auth=dead` · no `/tmp/owner-llm.env`
+- **Tip:** critics Hermes-first (needs Fly deploy — `tip_ahead_app`)
+- **Live Fly (app):** `9d35948` / **0073** (pre-fix)
+- **PARTIAL E2E (last):** **62/0** — approve critics soft-failed under dead Kimi (pre-fix)
+- **Microsoft / M365:** **DEFERRED**
+- **LLM:** `llm_auth=dead` · Hermes runtime ready — critics now use `resolveLoopLlm`
 
 ## Done this shift
 
-1. `print-fly-golive-status.sh`: `tip_ahead_docs` vs `tip_ahead_app` (stop false stale on docs/ops tip-ahead)
-2. `run-enterprise-e2e-partial.sh`: treat `tip_ahead_docs` like tip_live (no stale E2E flag)
-3. Audit matrix pins tip_ahead_docs / tip_ahead_app
+1. Workspace outreach critics → `resolveLoopLlm` (Hermes-first → cloud), matching draft cron
+2. Demo path keeps `serverGenerateText` env-only; fail-closed when all dead
+3. Tests: `outreach-quality-live-hermes`; audit pin; manifest 193/246
 
 ## Blockers
 
-- Strict PASS needs owner M365 reopen + live LLM remint (no `/tmp/owner-llm.env`)
+- Strict PASS still needs owner M365 reopen (calendar/Teams)
+- Owner LLM remint still required if Hermes down / cloud-only path
+- Deploy tip for critics fix before re-running PARTIAL for approve path
 
 ## Next steps
 
 ```bash
 # Microsoft path OFF unless owner re-enables.
-bash scripts/print-fly-golive-status.sh   # expect deploy_status=tip_ahead_docs|tip_live
-bash scripts/print-fly-deploy-confirm.sh  # remint only when tip_ahead_app
-curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,status,build,migration,components}'
+bash scripts/print-fly-golive-status.sh   # expect tip_ahead_app after this tip
+bash scripts/print-fly-deploy-confirm.sh
+# remint /tmp/owner-deploy-confirm.env then:
+bash scripts/fly-deploy-now.sh
 ARIA_ALLOW_PARTIAL_M365_E2E=1 ARIA_ALLOW_PARTIAL_LLM_E2E=1 bash e2e-workflow-test.sh
 # expect step 3c PASS with provenance=live; provenance / live=0 is quota
-# Only remint+deploy when deploy_status=tip_ahead_app
+# expect approve critics to use Hermes when cloud llm_auth=dead
 ```
 
 ## Production gate (Fly)
@@ -57,13 +58,10 @@ ARIA_ALLOW_PARTIAL_M365_E2E=1 ARIA_ALLOW_PARTIAL_LLM_E2E=1 bash e2e-workflow-tes
 - PR #36 only (supersedes #29)
 - **2026-08-29: Owner — don’t do the Microsoft part**
 - Deploy confirm remint is agent-owned (non-secret)
-- HMAC inbound without OAuth; Cal.com roadmap-only
-- LinkedIn always assisted-manual; PARTIAL requires inboundWebhookSecret
-- `/api/ready` llmKeysPresent is informational — live auth via probe-fly-llm-auth + `/api/admin/llm-env-status`
-- Docs/ops tip-ahead → `tip_ahead_docs` (no Fly redeploy); app tip-ahead → `tip_ahead_app`
+- Workspace critics share Hermes-first stack with loop drafts (`resolveLoopLlm`)
+- Docs/ops tip-ahead → `tip_ahead_docs`; app tip-ahead → `tip_ahead_app`
 
 ## Watch out
 
 - HANDOFF must keep “expect step 3c PASS” / “step 3c should show”
 - Do not re-arm `m365-secrets-reprobe` unless owner asks
-- llm-env-status is admin-only + 3/min — not a public health check
