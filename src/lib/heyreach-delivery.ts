@@ -3,20 +3,35 @@
  * Uses X-API-KEY. Prefer inbox SendMessage when conversation exists; otherwise
  * AddLeadsToCampaign / campaign Create for connection+message sequences.
  *
+ * Config sources (merged): Fly env HEYREACH_* and/or Settings → LinkedIn stack
+ * (api_keys vault + settings.heyreach.campaignId).
+ *
  * Docs: https://documenter.getpostman.com/view/23808049/2sA2xb5F75
  */
 
 import { classifyFailedHttpDeliveryState } from "@/lib/delivery-outcome";
+import { decryptSecret } from "@/lib/crypto-secrets";
+import { getServiceSupabase } from "@/lib/supabase/server";
+import { mergeHeyReachConfig } from "@/lib/heyreach-config";
 import type { LinkedInDeliveryOutcome, LinkedInDeliveryRequest } from "@/lib/linkedin-channel";
+import type { HeyReachSettings } from "@/lib/types";
+
+export { heyReachSettingsReady, mergeHeyReachConfig } from "@/lib/heyreach-config";
 
 const HEYREACH_BASE = "https://api.heyreach.io/api/public";
 const TIMEOUT = 20_000;
 
 export type HeyReachConfig = {
   apiKey: string;
-  /** Optional campaign id to add leads into (Settings / env HEYREACH_CAMPAIGN_ID) */
+  /** Campaign id to add leads into (Settings or env HEYREACH_CAMPAIGN_ID) */
   campaignId?: string;
   /** Optional LinkedIn sender account id in HeyReach */
+  accountId?: string;
+};
+
+export type HeyReachWorkspaceSecrets = {
+  apiKey?: string;
+  campaignId?: string;
   accountId?: string;
 };
 
@@ -68,10 +83,80 @@ export async function checkHeyReachApiKey(apiKey: string): Promise<boolean> {
 }
 
 /**
+ * Resolve delivery config for a workspace: Fly env and/or Settings vault + campaign id.
+ * NEVER logs the decrypted API key.
+ */
+export async function resolveHeyReachConfigForWorkspace(
+  workspaceId: string,
+): Promise<HeyReachConfig | null> {
+  const env = heyReachConfigFromEnv();
+  if (env?.apiKey && env.campaignId) return env;
+
+  const wid = workspaceId.trim();
+  if (!wid) return mergeHeyReachConfig(env, null);
+
+  const svc = getServiceSupabase();
+  if (!svc) return mergeHeyReachConfig(env, null);
+
+  const { data: row } = await svc
+    .from("workspace_state")
+    .select("state")
+    .eq("workspace_id", wid)
+    .maybeSingle();
+  const state = row?.state as { settings?: { heyreach?: HeyReachSettings } } | null | undefined;
+  const hey = state?.settings?.heyreach;
+  const campaignId = (hey?.campaignId ?? "").trim();
+  const accountId = (hey?.accountId ?? "").trim() || undefined;
+  const apiKeyId = (hey?.apiKeyId ?? "").trim();
+
+  let apiKey = "";
+  if (apiKeyId) {
+    const { data: keyRow } = await svc
+      .from("api_keys")
+      .select("secret, status, provider")
+      .eq("id", apiKeyId)
+      .eq("workspace_id", wid)
+      .maybeSingle();
+    if (
+      keyRow &&
+      keyRow.status === "valid" &&
+      (keyRow.provider === "HeyReach" || keyRow.provider === "Custom") &&
+      typeof keyRow.secret === "string"
+    ) {
+      apiKey = decryptSecret(keyRow.secret).trim();
+    }
+  }
+  if (!apiKey) {
+    const { data: latest } = await svc
+      .from("api_keys")
+      .select("secret")
+      .eq("workspace_id", wid)
+      .eq("provider", "HeyReach")
+      .eq("status", "valid")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latest?.secret && typeof latest.secret === "string") {
+      apiKey = decryptSecret(latest.secret).trim();
+    }
+  }
+
+  return mergeHeyReachConfig(env, {
+    apiKey: apiKey || undefined,
+    campaignId: campaignId || undefined,
+    accountId,
+  });
+}
+
+export async function heyReachDeliveryReadyForWorkspace(workspaceId: string): Promise<boolean> {
+  return Boolean(await resolveHeyReachConfigForWorkspace(workspaceId));
+}
+
+/**
  * Deliver a LinkedIn first-touch via HeyReach.
  * Strategy:
  * 1. If campaignId set → AddLeadsToCampaign with profile URL + custom message fields
- * 2. Else → refuse with clear detail (operator must set HEYREACH_CAMPAIGN_ID or use assisted-manual)
+ * 2. Else → refuse with clear detail (operator must set campaign id in Settings or env)
  */
 export async function deliverLinkedInViaHeyReach(
   req: LinkedInDeliveryRequest,
@@ -92,7 +177,7 @@ export async function deliverLinkedInViaHeyReach(
       deliveryState: "not-sent",
       provider: "HeyReach",
       detail:
-        "HEYREACH_CAMPAIGN_ID is required so Aria can add the lead to your HeyReach campaign sequence.",
+        "HeyReach campaign id is required (Settings → LinkedIn stack, or HEYREACH_CAMPAIGN_ID).",
     };
   }
 

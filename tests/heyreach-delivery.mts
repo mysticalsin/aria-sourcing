@@ -135,6 +135,33 @@ try {
   );
   ok("falls back to V1 on V2 failure", fallback.status === "sent" && v2ThenFallback === 2);
 
+  process.env.HEYREACH_ACCOUNT_ID = "7";
+  const withAccount = heyReachConfigFromEnv();
+  ok("configFromEnv includes accountId", withAccount?.accountId === "7");
+
+  // merge / settings readiness (client-safe)
+  const { mergeHeyReachConfig, heyReachSettingsReady } = await import("../src/lib/heyreach-config");
+  ok(
+    "merge prefers env campaign over workspace",
+    mergeHeyReachConfig(
+      { apiKey: "ek", campaignId: "env-c" },
+      { apiKey: "wk", campaignId: "ws-c" },
+    )?.campaignId === "env-c",
+  );
+  ok(
+    "merge fills campaign from workspace when env lacks it",
+    mergeHeyReachConfig({ apiKey: "ek" }, { campaignId: "ws-c" })?.campaignId === "ws-c",
+  );
+  ok(
+    "merge null without both",
+    mergeHeyReachConfig({ apiKey: "ek" }, { accountId: "1" }) === null,
+  );
+  ok(
+    "settingsReady needs apiKeyId+campaignId",
+    heyReachSettingsReady({ apiKeyId: "k", campaignId: "1" }) === true &&
+      heyReachSettingsReady({ apiKeyId: "k" }) === false,
+  );
+
   globalThis.fetch = (async () => new Response("down", { status: 503 })) as typeof fetch;
   const bothFail = await deliverLinkedInViaHeyReach(
     {
@@ -152,10 +179,6 @@ try {
     "both endpoints fail → error",
     bothFail.status === "error" && /503/.test(bothFail.detail),
   );
-
-  process.env.HEYREACH_ACCOUNT_ID = "7";
-  const withAccount = heyReachConfigFromEnv();
-  ok("configFromEnv includes accountId", withAccount?.accountId === "7");
 
   ok("checkApiKey false on throw", (await checkHeyReachApiKey("k")) === false);
 } finally {

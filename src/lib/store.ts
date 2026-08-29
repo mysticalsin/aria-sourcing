@@ -7394,6 +7394,10 @@ export function useDustSettings() {
   return useStateOrEmpty().settings.dust;
 }
 
+export function useHeyReachSettings() {
+  return useStateOrEmpty().settings.heyreach;
+}
+
 export function useSavedModels() {
   return useStateOrEmpty().settings.savedModels ?? [];
 }

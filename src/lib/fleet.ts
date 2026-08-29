@@ -48,7 +48,7 @@ export const PROVIDER_LIMIT_NOTE: Record<SeatProvider, string> = {
   "Twilio SMS": "Honor SMS regulations (opt-in/TCPA); keep cold sends low and include opt-out.",
   "LinkedIn Assisted Manual": "Assisted-manual only: draft, profile deep-link, human copy/paste/send, then record outcome.",
   "LinkedIn Vendor API": "Licensed vendor API only; fails closed until credentials and a signed provider contract exist.",
-  HeyReach: "Official HeyReach API — set HEYREACH_API_KEY + HEYREACH_CAMPAIGN_ID; autopilot queues LinkedIn after critics.",
+  HeyReach: "Official HeyReach API — add key + campaign id in Settings → LinkedIn stack; autopilot queues LinkedIn after critics.",
 };
 
 /* ---- Warm-up + capacity --------------------------------------------------- */

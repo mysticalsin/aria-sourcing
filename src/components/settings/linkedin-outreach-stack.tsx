@@ -1,11 +1,12 @@
 "use client";
 
 import { ShieldCheck } from "lucide-react";
-import { useMcpServers } from "@/lib/store";
+import { useMcpServers, useSettings } from "@/lib/store";
 import {
   findHeyReachMcpServer,
   heyReachMcpConnected,
 } from "@/lib/heyreach-mcp";
+import { heyReachSettingsReady } from "@/lib/heyreach-config";
 import { ConnectionStackShell } from "@/components/settings/integration-connection-primitives";
 import {
   LinkedInConnectionsProvider,
@@ -21,32 +22,36 @@ function LinkedInOutreachStackInner() {
   const mcpServers = useMcpServers();
   const heyReach = findHeyReachMcpServer(mcpServers);
   const heyReachConnected = heyReachMcpConnected(heyReach);
+  const apiReady = heyReachSettingsReady(useSettings().heyreach);
+  const step2Done = heyReachConnected || apiReady;
 
-  const stepsComplete = (signedIn ? 1 : 0) + (heyReachConnected ? 1 : 0);
+  const stepsComplete = (signedIn ? 1 : 0) + (step2Done ? 1 : 0);
   const progressPct = (stepsComplete / 2) * 100;
 
   let statusLabel = "Not started";
   let statusTone: "neutral" | "success" | "electric" = "neutral";
-  if (heyReachConnected && signedIn) {
-    statusLabel = "Identity + HeyReach ready (autopilot can queue LinkedIn when secrets set)";
+  if (step2Done && signedIn) {
+    statusLabel = apiReady
+      ? "Identity + HeyReach API ready"
+      : "Identity + HeyReach MCP ready (add campaign id for send)";
     statusTone = "success";
   } else if (signedIn) {
     statusLabel = "Identity connected";
     statusTone = "electric";
-  } else if (heyReachConnected) {
-    statusLabel = "MCP connected";
+  } else if (step2Done) {
+    statusLabel = apiReady ? "API configured" : "MCP connected";
     statusTone = "electric";
   }
 
   const identityState = signedIn ? "complete" : "active";
-  const outreachState = heyReachConnected ? "complete" : signedIn ? "active" : "pending";
+  const outreachState = step2Done ? "complete" : signedIn ? "active" : "pending";
 
   return (
     <ConnectionStackShell
       id={LINKEDIN_OUTREACH_STACK_ID}
       eyebrow="LinkedIn stack"
       title="Identity & outreach"
-      description="Two steps: prove who you are with LinkedIn OIDC, then wire HeyReach (MCP + API). With Autopilot ON and HEYREACH_API_KEY + HEYREACH_CAMPAIGN_ID on Fly, Aria queues LinkedIn first-touch via HeyReach after critics pass. Autopilot OFF keeps Approve → Send (or Pending Manual Send)."
+      description="Two steps: prove who you are with LinkedIn OIDC, then add HeyReach API (key + campaign id) and/or MCP in Settings. With Autopilot ON, Aria queues LinkedIn first-touch via HeyReach after critics pass. Autopilot OFF keeps Approve → Send (or Pending Manual Send)."
       statusLabel={statusLabel}
       statusTone={statusTone}
       progressPct={progressPct}
@@ -55,7 +60,7 @@ function LinkedInOutreachStackInner() {
         <p className="flex items-start gap-2 text-xs leading-relaxed text-muted">
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
           No scrape, no session bots, no password storage. OIDC tokens encrypted at rest.
-          Set Fly secrets HEYREACH_API_KEY and HEYREACH_CAMPAIGN_ID for durable LinkedIn delivery; MCP remains the agent tool path.
+          Paste HeyReach API key + campaign id in step 2 — no Fly CLI required for delivery config.
         </p>
       }
     >

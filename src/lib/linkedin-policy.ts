@@ -95,7 +95,7 @@ export function getOutboundChannelPolicy(
     return {
       ok: false,
       reason:
-        "LinkedIn delivery is assisted-manual only until HeyReach (HEYREACH_API_KEY + HEYREACH_CAMPAIGN_ID) or LINKEDIN_VENDOR_API_* is configured. Copy the approved draft and send it yourself, or connect HeyReach in Settings.",
+        "LinkedIn delivery is assisted-manual only until HeyReach (Settings → LinkedIn stack: API key + campaign id) or LINKEDIN_VENDOR_API_* is configured. Copy the approved draft and send it yourself, or connect HeyReach in Settings.",
     };
   }
   return { ok: true };

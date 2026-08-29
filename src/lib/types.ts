@@ -1073,6 +1073,9 @@ export interface SystemSettings {
    *  and which agent is locked to each DustTask. Optional — absent means Dust is
    *  not configured for this workspace. */
   dust?: DustSettings;
+  /** HeyReach LinkedIn delivery: vault apiKeyId + campaign id (non-secret).
+   *  Complements optional Fly env HEYREACH_* — Settings can configure without CLI. */
+  heyreach?: HeyReachSettings;
 }
 
 /* ---- Outreach fleet (multi-seat coordination + anti-ban guardrails) ------- */
@@ -1403,6 +1406,19 @@ export interface DatabricksSettings {
   clientId?: string;
   apiKeyId: string;
   needsQuery: string;
+}
+
+/** Non-secret HeyReach delivery config in workspace settings. The API key itself
+ *  lives in the api_keys vault (provider "HeyReach"), referenced by apiKeyId. */
+export interface HeyReachSettings {
+  /** References an ApiKey.id (provider "HeyReach" or Custom). */
+  apiKeyId?: string;
+  /** HeyReach campaign id used by AddLeadsToCampaign for LinkedIn sequences. */
+  campaignId?: string;
+  /** Optional LinkedIn sender account id inside HeyReach. */
+  accountId?: string;
+  /** True after a successful save + CheckApiKey (or when operator marks ready). */
+  connected?: boolean;
 }
 
 /** Stored metadata only — the secret value never lives in client state. */

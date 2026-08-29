@@ -361,7 +361,7 @@ function useLinkedInConnectionsState() {
           label: "HeyReach API (campaign delivery)",
           ok: providers.heyReachConfigured,
           optional: true,
-          hint: "Set HEYREACH_API_KEY + HEYREACH_CAMPAIGN_ID on Fly for autopilot LinkedIn send.",
+          hint: "Add API key + campaign id in Settings → LinkedIn stack (or Fly HEYREACH_*).",
         },
         {
           id: "webhook",

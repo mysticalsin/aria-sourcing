@@ -18,6 +18,9 @@ import type { Role } from "@/lib/types";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { safeLog } from "@/lib/log-redact";
 import { linkedInAdapterForProvider } from "@/lib/linkedin-channel";
+import { heyReachDeliveryReadyForWorkspace } from "@/lib/heyreach-delivery";
+import { heyReachSettingsReady } from "@/lib/heyreach-config";
+import type { HeyReachSettings } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -94,6 +97,22 @@ export async function GET(req: NextRequest) {
 
   const seats = ((seatRows ?? []) as AgentSeatRow[]).filter((s) => isLinkedInSeatProvider(s.provider));
 
+  const { data: stateRow } = await supabase
+    .from("workspace_state")
+    .select("state")
+    .eq("workspace_id", wid)
+    .maybeSingle();
+  const heySettings = (stateRow?.state as { settings?: { heyreach?: HeyReachSettings } } | null)?.settings
+    ?.heyreach;
+  const heyReachFromSettings = heyReachSettingsReady(heySettings);
+  const heyReachFromVault = heyReachFromSettings
+    ? true
+    : await heyReachDeliveryReadyForWorkspace(String(wid));
+  const providers = linkedInProviderReadiness();
+  if (heyReachFromVault || heyReachFromSettings) {
+    providers.heyReachConfigured = true;
+  }
+
   const { data: routes } = await supabase
     .from("linkedin_inbound_routes")
     .select("seat_id, route_key, operator_label, active")
@@ -129,7 +148,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    providers: linkedInProviderReadiness(),
+    providers,
     oauthConnections: Array.from(oauthBySeat.values()).map((o) => ({
       id: o.id,
       seatId: o.seat_id,
@@ -146,6 +165,10 @@ export async function GET(req: NextRequest) {
       const route = routeBySeat.get(s.id);
       const adapter = linkedInAdapterForProvider(s.provider);
       const oauth = oauthBySeat.get(s.id);
+      const adapterConfigured =
+        s.provider === "HeyReach"
+          ? providers.heyReachConfigured || (adapter?.configured() ?? false)
+          : (adapter?.configured() ?? false);
       return {
         id: s.id,
         name: s.name,
@@ -154,7 +177,7 @@ export async function GET(req: NextRequest) {
         mode: s.mode,
         operatorEmail: s.operator_email,
         connectedAccount: s.connected_account || null,
-        adapterConfigured: adapter?.configured() ?? false,
+        adapterConfigured,
         oauthConnected: Boolean(oauth),
         oauthProfile: oauth
           ? {
@@ -283,13 +306,17 @@ async function ensureConnect(
     );
   }
   if (provider === "HeyReach" && !readiness.heyReachConfigured) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "HEYREACH_API_KEY / HEYREACH_CAMPAIGN_ID are not configured on the server.",
-      },
-      { status: 503 },
-    );
+    const workspaceReady = await heyReachDeliveryReadyForWorkspace(workspaceId);
+    if (!workspaceReady) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "HeyReach is not configured. Add API key + campaign id in Settings → LinkedIn stack.",
+        },
+        { status: 503 },
+      );
+    }
   }
 
   const { data: seatRows, error: seatErr } = await supabase

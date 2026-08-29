@@ -14,7 +14,7 @@ export type LinkedInProviderReadiness = {
   encryptionReady: boolean;
   assistedManual: true;
   vendorApiConfigured: boolean;
-  /** Fly secrets HEYREACH_API_KEY + HEYREACH_CAMPAIGN_ID ready for durable queue. */
+  /** Ready when Fly env or Settings vault+campaign is configured for durable queue. */
   heyReachConfigured: boolean;
   inboundWebhookSecret: boolean;
 };

@@ -156,7 +156,11 @@ export function ApiKeysPanel() {
                   autoComplete="off"
                   value={value}
                   onChange={(e) => setValue(e.target.value)}
-                  placeholder={KEY_VALUE_PLACEHOLDER[provider] ?? "sk-…  (encrypted; never shown again)"}
+                  placeholder={
+                    provider === "HeyReach"
+                      ? "HeyReach X-API-KEY… (encrypted; never shown again)"
+                      : (KEY_VALUE_PLACEHOLDER[provider] ?? "sk-…  (encrypted; never shown again)")
+                  }
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !busy) void handleSave();
                   }}

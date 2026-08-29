@@ -37,6 +37,7 @@ import { detectInjection, validateCandidateBoundText } from "@/lib/agent-disclos
 import { performEmailSend } from "@/lib/email-send";
 import { createEmailUnsubscribeLink } from "@/lib/email-unsubscribe";
 import { linkedInAdapterForProvider } from "@/lib/linkedin-channel";
+import { resolveHeyReachConfigForWorkspace } from "@/lib/heyreach-delivery";
 
 const WHATSAPP_GATE_CACHE_VERSION = "whatsapp-outbound-gate-v1";
 const WHATSAPP_GATE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
@@ -339,7 +340,13 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           await finish("blocked", { pass: false, reasons: ["linkedin-seat-not-live"] });
           continue;
         }
-        if (!adapter.configured()) {
+        if (adapter.kind === "heyreach") {
+          const cfg = await resolveHeyReachConfigForWorkspace(msg.workspace_id);
+          if (!cfg) {
+            await finish("blocked", { pass: false, reasons: ["linkedin-provider-unconfigured"] }, "unconfigured");
+            continue;
+          }
+        } else if (!adapter.configured()) {
           await finish("blocked", { pass: false, reasons: ["linkedin-provider-unconfigured"] }, "unconfigured");
           continue;
         }

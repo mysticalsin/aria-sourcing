@@ -11,6 +11,7 @@ import { testSillageConnection } from "@/lib/sourcing/sillage";
 import { checkApolloAuth } from "@/lib/sourcing/apollo";
 import { checkSeamlessAuth } from "@/lib/sourcing/seamless";
 import { testApifyConnection } from "@/lib/sourcing/apify";
+import { checkHeyReachApiKey } from "@/lib/heyreach-delivery";
 import { clearProviderProbe } from "@/lib/sourcing/provider-egress";
 
 const ApiKeyTestSchema = z.object({
@@ -81,6 +82,12 @@ async function resolveKeyTest(
   if (provider === "Apollo") return testApolloKey(value);
   if (provider === "Seamless") return testSeamlessKey(value);
   if (provider === "Apify") return testApifyKey(value);
+  if (provider === "HeyReach") {
+    const ok = await checkHeyReachApiKey(value);
+    return ok
+      ? { valid: true, detail: "HeyReach API key accepted (CheckApiKey)." }
+      : { valid: false, detail: "HeyReach rejected this API key (CheckApiKey)." };
+  }
   if (isLiveLlmKeyProvider(provider)) return testLlmApiKey(provider, value);
   return validateApiKeyFormat(provider, value);
 }

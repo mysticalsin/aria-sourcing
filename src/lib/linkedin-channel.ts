@@ -1,8 +1,8 @@
 import { classifyFailedHttpDeliveryState } from "@/lib/delivery-outcome";
 import {
   deliverLinkedInViaHeyReach,
-  heyReachConfigFromEnv,
   heyReachDeliveryReadyFromEnv,
+  resolveHeyReachConfigForWorkspace,
 } from "@/lib/heyreach-delivery";
 
 export type LinkedInBackendKind = "assisted-manual" | "vendor-api" | "heyreach";
@@ -137,13 +137,14 @@ const heyReachAdapter: LinkedInAdapter = {
   provider: "HeyReach",
   configured: () => heyReachDeliveryReadyFromEnv(),
   async deliver(req) {
-    const config = heyReachConfigFromEnv();
+    const config = await resolveHeyReachConfigForWorkspace(req.workspaceId);
     if (!config?.campaignId) {
       return {
         status: "error",
         deliveryState: "not-sent",
         provider: "HeyReach",
-        detail: "HEYREACH_API_KEY / HEYREACH_CAMPAIGN_ID not set.",
+        detail:
+          "HeyReach is not configured. Add API key + campaign id in Settings → LinkedIn stack (or set HEYREACH_* env).",
       };
     }
     return deliverLinkedInViaHeyReach(req, config);

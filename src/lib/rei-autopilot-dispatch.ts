@@ -6,8 +6,8 @@
 import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
 import { decideReiAutopilotSend, type ReiOutboundChannel } from "@/lib/rei-autopilot-send";
 import {
-  heyReachConfigFromEnv,
   heyReachDeliveryReadyFromEnv,
+  resolveHeyReachConfigForWorkspace,
   deliverLinkedInViaHeyReach,
 } from "@/lib/heyreach-delivery";
 import { isMailboxSeatProvider } from "@/lib/outreach-send-mode";
@@ -77,6 +77,9 @@ async function loadAutopilotContext(svc: ServiceClient, workspaceId: string) {
     (s) => s.mode === "live" && String(s.provider) === "HeyReach",
   );
 
+  const heyReachConfigured =
+    heyReachDeliveryReadyFromEnv() || Boolean(await resolveHeyReachConfigForWorkspace(workspaceId));
+
   return {
     sequencesArmed,
     entitledId,
@@ -87,7 +90,7 @@ async function loadAutopilotContext(svc: ServiceClient, workspaceId: string) {
     liveHeyReach,
     hasLiveMailbox: Boolean(liveMailbox),
     hasLiveWhatsApp: Boolean(liveWhatsApp),
-    heyReachConfigured: heyReachDeliveryReadyFromEnv(),
+    heyReachConfigured,
     linkedInVendorConfigured: Boolean(
       process.env.LINKEDIN_VENDOR_API_URL && process.env.LINKEDIN_VENDOR_API_KEY,
     ),
@@ -252,11 +255,11 @@ async function dispatchLinkedIn(
   }
 
   if (mode === "heyreach") {
-    const config = heyReachConfigFromEnv();
+    const config = await resolveHeyReachConfigForWorkspace(input.workspaceId);
     if (!config?.campaignId) {
       return {
         status: "skipped",
-        detail: "HEYREACH_API_KEY + HEYREACH_CAMPAIGN_ID required.",
+        detail: "HeyReach API key + campaign id required (Settings → LinkedIn stack).",
         reason: "heyreach_incomplete",
       };
     }

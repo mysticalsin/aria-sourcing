@@ -54,6 +54,8 @@ ok("integrations catalogue includes HeyReach MCP", Boolean(integ?.real));
 
 const panel = readFileSync("src/components/settings/heyreach-mcp-panel.tsx", "utf8");
 ok("settings panel wires connect + test", /Connect HeyReach MCP/.test(panel) && /testMcpServer/.test(panel));
+ok("settings panel saves API delivery inline", /Save HeyReach API/.test(panel) && /Paste HeyReach API key/.test(panel));
+ok("settings panel accepts campaign id", /heyreach-campaign-id/.test(panel));
 
 const settings = readFileSync("src/app/settings/page.tsx", "utf8");
 ok(

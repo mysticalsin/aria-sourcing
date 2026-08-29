@@ -21,7 +21,10 @@ import { dispatchDue } from "@/lib/dispatch-outbound";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 import { isMailboxSeatProvider } from "@/lib/outreach-send-mode";
-import { heyReachDeliveryReadyFromEnv } from "@/lib/heyreach-delivery";
+import {
+  heyReachDeliveryReadyFromEnv,
+  heyReachDeliveryReadyForWorkspace,
+} from "@/lib/heyreach-delivery";
 import { normalizeLinkedInProfileUrl } from "@/lib/linkedin-connections";
 
 const OutreachSendSchema = z.object({
@@ -75,18 +78,25 @@ export async function POST(req: NextRequest) {
   const payload = validated.data;
   const channel = payload.channel ?? "Email";
 
-  // LinkedIn is assisted-manual unless HeyReach / vendor API is configured.
-  const channelPolicy = getOutboundChannelPolicy(channel, {
-    heyReachConfigured: heyReachDeliveryReadyFromEnv(),
-    linkedInVendorConfigured: Boolean(
-      process.env.LINKEDIN_VENDOR_API_URL && process.env.LINKEDIN_VENDOR_API_KEY,
-    ),
+  // LinkedIn is assisted-manual unless HeyReach / vendor API is configured
+  // (Fly env and/or Settings → LinkedIn stack vault + campaign id).
+  const linkedInVendorConfigured = Boolean(
+    process.env.LINKEDIN_VENDOR_API_URL && process.env.LINKEDIN_VENDOR_API_KEY,
+  );
+  let heyReachConfigured = heyReachDeliveryReadyFromEnv();
+  const earlyChannelPolicy = getOutboundChannelPolicy(channel, {
+    heyReachConfigured,
+    linkedInVendorConfigured,
   });
-  if (!channelPolicy.ok) {
-    return NextResponse.json(
-      { status: "manual-required", detail: channelPolicy.reason },
-      { status: 409 },
-    );
+  if (!earlyChannelPolicy.ok) {
+    // Defer LinkedIn fail until after workspace auth when confirmLive — Settings
+    // may hold the vault key + campaign id even without Fly secrets.
+    if (channel !== "LinkedIn" || !payload.confirmLive) {
+      return NextResponse.json(
+        { status: "manual-required", detail: earlyChannelPolicy.reason },
+        { status: 409 },
+      );
+    }
   }
   if (channel === "SMS") {
     return NextResponse.json(
@@ -143,6 +153,21 @@ export async function POST(req: NextRequest) {
   if (!approvalWid) {
     return NextResponse.json({ status: "error", detail: "Workspace not found." }, { status: 400 });
   }
+
+  if (channel === "LinkedIn" && !earlyChannelPolicy.ok) {
+    heyReachConfigured = await heyReachDeliveryReadyForWorkspace(String(approvalWid));
+    const channelPolicy = getOutboundChannelPolicy("LinkedIn", {
+      heyReachConfigured,
+      linkedInVendorConfigured,
+    });
+    if (!channelPolicy.ok) {
+      return NextResponse.json(
+        { status: "manual-required", detail: channelPolicy.reason },
+        { status: 409 },
+      );
+    }
+  }
+
   const { data: workspaceState } = await supabase
     .from("workspace_state")
     .select("state")
