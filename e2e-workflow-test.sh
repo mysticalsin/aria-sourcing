@@ -1245,9 +1245,15 @@ gen_draft() {  # $1 = channel label used only in the prompt
   else
     fmt_hint="Format: Subject: ... then body."
   fi
-  prompt="Draft a first-touch ${channel} recruiting message in language ISO code ${E2E_OUTREACH_LANGUAGE}. The candidate's main language is ${E2E_LANG_LABEL}. Write the entire message in ${E2E_LANG_LABEL} only (proper nouns like Mantu Group excepted). ${fmt_hint} Reach out to ${CAND_NAME} about a senior engineering role with Mantu Group. Mention Mantu Group by name, lead with their work, one genuine reason, soft ask."
-  jq -n --arg p "$prompt" --arg prov "$AGENT_PROVIDER" --arg model "$OUTREACH_MODEL" \
-    '{task:"outreach", prompt:$p, provider:$prov, model:$model}' > "$WORK/draft_req.json"
+  prompt="Draft a first-touch ${channel} recruiting message in language ISO code ${E2E_OUTREACH_LANGUAGE}. The candidate's main language is ${E2E_LANG_LABEL}. Write the entire message in ${E2E_LANG_LABEL} only (proper nouns like Mantu Group excepted). Do not ask clarifying questions — output the final message only. ${fmt_hint} Reach out to ${CAND_NAME} about a senior engineering role with Mantu Group. Mention Mantu Group by name, lead with their work, one genuine reason, soft ask."
+  # Hermes uses server default model — never send model:"" (Zod rejects empty string).
+  if [ -n "${OUTREACH_MODEL:-}" ]; then
+    jq -n --arg p "$prompt" --arg prov "$AGENT_PROVIDER" --arg model "$OUTREACH_MODEL" \
+      '{task:"outreach", prompt:$p, provider:$prov, model:$model}' > "$WORK/draft_req.json"
+  else
+    jq -n --arg p "$prompt" --arg prov "$AGENT_PROVIDER" \
+      '{task:"outreach", prompt:$p, provider:$prov}' > "$WORK/draft_req.json"
+  fi
   api POST "$APP_URL/api/hermes/chat" "$WORK/draft_req.json"
   ok=$(jq -r '.ok // false' "$RESP"); text=$(jq -r '.text // empty' "$RESP")
   if [ "$ok" = "true" ] && [ -n "$text" ]; then

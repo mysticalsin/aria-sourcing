@@ -1145,6 +1145,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /graph_stage_invalid/.test(draft)
         && /ARIA_ALLOW_CANNED_DRAFT_E2E/.test(e2e)
         && /Fly enterprise E2E requires live Hermes/.test(e2e)
+        && /never send model:""/.test(e2e)
         && /outreach_draft_graph_stage_invalid/.test(worker)
         && /outreach_draft_critics_required/.test(worker)
         && /assertRecruitingGraphCheckpoint/.test(worker)
