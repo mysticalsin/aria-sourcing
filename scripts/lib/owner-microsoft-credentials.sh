@@ -211,35 +211,46 @@ owner_ms_configure_apply_lock_path() {
   printf '%s' "${ARIA_M365_CONFIGURE_APPLY_LOCK:-/tmp/aria-m365-configure-apply.lock}"
 }
 
-# Exclusive flock so duplicate tmux/agent restarts cannot double-apply Fly secrets.
-# Holds FD 9 for the remainder of the process (or until owner_ms_release_singleton_lock).
+# Exclusive lock so duplicate tmux/agent restarts cannot double-apply.
+# Uses a mkdir lockdir (not flock FD) so sleep/flyctl children cannot strand the lock.
 # Optional 3rd arg: exit code when lock busy (default 0 = idempotent no-op for waiters).
 # Nested acquire of the same path is a no-op when ARIA_M365_LOCK_HELD=1 (az-configure --apply → fly-apply).
 owner_ms_acquire_singleton_lock() {
   local lockfile="${1:?lockfile required}"
   local name="${2:-process}"
   local busy_exit="${3:-0}"
+  local lockdir pidfile stale_pid
   if [ "${ARIA_M365_LOCK_HELD:-0}" = "1" ] && [ "${ARIA_M365_LOCK_PATH:-}" = "$lockfile" ]; then
     return 0
   fi
-  # shellcheck disable=SC2329
-  exec 9>"$lockfile"
-  # Close-on-exec so sleep/flyctl children cannot strand the flock after parent exit.
-  if command -v python3 >/dev/null 2>&1; then
-    python3 -c 'import fcntl, os, sys; fcntl.fcntl(9, fcntl.F_SETFD, fcntl.FD_CLOEXEC)' 2>/dev/null || true
+  lockdir="${lockfile}.d"
+  pidfile="${lockdir}/pid"
+  if ! mkdir "$lockdir" 2>/dev/null; then
+    stale_pid="$(cat "$pidfile" 2>/dev/null || true)"
+    if [ -n "$stale_pid" ] && ! kill -0 "$stale_pid" 2>/dev/null; then
+      rm -rf "$lockdir"
+      if ! mkdir "$lockdir" 2>/dev/null; then
+        printf 'Another %s already running (%s) — exiting\n' "$name" "$lockfile" >&2
+        exit "$busy_exit"
+      fi
+    else
+      printf 'Another %s already running (%s) — exiting\n' "$name" "$lockfile" >&2
+      exit "$busy_exit"
+    fi
   fi
-  if ! flock -n 9; then
-    printf 'Another %s already running (%s) — exiting\n' "$name" "$lockfile" >&2
-    exit "$busy_exit"
-  fi
+  printf '%s\n' "$$" > "$pidfile"
   export ARIA_M365_LOCK_HELD=1
   export ARIA_M365_LOCK_PATH="$lockfile"
+  export ARIA_M365_LOCK_DIR="$lockdir"
 }
 
-# Release FD 9 flock so long seat-waits do not block peer configure/apply.
+# Release mkdir lock so long seat-waits do not block peer configure/apply.
 owner_ms_release_singleton_lock() {
-  exec 9>&- 2>/dev/null || true
-  unset ARIA_M365_LOCK_HELD ARIA_M365_LOCK_PATH 2>/dev/null || true
+  local lockdir="${ARIA_M365_LOCK_DIR:-}"
+  if [ -n "$lockdir" ] && [ -d "$lockdir" ]; then
+    rm -rf "$lockdir"
+  fi
+  unset ARIA_M365_LOCK_HELD ARIA_M365_LOCK_PATH ARIA_M365_LOCK_DIR 2>/dev/null || true
 }
 
 # True when admin-consent CLI failed and Portal Grant is still required (or SKIP path pending).
