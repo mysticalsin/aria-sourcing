@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { SkeletonCard } from "@/components/ui";
+import { EmptyState } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { FunnelBoard } from "@/components/tania/funnel-board";
 import { FlowMatrix } from "@/components/tania/flow-matrix";
@@ -33,10 +33,10 @@ export default function FunnelPage() {
       <HydrationGate
         hydrated={hydrated}
         fallback={
-          <div className="space-y-6">
-            <SkeletonCard />
-            <SkeletonCard />
-          </div>
+          <EmptyState
+            title="Loading funnel…"
+            description="Funnel board appears after workspace hydrate — no placeholder stages."
+          />
         }
       >
         <div className="space-y-8">

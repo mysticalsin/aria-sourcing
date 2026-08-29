@@ -172,7 +172,8 @@ export function planOutreachApprovalDelivery(input: {
   stampSimulatedSend: boolean;
 } {
   const isLive = !input.forceDryRun;
-  const isLinkedInManual = input.channel === "LinkedIn" && isLive;
+  // LinkedIn is always assisted-manual — dry-run must not land on Approved + "Send now".
+  const isLinkedInManual = input.channel === "LinkedIn";
   const isLiveSendChannel =
     (input.channel === "Email" || input.channel === "WhatsApp" || input.channel === "SMS") && isLive;
   const finalStatus: OutreachStatus = isLinkedInManual

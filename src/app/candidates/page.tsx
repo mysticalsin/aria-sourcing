@@ -12,7 +12,7 @@ import {
   Input,
   Progress,
   Select,
-  SkeletonCard,
+  EmptyState,
   useToast,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
@@ -410,10 +410,10 @@ function CandidatesView() {
     <HydrationGate
       hydrated={hydrated}
       fallback={
-        <div className="space-y-6">
-          <SkeletonCard />
-          <SkeletonCard />
-        </div>
+        <EmptyState
+          title="Loading candidates…"
+          description="Candidate table appears after workspace hydrate — no placeholder rows."
+        />
       }
     >
       <Card className="mb-6">
@@ -639,10 +639,10 @@ export default function CandidatesPage() {
       />
       <React.Suspense
         fallback={
-          <div className="space-y-6">
-            <SkeletonCard />
-            <SkeletonCard />
-          </div>
+          <EmptyState
+            title="Loading candidates…"
+            description="Candidate table appears after workspace hydrate — no placeholder rows."
+          />
         }
       >
         <CandidatesView />

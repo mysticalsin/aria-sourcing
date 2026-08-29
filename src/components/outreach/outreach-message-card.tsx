@@ -107,8 +107,10 @@ export function OutreachMessageCard({
   const pendingManual = message.status === "Pending Manual Send";
   const settled = message.status === "Scheduled" || message.status === "Approved";
   const rejected = message.status === "Rejected";
-  // Live-approved email awaiting the deliberate, gated send (the real delivery step).
-  const approvedPendingSend = message.status === "Approved";
+  // Live-approved mailbox channel awaiting deliberate send — never LinkedIn
+  // (LinkedIn stays Pending Manual Send even under dry-run approve).
+  const approvedPendingSend =
+    message.status === "Approved" && message.channel !== "LinkedIn";
 
   const subjectId = `outreach-subject-${message.id}`;
   const bodyId = `outreach-body-${message.id}`;

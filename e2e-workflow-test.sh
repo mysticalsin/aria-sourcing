@@ -682,13 +682,16 @@ if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_
     info "No connected Outlook mailbox yet — Graph subscription check deferred until Connect Outlook."
   fi
 elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ]; then
-  # Honest PARTIAL: surface M365 gaps as WARN + skip flag (never silent PASS).
+  # Honest PARTIAL: soft-skip Graph/Teams only. Generic HMAC inbound webhook is
+  # the non-MS hiring-need intake path — still required for PARTIAL green.
   if [ "$MS_OAUTH" != "true" ]; then
     warn "PARTIAL: microsoftOAuth=false — MICROSOFT_CLIENT_* not ready; calendar/Teams steps will skip."
     E2E_SKIP_M365=1
   fi
-  if [ "$INBOUND_READY" != "true" ]; then
-    warn "PARTIAL: inboundWebhookSecret=false — EMAIL_INBOUND_WEBHOOK_SECRET not ready."
+  if [ "$INBOUND_READY" = "true" ]; then
+    pass "Fly inboundWebhookSecret provider ready (HMAC intake; independent of Graph)."
+  else
+    fail "PARTIAL still requires inboundWebhookSecret=true (EMAIL_INBOUND_WEBHOOK_SECRET) for hiring-need intake."
   fi
 fi
 # email/test hiring_need_handler: ready without Graph (HMAC path). Assert when any mailbox seat exists.

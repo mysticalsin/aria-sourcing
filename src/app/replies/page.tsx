@@ -6,7 +6,6 @@ import {
   Button,
   Select,
   EmptyState,
-  SkeletonCard,
   useToast,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
@@ -221,13 +220,10 @@ export default function RepliesPage() {
       <HydrationGate
         hydrated={hydrated}
         fallback={
-          <div className="space-y-6">
-            <SkeletonCard />
-            <div className="grid gap-4 md:grid-cols-2">
-              <SkeletonCard />
-              <SkeletonCard />
-            </div>
-          </div>
+          <EmptyState
+            title="Loading replies…"
+            description="Inbound triage appears after workspace hydrate — no placeholder cards."
+          />
         }
       >
         <RepliesInboxShell

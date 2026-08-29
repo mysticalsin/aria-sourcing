@@ -10,7 +10,6 @@ import {
   Field,
   Input,
   Select,
-  SkeletonCard,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { CampaignCard } from "@/components/campaigns/campaign-card";
@@ -95,14 +94,10 @@ export default function CampaignsPage() {
       <HydrationGate
         hydrated={hydrated}
         fallback={
-          <div className="space-y-6">
-            <SkeletonCard />
-            <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-              <SkeletonCard />
-              <SkeletonCard />
-              <SkeletonCard />
-            </div>
-          </div>
+          <EmptyState
+            title="Loading campaigns…"
+            description="Campaign list appears after workspace hydrate — no placeholder cards."
+          />
         }
       >
         {campaigns.length === 0 ? (

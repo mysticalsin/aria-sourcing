@@ -17,7 +17,6 @@ import {
   Meter,
   Progress,
   Select,
-  SkeletonCard,
   Tabs,
   TabPanel,
   Textarea,
@@ -409,11 +408,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   if (!hydrated) {
     return (
-      <div className="space-y-6">
-        <SkeletonCard />
-        <SkeletonCard />
-        <SkeletonCard />
-      </div>
+      <EmptyState
+        title="Loading campaign…"
+        description="Campaign detail appears after workspace hydrate — no placeholder panels."
+      />
     );
   }
 
