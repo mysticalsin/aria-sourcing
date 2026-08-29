@@ -37,6 +37,7 @@ status: critics-pass-m365-partial-only
 ```bash
 unset AGENT_PROVIDER AGENT_MODEL
 bash scripts/print-fly-golive-status.sh   # expect tip_ahead_docs or tip_live; live ff27e74
+bash scripts/print-fly-deploy-confirm.sh   # remint /tmp/owner-deploy-confirm.env when tip_ahead_app
 bash scripts/run-enterprise-e2e-partial.sh
 # expect Running: ARIA_ALLOW_PARTIAL_M365_E2E=1 only
 # expect step 3c PASS with provenance=live top-10

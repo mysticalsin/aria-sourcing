@@ -1126,6 +1126,7 @@ jq -n --arg id "$AGENT_CAMPAIGN_ID" '{campaignId:$id, count:10}' > "$WORK/agent_
 SOURCING_ATTEMPT=0
 # Fly always gets retry headroom — sourcing soft-skip is NOT tied to PARTIAL_M365
 # (that flag is Microsoft-only; quota/empty must not hide under M365 deferral).
+# Strict Fly runs: transient sourcing quota and LLM critic saturation need headroom without partial escapes.
 if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ]; then
   SOURCING_MAX="${E2E_SOURCING_MAX:-6}"
 else
