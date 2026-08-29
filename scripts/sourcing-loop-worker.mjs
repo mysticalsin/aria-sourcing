@@ -1579,6 +1579,10 @@ async function handleDraftGenerate(job, context) {
   const candidateId = boundedText(payload.candidateId, 160, "candidate_id_required");
   const trigger = typeof payload.trigger === "string" ? payload.trigger : "";
   const intent = typeof payload.intent === "string" ? payload.intent : "";
+  const channelHint =
+    payload.channel === "Email" || payload.channel === "LinkedIn" || payload.channel === "WhatsApp"
+      ? payload.channel
+      : "";
 
   if (!context.configuration?.outreachDraftUrl || !context.configuration?.cronSecret) {
     throw new HandlerError("outreach_draft_unconfigured", true);
@@ -1598,6 +1602,7 @@ async function handleDraftGenerate(job, context) {
         candidateId,
         ...(trigger ? { trigger } : {}),
         ...(intent ? { intent } : {}),
+        ...(channelHint ? { channel: channelHint } : {}),
       }),
       signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
     });
@@ -2289,7 +2294,8 @@ async function handleFirstInterviewBook(job, context) {
         && (confirm.status === "no_live_graph_seat"
           || confirm.status === "scope_insufficient"
           || confirm.status === "graph_connection_missing"
-          || confirm.status === "skipped")
+          || confirm.status === "skipped"
+          || confirm.status === "autopilot_disarmed")
       ) {
         // fall through
       } else if (isRecord(confirm) && confirm.status === "reconciliation_required") {
@@ -2485,6 +2491,10 @@ async function handleInboundClassify(job, context) {
 
       const arm = await workspaceAutopilotArmed(context.client, job.workspace_id);
       if (arm.entitledId) {
+        const replyChannel =
+          reply.channel === "Email" || reply.channel === "LinkedIn" || reply.channel === "WhatsApp"
+            ? reply.channel
+            : "";
         successors.push(
           successorJob(
             "draft_generate",
@@ -2496,6 +2506,7 @@ async function handleInboundClassify(job, context) {
               approvalSource: "autopilot_reply",
               trigger: "inbound_classify",
               intent: classification.intent,
+              ...(replyChannel ? { channel: replyChannel } : {}),
             },
             70,
           ),

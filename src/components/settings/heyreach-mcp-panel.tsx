@@ -169,6 +169,33 @@ export function useHeyReachMcp() {
       }
 
       const seatOutcome = await ensureHeyReachSeatLive();
+      let routeNote = "";
+      try {
+        const routeRes = await fetch("/api/linkedin/connections", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "ensure_connect",
+            provider: "HeyReach",
+            operatorLabel: "HeyReach",
+            goLive: true,
+          }),
+        });
+        const routeJson = (await routeRes.json().catch(() => null)) as {
+          ok?: boolean;
+          routeKey?: string;
+          error?: string;
+        } | null;
+        if (routeJson?.ok && routeJson.routeKey) {
+          routeNote = ` Inbound route ${routeJson.routeKey.slice(0, 8)}… registered for LinkedIn replies.`;
+        } else if (routeJson && !routeJson.ok) {
+          routeNote = ` Inbound route not registered (${routeJson.error ?? "retry Connect"}).`;
+        }
+      } catch {
+        routeNote = " Inbound route registration skipped (network).";
+      }
+
       actions.updateIntegration(HEYREACH_MCP_INTEGRATION_ID, {
         status: "connected",
         mode: "live",
@@ -188,7 +215,7 @@ export function useHeyReachMcp() {
 
       toast({
         title: "HeyReach API saved",
-        description: `Campaign ${trimmedCampaign} linked for LinkedIn delivery.${seatNote}`,
+        description: `Campaign ${trimmedCampaign} linked for LinkedIn delivery.${seatNote}${routeNote}`,
         variant: "success",
       });
     } catch (err) {

@@ -78,10 +78,15 @@ try {
   );
 
   let calledPath = "";
+  let lastBody = "";
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     calledPath = String(input);
+    lastBody = typeof init?.body === "string" ? init.body : "";
     if (String(input).includes("CheckApiKey")) {
       return new Response("{}", { status: 200 });
+    }
+    if (String(input).includes("inbox/SendMessage")) {
+      return new Response("no conversation", { status: 404 });
     }
     if (String(input).includes("AddLeadsToCampaignV2")) {
       return new Response(JSON.stringify({ addedLeadsCount: 1, id: "hr-1" }), { status: 200 });
@@ -104,12 +109,39 @@ try {
     { apiKey: "k", campaignId: "99" },
   );
   ok("V2 success → sent/accepted", sent.status === "sent" && sent.deliveryState === "accepted");
-  ok("V2 hits AddLeadsToCampaignV2", /AddLeadsToCampaignV2/.test(calledPath));
+  ok("V2 hits AddLeadsToCampaignV2 after SendMessage miss", /AddLeadsToCampaignV2/.test(calledPath));
+  ok("AddLeads payload includes message custom field", /"name":"message"/.test(lastBody) && /Hello from Aria/.test(lastBody));
   ok("provider is HeyReach", sent.provider === "HeyReach");
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calledPath = String(input);
+    lastBody = typeof init?.body === "string" ? init.body : "";
+    if (String(input).includes("inbox/SendMessage")) {
+      return new Response(JSON.stringify({ id: "msg-hr-1" }), { status: 200 });
+    }
+    return new Response("should not reach AddLeads", { status: 500 });
+  }) as typeof fetch;
+  const inboxSent = await deliverLinkedInViaHeyReach(
+    {
+      workspaceId: "ws",
+      messageId: "m1",
+      candidateId: "c1",
+      profileUrl: "https://www.linkedin.com/in/jane",
+      subject: "Hi",
+      body: "Exact Aria draft body",
+      attemptId: "a-inbox",
+    },
+    { apiKey: "k", campaignId: "99" },
+  );
+  ok("SendMessage success → sent", inboxSent.status === "sent" && /SendMessage/.test(inboxSent.detail));
+  ok("SendMessage posts draft body", /Exact Aria draft body/.test(lastBody));
 
   let v2ThenFallback = 0;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
+    if (url.includes("inbox/SendMessage")) {
+      return new Response("nope", { status: 404 });
+    }
     if (url.includes("AddLeadsToCampaignV2")) {
       v2ThenFallback++;
       return new Response("fail", { status: 500 });

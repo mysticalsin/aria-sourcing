@@ -157,8 +157,8 @@ export async function heyReachDeliveryReadyForWorkspace(workspaceId: string): Pr
 /**
  * Deliver a LinkedIn first-touch via HeyReach.
  * Strategy:
- * 1. If campaignId set → AddLeadsToCampaign with profile URL + custom message fields
- * 2. Else → refuse with clear detail (operator must set campaign id in Settings or env)
+ * 1. Prefer inbox SendMessage with the critics-green draft body (campaignId + profile URL).
+ * 2. Else AddLeadsToCampaignV2 with customUserFields.message = draft (campaign must use {message}).
  */
 export async function deliverLinkedInViaHeyReach(
   req: LinkedInDeliveryRequest,
@@ -183,22 +183,50 @@ export async function deliverLinkedInViaHeyReach(
     };
   }
 
+  const campaignId = Number(config.campaignId) || config.campaignId;
+  const accountId = config.accountId ? Number(config.accountId) || config.accountId : undefined;
+  const message = req.body.slice(0, 8000);
+
   try {
+    // Prefer sending the exact Aria draft when HeyReach can address the lead.
+    const sendRes = await heyReachFetch("/inbox/SendMessage", config.apiKey, {
+      method: "POST",
+      body: JSON.stringify({
+        campaignId,
+        leadProfileUrl: profileUrl,
+        message,
+        ...(accountId !== undefined ? { linkedInAccountId: accountId } : {}),
+        ...(req.subject.trim() ? { subject: req.subject.slice(0, 200) } : {}),
+      }),
+    });
+    if (sendRes.ok) {
+      const data = (await sendRes.json().catch(() => ({}))) as { id?: string; conversationId?: string };
+      return {
+        status: "sent",
+        deliveryState: "accepted",
+        provider: "HeyReach",
+        detail: "HeyReach inbox SendMessage accepted the Aria draft body.",
+        id: data.id?.trim() || data.conversationId?.trim() || `${req.attemptId}:heyreach-inbox`,
+      };
+    }
+
     const res = await heyReachFetch("/campaign/AddLeadsToCampaignV2", config.apiKey, {
       method: "POST",
       body: JSON.stringify({
-        campaignId: Number(config.campaignId) || config.campaignId,
+        campaignId,
         accountLeadPairs: [
           {
-            linkedInAccountId: config.accountId ? Number(config.accountId) || config.accountId : undefined,
+            linkedInAccountId: accountId,
             lead: {
               profileUrl,
               firstName: undefined,
               lastName: undefined,
+              // Campaign sequence steps must reference {message} (or {aria_body}).
               customUserFields: [
+                { name: "message", value: message },
+                { name: "aria_body", value: message },
                 { name: "aria_message_id", value: req.messageId },
                 { name: "aria_subject", value: req.subject.slice(0, 500) },
-                { name: "aria_body", value: req.body.slice(0, 7500) },
               ],
             },
           },
@@ -207,13 +235,21 @@ export async function deliverLinkedInViaHeyReach(
     });
 
     if (!res.ok) {
-      // Fallback older endpoint shape
       const fallback = await heyReachFetch("/campaign/AddLeadsToCampaign", config.apiKey, {
         method: "POST",
         body: JSON.stringify({
-          campaignId: Number(config.campaignId) || config.campaignId,
-          linkedInAccountId: config.accountId ? Number(config.accountId) || config.accountId : undefined,
-          leads: [{ profileUrl, customFields: { aria_message_id: req.messageId } }],
+          campaignId,
+          linkedInAccountId: accountId,
+          leads: [
+            {
+              profileUrl,
+              customFields: {
+                message,
+                aria_body: message,
+                aria_message_id: req.messageId,
+              },
+            },
+          ],
         }),
       });
       if (!fallback.ok) {
@@ -221,14 +257,15 @@ export async function deliverLinkedInViaHeyReach(
           status: "error",
           deliveryState: classifyFailedHttpDeliveryState(res.status),
           provider: "HeyReach",
-          detail: `HeyReach AddLeads HTTP ${res.status}/${fallback.status}`,
+          detail: `HeyReach SendMessage HTTP ${sendRes.status}; AddLeads ${res.status}/${fallback.status}`,
         };
       }
       return {
         status: "sent",
         deliveryState: "accepted",
         provider: "HeyReach",
-        detail: "Lead added to HeyReach campaign for LinkedIn sequence delivery.",
+        detail:
+          "Lead added to HeyReach campaign with {message} custom field (configure campaign to use {message}).",
         id: `${req.attemptId}:heyreach-campaign`,
       };
     }
@@ -238,7 +275,7 @@ export async function deliverLinkedInViaHeyReach(
       status: "sent",
       deliveryState: "accepted",
       provider: "HeyReach",
-      detail: `Lead queued in HeyReach campaign (added=${data.addedLeadsCount ?? "ok"}).`,
+      detail: `Lead queued in HeyReach campaign with draft in {message} (added=${data.addedLeadsCount ?? "ok"}).`,
       id: data.id?.trim() || `${req.attemptId}:heyreach`,
     };
   } catch (err) {

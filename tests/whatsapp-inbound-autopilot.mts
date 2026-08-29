@@ -17,6 +17,8 @@ function ok(name: string, cond: boolean) {
 const inbound = readFileSync(new URL("../src/lib/whatsapp-inbound.ts", import.meta.url), "utf8");
 const webhook = readFileSync(new URL("../src/app/api/webhooks/whatsapp/route.ts", import.meta.url), "utf8");
 
+ok("overrides locked spec guardrails when workspace Autopilot armed", /canary_remaining:\s*0/.test(inbound));
+ok("runs live critics before mint", /validateOutreachQualityLive/.test(inbound));
 ok("loads workspace Autopilot arming", /loadWorkspaceAutopilotArmed/.test(inbound));
 ok("passes entitlement into decideAutopilot", /autopilotEnabled:\s*arm\.entitled/.test(inbound));
 ok("mints autopilot_critics when eligible", /mint_autopilot_critics_approval/.test(inbound));

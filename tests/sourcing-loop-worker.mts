@@ -718,6 +718,7 @@ test("inbound_classify enqueues draft_generate for positive intent when autopilo
         approvalSource: "autopilot_reply",
         trigger: "inbound_classify",
         intent: "INTERESTED",
+        channel: "Email",
       },
       priority: 70,
     },

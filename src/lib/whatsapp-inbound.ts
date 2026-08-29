@@ -282,7 +282,14 @@ export async function processStoredWhatsAppInbound(
     const forbidden = [brief.department, brief.teamSize, brief.reportingTo, brief.currency]
       .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
     const arm = await loadWorkspaceAutopilotArmed(supabase, workspaceId);
-    const decision = decideAutopilot(draft, guardrails, { salaryMin, salaryMax, forbidden }, {
+    // Spec guardrails historically lock autopilot:false + canary>0. When the
+    // workspace Autopilot arm is on, trust entitlement for eligibility and keep
+    // disclosure / injection / human-likeness gate checks from decideAutopilot.
+    const effectiveGuardrails: SpecGuardrails =
+      arm.entitled && arm.sequencesArmed
+        ? { ...guardrails, autopilot: true, canary_remaining: 0 }
+        : guardrails;
+    const decision = decideAutopilot(draft, effectiveGuardrails, { salaryMin, salaryMax, forbidden }, {
       autopilotEnabled: arm.entitled && arm.sequencesArmed,
     });
     if (detectInjection(body).flagged && !decision.reasons.includes("injection-suspected")) {
@@ -290,7 +297,7 @@ export async function processStoredWhatsAppInbound(
     }
     const reviewDraftDedupeHash = dedupeHash(conversationCandidateId, "WhatsApp", decision.text);
 
-    // Autopilot ON + Sequences + clean decision → mint + durable queue (open reply window).
+    // Autopilot ON + Sequences + clean decision + live critics → mint + queue.
     // Otherwise store blocked for the Replies human-review surface.
     const mayAutoQueue =
       decision.action === "auto_approve_eligible" &&
@@ -300,6 +307,14 @@ export async function processStoredWhatsAppInbound(
       !decision.reasons.includes("injection-suspected");
 
     if (mayAutoQueue) {
+      const { validateOutreachQualityLive } = await import("@/lib/outreach-quality-pipeline-live");
+      const liveVerdict = await validateOutreachQualityLive({
+        subject: "",
+        body: decision.text,
+        channel: "WhatsApp",
+        workspaceId,
+      });
+      if (liveVerdict.llmCriticsUsed === true && liveVerdict.status === "ready") {
       const outboundId = randomUUID();
       const subject = "";
       const bodyHash = approvalHash(subject, decision.text);
@@ -365,12 +380,12 @@ export async function processStoredWhatsAppInbound(
             }
             return complete("triage", "review-draft-dedupe-conflict");
           }
-          // Mint succeeded but insert failed for another reason — fall through to blocked review.
           safeLog("whatsapp inbound: autopilot queue insert failed", {
             message: outboundErr.message,
             code: outboundErr.code,
           });
         }
+      }
       }
     }
 

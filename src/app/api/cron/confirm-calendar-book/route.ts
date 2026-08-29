@@ -69,6 +69,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, status: "service_unavailable" }, { status: 503 });
   }
 
+  // Live book is Autopilot-only. Human confirmLive uses /api/calendar/event.
+  const entitled = await svc
+    .from("profiles")
+    .select("id")
+    .eq("workspace_id", parsed.data.workspaceId)
+    .eq("autopilot_enabled", true)
+    .in("role", ["admin", "member"])
+    .limit(1)
+    .maybeSingle();
+  if (!entitled.data?.id) {
+    return NextResponse.json({ ok: false, status: "autopilot_disarmed" }, { status: 409 });
+  }
+  const controls = await svc
+    .from("sourcing_loop_controls")
+    .select("kill_switch, sequences_enabled")
+    .eq("workspace_id", parsed.data.workspaceId)
+    .maybeSingle();
+  if (controls.data?.kill_switch !== false || controls.data?.sequences_enabled !== true) {
+    return NextResponse.json({ ok: false, status: "autopilot_disarmed" }, { status: 409 });
+  }
+
   const snapshot = await svc.rpc("read_workspace_state_for_loop", {
     p_workspace_id: parsed.data.workspaceId,
   });
