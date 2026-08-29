@@ -299,11 +299,19 @@ export async function POST(req: NextRequest) {
     outreach.htmlBody = mantuEmailHtmlWrapper(verdict.text.body);
   }
 
+  const recipient =
+    channel === "WhatsApp" || channel === "SMS"
+      ? candidate.phone ?? ""
+      : channel === "LinkedIn"
+        ? candidate.linkedinUrl ?? ""
+        : candidate.email ?? "";
+
   return NextResponse.json({
     ok: true,
     campaignId: campaign.id,
     candidateId: candidate.id,
     channel,
+    recipient,
     quality: verdict,
     outreach,
     modelUsed,

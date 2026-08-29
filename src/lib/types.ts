@@ -1086,6 +1086,7 @@ export const SEAT_PROVIDERS = [
   "Twilio SMS",
   "LinkedIn Assisted Manual",
   "LinkedIn Vendor API",
+  "HeyReach",
 ] as const;
 export type SeatProvider = (typeof SEAT_PROVIDERS)[number];
 

@@ -89,6 +89,7 @@ ok(
 );
 ok("adapter maps assisted-manual by provider", linkedInBackendForProvider("LinkedIn Assisted Manual") === "assisted-manual");
 ok("adapter maps vendor-api by provider", linkedInBackendForProvider("LinkedIn Vendor API") === "vendor-api");
+ok("adapter maps heyreach by provider", linkedInBackendForProvider("HeyReach") === "heyreach");
 ok("unknown provider has no adapter", linkedInAdapterForProvider("LinkedIn Bot Fleet") === null);
 
 const originalUrl = process.env.LINKEDIN_VENDOR_API_URL;

@@ -263,10 +263,13 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
       const approvalSource =
         approval && typeof approval.approval_source === "string" ? approval.approval_source : null;
       let approvalOk = false;
-      if (approval && !approval.revoked_at && approval.body_hash === bodyHash) {
+      if (approval && !approval.revoked_at && approval.body_hash === bodyHash && approvalSource) {
         if (approvalSource === "human") {
           approvalOk = true;
-        } else if (approvalSource === "template_bound") {
+        } else if (
+          approvalSource === "template_bound" ||
+          approvalSource === "autopilot_critics"
+        ) {
           const authorized = await supabase.rpc("outbound_approval_authorizes_send", {
             p_workspace_id: msg.workspace_id,
             p_approval_source: approvalSource,

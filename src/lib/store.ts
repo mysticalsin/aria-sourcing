@@ -85,7 +85,7 @@ import {
   readWorkspaceBootstrapCache,
   writeWorkspaceBootstrapCache,
 } from "./workspace-bootstrap-cache";
-import { effectiveDryRunMode, planOutreachApprovalDelivery, isLiveMailboxSeat } from "./outreach-send-mode";
+import { effectiveDryRunMode, planOutreachApprovalDelivery, isLiveMailboxSeat, hasLiveLinkedInQueueSeat } from "./outreach-send-mode";
 import { demoStateAllowsCandidatePersistence } from "./store/demo-persistence";
 import { mapApifyCandidates, mapSillageCandidates, parseSillageIdentifier } from "./store/sourcing-helpers";
 import { computeCoverage } from "./enrichment/merge";
@@ -2713,7 +2713,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         finalStatus,
         finalLedgerStatus,
         stampSimulatedSend,
-      } = planOutreachApprovalDelivery({ channel: msg.channel, forceDryRun });
+      } = planOutreachApprovalDelivery({
+        channel: msg.channel,
+        forceDryRun,
+        linkedInCanQueue: hasLiveLinkedInQueueSeat(s.seats),
+      });
       commit((prev) => {
         const outreach = prev.outreach.map((m) =>
           m.id === messageId
@@ -2983,6 +2987,13 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "WhatsApp Cloud")
           : channel === "SMS"
             ? s.seats.find((x) => x.status === "active" && x.mode === "live" && x.provider === "Twilio SMS")
+            : channel === "LinkedIn"
+              ? s.seats.find(
+                  (x) =>
+                    x.status === "active" &&
+                    x.mode === "live" &&
+                    (x.provider === "HeyReach" || x.provider === "LinkedIn Vendor API"),
+                )
             : s.seats.find((x) => isLiveMailboxSeat(x));
       if (!supabaseEnabled || !seat) {
         const need =
@@ -2990,11 +3001,16 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             ? "live WhatsApp sender"
             : channel === "SMS"
               ? "live SMS sender"
+              : channel === "LinkedIn"
+                ? "live HeyReach or LinkedIn Vendor seat"
               : "live mailbox";
         return { ok: false, error: `No ${need} connected. Connect one in the Fleet first.` };
       }
       if ((channel === "WhatsApp" || channel === "SMS") && !candidate.phone) {
         return { ok: false, error: "No phone number on file for this candidate. Enrich it before a phone send." };
+      }
+      if (channel === "LinkedIn" && !(candidate.linkedinUrl ?? "").trim()) {
+        return { ok: false, error: "No LinkedIn profile URL on file for this candidate." };
       }
       let out: { status?: string; detail?: string };
       try {
@@ -3006,6 +3022,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             seatId: seat.id,
             candidateId: candidate.id,
             candidateEmail: candidate.email,
+            profileUrl: candidate.linkedinUrl,
             campaignId: msg.campaignId,
             subject: msg.subject,
             body: msg.body,
@@ -3021,7 +3038,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : "Send failed." };
       }
-      const deliveryQueued = channel === "WhatsApp" && out.status === "queued";
+      const deliveryQueued =
+        (channel === "WhatsApp" || channel === "LinkedIn") && out.status === "queued";
       if (out.status !== "sent" && !deliveryQueued) {
         return { ok: false, error: out.detail ?? `Send did not complete (${out.status ?? "unknown"}).` };
       }
@@ -3037,8 +3055,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             { ...prev, outreach },
             makeActivity({
               type: "outreach",
-              title: `WhatsApp delivery queued for ${candidate.name}`,
-              notes: "ARIA will re-check consent, do-not-contact status, the reply window, and the approval before delivery.",
+              title: `${channel} delivery queued for ${candidate.name}`,
+              notes:
+                channel === "LinkedIn"
+                  ? "Aria will re-check approval and deliver via HeyReach/vendor."
+                  : "ARIA will re-check consent, do-not-contact status, the reply window, and the approval before delivery.",
               outcome: "Queued for policy check",
               campaignId: msg.campaignId,
               linkedEntityType: "candidate",
@@ -4986,7 +5007,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return { ok: true, reason: "Switched to dry-run (mock)." };
       }
       const isLinkedIn =
-        seat.provider === "LinkedIn Assisted Manual" || seat.provider === "LinkedIn Vendor API";
+        seat.provider === "LinkedIn Assisted Manual" ||
+        seat.provider === "LinkedIn Vendor API" ||
+        seat.provider === "HeyReach";
       if (!isLinkedIn) {
         if (!seat.connectedAccount) return { ok: false, reason: "Connect a mailbox before going live." };
         // Graph OAuth seats send as the connected mailbox — SPF vanity-domain gate is for API keys.
@@ -4994,8 +5017,8 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         if (!isGraph && !seat.domainVerified) {
           return { ok: false, reason: "Verify sender domain (SPF, DMARC, or DKIM) first." };
         }
-      } else if (seat.provider === "LinkedIn Vendor API") {
-        // Vendor seat may go live without mailbox; keys are env-side. Assisted-manual never needs SPF.
+      } else if (seat.provider === "LinkedIn Vendor API" || seat.provider === "HeyReach") {
+        // Vendor / HeyReach seats may go live without mailbox; keys are env-side.
       } else if (!seat.connectedAccount?.trim()) {
         // Soft: allow live with empty label — Settings connect stamps connectedAccount.
       }

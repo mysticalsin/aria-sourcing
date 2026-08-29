@@ -1,6 +1,11 @@
 import { classifyFailedHttpDeliveryState } from "@/lib/delivery-outcome";
+import {
+  deliverLinkedInViaHeyReach,
+  heyReachConfigFromEnv,
+  heyReachDeliveryReadyFromEnv,
+} from "@/lib/heyreach-delivery";
 
-export type LinkedInBackendKind = "assisted-manual" | "vendor-api";
+export type LinkedInBackendKind = "assisted-manual" | "vendor-api" | "heyreach";
 
 export interface LinkedInDeliveryRequest {
   workspaceId: string;
@@ -127,15 +132,35 @@ const vendorApiAdapter: LinkedInAdapter = {
   },
 };
 
+const heyReachAdapter: LinkedInAdapter = {
+  kind: "heyreach",
+  provider: "HeyReach",
+  configured: () => heyReachDeliveryReadyFromEnv(),
+  async deliver(req) {
+    const config = heyReachConfigFromEnv();
+    if (!config?.campaignId) {
+      return {
+        status: "error",
+        deliveryState: "not-sent",
+        provider: "HeyReach",
+        detail: "HEYREACH_API_KEY / HEYREACH_CAMPAIGN_ID not set.",
+      };
+    }
+    return deliverLinkedInViaHeyReach(req, config);
+  },
+};
+
 const adapters: Record<LinkedInBackendKind, LinkedInAdapter> = {
   "assisted-manual": assistedManualAdapter,
   "vendor-api": vendorApiAdapter,
+  heyreach: heyReachAdapter,
 };
 
 export function linkedInBackendForProvider(provider: string | null | undefined): LinkedInBackendKind | null {
   const normalized = normalizeProvider(provider);
   if (normalized === "linkedin assisted manual" || normalized === "linkedin assisted-manual") return "assisted-manual";
   if (normalized === "linkedin vendor api" || normalized === "linkedin vendor-api") return "vendor-api";
+  if (normalized === "heyreach") return "heyreach";
   return null;
 }
 

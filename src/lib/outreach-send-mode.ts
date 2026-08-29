@@ -34,7 +34,11 @@ export function isLiveMailboxSeat(seat: AgentSeat): boolean {
 }
 
 function isLinkedInSeatProvider(provider: AgentSeat["provider"]): boolean {
-  return provider === "LinkedIn Assisted Manual" || provider === "LinkedIn Vendor API";
+  return (
+    provider === "LinkedIn Assisted Manual" ||
+    provider === "LinkedIn Vendor API" ||
+    provider === "HeyReach"
+  );
 }
 
 function integrationAccountReady(integ: IntegrationStatus): string | null {
@@ -159,11 +163,14 @@ export function effectiveDryRunMode(
 /**
  * Pure approve→delivery plan. Dry-run never stamps a simulated send
  * (no Scheduled/sentAt/ledger sent). Live Email/WA/SMS stay Approved until
- * explicit send; LinkedIn stays Pending Manual Send.
+ * explicit send; LinkedIn stays Pending Manual Send unless a HeyReach/vendor
+ * seat can queue durable delivery (then Approved → Send like Email).
  */
 export function planOutreachApprovalDelivery(input: {
   channel: OutreachChannel;
   forceDryRun: boolean;
+  /** Live HeyReach / LinkedIn Vendor seat present — LinkedIn can queue after Approve. */
+  linkedInCanQueue?: boolean;
 }): {
   isLinkedInManual: boolean;
   isLiveSendChannel: boolean;
@@ -172,10 +179,11 @@ export function planOutreachApprovalDelivery(input: {
   stampSimulatedSend: boolean;
 } {
   const isLive = !input.forceDryRun;
-  // LinkedIn is always assisted-manual — dry-run must not land on Approved + "Send now".
-  const isLinkedInManual = input.channel === "LinkedIn";
+  const linkedInCanQueue = input.linkedInCanQueue === true;
+  const isLinkedInManual = input.channel === "LinkedIn" && !linkedInCanQueue;
   const isLiveSendChannel =
-    (input.channel === "Email" || input.channel === "WhatsApp" || input.channel === "SMS") && isLive;
+    ((input.channel === "Email" || input.channel === "WhatsApp" || input.channel === "SMS") && isLive)
+    || (input.channel === "LinkedIn" && linkedInCanQueue && isLive);
   const finalStatus: OutreachStatus = isLinkedInManual
     ? "Pending Manual Send"
     : isLiveSendChannel || input.forceDryRun
@@ -188,4 +196,23 @@ export function planOutreachApprovalDelivery(input: {
       : "sent";
   const stampSimulatedSend = !input.forceDryRun && !isLinkedInManual && !isLiveSendChannel;
   return { isLinkedInManual, isLiveSendChannel, finalStatus, finalLedgerStatus, stampSimulatedSend };
+}
+
+export function isLinkedInDeliverySeat(seat: AgentSeat): boolean {
+  return (
+    seat.status === "active" &&
+    seat.mode === "live" &&
+    (seat.provider === "HeyReach" ||
+      seat.provider === "LinkedIn Vendor API" ||
+      seat.provider === "LinkedIn Assisted Manual")
+  );
+}
+
+export function hasLiveLinkedInQueueSeat(seats: AgentSeat[]): boolean {
+  return seats.some(
+    (seat) =>
+      seat.status === "active" &&
+      seat.mode === "live" &&
+      (seat.provider === "HeyReach" || seat.provider === "LinkedIn Vendor API"),
+  );
 }

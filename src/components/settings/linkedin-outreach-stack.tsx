@@ -28,7 +28,7 @@ function LinkedInOutreachStackInner() {
   let statusLabel = "Not started";
   let statusTone: "neutral" | "success" | "electric" = "neutral";
   if (heyReachConnected && signedIn) {
-    statusLabel = "Identity + HeyReach MCP ready (LinkedIn send stays assisted-manual)";
+    statusLabel = "Identity + HeyReach ready (autopilot can queue LinkedIn when secrets set)";
     statusTone = "success";
   } else if (signedIn) {
     statusLabel = "Identity connected";
@@ -46,7 +46,7 @@ function LinkedInOutreachStackInner() {
       id={LINKEDIN_OUTREACH_STACK_ID}
       eyebrow="LinkedIn stack"
       title="Identity & outreach"
-      description="Two steps: prove who you are with LinkedIn OIDC, then wire HeyReach MCP so agents can use LinkedIn tools. Approve→Send on LinkedIn stays assisted-manual (409) — HeyReach does not auto-deliver from /api/outreach/send."
+      description="Two steps: prove who you are with LinkedIn OIDC, then wire HeyReach (MCP + API). With Autopilot ON and HEYREACH_API_KEY + HEYREACH_CAMPAIGN_ID on Fly, Aria queues LinkedIn first-touch via HeyReach after critics pass. Autopilot OFF keeps Approve → Send (or Pending Manual Send)."
       statusLabel={statusLabel}
       statusTone={statusTone}
       progressPct={progressPct}
@@ -55,7 +55,7 @@ function LinkedInOutreachStackInner() {
         <p className="flex items-start gap-2 text-xs leading-relaxed text-muted">
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
           No scrape, no session bots, no password storage. OIDC tokens encrypted at rest.
-          LinkedIn messaging drafts always require assisted-manual send (409); HeyReach is the MCP tools path for agents, not an auto-send bypass.
+          Set Fly secrets HEYREACH_API_KEY and HEYREACH_CAMPAIGN_ID for durable LinkedIn delivery; MCP remains the agent tool path.
         </p>
       }
     >

@@ -172,8 +172,10 @@ export function LoopSwitchboardPanel() {
             <Eyebrow>Sourcing loop</Eyebrow>
             <p className="mt-1 text-sm font-semibold text-ink">Workspace switchboard</p>
             <p className="mt-1 max-w-xl text-xs text-muted">
-              Webhook intake and worker jobs stay dark until an admin arms this board.
-              Also set{" "}
+              Webhook intake → parse → source → draft → send. With REI Autopilot
+              enabled on a member profile and Sequences armed here, critic-green
+              drafts auto-queue Email / WhatsApp / LinkedIn (HeyReach). Autopilot
+              off keeps one-by-one human Approve → Send. Also set{" "}
               <code className="rounded bg-ink/[0.06] px-1 font-mono">ARIA_LOOP_KILL_SWITCH=false</code>{" "}
               on the Fly loop process.
             </p>
@@ -206,7 +208,7 @@ export function LoopSwitchboardPanel() {
               ["Kill switch", controls.killSwitch, "Stops every loop stage for this workspace."],
               ["Intake", controls.intakeEnabled, "Allows hiring-need → requisition_parse enqueue."],
               ["Sourcing", controls.sourcingEnabled, "Allows sourcing batches and shortlist jobs."],
-              ["Sequences", controls.sequencesEnabled, "Allows outreach drafts and calendar_book."],
+              ["Sequences", controls.sequencesEnabled, "Outreach drafts + autopilot send + calendar book when entitled."],
             ] as const
           ).map(([label, on, hint], i) => (
             <motion.li

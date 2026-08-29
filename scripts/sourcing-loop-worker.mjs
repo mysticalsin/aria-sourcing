@@ -438,6 +438,7 @@ export function loadSourcingLoopConfiguration(environment) {
   let calendarConfirmUrl = null;
   let interviewPrepDispatchUrl = null;
   let recruitingGraphUrl = null;
+  let autopilotSendUrl = null;
   if (webOrigin !== "" || cronSecret !== "") {
     let parsed;
     try {
@@ -463,6 +464,7 @@ export function loadSourcingLoopConfiguration(environment) {
     calendarConfirmUrl = new URL("/api/cron/confirm-calendar-book", webOrigin);
     interviewPrepDispatchUrl = new URL("/api/cron/interview-prep-dispatch", webOrigin);
     recruitingGraphUrl = new URL("/api/cron/recruiting-graph-stage", webOrigin);
+    autopilotSendUrl = new URL("/api/cron/autopilot-send-outreach", webOrigin);
   }
 
   return {
@@ -481,6 +483,7 @@ export function loadSourcingLoopConfiguration(environment) {
     calendarConfirmUrl,
     interviewPrepDispatchUrl,
     recruitingGraphUrl,
+    autopilotSendUrl,
     cronSecret,
     tickMs: boundedInteger(environment.ARIA_LOOP_TICK_MS, DEFAULT_TICK_MS, 5_000, 300_000, "ARIA_LOOP_TICK_MS"),
     timeoutMs: boundedInteger(environment.ARIA_LOOP_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, 1_000, 60_000, "ARIA_LOOP_TIMEOUT_MS"),
@@ -1633,17 +1636,104 @@ async function handleDraftGenerate(job, context) {
     );
   }
 
+  // REI autopilot: when entitled + sequences armed + critics green, mint approval
+  // and durable-queue send. Otherwise leave Needs Approval for human review.
+  let autopilotStatus = "human_review";
+  let outreachRecord = {
+    ...body.outreach,
+    status: "Needs Approval",
+    dryRun: true,
+  };
+  const messageId =
+    isRecord(body.outreach) && typeof body.outreach.id === "string"
+      ? body.outreach.id
+      : "";
+  if (
+    messageId
+    && context.configuration?.autopilotSendUrl
+    && context.configuration?.cronSecret
+    && qualityStatus !== "blocked"
+    && body.llmCriticsUsed === true
+  ) {
+    try {
+      const channel =
+        typeof body.channel === "string"
+          ? body.channel
+          : (isRecord(body.outreach) && typeof body.outreach.channel === "string"
+            ? body.outreach.channel
+            : "LinkedIn");
+      const subject =
+        isRecord(body.outreach) && typeof body.outreach.subject === "string"
+          ? body.outreach.subject
+          : "";
+      const draftBody =
+        isRecord(body.outreach) && typeof body.outreach.body === "string"
+          ? body.outreach.body
+          : "";
+      const recipient =
+        typeof body.recipient === "string" && body.recipient.trim()
+          ? body.recipient.trim()
+          : "";
+      if (!subject || !draftBody || !recipient) {
+        // Incomplete draft payload — stay on human review path.
+      } else {
+      const autoRes = await context.fetcher(context.configuration.autopilotSendUrl, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${context.configuration.cronSecret}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          workspaceId: job.workspace_id,
+          campaignId,
+          candidateId,
+          messageId,
+          channel,
+          subject,
+          body: draftBody,
+          recipient,
+          qualityStatus,
+          criticsPassed: true,
+        }),
+        signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+      });
+      if (autoRes.ok) {
+        const autoBody = await readBoundedJson(autoRes, RPC_RESPONSE_BYTES);
+        const first =
+          isRecord(autoBody)
+          && Array.isArray(autoBody.results)
+          && isRecord(autoBody.results[0])
+          && isRecord(autoBody.results[0].result)
+            ? autoBody.results[0].result
+            : null;
+        const st = first && typeof first.status === "string" ? first.status : "";
+        if (st === "sent" || st === "queued") {
+          autopilotStatus = st;
+          outreachRecord = {
+            ...body.outreach,
+            status: "Scheduled",
+            dryRun: false,
+            ...(st === "sent" ? { sentAt: new Date().toISOString() } : {}),
+            scheduledFor: new Date().toISOString(),
+          };
+        } else if (st === "skipped" && first && typeof first.reason === "string") {
+          autopilotStatus = `skipped:${first.reason}`;
+        }
+      } else {
+        await autoRes.body?.cancel?.().catch(() => undefined);
+      }
+      }
+    } catch {
+      autopilotStatus = "autopilot_unreachable";
+    }
+  }
+
   return completeJobWithWorkspacePatch(
     context.client,
     job,
     {
       kind: "append_outreach",
-      // Autonomous drafts stay Needs Approval + dryRun until a human Approve/send.
-      value: [{
-        ...body.outreach,
-        status: "Needs Approval",
-        dryRun: true,
-      }],
+      value: [outreachRecord],
       receiptKey: `draft:${campaignId}:${candidateId}`,
     },
     {
@@ -1654,13 +1744,15 @@ async function handleDraftGenerate(job, context) {
       channel: typeof body.channel === "string" ? body.channel : "",
       calendarQueued: successors.length > 0,
       graphStage: graphStage || "queued_for_approval",
-      dryRun: true,
+      dryRun: outreachRecord.dryRun === true,
+      autopilot: autopilotStatus,
     },
     [event("draft.ready", "candidate", candidateId, {
       campaignId,
       quality: qualityStatus,
       calendarQueued: successors.length > 0,
-      dryRun: true,
+      dryRun: outreachRecord.dryRun === true,
+      autopilot: autopilotStatus,
     })],
     successors,
   );

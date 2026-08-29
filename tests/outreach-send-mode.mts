@@ -66,6 +66,14 @@ ok(
   ok("live LinkedIn → Pending Manual Send", liveLi.finalStatus === "Pending Manual Send");
   ok("live LinkedIn → pending_manual ledger", liveLi.finalLedgerStatus === "pending_manual");
 
+  const liveLiQueue = planOutreachApprovalDelivery({
+    channel: "LinkedIn",
+    forceDryRun: false,
+    linkedInCanQueue: true,
+  });
+  ok("live LinkedIn + queue seat → Approved", liveLiQueue.finalStatus === "Approved");
+  ok("live LinkedIn + queue seat → not manual", liveLiQueue.isLinkedInManual === false);
+
   const dryLi = planOutreachApprovalDelivery({ channel: "LinkedIn", forceDryRun: true });
   ok("dry-run LinkedIn → Pending Manual Send (not Approved)", dryLi.finalStatus === "Pending Manual Send");
   ok("dry-run LinkedIn → pending_manual ledger", dryLi.finalLedgerStatus === "pending_manual");
