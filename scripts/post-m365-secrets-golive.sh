@@ -9,11 +9,13 @@ cd "$repo"
 APP_URL="${APP_URL:-https://aria-mantu-app.fly.dev}"
 KONG_URL="${KONG_URL:-https://aria-mantu-kong.fly.dev}"
 WAIT_OAUTH_SEC="${ARIA_WAIT_OAUTH_SECONDS:-180}"
-WAIT_SEAT_SEC="${ARIA_WAIT_LIVE_SEAT_SECONDS:-0}" # 0 = do not wait; print Connect Outlook
+# Default 30m so probe --apply / fly-apply wait for interactive Connect Outlook.
+# Watcher overrides with remaining budget. Set ARIA_WAIT_LIVE_SEAT_SECONDS=0 to skip.
+WAIT_SEAT_SEC="${ARIA_WAIT_LIVE_SEAT_SECONDS:-1800}"
 
 echo "=== 1) Secret inventory ==="
 missing=0
-for name in MICROSOFT_CLIENT_ID MICROSOFT_CLIENT_SECRET MICROSOFT_REDIRECT_URI MICROSOFT_TENANT_ID DATA_ENCRYPTION_KEY; do
+for name in MICROSOFT_CLIENT_ID MICROSOFT_CLIENT_SECRET MICROSOFT_REDIRECT_URI MICROSOFT_TENANT_ID DATA_ENCRYPTION_KEY EMAIL_INBOUND_WEBHOOK_SECRET; do
   if flyctl secrets list -a aria-mantu-app 2>/dev/null | awk 'NR>1{print $1}' | grep -qx "$name"; then
     echo "  OK  aria-mantu-app $name"
   else
@@ -36,24 +38,30 @@ if [ "$missing" = "1" ]; then
 fi
 
 echo
-echo "=== 2) Tip remint for Entra SSO build flag (when confirm matches tip) ==="
+echo "=== 2) Tip remint for Entra SSO build flag (tip_ahead_app only) ==="
 if [ "$entra_ok" = "1" ]; then
-  if [ -r /tmp/owner-deploy-confirm.env ]; then
-    set -a
-    # shellcheck disable=SC1091
-    source /tmp/owner-deploy-confirm.env
-    set +a
-  fi
-  TIP="$(git rev-parse HEAD)"
-  if [ "${ARIA_RELEASE_SHA:-}" = "$TIP" ] \
-    && [ "${ARIA_PROD_DEPLOY_CONFIRM:-}" = "aria-production-release-v1:fly-deploy-now:${TIP}:aria-mantu-bootstrap,aria-mantu-app" ]; then
-    echo "Confirm matches tip — app-only remint (NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true expected)"
-    bash "$repo/scripts/fly-remint-app-only.sh" || {
-      echo "WARN: remint failed (lease race?) — retry: bash scripts/fly-remint-app-only.sh" >&2
-    }
+  status="$(bash "$repo/scripts/print-fly-golive-status.sh" 2>/dev/null || true)"
+  if ! printf '%s\n' "$status" | grep -q 'deploy_status=tip_ahead_app'; then
+    echo "Skip SSO remint — not tip_ahead_app (docs-ahead/live tips must not remint for Graph-only)."
+    printf '%s\n' "$status" | grep -E 'deploy_status=|tip_sha=|live_sha=' || true
   else
-    echo "Deploy confirm stale/missing — print tip confirm then remint manually:"
-    bash "$repo/scripts/print-fly-deploy-confirm.sh"
+    if [ -r /tmp/owner-deploy-confirm.env ]; then
+      set -a
+      # shellcheck disable=SC1091
+      source /tmp/owner-deploy-confirm.env
+      set +a
+    fi
+    TIP="$(git rev-parse HEAD)"
+    if [ "${ARIA_RELEASE_SHA:-}" = "$TIP" ] \
+      && [ "${ARIA_PROD_DEPLOY_CONFIRM:-}" = "aria-production-release-v1:fly-deploy-now:${TIP}:aria-mantu-bootstrap,aria-mantu-app" ]; then
+      echo "Confirm matches tip_ahead_app — app-only remint (NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true expected)"
+      bash "$repo/scripts/fly-remint-app-only.sh" || {
+        echo "WARN: remint failed (lease race?) — retry: bash scripts/fly-remint-app-only.sh" >&2
+      }
+    else
+      echo "Deploy confirm stale/missing — print tip confirm then remint manually:"
+      bash "$repo/scripts/print-fly-deploy-confirm.sh"
+    fi
   fi
 else
   echo "Entra incomplete — skip SSO remint (Graph Connect Outlook still works after secrets restart)."
@@ -213,7 +221,8 @@ fi
 echo
 echo "=== Connect Outlook required (interactive) ==="
 echo "  1) Open: ${APP_URL}/settings"
-echo "  2) Connect Outlook (mode=live) → Enable Graph webhook"
+echo "  2) Connect Outlook (mode=live) — callback auto-wires Graph webhook when Calendars+OnlineMeetings scopes are granted"
 echo "  3) bash scripts/verify-m365-ready.sh"
 echo "microsoftOAuth is ready; only the live seat + webhook remain for E2E 6b / full PASS."
+echo "  (Waited ${WAIT_SEAT_SEC}s; re-run with ARIA_WAIT_LIVE_SEAT_SECONDS=3600 to poll longer.)"
 exit 5

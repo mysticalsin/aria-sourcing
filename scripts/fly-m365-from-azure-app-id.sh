@@ -42,6 +42,7 @@ echo
 echo "=== Probe microsoftOAuth honesty ==="
 bash "$repo/scripts/probe-m365-unblock.sh"
 echo
-echo "Next (human): Settings → Connect Outlook → Enable webhook"
-echo "  (Calendars.ReadWrite + OnlineMeetings.ReadWrite)"
+echo "Next (human): Settings → Connect Outlook (mode=live)"
+echo "  Callback auto-wires Graph webhook when Calendars.ReadWrite + OnlineMeetings.ReadWrite are granted."
 echo "Then: bash scripts/verify-m365-ready.sh"
+echo "  (fly-apply already polls up to ARIA_WAIT_LIVE_SEAT_SECONDS=${ARIA_WAIT_LIVE_SEAT_SECONDS:-1800}s for the live seat)"

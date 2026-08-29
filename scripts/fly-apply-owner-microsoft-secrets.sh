@@ -192,6 +192,7 @@ EOF
 chmod 600 /tmp/owner-deploy-confirm.env
 bash "$repo/scripts/post-m365-secrets-golive.sh" || {
   rc=$?
-  echo "NOTE: post-m365-secrets-golive exit $rc — secrets are on Fly; Connect Outlook (mode=live) + Enable webhook may still be required." >&2
+  echo "NOTE: post-m365-secrets-golive exit $rc — secrets are on Fly; Connect Outlook (mode=live) may still be required." >&2
+  echo "  Callback auto-wires webhook when Calendars+OnlineMeetings scopes are present." >&2
   echo "  Then: bash scripts/verify-m365-ready.sh" >&2
 }
