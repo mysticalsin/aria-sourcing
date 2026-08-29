@@ -16,6 +16,10 @@ ok("Kimi (Moonshot) is a live LLM key provider", isLiveLlmKeyProvider("Kimi (Moo
 ok("DeepSeek is a live LLM key provider", isLiveLlmKeyProvider("DeepSeek"));
 ok("NVIDIA NIM is a live LLM key provider", isLiveLlmKeyProvider("NVIDIA NIM"));
 ok("Dust is not a live LLM key provider", !isLiveLlmKeyProvider("Dust"));
+ok(
+  "Cloudflare is not a live LLM key provider (account-scoped probe via Workers AI connect)",
+  !isLiveLlmKeyProvider("Cloudflare"),
+);
 ok("Apify is not an LLM key provider", !isLiveLlmKeyProvider("Apify"));
 
 {
