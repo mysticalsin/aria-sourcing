@@ -66,7 +66,10 @@ cp production-readiness/.owner-microsoft.env.example /tmp/owner-microsoft.env
 # edit real MICROSOFT_CLIENT_ID/SECRET/TENANT_ID
 bash scripts/probe-m365-unblock.sh --apply
 
-# Or export ARIA_AZURE_APP_ID and:
+# Or export ARIA_AZURE_APP_ID and configure existing app:
+export ARIA_AZURE_APP_ID='<client-id>'
+bash scripts/az-configure-existing-graph-app.sh --apply
+# or:
 bash scripts/fly-m365-from-azure-app-id.sh
 ```
 
