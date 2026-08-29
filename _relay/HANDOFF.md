@@ -11,7 +11,7 @@ status: microsoft-deferred-hmac-mailbox
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft (supersedes #29)
-- **Tip:** pending-commit · Live Fly `fc8b54a` / **0071** (tip **0073**)
+- **Tip:** 3ca31fe · Live Fly `fc8b54a` / **0071** (tip **0073**)
 - **Audit:** **64/64** · **Gate:** green
 - **Microsoft / M365:** **DEFERRED by owner**
 - **CI:** GHA empty-steps + Vercel rate-limit — **ignore**
