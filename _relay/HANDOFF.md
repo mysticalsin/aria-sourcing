@@ -18,7 +18,7 @@ status: e2e-partial-tip-live-m365-deferred
   - **classifier=model PASS**; Hermes/vault LLM OK
 - **Microsoft:** **DEFERRED** · `graph_secrets_missing=3` (CLIENT/SECRET/TENANT) · `entra_secrets_missing=4` WARN · no `/tmp/owner-microsoft.env`
 - **LLM:** `llm_auth=dead` but Fly-env key *present* (`llm_env_missing=0`) — auth-dead keys; Hermes/vault OK · no `/tmp/owner-llm.env`
-- **Machines:** loop + cleanup + web started; framework_heartbeat primary started this shift
+- **Machines:** loop + cleanup + web started; framework_heartbeat not required for E2E PASS (start attempts may exit — ignore unless framework readiness is the goal)
 
 ## Done this shift
 
