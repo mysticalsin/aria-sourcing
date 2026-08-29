@@ -51,6 +51,8 @@ Without Graph secrets: no Outlook connect, no Graph push intake, no confirmLive 
 Without Entra: Graph Connect Outlook still works; /login Microsoft SSO CTA stays off.
 
 Agent can READ Entra apps in this tenant but cannot CREATE (Insufficient privileges).
+Tenant policy: defaultUserRolePermissions.allowedToCreateApps=false.
+No PIM eligibility for Application Developer / Application Administrator.
 Tenant scan: still zero apps with aria-mantu-*.fly.dev redirect URIs — owner must create one
 (reject PLACEHOLDER_* and monotonous demo UUIDs like 11111111-…).
 

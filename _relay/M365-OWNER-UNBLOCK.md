@@ -31,8 +31,20 @@ Entra scan: **zero** apps with `aria-mantu` or `*.fly.dev` redirect URIs. Owner 
 
 ## Why agent cannot self-serve
 
-`twalteur@amaris.com` is az-logged-in but Insufficient privileges / owns zero apps.  
+`twalteur@amaris.com` is az-logged-in but:
+- Tenant policy `defaultUserRolePermissions.allowedToCreateApps=false` (users cannot register apps)
+- No PIM-eligible Application Developer / Application Administrator / Cloud Application Administrator
+- Owns zero apps; create returns Insufficient privileges  
 Marker: `/tmp/az-create-mantu-graph-app.noperm`
+
+### Owner unblock options (any one)
+
+1. **Minimal (recommended):** Portal → New registration `ARIA Mantu Graph (Fly)` →  
+   `echo '<client-id>' > /tmp/owner-azure-app-id` (agent configures + mints + applies)
+2. Assign **Application Developer** (or Application Administrator) to the agent account, then  
+   `bash scripts/az-create-mantu-graph-app.sh --apply`
+3. Temporarily enable user app registration (`allowedToCreateApps=true`), then option 2, then revert policy
+
 
 ## Current E2E evidence (2026-08-29)
 
