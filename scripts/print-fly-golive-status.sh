@@ -78,8 +78,9 @@ if [ -n "$LIVE" ] && [[ "$LIVE" == "$TIP"* || "$TIP" == "$LIVE"* ]]; then
 elif [ -n "$LIVE" ] && git cat-file -e "${LIVE}^{commit}" 2>/dev/null \
   && git merge-base --is-ancestor "$LIVE" "$TIP" 2>/dev/null; then
   changed="$(git diff --name-only "$LIVE" "$TIP" 2>/dev/null || true)"
-  # Paths that land in the Fly app image / runtime workers / E2E against live build.
-  if printf '%s\n' "$changed" | grep -qE '^(src/|supabase/migrations/|public/|package(-lock)?\.json$|fly\.|Dockerfile|next\.config|e2e-workflow-test\.sh$|scripts/sourcing-loop-worker|scripts/.*worker\.|scripts/fly-deploy|scripts/fly-enterprise)'; then
+  # Paths that land in the Fly app image / runtime workers (require redeploy).
+  # e2e-workflow-test.sh runs from the agent checkout against live Fly — not an image path.
+  if printf '%s\n' "$changed" | grep -qE '^(src/|supabase/migrations/|public/|package(-lock)?\.json$|fly\.|Dockerfile|next\.config|scripts/sourcing-loop-worker|scripts/.*worker\.|scripts/fly-deploy|scripts/fly-enterprise)'; then
     deploy_status="tip_ahead_app"
   else
     deploy_status="tip_ahead_docs"
