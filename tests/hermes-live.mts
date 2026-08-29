@@ -117,6 +117,10 @@ const prompt = buildOutreachPrompt({
 ok("prompt mentions the candidate", prompt.includes("Maya Okafor"));
 ok("prompt mentions the role", prompt.includes("Principal Platform Engineer"));
 ok("prompt requests Subject: format", prompt.includes("Subject:"));
+ok(
+  "prompt bans employer-name-only openers",
+  /employer\/company-name compliment alone|researched database insert/i.test(prompt),
+);
 
 /* ---- 7. Approval-authority invariant on a live-drafted-shaped message ---- */
 

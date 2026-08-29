@@ -33,6 +33,7 @@ const TASK_OUTPUT_CONTRACT: Record<HermesLoopTask, string> = {
     `Sign off as: ${mantuOutreachVoice().signature}.`,
     "Reply with exactly: a line 'Subject: <subject>' then a blank line then the message body. No preamble.",
     "Always name Mantu Group in the body. Never disclose salary bands or imply AI authorship.",
+    "Lead with concrete tech/project/stack detail — never an employer-name-only compliment.",
   ].join(" "),
   classify: [
     "Respond with compact JSON only:",
