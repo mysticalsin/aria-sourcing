@@ -15,10 +15,19 @@ READY_OK="$(echo "$ready" | jq -r '.ok // false' 2>/dev/null || echo false)"
 load_confirm() {
   local path="$1"
   [ -r "$path" ] || return 0
-  set -a
-  # shellcheck disable=SC1090
-  source "$path"
-  set +a
+  # Only KEY=value lines — never source shell one-liners that invoke deploy.
+  local line key val
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" == *=* ]] || continue
+    key="${line%%=*}"
+    val="${line#*=}"
+    key="${key%"${key##*[![:space:]]}"}"
+    case "$key" in
+      ARIA_RELEASE_SHA|ARIA_PROD_DEPLOY_CONFIRM) export "$key=$val" ;;
+    esac
+  done < "$path"
 }
 load_confirm "/tmp/owner-deploy-confirm.env"
 load_confirm "$repo/production-readiness/.owner-deploy-confirm.env"
