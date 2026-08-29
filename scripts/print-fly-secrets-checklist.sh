@@ -59,8 +59,9 @@ flyctl secrets set -a aria-mantu-app ARIA_LOOP_KILL_SWITCH='false'
 # Optional but recommended for authenticated draft-cron / graph-stage E2E probes:
 # flyctl secrets set -a aria-mantu-app CRON_SECRET='PLACEHOLDER_SAME_AS_FLY_CRON_SECRET'
 
-# === aria-mantu-auth (Entra SSO / GoTrue Azure) ===
-# Required so fly-deploy-now.sh flips NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true.
+# === aria-mantu-auth (Entra SSO / GoTrue Azure) — OPTIONAL for Graph E2E PASS ===
+# Only needed for /login "Sign in with Microsoft". Graph Connect Outlook works
+# without these. When set, fly-deploy-now.sh flips NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true.
 
 flyctl secrets set -a aria-mantu-auth \
   GOTRUE_EXTERNAL_AZURE_ENABLED='true' \

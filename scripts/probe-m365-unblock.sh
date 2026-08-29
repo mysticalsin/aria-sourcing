@@ -33,11 +33,25 @@ else
   echo "  credentials=none"
 fi
 
-missing="$(bash "$repo/scripts/print-fly-missing-secrets.sh" 2>/dev/null | grep -c '^MISSING' || true)"
-echo "  fly_m365_missing=${missing}"
+# Graph-only readiness (Entra/LLM are WARN in print-fly-missing-secrets).
+inv="$(bash "$repo/scripts/print-fly-missing-secrets.sh" 2>/dev/null || true)"
+graph_missing="$(printf '%s\n' "$inv" | sed -n 's/^graph_secrets_missing=//p' | tail -1)"
+entra_missing="$(printf '%s\n' "$inv" | sed -n 's/^entra_secrets_missing=//p' | tail -1)"
+llm_missing="$(printf '%s\n' "$inv" | sed -n 's/^llm_env_missing=//p' | tail -1)"
+graph_missing="${graph_missing:-unknown}"
+entra_missing="${entra_missing:-unknown}"
+llm_missing="${llm_missing:-unknown}"
+echo "  fly_graph_secrets_missing=${graph_missing}"
+echo "  fly_entra_secrets_missing=${entra_missing}"
+echo "  fly_llm_env_missing=${llm_missing}"
+# Compat alias: m365 = Graph bucket only (E2E PASS / verify-m365-ready).
+echo "  fly_m365_missing=${graph_missing}"
 
-if [ "$missing" = "0" ]; then
+if [ "$graph_missing" = "0" ]; then
   echo "RESULT: fly-secrets-ready"
+  if [ "${entra_missing:-0}" != "0" ] || [ "${llm_missing:-0}" != "0" ]; then
+    echo "  note: Entra/LLM optional WARNs remain — Graph E2E PASS does not require them"
+  fi
   exit 0
 fi
 
@@ -49,7 +63,9 @@ if owner_ms_has_credentials; then
     fi
     echo "Applying owner Microsoft secrets to Fly…"
     bash "$repo/scripts/fly-apply-owner-microsoft-secrets.sh"
-    missing_after="$(bash "$repo/scripts/print-fly-missing-secrets.sh" 2>/dev/null | grep -c '^MISSING' || true)"
+    inv_after="$(bash "$repo/scripts/print-fly-missing-secrets.sh" 2>/dev/null || true)"
+    missing_after="$(printf '%s\n' "$inv_after" | sed -n 's/^graph_secrets_missing=//p' | tail -1)"
+    missing_after="${missing_after:-unknown}"
     if [ "$missing_after" = "0" ]; then
       echo "RESULT: applied-ok"
       exit 0

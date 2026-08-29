@@ -1382,11 +1382,33 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /--apply/.test(probe)
         && /fly-apply-owner-microsoft-secrets/.test(probe)
         && /RESULT: owner-blocked/.test(probe)
+        && /fly_graph_secrets_missing|graph_secrets_missing/.test(probe)
+        && /Graph-minimum/.test(unblock)
+        && /optional.*for Graph/.test(unblock)
         && /probe-m365-unblock/.test(unblock)
         && /owner-microsoft-credentials/.test(watch)
         && /ARIA_WAIT_LIVE_SEAT_SECONDS/.test(watch)
         && /owner-microsoft-strict-pass\.ok/.test(watch)
         && /verify-m365-ready|post-m365-secrets-golive/.test(watch)
+      );
+    },
+  },
+  {
+    requirement: "Fly missing-secrets inventory splits Graph (required) from Entra/LLM (WARN)",
+    evidence: () => {
+      const missing = readFileSync("scripts/print-fly-missing-secrets.sh", "utf8");
+      const status = readFileSync("scripts/print-fly-golive-status.sh", "utf8");
+      const example = readFileSync("production-readiness/.owner-microsoft.env.example", "utf8");
+      return (
+        /graph_secrets_missing=/.test(missing)
+        && /entra_secrets_missing=/.test(missing)
+        && /llm_env_missing=/.test(missing)
+        && /optional for Graph E2E PASS/.test(missing)
+        && /graph_secrets_missing=/.test(status)
+        && /entra_secrets_missing=/.test(status)
+        && /m365_secrets_missing=\$\{GRAPH_MISSING\}|m365_secrets_missing=\$\{GRAPH/.test(status)
+        && /Graph-minimum/.test(example)
+        && /OPTIONAL for Graph/.test(example)
       );
     },
   },

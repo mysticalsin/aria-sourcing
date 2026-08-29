@@ -40,16 +40,20 @@ Signed-in az account: ${ACCOUNT:-'(az not logged in)'}
 
 ## Why this is needed
 
-Fly is missing 7 secrets:
+Graph secrets required for E2E PASS (Outlook connect + Graph webhook + confirmLive Teams):
   aria-mantu-app: MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_TENANT_ID
-  aria-mantu-auth: GOTRUE_EXTERNAL_AZURE_* (4)
+  (REDIRECT_URI + DATA_ENCRYPTION_KEY + EMAIL_INBOUND_WEBHOOK_SECRET usually already set)
 
-Without them: no Outlook connect, no Graph push intake, no Entra SSO, no confirmLive Teams book.
+Entra SSO (GOTRUE_EXTERNAL_AZURE_* on aria-mantu-auth) is OPTIONAL for Graph E2E PASS.
+Fly-env LLM keys are OPTIONAL (Hermes/vault may already green drafts/critics).
+
+Without Graph secrets: no Outlook connect, no Graph push intake, no confirmLive Teams book.
+Without Entra: Graph Connect Outlook still works; /login Microsoft SSO CTA stays off.
 
 Agent can READ Entra apps in this tenant but cannot CREATE (Insufficient privileges).
 Tenant scan: 1339 apps, zero with aria-mantu-*.fly.dev redirect URIs — owner must create one.
 
-GOTRUE_EXTERNAL_AZURE_URL must be:
+GOTRUE_EXTERNAL_AZURE_URL (only if enabling SSO):
   https://login.microsoftonline.com/${TENANT_ID}/v2.0
 
 ## Portal steps (Option A — create app)
@@ -77,7 +81,8 @@ bash scripts/az-configure-existing-graph-app.sh --apply
 ## Option B — paste env file
 
 cp production-readiness/.owner-microsoft.env.example /tmp/owner-microsoft.env
-# fill MICROSOFT_CLIENT_ID/SECRET/TENANT_ID=${TENANT_ID} + GOTRUE_EXTERNAL_AZURE_*
+# fill MICROSOFT_CLIENT_ID/SECRET/TENANT_ID=${TENANT_ID} (Graph-minimum)
+# GOTRUE_EXTERNAL_AZURE_* optional — leave PLACEHOLDER to skip Entra SSO apply
 bash scripts/fly-apply-owner-microsoft-secrets.sh
 bash scripts/post-m365-secrets-golive.sh
 

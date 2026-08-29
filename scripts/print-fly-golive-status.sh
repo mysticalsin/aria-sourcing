@@ -47,9 +47,17 @@ if [ -n "$CONFIRM_SHA" ] && [ "$CONFIRM_SHA" != "$TIP" ]; then
   CONFIRM_STALE="yes"
 fi
 
-M365_MISSING="unknown"
+GRAPH_MISSING="unknown"
+ENTRA_MISSING="unknown"
+LLM_ENV_MISSING="unknown"
 if [ -n "${FLY_API_TOKEN:-}" ] || [ -r "$repo/production-readiness/.fly-token.env" ]; then
-  M365_MISSING="$(bash "$repo/scripts/print-fly-missing-secrets.sh" 2>/dev/null | grep -c '^MISSING' || true)"
+  inv="$(bash "$repo/scripts/print-fly-missing-secrets.sh" 2>/dev/null || true)"
+  GRAPH_MISSING="$(printf '%s\n' "$inv" | sed -n 's/^graph_secrets_missing=//p' | tail -1)"
+  ENTRA_MISSING="$(printf '%s\n' "$inv" | sed -n 's/^entra_secrets_missing=//p' | tail -1)"
+  LLM_ENV_MISSING="$(printf '%s\n' "$inv" | sed -n 's/^llm_env_missing=//p' | tail -1)"
+  GRAPH_MISSING="${GRAPH_MISSING:-unknown}"
+  ENTRA_MISSING="${ENTRA_MISSING:-unknown}"
+  LLM_ENV_MISSING="${LLM_ENV_MISSING:-unknown}"
 fi
 
 LLM_AUTH="unknown"
@@ -71,7 +79,11 @@ echo "confirm_sha=${CONFIRM_SHA:-unset}"
 echo "confirm_file_present=${CONFIRM_FILE_PRESENT}"
 echo "confirm_matches_tip=${CONFIRM_MATCH}"
 echo "confirm_stale_for_tip=${CONFIRM_STALE}"
-echo "m365_secrets_missing=${M365_MISSING}"
+# Graph-only count (E2E PASS / verify-m365-ready). Compat alias m365_secrets_missing=graph.
+echo "graph_secrets_missing=${GRAPH_MISSING}"
+echo "entra_secrets_missing=${ENTRA_MISSING}"
+echo "llm_env_missing=${LLM_ENV_MISSING}"
+echo "m365_secrets_missing=${GRAPH_MISSING}"
 echo "llm_auth=${LLM_AUTH}"
 
 # Classify tip vs live without secrets.

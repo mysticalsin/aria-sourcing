@@ -6,8 +6,8 @@
 #
 # Unblock triggers (any one):
 #   - /tmp/owner-microsoft.env or production-readiness/.owner-microsoft.env
-#     without PLACEHOLDER values
-#   - exported MICROSOFT_* + GOTRUE_EXTERNAL_AZURE_* (non-PLACEHOLDER; tenant or URL)
+#     with Graph MICROSOFT_* real (Entra GOTRUE_* optional / PLACEHOLDER OK)
+#   - exported MICROSOFT_* Graph-minimum (GOTRUE_* optional; tenant required)
 #   - ARIA_AZURE_APP_ID set → az-configure-existing-graph-app.sh --apply
 #
 # Usage:

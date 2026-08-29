@@ -2,14 +2,17 @@
 
 **Blocker ID:** M365-FLY-6  
 **Production:** https://aria-mantu-app.fly.dev only  
-**Updated:** 2026-08-28T11:10Z
+**Updated:** 2026-08-29T09:20Z
 
-## Missing Fly secrets (7)
+## Graph secrets required for E2E PASS (Graph-minimum)
 
 | App | Secret |
 |---|---|
-| aria-mantu-app | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID` (`MICROSOFT_REDIRECT_URI` + `DATA_ENCRYPTION_KEY` already set; tenant may be derived from `GOTRUE_EXTERNAL_AZURE_URL`) |
-| aria-mantu-auth | `GOTRUE_EXTERNAL_AZURE_ENABLED`, `GOTRUE_EXTERNAL_AZURE_CLIENT_ID`, `GOTRUE_EXTERNAL_AZURE_SECRET`, `GOTRUE_EXTERNAL_AZURE_URL` |
+| aria-mantu-app | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID` (`MICROSOFT_REDIRECT_URI` + `DATA_ENCRYPTION_KEY` + `EMAIL_INBOUND_WEBHOOK_SECRET` usually already set) |
+
+Entra GoTrue Azure (`GOTRUE_EXTERNAL_AZURE_*` on aria-mantu-auth) is **optional** for Graph/Outlook E2E PASS (SSO only). Fly-env LLM keys are also optional (Hermes/vault failover may already green drafts/critics).
+
+Inventory: `bash scripts/print-fly-missing-secrets.sh` → `graph_secrets_missing=` (PASS blocker) vs `entra_secrets_missing=` / `llm_env_missing=` (WARN).
 
 ## Correct redirect URIs (do not invent)
 
@@ -31,11 +34,12 @@ Entra reprobe 2026-08-28: **zero** apps with `aria-mantu` or `*.fly.dev` redirec
 `twalteur@amaris.com` is az-logged-in but Insufficient privileges / owns zero apps.  
 Marker: `/tmp/az-create-mantu-graph-app.noperm`
 
-## Current E2E evidence (2026-08-28)
+## Current E2E evidence (2026-08-29)
 
 ```bash
-ARIA_ALLOW_PARTIAL_M365_E2E=1 bash e2e-workflow-test.sh
-# → 49 pass, 0 fail, 2 warn (PARTIAL) on live 344fcaf / tip 8701a56 (2026-08-28)
+bash scripts/run-enterprise-e2e-partial.sh
+# → PARTIAL · 58 pass / 0 fail / 2 warn (Microsoft only) on live e5c37c1 / 0074
+# classifier=model PASS; Hermes/vault LLM OK despite llm_auth=dead
 ```
 
 Strict E2E (no partial flag) correctly **FAIL**s on: `microsoftOAuth=false` + step 6b (no Graph seat).
@@ -44,16 +48,16 @@ Strict E2E (no partial flag) correctly **FAIL**s on: `microsoftOAuth=false` + st
 
 ```bash
 bash scripts/print-m365-owner-portal-checklist.sh
-bash scripts/probe-m365-unblock.sh              # status
+bash scripts/probe-m365-unblock.sh              # status (Graph bucket)
 bash scripts/probe-m365-unblock.sh --apply      # when drop-zone or env exports ready
 # Option A — existing app:
 export ARIA_AZURE_APP_ID='<client-id>'
 bash scripts/az-configure-existing-graph-app.sh --apply
-# Option B — paste drop-zone:
+# Option B — paste drop-zone (Graph-minimum; Entra lines optional):
 cp production-readiness/.owner-microsoft.env.example /tmp/owner-microsoft.env
-# edit real values (incl MICROSOFT_TENANT_ID)
+# edit real MICROSOFT_CLIENT_ID/SECRET/TENANT_ID (Entra PLACEHOLDER OK for Graph PASS)
 bash scripts/fly-apply-owner-microsoft-secrets.sh   # auto-runs post-m365-secrets-golive
 ```
 
-Then Settings → Connect Outlook (mode=live) → Enable Graph webhook → `bash scripts/verify-m365-ready.sh`  
-Verifier checks: 7 secrets · microsoftOAuth · live Graph seat + webhook · Entra `/login` · strict E2E (incl. **6b** Teams)
+Then Settings → Connect Outlook (grant **Calendars.ReadWrite** + **OnlineMeetings.ReadWrite**, mode=live) → Enable Graph webhook → `bash scripts/verify-m365-ready.sh`  
+Verifier: Graph secrets · microsoftOAuth · live seat (webhook + Calendars + OnlineMeetings) · Entra/LLM WARN-only · strict E2E (incl. **6b** Teams)
