@@ -137,11 +137,24 @@ export function emailProviderReadiness(
     ),
     sendgridApiKey: Boolean(env.SENDGRID_API_KEY?.trim()),
     resendApiKey: Boolean(env.RESEND_API_KEY?.trim()),
-    // Matches encryptionRequiredButMissing(): production requires a key; elsewhere a key is optional.
-    encryptionReady: production ? encryptionKey.length > 0 : true,
+    // Align with secretEncryptionEnabled() / encryptSecret: production needs a
+    // base64-decoded 32-byte DATA_ENCRYPTION_KEY (junk keys must not enable Connect).
+    encryptionReady: production ? dataEncryptionKeyLooksValid(encryptionKey) : true,
     inboundWebhookSecret: Boolean(env.EMAIL_INBOUND_WEBHOOK_SECRET?.trim()),
     inboxPollAllowed: isInboxPollAllowed(env),
   };
+}
+
+/** True when DATA_ENCRYPTION_KEY is a base64-encoded 32-byte AES key (same as crypto-secrets). */
+export function dataEncryptionKeyLooksValid(raw: string): boolean {
+  const value = raw.trim();
+  if (!value) return false;
+  try {
+    const decoded = Buffer.from(value, "base64");
+    return decoded.length === 32 && decoded.toString("base64") === value;
+  } catch {
+    return false;
+  }
 }
 
 /** Inbox list-poll (`/api/email/sync`) is off unless an operator sets ARIA_ALLOW_INBOX_SYNC=1. */

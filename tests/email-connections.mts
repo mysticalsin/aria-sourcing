@@ -145,10 +145,17 @@ ok(
   emailProviderReadiness({ NODE_ENV: "production" }).encryptionReady === false,
 );
 ok(
-  "production encryption ok with key",
+  "production encryption rejects junk key",
   emailProviderReadiness({
     NODE_ENV: "production",
     DATA_ENCRYPTION_KEY: "abc",
+  }).encryptionReady === false,
+);
+ok(
+  "production encryption ok with 32-byte base64 key",
+  emailProviderReadiness({
+    NODE_ENV: "production",
+    DATA_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
   }).encryptionReady === true,
 );
 ok(
