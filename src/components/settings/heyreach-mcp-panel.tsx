@@ -496,7 +496,7 @@ export function HeyReachOutreachStep({
               <Field
                 label="Campaign id"
                 htmlFor="heyreach-campaign-id"
-                hint="From HeyReach → Campaigns (required for LinkedIn send)."
+                hint="From HeyReach → Campaigns. Prefer inbox SendMessage; else campaign steps must use {message}."
               >
                 <Input
                   id="heyreach-campaign-id"
