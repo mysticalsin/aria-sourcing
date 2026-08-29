@@ -24,6 +24,7 @@ const propose = readFileSync("src/app/api/cron/propose-calendar-book/route.ts", 
 const confirm = readFileSync("src/app/api/cron/confirm-calendar-book/route.ts", "utf8");
 
 ok("slices helper exports mergeOutreachMessageScheduled", /export async function mergeOutreachMessageScheduled/.test(slices));
+ok("slices helper retries stale_token once", /stale_token/.test(slices) && /attempt < 2/.test(slices));
 ok("slices helper uses revision-only then merge_outreach_message", /merge_outreach_message/.test(slices) && /read_workspace_state_for_loop/.test(slices));
 ok("0078 defines merge_outreach_message", /'merge_outreach_message'/.test(mig78));
 ok("0078 defines outreach ready sweep RPC", /p_ready_sweep/.test(mig78));

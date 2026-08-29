@@ -998,7 +998,7 @@ if grep -q 'decideInterviewPrepEnqueue' src/lib/interview-prep-trigger.ts \
   && grep -q 'handleInterviewPrepSend' scripts/sourcing-loop-worker.mjs \
   && grep -q 'interview-prep-dispatch' src/app/api/cron/interview-prep-dispatch/route.ts \
   && grep -q '/api/booking/interview-prep' src/lib/store.ts; then
-  pass "Live booking → interview_prep_send enqueue + approval-gated prep dispatch wired."
+  pass "Live booking → interview_prep_send enqueue + Autopilot-capable prep dispatch wired."
 else
   fail "Interview prep dispatch wiring missing (trigger, worker handler, cron route, or store enqueue)."
 fi

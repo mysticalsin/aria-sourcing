@@ -117,34 +117,42 @@ export async function mergeOutreachMessageScheduled(
   messageId: string,
   outcome: "sent" | "queued",
 ): Promise<{ ok: boolean; status: string }> {
-  const revision = await svc.rpc("read_workspace_state_for_loop", {
-    p_workspace_id: workspaceId,
-  });
-  const rev = revision.data as { status?: string; updated_at?: string } | null;
-  if (revision.error || rev?.status !== "ok" || typeof rev.updated_at !== "string") {
-    return { ok: false, status: "revision_unavailable" };
-  }
   const now = new Date().toISOString();
-  const patched = await svc.rpc("apply_workspace_patch", {
-    p_workspace_id: workspaceId,
-    p_expected_updated_at: rev.updated_at,
-    p_patch_kind: "merge_outreach_message",
-    p_patch: {
-      id: messageId,
-      patch: {
-        status: "Scheduled",
-        dryRun: false,
-        scheduledFor: now,
-        ...(outcome === "sent" ? { sentAt: now } : {}),
-      },
+  const patch = {
+    id: messageId,
+    patch: {
+      status: "Scheduled",
+      dryRun: false,
+      scheduledFor: now,
+      ...(outcome === "sent" ? { sentAt: now } : {}),
     },
-    p_receipt_key: `autopilot_sched:${messageId}:${outcome}`,
-  });
-  const status =
-    patched.data && typeof patched.data === "object" && "status" in patched.data
-      ? String((patched.data as { status: string }).status)
-      : "";
-  if (patched.error) return { ok: false, status: patched.error.message };
-  if (status === "applied" || status === "already_applied") return { ok: true, status };
-  return { ok: false, status: status || "patch_failed" };
+  };
+  const receiptKey = `autopilot_sched:${messageId}:${outcome}`;
+
+  // One stale-token retry — sweep may patch several messages in one tick.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const revision = await svc.rpc("read_workspace_state_for_loop", {
+      p_workspace_id: workspaceId,
+    });
+    const rev = revision.data as { status?: string; updated_at?: string } | null;
+    if (revision.error || rev?.status !== "ok" || typeof rev.updated_at !== "string") {
+      return { ok: false, status: "revision_unavailable" };
+    }
+    const patched = await svc.rpc("apply_workspace_patch", {
+      p_workspace_id: workspaceId,
+      p_expected_updated_at: rev.updated_at,
+      p_patch_kind: "merge_outreach_message",
+      p_patch: patch,
+      p_receipt_key: receiptKey,
+    });
+    const status =
+      patched.data && typeof patched.data === "object" && "status" in patched.data
+        ? String((patched.data as { status: string }).status)
+        : "";
+    if (patched.error) return { ok: false, status: patched.error.message };
+    if (status === "applied" || status === "already_applied") return { ok: true, status };
+    if (status === "stale_token" && attempt === 0) continue;
+    return { ok: false, status: status || "patch_failed" };
+  }
+  return { ok: false, status: "stale_token" };
 }

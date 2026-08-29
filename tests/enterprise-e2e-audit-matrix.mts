@@ -1319,12 +1319,13 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
-    requirement: "0071 interview_prep_send queues post-booking prep through approval spine",
+    requirement: "0071 interview_prep_send drafts post-booking prep (Autopilot when critics green)",
     evidence: () => {
       const mig71 = readFileSync("supabase/migrations/0071_interview_prep_send_loop_kind.sql", "utf8");
       const loopAuth = readFileSync("tests/loop-authority-contract.mts", "utf8");
       const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
       const bookingActions = readFileSync("src/lib/store/booking-report-actions.ts", "utf8");
+      const prepCron = readFileSync("src/app/api/cron/interview-prep-dispatch/route.ts", "utf8");
       const e2e = readFileSync("e2e-workflow-test.sh", "utf8");
       return (
         /when 'interview_prep_send' then allowed_keys/i.test(mig71)
@@ -1332,9 +1333,59 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /interview_prep_send: handleInterviewPrepSend/.test(worker)
         && /handleInterviewPrepSend/.test(worker)
         && /enqueueInterviewPrep/.test(bookingActions)
-        && /interview_prep_send enqueue \+ approval-gated prep dispatch wired/.test(e2e)
+        && /interview_prep_send enqueue \+ Autopilot-capable prep dispatch wired/.test(e2e)
+        && /validateOutreachQualityLive/.test(prepCron)
+        && /loadBookingForLoop/.test(prepCron)
         && existsSync("src/app/api/cron/interview-prep-dispatch/route.ts")
         && existsSync("src/app/api/booking/interview-prep/route.ts")
+      );
+    },
+  },
+  {
+    requirement: "0076 Autopilot critics mint + service enqueue Email/WA/LinkedIn",
+    evidence: () => {
+      const mig76 = readFileSync("supabase/migrations/0076_autopilot_critics_approval.sql", "utf8");
+      const dispatch = readFileSync("src/lib/rei-autopilot-dispatch.ts", "utf8");
+      const cron = readFileSync("src/app/api/cron/autopilot-send-outreach/route.ts", "utf8");
+      return (
+        /mint_autopilot_critics_approval/.test(mig76)
+        && /enqueue_email_outbound_service/.test(mig76)
+        && /enqueue_whatsapp_outbound_service/.test(mig76)
+        && /enqueue_linkedin_outbound_service/.test(mig76)
+        && /autopilot_critics/.test(mig76)
+        && /runAutopilotOutreachDispatch/.test(dispatch)
+        && /mint_autopilot_critics_approval/.test(dispatch)
+        && /persistScheduled/.test(cron)
+      );
+    },
+  },
+  {
+    requirement: "0077 HeyReach seats can register linkedin_inbound_routes",
+    evidence: () => {
+      const mig77 = readFileSync("supabase/migrations/0077_heyreach_inbound_route.sql", "utf8");
+      return (
+        existsSync("supabase/migrations/0077_heyreach_inbound_route.sql")
+        && /HeyReach/i.test(mig77)
+        && /linkedin_inbound_routes|upsert_linkedin_inbound_route/i.test(mig77)
+      );
+    },
+  },
+  {
+    requirement: "0078 post-0074 loop slices + merge_outreach_message for Autopilot sweep",
+    evidence: () => {
+      const mig78 = readFileSync("supabase/migrations/0078_loop_outreach_slices_and_merge.sql", "utf8");
+      const slices = readFileSync("src/lib/workspace-loop-slices.ts", "utf8");
+      const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
+      const contract = readFileSync("tests/workspace-loop-slices.mts", "utf8");
+      return (
+        /read_workspace_outreach_for_loop/.test(mig78)
+        && /read_workspace_booking_for_loop/.test(mig78)
+        && /'merge_outreach_message'/.test(mig78)
+        && /mergeOutreachMessageScheduled/.test(slices)
+        && /stale_token/.test(slices)
+        && /sweepAutopilotReadyDrafts/.test(worker)
+        && /ARIA_LOOP_WORKSPACE_IDS/.test(worker)
+        && /RESULT workspace-loop-slices/.test(contract)
       );
     },
   },
@@ -1661,7 +1712,12 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     evidence: () => {
       const panel = readFileSync("src/components/settings/hermes-schedules-panel.tsx", "utf8");
       const jobs = readFileSync("src/app/api/cron/jobs/route.ts", "utf8");
-      return /\/api\/cron\/jobs/.test(panel) && /generate-outreach-draft/.test(jobs);
+      return (
+        /\/api\/cron\/jobs/.test(panel)
+        && /generate-outreach-draft/.test(jobs)
+        && /autopilot-send-outreach/.test(jobs)
+        && /interview-prep-dispatch/.test(jobs)
+      );
     },
   },
 ];
