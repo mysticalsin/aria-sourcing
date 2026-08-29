@@ -19,7 +19,7 @@ ok(
   "empathetic personalized draft passes quality pipeline",
   validateOutreachQuality({
     subject: "Your TypeScript platform work at Acme",
-    body: "Hi Alex,\n\nI noticed your recent work on TypeScript tooling at Acme — the way you structured the migration stood out. Mantu Group is hiring a senior platform engineer in London and I thought of you.\n\nWould you be open to a short first conversation to explore whether the role could be a fit?\n\nBest regards,\nMantu Talent Team",
+    body: "Hi Alex,\n\nI noticed your recent work on TypeScript tooling at Acme — the way you structured the migration stood out. Mantu Group is hiring a senior platform engineer in London and I thought of you.\n\nWould you be open to a short first conversation to explore whether the role could be a fit?\n\nBest regards,\nAria · Mantu Group",
     channel: "Email",
   }).status === "ready",
 );

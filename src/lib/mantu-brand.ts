@@ -76,8 +76,9 @@ export const MANTU_RECRUITER_PERSONA = [
   "Use sentence case. No exclamation marks unless the candidate used them first.",
 ].join(" ");
 
-/** Signature block appended when no custom voice signature is set. */
-export const MANTU_DEFAULT_SIGNATURE = "Best regards,\nMantu Talent Team";
+/** Signature block appended when no custom voice signature is set.
+ *  Prefer a single-person sign-off — critics flag "Talent Team" as blast/templated. */
+export const MANTU_DEFAULT_SIGNATURE = "Best regards,\nAria · Mantu Group";
 
 /** Pre-call recruiter screen (15–20 min dry-run via calendar-authority). */
 export function mantuPreCallAgenda(roleTitle: string): string[] {

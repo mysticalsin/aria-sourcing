@@ -1455,7 +1455,7 @@ Teams / calendar: To be confirmed (Connect Outlook and book with confirmLive)
 Proposed agenda:
 ${b.agenda.map((a) => `- ${a}`).join("\n")}
 
-— Mantu Talent Team`;
+— Aria · Mantu Group`;
   }
   return `Subject: Interview prep: ${b.candidateName} for ${b.role} at Mantu
 
@@ -1470,7 +1470,7 @@ Teams / calendar: ${meetingUrl}
 Agenda:
 ${b.agenda.map((a) => `- ${a}`).join("\n")}
 
-— Mantu Talent Team`;
+— Aria · Mantu Group`;
 }
 
 export function candidateConfirmationEmail(b: Booking): string {
@@ -1497,7 +1497,7 @@ We've proposed a conversation with Mantu Group about ${b.role}. Details:
 
 This is not a confirmed booking yet. Reply here if you need to move the proposed time.
 
-— Mantu Talent Team`;
+— Aria · Mantu Group`;
   }
   return `Subject: Confirmed: your ${b.role} conversation with Mantu
 
@@ -1512,7 +1512,7 @@ No heavy prep needed — bring your questions about the role and Mantu. Reply he
 
 Looking forward to speaking with you.
 
-— Mantu Talent Team`;
+— Aria · Mantu Group`;
 }
 
 /* ============================================================================

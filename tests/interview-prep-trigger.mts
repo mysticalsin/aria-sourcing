@@ -64,7 +64,7 @@ ok(
 );
 ok(
   "prep drafts name Mantu in plain body",
-  outreach.every((m) => /Mantu/.test(m.body) && /Mantu Talent Team/.test(m.body)),
+  outreach.every((m) => /Mantu/.test(m.body) && /Aria · Mantu Group/.test(m.body)),
 );
 ok("interviewer override when email present", Boolean(outreach[0].recipientOverride || !booking.interviewerEmail));
 ok("candidate confirmation purpose", outreach[1].prepPurpose === "candidate_confirmation");
