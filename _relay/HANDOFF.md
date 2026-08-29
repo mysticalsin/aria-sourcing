@@ -19,6 +19,15 @@ status: graph-oauth-live-awaiting-connect-outlook
   - `microsoftOAuth=true` PASS (no false WARN)
   - **classifier=model PASS**; top-10 live; approve after 1 critic retry
   - Remaining WARN: no live Graph seat (Connect Outlook) + one critic specificity retry
+- **Dropzone:** `/tmp/owner-microsoft.env` synced (mode 600) · never commit
+- **LLM:** `llm_auth=dead` · Hermes/vault OK
+
+## Done this shift
+
+1. Owner Microsoft env-exports → `probe-m365-unblock.sh --apply` → **applied-ok** · `graph_secrets_missing=0`
+2. Entra PLACEHOLDER skip + tenant derive from Azure URL exercised live
+3. post-m365: `microsoftOAuth=true`; Connect Outlook remaining (exit 5)
+4. PARTIAL E2E **60/0/2** — microsoftOAuth=true PASS; only live-seat WARN left for MS
 
 ## Blockers
 
