@@ -718,12 +718,37 @@ async function completeJob(client, job, result, events, successors) {
 }
 
 async function readWorkspaceSnapshot(client, workspaceId) {
+  // Revision only (updated_at) — full state blob can exceed RPC_RESPONSE_BYTES.
   const snapshot = await client.rpc("read_workspace_state_for_loop", { p_workspace_id: workspaceId });
   if (snapshot.error) throw new HandlerError(snapshot.error.code, true);
   if (!isRecord(snapshot.data) || snapshot.data.status !== "ok" || typeof snapshot.data.updated_at !== "string") {
     throw new HandlerError("workspace_state_unavailable", true);
   }
   return snapshot.data;
+}
+
+async function readWorkspaceCampaign(client, workspaceId, campaignId) {
+  const result = await client.rpc("read_workspace_campaign_for_loop", {
+    p_workspace_id: workspaceId,
+    p_campaign_id: campaignId,
+  });
+  if (result.error) throw new HandlerError(result.error.code, true);
+  if (!isRecord(result.data) || result.data.status !== "ok" || !isRecord(result.data.campaign)) {
+    throw new HandlerError("campaign_missing", true);
+  }
+  return result.data.campaign;
+}
+
+async function readWorkspaceCandidatesByIds(client, workspaceId, candidateIds) {
+  const result = await client.rpc("read_workspace_candidates_for_loop", {
+    p_workspace_id: workspaceId,
+    p_candidate_ids: candidateIds,
+  });
+  if (result.error) throw new HandlerError(result.error.code, true);
+  if (!isRecord(result.data) || result.data.status !== "ok") {
+    throw new HandlerError("workspace_candidates_unavailable", true);
+  }
+  return Array.isArray(result.data.candidates) ? result.data.candidates.filter(isRecord) : [];
 }
 
 async function completeJobWithWorkspacePatch(client, job, patch, result, events, successors) {
@@ -1042,13 +1067,7 @@ async function handleCampaignCreate(job, context) {
   const campaignId = boundedText(payload.campaignId, 160, "campaign_id_required");
   // Fail closed until the requisition_parse campaign blob is visible — otherwise
   // sourcing_batch hits campaign_not_found and burns retries without progress.
-  const snapshot = await readWorkspaceSnapshot(context.client, job.workspace_id);
-  const state = isRecord(snapshot.state) ? snapshot.state : {};
-  const campaigns = Array.isArray(state.campaigns) ? state.campaigns.filter(isRecord) : [];
-  const campaign = campaigns.find((row) => row.id === campaignId);
-  if (!campaign) {
-    throw new HandlerError("campaign_missing", true);
-  }
+  await readWorkspaceCampaign(context.client, job.workspace_id, campaignId);
   const batchId = `batch:${campaignId}:${job.id}`;
   return completeJob(
     context.client,
@@ -1253,9 +1272,7 @@ async function handleProviderPoll(job, context) {
 async function candidatesForShortlist(job, context, payload, campaignId) {
   const ids = candidateIdsFromPayload(payload);
   if (ids.length > 0) {
-    const snapshot = await readWorkspaceSnapshot(context.client, job.workspace_id);
-    const state = isRecord(snapshot.state) ? snapshot.state : {};
-    const all = Array.isArray(state.candidates) ? state.candidates.filter(isRecord) : [];
+    const all = await readWorkspaceCandidatesByIds(context.client, job.workspace_id, ids);
     const byId = new Map(all.map((c) => [c.id, c]));
     const matched = ids.map((id) => byId.get(id)).filter(Boolean);
     if (matched.length > 0) {
@@ -1353,13 +1370,14 @@ async function handleShortlistBuild(job, context) {
 
   // candidateIds already in workspace only when sourcing_batch persisted them and
   // shortlist resolved from workspace (not provider fallback).
-  const snapshot = await readWorkspaceSnapshot(context.client, job.workspace_id);
-  const state = isRecord(snapshot.state) ? snapshot.state : {};
-  const existingIds = new Set(
-    (Array.isArray(state.candidates) ? state.candidates : [])
-      .filter(isRecord)
-      .map((c) => c.id),
-  );
+  const existing = fromWorkspaceIds
+    ? await readWorkspaceCandidatesByIds(
+      context.client,
+      job.workspace_id,
+      candidates.map((c) => c.id).filter((id) => typeof id === "string"),
+    )
+    : [];
+  const existingIds = new Set(existing.map((c) => c.id));
   const fromIds = fromWorkspaceIds && candidates.every((c) => existingIds.has(c.id));
 
   // Entitled auto-approve: only when an autopilot-enabled profile exists in the

@@ -151,6 +151,23 @@ ok(
   })(),
 );
 ok(
+  "0074 loop workspace revision omits full state; campaign/candidate slice RPCs",
+  (() => {
+    const mig74 = read("supabase/migrations/0074_workspace_loop_revision_only.sql");
+    const worker = read("scripts/sourcing-loop-worker.mjs");
+    return (
+      mig74.length > 0 &&
+      noTxn(mig74) &&
+      /read_workspace_campaign_for_loop/.test(mig74) &&
+      /read_workspace_candidates_for_loop/.test(mig74) &&
+      /'updated_at', ws\.updated_at/.test(mig74) &&
+      !/state', ws\.state/.test(mig74) &&
+      /read_workspace_campaign_for_loop/.test(worker) &&
+      /read_workspace_candidates_for_loop/.test(worker)
+    );
+  })(),
+);
+ok(
   "loop event erasure has a narrow trigger-recognized redaction path",
   /redact_loop_events_for_candidate_erasure\(uuid, text, text\[\], text\[\]\)/i.test(dataProtection) &&
     /set_config\('aria\.candidate_erasure_loop_event_redaction', 'on', true\)/i.test(dataProtection) &&

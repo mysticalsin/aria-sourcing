@@ -1363,18 +1363,32 @@ test("runSourcingLoopTick claims every handler kind and completes each claimed j
       return {
         data: {
           status: "ok",
-          state: {
-            campaigns: [{ id: "camp-1", title: "Senior Engineer", status: "Sourcing" }],
-            candidates: [
-              {
-                id: "cand-1",
-                campaignId: "camp-1",
-                matchScore: 88,
-                stage: "Sourced",
-              },
-            ],
-          },
           updated_at: "2026-07-25T12:00:00.000Z",
+        },
+        error: null,
+      };
+    }
+    if (name === "read_workspace_campaign_for_loop") {
+      return {
+        data: {
+          status: "ok",
+          campaign: { id: "camp-1", title: "Senior Engineer", status: "Sourcing" },
+        },
+        error: null,
+      };
+    }
+    if (name === "read_workspace_candidates_for_loop") {
+      return {
+        data: {
+          status: "ok",
+          candidates: [
+            {
+              id: "cand-1",
+              campaignId: "camp-1",
+              matchScore: 88,
+              stage: "Sourced",
+            },
+          ],
         },
         error: null,
       };
@@ -1599,12 +1613,11 @@ test("buildReplyClassificationPrompt strips delimiter breakout while preserving 
 
 test("campaign_create verifies campaign blob then enqueues sourcing_batch without graphStage", async () => {
   const { client, calls } = rpcClient((name) => {
-    if (name === "read_workspace_state_for_loop") {
+    if (name === "read_workspace_campaign_for_loop") {
       return {
         data: {
           status: "ok",
-          state: { campaigns: [{ id: "camp-chain-1", title: "TS Engineer", status: "Sourcing" }] },
-          updated_at: "2026-08-27T12:00:00.000Z",
+          campaign: { id: "camp-chain-1", title: "TS Engineer", status: "Sourcing" },
         },
         error: null,
       };
@@ -1627,8 +1640,8 @@ test("campaign_create verifies campaign blob then enqueues sourcing_batch withou
 
 test("campaign_create fails closed when campaign blob is missing", async () => {
   const { client } = rpcClient((name) => {
-    if (name === "read_workspace_state_for_loop") {
-      return { data: { status: "ok", state: { campaigns: [] }, updated_at: "2026-08-27T12:00:00.000Z" }, error: null };
+    if (name === "read_workspace_campaign_for_loop") {
+      return { data: { status: "not_found" }, error: null };
     }
     throw new Error(`unexpected rpc ${name}`);
   });
@@ -1702,12 +1715,11 @@ test("sourcing_batch via route → shortlist autopilot top-N → draft_generate 
   const shortlistCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
   const { client: shortlistClient } = rpcClient((name, args) => {
     shortlistCalls.push({ name, args });
-    if (name === "read_workspace_state_for_loop") {
+    if (name === "read_workspace_candidates_for_loop") {
       return {
         data: {
           status: "ok",
-          state: { candidates },
-          updated_at: "2026-08-27T12:00:00.000Z",
+          candidates,
         },
         error: null,
       };
