@@ -226,7 +226,7 @@ function Microsoft365StackInner() {
                 ? "Checking deployment env…"
                 : oauthReady
                   ? "MICROSOFT_CLIENT_ID + secret + tenant + REDIRECT_URI configured"
-                  : "Entra admin: register single-tenant app ARIA Mantu Graph (Fly), Grant admin consent (Mail.Read/Send, Calendars.ReadWrite, OnlineMeetings.ReadWrite), then set MICROSOFT_CLIENT_ID/SECRET/TENANT_ID on Fly (or drop client id for agent apply). Tenant blocks user app create (allowedToCreateApps=false). Portal: https://portal.azure.com/ce57ebe3-a63d-4708-b5cf-c274b48bd26c/#view/Microsoft_AAD_RegisteredApps/CreateApplicationBlade/quickStartType~/null/isMSAApp~/false",
+                  : "Entra admin: register single-tenant app ARIA Mantu Graph (Fly), Owners → Add twalteur@amaris.com, Grant admin consent (Mail.Read/Send, Calendars.ReadWrite, OnlineMeetings.ReadWrite), then set MICROSOFT_CLIENT_ID/SECRET/TENANT_ID on Fly (or drop client id for agent apply). Tenant blocks user app create (allowedToCreateApps=false). Portal: https://portal.azure.com/ce57ebe3-a63d-4708-b5cf-c274b48bd26c/#view/Microsoft_AAD_RegisteredApps/CreateApplicationBlade/quickStartType~/null/isMSAApp~/false",
             },
             {
               id: "connect-outlook",

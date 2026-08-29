@@ -248,6 +248,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && !/id:\s*"teams-links"/.test(src)
         && /Outlook OAuth not configured/.test(src)
         && /Entra admin must register ARIA Mantu Graph/.test(src)
+        && /Owners → Add twalteur@amaris\.com/.test(src)
         && /portal\.azure\.com\/ce57ebe3/.test(src)
         && /Grant admin consent/.test(src)
         && /Connect Outlook stays disabled until Graph OAuth/.test(src)
