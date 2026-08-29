@@ -85,10 +85,35 @@ owner_ms_has_azure_app_id() {
 # When Entra admin Registers ARIA Mantu Graph (Fly) and adds Tony as Owner but
 # forgets the dropzone file, discover the app via Graph ownedObjects.
 # Prints appId on stdout when found; prefers exact "ARIA Mantu Graph (Fly)".
+# Throttle Graph calls to ARIA_OWNED_APP_DISCOVER_TTL_SECONDS (default 120).
 owner_ms_discover_owned_aria_app_id() {
   command -v az >/dev/null 2>&1 || return 1
   command -v jq >/dev/null 2>&1 || return 1
   az account show >/dev/null 2>&1 || return 1
+
+  local stamp now ttl age cached
+  stamp="${ARIA_OWNED_APP_DISCOVER_STAMP:-/tmp/aria-owned-app-discover.stamp}"
+  ttl="${ARIA_OWNED_APP_DISCOVER_TTL_SECONDS:-120}"
+  case "$ttl" in
+    ''|*[!0-9]*) ttl=120 ;;
+  esac
+  now="$(date +%s)"
+  if [ -f "$stamp" ] && [ "${ARIA_OWNED_APP_DISCOVER_FORCE:-0}" != "1" ]; then
+    age=$(( now - $(stat -c %Y "$stamp" 2>/dev/null || echo 0) ))
+    if [ "$age" -lt "$ttl" ]; then
+      if [ -r /tmp/aria-owned-app-discover.last ]; then
+        cached="$(tr -d ' \t\r\n' </tmp/aria-owned-app-discover.last | head -c 80)"
+        if printf '%s' "$cached" | grep -Eqi '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' \
+          && ! owner_ms_is_placeholder "$cached"; then
+          printf '%s' "$cached"
+          return 0
+        fi
+      fi
+      return 1
+    fi
+  fi
+  touch "$stamp" 2>/dev/null || true
+
   local json app_id
   set +e
   json="$(az rest --method GET \
@@ -96,25 +121,30 @@ owner_ms_discover_owned_aria_app_id() {
     -o json 2>/dev/null)"
   set -e
   [ -n "$json" ] || return 1
+
+  # Accept {value:[...]} or a bare array (az/cli quirks).
   app_id="$(
     printf '%s' "$json" | jq -r '
-      [.value[]?
-        | select((.displayName // "") | test("^ARIA Mantu Graph \\(Fly\\)$"; "i"))
-        | .appId]
+      (if type == "array" then . else (.value // []) end) as $apps
+      | [$apps[]?
+          | select((.displayName // "") | test("^ARIA Mantu Graph \\(Fly\\)$"; "i"))
+          | .appId]
       | .[0] // empty
     ' 2>/dev/null
   )"
   if [ -z "$app_id" ]; then
     app_id="$(
       printf '%s' "$json" | jq -r '
-        [.value[]?
-          | select((.displayName // "") | test("^ARIA Mantu Graph"; "i"))
-          | .appId]
+        (if type == "array" then . else (.value // []) end) as $apps
+        | [$apps[]?
+            | select((.displayName // "") | test("^ARIA Mantu Graph"; "i"))
+            | .appId]
         | .[0] // empty
       ' 2>/dev/null
     )"
   fi
   if [ -z "$app_id" ]; then
+    rm -f /tmp/aria-owned-app-discover.last 2>/dev/null || true
     return 1
   fi
   if owner_ms_is_placeholder "$app_id"; then
@@ -123,6 +153,9 @@ owner_ms_discover_owned_aria_app_id() {
   if ! printf '%s' "$app_id" | grep -Eqi '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'; then
     return 1
   fi
+  umask 077
+  printf '%s\n' "$app_id" > /tmp/aria-owned-app-discover.last
+  chmod 600 /tmp/aria-owned-app-discover.last 2>/dev/null || true
   printf '%s' "$app_id"
   return 0
 }
@@ -133,6 +166,10 @@ owner_ms_maybe_materialize_owned_app_id() {
   owner_ms_has_azure_app_id && return 0
   local app_id out
   app_id="$(owner_ms_discover_owned_aria_app_id 2>/dev/null)" || return 1
+  [ -n "$app_id" ] || return 1
+  if owner_ms_is_placeholder "$app_id"; then
+    return 1
+  fi
   out="${ARIA_OWNER_AZURE_APP_ID_PATH:-/tmp/owner-azure-app-id}"
   umask 077
   printf '%s\n' "$app_id" > "$out"
