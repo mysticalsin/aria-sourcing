@@ -1,38 +1,38 @@
 ---
 project: MSourcing / ARIA
-shift: 385
+shift: 386
 agent: cursor-cloud
-updated: 2026-08-29T15:20Z
+updated: 2026-08-29T15:48Z
 status: e2e-partial-awaiting-real-graph-secrets
 ---
 
-# Handoff — Shift 385
+# Handoff — Shift 386
 
 ## Current state
 
-- **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** OPEN
-- **Live Fly:** **`1665b39`** / **0074** · `tip_live` · loop primary **2863e10bd41e28**
-- **PARTIAL E2E:** see `/tmp/e2e-partial-1665b39.log` — expect step 3c PASS · `ARIA_ALLOW_PARTIAL_M365_E2E=1` only
-- **Graph:** still owner-blocked · both tenants `allowedToCreateApps=false`
-- **Non-M365 PASS path:** audit says nothing material beyond Graph seat
-- **Gate:** audit **66/66**
+- **Enterprise / Fly:** PR **#36** `cursor/enterprise-autopilot-b91d` · live **`1665b39`** / **0074** · Graph owner-blocked (quiet HOLD)
+- **Cloudflare:** successor **PR #37** `cursor/cloudflare-agents-settings-b91d` (supersedes closed #34) · tip includes CF feature + migration **0075** · local gate green (`tsc` + `npm test` `# fail 0`)
+- **Dropzones:** still empty (`/tmp/owner-azure-app-id`, `/tmp/owner-microsoft.env`, `/tmp/owner-llm.env`)
 
 ## Done this shift
 
-1. Confirmed create-for-rbac / BAW also noperm
-2. `encryptionReady` requires valid 32-byte base64 key (not junk)
-3. Reminted live **`1665b39`**
+1. Ported Cloudflare Workers AI Settings connect onto current tip
+2. Renamed migration **0070 → 0075** (avoid collision with `0070_fix_sourcing_loop_stage_enabled`)
+3. Opened **PR #37** (could not reopen #34 after branch recreate)
+4. Verified `npx tsc --noEmit` + `npm test`
 
 ## Blockers
 
-- Entra admin → Register + Owners Add Tony + Grant → waiters apply → Connect Outlook → `verify-m365-ready` → **RESULT: PASS**
+- Entra admin → Register + Owners Add Tony + Grant → dropzone → Connect Outlook → `verify-m365-ready` → **RESULT: PASS** (Microsoft DEFERRED / quiet HOLD)
 
 ## Next steps
 
 ```bash
-bash scripts/print-m365-owner-portal-checklist.sh
-bash scripts/probe-m365-unblock.sh --apply   # after Owners Add / dropzone
-bash scripts/verify-m365-ready.sh            # RESULT: PASS
+# Cloudflare PR
+gh pr view 37 --repo mysticalsin/aria-sourcing
+# After Microsoft dropzone (HOLD until then):
+bash scripts/probe-m365-unblock.sh --apply
+bash scripts/verify-m365-ready.sh
 unset AGENT_PROVIDER AGENT_MODEL
 bash scripts/run-enterprise-e2e-partial.sh
 # expect step 3c PASS; RESULT: PARTIAL until live Graph seat
@@ -49,10 +49,12 @@ curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
 
 ## Decisions made (don't relitigate)
 
-- Production = Fly only; PR #36 only; Entra admin + Owners Add Tony required
-- encryptionReady must match crypto-secrets valid key
+- Production = Fly only; PR #36 for enterprise E2E; Cloudflare ships via **PR #37** (not #34)
+- Cloudflare migration is **0075** on current tip
+- Microsoft deferred: dropzones only; quiet HOLD
 
 ## Watch out
 
 - HANDOFF must keep “expect step 3c PASS” / “step 3c should show” + `print-fly-deploy-confirm`
 - Never invent Microsoft secrets
+- Do not reopen closed #34; use #37
