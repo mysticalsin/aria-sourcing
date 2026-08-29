@@ -676,6 +676,7 @@ MS_OAUTH=$(jq -r '.providers.microsoftOAuth // false' "$RESP")
 INBOUND_READY=$(jq -r '.providers.inboundWebhookSecret // false' "$RESP")
 if [ "$HTTP" = "200" ] && [ "$CONN_OK" = "true" ]; then
   pass "GET /api/email/connections ok (providers=$(jq -c '.providers // {}' "$RESP"))."
+  cp "$RESP" "$WORK/conn_snapshot.json"
 else
   fail "GET /api/email/connections failed (HTTP $HTTP): $(head -c 200 "$RESP")"
 fi
@@ -750,6 +751,45 @@ elif [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIA
   else
     fail "register_hmac_mailbox failed (HTTP ${HMAC_HTTP:-empty}): $(head -c 240 <<<"$HMAC_RESP")"
   fi
+fi
+# Live Graph subscription fail-closed: real subscriptionId + forged clientState must
+# 202 with client_state_mismatch (proves lookup; enqueue still needs a real inbox message).
+LIVE_GRAPH_SUB=$(jq -r '
+  [(.connections // [])[]
+    | select(
+        (.provider // "") == "Microsoft Graph"
+        and (.hasRefreshToken == true)
+        and ((.graphSubscription.active // false) == true)
+        and ((.graphSubscription.subscriptionId // "") | length > 0)
+      )
+    | .graphSubscription.subscriptionId
+  ] | .[0] // empty
+' "$WORK/conn_snapshot.json" 2>/dev/null || true)
+if [ -n "$LIVE_GRAPH_SUB" ]; then
+  jq -n --arg sid "$LIVE_GRAPH_SUB" '{
+    value:[{
+      subscriptionId:$sid,
+      clientState:"e2e-forged-client-state",
+      changeType:"created",
+      resource:"Users/u/Messages('\''AAMkAGE2e2e'\'')",
+      resourceData:{id:"AAMkAGE2e2e"}
+    }]
+  }' > "$WORK/graph_live_sub_notify.json"
+  LIVE_GRAPH_CODE=$(curl -sS -m 20 -o "$WORK/graph_live_sub_resp.json" -w '%{http_code}' \
+    -X POST "$APP_URL/api/webhooks/microsoft-graph" \
+    -H 'Content-Type: application/json' \
+    --data-binary @"$WORK/graph_live_sub_notify.json")
+  LIVE_GRAPH_STATUS=$(jq -r '.results[0].status // empty' "$WORK/graph_live_sub_resp.json" 2>/dev/null || true)
+  if [ "$LIVE_GRAPH_CODE" = "202" ] && [ "$LIVE_GRAPH_STATUS" = "client_state_mismatch" ]; then
+    pass "Live Graph subscription lookup fail-closed (client_state_mismatch; no forged ingest)."
+  else
+    fail "Live Graph sub probe (HTTP $LIVE_GRAPH_CODE status='$LIVE_GRAPH_STATUS'): $(head -c 200 "$WORK/graph_live_sub_resp.json")"
+  fi
+elif grep -q 'subscriptionId: graphSubscription.graphSubscriptionId' src/app/api/email/connections/route.ts \
+  && grep -q 'client_state_mismatch' e2e-workflow-test.sh; then
+  info "No live Graph subscriptionId — skipped real-sub client_state_mismatch probe (HMAC hiring-need still covers enqueue)."
+else
+  fail "connections API must expose graphSubscription.subscriptionId for live-sub fail-closed E2E."
 fi
 # email/test hiring_need_handler: ready without Graph (HMAC path). Assert when any mailbox seat exists.
 TEST_SEAT=$(jq -r '

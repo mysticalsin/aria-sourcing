@@ -482,7 +482,12 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /migration must be >= 0066_/.test(script)
         && /0066_\*|006\[7-9\]_\*/.test(script)
         && /unknown_subscription/.test(script)
+        && /client_state_mismatch/.test(script)
+        && /graphSubscription\.subscriptionId/.test(script)
         && /microsoft-graph/.test(script)
+        && /subscriptionId: graphSubscription\.graphSubscriptionId/.test(
+          readFileSync("src/app/api/email/connections/route.ts", "utf8"),
+        )
         && /Polling workspace_state for campaign title/.test(script)
         && /Loop worker materialized campaign/.test(script)
         && /set_sourcing_loop_controls/.test(script)

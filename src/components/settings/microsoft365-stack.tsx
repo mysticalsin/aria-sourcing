@@ -29,6 +29,7 @@ type ConnectionRow = {
   scope: string;
   inboundRoute: { mailbox: string; purpose: string; active: boolean } | null;
   graphSubscription?: {
+    subscriptionId?: string;
     status: string;
     expiresAt: string;
     lastNotificationAt: string | null;

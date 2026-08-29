@@ -182,6 +182,9 @@ export async function GET(req: NextRequest) {
         : null,
       graphSubscription: graphSubscription
         ? {
+            // subscriptionId is safe to expose to admins (clientState plaintext is never stored).
+            // E2E uses it to prove live-sub lookup + client_state_mismatch fail-closed.
+            subscriptionId: graphSubscription.graphSubscriptionId,
             status: graphSubscription.status,
             expiresAt: graphSubscription.expiresAt,
             lastNotificationAt: graphSubscription.lastNotificationAt,
