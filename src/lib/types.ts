@@ -707,6 +707,8 @@ export interface ClassifiedReply {
   handled: boolean;
   slaDueAt: string | null;
   receivedAt: string;
+  /** Live model vs keyword fallback — loop worker / E2E prove classifier=model. */
+  classifier?: "model" | "deterministic_fallback";
   /** Inbound-email metadata (set when auto-ingested from a mailbox; absent for manual entry). */
   fromAddress?: string;
   messageId?: string;

@@ -3238,6 +3238,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
       // F-1: route through live provider when available; mock is the fallback on any failure.
       let classification = classifyReply(input.text, candidate?.name);
+      let replyClassifier: ClassifiedReply["classifier"] = "deterministic_fallback";
       const classifyAiCfg = resolveAiProvider(s.settings, "classification", { providerId: undefined });
       if (classifyAiCfg || hermesAvailable(s.settings)) {
         try {
@@ -3273,6 +3274,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
                 ...(parsed.suggestedAction ? { suggestedAction: parsed.suggestedAction } : {}),
                 ...(parsed.draftResponse ? { draftResponse: parsed.draftResponse } : {}),
               };
+              replyClassifier = "model";
             }
           }
         } catch {
@@ -3326,6 +3328,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         reasoning: classification.reasoning,
         suggestedAction: classification.suggestedAction,
         draftResponse: classification.draftResponse,
+        classifier: replyClassifier,
         handled: false,
         slaDueAt:
           ["INTERESTED", "QUALIFIED_INTEREST"].includes(classification.intent)

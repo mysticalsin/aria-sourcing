@@ -472,6 +472,7 @@ test("reply classify wraps candidate text in the disclosure envelope handed to t
   assert.ok(completion);
   assert.equal(completion.args.p_patch_kind, "append_reply");
   assert.equal((completion.args.p_patch as Array<Record<string, unknown>>)[0].intent, "QUALIFIED_INTEREST");
+  assert.equal((completion.args.p_patch as Array<Record<string, unknown>>)[0].classifier, "model");
 });
 
 test("email_sync refuses empty inboundIds (no polling stand-in)", async () => {
@@ -540,6 +541,7 @@ test("email_sync enqueues inbound_classify and the classifier persists the store
   assert.equal(reply.body, "Interested, please send the details.");
   assert.equal(reply.intent, "INTERESTED");
   assert.equal(reply.draftResponse, "");
+  assert.equal(reply.classifier, "deterministic_fallback");
 });
 
 test("inbound_classify persists LinkedIn channel from stored inbound message", async () => {
@@ -840,6 +842,8 @@ test("inbound_classify uses classify-inbound-reply cron vault path when modelCli
   assert.equal(cronCalls[0].body.replyText, "Yes I'm interested — send times.");
   assert.equal(patches[0].p_patch_kind, "merge_candidate_patch");
   assert.equal((patches[0].p_patch as { patch?: { stage?: string } }).patch?.stage, "Interested");
+  const cronReply = (patches[1].p_patch as Array<Record<string, unknown>>)[0];
+  assert.equal(cronReply.classifier, "model");
   const enqueue = patches[1].p_enqueue as Array<Record<string, unknown>>;
   assert.ok(enqueue.some((row) => row.kind === "pre_call_propose"));
   assert.ok(enqueue.some((row) => row.kind === "draft_generate"));

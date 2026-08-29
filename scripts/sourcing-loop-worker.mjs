@@ -2215,6 +2215,8 @@ async function handleInboundClassify(job, context) {
     suggestedAction: classification.suggestedAction,
     // Keyword deterministic_fallback must not invent reply outreach copy.
     draftResponse: classifier === "model" ? modelDraftResponse : "",
+    // Persist so workspace_state / E2E can prove live model classify (not keyword-only).
+    classifier,
     handled: false,
     slaDueAt: null,
     receivedAt: typeof payload.receivedAt === "string" && payload.receivedAt.trim()

@@ -824,6 +824,34 @@ if [ -n "$WEBHOOK_SECRET" ]; then
   REPLY_KIND=$(jq -r '.jobKind // empty' "$WORK/webhook_reply.json")
   if [ "$REPLY_CODE" = "200" ] && [ "$REPLY_ROUTE" = "reply_classify" ] && [ "$REPLY_KIND" = "inbound_classify" ] && [ "$REPLY_QUEUED" = "true" ]; then
     pass "Webhook candidate reply queued inbound_classify (route=$REPLY_ROUTE, jobKind=$REPLY_KIND)."
+    REPLY_INBOUND_ID=$(jq -r '.inboundId // empty' "$WORK/webhook_reply.json")
+    if [ -n "$REPLY_INBOUND_ID" ] && [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ]; then
+      # Prove loop worker finished with live model classify (Hermes/env/cron vault) —
+      # keyword deterministic_fallback alone must not satisfy enterprise E2E.
+      REPLY_MODEL_OK=0
+      info "Polling workspace_state for reply classifier=model (inbound=${REPLY_INBOUND_ID})…"
+      for _rpoll in $(seq 1 36); do
+        curl -sS -m 20 -o "$WORK/ws_replies.json" \
+          "$KONG_URL/rest/v1/workspace_state?select=state&limit=1" \
+          -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ACCESS_TOKEN" \
+          -H 'Accept: application/json' >/dev/null 2>&1 || true
+        FOUND_MODEL=$(jq -r --arg id "rep-${REPLY_INBOUND_ID}" '
+          (.[0].state.replies // [])
+          | map(select((.id == $id) and (.classifier == "model")))
+          | length
+        ' "$WORK/ws_replies.json" 2>/dev/null || echo 0)
+        if [ "${FOUND_MODEL:-0}" -gt 0 ] 2>/dev/null; then
+          REPLY_MODEL_OK=1
+          break
+        fi
+        sleep 5
+      done
+      if [ "$REPLY_MODEL_OK" = "1" ]; then
+        pass "Loop worker classified inbound reply with classifier=model (inbound=${REPLY_INBOUND_ID})."
+      else
+        fail "Webhook queued inbound_classify but no workspace_state reply with classifier=model within ~180s (Hermes/vault classify path)."
+      fi
+    fi
   elif [ "$REPLY_CODE" = "200" ] && [ "$REPLY_ROUTE" = "none" ] \
     && [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_SKIP_REPLY_CLASSIFY_E2E:-}" = "1" ]; then
     E2E_SKIP_REPLY_CLASSIFY=1
