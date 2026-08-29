@@ -11,7 +11,7 @@ status: tip-live-0073-microsoft-deferred
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft
-- **Tip:** pending-commit · **Live Fly matches tip `06e87ce` / migration `0073`** (`deploy_status=tip_live`)
+- **Tip:** 5c3d2a1 · **Live Fly matches tip `06e87ce` / migration `0073`** (`deploy_status=tip_live`)
 - **Audit:** **64/64** · **Gate:** green
 - **Microsoft / M365:** **DEFERRED by owner**
 - **LLM:** `llm_auth=dead` · `/api/ready` reports `llmKeysPresent=true`
