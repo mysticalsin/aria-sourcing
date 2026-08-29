@@ -162,6 +162,18 @@ try {
       heyReachSettingsReady({ apiKeyId: "k" }) === false,
   );
 
+  const { heyReachSettingsFromWorkspaceState } = await import("../src/lib/heyreach-config");
+  ok(
+    "settingsFromWorkspaceState reads heyreach blob",
+    heyReachSettingsFromWorkspaceState({
+      settings: { heyreach: { apiKeyId: "kid", campaignId: "99", connected: true } },
+    })?.campaignId === "99",
+  );
+  ok(
+    "settingsFromWorkspaceState rejects junk",
+    heyReachSettingsFromWorkspaceState({ settings: { heyreach: "nope" } }) === null,
+  );
+
   globalThis.fetch = (async () => new Response("down", { status: 503 })) as typeof fetch;
   const bothFail = await deliverLinkedInViaHeyReach(
     {

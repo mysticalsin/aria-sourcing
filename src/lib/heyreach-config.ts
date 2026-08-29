@@ -25,3 +25,19 @@ export function mergeHeyReachConfig(
 export function heyReachSettingsReady(settings: HeyReachSettings | null | undefined): boolean {
   return Boolean(settings?.apiKeyId?.trim() && settings?.campaignId?.trim());
 }
+
+/** Read non-secret HeyReach Settings from a workspace_state.state blob. */
+export function heyReachSettingsFromWorkspaceState(state: unknown): HeyReachSettings | null {
+  if (!state || typeof state !== "object" || Array.isArray(state)) return null;
+  const settings = (state as { settings?: unknown }).settings;
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) return null;
+  const hey = (settings as { heyreach?: unknown }).heyreach;
+  if (!hey || typeof hey !== "object" || Array.isArray(hey)) return null;
+  const row = hey as HeyReachSettings;
+  return {
+    apiKeyId: typeof row.apiKeyId === "string" ? row.apiKeyId : undefined,
+    campaignId: typeof row.campaignId === "string" ? row.campaignId : undefined,
+    accountId: typeof row.accountId === "string" ? row.accountId : undefined,
+    connected: row.connected === true,
+  };
+}

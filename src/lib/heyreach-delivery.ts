@@ -12,11 +12,14 @@
 import { classifyFailedHttpDeliveryState } from "@/lib/delivery-outcome";
 import { decryptSecret } from "@/lib/crypto-secrets";
 import { getServiceSupabase } from "@/lib/supabase/server";
-import { mergeHeyReachConfig } from "@/lib/heyreach-config";
+import { mergeHeyReachConfig, heyReachSettingsFromWorkspaceState } from "@/lib/heyreach-config";
 import type { LinkedInDeliveryOutcome, LinkedInDeliveryRequest } from "@/lib/linkedin-channel";
-import type { HeyReachSettings } from "@/lib/types";
 
-export { heyReachSettingsReady, mergeHeyReachConfig } from "@/lib/heyreach-config";
+export {
+  heyReachSettingsReady,
+  mergeHeyReachConfig,
+  heyReachSettingsFromWorkspaceState,
+} from "@/lib/heyreach-config";
 
 const HEYREACH_BASE = "https://api.heyreach.io/api/public";
 const TIMEOUT = 20_000;
@@ -103,8 +106,7 @@ export async function resolveHeyReachConfigForWorkspace(
     .select("state")
     .eq("workspace_id", wid)
     .maybeSingle();
-  const state = row?.state as { settings?: { heyreach?: HeyReachSettings } } | null | undefined;
-  const hey = state?.settings?.heyreach;
+  const hey = heyReachSettingsFromWorkspaceState(row?.state);
   const campaignId = (hey?.campaignId ?? "").trim();
   const accountId = (hey?.accountId ?? "").trim() || undefined;
   const apiKeyId = (hey?.apiKeyId ?? "").trim();

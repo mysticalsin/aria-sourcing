@@ -1,47 +1,47 @@
 ---
 project: MSourcing / ARIA
-shift: 395
+shift: 396
 agent: cursor-cloud
-updated: 2026-08-29T20:20Z
-status: interview-prep-loop-wired
+updated: 2026-08-29T20:25Z
+status: rei-dispatch-tests-green
 ---
 
-# Handoff — Shift 395
+# Handoff — Shift 396
 
 ## Current state
 
-- **Branch / PR:** `cursor/rei-autopilot-send-b91d` → **PR #39** tip includes interview_prep claim + enqueue
-- **Pipeline:** `first_interview_book` → `interview_prep_send` (was empty; prep jobs were never claimed)
+- **Branch / PR:** `cursor/rei-autopilot-send-b91d` → **PR #39**
+- **Tests:** `rei-autopilot-dispatch` (mocked mint→enqueue Email/WA/LI), heyreach workspace-state parse pins
 - **Live Fly:** `1665b39` / **0074**; Graph dropzones absent → **HOLD**; no deploy confirm
 
 ## Done this shift
 
-1. Added `interview_prep_send` to `pipeline-transitions.json` (claimable by loop)
-2. Live Graph book enqueues `interview_prep_send` when provider `eventId` present
-3. Worker tests: live book asserts prep enqueue; tick test covers prep handler
+1. `tests/rei-autopilot-dispatch.mts` — entitlement/sequences/critics/email/WA/HeyReach queue paths
+2. `heyReachSettingsFromWorkspaceState` pure helper + unit pins
+3. Registered dispatch suite in test-manifest
 
 ## Blockers
 
-1. Deploy tip + **0076** (needs deploy confirm)
-2. Settings HeyReach key after deploy
-3. Graph dropzones empty — live Teams book + strict PASS HOLD
+1. Deploy tip + **0076**
+2. Operator Settings HeyReach API after deploy
+3. Graph dropzones empty — strict PASS HOLD
 
 ## Next steps
 
 ```bash
-bash scripts/print-fly-deploy-confirm.sh
-bash scripts/fly-deploy-now.sh
+bash scripts/print-fly-deploy-confirm.sh && bash scripts/fly-deploy-now.sh
 # Settings → Save HeyReach API; entitle autopilot; arm Sequences
 bash scripts/run-enterprise-e2e-partial.sh
 ```
 
 ## Decisions made (don't relitigate)
 
-- Prep drafts stay Needs Approval / dryRun (human send)
+- Settings vault + campaign first-class; Fly env optional
 - Autopilot fail-closed: qualityStatus=ready + criticsPassed
+- interview_prep_send claimable after live book
 - HOLD when Microsoft dropzones empty
 
 ## Watch out
 
-- Dry-run interview propose does **not** enqueue prep (no provider event)
+- Run dispatch tests with `--experimental-test-module-mocks`
 - Client: `heyReachSettingsReady` from `heyreach-config`
