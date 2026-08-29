@@ -10,6 +10,11 @@ import type { CandidateMappingCampaign } from "@/lib/sourcing/candidate-mappers"
 import type { Candidate, ScoringWeights, SourcePlatform } from "@/lib/types";
 import type { WebFetch } from "@/lib/ai/web-tools";
 import {
+  buildGithubUserQueriesForSkills,
+  githubLanguageForSkill,
+  sanitizeGithubUserSearchQuery,
+} from "@/lib/sourcing/github-query-language";
+import {
   availableProviders,
   providersForCampaign,
   type SourcingProvider,
@@ -18,6 +23,7 @@ import {
 import { mergePreferringRicher } from "./providers/merge";
 
 export { mergePreferringRicher } from "./providers/merge";
+export { githubLanguageForSkill } from "@/lib/sourcing/github-query-language";
 
 export interface MultiProviderSourcingInput {
   campaign: CandidateMappingCampaign & {
@@ -57,35 +63,22 @@ export interface MultiProviderSourcingResult {
   providersUsed: SourcingProviderId[];
 }
 
-function githubLanguageForSkill(skill: string): string | null {
-  const s = skill.toLowerCase().trim();
-  if (!s) return null;
-  if (/type\s*script|\bts\b|tsx/.test(s)) return "TypeScript";
-  if (/java\s*script|\bjs\b|react|node\.?js|next\.?js|vue|angular|express/.test(s)) return "JavaScript";
-  if (/python|django|flask|fastapi/.test(s)) return "Python";
-  if (/golang|\bgo\b/.test(s)) return "Go";
-  if (/\brust\b/.test(s)) return "Rust";
-  if (/\bjava\b|spring/.test(s)) return "Java";
-  if (/kotlin/.test(s)) return "Kotlin";
-  if (/c\+\+|cpp/.test(s)) return "C++";
-  if (/\bc#|dotnet|\.net/.test(s)) return "C#";
-  if (/swift|ios/.test(s)) return "Swift";
-  if (/^[A-Za-z][A-Za-z0-9+#.]{1,24}$/.test(skill.trim())) return skill.trim();
-  return null;
-}
-
 function githubQueriesFor(campaign: MultiProviderSourcingInput["campaign"]): string[] {
+  const skills = campaign.jobAnalysis.requiredSkills;
   const configured = (campaign.sourcingStrategy.githubQueries ?? [])
-    .map((q) => q.query.trim())
+    .map((q) => sanitizeGithubUserSearchQuery(q.query.trim(), skills))
     .filter(Boolean);
   if (configured.length > 0) return configured.slice(0, 6);
-  const skills = campaign.jobAnalysis.requiredSkills.slice(0, 4);
+  const built = buildGithubUserQueriesForSkills(skills.slice(0, 4), {
+    region: campaign.jobAnalysis.regions[0] ?? null,
+    max: 3,
+  }).map((q) => q.query);
+  if (built.length === 0) return [];
   const languages = Array.from(
     new Set(skills.map(githubLanguageForSkill).filter((lang): lang is string => Boolean(lang))),
   );
-  if (languages.length === 0) return [];
-  const queries: string[] = [];
-  for (const lang of languages) {
+  const queries = [...built];
+  for (const lang of languages.slice(0, 2)) {
     queries.push(`language:${lang} followers:>40 repos:>5`);
     queries.push(`language:${lang} followers:>20 repos:>3`);
   }

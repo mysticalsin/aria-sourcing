@@ -4,6 +4,7 @@ import { humanizeText } from "./humanizer";
 import { mantuOutreachVoice, mantuEmailHtmlWrapper } from "./mantu-brand";
 import { roleProfile } from "./roles";
 import type { SourceResult } from "./sourcing/candidate-mappers";
+import { buildGithubUserQueriesForSkills } from "./sourcing/github-query-language";
 import { detectLanguage, detectLanguageWithHint, isKnownBusinessLanguage, outreachStrings, REPLY_LEXICON } from "./i18n";
 import { evaluateNeedReadiness } from "./needs/readiness";
 import {
@@ -967,17 +968,14 @@ export function buildLinkedInQueryVariants(jd: JobAnalysis, max = 12): string[] 
 export function buildSourcingStrategy(jd: JobAnalysis): SourcingStrategy {
   const topSkills = jd.requiredSkills.slice(0, 4);
   const region = jd.regions[0];
-  const locationQualifier = region && !NON_LOCATION_REGIONS.has(region) ? ` location:${region}` : "";
   // Note: only user-search qualifiers are valid here (language:, location:,
   // followers:, repos:, created:). Repo qualifiers like `stars:` silently zero
-  // out the whole query on /search/users.
-  const githubQueries: GithubQuery[] = topSkills.slice(0, 3).map((skill, i) => ({
-    label: `${skill} contributors`,
-    query: `language:${skill.replace(/\s+/g, "")}${locationQualifier} followers:>40 ${
-      i === 0 ? "repos:>10" : "repos:>5"
-    }`,
-    estimatedResults: 120 + i * 60,
-  }));
+  // out the whole query on /search/users. Non-language skills (PostgreSQL,
+  // GraphQL, AWS) must not be emitted as language: tokens.
+  const githubQueries: GithubQuery[] = buildGithubUserQueriesForSkills(topSkills, {
+    region: region && !NON_LOCATION_REGIONS.has(region) ? region : null,
+    max: 3,
+  });
 
   const linkedinBoolean = (jd.linkedinBoolean?.trim() || buildLinkedInKeywords(jd)).slice(0, 2000);
 

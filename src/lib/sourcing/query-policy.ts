@@ -1,5 +1,6 @@
 import { detectInjection } from "@/lib/agent-disclosure-policy";
 import type { CandidateMappingCampaign } from "@/lib/sourcing/candidate-mappers";
+import { authorizedGithubLanguages } from "@/lib/sourcing/github-query-language";
 import type { SourcePlatform } from "@/lib/types";
 
 export const PROHIBITED_CRITERIA =
@@ -99,12 +100,21 @@ export function validateSourcingCriteria(
     return { ok: false, error: `Search query is not bound to the approved role on ${platform}.` };
   }
   if (platform === "GitHub") {
+    const authorizedLanguages = new Set(
+      [
+        ...roleTerms,
+        ...authorizedGithubLanguages([
+          ...campaign.jobAnalysis.requiredSkills,
+          ...campaign.jobAnalysis.niceToHaveSkills,
+        ]).map((lang) => token(lang)),
+      ].filter(Boolean),
+    );
     const languageQualifiers = fieldValues
       .map(({ value }) => value)
       .flatMap((value) => [...value.matchAll(/(?:^|\s)language:([A-Za-z0-9+#.\-]+)/gi)])
       .map((match) => token(match[1] ?? ""))
       .filter(Boolean);
-    if (languageQualifiers.some((language) => !roleTerms.includes(language))) {
+    if (languageQualifiers.some((language) => !authorizedLanguages.has(language))) {
       return { ok: false, error: "GitHub language qualifier is not approved for this role." };
     }
   }

@@ -1189,7 +1189,7 @@ elif [ "$HTTP" = "429" ] && [ "$AG_CODE" = "SOURCING_AGENT_RATE_LIMITED" ] \
   AG_OK="skipped"
 elif [ "$HTTP" = "200" ] && [ "$AG_OK" = "true" ] && [ "$AG_N" -eq 0 ] \
   && [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ]; then
-  warn "sourcing-agent returned zero live candidates (transient search/quota) — PARTIAL outreach-only continuation."
+  warn "sourcing-agent returned zero live candidates (empty provider results or quality filter — not necessarily quota) — PARTIAL outreach-only continuation."
   E2E_SKIP_SOURCING=1
   echo 'null' > "$WORK/cand0.json"
   AG_OK="skipped"
@@ -1212,7 +1212,7 @@ if [ -z "$CAND_ID" ]; then
   else
     CAND_ID="cand-e2e-$$"
     if [ "${E2E_SKIP_SOURCING:-0}" = "1" ]; then
-      warn "No live candidate — sourcing skipped (quota); synthetic id for downstream dry-run only."
+      warn "No live candidate — sourcing skipped (empty results/quality filter or quota); synthetic id for downstream dry-run only."
     else
       warn "No live candidate — using synthetic id for approve/no-send assertions only."
     fi

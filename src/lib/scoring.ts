@@ -37,7 +37,8 @@ const SCORE_DIMENSIONS: (keyof ScoringWeights)[] = [
 // from these; ACTIVITY_SIGNAL_RE (used by the classifier to decide scored-vs-
 // excluded) is DERIVED from their union so the two can never drift apart.
 const ACTIVITY_HIGH_RE = /this week|days ago|active|shipped|merged|launched|speaking/;
-const ACTIVITY_MED_RE = /this month|recently|published|maintains|contribut/;
+const ACTIVITY_MED_RE =
+  /this month|recently|published|maintains|contribut|\d+\s+public\s+repos/;
 const ACTIVITY_LOW_RE = /last year|inactive|dormant|quiet/;
 const ACTIVITY_SIGNAL_RE = new RegExp(
   [ACTIVITY_HIGH_RE, ACTIVITY_MED_RE, ACTIVITY_LOW_RE].map((r) => r.source).join("|"),
@@ -118,6 +119,13 @@ function scoreSkills(c: Candidate, jd: JobAnalysis): { score: number; rationale:
   if (titleOverlap >= 0.5 && reqHit >= 1) score = Math.max(score, 82);
   if (titleOverlap >= 0.6) score = Math.max(score, 86);
   if (titleOverlap >= 0.9 && reqHit >= 1) score = Math.max(score, 92);
+  // GitHub profiles omit job titles by design; language:/skill evidence in
+  // techStack + bio must still be able to clear the 80% contact floor.
+  if (c.sourcePlatform === "GitHub" && reqHit >= 1) {
+    score = Math.max(score, 82);
+    if (reqHit >= 2) score = Math.max(score, 86);
+    if (reqHit >= 3) score = Math.max(score, 90);
+  }
   return {
     score,
     rationale: `${reqHit}/${req.length || "—"} required, ${niceHit}/${

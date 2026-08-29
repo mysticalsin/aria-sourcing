@@ -19,6 +19,10 @@ import type {
   ValidationWarning,
 } from "../types";
 import { evaluateNeedReadiness } from "../needs/readiness";
+import {
+  githubLanguageForSkill,
+  primaryGithubLanguage,
+} from "../sourcing/github-query-language";
 
 export type CampaignActions = Pick<
   HermesActions,
@@ -415,10 +419,18 @@ export function createCampaignActions({
       const skill = skills[campaign.sourcingStrategy.githubQueries.length % skills.length];
       if (!skill) return state;
       const region = campaign.jobAnalysis.regions[0]?.trim().replace(/["\\]/g, "") ?? "";
+      const language = githubLanguageForSkill(skill) ?? primaryGithubLanguage(skills);
+      const locationPart = region ? ` location:"${region}"` : "";
+      // User-search only: never emit forks:/stars:/sort: (repo qualifiers zero /search/users).
+      const query = language
+        ? githubLanguageForSkill(skill)
+          ? `language:${language}${locationPart} followers:>20 repos:>3`
+          : `${skill.replace(/\s+/g, "")} language:${language}${locationPart} followers:>20 repos:>3`
+        : `${skill.replace(/\s+/g, "")}${locationPart} followers:>20 repos:>3`;
 
       const extra = {
         label: `Adjacent: ${skill} maintainers`,
-        query: `language:${skill.replace(/\s+/g, "")} sort:updated${region ? ` location:"${region}"` : ""} forks:>5`,
+        query,
         estimatedResults: 80 + Math.round((campaign.metrics.sourced + 1) * 3.5),
       };
       generated = true;
