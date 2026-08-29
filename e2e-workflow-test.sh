@@ -111,6 +111,13 @@ E2E_SKIP_M365=0
 E2E_SKIP_APPROVE=0
 E2E_SKIP_CRON=0
 E2E_SKIP_WEBHOOK=0
+E2E_SKIP_REPLY_CLASSIFY=0
+E2E_CANNED_DRAFT=0
+E2E_SYNTHETIC_CANDIDATE=0
+# Opt-in soft-degrade flags always force PARTIAL (never pretend full PASS).
+[ "${ARIA_ALLOW_SKIP_REPLY_CLASSIFY_E2E:-}" = "1" ] && E2E_SKIP_REPLY_CLASSIFY=1
+[ "${ARIA_ALLOW_CANNED_DRAFT_E2E:-}" = "1" ] && E2E_CANNED_DRAFT=1
+[ "${ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E:-}" = "1" ] && E2E_SYNTHETIC_CANDIDATE=1
 step() { printf "\n${C_B}== %s ==${C_0}\n" "$1"; }
 pass() { printf "  ${C_G}PASS${C_0}  %s\n" "$1"; PASSES=$((PASSES+1)); }
 fail() { printf "  ${C_R}FAIL${C_0}  %s\n" "$1"; FAILS=$((FAILS+1)); }
@@ -819,7 +826,8 @@ if [ -n "$WEBHOOK_SECRET" ]; then
     pass "Webhook candidate reply queued inbound_classify (route=$REPLY_ROUTE, jobKind=$REPLY_KIND)."
   elif [ "$REPLY_CODE" = "200" ] && [ "$REPLY_ROUTE" = "none" ] \
     && [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_SKIP_REPLY_CLASSIFY_E2E:-}" = "1" ]; then
-    warn "Reply webhook route=none ($(jq -r '.reason // empty' "$WORK/webhook_reply.json")) — ARIA_ALLOW_SKIP_REPLY_CLASSIFY_E2E=1 soft-skip."
+    E2E_SKIP_REPLY_CLASSIFY=1
+    warn "Reply webhook route=none ($(jq -r '.reason // empty' "$WORK/webhook_reply.json")) — ARIA_ALLOW_SKIP_REPLY_CLASSIFY_E2E=1 soft-skip (PARTIAL, never PASS)."
   elif [ "$REPLY_CODE" = "200" ] && [ "$REPLY_ROUTE" = "none" ] && [ "$APP_URL" != "https://aria-mantu-app.fly.dev" ]; then
     warn "Reply webhook returned route=none ($(jq -r '.reason // empty' "$WORK/webhook_reply.json")) — classify enqueue proxy covered by tests/inbound-reply-trigger.mts."
   else
@@ -1231,10 +1239,11 @@ if [ -z "$CAND_ID" ]; then
     CAND_ID="cand-e2e-$$"
   else
     CAND_ID="cand-e2e-$$"
+    E2E_SYNTHETIC_CANDIDATE=1
     if [ "${E2E_SKIP_SOURCING:-0}" = "1" ]; then
-      warn "No live candidate — sourcing skipped (empty results/quality filter or quota); synthetic id for downstream dry-run only."
+      warn "No live candidate — sourcing skipped (empty results/quality filter or quota); synthetic id for downstream dry-run only (PARTIAL)."
     else
-      warn "No live candidate — using synthetic id for approve/no-send assertions only."
+      warn "No live candidate — using synthetic id for approve/no-send assertions only (PARTIAL)."
     fi
   fi
 fi
@@ -1326,7 +1335,8 @@ Recrutement · Mantu Group"
 Best,
 Recruiting · Mantu Group"
   fi
-  warn "${channel} draft generation degraded (no tool-calling/provider key): $(jq -rc '.reason // empty' "$RESP") — using a canned ${E2E_OUTREACH_LANGUAGE} draft so the approval + no-send assertions still run."
+  warn "${channel} draft generation degraded (no tool-calling/provider key): $(jq -rc '.reason // empty' "$RESP") — using a canned ${E2E_OUTREACH_LANGUAGE} draft so the approval + no-send assertions still run (PARTIAL)."
+  E2E_CANNED_DRAFT=1
   assert_outreach_language "$channel" || true
   return 0
 }
@@ -1756,11 +1766,17 @@ elif [ "${MS_LIVE_GAP:-0}" = "1" ] \
   || [ "${ARIA_ALLOW_PARTIAL_M365_E2E:-}" = "1" ] \
   || [ "${ARIA_ALLOW_PARTIAL_LLM_E2E:-}" = "1" ] \
   || [ "${ARIA_ALLOW_STALE_FLY_E2E:-}" = "1" ] \
+  || [ "${ARIA_ALLOW_CANNED_DRAFT_E2E:-}" = "1" ] \
+  || [ "${ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E:-}" = "1" ] \
+  || [ "${ARIA_ALLOW_SKIP_REPLY_CLASSIFY_E2E:-}" = "1" ] \
   || [ "${E2E_STALE_FLY:-0}" = "1" ] \
   || [ "${E2E_SKIP_APPROVE:-0}" = "1" ] \
   || [ "${E2E_SKIP_CRON:-0}" = "1" ] \
   || [ "${E2E_SKIP_SOURCING:-0}" = "1" ] \
-  || [ "${E2E_SKIP_WEBHOOK:-0}" = "1" ]; then
+  || [ "${E2E_SKIP_WEBHOOK:-0}" = "1" ] \
+  || [ "${E2E_SKIP_REPLY_CLASSIFY:-0}" = "1" ] \
+  || [ "${E2E_CANNED_DRAFT:-0}" = "1" ] \
+  || [ "${E2E_SYNTHETIC_CANDIDATE:-0}" = "1" ]; then
   printf "  ${C_Y}RESULT: PARTIAL${C_0} — core recruiting loop green (${PASSES} pass, 0 fail); outstanding gaps below are explicit skips only.\n"
   if [ "${E2E_SKIP_M365:-0}" = "1" ]; then
     printf "  Skipped (Microsoft / calendar): confirmLive Teams book — no live Graph seat or owner ARIA_ALLOW_PARTIAL_M365_E2E=1.\n"
@@ -1783,6 +1799,15 @@ elif [ "${MS_LIVE_GAP:-0}" = "1" ] \
   fi
   if [ "${E2E_SKIP_WEBHOOK:-0}" = "1" ]; then
     printf "  Skipped (owner policy): webhook hiring-need intake (ARIA_ALLOW_SKIP_WEBHOOK_E2E=1).\n"
+  fi
+  if [ "${E2E_SKIP_REPLY_CLASSIFY:-0}" = "1" ] || [ "${ARIA_ALLOW_SKIP_REPLY_CLASSIFY_E2E:-}" = "1" ]; then
+    printf "  Skipped (reply classify): route=none soft-skip (ARIA_ALLOW_SKIP_REPLY_CLASSIFY_E2E=1) — never pretends full PASS.\n"
+  fi
+  if [ "${E2E_CANNED_DRAFT:-0}" = "1" ] || [ "${ARIA_ALLOW_CANNED_DRAFT_E2E:-}" = "1" ]; then
+    printf "  Skipped (draft): canned outreach draft (ARIA_ALLOW_CANNED_DRAFT_E2E=1) — never pretends full PASS.\n"
+  fi
+  if [ "${E2E_SYNTHETIC_CANDIDATE:-0}" = "1" ] || [ "${ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E:-}" = "1" ]; then
+    printf "  Skipped (sourcing): synthetic candidate (ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E=1) — never pretends full PASS.\n"
   fi
   if [ "${E2E_SKIP_M365:-0}" != "1" ] && [ "${E2E_SKIP_APPROVE:-0}" != "1" ] && [ "${E2E_SKIP_CRON:-0}" != "1" ] && [ "${E2E_LLM_GAP:-0}" != "1" ]; then
     printf "  MS gaps: microsoftOAuth live seat, Outlook connect, Graph webhook push ingest, confirmLive Teams book.\n"
