@@ -308,7 +308,8 @@ function ReadyToBookPanel({ candidates }: { candidates: Candidate[] }) {
                 ) : (
                   <p className="text-xs text-muted">
                     Needs calendar — connect Microsoft Graph and book with confirmLive to create
-                    an online meeting. This is not a live Teams interview yet.
+                    an online meeting when Outlook is live. Cal.com is roadmap-only. This is not a
+                    live Teams interview yet.
                   </p>
                 )}
               </div>

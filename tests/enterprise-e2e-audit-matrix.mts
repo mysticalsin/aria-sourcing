@@ -409,9 +409,10 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /upsert_hmac_inbound_mailbox_route/.test(
           readFileSync("supabase/migrations/0073_hmac_inbound_mailbox_route.sql", "utf8"),
         )
-        && /Register HMAC mailbox/.test(
-          readFileSync("src/components/settings/email-connections-panel.tsx", "utf8"),
-        )
+        && /Cal\.com is roadmap-only/.test(readFileSync("src/lib/booking-status.ts", "utf8"))
+        && /llmKeysPresent/.test(readFileSync("src/lib/readiness.ts", "utf8"))
+        && /Live tenants fail closed/.test(readFileSync("src/components/settings/hermes-runtime-panel.tsx", "utf8"))
+        && /Roadmap only — no live adapter/.test(readFileSync("src/lib/integrations.ts", "utf8"))
       );
     },
   },

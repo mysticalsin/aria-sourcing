@@ -74,7 +74,7 @@ function LinkButton({
     return (
       <span
         aria-disabled="true"
-        title="Needs calendar — connect Microsoft Graph and book with confirmLive for a Teams meeting"
+        title="Needs calendar — connect Microsoft Graph and book with confirmLive for a Teams meeting (Cal.com roadmap-only)"
         className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-full bg-ink/[0.04] px-3 text-xs font-semibold text-muted ring-1 ring-inset ring-line"
       >
         {icon}
@@ -221,7 +221,7 @@ function BookingRow({ booking }: { booking: Booking }) {
           {!booking.teamsLink && !booking.calLink ? (
             <span
               aria-disabled="true"
-              title="Needs calendar — connect Microsoft Graph and book with confirmLive for a Teams meeting"
+              title="Needs calendar — connect Microsoft Graph and book with confirmLive for a Teams meeting (Cal.com roadmap-only)"
               className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-full bg-ink/[0.04] px-3 text-xs font-semibold text-muted ring-1 ring-inset ring-line"
             >
               <Video className="h-3.5 w-3.5" aria-hidden />

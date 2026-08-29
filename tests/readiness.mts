@@ -14,6 +14,7 @@ const readinessInput = {
   expectedLedgerSha256,
   agentFrameworksRequired: true,
   hermesRuntimeMisconfigured: false,
+  llmKeysPresent: true,
 };
 
 let passed = 0;
@@ -130,6 +131,18 @@ ok(
   "a correctly configured or absent Hermes runtime does not fail readiness",
   healthy.ok && healthy.components.hermesRuntime,
 );
+ok(
+  "llmKeysPresent is informational and does not gate ok",
+  healthy.ok && healthy.components.llmKeysPresent === true,
+);
+const llmKeysAbsent = await evaluateReadiness(
+  { ...readinessInput, llmKeysPresent: false },
+  healthyProbes(),
+);
+ok(
+  "missing LLM keys still report ready (auth may be dead separately)",
+  llmKeysAbsent.ok && llmKeysAbsent.components.llmKeysPresent === false,
+);
 
 const readinessRoute = readFileSync(
   new URL("../src/app/api/ready/route.ts", import.meta.url),
@@ -150,6 +163,7 @@ const missingIdentity = await evaluateReadiness(
     expectedLedgerSha256: "",
     agentFrameworksRequired: true,
     hermesRuntimeMisconfigured: false,
+    llmKeysPresent: false,
   },
   healthyProbes(),
 );

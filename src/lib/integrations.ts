@@ -185,7 +185,8 @@ export function defaultIntegrations(): IntegrationStatus[] {
       id: "int_calcom",
       name: "Cal.com",
       category: "Calendar",
-      description: "Generate scheduling links and capture interview bookings.",
+      description:
+        "Roadmap only — no live adapter. Interview books use Microsoft Graph Teams (confirmLive) when Outlook is connected; do not Configure/Live this card.",
       status: "not_configured",
       mode: "mock",
       lastSync: null,

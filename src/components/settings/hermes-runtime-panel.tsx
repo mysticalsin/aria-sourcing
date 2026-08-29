@@ -85,7 +85,7 @@ export function HermesRuntimePanel() {
       } else {
         toast({
           title: "Aria runtime unavailable",
-          description: json.reason ?? "No response. Outreach will use the mock.",
+          description: json.reason ?? "No response. Live tenants fail closed — drafts/critics will not mock-send.",
           variant: "error",
         });
       }

@@ -52,6 +52,12 @@ export async function GET(req: Request) {
         // from a cached module-load reading would keep reporting the old verdict
         // after the config was corrected.
         hermesRuntimeMisconfigured: hermesRuntimeMisconfigured(process.env.HERMES_API_URL),
+        llmKeysPresent: Boolean(
+          process.env.KIMI_API_KEY?.trim()
+          || process.env.ANTHROPIC_API_KEY?.trim()
+          || process.env.OPENAI_API_KEY?.trim()
+          || process.env.DEEPSEEK_API_KEY?.trim(),
+        ),
       },
       {
         database: async () => {

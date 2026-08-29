@@ -25,7 +25,7 @@ export function bookingCalendarSummary(booking: BookingCalendarState): string {
   if (booking.calendarSync) {
     return "Calendar event confirmed; meeting link unavailable — re-book with confirmLive after OnlineMeetings scope.";
   }
-  return "Needs calendar — connect Microsoft Graph and book with confirmLive for a Teams meeting.";
+  return "Needs calendar — connect Microsoft Graph and book with confirmLive for a Teams meeting when Outlook is live. Cal.com is roadmap-only (not wired); no fake calendar book.";
 }
 
 /** Activity / toast title — never claim a live booked interview without calendar proof. */
