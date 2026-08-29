@@ -74,5 +74,15 @@ ok(
   /sendApprovedOutreach[\s\S]{0,4000}outreachDispatchRecipient\(msg, candidate\)/.test(store),
 );
 
+const sendRoute = await import("node:fs").then((fs) =>
+  fs.readFileSync("src/app/api/outreach/send/route.ts", "utf8"),
+);
+ok(
+  "Approve→Send Graph/DNS domain_verified heal fails closed on Supabase error",
+  /const \{ error: healErr \}/.test(sendRoute)
+    && /outreach send Graph domain_verified heal failed/.test(sendRoute)
+    && /if \(healErr\)[\s\S]{0,300}else \{[\s\S]{0,80}seat\.domain_verified = true/.test(sendRoute),
+);
+
 console.log(`RESULT outreach-recipient: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

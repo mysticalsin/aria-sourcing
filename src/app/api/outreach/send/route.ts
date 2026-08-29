@@ -556,13 +556,33 @@ export async function POST(req: NextRequest) {
   if (!seat.domain_verified) {
     const isGraph = String(seat.provider ?? "") === "Microsoft Graph";
     if (isGraph && seat.mode === "live") {
-      await supabase.from("agent_seats").update({ domain_verified: true }).eq("id", seatId);
-      seat.domain_verified = true;
+      const { error: healErr } = await supabase
+        .from("agent_seats")
+        .update({ domain_verified: true })
+        .eq("id", seatId);
+      if (healErr) {
+        safeLog("outreach send Graph domain_verified heal failed", {
+          message: healErr.message,
+          code: healErr.code,
+        });
+      } else {
+        seat.domain_verified = true;
+      }
     } else {
       const verified = await domainVerified(seat.operator_email.split("@")[1] ?? "");
       if (verified) {
-        await supabase.from("agent_seats").update({ domain_verified: true }).eq("id", seatId);
-        seat.domain_verified = true;
+        const { error: healErr } = await supabase
+          .from("agent_seats")
+          .update({ domain_verified: true })
+          .eq("id", seatId);
+        if (healErr) {
+          safeLog("outreach send domain_verified heal failed", {
+            message: healErr.message,
+            code: healErr.code,
+          });
+        } else {
+          seat.domain_verified = true;
+        }
       }
     }
   }
