@@ -1,9 +1,12 @@
 /**
- * Pure helpers for Settings → LinkedIn messaging (OIDC login + assisted-manual + vendor).
+ * Pure helpers for Settings → LinkedIn messaging (OIDC login + assisted-manual + vendor/HeyReach).
  * No LinkedIn passwords, session cookies, or scrape — ever.
  */
 
-export type LinkedInSeatProvider = "LinkedIn Assisted Manual" | "LinkedIn Vendor API";
+export type LinkedInSeatProvider =
+  | "LinkedIn Assisted Manual"
+  | "LinkedIn Vendor API"
+  | "HeyReach";
 
 export type LinkedInProviderReadiness = {
   /** Sign In with LinkedIn (OpenID Connect) client configured. */
@@ -11,6 +14,8 @@ export type LinkedInProviderReadiness = {
   encryptionReady: boolean;
   assistedManual: true;
   vendorApiConfigured: boolean;
+  /** Fly secrets HEYREACH_API_KEY + HEYREACH_CAMPAIGN_ID ready for durable queue. */
+  heyReachConfigured: boolean;
   inboundWebhookSecret: boolean;
 };
 
@@ -25,6 +30,9 @@ export function linkedInProviderReadiness(
     vendorApiConfigured: Boolean(
       env.LINKEDIN_VENDOR_API_URL?.trim() && env.LINKEDIN_VENDOR_API_KEY?.trim(),
     ),
+    heyReachConfigured: Boolean(
+      env.HEYREACH_API_KEY?.trim() && env.HEYREACH_CAMPAIGN_ID?.trim(),
+    ),
     inboundWebhookSecret: Boolean(
       (env.LINKEDIN_INBOUND_WEBHOOK_SECRET ?? env.EMAIL_INBOUND_WEBHOOK_SECRET)?.trim(),
     ),
@@ -32,11 +40,17 @@ export function linkedInProviderReadiness(
 }
 
 export function isLinkedInSeatProvider(provider: string | null | undefined): provider is LinkedInSeatProvider {
-  return provider === "LinkedIn Assisted Manual" || provider === "LinkedIn Vendor API";
+  return (
+    provider === "LinkedIn Assisted Manual" ||
+    provider === "LinkedIn Vendor API" ||
+    provider === "HeyReach"
+  );
 }
 
 export function defaultLinkedInSeatName(provider: LinkedInSeatProvider): string {
-  return provider === "LinkedIn Vendor API" ? "LinkedIn Vendor" : "My LinkedIn (assisted)";
+  if (provider === "LinkedIn Vendor API") return "LinkedIn Vendor";
+  if (provider === "HeyReach") return "HeyReach LinkedIn";
+  return "My LinkedIn (assisted)";
 }
 
 export type LinkedInSeatRow = {

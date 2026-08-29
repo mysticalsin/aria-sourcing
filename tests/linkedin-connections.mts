@@ -33,6 +33,18 @@ ok(
   }).vendorApiConfigured === true,
 );
 ok(
+  "HeyReach dark without campaign id",
+  linkedInProviderReadiness({ HEYREACH_API_KEY: "k" }).heyReachConfigured === false,
+);
+ok(
+  "HeyReach ready with key + campaign",
+  linkedInProviderReadiness({
+    HEYREACH_API_KEY: "k",
+    HEYREACH_CAMPAIGN_ID: "123",
+  }).heyReachConfigured === true,
+);
+ok("is HeyReach seat provider", isLinkedInSeatProvider("HeyReach"));
+ok(
   "inbound secret from LINKEDIN_ or EMAIL_",
   linkedInProviderReadiness({ EMAIL_INBOUND_WEBHOOK_SECRET: "x" }).inboundWebhookSecret === true,
 );

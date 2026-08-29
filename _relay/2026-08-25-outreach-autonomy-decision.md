@@ -17,7 +17,11 @@
 4. **Replies (A-6):** `decideAutopilot` returns `auto_approve_eligible` only when
    entitlement + guardrails pass and salary/injection/gate checks are clean;
    otherwise `queue` for human review.
-5. **LinkedIn:** Assisted-manual remains; vendor-api fail-closed until credentials.
+5. **LinkedIn:** Assisted-manual by default. When `HEYREACH_API_KEY` +
+   `HEYREACH_CAMPAIGN_ID` (or `LINKEDIN_VENDOR_API_*`) are configured and a live
+   HeyReach/Vendor seat exists, entitled autopilot may mint
+   `approval_source=autopilot_critics` and durable-queue LinkedIn delivery
+   (migration 0076). No scraping / session fleets.
 
 ## Non-goals
 

@@ -23,7 +23,7 @@ export const dynamic = "force-dynamic";
 
 const EnsureSchema = z.object({
   action: z.literal("ensure_connect"),
-  provider: z.enum(["LinkedIn Assisted Manual", "LinkedIn Vendor API"]).default("LinkedIn Assisted Manual"),
+  provider: z.enum(["LinkedIn Assisted Manual", "LinkedIn Vendor API", "HeyReach"]).default("LinkedIn Assisted Manual"),
   operatorLabel: z.string().max(200).optional(),
   goLive: z.boolean().optional().default(true),
 });
@@ -278,6 +278,15 @@ async function ensureConnect(
       {
         ok: false,
         error: "LINKEDIN_VENDOR_API_URL / LINKEDIN_VENDOR_API_KEY are not configured.",
+      },
+      { status: 503 },
+    );
+  }
+  if (provider === "HeyReach" && !readiness.heyReachConfigured) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "HEYREACH_API_KEY / HEYREACH_CAMPAIGN_ID are not configured on the server.",
       },
       { status: 503 },
     );

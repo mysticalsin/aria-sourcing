@@ -32,6 +32,7 @@ type ProviderReadiness = {
   encryptionReady: boolean;
   assistedManual: boolean;
   vendorApiConfigured: boolean;
+  heyReachConfigured: boolean;
   inboundWebhookSecret: boolean;
 };
 
@@ -354,6 +355,13 @@ function useLinkedInConnectionsState() {
           label: "Vendor API (contracted automation)",
           ok: providers.vendorApiConfigured,
           optional: true,
+        },
+        {
+          id: "heyreach",
+          label: "HeyReach API (campaign delivery)",
+          ok: providers.heyReachConfigured,
+          optional: true,
+          hint: "Set HEYREACH_API_KEY + HEYREACH_CAMPAIGN_ID on Fly for autopilot LinkedIn send.",
         },
         {
           id: "webhook",
