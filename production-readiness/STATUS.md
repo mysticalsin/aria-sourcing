@@ -98,6 +98,6 @@ particular production deployment is healthy.
 ## Live deployment note (2026-08-29)
 
 - **Production = Fly only** (`aria-mantu-app.fly.dev`).
-- **Live Fly:** `1665b39` · migration **0074** · tip Autopilot (0076–0079) **not applied**.
+- **Live Fly:** tip `b0cf56a` · `/api/ready` **ok** · migration **0079** (`components.migration: true`). Bootstrap applied **0076–0079** after 0077 DROP-before-recreate fix.
 - PR [#40](https://github.com/mysticalsin/aria-sourcing/pull/40) tracks REI Autopilot send + prep path (supersedes closed #39).
-- **Remaining for full objective:** deploy tip + **0076–0079**, Settings HeyReach + Autopilot entitle + Sequences + `ARIA_LOOP_WORKSPACE_IDS`, M365 dropzones for live Teams book, full Fly E2E without PARTIAL flags.
+- **Remaining for full objective:** Settings HeyReach + Autopilot entitle + Sequences + `ARIA_LOOP_WORKSPACE_IDS`, M365 dropzones for live Teams book (Graph **HOLD** while owner Microsoft dropzones absent), Autopilot E2E receipt, full Fly E2E without PARTIAL flags.
