@@ -1366,6 +1366,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       return (
         existsSync("supabase/migrations/0077_heyreach_inbound_route.sql")
         && /HeyReach/i.test(mig77)
+        && /drop function if exists public\.upsert_linkedin_inbound_route\(uuid, text, uuid\)/i.test(mig77)
         && /linkedin_inbound_routes|upsert_linkedin_inbound_route/i.test(mig77)
       );
     },

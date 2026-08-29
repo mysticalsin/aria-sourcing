@@ -1,5 +1,11 @@
 -- 0077_heyreach_inbound_route.sql
 -- Allow HeyReach seats to register linkedin_inbound_routes (reply webhooks).
+--
+-- DROP required: 0058/0060 defined p_operator_label with DEFAULT ''. Postgres
+-- rejects CREATE OR REPLACE that removes parameter defaults
+-- ("cannot remove parameter defaults from existing function").
+
+drop function if exists public.upsert_linkedin_inbound_route(uuid, text, uuid);
 
 create or replace function public.upsert_linkedin_inbound_route(
   p_seat_id uuid,
