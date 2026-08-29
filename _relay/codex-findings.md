@@ -1105,3 +1105,11 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Live tick 2026-08-27T22:47:21Z claimed=1 completed=0 failureCodes=`handler:requisition_parse:rpc_http_400:22023`; campaign `camp-req-620deff9` present with 0 candidates (no campaign_create→sourcing_batch chain).
 **Suggested fix:** Strip `graphStage` in `successorJob` (keep on result objects only); resume when ingest status is `campaign_created` so retries enqueue `campaign_create` without `record_requisition_parse`.
 **Status:** fixed (this shift; requires Fly redeploy of tip beyond `e469126`)
+
+## 2026-08-29 — microsoftOAuth true without tenant while authorize 500s
+**Severity:** correctness
+**File:** src/lib/email-connections.ts:107-114
+**Issue:** `emailProviderReadiness.microsoftOAuth` was true with only CLIENT_ID/SECRET/REDIRECT_URI. Production authorize/callback require `resolveMicrosoftOAuthAuthority()` (MICROSOFT_TENANT_ID or GOTRUE_EXTERNAL_AZURE_URL); without tenant Connect Outlook returns 500 while E2E step 2d would PASS microsoftOAuth.
+**Repro/evidence:** Fly can have REDIRECT present + partial CLIENT_* without TENANT; `resolveMicrosoftOAuthAuthority({NODE_ENV:production})===null` but old readiness still true.
+**Suggested fix:** Gate microsoftOAuth on `resolveMicrosoftOAuthAuthority(env)` as well.
+**Status:** fixed (this shift — cursor/m365-oauth-tenant-readiness-570c)

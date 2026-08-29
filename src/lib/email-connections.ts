@@ -104,10 +104,14 @@ export function emailProviderReadiness(
   const production = env.NODE_ENV === "production";
   return {
     gmailOAuth: Boolean(env.GOOGLE_CLIENT_ID?.trim() && env.GOOGLE_CLIENT_SECRET?.trim()),
+    // Align with authorize/callback: production needs a resolved tenant authority
+    // (MICROSOFT_TENANT_ID or GOTRUE_EXTERNAL_AZURE_URL). Without it, microsoftOAuth
+    // would lie true while Connect Outlook returns 500 (AADSTS50194 /common/).
     microsoftOAuth: Boolean(
       env.MICROSOFT_CLIENT_ID?.trim()
         && env.MICROSOFT_CLIENT_SECRET?.trim()
-        && microsoftRedirectUriReady(env),
+        && microsoftRedirectUriReady(env)
+        && resolveMicrosoftOAuthAuthority(env),
     ),
     sendgridApiKey: Boolean(env.SENDGRID_API_KEY?.trim()),
     resendApiKey: Boolean(env.RESEND_API_KEY?.trim()),

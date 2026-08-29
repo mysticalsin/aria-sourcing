@@ -62,12 +62,33 @@ ok(
   }).microsoftOAuth === false,
 );
 ok(
-  "production microsoft oauth accepts public https redirect",
+  "production microsoft oauth incomplete without tenant (authorize would 500)",
   emailProviderReadiness({
     NODE_ENV: "production",
     MICROSOFT_CLIENT_ID: "id",
     MICROSOFT_CLIENT_SECRET: "sec",
     MICROSOFT_REDIRECT_URI: "https://aria-mantu-app.fly.dev/auth/microsoft/callback",
+  }).microsoftOAuth === false,
+);
+ok(
+  "production microsoft oauth accepts public https redirect + tenant",
+  emailProviderReadiness({
+    NODE_ENV: "production",
+    MICROSOFT_CLIENT_ID: "id",
+    MICROSOFT_CLIENT_SECRET: "sec",
+    MICROSOFT_REDIRECT_URI: "https://aria-mantu-app.fly.dev/auth/microsoft/callback",
+    MICROSOFT_TENANT_ID: "ce57ebe3-a63d-4708-b5cf-c274b48bd26c",
+  }).microsoftOAuth === true,
+);
+ok(
+  "production microsoft oauth accepts tenant derived from GOTRUE_EXTERNAL_AZURE_URL",
+  emailProviderReadiness({
+    NODE_ENV: "production",
+    MICROSOFT_CLIENT_ID: "id",
+    MICROSOFT_CLIENT_SECRET: "sec",
+    MICROSOFT_REDIRECT_URI: "https://aria-mantu-app.fly.dev/auth/microsoft/callback",
+    GOTRUE_EXTERNAL_AZURE_URL:
+      "https://login.microsoftonline.com/ce57ebe3-a63d-4708-b5cf-c274b48bd26c/v2.0",
   }).microsoftOAuth === true,
 );
 ok(
