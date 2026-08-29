@@ -2,32 +2,32 @@
 project: MSourcing / ARIA
 shift: 353
 agent: cursor-cloud
-updated: 2026-08-29T09:51Z
-status: graph-min-reopen-fixes-awaiting-owner-secrets
+updated: 2026-08-29T09:58Z
+status: e2e-partial-tip-live-m365-deferred
 ---
 
 # Handoff — Shift 353
 
 ## Current state
 
-- **Branch / PR:** `cursor/graph-minimum-reopen-fixes-bca0` (off `cursor/enterprise-autopilot-b91d` tip `df61606`) · merge into PR **#36**
-- **Live Fly:** `e5c37c1` / **0074** · `deploy_status=tip_ahead_docs` (script/ops only — no remint)
-- **Gate/audit:** green · audit **65/65** · `npx tsc --noEmit && npm test` green
-- **E2E verified prior:** PARTIAL **60/0/3** on live `e5c37c1` (`/tmp/e2e-partial-0934.log`) — all 3 WARNs Microsoft-deferred except critic retry (non-blocking PASS)
+- **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft OPEN (cherry-picked Graph-min reopen fixes; ignore stray `cursor/graph-minimum-reopen-fixes-bca0`)
+- **Live Fly:** `e5c37c1` / **0074** · `deploy_status=tip_ahead_docs`
+- **Gate/audit:** green · audit **65/65**
+- **E2E verified:** PARTIAL **60 pass / 0 fail / 3 warn** on live `e5c37c1` — WARNs are microsoftOAuth + critic retry + no live seat (MS deferred)
 - **Microsoft:** **DEFERRED** · `graph_secrets_missing=3` · no `/tmp/owner-microsoft.env`
 - **LLM:** `llm_auth=dead` · Hermes/vault OK · no `/tmp/owner-llm.env`
 
 ## Done this shift
 
-1. Audited Graph-only reopen path after df61606 PLACEHOLDER/Entra splits
-2. **P0 fix:** `fly-apply-owner-microsoft-secrets` — real Azure URL alone no longer ERROR as partial Entra (tenant derive OK; SSO skip when CLIENT_ID+SECRET PLACEHOLDER)
-3. **P1 fix:** apply load order — `/tmp/owner-microsoft.env` wins over stale `production-readiness/.owner-microsoft.env`
-4. **P1 fix:** `fly-enterprise-activate` — Entra/LLM WARN-only; require `MICROSOFT_TENANT_ID`
-5. Checklist/az permissions comment + audit pins; codex findings written
+1. Cherry-picked Graph-minimum reopen fixes onto PR #36:
+   - real Azure URL alone no longer ERROR as partial Entra (tenant derive OK; SSO skip when CLIENT_ID+SECRET PLACEHOLDER)
+   - `/tmp/owner-microsoft.env` wins over stale production-readiness copy
+   - `fly-enterprise-activate` Entra/LLM WARN-only; require `MICROSOFT_TENANT_ID`
+2. Prior this session: inventory split, verify-m365 WARN, PLACEHOLDER Entra skip, post-m365 seat scopes, PARTIAL 60/0/3
 
 ## Blockers
 
-- Owner reopen Microsoft for RESULT: PASS (Graph CLIENT/SECRET/TENANT dropzone → apply → Connect Outlook Calendars+OnlineMeetings → `verify-m365-ready`)
+- Owner reopen Microsoft for RESULT: PASS (Graph CLIENT/SECRET/TENANT → apply → Connect Outlook Calendars+OnlineMeetings → `verify-m365-ready`)
 
 ## Next steps
 
@@ -42,7 +42,8 @@ bash scripts/run-enterprise-e2e-partial.sh
 # expect Human approval RECORDED + live LLM critics used
 # expect classifier=model PASS on reply webhook poll
 # expect RESULT: PARTIAL until Microsoft reopened
-# When owner drops /tmp/owner-microsoft.env (Graph real; Entra PLACEHOLDER OK):
+# When owner drops /tmp/owner-microsoft.env (Graph real; Entra CLIENT+SECRET PLACEHOLDER OK;
+#   Azure URL alone may derive TENANT):
 #   bash scripts/probe-m365-unblock.sh --apply
 #   Settings → Connect Outlook (Calendars.ReadWrite + OnlineMeetings.ReadWrite)
 #   bash scripts/verify-m365-ready.sh
@@ -61,24 +62,21 @@ bash scripts/run-enterprise-e2e-partial.sh
 ## Decisions made (don't relitigate)
 
 - Production = Fly only; ignore Vercel/GHA empty-steps
-- PR #36 only
+- **PR #36 only** (do not open separate PRs for tip-ahead fix branches)
 - **2026-08-29: Owner — don’t do the Microsoft part**
 - Deploy confirm remint is agent-owned (non-secret KEY=value only — never redirect print-fly-deploy-confirm output into dropzone)
 - Never pin auth-dead cloud AGENT_PROVIDER on Fly E2E
 - Never send `model:""` to `/api/hermes/chat`
-- Live Graph promote requires OnlineMeetings + Calendars scopes
-- Owner Microsoft dropzone is Graph-minimum (Entra SSO optional / PLACEHOLDER OK)
-- verify-m365-ready + post-m365 seat wait: Graph+Calendars+OnlineMeetings; Entra/LLM WARN-only
+- Owner Microsoft dropzone is Graph-minimum (Entra CLIENT+SECRET PLACEHOLDER OK; URL alone may derive tenant)
+- verify-m365-ready + activate + inventory: Graph required; Entra/LLM WARN-only
 - `m365_secrets_missing` = Graph bucket only
-- fly-apply skips Entra when GOTRUE CLIENT_ID+SECRET are PLACEHOLDER/empty (URL alone may derive tenant; not partial ERROR)
-- `/tmp/owner-microsoft.env` wins over `production-readiness/.owner-microsoft.env` on apply
+- Apply load order: `/tmp/owner-microsoft.env` wins
 
 ## Watch out
 
 - HANDOFF must keep “expect step 3c PASS” / “step 3c should show” + `print-fly-deploy-confirm`
 - `/tmp/owner-deploy-confirm.env` must be KEY=value only (two lines)
 - Do not edit `e2e-workflow-test.sh` while a live E2E bash process is running
-- After `fly deploy`, confirm loop/cleanup/heartbeat primaries are started (not standbys)
 - tip_ahead_docs after script-only commits — do not remint Fly for ops/docs alone
 - `llm_env_missing=0` does not imply `llm_auth=ok`
-- watch/golive already use `owner_ms_has_*` (not blanket PLACEHOLDER grep on microsoft dropzone)
+- Stray branch `cursor/graph-minimum-reopen-fixes-bca0` is superseded by cherry-pick on PR #36 — do not open a second PR
