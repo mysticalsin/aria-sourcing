@@ -82,6 +82,32 @@ owner_ms_has_azure_app_id() {
   owner_ms_read_azure_app_id >/dev/null 2>&1
 }
 
+# Path of the Insufficient-privileges latch used by az-create-mantu-graph-app.sh.
+owner_ms_noperm_latch_path() {
+  printf '%s' "${ARIA_AZ_CREATE_NOPERM_LATCH:-/tmp/az-create-mantu-graph-app.noperm}"
+}
+
+# Expire the noperm latch so waiters re-attempt create after an admin grants
+# Application Developer / flips allowedToCreateApps. Default TTL 15m.
+# Prints one line to stdout when cleared (caller may log it). Returns 0 if cleared.
+owner_ms_maybe_clear_stale_noperm() {
+  local latch ttl age now
+  latch="$(owner_ms_noperm_latch_path)"
+  [ -f "$latch" ] || return 1
+  ttl="${ARIA_NOPERM_LATCH_TTL_SECONDS:-900}"
+  case "$ttl" in
+    ''|*[!0-9]*) ttl=900 ;;
+  esac
+  now="$(date +%s)"
+  age=$(( now - $(stat -c %Y "$latch" 2>/dev/null || echo "$now") ))
+  if [ "$age" -ge "$ttl" ]; then
+    rm -f "$latch"
+    printf 'cleared stale noperm latch (age=%ss ttl=%ss) — will re-probe az create\n' "$age" "$ttl"
+    return 0
+  fi
+  return 1
+}
+
 # Persist env exports to drop-zone (mode 600) so watcher/remint survive shell restarts.
 owner_ms_sync_env_to_dropzone() {
   local out="${OWNER_MICROSOFT_ENV:-/tmp/owner-microsoft.env}"

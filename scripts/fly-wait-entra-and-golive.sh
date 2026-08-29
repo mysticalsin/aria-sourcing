@@ -127,6 +127,9 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       log "confirm present but no tip_ahead_app — waiting for /tmp/owner-azure-app-id or /tmp/owner-microsoft.env (Graph PASS blocker)"
     fi
   elif az account show >/dev/null 2>&1; then
+    if msg="$(owner_ms_maybe_clear_stale_noperm 2>/dev/null)"; then
+      [ -n "$msg" ] && log "$msg"
+    fi
     if [ -f /tmp/az-create-mantu-graph-app.noperm ]; then
       if owner_ms_has_azure_app_id; then
         log "noperm but azure app id set — configuring existing Entra app"
@@ -140,7 +143,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
         fi
       fi
       if [ $(( $(date +%s) % 300 )) -lt "$SLEEP_SEC" ]; then
-        log "az OK but cannot create apps (noperm) — need /tmp/owner-azure-app-id or /tmp/owner-microsoft.env"
+        log "az OK but cannot create apps (noperm) — Entra admin must register (or grant Application Developer) → /tmp/owner-azure-app-id or /tmp/owner-microsoft.env"
         bash "$repo/scripts/print-fly-missing-secrets.sh" 2>/dev/null | grep -E 'MISSING|missing' | tee -a "$LOG" || true
         bash "$repo/scripts/print-fly-deploy-confirm.sh" 2>/dev/null | head -6 | tee -a "$LOG" || true
       fi

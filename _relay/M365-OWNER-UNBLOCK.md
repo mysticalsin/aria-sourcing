@@ -33,16 +33,17 @@ Entra scan: **zero** apps with `aria-mantu` or `*.fly.dev` redirect URIs. Owner 
 
 `twalteur@amaris.com` is az-logged-in but:
 - Tenant policy `defaultUserRolePermissions.allowedToCreateApps=false` (users cannot register apps)
-- No PIM-eligible Application Developer / Application Administrator / Cloud Application Administrator
-- Owns zero apps; create returns Insufficient privileges  
-Marker: `/tmp/az-create-mantu-graph-app.noperm`
+- No Application Developer / Application Administrator / Cloud Application Administrator directory role
+- Owns zero apps; `az ad app create` and Graph `POST /applications` both Insufficient privileges
+- **Portal New registration also fails for this user** under the same policy — Option A needs an Entra admin
+Marker: `/tmp/az-create-mantu-graph-app.noperm` (waiters expire it every ~15m and re-probe create after role grants)
 
 ### Owner unblock options (any one)
 
-1. **Minimal (recommended):** Portal → New registration `ARIA Mantu Graph (Fly)` →  
+1. **Minimal (recommended):** An **Entra admin** (Global Admin / Application Administrator / Application Developer) registers `ARIA Mantu Graph (Fly)` in Portal →  
    `echo '<client-id>' > /tmp/owner-azure-app-id` (agent configures + mints + applies)
-2. Assign **Application Developer** (or Application Administrator) to the agent account, then  
-   `bash scripts/az-create-mantu-graph-app.sh --apply`
+2. Assign **Application Developer** (or Application Administrator) to `twalteur@amaris.com`, then waiters auto-retry  
+   `bash scripts/az-create-mantu-graph-app.sh --apply` (noperm latch TTL clears every ~15m)
 3. Temporarily enable user app registration (`allowedToCreateApps=true`), then option 2, then revert policy
 
 
@@ -50,7 +51,7 @@ Marker: `/tmp/az-create-mantu-graph-app.noperm`
 
 ```bash
 bash scripts/run-enterprise-e2e-partial.sh
-# → PARTIAL · 58 pass / 0 fail / 2 warn (Microsoft only) on live f532707 / 0074
+# → PARTIAL · 58 pass / 0 fail / 2 warn (Microsoft only) on live 3fabbfa / 0074
 # classifier=model PASS; clean approve (no disclosure-comp retries); Hermes/vault OK
 ```
 
@@ -60,8 +61,9 @@ Strict E2E (no partial flag) correctly **FAIL**s on: `microsoftOAuth=false` + st
 
 ```bash
 bash scripts/print-m365-owner-portal-checklist.sh
-# 1) Azure Portal → New registration: ARIA Mantu Graph (Fly), single-tenant
-# 2) Copy Application (client) ID only:
+# 1) Entra admin → New registration: ARIA Mantu Graph (Fly), single-tenant
+#    (twalteur@amaris.com cannot portal-create while allowedToCreateApps=false)
+# 2) Copy Application (client) ID only onto the agent VM:
 echo '<application-client-id>' > /tmp/owner-azure-app-id
 # 3) Agent finishes redirects + Graph perms + secret mint + Fly apply:
 bash scripts/probe-m365-unblock.sh --apply

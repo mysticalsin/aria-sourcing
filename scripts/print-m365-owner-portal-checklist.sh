@@ -52,8 +52,9 @@ Without Entra: Graph Connect Outlook still works; /login Microsoft SSO CTA stays
 
 Agent can READ Entra apps in this tenant but cannot CREATE (Insufficient privileges).
 Tenant policy: defaultUserRolePermissions.allowedToCreateApps=false.
-No PIM eligibility for Application Developer / Application Administrator.
-Tenant scan: still zero apps with aria-mantu-*.fly.dev redirect URIs — owner must create one
+Signed-in az account (${ACCOUNT:-unknown}) has no Application Developer / App Admin role —
+Portal "New registration" fails for this user too (same policy). An Entra admin must act.
+Tenant scan: still zero apps with aria-mantu-*.fly.dev redirect URIs.
 (reject PLACEHOLDER_* and monotonous demo UUIDs like 11111111-…).
 
 After REAL secrets + Connect Outlook (webhook + Calendars.ReadWrite + OnlineMeetings.ReadWrite):
@@ -63,21 +64,24 @@ After REAL secrets + Connect Outlook (webhook + Calendars.ReadWrite + OnlineMeet
 GOTRUE_EXTERNAL_AZURE_URL (only if enabling SSO):
   https://login.microsoftonline.com/${TENANT_ID}/v2.0
 
-## Portal steps (Option A — create app; agent finishes the rest)
+## Portal steps (Option A — Entra admin registers; agent finishes the rest)
 
-Minimal owner path (recommended):
-1. Open (tenant-scoped): ${PORTAL_NEW_TENANT}
+Who can register: Global Admin / Application Administrator / Application Developer
+(or temporarily set allowedToCreateApps=true). NOT the current non-privileged az user.
+
+Minimal path (recommended):
+1. Entra admin opens (tenant-scoped): ${PORTAL_NEW_TENANT}
 2. Name: ARIA Mantu Graph (Fly) · Single tenant · Register (redirects optional — agent adds them)
-3. Copy Application (client) ID only, then:
+3. Copy Application (client) ID only into the agent VM:
    echo '<application-client-id>' > /tmp/owner-azure-app-id
    bash scripts/probe-m365-unblock.sh --apply
    # or: bash scripts/fly-m365-from-azure-app-id.sh
 4. Agent configures redirects + Graph delegated perms, mints secret, applies Fly Graph secrets.
-5. You: Settings → Connect Outlook → Enable webhook (Calendars.ReadWrite + OnlineMeetings.ReadWrite)
+5. Recruiter: Settings → Connect Outlook → Enable webhook (Calendars.ReadWrite + OnlineMeetings.ReadWrite)
 6. bash scripts/verify-m365-ready.sh
 
 Full manual portal path (if preferred):
-1. Open: ${PORTAL_NEW_TENANT}
+1. Entra admin opens: ${PORTAL_NEW_TENANT}
 2. Name: ARIA Mantu Graph (Fly) · Single tenant
 3. Redirect URI (Web):
    - ${APP_REDIRECT}

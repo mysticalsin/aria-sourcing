@@ -115,6 +115,11 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     fi
   fi
 
+  # Expire stale noperm so Application Developer / allowedToCreateApps grants are detected.
+  if msg="$(owner_ms_maybe_clear_stale_noperm 2>/dev/null)"; then
+    [ -n "$msg" ] && log "$msg"
+  fi
+
   # Only attempt az create when noperm latch is absent.
   if [ ! -f /tmp/az-create-mantu-graph-app.noperm ] \
     && command -v az >/dev/null 2>&1 \
@@ -131,7 +136,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
 
   if [ $(( $(date +%s) % 300 )) -lt "$SLEEP_SEC" ]; then
     if [ -f /tmp/az-create-mantu-graph-app.noperm ]; then
-      log "Blocked: noperm latch set — need portal app + /tmp/owner-azure-app-id or /tmp/owner-microsoft.env"
+      log "Blocked: noperm latch set — Entra admin must register app (or grant Application Developer) → /tmp/owner-azure-app-id or /tmp/owner-microsoft.env"
     else
       log "Waiting for owner Microsoft drop-zone…"
     fi
