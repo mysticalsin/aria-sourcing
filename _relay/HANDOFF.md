@@ -1,47 +1,45 @@
 ---
 project: MSourcing / ARIA
-shift: 360
+shift: 361
 agent: cursor-cloud
-updated: 2026-08-29T11:30Z
+updated: 2026-08-29T11:53Z
 status: e2e-partial-awaiting-real-graph-secrets
 ---
 
-# Handoff — Shift 360
+# Handoff — Shift 361
 
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft OPEN
-- **Live Fly:** **`47c01df`** / **0074** · tip_live · loop primary **2863e10bd41e28**
+- **Live Fly:** **`f532707`** / **0074** · tip_live · loop primary **2863e10bd41e28**
 - **Gate/audit:** green · audit **65/65**
-- **PARTIAL E2E:** **60/0/2** on `47c01df` — step 3c PASS · classifier=model · Graph push Mail.Send step skips cleanly until Connect Outlook
-- **Graph:** `graph_secrets_missing=3` · probe `owner-blocked` · no dropzone
+- **PARTIAL E2E:** **58/0/2** on `f532707` — step 3c PASS · classifier=model · **no approve retries** (disclosure/signature harden)
+- **Graph:** `graph_secrets_missing=3` · probe `owner-blocked` · Entra create still **Insufficient privileges**; zero aria-mantu redirect apps
 
 ## Done this shift
 
-1. `sendGraphJsonMail` + admin `send_graph_need_probe` (self-mail hiring-need template)
-2. E2E `2d+)` Graph push → hiring_need: polls `lastNotificationAt` + campaign title when live seat+webhook
-3. Deploy tip_live `47c01df`; PARTIAL re-verified
+1. Confirmed az cannot create Graph app; no owner dropzone
+2. Strip `compensationNorms` from candidate-bound `buildOutreachPrompt` (was steering disclosure-comp-blocked)
+3. Default signature → `Aria · Mantu Group` (critics flagged Talent Team blast)
+4. Deploy tip_live `f532707`; PARTIAL clean approve path
 
 ## Blockers
 
-- Owner **real** Graph CLIENT_ID/SECRET/TENANT (not `11111111-…` / PLACEHOLDER_*)
-- Then: apply → Connect Outlook → `verify-m365-ready` (expect Graph push step PASS + confirmLive book + RESULT: PASS)
+- Owner must create Entra app + REAL CLIENT_ID/SECRET/TENANT in `/tmp/owner-microsoft.env`
+- Then apply → Connect Outlook → `verify-m365-ready` for RESULT: PASS
 
 ## Next steps
 
 ```bash
 bash scripts/print-fly-golive-status.sh
-# expect tip_live 47c01df; graph_secrets_missing=3 until REAL secrets
-# If REAL /tmp/owner-microsoft.env:
+# expect tip_live f532707; graph_secrets_missing=3
+# Owner: Azure Portal create app (checklist) → REAL secrets → /tmp/owner-microsoft.env
 #   bash scripts/probe-m365-unblock.sh --apply
-#   expect microsoftOAuth=true; authorize client_id not synthetic
 #   Settings → Connect Outlook → webhook + Calendars + OnlineMeetings
-#   bash scripts/verify-m365-ready.sh
-#   expect: live-sub client_state_mismatch PASS; Graph push hiring_need PASS; RESULT: PASS
+#   bash scripts/verify-m365-ready.sh   # RESULT: PASS
 unset AGENT_PROVIDER AGENT_MODEL
 bash scripts/run-enterprise-e2e-partial.sh
-# expect Running: ARIA_ALLOW_PARTIAL_M365_E2E=1 only
-# expect step 3c PASS; classifier=model PASS
+# expect step 3c PASS; classifier=model PASS; no disclosure-comp approve retries
 # expect RESULT: PARTIAL until real Graph + live seat
 ```
 
@@ -59,15 +57,14 @@ curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
 - Production = Fly only; ignore Vercel/GHA empty-steps
 - PR #36 only
 - Graph-minimum apply; Entra/LLM WARN-only
-- **Monotonous demo UUIDs (11111111-…) are PLACEHOLDER** — never apply / never microsoftOAuth=true
+- **Monotonous demo UUIDs (11111111-…) are PLACEHOLDER**
 - Deploy confirm remint is agent-owned (KEY=value only)
-- Ban GitHub-activity boilerplate in draft signals
-- Do not store plaintext Graph clientState; prove push via real Mail.Send self-mail
+- Do not inject compensationNorms into candidate-bound outreach prompts
+- Prefer personal Aria · Mantu Group signature over Talent Team
 
 ## Watch out
 
 - HANDOFF must keep “expect step 3c PASS” / “step 3c should show” + `print-fly-deploy-confirm`
 - `/tmp/owner-deploy-confirm.env` must be KEY=value only (two lines)
-- Never print Microsoft secret values; quarantine fake dropzones as `*.FAKE-QUARANTINED-*`
+- Never print Microsoft secret values
 - After remint deploy, confirm loop primary started
-- Graph push E2E can take ~4 min waiting on Inbox notification when live
