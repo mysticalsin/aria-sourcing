@@ -130,8 +130,8 @@ bash scripts/fly-deploy-now.sh                       # after confirm
 # Full Fly E2E (requires secrets + live Graph seat)
 APP_URL=https://aria-mantu-app.fly.dev bash e2e-workflow-test.sh
 
-# Partial honest run (core loop, skip live Teams)
-ARIA_ALLOW_PARTIAL_M365_E2E=1 bash scripts/run-enterprise-e2e-partial.sh
+# Partial honest run (M365 deferred; live drafts + critics/approve)
+bash scripts/run-enterprise-e2e-partial.sh
 ```
 
 ---

@@ -140,5 +140,7 @@ cat <<'EOF'
 # If Fly secrets are still missing, print templates first:
 #   bash scripts/print-fly-secrets-checklist.sh
 bash scripts/run-enterprise-e2e-partial.sh
-# (auto PARTIAL flags + stale Fly while live lags tip; raw: bash e2e-workflow-test.sh)
+# (PARTIAL M365 by default; live drafts/critics; stale Fly only while tip_ahead_app.
+#  Opt-in: ARIA_ALLOW_SKIP_APPROVE_E2E / ARIA_ALLOW_PARTIAL_LLM_E2E / ARIA_ALLOW_CANNED_DRAFT_E2E.
+#  Raw: ARIA_ALLOW_PARTIAL_M365_E2E=1 bash e2e-workflow-test.sh)
 EOF
