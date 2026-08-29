@@ -107,6 +107,7 @@ import {
   CalendarCheck,
   CalendarPlus,
   CheckCircle2,
+  ChevronDown,
   ClipboardList,
   Compass,
   Copy,
@@ -983,27 +984,47 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       </Card>
 
       {feedbackReceipts.length > 0 && (
-        <Card className="mb-6" aria-label="Sourcing lesson feedback">
-          <CardHeader>
-            <Eyebrow>Private role learning</Eyebrow>
-            <CardTitle className="mt-1">Were these real searches useful?</CardTitle>
-          </CardHeader>
-          <CardBody className="space-y-3">
-            <p className="text-sm text-muted">
-              Feedback stores aggregate query outcomes only. It never sends candidate profiles to Graphify,
-              and no lesson can go live without a separate admin review.
+        <details
+          className="group mb-6 rounded-2xl border border-line/80 bg-surface shadow-sm"
+          aria-label="Sourcing lesson feedback"
+        >
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 sm:px-5 [&::-webkit-details-marker]:hidden">
+            <div className="min-w-0 flex items-center gap-3">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-soft text-violet">
+                <GraduationCap className="h-4 w-4" aria-hidden />
+              </span>
+              <div className="min-w-0">
+                <Eyebrow>Private role learning</Eyebrow>
+                <p className="truncate text-sm font-semibold text-ink">
+                  Were these real searches useful?
+                  <span className="ml-2 font-normal text-muted">
+                    ({feedbackReceipts.length} batch{feedbackReceipts.length === 1 ? "" : "es"})
+                  </span>
+                </p>
+              </div>
+            </div>
+            <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-muted">
+              <span className="group-open:hidden">Open</span>
+              <span className="hidden group-open:inline">Close</span>
+              <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" aria-hidden />
+            </span>
+          </summary>
+          <div className="space-y-3 border-t border-line/60 px-4 pb-4 pt-3 sm:px-5">
+            <p className="text-xs leading-relaxed text-muted">
+              Aggregate query outcomes only — never candidate profiles. Lessons stay private until admin review.
             </p>
             {feedbackReceipts.map((receipt) => {
               const submitting = feedbackSubmitting.has(receipt.receiptId);
               return (
                 <div
                   key={receipt.receiptId}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line p-3"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line/80 bg-canvas/40 px-3 py-2.5"
                 >
                   <p className="text-sm font-medium text-ink">
-                    {receipt.platform}: {receipt.candidateCount} real candidate{receipt.candidateCount === 1 ? "" : "s"}
+                    {receipt.platform}: {receipt.candidateCount} real candidate
+                    {receipt.candidateCount === 1 ? "" : "s"}
                   </p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-1.5">
                     <Button
                       size="sm"
                       variant="secondary"
@@ -1032,8 +1053,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 </div>
               );
             })}
-          </CardBody>
-        </Card>
+          </div>
+        </details>
       )}
 
       {runOpen && (
