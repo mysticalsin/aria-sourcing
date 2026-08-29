@@ -415,6 +415,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /llmKeysPresent/.test(readFileSync("src/lib/readiness.ts", "utf8"))
         && /Live tenants fail closed/.test(readFileSync("src/components/settings/hermes-runtime-panel.tsx", "utf8"))
         && /Roadmap only — no live adapter/.test(readFileSync("src/lib/integrations.ts", "utf8"))
+        && /probeLlmEnvStatus/.test(readFileSync("src/lib/ai/llm-env-status.ts", "utf8"))
+        && /llm_auth_dead/.test(readFileSync("src/app/api/admin/llm-env-status/route.ts", "utf8"))
+        && /FlyEnvLlmStatus|Fly env keys present but auth-dead/.test(
+          readFileSync("src/components/settings/providers-panel.tsx", "utf8"),
+        )
       );
     },
   },

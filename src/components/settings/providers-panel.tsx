@@ -29,16 +29,29 @@ import {
 import { can } from "@/lib/rbac";
 import { formatTimeAgo, type Tone } from "@/lib/utils";
 import {
+  AlertTriangle,
   CheckCircle2,
   Cpu,
   KeyRound,
   Loader2,
   Plus,
+  RefreshCw,
   ShieldCheck,
   Star,
   Trash2,
   Zap,
 } from "lucide-react";
+
+type LlmEnvProviderState = "absent" | "ok" | "auth_dead" | "error" | `http_${number}`;
+type LlmEnvStatusPayload = {
+  ok: boolean;
+  status: "llm_auth_ok" | "llm_auth_dead" | "llm_keys_absent";
+  keysPresent: boolean;
+  firstLiveProvider: string | null;
+  providers: Array<{ slug: string; env: string; state: LlmEnvProviderState; httpStatus: number | null }>;
+  note?: string;
+  error?: string;
+};
 
 /* ---- helpers ------------------------------------------------------------- */
 
@@ -242,6 +255,117 @@ function ProviderRow({
   );
 }
 
+/* ---- FlyEnvLlmStatus (admin) --------------------------------------------- */
+
+function FlyEnvLlmStatus({ enabled }: { enabled: boolean }) {
+  const [status, setStatus] = React.useState<LlmEnvStatusPayload | null>(null);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const { toast } = useToast();
+
+  const load = React.useCallback(async (force = false) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const url = force ? "/api/admin/llm-env-status?force=1" : "/api/admin/llm-env-status";
+      const res = await fetch(url, { cache: "no-store" });
+      const body = (await res.json().catch(() => null)) as LlmEnvStatusPayload | null;
+      if (!res.ok || !body?.ok) {
+        const msg = body?.error || `HTTP ${res.status}`;
+        setError(msg);
+        setStatus(null);
+        return;
+      }
+      setStatus(body);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Probe failed");
+      setStatus(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!enabled) return;
+    void load(false);
+  }, [enabled, load]);
+
+  if (!enabled) return null;
+
+  const tone =
+    status?.status === "llm_auth_ok"
+      ? "border-success/30 bg-success-soft/40 text-[hsl(152_45%_28%)]"
+      : status?.status === "llm_auth_dead"
+        ? "border-danger/25 bg-danger-soft/50 text-danger"
+        : "border-line bg-surface-2 text-muted";
+
+  const title =
+    status?.status === "llm_auth_ok"
+      ? `Fly env LLM auth OK${status.firstLiveProvider ? ` (${status.firstLiveProvider})` : ""}`
+      : status?.status === "llm_auth_dead"
+        ? "Fly env keys present but auth-dead"
+        : status?.status === "llm_keys_absent"
+          ? "No Fly env LLM keys set"
+          : "Fly env LLM auth";
+
+  return (
+    <div className={`rounded-2xl border px-4 py-3 ${tone}`} role="status">
+      <div className="flex flex-wrap items-start gap-3">
+        <span className="mt-0.5 shrink-0" aria-hidden>
+          {status?.status === "llm_auth_ok" ? (
+            <CheckCircle2 className="h-4 w-4" />
+          ) : status?.status === "llm_auth_dead" ? (
+            <AlertTriangle className="h-4 w-4" />
+          ) : loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <KeyRound className="h-4 w-4" />
+          )}
+        </span>
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className="text-sm font-semibold text-ink">{title}</p>
+          <p className="text-xs text-muted">
+            {error
+              ? error
+              : status?.note ||
+                "Live probe of KIMI/ANTHROPIC/OPENAI/DEEPSEEK on this host. llmKeysPresent on /api/ready is presence only — not live auth."}
+          </p>
+          {status?.providers ? (
+            <p className="font-mono text-[11px] text-muted">
+              {status.providers
+                .map((p) => `${p.slug}=${p.state}${p.httpStatus != null ? `(${p.httpStatus})` : ""}`)
+                .join(" · ")}
+            </p>
+          ) : null}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={loading}
+          leftIcon={
+            loading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )
+          }
+          onClick={() => {
+            void load(true).then(() => {
+              toast({
+                title: "Fly env LLM re-probed",
+                variant: "info",
+              });
+            });
+          }}
+        >
+          Re-probe
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /* ---- ProvidersPanel ------------------------------------------------------ */
 
 export function ProvidersPanel() {
@@ -417,6 +541,8 @@ export function ProvidersPanel() {
   return (
     <Card>
       <CardContent className="space-y-6">
+        <FlyEnvLlmStatus enabled={isAdmin} />
+
         {/* ---- Primary: simple add key ------------------------------------ */}
         {canManageKeys ? (
           <div className="rounded-2xl border border-electric/20 bg-electric/[0.04] p-4 sm:p-5">
