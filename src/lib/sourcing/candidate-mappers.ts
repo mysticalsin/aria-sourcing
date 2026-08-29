@@ -52,11 +52,16 @@ export function mapGithubCandidates(
         ].filter(Boolean),
       ),
     );
-    // Keep raw counts out of recentActivity — empathy critics reject scraped
-    // vanity metrics in outreach. Scoring still sees publicRepos via other paths.
+    // Keep raw counts AND "GitHub profile/activity" boilerplate out of
+    // recentActivity — live empathy critics reject both as scraping tells.
+    // Prefer stack/language when available; else neutral open-source phrasing.
     const activityParts = [
       bio || null,
-      user.publicRepos > 0 || user.followers > 0 ? "Active GitHub profile with recent public work" : null,
+      user.topLanguage
+        ? `Recent ${user.topLanguage} open-source work`
+        : user.publicRepos > 0 || user.followers > 0
+          ? "recent open-source work"
+          : null,
     ].filter(Boolean);
     return {
       id: genId("cand"),

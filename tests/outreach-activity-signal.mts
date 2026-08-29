@@ -5,7 +5,12 @@ const cases: Array<[string, (out: string) => boolean]> = [
   ["60 public repos, 12 followers", (o) => o === "recent open-source work"],
   ["Vos 60 dépôts publics sur GitHub", (o) => o.includes("recent open-source work") && !/\d/.test(o)],
   ["Shipped a zero-downtime migration tool", (o) => o === "Shipped a zero-downtime migration tool"],
-  ["Active GitHub profile with recent public work", (o) => o === "Active GitHub profile with recent public work"],
+  [
+    "Active GitHub profile with recent public work",
+    (o) => o === "recent open-source work" && !/GitHub/i.test(o),
+  ],
+  ["Votre activité GitHub récente", (o) => o === "recent open-source work" && !/GitHub/i.test(o)],
+  ["your recent GitHub activity", (o) => o === "recent open-source work" && !/GitHub/i.test(o)],
   ["", (o) => o === ""],
   ["no activity signal", (o) => o === ""],
 ];

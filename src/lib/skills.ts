@@ -56,6 +56,7 @@ export function defaultSkills(now = new Date("2026-06-26T09:00:00Z").toISOString
         "- Never send until human approval; LinkedIn stays assisted-manual.",
         "- Ban generic openers: \"I hope this finds you well\", \"I came across your profile\", \"exciting opportunity\", \"perfect fit\".",
         "- Ban employer-name-only openers (\"your work at Acme\") — empathy critics treat that as a researched database insert.",
+        "- Ban GitHub-activity boilerplate (\"your GitHub activity\", \"votre activité GitHub\", \"Active GitHub profile\") — critics treat that as scraped profile disclosure.",
         "- Ban pressure language: act now, limited time, don't miss, only N slots.",
       ].join("\n"),
       version: 1,
