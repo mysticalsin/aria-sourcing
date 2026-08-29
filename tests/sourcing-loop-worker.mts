@@ -56,7 +56,7 @@ function rpcClient(handler: (name: string, args: Record<string, unknown>) => unk
         calls.push({ name, args });
         return handler(name, args) as { data: unknown; error: { code: string } | null };
       },
-      from() {
+      from(_table?: string) {
         return {
           select() {
             return this;
@@ -76,6 +76,48 @@ function rpcClient(handler: (name: string, args: Record<string, unknown>) => unk
         };
       },
     },
+  };
+}
+
+/** Stub profiles + sourcing_loop_controls for workspaceAutopilotArmed(). */
+function stubWorkspaceAutopilotArmed(
+  client: { from: (table?: string) => unknown },
+  opts: { entitled?: boolean; sequencesArmed?: boolean; entitledId?: string } = {},
+) {
+  const entitled = opts.entitled !== false;
+  const sequencesArmed = opts.sequencesArmed !== false;
+  const entitledId = opts.entitledId ?? "user-autopilot-1";
+  client.from = (table?: string) => {
+    const chain = {
+      select() {
+        return this;
+      },
+      eq() {
+        return this;
+      },
+      in() {
+        return this;
+      },
+      limit() {
+        return this;
+      },
+      async maybeSingle() {
+        if (table === "profiles") {
+          return { data: entitled ? { id: entitledId } : null, error: null };
+        }
+        if (table === "sourcing_loop_controls") {
+          return {
+            data: {
+              kill_switch: !sequencesArmed,
+              sequences_enabled: sequencesArmed,
+            },
+            error: null,
+          };
+        }
+        return { data: null, error: null };
+      },
+    };
+    return chain;
   };
 }
 
@@ -632,23 +674,9 @@ test("inbound_classify enqueues draft_generate for positive intent when autopilo
     }
     throw new Error(`unexpected rpc ${name}`);
   });
-  // Override from() to return an entitled profile.
-  (client as { from: () => unknown }).from = () => ({
-    select() {
-      return this;
-    },
-    eq() {
-      return this;
-    },
-    in() {
-      return this;
-    },
-    limit() {
-      return this;
-    },
-    async maybeSingle() {
-      return { data: { id: "user-autopilot-1" }, error: null };
-    },
+  // Override from() to return an entitled profile (+ sequences for arm helper).
+  stubWorkspaceAutopilotArmed(client as { from: (table?: string) => unknown }, {
+    entitledId: "user-autopilot-1",
   });
 
   await handleAriaJob(job("inbound_classify", { inboundId: "inbound-2" }), {
@@ -1013,6 +1041,7 @@ test("first_interview_book confirms live Teams when confirm cron returns created
     }
     throw new Error(`unexpected rpc ${name}`);
   });
+  stubWorkspaceAutopilotArmed(client as { from: (table?: string) => unknown });
 
   await handleAriaJob(
     job("first_interview_book", {
@@ -1192,6 +1221,7 @@ test("first_interview_book soft-continues when append_booking is pre-0072 unknow
     }
     throw new Error(`unexpected rpc ${name}`);
   });
+  stubWorkspaceAutopilotArmed(client as { from: (table?: string) => unknown });
 
   await handleAriaJob(
     job("first_interview_book", {
@@ -1362,6 +1392,200 @@ test("draft_generate enqueues pre_call_propose after positive reply trigger", as
       priority: 60,
     },
   ]);
+});
+
+test("draft_generate posts autopilot-send and marks outreach Scheduled when queued", async () => {
+  const patches: Array<Record<string, unknown>> = [];
+  const autopilotBodies: Array<Record<string, unknown>> = [];
+  const draftBodies: Array<Record<string, unknown>> = [];
+  const { client } = rpcClient((name, args) => {
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: {}, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      patches.push(args);
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await handleAriaJob(
+    job("draft_generate", {
+      campaignId: "camp-auto-1",
+      candidateId: "cand-auto-1",
+    }),
+    {
+      client,
+      configuration: {
+        outreachDraftUrl: new URL("https://worker.example.test/api/cron/generate-outreach-draft"),
+        autopilotSendUrl: new URL("https://worker.example.test/api/cron/autopilot-send-outreach"),
+        cronSecret: "s".repeat(32),
+      },
+      fetcher: async (url, init) => {
+        const href = String(url);
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        if (href.includes("generate-outreach-draft")) {
+          draftBodies.push(body);
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              campaignId: "camp-auto-1",
+              candidateId: "cand-auto-1",
+              channel: "Email",
+              recipient: "cand@example.com",
+              graphStage: "queued_for_approval",
+              llmCriticsUsed: true,
+              quality: { status: "ready", aggregateScore: 92 },
+              outreach: {
+                id: "msg_stable_auto_1",
+                candidateId: "cand-auto-1",
+                campaignId: "camp-auto-1",
+                channel: "Email",
+                subject: "Your TypeScript work",
+                body: "Hi — noticed your TypeScript work for a Mantu Group role.",
+                status: "Needs Approval",
+              },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (href.includes("autopilot-send-outreach")) {
+          autopilotBodies.push(body);
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              results: [{ result: { status: "queued", channel: "Email", detail: "queued" } }],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        throw new Error(`unexpected fetch ${href}`);
+      },
+    },
+  );
+
+  assert.equal(autopilotBodies.length, 1);
+  assert.equal(autopilotBodies[0]!.criticsPassed, true);
+  assert.equal(autopilotBodies[0]!.qualityStatus, "ready");
+  assert.equal(autopilotBodies[0]!.messageId, "msg_stable_auto_1");
+  assert.equal(patches.length, 1);
+  const outreach = patches[0]!.p_patch as Array<Record<string, unknown>>;
+  assert.equal(outreach[0]?.status, "Scheduled");
+  assert.equal(outreach[0]?.dryRun, false);
+});
+
+test("draft_generate skips autopilot-send when quality is needs_review", async () => {
+  const autopilotCalls: string[] = [];
+  const { client } = rpcClient((name) => {
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: {}, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await handleAriaJob(
+    job("draft_generate", { campaignId: "camp-nr", candidateId: "cand-nr" }),
+    {
+      client,
+      configuration: {
+        outreachDraftUrl: new URL("https://worker.example.test/api/cron/generate-outreach-draft"),
+        autopilotSendUrl: new URL("https://worker.example.test/api/cron/autopilot-send-outreach"),
+        cronSecret: "s".repeat(32),
+      },
+      fetcher: async (url) => {
+        const href = String(url);
+        if (href.includes("autopilot-send")) autopilotCalls.push(href);
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            channel: "Email",
+            recipient: "a@b.co",
+            graphStage: "queued_for_approval",
+            llmCriticsUsed: true,
+            quality: { status: "needs_review", aggregateScore: 70 },
+            outreach: {
+              id: "msg-nr",
+              subject: "Hi",
+              body: "Body with Mantu Group mention for critics.",
+              channel: "Email",
+              status: "Needs Approval",
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    },
+  );
+  assert.equal(autopilotCalls.length, 0);
+});
+
+test("first_interview_book skips live confirm when Autopilot is not armed", async () => {
+  const confirmCalls: string[] = [];
+  const proposeCalls: string[] = [];
+  const { client } = rpcClient((name) => {
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: {}, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "apply_workspace_patch") {
+      return { data: { status: "applied" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+  // Default from() → not entitled → arm.armed false
+
+  await handleAriaJob(
+    job("first_interview_book", {
+      campaignId: "camp-off",
+      candidateId: "cand-off",
+      intent: "INTERESTED",
+    }),
+    {
+      client,
+      configuration: {
+        calendarConfirmUrl: new URL("https://worker.example.test/api/cron/confirm-calendar-book"),
+        calendarProposeUrl: new URL("https://worker.example.test/api/cron/propose-calendar-book"),
+        recruitingGraphUrl: new URL("https://worker.example.test/api/cron/recruiting-graph-stage"),
+        cronSecret: "s".repeat(32),
+      },
+      fetcher: async (url) => {
+        const href = String(url);
+        if (href.includes("confirm-calendar-book")) {
+          confirmCalls.push(href);
+          throw new Error("confirm must not run when autopilot disarmed");
+        }
+        if (href.includes("propose-calendar-book")) {
+          proposeCalls.push(href);
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              status: "proposed_dry_run",
+              startTime: "2026-08-28T10:00:00.000Z",
+              endTime: "2026-08-28T10:30:00.000Z",
+              claimId: null,
+              agenda: ["Intro"],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (href.includes("recruiting-graph-stage")) {
+          return new Response(
+            JSON.stringify({ ok: true, stage: "queued_for_approval", shortlistIds: [] }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        throw new Error(`unexpected fetch ${href}`);
+      },
+    },
+  );
+
+  assert.equal(confirmCalls.length, 0);
+  assert.equal(proposeCalls.length, 1);
 });
 
 test("runSourcingLoopTick claims every handler kind and completes each claimed job once", async () => {

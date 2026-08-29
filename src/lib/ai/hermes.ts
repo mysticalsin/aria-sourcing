@@ -87,6 +87,9 @@ export function buildOutreachPrompt(opts: {
   localeContext?: LocaleContext;
   persona?: string;
   signature?: string;
+  /** 1 = first-touch; 2+ = follow-up after positive reply. */
+  sequenceStep?: number;
+  intent?: string;
 }): string {
   const localeLines = opts.localeContext
     ? [
@@ -102,8 +105,16 @@ export function buildOutreachPrompt(opts: {
         // that steers drafts into disclosure-comp-blocked (€ / salary / rate / band).
       ].filter(Boolean)
     : [];
+  const step = opts.sequenceStep && opts.sequenceStep > 1 ? opts.sequenceStep : 1;
+  const draftKind =
+    step > 1
+      ? `follow-up (sequence step ${step}${opts.intent ? `, intent ${opts.intent}` : ""})`
+      : "first-touch";
   const lines = [
-    `Draft a first-touch ${opts.channel} recruiting message in this language (ISO code): ${opts.language}.`,
+    `Draft a ${draftKind} ${opts.channel} recruiting message in this language (ISO code): ${opts.language}.`,
+    step > 1
+      ? "The candidate already replied positively — thank them briefly, propose a short intro call, do not re-pitch the role from scratch."
+      : "",
     `Tone: ${opts.tone}.`,
     opts.persona ? `Voice / persona: ${opts.persona}` : "",
     ...localeLines,

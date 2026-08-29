@@ -1272,9 +1272,10 @@ export function newOutreachMessage(
   tone: OutreachTone,
   settings: SystemSettings,
   sequenceStep = 1,
+  opts?: { id?: string },
 ): OutreachMessage {
   return {
-    id: genId("msg"),
+    id: opts?.id && opts.id.trim() ? opts.id.trim() : genId("msg"),
     candidateId: candidate.id,
     campaignId: campaign.id,
     channel: gen.channel,
@@ -1284,7 +1285,8 @@ export function newOutreachMessage(
     personalizationEvidence: gen.personalizationEvidence,
     // Browser settings never grant delivery authority. Every generated message
     // starts in named human review; channel-specific handling begins only after
-    // the approval is durably recorded.
+    // the approval is durably recorded. Loop drafts may pass a stable id so
+    // retries do not double-enqueue under autopilot.
     status: "Needs Approval",
     sequenceStep,
     scheduledFor: null,

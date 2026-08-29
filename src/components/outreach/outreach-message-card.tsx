@@ -542,7 +542,8 @@ export function OutreachMessageCard({
                 {(missingLawfulBasis || showBasisPrompt) && (
                   <p className="text-[hsl(32_90%_28%)]/90">
                     GDPR hold: record a lawful basis for this candidate, then click Approve again.
-                    Nothing auto-sends — approval is a separate second click.
+                    Autopilot ON + Sequences armed may auto-queue critics-green drafts; otherwise
+                    approval is a separate click before Send.
                   </p>
                 )}
                 <ul className="list-disc space-y-0.5 pl-4 text-[hsl(32_90%_28%)]/90">

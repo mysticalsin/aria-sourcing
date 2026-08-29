@@ -1,55 +1,52 @@
 ---
 project: MSourcing / ARIA
-shift: 397
+shift: 398
 agent: cursor-cloud
-updated: 2026-08-29T20:45Z
-status: rei-wa-linkedin-failclosed
+updated: 2026-08-29T21:05Z
+status: rei-book-gate-idempotent-draft
 ---
 
-# Handoff — Shift 397
+# Handoff — Shift 398
 
 ## Current state
 
 - **Branch / PR:** `cursor/rei-autopilot-send-b91d` → **PR #39**
-- **Change:** WhatsApp cold first-touch fail-closed (open window → reply; else zero-param Meta template; else skip). LinkedIn durable-only (live HeyReach/vendor seat required — no direct REST fallback). Copy/skills honesty + draft phone 422.
-- **Live Fly:** `1665b39` / **0074**; **0076 not applied**; Graph dropzones absent → **HOLD**
+- **This shift:** Live Teams book gated on Autopilot+Sequences; stable draft message ids (no retry double-send); reply follow-up draft (step 2 + prompt); worker tests for autopilot-send wiring + disarmed book
+- **Live Fly:** `1665b39` / **0074**; **0076 not applied**; Graph dropzones absent → **HOLD**; no `ARIA_PROD_DEPLOY_CONFIRM`
 
 ## Done this shift
 
-1. `src/lib/rei-autopilot-whatsapp.ts` — resolve reply-window vs cold template shape
-2. `rei-autopilot-dispatch.ts` — mint after WA shape; LinkedIn seat-required durable enqueue only
-3. Migration **0076** — `enqueue_whatsapp_outbound_service` accepts `approved_template`
-4. Settings copy (email connections, Sequences hint), `skills.ts` Autopilot exception
-5. `generate-outreach-draft` WA/SMS missing phone → 422
-6. Tests: `rei-autopilot-whatsapp`, expanded dispatch suite
+1. `workspaceAutopilotArmed` in sourcing-loop-worker — live `confirm-calendar-book` only when armed
+2. `stableOutreachMessageId` + draft cron trigger/intent/sequenceStep for reply follow-ups
+3. Worker tests: autopilot-send → Scheduled; needs_review skips; book skipped when disarmed
+4. Reply panel / outreach card / INBOUND_REPLY_AUTOPILOT docs honesty
 
 ## Blockers
 
 1. Deploy tip + **0076**
-2. Operator Settings HeyReach API + live HeyReach seat after deploy
-3. Cold WA needs zero-param Meta template (or human template picker)
-4. Graph dropzones empty — strict PASS HOLD
+2. Settings HeyReach API + live seat; entitle Autopilot; arm Sequences
+3. Graph dropzones empty — strict PASS HOLD
+4. WhatsApp *inbound reply* auto-queue still inserts `blocked` (agent-spec path) — separate from first-touch REI WA cold template
 
 ## Next steps
 
 ```bash
 bash scripts/print-fly-deploy-confirm.sh && bash scripts/fly-deploy-now.sh
-# Settings → Save HeyReach API + live HeyReach seat; entitle autopilot; arm Sequences
-# Optional: approve a zero-param WhatsApp Meta template for cold first-touch
+# Settings → HeyReach; entitle; arm Sequences
 bash scripts/run-enterprise-e2e-partial.sh
+# Optional next code: WhatsApp inbound decideAutopilot(entitlement) → mint+queue
 ```
 
 ## Decisions made (don't relitigate)
 
 - Settings vault + campaign first-class; Fly env optional
 - Autopilot fail-closed: qualityStatus=ready + criticsPassed
-- WhatsApp cold: Meta approved template (zero-param auto) or human picker — never free-form without open window
-- LinkedIn autopilot: durable outbox + live HeyReach/vendor seat only (no direct-send bypass)
-- interview_prep_send claimable after live book
+- WhatsApp cold: Meta template or open window; LinkedIn durable seat only
+- Live interview book only when Autopilot entitled + Sequences armed; else dry-run propose
+- Stable draft message ids for loop retries
 - HOLD when Microsoft dropzones empty
 
 ## Watch out
 
-- Run dispatch tests with `--experimental-test-module-mocks`
-- Client: `heyReachSettingsReady` from `heyreach-config`
-- `typecheck:tests` still has pre-existing errors in sourcing-loop-worker / store-booking (unrelated)
+- Worker tests: `stubWorkspaceAutopilotArmed(client)` for live book paths
+- Dispatch tests need `--experimental-test-module-mocks`

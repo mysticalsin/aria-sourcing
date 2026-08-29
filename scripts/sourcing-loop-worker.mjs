@@ -724,6 +724,37 @@ function successorJob(kind, idempotencyKey, payload, priority = 100) {
   return { kind, idempotency_key: idempotencyKey, payload: cleaned, priority };
 }
 
+/**
+ * Entitled Autopilot + Sequences armed (kill_switch off). Live book / auto-send
+ * require this; dry-run propose and human Approve→Send do not.
+ */
+async function workspaceAutopilotArmed(client, workspaceId) {
+  try {
+    const entitled = await client
+      .from("profiles")
+      .select("id")
+      .eq("workspace_id", workspaceId)
+      .eq("autopilot_enabled", true)
+      .in("role", ["admin", "member"])
+      .limit(1)
+      .maybeSingle();
+    const entitledId = typeof entitled.data?.id === "string" ? entitled.data.id : "";
+    if (!entitledId) {
+      return { armed: false, entitledId: "", sequencesArmed: false };
+    }
+    const controls = await client
+      .from("sourcing_loop_controls")
+      .select("kill_switch, sequences_enabled")
+      .eq("workspace_id", workspaceId)
+      .maybeSingle();
+    const sequencesArmed =
+      controls.data?.kill_switch === false && controls.data?.sequences_enabled === true;
+    return { armed: sequencesArmed, entitledId, sequencesArmed };
+  } catch {
+    return { armed: false, entitledId: "", sequencesArmed: false };
+  }
+}
+
 function event(eventType, subjectKind, subjectId, payload = {}) {
   return { event_type: eventType, subject_kind: subjectKind, subject_id: subjectId, payload };
 }
@@ -1546,6 +1577,8 @@ async function handleDraftGenerate(job, context) {
   const payload = payloadOf(job);
   const campaignId = boundedText(payload.campaignId, 160, "campaign_id_required");
   const candidateId = boundedText(payload.candidateId, 160, "candidate_id_required");
+  const trigger = typeof payload.trigger === "string" ? payload.trigger : "";
+  const intent = typeof payload.intent === "string" ? payload.intent : "";
 
   if (!context.configuration?.outreachDraftUrl || !context.configuration?.cronSecret) {
     throw new HandlerError("outreach_draft_unconfigured", true);
@@ -1563,6 +1596,8 @@ async function handleDraftGenerate(job, context) {
         workspaceId: job.workspace_id,
         campaignId,
         candidateId,
+        ...(trigger ? { trigger } : {}),
+        ...(intent ? { intent } : {}),
       }),
       signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
     });
@@ -1610,8 +1645,7 @@ async function handleDraftGenerate(job, context) {
   }
 
   const successors = [];
-  const trigger = typeof payload.trigger === "string" ? payload.trigger : "";
-  const intent = typeof payload.intent === "string" ? payload.intent : "";
+  // trigger/intent already bound above for the draft cron body.
   const positiveReply =
     trigger === "inbound_classify"
     && (intent === "INTERESTED" || intent === "QUALIFIED_INTEREST");
@@ -2017,7 +2051,14 @@ async function handleFirstInterviewBook(job, context) {
   const candidateId = boundedText(payload.candidateId, 160, "candidate_id_required");
   const intent = typeof payload.intent === "string" ? payload.intent : "";
 
-  if (context.configuration?.calendarConfirmUrl && context.configuration?.cronSecret) {
+  // Live Teams book only when Autopilot entitled + Sequences armed. Otherwise
+  // fall through to dry-run propose for human confirmLive in Calendar.
+  const arm = await workspaceAutopilotArmed(context.client, job.workspace_id);
+  if (
+    arm.armed
+    && context.configuration?.calendarConfirmUrl
+    && context.configuration?.cronSecret
+  ) {
     let response;
     try {
       response = await context.fetcher(context.configuration.calendarConfirmUrl, {
@@ -2419,7 +2460,7 @@ async function handleInboundClassify(job, context) {
     }
 
     try {
-      // Positive interest → pre-call propose first, then first interview (dry-run).
+      // Positive interest → pre-call propose (dry-run slot for human or autopilot).
       successors.push(
         successorJob(
           "pre_call_propose",
@@ -2434,16 +2475,8 @@ async function handleInboundClassify(job, context) {
         ),
       );
 
-      const entitled = await context.client
-        .from("profiles")
-        .select("id")
-        .eq("workspace_id", job.workspace_id)
-        .eq("autopilot_enabled", true)
-        .in("role", ["admin", "member"])
-        .limit(1)
-        .maybeSingle();
-      const entitledId = typeof entitled.data?.id === "string" ? entitled.data.id : "";
-      if (entitledId) {
+      const arm = await workspaceAutopilotArmed(context.client, job.workspace_id);
+      if (arm.entitledId) {
         successors.push(
           successorJob(
             "draft_generate",
@@ -2451,7 +2484,7 @@ async function handleInboundClassify(job, context) {
             {
               campaignId,
               candidateId,
-              approvedBy: entitledId,
+              approvedBy: arm.entitledId,
               approvalSource: "autopilot_reply",
               trigger: "inbound_classify",
               intent: classification.intent,

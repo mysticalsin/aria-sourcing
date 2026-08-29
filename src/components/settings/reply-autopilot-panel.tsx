@@ -43,7 +43,7 @@ export function ReplyAutopilotPanel() {
             {
               icon: <Radio className="h-3.5 w-3.5" aria-hidden />,
               title: "Loop claims → classify once → draft if Interested",
-              body: "Positive intents can enqueue a follow-up draft for entitled autopilot. With Autopilot ON + Sequences armed, critics-green first-touch auto-queues; when OFF, sends still need Approve → Send.",
+              body: "Positive intents enqueue a follow-up draft when Autopilot is entitled. With Autopilot ON + Sequences armed: critics-green first-touch auto-queues, and positive replies advance to pre-call → live Teams book when Graph is connected. When OFF, sends and live book still need human Approve / confirmLive.",
             },
           ].map((step, i) => (
             <motion.li

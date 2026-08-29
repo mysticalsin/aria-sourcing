@@ -16,6 +16,7 @@ import type { Candidate, Campaign, OutreachChannel, SystemSettings } from "@/lib
 import { candidateDisclosureContextForCampaignLike } from "@/lib/agent-disclosure-policy";
 import { resolveOutreachLanguage } from "@/lib/outreach-language";
 import { preferredOutreachChannel } from "@/lib/outreach-channel";
+import { stableOutreachMessageId } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,6 +26,9 @@ const BodySchema = z.object({
   campaignId: z.string().min(1).max(100),
   candidateId: z.string().min(1).max(100),
   channel: z.enum(["Email", "LinkedIn", "WhatsApp", "SMS"]).optional(),
+  /** Loop trigger — inbound_classify → reply follow-up (step 2), else first-touch. */
+  trigger: z.string().min(1).max(80).optional(),
+  intent: z.string().min(1).max(80).optional(),
 });
 
 function authorized(req: NextRequest): boolean {
@@ -77,9 +81,15 @@ export async function POST(req: NextRequest) {
 
   const channel: OutreachChannel =
     parsed.data.channel ?? preferredOutreachChannel(candidate);
+  const trigger = parsed.data.trigger?.trim() || "first_touch";
+  const intent = parsed.data.intent?.trim() || "";
+  const replyFollowUp =
+    trigger === "inbound_classify" &&
+    (intent === "INTERESTED" || intent === "QUALIFIED_INTEREST");
+  const sequenceStep = replyFollowUp ? 2 : 1;
   // Prefer a reachable channel — never invent Email drafts for LinkedIn-only profiles
-  // (Approve would dead-end on "no email"). LinkedIn drafts stay Needs Approval +
-  // assisted-manual (409 on send); Email drafts use connected Outlook after human Send.
+  // (Approve would dead-end on "no email"). LinkedIn drafts need a profile URL;
+  // with Autopilot + HeyReach/vendor they may durable-queue; otherwise assisted-manual.
   if (channel === "Email" && !candidate.email.trim()) {
     return NextResponse.json(
       {
@@ -114,7 +124,14 @@ export async function POST(req: NextRequest) {
     );
   }
   const voice = mantuOutreachVoice();
-  const mockGenerated = generateOutreach(candidate, campaign, "Casual Professional", channel, 1, voice);
+  const mockGenerated = generateOutreach(
+    candidate,
+    campaign,
+    "Casual Professional",
+    channel,
+    sequenceStep,
+    voice,
+  );
 
   let generated = mockGenerated;
   let modelUsed = false;
@@ -140,6 +157,8 @@ export async function POST(req: NextRequest) {
     localeContext: campaign.jobAnalysis.localeContext,
     persona: voice.persona,
     signature: voice.signature,
+    sequenceStep,
+    intent: intent || undefined,
   });
   const live = await resolveLoopLlm({
     task: "outreach",
@@ -286,6 +305,14 @@ export async function POST(req: NextRequest) {
       : graphResult.stage;
 
   const settings: Pick<SystemSettings, "dryRunMode"> = { dryRunMode: true };
+  const stableId = stableOutreachMessageId({
+    workspaceId: parsed.data.workspaceId,
+    campaignId: parsed.data.campaignId,
+    candidateId: parsed.data.candidateId,
+    channel,
+    sequenceStep,
+    trigger,
+  });
   const outreach = newOutreachMessage(
     candidate,
     campaign,
@@ -296,7 +323,8 @@ export async function POST(req: NextRequest) {
     },
     "Casual Professional",
     settings as SystemSettings,
-    1,
+    sequenceStep,
+    { id: stableId },
   );
   outreach.status = "Needs Approval";
   outreach.qualityStatus = verdict.status;

@@ -23,10 +23,14 @@ Fly sourcing-loop-worker (claim_due_aria_jobs)
     │  read_inbound_email_for_loop
     │  classify once (model or deterministic fallback)
     │  append_reply patch
-    │  if INTERESTED / QUALIFIED_INTEREST + entitled profile
-    │      → enqueue draft_generate (still approval-gated before send)
+    │  if INTERESTED / QUALIFIED_INTEREST
+    │      → enqueue pre_call_propose (dry-run slot; live book only if Autopilot+Sequences)
+    │      → enqueue draft_generate when entitled (follow-up step 2)
+    │         → critics-green + Autopilot ON + Sequences → autopilot-send durable queue
+    │         → else Needs Approval → human Approve → Send
     ▼
-Human / entitled approval → dispatch-outbound
+Autopilot ON: mint autopilot_critics → Email/WA/LI queue; live Teams book when Graph ready
+Autopilot OFF: human Approve → Send; Calendar confirmLive for book
 ```
 
 Idle loop ticks (~30s) **do not** call Graph or the classifier. Empty daily
