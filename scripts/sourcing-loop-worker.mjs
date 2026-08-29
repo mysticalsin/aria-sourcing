@@ -1814,7 +1814,10 @@ async function proposeMeetingForCandidate(job, context, meetingKind) {
   );
 
   const successors = [];
-  if (preCallClaim) {
+  // Always advance pre_call → first_interview_book after a successful propose.
+  // Dry-run releases the claim (claimId null) so graph stays on queued_for_approval;
+  // first_interview_book tries confirm-calendar-book then falls back to dry-run propose.
+  if (isPreCall) {
     successors.push(
       successorJob(
         "first_interview_book",
@@ -1997,6 +2000,8 @@ async function handleFirstInterviewBook(job, context) {
         }
 
         // Mirror createBookingFor: Calendar Agenda reads state.bookings (useBookings).
+        // Soft-fail when live DB is pre-0072 (unknown-patch-kind) — candidate.booking
+        // already holds the Teams fact; agenda append waits for migration remint.
         const bookingSnapshot = await readWorkspaceSnapshot(context.client, job.workspace_id);
         const bookingAppend = await context.client.rpc("apply_workspace_patch", {
           p_workspace_id: job.workspace_id,
@@ -2010,7 +2015,18 @@ async function handleFirstInterviewBook(job, context) {
           isRecord(bookingAppend.data) && typeof bookingAppend.data.status === "string"
             ? bookingAppend.data.status
             : "patch_failed";
-        if (bookingAppendStatus !== "applied" && bookingAppendStatus !== "already_applied") {
+        const bookingAppendReason =
+          isRecord(bookingAppend.data) && typeof bookingAppend.data.reason === "string"
+            ? bookingAppend.data.reason
+            : "";
+        const bookingAppendDeferred =
+          bookingAppendStatus === "invalid_request"
+          && (bookingAppendReason === "unknown-patch-kind" || bookingAppendReason.includes("unknown"));
+        if (
+          bookingAppendStatus !== "applied"
+          && bookingAppendStatus !== "already_applied"
+          && !bookingAppendDeferred
+        ) {
           throw new HandlerError(
             `booking_append_${bookingAppendStatus}`,
             bookingAppendStatus === "stale_token",

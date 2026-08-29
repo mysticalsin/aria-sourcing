@@ -952,6 +952,165 @@ test("first_interview_book confirms live Teams when confirm cron returns created
   assert.notEqual(bookingAppend!.p_receipt_key, activityPatch!.p_receipt_key);
 });
 
+test("pre_call_propose dry-run enqueues first_interview_book without held claim", async () => {
+  const patches: Array<Record<string, unknown>> = [];
+  const { client } = rpcClient((name, args) => {
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: {}, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "apply_workspace_patch") {
+      patches.push(args);
+      return { data: { status: "applied" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      patches.push(args);
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await handleAriaJob(
+    job("pre_call_propose", {
+      campaignId: "camp-pre-1",
+      candidateId: "cand-pre-1",
+      intent: "INTERESTED",
+      trigger: "inbound_classify",
+    }),
+    {
+      client,
+      configuration: {
+        calendarProposeUrl: new URL("https://worker.example.test/api/cron/propose-calendar-book"),
+        recruitingGraphUrl: new URL("https://worker.example.test/api/cron/recruiting-graph-stage"),
+        cronSecret: "s".repeat(32),
+      },
+      fetcher: async (url) => {
+        const href = String(url);
+        if (href.includes("propose-calendar-book")) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              status: "proposed_dry_run",
+              startTime: "2026-08-28T10:00:00.000Z",
+              endTime: "2026-08-28T10:20:00.000Z",
+              claimId: null,
+              releasedClaimId: "claim-released-1",
+              agenda: ["Screen"],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (href.includes("recruiting-graph-stage")) {
+          return new Response(
+            JSON.stringify({ ok: true, stage: "queued_for_approval", shortlistIds: [] }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        throw new Error(`unexpected fetch ${href}`);
+      },
+    },
+  );
+
+  const complete = patches.find((p) => Array.isArray(p.p_enqueue));
+  assert.ok(complete);
+  const enqueue = complete!.p_enqueue as Array<{ kind?: string; payload?: { trigger?: string } }>;
+  assert.equal(enqueue.some((j) => j.kind === "first_interview_book"), true);
+  assert.equal(
+    enqueue.find((j) => j.kind === "first_interview_book")?.payload?.trigger,
+    "pre_call_propose",
+  );
+  const stageMerge = patches.find((p) => p.p_patch_kind === "merge_candidate_patch");
+  assert.ok(stageMerge);
+  const merged = stageMerge!.p_patch as {
+    patch?: { preCallProposal?: { claimId?: string | null; proposeStatus?: string } };
+  };
+  assert.equal(merged.patch?.preCallProposal?.claimId ?? null, null);
+  assert.equal(merged.patch?.preCallProposal?.proposeStatus, "proposed_dry_run");
+});
+
+test("first_interview_book soft-continues when append_booking is pre-0072 unknown-patch-kind", async () => {
+  const patches: Array<Record<string, unknown>> = [];
+  const { client } = rpcClient((name, args) => {
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: {}, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "apply_workspace_patch") {
+      patches.push(args);
+      if (args.p_patch_kind === "append_booking") {
+        return {
+          data: { status: "invalid_request", reason: "unknown-patch-kind" },
+          error: null,
+        };
+      }
+      return { data: { status: "applied" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      patches.push(args);
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await handleAriaJob(
+    job("first_interview_book", {
+      campaignId: "camp-pre72",
+      candidateId: "cand-pre72",
+      intent: "INTERESTED",
+    }),
+    {
+      client,
+      configuration: {
+        calendarConfirmUrl: new URL("https://worker.example.test/api/cron/confirm-calendar-book"),
+        calendarProposeUrl: new URL("https://worker.example.test/api/cron/propose-calendar-book"),
+        recruitingGraphUrl: new URL("https://worker.example.test/api/cron/recruiting-graph-stage"),
+        cronSecret: "s".repeat(32),
+      },
+      fetcher: async (url) => {
+        const href = String(url);
+        if (href.includes("confirm-calendar-book")) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              status: "created",
+              teamsLink: "https://teams.microsoft.com/l/meetup-join/19%3ameeting_pre72",
+              claimId: "claim-pre72",
+              eventId: "evt-pre72",
+              seatId: "11111111-1111-4111-8111-111111111111",
+              candidateName: "Ada",
+              startTime: "2026-08-28T10:00:00.000Z",
+              endTime: "2026-08-28T10:30:00.000Z",
+              agenda: ["Intro"],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (href.includes("recruiting-graph-stage")) {
+          return new Response(
+            JSON.stringify({ ok: true, stage: "interview_scheduled", shortlistIds: [] }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        throw new Error(`unexpected fetch ${href}`);
+      },
+    },
+  );
+
+  const stageMerge = patches.find((p) => p.p_patch_kind === "merge_candidate_patch");
+  assert.ok(stageMerge);
+  const merged = stageMerge!.p_patch as {
+    patch?: { stage?: string; booking?: { teamsLink?: string } };
+  };
+  assert.equal(merged.patch?.stage, "Booked");
+  assert.equal(
+    merged.patch?.booking?.teamsLink,
+    "https://teams.microsoft.com/l/meetup-join/19%3ameeting_pre72",
+  );
+  assert.ok(patches.find((p) => p.p_patch_kind === "append_booking"));
+  // Job still completed (append_activities on complete RPC) despite pre-0072 unknown kind.
+  assert.ok(patches.some((p) => Array.isArray(p.p_enqueue)));
+  const activityComplete = patches.find((p) => Array.isArray(p.p_enqueue) && p.p_patch_kind === "append_activities");
+  assert.ok(activityComplete);
+});
+
 test("draft_generate rejects fake interview_scheduled graphStage from cron", async () => {
   const { client } = rpcClient((name) => {
     if (name === "read_workspace_state_for_loop") {

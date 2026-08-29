@@ -62,8 +62,8 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
       id: "outlook",
       title: "Connect email",
       body: supabaseEnabled
-        ? "Link Outlook (or Gmail) in Settings → Integrations. Hiring needs arrive via Microsoft Graph webhook push — no inbox polling."
-        : "Turn on live Supabase, then connect Outlook under Settings → Integrations for Graph webhook intake.",
+        ? "Link a mailbox when ready. Hiring needs arrive via signed inbound webhook push (HMAC) — Graph push when Outlook is connected. No inbox polling."
+        : "Turn on live Supabase, then configure signed inbound webhook push intake (Graph optional when M365 is connected).",
       done: outlookOk,
       ctaLabel: outlookOk ? "Manage mailboxes" : "Connect email",
       href: "/settings?tab=integrations",
@@ -90,7 +90,7 @@ export function SetupGuidePanel({ onGoAi }: { onGoAi?: () => void }) {
     {
       id: "source",
       title: "Webhook needs & source",
-      body: "On Intake, wait for Graph-delivered needs (or paste a brief). Emergency sync is break-glass only when ARIA_ALLOW_INBOX_SYNC=1. Then create the campaign and source.",
+      body: "On Intake, wait for signed inbound webhook needs (or paste a brief). Graph delivery when Outlook is connected. Emergency sync is break-glass only when ARIA_ALLOW_INBOX_SYNC=1. Then create the campaign and source.",
       done: false,
       ctaLabel: "Go to Intake",
       href: "/intake",

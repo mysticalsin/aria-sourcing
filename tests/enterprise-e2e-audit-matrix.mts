@@ -394,8 +394,17 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
           readFileSync("src/lib/store/booking-report-actions.ts", "utf8"),
         )
         && /preCallClaim/.test(readFileSync("scripts/sourcing-loop-worker.mjs", "utf8"))
+        && /Always advance pre_call → first_interview_book/.test(readFileSync("scripts/sourcing-loop-worker.mjs", "utf8"))
+        && /bookingAppendDeferred/.test(readFileSync("scripts/sourcing-loop-worker.mjs", "utf8"))
+        && /unknown-patch-kind/.test(readFileSync("scripts/sourcing-loop-worker.mjs", "utf8"))
         && /OnlineMeetings\.ReadWrite/.test(readFileSync("scripts/verify-m365-ready.sh", "utf8"))
         && /connection\.scope = json\.scope/.test(readFileSync("src/lib/email-oauth.ts", "utf8"))
+        && /pre_call_propose dry-run enqueues first_interview_book/.test(
+          readFileSync("tests/sourcing-loop-worker.mts", "utf8"),
+        )
+        && /append_booking is pre-0072 unknown-patch-kind/.test(
+          readFileSync("tests/sourcing-loop-worker.mts", "utf8"),
+        )
       );
     },
   },

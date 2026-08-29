@@ -204,7 +204,7 @@ export default function IntakePage() {
     });
   }
 
-  /** Break-glass mailbox poll. Production intake is Graph webhook push. */
+  /** Break-glass mailbox poll. Production intake is signed inbound webhook (HMAC); Graph push when M365 is connected. */
   async function emergencySyncInbox() {
     const seq = ++liveParseSeqRef.current;
     setParsing(true);
@@ -228,7 +228,7 @@ export default function IntakePage() {
         setParsing(false);
         toast({
           title: "Inbox polling disabled",
-          description: json.error ?? "Hiring needs arrive via Graph webhook. Inbox list-sync is off.",
+          description: json.error ?? "Hiring needs arrive via signed inbound webhook (or Graph when connected). Inbox list-sync is off.",
           variant: "warning",
         });
         return;
@@ -254,7 +254,7 @@ export default function IntakePage() {
       toast({
         title: "No hiring need found",
         description:
-          "Emergency sync found no hiring-need email. Prefer Graph webhook intake; nothing was created or substituted.",
+          "Emergency sync found no hiring-need email. Prefer signed inbound webhook intake; nothing was created or substituted.",
         variant: "warning",
       });
       return;
@@ -264,7 +264,7 @@ export default function IntakePage() {
         setParsing(false);
         toast({
           title: "No hiring need found",
-          description: "Sample substitution is disabled on this tenant. Paste a brief or wait for Graph webhook intake.",
+          description: "Sample substitution is disabled on this tenant. Paste a brief or wait for signed inbound webhook intake.",
           variant: "warning",
         });
         return;
@@ -506,7 +506,7 @@ export default function IntakePage() {
       <PageHeader
         eyebrow="Intake"
         title="Open needs → sourcing"
-        description="Hiring needs arrive via Outlook Graph webhook (no inbox polling), or paste a brief. Aria parses it into an editable role and starts a real sourcing campaign."
+        description="Hiring needs arrive via signed inbound webhook (HMAC) — Graph push when Outlook is connected — or paste a brief. No inbox polling. Aria parses into an editable role and starts a real sourcing campaign."
         actions={
           <Badge tone="aqua" dot>
             <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
@@ -613,11 +613,15 @@ export default function IntakePage() {
                   </Button>
                 </div>
                 <p className="text-xs text-muted">
-                  Production intake is Microsoft Graph webhook push to{" "}
+                  Production intake is signed inbound webhook push to{" "}
+                  <code className="rounded bg-ink/[0.06] px-1 py-0.5 font-mono text-[0.6875rem] text-ink-soft">
+                    /api/webhooks/email-inbound
+                  </code>
+                  {" "}(HMAC). Graph push to{" "}
                   <code className="rounded bg-ink/[0.06] px-1 py-0.5 font-mono text-[0.6875rem] text-ink-soft">
                     /api/webhooks/microsoft-graph
                   </code>
-                  {". "}
+                  {" "}when Outlook is connected.{" "}
                   {inboxPollAllowed
                     ? "Emergency sync polls only as break-glass."
                     : "Inbox polling is disabled (ARIA_ALLOW_INBOX_SYNC)."}
