@@ -1,40 +1,38 @@
 ---
 project: MSourcing / ARIA
-shift: 382
+shift: 383
 agent: cursor-cloud
-updated: 2026-08-29T14:38Z
+updated: 2026-08-29T14:55Z
 status: e2e-partial-awaiting-real-graph-secrets
 ---
 
-# Handoff — Shift 382
+# Handoff — Shift 383
 
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** OPEN
-- **Live Fly:** **`fe01737`** / **0074** · `tip_live` · loop primary **2863e10bd41e28** started
-- **PARTIAL E2E:** **58/0/2** on `fe01737` — Running: `ARIA_ALLOW_PARTIAL_M365_E2E=1` only · step 3c PASS · classifier=model · Hermes
-- **Graph:** `graph_secrets_missing=3` · allowedToCreateApps=false · no dropzone
-- **PASS-path audit:** after secrets + Connect Outlook, code path ready; only Entra Owner dropzone blocks PASS
-- **Gate:** tsc + npm test green · audit **66/66**
+- **Live Fly:** **`fe01737`** / **0074** · tip docs-ahead · loop primary **2863e10bd41e28**
+- **PARTIAL E2E:** last **58/0/2** on `fe01737` — step 3c PASS · classifier=model
+- **Graph:** still owner-blocked · allowedToCreateApps=false · ownedObjects=[] · no dropzone
+- **New:** waiters auto-discover owned `ARIA Mantu Graph*` apps via Graph ownedObjects (no dropzone file required once Owners Add Tony)
+- **Gate:** audit **66/66**
 
 ## Done this shift
 
-1. PASS-path audit — nothing material beyond Entra dropzone
-2. `post-m365` live-seat jq aligned with verify (`status=active`)
-3. Intake + fleet Owners → Add Tony copy when OAuth missing
-4. Reminted **`fe01737`**; PARTIAL 58/0/2 re-verified; restarted fly-wait-entra
+1. Re-probed Entra — still noperm; zero ARIA Mantu Graph apps; Tony owns nothing
+2. ClickUp search for Graph/Entra — empty
+3. `owner_ms_discover_owned_aria_app_id` + materialize into `/tmp/owner-azure-app-id` wired into watch / fly-wait / probe
 
 ## Blockers
 
-- Entra admin → Register + **Owners Add Tony** + Grant admin consent →  
-  `echo '<id>' > /tmp/owner-azure-app-id` → (if needed: `touch /tmp/az-graph-admin-consent.portal-granted`) →  
-  apply → Connect Outlook → `verify-m365-ready` → **RESULT: PASS**
+- Entra admin → Register **ARIA Mantu Graph (Fly)** + **Owners Add twalteur@amaris.com** (+ Grant admin consent)  
+  → waiters auto-discover OR `echo '<id>' > /tmp/owner-azure-app-id` → apply → Connect Outlook → `verify-m365-ready` → **RESULT: PASS**
 
 ## Next steps
 
 ```bash
 bash scripts/print-m365-owner-portal-checklist.sh
-echo '<application-client-id>' > /tmp/owner-azure-app-id
+# After Owners Add Tony (dropzone optional):
 bash scripts/probe-m365-unblock.sh --apply
 # Settings → Connect Outlook (mode=live)
 bash scripts/verify-m365-ready.sh   # RESULT: PASS
@@ -50,14 +48,12 @@ bash scripts/print-fly-golive-status.sh
 bash scripts/print-fly-deploy-confirm.sh
 curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
 # step 3c should show PASS when running PARTIAL E2E
-# Do NOT run verify-m365-ready until real Graph secrets + Connect Outlook.
 ```
 
 ## Decisions made (don't relitigate)
 
-- Production = Fly only; ignore Vercel/GHA empty-steps; PR #36 only
-- Entra admin must register **and add Tony as Owner**; Graph perms fail-closed
-- post-m365 seat detection must match verify (`status=active`)
+- Production = Fly only; PR #36 only; Entra admin must register + Owners Add Tony
+- Waiters auto-discover owned ARIA Mantu Graph apps (ownedObjects)
 
 ## Watch out
 

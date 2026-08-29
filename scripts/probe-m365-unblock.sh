@@ -163,6 +163,12 @@ if owner_ms_has_credentials; then
 fi
 
 # Owner created an Entra app but hasn't minted secrets yet — configure + apply.
+# Also discover owned "ARIA Mantu Graph*" apps when dropzone file is missing.
+if ! owner_ms_has_azure_app_id; then
+  if msg="$(owner_ms_maybe_materialize_owned_app_id 2>/dev/null)"; then
+    [ -n "$msg" ] && echo "  $msg"
+  fi
+fi
 if owner_ms_has_azure_app_id; then
   if [ "$APPLY" = "1" ]; then
     echo "Configuring Entra app + minting secret via az-configure-existing-graph-app…"
@@ -197,5 +203,6 @@ echo "RESULT: owner-blocked"
 echo "  bash scripts/print-m365-owner-portal-checklist.sh"
 echo "  Minimal: Entra admin registers ARIA Mantu Graph (Fly) → Owners Add twalteur@amaris.com →"
 echo "    echo '<client-id>' > /tmp/owner-azure-app-id && bash scripts/probe-m365-unblock.sh --apply"
+echo "  (Waiters also auto-discover owned ARIA Mantu Graph apps via Graph ownedObjects.)"
 echo "  Or grant Application Developer to the az account (waiters re-probe create every ~5m)."
 exit 1

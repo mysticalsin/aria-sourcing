@@ -87,6 +87,11 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     apply_and_exit
   fi
 
+  # Entra admin may have Registered + Owners Add without dropping the client id file.
+  if msg="$(owner_ms_maybe_materialize_owned_app_id 2>/dev/null)"; then
+    [ -n "$msg" ] && log "$msg"
+  fi
+
   if owner_ms_has_azure_app_id; then
     log "owner-azure-app-id / ARIA_AZURE_APP_ID present — configure + mint + apply"
     export ARIA_AZURE_APP_ID

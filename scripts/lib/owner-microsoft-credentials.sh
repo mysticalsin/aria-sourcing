@@ -82,6 +82,65 @@ owner_ms_has_azure_app_id() {
   owner_ms_read_azure_app_id >/dev/null 2>&1
 }
 
+# When Entra admin Registers ARIA Mantu Graph (Fly) and adds Tony as Owner but
+# forgets the dropzone file, discover the app via Graph ownedObjects.
+# Prints appId on stdout when found; prefers exact "ARIA Mantu Graph (Fly)".
+owner_ms_discover_owned_aria_app_id() {
+  command -v az >/dev/null 2>&1 || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  az account show >/dev/null 2>&1 || return 1
+  local json app_id
+  set +e
+  json="$(az rest --method GET \
+    --url "https://graph.microsoft.com/v1.0/me/ownedObjects/microsoft.graph.application?\$select=appId,displayName" \
+    -o json 2>/dev/null)"
+  set -e
+  [ -n "$json" ] || return 1
+  app_id="$(
+    printf '%s' "$json" | jq -r '
+      [.value[]?
+        | select((.displayName // "") | test("^ARIA Mantu Graph \\(Fly\\)$"; "i"))
+        | .appId]
+      | .[0] // empty
+    ' 2>/dev/null
+  )"
+  if [ -z "$app_id" ]; then
+    app_id="$(
+      printf '%s' "$json" | jq -r '
+        [.value[]?
+          | select((.displayName // "") | test("^ARIA Mantu Graph"; "i"))
+          | .appId]
+        | .[0] // empty
+      ' 2>/dev/null
+    )"
+  fi
+  if [ -z "$app_id" ]; then
+    return 1
+  fi
+  if owner_ms_is_placeholder "$app_id"; then
+    return 1
+  fi
+  if ! printf '%s' "$app_id" | grep -Eqi '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'; then
+    return 1
+  fi
+  printf '%s' "$app_id"
+  return 0
+}
+
+# Materialize /tmp/owner-azure-app-id from owned ARIA app when dropzone absent.
+# Returns 0 when a usable app id is now available via owner_ms_has_azure_app_id.
+owner_ms_maybe_materialize_owned_app_id() {
+  owner_ms_has_azure_app_id && return 0
+  local app_id out
+  app_id="$(owner_ms_discover_owned_aria_app_id 2>/dev/null)" || return 1
+  out="${ARIA_OWNER_AZURE_APP_ID_PATH:-/tmp/owner-azure-app-id}"
+  umask 077
+  printf '%s\n' "$app_id" > "$out"
+  chmod 600 "$out"
+  printf 'discovered owned ARIA Graph appId=%s → %s\n' "$app_id" "$out"
+  return 0
+}
+
 # Path of the Insufficient-privileges latch used by az-create-mantu-graph-app.sh.
 owner_ms_noperm_latch_path() {
   printf '%s' "${ARIA_AZ_CREATE_NOPERM_LATCH:-/tmp/az-create-mantu-graph-app.noperm}"

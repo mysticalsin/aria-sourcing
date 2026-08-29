@@ -73,7 +73,8 @@ Minimal path (recommended):
 1. Entra admin opens (tenant-scoped): ${PORTAL_NEW_TENANT}
 2. Name: ARIA Mantu Graph (Fly) · Single tenant · Register (redirects optional — agent adds them)
 3. **Owners → Add** → ${ACCOUNT:-twalteur@amaris.com} (required — agent needs Application.ReadWrite.OwnedBy)
-4. Copy Application (client) ID only into the agent VM:
+   Waiters auto-discover this app via Graph ownedObjects even without the dropzone file.
+4. Copy Application (client) ID only into the agent VM (optional if Owners Add already done):
    echo '<application-client-id>' > /tmp/owner-azure-app-id
    bash scripts/probe-m365-unblock.sh --apply
    # or: bash scripts/fly-m365-from-azure-app-id.sh

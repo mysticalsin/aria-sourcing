@@ -42,6 +42,7 @@ Marker: `/tmp/az-create-mantu-graph-app.noperm` (waiters expire it every ~5m and
 
 1. **Minimal (recommended):** An **Entra admin** (Global Admin / Application Administrator / Application Developer) registers `ARIA Mantu Graph (Fly)` in Portal → **adds `twalteur@amaris.com` as app Owner** →  
    `echo '<client-id>' > /tmp/owner-azure-app-id` (agent configures + mints + applies).  
+   Waiters also **auto-discover** owned `ARIA Mantu Graph*` apps via Graph `ownedObjects` if the dropzone file is missing.  
    Without Owner, `az-configure-existing-graph-app.sh` fail-closes (Application.ReadWrite.OwnedBy).  
    Agent **fail-closes** if required Graph scopes are missing or admin-consent cannot be granted (Portal → API permissions → Grant admin consent, then `touch /tmp/az-graph-admin-consent.portal-granted` or wait ~60s for waiter SKIP retry).
 2. Assign **Application Developer** (or Application Administrator) to `twalteur@amaris.com`, then waiters auto-retry  

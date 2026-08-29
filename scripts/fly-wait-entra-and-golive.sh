@@ -102,6 +102,11 @@ refresh_device_code_if_needed
 print_device_code
 
 while [ "$(date +%s)" -lt "$deadline" ]; do
+  # Entra admin may Register + Owners Add without dropping the client id file.
+  if msg="$(owner_ms_maybe_materialize_owned_app_id 2>/dev/null)"; then
+    [ -n "$msg" ] && log "$msg"
+  fi
+
   # Owner-supplied Microsoft drop-zone / env always wins (and clears noperm latch).
   if has_microsoft_drop; then
     rm -f /tmp/az-create-mantu-graph-app.noperm

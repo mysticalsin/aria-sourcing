@@ -1447,6 +1447,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /owner_ms_sync_env_to_dropzone/.test(lib)
         && /owner_ms_maybe_clear_stale_noperm/.test(lib)
         && /owner_ms_acquire_singleton_lock/.test(lib)
+        && /owner_ms_discover_owned_aria_app_id/.test(lib)
+        && /owner_ms_maybe_materialize_owned_app_id/.test(lib)
         && /ARIA_NOPERM_LATCH_TTL_SECONDS/.test(lib)
         && /GOTRUE_EXTERNAL_AZURE_URL/.test(lib)
         && /Graph\/Outlook secrets are enough/.test(lib)
@@ -1463,10 +1465,14 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /owner-microsoft-credentials/.test(watch)
         && /owner_ms_maybe_clear_stale_noperm/.test(watch)
         && /owner_ms_acquire_singleton_lock/.test(watch)
+        && /owner_ms_maybe_materialize_owned_app_id/.test(watch)
         && /ARIA_WAIT_LIVE_SEAT_SECONDS/.test(watch)
         && /owner-microsoft-strict-pass\.ok/.test(watch)
         && /verify-m365-ready|post-m365-secrets-golive/.test(watch)
         && /owner_ms_acquire_singleton_lock/.test(
+          readFileSync("scripts/fly-wait-entra-and-golive.sh", "utf8"),
+        )
+        && /owner_ms_maybe_materialize_owned_app_id/.test(
           readFileSync("scripts/fly-wait-entra-and-golive.sh", "utf8"),
         )
         && /owner_ms_acquire_singleton_lock/.test(
