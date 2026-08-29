@@ -1,41 +1,40 @@
 ---
 project: MSourcing / ARIA
-shift: 386
+shift: 387
 agent: cursor-cloud
-updated: 2026-08-29T15:48Z
+updated: 2026-08-29T15:55Z
 status: e2e-partial-awaiting-real-graph-secrets
 ---
 
-# Handoff — Shift 386
+# Handoff — Shift 387
 
 ## Current state
 
-- **Enterprise / Fly:** PR **#36** `cursor/enterprise-autopilot-b91d` · live **`1665b39`** / **0074** · Graph owner-blocked (quiet HOLD)
-- **Cloudflare:** successor **PR #37** `cursor/cloudflare-agents-settings-b91d` (supersedes closed #34) · tip includes CF feature + migration **0075** · local gate green (`tsc` + `npm test` `# fail 0`)
-- **Dropzones:** still empty (`/tmp/owner-azure-app-id`, `/tmp/owner-microsoft.env`, `/tmp/owner-llm.env`)
+- **Cloudflare PR:** [#37](https://github.com/mysticalsin/aria-sourcing/pull/37) `cursor/cloudflare-agents-settings-b91d` @ `19a5243` · feature + migration **0075** · local gate green
+- **CI on #37:** 7 GHA checks fail — **Actions budget exhausted** (annotation: “budget is preventing further use”; `steps:0`; no runner). Not a Cloudflare code defect.
+- **Vercel:** rate-limited 24h (separate from GHA). Fly-only prod.
+- **Enterprise / Fly:** PR **#36** · live **`1665b39`** / **0074** · Microsoft quiet HOLD (no dropzones)
 
 ## Done this shift
 
-1. Ported Cloudflare Workers AI Settings connect onto current tip
-2. Renamed migration **0070 → 0075** (avoid collision with `0070_fix_sourcing_loop_stage_enabled`)
-3. Opened **PR #37** (could not reopen #34 after branch recreate)
-4. Verified `npx tsc --noEmit` + `npm test`
+1. Investigated PR #37 CI: all 7 failures are Actions budget phantoms (same as long-standing CI-BUDGET)
+2. Confirmed local `tsc` + store-contracts + llm-key-probe still green on tip
+3. Documented owner unblock in PR #37 body + `_relay/issues-open.md`
 
 ## Blockers
 
-- Entra admin → Register + Owners Add Tony + Grant → dropzone → Connect Outlook → `verify-m365-ready` → **RESULT: PASS** (Microsoft DEFERRED / quiet HOLD)
+1. **Tony:** restore GitHub Actions minutes → re-run CI/CodeQL on PR #37 tip
+2. Entra admin → Graph seat (quiet HOLD / dropzones only)
 
 ## Next steps
 
 ```bash
-# Cloudflare PR
-gh pr view 37 --repo mysticalsin/aria-sourcing
-# After Microsoft dropzone (HOLD until then):
-bash scripts/probe-m365-unblock.sh --apply
-bash scripts/verify-m365-ready.sh
-unset AGENT_PROVIDER AGENT_MODEL
-bash scripts/run-enterprise-e2e-partial.sh
-# expect step 3c PASS; RESULT: PARTIAL until live Graph seat
+# After Actions budget restored:
+gh run rerun 33261255992 --repo mysticalsin/aria-sourcing --failed
+# Local authority until then:
+npx tsc --noEmit && npm test
+# Microsoft HOLD:
+ls /tmp/owner-azure-app-id /tmp/owner-microsoft.env /tmp/owner-llm.env
 ```
 
 ## Production gate (Fly)
@@ -49,12 +48,11 @@ curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
 
 ## Decisions made (don't relitigate)
 
-- Production = Fly only; PR #36 for enterprise E2E; Cloudflare ships via **PR #37** (not #34)
-- Cloudflare migration is **0075** on current tip
-- Microsoft deferred: dropzones only; quiet HOLD
+- Production = Fly only; local gate authority while Actions budget empty
+- Do not gut `ci.yml` / `codeql.yml` to hide budget failures
+- Cloudflare ships via **PR #37**; Microsoft via **PR #36** dropzones
 
 ## Watch out
 
 - HANDOFF must keep “expect step 3c PASS” / “step 3c should show” + `print-fly-deploy-confirm`
 - Never invent Microsoft secrets
-- Do not reopen closed #34; use #37
