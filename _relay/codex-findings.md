@@ -1144,4 +1144,4 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Env exports with monotonous demo UUID `11111111-1111-4111-8111-111111111111` passed PLACEHOLDER checks, were applied to Fly, and made `microsoftOAuth=true` while authorize redirected with a non-real client_id (Connect Outlook would fail at Microsoft).
 **Repro/evidence:** After `probe-m365-unblock.sh --apply`, authed `GET /auth/microsoft?seat_id=…` Location contained `client_id=11111111-1111-4111-8111-111111111111`.
 **Suggested fix:** Treat monotonous fixture UUIDs as placeholder in apply + readiness; refuse authorize; unset fake Fly secrets.
-**Status:** fixed (pending commit)
+**Status:** fixed (29bd05b)

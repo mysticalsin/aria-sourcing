@@ -11,20 +11,19 @@ status: e2e-partial-awaiting-real-graph-secrets
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft OPEN
-- **Live Fly:** was `c545c07` (+ secrets unset); tip will remint for synthetic-credential reject
+- **Live Fly:** `29bd05b` / **0074** · `deploy_status=tip_live`
 - **Gate/audit:** green · audit **65/65**
-- **Graph secrets:** **ROLLED BACK** · `graph_secrets_missing=3` · `microsoftOAuth=false`
-  - Prior apply used synthetic client_id `11111111-1111-4111-8111-111111111111` (len=36, not PLACEHOLDER_* prefix) — authorize would fail at Microsoft
-  - Fly `MICROSOFT_CLIENT_ID/SECRET/TENANT_ID` unset; dropzone quarantined
-- **E2E prior (false-ready window):** PARTIAL 60/0/2 with microsoftOAuth=true was **not trustworthy** for Connect Outlook
+- **Graph secrets:** **ROLLED BACK (honest)** · `graph_secrets_missing=3` · `microsoftOAuth=false`
+  - Prior apply used synthetic client_id `11111111-…` — authorize would fail at Microsoft
+  - Fly Graph CLIENT/SECRET/TENANT unset; dropzone quarantined; probe `credentials=none`
 - **LLM:** `llm_auth=dead` · Hermes/vault OK
 
 ## Done this shift
 
-1. Detected false-ready Graph apply (synthetic UUID client_id in authorize Location)
-2. Unset fake Fly Graph secrets; quarantine `/tmp/owner-microsoft.env`
+1. Detected false-ready Graph apply (synthetic UUID in authorize Location)
+2. Unset fake Fly Graph secrets; quarantine dropzone
 3. `microsoftCredentialLooksSynthetic` + bash placeholder reject monotonous demo UUIDs
-4. Authorize + readiness fail-closed on synthetic client id/secret
+4. Authorize + readiness fail-closed; tip_live `29bd05b` deployed
 
 ## Blockers
 
