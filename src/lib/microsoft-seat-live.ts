@@ -2,11 +2,13 @@ import "server-only";
 
 /**
  * Microsoft Graph (Outlook) seats may only be `mode=live` after:
- *   1) durable inbound mailbox route, and
- *   2) active Graph mail push subscription.
+ *   1) durable inbound mailbox route,
+ *   2) active Graph mail push subscription, and
+ *   3) OnlineMeetings.ReadWrite (+ Calendars.ReadWrite) on the connection scope
+ *      so confirmLive can create Teams joinUrl.
  *
  * This matches the OAuth callback promote gate and keeps fleet PATCH /
- * Enable-webhook repair from claiming live without webhook intake.
+ * Enable-webhook repair from claiming live without webhook intake / Teams scope.
  */
 
 import { normalizeMailboxAddress } from "@/lib/email-connections";
@@ -19,6 +21,10 @@ export type MicrosoftSeatLiveReady =
   | { ok: true; skipped: true }
   | { ok: true; skipped: false; connectionId: string; accountEmail: string; seatId: string }
   | { ok: false; reason: string };
+
+function hasGraphScope(scope: string | null | undefined, needed: string): boolean {
+  return new RegExp(needed.replace(/\./g, "\\."), "i").test(String(scope ?? ""));
+}
 
 /** Returns readiness for promoting / keeping a seat live. Non-Graph providers skip. */
 export async function assertMicrosoftGraphSeatLiveReady(
@@ -44,7 +50,7 @@ export async function assertMicrosoftGraphSeatLiveReady(
 
   const { data: conn, error: connErr } = await svc
     .from("email_connections")
-    .select("id, account_email, refresh_token")
+    .select("id, account_email, refresh_token, scope")
     .eq("seat_id", input.seatId)
     .eq("workspace_id", input.workspaceId)
     .eq("provider", "Microsoft Graph")
@@ -56,6 +62,22 @@ export async function assertMicrosoftGraphSeatLiveReady(
     return {
       ok: false,
       reason: "Connect Outlook (Microsoft Graph) before setting this seat live.",
+    };
+  }
+
+  const connScope = String(conn.scope ?? "");
+  if (!hasGraphScope(connScope, "Calendars.ReadWrite")) {
+    return {
+      ok: false,
+      reason:
+        "Calendars.ReadWrite is missing on this Outlook connection. Reconnect Outlook and grant calendar permissions before going live.",
+    };
+  }
+  if (!hasGraphScope(connScope, "OnlineMeetings.ReadWrite")) {
+    return {
+      ok: false,
+      reason:
+        "OnlineMeetings.ReadWrite is missing on this Outlook connection. Reconnect Outlook and grant Teams meeting permissions before going live.",
     };
   }
 
@@ -109,7 +131,7 @@ export async function assertMicrosoftGraphSeatLiveReady(
   };
 }
 
-/** Promote seat to live after inbound route + Graph subscription are durable. */
+/** Promote seat to live after inbound route + Graph subscription + Teams scopes are durable. */
 export async function promoteMicrosoftGraphSeatLive(
   svc: ServiceClient,
   input: { seatId: string; accountEmail?: string | null },

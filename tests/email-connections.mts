@@ -245,6 +245,10 @@ ok(
 const seatLive = readFileSync("src/lib/microsoft-seat-live.ts", "utf8");
 ok("microsoft-seat-live assert helper", /export async function assertMicrosoftGraphSeatLiveReady/.test(seatLive));
 ok("microsoft-seat-live promote helper", /export async function promoteMicrosoftGraphSeatLive/.test(seatLive));
+ok(
+  "microsoft-seat-live requires OnlineMeetings.ReadWrite before live promote",
+  /OnlineMeetings\.ReadWrite/.test(seatLive) && /Calendars\.ReadWrite/.test(seatLive) && /select\("id, account_email, refresh_token, scope"\)/.test(seatLive),
+);
 
 const fleetSeats = readFileSync("src/app/api/fleet/seats/route.ts", "utf8");
 ok(

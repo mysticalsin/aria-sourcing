@@ -747,6 +747,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /assertMicrosoftGraphSeatLiveReady/.test(
           readFileSync("src/app/api/fleet/seats/route.ts", "utf8"),
         )
+        && /OnlineMeetings\.ReadWrite/.test(readFileSync("src/lib/microsoft-seat-live.ts", "utf8"))
+        && /Calendars\.ReadWrite/.test(readFileSync("src/lib/microsoft-seat-live.ts", "utf8"))
         && /mode:\s*"mock"/.test(readFileSync("src/app/api/email/disconnect/route.ts", "utf8"))
         && /assisted-manual/.test(readFileSync("src/components/settings/linkedin-outreach-stack.tsx", "utf8"))
         && !/Ready for outreach/.test(readFileSync("src/components/settings/linkedin-outreach-stack.tsx", "utf8"))

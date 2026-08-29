@@ -1266,8 +1266,9 @@ gen_draft() {  # $1 = channel label used only in the prompt
   [ -n "${CAND_STACK:-}" ] && specifics="${specifics} Skills/stack: ${CAND_STACK}."
   [ -n "${CAND_GH:-}" ] && specifics="${specifics} GitHub: ${CAND_GH}."
   [ -n "${CAND_ACTIVITY:-}" ] && specifics="${specifics} Activity signal: ${CAND_ACTIVITY}."
+  [ -n "${APPROVE_CRITIC_FEEDBACK:-}" ] && specifics="${specifics} Prior quality-critic block to fix (do not repeat): ${APPROVE_CRITIC_FEEDBACK}."
   [ -n "$specifics" ] || specifics=" Use any concrete public signal you can infer from their name; never invent employers."
-  prompt="Draft a first-touch ${channel} recruiting message in language ISO code ${E2E_OUTREACH_LANGUAGE}. The candidate's main language is ${E2E_LANG_LABEL}. Write the entire message in ${E2E_LANG_LABEL} only (proper nouns like Mantu Group excepted). Do not ask clarifying questions — output the final message only. ${fmt_hint} Reach out to ${CAND_NAME} about a senior engineering role with Mantu Group. Mention Mantu Group by name. Lead with ONE specific detail from this candidate profile (not a generic compliment):${specifics} Soft ask for a short chat. Avoid salary/compensation."
+  prompt="Draft a first-touch ${channel} recruiting message in language ISO code ${E2E_OUTREACH_LANGUAGE}. The candidate's main language is ${E2E_LANG_LABEL}. Write the entire message in ${E2E_LANG_LABEL} only (proper nouns like Mantu Group excepted). Do not ask clarifying questions — output the final message only. ${fmt_hint} Reach out to ${CAND_NAME} about a senior engineering role with Mantu Group. Mention Mantu Group by name. Lead with ONE specific detail from this candidate profile (not a generic compliment):${specifics} Soft ask for a short chat. Avoid salary/compensation. Avoid generic openers like 'I hope this finds you well'."
   # Hermes uses server default model — never send model:"" (Zod rejects empty string).
   if [ -n "${OUTREACH_MODEL:-}" ]; then
     jq -n --arg p "$prompt" --arg prov "$AGENT_PROVIDER" --arg model "$OUTREACH_MODEL" \
@@ -1345,6 +1346,7 @@ fi
 
 MSG_LI="msg-e2e-li-$$"
 APPROVE_TRY=0
+APPROVE_CRITIC_FEEDBACK=""
 if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ]; then
   APPROVE_MAX="${E2E_APPROVE_MAX:-5}"
 else
@@ -1352,7 +1354,8 @@ else
 fi
 while [ "$APPROVE_TRY" -lt "$APPROVE_MAX" ]; do
   if [ "$APPROVE_TRY" -gt 0 ]; then
-    warn "Approve retry $APPROVE_TRY/$APPROVE_MAX — regenerating LinkedIn draft after HTTP $HTTP."
+    APPROVE_CRITIC_FEEDBACK="$(jq -r '.error // .detail // empty' "$APPROVE_RESP" 2>/dev/null | tr '\n' ' ' | head -c 280)"
+    warn "Approve retry $APPROVE_TRY/$APPROVE_MAX — regenerating LinkedIn draft after HTTP $HTTP${APPROVE_CRITIC_FEEDBACK:+ (critic: $APPROVE_CRITIC_FEEDBACK)}."
     require_live_draft_or_canned "LinkedIn" || break
     if printf '%s\n%s' "$DRAFT_SUBJECT" "$DRAFT_BODY" | grep -Eiq '\b(salary|compensation|budget|£[0-9]|€[0-9]|\$[0-9]|120k|90000)\b'; then
       fail "LinkedIn draft failed outreach quality gate on approve retry (salary/compensation disclosure)."
@@ -1366,6 +1369,7 @@ while [ "$APPROVE_TRY" -lt "$APPROVE_MAX" ]; do
   api POST "$APP_URL/api/outreach/approve" "$WORK/approve_req.json" "" "${APPROVE_API_TIMEOUT:-180}"
   RESP="$WORK/resp.json"
   if [ "$HTTP" = "200" ] && [ "$(jq -r '.ok // false' "$APPROVE_RESP")" = "true" ]; then
+    APPROVE_CRITIC_FEEDBACK=""
     break
   fi
   # LLM drafts are non-deterministic — retry on critic infra (503), quality block (422), or curl timeout (000).
@@ -1514,8 +1518,19 @@ step "6) First interview — calendar/Teams dry-run (Outlook Graph when live)"
 # ===========================================================================
 # confirmLive:false must never create a Graph event. Live Teams join links require
 # a connected Microsoft Graph seat + confirmLive:true (same route).
-START_ISO=$(date -u -d '+2 days 15:00' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v+2d +%Y-%m-%dT15:00:00Z)
-END_ISO=$(date -u -d '+2 days 15:45' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v+2d +%Y-%m-%dT15:45:00Z)
+# Jitter slot per run so re-runs do not collide on calendar_booking_ledger double_booked.
+CAL_JITTER_MIN=$(( ( $$ + ${RANDOM:-0} ) % 50 ))
+CAL_JITTER_HOUR=$(( 10 + ( $$ % 7 ) ))
+CAL_END_MIN=$(( CAL_JITTER_MIN + 45 ))
+CAL_END_HOUR=$CAL_JITTER_HOUR
+if [ "$CAL_END_MIN" -ge 60 ]; then
+  CAL_END_MIN=$(( CAL_END_MIN - 60 ))
+  CAL_END_HOUR=$(( CAL_END_HOUR + 1 ))
+fi
+START_ISO=$(date -u -d "+2 days ${CAL_JITTER_HOUR}:$(printf '%02d' "$CAL_JITTER_MIN")" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -v+2d -v${CAL_JITTER_HOUR}H -v${CAL_JITTER_MIN}M +%Y-%m-%dT%H:%M:%SZ)
+END_ISO=$(date -u -d "+2 days ${CAL_END_HOUR}:$(printf '%02d' "$CAL_END_MIN")" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -v+2d -v${CAL_END_HOUR}H -v${CAL_END_MIN}M +%Y-%m-%dT%H:%M:%SZ)
 SEAT_UUID="81111111-1111-4111-8111-111111111111"
 jq -n \
   --arg seat "$SEAT_UUID" \
