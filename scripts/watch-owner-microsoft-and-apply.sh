@@ -8,6 +8,7 @@
 #   - /tmp/owner-microsoft.env or production-readiness/.owner-microsoft.env
 #     with Graph MICROSOFT_* real (Entra GOTRUE_* optional / PLACEHOLDER OK)
 #   - exported MICROSOFT_* Graph-minimum (GOTRUE_* optional; tenant required)
+#   - /tmp/owner-azure-app-id or ARIA_AZURE_APP_ID → configure + mint + apply
 #   - ARIA_AZURE_APP_ID set → az-configure-existing-graph-app.sh --apply
 #
 # Usage:
@@ -66,12 +67,41 @@ apply_and_exit() {
 }
 
 deadline=$(( $(date +%s) + MAX_MIN * 60 ))
-log "Watching up to ${MAX_MIN}m for /tmp/owner-microsoft.env or ARIA_AZURE_APP_ID (noperm-aware)…"
+log "Watching up to ${MAX_MIN}m for /tmp/owner-microsoft.env or /tmp/owner-azure-app-id (noperm-aware)…"
 
 while [ "$(date +%s)" -lt "$deadline" ]; do
   if has_microsoft_drop; then
     rm -f /tmp/az-create-mantu-graph-app.noperm
     apply_and_exit
+  fi
+
+  if owner_ms_has_azure_app_id; then
+    log "owner-azure-app-id / ARIA_AZURE_APP_ID present — configure + mint + apply"
+    export ARIA_AZURE_APP_ID
+    ARIA_AZURE_APP_ID="$(owner_ms_read_azure_app_id)"
+    if bash "$repo/scripts/fly-m365-from-azure-app-id.sh"; then
+      if has_microsoft_drop; then
+        apply_and_exit
+      fi
+      # fly-m365 already applied; still wait for Connect Outlook via post-golive
+      touch /tmp/owner-microsoft-applied.ok
+      now="$(date +%s)"
+      remain_sec=$(( deadline - now ))
+      if [ "$remain_sec" -lt 1800 ]; then remain_sec=1800; fi
+      wait_seat="${ARIA_WAIT_LIVE_SEAT_SECONDS:-$remain_sec}"
+      log "ARIA_WAIT_LIVE_SEAT_SECONDS=${wait_seat} after azure-app-id apply"
+      if ARIA_WAIT_LIVE_SEAT_SECONDS="$wait_seat" bash "$repo/scripts/post-m365-secrets-golive.sh"; then
+        touch /tmp/owner-microsoft-strict-pass.ok
+        log "RESULT: strict M365 golive PASS (verify + E2E)"
+        exit 0
+      fi
+      rc=$?
+      log "post-m365-secrets-golive exit $rc — Connect Outlook may still be pending"
+      echo "  Open https://aria-mantu-app.fly.dev/settings → Connect Outlook → Enable webhook" | tee -a "$LOG"
+      exit "$rc"
+    else
+      log "WARN: fly-m365-from-azure-app-id failed — will retry"
+    fi
   fi
 
   if [ -n "${ARIA_AZURE_APP_ID:-}" ] && [[ "${ARIA_AZURE_APP_ID}" != PLACEHOLDER* ]]; then
@@ -101,7 +131,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
 
   if [ $(( $(date +%s) % 300 )) -lt "$SLEEP_SEC" ]; then
     if [ -f /tmp/az-create-mantu-graph-app.noperm ]; then
-      log "Blocked: noperm latch set — need portal app + /tmp/owner-microsoft.env or ARIA_AZURE_APP_ID"
+      log "Blocked: noperm latch set — need portal app + /tmp/owner-azure-app-id or /tmp/owner-microsoft.env"
     else
       log "Waiting for owner Microsoft drop-zone…"
     fi
