@@ -11,7 +11,7 @@ status: microsoft-deferred-empty-state-sweep
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft (supersedes #29)
-- **Tip:** pending-commit · Live Fly `fc8b54a` / **0071** (tip **0072**)
+- **Tip:** e93d18b · Live Fly `fc8b54a` / **0071** (tip **0072**)
 - **Audit:** **64/64** · **Gate:** green
 - **Microsoft / M365:** **DEFERRED by owner**
 - **CI:** GHA jobs fail with `steps: []` / 0ms billable — **ignore** (Fly only)
