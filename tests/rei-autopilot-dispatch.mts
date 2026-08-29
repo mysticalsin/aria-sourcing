@@ -33,6 +33,12 @@ function makeSvc(opts: {
   mintStatus?: string;
   enqueue?: { ok?: boolean; id?: string; reason?: string };
   rpcError?: string;
+  /** Open WhatsApp reply window contact */
+  waContact?: Row | null;
+  /** Active WhatsApp sender for seat */
+  waSender?: Row | null;
+  /** Zero-param approved templates */
+  waTemplates?: Row[];
 }) {
   const rpcs: { name: string; args: Row }[] = [];
   const seats = opts.seats ?? [
@@ -53,11 +59,14 @@ function makeSvc(opts: {
 
   const svc = {
     from(table: string) {
-      const filters: Array<(r: Row) => boolean> = [];
+      const filters: Array<{ col: string; val: unknown }> = [];
       const chain: Record<string, unknown> = {};
       const self = () => chain;
       chain.select = () => self();
-      chain.eq = (_col: string, _val: unknown) => self();
+      chain.eq = (col: string, val: unknown) => {
+        filters.push({ col, val });
+        return self();
+      };
       chain.in = () => self();
       chain.limit = () => self();
       chain.maybeSingle = async () => {
@@ -65,21 +74,32 @@ function makeSvc(opts: {
         if (table === "profiles") {
           return { data: entitledId ? { id: entitledId } : null, error: null };
         }
+        if (table === "whatsapp_contacts") {
+          return { data: opts.waContact === undefined ? null : opts.waContact, error: null };
+        }
+        if (table === "whatsapp_senders") {
+          return { data: opts.waSender === undefined ? null : opts.waSender, error: null };
+        }
         return { data: null, error: null };
       };
-      // agent_seats uses bare await (no maybeSingle)
       const thenable = {
         then(resolve: (v: unknown) => void) {
           if (table === "agent_seats") {
             resolve({ data: seats, error: null });
             return;
           }
+          if (table === "whatsapp_templates") {
+            resolve({ data: opts.waTemplates ?? [], error: null });
+            return;
+          }
           resolve({ data: null, error: null });
         },
       };
       Object.assign(chain, thenable);
-      // Keep filter hooks for realism
-      chain.eq = () => Object.assign(self(), thenable);
+      chain.eq = (col: string, val: unknown) => {
+        filters.push({ col, val });
+        return Object.assign(self(), thenable);
+      };
       return chain;
     },
     async rpc(name: string, args: Row) {
@@ -166,6 +186,7 @@ const baseInput = {
 }
 
 {
+  const inboundAt = new Date(Date.now() - 60_000).toISOString();
   const { svc, rpcs } = makeSvc({
     seats: [
       {
@@ -177,17 +198,91 @@ const baseInput = {
         operator_email: "wa@example.com",
       },
     ],
+    waContact: {
+      consent_status: "opted_in",
+      recipient_e164: "15551234567",
+      recorded_at: inboundAt,
+      expires_at: null,
+      last_inbound_at: inboundAt,
+    },
   });
   const r = await runAutopilotOutreachDispatch(svc, {
     ...baseInput,
     channel: "WhatsApp",
     recipient: "+15551234567",
   });
-  ok("whatsapp ready → queued", r.status === "queued" && "channel" in r && r.channel === "WhatsApp");
+  ok("whatsapp open window → queued", r.status === "queued" && "channel" in r && r.channel === "WhatsApp");
+  const waEnqueue = rpcs.find((c) => c.name === "enqueue_whatsapp_outbound_service");
+  ok("whatsapp enqueues candidate_reply", waEnqueue?.args.p_type === "candidate_reply");
+}
+
+{
+  const senderId = "22222222-2222-4222-8222-222222222201";
+  const { svc, rpcs } = makeSvc({
+    seats: [
+      {
+        id: "seat-wa-1",
+        provider: "WhatsApp Cloud",
+        status: "active",
+        mode: "live",
+        domain_verified: true,
+        operator_email: "wa@example.com",
+      },
+    ],
+    waContact: null,
+    waSender: { id: senderId },
+    waTemplates: [
+      {
+        id: "11111111-1111-4111-8111-111111111101",
+        sender_id: senderId,
+        meta_name: "intro_zero",
+        language: "en_US",
+        version: 1,
+        status: "approved",
+        parameter_schema: [],
+        body_parameter_count: 0,
+      },
+    ],
+  });
+  const r = await runAutopilotOutreachDispatch(svc, {
+    ...baseInput,
+    channel: "WhatsApp",
+    recipient: "+15551234567",
+  });
   ok(
-    "whatsapp enqueues service rpc",
-    rpcs.some((c) => c.name === "enqueue_whatsapp_outbound_service"),
+    "whatsapp cold zero-param template → queued",
+    r.status === "queued" && "channel" in r && r.channel === "WhatsApp",
   );
+  const waEnqueue = rpcs.find((c) => c.name === "enqueue_whatsapp_outbound_service");
+  ok("whatsapp cold enqueues approved_template", waEnqueue?.args.p_type === "approved_template");
+}
+
+{
+  const { svc, rpcs } = makeSvc({
+    seats: [
+      {
+        id: "seat-wa-1",
+        provider: "WhatsApp Cloud",
+        status: "active",
+        mode: "live",
+        domain_verified: true,
+        operator_email: "wa@example.com",
+      },
+    ],
+    waContact: null,
+    waSender: null,
+    waTemplates: [],
+  });
+  const r = await runAutopilotOutreachDispatch(svc, {
+    ...baseInput,
+    channel: "WhatsApp",
+    recipient: "+15551234567",
+  });
+  ok(
+    "whatsapp cold without template → skip",
+    r.status === "skipped" && "reason" in r && r.reason === "whatsapp_cold_requires_template",
+  );
+  ok("whatsapp cold skip → no enqueue", !rpcs.some((c) => c.name === "enqueue_whatsapp_outbound_service"));
 }
 
 {
@@ -218,6 +313,32 @@ const baseInput = {
     ok(
       "linkedin enqueues durable queue",
       rpcs.some((c) => c.name === "enqueue_linkedin_outbound_service"),
+    );
+  } finally {
+    delete process.env.HEYREACH_API_KEY;
+    delete process.env.HEYREACH_CAMPAIGN_ID;
+  }
+}
+
+{
+  process.env.HEYREACH_API_KEY = "test-key";
+  process.env.HEYREACH_CAMPAIGN_ID = "42";
+  const { svc, rpcs } = makeSvc({ seats: [] });
+  try {
+    const r = await runAutopilotOutreachDispatch(svc, {
+      ...baseInput,
+      channel: "LinkedIn",
+      recipient: "https://www.linkedin.com/in/jane-doe",
+    });
+    ok(
+      "linkedin api without live seat → human review (no direct send)",
+      r.status === "skipped" &&
+        "reason" in r &&
+        (r.reason === "linkedin_assisted_manual_only" || r.reason === "linkedin_seat_required"),
+    );
+    ok(
+      "linkedin without seat → no enqueue",
+      !rpcs.some((c) => c.name === "enqueue_linkedin_outbound_service"),
     );
   } finally {
     delete process.env.HEYREACH_API_KEY;

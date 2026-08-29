@@ -102,6 +102,17 @@ export async function POST(req: NextRequest) {
       { status: 422 },
     );
   }
+  if ((channel === "WhatsApp" || channel === "SMS") && !(candidate.phone ?? "").trim()) {
+    return NextResponse.json(
+      {
+        ok: false,
+        status: "contact_channel_unavailable",
+        detail: "No phone on file — enrich the candidate or draft Email/LinkedIn when contact exists.",
+        channel,
+      },
+      { status: 422 },
+    );
+  }
   const voice = mantuOutreachVoice();
   const mockGenerated = generateOutreach(candidate, campaign, "Casual Professional", channel, 1, voice);
 

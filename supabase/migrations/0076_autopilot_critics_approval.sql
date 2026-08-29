@@ -319,6 +319,8 @@ declare
   new_id uuid;
   existing public.messages_outbound%rowtype;
   approval public.outreach_approvals%rowtype;
+  sender public.whatsapp_senders%rowtype;
+  template public.whatsapp_templates%rowtype;
 begin
   if coalesce(auth.role(), '') <> 'service_role' then
     return json_build_object('ok', false, 'reason', 'service-only');
@@ -326,13 +328,56 @@ begin
   if p_workspace_id is null or p_message_id is null or p_candidate_id is null or p_seat_id is null then
     return json_build_object('ok', false, 'reason', 'invalid-request');
   end if;
-  if coalesce(p_type, '') <> 'candidate_reply' then
+  if coalesce(p_type, '') not in ('candidate_reply', 'approved_template') then
     return json_build_object('ok', false, 'reason', 'invalid-type');
+  end if;
+  if p_body is null or length(btrim(p_body)) < 1 then
+    return json_build_object('ok', false, 'reason', 'empty-body');
   end if;
 
   recipient := public.normalize_whatsapp_e164(p_recipient);
   if recipient is null then
     return json_build_object('ok', false, 'reason', 'invalid-recipient');
+  end if;
+
+  if p_type = 'candidate_reply' then
+    if p_template_id is not null
+       or coalesce(p_template_parameters, '[]'::jsonb) <> '[]'::jsonb then
+      return json_build_object('ok', false, 'reason', 'invalid-reply-shape');
+    end if;
+  else
+    -- Cold autopilot: Meta-approved template only (prefer zero-param; params must match count).
+    if p_template_id is null
+       or jsonb_typeof(coalesce(p_template_parameters, 'null'::jsonb)) <> 'array'
+       or p_subject is distinct from 'WhatsApp approved-template dispatch' then
+      return json_build_object('ok', false, 'reason', 'invalid-template-shape');
+    end if;
+    select whatsapp_sender.* into sender
+      from public.whatsapp_senders as whatsapp_sender
+      join public.agent_seats as seat
+        on seat.id = whatsapp_sender.seat_id
+       and seat.workspace_id = p_workspace_id
+       and seat.provider = 'WhatsApp Cloud'
+       and seat.status = 'active'
+       and seat.mode = 'live'
+      where whatsapp_sender.workspace_id = p_workspace_id
+        and whatsapp_sender.seat_id = p_seat_id
+        and whatsapp_sender.status = 'active';
+    if not found then
+      return json_build_object('ok', false, 'reason', 'sender-unavailable');
+    end if;
+    select * into template
+      from public.whatsapp_templates
+      where id = p_template_id
+        and workspace_id = p_workspace_id
+        and sender_id = sender.id
+        and status = 'approved';
+    if not found
+       or template.approved_at is null
+       or jsonb_array_length(coalesce(p_template_parameters, '[]'::jsonb))
+            <> coalesce(template.body_parameter_count, -1) then
+      return json_build_object('ok', false, 'reason', 'template-invalid');
+    end if;
   end if;
 
   perform pg_advisory_xact_lock(hashtextextended(p_workspace_id::text || ':' || p_message_id, 0));

@@ -208,7 +208,7 @@ export function LoopSwitchboardPanel() {
               ["Kill switch", controls.killSwitch, "Stops every loop stage for this workspace."],
               ["Intake", controls.intakeEnabled, "Allows hiring-need → requisition_parse enqueue."],
               ["Sourcing", controls.sourcingEnabled, "Allows sourcing batches and shortlist jobs."],
-              ["Sequences", controls.sequencesEnabled, "Outreach drafts + autopilot send + calendar book when entitled."],
+              ["Sequences", controls.sequencesEnabled, "Autopilot send + calendar book when entitled (drafts also need Sourcing armed)."],
             ] as const
           ).map(([label, on, hint], i) => (
             <motion.li

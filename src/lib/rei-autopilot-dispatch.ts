@@ -5,17 +5,16 @@
 
 import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
 import { decideReiAutopilotSend, type ReiOutboundChannel } from "@/lib/rei-autopilot-send";
+import { resolveWhatsAppAutopilotShape } from "@/lib/rei-autopilot-whatsapp";
 import {
   heyReachDeliveryReadyFromEnv,
   resolveHeyReachConfigForWorkspace,
-  deliverLinkedInViaHeyReach,
 } from "@/lib/heyreach-delivery";
 import { isMailboxSeatProvider } from "@/lib/outreach-send-mode";
 import { dispatchDue } from "@/lib/dispatch-outbound";
 import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
 import { normalizeLinkedInProfileUrl } from "@/lib/linkedin-connections";
 import { safeLog } from "@/lib/log-redact";
-import { randomUUID } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type AutopilotDispatchInput = {
@@ -77,7 +76,7 @@ async function loadAutopilotContext(svc: ServiceClient, workspaceId: string) {
     (s) => s.mode === "live" && String(s.provider) === "HeyReach",
   );
 
-  const heyReachConfigured =
+  const heyReachApiReady =
     heyReachDeliveryReadyFromEnv() || Boolean(await resolveHeyReachConfigForWorkspace(workspaceId));
 
   return {
@@ -90,10 +89,10 @@ async function loadAutopilotContext(svc: ServiceClient, workspaceId: string) {
     liveHeyReach,
     hasLiveMailbox: Boolean(liveMailbox),
     hasLiveWhatsApp: Boolean(liveWhatsApp),
-    heyReachConfigured,
-    linkedInVendorConfigured: Boolean(
-      process.env.LINKEDIN_VENDOR_API_URL && process.env.LINKEDIN_VENDOR_API_KEY,
-    ),
+    heyReachConfigured: heyReachApiReady && Boolean(liveHeyReach),
+    linkedInVendorConfigured:
+      Boolean(process.env.LINKEDIN_VENDOR_API_URL && process.env.LINKEDIN_VENDOR_API_KEY) &&
+      Boolean(liveLinkedInVendor),
   };
 }
 
@@ -102,9 +101,11 @@ async function mintApproval(
   input: AutopilotDispatchInput,
   entitledId: string,
   recipient: string,
+  subject: string,
+  body: string,
 ): Promise<{ ok: true } | { ok: false; detail: string }> {
-  const subject = sanitizeOutreachSubject(input.subject);
-  const bodyHash = approvalHash(subject, input.body);
+  const safeSubject = sanitizeOutreachSubject(subject);
+  const bodyHash = approvalHash(safeSubject, body);
   const scopeHash = approvalScopeHash({
     candidateId: input.candidateId,
     channel: input.channel,
@@ -184,24 +185,43 @@ async function dispatchWhatsApp(
   svc: ServiceClient,
   input: AutopilotDispatchInput,
   seatId: string,
+  entitledId: string,
 ): Promise<AutopilotDispatchResult> {
-  const phone = normalizeWhatsAppAddress(input.recipient);
-  if (!phone) {
-    return { status: "skipped", detail: "No valid WhatsApp number.", reason: "no_phone" };
+  const shape = await resolveWhatsAppAutopilotShape(svc, {
+    workspaceId: input.workspaceId,
+    seatId,
+    recipient: input.recipient,
+    subject: sanitizeOutreachSubject(input.subject),
+    body: input.body,
+  });
+  if (shape.kind === "skip") {
+    return { status: "skipped", detail: shape.detail, reason: shape.reason };
   }
-  const subject = sanitizeOutreachSubject(input.subject);
+
+  const minted = await mintApproval(
+    svc,
+    input,
+    entitledId,
+    shape.recipient,
+    shape.subject,
+    shape.body,
+  );
+  if (!minted.ok) {
+    return { status: "error", detail: minted.detail };
+  }
+
   const queued = await svc.rpc("enqueue_whatsapp_outbound_service", {
     p_workspace_id: input.workspaceId,
     p_message_id: input.messageId,
     p_candidate_id: input.candidateId,
     p_campaign_id: input.campaignId,
     p_seat_id: seatId,
-    p_recipient: phone,
-    p_type: "candidate_reply",
-    p_subject: subject,
-    p_body: input.body,
-    p_template_id: null,
-    p_template_parameters: [],
+    p_recipient: shape.recipient,
+    p_type: shape.kind,
+    p_subject: shape.subject,
+    p_body: shape.body,
+    p_template_id: shape.templateId,
+    p_template_parameters: shape.templateParameters,
   });
   const queuedObj = queued.data as { ok?: boolean; status?: string; id?: string; reason?: string } | null;
   if (queued.error || (queuedObj?.ok !== true && queuedObj?.reason !== "duplicate") || !queuedObj?.id) {
@@ -214,7 +234,10 @@ async function dispatchWhatsApp(
   await dispatchDue(svc, 1, queuedObj.id);
   return {
     status: "queued",
-    detail: "WhatsApp queued for policy-checked delivery.",
+    detail:
+      shape.kind === "approved_template"
+        ? "WhatsApp approved template queued for policy-checked delivery."
+        : "WhatsApp reply queued for policy-checked delivery.",
     channel: "WhatsApp",
   };
 }
@@ -222,8 +245,7 @@ async function dispatchWhatsApp(
 async function dispatchLinkedIn(
   svc: ServiceClient,
   input: AutopilotDispatchInput,
-  seatId: string | undefined,
-  mode: "heyreach" | "vendor",
+  seatId: string,
 ): Promise<AutopilotDispatchResult> {
   const profileUrl = normalizeLinkedInProfileUrl(input.recipient) ?? input.recipient.trim();
   if (!profileUrl || !/linkedin\.com\//i.test(profileUrl)) {
@@ -232,60 +254,29 @@ async function dispatchLinkedIn(
   const subject = sanitizeOutreachSubject(input.subject);
   const normalized = profileUrl.toLowerCase();
 
-  if (seatId) {
-    const queued = await svc.rpc("enqueue_linkedin_outbound_service", {
-      p_workspace_id: input.workspaceId,
-      p_message_id: input.messageId,
-      p_candidate_id: input.candidateId,
-      p_campaign_id: input.campaignId,
-      p_seat_id: seatId,
-      p_profile_url: normalized,
-      p_subject: subject,
-      p_body: input.body,
-    });
-    const queuedObj = queued.data as { ok?: boolean; id?: string; reason?: string } | null;
-    if (!queued.error && (queuedObj?.ok === true || queuedObj?.reason === "duplicate") && queuedObj.id) {
-      await dispatchDue(svc, 1, queuedObj.id);
-      return {
-        status: "queued",
-        detail: "LinkedIn queued for HeyReach/vendor dispatch.",
-        channel: "LinkedIn",
-      };
-    }
+  const queued = await svc.rpc("enqueue_linkedin_outbound_service", {
+    p_workspace_id: input.workspaceId,
+    p_message_id: input.messageId,
+    p_candidate_id: input.candidateId,
+    p_campaign_id: input.campaignId,
+    p_seat_id: seatId,
+    p_profile_url: normalized,
+    p_subject: subject,
+    p_body: input.body,
+  });
+  const queuedObj = queued.data as { ok?: boolean; id?: string; reason?: string } | null;
+  if (!queued.error && (queuedObj?.ok === true || queuedObj?.reason === "duplicate") && queuedObj.id) {
+    await dispatchDue(svc, 1, queuedObj.id);
+    return {
+      status: "queued",
+      detail: "LinkedIn queued for HeyReach/vendor dispatch.",
+      channel: "LinkedIn",
+    };
   }
-
-  if (mode === "heyreach") {
-    const config = await resolveHeyReachConfigForWorkspace(input.workspaceId);
-    if (!config?.campaignId) {
-      return {
-        status: "skipped",
-        detail: "HeyReach API key + campaign id required (Settings → LinkedIn stack).",
-        reason: "heyreach_incomplete",
-      };
-    }
-    const attemptId = randomUUID();
-    const outcome = await deliverLinkedInViaHeyReach(
-      {
-        workspaceId: input.workspaceId,
-        messageId: input.messageId,
-        candidateId: input.candidateId,
-        profileUrl: normalized,
-        subject,
-        body: input.body,
-        attemptId,
-      },
-      config,
-    );
-    if (outcome.status === "sent" && outcome.deliveryState === "accepted") {
-      return { status: "sent", detail: outcome.detail, channel: "LinkedIn" };
-    }
-    return { status: "error", detail: outcome.detail };
-  }
-
   return {
     status: "skipped",
-    detail: "LinkedIn vendor seat required for durable dispatch.",
-    reason: "linkedin_seat_required",
+    detail: queued.error?.message ?? queuedObj?.reason ?? "linkedin_enqueue_failed",
+    reason: queuedObj?.reason ?? "enqueue_failed",
   };
 }
 
@@ -328,39 +319,61 @@ export async function runAutopilotOutreachDispatch(
     recipient = normalizeWhatsAppAddress(recipient) ?? "";
   }
 
-  const minted = await mintApproval(svc, input, ctx.entitledId, recipient);
-  if (!minted.ok) {
-    safeLog("autopilot mint approval failed", { detail: minted.detail });
-    return { status: "error", detail: minted.detail };
-  }
-
   try {
     switch (verdict.channel) {
-      case "Email":
+      case "Email": {
         if (!ctx.liveMailbox) {
           return { status: "skipped", detail: "No live mailbox.", reason: "no_live_mailbox" };
         }
+        const minted = await mintApproval(
+          svc,
+          { ...input, recipient },
+          ctx.entitledId,
+          recipient,
+          input.subject,
+          input.body,
+        );
+        if (!minted.ok) {
+          safeLog("autopilot mint approval failed", { detail: minted.detail });
+          return { status: "error", detail: minted.detail };
+        }
         return await dispatchEmail(svc, { ...input, recipient }, ctx.liveMailbox.id);
+      }
       case "WhatsApp":
         if (!ctx.liveWhatsApp) {
           return { status: "skipped", detail: "No live WhatsApp seat.", reason: "no_live_whatsapp" };
         }
-        return await dispatchWhatsApp(svc, { ...input, recipient }, ctx.liveWhatsApp.id);
+        // Mint happens inside after reply-window vs cold-template shape is known.
+        return await dispatchWhatsApp(svc, { ...input, recipient }, ctx.liveWhatsApp.id, ctx.entitledId);
       case "LinkedIn": {
         const seatId = ctx.liveHeyReach?.id ?? ctx.liveLinkedInVendor?.id;
-        if (verdict.linkedInDelivery === "heyreach" || verdict.linkedInDelivery === "vendor") {
-          return await dispatchLinkedIn(
-            svc,
-            { ...input, recipient },
-            seatId,
-            verdict.linkedInDelivery,
-          );
+        if (!seatId) {
+          return {
+            status: "skipped",
+            detail: "Live HeyReach or LinkedIn Vendor seat required for durable LinkedIn queue.",
+            reason: "linkedin_seat_required",
+          };
         }
-        return {
-          status: "skipped",
-          detail: "LinkedIn assisted-manual only.",
-          reason: "linkedin_assisted_manual_only",
-        };
+        if (verdict.linkedInDelivery !== "heyreach" && verdict.linkedInDelivery !== "vendor") {
+          return {
+            status: "skipped",
+            detail: "LinkedIn assisted-manual only.",
+            reason: "linkedin_assisted_manual_only",
+          };
+        }
+        const minted = await mintApproval(
+          svc,
+          { ...input, recipient },
+          ctx.entitledId,
+          recipient,
+          input.subject,
+          input.body,
+        );
+        if (!minted.ok) {
+          safeLog("autopilot mint approval failed", { detail: minted.detail });
+          return { status: "error", detail: minted.detail };
+        }
+        return await dispatchLinkedIn(svc, { ...input, recipient }, seatId);
       }
       default:
         return { status: "skipped", detail: "Channel disabled.", reason: "channel_disabled" };
