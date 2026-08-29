@@ -972,6 +972,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       const callback = readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8");
       const authorize = readFileSync("src/app/auth/microsoft/route.ts", "utf8");
       const calendar = readFileSync("src/lib/calendar.ts", "utf8");
+      const e2e = readFileSync("e2e-workflow-test.sh", "utf8");
       return (
         /Calendars\.ReadWrite/.test(authorize)
         && /OnlineMeetings\.ReadWrite/.test(authorize)
@@ -980,6 +981,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /lacks Calendars\.ReadWrite/.test(calendar)
         && /lacks OnlineMeetings\.ReadWrite/.test(calendar)
         && calendar.includes("!scope || !/calendars")
+        && /missing Calendars\.ReadWrite in token scope/.test(e2e)
+        && /missing OnlineMeetings\.ReadWrite in token scope/.test(e2e)
       );
     },
   },

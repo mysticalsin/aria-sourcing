@@ -1726,6 +1726,11 @@ if [ -n "$LIVE_SEAT_ID" ]; then
     | map(select((.seatId // "") == $sid))
     | .[0].scope // ""
   ' "$RESP" 2>/dev/null || true)
+  if ! printf '%s' "$LIVE_SCOPE" | grep -Eiq 'Calendars\.ReadWrite|calendars\.readwrite'; then
+    fail "Live Graph seat $LIVE_SEAT_ID missing Calendars.ReadWrite in token scope — reconnect Outlook after tip with calendar authorize scope."
+  else
+    pass "Live Graph seat token includes Calendars.ReadWrite for Outlook event create."
+  fi
   if ! printf '%s' "$LIVE_SCOPE" | grep -Eiq 'OnlineMeetings\.ReadWrite|onlinemeetings\.readwrite'; then
     fail "Live Graph seat $LIVE_SEAT_ID missing OnlineMeetings.ReadWrite in token scope — reconnect Outlook after tip with OnlineMeetings authorize scope."
   else
