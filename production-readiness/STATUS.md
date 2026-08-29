@@ -89,14 +89,14 @@ particular production deployment is healthy.
 5. Prove database, Auth, REST, Kong, `/api/ready`, migration identity, persistence,
    two restart cycles, backup restore, rollback, login, and controlled campaign
    behavior before real tenant or candidate use — including migrations `0053`–
-   `0071` on real Postgres (P-1) and the full gate at one SHA (P-2).
+   `0078` on real Postgres (P-1) and the full gate at one SHA (P-2).
 6. Owner: M365 Graph secrets + Entra SSO (E-2) + verified delivery domain (P-7).
 7. Run extended Fly E2E (`e2e-workflow-test.sh`) without PARTIAL flags when M365
    live.
 
-## Live deployment note (2026-08-28)
+## Live deployment note (2026-08-29)
 
 - **Production = Fly only** (`aria-mantu-app.fly.dev`).
-- **Live Fly:** `33130a8` · migration **0071** · `deploy_status=tip_live`.
-- PR [#35](https://github.com/mysticalsin/aria-sourcing/pull/35) tracks enterprise autopilot lineage.
-- **Remaining for full objective:** M365 secrets (6), full Fly E2E without PARTIAL flags, Entra SSO enablement.
+- **Live Fly:** `1665b39` · migration **0074** · tip Autopilot (0076/0077/0078) **not applied**.
+- PR [#39](https://github.com/mysticalsin/aria-sourcing/pull/39) tracks REI Autopilot send + prep path.
+- **Remaining for full objective:** deploy tip + **0076–0078**, Settings HeyReach + Autopilot entitle + Sequences + `ARIA_LOOP_WORKSPACE_IDS`, M365 dropzones for live Teams book, full Fly E2E without PARTIAL flags.

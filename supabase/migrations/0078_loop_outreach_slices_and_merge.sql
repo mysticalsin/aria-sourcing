@@ -35,6 +35,18 @@ begin
      and elem->>'id' = p_booking_id
    limit 1;
 
+  -- Fallback: candidate-embedded booking when append_booking was deferred
+  -- (pre-0072 / unknown-patch-kind) but merge_candidate_patch already wrote booking.
+  if row is null then
+    select cand->'booking' into row
+      from public.workspace_state ws,
+           lateral jsonb_array_elements(coalesce(ws.state->'candidates', '[]'::jsonb)) cand
+     where ws.workspace_id = p_workspace_id
+       and jsonb_typeof(cand->'booking') = 'object'
+       and cand->'booking'->>'id' = p_booking_id
+     limit 1;
+  end if;
+
   if row is null then
     return json_build_object('status', 'not_found');
   end if;
@@ -471,3 +483,43 @@ grant execute on function public.apply_workspace_patch(uuid, timestamptz, text, 
   to service_role;
 
 alter function public.apply_workspace_patch(uuid, timestamptz, text, jsonb, text) owner to postgres;
+
+-- ---------------------------------------------------------------------------
+-- Bounded HeyReach settings (no full workspace_state.state blob)
+-- ---------------------------------------------------------------------------
+create or replace function public.read_workspace_heyreach_settings_for_loop(
+  p_workspace_id uuid
+) returns json
+language plpgsql
+security definer
+set search_path = pg_catalog, public, pg_temp
+as $$
+declare
+  hey jsonb;
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    return json_build_object('status', 'service_only');
+  end if;
+  if p_workspace_id is null then
+    return json_build_object('status', 'invalid_request');
+  end if;
+
+  select ws.state->'settings'->'heyreach' into hey
+    from public.workspace_state ws
+   where ws.workspace_id = p_workspace_id;
+
+  if not found then
+    return json_build_object('status', 'not_found');
+  end if;
+
+  return json_build_object(
+    'status', 'ok',
+    'heyreach', coalesce(hey, '{}'::jsonb)
+  );
+end;
+$$;
+
+revoke all on function public.read_workspace_heyreach_settings_for_loop(uuid)
+  from public, anon, authenticated, authenticator;
+grant execute on function public.read_workspace_heyreach_settings_for_loop(uuid) to service_role;
+alter function public.read_workspace_heyreach_settings_for_loop(uuid) owner to postgres;

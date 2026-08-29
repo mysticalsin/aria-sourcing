@@ -85,15 +85,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, status: "service_unavailable" }, { status: 503 });
   }
 
-  const [campaign, candidate, booking] = await Promise.all([
+  const [campaign, candidate, bookingRaw] = await Promise.all([
     loadCampaignForLoop(svc, parsed.data.workspaceId, parsed.data.campaignId),
     loadCandidateForLoop(svc, parsed.data.workspaceId, parsed.data.candidateId),
     loadBookingForLoop(svc, parsed.data.workspaceId, parsed.data.bookingId),
   ]);
-  if (!campaign || !candidate || !booking) {
+  if (!campaign || !candidate || !bookingRaw) {
     return NextResponse.json({ ok: false, status: "not_found" }, { status: 404 });
   }
-  if (!booking.calendarSync && !booking.teamsLink && !booking.calLink) {
+  if (!bookingRaw.calendarSync && !bookingRaw.teamsLink && !bookingRaw.calLink) {
     return NextResponse.json(
       {
         ok: false,
@@ -102,6 +102,19 @@ export async function POST(req: NextRequest) {
       },
       { status: 409 },
     );
+  }
+
+  // Belt: if live book omitted interviewerEmail, use the Graph mailbox on the seat.
+  let booking = bookingRaw;
+  if (!booking.interviewerEmail?.trim()) {
+    const seatEmail = await resolveGraphSeatAccountEmail(svc, parsed.data.workspaceId);
+    if (seatEmail) {
+      booking = {
+        ...booking,
+        interviewerEmail: seatEmail,
+        interviewer: booking.interviewer?.trim() || seatEmail,
+      };
+    }
   }
 
   const base = buildInterviewPrepOutreach({
@@ -141,4 +154,33 @@ export async function POST(req: NextRequest) {
     llmCriticsUsed,
     qualityReady: allReady,
   });
+}
+
+async function resolveGraphSeatAccountEmail(
+  svc: NonNullable<ReturnType<typeof getServiceSupabase>>,
+  workspaceId: string,
+): Promise<string | null> {
+  const { data: seats, error: seatErr } = await svc
+    .from("agent_seats")
+    .select("id, connected_account")
+    .eq("workspace_id", workspaceId)
+    .eq("provider", "Microsoft Graph")
+    .eq("mode", "live")
+    .eq("status", "active");
+  if (seatErr) return null;
+  const seat = (Array.isArray(seats) ? seats : []).find(
+    (s: { connected_account?: string | null }) => Boolean(String(s.connected_account ?? "").trim()),
+  ) as { id: string; connected_account?: string | null } | undefined;
+  const fromSeat = String(seat?.connected_account ?? "").trim();
+  if (fromSeat.includes("@")) return fromSeat;
+  if (!seat?.id) return null;
+  const { data: conn } = await svc
+    .from("email_connections")
+    .select("account_email")
+    .eq("seat_id", seat.id)
+    .eq("workspace_id", workspaceId)
+    .eq("provider", "Microsoft Graph")
+    .maybeSingle();
+  const email = String(conn?.account_email ?? "").trim();
+  return email.includes("@") ? email : null;
 }

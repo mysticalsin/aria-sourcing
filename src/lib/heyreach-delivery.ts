@@ -12,13 +12,18 @@
 import { classifyFailedHttpDeliveryState } from "@/lib/delivery-outcome";
 import { decryptSecret } from "@/lib/crypto-secrets";
 import { getServiceSupabase } from "@/lib/supabase/server";
-import { mergeHeyReachConfig, heyReachSettingsFromWorkspaceState } from "@/lib/heyreach-config";
+import {
+  mergeHeyReachConfig,
+  heyReachSettingsFromWorkspaceState,
+  heyReachSettingsFromRow,
+} from "@/lib/heyreach-config";
 import type { LinkedInDeliveryOutcome, LinkedInDeliveryRequest } from "@/lib/linkedin-delivery-types";
 
 export {
   heyReachSettingsReady,
   mergeHeyReachConfig,
   heyReachSettingsFromWorkspaceState,
+  heyReachSettingsFromRow,
 } from "@/lib/heyreach-config";
 
 const HEYREACH_BASE = "https://api.heyreach.io/api/public";
@@ -101,12 +106,14 @@ export async function resolveHeyReachConfigForWorkspace(
   const svc = getServiceSupabase();
   if (!svc) return mergeHeyReachConfig(env, null);
 
-  const { data: row } = await svc
-    .from("workspace_state")
-    .select("state")
-    .eq("workspace_id", wid)
-    .maybeSingle();
-  const hey = heyReachSettingsFromWorkspaceState(row?.state);
+  // Bounded settings slice — never pull the full workspace_state.state blob.
+  const { data: slice } = await svc.rpc("read_workspace_heyreach_settings_for_loop", {
+    p_workspace_id: wid,
+  });
+  const hey =
+    slice && typeof slice === "object" && (slice as { status?: string }).status === "ok"
+      ? heyReachSettingsFromRow((slice as { heyreach?: unknown }).heyreach)
+      : null;
   const campaignId = (hey?.campaignId ?? "").trim();
   const accountId = (hey?.accountId ?? "").trim() || undefined;
   const apiKeyId = (hey?.apiKeyId ?? "").trim();

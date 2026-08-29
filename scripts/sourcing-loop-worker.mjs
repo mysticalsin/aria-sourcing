@@ -2224,6 +2224,12 @@ async function handleFirstInterviewBook(job, context) {
         const teamsLink = confirm.teamsLink.trim();
         const claimId = confirm.claimId.trim();
         const eventId = typeof confirm.eventId === "string" ? confirm.eventId : null;
+        const interviewerEmail =
+          typeof confirm.interviewerEmail === "string" ? confirm.interviewerEmail.trim() : "";
+        const interviewer =
+          typeof confirm.interviewer === "string" && confirm.interviewer.trim()
+            ? confirm.interviewer.trim()
+            : interviewerEmail;
         const nowIso = new Date().toISOString();
         const booking = {
           id: claimId,
@@ -2234,8 +2240,8 @@ async function handleFirstInterviewBook(job, context) {
           startTime,
           endTime,
           timezone: "UTC",
-          interviewer: "",
-          interviewerEmail: "",
+          interviewer,
+          interviewerEmail,
           teamsLink,
           calLink: "",
           calendarSync: eventId

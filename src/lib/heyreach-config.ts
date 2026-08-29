@@ -32,6 +32,11 @@ export function heyReachSettingsFromWorkspaceState(state: unknown): HeyReachSett
   const settings = (state as { settings?: unknown }).settings;
   if (!settings || typeof settings !== "object" || Array.isArray(settings)) return null;
   const hey = (settings as { heyreach?: unknown }).heyreach;
+  return heyReachSettingsFromRow(hey);
+}
+
+/** Parse a bare settings.heyreach object (bounded RPC / JSON-path reads). */
+export function heyReachSettingsFromRow(hey: unknown): HeyReachSettings | null {
   if (!hey || typeof hey !== "object" || Array.isArray(hey)) return null;
   const row = hey as HeyReachSettings;
   return {

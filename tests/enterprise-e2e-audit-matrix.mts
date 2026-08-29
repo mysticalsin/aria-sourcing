@@ -1377,14 +1377,21 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
       const slices = readFileSync("src/lib/workspace-loop-slices.ts", "utf8");
       const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
       const contract = readFileSync("tests/workspace-loop-slices.mts", "utf8");
+      const confirm = readFileSync("src/app/api/cron/confirm-calendar-book/route.ts", "utf8");
+      const hey = readFileSync("src/lib/heyreach-delivery.ts", "utf8");
       return (
         /read_workspace_outreach_for_loop/.test(mig78)
         && /read_workspace_booking_for_loop/.test(mig78)
+        && /cand->'booking'->>'id' = p_booking_id/.test(mig78)
+        && /read_workspace_heyreach_settings_for_loop/.test(mig78)
         && /'merge_outreach_message'/.test(mig78)
         && /mergeOutreachMessageScheduled/.test(slices)
         && /stale_token/.test(slices)
         && /sweepAutopilotReadyDrafts/.test(worker)
         && /ARIA_LOOP_WORKSPACE_IDS/.test(worker)
+        && /interviewerEmail/.test(worker)
+        && /interviewerEmail/.test(confirm)
+        && /read_workspace_heyreach_settings_for_loop/.test(hey)
         && /RESULT workspace-loop-slices/.test(contract)
       );
     },

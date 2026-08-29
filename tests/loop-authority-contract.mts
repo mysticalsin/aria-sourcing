@@ -175,6 +175,8 @@ ok(
       mig78.length > 0 &&
       noTxn(mig78) &&
       /read_workspace_booking_for_loop/.test(mig78) &&
+      /cand->'booking'->>'id' = p_booking_id/.test(mig78) &&
+      /read_workspace_heyreach_settings_for_loop/.test(mig78) &&
       /read_workspace_outreach_for_loop/.test(mig78) &&
       /read_workspace_skills_for_loop/.test(mig78) &&
       /'merge_outreach_message'/.test(mig78) &&

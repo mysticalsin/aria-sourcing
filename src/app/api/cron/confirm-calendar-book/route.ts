@@ -189,6 +189,7 @@ export async function POST(req: NextRequest) {
           { status: 502 },
         );
       }
+      const interviewerEmail = String(conn.account_email ?? "").trim();
       return NextResponse.json({
         ok: true,
         status: "created",
@@ -203,6 +204,8 @@ export async function POST(req: NextRequest) {
         teamsLink: claim.meetingUrl,
         eventId: claim.externalEventId,
         seatId: seat.id,
+        interviewerEmail,
+        interviewer: interviewerEmail,
         replay: true,
       });
     }
@@ -317,6 +320,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      const interviewerEmail = String(connection.accountEmail ?? "").trim();
       return NextResponse.json({
         ok: true,
         status: "created",
@@ -331,6 +335,8 @@ export async function POST(req: NextRequest) {
         teamsLink: outcome.link,
         eventId: outcome.eventId ?? null,
         seatId: seat.id,
+        interviewerEmail,
+        interviewer: interviewerEmail,
         replay: false,
       });
     }

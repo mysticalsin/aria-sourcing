@@ -56,6 +56,8 @@ assert.match(src, /bookingStatus === "claimed"/);
 assert.match(src, /deliveryState === "not-sent"/);
 assert.match(src, /isTeamsMeetingJoinUrl\(claim\.meetingUrl\)/);
 assert.match(src, /OnlineMeetings\.ReadWrite/);
+assert.match(src, /interviewerEmail/);
+assert.match(src, /connection\.accountEmail/);
 
 mock.module(moduleUrl("src/lib/calendar-authority.ts"), {
   namedExports: {
@@ -273,13 +275,46 @@ test("confirmed replay with Teams URL returns created without Graph", async () =
     status?: string;
     teamsLink?: string;
     replay?: boolean;
+    interviewerEmail?: string;
+    interviewer?: string;
   };
   assert.equal(res.status, 200);
   assert.equal(body.ok, true);
   assert.equal(body.status, "created");
   assert.equal(body.teamsLink, TEAMS_URL);
   assert.equal(body.replay, true);
+  assert.equal(body.interviewerEmail, "recruiter@mantu.com");
+  assert.equal(body.interviewer, "recruiter@mantu.com");
   assert.equal(graphCalls, 0);
+});
+
+test("fresh confirm created returns interviewerEmail from Graph mailbox", async () => {
+  graphCalls = 0;
+  reconcileCalls = [];
+  claimResult = { status: "claimed", id: "claim-fresh-ok", replay: false };
+  graphOutcome = {
+    ok: true,
+    deliveryState: "sent",
+    link: TEAMS_URL,
+    eventId: "evt-fresh",
+    detail: "ok",
+  };
+  const res = await post();
+  const body = (await res.json()) as {
+    ok?: boolean;
+    status?: string;
+    interviewerEmail?: string;
+    eventId?: string | null;
+    replay?: boolean;
+  };
+  assert.equal(res.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.status, "created");
+  assert.equal(body.interviewerEmail, "recruiter@mantu.com");
+  assert.equal(body.eventId, "evt-fresh");
+  assert.equal(body.replay, false);
+  assert.equal(graphCalls, 1);
+  assert.deepEqual(reconcileCalls, [{ status: "confirmed" }]);
 });
 
 test("not-sent Graph outcome reconciles failed and returns skipped", async () => {

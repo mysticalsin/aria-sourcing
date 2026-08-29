@@ -1075,6 +1075,8 @@ test("first_interview_book confirms live Teams when confirm cron returns created
               startTime: "2026-08-28T10:00:00.000Z",
               endTime: "2026-08-28T10:30:00.000Z",
               agenda: ["Intro"],
+              interviewerEmail: "recruiter@mantu.com",
+              interviewer: "recruiter@mantu.com",
             }),
             { status: 200, headers: { "content-type": "application/json" } },
           );
@@ -1095,7 +1097,10 @@ test("first_interview_book confirms live Teams when confirm cron returns created
   const stageMerge = patches.find((p) => p.p_patch_kind === "merge_candidate_patch");
   assert.ok(stageMerge);
   const merged = stageMerge!.p_patch as {
-    patch?: { stage?: string; booking?: { teamsLink?: string; status?: string } };
+    patch?: {
+      stage?: string;
+      booking?: { teamsLink?: string; status?: string; interviewerEmail?: string; interviewer?: string };
+    };
   };
   assert.equal(merged.patch?.stage, "Booked");
   assert.equal(
@@ -1103,11 +1108,14 @@ test("first_interview_book confirms live Teams when confirm cron returns created
     "https://teams.microsoft.com/l/meetup-join/19%3ameeting_live",
   );
   assert.equal(merged.patch?.booking?.status, "Confirmed");
+  assert.equal(merged.patch?.booking?.interviewerEmail, "recruiter@mantu.com");
+  assert.equal(merged.patch?.booking?.interviewer, "recruiter@mantu.com");
   const bookingAppend = patches.find((p) => p.p_patch_kind === "append_booking");
   assert.ok(bookingAppend);
   const bookings = bookingAppend!.p_patch as Array<Record<string, unknown>>;
   assert.equal(bookings[0]?.teamsLink, "https://teams.microsoft.com/l/meetup-join/19%3ameeting_live");
   assert.equal(bookings[0]?.status, "Confirmed");
+  assert.equal(bookings[0]?.interviewerEmail, "recruiter@mantu.com");
   const activityPatch = patches.find((p) => p.p_patch_kind === "append_activities");
   assert.ok(activityPatch);
   const activities = activityPatch!.p_patch as Array<Record<string, unknown>>;

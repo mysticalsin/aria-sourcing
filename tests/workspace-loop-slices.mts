@@ -28,6 +28,29 @@ ok("slices helper retries stale_token once", /stale_token/.test(slices) && /atte
 ok("slices helper uses revision-only then merge_outreach_message", /merge_outreach_message/.test(slices) && /read_workspace_state_for_loop/.test(slices));
 ok("0078 defines merge_outreach_message", /'merge_outreach_message'/.test(mig78));
 ok("0078 defines outreach ready sweep RPC", /p_ready_sweep/.test(mig78));
+ok(
+  "0078 booking slice falls back to candidate.booking",
+  /cand->'booking'->>'id' = p_booking_id/.test(mig78),
+);
+ok(
+  "0078 defines bounded heyreach settings RPC",
+  /read_workspace_heyreach_settings_for_loop/.test(mig78),
+);
+
+const heyreachDelivery = readFileSync("src/lib/heyreach-delivery.ts", "utf8");
+ok(
+  "HeyReach Autopilot uses heyreach settings slice (not full state blob)",
+  /read_workspace_heyreach_settings_for_loop/.test(heyreachDelivery)
+    && !/\.select\("state"\)/.test(heyreachDelivery),
+);
+ok(
+  "confirm-calendar-book returns interviewerEmail for prep Autopilot",
+  /interviewerEmail/.test(confirm) && /accountEmail/.test(confirm),
+);
+ok(
+  "prep dispatch falls back to Graph seat email when booking email empty",
+  /resolveGraphSeatAccountEmail/.test(prep),
+);
 
 for (const [name, src] of [
   ["generate-outreach-draft", draft],
