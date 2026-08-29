@@ -137,6 +137,46 @@ flyctl deploy --config fly.app.toml --remote-only \
   --env "ARIA_EXPECTED_LEDGER_SHA=${EXPECTED_LEDGER_SHA}" \
   --env "AGENT_FRAMEWORKS_REQUIRED=false"
 
+# Non-http process groups (loop/cleanup/framework_heartbeat) stay stopped after
+# deploy unless started — web alone has auto_start via http_service. Start one
+# active machine per worker group (standbys stay stopped).
+echo "=== post-deploy: start worker process groups ==="
+machines_json="$(flyctl machines list -a aria-mantu-app --json 2>/dev/null || true)"
+if [ -n "$machines_json" ]; then
+  for group in loop cleanup framework_heartbeat; do
+    mid="$(printf '%s' "$machines_json" | node -e '
+      const g = process.argv[1];
+      const machines = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+      const group = machines.filter((m) => m?.config?.metadata?.fly_process_group === g);
+      const started = group.find((m) => m.state === "started");
+      if (started) { process.stdout.write(started.id); process.exit(0); }
+      const standbyIds = new Set(
+        group.flatMap((m) => Array.isArray(m?.config?.standbys) ? m.config.standbys : []),
+      );
+      const primary = group.find((m) => m.state !== "started" && !standbyIds.has(m.id))
+        || group.find((m) => m.state !== "started");
+      if (primary?.id) process.stdout.write(primary.id);
+    ' "$group")"
+    if [ -n "$mid" ]; then
+      if printf '%s' "$machines_json" | node -e '
+        const id = process.argv[1];
+        const machines = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+        const m = machines.find((x) => x.id === id);
+        process.exit(m && m.state === "started" ? 0 : 1);
+      ' "$mid"; then
+        echo "  $group already started ($mid)"
+      else
+        echo "  starting $group ($mid)"
+        flyctl machine start "$mid" -a aria-mantu-app || echo "WARN: failed to start $group ($mid)" >&2
+      fi
+    else
+      echo "WARN: no machine found for process group $group" >&2
+    fi
+  done
+else
+  echo "WARN: could not list machines for post-deploy worker start" >&2
+fi
+
 echo
 echo "Verify:"
 echo "  curl -fsS https://aria-mantu-app.fly.dev/api/health"

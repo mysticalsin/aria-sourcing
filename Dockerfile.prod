@@ -50,6 +50,7 @@ COPY --from=builder --chown=node:node /app/src/lib/agents/framework/configuratio
 # Loop worker reads these shared JSON tables at boot (not bundled by Next standalone).
 COPY --from=builder --chown=node:node /app/src/lib/langchain/pipeline-transitions.json ./src/lib/langchain/pipeline-transitions.json
 COPY --from=builder --chown=node:node /app/src/lib/langchain/graph-stage-jobs.json ./src/lib/langchain/graph-stage-jobs.json
+COPY --from=builder --chown=node:node /app/src/lib/recruiting-loop/loop-limits.json ./src/lib/recruiting-loop/loop-limits.json
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \

@@ -849,7 +849,11 @@ if [ -n "$WEBHOOK_SECRET" ]; then
       if [ "$REPLY_MODEL_OK" = "1" ]; then
         pass "Loop worker classified inbound reply with classifier=model (inbound=${REPLY_INBOUND_ID})."
       else
-        fail "Webhook queued inbound_classify but no workspace_state reply with classifier=model within ~180s (Hermes/vault classify path)."
+        REPLY_DIAG=$(jq -r --arg id "rep-${REPLY_INBOUND_ID}" '
+          (.[0].state.replies // []) as $r
+          | "n_replies=\($r|length) target=\($r|map(select(.id==$id))|map(.classifier // "missing")|join(",") // "absent")"
+        ' "$WORK/ws_replies.json" 2>/dev/null || echo "workspace_state_unreadable")
+        fail "Webhook queued inbound_classify but no workspace_state reply with classifier=model within ~180s ($REPLY_DIAG; check loop machine up + loop-limits.json in image)."
       fi
     fi
   elif [ "$REPLY_CODE" = "200" ] && [ "$REPLY_ROUTE" = "none" ] \
