@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
-# verify-m365-ready.sh — after owner applies M365 secrets + Connect Outlook.
+# verify-m365-ready.sh — after owner applies Graph secrets + Connect Outlook.
 #
-# Checks Fly secret inventory, live microsoftOAuth, Graph live seat + webhook,
-# then runs strict enterprise E2E with NO partial flags.
+# Strict gate matches enterprise E2E PASS for Microsoft:
+#   required — aria-mantu-app Graph secrets + encryption + webhook secret,
+#              microsoftOAuth live, mode=live seat with active webhook +
+#              Calendars.ReadWrite + OnlineMeetings.ReadWrite, then strict E2E
+#              with NO partial flags.
+#   optional (WARN only) — GoTrue Entra SSO on aria-mantu-auth /login CTA,
+#              Fly-env LLM auth (Hermes/vault failover already greens E2E).
 #
-# Usage (after secrets + Settings → Connect Outlook → Enable webhook):
+# Usage (after Graph secrets + Settings → Connect Outlook → Enable webhook):
 #   bash scripts/verify-m365-ready.sh
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -23,19 +28,25 @@ for name in MICROSOFT_CLIENT_ID MICROSOFT_CLIENT_SECRET MICROSOFT_REDIRECT_URI M
     missing=1
   fi
 done
+if [ "$missing" = "1" ]; then
+  echo "ERROR: apply Graph secrets first — see _relay/M365-OWNER-UNBLOCK.md" >&2
+  echo "  bash scripts/print-m365-owner-portal-checklist.sh" >&2
+  echo "  bash scripts/probe-m365-unblock.sh --apply  # when drop-zone or env exports ready" >&2
+  exit 2
+fi
+
+# Entra SSO is optional for Graph/Outlook E2E PASS (owner may defer GoTrue Azure).
+entra_missing=0
 for name in GOTRUE_EXTERNAL_AZURE_ENABLED GOTRUE_EXTERNAL_AZURE_CLIENT_ID GOTRUE_EXTERNAL_AZURE_SECRET GOTRUE_EXTERNAL_AZURE_URL; do
   if flyctl secrets list -a aria-mantu-auth 2>/dev/null | awk 'NR>1{print $1}' | grep -qx "$name"; then
     echo "  OK  aria-mantu-auth $name"
   else
-    echo "  MISSING aria-mantu-auth $name"
-    missing=1
+    echo "  WARN missing aria-mantu-auth $name (Entra SSO optional for Graph E2E PASS)"
+    entra_missing=1
   fi
 done
-if [ "$missing" = "1" ]; then
-  echo "ERROR: apply secrets first — see _relay/M365-OWNER-UNBLOCK.md" >&2
-  echo "  bash scripts/print-m365-owner-portal-checklist.sh" >&2
-  echo "  bash scripts/probe-m365-unblock.sh --apply  # when drop-zone or env exports ready" >&2
-  exit 2
+if [ "$entra_missing" = "0" ]; then
+  echo "  OK  Entra GoTrue Azure secret set complete (SSO optional path ready)"
 fi
 
 echo
@@ -124,6 +135,7 @@ if [ "$MS_OAUTH" != "true" ] || [ "$ENC_READY" != "true" ]; then
   exit 4
 fi
 
+# Match e2e-workflow-test.sh 6b: Calendars.ReadWrite + OnlineMeetings.ReadWrite + webhook + mode=live.
 LIVE_SEAT="$(
   jq -r '
     (.connections // []) as $conns
@@ -135,6 +147,7 @@ LIVE_SEAT="$(
             and (.hasRefreshToken == true)
             and ((.graphSubscription.active // false) == true)
             and ((.seatId // "") | length) > 0
+            and ((.scope // "") | test("Calendars[.]ReadWrite|calendars[.]readwrite"; "i"))
             and ((.scope // "") | test("OnlineMeetings[.]ReadWrite|onlinemeetings[.]readwrite"; "i"))
           )
         | .seatId as $sid
@@ -169,6 +182,16 @@ SUB_N="$(
     ] | length
   ' "$WORK/conn.json"
 )"
+CALENDARS_N="$(
+  jq -r '
+    [(.connections // [])[]
+      | select(
+          (.provider // "") == "Microsoft Graph"
+          and ((.scope // "") | test("Calendars[.]ReadWrite|calendars[.]readwrite"; "i"))
+        )
+    ] | length
+  ' "$WORK/conn.json"
+)"
 MEETINGS_N="$(
   jq -r '
     [(.connections // [])[]
@@ -179,13 +202,15 @@ MEETINGS_N="$(
     ] | length
   ' "$WORK/conn.json"
 )"
-echo "  connectedGraph=$CONNECTED_N activeWebhook=$SUB_N onlineMeetings=$MEETINGS_N liveSeat=${LIVE_SEAT:-'(none)'}"
+echo "  connectedGraph=$CONNECTED_N activeWebhook=$SUB_N calendars=$CALENDARS_N onlineMeetings=$MEETINGS_N liveSeat=${LIVE_SEAT:-'(none)'}"
 
 if [ -z "$LIVE_SEAT" ]; then
-  echo "ERROR: no mode=live Graph seat with active webhook + OnlineMeetings.ReadWrite." >&2
-  echo "  Settings → Connect Outlook (grant Teams meetings) → Enable Graph webhook, then re-run." >&2
+  echo "ERROR: no mode=live Graph seat with active webhook + Calendars.ReadWrite + OnlineMeetings.ReadWrite." >&2
+  echo "  Settings → Connect Outlook (grant Calendar + Teams meetings) → Enable Graph webhook, then re-run." >&2
   if [ "${CONNECTED_N:-0}" -gt 0 ] && [ "${SUB_N:-0}" -eq 0 ]; then
     echo "  Hint: mailbox connected but graphSubscription.active=false — Enable webhook." >&2
+  elif [ "${CONNECTED_N:-0}" -gt 0 ] && [ "${CALENDARS_N:-0}" -eq 0 ]; then
+    echo "  Hint: reconnect Outlook and grant Calendars.ReadWrite (Outlook event create)." >&2
   elif [ "${CONNECTED_N:-0}" -gt 0 ] && [ "${MEETINGS_N:-0}" -eq 0 ]; then
     echo "  Hint: reconnect Outlook and grant OnlineMeetings.ReadWrite (Teams joinUrl)." >&2
   elif [ "${CONNECTED_N:-0}" -eq 0 ]; then
@@ -193,10 +218,10 @@ if [ -z "$LIVE_SEAT" ]; then
   fi
   exit 5
 fi
-echo "  OK live Graph seat $LIVE_SEAT (webhook + OnlineMeetings + mode=live)"
+echo "  OK live Graph seat $LIVE_SEAT (webhook + Calendars + OnlineMeetings + mode=live)"
 
 echo
-echo "=== 3b) Entra SSO login surface (GoTrue Azure + baked /login) ==="
+echo "=== 3b) Entra SSO login surface (optional — WARN only) ==="
 SETTINGS_CODE="$(
   curl -sS -o "$WORK/settings.json" -w '%{http_code}' \
     -H "apikey: $ANON_KEY" \
@@ -208,20 +233,20 @@ if [ "$SETTINGS_CODE" = "200" ] && [ "$AZURE_PROVIDER" = "true" ] \
   && printf '%s' "$LOGIN_HTML" | grep -q 'Sign in with Microsoft'; then
   echo "  OK  GoTrue external.azure=true and /login exposes Sign in with Microsoft"
 elif [ "$SETTINGS_CODE" = "200" ] && [ "$AZURE_PROVIDER" != "true" ]; then
-  echo "ERROR: GoTrue Azure provider not enabled (external.azure=$AZURE_PROVIDER) despite auth secrets." >&2
-  echo "  Check GOTRUE_EXTERNAL_AZURE_* on aria-mantu-auth and restart auth app." >&2
-  exit 6
+  echo "  WARN GoTrue Azure provider not enabled (external.azure=$AZURE_PROVIDER) — Entra SSO optional for Graph E2E PASS."
+  echo "  Hint: set GOTRUE_EXTERNAL_AZURE_* on aria-mantu-auth and restart auth when SSO is desired."
 else
-  echo "ERROR: Entra SSO not live-verified (settings HTTP $SETTINGS_CODE, external.azure=$AZURE_PROVIDER)." >&2
-  echo "  Remint app tip so NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true after GoTrue Azure secrets land." >&2
-  exit 6
+  echo "  WARN Entra SSO not live-verified (settings HTTP $SETTINGS_CODE, external.azure=$AZURE_PROVIDER) — optional for Graph E2E PASS."
+  echo "  Hint: remint app tip so NEXT_PUBLIC_ENABLE_AZURE_LOGIN=true after GoTrue Azure secrets land."
 fi
 
 echo
-echo "=== 3c) Live LLM auth (presence ≠ usable — reject auth-dead keys) ==="
-if ! bash "$repo/scripts/probe-fly-llm-auth.sh"; then
-  echo "ERROR: Fly LLM auth dead or absent — rotate Kimi/OpenAI/Anthropic/DeepSeek before strict E2E." >&2
-  exit 7
+echo "=== 3c) Live LLM auth (optional — WARN only; Hermes/vault may already green E2E) ==="
+if bash "$repo/scripts/probe-fly-llm-auth.sh"; then
+  echo "  OK  Fly-env LLM auth usable"
+else
+  echo "  WARN Fly LLM auth dead or absent — rotate Kimi/OpenAI/Anthropic/DeepSeek when clearing llm_auth=dead."
+  echo "  Continuing: strict E2E may still PASS via Hermes/vault failover without ARIA_ALLOW_PARTIAL_LLM_E2E."
 fi
 
 echo

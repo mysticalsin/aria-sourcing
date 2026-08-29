@@ -1336,7 +1336,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
-    requirement: "verify-m365-ready strict gate: secrets inventory, live Graph seat, Entra /login, strict E2E",
+    requirement: "verify-m365-ready strict gate: Graph secrets + live seat (Calendars+OnlineMeetings); Entra/LLM WARN-only; strict E2E",
     evidence: () => {
       const verify = readFileSync("scripts/verify-m365-ready.sh", "utf8");
       const apply = readFileSync("scripts/fly-apply-owner-microsoft-secrets.sh", "utf8");
@@ -1344,14 +1344,21 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         existsSync("scripts/verify-m365-ready.sh")
         && /MICROSOFT_TENANT_ID/.test(verify)
         && /GOTRUE_EXTERNAL_AZURE_URL/.test(verify)
+        && /Entra SSO optional for Graph E2E PASS/.test(verify)
+        && /Calendars\[\.\]ReadWrite\|calendars\[\.\]readwrite/.test(verify)
+        && /OnlineMeetings\[\.\]ReadWrite\|onlinemeetings\[\.\]readwrite/.test(verify)
         && /Sign in with Microsoft/.test(verify)
         && /auth\/v1\/settings/.test(verify)
         && /external\.azure/.test(verify)
+        && /optional — WARN only/.test(verify)
         && /unset ARIA_ALLOW_PARTIAL_M365_E2E/.test(verify)
         && /unset ARIA_ALLOW_PARTIAL_LLM_E2E|ARIA_ALLOW_PARTIAL_LLM_E2E/.test(verify)
         && /probe-fly-llm-auth/.test(verify)
+        && /Hermes\/vault/.test(verify)
         && /live Graph seat/.test(verify)
         && /e2e-workflow-test\.sh/.test(verify)
+        && !/exit 6/.test(verify)
+        && !/exit 7/.test(verify)
         && /post-m365-secrets-golive/.test(apply)
       );
     },
