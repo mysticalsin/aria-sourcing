@@ -4,26 +4,14 @@ import {
   heyReachDeliveryReadyFromEnv,
   resolveHeyReachConfigForWorkspace,
 } from "@/lib/heyreach-delivery";
+import type {
+  LinkedInDeliveryOutcome,
+  LinkedInDeliveryRequest,
+} from "@/lib/linkedin-delivery-types";
+
+export type { LinkedInDeliveryOutcome, LinkedInDeliveryRequest } from "@/lib/linkedin-delivery-types";
 
 export type LinkedInBackendKind = "assisted-manual" | "vendor-api" | "heyreach";
-
-export interface LinkedInDeliveryRequest {
-  workspaceId: string;
-  messageId: string;
-  candidateId: string;
-  profileUrl: string;
-  subject: string;
-  body: string;
-  attemptId: string;
-}
-
-export interface LinkedInDeliveryOutcome {
-  status: "sent" | "dry-run" | "error";
-  deliveryState: "accepted" | "not-sent" | "unknown";
-  provider: string;
-  detail: string;
-  id?: string;
-}
 
 export interface LinkedInAdapter {
   kind: LinkedInBackendKind;

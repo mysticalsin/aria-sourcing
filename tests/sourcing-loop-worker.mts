@@ -1690,6 +1690,145 @@ test("draft_generate skips autopilot-send when quality is needs_review", async (
   assert.equal(autopilotCalls.length, 0);
 });
 
+test("interview_prep_send autopilots critics-green drafts and marks Scheduled", async () => {
+  const patches: Array<Record<string, unknown>> = [];
+  const autopilotBodies: Array<Record<string, unknown>> = [];
+  const { client } = rpcClient((name, args) => {
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: {}, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      patches.push(args);
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await handleAriaJob(
+    job("interview_prep_send", {
+      campaignId: "camp-prep",
+      candidateId: "cand-prep",
+      bookingId: "bk-prep",
+    }),
+    {
+      client,
+      configuration: {
+        interviewPrepDispatchUrl: new URL("https://worker.example.test/api/cron/interview-prep-dispatch"),
+        autopilotSendUrl: new URL("https://worker.example.test/api/cron/autopilot-send-outreach"),
+        cronSecret: "s".repeat(32),
+      },
+      fetcher: async (url, init) => {
+        const href = String(url);
+        if (href.includes("interview-prep-dispatch")) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              llmCriticsUsed: true,
+              qualityReady: true,
+              outreach: [
+                {
+                  id: "msg-prep-interviewer",
+                  candidateId: "cand-prep",
+                  campaignId: "camp-prep",
+                  channel: "Email",
+                  subject: "Interview prep: Ada",
+                  body: "Prep notes for Mantu Group interview.",
+                  status: "Needs Approval",
+                  dryRun: true,
+                  qualityStatus: "ready",
+                  qualityCriticsUsed: true,
+                  recipientOverride: "tony@mantu.com",
+                  recipient: "tony@mantu.com",
+                  prepPurpose: "interviewer",
+                },
+                {
+                  id: "msg-prep-confirm",
+                  candidateId: "cand-prep",
+                  campaignId: "camp-prep",
+                  channel: "Email",
+                  subject: "Confirmed: your conversation",
+                  body: "You're booked with Mantu Group.",
+                  status: "Needs Approval",
+                  dryRun: true,
+                  qualityStatus: "ready",
+                  qualityCriticsUsed: true,
+                  recipient: "ada@example.com",
+                  prepPurpose: "candidate_confirmation",
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (href.includes("autopilot-send-outreach")) {
+          autopilotBodies.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              results: [{ result: { status: "queued", channel: "Email", detail: "queued" } }],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        throw new Error(`unexpected fetch ${href}`);
+      },
+    },
+  );
+
+  assert.equal(autopilotBodies.length, 2);
+  assert.equal(autopilotBodies[0]!.recipient, "tony@mantu.com");
+  assert.equal(autopilotBodies[1]!.recipient, "ada@example.com");
+  assert.equal(autopilotBodies.every((b) => b.criticsPassed === true), true);
+  const value = patches[0]!.p_patch as Array<Record<string, unknown>>;
+  assert.ok(Array.isArray(value));
+  assert.equal(value.length, 2);
+  assert.equal(value.every((r) => r.status === "Scheduled"), true);
+  assert.equal(value.every((r) => r.dryRun === false), true);
+});
+
+test("runSourcingLoopTick sweeps autopilot ready drafts for configured workspaces", async () => {
+  const sweepBodies: Array<Record<string, unknown>> = [];
+  const { client } = rpcClient((name) => {
+    if (name === "record_loop_worker_heartbeat") return { data: true, error: null };
+    if (name === "reap_expired_aria_job_leases") return { data: 0, error: null };
+    if (name === "reap_expired_agent_framework_leases") return { data: 0, error: null };
+    if (name === "cleanup_email_ledger_delivery_receipts") return { data: 0, error: null };
+    if (name === "claim_due_aria_jobs") return { data: [], error: null };
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  const result = await runSourcingLoopTick(
+    client,
+    {
+      workerId: "loop-sweep",
+      releaseSha: "a".repeat(40),
+      dispatchUrl: null,
+      renewGraphUrl: null,
+      autopilotSendUrl: new URL("https://worker.example.test/api/cron/autopilot-send-outreach"),
+      loopWorkspaceIds: ["51111111-1111-4111-8111-111111111111"],
+      cronSecret: "s".repeat(32),
+    },
+    { ARIA_LOOP_KILL_SWITCH: "false" },
+    async (url, init) => {
+      if (String(url).includes("autopilot-send-outreach")) {
+        sweepBodies.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+        return new Response(JSON.stringify({ ok: true, sent: 0, skipped: 0, errors: 0, results: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    },
+  );
+
+  assert.equal(result.status, "ok");
+  assert.equal(result.autopilotSweep, "ok");
+  assert.equal(result.autopilotSweepWorkspaces, 1);
+  assert.equal(sweepBodies.length, 1);
+  assert.equal(sweepBodies[0]!.sweep, true);
+  assert.equal(sweepBodies[0]!.workspaceId, "51111111-1111-4111-8111-111111111111");
+});
+
 test("first_interview_book skips live confirm when Autopilot is not armed", async () => {
   const confirmCalls: string[] = [];
   const proposeCalls: string[] = [];

@@ -4,8 +4,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { buildInterviewPrepOutreach } from "@/lib/interview-prep-dispatch";
+import { mantuEmailHtmlWrapper } from "@/lib/mantu-brand";
+import { validateOutreachQualityLive } from "@/lib/outreach-quality-pipeline-live";
 import { getServiceSupabase } from "@/lib/supabase/server";
-import type { Booking, Campaign, Candidate } from "@/lib/types";
+import type { Booking, Campaign, Candidate, OutreachMessage } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -30,9 +32,35 @@ function authorized(req: NextRequest): boolean {
   );
 }
 
+async function applyLiveCritics(
+  draft: OutreachMessage,
+  workspaceId: string,
+): Promise<OutreachMessage> {
+  const verdict = await validateOutreachQualityLive({
+    subject: draft.subject,
+    body: draft.body,
+    channel: draft.channel ?? "Email",
+    workspaceId,
+  });
+  return {
+    ...draft,
+    subject: verdict.text.subject,
+    body: verdict.text.body,
+    htmlBody: mantuEmailHtmlWrapper(verdict.text.body),
+    qualityStatus: verdict.status,
+    qualityScore: verdict.aggregateScore,
+    qualityCriticsUsed: verdict.llmCriticsUsed === true,
+    qualityReasons: verdict.stages
+      .flatMap((s) => s.reasons)
+      .filter(Boolean)
+      .slice(0, 12),
+  };
+}
+
 /**
  * Loop-side interview prep dispatch: build interviewer prep + candidate
- * confirmation drafts for the approval queue. Never sends directly.
+ * confirmation drafts, run live critics, return for workspace append.
+ * Autopilot send is the worker's job when critics are green + entitled.
  */
 export async function POST(req: NextRequest) {
   if (req.headers.get("cookie") || req.headers.get("origin")) {
@@ -69,9 +97,6 @@ export async function POST(req: NextRequest) {
   if (!campaign || !candidate || !booking) {
     return NextResponse.json({ ok: false, status: "not_found" }, { status: 404 });
   }
-  if (booking.candidateName !== candidate.name && booking.role) {
-    // Booking rows are keyed by id; tolerate name drift but require candidate link via id usage.
-  }
   if (!booking.calendarSync && !booking.teamsLink && !booking.calLink) {
     return NextResponse.json(
       {
@@ -83,14 +108,41 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const outreach = buildInterviewPrepOutreach({ booking, candidate, campaign });
+  const base = buildInterviewPrepOutreach({
+    booking,
+    candidate,
+    campaign,
+    workspaceId: parsed.data.workspaceId,
+  });
+  const outreach: OutreachMessage[] = [];
+  for (const draft of base) {
+    outreach.push(await applyLiveCritics(draft, parsed.data.workspaceId));
+  }
+
+  const llmCriticsUsed = outreach.every((m) => m.qualityCriticsUsed === true);
+  const allReady = outreach.every((m) => m.qualityStatus === "ready");
+
+  // Include resolved recipients for the worker's inline autopilot path
+  // (interviewer override or candidate email). Not a persisted OutreachMessage field.
+  const withRecipients = outreach.map((m) => {
+    const override = m.recipientOverride?.trim() ?? "";
+    const candidateEmail =
+      m.prepPurpose === "candidate_confirmation" ? (candidate.email?.trim() ?? "") : "";
+    return {
+      ...m,
+      recipient: override || candidateEmail,
+    };
+  });
+
   return NextResponse.json({
     ok: true,
     status: "prep_drafted",
     campaignId: campaign.id,
     candidateId: candidate.id,
     bookingId: booking.id,
-    outreach,
+    outreach: withRecipients,
     dryRun: true,
+    llmCriticsUsed,
+    qualityReady: allReady,
   });
 }

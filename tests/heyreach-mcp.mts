@@ -73,10 +73,16 @@ ok("0076 mint requires sequences armed", /mint_autopilot_critics_approval[\s\S]*
 
 const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
 ok("worker only autopilots qualityStatus ready", /qualityStatus === "ready"/.test(worker) && /criticsPassed: true/.test(worker));
+ok("worker sweeps autopilot ready drafts", /sweepAutopilotReadyDrafts/.test(worker) && /sweep: true/.test(worker));
+ok("worker autopilots interview prep when critics green", /handleInterviewPrepSend[\s\S]*criticsPassed: true/.test(worker));
 
 const cron = readFileSync("src/app/api/cron/autopilot-send-outreach/route.ts", "utf8");
 ok("cron requires criticsPassed === true", /criticsPassed: parsed\.data\.criticsPassed === true/.test(cron));
+ok("sweep filters ready+critics", /qualityStatus === "ready"/.test(cron) && /qualityCriticsUsed === true/.test(cron));
+ok("sweep honors recipientOverride", /recipientOverride/.test(cron));
 
+const prepCron = readFileSync("src/app/api/cron/interview-prep-dispatch/route.ts", "utf8");
+ok("prep dispatch runs live critics", /validateOutreachQualityLive/.test(prepCron));
 const transitions = readFileSync("src/lib/langchain/pipeline-transitions.json", "utf8");
 ok(
   "pipeline claims interview_prep_send after live book",

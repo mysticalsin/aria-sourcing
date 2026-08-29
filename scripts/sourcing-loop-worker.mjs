@@ -442,6 +442,10 @@ export function loadSourcingLoopConfiguration(environment) {
   let interviewPrepDispatchUrl = null;
   let recruitingGraphUrl = null;
   let autopilotSendUrl = null;
+  const loopWorkspaceIds = String(environment.ARIA_LOOP_WORKSPACE_IDS ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id));
   if (webOrigin !== "" || cronSecret !== "") {
     let parsed;
     try {
@@ -487,6 +491,7 @@ export function loadSourcingLoopConfiguration(environment) {
     interviewPrepDispatchUrl,
     recruitingGraphUrl,
     autopilotSendUrl,
+    loopWorkspaceIds,
     cronSecret,
     tickMs: boundedInteger(environment.ARIA_LOOP_TICK_MS, DEFAULT_TICK_MS, 5_000, 300_000, "ARIA_LOOP_TICK_MS"),
     timeoutMs: boundedInteger(environment.ARIA_LOOP_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, 1_000, 60_000, "ARIA_LOOP_TIMEOUT_MS"),
@@ -1852,12 +1857,109 @@ async function handleInterviewPrepSend(job, context) {
     throw new HandlerError("interview_prep_response_invalid", true);
   }
 
+  // Autopilot: critics-green prep drafts → mint + durable email queue when entitled.
+  const outreachRecords = [];
+  const autopilotResults = [];
+  for (const draft of body.outreach) {
+    if (!isRecord(draft) || typeof draft.id !== "string") continue;
+    let record = { ...draft, status: "Needs Approval", dryRun: true };
+    let autopilotStatus = "human_review";
+    const qualityStatus = typeof draft.qualityStatus === "string" ? draft.qualityStatus : "";
+    const criticsOk = draft.qualityCriticsUsed === true;
+    if (
+      criticsOk
+      && qualityStatus === "ready"
+      && context.configuration?.autopilotSendUrl
+      && context.configuration?.cronSecret
+    ) {
+      const channel =
+        draft.channel === "Email" || draft.channel === "LinkedIn" || draft.channel === "WhatsApp" || draft.channel === "SMS"
+          ? draft.channel
+          : "Email";
+      const subject = typeof draft.subject === "string" ? draft.subject : "";
+      const draftBody = typeof draft.body === "string" ? draft.body : "";
+      const override = typeof draft.recipientOverride === "string" ? draft.recipientOverride.trim() : "";
+      const explicit = typeof draft.recipient === "string" ? draft.recipient.trim() : "";
+      let recipient = override || explicit;
+      if (!recipient && typeof body.recipient === "string") recipient = body.recipient.trim();
+      // When no recipient, leave Needs Approval — sweep may still pick up later
+      // once workspace state has the candidate email.
+      if (subject && draftBody && recipient) {
+        try {
+          const autoRes = await context.fetcher(context.configuration.autopilotSendUrl, {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${context.configuration.cronSecret}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              workspaceId: job.workspace_id,
+              campaignId,
+              candidateId,
+              messageId: draft.id,
+              channel,
+              subject,
+              body: draftBody,
+              recipient,
+              qualityStatus,
+              criticsPassed: true,
+            }),
+            signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+          });
+          if (autoRes.ok) {
+            const autoBody = await readBoundedJson(autoRes, RPC_RESPONSE_BYTES);
+            const first =
+              isRecord(autoBody)
+              && Array.isArray(autoBody.results)
+              && isRecord(autoBody.results[0])
+              && isRecord(autoBody.results[0].result)
+                ? autoBody.results[0].result
+                : null;
+            const st = first && typeof first.status === "string" ? first.status : "";
+            if (st === "sent" || st === "queued") {
+              autopilotStatus = st;
+              record = {
+                ...draft,
+                status: "Scheduled",
+                dryRun: false,
+                ...(st === "sent" ? { sentAt: new Date().toISOString() } : {}),
+                scheduledFor: new Date().toISOString(),
+              };
+            } else if (st === "skipped" && first && typeof first.reason === "string") {
+              autopilotStatus = `skipped:${first.reason}`;
+            } else if (st === "error") {
+              const detail = first && typeof first.detail === "string" ? first.detail : "error";
+              autopilotStatus = `error:${detail.slice(0, 120)}`;
+            }
+          } else if (autoRes.status >= 500) {
+            await autoRes.body?.cancel?.().catch(() => undefined);
+            throw new HandlerError(`autopilot_send_http_${autoRes.status}`, true);
+          } else {
+            await autoRes.body?.cancel?.().catch(() => undefined);
+            autopilotStatus = `http_${autoRes.status}`;
+          }
+        } catch (err) {
+          if (err instanceof HandlerError) throw err;
+          throw new HandlerError("autopilot_unreachable", true);
+        }
+      } else if (!recipient) {
+        autopilotStatus = "missing_recipient";
+      }
+    }
+    outreachRecords.push(record);
+    autopilotResults.push({ messageId: draft.id, autopilot: autopilotStatus });
+  }
+
+  if (outreachRecords.length < 1) {
+    throw new HandlerError("interview_prep_response_invalid", true);
+  }
+
   return completeJobWithWorkspacePatch(
     context.client,
     job,
     {
       kind: "append_outreach",
-      value: body.outreach,
+      value: outreachRecords,
       receiptKey: `prep:${bookingId}`,
     },
     {
@@ -1865,14 +1967,16 @@ async function handleInterviewPrepSend(job, context) {
       campaignId,
       candidateId,
       bookingId,
-      draftCount: body.outreach.length,
-      dryRun: true,
+      draftCount: outreachRecords.length,
+      dryRun: outreachRecords.every((row) => row.dryRun === true),
+      autopilot: autopilotResults,
     },
     [event("booking.prep_drafted", "booking", bookingId, {
       campaignId,
       candidateId,
-      draftCount: body.outreach.length,
-      dryRun: true,
+      draftCount: outreachRecords.length,
+      dryRun: outreachRecords.every((row) => row.dryRun === true),
+      autopilot: autopilotResults,
     })],
     [],
   );
@@ -2600,6 +2704,51 @@ async function drainOutbound(configuration, fetcher) {
   return { status: "ok" };
 }
 
+/**
+ * Backstop: re-attempt autopilot send for critics-green Needs Approval drafts
+ * that missed the inline worker path (transient 5xx, race, etc.).
+ * Uses ARIA_LOOP_WORKSPACE_IDS — same list as ignite scheduler.
+ */
+async function sweepAutopilotReadyDrafts(configuration, fetcher) {
+  if (
+    !configuration.autopilotSendUrl
+    || !configuration.cronSecret
+    || !Array.isArray(configuration.loopWorkspaceIds)
+    || configuration.loopWorkspaceIds.length === 0
+  ) {
+    return { status: "unconfigured", swept: 0 };
+  }
+  let swept = 0;
+  let errors = 0;
+  for (const workspaceId of configuration.loopWorkspaceIds.slice(0, 10)) {
+    let response;
+    try {
+      response = await fetcher(configuration.autopilotSendUrl, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${configuration.cronSecret}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ workspaceId, sweep: true }),
+        signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+      });
+    } catch {
+      errors += 1;
+      continue;
+    }
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      if (response.status >= 500) errors += 1;
+      continue;
+    }
+    await response.body?.cancel().catch(() => undefined);
+    swept += 1;
+  }
+  if (errors > 0 && swept === 0) return { status: "unreachable", swept: 0 };
+  if (errors > 0) return { status: "degraded", swept };
+  return { status: "ok", swept };
+}
+
 async function renewGraphSubscriptions(configuration, fetcher) {
   if (!configuration.renewGraphUrl || !configuration.cronSecret) {
     return { status: "unconfigured" };
@@ -2662,6 +2811,12 @@ export async function runSourcingLoopTick(client, configuration, environment, fe
     failureCodes.push(`dispatch:${dispatch.status}`);
   }
 
+  // Idle-friendly backstop: always attempt once per tick when workspace ids configured.
+  const autopilotSweep = await sweepAutopilotReadyDrafts(configuration, fetcher);
+  if (autopilotSweep.status !== "ok" && autopilotSweep.status !== "unconfigured") {
+    failureCodes.push(`autopilot_sweep:${autopilotSweep.status}`);
+  }
+
   let claimed = 0;
   let completed = 0;
   if (HANDLER_KINDS.length > 0) {
@@ -2712,6 +2867,8 @@ export async function runSourcingLoopTick(client, configuration, environment, fe
     jobLeasesReaped: typeof jobReap.data === "number" ? jobReap.data : 0,
     frameworkLeasesReaped: typeof frameworkReap.data === "number" ? frameworkReap.data : 0,
     dispatch: dispatch.status,
+    autopilotSweep: autopilotSweep.status,
+    autopilotSweepWorkspaces: autopilotSweep.swept,
     graphRenew: renew.status,
     claimed,
     completed,

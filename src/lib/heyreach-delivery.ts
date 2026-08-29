@@ -13,7 +13,7 @@ import { classifyFailedHttpDeliveryState } from "@/lib/delivery-outcome";
 import { decryptSecret } from "@/lib/crypto-secrets";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import { mergeHeyReachConfig, heyReachSettingsFromWorkspaceState } from "@/lib/heyreach-config";
-import type { LinkedInDeliveryOutcome, LinkedInDeliveryRequest } from "@/lib/linkedin-channel";
+import type { LinkedInDeliveryOutcome, LinkedInDeliveryRequest } from "@/lib/linkedin-delivery-types";
 
 export {
   heyReachSettingsReady,

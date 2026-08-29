@@ -145,7 +145,18 @@ export async function POST(req: NextRequest) {
       }
       msgs.push(msg);
     } else if (parsed.data.sweep) {
-      msgs.push(...outreach.filter((m) => m.status === "Needs Approval").slice(0, 20));
+      // Only critics-green ready drafts — dispatch still fail-closes, but avoid
+      // minting attempts on every Needs Approval row each tick.
+      msgs.push(
+        ...outreach
+          .filter(
+            (m) =>
+              m.status === "Needs Approval" &&
+              m.qualityStatus === "ready" &&
+              m.qualityCriticsUsed === true,
+          )
+          .slice(0, 20),
+      );
     } else {
       return NextResponse.json({ ok: false, status: "invalid_request" }, { status: 400 });
     }
@@ -154,6 +165,7 @@ export async function POST(req: NextRequest) {
       const candidate = candidates.find((c) => c.id === msg.candidateId);
       if (!candidate) continue;
       const channel = (msg.channel ?? preferredOutreachChannel(candidate)) as ReiOutboundChannel;
+      const override = msg.recipientOverride?.trim() ?? "";
       targets.push({
         messageId: msg.id,
         campaignId: msg.campaignId,
@@ -161,7 +173,7 @@ export async function POST(req: NextRequest) {
         channel,
         subject: msg.subject,
         body: msg.body,
-        recipient: recipientFor(channel, candidate),
+        recipient: override || recipientFor(channel, candidate),
         qualityStatus: msg.qualityStatus ?? "unknown",
         criticsPassed:
           msg.qualityStatus === "ready" && msg.qualityCriticsUsed === true,

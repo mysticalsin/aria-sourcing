@@ -48,19 +48,44 @@ ok("parse body", parsed.body === "Body text");
 const seed = buildHistoricalDemoSeedState();
 const candidate = seed.candidates[0];
 const campaign = seed.campaigns.find((c) => c.id === candidate.campaignId)!;
-const booking = seed.bookings[0];
-const outreach = buildInterviewPrepOutreach({ booking, candidate, campaign });
+const booking = {
+  ...seed.bookings[0],
+  teamsLink: seed.bookings[0].teamsLink || "https://teams.microsoft.com/l/meetup-join/x",
+  calendarSync: true,
+};
+const outreach = buildInterviewPrepOutreach({
+  booking,
+  candidate,
+  campaign,
+  workspaceId: "11111111-1111-4111-8111-111111111111",
+});
 ok("builds two prep drafts", outreach.length === 2);
 ok("both need approval", outreach.every((m) => m.status === "Needs Approval"));
 ok("both dry-run", outreach.every((m) => m.dryRun === true));
 ok(
-  "prep drafts honest about critics (needs_review, not fake ready/100)",
+  "deterministic quality applied (ready or honest needs_review — never fake 100)",
   outreach.every(
     (m) =>
-      m.qualityStatus === "needs_review"
-      && m.qualityCriticsUsed === false
-      && (m.qualityScore ?? 0) < 100,
+      (m.qualityStatus === "ready" || m.qualityStatus === "needs_review") &&
+      m.qualityCriticsUsed === false &&
+      (m.qualityScore ?? 0) < 100,
   ),
+);
+ok(
+  "provider-linked prep is deterministically ready for live-critic upgrade",
+  outreach.every((m) => m.qualityStatus === "ready"),
+);
+ok(
+  "stable ids across rebuild",
+  (() => {
+    const again = buildInterviewPrepOutreach({
+      booking,
+      candidate,
+      campaign,
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    return again[0].id === outreach[0].id && again[1].id === outreach[1].id;
+  })(),
 );
 ok(
   "prep drafts name Mantu in plain body",
