@@ -660,6 +660,26 @@ function parseClassification(value, fallback) {
   };
 }
 
+/** Models often wrap JSON in ```json fences despite "JSON only" instructions. */
+export function parseModelJsonObject(text) {
+  if (typeof text !== "string" || !text.trim()) return null;
+  let raw = text.trim();
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(raw);
+  if (fenced?.[1]) raw = fenced[1].trim();
+  // Prefer first {...} object if prose prefixes the payload.
+  if (!raw.startsWith("{")) {
+    const start = raw.indexOf("{");
+    const end = raw.lastIndexOf("}");
+    if (start >= 0 && end > start) raw = raw.slice(start, end + 1);
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function safeResultHash(value) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
@@ -2194,17 +2214,14 @@ async function handleInboundClassify(job, context) {
   // sole trigger. Idle loop ticks never invent inbound_classify jobs.
   // Order: inline Hermes/env modelClient → cron resolveLoopLlm (Hermes→vault).
   async function applyModelText(text) {
-    try {
-      const parsed = JSON.parse(text);
-      classification = parseClassification(parsed, fallback);
-      classifier = "model";
-      if (isRecord(parsed) && typeof parsed.draftResponse === "string" && parsed.draftResponse.trim()) {
-        modelDraftResponse = parsed.draftResponse.trim().slice(0, 1_000);
-      }
-      return true;
-    } catch {
-      return false;
+    const parsed = parseModelJsonObject(text);
+    if (!parsed) return false;
+    classification = parseClassification(parsed, fallback);
+    classifier = "model";
+    if (typeof parsed.draftResponse === "string" && parsed.draftResponse.trim()) {
+      modelDraftResponse = parsed.draftResponse.trim().slice(0, 1_000);
     }
+    return true;
   }
   if (context.modelClient?.classifyReply) {
     const modelResult = await context.modelClient.classifyReply(prompt);

@@ -1182,6 +1182,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /inbound_classify positive interest/.test(e2e)
         && /classifier=model/.test(e2e)
         && /Polling workspace_state for reply classifier=model/.test(e2e)
+        && /parseModelJsonObject/.test(readFileSync("scripts/sourcing-loop-worker.mjs", "utf8"))
+        && /```(?:json)?/.test(readFileSync("scripts/sourcing-loop-worker.mjs", "utf8"))
         && /Persist so workspace_state \/ E2E can prove live model classify/.test(worker)
         && /classifier\?: "model" \| "deterministic_fallback"/.test(readFileSync("src/lib/types.ts", "utf8"))
         && /llmStages\.length === CRITICS\.length/.test(readFileSync("src/lib/outreach-quality-pipeline-live.ts", "utf8"))

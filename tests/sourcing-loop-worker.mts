@@ -13,12 +13,29 @@ import {
   createLoopRpcClient,
   createReplyClassificationModelClient,
   handleAriaJob,
+  parseModelJsonObject,
   runSourcingLoopForever,
   runSourcingLoopTick,
 } from "../scripts/sourcing-loop-worker.mjs";
 
 const WORKSPACE_ID = "51111111-1111-4111-8111-111111111111";
 const LEASE_ID = "61111111-1111-4111-8111-111111111111";
+
+test("parseModelJsonObject unwraps markdown fences and prose prefixes", () => {
+  const payload = {
+    intent: "INTERESTED",
+    confidence: 0.9,
+    reasoning: "ok",
+    suggestedAction: "book",
+    draftResponse: "hi",
+  };
+  assert.deepEqual(
+    parseModelJsonObject("```json\n" + JSON.stringify(payload) + "\n```"),
+    payload,
+  );
+  assert.equal(parseModelJsonObject("Sure!\n" + JSON.stringify(payload)).intent, "INTERESTED");
+  assert.equal(parseModelJsonObject("not json"), null);
+});
 
 function job(kind: string, payload: Record<string, unknown>) {
   return {
@@ -821,13 +838,14 @@ test("inbound_classify uses classify-inbound-reply cron vault path when modelCli
       return new Response(
         JSON.stringify({
           ok: true,
-          text: JSON.stringify({
+          // Production loop_llm often wraps JSON in markdown fences.
+          text: "```json\n" + JSON.stringify({
             intent: "INTERESTED",
             confidence: 0.91,
             reasoning: "Live vault classify",
             suggestedAction: "Queue pre-call",
             draftResponse: "Thanks — a Mantu recruiter will follow up.",
-          }),
+          }) + "\n```",
           via: "loop_llm",
         }),
         { status: 200, headers: { "content-type": "application/json" } },
