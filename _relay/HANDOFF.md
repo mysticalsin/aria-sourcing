@@ -1,62 +1,59 @@
 ---
 project: MSourcing / ARIA
-shift: 415
+shift: 416
 agent: cursor-cloud
-updated: 2026-08-29T22:45Z
-status: tip-ready-ops-partial-graph-hold
+updated: 2026-08-29T22:50Z
+status: hold-channels
 ---
 
-# Handoff — Shift 415
+# Handoff — Shift 416
 
 ## Current state
 
-- **Branch / PR:** `cursor/rei-autopilot-send-b91d` → **PR #40** (git tip may be relay-ahead of live image)
-- **Live Fly image:** `b0cf56a` — `/api/ready` **ok:true**, migration **0079**, `components.migration:true`
-- **Bootstrap:** 0077 DROP-before-recreate fixed; **0076–0079** applied (`[migrate] complete`)
-- **Ops wired this shift:**
-  - Admin `autopilot_enabled=true` (user `521a53af-…`)
-  - `set_sourcing_loop_controls` → kill off, intake/sourcing/sequences **on**
-  - Fly secret `ARIA_LOOP_WORKSPACE_IDS=0d179005-e8e2-4b99-8b9a-b67453348005` **Deployed** (verified on loop machine)
-- **Seats:** 6× Microsoft Graph (`domain_verified=false`, Graph secrets absent) + 1× LinkedIn Assisted Manual — **no HeyReach seat**
-- **Dropzones:** Microsoft/Azure/LLM owner files **absent** → Graph = **HOLD**
-- **Autopilot E2E:** still **unproven** (no live mailbox / no HeyReach seat / no inbound→auto-send receipt)
+- **PR #40** / branch `cursor/rei-autopilot-send-b91d`
+- **Live:** `b0cf56a` · `/api/ready` **ok** · migration **0079**
+- **Autopilot ops:** entitled + Sequences armed + `ARIA_LOOP_WORKSPACE_IDS=0d179005-…` · loop `autopilotSweep=ok` (1 workspace)
+- **Sweep cron:** `POST /api/cron/autopilot-send-outreach` → `{ok:true,sent:0,results:[]}` (no ready drafts)
+- **Channels blocked (HOLD):**
+  1. Graph dropzones **absent** (`/tmp/owner-azure-app-id`, `owner-microsoft.env`, `owner-llm.env`) — 6 Graph seats all `mode=mock`, `domain_verified=false`
+  2. HeyReach API key in `/tmp/aria-e2e-heyreach-api-key` **CheckApiKey=200** but **0 LinkedIn accounts** + **0 campaigns** — cannot Create campaign (needs LinkedInAccountIds)
+  3. No Meta/WhatsApp env; no Resend/SendGrid secrets
+  4. Only live LI seat = Assisted Manual (not Autopilot send)
+  5. `settings.heyreach` empty; outreach ready-sweep = `[]`
 
 ## Done this shift
 
-1. Fixed `0077_heyreach_inbound_route.sql` DROP FUNCTION; redeployed; ready green
-2. Entitled admin Autopilot + armed Sequences via admin JWT RPCs
-3. Set `ARIA_LOOP_WORKSPACE_IDS` on Fly
-4. STATUS.md + HANDOFF updated; PR #40 body refreshed
+1. Confirmed ready still green; Autopilot sweep live after LOOP IDs
+2. Probed HeyReach Public API + MCP — key valid, tenant empty of LI senders
+3. Confirmed no alternate email/WA path on Fly
 
-## Blockers
+## Blockers (owner / external)
 
-1. Graph dropzones empty → cannot heal Graph mailbox / live Teams book (HOLD)
-2. No HeyReach seat + Settings campaign — LI Autopilot cannot send
-3. Graph seats `domain_verified=false` without live Graph → email Autopilot fail-closed
-4. Full Autopilot E2E receipt still required
+1. Drop Graph/M365 secrets into dropzones (or live Graph app) → goLive mailbox → email Autopilot
+2. Connect a LinkedIn sender in HeyReach portal → create campaign with `{message}` → Settings Save + HeyReach seat live
+3. Optional: Meta WA Cloud template for WhatsApp Autopilot
+4. Produce critics-green ready drafts (intake/source/draft) then prove auto-send receipt
 
 ## Next steps
 
 ```bash
-curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
 ls /tmp/owner-azure-app-id /tmp/owner-microsoft.env /tmp/owner-llm.env
-# missing → Graph HOLD; do not chase Entra
-# Owner: Settings → HeyReach seat + Save API/campaign; or drop Graph secrets for email path
-# Prove: inbound → critics-green draft → autopilot-send queue → provider accepted
+# missing → HOLD (do not chase Entra)
+# After Graph OR HeyReach LI account+campaign present:
+curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
+# Prove Autopilot: ready draft → sweep sent>0 or provider receipt
 ```
 
 ## Decisions made (don't relitigate)
 
 - Never reintroduce full `state` on `read_workspace_state_for_loop`
-- Autopilot fail-closed: ready + live critics + Sequences + entitlement
-- HOLD when Microsoft dropzones empty
-- Interviewer prep must never send/Autopilot to candidate email
-- Never deploy with confirm whose SHA ≠ `git rev-parse HEAD`
-- 0077 must DROP before recreate when removing parameter defaults
-- Workspace UUID for Mantu admin loop: `0d179005-e8e2-4b99-8b9a-b67453348005`
+- Autopilot fail-closed: ready + critics + Sequences + entitlement
+- HOLD when Microsoft dropzones empty — no Entra chase
+- HeyReach CheckApiKey alone ≠ delivery-ready (needs campaignId + LI account)
+- Workspace `0d179005-e8e2-4b99-8b9a-b67453348005`
 
 ## Watch out
 
-- Do not mark goal complete until Autopilot E2E evidence (ready green ≠ E2E)
-- Quiet HOLD: if follow-up is only empty Graph dropzone check → reply HOLD and stop
-- Assisted Manual LinkedIn ≠ Autopilot send path
+- Goal incomplete until Autopilot **auto-send** E2E (not just ready/sweep ok)
+- Quiet HOLD: empty Graph dropzones only → reply HOLD and stop
+- Do not deploy FAKE-QUARANTINED microsoft env
