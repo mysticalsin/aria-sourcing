@@ -265,6 +265,13 @@ ok(
 );
 ok("connections ensure_graph_webhook", /ensure_graph_webhook/.test(connectionsRoute));
 ok("connections ensureGraphMailSubscription", /ensureGraphMailSubscription/.test(connectionsRoute));
+ok("connections send_graph_need_probe", /send_graph_need_probe/.test(connectionsRoute));
+ok(
+  "send_graph_need_probe uses sendGraphJsonMail self-delivery",
+  /sendGraphJsonMail/.test(connectionsRoute)
+    && /E2E Graph Push/.test(connectionsRoute)
+    && /seat\.mode !== "live"/.test(connectionsRoute),
+);
 ok(
   "ensure_graph_webhook promotes seat to live after inbound + Graph sub",
   /promoteMicrosoftGraphSeatLive/.test(connectionsRoute)

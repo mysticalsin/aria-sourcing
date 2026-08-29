@@ -20,9 +20,11 @@ import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit"
 import { can } from "@/lib/rbac";
 import { getServerSupabase, getServiceSupabase, requireAdmin } from "@/lib/supabase/server";
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
-import type { Role } from "@/lib/types";
+import type { EmailConnection, Role } from "@/lib/types";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { safeLog } from "@/lib/log-redact";
+import { decryptSecret, encryptSecret } from "@/lib/crypto-secrets";
+import { sendGraphJsonMail } from "@/lib/email-oauth";
 
 export const dynamic = "force-dynamic";
 
@@ -48,11 +50,17 @@ const EnsureGraphWebhookSchema = z.object({
   connectionId: z.string().uuid(),
 });
 
+const SendGraphNeedProbeSchema = z.object({
+  action: z.literal("send_graph_need_probe"),
+  connectionId: z.string().uuid(),
+});
+
 const BodySchema = z.discriminatedUnion("action", [
   EnsureConnectSchema,
   RegisterInboundSchema,
   RegisterHmacMailboxSchema,
   EnsureGraphWebhookSchema,
+  SendGraphNeedProbeSchema,
 ]);
 
 type ConnRow = {
@@ -79,6 +87,7 @@ type RouteRow = {
  * POST register_inbound upserts inbound_mailbox_routes for a connected seat.
  * POST register_hmac_mailbox registers HMAC intake/reply routing without OAuth.
  * POST ensure_graph_webhook creates or renews a Microsoft Graph mail push subscription.
+ * POST send_graph_need_probe self-sends a hiring-need email via Graph (live seat + active sub only).
  */
 export async function GET(req: NextRequest) {
   const prodBlock = prodFailClosed();
@@ -275,6 +284,9 @@ export async function POST(req: NextRequest) {
   }
   if (body.action === "ensure_graph_webhook") {
     return ensureGraphWebhook(wid as string, body.connectionId);
+  }
+  if (body.action === "send_graph_need_probe") {
+    return sendGraphNeedProbe(wid as string, body.connectionId);
   }
   if (body.action === "register_hmac_mailbox") {
     return registerHmacMailbox(supabase, wid as string, body.mailbox, body.purpose ?? "intake");
@@ -571,5 +583,144 @@ async function ensureGraphWebhook(workspaceId: string, connectionId: string) {
           : result.mode === "recreated"
             ? "Graph webhook subscription recreated; seat promoted to live."
             : "Graph webhook subscription renewed; seat promoted to live.",
+  });
+}
+
+/**
+ * Admin-only: send a fixed hiring-need template to the connected Outlook mailbox
+ * via Graph me/sendMail so a real Inbox message triggers push → hiring_need ingest.
+ * Never accepts arbitrary content; to is forced to connection.account_email.
+ */
+async function sendGraphNeedProbe(workspaceId: string, connectionId: string) {
+  const svc = getServiceSupabase();
+  if (!svc) {
+    return NextResponse.json({ ok: false, error: "Service client unavailable." }, { status: 500 });
+  }
+
+  const { data: row, error: connErr } = await svc
+    .from("email_connections")
+    .select(
+      "id, workspace_id, seat_id, provider, account_email, access_token, refresh_token, expires_at, scope, updated_at",
+    )
+    .eq("id", connectionId)
+    .maybeSingle();
+  if (connErr) {
+    return NextResponse.json({ ok: false, error: "Failed to look up email connection." }, { status: 500 });
+  }
+  if (!row || row.workspace_id !== workspaceId) {
+    return NextResponse.json({ ok: false, error: "Connection not found in this workspace." }, { status: 404 });
+  }
+  if (row.provider !== "Microsoft Graph") {
+    return NextResponse.json(
+      { ok: false, error: "Graph need probe applies to Microsoft Graph (Outlook) mailboxes only." },
+      { status: 400 },
+    );
+  }
+  if (!row.refresh_token || !row.seat_id) {
+    return NextResponse.json(
+      { ok: false, error: "Outlook connection missing refresh token or seat — reconnect Outlook." },
+      { status: 409 },
+    );
+  }
+
+  const { data: seat } = await svc
+    .from("agent_seats")
+    .select("id, mode, status")
+    .eq("id", row.seat_id)
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+  if (!seat || seat.mode !== "live") {
+    return NextResponse.json(
+      { ok: false, error: "Graph need probe requires seat.mode=live (Connect Outlook + Enable webhook)." },
+      { status: 409 },
+    );
+  }
+
+  const graphSubs = await listGraphSubscriptionsForWorkspace(workspaceId);
+  const sub = graphSubs.find((s) => s.connectionId === row.id && s.status === "active");
+  if (!sub) {
+    return NextResponse.json(
+      { ok: false, error: "No active Graph mail subscription — Enable webhook under Connect email." },
+      { status: 409 },
+    );
+  }
+
+  const mailbox = normalizeMailboxAddress(String(row.account_email ?? ""));
+  if (!mailbox) {
+    return NextResponse.json({ ok: false, error: "Outlook connection missing mailbox address." }, { status: 409 });
+  }
+  const { data: route } = await svc
+    .from("inbound_mailbox_routes")
+    .select("id, active, purpose")
+    .eq("workspace_id", workspaceId)
+    .eq("connection_id", row.id)
+    .eq("active", true)
+    .maybeSingle();
+  if (!route) {
+    return NextResponse.json(
+      { ok: false, error: "No active inbound mailbox route for this Outlook connection." },
+      { status: 409 },
+    );
+  }
+
+  const ready = await assertMicrosoftGraphSeatLiveReady(svc, {
+    workspaceId,
+    seatId: row.seat_id,
+    provider: "Microsoft Graph",
+  });
+  if (!ready.ok) {
+    return NextResponse.json({ ok: false, error: ready.reason }, { status: 503 });
+  }
+
+  const connection: EmailConnection = {
+    id: row.id,
+    seatId: row.seat_id,
+    provider: "Microsoft Graph",
+    accountEmail: row.account_email,
+    accessToken: row.access_token ? decryptSecret(row.access_token) : "",
+    refreshToken: row.refresh_token ? decryptSecret(row.refresh_token) : null,
+    expiresAt: row.expires_at,
+    scope: row.scope ?? "",
+    connectedAt: row.updated_at ?? new Date().toISOString(),
+    updatedAt: row.updated_at ?? new Date().toISOString(),
+  };
+
+  const probeId = `e2e-graph-${Date.now().toString(36)}`;
+  const subject = `This need is now ACTIVE: E2E Graph Push ${probeId}`;
+  const body = [
+    "Recruiter: E2E Graph Autopilot",
+    `Role: E2E Graph Push ${probeId}`,
+    "Location: London, UK",
+    "Type: Permanent",
+    "Skills: TypeScript, React, Node.js",
+    "Experience: 5+ years",
+  ].join("\n");
+
+  const priorAccess = connection.accessToken;
+  const outcome = await sendGraphJsonMail(connection, { to: mailbox, subject, body });
+  if (connection.accessToken && connection.accessToken !== priorAccess) {
+    await svc
+      .from("email_connections")
+      .update({
+        access_token: encryptSecret(connection.accessToken),
+        expires_at: connection.expiresAt,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", row.id);
+  }
+  if (outcome.status !== "sent") {
+    return NextResponse.json(
+      { ok: false, error: outcome.detail, deliveryState: outcome.deliveryState },
+      { status: 502 },
+    );
+  }
+
+  return NextResponse.json({
+    ok: true,
+    connectionId: row.id,
+    to: mailbox,
+    probeId,
+    subject,
+    sentAt: new Date().toISOString(),
   });
 }

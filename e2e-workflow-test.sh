@@ -791,6 +791,91 @@ elif grep -q 'subscriptionId: graphSubscription.graphSubscriptionId' src/app/api
 else
   fail "connections API must expose graphSubscription.subscriptionId for live-sub fail-closed E2E."
 fi
+
+# ===========================================================================
+step "2d+) Graph push → hiring_need ingest (live seat + Mail.Send self-mail)"
+# ===========================================================================
+# Only when Outlook is live with an active Graph subscription. Proves real
+# Inbox message → Graph notification → hiring_need (HMAC step 2b is separate).
+LIVE_GRAPH_PUSH_CONN=$(jq -r '
+  [(.connections // [])[]
+    | select(
+        (.provider // "") == "Microsoft Graph"
+        and (.hasRefreshToken == true)
+        and ((.graphSubscription.active // false) == true)
+        and ((.seatMode // "") == "live")
+        and ((.inboundRoute.active // false) == true)
+        and ((.id // "") | length > 0)
+      )
+    | {id, lastNotificationAt:(.graphSubscription.lastNotificationAt // null)}
+  ] | .[0] // empty
+' "$WORK/conn_snapshot.json" 2>/dev/null || true)
+if [ -n "$LIVE_GRAPH_PUSH_CONN" ] && [ "$LIVE_GRAPH_PUSH_CONN" != "null" ]; then
+  GRAPH_PUSH_ID=$(jq -r '.id // empty' <<<"$LIVE_GRAPH_PUSH_CONN")
+  GRAPH_PUSH_LAST0=$(jq -r '.lastNotificationAt // empty' <<<"$LIVE_GRAPH_PUSH_CONN")
+  if [ -z "$GRAPH_PUSH_ID" ]; then
+    fail "Live Graph push gate matched but connection id empty."
+  fi
+  jq -nc --arg id "$GRAPH_PUSH_ID" '{action:"send_graph_need_probe",connectionId:$id}' > "$WORK/graph_need_probe.json"
+  api POST "$APP_URL/api/email/connections" "$WORK/graph_need_probe.json"
+  GRAPH_PROBE_OK=$(jq -r '.ok // false' "$RESP")
+  GRAPH_PROBE_ID=$(jq -r '.probeId // empty' "$RESP")
+  GRAPH_PROBE_SUBJ=$(jq -r '.subject // empty' "$RESP")
+  if [ "$HTTP" != "200" ] || [ "$GRAPH_PROBE_OK" != "true" ] || [ -z "$GRAPH_PROBE_ID" ]; then
+    fail "send_graph_need_probe failed (HTTP $HTTP): $(head -c 240 "$RESP")"
+  fi
+  pass "Graph Mail.Send need probe accepted (probeId=$GRAPH_PROBE_ID)."
+  GRAPH_NOTIFY_OK=0
+  info "Polling connections for Graph lastNotificationAt advance (push ingest)…"
+  for _gpoll in $(seq 1 48); do
+    api GET "$APP_URL/api/email/connections"
+    LAST_NOW=$(jq -r --arg id "$GRAPH_PUSH_ID" '
+      [.connections // [] | .[] | select(.id == $id) | .graphSubscription.lastNotificationAt // empty] | .[0] // empty
+    ' "$RESP" 2>/dev/null || true)
+    if [ -n "$LAST_NOW" ] && { [ -z "$GRAPH_PUSH_LAST0" ] || [ "$LAST_NOW" != "$GRAPH_PUSH_LAST0" ]; }; then
+      # Prefer strict advance when prior timestamp existed.
+      if [ -z "$GRAPH_PUSH_LAST0" ] || [[ "$LAST_NOW" > "$GRAPH_PUSH_LAST0" ]]; then
+        GRAPH_NOTIFY_OK=1
+        break
+      fi
+    fi
+    sleep 5
+  done
+  if [ "$GRAPH_NOTIFY_OK" = "1" ]; then
+    pass "Graph push notified (lastNotificationAt advanced after send_graph_need_probe)."
+  else
+    fail "Graph Mail.Send probe sent but lastNotificationAt did not advance within ~240s (subscription / Inbox delivery)."
+  fi
+  GRAPH_TITLE="E2E Graph Push ${GRAPH_PROBE_ID}"
+  GRAPH_CAMP_OK=0
+  info "Polling workspace_state for Graph push campaign title matching '${GRAPH_TITLE}'…"
+  for _gpoll2 in $(seq 1 36); do
+    curl -sS -m 20 -o "$WORK/ws_graph_push.json" \
+      "$KONG_URL/rest/v1/workspace_state?select=state&limit=1" \
+      -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ACCESS_TOKEN" \
+      -H 'Accept: application/json' >/dev/null 2>&1 || true
+    FOUND_G=$(jq -r --arg t "$GRAPH_TITLE" '
+      (.[0].state.campaigns // [])
+      | map(select((.jobAnalysis.title // .title // "") | test($t; "i")))
+      | length
+    ' "$WORK/ws_graph_push.json" 2>/dev/null || echo 0)
+    if [ "${FOUND_G:-0}" -gt 0 ] 2>/dev/null; then
+      GRAPH_CAMP_OK=1
+      break
+    fi
+    sleep 5
+  done
+  if [ "$GRAPH_CAMP_OK" = "1" ]; then
+    pass "Graph push → hiring_need campaign materialized (title match '${GRAPH_TITLE}')."
+  else
+    fail "Graph push notified but no campaign for '${GRAPH_TITLE}' in workspace_state within ~180s (subject was '${GRAPH_PROBE_SUBJ}')."
+  fi
+elif grep -q 'send_graph_need_probe' src/app/api/email/connections/route.ts \
+  && grep -q 'sendGraphJsonMail' src/lib/email-oauth.ts; then
+  info "No live Graph seat+webhook — skipped Graph push hiring-need Mail.Send proof (HMAC step 2b still covers enqueue)."
+else
+  fail "send_graph_need_probe / sendGraphJsonMail missing — Graph push hiring-need proof cannot run when seat is live."
+fi
 # email/test hiring_need_handler: ready without Graph (HMAC path). Assert when any mailbox seat exists.
 TEST_SEAT=$(jq -r '
   ([.connections // [] | .[] | .seatId // empty]

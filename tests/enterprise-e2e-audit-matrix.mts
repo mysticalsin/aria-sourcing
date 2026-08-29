@@ -484,10 +484,14 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /unknown_subscription/.test(script)
         && /client_state_mismatch/.test(script)
         && /graphSubscription\.subscriptionId/.test(script)
+        && /send_graph_need_probe/.test(script)
+        && /Graph push → hiring_need/.test(script)
         && /microsoft-graph/.test(script)
         && /subscriptionId: graphSubscription\.graphSubscriptionId/.test(
           readFileSync("src/app/api/email/connections/route.ts", "utf8"),
         )
+        && /sendGraphJsonMail/.test(readFileSync("src/lib/email-oauth.ts", "utf8"))
+        && /send_graph_need_probe/.test(readFileSync("src/app/api/email/connections/route.ts", "utf8"))
         && /Polling workspace_state for campaign title/.test(script)
         && /Loop worker materialized campaign/.test(script)
         && /set_sourcing_loop_controls/.test(script)

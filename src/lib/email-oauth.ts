@@ -114,6 +114,69 @@ export async function sendViaMicrosoftGraph(
 }
 
 /**
+ * Admin Graph self-mail probe (JSON me/sendMail) — no List-Unsubscribe.
+ * Used to prove Outlook Inbox → Graph push → hiring_need ingest without forging webhooks.
+ */
+export async function sendGraphJsonMail(
+  connection: EmailConnection,
+  opts: { to: string; subject: string; body: string },
+): Promise<OAuthSendOutcome> {
+  const provider = connection.provider;
+  if (provider !== "Microsoft Graph") {
+    return { status: "error", deliveryState: "not-sent", provider, detail: "sendGraphJsonMail requires Microsoft Graph." };
+  }
+  const to = opts.to.trim();
+  const subject = opts.subject.trim();
+  const body = opts.body.trim();
+  if (!to || !subject || !body) {
+    return { status: "error", deliveryState: "not-sent", provider, detail: "to/subject/body required." };
+  }
+  const token = await ensureAccessToken(connection);
+  if (!token) {
+    return { status: "error", deliveryState: "not-sent", provider, detail: "Unable to refresh Microsoft access token." };
+  }
+  try {
+    const res = await fetch("https://graph.microsoft.com/v1.0/me/sendMail", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: {
+          subject,
+          body: { contentType: "Text", content: body },
+          toRecipients: [{ emailAddress: { address: to } }],
+        },
+        saveToSentItems: true,
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      console.error("Microsoft Graph JSON sendMail error", {
+        status: res.status,
+        body: redactSecrets(redactEmail(txt.slice(0, 500))),
+      });
+      return {
+        status: "error",
+        deliveryState: classifyFailedHttpDeliveryState(res.status),
+        provider,
+        detail: `Microsoft Graph sendMail error ${res.status}.`,
+      };
+    }
+    return { status: "sent", deliveryState: "accepted", provider, detail: "Sent via Microsoft Graph JSON sendMail." };
+  } catch {
+    return {
+      status: "error",
+      deliveryState: "unknown",
+      provider,
+      detail: "Microsoft Graph JSON sendMail transport failure: delivery state unknown.",
+    };
+  }
+}
+
+/**
  * Return a valid access token, refreshing if needed.
  * Returns null if refresh is unavailable or fails.
  *
