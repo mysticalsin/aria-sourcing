@@ -49,11 +49,20 @@ Idle loop ticks (~30s) **do not** call Graph or the classifier. Empty daily
    **Register inbound** on the connection card.
 3. Point provider inbound / Graph subscription adapter at  
    `https://<host>/api/webhooks/email-inbound`.
-4. Flip workspace `sourcing_loop_controls`: `kill_switch=false`, `intake_enabled=true`
-   only after migrations proven (see `_relay/issues-open.md` A-1).
+4. Flip workspace `sourcing_loop_controls`: `kill_switch=false`,
+   `sequences_enabled=true`, `intake_enabled=true` only after migrations proven
+   (see `_relay/issues-open.md` A-1). Autopilot mint/send refuses when Sequences
+   are disarmed.
 5. Entitled operators: `profiles.autopilot_enabled=true` (Settings → Access & roles).
-6. Run Fly loop process with `ARIA_LOOP_KILL_SWITCH=false`.
-7. Validate: Settings → Integrations → **Validate** on the mailbox (token + profile + route).
+6. Run Fly loop process with `ARIA_LOOP_KILL_SWITCH=false` and set
+   `ARIA_LOOP_WORKSPACE_IDS` to the workspace UUID(s) that should receive the
+   ready-draft Autopilot sweep (empty → sweep is an unconfigured no-op).
+7. LinkedIn Autopilot: **Settings → Integrations → LinkedIn stack → Save HeyReach
+   API** (API key + campaign id) and a live HeyReach seat. Campaign sequence steps
+   should reference `{message}` when inbox SendMessage is unavailable.
+8. Validate: Settings → Integrations → **Validate** on the mailbox (token + profile + route).
+
+SMS is never Autopilot-queued (`sms_disabled` / human review only).
 
 ## Payload shape
 

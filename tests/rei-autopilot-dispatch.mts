@@ -39,6 +39,8 @@ function makeSvc(opts: {
   waSender?: Row | null;
   /** Zero-param approved templates */
   waTemplates?: Row[];
+  /** When set, Graph domain_verified heal update fails */
+  healError?: string;
 }) {
   const rpcs: { name: string; args: Row }[] = [];
   const seats = opts.seats ?? [
@@ -73,6 +75,10 @@ function makeSvc(opts: {
         const upd: Record<string, unknown> = {};
         upd.eq = () => ({
           then(resolve: (v: unknown) => void) {
+            if (opts.healError) {
+              resolve({ data: null, error: { message: opts.healError, code: "42501" } });
+              return;
+            }
             resolve({ data: null, error: null });
           },
         });
@@ -373,6 +379,33 @@ const baseInput = {
   ok(
     "Graph live mailbox heals domain_verified and queues (Approve→Send parity)",
     r.status === "queued" && rpcs.some((c) => c.name === "enqueue_email_outbound_service"),
+  );
+}
+
+{
+  const { svc, rpcs } = makeSvc({
+    healError: "permission denied",
+    seats: [
+      {
+        id: "seat-mail-heal-fail",
+        provider: "Microsoft Graph",
+        status: "active",
+        mode: "live",
+        domain_verified: false,
+        operator_email: "recruiter@example.com",
+        connected_account: "recruiter@example.com",
+      },
+    ],
+  });
+  const r = await runAutopilotOutreachDispatch(svc, baseInput);
+  ok(
+    "Graph domain_verified heal failure → no_live_mailbox (no orphan queue)",
+    r.status === "skipped" && "reason" in r && r.reason === "no_live_mailbox",
+  );
+  ok(
+    "heal failure → no mint/enqueue",
+    !rpcs.some((c) => c.name === "mint_autopilot_critics_approval")
+      && !rpcs.some((c) => c.name === "enqueue_email_outbound_service"),
   );
 }
 

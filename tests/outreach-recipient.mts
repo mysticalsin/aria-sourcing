@@ -63,6 +63,16 @@ ok(
   "Autopilot mailbox gate aligns with Graph live-ready (not vanity DNS only)",
   /mailboxSeatReadyForAutopilot/.test(dispatch) && /Microsoft Graph/.test(dispatch),
 );
+ok(
+  "Graph domain_verified heal fails closed on Supabase error",
+  /healErr/.test(dispatch) && /liveMailbox = undefined/.test(dispatch),
+);
+
+const store = await import("node:fs").then((fs) => fs.readFileSync("src/lib/store.ts", "utf8"));
+ok(
+  "Approve→Send uses outreachDispatchRecipient for Email recipient",
+  /sendApprovedOutreach[\s\S]{0,4000}outreachDispatchRecipient\(msg, candidate\)/.test(store),
+);
 
 console.log(`RESULT outreach-recipient: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

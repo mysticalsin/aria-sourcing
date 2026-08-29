@@ -3006,6 +3006,18 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       if (channel === "LinkedIn" && !(candidate.linkedinUrl ?? "").trim()) {
         return { ok: false, error: "No LinkedIn profile URL on file for this candidate." };
       }
+      // Same recipient authority as Approve / Autopilot — interviewer prep must not
+      // re-scope to candidate.email (approval-mismatch / wrong inbox).
+      const recipient = outreachDispatchRecipient(msg, candidate).trim();
+      if (!recipient) {
+        return {
+          ok: false,
+          error:
+            msg.prepPurpose === "interviewer"
+              ? "Interviewer prep has no interviewer email. Re-book with a live Outlook seat or set recipientOverride."
+              : "No recipient on file for this message.",
+        };
+      }
       let out: { status?: string; detail?: string };
       try {
         const res = await workspaceFetch("/api/outreach/send", {
@@ -3015,13 +3027,14 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
             messageId,
             seatId: seat.id,
             candidateId: candidate.id,
-            candidateEmail: candidate.email,
-            profileUrl: candidate.linkedinUrl,
+            candidateEmail: channel === "Email" ? recipient : candidate.email,
+            profileUrl: channel === "LinkedIn" ? recipient : candidate.linkedinUrl,
             campaignId: msg.campaignId,
             subject: msg.subject,
             body: msg.body,
             channel,
-            phone: candidate.phone,
+            phone:
+              channel === "WhatsApp" || channel === "SMS" ? recipient : candidate.phone,
             confirmLive: true,
           }),
         });

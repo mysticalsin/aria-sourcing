@@ -84,7 +84,15 @@ Legacy reply-only payloads (`routeKey`, `providerId`, `fromProfileUrl`, `body`) 
 
 ## Ops enablement
 
-1. Apply migrations `0058` + `0059`.
+1. Apply migrations `0058` + `0059` (+ `0077` for HeyReach inbound routes when Autopilot LI replies matter).
 2. Connect seat; copy `route_key` to vendor.
-3. Optional: `LINKEDIN_VENDOR_*` for automated wire.
-4. Use **Simulate event** in Settings (admin) to prove S5/S10 without a vendor.
+3. **Autopilot LinkedIn (preferred):** Settings → Integrations → **LinkedIn outreach stack** →
+   paste HeyReach API key + campaign id → **Save HeyReach API**, then mark a
+   **HeyReach** seat live. Aria prefers inbox `SendMessage`; otherwise
+   `AddLeadsToCampaignV2` with custom field `{message}` (configure the HeyReach
+   campaign sequence to use `{message}`).
+4. Optional Fly env fallback: `HEYREACH_API_KEY` + `HEYREACH_CAMPAIGN_ID` (Settings
+   Save is enough for most tenants — no Fly CLI required).
+5. Optional: `LINKEDIN_VENDOR_*` for automated wire when not using HeyReach.
+6. Use **Simulate event** in Settings (admin) to prove S5/S10 without a vendor.
+7. Entitlement: `profiles.autopilot_enabled` + `sourcing_loop_controls.sequences_enabled=true`.

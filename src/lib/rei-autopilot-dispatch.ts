@@ -87,20 +87,26 @@ async function loadAutopilotContext(svc: ServiceClient, workspaceId: string) {
     .eq("status", "active");
 
   const rows = (seats.data ?? []) as SeatRow[];
-  const liveMailbox = rows.find((s) => mailboxSeatReadyForAutopilot(s));
+  let liveMailbox = rows.find((s) => mailboxSeatReadyForAutopilot(s));
   // Mirror Approve→Send: heal Graph domain_verified so claim_* accepts the seat.
   if (
     liveMailbox
     && String(liveMailbox.provider) === "Microsoft Graph"
     && liveMailbox.domain_verified !== true
   ) {
-    try {
-      await svc.from("agent_seats").update({ domain_verified: true }).eq("id", liveMailbox.id);
-      liveMailbox.domain_verified = true;
-    } catch (err) {
+    const { error: healErr } = await svc
+      .from("agent_seats")
+      .update({ domain_verified: true })
+      .eq("id", liveMailbox.id);
+    if (healErr) {
       safeLog("autopilot Graph domain_verified heal failed", {
-        message: err instanceof Error ? err.message : "unknown",
+        message: healErr.message,
+        code: healErr.code,
       });
+      // Fail closed — claim_* still requires DB domain_verified; do not mint/enqueue.
+      liveMailbox = undefined;
+    } else {
+      liveMailbox.domain_verified = true;
     }
   }
   const liveWhatsApp = rows.find(
