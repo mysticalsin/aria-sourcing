@@ -1133,6 +1133,127 @@ test("first_interview_book confirms live Teams when confirm cron returns created
   assert.equal(prep?.payload?.trigger, "create_booking");
 });
 
+test("first_interview_book soft-continues to dry-run when Graph seat missing", async () => {
+  const proposeCalls: string[] = [];
+  const { client } = rpcClient((name) => {
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: {}, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "apply_workspace_patch") {
+      return { data: { status: "applied" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+  stubWorkspaceAutopilotArmed(client as { from: (table?: string) => unknown });
+
+  await handleAriaJob(
+    job("first_interview_book", {
+      campaignId: "camp-soft-gap",
+      candidateId: "cand-soft-gap",
+      intent: "INTERESTED",
+    }),
+    {
+      client,
+      configuration: {
+        calendarConfirmUrl: new URL("https://worker.example.test/api/cron/confirm-calendar-book"),
+        calendarProposeUrl: new URL("https://worker.example.test/api/cron/propose-calendar-book"),
+        recruitingGraphUrl: new URL("https://worker.example.test/api/cron/recruiting-graph-stage"),
+        cronSecret: "s".repeat(32),
+      },
+      fetcher: async (url) => {
+        const href = String(url);
+        if (href.includes("confirm-calendar-book")) {
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              status: "no_live_graph_seat",
+              detail: "Connect Outlook",
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (href.includes("propose-calendar-book")) {
+          proposeCalls.push(href);
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              status: "proposed_dry_run",
+              startTime: "2026-08-28T10:00:00.000Z",
+              endTime: "2026-08-28T10:30:00.000Z",
+              claimId: null,
+              agenda: ["Intro"],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (href.includes("recruiting-graph-stage")) {
+          return new Response(
+            JSON.stringify({ ok: true, stage: "queued_for_approval", shortlistIds: [] }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        throw new Error(`unexpected fetch ${href}`);
+      },
+    },
+  );
+
+  assert.equal(proposeCalls.length, 1);
+});
+
+test("first_interview_book fails closed on confirm double_booked (no fake propose)", async () => {
+  const proposeCalls: string[] = [];
+  const { client } = rpcClient((name) => {
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: {}, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "fail_aria_job") return { data: true, error: null };
+    throw new Error(`unexpected rpc ${name}`);
+  });
+  stubWorkspaceAutopilotArmed(client as { from: (table?: string) => unknown });
+
+  await assert.rejects(
+    () =>
+      handleAriaJob(
+        job("first_interview_book", {
+          campaignId: "camp-dbl",
+          candidateId: "cand-dbl",
+          intent: "INTERESTED",
+        }),
+        {
+          client,
+          configuration: {
+            calendarConfirmUrl: new URL("https://worker.example.test/api/cron/confirm-calendar-book"),
+            calendarProposeUrl: new URL("https://worker.example.test/api/cron/propose-calendar-book"),
+            recruitingGraphUrl: new URL("https://worker.example.test/api/cron/recruiting-graph-stage"),
+            cronSecret: "s".repeat(32),
+          },
+          fetcher: async (url) => {
+            const href = String(url);
+            if (href.includes("confirm-calendar-book")) {
+              return new Response(
+                JSON.stringify({ ok: false, status: "double_booked" }),
+                { status: 409, headers: { "content-type": "application/json" } },
+              );
+            }
+            if (href.includes("propose-calendar-book")) {
+              proposeCalls.push(href);
+              throw new Error("propose must not run after double_booked");
+            }
+            throw new Error(`unexpected fetch ${href}`);
+          },
+        },
+      ),
+    (err: unknown) =>
+      err instanceof Error
+      && /calendar_confirm_double_booked/.test(err.message)
+      && (err as { retryable?: boolean }).retryable !== true,
+  );
+  assert.equal(proposeCalls.length, 0);
+});
+
 test("pre_call_propose dry-run enqueues first_interview_book without held claim", async () => {
   const patches: Array<Record<string, unknown>> = [];
   const { client } = rpcClient((name, args) => {

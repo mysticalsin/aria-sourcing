@@ -185,6 +185,20 @@ ok(
   })(),
 );
 ok(
+  "0079 Autopilot enqueue binds approval body_hash + scope (Email/WA/LinkedIn)",
+  (() => {
+    const mig79 = read("supabase/migrations/0079_autopilot_enqueue_approval_hash_bind.sql");
+    return (
+      mig79.length > 0 &&
+      noTxn(mig79) &&
+      (mig79.match(/reason', 'approval-mismatch'/g) ?? []).length === 3 &&
+      /enqueue_email_outbound_service/.test(mig79) &&
+      /enqueue_whatsapp_outbound_service/.test(mig79) &&
+      /enqueue_linkedin_outbound_service/.test(mig79)
+    );
+  })(),
+);
+ok(
   "loop event erasure has a narrow trigger-recognized redaction path",
   /redact_loop_events_for_candidate_erasure\(uuid, text, text\[\], text\[\]\)/i.test(dataProtection) &&
     /set_config\('aria\.candidate_erasure_loop_event_redaction', 'on', true\)/i.test(dataProtection) &&

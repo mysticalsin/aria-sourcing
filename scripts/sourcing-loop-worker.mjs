@@ -2404,7 +2404,8 @@ async function handleFirstInterviewBook(job, context) {
           prepSuccessors,
         );
       }
-      // Soft gaps (no live seat / insufficient scope) → dry-run propose fallback.
+      // Soft gaps (no live seat / insufficient scope / Autopilot off) → dry-run propose.
+      // Everything else fail-closed — do not fake a successful propose on claim conflicts.
       if (
         isRecord(confirm)
         && (confirm.status === "no_live_graph_seat"
@@ -2416,6 +2417,12 @@ async function handleFirstInterviewBook(job, context) {
         // fall through
       } else if (isRecord(confirm) && confirm.status === "reconciliation_required") {
         throw new HandlerError("calendar_confirm_reconciliation_required", false);
+      } else if (isRecord(confirm) && typeof confirm.status === "string" && confirm.status) {
+        const retryable =
+          confirm.status === "dependency_unavailable" || confirm.status === "seat_lookup_failed";
+        throw new HandlerError(`calendar_confirm_${confirm.status}`, retryable);
+      } else {
+        throw new HandlerError("calendar_confirm_unexpected", true);
       }
     }
   }

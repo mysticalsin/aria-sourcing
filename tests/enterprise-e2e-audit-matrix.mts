@@ -1397,6 +1397,26 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
+    requirement: "0079 Autopilot service enqueue binds approval body_hash + scope",
+    evidence: () => {
+      const mig79 = readFileSync(
+        "supabase/migrations/0079_autopilot_enqueue_approval_hash_bind.sql",
+        "utf8",
+      );
+      const hey = readFileSync("tests/heyreach-mcp.mts", "utf8");
+      const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
+      return (
+        existsSync("supabase/migrations/0079_autopilot_enqueue_approval_hash_bind.sql")
+        && (mig79.match(/reason', 'approval-mismatch'/g) ?? []).length === 3
+        && /enqueue_email_outbound_service/.test(mig79)
+        && /enqueue_whatsapp_outbound_service/.test(mig79)
+        && /enqueue_linkedin_outbound_service/.test(mig79)
+        && /0079 Autopilot enqueue binds body_hash/.test(hey)
+        && /calendar_confirm_unexpected/.test(worker)
+      );
+    },
+  },
+  {
     requirement: "M365 owner unblock runbook when az cannot create Entra apps",
     evidence: () => {
       const doc = readFileSync("_relay/M365-OWNER-UNBLOCK.md", "utf8");

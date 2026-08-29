@@ -71,10 +71,24 @@ const mig = readFileSync("supabase/migrations/0076_autopilot_critics_approval.sq
 ok("0076 email enqueue requires approval", /enqueue_email_outbound_service[\s\S]*approval-required/.test(mig));
 ok("0076 mint requires sequences armed", /mint_autopilot_critics_approval[\s\S]*sequences_not_armed/.test(mig));
 
+const mig79 = readFileSync("supabase/migrations/0079_autopilot_enqueue_approval_hash_bind.sql", "utf8");
+ok(
+  "0079 Autopilot enqueue binds body_hash + scope for Email/WA/LinkedIn",
+  (mig79.match(/reason', 'approval-mismatch'/g) ?? []).length === 3
+    && /'Email'/.test(mig79)
+    && /'WhatsApp'/.test(mig79)
+    && /'LinkedIn'/.test(mig79),
+);
+
 const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
 ok("worker only autopilots qualityStatus ready", /qualityStatus === "ready"/.test(worker) && /criticsPassed: true/.test(worker));
 ok("worker sweeps autopilot ready drafts", /sweepAutopilotReadyDrafts/.test(worker) && /sweep: true/.test(worker));
 ok("worker autopilots interview prep when critics green", /handleInterviewPrepSend[\s\S]*criticsPassed: true/.test(worker));
+ok(
+  "worker fail-closes confirm statuses outside soft Graph/ops allowlist",
+  /calendar_confirm_\$\{confirm\.status\}/.test(worker)
+    && /calendar_confirm_unexpected/.test(worker),
+);
 
 const cron = readFileSync("src/app/api/cron/autopilot-send-outreach/route.ts", "utf8");
 ok("cron requires criticsPassed === true", /criticsPassed: parsed\.data\.criticsPassed === true/.test(cron));

@@ -14,13 +14,14 @@ particular production deployment is healthy.
 - Local acceptance requires typecheck, lint, the full test chain, the isolated
   production build, the exact database restart test, and the database authority
   test.
-- Migrations through **0078** are in source: LinkedIn channel (`0054`), per-user
+- Migrations through **0079** are in source: LinkedIn channel (`0054`), per-user
   autopilot entitlements + template-bound approvals (`0055`), MCP allowlist
   authority (`0056`), pre-call/first-interview loop kinds (`0069`), enqueue
   switchboard fix (`0070`), post-booking interview prep (`0071`), workspace
   revision-only loop reads (`0074`), Autopilot critics mint/enqueue (`0076`),
-  HeyReach inbound routes (`0077`), and post-0074 loop slice RPCs +
-  `merge_outreach_message` (`0078`). Apply and prove on a Docker-enabled host
+  HeyReach inbound routes (`0077`), post-0074 loop slice RPCs +
+  `merge_outreach_message` (`0078`), and Autopilot enqueue body/scope hash bind
+  (`0079`). Apply and prove on a Docker-enabled host
   before lighting the loop kill switch.
 - Enterprise E2E audit matrix: [`_relay/e2e-audit-matrix.md`](../_relay/e2e-audit-matrix.md)
   (58/58 automated pins in `tests/enterprise-e2e-audit-matrix.mts`).
@@ -89,7 +90,7 @@ particular production deployment is healthy.
 5. Prove database, Auth, REST, Kong, `/api/ready`, migration identity, persistence,
    two restart cycles, backup restore, rollback, login, and controlled campaign
    behavior before real tenant or candidate use — including migrations `0053`–
-   `0078` on real Postgres (P-1) and the full gate at one SHA (P-2).
+   `0079` on real Postgres (P-1) and the full gate at one SHA (P-2).
 6. Owner: M365 Graph secrets + Entra SSO (E-2) + verified delivery domain (P-7).
 7. Run extended Fly E2E (`e2e-workflow-test.sh`) without PARTIAL flags when M365
    live.
@@ -97,6 +98,6 @@ particular production deployment is healthy.
 ## Live deployment note (2026-08-29)
 
 - **Production = Fly only** (`aria-mantu-app.fly.dev`).
-- **Live Fly:** `1665b39` · migration **0074** · tip Autopilot (0076/0077/0078) **not applied**.
+- **Live Fly:** `1665b39` · migration **0074** · tip Autopilot (0076–0079) **not applied**.
 - PR [#39](https://github.com/mysticalsin/aria-sourcing/pull/39) tracks REI Autopilot send + prep path.
-- **Remaining for full objective:** deploy tip + **0076–0078**, Settings HeyReach + Autopilot entitle + Sequences + `ARIA_LOOP_WORKSPACE_IDS`, M365 dropzones for live Teams book, full Fly E2E without PARTIAL flags.
+- **Remaining for full objective:** deploy tip + **0076–0079**, Settings HeyReach + Autopilot entitle + Sequences + `ARIA_LOOP_WORKSPACE_IDS`, M365 dropzones for live Teams book, full Fly E2E without PARTIAL flags.

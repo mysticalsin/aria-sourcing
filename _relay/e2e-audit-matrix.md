@@ -1,12 +1,12 @@
 # Enterprise E2E Audit Matrix
 
 **Date:** 2026-08-29  
-**Branch:** `cursor/enterprise-autopilot-b91d`  
-**PR:** [#36](https://github.com/mysticalsin/aria-sourcing/pull/36)  
+**Branch:** `cursor/rei-autopilot-send-b91d`  
+**PR:** [#39](https://github.com/mysticalsin/aria-sourcing/pull/39) (REI Autopilot); related [#36](https://github.com/mysticalsin/aria-sourcing/pull/36) enterprise lineage  
 **Production host:** `https://aria-mantu-app.fly.dev` (Fly only)  
 **Automated pin:** `tests/enterprise-e2e-audit-matrix.mts`  
-**Live Fly:** **`ff27e74`** · migration **0073** · `deploy_status=tip_ahead_docs` (app tip live; docs/scripts ahead)  
-**Fly E2E:** **57 pass, 0 fail** via `bash scripts/run-enterprise-e2e-partial.sh` (PARTIAL — Microsoft deferred only; live drafts + critics via Hermes/vault; no PARTIAL_LLM)
+**Live Fly:** **`1665b39`** · migration **0074** · tip Autopilot (**0076–0079**) not applied  
+**Fly E2E:** PARTIAL until Graph dropzones + tip deploy (see `production-readiness/STATUS.md`)
 
 Format: `| Section | Check | Status | Evidence | Fix owner |`
 
@@ -63,9 +63,9 @@ Format: `| Section | Check | Status | Evidence | Fix owner |`
 | Loop | Positive reply → `pre_call_propose` | pass | worker inbound_classify successors | — |
 | Loop | `pre_call_propose` → `first_interview_book` | pass | mig 0069/0070, propose-calendar-book cron | — |
 | Loop | Live book → `interview_prep_send` | pass | mig 0071, `/api/booking/interview-prep`, worker handler | — |
-| Loop | Prep drafts → approval → dispatch-outbound | pass | `interview-prep-dispatch` cron, dispatch spine | — |
+| Loop | Prep drafts → critics → Autopilot Email (or Needs Approval) | pass | `interview-prep-dispatch` + worker Autopilot when critics green | — |
 | Loop | Autopilot kill switch default inert | pass | `ARIA_LOOP_KILL_SWITCH` !== false | Tony (A-1) |
-| Loop | DB migrations 0053–0073 on Fly Postgres | pass | live migration **0073_hmac_inbound_mailbox_route.sql** | — |
+| Loop | DB migrations 0053–0079 in source; live Fly ≤0074 | partial | live **0074**; tip needs **0076–0079** apply | ops deploy |
 
 ---
 
