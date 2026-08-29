@@ -1218,7 +1218,10 @@ CAND_NAME=$(jq -r '(.name // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null
 CAND_TITLE=$(jq -r '(.currentTitle // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null)
 CAND_COMPANY=$(jq -r '(.currentCompany // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null)
 CAND_STACK=$(jq -r '[(.techStack // [])[] | select(type=="string" and .!="")] | .[0:6] | join(", ")' "$WORK/cand0.json" 2>/dev/null)
-CAND_ACTIVITY=$(jq -r '(.recentActivity // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null | head -c 280)
+# Empathy critics reject raw scraped counts ("60 public repos") — keep activity qualitative.
+CAND_ACTIVITY=$(jq -r '(.recentActivity // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null | head -c 280 \
+  | sed -E 's/[0-9]+[[:space:]]*(public[[:space:]]+)?(repos?|dépôts?|followers?|stars?)[^.,;]*/recent open-source work/Ig' \
+  | sed -E 's/[[:space:]]{2,}/ /g' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
 CAND_GH=$(jq -r '(.githubUrl // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null)
 if [ -z "$CAND_ID" ]; then
   if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E:-}" != "1" ] && [ "${E2E_SKIP_SOURCING:-0}" != "1" ]; then
