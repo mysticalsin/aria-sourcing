@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 385
 agent: cursor-cloud
-updated: 2026-08-29T15:09Z
+updated: 2026-08-29T15:20Z
 status: e2e-partial-awaiting-real-graph-secrets
 ---
 
@@ -11,31 +11,28 @@ status: e2e-partial-awaiting-real-graph-secrets
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** OPEN
-- **Live Fly:** **`fe01737`** / **0074** · tip docs-ahead · loop primary up
-- **PARTIAL E2E:** last **58/0/2** on `fe01737` — step 3c PASS · classifier=model · Hermes · critics live
-- **Graph:** `graph_secrets_missing=3` · owner-blocked (expected)
-- **Non-MS gap audit (this shift):** **nothing material** beyond Graph seat for strict E2E / verify-m365-ready FAIL after secrets + Connect Outlook
-- **Gate:** ignore Vercel rate-limit / GHA empty-steps
+- **Live Fly:** **`1665b39`** / **0074** · `tip_live` · loop primary **2863e10bd41e28**
+- **PARTIAL E2E:** see `/tmp/e2e-partial-1665b39.log` — expect step 3c PASS · `ARIA_ALLOW_PARTIAL_M365_E2E=1` only
+- **Graph:** still owner-blocked · both tenants `allowedToCreateApps=false`
+- **Non-M365 PASS path:** audit says nothing material beyond Graph seat
+- **Gate:** audit **66/66**
 
 ## Done this shift
 
-1. Audited strict E2E + verify-m365-ready for NON-Microsoft FAIL paths post Graph+Connect
-2. Confirmed PARTIAL 58/0/2 WARNs are Microsoft-only; LLM/Hermes/classifier/3c/HMAC already green
-3. Fly-env LLM probe `llm_auth_dead` (Kimi 401) is WARN-only — Hermes/vault already greens drafts+critics
+1. Confirmed create-for-rbac / BAW also noperm
+2. `encryptionReady` requires valid 32-byte base64 key (not junk)
+3. Reminted live **`1665b39`**
 
 ## Blockers
 
-- **Only remaining PASS blocker:** Entra admin Register `ARIA Mantu Graph (Fly)` + **Owners Add twalteur@amaris.com** + Grant admin consent  
-  → waiters auto-discover / dropzone → apply → Connect Outlook → `verify-m365-ready` → **RESULT: PASS**
+- Entra admin → Register + Owners Add Tony + Grant → waiters apply → Connect Outlook → `verify-m365-ready` → **RESULT: PASS**
 
 ## Next steps
 
 ```bash
 bash scripts/print-m365-owner-portal-checklist.sh
-# After Owners Add Tony (dropzone optional):
-bash scripts/probe-m365-unblock.sh --apply
-# Settings → Connect Outlook (mode=live)
-bash scripts/verify-m365-ready.sh   # RESULT: PASS
+bash scripts/probe-m365-unblock.sh --apply   # after Owners Add / dropzone
+bash scripts/verify-m365-ready.sh            # RESULT: PASS
 unset AGENT_PROVIDER AGENT_MODEL
 bash scripts/run-enterprise-e2e-partial.sh
 # expect step 3c PASS; RESULT: PARTIAL until live Graph seat
@@ -48,21 +45,14 @@ bash scripts/print-fly-golive-status.sh
 bash scripts/print-fly-deploy-confirm.sh
 curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
 # step 3c should show PASS when running PARTIAL E2E
-# Do NOT run verify-m365-ready until real Graph secrets + Connect Outlook.
 ```
 
 ## Decisions made (don't relitigate)
 
-- Production = Fly only; PR #36 only; ignore Vercel/GHA phantoms
-- Entra admin must register + Owners Add Tony; Graph perms fail-closed
-- Entra SSO + Fly-env LLM are WARN-only for Graph E2E PASS (Hermes/vault may green)
-- mkdir locks for waiters; shared configure+apply lock; release before seat wait
-- create-for-rbac is not an escape hatch under allowedToCreateApps=false
-- Non-MS strict-E2E paths already proven green under PARTIAL; do not redefine PASS around PARTIAL
+- Production = Fly only; PR #36 only; Entra admin + Owners Add Tony required
+- encryptionReady must match crypto-secrets valid key
 
 ## Watch out
 
 - HANDOFF must keep “expect step 3c PASS” / “step 3c should show” + `print-fly-deploy-confirm`
-- Never invent Microsoft secrets; reject synthetic app ids
-- Do not `pkill -f` waiter script names from a shell whose cmdline embeds those strings
-- Post-seat MS-only fail surfaces (not non-MS gaps): Graph push 2d+ notification advance; Teams joinUrl on confirmLive book
+- Never invent Microsoft secrets
