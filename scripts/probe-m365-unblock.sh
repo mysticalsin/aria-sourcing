@@ -192,5 +192,7 @@ fi
 
 echo "RESULT: owner-blocked"
 echo "  bash scripts/print-m365-owner-portal-checklist.sh"
-echo "  Minimal: create Entra app → echo '<client-id>' > /tmp/owner-azure-app-id → bash scripts/probe-m365-unblock.sh --apply"
+echo "  Minimal: Entra admin registers ARIA Mantu Graph (Fly) →"
+echo "    echo '<client-id>' > /tmp/owner-azure-app-id && bash scripts/probe-m365-unblock.sh --apply"
+echo "  Or grant Application Developer to the az account (waiters re-probe create every ~5m)."
 exit 1

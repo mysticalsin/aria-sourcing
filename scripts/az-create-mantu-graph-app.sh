@@ -83,11 +83,15 @@ else
     printf '%s\n' "$CREATE_ERR" >&2
     if printf '%s' "$CREATE_ERR" | grep -qiE 'Insufficient privileges|Authorization_RequestDenied|Directory permission is needed'; then
       echo "ERROR: this Entra account cannot create app registrations." >&2
-      echo "       Option A: create an app in Azure Portal, then:" >&2
-      echo "         export ARIA_AZURE_APP_ID='<client-id>'" >&2
-      echo "         bash scripts/az-configure-existing-graph-app.sh --apply" >&2
+      echo "       Tenant policy allowedToCreateApps=false — Portal New registration fails for" >&2
+      echo "       this non-privileged user too. An Entra admin must act:" >&2
+      echo "       Option A: Entra admin registers ARIA Mantu Graph (Fly), then:" >&2
+      echo "         echo '<client-id>' > /tmp/owner-azure-app-id" >&2
+      echo "         bash scripts/probe-m365-unblock.sh --apply" >&2
       echo "       Option B: paste MICROSOFT_CLIENT_ID/SECRET into /tmp/owner-microsoft.env" >&2
-      echo "       Option C: grant Application.ReadWrite.All / cloud-app-admin and re-run." >&2
+      echo "       Option C: grant Application Developer (or App Admin) to this account; waiters" >&2
+      echo "         expire noperm ~5m and re-run az-create automatically." >&2
+      echo "       Checklist: bash scripts/print-m365-owner-portal-checklist.sh" >&2
       touch /tmp/az-create-mantu-graph-app.noperm
       exit 3
     fi

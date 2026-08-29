@@ -16,7 +16,12 @@ cat <<'EOF'
 #   export GOTRUE_EXTERNAL_AZURE_CLIENT_ID=... GOTRUE_EXTERNAL_AZURE_SECRET=...
 #   export GOTRUE_EXTERNAL_AZURE_URL='https://login.microsoftonline.com/<tenant>/v2.0'
 #   bash scripts/fly-apply-owner-microsoft-secrets.sh
-# If az login cannot CREATE app registrations (Insufficient privileges):
+# If az login cannot CREATE app registrations (Insufficient privileges /
+# allowedToCreateApps=false — Portal create also fails for non-admins):
+#   # Entra admin registers ARIA Mantu Graph (Fly), then:
+#   echo '<client-id>' > /tmp/owner-azure-app-id
+#   bash scripts/probe-m365-unblock.sh --apply
+#   # or:
 #   export ARIA_AZURE_APP_ID='<client-id-from-azure-portal>'
 #   bash scripts/az-configure-existing-graph-app.sh --apply
 # Or drop KEY=value file (never commit):

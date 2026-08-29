@@ -36,14 +36,14 @@ Entra scan: **zero** apps with `aria-mantu` or `*.fly.dev` redirect URIs. Owner 
 - No Application Developer / Application Administrator / Cloud Application Administrator directory role
 - Owns zero apps; `az ad app create` and Graph `POST /applications` both Insufficient privileges
 - **Portal New registration also fails for this user** under the same policy — Option A needs an Entra admin
-Marker: `/tmp/az-create-mantu-graph-app.noperm` (waiters expire it every ~15m and re-probe create after role grants)
+Marker: `/tmp/az-create-mantu-graph-app.noperm` (waiters expire it every ~5m and re-probe create after role grants)
 
 ### Owner unblock options (any one)
 
 1. **Minimal (recommended):** An **Entra admin** (Global Admin / Application Administrator / Application Developer) registers `ARIA Mantu Graph (Fly)` in Portal →  
    `echo '<client-id>' > /tmp/owner-azure-app-id` (agent configures + mints + applies)
 2. Assign **Application Developer** (or Application Administrator) to `twalteur@amaris.com`, then waiters auto-retry  
-   `bash scripts/az-create-mantu-graph-app.sh --apply` (noperm latch TTL clears every ~15m)
+   `bash scripts/az-create-mantu-graph-app.sh --apply` (noperm latch TTL clears every ~5m)
 3. Temporarily enable user app registration (`allowedToCreateApps=true`), then option 2, then revert policy
 
 

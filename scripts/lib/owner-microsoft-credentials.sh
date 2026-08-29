@@ -88,15 +88,15 @@ owner_ms_noperm_latch_path() {
 }
 
 # Expire the noperm latch so waiters re-attempt create after an admin grants
-# Application Developer / flips allowedToCreateApps. Default TTL 15m.
+# Application Developer / flips allowedToCreateApps. Default TTL 5m.
 # Prints one line to stdout when cleared (caller may log it). Returns 0 if cleared.
 owner_ms_maybe_clear_stale_noperm() {
   local latch ttl age now
   latch="$(owner_ms_noperm_latch_path)"
   [ -f "$latch" ] || return 1
-  ttl="${ARIA_NOPERM_LATCH_TTL_SECONDS:-900}"
+  ttl="${ARIA_NOPERM_LATCH_TTL_SECONDS:-300}"
   case "$ttl" in
-    ''|*[!0-9]*) ttl=900 ;;
+    ''|*[!0-9]*) ttl=300 ;;
   esac
   now="$(date +%s)"
   age=$(( now - $(stat -c %Y "$latch" 2>/dev/null || echo "$now") ))

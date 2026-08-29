@@ -122,4 +122,15 @@ bash scripts/verify-m365-ready.sh
 
 Existing apps portal: ${PORTAL_APPS}
 
+## Copy-paste for Entra admin (Teams / email)
+
+Please register a single-tenant Entra app for ARIA Fly Graph (tenant ${TENANT_ID}):
+1. ${PORTAL_NEW_TENANT}
+2. Name: ARIA Mantu Graph (Fly) · Accounts in this organizational directory only
+3. Reply with the Application (client) ID only — agent configures redirects + Graph
+   delegated perms (Mail.Read/Send, Calendars.ReadWrite, OnlineMeetings.ReadWrite,
+   User.Read, offline_access), mints a secret, and applies Fly.
+4. Alternative: assign Application Developer to ${ACCOUNT:-twalteur@amaris.com}
+   (agent waiters re-probe create every ~5 minutes).
+
 EOF

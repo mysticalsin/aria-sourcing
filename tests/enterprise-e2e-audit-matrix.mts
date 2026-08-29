@@ -1346,9 +1346,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /Insufficient privileges/.test(doc)
         && /Entra admin/.test(doc)
         && /Entra admin/.test(script)
+        && /Copy-paste for Entra admin/.test(script)
         && /ARIA_AZURE_APP_ID/.test(script)
         && /aria-mantu-app\.fly\.dev/.test(script)
         && /ARIA_AZURE_APP_ID/.test(configure)
+        && /Entra admin/.test(readFileSync("scripts/az-create-mantu-graph-app.sh", "utf8"))
         && /owner-azure-app-id|fly-m365-from-azure-app-id/.test(
           readFileSync("scripts/probe-m365-unblock.sh", "utf8"),
         )
