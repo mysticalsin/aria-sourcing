@@ -1150,7 +1150,7 @@ export default function SettingsPage() {
             n="14"
             eyebrow="AI backbone"
             title="LLM providers & keys"
-            description="Paste an API key once. We encrypt it at rest, verify it live with the provider, and never show the secret again — only ••••last4. Admin only."
+            description="Paste an API key once. We encrypt it at rest, verify it live with the provider, and never show the secret again — only ••••last4. Fly env keys (e.g. KIMI_API_KEY) can be present while auth-dead — rotate via owner dropzone; llmKeysPresent on /api/ready is not live auth. Admin only."
           >
             <ProvidersPanel />
           </Section>
