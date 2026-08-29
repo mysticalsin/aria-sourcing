@@ -1698,12 +1698,16 @@ async function handleDraftGenerate(job, context) {
     && body.llmCriticsUsed === true
   ) {
     try {
-      const channel =
+      const channelRaw =
         typeof body.channel === "string"
           ? body.channel
           : (isRecord(body.outreach) && typeof body.outreach.channel === "string"
             ? body.outreach.channel
-            : "LinkedIn");
+            : "");
+      const channel =
+        channelRaw === "Email" || channelRaw === "LinkedIn" || channelRaw === "WhatsApp" || channelRaw === "SMS"
+          ? channelRaw
+          : "";
       const subject =
         isRecord(body.outreach) && typeof body.outreach.subject === "string"
           ? body.outreach.subject
@@ -1716,8 +1720,9 @@ async function handleDraftGenerate(job, context) {
         typeof body.recipient === "string" && body.recipient.trim()
           ? body.recipient.trim()
           : "";
-      if (!subject || !draftBody || !recipient) {
+      if (!channel || !subject || !draftBody || !recipient) {
         // Incomplete draft payload — stay on human review path.
+        autopilotStatus = channel ? "incomplete_draft" : "missing_channel";
       } else {
       const autoRes = await context.fetcher(context.configuration.autopilotSendUrl, {
         method: "POST",
@@ -1761,8 +1766,9 @@ async function handleDraftGenerate(job, context) {
         } else if (st === "skipped" && first && typeof first.reason === "string") {
           autopilotStatus = `skipped:${first.reason}`;
         } else if (st === "error") {
-          // Transient dispatch/mint failure — retry the job before leaving Needs Approval.
-          throw new HandlerError("autopilot_send_error", true);
+          // Permanent mint/policy failures stay Needs Approval — do not retry forever.
+          const detail = first && typeof first.detail === "string" ? first.detail : "error";
+          autopilotStatus = `error:${detail.slice(0, 120)}`;
         }
       } else if (autoRes.status >= 500) {
         await autoRes.body?.cancel?.().catch(() => undefined);

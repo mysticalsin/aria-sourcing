@@ -1530,6 +1530,118 @@ test("draft_generate retries when autopilot-send returns 5xx", async () => {
   );
 });
 
+test("draft_generate leaves Needs Approval on autopilot result error (no infinite retry)", async () => {
+  const patches: Array<Record<string, unknown>> = [];
+  const { client } = rpcClient((name, args) => {
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: {}, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      patches.push(args);
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await handleAriaJob(
+    job("draft_generate", { campaignId: "camp-err", candidateId: "cand-err" }),
+    {
+      client,
+      configuration: {
+        outreachDraftUrl: new URL("https://worker.example.test/api/cron/generate-outreach-draft"),
+        autopilotSendUrl: new URL("https://worker.example.test/api/cron/autopilot-send-outreach"),
+        cronSecret: "s".repeat(32),
+      },
+      fetcher: async (url) => {
+        const href = String(url);
+        if (href.includes("generate-outreach-draft")) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              channel: "Email",
+              recipient: "a@b.co",
+              graphStage: "queued_for_approval",
+              llmCriticsUsed: true,
+              quality: { status: "ready", aggregateScore: 90 },
+              outreach: {
+                id: "msg-err",
+                subject: "Hi",
+                body: "Body with Mantu Group for critics.",
+                channel: "Email",
+                status: "Needs Approval",
+              },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (href.includes("autopilot-send")) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              results: [{ result: { status: "error", detail: "mint_failed:not_authorized" } }],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        throw new Error(`unexpected fetch ${href}`);
+      },
+    },
+  );
+
+  assert.equal(patches.length, 1);
+  const outreach = patches[0]!.p_patch as Array<Record<string, unknown>>;
+  assert.equal(outreach[0]?.status, "Needs Approval");
+  const events = patches[0]!.p_events as Array<{ payload?: { autopilot?: string } }>;
+  assert.equal(events?.[0]?.payload?.autopilot?.startsWith("error:"), true);
+});
+
+test("draft_generate skips autopilot when channel missing from draft response", async () => {
+  const autopilotCalls: string[] = [];
+  const { client } = rpcClient((name) => {
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: {}, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await handleAriaJob(
+    job("draft_generate", { campaignId: "camp-nc", candidateId: "cand-nc" }),
+    {
+      client,
+      configuration: {
+        outreachDraftUrl: new URL("https://worker.example.test/api/cron/generate-outreach-draft"),
+        autopilotSendUrl: new URL("https://worker.example.test/api/cron/autopilot-send-outreach"),
+        cronSecret: "s".repeat(32),
+      },
+      fetcher: async (url) => {
+        const href = String(url);
+        if (href.includes("autopilot-send")) autopilotCalls.push(href);
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            // no top-level channel; outreach also lacks channel
+            recipient: "a@b.co",
+            graphStage: "queued_for_approval",
+            llmCriticsUsed: true,
+            quality: { status: "ready", aggregateScore: 90 },
+            outreach: {
+              id: "msg-nc",
+              subject: "Hi",
+              body: "Body with Mantu Group for critics.",
+              status: "Needs Approval",
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    },
+  );
+  assert.equal(autopilotCalls.length, 0);
+});
+
 test("draft_generate skips autopilot-send when quality is needs_review", async () => {
   const autopilotCalls: string[] = [];
   const { client } = rpcClient((name) => {

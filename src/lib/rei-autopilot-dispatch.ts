@@ -64,7 +64,10 @@ async function loadAutopilotContext(svc: ServiceClient, workspaceId: string) {
 
   const rows = seats.data ?? [];
   const liveMailbox = rows.find(
-    (s) => s.mode === "live" && isMailboxSeatProvider(String(s.provider ?? "")),
+    (s) =>
+      s.mode === "live" &&
+      isMailboxSeatProvider(String(s.provider ?? "")) &&
+      s.domain_verified === true,
   );
   const liveWhatsApp = rows.find(
     (s) => s.mode === "live" && String(s.provider) === "WhatsApp Cloud",

@@ -348,6 +348,26 @@ const baseInput = {
 
 {
   const { svc } = makeSvc({
+    seats: [
+      {
+        id: "seat-mail-unverified",
+        provider: "Microsoft Graph",
+        status: "active",
+        mode: "live",
+        domain_verified: false,
+        operator_email: "recruiter@example.com",
+      },
+    ],
+  });
+  const r = await runAutopilotOutreachDispatch(svc, baseInput);
+  ok(
+    "email live but domain_verified false → no_live_mailbox",
+    r.status === "skipped" && "reason" in r && r.reason === "no_live_mailbox",
+  );
+}
+
+{
+  const { svc } = makeSvc({
     seats: [],
   });
   const r = await runAutopilotOutreachDispatch(svc, baseInput);
