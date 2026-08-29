@@ -2362,11 +2362,21 @@ async function renewGraphSubscriptions(configuration, fetcher) {
 }
 
 export async function runSourcingLoopTick(client, configuration, environment, fetcher = fetch, modelClient) {
-  if (killSwitchEngaged(environment)) {
-    return { status: "kill_switch_engaged" };
+  const failureCodes = [];
+  // Always renew Graph mail push subscriptions — even when kill switch is engaged —
+  // so inbox webhooks do not expire while autopilot is paused (STRICT needs active sub).
+  const renew = await renewGraphSubscriptions(configuration, fetcher);
+  if (renew.status !== "ok" && renew.status !== "unconfigured") {
+    failureCodes.push(`graph_renew:${renew.status}`);
   }
 
-  const failureCodes = [];
+  if (killSwitchEngaged(environment)) {
+    return {
+      status: "kill_switch_engaged",
+      ...(failureCodes.length ? { failureCodes } : {}),
+    };
+  }
+
   const replyClassifier = modelClient?.classifyReply ? "model_configured" : "deterministic_fallback";
 
   const heartbeat = await client.rpc("record_loop_worker_heartbeat", {
@@ -2385,11 +2395,6 @@ export async function runSourcingLoopTick(client, configuration, environment, fe
   // floored at 90 in-DB). Keeps the table from growing without limit.
   const receiptGc = await client.rpc("cleanup_email_ledger_delivery_receipts", { p_retention_days: 180 });
   if (receiptGc.error) failureCodes.push(`receipt_gc:${receiptGc.error.code}`);
-
-  const renew = await renewGraphSubscriptions(configuration, fetcher);
-  if (renew.status !== "ok" && renew.status !== "unconfigured") {
-    failureCodes.push(`graph_renew:${renew.status}`);
-  }
 
   const dispatch = await drainOutbound(configuration, fetcher);
   if (dispatch.status !== "ok" && dispatch.status !== "unconfigured") {

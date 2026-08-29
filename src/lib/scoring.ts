@@ -38,7 +38,7 @@ const SCORE_DIMENSIONS: (keyof ScoringWeights)[] = [
 // excluded) is DERIVED from their union so the two can never drift apart.
 const ACTIVITY_HIGH_RE = /this week|days ago|active|shipped|merged|launched|speaking/;
 const ACTIVITY_MED_RE =
-  /this month|recently|published|maintains|contribut|\d+\s+public\s+repos/;
+  /this month|recently|published|maintains|contribut|\d+\s+public\s+repos|active github profile/;
 const ACTIVITY_LOW_RE = /last year|inactive|dormant|quiet/;
 const ACTIVITY_SIGNAL_RE = new RegExp(
   [ACTIVITY_HIGH_RE, ACTIVITY_MED_RE, ACTIVITY_LOW_RE].map((r) => r.source).join("|"),

@@ -1,4 +1,5 @@
 import type { OutreachChannel, SystemSettings, LocaleContext } from "@/lib/types";
+import { sanitizeOutreachActivitySignal } from "@/lib/outreach-activity-signal";
 
 /* ============================================================================
    Aria live runtime — client helper.
@@ -116,9 +117,10 @@ export function buildOutreachPrompt(opts: {
       : `- Experience: ${opts.yearsExperience} years`,
     `- Tech stack: ${opts.techStack.join(", ") || "n/a"}`,
     `- Recent activity: ${
-      opts.recentActivity && !/no activity signal/i.test(opts.recentActivity)
-        ? opts.recentActivity
-        : "n/a"
+      (() => {
+        const activity = sanitizeOutreachActivitySignal(opts.recentActivity);
+        return activity || "n/a";
+      })()
     }`,
     "",
     "Role:",
@@ -129,7 +131,7 @@ export function buildOutreachPrompt(opts: {
         `- Core skills: ${opts.requiredSkills.join(", ") || "n/a"}`,
       ].join("\n"),
     "",
-    "Rules: lead with the candidate's specific recent work; one genuine reason you're reaching out; a soft, low-pressure ask. Name Mantu Group in the body. Under 120 words (LinkedIn under 80). No AI slop, no corporate filler, no salary disclosure.",
+    "Rules: lead with the candidate's specific recent work (project/repo name or stack — never raw scraped counts like public repos, followers, or stars); one genuine reason you're reaching out; a soft, low-pressure ask. Name Mantu Group in the body. Under 120 words (LinkedIn under 80). No AI slop, no corporate filler, no salary disclosure.",
     opts.signature ? `Sign off with: ${opts.signature}` : "",
     "",
     "Reply with exactly: a line 'Subject: <subject>' then a blank line then the message body. No preamble, no commentary.",

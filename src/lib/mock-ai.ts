@@ -7,6 +7,7 @@ import type { SourceResult } from "./sourcing/candidate-mappers";
 import { buildGithubUserQueriesForSkills } from "./sourcing/github-query-language";
 import { detectLanguage, detectLanguageWithHint, isKnownBusinessLanguage, outreachStrings, REPLY_LEXICON } from "./i18n";
 import { evaluateNeedReadiness } from "./needs/readiness";
+import { sanitizeOutreachActivitySignal } from "./outreach-activity-signal";
 import {
   employmentFromMantuType,
   industryFromSector,
@@ -1255,8 +1256,9 @@ export function personalizationEvidence(candidate: Candidate, jd: JobAnalysis): 
       `${candidate.yearsExperience} yrs of depth${candidate.currentCompany ? `, currently at ${candidate.currentCompany}` : ""}`,
     );
   }
-  if (candidate.recentActivity && !/no activity signal/i.test(candidate.recentActivity)) {
-    ev.push(candidate.recentActivity.replace(/\.$/, ""));
+  {
+    const activity = sanitizeOutreachActivitySignal(candidate.recentActivity);
+    if (activity) ev.push(activity.replace(/\.$/, ""));
   }
   if (candidate.companyStageExperience.length)
     ev.push(`Experience at ${candidate.companyStageExperience.join(" / ")} stage companies`);

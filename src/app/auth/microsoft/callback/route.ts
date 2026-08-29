@@ -5,6 +5,10 @@ import { supabaseEnabled } from "@/lib/supabase/config";
 import { encryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { publicOrigin } from "@/lib/public-origin";
+import {
+  assertMicrosoftGraphSeatLiveReady,
+  promoteMicrosoftGraphSeatLive,
+} from "@/lib/microsoft-seat-live";
 
 /**
  * Microsoft OAuth callback for Microsoft Graph seat connection.
@@ -229,30 +233,25 @@ export async function GET(req: NextRequest) {
   }
 
   // Promote seat to live only after inbound route + Graph webhook are durable —
-  // and OnlineMeetings.ReadWrite is present (confirmLive Teams joinUrl).
+  // and Calendars/OnlineMeetings scopes are present (same gate as fleet / Enable webhook).
   {
-    const grantedScope = (tokenJson.scope ?? "").trim();
-    if (!/OnlineMeetings\.ReadWrite/i.test(grantedScope)) {
-      return redirectError(
-        req,
-        `Connected ${accountEmail} with webhook, but OnlineMeetings.ReadWrite is missing. Reconnect Outlook and grant Teams meeting permissions before going live.`,
-      );
+    const ready = await assertMicrosoftGraphSeatLiveReady(svc, {
+      workspaceId: String(wid),
+      seatId,
+      provider: "Microsoft Graph",
+    });
+    if (!ready.ok) {
+      return redirectError(req, `Connected ${accountEmail} with webhook, but ${ready.reason}`);
     }
-    const { error: liveErr } = await svc
-      .from("agent_seats")
-      .update({
-        mode: "live",
-        status: "active",
-        connected_account: accountEmail,
-        // Graph me/sendMail authenticates as this mailbox — SPF on a vanity
-        // domain is the wrong gate. Mark verified so Approve → Send can use
-        // Outlook once the operator confirms (dry-run / Needs Approval still apply).
-        domain_verified: true,
-      })
-      .eq("id", seatId);
-    if (liveErr) {
-      console.error("[microsoft/callback] agent_seats live promote failed:", liveErr.message, liveErr.code);
-      return redirectError(req, "Graph webhook ready but failed to promote seat to live. Reconnect Outlook.");
+    if (!ready.skipped) {
+      const promoted = await promoteMicrosoftGraphSeatLive(svc, {
+        seatId,
+        accountEmail,
+      });
+      if (!promoted.ok) {
+        console.error("[microsoft/callback] agent_seats live promote failed:", promoted.reason);
+        return redirectError(req, "Graph webhook ready but failed to promote seat to live. Reconnect Outlook.");
+      }
     }
   }
 

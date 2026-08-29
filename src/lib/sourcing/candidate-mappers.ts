@@ -52,9 +52,11 @@ export function mapGithubCandidates(
         ].filter(Boolean),
       ),
     );
+    // Keep raw counts out of recentActivity — empathy critics reject scraped
+    // vanity metrics in outreach. Scoring still sees publicRepos via other paths.
     const activityParts = [
       bio || null,
-      `${user.publicRepos} public repos, ${user.followers} followers`,
+      user.publicRepos > 0 || user.followers > 0 ? "Active GitHub profile with recent public work" : null,
     ].filter(Boolean);
     return {
       id: genId("cand"),

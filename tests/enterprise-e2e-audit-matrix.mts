@@ -743,6 +743,12 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /Promote seat to live only after inbound route/.test(
           readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8"),
         )
+        && /assertMicrosoftGraphSeatLiveReady/.test(
+          readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8"),
+        )
+        && /promoteMicrosoftGraphSeatLive/.test(
+          readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8"),
+        )
         && /promoteMicrosoftGraphSeatLive/.test(connections)
         && /assertMicrosoftGraphSeatLiveReady/.test(
           readFileSync("src/app/api/fleet/seats/route.ts", "utf8"),
@@ -865,7 +871,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         )
         && /DEEPSEEK_API_KEY/.test(readFileSync("production-readiness/.owner-llm.env.example", "utf8"))
         && /ensureGraphMailSubscription/.test(readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8"))
-        && /domain_verified:\s*true/.test(readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8"))
+        && /promoteMicrosoftGraphSeatLive/.test(readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8"))
+        && /domain_verified:\s*true/.test(readFileSync("src/lib/microsoft-seat-live.ts", "utf8"))
         && /Microsoft Graph/.test(readFileSync("src/app/api/outreach/send/route.ts", "utf8"))
         && /seat\.provider === "Microsoft Graph"/.test(readFileSync("src/lib/fleet.ts", "utf8"))
         && /seatMode !== "live"/.test(readFileSync("src/components/settings/email-connections-panel.tsx", "utf8"))

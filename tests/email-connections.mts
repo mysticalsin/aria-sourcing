@@ -304,9 +304,10 @@ ok("microsoft callback registers inbound route", /upsert_inbound_mailbox_route/.
 ok(
   "microsoft callback promotes seat to live only after Graph webhook succeeds",
   /Promote seat to live only after inbound route/.test(msCb)
-    && /mode:\s*"live"/.test(msCb)
+    && /assertMicrosoftGraphSeatLiveReady/.test(msCb)
+    && /await promoteMicrosoftGraphSeatLive/.test(msCb)
     && /ensureGraphMailSubscription/.test(msCb)
-    && msCb.indexOf("ensureGraphMailSubscription") < msCb.indexOf('mode: "live"'),
+    && msCb.indexOf("ensureGraphMailSubscription") < msCb.indexOf("await promoteMicrosoftGraphSeatLive"),
 );
 ok(
   "microsoft callback fails closed when inbound route upsert fails",
