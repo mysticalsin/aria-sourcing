@@ -77,5 +77,12 @@ ok("worker only autopilots qualityStatus ready", /qualityStatus === "ready"/.tes
 const cron = readFileSync("src/app/api/cron/autopilot-send-outreach/route.ts", "utf8");
 ok("cron requires criticsPassed === true", /criticsPassed: parsed\.data\.criticsPassed === true/.test(cron));
 
+const transitions = readFileSync("src/lib/langchain/pipeline-transitions.json", "utf8");
+ok(
+  "pipeline claims interview_prep_send after live book",
+  /"first_interview_book":\s*\["interview_prep_send"\]/.test(transitions) &&
+    /"interview_prep_send":\s*\[\]/.test(transitions),
+);
+
 console.log(`RESULT heyreach-mcp: ${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);

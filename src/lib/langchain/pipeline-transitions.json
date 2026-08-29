@@ -9,7 +9,8 @@
   "shortlist_build": ["draft_generate"],
   "draft_generate": ["pre_call_propose"],
   "pre_call_propose": ["first_interview_book"],
-  "first_interview_book": [],
+  "first_interview_book": ["interview_prep_send"],
+  "interview_prep_send": [],
   "calendar_book": [],
   "delivery_reconcile": ["outcome_feedback"],
   "outcome_feedback": []

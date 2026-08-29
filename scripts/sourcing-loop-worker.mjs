@@ -154,6 +154,9 @@ export const PIPELINE_STAGE_TRANSITION_PRODUCERS = Object.freeze({
   "pre_call_propose->first_interview_book": Object.freeze([
     "handlePreCallPropose",
   ]),
+  "first_interview_book->interview_prep_send": Object.freeze([
+    "handleFirstInterviewBook (live Graph book with provider event)",
+  ]),
   "delivery_reconcile->outcome_feedback": Object.freeze(["handleDeliveryReconcile"]),
 });
 
@@ -2182,6 +2185,24 @@ async function handleFirstInterviewBook(job, context) {
           ["interview_scheduled", "interview_proposed", "queued_for_approval"],
         );
 
+        // Post-booking prep drafts (Needs Approval) — only when a provider event exists.
+        const prepSuccessors = [];
+        if (eventId) {
+          prepSuccessors.push(
+            successorJob(
+              "interview_prep_send",
+              `prep:${claimId}`,
+              {
+                campaignId,
+                candidateId,
+                bookingId: claimId,
+                trigger: "create_booking",
+              },
+              55,
+            ),
+          );
+        }
+
         return completeJobWithWorkspacePatch(
           context.client,
           job,
@@ -2197,6 +2218,8 @@ async function handleFirstInterviewBook(job, context) {
             bookingMode: "loop_confirm_live",
             claimId,
             teamsLink,
+            ...(eventId ? { eventId } : {}),
+            prepQueued: prepSuccessors.length > 0,
           },
           [event("interview.booked", "candidate", candidateId, {
             campaignId,
@@ -2206,8 +2229,9 @@ async function handleFirstInterviewBook(job, context) {
             teamsLink,
             startTime,
             endTime,
+            ...(eventId ? { eventId } : {}),
           })],
-          [],
+          prepSuccessors,
         );
       }
       // Soft gaps (no live seat / insufficient scope) → dry-run propose fallback.

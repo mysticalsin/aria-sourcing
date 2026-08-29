@@ -1086,6 +1086,13 @@ test("first_interview_book confirms live Teams when confirm cron returns created
   assert.notEqual(stageMerge!.p_receipt_key, bookingAppend!.p_receipt_key);
   assert.notEqual(stageMerge!.p_receipt_key, activityPatch!.p_receipt_key);
   assert.notEqual(bookingAppend!.p_receipt_key, activityPatch!.p_receipt_key);
+  const complete = patches.find((p) => p.p_enqueue !== undefined);
+  assert.ok(complete);
+  const enqueue = complete!.p_enqueue as Array<{ kind?: string; payload?: { bookingId?: string; trigger?: string } }>;
+  assert.equal(enqueue.some((j) => j.kind === "interview_prep_send"), true);
+  const prep = enqueue.find((j) => j.kind === "interview_prep_send");
+  assert.equal(prep?.payload?.bookingId, "claim-live-1");
+  assert.equal(prep?.payload?.trigger, "create_booking");
 });
 
 test("pre_call_propose dry-run enqueues first_interview_book without held claim", async () => {
@@ -1368,6 +1375,8 @@ test("runSourcingLoopTick claims every handler kind and completes each claimed j
       providerRunId: "81111111-1111-4111-8111-111111111111",
       candidateId: "cand-1",
       candidateIds: ["cand-1"],
+      bookingId: "booking-1",
+      trigger: "create_booking",
     }),
   );
   const { client, calls } = rpcClient((name) => {
@@ -1377,6 +1386,7 @@ test("runSourcingLoopTick claims every handler kind and completes each claimed j
     if (name === "cleanup_email_ledger_delivery_receipts") return { data: 0, error: null };
     if (name === "claim_due_aria_jobs") return { data: claimedJobs, error: null };
     if (name === "sourcing_loop_stage_enabled") return { data: true, error: null };
+    if (name === "fail_aria_job") return { data: true, error: null };
     if (name === "read_workspace_state_for_loop") {
       return {
         data: {
@@ -1461,6 +1471,7 @@ test("runSourcingLoopTick claims every handler kind and completes each claimed j
       outreachDraftUrl: new URL("https://worker.example.test/api/cron/generate-outreach-draft"),
       renewGraphUrl: null,
       calendarProposeUrl: null,
+      interviewPrepDispatchUrl: new URL("https://worker.example.test/api/cron/interview-prep-dispatch"),
       cronSecret: "s".repeat(32),
     },
     { ARIA_LOOP_KILL_SWITCH: "false" },
@@ -1509,6 +1520,27 @@ test("runSourcingLoopTick claims every handler kind and completes each claimed j
               qualityStatus: "ready",
               qualityScore: 88,
             },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (String(url).includes("interview-prep-dispatch")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            outreach: [
+              {
+                id: "msg-prep-1",
+                candidateId: "cand-1",
+                campaignId: "camp-1",
+                channel: "Email",
+                subject: "Interview prep",
+                body: "Prep notes for the interviewer.",
+                status: "Needs Approval",
+                dryRun: true,
+                createdAt: "2026-07-25T12:00:00.000Z",
+              },
+            ],
           }),
           { status: 200, headers: { "content-type": "application/json" } },
         );
