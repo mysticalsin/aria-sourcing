@@ -83,6 +83,8 @@ ok("sweep honors recipientOverride", /recipientOverride/.test(cron));
 
 const prepCron = readFileSync("src/app/api/cron/interview-prep-dispatch/route.ts", "utf8");
 ok("prep dispatch runs live critics", /validateOutreachQualityLive/.test(prepCron));
+ok("prep dispatch uses booking slice RPC", /loadBookingForLoop|read_workspace_booking_for_loop/.test(prepCron));
+ok("autopilot send uses post-0074 slices", /loadReadyAutopilotOutreachSweep|mergeOutreachMessageScheduled/.test(cron));
 const transitions = readFileSync("src/lib/langchain/pipeline-transitions.json", "utf8");
 ok(
   "pipeline claims interview_prep_send after live book",

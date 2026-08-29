@@ -168,6 +168,21 @@ ok(
   })(),
 );
 ok(
+  "0078 adds outreach/booking slices + merge_outreach_message for Autopilot post-0074",
+  (() => {
+    const mig78 = read("supabase/migrations/0078_loop_outreach_slices_and_merge.sql");
+    return (
+      mig78.length > 0 &&
+      noTxn(mig78) &&
+      /read_workspace_booking_for_loop/.test(mig78) &&
+      /read_workspace_outreach_for_loop/.test(mig78) &&
+      /read_workspace_skills_for_loop/.test(mig78) &&
+      /'merge_outreach_message'/.test(mig78) &&
+      /\{outreach\}/.test(mig78)
+    );
+  })(),
+);
+ok(
   "loop event erasure has a narrow trigger-recognized redaction path",
   /redact_loop_events_for_candidate_erasure\(uuid, text, text\[\], text\[\]\)/i.test(dataProtection) &&
     /set_config\('aria\.candidate_erasure_loop_event_redaction', 'on', true\)/i.test(dataProtection) &&

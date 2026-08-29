@@ -7,7 +7,14 @@ import { getServiceSupabase } from "@/lib/supabase/server";
 import { runAutopilotOutreachDispatch } from "@/lib/rei-autopilot-dispatch";
 import type { ReiOutboundChannel } from "@/lib/rei-autopilot-send";
 import { preferredOutreachChannel } from "@/lib/outreach-channel";
-import type { Candidate, Campaign, OutreachMessage } from "@/lib/types";
+import type { Candidate, OutreachMessage } from "@/lib/types";
+import {
+  loadCandidateForLoop,
+  loadCandidateOutreachForLoop,
+  loadOutreachMessageForLoop,
+  loadReadyAutopilotOutreachSweep,
+  mergeOutreachMessageScheduled,
+} from "@/lib/workspace-loop-slices";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -57,12 +64,39 @@ type DispatchTarget = {
   recipient: string;
   qualityStatus: string;
   criticsPassed: boolean;
+  /** True when message already lives in workspace (sweep / messageId) — patch Scheduled after queue. */
+  persistScheduled: boolean;
 };
+
+async function targetFromMessage(
+  svc: NonNullable<ReturnType<typeof getServiceSupabase>>,
+  workspaceId: string,
+  msg: OutreachMessage,
+  persistScheduled: boolean,
+): Promise<DispatchTarget | null> {
+  const candidate = await loadCandidateForLoop(svc, workspaceId, msg.candidateId);
+  if (!candidate) return null;
+  const channel = (msg.channel ?? preferredOutreachChannel(candidate)) as ReiOutboundChannel;
+  const override = msg.recipientOverride?.trim() ?? "";
+  return {
+    messageId: msg.id,
+    campaignId: msg.campaignId,
+    candidateId: msg.candidateId,
+    channel,
+    subject: msg.subject,
+    body: msg.body,
+    recipient: override || recipientFor(channel, candidate),
+    qualityStatus: msg.qualityStatus ?? "unknown",
+    criticsPassed: msg.qualityStatus === "ready" && msg.qualityCriticsUsed === true,
+    persistScheduled,
+  };
+}
 
 /**
  * Autopilot first-touch send — only when profiles.autopilot_enabled + sequences armed.
  * Mints autopilot_critics approval after critics already green on the draft, then
  * durable-queues Email / WhatsApp / LinkedIn (HeyReach).
+ * Uses post-0074 slice RPCs (never full workspace blob).
  */
 export async function POST(req: NextRequest) {
   if (req.headers.get("cookie") || req.headers.get("origin")) {
@@ -83,6 +117,7 @@ export async function POST(req: NextRequest) {
   }
 
   const targets: DispatchTarget[] = [];
+  const workspaceId = parsed.data.workspaceId;
 
   // Fast path: worker passes the just-generated draft inline (before workspace append).
   if (
@@ -104,92 +139,70 @@ export async function POST(req: NextRequest) {
       recipient: parsed.data.recipient,
       qualityStatus: parsed.data.qualityStatus ?? "",
       criticsPassed: parsed.data.criticsPassed === true,
+      persistScheduled: false,
     });
-  } else {
-    const snapshot = await svc.rpc("read_workspace_state_for_loop", {
-      p_workspace_id: parsed.data.workspaceId,
-    });
-    const body = snapshot.data as {
-      status?: string;
-      state?: {
-        campaigns?: Campaign[];
-        candidates?: Candidate[];
-        outreach?: OutreachMessage[];
-      };
-    } | null;
-    if (snapshot.error || body?.status !== "ok" || !body.state) {
-      return NextResponse.json({ ok: false, status: "workspace_unavailable" }, { status: 503 });
+  } else if (parsed.data.messageId) {
+    const msg = await loadOutreachMessageForLoop(svc, workspaceId, parsed.data.messageId);
+    if (!msg) {
+      return NextResponse.json({ ok: false, status: "not_found" }, { status: 404 });
     }
-
-    const outreach = body.state.outreach ?? [];
-    const candidates = body.state.candidates ?? [];
-    const msgs: OutreachMessage[] = [];
-
-    if (parsed.data.messageId) {
-      const msg = outreach.find((m) => m.id === parsed.data.messageId);
-      if (!msg) {
-        return NextResponse.json({ ok: false, status: "not_found" }, { status: 404 });
-      }
-      msgs.push(msg);
-    } else if (parsed.data.campaignId && parsed.data.candidateId) {
-      const msg = outreach
-        .filter(
-          (m) =>
-            m.campaignId === parsed.data.campaignId &&
-            m.candidateId === parsed.data.candidateId &&
-            (m.status === "Needs Approval" || m.status === "Draft"),
-        )
-        .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
-      if (!msg) {
-        return NextResponse.json({ ok: false, status: "not_found" }, { status: 404 });
-      }
-      msgs.push(msg);
-    } else if (parsed.data.sweep) {
-      // Only critics-green ready drafts — dispatch still fail-closes, but avoid
-      // minting attempts on every Needs Approval row each tick.
-      msgs.push(
-        ...outreach
-          .filter(
-            (m) =>
-              m.status === "Needs Approval" &&
-              m.qualityStatus === "ready" &&
-              m.qualityCriticsUsed === true,
-          )
-          .slice(0, 20),
-      );
-    } else {
-      return NextResponse.json({ ok: false, status: "invalid_request" }, { status: 400 });
+    const target = await targetFromMessage(svc, workspaceId, msg, true);
+    if (target) targets.push(target);
+  } else if (parsed.data.campaignId && parsed.data.candidateId) {
+    const msg = await loadCandidateOutreachForLoop(
+      svc,
+      workspaceId,
+      parsed.data.campaignId,
+      parsed.data.candidateId,
+    );
+    if (!msg) {
+      return NextResponse.json({ ok: false, status: "not_found" }, { status: 404 });
     }
-
+    const target = await targetFromMessage(svc, workspaceId, msg, true);
+    if (target) targets.push(target);
+  } else if (parsed.data.sweep) {
+    const msgs = await loadReadyAutopilotOutreachSweep(svc, workspaceId, 20);
     for (const msg of msgs) {
-      const candidate = candidates.find((c) => c.id === msg.candidateId);
-      if (!candidate) continue;
-      const channel = (msg.channel ?? preferredOutreachChannel(candidate)) as ReiOutboundChannel;
-      const override = msg.recipientOverride?.trim() ?? "";
-      targets.push({
-        messageId: msg.id,
-        campaignId: msg.campaignId,
-        candidateId: msg.candidateId,
-        channel,
-        subject: msg.subject,
-        body: msg.body,
-        recipient: override || recipientFor(channel, candidate),
-        qualityStatus: msg.qualityStatus ?? "unknown",
-        criticsPassed:
-          msg.qualityStatus === "ready" && msg.qualityCriticsUsed === true,
-      });
+      const target = await targetFromMessage(svc, workspaceId, msg, true);
+      if (target) targets.push(target);
     }
+  } else {
+    return NextResponse.json({ ok: false, status: "invalid_request" }, { status: 400 });
   }
 
-  const results: Array<{ messageId: string; result: Awaited<ReturnType<typeof runAutopilotOutreachDispatch>> }> =
-    [];
+  const results: Array<{
+    messageId: string;
+    result: Awaited<ReturnType<typeof runAutopilotOutreachDispatch>>;
+    workspacePatch?: string;
+  }> = [];
 
   for (const target of targets) {
     const result = await runAutopilotOutreachDispatch(svc, {
-      workspaceId: parsed.data.workspaceId,
-      ...target,
+      workspaceId,
+      messageId: target.messageId,
+      campaignId: target.campaignId,
+      candidateId: target.candidateId,
+      channel: target.channel,
+      subject: target.subject,
+      body: target.body,
+      recipient: target.recipient,
+      qualityStatus: target.qualityStatus,
+      criticsPassed: target.criticsPassed,
     });
-    results.push({ messageId: target.messageId, result });
+    let workspacePatch: string | undefined;
+    if (
+      target.persistScheduled &&
+      (result.status === "sent" || result.status === "queued")
+    ) {
+      const patched = await mergeOutreachMessageScheduled(
+        svc,
+        workspaceId,
+        target.messageId,
+        result.status,
+      );
+      workspacePatch = patched.status;
+    }
+    results.push({ messageId: target.messageId, result, workspacePatch });
   }
 
   const sent = results.filter((r) => r.result.status === "sent" || r.result.status === "queued").length;

@@ -1,54 +1,49 @@
 ---
 project: MSourcing / ARIA
-shift: 402
+shift: 403
 agent: cursor-cloud
-updated: 2026-08-29T21:18Z
-status: rei-prep-autopilot-and-sweep
+updated: 2026-08-29T21:30Z
+status: rei-post-0074-slice-fix
 ---
 
-# Handoff — Shift 402
+# Handoff — Shift 403
 
 ## Current state
 
 - **Branch / PR:** `cursor/rei-autopilot-send-b91d` → **PR #39**
-- **CODE:** Interview prep now runs live critics + Autopilot send when entitled; worker tick sweeps critics-green Needs Approval drafts via `ARIA_LOOP_WORKSPACE_IDS`
-- **Live Fly:** still `1665b39` / **0074**; Graph dropzones absent → **HOLD**; no `ARIA_PROD_DEPLOY_CONFIRM` in agent env
+- **CODE:** Autopilot crons fixed for post-0074 revision-only reads (slice RPCs); sweep can merge outreach → Scheduled
+- **Live Fly:** still `1665b39` / **0074**; Graph dropzones absent → **HOLD**; need deploy tip + **0076/0077/0078**
 
 ## Done this shift
 
-1. `interview-prep-dispatch`: deterministic quality + live critics; stable message ids; recipients for inline autopilot
-2. Worker `interview_prep_send`: autopilot mint/queue when `qualityStatus=ready` + `qualityCriticsUsed`; else Needs Approval
-3. Worker tick `sweepAutopilotReadyDrafts` for configured workspace UUIDs (`sweep: true`)
-4. Autopilot send sweep filters ready+critics; honors `recipientOverride` (interviewer prep)
-5. Broke `heyreach-delivery` ↔ `linkedin-channel` import cycle via `linkedin-delivery-types.ts`
-6. Bumped store-contracts action count 130→131 (pre-existing drift)
+1. Migration **0078**: booking/skills/outreach/scoring/identity slices + `merge_outreach_message`
+2. Rewired crons to slices: `generate-outreach-draft`, `interview-prep-dispatch`, `autopilot-send-outreach`, `propose/confirm-calendar-book`, `run-sourcing-batch`
+3. Sweep persists Scheduled via `merge_outreach_message` after durable queue
+4. Helper `src/lib/workspace-loop-slices.ts`
 
 ## Blockers (ops only)
 
-1. Deploy tip + apply **0076** + **0077** (`bash scripts/print-fly-deploy-confirm.sh && bash scripts/fly-deploy-now.sh`)
-2. Settings → Save HeyReach; entitle Autopilot; arm Sequences; set `ARIA_LOOP_WORKSPACE_IDS` on loop process
-3. Graph dropzones for live Teams / strict RESULT: PASS
-4. WA cold: zero-param Meta template; HeyReach `{message}` if SendMessage unavailable
+1. Deploy tip + apply **0076** + **0077** + **0078**
+2. Settings HeyReach Save; entitle; arm Sequences; `ARIA_LOOP_WORKSPACE_IDS`
+3. Graph dropzones for live Teams
+4. WA cold Meta template / HeyReach `{message}`
 
 ## Next steps
 
 ```bash
 bash scripts/print-fly-deploy-confirm.sh && bash scripts/fly-deploy-now.sh
-# Settings → Save HeyReach; entitle; arm Sequences
-# Ensure Fly loop has ARIA_LOOP_WORKSPACE_IDS=<uuid>
-bash scripts/run-enterprise-e2e-partial.sh
 curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
+# migration must show 0078_…
+bash scripts/run-enterprise-e2e-partial.sh
 ```
 
 ## Decisions made (don't relitigate)
 
-- Autopilot fail-closed: ready + live critics + Sequences armed + entitlement
-- Interview prep Autopilot uses same critics/mint path as first-touch (not silent template_bound bypass)
+- Never reintroduce full `state` blob on `read_workspace_state_for_loop`
+- Autopilot fail-closed: ready + live critics + Sequences + entitlement
 - HOLD when Microsoft dropzones empty
-- Sweep is backstop only; primary path is inline worker after draft/prep
 
 ## Watch out
 
-- Prep Autopilot needs live LLM critics; deterministic-ready alone stays human_review
-- Interviewer prep requires `booking.interviewerEmail` or send skips with `missing_recipient`
-- Domain-unverified Outlook seats fail closed for Autopilot Email
+- Tip before 0078 apply will 404/503 on prep/draft/sweep if only 0074 is live — deploy migration with tip
+- Sweep without `ARIA_LOOP_WORKSPACE_IDS` is a no-op (`unconfigured`)

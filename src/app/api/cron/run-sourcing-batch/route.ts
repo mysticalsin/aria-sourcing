@@ -4,11 +4,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { DEFAULT_SOURCING_BATCH_SIZE, TOP_CANDIDATE_SHORTLIST_SIZE } from "@/lib/recruiting-loop/constants";
+import type { CandidateDedupeIdentity } from "@/lib/rules";
 import { resolveStoredApifyKeyForWorkspace } from "@/lib/sourcing/apify";
 import { runMultiProviderSourcing } from "@/lib/sourcing/orchestrator";
 import { resolveStoredTavilyKeyForWorkspace } from "@/lib/sourcing/tavily";
 import { getServiceSupabase } from "@/lib/supabase/server";
-import type { Candidate, Campaign, ScoringWeights } from "@/lib/types";
+import type { ScoringWeights } from "@/lib/types";
+import { loadCampaignForLoop } from "@/lib/workspace-loop-slices";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -50,27 +52,40 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, status: "service_unavailable" }, { status: 503 });
   }
 
-  const snapshot = await svc.rpc("read_workspace_state_for_loop", {
-    p_workspace_id: parsed.data.workspaceId,
-  });
-  const body = snapshot.data as {
-    status?: string;
-    state?: { campaigns?: Campaign[]; candidates?: Candidate[]; settings?: { scoringWeights?: ScoringWeights } };
-  } | null;
-  if (snapshot.error || body?.status !== "ok" || !body.state) {
-    return NextResponse.json({ ok: false, status: "workspace_unavailable" }, { status: 503 });
-  }
-
-  const campaign = (body.state.campaigns ?? []).find((c) => c.id === parsed.data.campaignId);
+  const campaign = await loadCampaignForLoop(svc, parsed.data.workspaceId, parsed.data.campaignId);
   if (!campaign?.jobAnalysis) {
     return NextResponse.json({ ok: false, status: "campaign_not_found" }, { status: 404 });
   }
 
   const count = parsed.data.count ?? Math.max(DEFAULT_SOURCING_BATCH_SIZE, TOP_CANDIDATE_SHORTLIST_SIZE);
-  const weights = campaign.scoringWeights ?? body.state.settings?.scoringWeights;
+
+  let weights: ScoringWeights | undefined = campaign.scoringWeights;
+  if (!weights) {
+    const weightsRes = await svc.rpc("read_workspace_scoring_weights_for_loop", {
+      p_workspace_id: parsed.data.workspaceId,
+    });
+    const weightsBody = weightsRes.data as { status?: string; scoringWeights?: ScoringWeights } | null;
+    if (!weightsRes.error && weightsBody?.status === "ok" && weightsBody.scoringWeights) {
+      weights = weightsBody.scoringWeights;
+    }
+  }
   if (!weights) {
     return NextResponse.json({ ok: false, status: "scoring_weights_missing" }, { status: 503 });
   }
+
+  const identities = await svc.rpc("read_workspace_candidate_identities_for_loop", {
+    p_workspace_id: parsed.data.workspaceId,
+    p_campaign_id: parsed.data.campaignId,
+    p_limit: 500,
+  });
+  const identityBody = identities.data as {
+    status?: string;
+    candidates?: CandidateDedupeIdentity[];
+  } | null;
+  const existing: CandidateDedupeIdentity[] =
+    !identities.error && identityBody?.status === "ok" && Array.isArray(identityBody.candidates)
+      ? identityBody.candidates
+      : [];
 
   const [linkedInProfileToken, workspaceTavilyKey] = await Promise.all([
     resolveStoredApifyKeyForWorkspace(parsed.data.workspaceId),
@@ -79,7 +94,7 @@ export async function POST(req: NextRequest) {
 
   const result = await runMultiProviderSourcing({
     campaign,
-    existing: body.state.candidates ?? [],
+    existing,
     weights,
     count,
     githubToken: process.env.GITHUB_TOKEN ?? "",

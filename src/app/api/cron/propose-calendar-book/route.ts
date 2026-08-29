@@ -6,7 +6,7 @@ import { z } from "zod";
 import { claimCalendarBooking, reconcileCalendarBooking } from "@/lib/calendar-authority";
 import { mantuFirstInterviewAgenda, mantuPreCallAgenda } from "@/lib/mantu-brand";
 import { getServiceSupabase } from "@/lib/supabase/server";
-import type { Candidate, Campaign } from "@/lib/types";
+import { loadCampaignForLoop, loadCandidateForLoop } from "@/lib/workspace-loop-slices";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -88,19 +88,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, status: "service_unavailable" }, { status: 503 });
   }
 
-  const snapshot = await svc.rpc("read_workspace_state_for_loop", {
-    p_workspace_id: parsed.data.workspaceId,
-  });
-  const body = snapshot.data as {
-    status?: string;
-    state?: { campaigns?: Campaign[]; candidates?: Candidate[] };
-  } | null;
-  if (snapshot.error || body?.status !== "ok" || !body.state) {
-    return NextResponse.json({ ok: false, status: "workspace_unavailable" }, { status: 503 });
-  }
-
-  const campaign = (body.state.campaigns ?? []).find((c) => c.id === parsed.data.campaignId);
-  const candidate = (body.state.candidates ?? []).find((c) => c.id === parsed.data.candidateId);
+  const [campaign, candidate] = await Promise.all([
+    loadCampaignForLoop(svc, parsed.data.workspaceId, parsed.data.campaignId),
+    loadCandidateForLoop(svc, parsed.data.workspaceId, parsed.data.candidateId),
+  ]);
   if (!campaign || !candidate) {
     return NextResponse.json({ ok: false, status: "not_found" }, { status: 404 });
   }

@@ -12,11 +12,16 @@ import { humanizeText } from "@/lib/humanizer";
 import { validateOutreachQuality } from "@/lib/outreach-quality-pipeline";
 import { validateOutreachQualityLive } from "@/lib/outreach-quality-pipeline-live";
 import { getServiceSupabase } from "@/lib/supabase/server";
-import type { Candidate, Campaign, OutreachChannel, SystemSettings } from "@/lib/types";
+import type { OutreachChannel, SystemSettings } from "@/lib/types";
 import { candidateDisclosureContextForCampaignLike } from "@/lib/agent-disclosure-policy";
 import { resolveOutreachLanguage } from "@/lib/outreach-language";
 import { preferredOutreachChannel } from "@/lib/outreach-channel";
 import { stableOutreachMessageId } from "@/lib/utils";
+import {
+  loadCampaignForLoop,
+  loadCandidateForLoop,
+  loadSkillsForLoop,
+} from "@/lib/workspace-loop-slices";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -62,19 +67,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, status: "service_unavailable" }, { status: 503 });
   }
 
-  const snapshot = await svc.rpc("read_workspace_state_for_loop", {
-    p_workspace_id: parsed.data.workspaceId,
-  });
-  const body = snapshot.data as {
-    status?: string;
-    state?: { campaigns?: Campaign[]; candidates?: Candidate[]; skills?: import("@/lib/types").AgentSkill[] };
-  } | null;
-  if (snapshot.error || body?.status !== "ok" || !body.state) {
-    return NextResponse.json({ ok: false, status: "workspace_unavailable" }, { status: 503 });
-  }
-
-  const campaign = (body.state.campaigns ?? []).find((c) => c.id === parsed.data.campaignId);
-  const candidate = (body.state.candidates ?? []).find((c) => c.id === parsed.data.candidateId);
+  const [campaign, candidate, skills] = await Promise.all([
+    loadCampaignForLoop(svc, parsed.data.workspaceId, parsed.data.campaignId),
+    loadCandidateForLoop(svc, parsed.data.workspaceId, parsed.data.candidateId),
+    loadSkillsForLoop(svc, parsed.data.workspaceId),
+  ]);
   if (!campaign || !candidate) {
     return NextResponse.json({ ok: false, status: "not_found" }, { status: 404 });
   }
@@ -167,7 +164,7 @@ export async function POST(req: NextRequest) {
     campaignId: parsed.data.campaignId,
     candidateId: parsed.data.candidateId,
     maxTokens: 1024,
-    skills: body.state.skills ?? null,
+    skills: skills ?? null,
   });
   if (live.ok) {
     const parsedLive = parseHermesOutreach(live.text, channel, mockGenerated.subject);

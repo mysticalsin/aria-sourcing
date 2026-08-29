@@ -84,21 +84,24 @@ mock.module(moduleUrl("src/lib/calendar.ts"), {
 mock.module(moduleUrl("src/lib/supabase/server.ts"), {
   namedExports: {
     getServiceSupabase: () => ({
-      rpc: async (name: string) => {
-        if (name !== "read_workspace_state_for_loop") {
-          return { data: null, error: { message: `unexpected ${name}` } };
+      rpc: async (name: string, args?: Record<string, unknown>) => {
+        if (name === "read_workspace_campaign_for_loop") {
+          return {
+            data: {
+              status: "ok",
+              campaign: {
+                id: CAMPAIGN_ID,
+                title: "Senior Engineer",
+                jobAnalysis: { title: "Senior Engineer" },
+              },
+            },
+            error: null,
+          };
         }
-        return {
-          data: {
-            status: "ok",
-            state: {
-              campaigns: [
-                {
-                  id: CAMPAIGN_ID,
-                  title: "Senior Engineer",
-                  jobAnalysis: { title: "Senior Engineer" },
-                },
-              ],
+        if (name === "read_workspace_candidates_for_loop") {
+          return {
+            data: {
+              status: "ok",
               candidates: [
                 {
                   id: CANDIDATE_ID,
@@ -108,15 +111,18 @@ mock.module(moduleUrl("src/lib/supabase/server.ts"), {
                 },
               ],
             },
-          },
-          error: null,
-        };
+            error: null,
+          };
+        }
+        return { data: null, error: { message: `unexpected ${name}:${JSON.stringify(args ?? {})}` } };
       },
       from: (table: string) => {
         const chain: Record<string, unknown> = {};
         const self = () => chain;
         chain.select = self;
         chain.eq = self;
+        chain.in = self;
+        chain.limit = self;
         chain.update = self;
         chain.maybeSingle = async () => {
           if (table === "email_connections") {
@@ -130,6 +136,18 @@ mock.module(moduleUrl("src/lib/supabase/server.ts"), {
                 account_email: "recruiter@mantu.com",
                 workspace_id: WORKSPACE_ID,
               },
+              error: null,
+            };
+          }
+          if (table === "sourcing_loop_controls") {
+            return {
+              data: { kill_switch: false, sequences_enabled: true },
+              error: null,
+            };
+          }
+          if (table === "profiles") {
+            return {
+              data: { id: "profile-autopilot-1" },
               error: null,
             };
           }
