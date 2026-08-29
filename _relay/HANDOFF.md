@@ -10,16 +10,16 @@ status: ops-blocked-stale-deploy-confirm
 
 ## Current state
 
-- **Branch / PR:** `cursor/rei-autopilot-send-b91d` → **PR #40** tip **`9f24347`**
+- **Branch / PR:** `cursor/rei-autopilot-send-b91d` → **PR #40** tip **`acf016a`**
 - **CODE:** Autopilot path complete in source (ops only) — skeptical re-audit found no material code gap
 - **Live Fly:** `1665b39` / **0074** — tip + **0076–0079** not applied
 - **Dropzones:** Microsoft/LLM absent → Graph = **HOLD**
-- **Deploy:** `/tmp/owner-deploy-confirm.env` exists but targets **`1665b39`** (live), **not** tip `9f24347` — do **not** use for tip deploy
+- **Deploy:** `/tmp/owner-deploy-confirm.env` exists but targets **`1665b39`** (live), **not** tip — do **not** use for tip deploy
 - **Docs:** STATUS cites PR #40
 
 ## Done this shift
 
-1. Confirmed tip `9f24347` / PR #40 open; Fly still 0074
+1. Confirmed tip / PR #40 open; Fly still 0074
 2. Validated owner-deploy-confirm is stale (SHA mismatch vs tip) — refuse to deploy with it
 3. Printed tip-bound confirm via `print-fly-deploy-confirm.sh` for owner
 
@@ -33,12 +33,11 @@ status: ops-blocked-stale-deploy-confirm
 ## Next steps
 
 ```bash
-# Owner must mint confirm for CURRENT tip (do not reuse /tmp/owner-deploy-confirm.env @ 1665b39):
-bash scripts/print-fly-deploy-confirm.sh
-# Then either export the printed ARIA_* vars, or write matching /tmp/owner-deploy-confirm.env, then:
+bash scripts/print-fly-deploy-confirm.sh   # must match git rev-parse HEAD
+# export printed ARIA_* (do not reuse /tmp/owner-deploy-confirm.env @ 1665b39)
 bash scripts/fly-deploy-now.sh
 curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
-# expect build=9f24347… and migration >= 0079
+# expect tip SHA + migration >= 0079
 ```
 
 ## Decisions made (don't relitigate)
