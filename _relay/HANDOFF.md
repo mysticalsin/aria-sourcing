@@ -11,7 +11,7 @@ status: microsoft-deferred-non-ms-honesty
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft (supersedes #29)
-- **Tip:** pending-commit · Live Fly `fc8b54a` / **0071** (tip **0072**)
+- **Tip:** ee0818b · Live Fly `fc8b54a` / **0071** (tip **0072**)
 - **Audit:** **64/64** · **Gate:** green (`npx tsc --noEmit && npm test`)
 - **Microsoft / M365:** **DEFERRED by owner** — no Entra/Graph secrets, no Outlook connect, no `verify-m365-ready` / strict M365 E2E
 - **LLM:** `llm_auth=dead` (only pursue if owner asks)
