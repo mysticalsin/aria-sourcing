@@ -1390,6 +1390,28 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
     },
   },
   {
+    requirement: "az Graph permission apply fail-closes on missing scopes / admin-consent (no silent || true)",
+    evidence: () => {
+      const perms = readFileSync("scripts/lib/az-mantu-graph-permissions.sh", "utf8");
+      return (
+        existsSync("scripts/lib/az-mantu-graph-permissions.sh")
+        && /aria_graph_verify_required_scopes/.test(perms)
+        && /ARIA_GRAPH_REQUIRED_SCOPE_IDS/.test(perms)
+        && /Mail\.Read/.test(perms)
+        && /Mail\.Send/.test(perms)
+        && /Calendars\.ReadWrite/.test(perms)
+        && /OnlineMeetings\.ReadWrite/.test(perms)
+        && /admin-consent/.test(perms)
+        && /ARIA_GRAPH_SKIP_ADMIN_CONSENT/.test(perms)
+        && /az-graph-admin-consent\.needed/.test(perms)
+        && !/permission add[\s\S]{0,120}\|\| true/.test(perms)
+        && /apply_mantu_graph_delegated_permissions/.test(
+          readFileSync("scripts/az-configure-existing-graph-app.sh", "utf8"),
+        )
+      );
+    },
+  },
+  {
     requirement: "probe-m365-unblock reprobe + --apply when owner credentials present",
     evidence: () => {
       const probe = readFileSync("scripts/probe-m365-unblock.sh", "utf8");

@@ -1,29 +1,120 @@
 #!/usr/bin/env bash
 # Shared Graph delegated permissions for Mantu Fly (Outlook mail/calendar/Teams + SSO).
 # Includes Mail.Read, Mail.Send, Calendars.ReadWrite, OnlineMeetings.ReadWrite (delegated).
+#
+# Fail-closed: required scopes must be present on the app, and admin consent must succeed
+# (or ARIA_GRAPH_SKIP_ADMIN_CONSENT=1 after Portal grant) before minting secrets / Fly apply.
+# shellcheck disable=SC2034
+
+# Microsoft Graph application id
+ARIA_GRAPH_API_ID="00000003-0000-0000-c000-000000000000"
+
+# Required for live Outlook seat + confirmLive Teams (delegated Scope IDs).
+ARIA_GRAPH_REQUIRED_SCOPE_IDS=(
+  "570282fd-fa5c-430d-a7fd-fc8dc98a9dca" # Mail.Read
+  "e383f46e-2787-4529-855e-0e479a3ffac0" # Mail.Send
+  "1ec239c2-d7c9-4623-a91a-a9775856bb36" # Calendars.ReadWrite
+  "a65f2972-a4f8-4f5e-afd7-69ccb046d5dc" # OnlineMeetings.ReadWrite
+  "e1fe6dd8-ba31-4d61-89e7-88639da4683d" # User.Read
+)
+
+# Full set requested on the Entra app (OIDC + mail/calendar/meetings).
+ARIA_GRAPH_ALL_PERM_SPECS=(
+  "37f7f235-527c-4136-accd-4a02d197975b=Scope" # openid
+  "64a6cdd6-aab1-4aaf-94b8-3cc8405e90d0=Scope" # email
+  "14dad69e-099b-42c9-810b-d002981feec1=Scope" # profile
+  "7427e0e9-2fdb-4417-809c-591378161370=Scope" # offline_access
+  "e1fe6dd8-ba31-4d61-89e7-88639da4683d=Scope" # User.Read
+  "570282fd-fa5c-430d-a7fd-fc8dc98a9dca=Scope" # Mail.Read
+  "e383f46e-2787-4529-855e-0e479a3ffac0=Scope" # Mail.Send
+  "1ec239c2-d7c9-4623-a91a-a9775856bb36=Scope" # Calendars.ReadWrite
+  "a65f2972-a4f8-4f5e-afd7-69ccb046d5dc=Scope" # OnlineMeetings.ReadWrite
+)
+
+aria_graph_app_scope_ids() {
+  local app_id="$1"
+  az ad app show --id "$app_id" \
+    --query "requiredResourceAccess[?resourceAppId=='${ARIA_GRAPH_API_ID}'].resourceAccess[].id" \
+    -o tsv 2>/dev/null | tr '\t' '\n' | sed '/^$/d'
+}
+
+aria_graph_verify_required_scopes() {
+  local app_id="$1"
+  local present missing id
+  present="$(aria_graph_app_scope_ids "$app_id")"
+  missing=()
+  for id in "${ARIA_GRAPH_REQUIRED_SCOPE_IDS[@]}"; do
+    if ! printf '%s\n' "$present" | grep -qix "$id"; then
+      missing+=("$id")
+    fi
+  done
+  if [ "${#missing[@]}" -gt 0 ]; then
+    echo "ERROR: Entra app $app_id missing required Graph delegated scopes:" >&2
+    printf '  %s\n' "${missing[@]}" >&2
+    echo "       Need Mail.Read, Mail.Send, Calendars.ReadWrite, OnlineMeetings.ReadWrite, User.Read." >&2
+    return 1
+  fi
+  echo "Verified required Graph delegated scopes on appId=$app_id"
+  return 0
+}
+
 apply_mantu_graph_delegated_permissions() {
   local app_id="$1"
-  local graph_api="00000003-0000-0000-c000-000000000000"
-  local perm_ids=(
-    "37f7f235-527c-4136-accd-4a02d197975b=Scope"
-    "64a6cdd6-aab1-4aaf-94b8-3cc8405e90d0=Scope"
-    "14dad69e-099b-42c9-810b-d002981feec1=Scope"
-    "7427e0e9-2fdb-4417-809c-591378161370=Scope"
-    "e1fe6dd8-ba31-4d61-89e7-88639da4683d=Scope"
-    "570282fd-fa5c-430d-a7fd-fc8dc98a9dca=Scope"
-    "e383f46e-2787-4529-855e-0e479a3ffac0=Scope"
-    "1ec239c2-d7c9-4623-a91a-a9775856bb36=Scope"
-    "a65f2972-a4f8-4f5e-afd7-69ccb046d5dc=Scope"
-  )
-  echo "Ensuring Graph delegated permissions on appId=$app_id…"
-  az ad app permission add --id "$app_id" --api "$graph_api" \
-    --api-permissions "${perm_ids[@]}" >/dev/null 2>&1 || true
-  if az ad app permission admin-consent --id "$app_id" >/dev/null 2>&1; then
-    echo "Admin consent granted."
-  else
-    echo "WARN: admin-consent failed — grant in Azure Portal → API permissions."
+  local add_err tenant_id portal_perms
+  if [ -z "$app_id" ]; then
+    echo "ERROR: apply_mantu_graph_delegated_permissions requires app id" >&2
+    return 2
   fi
+
+  echo "Ensuring Graph delegated permissions on appId=$app_id…"
+  set +e
+  add_err="$(az ad app permission add --id "$app_id" --api "$ARIA_GRAPH_API_ID" \
+    --api-permissions "${ARIA_GRAPH_ALL_PERM_SPECS[@]}" 2>&1)"
+  add_rc=$?
+  set -e
+  # Duplicate add is OK; other failures must not leave the app without required scopes.
+  if [ "$add_rc" -ne 0 ]; then
+    if ! printf '%s' "$add_err" | grep -qiE 'already exists|PermissionBeingAddedAlreadyExists|Conflict'; then
+      echo "WARN: az ad app permission add exit $add_rc — will verify scopes next" >&2
+      printf '%s\n' "$add_err" | sed 's/^/  /' >&2
+    fi
+  fi
+
+  if ! aria_graph_verify_required_scopes "$app_id"; then
+    echo "ERROR: permission add did not land required Graph scopes — fix in Portal then re-run." >&2
+    return 3
+  fi
+
+  # Service principal needed for admin consent / token issuance.
   az ad sp create --id "$app_id" >/dev/null 2>&1 || true
+
+  tenant_id="$(az account show --query tenantId -o tsv 2>/dev/null || true)"
+  portal_perms="https://portal.azure.com/${tenant_id}/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/CallAnAPI/appId/${app_id}"
+
+  if [ "${ARIA_GRAPH_SKIP_ADMIN_CONSENT:-0}" = "1" ]; then
+    echo "ARIA_GRAPH_SKIP_ADMIN_CONSENT=1 — skipping admin-consent CLI (ensure Portal Grant admin consent done)."
+    echo "  $portal_perms"
+    return 0
+  fi
+
+  set +e
+  consent_err="$(az ad app permission admin-consent --id "$app_id" 2>&1)"
+  consent_rc=$?
+  set -e
+  if [ "$consent_rc" -eq 0 ]; then
+    echo "Admin consent granted."
+    rm -f /tmp/az-graph-admin-consent.needed
+    return 0
+  fi
+
+  echo "ERROR: admin-consent failed (requires Global Admin / Privileged Role Admin)." >&2
+  printf '%s\n' "$consent_err" | sed 's/^/  /' >&2
+  echo "       Grant admin consent in Portal, then either:" >&2
+  echo "         1) re-run: bash scripts/az-configure-existing-graph-app.sh --apply" >&2
+  echo "         2) or: ARIA_GRAPH_SKIP_ADMIN_CONSENT=1 bash scripts/az-configure-existing-graph-app.sh --apply" >&2
+  echo "       Portal: $portal_perms" >&2
+  touch /tmp/az-graph-admin-consent.needed
+  return 3
 }
 
 write_owner_microsoft_env() {

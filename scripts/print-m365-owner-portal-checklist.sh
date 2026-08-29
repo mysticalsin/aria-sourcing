@@ -76,8 +76,10 @@ Minimal path (recommended):
    echo '<application-client-id>' > /tmp/owner-azure-app-id
    bash scripts/probe-m365-unblock.sh --apply
    # or: bash scripts/fly-m365-from-azure-app-id.sh
-4. Agent configures redirects + Graph delegated perms, mints secret, applies Fly Graph secrets.
-5. Recruiter: Settings → Connect Outlook → Enable webhook (Calendars.ReadWrite + OnlineMeetings.ReadWrite)
+4. Agent configures redirects + Graph delegated perms, **admin-consent** (or Portal Grant), mints secret, applies Fly Graph secrets.
+   If admin-consent CLI fails: Grant admin consent in Portal → API permissions, then re-run probe --apply
+   (or ARIA_GRAPH_SKIP_ADMIN_CONSENT=1 after Portal grant).
+5. Recruiter: Settings → Connect Outlook (callback auto-wires webhook when scopes present)
 6. bash scripts/verify-m365-ready.sh
 
 Full manual portal path (if preferred):
@@ -129,7 +131,8 @@ Please register a single-tenant Entra app for ARIA Fly Graph (tenant ${TENANT_ID
 2. Name: ARIA Mantu Graph (Fly) · Accounts in this organizational directory only
 3. Reply with the Application (client) ID only — agent configures redirects + Graph
    delegated perms (Mail.Read/Send, Calendars.ReadWrite, OnlineMeetings.ReadWrite,
-   User.Read, offline_access), mints a secret, and applies Fly.
+   User.Read, offline_access), grants admin consent when possible, mints a secret,
+   and applies Fly. If you are Global Admin, also click Grant admin consent on the app.
 4. Alternative: assign Application Developer to ${ACCOUNT:-twalteur@amaris.com}
    (agent waiters re-probe create every ~5 minutes).
 

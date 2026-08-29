@@ -41,7 +41,8 @@ Marker: `/tmp/az-create-mantu-graph-app.noperm` (waiters expire it every ~5m and
 ### Owner unblock options (any one)
 
 1. **Minimal (recommended):** An **Entra admin** (Global Admin / Application Administrator / Application Developer) registers `ARIA Mantu Graph (Fly)` in Portal →  
-   `echo '<client-id>' > /tmp/owner-azure-app-id` (agent configures + mints + applies)
+   `echo '<client-id>' > /tmp/owner-azure-app-id` (agent configures + mints + applies).  
+   Agent **fail-closes** if required Graph scopes are missing or admin-consent cannot be granted (Portal → API permissions → Grant admin consent, then re-run).
 2. Assign **Application Developer** (or Application Administrator) to `twalteur@amaris.com`, then waiters auto-retry  
    `bash scripts/az-create-mantu-graph-app.sh --apply` (noperm latch TTL clears every ~5m)
 3. Temporarily enable user app registration (`allowedToCreateApps=true`), then option 2, then revert policy
