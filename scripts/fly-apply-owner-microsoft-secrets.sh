@@ -70,6 +70,11 @@ is_placeholder() {
   case "$v" in
     *PLACEHOLDER*|*placeholder*) return 0 ;;
   esac
+  # Monotonous demo/fixture UUIDs (11111111-1111-4111-8111-111111111111) look "set"
+  # but break Connect Outlook authorize at Microsoft — refuse apply.
+  if printf '%s' "$v" | grep -Eqi '^([0-9a-f])\1{7}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'; then
+    return 0
+  fi
   return 1
 }
 

@@ -81,6 +81,16 @@ ok(
   }).microsoftOAuth === true,
 );
 ok(
+  "production microsoft oauth rejects monotonous demo client_id UUID",
+  emailProviderReadiness({
+    NODE_ENV: "production",
+    MICROSOFT_CLIENT_ID: "11111111-1111-4111-8111-111111111111",
+    MICROSOFT_CLIENT_SECRET: "sec",
+    MICROSOFT_REDIRECT_URI: "https://aria-mantu-app.fly.dev/auth/microsoft/callback",
+    MICROSOFT_TENANT_ID: "ce57ebe3-a63d-4708-b5cf-c274b48bd26c",
+  }).microsoftOAuth === false,
+);
+ok(
   "production microsoft oauth accepts tenant derived from GOTRUE_EXTERNAL_AZURE_URL",
   emailProviderReadiness({
     NODE_ENV: "production",

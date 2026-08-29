@@ -56,6 +56,22 @@ const TENANT_GUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
+ * Reject PLACEHOLDER_* tokens and monotonous demo UUIDs (e.g. 11111111-1111-4111-8111-111111111111)
+ * that look "set" but break Connect Outlook authorize at Microsoft.
+ */
+export function microsoftCredentialLooksSynthetic(value: string | null | undefined): boolean {
+  const v = String(value ?? "").trim();
+  if (!v) return true;
+  if (/^(PLACEHOLDER|placeholder|your-|YOUR-|changeme|CHANGEME)/i.test(v)) return true;
+  if (/PLACEHOLDER|placeholder/.test(v)) return true;
+  // Fixture/demo UUIDs: first group is a single hex digit repeated 8 times.
+  if (/^([0-9a-f])\1{7}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v)) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Resolve Entra tenant for Graph mailbox OAuth.
  * Prefer MICROSOFT_TENANT_ID; else parse GOTRUE_EXTERNAL_AZURE_URL
  * (`https://login.microsoftonline.com/<tenant>/v2.0`).
@@ -65,14 +81,18 @@ export function resolveMicrosoftTenantId(
   env: Record<string, string | undefined> = process.env,
 ): string | null {
   const explicit = (env.MICROSOFT_TENANT_ID ?? "").trim();
-  if (explicit && TENANT_GUID_RE.test(explicit)) return explicit.toLowerCase();
+  if (explicit && TENANT_GUID_RE.test(explicit) && !microsoftCredentialLooksSynthetic(explicit)) {
+    return explicit.toLowerCase();
+  }
 
   const azureUrl = (env.GOTRUE_EXTERNAL_AZURE_URL ?? "").trim();
-  if (azureUrl) {
+  if (azureUrl && !microsoftCredentialLooksSynthetic(azureUrl)) {
     try {
       const path = new URL(azureUrl).pathname.replace(/^\/+|\/+$/g, "");
       const tenant = path.split("/")[0] ?? "";
-      if (TENANT_GUID_RE.test(tenant)) return tenant.toLowerCase();
+      if (TENANT_GUID_RE.test(tenant) && !microsoftCredentialLooksSynthetic(tenant)) {
+        return tenant.toLowerCase();
+      }
     } catch {
       /* ignore */
     }
@@ -109,7 +129,9 @@ export function emailProviderReadiness(
     // would lie true while Connect Outlook returns 500 (AADSTS50194 /common/).
     microsoftOAuth: Boolean(
       env.MICROSOFT_CLIENT_ID?.trim()
+        && !microsoftCredentialLooksSynthetic(env.MICROSOFT_CLIENT_ID)
         && env.MICROSOFT_CLIENT_SECRET?.trim()
+        && !microsoftCredentialLooksSynthetic(env.MICROSOFT_CLIENT_SECRET)
         && microsoftRedirectUriReady(env)
         && resolveMicrosoftOAuthAuthority(env),
     ),

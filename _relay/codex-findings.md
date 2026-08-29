@@ -1137,3 +1137,11 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** Decisions: Entra/LLM WARN-only for Graph E2E PASS; `print-fly-secrets-checklist` ends with `fly-enterprise-activate.sh`.
 **Suggested fix:** Entra/LLM → WARN; require `MICROSOFT_TENANT_ID` with other Graph secrets.
 **Status:** fixed (this shift — cursor/graph-minimum-reopen-fixes-bca0)
+
+## 2026-08-29 — Synthetic Graph client_id false-ready after apply
+**Severity:** correctness
+**File:** scripts/lib/owner-microsoft-credentials.sh; src/lib/email-connections.ts; scripts/fly-apply-owner-microsoft-secrets.sh
+**Issue:** Env exports with monotonous demo UUID `11111111-1111-4111-8111-111111111111` passed PLACEHOLDER checks, were applied to Fly, and made `microsoftOAuth=true` while authorize redirected with a non-real client_id (Connect Outlook would fail at Microsoft).
+**Repro/evidence:** After `probe-m365-unblock.sh --apply`, authed `GET /auth/microsoft?seat_id=…` Location contained `client_id=11111111-1111-4111-8111-111111111111`.
+**Suggested fix:** Treat monotonous fixture UUIDs as placeholder in apply + readiness; refuse authorize; unset fake Fly secrets.
+**Status:** fixed (pending commit)

@@ -13,6 +13,10 @@ owner_ms_is_placeholder() {
   case "$v" in
     *PLACEHOLDER*|*placeholder*) return 0 ;;
   esac
+  # Monotonous demo/fixture UUIDs are not real Entra app credentials.
+  if printf '%s' "$v" | grep -Eqi '^([0-9a-f])\1{7}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'; then
+    return 0
+  fi
   return 1
 }
 

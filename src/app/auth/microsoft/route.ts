@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { resolveMicrosoftOAuthAuthority, resolveMicrosoftRedirectUri } from "@/lib/email-connections";
+import {
+  microsoftCredentialLooksSynthetic,
+  resolveMicrosoftOAuthAuthority,
+  resolveMicrosoftRedirectUri,
+} from "@/lib/email-connections";
 import { getServerSupabase, requireAdmin } from "@/lib/supabase/server";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 
@@ -27,6 +31,13 @@ export async function GET(req: NextRequest) {
   const clientId = process.env.MICROSOFT_CLIENT_ID;
   if (!clientId) {
     return NextResponse.json({ ok: false, error: "Microsoft OAuth is not configured." }, { status: 500 });
+  }
+  // Fail closed on monotonous demo UUIDs / PLACEHOLDER tokens (false-ready apply).
+  if (microsoftCredentialLooksSynthetic(clientId)) {
+    return NextResponse.json(
+      { ok: false, error: "Microsoft OAuth client id looks synthetic/placeholder — refuse authorize." },
+      { status: 500 },
+    );
   }
 
   const searchParams = new URL(req.url).searchParams;
