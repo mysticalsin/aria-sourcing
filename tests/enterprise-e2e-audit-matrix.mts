@@ -1366,6 +1366,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /owner_ms_has_credentials/.test(lib)
         && /owner_ms_sync_env_to_dropzone/.test(lib)
         && /GOTRUE_EXTERNAL_AZURE_URL/.test(lib)
+        && /Graph\/Outlook secrets are enough/.test(lib)
+        && /Entra SSO is optional/.test(lib)
         && /owner_ms_sync_env_to_dropzone/.test(probe)
         && /--apply/.test(probe)
         && /fly-apply-owner-microsoft-secrets/.test(probe)

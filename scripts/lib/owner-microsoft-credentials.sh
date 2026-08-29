@@ -14,9 +14,23 @@ owner_ms_is_placeholder() {
 }
 
 owner_ms_has_drop_file() {
+  # Graph/Outlook secrets are enough to remint microsoftOAuth (Entra SSO lines may
+  # still be PLACEHOLDER). Reject only when required Graph fields are missing/placeholder.
   local f
   for f in /tmp/owner-microsoft.env "$owner_ms_repo/production-readiness/.owner-microsoft.env"; do
-    if [ -r "$f" ] && ! grep -q 'PLACEHOLDER' "$f" 2>/dev/null; then
+    [ -r "$f" ] || continue
+    if (
+      set -a
+      # shellcheck disable=SC1090
+      source "$f"
+      set +a
+      owner_ms_is_placeholder "${MICROSOFT_CLIENT_ID:-}" && exit 1
+      owner_ms_is_placeholder "${MICROSOFT_CLIENT_SECRET:-}" && exit 1
+      if owner_ms_is_placeholder "${MICROSOFT_TENANT_ID:-}"; then
+        owner_ms_is_placeholder "${GOTRUE_EXTERNAL_AZURE_URL:-}" && exit 1
+      fi
+      exit 0
+    ); then
       return 0
     fi
   done
@@ -24,17 +38,11 @@ owner_ms_has_drop_file() {
 }
 
 owner_ms_has_env_exports() {
+  # Match fly-apply Graph requirements (tenant or Azure URL). Entra SSO is optional.
   owner_ms_is_placeholder "${MICROSOFT_CLIENT_ID:-}" && return 1
   owner_ms_is_placeholder "${MICROSOFT_CLIENT_SECRET:-}" && return 1
   if owner_ms_is_placeholder "${MICROSOFT_TENANT_ID:-}"; then
     owner_ms_is_placeholder "${GOTRUE_EXTERNAL_AZURE_URL:-}" && return 1
-  fi
-  owner_ms_is_placeholder "${GOTRUE_EXTERNAL_AZURE_CLIENT_ID:-}" && return 1
-  owner_ms_is_placeholder "${GOTRUE_EXTERNAL_AZURE_SECRET:-}" && return 1
-  owner_ms_is_placeholder "${GOTRUE_EXTERNAL_AZURE_URL:-}" && return 1
-  if [ -n "${GOTRUE_EXTERNAL_AZURE_ENABLED:-}" ] \
-    && owner_ms_is_placeholder "${GOTRUE_EXTERNAL_AZURE_ENABLED}"; then
-    return 1
   fi
   return 0
 }
@@ -47,7 +55,20 @@ owner_ms_has_credentials() {
 owner_ms_sync_env_to_dropzone() {
   local out="${OWNER_MICROSOFT_ENV:-/tmp/owner-microsoft.env}"
   owner_ms_has_env_exports || return 1
-  [ -r "$out" ] && ! grep -q 'PLACEHOLDER' "$out" 2>/dev/null && return 0
+  if [ -r "$out" ] && (
+    set -a
+    # shellcheck disable=SC1090
+    source "$out"
+    set +a
+    owner_ms_is_placeholder "${MICROSOFT_CLIENT_ID:-}" && exit 1
+    owner_ms_is_placeholder "${MICROSOFT_CLIENT_SECRET:-}" && exit 1
+    if owner_ms_is_placeholder "${MICROSOFT_TENANT_ID:-}"; then
+      owner_ms_is_placeholder "${GOTRUE_EXTERNAL_AZURE_URL:-}" && exit 1
+    fi
+    exit 0
+  ); then
+    return 0
+  fi
   local tenant="${MICROSOFT_TENANT_ID:-}"
   if owner_ms_is_placeholder "$tenant"; then
     tenant="$(
@@ -65,16 +86,20 @@ owner_ms_sync_env_to_dropzone() {
   local enabled="${GOTRUE_EXTERNAL_AZURE_ENABLED:-true}"
   owner_ms_is_placeholder "$enabled" && enabled="true"
   umask 077
-  cat > "$out" <<EOF
-# Synced from env exports by probe-m365-unblock — NEVER commit
-MICROSOFT_CLIENT_ID=${MICROSOFT_CLIENT_ID}
-MICROSOFT_CLIENT_SECRET=${MICROSOFT_CLIENT_SECRET}
-MICROSOFT_REDIRECT_URI=${MICROSOFT_REDIRECT_URI:-https://aria-mantu-app.fly.dev/auth/microsoft/callback}
-MICROSOFT_TENANT_ID=${tenant}
-GOTRUE_EXTERNAL_AZURE_ENABLED=${enabled}
-GOTRUE_EXTERNAL_AZURE_CLIENT_ID=${GOTRUE_EXTERNAL_AZURE_CLIENT_ID}
-GOTRUE_EXTERNAL_AZURE_SECRET=${GOTRUE_EXTERNAL_AZURE_SECRET}
-GOTRUE_EXTERNAL_AZURE_URL=${GOTRUE_EXTERNAL_AZURE_URL}
-EOF
+  {
+    echo "# Synced from env exports by probe-m365-unblock — NEVER commit"
+    echo "MICROSOFT_CLIENT_ID=${MICROSOFT_CLIENT_ID}"
+    echo "MICROSOFT_CLIENT_SECRET=${MICROSOFT_CLIENT_SECRET}"
+    echo "MICROSOFT_REDIRECT_URI=${MICROSOFT_REDIRECT_URI:-https://aria-mantu-app.fly.dev/auth/microsoft/callback}"
+    echo "MICROSOFT_TENANT_ID=${tenant}"
+    if ! owner_ms_is_placeholder "${GOTRUE_EXTERNAL_AZURE_CLIENT_ID:-}" \
+      && ! owner_ms_is_placeholder "${GOTRUE_EXTERNAL_AZURE_SECRET:-}" \
+      && ! owner_ms_is_placeholder "${GOTRUE_EXTERNAL_AZURE_URL:-}"; then
+      echo "GOTRUE_EXTERNAL_AZURE_ENABLED=${enabled}"
+      echo "GOTRUE_EXTERNAL_AZURE_CLIENT_ID=${GOTRUE_EXTERNAL_AZURE_CLIENT_ID}"
+      echo "GOTRUE_EXTERNAL_AZURE_SECRET=${GOTRUE_EXTERNAL_AZURE_SECRET}"
+      echo "GOTRUE_EXTERNAL_AZURE_URL=${GOTRUE_EXTERNAL_AZURE_URL}"
+    fi
+  } > "$out"
   chmod 600 "$out"
 }
