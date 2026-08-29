@@ -51,7 +51,12 @@ Without Graph secrets: no Outlook connect, no Graph push intake, no confirmLive 
 Without Entra: Graph Connect Outlook still works; /login Microsoft SSO CTA stays off.
 
 Agent can READ Entra apps in this tenant but cannot CREATE (Insufficient privileges).
-Tenant scan: 1339 apps, zero with aria-mantu-*.fly.dev redirect URIs — owner must create one.
+Tenant scan: still zero apps with aria-mantu-*.fly.dev redirect URIs — owner must create one
+(reject PLACEHOLDER_* and monotonous demo UUIDs like 11111111-…).
+
+After REAL secrets + Connect Outlook (webhook + Calendars.ReadWrite + OnlineMeetings.ReadWrite):
+  bash scripts/verify-m365-ready.sh
+  # expects Graph Mail.Send push→hiring_need PASS + confirmLive Teams book + RESULT: PASS
 
 GOTRUE_EXTERNAL_AZURE_URL (only if enabling SSO):
   https://login.microsoftonline.com/${TENANT_ID}/v2.0

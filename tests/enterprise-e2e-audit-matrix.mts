@@ -492,6 +492,11 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         )
         && /sendGraphJsonMail/.test(readFileSync("src/lib/email-oauth.ts", "utf8"))
         && /send_graph_need_probe/.test(readFileSync("src/app/api/email/connections/route.ts", "utf8"))
+        && !/Compensation norms:/.test(
+          readFileSync("src/lib/ai/hermes.ts", "utf8").match(
+            /export function buildOutreachPrompt[\s\S]*?^}/m,
+          )?.[0] ?? "Compensation norms:",
+        )
         && /Polling workspace_state for campaign title/.test(script)
         && /Loop worker materialized campaign/.test(script)
         && /set_sourcing_loop_controls/.test(script)

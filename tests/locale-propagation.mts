@@ -55,6 +55,10 @@ const frPrompt = buildOutreachPrompt({
 });
 ok("FR outreach prompt names language", /ISO code\): fr/.test(frPrompt));
 ok("FR outreach prompt carries locale city", /Work city: Paris/.test(frPrompt));
+ok(
+  "FR outreach prompt omits compensation norms (candidate-bound)",
+  !/Compensation norms:/i.test(frPrompt),
+);
 
 const dePrompt = buildOutreachPrompt({
   candidateName: "Hans",

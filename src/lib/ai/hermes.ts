@@ -98,7 +98,8 @@ export function buildOutreachPrompt(opts: {
         opts.localeContext.workCity ? `Work city: ${opts.localeContext.workCity}.` : "",
         opts.localeContext.clientSector ? `Client sector: ${opts.localeContext.clientSector}.` : "",
         opts.localeContext.formality ? `Formality: ${opts.localeContext.formality}.` : "",
-        opts.localeContext.compensationNorms ? `Compensation norms: ${opts.localeContext.compensationNorms}.` : "",
+        // Never inject compensationNorms into candidate-bound outreach prompts —
+        // that steers drafts into disclosure-comp-blocked (€ / salary / rate / band).
       ].filter(Boolean)
     : [];
   const lines = [
@@ -131,7 +132,7 @@ export function buildOutreachPrompt(opts: {
         `- Core skills: ${opts.requiredSkills.join(", ") || "n/a"}`,
       ].join("\n"),
     "",
-    "Rules: lead with the candidate's specific recent work (project/repo name, architecture detail, or stack — never raw scraped counts like public repos, followers, or stars). Never open with GitHub-activity boilerplate (\"your GitHub activity\", \"votre activité GitHub\", \"Active GitHub profile\") — that reads as scraped profile disclosure; name a concrete project/stack detail instead. Never open with an employer/company-name compliment alone (e.g. \"your work at Acme\") — that reads as a researched database insert; pair any company mention with a concrete tech/project detail, or lead with stack/recent work instead. One genuine reason you're reaching out; a soft, low-pressure ask. Name Mantu Group in the body. Under 120 words (LinkedIn under 80). No AI slop, no corporate filler, no salary disclosure.",
+    "Rules: lead with the candidate's specific recent work (project/repo name, architecture detail, or stack — never raw scraped counts like public repos, followers, or stars). Never open with GitHub-activity boilerplate (\"your GitHub activity\", \"votre activité GitHub\", \"Active GitHub profile\") — that reads as scraped profile disclosure; name a concrete project/stack detail instead. Never open with an employer/company-name compliment alone (e.g. \"your work at Acme\") — that reads as a researched database insert; pair any company mention with a concrete tech/project detail, or lead with stack/recent work instead. One genuine reason you're reaching out; a soft, low-pressure ask. Name Mantu Group in the body. Under 120 words (LinkedIn under 80). No AI slop, no corporate filler. Never mention salary, compensation, pay, rate, budget, band, package, salaire, fourchette, or any currency symbol (€/$/£) — a recruiter can discuss ranges later if asked.",
     opts.signature ? `Sign off with: ${opts.signature}` : "",
     "",
     "Reply with exactly: a line 'Subject: <subject>' then a blank line then the message body. No preamble, no commentary.",
