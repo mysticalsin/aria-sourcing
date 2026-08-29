@@ -47,8 +47,78 @@ echo "  fly_llm_env_missing=${llm_missing}"
 # Compat alias: m365 = Graph bucket only (E2E PASS / verify-m365-ready).
 echo "  fly_m365_missing=${graph_missing}"
 
+# Name inventory alone is not enough: synthetic demo UUIDs can set secret NAMES while
+# microsoftOAuth stays false (readiness rejects). Prefer live connections check.
+probe_microsoft_oauth() {
+  local app_url kong_url work login_code cookie_hdr cookie_value len max_chunk chunks idx start part ms_oauth
+  app_url="${APP_URL:-https://aria-mantu-app.fly.dev}"
+  kong_url="${KONG_URL:-https://aria-mantu-kong.fly.dev}"
+  if ! eval "$(bash "$repo/scripts/print-fly-e2e-env.sh" --export 2>/dev/null)"; then
+    echo "unknown"
+    return 0
+  fi
+  if [ -z "${ADMIN_EMAIL:-}" ] || [ -z "${ADMIN_PASSWORD:-}" ] || [ -z "${ANON_KEY:-}" ]; then
+    echo "unknown"
+    return 0
+  fi
+  work="$(mktemp -d "${TMPDIR:-/tmp}/probe-m365-oauth.XXXXXX")"
+  login_code="$(
+    curl -sS -o "$work/sess.json" -w '%{http_code}' \
+      -X POST "$kong_url/auth/v1/token?grant_type=password" \
+      -H "apikey: $ANON_KEY" \
+      -H "Content-Type: application/json" \
+      -d "$(jq -nc --arg e "$ADMIN_EMAIL" --arg p "$ADMIN_PASSWORD" '{email:$e,password:$p}')" \
+      2>/dev/null || echo "000"
+  )"
+  if [ "$login_code" != "200" ]; then
+    rm -rf "$work"
+    echo "unknown"
+    return 0
+  fi
+  cookie_value="$(jq -r '.access_token // empty' "$work/sess.json")"
+  len=${#cookie_value}
+  max_chunk=3180
+  cookie_hdr=""
+  if [ "$len" -le "$max_chunk" ]; then
+    cookie_hdr="sb-auth-token=$cookie_value"
+  else
+    chunks=$(( (len + max_chunk - 1) / max_chunk ))
+    idx=0
+    while [ "$idx" -lt "$chunks" ]; do
+      start=$((idx * max_chunk))
+      part="${cookie_value:$start:$max_chunk}"
+      if [ -z "$cookie_hdr" ]; then cookie_hdr="sb-auth-token.${idx}=${part}"
+      else cookie_hdr="${cookie_hdr}; sb-auth-token.${idx}=${part}"; fi
+      idx=$((idx + 1))
+    done
+  fi
+  curl -sS -o "$work/conn.json" -H "Cookie: $cookie_hdr" "$app_url/api/email/connections" >/dev/null 2>&1 || true
+  ms_oauth="$(jq -r '.providers.microsoftOAuth // empty' "$work/conn.json" 2>/dev/null || true)"
+  rm -rf "$work"
+  case "$ms_oauth" in
+    true|false) echo "$ms_oauth" ;;
+    *) echo "unknown" ;;
+  esac
+}
+
 if [ "$graph_missing" = "0" ]; then
-  echo "RESULT: fly-secrets-ready"
+  ms_oauth="$(probe_microsoft_oauth)"
+  echo "  microsoftOAuth=${ms_oauth}"
+  if [ "$ms_oauth" = "false" ]; then
+    echo "RESULT: fly-secrets-present-oauth-false"
+    echo "  Graph secret NAMES are set but readiness rejected them (synthetic/PLACEHOLDER/tenant/redirect)."
+    echo "  Unset fake MICROSOFT_CLIENT_* / TENANT or re-apply REAL values; do not Connect Outlook yet."
+    exit 4
+  fi
+  if [ "$ms_oauth" = "true" ]; then
+    echo "RESULT: fly-secrets-ready"
+    if [ "${entra_missing:-0}" != "0" ] || [ "${llm_missing:-0}" != "0" ]; then
+      echo "  note: Entra/LLM optional WARNs remain — Graph E2E PASS does not require them"
+    fi
+    exit 0
+  fi
+  echo "RESULT: fly-secrets-names-ready"
+  echo "  note: could not verify microsoftOAuth (admin session); confirm via Settings / verify-m365-ready"
   if [ "${entra_missing:-0}" != "0" ] || [ "${llm_missing:-0}" != "0" ]; then
     echo "  note: Entra/LLM optional WARNs remain — Graph E2E PASS does not require them"
   fi
@@ -67,7 +137,19 @@ if owner_ms_has_credentials; then
     missing_after="$(printf '%s\n' "$inv_after" | sed -n 's/^graph_secrets_missing=//p' | tail -1)"
     missing_after="${missing_after:-unknown}"
     if [ "$missing_after" = "0" ]; then
-      echo "RESULT: applied-ok"
+      ms_oauth="$(probe_microsoft_oauth)"
+      echo "  microsoftOAuth=${ms_oauth}"
+      if [ "$ms_oauth" = "false" ]; then
+        echo "RESULT: applied-but-oauth-false" >&2
+        echo "  Secrets landed by name but microsoftOAuth=false — likely synthetic/PLACEHOLDER. Roll back." >&2
+        exit 4
+      fi
+      if [ "$ms_oauth" = "true" ]; then
+        echo "RESULT: applied-ok"
+        exit 0
+      fi
+      echo "RESULT: applied-ok-oauth-unchecked"
+      echo "  note: confirm microsoftOAuth=true before Connect Outlook"
       exit 0
     fi
     echo "RESULT: apply-ran-still-missing=${missing_after}" >&2

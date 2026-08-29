@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { resolveMicrosoftOAuthAuthority, resolveMicrosoftRedirectUri } from "@/lib/email-connections";
+import {
+  microsoftCredentialLooksSynthetic,
+  resolveMicrosoftOAuthAuthority,
+  resolveMicrosoftRedirectUri,
+} from "@/lib/email-connections";
 import { getServerSupabase, getServiceSupabase, requireAdmin } from "@/lib/supabase/server";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { encryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
@@ -22,6 +26,11 @@ export async function GET(req: NextRequest) {
   const clientSecret = process.env.MICROSOFT_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
     return redirectError(req, "Microsoft OAuth is not configured.");
+  }
+  // Defense in depth: refuse token exchange on monotonous demo UUIDs / PLACEHOLDER
+  // (authorize + readiness already reject; callback must not persist if they regress).
+  if (microsoftCredentialLooksSynthetic(clientId) || microsoftCredentialLooksSynthetic(clientSecret)) {
+    return redirectError(req, "Microsoft OAuth credentials look synthetic/placeholder — refuse callback.");
   }
 
   const searchParams = new URL(req.url).searchParams;

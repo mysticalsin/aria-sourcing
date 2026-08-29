@@ -1416,6 +1416,8 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /[Mm]onotonous demo\/fixture UUIDs|\\1\{7\}/.test(readFileSync("scripts/fly-apply-owner-microsoft-secrets.sh", "utf8"))
         && /microsoftCredentialLooksSynthetic/.test(readFileSync("src/lib/email-connections.ts", "utf8"))
         && /microsoftCredentialLooksSynthetic/.test(readFileSync("src/app/auth/microsoft/route.ts", "utf8"))
+        && /microsoftCredentialLooksSynthetic/.test(readFileSync("src/app/auth/microsoft/callback/route.ts", "utf8"))
+        && /fly-secrets-present-oauth-false|probe_microsoft_oauth/.test(readFileSync("scripts/probe-m365-unblock.sh", "utf8"))
         && /owner_ms_has_drop_file/.test(readFileSync("scripts/fly-enterprise-golive-when-ready.sh", "utf8"))
         && /Calendars\[\.\]ReadWrite\|calendars\[\.\]readwrite/.test(readFileSync("scripts/post-m365-secrets-golive.sh", "utf8"))
         && /MICROSOFT_TENANT_ID/.test(readFileSync("scripts/fly-enterprise-activate.sh", "utf8"))
