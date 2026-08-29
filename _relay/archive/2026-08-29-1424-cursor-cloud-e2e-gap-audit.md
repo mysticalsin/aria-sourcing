@@ -1,27 +1,28 @@
 ---
 project: MSourcing / ARIA
-shift: 382
+shift: 381
 agent: cursor-cloud
-updated: 2026-08-29T14:24Z
+updated: 2026-08-29T14:18Z
 status: e2e-partial-awaiting-real-graph-secrets
 ---
 
-# Handoff — Shift 382
+# Handoff — Shift 381
 
 ## Current state
 
-- **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** OPEN
-- **Live Fly:** **`f650f63`** / **0074** · `tip_live`
-- **PARTIAL E2E:** **58/0/2** on `f650f63` — Running: `ARIA_ALLOW_PARTIAL_M365_E2E=1` only · step 3c PASS
-- **Graph:** `graph_secrets_missing=3` (CLIENT_ID/SECRET/TENANT) · REDIRECT + DATA_ENCRYPTION + EMAIL_INBOUND present · microsoftOAuth=false · encryptionReady=true · 6 mock Graph seats
-- **E2E PASS code audit (this shift):** no material code gaps beyond Entra Owner dropzone — authorize scopes + webhook auto-wire + synthetic refuse + verify/6b gates OK
+- **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** OPEN (reopened after accidental close)
+- **Live Fly:** **`f650f63`** / **0074** · `tip_live` · loop primary **2863e10bd41e28** started
+- **PARTIAL E2E:** **58/0/2** on `f650f63` — Running: `ARIA_ALLOW_PARTIAL_M365_E2E=1` only · step 3c PASS · classifier=model · Hermes
+- **Graph:** `graph_secrets_missing=3` · allowedToCreateApps=false · zero fly.dev apps · no dropzone
+- **Settings (live):** Owners → Add twalteur@amaris.com in Graph OAuth empty-state
 - **Gate:** tsc + npm test green · audit **66/66**
 
 ## Done this shift
 
-1. Codex-style E2E PASS gap audit across Connect Outlook, verify-m365, post-m365, Settings Owner surfaces, synthetic microsoftOAuth, e2e 6b
-2. Live re-probe: graph_missing=3 only; encryptionReady=true; Graph seats mock/active ready
-3. Recorded audit in `_relay/codex-findings.md` (ops blocker + non-blocking nits)
+1. Re-probed Entra — still Insufficient privileges / noperm
+2. Settings + tests: Owners Add Tony required in Connect Outlook disabled hint
+3. Reminted Fly to **`f650f63`**; PARTIAL re-verified 58/0/2
+4. Reopened PR #36
 
 ## Blockers
 
@@ -59,11 +60,9 @@ curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
 - Entra admin must register **and add Tony as Owner**; Graph perms fail-closed
 - After Portal Grant: portal-granted marker or ~60s TTL then SKIP consent CLI
 - Shared configure+apply lock; release before seat wait
-- E2E PASS path code-complete pending Entra Owner dropzone (2026-08-29 audit)
 
 ## Watch out
 
 - HANDOFF must keep “expect step 3c PASS” / “step 3c should show” + `print-fly-deploy-confirm`
 - Never invent Microsoft secrets; reject synthetic app ids
 - `/tmp/owner-deploy-confirm.env` must be KEY=value only (two lines)
-- Optional polish only: outlook-needs / seat-card Owners copy; encryptionReady↔secretEncryptionEnabled

@@ -1145,3 +1145,17 @@ Historical and current findings follow. The current consolidated audit is
 **Repro/evidence:** After `probe-m365-unblock.sh --apply`, authed `GET /auth/microsoft?seat_id=…` Location contained `client_id=11111111-1111-4111-8111-111111111111`.
 **Suggested fix:** Treat monotonous fixture UUIDs as placeholder in apply + readiness; refuse authorize; unset fake Fly secrets.
 **Status:** fixed (29bd05b)
+
+## 2026-08-29 — E2E PASS gap audit (post-Owner-hardening)
+**Severity:** spec-mismatch
+**File:** (audit) Connect Outlook / verify-m365 / post-m365 / Settings / synthetic gates / e2e 6b
+**Issue:** Adversarial pass over remaining RESULT: PASS blockers after Owner preflight + consent SKIP + shared lock + Settings Owners hint. Live Fly: `graph_secrets_missing=3` (CLIENT_ID/SECRET/TENANT only); `encryptionReady=true`; microsoftOAuth=false; 6 mock Microsoft Graph seats ready for Connect.
+**Repro/evidence:** See audit body below. Authorize already requests Calendars.ReadWrite + OnlineMeetings.ReadWrite (`src/app/auth/microsoft/route.ts:89-91`); callback auto-wires route + `ensureGraphMailSubscription` + promote (`callback/route.ts:204-265`); synthetic/PLACEHOLDER/monotonous UUID refused in readiness+authorize+callback+apply; verify-m365 + e2e 6b require live seat + webhook + both scopes + Teams joinUrl.
+**Suggested fix:** None required for PASS — only Entra Owner dropzone + real secrets + Connect Outlook.
+**Status:** open (ops: Entra admin Owners Add Tony → apply → Connect Outlook); code PASS path clear
+
+### Non-blocking honesty nits (do not claim PASS; optional polish)
+1. **outlook-needs-panel omits Owners** — `src/components/intake/outlook-needs-panel.tsx:278-286` title/copy says only "OAuth env missing"; Settings panels already say Owners → Add twalteur@amaris.com. Mislead only.
+2. **fleet seat-card toast omits Owners** — `src/components/fleet/seat-card.tsx:170-174` generic "OAuth env missing". Mislead only.
+3. **encryptionReady ≠ secretEncryptionEnabled** — `email-connections.ts:141` is `length > 0`; callback uses `encryptionRequiredButMissing()` → `secretEncryptionEnabled()` (valid base64-32). Junk key could enable Connect UI then fail callback. Live Fly encryptionReady=true and LinkedIn live seat present — not a current PASS blocker.
+4. **post-m365 LIVE_SEAT omits status=active** — `post-m365-secrets-golive.sh:168-170` vs `verify-m365-ready.sh:155-160`; oauth wait can leave ENC=false if MS_OAUTH true (`:148-151`). Verify still fail-closes; no false PASS.
