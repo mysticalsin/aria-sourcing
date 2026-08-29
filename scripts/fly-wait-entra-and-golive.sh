@@ -114,11 +114,18 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       log "WARN: probe --apply from azure-app-id failed; will retry."
     fi
   elif has_deploy_confirm_drop; then
-    log "deploy-confirm present — tip golive (Microsoft secrets may still be missing)"
-    if run_golive; then
-      exit 0
+    # Deploy-confirm alone does not unblock Graph. Only remint-deploy when tip_ahead_app.
+    # tip_ahead_docs / tip_live → wait for owner-azure-app-id / owner-microsoft.env (no golive spam).
+    status="$(bash "$repo/scripts/print-fly-golive-status.sh" 2>/dev/null || true)"
+    if printf '%s\n' "$status" | grep -q 'deploy_status=tip_ahead_app'; then
+      log "deploy-confirm present + tip_ahead_app — tip golive"
+      if run_golive; then
+        exit 0
+      fi
+      log "Golive incomplete with confirm present; will retry."
+    elif [ $(( $(date +%s) % 300 )) -lt "$SLEEP_SEC" ]; then
+      log "confirm present but no tip_ahead_app — waiting for /tmp/owner-azure-app-id or /tmp/owner-microsoft.env (Graph PASS blocker)"
     fi
-    log "Golive incomplete with confirm present; will retry."
   elif az account show >/dev/null 2>&1; then
     if [ -f /tmp/az-create-mantu-graph-app.noperm ]; then
       if owner_ms_has_azure_app_id; then
