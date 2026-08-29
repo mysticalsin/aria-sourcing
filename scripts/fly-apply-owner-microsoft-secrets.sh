@@ -39,6 +39,12 @@ set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo"
 
+# shellcheck source=scripts/lib/owner-microsoft-credentials.sh
+source "$repo/scripts/lib/owner-microsoft-credentials.sh"
+# Busy exit 4 so concurrent waiters/probe do not race secret set + golive.
+owner_ms_acquire_singleton_lock "${ARIA_APPLY_MICROSOFT_LOCK:-/tmp/aria-fly-apply-owner-microsoft.lock}" \
+  "fly-apply-owner-microsoft-secrets" 4
+
 load_owner_env_file() {
   local path="$1"
   [ -r "$path" ] || return 0

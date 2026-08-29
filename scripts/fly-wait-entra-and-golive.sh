@@ -32,6 +32,8 @@ log() { printf '%s %s\n' "$(date -u +%H:%M:%SZ)" "$*" | tee -a "$LOG"; }
 
 # shellcheck source=scripts/lib/owner-microsoft-credentials.sh
 source "$repo/scripts/lib/owner-microsoft-credentials.sh"
+owner_ms_acquire_singleton_lock "${ARIA_WAIT_ENTRA_LOCK:-/tmp/aria-fly-wait-entra.lock}" \
+  "fly-wait-entra-and-golive"
 
 has_microsoft_drop() {
   # Graph-minimum: MICROSOFT_CLIENT_ID/SECRET (+ TENANT) via drop-zone or exports.

@@ -31,6 +31,8 @@ log() { printf '%s %s\n' "$(date -u +%H:%M:%SZ)" "$*" | tee -a "$LOG"; }
 
 # shellcheck source=scripts/lib/owner-microsoft-credentials.sh
 source "$repo/scripts/lib/owner-microsoft-credentials.sh"
+owner_ms_acquire_singleton_lock "${ARIA_WATCH_MICROSOFT_LOCK:-/tmp/aria-watch-owner-microsoft.lock}" \
+  "watch-owner-microsoft-and-apply"
 
 has_microsoft_drop() {
   owner_ms_has_credentials

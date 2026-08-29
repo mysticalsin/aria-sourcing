@@ -108,6 +108,21 @@ owner_ms_maybe_clear_stale_noperm() {
   return 1
 }
 
+# Exclusive flock so duplicate tmux/agent restarts cannot double-apply Fly secrets.
+# Holds FD 9 for the remainder of the process.
+# Optional 3rd arg: exit code when lock busy (default 0 = idempotent no-op for waiters).
+owner_ms_acquire_singleton_lock() {
+  local lockfile="${1:?lockfile required}"
+  local name="${2:-process}"
+  local busy_exit="${3:-0}"
+  # shellcheck disable=SC2329
+  exec 9>"$lockfile"
+  if ! flock -n 9; then
+    printf 'Another %s already running (%s) — exiting\n' "$name" "$lockfile" >&2
+    exit "$busy_exit"
+  fi
+}
+
 # Persist env exports to drop-zone (mode 600) so watcher/remint survive shell restarts.
 owner_ms_sync_env_to_dropzone() {
   local out="${OWNER_MICROSOFT_ENV:-/tmp/owner-microsoft.env}"
