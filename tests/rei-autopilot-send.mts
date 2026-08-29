@@ -106,5 +106,58 @@ ok(
   }).mode === "human_review",
 );
 
+ok(
+  "LinkedIn key without campaign → heyreach_campaign_required",
+  decideReiAutopilotSend({
+    ...base,
+    autopilotEnabled: true,
+    channel: "LinkedIn",
+    heyReachConfigured: false,
+    linkedInVendorConfigured: false,
+    heyReachKeyPresent: true,
+    heyReachCampaignPresent: false,
+    liveHeyReachSeat: false,
+  }).reason === "heyreach_campaign_required",
+);
+
+ok(
+  "LinkedIn key+campaign without seat → heyreach_seat_required",
+  decideReiAutopilotSend({
+    ...base,
+    autopilotEnabled: true,
+    channel: "LinkedIn",
+    heyReachConfigured: false,
+    linkedInVendorConfigured: false,
+    heyReachKeyPresent: true,
+    heyReachCampaignPresent: true,
+    liveHeyReachSeat: false,
+  }).reason === "heyreach_seat_required",
+);
+
+ok(
+  "LinkedIn seat without key → heyreach_key_required",
+  decideReiAutopilotSend({
+    ...base,
+    autopilotEnabled: true,
+    channel: "LinkedIn",
+    heyReachConfigured: false,
+    linkedInVendorConfigured: false,
+    heyReachKeyPresent: false,
+    heyReachCampaignPresent: false,
+    liveHeyReachSeat: true,
+  }).reason === "heyreach_key_required",
+);
+
+ok(
+  "LinkedIn with no HeyReach signals → assisted_manual_only",
+  decideReiAutopilotSend({
+    ...base,
+    autopilotEnabled: true,
+    channel: "LinkedIn",
+    heyReachConfigured: false,
+    linkedInVendorConfigured: false,
+  }).reason === "linkedin_assisted_manual_only",
+);
+
 console.log(`RESULT rei-autopilot-send: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

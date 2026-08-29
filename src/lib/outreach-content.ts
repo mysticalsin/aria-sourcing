@@ -33,10 +33,11 @@ export function approvalScopeHash(input: ApprovalScopeInput): string | null {
   const candidateId = input.candidateId.trim();
   const channel = input.channel.trim();
   if (!candidateId || !channel) return null;
+  // Match SQL lower() / enqueue bind (0079) — use invariant lower, not locale-sensitive.
   const recipient =
     channel === "WhatsApp" || channel === "SMS"
       ? normalizeWhatsAppAddress(input.recipient)
-      : input.recipient.trim().toLocaleLowerCase();
+      : input.recipient.trim().toLowerCase();
   if (!recipient) return null;
   return createHash("sha256").update(`${candidateId}\n${channel}\n${recipient}`, "utf8").digest("hex");
 }

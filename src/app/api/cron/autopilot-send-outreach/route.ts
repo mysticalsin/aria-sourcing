@@ -63,29 +63,50 @@ type DispatchTarget = {
   persistScheduled: boolean;
 };
 
+type TargetResolve =
+  | { ok: true; target: DispatchTarget }
+  | { ok: false; messageId: string; reason: "candidate_missing" | "no_recipient"; detail: string };
+
 async function targetFromMessage(
   svc: NonNullable<ReturnType<typeof getServiceSupabase>>,
   workspaceId: string,
   msg: OutreachMessage,
   persistScheduled: boolean,
-): Promise<DispatchTarget | null> {
+): Promise<TargetResolve> {
   const candidate = await loadCandidateForLoop(svc, workspaceId, msg.candidateId);
-  if (!candidate) return null;
+  if (!candidate) {
+    return {
+      ok: false,
+      messageId: msg.id,
+      reason: "candidate_missing",
+      detail: "Candidate slice unavailable for outreach message.",
+    };
+  }
   const channel = (msg.channel ?? preferredOutreachChannel(candidate)) as ReiOutboundChannel;
   const recipient = outreachDispatchRecipient(msg, candidate).trim();
   // Interviewer prep without override → skip (do not Autopilot to candidate).
-  if (!recipient) return null;
+  if (!recipient) {
+    return {
+      ok: false,
+      messageId: msg.id,
+      reason: "no_recipient",
+      detail: "No reachable recipient for channel (or interviewer prep without override).",
+    };
+  }
   return {
-    messageId: msg.id,
-    campaignId: msg.campaignId,
-    candidateId: msg.candidateId,
-    channel,
-    subject: msg.subject,
-    body: msg.body,
-    recipient,
-    qualityStatus: msg.qualityStatus ?? "unknown",
-    criticsPassed: msg.qualityStatus === "ready" && msg.qualityCriticsUsed === true,
-    persistScheduled,
+    ok: true,
+    target: {
+      messageId: msg.id,
+      campaignId: msg.campaignId,
+      candidateId: msg.candidateId,
+      channel,
+      subject: msg.subject,
+      body: msg.body,
+      recipient,
+      qualityStatus: msg.qualityStatus ?? "unknown",
+      criticsPassed: msg.qualityStatus === "ready" && msg.qualityCriticsUsed === true,
+      persistScheduled,
+    },
   };
 }
 
@@ -114,6 +135,10 @@ export async function POST(req: NextRequest) {
   }
 
   const targets: DispatchTarget[] = [];
+  const earlySkips: Array<{
+    messageId: string;
+    result: { status: "skipped"; detail: string; reason: string };
+  }> = [];
   const workspaceId = parsed.data.workspaceId;
 
   // Fast path: worker passes the just-generated draft inline (before workspace append).
@@ -143,8 +168,14 @@ export async function POST(req: NextRequest) {
     if (!msg) {
       return NextResponse.json({ ok: false, status: "not_found" }, { status: 404 });
     }
-    const target = await targetFromMessage(svc, workspaceId, msg, true);
-    if (target) targets.push(target);
+    const resolved = await targetFromMessage(svc, workspaceId, msg, true);
+    if (resolved.ok) targets.push(resolved.target);
+    else {
+      earlySkips.push({
+        messageId: resolved.messageId,
+        result: { status: "skipped", detail: resolved.detail, reason: resolved.reason },
+      });
+    }
   } else if (parsed.data.campaignId && parsed.data.candidateId) {
     const msg = await loadCandidateOutreachForLoop(
       svc,
@@ -155,13 +186,35 @@ export async function POST(req: NextRequest) {
     if (!msg) {
       return NextResponse.json({ ok: false, status: "not_found" }, { status: 404 });
     }
-    const target = await targetFromMessage(svc, workspaceId, msg, true);
-    if (target) targets.push(target);
+    const resolved = await targetFromMessage(svc, workspaceId, msg, true);
+    if (resolved.ok) targets.push(resolved.target);
+    else {
+      earlySkips.push({
+        messageId: resolved.messageId,
+        result: { status: "skipped", detail: resolved.detail, reason: resolved.reason },
+      });
+    }
   } else if (parsed.data.sweep) {
-    const msgs = await loadReadyAutopilotOutreachSweep(svc, workspaceId, 20);
-    for (const msg of msgs) {
-      const target = await targetFromMessage(svc, workspaceId, msg, true);
-      if (target) targets.push(target);
+    const loaded = await loadReadyAutopilotOutreachSweep(svc, workspaceId, 20);
+    if (!loaded.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          status: loaded.status,
+          detail: loaded.detail,
+        },
+        { status: 503 },
+      );
+    }
+    for (const msg of loaded.outreach) {
+      const resolved = await targetFromMessage(svc, workspaceId, msg, true);
+      if (resolved.ok) targets.push(resolved.target);
+      else {
+        earlySkips.push({
+          messageId: resolved.messageId,
+          result: { status: "skipped", detail: resolved.detail, reason: resolved.reason },
+        });
+      }
     }
   } else {
     return NextResponse.json({ ok: false, status: "invalid_request" }, { status: 400 });
@@ -169,9 +222,13 @@ export async function POST(req: NextRequest) {
 
   const results: Array<{
     messageId: string;
-    result: Awaited<ReturnType<typeof runAutopilotOutreachDispatch>>;
+    result: Awaited<ReturnType<typeof runAutopilotOutreachDispatch>> | {
+      status: "skipped";
+      detail: string;
+      reason: string;
+    };
     workspacePatch?: string;
-  }> = [];
+  }> = [...earlySkips];
 
   for (const target of targets) {
     const result = await runAutopilotOutreachDispatch(svc, {

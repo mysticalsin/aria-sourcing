@@ -7,8 +7,7 @@ import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/
 import { decideReiAutopilotSend, type ReiOutboundChannel } from "@/lib/rei-autopilot-send";
 import { resolveWhatsAppAutopilotShape } from "@/lib/rei-autopilot-whatsapp";
 import {
-  heyReachDeliveryReadyFromEnv,
-  resolveHeyReachConfigForWorkspace,
+  inspectHeyReachDeliveryPartsForWorkspace,
 } from "@/lib/heyreach-delivery";
 import { isMailboxSeatProvider } from "@/lib/outreach-send-mode";
 import { dispatchDue } from "@/lib/dispatch-outbound";
@@ -62,13 +61,17 @@ export function mailboxSeatReadyForAutopilot(seat: SeatRow): boolean {
 }
 
 async function loadAutopilotContext(svc: ServiceClient, workspaceId: string) {
-  const controls = await svc
-    .from("sourcing_loop_controls")
-    .select("kill_switch, sequences_enabled")
-    .eq("workspace_id", workspaceId)
-    .maybeSingle();
+  const controls = await svc.rpc("get_sourcing_loop_controls", {
+    p_workspace_id: workspaceId,
+  });
+  // RPC returns setof rows (array). Table SELECT is revoked from service_role.
+  const controlRow = Array.isArray(controls.data)
+    ? (controls.data[0] as { kill_switch?: boolean; sequences_enabled?: boolean } | undefined)
+    : (controls.data as { kill_switch?: boolean; sequences_enabled?: boolean } | null);
   const sequencesArmed =
-    controls.data?.kill_switch === false && controls.data?.sequences_enabled === true;
+    !controls.error &&
+    controlRow?.kill_switch === false &&
+    controlRow?.sequences_enabled === true;
 
   const entitled = await svc
     .from("profiles")
@@ -119,8 +122,8 @@ async function loadAutopilotContext(svc: ServiceClient, workspaceId: string) {
     (s) => s.mode === "live" && String(s.provider) === "HeyReach",
   );
 
-  const heyReachApiReady =
-    heyReachDeliveryReadyFromEnv() || Boolean(await resolveHeyReachConfigForWorkspace(workspaceId));
+  const heyReachParts = await inspectHeyReachDeliveryPartsForWorkspace(workspaceId);
+  const heyReachApiReady = heyReachParts.keyPresent && heyReachParts.campaignPresent;
 
   return {
     sequencesArmed,
@@ -133,6 +136,9 @@ async function loadAutopilotContext(svc: ServiceClient, workspaceId: string) {
     hasLiveMailbox: Boolean(liveMailbox),
     hasLiveWhatsApp: Boolean(liveWhatsApp),
     heyReachConfigured: heyReachApiReady && Boolean(liveHeyReach),
+    heyReachKeyPresent: heyReachParts.keyPresent,
+    heyReachCampaignPresent: heyReachParts.campaignPresent,
+    liveHeyReachSeat: Boolean(liveHeyReach),
     linkedInVendorConfigured:
       Boolean(process.env.LINKEDIN_VENDOR_API_URL && process.env.LINKEDIN_VENDOR_API_KEY) &&
       Boolean(liveLinkedInVendor),
@@ -343,6 +349,9 @@ export async function runAutopilotOutreachDispatch(
     hasLiveWhatsApp: ctx.hasLiveWhatsApp,
     heyReachConfigured: ctx.heyReachConfigured,
     linkedInVendorConfigured: ctx.linkedInVendorConfigured,
+    heyReachKeyPresent: ctx.heyReachKeyPresent,
+    heyReachCampaignPresent: ctx.heyReachCampaignPresent,
+    liveHeyReachSeat: ctx.liveHeyReachSeat,
   });
 
   if (verdict.mode !== "autopilot_dispatch") {

@@ -120,6 +120,18 @@ function makeSvc(opts: {
     async rpc(name: string, args: Row) {
       rpcs.push({ name, args });
       if (opts.rpcError) return { data: null, error: { message: opts.rpcError } };
+      if (name === "get_sourcing_loop_controls") {
+        return {
+          data: [
+            {
+              workspace_id: args.p_workspace_id,
+              kill_switch: opts.sequencesArmed === false,
+              sequences_enabled: opts.sequencesArmed !== false,
+            },
+          ],
+          error: null,
+        };
+      }
       if (name === "mint_autopilot_critics_approval") {
         return { data: { status: opts.mintStatus ?? "ok" }, error: null };
       }
@@ -189,8 +201,9 @@ const baseInput = {
   ok("email ready → queued", r.status === "queued" && "channel" in r && r.channel === "Email");
   ok(
     "email path mints then enqueues",
-    rpcs.map((c) => c.name).join(",") ===
-      "mint_autopilot_critics_approval,enqueue_email_outbound_service",
+    rpcs.some((c) => c.name === "get_sourcing_loop_controls") &&
+      rpcs.some((c) => c.name === "mint_autopilot_critics_approval") &&
+      rpcs.some((c) => c.name === "enqueue_email_outbound_service"),
   );
 }
 
@@ -349,7 +362,9 @@ const baseInput = {
       "linkedin api without live seat → human review (no direct send)",
       r.status === "skipped" &&
         "reason" in r &&
-        (r.reason === "linkedin_assisted_manual_only" || r.reason === "linkedin_seat_required"),
+        (r.reason === "heyreach_seat_required" ||
+          r.reason === "linkedin_assisted_manual_only" ||
+          r.reason === "linkedin_seat_required"),
     );
     ok(
       "linkedin without seat → no enqueue",

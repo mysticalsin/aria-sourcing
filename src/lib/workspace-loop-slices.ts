@@ -94,20 +94,33 @@ export async function loadCandidateOutreachForLoop(
   return body.outreach;
 }
 
+export type ReadyAutopilotSweepLoad =
+  | { ok: true; outreach: OutreachMessage[] }
+  | { ok: false; status: string; detail?: string };
+
 export async function loadReadyAutopilotOutreachSweep(
   svc: ServiceClient,
   workspaceId: string,
   limit = 20,
-): Promise<OutreachMessage[]> {
+): Promise<ReadyAutopilotSweepLoad> {
   const res = await svc.rpc("read_workspace_outreach_for_loop", {
     p_workspace_id: workspaceId,
     p_message_id: null,
     p_ready_sweep: true,
     p_limit: limit,
   });
+  if (res.error) {
+    return { ok: false, status: "sweep_rpc_error", detail: res.error.message };
+  }
   const body = res.data as { status?: string; outreach?: OutreachMessage[] } | null;
-  if (res.error || body?.status !== "ok" || !Array.isArray(body.outreach)) return [];
-  return body.outreach;
+  if (!body || body.status !== "ok") {
+    return {
+      ok: false,
+      status: "sweep_read_failed",
+      detail: typeof body?.status === "string" ? body.status : "invalid_response",
+    };
+  }
+  return { ok: true, outreach: Array.isArray(body.outreach) ? body.outreach : [] };
 }
 
 /** After durable queue, flip workspace outreach row to Scheduled (sweep honesty). */

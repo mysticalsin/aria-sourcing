@@ -14,6 +14,7 @@ import { decryptSecret } from "@/lib/crypto-secrets";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import {
   mergeHeyReachConfig,
+  inspectHeyReachConfigParts,
   heyReachSettingsFromWorkspaceState,
   heyReachSettingsFromRow,
 } from "@/lib/heyreach-config";
@@ -22,6 +23,7 @@ import type { LinkedInDeliveryOutcome, LinkedInDeliveryRequest } from "@/lib/lin
 export {
   heyReachSettingsReady,
   mergeHeyReachConfig,
+  inspectHeyReachConfigParts,
   heyReachSettingsFromWorkspaceState,
   heyReachSettingsFromRow,
 } from "@/lib/heyreach-config";
@@ -90,21 +92,14 @@ export async function checkHeyReachApiKey(apiKey: string): Promise<boolean> {
   }
 }
 
-/**
- * Resolve delivery config for a workspace: Fly env and/or Settings vault + campaign id.
- * NEVER logs the decrypted API key.
- */
-export async function resolveHeyReachConfigForWorkspace(
+async function loadHeyReachWorkspaceSecrets(
   workspaceId: string,
-): Promise<HeyReachConfig | null> {
-  const env = heyReachConfigFromEnv();
-  if (env?.apiKey && env.campaignId) return env;
-
+): Promise<HeyReachWorkspaceSecrets | null> {
   const wid = workspaceId.trim();
-  if (!wid) return mergeHeyReachConfig(env, null);
+  if (!wid) return null;
 
   const svc = getServiceSupabase();
-  if (!svc) return mergeHeyReachConfig(env, null);
+  if (!svc) return null;
 
   // Bounded settings slice — never pull the full workspace_state.state blob.
   const { data: slice } = await svc.rpc("read_workspace_heyreach_settings_for_loop", {
@@ -150,11 +145,38 @@ export async function resolveHeyReachConfigForWorkspace(
     }
   }
 
-  return mergeHeyReachConfig(env, {
+  return {
     apiKey: apiKey || undefined,
     campaignId: campaignId || undefined,
     accountId,
-  });
+  };
+}
+
+/**
+ * Resolve delivery config for a workspace: Fly env and/or Settings vault + campaign id.
+ * NEVER logs the decrypted API key.
+ */
+export async function resolveHeyReachConfigForWorkspace(
+  workspaceId: string,
+): Promise<HeyReachConfig | null> {
+  const env = heyReachConfigFromEnv();
+  if (env?.apiKey && env.campaignId) return env;
+
+  const workspace = await loadHeyReachWorkspaceSecrets(workspaceId);
+  return mergeHeyReachConfig(env, workspace);
+}
+
+/** Key/campaign presence for Autopilot skip-reason honesty (fail-closed gate unchanged). */
+export async function inspectHeyReachDeliveryPartsForWorkspace(
+  workspaceId: string,
+): Promise<{ keyPresent: boolean; campaignPresent: boolean }> {
+  const env = heyReachConfigFromEnv();
+  if (env?.apiKey && env.campaignId) {
+    return { keyPresent: true, campaignPresent: true };
+  }
+  const workspace = await loadHeyReachWorkspaceSecrets(workspaceId);
+  const parts = inspectHeyReachConfigParts(env, workspace);
+  return { keyPresent: parts.keyPresent, campaignPresent: parts.campaignPresent };
 }
 
 export async function heyReachDeliveryReadyForWorkspace(workspaceId: string): Promise<boolean> {

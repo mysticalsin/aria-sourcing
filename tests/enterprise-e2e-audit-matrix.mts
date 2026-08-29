@@ -1389,6 +1389,7 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /mergeOutreachMessageScheduled/.test(slices)
         && /stale_token/.test(slices)
         && /sweepAutopilotReadyDrafts/.test(worker)
+        && /autopilotSweepSent/.test(worker)
         && /ARIA_LOOP_WORKSPACE_IDS/.test(worker)
         && /interviewerEmail/.test(worker)
         && /interviewerEmail/.test(confirm)

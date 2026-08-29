@@ -38,6 +38,10 @@ export type ReiAutopilotSendInput = {
   heyReachConfigured: boolean;
   /** LINKEDIN_VENDOR_API_* present */
   linkedInVendorConfigured: boolean;
+  /** Optional diagnostics when heyReachConfigured is false (do not weaken the AND gate). */
+  heyReachKeyPresent?: boolean;
+  heyReachCampaignPresent?: boolean;
+  liveHeyReachSeat?: boolean;
 };
 
 /**
@@ -94,6 +98,20 @@ export function decideReiAutopilotSend(input: ReiAutopilotSendInput): ReiAutopil
           linkedInDelivery: "vendor",
           reason: "linkedin_vendor_configured",
         };
+      }
+      // Fail-closed: still human_review. Split reason so ops sees the actionable gap.
+      if (input.heyReachKeyPresent === true && input.heyReachCampaignPresent !== true) {
+        return { mode: "human_review", reason: "heyreach_campaign_required" };
+      }
+      if (
+        input.heyReachKeyPresent === true &&
+        input.heyReachCampaignPresent === true &&
+        input.liveHeyReachSeat === false
+      ) {
+        return { mode: "human_review", reason: "heyreach_seat_required" };
+      }
+      if (input.heyReachKeyPresent !== true && input.liveHeyReachSeat === true) {
+        return { mode: "human_review", reason: "heyreach_key_required" };
       }
       return { mode: "human_review", reason: "linkedin_assisted_manual_only" };
     default:

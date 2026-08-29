@@ -83,6 +83,12 @@ ok(
 const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
 ok("worker only autopilots qualityStatus ready", /qualityStatus === "ready"/.test(worker) && /criticsPassed: true/.test(worker));
 ok("worker sweeps autopilot ready drafts", /sweepAutopilotReadyDrafts/.test(worker) && /sweep: true/.test(worker));
+ok(
+  "worker sweep retains sent/skipped/errors from cron body",
+  /autopilotSweepSent/.test(worker)
+    && /readBoundedJson\(response, RPC_RESPONSE_BYTES\)/.test(worker)
+    && /body\.sent/.test(worker),
+);
 ok("worker autopilots interview prep when critics green", /handleInterviewPrepSend[\s\S]*criticsPassed: true/.test(worker));
 ok(
   "worker fail-closes confirm statuses outside soft Graph/ops allowlist",
@@ -95,7 +101,19 @@ ok("cron requires criticsPassed === true", /criticsPassed: parsed\.data\.critics
 ok("sweep filters ready+critics", /qualityStatus === "ready"/.test(cron) && /qualityCriticsUsed === true/.test(cron));
 ok(
   "sweep uses shared recipient helper (override + interviewer fail-closed)",
-  /outreachDispatchRecipient/.test(cron) && /if \(!recipient\) return null/.test(cron),
+  /outreachDispatchRecipient/.test(cron) && /reason: "no_recipient"/.test(cron),
+);
+ok(
+  "sweep surfaces candidate/recipient skips instead of silent omit",
+  /candidate_missing/.test(cron) && /earlySkips/.test(cron),
+);
+ok(
+  "sweep RPC failure is 503 not empty success",
+  /status: 503/.test(cron)
+    && /!loaded\.ok/.test(cron)
+    && /sweep_rpc_error|sweep_read_failed/.test(
+      readFileSync("src/lib/workspace-loop-slices.ts", "utf8"),
+    ),
 );
 
 const prepCron = readFileSync("src/app/api/cron/interview-prep-dispatch/route.ts", "utf8");
@@ -118,6 +136,12 @@ ok(
   "pipeline claims interview_prep_send after live book",
   /"first_interview_book":\s*\["interview_prep_send"\]/.test(transitions) &&
     /"interview_prep_send":\s*\[\]/.test(transitions),
+);
+
+ok(
+  "autopilot loads sequences via get_sourcing_loop_controls (not revoked table SELECT)",
+  /get_sourcing_loop_controls/.test(readFileSync("src/lib/rei-autopilot-dispatch.ts", "utf8"))
+    && !/\.from\("sourcing_loop_controls"\)/.test(readFileSync("src/lib/rei-autopilot-dispatch.ts", "utf8")),
 );
 
 console.log(`RESULT heyreach-mcp: ${pass} passed, ${fail} failed`);

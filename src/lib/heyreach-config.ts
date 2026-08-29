@@ -10,16 +10,31 @@ export type HeyReachConfigParts = {
   accountId?: string;
 };
 
+/** Per-field presence after env∪workspace merge (diagnostics; does not imply delivery-ready). */
+export function inspectHeyReachConfigParts(
+  env: HeyReachConfigParts | null | undefined,
+  workspace: HeyReachConfigParts | null | undefined,
+): { keyPresent: boolean; campaignPresent: boolean; accountId?: string } {
+  const apiKey = (env?.apiKey ?? workspace?.apiKey ?? "").trim();
+  const campaignId = (env?.campaignId ?? workspace?.campaignId ?? "").trim();
+  const accountId = (env?.accountId ?? workspace?.accountId ?? "").trim() || undefined;
+  return {
+    keyPresent: Boolean(apiKey),
+    campaignPresent: Boolean(campaignId),
+    accountId,
+  };
+}
+
 /** Pure merge: env wins per-field when set; Settings fills gaps. Ready only with both key+campaign. */
 export function mergeHeyReachConfig(
   env: HeyReachConfigParts | null | undefined,
   workspace: HeyReachConfigParts | null | undefined,
 ): { apiKey: string; campaignId: string; accountId?: string } | null {
+  const parts = inspectHeyReachConfigParts(env, workspace);
+  if (!parts.keyPresent || !parts.campaignPresent) return null;
   const apiKey = (env?.apiKey ?? workspace?.apiKey ?? "").trim();
   const campaignId = (env?.campaignId ?? workspace?.campaignId ?? "").trim();
-  if (!apiKey || !campaignId) return null;
-  const accountId = (env?.accountId ?? workspace?.accountId ?? "").trim() || undefined;
-  return { apiKey, campaignId, accountId };
+  return { apiKey, campaignId, accountId: parts.accountId };
 }
 
 export function heyReachSettingsReady(settings: HeyReachSettings | null | undefined): boolean {

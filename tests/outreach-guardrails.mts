@@ -68,6 +68,23 @@ ok(
   approvalScopeHash({ candidateId: "cand-1", channel: "WhatsApp", recipient: "33612345678" }) !==
     approvalScopeHash({ candidateId: "cand-2", channel: "WhatsApp", recipient: "33612345678" }),
 );
+ok(
+  "email approval scope uses toLowerCase (matches SQL lower / 0079 bind)",
+  approvalScopeHash({
+    candidateId: "cand-1",
+    channel: "Email",
+    recipient: "Ada.Lovelace@Example.COM",
+  }) ===
+    approvalScopeHash({
+      candidateId: "cand-1",
+      channel: "Email",
+      recipient: "ada.lovelace@example.com",
+    }),
+);
+ok(
+  "approvalScopeHash source does not call toLocaleLowerCase",
+  !/toLocaleLowerCase\s*\(/.test(readFileSync("src/lib/outreach-content.ts", "utf8")),
+);
 
 /* ===========================================================================
    2. Suppression / do-not-contact guardrail (real exported matcher).

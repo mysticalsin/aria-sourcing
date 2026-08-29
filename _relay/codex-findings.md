@@ -1159,3 +1159,43 @@ Historical and current findings follow. The current consolidated audit is
 2. **fleet seat-card toast omits Owners** — `src/components/fleet/seat-card.tsx:170-174` generic "OAuth env missing". Mislead only.
 3. **encryptionReady ≠ secretEncryptionEnabled** — `email-connections.ts:141` is `length > 0`; callback uses `encryptionRequiredButMissing()` → `secretEncryptionEnabled()` (valid base64-32). Junk key could enable Connect UI then fail callback. Live Fly encryptionReady=true and LinkedIn live seat present — not a current PASS blocker.
 4. **post-m365 LIVE_SEAT omits status=active** — `post-m365-secrets-golive.sh:168-170` vs `verify-m365-ready.sh:155-160`; oauth wait can leave ENC=false if MS_OAUTH true (`:148-151`). Verify still fail-closes; no false PASS.
+
+## 2026-08-29 — Autopilot sequences always "not armed" (service_role table SELECT)
+**Severity:** correctness
+**File:** src/lib/rei-autopilot-dispatch.ts (loadAutopilotContext)
+**Issue:** Autopilot read `sourcing_loop_controls` via PostgREST table SELECT. `service_role` has EXECUTE on `get_sourcing_loop_controls` only — table SELECT is revoked (42501). Live Fly with kill_switch=false + sequences_enabled=true still returned `sequences_not_armed` for every Autopilot dispatch/sweep.
+**Repro/evidence:** Planted critics-green Needs Approval draft; `get_sourcing_loop_controls` showed sequences armed; cron sweep returned `reason:sequences_not_armed`. Direct `GET /sourcing_loop_controls` as service_role → 403 permission denied.
+**Suggested fix:** Use `rpc("get_sourcing_loop_controls")` exclusively.
+**Status:** fixed (this shift)
+
+## 2026-08-29 — Autopilot sweep hides RPC / recipient failures as empty
+**Severity:** correctness
+**File:** src/lib/workspace-loop-slices.ts; src/app/api/cron/autopilot-send-outreach/route.ts
+**Issue:** Sweep RPC errors and `targetFromMessage` nulls collapsed to `{ok:true,sent:0,results:[]}`.
+**Repro/evidence:** Audit plant recipe; ready drafts with missing candidate/recipient looked identical to empty outreach.
+**Suggested fix:** 503 on sweep read failure; push `candidate_missing` / `no_recipient` into results.
+**Status:** fixed (this shift)
+
+## 2026-08-29 — Worker sweep discards send outcomes
+**Severity:** test-gap
+**File:** scripts/sourcing-loop-worker.mjs (sweepAutopilotReadyDrafts)
+**Issue:** Worker cancelled cron body; tick only reported `autopilotSweep=ok` + workspace count.
+**Repro/evidence:** Live tick ok while cron sent:0; no skip reasons in heartbeat.
+**Suggested fix:** readBoundedJson; surface sent/skipped/errors/reasons; degrade on errors>0.
+**Status:** fixed (this shift)
+
+## 2026-08-29 — LinkedIn Autopilot skip reason collapses config gaps
+**Severity:** spec-mismatch
+**File:** src/lib/rei-autopilot-send.ts; src/lib/rei-autopilot-dispatch.ts; src/lib/heyreach-delivery.ts
+**Issue:** Missing campaign vs seat vs key all mapped to `linkedin_assisted_manual_only`.
+**Repro/evidence:** Vault HeyReach key without settings.heyreach.campaignId.
+**Suggested fix:** Split diagnostic flags; keep fail-closed AND for dispatch.
+**Status:** fixed (this shift)
+
+## 2026-08-29 — approvalScopeHash locale vs SQL lower
+**Severity:** correctness
+**File:** src/lib/outreach-content.ts
+**Issue:** `toLocaleLowerCase()` could diverge from SQL `lower()` / 0079 bind.
+**Repro/evidence:** Non-ASCII locale recipient casing.
+**Suggested fix:** Use invariant `toLowerCase()`.
+**Status:** fixed (this shift)

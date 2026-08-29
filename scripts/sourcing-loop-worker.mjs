@@ -2729,10 +2729,15 @@ async function sweepAutopilotReadyDrafts(configuration, fetcher) {
     || !Array.isArray(configuration.loopWorkspaceIds)
     || configuration.loopWorkspaceIds.length === 0
   ) {
-    return { status: "unconfigured", swept: 0 };
+    return { status: "unconfigured", swept: 0, sent: 0, skipped: 0, errors: 0, reasons: [] };
   }
   let swept = 0;
+  let sent = 0;
+  let skipped = 0;
   let errors = 0;
+  /** Cap reason samples so tick telemetry stays bounded. */
+  const reasons = [];
+  let transportErrors = 0;
   for (const workspaceId of configuration.loopWorkspaceIds.slice(0, 10)) {
     let response;
     try {
@@ -2746,20 +2751,51 @@ async function sweepAutopilotReadyDrafts(configuration, fetcher) {
         signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
       });
     } catch {
-      errors += 1;
+      transportErrors += 1;
       continue;
     }
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      if (response.status >= 500) errors += 1;
+      if (response.status >= 500) transportErrors += 1;
       continue;
     }
-    await response.body?.cancel().catch(() => undefined);
+    let body;
+    try {
+      body = await readBoundedJson(response, RPC_RESPONSE_BYTES);
+    } catch {
+      transportErrors += 1;
+      continue;
+    }
     swept += 1;
+    if (body && typeof body === "object") {
+      const bodySent = Number(body.sent);
+      const bodySkipped = Number(body.skipped);
+      const bodyErrors = Number(body.errors);
+      if (Number.isFinite(bodySent) && bodySent > 0) sent += bodySent;
+      if (Number.isFinite(bodySkipped) && bodySkipped > 0) skipped += bodySkipped;
+      if (Number.isFinite(bodyErrors) && bodyErrors > 0) errors += bodyErrors;
+      if (Array.isArray(body.results)) {
+        for (const row of body.results) {
+          if (reasons.length >= 12) break;
+          const result = row && typeof row === "object" ? row.result : null;
+          const reason =
+            result && typeof result === "object" && typeof result.reason === "string"
+              ? result.reason
+              : result && typeof result === "object" && typeof result.status === "string"
+                ? result.status
+                : null;
+          if (reason) reasons.push(reason);
+        }
+      }
+    }
   }
-  if (errors > 0 && swept === 0) return { status: "unreachable", swept: 0 };
-  if (errors > 0) return { status: "degraded", swept };
-  return { status: "ok", swept };
+  if (transportErrors > 0 && swept === 0) {
+    return { status: "unreachable", swept: 0, sent, skipped, errors, reasons };
+  }
+  if (transportErrors > 0 || errors > 0) {
+    return { status: "degraded", swept, sent, skipped, errors, reasons };
+  }
+  return { status: "ok", swept, sent, skipped, errors, reasons };
 }
 
 async function renewGraphSubscriptions(configuration, fetcher) {
@@ -2882,6 +2918,12 @@ export async function runSourcingLoopTick(client, configuration, environment, fe
     dispatch: dispatch.status,
     autopilotSweep: autopilotSweep.status,
     autopilotSweepWorkspaces: autopilotSweep.swept,
+    autopilotSweepSent: autopilotSweep.sent ?? 0,
+    autopilotSweepSkipped: autopilotSweep.skipped ?? 0,
+    autopilotSweepErrors: autopilotSweep.errors ?? 0,
+    ...(Array.isArray(autopilotSweep.reasons) && autopilotSweep.reasons.length > 0
+      ? { autopilotSweepReasons: autopilotSweep.reasons }
+      : {}),
     graphRenew: renew.status,
     claimed,
     completed,

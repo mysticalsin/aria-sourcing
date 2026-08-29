@@ -1941,18 +1941,42 @@ test("runSourcingLoopTick sweeps autopilot ready drafts for configured workspace
     async (url, init) => {
       if (String(url).includes("autopilot-send-outreach")) {
         sweepBodies.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
-        return new Response(JSON.stringify({ ok: true, sent: 0, skipped: 0, errors: 0, results: [] }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            sent: 0,
+            skipped: 2,
+            errors: 0,
+            results: [
+              { messageId: "m1", result: { status: "skipped", reason: "no_live_mailbox" } },
+              { messageId: "m2", result: { status: "skipped", reason: "heyreach_campaign_required" } },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
       }
       throw new Error(`unexpected fetch ${url}`);
     },
   );
 
   assert.equal(result.status, "ok");
-  assert.equal(result.autopilotSweep, "ok");
-  assert.equal(result.autopilotSweepWorkspaces, 1);
+  const sweepTick = result as {
+    autopilotSweep: string;
+    autopilotSweepWorkspaces: number;
+    autopilotSweepSent: number;
+    autopilotSweepSkipped: number;
+    autopilotSweepErrors: number;
+    autopilotSweepReasons?: string[];
+  };
+  assert.equal(sweepTick.autopilotSweep, "ok");
+  assert.equal(sweepTick.autopilotSweepWorkspaces, 1);
+  assert.equal(sweepTick.autopilotSweepSent, 0);
+  assert.equal(sweepTick.autopilotSweepSkipped, 2);
+  assert.equal(sweepTick.autopilotSweepErrors, 0);
+  assert.deepEqual(sweepTick.autopilotSweepReasons, ["no_live_mailbox", "heyreach_campaign_required"]);
   assert.equal(sweepBodies.length, 1);
   assert.equal(sweepBodies[0]!.sweep, true);
   assert.equal(sweepBodies[0]!.workspaceId, "51111111-1111-4111-8111-111111111111");
