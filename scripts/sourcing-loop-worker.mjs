@@ -205,50 +205,46 @@ export function createReplyClassificationModelClient(environment, fetcher = fetc
     && validServiceToken(hermesKey)
     && environment.HERMES_LIVE_MODE !== "0";
 
-  if (hermesLive) {
+  async function classifyViaHermes({ system, prompt }) {
     const model = optionalModelName(environment.HERMES_LOOP_MODEL ?? environment.ARIA_REPLY_CLASSIFIER_MODEL);
-    return {
-      async classifyReply({ system, prompt }) {
-        const profilePrefix = environment.HERMES_RUNTIME_WORKSPACE_ID
-          ? `ws-${environment.HERMES_RUNTIME_WORKSPACE_ID}`
-          : "default";
-        const upstreamUrl = `${hermesUrl}/p/${profilePrefix}/v1/chat/completions`;
-        let response;
-        try {
-          response = await fetcher(upstreamUrl, {
-            method: "POST",
-            headers: {
-              authorization: `Bearer ${hermesKey}`,
-              "content-type": "application/json",
-            },
-            body: JSON.stringify({
-              model,
-              temperature: 0,
-              messages: [
-                { role: "system", content: system },
-                { role: "user", content: prompt },
-              ],
-            }),
-            signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
-          });
-        } catch {
-          return { ok: false, reason: "hermes_unreachable" };
-        }
-        if (!response.ok) {
-          await response.body?.cancel().catch(() => undefined);
-          return { ok: false, reason: `hermes_http_${response.status}` };
-        }
-        try {
-          const body = await readBoundedJson(response, MODEL_RESPONSE_BYTES);
-          const text = body?.choices?.[0]?.message?.content;
-          return typeof text === "string" && text.trim()
-            ? { ok: true, text }
-            : { ok: false, reason: "hermes_response_empty" };
-        } catch (cause) {
-          return { ok: false, reason: cause instanceof Error ? cause.message : "hermes_response_invalid" };
-        }
-      },
-    };
+    const profilePrefix = environment.HERMES_RUNTIME_WORKSPACE_ID
+      ? `ws-${environment.HERMES_RUNTIME_WORKSPACE_ID}`
+      : "default";
+    const upstreamUrl = `${hermesUrl}/p/${profilePrefix}/v1/chat/completions`;
+    let response;
+    try {
+      response = await fetcher(upstreamUrl, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${hermesKey}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: prompt },
+          ],
+        }),
+        signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+      });
+    } catch {
+      return { ok: false, reason: "hermes_unreachable" };
+    }
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      return { ok: false, reason: `hermes_http_${response.status}` };
+    }
+    try {
+      const body = await readBoundedJson(response, MODEL_RESPONSE_BYTES);
+      const text = body?.choices?.[0]?.message?.content;
+      return typeof text === "string" && text.trim()
+        ? { ok: true, text }
+        : { ok: false, reason: "hermes_response_empty" };
+    } catch (cause) {
+      return { ok: false, reason: cause instanceof Error ? cause.message : "hermes_response_invalid" };
+    }
   }
 
   // Prefer the same cloud stack as serverGenerateText (Kimi → Anthropic → DeepSeek → OpenAI).
@@ -282,11 +278,19 @@ export function createReplyClassificationModelClient(environment, fetcher = fetc
       : "claude-sonnet-4-6";
   const anthropicModel = optionalModelName(anthropicModelRaw);
   const hasAnthropic = validServiceToken(anthropicKey);
+  const hasEnvCloud = openAiCompatible.length > 0 || hasAnthropic;
 
-  if (openAiCompatible.length === 0 && !hasAnthropic) return null;
+  if (!hermesLive && !hasEnvCloud) return null;
 
   return {
     async classifyReply({ system, prompt }) {
+      // Hermes-first (when configured), then env cloud — never exclusive-fail on Hermes miss.
+      if (hermesLive) {
+        const hermesHit = await classifyViaHermes({ system, prompt });
+        if (hermesHit.ok) return hermesHit;
+        if (!hasEnvCloud) return hermesHit;
+      }
+
       let lastReason = "model_unreachable";
 
       async function tryOpenAiCompat(provider) {
@@ -428,6 +432,7 @@ export function loadSourcingLoopConfiguration(environment) {
   let intakeParseUrl = null;
   let sourcingBatchUrl = null;
   let outreachDraftUrl = null;
+  let classifyInboundUrl = null;
   let renewGraphUrl = null;
   let calendarProposeUrl = null;
   let calendarConfirmUrl = null;
@@ -451,6 +456,8 @@ export function loadSourcingLoopConfiguration(environment) {
     intakeParseUrl = new URL("/api/cron/parse-inbound-need", webOrigin);
     sourcingBatchUrl = new URL("/api/cron/run-sourcing-batch", webOrigin);
     outreachDraftUrl = new URL("/api/cron/generate-outreach-draft", webOrigin);
+    // Hermes → vault/cloud via resolveLoopLlm (same stack as drafts/critics).
+    classifyInboundUrl = new URL("/api/cron/classify-inbound-reply", webOrigin);
     renewGraphUrl = new URL("/api/cron/renew-graph-subscriptions", webOrigin);
     calendarProposeUrl = new URL("/api/cron/propose-calendar-book", webOrigin);
     calendarConfirmUrl = new URL("/api/cron/confirm-calendar-book", webOrigin);
@@ -468,6 +475,7 @@ export function loadSourcingLoopConfiguration(environment) {
     intakeParseUrl,
     sourcingBatchUrl,
     outreachDraftUrl,
+    classifyInboundUrl,
     renewGraphUrl,
     calendarProposeUrl,
     calendarConfirmUrl,
@@ -2097,6 +2105,42 @@ async function handleCalendarBook(job, context) {
   return handleFirstInterviewBook(job, context);
 }
 
+async function classifyReplyViaCron(context, job, { campaignId, candidateId, replyText }) {
+  const url = context.configuration?.classifyInboundUrl;
+  const secret = context.configuration?.cronSecret;
+  if (!url || !secret || !context.fetcher) return null;
+  let response;
+  try {
+    response = await context.fetcher(url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${secret}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        workspaceId: job.workspace_id,
+        ...(campaignId ? { campaignId } : {}),
+        ...(candidateId ? { candidateId } : {}),
+        replyText,
+      }),
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+    });
+  } catch {
+    return { ok: false, reason: "classify_cron_unreachable" };
+  }
+  if (!response.ok) {
+    await response.body?.cancel?.().catch(() => undefined);
+    return { ok: false, reason: `classify_cron_http_${response.status}` };
+  }
+  try {
+    const body = await readBoundedJson(response, MODEL_RESPONSE_BYTES);
+    const text = isRecord(body) && typeof body.text === "string" ? body.text.trim() : "";
+    return text ? { ok: true, text } : { ok: false, reason: "classify_cron_response_empty" };
+  } catch (cause) {
+    return { ok: false, reason: cause instanceof Error ? cause.message : "classify_cron_response_invalid" };
+  }
+}
+
 async function handleInboundClassify(job, context) {
   const payload = payloadOf(job);
   const inboundId = typeof payload.inboundId === "string" ? payload.inboundId.trim() : job.id;
@@ -2130,19 +2174,30 @@ async function handleInboundClassify(job, context) {
   let modelDraftResponse = "";
   // LLM runs ONLY when this job was claimed — webhook/email_sync enqueue is the
   // sole trigger. Idle loop ticks never invent inbound_classify jobs.
+  // Order: inline Hermes/env modelClient → cron resolveLoopLlm (Hermes→vault).
+  async function applyModelText(text) {
+    try {
+      const parsed = JSON.parse(text);
+      classification = parseClassification(parsed, fallback);
+      classifier = "model";
+      if (isRecord(parsed) && typeof parsed.draftResponse === "string" && parsed.draftResponse.trim()) {
+        modelDraftResponse = parsed.draftResponse.trim().slice(0, 1_000);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
   if (context.modelClient?.classifyReply) {
     const modelResult = await context.modelClient.classifyReply(prompt);
     if (modelResult?.ok && typeof modelResult.text === "string") {
-      try {
-        const parsed = JSON.parse(modelResult.text);
-        classification = parseClassification(parsed, fallback);
-        classifier = "model";
-        if (isRecord(parsed) && typeof parsed.draftResponse === "string" && parsed.draftResponse.trim()) {
-          modelDraftResponse = parsed.draftResponse.trim().slice(0, 1_000);
-        }
-      } catch {
-        classification = fallback;
-      }
+      await applyModelText(modelResult.text);
+    }
+  }
+  if (classifier !== "model") {
+    const cronResult = await classifyReplyViaCron(context, job, { campaignId, candidateId, replyText });
+    if (cronResult?.ok && typeof cronResult.text === "string") {
+      await applyModelText(cronResult.text);
     }
   }
   const reply = {
@@ -2174,14 +2229,15 @@ async function handleInboundClassify(job, context) {
       : undefined,
   };
 
-  // Positive intent → stage Interested so Calendar "Ready to book" surfaces them,
-  // then optional draft follow-up for entitled autopilot (still approval-gated).
+  // Positive intent → stage Interested + autopilot successors ONLY when a live
+  // model classified (inline Hermes/env or cron vault). Keyword fallback must
+  // not invent Interested stage or booking-ready UI under llm_auth=dead.
   const successors = [];
   let draftQueued = false;
   let stageUpdated = false;
   const positive =
     classification.intent === "INTERESTED" || classification.intent === "QUALIFIED_INTEREST";
-  if (positive && campaignId && candidateId) {
+  if (positive && classifier === "model" && campaignId && candidateId) {
     try {
       const snapshot = await readWorkspaceSnapshot(context.client, job.workspace_id);
       const stagePatch = await context.client.rpc("apply_workspace_patch", {
@@ -2210,53 +2266,47 @@ async function handleInboundClassify(job, context) {
     }
 
     try {
-      // Autopilot successors require a live model classification — keyword
-      // deterministic_fallback must not invent pre_call/draft jobs on Fly when
-      // Kimi/OpenAI are absent or auth-dead. Stage Interested above still runs
-      // so humans can book manually.
-      if (classifier === "model") {
-        // Positive interest → pre-call propose first, then first interview (dry-run).
+      // Positive interest → pre-call propose first, then first interview (dry-run).
+      successors.push(
+        successorJob(
+          "pre_call_propose",
+          `precall:reply:${campaignId}:${candidateId}`,
+          {
+            campaignId,
+            candidateId,
+            trigger: "inbound_classify",
+            intent: classification.intent,
+          },
+          65,
+        ),
+      );
+
+      const entitled = await context.client
+        .from("profiles")
+        .select("id")
+        .eq("workspace_id", job.workspace_id)
+        .eq("autopilot_enabled", true)
+        .in("role", ["admin", "member"])
+        .limit(1)
+        .maybeSingle();
+      const entitledId = typeof entitled.data?.id === "string" ? entitled.data.id : "";
+      if (entitledId) {
         successors.push(
           successorJob(
-            "pre_call_propose",
-            `precall:reply:${campaignId}:${candidateId}`,
+            "draft_generate",
+            `draft:reply:${campaignId}:${candidateId}`,
             {
               campaignId,
               candidateId,
+              approvedBy: entitledId,
+              approvalSource: "autopilot_reply",
               trigger: "inbound_classify",
               intent: classification.intent,
             },
-            65,
+            70,
           ),
         );
-
-        const entitled = await context.client
-          .from("profiles")
-          .select("id")
-          .eq("workspace_id", job.workspace_id)
-          .eq("autopilot_enabled", true)
-          .in("role", ["admin", "member"])
-          .limit(1)
-          .maybeSingle();
-        const entitledId = typeof entitled.data?.id === "string" ? entitled.data.id : "";
-        if (entitledId) {
-          successors.push(
-            successorJob(
-              "draft_generate",
-              `draft:reply:${campaignId}:${candidateId}`,
-              {
-                campaignId,
-                candidateId,
-                approvedBy: entitledId,
-                approvalSource: "autopilot_reply",
-                trigger: "inbound_classify",
-                intent: classification.intent,
-              },
-              70,
-            ),
-          );
-          draftQueued = true;
-        }
+        draftQueued = true;
       }
     } catch {
       draftQueued = false;

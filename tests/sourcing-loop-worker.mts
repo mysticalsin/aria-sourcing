@@ -531,11 +531,10 @@ test("email_sync enqueues inbound_classify and the classifier persists the store
 
   await handleAriaJob(job("inbound_classify", { inboundId: "inbound-1" }), { client });
 
-  assert.equal(patches.length, 2);
-  assert.equal(patches[0].p_patch_kind, "merge_candidate_patch");
-  assert.equal((patches[0].p_patch as { patch?: { stage?: string } }).patch?.stage, "Interested");
-  assert.equal(patches[1].p_patch_kind, "append_reply");
-  const reply = (patches[1].p_patch as Array<Record<string, unknown>>)[0];
+  // Keyword-only classify must not invent Interested stage (model/cron required).
+  assert.equal(patches.length, 1);
+  assert.equal(patches[0].p_patch_kind, "append_reply");
+  const reply = (patches[0].p_patch as Array<Record<string, unknown>>)[0];
   assert.equal(reply.candidateId, "cand-1");
   assert.equal(reply.campaignId, "camp-1");
   assert.equal(reply.body, "Interested, please send the details.");
@@ -725,10 +724,125 @@ test("inbound_classify keyword INTERESTED does not invent autopilot successors",
     },
   });
 
-  // No modelClient → deterministic_fallback classifier; entitled profile alone must not invent jobs.
+  // No modelClient → deterministic_fallback classifier; entitled profile alone must not invent jobs
+  // or Interested stage (fail-closed until live model/cron classify).
   await handleAriaJob(job("inbound_classify", { inboundId: "inbound-kw" }), { client });
   assert.equal(patches.length, 1);
+  assert.equal(patches[0].p_patch_kind, "append_reply");
   assert.deepEqual(patches[0].p_enqueue, []);
+});
+
+test("createReplyClassificationModelClient fails over past Hermes miss to OpenAI", async () => {
+  const urls: string[] = [];
+  const client = createReplyClassificationModelClient(
+    {
+      HERMES_API_URL: "https://hermes.example.test",
+      HERMES_API_KEY: "h".repeat(32),
+      OPENAI_API_KEY: "o".repeat(32),
+    },
+    async (url) => {
+      urls.push(String(url));
+      if (String(url).includes("hermes")) {
+        return new Response("bad gateway", { status: 502 });
+      }
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: '{"intent":"INTERESTED"}' } }] }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    },
+  );
+  assert.ok(client);
+  const result = await client!.classifyReply({ system: "s", prompt: "p" });
+  assert.equal(result.ok, true);
+  assert.ok(urls.some((u) => u.includes("hermes")));
+  assert.ok(urls.some((u) => u.includes("openai")));
+});
+
+test("inbound_classify uses classify-inbound-reply cron vault path when modelClient misses", async () => {
+  const patches: Array<Record<string, unknown>> = [];
+  const cronCalls: Array<{ url: string; body: Record<string, unknown> }> = [];
+  const { client } = rpcClient((name, args) => {
+    if (name === "read_inbound_message_for_loop") {
+      return {
+        data: {
+          status: "ok",
+          inbound_id: "inbound-cron",
+          candidate_id: "cand-cron",
+          campaign_id: "camp-cron",
+          body: "Yes I'm interested — send times.",
+          received_at: "2026-07-25T12:30:00.000Z",
+          message_id: "provider-message-cron",
+        },
+        error: null,
+      };
+    }
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: { replies: [] }, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    if (name === "apply_workspace_patch") {
+      patches.push(args);
+      return { data: { status: "applied" }, error: null };
+    }
+    if (name === "complete_aria_job_with_workspace_patch") {
+      patches.push(args);
+      return { data: { status: "completed", patch_status: "applied" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+  (client as { from: () => unknown }).from = () => ({
+    select() {
+      return this;
+    },
+    eq() {
+      return this;
+    },
+    in() {
+      return this;
+    },
+    limit() {
+      return this;
+    },
+    async maybeSingle() {
+      return { data: { id: "user-autopilot-cron" }, error: null };
+    },
+  });
+
+  await handleAriaJob(job("inbound_classify", { inboundId: "inbound-cron" }), {
+    client,
+    configuration: {
+      classifyInboundUrl: new URL("https://worker.example.test/api/cron/classify-inbound-reply"),
+      cronSecret: "c".repeat(32),
+    },
+    fetcher: async (url, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      cronCalls.push({ url: String(url), body });
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          text: JSON.stringify({
+            intent: "INTERESTED",
+            confidence: 0.91,
+            reasoning: "Live vault classify",
+            suggestedAction: "Queue pre-call",
+            draftResponse: "Thanks — a Mantu recruiter will follow up.",
+          }),
+          via: "loop_llm",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    },
+  });
+
+  assert.equal(cronCalls.length, 1);
+  assert.match(cronCalls[0].url, /classify-inbound-reply/);
+  assert.equal(cronCalls[0].body.workspaceId, WORKSPACE_ID);
+  assert.equal(cronCalls[0].body.campaignId, "camp-cron");
+  assert.equal(cronCalls[0].body.replyText, "Yes I'm interested — send times.");
+  assert.equal(patches[0].p_patch_kind, "merge_candidate_patch");
+  assert.equal((patches[0].p_patch as { patch?: { stage?: string } }).patch?.stage, "Interested");
+  const enqueue = patches[1].p_enqueue as Array<Record<string, unknown>>;
+  assert.ok(enqueue.some((row) => row.kind === "pre_call_propose"));
+  assert.ok(enqueue.some((row) => row.kind === "draft_generate"));
 });
 
 test("createReplyClassificationModelClient fails over past auth-dead Kimi to OpenAI", async () => {

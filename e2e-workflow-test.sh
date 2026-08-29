@@ -790,10 +790,12 @@ fi
 # (keyword deterministic_fallback must not invent successors).
 if grep -q 'classifier === "model"' scripts/sourcing-loop-worker.mjs \
   && grep -q 'inbound_classify->pre_call_propose' scripts/sourcing-loop-worker.mjs \
-  && grep -q 'trigger: "inbound_classify"' scripts/sourcing-loop-worker.mjs; then
-  pass "inbound_classify positive interest → pre_call_propose only when classifier=model."
+  && grep -q 'trigger: "inbound_classify"' scripts/sourcing-loop-worker.mjs \
+  && grep -q 'classify-inbound-reply' scripts/sourcing-loop-worker.mjs \
+  && grep -q 'classifyInboundUrl' scripts/sourcing-loop-worker.mjs; then
+  pass "inbound_classify positive interest → pre_call_propose only when classifier=model (cron vault failover wired)."
 else
-  fail "interest→pre_call_propose model-only wiring missing from loop worker."
+  fail "interest→pre_call_propose model-only wiring or classifyInboundUrl cron missing from loop worker."
 fi
 
 # ===========================================================================
