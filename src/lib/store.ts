@@ -4761,7 +4761,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
           "Warm, concise, peer-to-peer recruiter. Lead with the candidate's recent work, one genuine specific compliment, soft 15-minute ask. No corporate fluff, no AI slop.",
         signature: partial.signature ?? "",
         language: partial.language ?? current().settings.defaultLanguage,
-        connectedAccount: "",
+        connectedAccount: partial.connectedAccount ?? "",
         createdAt: now,
       };
       let seat = draft;

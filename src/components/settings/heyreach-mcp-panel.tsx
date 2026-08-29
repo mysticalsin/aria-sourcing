@@ -8,7 +8,7 @@ import {
   Select,
   useToast,
 } from "@/components/ui";
-import { useActions, useApiKeys, useMcpServers, useRole } from "@/lib/store";
+import { useActions, useApiKeys, useMcpServers, useRole, useSeats } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import {
   HEYREACH_HELP_URL,
@@ -34,11 +34,16 @@ export function useHeyReachMcp() {
   const actions = useActions();
   const apiKeys = useApiKeys();
   const mcpServers = useMcpServers();
+  const seats = useSeats();
   const { toast } = useToast();
 
   const existing = React.useMemo(() => findHeyReachMcpServer(mcpServers), [mcpServers]);
   const connected = heyReachMcpConnected(existing);
   const keyOptions = React.useMemo(() => heyReachApiKeys(apiKeys), [apiKeys]);
+  const heyReachSeat = React.useMemo(
+    () => seats.find((s) => s.provider === "HeyReach" && s.status === "active"),
+    [seats],
+  );
 
   const [url, setUrl] = React.useState(existing?.url ?? "");
   const [apiKeyId, setApiKeyId] = React.useState(existing?.apiKeyId ?? "");
@@ -52,6 +57,30 @@ export function useHeyReachMcp() {
       setAuthStyle(existing.authStyle ?? "bearer");
     }
   }, [existing?.id, existing?.url, existing?.apiKeyId, existing?.authStyle]);
+
+  async function ensureHeyReachSeatLive(): Promise<"created" | "live" | "unchanged" | "failed"> {
+    if (!can(role, "manage_fleet")) return "unchanged";
+    let seat = heyReachSeat;
+    if (!seat) {
+      const created = await actions.addSeat({
+        name: "HeyReach LinkedIn",
+        operatorEmail: "heyreach@aria.local",
+        provider: "HeyReach",
+        dailyLimit: 40,
+        warmup: true,
+        connectedAccount: "HeyReach",
+      });
+      if (!created) return "failed";
+      seat = created;
+      const live = await actions.toggleSeatLive(seat.id);
+      return live.ok ? "created" : "failed";
+    }
+    if (seat.mode !== "live") {
+      const live = await actions.toggleSeatLive(seat.id);
+      return live.ok ? "live" : "failed";
+    }
+    return "unchanged";
+  }
 
   async function connectHeyReach() {
     const trimmedUrl = url.trim();
@@ -123,9 +152,20 @@ export function useHeyReachMcp() {
         errors: [],
         connectedAccount: HEYREACH_MCP_SERVER_NAME,
       });
+
+      const seatOutcome = await ensureHeyReachSeatLive();
+      const seatNote =
+        seatOutcome === "created"
+          ? " Live HeyReach fleet seat created for durable LinkedIn queue."
+          : seatOutcome === "live"
+            ? " HeyReach fleet seat set live."
+            : seatOutcome === "failed"
+              ? " Create a HeyReach seat in Fleet and set it live for durable queue."
+              : "";
+
       toast({
         title: "HeyReach MCP connected",
-        description: `${test.toolCount ?? 0} tools available to agents for LinkedIn outreach.`,
+        description: `${test.toolCount ?? 0} tools available.${seatNote} Set Fly secrets HEYREACH_API_KEY + HEYREACH_CAMPAIGN_ID for autopilot LinkedIn send.`,
         variant: "success",
       });
     } catch (err) {
@@ -166,6 +206,7 @@ export function useHeyReachMcp() {
     connecting,
     connectHeyReach,
     disconnectHeyReach,
+    heyReachSeatLive: heyReachSeat?.mode === "live",
   };
 }
 
@@ -190,6 +231,7 @@ export function HeyReachOutreachStep({
     connecting,
     connectHeyReach,
     disconnectHeyReach,
+    heyReachSeatLive,
   } = useHeyReachMcp();
 
   const state: StepState =
@@ -199,13 +241,13 @@ export function HeyReachOutreachStep({
     <ConnectionStep
       step={2}
       title="Outreach — HeyReach MCP"
-      subtitle="Official MCP server for sequences, lists, and sends. Identity stays OIDC; execution goes through HeyReach."
+      subtitle="Official MCP + REST path for LinkedIn sequences. Identity stays OIDC; delivery goes through HeyReach when Fly secrets are set."
       state={state}
     >
       {connected && existing ? (
         <ConnectedIdentityBanner
           displayName={existing.name}
-          secondary={`${existing.toolCount ?? 0} tools · ${existing.authStyle ?? "bearer"}${existing.toolNames?.length ? ` · e.g. ${existing.toolNames.slice(0, 3).join(", ")}` : ""}`}
+          secondary={`${existing.toolCount ?? 0} tools · ${existing.authStyle ?? "bearer"}${heyReachSeatLive ? " · fleet seat live" : ""}${existing.toolNames?.length ? ` · e.g. ${existing.toolNames.slice(0, 3).join(", ")}` : ""}`}
           icon={<CheckCircle2 className="h-5 w-5" aria-hidden />}
           action={
             isAdmin ? (
@@ -291,9 +333,11 @@ export function HeyReachOutreachStep({
       )}
 
       <p className="text-[0.65rem] leading-relaxed text-muted">
-        Dev: <code className="font-mono">ARIA_ENABLE_REMOTE_MCP_EXECUTION=true</code> before test.
-        Production requires MCP allowlist. Inbound replies via{" "}
-        <code className="font-mono">POST /api/webhooks/linkedin</code>.
+        Autopilot LinkedIn send needs Fly secrets{" "}
+        <code className="font-mono">HEYREACH_API_KEY</code> +{" "}
+        <code className="font-mono">HEYREACH_CAMPAIGN_ID</code> (and migration 0076).
+        Dev MCP: <code className="font-mono">ARIA_ENABLE_REMOTE_MCP_EXECUTION=true</code>.
+        Inbound: <code className="font-mono">POST /api/webhooks/linkedin</code>.
       </p>
     </ConnectionStep>
   );
