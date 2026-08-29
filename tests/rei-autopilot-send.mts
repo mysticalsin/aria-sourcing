@@ -80,6 +80,17 @@ ok(
 );
 
 ok(
+  "needs_review even with criticsPassed → human review",
+  decideReiAutopilotSend({
+    ...base,
+    autopilotEnabled: true,
+    channel: "Email",
+    criticsPassed: true,
+    qualityStatus: "needs_review",
+  }).mode === "human_review",
+);
+
+ok(
   "SMS always human review",
   decideReiAutopilotSend({ ...base, autopilotEnabled: true, channel: "SMS" }).mode ===
     "human_review",

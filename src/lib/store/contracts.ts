@@ -456,6 +456,8 @@ export interface HermesActions {
 
   // settings + integrations
   updateSettings: (patch: Partial<SystemSettings>) => void;
+  /** Authoritative workspace_state write for settings patches (await before toasting). */
+  updateSettingsPersisted: (patch: Partial<SystemSettings>) => Promise<boolean>;
   updateIntegration: (id: string, patch: Partial<IntegrationStatus>) => void;
   toggleIntegrationMode: (id: string) => void;
   testIntegration: (id: string) => Promise<ConnectionTestResult>;

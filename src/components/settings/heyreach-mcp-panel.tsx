@@ -158,7 +158,15 @@ export function useHeyReachMcp() {
         accountId: accountId.trim() || undefined,
         connected: true,
       };
-      actions.updateSettings({ heyreach: next });
+      const persisted = await actions.updateSettingsPersisted({ heyreach: next });
+      if (!persisted) {
+        toast({
+          title: "Could not save HeyReach settings",
+          description: "Workspace write failed. Retry when the workspace is ready.",
+          variant: "error",
+        });
+        return;
+      }
 
       const seatOutcome = await ensureHeyReachSeatLive();
       actions.updateIntegration(HEYREACH_MCP_INTEGRATION_ID, {
@@ -269,7 +277,7 @@ export function useHeyReachMcp() {
 
       // Persist campaign id if the operator already filled it (API path).
       if (campaignId.trim()) {
-        actions.updateSettings({
+        const persisted = await actions.updateSettingsPersisted({
           heyreach: {
             apiKeyId: keyId,
             campaignId: campaignId.trim(),
@@ -277,6 +285,13 @@ export function useHeyReachMcp() {
             connected: true,
           },
         });
+        if (!persisted) {
+          toast({
+            title: "MCP connected, but campaign id did not persist",
+            description: "Retry Save HeyReach API when the workspace is ready.",
+            variant: "warning",
+          });
+        }
       }
 
       const seatOutcome = await ensureHeyReachSeatLive();

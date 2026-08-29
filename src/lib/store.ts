@@ -4484,6 +4484,12 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit],
   );
 
+  const updateSettingsPersisted = useCallback(
+    async (patch: Partial<SystemSettings>): Promise<boolean> =>
+      commitPersisted((s) => ({ ...s, settings: { ...s.settings, ...patch } })),
+    [commitPersisted],
+  );
+
   const updateIntegration = useCallback(
     (id: string, patch: Partial<IntegrationStatus>) =>
       commit((s) => ({
@@ -6970,6 +6976,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       anonymizeCandidate,
       exportCandidate,
       updateSettings,
+      updateSettingsPersisted,
       updateIntegration,
       toggleIntegrationMode,
       testIntegration,
@@ -7050,6 +7057,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       advanceChatboxSubmission, setChatboxSubmissionStatus, addChatboxSubmission,
       suppressCandidate, markDoNotContact, restoreCandidateContact,
       unsubscribeCandidate, anonymizeCandidate, exportCandidate, updateSettings,
+      updateSettingsPersisted,
       updateIntegration, toggleIntegrationMode, testIntegration,
       addSeat, deployAgents, updateSeat, setSeatStatus, connectSeatAccount, disconnectSeatAccount, toggleSeatLive, verifySeatDomain,
       addSuppression, removeSuppression, allocateOutreach,

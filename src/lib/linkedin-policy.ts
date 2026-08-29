@@ -73,7 +73,7 @@ export function checkLinkedInPolicy(text: string): LinkedInPolicyResult {
 }
 
 export type OutboundChannelPolicyOpts = {
-  /** Official HeyReach API key + campaign id configured (Fly secrets). */
+  /** Official HeyReach API key + campaign id (Settings vault and/or Fly HEYREACH_*). */
   heyReachConfigured?: boolean;
   /** LINKEDIN_VENDOR_API_URL + KEY configured. */
   linkedInVendorConfigured?: boolean;

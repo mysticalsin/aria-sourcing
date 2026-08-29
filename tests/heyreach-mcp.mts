@@ -67,5 +67,15 @@ const guide = readFileSync("src/components/settings/setup-guide-panel.tsx", "utf
 ok("setup guide includes HeyReach step", /Add HeyReach \(LinkedIn\)/.test(guide) && /heyreach-settingsReady|heyReachSettingsReady/.test(guide));
 ok("setup guide links LinkedIn stack anchor", /linkedin-outreach-stack/.test(guide));
 
+const mig = readFileSync("supabase/migrations/0076_autopilot_critics_approval.sql", "utf8");
+ok("0076 email enqueue requires approval", /enqueue_email_outbound_service[\s\S]*approval-required/.test(mig));
+ok("0076 mint requires sequences armed", /mint_autopilot_critics_approval[\s\S]*sequences_not_armed/.test(mig));
+
+const worker = readFileSync("scripts/sourcing-loop-worker.mjs", "utf8");
+ok("worker only autopilots qualityStatus ready", /qualityStatus === "ready"/.test(worker) && /criticsPassed: true/.test(worker));
+
+const cron = readFileSync("src/app/api/cron/autopilot-send-outreach/route.ts", "utf8");
+ok("cron requires criticsPassed === true", /criticsPassed: parsed\.data\.criticsPassed === true/.test(cron));
+
 console.log(`RESULT heyreach-mcp: ${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);

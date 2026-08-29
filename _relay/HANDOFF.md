@@ -1,50 +1,52 @@
 ---
 project: MSourcing / ARIA
-shift: 393
+shift: 394
 agent: cursor-cloud
-updated: 2026-08-29T20:00Z
-status: heyreach-settings-discoverable
+updated: 2026-08-29T20:10Z
+status: rei-autopilot-fail-closed-hardened
 ---
 
-# Handoff — Shift 393
+# Handoff — Shift 394
 
 ## Current state
 
 - **Branch / PR:** `cursor/rei-autopilot-send-b91d` → **PR #39**
-- **Settings:** HeyReach API + MCP in LinkedIn stack; setup guide has **Add HeyReach** step; Test Integration honors API-only config
-- **Live Fly:** `1665b39` / **0074** — tip not deployed; Graph dropzones absent → **HOLD**
-- No `ARIA_PROD_DEPLOY_CONFIRM` in agent env — cannot apply 0076 / deploy from here
+- **Fail-closed:** autopilot dispatch only when `qualityStatus === "ready"` + `criticsPassed === true`; worker matches; cron no longer defaults critics true
+- **0076:** email enqueue requires approval; mint requires sequences armed
+- **Settings:** `updateSettingsPersisted` for HeyReach save (await workspace write)
+- **Live Fly:** still `1665b39` / **0074**; Graph dropzones absent → **HOLD**; no deploy confirm
 
 ## Done this shift
 
-1. Setup guide HeyReach step → `#linkedin-outreach-stack`
-2. Integration Test for `int_heyreach` succeeds on Settings API (MCP optional)
-3. Secrets checklist prefers Settings over Fly CLI
-4. Migrations preserve `settings.heyreach`; toggleSeatLive notes updated
+1. Critics fail-closed (decision + cron + worker)
+2. Migration 0076: email approval gate + mint sequences check
+3. HeyReach Settings persist await; roles/reply/email/fleet copy honesty
+4. Cron jobs catalog includes autopilot-send-outreach
+5. Tests: needs_review gate + migration/worker pins
 
 ## Blockers
 
-1. Deploy tip + migration **0076** (needs owner deploy confirm)
-2. Operator paste HeyReach key + campaign in Settings (after deploy)
+1. Deploy tip + apply **0076** (needs `ARIA_PROD_DEPLOY_CONFIRM`)
+2. Operator: Settings → LinkedIn stack → Save HeyReach API
 3. Graph dropzones empty — strict PASS HOLD
 
 ## Next steps
 
 ```bash
-# owner: print confirm + deploy tip of PR #39
 bash scripts/print-fly-deploy-confirm.sh
-# after deploy: Settings → LinkedIn stack → Save HeyReach API
+# export ARIA_PROD_DEPLOY_CONFIRM=… then:
+bash scripts/fly-deploy-now.sh
+# Settings → Save HeyReach API; arm Sequences; entitle autopilot
 bash scripts/run-enterprise-e2e-partial.sh
-# Graph only when /tmp/owner-* appear
 ```
 
 ## Decisions made (don't relitigate)
 
-- Settings vault + campaign id first-class; Fly env optional override
-- Autopilot OFF → human Approve → Send; ON → critics → queue
+- Settings vault + campaign first-class; Fly env optional
+- Autopilot ON + Sequences + critics ready → auto-queue; else human review
 - HOLD when Microsoft dropzones empty
 
 ## Watch out
 
-- Import `heyReachSettingsReady` from `heyreach-config` in client components
-- Audit matrix 4 FAIL entries are tip/PR#36 bookkeeping — not REI regressions
+- Client: import `heyReachSettingsReady` from `heyreach-config`
+- Direct HeyReach API without live seat still allowed as fallback in dispatch

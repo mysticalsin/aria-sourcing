@@ -51,7 +51,7 @@ export function decideReiAutopilotSend(input: ReiAutopilotSendInput): ReiAutopil
   if (!input.sequencesArmed) {
     return { mode: "human_review", reason: "sequences_not_armed" };
   }
-  if (!input.criticsPassed || input.qualityStatus === "blocked") {
+  if (!input.criticsPassed || input.qualityStatus !== "ready") {
     return { mode: "human_review", reason: "critics_not_green" };
   }
 

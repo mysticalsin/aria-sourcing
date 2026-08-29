@@ -83,6 +83,8 @@ language plpgsql
 security definer
 set search_path = pg_catalog, public, pg_temp
 as $$
+declare
+  controls public.sourcing_loop_controls%rowtype;
 begin
   if auth.role() is distinct from 'service_role' then
     raise exception 'service_role required' using errcode = '42501';
@@ -93,6 +95,15 @@ begin
      or p_approval_scope_hash is null
      or p_entitled_approver_id is null then
     return jsonb_build_object('status', 'invalid_request');
+  end if;
+
+  select * into controls
+    from public.sourcing_loop_controls
+    where workspace_id = p_workspace_id;
+  if not found
+     or controls.kill_switch is distinct from false
+     or controls.sequences_enabled is distinct from true then
+    return jsonb_build_object('status', 'sequences_not_armed');
   end if;
 
   if not public.outbound_approval_authorizes_send(
@@ -220,6 +231,7 @@ declare
   dedupe text;
   new_id uuid;
   existing public.messages_outbound%rowtype;
+  approval public.outreach_approvals%rowtype;
 begin
   if coalesce(auth.role(), '') <> 'service_role' then
     return json_build_object('ok', false, 'reason', 'service-only');
@@ -232,6 +244,21 @@ begin
   end if;
   if p_body is null or length(btrim(p_body)) < 1 then
     return json_build_object('ok', false, 'reason', 'empty-body');
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(p_workspace_id::text || ':' || p_message_id, 0));
+
+  select * into approval
+    from public.outreach_approvals
+    where workspace_id = p_workspace_id and message_id = p_message_id
+    for update;
+  if not found then
+    return json_build_object('ok', false, 'reason', 'approval-required');
+  end if;
+  if not public.outbound_approval_authorizes_send(
+    p_workspace_id, approval.approval_source, approval.approved_by, approval.template_id, approval.revoked_at
+  ) then
+    return json_build_object('ok', false, 'reason', 'approval-not-authorized');
   end if;
 
   dedupe := encode(

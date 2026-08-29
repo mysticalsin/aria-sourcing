@@ -102,8 +102,8 @@ export async function POST(req: NextRequest) {
       subject: parsed.data.subject,
       body: parsed.data.body,
       recipient: parsed.data.recipient,
-      qualityStatus: parsed.data.qualityStatus ?? "ready",
-      criticsPassed: parsed.data.criticsPassed !== false,
+      qualityStatus: parsed.data.qualityStatus ?? "",
+      criticsPassed: parsed.data.criticsPassed === true,
     });
   } else {
     const snapshot = await svc.rpc("read_workspace_state_for_loop", {
@@ -164,8 +164,7 @@ export async function POST(req: NextRequest) {
         recipient: recipientFor(channel, candidate),
         qualityStatus: msg.qualityStatus ?? "unknown",
         criticsPassed:
-          msg.qualityStatus !== "blocked" &&
-          (msg.qualityCriticsUsed === true || msg.qualityStatus === "ready"),
+          msg.qualityStatus === "ready" && msg.qualityCriticsUsed === true,
       });
     }
   }

@@ -125,8 +125,9 @@ export function RolesPanel() {
           <p className="text-xs text-muted">
             This access level is assigned to your signed-in profile. An administrator changes teammate
             roles in the identity directory, not in shared workspace settings. Autopilot is a separate
-            admin toggle: only entitled members can use shortlist auto-approve, template-bound send, or
-            guardrailed reply auto-queue.
+            admin toggle: when ON (and Sequences armed on the switchboard), critics-green first-touch
+            drafts auto-queue Email / WhatsApp / LinkedIn (HeyReach). When OFF, shortlist/template/reply
+            paths still need human Approve → Send.
           </p>
 
           {can(role, "manage_autopilot") ? (

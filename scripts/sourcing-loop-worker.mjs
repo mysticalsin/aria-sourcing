@@ -1652,7 +1652,7 @@ async function handleDraftGenerate(job, context) {
     messageId
     && context.configuration?.autopilotSendUrl
     && context.configuration?.cronSecret
-    && qualityStatus !== "blocked"
+    && qualityStatus === "ready"
     && body.llmCriticsUsed === true
   ) {
     try {

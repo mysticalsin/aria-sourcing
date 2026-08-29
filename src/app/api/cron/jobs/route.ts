@@ -26,6 +26,7 @@ const LOOP_CRON_JOBS = [
   { id: "parse-inbound-need", path: "/api/cron/parse-inbound-need", schedule: "loop worker", description: "Requisition parse from inbound email" },
   { id: "run-sourcing-batch", path: "/api/cron/run-sourcing-batch", schedule: "loop worker", description: "Multi-provider sourcing batch" },
   { id: "recruiting-graph-stage", path: "/api/cron/recruiting-graph-stage", schedule: "loop worker", description: "LangGraph stage checkpoint validation" },
+  { id: "autopilot-send-outreach", path: "/api/cron/autopilot-send-outreach", schedule: "loop worker", description: "REI autopilot first-touch send after critics-green draft" },
   { id: "ignite-sourcing-loop", path: "/api/cron/ignite-sourcing-loop", schedule: "scheduled", description: "Enqueue loop tick per workspace" },
   { id: "poll-provider-run", path: "/api/cron/poll-provider-run", schedule: "loop worker", description: "Async provider poll completion" },
   { id: "renew-graph-subscriptions", path: "/api/cron/renew-graph-subscriptions", schedule: "scheduled", description: "Microsoft Graph subscription renew (deferred)" },

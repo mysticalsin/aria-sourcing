@@ -323,7 +323,7 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
               secondary={
                 graphMailboxReady || seat.domainVerified
                   ? seat.provider === "Microsoft Graph"
-                    ? "Outlook connected · Approve then Send uses this mailbox (nothing auto-sends)"
+                    ? "Outlook connected · Approve→Send uses this mailbox (auto-send only when Autopilot + Sequences armed)"
                     : "Domain verified · ready for live sends"
                   : "Domain not verified — verify before going live"
               }

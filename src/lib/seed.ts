@@ -189,6 +189,7 @@ export function defaultSettings(): SystemSettings {
     hermesApiKeyId: "",
     memoryCapacity: 200,
     hermesWebUrl: "",
+    heyreach: undefined,
   };
 }
 
