@@ -6,7 +6,8 @@ import { getServiceSupabase } from "@/lib/supabase/server";
 import { getRunStatus, fetchDatasetItems, resolveStoredApifyKeyForWorkspace } from "@/lib/sourcing/apify";
 import { clearIdentityResolution } from "@/lib/sourcing/provider-egress";
 import { mapApifyCandidates } from "@/lib/store/sourcing-helpers";
-import type { Campaign, Candidate } from "@/lib/types";
+import type { CandidateDedupeIdentity } from "@/lib/rules";
+import { loadCampaignForLoop } from "@/lib/workspace-loop-slices";
 
 export const dynamic = "force-dynamic";
 
@@ -27,19 +28,6 @@ function authorized(req: NextRequest): boolean {
   return secret !== ""
     && presentedBuf.length === expectedBuf.length
     && timingSafeEqual(presentedBuf, expectedBuf);
-}
-
-function campaignFromState(state: unknown, campaignId: string): Campaign | null {
-  const root = state && typeof state === "object" ? state as { campaigns?: unknown[] } : {};
-  const campaign = Array.isArray(root.campaigns)
-    ? root.campaigns.find((item) => (item as { id?: unknown })?.id === campaignId)
-    : null;
-  return campaign && typeof campaign === "object" ? campaign as Campaign : null;
-}
-
-function candidatesFromState(state: unknown): Candidate[] {
-  const root = state && typeof state === "object" ? state as { candidates?: unknown[] } : {};
-  return Array.isArray(root.candidates) ? root.candidates.filter((item): item is Candidate => Boolean(item && typeof item === "object")) : [];
 }
 
 export async function POST(req: NextRequest) {
@@ -101,15 +89,26 @@ export async function POST(req: NextRequest) {
   const itemsRes = await fetchDatasetItems(clearance.clearance, apiKey, runData.dataset_id, DATASET_ITEMS_LIMIT);
   if (!itemsRes.ok) return NextResponse.json({ ok: false, status: "provider_error" }, { status: itemsRes.status || 502 });
 
-  const snapshot = await supabase.rpc("read_workspace_state_for_loop", { p_workspace_id: parsed.data.workspaceId });
-  const snapshotData = snapshot.data as { status?: string; state?: unknown } | null;
-  if (snapshot.error || snapshotData?.status !== "ok") {
-    return NextResponse.json({ ok: false, status: "workspace_unavailable" }, { status: 409 });
-  }
-  const campaign = campaignFromState(snapshotData.state, runData.campaign_id ?? "");
+  const campaignId = runData.campaign_id ?? "";
+  if (!campaignId) return NextResponse.json({ ok: false, status: "campaign_unavailable" }, { status: 409 });
+
+  const campaign = await loadCampaignForLoop(supabase, parsed.data.workspaceId, campaignId);
   if (!campaign) return NextResponse.json({ ok: false, status: "campaign_unavailable" }, { status: 409 });
 
-  const existing = candidatesFromState(snapshotData.state);
+  const identities = await supabase.rpc("read_workspace_candidate_identities_for_loop", {
+    p_workspace_id: parsed.data.workspaceId,
+    p_campaign_id: campaignId,
+    p_limit: 500,
+  });
+  const identityBody = identities.data as {
+    status?: string;
+    candidates?: CandidateDedupeIdentity[];
+  } | null;
+  const existing: CandidateDedupeIdentity[] =
+    !identities.error && identityBody?.status === "ok" && Array.isArray(identityBody.candidates)
+      ? identityBody.candidates
+      : [];
+
   const mapped = mapApifyCandidates(itemsRes.data, campaign, "Apify provider run", existing);
   await supabase.rpc("settle_provider_run", { p_run_id: parsed.data.providerRunId, p_succeeded: true });
 

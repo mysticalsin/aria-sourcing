@@ -1,6 +1,6 @@
 import { computeCoverage } from "../enrichment/merge";
 import type { SourceResult } from "../sourcing/candidate-mappers";
-import { dedupeCandidates } from "../rules";
+import { dedupeCandidates, type CandidateDedupeIdentity } from "../rules";
 import { scoreCandidate } from "../scoring";
 import type { ApifyProfile } from "../sourcing/apify";
 import type { SillageProfile } from "../sourcing/sillage";
@@ -186,7 +186,7 @@ export function mapApifyCandidates(
   profiles: ApifyProfile[],
   campaign: Campaign,
   query: string,
-  existing: Candidate[],
+  existing: CandidateDedupeIdentity[],
   weights: ScoringWeights = campaign.scoringWeights,
   opts: MapApifyOptions = {},
 ): SourceResult {

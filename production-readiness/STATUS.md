@@ -14,12 +14,14 @@ particular production deployment is healthy.
 - Local acceptance requires typecheck, lint, the full test chain, the isolated
   production build, the exact database restart test, and the database authority
   test.
-- Migrations through **0071** are in source: LinkedIn channel (`0054`), per-user
+- Migrations through **0078** are in source: LinkedIn channel (`0054`), per-user
   autopilot entitlements + template-bound approvals (`0055`), MCP allowlist
   authority (`0056`), pre-call/first-interview loop kinds (`0069`), enqueue
-  switchboard fix (`0070`), and post-booking interview prep dispatch
-  (`0071_interview_prep_send_loop_kind.sql`). Apply and prove on a Docker-enabled
-  host before lighting the loop kill switch.
+  switchboard fix (`0070`), post-booking interview prep (`0071`), workspace
+  revision-only loop reads (`0074`), Autopilot critics mint/enqueue (`0076`),
+  HeyReach inbound routes (`0077`), and post-0074 loop slice RPCs +
+  `merge_outreach_message` (`0078`). Apply and prove on a Docker-enabled host
+  before lighting the loop kill switch.
 - Enterprise E2E audit matrix: [`_relay/e2e-audit-matrix.md`](../_relay/e2e-audit-matrix.md)
   (58/58 automated pins in `tests/enterprise-e2e-audit-matrix.mts`).
 - The Fly release builds the application, database, bootstrap, Kong, and
@@ -47,8 +49,9 @@ particular production deployment is healthy.
   Entitled users may reach `auto_approve_eligible` only when guardrails, salary
   disclosure, and injection checks all pass.
 - After a live calendar booking (`confirmLive` + provider receipt),
-  `interview_prep_send` enqueues interviewer prep and candidate confirmation
-  drafts into the approval queue — nothing sends without review.
+  `interview_prep_send` drafts interviewer prep + candidate confirmation, runs
+  live quality critics, and Autopilot-queues Email when entitled + Sequences
+  armed; otherwise drafts stay Needs Approval for human Approve → Send.
 - Agent graph drafts stay in exact-owner run history with no delivery authority.
   They do not create a review queue or provider outbox row.
 - Email, WhatsApp, and LinkedIn claims share seat/capacity and recontact

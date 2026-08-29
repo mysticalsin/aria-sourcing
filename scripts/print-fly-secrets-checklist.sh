@@ -72,7 +72,8 @@ flyctl secrets set -a aria-mantu-app ARIA_LOOP_KILL_SWITCH='false'
 #   HEYREACH_API_KEY='PLACEHOLDER_HEYREACH_PUBLIC_API_KEY' \
 #   HEYREACH_CAMPAIGN_ID='PLACEHOLDER_ACTIVE_CAMPAIGN_ID'
 # Optional: HEYREACH_ACCOUNT_ID='PLACEHOLDER_LINKEDIN_ACCOUNT_ID'
-# Also needs migration 0076 + live HeyReach fleet seat (auto-created on Save/Connect).
+# Also needs migrations 0076+0077+0078 + live HeyReach fleet seat (auto-created on Save/Connect).
+# Loop process: set ARIA_LOOP_WORKSPACE_IDS=<workspace-uuid> so autopilot sweep runs each tick.
 
 # === aria-mantu-auth (Entra SSO / GoTrue Azure) — OPTIONAL for Graph E2E PASS ===
 # Only needed for /login "Sign in with Microsoft". Graph Connect Outlook works

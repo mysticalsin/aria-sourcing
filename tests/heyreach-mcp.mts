@@ -85,6 +85,17 @@ const prepCron = readFileSync("src/app/api/cron/interview-prep-dispatch/route.ts
 ok("prep dispatch runs live critics", /validateOutreachQualityLive/.test(prepCron));
 ok("prep dispatch uses booking slice RPC", /loadBookingForLoop|read_workspace_booking_for_loop/.test(prepCron));
 ok("autopilot send uses post-0074 slices", /loadReadyAutopilotOutreachSweep|mergeOutreachMessageScheduled/.test(cron));
+ok(
+  "poll-provider-run uses campaign + identity slices (no full state blob)",
+  (() => {
+    const poll = readFileSync("src/app/api/cron/poll-provider-run/route.ts", "utf8");
+    return (
+      /loadCampaignForLoop/.test(poll) &&
+      /read_workspace_candidate_identities_for_loop/.test(poll) &&
+      !/read_workspace_state_for_loop/.test(poll)
+    );
+  })(),
+);
 const transitions = readFileSync("src/lib/langchain/pipeline-transitions.json", "utf8");
 ok(
   "pipeline claims interview_prep_send after live book",
