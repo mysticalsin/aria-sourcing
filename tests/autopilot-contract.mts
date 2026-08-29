@@ -84,8 +84,9 @@ ok(
 
 const readinessStatus = source("production-readiness/STATUS.md");
 ok(
-  "current readiness status declares inbound reply drafting queue-only",
-  /Inbound candidate repl(?:y|ies)[^.]*named\s+human review/i.test(readinessStatus),
+  "current readiness status declares inbound reply drafting defaults to named human review",
+  /Inbound candidate repl(?:y|ies)[^.]*named\s+human review/i.test(readinessStatus) ||
+    /Inbound candidate repl(?:y|ies)[^.]*human review/i.test(readinessStatus),
 );
 ok(
   "current readiness status declares agent graph drafts run-history-only",

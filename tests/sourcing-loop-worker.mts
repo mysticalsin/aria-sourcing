@@ -1474,6 +1474,61 @@ test("draft_generate posts autopilot-send and marks outreach Scheduled when queu
   assert.equal(outreach[0]?.dryRun, false);
 });
 
+test("draft_generate retries when autopilot-send returns 5xx", async () => {
+  const { client } = rpcClient((name) => {
+    if (name === "read_workspace_state_for_loop") {
+      return { data: { status: "ok", state: {}, updated_at: "2026-07-25T12:00:00.000Z" }, error: null };
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  });
+
+  await assert.rejects(
+    () =>
+      handleAriaJob(
+        job("draft_generate", { campaignId: "camp-5xx", candidateId: "cand-5xx" }),
+        {
+          client,
+          configuration: {
+            outreachDraftUrl: new URL("https://worker.example.test/api/cron/generate-outreach-draft"),
+            autopilotSendUrl: new URL("https://worker.example.test/api/cron/autopilot-send-outreach"),
+            cronSecret: "s".repeat(32),
+          },
+          fetcher: async (url) => {
+            const href = String(url);
+            if (href.includes("generate-outreach-draft")) {
+              return new Response(
+                JSON.stringify({
+                  ok: true,
+                  channel: "Email",
+                  recipient: "a@b.co",
+                  graphStage: "queued_for_approval",
+                  llmCriticsUsed: true,
+                  quality: { status: "ready", aggregateScore: 90 },
+                  outreach: {
+                    id: "msg-5xx",
+                    subject: "Hi",
+                    body: "Body with Mantu Group for critics.",
+                    channel: "Email",
+                    status: "Needs Approval",
+                  },
+                }),
+                { status: 200, headers: { "content-type": "application/json" } },
+              );
+            }
+            if (href.includes("autopilot-send")) {
+              return new Response("boom", { status: 503 });
+            }
+            throw new Error(`unexpected fetch ${href}`);
+          },
+        },
+      ),
+    (err: unknown) =>
+      err instanceof Error &&
+      err.message === "autopilot_send_http_503" &&
+      (err as { retryable?: boolean }).retryable === true,
+  );
+});
+
 test("draft_generate skips autopilot-send when quality is needs_review", async () => {
   const autopilotCalls: string[] = [];
   const { client } = rpcClient((name) => {

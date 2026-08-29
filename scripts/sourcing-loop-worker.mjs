@@ -1755,13 +1755,21 @@ async function handleDraftGenerate(job, context) {
           };
         } else if (st === "skipped" && first && typeof first.reason === "string") {
           autopilotStatus = `skipped:${first.reason}`;
+        } else if (st === "error") {
+          // Transient dispatch/mint failure — retry the job before leaving Needs Approval.
+          throw new HandlerError("autopilot_send_error", true);
         }
+      } else if (autoRes.status >= 500) {
+        await autoRes.body?.cancel?.().catch(() => undefined);
+        throw new HandlerError(`autopilot_send_http_${autoRes.status}`, true);
       } else {
         await autoRes.body?.cancel?.().catch(() => undefined);
+        autopilotStatus = `http_${autoRes.status}`;
       }
       }
-    } catch {
-      autopilotStatus = "autopilot_unreachable";
+    } catch (err) {
+      if (err instanceof HandlerError) throw err;
+      throw new HandlerError("autopilot_unreachable", true);
     }
   }
 

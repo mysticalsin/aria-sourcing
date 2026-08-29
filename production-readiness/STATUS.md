@@ -40,10 +40,12 @@ particular production deployment is healthy.
 - The 0032 application-surface fallback passes its disposable database test but
   is not production-executable. A protected apply job and append-only,
   ledger-safe forward migration are still required.
-- Inbound candidate replies are queue-only and require named human review by
-  default. Entitled users (`profiles.autopilot_enabled`) may reach
-  `auto_approve_eligible` only when guardrails, salary disclosure, and injection
-  checks all pass; claim RPCs still re-validate authority at send time.
+- Inbound candidate replies default to named human review (`blocked` / Needs
+  Approval). When Autopilot is entitled and Sequences are armed, critics-green
+  first-touch and eligible WhatsApp reply drafts may mint `autopilot_critics`
+  and durable-queue; claim RPCs still re-validate authority at send time.
+  Entitled users may reach `auto_approve_eligible` only when guardrails, salary
+  disclosure, and injection checks all pass.
 - After a live calendar booking (`confirmLive` + provider receipt),
   `interview_prep_send` enqueues interviewer prep and candidate confirmation
   drafts into the approval queue — nothing sends without review.

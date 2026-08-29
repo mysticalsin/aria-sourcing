@@ -204,8 +204,11 @@ const webhookRoute = readFileSync(new URL("../src/app/api/webhooks/whatsapp/rout
 const inboundProcessor = readFileSync(new URL("../src/lib/whatsapp-inbound.ts", import.meta.url), "utf8");
 ok("webhook never synthesizes an outreach approval", !/from\("outreach_approvals"\)\.insert/.test(webhookRoute));
 ok(
-  "webhook stores generated WhatsApp replies as human-review blocked",
-  /processStoredWhatsAppInbound/.test(webhookRoute) && /status:\s*"blocked"/.test(inboundProcessor),
+  "webhook stores WhatsApp replies as blocked for human review (default) or queues when Autopilot armed",
+  /processStoredWhatsAppInbound/.test(webhookRoute) &&
+    /status:\s*"blocked"/.test(inboundProcessor) &&
+    /mint_autopilot_critics_approval/.test(inboundProcessor) &&
+    /auto_approve_eligible/.test(inboundProcessor),
 );
 ok("webhook resolves workspace from the registered WhatsApp sender", /from\("whatsapp_senders"\)/.test(webhookRoute));
 const optOutIndex = inboundProcessor.indexOf("isWhatsAppOptOut(body)");

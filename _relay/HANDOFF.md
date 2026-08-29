@@ -1,32 +1,30 @@
 ---
 project: MSourcing / ARIA
-shift: 398
+shift: 399
 agent: cursor-cloud
-updated: 2026-08-29T21:05Z
-status: rei-book-gate-idempotent-draft
+updated: 2026-08-29T21:20Z
+status: rei-wa-inbound-autopilot-retry
 ---
 
-# Handoff — Shift 398
+# Handoff — Shift 399
 
 ## Current state
 
 - **Branch / PR:** `cursor/rei-autopilot-send-b91d` → **PR #39**
-- **This shift:** Live Teams book gated on Autopilot+Sequences; stable draft message ids (no retry double-send); reply follow-up draft (step 2 + prompt); worker tests for autopilot-send wiring + disarmed book
-- **Live Fly:** `1665b39` / **0074**; **0076 not applied**; Graph dropzones absent → **HOLD**; no `ARIA_PROD_DEPLOY_CONFIRM`
+- **This shift:** WhatsApp inbound replies Autopilot-queue when entitled+Sequences+eligible; draft_generate retries on autopilot 5xx/unreachable
+- **Live Fly:** `1665b39` / **0074**; **0076 not applied**; Graph dropzones absent → **HOLD**
 
 ## Done this shift
 
-1. `workspaceAutopilotArmed` in sourcing-loop-worker — live `confirm-calendar-book` only when armed
-2. `stableOutreachMessageId` + draft cron trigger/intent/sequenceStep for reply follow-ups
-3. Worker tests: autopilot-send → Scheduled; needs_review skips; book skipped when disarmed
-4. Reply panel / outreach card / INBOUND_REPLY_AUTOPILOT docs honesty
+1. `whatsapp-inbound.ts` — load arming, mint `autopilot_critics`, queue+dispatchDue; else blocked review
+2. Worker — `HandlerError` retryable on autopilot 5xx / unreachable / result error
+3. Tests: whatsapp-inbound-autopilot contract, draft 5xx retry; STATUS/webhook honesty
 
 ## Blockers
 
 1. Deploy tip + **0076**
-2. Settings HeyReach API + live seat; entitle Autopilot; arm Sequences
+2. Settings HeyReach + live seat; entitle; arm Sequences
 3. Graph dropzones empty — strict PASS HOLD
-4. WhatsApp *inbound reply* auto-queue still inserts `blocked` (agent-spec path) — separate from first-touch REI WA cold template
 
 ## Next steps
 
@@ -34,19 +32,18 @@ status: rei-book-gate-idempotent-draft
 bash scripts/print-fly-deploy-confirm.sh && bash scripts/fly-deploy-now.sh
 # Settings → HeyReach; entitle; arm Sequences
 bash scripts/run-enterprise-e2e-partial.sh
-# Optional next code: WhatsApp inbound decideAutopilot(entitlement) → mint+queue
 ```
 
 ## Decisions made (don't relitigate)
 
-- Settings vault + campaign first-class; Fly env optional
-- Autopilot fail-closed: qualityStatus=ready + criticsPassed
-- WhatsApp cold: Meta template or open window; LinkedIn durable seat only
-- Live interview book only when Autopilot entitled + Sequences armed; else dry-run propose
-- Stable draft message ids for loop retries
+- Settings vault + campaign first-class
+- Autopilot fail-closed: ready + criticsPassed
+- WA cold first-touch: template or open window; WA inbound reply: Autopilot may queue
+- Live book + WA inbound queue require Autopilot + Sequences
+- Stable draft ids; retry autopilot send on transient failure
 - HOLD when Microsoft dropzones empty
 
 ## Watch out
 
-- Worker tests: `stubWorkspaceAutopilotArmed(client)` for live book paths
-- Dispatch tests need `--experimental-test-module-mocks`
+- WA inbound still needs agent-spec `guardrails.autopilot: true` for auto_approve_eligible
+- mint requires 0076 on prod
