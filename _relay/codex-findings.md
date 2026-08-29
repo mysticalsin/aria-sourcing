@@ -1166,7 +1166,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Autopilot read `sourcing_loop_controls` via PostgREST table SELECT. `service_role` has EXECUTE on `get_sourcing_loop_controls` only — table SELECT is revoked (42501). Live Fly with kill_switch=false + sequences_enabled=true still returned `sequences_not_armed` for every Autopilot dispatch/sweep.
 **Repro/evidence:** Planted critics-green Needs Approval draft; `get_sourcing_loop_controls` showed sequences armed; cron sweep returned `reason:sequences_not_armed`. Direct `GET /sourcing_loop_controls` as service_role → 403 permission denied.
 **Suggested fix:** Use `rpc("get_sourcing_loop_controls")` exclusively.
-**Status:** fixed (this shift)
+**Status:** fixed (9426d76)
 
 ## 2026-08-29 — Autopilot sweep hides RPC / recipient failures as empty
 **Severity:** correctness
@@ -1174,7 +1174,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Sweep RPC errors and `targetFromMessage` nulls collapsed to `{ok:true,sent:0,results:[]}`.
 **Repro/evidence:** Audit plant recipe; ready drafts with missing candidate/recipient looked identical to empty outreach.
 **Suggested fix:** 503 on sweep read failure; push `candidate_missing` / `no_recipient` into results.
-**Status:** fixed (this shift)
+**Status:** fixed (9426d76)
 
 ## 2026-08-29 — Worker sweep discards send outcomes
 **Severity:** test-gap
@@ -1182,7 +1182,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Worker cancelled cron body; tick only reported `autopilotSweep=ok` + workspace count.
 **Repro/evidence:** Live tick ok while cron sent:0; no skip reasons in heartbeat.
 **Suggested fix:** readBoundedJson; surface sent/skipped/errors/reasons; degrade on errors>0.
-**Status:** fixed (this shift)
+**Status:** fixed (9426d76)
 
 ## 2026-08-29 — LinkedIn Autopilot skip reason collapses config gaps
 **Severity:** spec-mismatch
@@ -1190,7 +1190,7 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** Missing campaign vs seat vs key all mapped to `linkedin_assisted_manual_only`.
 **Repro/evidence:** Vault HeyReach key without settings.heyreach.campaignId.
 **Suggested fix:** Split diagnostic flags; keep fail-closed AND for dispatch.
-**Status:** fixed (this shift)
+**Status:** fixed (9426d76)
 
 ## 2026-08-29 — approvalScopeHash locale vs SQL lower
 **Severity:** correctness
@@ -1198,4 +1198,4 @@ Historical and current findings follow. The current consolidated audit is
 **Issue:** `toLocaleLowerCase()` could diverge from SQL `lower()` / 0079 bind.
 **Repro/evidence:** Non-ASCII locale recipient casing.
 **Suggested fix:** Use invariant `toLowerCase()`.
-**Status:** fixed (this shift)
+**Status:** fixed (9426d76)
