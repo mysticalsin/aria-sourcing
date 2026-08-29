@@ -365,7 +365,9 @@ ok("settings panel Connect Gmail", /Connect Gmail/.test(panel));
 ok("settings panel Connect Outlook", /Connect Outlook/.test(panel));
 ok(
   "settings panel honest when Outlook OAuth missing",
-  /MICROSOFT_CLIENT_ID/.test(panel) && /Connect Outlook stays disabled/.test(panel),
+  /MICROSOFT_CLIENT_ID/.test(panel)
+    && /Connect Outlook stays disabled/.test(panel)
+    && /Entra admin must register ARIA Mantu Graph/.test(panel),
 );
 ok("settings panel Enable webhook", /Enable webhook/.test(panel));
 ok("settings panel ensure_graph_webhook", /ensure_graph_webhook/.test(panel));

@@ -452,7 +452,7 @@ export function EmailConnectionsPanel() {
               <p className="max-w-md text-xs text-muted">
                 {!providers.encryptionReady
                   ? "Token encryption missing (DATA_ENCRYPTION_KEY) — Connect Outlook stays disabled."
-                  : "Microsoft Graph OAuth env missing (MICROSOFT_CLIENT_ID / SECRET / REDIRECT_URI) — Connect Outlook stays disabled. Use HMAC mailbox above for intake."}
+                  : "Microsoft Graph OAuth env missing — Entra admin must register ARIA Mantu Graph (Fly), Grant admin consent, then set MICROSOFT_CLIENT_ID/SECRET/TENANT_ID on Fly (or drop client id for agent apply). Connect Outlook stays disabled. HMAC mailbox above still works for intake."}
               </p>
             ) : null}
           </div>
