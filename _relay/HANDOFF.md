@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 339
 agent: cursor-cloud
-updated: 2026-08-29T05:35Z
+updated: 2026-08-29T05:45Z
 status: critics-pass-m365-partial-only
 ---
 
@@ -14,12 +14,13 @@ status: critics-pass-m365-partial-only
 - **Live Fly:** `cb6d217` / **0073** · `deploy_status=tip_ahead_docs` (tip ops/tests/_relay only)
 - **Gate:** tsc green · audit **64/64** · fleet-seats-server 21/0 after Teams-scope pin
 - **E2E verified (live `cb6d217`):** `bash scripts/run-enterprise-e2e-partial.sh`
-  - **RESULT: PARTIAL · 59 pass / 0 fail**
+  - **RESULT: PARTIAL · 57 pass / 0 fail / 2 warn** (Microsoft only)
   - step **3c PASS** top-10 live
-  - approve retry feeds critic reason into next draft (1×422 then PASS)
-  - **Human approval RECORDED** + **live LLM critics (stages=6)**
+  - first-try approve (no repo-count empathy flake) + **live LLM critics (stages=6)**
+  - drafts sanitize raw activity metrics; critic 422 feedback still wired for retries
   - calendar slot jittered (ready for post-MS confirmLive re-runs)
-- **Microsoft:** **DEFERRED** · live promote now fail-closed without OnlineMeetings/Calendars scopes
+- **Microsoft:** **DEFERRED** (no `/tmp/owner-microsoft.env`) · live promote fail-closed without OnlineMeetings/Calendars scopes
+- **MS reopen check:** reconfirmed deferred; timer re-armed (~30m)
 
 ## Done this shift
 
@@ -27,6 +28,7 @@ status: critics-pass-m365-partial-only
 2. E2E approve regenerates with critic 422 feedback; confirmLive slot jitter
 3. Deployed `cb6d217` to Fly; hardened confirm dropzone loader (no accidental `source` deploy)
 4. tip_ahead classifier: ops golive scripts are docs-only (not image)
+5. MS reopen check: still deferred; drafts avoid raw GitHub repo-count citations (first-try approve)
 
 ## Blockers
 
