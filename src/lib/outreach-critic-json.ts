@@ -40,28 +40,40 @@ function coerceScore(value: unknown): number | undefined {
 export function parseCriticJson(text: string): CriticJsonRow | null {
   const stripped = stripFences(text);
   const jsonMatch = /\{[\s\S]*\}/.exec(stripped);
-  if (!jsonMatch) return null;
-  const candidates = [jsonMatch[0], relaxJson(jsonMatch[0])];
-  for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate) as Record<string, unknown>;
-      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) continue;
-      const pass = coercePass(parsed.pass);
-      const score = coerceScore(parsed.score);
-      const reasonsRaw = parsed.reasons;
-      const reasons = Array.isArray(reasonsRaw)
-        ? reasonsRaw.map(String).filter(Boolean).slice(0, 8)
-        : typeof reasonsRaw === "string" && reasonsRaw.trim()
-          ? [reasonsRaw.trim()]
-          : undefined;
-      return {
-        ...(pass !== undefined ? { pass } : {}),
-        ...(score !== undefined ? { score } : {}),
-        ...(reasons ? { reasons } : {}),
-      };
-    } catch {
-      // try next candidate
+  if (jsonMatch) {
+    const candidates = [jsonMatch[0], relaxJson(jsonMatch[0])];
+    for (const candidate of candidates) {
+      try {
+        const parsed = JSON.parse(candidate) as Record<string, unknown>;
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) continue;
+        const pass = coercePass(parsed.pass);
+        const score = coerceScore(parsed.score);
+        const reasonsRaw = parsed.reasons;
+        const reasons = Array.isArray(reasonsRaw)
+          ? reasonsRaw.map(String).filter(Boolean).slice(0, 8)
+          : typeof reasonsRaw === "string" && reasonsRaw.trim()
+            ? [reasonsRaw.trim()]
+            : undefined;
+        return {
+          ...(pass !== undefined ? { pass } : {}),
+          ...(score !== undefined ? { score } : {}),
+          ...(reasons ? { reasons } : {}),
+        };
+      } catch {
+        // try next candidate
+      }
     }
   }
-  return null;
+  // Last-resort prose scrape when models ignore "JSON only".
+  const scoreMatch = /(?:["']?score["']?\s*[:=]\s*|score\s+)(\d{1,3})\b/i.exec(stripped);
+  const passMatch = /(?:["']?pass["']?\s*[:=]\s*|pass(?:es|ed)?\s*[:=]?\s*)(true|false|yes|no|pass|fail)\b/i.exec(
+    stripped,
+  );
+  if (!scoreMatch && !passMatch) return null;
+  const score = scoreMatch ? Number(scoreMatch[1]) : undefined;
+  const pass = passMatch ? coercePass(passMatch[1]) : score != null ? score >= 60 : undefined;
+  return {
+    ...(pass !== undefined ? { pass } : {}),
+    ...(score !== undefined && Number.isFinite(score) ? { score } : {}),
+  };
 }

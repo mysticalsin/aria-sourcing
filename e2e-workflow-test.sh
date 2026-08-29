@@ -1205,6 +1205,11 @@ CAND_ID=$(jq -r 'if type=="object" and .id then .id else empty end' "$WORK/cand0
 CAND_LI=$(jq -r '(.linkedinUrl // .githubUrl // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null)
 CAND_EMAIL=$(jq -r '(.email // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null)
 CAND_NAME=$(jq -r '(.name // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null)
+CAND_TITLE=$(jq -r '(.currentTitle // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null)
+CAND_COMPANY=$(jq -r '(.currentCompany // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null)
+CAND_STACK=$(jq -r '[(.techStack // [])[] | select(type=="string" and .!="")] | .[0:6] | join(", ")' "$WORK/cand0.json" 2>/dev/null)
+CAND_ACTIVITY=$(jq -r '(.recentActivity // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null | head -c 280)
+CAND_GH=$(jq -r '(.githubUrl // "") | select(.!="")' "$WORK/cand0.json" 2>/dev/null)
 if [ -z "$CAND_ID" ]; then
   if [ "$APP_URL" = "https://aria-mantu-app.fly.dev" ] && [ "${ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E:-}" != "1" ] && [ "${E2E_SKIP_SOURCING:-0}" != "1" ]; then
     fail "Fly enterprise E2E requires a live sourced candidate (no synthetic cand-e2e). Set ARIA_ALLOW_SYNTHETIC_CANDIDATE_E2E=1 only for partial runs."
@@ -1239,13 +1244,20 @@ assert_outreach_language() {
   return 0
 }
 gen_draft() {  # $1 = channel label used only in the prompt
-  local channel="$1" prompt gen ok text fmt_hint
+  local channel="$1" prompt gen ok text fmt_hint specifics
   if [ "$channel" = "WhatsApp" ]; then
     fmt_hint="Write ONE short WhatsApp message (no Subject line, under 400 characters)."
   else
     fmt_hint="Format: Subject: ... then body."
   fi
-  prompt="Draft a first-touch ${channel} recruiting message in language ISO code ${E2E_OUTREACH_LANGUAGE}. The candidate's main language is ${E2E_LANG_LABEL}. Write the entire message in ${E2E_LANG_LABEL} only (proper nouns like Mantu Group excepted). Do not ask clarifying questions — output the final message only. ${fmt_hint} Reach out to ${CAND_NAME} about a senior engineering role with Mantu Group. Mention Mantu Group by name, lead with their work, one genuine reason, soft ask."
+  specifics=""
+  [ -n "${CAND_TITLE:-}" ] && specifics="${specifics} Title: ${CAND_TITLE}."
+  [ -n "${CAND_COMPANY:-}" ] && specifics="${specifics} Company: ${CAND_COMPANY}."
+  [ -n "${CAND_STACK:-}" ] && specifics="${specifics} Skills/stack: ${CAND_STACK}."
+  [ -n "${CAND_GH:-}" ] && specifics="${specifics} GitHub: ${CAND_GH}."
+  [ -n "${CAND_ACTIVITY:-}" ] && specifics="${specifics} Activity signal: ${CAND_ACTIVITY}."
+  [ -n "$specifics" ] || specifics=" Use any concrete public signal you can infer from their name; never invent employers."
+  prompt="Draft a first-touch ${channel} recruiting message in language ISO code ${E2E_OUTREACH_LANGUAGE}. The candidate's main language is ${E2E_LANG_LABEL}. Write the entire message in ${E2E_LANG_LABEL} only (proper nouns like Mantu Group excepted). Do not ask clarifying questions — output the final message only. ${fmt_hint} Reach out to ${CAND_NAME} about a senior engineering role with Mantu Group. Mention Mantu Group by name. Lead with ONE specific detail from this candidate profile (not a generic compliment):${specifics} Soft ask for a short chat. Avoid salary/compensation."
   # Hermes uses server default model — never send model:"" (Zod rejects empty string).
   if [ -n "${OUTREACH_MODEL:-}" ]; then
     jq -n --arg p "$prompt" --arg prov "$AGENT_PROVIDER" --arg model "$OUTREACH_MODEL" \

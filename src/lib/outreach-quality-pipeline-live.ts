@@ -70,14 +70,14 @@ async function generateCriticText(input: {
       system: input.system,
       prompt: input.prompt,
       workspaceId: input.workspaceId,
-      maxTokens: 256,
+      maxTokens: 512,
     });
     return live.ok ? { ok: true, text: live.text } : { ok: false };
   }
   const live = await serverGenerateText({
     system: input.system,
     prompt: input.prompt,
-    maxTokens: 256,
+    maxTokens: 512,
   });
   return live.ok ? { ok: true, text: live.text } : { ok: false };
 }
@@ -93,7 +93,10 @@ async function runOneCritic(
     "Body:",
     input.body.slice(0, 4_000),
   ].join("\n");
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 400 * attempt));
+    }
     const live = await generateCriticText({
       system: critic.system,
       prompt,

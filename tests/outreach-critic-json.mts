@@ -24,3 +24,9 @@ test("parseCriticJson coerces stringly pass/score", () => {
 test("parseCriticJson returns null for non-JSON prose", () => {
   assert.equal(parseCriticJson("Looks fine to me."), null);
 });
+
+test("parseCriticJson scrapes pass/score from prose when JSON is missing", () => {
+  const row = parseCriticJson("Overall pass: true with score: 78 for specificity.");
+  assert.equal(row?.pass, true);
+  assert.equal(row?.score, 78);
+});
