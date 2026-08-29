@@ -1,50 +1,45 @@
 ---
 project: MSourcing / ARIA
-shift: 354
+shift: 355
 agent: cursor-cloud
-updated: 2026-08-29T10:16Z
-status: e2e-partial-tip-live-m365-deferred
+updated: 2026-08-29T10:22Z
+status: graph-oauth-live-awaiting-connect-outlook
 ---
 
-# Handoff — Shift 354
+# Handoff — Shift 355
 
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft OPEN
-- **Live Fly:** `c545c07` / **0074** · `deploy_status=tip_live`
+- **Live Fly:** `c545c07` / **0074** · `deploy_status=tip_ahead_docs` (HANDOFF tip)
 - **Gate/audit:** green · audit **65/65**
+- **Graph secrets:** **APPLIED** · `graph_secrets_missing=0` · `microsoftOAuth=true` · Entra SSO skipped (PLACEHOLDER CLIENT/SECRET; URL used for tenant derive only)
 - **E2E verified now:** `bash scripts/run-enterprise-e2e-partial.sh`
-  - **RESULT: PARTIAL · 58 pass / 0 fail / 2 warn** (Microsoft only — no critic retry WARN)
-  - **classifier=model PASS**; top-10 live; first-try Human approval + live critics
-- **Microsoft:** **DEFERRED** · `graph_secrets_missing=3` · no `/tmp/owner-microsoft.env`
-- **LLM:** `llm_auth=dead` · Hermes/vault OK · no `/tmp/owner-llm.env`
-
-## Done this shift
-
-1. Fixed GitHub-activity boilerplate feeding drafts (`Active GitHub profile` → critic `"Votre activité GitHub récente"`)
-2. Deployed tip_ahead_app → tip_live `c545c07`
-3. Re-ran PARTIAL E2E: **58/0/2** — MS WARNs only; first-try approve (critic retry eliminated)
+  - **RESULT: PARTIAL · 60 pass / 0 fail / 2 warn**
+  - `microsoftOAuth=true` PASS (no false WARN)
+  - **classifier=model PASS**; top-10 live; approve after 1 critic retry
+  - Remaining WARN: no live Graph seat (Connect Outlook) + one critic specificity retry
 
 ## Blockers
 
-- Owner reopen Microsoft for RESULT: PASS
+- **Human:** Settings → Connect Outlook (grant Calendars.ReadWrite + OnlineMeetings.ReadWrite, mode=live) → Enable Graph webhook
+- Then: `bash scripts/verify-m365-ready.sh` (strict, no PARTIAL_M365)
 
 ## Next steps
 
 ```bash
+bash scripts/print-fly-golive-status.sh
+# expect graph_secrets_missing=0 m365_secrets_missing=0 microsoftOAuth path ready
+# HUMAN: https://aria-mantu-app.fly.dev/settings → Connect Outlook → Enable webhook
+# After live seat:
+bash scripts/verify-m365-ready.sh
+# expect RESULT: PASS (confirmLive Teams joinUrl)
+# Until seat exists, PARTIAL still honest:
 unset AGENT_PROVIDER AGENT_MODEL
-bash scripts/print-fly-golive-status.sh   # tip_live c545c07 / 0074
 bash scripts/run-enterprise-e2e-partial.sh
 # expect Running: ARIA_ALLOW_PARTIAL_M365_E2E=1 only
-# expect step 3c PASS with provenance=live top-10
-# expect Generated a LinkedIn draft via /api/hermes/chat (fr)
-# expect Human approval RECORDED + live LLM critics used (first-try preferred)
-# expect classifier=model PASS on reply webhook poll
-# expect RESULT: PARTIAL until Microsoft reopened
-# When owner drops /tmp/owner-microsoft.env (Graph real; Entra CLIENT+SECRET PLACEHOLDER OK):
-#   bash scripts/probe-m365-unblock.sh --apply
-#   Settings → Connect Outlook (Calendars.ReadWrite + OnlineMeetings.ReadWrite)
-#   bash scripts/verify-m365-ready.sh
+# expect step 3c PASS; classifier=model PASS; microsoftOAuth=true (no microsoftOAuth=false WARN)
+# expect still PARTIAL until live seat (confirmLive skip only)
 ```
 
 ## Production gate (Fly)
@@ -53,24 +48,23 @@ bash scripts/run-enterprise-e2e-partial.sh
 bash scripts/print-fly-golive-status.sh
 curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
 # step 3c should show PASS when running PARTIAL E2E
-# Do NOT run verify-m365-ready / strict M365 E2E while Microsoft is deferred.
-bash scripts/run-enterprise-e2e-partial.sh
+# After Connect Outlook: bash scripts/verify-m365-ready.sh
 ```
 
 ## Decisions made (don't relitigate)
 
 - Production = Fly only; ignore Vercel/GHA empty-steps
 - PR #36 only
-- **2026-08-29: Owner — don’t do the Microsoft part**
-- Deploy confirm remint is agent-owned (KEY=value only — never redirect print-fly-deploy-confirm output into dropzone)
+- Graph-minimum apply (Entra PLACEHOLDER OK; URL may derive tenant)
+- Deploy confirm remint is agent-owned (KEY=value only)
 - Never pin auth-dead cloud AGENT_PROVIDER on Fly E2E
-- Graph-minimum dropzone; Entra/LLM WARN-only
-- Ban GitHub-activity boilerplate in activity signals + Hermes rules
+- Ban GitHub-activity boilerplate in draft signals
+- Owner Microsoft env-exports are valid apply triggers (sync to `/tmp/owner-microsoft.env`)
 
 ## Watch out
 
 - HANDOFF must keep “expect step 3c PASS” / “step 3c should show” + `print-fly-deploy-confirm`
 - `/tmp/owner-deploy-confirm.env` must be KEY=value only (two lines)
 - Do not edit `e2e-workflow-test.sh` while a live E2E bash process is running
-- After `fly deploy`, confirm loop/cleanup/heartbeat primaries are started (not standbys)
-- Empathy critics reject employer-name-only openers and GitHub-activity boilerplate
+- Do not invent Entra SSO secrets; Graph-only is enough for PASS after Connect Outlook
+- `/tmp/owner-microsoft.env` contains secrets — never commit; never print values
