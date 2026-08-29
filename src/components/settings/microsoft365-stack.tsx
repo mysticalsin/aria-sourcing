@@ -145,7 +145,7 @@ function Microsoft365StackInner() {
     // Fail closed: never imply Connect Outlook works without Graph client secrets.
     statusLabel = ssoFlagOn
       ? "Outlook OAuth not configured (SSO flag on — verify /login separately)"
-      : "Outlook OAuth not configured — register Entra app + set MICROSOFT_CLIENT_* on Fly";
+      : "Outlook OAuth not configured — Entra admin must register ARIA Mantu Graph (Fly)";
     statusTone = "neutral";
   }
 
@@ -226,7 +226,7 @@ function Microsoft365StackInner() {
                 ? "Checking deployment env…"
                 : oauthReady
                   ? "MICROSOFT_CLIENT_ID + secret + tenant + REDIRECT_URI configured"
-                  : "Register single-tenant Entra app (ARIA Mantu Graph), set MICROSOFT_CLIENT_ID / SECRET / TENANT_ID + DATA_ENCRYPTION_KEY on Fly. Tenant may block user app create (allowedToCreateApps=false) — an admin must register or grant Application Developer.",
+                  : "Entra admin: register single-tenant app ARIA Mantu Graph (Fly), Grant admin consent (Mail.Read/Send, Calendars.ReadWrite, OnlineMeetings.ReadWrite), then set MICROSOFT_CLIENT_ID/SECRET/TENANT_ID on Fly (or drop client id for agent apply). Tenant blocks user app create (allowedToCreateApps=false). Portal: https://portal.azure.com/ce57ebe3-a63d-4708-b5cf-c274b48bd26c/#view/Microsoft_AAD_RegisteredApps/CreateApplicationBlade/quickStartType~/null/isMSAApp~/false",
             },
             {
               id: "connect-outlook",
