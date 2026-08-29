@@ -11,7 +11,7 @@ status: microsoft-deferred-loop-chain-fix
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft (supersedes #29)
-- **Tip:** pending-commit · Live Fly `fc8b54a` / **0071** (tip **0072**)
+- **Tip:** 0224a2f · Live Fly `fc8b54a` / **0071** (tip **0072**)
 - **Audit:** **64/64** · **Gate:** green
 - **PARTIAL E2E:** last run **61/0** (shift 319)
 - **Microsoft / M365:** **DEFERRED by owner**
