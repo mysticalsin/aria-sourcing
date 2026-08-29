@@ -1,43 +1,48 @@
 ---
 project: MSourcing / ARIA
-shift: 414
+shift: 415
 agent: cursor-cloud
-updated: 2026-08-29T22:40Z
-status: tip-live-ready-graph-hold
+updated: 2026-08-29T22:45Z
+status: tip-ready-ops-partial-graph-hold
 ---
 
-# Handoff — Shift 414
+# Handoff — Shift 415
 
 ## Current state
 
-- **Branch / PR:** `cursor/rei-autopilot-send-b91d` → **PR #40**
-- **Tip / live:** `b0cf56a` — `/api/ready` **ok:true**, migration **`0079_autopilot_enqueue_approval_hash_bind.sql`**, `components.migration:true`
-- **Bootstrap:** fixed 0077 (`DROP FUNCTION` before recreate) → applied **0076–0079** cleanly (`[migrate] complete`)
-- **Dropzones:** Microsoft / Azure / LLM owner files absent → Graph Teams = **HOLD** (`graph_secrets_missing=3`)
-- **CODE:** Autopilot path in source; live Fly tip + ledger green; Autopilot **E2E still unproven** (entitle / Sequences / HeyReach Settings / `ARIA_LOOP_WORKSPACE_IDS` / WA template)
+- **Branch / PR:** `cursor/rei-autopilot-send-b91d` → **PR #40** (git tip may be relay-ahead of live image)
+- **Live Fly image:** `b0cf56a` — `/api/ready` **ok:true**, migration **0079**, `components.migration:true`
+- **Bootstrap:** 0077 DROP-before-recreate fixed; **0076–0079** applied (`[migrate] complete`)
+- **Ops wired this shift:**
+  - Admin `autopilot_enabled=true` (user `521a53af-…`)
+  - `set_sourcing_loop_controls` → kill off, intake/sourcing/sequences **on**
+  - Fly secret `ARIA_LOOP_WORKSPACE_IDS=0d179005-e8e2-4b99-8b9a-b67453348005` **Deployed** (verified on loop machine)
+- **Seats:** 6× Microsoft Graph (`domain_verified=false`, Graph secrets absent) + 1× LinkedIn Assisted Manual — **no HeyReach seat**
+- **Dropzones:** Microsoft/Azure/LLM owner files **absent** → Graph = **HOLD**
+- **Autopilot E2E:** still **unproven** (no live mailbox / no HeyReach seat / no inbound→auto-send receipt)
 
 ## Done this shift
 
-1. Fixed `0077_heyreach_inbound_route.sql` — `drop function if exists upsert_linkedin_inbound_route(uuid,text,uuid)` before recreate (Postgres cannot remove `p_operator_label` DEFAULT from 0058/0060)
-2. Pinned DROP in enterprise matrix evidence for 0077
-3. Reminted tip confirm + `bash scripts/fly-deploy-now.sh` → DEPLOY_EXIT=0
-4. Verified `curl /api/ready` → ready + tip SHA + 0079
+1. Fixed `0077_heyreach_inbound_route.sql` DROP FUNCTION; redeployed; ready green
+2. Entitled admin Autopilot + armed Sequences via admin JWT RPCs
+3. Set `ARIA_LOOP_WORKSPACE_IDS` on Fly
+4. STATUS.md + HANDOFF updated; PR #40 body refreshed
 
 ## Blockers
 
-1. Graph dropzones empty → no live Teams book / interviewer Graph mailbox path (HOLD — do not chase Entra)
-2. Ops: Settings HeyReach; entitle `autopilot_enabled`; Sequences; `ARIA_LOOP_WORKSPACE_IDS`; WA Meta zero-param template
-3. Autopilot E2E receipt still required before goal complete
+1. Graph dropzones empty → cannot heal Graph mailbox / live Teams book (HOLD)
+2. No HeyReach seat + Settings campaign — LI Autopilot cannot send
+3. Graph seats `domain_verified=false` without live Graph → email Autopilot fail-closed
+4. Full Autopilot E2E receipt still required
 
 ## Next steps
 
 ```bash
-curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration,components}'
-# expect ok:true, build=b0cf56a…, migration=0079_…
+curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
 ls /tmp/owner-azure-app-id /tmp/owner-microsoft.env /tmp/owner-llm.env
-# if missing → Graph HOLD; continue Autopilot email/LI ops wiring instead
-# Entitle workspace + Sequences + HeyReach Settings + ARIA_LOOP_WORKSPACE_IDS
-# Prove Autopilot: inbound → draft → auto-send (email or LI) without human Approve
+# missing → Graph HOLD; do not chase Entra
+# Owner: Settings → HeyReach seat + Save API/campaign; or drop Graph secrets for email path
+# Prove: inbound → critics-green draft → autopilot-send queue → provider accepted
 ```
 
 ## Decisions made (don't relitigate)
@@ -48,9 +53,10 @@ ls /tmp/owner-azure-app-id /tmp/owner-microsoft.env /tmp/owner-llm.env
 - Interviewer prep must never send/Autopilot to candidate email
 - Never deploy with confirm whose SHA ≠ `git rev-parse HEAD`
 - 0077 must DROP before recreate when removing parameter defaults
+- Workspace UUID for Mantu admin loop: `0d179005-e8e2-4b99-8b9a-b67453348005`
 
 ## Watch out
 
-- Do not mark goal complete until Autopilot E2E evidence (not just ready green)
-- Stale confirm files under `/tmp/owner-deploy-confirm.env.stale-*` — ignore
+- Do not mark goal complete until Autopilot E2E evidence (ready green ≠ E2E)
 - Quiet HOLD: if follow-up is only empty Graph dropzone check → reply HOLD and stop
+- Assisted Manual LinkedIn ≠ Autopilot send path
