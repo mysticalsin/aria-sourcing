@@ -845,6 +845,9 @@ const MATRIX: Array<{ requirement: string; evidence: () => boolean }> = [
         && /serverGenerateText/.test(readFileSync("src/lib/ai/hermes-loop-failover.ts", "utf8"))
         && /tryLoopTaskCloudFailover/.test(readFileSync("src/app/api/hermes/chat/route.ts", "utf8"))
         && /tryLoopTaskCloudFailover/.test(readFileSync("src/lib/ai/hermes-loop-failover.ts", "utf8"))
+        && /!binding\.ok[\s\S]{0,400}tryLoopTaskCloudFailover/.test(
+          readFileSync("src/app/api/hermes/chat/route.ts", "utf8"),
+        )
         && /isRetryableProviderStatus/.test(readFileSync("src/app/api/hermes/chat/route.ts", "utf8"))
         && !/if \(!input\.workspaceId \|\| !LOOP_LLM_TASKS/.test(
           readFileSync("src/lib/ai/hermes-loop-failover.ts", "utf8"),

@@ -421,6 +421,15 @@ export async function POST(req: NextRequest) {
     boundWorkspaceId: process.env.HERMES_RUNTIME_WORKSPACE_ID,
   });
   if (!binding.ok) {
+    // Loop tasks (outreach/classify/sourcing) may still complete via cloud env/vault
+    // when the shared Hermes process is unbound or not provisioned on this deploy.
+    const failoverText = await tryLoopTaskCloudFailover({
+      task: task as string,
+      system,
+      prompt,
+      workspaceId: runtimeWorkspaceId,
+    });
+    if (failoverText) return NextResponse.json({ ok: true, text: failoverText });
     return NextResponse.json({ ok: false, reason: binding.reason }, { status: binding.status });
   }
 
@@ -435,6 +444,13 @@ export async function POST(req: NextRequest) {
   const baseUrlResult = getHermesBaseUrl("api");
   if (!baseUrlResult.ok) {
     logUpstream("error", "Aria runtime base URL unavailable", { reason: baseUrlResult.reason });
+    const failoverText = await tryLoopTaskCloudFailover({
+      task: task as string,
+      system,
+      prompt,
+      workspaceId: runtimeWorkspaceId,
+    });
+    if (failoverText) return NextResponse.json({ ok: true, text: failoverText });
     return NextResponse.json({ ok: false, reason: baseUrlResult.reason });
   }
   const baseUrl = baseUrlResult.baseUrl;
@@ -535,6 +551,13 @@ export async function POST(req: NextRequest) {
     if (!upstream.ok) {
       const err = await upstream.text().catch(() => "");
       logUpstream("error", "Aria upstream error", { status: upstream.status, err: err.slice(0, 500) });
+      const failoverText = await tryLoopTaskCloudFailover({
+        task: task as string,
+        system,
+        prompt,
+        workspaceId: runtimeWorkspaceId,
+      });
+      if (failoverText) return NextResponse.json({ ok: true, text: failoverText });
       // Generic message to the client; the (redacted) detail is logged above —
       // matches the streaming path, never leaks the raw upstream error body.
       return NextResponse.json({
@@ -549,12 +572,26 @@ export async function POST(req: NextRequest) {
     const text =
       json?.choices?.[0]?.message?.content ?? json?.choices?.[0]?.delta?.content ?? "";
     if (!text) {
+      const failoverText = await tryLoopTaskCloudFailover({
+        task: task as string,
+        system,
+        prompt,
+        workspaceId: runtimeWorkspaceId,
+      });
+      if (failoverText) return NextResponse.json({ ok: true, text: failoverText });
       return NextResponse.json({ ok: false, reason: "Empty response from Aria runtime." });
     }
     return NextResponse.json({ ok: true, text });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Network error.";
     logUpstream("error", "Aria upstream network error", { error: msg });
+    const failoverText = await tryLoopTaskCloudFailover({
+      task: task as string,
+      system,
+      prompt,
+      workspaceId: runtimeWorkspaceId,
+    });
+    if (failoverText) return NextResponse.json({ ok: true, text: failoverText });
     return NextResponse.json({ ok: false, reason: redactSecrets(redactEmail(msg)) });
   }
 }
