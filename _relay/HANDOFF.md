@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 334
 agent: cursor-cloud
 updated: 2026-08-29T03:45Z
-status: hermes-unbound-cloud-failover
+status: tip-live-hermes-cloud-failover
 ---
 
 # Handoff — Shift 334
@@ -11,8 +11,7 @@ status: hermes-unbound-cloud-failover
 ## Current state
 
 - **Branch / PR:** `cursor/enterprise-autopilot-b91d` · **PR #36** draft
-- **Prior live Fly app:** `9f143d1` / **0073** (sourcing top-10 fix)
-- **Tip (this shift):** Hermes unbound → cloud failover for loop tasks (deploy pending)
+- **Live Fly:** `4732c4d` / **0073** · `deploy_status=tip_live` · Hermes unbound→cloud failover for loop tasks
 - **PARTIAL E2E (on 9f143d1):** **RESULT: PARTIAL** · **42/0** · step **3c PASS** top-10 live
 - **Microsoft:** **DEFERRED** · **LLM:** `llm_auth=dead` · no `/tmp/owner-llm.env`
 
