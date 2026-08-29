@@ -166,7 +166,13 @@ LIVE_SEAT="$(
           )
         | .seatId as $sid
         | select(
-            ($seats | map(select((.id // "") == $sid and (.mode // "") == "live")) | length) > 0
+            ($seats
+              | map(select(
+                  (.id // "") == $sid
+                  and (.mode // "") == "live"
+                  and ((.status // "active") == "active")
+                ))
+              | length) > 0
           )
         | $sid
       ]
@@ -175,7 +181,7 @@ LIVE_SEAT="$(
 )"
 
 if [ -n "$LIVE_SEAT" ]; then
-  echo "Live Graph seat ready: $LIVE_SEAT (webhook + Calendars + OnlineMeetings + mode=live)"
+  echo "Live Graph seat ready: $LIVE_SEAT (webhook + Calendars + OnlineMeetings + mode=live + status=active)"
   echo
   echo "=== 4) Strict verify-m365-ready ==="
   bash "$repo/scripts/verify-m365-ready.sh"
@@ -203,14 +209,22 @@ if [ "${WAIT_SEAT_SEC}" -gt 0 ]; then
                 and ((.scope // "") | test("OnlineMeetings[.]ReadWrite|onlinemeetings[.]readwrite"; "i"))
               )
             | .seatId as $sid
-            | select(($seats | map(select(.id == $sid and .mode == "live")) | length) > 0)
+            | select(
+                ($seats
+                  | map(select(
+                      (.id // "") == $sid
+                      and (.mode // "") == "live"
+                      and ((.status // "active") == "active")
+                    ))
+                  | length) > 0
+              )
             | $sid
           ]
         | .[0] // empty
       ' "$WORK/conn.json" 2>/dev/null || true
     )"
     if [ -n "$LIVE_SEAT" ]; then
-      echo "Live seat appeared: $LIVE_SEAT (webhook + Calendars + OnlineMeetings + mode=live)"
+      echo "Live seat appeared: $LIVE_SEAT (webhook + Calendars + OnlineMeetings + mode=live + status=active)"
       bash "$repo/scripts/verify-m365-ready.sh"
       exit $?
     fi

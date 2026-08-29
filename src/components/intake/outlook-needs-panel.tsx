@@ -276,7 +276,7 @@ export function OutlookNeedsPanel({
                   className="inline-flex h-9 items-center gap-1.5 rounded-full border border-ink/15 bg-surface px-3.5 text-sm font-semibold text-ink hover:bg-canvas"
                   title={
                     microsoftOAuthReady === false
-                      ? "Microsoft Graph OAuth env missing — Connect Outlook stays disabled until secrets land."
+                      ? "Microsoft Graph OAuth env missing — Entra admin must register ARIA Mantu Graph (Fly), Owners → Add twalteur@amaris.com, Grant admin consent, then set secrets. Connect Outlook stays disabled until then."
                       : "Checking OAuth readiness…"
                   }
                 >

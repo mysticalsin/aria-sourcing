@@ -171,7 +171,9 @@ export function SeatCard({ seat }: { seat: AgentSeat }) {
           title: isGmail ? "Gmail OAuth not configured" : "Outlook OAuth not configured",
           description: !providers?.encryptionReady
             ? "Token encryption missing (DATA_ENCRYPTION_KEY). Connect stays disabled until secrets land."
-            : "Microsoft/Google OAuth env missing on this deployment. Open Settings → Integrations after secrets land.",
+            : isGmail
+              ? "Google OAuth env missing on this deployment. Open Settings → Integrations after secrets land."
+              : "Microsoft Graph OAuth env missing — Entra admin must register ARIA Mantu Graph (Fly), Owners → Add twalteur@amaris.com, Grant admin consent, then set secrets. Open Settings → Integrations.",
           variant: "error",
         });
         return;
