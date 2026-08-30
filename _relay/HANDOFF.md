@@ -1,47 +1,48 @@
 ---
 project: MSourcing / ARIA
-shift: 427
+shift: 428
 agent: cursor-cloud
-updated: 2026-08-30T04:45Z
-status: main-fly-synced-candidates-fix-landed
+updated: 2026-08-30T05:10Z
+status: qa-approved-fly-synced
 ---
 
-# Handoff — Shift 427
+# Handoff — Shift 428
 
 ## Current state
 
-- **main = integration = Fly tip:** `7d09d09f571740933997423b2d080cedd9fa7823`
-- **PR #42 MERGED** (candidates `complianceFlags` repair) — landed via FF into integration then main
-- **Fly:** `/api/ready` build `7d09d09…`, healthy, migration `0079_…`
-- **Post-merge live E2E:** all routes PASS after hard refresh; sourcing CTA runs without error boundary
-- **Open PRs left:** #14 Dependabot brace-expansion; #3 draft flyctl workflow (`vercel-demo` lineage) — not on this tip
+- **main = integration = Fly tip:** `863b19562555d2ab4d55cbece3abe494f2f3de93`
+- **PR #42 MERGED** — candidate `complianceFlags` repair
+- **PR #43** — outreach `personalizationEvidence` repair (FF into main/integration; Fly live)
+- **QA_VERDICT: APPROVED** (hard-refresh physical E2E) — `/`, `/campaigns`, `/candidates`, `/outreach`, `/floor`, `/intake`, campaign detail, candidate drawer, Source next batch
+- **GHA CI red:** Actions **budget** only (`The job was not started because an Actions budget is preventing further use`) — not code
 
 ## Done this shift
 
-1. FF-merged `cursor/candidate-compliance-repair-b91d` → `integration/sourcing-enrichment-on-main` → `main`
-2. Reminted deploy confirm for `602bad7`; `fly-deploy-now` succeeded
-3. Physical E2E on Fly: home/campaigns/candidates/floor/intake/campaign detail + Source next batch — no "Something broke"
+1. Confirmed Fly already on main tip; local typecheck + campaign-repair + npm test green
+2. Full live QA found `/outreach` blocker (`TypeError … reading 'find'` on missing `personalizationEvidence`)
+3. Fixed via `repairOutreach` + fail-soft UI; deployed `863b195`; re-QA **APPROVED**
+4. FF-merged tip into integration + main; Fly ready build matches
 
 ## Blockers (owner)
 
-1. Graph/HeyReach dropzones empty → no live auto-send `sent>0` (HOLD if dropzones missing)
-2. GHA Actions budget → CI red phantoms on historical runs
+1. Graph/HeyReach dropzones empty → no live auto-send `sent>0` (HOLD)
+2. GHA Actions budget — ignore CI phantoms
 
 ## Next steps
 
 ```bash
-# Tip already live. Optional: close stale #3/#14 if undesired.
 curl -fsS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build}'
+# Expect build 863b195…
 # Hard-refresh browser after any future deploy
 ```
 
 ## Decisions made (don't relitigate)
 
-- Shell repair for sparse `campaign.metrics` (#41) and `candidate.complianceFlags` (#42)
-- main/integration stay FF-synced; Fly deploys reviewed tip SHA
+- Sparse-state repair for campaigns (`metrics`), candidates (`complianceFlags`), outreach (`personalizationEvidence`)
+- Live physical QA after hard refresh is the release gate when GHA budget blocks CI
 - Goal complete only on auto-send `sent>0`
 
 ## Watch out
 
-- Hard-refresh after deploys (cached JS can flash old error boundary)
-- Stale `/tmp/owner-deploy-confirm.env` SHA fails fly-deploy-now
+- Hard-refresh after deploys
+- Stale deploy confirm SHA fails fly-deploy-now
