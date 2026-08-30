@@ -42,11 +42,12 @@ ok("isSourcingTool rejects an unrelated name", !isSourcingTool("web_search"));
       email: "alice@corp.io",
       company: "zzz-unique-co",
       location: "London",
-      bio: "TypeScript engineer",
+      bio: "Go Kubernetes PostgreSQL gRPC Distributed Systems engineer",
       html_url: "https://github.com/alice",
       public_repos: 10,
       followers: 50,
       created_at: "2018-01-01T00:00:00Z",
+      // top language used by mapper when present
     });
 
   const runner = makeSourcingToolRunner(campaign, [], W, "");
@@ -71,8 +72,8 @@ ok("isSourcingTool rejects an unrelated name", !isSourcingTool("web_search"));
       name: null,
       email: null,
       company: null,
-      location: null,
-      bio: null,
+      location: "Berlin",
+      bio: "Go Kubernetes PostgreSQL gRPC Distributed Systems",
       html_url: "https://github.com/bob",
       public_repos: 1,
       followers: 1,
