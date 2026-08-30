@@ -128,15 +128,22 @@ export function candidateOpenToWorkSignal(
 function mustHaveHitsMisses(
   candidate: Candidate,
   jd: JobAnalysis,
-): { hits: string[]; misses: string[] } {
+): { hits: string[]; misses: string[]; hardFail: boolean } {
   const corpus = buildCorpus(candidate);
+  const required = jd.requiredSkills ?? [];
   const hits: string[] = [];
   const misses: string[] = [];
-  for (const skill of jd.requiredSkills ?? []) {
+  for (const skill of required) {
     if (skillMentioned(skill, corpus)) hits.push(skill);
     else misses.push(skill);
   }
-  return { hits, misses };
+  if (required.length === 0) return { hits, misses, hardFail: false };
+  // Majority miss or zero hits → hard reject. Sparse live bios with ≥50% hits
+  // stay soft-dampened so thin provider payloads aren't emptied wholesale.
+  const minHits =
+    required.length <= 2 ? required.length : Math.ceil(required.length * 0.5);
+  const hardFail = hits.length < minHits;
+  return { hits, misses, hardFail };
 }
 
 function languageHitsMisses(
@@ -155,10 +162,50 @@ function languageHitsMisses(
   return { hits, misses, verifiable };
 }
 
+function locationMatchesPlace(location: string, place: string): boolean {
+  const loc = location.trim().toLowerCase();
+  const reg = place.trim().toLowerCase();
+  if (!loc || !reg) return false;
+  if (loc.includes(reg) || reg.includes(loc.split(",")[0]!.trim())) return true;
+  const locCity = loc.split(",")[0]!.trim();
+  const regCity = reg.split(",")[0]!.trim();
+  return locCity.length > 2 && regCity.length > 2 && locCity === regCity;
+}
+
+function jdConcretePlaces(jd: JobAnalysis): string[] {
+  const places: string[] = [];
+  for (const raw of [jd.location ?? "", ...(jd.regions ?? [])]) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    if (/^(eu|eea|emea|europe|remote|global|international)$/i.test(trimmed)) continue;
+    const city = trimmed.split(",")[0]!.trim();
+    if (city.length < 3) continue;
+    if (!places.some((p) => p.toLowerCase() === city.toLowerCase())) places.push(city);
+  }
+  return places;
+}
+
 function geoHardPass(candidate: Candidate, jd: JobAnalysis): boolean {
   const hasLoc = Boolean(candidate.location?.trim() || candidate.timezone?.trim());
   if (!hasLoc) return true;
+
+  // Concrete JD target (Montreal, Toronto, Berlin, …) always wins over macro EU tags.
+  const targets = jdConcretePlaces(jd);
+  if (
+    candidate.location &&
+    targets.some((place) => locationMatchesPlace(candidate.location, place))
+  ) {
+    return true;
+  }
+
   if (jobAnalysisIsEuropeFocused(jd) && candidateIsFarFromEurope(candidate)) {
+    // Conflicting brief (EU regions + Americas city) → soft dampen only.
+    const jdBlob = [jd.location ?? "", ...(jd.regions ?? [])].join(" ");
+    if (
+      /\b(?:canada|montreal|toronto|vancouver|united\s+states|\busa\b|americas?)\b/i.test(jdBlob)
+    ) {
+      return true;
+    }
     return false;
   }
   return true;
@@ -201,7 +248,8 @@ function buildSummary(evidence: Omit<MatchEvidence, "summary">): string {
 
 /** Evaluate mandatory gates + structured match evidence for a candidate vs JD. */
 export function evaluateHardGates(candidate: Candidate, jd: JobAnalysis): HardGateResult {
-  const { hits: mustHaveHits, misses: mustHaveMisses } = mustHaveHitsMisses(candidate, jd);
+  const { hits: mustHaveHits, misses: mustHaveMisses, hardFail: mustHardFail } =
+    mustHaveHitsMisses(candidate, jd);
   const {
     hits: languageHits,
     misses: languageMisses,
@@ -212,8 +260,12 @@ export function evaluateHardGates(candidate: Candidate, jd: JobAnalysis): HardGa
   const openToWork = candidateOpenToWorkSignal(candidate);
 
   const reasons: string[] = [];
-  if (mustHaveMisses.length > 0) {
-    reasons.push(`Missing must-have: ${mustHaveMisses.slice(0, 4).join(", ")}`);
+  if (mustHardFail) {
+    reasons.push(
+      mustHaveHits.length === 0
+        ? `Missing must-have: ${mustHaveMisses.slice(0, 4).join(", ")}`
+        : `Insufficient must-haves (${mustHaveHits.length}/${mustHaveHits.length + mustHaveMisses.length}): missing ${mustHaveMisses.slice(0, 4).join(", ")}`,
+    );
   }
   if (langVerifiable && languageMisses.length > 0) {
     reasons.push(`Missing required language: ${languageMisses.join(", ")}`);
