@@ -165,8 +165,10 @@ const skillsOnly = scoreCandidate(
     ...signalCandidate,
     techStack: ["typescript", "react", "node", "next"],
     yearsExperience: null,
-    location: "Toronto, Canada",
+    location: "",
     timezone: "",
+    // Live sparse profiles treat missing geo as N/A so skills alone drive the composite.
+    provenance: "live",
   },
   skillsOnlyJd,
   DEFAULT_SCORING_WEIGHTS,

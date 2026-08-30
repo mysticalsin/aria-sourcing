@@ -754,7 +754,7 @@ test("specific GitHub intake revalidates authority and latest dedupe state after
     ok: true,
     added: 0,
     skipped: 1,
-    skipReason: "Duplicate GitHub",
+    skipReason: "Already contacted (do not re-source)",
   });
   assert.equal(concurrent.persistedCalls, 1);
   assert.equal(concurrent.recomputeCalls, 0);
@@ -762,7 +762,7 @@ test("specific GitHub intake revalidates authority and latest dedupe state after
   assert.deepEqual(concurrent.activityDrafts[0], {
     type: "sourcing",
     title: "@live-user was not added",
-    notes: "Skipped by dedupe (Duplicate GitHub).",
+    notes: "Skipped by dedupe (Already contacted (do not re-source)).",
     outcome: "0 accepted, 1 skipped",
     campaignId: concurrent.state.campaigns[0].id,
     linkedEntityType: "campaign",
