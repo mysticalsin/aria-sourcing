@@ -1,49 +1,51 @@
 ---
 project: MSourcing / ARIA
-shift: 433
+shift: 434
 agent: cursor-cloud
-updated: 2026-08-30T10:36Z
-status: europe-tz-landed-on-integration
+updated: 2026-08-30T10:45Z
+status: post-merge-fly-green-qa-pass
 ---
 
-# Handoff — Shift 433
+# Handoff — Shift 434
 
 ## Current state
 
-- **Europe/EMEA timezone sourcing** is on `integration/sourcing-enrichment-on-main` tip **`f4c992b`** (4 files)
-- Files: `src/lib/geo-europe.ts`, `src/lib/scoring.ts`, `src/lib/mock-ai.ts`, `tests/scoring-metrics.mts`
-- **PR #49** remains **CLOSED** / draft / stale head `a7f0b89` — token cannot reopen/undraft/create PR (403). Content landed via **FF push** of branch to integration after #48+#50.
-- **PR #48** MERGED; **PR #50** MERGED onto integration before Europe FF.
+- **integration** tip `3407a6a8c494fb19df7a9fe7e69b7e0ea6c4fe1e` == **main** tip (FF-synced)
+- **Fly** `aria-mantu-app` build **matches** tip · `/api/ready` → `ok:true` · migration `0079_autopilot_enqueue_approval_hash_bind.sql`
+- **PR #48 MERGED** merge `eaf898f` (settings accordion + ready opt-out; head `f0b5760`)
+- **PR #50 MERGED** merge `ee09e21` (Command Center first-run; head after rebase `05db8b3`)
+- **PR #49 CLOSED** (old megapr) — Europe/EMEA clean slice landed separately as `f4c992b` + relay `3407a6a` (not via #49 merge)
+- Whole-app authenticated QA **PASS** (hard-refresh; no “Something broke”)
 
 ## Done this shift
 
-1. Isolated worktree `/tmp/europe-tz-wt`
-2. Slimmed Europe slice onto post-#50 integration (no SMART/orchestrator megapr — those files absent from tip)
-3. `npm run typecheck` + `typecheck:tests` + `scoring-metrics` 184 passed
-4. Pushed `cursor/europe-timezone-sourcing-b91d` @ `f4c992b`; FF'd onto integration
+1. `gh pr merge 48 --merge` → `eaf898f`
+2. `gh pr ready 50`; rebased onto post-#48 integration (manifest digests for accordion+firstrun); local gate green; `gh pr merge 50 --merge` → `ee09e21`
+3. FF-synced `main` → integration after each tip advance (`ee09e21` then `3407a6a`)
+4. Reminted deploy confirm; app-only Fly deploy (preserve 0079 / skip bootstrap) for `ee09e21` then `3407a6a`
+5. Authenticated route QA + screenshots under `/opt/cursor/artifacts/screenshots/post-merge-qa-*.png`
 
 ## Blockers
 
-1. `gh pr reopen/ready/create/comment` → **403 Resource not accessible by integration** — parent must close/annotate #49 or open a formal PR if GitHub merge record required
-2. Closed #49 UI still lists old 11-file tip; ignore — ground truth is integration `f4c992b` (4 files)
+none
 
 ## Next steps
 
 ```bash
-git fetch origin integration/sourcing-enrichment-on-main
-git log -1 --oneline origin/integration/sourcing-enrichment-on-main   # expect f4c992b
-# Optional for humans: reopen #49 or open new PR from f4c992b for GitHub merge UI
-gh pr view 49 --json state,headRefOid
+curl -sS https://aria-mantu-app.fly.dev/api/ready
+# optional: reopen a clean Europe PR for paper trail (feature already on tip f4c992b)
+# Graph/Microsoft HOLD unchanged
 ```
 
 ## Decisions made (don't relitigate)
 
-- Europe PR does **not** reintroduce SMART/orchestrator/linkedin-profiles absent from integration tip
-- Provider hints wire through `buildSourcingStrategy` (GitHub location / LinkedIn boolean / geoTargets)
-- Graph/Microsoft HOLD unchanged
-- Prefer FF land to integration when PR write APIs 403, rather than parking
+- Fly-only production; ignore GHA/Vercel budget phantoms for merge
+- App-only remint preserves live `ARIA_EXPECTED_*` at 0079 when tip ledger ends at 0054
+- No megapr / OCR dump reintroduction; Graph/Microsoft HOLD
+- FF-sync `main` to `integration/sourcing-enrichment-on-main` after merges
 
 ## Watch out
 
-- Do not restore megapr files from old #49 tip `a7f0b89`
-- Concurrent agents: integration tip moved; rebase siblings onto `f4c992b`
+- Concurrent agents may land clean slices on integration while merge autopilot runs — re-fetch before final FF/deploy
+- `framework_heartbeat` may stop after deploy; start machine if needed (`d8d3976b469d98`)
+- Do not bootstrap from slim tip ledger (0054) against live 0079 DB
