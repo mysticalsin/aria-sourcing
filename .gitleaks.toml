@@ -2,5 +2,6 @@ title = "aria-sourcing-demo gitleaks config"
 
 # Keep every built-in detection rule. Exceptions belong in exact fingerprints
 # or on the single synthetic line that triggers a rule; never allowlist a path.
+# Fingerprints live in .gitleaksignore (see gitleaks v8.10+).
 [extend]
 useDefault = true

@@ -1,5 +1,6 @@
 # Exact, reviewed false-positive fingerprints from committed history. Keep this
 # list fingerprint-specific so new findings in the same files still fail CI.
+# Includes synthetic CRON test fixtures and LinkedIn identifier false-positives.
 e1edfeaa551622422d6d21fe0479670ec2e47775:tests/databricks-intake.mts:generic-api-key:88
 5ea23208120ed528511c42e14ba84f66eb3c66f8:.rocket-fuel/codex/rock-5.events.jsonl:generic-api-key:54
 51b0a3058aec43f0dcf0874d2b1e0c0fc91de06e:.rocket-fuel/codex/r3-docs.events.jsonl:generic-api-key:56
@@ -11,3 +12,10 @@ df6fa3398f1f6ee5cd4289056fff762704a674bc:docker-compose.yml:jwt:23
 5c4270c88a42e1b83561f77e7394f29f4529e5ca:.env.production.example:generic-api-key:23
 5c4270c88a42e1b83561f77e7394f29f4529e5ca:tests/log-redact.mts:generic-api-key:33
 5c4270c88a42e1b83561f77e7394f29f4529e5ca:tests/audit-fixes.mts:generic-api-key:83
+3cc1cb1ca20f63e3cd0d3a43d4354c47e03c9679:tests/confirm-calendar-book.mts:generic-api-key:18
+78355942e8938ba12b719e302541429be73833b0:tests/parse-inbound-need-route.mts:generic-api-key:7
+78355942e8938ba12b719e302541429be73833b0:tests/sourcing-loop-worker.mts:generic-api-key:225
+886df40f0e21c4fd8c2cf32865f2901a1caab5ae:tests/sourcing-loop-ignition-route.mts:generic-api-key:9
+d4ca9af6dc65bbd488625e4edd25bcaa705e378f:tests/source-apify-auth.mts:generic-api-key:169
+b5d723a3914a029d9efbf3eaed1e34b10c16bca4:src/lib/sourcing/providers/linkedin-profiles.ts:linkedin-client-secret:44
+f5f1e47fec2568fbcf6da60d73dc7aaf42585df7:src/app/api/source/sillage/start/route.ts:linkedin-client-id:75
