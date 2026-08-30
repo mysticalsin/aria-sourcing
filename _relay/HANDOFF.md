@@ -1,52 +1,52 @@
 ---
 project: MSourcing / ARIA
-shift: 435
+shift: 436
 agent: cursor-cloud
-updated: 2026-08-30T11:00Z
-status: europe-pr51-merge-ready
+updated: 2026-08-30T11:22Z
+status: post-merge-e2e-green
 ---
 
-# Handoff — Shift 435
+# Handoff — Shift 436
 
 ## Current state
 
-- **PR #51** https://github.com/mysticalsin/aria-sourcing/pull/51 — `cursor/europe-timezone-restore` @ `0b69195` → `integration/sourcing-enrichment-on-main` (OPEN, ready for review; do not close)
-- Europe scoring feat `f4c992b` already on integration tip + **live on Fly** build `309c179` (`/api/ready` ok:true)
-- PR delta vs tip: scoring-quality suite + US-state Americas dampening (Eugene≠EU) + manifest freezes
-- Closed #49 cannot reopen (403); #51 is the ONE successor PR
-- Fly authenticated QA: Settings accordion one-open **pass**; Command Center **pass**
-  - Screenshots: `/opt/cursor/artifacts/screenshots/tony-fly-settings-*.png`, `tony-fly-cc-*.png`
+- **PR #51 MERGED** → merge commit `d9e8cd0862e4d8f1803478e772be57b7368ad0a3`
+- **integration** tip = **main** tip = `d9e8cd0` (FF-synced)
+- **Fly** `aria-mantu-app` build **matches** tip · `/api/ready` → `ok:true` · migration `0079_autopilot_enqueue_approval_hash_bind.sql`
+- No other open Aria READY PRs (only #14 dependabot + #3 draft on vercel-demo — left alone)
+- Whole-workflow authenticated E2E **PASS** on live Fly
 
 ## Done this shift
 
-1. Verified restore tip `a7f0b89`; rebased focused Europe onto latest integration (not megapr)
-2. Added `tests/scoring-quality.mts` (EU>US/Asia); fixed Eugene Oregon false-EU; gate green
-3. Opened/kept **PR #51** (marked ready); did not close unmerged PRs
-4. Fly click-through Settings + Command Center on live `309c179`
+1. Confirmed/merged PR #51 (Europe scoring-quality + US-state dampening)
+2. FF-synced `main` → integration tip `d9e8cd0`
+3. Deployed Fly slim (preserve 0079 migration identity); ready build = tip
+4. Local `npx tsx tests/scoring-quality.mts` → 23 passed (EU>US/Asia)
+5. Authenticated E2E click-through all product paths; screenshots + JSON report
 
 ## Blockers
 
-- None for merge of #51
-- Optional: Fly redeploy of `0b69195` after merge for US-state dampening (Europe scoring already live)
+- None for product workflow
+- Graph / Microsoft / HeyReach HOLD unchanged (not chased)
+- Meta WhatsApp templates empty on Outreach (expected under HOLD)
 
 ## Next steps
 
 ```bash
-# Merge PR #51 when ready
-gh pr view 51 --json state,mergeable,url
-# Optional post-merge Fly deploy of integration tip
-curl -s https://aria-mantu-app.fly.dev/api/ready
-npx tsx tests/scoring-quality.mts
+curl -sS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
+# Optional: owner Graph/HeyReach reconnect when ready
 ```
 
 ## Decisions made (don't relitigate)
 
-- #49 closed permanently; use #51 as the Europe PR
-- Keep focused Europe/EMEA geo+scoring slice only — no megapr #36 reopen
-- Europe scoring already landed on integration via `f4c992b`; PR #51 is quality suite + US-state harden
-- Graph/Microsoft HOLD unchanged; ignore Vercel
+- #49 closed permanently; #51 was the Europe successor — now merged
+- Keep focused Europe/EMEA geo+scoring slice — no megapr #36 reopen
+- Slim Fly deploy preserves live 0079 migration identity (tip tree ledger ends 0054)
+- Ignore Vercel/GHA budget noise
 
 ## Watch out
 
-- Manifest freezes (counts + SHA) must bump when adding application suites
-- `store-sourcing-actions` falseEuMatch now expects Americas dampen (≤40), not old remote mid-band 80
+- Manifest freezes already bumped in #51 (app 152 / all 205 / parity 207)
+- `store-sourcing-actions` falseEuMatch expects Americas dampen ≤40
+- E2E screenshots: `/opt/cursor/artifacts/screenshots/e2e-workflow-*.png`
+- Report: `/opt/cursor/artifacts/e2e-workflow-report.json`
