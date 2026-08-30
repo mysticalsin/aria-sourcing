@@ -207,7 +207,7 @@ export function ConsentPassport({ candidate }: { candidate: Candidate }) {
             {basisLabel}
           </Badge>
         </div>
-        {!recorded && !candidate.complianceFlags.anonymized ? (
+        {!recorded && !candidate.complianceFlags?.anonymized ? (
           <div className="mt-3 space-y-2 rounded-xl bg-ink/[0.03] p-3">
             <Field
               label="Record lawful basis"
@@ -234,7 +234,7 @@ export function ConsentPassport({ candidate }: { candidate: Candidate }) {
             </Button>
           </div>
         ) : null}
-        {needsFitEndorsement && !candidate.complianceFlags.anonymized ? (
+        {needsFitEndorsement && !candidate.complianceFlags?.anonymized ? (
           <div className="mt-3 space-y-2 rounded-xl bg-ink/[0.03] p-3">
             <p className="text-sm text-ink-soft">
               Match score {candidate.matchScore} is below the {settings.minScoreToContact} contact

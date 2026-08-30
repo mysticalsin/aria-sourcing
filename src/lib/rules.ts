@@ -106,7 +106,16 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
   }
 
   // Rule 10 + compliance — respect candidate wishes
-  if (candidate.complianceFlags.doNotContact) {
+  // Sparse candidates may omit complianceFlags; treat missing as all-clear.
+  const compliance = candidate.complianceFlags ?? {
+    doNotContact: false,
+    suppressed: false,
+    unsubscribed: false,
+    gdprExportRequested: false,
+    anonymized: false,
+    suppressedUntil: null,
+  };
+  if (compliance.doNotContact) {
     const detail = "Candidate is on the do-not-contact list.";
     blockers.push(detail);
     checks.push({ rule: "Do-not-contact", status: "block", detail });
@@ -114,7 +123,7 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
     checks.push({ rule: "Do-not-contact", status: "pass", detail: "Not on the do-not-contact list." });
   }
 
-  if (candidate.complianceFlags.unsubscribed) {
+  if (compliance.unsubscribed) {
     const detail = "Candidate has unsubscribed.";
     blockers.push(detail);
     checks.push({ rule: "Unsubscribed", status: "block", detail });
@@ -122,7 +131,7 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
     checks.push({ rule: "Unsubscribed", status: "pass", detail: "Has not unsubscribed." });
   }
 
-  if (candidate.complianceFlags.suppressed) {
+  if (compliance.suppressed) {
     const detail = "Candidate contact is currently suppressed.";
     blockers.push(detail);
     checks.push({ rule: "Suppressed", status: "block", detail });

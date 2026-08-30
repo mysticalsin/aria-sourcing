@@ -35,17 +35,26 @@ interface FlagDescriptor {
   icon: React.ReactNode;
 }
 
-function activeFlags(flags: ComplianceFlags): FlagDescriptor[] {
+function activeFlags(flags: ComplianceFlags | null | undefined): FlagDescriptor[] {
+  // Sparse remote candidates may omit complianceFlags; never throw into error.tsx.
+  const f = flags ?? {
+    doNotContact: false,
+    suppressed: false,
+    unsubscribed: false,
+    gdprExportRequested: false,
+    anonymized: false,
+    suppressedUntil: null,
+  };
   const out: FlagDescriptor[] = [];
-  if (flags.doNotContact)
+  if (f.doNotContact)
     out.push({ key: "doNotContact", label: "Do not contact", tone: "danger", icon: <Ban className="h-3.5 w-3.5" /> });
-  if (flags.suppressed)
+  if (f.suppressed)
     out.push({ key: "suppressed", label: "Suppressed", tone: "danger", icon: <EyeOff className="h-3.5 w-3.5" /> });
-  if (flags.unsubscribed)
+  if (f.unsubscribed)
     out.push({ key: "unsubscribed", label: "Unsubscribed", tone: "warning", icon: <MailX className="h-3.5 w-3.5" /> });
-  if (flags.anonymized)
+  if (f.anonymized)
     out.push({ key: "anonymized", label: "Anonymized", tone: "violet", icon: <UserX className="h-3.5 w-3.5" /> });
-  if (flags.gdprExportRequested)
+  if (f.gdprExportRequested)
     out.push({ key: "gdprExportRequested", label: "GDPR export requested", tone: "aqua", icon: <Download className="h-3.5 w-3.5" /> });
   return out;
 }

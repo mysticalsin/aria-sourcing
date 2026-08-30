@@ -3,7 +3,16 @@ import { buildSourcingStrategy, emptyMetrics } from "../mock-ai";
 import { DEFAULT_SCORING_WEIGHTS } from "../scoring";
 import { buildSeedState, defaultSettings, seedInterviewers, STATE_VERSION } from "../seed";
 import { DEFAULT_STAR_THRESHOLDS, deriveLeadSource, deriveStarRating } from "../tania";
-import type { Campaign, CampaignMetrics, CampaignStatus, HermesState, JobAnalysis, Urgency } from "../types";
+import type {
+  Campaign,
+  CampaignMetrics,
+  CampaignStatus,
+  Candidate,
+  ComplianceFlags,
+  HermesState,
+  JobAnalysis,
+  Urgency,
+} from "../types";
 import { demoStateAllowsCandidatePersistence } from "./demo-persistence";
 
 const STORAGE_KEY = "hermes-sourcing:v1";
@@ -161,6 +170,91 @@ function repairCampaigns(raw: unknown): Campaign[] {
   return out;
 }
 
+function emptyComplianceFlags(): ComplianceFlags {
+  return {
+    doNotContact: false,
+    suppressed: false,
+    unsubscribed: false,
+    gdprExportRequested: false,
+    anonymized: false,
+    suppressedUntil: null,
+  };
+}
+
+/**
+ * Sparse remote/proof candidates often omit `complianceFlags`. CandidateTable,
+ * CandidateDrawer, and rules read `.doNotContact` and previously threw into
+ * error.tsx ("Something broke") on /candidates.
+ */
+function repairComplianceFlags(raw: unknown): ComplianceFlags {
+  const base = emptyComplianceFlags();
+  if (!raw || typeof raw !== "object") return base;
+  const f = raw as Partial<ComplianceFlags>;
+  return {
+    doNotContact: f.doNotContact === true,
+    suppressed: f.suppressed === true,
+    unsubscribed: f.unsubscribed === true,
+    gdprExportRequested: f.gdprExportRequested === true,
+    anonymized: f.anonymized === true,
+    suppressedUntil:
+      typeof f.suppressedUntil === "string"
+        ? f.suppressedUntil
+        : f.suppressedUntil === null
+          ? null
+          : base.suppressedUntil,
+    ...(f.preSuppressionStage !== undefined
+      ? { preSuppressionStage: f.preSuppressionStage ?? null }
+      : {}),
+  };
+}
+
+function repairCandidates(raw: unknown): Candidate[] {
+  if (!Array.isArray(raw)) return [];
+  const out: Candidate[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const c = item as Candidate;
+    if (typeof c.id !== "string" || !c.id.trim()) continue;
+    if (typeof c.campaignId !== "string" || !c.campaignId.trim()) continue;
+    out.push({
+      ...c,
+      name: typeof c.name === "string" && c.name.trim() ? c.name : c.id,
+      email: typeof c.email === "string" ? c.email : "",
+      avatarInitials: typeof c.avatarInitials === "string" ? c.avatarInitials : "",
+      currentTitle: typeof c.currentTitle === "string" ? c.currentTitle : "",
+      currentCompany: typeof c.currentCompany === "string" ? c.currentCompany : "",
+      location: typeof c.location === "string" ? c.location : "",
+      timezone: typeof c.timezone === "string" ? c.timezone : "",
+      linkedinUrl: typeof c.linkedinUrl === "string" ? c.linkedinUrl : "",
+      githubUrl: typeof c.githubUrl === "string" ? c.githubUrl : "",
+      sourcePlatform: c.sourcePlatform ?? "Manual",
+      sourceQuery: typeof c.sourceQuery === "string" ? c.sourceQuery : "",
+      matchScore: typeof c.matchScore === "number" && Number.isFinite(c.matchScore) ? c.matchScore : 0,
+      matchBreakdown: Array.isArray(c.matchBreakdown) ? c.matchBreakdown : [],
+      techStack: Array.isArray(c.techStack) ? c.techStack : [],
+      yearsExperience:
+        typeof c.yearsExperience === "number" && Number.isFinite(c.yearsExperience)
+          ? c.yearsExperience
+          : c.yearsExperience === null
+            ? null
+            : null,
+      companyStageExperience: Array.isArray(c.companyStageExperience) ? c.companyStageExperience : [],
+      industryExperience: Array.isArray(c.industryExperience) ? c.industryExperience : [],
+      recentActivity: typeof c.recentActivity === "string" ? c.recentActivity : "",
+      stage: c.stage ?? "Sourced",
+      lastContactedAt: c.lastContactedAt ?? null,
+      lastRepliedAt: c.lastRepliedAt ?? null,
+      outreachHistory: Array.isArray(c.outreachHistory) ? c.outreachHistory : [],
+      replyHistory: Array.isArray(c.replyHistory) ? c.replyHistory : [],
+      booking: c.booking && typeof c.booking === "object" ? c.booking : null,
+      notes: Array.isArray(c.notes) ? c.notes : [],
+      complianceFlags: repairComplianceFlags(c.complianceFlags),
+      createdAt: typeof c.createdAt === "string" ? c.createdAt : new Date(0).toISOString(),
+    });
+  }
+  return out;
+}
+
 /** Fill in any fields added in recent STATE_VERSIONs without wiping existing data. */
 export function migrateToCurrentVersion(parsed: HermesState): HermesState {
   const defs = defaultSettings();
@@ -183,7 +277,7 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
       : repairCampaigns(parsed.campaigns),
     candidates: preCleanSlate
       ? []
-      : (parsed.candidates ?? []).map((c) => ({
+      : repairCandidates(parsed.candidates).map((c) => ({
           ...c,
           leadSource: c.leadSource ?? deriveLeadSource(c),
           starRating: c.starRating ?? deriveStarRating(c.matchScore, starT),
@@ -273,10 +367,16 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
 export function normalizeHermesState(parsed: HermesState): HermesState {
   if (parsed.version !== STATE_VERSION) return migrateToCurrentVersion(parsed);
   const settings = withoutLegacyIntegrationAuthority(parsed.settings);
+  const starT = settings.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
   return {
     ...parsed,
     wins: parsed.wins ?? [],
     campaigns: repairCampaigns(parsed.campaigns),
+    candidates: repairCandidates(parsed.candidates).map((c) => ({
+      ...c,
+      leadSource: c.leadSource ?? deriveLeadSource(c),
+      starRating: c.starRating ?? deriveStarRating(c.matchScore, starT),
+    })),
     settings: {
       ...settings,
       // Quality bar: never contact / accept below 80% unless operator raises further.

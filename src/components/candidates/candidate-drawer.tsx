@@ -768,7 +768,14 @@ export function CandidateDrawer({
     confidentialityMode,
     reveal: purpose || revealed,
   });
-  const flags = c.complianceFlags;
+  const flags = c.complianceFlags ?? {
+    doNotContact: false,
+    suppressed: false,
+    unsubscribed: false,
+    gdprExportRequested: false,
+    anonymized: false,
+    suppressedUntil: null,
+  };
   const hasFlags =
     flags.doNotContact ||
     flags.suppressed ||

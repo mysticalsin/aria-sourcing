@@ -70,5 +70,41 @@ check("normalizeHermesState fills missing metrics so CampaignCard cannot throw",
   assert.equal(sparse.metrics.sourced + sparse.metrics.contacted, 0);
 });
 
+check("normalizeHermesState fills missing complianceFlags so /candidates cannot throw", () => {
+  const base = buildSeedState();
+  const polluted = {
+    ...base,
+    version: STATE_VERSION,
+    candidates: [
+      null,
+      undefined,
+      {
+        id: "cand:sparse:flags",
+        campaignId: "camp:1",
+        name: "Sparse Flags",
+        // complianceFlags intentionally omitted
+      },
+      {
+        id: "cand:no-campaign",
+        name: "No Campaign",
+      },
+    ],
+  } as unknown as HermesState;
+
+  const normalized = normalizeHermesState(polluted);
+  assert.equal(normalized.candidates.some((c) => !c), false);
+  const sparse = normalized.candidates.find((c) => c.id === "cand:sparse:flags");
+  assert.ok(sparse);
+  assert.ok(sparse.complianceFlags);
+  assert.equal(sparse.complianceFlags.doNotContact, false);
+  assert.equal(sparse.complianceFlags.suppressed, false);
+  // Mimic CandidateTable / rules reads that previously threw TypeError
+  assert.equal(sparse.complianceFlags.doNotContact, false);
+  assert.equal(
+    normalized.candidates.some((c) => c.id === "cand:no-campaign"),
+    false,
+  );
+});
+
 console.log(`RESULT campaign-repair: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);
