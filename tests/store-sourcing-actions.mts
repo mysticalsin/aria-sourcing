@@ -1613,7 +1613,8 @@ test("demo candidate authority is synthetic-only and blocks real or manual intak
   assert.equal(synthetic.ok, true);
   if (!synthetic.ok) return;
   assert.equal(synthetic.source, "mock");
-  assert.equal(synthetic.accepted.length, 2);
+  // Requested 2 clamps up into the 5–20 quality shortlist band.
+  assert.equal(synthetic.accepted.length, 5);
   assert.equal(
     synthetic.accepted.every((candidate) => candidate.provenance === "synthetic"),
     true,
